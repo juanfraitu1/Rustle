@@ -24,11 +24,12 @@ use rustle::vg_family::catalog_input::{group_families, parse_copies_fa, parse_co
 use rustle::vg_family::copy_assign::AssignParams;
 use rustle::vg_family::o3_candidates::{
     attribute_by_hits, best_by_id_cov, best_by_matches, candidate_id, classify, cluster_reads, components, consensus_from_template,
-    distinguishing_columns, is_flagged, minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf, refine_cluster,
-    sample_net, sketch_share, union_sequence_with_note, variant_is_real, write_cluster_members, write_family_table, write_outputs, Candidate,
-    ClusterSeq, FamilyCounts, Fate, PafHit, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA, MM2_GENOME, MM2_MEMBERS, MM2_UNION, SKETCH_W,
-    UNMAPPED_MAX_DE, UNMAPPED_MIN_COV,
+    distinguishing_columns, is_flagged, is_poorly_placed, minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf,
+    refine_cluster, sample_net, sketch_share, union_sequence_with_note, variant_is_real, write_cluster_members, write_family_table, write_outputs,
+    Candidate, ClusterSeq, FamilyCounts, Fate, PafHit, ATTRIB_MAX_DE, ATTRIB_MIN_READ_COV, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA,
+    MM2_GENOME, MM2_MEMBERS, MM2_UNION, POORLY_PLACED_DE, SKETCH_W,
 };
+use rustle::bam::record_de;
 use rustle::vg_family::run_cache as rc;
 use rustle::vg_family::seq_utils::reverse_complement;
 use std::cell::Cell;
@@ -200,10 +201,10 @@ fn run(raw: &[String]) -> Result<()> {
             return Err(exit_two(format!("{flag}: {path} does not exist")));
         }
     }
-    let (families, family_of_target) = load_copies(&args)?;
+    let (families, family_of_copy) = load_copies(&args)?;
     eprintln!(
-        "[o3_candidates] {} families from {} ({} copy sequences of {} attribute the unmapped reads)",
-        families.len(), args.copies, family_of_target.len(), args.copies_fa
+        "[o3_candidates] {} families from {} ({} copy records of {} are attribution targets beside the nets)",
+        families.len(), args.copies, family_of_copy.len(), args.copies_fa
     );
 
     // the stage cache: one `cand` entry holds the whole result (spec §5.8)
@@ -229,7 +230,7 @@ fn run(raw: &[String]) -> Result<()> {
     let mm = Mm2 { cache, threads: args.threads, calls: Cell::new(0) };
 
     // spec §5.1 and prereg Amendment 13: the nets, then the cap
-    let nets = collect_nets(&args, &families, &family_of_target, &tmp, &mm)?;
+    let nets = collect_nets(&args, &families, &family_of_copy, &tmp, &mm)?;
     let t_nets = t0.elapsed().as_secs_f64();
 
     // phase 1, per family: clusters, consensus, refinement, significance merge (spec §5.3-5.5)
@@ -341,10 +342,11 @@ fn run(raw: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// The families of `--copies` the stage runs on (`--families`, else all), and the targets that attribute the unmapped reads (prereg
-/// Amendment 13): the `--copies-fa` record of every copy of EVERY family (a read is judged against all of them), checked against its row,
-/// by the name minimap2 reports -> its family (`copy_targets`). `partner` rows (another family's unit, `catalog_input::CatalogCopy::partner`)
-/// are no copy of the family: they bring no reads into its net, and a hit on their record attributes no read.
+/// The families of `--copies` the stage runs on (`--families`, else all), and the copy records among the attribution targets (prereg
+/// Amendment 13b, beside this run's net reads): the `--copies-fa` record of every copy of EVERY family (a read is judged against all of
+/// them), checked against its row, by the name minimap2 reports -> its family (`copy_targets`). `partner` rows (another family's unit,
+/// `catalog_input::CatalogCopy::partner`) are no copy of the family: they bring no reads into its net, and a hit on their record attributes
+/// no read.
 fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, HashMap<String, String>)> {
     let text = std::fs::read_to_string(&args.copies).map_err(|e| exit_two(format!("--copies {}: {e}", args.copies)))?;
     if text.trim().is_empty() {
@@ -459,12 +461,15 @@ fn oriented_sequence(record: &noodles_bam::Record) -> Vec<u8> {
 
 /// Pass A (indexed, per copy interval): every primary or secondary record overlapping a copy names its read for that family's net
 /// (supplementary records do not); a primary record gives the read's sequence. Pass B (one sequential sweep of the whole BAM): the sequence
-/// of every read that only secondary records named, from its primary record wherever it lies; and every unmapped record of
-/// >= `MIN_UNMAPPED_LEN` bases, streamed as sequenced to `<tmp>/unmapped.fa` while the sweep meets it (never held in memory). After the
-/// sweep (prereg Amendment 13) the FASTA is aligned once against `--copies-fa` (`MM2_ATTRIB`) and `attribute_by_hits` gives reads to
-/// families; a read given to a family the stage runs on joins its net (before the `--max-reads` cap), its sequence read back from the FASTA.
-/// A read whose sequence never appears (a secondary-only name without a primary record in the BAM) stays out of every net.
-fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_target: &HashMap<String, String>, tmp: &Path, mm: &Mm2) -> Result<Nets> {
+/// of every read that only secondary records named, from its primary record wherever it lies; and the ATTRIBUTION SET of prereg Amendment
+/// 13b, streamed as sequenced to `<tmp>/attrib.fa` while the sweep meets it (never held in memory): every unmapped record of
+/// >= `MIN_UNMAPPED_LEN` bases, and every read in no net of this run (ruling R18) whose primary record is poorly placed (`is_poorly_placed`).
+/// After the sweep the targets go to `<tmp>/attrib_targets.fa` (`write_attrib_targets`: this run's net reads as `{family}|{read}`, then
+/// `--copies-fa`), the set is aligned once against them (`MM2_ATTRIB`), and `attribute_by_hits` gives reads to families (`family_of_copy`
+/// names the copies' records, the net-read targets name their own family); a read given to a family the stage runs on joins its net
+/// (before the `--max-reads` cap), its sequence read back from the FASTA (`join_attributed`). A read whose sequence never appears (a
+/// secondary-only name without a primary record in the BAM) stays out of every net.
+fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMap<String, String>, tmp: &Path, mm: &Mm2) -> Result<Nets> {
     let mut seqs: HashMap<String, Vec<u8>> = HashMap::new();
     let mut names: Vec<BTreeSet<String>> = vec![BTreeSet::new(); families.len()];
     let (mut n_primary, mut n_secondary) = (0usize, 0usize);
@@ -508,9 +513,12 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_target: &Hash
         }
     }
     let need: HashSet<String> = names.iter().flatten().filter(|n| !seqs.contains_key(*n)).cloned().collect();
-    let unmapped_fa = tmp.join("unmapped.fa");
-    let mut unmapped = std::io::BufWriter::new(std::fs::File::create(&unmapped_fa).with_context(|| format!("creating {}", unmapped_fa.display()))?);
-    let (mut n_found, mut n_long_unmapped, mut n_written) = (0usize, 0usize, 0usize);
+    // ruling R18: "no record on a family copy" means in no net of THIS run (pass A's scope)
+    let netted: HashSet<String> = names.iter().flatten().cloned().collect();
+    let attrib_fa = tmp.join("attrib.fa");
+    let mut attrib = std::io::BufWriter::new(std::fs::File::create(&attrib_fa).with_context(|| format!("creating {}", attrib_fa.display()))?);
+    let mut class: HashMap<String, AttribClass> = HashMap::new();
+    let (mut n_found, mut n_unmapped, mut n_poor, mut n_no_de) = (0usize, 0usize, 0usize, 0usize);
     let mut reader = rustle::bam::open_bam(&args.bam, args.threads).with_context(|| format!("opening --bam {}", args.bam))?;
     reader.read_header().with_context(|| format!("reading the header of {}", args.bam))?;
     for result in reader.records() {
@@ -521,14 +529,15 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_target: &Hash
             if record.sequence().len() < MIN_UNMAPPED_LEN {
                 continue;
             }
-            n_long_unmapped += 1;
             let Some(name) = record.name() else { continue };
+            let name = name.to_string();
             // A13 Review Focus 5: decoded once and written now; only the reads that join a net are read back after the alignment
-            fasta_record(&mut unmapped, &name.to_string(), &oriented_sequence(&record)).with_context(|| format!("writing {}", unmapped_fa.display()))?;
-            n_written += 1;
+            fasta_record(&mut attrib, &name, &oriented_sequence(&record)).with_context(|| format!("writing {}", attrib_fa.display()))?;
+            class.insert(name, AttribClass::Unmapped);
+            n_unmapped += 1;
             continue;
         }
-        if need.is_empty() || flags.is_secondary() || flags.is_supplementary() {
+        if flags.is_secondary() || flags.is_supplementary() {
             continue;
         }
         let Some(name) = record.name() else { continue };
@@ -540,42 +549,103 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_target: &Hash
                 n_found += 1;
             }
         }
+        // Amendment 13b: the primary record decides whether a read in no net of the run is poorly placed (de > 0.02 or MAPQ 0). An absent `de`
+        // reads as 0 (the repo's fail-soft reading: MAPQ alone decides, counted below); MAPQ 255 (unavailable) is not MAPQ 0.
+        let in_net = netted.contains(name);
+        let de = record_de(&record);
+        n_no_de += usize::from(!in_net && de.is_none());
+        let mapq = record.mapping_quality().map_or(u8::MAX, |q| q.get());
+        if is_poorly_placed(de.unwrap_or(0.0), mapq, in_net) {
+            let seq = oriented_sequence(&record);
+            if !seq.is_empty() {
+                fasta_record(&mut attrib, name, &seq).with_context(|| format!("writing {}", attrib_fa.display()))?;
+                class.insert(name.to_string(), AttribClass::PoorlyPlaced);
+                n_poor += 1;
+            }
+        }
     }
-    unmapped.flush().with_context(|| format!("writing {}", unmapped_fa.display()))?;
-    drop(unmapped);
-    // prereg Amendment 13: one alignment of the unmapped reads against every family's copies, then the attribution rule
-    let (mut n_aligned, mut n_attributed, mut n_joined) = (0usize, 0usize, 0usize);
-    if n_written > 0 {
-        let hits = mm.run(MM2_ATTRIB, Path::new(&args.copies_fa), &unmapped_fa, &tmp.join("unmapped.paf"))?;
+    attrib.flush().with_context(|| format!("writing {}", attrib_fa.display()))?;
+    drop(attrib);
+    // prereg Amendment 13b: one alignment of the attribution set against this run's net reads and every family's copies, then the rule
+    let (mut n_aligned, mut n_attributed, mut n_att_unmapped, mut n_att_poor, mut n_joined) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    if n_unmapped + n_poor > 0 {
+        let targets_fa = tmp.join("attrib_targets.fa");
+        let mut family_of_target = family_of_copy.clone();
+        {
+            let nets: Vec<(&str, &BTreeSet<String>)> = families.iter().map(|f| f.family_id.as_str()).zip(names.iter()).collect();
+            let copies = std::fs::File::open(&args.copies_fa).with_context(|| format!("opening --copies-fa {}", args.copies_fa))?;
+            let mut w = std::io::BufWriter::new(std::fs::File::create(&targets_fa).with_context(|| format!("creating {}", targets_fa.display()))?);
+            let net_targets = write_attrib_targets(&mut w, &nets, &seqs, copies).and_then(|m| w.flush().map(|()| m));
+            family_of_target.extend(net_targets.with_context(|| format!("writing {}", targets_fa.display()))?);
+        }
+        let hits = mm.run(MM2_ATTRIB, &targets_fa, &attrib_fa, &tmp.join("attrib.paf"))?;
         n_aligned = hits.iter().filter(|h| family_of_target.contains_key(&h.t)).map(|h| h.q.as_str()).collect::<HashSet<_>>().len();
-        let attributed = attribute_by_hits(&hits, family_of_target);
+        let attributed = attribute_by_hits(&hits, &family_of_target);
         n_attributed = attributed.len();
+        n_att_unmapped = attributed.keys().filter(|r| class.get(r.as_str()) == Some(&AttribClass::Unmapped)).count();
+        n_att_poor = attributed.keys().filter(|r| class.get(r.as_str()) == Some(&AttribClass::PoorlyPlaced)).count();
         let fam_pos: HashMap<&str, usize> = families.iter().enumerate().map(|(i, f)| (f.family_id.as_str(), i)).collect();
         let joining: HashMap<String, usize> =
             attributed.into_iter().filter_map(|(read, family)| fam_pos.get(family.as_str()).map(|&fi| (read, fi))).collect();
         n_joined = joining.len();
         if !joining.is_empty() {
-            let file = std::fs::File::open(&unmapped_fa).with_context(|| format!("opening {}", unmapped_fa.display()))?;
-            join_unmapped(std::io::BufReader::new(file), &joining, &mut names, &mut seqs).with_context(|| format!("reading {}", unmapped_fa.display()))?;
+            let file = std::fs::File::open(&attrib_fa).with_context(|| format!("opening {}", attrib_fa.display()))?;
+            join_attributed(std::io::BufReader::new(file), &joining, &mut names, &mut seqs).with_context(|| format!("reading {}", attrib_fa.display()))?;
         }
     }
     let n_lost = need.iter().filter(|n| !seqs.contains_key(n.as_str())).count();
     eprintln!(
         "[o3_candidates] BAM: pass A {n_primary} reads by a primary record and {n_secondary} secondary records on the copies; pass B {n_found} of {} \
-         secondary-only reads found by their primary record ({n_lost} without one: left out), {n_aligned} of {n_long_unmapped} unmapped reads >= \
-         {MIN_UNMAPPED_LEN} bp aligned to a copy, {n_attributed} attributed (read coverage >= {UNMAPPED_MIN_COV}, de <= {UNMAPPED_MAX_DE}), {n_joined} of \
-         them to a family of this run",
+         secondary-only reads found by their primary record ({n_lost} without one: left out)",
         need.len()
     );
+    eprintln!(
+        "[o3_candidates] pass B: unmapped >= {MIN_UNMAPPED_LEN} bp {n_unmapped}, poorly placed {n_poor} (de > {POORLY_PLACED_DE} or MAPQ 0, no record \
+         on a family copy); aligned {n_aligned}; attributed {n_attributed} (read coverage >= {ATTRIB_MIN_READ_COV}, de <= {ATTRIB_MAX_DE:.2}): unmapped \
+         {n_att_unmapped}, poorly placed {n_att_poor}; joined this run's families {n_joined}"
+    );
+    if n_no_de > 0 {
+        eprintln!("[o3_candidates] pass B: {n_no_de} primary records of reads in no net carry no de tag: judged by their MAPQ alone");
+    }
     let names = names.into_iter().map(|set| set.into_iter().filter(|n| seqs.contains_key(n)).collect()).collect();
     Ok(Nets { names, seqs })
 }
 
-/// Pass B's read-back (prereg Amendment 13): the reads of `joining` (read -> index of the family it joins) from the unmapped-read FASTA,
-/// written by `fasta_record` with one sequence line per record, so the line after a joining read's header is its sequence. Each joining read
-/// enters its family's `names`, and its sequence enters `seqs` unless the read has one already (the first wins). Every other record is passed
-/// over without being kept, and a joining name the FASTA lacks adds nothing.
-fn join_unmapped(fasta: impl BufRead, joining: &HashMap<String, usize>, names: &mut [BTreeSet<String>], seqs: &mut HashMap<String, Vec<u8>>) -> std::io::Result<()> {
+/// Which part of the attribution set (prereg Amendment 13b) a read belongs to; the log reports the attributed reads of each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AttribClass {
+    Unmapped,
+    PoorlyPlaced,
+}
+
+/// The attribution targets (prereg Amendment 13b; ruling R18: this run's nets and the copies): every read of each net (family id, the reads
+/// pass A put in it) that has a sequence in `seqs`, as `>{family}|{read}` and the read as sequenced (a read in two nets is a target of each),
+/// then the bytes of `copies` (`--copies-fa`, its records under their own `{fid}|...` headers). Returns the net-read targets' names -> family
+/// (a family id holds no `|`, so the family is the name's prefix before its first `|`); the copies' names come from `copy_targets`.
+fn write_attrib_targets(
+    w: &mut impl Write,
+    nets: &[(&str, &BTreeSet<String>)],
+    seqs: &HashMap<String, Vec<u8>>,
+    mut copies: impl std::io::Read,
+) -> std::io::Result<HashMap<String, String>> {
+    let mut family_of_target = HashMap::new();
+    for &(family, reads) in nets {
+        for read in reads {
+            let Some(seq) = seqs.get(read) else { continue };
+            let target = format!("{family}|{read}");
+            fasta_record(w, &target, seq)?;
+            family_of_target.insert(target, family.to_string());
+        }
+    }
+    std::io::copy(&mut copies, w)?;
+    Ok(family_of_target)
+}
+
+/// Pass B's read-back (prereg Amendments 13 / 13b): the reads of `joining` (read -> index of the family it joins) from the attribution FASTA
+/// (the unmapped and the poorly placed reads), written by `fasta_record` with one sequence line per record, so the line after a joining read's
+/// header is its sequence. Each joining read enters its family's `names`, and its sequence enters `seqs` unless the read has one already (the
+/// first wins). Every other record is passed over without being kept, and a joining name the FASTA lacks adds nothing.
+fn join_attributed(fasta: impl BufRead, joining: &HashMap<String, usize>, names: &mut [BTreeSet<String>], seqs: &mut HashMap<String, Vec<u8>>) -> std::io::Result<()> {
     let mut current: Option<(String, usize)> = None;
     for line in fasta.lines() {
         let line = line?;
@@ -976,10 +1046,10 @@ mod tests {
     }
 
     #[test]
-    fn the_unmapped_readback_brings_exactly_the_joining_reads_into_their_family() {
-        // pass B's read-back (prereg Amendment 13) on a FASTA as the sweep writes it (`fasta_record`, one sequence line per record): each
-        // joining read enters its family's names with its own sequence; a read that joins no family is not kept; a read that has a sequence
-        // already keeps it (the first wins, as before); a joining name the FASTA lacks adds nothing
+    fn the_attribution_readback_brings_exactly_the_joining_reads_into_their_family() {
+        // pass B's read-back (prereg Amendments 13 / 13b) on a FASTA as the sweep writes it (`fasta_record`, one sequence line per record):
+        // each joining read enters its family's names with its own sequence; a read that joins no family is not kept; a read that has a
+        // sequence already keeps it (the first wins, as before); a joining name the FASTA lacks adds nothing
         let mut fasta: Vec<u8> = Vec::new();
         for (name, seq) in [("u1", "ACGTACGTAA"), ("u2", "GGGGCC"), ("u3", "TTTTCCA"), ("u4", "CCCAT")] {
             fasta_record(&mut fasta, name, seq.as_bytes()).unwrap();
@@ -988,10 +1058,27 @@ mod tests {
         let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
         let mut names = vec![BTreeSet::new(), set(&["p1"])];
         let mut seqs: HashMap<String, Vec<u8>> = [("p1", "AAAA"), ("u4", "KEPT")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
-        join_unmapped(&fasta[..], &joining, &mut names, &mut seqs).unwrap();
+        join_attributed(&fasta[..], &joining, &mut names, &mut seqs).unwrap();
         assert_eq!(names, vec![set(&["u3"]), set(&["p1", "u1", "u4"])]);
         let got: BTreeMap<&str, &[u8]> = seqs.iter().map(|(r, s)| (r.as_str(), s.as_slice())).collect();
         let want: BTreeMap<&str, &[u8]> = [("p1", &b"AAAA"[..]), ("u1", b"ACGTACGTAA"), ("u3", b"TTTTCCA"), ("u4", b"KEPT")].into_iter().collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn the_attribution_targets_are_the_net_reads_then_the_copies() {
+        // prereg Amendment 13b (ruling R18): every read of this run's nets that has a sequence, as `{family}|{read}` (a read in two nets is a
+        // target of each; r3 has no sequence and is left out), then --copies-fa byte for byte; the net-read targets map to their family
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
+        let (f1, f2) = (set(&["r1", "r2"]), set(&["r2", "r3"]));
+        let seqs: HashMap<String, Vec<u8>> = [("r1", "ACGT"), ("r2", "GGA")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
+        let copies = ">F1|0|chrT:1-5|+|nexon=1\nACGTA\n>F2|0|chrT:9-12|-|nexon=1\nTTG\n";
+        let mut out: Vec<u8> = Vec::new();
+        let map = write_attrib_targets(&mut out, &[("F1", &f1), ("F2", &f2)], &seqs, copies.as_bytes()).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), format!(">F1|r1\nACGT\n>F1|r2\nGGA\n>F2|r2\nGGA\n{copies}"));
+        let mut got: Vec<(String, String)> = map.into_iter().collect();
+        got.sort();
+        let want: Vec<(String, String)> = [("F1|r1", "F1"), ("F1|r2", "F1"), ("F2|r2", "F2")].iter().map(|(t, f)| (t.to_string(), f.to_string())).collect();
         assert_eq!(got, want);
     }
 }

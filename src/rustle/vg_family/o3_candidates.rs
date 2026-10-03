@@ -12,13 +12,21 @@ use std::path::Path;
 
 pub const KMER_K: usize = 31;
 pub const SKETCH_W: usize = 5;
-/// Unmapped records shorter than this are never aligned to the copies nor attributed (prereg Amendment 13: unmapped reads >= 300 bp only).
+/// Unmapped records shorter than this are never aligned nor attributed (prereg Amendment 13: unmapped reads >= 300 bp only).
 pub const MIN_UNMAPPED_LEN: usize = 300;
-/// `attribute_by_hits` (prereg Amendment 13): the best hit must cover at least this fraction of the READ (`(qe - qs) / qlen`, whatever the
-/// copy's length) ...
-pub const UNMAPPED_MIN_COV: f64 = 0.5;
-/// ... and its gap-compressed divergence `de` must be at most this.
-pub const UNMAPPED_MAX_DE: f64 = 0.15;
+/// `attribute_by_hits` (prereg Amendment 13b): the best hit must cover at least this fraction of the READ (`(qe - qs) / qlen`, whatever the
+/// target's length) ...
+pub const ATTRIB_MIN_READ_COV: f64 = 0.5;
+/// ... and its gap-compressed divergence `de` must be at most this: the family definition's identity floor (0.80) in read space.
+pub const ATTRIB_MAX_DE: f64 = 0.20;
+
+/// `is_poorly_placed` (prereg Amendment 13b): a primary record whose `de` exceeds this places its read poorly.
+pub const POORLY_PLACED_DE: f32 = 0.02;
+
+/// Prereg Amendment 13b: a mapped read joins the attribution set ("poorly placed") when no record of it lies on a copy of the run's families
+/// (`netted` false: it is in no net of pass A; ruling R18) and its PRIMARY record has `de > POORLY_PLACED_DE` or MAPQ 0. The caller passes the
+/// primary's `de` (absent -> 0.0: MAPQ alone decides) and its MAPQ (unavailable, 255, is not 0).
+pub fn is_poorly_placed(de: f32, mapq: u8, netted: bool) -> bool { !netted && (de > POORLY_PLACED_DE || mapq == 0) }
 
 fn code(b: u8) -> Option<u64> { match b { b'A' | b'a' => Some(0), b'C' | b'c' => Some(1), b'G' | b'g' => Some(2), b'T' | b't' => Some(3), _ => None } }
 
@@ -103,13 +111,14 @@ pub fn best_by_id_cov(hits: &[PafHit]) -> HashMap<String, PafHit> {
     best
 }
 
-/// The family each unmapped read joins (prereg Amendment 13, which retires spec §5.2's k-mer index), from the reads' `MM2_ATTRIB` hits on
-/// every family's copy sequences: per read, its best hit by matches (the first encountered on a tie, as `best_by_matches`) among the hits
-/// whose target `family_of_target` names, and the read joins that target's family iff the hit covers >= `UNMAPPED_MIN_COV` of the READ
-/// (the query's aligned span over its length, `(qe - qs) / qlen`; NOT `shorter_cov`, which would judge the copy's covered fraction when the
-/// read is the longer sequence) and its `de` is <= `UNMAPPED_MAX_DE`. A best hit that fails either joins the read to no family: a lesser hit
-/// never stands in (a read whose best hit is a 40% shared exon of another family's copy stays out). A target absent from the map (a partner
-/// row, a record the copies table does not hold) is ignored. Returns read -> family.
+/// The family each read of the attribution set joins (prereg Amendments 13 / 13b, which retire spec §5.2's k-mer index), from its
+/// `MM2_ATTRIB` hits on the targets (this run's net reads, `{family}|{read}`, and every family's copy sequences): per read, its best hit by
+/// matches (the first encountered on a tie, as `best_by_matches`) among the hits whose target `family_of_target` names, and the read joins
+/// that target's family iff the hit covers >= `ATTRIB_MIN_READ_COV` of the READ (the query's aligned span over its length,
+/// `(qe - qs) / qlen`; NOT `shorter_cov`, which would judge the target's covered fraction when the read is the longer sequence) and its `de`
+/// is <= `ATTRIB_MAX_DE`. A best hit that fails either joins the read to no family: a lesser hit never stands in (a read whose best hit is a
+/// 40% shared exon of another family's copy stays out). A target absent from the map (a partner row, a record the copies table does not
+/// hold) is ignored. Returns read -> family.
 pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, String>) -> HashMap<String, String> {
     let mut best: HashMap<&str, (&PafHit, &String)> = HashMap::new();
     for h in hits {
@@ -121,7 +130,7 @@ pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, Str
     // the read's covered fraction, guarded as the quantities below are (a zero length counts as 1, an end before its start as no span)
     let read_cov = |h: &PafHit| h.qe.saturating_sub(h.qs) as f64 / h.qlen.max(1) as f64;
     best.into_iter()
-        .filter(|(_, (h, _))| read_cov(h) >= UNMAPPED_MIN_COV && h.de <= UNMAPPED_MAX_DE)
+        .filter(|(_, (h, _))| read_cov(h) >= ATTRIB_MIN_READ_COV && h.de <= ATTRIB_MAX_DE)
         .map(|(read, (_, family))| (read.to_string(), family.clone()))
         .collect()
 }
@@ -494,10 +503,11 @@ pub const MM2_MEMBERS: &[&str] = &["-x", "asm20", "-c", "--cs", "-N", "5", "-p",
 pub const MM2_UNION: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"];
 /// Consensus sequences against the primary genome's splice index (`--index`): the genome hits that `classify` judges (spec §5.6).
 pub const MM2_GENOME: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"];
-/// The unmapped reads >= `MIN_UNMAPPED_LEN` (the query) against `--copies-fa`, every family's copy sequences (the target), in one call per
-/// run (prereg Amendment 13): the hits `attribute_by_hits` judges. A splice preset, so a read aligns across the introns of an unspliced copy;
-/// up to 5 secondary hits within half the best score; no `--cs` (the rule reads matches, spans and `de` only).
-pub const MM2_ATTRIB: &[&str] = &["-x", "splice:hq", "-uf", "-c", "-N", "5", "-p", "0.5"];
+/// The attribution set (the unmapped reads >= `MIN_UNMAPPED_LEN` and the poorly placed reads: the query) against this run's net reads and
+/// every family's copy sequences (`--copies-fa`: the target), in one call per run (prereg Amendment 13b): the hits `attribute_by_hits`
+/// judges. `map-ont`: read against read, the family definition's edge alignment in read space; up to 5 secondary hits within half the best
+/// score; no `--cs` (the rule reads matches, spans and `de` only).
+pub const MM2_ATTRIB: &[&str] = &["-x", "map-ont", "-c", "-N", "5", "-p", "0.5"];
 
 /// The name of the k-th candidate of `family` (k = the component's order within the family): `cand_<family>_<k>`.
 pub fn candidate_id(family: &str, k: usize) -> String { format!("cand_{family}_{k}") }
@@ -921,10 +931,10 @@ mod tests {
         assert_eq!((id_cov(&h), shorter_cov(&h)), (0.0, 0.0));
     }
 
-    // ---- unmapped-read attribution by alignment to the copies (prereg Amendment 13) ------------------------------------------------------
+    // ---- attribution of the unmapped and poorly placed reads to the nets and copies (prereg Amendments 13 / 13b) --------------------------
 
-    /// A hit of an unmapped read of `qlen` bases on a copy sequence of 5,000 bp: `span` read bases aligned (read coverage `span / qlen`, the
-    /// fraction the rule reads), `matches` of them identical, divergence `de`. A copy shorter than the read is built field by field where needed.
+    /// A hit of a read of the attribution set (`qlen` bases) on a target of 5,000 bp: `span` read bases aligned (read coverage `span / qlen`,
+    /// the fraction the rule reads), `matches` of them identical, divergence `de`. A target shorter than the read is built field by field.
     fn read_hit(read: &str, copy: &str, qlen: usize, span: usize, matches: usize, de: f64) -> PafHit {
         PafHit { q: read.into(), qlen, qs: 0, qe: span, strand: b'+', t: copy.into(), tlen: 5000, ts: 100, te: 100 + span, matches, block: span, de, cs: None }
     }
@@ -960,8 +970,9 @@ mod tests {
         // to the other family's lesser hit although that one covers 60% (a 200-bp insertion inside it: fewer matches, one gap at de 0.01)
         let shared = vec![read_hit("r", F1_A, 1000, 400, 398, 0.01), read_hit("r", F2_A, 1000, 600, 390, 0.01)];
         assert!(attributed(&shared).is_empty());
-        // the bound is inclusive: a best hit covering exactly half of the read attributes
+        // the bound is inclusive: a best hit covering exactly half of the read attributes, one covering 0.4999 of it does not
         assert_eq!(attributed(&[read_hit("r", F2_A, 1000, 500, 495, 0.01)]), pairs(&[("r", "F2")]));
+        assert!(attributed(&[read_hit("r", F2_A, 10_000, 4999, 4990, 0.01)]).is_empty());
     }
     #[test]
     fn attribution_measures_coverage_on_the_read_even_when_the_copy_is_shorter() {
@@ -976,11 +987,34 @@ mod tests {
     }
     #[test]
     fn attribution_refuses_a_divergent_best_hit() {
-        // (c) de 0.2 > 0.15: nothing, however well the hit covers the read; the bound is inclusive (de 0.15 attributes)
-        assert!(attributed(&[read_hit("r", F1_A, 1000, 1000, 810, 0.2)]).is_empty());
-        assert_eq!(attributed(&[read_hit("r", F1_A, 1000, 1000, 850, 0.15)]), pairs(&[("r", "F1")]));
+        // (c) Amendment 13b: de 0.2001 > 0.20 attributes nothing, however well the hit covers the read; the bound is inclusive (de 0.20 attributes)
+        assert!(attributed(&[read_hit("r", F1_A, 1000, 1000, 799, 0.2001)]).is_empty());
+        assert_eq!(attributed(&[read_hit("r", F1_A, 1000, 1000, 800, 0.20)]), pairs(&[("r", "F1")]));
         // a divergent best hit is not replaced by a closer lesser one either
-        assert!(attributed(&[read_hit("r", F1_A, 1000, 1000, 820, 0.18), read_hit("r", F2_A, 1000, 800, 795, 0.005)]).is_empty());
+        assert!(attributed(&[read_hit("r", F1_A, 1000, 1000, 780, 0.25), read_hit("r", F2_A, 1000, 800, 775, 0.005)]).is_empty());
+    }
+    #[test]
+    fn attribution_prefers_a_net_read_of_one_family_over_a_lesser_copy_of_another() {
+        // Amendment 13b: the targets are the run's net reads (`{family}|{read}`) and the copies; a read whose best hit is a net read of F1 joins
+        // F1 although a lesser hit lies on a copy of F2, in either order of the hits
+        let mut map = copy_families();
+        map.insert("F1|m17".to_string(), "F1".to_string());
+        let (net, copy) = (read_hit("r", "F1|m17", 1000, 950, 940, 0.12), read_hit("r", F2_A, 1000, 900, 880, 0.01));
+        let got = |hits: &[PafHit]| attribute_by_hits(hits, &map).into_iter().collect::<Vec<_>>();
+        assert_eq!(got(&[net.clone(), copy.clone()]), pairs(&[("r", "F1")]));
+        assert_eq!(got(&[copy, net]), pairs(&[("r", "F1")]));
+    }
+    #[test]
+    fn poorly_placed_reads_are_unnetted_with_a_divergent_or_mapq0_primary() {
+        // Amendment 13b: a read in a net of the run (ruling R18) is never poorly placed, whatever its primary record
+        assert!(!is_poorly_placed(0.5, 0, true));
+        // de above 0.02 or MAPQ 0 makes an un-netted read poorly placed; de exactly 0.02 at a good MAPQ does not
+        assert!(is_poorly_placed(0.021, 60, false));
+        assert!(!is_poorly_placed(0.02, 60, false));
+        assert!(is_poorly_placed(0.0, 0, false));
+        assert!(!is_poorly_placed(0.002, 1, false));
+        // MAPQ 255 (unavailable) is not MAPQ 0
+        assert!(!is_poorly_placed(0.0, 255, false));
     }
     #[test]
     fn attribution_follows_the_hit_with_most_matches_not_the_lowest_de() {
@@ -1803,9 +1837,9 @@ mod tests {
         assert_eq!(MM2_MEMBERS, ["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"]);
         assert_eq!(MM2_UNION, ["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"]);
         assert_eq!(MM2_GENOME, ["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"]);
-        // prereg Amendment 13: the unmapped reads' preset and the attribution rule's values
-        assert_eq!(MM2_ATTRIB, ["-x", "splice:hq", "-uf", "-c", "-N", "5", "-p", "0.5"]);
-        assert_eq!((MIN_UNMAPPED_LEN, UNMAPPED_MIN_COV, UNMAPPED_MAX_DE), (300, 0.5, 0.15));
+        // prereg Amendment 13b: the attribution preset and the rule's values
+        assert_eq!(MM2_ATTRIB, ["-x", "map-ont", "-c", "-N", "5", "-p", "0.5"]);
+        assert_eq!((MIN_UNMAPPED_LEN, ATTRIB_MIN_READ_COV, ATTRIB_MAX_DE, POORLY_PLACED_DE), (300, 0.5, 0.20, 0.02));
     }
 
     #[test]
