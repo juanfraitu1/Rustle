@@ -78,7 +78,8 @@ struct Args {
     min_support: usize,
     threads: usize,
     families: Option<Vec<String>>,
-    /// The command line without `--threads` and its value: the stage key's `cmd` (the thread count never changes the result).
+    /// The command line without `--threads`, `--out` and their values: the stage key's `cmd`. The thread count never changes the result, and
+    /// the output prefix is no input (ruling R12): a re-run under another prefix replays the same entry.
     key_cmd: String,
 }
 
@@ -99,7 +100,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         if kv.insert(flag, value).is_some() {
             return Err(usage(format!("{flag} is given twice")));
         }
-        if flag != "--threads" {
+        if flag != "--threads" && flag != "--out" {
             key_cmd.extend([flag, value.as_str()]);
         }
         i += 2;
@@ -371,8 +372,8 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, Vec<(String, Vec<u8>)
     Ok((families, kmer_input))
 }
 
-/// The stage key (spec §5.8): the command line without `--threads`, the executable, the minimap2 build, the fingerprints (path, size, mtime) of
-/// every input file and of the BAM and FASTA indexes, and every `RUSTLE_*` variable.
+/// The stage key (spec §5.8): the command line without `--threads` and `--out` (R12), the executable, the minimap2 build, the fingerprints
+/// (path, size, mtime) of every input file and of the BAM and FASTA indexes, and every `RUSTLE_*` variable.
 fn stage_key(args: &Args, mm2: &str) -> String {
     let fp = |p: &str| rc::file_fingerprint(p);
     format!(
@@ -863,4 +864,30 @@ fn family_candidates(w: &FamilyWork, new: &[(usize, String, f64)], args: &Args, 
     }
     std::fs::remove_dir_all(dir).with_context(|| format!("removing {}", dir.display()))?;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `parse_args` over fixed inputs plus `extra` (the files need not exist: the key fingerprints an absent file as `path<TAB>absent`).
+    fn parsed(extra: &[&str]) -> Args {
+        let fixed = ["--bam", "r.bam", "--fasta", "g.fa", "--copies", "c.tsv", "--copies-fa", "c.fa", "--index", "g.mmi"];
+        parse_args(&fixed.iter().chain(extra).map(|s| s.to_string()).collect::<Vec<_>>()).unwrap()
+    }
+
+    #[test]
+    fn the_stage_key_ignores_the_output_prefix_and_the_threads_but_not_a_parameter() {
+        // R12: `--out` is an output path, not an input, so a re-run under another prefix hits; the thread count never enters a key (R10)
+        let key = |extra: &[&str]| stage_key(&parsed(extra), "/nonexistent/minimap2");
+        let base = key(&["--out", "runs/a/P.cand"]);
+        assert!(base.starts_with("rustle o3 candidates v1\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
+        assert!(!base.contains("P.cand"), "the output prefix must not be in the key: {base}");
+        assert_eq!(key(&["--out", "elsewhere/Q.cand"]), base);
+        assert_eq!(key(&["--threads", "7", "--out", "elsewhere/Q.cand"]), base);
+        // a parameter of the stage is part of the key, wherever `--out` stands
+        assert_ne!(key(&["--out", "runs/a/P.cand", "--delta", "0.005"]), base);
+        assert_ne!(key(&["--out", "runs/a/P.cand", "--min-support", "8"]), base);
+        assert_eq!(key(&["--out", "x.cand", "--delta", "0.005"]), key(&["--delta", "0.005", "--out", "y.cand"]));
+    }
 }

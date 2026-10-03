@@ -483,9 +483,11 @@ fn union_pieces(member: &[u8], union: &[u8], h: &PafHit) -> anyhow::Result<Vec<(
 
 // ---- the minimap2 runner (cached through run_cache) and the output writers (spec §5.8; plan task 7) ---------------------------------------
 
-/// All-vs-all, one direction per pair (`-X`) with the secondary hits kept (`-N 100 -p 0.1`): the reads of a net (read clustering) and the
-/// consensus sequences of a family (the significance merge, the components of new-copy consensus sequences). `--cs` carries the substitution columns.
-pub const MM2_AVA: &[&str] = &["-x", "asm20", "-c", "--cs", "-X", "-N", "100", "-p", "0.1", "--secondary=yes"];
+/// All-vs-all, one direction per pair (`--dual=no`; the self hits it lets through are ignored by `cluster_reads`) with up to 100 secondary
+/// hits per sequence (`-N 100 -p 0.1`): the reads of a net (read clustering) and the consensus sequences of a family (the significance merge,
+/// the components of new-copy consensus sequences). `--cs` carries the substitution columns.
+/// Ruling R11: `--dual=no`, not `-X`: with `-X` minimap2 keeps every chain and ignores `-N`/`-p`.
+pub const MM2_AVA: &[&str] = &["-x", "asm20", "-c", "--cs", "--dual=no", "-N", "100", "-p", "0.1", "--secondary=yes"];
 /// Members against their template (the consensus vote) and against their cluster's consensus (`refine_cluster`).
 pub const MM2_MEMBERS: &[&str] = &["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"];
 /// A member against the CURRENT union (`union_sequence`; ruling R6). A splice preset: it skips an exon the member lacks in ONE alignment, where
@@ -1723,7 +1725,7 @@ mod tests {
 
     #[test]
     fn the_minimap2_argument_sets_are_the_registered_ones() {
-        assert_eq!(MM2_AVA, ["-x", "asm20", "-c", "--cs", "-X", "-N", "100", "-p", "0.1", "--secondary=yes"]);
+        assert_eq!(MM2_AVA, ["-x", "asm20", "-c", "--cs", "--dual=no", "-N", "100", "-p", "0.1", "--secondary=yes"]);   // R11: not -X
         assert_eq!(MM2_MEMBERS, ["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"]);
         assert_eq!(MM2_UNION, ["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"]);
         assert_eq!(MM2_GENOME, ["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"]);
@@ -1737,7 +1739,7 @@ mod tests {
         let entry = |t: &Path, q: &Path, args: &[&str]| paf_entry(&root, "/bin/false", args, t, None, q).unwrap();
         let (target, query) = (b">t\nACGTACGTACGTACGTACGT\n".to_vec(), b">q\nGGGGCCCCAAAATTTTGGGG\n".to_vec());
         let base = entry(&file("t.fa", &target), &file("q.fa", &query), MM2_AVA);
-        assert!(base.key.starts_with("rustle o3 minimap2 v1\ncmd\t/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes\nminimap2\t"), "{}", base.key);
+        assert!(base.key.starts_with("rustle o3 minimap2 v1\ncmd\t/bin/false -x asm20 -c --cs --dual=no -N 100 -p 0.1 --secondary=yes\nminimap2\t"), "{}", base.key);
         assert!(base.pin && base.dir.starts_with(root.join("paf")), "a pinned entry of kind paf: {}", base.dir.display());
         // the same bytes written again later (a new mtime) and under other names: the same key, so the same entry
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -1788,7 +1790,7 @@ mod tests {
         for cache in [None, Some(root.as_path())] {
             std::fs::write(&out, b"an earlier product\n").unwrap();
             let msg = format!("{:#}", run_minimap2("/bin/false", MM2_AVA, &t, None, &q, &out, cache, 3).unwrap_err());
-            for want in ["/bin/false -x asm20 -c --cs -X -N 100 -p 0.1 --secondary=yes -t 3", t.to_str().unwrap(), q.to_str().unwrap()] { assert!(msg.contains(want), "{msg}"); }
+            for want in ["/bin/false -x asm20 -c --cs --dual=no -N 100 -p 0.1 --secondary=yes -t 3", t.to_str().unwrap(), q.to_str().unwrap()] { assert!(msg.contains(want), "{msg}"); }
             assert!(!out.exists(), "a failed run leaves no stale or partial PAF");
             assert!(!root.join("paf").exists(), "a failed run commits nothing to the cache");
         }
