@@ -1,24 +1,24 @@
-Driver end-to-end on this fixture (tools/rustle_pipeline.sh stages candidates, assign, flag; spec 2026-10-02 §7).
+Driver end-to-end on this fixture: tools/rustle_pipeline.sh's candidates and assign stages (spec 2026-10-02 §7).
 
-The fixture has no O1 products (its one locus gives the families stage no family), so the three files the families stage
-would write are staged by hand from the fixture itself, plus a one-gene GFF for the flag stage's scan. From the repo root:
+  bash tools/rlock.sh heavy bash tests/fixtures/o3_candidates/driver/run_e2e.sh --bin <CARGO_TARGET_DIR>/release --out <scratch>
 
-  T=$(mktemp -d); P=$T/fx; FX=tests/fixtures/o3_candidates; BIN=<CARGO_TARGET_DIR>/release
-  cp $FX/copies.tsv $P.fam.copies.tsv                       # the copy table (mcl_families' P.fam.copies.tsv layout)
-  cp $FX/copies.fa  $P.fam.copies.fa
-  printf 'MCL0\tchrT:5000-18100\n' > $P.fam.copies.regions  # mcl_families' layout: the hull +- 5 kb (start >= 1)
-  printf 'chrT\tfixture\tgene\t10001\t13100\t.\t+\t.\tID=geneA;Name=geneA\n' > $P.gff
-  minimap2 -x splice -d $P.splice.mmi $FX/genome.fa
-  for st in candidates assign flag; do
-    bash tools/rustle_pipeline.sh $st --bam $FX/reads.bam --fasta $FX/genome.fa --index $P.splice.mmi --gff $P.gff \
-      --out $P --bin $BIN --threads 2
-  done
+run_e2e.sh builds the families stage's three products from the fixture (the fixture has no O1 products: its one locus
+gives the families stage no family): fx.fam.copies.tsv/.fa = the fixture's copy table (MCL0, copy A) plus a control family
+MCL1 without a candidate (one copy at chrT:30000-30500, n_reads 0), and fx.fam.copies.regions in mcl_families' layout
+(hull +- 5 kb). It runs the driver's candidates and assign stages, and assign --no-candidates on the same inputs, then
+checks, exiting non-zero at the first failure it names:
+  (a) placement by the patch realignment: the 60 copy-B reads (B_*, the generator's names) have their primaries on
+      cand_MCL0_0 at MAPQ >= 60 in fx.aug.bam; the 60 copy-A reads' primaries are those of the fixture BAM
+  (b) MCL0 is assigned as a 2-copy family that includes cand_MCL0_0 (families.tsv n_copies 2, quant.tsv lists it), with
+      the AS-tied gate at its default (ratio 1.00)
+  (c) the control family's tables are the same in the split and in the --no-candidates run (MCL1 has no reads: this checks
+      the split's selection, regions and concatenation)
 
-Seen 2026-10-02 (minimap2 2.30-r1287, samtools 1.22.1):
-  candidates: 1 flagged candidate copies in 1 families; P.aug.bam: 120 primary records, 60 of them on a candidate contig
-              (the deleted copy's 60 reads: primary MAPQ 60 on cand_MCL0_0, secondary on chrT; copy A's 60 the reverse)
-  assign:     1 candidate family on P.aug.*, no other family; 0 assigned rows of 0 — every molecule is a unique/clear-best
-              mapper, which copy_assign's default AS-tied gate (ratio 1.0) keeps out of O2; MCL0 is assigned as a
-              2-copy family (P.assign.quant.tsv: cand_MCL0_0 and DN_chrT_10000_A)
-  flag:       verdicts reference_absent_candidate 1; geneA's o3_candidate = cand_MCL0_0
-`assign --no-candidates` on the same inputs: 0 rows, MCL0 a 1-copy family.
+Ruling R13 (2026-10-02): O2's scope is AS-tied molecules (assign-or-abstain). A read that the realignment places uniquely
+on a candidate is placed by the aligner and never enters the certificate. So fx.assign.assignments.tsv holds no MCL0 row
+on this fixture, with or without the candidate: every molecule is a clear-best mapper. That is the intended behaviour, not
+a gap. The candidate's reads are the 60 copy-B primaries on cand_MCL0_0 in fx.aug.bam.
+
+Seen 2026-10-02 (minimap2 2.30-r1287, samtools 1.22.1): all assertions hold. The driver reports 1 flagged candidate;
+fx.aug.bam has 120 primary records, 60 of them on cand_MCL0_0; assign gives 0 rows. The flag stage, run with a one-gene
+GFF (chrT 10001-13100 geneA), gives geneA o3_candidate = cand_MCL0_0.

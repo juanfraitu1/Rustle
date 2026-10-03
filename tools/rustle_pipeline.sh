@@ -9,12 +9,15 @@
 #             (read net -> read clusters -> consensus -> flag/link/merge -> one exon-union contig per flagged
 #             candidate, PREFIX.cand.*), then the augmentation (PREFIX.aug.fa = genome + the contigs, PREFIX.aug.copies.*
 #             = the copy table + one row per candidate) and the patch realignment of the candidate families' reads to
-#             PREFIX.aug.fa (PREFIX.aug.bam). --no-candidates skips it; --delta D (0.00958), --cand-max-reads N (1000)
+#             PREFIX.aug.fa (PREFIX.aug.bam): a read whose best alignment is on a candidate contig is PLACED there by the
+#             realignment (ruling R13). --no-candidates skips it; --delta D (0.00958), --cand-max-reads N (1000)
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment (assign/abstain) on the families'  copy_assign --families
 #             copy table PREFIX.fam.copies.*; with flagged candidates, two runs (the candidate families on
-#             PREFIX.aug.*, the others on the originals) concatenated into PREFIX.assign.*; --legacy-catalog: on the
-#             legacy catalog PREFIX.cat.* instead
+#             PREFIX.aug.*, each assigned as a family that includes its candidate copies; the others on the originals)
+#             concatenated into PREFIX.assign.*. O2 assigns AS-tied molecules only (the gate is unchanged): a read the
+#             realignment places uniquely on a candidate has no row (R13). --legacy-catalog: on the legacy catalog
+#             PREFIX.cat.* instead
 #   flag      copies the reference does not contain, from RNA alone     missing_copy_flag --scan-only / --from-scan
 #             (+ optional DNA confirmation against --confirm genomes; + the `o3_candidate` column naming the flagged
 #             candidate whose nearest locus is the row's, when the candidates stage ran)
@@ -322,7 +325,9 @@ cand_ready() {
 # families.txt} (each candidate a contig `cand_<family>_<k>` of PREFIX.aug.fa and a `member_status candidate` row of its
 # family), and the reads of the candidate families (PREFIX.cand.nets.fa, every read of each such family's net) are
 # realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign` gives those
-# families. An earlier run's PREFIX.aug.* are removed first, so a run without a flagged candidate leaves none behind.
+# families. That realignment is the placement of the candidates' reads (ruling R13): a read whose best alignment is on a
+# candidate contig lands there (the fixture: all 60 reads of the deleted copy, MAPQ 60). An earlier run's PREFIX.aug.* are
+# removed first, so a run without a flagged candidate leaves none behind.
 stage_candidates() {
   [ "$NO_CANDIDATES" = 1 ] && { say "candidates: skipped (--no-candidates)"; return 0; }
   [ -n "$INDEX" ] || { echo "candidates needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
@@ -386,8 +391,11 @@ stage_assign() {
 # and PREFIX.assign_rest.<t>.tsv: assignments, families, quant, family_join, famcn_readonly, and with --inspect psv_reads,
 # psv_cols, psv_copies, posterior) is concatenated, one header, into PREFIX.assign.<t>.tsv; the run certificates are not
 # family tables and stay per run (PREFIX.assign_cand.params.tsv, PREFIX.assign_rest.params.tsv); PREFIX.assign.log holds
-# both logs. One known difference from a single run: `tie_outside_catalog` is judged against the run's own families
-# (copy_assign registers such molecules process-wide by read name).
+# both logs. Ruling R13: each candidate family is assigned as a family that includes its candidate copies, under the
+# unchanged AS-tied gate, so a read the realignment placed uniquely on a candidate is not AS-tied and has no row (its
+# placement is PREFIX.aug.bam's); rows arise only for molecules tied between copies. One known difference from a single
+# run: `tie_outside_catalog` is judged against the run's own families (copy_assign registers such molecules
+# process-wide by read name).
 assign_with_candidates() {
   [ -s "$OUT.aug.bam.bai" ] && [ ! "$OUT.aug.bam.bai" -ot "$OUT.aug.families.txt" ] \
     || { echo "[rustle_pipeline] $OUT.aug.bam is missing or older than $OUT.aug.families.txt: run the candidates stage again, or pass --no-candidates" >&2; exit 2; }
@@ -421,7 +429,11 @@ assign_with_candidates() {
     done
   done
   for r in "${runs[@]}"; do echo "=== [rustle_pipeline] $r.log"; cat "$r.log"; done > "$OUT.assign.log"
-  say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family; $(awk -F'\t' 'NR>1 && $4=="assigned" && $3 ~ /^cand_/' "$OUT.assign.assignments.tsv" | wc -l) of the assigned on a candidate copy)"
+  # assigned_copy is the family's copy INDEX: family_join names the copy (copy_tid)
+  local on_cand
+  on_cand=$(awk -F'\t' 'FNR == 1 { next } FILENAME == ARGV[1] { tid[$1 "\t" $2] = $3; next } $4 == "assigned" && tid[$2 "\t" $3] ~ /^cand_/ { n++ } END { print n + 0 }' \
+    "$OUT.assign.family_join.tsv" "$OUT.assign.assignments.tsv")
+  say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family; $on_cand on a candidate copy; a read the realignment placed uniquely on a candidate is not AS-tied and has no row)"
 }
 stage_flag() {
   [ -n "$INDEX" ] || { echo "flag needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
