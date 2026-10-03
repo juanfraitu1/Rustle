@@ -14,7 +14,8 @@ pub const KMER_K: usize = 31;
 pub const SKETCH_W: usize = 5;
 /// Unmapped records shorter than this are never aligned to the copies nor attributed (prereg Amendment 13: unmapped reads >= 300 bp only).
 pub const MIN_UNMAPPED_LEN: usize = 300;
-/// `attribute_by_hits` (prereg Amendment 13): the best hit must cover at least this fraction of the shorter sequence (`shorter_cov`) ...
+/// `attribute_by_hits` (prereg Amendment 13): the best hit must cover at least this fraction of the READ (`(qe - qs) / qlen`, whatever the
+/// copy's length) ...
 pub const UNMAPPED_MIN_COV: f64 = 0.5;
 /// ... and its gap-compressed divergence `de` must be at most this.
 pub const UNMAPPED_MAX_DE: f64 = 0.15;
@@ -104,8 +105,9 @@ pub fn best_by_id_cov(hits: &[PafHit]) -> HashMap<String, PafHit> {
 
 /// The family each unmapped read joins (prereg Amendment 13, which retires spec §5.2's k-mer index), from the reads' `MM2_ATTRIB` hits on
 /// every family's copy sequences: per read, its best hit by matches (the first encountered on a tie, as `best_by_matches`) among the hits
-/// whose target `family_of_target` names, and the read joins that target's family iff the hit covers >= `UNMAPPED_MIN_COV` of the shorter
-/// sequence (`shorter_cov`) and its `de` is <= `UNMAPPED_MAX_DE`. A best hit that fails either joins the read to no family: a lesser hit
+/// whose target `family_of_target` names, and the read joins that target's family iff the hit covers >= `UNMAPPED_MIN_COV` of the READ
+/// (the query's aligned span over its length, `(qe - qs) / qlen`; NOT `shorter_cov`, which would judge the copy's covered fraction when the
+/// read is the longer sequence) and its `de` is <= `UNMAPPED_MAX_DE`. A best hit that fails either joins the read to no family: a lesser hit
 /// never stands in (a read whose best hit is a 40% shared exon of another family's copy stays out). A target absent from the map (a partner
 /// row, a record the copies table does not hold) is ignored. Returns read -> family.
 pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, String>) -> HashMap<String, String> {
@@ -116,8 +118,10 @@ pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, Str
             best.insert(h.q.as_str(), (h, family));
         }
     }
+    // the read's covered fraction, guarded as the quantities below are (a zero length counts as 1, an end before its start as no span)
+    let read_cov = |h: &PafHit| h.qe.saturating_sub(h.qs) as f64 / h.qlen.max(1) as f64;
     best.into_iter()
-        .filter(|(_, (h, _))| shorter_cov(h) >= UNMAPPED_MIN_COV && h.de <= UNMAPPED_MAX_DE)
+        .filter(|(_, (h, _))| read_cov(h) >= UNMAPPED_MIN_COV && h.de <= UNMAPPED_MAX_DE)
         .map(|(read, (_, family))| (read.to_string(), family.clone()))
         .collect()
 }
@@ -919,8 +923,8 @@ mod tests {
 
     // ---- unmapped-read attribution by alignment to the copies (prereg Amendment 13) ------------------------------------------------------
 
-    /// A hit of an unmapped read of `qlen` bases on a copy sequence of 5,000 bp (longer than every read here, so `shorter_cov` is the read's
-    /// covered fraction, `span / qlen`): `span` read bases aligned, `matches` of them identical, divergence `de`.
+    /// A hit of an unmapped read of `qlen` bases on a copy sequence of 5,000 bp: `span` read bases aligned (read coverage `span / qlen`, the
+    /// fraction the rule reads), `matches` of them identical, divergence `de`. A copy shorter than the read is built field by field where needed.
     fn read_hit(read: &str, copy: &str, qlen: usize, span: usize, matches: usize, de: f64) -> PafHit {
         PafHit { q: read.into(), qlen, qs: 0, qe: span, strand: b'+', t: copy.into(), tlen: 5000, ts: 100, te: 100 + span, matches, block: span, de, cs: None }
     }
@@ -958,6 +962,17 @@ mod tests {
         assert!(attributed(&shared).is_empty());
         // the bound is inclusive: a best hit covering exactly half of the read attributes
         assert_eq!(attributed(&[read_hit("r", F2_A, 1000, 500, 495, 0.01)]), pairs(&[("r", "F2")]));
+    }
+    #[test]
+    fn attribution_measures_coverage_on_the_read_even_when_the_copy_is_shorter() {
+        // Amendment 13: the best hit must cover >= 50% of the READ. A 3,000-bp read whose best hit spans 899 bp of a 900-bp copy covers 30% of
+        // the read and is refused, although it covers the shorter sequence (the copy) almost whole
+        let long = PafHit { qlen: 3000, qs: 1000, qe: 1899, tlen: 900, ts: 0, te: 899, ..read_hit("r", F1_A, 3000, 899, 895, 0.01) };
+        assert!((shorter_cov(&long) - 899.0 / 900.0).abs() < 1e-12, "the shorter-sequence fraction, which the rule must not read");
+        assert!(attributed(&[long]).is_empty());
+        // a 1,200-bp read with a 900-bp hit on a 900-bp copy covers 75% of the read: attributed
+        let fits = PafHit { qlen: 1200, qs: 150, qe: 1050, tlen: 900, ts: 0, te: 900, ..read_hit("r", F2_A, 1200, 900, 897, 0.01) };
+        assert_eq!(attributed(&[fits]), pairs(&[("r", "F2")]));
     }
     #[test]
     fn attribution_refuses_a_divergent_best_hit() {

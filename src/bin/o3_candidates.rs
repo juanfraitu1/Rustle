@@ -555,33 +555,41 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_target: &Hash
             attributed.into_iter().filter_map(|(read, family)| fam_pos.get(family.as_str()).map(|&fi| (read, fi))).collect();
         n_joined = joining.len();
         if !joining.is_empty() {
-            // the FASTA holds one sequence line per record (written above): keep the line after a joining read's header
             let file = std::fs::File::open(&unmapped_fa).with_context(|| format!("opening {}", unmapped_fa.display()))?;
-            let mut current: Option<(String, usize)> = None;
-            for line in std::io::BufReader::new(file).lines() {
-                let line = line.with_context(|| format!("reading {}", unmapped_fa.display()))?;
-                match line.strip_prefix('>') {
-                    Some(name) => current = joining.get(name).map(|&fi| (name.to_string(), fi)),
-                    None => {
-                        if let Some((name, fi)) = current.take() {
-                            names[fi].insert(name.clone());
-                            seqs.entry(name).or_insert_with(|| line.into_bytes());
-                        }
-                    }
-                }
-            }
+            join_unmapped(std::io::BufReader::new(file), &joining, &mut names, &mut seqs).with_context(|| format!("reading {}", unmapped_fa.display()))?;
         }
     }
     let n_lost = need.iter().filter(|n| !seqs.contains_key(n.as_str())).count();
     eprintln!(
         "[o3_candidates] BAM: pass A {n_primary} reads by a primary record and {n_secondary} secondary records on the copies; pass B {n_found} of {} \
          secondary-only reads found by their primary record ({n_lost} without one: left out), {n_aligned} of {n_long_unmapped} unmapped reads >= \
-         {MIN_UNMAPPED_LEN} bp aligned to a copy, {n_attributed} attributed (coverage >= {UNMAPPED_MIN_COV}, de <= {UNMAPPED_MAX_DE}), {n_joined} of \
+         {MIN_UNMAPPED_LEN} bp aligned to a copy, {n_attributed} attributed (read coverage >= {UNMAPPED_MIN_COV}, de <= {UNMAPPED_MAX_DE}), {n_joined} of \
          them to a family of this run",
         need.len()
     );
     let names = names.into_iter().map(|set| set.into_iter().filter(|n| seqs.contains_key(n)).collect()).collect();
     Ok(Nets { names, seqs })
+}
+
+/// Pass B's read-back (prereg Amendment 13): the reads of `joining` (read -> index of the family it joins) from the unmapped-read FASTA,
+/// written by `fasta_record` with one sequence line per record, so the line after a joining read's header is its sequence. Each joining read
+/// enters its family's `names`, and its sequence enters `seqs` unless the read has one already (the first wins). Every other record is passed
+/// over without being kept, and a joining name the FASTA lacks adds nothing.
+fn join_unmapped(fasta: impl BufRead, joining: &HashMap<String, usize>, names: &mut [BTreeSet<String>], seqs: &mut HashMap<String, Vec<u8>>) -> std::io::Result<()> {
+    let mut current: Option<(String, usize)> = None;
+    for line in fasta.lines() {
+        let line = line?;
+        match line.strip_prefix('>') {
+            Some(name) => current = joining.get(name).map(|&fi| (name.to_string(), fi)),
+            None => {
+                if let Some((name, fi)) = current.take() {
+                    names[fi].insert(name.clone());
+                    seqs.entry(name).or_insert_with(|| line.into_bytes());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// One family's used net, written to `net.fa` (sorted names) in its temporary directory: the query of every members alignment.
@@ -965,5 +973,25 @@ mod tests {
             .collect();
         assert_eq!(got, want);
         assert!(copy_targets(fa, &HashSet::new()).is_empty());
+    }
+
+    #[test]
+    fn the_unmapped_readback_brings_exactly_the_joining_reads_into_their_family() {
+        // pass B's read-back (prereg Amendment 13) on a FASTA as the sweep writes it (`fasta_record`, one sequence line per record): each
+        // joining read enters its family's names with its own sequence; a read that joins no family is not kept; a read that has a sequence
+        // already keeps it (the first wins, as before); a joining name the FASTA lacks adds nothing
+        let mut fasta: Vec<u8> = Vec::new();
+        for (name, seq) in [("u1", "ACGTACGTAA"), ("u2", "GGGGCC"), ("u3", "TTTTCCA"), ("u4", "CCCAT")] {
+            fasta_record(&mut fasta, name, seq.as_bytes()).unwrap();
+        }
+        let joining: HashMap<String, usize> = [("u1", 1), ("u3", 0), ("u4", 1), ("u9", 0)].iter().map(|(r, f)| (r.to_string(), *f)).collect();
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
+        let mut names = vec![BTreeSet::new(), set(&["p1"])];
+        let mut seqs: HashMap<String, Vec<u8>> = [("p1", "AAAA"), ("u4", "KEPT")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
+        join_unmapped(&fasta[..], &joining, &mut names, &mut seqs).unwrap();
+        assert_eq!(names, vec![set(&["u3"]), set(&["p1", "u1", "u4"])]);
+        let got: BTreeMap<&str, &[u8]> = seqs.iter().map(|(r, s)| (r.as_str(), s.as_slice())).collect();
+        let want: BTreeMap<&str, &[u8]> = [("p1", &b"AAAA"[..]), ("u1", b"ACGTACGTAA"), ("u3", b"TTTTCCA"), ("u4", b"KEPT")].into_iter().collect();
+        assert_eq!(got, want);
     }
 }
