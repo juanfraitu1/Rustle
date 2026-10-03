@@ -5853,8 +5853,15 @@ fn main() -> Result<()> {
             // detector that used the locus flagged 541 of the 4,706 leaks — it defined "inside" by the
             // swallowing target. A tied record overlapping no unit is a competitor O2 will never score ⟹ the
             // molecule is registered and can never be `Assigned`. Only meaningful with --families.
+            // ⚠ Only in a sweep that HAS supplied units. A region bound to no family (`supplied = Some([])`): the real
+            // regions of a cross-chromosome family, which binds to its `~xchrom~` key (every O3 candidate family does,
+            // spec 2026-10-02 §7), or a region listing no family) has no unit to be outside of. Registering every
+            // tied molecule there (a process-wide registry, read when the `~xchrom~` keys are swept, last) demoted
+            // the family's own `Assigned` verdicts to `Tied`. The family's own sweep tests its molecules against its
+            // own units, as a single-chromosome family's sweep does. The copy-set bit (§6hp) and §6hd below are
+            // relative to the same units and skip with it (§6hd admits nothing without a unit anyway).
             let mut n_outside = 0usize;
-            if let Some(sup) = supplied.as_deref() {
+            if let Some(sup) = supplied.as_deref().filter(|s| !s.is_empty()) {
                 let targets: Vec<(String, u64, u64)> = sup
                     .iter()
                     .flat_map(|f| f.copies.iter())

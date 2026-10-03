@@ -499,3 +499,59 @@ fn only_and_skip_families_split_the_supplied_roster() {
     let (o, _) = run(&d, &["--only-families", &list]);
     assert!(!o.status.success() && stderr(&o).contains("only meaningful with --families"), "{}", stderr(&o));
 }
+
+/// Task 9 review (spec 2026-10-02 §7): a family made cross-chromosome by a zero-read copy on another contig, which is
+/// what the driver's augmentation does to every family with an O3 candidate, is bound to its `~xchrom~` key, so the real
+/// regions holding it are swept with NO family bound. The §6gz tie-outside test there had no unit to be inside of: it
+/// registered every AS-tied molecule as tied outside (a process-wide registry), and the family's own verdicts on those
+/// molecules then read `tie_outside_catalog 1` and could never be `assigned`. With the extra copy, the rows of the
+/// single-chromosome run keep their status and `tie_outside_catalog`. The molecules the c2 copy pools (`read_cross_*`,
+/// AS-tied between c1:0-260 and c2:0-260) still read 1: their c2 placement lies outside every unit of the family, so the
+/// family's own sweep still flags a real outside competitor.
+#[test]
+fn a_zero_read_copy_on_another_contig_does_not_mark_the_family_tied_outside() {
+    let d = scratch("xchrom_zero_read_copy");
+    let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
+    let only = write(&d, "only.txt", "GWFAM1\n");
+    let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
+    let fa = std::fs::read_to_string(format!("{FIX}/out_default.copies.fa")).unwrap();
+    let genome = std::fs::read_to_string(format!("{FIX}/genome.fa")).unwrap();
+    let c2: String = genome.split('>').find(|r| r.starts_with("c2")).expect("c2 in genome.fa").lines().skip(1).collect();
+    let tsv_b = write(&d, "b.copies.tsv", &format!("{tsv}GWFAM1\t2\tCAND_c2\tc2\t270\t320\t1\t+\t0\t270-320\t0\n"));
+    let fa_b = write(&d, "b.copies.fa", &format!("{fa}>GWFAM1|2|c2:270-320|+|nexon=1\n{}\n", &c2[270..320]));
+    let go = |name: &str, tsv: &str, fa: &str| -> (Output, String) {
+        let out = d.join(name).to_str().expect("utf-8 path").to_string();
+        let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+            .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+            .args(["--regions", &regions, "--families", tsv, "--copies-fa", fa, "--only-families", &only, "--out", &out])
+            .output()
+            .expect("copy_assign failed to spawn");
+        (o, out)
+    };
+    let (o, a) = go("a", &format!("{FIX}/out_default.copies.tsv"), &format!("{FIX}/out_default.copies.fa"));
+    assert!(o.status.success(), "{}", stderr(&o));
+    let (o, b) = go("b", &tsv_b, &fa_b);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(stderr(&o).contains("GWFAM1 spans 2 chromosomes"), "the extra copy must make GWFAM1 cross-chromosome:\n{}", stderr(&o));
+    // read -> (status, tie_outside_catalog), columns by name
+    let rows = |out: &str| -> std::collections::BTreeMap<String, (String, String)> {
+        let t = read(out, "assignments.tsv");
+        let head: Vec<&str> = t.lines().next().unwrap().split('\t').collect();
+        let at = |name: &str| head.iter().position(|c| *c == name).unwrap_or_else(|| panic!("no {name} column"));
+        let (i_read, i_status, i_out) = (at("read_name"), at("status"), at("tie_outside_catalog"));
+        t.lines()
+            .skip(1)
+            .map(|l| l.split('\t').collect::<Vec<_>>())
+            .map(|f| (f[i_read].to_string(), (f[i_status].to_string(), f[i_out].to_string())))
+            .collect()
+    };
+    let (ra, rb) = (rows(&a), rows(&b));
+    assert!(!ra.is_empty(), "the single-chromosome run must have rows to compare");
+    for (read, v) in &ra {
+        assert_eq!(v.1, "0", "{read}: tied only between GWFAM1's own copies in the single-chromosome run");
+        assert_eq!(rb.get(read), Some(v), "{read}: status / tie_outside_catalog changed by the zero-read c2 copy");
+    }
+    let cross: Vec<(&String, &(String, String))> = rb.iter().filter(|(r, _)| r.starts_with("read_cross_")).collect();
+    assert_eq!(cross.len(), 3, "the c2 copy pools the 3 read_cross molecules: {rb:?}");
+    assert!(cross.iter().all(|(_, v)| v.1 == "1"), "their c2 placement is outside every GWFAM1 unit: {cross:?}");
+}
