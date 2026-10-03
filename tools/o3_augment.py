@@ -22,7 +22,8 @@ writes, each candidate `cand_<family>_<k>` becoming a contig of its own:
 Refuses (exit 2, nothing written) when a candidate name already names a sequence of G.fa (G.fa.fai, else G.fa's headers),
 when a flagged candidate has no contig or a contig whose length is not its union_len, when a candidate's family has no
 row in the copies table or the regions file, and on malformed inputs. Every product is written to `<path>.tmp` and renamed
-only once all of them are complete. Python 3 standard library only.
+only once all of them are complete; an I/O error (an unreadable input, a full disk) removes every `.tmp` file and every
+product already renamed, and exits 2. Python 3 standard library only.
 """
 import argparse
 import os
@@ -95,14 +96,17 @@ def genome_names(fasta):
     except OSError as e:
         die(f"cannot read --fasta {fasta}: {e}")
     fai = fasta + ".fai"
-    if os.path.exists(fai):
-        with open(fai) as f:
-            return {l.split("\t", 1)[0] for l in f if l.strip()}, fai
-    names = set()
-    with open(fasta) as f:
-        for line in f:
-            if line.startswith(">"):
-                names.add((line[1:].split() or [""])[0])
+    try:
+        if os.path.exists(fai):
+            with open(fai) as f:
+                return {l.split("\t", 1)[0] for l in f if l.strip()}, fai
+        names = set()
+        with open(fasta) as f:
+            for line in f:
+                if line.startswith(">"):
+                    names.add((line[1:].split() or [""])[0])
+    except OSError as e:
+        die(f"cannot read the sequence names of --fasta {fasta}: {e}")
     return names, f"the headers of {fasta}"
 
 
@@ -196,33 +200,43 @@ def main():
     if lost:
         die(f"{a.regions} has no region for the candidate famil{'y' if len(lost) == 1 else 'ies'} {', '.join(lost)}")
 
-    # write every product to .tmp, then rename them all
-    tmp = {}
+    # write every product to .tmp, then rename them all; an I/O error (an unreadable --fasta / --copies-fa, a full disk, an
+    # unwritable --out directory) removes every .tmp file and every product this run already renamed, then exits 2
+    tmp, done = {}, []
 
     def out(suffix):
         tmp[suffix] = f"{a.out}.{suffix}.tmp"
         return tmp[suffix]
 
-    with open(out("fa"), "wb") as w, open(a.fasta, "rb") as g:
-        shutil.copyfileobj(g, w, 1 << 22)
-        size = g.tell()
-        if size:
-            g.seek(size - 1)
-            if g.read(1) != b"\n":
-                w.write(b"\n")
-        for r in flagged:
-            w.write(f">{r['candidate']}\n{contigs[r['candidate']]}\n".encode())
-    for suffix, src, extra in (("copies.tsv", a.copies, [l + "\n" for l in new_rows]), ("copies.fa", a.copies_fa, new_fa)):
-        with open(src) as s, open(out(suffix), "w") as w:
-            text = s.read()
-            w.write(text if not text or text.endswith("\n") else text + "\n")
-            w.writelines(extra)
-    with open(out("regions.txt"), "w") as w:
-        w.writelines(l + "\n" for l in merge_regions(intervals) + cand_regions)
-    with open(out("families.txt"), "w") as w:
-        w.writelines(fid + "\n" for fid in families)
-    for suffix, path in tmp.items():
-        os.replace(path, f"{a.out}.{suffix}")
+    try:
+        with open(out("fa"), "wb") as w, open(a.fasta, "rb") as g:
+            shutil.copyfileobj(g, w, 1 << 22)
+            size = g.tell()
+            if size:
+                g.seek(size - 1)
+                if g.read(1) != b"\n":
+                    w.write(b"\n")
+            for r in flagged:
+                w.write(f">{r['candidate']}\n{contigs[r['candidate']]}\n".encode())
+        for suffix, src, extra in (("copies.tsv", a.copies, [l + "\n" for l in new_rows]), ("copies.fa", a.copies_fa, new_fa)):
+            with open(src) as s, open(out(suffix), "w") as w:
+                text = s.read()
+                w.write(text if not text or text.endswith("\n") else text + "\n")
+                w.writelines(extra)
+        with open(out("regions.txt"), "w") as w:
+            w.writelines(l + "\n" for l in merge_regions(intervals) + cand_regions)
+        with open(out("families.txt"), "w") as w:
+            w.writelines(fid + "\n" for fid in families)
+        for suffix, path in tmp.items():
+            os.replace(path, f"{a.out}.{suffix}")
+            done.append(f"{a.out}.{suffix}")
+    except OSError as e:
+        for path in list(tmp.values()) + done:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        die(f"cannot make {a.out}.*: {e} (nothing written)")
     print(f"o3_augment: {len(flagged)} candidate contig(s) of {len(families)} famil{'y' if len(families) == 1 else 'ies'} "
           f"-> {a.out}.{{fa,copies.tsv,copies.fa,regions.txt,families.txt}}", file=sys.stderr)
 

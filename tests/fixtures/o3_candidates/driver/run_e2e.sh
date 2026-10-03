@@ -20,8 +20,9 @@
 # Which reads are copy A's and copy B's: by the generator's names (make_fixture.py: A_00..A_59 and B_00..B_59, "the
 # names carry the truth"). The fixture BAM cannot tell them apart by position: all 120 primaries lie on copy A's span.
 #
-# RUNS. The driver's `candidates` then `assign` on OUT/fx, and `assign --no-candidates` on OUT/ctl/fx (--no-cache, so
-# every run computes).
+# RUNS. The driver's `candidates` then `assign --candidates` on OUT/fx (the stage and the use of its products are opt-in,
+# ruling R14), and a plain `assign` on OUT/ctl/fx, which holds no candidates products (--no-cache, so every run computes).
+# Last, a plain `assign` on OUT/fx itself, after (a)-(c) (it replaces fx.assign.*).
 #
 # ASSERTIONS (exit 1 at the first that fails, naming it; exit 0 when all hold):
 #   (pre) the candidates stage flags exactly one candidate, cand_MCL0_0 of MCL0
@@ -32,8 +33,10 @@
 #         run's log line `AS-TIED GATE (ratio 1.00)`); no assigned row puts a copy-B read on the real copy or a copy-A
 #         read on the candidate (vacuous when MCL0 has no row, as here: every molecule is a clear-best mapper)
 #   (c)   the split ran (candidate families on the augmented inputs, MCL1 on the originals), each concatenated table has
-#         one header, and MCL1's rows are the same in every per-family table of the split and of the --no-candidates
-#         run. MCL1 has no reads: (c) checks the split's selection, regions and concatenation, not read assignment.
+#         one header, and MCL1's rows are the same in every per-family table of the split and of the plain run on
+#         OUT/ctl/fx. MCL1 has no reads: (c) checks the split's selection, regions and concatenation, not read assignment.
+#   (d)   opt-in (ruling R14): a plain `assign` on OUT/fx, whose candidates products are present, does not use them — the
+#         driver says so in one line, makes no split (no fx.assign_cand.*), and MCL0 is assigned as its 1-copy self
 set -euo pipefail
 usage() { echo "usage: bash $0 --bin DIR --out SCRATCH_DIR [--threads N]" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
@@ -83,10 +86,10 @@ drv() {
   bash "$repo/tools/rustle_pipeline.sh" "$@" --bam "$fx/reads.bam" --fasta "$fx/genome.fa" --index "$OUT/genome.splice.mmi" \
     --bin "$BIN" --threads "$THREADS" --no-cache
 }
-echo "== driver: candidates, assign (OUT/fx); assign --no-candidates (OUT/ctl/fx)"
+echo "== driver: candidates, assign --candidates (OUT/fx); assign (OUT/ctl/fx)"
 drv candidates --out "$P"
-drv assign --out "$P"
-drv assign --no-candidates --out "$Q"
+drv assign --candidates --out "$P"
+drv assign --out "$Q"
 echo "== assertions"
 
 # (pre) exactly one flagged candidate
@@ -138,16 +141,24 @@ rest_fams=$(awk -F'\t' 'NR > 1 { print $1 }' "$P.assign_rest.families.tsv" | pas
 [ "$cand_fams" = MCL0 ] && [ "$rest_fams" = MCL1 ] || fail "(c) the runs hold '$cand_fams' (augmented) and '$rest_fams' (originals), expected MCL0 and MCL1"
 pass "(c) the split ran: MCL0 on the augmented inputs, MCL1 on the originals"
 for t in assignments families quant family_join famcn_readonly; do
-  [ -e "$P.assign.$t.tsv" ] && [ -e "$Q.assign.$t.tsv" ] || fail "(c) fx.assign.$t.tsv is missing from the split or the --no-candidates run"
+  [ -e "$P.assign.$t.tsv" ] && [ -e "$Q.assign.$t.tsv" ] || fail "(c) fx.assign.$t.tsv is missing from the split or the plain run"
   head_line=$(head -1 "$P.assign.$t.tsv")
-  [ "$head_line" = "$(head -1 "$Q.assign.$t.tsv")" ] || fail "(c) fx.assign.$t.tsv: the header differs from the --no-candidates run's"
+  [ "$head_line" = "$(head -1 "$Q.assign.$t.tsv")" ] || fail "(c) fx.assign.$t.tsv: the header differs from the plain run's"
   n_head=$(awk -v h="$head_line" '$0 == h' "$P.assign.$t.tsv" | wc -l)
   [ "$n_head" = 1 ] || fail "(c) fx.assign.$t.tsv holds its header $n_head times"
   if ! diff <(rows_of family_id "$P.assign.$t.tsv" MCL1) <(rows_of family_id "$Q.assign.$t.tsv" MCL1) > "$OUT/c_$t.diff"; then
-    fail "(c) fx.assign.$t.tsv: MCL1's rows differ from the --no-candidates run's (see $OUT/c_$t.diff)"
+    fail "(c) fx.assign.$t.tsv: MCL1's rows differ from the plain run's (see $OUT/c_$t.diff)"
   fi
 done
 fams_split=$(awk -F'\t' 'NR > 1 { print $1 }' "$P.assign.families.tsv" | LC_ALL=C sort | paste -sd,)
 [ "$fams_split" = "MCL0,MCL1" ] || fail "(c) fx.assign.families.tsv lists '$fams_split', expected MCL0 and MCL1"
-pass "(c) one header per concatenated table; MCL1's rows identical to the --no-candidates run in assignments, families, quant, family_join, famcn_readonly (MCL1 has no reads: this checks the split's plumbing, not read assignment)"
+pass "(c) one header per concatenated table; MCL1's rows identical to the plain run in assignments, families, quant, family_join, famcn_readonly (MCL1 has no reads: this checks the split's plumbing, not read assignment)"
+
+# (d) opt-in: without --candidates, assign leaves the candidates products alone (and says so)
+drv assign --out "$P" 2> "$OUT/d_assign.stderr"
+grep -q "present but unused" "$OUT/d_assign.stderr" || fail "(d) a plain assign on OUT/fx did not say that the candidates products are unused (see $OUT/d_assign.stderr)"
+! ls "$P".assign_cand.* > /dev/null 2>&1 || fail "(d) a plain assign on OUT/fx made the candidate run (fx.assign_cand.* exist)"
+n_copies=$(col_of "$P.assign.families.tsv" n_copies MCL0)
+[ "$n_copies" = 1 ] || fail "(d) a plain assign gives MCL0 n_copies '$n_copies', expected 1 (the candidate is not used)"
+pass "(d) a plain assign on OUT/fx does not use the candidates products: one line says so, no split, MCL0 has 1 copy"
 echo "run_e2e: all assertions hold"

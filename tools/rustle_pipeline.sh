@@ -6,29 +6,34 @@
 #             = THE default de novo family definition (user decision 2026-09-25): one copy per member locus =
 #             its representative transcript (PREFIX.fam.copies.tsv/.fa, the copy table copy assignment consumes)
 #   candidates  reference-absent copies from each family's own reads    o3_candidates + tools/o3_augment.py + minimap2
+#             OPT-IN (ruling R14, 2026-10-02: its pre-registered acceptance, Amendment 12, FAILED —
+#             docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md): naming the stage runs it, `all` runs it only with --candidates.
 #             (read net -> read clusters -> consensus -> flag/link/merge -> one exon-union contig per flagged
 #             candidate, PREFIX.cand.*), then the augmentation (PREFIX.aug.fa = genome + the contigs, PREFIX.aug.copies.*
 #             = the copy table + one row per candidate) and the patch realignment of the candidate families' reads to
 #             PREFIX.aug.fa (PREFIX.aug.bam): a read whose best alignment is on a candidate contig is PLACED there by the
-#             realignment (ruling R13). --no-candidates skips it; --delta D (0.00958), --cand-max-reads N (1000)
+#             realignment (ruling R13). --delta D (0.00958), --cand-max-reads N (1000). Cost: PREFIX.aug.fa is a copy of
+#             the whole genome, and the realignment indexes it on every run (about 400 s and 19 GB on a human genome)
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment (assign/abstain) on the families'  copy_assign --families
-#             copy table PREFIX.fam.copies.*; with flagged candidates, two runs (the candidate families on
-#             PREFIX.aug.*, each assigned as a family that includes its candidate copies; the others on the originals)
+#             copy table PREFIX.fam.copies.*; with --candidates and flagged candidates, two runs (the candidate families
+#             on PREFIX.aug.*, each assigned as a family that includes its candidate copies; the others on the originals)
 #             concatenated into PREFIX.assign.*. O2 assigns AS-tied molecules only (the gate is unchanged): a read the
-#             realignment places uniquely on a candidate has no row (R13). --legacy-catalog: on the legacy catalog
-#             PREFIX.cat.* instead
+#             realignment places uniquely on a candidate has no row (R13). Without --candidates the candidates stage's
+#             products are not used. --legacy-catalog: on the legacy catalog PREFIX.cat.* instead (the stage as it ran
+#             before 2026-10-02; refused together with --candidates)
 #   flag      copies the reference does not contain, from RNA alone     missing_copy_flag --scan-only / --from-scan
-#             (+ optional DNA confirmation against --confirm genomes; + the `o3_candidate` column naming the flagged
-#             candidate whose nearest locus is the row's, when the candidates stage ran)
-#   all       assemble, families, candidates, assign, flag (with --legacy-catalog: catalog in place of candidates)
+#             (+ optional DNA confirmation against --confirm genomes; with --candidates, + the `o3_candidate` column
+#             naming the flagged candidate whose nearest locus is the row's)
+#   all       assemble, families, assign, flag; with --candidates the candidates stage before assign, with
+#             --legacy-catalog the catalog there instead
 # (thesis record: families/catalog = O1, candidates = O3, assign = O2, flag = O3; in order O1 families -> O3 candidates ->
 #  O2 assign -> O3 flag)
 #
 # usage: tools/rustle_pipeline.sh STAGE --bam B --fasta G --out PREFIX [--index G.splice.mmi] [--gff ANNOT.gff]
 #        [--confirm NAME=X.mmi ...] [--foreign NAME=X.mmi ...] [--threads N] [--bin DIR] [--no-seed-secondaries]
 #        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
-#        [--no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
+#        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
 # --piecewise (catalog only; needs the cache): the catalog's representatives (both BAM passes + the span-overlap
 #   collapse and its POA, none of which compares two contigs) are built one CONTIG per piece, each cached in
@@ -82,7 +87,7 @@ set -euo pipefail
 STAGE=${1:-all}; shift || true
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_SEC=1; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
-LEGACY_CATALOG=0; NO_CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
+LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
@@ -92,11 +97,19 @@ while [ $# -gt 0 ]; do
     --cache) CACHE=1; shift;; --no-cache) CACHE=0; shift;; --inspect) INSPECT=1; shift;;
     --piecewise) PIECEWISE=1; shift;; --max-pieces) MAX_PIECES=$2; shift 2;; --budget-s) BUDGET_S=$2; shift 2;;
     --piece-records) PIECE_RECORDS=$2; shift 2;; --piece) PIECE=$2; shift 2;;
-    --legacy-catalog) LEGACY_CATALOG=1; shift;; --no-candidates) NO_CANDIDATES=1; shift;;
+    --legacy-catalog) LEGACY_CATALOG=1; shift;; --candidates) CANDIDATES=1; shift;; --no-candidates) CANDIDATES=0; shift;;
     --delta) DELTA=$2; shift 2;; --cand-max-reads) CAND_MAX=$2; shift 2;;
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
+# --candidates and --legacy-catalog name two different copy tables for assign: refused together, whatever the stage. Written
+# as a `case "$STAGE"` block, as the final dispatch is, so figures/samples.py's driver_stage_code leaves it out of every
+# stage's code hash: it refuses a call and changes no product.
+case "$STAGE" in
+  *) if [ "$CANDIDATES" = 1 ] && [ "$LEGACY_CATALOG" = 1 ]; then
+       echo "[rustle_pipeline] --candidates and --legacy-catalog exclude each other (assign reads the families' copy table with its candidates, or the legacy catalog): drop one" >&2; exit 2
+     fi;;
+esac
 if [ "$STAGE" = cache-clear ]; then
   [ -n "$OUT" ] || { echo "cache-clear needs --out PREFIX" >&2; exit 2; }
   [ -d "$OUT.cache" ] && du -sh "$OUT.cache" && rm -rf "$OUT.cache"
@@ -287,49 +300,21 @@ stage_catalog() {
   fi
   say "catalog: $(awk 'NR>1' "$OUT.cat.copies.tsv" | wc -l) copies in $(awk 'NR>1 && $2>=2' "$OUT.cat.families.tsv" | wc -l) multi-copy families"
 }
-# fam_regions all|only|skip [LIST]: copy_assign's --regions for the families of PREFIX.fam.copies.regions (`{fid}\t{chrom}:
-# {lo}-{hi}`, the copies' hull +- 5 kb per family and contig, as mcl_families writes it): every row, the rows of the
-# families LIST names (one id per line), or the other rows, MERGED per contig into disjoint intervals (an interval that
-# overlaps or touches the previous one joins it). copy_assign refuses overlapping --regions, and families' hulls
-# overlap and nest wherever families interleave (human chr16: 92 overlapping neighbours among 111 regions), so the
-# second column cannot be passed as it is. Every family's own interval lies inside exactly one merged region, which is
-# what binds it; its reads are still gathered around each copy (copy_assign's copy windows), not over the region.
-# tools/o3_augment.py merges the candidate families' rows by the same rule (PREFIX.aug.regions.txt).
-fam_regions() {
-  local mode=$1 list=${2:-/dev/null}
-  awk -F'\t' -v OFS='\t' -v mode="$mode" -v list="$list" '
-    FILENAME == list { if ($1 != "") pick[$1] = 1; next }
-    mode == "all" || (mode == "only") == ($1 in pick) {
-      p = match($2, /:[0-9]+-[0-9]+$/)
-      if (!p) { print "[rustle_pipeline] bad region \"" $2 "\" in " FILENAME > "/dev/stderr"; bad = 1; exit 2 }
-      split(substr($2, p + 1), r, "-"); print substr($2, 1, p - 1), r[1], r[2] }
-    END { if (bad) exit 2 }' "$list" "$OUT.fam.copies.regions" |
-    LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n -k3,3n |
-    awk -F'\t' '$1 != c || $2 > e { if (c != "") print c ":" s "-" e; c = $1; s = $2; e = $3; next }
-                $3 > e { e = $3 }
-                END { if (c != "") print c ":" s "-" e }'
-}
-# cand_ready: true when this run uses the candidates stage's products (not --no-candidates, PREFIX.cand.candidates.tsv
-# present); a table older than PREFIX.fam.copies.tsv was made for other families: an error, not a silent mismatch.
-cand_ready() {
-  [ "$NO_CANDIDATES" != 1 ] && [ -s "$OUT.cand.candidates.tsv" ] || return 1
-  if [ "$OUT.cand.candidates.tsv" -ot "$OUT.fam.copies.tsv" ]; then
-    echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or pass --no-candidates" >&2; exit 2
-  fi
-}
-# candidates (O3; spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §4, §7): o3_candidates turns each family's
-# read net (reads with a record on its copies, plus attributed unmapped reads) into read clusters at --delta, one consensus
-# per cluster, and candidate copies (clusters beyond delta of every reference locus, merged by the significance test,
+# candidates (O3; spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §4, §7; OPT-IN since 2026-10-02, ruling R14:
+# its pre-registered acceptance, Amendment 12, FAILED, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md — naming the stage runs it,
+# `all` runs it only with --candidates, and assign and flag use its products only with --candidates): o3_candidates turns each
+# family's read net (reads with a record on its copies, plus attributed unmapped reads) into read clusters at --delta, one
+# consensus per cluster, and candidate copies (clusters beyond delta of every reference locus, merged by the significance test,
 # flagged with >= 6 reads), each represented by the exon union of its clusters -> PREFIX.cand.{candidates.tsv,contigs.fa,
 # nets.fa,...}. With a flagged candidate: tools/o3_augment.py writes PREFIX.aug.{fa,copies.tsv,copies.fa,regions.txt,
 # families.txt} (each candidate a contig `cand_<family>_<k>` of PREFIX.aug.fa and a `member_status candidate` row of its
 # family), and the reads of the candidate families (PREFIX.cand.nets.fa, every read of each such family's net) are
-# realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign` gives those
-# families. That realignment is the placement of the candidates' reads (ruling R13): a read whose best alignment is on a
-# candidate contig lands there (the fixture: all 60 reads of the deleted copy, MAPQ 60). An earlier run's PREFIX.aug.* are
-# removed first, so a run without a flagged candidate leaves none behind.
+# realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign --candidates` gives
+# those families. That realignment is the placement of the candidates' reads (ruling R13): a read whose best alignment is on
+# a candidate contig lands there (the fixture: all 60 reads of the deleted copy, MAPQ 60). An earlier run's PREFIX.aug.* are
+# removed first, so a run without a flagged candidate leaves none behind. PREFIX.aug.fa is a whole-genome copy that minimap2
+# indexes again on every run (about 400 s and 19 GB on a human genome).
 stage_candidates() {
-  [ "$NO_CANDIDATES" = 1 ] && { say "candidates: skipped (--no-candidates)"; return 0; }
   [ -n "$INDEX" ] || { echo "candidates needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
   [ -s "$OUT.fam.copies.tsv" ] || { echo "candidates needs $OUT.fam.copies.tsv (run the families stage)" >&2; exit 2; }
   rm -f "$OUT".aug.{fa,fa.fai,copies.tsv,copies.fa,regions.txt,families.txt,bam,bam.bai,mm2.log}
@@ -348,7 +333,7 @@ stage_candidates() {
     --regions "$OUT.fam.copies.regions" --cand "$OUT.cand" --out "$OUT.aug" || exit $?
   samtools faidx "$OUT.aug.fa"
   say "candidates: realigning the $(grep -c '^>' "$OUT.cand.nets.fa") reads of the candidate families to $OUT.aug.fa"
-  if ! minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes -t "$THREADS" "$OUT.aug.fa" "$OUT.cand.nets.fa" 2> "$OUT.aug.mm2.log" \
+  if ! "${RUSTLE_MINIMAP2:-minimap2}" -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes -t "$THREADS" "$OUT.aug.fa" "$OUT.cand.nets.fa" 2> "$OUT.aug.mm2.log" \
        | samtools sort -@ 2 -o "$OUT.aug.bam" -; then
     say "candidates: the patch realignment failed, see $OUT.aug.mm2.log"; rm -f "$OUT.aug.bam"; exit 1
   fi
@@ -356,10 +341,100 @@ stage_candidates() {
   say "candidates: $OUT.aug.bam: $(samtools view -F 2308 "$OUT.aug.bam" | awk -F'\t' 'FILENAME == ARGV[1] { if (FNR > 1 && $5 == 1) c[$2] = 1; next } { n++; k += ($3 in c) } END { print n + 0 " primary records, " k + 0 " of them on a candidate contig" }' "$OUT.cand.candidates.tsv" -)"
 }
 # assign (O2): per-read copy assignment on the families' copy table (PREFIX.fam.copies.tsv/.fa, the default O1 output),
-# swept over PREFIX.regions.txt (fam_regions). With flagged candidates (PREFIX.aug.families.txt from the candidates stage
-# of this families run): assign_with_candidates. --legacy-catalog: the legacy catalog PREFIX.cat.* over whole contigs, as
-# the stage ran before 2026-10-02.
+# swept over PREFIX.regions.txt (fam_regions). With --candidates and flagged candidates (PREFIX.aug.families.txt from the
+# candidates stage of this families run): assign_with_candidates; candidate products present without --candidates are not
+# used (one line says so). --legacy-catalog: the legacy catalog PREFIX.cat.* over whole contigs, as the stage ran before
+# 2026-10-02. The three helpers are defined inside the stage (they are its code alone: figures/samples.py's driver_stage_code
+# then keeps them out of the other stages' code hashes).
 stage_assign() {
+  # fam_regions all|only|skip [LIST]: copy_assign's --regions for the families of PREFIX.fam.copies.regions (`{fid}\t{chrom}:
+  # {lo}-{hi}`, the copies' hull +- 5 kb per family and contig, as mcl_families writes it): every row, the rows of the
+  # families LIST names (one id per line), or the other rows, MERGED per contig into disjoint intervals (an interval that
+  # overlaps or touches the previous one joins it). copy_assign refuses overlapping --regions, and families' hulls
+  # overlap and nest wherever families interleave (human chr16: 92 overlapping neighbours among 111 regions), so the
+  # second column cannot be passed as it is. Every family's own interval lies inside exactly one merged region, which is
+  # what binds it; its reads are still gathered around each copy (copy_assign's copy windows), not over the region.
+  # tools/o3_augment.py merges the candidate families' rows by the same rule (PREFIX.aug.regions.txt).
+  fam_regions() {
+    local mode=$1 list=${2:-/dev/null}
+    awk -F'\t' -v OFS='\t' -v mode="$mode" -v list="$list" '
+      FILENAME == list { if ($1 != "") pick[$1] = 1; next }
+      mode == "all" || (mode == "only") == ($1 in pick) {
+        p = match($2, /:[0-9]+-[0-9]+$/)
+        if (!p) { print "[rustle_pipeline] bad region \"" $2 "\" in " FILENAME > "/dev/stderr"; bad = 1; exit 2 }
+        split(substr($2, p + 1), r, "-"); print substr($2, 1, p - 1), r[1], r[2] }
+      END { if (bad) exit 2 }' "$list" "$OUT.fam.copies.regions" |
+      LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n -k3,3n |
+      awk -F'\t' '$1 != c || $2 > e { if (c != "") print c ":" s "-" e; c = $1; s = $2; e = $3; next }
+                  $3 > e { e = $3 }
+                  END { if (c != "") print c ":" s "-" e }'
+  }
+  # cand_ready: true when this run uses the candidates stage's products (--candidates, PREFIX.cand.candidates.tsv present);
+  # a table older than PREFIX.fam.copies.tsv was made for other families: an error, not a silent mismatch.
+  cand_ready() {
+    [ "$CANDIDATES" = 1 ] && [ -s "$OUT.cand.candidates.tsv" ] || return 1
+    if [ "$OUT.cand.candidates.tsv" -ot "$OUT.fam.copies.tsv" ]; then
+      echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or drop --candidates" >&2; exit 2
+    fi
+  }
+  # assign_with_candidates: the two-run O2 split (spec §4/§7; v1, §10 names the single run over a merged BAM as the end
+  # state). The families PREFIX.aug.families.txt lists are assigned on the augmented inputs (PREFIX.aug.bam = their nets
+  # realigned to PREFIX.aug.fa, PREFIX.aug.copies.* = their copies + candidates, PREFIX.aug.regions.txt), every other family
+  # on the original BAM and copy table; copy_assign's --only-families / --skip-families select them, so each family is
+  # assigned in exactly one run (a run with no family left is not made). Every per-family table (PREFIX.assign_cand.<t>.tsv
+  # and PREFIX.assign_rest.<t>.tsv: assignments, families, quant, family_join, famcn_readonly, and with --inspect psv_reads,
+  # psv_cols, psv_copies, posterior) is concatenated, one header, into PREFIX.assign.<t>.tsv; the run certificates are not
+  # family tables and stay per run (PREFIX.assign_cand.params.tsv, PREFIX.assign_rest.params.tsv); PREFIX.assign.log holds
+  # both logs. Ruling R13: each candidate family is assigned as a family that includes its candidate copies, under the
+  # unchanged AS-tied gate, so a read the realignment placed uniquely on a candidate is not AS-tied and has no row (its
+  # placement is PREFIX.aug.bam's); rows arise only for molecules tied between copies. How the split differs from one run
+  # over every family: copy_assign keeps a process-wide registry of the molecules tied outside the catalog (keyed by read
+  # name) and demotes a family's verdicts with it, so a row's `status`, not only its `tie_outside_catalog`, can differ from
+  # a single run; the cross-family steps see only their own run's families (RUSTLE_XFAM_RECONCILE's reconciliation, and
+  # `--union-certificate` in a hand-made split); and in the candidate run, candidate families whose real-chromosome hulls
+  # overlap register each other's tied molecules and can demote each other's verdicts.
+  assign_with_candidates() {
+    [ -s "$OUT.aug.bam.bai" ] && [ ! "$OUT.aug.bam.bai" -ot "$OUT.aug.families.txt" ] \
+      || { echo "[rustle_pipeline] $OUT.aug.bam is missing or older than $OUT.aug.families.txt: run the candidates stage again, or drop --candidates" >&2; exit 2; }
+    local n_cand n_rest t f
+    n_cand=$(grep -c . "$OUT.aug.families.txt")
+    n_rest=$(awk -F'\t' 'FILENAME == ARGV[1] { c[$1] = 1; next } FNR > 1 && !($1 in c) { print $1 }' "$OUT.aug.families.txt" "$OUT.fam.copies.tsv" | sort -u | wc -l)
+    say "assign: $n_cand candidate families on $OUT.aug.*, the other $n_rest on $OUT.fam.copies.tsv"
+    rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.*.tsv "$OUT".assign_rest.*.tsv
+    "$BIN/copy_assign" --bam "$OUT.aug.bam" --fasta "$OUT.aug.fa" --regions "$OUT.aug.regions.txt" --families "$OUT.aug.copies.tsv" \
+      --copies-fa "$OUT.aug.copies.fa" --only-families "$OUT.aug.families.txt" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_cand" > "$OUT.assign_cand.log" 2>&1 \
+      || { local rc=$?; say "assign: copy_assign failed on the candidate families (exit $rc), see $OUT.assign_cand.log; the likely cause: a real copy whose reads all realigned to its candidate, so it has no read in $OUT.aug.bam (copy_assign requires one on every real copy)"; exit "$rc"; }
+    local runs=("$OUT.assign_cand")
+    if [ "$n_rest" -gt 0 ]; then
+      fam_regions skip "$OUT.aug.families.txt" > "$OUT.regions.txt"
+      "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
+        --copies-fa "$OUT.fam.copies.fa" --skip-families "$OUT.aug.families.txt" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_rest" > "$OUT.assign_rest.log" 2>&1 \
+        || { local rc=$?; say "assign: copy_assign failed on the other families (exit $rc), see $OUT.assign_rest.log"; exit "$rc"; }
+      runs+=("$OUT.assign_rest")
+    fi
+    for t in $(for r in "${runs[@]}"; do for f in "$r".*.tsv; do [ -e "$f" ] || continue; f=${f#"$r."}; echo "${f%.tsv}"; done; done | sort -u); do
+      [ "$t" = params ] && continue
+      local first=""
+      : > "$OUT.assign.$t.tsv"
+      for r in "${runs[@]}"; do
+        [ -e "$r.$t.tsv" ] || continue
+        if [ -z "$first" ]; then
+          first=$r; cat "$r.$t.tsv" >> "$OUT.assign.$t.tsv"
+        elif [ "$(head -1 "$r.$t.tsv")" = "$(head -1 "$first.$t.tsv")" ]; then
+          awk 'NR > 1' "$r.$t.tsv" >> "$OUT.assign.$t.tsv"
+        else
+          echo "[rustle_pipeline] $r.$t.tsv and $first.$t.tsv have different headers: cannot concatenate them into $OUT.assign.$t.tsv" >&2
+          rm -f "$OUT".assign.*.tsv; exit 2
+        fi
+      done
+    done
+    for r in "${runs[@]}"; do echo "=== [rustle_pipeline] $r.log"; cat "$r.log"; done > "$OUT.assign.log"
+    # assigned_copy is the family's copy INDEX: family_join names the copy (copy_tid)
+    local on_cand
+    on_cand=$(awk -F'\t' 'FNR == 1 { next } FILENAME == ARGV[1] { tid[$1 "\t" $2] = $3; next } $4 == "assigned" && tid[$2 "\t" $3] ~ /^cand_/ { n++ } END { print n + 0 }' \
+      "$OUT.assign.family_join.tsv" "$OUT.assign.assignments.tsv")
+    say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family; $on_cand on a candidate copy; a read the realignment placed uniquely on a candidate is not AS-tied and has no row)"
+  }
   if [ "$LEGACY_CATALOG" = 1 ]; then
     say "assign: per-read copy assignment on $OUT.cat"
     samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.regions.txt"
@@ -376,72 +451,29 @@ stage_assign() {
   if cand_ready && [ -s "$OUT.aug.families.txt" ]; then
     assign_with_candidates; return 0
   fi
+  if [ "$CANDIDATES" != 1 ] && [ -s "$OUT.aug.families.txt" ] && [ ! "$OUT.aug.families.txt" -ot "$OUT.fam.copies.tsv" ]; then
+    say "assign: the candidates stage's products ($OUT.aug.*) are present but unused (the stage is opt-in, ruling R14): pass --candidates to assign the candidate families on them"
+  fi
   say "assign: per-read copy assignment on $OUT.fam.copies.tsv"
   rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier split run's tables
   fam_regions all > "$OUT.regions.txt"
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
-    --copies-fa "$OUT.fam.copies.fa" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
+    --copies-fa "$OUT.fam.copies.fa" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
+    || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
-}
-# assign_with_candidates: the two-run O2 split (spec §4/§7; v1, §10 names the single run over a merged BAM as the end
-# state). The families PREFIX.aug.families.txt lists are assigned on the augmented inputs (PREFIX.aug.bam = their nets
-# realigned to PREFIX.aug.fa, PREFIX.aug.copies.* = their copies + candidates, PREFIX.aug.regions.txt), every other family
-# on the original BAM and copy table; copy_assign's --only-families / --skip-families select them, so each family is
-# assigned in exactly one run (a run with no family left is not made). Every per-family table (PREFIX.assign_cand.<t>.tsv
-# and PREFIX.assign_rest.<t>.tsv: assignments, families, quant, family_join, famcn_readonly, and with --inspect psv_reads,
-# psv_cols, psv_copies, posterior) is concatenated, one header, into PREFIX.assign.<t>.tsv; the run certificates are not
-# family tables and stay per run (PREFIX.assign_cand.params.tsv, PREFIX.assign_rest.params.tsv); PREFIX.assign.log holds
-# both logs. Ruling R13: each candidate family is assigned as a family that includes its candidate copies, under the
-# unchanged AS-tied gate, so a read the realignment placed uniquely on a candidate is not AS-tied and has no row (its
-# placement is PREFIX.aug.bam's); rows arise only for molecules tied between copies. One known difference from a single
-# run: `tie_outside_catalog` is judged against the run's own families (copy_assign registers such molecules
-# process-wide by read name).
-assign_with_candidates() {
-  [ -s "$OUT.aug.bam.bai" ] && [ ! "$OUT.aug.bam.bai" -ot "$OUT.aug.families.txt" ] \
-    || { echo "[rustle_pipeline] $OUT.aug.bam is missing or older than $OUT.aug.families.txt: run the candidates stage again, or pass --no-candidates" >&2; exit 2; }
-  local n_cand n_rest t f
-  n_cand=$(grep -c . "$OUT.aug.families.txt")
-  n_rest=$(awk -F'\t' 'FILENAME == ARGV[1] { c[$1] = 1; next } FNR > 1 && !($1 in c) { print $1 }' "$OUT.aug.families.txt" "$OUT.fam.copies.tsv" | sort -u | wc -l)
-  say "assign: $n_cand candidate families on $OUT.aug.*, the other $n_rest on $OUT.fam.copies.tsv"
-  rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.*.tsv "$OUT".assign_rest.*.tsv
-  "$BIN/copy_assign" --bam "$OUT.aug.bam" --fasta "$OUT.aug.fa" --regions "$OUT.aug.regions.txt" --families "$OUT.aug.copies.tsv" \
-    --copies-fa "$OUT.aug.copies.fa" --only-families "$OUT.aug.families.txt" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_cand" > "$OUT.assign_cand.log" 2>&1
-  local runs=("$OUT.assign_cand")
-  if [ "$n_rest" -gt 0 ]; then
-    fam_regions skip "$OUT.aug.families.txt" > "$OUT.regions.txt"
-    "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
-      --copies-fa "$OUT.fam.copies.fa" --skip-families "$OUT.aug.families.txt" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_rest" > "$OUT.assign_rest.log" 2>&1
-    runs+=("$OUT.assign_rest")
-  fi
-  for t in $(for r in "${runs[@]}"; do for f in "$r".*.tsv; do [ -e "$f" ] || continue; f=${f#"$r."}; echo "${f%.tsv}"; done; done | sort -u); do
-    [ "$t" = params ] && continue
-    local first=""
-    : > "$OUT.assign.$t.tsv"
-    for r in "${runs[@]}"; do
-      [ -e "$r.$t.tsv" ] || continue
-      if [ -z "$first" ]; then
-        first=$r; cat "$r.$t.tsv" >> "$OUT.assign.$t.tsv"
-      elif [ "$(head -1 "$r.$t.tsv")" = "$(head -1 "$first.$t.tsv")" ]; then
-        awk 'NR > 1' "$r.$t.tsv" >> "$OUT.assign.$t.tsv"
-      else
-        echo "[rustle_pipeline] $r.$t.tsv and $first.$t.tsv have different headers: cannot concatenate them into $OUT.assign.$t.tsv" >&2; exit 2
-      fi
-    done
-  done
-  for r in "${runs[@]}"; do echo "=== [rustle_pipeline] $r.log"; cat "$r.log"; done > "$OUT.assign.log"
-  # assigned_copy is the family's copy INDEX: family_join names the copy (copy_tid)
-  local on_cand
-  on_cand=$(awk -F'\t' 'FNR == 1 { next } FILENAME == ARGV[1] { tid[$1 "\t" $2] = $3; next } $4 == "assigned" && tid[$2 "\t" $3] ~ /^cand_/ { n++ } END { print n + 0 }' \
-    "$OUT.assign.family_join.tsv" "$OUT.assign.assignments.tsv")
-  say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family; $on_cand on a candidate copy; a read the realignment placed uniquely on a candidate is not AS-tied and has no row)"
 }
 stage_flag() {
   [ -n "$INDEX" ] || { echo "flag needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
   # the loci to scan: the annotation with --gff, else the de novo loci `families` reads (bridges are relations, not loci)
   [ -n "$GFF" ] || fam_gtf_guard flag
   local LOCI=${GFF:-$FAM_GTF} cand=()
-  # the two O3 sources corroborate: the verdict table's `o3_candidate` column names a flagged candidate on the row's locus
-  if cand_ready; then cand=(--candidates "$OUT.cand.candidates.tsv"); fi
+  # with --candidates, the two O3 sources corroborate: the verdict table's `o3_candidate` column names a flagged candidate on
+  # the row's locus (a candidates table older than PREFIX.fam.copies.tsv was made for other families: an error)
+  if [ "$CANDIDATES" = 1 ] && [ -s "$OUT.cand.candidates.tsv" ]; then
+    [ ! "$OUT.cand.candidates.tsv" -ot "$OUT.fam.copies.tsv" ] \
+      || { echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or drop --candidates" >&2; exit 2; }
+    cand=(--candidates "$OUT.cand.candidates.tsv")
+  fi
   say "flag: scan $BAM on $LOCI"
   "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$THREADS" \
     --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1
@@ -454,9 +486,11 @@ stage_flag() {
 case "$STAGE" in
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;;
-  # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it where the default builds the candidates
+  # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
   all) stage_assemble; stage_families
-       if [ "$LEGACY_CATALOG" = 1 ]; then stage_catalog; else stage_candidates; fi
+       if [ "$LEGACY_CATALOG" = 1 ]; then stage_catalog
+       elif [ "$CANDIDATES" = 1 ]; then stage_candidates
+       else say "candidates: skipped (opt-in, --candidates; Amendment 12 failed, R14)"; fi
        stage_assign; stage_flag;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;
 esac
