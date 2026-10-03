@@ -14,7 +14,7 @@
 
 - Build/test only with `CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target_m2 bash tools/rlock.sh heavy cargo ... --release`, output captured to a file; every heavy run (binary, minimap2, samtools, the harness) foreground through `bash tools/rlock.sh heavy ...`, each call < 10 min; no background jobs, no waiter loops, no `pkill -f`.
 - The chain's registered rules do not move: `--delta 0.00958`, component merge rule, `--min-support 6`, `--min-cluster 3`, 0.98 tie ratio, `--max-reads 1000`, R13.
-- Amendment 13's exact values: `MM2_ATTRIB = [-x splice:hq -uf -c -N 5 -p 0.5]`; attribution iff best hit (most matches) covers >= 50% of the read (`shorter_cov`) and `de <= 0.15`; unmapped reads >= 300 bp only; template = member with the LOWEST total bases of indels >= 20 bp over its all-vs-all alignments to the other members (ties: longest, then name); `MM2_MEMBERS = [-x splice:hq -uf -c --cs -N 5 -p 0.5]`; insertion vote: >= 20 bp with >= 3 carriers first, then the < 20 bp 50% rule; refine re-templates by the same rule when the template is split off; an absorbing cluster with an empty re-polished consensus keeps the absorbed clusters separate.
+- Amendment 13b's exact values: `MM2_ATTRIB = [-x map-ont -c -N 5 -p 0.5]`; attribution set = unmapped reads >= 300 bp PLUS poorly placed un-netted reads (primary `de > 0.02` or MAPQ 0, no record on any family copy); targets = the families' mapped net reads (tagged `<family>|<read>`) + `--copies-fa`; a read joins the family of its best hit (most matches) iff the hit covers >= 50% of the READ (`(qe-qs)/qlen`) and `de <= 0.20`; template = member with the LOWEST total bases of indels >= 20 bp over its all-vs-all alignments to the other members (ties: longest, then name); `MM2_MEMBERS = [-x splice:hq -uf -c --cs -N 5 -p 0.5]`; insertion vote: >= 20 bp with >= 3 carriers first, then the < 20 bp 50% rule; refine re-templates by the same rule when the template is split off; an absorbing cluster with an empty re-polished consensus keeps the absorbed clusters separate.
 - Existing tests stay green (1081 + new); the fixture integration test and `run_e2e.sh` still pass (one flagged candidate `cand_MCL0_0`, 850-950 bp).
 - Commits end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01DAyQQ6R8drUxY5GsM5wNkb`; author from the canonical repo's git config; never touch `/mnt/c/Users/jfris/Desktop/Rustle`; do not push.
 
@@ -28,7 +28,7 @@
 
 ---
 
-### Task 1: Net attribution by alignment
+### Task 1: Net attribution by alignment (Amendment 13b: unmapped + poorly placed reads, targets = net reads + copies, map-ont, read coverage >= 0.5, de <= 0.20)
 
 **Files:**
 - Modify: `src/rustle/vg_family/o3_candidates.rs` (add `pub const MM2_ATTRIB`, `pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, String>) -> HashMap<String, String>` (read -> family), remove `FamilyKmerIndex`, `ATTRIB_MAX_FAMILIES`, their tests)
@@ -54,7 +54,7 @@
 
 - [ ] **Step 1:** rebuild the binary; run the stage in batches (as A12: 5 groups via `--families`, each under 10 min, `/usr/bin/time -v`); concatenate.
 - [ ] **Step 2:** arm M exactly as A12 (rename contigs `iso_*`, index, realign the three parts, label contigs from the unmasked genome, `merge_test.py score`); A13-2 with the arm-M preset; A13-3 = summed batch time.
-- [ ] **Step 3:** cause table; attribution counts (unmapped reads aligned / attributed / attributed to the right family by `labels.tsv`); delta/2 and 2 x delta reruns.
+- [ ] **Step 3:** compute C = IsoCon's right D reads (Amendment 8's per-read calls, `merge_test.py` semantics on `linktest/RIL.bam`) over the truth-free attainable D reads (any record on a survivor in `R.bam`, or attributable by the Task 1 rule); A13-1 = stage D right >= 0.80 x C and false moves <= 5% (A12-1's 10,230 reported beside); cause table; attribution counts (unmapped / poorly placed: aligned, attributed, right family by `labels.tsv`); delta/2 and 2 x delta reruns.
 - [ ] **Step 4:** verdicts as registered; write the doc and register rows; IF all three hold, flip the default (and say so in the doc); commit.
 
 ## Self-review notes
