@@ -1,6 +1,7 @@
 # O3 candidate copies in the pipeline (`o3_candidates`) — design
 
-Date 2026-10-02. Branch `machine2/soto-evidence` (== `main`). Status: spec for review; no code yet.
+Date 2026-10-02. Branch `machine2/soto-evidence` (== `main`). Status: implemented 2026-10-02; the pre-registered acceptance
+(Amendment 12) FAILED, so the driver's `candidates` stage is OPT-IN (ruling R14, §9b; `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
 
 ## 1. Goal
 
@@ -30,7 +31,7 @@ hierarchy work, YAG-specific delta (the stage takes `--delta`; the Y value is th
 ## 4. Pipeline placement and data flow
 
 ```
-assemble -> families (O1: P.fam.copies.{tsv,fa,regions}) -> candidates (new) -> assign (O2, augmented) -> flag (O3 screen)
+assemble -> families (O1: P.fam.copies.{tsv,fa,regions}) -> candidates (new; opt-in, R14) -> assign (O2, augmented) -> flag (O3 screen)
 ```
 
 ```
@@ -69,7 +70,9 @@ sampling (seed 1), stable sort orders, no threads in anything that affects outpu
 3. BAM pass B (one sequential pass over the whole BAM, once for all families): (a) the sequence of every read named only by a secondary
    record; (b) every unmapped record with length >= 300 bp, attributed by the k-mer index of §5.2.
 4. Cap: if a family's net exceeds `--max-reads`, sample that many (seed 1, after sorting names).
-5. Output: `P.cand.nets.fa` holds the nets of families that end with a flagged candidate (§5.6); all nets are kept in the cache entry.
+5. Output: `P.cand.nets.fa` holds the WHOLE net (before the cap of 4.) of each family that ends with a flagged candidate (§5.6), each read
+   once (ruling R9: the first family in `--copies` order keeps a read two nets share) — the input of the patch realignment (§7). The
+   `cand` cache entry stores the products as written: no other family's net is kept.
 
 ### 5.2 Unmapped-read attribution
 
@@ -139,16 +142,21 @@ byte-identical except where a test is added for the cross-chromosome case.
 
 - `assign` reads `P.fam.copies.tsv` / `.fa` (the default O1 output) and derives `P.regions.txt` from `P.fam.copies.regions` (second
   column; the first is the family id — `parse_region` takes the first token). The legacy `P.cat.*` path stays behind `--legacy-catalog`.
-- New stage `candidates` (in `all` between `families` and `assign`; `--no-candidates` skips it; `--delta`, `--cand-max-reads` pass
-  through). It runs `o3_candidates`, then the augmentation (§4): `P.aug.fa` (+ `samtools faidx`), `P.aug.copies.tsv` rows
+- New stage `candidates`, OPT-IN since ruling R14 (§9b): naming the stage runs it; `all` runs it between `families` and `assign` only
+  with `--candidates`, and `assign` and `flag` use its products only with `--candidates` (`--no-candidates`, the default, says so
+  explicitly; `--candidates` with `--legacy-catalog` exits 2); `--delta`, `--cand-max-reads` pass through. As first written here it
+  was a default stage of `all`. It runs `o3_candidates`, then the augmentation (§4): `P.aug.fa` (+ `samtools faidx`), `P.aug.copies.tsv` rows
   `family_id copy_idx=<next> tid=cand_<f>_<k> chrom=cand_<f>_<k> start=0 end=<len> n_exon=1 strand=+ n_reads=0 exons=0-<len> ...
   source=o3_candidate`, `P.aug.copies.fa` entries `>{fid}|{idx}|cand_<f>_<k>:0-<len>|+|nexon=1`, `P.aug.regions.txt` with
   `cand_<f>_<k>:0-<len>`, and the patch realignment of `P.cand.nets.fa` to `P.aug.fa` with the same minimap2 flags the pipeline's BAM
   was made with (`-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`), sorted and indexed as `P.aug.bam`.
-- `assign` with candidates: two `copy_assign` runs (candidate families on `P.aug.*`, the rest on the original inputs; `--families`
-  restricted by a family list file each binary already accepts or gains), outputs concatenated with one header.
-- `flag` gains `--candidates P.cand.candidates.tsv`: `missing_copy_flag` adds a column `o3_candidate` (candidate id or `-`) to
-  `P.flag.missing_copy.tsv` when a flagged candidate's nearest locus is the row's locus — the two O3 sources corroborate each other.
+- `assign --candidates` with flagged candidates: two `copy_assign` runs (candidate families on `P.aug.*`, the rest on the original
+  inputs; `--families` restricted by `--only-families` / `--skip-families`), outputs concatenated with one header. Ruling R13
+  (§9b): O2 assigns AS-tied molecules only, so a read the realignment places uniquely on a candidate has no row; its placement is
+  `P.aug.bam`'s.
+- `flag --candidates` passes `--candidates P.cand.candidates.tsv`: `missing_copy_flag` adds a column `o3_candidate` (candidate id or
+  `-`) to `P.flag.missing_copy.tsv` when a flagged candidate's nearest locus is the row's locus — the two O3 sources corroborate each
+  other.
 
 ## 8. Error handling
 
@@ -185,6 +193,26 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
   **R2** §5.4 consensus: indels >= 20 bp are structure — an insertion >= 20 bp carried by >= 3 members is inserted whatever its share, a
   deletion >= 20 bp is never applied — so a cluster's consensus is the exon union of its reads' isoforms (the representative decision
   carried down one level); indels < 20 bp follow the 50% majority.
+
+- Rulings made during the implementation (2026-10-02):
+  - **R3** (§6): `detect_and_assign` hands a supplied CROSS-chromosome family, besides the reads on its first chromosome within the
+    family span, the reads on each of its other chromosomes that overlap that chromosome's copy hull, each read matched only to the
+    copies of its own chromosome. Byte-identical for single-chromosome families; for existing `~xchrom~` families a behaviour change
+    (their reads on other chromosomes were silently never assigned), and the precondition for O2 over candidate contigs (§4, §7).
+  - **R6** (§5.7): the member-vs-union alignment is minimap2 `-x splice:hq -uf -c --cs -N 5 -p 0.5` (`MM2_UNION`), not `asm20`:
+    measured on Amendment 8's 50 multi-member components (540 real IsoCon contigs), `asm20` cut the alignment at an exon skip and
+    inserted the far side again, duplicating 11.7% of the unions' bases; `splice:hq` duplicated 0% and contained all 540 members.
+  - **R13** (§7): O2's scope is AS-tied molecules (assign-or-abstain, user 2026-09-09). A deleted copy's reads that realign uniquely
+    to its candidate (the fixture: 60/60, MAPQ 60) are placed by the aligner and never enter the certificate; the candidate family is
+    assigned as a family that includes its candidate copies, under the unchanged AS-tied gate. Amendment 12 scores placement (arm M);
+    the `--no-as-tied-only` route is not taken.
+  - **R14** (after Amendment 12): A12-1 and A12-2 FAILED (D right 5,995 vs the bar 10,230; union representatives 90.9% vs 95%;
+    `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`), so the stage does not replace IsoCon yet: the driver's `candidates` stage is
+    OPT-IN (`--candidates`; default off; `all` skips it) until a new prereg (A13) passes. The code ships, inert by default.
+  - **R15** (final review): in `copy_assign`, a sweep bound to no family skips the §6gz tie-outside registration only when its region
+    holds a read window of a cross-chromosome (`~xchrom~`) family (every candidate family is one); a catalog without cross-chromosome
+    families registers exactly as before 2026-10-02 (A/B against a b9c412f9 build on the human chr16 O2 simulation, the O2 and
+    `--union-certificate` commands of `figures/_o2.py`: every table byte-identical).
 
 ## 10. Open items (deferred, named)
 

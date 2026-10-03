@@ -34,10 +34,10 @@
 # nets, clusters and candidates are per family, the unmapped-read attribution indexes every family's copies in every batch, and the
 # genome hits are per consensus; only nets.fa's de-duplication across families (R9, not used here) depends on the batch.
 set -euo pipefail
-REPO=/mnt/linuxdisk/home/juanfraitu/rustle_m2_soto
+REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}   # this checkout unless the caller sets REPO
 L=/mnt/linuxdisk/tmp/rna_allele/linktest
 A=/mnt/linuxdisk/tmp/rna_allele/a12
-BIN=/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release/o3_candidates
+BIN=${BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release/o3_candidates}   # the binary of the 2026-10-02 run unless set
 GGO_MMI=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi
 PY="python3 $REPO/bench/rna_allele/accept_o3_candidates.py"
 HEAVY="bash $REPO/tools/rlock.sh heavy"

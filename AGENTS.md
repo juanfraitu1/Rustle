@@ -18,8 +18,10 @@ delete them without the user's confirmation.
 ## 3. Start here
 1. `README.md` — the three stages (family definition, copy assignment, missing copies) and the binaries.
 2. `REPRODUCE.md` — every reported number with its exact command.
-3. `tools/rustle_pipeline.sh` — the whole pipeline, one command per stage (`assemble|families|catalog|assign|flag|all`),
-   with a default-on intermediate cache in `PREFIX.cache/` and `--inspect` for analyst dumps.
+3. `tools/rustle_pipeline.sh` — the whole pipeline, one command per stage (`assemble|families|candidates|catalog|assign|flag|all`;
+   `assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`; `candidates` is opt-in,
+   `--candidates`, since its acceptance failed: `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`), with a default-on
+   intermediate cache in `PREFIX.cache/` and `--inspect` for analyst dumps.
 4. `docs/NEGATIVE_RESULTS_REGISTER.md` — every refuted idea; check it before proposing anything.
 5. `docs/MODULE_STATUS.md` — what each Rust module is (shipped, opt-in, other binary); a test keeps it in sync.
 6. `bench/README.md` — the analysis scripts and the old-name → new-command table.

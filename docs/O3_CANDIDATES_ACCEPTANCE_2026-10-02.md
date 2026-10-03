@@ -41,11 +41,15 @@ Python recomputation of the nets (`accept_o3_candidates.py nets`) equals the sta
 ## What the stage produced
 
 - Nets: 48,985 reads over the 53 families (40,405 after the 1,000-read cap). **Pass B attributed 0 of the 5,312 unmapped reads >= 300 bp**
-  (all of them D reads) to any family: they share essentially no 31-mer with any surviving copy (best-family k-mer hit fraction p90 0.002,
-  max 0.076, against the 0.30 floor; a sample of 300 mapped S reads: median 0.85, 286/300 >= 0.30).
+  (all of them D reads) to any family: they share essentially no 31-mer with any surviving copy. 1,293 of the 5,312 share >= 1 indexed
+  31-mer with some family (691 with their own); the fraction of a read's 31-mers found in its own family's copies is p99 0.008, max
+  0.097 (counting the repeat k-mers the index drops; 0.006 / 0.044 without them), the best family's p90 0.002, max 0.076, against the
+  0.30 floor (final review's recount, reproduced 2026-10-03; a sample of 300 mapped S reads: best-family median 0.85, 286/300 >= 0.30).
 - 349 clusters: 136 already in the reference (identity x coverage >= 0.999), 146 linked (d <= delta), 67 new copy -> **60 candidates, 39
   flagged** (>= 6 reads) in 25 families. Flagged by label (best unmasked hit): **26 D-derived, 12 survivor-derived, 1 elsewhere**.
-- **Deleted copies with >= 1 D-derived flagged candidate: 19/53** (IsoCon, Amendment 8: 44/53). Exactly one D-derived candidate in 13 of
+- **Deleted copies with >= 1 D-derived flagged candidate: 19/53** (IsoCon, Amendment 8: 44/53 — but at a different floor: IsoCon's 44
+  counts a candidate of ANY support, >= 1 IsoCon transcript of >= 2 reads; at its >= 2-transcript floor, the floor R1 translated to
+  >= 6 reads, IsoCon finds 41/53, `docs/RNA_ALLELE_CONTROL_2026-10-01.md`). Exactly one D-derived candidate in 13 of
   the 19 (2 in 5, 3 in 1). Candidates per family: 0 in 23 families, 1 in 15, 2 in 7, 3 in 4, 4 in 2, 5 and 6 in one each; clusters per
   flagged candidate: 1 in 32, 2 in 7; reads per flagged candidate median 107 (6-390).
 
@@ -70,6 +74,11 @@ command (+ `-K 100M`), each candidate its own component (its union already is th
   component" is 0/6 by construction.)
 - False moves: 295 are GWFAM175 reads placed on `iso_GWFAM175_1`, a candidate labelled as derived from another surviving copy
   (GWFAM175:2); 36 GWFAM331 reads likewise; 8 GWFAM244 reads on its `elsewhere` candidate; 7 on D-derived candidates.
+  ⚠ The 295 are probably not false: GWFAM175 carries a real reference-absent copy, GWFAM175_B0 (Amendment 10, row 1206: 281 reads
+  whose primaries sit on `_pri` copy GWFAM175:2), and the held-out labels a read by the copy of its primary alignment on the unmasked
+  reference (Amendment 7), so B0's reads are labelled S of GWFAM175:2. `iso_GWFAM175_1` would then be B0 and these reads correctly
+  placed — unverified (the candidate was not aligned to the haplotype assemblies here); the verdict does not depend on it (false moves
+  pass either way).
 
 ## Why: the deleted copies without a D-derived flagged candidate (34), by cause
 
@@ -80,6 +89,7 @@ command (+ `-K 100M`), each candidate its own component (its union already is th
 | (ii) D reads in no reported cluster (below `--min-cluster`, split off, or in an in-reference cluster) | 1 | GWFAM415 (58 D reads: 38 in no reported cluster, 20 linked; D-to-survivor `de` 0.0052) |
 | (iii) D reads' clusters linked to a survivor | 3 | GWFAM4 (93 of 95 D reads), GWFAM28 (332/337), GWFAM401 (281/284); D-to-survivor `de` 0.0057 / 0.0057 / 0.0035 |
 
+- The 34 = 25 (i) + 5 (ii, below the floors) + 1 (ii, GWFAM415: no reported cluster) + 3 (iii).
 - **(i) is most of the gap.** The 25 deleted copies' reads are unmapped in the masked genome (4,498 reads) or map only to loci outside
   the family's copy list (3,225); no record of theirs touches a surviving copy, and the 31-mer attribution gives none of the unmapped
   ones to a family. Over all 53 families: 7,181 D reads have a record on a surviving copy (in a net), 4,792 map only elsewhere,
@@ -101,11 +111,12 @@ both runs, totals equal):**
 IsoCon's input net (Amendment 7: "the reads with an R-arm record overlapping a surviving copy, plus the reads R leaves unmapped",
 within the family's scored reads) gave each family its unmapped reads **by the truth label**; 5,238 of IsoCon's 12,787 right calls are
 reads the R arm leaves unmapped (the stage: 500). The stage has to attribute unmapped reads by sequence, and these reads align nowhere in
-the masked genome and share no 31-mer with their family's surviving copies; 4,498 of the 5,313 belong to the 25 cause-(i) families,
-where no read of the deleted copy touches the family's copies at all. Where both runs find the deleted copy, the counts are near-identical
-(GWFAM37 496/496, GWFAM100 478/477, GWFAM104 417/417, GWFAM164 287/287, GWFAM175 499/498, GWFAM244 500/500, GWFAM268 498/500, GWFAM269
-491/491, GWFAM314 492/492, GWFAM407 485/494); lower in GWFAM247 (497 -> 158), GWFAM331 (103 -> 1), GWFAM425 (375 -> 334), GWFAM490
-(140 -> 88), GWFAM169 (40 -> 10). The bar was set on a comparator that held those unmapped reads by label; the registered verdict stands
+the masked genome and share essentially no 31-mer with their family's surviving copies (own-family 31-mer fraction p99 0.008, max 0.097;
+above); 4,498 of the 5,313 belong to the 25 cause-(i) families,
+where no read of the deleted copy touches the family's copies at all. Where both runs find the deleted copy, the counts (IsoCon -> stage)
+are near-identical (GWFAM37 496 -> 496, GWFAM100 478 -> 477, GWFAM104 417 -> 417, GWFAM164 287 -> 287, GWFAM175 499 -> 498, GWFAM244
+500 -> 500, GWFAM268 498 -> 500, GWFAM269 491 -> 491, GWFAM314 492 -> 492, GWFAM407 485 -> 494); lower in GWFAM247 (497 -> 158), GWFAM331
+(103 -> 1), GWFAM425 (375 -> 334), GWFAM490 (140 -> 88), GWFAM169 (40 -> 10). The bar was set on a comparator that held those unmapped reads by label; the registered verdict stands
 as FAILS.
 
 ## A12-2: the union representative — FAILS
@@ -162,6 +173,10 @@ a registered one), scored the same way.
 | D right, D-derived candidates grouped with truth (T) | 5,985 | 6,420 | 5,394 |
 | >= 2-cluster candidates (D-derived); deleted copies with one | 10 (7); 7 | 7 (5); 5 | 1 (1); 1 |
 | deleted copies without a D-derived flag: i / ii / iii / iv | 25 / 5 / 3 / 1 | 25 / 6 / 3 / 0 | 25 / 5 / 6 / 2 |
+
+(iv), not a registered category: the plurality of the family's D reads under the 1,000-read cap sit in a FLAGGED candidate whose best
+unmasked hit labels it survivor-derived or elsewhere (`accept_o3_candidates.py report` takes each family's plurality fate of those
+reads; a tie resolves in the order (iv), (ii) below `--min-support`, (iii), (ii) in no reported cluster).
 
 - No delta rescues A12-1 (bar 10,230): cause (i), 25 deleted copies with no read in the net, does not depend on delta. Halving delta
   doubles the survivor-derived flags (25 vs 12: alleles beyond delta/2 become "new copies") without finding more deleted copies (19:

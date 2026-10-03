@@ -107,7 +107,9 @@ guided column: Rustle has no annotation-guided transcript assembly.
 (`--no-seed-secondaries`), `families` (THE default de novo family definition on `<sample>.gtf`, with its copy table
 `<sample>.fam.copies.tsv` / `.fa` that copy assignment consumes), `families_primary` (the same on the primaries-only
 assembly; OPTIONAL: only the supplementary fig. 6s-seeding reads it), `catalog` (LEGACY copy catalog, `--piecewise`;
-no main figure needs it), `assign`, `index` (a splice minimap2 index, only where none exists: chimpanzee, orangutan)
+no main figure needs it), `assign` (it reads the families' copy table since 2026-10-02, so it needs `families`; the
+legacy catalog only with the driver's `--legacy-catalog`, not passed here; the driver's opt-in `candidates` stage, ruling
+R14, is not a run-cache stage), `index` (a splice minimap2 index, only where none exists: chimpanzee, orangutan)
 and `flag` (`--gff` = the sample's annotation, `--confirm` = the gorilla haplotype assemblies). A stage is skipped while its stamp `<stage>.key` matches the current key (BAM/FASTA/index/
 annotation fingerprints, sha1 of the binaries, the driver's code hash, minimap2 version, `RUSTLE_*` environment,
 upstream key); every run appends wall time and peak RSS to `<stage>.time`. It refuses to start while another heavy

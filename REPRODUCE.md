@@ -339,8 +339,12 @@ reads, 1,263 MAPQ-0; OWN 163 correct, 0 wrong, 0 conflict, 1,084 abstain, 16 not
 ```bash
 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index GENOME.splice.mmi --gff ANNOT.gff \
     [--confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi] [--foreign human=CHM13.splice.mmi] [--threads 4]
-# stages, each also runnable alone: assemble -> families (mcl_families --from-gtf) -> catalog (gw_family_catalog)
-#   -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). Products all carry the --out prefix.
+# stages, each also runnable alone: assemble -> families (mcl_families --from-gtf; its copy table run.fam.copies.* is what
+#   assign reads since 2026-10-02) -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). OPT-IN:
+#   candidates (o3_candidates + augmentation + patch realignment, between families and assign; `--candidates` runs it in
+#   `all` and makes assign and flag use it; ruling R14: its acceptance failed, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md).
+#   LEGACY: catalog (gw_family_catalog), which `--legacy-catalog` builds in `all` and assign then reads (refused together
+#   with --candidates). Products all carry the --out prefix.
 # Intermediates are cached in run.cache/ (default; --no-cache off): the catalog's collapsed representatives and every
 # all-vs-all PAF, keyed by the binary, the BAM/FASTA and every upstream setting. A re-run that changes only the edge
 # rule replays them (human chr16 catalog 358 s cold -> 0.9 s warm; gorilla families 225 s -> 0.6 s; byte-identical).
@@ -352,8 +356,10 @@ tools/rustle_pipeline.sh cache-ls --out run                                     
 # docs/PREREG_f1v2_readshare_2026-09-29.md (f1v2: human A119b, testis) byte for byte: run.gtf, the families input
 # run.families.gtf and the side tables. Their FUSED counts are readthrough_eval `a.fused` on the latter.
 RUSTLE_BRIDGE_REGROUP=f1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...   # the F1 arm
-# THE PRE-FLIP PIPELINE, byte for byte (every driver number in this file dated before 2026-09-29 was measured this way):
-RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
+# THE PRE-FLIP PIPELINE, byte for byte (every driver number in this file dated before 2026-09-29 was measured this way; its
+# assign ran on the legacy catalog, hence --legacy-catalog since 2026-10-02; assign on a catalog with cross-chromosome
+# families differs since then, see `copy_assign --help`, --families):
+RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 tools/rustle_pipeline.sh all --legacy-catalog --bam READS.bam --fasta GENOME.fa --out run ...
 ```
 
 ## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)
