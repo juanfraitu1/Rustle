@@ -1,0 +1,2 @@
+family_id	copy_idx	tid	chrom	start	end	n_exon	strand	n_reads	exons	max_family_identity	source	gene_id	core_hull	sd_depth	core_bp	rep_frac	member_status	locus_start	locus_end
+MCL0	0	DN_chrT_10000_A	chrT	10000	13100	3	+	120	10000-10300,11300-11500,12700-13100	1.000	fixture	geneA	NA	1	900	0.000	kept	10000	13100
