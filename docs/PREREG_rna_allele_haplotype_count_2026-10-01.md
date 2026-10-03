@@ -361,3 +361,33 @@ masked splice index. Arm M = masked genome + `P.cand.contigs.fa` (one union per 
 - **A12-3 (cost):** wall time of the stage on the 53 families <= 40 min (2 x IsoCon's ~20 min) on this machine, 4 threads.
 - Reported: candidates per family, clusters per candidate, the deleted copies with no candidate by cause (no reads in the net / clusters
   below the floor / linked to a survivor), the same numbers at delta/2 and 2 x delta, and the flag counts under the alternative >= 2-cluster floor.
+
+## Amendment 13 (2026-10-03): the stage's net and template — the two causes Amendment 12 measured (written before any change runs)
+
+Amendment 12 failed on two measured causes (`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`): (1) the k-mer attribution placed 0 of 5,312
+unmapped reads, so 25 of 53 deleted copies had no read in their family's net; (2) a longest-read template that retains an intron drags the
+union (two-cluster unions kept 68.7% of reads). This amendment fixes how the stage builds those two things and re-runs Amendment 12's
+rules unchanged. The chain's rules (delta link, component merge at delta, `--min-support 6`, 0.98 tie ratio) do not move.
+
+- **Net attribution by alignment (replaces §5.2's k-mer rule for unmapped reads).** The unmapped records >= 300 bp of BAM pass B are
+  written to a FASTA and aligned once against `--copies-fa` (every family's copy sequences) with `MM2_ATTRIB = [-x splice:hq -uf -c -N 5
+  -p 0.5]`; a read joins the family of its best hit (most matches) when that hit covers >= 50% of the read and its `de` <= 0.15; no
+  other read enters a net this way (reads whose primary lies at a locus outside every family and that carry no secondary on a family
+  copy stay out of reach — stated, not fixed here). The k-mer index is retired from the net; `ATTRIB_*` constants go with it.
+- **Template = the structurally central member (replaces "longest").** For each cluster, from the net's all-vs-all PAF (`--cs`), score
+  every member by the total bases of indels >= 20 bp in its alignments to the other members (insertions and deletions alike: a retained
+  intron shows as an insertion in every pair, a skipped exon as a deletion); the template is the member with the LOWEST score, ties
+  broken by length (longest) then name. Clusters of one member keep that member.
+- **Consensus details carried from the reviews (named so they are not silent):** the vote and refinement alignments use the splice preset
+  (`MM2_MEMBERS` becomes `[-x splice:hq -uf -c --cs -N 5 -p 0.5]`; asm20 cut alignments at exon skips, as R6 found for the union); the
+  insertion vote considers insertions >= 20 bp with >= 3 carriers before the < 20 bp majority rule at the same position; when refinement
+  splits the template off, the kept set is re-templated by the same structural rule; an absorbing cluster whose re-polished consensus is
+  empty keeps its absorbed clusters separate instead of dropping them.
+- **Substrate and scoring: Amendment 12's, unchanged** — the 53 families, `linktest/R.bam`, the masked genome and index, `A12.copies.*`,
+  arm M realigned with the pipeline's flags, `merge_test.py score` semantics, the A12-2 union measure with the arm-M preset, the summed
+  batch wall time. **A13-1 = A12-1 (D right >= 10,230 and false moves <= 5%), A13-2 = A12-2 (>= 95% kept), A13-3 = A12-3 (<= 40 min).**
+  Adopt (flip the `candidates` stage to default-on) iff all three hold. Reported beside: the same cause table as Amendment 12 (how many
+  deleted copies reach their net now), the attribution counts (unmapped reads aligned / attributed / to the right family by label),
+  and the delta/2 and 2 x delta reruns.
+- **Not changed, by design:** `--min-support 6`, delta, the 0.98 tie ratio, the 1,000-read cap, R13 (reads placed uniquely on a candidate
+  are the aligner's result).
