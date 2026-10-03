@@ -412,8 +412,8 @@ pub struct RealignRecord {
     /// no `id_best` was computed).
     pub id_best: f64,
     /// The copy index the read's own linear (BAM-coordinate) alignment placed it on within this family, or
-    /// `-1` if none of the family's copies overlap the read's aligned span (`best_overlap_copy` returned
-    /// `None`).
+    /// `-1` if none of the family's copies on the read's chromosome overlap its aligned span
+    /// (`best_overlap_copy_on` returned `None`).
     pub linear_copy: i64,
 }
 

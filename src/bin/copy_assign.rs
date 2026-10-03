@@ -801,6 +801,12 @@ struct Args {
     /// `n_hard` (counts `best_copy` regardless of status, so a union-tied row still counts at its per-family
     /// best copy), `uniq`/`uniq_agree`, `--dump-star` proofs and `readthrough_into` (registered by the
     /// per-family pass). Read `n_soft` and the statuses under this flag, not those columns.
+    ///
+    /// ⚠ 2026-10-02 behaviour change (spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §6, §9b): the
+    /// union certificate matches each tied record only to the candidates on its OWN chromosome (`read_chroms`).
+    /// Before, it compared coordinates alone, so a record could overlap a copy or an outside pseudo-copy on another
+    /// chromosome at the same numbers; its tables can differ from earlier runs of the same inputs. The `--families`
+    /// help lists the other changes of that date (R3, R15).
     #[arg(long, default_value_t = false)]
     union_certificate: bool,
     /// One-flag IGV bundle: implies `--dump-psv` (the PSV genotype matrix), so a subsequent
@@ -1235,6 +1241,13 @@ struct Args {
     /// copies on its OWN chromosome (`read_chroms`), so coinciding coordinates on different chromosomes no longer
     /// cross-attribute. Still chromosome-blind for such a family: the read-through cut, the mosaic breakpoint
     /// stamp, and `in_copy`/`primary_local` (compared with the sweep key, so they read false).
+    ///
+    /// ⚠ 2026-10-02 behaviour changes (spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §9b): (R3) a
+    /// cross-chromosome family is assigned the reads on EVERY chromosome carrying one of its copies, each matched only
+    /// to the copies of its own chromosome (before: the reads of its first chromosome only), so its rows differ from
+    /// earlier runs; (R15) a sweep bound to no family whose region holds a read window of a cross-chromosome family
+    /// no longer registers its AS-tied molecules as tied outside the catalog (§6gz), which had demoted that family's
+    /// own `assigned` verdicts to `tied`. A catalog without cross-chromosome families gives the same rows as before.
     #[arg(long)]
     families: Option<String>,
 
@@ -5593,6 +5606,16 @@ fn main() -> Result<()> {
             }
         }
     };
+    // Ruling R15 (2026-10-02): the read windows of every cross-chromosome family (the windows of its `~xchrom~`
+    // key, each tagged with its real chromosome), built once. A sweep bound to no family reads it to tell whether
+    // its region holds such a family (the §6gz block in `compute`). Empty for a catalog without cross-chromosome
+    // families, which then registers exactly as before 2026-10-02.
+    let xchrom_windows: Vec<(String, u64, u64)> = region_windows
+        .iter()
+        .flat_map(|w| w.iter())
+        .filter(|(k, _)| k.0.starts_with("~xchrom~"))
+        .flat_map(|(_, ws)| ws.iter().cloned())
+        .collect();
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
@@ -5853,15 +5876,20 @@ fn main() -> Result<()> {
             // detector that used the locus flagged 541 of the 4,706 leaks — it defined "inside" by the
             // swallowing target. A tied record overlapping no unit is a competitor O2 will never score ⟹ the
             // molecule is registered and can never be `Assigned`. Only meaningful with --families.
-            // ⚠ Only in a sweep that HAS supplied units. A region bound to no family (`supplied = Some([])`): the real
-            // regions of a cross-chromosome family, which binds to its `~xchrom~` key (every O3 candidate family does,
-            // spec 2026-10-02 §7), or a region listing no family) has no unit to be outside of. Registering every
-            // tied molecule there (a process-wide registry, read when the `~xchrom~` keys are swept, last) demoted
-            // the family's own `Assigned` verdicts to `Tied`. The family's own sweep tests its molecules against its
-            // own units, as a single-chromosome family's sweep does. The copy-set bit (§6hp) and §6hd below are
-            // relative to the same units and skip with it (§6hd admits nothing without a unit anyway).
+            // ⚠ Ruling R15 (2026-10-02): ONE kind of sweep skips this block, a region bound to no family (`supplied`
+            // empty) that holds a read window of a cross-chromosome family (`xchrom_windows`). Such a family binds to
+            // its `~xchrom~` key (every O3 candidate family does, spec 2026-10-02 §7), so its real regions are swept
+            // with no unit to be outside of: registering every tied molecule there (a process-wide registry, read when
+            // the `~xchrom~` keys are swept, last) demoted the family's own `Assigned` verdicts to `Tied`. The price:
+            // the family's own sweep reads only its copy windows, so a tied placement elsewhere in such a region is
+            // now registered by no sweep. Every other family-less sweep (no cross-chromosome window there: e.g. the
+            // whole-contig regions around a single-chromosome catalog) registers as before 2026-10-02 (a3564999 had
+            // skipped them all: final review C2). The copy-set bit (§6hp) and §6hd below are relative to the same
+            // units and skip with it (§6hd admits nothing without a unit anyway).
             let mut n_outside = 0usize;
-            if let Some(sup) = supplied.as_deref().filter(|s| !s.is_empty()) {
+            let skip_family_less = supplied.as_deref().is_some_and(|s| s.is_empty())
+                && xchrom_windows.iter().any(|(c, a, b)| c == contig && *a < hi && *b > lo);
+            if let Some(sup) = supplied.as_deref().filter(|_| !skip_family_less) {
                 let targets: Vec<(String, u64, u64)> = sup
                     .iter()
                     .flat_map(|f| f.copies.iter())

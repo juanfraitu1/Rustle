@@ -23,7 +23,7 @@ use super::copy_assign::{
     assign_read_editing, Assignment, AssignParams, AssignStatus, BubbleGraph, CopyProfile, ReadFeatures,
 };
 use super::copy_assign_pipeline::{
-    assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy, build_family_profiles,
+    assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy_on, build_family_profiles,
     copy_boundaries, detect_editing_columns, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
 };
 use super::copy_split::{
@@ -2087,10 +2087,11 @@ fn linearize_cert_if_enabled(
 ///
 /// What still runs is the ASSIGNMENT of BAM reads to the given copies (PSV + junction likelihood +
 /// significance gate) — reads always come from the BAM; only the copy set is supplied. A supplied
-/// CROSS-chromosome family is handed the reads on every chromosome that carries one of its copies (each
-/// overlapping that chromosome's copy hull), and a read overlaps only the copies on its own chromosome. The other
-/// roster-changing legs (`absent_copies`, `vg_realign` admission, `iterative_prune`, `collapse_gate`,
-/// `tied_seed`) are refused by the CLI when `--families` is given rather than silently widened here.
+/// CROSS-chromosome family is handed the reads on every chromosome that carries one of its copies (on its first
+/// chromosome `cf.chrom` those overlapping `cf.start..cf.end`, the min/max over ALL its chromosomes' copies; on each
+/// other one those overlapping that chromosome's copy hull), and a read overlaps only the copies on its own
+/// chromosome. The other roster-changing legs (`absent_copies`, `vg_realign` admission, `iterative_prune`,
+/// `collapse_gate`, `tied_seed`) are refused by the CLI when `--families` is given rather than silently widened here.
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -2406,10 +2407,12 @@ pub fn detect_and_assign(
              ..Default::default() });
         }
         // The reads this family is assigned (assign overlaps by coordinate, so they are pre-filtered by chromosome):
-        // (1) those on `cf.chrom` overlapping its span, as ever; (2) for a family with copies on OTHER chromosomes
-        // -- a supplied cross-chromosome family -- those on each of those chromosomes overlapping that
-        // chromosome's own copy hull (min start .. max end over the family's copies there, rescued ones
-        // included). Without (2) such a family only ever saw the reads on its first chromosome, so its copies
+        // (1) those on `cf.chrom` overlapping its span, as ever -- for a supplied cross-chromosome family that span
+        // `cf.start..cf.end` is the min/max over the copies of ALL its chromosomes (`catalog_input::group_families`,
+        // `to_colocated`), so on `cf.chrom` it can reach past that chromosome's own copies; (2) for a family with
+        // copies on OTHER chromosomes -- a supplied cross-chromosome family -- those on each of those chromosomes
+        // overlapping that chromosome's own copy hull (min start .. max end over the family's copies there, rescued
+        // ones included). Without (2) such a family only ever saw the reads on its first chromosome, so its copies
         // elsewhere were scored on none of theirs. A detected or refined family is single-chromosome:
         // `other_hulls` is empty and this is exactly the old filter. `region_chroms` below keeps each read to the
         // copies of its own chromosome.
@@ -2609,9 +2612,11 @@ pub fn detect_and_assign(
                     psv_positions_for(&col_gpos, &g2o, copy_seqs[k].len())
                 })
                 .collect();
+            // each read's linear copy among the copies on ITS chromosome: a cross-chromosome family's reads come from
+            // every chromosome it has a copy on (R3), and a copy elsewhere at the same numbers is no overlap
             let linear_copy_of: Vec<Option<usize>> = family_bam_reads
                 .iter()
-                .map(|br| best_overlap_copy(&br.read, &copy_refs))
+                .map(|br| best_overlap_copy_on(&br.read, &copy_refs, Some(br.chrom.as_str())))
                 .collect();
             let apply = super::vg_realign::apply_realign(
                 &family_bam_reads,

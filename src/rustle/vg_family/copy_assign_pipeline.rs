@@ -1616,7 +1616,10 @@ pub(crate) fn best_overlap_copy_on(read: &AlignedRead, copies: &[&DenovoTranscri
     best
 }
 
-/// `best_overlap_copy_on` with no chromosome (coordinates only): the callers that cannot know the read's chromosome.
+/// `best_overlap_copy_on` with no chromosome (coordinates only). Test-only: every pipeline call site now passes the
+/// read's chromosome (the last one, `--vg-realign-correct`'s linear copy in `detect_and_assign`, since the 2026-10-02
+/// final fix wave), so outside the tests nothing calls it.
+#[cfg(test)]
 pub(crate) fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
     best_overlap_copy_on(read, copies, None)
 }

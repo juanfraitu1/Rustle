@@ -555,3 +555,38 @@ fn a_zero_read_copy_on_another_contig_does_not_mark_the_family_tied_outside() {
     assert_eq!(cross.len(), 3, "the c2 copy pools the 3 read_cross molecules: {rb:?}");
     assert!(cross.iter().all(|(_, v)| v.1 == "1"), "their c2 placement is outside every GWFAM1 unit: {cross:?}");
 }
+
+/// Ruling R15 (final review C2, 2026-10-02): the tie-outside skip that keeps a cross-chromosome family's verdicts (the test
+/// above) applies ONLY to a family-less sweep whose region holds a read window of a cross-chromosome (`~xchrom~`) family.
+/// Any other family-less sweep registers its AS-tied molecules as tied outside the catalog, as every build before
+/// 2026-10-02 did (a3564999 had skipped them all, and the whole-genome human O2 run then lost 20 of its 163 §6gz flags).
+/// Here `--only-families` keeps GWFAM2, a family on c2 alone (GWFAM0's c2 copy), so the region `c1:0-600` holds no family
+/// and no cross-chromosome window (GWFAM0 is not selected): its 3 `read_same_*` molecules, AS-tied between c1:251 and
+/// c1:381, must be registered. 3 is what a b9c412f9 build prints for the same catalog (that build has no
+/// `--only-families`: given a table of GWFAM2 alone); a3564999 printed 0.
+#[test]
+fn a_family_less_region_without_a_cross_chromosome_window_still_registers_ties_outside() {
+    let d = scratch("family_less_region_registers");
+    let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
+    let only = write(&d, "only.txt", "GWFAM2\n");
+    let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
+    let fa = std::fs::read_to_string(format!("{FIX}/out_default.copies.fa")).unwrap();
+    let c2_copy: String =
+        fa.split('>').find(|r| r.starts_with("GWFAM0|1|")).expect("GWFAM0 copy 1 in the fixture FASTA").lines().skip(1).collect();
+    let tsv_c = write(&d, "c.copies.tsv", &format!("{tsv}GWFAM2\t0\tDN_c2_0_2\tc2\t0\t260\t2\t+\t3\t0-59,211-260\t1.000000\n"));
+    let fa_c = write(&d, "c.copies.fa", &format!("{fa}>GWFAM2|0|c2:0-260|+|nexon=2\n{c2_copy}\n"));
+    let out = d.join("o").to_str().expect("utf-8 path").to_string();
+    let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args(["--regions", &regions, "--families", &tsv_c, "--copies-fa", &fa_c, "--only-families", &only, "--out", &out])
+        .output()
+        .expect("copy_assign failed to spawn");
+    let err = stderr(&o);
+    assert!(o.status.success(), "{err}");
+    assert!(err.contains("1 of 3 families selected (--only-families"), "{err}");
+    assert!(!err.contains("spans 2 chromosomes"), "no cross-chromosome family may be left after the selection:\n{err}");
+    assert!(
+        err.contains("⚠ 3 of those tied molecules have a tied placement OUTSIDE every supplied family"),
+        "the 3 read_same_* molecules tied inside the family-less region c1:0-600 must be registered as tied outside:\n{err}"
+    );
+}
