@@ -23,16 +23,17 @@ use noodles_core::{Position, Region};
 use rustle::vg_family::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily};
 use rustle::vg_family::copy_assign::AssignParams;
 use rustle::vg_family::o3_candidates::{
-    best_by_id_cov, best_by_matches, candidate_id, classify, cluster_reads, components, consensus_from_template, distinguishing_columns, is_flagged,
-    minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf, refine_cluster, sample_net, sketch_share,
-    union_sequence_with_note, variant_is_real, write_cluster_members, write_family_table, write_outputs, Candidate, ClusterSeq, FamilyCounts,
-    FamilyKmerIndex, Fate, PafHit, ATTRIB_MAX_FAMILIES, KMER_K, MIN_UNMAPPED_LEN, MM2_AVA, MM2_GENOME, MM2_MEMBERS, MM2_UNION, SKETCH_W,
+    attribute_by_hits, best_by_id_cov, best_by_matches, candidate_id, classify, cluster_reads, components, consensus_from_template,
+    distinguishing_columns, is_flagged, minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf, refine_cluster,
+    sample_net, sketch_share, union_sequence_with_note, variant_is_real, write_cluster_members, write_family_table, write_outputs, Candidate,
+    ClusterSeq, FamilyCounts, Fate, PafHit, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA, MM2_GENOME, MM2_MEMBERS, MM2_UNION, SKETCH_W,
+    UNMAPPED_MAX_DE, UNMAPPED_MIN_COV,
 };
 use rustle::vg_family::run_cache as rc;
 use rustle::vg_family::seq_utils::reverse_complement;
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -167,11 +168,16 @@ fn write_fasta<'a>(path: &Path, records: impl IntoIterator<Item = (String, &'a [
     }
     let mut w = std::io::BufWriter::new(std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?);
     for (name, seq) in records {
-        writeln!(w, ">{name}")?;
-        w.write_all(seq)?;
-        writeln!(w)?;
+        fasta_record(&mut w, &name, seq)?;
     }
     w.flush().with_context(|| format!("writing {}", path.display()))
+}
+
+/// One FASTA record: `>name` and the sequence on one line.
+fn fasta_record(w: &mut impl Write, name: &str, seq: &[u8]) -> std::io::Result<()> {
+    writeln!(w, ">{name}")?;
+    w.write_all(seq)?;
+    writeln!(w)
 }
 
 fn fresh_dir(dir: &Path) -> Result<()> {
@@ -194,8 +200,11 @@ fn run(raw: &[String]) -> Result<()> {
             return Err(exit_two(format!("{flag}: {path} does not exist")));
         }
     }
-    let (families, kmer_input) = load_copies(&args)?;
-    eprintln!("[o3_candidates] {} families from {} ({} copy sequences index the unmapped reads)", families.len(), args.copies, kmer_input.len());
+    let (families, family_of_target) = load_copies(&args)?;
+    eprintln!(
+        "[o3_candidates] {} families from {} ({} copy sequences of {} attribute the unmapped reads)",
+        families.len(), args.copies, family_of_target.len(), args.copies_fa
+    );
 
     // the stage cache: one `cand` entry holds the whole result (spec §5.8)
     let cache = rc::cache_root();
@@ -219,8 +228,8 @@ fn run(raw: &[String]) -> Result<()> {
     fresh_dir(&tmp)?;
     let mm = Mm2 { cache, threads: args.threads, calls: Cell::new(0) };
 
-    // spec §5.1-5.2: the nets, then the cap
-    let nets = collect_nets(&args, &families, &kmer_input)?;
+    // spec §5.1 and prereg Amendment 13: the nets, then the cap
+    let nets = collect_nets(&args, &families, &family_of_target, &tmp, &mm)?;
     let t_nets = t0.elapsed().as_secs_f64();
 
     // phase 1, per family: clusters, consensus, refinement, significance merge (spec §5.3-5.5)
@@ -332,10 +341,11 @@ fn run(raw: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// The families of `--copies` the stage runs on (`--families`, else all), and the input of the unmapped-read index: the sequence of every
-/// copy of EVERY family (a read is judged against all of them, spec §5.2) from `--copies-fa`, checked against its row. `partner` rows (another
-/// family's unit, `catalog_input::CatalogCopy::partner`) are no copy of the family: they bring no reads into its net and no k-mers into its index.
-fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, Vec<(String, Vec<u8>)>)> {
+/// The families of `--copies` the stage runs on (`--families`, else all), and the targets that attribute the unmapped reads (prereg
+/// Amendment 13): the `--copies-fa` record of every copy of EVERY family (a read is judged against all of them), checked against its row,
+/// by the name minimap2 reports -> its family (`copy_targets`). `partner` rows (another family's unit, `catalog_input::CatalogCopy::partner`)
+/// are no copy of the family: they bring no reads into its net, and a hit on their record attributes no read.
+fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, HashMap<String, String>)> {
     let text = std::fs::read_to_string(&args.copies).map_err(|e| exit_two(format!("--copies {}: {e}", args.copies)))?;
     if text.trim().is_empty() {
         return Err(exit_two(format!("--copies {} is empty", args.copies)));
@@ -347,10 +357,9 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, Vec<(String, Vec<u8>)
     }
     let fa = std::fs::read_to_string(&args.copies_fa).map_err(|e| exit_two(format!("--copies-fa {}: {e}", args.copies_fa)))?;
     let seqs = parse_copies_fa(&fa).map_err(|e| exit_two(format!("--copies-fa {}: {e:#}", args.copies_fa)))?;
-    let mut kmer_input = Vec::new();
+    let mut checked: HashSet<(&str, usize)> = HashSet::new();
     for c in all.iter().flat_map(|f| f.copies.iter()).filter(|c| !c.partner) {
-        let s = seqs
-            .get(&(c.family_id.clone(), c.copy_idx))
+        seqs.get(&(c.family_id.clone(), c.copy_idx))
             .filter(|s| (s.chrom.as_str(), s.start, s.end) == (c.chrom.as_str(), c.start, c.end))
             .ok_or_else(|| {
                 exit_two(format!(
@@ -358,8 +367,10 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, Vec<(String, Vec<u8>)
                     args.copies_fa, c.family_id, c.copy_idx, c.chrom, c.start, c.end, c.copy_idx, c.family_id
                 ))
             })?;
-        kmer_input.push((c.family_id.clone(), s.seq.clone()));
+        checked.insert((c.family_id.as_str(), c.copy_idx));
     }
+    let family_of_target = copy_targets(&fa, &checked);
+    drop(checked);
     let families = match &args.families {
         None => all,
         Some(want) => {
@@ -371,7 +382,21 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, Vec<(String, Vec<u8>)
             all.into_iter().filter(|f| want.contains(&f.family_id)).collect()
         }
     };
-    Ok((families, kmer_input))
+    Ok((families, family_of_target))
+}
+
+/// The `--copies-fa` records of the `checked` copies, by the name minimap2 reports for each (its header up to the first whitespace) -> its
+/// family: a header's `{family}|{copy_idx}` prefix is its `parse_copies_fa` key, and a record whose key is no checked copy maps to nothing.
+fn copy_targets(fa: &str, checked: &HashSet<(&str, usize)>) -> HashMap<String, String> {
+    fa.lines()
+        .filter_map(|l| l.strip_prefix('>'))
+        .filter_map(|h| {
+            let mut parts = h.split('|');
+            let (family, idx) = (parts.next()?, parts.next()?.parse::<usize>().ok()?);
+            let name = h.split_whitespace().next()?;
+            checked.contains(&(family, idx)).then(|| (name.to_string(), family.to_string()))
+        })
+        .collect()
 }
 
 /// The stage key (spec §5.8): the command line without `--threads` and `--out` (R12), the executable, the minimap2 build, the fingerprints
@@ -434,10 +459,12 @@ fn oriented_sequence(record: &noodles_bam::Record) -> Vec<u8> {
 
 /// Pass A (indexed, per copy interval): every primary or secondary record overlapping a copy names its read for that family's net
 /// (supplementary records do not); a primary record gives the read's sequence. Pass B (one sequential sweep of the whole BAM): the sequence
-/// of every read that only secondary records named, from its primary record wherever it lies, and every unmapped record of
-/// >= `MIN_UNMAPPED_LEN` bases that `FamilyKmerIndex::attribute` gives to a family the stage runs on. A read whose sequence never appears
-/// (a secondary-only name without a primary record in the BAM) stays out of every net.
-fn collect_nets(args: &Args, families: &[CatalogFamily], kmer_input: &[(String, Vec<u8>)]) -> Result<Nets> {
+/// of every read that only secondary records named, from its primary record wherever it lies; and every unmapped record of
+/// >= `MIN_UNMAPPED_LEN` bases, streamed as sequenced to `<tmp>/unmapped.fa` while the sweep meets it (never held in memory). After the
+/// sweep (prereg Amendment 13) the FASTA is aligned once against `--copies-fa` (`MM2_ATTRIB`) and `attribute_by_hits` gives reads to
+/// families; a read given to a family the stage runs on joins its net (before the `--max-reads` cap), its sequence read back from the FASTA.
+/// A read whose sequence never appears (a secondary-only name without a primary record in the BAM) stays out of every net.
+fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_target: &HashMap<String, String>, tmp: &Path, mm: &Mm2) -> Result<Nets> {
     let mut seqs: HashMap<String, Vec<u8>> = HashMap::new();
     let mut names: Vec<BTreeSet<String>> = vec![BTreeSet::new(); families.len()];
     let (mut n_primary, mut n_secondary) = (0usize, 0usize);
@@ -481,27 +508,24 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], kmer_input: &[(String, 
         }
     }
     let need: HashSet<String> = names.iter().flatten().filter(|n| !seqs.contains_key(*n)).cloned().collect();
-    let kmer_index = FamilyKmerIndex::build(kmer_input, KMER_K, ATTRIB_MAX_FAMILIES);
-    let fam_pos: HashMap<&str, usize> = families.iter().enumerate().map(|(i, f)| (f.family_id.as_str(), i)).collect();
-    let (mut n_found, mut n_long_unmapped, mut n_attributed) = (0usize, 0usize, 0usize);
+    let unmapped_fa = tmp.join("unmapped.fa");
+    let mut unmapped = std::io::BufWriter::new(std::fs::File::create(&unmapped_fa).with_context(|| format!("creating {}", unmapped_fa.display()))?);
+    let (mut n_found, mut n_long_unmapped, mut n_written) = (0usize, 0usize, 0usize);
     let mut reader = rustle::bam::open_bam(&args.bam, args.threads).with_context(|| format!("opening --bam {}", args.bam))?;
     reader.read_header().with_context(|| format!("reading the header of {}", args.bam))?;
     for result in reader.records() {
         let record = result.with_context(|| format!("reading {} (the sequential pass)", args.bam))?;
         let flags = record.flags();
         if flags.is_unmapped() {
-            // Review Focus 3: a short unmapped read is never decoded, attributed or counted
+            // Review Focus 3: a short unmapped read is never decoded, aligned or counted
             if record.sequence().len() < MIN_UNMAPPED_LEN {
                 continue;
             }
             n_long_unmapped += 1;
-            let seq = oriented_sequence(&record);
-            let Some(&fi) = kmer_index.attribute(&seq).and_then(|f| fam_pos.get(f.as_str())) else { continue };
             let Some(name) = record.name() else { continue };
-            let name = name.to_string();
-            n_attributed += 1;
-            names[fi].insert(name.clone());
-            seqs.entry(name).or_insert(seq);
+            // A13 Review Focus 5: decoded once and written now; only the reads that join a net are read back after the alignment
+            fasta_record(&mut unmapped, &name.to_string(), &oriented_sequence(&record)).with_context(|| format!("writing {}", unmapped_fa.display()))?;
+            n_written += 1;
             continue;
         }
         if need.is_empty() || flags.is_secondary() || flags.is_supplementary() {
@@ -517,11 +541,43 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], kmer_input: &[(String, 
             }
         }
     }
+    unmapped.flush().with_context(|| format!("writing {}", unmapped_fa.display()))?;
+    drop(unmapped);
+    // prereg Amendment 13: one alignment of the unmapped reads against every family's copies, then the attribution rule
+    let (mut n_aligned, mut n_attributed, mut n_joined) = (0usize, 0usize, 0usize);
+    if n_written > 0 {
+        let hits = mm.run(MM2_ATTRIB, Path::new(&args.copies_fa), &unmapped_fa, &tmp.join("unmapped.paf"))?;
+        n_aligned = hits.iter().filter(|h| family_of_target.contains_key(&h.t)).map(|h| h.q.as_str()).collect::<HashSet<_>>().len();
+        let attributed = attribute_by_hits(&hits, family_of_target);
+        n_attributed = attributed.len();
+        let fam_pos: HashMap<&str, usize> = families.iter().enumerate().map(|(i, f)| (f.family_id.as_str(), i)).collect();
+        let joining: HashMap<String, usize> =
+            attributed.into_iter().filter_map(|(read, family)| fam_pos.get(family.as_str()).map(|&fi| (read, fi))).collect();
+        n_joined = joining.len();
+        if !joining.is_empty() {
+            // the FASTA holds one sequence line per record (written above): keep the line after a joining read's header
+            let file = std::fs::File::open(&unmapped_fa).with_context(|| format!("opening {}", unmapped_fa.display()))?;
+            let mut current: Option<(String, usize)> = None;
+            for line in std::io::BufReader::new(file).lines() {
+                let line = line.with_context(|| format!("reading {}", unmapped_fa.display()))?;
+                match line.strip_prefix('>') {
+                    Some(name) => current = joining.get(name).map(|&fi| (name.to_string(), fi)),
+                    None => {
+                        if let Some((name, fi)) = current.take() {
+                            names[fi].insert(name.clone());
+                            seqs.entry(name).or_insert_with(|| line.into_bytes());
+                        }
+                    }
+                }
+            }
+        }
+    }
     let n_lost = need.iter().filter(|n| !seqs.contains_key(n.as_str())).count();
     eprintln!(
         "[o3_candidates] BAM: pass A {n_primary} reads by a primary record and {n_secondary} secondary records on the copies; pass B {n_found} of {} \
-         secondary-only reads found by their primary record ({n_lost} without one: left out), {n_attributed} of {n_long_unmapped} unmapped reads >= \
-         {MIN_UNMAPPED_LEN} bp attributed",
+         secondary-only reads found by their primary record ({n_lost} without one: left out), {n_aligned} of {n_long_unmapped} unmapped reads >= \
+         {MIN_UNMAPPED_LEN} bp aligned to a copy, {n_attributed} attributed (coverage >= {UNMAPPED_MIN_COV}, de <= {UNMAPPED_MAX_DE}), {n_joined} of \
+         them to a family of this run",
         need.len()
     );
     let names = names.into_iter().map(|set| set.into_iter().filter(|n| seqs.contains_key(n)).collect()).collect();
@@ -892,5 +948,22 @@ mod tests {
         assert_ne!(key(&["--out", "runs/a/P.cand", "--delta", "0.005"]), base);
         assert_ne!(key(&["--out", "runs/a/P.cand", "--min-support", "8"]), base);
         assert_eq!(key(&["--out", "x.cand", "--delta", "0.005"]), key(&["--delta", "0.005", "--out", "y.cand"]));
+    }
+
+    #[test]
+    fn the_copies_fa_record_names_map_to_their_family_for_the_checked_copies_only() {
+        // prereg Amendment 13: the targets of the unmapped reads are named as minimap2 reports them (the header up to its first whitespace);
+        // a record is a target of its `{family}|{copy_idx}` prefix's family only when that copy was checked against --copies (F9's record is
+        // not: a partner row or a record the table lacks); F1 copy 1 has a sixth field with a space, which minimap2 cuts
+        let fa = ">F1|0|chr1:100-200|+|nexon=1\nACGT\n>F1|1|chr1:300-400|-|nexon=2|lib A\nAC\nGT\n>F2|0|chr2:1-50|+|nexon=1\nAC\n>F9|4|chr9:1-9|+|nexon=1\nA\n";
+        let checked: HashSet<(&str, usize)> = [("F1", 0), ("F1", 1), ("F2", 0)].into_iter().collect();
+        let mut got: Vec<(String, String)> = copy_targets(fa, &checked).into_iter().collect();
+        got.sort();
+        let want: Vec<(String, String)> = [("F1|0|chr1:100-200|+|nexon=1", "F1"), ("F1|1|chr1:300-400|-|nexon=2|lib", "F1"), ("F2|0|chr2:1-50|+|nexon=1", "F2")]
+            .iter()
+            .map(|(t, f)| (t.to_string(), f.to_string()))
+            .collect();
+        assert_eq!(got, want);
+        assert!(copy_targets(fa, &HashSet::new()).is_empty());
     }
 }

@@ -12,11 +12,12 @@ use std::path::Path;
 
 pub const KMER_K: usize = 31;
 pub const SKETCH_W: usize = 5;
+/// Unmapped records shorter than this are never aligned to the copies nor attributed (prereg Amendment 13: unmapped reads >= 300 bp only).
 pub const MIN_UNMAPPED_LEN: usize = 300;
-/// k-mers carried by more than this many families are repeats: the index drops them (spec §5.2; the `max_families` of `FamilyKmerIndex::build`).
-pub const ATTRIB_MAX_FAMILIES: usize = 8;
-const ATTRIB_MIN_FRAC: f64 = 0.30;
-const ATTRIB_MIN_RATIO: f64 = 2.0;
+/// `attribute_by_hits` (prereg Amendment 13): the best hit must cover at least this fraction of the shorter sequence (`shorter_cov`) ...
+pub const UNMAPPED_MIN_COV: f64 = 0.5;
+/// ... and its gap-compressed divergence `de` must be at most this.
+pub const UNMAPPED_MAX_DE: f64 = 0.15;
 
 fn code(b: u8) -> Option<u64> { match b { b'A' | b'a' => Some(0), b'C' | b'c' => Some(1), b'G' | b'g' => Some(2), b'T' | b't' => Some(3), _ => None } }
 
@@ -54,33 +55,6 @@ pub fn sketch_share(a: &[u64], b: &[u64]) -> f64 {
     let (mut i, mut j, mut shared) = (0, 0, 0usize);
     while i < a.len() && j < b.len() { if a[i] == b[j] { shared += 1; i += 1; j += 1; } else if a[i] < b[j] { i += 1; } else { j += 1; } }
     shared as f64 / a.len().min(b.len()).max(1) as f64
-}
-
-/// Canonical 31-mers of every copy sequence -> the families carrying them (k-mers in > max_families families dropped as repeats).
-pub struct FamilyKmerIndex { map: HashMap<u64, Vec<String>>, k: usize }
-impl FamilyKmerIndex {
-    pub fn build(copies: &[(String, Vec<u8>)], k: usize, max_families: usize) -> Self {
-        let mut map: HashMap<u64, Vec<String>> = HashMap::new();
-        for (fam, seq) in copies {
-            for km in canonical_kmers(seq, k) { let v = map.entry(km).or_default(); if !v.contains(fam) { v.push(fam.clone()); } }
-        }
-        map.retain(|_, v| v.len() <= max_families);
-        FamilyKmerIndex { map, k }
-    }
-    /// The family with the most k-mer hits when >= 30% of the read's k-mers hit it and it leads the runner-up >= 2x; reads < 300 bp: None.
-    pub fn attribute(&self, read: &[u8]) -> Option<String> {
-        if read.len() < MIN_UNMAPPED_LEN { return None; }
-        let kms = canonical_kmers(read, self.k);
-        let mut hits: HashMap<&str, usize> = HashMap::new();
-        for km in &kms { if let Some(f) = self.map.get(km) { for fam in f { *hits.entry(fam).or_insert(0) += 1; } } }
-        let mut v: Vec<(&str, usize)> = hits.into_iter().collect();
-        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-        let (best, n) = *v.first()?;
-        let second = v.get(1).map(|x| x.1).unwrap_or(0);
-        if (n as f64) < ATTRIB_MIN_FRAC * kms.len() as f64 { return None; }
-        if second > 0 && (n as f64) < ATTRIB_MIN_RATIO * second as f64 { return None; }
-        Some(best.to_string())
-    }
 }
 
 /// One minimap2 PAF alignment: columns 1-11 (mapq is not kept) plus the `de:f:` and `cs:Z:` tags. Coordinates are 0-based half-open as in
@@ -126,6 +100,26 @@ pub fn best_by_id_cov(hits: &[PafHit]) -> HashMap<String, PafHit> {
     let mut best: HashMap<String, PafHit> = HashMap::new();
     for h in hits { if best.get(&h.q).map_or(true, |b| id_cov(h) > id_cov(b)) { best.insert(h.q.clone(), h.clone()); } }
     best
+}
+
+/// The family each unmapped read joins (prereg Amendment 13, which retires spec §5.2's k-mer index), from the reads' `MM2_ATTRIB` hits on
+/// every family's copy sequences: per read, its best hit by matches (the first encountered on a tie, as `best_by_matches`) among the hits
+/// whose target `family_of_target` names, and the read joins that target's family iff the hit covers >= `UNMAPPED_MIN_COV` of the shorter
+/// sequence (`shorter_cov`) and its `de` is <= `UNMAPPED_MAX_DE`. A best hit that fails either joins the read to no family: a lesser hit
+/// never stands in (a read whose best hit is a 40% shared exon of another family's copy stays out). A target absent from the map (a partner
+/// row, a record the copies table does not hold) is ignored. Returns read -> family.
+pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, String>) -> HashMap<String, String> {
+    let mut best: HashMap<&str, (&PafHit, &String)> = HashMap::new();
+    for h in hits {
+        let Some(family) = family_of_target.get(&h.t) else { continue };
+        if best.get(h.q.as_str()).map_or(true, |(b, _)| h.matches > b.matches) {
+            best.insert(h.q.as_str(), (h, family));
+        }
+    }
+    best.into_iter()
+        .filter(|(_, (h, _))| shorter_cov(h) >= UNMAPPED_MIN_COV && h.de <= UNMAPPED_MAX_DE)
+        .map(|(read, (_, family))| (read.to_string(), family.clone()))
+        .collect()
 }
 
 // The three quantities below divide by lengths from the PAF; a zero length counts as 1 (no NaN / inf) and an end before its start as an
@@ -496,6 +490,10 @@ pub const MM2_MEMBERS: &[&str] = &["-x", "asm20", "-c", "--cs", "-N", "5", "-p",
 pub const MM2_UNION: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"];
 /// Consensus sequences against the primary genome's splice index (`--index`): the genome hits that `classify` judges (spec §5.6).
 pub const MM2_GENOME: &[&str] = &["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"];
+/// The unmapped reads >= `MIN_UNMAPPED_LEN` (the query) against `--copies-fa`, every family's copy sequences (the target), in one call per
+/// run (prereg Amendment 13): the hits `attribute_by_hits` judges. A splice preset, so a read aligns across the introns of an unspliced copy;
+/// up to 5 secondary hits within half the best score; no `--cs` (the rule reads matches, spans and `de` only).
+pub const MM2_ATTRIB: &[&str] = &["-x", "splice:hq", "-uf", "-c", "-N", "5", "-p", "0.5"];
 
 /// The name of the k-th candidate of `family` (k = the component's order within the family): `cand_<family>_<k>`.
 pub fn candidate_id(family: &str, k: usize) -> String { format!("cand_{family}_{k}") }
@@ -821,16 +819,6 @@ mod tests {
         assert!(sketch_share(&sa, &minimizer_sketch(&same_copy_read, 31, 5)) > 0.8);
         assert!(sketch_share(&sa, &minimizer_sketch(&copy_b, 31, 5)) < 0.6);
     }
-    #[test]
-    fn attribution_needs_a_clear_winner_and_ignores_short_reads() {
-        let fam1 = rand_seq(2000, 11); let fam2 = rand_seq(2000, 12);
-        let idx = FamilyKmerIndex::build(&[("F1".into(), fam1.clone()), ("F2".into(), fam2.clone())], 31, 8);
-        assert_eq!(idx.attribute(&mutate(&fam1, 2, 2)).as_deref(), Some("F1"));
-        assert_eq!(idx.attribute(&rand_seq(1500, 99)), None);               // nothing hits
-        let half: Vec<u8> = fam1[..1000].iter().chain(fam2[..1000].iter()).copied().collect();
-        assert_eq!(idx.attribute(&half), None);                             // no 2x winner
-        assert_eq!(idx.attribute(&fam1[..69]), None);                       // short_unmapped_reads_are_ignored
-    }
 
     fn paf_hit(q: &str, t: &str, matches: usize) -> PafHit {
         PafHit { q: q.into(), qlen: 1000, qs: 0, qe: 1000, strand: b'+', t: t.into(), tlen: 1000, ts: 0, te: 1000, matches, block: 1000, de: 0.01, cs: None }
@@ -927,6 +915,76 @@ mod tests {
         assert_eq!(shorter_cov(&h), 0.0);
         (h.qlen, h.qs, h.qe, h.tlen, h.ts, h.te, h.block, h.matches) = (100, 60, 40, 100, 60, 40, 10, 5);   // end before start: zero span, not a wrapped one
         assert_eq!((id_cov(&h), shorter_cov(&h)), (0.0, 0.0));
+    }
+
+    // ---- unmapped-read attribution by alignment to the copies (prereg Amendment 13) ------------------------------------------------------
+
+    /// A hit of an unmapped read of `qlen` bases on a copy sequence of 5,000 bp (longer than every read here, so `shorter_cov` is the read's
+    /// covered fraction, `span / qlen`): `span` read bases aligned, `matches` of them identical, divergence `de`.
+    fn read_hit(read: &str, copy: &str, qlen: usize, span: usize, matches: usize, de: f64) -> PafHit {
+        PafHit { q: read.into(), qlen, qs: 0, qe: span, strand: b'+', t: copy.into(), tlen: 5000, ts: 100, te: 100 + span, matches, block: span, de, cs: None }
+    }
+    /// The `--copies-fa` record names of two families' copies -> their family (F1 has two copies).
+    fn copy_families() -> HashMap<String, String> {
+        [("F1|0|chr1:100-5100|+|nexon=1", "F1"), ("F1|1|chr1:9000-14000|+|nexon=1", "F1"), ("F2|0|chr2:100-5100|+|nexon=1", "F2")]
+            .into_iter()
+            .map(|(t, f)| (t.to_string(), f.to_string()))
+            .collect()
+    }
+    const F1_A: &str = "F1|0|chr1:100-5100|+|nexon=1";
+    const F1_B: &str = "F1|1|chr1:9000-14000|+|nexon=1";
+    const F2_A: &str = "F2|0|chr2:100-5100|+|nexon=1";
+    fn attributed(hits: &[PafHit]) -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = attribute_by_hits(hits, &copy_families()).into_iter().collect();
+        v.sort();
+        v
+    }
+    fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> { v.iter().map(|(r, f)| (r.to_string(), f.to_string())).collect() }
+
+    #[test]
+    fn attribution_gives_a_read_to_the_family_of_a_best_hit_covering_most_of_it() {
+        // (a) the best hit covers 90% of the read at de 0.05: the read joins that copy's family; each read is judged on its own hits
+        let hits = vec![read_hit("r1", F1_B, 1000, 900, 880, 0.05), read_hit("r2", F2_A, 2000, 1900, 1890, 0.01)];
+        assert_eq!(attributed(&hits), pairs(&[("r1", "F1"), ("r2", "F2")]));
+        assert!(attributed(&[]).is_empty());
+    }
+    #[test]
+    fn attribution_refuses_a_best_hit_covering_under_half_of_the_read() {
+        // (b) a best hit covering 40% of the read attributes nothing
+        assert!(attributed(&[read_hit("r", F1_A, 1000, 400, 398, 0.01)]).is_empty());
+        // Review Focus 1: a read on copies of two families (a shared exon). Its best hit (most matches) covers 40%: no family, and no fall-back
+        // to the other family's lesser hit although that one covers 60% (a 200-bp insertion inside it: fewer matches, one gap at de 0.01)
+        let shared = vec![read_hit("r", F1_A, 1000, 400, 398, 0.01), read_hit("r", F2_A, 1000, 600, 390, 0.01)];
+        assert!(attributed(&shared).is_empty());
+        // the bound is inclusive: a best hit covering exactly half of the read attributes
+        assert_eq!(attributed(&[read_hit("r", F2_A, 1000, 500, 495, 0.01)]), pairs(&[("r", "F2")]));
+    }
+    #[test]
+    fn attribution_refuses_a_divergent_best_hit() {
+        // (c) de 0.2 > 0.15: nothing, however well the hit covers the read; the bound is inclusive (de 0.15 attributes)
+        assert!(attributed(&[read_hit("r", F1_A, 1000, 1000, 810, 0.2)]).is_empty());
+        assert_eq!(attributed(&[read_hit("r", F1_A, 1000, 1000, 850, 0.15)]), pairs(&[("r", "F1")]));
+        // a divergent best hit is not replaced by a closer lesser one either
+        assert!(attributed(&[read_hit("r", F1_A, 1000, 1000, 820, 0.18), read_hit("r", F2_A, 1000, 800, 795, 0.005)]).is_empty());
+    }
+    #[test]
+    fn attribution_follows_the_hit_with_most_matches_not_the_lowest_de() {
+        // (d) two hits that both pass: the one with more matches decides although the other has the lower de, in either order
+        let a = read_hit("r", F1_A, 1000, 1000, 920, 0.08);
+        let b = read_hit("r", F2_A, 1000, 900, 899, 0.001);
+        assert_eq!(attributed(&[a.clone(), b.clone()]), pairs(&[("r", "F1")]));
+        assert_eq!(attributed(&[b, a]), pairs(&[("r", "F1")]));
+    }
+    #[test]
+    fn attribution_ignores_targets_outside_the_map_and_keeps_the_first_of_tied_hits() {
+        // a target the map does not name (a partner row, a record the copies table lacks) is ignored: the best mapped hit decides
+        let partner = read_hit("r", "F9|3|chr9:1-6000|+|nexon=1", 1000, 1000, 990, 0.01);
+        assert_eq!(attributed(&[partner.clone(), read_hit("r", F2_A, 1000, 900, 880, 0.02)]), pairs(&[("r", "F2")]));
+        assert!(attributed(&[partner]).is_empty());
+        // equal matches: the first encountered (the `best_by_matches` rule)
+        let (f1, f2) = (read_hit("r", F1_A, 1000, 900, 870, 0.03), read_hit("r", F2_A, 1000, 900, 870, 0.03));
+        assert_eq!(attributed(&[f1.clone(), f2.clone()]), pairs(&[("r", "F1")]));
+        assert_eq!(attributed(&[f2, f1]), pairs(&[("r", "F2")]));
     }
 
     // ---- read clustering, template-and-vote consensus, the real-vs-error test, one refinement pass --------------------------------------
@@ -1730,6 +1788,9 @@ mod tests {
         assert_eq!(MM2_MEMBERS, ["-x", "asm20", "-c", "--cs", "-N", "5", "-p", "0.5"]);
         assert_eq!(MM2_UNION, ["-x", "splice:hq", "-uf", "-c", "--cs", "-N", "5", "-p", "0.5"]);
         assert_eq!(MM2_GENOME, ["-x", "splice:hq", "-uf", "-c", "--eqx", "-N", "20"]);
+        // prereg Amendment 13: the unmapped reads' preset and the attribution rule's values
+        assert_eq!(MM2_ATTRIB, ["-x", "splice:hq", "-uf", "-c", "-N", "5", "-p", "0.5"]);
+        assert_eq!((MIN_UNMAPPED_LEN, UNMAPPED_MIN_COV, UNMAPPED_MAX_DE), (300, 0.5, 0.15));
     }
 
     #[test]
@@ -1911,7 +1972,7 @@ mod tests {
         assert_eq!(text(&prefix, "clusters.fa"), ">MCL0:c2\nGGA\n>MCL0:c10\nACGT\n>MCL1:c0\nT\n");
     }
 
-    // ---- canonical k-mers, sketches and the attribution boundaries against independent references (Task 2's deferred items) -----------
+    // ---- canonical k-mers and sketches against independent references (Task 2's deferred items) ------------------------------------------
 
     /// A reproducible generator for the reference tests below (not the module's code paths).
     struct Rng(u64);
@@ -1976,38 +2037,5 @@ mod tests {
         for bad in [0usize, 33, 64] { assert!(std::panic::catch_unwind(|| canonical_kmers(b"ACGTACGTAC", bad)).is_err(), "k = {bad}"); }
         assert!(std::panic::catch_unwind(|| minimizer_sketch(b"ACGTACGTACGTACGTACGTACGTACGTACGTACGT", 31, 0)).is_err(), "w = 0");
         assert_eq!(minimizer_sketch(&rng.acgt(34), 31, 5).len(), 1);                                 // fewer k-mers than w: one minimizer
-    }
-
-    #[test]
-    fn attribution_boundaries_are_the_spec_values() {
-        // spec §5.2 at its edges: 300 bp, 30% of the read's k-mers, 2 x the runner-up, k-mers of more than ATTRIB_MAX_FAMILIES families dropped.
-        // Random parts share no 31-mer with the families, so a read made of x family bases then random bases has x - 30 hits.
-        let mut rng = Rng(42);
-        let f1 = rng.acgt(2000);
-        let idx = FamilyKmerIndex::build(&[("F1".into(), f1.clone())], KMER_K, ATTRIB_MAX_FAMILIES);
-        assert_eq!((idx.attribute(&f1[..MIN_UNMAPPED_LEN - 1]), idx.attribute(&f1[..MIN_UNMAPPED_LEN]).as_deref()), (None, Some("F1")));
-        // a 1000 bp read has 970 k-mers, 30% of them is 291: 321 family bases give 291 hits (in), 320 give 290 (out)
-        for (x, want) in [(321usize, Some("F1")), (320, None)] {
-            let mut read = f1[..x].to_vec(); read.extend(rng.acgt(1000 - x));
-            assert_eq!(idx.attribute(&read).as_deref(), want, "30% boundary at {x} family bases");
-        }
-        // F1 = X + Y and F2 = Y, the read is X + Y: F1 has lx + ly - 30 hits, F2 ly - 30, and F1 needs at least twice F2's: ly <= lx + 30
-        for (lx, ly, want) in [(500usize, 529usize, Some("F1")), (500, 530, Some("F1")), (500, 531, None)] {
-            let (x, y) = (rng.acgt(lx), rng.acgt(ly));
-            let f = [x, y.clone()].concat();
-            let idx = FamilyKmerIndex::build(&[("F1".into(), f.clone()), ("F2".into(), y)], KMER_K, ATTRIB_MAX_FAMILIES);
-            assert_eq!(idx.attribute(&f).as_deref(), want, "2x boundary at lx = {lx}, ly = {ly}");
-        }
-        // F1 = U + S, and n - 1 more families carry S only: with n = 8 families S is kept (F1 does not lead 2x), with n = 9 it is a repeat
-        // and dropped (F1 wins on U alone, 450 hits of 1170 k-mers)
-        assert_eq!(ATTRIB_MAX_FAMILIES, 8);
-        for (n_fam, want) in [(ATTRIB_MAX_FAMILIES, None), (ATTRIB_MAX_FAMILIES + 1, Some("F1"))] {
-            let (u, s) = (rng.acgt(450), rng.acgt(750));
-            let f = [u, s.clone()].concat();
-            let mut copies = vec![("F1".to_string(), f.clone())];
-            copies.extend((2..=n_fam).map(|i| (format!("F{i}"), s.clone())));
-            let idx = FamilyKmerIndex::build(&copies, KMER_K, ATTRIB_MAX_FAMILIES);
-            assert_eq!(idx.attribute(&f).as_deref(), want, "family cap at {n_fam} families");
-        }
     }
 }
