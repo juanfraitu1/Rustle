@@ -14,6 +14,8 @@
 # Inputs, read-only: ${FIG7}/<species>_<contig>.denovo.gtf (the genome-wide de novo assembly restricted to the contig, the
 # Figure 7 development tables of 2026-09-25), copied once to ${W}/<species>_<contig>/; each arm's PREFIX is
 # ${W}/<species>_<contig>/<ARM> and the stage reads PREFIX.gtf (a copy of it). BAM / FASTA from figures/inputs.local.tsv.
+# Environment (defaults = the run of 2026-10-04): REP_WORK (products), REP_FIG7 (the read-only Figure 7 cache), REP_NPIP_ANN
+# (the NPIP copies + truth of `npip`), REP_CAT_GFF (read by score.py h3-inputs); all exported to score.py with REP_BIN.
 # REP_BIN (default the m2 release dir) holds the ONE binary both arms use; every log records the sha1 of its mcl_families and
 # family_score before and after the call (score.py refuses a contig whose arms differ).
 # Arms: R_M runs with RUSTLE_REPRESENTATIVE unset (`env -u`), R_J with RUSTLE_REPRESENTATIVE=most-junctions on that one command.
@@ -25,7 +27,9 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd)
 BIN=${REP_BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release}
 W=${REP_WORK:-/mnt/linuxdisk/tmp/rep_rule}
-FIG7=/mnt/linuxdisk/tmp/rustle_figures/fig7/current
+FIG7=${REP_FIG7:-/mnt/linuxdisk/tmp/rustle_figures/fig7/current}
+NPIP_ANN=${REP_NPIP_ANN:-/mnt/linuxdisk/tmp/rustle_figures_dev/copy_recovery_tools_cat/ann}
+export REP_BIN=$BIN REP_WORK=$W REP_FIG7=$FIG7   # score.py reads the same values
 THREADS=4
 export TMPDIR=$W/tmp
 mkdir -p "$TMPDIR"
@@ -100,7 +104,7 @@ h3)
   exit "$rc" ;;
 npip)
   D=$W/human_chr16; gtf=$D/human_chr16.denovo.gtf
-  ANN=/mnt/linuxdisk/tmp/rustle_figures_dev/copy_recovery_tools_cat/ann
+  ANN=$NPIP_ANN
   BAM=$(cfgval human_bam)
   log=$D/npip.run.log
   { echo "date	$(date -Is)"; echo "copies	$ANN/copies.hsa.tsv	$(sha "$ANN/copies.hsa.tsv")"; echo "truth	$ANN/truth.hsa.gtf	$(sha "$ANN/truth.hsa.gtf")"; stamp; echo "--- command"; } > "$log"

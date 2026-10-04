@@ -15,6 +15,8 @@ Compara families at Primates restricted to the contig (the genome-wide table cac
 the NPIP reference set (`npip_u2_truth`, chr16) and the contig's protein-homology families (the Figure 7 cache); figures/_liftoff.py
 `support_if_ready` / `copy_pairs(loci, 0.95, support, both loci on the contig)` / `pair_families` / `catalog_loci` on each arm's copy
 table (Figure 7's Liftoff rows, per contig). The family_score GFF is the Figure 7 GFF slice of the contig.
+Environment (as bench/rep_rule/run.sh): REP_WORK (products, default /mnt/linuxdisk/tmp/rep_rule), REP_FIG7 (the read-only Figure 7
+cache), REP_BIN (the binary dir of the runs; family_score runs from it), REP_CAT_GFF (the human H3 annotation).
 H2: each arm's PREFIX.fam.copies.tsv: junctions per copy = gaps >= 50 bp between consecutive exons of its `exons` column (the rule's
 own junction, the Task 1 review's F5), `n_exon - 1` (the prereg's wording) beside; loci whose representative differs between the arms
 (loci.gff3 joined by gene Name); and a check that a Python re-derivation of both rules from the GTF reproduces each loci.gff3.
@@ -31,6 +33,7 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 import re
 import shutil
 import statistics
@@ -41,9 +44,14 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(REPO / "figures"))
 
-W = Path("/mnt/linuxdisk/tmp/rep_rule")
-FIG7 = Path("/mnt/linuxdisk/tmp/rustle_figures/fig7/current")           # read-only
-CAT_GFF = Path("/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
+# Paths: the same environment variables as bench/rep_rule/run.sh (which passes its resolved values down), defaults = the run of
+# 2026-10-04. REP_BIN is the ONE binary dir both arms ran with (its mcl_families / family_score sha1 are checked against the run
+# logs, and family_score runs from it); the inputs file's `bin` is overridden by it.
+W = Path(os.environ.get("REP_WORK", "/mnt/linuxdisk/tmp/rep_rule"))
+FIG7 = Path(os.environ.get("REP_FIG7", "/mnt/linuxdisk/tmp/rustle_figures/fig7/current"))          # read-only
+BIN = Path(os.environ.get("REP_BIN", "/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release"))
+CAT_GFF = Path(os.environ.get(
+    "REP_CAT_GFF", "/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_CAT_Liftoff.slim.gff3.gz"))
 SAMPLE = {"human": "human_A119b", "gorilla": "gorilla_OR6737"}          # the BAMs of figures/inputs.local.tsv human_bam / gorilla_bam
 ARMS = ("R_M", "R_J")
 ARM_RULE = {"R_M": "most-reads (shipped)", "R_J": "most-junctions"}
@@ -485,6 +493,7 @@ def run_log(p: Path) -> dict:
 def score(species: str, contig: str):
     import figlib
     cfg = figlib.load_inputs()
+    cfg["bin"] = str(BIN)                  # family_score (R.family_score) runs from REP_BIN
     d = W / f"{species}_{contig}"
     logs = {arm: run_log(d / f"{arm}.run.log") for arm in ARMS}
     bin_sha = {}
@@ -498,7 +507,7 @@ def score(species: str, contig: str):
             raise RuntimeError(f"{d}/{a}.run.log: exit {logs[a].get('exit')}")
     if logs["R_J"].get("params_representative_row") != "present" or logs["R_M"].get("params_representative_row") != "absent":
         raise RuntimeError(f"{d}: params.tsv representative row not as registered")
-    cur = {k: _sha1(Path(cfg["bin"]) / k) for k in bin_sha}
+    cur = {k: _sha1(BIN / k) for k in bin_sha}
     if cur != bin_sha:
         raise RuntimeError(f"the binary changed since the runs: {bin_sha} -> {cur}")
     gtf = d / f"{species}_{contig}.denovo.gtf"
