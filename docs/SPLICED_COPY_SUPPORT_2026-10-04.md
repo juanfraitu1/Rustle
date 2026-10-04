@@ -166,3 +166,54 @@ such reads AND a node whose representative's in-span junction chain is such a su
   copies; the representative does not.
 
 Register row 1238. The headline the page now carries: own node 23 / 21 / 24 vs found 9 / 6 / 6.
+
+## Amendment C re-score (2026-10-04 12:25): only reads that TRULY support an expressed intron chain are counted
+
+Amendment C (prereg dd710b37, before the run): the copy's expressed chains are its reads' own identical >= 2-junction chains carried by >= 3
+UNIQUELY placed reads (MAPQ > 0); a read truly supports the copy iff its chain equals or is a contiguous sub-chain of an expressed chain; FOUND
+= the node's representative is such a sub-chain. No annotation enters the verdict; each expressed chain is classed against CAT ∪ RefSeq for
+the record. Columns `xc_*` in `docs/SPLICED_COPY_SUPPORT_hsa_npip.tsv` (the C run carries every rule's columns).
+
+**NPIP: 24 of 25 copies have an expressed chain (NPIPB12 none: 54 reads, no three identical unique chains). FOUND = 14 / 10 / 7 of 25 by any
+locus, 13 / 9 / 6 within the page's own nodes (P / GOOD / ALL); locus level 21 / 19 / 17.** Amendment B (annotated chains): 9 / 6 / 6.
+
+| copy | reads | expressed chains | truly-supporting reads (unique / incl. tied) | dominant expressed chain: reads, junctions, class vs CAT ∪ RefSeq | B support | P found / own node | GOOD | ALL |
+|---|---|---|---|---|---|---|---|---|
+| NPIPB2 | 432 | 19 | 301 / 301 | 167, 5j, FSM | 216 | 0 / 0 | 0 / 0 | 0 / 1 |
+| NPIPA2 | 348 | 16 | 236 / 236 | 79, 6j, FSM | 201 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA1 | 806 | 52 | 402 / 402 | 67, 6j, NIC | 155 | 1 / 1 | 1 / 1 | 0 / 1 |
+| PKD1P6-NPIPP1 | 253 | 13 | 57 / 57 | 6, 3j, NNC | 37 | 1 / 0 | 1 / 0 | 0 / 1 |
+| NPIPA5 | 147 | 6 | 86 / 86 | 38, 6j, ISM | 83 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA6 | 204 | 7 | 47 / 61 | 10, 7j, NIC | 18 | 1 / 1 | 0 / 0 | 0 / 1 |
+| NPIPA7 | 285 | 5 | 43 / 141 | 10, 5j, ISM | 36 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA8 | 192 | 1 | 4 / 100 | 3, 4j, NNC | 2 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA9 | 998 | 48 | 447 / 469 | 30, 6j, NIC | 55 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC128966608 | 1104 | 23 | 320 / 412 | 135, 11j, ISM | 338 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB4 | 897 | 13 | 96 / 101 | 21, 6j, NIC | 49 | 0 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB5 | 785 | 19 | 197 / 219 | 108, 2j, ISM | 133 | 0 / 1 | 0 / 1 | 1 / 1 |
+| NPIPB6 | 684 | 29 | 511 / 513 | 184, 7j, NNC | 206 | 1 / 1 | 0 / 0 | 0 / 1 |
+| NPIPB7 | 164 | 8 | 69 / 72 | 21, 6j, FSM | 38 | 1 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB8 | 174 | 6 | 86 / 92 | 27, 15j, ISM | 74 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB9 | 568 | 22 | 396 / 401 | 194, 7j, NNC | 102 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB10P | 70 | 3 | 24 / 25 | 10, 6j, NNC | 2 | 0 / 1 | 1 / 1 | 0 / 1 |
+| NPIPB11 | 150 | 6 | 49 / 49 | 11, 6j, NIC | 6 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB12 | 54 | 0 | 0 / 0 | 1, 8j, NNC | 3 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907834 | 634 | 17 | 256 / 257 | 68, 2j, ISM | 131 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB13 | 131 | 5 | 42 / 42 | 9, 6j, NNC | 23 | 1 / 1 | 0 / 1 | 1 / 0 |
+| NPIPB14P | 1255 | 46 | 918 / 918 | 400, 6j, NIC | 43 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB15 | 220 | 4 | 116 / 144 | 70, 6j, FSM | 141 | 1 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907808 | 73 | 1 | 5 / 33 | 5, 5j, ISM | 33 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907807 | 96 | 2 | 22 / 31 | 14, 6j, FSM | 33 | 1 / 1 | 0 / 1 | 0 / 1 |
+
+- **The reads do carry consistent intron chains at almost every copy** — NPIPB14P 46 expressed chains and 918 truly-supporting unique reads
+  (dominant chain 400 reads, 6 junctions, NIC: annotated splice sites in an unannotated combination), NPIPB6 511 (dominant 184 reads, NNC),
+  NPIPA9 447, NPIPA1 402, NPIPB9 396, NPIPB2 301 — and the nodes do not: at NPIPB14P, NPIPB9, NPIPA9, NPIPB2 no arm's representative is a
+  sub-chain of any expressed chain. The copy is expressed and structured; what we hand on is a fragment.
+- **Where the reads are shared with siblings the unique-read floor exposes it:** NPIPA8 4 unique truly-supporting reads (100 with tied reads),
+  NPIPA7 43 / 141, LOC124907808 5 / 33, NPIPA6 47 / 61, NPIPB15 116 / 144 — these copies' chains are also their siblings' chains; the tied
+  reads count only through O2.
+- Amendment B vs C per copy: B's annotated-chain support is lower than C's everywhere except where the annotation happens to be the expressed
+  chain (NPIPA2, NPIPA5, NPIPB15, LOC124907807); at NPIPB14P 43 vs 918, NPIPA9 55 vs 447, NPIPA1 155 vs 402.
+
+Register row 1240. The page's headline is now the Amendment C number (13 / 9 / 6 within own nodes 23 / 21 / 24), with B, A and the first rule
+beside.

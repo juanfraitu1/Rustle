@@ -318,3 +318,26 @@ gorilla). Re-scored from the saved arms (`h3B.support.*`), no families re-run.
 - What this measures: agreement of ONE representative with the annotated isoform chains (ISM/FSM). A representative that is a real, novel
   isoform fails it; the metric is the user's standard for "does the node support the annotated gene", not a count of real transcripts. Any
   future representative rule is judged on this chain rule and the family metrics together.
+
+## Amendment C (2026-10-04 12:25): H3 against the reads' own EXPRESSED chains (annotation-free)
+
+Expressed chain = an identical >= 2-junction chain of >= 3 uniquely placed reads; a representative is FOUND when its in-span chain equals or is
+a contiguous sub-chain of one (re-scored from the saved arms, `h3C.support.*`).
+
+| contig | genes | expressed (>= 1 expressed chain) | FOUND C R_M | R_J | locus level R_M | R_J | (Amendment B, annotated chains, R_M / R_J) |
+|---|---|---|---|---|---|---|---|
+| human_chr2 | 1,243 | 1,047 | **920** | **891** | 980 | 998 | 827 / 564 |
+| human_chr6 | 1,047 | 843 | **718** | **699** | 771 | 783 | 638 / 469 |
+| human_chr8 | 698 | 539 | **475** | **439** | 506 | 511 | 436 / 295 |
+| human_chr10 | 729 | 609 | **536** | **513** | 564 | 580 | 473 / 337 |
+| gorilla_NC_073234.2 | 1,119 | 717 | **674** | **613** | 684 | 692 | 680 / 567 |
+| human_chr16 (dev) | 857 | 684 | **587** | **538** | 627 | 637 | 538 / 363 |
+| gorilla_NC_073244.2 (dev) | 1,520 | 866 | **807** | **753** | 816 | 830 | 823 / 738 |
+
+- **R_M finds slightly more than R_J on every contig under C as well** (held-out chr2 920 vs 891, chr6 718 vs 699, chr8 475 vs 439, chr10 536 vs
+  513, NC_073234.2 674 vs 613; the gap is a third of Amendment B's): the junction-maximal transcript often carries a junction that fewer than 3
+  unique reads share, so it is not a sub-chain of any expressed chain; the locus level stays slightly in R_J's favour (chr2 980 vs 998).
+- Verdict unchanged (R_M default); clause (b) is against R_J under B and under C, for R_J under A and the first rule — the four readings
+  disagree on what a representative should carry, which is itself the finding: a representative should be an expressed chain, neither the
+  most-read fragment nor the junction-maximal transcript. That rule ("the most-read EXPRESSED CHAIN of the locus") is the one to pre-register
+  next; its H3 under C is bounded above by the locus-level column.
