@@ -144,9 +144,11 @@ case $step in
     else
       IN="--bam $L/R.bam --fasta $L/masked.fa --copies $A/A12.copies.tsv --copies-fa $A/A12.copies.fa --index $L/masked.splice.mmi"
     fi
-    # stderr (the stage's log and time -v) timestamped line by line (epoch s) for the per-family timing
+    # stderr (the stage's log and time -v) timestamped line by line (epoch s) for the per-family timing; the first line names the
+    # binary's sha1 (final review 2026-10-03, finding 6: a `cargo test` can rebuild the shared target between runs)
+    printf '%s\tbinary sha1 %s\n' "$(date +%s)" "$(sha1sum $BIN | cut -c1-40)" > $W/logs/stage_g$g.log
     env -u RUSTLE_CACHE_DIR $HEAVY /usr/bin/time -v $BIN $IN --out $W/cand_g$g --threads 4 $(delta_args "$run") --families "$fams" 2>&1 >/dev/null \
-      | gawk '{ print systime() "\t" $0; fflush() }' > $W/logs/stage_g$g.log
+      | gawk '{ print systime() "\t" $0; fflush() }' >> $W/logs/stage_g$g.log
     grep -E "Elapsed \(wall|Maximum resident|pass B:|done:" $W/logs/stage_g$g.log ;;
   concat)  $LIGHT $PY concat --w $W --prefix cand ;;
   nets)    [ "$ACC" != a12 ] || only a13
@@ -199,11 +201,12 @@ case $step in
                      # minimap2 runs it had reaped); the lock's RLOCK_TIMEOUT (590 s) is the backstop. Exit 124 = stopped.
     g=${1:?batch}; fams=$(sed -n "$((g + 1))p" $WB/batches.txt); [ -n "$fams" ] || { echo "no batch $g in $WB/batches.txt" >&2; exit 2; }
     mkdir -p $WB/logs
+    printf '%s\tbinary sha1 %s\n' "$(date +%s)" "$(sha1sum $BIN | cut -c1-40)" > $WB/logs/wstage_g$g.log
     set +e
     env -u RUSTLE_CACHE_DIR RLOCK_TIMEOUT=${RLOCK_TIMEOUT:-590} $HEAVY timeout -s INT -k 10 ${WSTAGE_LIMIT:-570} /usr/bin/time -v $BIN --bam $FIBRO \
       --fasta $GGO_FA --copies $WB/W.copies.tsv \
       --copies-fa $WB/W.copies.fa --index $GGO_MMI --out $WB/cand_g$g --threads 4 --families "$fams" 2>&1 >/dev/null \
-      | gawk '{ print systime() "\t" $0; fflush() }' > $WB/logs/wstage_g$g.log
+      | gawk '{ print systime() "\t" $0; fflush() }' >> $WB/logs/wstage_g$g.log
     rc=${PIPESTATUS[0]}; set -e
     echo "exit $rc"; grep -E "Elapsed \(wall|Maximum resident|exit status|signal|BAM:|pass B:|done:" $WB/logs/wstage_g$g.log ;;
   wreport) only a14; $LIGHT $PY wreport --w $WB --copies $WB/W.copies.tsv --copies-fa $WB/W.copies.fa > $WB/wreport.out; cat $WB/wreport.out ;;

@@ -267,6 +267,11 @@ and the spec's header and §9 keep the record of the flip with the dated outcome
   uses those nets; the `reads.tsv`-only reading is reported beside and passes too.
 - One individual (KB3781), fibroblast Iso-Seq, the 1,000-read cap; the registered run's genome phase started on a cold page cache (above).
 
+- **A13 is not a held-out of its own rules** (final review, 2026-10-03): Amendment 13b's preset and thresholds were chosen from
+  truth-labelled counts on these same reads; 13d/13e were fixed after smoke runs on these families (GWFAM105); R24, the reading under
+  which A13-2 passes, was ruled after the run (the per-component reading fails on 2 of 82). The held-out of the corrected stage is
+  Amendment 15's 30 families of Amendment 10 disjoint from these 53.
+
 ## Appendix: per family (registered run)
 
 Flagged labels: D = D-derived, S = survivor-derived, e = elsewhere. "D reads in net (attributed)": D reads of the family in its net, and

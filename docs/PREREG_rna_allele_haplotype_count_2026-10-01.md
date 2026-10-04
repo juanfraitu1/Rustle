@@ -498,3 +498,15 @@ the merge rule, the flag floor, the tie ratio, the net (13b/13c), the template (
   outcome is recorded. Reported beside: the identity x coverage of every flagged union to its best genome hit (the number that exposed
   the defect) and the duplication signature count; the whole-BAM cost of the corrected stage on one 50-family batch (R23 repeated).
 - Not yet scheduled (user's decision on cost, 2026-10-03 23:50): this amendment binds whenever the re-runs happen.
+
+**Amendment 15b (2026-10-03 23:59, still before any re-run; from the final whole-branch review).** The reviewer's reproduction on the
+stage's own template (SRR27178663.1064406, 3,007 bp) refines the mechanism: minimap2 writes an exon E the template lacks as `+X·E ~|X|` —
+the insertion begins with the template bases the adjacent skip removes (107 of 134 insertion-plus-skip pairs; one ~605-bp exon placed at 8
+columns 618-747, a second ~795-bp one near 1,571). Normalising the `cs` alone (`+X·E ~|X|` -> `:|X| +E`) gives 5,102 bp, still flagged
+(0.9875); the majority test is what clears it. The correction therefore has three parts, all bookkeeping, none a new constant: (a) normalise
+each member's `cs` before the vote (an insertion that starts with the bases its adjacent skip removes is shortened by them, the skip
+becomes matches), (b) one copy per identical long insertion per consensus (carriers aggregated across columns, placed at the column with
+most carriers), (c) the majority test of Amendment 15. Reported beside, no rule: for every member kept by the refinement fit, the consensus
+bases its alignment skips (the fit test reads gap-compressed `de` and the read's own coverage, so a bloated consensus is invisible to it:
+all 361 GWFAM37:c1 members "fit" the 8,201-bp consensus, 348 of them skipping >= 1,000 bp of it). Regression tests for both `cs` patterns
+and for one insertion at two columns are part of the implementation. Bars and held-out as in Amendment 15.

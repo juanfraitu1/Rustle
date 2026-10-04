@@ -342,7 +342,7 @@ tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index
 # stages, each also runnable alone: assemble -> families (mcl_families --from-gtf; its copy table run.fam.copies.* is what
 #   assign reads since 2026-10-02) -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). OPT-IN:
 #   candidates (o3_candidates + augmentation + patch realignment, between families and assign; `--candidates` runs it in
-#   `all` and makes assign and flag use it; ruling R14: its acceptance failed, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md, and
+#   `all` and makes assign and flag use it; ruling R14: its first acceptance failed, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md (the re-run passed: A13, docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md), and
 #   Amendment 14's no-deletion control failed, docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md).
 #   LEGACY: catalog (gw_family_catalog), which `--legacy-catalog` builds in `all` and assign then reads (refused together
 #   with --candidates). Products all carry the --out prefix.

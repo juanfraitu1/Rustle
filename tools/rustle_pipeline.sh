@@ -18,7 +18,9 @@
 #             the whole genome, and the realignment indexes it on every run (about 400 s and 19 GB on a human genome).
 #             The stage's own cost on a full BAM (spec §9b, R23): on the 23-GB gorilla fibroblast BAM one batch of 50 families
 #             did not finish in a 10-minute call (nets phase 397-469 s: the whole-BAM sweep ~150 s, the attribution alignment
-#             against the batch's 2.6 GB of net reads 213-250 s; peak RSS 10.7 GB at the stop).
+#             against the batch's 2.6 GB of net reads 213-250 s; peak RSS 10.7 GB at the stop). The driver runs EVERY family in
+#             one call (no batching; the binary's `--families` batches): the attribution targets are then all families' nets, so
+#             its peak memory exceeds that batch's 10.7 GB — an OOM risk on this machine.
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment (assign/abstain) on the families'  copy_assign --families
 #             copy table PREFIX.fam.copies.*; with --candidates and flagged candidates, two runs (the candidate families

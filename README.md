@@ -41,7 +41,7 @@ assemble, families, assign, flag), with the shipped defaults (since 2026-09-29 t
 copies from each family's reads, `o3_candidates` — is OPT-IN, `--candidates`, because its pre-registered acceptance failed:
 `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; the re-run acceptance passed on 2026-10-03, but its no-deletion control failed
 and the default flip was reverted the same day, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; on a full BAM one batch of 50
-families did not finish in a 10-minute call, spec §9b, R23). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
+families did not finish in a 10-minute call, spec §9b, R23; the driver runs every family in one call, only the binary's `--families` batches, so its peak memory exceeds that batch's 10.7 GB). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
 the earlier pipeline, byte for byte except `assign` on a catalog with cross-chromosome families (2026-10-02, `copy_assign
 --help`, `--families`) — `REPRODUCE.md` §5 and its driver section, `bench/ASSEMBLY_POLISH.md` addendum 3). `bench/` holds the
 9 Python files behind the record's analysis commands: the library `lib.py`, the subcommand scripts `score.py`,
