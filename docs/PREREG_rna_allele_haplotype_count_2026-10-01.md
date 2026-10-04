@@ -426,3 +426,9 @@ introns alike) in m's best alignment to p, PLUS p's terminal bases (>= 20 bp at 
 **eligible** when it is aligned to >= 50% of the cluster's other members (every member is eligible in clusters of < 4); template = the
 eligible member with the lowest MEAN d over its aligned partners, ties -> longest -> smallest name; a cluster with no eligible member takes
 its longest member. Unchanged: everything else in Amendments 13-13c.
+
+#### Amendment 13e (2026-10-03, before the A13 run): eligibility made cap-aware. The all-vs-all keeps at most 100 hits per query (`-N 100`,
+`--dual=no`), so in clusters of several hundred reads no member can be aligned to 50% of the others and eligibility followed read-name order
+(smoke: 0% of the first name quartile vs ~50% of the last in 474- and 482-read clusters). Eligible = aligned to >= min(0.5 x (n - 1), 50)
+other members. A member with no aligned partner has no mean and is never chosen while another member has one; if no member has a mean, the
+longest is taken. Everything else as 13d.
