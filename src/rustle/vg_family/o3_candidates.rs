@@ -299,15 +299,19 @@ impl StructuralScore {
     pub fn mean_d(&self) -> Option<f64> { (self.aligned > 0).then(|| self.sum_d as f64 / self.aligned as f64) }
 }
 
-/// How a cluster's template was chosen (prereg Amendments 13 / 13d).
+/// How a cluster's template was chosen (prereg Amendments 13 / 13d / 13e).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TemplateChoice {
     /// The medoid: the eligible member with the lowest mean d over its aligned partners (`structural_template`); also the only member of a
     /// cluster of one.
     Medoid(usize),
-    /// No eligible member (none is aligned to min(half of the others, `ELIGIBLE_PARTNER_CAP`) of them; in a cluster of 2 or 3, none has an
-    /// aligned partner): the longest member, the smaller name on equal lengths. The binary logs it.
-    Longest(usize),
+    /// No eligible member (none is aligned to min(half of the others, `ELIGIBLE_PARTNER_CAP`) of them), and some member has an aligned
+    /// partner: the longest member WITH an aligned partner (a mean), the smaller name on equal lengths. A partner-less member is passed over
+    /// however long it is (Amendment 13e: it is never chosen while another member has a mean). The binary logs it.
+    LongestAligned(usize),
+    /// No member has an aligned partner (no mean anywhere): the longest member, the smaller name on equal lengths (Amendment 13e). The binary
+    /// logs it apart from `LongestAligned`.
+    LongestUnaligned(usize),
     /// `refined_template` only: the refinement kept the cluster's template, which stays.
     Kept(usize),
 }
@@ -315,7 +319,7 @@ impl TemplateChoice {
     /// The chosen member.
     pub fn member(self) -> usize {
         match self {
-            TemplateChoice::Medoid(m) | TemplateChoice::Longest(m) | TemplateChoice::Kept(m) => m,
+            TemplateChoice::Medoid(m) | TemplateChoice::LongestAligned(m) | TemplateChoice::LongestUnaligned(m) | TemplateChoice::Kept(m) => m,
         }
     }
 }
@@ -365,9 +369,10 @@ pub fn structural_scores(members: &[usize], names: &[String], ava: &[PafHit]) ->
 /// the LOWEST mean d over its aligned partners (compared exactly, as cross-multiplied sums), ties to the longest (`lens`, indexed like
 /// `names`), then to the smallest name: `Medoid`. A read that retains an intron or skips an exon pays the indel in every pair, a fragment pays
 /// its partners' uncovered ends, and a member aligned to fewer than min(half of the others, 50) is not eligible (Amendment 13e). A member
-/// with no aligned partner has no mean and is never chosen while another member has one; without any eligible member that has a partner, the
-/// longest member (`Longest`, logged by the binary). A cluster of one member is its own template; an empty one is an
-/// error, and so is a malformed `cs`. A function of the cluster as a set, the hits and the names: neither the order of `members` nor (beyond
+/// with no aligned partner has no mean and is never chosen while another member has one, the fallbacks included: without an eligible member
+/// the template is the longest member that has an aligned partner (`LongestAligned`), and only when no member has one the longest member
+/// (`LongestUnaligned`); the binary logs both. A cluster of one member is its own template; an empty one is an error, and so is a malformed
+/// `cs`. A function of the cluster as a set, the hits and the names: neither the order of `members` nor (beyond
 /// the first-wins tie between two hits of one pair) the order of `ava` reaches it.
 pub fn structural_template(members: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> anyhow::Result<TemplateChoice> {
     anyhow::ensure!(!members.is_empty(), "the structural template of a cluster without members");
@@ -381,10 +386,17 @@ pub fn structural_template(members: &[usize], names: &[String], ava: &[PafHit], 
     });
     Ok(match medoid {
         Some(s) => TemplateChoice::Medoid(s.member),
-        None => TemplateChoice::Longest(
-            *members.iter().max_by(|&&a, &&b| lens[a].cmp(&lens[b]).then_with(|| names[b].cmp(&names[a]))).expect("a non-empty cluster has a longest member"),
-        ),
+        // Amendment 13e: a member with no aligned partner has no mean and is never chosen while another member has one
+        None => match longest_of(scores.iter().filter(|s| s.aligned > 0).map(|s| s.member), names, lens) {
+            Some(m) => TemplateChoice::LongestAligned(m),
+            None => TemplateChoice::LongestUnaligned(longest_of(members.iter().copied(), names, lens).expect("a non-empty cluster has a longest member")),
+        },
     })
+}
+
+/// The longest of `pool` (`lens`, indexed like `names`), the smaller name on equal lengths; `None` for an empty pool.
+fn longest_of(pool: impl Iterator<Item = usize>, names: &[String], lens: &[usize]) -> Option<usize> {
+    pool.max_by(|&a, &b| lens[a].cmp(&lens[b]).then_with(|| names[b].cmp(&names[a])))
 }
 
 /// The template of a refined cluster's kept set (prereg Amendment 13): `Kept(template)` while the refinement keeps the template, else (the
@@ -1478,7 +1490,7 @@ mod tests {
             let all: Vec<usize> = (0..n).collect();
             let s = structural_scores(&all, &names, &ava).unwrap();
             assert!(s.iter().all(|x| (x.aligned, x.eligible) == (2 * k, eligible)), "n = {n}, k = {k}");
-            let want = if eligible { TemplateChoice::Medoid(17) } else { TemplateChoice::Longest(17) };
+            let want = if eligible { TemplateChoice::Medoid(17) } else { TemplateChoice::LongestAligned(17) };
             assert_eq!(template(&all, &names, &ava, &lens), want, "n = {n}, k = {k}");
         };
         // 300 members: 60 partners each -> all eligible (60 >= min(149.5, 50)), the medoid a tie broken by length; exactly 50 -> all; 40 -> none,
@@ -1494,16 +1506,21 @@ mod tests {
     }
     #[test]
     fn no_eligible_member_takes_the_longest() {
-        // Amendment 13d: 5 members each aligned to at most 1 of the 4 others (pairs m0-m1 and m2-m3, m4 none): no member is eligible, so the
-        // template is the longest member (`Longest`: the binary logs it), equal lengths to the smaller name
+        // Amendments 13d / 13e: 5 members each aligned to at most 1 of the 4 others (pairs m0-m1 and m2-m3, m4 none): no member is eligible, so
+        // the template is the longest member that has an aligned partner (`LongestAligned`: the binary logs it), equal lengths to the smaller
+        // name. m4, the longest of all, has no partner and no mean: it is never chosen while another member has one
         let names = names_of("m0 m1 m2 m3 m4");
         let ava = vec![whole_hit("m0", 900, "m1", 900, 900, ":900"), whole_hit("m2", 900, "m3", 900, 900, ":900")];
         let all = [0, 1, 2, 3, 4];
         assert!(sorted_scores(&all, &names, &ava).iter().all(|&(_, _, _, eligible)| !eligible));
-        assert_eq!(template(&all, &names, &ava, &[900, 900, 950, 900, 1000]), TemplateChoice::Longest(4));
-        assert_eq!(template(&all, &names, &ava, &[900, 980, 980, 900, 700]), TemplateChoice::Longest(1));
-        // a small cluster with no alignment at all: no member has the one partner it needs: the longest as well
-        assert_eq!(template(&[0, 1, 4], &names, &[], &[900, 980, 970, 900, 700]), TemplateChoice::Longest(1));
+        assert_eq!(template(&all, &names, &ava, &[900, 900, 950, 900, 1000]), TemplateChoice::LongestAligned(2));
+        assert_eq!(template(&all, &names, &ava, &[900, 980, 980, 900, 700]), TemplateChoice::LongestAligned(1));
+        // a 4-read set as a refinement split-off or a merge leaves it: m0-m1 is its only pair, so nobody has the 2 partners needed; the two
+        // partner-less members are the longest (2,000 and 1,500 bp) and are passed over for m1 (950 bp)
+        assert_eq!(template(&[0, 1, 3, 4], &names, &ava[..1], &[900, 950, 970, 2000, 1500]), TemplateChoice::LongestAligned(1));
+        // no member with an aligned partner at all (no mean anywhere): the longest member (`LongestUnaligned`, logged apart)
+        assert_eq!(template(&[0, 1, 4], &names, &[], &[900, 980, 970, 900, 700]), TemplateChoice::LongestUnaligned(1));
+        assert_eq!(template(&[2, 3, 4], &names, &ava[..1], &[900, 980, 970, 900, 700]), TemplateChoice::LongestUnaligned(2));
         // one member is its own template, not a fallback; no member is an error
         assert_eq!(template(&[3], &names, &[], &[900; 5]), TemplateChoice::Medoid(3));
         assert!(structural_template(&[], &names, &[], &[900; 5]).is_err());
