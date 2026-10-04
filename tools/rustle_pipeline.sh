@@ -89,8 +89,10 @@
 #   RUSTLE_REPRESENTATIVE=most-reads|most-junctions sets `mcl_families --representative` on `families`, the transcript that
 #     represents each de novo locus (loci.gff3, the copy table). Unset = nothing passed: the binary's default, most-reads
 #     (the transcript with the most reads), byte for byte the earlier products; most-junctions = the transcript with the most
-#     junctions (gaps >= 50 bp between exons), ties to the most reads — opt-in, the arm of
-#     docs/PREREG_locus_representative_rule_2026-10-04.md; an mcl_families without the flag is refused;
+#     junctions (gaps >= 50 bp between exons), ties to the most reads — OPT-IN: the arm of
+#     docs/PREREG_locus_representative_rule_2026-10-04.md, whose held-out decision (2026-10-04) kept most-reads: chr6 clause (a)
+#     FAILED, Compara F 0.444 -> 0.372, on pre-f1v2 GTFs (docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md); an mcl_families
+#     without the flag is refused;
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py

@@ -1,4 +1,10 @@
-# The locus representative, most-junctions (R_J) vs most-reads (R_M): R_J carries the copy's structure but costs families — chr6 fails clause (a), R_J stays opt-in (2026-10-04)
+# The locus representative, most-junctions (R_J) vs most-reads (R_M), on pre-f1v2 de novo GTFs: R_J carries the copy's structure, held-out families are mixed — chr6 fails clause (a), R_J stays opt-in (2026-10-04)
+
+> ⚠ **A verdict on the configuration as run, not on the shipped one.** Both arms ran on the same pre-f1v2 GTFs (assembled 2026-09-25)
+> with `RUSTLE_BRIDGE_REGROUP=off`. That setting was forced: the driver refuses f1v2 on a GTF that has no bridge relations. The chain
+> behind the chr6 failure is a fused chain of the kind f1v2 may turn into a relation. Whether it would is unmeasured.
+
+Coordinates are 1-based, closed (GTF / GFF).
 
 Prereg: `docs/PREREG_locus_representative_rule_2026-10-04.md` (3bf6aca1, written before any run). Flag: `mcl_families --representative
 most-junctions` / driver `RUSTLE_REPRESENTATIVE=most-junctions` (559649a9). Runner `bench/rep_rule/run.sh`, scorer `bench/rep_rule/score.py`;
@@ -15,21 +21,41 @@ primary reference to test (0 Liftoff pairs on the contig); (b) H3 found genes go
 copy ties on all five (0, 1 or 2 under both rules).
 
 What the run shows:
-- **R_J does what it was built for.** On every contig the representative carries more of the gene's read-supported structure. Held-out found
-  genes: chr2 960 → 1,030, chr6 757 → 815, chr8 500 → 531, chr10 562 → 598, NC_073234.2 734 → 750. That is close to the locus-level ceiling
-  (chr2 1,037). On the 25 NPIP copies, strict FOUND goes from 10 to 20, equal to the locus-level reading. The gain does not depend on fused
-  representatives: dropping every gained gene that a two-gene R_J representative overlaps still leaves R_J ahead on every contig.
-- **It does not improve families, and on chr6 it costs one.** The whole chr6 loss is one 2-gene Compara family, BTN3A (BTN3A2 + BTN3A3). R_J
-  represents the BTN3A2 locus by `DN_chr6_26200364_15`, a 2-read, 15-exon chain from the lncRNA LOC124901288 through BTN3A2 into BTN2A2
-  (26,200,365-26,251,178). R_M uses BTN3A2's own 5-read, 11-exon body. The alignment does not change (`loci.paf` is byte-identical between the
-  arms), so the pair is lost in the exon-dependent edge rule. **This is the fused-locus caveat.** These input GTFs predate the f1v2 bridge
-  regroup (below).
-- **On the development contig, R_J's full-length representatives split NPIP by subfamily.** Under R_M, 18 of the 25 annotated chr16 NPIP
-  copies map to one 27-copy family whose representatives are mostly 2-exon fragments. Under R_J those copies map to four families:
-  - the NPIPB copies (B7-B15, B14P, LOC124907834/807/808): one family of 18;
-  - NPIPA1/A6/A8/A9: one of 5;
-  - NPIPA2/A5: one of 2;
-  - NPIPB4/B5: one of 3.
+- **R_J does what it was built for, with losses.** On every contig the representative carries more of the gene's read-supported
+  structure.
+  - Held-out found genes: chr2 960 → 1,030, chr6 757 → 815, chr8 500 → 531, chr10 562 → 598, NC_073234.2 734 → 750. That is close to the
+    locus-level ceiling (chr2 1,037).
+  - On the 25 NPIP copies, strict FOUND goes from 10 to 20, equal to the locus-level reading.
+  - The gain does not depend on fused representatives: dropping every gained gene that a two-gene R_J representative overlaps still leaves
+    R_J ahead on every contig.
+  - The 3-14 losses per contig have two causes (see H3): the representative moves to a neighbour gene in a multi-gene locus, or it stays on
+    the gene but carries fewer well-supported junctions.
+- **Held-out families are mixed, and chr6 loses one.**
+  - chr2 improves: Compara F 0.588 → 0.609, Soto 0.600 → 0.634, and the LIMS pair joins one family.
+  - chr8 and chr10 do not move.
+  - chr6 loses one 2-gene Compara family, BTN3A (BTN3A2 + BTN3A3). R_J represents the BTN3A2 locus by `DN_chr6_26200364_15`, a 2-read,
+    15-exon chain from the lncRNA LOC124901288 through BTN3A2 into BTN2A2 (26,200,365-26,251,178). R_M uses BTN3A2's own 5-read, 11-exon
+    body.
+
+  At chr6, the pair's one PAF record is the same in both arms (`loci.paf` is byte-identical). What changes is the shared-exon fraction the
+  edge rule computes on that record: the record's exon-to-exon bases divided by the smaller locus's exonic length, with threshold 0.60.
+  - R_M: 1,524 / 1,707 = 0.893.
+  - R_J: 1,300 / 2,174 = 0.598, which is 0.002 under the bar.
+
+  This is a re-derivation outside the binary, from `loci.gff3` + `loci.paf`, and it matches the reviewer's independent figure. Two things
+  move the fraction:
+  - The chain adds exons outside BTN3A2 (the lncRNA's and BTN2A2's), so the exonic length grows 1,707 → 2,174.
+  - Its BTN3A2 exon at 26,244,169 ends at 26,244,363 instead of 26,244,587, 224 bp shorter, so the exon-to-exon bases fall 1,524 → 1,300.
+
+  Contig-wide, `rejected_low_shared_exon` goes 9,585 → 9,824 and the edges 2,082 → 2,046. **This is the fused-locus caveat** (see the ⚠ at
+  the top).
+- **On the development contig, R_J's full-length representatives split NPIP by subfamily.** This is a post hoc reading of a registered dev
+  readout, not a pre-registered test. Under R_M, 18 of the 25 annotated chr16 NPIP copies map to one 27-copy family whose representatives
+  are mostly 2-exon fragments. Under R_J, 19 annotated copies map to four families: the same 18 minus NPIPA7, plus NPIPA6 and NPIPB9.
+  - 11 annotated copies (NPIPB7-B11, B13, B14P, B15, LOC124907834/807/808) in a family of 18 de novo copies;
+  - 4 (NPIPA1/A6/A8/A9) in a family of 5;
+  - 2 (NPIPA2/A5) in a family of 2;
+  - 2 (NPIPB4/B5, which share one de novo locus) in a family of 3.
 
   The family-level references score that split as a loss: Compara 0.615 → 0.541, the NPIP set 0.576 → 0.481, Liftoff pairs 15/36 → 8/36.
   Development results are reported only and decide nothing.
@@ -45,8 +71,9 @@ What the run shows:
 - ⚠ **`RUSTLE_BRIDGE_REGROUP=off` on both arms (forced, not chosen).** The prereg lists `--bridge-regroup f1v2` among the shipped defaults.
   But the Figure 7 GTFs were assembled on 2026-09-25, before f1v2 became the default (2026-09-29). They hold 0 `fusion_of` relations and no
   `PREFIX.families.gtf`, and the driver's guard refuses f1v2 on them. Bridge transcripts are therefore still loci members here. Under the
-  current assembly default some of them would become relations; whether that includes the chr6 chain is not measured, because it needs a
-  re-assembly. That would be a new test, not a re-scoring of this one.
+  current default some of them would become relations; whether that includes the chr6 chain is not measured. f1v2 can regroup these base
+  GTFs from the BAM without a re-assembly (the frozen `f1_bridge.py` + `f1v2.py`; `docs/PENDING_2026-10-04.md` item 5), but that is a new
+  test with its own pre-registration, not a re-scoring of this one.
 - The R_M numbers are not Figure 7's printed dev numbers. The family binary's defaults changed after 2026-09-25 (`--min-cov-shorter 0.70`
   since 09-29, the copy table), so chr8 Compara is 0.388 here vs 0.364 in Fig. 7. The comparison is between the two arms of this run.
 - References and scorers are Figure 7's own, imported: `_o1_recovery.family_score` (the binary), `score_arm` and
@@ -106,13 +133,13 @@ the contig.
 
 ## H2 — copy table structure (junction = gap >= 50 bp; `n_exon - 1` in brackets)
 
-| contig | arm | copies | families | median junctions / copy | mean | copies with >= 2 junctions | total exon bp | loci whose rep changed |
+| contig | arm | copies | families | median junctions / copy | mean junctions / copy (gap >= 50 bp) | copies with >= 2 junctions | total exon bp | loci whose rep changed |
 |---|---|---|---|---|---|---|---|---|
 | chr16 | R_M | 366 | 110 | 1 [1] | 2.08 | 0.249 [0.249] | 1,525,952 | |
 | chr16 | R_J | 366 | 105 | 1 [1] | 3.11 | 0.287 [0.287] | 1,468,532 | 547 / 2,802 |
 | NC_073244.2 | R_M | 94 | 29 | 3 [3] | 3.11 | 0.968 [0.968] | 270,596 | |
 | NC_073244.2 | R_J | 93 | 29 | 4 [4] | 3.71 | 0.946 [0.946] | 258,350 | 323 / 1,142 |
-| chr2 | R_M | 456 | 131 | 1 [1] | 1.72 | 0.250 [0.250] | 2,841,771 | |
+| chr2 | R_M | 456 | 131 | 1 [1] | 1.71 | 0.250 [0.250] | 2,841,771 | |
 | chr2 | R_J | 452 | 131 | 1 [1] | 2.62 | 0.265 [0.265] | 2,771,563 | 973 / 7,163 |
 | chr6 | R_M | 250 | 58 | 0 [0] | 1.56 | 0.240 [0.240] | 1,874,626 | |
 | chr6 | R_J | 241 | 55 | 0 [0] | 2.01 | 0.253 [0.253] | 1,807,827 | 705 / 5,012 |
@@ -124,7 +151,7 @@ the contig.
 | NC_073234.2 | R_J | 15 | 7 | 2 [2] | 3.27 | 0.600 [0.600] | 61,059 | 353 / 956 |
 
 Clause (c) ties on all five held-out contigs: the median does not move. Most human family members have a 0-1 junction representative under
-both rules (single-transcript loci have no alternative). The mean, though, rises on every contig (chr2 1.72 → 2.62, chr10 1.63 → 2.84), and
+both rules (single-transcript loci have no alternative). The mean, though, rises on every contig (chr2 1.71 → 2.62, chr10 1.63 → 2.84), and
 so does the >= 2 fraction everywhere except NC_073244.2 (0.968 → 0.946) and NC_073234.2 (0.600 = 0.600). Total exon bp falls on 6 of 7
 contigs: the junction-richest transcript is often shorter in exon bp than the most-read one. 13-37% of loci change representative.
 
@@ -142,21 +169,37 @@ contigs: the junction-richest transcript is often shorter in exon bp than the mo
 
 - A **two-gene representative** has exons overlapping the exon unions of >= 2 same-strand protein-coding genes of the GFF slice that are
   exon-disjoint from each other (RefSeq readthrough genes excluded). R_J makes 2-7 times more of them at the locus level (chr2 6 → 25,
-  chr10 4 → 17), but few reach the copy table (chr10 0 → 3, chr16 3 → 5, otherwise unchanged). The bracketed gain counts are an upper bound
-  on what fused representatives explain: they count overlap, not the junction-carrying locus. R_J stays ahead without them (chr2 1,016,
-  chr6 801, chr8 528, chr10 585, NC_073234.2 743, each vs R_M's count above).
-- **The losses (3-14 per contig) come from over-merged multi-gene loci, where R_J moves the representative to the neighbour gene.** Example:
-  HSP90AB1 on chr6, 9,966 support reads. Its locus `DN_chr6_44080652_12` (44,053,598-44,088,620) also holds an upstream gene. R_M picks
-  HSP90AB1's 606-read, 11-junction transcript; R_J picks the neighbour's 61-read, 12-junction transcript. Two chr2 losses are the same
-  case, in larger loci:
-  - ATF2: locus 175,288,065-175,657,658. R_J takes a 16-junction transcript at 175,288,135-175,494,189.
-  - PPM1B: locus 44,172,944-44,777,912. R_J takes a 10-junction transcript at 44,255,365-44,327,759.
+  chr10 4 → 17).
+- In the copy table they stay rare (chr10 0 → 3, chr16 3 → 5, otherwise unchanged), but that count is survivorship-biased. A fused
+  representative can drop its locus out of its family, and so out of the copy table: the chr6 BTN3A2 locus (BTN2A2 + BTN3A2 under R_J) is
+  one.
+- The bracketed gain counts are an upper bound on what fused representatives explain: they count overlap, not the junction-carrying locus.
+  R_J stays ahead without them: chr2 1,016, chr6 801, chr8 528, chr10 585, NC_073234.2 743, each vs R_M's count above.
+- **The 46 losses (3-14 per contig; 28 held-out) have two causes.** The table below comes from a recount over the lost genes with
+  `bench/copy_support.py`'s own functions (read filter, junctions, support). "Moves off" means R_J's representative of the locus that found
+  the gene under R_M no longer overlaps the gene's exons; the split is the same with territory overlap.
 
-  Under either rule a multi-gene locus is represented by one gene. The locus over-merge (`project_node_overmerge_reversal`) is the defect,
-  not the representative rule.
-- **The 25 NPIP copies (chr16; the page's question).** R_M reproduces the chr16-wide reading of the GOOD arm in
-  `docs/SPLICED_COPY_SUPPORT_2026-10-04.md` exactly: strict 10, locus level 20, overlap 22. That doc's 9 / 19 count only the page's
-  NPIP-cluster nodes.
+  | cause | all | held-out | of which |
+  |---|---|---|---|
+  | moves off the gene | 30 | 17 | 28 (held-out 17) in loci whose span holds another same-strand RefSeq protein-coding gene's exons |
+  | stays on the gene, fewer supported junctions | 16 | 11 | 14 (held-out 9) in single-gene loci |
+
+  The reviewer's independent recount, with its own overlap definition, gave 28 moved / 18 stayed (held-out 16 / 12). Both counts find the
+  same two causes and differ by 2 genes (1 held-out).
+  - **Moves off the gene:** R_J picks a transcript with more junctions that does not overlap the gene, in 28 of 30 cases a neighbour's in
+    a multi-gene locus.
+    - HSP90AB1 (chr6, 9,966 support reads): its locus `DN_chr6_44080652_12` (44,053,598-44,088,620) also holds an upstream gene. R_M picks
+      HSP90AB1's 606-read, 11-junction transcript; R_J picks the neighbour's 61-read, 12-junction transcript (44,053,598-44,070,604).
+    - ATF2 (chr2): locus 175,288,066-175,657,658. R_J takes a 16-junction transcript at 175,288,135-175,494,189.
+    - PPM1B (chr2): locus 44,172,945-44,777,912. R_J takes a 10-junction transcript at 44,255,365-44,327,759.
+  - **Stays on the gene but carries fewer of its >= 3-read-supported junctions:**
+    - ZNF174 (chr16): R_M's representative, 3 exons / 2 junctions, carries 2; R_J's, 5 exons / 4 junctions, carries 1.
+    - CUTC (chr10): 8 → 1.
+
+    The junction count is blind to per-junction support: the assembler admits a junction at 2 reads, H3 calls it supported at >= 3.
+- **The 25 NPIP copies (chr16; the page's question).** R_M reproduces the chr16-wide reading of the GOOD arm exactly: strict 10, locus
+  level 20, overlap 22. Those figures are in `/mnt/linuxdisk/tmp/readpool_npip/support_hsa.json`.
+  `docs/SPLICED_COPY_SUPPORT_2026-10-04.md` quotes 9 / 19 instead, because it counts only the page's NPIP-cluster nodes.
 
   | arm | strict found | locus-level found | any same-strand overlapping locus |
   |---|---|---|---|
@@ -165,13 +208,13 @@ contigs: the junction-richest transcript is often shorter in exon bp than the mo
 
   - Gained (11): NPIPA6, NPIPA8, NPIPA9, NPIPB5, NPIPB7, NPIPB9, NPIPB12, NPIPB14P, NPIPB15, LOC124907808, LOC124907807. At NPIPA9 the
     representative goes from 1 supported junction to 22.
-  - Lost (1): NPIPB4. Its locus (22,350,724-22,422,849) also holds a 13-junction transcript downstream of the copy
+  - Lost (1): NPIPB4. Its locus (22,350,725-22,422,849) also holds a 13-junction transcript downstream of the copy
     (22,396,489-22,419,976), and R_J picks that one.
   - Not found under either rule:
     - NPIPB2 and NPIPB6: no same-strand locus representative overlaps them.
     - NPIPB13: not spliced-expressed.
-    - NPIPA7: R_M's representative carries 1 junction. Its locus (16,329,976-16,406,194) also spans NPIPA6, and R_J's representative is
-      NPIPA6's 22-junction transcript.
+    - NPIPA7: R_M's representative carries 1 junction. Its locus (16,329,977-16,406,194) also spans NPIPA6, and R_J's representative is
+      NPIPA6's 22-junction transcript (16,329,977-16,359,006).
 
 ## Run times (`/usr/bin/time -v`)
 
@@ -198,19 +241,32 @@ The representative rule costs nothing measurable: the all-vs-all dominates and i
 | NC_073234.2 | not testable: 0 Liftoff pairs with both loci on the contig | PASS: 750 vs 734 | PASS: 2 vs 2 [2 vs 2] |
 
 **R_M stays the default; R_J stays opt-in** (`RUSTLE_REPRESENTATIVE=most-junctions` / `--representative most-junctions`, unchanged since
-559649a9). The development results (chr16 families down, NPIP strict found 10 → 20) do not enter the decision.
+559649a9).
+- ⚠ This is the verdict on the configuration as run. Both arms ran on the same pre-f1v2 GTFs with `RUSTLE_BRIDGE_REGROUP=off` (forced).
+  The chain that fails chr6 is a fused chain of the kind f1v2 may turn into a relation; whether it would is unmeasured.
+- The prereg is silent on an empty primary reference. NC_073234.2's clause (a) is reported as not testable, and the verdict does not
+  depend on it: chr6's violation alone keeps R_M, so counting NC_073234.2 as a pass or as a fail changes nothing.
+- The development results (chr16 families down, NPIP strict found 10 → 20) do not enter the decision.
 
 ## What follows (not run here)
 
-- The representative serves two consumers, and they want different things:
-  - The copy table (O2, per-copy structure) is better under R_J on every contig.
-  - The family edge rule is better under R_M. Fragment representatives align fragment-to-fragment, so they keep coarse families together.
-    Full-length representatives resolve subfamilies (NPIPA vs NPIPB) and are exposed to readthrough chains.
-  
-  One representative per locus cannot serve both. Separating them would be a new rule, to be pre-registered: R_M for the family graph,
-  R_J's transcript for the copy table O2 reads, with the families unchanged.
-- The chr6 failure is a bridge chain in a GTF assembled without f1v2. A re-test on f1v2 GTFs would be a new pre-registration: the contigs
-  re-assembled with the current default, and the same clauses.
+- **The lead for any follow-up rule is per-junction support.** R_J counts junctions, not how well each is supported. 16 of its 46 H3
+  losses stay on the gene but carry fewer >= 3-read-supported junctions: the assembler admits a junction at 2 reads, H3's "supported" is
+  >= 3 reads. A support-aware representative rule is the next arm. It must be pre-registered, held-out first, and never tuned on chr16.
+- The other 30 losses move off the gene, 28 of them to a transcript in a locus that also holds another protein-coding gene. In such a
+  locus, any one-transcript representative stands for one gene only.
+- **Two consumers.** The representative serves two consumers:
+  - The copy table (O2, per-copy structure) is better under R_J on every contig (H3).
+  - For the family edge rule, the held-out result is mixed (chr2 up, chr6 down, chr8 and chr10 equal) and the development contig is worse.
+
+  Hypothesis, untested: the alignments are the same under both rules (`loci.paf` is identical), and what changes is which exon bases the
+  shared-exon rule scores over them. 2-exon fragments would share most of their exon bases with their paralogs' fragments. Full-length
+  representatives add subfamily-specific or fused exons to the denominator; BTN3A2 is one measured case (0.893 → 0.598). Separating the two
+  consumers would be a new rule, to be pre-registered: the current representative for the family graph, R_J's (or a support-aware) transcript
+  for the copy table O2 reads.
+- **The chr6 failure is a fused chain; how f1v2 would classify it is unmeasured.** A re-test on f1v2 GTFs is a new pre-registration, with
+  the same clauses. f1v2 can regroup the existing base GTFs from the BAM without a re-assembly, using the frozen
+  `/mnt/linuxdisk/tmp/rustle_figures/f1_frozen/f1_bridge.py` and `/mnt/linuxdisk/tmp/rustle_figures/f1v2_frozen/f1v2.py`.
 - O2 was not re-run, as registered. R_J changes the copy table O2 reads; its effect is a separate measurement.
 
 Register rows 1234-1236.

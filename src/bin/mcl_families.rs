@@ -50,7 +50,8 @@ struct Args {
     /// With `--from-gtf` only: which transcript of a locus is its representative — the locus's exons in
     /// `<out>.loci.gff3` and the copy in `<out>.copies.tsv`. `most-reads` (default; every product before
     /// 2026-10-04): the transcript with the most `reads`, ties to the longer span, then the last `transcript_id`.
-    /// `most-junctions` (opt-in; pre-registered test, `docs/PREREG_locus_representative_rule_2026-10-04.md`): the
+    /// `most-junctions` (opt-in; pre-registered test, `docs/PREREG_locus_representative_rule_2026-10-04.md`, NOT adopted on
+    /// 2026-10-04: held-out chr6 clause (a) failed on pre-f1v2 GTFs, `docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`): the
     /// transcript with the most junctions — gaps of >= 50 bp between consecutive exons, the junction floor of the
     /// strict "found" rule (`bench/copy_support.py`) — ties to the most `reads`, then the longer span, then the
     /// last `transcript_id`. In a 5'-truncated library the most-read transcript can be a 3' fragment (NPIPA9: 1
