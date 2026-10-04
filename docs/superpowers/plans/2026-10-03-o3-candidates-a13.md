@@ -57,5 +57,17 @@
 - [ ] **Step 3:** compute C = IsoCon's right D reads (Amendment 8's per-read calls, `merge_test.py` semantics on `linktest/RIL.bam`) over the truth-free attainable D reads (any record on a survivor in `R.bam`, or attributable by the Task 1 rule); A13-1 = stage D right >= 0.80 x C and false moves <= 5% (A12-1's 10,230 reported beside); cause table; attribution counts (unmapped / poorly placed: aligned, attributed, right family by `labels.tsv`); delta/2 and 2 x delta reruns.
 - [ ] **Step 4:** verdicts as registered; write the doc and register rows; IF all three hold, flip the default (and say so in the doc); commit.
 
+
+### Task 4: The no-deletion control for the stage (Amendment 14), added by ruling R22
+
+**Files:**
+- Modify: `bench/rna_allele/accept_o3_candidates.sh` / `.py` (a `CTRL` mode: unmasked `_pri`, `control/R0.bam`, a copies table of all 201 copies, the stage batched as A13, candidates classified against mat/pat with Amendment 9's rule — reuse `bench/rna_allele/control_test.py classify` logic — arm C = `_pri` + flagged unions)
+- Create: `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; modify `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1226+); iff C1'/C2' FAIL: revert `1f49d0f0` (the flip) with a dated note.
+
+- [ ] **Step 1:** `panel_to_copies.py --all` -> `A14.copies.{tsv,fa}` (201 copies: `mask` + `keep` of `linktest/panel.json`, sequences from the UNMASKED `_pri`); the stage in 5 batches on `control/R0.bam` with `GGO.splice.mmi`; wall time recorded.
+- [ ] **Step 2:** classify every flagged candidate (unions aligned to mat/pat, `splice:hq -uf -c -N 20`; lift of the copy intervals = `control/copies_lift.tsv`) into a / b / c as Amendment 9; C1' = families with >= 1 class-b/c flag <= 8 (15.7%); also the a+b+c rate and A9's 16/53.
+- [ ] **Step 3:** arm C: `_pri` + flagged unions (renamed `iso_*`), realign the three control read parts (`linktest/scored.part*.fa`, same reads) with the pipeline flags, `control_test.py score`-style classification: C2' = false moves <= 5%.
+- [ ] **Step 4:** doc, register rows, attribution counts and counters; decision per Amendment 14 (keep or revert the flip).
+
 ## Self-review notes
 Spec coverage: Amendment 13's four bullets map to Tasks 1 (net), 2 (template + details), 3 (acceptance + flip). Review Focus 1-5 each name their test or check. No placeholders.
