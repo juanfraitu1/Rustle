@@ -292,3 +292,29 @@ H3 re-scored from the saved arms (`h3A.support.*` in each contig's work dir; no 
 - Annotation anchoring lowers the found counts by 0-3% on the human contigs for both arms (the read-defined rule credited reads spliced at
   junctions the annotation lacks) and raises the gorilla "spliced-expressed" denominators (RefSeq gorilla models carry introns the
   >= 3-read rule had not yet confirmed at low depth).
+
+## Amendment B of the spliced-support prereg (2026-10-04 12:00): H3 under the CHAIN rule — the sign of clause (b) flips
+
+Amendment B (prereg 1e2801b0, before this re-score): support and FOUND require the read's / representative's in-span junction chain to be a
+contiguous sub-chain of an annotated transcript's intron chain (>= 2 junctions; single annotation on these contigs: CAT human, RefSeq
+gorilla). Re-scored from the saved arms (`h3B.support.*`), no families re-run.
+
+| contig | genes | chain-expressed (>= 2 ISM/FSM reads) | CHAIN FOUND R_M | R_J | locus level R_M | R_J | (Amendment A coordinate rule R_M / R_J) |
+|---|---|---|---|---|---|---|---|
+| human_chr2 | 1,243 | 1,091 | **827** | **564** | 971 | 987 | 943 / 1,026 |
+| human_chr6 | 1,047 | 876 | **638** | **469** | 754 | 766 | 741 / 800 |
+| human_chr8 | 698 | 561 | **436** | **295** | 502 | 506 | 498 / 524 |
+| human_chr10 | 729 | 637 | **473** | **337** | 561 | 575 | 555 / 589 |
+| gorilla_NC_073234.2 | 1,119 | 808 | **680** | **567** | 724 | 733 | 738 / 750 |
+| human_chr16 (dev) | 857 | 735 | **538** | **363** | 622 | 633 | 619 / 653 |
+| gorilla_NC_073244.2 (dev) | 1,520 | 1,004 | **823** | **738** | 880 | 896 | 893 / 918 |
+
+- **Under the chain rule R_J finds FEWER genes than R_M on all seven contigs** (held-out chr2 827 vs 564, chr6 638 vs 469, chr8 436 vs 295,
+  chr10 473 vs 337, NC_073234.2 680 vs 567): the junction-maximal transcript carries, more often than the most-read one, a junction the
+  annotation lacks (an alternative donor/acceptor, an extra exon, a readthrough junction), and one such junction fails the whole chain. The
+  locus level barely moves (R_J still slightly ahead: the loci hold an annotated sub-chain either way); it is the single representative that
+  the chain test judges.
+- **Decision unchanged, now on two clauses:** R_M stays the default; under Amendment B clause (b) is violated on every held-out contig as well.
+- What this measures: agreement of ONE representative with the annotated isoform chains (ISM/FSM). A representative that is a real, novel
+  isoform fails it; the metric is the user's standard for "does the node support the annotated gene", not a count of real transcripts. Any
+  future representative rule is judged on this chain rule and the family metrics together.

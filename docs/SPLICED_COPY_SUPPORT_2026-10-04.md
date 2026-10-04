@@ -108,3 +108,61 @@ spliced-expressed. So the correction changes the per-copy verdicts, not the head
   NPIPB5 the reverse (317 vs 46); NPIPB13 has 0 CAT-anchored support reads and 52 RefSeq-anchored ones. The per-copy verdicts should be read
   against both models until the human annotation question is settled (CAT is the default since 2026-10-01).
 - The register row 1232 headline (23/21/24 -> 13/9/7) is superseded by 13/9/8 (annotation-anchored); row 1237 records the amendment.
+
+## Amendment B re-score (2026-10-04 12:00, user correction): the exon-intron CHAIN must align; CAT and RefSeq models both count
+
+Amendment A credited a read when >= 2 of its junction coordinates were annotated introns, in any order with anything in between. Amendment B
+(prereg 1e2801b0, before this re-score) requires the read's junction chain inside the copy's span to be a **contiguous sub-chain of an
+annotated transcript's intron chain** (an incomplete/full splice match: every junction of the read in the span belongs to it, the exon between
+two matched introns is spanned exactly), >= 2 junctions, against the union of the CAT/Liftoff v2.0 and RefSeq models of the gene. FOUND = >= 2
+such reads AND a node whose representative's in-span junction chain is such a sub-chain. Scorer columns `chain_support_reads` (+ `_ann1` CAT,
+`_ann2` RefSeq), `chain_expressed`, `<arm>_chain_found`, `<arm>_locus_chain_found`. The page's per-copy table is `docs/SPLICED_COPY_SUPPORT_hsa_npip.tsv`
+(all three rules' columns).
+
+**NPIP: FOUND = 10 / 7 / 7 of 25 (P / GOOD / ALL), within the page's NPIP-cluster nodes 9 / 6 / 6** (Amendment A: 13 / 9 / 8; the first rule:
+13 / 9 / 7; own node 23 / 21 / 24). Every copy has >= 2 chain-support reads, but at most copies they are a small minority of the reads:
+
+| copy | reads | chain-support reads: both / CAT / RefSeq | coordinate rule (A) | exact chains | P found / own | GOOD | ALL |
+|---|---|---|---|---|---|---|---|
+| NPIPB2 | 432 | 216 / 199 / 39 | 348 | 193 | 0 / 0 | 0 / 0 | 0 / 1 |
+| NPIPA2 | 348 | 201 / 1 / 201 | 132 | 0 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA1 | 806 | 155 / 155 / 38 | 631 | 10 | 0 / 1 | 0 / 1 | 0 / 1 |
+| PKD1P6-NPIPP1 | 253 | 37 / 36 / 32 | 139 | 5 | 1 / 0 | 1 / 0 | 0 / 1 |
+| NPIPA5 | 147 | 83 / 9 / 83 | 110 | 0 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA6 | 204 | 18 / 18 / 7 | 142 | 1 | 0 / 1 | 0 / 0 | 0 / 1 |
+| NPIPA7 | 285 | 36 / 36 / 36 | 184 | 0 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA8 | 192 | 2 / 2 / 2 | 140 | 0 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA9 | 998 | 55 / 55 / 39 | 865 | 13 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC128966608 | 1104 | 338 / 338 / 66 | 585 | 37 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB4 | 897 | 49 / 49 / 31 | 199 | 27 | 0 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB5 | 785 | 133 / 132 / 11 | 317 | 1 | 0 / 1 | 0 / 1 | 1 / 1 |
+| NPIPB6 | 684 | 206 / 164 / 206 | 563 | 107 | 0 / 1 | 0 / 0 | 0 / 1 |
+| NPIPB7 | 164 | 38 / 28 / 15 | 105 | 21 | 1 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB8 | 174 | 74 / 74 / 6 | 128 | 0 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB9 | 568 | 102 / 6 / 102 | 433 | 0 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB10P | 70 | 2 / 2 / 2 | 28 | 0 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB11 | 150 | 6 / 5 / 6 | 82 | 0 | 0 / 1 | 0 / 1 | 1 / 1 |
+| NPIPB12 | 54 | 3 / 2 / 3 | 9 | 1 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907834 | 634 | 131 / 72 / 127 | 302 | 0 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB13 | 131 | 23 / 0 / 23 | 0 | 0 | 1 / 1 | 0 / 1 | 1 / 0 |
+| NPIPB14P | 1255 | 43 / 43 / 1 | 1023 | 20 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB15 | 220 | 141 / 117 / 141 | 170 | 74 | 1 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907808 | 73 | 33 / 19 / 33 | 46 | 5 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907807 | 96 | 33 / 31 / 33 | 41 | 14 | 1 / 1 | 0 / 1 | 0 / 1 |
+
+- **The user's concern is confirmed at the read level.** At NPIPA8, 2 of 192 reads chain-match any annotated model (Amendment A counted 140:
+  their junction coordinates are annotated introns, their chains are not an annotated chain); NPIPA9 55 of 998 (A: 865); NPIPB14P 43 of 1,255
+  (A: 1,023); NPIPB4 49 of 897; NPIPA6 18 of 204; NPIPB10P 2 of 70; NPIPB12 3 of 54. The reads at these copies splice through annotated
+  splice sites in chains the annotation does not have — alternative or novel isoforms, 5'-variable structures, or chains of a sibling copy.
+  Only NPIPB2 (216), NPIPB6 (206), NPIPA2 (201, all RefSeq), LOC128966608 (338), NPIPB15 (141), NPIPB5 (133), LOC124907834 (131), NPIPB9 (102,
+  RefSeq) have >= 100 reads that are an annotated chain.
+- **Which annotation matters, copy by copy:** NPIPA2 1 CAT / 201 RefSeq; NPIPB9 6 / 102; NPIPA5 9 / 83; NPIPB13 0 / 23; NPIPB2 199 / 39;
+  NPIPB5 132 / 11; NPIPB14P 43 / 1. Neither annotation alone describes what is expressed at NPIP; the union is used, as registered.
+- **Nodes:** the primaries-only arm keeps 9 chain-found copies among its 23 own nodes; "+ all" 6 of 24. NPIPB2 again 0 in every arm (ALL's
+  loci are fragments); NPIPB4 0 / 1 / 1; NPIPA8, NPIPA9, NPIPB14P, NPIPB9, NPIPB10P, NPIPB11, NPIPB12, LOC124907808 are own nodes in every arm
+  and chain-found in none — the representatives at those copies are not an annotated chain (fragments, or chains with a junction the
+  annotation lacks).
+- Locus level (any transcript of the locus is an annotated sub-chain): 17 / 16 / 16. The loci still carry annotated chains at two thirds of the
+  copies; the representative does not.
+
+Register row 1238. The headline the page now carries: own node 23 / 21 / 24 vs found 9 / 6 / 6.
