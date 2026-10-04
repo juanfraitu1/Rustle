@@ -27,7 +27,7 @@ use rustle::vg_family::o3_candidates::{
     distinguishing_columns, is_flagged, is_poorly_placed, minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf,
     refine_cluster, refined_template, sample_net, sketch_share, structural_template, union_sequence_with_note, variant_is_real, write_cluster_members,
     write_family_table, write_outputs,
-    Candidate, ClusterSeq, FamilyCounts, Fate, PafHit, ATTRIB_MAX_DE, ATTRIB_MIN_READ_COV, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA,
+    Candidate, ClusterSeq, FamilyCounts, Fate, PafHit, TemplateChoice, ATTRIB_MAX_DE, ATTRIB_MIN_READ_COV, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA,
     MM2_GENOME, MM2_MEMBERS, MM2_UNION, POORLY_PLACED_DE, SKETCH_W,
 };
 use rustle::bam::record_de;
@@ -749,12 +749,23 @@ struct Family<'n, 'a> {
     lens: Vec<usize>,
 }
 impl Family<'_, '_> {
-    /// `structural_template` of `members`: a new cluster's template, and a merged cluster's.
-    fn template(&self, members: &[usize]) -> Result<usize> { structural_template(members, &self.net.names, &self.ava, &self.lens) }
-    /// `refined_template`: the kept set's template after the refinement (re-templated when the old template was split off).
-    fn kept_template(&self, template: usize, kept: &[usize]) -> Result<usize> {
-        refined_template(template, kept, &self.net.names, &self.ava, &self.lens)
+    /// `structural_template` of `members` (prereg Amendment 13d: the medoid under the structural distance): a new cluster's template, and a
+    /// merged cluster's. A cluster with no eligible member takes its longest member, counted in `log`.
+    fn template(&self, members: &[usize], log: &mut ClusterLog) -> Result<usize> {
+        Ok(counted(structural_template(members, &self.net.names, &self.ava, &self.lens)?, log))
     }
+    /// `refined_template`: the kept set's template after the refinement (re-templated by the same rule when the old template was split off).
+    fn kept_template(&self, template: usize, kept: &[usize], log: &mut ClusterLog) -> Result<usize> {
+        Ok(counted(refined_template(template, kept, &self.net.names, &self.ava, &self.lens)?, log))
+    }
+}
+
+/// The chosen member; a longest-member fallback (Amendment 13d: no member aligned to >= 50% of the others) is counted in the family's log.
+fn counted(choice: TemplateChoice, log: &mut ClusterLog) -> usize {
+    if let TemplateChoice::Longest(_) = choice {
+        log.longest_template += 1;
+    }
+    choice.member()
 }
 
 /// A cluster of net reads: its members (indices into the net, ascending), the read it is polished on, and its consensus.
@@ -818,6 +829,8 @@ struct ClusterLog {
     absorbed: usize,
     /// Merges undone because the absorber's re-polished consensus was empty: its absorbed clusters kept separate (prereg Amendment 13).
     undone: usize,
+    /// Templates chosen as the longest member because no member was eligible (prereg Amendment 13d).
+    longest_template: usize,
     fin: usize,
 }
 impl std::fmt::Display for ClusterLog {
@@ -826,9 +839,10 @@ impl std::fmt::Display for ClusterLog {
             f,
             "{} read clusters >= --min-cluster; {} empty consensus dropped; refinement split off {} reads ({} new clusters, {} clusters fell under \
              --min-cluster, {} kept sets re-templated); significance merge absorbed {} clusters in {} rounds ({} absorptions undone: empty \
-             merged consensus, the absorbed cluster kept separate); {} clusters",
+             merged consensus, the absorbed cluster kept separate); {} templates the longest member (no member aligned to >= 50% of the others); \
+             {} clusters",
             self.read_clusters, self.empty, self.split_off, self.split_clusters, self.dropped_small, self.retemplated, self.absorbed, self.rounds,
-            self.undone, self.fin
+            self.undone, self.longest_template, self.fin
         )
     }
 }
@@ -872,13 +886,13 @@ fn polish(net: &Net, dir: &Path, tag: &str, groups: &[(Vec<usize>, usize)], mm: 
         .collect()
 }
 
-/// Polishes new groups, each on its structural template (prereg Amendment 13: `structural_template`, in place of the longest member), and
+/// Polishes new groups, each on its structural template (prereg Amendments 13 / 13d: `structural_template`, in place of the longest member), and
 /// keeps those with a non-empty consensus (R5).
 fn seeded_clusters(fam: &Family, dir: &Path, tag: &str, groups: Vec<Vec<usize>>, mm: &Mm2, log: &mut ClusterLog) -> Result<(Vec<Cluster>, Vec<Vec<(usize, PafHit)>>)> {
     let seeds: Vec<(Vec<usize>, usize)> = groups
         .into_iter()
         .map(|g| {
-            let t = fam.template(&g)?;
+            let t = fam.template(&g, log)?;
             Ok((g, t))
         })
         .collect::<Result<_>>()?;
@@ -896,8 +910,8 @@ fn seeded_clusters(fam: &Family, dir: &Path, tag: &str, groups: Vec<Vec<usize>>,
 }
 
 /// Phase 1 of one family (spec §5.3-5.5 with the minimap2 engine of §9b, rulings R2/R5): the reads clustered at delta on their all-vs-all,
-/// clusters under `--min-cluster` dropped, a consensus per cluster on its structural template (prereg Amendment 13: the member with the
-/// fewest bases of >= 20 bp indels against the other members, read from the same all-vs-all), one refinement pass, the significance merge.
+/// clusters under `--min-cluster` dropped, a consensus per cluster on its structural template (prereg Amendment 13d: the medoid of the
+/// eligible members under the structural distance, read from the same all-vs-all), one refinement pass, the significance merge.
 /// The final clusters come back ordered by size (descending), then first member.
 fn family_clusters(net: &Net, args: &Args, dir: &Path, mm: &Mm2, alpha: f64) -> Result<(Vec<Cluster>, ClusterLog)> {
     let mut log = ClusterLog::default();
@@ -947,7 +961,7 @@ fn refine(fam: &Family, args: &Args, dir: &Path, mm: &Mm2, clusters: Vec<Cluster
             log.dropped_small += 1;
             continue;
         }
-        let template = fam.kept_template(c.template, &kept)?;
+        let template = fam.kept_template(c.template, &kept, log)?;
         if template != c.template {
             // A13: the refinement split the template off: the kept set gets its own structural template, polished below
             log.retemplated += 1;
@@ -1062,7 +1076,7 @@ fn merge(fam: &Family, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: 
             .map(|m| {
                 let mut m = m.clone();
                 m.sort_unstable();
-                let t = fam.template(&m)?;
+                let t = fam.template(&m, log)?;
                 Ok((m, t))
             })
             .collect::<Result<_>>()?;

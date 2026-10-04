@@ -270,15 +270,63 @@ fn big_indel_bases(ops: &[CsOp]) -> u64 {
         .sum()
 }
 
-/// Per member of one cluster, its structural score (prereg Amendment 13): the total bases of indels >= 20 bp (`big_indel_bases`: a
-/// retained intron shows as an insertion in every pair of the read that retains it, a skipped exon as a deletion) in its best alignment to
-/// EACH other member of the cluster, summed over the other members. A pair's alignment is its best hit in the net's all-vs-all `ava`
-/// (`MM2_AVA`): the most matches, the first on a tie, whichever of the two reads is the query (the pair rule of `cluster_reads`). Its bases
-/// count for both members (a `+` of the query is a deletion from the target's point of view). A pair with no hit, or whose best hit carries
-/// no `cs`, contributes 0; hits that name a read outside `members` and self hits are ignored. Unaligned ends are not indels and do not count.
-/// `members` index `names` (the net's reads, distinct) and are distinct. Returns `(member, score)` in `members` order; a malformed `cs` of a
-/// pair's best hit is an error naming the pair (never a silent 0). No hash order reaches the result (pairs are visited in index order).
-pub fn structural_scores(members: &[usize], names: &[String], ava: &[PafHit]) -> anyhow::Result<Vec<(usize, u64)>> {
+/// The terminal bases of one sequence that a pairwise alignment leaves uncovered (prereg Amendment 13d): the `start` bases before its aligned
+/// span and the `len - end` after it, each end counted only from `STRUCT_MIN_INDEL` (20) bp. Both ends count alike, so the strand of the hit
+/// (which end is the read's 5' end) does not matter.
+fn uncovered_ends(start: usize, end: usize, len: usize) -> u64 {
+    [start, len.saturating_sub(end)].into_iter().filter(|&bases| bases >= STRUCT_MIN_INDEL).map(|bases| bases as u64).sum()
+}
+
+/// One member's place in its cluster under the structural distance of prereg Amendment 13d (`structural_scores`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StructuralScore {
+    /// The member: an index into the net's names.
+    pub member: usize,
+    /// Its aligned partners: the other members it has a hit with in the all-vs-all, in either direction.
+    pub aligned: usize,
+    /// The sum of d(member, p) over its aligned partners.
+    pub sum_d: u64,
+    /// Aligned to >= 50% of the cluster's other members, or a member of a cluster of fewer than 4 (every member is eligible there).
+    pub eligible: bool,
+}
+impl StructuralScore {
+    /// The mean d over its aligned partners; `None` without one.
+    pub fn mean_d(&self) -> Option<f64> { (self.aligned > 0).then(|| self.sum_d as f64 / self.aligned as f64) }
+}
+
+/// How a cluster's template was chosen (prereg Amendments 13 / 13d).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TemplateChoice {
+    /// The medoid: the eligible member with the lowest mean d over its aligned partners (`structural_template`); also the only member of a
+    /// cluster of one.
+    Medoid(usize),
+    /// No eligible member has an aligned partner (no member is eligible, or the members of a cluster of fewer than 4 are aligned to nothing):
+    /// the longest member, the smaller name on equal lengths. The binary logs it.
+    Longest(usize),
+    /// `refined_template` only: the refinement kept the cluster's template, which stays.
+    Kept(usize),
+}
+impl TemplateChoice {
+    /// The chosen member.
+    pub fn member(self) -> usize {
+        match self {
+            TemplateChoice::Medoid(m) | TemplateChoice::Longest(m) | TemplateChoice::Kept(m) => m,
+        }
+    }
+}
+
+/// Per member of one cluster, its aligned partners, its summed structural distance to them and its eligibility (prereg Amendment 13d).
+/// A pair's alignment is its best hit in the net's all-vs-all `ava` (`MM2_AVA`): the most matches, the first on a tie, whichever of the two
+/// reads is the query (the pair rule of `cluster_reads`); a pair with no hit is not aligned and adds nothing. For a member m and an aligned
+/// partner p, d(m, p) = the bases of the indels of >= 20 bp in that alignment (`big_indel_bases`: insertions, deletions and `~` introns
+/// alike, the same from either side) PLUS p's terminal bases the alignment leaves uncovered, each end counted from 20 bp (`uncovered_ends`:
+/// `ts` and `tlen - te` when p is the target, `qs` and `qlen - qe` when it is the query). d is not symmetric: a fragment inside its partner
+/// pays the partner's uncovered ends, the partner pays nothing for the fragment, and a member's own unaligned end costs its partners, not
+/// it. A best hit without a `cs` aligns its pair with the uncovered ends as d. A member is eligible when it is aligned to >= 50% of the
+/// cluster's other members; every member of a cluster of fewer than 4 is eligible. Hits naming a read outside `members` and self hits are
+/// ignored. `members` index `names` (the net's reads, distinct) and are distinct. Returned in `members` order; a malformed `cs` of a pair's
+/// best hit is an error naming the pair (never a silent 0). No hash order reaches the result (pairs are visited in index order).
+pub fn structural_scores(members: &[usize], names: &[String], ava: &[PafHit]) -> anyhow::Result<Vec<StructuralScore>> {
     let idx: HashMap<&str, usize> = members.iter().enumerate().map(|(i, &m)| (names[m].as_str(), i)).collect();
     let mut best: BTreeMap<(usize, usize), &PafHit> = BTreeMap::new();
     for h in ava {
@@ -287,33 +335,53 @@ pub fn structural_scores(members: &[usize], names: &[String], ava: &[PafHit]) ->
         let key = (a.min(b), a.max(b));
         if best.get(&key).map_or(true, |o| h.matches > o.matches) { best.insert(key, h); }
     }
-    let mut score = vec![0u64; members.len()];
-    for (&(a, b), h) in &best {
-        let Some(cs) = h.cs.as_deref() else { continue };
-        let bases = big_indel_bases(&parse_cs(cs).with_context(|| format!("the structural template: {} against {}", h.q, h.t))?);
-        score[a] += bases;
-        score[b] += bases;
+    let n = members.len();
+    let (mut aligned, mut sum_d) = (vec![0usize; n], vec![0u64; n]);
+    for h in best.into_values() {
+        let indel = match h.cs.as_deref() {
+            Some(cs) => big_indel_bases(&parse_cs(cs).with_context(|| format!("the structural template: {} against {}", h.q, h.t))?),
+            None => 0,
+        };
+        let (q, t) = (idx[h.q.as_str()], idx[h.t.as_str()]);
+        // the query pays the target's uncovered ends, the target the query's
+        sum_d[q] += indel + uncovered_ends(h.ts, h.te, h.tlen);
+        sum_d[t] += indel + uncovered_ends(h.qs, h.qe, h.qlen);
+        aligned[q] += 1;
+        aligned[t] += 1;
     }
-    Ok(members.iter().copied().zip(score).collect())
+    Ok((0..n).map(|i| StructuralScore { member: members[i], aligned: aligned[i], sum_d: sum_d[i], eligible: n < 4 || 2 * aligned[i] >= n - 1 }).collect())
 }
 
-/// The template of a cluster (prereg Amendment 13, in place of the longest read): the member with the LOWEST `structural_scores`, i.e. the
-/// fewest bases of >= 20 bp indels against the other members, so a read that retains an intron or skips an exon is not the template; ties
-/// go to the longest member (`lens`, indexed like `names`), then to the smallest name. A cluster of one member is its own template; an empty
-/// one is an error, and so is a malformed `cs` (see `structural_scores`). A function of the cluster as a set, the hits and the names: neither
-/// the order of `members` nor (beyond the first-wins tie between two hits of one pair) the order of `ava` reaches it.
-pub fn structural_template(members: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> anyhow::Result<usize> {
+/// The template of a cluster (prereg Amendment 13d, the medoid under the structural distance, in place of Amendment 13's lowest total of
+/// indel bases and of the longest read before it): among the eligible members with an aligned partner (`structural_scores`), the one with
+/// the LOWEST mean d over its aligned partners (compared exactly, as cross-multiplied sums), ties to the longest (`lens`, indexed like
+/// `names`), then to the smallest name: `Medoid`. A read that retains an intron or skips an exon pays the indel in every pair, a fragment pays
+/// its partners' uncovered ends, and a member aligned to under half of the others is not eligible. Without any eligible member that has an
+/// aligned partner, the longest member (`Longest`, logged by the binary). A cluster of one member is its own template; an empty one is an
+/// error, and so is a malformed `cs`. A function of the cluster as a set, the hits and the names: neither the order of `members` nor (beyond
+/// the first-wins tie between two hits of one pair) the order of `ava` reaches it.
+pub fn structural_template(members: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> anyhow::Result<TemplateChoice> {
     anyhow::ensure!(!members.is_empty(), "the structural template of a cluster without members");
-    if let [only] = members { return Ok(*only); }
+    if let [only] = members { return Ok(TemplateChoice::Medoid(*only)); }
     let scores = structural_scores(members, names, ava)?;
-    let key = |&(m, s): &(usize, u64)| (s, std::cmp::Reverse(lens[m]), names[m].as_str());
-    Ok(scores.iter().min_by(|a, b| key(a).cmp(&key(b))).map(|&(m, _)| m).expect("a non-empty cluster has a minimum"))
+    let medoid = scores.iter().filter(|s| s.eligible && s.aligned > 0).min_by(|a, b| {
+        (u128::from(a.sum_d) * b.aligned as u128)
+            .cmp(&(u128::from(b.sum_d) * a.aligned as u128))
+            .then(lens[b.member].cmp(&lens[a.member]))
+            .then_with(|| names[a.member].cmp(&names[b.member]))
+    });
+    Ok(match medoid {
+        Some(s) => TemplateChoice::Medoid(s.member),
+        None => TemplateChoice::Longest(
+            *members.iter().max_by(|&&a, &&b| lens[a].cmp(&lens[b]).then_with(|| names[b].cmp(&names[a]))).expect("a non-empty cluster has a longest member"),
+        ),
+    })
 }
 
-/// The template of a refined cluster's kept set (prereg Amendment 13): `template` while the refinement keeps it, else (the refinement split
-/// the template off) the `structural_template` of `kept`, over the pairs of the kept set only.
-pub fn refined_template(template: usize, kept: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> anyhow::Result<usize> {
-    if kept.contains(&template) { Ok(template) } else { structural_template(kept, names, ava, lens) }
+/// The template of a refined cluster's kept set (prereg Amendment 13): `Kept(template)` while the refinement keeps the template, else (the
+/// refinement split it off) the `structural_template` of `kept`, over the pairs of the kept set only.
+pub fn refined_template(template: usize, kept: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> anyhow::Result<TemplateChoice> {
+    if kept.contains(&template) { Ok(TemplateChoice::Kept(template)) } else { structural_template(kept, names, ava, lens) }
 }
 
 /// Template-and-vote consensus of one cluster (spec §5.4, rulings R2 and R5). `template` is the sequence the members were aligned to; each
@@ -1222,7 +1290,7 @@ mod tests {
         }
     }
 
-    // ---- the structurally central template (prereg Amendment 13) -----------------------------------------------------------------------
+    // ---- the template: the medoid under a structural distance (prereg Amendments 13 / 13d) ------------------------------------------------
 
     /// A hand-written all-vs-all hit: read `q` (`qlen` bases, `qs..qe` aligned) on read `t` (`tlen` bases, `ts..te` aligned) with the
     /// `cs` given; `matches` decides between two hits of one pair, `block` and `de` are fillers.
@@ -1232,17 +1300,20 @@ mod tests {
     }
     /// `pair_hit` of two reads aligned end to end.
     fn whole_hit(q: &str, qlen: usize, t: &str, tlen: usize, matches: usize, cs: &str) -> PafHit { pair_hit(q, qlen, (0, qlen), t, tlen, (0, tlen), matches, cs) }
-    fn sorted_scores(members: &[usize], names: &[String], ava: &[PafHit]) -> Vec<(usize, u64)> {
-        let mut v = structural_scores(members, names, ava).unwrap();
+    /// `structural_scores` as `(member, aligned partners, sum of d, eligible)`, sorted by member.
+    fn sorted_scores(members: &[usize], names: &[String], ava: &[PafHit]) -> Vec<(usize, usize, u64, bool)> {
+        let mut v: Vec<(usize, usize, u64, bool)> = structural_scores(members, names, ava).unwrap().iter().map(|s| (s.member, s.aligned, s.sum_d, s.eligible)).collect();
         v.sort();
         v
     }
+    fn template(members: &[usize], names: &[String], ava: &[PafHit], lens: &[usize]) -> TemplateChoice { structural_template(members, names, ava, lens).unwrap() }
 
     #[test]
     fn retained_intron_read_is_not_the_template() {
         // Review Focus 2. A = a clean 900-bp read; B = A with a 300-bp intron retained after base 400 (1,200 bp: the longest member, the old
-        // template); C = A with 0.2% substitutions (2 in 900). B's hits to A and to C carry the 300 bases as a `-` (B the target) or a `+` (B the
-        // query); A-C carries the substitutions only. Scores: A 300, B 600, C 300; A and C tie on score and length, the name gives A
+        // template); C = A with 0.2% substitutions (2 in 900). Every hit covers both reads end to end, so d is the indel length: B's pairs carry
+        // the 300 bases as a `-` (B the target) or a `+` (B the query), A-C none. Mean d: A 150, B 300, C 150; A and C tie on the mean and the
+        // length, the name gives A
         let intron = lc(&rand_seq(300, 211));
         let names = names_of("A B C");
         let lens = [900, 1200, 900];
@@ -1251,92 +1322,202 @@ mod tests {
             whole_hit("B", 1200, "C", 900, 898, &format!(":400+{intron}:50*ag:349*tc:99")),
             whole_hit("A", 900, "C", 900, 898, ":450*ag:349*tc:99"),
         ];
-        assert_eq!(sorted_scores(&[0, 1, 2], &names, &ava), vec![(0, 300), (1, 600), (2, 300)]);
-        assert_eq!(structural_template(&[0, 1, 2], &names, &ava, &lens).unwrap(), 0);
+        assert_eq!(sorted_scores(&[0, 1, 2], &names, &ava), vec![(0, 2, 300, true), (1, 2, 600, true), (2, 2, 300, true)]);
+        assert_eq!(template(&[0, 1, 2], &names, &ava, &lens), TemplateChoice::Medoid(0));
         // the cluster's order and the PAF's order do not matter
         let rev: Vec<PafHit> = ava.iter().rev().cloned().collect();
-        assert_eq!(structural_template(&[2, 1, 0], &names, &rev, &lens).unwrap(), 0);
+        assert_eq!(template(&[2, 1, 0], &names, &rev, &lens), TemplateChoice::Medoid(0));
         // the retained-intron read loses whatever its name: renamed to sort first, B is still not the template
         let renamed = names_of("x 0 y");
         let ava0: Vec<PafHit> = ava.iter().map(|h| PafHit { q: rename(&h.q), t: rename(&h.t), ..h.clone() }).collect();
         fn rename(s: &str) -> String { match s { "A" => "x", "B" => "0", _ => "y" }.to_string() }
-        assert_eq!(structural_template(&[0, 1, 2], &renamed, &ava0, &lens).unwrap(), 0);
+        assert_eq!(template(&[0, 1, 2], &renamed, &ava0, &lens), TemplateChoice::Medoid(0));
     }
     #[test]
     fn skipping_read_is_not_the_template() {
-        // r1 lacks a 200-bp exon of the others (after base 300) and carries a 250-bp 5' extension that no pair aligns (an unaligned end, not an
-        // indel): at 950 bp it is the longest member. Its hits carry the exon as a 200-bp `-` (r1 the query), as a 200-bp `+` (r1 the target)
-        // and, as a splice preset writes it, as a 200-bp `~` intron; every other pair is clean. Scores: r1 600, the others 200 each
+        // r1 lacks a 200-bp exon of the others (after base 300): 700 bp. Its hits cover both reads end to end, so d is the indel length, and
+        // carry the exon as a 200-bp `-` (r1 the query), a 200-bp `+` (r1 the target) and, as a splice preset writes it, a 200-bp `~` intron;
+        // every other pair is clean. Mean d: r1 200, the others 200 / 3 each; the name gives r0
         let exon = lc(&rand_seq(200, 223));
         let names = names_of("r0 r1 r2 r3");
-        let lens = [900, 950, 900, 900];
+        let lens = [900, 700, 900, 900];
         let ava = vec![
-            pair_hit("r1", 950, (250, 950), "r0", 900, (0, 900), 700, &format!(":300-{exon}:400")),
-            pair_hit("r2", 900, (0, 900), "r1", 950, (250, 950), 700, &format!(":300+{exon}:400")),
-            pair_hit("r1", 950, (250, 950), "r3", 900, (0, 900), 700, ":300~gt200ag:400"),
+            whole_hit("r1", 700, "r0", 900, 700, &format!(":300-{exon}:400")),
+            whole_hit("r2", 900, "r1", 700, 700, &format!(":300+{exon}:400")),
+            whole_hit("r1", 700, "r3", 900, 700, ":300~gt200ag:400"),
             whole_hit("r0", 900, "r2", 900, 900, ":900"),
             whole_hit("r0", 900, "r3", 900, 900, ":900"),
             whole_hit("r2", 900, "r3", 900, 900, ":900"),
         ];
-        assert_eq!(sorted_scores(&[0, 1, 2, 3], &names, &ava), vec![(0, 200), (1, 600), (2, 200), (3, 200)]);
-        assert_eq!(structural_template(&[0, 1, 2, 3], &names, &ava, &lens).unwrap(), 0);
-        // without r0 the skipping read is still not chosen: r2 and r3 tie at 200, the name gives r2
-        assert_eq!(structural_template(&[1, 2, 3], &names, &ava, &lens).unwrap(), 2);
+        assert_eq!(sorted_scores(&[0, 1, 2, 3], &names, &ava), vec![(0, 3, 200, true), (1, 3, 600, true), (2, 3, 200, true), (3, 3, 200, true)]);
+        assert_eq!(template(&[0, 1, 2, 3], &names, &ava, &lens), TemplateChoice::Medoid(0));
+        // without r0 the skipping read is still not chosen: r2 and r3 tie at a mean of 100 (r1: 200), the name gives r2
+        assert_eq!(template(&[1, 2, 3], &names, &ava, &lens), TemplateChoice::Medoid(2));
+    }
+    #[test]
+    fn fragment_is_not_the_template() {
+        // Amendment 13d. F, a 300-bp read, lies wholly inside the full-length reads A (925 bp: a 25-bp exon of its own), B and C (900 bp). F's
+        // alignments carry no indel but leave >= 600 bases of each partner uncovered (both ends >= 20 bp), so d(F, p) >= 600 while d(p, F) = 0;
+        // A-B and A-C carry A's 25-bp exon. Sums of d over 3 partners: A 50, B 25, C 25, F 625 + 600 + 600; B and C tie on the mean (8.3) and the
+        // length, the name gives B. (Amendment 13's total of indel bases chose F: 0 against A 50, B 25, C 25.)
+        let x25 = lc(&rand_seq(25, 257));
+        let names = names_of("A B C F");
+        let lens = [925, 900, 900, 300];
+        let ava = vec![
+            whole_hit("A", 925, "B", 900, 900, &format!(":400+{x25}:500")),
+            whole_hit("C", 900, "A", 925, 900, &format!(":400-{x25}:500")),
+            whole_hit("B", 900, "C", 900, 900, ":900"),
+            pair_hit("F", 300, (0, 300), "A", 925, (500, 800), 300, ":300"),        // A uncovered: 500 before, 125 after
+            pair_hit("B", 900, (300, 600), "F", 300, (0, 300), 300, ":300"),        // F the target: B (the query) uncovered 300 + 300
+            pair_hit("F", 300, (0, 300), "C", 900, (300, 600), 300, ":300"),
+        ];
+        assert_eq!(sorted_scores(&[0, 1, 2, 3], &names, &ava), vec![(0, 3, 50, true), (1, 3, 25, true), (2, 3, 25, true), (3, 3, 1825, true)]);
+        assert_eq!(template(&[0, 1, 2, 3], &names, &ava, &lens), TemplateChoice::Medoid(1));
+        // with the fragment and one full-length read only, the full-length read is the template (d 0 against F's 625)
+        assert_eq!(template(&[0, 3], &names, &ava, &lens), TemplateChoice::Medoid(0));
+    }
+    #[test]
+    fn the_distance_adds_the_partners_uncovered_ends_of_20_bp_and_more() {
+        // Amendment 13d: d(m, p) = the >= 20 bp indels of the pair's best hit + p's terminal bases that the hit leaves uncovered, each end only
+        // from 20 bp, from whichever side m sits on. a (the query, 144 bp, 100 aligned) on b (161 bp, 122 aligned): b has 19 bases uncovered
+        // before ts (not counted) and 20 after te (counted); a has 25 before qs (counted) and 19 after qe (not); the cs carries a 22-bp deletion
+        let x22 = lc(&rand_seq(22, 271));
+        let names = names_of("a b");
+        let h = pair_hit("a", 144, (25, 125), "b", 161, (19, 141), 100, &format!(":50-{x22}:50"));
+        assert_eq!(sorted_scores(&[0, 1], &names, &[h]), vec![(0, 1, 22 + 20, true), (1, 1, 22 + 25, true)]);
+        // the same alignment written the other way round (b the query): the same distances
+        let flipped = pair_hit("b", 161, (19, 141), "a", 144, (25, 125), 100, &format!(":50+{x22}:50"));
+        assert_eq!(sorted_scores(&[0, 1], &names, &[flipped]), vec![(0, 1, 42, true), (1, 1, 47, true)]);
+        // the uncovered end counts against the member that leaves it, not against its owner: r1 skips a 200-bp exon but carries a 250-bp 5'
+        // extension of its own that no partner covers, so d(r1, p) = 200 and d(p, r1) = 450; in a cluster of three it is the medoid (mean 200
+        // against 225), in a larger one the partners' means fall (450 / (n - 1)) and it is not
+        let exon = lc(&rand_seq(200, 223));
+        let three = names_of("r1 r2 r3");
+        let ava = vec![
+            pair_hit("r2", 900, (0, 900), "r1", 950, (250, 950), 700, &format!(":300+{exon}:400")),
+            pair_hit("r1", 950, (250, 950), "r3", 900, (0, 900), 700, ":300~gt200ag:400"),
+            whole_hit("r2", 900, "r3", 900, 900, ":900"),
+        ];
+        assert_eq!(sorted_scores(&[0, 1, 2], &three, &ava), vec![(0, 2, 400, true), (1, 2, 450, true), (2, 2, 450, true)]);
+        assert_eq!(template(&[0, 1, 2], &three, &ava, &[950, 900, 900]), TemplateChoice::Medoid(0));
+    }
+    #[test]
+    fn sparse_member_is_ineligible() {
+        // Amendment 13d: a member is eligible when it is aligned to >= 50% of the cluster's other members. m6 is aligned to m0 only (1 of 6),
+        // d 0 both ways; m0..m5 are aligned pairwise, each pair carrying a 30-bp exon swap (d 60). Mean d: m6 0 over 1 partner, m0 50, m1..m5
+        // 60: m6 is skipped and m0 is the template
+        let (xa, xb) = (lc(&rand_seq(30, 263)), lc(&rand_seq(30, 269)));
+        let names = names_of("m0 m1 m2 m3 m4 m5 m6");
+        let lens = [900; 7];
+        let all: Vec<usize> = (0..7).collect();
+        let swap = format!(":200+{xa}:200-{xb}:470");
+        let mut ava: Vec<PafHit> = Vec::new();
+        for i in 0..6 {
+            for j in i + 1..6 { ava.push(whole_hit(&names[i], 900, &names[j], 900, 840, &swap)); }
+        }
+        ava.push(whole_hit("m6", 900, "m0", 900, 900, ":900"));
+        let s = sorted_scores(&all, &names, &ava);
+        assert_eq!((s[0], s[6]), ((0, 6, 300, true), (6, 1, 0, false)));
+        assert!(s[1..6].iter().all(|&(_, aligned, sum_d, eligible)| (aligned, sum_d, eligible) == (5, 300, true)), "{s:?}");
+        assert_eq!(template(&all, &names, &ava, &lens), TemplateChoice::Medoid(0));
+        // aligned to 2 of 6 it is still under half (m1 now ties m0 at a mean of 50: the name keeps m0) ...
+        ava.push(whole_hit("m1", 900, "m6", 900, 900, ":900"));
+        assert_eq!(sorted_scores(&all, &names, &ava)[6], (6, 2, 0, false));
+        assert_eq!(template(&all, &names, &ava, &lens), TemplateChoice::Medoid(0));
+        // ... aligned to 3 of 6 (exactly half) it is eligible and, at a mean of 0, the template
+        ava.push(whole_hit("m6", 900, "m2", 900, 900, ":900"));
+        assert_eq!(sorted_scores(&all, &names, &ava)[6], (6, 3, 0, true));
+        assert_eq!(template(&all, &names, &ava, &lens), TemplateChoice::Medoid(6));
+    }
+    #[test]
+    fn small_cluster_all_eligible() {
+        // Amendment 13d: every member of a cluster of fewer than 4 is eligible. Of p, q, r only p-q is aligned (d 0): r is eligible with no
+        // aligned partner, so it has no mean and is not the medoid although it is the longest; p and q tie, the name gives p
+        let names = names_of("p q r s");
+        let ava = vec![whole_hit("p", 900, "q", 900, 900, ":900")];
+        let lens = [900, 900, 1000, 900];
+        assert_eq!(sorted_scores(&[0, 1, 2], &names, &ava), vec![(0, 1, 0, true), (1, 1, 0, true), (2, 0, 0, true)]);
+        assert_eq!(template(&[0, 1, 2], &names, &ava, &lens), TemplateChoice::Medoid(0));
+        // p, q, s with p-q carrying a 25-bp exon swap (d 50) and s aligned to p only (d 0): s is eligible and the template
+        let (xa, xb) = (lc(&rand_seq(25, 277)), lc(&rand_seq(25, 281)));
+        let swap = whole_hit("p", 900, "q", 900, 850, &format!(":200+{xa}:200-{xb}:475"));
+        let ava = vec![swap.clone(), whole_hit("s", 900, "p", 900, 900, ":900")];
+        assert_eq!(sorted_scores(&[0, 1, 3], &names, &ava), vec![(0, 2, 50, true), (1, 1, 50, true), (3, 1, 0, true)]);
+        assert_eq!(template(&[0, 1, 3], &names, &ava, &lens), TemplateChoice::Medoid(3));
+        // from 4 members the rule applies: with r (here 900 bp) aligned to p and q (d 50), s aligned to 1 of 3 is no longer eligible and p
+        // (mean 100 / 3) is the template
+        let swap_r = |q: &str| whole_hit(q, 900, "r", 900, 850, &format!(":200+{xa}:200-{xb}:475"));
+        let ava = vec![swap, whole_hit("s", 900, "p", 900, 900, ":900"), swap_r("p"), swap_r("q")];
+        assert_eq!(sorted_scores(&[0, 1, 2, 3], &names, &ava), vec![(0, 3, 100, true), (1, 2, 100, true), (2, 2, 100, true), (3, 1, 0, false)]);
+        assert_eq!(template(&[0, 1, 2, 3], &names, &ava, &[900; 4]), TemplateChoice::Medoid(0));
+    }
+    #[test]
+    fn no_eligible_member_takes_the_longest() {
+        // Amendment 13d: 5 members each aligned to at most 1 of the 4 others (pairs m0-m1 and m2-m3, m4 none): no member is eligible, so the
+        // template is the longest member (`Longest`: the binary logs it), equal lengths to the smaller name
+        let names = names_of("m0 m1 m2 m3 m4");
+        let ava = vec![whole_hit("m0", 900, "m1", 900, 900, ":900"), whole_hit("m2", 900, "m3", 900, 900, ":900")];
+        let all = [0, 1, 2, 3, 4];
+        assert!(sorted_scores(&all, &names, &ava).iter().all(|&(_, _, _, eligible)| !eligible));
+        assert_eq!(template(&all, &names, &ava, &[900, 900, 950, 900, 1000]), TemplateChoice::Longest(4));
+        assert_eq!(template(&all, &names, &ava, &[900, 980, 980, 900, 700]), TemplateChoice::Longest(1));
+        // a small cluster with no alignment at all: every member is eligible but none has a mean: the longest as well
+        assert_eq!(template(&[0, 1, 4], &names, &[], &[900, 980, 970, 900, 700]), TemplateChoice::Longest(1));
+        // one member is its own template, not a fallback; no member is an error
+        assert_eq!(template(&[3], &names, &[], &[900; 5]), TemplateChoice::Medoid(3));
+        assert!(structural_template(&[], &names, &[], &[900; 5]).is_err());
     }
     #[test]
     fn tie_breaks_by_length_then_name() {
-        // Review Focus 3: two members with identical structure (a clean pair) tie on the score: the longer one, else the smaller name, whatever
-        // the order of the cluster, of the PAF and of the net
+        // Review Focus 3: two members with identical structure (a clean pair: d 0 both ways) tie on the mean: the longer one, else the smaller
+        // name, whatever the order of the cluster, of the PAF and of the net
         let names = names_of("b a");
         let ava = vec![whole_hit("b", 900, "a", 900, 900, ":900")];
-        assert_eq!(structural_template(&[0, 1], &names, &ava, &[900, 900]).unwrap(), 1);         // equal lengths: "a"
-        assert_eq!(structural_template(&[1, 0], &names, &ava, &[900, 900]).unwrap(), 1);
-        assert_eq!(structural_template(&[0, 1], &names, &ava, &[900, 901]).unwrap(), 1);         // "a" is longer
-        assert_eq!(structural_template(&[0, 1], &names, &ava, &[901, 900]).unwrap(), 0);         // "b" is longer: length before name
-        // a pair with no hit contributes 0: without any hit every member scores 0 and the longest is the template
+        let pick = |members: &[usize], lens: &[usize]| template(members, &names, &ava, lens);
+        assert_eq!(pick(&[0, 1], &[900, 900]), TemplateChoice::Medoid(1));                        // equal lengths: "a"
+        assert_eq!(pick(&[1, 0], &[900, 900]), TemplateChoice::Medoid(1));
+        assert_eq!(pick(&[0, 1], &[900, 901]), TemplateChoice::Medoid(1));                        // "a" is longer
+        assert_eq!(pick(&[0, 1], &[901, 900]), TemplateChoice::Medoid(0));                        // "b" is longer: length before name
+        // the mean comes before the length: q (920 bp) carries a 20-bp insertion against p and r, so p (900 bp) is the template ...
         let three = names_of("p q r");
-        assert_eq!(sorted_scores(&[0, 1, 2], &three, &[]), vec![(0, 0), (1, 0), (2, 0)]);
-        assert_eq!(structural_template(&[0, 1, 2], &three, &[], &[700, 900, 800]).unwrap(), 1);
-        // one member is its own template (no hit needed); no member is an error
-        assert_eq!(structural_template(&[2], &three, &[], &[700, 900, 800]).unwrap(), 2);
-        assert!(structural_template(&[], &three, &[], &[700, 900, 800]).is_err());
-        // the score comes before the length: q (919 bp) carries a 20-bp insertion against p and r, so p (900 bp) is the template ...
         let ins20 = lc(&rand_seq(20, 229));
         let ins = |n: usize| vec![
             whole_hit("q", 900 + n, "p", 900, 900, &format!(":450+{}:450", &ins20[..n])),
             whole_hit("r", 900, "q", 900 + n, 900, &format!(":450-{}:450", &ins20[..n])),
             whole_hit("p", 900, "r", 900, 900, ":900"),
         ];
-        assert_eq!(sorted_scores(&[0, 1, 2], &three, &ins(20)), vec![(0, 20), (1, 40), (2, 20)]);
-        assert_eq!(structural_template(&[0, 1, 2], &three, &ins(20), &[900, 920, 900]).unwrap(), 0);
-        // ... while a 19-bp insertion is no structure: every score is 0 and the longest member (q) is the template
-        assert_eq!(sorted_scores(&[0, 1, 2], &three, &ins(19)), vec![(0, 0), (1, 0), (2, 0)]);
-        assert_eq!(structural_template(&[0, 1, 2], &three, &ins(19), &[900, 919, 900]).unwrap(), 1);
+        assert_eq!(sorted_scores(&[0, 1, 2], &three, &ins(20)), vec![(0, 2, 20, true), (1, 2, 40, true), (2, 2, 20, true)]);
+        assert_eq!(template(&[0, 1, 2], &three, &ins(20), &[900, 920, 900]), TemplateChoice::Medoid(0));
+        // ... while a 19-bp insertion is no structure: every d is 0 and the longest member (q) is the template
+        assert_eq!(sorted_scores(&[0, 1, 2], &three, &ins(19)), vec![(0, 2, 0, true), (1, 2, 0, true), (2, 2, 0, true)]);
+        assert_eq!(template(&[0, 1, 2], &three, &ins(19), &[900, 919, 900]), TemplateChoice::Medoid(1));
     }
     #[test]
     fn the_structural_score_reads_each_member_pairs_best_hit_only() {
         let big = lc(&rand_seq(300, 233));
         let names = names_of("m0 m1 m2 out");
-        // the pair's best hit by matches decides, in either order of the PAF: a secondary hit with fewer matches and a 300-bp `+` does not count
+        // the pair's best hit by matches decides, in either order of the PAF: a secondary hit with fewer matches (a 300-bp `+`, 300 bases of m0
+        // uncovered) does not count
         let clean = whole_hit("m0", 900, "m1", 900, 899, ":900");
         let secondary = pair_hit("m1", 900, (0, 900), "m0", 900, (300, 900), 600, &format!(":400+{big}:200"));
         for ava in [vec![clean.clone(), secondary.clone()], vec![secondary.clone(), clean.clone()]] {
-            assert_eq!(sorted_scores(&[0, 1, 2], &names, &ava), vec![(0, 0), (1, 0), (2, 0)]);
+            assert_eq!(sorted_scores(&[0, 1, 2], &names, &ava), vec![(0, 1, 0, true), (1, 1, 0, true), (2, 0, 0, true)]);
         }
-        // equal matches: the first hit encountered (as `cluster_reads` picks a pair's hit)
+        // equal matches: the first hit encountered (as `cluster_reads` picks a pair's hit); d(m0, m1) = 300, d(m1, m0) = 300 + m0's 300 uncovered
         let tied = PafHit { matches: 899, ..secondary.clone() };
-        assert_eq!(sorted_scores(&[0, 1, 2], &names, &[clean.clone(), tied.clone()]), vec![(0, 0), (1, 0), (2, 0)]);
-        assert_eq!(sorted_scores(&[0, 1, 2], &names, &[tied, clean.clone()]), vec![(0, 300), (1, 300), (2, 0)]);
-        // hits to a read outside the cluster and self hits are ignored; a best hit without a cs contributes 0
+        assert_eq!(sorted_scores(&[0, 1, 2], &names, &[clean.clone(), tied.clone()]), vec![(0, 1, 0, true), (1, 1, 0, true), (2, 0, 0, true)]);
+        assert_eq!(sorted_scores(&[0, 1, 2], &names, &[tied, clean.clone()]), vec![(0, 1, 300, true), (1, 1, 600, true), (2, 0, 0, true)]);
+        // hits to a read outside the cluster and self hits are ignored; a best hit without a cs aligns its pair with the uncovered ends as d
         let ignored = vec![
             whole_hit("m2", 900, "out", 1200, 890, &format!(":400+{big}:500")),
             whole_hit("m2", 900, "m2", 900, 900, &format!(":400+{big}:500")),
-            PafHit { cs: None, ..whole_hit("m0", 900, "m2", 900, 900, "") },
+            PafHit { cs: None, ..pair_hit("m0", 900, (0, 900), "m2", 950, (0, 900), 900, "") },
         ];
-        assert_eq!(sorted_scores(&[0, 1, 2], &names, &ignored), vec![(0, 0), (1, 0), (2, 0)]);
-        // the scores come back in the cluster's order
+        assert_eq!(sorted_scores(&[0, 1, 2], &names, &ignored), vec![(0, 1, 50, true), (1, 0, 0, true), (2, 1, 0, true)]);
+        // the scores come back in the cluster's order, with the mean over the aligned partners
         let pair = vec![whole_hit("m2", 600, "m0", 900, 590, &format!(":400-{big}:200"))];
-        assert_eq!(structural_scores(&[2, 1, 0], &names, &pair).unwrap(), vec![(2, 300), (1, 0), (0, 300)]);
+        let got = structural_scores(&[2, 1, 0], &names, &pair).unwrap();
+        assert_eq!(got.iter().map(|s| (s.member, s.sum_d, s.mean_d())).collect::<Vec<_>>(), vec![(2, 300, Some(300.0)), (1, 0, None), (0, 300, Some(300.0))]);
         // a malformed cs of a best hit is an error naming the pair, never a silent 0
         let bad = vec![whole_hit("m0", 900, "m1", 900, 900, ":400+")];
         let msg = format!("{:#}", structural_scores(&[0, 1, 2], &names, &bad).unwrap_err());
@@ -1345,9 +1526,10 @@ mod tests {
     }
     #[test]
     fn refine_re_templates_the_kept_set_when_its_template_was_split_off() {
-        // prereg Amendment 13: X (the cluster's template) is split off by the refinement; the kept set {A, B, C} is re-templated by the
-        // structural rule over ITS pairs only. Counting X's pairs would make C the template (A-X carries a 500-bp indel: A 800, C 300); over
-        // the kept pairs A and C score 300 each (B, a retained intron, 600) and the name gives A
+        // prereg Amendment 13: X (the cluster's template) is split off by the refinement; the kept set {A, B, C} is re-templated by the same
+        // rule over ITS pairs only. Over the whole cluster X's pairs count and C is the medoid (mean d: A 800/3, B 300, C 700/3, X 300: A-X
+        // carries a 500-bp indel and leaves 100 bases of A uncovered, C-X leaves 400 of X); over the kept pairs A and C tie at 150 (B, a
+        // retained intron, 300) and the name gives A
         let (intron, other) = (lc(&rand_seq(300, 241)), lc(&rand_seq(500, 251)));
         let names = names_of("A B C X");
         let lens = [900, 1200, 900, 1300];
@@ -1358,11 +1540,11 @@ mod tests {
             pair_hit("A", 900, (50, 850), "X", 1300, (0, 1300), 800, &format!(":400-{other}:400")),
             pair_hit("C", 900, (0, 900), "X", 1300, (0, 900), 900, ":900"),
         ];
-        assert_eq!(structural_template(&[0, 1, 2, 3], &names, &ava, &lens).unwrap(), 2, "over the whole cluster, X's pairs count");
-        assert_eq!(refined_template(3, &[0, 1, 2], &names, &ava, &lens).unwrap(), 0);
-        // a template that the refinement keeps stays the template, although the kept set's structural template would be another member
-        assert_eq!(refined_template(3, &[0, 1, 2, 3], &names, &ava, &lens).unwrap(), 3);
-        assert_eq!(refined_template(1, &[0, 1, 2], &names, &ava, &lens).unwrap(), 1);
+        assert_eq!(template(&[0, 1, 2, 3], &names, &ava, &lens), TemplateChoice::Medoid(2), "over the whole cluster, X's pairs count");
+        assert_eq!(refined_template(3, &[0, 1, 2], &names, &ava, &lens).unwrap(), TemplateChoice::Medoid(0));
+        // a template that the refinement keeps stays the template, although the kept set's medoid would be another member
+        assert_eq!(refined_template(3, &[0, 1, 2, 3], &names, &ava, &lens).unwrap(), TemplateChoice::Kept(3));
+        assert_eq!(refined_template(1, &[0, 1, 2], &names, &ava, &lens).unwrap(), TemplateChoice::Kept(1));
     }
 
     #[test]
