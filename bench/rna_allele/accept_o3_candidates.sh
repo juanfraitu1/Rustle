@@ -1,17 +1,24 @@
 #!/bin/bash
-# accept_o3_candidates.sh — Amendment 12 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): `o3_candidates` on Amendment 7's 53-family
-# held-out, scored by `merge_test.py score` (arm M = masked genome + one union per flagged candidate, each candidate its own component).
+# accept_o3_candidates.sh — the `o3_candidates` acceptance on Amendment 7's 53-family held-out (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md),
+# scored by `merge_test.py score` (arm M = masked genome + one union per flagged candidate, each candidate its own component).
+#   ACC=a13 (default): Amendment 13 (+ 13b-13e) — the A13 stage (alignment attribution, structural template), work dir a13/; the copies table,
+#                      FASTA, regions and batch plan of A12 are reused (`link`); A13-1 is decided on the re-registered comparator C (`comparator`).
+#   ACC=a12:           Amendment 12, as run on 2026-10-02 into a12/ (its k-mer net recomputation `nets` and binary a3564999 are at commit fde90c0a;
+#                      the current stage has no k-mer rule, so only its scoring steps re-run here).
 #
-#   accept_o3_candidates.sh <step> [run] [arg]    run = reg (delta 0.00958, the registered run, work dir $A) | half (0.00479, $A/half) |
-#                                                 double (0.01916, $A/double)
+#   [ACC=a12|a13] accept_o3_candidates.sh <step> [run] [arg]    run = reg (delta 0.00958, the registered run, work dir $A) | half (0.00479,
+#                                                               $A/half) | double (0.01916, $A/double)
 #
 # Steps, in order (every heavy step is ONE foreground call under tools/rlock.sh heavy, each < 10 min; light ones under rlock light):
-#   copies               panel.json -> A12.copies.tsv / A12.copies.fa / A12.regions (panel_to_copies.py)              light
-#   nets                 the stage's read nets recomputed (pass A / pass B / cap) -> nets.tsv, net_reads.tsv          light
+#   copies               (a12) panel.json -> A12.copies.tsv / A12.copies.fa / A12.regions (panel_to_copies.py)         light
+#   link                 (a13) A12's copies table / FASTA / regions / batches.txt and R.bam (+ .bai) linked into $A           light
 #   plan [n] [k] [file]  families not in the first k lines of the batch file -> n new batches on an estimated cost     light
 #   split                each scored part in two halves -> $A/parts/scored.part{0,1,2}{a,b}.fa (shorter malign calls)   light
 #   stage <run> <g>      o3_candidates on batch g (line g+1 of $W/batches.txt, else $A/batches.txt), time -v -> cand_g<g>.* heavy
 #   concat <run>         the batches' products -> cand.* (one header; families in the stage's order)                 light
+#   nets <run>           (a13) the nets as the stage built them: pass A from R.bam and pass B's attribution re-run per batch
+#                        (minimap2 map-ont), checked against the stage's own products (every batch log's pass-B counts,
+#                        families.tsv n_net / n_used, reads.tsv, nets.fa) -> nets.tsv, net_reads.tsv, attrib.json, attrib.out   heavy
 #   contigs <run>        flagged unions renamed iso_<family>_<k> -> iso.contigs.fa, iso_names.tsv                    light
 #   mindex <run>         M.fa = masked.fa + iso.contigs.fa; minimap2 -x splice -d M.splice.mmi (~5 min, ~21 GB)      heavy
 #   malign <run> <p>     scored.part<p>.fa (p = 0..2, or a half 0a..2b) realigned to M (R / RIL arms' flags + -K 100M)  heavy
@@ -19,25 +26,36 @@
 #   label <run>          iso.contigs.fa vs the UNMASKED genome (minimap2 -c -x splice:hq -uf -N 20) -> iso.base.paf;
 #                        contigs.tsv (source D / S:<copy> / elsewhere / none), empty merge/paf/*.paf, links            heavy + light
 #   score <run>          merge_test.py components (singletons: no pair alignments) + merge_test.py score -> score.out  light + heavy
-#   keep <run>           A12-2: candidates' reads vs unions and cluster consensus sequences -> keep.out, keep.json     heavy
+#   keep <run>           A12-2 / A13-2: candidates' reads vs unions and cluster consensus sequences -> keep.out       heavy
 #   report <run>         stage counts, labels, detection, floors, causes -> report.out, report.json                  light
+#   comparator <run>     (a13) Amendment 13b's C: IsoCon's Amendment 8 arm M right D reads over the truth-free attainable D
+#                        reads (a record on a surviving copy in R.bam, or attributed into their own family's net by this run)
+#                        and the A13-1 verdict -> comparator.out, comparator.json                                        light
 #   decompose <run>      post hoc (no registered rule): arm M read by read vs IsoCon's Amendment 8 arm M, D reads split by
 #                        where the R arm put them -> decompose.out, decompose.json                                     light
 #   clean <run>          rm M.splice.mmi and M.fa (the BAMs and tables stay)
 #
-# As run on 2026-10-02: copies; nets; batches.txt = batch 0 written by hand, then `plan 4 1` (calibrated on it); stage reg 0..4; concat,
-# contigs, label, mindex reg; malign reg 0..2; mmerge reg; score reg; keep reg; report reg; decompose reg; clean reg. Reruns (the heavy
-# lock was shared with another session, so shorter calls): `plan 9 0 $A/half/batches.txt`, copied to $A/double/; split; stage half|double
-# 0..8; concat, contigs, label, mindex; malign half 0a..2b / double 0..2; mmerge; score; report; clean.
+# As run on 2026-10-02 (ACC=a12): copies; nets; batches.txt = batch 0 written by hand, then `plan 4 1` (calibrated on it); stage reg 0..4;
+# concat, contigs, label, mindex reg; malign reg 0..2; mmerge reg; score reg; keep reg; report reg; decompose reg; clean reg. Reruns (the
+# heavy lock was shared with another session, so shorter calls): `plan 9 0 $A/half/batches.txt`, copied to $A/double/; split; stage
+# half|double 0..8; concat, contigs, label, mindex; malign half 0a..2b / double 0..2; mmerge; score; report; clean.
+# As run on 2026-10-03 (ACC=a13, the o3_candidates of 0f5824a7): link; stage reg 0..4 (A12's five batches); concat, nets, contigs, label,
+# mindex reg; malign reg 0..2; mmerge; score; comparator; keep; report; decompose; clean. Reruns: stage half|double 0..4 (the same five
+# batches), concat, nets, contigs, label; the flagged contig sets differed from the registered run's (34 of 102 and 43 of 68 unions
+# byte-identical), so each got its own mindex, malign 0..2, mmerge, score, report, comparator, clean.
 #
-# The stage never sees RUSTLE_CACHE_DIR (every run is computed, so A12-3's wall times are real). Batching does not change any result:
-# nets, clusters and candidates are per family, the unmapped-read attribution indexes every family's copies in every batch, and the
-# genome hits are per consensus; only nets.fa's de-duplication across families (R9, not used here) depends on the batch.
+# The stage never sees RUSTLE_CACHE_DIR (every run is computed, so the wall times are real). Batching changes the A13 result only through
+# ruling R18: the poorly placed reads (Amendment 13b) are those in no net of THIS run's families, and the attribution targets are this run's
+# nets + every family's copies, so a read netted in one batch may be attributed in another (`nets` counts the reads in nets of two batches);
+# clusters, candidates and genome hits are per family / per consensus; nets.fa's de-duplication across families (R9) is per batch (unused).
 set -euo pipefail
 REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}   # this checkout unless the caller sets REPO
+ACC=${ACC:-a13}
+case $ACC in a12|a13) ;; *) echo "ACC must be a12 or a13" >&2; exit 2 ;; esac
 L=/mnt/linuxdisk/tmp/rna_allele/linktest
-A=/mnt/linuxdisk/tmp/rna_allele/a12
-BIN=${BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release/o3_candidates}   # the binary of the 2026-10-02 run unless set
+A12=/mnt/linuxdisk/tmp/rna_allele/a12                 # A12's work dir: the copies table, FASTA, regions and batch plan A13 reuses
+A=/mnt/linuxdisk/tmp/rna_allele/$ACC
+BIN=${BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release/o3_candidates}   # rebuilt from the commit under test before each run
 GGO_MMI=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi
 PY="python3 $REPO/bench/rna_allele/accept_o3_candidates.py"
 HEAVY="bash $REPO/tools/rlock.sh heavy"
@@ -45,13 +63,18 @@ LIGHT="bash $REPO/tools/rlock.sh light"
 
 dir_of() { case $1 in reg) echo $A ;; half) echo $A/half ;; double) echo $A/double ;; *) echo "run must be reg|half|double" >&2; exit 2 ;; esac; }
 delta_args() { case $1 in reg) echo "" ;; half) echo "--delta 0.00479" ;; double) echo "--delta 0.01916" ;; esac; }
+only() { [ "$ACC" = "$1" ] || { echo "step $step is ACC=$1 only" >&2; exit 2; }; }
 
 step=${1:?step}; shift
-case $step in copies|nets|plan|split) run=reg ;; *) run=${1:?run}; shift ;; esac
+case $step in copies|link|plan|split) run=reg ;; *) run=${1:?run}; shift ;; esac
 W=$(dir_of "$run"); mkdir -p "$W/logs"
 case $step in
-  copies) $LIGHT python3 $REPO/bench/rna_allele/panel_to_copies.py --panel $L/panel.json --bam $L/R.bam --fasta $L/masked.fa --out $A/A12 ;;
-  nets)   $LIGHT $PY nets --w $A --linktest $L ;;
+  copies) only a12; $LIGHT python3 $REPO/bench/rna_allele/panel_to_copies.py --panel $L/panel.json --bam $L/R.bam --fasta $L/masked.fa --out $A/A12 ;;
+  link)   # Amendment 13: substrate and scoring unchanged — the same copies table, FASTA and regions; the same five batches
+    only a13
+    for f in A12.copies.tsv A12.copies.fa A12.regions batches.txt; do ln -sfn $A12/$f $A/$f; done
+    for f in R.bam R.bam.bai; do ln -sfn $L/$f $A/$f; done
+    ls -l $A | grep -- "->" ;;
   plan)   $LIGHT $PY plan --w $A --batches "${1:-7}" --keep "${2:-0}" --batch-file "${3:-$A/batches.txt}" ;;
   split)  # each scored part in two halves (alternate records): shorter heavy calls when the lock is contended; per-read results unchanged
     mkdir -p $A/parts
@@ -67,8 +90,10 @@ case $step in
     env -u RUSTLE_CACHE_DIR $HEAVY /usr/bin/time -v $BIN --bam $L/R.bam --fasta $L/masked.fa --copies $A/A12.copies.tsv --copies-fa $A/A12.copies.fa \
       --index $L/masked.splice.mmi --out $W/cand_g$g --threads 4 $(delta_args "$run") --families "$fams" 2>&1 >/dev/null \
       | gawk '{ print systime() "\t" $0; fflush() }' > $W/logs/stage_g$g.log
-    grep -E "Elapsed \(wall|Maximum resident|done:" $W/logs/stage_g$g.log ;;
+    grep -E "Elapsed \(wall|Maximum resident|pass B:|done:" $W/logs/stage_g$g.log ;;
   concat)  $LIGHT $PY concat --w $W --prefix cand ;;
+  nets)    only a13; $HEAVY $PY nets --w $W --linktest $L --prefix cand --copies $A/A12.copies.tsv --copies-fa $A/A12.copies.fa > $W/attrib.out
+           cat $W/attrib.out ;;
   contigs) $LIGHT $PY contigs --w $W --prefix cand ;;
   mindex)
     $HEAVY /usr/bin/time -v bash -c "cat $L/masked.fa $W/iso.contigs.fa > $W/M.fa && minimap2 -x splice -t 4 -d $W/M.splice.mmi $W/M.fa" > $W/logs/mindex.log 2>&1
@@ -90,7 +115,10 @@ case $step in
     $HEAVY python3 $REPO/bench/rna_allele/merge_test.py score --w $W > $W/score.out 2>&1
     cat $W/score.out ;;
   keep)   $HEAVY $PY keep --w $W --linktest $L --prefix cand > $W/keep.out 2> $W/logs/keep.log; cat $W/keep.out ;;
-  report) $LIGHT $PY report --w $W --linktest $L --prefix cand --nets $A > $W/report.out; cat $W/report.out ;;
+  report) # A12: the registered run's k-mer nets for every run; A13: each run's own nets (pass A and n_net do not depend on delta; `nets` checks)
+    if [ "$ACC" = a12 ]; then NETS=$A; else NETS=$W; fi
+    $LIGHT $PY report --w $W --linktest $L --prefix cand --nets $NETS > $W/report.out; cat $W/report.out ;;
+  comparator) only a13; $LIGHT $PY comparator --w $W --linktest $L --prefix cand > $W/comparator.out; cat $W/comparator.out ;;
   decompose) $LIGHT $PY decompose --w $W --linktest $L > $W/decompose.out; cat $W/decompose.out ;;
   clean)  rm -f $W/M.splice.mmi $W/M.fa ;;
   *) echo "unknown step $step" >&2; exit 2 ;;

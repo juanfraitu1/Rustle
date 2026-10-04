@@ -1,29 +1,39 @@
 #!/usr/bin/env python3
-"""Amendment 12 acceptance helpers (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): `o3_candidates` on Amendment 7's 53-family
-held-out. `bench/rna_allele/accept_o3_candidates.sh` runs the subcommands in order; the stage and every minimap2 call run there (or, for
-`keep`, here) under `tools/rlock.sh heavy`.
+"""The `o3_candidates` acceptance helpers on Amendment 7's 53-family held-out (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md:
+Amendment 12, and Amendment 13 + 13b-13e). `bench/rna_allele/accept_o3_candidates.sh` runs the subcommands in order; the stage and every
+minimap2 call run there (or, for `nets` and `keep`, here) under `tools/rlock.sh heavy`.
 
-  nets     the stage's read nets recomputed from the BAM (pass A: primary / secondary records on a surviving copy; pass B: unmapped reads
-           >= 300 bp given to a family by the 31-mer attribution of `FamilyKmerIndex`), the 1,000-read cap (`sample_net`: splitmix64
-           Fisher-Yates, seed 1) and their D / S composition -> nets.tsv, net_reads.tsv (checked against the stage's families.tsv by `report`)
+  nets     (A13) the nets as the stage built them, replicated and checked against the stage's own products: pass A from the BAM (primary /
+           secondary records on a surviving copy), pass B re-run per batch exactly as the stage runs it (Amendment 13b/13c: unmapped reads
+           and the poorly placed reads in no net of THIS batch (R18), >= 300 bp, aligned with map-ont to the batch's net reads + every
+           copy; a read joins the family of its best hit iff it covers >= 50% of the read and de <= 0.20), the 1,000-read cap
+           (`sample_net`). Checked: the per-class counts of every batch log's pass-B line, n_net / n_used of families.tsv, every reads.tsv
+           read under the cap of its family, nets.fa = the whole nets of the flagged families -> nets.tsv, net_reads.tsv, attrib.json
+           (+ stdout: the attribution counts, right family by labels.tsv for every joined read and for the reads.tsv subset, the reads in
+           nets of two batches). (A12's k-mer replica of the retired FamilyKmerIndex is at commit fde90c0a.)
   plan     families -> batches of the stage (each batch one foreground call < 10 min), balanced on an estimated cost -> batches.txt
   concat   the batches' tables and FASTAs -> one set (`<prefix>.*`), one header, families in the stage's order
   contigs  the flagged candidates' unions renamed `iso_<family>_<k>` (the scorer counts only `iso_*` references as contigs) -> iso.contigs.fa,
            iso_names.tsv (iso -> cand)
   label    each contig's best UNMASKED hit (identity x coverage, `link_test.best_hits`) -> source D (the family's masked interval) / S:<copy> /
            elsewhere / none -> contigs.tsv (`link_test.py` layout, linked = 0), empty merge/paf/<family>.paf, links to R.bam, labels, panel
-  keep     A12-2: each flagged candidate's reads (reads.tsv via clusters.tsv) against the unions and the cluster consensus sequences
+  keep     A12-2 / A13-2: each flagged candidate's reads (reads.tsv via clusters.tsv) against the unions and the cluster consensus sequences
            (minimap2 -c -x splice:hq -uf -N 10); kept = best AS on the read's own union >= 0.98 x its best AS over its candidate's
            cluster consensus sequences (`rep_choice.py`: no record on the union = not kept; no record on any of its consensus sequences =
            not measured). Pooled (all unions / all of clusters.fa as targets, the registered verdict) and isolated (per candidate: its union
            alone, its consensus sequences alone; the check)
-  report   the stage's counts, the D / S labels, detection, candidates per family, clusters per candidate, the >= 2-cluster floor, the
-           cause of each deleted copy without a D-derived flagged candidate -> report.json + stdout
+  report   the stage's counts, the stage log's per-family counters (A13: templates by kind, kept sets re-templated, absorptions undone),
+           the D / S labels, detection, candidates per family, clusters per candidate, the >= 2-cluster floor, the cause of each deleted copy
+           without a D-derived flagged candidate -> report.json + stdout
+  comparator  (A13) Amendment 13b's comparator C = IsoCon's right D reads (Amendment 8's arm M, read by read) over the truth-free
+           attainable D reads: (1) a record (primary or secondary) on a surviving copy of their family in R.bam, (2) attributed into their
+           own family's net by this run (`nets`), else; A13-1 = stage D right >= 0.80 x C and false moves <= 5% of S reads (A12-1's
+           10,230 beside); also C with part 2 read from reads.tsv alone (the reads that reached a reported cluster) -> comparator.json
   decompose  (post hoc, not a registered rule) arm M read by read for the stage and for IsoCon's Amendment 8 run (checked equal to
            merge_test.py score's totals), the deleted copies' reads split by where the R arm put them (on a surviving copy / mapped only
            elsewhere / unmapped) -> decompose.json + stdout
 
-    accept_o3_candidates.py nets --w /mnt/linuxdisk/tmp/rna_allele/a12 --linktest /mnt/linuxdisk/tmp/rna_allele/linktest
+    accept_o3_candidates.py nets --w /mnt/linuxdisk/tmp/rna_allele/a13 --linktest /mnt/linuxdisk/tmp/rna_allele/linktest
 """
 import argparse
 import collections
@@ -32,21 +42,36 @@ import glob
 import json
 import os
 import re
+import shutil
+import struct
 import subprocess
+import tempfile
 
 import pysam
 
-K = 31
-MIN_UNMAPPED_LEN = 300
-ATTRIB_MAX_FAMILIES = 8
-ATTRIB_MIN_FRAC, ATTRIB_MIN_RATIO = 0.30, 2.0
 MAX_READS = 1000
 TIE = 0.98
 M64 = (1 << 64) - 1
 GOLDEN = 0x9E3779B97F4A7C15
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
-CODE = {"A": 0, "C": 1, "G": 2, "T": 3, "a": 0, "c": 1, "g": 2, "t": 3}
 MM2_KEEP = ["-c", "-x", "splice:hq", "-uf", "-N", "10", "-t", "4"]
+# o3_candidates.rs (A13), pass B: MIN_UNMAPPED_LEN (both classes, Amendment 13c / R19), POORLY_PLACED_DE (an f32 compared with the f32 `de`),
+# ATTRIB_MIN_READ_COV, ATTRIB_MAX_DE, MM2_ATTRIB (the stage appends `-t <threads>`; its `--threads 4`)
+MIN_ATTRIB_LEN = 300
+POORLY_PLACED_DE = struct.unpack("f", struct.pack("f", 0.02))[0]
+ATTRIB_MIN_READ_COV, ATTRIB_MAX_DE = 0.5, 0.20
+MM2_ATTRIB = ["-x", "map-ont", "-c", "-N", "5", "-p", "0.5", "-t", "4"]
+PASS_B = re.compile(r"pass B: unmapped >= \d+ bp (\d+); poorly placed >= \d+ bp (\d+) \(.*?; (\d+) below the floor\); aligned (\d+): unmapped (\d+), "
+                    r"poorly placed (\d+); attributed (\d+) \(.*?\): unmapped (\d+), poorly placed (\d+); joined this run's families (\d+)")
+PASS_B_KEYS = ("unmapped", "poorly_placed", "poorly_placed_short", "aligned", "aligned_unmapped", "aligned_poorly_placed", "attributed",
+               "attributed_unmapped", "attributed_poorly_placed", "joined")
+# the per-family phase-1 line of the A13 stage log (`ClusterLog`'s Display in src/bin/o3_candidates.rs)
+CLUSTER_LOG = re.compile(r"\] (\S+): net \d+ reads \(\d+ used\) \| (\d+) read clusters >= --min-cluster; (\d+) empty consensus dropped; refinement "
+                         r"split off (\d+) reads \((\d+) new clusters, (\d+) clusters fell under --min-cluster, (\d+) kept sets re-templated\); "
+                         r"significance merge absorbed (\d+) clusters in (\d+) rounds \((\d+) absorptions undone[^)]*\); templates without an eligible "
+                         r"member [^:]*: (\d+) the longest member with an aligned partner, (\d+) the longest member \(no member aligned\); (\d+) clusters")
+CLUSTER_LOG_KEYS = ("read_clusters", "empty", "split_off", "split_clusters", "fell_under", "retemplated", "absorbed", "rounds", "undone",
+                    "longest_aligned", "longest_unaligned", "final")
 
 
 def name_key(s):
@@ -75,60 +100,7 @@ def oriented(rd):
     return s.translate(COMP)[::-1] if rd.is_reverse else s
 
 
-# ---- nets: the stage's pass A / pass B and the cap, recomputed ------------------------------------------------------------------------
-
-def canonical_kmers(seq, k=K):
-    mask, shift = (1 << (2 * k)) - 1, 2 * (k - 1)
-    fw = rv = valid = 0
-    out = []
-    for ch in seq:
-        c = CODE.get(ch)
-        if c is None:
-            fw = rv = valid = 0
-            continue
-        fw = ((fw << 2) | c) & mask
-        rv = (rv >> 2) | ((3 - c) << shift)
-        valid += 1
-        if valid >= k:
-            out.append(fw if fw < rv else rv)
-    return out
-
-
-def kmer_index(copies, fams):
-    """FamilyKmerIndex::build: k-mer -> bitmask of the families carrying it; k-mers of > 8 families dropped"""
-    fi = {f: i for i, f in enumerate(fams)}
-    idx = {}
-    for fam, seq in copies:
-        bit = 1 << fi[fam]
-        for km in set(canonical_kmers(seq)):
-            idx[km] = idx.get(km, 0) | bit
-    return {km: b for km, b in idx.items() if bin(b).count("1") <= ATTRIB_MAX_FAMILIES}
-
-
-def attribute(idx, fams, read):
-    """FamilyKmerIndex::attribute: the family with the most k-mer hits (multiplicity counted) when >= 30% of the read's k-mers hit it
-    and it leads the runner-up >= 2x"""
-    if len(read) < MIN_UNMAPPED_LEN:
-        return None
-    kms = canonical_kmers(read)
-    hits = collections.Counter()
-    for km in kms:
-        b = idx.get(km, 0)
-        while b:
-            low = b & -b
-            hits[low.bit_length() - 1] += 1
-            b ^= low
-    if not hits:
-        return None
-    v = sorted(hits.items(), key=lambda x: (-x[1], fams[x[0]]))
-    best, n = v[0]
-    second = v[1][1] if len(v) > 1 else 0
-    if n < ATTRIB_MIN_FRAC * len(kms):
-        return None
-    if second > 0 and n < ATTRIB_MIN_RATIO * second:
-        return None
-    return fams[best]
-
+# ---- nets (A13): the stage's nets replicated (pass A from the BAM, pass B re-run per batch) and checked against its own products -------
 
 def splitmix(x):
     z = (x + GOLDEN) & M64
@@ -149,72 +121,197 @@ def sample_net(names, cap=MAX_READS):
     return v
 
 
+def stage_batches(w):
+    """[(g, the batch's families, its pass-B counts)] from the batch logs (`logs/stage_g<g>.log`): the families of the `--families` argument
+    in time -v's `Command being timed` line, the counts of the stage's pass-B line"""
+    out = []
+    for p in sorted(glob.glob(f"{w}/logs/stage_g*.log"), key=lambda p: int(re.search(r"stage_g(\d+)\.log$", p).group(1))):
+        g = int(re.search(r"stage_g(\d+)\.log$", p).group(1))
+        text = open(p).read()
+        fams = re.search(r'Command being timed: ".*?--families ([^\s"]+)', text).group(1).split(",")
+        m = PASS_B.search(text)
+        assert m, f"{p}: no pass-B line (not an A13 stage log?)"
+        out.append((g, fams, dict(zip(PASS_B_KEYS, map(int, m.groups())))))
+    return out
+
+
+def copy_rows(path):
+    rows = tsv(path)
+    assert all(r.get("member_status", "member") != "partner" for r in rows), f"{path}: partner rows (not handled here)"
+    return rows
+
+
 def nets(a):
-    rows = tsv(f"{a.w}/A12.copies.tsv")
-    fams = list(dict.fromkeys(r["family_id"] for r in rows))
-    cseq = {}
-    cur = None
-    for ln in open(f"{a.w}/A12.copies.fa"):
-        if ln[0] == ">":
-            h = ln[1:].strip().split("|"); cur = (h[0], int(h[1])); cseq[cur] = []
-        else:
-            cseq[cur].append(ln.strip())
-    copies = [(r["family_id"], "".join(cseq[(r["family_id"], int(r["copy_idx"]))])) for r in rows]
-    idx = kmer_index(copies, fams)
+    rows = copy_rows(a.copies)
+    order = list(dict.fromkeys(r["family_id"] for r in rows))           # group_families: first appearance in --copies = the run order
     lab = {r["read"]: r for r in tsv(f"{a.linktest}/labels.tsv")}
+    fams_tsv = {r["family"]: r for r in tsv(f"{a.w}/{a.prefix}.families.tsv")}
+    batches = stage_batches(a.w)
+    batch_of = {f: g for g, fs, _ in batches for f in fs}
+    assert sorted(batch_of) == sorted(fams_tsv), "the batch logs and families.tsv name different families"
+    # pass A, for every family: names with a primary / secondary record overlapping a copy's locus extent (no supplementary)
     bam = pysam.AlignmentFile(f"{a.linktest}/R.bam")
-    names = {f: set() for f in fams}
-    via = collections.defaultdict(dict)
-    seqs = {}
+    names = collections.defaultdict(set)
     for r in rows:
-        f, chrom = r["family_id"], r["chrom"]
-        lo, hi = int(r["locus_start"]), int(r["locus_end"])
-        for rd in bam.fetch(chrom, lo, max(hi, lo + 1)):
-            if rd.is_unmapped or rd.is_supplementary:
-                continue
-            n = rd.query_name
-            if not rd.is_secondary and n not in seqs:
-                s = oriented(rd)
-                if s:
-                    seqs[n] = s
-            names[f].add(n); via[f].setdefault(n, "A")
-    need = {n for f in fams for n in names[f] if n not in seqs}
-    n_unm = n_attr = 0
+        lo, hi = (int(r["locus_start"]), int(r["locus_end"])) if r.get("locus_start", "NA") not in ("", "NA") else (int(r["start"]), int(r["end"]))
+        for rd in bam.fetch(r["chrom"], lo, max(hi, lo + 1)):
+            if not (rd.is_unmapped or rd.is_supplementary):
+                names[r["family_id"]].add(rd.query_name)
+    # pass B's sweep, once (file order): every unmapped record and every primary record, with what the attribution set is chosen on
+    recs, seqs = [], {}
     for rd in pysam.AlignmentFile(f"{a.linktest}/R.bam").fetch(until_eof=True):
         if rd.is_unmapped:
-            if rd.query_length < MIN_UNMAPPED_LEN:
-                continue
-            n_unm += 1
-            s = oriented(rd)
-            f = attribute(idx, fams, s)
-            if f is None:
-                continue
-            n_attr += 1
-            names[f].add(rd.query_name); via[f].setdefault(rd.query_name, "B")
-            seqs.setdefault(rd.query_name, s)
-            continue
-        if not need or rd.is_secondary or rd.is_supplementary:
-            continue
-        if rd.query_name in need and rd.query_name not in seqs:
+            recs.append((True, rd.query_name, oriented(rd), None, None))
+        elif not (rd.is_secondary or rd.is_supplementary):
             s = oriented(rd)
             if s:
-                seqs[rd.query_name] = s
+                seqs.setdefault(rd.query_name, s)
+            recs.append((False, rd.query_name, s, rd.get_tag("de") if rd.has_tag("de") else None, rd.mapping_quality))
+    copies_fa = open(a.copies_fa).read()
+    checked = {(r["family_id"], int(r["copy_idx"])) for r in rows}
+    family_of_copy = {}
+    for h in (ln[1:].split()[0] for ln in copies_fa.splitlines() if ln.startswith(">")):
+        f, idx = h.split("|")[:2]
+        if (f, int(idx)) in checked:
+            family_of_copy[h] = f
+    net, via, cls_of, res = {}, {}, {}, {}
+    tmp = tempfile.mkdtemp(prefix="nets.", dir=a.w)
+    for g, fams_g, logged in batches:
+        run = [f for f in order if f in set(fams_g)]
+        netted = set().union(*(names[f] for f in run))
+        rep = collections.Counter()
+        att_class = {}
+        with open(f"{tmp}/attrib.fa", "w") as o:
+            for unmapped, n, s, de, mapq in recs:
+                if unmapped:
+                    if len(s) < MIN_ATTRIB_LEN:
+                        continue
+                    c = "unmapped"
+                elif n in netted or not ((de if de is not None else 0.0) > POORLY_PLACED_DE or mapq == 0):
+                    continue
+                elif len(s) < MIN_ATTRIB_LEN:
+                    rep["poorly_placed_short"] += 1; continue
+                else:
+                    c = "poorly_placed"
+                rep[c] += 1
+                att_class.setdefault(n, c)
+                o.write(f">{n} {c}\n{s}\n")
+        fot = dict(family_of_copy)
+        with open(f"{tmp}/targets.fa", "w") as o:
+            for f in run:
+                for n in sorted(names[f]):
+                    if n in seqs:
+                        o.write(f">{f}|{n}\n{seqs[n]}\n"); fot[f"{f}|{n}"] = f
+            o.write(copies_fa)
+        with open(f"{tmp}/attrib.paf", "w") as out, open(f"{tmp}/attrib.log", "w") as err:
+            subprocess.run(["minimap2", *MM2_ATTRIB, f"{tmp}/targets.fa", f"{tmp}/attrib.fa"], stdout=out, stderr=err, check=True)
+        best = {}                                                          # attribute_by_hits: best hit by matches, the first on a tie
+        for ln in open(f"{tmp}/attrib.paf"):
+            x = ln.rstrip("\n").split("\t")
+            if len(x) < 12 or x[5] not in fot:
+                continue
+            m = int(x[9])
+            if x[0] not in best or m > best[x[0]][0]:
+                de = next((float(t[5:]) for t in x[12:] if t.startswith("de:f:")), 1.0)
+                best[x[0]] = (m, max(0, int(x[3]) - int(x[2])) / max(1, int(x[1])), de, fot[x[5]])
+        attributed = {q: v[3] for q, v in best.items() if v[1] >= ATTRIB_MIN_READ_COV and v[2] <= ATTRIB_MAX_DE}
+        for q in best:
+            rep["aligned_" + att_class[q]] += 1
+        for q in attributed:
+            rep["attributed_" + att_class[q]] += 1
+        rep["aligned"], rep["attributed"] = len(best), len(attributed)
+        joined = {q: f for q, f in attributed.items() if f in set(run)}
+        rep["joined"] = len(joined)
+        assert all(rep[k] == logged[k] for k in PASS_B_KEYS), f"batch {g}: replicated pass B {dict(rep)} != the stage log {logged}"
+        right = collections.Counter()
+        for q, f in attributed.items():
+            r = lab.get(q)
+            right[(att_class[q], "joined" if q in joined else "elsewhere", "right" if r and r["family"] == f else "wrong")] += 1
+        for f in run:
+            net[f] = sorted({n for n in names[f] if n in seqs} | {q for q, jf in joined.items() if jf == f})
+            via[f] = {n: ("B" if n in joined else "A") for n in net[f]}
+            for q in (q for q, jf in joined.items() if jf == f):
+                cls_of[(f, q)] = att_class[q]
+        # nets.fa: each read of the flagged families' whole nets once (R9)
+        nfa = set(fasta(f"{a.w}/{a.prefix}_g{g}.nets.fa"))
+        flagged = [f for f in run if int(fams_tsv[f]["n_flagged"]) > 0]
+        want = set().union(*(set(net[f]) for f in flagged)) if flagged else set()
+        assert nfa == want, f"batch {g}: nets.fa ({len(nfa)} reads) != the replicated nets of the flagged families ({len(want)})"
+        res[g] = dict(families=run, logged=logged, replicated=dict(rep), attributed_by={"|".join(k): v for k, v in sorted(right.items())})
+    shutil.rmtree(tmp)
+    # the cap and the stage's own products
+    in_rt = collections.defaultdict(set)
+    for r in tsv(f"{a.w}/{a.prefix}.reads.tsv"):
+        in_rt[r["family"]].add(r["read"])
+    used = {}
+    for f in fams_tsv:
+        used[f] = set(sample_net(net[f]))
+        st = fams_tsv[f]
+        assert (len(net[f]), len(used[f])) == (int(st["n_net"]), int(st["n_used"])), \
+            f"{f}: replicated n_net / n_used {len(net[f])} / {len(used[f])} != the stage's {st['n_net']} / {st['n_used']}"
+        assert in_rt[f] <= used[f], f"{f}: {len(in_rt[f] - used[f])} reads.tsv reads outside the replicated used net"
+    role = lambda f, n: lab[n]["role"] if n in lab and lab[n]["family"] == f else ("other" if n in lab else "unlabelled")
     with open(f"{a.w}/nets.tsv", "w") as o, open(f"{a.w}/net_reads.tsv", "w") as nr:
-        o.write("family\tn_net\tn_used\tD_net\tD_used\tS_net\tS_used\tother_net\tvia_B\tD_via_B\n")
-        nr.write("family\tread\tused\trole\tvia\n")
-        for f in fams:
-            net = sorted(n for n in names[f] if n in seqs)
-            used = set(sample_net(net))
-            role = lambda n: lab[n]["role"] if n in lab and lab[n]["family"] == f else ("other" if n in lab else "unlabelled")
-            c = collections.Counter((role(n), n in used) for n in net)
-            vb = sum(1 for n in net if via[f][n] == "B")
-            dvb = sum(1 for n in net if via[f][n] == "B" and role(n) == "D")
-            o.write(f"{f}\t{len(net)}\t{len(used)}\t{c[('D', True)] + c[('D', False)]}\t{c[('D', True)]}\t{c[('S', True)] + c[('S', False)]}\t"
-                    f"{c[('S', True)]}\t{sum(v for (r, _), v in c.items() if r not in ('D', 'S'))}\t{vb}\t{dvb}\n")
-            for n in net:
-                nr.write(f"{f}\t{n}\t{int(n in used)}\t{role(n)}\t{via[f][n]}\n")
-    print(f"families {len(fams)}; k-mers indexed {len(idx)}; unmapped reads >= {MIN_UNMAPPED_LEN} bp {n_unm}, attributed {n_attr}; "
-          f"nets total {sum(len([n for n in names[f] if n in seqs]) for f in fams)}")
+        o.write("family\tbatch\tn_net\tn_used\tD_net\tD_used\tS_net\tS_used\tother_net\tvia_B\tD_via_B\tD_via_B_used\tD_via_B_in_reads_tsv\t"
+                "other_via_B\n")
+        nr.write("family\tread\tused\trole\tvia\tclass\tin_reads_tsv\n")
+        for f in sorted(fams_tsv, key=name_key):
+            c = collections.Counter((role(f, n), n in used[f]) for n in net[f])
+            vb = [n for n in net[f] if via[f][n] == "B"]
+            dvb = [n for n in vb if role(f, n) == "D"]
+            o.write(f"{f}\t{batch_of[f]}\t{len(net[f])}\t{len(used[f])}\t{c[('D', True)] + c[('D', False)]}\t{c[('D', True)]}\t"
+                    f"{c[('S', True)] + c[('S', False)]}\t{c[('S', True)]}\t{sum(v for (r, _), v in c.items() if r not in ('D', 'S'))}\t{len(vb)}\t"
+                    f"{len(dvb)}\t{sum(1 for n in dvb if n in used[f])}\t{sum(1 for n in dvb if n in in_rt[f])}\t{len(vb) - len(dvb)}\n")
+            for n in net[f]:
+                nr.write(f"{f}\t{n}\t{int(n in used[f])}\t{role(f, n)}\t{via[f][n]}\t{cls_of.get((f, n), 'pass_A')}\t{int(n in in_rt[f])}\n")
+    # reads in nets of more than one batch (ruling R18: a read netted in one batch may be attributed in another)
+    batches_of = collections.defaultdict(set)
+    viab = collections.defaultdict(set)
+    for f in fams_tsv:
+        for n in net[f]:
+            batches_of[n].add(batch_of[f])
+            if via[f][n] == "B":
+                viab[n].add(batch_of[f])
+    multi = [n for n, bs in batches_of.items() if len(bs) > 1]
+    multi_b = [n for n in multi if viab[n]]
+    # report
+    tot_log = collections.Counter()
+    for g, _, logged in batches:
+        tot_log.update(logged)
+    print("pass B per batch (the stage log's counts; the replication re-runs the attribution and equals them in every batch):")
+    print("batch\tfamilies\tunmapped>=300\tpoorly placed>=300 (short)\taligned u / p\tattributed u / p\tjoined")
+    for g, fs, lg in batches:
+        print(f"{g}\t{len(fs)}\t{lg['unmapped']}\t{lg['poorly_placed']} ({lg['poorly_placed_short']})\t{lg['aligned_unmapped']} / "
+              f"{lg['aligned_poorly_placed']}\t{lg['attributed_unmapped']} / {lg['attributed_poorly_placed']}\t{lg['joined']}")
+    print(f"sum\t{len(batch_of)}\t{tot_log['unmapped']}\t{tot_log['poorly_placed']} ({tot_log['poorly_placed_short']})\t"
+          f"{tot_log['aligned_unmapped']} / {tot_log['aligned_poorly_placed']}\t{tot_log['attributed_unmapped']} / "
+          f"{tot_log['attributed_poorly_placed']}\t{tot_log['joined']}")
+    rt = collections.Counter()
+    for k in res.values():
+        for key, v in k["attributed_by"].items():
+            rt[key] += v
+    print("attributed reads by class, joined (a family of the batch) or not, right family by labels.tsv (summed over batches; a read may be "
+          "attributed in several batches):")
+    for c in ("unmapped", "poorly_placed"):
+        for j in ("joined", "elsewhere"):
+            r_, w_ = rt[f"{c}|{j}|right"], rt[f"{c}|{j}|wrong"]
+            print(f"  {c:13s} {j:9s}: {r_ + w_:5d}, right family {r_:5d} ({r_ / max(1, r_ + w_):.1%})")
+    jn = [(f, n) for f in fams_tsv for n in net[f] if via[f][n] == "B"]
+    jr = sum(1 for f, n in jn if n in lab and lab[n]["family"] == f)
+    jv = [(f, n) for f, n in jn if n in in_rt[f]]
+    jvr = sum(1 for f, n in jv if n in lab and lab[n]["family"] == f)
+    jd = sum(1 for f, n in jn if role(f, n) == "D")
+    print(f"joined reads (in a net of their batch): {len(jn)} (unmapped {sum(1 for f, n in jn if cls_of[(f, n)] == 'unmapped')}, poorly placed "
+          f"{sum(1 for f, n in jn if cls_of[(f, n)] == 'poorly_placed')}); right family {jr} ({jr / max(1, len(jn)):.1%}; D reads of the family "
+          f"{jd}); under the cap {sum(1 for f, n in jn if n in used[f])}; in reads.tsv (a reported cluster) {len(jv)}, right family {jvr} "
+          f"({jvr / max(1, len(jv)):.1%}) — reads.tsv lists only the new-copy and linked clusters' reads, so it sees {len(jv)} of {len(jn)}")
+    print(f"reads in nets of more than one batch: {len(multi)} (of {len(batches_of)} netted reads); attributed (pass B) in at least one of "
+          f"them: {len(multi_b)} (ruling R18)")
+    print(f"checks: n_net and n_used of families.tsv equal in {len(fams_tsv)}/{len(fams_tsv)} families; every reads.tsv read under the cap of "
+          f"its family; nets.fa = the flagged families' whole nets in every batch")
+    json.dump(dict(batches=res, multi_batch=len(multi), multi_batch_attributed=len(multi_b), joined=len(jn), joined_right=jr, joined_D=jd,
+                   joined_in_reads_tsv=len(jv), joined_in_reads_tsv_right=jvr, totals_logged=dict(tot_log)),
+              open(f"{a.w}/attrib.json", "w"), indent=0)
 
 
 def plan(a):
@@ -456,6 +553,25 @@ def report(a):
             tot[k] += int(r[k])
     out["stage"] = dict(tot)
     print("stage totals:", dict(tot), f"| families with >= 1 flagged candidate {sum(1 for r in fams.values() if int(r['n_flagged']) > 0)}/{len(fams)}")
+    # 2b. the stage log's per-family phase-1 counters (A13 logs: kept sets re-templated, absorptions undone, fallback templates by kind)
+    counters, logs = {}, sorted(glob.glob(f"{a.w}/logs/stage_g*.log"))
+    for p in logs:
+        for m in CLUSTER_LOG.finditer(open(p).read()):
+            counters[m.group(1)] = dict(zip(CLUSTER_LOG_KEYS, map(int, m.groups()[1:])))
+    if counters:
+        ct = collections.Counter()
+        for v in counters.values():
+            ct.update(v)
+        fam_with = lambda k: sorted((f for f, v in counters.items() if v[k] > 0), key=name_key)
+        out["counters"] = dict(total=dict(ct), per_family=counters)
+        print(f"stage log counters over {len(counters)} families (phase 1): read clusters >= --min-cluster {ct['read_clusters']}; empty consensus "
+              f"dropped {ct['empty']}; refinement split off {ct['split_off']} reads into {ct['split_clusters']} new clusters, {ct['fell_under']} "
+              f"clusters fell under --min-cluster, kept sets re-templated {ct['retemplated']} (families {fam_with('retemplated')}); significance "
+              f"merge absorbed {ct['absorbed']} clusters in {ct['rounds']} rounds, absorptions undone {ct['undone']}; fallback templates (no eligible "
+              f"member): longest with an aligned partner {ct['longest_aligned']}, longest overall {ct['longest_unaligned']} (every other template "
+              f"choice is the structural medoid, or the kept template); final clusters {ct['final']}")
+    elif logs:
+        print("stage log counters: none (not an A13 stage log)")
     # 3. flagged candidates by label; detection
     flagged = [c for c in cands if c["flagged"] == "1"]
     src = {c["candidate"]: ctg[c["candidate"]]["source"] for c in flagged}
@@ -638,6 +754,68 @@ def arm_m(w, lab, P):
     return out
 
 
+def comparator(a):
+    """Amendment 13b's comparator and the A13-1 verdict (see the module doc)"""
+    P = {p["fam"]: p for p in json.load(open(f"{a.linktest}/panel.json"))}
+    lab = {r["read"]: r for r in tsv(f"{a.linktest}/labels.tsv")}
+    nD = sum(1 for r in lab.values() if r["role"] == "D"); nS = len(lab) - nD
+    iso = arm_m(a.linktest, lab, P)
+    iso.pop("__false_moves__")
+    tot = collections.Counter(iso.values())
+    ref = json.load(open(f"{a.linktest}/merge/score.json"))["M"]
+    assert {"|".join(k): v for k, v in tot.items()} == ref, f"IsoCon's arm M replication differs from merge_test.py score: {dict(tot)} vs {ref}"
+    # (1) a record, primary or secondary, on a surviving copy of the read's family in R.bam
+    on_surv = set()
+    for rd in pysam.AlignmentFile(f"{a.linktest}/R.bam").fetch(until_eof=True):
+        r = lab.get(rd.query_name)
+        if rd.is_unmapped or rd.is_supplementary or not r or r["role"] != "D":
+            continue
+        if any(rd.reference_name == k[0] and rd.reference_start < k[2] and k[1] < rd.reference_end for k in P[r["family"]]["keep"]):
+            on_surv.add(rd.query_name)
+    # (2) attributed (pass B) into the read's OWN family's net by this run, without a record on a survivor
+    netr = tsv(f"{a.w}/net_reads.tsv")
+    own = lambda r: r["read"] in lab and lab[r["read"]]["role"] == "D" and lab[r["read"]]["family"] == r["family"]
+    att = {r["read"] for r in netr if r["via"] == "B" and own(r)} - on_surv
+    att_cls = {r["read"]: r["class"] for r in netr if r["via"] == "B" and own(r)}
+    # (2') the same read from reads.tsv alone: the D reads of the family in a reported cluster (new-copy or linked), without a record on a survivor
+    rt = {r["read"] for r in tsv(f"{a.w}/{a.prefix}.reads.tsv") if own(r)} - on_surv
+    right = lambda S: sum(1 for n in S if iso[n] == ("D", "right"))
+    C1, C2, C2rt = right(on_surv), right(att), right(rt)
+    C, Crt = C1 + C2, C1 + C2rt
+    by_cls = collections.Counter((att_cls[n], iso[n] == ("D", "right")) for n in att)
+    out = dict(attainable_on_survivor=len(on_surv), attainable_attributed=len(att), attainable_attributed_reads_tsv=len(rt),
+               C1=C1, C2=C2, C=C, bar=0.8 * C, C2_reads_tsv=C2rt, C_reads_tsv=Crt, bar_reads_tsv=0.8 * Crt,
+               isocon_right_total=tot[("D", "right")], attributed_by_class={f"{c}|{'right' if k else 'not_right'}": v for (c, k), v in by_cls.items()})
+    print(f"IsoCon (Amendment 8, arm M read by read; equals merge_test.py score: D right {tot[('D', 'right')]}, S false moves "
+          f"{tot[('S', 'false_move')]})")
+    print(f"attainable D reads (truth-free, Amendment 13b): (1) a record on a surviving copy of their family in R.bam {len(on_surv)}; (2) else "
+          f"attributed into their own family's net by this run {len(att)} (unmapped {sum(v for (c, _), v in by_cls.items() if c == 'unmapped')}, "
+          f"poorly placed {sum(v for (c, _), v in by_cls.items() if c == 'poorly_placed')}); total {len(on_surv) + len(att)} of {nD}")
+    print(f"C = IsoCon's right D reads over them = C1 {C1} + C2 {C2} = {C}; bar 0.80 x C = {0.8 * C:.1f}")
+    print(f"  (part 2 read from reads.tsv alone — the attributed D reads that reached a reported cluster: {len(rt)} reads, C2 {C2rt}, C {Crt}, "
+          f"bar {0.8 * Crt:.1f})")
+    sj = f"{a.w}/merge/score.json"
+    if os.path.exists(sj):
+        st = json.load(open(sj))["M"]
+        dr, fm = st.get("D|right", 0), st.get("S|false_move", 0)
+        ok = dr >= 0.8 * C and fm <= 0.05 * nS
+        okrt = dr >= 0.8 * Crt and fm <= 0.05 * nS
+        stage = arm_m(a.w, lab, P)
+        stage.pop("__false_moves__")
+        dr_att = sum(1 for n in on_surv | att if stage[n] == ("D", "right"))
+        out.update(stage_D_right=dr, stage_false_moves=fm, n_S=nS, A13_1=ok, A13_1_reads_tsv=okrt, stage_D_right_on_attainable=dr_att,
+                   A12_1_bar=10230, A12_1=dr >= 10230 and fm <= 0.05 * nS)
+        print(f"stage (arm M, merge_test.py score): D right {dr} ({dr / max(1, C):.1%} of C; on the attainable reads {dr_att}), false moves {fm}/{nS} "
+              f"= {fm / nS:.2%}")
+        print(f"A13-1: D right {dr} >= 0.80 x C = {0.8 * C:.1f} {'yes' if dr >= 0.8 * C else 'NO'}; false moves {fm / nS:.2%} <= 5% "
+              f"{'yes' if fm <= 0.05 * nS else 'NO'} -> {'PASSES' if ok else 'FAILS'} (with part 2 from reads.tsv alone: "
+              f"{'PASSES' if okrt else 'FAILS'})")
+        print(f"beside (not decided on): A12-1's bar 10,230 (80% of IsoCon's 12,787): {'met' if dr >= 10230 else 'not met'}")
+    else:
+        print(f"no {sj}: arm M not scored for this run (its flagged contig set equals the registered run's, or the step has not run)")
+    json.dump(out, open(f"{a.w}/comparator.json", "w"), indent=0)
+
+
 def decompose(a):
     P = {p["fam"]: p for p in json.load(open(f"{a.linktest}/panel.json"))}
     lab = {r["read"]: r for r in tsv(f"{a.linktest}/labels.tsv")}
@@ -681,7 +859,7 @@ def decompose(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["nets", "plan", "concat", "contigs", "label", "keep", "report", "decompose"])
+    ap.add_argument("cmd", choices=["nets", "plan", "concat", "contigs", "label", "keep", "report", "comparator", "decompose"])
     ap.add_argument("--w", required=True, help="the run's work dir")
     ap.add_argument("--linktest", default="/mnt/linuxdisk/tmp/rna_allele/linktest", help="Amendment 7's work dir")
     ap.add_argument("--prefix", default="cand")
@@ -689,8 +867,12 @@ def main(argv=None):
     ap.add_argument("--keep", type=int, default=0, help="plan: keep the first N lines of the batch file (batches already run)")
     ap.add_argument("--batch-file", default=None, help="plan: the batch file (default <w>/batches.txt)")
     ap.add_argument("--nets", default=None, help="dir with nets.tsv / net_reads.tsv (default --w)")
+    ap.add_argument("--copies", default=None, help="nets: the stage's --copies table (default <w>/A12.copies.tsv)")
+    ap.add_argument("--copies-fa", default=None, help="nets: the stage's --copies-fa (default <w>/A12.copies.fa)")
     a = ap.parse_args(argv)
     a.nets = a.nets or a.w
+    a.copies = a.copies or f"{a.w}/A12.copies.tsv"
+    a.copies_fa = a.copies_fa or f"{a.w}/A12.copies.fa"
     globals()[a.cmd](a)
 
 
