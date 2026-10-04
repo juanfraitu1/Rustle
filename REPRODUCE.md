@@ -340,12 +340,11 @@ reads, 1,263 MAPQ-0; OWN 163 correct, 0 wrong, 0 conflict, 1,084 abstain, 16 not
 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index GENOME.splice.mmi --gff ANNOT.gff \
     [--confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi] [--foreign human=CHM13.splice.mmi] [--threads 4]
 # stages, each also runnable alone: assemble -> families (mcl_families --from-gtf; its copy table run.fam.copies.* is what
-#   assign reads since 2026-10-02) -> candidates (o3_candidates + augmentation + patch realignment; DEFAULT since 2026-10-03,
-#   prereg Amendment 13 passed, docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md; `--no-candidates` skips it in `all` and
-#   keeps assign and flag off its products; opt-in 2026-10-02..03 under ruling R14 after the first acceptance failed,
-#   docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md) -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align).
-#   LEGACY: catalog (gw_family_catalog), which `--legacy-catalog` builds in `all` and assign then reads (it implies
-#   --no-candidates; an explicit --candidates with it is refused). Products all carry the --out prefix.
+#   assign reads since 2026-10-02) -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). OPT-IN:
+#   candidates (o3_candidates + augmentation + patch realignment, between families and assign; `--candidates` runs it in
+#   `all` and makes assign and flag use it; ruling R14: its acceptance failed, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md).
+#   LEGACY: catalog (gw_family_catalog), which `--legacy-catalog` builds in `all` and assign then reads (refused together
+#   with --candidates). Products all carry the --out prefix.
 # Intermediates are cached in run.cache/ (default; --no-cache off): the catalog's collapsed representatives and every
 # all-vs-all PAF, keyed by the binary, the BAM/FASTA and every upstream setting. A re-run that changes only the edge
 # rule replays them (human chr16 catalog 358 s cold -> 0.9 s warm; gorilla families 225 s -> 0.6 s; byte-identical).

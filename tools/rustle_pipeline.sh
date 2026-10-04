@@ -6,30 +6,32 @@
 #             = THE default de novo family definition (user decision 2026-09-25): one copy per member locus =
 #             its representative transcript (PREFIX.fam.copies.tsv/.fa, the copy table copy assignment consumes)
 #   candidates  reference-absent copies from each family's own reads    o3_candidates + tools/o3_augment.py + minimap2
-#             DEFAULT since 2026-10-03: its re-run acceptance, prereg Amendment 13 (+ 13b-13e), PASSED
-#             (docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md); it was opt-in from 2026-10-02 (ruling R14, Amendment 12
-#             failed). `all` runs it and assign and flag use its products; --no-candidates turns it off (--candidates,
-#             the old opt-in switch, is still accepted).
+#             OPT-IN (ruling R14, 2026-10-02: its pre-registered acceptance, Amendment 12, FAILED —
+#             docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; 2026-10-03: the re-run, Amendment 13, passed, but the no-deletion
+#             control, Amendment 14, failed, so the default flip was reverted — docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md):
+#             naming the stage runs it, `all` runs it only with --candidates.
 #             (read net -> read clusters -> consensus -> flag/link/merge -> one exon-union contig per flagged
 #             candidate, PREFIX.cand.*), then the augmentation (PREFIX.aug.fa = genome + the contigs, PREFIX.aug.copies.*
 #             = the copy table + one row per candidate) and the patch realignment of the candidate families' reads to
 #             PREFIX.aug.fa (PREFIX.aug.bam): a read whose best alignment is on a candidate contig is PLACED there by the
 #             realignment (ruling R13). --delta D (0.00958), --cand-max-reads N (1000). Cost: PREFIX.aug.fa is a copy of
 #             the whole genome, and the realignment indexes it on every run (about 400 s and 19 GB on a human genome).
-#             The stage's own cost on a full BAM is not yet measured; see Amendment 14 / R23.
+#             The stage's own cost on a full BAM (spec §9b, R23): on the 23-GB gorilla fibroblast BAM one batch of 50 families
+#             did not finish in a 10-minute call (nets phase 397-469 s: the whole-BAM sweep ~150 s, the attribution alignment
+#             against the batch's 2.6 GB of net reads 213-250 s; peak RSS 10.7 GB at the stop).
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment (assign/abstain) on the families'  copy_assign --families
-#             copy table PREFIX.fam.copies.*; with the candidates stage's flagged candidates (the default), two runs (the
-#             candidate families on PREFIX.aug.*, each assigned as a family that includes its candidate copies; the others
-#             on the originals) concatenated into PREFIX.assign.*. O2 assigns AS-tied molecules only (the gate is
-#             unchanged): a read the realignment places uniquely on a candidate has no row (R13). With --no-candidates the
-#             candidates stage's products are not used. --legacy-catalog: on the legacy catalog PREFIX.cat.* instead (the
-#             stage as it ran before 2026-10-02; it implies --no-candidates, and an explicit --candidates is refused)
+#             copy table PREFIX.fam.copies.*; with --candidates and flagged candidates, two runs (the candidate families
+#             on PREFIX.aug.*, each assigned as a family that includes its candidate copies; the others on the originals)
+#             concatenated into PREFIX.assign.*. O2 assigns AS-tied molecules only (the gate is unchanged): a read the
+#             realignment places uniquely on a candidate has no row (R13). Without --candidates the candidates stage's
+#             products are not used. --legacy-catalog: on the legacy catalog PREFIX.cat.* instead (the stage as it ran
+#             before 2026-10-02; refused together with --candidates)
 #   flag      copies the reference does not contain, from RNA alone     missing_copy_flag --scan-only / --from-scan
-#             (+ optional DNA confirmation against --confirm genomes; with the candidates stage's table, the default, +
-#             the `o3_candidate` column naming the flagged candidate whose nearest locus is the row's)
-#   all       assemble, families, candidates, assign, flag (--no-candidates skips candidates; --legacy-catalog runs
-#             the catalog there instead)
+#             (+ optional DNA confirmation against --confirm genomes; with --candidates, + the `o3_candidate` column
+#             naming the flagged candidate whose nearest locus is the row's)
+#   all       assemble, families, assign, flag; with --candidates the candidates stage before assign, with
+#             --legacy-catalog the catalog there instead
 # (thesis record: families/catalog = O1, candidates = O3, assign = O2, flag = O3; in order O1 families -> O3 candidates ->
 #  O2 assign -> O3 flag)
 #
@@ -90,7 +92,7 @@ set -euo pipefail
 STAGE=${1:-all}; shift || true
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_SEC=1; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
-LEGACY_CATALOG=0; CANDIDATES=""; DELTA=0.00958; CAND_MAX=1000
+LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
@@ -105,19 +107,12 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
-# --candidates and --legacy-catalog name two different copy tables for assign: refused together, whatever the stage. Then the
-# default of CANDIDATES (unset = no switch given): 1 since 2026-10-03 (prereg Amendment 13 passed), except with
-# --legacy-catalog, whose assign reads the legacy catalog. Written as a `case "$STAGE"` block, as the final dispatch is, so
-# figures/samples.py's driver_stage_code leaves it out of every stage's code hash. That includes the EFFECTIVE default set
-# here: the stages that read CANDIDATES (assign, flag) hash only the assignment CANDIDATES="" above, which does not change
-# with the value chosen here. A change of this default must therefore also change that assignment or those stages' code, or
-# figures' run-cache will not see it.
+# --candidates and --legacy-catalog name two different copy tables for assign: refused together, whatever the stage. Written
+# as a `case "$STAGE"` block, as the final dispatch is, so figures/samples.py's driver_stage_code leaves it out of every
+# stage's code hash: it refuses a call and changes no product.
 case "$STAGE" in
   *) if [ "$CANDIDATES" = 1 ] && [ "$LEGACY_CATALOG" = 1 ]; then
        echo "[rustle_pipeline] --candidates and --legacy-catalog exclude each other (assign reads the families' copy table with its candidates, or the legacy catalog): drop one" >&2; exit 2
-     fi
-     if [ -z "$CANDIDATES" ]; then
-       if [ "$LEGACY_CATALOG" = 1 ]; then CANDIDATES=0; else CANDIDATES=1; fi
      fi;;
 esac
 if [ "$STAGE" = cache-clear ]; then
@@ -310,18 +305,16 @@ stage_catalog() {
   fi
   say "catalog: $(awk 'NR>1' "$OUT.cat.copies.tsv" | wc -l) copies in $(awk 'NR>1 && $2>=2' "$OUT.cat.families.tsv" | wc -l) multi-copy families"
 }
-# candidates (O3; spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §4, §7; DEFAULT since 2026-10-03, prereg
-# Amendment 13 passed, docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md — opt-in 2026-10-02..03 under ruling R14 after
-# Amendment 12 failed; `all` runs it and assign and flag use its products unless --no-candidates): o3_candidates turns each
-# family's read net (reads with a record on its copies, plus the unmapped and the poorly placed reads >= 300 bp that align,
-# map-ont, over >= 50% of their length at de <= 0.20 to the run's net reads or copies: Amendment 13b) into read clusters at
-# --delta, one consensus per cluster on its structurally central member (Amendments 13d/13e), and candidate copies (clusters
-# beyond delta of every reference locus, merged by the significance test, flagged with >= 6 reads), each represented by the
-# exon union of its clusters -> PREFIX.cand.{candidates.tsv,contigs.fa,
+# candidates (O3; spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §4, §7; OPT-IN since 2026-10-02, ruling R14:
+# its pre-registered acceptance, Amendment 12, FAILED, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md — naming the stage runs it,
+# `all` runs it only with --candidates, and assign and flag use its products only with --candidates): o3_candidates turns each
+# family's read net (reads with a record on its copies, plus attributed unmapped reads) into read clusters at --delta, one
+# consensus per cluster, and candidate copies (clusters beyond delta of every reference locus, merged by the significance test,
+# flagged with >= 6 reads), each represented by the exon union of its clusters -> PREFIX.cand.{candidates.tsv,contigs.fa,
 # nets.fa,...}. With a flagged candidate: tools/o3_augment.py writes PREFIX.aug.{fa,copies.tsv,copies.fa,regions.txt,
 # families.txt} (each candidate a contig `cand_<family>_<k>` of PREFIX.aug.fa and a `member_status candidate` row of its
 # family), and the reads of the candidate families (PREFIX.cand.nets.fa, every read of each such family's net) are
-# realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign` gives
+# realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign --candidates` gives
 # those families. That realignment is the placement of the candidates' reads (ruling R13): a read whose best alignment is on
 # a candidate contig lands there (the fixture: all 60 reads of the deleted copy, MAPQ 60). An earlier run's PREFIX.aug.* are
 # removed first, so a run without a flagged candidate leaves none behind. PREFIX.aug.fa is a whole-genome copy that minimap2
@@ -353,9 +346,9 @@ stage_candidates() {
   say "candidates: $OUT.aug.bam: $(samtools view -F 2308 "$OUT.aug.bam" | awk -F'\t' 'FILENAME == ARGV[1] { if (FNR > 1 && $5 == 1) c[$2] = 1; next } { n++; k += ($3 in c) } END { print n + 0 " primary records, " k + 0 " of them on a candidate contig" }' "$OUT.cand.candidates.tsv" -)"
 }
 # assign (O2): per-read copy assignment on the families' copy table (PREFIX.fam.copies.tsv/.fa, the default O1 output),
-# swept over PREFIX.regions.txt (fam_regions). With flagged candidates (PREFIX.aug.families.txt from the candidates stage of
-# this families run; the default): assign_with_candidates; candidate products present with --no-candidates are not used
-# (one line says so). --legacy-catalog: the legacy catalog PREFIX.cat.* over whole contigs, as the stage ran before
+# swept over PREFIX.regions.txt (fam_regions). With --candidates and flagged candidates (PREFIX.aug.families.txt from the
+# candidates stage of this families run): assign_with_candidates; candidate products present without --candidates are not
+# used (one line says so). --legacy-catalog: the legacy catalog PREFIX.cat.* over whole contigs, as the stage ran before
 # 2026-10-02. The three helpers are defined inside the stage (they are its code alone: figures/samples.py's driver_stage_code
 # then keeps them out of the other stages' code hashes).
 stage_assign() {
@@ -381,13 +374,12 @@ stage_assign() {
                   $3 > e { e = $3 }
                   END { if (c != "") print c ":" s "-" e }'
   }
-  # cand_ready: true when this run uses the candidates stage's products (CANDIDATES=1, the default unless --no-candidates or
-  # --legacy-catalog, and PREFIX.cand.candidates.tsv present);
+  # cand_ready: true when this run uses the candidates stage's products (--candidates, PREFIX.cand.candidates.tsv present);
   # a table older than PREFIX.fam.copies.tsv was made for other families: an error, not a silent mismatch.
   cand_ready() {
     [ "$CANDIDATES" = 1 ] && [ -s "$OUT.cand.candidates.tsv" ] || return 1
     if [ "$OUT.cand.candidates.tsv" -ot "$OUT.fam.copies.tsv" ]; then
-      echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or pass --no-candidates" >&2; exit 2
+      echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or drop --candidates" >&2; exit 2
     fi
   }
   # assign_with_candidates: the two-run O2 split (spec §4/§7; v1, §10 names the single run over a merged BAM as the end
@@ -408,7 +400,7 @@ stage_assign() {
   # overlap register each other's tied molecules and can demote each other's verdicts.
   assign_with_candidates() {
     [ -s "$OUT.aug.bam.bai" ] && [ ! "$OUT.aug.bam.bai" -ot "$OUT.aug.families.txt" ] \
-      || { echo "[rustle_pipeline] $OUT.aug.bam is missing or older than $OUT.aug.families.txt: run the candidates stage again, or pass --no-candidates" >&2; exit 2; }
+      || { echo "[rustle_pipeline] $OUT.aug.bam is missing or older than $OUT.aug.families.txt: run the candidates stage again, or drop --candidates" >&2; exit 2; }
     local n_cand n_rest t f
     n_cand=$(grep -c . "$OUT.aug.families.txt")
     n_rest=$(awk -F'\t' 'FILENAME == ARGV[1] { c[$1] = 1; next } FNR > 1 && !($1 in c) { print $1 }' "$OUT.aug.families.txt" "$OUT.fam.copies.tsv" | sort -u | wc -l)
@@ -465,7 +457,7 @@ stage_assign() {
     assign_with_candidates; return 0
   fi
   if [ "$CANDIDATES" != 1 ] && [ -s "$OUT.aug.families.txt" ] && [ ! "$OUT.aug.families.txt" -ot "$OUT.fam.copies.tsv" ]; then
-    say "assign: the candidates stage's products ($OUT.aug.*) are present but unused (--no-candidates): drop it to assign the candidate families on them"
+    say "assign: the candidates stage's products ($OUT.aug.*) are present but unused (the stage is opt-in, ruling R14): pass --candidates to assign the candidate families on them"
   fi
   say "assign: per-read copy assignment on $OUT.fam.copies.tsv"
   rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier split run's tables
@@ -480,12 +472,11 @@ stage_flag() {
   # the loci to scan: the annotation with --gff, else the de novo loci `families` reads (bridges are relations, not loci)
   [ -n "$GFF" ] || fam_gtf_guard flag
   local LOCI=${GFF:-$FAM_GTF} cand=()
-  # with the candidates stage's table (the default; not with --no-candidates), the two O3 sources corroborate: the verdict
-  # table's `o3_candidate` column names a flagged candidate on the row's locus (a candidates table older than
-  # PREFIX.fam.copies.tsv was made for other families: an error)
+  # with --candidates, the two O3 sources corroborate: the verdict table's `o3_candidate` column names a flagged candidate on
+  # the row's locus (a candidates table older than PREFIX.fam.copies.tsv was made for other families: an error)
   if [ "$CANDIDATES" = 1 ] && [ -s "$OUT.cand.candidates.tsv" ]; then
     [ ! "$OUT.cand.candidates.tsv" -ot "$OUT.fam.copies.tsv" ] \
-      || { echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or pass --no-candidates" >&2; exit 2; }
+      || { echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or drop --candidates" >&2; exit 2; }
     cand=(--candidates "$OUT.cand.candidates.tsv")
   fi
   say "flag: scan $BAM on $LOCI"
@@ -500,12 +491,11 @@ stage_flag() {
 case "$STAGE" in
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;;
-  # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; otherwise `all` runs the candidates stage (the
-  # default since 2026-10-03, Amendment 13 passed) unless --no-candidates
+  # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
   all) stage_assemble; stage_families
        if [ "$LEGACY_CATALOG" = 1 ]; then stage_catalog
        elif [ "$CANDIDATES" = 1 ]; then stage_candidates
-       else say "candidates: skipped (--no-candidates)"; fi
+       else say "candidates: skipped (opt-in, --candidates; Amendment 12 failed, R14)"; fi
        stage_assign; stage_flag;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;
 esac

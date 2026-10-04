@@ -32,16 +32,16 @@ Main binaries (`src/bin/`, twelve): the pipeline stages — `copy_assign` (`--as
 streams a whole BAM into loci and isoforms; `--families` is the copy assignment; `--flag-missing-copies` the
 pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` runs the de novo stage from an
 assembled GTF in one command, with the copy table the assignment consumes), `gw_family_catalog` (the LEGACY copy
-catalog, assigned only with the driver's `--legacy-catalog`), `o3_candidates` (the candidates stage, default since
-2026-10-03: candidate copies absent from the reference, from each family's reads), `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — and six comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
+catalog, assigned only with the driver's `--legacy-catalog`), `o3_candidates` (the opt-in candidates stage: candidate
+copies absent from the reference, from each family's reads), `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — and six comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
 `tools/rustle_pipeline.sh assemble|families|candidates|catalog|assign|flag|all` runs any stage, or all of them (`all` =
-assemble, families, candidates, assign, flag), with the shipped defaults (since 2026-09-29 these include bridge-aware
-regrouping, `copy_assign --bridge-regroup f1v2`, and the containment escape `mcl_families --min-cov-shorter 0.70`; since
-2026-10-02 `assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`; since 2026-10-03
-`candidates` — O3 candidate copies from each family's reads, `o3_candidates` — is a DEFAULT stage whose products assign and
-flag use, because its re-run pre-registered acceptance passed: `docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`;
-`--no-candidates` turns it off, and it was opt-in from 2026-10-02 after the first acceptance failed,
-`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; its cost on a full BAM is not yet measured, see Amendment 14 / R23). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
+assemble, families, assign, flag), with the shipped defaults (since 2026-09-29 these include bridge-aware regrouping,
+`copy_assign --bridge-regroup f1v2`, and the containment escape `mcl_families --min-cov-shorter 0.70`; since 2026-10-02
+`assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`, and `candidates` — O3 candidate
+copies from each family's reads, `o3_candidates` — is OPT-IN, `--candidates`, because its pre-registered acceptance failed:
+`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; the re-run acceptance passed on 2026-10-03, but its no-deletion control failed
+and the default flip was reverted the same day, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; on a full BAM one batch of 50
+families did not finish in a 10-minute call, spec §9b, R23). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
 the earlier pipeline, byte for byte except `assign` on a catalog with cross-chromosome families (2026-10-02, `copy_assign
 --help`, `--families`) — `REPRODUCE.md` §5 and its driver section, `bench/ASSEMBLY_POLISH.md` addendum 3). `bench/` holds the
 9 Python files behind the record's analysis commands: the library `lib.py`, the subcommand scripts `score.py`,

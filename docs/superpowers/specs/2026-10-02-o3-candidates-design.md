@@ -3,9 +3,10 @@
 Date 2026-10-02. Branch `machine2/soto-evidence` (== `main`). Status: implemented 2026-10-02; the pre-registered acceptance
 (Amendment 12) FAILED, so the driver's `candidates` stage went OPT-IN (ruling R14, §9b; `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
 Amendment 13 (+ 13b-13e; rulings R16-R21, §9b) changed the net attribution and the template, and the re-run acceptance PASSED
-(`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): commit 1f49d0f0 makes the stage a DEFAULT stage of the driver's `all`
-(`--no-candidates` turns it off; §7), pending Amendment 14's no-deletion control (ruling R22, §9b), not yet run: the flip ships only
-if that control holds.
+(`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): commit 1f49d0f0 made the stage a DEFAULT stage of the driver's `all`,
+conditional on Amendment 14's no-deletion control (ruling R22, §9b). **2026-10-03: Amendment 14 FAILED (C1': 35 of the 53 families
+carry a false flag with nothing deleted, bar 8; C2' held, 0.54% false moves; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`), so the
+default flip (1f49d0f0) was reverted on 2026-10-03 by ruling R22: the stage is OPT-IN again (`--candidates`; §7).**
 
 ## 1. Goal
 
@@ -35,7 +36,7 @@ hierarchy work, YAG-specific delta (the stage takes `--delta`; the Y value is th
 ## 4. Pipeline placement and data flow
 
 ```
-assemble -> families (O1: P.fam.copies.{tsv,fa,regions}) -> candidates (new; default since 2026-10-03) -> assign (O2, augmented) -> flag (O3 screen)
+assemble -> families (O1: P.fam.copies.{tsv,fa,regions}) -> candidates (new; opt-in, R14) -> assign (O2, augmented) -> flag (O3 screen)
 ```
 
 ```
@@ -180,20 +181,19 @@ byte-identical except where a test is added for the cross-chromosome case.
 
 - `assign` reads `P.fam.copies.tsv` / `.fa` (the default O1 output) and derives `P.regions.txt` from `P.fam.copies.regions` (second
   column; the first is the family id — `parse_region` takes the first token). The legacy `P.cat.*` path stays behind `--legacy-catalog`.
-- New stage `candidates`, a DEFAULT stage since 2026-10-03 (Amendment 13's acceptance passed, §9b): `all` runs it between `families`
-  and `assign`, and `assign` and `flag` use its products, unless `--no-candidates` (with products present, assign says in one line that
-  it does not use them); `--candidates`, the switch of its opt-in period (ruling R14, 2026-10-02..03), is still accepted;
-  `--legacy-catalog` implies `--no-candidates`, and an explicit `--candidates` with it exits 2; `--delta`, `--cand-max-reads` pass
-  through. As first written here it was a default stage of `all`. It runs `o3_candidates`, then the augmentation (§4): `P.aug.fa` (+ `samtools faidx`), `P.aug.copies.tsv` rows
+- New stage `candidates`, OPT-IN since ruling R14 (§9b): naming the stage runs it; `all` runs it between `families` and `assign` only
+  with `--candidates`, and `assign` and `flag` use its products only with `--candidates` (`--no-candidates`, the default, says so
+  explicitly; `--candidates` with `--legacy-catalog` exits 2); `--delta`, `--cand-max-reads` pass through. As first written here it
+  was a default stage of `all`. It runs `o3_candidates`, then the augmentation (§4): `P.aug.fa` (+ `samtools faidx`), `P.aug.copies.tsv` rows
   `family_id copy_idx=<next> tid=cand_<f>_<k> chrom=cand_<f>_<k> start=0 end=<len> n_exon=1 strand=+ n_reads=0 exons=0-<len> ...
   source=o3_candidate`, `P.aug.copies.fa` entries `>{fid}|{idx}|cand_<f>_<k>:0-<len>|+|nexon=1`, `P.aug.regions.txt` with
   `cand_<f>_<k>:0-<len>`, and the patch realignment of `P.cand.nets.fa` to `P.aug.fa` with the same minimap2 flags the pipeline's BAM
   was made with (`-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`), sorted and indexed as `P.aug.bam`.
-- `assign` with flagged candidates (the default): two `copy_assign` runs (candidate families on `P.aug.*`, the rest on the original
+- `assign --candidates` with flagged candidates: two `copy_assign` runs (candidate families on `P.aug.*`, the rest on the original
   inputs; `--families` restricted by `--only-families` / `--skip-families`), outputs concatenated with one header. Ruling R13
   (§9b): O2 assigns AS-tied molecules only, so a read the realignment places uniquely on a candidate has no row; its placement is
   `P.aug.bam`'s.
-- `flag` (the default; not with `--no-candidates`) passes `--candidates P.cand.candidates.tsv`: `missing_copy_flag` adds a column `o3_candidate` (candidate id or
+- `flag --candidates` passes `--candidates P.cand.candidates.tsv`: `missing_copy_flag` adds a column `o3_candidate` (candidate id or
   `-`) to `P.flag.missing_copy.tsv` when a flagged candidate's nearest locus is the row's locus — the two O3 sources corroborate each
   other.
 
@@ -218,8 +218,13 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
 `rep_choice.py` measure); wall time <= 2 x IsoCon's (~20 min for 53 families at the 1,000-read cap).
 **Re-run acceptance (prereg Amendment 13 + 13b-13e, written before the A13 run):** A13-1 = D right >= 0.80 x C, C = IsoCon's right D
 reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%; A13-2 = A12-2; A13-3 = A12-3. All three PASSED on
-2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage was flipped to default-on (1f49d0f0), pending
+2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage was flipped to default-on (1f49d0f0), conditional on
 Amendment 14's no-deletion control (R22, §9b).
+**No-deletion control (prereg Amendment 14, written before the run):** Amendment 9's control with the stage in place of the IsoCon
+chain (nothing masked; every flagged union classified against the individual's own haplotypes): C1' = families with >= 1 false flag
+<= 8 of 53, C2' = false moves <= 5% of all reads. **C1' FAILED (35/53 = 66.0%, LR 0.71; 54 of the 56 flags match neither haplotype at
+0.999, 1 is an allele, 1 is GWFAM175's real haplotype-only copy); C2' held (318 / 59,013 = 0.54%). The default flip (1f49d0f0) was
+reverted on 2026-10-03 by ruling R22** (`docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`).
 
 ## 9b. Plan rulings (2026-10-02, recorded here so the spec and the plan agree)
 
@@ -277,8 +282,8 @@ Amendment 14's no-deletion control (R22, §9b).
     total indel bases" picked fragments.
   - **R21** (Amendment 13e, `ff869c40`): eligibility = aligned to >= min(0.5 x (n - 1), 50) other members (the all-vs-all's `-N 100` made
     50% unattainable in 400+-read clusters); a member with no aligned partner is never chosen while another has a mean.
-- **Default flip (2026-10-03, commit 1f49d0f0, after Amendment 13's acceptance) — pending Amendment 14's no-deletion control (R22),
-  not yet run:** A13-1 PASSED (D right 7,898 >= 0.80 x C = 5,842.4; C = 6,048 on a survivor + 1,255 attributed = 7,303; false moves
+- **Default flip (2026-10-03, commit 1f49d0f0, after Amendment 13's acceptance) — conditional on Amendment 14's no-deletion control
+  (R22); reverted on 2026-10-03 (below):** A13-1 PASSED (D right 7,898 >= 0.80 x C = 5,842.4; C = 6,048 on a survivor + 1,255 attributed = 7,303; false moves
   323 = 0.77%), A13-2 PASSED (99.50% of 15,364 read-candidate pairs kept with pooled targets, the registered reading, R24; 99.78%
   isolated), A13-3 PASSED (25.9 min summed over 5 batches) -> 1f49d0f0 makes the driver's `candidates` stage a default stage of `all`,
   with `assign` / `flag` using its products and `--no-candidates` as the off switch. Reported beside, not decided on: A12-1's bar
@@ -288,7 +293,19 @@ Amendment 14's no-deletion control (R22, §9b).
     C1' <= 8 of the 53 families with a false flag, C2' <= 5% false moves without a deletion) holds for the stage; if it fails,
     1f49d0f0 is reverted and the stage stays opt-in (R14).
   - **R23**: the stage's cost on a full BAM is measured in a separate task; until then it is disclosed as not yet measured.
+    **Measured 2026-10-03 (Amendment 14's task, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`): one batch of 50 families on the full
+    gorilla fibroblast Iso-Seq BAM (23 GB, 34.9 M mapped records; the 378-family / 915-copy interval table) did NOT finish in a
+    10-minute call.** Its nets phase alone took 397-469 s (two attempts): pass A + the sequential pass-B sweep 146-155 s; the 50
+    families' net reads written as attribution targets (648,946 reads, 2.6 GB) 28-72 s; the attribution alignment (88,571 reads: 202
+    unmapped + 88,369 poorly placed) 213-250 s; then 7-14 of the 50 families were clustered (16-20 s each) before the stop; peak RSS
+    10.7 GB at the stop. Every call repeats the whole-BAM sweep and the targets grow with the batch's nets; from the measured phases
+    this one batch needs ~20 min (an estimate: R23's task stops after one batch that cannot finish).
   - **R24**: A13-2's pooled-target reading is the registered one (as A12's doc decided).
+- **Amendment 14's outcome (2026-10-03):** C1' FAILED — 35 of the 53 families carry a false flag with nothing deleted (bar 8; 54 of
+  the 56 flagged unions match neither of KB3781's haplotypes at 0.999, 1 is an allele, 1 is GWFAM175's real paternal-only copy); C2'
+  held (318 false moves = 0.54% of 59,013 reads, 295 of them onto that real copy). **The default flip (1f49d0f0) was reverted on
+  2026-10-03 by ruling R22 (Amendment 14 failed)**: the stage is opt-in again (R14), `--candidates` runs it, and the control's numbers
+  are the next prereg's starting point.
 
 ## 10. Open items (deferred, named)
 

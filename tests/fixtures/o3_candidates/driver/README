@@ -5,19 +5,17 @@ Driver end-to-end on this fixture: tools/rustle_pipeline.sh's candidates and ass
 run_e2e.sh builds the families stage's three products from the fixture (the fixture has no O1 products: its one locus
 gives the families stage no family): fx.fam.copies.tsv/.fa = the fixture's copy table (MCL0, copy A) plus a control family
 MCL1 without a candidate (one copy at chrT:30000-30500, n_reads 0), and fx.fam.copies.regions in mcl_families' layout
-(hull +- 5 kb). It runs the driver's candidates stage and `assign --candidates` (the default since 2026-10-03, prereg
-Amendment 13 passed; `--candidates`, the old opt-in switch of ruling R14, is still accepted), and a plain `assign` on a copy
-of the same inputs without candidates products, then checks, exiting non-zero at the first failure it names:
+(hull +- 5 kb). It runs the driver's candidates stage and `assign --candidates` (both opt-in since ruling R14: the stage's
+pre-registered acceptance, Amendment 12, failed), and a plain `assign` on a copy of the same inputs without candidates
+products, then checks, exiting non-zero at the first failure it names:
   (a) placement by the patch realignment: the 60 copy-B reads (B_*, the generator's names) have their primaries on
       cand_MCL0_0 at MAPQ >= 60 in fx.aug.bam; the 60 copy-A reads' primaries are those of the fixture BAM
   (b) MCL0 is assigned as a 2-copy family that includes cand_MCL0_0 (families.tsv n_copies 2, quant.tsv lists it), with
       the AS-tied gate at its default (ratio 1.00)
   (c) the control family's tables are the same in the split and in the plain run (MCL1 has no reads: this checks the
       split's selection, regions and concatenation)
-  (d) the default: a plain `assign` where the candidates products are present uses them (no "present but unused" line;
-      the split runs; MCL0 is assigned as a 2-copy family)
-  (e) the off switch: `assign --no-candidates` there does not use them (one driver line says so; no split; MCL0 is
-      assigned as its 1-copy self)
+  (d) opt-in: a plain `assign` where the candidates products are present does not use them (one driver line says so; no
+      split; MCL0 is assigned as its 1-copy self)
 
 Ruling R13 (2026-10-02): O2's scope is AS-tied molecules (assign-or-abstain). A read that the realignment places uniquely
 on a candidate is placed by the aligner and never enters the certificate. So fx.assign.assignments.tsv holds no MCL0 row
@@ -25,7 +23,6 @@ on this fixture, with or without the candidate: every molecule is a clear-best m
 a gap. The candidate's reads are the 60 copy-B primaries on cand_MCL0_0 in fx.aug.bam.
 
 Seen 2026-10-02 and again 2026-10-03 after the opt-in flip (minimap2 2.30-r1287, samtools 1.22.1): all assertions hold,
-(d) included. Seen again 2026-10-03 after the default flip (A13; o3_candidates of 0f5824a7): (pre), (a)-(c), the new (d)
-and (e) hold. The driver reports 1 flagged candidate; fx.aug.bam has 120 primary records, 60 of them on cand_MCL0_0;
+(d) included. The driver reports 1 flagged candidate; fx.aug.bam has 120 primary records, 60 of them on cand_MCL0_0;
 `assign --candidates` gives 0 rows. The flag stage with --candidates, run with a one-gene GFF (chrT 10001-13100 geneA), gives
 geneA o3_candidate = cand_MCL0_0; without --candidates the column is absent.
