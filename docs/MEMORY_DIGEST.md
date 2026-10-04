@@ -478,3 +478,122 @@ evictions; it is kept here as the claim in the words it was first believed in.
 ⛔09-24 §6zg [[project_tandem_copy_sim]] r1095 — **`bench/tandem_copy_sim.py`: minimap2 does NOT join exons across near-identical tandem copies from clean copies** (0 cross-copy chains at 0.90–0.995, tandem or interleaved, either direction; at 1.0 ties keep both exons in ONE copy); 99% copies keep MAPQ 60; assembler never chimeric; ⚠**interleaved (exon-level) duplications are invisible to `gw_family_catalog`** (one locus, 0 families). Prereg predicted 5–20% cross — wrong.
 ⭐/⛔09-23/24 §6zf/§6zm [[project_o2_read_truth]] r1092/r1093/r1103 — **O2 PER-READ TRUTH: PSV certificate exact within a family but the `--families` table had NO cross-family arbitration** ⇒ `--union-certificate` SHIPPED (opt-in): foreign rows 844→0, wrong→0 — ⛔but **every chr16 tied read has an NM-IDENTICAL genomic twin ⇒ the union TIES all 1,259**; the old 157 assignments were blind to the twin. Decision: strict abstain vs expression prior.
 ⭐⭐⭐09-23 §6za [[project_assembly_polish]] — **ASSEMBLER DEFAULTS CHANGED (r1074-r1076): `--assemble-only` = `--assembly-junctions strict` + `--polish-retained-ratio 10`** (gorilla chain prec 33.1→35.6, −0.46% chains; old output = `majority` + ratio 0). ⛔r1077-r1085 EVERY chain-level rule refuted (partials, trims, retained introns, exon combos, StringTie 1-read/junction, isoform fraction, clips, micro-exons) — **chain-rule search CLOSED**; full text `docs/MEMORY_DIGEST.md` "Compacted 2026-09-23".
+
+## Compacted 2026-10-03
+
+Lines removed or shortened from MEMORY.md on 2026-10-03 (index over the 24.4 KB load limit; the tail with the advisor/user links was being cut off). Verbatim:
+
+## Current work — 2026-09-22
+⭐⭐⭐10-02 [[project_famsim]] — `bench/famsim`: spec-driven family simulator that PROVES its condition (verify.tsv) + scores O1/O2/O3; 22-rung ladder ran on human SNRPB + orangutan SPAG7 (~1 min each); gorilla needs a GFF-matching FASTA.
+⛔⭐10-02 [[project_mcl_two_node_fragility]] — mcl_families SIZE-2 families split or join by floating-point residue (w .99 split, .98 join, .90 split, .85 join); 3 nodes fine; found by famsim in both species; fix candidates in the note, NOT applied.
+⭐⭐09-30 [[project_unit_cover]] — partition of (duplicon x CN class) units + genes as paths expresses Soto cover: held-out Jaccard .660, NPIP exact; 65% not exact.
+⭐⭐⭐10-01 [[project_rna_haplotype_count_parked]] — IsoCon chain truth-free (flag → link → merge at δ): held-out 53 fam, missing-copy reads right 0→74%, 1 candidate/copy 80%; ⛔no-deletion control C1 FAILS 30.2% vs 28% (LR 2.75), C2 holds; post hoc ≥2-transcript floor LR 8.2 (prereg next); A10 real ref-absent: D1 PASSES n=1 (GWFAM175_B0); YAGs: human Y1 10/11 (palindrome copies d_min 0; DAZ3 flagged by exon STRUCTURE), gorilla held-out 2/2 (DAZ1 10%); A11 missing_copy_flag FAILS ⇒ Rust `o3_candidates` BUILT 10-02 (SHIPPED OPT-IN 10-03, pushed main fde90c0a; ⛔A12 FAILS 34.7% vs 80%-of-IsoCon bar — the NET: 0/5,312 unmapped reads attributed by k-mers, IsoCon had truth labels; NEXT A13 = alignment-based net + medoid template; ledger docs/superpowers/plans/2026-10-02-o3-candidates-ledger.md); rows 1194-1215.
+⭐09-30 [[project_fusions_are_duplicon_blocks]] — NPIP fusions = paths across a duplicon boundary in a co-duplicated block; prereg: dev EXPLAINED, held-out UNDERPOWERED (no verdict).
+⭐⭐09-30 [[project_cn_cut_follows_duplicons]] — prereg: Soto CN cut FOLLOWS duplicon boundaries (held-out p 1e-4); duplicons = units; family_gfa spec amended.
+⭐⭐10-01 [[project_locus_read_pool]] NPIP read pools: coin toss real (59% tied), ALL adds 87 off-copy nodes the all-vs-all keeps; page F3gJty4e.
+⭐⭐⭐10-01 CAT re-run of RefSeq benchmarks ([[project_cat_default_annotation]]): SQANTI3 ranking holds (27/30, miss chr5→chr14); ⛔copy recovery P3 FAILS on CAT NPIP (isoseq 10 vs ours 8 E2).
+⭐⭐⭐09-30 Soto meeting: branch `machine2/soto-evidence` MERGED into main 10-01 (fast-forward to f38064fd); 4-tab page J12TB7eb; per-family classes, filters, bipartite, loosen ⛔ ([[project_soto_refinement_evidence]]).
+⭐⭐09-30 [[project_container_v2]] — fused-locus container PAUSED: units execution in Rust (opt-in, UNCOMMITTED, review fixes half-applied); headroom +2/146 copies; majority-core/RC NOT; held-out units not run.
+⭐⭐⭐09-29 [[project_copy_recovery_tools]] (e163d955, rows 1189-1193) — per-copy NPIP/TBC1D3 vs StringTie/FLAIR/isoseq: ours >= all on E2 copies, StringTie +1 over all human NPIP; gorilla NPIP 0/25 for all, F4 fired; not independently recomputed.
+⛔09-29 [[project_o1_cover_growth]] — Soto-style cover for fusions REFUTED held-out (no real fusion spans two families; = random null); side: F1v2 partition beats default.
+⛔09-29 [[project_o2_presence_gate]] — DNA k-mer presence gate REFUTED on HG002 (removes the true copy, prec .21 < random); use synteny + the individual's own copies.
+⭐09-29 [[project_o2_power]] — O2 abstention is a PSV-count step, not depth; m=1 never assigns (p = alpha exactly); NPIP copies 6/7 reads match neither ref copy.
+⭐09-29 [[project_ggo_npip_loss]] — gorilla NPIP w/ reads, no locus: no open lever; 2x2 sim: exonic deletions/SVs + truncation, not SNVs (O3); TBC1D3 held-out: does NOT transfer.
+⭐09-28 [[project_f1_bridge_locus_fix]] r1145-1147 — F1 bridge loci EFFECTIVE gorilla; F1v2 (09-29) EFFECTIVE human −17%/−8%, family-level F up; Rust port c6cc4142; **DEFAULT ON 09-29**; ⚠beats RG3 only if bridges = relations.
+⭐⭐⭐09-28 [[project_soto_refinement_evidence]] — Soto ARI .7096 literal (235 exact); 5 named gaps; Soto = coarser COVER; 09-29 their code ⇒ ARI .97 w/ S1C CN; our 268-sample CN .93/411 (old .92 = lucky draw).
+⭐09-27 [[project_read_proven_ends]] — opt-in --polish-tss (cap-aware; human only) + --polish-tes pas-end; both-forms rule; r1131-1135.
+⭐09-27 [[project_complete_transcripts_subchain]] — /goal fewer gffcompare partials (user target `c`, not `m`): arm A (end-compatible sub-chain drop) WITHDRAWN on dev; held-out + SIRV NOT spent.
+⭐09-27 [[project_locus_representatives_study]] r1121-r1127 — advisor rep criticism: rep fine for families/O2; loss = genes in fused loci; all 4 arms dev-only, PARKED.
+⭐09-26 [[project_spikein_standards]] — only human_testis is spiked (SIRV E0 + ERCC, 2.3%, all unmapped); other 5 not; no sequins.
+⭐09-26 [[project_readthrough_ends_filter]] r1117-r1120 — readthrough filter v3 `r3` EFFECTIVE 6/6 held-out (fused −16..−34%) but ASSEMBLY-level only (reps/families = R); opt-in; no v4 on these 6.
+⭐⭐09-25 [[project_o3_wgs_trio_cn]] — **WGS trio (Jim+Trib+Dolly) k-mer CN: 17/516 families differ between gorillas; RNA O3 flags mostly absent from DNA; advisor artifact; RNA-as-screen recall 0/17 (`docs/O3_WGS_TRIO_CN_2026-09-25.md`).** ⚠Aug fastq.gz corrupt.
+⭐⭐⭐09-25 [[project_publication_figures]] — **`figures/` = 7 publication figures** (`make.py data figN|plot all|check`), all tables rebuilt 09-25; register 1109-1115 (O2 stable seed holds; de novo vs guided off chr16; r1115 spectrum).
+⛔09-24 §6zh–§6zj [[project_identity_spectrum]] r1096–r1099/r1115 — spectrum vs Compara chr16; union-coverage rule ⛔; chr16 catalog 85% Alu stubs. (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-29")
+⛔09-24 §6zg [[project_tandem_copy_sim]] r1095 — minimap2 does NOT join exons across near-identical tandem copies; interleaved dups invisible to gw_family_catalog. (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-29")
+⭐/⛔09-23/24 §6zf/§6zm [[project_o2_read_truth]] r1092/r1093/r1103 — `--union-certificate` shipped opt-in; every chr16 tied read has an NM-identical twin ⇒ union ties all. (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-29")
+⭐⭐09-23 §6ze [[project_o3_rna_only_chain]] — **`o3_rna_flag` SHIPPED (r1090/r1091): RNA-only O3 chain** (S2 mixture → PSV consistency → patched … (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-25")
+⭐⭐⭐09-23 §6zc/§6zd [[project_external_tool_bakeoff]] [[project_o3_reference_bias]] — **PENDING ITEMS MEASURED: r1088 QUANT PARITY ⚠ CLOSE** (Spearman … (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-25")
+⭐⭐⭐09-23 §6zb [[project_pipeline_performance]] — streaming `--assemble-only --genome-wide`: whole human genome 482 s / 1.93 GB. (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-28")
+⭐⭐⭐09-23 §6za [[project_assembly_polish]] — assembler defaults = strict junctions + retained ratio 10 (r1074-1076); r1077-1085 every chain-level rule refuted, chain-rule search CLOSED. (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-29")
+⛔⛔09-23 §6z9 [[project_external_tool_bakeoff]] r1067-r1073 — **SINGLE-READ CHAINS / NON-CANONICAL JUNCTIONS: no learnable admission rule; FLOOR STAYS AT 2** (best predicate 4.2%/15.7% vs bar 18.3; tools have no floor; learned cut does not transfer; 5′ fold-in breaks 2.5 per fix). Full text in the digest.
+⭐⭐⭐09-23 §6z8 [[project_external_tool_bakeoff]] — **ASSEMBLY-ARM RULE SEARCH CLOSED (r1062-r1066)**: on refs with ≥2 exact-chain reads we are the … (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-25")
+⭐⭐⭐09-23 §6z7 [[project_locus_read_pool]] — which alignments seed the loci: ALL secondaries = precision trade; **GOOD secondaries (0.98 of genome-wide best AS) better held-out** (needs a full-BAM AS table); coin-toss mis-seeding negligible. Full text in the digest.
+⭐⭐⭐09-22 §6z5/§6z6 [[project_external_tool_bakeoff]] — ours vs lab isoseq/StringTie/FLAIR (gorilla 10/15, human 12/15 cells); tools add SINGLE-READ isoforms; ⛔r1058 dedupe key drops 25–39% of primaries (`--keep-coordinate-duplicates`). Full text in the digest.
+⭐⭐⭐09-22 §6z4 [[project_locus_formation_gap]] — **NODE FORMATION RULES (r1049-r1055, `docs/NODE_FORMATION_2026-09-22.md`): do NOT widen reps** (fuller evicts, smaller makes hubs; the FN remedy is the EDGE escape §6x4); rep selection parked. Full text in the digest.
+⭐⭐09-22 §6z2/§6z3 [[project_cleanup_audit]] — script reduction (`mode_family_score.py`→`family_score`, `mcl_port.py`→`mcl_port` bin bit-identical); ⚠r1045 bipartite PRECISION is NOT tie-invariant. Full text in the digest.
+⚠⚠09-22 §6y6 r1032-r1034 — `RUSTLE_ER_COVERAGE_LONGER_FLOOR` unreachable from `family_define` (needs a BAM rebuild); `bench/family_rna_refine.tsv` parity claim FALSE 3 ways; that catalog is GORILLA — **check contig names before choosing a truth.** Full text in the digest.
+⭐⭐⭐09-22 §6w1-§6y5 — **NODE DEFINITION + EDGE CONSTRUCTION, full report `docs/NODE_DEFINITION_2026-09-22.md`, rows 969-1031.** Topic files carry the detail: [[project_containment_escape_admission]] · [[project_node_overmerge_reversal]] · [[project_containment_poset]] · [[project_sedef_not_load_bearing]].
+⭐⭐⭐**SHIPPED: `mcl_families --min-cov-shorter 0.70`** (default OFF, byte-identical unset, 843 tests, commit f2144faf). Held-out F up 2/3, precision up-or-equal everywhere; C insensitive .40-.80 (not a fitted threshold). ⛔Regresses NPIP-guided .833→.800 and semi-guided (prec .973→.833) — **inseparable from the gain (r1019: it is an EDGE-WEIGHT change, admission is worth 0.000)**. **DEFAULT ON since 09-29 (user decision, with F1v2 `--bridge-regroup f1v2`; `0`/`off` = old behaviour).**
+⛔⛔09-22 r1013/r1017 — over-merge does NOT cause the evictions; a perfect split of fused loci buys +0.021F (⚠NPIPB7 clip artefact, 09-28). (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-28")
+⭐⭐⭐09-22 **r1026 THE BOUND ON EVERY STRUCTURAL IDEA: 81.1% of referee same-family pairs have NO ALIGNMENT AT ALL** ⇒ §6o8's ceiling is the ALIGNMENT, not grouping or the gate (corroborates §6t1's cliff). Poset/trie/VG/junction-strings/DP-chaining are all computed FROM alignments ⇒ none reaches 4/5 of truth pairs. ⭐**Scope not defeat** — NPIP 90.6%, FAM90A 100%.
+⛔09-22 **ALL STRUCTURES CLOSED**: r1022 poset (dev .714 vs MCL .516 but held-out never beats its own NULL ⇒ **order adds nothing over connectivity**; … (full text: docs/MEMORY_DIGEST.md "Compacted 2026-09-25")
+⭐⭐09-22 §6x1/§6x2 — **UNION TRUTH: guided stays best, lead WIDENS** (F .833/.762/.721; ⛔r991 semi-guided's "prec 1.000" was the universe intersection, r992 collapse 2→11). **r994/r996 SEDEF NOT LOAD-BEARING** — de novo+guided consume none, and it is a **LOSSY COPY of our own PAF** (median |Δcore| 0 bp, 29.1% blind spot).
+
+⭐⭐⭐[[project_assembly_polish]] — polish flags = 28/30 cells vs StringTie/6 chroms, pooled 2,809 vs 2,761 chains; chr5/chr11 infeasible (r863), 9 closing attempts refuted.
+⭐⭐⭐SQANTI3 (`bench/SQANTI3_POLISH.md`): pooled FSM 46.6% / PASS 94.3% beat StringTie+FLAIR on every category. NIC/NNC can't be made FSM.
+⭐⭐⭐**RESUME:** `docs/PENDING_2026-09-23.md` (items 1-2 measured; **item 3 = O3 DNA step: KB3781 HiFi reads from SRA, PSV k-mer depth on the 52 candidates + HG002 matched-individual human test**; O1 Compara truth) + `-17.md`.
+⭐⭐⭐[[project_cleanup_audit]] — chronology IN THE TOPIC FILE. **Wave 7 09-24 (tag `notebook-2026-09-24`): bench .py 42→9 (`lib/score/sim/truth` + 5), Rust 63.6k→56.8k lines, tools 5→2; catalog chr16 3,495→373 s byte-identical; `run_cache.rs` = `PREFIX.cache` (driver default, `--inspect`, `cache-ls`).** ⚠touch .rs before verify builds (/mnt/c timestamps). O1/O2/O3 internal only.
+⭐⭐⭐§6s9 — **O1 emits a STRICT PARTITION** (0/2,670 loci in >1 cluster) ⇒ a fusion (PKD1P6-NPIPP1, member of 2 families) is INEXPRESSIBLE — forced choice, not a bug. Don't re-propose node-cut(846)/multi-truth(845).
+⭐⭐⭐§6t1 — **DOMINANT GAP RESOLVED**: RNA edge-recall ceiling (0.052) is a protein-identity DIVERGENCE CLIFF at 0.60, not an O1 defect; no ceiling where the thesis operates (NPIP 90.6%, FAM90A 100%). Scope quote: prot id ≳0.80.
+⭐⭐§6t2 — protein seqs translated in-house; blastp buys nothing over the shipped LCS core (wins only <0.60 id, where RNAs don't align anyway).
+⭐⭐⭐§6t3-t6 — advisor's Jaccard-sweep/ochiai/guarded-containment/DP-chaining arms all superseded by §6t7; full text `docs/MEMORY_DIGEST.md` "Compacted 2026-09-21".
+⭐⭐⭐§6t7 — **ASYMMETRY THREAD CLOSED**: shipped rule recovers 64.4% of asymmetric true pairs; the 21-pair gap is near-complete containments where NO pairwise signal separates true/false (r919, flat prec .250). Rejection is CORRECT; needs STRUCTURE not a scalar.
+⭐⭐⭐§6t8 — VGs/node multiplicity do NOT solve containment (best prec .324 vs .60 bar, AUC .681).
+⭐⭐⭐§6t9 — operator bakeoff held-out: **nothing beats MCL** (.7123); label-prop .7295 tied, not a switch.
+⭐⭐⭐§6u0 — containment isn't exonic (AUC .655); shipped `--exonic-both-sides` IS correct. Only option left was junction identity.
+⭐⭐⭐§6u1/u2 — junction-based definition built & REFUTED (F .4513 @ 6.5% cov vs shipped .7123): half of family pairs have a genuinely INTRONLESS member (biological ceiling, unliftable).
+⭐⭐⭐§6u3 — neighbourhood Jaccard is the **strongest pairwise separator** (.826) but AUC=.500 exactly at component size 2 (60% of families) ⇒ scorer for large components, not a definition.
+⭐⭐⭐§6u4 — FN decomposition: 48.8% of FNs are EDGE-CONSTRUCTION losses, not filter losses; post-clustering merge rules don't transfer across chroms.
+⭐⭐§6u5/u6 — Eichler AS-margin comparator (`bench/eichler_compare.py`, `--eichler-margin`, byte-identical when unset); reproduces its confident calls 97%+, we assign 145 it discards, abstain ~3,546 it assigns. PRY 33% agreement = FLAG, no truth.
+⭐⭐⭐[[project_pipeline_performance]] — genome-wide sweep 426s→114s (3.74×) via dropping seq/qual in assemble-only. NEVER `--region-threads` (not byte-identical).
+
+## O1 — family definition
+⭐10-03 [[project_family_hierarchy]] — advisor's "where is my hierarchy in the MCL" = nested levels, TP/FP level-relative; answer + question to ask in `docs/ADVISOR_HIERARCHY_2026-10-03.md`.
+
+⭐09-25 [[project_readthrough_g50k_rule]] — **advisor `-G 50k` REFUTED (RT introns ~18 kb; breaks 99.6% of real ≥50 kb introns); polyA-inside-intron junction rule passes held-out (FPR ≤.004, recall ~.5)**; family gain unmeasured.
+⛔09-25 [[project_advisor_jaccard_anchors]] — **advisor read-Jaccard/multimapper-anchor edge rule: NOT a replacement** (chr16 prec .96→.72 from SD passengers; anchor-chain worse); retrocopies are the real gain.
+
+⛔⭐09-21 §6u8/§6u9 [[project_cover_and_jn_refuted]] — **cover prediction & J_N-weight REFUTED on TWO truths** (Soto −0.0045/+0.0102, protein referee −0.0032/−0.0013; J_N's gain is ONE family and does NOT replicate). ⚠⚠**Soto's truth is a COVER every scorer dropped (6.4%)**; Soto **UNDER**-merges (83 pairs, id 0.858), does NOT over-merge (0/24) ⇒ **our pairwise prec 0.711→0.888**.
+⭐⭐⭐**CURRENT DEFINITION: `docs/seeded_family_definition.md` §0★★** — one copy graph both modes/levels; triangle-supported leaders on read-supported nodes (§6kd) confirmed on fresh gorilla substrate.
+⭐⭐⭐**RNA-LEVEL DEFINITION (§6p0/§6p1)**: components of L3 at `w_98 ≥ 0.985` (shipped; **every lattice number before 09-19 used 0.98**). ⭐**§6p5 L4** = subfamily level at 0.995, applied SELECTIVELY; nesting free 30/30.
+⭐⭐⭐**DNA-LEVEL BEST (§6o2-§6o6)** [[project_family_definition_goal]]: `mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60`, LORO-validated. ⚠the flag is INERT without `--min-exonic-bp 1`.
+⚠⚠⚠[[project_overall_family_metrics]] — **the published F 0.881 is 11 HAND-PICKED families; all 72 give F 0.628. Never quote 0.88 alone.**
+⭐⭐⭐**GROUND-TRUTH CEILING (§6kl/§6km)**: nothing exceeds ~0.8 against a single-annotation truth.
+⭐⭐⭐**§6n7 SOTO IS A REFINEMENT OF US** — Soto sits BETWEEN our L2 and L3; all 6 NPIP-side Soto families lie inside our single NPIP family at L1/L2, 0/6 at L3. ⚠Soto's families are a COVER.
+⭐⭐[[project_nested_edge_test_lattice]] · [[project_leader_rule_breaks_nesting]] (leaders BREAK RNA⊆DNA nesting) · [[project_npip_tbc1d3_layer_order]] · [[project_family_certificates]] · [[project_npip_node_ladder]].
+⛔**§6p3 SELF-TUNING THE L3 CUT FAILS 3 WAYS** — the cut encodes paralog divergence, so it must be estimated from an INDEPENDENT source, not from the weights being thresholded.
+⛔**§6n6 Louvain does NOT replace MCL at the DNA level** (r851) — never propose a full-partition operator for the DNA catalog. ⭐§6n5: Louvain helps only on the RNA L2 graph, and breaks T1/T1′ nesting.
+⭐⭐**EDGE CORE = LCS BY DEFAULT (§6ja-§6jd)**; escape `RUSTLE_EDGE_CORE=poa`. ⛔LCS ≥50 bp refuted (r814).
+⭐⭐⭐**§6o8 RNA edge bound**: pairwise recall CEILING 0.052 human / 0.229 gorilla — **no grouping rule can fix recall; grouping is SATURATED.** Priority is edge construction, then node completeness.
+
+## Assembler / node construction
+
+⛔⛔**§6u7 the de novo defect is OVER-merge, NOT fragmentation** (correctness RISES with loci/gene .429@1→.697@≥5; 172/369 collisions are readthrough-fused disjoint genes) — but r1013/r1017 show its cost is NOT the evictions and its repair ceiling is +0.021F. [[project_node_overmerge_reversal]]
+⛔⛔**§6w3 the 5′ boundary is DISPERSION, NOT BIAS ⇒ every extension rule is dead on arrival** (median d5 +1 bp at 50% short; |d5| 229 vs |d3| 22 human, 136 vs 5 gorilla). ⭐Carry 5′ as ±150-250 bp, 3′ as ±5-25. ⚠bias does NOT transfer across libraries (+1 human vs +67 gorilla).
+⭐⭐⭐[[project_locus_formation_gap]] — the de novo locus gap is ONE REP PER LOCUS before consolidation; lever = read-isoform widening (`RUSTLE_SD_READ_ISOFORM`, k the precision dial).
+⭐⭐⭐[[project_npip_sim_ceiling]] (§6n0) — with full-length JITTERED reads the assembler gets 25/26 complete, 0 gate rejections ⇒ **NO algorithmic defect**; 5'-truncation −6, real-library effects −9.
+⭐⭐⭐[[project_gtf_secondary_pool]] (§6n2) — `RUSTLE_GTF_SECONDARY` is the big win: complete NPIP chains 10/26→20/26, junctions 170→197/209. ⚠9× transcripts ⇒ O1 only, never quantification. ⛔§6n3 AS-tie echo collapse refuted per-region (r850) — needs a GENOME-WIDE best-AS pre-pass.
+⭐⭐⭐[[project_junction_majority_chr16]] (§6m8) — strict canonicity is 69.4% of pass-1→GTF loss; `RUSTLE_JUNCTION_MAJORITY` recovers it; ⚠**MAJORITY IS NOW THE DEFAULT** (`denovo_assemble.rs:1727`, `=0` is the only override) — the old "default not flipped" note was stale (verified 09-22). ⛔Never relax canonicity itself (0/40 recovered in any arm).
+⭐⭐⭐[[project_canonical_junction_ceiling]] (§6m7) — the NPIP 209/249 "ceiling" IS the canonical-motif count; §6m4's depth framing WITHDRAWN. Filter truth to canonical motifs first.
+⭐⭐[[project_assembler_widening]] (§6m6) · [[project_locus_assembly_npip]] (§6m5: O2 contributed 0 junctions) · [[project_rna_reconstructability]] · §6p6 `--assemble-only` shipped (`bench/ASSEMBLE_ONLY_MODE.md`).
+⭐⭐**§6p4 WHERE INFO IS LOST**: CDS is COMPLETE (99.8%); the only real loss is TBC1D3's 5'UTR at 75.3% vs 3'UTR 100% ⇒ **CDS-based rules are safe, 5'/TSS-based rules are not.**
+
+## O2 / O3 / readthroughs
+
+⭐⭐⭐**O2** [[project_o2_as_tied_gate]] — AS-tied gate → best_by_psv → certificate; hard-locus bakeoff 0.846 vs flair 0.574 / StringTie 0.502 / isoseq 0.755 (§6hz). [[project_assembler_framing_0909]].
+⭐⭐⭐[[project_pkd1p6_npipp1_is_real]] — a REAL fusion (110 MAPQ-60 reads, canonical GT-AG); NPIP's DNA-certificate blocker is NOT a mis-annotation.
+⭐⭐[[project_chimera_policy]] (§6m2, r845) NOT ADOPTED — all gains were denominator shrinkage; but the RefSeq `description=readthrough` LABEL is free and curated.
+⭐⭐⭐[[project_node_cut_rule]] (§6m3, r846) — cutting a chimera at its parent boundary is SAFE but HARMFUL: it DOUBLES rather than separates, and short pieces become hubs.
+⭐⭐**§6n9/§6o0** `bench/readthrough_secondary_filter.py` (opt-in) — KEEPS PKD1P6-NPIPP1, FLAGS PKD1P4-NPIPA8. Fusion-junction reads are RESIDENT not reference-forced ⇒ a graph reference would likely NOT dissolve them (r852). ⚠secondary-dominance ≠ reference-absence.
+⭐[[project_o3_flag_pass]] · [[project_fam90a_parked]] (truth obtained but circular; parked for O2/O3 by the user) · [[project_cross_species_npip_conjunct]] · [[project_no_readthrough_counterfactual]] · [[project_npip_ideal_expression]].
+
+## Prior art & people
+
+⭐⭐⭐[[reference_soto_2025_hsd_brain]] · [[project_soto_full_replication]] (ARI 0.6959 / 49.1% exact) · [[project_soto_family_pseudogene_fragment_audit]] (35.9% all-pseudogene).
+⭐⭐[[project_tbc1d3_subclusters_population_unit]] — ⚠old name-based AE/CDKL truth WRONG, 16 claims retracted. NPIP truth vs Dishuck: groups hold, 8 renamed, 5 copies missing.
+[[reference_advisor_canzar]] · [[project_advisor_interests]] · [[project_thesis_framing_family_vg]] · [[reference_obsidian_thesis_vault]] · [[user_profile]] · [[reference_npip_biology]] · [[reference_gorilla_repeat_library]].
+
+## Older findings
+
+⚠Many `project_*.md` are NOT indexed here — **grep the memory dir**. Full text of every entry compacted out of this file, plus all pre-09-15 date buckets and their link lists, is in **`docs/MEMORY_DIGEST.md`** (repo).
+⚠09-13 link check: 34 older links point to topic files that no longer exist (e.g. `project_o1_false_omission_rate`) — search `docs/MEMORY_DIGEST.md` / `docs/o1_ledger.md` instead.
