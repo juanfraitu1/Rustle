@@ -1,0 +1,366 @@
+species	contig	status	cid	name	k	support_reads	supported_junctions	R_M_found	R_J_found	R_M_rep_supported_junctions_max	R_J_rep_supported_junctions_max	R_M_locus_supported_junctions_max	R_J_locus_supported_junctions_max	two_gene_locus_in_finding_arm
+human	chr16	development	CHM13_G0020176	WDR90	2	431	73	0	1	0	40	0	44	
+human	chr16	development	CHM13_G0020178	RHOT2	2	1003	35	1	0	18	0	29	0	
+human	chr16	development	CHM13_G0020179	RHBDL1	2	5	6	0	1	1	6	6	6	
+human	chr16	development	CHM13_G0020277	IGFALS	1	19	1	0	1	0	1	0	1	DN_chr16_1823414_9:HAGH+IGFALS
+human	chr16	development	CHM13_G0020294	RNF151	2	396	7	0	1	0	2	0	4	DN_chr16_1991625_22:RNF151+TBL3
+human	chr16	development	CHM13_G0020300	SYNGR3	2	12	3	0	1	1	3	3	3	
+human	chr16	development	CHM13_G0020442	ZNF174	2	185	5	1	0	2	1	5	5	
+human	chr16	development	CHM13_G0020471	PAM16	2	61	7	0	1	0	4	0	6	DN_chr16_4383717_28:CORO7+PAM16
+human	chr16	development	CHM13_G0020743	MYH11	2	2387	53	0	1	1	41	1	44	
+human	chr16	development	CHM13_G0020747	CEP20	2	1359	17	1	0	4	0	11	0	
+human	chr16	development	CHM13_G0020751	MSTRG.2106	2	606	53	0	1	1	30	41	41	
+human	chr16	development	LOFF_G0001021	AC138969.1	2	143	43	0	1	0	22	0	38	
+human	chr16	development	LOFF_G0001030	NPIPA8	2	144	19	0	1	1	8	12	12	
+human	chr16	development	CHM13_G0020804	AC138969.1	2	875	68	0	1	1	22	43	43	
+human	chr16	development	CHM13_G0020811	RPS15A	2	103	5	0	1	0	3	0	4	DN_chr16_18728042_6:ARL6IP1+RPS15A
+human	chr16	development	CHM13_G0020870	THUMPD1	2	923	30	1	0	4	0	13	0	
+human	chr16	development	CHM13_G0020878	DCUN1D3	2	50	6	1	0	2	1	6	6	
+human	chr16	development	CHM13_G0020913	MOSMO	2	73	14	0	1	0	3	0	10	DN_chr16_22078653_22:MOSMO+VWA3A
+human	chr16	development	CHM13_G0020921	NPIPB4	2	212	47	1	0	2	0	16	0	
+human	chr16	development	CHM13_G0020937	NPIPB3	2	327	37	0	1	1	3	1	16	
+human	chr16	development	CHM13_G0020982	RBBP6	2	1165	33	0	1	1	17	21	21	
+human	chr16	development	CHM13_G0021054	NPIPB8	2	107	21	0	1	1	7	14	14	
+human	chr16	development	CHM13_G0021063	NUPR1	2	102	3	1	0	2	1	2	2	
+human	chr16	development	CHM13_G0021068	NPIPB7	2	35	8	0	1	0	6	7	7	
+human	chr16	development	CHM13_G0021074	NPIPB9	2	489	34	0	1	0	7	10	10	
+human	chr16	development	CHM13_G0021118	BOLA2	2	265	9	1	0	2	0	8	0	
+human	chr16	development	CHM13_G0021119	BOLA2-SMG1P6	2	265	9	1	0	2	0	8	0	
+human	chr16	development	CHM13_G0021130	NPIPB12	2	9	10	0	1	1	5	6	6	
+human	chr16	development	CHM13_G0021152	AC120114.4	2	9	9	0	1	1	2	7	7	
+human	chr16	development	CHM13_G0021163	TAOK2	2	406	34	0	1	1	19	25	25	
+human	chr16	development	CHM13_G0021165	INO80E	2	316	29	0	1	1	11	22	22	
+human	chr16	development	CHM13_G0021169	AC093512.2	2	1201	23	0	1	0	14	0	20	
+human	chr16	development	CHM13_G0021170	ALDOA	2	1201	14	0	1	0	10	0	13	
+human	chr16	development	CHM13_G0021172	PPP4C	2	1386	19	1	0	8	0	14	0	
+human	chr16	development	LOFF_G0001069	BOLA2B	2	10	2	1	0	2	0	2	0	
+human	chr16	development	LOFF_G0001077	NPIPA3	2	52	8	0	1	1	6	7	7	
+human	chr16	development	CHM13_G0021227	FBRS	2	206	28	0	1	1	16	21	21	
+human	chr16	development	CHM13_G0021265	ZNF646	2	171	16	0	1	1	2	6	6	
+human	chr16	development	CHM13_G0021303	AHSP	2	8	2	1	0	2	1	2	2	
+human	chr16	development	CHM13_G0021345	TP53TG3D	2	99	10	0	1	1	3	7	7	
+human	chr16	development	CHM13_G0021579	ABCC11	2	235	39	0	1	1	23	24	24	
+human	chr16	development	CHM13_G0021660	SALL1	2	4	2	0	1	1	2	2	2	
+human	chr16	development	CHM13_G0021691	CHD9	2	2139	93	0	1	1	22	68	68	
+human	chr16	development	CHM13_G0021711	RPGRIP1L	2	1115	94	0	1	1	26	48	48	
+human	chr16	development	CHM13_G0021841	MSTRG.2187	2	5	2	0	1	1	2	2	2	
+human	chr16	development	CHM13_G0021849	CSNK2A2	2	453	26	0	1	0	10	0	17	DN_chr16_63908487_6:CFAP20+CSNK2A2
+human	chr16	development	CHM13_G0021919	CDH11	2	213	29	0	1	1	12	19	19	
+human	chr16	development	CHM13_G0021948	CMTM4	2	9	5	0	1	1	5	5	5	
+human	chr16	development	CHM13_G0021949	DYNC1LI2	2	2065	36	1	0	12	0	16	0	
+human	chr16	development	CHM13_G0021954	TERB1	2	1424	69	0	1	1	19	1	27	
+human	chr16	development	CHM13_G0022013	ENKD1	2	32	11	0	1	1	7	9	9	
+human	chr16	development	CHM13_G0022026	PSKH1	2	216	6	0	1	1	4	4	4	
+human	chr16	development	CHM13_G0022171	ZNF23	2	277	27	0	1	0	4	0	20	DN_chr16_77290805_6:ZNF19+ZNF23
+human	chr16	development	CHM13_G0022247	NPIPB15	2	171	14	0	1	1	7	11	11	
+human	chr16	development	LOFF_G0001213	NPIPB15	2	46	8	0	1	1	6	8	8	
+human	chr16	development	LOFF_G0001218	NPIPB15	2	47	9	0	1	1	6	8	8	
+human	chr16	development	CHM13_G0022322	SYCE1L	2	180	24	0	1	0	11	19	19	
+human	chr16	development	CHM13_G0022389	CENPN	2	199	22	0	1	0	11	0	14	
+human	chr16	development	CHM13_G0022393	MSTRG.2257	2	771	21	1	0	3	0	11	0	
+human	chr16	development	CHM13_G0022425	MPHOSPH6	2	183	18	0	1	1	8	14	14	
+human	chr16	development	CHM13_G0022447	OSGIN1	2	186	28	0	1	1	9	1	16	DN_chr16_89964741_5:LOC124907813+NECAB2+OSGIN1
+human	chr16	development	CHM13_G0022553	C16orf95	2	345	17	0	1	0	3	0	15	DN_chr16_93400222_2:C16orf95+FBXO31
+human	chr16	development	CHM13_G0022555	AC010531.1	2	356	22	0	1	1	4	18	18	DN_chr16_93400222_2:C16orf95+FBXO31
+human	chr16	development	CHM13_G0022557	FBXO31	2	382	33	0	1	1	7	19	19	DN_chr16_93400222_2:C16orf95+FBXO31
+human	chr16	development	CHM13_G0022562	ZCCHC14	2	533	21	0	1	1	11	14	14	
+gorilla	NC_073244.2	development	gene-MBD3	MBD3	2	48	7	0	1	0	5	0	7	DN_NC_073244.2_7381811_3:LOC101152996+MBD3
+gorilla	NC_073244.2	development	gene-KHSRP	KHSRP	2	8	11	0	1	1	2	2	2	
+gorilla	NC_073244.2	development	gene-NDUFA7	NDUFA7	2	41	4	0	1	0	3	0	3	DN_NC_073244.2_14171609_5:CD320+NDUFA7
+gorilla	NC_073244.2	development	gene-FDX2	FDX2	2	29	5	0	1	0	4	0	5	DN_NC_073244.2_16341737_4:FDX2+ZGLP1
+gorilla	NC_073244.2	development	gene-LOC101153837	LOC101153837	2	26	3	0	1	0	2	0	3	DN_NC_073244.2_18201516_4:LOC101153837+ZNF136
+gorilla	NC_073244.2	development	gene-MAST1	MAST1	2	9	17	0	1	1	8	8	8	
+gorilla	NC_073244.2	development	gene-SYCE2	SYCE2	2	14	6	0	1	0	3	0	6	DN_NC_073244.2_18963292_13:FARSA+SYCE2
+gorilla	NC_073244.2	development	gene-LOC134757714	LOC134757714	1	7	1	0	1	0	1	0	1	DN_NC_073244.2_19147321_17:LOC134757714+TRMT1
+gorilla	NC_073244.2	development	gene-DNAJB1	DNAJB1	2	2182	5	1	0	2	1	3	3	
+gorilla	NC_073244.2	development	gene-NR2F6	NR2F6	2	7	3	0	1	1	3	3	3	
+gorilla	NC_073244.2	development	gene-JAK3	JAK3	2	37	23	0	1	0	22	0	23	DN_NC_073244.2_24257511_2:INSL3+JAK3
+gorilla	NC_073244.2	development	gene-CEBPG	CEBPG	2	6	2	0	1	1	2	2	2	
+gorilla	NC_073244.2	development	gene-LGI4	LGI4	2	12	10	0	1	1	9	10	10	
+gorilla	NC_073244.2	development	gene-CD22	CD22	2	75	22	0	1	0	13	0	17	DN_NC_073244.2_46365771_5:CD22+MAG
+gorilla	NC_073244.2	development	gene-LOC101151317	LOC101151317	2	12	7	0	1	1	2	5	5	
+gorilla	NC_073244.2	development	gene-ZFP30	ZFP30	2	50	10	0	1	0	4	0	9	DN_NC_073244.2_49072464_4:ZFP30+ZNF571
+gorilla	NC_073244.2	development	gene-SYCN	SYCN	2	3	2	0	1	1	2	2	2	
+gorilla	NC_073244.2	development	gene-PRX	PRX	2	4	3	0	1	1	3	3	3	
+gorilla	NC_073244.2	development	gene-NUMBL	NUMBL	2	7	8	0	1	0	8	0	8	DN_NC_073244.2_52445193_15:COQ8B+NUMBL
+gorilla	NC_073244.2	development	gene-RAB4B	RAB4B	2	72	11	0	1	0	7	0	7	
+gorilla	NC_073244.2	development	gene-EGLN2	EGLN2	2	1037	10	1	0	5	0	9	0	
+gorilla	NC_073244.2	development	gene-MEGF8	MEGF8	2	9	9	0	1	1	8	8	8	
+gorilla	NC_073244.2	development	gene-LYPD3	LYPD3	2	2	2	0	1	1	2	2	2	
+gorilla	NC_073244.2	development	gene-ZNF227	ZNF227	2	181	15	0	1	0	4	0	14	DN_NC_073244.2_55678004_6:LOC101131689+ZNF227
+gorilla	NC_073244.2	development	gene-PPFIA3	PPFIA3	2	5	2	0	1	1	2	2	2	
+gorilla	NC_073244.2	development	gene-LOC129528673	LOC129528673	0	22	0	0	1	0	0	0	0	
+gorilla	NC_073244.2	development	gene-DNAAF3	DNAAF3	2	29	14	0	1	0	3	0	13	DN_NC_073244.2_67159115_8:DNAAF3+TNNI3
+gorilla	NC_073244.2	development	gene-ZNF71	ZNF71	2	180	7	0	1	0	2	0	5	DN_NC_073244.2_68671559_6:ZNF470+ZNF71
+gorilla	NC_073244.2	development	gene-LOC109024193	LOC109024193	2	161	11	0	1	1	4	9	9	
+gorilla	NC_073244.2	development	gene-LOC101153504	LOC101153504	2	109	8	1	0	3	0	6	0	
+gorilla	NC_073244.2	development	gene-ZNF134	ZNF134	2	612	3	1	0	2	1	2	1	
+gorilla	NC_073244.2	development	gene-ZNF211	ZNF211	2	174	10	0	1	0	5	0	9	
+gorilla	NC_073244.2	development	gene-LOC101145690	LOC101145690	2	25	4	0	1	0	2	3	3	DN_NC_073244.2_69923242_3:LOC101145690+ZNF587;DN_NC_073244.2_69923243_2:LOC101145690+ZNF587
+human	chr2	held out (reused verdict set)	CHM13_G0030073	MBOAT2	2	233	29	0	1	1	13	22	22	
+human	chr2	held out (reused verdict set)	CHM13_G0030216	GEN1	2	433	36	0	1	1	13	24	24	
+human	chr2	held out (reused verdict set)	CHM13_G0030251	PUM2	2	1677	73	0	1	1	22	29	29	
+human	chr2	held out (reused verdict set)	CHM13_G0030296	ATAD2B	2	1475	106	0	1	1	28	65	65	
+human	chr2	held out (reused verdict set)	CHM13_G0030323	PTRHD1	2	17	5	0	1	1	2	3	3	
+human	chr2	held out (reused verdict set)	CHM13_G0030336	POMC	2	9	2	1	0	2	1	2	2	
+human	chr2	held out (reused verdict set)	CHM13_G0030344	ASXL2	2	356	32	0	1	1	12	22	22	
+human	chr2	held out (reused verdict set)	CHM13_G0030398	DNAJC5G	2	406	25	0	1	0	3	18	18	
+human	chr2	held out (reused verdict set)	CHM13_G0030401	MPV17	2	62	18	0	1	1	7	8	8	DN_chr2_27349812_2:MPV17+UCN
+human	chr2	held out (reused verdict set)	CHM13_G0030416	GCKR	2	56	22	0	1	0	15	0	16	DN_chr2_27579713_5:GCKR+SPATA31H1
+human	chr2	held out (reused verdict set)	CHM13_G0030502	YIPF4	2	312	15	1	0	5	1	9	1	
+human	chr2	held out (reused verdict set)	CHM13_G0030504	MSTRG.3034	2	3568	160	0	1	1	33	1	95	
+human	chr2	held out (reused verdict set)	CHM13_G0030547	CRIM1	2	58	30	0	1	1	18	22	22	
+human	chr2	held out (reused verdict set)	CHM13_G0030578	RMDN2	2	720	43	0	1	1	13	27	27	
+human	chr2	held out (reused verdict set)	CHM13_G0030580	CYP1B1	2	288	8	0	1	1	3	4	4	
+human	chr2	held out (reused verdict set)	CHM13_G0030599	MSTRG.3048	2	1723	18	1	0	7	0	15	0	
+human	chr2	held out (reused verdict set)	CHM13_G0030603	DHX57	2	1490	73	0	1	0	25	0	43	
+human	chr2	held out (reused verdict set)	CHM13_G0030608	ARHGEF33	2	106	34	0	1	1	16	1	21	DN_chr2_38884266_5:ARHGEF33+MORN2
+human	chr2	held out (reused verdict set)	CHM13_G0030685	PPM1B	2	2065	39	1	0	5	0	12	0	
+human	chr2	held out (reused verdict set)	CHM13_G0030688	SLC3A1	2	134	14	0	1	0	9	0	9	
+human	chr2	held out (reused verdict set)	CHM13_G0030726	ATP6V1E2	2	37	11	0	1	1	4	7	7	
+human	chr2	held out (reused verdict set)	CHM13_G0030729	PIGF	2	75	13	0	1	1	7	12	12	
+human	chr2	held out (reused verdict set)	CHM13_G0030856	PPP4R3B	2	2672	69	0	1	1	17	27	27	
+human	chr2	held out (reused verdict set)	CHM13_G0030919	KIAA1841	2	299	47	0	1	0	21	0	22	
+human	chr2	held out (reused verdict set)	CHM13_G0030945	COMMD1	2	185	16	1	0	2	1	8	8	
+human	chr2	held out (reused verdict set)	CHM13_G0031053	ETAA1	2	310	15	0	1	1	6	9	9	
+human	chr2	held out (reused verdict set)	CHM13_G0031059	C1D	2	280	18	0	1	1	4	1	11	DN_chr2_68140355_8:C1D+DNAAF10
+human	chr2	held out (reused verdict set)	CHM13_G0031112	TIA1	2	757	35	0	1	1	13	26	26	
+human	chr2	held out (reused verdict set)	CHM13_G0031148	MCEE	2	19	7	0	1	1	2	3	3	
+human	chr2	held out (reused verdict set)	CHM13_G0031189	C2orf78	2	524	7	0	1	1	3	6	6	
+human	chr2	held out (reused verdict set)	CHM13_G0031210	SLC4A5	2	321	50	0	1	1	31	34	34	
+human	chr2	held out (reused verdict set)	CHM13_G0031224	INO80B	2	11	4	0	1	0	3	3	3	DN_chr2_74466168_4:INO80B+WBP1
+human	chr2	held out (reused verdict set)	CHM13_G0031250	HK2	2	1130	35	0	1	1	17	19	19	
+human	chr2	held out (reused verdict set)	CHM13_G0031300	REG3G	2	26	8	0	1	1	5	8	8	
+human	chr2	held out (reused verdict set)	CHM13_G0031355	KCMF1	2	744	26	0	1	1	2	2	2	
+human	chr2	held out (reused verdict set)	CHM13_G0031668	ANKRD36C	2	9281	281	0	1	1	57	1	93	
+human	chr2	held out (reused verdict set)	CHM13_G0031670	GPAT2	2	36	17	0	1	0	13	0	13	
+human	chr2	held out (reused verdict set)	CHM13_G0031689	CNNM4	2	144	11	0	1	0	6	0	10	DN_chr2_97322881_8:CNNM3+CNNM4
+human	chr2	held out (reused verdict set)	CHM13_G0031745	COA5	2	201	10	0	1	1	2	8	8	
+human	chr2	held out (reused verdict set)	CHM13_G0031758	AC092587.1	2	315	26	0	1	1	4	20	20	
+human	chr2	held out (reused verdict set)	CHM13_G0031759	MITD1	2	37	12	0	1	1	6	10	10	
+human	chr2	held out (reused verdict set)	CHM13_G0031760	MRPL30	2	151	12	0	1	0	6	0	6	
+human	chr2	held out (reused verdict set)	CHM13_G0031762	LYG1	2	61	10	0	1	0	5	0	5	DN_chr2_99775402_5:LYG1+TXNDC9
+human	chr2	held out (reused verdict set)	CHM13_G0031797	CREG2	2	3	3	0	1	1	3	3	3	
+human	chr2	held out (reused verdict set)	CHM13_G0031805	MAP4K4	2	1385	86	0	1	1	29	48	48	
+human	chr2	held out (reused verdict set)	CHM13_G0031809	IL1R1	2	274	39	0	1	1	13	23	23	
+human	chr2	held out (reused verdict set)	CHM13_G0031865	TGFBRAP1	2	45	11	0	1	1	11	11	11	
+human	chr2	held out (reused verdict set)	CHM13_G0031873	NCK2	2	261	13	0	1	1	4	11	11	
+human	chr2	held out (reused verdict set)	CHM13_G0031978	AC013271.1	2	306	22	0	1	0	9	0	9	
+human	chr2	held out (reused verdict set)	CHM13_G0031979	LIMS4	2	306	17	0	1	0	8	0	8	
+human	chr2	held out (reused verdict set)	CHM13_G0032060	PAX8	2	187	16	0	1	1	11	15	15	
+human	chr2	held out (reused verdict set)	CHM13_G0032139	TMEM177	2	8	6	0	1	1	2	2	2	
+human	chr2	held out (reused verdict set)	CHM13_G0032220	MAP3K2	2	687	20	0	1	1	15	16	16	
+human	chr2	held out (reused verdict set)	CHM13_G0032309	PTPN18	2	25	16	0	1	1	14	15	15	
+human	chr2	held out (reused verdict set)	CHM13_G0032405	ANKRD30BL	2	180	14	0	1	1	6	9	9	
+human	chr2	held out (reused verdict set)	CHM13_G0032433	MGAT5	2	122	25	0	1	1	16	23	23	
+human	chr2	held out (reused verdict set)	CHM13_G0032444	CCNT2	2	1005	51	0	1	1	10	19	19	
+human	chr2	held out (reused verdict set)	CHM13_G0032723	LY75	2	25	29	0	1	1	7	1	7	DN_chr2_160225923_6:CD302+LY75
+human	chr2	held out (reused verdict set)	CHM13_G0032725	PLA2R1	2	83	42	0	1	1	19	19	19	
+human	chr2	held out (reused verdict set)	CHM13_G0032824	KLHL41	2	362	8	0	1	0	6	0	7	DN_chr2_169956050_12:BBS5+KLHL41
+human	chr2	held out (reused verdict set)	CHM13_G0032927	CHN1	2	893	64	0	1	0	16	0	32	
+human	chr2	held out (reused verdict set)	CHM13_G0032931	ATF2	2	1810	88	1	0	13	1	36	1	
+human	chr2	held out (reused verdict set)	CHM13_G0032950	HOXD8	2	16	5	0	1	1	3	4	4	
+human	chr2	held out (reused verdict set)	CHM13_G0032951	HOXD3	2	12	5	0	1	1	2	4	4	
+human	chr2	held out (reused verdict set)	CHM13_G0033062	PPP1R1C	2	120	15	0	1	1	6	12	12	
+human	chr2	held out (reused verdict set)	CHM13_G0033228	C2orf66	2	64	2	1	0	2	0	2	0	
+human	chr2	held out (reused verdict set)	CHM13_G0033230	PGAP1	2	298	57	0	1	1	27	1	39	
+human	chr2	held out (reused verdict set)	CHM13_G0033244	HSPE1	2	41	3	0	1	0	2	0	3	DN_chr2_197999559_8:HSPE1+MOB4
+human	chr2	held out (reused verdict set)	CHM13_G0033248	RFTN2	2	784	24	0	1	0	2	0	17	DN_chr2_197969648_12:HSPD1+RFTN2
+human	chr2	held out (reused verdict set)	CHM13_G0033312	CASP10	2	14	8	0	1	1	2	2	2	
+human	chr2	held out (reused verdict set)	CHM13_G0033316	CASP8	2	58	17	0	1	1	8	11	11	
+human	chr2	held out (reused verdict set)	CHM13_G0033317	FLACC1	2	399	30	1	0	14	1	22	22	
+human	chr2	held out (reused verdict set)	CHM13_G0033318	TRAK2	2	456	27	0	1	0	15	0	18	DN_chr2_201768073_15:FLACC1+TRAK2
+human	chr2	held out (reused verdict set)	CHM13_G0033362	MSTRG.3343	2	572	28	0	1	1	12	17	17	
+human	chr2	held out (reused verdict set)	CHM13_G0033390	ABI2	2	745	57	0	1	1	7	1	25	DN_chr2_203720107_13:ABI2+CYP20A1
+human	chr2	held out (reused verdict set)	CHM13_G0033392	RAPH1	2	131	32	0	1	1	16	22	22	
+human	chr2	held out (reused verdict set)	CHM13_G0033435	ZDBF2	2	74	17	0	1	1	7	13	13	
+human	chr2	held out (reused verdict set)	CHM13_G0033507	MAP2	2	408	46	0	1	1	12	32	32	
+human	chr2	held out (reused verdict set)	CHM13_G0033526	ERBB4	2	419	48	0	1	1	15	28	28	
+human	chr2	held out (reused verdict set)	CHM13_G0033642	PLCD4	2	329	41	0	1	1	12	18	18	
+human	chr2	held out (reused verdict set)	CHM13_G0033647	STK36	2	1379	66	0	1	1	27	37	37	
+human	chr2	held out (reused verdict set)	CHM13_G0033667	CFAP65	2	482	67	0	1	1	34	48	48	
+human	chr2	held out (reused verdict set)	CHM13_G0033731	EPHA4	2	480	29	0	1	1	17	18	18	
+human	chr2	held out (reused verdict set)	CHM13_G0033763	AP1S3	2	21	5	0	1	0	3	0	4	DN_chr2_224358551_12:AP1S3+WDFY1
+human	chr2	held out (reused verdict set)	CHM13_G0033896	PDE6D	2	154	23	0	1	1	7	14	14	
+human	chr2	held out (reused verdict set)	CHM13_G0033945	DGKD	2	480	51	0	1	1	29	37	37	
+human	chr6	held out (untouched)	CHM13_G0046858	TMEM170B	2	17	5	0	1	1	2	2	2	
+human	chr6	held out (untouched)	CHM13_G0046928	ATXN1	2	72	17	0	1	1	7	10	10	
+human	chr6	held out (untouched)	CHM13_G0047050	CARMIL1	2	554	60	0	1	1	36	44	44	
+human	chr6	held out (untouched)	CHM13_G0047066	TRIM38	2	133	11	0	1	1	7	10	10	
+human	chr6	held out (untouched)	CHM13_G0047221	PGBD1	2	79	8	0	1	0	6	0	8	DN_chr6_28138769_4:PGBD1+ZSCAN26
+human	chr6	held out (untouched)	CHM13_G0047228	ZSCAN23	2	96	6	0	1	0	5	0	6	
+human	chr6	held out (untouched)	CHM13_G0047254	ZNF311	2	67	12	0	1	1	6	8	8	
+human	chr6	held out (untouched)	CHM13_G0047262	OR2J3	2	10	3	0	1	0	2	0	2	
+human	chr6	held out (untouched)	CHM13_G0047347	TRIM31	2	51	12	0	1	1	7	11	11	
+human	chr6	held out (untouched)	CHM13_G0047362	RPP21	2	215	7	0	1	0	3	0	4	DN_chr6_30190631_8:RPP21+TRIM39
+human	chr6	held out (untouched)	CHM13_G0047377	PPP1R10	2	563	34	0	1	1	19	23	23	
+human	chr6	held out (untouched)	CHM13_G0047493	DDAH2	2	89	7	0	1	0	5	7	7	DN_chr6_31583615_7:CLIC1+DDAH2
+human	chr6	held out (untouched)	CHM13_G0047503	LSM2	2	166	4	0	1	0	3	0	3	DN_chr6_31662662_2:HSPA1L+LSM2
+human	chr6	held out (untouched)	CHM13_G0047544	EGFL8	2	92	12	0	1	0	7	0	7	DN_chr6_32007343_9:EGFL8+PPT2
+human	chr6	held out (untouched)	CHM13_G0047576	PSMB8	2	6	6	0	1	1	5	5	5	
+human	chr6	held out (untouched)	CHM13_G0047610	B3GALT4	1	13	4	0	1	0	2	0	2	DN_chr6_33107539_4:B3GALT4+PFDN6
+human	chr6	held out (untouched)	CHM13_G0047619	SMIM40	2	1664	23	0	1	1	2	17	17	
+human	chr6	held out (untouched)	CHM13_G0047654	SMIM29	2	10	4	0	1	1	4	4	4	
+human	chr6	held out (untouched)	CHM13_G0047799	LRFN2	2	26	6	0	1	0	3	0	5	
+human	chr6	held out (untouched)	CHM13_G0047839	PRICKLE4	2	55	13	0	1	0	7	9	9	DN_chr6_41615183_3:PRICKLE4+TOMM6
+human	chr6	held out (untouched)	CHM13_G0047854	GUCA1A	2	78	11	0	1	1	6	10	10	DN_chr6_41983602_2:CIMIP3+GUCA1A
+human	chr6	held out (untouched)	CHM13_G0047856	AL096814.2	2	78	11	0	1	1	6	10	10	DN_chr6_41983602_2:CIMIP3+GUCA1A
+human	chr6	held out (untouched)	CHM13_G0047863	PRPH2	2	28	5	0	1	1	3	5	5	
+human	chr6	held out (untouched)	CHM13_G0047895	CRIP3	2	162	22	0	1	1	4	2	11	DN_chr6_43168261_10:CRIP3+ZNF318
+human	chr6	held out (untouched)	CHM13_G0047938	SLC29A1	2	396	26	0	1	0	12	0	14	
+human	chr6	held out (untouched)	CHM13_G0047939	HSP90AB1	2	9966	35	1	0	11	0	18	0	
+human	chr6	held out (untouched)	CHM13_G0048011	C6orf141	2	90	11	0	1	1	4	10	10	
+human	chr6	held out (untouched)	CHM13_G0048055	TMEM14A	2	137	9	0	1	0	4	0	7	
+human	chr6	held out (untouched)	CHM13_G0048123	COL21A1	2	117	41	0	1	1	28	33	33	
+human	chr6	held out (untouched)	CHM13_G0048136	ZNF451	2	4755	79	0	1	1	14	1	27	
+human	chr6	held out (untouched)	CHM13_G0048138	BAG2	2	1943	31	1	0	2	0	13	0	
+human	chr6	held out (untouched)	CHM13_G0048165	KHDRBS2	2	8	5	0	1	1	2	2	2	
+human	chr6	held out (untouched)	CHM13_G0048307	FILIP1	2	179	19	0	1	1	6	12	12	
+human	chr6	held out (untouched)	CHM13_G0048323	MYO6	2	2648	70	0	1	1	27	42	42	
+human	chr6	held out (untouched)	CHM13_G0048342	IRAK1BP1	2	29	10	0	1	1	5	6	6	
+human	chr6	held out (untouched)	CHM13_G0048361	SH3BGRL2	2	199	7	0	1	0	2	0	5	
+human	chr6	held out (untouched)	CHM13_G0048397	TPBG	2	13	4	0	1	1	2	3	3	
+human	chr6	held out (untouched)	CHM13_G0048467	C6orf163	2	66	7	0	1	1	5	1	6	DN_chr6_88531261_3:C6orf163+SMIM8
+human	chr6	held out (untouched)	CHM13_G0048580	KLHL32	2	98	18	0	1	1	10	15	15	
+human	chr6	held out (untouched)	CHM13_G0048596	PNISR	2	1378	31	0	1	1	11	15	15	DN_chr6_100543769_7:COQ3+PNISR
+human	chr6	held out (untouched)	CHM13_G0048611	SIM1	2	7	5	0	1	1	4	4	4	
+human	chr6	held out (untouched)	CHM13_G0048708	FOXO3	2	1141	24	0	1	1	3	4	4	
+human	chr6	held out (untouched)	CHM13_G0048851	FAM162B	2	31	5	0	1	0	2	0	4	DN_chr6_117819327_10:FAM162B+ZUP1
+human	chr6	held out (untouched)	CHM13_G0048858	ROS1	2	90	47	0	1	1	24	24	24	
+human	chr6	held out (untouched)	CHM13_G0048895	TBC1D32	2	1503	118	0	1	1	28	46	46	
+human	chr6	held out (untouched)	CHM13_G0048945	HINT3	2	357	7	1	0	4	0	6	0	
+human	chr6	held out (untouched)	CHM13_G0048947	TRMT11	2	1278	117	0	1	1	15	1	29	
+human	chr6	held out (untouched)	CHM13_G0048950	CENPW	2	68	3	1	0	2	1	3	3	
+human	chr6	held out (untouched)	CHM13_G0049050	RPS12	2	60	6	0	1	1	5	6	6	
+human	chr6	held out (untouched)	CHM13_G0049068	TCF21	2	11	2	0	1	1	2	2	2	
+human	chr6	held out (untouched)	CHM13_G0049070	AL035699.1	1	732	8	0	1	0	1	4	4	
+human	chr6	held out (untouched)	CHM13_G0049126	MAP3K5	2	722	41	0	1	1	29	31	31	
+human	chr6	held out (untouched)	CHM13_G0049155	ARFGEF3	2	39	34	0	1	1	15	15	15	
+human	chr6	held out (untouched)	CHM13_G0049168	ECT2L	2	76	35	0	1	0	11	0	11	DN_chr6_139961994_6:CCDC28A+ECT2L
+human	chr6	held out (untouched)	CHM13_G0049205	ADGRG6	2	51	33	0	1	1	13	13	13	
+human	chr6	held out (untouched)	CHM13_G0049234	PLAGL1	2	101	16	0	1	1	7	14	14	
+human	chr6	held out (untouched)	CHM13_G0049257	FBXO30	2	611	17	0	1	1	2	6	6	
+human	chr6	held out (untouched)	CHM13_G0049347	PLEKHG1	2	273	34	0	1	1	17	27	27	
+human	chr6	held out (untouched)	CHM13_G0049361	AKAP12	2	815	33	0	1	1	2	5	5	
+human	chr6	held out (untouched)	CHM13_G0049381	MYCT1	2	17	5	0	1	1	2	4	4	
+human	chr6	held out (untouched)	CHM13_G0049417	SCAF8	2	1050	45	0	1	1	19	28	28	
+human	chr6	held out (untouched)	CHM13_G0049462	MSTRG.5031	2	132	25	0	1	1	12	22	22	
+human	chr6	held out (untouched)	CHM13_G0049498	SOD2	2	1274	48	0	1	1	6	9	9	
+human	chr6	held out (untouched)	CHM13_G0049539	PACRG	2	193	36	0	1	1	5	24	24	
+human	chr6	held out (untouched)	CHM13_G0049627	AFDN	2	1020	47	0	1	1	17	28	28	
+human	chr6	held out (untouched)	CHM13_G0049662	PHF10	2	270	20	0	1	1	11	15	15	
+human	chr8	held out (reused verdict set)	CHM13_G0052911	XKR6	2	20	6	0	1	1	2	4	4	
+human	chr8	held out (reused verdict set)	CHM13_G0052927	C8orf74	2	55	10	0	1	1	4	9	9	
+human	chr8	held out (reused verdict set)	CHM13_G0052931	PRSS51	2	43	13	0	1	1	5	8	8	
+human	chr8	held out (reused verdict set)	CHM13_G0052981	PRAG1	2	3	4	0	1	1	2	2	2	
+human	chr8	held out (reused verdict set)	CHM13_G0053055	TRMT9B	2	12	10	0	1	0	2	0	3	
+human	chr8	held out (reused verdict set)	CHM13_G0053098	MSTRG.5346	2	123	18	0	1	1	13	14	14	
+human	chr8	held out (reused verdict set)	CHM13_G0053157	LZTS1	2	19	6	0	1	1	3	5	5	
+human	chr8	held out (reused verdict set)	CHM13_G0053189	PHYHIP	2	20	8	0	1	1	4	6	6	
+human	chr8	held out (reused verdict set)	CHM13_G0053240	SLC25A37	2	300	22	0	1	1	4	8	8	
+human	chr8	held out (reused verdict set)	CHM13_G0053286	PNMA2	2	19	3	1	0	2	1	2	2	
+human	chr8	held out (reused verdict set)	CHM13_G0053307	SCARA3	2	52	6	0	1	1	5	6	6	
+human	chr8	held out (reused verdict set)	CHM13_G0053387	RBPMS	2	353	41	0	1	1	9	30	30	
+human	chr8	held out (reused verdict set)	CHM13_G0053389	GTF2E2	2	741	39	1	0	7	0	17	0	
+human	chr8	held out (reused verdict set)	CHM13_G0053393	GSR	2	55	14	0	1	0	12	0	12	
+human	chr8	held out (reused verdict set)	CHM13_G0053397	TEX15	2	1679	59	0	1	1	8	23	23	
+human	chr8	held out (reused verdict set)	CHM13_G0053425	FUT10	2	142	9	0	1	1	4	8	8	
+human	chr8	held out (reused verdict set)	CHM13_G0053485	ERLIN2	2	280	23	0	1	0	10	0	19	
+human	chr8	held out (reused verdict set)	CHM13_G0053612	MSTRG.5410	2	672	52	0	1	1	21	1	25	
+human	chr8	held out (reused verdict set)	CHM13_G0053614	AC110275.1	2	878	24	1	0	5	1	12	12	
+human	chr8	held out (reused verdict set)	CHM13_G0053615	FNTA	2	1052	25	1	0	8	0	15	0	
+human	chr8	held out (reused verdict set)	CHM13_G0053761	TCEA1	2	2477	27	0	1	0	8	0	13	DN_chr8_54423757_9:LYPLA1+TCEA1
+human	chr8	held out (reused verdict set)	CHM13_G0053902	MSTRG.5432	2	475	21	0	1	1	5	9	9	
+human	chr8	held out (reused verdict set)	CHM13_G0053950	VXN	2	24	5	0	1	0	4	0	4	DN_chr8_66858052_14:ADHFE1+VXN
+human	chr8	held out (reused verdict set)	CHM13_G0054055	C8orf89	2	28	3	0	1	1	3	3	3	
+human	chr8	held out (reused verdict set)	CHM13_G0054058	RDH10	2	205	11	0	1	1	5	9	9	
+human	chr8	held out (reused verdict set)	CHM13_G0054063	STAU2	2	782	54	0	1	1	14	1	22	
+human	chr8	held out (reused verdict set)	CHM13_G0054069	UBE2W	2	1048	27	1	0	5	1	15	1	
+human	chr8	held out (reused verdict set)	CHM13_G0054114	ZFHX4	2	379	49	0	1	1	9	31	31	
+human	chr8	held out (reused verdict set)	CHM13_G0054127	ZC2HC1A	2	745	21	0	1	1	10	17	17	
+human	chr8	held out (reused verdict set)	CHM13_G0054168	ZNF704	2	80	24	0	1	1	9	18	18	
+human	chr8	held out (reused verdict set)	CHM13_G0054312	OTUD6B	2	380	12	1	0	6	0	10	0	
+human	chr8	held out (reused verdict set)	CHM13_G0054313	LRRC69	2	98	33	0	1	1	11	1	18	
+human	chr8	held out (reused verdict set)	CHM13_G0054547	MSTRG.5489	2	1314	8	0	1	1	4	7	7	
+human	chr8	held out (reused verdict set)	CHM13_G0054569	FZD6	2	284	15	0	1	1	6	9	9	
+human	chr8	held out (reused verdict set)	CHM13_G0054592	ZFPM2	2	107	24	0	1	1	7	14	14	
+human	chr8	held out (reused verdict set)	CHM13_G0054612	ABRA	1	20	1	0	1	0	1	1	1	
+human	chr8	held out (reused verdict set)	CHM13_G0054727	COL14A1	2	162	48	0	1	1	47	48	48	
+human	chr8	held out (reused verdict set)	CHM13_G0054750	ZHX2	2	72	16	0	1	1	4	9	9	
+human	chr8	held out (reused verdict set)	CHM13_G0054764	C8orf76	2	93	10	0	1	0	5	0	5	
+human	chr8	held out (reused verdict set)	CHM13_G0054765	ZHX1-C8orf76	2	421	26	0	1	0	4	0	11	
+human	chr8	held out (reused verdict set)	CHM13_G0054892	ADCY8	2	30	20	0	1	1	11	14	14	
+human	chr8	held out (reused verdict set)	CHM13_G0055055	ZFP41	2	73	11	1	0	2	1	9	1	
+human	chr8	held out (reused verdict set)	CHM13_G0055057	GLI4	2	41	7	0	1	0	5	0	7	
+human	chr8	held out (reused verdict set)	CHM13_G0055113	EXOSC4	2	124	6	1	0	2	1	6	6	
+human	chr8	held out (reused verdict set)	CHM13_G0055146	CYHR1	2	71	10	0	1	1	5	10	10	DN_chr8_145619690_2:TMEM276+ZFTRAF1
+human	chr8	held out (reused verdict set)	CHM13_G0055156	LRRC14	2	135	11	0	1	1	6	8	8	
+human	chr8	held out (reused verdict set)	CHM13_G0055157	LRRC24	2	17	5	0	1	1	4	5	5	
+human	chr10	held out (reused verdict set)	CHM13_G0005728	RSU1	2	467	19	1	0	8	1	11	1	
+human	chr10	held out (reused verdict set)	CHM13_G0005815	COMMD3	2	493	18	0	1	0	6	0	12	DN_chr10_22340263_10:BMI1+COMMD3
+human	chr10	held out (reused verdict set)	CHM13_G0005857	THNSL1	2	522	7	1	0	2	1	5	5	
+human	chr10	held out (reused verdict set)	CHM13_G0005883	ABI1	2	1211	34	0	1	1	10	18	18	
+human	chr10	held out (reused verdict set)	CHM13_G0005947	MSTRG.650	2	104	10	0	1	1	3	4	4	
+human	chr10	held out (reused verdict set)	CHM13_G0005970	ZNF438	2	569	75	0	1	1	7	26	26	
+human	chr10	held out (reused verdict set)	CHM13_G0006094	ZNF37A	2	109	18	0	1	1	7	12	12	
+human	chr10	held out (reused verdict set)	CHM13_G0006095	AL117339.4	2	233	66	0	1	1	7	15	15	
+human	chr10	held out (reused verdict set)	CHM13_G0006131	ZNF33B	2	220	23	0	1	0	4	0	10	
+human	chr10	held out (reused verdict set)	CHM13_G0006236	MSMB	2	44	12	0	1	1	2	1	2	DN_chr10_46885970_3:MSMB+NCOA4
+human	chr10	held out (reused verdict set)	CHM13_G0006300	ARHGAP22	2	77	20	0	1	1	7	12	12	
+human	chr10	held out (reused verdict set)	CHM13_G0006332	TIMM23B	2	474	37	0	1	1	6	1	11	DN_chr10_50836449_8:AGAP6+TIMM23B
+human	chr10	held out (reused verdict set)	CHM13_G0006441	ARID5B	2	364	20	0	1	1	9	16	16	
+human	chr10	held out (reused verdict set)	CHM13_G0006452	EGR2	2	16	10	0	1	1	2	3	3	
+human	chr10	held out (reused verdict set)	CHM13_G0006497	SIRT1	2	522	17	0	1	1	8	8	8	
+human	chr10	held out (reused verdict set)	CHM13_G0006498	HERC4	2	1365	108	0	1	1	28	54	54	
+human	chr10	held out (reused verdict set)	CHM13_G0006526	STOX1	2	40	4	0	1	1	3	4	4	
+human	chr10	held out (reused verdict set)	CHM13_G0006575	PALD1	2	53	25	0	1	1	19	19	19	
+human	chr10	held out (reused verdict set)	CHM13_G0006600	SPOCK2	2	245	17	0	1	0	9	0	14	DN_chr10_72966864_10:ASCC1+SPOCK2
+human	chr10	held out (reused verdict set)	CHM13_G0006604	ANAPC16	2	331	17	0	1	1	4	11	11	
+human	chr10	held out (reused verdict set)	CHM13_G0006643	MRPS16	2	273	12	1	0	2	1	9	1	DN_chr10_74113331_5:DNAJC9+MRPS16
+human	chr10	held out (reused verdict set)	CHM13_G0006645	CFAP70	2	1783	114	0	1	1	27	1	43	
+human	chr10	held out (reused verdict set)	CHM13_G0006652	PPP3CB	2	840	28	0	1	1	13	19	19	DN_chr10_74294995_9:MSS51+PPP3CB
+human	chr10	held out (reused verdict set)	CHM13_G0006707	SAMD8	2	562	19	0	1	0	4	0	7	DN_chr10_76083641_10:SAMD8+VDAC2
+human	chr10	held out (reused verdict set)	CHM13_G0006747	DLG5	2	276	54	0	1	1	21	34	34	
+human	chr10	held out (reused verdict set)	CHM13_G0006826	SH2D4B	2	30	11	0	1	1	4	6	6	
+human	chr10	held out (reused verdict set)	CHM13_G0006891	MMRN2	2	114	16	0	1	1	6	6	6	
+human	chr10	held out (reused verdict set)	CHM13_G0006895	ADIRF	2	54	19	0	1	0	5	13	13	DN_chr10_87864876_10:ADIRF+LOC124902474
+human	chr10	held out (reused verdict set)	CHM13_G0006942	LIPF	2	76	10	0	1	0	8	0	10	DN_chr10_89470814_11:LIPF+LIPJ
+human	chr10	held out (reused verdict set)	CHM13_G0007035	EXOC6	2	584	50	0	1	1	22	34	34	
+human	chr10	held out (reused verdict set)	CHM13_G0007051	FRA10AC1	2	890	43	0	1	1	15	21	21	
+human	chr10	held out (reused verdict set)	CHM13_G0007104	ZNF518A	2	579	35	0	1	1	6	12	12	
+human	chr10	held out (reused verdict set)	CHM13_G0007137	EXOSC1	2	38	9	0	1	1	7	8	8	
+human	chr10	held out (reused verdict set)	CHM13_G0007177	ENTPD7	2	97	16	0	1	0	12	0	14	
+human	chr10	held out (reused verdict set)	CHM13_G0007179	CUTC	2	628	27	1	0	8	1	15	15	
+human	chr10	held out (reused verdict set)	CHM13_G0007183	MSTRG.784	2	225	27	0	1	1	17	22	22	
+human	chr10	held out (reused verdict set)	CHM13_G0007189	ERLIN1	2	1339	37	1	0	11	1	20	1	
+human	chr10	held out (reused verdict set)	CHM13_G0007190	CHUK	2	548	38	0	1	0	21	0	23	
+human	chr10	held out (reused verdict set)	CHM13_G0007198	PKD2L1	2	86	23	0	1	0	13	0	16	
+human	chr10	held out (reused verdict set)	CHM13_G0007204	SEC31B	2	371	56	0	1	0	15	0	30	DN_chr10_101406843_4:NDUFB8+SEC31B
+human	chr10	held out (reused verdict set)	CHM13_G0007214	MRPL43	2	136	15	0	1	1	5	13	13	
+human	chr10	held out (reused verdict set)	CHM13_G0007309	CALHM3	2	25	2	0	1	0	2	0	2	
+human	chr10	held out (reused verdict set)	CHM13_G0007577	CUZD1	2	73	10	0	1	0	8	0	8	DN_chr10_123724064_2:CUZD1+FAM24B;DN_chr10_123719204_2:CUZD1+FAM24B
+human	chr10	held out (reused verdict set)	CHM13_G0007578	AC073585.1	2	103	18	0	1	1	12	15	15	DN_chr10_123724064_2:CUZD1+FAM24B;DN_chr10_123719204_2:CUZD1+FAM24B
+human	chr10	held out (reused verdict set)	CHM13_G0007579	FAM24B	2	51	7	0	1	1	3	6	6	DN_chr10_123724064_2:CUZD1+FAM24B;DN_chr10_123719204_2:CUZD1+FAM24B
+human	chr10	held out (reused verdict set)	CHM13_G0007744	PAOX	2	191	16	0	1	0	2	0	13	DN_chr10_134347877_11:MTG1+PAOX
+gorilla	NC_073234.2	held out (untouched)	gene-WNT5B	WNT5B	2	16	4	0	1	0	3	0	4	DN_NC_073234.2_16607468_19:ERC1+WNT5B
+gorilla	NC_073234.2	held out (untouched)	gene-SPSB2	SPSB2	2	8	2	0	1	1	2	2	2	
+gorilla	NC_073234.2	held out (untouched)	gene-CLEC2D	CLEC2D	2	16	11	0	1	0	5	6	6	
+gorilla	NC_073234.2	held out (untouched)	gene-LOC134756550	LOC134756550	0	19	0	0	1	0	0	0	0	
+gorilla	NC_073234.2	held out (untouched)	gene-LOC101129370	LOC101129370	2	42	8	0	1	0	7	8	8	
+gorilla	NC_073234.2	held out (untouched)	gene-SMIM10L1	SMIM10L1	2	17	4	0	1	1	2	2	2	
+gorilla	NC_073234.2	held out (untouched)	gene-FAM234B	FAM234B	2	320	18	0	1	0	13	0	16	
+gorilla	NC_073234.2	held out (untouched)	gene-EMP1	EMP1	2	647	6	1	0	4	0	6	0	
+gorilla	NC_073234.2	held out (untouched)	gene-LOC101131994	LOC101131994	2	5	9	0	1	1	2	3	3	
+gorilla	NC_073234.2	held out (untouched)	gene-CTDSP2	CTDSP2	2	42	7	0	1	1	7	7	7	
+gorilla	NC_073234.2	held out (untouched)	gene-PRIM1	PRIM1	2	48	12	0	1	0	11	0	12	DN_NC_073234.2_44631851_8:LOC109025310+PRIM1
+gorilla	NC_073234.2	held out (untouched)	gene-PYM1	PYM1	2	66	4	1	0	2	1	3	3	
+gorilla	NC_073234.2	held out (untouched)	gene-SARNP	SARNP	2	362	16	0	1	0	9	0	11	DN_NC_073234.2_45531723_7:DNAJC14+SARNP
+gorilla	NC_073234.2	held out (untouched)	gene-RDH5	RDH5	2	14	3	0	1	0	2	0	2	DN_NC_073234.2_45642615_4:BLOC1S1+RDH5
+gorilla	NC_073234.2	held out (untouched)	gene-PFDN5	PFDN5	2	83	5	0	1	0	4	0	5	DN_NC_073234.2_48043165_7:MYG1+PFDN5
+gorilla	NC_073234.2	held out (untouched)	gene-RAB21	RAB21	2	27	6	0	1	1	6	6	6	
+gorilla	NC_073234.2	held out (untouched)	gene-LOC109029067	LOC109029067	2	6	3	0	1	1	2	2	2	
+gorilla	NC_073234.2	held out (untouched)	gene-AMDHD1	AMDHD1	2	11	8	0	1	0	7	0	8	DN_NC_073234.2_111290467_4:AMDHD1+SNRPF
+gorilla	NC_073234.2	held out (untouched)	gene-GAS2L3	GAS2L3	2	155	25	0	1	1	11	19	19	
+gorilla	NC_073234.2	held out (untouched)	gene-HSPB8	HSPB8	2	74	2	1	0	2	1	2	2	
+gorilla	NC_073234.2	held out (untouched)	gene-UBC	UBC	2	603	16	0	1	1	2	5	5	
+gorilla	NC_073234.2	held out (untouched)	gene-ZNF605	ZNF605	2	41	10	0	1	0	2	0	10	DN_NC_073234.2_148337649_18:CHFR+ZNF605
