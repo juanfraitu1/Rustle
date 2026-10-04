@@ -1,7 +1,10 @@
 # O3 candidate copies in the pipeline (`o3_candidates`) — design
 
 Date 2026-10-02. Branch `machine2/soto-evidence` (== `main`). Status: implemented 2026-10-02; the pre-registered acceptance
-(Amendment 12) FAILED, so the driver's `candidates` stage is OPT-IN (ruling R14, §9b; `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
+(Amendment 12) FAILED, so the driver's `candidates` stage went OPT-IN (ruling R14, §9b; `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
+Amendment 13 (+ 13b-13e; rulings R16-R21, §9b) changed the net attribution and the template, and the re-run acceptance PASSED
+(`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): the stage is a DEFAULT stage of the driver's `all` since 2026-10-03
+(`--no-candidates` turns it off; §7).
 
 ## 1. Goal
 
@@ -31,7 +34,7 @@ hierarchy work, YAG-specific delta (the stage takes `--delta`; the Y value is th
 ## 4. Pipeline placement and data flow
 
 ```
-assemble -> families (O1: P.fam.copies.{tsv,fa,regions}) -> candidates (new; opt-in, R14) -> assign (O2, augmented) -> flag (O3 screen)
+assemble -> families (O1: P.fam.copies.{tsv,fa,regions}) -> candidates (new; default since 2026-10-03) -> assign (O2, augmented) -> flag (O3 screen)
 ```
 
 ```
@@ -176,19 +179,20 @@ byte-identical except where a test is added for the cross-chromosome case.
 
 - `assign` reads `P.fam.copies.tsv` / `.fa` (the default O1 output) and derives `P.regions.txt` from `P.fam.copies.regions` (second
   column; the first is the family id — `parse_region` takes the first token). The legacy `P.cat.*` path stays behind `--legacy-catalog`.
-- New stage `candidates`, OPT-IN since ruling R14 (§9b): naming the stage runs it; `all` runs it between `families` and `assign` only
-  with `--candidates`, and `assign` and `flag` use its products only with `--candidates` (`--no-candidates`, the default, says so
-  explicitly; `--candidates` with `--legacy-catalog` exits 2); `--delta`, `--cand-max-reads` pass through. As first written here it
-  was a default stage of `all`. It runs `o3_candidates`, then the augmentation (§4): `P.aug.fa` (+ `samtools faidx`), `P.aug.copies.tsv` rows
+- New stage `candidates`, a DEFAULT stage since 2026-10-03 (Amendment 13's acceptance passed, §9b): `all` runs it between `families`
+  and `assign`, and `assign` and `flag` use its products, unless `--no-candidates` (with products present, assign says in one line that
+  it does not use them); `--candidates`, the switch of its opt-in period (ruling R14, 2026-10-02..03), is still accepted;
+  `--legacy-catalog` implies `--no-candidates`, and an explicit `--candidates` with it exits 2; `--delta`, `--cand-max-reads` pass
+  through. As first written here it was a default stage of `all`. It runs `o3_candidates`, then the augmentation (§4): `P.aug.fa` (+ `samtools faidx`), `P.aug.copies.tsv` rows
   `family_id copy_idx=<next> tid=cand_<f>_<k> chrom=cand_<f>_<k> start=0 end=<len> n_exon=1 strand=+ n_reads=0 exons=0-<len> ...
   source=o3_candidate`, `P.aug.copies.fa` entries `>{fid}|{idx}|cand_<f>_<k>:0-<len>|+|nexon=1`, `P.aug.regions.txt` with
   `cand_<f>_<k>:0-<len>`, and the patch realignment of `P.cand.nets.fa` to `P.aug.fa` with the same minimap2 flags the pipeline's BAM
   was made with (`-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`), sorted and indexed as `P.aug.bam`.
-- `assign --candidates` with flagged candidates: two `copy_assign` runs (candidate families on `P.aug.*`, the rest on the original
+- `assign` with flagged candidates (the default): two `copy_assign` runs (candidate families on `P.aug.*`, the rest on the original
   inputs; `--families` restricted by `--only-families` / `--skip-families`), outputs concatenated with one header. Ruling R13
   (§9b): O2 assigns AS-tied molecules only, so a read the realignment places uniquely on a candidate has no row; its placement is
   `P.aug.bam`'s.
-- `flag --candidates` passes `--candidates P.cand.candidates.tsv`: `missing_copy_flag` adds a column `o3_candidate` (candidate id or
+- `flag` (the default; not with `--no-candidates`) passes `--candidates P.cand.candidates.tsv`: `missing_copy_flag` adds a column `o3_candidate` (candidate id or
   `-`) to `P.flag.missing_copy.tsv` when a flagged candidate's nearest locus is the row's locus — the two O3 sources corroborate each
   other.
 
@@ -213,7 +217,7 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
 `rep_choice.py` measure); wall time <= 2 x IsoCon's (~20 min for 53 families at the 1,000-read cap).
 **Re-run acceptance (prereg Amendment 13 + 13b-13e, written before the A13 run):** A13-1 = D right >= 0.80 x C, C = IsoCon's right D
 reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%; A13-2 = A12-2; A13-3 = A12-3. All three PASSED on
-2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`).
+2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage is default-on (§9b).
 
 ## 9b. Plan rulings (2026-10-02, recorded here so the spec and the plan agree)
 
@@ -271,6 +275,12 @@ reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%
     total indel bases" picked fragments.
   - **R21** (Amendment 13e, `ff869c40`): eligibility = aligned to >= min(0.5 x (n - 1), 50) other members (the all-vs-all's `-N 100` made
     50% unattainable in 400+-read clusters); a member with no aligned partner is never chosen while another has a mean.
+- **Default flip (2026-10-03, after Amendment 13's acceptance):** A13-1 PASSED (D right 7,898 >= 0.80 x C = 5,842.4; C = 6,048 on a
+  survivor + 1,255 attributed = 7,303; false moves 323 = 0.77%), A13-2 PASSED (99.50% of 15,364 read-candidate pairs kept, pooled
+  targets as A12's doc decided; 99.78% isolated), A13-3 PASSED (25.9 min summed over 5 batches) -> the driver's `candidates` stage is
+  a default stage of `all` and `assign` / `flag` use its products; `--no-candidates` is the off switch (R14's opt-in ends). Reported
+  beside, not decided on: A12-1's bar (10,230) is still not met; 2 of 82 candidates keep < 95% of their reads on their own (isolated);
+  46 of the 82 flagged candidates are survivor-derived (A12: 12 of 39) and S reads left unplaced rise from 1,182 to 3,527.
 
 ## 10. Open items (deferred, named)
 

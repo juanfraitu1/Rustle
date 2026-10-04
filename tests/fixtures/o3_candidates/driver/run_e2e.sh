@@ -20,9 +20,10 @@
 # Which reads are copy A's and copy B's: by the generator's names (make_fixture.py: A_00..A_59 and B_00..B_59, "the
 # names carry the truth"). The fixture BAM cannot tell them apart by position: all 120 primaries lie on copy A's span.
 #
-# RUNS. The driver's `candidates` then `assign --candidates` on OUT/fx (the stage and the use of its products are opt-in,
-# ruling R14), and a plain `assign` on OUT/ctl/fx, which holds no candidates products (--no-cache, so every run computes).
-# Last, a plain `assign` on OUT/fx itself, after (a)-(c) (it replaces fx.assign.*).
+# RUNS. The driver's `candidates` then `assign --candidates` on OUT/fx (the stage and the use of its products are the
+# default since 2026-10-03, prereg Amendment 13 passed; `--candidates`, the old opt-in switch, is still accepted), and a
+# plain `assign` on OUT/ctl/fx, which holds no candidates products (--no-cache, so every run computes). After (a)-(c), a
+# plain `assign` on OUT/fx itself (d), then `assign --no-candidates` on OUT/fx (e); each replaces fx.assign.*.
 #
 # ASSERTIONS (exit 1 at the first that fails, naming it; exit 0 when all hold):
 #   (pre) the candidates stage flags exactly one candidate, cand_MCL0_0 of MCL0
@@ -35,8 +36,10 @@
 #   (c)   the split ran (candidate families on the augmented inputs, MCL1 on the originals), each concatenated table has
 #         one header, and MCL1's rows are the same in every per-family table of the split and of the plain run on
 #         OUT/ctl/fx. MCL1 has no reads: (c) checks the split's selection, regions and concatenation, not read assignment.
-#   (d)   opt-in (ruling R14): a plain `assign` on OUT/fx, whose candidates products are present, does not use them — the
-#         driver says so in one line, makes no split (no fx.assign_cand.*), and MCL0 is assigned as its 1-copy self
+#   (d)   the default (2026-10-03): a plain `assign` on OUT/fx, whose candidates products are present, uses them — no
+#         "present but unused" line, the split runs (fx.assign_cand.* lists MCL0), MCL0 is assigned as a 2-copy family
+#   (e)   the off switch: `assign --no-candidates` on OUT/fx does not use them — the driver says so in one line, makes no
+#         split (no fx.assign_cand.*), and MCL0 is assigned as its 1-copy self
 set -euo pipefail
 usage() { echo "usage: bash $0 --bin DIR --out SCRATCH_DIR [--threads N]" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
@@ -154,11 +157,21 @@ fams_split=$(awk -F'\t' 'NR > 1 { print $1 }' "$P.assign.families.tsv" | LC_ALL=
 [ "$fams_split" = "MCL0,MCL1" ] || fail "(c) fx.assign.families.tsv lists '$fams_split', expected MCL0 and MCL1"
 pass "(c) one header per concatenated table; MCL1's rows identical to the plain run in assignments, families, quant, family_join, famcn_readonly (MCL1 has no reads: this checks the split's plumbing, not read assignment)"
 
-# (d) opt-in: without --candidates, assign leaves the candidates products alone (and says so)
+# (d) the default: a plain assign uses the candidates products (no switch needed since 2026-10-03)
 drv assign --out "$P" 2> "$OUT/d_assign.stderr"
-grep -q "present but unused" "$OUT/d_assign.stderr" || fail "(d) a plain assign on OUT/fx did not say that the candidates products are unused (see $OUT/d_assign.stderr)"
-! ls "$P".assign_cand.* > /dev/null 2>&1 || fail "(d) a plain assign on OUT/fx made the candidate run (fx.assign_cand.* exist)"
+! grep -q "present but unused" "$OUT/d_assign.stderr" || fail "(d) a plain assign on OUT/fx said the candidates products are unused (see $OUT/d_assign.stderr)"
+[ -s "$P.assign_cand.families.tsv" ] || fail "(d) a plain assign on OUT/fx made no candidate run (no fx.assign_cand.families.tsv)"
+cand_fams=$(awk -F'\t' 'NR > 1 { print $1 }' "$P.assign_cand.families.tsv" | paste -sd,)
+[ "$cand_fams" = MCL0 ] || fail "(d) the candidate run of a plain assign holds '$cand_fams', expected MCL0"
 n_copies=$(col_of "$P.assign.families.tsv" n_copies MCL0)
-[ "$n_copies" = 1 ] || fail "(d) a plain assign gives MCL0 n_copies '$n_copies', expected 1 (the candidate is not used)"
-pass "(d) a plain assign on OUT/fx does not use the candidates products: one line says so, no split, MCL0 has 1 copy"
+[ "$n_copies" = 2 ] || fail "(d) a plain assign gives MCL0 n_copies '$n_copies', expected 2 (the candidate is used)"
+pass "(d) a plain assign on OUT/fx uses the candidates products: the split ran (MCL0 on the augmented inputs), MCL0 has 2 copies"
+
+# (e) the off switch: --no-candidates leaves the candidates products alone (and says so)
+drv assign --no-candidates --out "$P" 2> "$OUT/e_assign.stderr"
+grep -q "present but unused" "$OUT/e_assign.stderr" || fail "(e) assign --no-candidates on OUT/fx did not say that the candidates products are unused (see $OUT/e_assign.stderr)"
+! ls "$P".assign_cand.* > /dev/null 2>&1 || fail "(e) assign --no-candidates on OUT/fx made the candidate run (fx.assign_cand.* exist)"
+n_copies=$(col_of "$P.assign.families.tsv" n_copies MCL0)
+[ "$n_copies" = 1 ] || fail "(e) assign --no-candidates gives MCL0 n_copies '$n_copies', expected 1 (the candidate is not used)"
+pass "(e) assign --no-candidates on OUT/fx does not use the candidates products: one line says so, no split, MCL0 has 1 copy"
 echo "run_e2e: all assertions hold"

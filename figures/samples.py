@@ -42,7 +42,7 @@ RUN CACHE. Each stage of `tools/rustle_pipeline.sh` runs GENOME-WIDE on the whol
     catalog           catalog (LEGACY copy catalog)                 copies <id>.cat.copies.tsv, copies_fa, families, pairs
     assign            assign (needs families: the driver's assign   assignments <id>.assign.assignments.tsv
                       reads the families' copy table since
-                      2026-10-02; the opt-in candidates stage is not run)
+                      2026-10-02; the candidates stage is not run here)
     index             minimap2 -x splice -d (only when the registry's splice_mmi file is absent)   mmi
     flag              flag --index splice_mmi --gff annotation_gff [--confirm ...]   scan, calls <id>.flag.missing_copy.tsv
 
@@ -370,7 +370,8 @@ STAGES = {
                 "products": {"copies": ".cat.copies.tsv", "copies_fa": ".cat.copies.fa", "families": ".cat.families.tsv",
                              "pairs": ".cat.pairs.tsv"}, "needs": []},
     # the driver's assign reads the families' copy table (<id>.fam.copies.*) since 2026-10-02 (the legacy catalog only with
-    # --legacy-catalog, not passed here); the opt-in candidates stage (ruling R14) is not a run-cache stage
+    # --legacy-catalog, not passed here); the driver's candidates stage (default in its `all` since 2026-10-03) is not a
+    # run-cache stage, so assign finds no candidates products here
     "assign": {"driver": "assign", "suffix": "", "extra": [], "bins": ["copy_assign"], "mm2": True,
                "products": {"assignments": ".assign.assignments.tsv"}, "needs": ["families"]},
     "index": {"driver": None, "bins": [], "mm2": True, "needs": []},
