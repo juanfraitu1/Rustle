@@ -65,6 +65,22 @@ animal; testis = OR6737.)
   carries an LRPAP1 locus the primary lacks. **Diploid copy number 15 (7 + 8); no reference-absent copy** — the honest O3 statement is "none
   detected, and the matched haplotypes agree". (The WGS trio dosage table does not cover this family: it is not a GWFAM family.)
 
+## How many copies are found in gorilla, by each definition
+
+| how the copies are counted | copies in gorilla |
+|---|---|
+| RefSeq annotation (mGorGor1): named loci | **6** — LRPAP1 + 2 protein-coding LOCs + 3 pseudogene LOCs |
+| Sequence: Liftoff self-lift of LRPAP1's body (>= 95.7% identity, >= 98% coverage) | **8** (the six named + 2 unannotated on chr12) |
+| Haplotype assemblies of the same animal (>= 95% identity over >= 80% of the copy) | maternal **7**, paternal **8** (the Y copy); diploid 15 |
+| Expressed: >= 3 uniquely placed reads with one identical >= 2-intron chain (Amendment C) | fibroblast **6**, testis **7**, in at least one library **8** |
+| A de novo locus built at the copy | fibroblast **6**, testis **8** |
+| A member of the de novo LRPAP1 family | fibroblast **6** (MCL2, all its members), testis **8** (MCL9, all its members) |
+| FOUND, strict: the locus representative is an expressed chain of the copy or a 5' piece of it (C) | fibroblast **6 of 6** expressed, testis **7 of 7**, in at least one library **8 of 8** |
+| FOUND, TSS-anchored: the representative starts at the copy's modal start with its first three introns (D') | fibroblast **5**, testis **6** — LRPAP1's (fibroblast) and LOC134756753's (testis) representatives carry 6 of the 7 introns and miss the first |
+| In the legacy GWFAM catalog | **0** (the family is not in it) |
+
+(`found_fibro.*`, `found_testis.*` in the work dir: `bench/copy_support.py` with each library's de novo loci as the `--loci` set.)
+
 ## What the family is good for
 
 - A clean positive example for O1 de novo: a gorilla-specific expansion to eight full-length copies, recovered completely from reads in the
