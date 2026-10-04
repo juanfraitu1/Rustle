@@ -3,6 +3,8 @@
 **2026-09-03.** Built from a 3-agent inventory of the full ledger, the negative-results register, memory,
 and code reachability. Ledger §6dk–§6dq and the sections cited below.
 
+> **2026-10-04 update — the RNA-only O3 chain and its Rust stage:** `o3_candidates` (family read net -> clusters at delta = 0.00958 -> consensus -> flag -> link -> merge -> >= 6 reads -> exon-union representative -> O2 over the augmented copy set) is SHIPPED OPT-IN (`tools/rustle_pipeline.sh --candidates`). Pre-registered results: deletion held-out A13 PASSES (missing-copy reads right 7,898 = 92% of the truth-free attainable set; false moves 0.77%; `docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), no-deletion control A14 FAILS (35/53 families carry a false flag; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`) — cause reproduced byte for byte (a long-insertion vote without a majority test duplicates the consensus' own exons; `docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md`), fix and re-runs pre-registered as Amendment 15/15b and PARKED (`docs/PENDING_2026-10-04.md`). The one real reference-absent expressed locus in the gorilla truth (GWFAM175_B0, paternal chr5) is flagged in every run; the Y-ampliconic panels confirm the delta_Y identifiability prediction (human 10/11, gorilla 2/2).
+
 > **2026-09-25 update — [`O3_WGS_TRIO_CN_2026-09-25.md`](O3_WGS_TRIO_CN_2026-09-25.md):** WGS k-mer dosage for Jim (genome animal) + parents Trib/Dolly: 17/516 autosomal families differ between the three gorillas (floor 4). RNA neither measures nor screens this (0/17 candidates); of 117 fibroblast RNA flags 82 are absent from Jim's DNA. The between-individual comparison (§1 "NO BETWEEN-INDIVIDUAL COMPARISON") is now executable at the DNA level.
 
 ---
