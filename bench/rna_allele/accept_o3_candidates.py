@@ -32,6 +32,13 @@ minimap2 call run there (or, for `nets` and `keep`, here) under `tools/rlock.sh 
   decompose  (post hoc, not a registered rule) arm M read by read for the stage and for IsoCon's Amendment 8 run (checked equal to
            merge_test.py score's totals), the deleted copies' reads split by where the R arm put them (on a surviving copy / mapped only
            elsewhere / unmapped) -> decompose.json + stdout
+  Amendment 14 (the no-deletion control, ACC=a14; `nets` with --bam control/R0.bam, `label` with --all-copies):
+  classify (C1') every flagged union against KB3781's mat / pat by Amendment 9's rule (`control_test.classify`: a haplotype-only locus /
+           b allele / c unmatched / pri), self-checked on A9's own 28 candidates; overlaps with A9's candidates and with the A13 run's
+           survivor-derived flags -> candidates_classified.tsv, classify.json
+  cscore   (C2') arms R0 and C scored as `control_test.score` (each flagged union its own locus), self-checked on A9's R0 -> score.json, calls.tsv
+  creport  wall time, stage totals, the per-family counters, pass B per batch, what the joined reads become, a per-family table -> report.json
+  wplan / wreport  ruling R23's whole-BAM cost: batches of the 378-family copies table; per batch Elapsed, peak RSS, attribution set, flagged
 
     accept_o3_candidates.py nets --w /mnt/linuxdisk/tmp/rna_allele/a13 --linktest /mnt/linuxdisk/tmp/rna_allele/linktest
 """
@@ -45,9 +52,13 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 
 import pysam
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import control_test  # noqa: E402  (Amendment 9's haplotype names and truth paths; Amendment 14 reuses its classify rule)
 
 MAX_READS = 1000
 TIE = 0.98
@@ -150,7 +161,7 @@ def nets(a):
     batch_of = {f: g for g, fs, _ in batches for f in fs}
     assert sorted(batch_of) == sorted(fams_tsv), "the batch logs and families.tsv name different families"
     # pass A, for every family: names with a primary / secondary record overlapping a copy's locus extent (no supplementary)
-    bam = pysam.AlignmentFile(f"{a.linktest}/R.bam")
+    bam = pysam.AlignmentFile(a.bam)
     names = collections.defaultdict(set)
     for r in rows:
         lo, hi = (int(r["locus_start"]), int(r["locus_end"])) if r.get("locus_start", "NA") not in ("", "NA") else (int(r["start"]), int(r["end"]))
@@ -159,7 +170,7 @@ def nets(a):
                 names[r["family_id"]].add(rd.query_name)
     # pass B's sweep, once (file order): every unmapped record and every primary record, with what the attribution set is chosen on
     recs, seqs = [], {}
-    for rd in pysam.AlignmentFile(f"{a.linktest}/R.bam").fetch(until_eof=True):
+    for rd in pysam.AlignmentFile(a.bam).fetch(until_eof=True):
         if rd.is_unmapped:
             recs.append((True, rd.query_name, oriented(rd), None, None))
         elif not (rd.is_secondary or rd.is_supplementary):
@@ -416,7 +427,8 @@ def label(a):
             fam, b = r["family"], B.get(r["iso"])
             src = "none"
             if b:
-                for lab_, (c, s0, e, g) in [("D", P[fam]["mask"])] + [("S:" + kk[3], kk) for kk in P[fam]["keep"]]:
+                first = ("S:" + P[fam]["mask"][3]) if a.all_copies else "D"
+                for lab_, (c, s0, e, g) in [(first, P[fam]["mask"])] + [("S:" + kk[3], kk) for kk in P[fam]["keep"]]:
                     if b[1] == c and b[2] < e and s0 < b[3]:
                         src = lab_; break
                 else:
@@ -425,7 +437,8 @@ def label(a):
             t.write(f"{r['iso']}\t{fam}\t{r['candidate']}\t{r['length']}\tNA\t{r['d']}\t0\t{src}\n")
     for fam in sorted({r["family"] for r in iso}):
         open(f"{a.w}/merge/paf/{fam}.paf", "w").close()
-    for f in ("R.bam", "R.bam.bai", "labels.tsv", "panel.json"):
+    # merge_test.py score's inputs (arm M); Amendment 14 scores its own arm C (`cscore`) and never reads the masked run's R.bam
+    for f in ("R.bam", "R.bam.bai", "labels.tsv", "panel.json") if not a.all_copies else ():
         dst = f"{a.w}/{f}"
         if not os.path.lexists(dst):
             os.symlink(f"{a.linktest}/{f}", dst)
@@ -857,9 +870,415 @@ def decompose(a):
     json.dump(res, open(f"{a.w}/decompose.json", "w"), indent=0)
 
 
+# ---- Amendment 14: the no-deletion control of the stage (classify = Amendment 9's rule, cscore = arm C, creport) and R23's plan -------
+
+def all_copies(linktest):
+    """`control_test.panel`: family -> every copy [chrom, start, end, gene], the copy Amendment 7 masked first"""
+    return {p["fam"]: [p["mask"]] + p["keep"] for p in json.load(open(f"{linktest}/panel.json"))}
+
+
+def hap_best(paths):
+    """`control_test.classify`'s best haplotype hit per query over the mat, then the pat PAF: (identity x coverage, hap, accession, start,
+    end), the first on a tie; a target named chr<N>_<hap>_hsa* (the haplotype splice indexes) -> its accession by <hap>.len.tsv, any other
+    target skipped"""
+    alias = control_test.hap_alias()
+    hb = {}
+    for h, path in paths:
+        for ln in open(path):
+            f = ln.rstrip("\n").split("\t")
+            m = re.fullmatch(r"chr(\w+?)_(mat|pat)_hsa[^_]*", f[5])
+            if not m:
+                continue
+            acc = alias[(m.group(2), m.group(1))]
+            s = int(f[9]) / max(1, int(f[10])) * (int(f[3]) - int(f[2])) / max(1, int(f[1]))
+            if f[0] not in hb or s > hb[f[0]][0]:
+                hb[f[0]] = (s, h, acc, int(f[7]), int(f[8]))
+    return hb
+
+
+def hap_class(c, fam, hb, P, bside, liftd):
+    """`control_test.classify`'s per-contig class (its `cls_contig`): c_unmatched = no haplotype hit at identity x coverage >= 0.999; pri =
+    the hit lies on the haplotype `_pri` took that chromosome from (in `_pri` after all: an artefact); b_allele = on the other (B)
+    haplotype, inside the lifted B interval of a copy of the family (lift_frac >= 0.5); a_haplotype_only = on B, outside every such
+    interval (a genuine reference-absent locus: the only TRUE flag)"""
+    b = hb.get(c)
+    if not b or b[0] < 0.999:
+        return "c_unmatched"
+    _, h, acc, s, e = b
+    if (h, acc) not in bside:
+        return "pri"
+    for cc, s0, e0, g in P[fam]:
+        L = liftd.get(g)
+        if L and float(L["lift_frac"]) >= 0.5 and L["B_chrom"] == acc and int(L["B_start"]) < e and s < int(L["B_end"]):
+            return "b_allele"
+    return "a_haplotype_only"
+
+
+def same_transcript(path):
+    """`control_test.classify`'s overlap rule on an asm20 PAF: the (query, target) pairs of the same family (iso_<family>_<k> names) at
+    identity >= 0.999 over >= 90% of the shorter sequence"""
+    pairs = set()
+    for ln in open(path):
+        f = ln.split("\t")
+        ident = int(f[9]) / max(1, int(f[10]))
+        short = min(int(f[1]), int(f[6]))
+        cov = (int(f[3]) - int(f[2])) / short if int(f[1]) <= int(f[6]) else (int(f[8]) - int(f[7])) / short
+        if ident >= 0.999 and cov >= 0.9 and f[5].split("_")[1] == f[0].split("_")[1]:
+            pairs.add((f[0], f[5]))
+    return pairs
+
+
+A13_DETECTED = 25          # A13's family-level detection rate 25/53 (docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md)
+C1_MAX_FAMILIES = 8        # Amendment 14: <= 1/3 of 25/53 = 0.157 -> <= 8 of 53 families
+A9_FALSE_FAMILIES = 16     # Amendment 9: the IsoCon chain, 16/53 families with a false candidate at any support
+
+
+def classify(a):
+    """Amendment 14's C1': every flagged union (iso.contigs.fa, iso_<family>_<k>) classified against KB3781's mat / pat assemblies by
+    Amendment 9's rule (iso.mat.paf / iso.pat.paf: minimap2 -c -x splice:hq -uf -N 20; chrmap.tsv; control/copies_lift.tsv). Self-check
+    first: Amendment 9's 28 candidates re-classified from its own PAFs must equal control/candidates.tsv. Beside: the a + b + c rate, A9's
+    16/53, the overlap with A9's 28 candidates (control/contigs_L.fa, components of control/merge/components.tsv) and with the A13 run's
+    survivor-derived flags (A13 contigs.tsv source S:*), both by `same_transcript` -> candidates_classified.tsv, classify.json + stdout"""
+    P = all_copies(a.linktest)
+    n_fam = len(P)
+    bside = {(r["B_hap"], r["B_name"]) for r in tsv(f"{control_test.TRUTH}/chrmap.tsv") if r["B_name"]}
+    liftd = {r["gene_id"]: r for r in tsv(f"{a.control}/copies_lift.tsv")}
+    hb9 = hap_best([("mat", f"{a.control}/contigs_L.mat.paf"), ("pat", f"{a.control}/contigs_L.pat.paf")])
+    a9 = tsv(f"{a.control}/candidates.tsv")
+    mism = [r["candidate"] for r in a9 if hap_class(r["best_contig"], r["family"], hb9, P, bside, liftd) != r["class"]]
+    assert not mism, f"Amendment 9's classes not reproduced from its own PAFs: {mism}"
+    print(f"self-check: Amendment 9's {len(a9)} candidates re-classified from control/contigs_L.{{mat,pat}}.paf equal control/candidates.tsv "
+          f"({dict(collections.Counter(r['class'] for r in a9))})")
+    iso = tsv(f"{a.w}/iso_names.tsv")
+    src = {r["contig"]: r["source"] for r in tsv(f"{a.w}/contigs.tsv")}
+    hb = hap_best([("mat", f"{a.w}/iso.mat.paf"), ("pat", f"{a.w}/iso.pat.paf")])
+    comp9 = {r["contig"]: r["component"] for r in tsv(f"{a.control}/merge/components.tsv")}
+    ov9 = same_transcript(f"{a.w}/overlap_a9.paf")
+    a13_s = {r["contig"]: r for r in tsv(f"{a.a13}/contigs.tsv") if r["source"].startswith("S:")}
+    ov13 = {(q, t) for q, t in same_transcript(f"{a.w}/overlap_a13.paf") if t in a13_s}
+    rows = []
+    for r in iso:
+        c, fam = r["iso"], r["family"]
+        b = hb.get(c)
+        rows.append(dict(iso=c, candidate=r["candidate"], family=fam, n_clusters=int(r["n_clusters"]), n_reads=int(r["n_reads"]), d=r["d"],
+                         length=int(r["length"]), source=src[c], cls=hap_class(c, fam, hb, P, bside, liftd),
+                         hap_hit=f"{b[1]}:{b[2]}:{b[3]}-{b[4]} {b[0]:.4f}" if b else "-",
+                         a9=sorted({comp9[t] for q, t in ov9 if q == c}), a13=sorted({t for q, t in ov13 if q == c})))
+    with open(f"{a.w}/candidates_classified.tsv", "w") as o:
+        o.write("iso\tcandidate\tfamily\tn_clusters\tn_reads\tlength\td\tsource\tclass\thap_hit\tmatches_A9_candidates\tmatches_A13_survivor_flags\n")
+        for x in rows:
+            o.write(f"{x['iso']}\t{x['candidate']}\t{x['family']}\t{x['n_clusters']}\t{x['n_reads']}\t{x['length']}\t{x['d']}\t{x['source']}\t{x['cls']}\t"
+                    f"{x['hap_hit']}\t{','.join(x['a9']) or '-'}\t{','.join(x['a13']) or '-'}\n")
+    classes = collections.Counter(x["cls"] for x in rows)
+    fam_any = {x["family"] for x in rows}
+    fam_false = {x["family"] for x in rows if x["cls"] != "a_haplotype_only"}
+    fam_true = {x["family"] for x in rows if x["cls"] == "a_haplotype_only"}
+    ok = len(fam_false) <= C1_MAX_FAMILIES
+    det = A13_DETECTED / n_fam
+    lr = det / (len(fam_false) / n_fam) if fam_false else float("inf")
+    per_fam = collections.defaultdict(collections.Counter)
+    for x in rows:
+        per_fam[x["family"]][x["cls"]] += 1
+    by_src = collections.Counter((("S" if x["source"].startswith("S:") else x["source"]), x["cls"]) for x in rows)
+    m9 = [x for x in rows if x["a9"]]
+    a9_hit = sorted({cpn for x in rows for cpn in x["a9"]})
+    a9_fams = {r["family"] for r in a9}
+    m13 = [x for x in rows if x["a13"]]
+    a13_hit = sorted({t for x in rows for t in x["a13"]})
+    out = dict(flagged=len(rows), classes=dict(classes), families_any=sorted(fam_any, key=name_key), families_false=sorted(fam_false, key=name_key),
+               families_true=sorted(fam_true, key=name_key), n_families=n_fam, C1_prime=ok, C1_bar_families=C1_MAX_FAMILIES, LR=lr,
+               by_source_class={"|".join(k): v for k, v in sorted(by_src.items())},
+               per_family={f: dict(v) for f, v in sorted(per_fam.items(), key=lambda kv: name_key(kv[0]))},
+               match_A9=dict(flags=len(m9), A9_candidates_reproduced=len(a9_hit), A9_candidates=len(a9), families_both=sorted(fam_any & a9_fams, key=name_key),
+                             A9_families=len(a9_fams)),
+               match_A13_survivor=dict(flags=len(m13), A13_survivor_flags_reproduced=len(a13_hit), A13_survivor_flags=len(a13_s)))
+    print(f"flagged candidates {len(rows)} in {len(fam_any)} families; classes {dict(classes)}")
+    print(f"by stage label x class: {out['by_source_class']}")
+    print(f"C1': families with >= 1 FALSE flag (b + c + pri) {len(fam_false)}/{n_fam} = {len(fam_false) / n_fam:.1%} (bar <= {C1_MAX_FAMILIES} = "
+          f"{C1_MAX_FAMILIES / n_fam:.1%}, i.e. <= 1/3 of A13's detection {A13_DETECTED}/{n_fam} = {det:.3f}) -> {'HOLDS' if ok else 'FAILS'}; "
+          f"family-level LR of a flag {det:.3f} / {len(fam_false) / n_fam:.3f} = {lr:.2f} (bar 3)")
+    print(f"beside: families with any flag (a + b + c) {len(fam_any)}/{n_fam} = {len(fam_any) / n_fam:.1%}; with a TRUE flag (a) {len(fam_true)} "
+          f"{sorted(fam_true, key=name_key)}; A9's IsoCon chain (any support): {A9_FALSE_FAMILIES}/{n_fam} = {A9_FALSE_FAMILIES / n_fam:.1%} with a false candidate")
+    print(f"overlap with A9's {len(a9)} candidates (same family, identity >= 0.999 over >= 90% of the shorter): {len(m9)} of the {len(rows)} flags match "
+          f"one; A9 candidates reproduced {len(a9_hit)}/{len(a9)}; families flagged by both {len(fam_any & a9_fams)} (A9 {len(a9_fams)}, A14 {len(fam_any)})")
+    print(f"overlap with the A13 run's {len(a13_s)} survivor-derived flags: {len(m13)} of the {len(rows)} flags match one; A13 survivor-derived flags "
+          f"reproduced {len(a13_hit)}/{len(a13_s)}")
+    print("per family (flagged candidates by class; a = haplotype-only, b = allele, c = unmatched):")
+    for f in sorted(per_fam, key=name_key):
+        v = per_fam[f]
+        print(f"  {f}\t" + " ".join(f"{k.split('_')[0]}:{n}" for k, n in sorted(v.items())) + ("\tFALSE" if f in fam_false else "\ttrue only"))
+    print("candidate\tfamily\treads\tclusters\tlength\td\tlabel\tclass\tbest haplotype hit\tA9\tA13-S")
+    for x in rows:
+        print(f"{x['iso']}\t{x['family']}\t{x['n_reads']}\t{x['n_clusters']}\t{x['length']}\t{x['d']}\t{x['source']}\t{x['cls']}\t{x['hap_hit']}\t"
+              f"{','.join(x['a9']) or '-'}\t{','.join(x['a13']) or '-'}")
+    json.dump(out, open(f"{a.w}/classify.json", "w"), indent=0)
+
+
+def cscore(a):
+    """Amendment 14's C2': arms R0 (control/R0.bam) and C (C.bam = the scored reads realigned to `_pri` + the flagged unions) scored as
+    `control_test.score` (each flagged candidate its own locus: the stage's candidate is already its component): stay / other_copy /
+    own_candidate (a candidate labelled with the read's own copy) / false_move (any other candidate) / elsewhere / unplaced (no record, or
+    a 0.98 AS tie across loci). Self-check: arm R0 equals Amendment 9's control/score.json -> score.json, calls.tsv + stdout"""
+    P = all_copies(a.linktest)
+    lab = {r["read"]: r for r in tsv(f"{a.linktest}/labels.tsv")}
+    src = {r["contig"]: r["source"] for r in tsv(f"{a.w}/contigs.tsv")}
+    want = set(lab)
+
+    def locus(chrom, s, e, fam):
+        if chrom.startswith("iso_"):
+            return ("ctg", chrom)
+        for c, s0, e0, g in P[fam]:
+            if chrom == c and s < e0 and s0 < e:
+                return ("copy", g)
+        return ("other", f"{chrom}:{s // 100000}")
+
+    def calls(bam):
+        recs = collections.defaultdict(list)
+        for rd in pysam.AlignmentFile(bam).fetch(until_eof=True):
+            if rd.query_name not in want or rd.is_supplementary:
+                continue
+            recs[rd.query_name].append(None if rd.is_unmapped else
+                                       (rd.is_secondary, rd.reference_name, rd.reference_start, rd.reference_end,
+                                        rd.get_tag("AS") if rd.has_tag("AS") else 0))
+        out = {}
+        for n, rs in recs.items():
+            rs = [r for r in rs if r]
+            if not rs:
+                out[n] = ("unplaced", None); continue
+            fam = lab[n]["family"]
+            prim = next((r for r in rs if not r[0]), rs[0])
+            srt = sorted(rs, key=lambda r: -r[4])
+            if len(srt) > 1 and srt[1][4] > 0 and srt[1][4] >= TIE * srt[0][4]:
+                if len({locus(r[1], r[2], r[3], fam) for r in srt if r[4] >= TIE * srt[0][4]}) > 1:
+                    out[n] = ("unplaced", None); continue
+            out[n] = ("placed", locus(prim[1], prim[2], prim[3], fam))
+        return out
+
+    def cls(n, call):
+        r = lab[n]
+        st, L = call
+        if st == "unplaced":
+            return "unplaced"
+        kind, key = L
+        if kind == "copy":
+            return "stay" if key == r["copy"] else "other_copy"
+        if kind == "ctg":
+            return "own_candidate" if src[key] == "S:" + r["copy"] else "false_move"
+        return "elsewhere"
+    res, per = {}, {}
+    for arm, bam in (("R0", f"{a.control}/R0.bam"), ("C", f"{a.w}/C.bam")):
+        cc = calls(bam)
+        per[arm] = {n: (cls(n, cc.get(n, ("unplaced", None))), cc.get(n, ("unplaced", None))[1]) for n in lab}
+        res[arm] = collections.Counter(v[0] for v in per[arm].values())
+        print(f"[{arm}]", dict(sorted(res[arm].items())))
+    ref = json.load(open(f"{a.control}/score.json"))["R0"]
+    assert dict(res["R0"]) == ref, f"arm R0 differs from Amendment 9's control/score.json: {dict(res['R0'])} vs {ref}"
+    print(f"self-check: arm R0 equals Amendment 9's control/score.json {ref}")
+    n = len(lab)
+    fm = res["C"]["false_move"]
+    ok = fm <= 0.05 * n
+    print(f"C2': false moves {fm}/{n} = {fm / n:.2%} (bar <= 5%) -> {'HOLDS' if ok else 'FAILS'}; own-candidate placements {res['C']['own_candidate']} "
+          f"({res['C']['own_candidate'] / n:.1%}); unplaced {res['R0']['unplaced']} -> {res['C']['unplaced']}; stay {res['R0']['stay']} -> {res['C']['stay']}")
+    to = collections.Counter()
+    own = collections.Counter()
+    unpl = collections.Counter()
+    for r, (k, L) in per["C"].items():
+        fam = lab[r]["family"]
+        if k == "false_move":
+            tgt = L[1]
+            to[(fam, tgt, src[tgt], "own family" if tgt.split("_")[1] == fam else "other family")] += 1
+        elif k == "own_candidate":
+            own[(fam, L[1])] += 1
+        if k == "unplaced" and per["R0"][r][0] != "unplaced":
+            unpl[fam] += 1
+    print("false moves by (family, candidate, its label, own family or not): " +
+          ("; ".join(f"{f} -> {t} ({s_}, {o}): {v}" for (f, t, s_, o), v in sorted(to.items(), key=lambda kv: -kv[1])) or "none"))
+    print("own-candidate placements by (family, candidate): " + "; ".join(f"{f} {t}: {v}" for (f, t), v in sorted(own.items(), key=lambda kv: -kv[1])))
+    print("reads placed in R0 and unplaced in C, by family: " + "; ".join(f"{f} {v}" for f, v in sorted(unpl.items(), key=lambda kv: -kv[1])))
+    with open(f"{a.w}/calls.tsv", "w") as o:
+        o.write("read\tfamily\tcopy\trole\tR0\tC\tC_target\n")
+        for r in sorted(lab):
+            k, L = per["C"][r]
+            o.write(f"{r}\t{lab[r]['family']}\t{lab[r]['copy']}\t{lab[r]['role']}\t{per['R0'][r][0]}\t{k}\t{L[1] if L else '-'}\n")
+    json.dump(dict(arms={k: dict(v) for k, v in res.items()}, n_reads=n, false_moves=fm, C2_prime=ok,
+                   false_moves_to={"|".join(k): v for k, v in to.items()}, own_candidate_by={"|".join(k): v for k, v in own.items()},
+                   newly_unplaced_by_family=dict(unpl)), open(f"{a.w}/score.json", "w"), indent=0)
+
+
+ELAPSED = re.compile(r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)")
+MAXRSS = re.compile(r"Maximum resident set size \(kbytes\): (\d+)")
+DONE = re.compile(r"done: (\d+) families, (\d+) clusters, (\d+) candidates, (\d+) flagged in (\d+) families; (\d+) minimap2 calls; ([\d.]+) s "
+                  r"\(nets ([\d.]+) s, clusters ([\d.]+) s, genome ([\d.]+) s\)")
+PASS_A = re.compile(r"BAM: pass A (\d+) reads by a primary record and (\d+) secondary records on the copies; pass B (\d+) of (\d+) secondary-only")
+
+
+def hms(t):
+    s = 0.0
+    for x in t.split(":"):
+        s = s * 60 + float(x)
+    return s
+
+
+def batch_logs(w, stem):
+    """per batch log (logs/<stem>_g<g>.log): /usr/bin/time's Elapsed (s) and peak RSS (GB = 10^6 kB, as the A13 doc), the stage's done line,
+    its pass A / pass B lines, and whether the run was stopped (a signal: the wstage step's time limit)"""
+    out = {}
+    for p in sorted(glob.glob(f"{w}/logs/{stem}_g*.log"), key=lambda p: int(re.search(r"_g(\d+)\.log$", p).group(1))):
+        g = int(re.search(r"_g(\d+)\.log$", p).group(1))
+        text = open(p).read()
+        e, m, d, pb, pa = ELAPSED.search(text), MAXRSS.search(text), DONE.search(text), PASS_B.search(text), PASS_A.search(text)
+        out[g] = dict(elapsed=hms(e.group(1)) if e else None, rss_gb=int(m.group(1)) / 1e6 if m else None,
+                      done=dict(zip(("families", "clusters", "candidates", "flagged", "flagged_families", "mm2_calls", "total", "nets", "clusters_s",
+                                     "genome"), map(float, d.groups()))) if d else None,
+                      pass_b=dict(zip(PASS_B_KEYS, map(int, pb.groups()))) if pb else None,
+                      pass_a=dict(zip(("primary", "secondary", "found", "need"), map(int, pa.groups()))) if pa else None,
+                      stopped="Command terminated by signal" in text or "Command exited with non-zero status 124" in text)
+    return out
+
+
+def creport(a):
+    """Amendment 14's reported numbers beside C1' / C2' (prereg: candidates per family by class, the attribution counts without a deletion
+    and what the joined reads become, the per-family counters): wall time per batch, stage totals, the stage log's phase-1 counters, pass B
+    per batch, the joined reads (nets replication: right family, under the cap, in a reported cluster / a flagged candidate, R0 and arm C
+    class), and a per-family table -> report.json + stdout"""
+    lab = {r["read"]: r for r in tsv(f"{a.linktest}/labels.tsv")}
+    fams = {r["family"]: r for r in tsv(f"{a.w}/{a.prefix}.families.tsv")}
+    cands = {r["candidate"]: r for r in tsv(f"{a.w}/{a.prefix}.candidates.tsv")}
+    clus = {r["cluster"]: r for r in tsv(f"{a.w}/{a.prefix}.clusters.tsv")}
+    cl_of = collections.defaultdict(dict)
+    for r in tsv(f"{a.w}/{a.prefix}.reads.tsv"):
+        cl_of[r["family"]][r["read"]] = r["cluster"]
+    klass = {r["candidate"]: r for r in tsv(f"{a.w}/candidates_classified.tsv")}
+    calls = {r["read"]: r for r in tsv(f"{a.w}/calls.tsv")}
+    netr = tsv(f"{a.w}/net_reads.tsv")
+    nets_rows = {r["family"]: r for r in tsv(f"{a.w}/nets.tsv")}
+    out = {}
+    bl = batch_logs(a.w, "stage")
+    print("batch\tfamilies\tElapsed s\tstage clock s (nets / clusters / genome)\tpeak RSS GB\tflagged (families)")
+    for g, v in bl.items():
+        d = v["done"]
+        print(f"{g}\t{int(d['families'])}\t{v['elapsed']:.1f}\t{d['total']:.1f} ({d['nets']:.1f} / {d['clusters_s']:.1f} / {d['genome']:.1f})\t{v['rss_gb']:.1f}\t"
+              f"{int(d['flagged'])} ({int(d['flagged_families'])})")
+    tot_e = sum(v["elapsed"] for v in bl.values())
+    print(f"sum\t{sum(int(v['done']['families']) for v in bl.values())}\t{tot_e:.1f} = {tot_e / 60:.1f} min\t"
+          f"{sum(v['done']['total'] for v in bl.values()):.1f}\t{max(v['rss_gb'] for v in bl.values()):.1f} (max)")
+    out["batches"] = bl
+    tot = collections.Counter()
+    for r in fams.values():
+        for k in ("n_net", "n_used", "n_clusters", "n_in_reference", "n_linked", "n_new", "n_candidates", "n_flagged"):
+            tot[k] += int(r[k])
+    out["stage"] = dict(tot)
+    print("stage totals:", dict(tot), f"| families with >= 1 flagged candidate {sum(1 for r in fams.values() if int(r['n_flagged']) > 0)}/{len(fams)}")
+    counters = {}
+    for p in sorted(glob.glob(f"{a.w}/logs/stage_g*.log")):
+        for m in CLUSTER_LOG.finditer(open(p).read()):
+            counters[m.group(1)] = dict(zip(CLUSTER_LOG_KEYS, map(int, m.groups()[1:])))
+    ct = collections.Counter()
+    for v in counters.values():
+        ct.update(v)
+    fam_with = lambda k: sorted((f for f, v in counters.items() if v[k] > 0), key=name_key)
+    out["counters"] = dict(total=dict(ct), per_family=counters)
+    print(f"stage log counters over {len(counters)} families (phase 1): read clusters >= --min-cluster {ct['read_clusters']}; empty consensus dropped "
+          f"{ct['empty']}; refinement split off {ct['split_off']} reads into {ct['split_clusters']} new clusters, {ct['fell_under']} clusters fell under "
+          f"--min-cluster, kept sets re-templated {ct['retemplated']} (families {fam_with('retemplated')}); significance merge absorbed {ct['absorbed']} "
+          f"clusters in {ct['rounds']} rounds, absorptions undone {ct['undone']}; fallback templates (no eligible member): longest with an aligned "
+          f"partner {ct['longest_aligned']}, longest overall {ct['longest_unaligned']}; final clusters {ct['final']}")
+    print("pass B per batch (stage logs): batch\tunmapped>=300\tpoorly placed>=300 (short)\taligned u / p\tattributed u / p\tjoined")
+    pbt = collections.Counter()
+    for g, v in bl.items():
+        b = v["pass_b"]
+        pbt.update(b)
+        print(f"  {g}\t{b['unmapped']}\t{b['poorly_placed']} ({b['poorly_placed_short']})\t{b['aligned_unmapped']} / {b['aligned_poorly_placed']}\t"
+              f"{b['attributed_unmapped']} / {b['attributed_poorly_placed']}\t{b['joined']}")
+    print(f"  sum\t{pbt['unmapped']}\t{pbt['poorly_placed']} ({pbt['poorly_placed_short']})\t{pbt['aligned_unmapped']} / {pbt['aligned_poorly_placed']}\t"
+          f"{pbt['attributed_unmapped']} / {pbt['attributed_poorly_placed']}\t{pbt['joined']}")
+    out["pass_b_total"] = dict(pbt)
+    # the joined reads (a read entering a net of its batch by pass B) and what they become
+    jn = [r for r in netr if r["via"] == "B"]
+    fate = collections.Counter()
+    for r in jn:
+        f, n = r["family"], r["read"]
+        right = n in lab and lab[n]["family"] == f
+        cl = cl_of[f].get(n)
+        if r["used"] != "1":
+            where = "over the cap"
+        elif cl is None:
+            where = "no reported cluster (in-reference / unreported)"
+        elif clus[cl]["fate"] == "linked":
+            where = "linked cluster"
+        else:
+            k = cands.get(clus[cl]["candidate"])
+            where = "flagged candidate" if k and k["flagged"] == "1" else "candidate below support"
+        fate[(r["class"], "right" if right else "wrong", where, calls[n]["C"] if n in calls else "-")] += 1
+    out["joined"] = {"|".join(k): v for k, v in sorted(fate.items())}
+    def by(i):
+        c = collections.Counter()
+        for k, v in fate.items():
+            c[k[i]] += v
+        return c
+    print(f"joined reads (in a net of their batch via pass B): {len(jn)} joins of {len({r['read'] for r in jn})} reads; by class "
+          f"{dict(collections.Counter(r['class'] for r in jn))}; right family {sum(v for k, v in fate.items() if k[1] == 'right')}; where they end "
+          f"{dict(by(2))}; their arm-C class {dict(by(3))}")
+    for k, v in sorted(fate.items(), key=lambda kv: -kv[1]):
+        print(f"    {v:5d}  {k[0]:13s} {k[1]:5s}  {k[2]:48s} arm C: {k[3]}")
+    multi = collections.Counter(r["read"] for r in netr)
+    print(f"reads in nets of more than one family/batch: {sum(1 for v in multi.values() if v > 1)} (ruling R18)")
+    # per family
+    cpf = collections.defaultdict(list)
+    for r in klass.values():
+        cpf[r["family"]].append(r)
+    fm = collections.Counter(c["family"] for c in calls.values() if c["C"] == "false_move")
+    oc = collections.Counter(c["family"] for c in calls.values() if c["C"] == "own_candidate")
+    print("family\tbatch\tnet (used)\tjoined\tclusters ref / linked / new\tcandidates (flagged)\tflagged: class/label\tC: own-candidate / false moves")
+    table = []
+    for f in sorted(fams, key=name_key):
+        r = fams[f]
+        fl = sorted(cpf.get(f, []), key=lambda x: name_key(x["candidate"]))
+        t = dict(family=f, batch=nets_rows[f]["batch"], n_net=int(r["n_net"]), n_used=int(r["n_used"]), joined=int(nets_rows[f]["via_B"]),
+                 in_ref=int(r["n_in_reference"]), linked=int(r["n_linked"]), new=int(r["n_new"]), candidates=int(r["n_candidates"]),
+                 flagged=int(r["n_flagged"]), flags=[(x["class"], x["source"], int(x["n_reads"])) for x in fl], own_candidate=oc[f], false_moves=fm[f])
+        table.append(t)
+        print(f"{f}\t{t['batch']}\t{t['n_net']} ({t['n_used']})\t{t['joined']}\t{t['in_ref']} / {t['linked']} / {t['new']}\t{t['candidates']} ({t['flagged']})\t"
+              f"{' '.join(c.split('_')[0] + '/' + s_ + '/' + str(nr) for c, s_, nr in t['flags']) or '-'}\t{t['own_candidate']} / {t['false_moves']}")
+    out["per_family"] = table
+    json.dump(out, open(f"{a.w}/report.json", "w"), indent=0)
+
+
+def wplan(a):
+    """ruling R23's whole-BAM batches: the families of --copies in table order, --batch-size per line -> --batch-file"""
+    order = list(dict.fromkeys(r["family_id"] for r in tsv(a.copies)))
+    with open(a.batch_file, "w") as o:
+        for i in range(0, len(order), a.batch_size):
+            o.write(",".join(order[i:i + a.batch_size]) + "\n")
+    print(f"families {len(order)} -> {(len(order) + a.batch_size - 1) // a.batch_size} batches of <= {a.batch_size} ({a.batch_file})")
+
+
+def wreport(a):
+    """ruling R23: the whole-BAM batches' cost from their logs (logs/wstage_g<g>.log): Elapsed, peak RSS, the pass A / pass B counts (the
+    attribution set: unmapped / poorly placed written; the targets = this batch's net reads by pass A + every copy record), flagged"""
+    bl = batch_logs(a.w, "wstage")
+    n_copy_records = sum(1 for ln in open(a.copies_fa) if ln.startswith(">"))
+    print("batch\tElapsed s\tpeak RSS GB\tpass A reads (secondary records)\tattribution set: unmapped / poorly placed (short)\taligned\tattributed\t"
+          "joined\ttargets (net reads + copies)\tflagged (families)\tstage clock (nets / clusters / genome)")
+    for g, v in bl.items():
+        b, d, pa = v["pass_b"], v["done"], v["pass_a"]
+        fams = {r["family"]: r for r in tsv(f"{a.w}/cand_g{g}.families.tsv")} if os.path.exists(f"{a.w}/cand_g{g}.families.tsv") else {}
+        n_targets = sum(int(r["n_net"]) for r in fams.values()) - b["joined"] if (fams and b) else None
+        print(f"{g}\t{v['elapsed']}\t{v['rss_gb']}\t{pa and pa['primary']} ({pa and pa['secondary']})\t"
+              f"{b and b['unmapped']} / {b and b['poorly_placed']} ({b and b['poorly_placed_short']})\t{b and b['aligned']}\t{b and b['attributed']}\t"
+              f"{b and b['joined']}\t{n_targets} + {n_copy_records}\t{d and int(d['flagged'])} ({d and int(d['flagged_families'])})\t"
+              f"{d and d['total']} ({d and d['nets']} / {d and d['clusters_s']} / {d and d['genome']})" + ("\tSTOPPED (did not finish)" if v["stopped"] else ""))
+    done = [v for v in bl.values() if v["done"]]
+    if done:
+        print(f"sum over {len(done)} finished batches: Elapsed {sum(v['elapsed'] for v in done):.1f} s = {sum(v['elapsed'] for v in done) / 60:.1f} min; "
+              f"peak RSS max {max(v['rss_gb'] for v in done):.1f} GB; flagged {sum(int(v['done']['flagged']) for v in done)}")
+    json.dump(bl, open(f"{a.w}/wreport.json", "w"), indent=0)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["nets", "plan", "concat", "contigs", "label", "keep", "report", "comparator", "decompose"])
+    ap.add_argument("cmd", choices=["nets", "plan", "concat", "contigs", "label", "keep", "report", "comparator", "decompose", "classify", "cscore",
+                                    "creport", "wplan", "wreport"])
     ap.add_argument("--w", required=True, help="the run's work dir")
     ap.add_argument("--linktest", default="/mnt/linuxdisk/tmp/rna_allele/linktest", help="Amendment 7's work dir")
     ap.add_argument("--prefix", default="cand")
@@ -869,8 +1288,14 @@ def main(argv=None):
     ap.add_argument("--nets", default=None, help="dir with nets.tsv / net_reads.tsv (default --w)")
     ap.add_argument("--copies", default=None, help="nets: the stage's --copies table (default <w>/A12.copies.tsv)")
     ap.add_argument("--copies-fa", default=None, help="nets: the stage's --copies-fa (default <w>/A12.copies.fa)")
+    ap.add_argument("--bam", default=None, help="nets: the stage's --bam (default <linktest>/R.bam; Amendment 14: control/R0.bam)")
+    ap.add_argument("--all-copies", action="store_true", help="label: every copy is in the reference (Amendment 14): the masked copy is S:<copy> too")
+    ap.add_argument("--control", default="/mnt/linuxdisk/tmp/rna_allele/control", help="Amendment 9's work dir (R0.bam, copies_lift.tsv, its candidates)")
+    ap.add_argument("--a13", default="/mnt/linuxdisk/tmp/rna_allele/a13", help="classify: the A13 run's work dir (its survivor-derived flags)")
+    ap.add_argument("--batch-size", type=int, default=50, help="wplan: families per whole-BAM batch")
     a = ap.parse_args(argv)
     a.nets = a.nets or a.w
+    a.bam = a.bam or f"{a.linktest}/R.bam"
     a.copies = a.copies or f"{a.w}/A12.copies.tsv"
     a.copies_fa = a.copies_fa or f"{a.w}/A12.copies.fa"
     globals()[a.cmd](a)

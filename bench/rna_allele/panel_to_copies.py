@@ -3,7 +3,7 @@
 
 From `panel.json` (per family: `fam`, `mask` = the deleted copy, `keep` = the surviving copies' clean intervals, 0-based half-open) write:
 
-  <out>.copies.tsv  one row per SURVIVING copy in the `P.fam.copies.tsv` layout (header = COPIES_HEADER of src/bin/mcl_families.rs):
+  <out>.copies.tsv  one row per SURVIVING copy (with `--all`: per copy, `mask` first then `keep`, Amendment 14) in the `P.fam.copies.tsv` layout (header = COPIES_HEADER of src/bin/mcl_families.rs):
                     tid / gene_id = the copy's name, start-end = the clean interval, one exon block, strand +, n_reads = distinct
                     primaries of the BAM overlapping the interval, source `panel`, core_hull NA, member_status `member`, locus = the
                     interval; columns no reader of this run consumes are NA
@@ -12,9 +12,12 @@ From `panel.json` (per family: `fam`, `mask` = the deleted copy, `keep` = the su
   <out>.regions     per family and chromosome, the merged span of its surviving copies +- 5 kb (clamped at 0): `{family}\t{chrom}:{lo}-{hi}`;
                     not consumed by the acceptance (an O2 run on the same inputs needs it)
 
-The deleted copy is never written: the stage must find it from the reads alone.
+The deleted copy is never written: the stage must find it from the reads alone. With `--all` (Amendment 14, the no-deletion control; also
+the whole-BAM cost run of ruling R23 on the 378-family interval table) every copy is written, the `mask` copy first (Amendment 9's copy
+order, `control_test.panel`), and the FASTA must be the UNMASKED `_pri` (a copy that reads all N is refused either way).
 
     panel_to_copies.py --panel linktest/panel.json --bam linktest/R.bam --fasta linktest/masked.fa --out a12/A12
+    panel_to_copies.py --all --panel linktest/panel.json --bam control/R0.bam --fasta GGO.fasta --out a14/A14
 """
 import argparse
 import collections
@@ -37,6 +40,7 @@ def main(argv=None):
     ap.add_argument("--bam", required=True)
     ap.add_argument("--fasta", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--all", action="store_true", help="every copy (mask + keep), not only the surviving ones (Amendment 14)")
     a = ap.parse_args(argv)
     panel = json.load(open(a.panel))
     bam, fa = pysam.AlignmentFile(a.bam), pysam.FastaFile(a.fasta)
@@ -46,10 +50,10 @@ def main(argv=None):
         for p in panel:
             fam = p["fam"]
             spans = collections.defaultdict(list)
-            for idx, (chrom, start, end, gene) in enumerate(p["keep"]):
+            for idx, (chrom, start, end, gene) in enumerate(([p["mask"]] if a.all else []) + p["keep"]):
                 seq = fa.fetch(chrom, start, end).upper()
                 assert len(seq) == end - start, (fam, gene, len(seq), end - start)
-                assert set(seq) != {"N"}, f"{fam} {gene}: a surviving copy is masked"
+                assert set(seq) != {"N"}, f"{fam} {gene}: a written copy is masked (--all needs the unmasked genome)"
                 n = primaries(bam, chrom, start, end)
                 n_zero += n == 0
                 row = [fam, idx, gene, chrom, start, end, 1, "+", n, f"{start}-{end}", "NA", "panel", gene, "NA", "NA", end - start, "NA",
@@ -68,7 +72,10 @@ def main(argv=None):
                     else:
                         g.write(f"{fam}\t{chrom}:{max(0, lo - PAD)}-{hi + PAD}\n"); lo, hi = s, e
                 g.write(f"{fam}\t{chrom}:{max(0, lo - PAD)}-{hi + PAD}\n")
-    print(f"families {len(panel)}, surviving copies {n_rows} ({n_zero} without a primary read); deleted copies (not written) {len(panel)}")
+    if a.all:
+        print(f"families {len(panel)}, copies {n_rows} ({n_zero} without a primary read); every copy written (--all)")
+    else:
+        print(f"families {len(panel)}, surviving copies {n_rows} ({n_zero} without a primary read); deleted copies (not written) {len(panel)}")
 
 
 if __name__ == "__main__":
