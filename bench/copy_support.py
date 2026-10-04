@@ -116,6 +116,19 @@ def load_loci(path):
     return loci
 
 
+def locus_transcript_junctions(gtf):
+    """locus (gene_id) -> set of junctions over ALL its transcripts (the locus-level reading, reported beside the representative's)."""
+    ex = collections.defaultdict(lambda: collections.defaultdict(list))
+    for ln in open(gtf):
+        f = ln.rstrip("\n").split("\t")
+        if len(f) < 9 or f[2] != "exon":
+            continue
+        g = re.search(r'gene_id "([^"]+)"', f[8]).group(1)
+        t = re.search(r'transcript_id "([^"]+)"', f[8])
+        ex[g][t.group(1) if t else g].append([int(f[3]) - 1, int(f[4])])
+    return {g: set().union(*(set(introns_of(sorted(e))) for e in d.values())) for g, d in ex.items()}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--copies", required=True)
@@ -123,17 +136,22 @@ def main(argv=None):
     ap.add_argument("--bam", required=True)
     ap.add_argument("--family", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--loci", action="append", default=[], help="NAME=loci.gff3 (repeatable)")
+    ap.add_argument("--loci", action="append", default=[], help="NAME=loci.gff3[,transcripts.gtf] (repeatable); with the GTF the locus-level reading is reported beside")
     ap.add_argument("--nodes", help="pagedata.json of the read-pool page (its node[arm] per cid)")
     a = ap.parse_args(argv)
 
     copies = [r for r in csv.DictReader(open(a.copies), delimiter="\t") if r["family"] == a.family]
-    genes = {r["isoform_gene"] for r in copies}
+    # the truth GTF keys its genes by the copy id (cid) in the recovery benchmarks' truth files, by the annotation id elsewhere
+    genes = {r["isoform_gene"] for r in copies} | {r["cid"] for r in copies}
     tx = gtf_transcripts(a.truth, genes)
     arms = {}
+    arm_tx = {}
     for spec in a.loci:
         name, path = spec.split("=", 1)
+        path, _, gtf = path.partition(",")
         arms[name] = load_loci(path)
+        if gtf:
+            arm_tx[name] = locus_transcript_junctions(gtf)
     nodes = {}
     if a.nodes:
         pd = json.load(open(a.nodes))
@@ -143,10 +161,12 @@ def main(argv=None):
     bam = pysam.AlignmentFile(a.bam)
     rows, summary = [], {"copies": len(copies), "spliced_expressed": 0, "arms": {}}
     for arm in arms:
-        summary["arms"][arm] = {"old_overlap": 0, "strict_found": 0, "old_overlap_in_npip_nodes": 0, "strict_found_in_npip_nodes": 0}
+        summary["arms"][arm] = {"old_overlap": 0, "strict_found": 0, "old_overlap_in_npip_nodes": 0, "strict_found_in_npip_nodes": 0,
+                                "locus_level_found": 0, "locus_level_found_in_npip_nodes": 0}
     for c in copies:
         chrom, strand = c["chrom"], c["strand"]
-        texons = tx.get(c["isoform_gene"], {})
+        texons = tx.get(c["cid"]) or tx.get(c["isoform_gene"], {})
+        label = c.get("refseq_name") or c.get("cat_name") or c["name"]
         union = merge([e for ex in texons.values() for e in ex]) or [[int(c["terr_lo0"]), int(c["terr_hi"])]]
         ann_introns = {t: set(introns_of(ex)) for t, ex in texons.items()}
         n_intron = max((len(v) for v in ann_introns.values()), default=0)
@@ -176,7 +196,7 @@ def main(argv=None):
         n_exact = sum(1 for _, js in reads if js and any(set(js) == s for s in ann_introns.values() if s))
         expressed = n_support >= FLOOR
         summary["spliced_expressed"] += expressed
-        row = dict(cid=c["cid"], name=c["name"], chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
+        row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
                    ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed))
         for arm, loci in arms.items():
@@ -190,13 +210,26 @@ def main(argv=None):
             row[f"{arm}_old_overlap_loci"] = len(same)
             row[f"{arm}_strict_loci"] = len(strict_loci)
             row[f"{arm}_strict_found"] = int(strict)
+            row[f"{arm}_rep_supported_junctions_max"] = max((len(L["juncs"] & supported) for L in same), default=0)
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
+            # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
+            ltx = arm_tx.get(arm)
+            locus_found = None
+            if ltx is not None:
+                names_same = [n for n, L in loci.items() if L in same]
+                best = max((len(ltx.get(n, set()) & supported) for n in names_same), default=0)
+                row[f"{arm}_locus_supported_junctions_max"] = best
+                locus_found = expressed and (best >= k if k else len(strict_loci) > 0)
+                row[f"{arm}_locus_level_found"] = int(locus_found)
+                summary["arms"][arm]["locus_level_found"] += locus_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
                 summary["arms"][arm]["old_overlap_in_npip_nodes"] += own
                 summary["arms"][arm]["strict_found_in_npip_nodes"] += own and strict
+                if locus_found is not None:
+                    summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)
     with open(a.out + ".copies.tsv", "w") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()), delimiter="\t")
@@ -205,7 +238,7 @@ def main(argv=None):
     json.dump(summary, open(a.out + ".json", "w"), indent=1)
     print(json.dumps(summary))
     hdr = ["name", "reads", "unspliced", "one_junction", "supported_junctions", "support_reads", "ann2_reads", "exact_chain_reads", "spliced_expressed"] + \
-          [f"{arm}_{x}" for arm in arms for x in ("strict_found",) + (("page_own_node",) if nodes else ())]
+          [f"{arm}_{x}" for arm in arms for x in ("strict_found",) + (("locus_level_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
     print("\t".join(hdr))
     for r in rows:
         print("\t".join(str(r.get(h, "")) for h in hdr))
