@@ -270,3 +270,25 @@ The representative rule costs nothing measurable: the all-vs-all dominates and i
 - O2 was not re-run, as registered. R_J changes the copy table O2 reads; its effect is a separate measurement.
 
 Register rows 1234-1236.
+
+## Amendment A of the spliced-support prereg (2026-10-04 11:45): H3 re-scored with support anchored on the ANNOTATED introns
+
+The user's correction to `docs/PREREG_spliced_copy_support_2026-10-04.md` (Amendment A, 8735ceeb, before this re-score): a read or a
+representative supports a gene only through the gene's own annotated introns (exact splice sites), not through any read-supported junction.
+H3 re-scored from the saved arms (`h3A.support.*` in each contig's work dir; no families re-run; `bench/copy_support.py` `ann_*` columns):
+
+| contig | genes | spliced-expressed (annotated introns) | (read-defined) | FOUND R_M | FOUND R_J | read-defined found R_M | R_J | locus level R_M | R_J |
+|---|---|---|---|---|---|---|---|---|---|
+| human_chr2 | 1,243 | 1,127 | 1,111 | **943** | **1,026** | 960 | 1,030 | 1,017 | 1,035 |
+| human_chr6 | 1,047 | 909 | 900 | **741** | **800** | 757 | 815 | 798 | 810 |
+| human_chr8 | 698 | 586 | 574 | **498** | **524** | 500 | 531 | 529 | 534 |
+| human_chr10 | 729 | 660 | 650 | **555** | **589** | 562 | 598 | 589 | 604 |
+| gorilla_NC_073234.2 | 1,119 | 855 | 818 | **738** | **750** | 734 | 750 | 750 | 759 |
+| human_chr16 (dev) | 857 | 766 | 761 | **619** | **653** | 636 | 673 | 662 | 673 |
+| gorilla_NC_073244.2 (dev) | 1,520 | 1,075 | 1,005 | **893** | **918** | 884 | 909 | 911 | 927 |
+
+- **Clause (b) holds under Amendment A as well: found genes rise under R_J on all five held-out contigs** (chr2 943 -> 1,026, chr6 741 ->
+  800, chr8 498 -> 524, chr10 555 -> 589, NC_073234.2 738 -> 750). The verdict is unchanged: R_M stays the default (chr6 clause (a)).
+- Annotation anchoring lowers the found counts by 0-3% on the human contigs for both arms (the read-defined rule credited reads spliced at
+  junctions the annotation lacks) and raises the gorilla "spliced-expressed" denominators (RefSeq gorilla models carry introns the
+  >= 3-read rule had not yet confirmed at low depth).

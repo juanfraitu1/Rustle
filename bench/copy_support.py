@@ -11,6 +11,9 @@ junctions = N ops >= 50 bp (exact donor/acceptor); supported junction = carried 
 = >= 2 such reads. For each --loci set: OLD = a same-strand locus whose rep exons overlap the exon union; STRICT = spliced-expressed and a
 same-strand locus whose rep junctions include >= k supported junctions (k = 0: rep exons cover >= 50% of the union). --nodes restricts
 the loci of each arm to the page's NPIP-cluster nodes (pagedata.json rows: cid -> node[arm]) and reports found-within-NPIP-clusters too.
+Amendment A (2026-10-04): the FOUND verdict is annotation-anchored — `ann_support_reads` = reads with >= k of the copy's ANNOTATED introns,
+`ann_expressed` = >= 2 of them, `<arm>_ann_found` = ann_expressed and the representative carries >= k annotated introns (`<arm>_locus_ann_found`
+at the locus level); the read-defined columns (`support_reads`, `<arm>_strict_found`, ...) stay as the annotation-free reading, reported beside.
 Writes PREFIX.copies.tsv and PREFIX.json.
 """
 import argparse
@@ -159,7 +162,7 @@ def main(argv=None):
             nodes[row["cid"]] = row.get("node", {})
 
     bam = pysam.AlignmentFile(a.bam)
-    rows, summary = [], {"copies": len(copies), "spliced_expressed": 0, "arms": {}}
+    rows, summary = [], {"copies": len(copies), "spliced_expressed": 0, "ann_expressed": 0, "arms": {}}
     for arm in arms:
         summary["arms"][arm] = {"old_overlap": 0, "strict_found": 0, "old_overlap_in_npip_nodes": 0, "strict_found_in_npip_nodes": 0,
                                 "locus_level_found": 0, "locus_level_found_in_npip_nodes": 0}
@@ -193,12 +196,17 @@ def main(argv=None):
         else:
             n_support = sum(1 for _, js in reads if sum(1 for j in js if j in supported) >= k)
         n_ann2 = sum(1 for _, js in reads if sum(1 for j in js if j in ann_all) >= min(2, n_intron)) if n_intron else 0
+        # Amendment A: support = the copy's OWN annotated introns (k of them; k = 0: coverage of the exon union)
+        n_ann_support = n_ann2 if k else n_support
+        ann_expressed = n_ann_support >= FLOOR
         n_exact = sum(1 for _, js in reads if js and any(set(js) == s for s in ann_introns.values() if s))
         expressed = n_support >= FLOOR
         summary["spliced_expressed"] += expressed
+        summary["ann_expressed"] += ann_expressed
         row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
-                   ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed))
+                   ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed),
+                   ann_support_reads=n_ann_support, ann_expressed=int(ann_expressed))
         for arm, loci in arms.items():
             same = [L for L in loci.values() if L["chrom"] == chrom and L["strand"] == strand and inter(L["exons"], union) > 0]
             if k == 0:
@@ -211,6 +219,12 @@ def main(argv=None):
             row[f"{arm}_strict_loci"] = len(strict_loci)
             row[f"{arm}_strict_found"] = int(strict)
             row[f"{arm}_rep_supported_junctions_max"] = max((len(L["juncs"] & supported) for L in same), default=0)
+            # Amendment A: FOUND = annotation-anchored — the representative carries >= k of the copy's ANNOTATED introns
+            rep_ann = max((len(L["juncs"] & ann_all) for L in same), default=0)
+            ann_found = ann_expressed and ((len(strict_loci) > 0) if k == 0 else rep_ann >= k)
+            row[f"{arm}_rep_ann_junctions_max"] = rep_ann
+            row[f"{arm}_ann_found"] = int(ann_found)
+            summary["arms"][arm]["ann_found"] = summary["arms"][arm].get("ann_found", 0) + ann_found
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
             # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
@@ -223,11 +237,17 @@ def main(argv=None):
                 locus_found = expressed and (best >= k if k else len(strict_loci) > 0)
                 row[f"{arm}_locus_level_found"] = int(locus_found)
                 summary["arms"][arm]["locus_level_found"] += locus_found
+                best_ann = max((len(ltx.get(n, set()) & ann_all) for n in names_same), default=0)
+                locus_ann_found = ann_expressed and ((len(strict_loci) > 0) if k == 0 else best_ann >= k)
+                row[f"{arm}_locus_ann_junctions_max"] = best_ann
+                row[f"{arm}_locus_ann_found"] = int(locus_ann_found)
+                summary["arms"][arm]["locus_ann_found"] = summary["arms"][arm].get("locus_ann_found", 0) + locus_ann_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
                 summary["arms"][arm]["old_overlap_in_npip_nodes"] += own
                 summary["arms"][arm]["strict_found_in_npip_nodes"] += own and strict
+                summary["arms"][arm]["ann_found_in_npip_nodes"] = summary["arms"][arm].get("ann_found_in_npip_nodes", 0) + (own and ann_found)
                 if locus_found is not None:
                     summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)
@@ -237,8 +257,8 @@ def main(argv=None):
         w.writerows(rows)
     json.dump(summary, open(a.out + ".json", "w"), indent=1)
     print(json.dumps(summary))
-    hdr = ["name", "reads", "unspliced", "one_junction", "supported_junctions", "support_reads", "ann2_reads", "exact_chain_reads", "spliced_expressed"] + \
-          [f"{arm}_{x}" for arm in arms for x in ("strict_found",) + (("locus_level_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
+    hdr = ["name", "reads", "unspliced", "ann_support_reads", "ann_expressed", "support_reads", "exact_chain_reads"] + \
+          [f"{arm}_{x}" for arm in arms for x in ("ann_found", "strict_found") + (("locus_ann_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
     print("\t".join(hdr))
     for r in rows:
         print("\t".join(str(r.get(h, "")) for h in hdr))
