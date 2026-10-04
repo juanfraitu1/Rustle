@@ -104,6 +104,8 @@ step=${1:?step}; shift
 case $step in copies|link|plan|split|wcopies|wplan|wstage|wreport) run=reg ;; *) run=${1:?run}; shift ;; esac
 W=$(dir_of "$run"); mkdir -p "$W/logs"
 [ "$ACC" != a14 ] || [ "$run" = reg ] || { echo "ACC=a14 runs only reg" >&2; exit 2; }
+# the masked run's arm-M steps would mix masked.fa / R.bam with the control's unions: refused under a14 (its arm C: cindex .. creport)
+case $step in split|plan|mindex|malign|mmerge|score|keep|report|comparator|decompose) [ "$ACC" != a14 ] || { echo "step $step is the masked run's (ACC=a12/a13); ACC=a14 uses cindex / calign / cmerge / cscore / creport" >&2; exit 2; } ;; esac
 WB=$A/wholebam
 case $step in
   copies)

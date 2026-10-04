@@ -10,6 +10,8 @@ C1': families with >= 1 FALSE flag (b + c + pri) 35/53 = 66.0% (bar <= 8 = 15.1%
 beside: families with any flag (a + b + c) 35/53 = 66.0%; with a TRUE flag (a) 1 ['GWFAM175']; A9's IsoCon chain (any support): 16/53 = 30.2% with a false candidate
 overlap with A9's 28 candidates (same family, identity >= 0.999 over >= 90% of the shorter): 7 of the 56 flags match one; A9 candidates reproduced 7/28; families flagged by both 10 (A9 16, A14 35)
 overlap with the A13 run's 46 survivor-derived flags: 28 of the 56 flags match one; A13 survivor-derived flags reproduced 28/46
+the unmatched (c) flags: n 54; best haplotype hit (identity x coverage, 54 with a hit) median 0.9556 (0.4856-0.9985), >= 0.99 2, >= 0.95 30, < 0.90 11; whole-length d median 0.04525 (0.00973-0.51457), <= 0.02 13, > 0.10 12; reads median 196.5 (6-534), >= 100 39, <= 10 8
+all false flags (b + c + pri): n 55; best haplotype hit (identity x coverage, 55 with a hit) median 0.9558 (0.4856-1.0000), >= 0.99 3, >= 0.95 31, < 0.90 11; whole-length d median 0.04425 (0.00973-0.51457), <= 0.02 13, > 0.10 12; reads median 191 (6-534), >= 100 40, <= 10 8
 per family (flagged candidates by class; a = haplotype-only, b = allele, c = unmatched):
   GWFAM4	c:1	FALSE
   GWFAM6	c:1	FALSE
@@ -112,6 +114,7 @@ C2': false moves 318/59013 = 0.54% (bar <= 5%) -> HOLDS; own-candidate placement
 false moves by (family, candidate, its label, own family or not): GWFAM175 -> iso_GWFAM175_1 (S:GWFAM175:2, own family): 295; GWFAM244 -> iso_GWFAM244_1 (elsewhere, own family): 19; GWFAM175 -> iso_GWFAM175_2 (S:GWFAM175:5, own family): 2; GWFAM331 -> iso_GWFAM331_0 (S:GWFAM331:0, own family): 1; GWFAM37 -> iso_GWFAM37_1 (S:GWFAM37:2, own family): 1
 own-candidate placements by (family, candidate): GWFAM175 iso_GWFAM175_2: 287; GWFAM100 iso_GWFAM100_0: 270; GWFAM335 iso_GWFAM335_0: 262; GWFAM23 iso_GWFAM23_0: 241; GWFAM282 iso_GWFAM282_0: 227; GWFAM181 iso_GWFAM181_0: 224; GWFAM348 iso_GWFAM348_0: 207; GWFAM269 iso_GWFAM269_0: 196; GWFAM175 iso_GWFAM175_1: 187; GWFAM125 iso_GWFAM125_0: 166; GWFAM99 iso_GWFAM99_1: 159; GWFAM244 iso_GWFAM244_0: 125; GWFAM490 iso_GWFAM490_0: 110; GWFAM407 iso_GWFAM407_0: 98; GWFAM104 iso_GWFAM104_1: 91; GWFAM6 iso_GWFAM6_0: 81; GWFAM37 iso_GWFAM37_0: 75; GWFAM47 iso_GWFAM47_1: 75; GWFAM331 iso_GWFAM331_0: 63; GWFAM348 iso_GWFAM348_1: 57; GWFAM99 iso_GWFAM99_0: 53; GWFAM317 iso_GWFAM317_0: 49; GWFAM236 iso_GWFAM236_0: 47; GWFAM331 iso_GWFAM331_1: 46; GWFAM175 iso_GWFAM175_0: 43; GWFAM100 iso_GWFAM100_1: 40; GWFAM246 iso_GWFAM246_0: 38; GWFAM54 iso_GWFAM54_0: 30; GWFAM425 iso_GWFAM425_0: 29; GWFAM173 iso_GWFAM173_0: 28; GWFAM402 iso_GWFAM402_0: 27; GWFAM47 iso_GWFAM47_0: 19; GWFAM269 iso_GWFAM269_1: 14; GWFAM163 iso_GWFAM163_1: 13; GWFAM98 iso_GWFAM98_0: 13; GWFAM104 iso_GWFAM104_0: 12; GWFAM348 iso_GWFAM348_3: 12; GWFAM37 iso_GWFAM37_1: 10; GWFAM163 iso_GWFAM163_0: 10; GWFAM47 iso_GWFAM47_2: 9; GWFAM161 iso_GWFAM161_0: 8; GWFAM173 iso_GWFAM173_2: 4; GWFAM335 iso_GWFAM335_1: 4; GWFAM169 iso_GWFAM169_0: 3; GWFAM317 iso_GWFAM317_1: 3; GWFAM185 iso_GWFAM185_0: 3; GWFAM268 iso_GWFAM268_0: 3; GWFAM439 iso_GWFAM439_0: 2; GWFAM158 iso_GWFAM158_1: 1
 reads placed in R0 and unplaced in C, by family: GWFAM47 707; GWFAM98 476; GWFAM173 446; GWFAM158 433; GWFAM54 410; GWFAM269 375; GWFAM348 342; GWFAM268 214; GWFAM175 191; GWFAM490 145; GWFAM317 84; GWFAM104 68; GWFAM402 51; GWFAM331 30; GWFAM169 29; GWFAM125 22; GWFAM440 21; GWFAM37 20; GWFAM425 18; GWFAM100 17; GWFAM181 13; GWFAM4 10; GWFAM99 9; GWFAM161 6; GWFAM6 6; GWFAM185 5; GWFAM335 5; GWFAM163 4; GWFAM407 3; GWFAM246 3; GWFAM244 1; GWFAM439 1
+those 4165 reads by what they tie between in C: 4074 tie their own copy with a false flag derived from it; 81 tie their own copy with a flag derived from another copy (or labelled elsewhere); 10 do not tie with their own copy
 
 ## report.out (wall time, stage totals, counters, pass B, the joined reads, per family)
 batch	families	Elapsed s	stage clock s (nets / clusters / genome)	peak RSS GB	flagged (families)
@@ -298,6 +301,33 @@ checks: n_net and n_used of families.tsv equal in 53/53 families; every reads.ts
 ## whole-BAM cost (ruling R23): wholebam/wreport.out
 batch	Elapsed s	peak RSS GB	pass A reads (secondary records)	attribution set: unmapped / poorly placed (short)	aligned	attributed	joined	targets (net reads + copies)	flagged (families)	stage clock (nets / clusters / genome)
 0	631.18	10.688296	627388 (418841)	202 / 88369 (206)	61016	30457	26710	None + 915	None (None)	None (None / None / None)	STOPPED (did not finish)
+
+### terminal record (saved in fix round 1 from this task's terminal output; the commands ran on 2026-10-03 in /mnt/linuxdisk/tmp/rna_allele/a14)
+# attempt 1: `date +%s > wholebam/logs_wstage0_start.txt; time ACC=a14 bash bench/rna_allele/accept_o3_candidates.sh wstage 0; date +%s`
+#   start epoch 1791091038 (logs_wstage0_start.txt); the step printed "exit 124", then bash `time`:
+real	10m49.766s
+user	0m0.020s
+sys	0m0.011s
+#   and the epoch after it: 1791091688 (= start + 650 s)
+# attempt 1's temp dir (wholebam/cand_g0.tmp), counted before it was deleted:
+#   grep -c ">" attrib.fa; grep -c ">" attrib_targets.fa; grep ">" attrib_targets.fa | grep -vc "^>GWFAM[0-9]*|SRR\|^>GWFAM[0-9]*|m";
+#   cut -f1 attrib.paf | sort -u | wc -l; ls f14 | head; grep "unmapped$" -c attrib.fa; grep "poorly_placed$" -c attrib.fa
+88571
+649861
+915
+61016
+ava.paf
+net.fa
+202
+88369
+#   = attribution set 88,571 (202 unmapped + 88,369 poorly placed, equal to the stage log's pass-B line); targets 649,861 records, of
+#     which 915 are not net-read targets (`{family}|<read>`), i.e. the copy records -> 648,946 net-read targets; 61,016 queries with a
+#     hit (= the log's "aligned 61016"); f14 = the 15th family in progress at the stop
+# attempt 2: `date +%s > wholebam/logs/wstage_run2_start.txt && time ACC=a14 bash ... wstage 0 | cut -c1-260; date +%s`
+real	10m31.231s
+user	25m57.706s
+sys	2m44.777s
+#   epoch after it: 1791092484 (= start 1791091853 + 631 s; /usr/bin/time Elapsed 10:31.18)
 
 ### attempt 1 (lock timeout 585 s, SIGTERM; /usr/bin/time killed with the stage, no stats): log lines (epoch s) and the tmp dir at the stop
 start epoch 1791091038

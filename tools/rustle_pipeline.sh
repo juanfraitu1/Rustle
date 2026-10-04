@@ -306,12 +306,15 @@ stage_catalog() {
   say "catalog: $(awk 'NR>1' "$OUT.cat.copies.tsv" | wc -l) copies in $(awk 'NR>1 && $2>=2' "$OUT.cat.families.tsv" | wc -l) multi-copy families"
 }
 # candidates (O3; spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §4, §7; OPT-IN since 2026-10-02, ruling R14:
-# its pre-registered acceptance, Amendment 12, FAILED, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md — naming the stage runs it,
-# `all` runs it only with --candidates, and assign and flag use its products only with --candidates): o3_candidates turns each
-# family's read net (reads with a record on its copies, plus attributed unmapped reads) into read clusters at --delta, one
-# consensus per cluster, and candidate copies (clusters beyond delta of every reference locus, merged by the significance test,
-# flagged with >= 6 reads), each represented by the exon union of its clusters -> PREFIX.cand.{candidates.tsv,contigs.fa,
-# nets.fa,...}. With a flagged candidate: tools/o3_augment.py writes PREFIX.aug.{fa,copies.tsv,copies.fa,regions.txt,
+# its pre-registered acceptance, Amendment 12, FAILED, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; the re-run, Amendment 13,
+# passed, but its no-deletion control, Amendment 14, failed, so the 2026-10-03 default flip was reverted,
+# docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md — naming the stage runs it, `all` runs it only with --candidates, and assign
+# and flag use its products only with --candidates): o3_candidates turns each family's read net (reads with a record on its
+# copies, plus the unmapped and the poorly placed reads >= 300 bp that align, map-ont, over >= 50% of their length at
+# de <= 0.20 to the run's net reads or copies: Amendment 13b) into read clusters at --delta, one consensus per cluster on its
+# structurally central member (Amendments 13d/13e), and candidate copies (clusters beyond delta of every reference locus,
+# merged by the significance test, flagged with >= 6 reads), each represented by the exon union of its clusters ->
+# PREFIX.cand.{candidates.tsv,contigs.fa,nets.fa,...}. With a flagged candidate: tools/o3_augment.py writes PREFIX.aug.{fa,copies.tsv,copies.fa,regions.txt,
 # families.txt} (each candidate a contig `cand_<family>_<k>` of PREFIX.aug.fa and a `member_status candidate` row of its
 # family), and the reads of the candidate families (PREFIX.cand.nets.fa, every read of each such family's net) are
 # realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign --candidates` gives
@@ -495,7 +498,7 @@ case "$STAGE" in
   all) stage_assemble; stage_families
        if [ "$LEGACY_CATALOG" = 1 ]; then stage_catalog
        elif [ "$CANDIDATES" = 1 ]; then stage_candidates
-       else say "candidates: skipped (opt-in, --candidates; Amendment 12 failed, R14)"; fi
+       else say "candidates: skipped (opt-in, --candidates; R14: Amendment 12 failed; R22: Amendment 14 failed)"; fi
        stage_assign; stage_flag;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;
 esac

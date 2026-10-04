@@ -1003,6 +1003,17 @@ def classify(a):
           f"one; A9 candidates reproduced {len(a9_hit)}/{len(a9)}; families flagged by both {len(fam_any & a9_fams)} (A9 {len(a9_fams)}, A14 {len(fam_any)})")
     print(f"overlap with the A13 run's {len(a13_s)} survivor-derived flags: {len(m13)} of the {len(rows)} flags match one; A13 survivor-derived flags "
           f"reproduced {len(a13_hit)}/{len(a13_s)}")
+    def describe(pop):
+        hh = sorted(float(x["hap_hit"].split()[-1]) for x in pop if x["hap_hit"] != "-")
+        ds = sorted(float(x["d"]) for x in pop)
+        rd = sorted(x["n_reads"] for x in pop)
+        med = lambda v: (v[(len(v) - 1) // 2] + v[len(v) // 2]) / 2
+        return (f"n {len(pop)}; best haplotype hit (identity x coverage, {len(hh)} with a hit) median {med(hh):.4f} ({hh[0]:.4f}-{hh[-1]:.4f}), "
+                f">= 0.99 {sum(v >= 0.99 for v in hh)}, >= 0.95 {sum(v >= 0.95 for v in hh)}, < 0.90 {sum(v < 0.90 for v in hh)}; whole-length d "
+                f"median {med(ds):.5f} ({ds[0]:.5f}-{ds[-1]:.5f}), <= 0.02 {sum(v <= 0.02 for v in ds)}, > 0.10 {sum(v > 0.10 for v in ds)}; "
+                f"reads median {med(rd):g} ({rd[0]}-{rd[-1]}), >= 100 {sum(v >= 100 for v in rd)}, <= 10 {sum(v <= 10 for v in rd)}") if pop else "n 0"
+    print(f"the unmatched (c) flags: {describe([x for x in rows if x['cls'] == 'c_unmatched'])}")
+    print(f"all false flags (b + c + pri): {describe([x for x in rows if x['cls'] != 'a_haplotype_only'])}")
     print("per family (flagged candidates by class; a = haplotype-only, b = allele, c = unmatched):")
     for f in sorted(per_fam, key=name_key):
         v = per_fam[f]
@@ -1032,7 +1043,7 @@ def cscore(a):
                 return ("copy", g)
         return ("other", f"{chrom}:{s // 100000}")
 
-    def calls(bam):
+    def calls(bam, ties=None):
         recs = collections.defaultdict(list)
         for rd in pysam.AlignmentFile(bam).fetch(until_eof=True):
             if rd.query_name not in want or rd.is_supplementary:
@@ -1048,6 +1059,8 @@ def cscore(a):
             fam = lab[n]["family"]
             prim = next((r for r in rs if not r[0]), rs[0])
             srt = sorted(rs, key=lambda r: -r[4])
+            if ties is not None:                      # the loci at >= 0.98 x the best AS (what a tie is between; beside, no rule)
+                ties[n] = {locus(r[1], r[2], r[3], fam) for r in srt if r[4] >= TIE * srt[0][4]}
             if len(srt) > 1 and srt[1][4] > 0 and srt[1][4] >= TIE * srt[0][4]:
                 if len({locus(r[1], r[2], r[3], fam) for r in srt if r[4] >= TIE * srt[0][4]}) > 1:
                     out[n] = ("unplaced", None); continue
@@ -1065,9 +1078,9 @@ def cscore(a):
         if kind == "ctg":
             return "own_candidate" if src[key] == "S:" + r["copy"] else "false_move"
         return "elsewhere"
-    res, per = {}, {}
+    res, per, ties_c = {}, {}, {}
     for arm, bam in (("R0", f"{a.control}/R0.bam"), ("C", f"{a.w}/C.bam")):
-        cc = calls(bam)
+        cc = calls(bam, ties_c if arm == "C" else None)
         per[arm] = {n: (cls(n, cc.get(n, ("unplaced", None))), cc.get(n, ("unplaced", None))[1]) for n in lab}
         res[arm] = collections.Counter(v[0] for v in per[arm].values())
         print(f"[{arm}]", dict(sorted(res[arm].items())))
@@ -1095,6 +1108,29 @@ def cscore(a):
           ("; ".join(f"{f} -> {t} ({s_}, {o}): {v}" for (f, t, s_, o), v in sorted(to.items(), key=lambda kv: -kv[1])) or "none"))
     print("own-candidate placements by (family, candidate): " + "; ".join(f"{f} {t}: {v}" for (f, t), v in sorted(own.items(), key=lambda kv: -kv[1])))
     print("reads placed in R0 and unplaced in C, by family: " + "; ".join(f"{f} {v}" for f, v in sorted(unpl.items(), key=lambda kv: -kv[1])))
+    # what those reads tie between in C (the loci at >= 0.98 x their best AS): their own copy and a flag derived from it (false or
+    # true by `classify`'s candidates_classified.tsv, when it exists), or not
+    kpath = f"{a.w}/candidates_classified.tsv"
+    klass = {r["iso"]: r["class"] for r in tsv(kpath)} if os.path.exists(kpath) else {}
+    tie_kind = collections.Counter()
+    for r, (k, L) in per["C"].items():
+        if k != "unplaced" or per["R0"][r][0] == "unplaced":
+            continue
+        own_copy = lab[r]["copy"]
+        t = ties_c.get(r)
+        flags = [key for kind, key in (t or ()) if kind == "ctg"]
+        if not t:
+            tie_kind["no mapped record in C"] += 1
+        elif ("copy", own_copy) not in t:
+            tie_kind["do not tie with their own copy"] += 1
+        elif any(src[f] != "S:" + own_copy for f in flags):
+            tie_kind["tie their own copy with a flag derived from another copy (or labelled elsewhere)"] += 1
+        elif flags:
+            k = "" if not klass else "the TRUE " if all(klass.get(f) == "a_haplotype_only" for f in flags) else "a false "
+            tie_kind[f"tie their own copy with {k or 'a '}flag derived from it"] += 1
+        else:
+            tie_kind["tie their own copy with other loci only"] += 1
+    print(f"those {sum(unpl.values())} reads by what they tie between in C: " + "; ".join(f"{v} {k}" for k, v in tie_kind.most_common()))
     with open(f"{a.w}/calls.tsv", "w") as o:
         o.write("read\tfamily\tcopy\trole\tR0\tC\tC_target\n")
         for r in sorted(lab):
@@ -1102,7 +1138,7 @@ def cscore(a):
             o.write(f"{r}\t{lab[r]['family']}\t{lab[r]['copy']}\t{lab[r]['role']}\t{per['R0'][r][0]}\t{k}\t{L[1] if L else '-'}\n")
     json.dump(dict(arms={k: dict(v) for k, v in res.items()}, n_reads=n, false_moves=fm, C2_prime=ok,
                    false_moves_to={"|".join(k): v for k, v in to.items()}, own_candidate_by={"|".join(k): v for k, v in own.items()},
-                   newly_unplaced_by_family=dict(unpl)), open(f"{a.w}/score.json", "w"), indent=0)
+                   newly_unplaced_by_family=dict(unpl), newly_unplaced_ties=dict(tie_kind)), open(f"{a.w}/score.json", "w"), indent=0)
 
 
 ELAPSED = re.compile(r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)")

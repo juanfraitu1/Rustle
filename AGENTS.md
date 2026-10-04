@@ -20,7 +20,8 @@ delete them without the user's confirmation.
 2. `REPRODUCE.md` — every reported number with its exact command.
 3. `tools/rustle_pipeline.sh` — the whole pipeline, one command per stage (`assemble|families|candidates|catalog|assign|flag|all`;
    `assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`; `candidates` is opt-in,
-   `--candidates`, since its acceptance failed: `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`), with a default-on
+   `--candidates`, since its acceptance failed: `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`, and Amendment 14's no-deletion
+   control failed: `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`), with a default-on
    intermediate cache in `PREFIX.cache/` and `--inspect` for analyst dumps.
 4. `docs/NEGATIVE_RESULTS_REGISTER.md` — every refuted idea; check it before proposing anything.
 5. `docs/MODULE_STATUS.md` — what each Rust module is (shipped, opt-in, other binary); a test keeps it in sync.

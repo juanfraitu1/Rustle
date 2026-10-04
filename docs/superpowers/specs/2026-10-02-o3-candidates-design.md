@@ -295,11 +295,11 @@ reverted on 2026-10-03 by ruling R22** (`docs/O3_CANDIDATES_CONTROL_A14_2026-10-
   - **R23**: the stage's cost on a full BAM is measured in a separate task; until then it is disclosed as not yet measured.
     **Measured 2026-10-03 (Amendment 14's task, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`): one batch of 50 families on the full
     gorilla fibroblast Iso-Seq BAM (23 GB, 34.9 M mapped records; the 378-family / 915-copy interval table) did NOT finish in a
-    10-minute call.** Its nets phase alone took 397-469 s (two attempts): pass A + the sequential pass-B sweep 146-155 s; the 50
-    families' net reads written as attribution targets (648,946 reads, 2.6 GB) 28-72 s; the attribution alignment (88,571 reads: 202
-    unmapped + 88,369 poorly placed) 213-250 s; then 7-14 of the 50 families were clustered (16-20 s each) before the stop; peak RSS
-    10.7 GB at the stop. Every call repeats the whole-BAM sweep and the targets grow with the batch's nets; from the measured phases
-    this one batch needs ~20 min (an estimate: R23's task stops after one batch that cannot finish).
+    10-minute call.** Its nets phase alone took 397-469 s (two attempts; start to the pass-A/B log lines): pass A + the sequential
+    pass-B sweep 146-155 s; the 50 families' net reads written as attribution targets (648,946 reads, 2.6 GB) 28-72 s; the attribution
+    alignment (88,571 reads: 202 unmapped + 88,369 poorly placed) 213-250 s; then 7-14 of the 50 families were clustered (16-20 s
+    each) before the stop; peak RSS 10.7 GB at the stop. Every call repeats the whole-BAM sweep and the targets grow with the batch's
+    nets; from the measured phases this one batch needs ~20-25 min (an estimate: R23's task stops after one batch that cannot finish).
   - **R24**: A13-2's pooled-target reading is the registered one (as A12's doc decided).
 - **Amendment 14's outcome (2026-10-03):** C1' FAILED — 35 of the 53 families carry a false flag with nothing deleted (bar 8; 54 of
   the 56 flagged unions match neither of KB3781's haplotypes at 0.999, 1 is an allele, 1 is GWFAM175's real paternal-only copy); C2'

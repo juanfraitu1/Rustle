@@ -82,10 +82,11 @@ GWFAM175, also carries false ones); A9's IsoCon chain at any support: **16/53 = 
   chr5 `CM054563.2:40,027,838-40,031,943` (A9's 12-transcript candidate: `40,028,172-40,031,100`; register row 1204), outside the lift of
   every copy of the array. Its siblings are false: `iso_GWFAM175_2` (116 reads) is an allele (1.0000 at paternal
   `CM054563.2:41,468,509-41,471,848`, inside the lift of GWFAM175:5) and `iso_GWFAM175_0` (191 reads) is unmatched.
-- **The 54 unmatched flags exist in neither of KB3781's haplotypes at 0.999:** best haplotype hit median 0.956 (0.486-0.9985; 3 >= 0.99,
-  31 >= 0.95, 11 < 0.90); whole-length d to the nearest `_pri` locus median 0.044 (0.0097-0.515; 13 <= 0.02, 12 > 0.10). They are well
-  supported, not few-read noise: reads per false flag median 191 (6-534; 40 with >= 100 reads, 8 with <= 10). What they are — mosaic
-  consensus of paralogs, transcript structures absent from both assemblies, or residual consensus error — is not determined here.
+- **The 54 unmatched flags exist in neither of KB3781's haplotypes at 0.999.** Over these 54: best haplotype hit median 0.956
+  (0.486-0.9985; 2 >= 0.99, 30 >= 0.95, 11 < 0.90); whole-length d to the nearest `_pri` locus median 0.045 (0.0097-0.515; 13 <= 0.02,
+  12 > 0.10); reads per flag median 196.5 (6-534; 39 with >= 100 reads, 8 with <= 10) — well supported, not few-read noise. (Over all
+  55 false flags, b + c: reads median 191, 40 with >= 100; d median 0.044.) What they are — mosaic consensus of paralogs, transcript
+  structures absent from both assemblies, or residual consensus error — is not determined here.
 - **They recur:** 28 of the 56 flags reproduce one of the A13 run's 46 survivor-derived flags (same family, identity >= 0.999 over >= 90%
   of the shorter sequence: Amendment 9's overlap rule) — 28 of those 46 arise with nothing deleted — and 29 of the 31 families with an
   A13 survivor-derived flag carry a false flag here; 18 of the 25 families whose deleted copy A13 found do too. Against A9's 28 IsoCon
@@ -108,9 +109,11 @@ GWFAM175, also carries false ones); A9's IsoCon chain at any support: **16/53 = 
 - **C2': 318 / 59,013 = 0.54% <= 5% -> HOLDS.** 295 of the 318 are GWFAM175 reads on `iso_GWFAM175_1` — the real paternal-only copy
   (class a), whose reads the labels can only give to a `_pri` copy (as in A12's and A13's arm M) — then 19 GWFAM244 reads on its
   `elsewhere`-labelled `iso_GWFAM244_1`, 2 GWFAM175 reads on `iso_GWFAM175_2`, 1 + 1 on GWFAM331's and GWFAM37's flags.
-- Beside (no rule): 4,165 reads placed in R0 become unplaced in C — a copy's reads tie between the copy and its own flagged union
-  (GWFAM47 707, GWFAM98 476, GWFAM173 446, GWFAM158 433, GWFAM54 410, GWFAM269 375, GWFAM348 342, GWFAM268 214, ...); 3,774 move onto
-  a union derived from their own copy; stay falls 13.7%. In O2 every one of the 55 false flags is an extra copy.
+- Beside (no rule): 4,165 reads placed in R0 become unplaced in C (by family: GWFAM47 707, GWFAM98 476, GWFAM173 446, GWFAM158 433,
+  GWFAM54 410, GWFAM269 375, GWFAM348 342, GWFAM268 214, ...). By their 0.98 AS ties in C: 4,074 tie between their own copy and a false
+  flag derived from it; 81 tie their own copy with a flag derived from another copy (or labelled `elsewhere`; 43 of them with GWFAM402's flag);
+  10 do not tie with their own copy (9 tie between two flags). 3,774 move onto a union derived from their own copy; stay falls 13.7%.
+  In O2 every one of the 55 false flags is an extra copy.
 
 ## The decision (Amendment 14, ruling R22): the flip is reverted
 
@@ -135,10 +138,11 @@ other seven batches have 61-226 k) ran twice and was stopped both times; the mea
 | | attempt 1 | attempt 2 |
 |---|---|---|
 | stop | the lock's `timeout 585` (SIGTERM; `/usr/bin/time` dies with the stage: no stats) | `timeout -s INT 570` (`/usr/bin/time` survives SIGINT and reports) |
-| elapsed at the stop (realtime) | 650 s (bash `time` 649.8 s) | **631.2 s** (`/usr/bin/time` Elapsed) |
+| elapsed at the stop (realtime) | 650 s (bash `time` 649.8 s; terminal output, saved in the score copy) | **631.2 s** (`/usr/bin/time` Elapsed) |
 | pass A + the pass-B sweep done (`attrib.fa` complete) | +155 s | +146 s |
 | attribution targets written (`attrib_targets.fa`) | +183 s | +218 s |
-| attribution alignment done (`attrib.paf`) = the nets phase | **+396 s** | **+468 s** |
+| attribution alignment done (`attrib.paf` mtime) | +396 s | +468 s |
+| the stage's pass-A / pass-B log lines = the end of the nets phase (log timestamps) | **+397 s** | **+469 s** |
 | families clustered when stopped (of 50) | 14 (16.4 s each) | 7 (19.9 s each) |
 | peak RSS (the stage and the minimap2 runs it had reaped) | – | **10.7 GB** (10,688,296 kB); user 1,557.7 s, sys 164.8 s |
 
@@ -146,12 +150,14 @@ other seven batches have 61-226 k) ran twice and was stopped both times; the mea
   20,356 secondary-only reads.
 - **The attribution set** (written during the sweep): **88,571 reads, 167 MB** — 202 unmapped >= 300 bp + 88,369 poorly placed >= 300 bp
   in no net of the batch (206 below the floor). **The targets: 649,861 records, 2.61 GB** — the batch's 648,946 net reads (a read in two
-  nets once per net) + the 915 copies. Aligned 61,016 (117 unmapped, 60,899 poorly placed); attributed 30,457 (5 / 30,452); **joined the
+  nets once per net) + the 915 copies (record counts from the terminal output of attempt 1's temp dir before it was deleted, saved in
+  the score copy; the size from its listing). Aligned 61,016 (117 unmapped, 60,899 poorly placed); attributed 30,457 (5 / 30,452); **joined the
   batch's families 26,710** (no truth labels on this library: right / wrong unknown).
 - No flagged candidate: the genome phase was never reached.
-- **Cost statement.** On a full library one call of 50 families spends 396-468 s on its nets alone — a sequential sweep of the whole
-  23-GB BAM plus one alignment of ~89 k reads against the batch's whole nets — before any clustering; at 16-20 s per family the batch
-  would need about 20-25 min (an estimate from the measured phases, not a measurement), and every batch repeats the sweep. The stage
+- **Cost statement.** On a full library one call of 50 families spends 397-469 s on its nets alone (start to the pass-A/B log lines)
+  — a sequential sweep of the whole 23-GB BAM plus one alignment of ~89 k reads against the batch's whole nets — before any
+  clustering; at 16.4-19.9 s per family the batch would need about 20-25 min (397-469 s + 50 x 16.4-19.9 s = 20-24 min before the
+  genome phase: an estimate from the measured phases, not a measurement), and every batch repeats the sweep. The stage
   does not fit 10-minute calls at ~50 families per batch, and its nets phase scales with the library (the attribution set) and with the
   batch's expression (the targets).
 - Clock note: the realtime clock (`date`, gawk's `systime()`, `/usr/bin/time`) ran ~11% ahead of the timeout's timer (585 s -> 650 s, 570
