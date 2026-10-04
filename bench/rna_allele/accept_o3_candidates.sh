@@ -12,9 +12,11 @@
 # Steps, in order (every heavy step is ONE foreground call under tools/rlock.sh heavy, each < 10 min; light ones under rlock light):
 #   copies               (a12) panel.json -> A12.copies.tsv / A12.copies.fa / A12.regions (panel_to_copies.py)         light
 #   link                 (a13) A12's copies table / FASTA / regions / batches.txt and R.bam (+ .bai) linked into $A           light
-#   plan [n] [k] [file]  families not in the first k lines of the batch file -> n new batches on an estimated cost     light
+#   plan [n] [k] [file]  (a13) families not in the first k lines of the batch file -> n new batches on an estimated cost;
+#                        refuses to write through a link (a13/batches.txt links to A12's registered plan)               light
 #   split                each scored part in two halves -> $A/parts/scored.part{0,1,2}{a,b}.fa (shorter malign calls)   light
-#   stage <run> <g>      o3_candidates on batch g (line g+1 of $W/batches.txt, else $A/batches.txt), time -v -> cand_g<g>.* heavy
+#   stage <run> <g>      (a13) o3_candidates on batch g (line g+1 of $W/batches.txt, else $A/batches.txt), time -v ->
+#                        cand_g<g>.* (ACC=a12 refused: A12's registered products stay as they are)                    heavy
 #   concat <run>         the batches' products -> cand.* (one header; families in the stage's order)                 light
 #   nets <run>           (a13) the nets as the stage built them: pass A from R.bam and pass B's attribution re-run per batch
 #                        (minimap2 map-ont), checked against the stage's own products (every batch log's pass-B counts,
@@ -75,7 +77,10 @@ case $step in
     for f in A12.copies.tsv A12.copies.fa A12.regions batches.txt; do ln -sfn $A12/$f $A/$f; done
     for f in R.bam R.bam.bai; do ln -sfn $L/$f $A/$f; done
     ls -l $A | grep -- "->" ;;
-  plan)   $LIGHT $PY plan --w $A --batches "${1:-7}" --keep "${2:-0}" --batch-file "${3:-$A/batches.txt}" ;;
+  plan)   # A12's plan is a registered product: never rewritten (under a13 the default batch file is a link to it, so name another)
+    only a13; BF=${3:-$A/batches.txt}
+    [ ! -L "$BF" ] || { echo "plan: $BF is a link (to A12's registered batch plan): name another batch file" >&2; exit 2; }
+    $LIGHT $PY plan --w $A --batches "${1:-7}" --keep "${2:-0}" --batch-file "$BF" ;;
   split)  # each scored part in two halves (alternate records): shorter heavy calls when the lock is contended; per-read results unchanged
     mkdir -p $A/parts
     for p in 0 1 2; do
@@ -84,6 +89,7 @@ case $step in
     done
     grep -c ">" $A/parts/*.fa ;;
   stage)
+    only a13                                                     # A12's registered stage products (a12/cand_g*) are never overwritten
     BF=$W/batches.txt; [ -s $BF ] || BF=$A/batches.txt          # a run may carry its own batch plan (same families, other grouping)
     g=${1:?batch}; fams=$(sed -n "$((g + 1))p" $BF); [ -n "$fams" ] || { echo "no batch $g in $BF" >&2; exit 2; }
     # stderr (the stage's log and time -v) timestamped line by line (epoch s) for the per-family timing

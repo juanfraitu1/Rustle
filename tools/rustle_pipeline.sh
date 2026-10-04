@@ -15,7 +15,8 @@
 #             = the copy table + one row per candidate) and the patch realignment of the candidate families' reads to
 #             PREFIX.aug.fa (PREFIX.aug.bam): a read whose best alignment is on a candidate contig is PLACED there by the
 #             realignment (ruling R13). --delta D (0.00958), --cand-max-reads N (1000). Cost: PREFIX.aug.fa is a copy of
-#             the whole genome, and the realignment indexes it on every run (about 400 s and 19 GB on a human genome)
+#             the whole genome, and the realignment indexes it on every run (about 400 s and 19 GB on a human genome).
+#             The stage's own cost on a full BAM is not yet measured; see Amendment 14 / R23.
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment (assign/abstain) on the families'  copy_assign --families
 #             copy table PREFIX.fam.copies.*; with the candidates stage's flagged candidates (the default), two runs (the
@@ -107,8 +108,10 @@ done
 # --candidates and --legacy-catalog name two different copy tables for assign: refused together, whatever the stage. Then the
 # default of CANDIDATES (unset = no switch given): 1 since 2026-10-03 (prereg Amendment 13 passed), except with
 # --legacy-catalog, whose assign reads the legacy catalog. Written as a `case "$STAGE"` block, as the final dispatch is, so
-# figures/samples.py's driver_stage_code leaves it out of every stage's code hash (the default itself is the assignment
-# CANDIDATES="" above, which the stages that read CANDIDATES hash).
+# figures/samples.py's driver_stage_code leaves it out of every stage's code hash. That includes the EFFECTIVE default set
+# here: the stages that read CANDIDATES (assign, flag) hash only the assignment CANDIDATES="" above, which does not change
+# with the value chosen here. A change of this default must therefore also change that assignment or those stages' code, or
+# figures' run-cache will not see it.
 case "$STAGE" in
   *) if [ "$CANDIDATES" = 1 ] && [ "$LEGACY_CATALOG" = 1 ]; then
        echo "[rustle_pipeline] --candidates and --legacy-catalog exclude each other (assign reads the families' copy table with its candidates, or the legacy catalog): drop one" >&2; exit 2

@@ -3,8 +3,9 @@
 Date 2026-10-02. Branch `machine2/soto-evidence` (== `main`). Status: implemented 2026-10-02; the pre-registered acceptance
 (Amendment 12) FAILED, so the driver's `candidates` stage went OPT-IN (ruling R14, §9b; `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
 Amendment 13 (+ 13b-13e; rulings R16-R21, §9b) changed the net attribution and the template, and the re-run acceptance PASSED
-(`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): the stage is a DEFAULT stage of the driver's `all` since 2026-10-03
-(`--no-candidates` turns it off; §7).
+(`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): commit 1f49d0f0 makes the stage a DEFAULT stage of the driver's `all`
+(`--no-candidates` turns it off; §7), pending Amendment 14's no-deletion control (ruling R22, §9b), not yet run: the flip ships only
+if that control holds.
 
 ## 1. Goal
 
@@ -217,7 +218,8 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
 `rep_choice.py` measure); wall time <= 2 x IsoCon's (~20 min for 53 families at the 1,000-read cap).
 **Re-run acceptance (prereg Amendment 13 + 13b-13e, written before the A13 run):** A13-1 = D right >= 0.80 x C, C = IsoCon's right D
 reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%; A13-2 = A12-2; A13-3 = A12-3. All three PASSED on
-2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage is default-on (§9b).
+2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage was flipped to default-on (1f49d0f0), pending
+Amendment 14's no-deletion control (R22, §9b).
 
 ## 9b. Plan rulings (2026-10-02, recorded here so the spec and the plan agree)
 
@@ -275,12 +277,18 @@ reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%
     total indel bases" picked fragments.
   - **R21** (Amendment 13e, `ff869c40`): eligibility = aligned to >= min(0.5 x (n - 1), 50) other members (the all-vs-all's `-N 100` made
     50% unattainable in 400+-read clusters); a member with no aligned partner is never chosen while another has a mean.
-- **Default flip (2026-10-03, after Amendment 13's acceptance):** A13-1 PASSED (D right 7,898 >= 0.80 x C = 5,842.4; C = 6,048 on a
-  survivor + 1,255 attributed = 7,303; false moves 323 = 0.77%), A13-2 PASSED (99.50% of 15,364 read-candidate pairs kept, pooled
-  targets as A12's doc decided; 99.78% isolated), A13-3 PASSED (25.9 min summed over 5 batches) -> the driver's `candidates` stage is
-  a default stage of `all` and `assign` / `flag` use its products; `--no-candidates` is the off switch (R14's opt-in ends). Reported
-  beside, not decided on: A12-1's bar (10,230) is still not met; 2 of 82 candidates keep < 95% of their reads on their own (isolated);
-  46 of the 82 flagged candidates are survivor-derived (A12: 12 of 39) and S reads left unplaced rise from 1,182 to 3,527.
+- **Default flip (2026-10-03, commit 1f49d0f0, after Amendment 13's acceptance) — pending Amendment 14's no-deletion control (R22),
+  not yet run:** A13-1 PASSED (D right 7,898 >= 0.80 x C = 5,842.4; C = 6,048 on a survivor + 1,255 attributed = 7,303; false moves
+  323 = 0.77%), A13-2 PASSED (99.50% of 15,364 read-candidate pairs kept with pooled targets, the registered reading, R24; 99.78%
+  isolated), A13-3 PASSED (25.9 min summed over 5 batches) -> 1f49d0f0 makes the driver's `candidates` stage a default stage of `all`,
+  with `assign` / `flag` using its products and `--no-candidates` as the off switch. Reported beside, not decided on: A12-1's bar
+  (10,230) is still not met; 2 of 82 candidates keep < 95% of their reads on their own (isolated); 46 of the 82 flagged candidates are
+  survivor-derived (A12: 12 of 39) and S reads left unplaced rise from 1,182 to 3,527.
+  - **R22** (2026-10-03, after the acceptance): the flip does NOT ship until Amendment 14's no-deletion control (prereg, last section:
+    C1' <= 8 of the 53 families with a false flag, C2' <= 5% false moves without a deletion) holds for the stage; if it fails,
+    1f49d0f0 is reverted and the stage stays opt-in (R14).
+  - **R23**: the stage's cost on a full BAM is measured in a separate task; until then it is disclosed as not yet measured.
+  - **R24**: A13-2's pooled-target reading is the registered one (as A12's doc decided).
 
 ## 10. Open items (deferred, named)
 

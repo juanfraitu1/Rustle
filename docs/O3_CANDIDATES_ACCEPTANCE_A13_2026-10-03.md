@@ -1,4 +1,4 @@
-# `o3_candidates` re-run on the 53-family held-out (Amendment 13 + 13b-13e): A13-1 PASSES, A13-2 PASSES, A13-3 PASSES — the candidates stage is default-on — 2026-10-03
+# `o3_candidates` re-run on the 53-family held-out (Amendment 13 + 13b-13e): A13-1 PASSES, A13-2 PASSES, A13-3 PASSES — default-on flip made in 1f49d0f0, pending Amendment 14's no-deletion control (R22), not yet run — 2026-10-03
 
 Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md`, Amendment 13 (`e3e9d4bf`) with 13b (`d69f0e02`), 13c (`065b2b46`),
 13d (`f31f663e`) and 13e (`ff869c40`), each written before the A13 run; Amendment 12's rules (A12-1/2/3) unchanged except A13-1's
@@ -111,6 +111,9 @@ totals) counted over the truth-free attainable D reads:
 - **A13-1 PASSES: D right 7,898 >= 0.80 x C = 5,842.4, and false moves 323 / 41,727 = 0.77% <= 5%.** On the attainable reads alone the
   stage places 6,740 right (92.3% of C), so the verdict does not rest on the registered rule's all-reads numerator. With part (2) read
   from `reads.tsv` alone (the attributed D reads that reached a reported cluster: 938 reads, C2 730, C 6,778, bar 5,422.4) it passes too.
+  Counting supplementary records as well in part (1) (a record of any kind on a survivor: 7,286 reads; part (2) 1,416): C = 6,150 +
+  1,189 = 7,339, bar 5,871.2 — verdict unchanged. The registered reading is the brief's "any record, primary or secondary" (pass A's
+  scope: supplementary records name no read in the stage either).
 - Beside, not decided on: **A12-1's original bar (10,230 = 80% of IsoCon's 12,787) is still not met** (7,898 = 77.2% of it).
   Amendment 5's overall rule, R vs arm M: wrong D 10,218 -> 4,190 (-59.0%), false moves 0.77% -> HELP.
 - Where the right calls come from (post hoc, `decompose`; the A13 arm M read by read equals `merge_test.py score`): D reads with a record
@@ -130,7 +133,8 @@ totals) counted over the truth-free attainable D reads:
 Measured exactly as A12-2 (`accept_o3_candidates.py keep`: each flagged candidate's reads, `reads.tsv` via `clusters.tsv`, aligned with
 `minimap2 -c -x splice:hq -uf -N 10` — the arm-M preset as A12 used it — to the unions and to the cluster consensus sequences; kept = best
 AS on its own union >= 0.98 x its best AS over its candidate's consensus sequences). The prereg does not choose between pooled targets
-(all unions, all consensus sequences) and isolated targets (per candidate); A12's doc decided on pooled, and so does this one.
+(all unions, all consensus sequences) and isolated targets (per candidate); A12's doc decided on pooled, and so does this one —
+**ruling R24 (2026-10-03, after this run): A13-2's pooled reading is the registered one.**
 
 | | pairs measured | kept | lost | kept fraction |
 |---|---|---|---|---|
@@ -199,23 +203,49 @@ arm M.
   11 more survivor-derived flags; doubling it links more D clusters as alleles (iii: 4) and loses 2 detections. The registered delta sits
   between, and A13-1 holds at all three.
 
-## The default flip (A13-1, A13-2 and A13-3 all hold)
+## The default flip: made in commit 1f49d0f0, pending Amendment 14 (ruling R22)
 
-`tools/rustle_pipeline.sh`: `CANDIDATES` defaults to on — `all` runs `candidates` between `families` and `assign`, and `assign` / `flag`
-use its products — with `--no-candidates` as the off switch; `--candidates` (the opt-in switch of ruling R14) is still accepted;
-`--legacy-catalog` implies `--no-candidates` (an explicit `--candidates` with it still exits 2); `cand_ready` unchanged. The driver
-e2e (`tests/fixtures/o3_candidates/driver/run_e2e.sh`, on the 0f5824a7 binaries) passes with check (d) rewritten ("a plain assign uses
-the products": split made, MCL0 a 2-copy family) and a new control (e) (`assign --no-candidates`: one line says the products are
-unused, no split, MCL0 1 copy). Docs updated: README, AGENTS, REPRODUCE, figures/README + samples.py comments, MODULE_STATUS, the
-spec (§4, §5.1-5.5, §7, §9, §9b rulings R16-R21 and the flip note, §10).
+Commit 1f49d0f0 (2026-10-03, after these three verdicts) flipped `tools/rustle_pipeline.sh` to `CANDIDATES` on by default — `all` runs
+`candidates` between `families` and `assign`, and `assign` / `flag` use its products — with `--no-candidates` as the off switch;
+`--candidates` (the opt-in switch of ruling R14) stays accepted; `--legacy-catalog` implies `--no-candidates` (an explicit
+`--candidates` with it still exits 2); `cand_ready` unchanged. In that commit the driver e2e (`tests/fixtures/o3_candidates/driver/
+run_e2e.sh`, on the 0f5824a7 binaries) passes with check (d) rewritten ("a plain assign uses the products": split made, MCL0 a 2-copy
+family) and a new control (e) (`assign --no-candidates`: one line says the products are unused, no split, MCL0 1 copy); it also carries
+the matching README, AGENTS, REPRODUCE, figures/README + samples.py comments, MODULE_STATUS row, module header and spec (§4, §7, §9,
+§9b) lines.
+
+**Ruling R22 (2026-10-03, after this acceptance): the flip does NOT ship until Amendment 14's no-deletion control holds for the stage**
+(prereg, last section: Amendment 9's control with the stage in place of the IsoCon chain; C1' = families with >= 1 false flag <= 8 of
+53, C2' = false moves without a deletion <= 5% of all reads). That control has not been run yet. If it holds, 1f49d0f0 ships as
+committed; if it fails, 1f49d0f0 is reverted and the stage stays opt-in (R14), and this document's verdicts above stand unchanged. The
+stage's cost on a full BAM is measured in a separate task (ruling R23) and is not yet known.
+
+**Revert recipe (2026-10-03), if R22 reverts the flip.** Everything in this document and in register rows 1221-1225 is worded to stay
+true either way (the choice of this fix round: the true-either-way wording, plus this recipe because the gating commit itself — the one
+after 1f49d0f0 that adds this paragraph — edits lines 1f49d0f0 introduced). Run `git revert 1f49d0f0`. Checked on 2026-10-03 in a
+scratch worktree on top of the gating commit: it conflicts in exactly three files, five hunks, resolved as follows (and, so resolved,
+the pre-flip e2e with its opt-in check (d) passes, 9/9):
+- `tools/rustle_pipeline.sh`, 1 hunk — the comment above the `case "$STAGE" in *)` block (the default of `CANDIDATES`): take the
+  pre-flip side (aad7aca3's text: the block only refuses `--candidates` with `--legacy-catalog`). The code (`CANDIDATES=0`, the block,
+  the `all` dispatch) and the header revert by themselves; the header line "The stage's own cost on a full BAM is not yet measured;
+  see Amendment 14 / R23." merges in and stays.
+- `README.md`, 1 hunk — the pipeline paragraph: take the pre-flip side (`candidates` OPT-IN, `--candidates`) and re-add its clause
+  "its cost on a full BAM is not yet measured, see Amendment 14 / R23".
+- `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`, 3 hunks — header and §9: take the pre-flip side and append "The default
+  flip (1f49d0f0) was reverted on <date> by ruling R22 (Amendment 14 failed)."; §9b: keep the flip note and R22-R24 as written (they
+  record what was decided) and append that dated line.
+Everything else 1f49d0f0 changed reverts without conflict (the driver's default and `all` dispatch, the e2e checks, README / AGENTS /
+REPRODUCE / figures / MODULE_STATUS / module-header wording). Then run `bash tools/rlock.sh heavy bash
+tests/fixtures/o3_candidates/driver/run_e2e.sh --bin <release> --out <scratch>`.
 
 ## Caveats
 
 - **The flip raises the cost on S reads, which no registered rule bounds:** 46 of the 82 flagged candidates are survivor-derived (A12:
-  12 of 39; median whole-length d 0.053, 9 below 0.02), and S reads left unplaced in arm M rise from 1,182 (A12) to 3,527 (8.5% of S;
+  12 of 39; median whole-length d 0.0513, 9 below 0.02), and S reads left unplaced in arm M rise from 1,182 (A12) to 3,527 (8.5% of S;
   IsoCon 1,278): the reads of a surviving copy tie between it and its own survivor-derived candidate and abstain (GWFAM47 491, GWFAM158
   428, GWFAM54 411, GWFAM173 280, GWFAM268 214, ...). They are not false moves (false moves fall to 323), but in O2 these candidates are
-  extra copies. Amendment 9's no-deletion control (false flags without a deletion) has not been re-run for the A13 stage.
+  extra copies. Amendment 9's no-deletion control (false flags without a deletion) has not been run for the A13 stage: by ruling R22 it
+  is the precondition of the flip (Amendment 14), pending.
 - **One deleted copy, several candidates:** exactly one D-derived candidate in 20 of the 25 found copies; in GWFAM100 the two D-derived
   candidates tie for 368 D reads (D right 477 in A12 -> 110).
 - The registered A13-1 compares the stage's D right over ALL reads with C over the attainable reads; on the attainable reads alone the

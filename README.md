@@ -41,7 +41,7 @@ regrouping, `copy_assign --bridge-regroup f1v2`, and the containment escape `mcl
 `candidates` — O3 candidate copies from each family's reads, `o3_candidates` — is a DEFAULT stage whose products assign and
 flag use, because its re-run pre-registered acceptance passed: `docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`;
 `--no-candidates` turns it off, and it was opt-in from 2026-10-02 after the first acceptance failed,
-`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
+`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; its cost on a full BAM is not yet measured, see Amendment 14 / R23). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
 the earlier pipeline, byte for byte except `assign` on a catalog with cross-chromosome families (2026-10-02, `copy_assign
 --help`, `--families`) — `REPRODUCE.md` §5 and its driver section, `bench/ASSEMBLY_POLISH.md` addendum 3). `bench/` holds the
 9 Python files behind the record's analysis commands: the library `lib.py`, the subcommand scripts `score.py`,
