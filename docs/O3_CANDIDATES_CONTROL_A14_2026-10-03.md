@@ -4,7 +4,7 @@ Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md`, Amendment 14 (`7
 procedure (classification of each candidate against KB3781's own haplotypes, arm C). Rulings R22 (the default flip 1f49d0f0 ships iff
 C1' and C2' hold, else it is reverted) and R23 (the stage's cost on a full BAM is measured here). Stage: `o3_candidates` rebuilt from
 HEAD `75827d5d` (sha1 `77eed47a...`; its source differs from the A13 binary's `0f5824a7` in comments only). Recipe:
-`bench/rna_allele/accept_o3_candidates.sh` with `ACC=a14` (+ `.py`, `panel_to_copies.py --all`; commit `b272bc46`). Work dir
+`bench/rna_allele/accept_o3_candidates.sh` with `ACC=a14` (+ `.py`, `panel_to_copies.py --all`; commits `b272bc46` + `50cf5864`, the tie breakdown and the a14 guard). Work dir
 `/mnt/linuxdisk/tmp/rna_allele/a14/` (the whole-BAM run in `a14/wholebam/`). Scorer and helper outputs copied to
 `docs/O3_CANDIDATES_CONTROL_A14_score.out.txt`. The run under control: `docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md` (A13); the
 IsoCon chain's control: `docs/RNA_ALLELE_CONTROL_2026-10-01.md` (A9).
