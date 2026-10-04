@@ -98,6 +98,21 @@ def read_blocks_junctions(rd):
     return merge([b for b in blocks if b[1] > b[0]]), juncs
 
 
+def chain_class(chain, models):
+    """FSM / ISM / NIC / NNC of a junction chain against model intron chains (Amendment C's class column; `noann` without models)."""
+    if not models:
+        return "noann"
+    chain = tuple(chain)
+    if any(chain == tuple(m) for m in models):
+        return "FSM"
+    for m in models:
+        n, L = len(m), len(chain)
+        if L < n and any(tuple(m[i:i + L]) == chain for i in range(n - L + 1)):
+            return "ISM"
+    sites = {s for m in models for j in m for s in j}
+    return "NIC" if all(j[0] in sites and j[1] in sites for j in chain) else "NNC"
+
+
 def chain_match(js, chains, k):
     """Amendment B: `js` (a read's or representative's junctions inside the copy span, in order) is a contiguous sub-chain of >= k junctions of
     one of `chains` (each a transcript's intron chain, in order). k = 0 never matches here (the caller uses the coverage rule)."""
@@ -169,6 +184,7 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--loci", action="append", default=[], help="NAME=loci.gff3[,transcripts.gtf] (repeatable); with the GTF the locus-level reading is reported beside")
     ap.add_argument("--nodes", help="pagedata.json of the read-pool page (its node[arm] per cid)")
+    ap.add_argument("--chain-floor", type=int, default=3, help="Amendment C: unique reads an identical chain needs to be an expressed chain")
     ap.add_argument("--truth2", help="Amendment B: a second annotation's truth GTF (e.g. RefSeq) whose models of the same gene also count")
     ap.add_argument("--copies2", help="the copies table of --truth2 (its cid keys the GTF; genes matched to --copies by name / refseq_name)")
     a = ap.parse_args(argv)
@@ -223,7 +239,7 @@ def main(argv=None):
         k = min(2, n_intron)
         ann_all = set().union(*ann_introns.values()) if ann_introns else set()
         lo, hi = union[0][0], union[-1][1]
-        reads = []
+        reads, read_mapq = [], []
         for rd in bam.fetch(chrom, lo, hi):
             if rd.is_unmapped or rd.is_secondary or rd.is_supplementary:
                 continue
@@ -234,6 +250,7 @@ def main(argv=None):
                 continue
             juncs = [j for j in juncs if j[0] >= lo and j[1] <= hi]
             reads.append((blocks, juncs))
+            read_mapq.append(rd.mapping_quality)
         jcount = collections.Counter(j for _, js in reads for j in js)
         supported = {j for j, n in jcount.items() if n >= MIN_JUNCTION_READS}
         n_unspliced = sum(1 for _, js in reads if not js)
@@ -254,17 +271,40 @@ def main(argv=None):
             n_chain1 = sum(1 for _, js in reads if chain_match(js, chains1, kb))
             n_chain2 = sum(1 for _, js in reads if chain_match(js, chains2, kb))
         chain_expressed = n_chain >= FLOOR
+        # Amendment C: expressed chains = identical >= 2-junction chains of >= chain_floor UNIQUE reads; support = equal or contiguous sub-chain
+        cc_u, cc_all = collections.Counter(), collections.Counter()
+        for (_, js), q in zip(reads, read_mapq):
+            if len(js) >= 2:
+                cc_all[tuple(js)] += 1
+                if q > 0:
+                    cc_u[tuple(js)] += 1
+        expressed_chains = [list(ch) for ch, n in cc_u.items() if n >= a.chain_floor]
+        expressed_all = [list(ch) for ch, n in cc_all.items() if n >= a.chain_floor]      # tied reads included (beside)
+        xc_support = sum(1 for (_, js), q in zip(reads, read_mapq) if q > 0 and len(js) >= 2 and chain_match(js, expressed_chains, 2))
+        xc_support_all = sum(1 for (_, js) in reads if len(js) >= 2 and chain_match(js, expressed_all, 2))
+        xc_expressed = len(expressed_chains) >= 1 if kb else n_support >= FLOOR
+        n_exp2 = sum(1 for ch, n in cc_u.items() if n >= 2)
+        n_exp5 = sum(1 for ch, n in cc_u.items() if n >= 5)
+        dom = max(cc_u.items(), key=lambda kv: (kv[1], len(kv[0])), default=None)
+        dom_cls = chain_class(dom[0], chains) if dom else "-"
+        dom_reads = dom[1] if dom else 0
+        exp_classes = collections.Counter(chain_class(ch, chains) for ch in expressed_chains)
         n_exact = sum(1 for _, js in reads if js and any(set(js) == s for s in ann_introns.values() if s))
         expressed = n_support >= FLOOR
         summary["spliced_expressed"] += expressed
         summary["ann_expressed"] += ann_expressed
         summary["chain_expressed"] = summary.get("chain_expressed", 0) + chain_expressed
+        summary["xc_expressed"] = summary.get("xc_expressed", 0) + xc_expressed
         row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
                    ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed),
                    ann_support_reads=n_ann_support, ann_expressed=int(ann_expressed),
                    chain_support_reads=n_chain, chain_support_ann1=n_chain1, chain_support_ann2=n_chain2, chain_expressed=int(chain_expressed),
-                   models_ann1=len(chains1), models_ann2=len(chains2))
+                   models_ann1=len(chains1), models_ann2=len(chains2),
+                   xc_expressed_chains=len(expressed_chains), xc_expressed_chains_ge2=n_exp2, xc_expressed_chains_ge5=n_exp5,
+                   xc_support_reads=xc_support, xc_support_reads_incl_tied=xc_support_all, xc_expressed=int(xc_expressed),
+                   xc_dominant_reads=dom_reads, xc_dominant_junctions=len(dom[0]) if dom else 0, xc_dominant_class=dom_cls,
+                   xc_expressed_FSM_ISM=exp_classes["FSM"] + exp_classes["ISM"], xc_expressed_NIC=exp_classes["NIC"], xc_expressed_NNC=exp_classes["NNC"])
         for arm, loci in arms.items():
             same = [L for L in loci.values() if L["chrom"] == chrom and L["strand"] == strand and inter(L["exons"], union) > 0]
             if k == 0:
@@ -291,6 +331,14 @@ def main(argv=None):
             chain_found = chain_expressed and len(chain_loci) > 0
             row[f"{arm}_chain_found"] = int(chain_found)
             summary["arms"][arm]["chain_found"] = summary["arms"][arm].get("chain_found", 0) + chain_found
+            # Amendment C: the representative's in-span chain equals / is a sub-chain of an EXPRESSED chain of the copy
+            def rep_xc_ok(L):
+                js = sorted(j for j in L["juncs"] if j[0] >= lo and j[1] <= hi)
+                return chain_match(js, expressed_chains, 2)
+            xc_loci = [L for L in same if inter(L["exons"], union) >= COVER * ilen(union)] if not kb else [L for L in same if rep_xc_ok(L)]
+            xc_found = xc_expressed and len(xc_loci) > 0
+            row[f"{arm}_xc_found"] = int(xc_found)
+            summary["arms"][arm]["xc_found"] = summary["arms"][arm].get("xc_found", 0) + xc_found
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
             # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
@@ -317,6 +365,14 @@ def main(argv=None):
                         for n in names_same for ltx_t in [arm_tx_chains.get(arm, {}).get(n, [])] for ltx_t in ltx_t)
                 row[f"{arm}_locus_chain_found"] = int(locus_chain_found)
                 summary["arms"][arm]["locus_chain_found"] = summary["arms"][arm].get("locus_chain_found", 0) + locus_chain_found
+                if not kb:
+                    locus_xc_found = xc_found
+                else:
+                    locus_xc_found = xc_expressed and any(
+                        chain_match(sorted(j for j in t if j[0] >= lo and j[1] <= hi), expressed_chains, 2)
+                        for n in names_same for t in arm_tx_chains.get(arm, {}).get(n, []))
+                row[f"{arm}_locus_xc_found"] = int(locus_xc_found)
+                summary["arms"][arm]["locus_xc_found"] = summary["arms"][arm].get("locus_xc_found", 0) + locus_xc_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
@@ -324,6 +380,7 @@ def main(argv=None):
                 summary["arms"][arm]["strict_found_in_npip_nodes"] += own and strict
                 summary["arms"][arm]["ann_found_in_npip_nodes"] = summary["arms"][arm].get("ann_found_in_npip_nodes", 0) + (own and ann_found)
                 summary["arms"][arm]["chain_found_in_npip_nodes"] = summary["arms"][arm].get("chain_found_in_npip_nodes", 0) + (own and chain_found)
+                summary["arms"][arm]["xc_found_in_npip_nodes"] = summary["arms"][arm].get("xc_found_in_npip_nodes", 0) + (own and xc_found)
                 if locus_found is not None:
                     summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)
@@ -333,8 +390,8 @@ def main(argv=None):
         w.writerows(rows)
     json.dump(summary, open(a.out + ".json", "w"), indent=1)
     print(json.dumps(summary))
-    hdr = ["name", "reads", "chain_support_reads", "chain_support_ann1", "chain_support_ann2", "chain_expressed", "ann_support_reads", "exact_chain_reads"] + \
-          [f"{arm}_{x}" for arm in arms for x in ("chain_found", "ann_found") + (("locus_chain_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
+    hdr = ["name", "reads", "xc_expressed_chains", "xc_support_reads", "xc_support_reads_incl_tied", "xc_dominant_reads", "xc_dominant_junctions", "xc_dominant_class", "chain_support_reads"] + \
+          [f"{arm}_{x}" for arm in arms for x in ("xc_found", "chain_found") + (("locus_xc_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
     print("\t".join(hdr))
     for r in rows:
         print("\t".join(str(r.get(h, "")) for h in hdr))

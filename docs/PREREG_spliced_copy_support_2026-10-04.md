@@ -97,3 +97,26 @@ of that transcript. Re-registered:
 - Amendment A's coordinate-match columns and the original read-defined columns stay reported; neither is the verdict.
 
 Applied as Amendment A was: the NPIP page (both annotations) and the representative-rule H3 on the 7 contigs (single annotation).
+
+## Amendment C (2026-10-04 12:25, user: "ensure that only reads that truly support the intron chains are counted"; written before the run): expressed chains, annotation-free
+
+`docs/NPIP_CHAIN_COMPARISON_2026-10-04.md` showed that at NPIP the annotated chains are not what is expressed (27% of multi-junction reads are an
+annotated chain; the dominant chain is unannotated at 13 of 25 copies, by uniquely placed reads at reference divergence). Amendment B's verdict
+therefore measures the annotation as much as the nodes. Amendment C keeps B's chain logic and replaces the annotated models by the reads'
+own expressed chains:
+
+- **Read chain:** the read's junctions inside the copy's span (exon union of the CAT ∪ RefSeq models; `N` >= 50 bp, exact coordinates), in
+  order. **Unique read:** MAPQ > 0 (the aligner's own ambiguity call; a tied read is counted only where O2 assigns it — reported beside with
+  tied reads included).
+- **Expressed chain of a copy:** a chain of >= 2 junctions carried identically by >= 3 unique reads (the floor every junction rule of this
+  prereg uses; counts at >= 2 and >= 5 reported beside, fixed now, not chosen after).
+- **A read TRULY SUPPORTS the copy** iff its chain (>= 2 junctions) equals an expressed chain of the copy or is a contiguous sub-chain of one
+  (a 5'-truncated read of the same isoform). Any other read — unspliced, one junction, a chain not nested in an expressed chain — does not.
+  **Spliced-expressed copy:** >= 1 expressed chain (hence >= 3 support reads).
+- **FOUND:** spliced-expressed AND a same-strand locus whose representative's in-span chain (>= 2 junctions) equals or is a contiguous
+  sub-chain of an expressed chain of the copy; locus level (any transcript of the locus) beside. Intronless copies: the coverage rule as before.
+- **Reported, no rule:** each expressed chain's class against the CAT ∪ RefSeq models (FSM / ISM / NIC / NNC); the number of expressed chains per
+  copy and the reads on the dominant one; Amendment B's annotated-chain verdicts beside.
+- Applied to the NPIP page (3 arms; the page is restated under C with B beside) and to the representative-rule H3 on the 7 contigs (saved arms,
+  no families re-run; models of the contig's single annotation for the class column only). Scorer: `bench/copy_support.py` (`xc_*` columns,
+  `--chain-floor 3`).
