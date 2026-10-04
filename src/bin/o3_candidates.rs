@@ -760,7 +760,7 @@ impl Family<'_, '_> {
     }
 }
 
-/// The chosen member; a longest-member fallback (Amendment 13d: no member aligned to >= 50% of the others) is counted in the family's log.
+/// The chosen member; a longest-member fallback (Amendments 13d / 13e: no eligible member) is counted in the family's log.
 fn counted(choice: TemplateChoice, log: &mut ClusterLog) -> usize {
     if let TemplateChoice::Longest(_) = choice {
         log.longest_template += 1;
@@ -829,7 +829,7 @@ struct ClusterLog {
     absorbed: usize,
     /// Merges undone because the absorber's re-polished consensus was empty: its absorbed clusters kept separate (prereg Amendment 13).
     undone: usize,
-    /// Templates chosen as the longest member because no member was eligible (prereg Amendment 13d).
+    /// Templates chosen as the longest member because no member was eligible (prereg Amendments 13d / 13e).
     longest_template: usize,
     fin: usize,
 }
@@ -839,8 +839,8 @@ impl std::fmt::Display for ClusterLog {
             f,
             "{} read clusters >= --min-cluster; {} empty consensus dropped; refinement split off {} reads ({} new clusters, {} clusters fell under \
              --min-cluster, {} kept sets re-templated); significance merge absorbed {} clusters in {} rounds ({} absorptions undone: empty \
-             merged consensus, the absorbed cluster kept separate); {} templates the longest member (no member aligned to >= 50% of the others); \
-             {} clusters",
+             merged consensus, the absorbed cluster kept separate); {} templates the longest member (no member aligned to min(half, 50) of the \
+             others); {} clusters",
             self.read_clusters, self.empty, self.split_off, self.split_clusters, self.dropped_small, self.retemplated, self.absorbed, self.rounds,
             self.undone, self.longest_template, self.fin
         )
