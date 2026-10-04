@@ -750,7 +750,8 @@ struct Family<'n, 'a> {
 }
 impl Family<'_, '_> {
     /// `structural_template` of `members` (prereg Amendment 13d: the medoid under the structural distance): a new cluster's template, and a
-    /// merged cluster's. A cluster with no eligible member takes its longest member, counted in `log`.
+    /// merged cluster's. A cluster with no eligible member (Amendment 13e) takes its longest member WITH an aligned partner, else (no member
+    /// has one) its longest member; either fallback is counted in `log`.
     fn template(&self, members: &[usize], log: &mut ClusterLog) -> Result<usize> {
         Ok(counted(structural_template(members, &self.net.names, &self.ava, &self.lens)?, log))
     }
@@ -1196,9 +1197,10 @@ mod tests {
 
     #[test]
     fn the_copies_fa_record_names_map_to_their_family_for_the_checked_copies_only() {
-        // prereg Amendment 13: the targets of the unmapped reads are named as minimap2 reports them (the header up to its first whitespace);
-        // a record is a target of its `{family}|{copy_idx}` prefix's family only when that copy was checked against --copies (F9's record is
-        // not: a partner row or a record the table lacks); F1 copy 1 has a sixth field with a space, which minimap2 cuts
+        // prereg Amendments 13 / 13b: the copy records among the attribution targets (beside this run's net reads, `write_attrib_targets`) are
+        // named as minimap2 reports them (the header up to its first whitespace); a record is a target of its `{family}|{copy_idx}` prefix's
+        // family only when that copy was checked against --copies (F9's record is not: a partner row or a record the table lacks); F1 copy 1
+        // has a sixth field with a space, which minimap2 cuts
         let fa = ">F1|0|chr1:100-200|+|nexon=1\nACGT\n>F1|1|chr1:300-400|-|nexon=2|lib A\nAC\nGT\n>F2|0|chr2:1-50|+|nexon=1\nAC\n>F9|4|chr9:1-9|+|nexon=1\nA\n";
         let checked: HashSet<(&str, usize)> = [("F1", 0), ("F1", 1), ("F2", 0)].into_iter().collect();
         let mut got: Vec<(String, String)> = copy_targets(fa, &checked).into_iter().collect();

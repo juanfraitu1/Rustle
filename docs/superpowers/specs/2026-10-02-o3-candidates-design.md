@@ -68,17 +68,27 @@ sampling (seed 1), stable sort orders, no threads in anything that affects outpu
    `denovo_assemble.rs:1327`), supplementary excluded. Primary records give the read's sequence (orientation = as sequenced: reverse
    complement when the record is reverse). Secondary records only name the read.
 3. BAM pass B (one sequential pass over the whole BAM, once for all families): (a) the sequence of every read named only by a secondary
-   record; (b) every unmapped record with length >= 300 bp, attributed by the k-mer index of §5.2.
+   record; (b) the ATTRIBUTION SET of §5.2 (prereg Amendments 13b / 13c): every unmapped record, and every read in no net of this run
+   whose PRIMARY record is poorly placed (`de > 0.02` or MAPQ 0; ruling R18: "no record on a family copy" means in no net of THIS run,
+   pass A's scope under `--families`), each >= 300 bp (ruling R19: the floor holds for both classes), streamed as sequenced to a FASTA
+   (decoded once, never held in memory). (2026-10-02: unmapped records only, attributed by a k-mer index; retired by Amendment 13.)
 4. Cap: if a family's net exceeds `--max-reads`, sample that many (seed 1, after sorting names).
 5. Output: `P.cand.nets.fa` holds the WHOLE net (before the cap of 4.) of each family that ends with a flagged candidate (§5.6), each read
    once (ruling R9: the first family in `--copies` order keeps a read two nets share) — the input of the patch realignment (§7). The
    `cand` cache entry stores the products as written: no other family's net is kept.
 
-### 5.2 Unmapped-read attribution
+### 5.2 Attribution of unmapped and poorly placed reads (prereg Amendment 13b, ruling R16)
 
-Index: canonical 31-mers of every sequence in `--copies-fa`, each k-mer -> set of family ids (k-mers shared by > 8 families dropped as
-repeats). A read is attributed to family F when >= 30% of its 31-mers hit F and F's hits are >= 2 x the runner-up's; otherwise it is
-not in any net. Reads attributed to a family join its net before the cap.
+The attribution set of §5.1.3b is aligned once, `MM2_ATTRIB = -x map-ont -c -N 5 -p 0.5`, against the run's net reads (every read pass A
+put in a net, as `>{family}|{read}`) and every family's `--copies-fa` records. A read joins the family of its best hit (most matches;
+the first on a tie) iff that hit covers >= 50% of the READ (`(qe - qs) / qlen`) and its `de` <= 0.20: the family definition's own edge
+rule (identity >= 0.80 over >= 50%) in read space. A best hit that fails either joins the read to nothing (a lesser hit never stands
+in); a read given to a family outside this run (`--families`) joins no net. Joiners enter their net before the cap (§5.1.4). The
+chain's genome check (§5.6.2, identity x coverage 0.999) remains the guard against reads of foreign genes pulled in this way. Under
+`--families` the attribution set and the targets are the run's (R18), so batched runs may attribute one read in two batches.
+(2026-10-02's rule — canonical 31-mers of `--copies-fa`, >= 30% of a read's k-mers and >= 2 x the runner-up — attributed 0 of 5,312
+unmapped reads on the held-out, Amendment 12; Amendment 13 retired it. The A13 acceptance: 557 unmapped reads joined a net, 555 of them
+the right family by label; 1,171 poorly placed reads, 927 the right family; 5 batches.)
 
 ### 5.3 Read clustering (greedy template clustering, per family)
 
@@ -88,13 +98,35 @@ Reads sorted by length descending. For each read: candidate clusters = those who
 covers >= 50% of the shorter sequence with gap-compressed divergence `de` <= delta; otherwise it founds a new cluster with itself as
 template. `de` = (mismatches + gap openings) / aligned columns, computed from the alignment's operations — the same quantity minimap2's
 `de` tag reports, so the thresholds carry over from Amendment 8. The read's alignment to its template is kept for §5.4.
+As implemented (the minimap2 engine of §9b): the net's reads are aligned all-vs-all (`MM2_AVA = -x asm20 -c --cs --dual=no -N 100
+-p 0.1 --secondary=yes`) and clustered by union-find over the pairs whose best hit (most matches) covers >= 50% of the shorter read
+with `de` <= delta (`cluster_reads`: Amendment 8's merge rule applied to reads); the same all-vs-all is what §5.4's template rule reads.
 
 ### 5.4 Consensus per cluster (template and vote)
 
-Clusters with < `--min-cluster` reads are dropped (IsoCon's floor of 3). Consensus = the template polished by column majority over the
-cluster's alignments: a column with >= 3 covering reads takes the majority base; an insertion relative to the template present in >= 50%
-of the reads covering that position is inserted (the majority insertion sequence); a deletion in >= 50% is applied; columns with < 3
-reads keep the template. Template ends covered by fewer than 2 reads are trimmed. One polishing pass (HiFi).
+Clusters with < `--min-cluster` reads are dropped (IsoCon's floor of 3).
+
+**Template** (prereg Amendment 13 as corrected by 13d / 13e, rulings R20 / R21; it replaces "the longest read", which let an
+intron-retaining read drag the union, Amendment 12): the medoid of the cluster under a structural distance read from the net's
+all-vs-all (§5.3): d(m, p) = the bases of indels >= 20 bp (insertions, deletions and `~` introns alike) in m's best alignment to p PLUS
+p's terminal bases (>= 20 bp at either end) that the alignment leaves uncovered. A member is eligible when it is aligned to >= min(0.5 x
+(n - 1), 50) of the n - 1 other members (50 = half of the all-vs-all's `-N 100`); the template is the eligible member with the lowest
+mean d over its aligned partners, ties -> longest -> smallest name; with no eligible member, the longest member that has an aligned
+partner, else the longest member (a member with no aligned partner is never chosen while another has one). A cluster of one is its own
+template.
+
+**Vote** (rulings R2 / R5, Amendment 13): the members are aligned to the template with the splice preset (`MM2_MEMBERS = -x splice:hq
+-uf -c --cs -N 5 -p 0.5`; asm20 cut alignments at exon skips, as R6 found for the union) and the template is polished by column majority
+over them: a column with >= 3 covering members takes the majority base; before a column at most one insertion is made, the insertions
+>= 20 bp first (structure: the most frequent one with >= 3 carriers, whatever its share), and only without one the < 20 bp majority
+insertion (>= 50% of >= 3 covering members); a deletion < 20 bp carried by >= 50% of >= 3 covering members is applied, a deletion >= 20
+bp never (the consensus is the exon union of the cluster's isoforms); columns with < 3 covering members keep the template; template
+ends covered by fewer than 2 members are trimmed.
+
+**Refinement** (R5): one pass — the members are re-aligned to the consensus and those that do not fit (`de` > delta or < 50% of the
+shorter covered) are split off, as one new cluster polished on its own structural template when they are >= `--min-cluster`; a kept set
+that still holds its template is re-polished on it, and a kept set whose template was split off is re-templated by the same structural
+rule over its own pairs and re-polished (Amendment 13).
 
 ### 5.5 Cluster merge by the significance test
 
@@ -103,7 +135,9 @@ in homopolymer runs excluded, as `read_conflict.rs` does). The smaller cluster B
 number of B's reads carrying B's base at all k columns is unlikely under error: p = P(X >= n_B), X ~ Binomial(n_A + n_B, eps^k) with
 eps = 0.001 (the per-column error proxy of `read_conflict.rs:77`) and alpha = the assignment gate's alpha (the same constant
 `read_conflict.rs` uses). If p >= alpha the clusters merge (union of reads, re-polished on A's template); if k = 0 they merge. Iterate
-until no pair merges. This is IsoCon's statistical test in our own code, and the same test O2 uses to de-tie.
+until no pair merges. This is IsoCon's statistical test in our own code, and the same test O2 uses to de-tie. (Amendment 13: a merged
+cluster is re-polished on the structural template of all its members (§5.4), not on A's; a merge whose re-polished consensus is empty is
+undone — the clusters stay separate, nothing is dropped — and that pair is not tested again.)
 
 ### 5.6 Flag, link, merge, floor (the chain, Amendments 7-9)
 
@@ -177,6 +211,9 @@ byte-identical outputs on every existing fixture after §6, plus one cross-chrom
 **Acceptance (prereg Amendment 12, written before the run):** the 53-family held-out of Amendment 7 with `o3_candidates` in IsoCon's
 place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union representatives keep >= 95% of the components' reads (the
 `rep_choice.py` measure); wall time <= 2 x IsoCon's (~20 min for 53 families at the 1,000-read cap).
+**Re-run acceptance (prereg Amendment 13 + 13b-13e, written before the A13 run):** A13-1 = D right >= 0.80 x C, C = IsoCon's right D
+reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%; A13-2 = A12-2; A13-3 = A12-3. All three PASSED on
+2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`).
 
 ## 9b. Plan rulings (2026-10-02, recorded here so the spec and the plan agree)
 
@@ -214,10 +251,32 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
     families registers exactly as before 2026-10-02 (A/B against a b9c412f9 build on the human chr16 O2 simulation, the O2 and
     `--union-certificate` commands of `figures/_o2.py`: every table byte-identical).
 
+- Amendment 13 and its rulings (2026-10-03, each written into the prereg before the A13 run):
+  - **Amendment 13** (`e3e9d4bf`): the net attribution by alignment (§5.1-§5.2) and the structurally central template (§5.4), with the
+    consensus details the reviews named (splice preset for the votes, the insertion vote by size class, the refinement re-template, the
+    empty-merge fallback, §5.5); the chain's rules (delta, the merge rule, `--min-support 6`, 0.98, the 1,000-read cap, R13) unchanged.
+  - **R16** (Amendment 13b, `d69f0e02`): the attribution rule is the family's own edge rule in read space (the best hit covers >= 50% of
+    the READ, `de` <= 0.20), applied to the unmapped AND the poorly placed un-netted reads, against the families' net reads plus the
+    copies, with map-ont (§5.2). Measured at the attribution step only: no truth-free rule reaches the ~5,200 reads IsoCon received by
+    label in Amendment 8.
+  - **R17** (Amendment 13b): A13-1's comparator is re-registered to C = IsoCon's right D reads over the truth-free attainable D reads (a
+    record on a surviving copy of their family in `R.bam`, or attributed by the rule); A12-1's bar (10,230) is reported beside, not
+    decided on.
+  - **R18** (Amendment 13c, `065b2b46`): under `--families`, "no record on any family copy" (the poorly placed selection) is judged
+    against THIS run's families (pass A's scope), and the attribution targets are this run's nets plus every copy; batched runs may
+    attribute a read in more than one batch.
+  - **R19** (Amendment 13c): the 300-bp floor applies to the poorly placed reads as well.
+  - **R20** (Amendment 13d, `f31f663e`): the template is the medoid under the structural distance (big indels + the partner's uncovered
+    terminal bases), mean over aligned partners, eligibility by aligned fraction, ties longest then name (§5.4); Amendment 13's "lowest
+    total indel bases" picked fragments.
+  - **R21** (Amendment 13e, `ff869c40`): eligibility = aligned to >= min(0.5 x (n - 1), 50) other members (the all-vs-all's `-N 100` made
+    50% unattainable in 400+-read clusters); a member with no aligned partner is never chosen while another has a mean.
+
 ## 10. Open items (deferred, named)
 
 - POA-graph consensus (`build_poa_graph`, `family_graph.rs:18`) instead of template-and-vote, if the acceptance run shows consensus
   errors (visible as clusters that fail to link at delta although their reads are the survivor's).
-- Unmapped-read attribution thresholds (30%, 2 x) are set from the deletion tests' unmapped reads (median 69 bp, no evidence); a
-  prereg on a library with long unmapped reads would revisit them.
+- The k-mer attribution thresholds (30%, 2 x) are retired (Amendment 13). The alignment rule (R16) reaches 1,482 of the held-out's
+  17,286 deleted-copy reads by attribution; poorly placed reads joined a net of the wrong family in 244 of 1,171 joins (batched, R18).
+  A library with long unmapped reads of another kind would revisit the read-coverage floor.
 - The two-run O2 split is v1; a single run over a merged BAM is the cleaner end state once BAM patching is worth its cost.
