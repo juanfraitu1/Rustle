@@ -456,7 +456,7 @@ and the stage has never been run on Amendment 9's no-deletion control. The flip 
 
 ## Amendment 15 (2026-10-03, written before any re-run): the consensus defect behind Amendment 14's false flags — the correction, the re-runs, a held-out
 
-**What was found, post hoc (2026-10-03, after Amendment 14's verdict; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; Task 5 report in the
+**What was found, post hoc (2026-10-03, after Amendment 14's verdict; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; Task 5 report, archived as `docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md`, in the
 A13 ledger directory, reproduction byte-identical for 33 clusters of 5 families).** The 54 class-c flags of the control diverge from the
 primary assembly by insertions only (no mismatches, no deletions; 99% of the inserted bases in runs >= 20 bp), and 41 of the 54 carry a
 duplication signature: 94% of their genome-inserted bases (22,144 of 23,553) are copies of the union's own sequence (A13: 35 of the 46
