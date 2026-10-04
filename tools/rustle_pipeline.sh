@@ -86,6 +86,11 @@
 #     downstream stage); every stage derives the mode the same way (BRIDGE_MODE below);
 #   RUSTLE_MIN_COV_SHORTER=C sets `mcl_families --min-cov-shorter C` on `families` (unset = the binary's own default,
 #     0.70 since 2026-09-29, nothing passed; 0 = the 2026-09-25 edge weights);
+#   RUSTLE_REPRESENTATIVE=most-reads|most-junctions sets `mcl_families --representative` on `families`, the transcript that
+#     represents each de novo locus (loci.gff3, the copy table). Unset = nothing passed: the binary's default, most-reads
+#     (the transcript with the most reads), byte for byte the earlier products; most-junctions = the transcript with the most
+#     junctions (gaps >= 50 bp between exons), ties to the most reads — opt-in, the arm of
+#     docs/PREREG_locus_representative_rule_2026-10-04.md; an mcl_families without the flag is refused;
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
@@ -275,8 +280,20 @@ stage_families() {
   if [ ${#FAM_COV[@]} -gt 0 ] && [[ "$help" != *'--min-cov-shorter'* ]]; then
     echo "[rustle_pipeline] RUSTLE_MIN_COV_SHORTER is set but $BIN/mcl_families predates --min-cov-shorter; rebuild it" >&2; exit 2
   fi
+  # RUSTLE_REPRESENTATIVE=most-reads|most-junctions (unset = nothing passed: the binary's default, most-reads, the earlier
+  # products byte for byte; `most-reads` names that default): mcl_families --representative, which transcript represents each
+  # de novo locus (docs/PREREG_locus_representative_rule_2026-10-04.md). Read here, in this stage's code alone, so that
+  # figures/samples.py's driver_stage_code leaves the other stages' code hashes as they were.
+  local rep=()
+  case "${RUSTLE_REPRESENTATIVE:-}" in
+    "") ;;
+    most-reads|most-junctions)
+      [[ "$help" == *'--representative'* ]] || { echo "[rustle_pipeline] RUSTLE_REPRESENTATIVE is set but $BIN/mcl_families predates --representative; rebuild it" >&2; exit 2; }
+      rep=(--representative "$RUSTLE_REPRESENTATIVE") ;;
+    *) echo "[rustle_pipeline] RUSTLE_REPRESENTATIVE must be most-reads or most-junctions (got '$RUSTLE_REPRESENTATIVE')" >&2; exit 2 ;;
+  esac
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_COV[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"

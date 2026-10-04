@@ -22,6 +22,15 @@ use rustle::vg_family::annotation_families::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
+/// Which transcript of a `--from-gtf` locus is its representative (`--representative`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum Representative {
+    /// the transcript with the most `reads`; ties to the longer span, then the last `transcript_id` (the shipped rule)
+    MostReads,
+    /// the transcript with the most junctions; ties to the most `reads`, then the longer span, then the last `transcript_id`
+    MostJunctions,
+}
+
 #[derive(Parser, Debug)]
 #[command(about = "Multi-copy gene families by MCL over annotation sequence, corroborated by RNA")]
 struct Args {
@@ -30,13 +39,25 @@ struct Args {
     paf: String,
 
     /// One-command de novo family stage: derive the loci from an assembled GTF (`copy_assign --assemble-only`
-    /// output; locus = `gene_id` group, span = min/max over its transcripts, representative = the transcript
-    /// with most `reads` (tie: longer span), exons = the representative's), write `<out>.loci.gff3` and
+    /// output; locus = `gene_id` group, span = min/max over its transcripts, representative = the transcript with
+    /// most `reads` (tie: longer span; see `--representative`), exons = the representative's), write `<out>.loci.gff3` and
     /// `<out>.loci.fa` (genomic spans, `--fasta` required), run the all-vs-all (`minimap2 -x asm20 -c -X -N 50
     /// -p 0.1 --secondary=yes`) to `<out>.loci.paf`, then proceed as with `--paf <out>.loci.paf --gff
     /// <out>.loci.gff3`. Replaces the former scratch step `loci_from_gtf.py` + a hand-run minimap2.
     #[arg(long)]
     from_gtf: Option<String>,
+
+    /// With `--from-gtf` only: which transcript of a locus is its representative — the locus's exons in
+    /// `<out>.loci.gff3` and the copy in `<out>.copies.tsv`. `most-reads` (default; every product before
+    /// 2026-10-04): the transcript with the most `reads`, ties to the longer span, then the last `transcript_id`.
+    /// `most-junctions` (opt-in; pre-registered test, `docs/PREREG_locus_representative_rule_2026-10-04.md`): the
+    /// transcript with the most junctions — gaps of >= 50 bp between consecutive exons, the junction floor of the
+    /// strict "found" rule (`bench/copy_support.py`) — ties to the most `reads`, then the longer span, then the
+    /// last `transcript_id`. In a 5'-truncated library the most-read transcript can be a 3' fragment (NPIPA9: 1
+    /// junction of the locus's 38). Locus spans, so `<out>.loci.paf`, do not depend on the rule. Driver:
+    /// `RUSTLE_REPRESENTATIVE`.
+    #[arg(long, value_enum, default_value_t = Representative::MostReads)]
+    representative: Representative,
 
     /// minimap2 threads for `--from-gtf`.
     #[arg(long, default_value_t = 4)]
@@ -1118,11 +1139,15 @@ fn main() -> Result<()> {
         !args.emit_container || args.from_gtf.is_some(),
         "--emit-container needs --from-gtf (the container's exon blocks are the assembled GTF's transcripts)"
     );
+    anyhow::ensure!(
+        args.representative == Representative::MostReads || args.from_gtf.is_some(),
+        "--representative most-junctions needs --from-gtf (it picks the representative transcript of each de novo locus)"
+    );
     // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
     let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
     if let Some(gtf) = args.from_gtf.clone() {
         let fasta = args.fasta.clone().context("--from-gtf needs --fasta (the genome the GTF was assembled on)")?;
-        let (gff3, fa, paf, loci) = loci_from_gtf(&gtf, &fasta, &args.out, args.threads)?;
+        let (gff3, fa, paf, loci) = loci_from_gtf(&gtf, &fasta, &args.out, args.threads, args.representative)?;
         args.gff = Some(gff3);
         args.paf = paf;
         gtf_loci_list = Some(loci);
@@ -2224,6 +2249,10 @@ fn main() -> Result<()> {
             writeln!(ph, "{k}\t{v}")?;
         }
     }
+    // `--representative most-junctions` only (appended LAST, and only then: a default run's params.tsv is unchanged)
+    if args.representative == Representative::MostJunctions {
+        writeln!(ph, "representative\tmost-junctions")?;
+    }
 
     let members: usize = clusters.iter().map(|c| c.members.len()).sum();
     let largest = clusters.iter().map(|c| c.members.len()).max().unwrap_or(0);
@@ -2375,7 +2404,7 @@ c1\tr\ttranscript\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\"; re
 c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\";
 c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; reads \"9\";
 ";
-        let loci = gtf_loci(std::io::Cursor::new(gtf)).unwrap();
+        let loci = gtf_loci(std::io::Cursor::new(gtf), Representative::MostReads).unwrap();
         assert_eq!(loci.len(), 2, "G3 has no exon: not a locus");
         assert_eq!(
             loci[0],
@@ -2391,6 +2420,117 @@ c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; re
             }
         );
         assert_eq!((loci[1].rep.as_str(), loci[1].strand.as_str(), loci[1].rep_reads), ("Tb", "-", 3));
+    }
+
+    /// GTF lines of one assembled transcript on `c1`, `+`: the `transcript` line with its `reads`, then one `exon` line per
+    /// `(start, end)` (GFF 1-based closed) in the order given.
+    fn gtf_tx(gene: &str, tid: &str, reads: u64, exons: &[(u64, u64)]) -> String {
+        let (s, e) = (exons.iter().map(|x| x.0).min().unwrap(), exons.iter().map(|x| x.1).max().unwrap());
+        let mut out = format!("c1\tr\ttranscript\t{s}\t{e}\t.\t+\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; reads \"{reads}\";\n");
+        for (a, b) in exons {
+            out += &format!("c1\tr\texon\t{a}\t{b}\t.\t+\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\";\n");
+        }
+        out
+    }
+
+    /// `(gene_id, representative transcript_id)` of every locus of `gtf` under `rule`, in locus order.
+    fn reps_of(gtf: &str, rule: Representative) -> Vec<(String, String)> {
+        gtf_loci(std::io::Cursor::new(gtf.to_string()), rule).unwrap().into_iter().map(|l| (l.gene_id, l.rep)).collect()
+    }
+
+    /// `--representative`: `most-reads` is the default (every product before 2026-10-04), `most-junctions` the opt-in arm,
+    /// anything else is refused at parse time.
+    #[test]
+    fn representative_defaults_to_most_reads_and_accepts_exactly_the_two_rules() {
+        let parse = |v: &[&str]| Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied()));
+        assert_eq!(parse(&[]).expect("parse").representative, Representative::MostReads);
+        assert_eq!(parse(&["--representative", "most-reads"]).expect("parse").representative, Representative::MostReads);
+        assert_eq!(
+            parse(&["--representative", "most-junctions"]).expect("parse").representative,
+            Representative::MostJunctions
+        );
+        assert!(parse(&["--representative", "longest-span"]).is_err());
+    }
+
+    /// A junction is a gap of >= 50 bp between consecutive exons in coordinate order. GFF 1-based closed: after an exon
+    /// ending at 200, an exon starting at 251 leaves bases 201-250, a 50-bp gap (the boundary); 250 leaves 49.
+    #[test]
+    fn junction_count_is_the_gaps_of_at_least_50_bp_between_consecutive_exons() {
+        let ex = |v: &[(u64, u64)]| -> Vec<(String, u64, u64)> { v.iter().map(|&(a, b)| ("c1".to_string(), a, b)).collect() };
+        assert_eq!(junction_count(&ex(&[])), 0);
+        assert_eq!(junction_count(&ex(&[(101, 200)])), 0, "one exon: no junction");
+        assert_eq!(junction_count(&ex(&[(101, 200), (251, 300)])), 1, "a 50-bp gap is a junction");
+        assert_eq!(junction_count(&ex(&[(101, 200), (250, 300)])), 0, "a 49-bp gap is not");
+        assert_eq!(junction_count(&ex(&[(101, 200), (231, 300)])), 0, "a 30-bp gap is not");
+        assert_eq!(junction_count(&ex(&[(101, 200), (201, 300)])), 0, "abutting exons leave no gap");
+        assert_eq!(junction_count(&ex(&[(101, 200), (150, 300)])), 0, "overlapping exons leave no gap");
+        // coordinate order, not listing order
+        assert_eq!(junction_count(&ex(&[(501, 600), (101, 200), (301, 400)])), 2);
+        // a short gap is skipped, the two long ones are counted
+        assert_eq!(junction_count(&ex(&[(101, 200), (231, 300), (501, 600), (1001, 1100)])), 2);
+    }
+
+    /// ⭐ `most-junctions` (5'-truncated libraries, where the most-read transcript is a 3' fragment): a 1-junction transcript
+    /// with 10 reads represents its locus under `most-reads` and loses to the 5-junction transcript with 2 reads under
+    /// `most-junctions`. Only the representative moves: the locus, its span and every locus with one transcript, or with
+    /// no spliced transcript, are the same under both rules.
+    #[test]
+    fn most_junctions_beats_reads_where_the_most_read_transcript_is_a_fragment() {
+        let full = [(101, 200), (301, 400), (501, 600), (701, 800), (901, 1000), (1101, 1200)];
+        let gtf = gtf_tx("G1", "Tfrag", 10, &full[4..])
+            + &gtf_tx("G1", "Tfull", 2, &full)
+            + &gtf_tx("G2", "Tshort", 5, &[(5001, 5100)])
+            + &gtf_tx("G2", "Tlong", 2, &[(5001, 5300)]);
+        let by_reads = gtf_loci(std::io::Cursor::new(&gtf), Representative::MostReads).unwrap();
+        let by_junctions = gtf_loci(std::io::Cursor::new(&gtf), Representative::MostJunctions).unwrap();
+        let shape = |l: &GtfLocus| (l.rep.clone(), l.rep_reads, l.rep_exons.len());
+        assert_eq!(shape(&by_reads[0]), ("Tfrag".to_string(), 10, 2));
+        assert_eq!(shape(&by_junctions[0]), ("Tfull".to_string(), 2, 6));
+        assert_eq!((by_junctions[0].start, by_junctions[0].end), (101, 1200));
+        assert_eq!(by_reads[0].end, 1200, "the span is the locus's, not the representative's");
+        // no spliced transcript in G2: 0 junctions each, so `most-junctions` falls back to reads (then span, then id)
+        assert_eq!(by_reads[1], by_junctions[1]);
+        assert_eq!(by_junctions[1].rep, "Tshort");
+        assert_eq!(by_reads.len(), by_junctions.len());
+    }
+
+    /// `most-junctions` ties go to the most `reads`, then the longer span, then the LAST `transcript_id` in sorted order
+    /// (never file order). Every locus holds a decoy `Tz_<gene>` that wins on reads, span and id but has 1 junction against
+    /// the candidates' 2, so each winner has to beat it on junctions first and the lower keys only among the tied.
+    #[test]
+    fn most_junctions_ties_go_to_reads_then_span_then_the_last_id() {
+        let decoy = |g: &str| gtf_tx(g, &format!("Tz_{g}"), 100, &[(1, 100), (901, 1000)]);
+        let ex3 = |a: u64, z: u64| vec![(a, 200), (301, 400), (501, z)]; // 2 junctions, span z - a
+        let gtf = [
+            // G1: Ta has more reads but a shorter span and the earlier id than Tb: reads decide
+            gtf_tx("G1", "Ta", 9, &ex3(101, 600)),
+            gtf_tx("G1", "Tb", 4, &ex3(51, 650)),
+            decoy("G1"),
+            // G2: equal reads, so the longer span decides (Tc, the earlier id)
+            gtf_tx("G2", "Tc", 5, &ex3(101, 700)),
+            gtf_tx("G2", "Td", 5, &ex3(101, 600)),
+            decoy("G2"),
+            // G3: everything ties; the sorted-last id wins, whatever order the file lists them in
+            gtf_tx("G3", "Tf", 5, &ex3(101, 600)),
+            gtf_tx("G3", "Th", 5, &ex3(101, 600)),
+            gtf_tx("G3", "Te", 5, &ex3(101, 600)),
+            decoy("G3"),
+        ]
+        .concat();
+        let want: Vec<(String, String)> = [("G1", "Ta"), ("G2", "Tc"), ("G3", "Th")].iter().map(|&(g, t)| (g.into(), t.into())).collect();
+        assert_eq!(reps_of(&gtf, Representative::MostJunctions), want);
+        // `most-reads` takes the decoy everywhere: the junction count is the one thing it does not look at
+        assert!(reps_of(&gtf, Representative::MostReads).iter().all(|(_, t)| t.starts_with("Tz_")));
+    }
+
+    /// A gap under 50 bp is not a junction: a transcript whose exons are split by 30-bp gaps has none, so a one-junction
+    /// transcript with fewer reads represents the locus under `most-junctions`.
+    #[test]
+    fn most_junctions_does_not_count_a_30_bp_gap() {
+        let gtf = gtf_tx("G1", "Tgap", 9, &[(101, 200), (231, 330), (361, 460)]) // 30-bp gaps: 0 junctions
+            + &gtf_tx("G1", "Tone", 1, &[(101, 200), (401, 500)]); // one 200-bp intron: 1 junction
+        assert_eq!(reps_of(&gtf, Representative::MostJunctions), vec![("G1".to_string(), "Tone".to_string())]);
+        assert_eq!(reps_of(&gtf, Representative::MostReads), vec![("G1".to_string(), "Tgap".to_string())]);
     }
 
     /// ⭐ The `--from-gtf --emit-units` copy table is read by `copy_assign --families/--copies-fa` exactly as the
@@ -2535,9 +2675,11 @@ c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; re
 }
 
 /// One de novo locus of an assembled GTF (`--from-gtf`): a `gene_id` group, its span (GFF 1-based, min/max over the
-/// exons of all its transcripts) and its REPRESENTATIVE — the transcript with the most `reads`, ties to the longer
-/// span, then to the lexicographically last `transcript_id` (the order `max_by_key` has always resolved ties in).
-/// The representative's exons are the locus's exons in `loci.gff3` and, with `--emit-units`, the copy's exons in
+/// exons of all its transcripts) and its REPRESENTATIVE, picked by [`Representative`] (`--representative`). `MostReads`,
+/// the default: the transcript with the most `reads`, ties to the longer span, then to the lexicographically last
+/// `transcript_id` (the order `max_by_key` has always resolved ties in). `MostJunctions`: the transcript with the most
+/// [`junction_count`] junctions, then the same key (reads, longer span, last `transcript_id`). The span does not depend on
+/// the rule. The representative's exons are the locus's exons in `loci.gff3` and, with `--emit-units`, the copy's exons in
 /// `copies.tsv`: the "positional exon sum" (read-derived coordinates, genome bases).
 #[derive(Clone, Debug, PartialEq)]
 struct GtfLocus {
@@ -2553,10 +2695,24 @@ struct GtfLocus {
     rep_exons: Vec<(String, u64, u64)>,
 }
 
-/// Parse an assembled GTF into its loci, in first-appearance order of `gene_id` (genes without exons are left out).
+/// The junction floor of `--representative most-junctions`, in bp: the gap between two consecutive exons that makes a
+/// junction. The floor of the strict "found" rule (`bench/copy_support.py` `MIN_INTRON`), not a new constant.
+const MIN_JUNCTION_GAP: u64 = 50;
+
+/// Junctions of one transcript, for `--representative most-junctions`: the gaps of at least [`MIN_JUNCTION_GAP`] bp between
+/// consecutive exons in coordinate order. Exons are GFF 1-based closed, so the gap after `(_, e1)` and before `(s2, _)` is
+/// the `s2 - e1 - 1` bases between them; abutting or overlapping exons leave none.
+fn junction_count(exons: &[(String, u64, u64)]) -> usize {
+    let mut iv: Vec<(u64, u64)> = exons.iter().map(|x| (x.1, x.2)).collect();
+    iv.sort_unstable();
+    iv.windows(2).filter(|w| w[1].0.saturating_sub(w[0].1 + 1) >= MIN_JUNCTION_GAP).count()
+}
+
+/// Parse an assembled GTF into its loci, representatives picked by `rule`, in first-appearance order of `gene_id` (genes
+/// without exons are left out).
 /// ⚠ `loci.gff3`, and through it the whole family graph, is written from exactly this list: any change here must
 /// be cmp-checked on the families stage products.
-fn gtf_loci<R: std::io::BufRead>(reader: R) -> Result<Vec<GtfLocus>> {
+fn gtf_loci<R: std::io::BufRead>(reader: R, rule: Representative) -> Result<Vec<GtfLocus>> {
     use std::collections::{BTreeMap, HashMap, HashSet};
     fn attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
         let pat = format!("{key} \"");
@@ -2610,7 +2766,16 @@ fn gtf_loci<R: std::io::BufRead>(reader: R) -> Result<Vec<GtfLocus>> {
         let span_of = |t: &String| exons.get(t).map(|v| v.iter().map(|x| x.2).max().unwrap() - v.iter().map(|x| x.1).min().unwrap()).unwrap_or(0);
         let mut sorted_ts = ts.clone();
         sorted_ts.sort();
-        let rep = sorted_ts.iter().max_by_key(|t| (reads.get(*t).copied().unwrap_or(0), span_of(t))).unwrap().clone();
+        // `max_by_key` keeps the LAST maximum: over the sorted ids, a full tie goes to the last `transcript_id` under both
+        // rules (`most-junctions` only puts the junction count in front of the `most-reads` key)
+        let rep = match rule {
+            Representative::MostReads => sorted_ts.iter().max_by_key(|t| (reads.get(*t).copied().unwrap_or(0), span_of(t))),
+            Representative::MostJunctions => sorted_ts.iter().max_by_key(|t| {
+                (exons.get(*t).map_or(0, |v| junction_count(v)), reads.get(*t).copied().unwrap_or(0), span_of(t))
+            }),
+        }
+        .unwrap()
+        .clone();
         let st = strand.get(&rep).cloned().unwrap_or_else(|| ".".into());
         let mut ex = exons.get(&rep).cloned().unwrap_or_default();
         ex.sort_by_key(|x| x.1);
@@ -2663,11 +2828,17 @@ fn families_paf_key(cmd: &str, minimap2_version: &str, loci_fa: &rustle::vg_fami
 
 /// `--from-gtf`: the de novo locus set of an assembled GTF, as the family stage consumes it (see the flag doc).
 /// Returns `(loci.gff3, loci.fa, loci.paf)` paths and the loci themselves (for `--emit-units`' copy table).
-fn loci_from_gtf(gtf: &str, fasta: &str, out: &str, threads: usize) -> Result<(String, String, String, Vec<GtfLocus>)> {
+fn loci_from_gtf(
+    gtf: &str,
+    fasta: &str,
+    out: &str,
+    threads: usize,
+    rule: Representative,
+) -> Result<(String, String, String, Vec<GtfLocus>)> {
     use std::collections::HashSet;
     use std::io::Write;
     let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
-    let loci = gtf_loci(std::io::BufReader::new(f))?;
+    let loci = gtf_loci(std::io::BufReader::new(f), rule)?;
     let gff3 = format!("{out}.loci.gff3");
     let fa_path = format!("{out}.loci.fa");
     let paf = format!("{out}.loci.paf");
