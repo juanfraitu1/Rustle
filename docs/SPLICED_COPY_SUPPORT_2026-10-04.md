@@ -269,3 +269,54 @@ copies supported, FOUND 10 / 6 / 2 within the own nodes 23 / 21 / 24 (any locus 
 - Sibling-shared copies under the unique-read floor: NPIPA7 130 supporting reads but 28 unique, NPIPA8 121 / 10, LOC124907808 6 / 4.
 
 Register row 1241. The page's headline is D' (10 / 6 / 2), with D (1 / 1 / 1), C, B, A and the first rule beside.
+
+## Do we know where NPIP's 5' end is? CAT vs RefSeq vs the reads (2026-10-04 13:50, user question)
+
+Per copy: the CAT and RefSeq model spans, CAT's 5' extension beyond RefSeq (strand-aware; positive = CAT reaches further upstream), and the
+distance from the reads' modal transcription start (Amendment D', the dominant expressed chain's unique carriers) to the nearest CAT and
+RefSeq TSS. Session table (also the basis of the page's tooltips):
+
+| copy | CAT span | RefSeq span | CAT 5' extension | reads' TSS -> CAT (bp) | -> RefSeq (bp) |
+|---|---|---|---|---|---|
+| NPIPB2 | 49,450 | 49,446 | 0 | 4 | 4 |
+| NPIPA2 | 17,354 | 22,936 | -5,533 | 5,422 | 111 |
+| NPIPA1 | 31,910 | 14,597 | +17,309 | 16,849 | 460 |
+| PKD1P6-NPIPP1 | 33,210 | 35,998 | +17,605 | 30,136 | 12,531 |
+| NPIPA5 | 17,420 | 18,025 | -601 | 3,139 | 3,740 |
+| NPIPA6 | 36,006 | 18,742 | +17,282 | 14,771 | 2,511 |
+| NPIPA7 | 14,894 | 14,827 | +85 | 49,204 | 49,289 |
+| NPIPA8 | 18,795 | 18,818 | 0 | 4,458 | 4,458 |
+| NPIPA9 | 31,193 | 18,745 | +12,448 | 16,888 | 4,440 |
+| LOC128966608 | 57,390 | 22,731 | +34,678 | 52,864 | 18,186 |
+| NPIPB4 | 46,003 | 22,541 | +23,449 | 9,401 | 32,850 |
+| NPIPB5 | 43,879 | 32,704 | +13,262 | 9,250 | 22,512 |
+| NPIPB6 | 20,809 | 22,119 | -1,272 | 6,464 | 7,736 |
+| NPIPB7 | 20,987 | 41,603 | -20,573 | 13,959 | 6,614 |
+| NPIPB8 | 35,746 | 10,633 | +25,174 | 54 | 25,120 |
+| NPIPB9 | 21,030 | 37,372 | -16,285 | 99,677 | 83,392 |
+| NPIPB10P | 14,083 | 14,485 | -821 | 282,178 | 281,357 |
+| NPIPB11 | 22,428 | 25,154 | -2,682 | 5,996 | 8,678 |
+| NPIPB12 | 22,608 | 23,125 | -409 | – (no expressed chain) | – |
+| LOC124907834 | 28,891 | 22,360 | +8,932 | 14,728 | 5,796 |
+| NPIPB13 | – (no CAT gene) | 25,274 | – | – | 8,237 |
+| NPIPB14P | 19,826 | 89,796 | -69,970 | 70,166 | 196 |
+| NPIPB15 | 14,206 | 15,802 | -1,561 | 341 | 1,220 |
+| LOC124907808 | 14,188 | 15,984 | -1,761 | 1,572 | 189 |
+| LOC124907807 | 14,169 | 17,110 | -2,906 | 336 | 2,570 |
+
+- **CAT does not lengthen NPIP systematically.** It reaches further 5' than RefSeq at 9 of 24 copies, by 9-35 kb (NPIPA1, PKD1P6-NPIPP1, NPIPA6,
+  NPIPA9, LOC128966608, NPIPB4, NPIPB5, NPIPB8, LOC124907834 — the copies with 12-53 kb first exons); RefSeq reaches further at 6 (NPIPB14P by
+  70 kb, NPIPB7 21 kb, NPIPB9 16 kb, NPIPA2 5.5 kb, NPIPB11, LOC124907807); the median difference is -204 bp. The two annotations disagree
+  with each other in both directions.
+- **Neither annotation's TSS is where the reads start:** the reads' modal start is within 150 bp of a CAT TSS at 2 of 23 copies and of a
+  RefSeq TSS at 2 of 24 (within 1 kb: 4 and 5).
+- **The library does reach transcription starts elsewhere:** of the 660 chr16 CAT genes with >= 10 reads and >= 3 introns, 586 (89%) have
+  >= 2 reads starting within 150 bp of the CAT TSS and carrying its first three introns (Amendment D as registered); NPIP 5 of 25. The NPIP
+  discrepancy is annotation, not 5' truncation.
+- **So: the annotated 5' ends of NPIP are not known, and the reads' own starts are the only defensible estimate** — tight to the base at 24
+  of 25 copies (NPIPB2 196 full-chain reads at one position; NPIPA2, NPIPB6, NPIPB14P likewise). Caveat on three copies: the dominant
+  expressed chain starts 49-282 kb away from the copy (NPIPA7 49 kb, NPIPB9 100 kb, NPIPB10P 282 kb) — transcription units that run through
+  a neighbouring copy or gene (NPIPA6 -> NPIPA7 is the one the read-pool page saw as a merged locus); their TSS belongs to the neighbour, and
+  "the copy's 5' end" is not a well-posed question for them without the family context.
+
+Register row 1242.
