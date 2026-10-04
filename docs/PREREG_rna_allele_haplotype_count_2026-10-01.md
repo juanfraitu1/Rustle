@@ -432,3 +432,24 @@ its longest member. Unchanged: everything else in Amendments 13-13c.
 (smoke: 0% of the first name quartile vs ~50% of the last in 474- and 482-read clusters). Eligible = aligned to >= min(0.5 x (n - 1), 50)
 other members. A member with no aligned partner has no mean and is never chosen while another member has one; if no member has a mean, the
 longest is taken. Everything else as 13d.
+
+## Amendment 14 (2026-10-03): the no-deletion control for the Rust stage, before its default-on ships (written before the run)
+
+A13 passed its three rules (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`) and the driver's `candidates` stage was flipped to
+default-on in commit 1f49d0f0 — but the same run raised survivor-derived flags from 12 (A12) to 46 and left 3,527 survivor reads unplaced,
+and the stage has never been run on Amendment 9's no-deletion control. The flip is NOT pushed until this control is measured.
+
+- **Substrate and procedure: Amendment 9's, with the stage in place of the IsoCon chain** — the 53 families with nothing masked, the
+  unmasked `_pri` (`control/R0.bam`, `winloci_data/GGO.splice.mmi`), a copies table of all 201 copies (`panel_to_copies.py` over `mask` +
+  `keep`), the stage at its defaults (`--min-support 6`, batched as A13), every flagged candidate classified against the diploid truth as
+  in Amendment 9 (a: haplotype-only locus outside every lifted copy interval = true flag; b: allele; c: unmatched = false flags), arm C =
+  `_pri` + the flagged unions, components as loci.
+- **Rules (fixed now):**
+  - **C1' (specificity at the stage's operating point):** the fraction of the 53 families with >= 1 FALSE flag (b + c) <= 1/3 of A13's
+    family-level detection rate 25/53 = 0.472, i.e. **<= 0.157 (<= 8 families)** — a flag carries a likelihood ratio >= 3, the bar
+    Amendment 9 set. Reported beside: the rate counting every flag (a + b + c), and A9's 16/53 for the IsoCon chain at any support.
+  - **C2' (cost without a deletion):** reads placed on a candidate not derived from their own copy <= 5% of all reads.
+  - **Decision:** the default-on flip (1f49d0f0) ships iff C1' and C2' hold; otherwise it is reverted (the stage stays opt-in) and the
+    control's numbers are the next prereg's starting point.
+- Reported: candidates per family by class; the attribution counts without a deletion (how many unmapped / poorly placed reads join, and
+  what they become); the per-family counters (refine splits, templates by kind).
