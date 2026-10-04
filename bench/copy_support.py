@@ -18,6 +18,7 @@ Writes PREFIX.copies.tsv and PREFIX.json.
 """
 import argparse
 import collections
+import statistics
 import csv
 import json
 import re
@@ -280,11 +281,7 @@ def main(argv=None):
                         n += 1
                         break
             return n
-        td_150 = td_count(models_d, a.tss_tol)
-        td_50, td_300 = td_count(models_d, 50), td_count(models_d, 300)
-        td_cat, td_rs = td_count(models_d1, a.tss_tol), td_count(models_d2, a.tss_tol)
-        td_uniq = td_count(models_d, a.tss_tol, uniq=True)
-        td_expressed = td_150 >= FLOOR
+
         union = merge([e for ex in texons.values() for e in ex]) or [[int(c["terr_lo0"]), int(c["terr_hi"])]]
         ann_introns = {t: set(introns_of(ex)) for t, ex in texons.items()}
         n_intron = max((len(v) for v in ann_introns.values()), default=0)
@@ -342,6 +339,25 @@ def main(argv=None):
         dom_cls = chain_class(dom[0], chains) if dom else "-"
         dom_reads = dom[1] if dom else 0
         exp_classes = collections.Counter(chain_class(ch, chains) for ch in expressed_chains)
+        td_150 = td_count(models_d, a.tss_tol)
+        td_50, td_300 = td_count(models_d, 50), td_count(models_d, 300)
+        td_cat, td_rs = td_count(models_d1, a.tss_tol), td_count(models_d2, a.tss_tol)
+        td_uniq = td_count(models_d, a.tss_tol, uniq=True)
+        td_expressed = td_150 >= FLOOR
+        # D' (reported beside): the same test against the reads' own expressed chains; TSS_e = modal 5' end (20-bp bins) of the chain's unique carriers
+        te_models = []
+        for ch in expressed_chains:
+            p5s = [p5 for (_, js), q, p5 in zip(reads, read_mapq, read_5p) if q > 0 and tuple(js) == tuple(ch)]
+            if not p5s:
+                continue
+            binned = collections.Counter(p // 20 for p in p5s)
+            b = max(binned.items(), key=lambda kv: (kv[1], -abs(kv[0])))[0]
+            tss_e = int(statistics.median([p for p in p5s if p // 20 == b]))
+            intr = list(reversed(ch)) if strand == "-" else list(ch)
+            te_models.append((tss_e, intr, union))
+        te_150 = td_count(te_models, a.tss_tol) if te_models else 0
+        te_uniq = td_count(te_models, a.tss_tol, uniq=True) if te_models else 0
+        te_expressed = te_150 >= FLOOR
         n_exact = sum(1 for _, js in reads if js and any(set(js) == s for s in ann_introns.values() if s))
         expressed = n_support >= FLOOR
         summary["spliced_expressed"] += expressed
@@ -349,6 +365,7 @@ def main(argv=None):
         summary["chain_expressed"] = summary.get("chain_expressed", 0) + chain_expressed
         summary["xc_expressed"] = summary.get("xc_expressed", 0) + xc_expressed
         summary["td_expressed"] = summary.get("td_expressed", 0) + td_expressed
+        summary["te_expressed"] = summary.get("te_expressed", 0) + te_expressed
         row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
                    ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed),
@@ -360,7 +377,9 @@ def main(argv=None):
                    xc_dominant_reads=dom_reads, xc_dominant_junctions=len(dom[0]) if dom else 0, xc_dominant_class=dom_cls,
                    xc_expressed_FSM_ISM=exp_classes["FSM"] + exp_classes["ISM"], xc_expressed_NIC=exp_classes["NIC"], xc_expressed_NNC=exp_classes["NNC"],
                    td_support_reads=td_150, td_support_50=td_50, td_support_300=td_300, td_support_cat=td_cat, td_support_refseq=td_rs,
-                   td_support_unique=td_uniq, td_expressed=int(td_expressed))
+                   td_support_unique=td_uniq, td_expressed=int(td_expressed),
+                   te_support_reads=te_150, te_support_unique=te_uniq, te_expressed=int(te_expressed), te_chains=len(te_models),
+                   te_tss=";".join(str(m[0]) for m in te_models[:3]))
         for arm, loci in arms.items():
             same = [L for L in loci.values() if L["chrom"] == chrom and L["strand"] == strand and inter(L["exons"], union) > 0]
             if k == 0:
@@ -405,6 +424,13 @@ def main(argv=None):
             td_found = td_expressed and len(td_loci) > 0
             row[f"{arm}_td_found"] = int(td_found)
             summary["arms"][arm]["td_found"] = summary["arms"][arm].get("td_found", 0) + td_found
+            def rep_te_ok(L):
+                ex = L["exons"]
+                p5 = ex[-1][1] if strand == "-" else ex[0][0]
+                return any(tss_support(p5, sorted(L["juncs"]), mdl, a.tss_tol) for mdl in te_models)
+            te_found = te_expressed and any(rep_te_ok(L) for L in same)
+            row[f"{arm}_te_found"] = int(te_found)
+            summary["arms"][arm]["te_found"] = summary["arms"][arm].get("te_found", 0) + te_found
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
             # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
@@ -448,6 +474,13 @@ def main(argv=None):
                 locus_td_found = td_expressed and any(tx_td_ok(exs) for n in names_same for exs in arm_tx_exons.get(arm, {}).get(n, []))
                 row[f"{arm}_locus_td_found"] = int(locus_td_found)
                 summary["arms"][arm]["locus_td_found"] = summary["arms"][arm].get("locus_td_found", 0) + locus_td_found
+                def tx_te_ok(exs):
+                    ex = sorted(exs)
+                    p5 = ex[-1][1] if strand == "-" else ex[0][0]
+                    return any(tss_support(p5, introns_of(ex), mdl, a.tss_tol) for mdl in te_models)
+                locus_te_found = te_expressed and any(tx_te_ok(exs) for n in names_same for exs in arm_tx_exons.get(arm, {}).get(n, []))
+                row[f"{arm}_locus_te_found"] = int(locus_te_found)
+                summary["arms"][arm]["locus_te_found"] = summary["arms"][arm].get("locus_te_found", 0) + locus_te_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
@@ -457,6 +490,7 @@ def main(argv=None):
                 summary["arms"][arm]["chain_found_in_npip_nodes"] = summary["arms"][arm].get("chain_found_in_npip_nodes", 0) + (own and chain_found)
                 summary["arms"][arm]["xc_found_in_npip_nodes"] = summary["arms"][arm].get("xc_found_in_npip_nodes", 0) + (own and xc_found)
                 summary["arms"][arm]["td_found_in_npip_nodes"] = summary["arms"][arm].get("td_found_in_npip_nodes", 0) + (own and td_found)
+                summary["arms"][arm]["te_found_in_npip_nodes"] = summary["arms"][arm].get("te_found_in_npip_nodes", 0) + (own and te_found)
                 if locus_found is not None:
                     summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)

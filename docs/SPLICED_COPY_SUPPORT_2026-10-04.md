@@ -217,3 +217,55 @@ locus, 13 / 9 / 6 within the page's own nodes (P / GOOD / ALL); locus level 21 /
 
 Register row 1240. The page's headline is now the Amendment C number (13 / 9 / 6 within own nodes 23 / 21 / 24), with B, A and the first rule
 beside.
+
+## Amendment D re-score (2026-10-04 12:40, user: "a read that starts at the TSS, has up to 3 junctions and introns in common with the intron chain it is supporting")
+
+Amendment D (prereg 8affcfb2, before the run): a read supports a transcript iff its 5' end lies within ±150 bp of the transcript's TSS
+(strand-aware) AND its first m junctions equal the transcript's first m introns, m = min(3, introns); found = the node's representative does
+the same. Registered against the annotated models (CAT ∪ RefSeq); the same test against the reads' own expressed chains (Amendment C's chains,
+TSS = the modal 5' end of their unique carriers, 20-bp bins) was registered as the reading beside (D'). Columns `td_*` (annotated) and `te_*`
+(expressed) in `docs/SPLICED_COPY_SUPPORT_hsa_npip.tsv`.
+
+**Against the annotated TSS (D): 5 of 25 copies have >= 2 supporting reads; FOUND 1 / 1 / 1 (NPIPB8). Against the expressed TSS (D'): 24 of 25
+copies supported, FOUND 10 / 6 / 2 within the own nodes 23 / 21 / 24 (any locus 11 / 7 / 2); locus level 20 / 19 / 16.**
+
+| copy | reads | D: from the ANNOTATED TSS (±150; CAT / RefSeq; ±300) | D': from the EXPRESSED TSS (unique) | expressed TSS(s) | P found / own | GOOD | ALL |
+|---|---|---|---|---|---|---|---|
+| NPIPB2 | 432 | 34 (27 / 34; 35) | 305 (305) | 12012752, 11977729, 11973618 | 0 / 0 | 0 / 0 | 0 / 1 |
+| NPIPA2 | 348 | 0 (0 / 0; 0) | 227 (227) | 14741044, 14746189, 14749609 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA1 | 806 | 0 (0 / 0; 0) | 463 (463) | 14938049, 14925111, 14925612 | 1 / 1 | 1 / 1 | 0 / 1 |
+| PKD1P6-NPIPP1 | 253 | 0 (0 / 0; 0) | 68 (68) | 15129275, 15128694, 15130861 | 1 / 0 | 1 / 0 | 0 / 1 |
+| NPIPA5 | 147 | 1 (1 / 0; 1) | 82 (82) | 15382704, 15382704, 15400736 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA6 | 204 | 0 (0 / 0; 0) | 71 (70) | 16337769, 16339536, 16339733 | 1 / 1 | 0 / 0 | 0 / 1 |
+| NPIPA7 | 285 | 0 (0 / 0; 0) | 130 (28) | 16342074, 16395878, 16395769 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA8 | 192 | 0 (0 / 0; 0) | 121 (10) | 18339521 | 1 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA9 | 998 | 0 (0 / 0; 2) | 557 (541) | 18386676, 18391557, 18382592 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC128966608 | 1104 | 22 (15 / 7; 24) | 284 (281) | 21685230, 21689577, 21685160 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB4 | 897 | 0 (0 / 0; 0) | 97 (97) | 22326971, 22359378, 22365631 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB5 | 785 | 0 (0 / 0; 0) | 72 (72) | 22759094, 22696417, 22761474 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB6 | 684 | 1 (1 / 0; 1) | 516 (514) | 28637415, 28637415, 28637415 | 1 / 1 | 0 / 0 | 0 / 1 |
+| NPIPB7 | 164 | 0 (0 / 0; 1) | 48 (48) | 28771997, 28751524, 28771999 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB8 | 174 | 52 (52 / 0; 73) | 86 (86) | 28903704, 28903501, 28903794 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB9 | 568 | 0 (0 / 0; 0) | 360 (360) | 28932688, 28969226, 28992124 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB10P | 70 | 0 (0 / 0; 0) | 19 (19) | 29037610, 29319354, 29319354 | 0 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB11 | 150 | 0 (0 / 0; 0) | 44 (44) | 29679826, 29666321, 29679826 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPB12 | 54 | 1 (0 / 1; 1) | 0 (0) |  | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907834 | 634 | 4 (0 / 4; 4) | 170 (170) | 30523997, 30519740, 30511567 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB13 | 131 | 0 (0 / 0; 0) | 25 (25) | 30626433, 30625966, 30621808 | 0 / 1 | 0 / 1 | 0 / 0 |
+| NPIPB14P | 1255 | 0 (0 / 0; 0) | 729 (729) | 75875797, 75799850, 75843724 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB15 | 220 | 0 (0 / 0; 0) | 138 (129) | 80195303, 80195303, 80195303 | 1 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907808 | 73 | 2 (2 / 0; 2) | 6 (4) | 80308465 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907807 | 96 | 0 (0 / 0; 0) | 24 (21) | 80424051, 80432162 | 1 / 1 | 0 / 1 | 0 / 1 |
+
+- **Why the annotated TSS fails: the models' first exons.** The CAT NPIP models have first "exons" of 12-53 kb (NPIPB2 47,479 bp; LOC128966608
+  52,989; NPIPB4 41,574; NPIPA1 25,831; NPIPA9 25,056; NPIPB5 33,609), RefSeq's at several copies too (NPIPB9 34,034; NPIPB7 27,579; NPIPB6 19,184);
+  the models whose intron chain the full-length reads carry (their FSM match) place the TSS 3.7-51.5 kb upstream of where every read starts —
+  while the reads' 5' ends cluster to the base (NPIPB2: 196 FSM reads start at one position 35,027 bp downstream of that model's TSS, IQR
+  35,027-35,032; NPIPA2 8,676 [8,676, 8,676]; NPIPB6 6,464; NPIPB14P 5,781). The reads start at a consistent transcription start; the annotation's
+  first exon absorbs the upstream region. Post hoc; the per-copy first-exon lengths are in the session record and the `te_tss` column lists
+  the expressed starts (e.g. NPIPB2 12,012,752; NPIPB6 28,637,415; NPIPB15 80,195,303).
+- **Under the user's standard the nodes fall further:** the primaries-only arm's representative starts at the expressed TSS with the first
+  three introns at 10 of its 23 own nodes, "+ good" 6 of 21, "+ all" 2 of 24. The loci hold such a transcript at 20 / 19 / 16.
+- Sibling-shared copies under the unique-read floor: NPIPA7 130 supporting reads but 28 unique, NPIPA8 121 / 10, LOC124907808 6 / 4.
+
+Register row 1241. The page's headline is D' (10 / 6 / 2), with D (1 / 1 / 1), C, B, A and the first rule beside.

@@ -341,3 +341,25 @@ a contiguous sub-chain of one (re-scored from the saved arms, `h3C.support.*`).
   disagree on what a representative should carry, which is itself the finding: a representative should be an expressed chain, neither the
   most-read fragment nor the junction-maximal transcript. That rule ("the most-read EXPRESSED CHAIN of the locus") is the one to pre-register
   next; its H3 under C is bounded above by the locus-level column.
+
+## Amendment D (2026-10-04 12:40): H3 with TSS-anchored support — the sign of clause (b) flips back to R_J
+
+D' = the read / representative starts within ±150 bp of an expressed chain's TSS (modal 5' end of its unique carriers) and carries its first
+min(3, n) introns; D = the same against the annotated models' TSS (re-scored from the saved arms, `h3D.support.*`).
+
+| contig | genes | expressed (D': >= 2 reads from the expressed TSS with the first 3 introns) | FOUND D' R_M | R_J | locus level R_M | R_J | D (annotated TSS): expressed, found R_M / R_J |
+|---|---|---|---|---|---|---|---|
+| human_chr2 | 1,243 | 1,019 | **541** | **696** | 911 | 926 | 1,003, 442 / 537 |
+| human_chr6 | 1,047 | 778 | **410** | **497** | 675 | 686 | 776, 347 / 372 |
+| human_chr8 | 698 | 528 | **294** | **355** | 473 | 477 | 518, 239 / 283 |
+| human_chr10 | 729 | 591 | **331** | **410** | 522 | 535 | 582, 282 / 301 |
+| gorilla_NC_073234.2 | 1,119 | 690 | **446** | **465** | 604 | 609 | 598, 437 / 400 |
+| human_chr16 (dev) | 857 | 672 | **350** | **412** | 566 | 575 | 669, 320 / 349 |
+| gorilla_NC_073244.2 (dev) | 1,520 | 825 | **599** | **585** | 729 | 739 | 734, 546 / 513 |
+
+- **Under a TSS-anchored test the junction-maximal representative wins on the human contigs** (D': chr2 541 vs 696, chr6 410 vs 497, chr8 294
+  vs 355, chr10 331 vs 410, chr16 350 vs 412; gorilla NC_073234.2 446 vs 465, NC_073244.2 599 vs 585): reaching the 5' end is what the test
+  rewards, and the most-read representative is the 3' fragment. Under D (annotated TSS) the same, with lower counts (the annotated starts).
+- The four readings now split 2-2 (A, D for R_J; B, C for R_M) and the family clause (a) still fails on chr6. The decision stays as registered
+  (R_M default, R_J opt-in); the next representative rule is pre-registered against the user's standard (D') together with the family
+  metrics: the most-read expressed chain that starts at the locus's expressed TSS.
