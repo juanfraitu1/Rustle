@@ -51,3 +51,27 @@ the page, then to the figure denominators.
 ## Not changed
 
 Node admission in the assembler (single-exon loci stay admitted: retrocopies are real members), the tools benchmark's E2, O2's certificate.
+
+## Amendment A (2026-10-04 11:45, user correction, written before the re-score): support must be the COPY's own introns
+
+The rule above lets the reads define the junction set (any junction carried by >= 3 reads at the copy). That admits a set of fragments
+that is internally consistent but shares nothing with the copy's annotated transcript: at NPIPB4, 212 reads carry >= 2 "supported"
+junctions while only 144 carry >= 2 of CAT's introns, and the loci built from such reads were counted as found. The user's standard:
+**the introns and exons must align with the transcript the read is said to support; otherwise it is a fragment that is there by
+happenstance.** Re-registered definitions, replacing "supported junction" wherever the FOUND verdict is concerned:
+
+- **Annotated intron set A(c):** the introns (>= 50 bp, exact donor/acceptor) of every annotated transcript of the copy (human: CAT/Liftoff
+  v2.0; gorilla: RefSeq). Where RefSeq also annotates a human copy (the NPIP page), RefSeq's set is reported beside — CAT and RefSeq NPIPB4
+  share 2 of 20 introns, so the choice of annotation is part of the answer.
+- **Support read:** a read at the copy with >= k junctions in A(c), k = min(2, |A(c)|); k = 0 (intronless copy): aligned blocks cover
+  >= 50% of the exon union.
+- **Spliced-expressed copy:** >= 2 support reads.
+- **FOUND copy:** spliced-expressed AND a same-strand locus whose representative's junctions include >= k introns of A(c) (k = 0: the
+  representative's exons cover >= 50% of the exon union). Locus level (any transcript of the locus) reported beside.
+- The annotation-free reading of the original rule is kept as a REPORTED column (it answers "is there a consistent spliced structure here
+  at all"), never as the FOUND verdict. Exact-chain reads (E2) stay reported.
+
+Applied to: the NPIP page (3 arms, 25 copies; the page is restated once more), and the representative-rule run's H3 on all 7 contigs
+(`/mnt/linuxdisk/tmp/rep_rule/`, both arms) — the latter is a re-score of saved outputs, no families re-run; `docs/LOCUS_REPRESENTATIVE_
+RULE_2026-10-04.md` gains the annotation-anchored H3 table and its decision clause (b) is re-evaluated under it (R_J is opt-in already;
+the clause can only confirm or add a second violation). Scorer: `bench/copy_support.py` gains the `ann_*` columns; nothing else changes.
