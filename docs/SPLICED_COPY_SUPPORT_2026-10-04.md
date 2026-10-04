@@ -320,3 +320,49 @@ RefSeq TSS. Session table (also the basis of the page's tooltips):
   "the copy's 5' end" is not a well-posed question for them without the family context.
 
 Register row 1242.
+
+## The cap signal marks where NPIP transcription really starts (2026-10-04 13:55)
+
+The A119b library carries the template-switching cap signature (`--polish-tss`'s CAP signal, `docs/ASSEMBLY_POLISH.md` addendum 2): a 1-3 bp
+untemplated G at the RNA 5' end, present on molecules that were reverse-transcribed to the cap. Per copy, the fraction of same-strand primaries
+carrying it, at the reads' modal start (±20 bp, Amendment D') and >200 bp away from it:
+
+| locus | all reads | at the modal start | > 200 bp away |
+|---|---|---|---|
+| VPS4A (control) | 407/688 (59%) | 317/420 (75%) | 7/134 (5%) |
+| NPIPB2 | 206/436 (47%) | 189/306 (62%) | 1/100 (1%) |
+| NPIPA2 | 218/366 (60%) | 192/216 (89%) | 5/118 (4%) |
+| NPIPA5 | 85/153 (56%) | 77/86 (90%) | 2/60 (3%) |
+| NPIPA8 | 125/192 (65%) | 114/134 (85%) | 0/46 (0%) |
+| NPIPA9 | 102/999 (10%) | 76/112 (68%) | 23/809 (3%) |
+| NPIPB4 | 80/901 (9%) | 59/71 (83%) | 21/817 (3%) |
+| NPIPB6 | 422/693 (61%) | 410/501 (82%) | 7/185 (4%) |
+| NPIPB7 | 48/168 (29%) | 29/45 (64%) | 11/113 (10%) |
+| NPIPB8 | 99/198 (50%) | 35/45 (78%) | 28/108 (26%) |
+| NPIPB10P | 28/92 (30%) | 25/26 (96%) | 2/64 (3%) |
+| NPIPB11 | 58/181 (32%) | 50/56 (89%) | 5/117 (4%) |
+| NPIPB13 | 20/255 (8%) | 13/17 (76%) | 7/230 (3%) |
+| NPIPB14P | 602/1264 (48%) | 346/425 (81%) | 160/664 (24%) |
+| NPIPB15 | 133/231 (58%) | 127/147 (86%) | 5/83 (6%) |
+| LOC124907834 | 122/644 (19%) | 106/130 (82%) | 15/467 (3%) |
+| LOC124907807 | 31/106 (29%) | 24/25 (96%) | 6/77 (8%) |
+| NPIPA1 | 177/807 (22%) | 0/10 (0%) | 177/774 (23%) |
+| NPIPA6 | 22/204 (11%) | 0/22 (0%) | 22/139 (16%) |
+| NPIPA7 | 109/285 (38%) | 0/10 (0%) | 109/265 (41%) |
+| LOC128966608 | 116/1111 (10%) | 0/14 (0%) | 114/1074 (11%) |
+| NPIPB5 | 46/786 (6%) | 3/19 (16%) | 37/732 (5%) |
+| NPIPB9 | 321/624 (51%) | 6/8 (75%) | 307/605 (51%) |
+| LOC124907808 | 22/83 (27%) | 1/8 (12%) | 20/74 (27%) |
+| PKD1P6-NPIPP1 | 9/255 (4%) | 0/6 (0%) | 8/215 (4%) |
+
+- **At 17 of 24 copies the reads' modal start is a capped transcription start** (62-96% of the reads there carry the cap G, against 0-10%
+  of the reads starting elsewhere; the control gene 75% vs 5%). The 5' ends of NPIP are knowable from the data: they are where the capped
+  molecules begin, 3.7-51 kb downstream of the CAT first exons.
+- **At 7 copies the modal start picked by Amendment D' is not the capped start** (NPIPA1, NPIPA6, NPIPA7, LOC128966608, NPIPB5, LOC124907808
+  with 0-16% capped there while 11-41% of the other reads are capped; NPIPB9 has 51% capped reads away from the one start chosen): D' took the
+  first expressed chain's modal 5' end, which at these copies is a downstream fragment start or the start of a chain running in from a
+  neighbour. PKD1P6-NPIPP1 has almost no capped reads at all (9/255).
+- **So the fix is to define the start from the capped reads, not from the modal 5' end:** cluster the 5' ends of cap-clipped reads per locus,
+  call each cluster of >= 3 a transcription start, and anchor support, the representative and the evaluation there (Amendment E below).
+
+Register row 1243.

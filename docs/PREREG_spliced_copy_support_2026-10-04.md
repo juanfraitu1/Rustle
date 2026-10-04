@@ -137,3 +137,19 @@ counts as found. The user's standard anchors support at the transcript start:
 - Reported beside, no rule: the same test against the reads' own chains (the dominant expressed chain of Amendment C with its carrying reads'
   modal 5' end as the TSS), and Amendments A-C's counts.
 - Applied to the NPIP page (restated under D) and to the representative-rule H3 on the 7 contigs (saved arms; single annotation).
+
+## Amendment E (2026-10-04 13:58, written before the run): the transcription start is where the CAPPED reads begin
+
+Amendment D' took a chain's modal 5' end as its start; at 7 of 24 NPIP copies that start carries no cap signal while other reads of the copy
+do (`docs/SPLICED_COPY_SUPPORT_2026-10-04.md`, "The cap signal"). Re-registered:
+
+- **Cap read:** a primary whose RNA 5' end carries a 1-3 bp untemplated G (leading soft clip of G on `+`, trailing soft clip of C on `-`;
+  `--polish-tss`'s CAP signal). **Capped start (TSS_cap):** a 20-bp bin of cap reads' 5' ends holding >= 3 cap reads; its position = the
+  median 5' end of those reads; a locus may have several.
+- **Anchored expressed chain:** among the reads whose 5' end lies within ±150 bp of a TSS_cap, an identical >= 2-junction chain carried by >= 3
+  uniquely placed reads; its first m introns (m = min(3, length)) are the chain's anchor.
+- **A read supports the copy** iff its 5' end lies within ±150 bp of a TSS_cap and its first m junctions equal an anchored expressed chain's
+  first m introns at that start. **Spliced-expressed:** >= 2 such reads. **FOUND:** a same-strand locus whose representative's 5' end lies within
+  ±150 bp of a TSS_cap and whose first m junctions equal such an anchor; locus level beside. Reported beside: Amendment D (annotated TSS) and
+  D' (modal start); the number of capped starts per copy and their positions.
+- Applied to the NPIP page and to the representative-rule H3 on the 7 contigs (saved arms). Scorer `tc_*` columns.

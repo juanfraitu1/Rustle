@@ -99,6 +99,17 @@ def read_blocks_junctions(rd):
     return merge([b for b in blocks if b[1] > b[0]]), juncs
 
 
+def cap_clip(rd, strand):
+    """Amendment E: the cap signal — a 1-3 bp untemplated G at the RNA 5' end (leading soft clip of G on +, trailing soft clip of C on -)."""
+    ct = rd.cigartuples
+    seq = rd.query_sequence
+    if not ct or seq is None:
+        return False
+    if strand == "+":
+        return ct[0][0] == 4 and 1 <= ct[0][1] <= 3 and set(seq[:ct[0][1]]) <= {"G"}
+    return ct[-1][0] == 4 and 1 <= ct[-1][1] <= 3 and set(seq[-ct[-1][1]:]) <= {"C"}
+
+
 def chain_class(chain, models):
     """FSM / ISM / NIC / NNC of a junction chain against model intron chains (Amendment C's class column; `noann` without models)."""
     if not models:
@@ -288,7 +299,7 @@ def main(argv=None):
         k = min(2, n_intron)
         ann_all = set().union(*ann_introns.values()) if ann_introns else set()
         lo, hi = union[0][0], union[-1][1]
-        reads, read_mapq, read_5p = [], [], []
+        reads, read_mapq, read_5p, read_cap = [], [], [], []
         for rd in bam.fetch(chrom, lo, hi):
             if rd.is_unmapped or rd.is_secondary or rd.is_supplementary:
                 continue
@@ -301,6 +312,7 @@ def main(argv=None):
             reads.append((blocks, juncs))
             read_mapq.append(rd.mapping_quality)
             read_5p.append(rd.reference_end if strand == "-" else rd.reference_start)
+            read_cap.append(cap_clip(rd, strand))
         jcount = collections.Counter(j for _, js in reads for j in js)
         supported = {j for j, n in jcount.items() if n >= MIN_JUNCTION_READS}
         n_unspliced = sum(1 for _, js in reads if not js)
@@ -358,6 +370,22 @@ def main(argv=None):
         te_150 = td_count(te_models, a.tss_tol) if te_models else 0
         te_uniq = td_count(te_models, a.tss_tol, uniq=True) if te_models else 0
         te_expressed = te_150 >= FLOOR
+        # Amendment E: capped starts (20-bp bins of cap reads' 5' ends with >= 3 cap reads) and the expressed chains anchored there
+        capbins = collections.Counter(p5 // 20 for p5, c in zip(read_5p, read_cap) if c)
+        tss_caps = []
+        for b, n in capbins.items():
+            if n >= 3:
+                tss_caps.append(int(statistics.median([p5 for p5, c in zip(read_5p, read_cap) if c and p5 // 20 == b])))
+        tc_models = []
+        for tss_c in tss_caps:
+            cc = collections.Counter(tuple(js) for (_, js), q, p5 in zip(reads, read_mapq, read_5p) if q > 0 and len(js) >= 2 and abs(p5 - tss_c) <= a.tss_tol)
+            for ch, n in cc.items():
+                if n >= a.chain_floor:
+                    intr = list(reversed(ch)) if strand == "-" else list(ch)
+                    tc_models.append((tss_c, intr, union))
+        tc_150 = td_count(tc_models, a.tss_tol) if tc_models else 0
+        tc_uniq = td_count(tc_models, a.tss_tol, uniq=True) if tc_models else 0
+        tc_expressed = tc_150 >= FLOOR
         n_exact = sum(1 for _, js in reads if js and any(set(js) == s for s in ann_introns.values() if s))
         expressed = n_support >= FLOOR
         summary["spliced_expressed"] += expressed
@@ -366,6 +394,7 @@ def main(argv=None):
         summary["xc_expressed"] = summary.get("xc_expressed", 0) + xc_expressed
         summary["td_expressed"] = summary.get("td_expressed", 0) + td_expressed
         summary["te_expressed"] = summary.get("te_expressed", 0) + te_expressed
+        summary["tc_expressed"] = summary.get("tc_expressed", 0) + tc_expressed
         row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
                    ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed),
@@ -379,7 +408,9 @@ def main(argv=None):
                    td_support_reads=td_150, td_support_50=td_50, td_support_300=td_300, td_support_cat=td_cat, td_support_refseq=td_rs,
                    td_support_unique=td_uniq, td_expressed=int(td_expressed),
                    te_support_reads=te_150, te_support_unique=te_uniq, te_expressed=int(te_expressed), te_chains=len(te_models),
-                   te_tss=";".join(str(m[0]) for m in te_models[:3]))
+                   te_tss=";".join(str(m[0]) for m in te_models[:3]),
+                   tc_support_reads=tc_150, tc_support_unique=tc_uniq, tc_expressed=int(tc_expressed), tc_starts=len(tss_caps),
+                   tc_tss=";".join(str(t) for t in sorted(tss_caps)[:4]), cap_reads=sum(read_cap), tc_chains=len(tc_models))
         for arm, loci in arms.items():
             same = [L for L in loci.values() if L["chrom"] == chrom and L["strand"] == strand and inter(L["exons"], union) > 0]
             if k == 0:
@@ -431,6 +462,13 @@ def main(argv=None):
             te_found = te_expressed and any(rep_te_ok(L) for L in same)
             row[f"{arm}_te_found"] = int(te_found)
             summary["arms"][arm]["te_found"] = summary["arms"][arm].get("te_found", 0) + te_found
+            def rep_tc_ok(L):
+                ex = L["exons"]
+                p5 = ex[-1][1] if strand == "-" else ex[0][0]
+                return any(tss_support(p5, sorted(L["juncs"]), mdl, a.tss_tol) for mdl in tc_models)
+            tc_found = tc_expressed and any(rep_tc_ok(L) for L in same)
+            row[f"{arm}_tc_found"] = int(tc_found)
+            summary["arms"][arm]["tc_found"] = summary["arms"][arm].get("tc_found", 0) + tc_found
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
             # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
@@ -481,6 +519,13 @@ def main(argv=None):
                 locus_te_found = te_expressed and any(tx_te_ok(exs) for n in names_same for exs in arm_tx_exons.get(arm, {}).get(n, []))
                 row[f"{arm}_locus_te_found"] = int(locus_te_found)
                 summary["arms"][arm]["locus_te_found"] = summary["arms"][arm].get("locus_te_found", 0) + locus_te_found
+                def tx_tc_ok(exs):
+                    ex = sorted(exs)
+                    p5 = ex[-1][1] if strand == "-" else ex[0][0]
+                    return any(tss_support(p5, introns_of(ex), mdl, a.tss_tol) for mdl in tc_models)
+                locus_tc_found = tc_expressed and any(tx_tc_ok(exs) for n in names_same for exs in arm_tx_exons.get(arm, {}).get(n, []))
+                row[f"{arm}_locus_tc_found"] = int(locus_tc_found)
+                summary["arms"][arm]["locus_tc_found"] = summary["arms"][arm].get("locus_tc_found", 0) + locus_tc_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
@@ -491,6 +536,7 @@ def main(argv=None):
                 summary["arms"][arm]["xc_found_in_npip_nodes"] = summary["arms"][arm].get("xc_found_in_npip_nodes", 0) + (own and xc_found)
                 summary["arms"][arm]["td_found_in_npip_nodes"] = summary["arms"][arm].get("td_found_in_npip_nodes", 0) + (own and td_found)
                 summary["arms"][arm]["te_found_in_npip_nodes"] = summary["arms"][arm].get("te_found_in_npip_nodes", 0) + (own and te_found)
+                summary["arms"][arm]["tc_found_in_npip_nodes"] = summary["arms"][arm].get("tc_found_in_npip_nodes", 0) + (own and tc_found)
                 if locus_found is not None:
                     summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)
