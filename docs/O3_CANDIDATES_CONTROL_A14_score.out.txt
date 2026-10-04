@@ -1,0 +1,375 @@
+# Amendment 14 (the no-deletion control of o3_candidates) — scorer and helper outputs, 2026-10-03
+# Work dir /mnt/linuxdisk/tmp/rna_allele/a14/ (whole-BAM: a14/wholebam/); recipe: ACC=a14 bench/rna_allele/accept_o3_candidates.sh
+# Doc: docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md
+
+## classify.out (C1': the flagged unions against KB3781's mat / pat, Amendment 9's rule)
+self-check: Amendment 9's 28 candidates re-classified from control/contigs_L.{mat,pat}.paf equal control/candidates.tsv ({'c_unmatched': 24, 'a_haplotype_only': 1, 'b_allele': 3})
+flagged candidates 56 in 35 families; classes {'c_unmatched': 54, 'a_haplotype_only': 1, 'b_allele': 1}
+by stage label x class: {'S|a_haplotype_only': 1, 'S|b_allele': 1, 'S|c_unmatched': 53, 'elsewhere|c_unmatched': 1}
+C1': families with >= 1 FALSE flag (b + c + pri) 35/53 = 66.0% (bar <= 8 = 15.1%, i.e. <= 1/3 of A13's detection 25/53 = 0.472) -> FAILS; family-level LR of a flag 0.472 / 0.660 = 0.71 (bar 3)
+beside: families with any flag (a + b + c) 35/53 = 66.0%; with a TRUE flag (a) 1 ['GWFAM175']; A9's IsoCon chain (any support): 16/53 = 30.2% with a false candidate
+overlap with A9's 28 candidates (same family, identity >= 0.999 over >= 90% of the shorter): 7 of the 56 flags match one; A9 candidates reproduced 7/28; families flagged by both 10 (A9 16, A14 35)
+overlap with the A13 run's 46 survivor-derived flags: 28 of the 56 flags match one; A13 survivor-derived flags reproduced 28/46
+per family (flagged candidates by class; a = haplotype-only, b = allele, c = unmatched):
+  GWFAM4	c:1	FALSE
+  GWFAM6	c:1	FALSE
+  GWFAM23	c:1	FALSE
+  GWFAM37	c:2	FALSE
+  GWFAM47	c:3	FALSE
+  GWFAM54	c:1	FALSE
+  GWFAM98	c:1	FALSE
+  GWFAM99	c:2	FALSE
+  GWFAM100	c:2	FALSE
+  GWFAM104	c:2	FALSE
+  GWFAM125	c:1	FALSE
+  GWFAM158	c:2	FALSE
+  GWFAM161	c:1	FALSE
+  GWFAM163	c:2	FALSE
+  GWFAM169	c:1	FALSE
+  GWFAM173	c:3	FALSE
+  GWFAM175	a:1 b:1 c:1	FALSE
+  GWFAM181	c:1	FALSE
+  GWFAM185	c:1	FALSE
+  GWFAM236	c:1	FALSE
+  GWFAM244	c:2	FALSE
+  GWFAM246	c:1	FALSE
+  GWFAM268	c:1	FALSE
+  GWFAM269	c:2	FALSE
+  GWFAM282	c:1	FALSE
+  GWFAM317	c:2	FALSE
+  GWFAM331	c:2	FALSE
+  GWFAM335	c:2	FALSE
+  GWFAM348	c:4	FALSE
+  GWFAM402	c:1	FALSE
+  GWFAM407	c:1	FALSE
+  GWFAM425	c:2	FALSE
+  GWFAM439	c:1	FALSE
+  GWFAM440	c:1	FALSE
+  GWFAM490	c:1	FALSE
+candidate	family	reads	clusters	length	d	label	class	best haplotype hit	A9	A13-S
+iso_GWFAM4_0	GWFAM4	321	1	5321	0.10581	S:GWFAM4:0	c_unmatched	pat:CM054558.2:15670228-15802485 0.8939	-	iso_GWFAM4_0
+iso_GWFAM6_0	GWFAM6	457	1	3252	0.17036	S:GWFAM6:2	c_unmatched	mat:CM054592.2:22573007-22582156 0.8296	-	-
+iso_GWFAM23_0	GWFAM23	234	1	1689	0.08348	S:GWFAM23:1	c_unmatched	mat:CM054595.2:29277742-29285667 0.9183	-	-
+iso_GWFAM37_0	GWFAM37	369	1	3418	0.03511	S:GWFAM37:3	c_unmatched	pat:CM054558.2:150949243-150965402 0.9649	-	-
+iso_GWFAM37_1	GWFAM37	361	1	8201	0.51457	S:GWFAM37:2	c_unmatched	mat:CM054582.2:154410510-154423588 0.4856	-	-
+iso_GWFAM47_0	GWFAM47	224	1	7442	0.04300	S:GWFAM47:1	c_unmatched	mat:CM054592.2:148538045-148563757 0.9571	-	-
+iso_GWFAM47_1	GWFAM47	164	1	3497	0.08979	S:GWFAM47:4	c_unmatched	pat:CM054578.2:62120931-62143292 0.9108	-	-
+iso_GWFAM47_2	GWFAM47	94	1	3696	0.02408	S:GWFAM47:2	c_unmatched	mat:CM054602.2:63858086-63873901 0.9759	-	-
+iso_GWFAM54_0	GWFAM54	443	1	5721	0.08093	S:GWFAM54:1	c_unmatched	mat:CM054589.2:63060407-63102802 0.9191	-	iso_GWFAM54_0
+iso_GWFAM98_0	GWFAM98	7	1	1805	0.01496	S:GWFAM98:1	c_unmatched	mat:CM054588.2:12962268-12965715 0.9823	GWFAM98:c0	iso_GWFAM98_1
+iso_GWFAM99_0	GWFAM99	317	1	2223	0.05533	S:GWFAM99:1	c_unmatched	mat:CM054601.2:19383544-19389725 0.9447	-	-
+iso_GWFAM99_1	GWFAM99	309	1	4240	0.40849	S:GWFAM99:2	c_unmatched	mat:CM068942.1:197715779-197722132 0.6375	-	-
+iso_GWFAM100_0	GWFAM100	324	1	5209	0.03840	S:GWFAM100:2	c_unmatched	mat:CM054602.2:61414865-61428001 0.9614	-	-
+iso_GWFAM100_1	GWFAM100	233	1	3569	0.03979	S:GWFAM100:0	c_unmatched	pat:CM054562.2:13195076-13301866 0.9602	-	-
+iso_GWFAM104_0	GWFAM104	534	1	7080	0.21398	S:GWFAM104:2	c_unmatched	mat:CM054586.2:47173290-47228127 0.7847	-	-
+iso_GWFAM104_1	GWFAM104	342	1	5239	0.03588	S:GWFAM104:0	c_unmatched	mat:CM054586.2:27561996-27601586 0.9641	-	iso_GWFAM104_1
+iso_GWFAM125_0	GWFAM125	449	1	4317	0.01575	S:GWFAM125:1	c_unmatched	pat:CM054568.2:133587047-133805641 0.9845	-	iso_GWFAM125_0
+iso_GWFAM158_0	GWFAM158	223	1	5916	0.08300	S:GWFAM158:1	c_unmatched	mat:CM054595.2:99624326-99638292 0.9182	-	-
+iso_GWFAM158_1	GWFAM158	42	1	3985	0.05220	S:GWFAM158:2	c_unmatched	mat:CM054602.2:47288182-47314023 0.9478	-	-
+iso_GWFAM161_0	GWFAM161	14	1	8364	0.01363	S:GWFAM161:3	c_unmatched	mat:CM068942.1:85838827-85899081 0.9950	-	-
+iso_GWFAM163_0	GWFAM163	9	1	2941	0.01564	S:GWFAM163:0	c_unmatched	mat:CM054587.2:20501050-20515875 0.9761	GWFAM163:c0	iso_GWFAM163_0
+iso_GWFAM163_1	GWFAM163	6	1	2644	0.04425	S:GWFAM163:0	c_unmatched	mat:CM054587.2:20501049-20515876 0.9486	GWFAM163:c3	iso_GWFAM163_1
+iso_GWFAM169_0	GWFAM169	123	1	6452	0.01596	S:GWFAM169:2	c_unmatched	mat:CM054600.2:31615395-31671697 0.9840	-	-
+iso_GWFAM173_0	GWFAM173	247	1	2467	0.09972	S:GWFAM173:4	c_unmatched	mat:CM054588.2:88700677-88715880 0.9412	-	-
+iso_GWFAM173_1	GWFAM173	191	1	3409	0.01437	S:GWFAM173:2	c_unmatched	mat:CM054587.2:45960031-45990104 0.9856	-	iso_GWFAM173_1
+iso_GWFAM173_2	GWFAM173	130	1	5634	0.05609	S:GWFAM173:5	c_unmatched	mat:CM054599.2:64487095-64520181 0.9439	-	-
+iso_GWFAM175_0	GWFAM175	191	1	1795	0.04624	S:GWFAM175:4	c_unmatched	mat:CM054587.2:48968030-48971409 0.9538	-	iso_GWFAM175_0
+iso_GWFAM175_1	GWFAM175	183	1	2284	0.08275	S:GWFAM175:2	a_haplotype_only	pat:CM054563.2:40027838-40031943 1.0000	GWFAM175:c4	iso_GWFAM175_1
+iso_GWFAM175_2	GWFAM175	116	1	1571	0.02292	S:GWFAM175:5	b_allele	pat:CM054563.2:41468509-41471848 1.0000	GWFAM175:c0	-
+iso_GWFAM181_0	GWFAM181	489	1	6106	0.37848	S:GWFAM181:0	c_unmatched	mat:CM054587.2:50687331-50693702 0.6215	-	iso_GWFAM181_0
+iso_GWFAM185_0	GWFAM185	185	1	3150	0.01016	S:GWFAM185:1	c_unmatched	mat:CM054591.2:76378892-76389089 0.9898	-	iso_GWFAM185_0
+iso_GWFAM236_0	GWFAM236	100	1	2848	0.04424	S:GWFAM236:2	c_unmatched	pat:CM054570.2:65249502-65253369 0.9558	-	-
+iso_GWFAM244_0	GWFAM244	71	2	3693	0.06758	S:GWFAM244:2	c_unmatched	mat:CM054597.2:137987230-138993441 0.9127	-	-
+iso_GWFAM244_1	GWFAM244	7	1	1992	0.06124	elsewhere	c_unmatched	mat:CM054597.2:138160587-138551256 0.9383	GWFAM244:c0	-
+iso_GWFAM246_0	GWFAM246	231	1	3128	0.02302	S:GWFAM246:1	c_unmatched	mat:CM054592.2:53133485-53160231 0.9770	-	-
+iso_GWFAM268_0	GWFAM268	228	1	1443	0.19404	S:GWFAM268:1	c_unmatched	pat:CM054567.2:6765654-6766909 0.8060	-	iso_GWFAM268_1
+iso_GWFAM269_0	GWFAM269	60	1	2999	0.02101	S:GWFAM269:2	c_unmatched	mat:CM054591.2:15404875-15426317 0.9843	-	-
+iso_GWFAM269_1	GWFAM269	6	1	3698	0.00973	S:GWFAM269:3	c_unmatched	mat:CM054591.2:15430712-15451292 0.9884	-	-
+iso_GWFAM282_0	GWFAM282	312	1	1699	0.02707	S:GWFAM282:0	c_unmatched	mat:CM054591.2:77528505-77532180 0.9729	-	iso_GWFAM282_0
+iso_GWFAM317_0	GWFAM317	158	1	6440	0.02826	S:GWFAM317:2	c_unmatched	pat:CM054578.2:46620786-46648256 0.9590	-	iso_GWFAM317_0
+iso_GWFAM317_1	GWFAM317	6	1	2008	0.01394	S:GWFAM317:2	c_unmatched	pat:CM054578.2:46634689-46648239 0.9985	-	iso_GWFAM317_2
+iso_GWFAM331_0	GWFAM331	134	1	5532	0.06490	S:GWFAM331:0	c_unmatched	mat:CM054594.2:37913662-38037778 0.9729	-	iso_GWFAM331_1
+iso_GWFAM331_1	GWFAM331	123	1	5210	0.12188	S:GWFAM331:1	c_unmatched	mat:CM054594.2:39174712-39285236 0.9016	-	iso_GWFAM331_2
+iso_GWFAM335_0	GWFAM335	293	1	3883	0.16225	S:GWFAM335:1	c_unmatched	pat:CM054573.2:26918462-27067942 0.8378	GWFAM335:c0	iso_GWFAM335_0
+iso_GWFAM335_1	GWFAM335	9	1	3158	0.18714	S:GWFAM335:1	c_unmatched	mat:CM054597.2:30934234-31023899 0.8135	-	iso_GWFAM335_1
+iso_GWFAM348_0	GWFAM348	338	1	3579	0.01453	S:GWFAM348:2	c_unmatched	mat:CM054603.2:12331312-12358120 0.9888	-	iso_GWFAM348_0
+iso_GWFAM348_1	GWFAM348	205	1	2990	0.05318	S:GWFAM348:1	c_unmatched	pat:CM054578.2:46843392-46873706 0.9522	-	iso_GWFAM348_1
+iso_GWFAM348_2	GWFAM348	183	1	2638	0.01213	S:GWFAM348:3	c_unmatched	mat:CM054603.2:28212613-28241237 0.9853	-	-
+iso_GWFAM348_3	GWFAM348	59	1	2922	0.03936	S:GWFAM348:2	c_unmatched	mat:CM054603.2:12340038-12358101 0.9654	-	iso_GWFAM348_2
+iso_GWFAM402_0	GWFAM402	202	1	9213	0.22837	S:GWFAM402:1	c_unmatched	pat:CM054576.2:21112748-21170699 0.7716	-	iso_GWFAM402_0
+iso_GWFAM407_0	GWFAM407	325	1	7897	0.01216	S:GWFAM407:3	c_unmatched	pat:CM054577.2:23628389-23783335 0.9882	-	-
+iso_GWFAM425_0	GWFAM425	349	1	11627	0.50563	S:GWFAM425:2	c_unmatched	pat:CM068948.1:207540842-207569001 0.4944	-	-
+iso_GWFAM425_1	GWFAM425	120	1	5303	0.07241	S:GWFAM425:1	c_unmatched	pat:CM068948.1:207228664-207256382 0.9276	-	iso_GWFAM425_1
+iso_GWFAM439_0	GWFAM439	8	1	5563	0.04943	S:GWFAM439:0	c_unmatched	pat:CM054578.2:67627558-67635008 0.9555	-	iso_GWFAM439_0
+iso_GWFAM440_0	GWFAM440	32	1	4988	0.01022	S:GWFAM440:1	c_unmatched	mat:CM054602.2:69783988-69793027 0.9894	-	iso_GWFAM440_1
+iso_GWFAM490_0	GWFAM490	262	1	2342	0.03501	S:GWFAM490:0	c_unmatched	pat:CM068949.1:33715548-33736226 0.9671	-	iso_GWFAM490_0
+
+## score.out (C2': arms R0 and C, control_test.py score's classes)
+[R0] {'other_copy': 13, 'stay': 58097, 'unplaced': 903}
+[C] {'false_move': 318, 'other_copy': 12, 'own_candidate': 3774, 'stay': 50146, 'unplaced': 4763}
+self-check: arm R0 equals Amendment 9's control/score.json {'stay': 58097, 'unplaced': 903, 'other_copy': 13}
+C2': false moves 318/59013 = 0.54% (bar <= 5%) -> HOLDS; own-candidate placements 3774 (6.4%); unplaced 903 -> 4763; stay 58097 -> 50146
+false moves by (family, candidate, its label, own family or not): GWFAM175 -> iso_GWFAM175_1 (S:GWFAM175:2, own family): 295; GWFAM244 -> iso_GWFAM244_1 (elsewhere, own family): 19; GWFAM175 -> iso_GWFAM175_2 (S:GWFAM175:5, own family): 2; GWFAM331 -> iso_GWFAM331_0 (S:GWFAM331:0, own family): 1; GWFAM37 -> iso_GWFAM37_1 (S:GWFAM37:2, own family): 1
+own-candidate placements by (family, candidate): GWFAM175 iso_GWFAM175_2: 287; GWFAM100 iso_GWFAM100_0: 270; GWFAM335 iso_GWFAM335_0: 262; GWFAM23 iso_GWFAM23_0: 241; GWFAM282 iso_GWFAM282_0: 227; GWFAM181 iso_GWFAM181_0: 224; GWFAM348 iso_GWFAM348_0: 207; GWFAM269 iso_GWFAM269_0: 196; GWFAM175 iso_GWFAM175_1: 187; GWFAM125 iso_GWFAM125_0: 166; GWFAM99 iso_GWFAM99_1: 159; GWFAM244 iso_GWFAM244_0: 125; GWFAM490 iso_GWFAM490_0: 110; GWFAM407 iso_GWFAM407_0: 98; GWFAM104 iso_GWFAM104_1: 91; GWFAM6 iso_GWFAM6_0: 81; GWFAM37 iso_GWFAM37_0: 75; GWFAM47 iso_GWFAM47_1: 75; GWFAM331 iso_GWFAM331_0: 63; GWFAM348 iso_GWFAM348_1: 57; GWFAM99 iso_GWFAM99_0: 53; GWFAM317 iso_GWFAM317_0: 49; GWFAM236 iso_GWFAM236_0: 47; GWFAM331 iso_GWFAM331_1: 46; GWFAM175 iso_GWFAM175_0: 43; GWFAM100 iso_GWFAM100_1: 40; GWFAM246 iso_GWFAM246_0: 38; GWFAM54 iso_GWFAM54_0: 30; GWFAM425 iso_GWFAM425_0: 29; GWFAM173 iso_GWFAM173_0: 28; GWFAM402 iso_GWFAM402_0: 27; GWFAM47 iso_GWFAM47_0: 19; GWFAM269 iso_GWFAM269_1: 14; GWFAM163 iso_GWFAM163_1: 13; GWFAM98 iso_GWFAM98_0: 13; GWFAM104 iso_GWFAM104_0: 12; GWFAM348 iso_GWFAM348_3: 12; GWFAM37 iso_GWFAM37_1: 10; GWFAM163 iso_GWFAM163_0: 10; GWFAM47 iso_GWFAM47_2: 9; GWFAM161 iso_GWFAM161_0: 8; GWFAM173 iso_GWFAM173_2: 4; GWFAM335 iso_GWFAM335_1: 4; GWFAM169 iso_GWFAM169_0: 3; GWFAM317 iso_GWFAM317_1: 3; GWFAM185 iso_GWFAM185_0: 3; GWFAM268 iso_GWFAM268_0: 3; GWFAM439 iso_GWFAM439_0: 2; GWFAM158 iso_GWFAM158_1: 1
+reads placed in R0 and unplaced in C, by family: GWFAM47 707; GWFAM98 476; GWFAM173 446; GWFAM158 433; GWFAM54 410; GWFAM269 375; GWFAM348 342; GWFAM268 214; GWFAM175 191; GWFAM490 145; GWFAM317 84; GWFAM104 68; GWFAM402 51; GWFAM331 30; GWFAM169 29; GWFAM125 22; GWFAM440 21; GWFAM37 20; GWFAM425 18; GWFAM100 17; GWFAM181 13; GWFAM4 10; GWFAM99 9; GWFAM161 6; GWFAM6 6; GWFAM185 5; GWFAM335 5; GWFAM163 4; GWFAM407 3; GWFAM246 3; GWFAM244 1; GWFAM439 1
+
+## report.out (wall time, stage totals, counters, pass B, the joined reads, per family)
+batch	families	Elapsed s	stage clock s (nets / clusters / genome)	peak RSS GB	flagged (families)
+0	6	171.6	153.7 (4.7 / 89.2 / 59.8)	15.7	3 (2)
+1	12	218.8	197.3 (3.9 / 149.4 / 43.8)	15.7	12 (7)
+2	12	394.9	355.3 (4.3 / 242.6 / 106.6)	15.3	12 (9)
+3	11	302.2	273.5 (4.3 / 193.6 / 75.1)	15.9	15 (9)
+4	12	256.5	231.3 (3.8 / 176.3 / 49.8)	15.1	14 (8)
+sum	53	1344.1 = 22.4 min	1211.1	15.9 (max)
+stage totals: {'n_net': 59150, 'n_used': 44782, 'n_clusters': 414, 'n_in_reference': 175, 'n_linked': 159, 'n_new': 80, 'n_candidates': 79, 'n_flagged': 56} | families with >= 1 flagged candidate 35/53
+stage log counters over 53 families (phase 1): read clusters >= --min-cluster 307; empty consensus dropped 0; refinement split off 3162 reads into 132 new clusters, 0 clusters fell under --min-cluster, kept sets re-templated 13 (families ['GWFAM28', 'GWFAM149', 'GWFAM182', 'GWFAM247', 'GWFAM269', 'GWFAM272', 'GWFAM317', 'GWFAM331', 'GWFAM348', 'GWFAM398', 'GWFAM402', 'GWFAM490']); significance merge absorbed 25 clusters in 70 rounds, absorptions undone 0; fallback templates (no eligible member): longest with an aligned partner 16, longest overall 4; final clusters 414
+pass B per batch (stage logs): batch	unmapped>=300	poorly placed>=300 (short)	aligned u / p	attributed u / p	joined
+  0	0	1314 (2)	0 / 1160	0 / 298	1
+  1	0	461 (2)	0 / 309	0 / 237	20
+  2	0	1269 (1)	0 / 1115	0 / 294	17
+  3	0	1059 (2)	0 / 1057	0 / 229	7
+  4	0	1289 (1)	0 / 1135	0 / 290	0
+  sum	0	5392 (8)	0 / 4776	0 / 1348	45
+joined reads (in a net of their batch via pass B): 45 joins of 37 reads; by class {'poorly_placed': 45}; right family 0; where they end {'no reported cluster (in-reference / unreported)': 24, 'over the cap': 5, 'linked cluster': 16}; their arm-C class {'stay': 3, 'unplaced': 42}
+       22  poorly_placed wrong  no reported cluster (in-reference / unreported)  arm C: unplaced
+       16  poorly_placed wrong  linked cluster                                   arm C: unplaced
+        4  poorly_placed wrong  over the cap                                     arm C: unplaced
+        2  poorly_placed wrong  no reported cluster (in-reference / unreported)  arm C: stay
+        1  poorly_placed wrong  over the cap                                     arm C: stay
+reads in nets of more than one family/batch: 109 (ruling R18)
+family	batch	net (used)	joined	clusters ref / linked / new	candidates (flagged)	flagged: class/label	C: own-candidate / false moves
+GWFAM4	0	400 (400)	0	0 / 2 / 1	1 (1)	c/S:GWFAM4:0/321	0 / 0
+GWFAM6	1	1060 (1000)	0	3 / 2 / 3	3 (1)	c/S:GWFAM6:2/457	81 / 0
+GWFAM21	2	1500 (1000)	0	3 / 2 / 0	0 (0)	-	0 / 0
+GWFAM23	3	2000 (1000)	0	3 / 5 / 1	1 (1)	c/S:GWFAM23:1/234	241 / 0
+GWFAM28	0	1500 (1000)	0	0 / 4 / 0	0 (0)	-	0 / 0
+GWFAM37	4	1315 (1000)	0	0 / 6 / 2	2 (2)	c/S:GWFAM37:3/369 c/S:GWFAM37:2/361	85 / 1
+GWFAM47	1	2048 (1000)	0	7 / 3 / 4	4 (3)	c/S:GWFAM47:1/224 c/S:GWFAM47:4/164 c/S:GWFAM47:2/94	103 / 0
+GWFAM54	2	1082 (1000)	0	4 / 0 / 1	1 (1)	c/S:GWFAM54:1/443	30 / 0
+GWFAM62	3	1500 (1000)	0	3 / 4 / 1	1 (0)	-	0 / 0
+GWFAM98	4	1500 (1000)	0	5 / 1 / 2	2 (1)	c/S:GWFAM98:1/7	13 / 0
+GWFAM99	1	1500 (1000)	0	2 / 2 / 3	3 (2)	c/S:GWFAM99:1/317 c/S:GWFAM99:2/309	212 / 0
+GWFAM100	0	1323 (1000)	0	3 / 3 / 3	3 (2)	c/S:GWFAM100:2/324 c/S:GWFAM100:0/233	310 / 0
+GWFAM104	2	1312 (1000)	0	3 / 2 / 2	2 (2)	c/S:GWFAM104:2/534 c/S:GWFAM104:0/342	103 / 0
+GWFAM105	0	583 (583)	0	5 / 0 / 0	0 (0)	-	0 / 0
+GWFAM112	4	789 (789)	0	3 / 2 / 0	0 (0)	-	0 / 0
+GWFAM123	4	599 (599)	0	5 / 1 / 1	1 (0)	-	0 / 0
+GWFAM125	2	990 (990)	0	4 / 1 / 1	1 (1)	c/S:GWFAM125:1/449	166 / 0
+GWFAM144	3	1116 (1000)	0	3 / 3 / 1	1 (0)	-	0 / 0
+GWFAM149	1	727 (727)	0	4 / 4 / 0	0 (0)	-	0 / 0
+GWFAM158	4	1726 (1000)	0	8 / 8 / 2	2 (2)	c/S:GWFAM158:1/223 c/S:GWFAM158:2/42	1 / 0
+GWFAM161	4	346 (346)	0	6 / 5 / 1	1 (1)	c/S:GWFAM161:3/14	8 / 0
+GWFAM163	3	1187 (1000)	0	1 / 8 / 3	3 (2)	c/S:GWFAM163:0/9 c/S:GWFAM163:0/6	23 / 0
+GWFAM164	0	2161 (1000)	1	3 / 5 / 1	1 (0)	-	0 / 0
+GWFAM169	1	572 (572)	20	4 / 1 / 1	1 (1)	c/S:GWFAM169:2/123	3 / 0
+GWFAM173	3	1085 (1000)	0	9 / 4 / 3	3 (3)	c/S:GWFAM173:4/247 c/S:GWFAM173:2/191 c/S:GWFAM173:5/130	32 / 0
+GWFAM175	1	2463 (1000)	0	5 / 1 / 7	7 (3)	c/S:GWFAM175:4/191 a/S:GWFAM175:2/183 b/S:GWFAM175:5/116	517 / 297
+GWFAM177	1	1110 (1000)	0	3 / 1 / 0	0 (0)	-	0 / 0
+GWFAM181	2	966 (966)	0	2 / 3 / 1	1 (1)	c/S:GWFAM181:0/489	224 / 0
+GWFAM182	4	344 (344)	0	6 / 0 / 0	0 (0)	-	0 / 0
+GWFAM185	1	415 (415)	0	3 / 2 / 1	1 (1)	c/S:GWFAM185:1/185	3 / 0
+GWFAM192	1	764 (764)	0	5 / 4 / 0	0 (0)	-	0 / 0
+GWFAM236	2	1500 (1000)	0	4 / 2 / 1	1 (1)	c/S:GWFAM236:2/100	47 / 0
+GWFAM244	3	1706 (1000)	7	2 / 5 / 4	3 (2)	c/S:GWFAM244:2/71 c/elsewhere/7	125 / 19
+GWFAM246	4	1500 (1000)	0	3 / 1 / 3	3 (1)	c/S:GWFAM246:1/231	38 / 0
+GWFAM247	1	1222 (1000)	0	1 / 4 / 0	0 (0)	-	0 / 0
+GWFAM268	4	795 (795)	0	0 / 3 / 3	3 (1)	c/S:GWFAM268:1/228	3 / 0
+GWFAM269	2	1286 (1000)	0	3 / 4 / 2	2 (2)	c/S:GWFAM269:2/60 c/S:GWFAM269:3/6	210 / 0
+GWFAM272	2	1039 (1000)	0	2 / 3 / 0	0 (0)	-	0 / 0
+GWFAM282	3	1500 (1000)	0	3 / 1 / 1	1 (1)	c/S:GWFAM282:0/312	227 / 0
+GWFAM314	4	2000 (1000)	0	2 / 4 / 0	0 (0)	-	0 / 0
+GWFAM317	3	558 (558)	0	7 / 4 / 2	2 (2)	c/S:GWFAM317:2/158 c/S:GWFAM317:2/6	52 / 0
+GWFAM331	2	430 (430)	0	1 / 2 / 2	2 (2)	c/S:GWFAM331:0/134 c/S:GWFAM331:1/123	109 / 1
+GWFAM335	3	765 (765)	0	3 / 3 / 3	3 (2)	c/S:GWFAM335:1/293 c/S:GWFAM335:1/9	266 / 0
+GWFAM348	4	921 (921)	0	6 / 3 / 4	4 (4)	c/S:GWFAM348:2/338 c/S:GWFAM348:1/205 c/S:GWFAM348:3/183 c/S:GWFAM348:2/59	276 / 0
+GWFAM398	1	1500 (1000)	0	3 / 3 / 0	0 (0)	-	0 / 0
+GWFAM401	2	1078 (1000)	17	0 / 3 / 0	0 (0)	-	0 / 0
+GWFAM402	2	527 (527)	0	4 / 2 / 1	1 (1)	c/S:GWFAM402:1/202	27 / 0
+GWFAM407	3	1467 (1000)	0	6 / 4 / 2	2 (1)	c/S:GWFAM407:3/325	98 / 0
+GWFAM415	0	606 (606)	0	2 / 2 / 0	0 (0)	-	0 / 0
+GWFAM425	4	1082 (1000)	0	1 / 3 / 2	2 (2)	c/S:GWFAM425:2/349 c/S:GWFAM425:1/120	29 / 0
+GWFAM439	3	511 (511)	0	3 / 8 / 1	1 (1)	c/S:GWFAM439:0/8	2 / 0
+GWFAM440	2	257 (257)	0	3 / 1 / 1	1 (1)	c/S:GWFAM440:1/32	0 / 0
+GWFAM490	1	917 (917)	0	1 / 5 / 2	2 (1)	c/S:GWFAM490:0/262	110 / 0
+
+## attrib.out (nets: pass B replicated per batch and checked against the stage's products)
+pass B per batch (the stage log's counts; the replication re-runs the attribution and equals them in every batch):
+batch	families	unmapped>=300	poorly placed>=300 (short)	aligned u / p	attributed u / p	joined
+0	6	0	1314 (2)	0 / 1160	0 / 298	1
+1	12	0	461 (2)	0 / 309	0 / 237	20
+2	12	0	1269 (1)	0 / 1115	0 / 294	17
+3	11	0	1059 (2)	0 / 1057	0 / 229	7
+4	12	0	1289 (1)	0 / 1135	0 / 290	0
+sum	53	0	5392 (8)	0 / 4776	0 / 1348	45
+attributed reads by class, joined (a family of the batch) or not, right family by labels.tsv (summed over batches; a read may be attributed in several batches):
+  unmapped      joined   :     0, right family     0 (0.0%)
+  unmapped      elsewhere:     0, right family     0 (0.0%)
+  poorly_placed joined   :    45, right family     0 (0.0%)
+  poorly_placed elsewhere:  1303, right family  1301 (99.8%)
+joined reads (in a net of their batch): 45 (unmapped 0, poorly placed 45); right family 0 (0.0%; D reads of the family 0); under the cap 40; in reads.tsv (a reported cluster) 16, right family 0 (0.0%) — reads.tsv lists only the new-copy and linked clusters' reads, so it sees 16 of 45
+reads in nets of more than one batch: 109 (of 59013 netted reads); attributed (pass B) in at least one of them: 37 (ruling R18)
+checks: n_net and n_used of families.tsv equal in 53/53 families; every reads.tsv read under the cap of its family; nets.fa = the flagged families' whole nets in every batch
+
+## stage logs: per-batch pass A / pass B / done lines and /usr/bin/time (logs/stage_g<g>.log)
+### batch 0
+[o3_candidates] BAM: pass A 6571 reads by a primary record and 10045 secondary records on the copies; pass B 1 of 1 secondary-only reads found by their primary record (0 without one: left out)
+[o3_candidates] pass B: unmapped >= 300 bp 0; poorly placed >= 300 bp 1314 (de > 0.02 or MAPQ 0, in no net of this run; 2 below the floor); aligned 1160: unmapped 0, poorly placed 1160; attributed 298 (read coverage >= 0.5, de <= 0.20): unmapped 0, poorly placed 298; joined this run's families 1
+[o3_candidates] GWFAM100: net 1323 reads (1000 used) | 7 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 36 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 1 the longest member (no member aligned); 9 clusters
+[o3_candidates] GWFAM105: net 583 reads (583 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 14 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM164: net 2161 reads (1000 used) | 9 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 7 reads (0 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 9 clusters
+[o3_candidates] GWFAM28: net 1500 reads (1000 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 293 reads (1 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 4 clusters
+[o3_candidates] GWFAM4: net 400 reads (400 used) | 2 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 62 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 3 clusters
+[o3_candidates] GWFAM415: net 606 reads (606 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 165 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 4 clusters
+[o3_candidates] done: 6 families, 34 clusters, 5 candidates, 3 flagged in 2 families; 37 minimap2 calls; 153.7 s (nets 4.7 s, clusters 89.2 s, genome 59.8 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:51.61
+	Maximum resident set size (kbytes): 15726848
+### batch 1
+[o3_candidates] BAM: pass A 14258 reads by a primary record and 19998 secondary records on the copies; pass B 20 of 20 secondary-only reads found by their primary record (0 without one: left out)
+[o3_candidates] pass B: unmapped >= 300 bp 0; poorly placed >= 300 bp 461 (de > 0.02 or MAPQ 0, in no net of this run; 2 below the floor); aligned 309: unmapped 0, poorly placed 309; attributed 237 (read coverage >= 0.5, de <= 0.20): unmapped 0, poorly placed 237; joined this run's families 20
+[o3_candidates] GWFAM149: net 727 reads (727 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 99 reads (2 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 8 clusters
+[o3_candidates] GWFAM169: net 572 reads (572 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 162 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM175: net 2463 reads (1000 used) | 13 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 112 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 3 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 13 clusters
+[o3_candidates] GWFAM177: net 1110 reads (1000 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 13 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 4 clusters
+[o3_candidates] GWFAM185: net 415 reads (415 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 9 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM192: net 764 reads (764 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 125 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 9 clusters
+[o3_candidates] GWFAM247: net 1222 reads (1000 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 178 reads (2 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM398: net 1500 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 17 reads (2 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM47: net 2048 reads (1000 used) | 10 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 24 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 14 clusters
+[o3_candidates] GWFAM490: net 917 reads (917 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 12 reads (2 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 2 the longest member with an aligned partner, 0 the longest member (no member aligned); 8 clusters
+[o3_candidates] GWFAM6: net 1060 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 14 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 8 clusters
+[o3_candidates] GWFAM99: net 1500 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 26 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 2 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 2 the longest member with an aligned partner, 0 the longest member (no member aligned); 7 clusters
+[o3_candidates] done: 12 families, 94 clusters, 21 candidates, 12 flagged in 7 families; 75 minimap2 calls; 197.3 s (nets 3.9 s, clusters 149.4 s, genome 43.8 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:38.84
+	Maximum resident set size (kbytes): 15726848
+### batch 2
+[o3_candidates] BAM: pass A 11885 reads by a primary record and 8938 secondary records on the copies; pass B 65 of 65 secondary-only reads found by their primary record (0 without one: left out)
+[o3_candidates] pass B: unmapped >= 300 bp 0; poorly placed >= 300 bp 1269 (de > 0.02 or MAPQ 0, in no net of this run; 1 below the floor); aligned 1115: unmapped 0, poorly placed 1115; attributed 294 (read coverage >= 0.5, de <= 0.20): unmapped 0, poorly placed 294; joined this run's families 17
+[o3_candidates] GWFAM104: net 1312 reads (1000 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 50 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 7 clusters
+[o3_candidates] GWFAM125: net 990 reads (990 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 100 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM181: net 966 reads (966 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 43 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 2 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM21: net 1500 reads (1000 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 13 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM236: net 1500 reads (1000 used) | 7 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 20 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 4 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 7 clusters
+[o3_candidates] GWFAM269: net 1286 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 74 reads (3 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 9 clusters
+[o3_candidates] GWFAM272: net 1039 reads (1000 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 17 reads (2 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM331: net 430 reads (430 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 151 reads (2 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM401: net 1078 reads (1000 used) | 2 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 144 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 3 clusters
+[o3_candidates] GWFAM402: net 527 reads (527 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 55 reads (3 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 7 clusters
+[o3_candidates] GWFAM440: net 257 reads (257 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 22 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM54: net 1082 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 18 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] done: 12 families, 70 clusters, 12 candidates, 12 flagged in 9 families; 77 minimap2 calls; 355.3 s (nets 4.3 s, clusters 242.6 s, genome 106.6 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:34.89
+	Maximum resident set size (kbytes): 15309440
+### batch 3
+[o3_candidates] BAM: pass A 13385 reads by a primary record and 1103 secondary records on the copies; pass B 3 of 3 secondary-only reads found by their primary record (0 without one: left out)
+[o3_candidates] pass B: unmapped >= 300 bp 0; poorly placed >= 300 bp 1059 (de > 0.02 or MAPQ 0, in no net of this run; 2 below the floor); aligned 1057: unmapped 0, poorly placed 1057; attributed 229 (read coverage >= 0.5, de <= 0.20): unmapped 0, poorly placed 229; joined this run's families 7
+[o3_candidates] GWFAM144: net 1116 reads (1000 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 19 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 7 clusters
+[o3_candidates] GWFAM163: net 1187 reads (1000 used) | 9 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 39 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 12 clusters
+[o3_candidates] GWFAM173: net 1085 reads (1000 used) | 12 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 96 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 16 clusters
+[o3_candidates] GWFAM23: net 2000 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 65 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 9 clusters
+[o3_candidates] GWFAM244: net 1706 reads (1000 used) | 7 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 23 reads (5 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 11 clusters
+[o3_candidates] GWFAM282: net 1500 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 7 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM317: net 558 reads (558 used) | 8 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 45 reads (5 new clusters, 0 clusters fell under --min-cluster, 2 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 13 clusters
+[o3_candidates] GWFAM335: net 765 reads (765 used) | 7 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 166 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 9 clusters
+[o3_candidates] GWFAM407: net 1467 reads (1000 used) | 9 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 64 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 12 clusters
+[o3_candidates] GWFAM439: net 511 reads (511 used) | 8 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 140 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 12 clusters
+[o3_candidates] GWFAM62: net 1500 reads (1000 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 60 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 8 clusters
+[o3_candidates] done: 11 families, 114 clusters, 21 candidates, 15 flagged in 9 families; 71 minimap2 calls; 273.5 s (nets 4.3 s, clusters 193.6 s, genome 75.1 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:02.22
+	Maximum resident set size (kbytes): 15883644
+### batch 4
+[o3_candidates] BAM: pass A 12914 reads by a primary record and 10484 secondary records on the copies; pass B 3 of 3 secondary-only reads found by their primary record (0 without one: left out)
+[o3_candidates] pass B: unmapped >= 300 bp 0; poorly placed >= 300 bp 1289 (de > 0.02 or MAPQ 0, in no net of this run; 1 below the floor); aligned 1135: unmapped 0, poorly placed 1135; attributed 290 (read coverage >= 0.5, de <= 0.20): unmapped 0, poorly placed 290; joined this run's families 0
+[o3_candidates] GWFAM112: net 789 reads (789 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 5 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 1 the longest member (no member aligned); 5 clusters
+[o3_candidates] GWFAM123: net 599 reads (599 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 28 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 7 clusters
+[o3_candidates] GWFAM158: net 1726 reads (1000 used) | 15 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 30 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 18 clusters
+[o3_candidates] GWFAM161: net 346 reads (346 used) | 8 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 36 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 12 clusters
+[o3_candidates] GWFAM182: net 344 reads (344 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 37 reads (1 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM246: net 1500 reads (1000 used) | 7 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 8 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 2 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 1 the longest member (no member aligned); 7 clusters
+[o3_candidates] GWFAM268: net 795 reads (795 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 22 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM314: net 2000 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 17 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM348: net 921 reads (921 used) | 9 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 93 reads (4 new clusters, 0 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 13 clusters
+[o3_candidates] GWFAM37: net 1315 reads (1000 used) | 5 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 18 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 1 clusters in 2 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 1 the longest member with an aligned partner, 0 the longest member (no member aligned); 8 clusters
+[o3_candidates] GWFAM425: net 1082 reads (1000 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 56 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 0 the longest member (no member aligned); 6 clusters
+[o3_candidates] GWFAM98: net 1500 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 13 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbed 0 clusters in 1 rounds (0 absorptions undone: empty merged consensus, the absorbed cluster kept separate); templates without an eligible member (none aligned to min(half, 50) of the others): 0 the longest member with an aligned partner, 1 the longest member (no member aligned); 8 clusters
+[o3_candidates] done: 12 families, 102 clusters, 20 candidates, 14 flagged in 8 families; 83 minimap2 calls; 231.3 s (nets 3.8 s, clusters 176.3 s, genome 49.8 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:16.53
+	Maximum resident set size (kbytes): 15052032
+
+## whole-BAM cost (ruling R23): wholebam/wreport.out
+batch	Elapsed s	peak RSS GB	pass A reads (secondary records)	attribution set: unmapped / poorly placed (short)	aligned	attributed	joined	targets (net reads + copies)	flagged (families)	stage clock (nets / clusters / genome)
+0	631.18	10.688296	627388 (418841)	202 / 88369 (206)	61016	30457	26710	None + 915	None (None)	None (None / None / None)	STOPPED (did not finish)
+
+### attempt 1 (lock timeout 585 s, SIGTERM; /usr/bin/time killed with the stage, no stats): log lines (epoch s) and the tmp dir at the stop
+start epoch 1791091038
+1791091038	[o3_candidates] 50 families from /mnt/linuxdisk/tmp/rna_allele/a14/wholebam/W.copies.tsv (915 copy records of /mnt/linuxdisk/tmp/rna_allele/a14/wholebam/W.copies.fa are attribution targets beside the nets)
+1791091435	[o3_candidates] BAM: pass A 627388 reads by a primary record and 418841 secondary records on the copies; pass B 20356 of 20356 secondary-only reads found by their primary record (0 without one: left out)
+1791091435	[o3_candidates] pass B: unmapped >= 300 bp 202; poorly placed >= 300 bp 88369 (de > 0.02 or MAPQ 0, in no net of this run; 206 below the floor); aligned 61016: unmapped 117, poorly placed 60899; attributed 30457 (read coverage >= 0.5, de <= 0.20): u
+1791091439	[o3_candidates] GWFAM0: net 211 reads (211 used) | 2 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 22 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbe
+1791091453	[o3_candidates] GWFAM1: net 23622 reads (1000 used) | 41 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 27 reads (2 new clusters, 1 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge abs
+1791091467	[o3_candidates] GWFAM10: net 1374 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 29 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abso
+1791091499	[o3_candidates] GWFAM100: net 2337 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 36 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791091531	[o3_candidates] GWFAM101: net 1983 reads (1000 used) | 2 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 73 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791091547	[o3_candidates] GWFAM102: net 1965 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 56 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791091564	[o3_candidates] GWFAM103: net 5110 reads (1000 used) | 16 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 95 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge ab
+1791091592	[o3_candidates] GWFAM104: net 3115 reads (1000 used) | 10 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 29 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge ab
+1791091609	[o3_candidates] GWFAM105: net 667 reads (667 used) | 7 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 15 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absor
+1791091620	[o3_candidates] GWFAM106: net 1405 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 28 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791091626	[o3_candidates] GWFAM107: net 453 reads (453 used) | 3 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 49 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absor
+1791091645	[o3_candidates] GWFAM108: net 419 reads (419 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 6 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorb
+1791091649	[o3_candidates] GWFAM109: net 311 reads (311 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 22 reads (1 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absor
+1791091664	[o3_candidates] GWFAM11: net 1430 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 10 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abso
+total 2152
+drwxr-xr-x 2 juanfra juanfra    4096 2026-10-03 22:27:44.201628967 -0700 .
+drwxr-xr-x 3 juanfra juanfra    4096 2026-10-03 22:27:44.198028967 -0700 ..
+-rw-r--r-- 1 juanfra juanfra       0 2026-10-03 22:27:44.201628967 -0700 ava.paf
+-rw-r--r-- 1 juanfra juanfra 2192839 2026-10-03 22:27:44.201628967 -0700 net.fa
+total 2759852
+drwxr-xr-x 3 juanfra juanfra       4096 2026-10-03 22:27:44.198028967 -0700 .
+drwxr-xr-x 4 juanfra juanfra       4096 2026-10-03 22:17:18.466409967 -0700 ..
+-rw-r--r-- 1 juanfra juanfra  167091131 2026-10-03 22:19:53.681398774 -0700 attrib.fa
+-rw-r--r-- 1 juanfra juanfra   45576151 2026-10-03 22:23:54.692976632 -0700 attrib.paf
+-rw-r--r-- 1 juanfra juanfra 2613400449 2026-10-03 22:20:21.581209259 -0700 attrib_targets.fa
+drwxr-xr-x 2 juanfra juanfra       4096 2026-10-03 22:27:44.201628967 -0700 f14
+
+### attempt 2: the tmp dir at the stop (listed before it was deleted; start 2026-10-03 22:30:53 = epoch 1791091853)
+attrib.fa          167,091,131 B  mtime 22:33:19.50  (+146 s: pass A + the pass-B sweep done)
+attrib_targets.fa 2,613,400,449 B  mtime 22:34:31.42  (+218 s: the 50 families' net reads + the 915 copies written)
+attrib.paf          45,576,151 B  mtime 22:38:41.01  (+468 s: the attribution alignment done)
+f7/                                mtime 22:41:01.65  (the 8th family's clustering in progress at the stop)
+
+### attempt 2 (timeout -s INT 570 s; /usr/bin/time reports): log lines (epoch s)
+start epoch 1791091853
+1791091853	[o3_candidates] 50 families from /mnt/linuxdisk/tmp/rna_allele/a14/wholebam/W.copies.tsv (915 copy records of /mnt/linuxdisk/tmp/rna_allele/a14/wholebam/W.copies.fa are attribution targets beside the nets)
+1791092322	[o3_candidates] BAM: pass A 627388 reads by a primary record and 418841 secondary records on the copies; pass B 20356 of 20356 secondary-only reads found by their primary record (0 without one: left out)
+1791092322	[o3_candidates] pass B: unmapped >= 300 bp 202; poorly placed >= 300 bp 88369 (de > 0.02 or MAPQ 0, in no net of this run; 206 below the floor); aligned 61016: unmapped 117, poorly placed 60899; attributed 30457 (read coverage >= 0.5, de <= 0.20): u
+1791092327	[o3_candidates] GWFAM0: net 211 reads (211 used) | 2 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 22 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge absorbe
+1791092337	[o3_candidates] GWFAM1: net 23622 reads (1000 used) | 41 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 27 reads (2 new clusters, 1 clusters fell under --min-cluster, 1 kept sets re-templated); significance merge abs
+1791092355	[o3_candidates] GWFAM10: net 1374 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 29 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abso
+1791092388	[o3_candidates] GWFAM100: net 2337 reads (1000 used) | 6 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 36 reads (4 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791092423	[o3_candidates] GWFAM101: net 1983 reads (1000 used) | 2 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 73 reads (2 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791092441	[o3_candidates] GWFAM102: net 1965 reads (1000 used) | 4 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 56 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge abs
+1791092461	[o3_candidates] GWFAM103: net 5110 reads (1000 used) | 16 read clusters >= --min-cluster; 0 empty consensus dropped; refinement split off 95 reads (3 new clusters, 0 clusters fell under --min-cluster, 0 kept sets re-templated); significance merge ab
+1791092484	Command terminated by signal 2
+1791092484		Command being timed: "/mnt/linuxdisk/home/juanfraitu/rustle_target_m2/release/o3_candidates --bam /mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam --fasta /mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta --co
+1791092484		User time (seconds): 1557.68
+1791092484		System time (seconds): 164.75
+1791092484		Percent of CPU this job got: 272%
+1791092484		Elapsed (wall clock) time (h:mm:ss or m:ss): 10:31.18
+1791092484		Average shared text size (kbytes): 0
+1791092484		Average unshared data size (kbytes): 0
+1791092484		Average stack size (kbytes): 0
+1791092484		Average total size (kbytes): 0
+1791092484		Maximum resident set size (kbytes): 10688296
+1791092484		Average resident set size (kbytes): 0
+1791092484		Major (requiring I/O) page faults: 14
+1791092484		Minor (reclaiming a frame) page faults: 7203226
+1791092484		Voluntary context switches: 3582269
+1791092484		Involuntary context switches: 724421
+1791092484		Swaps: 0
+1791092484		File system inputs: 38467824
+1791092484		File system outputs: 5833800
+1791092484		Socket messages sent: 0
+1791092484		Socket messages received: 0
+1791092484		Signals delivered: 0
+1791092484		Page size (bytes): 4096
+1791092484		Exit status: 0
