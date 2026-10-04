@@ -120,3 +120,20 @@ own expressed chains:
 - Applied to the NPIP page (3 arms; the page is restated under C with B beside) and to the representative-rule H3 on the 7 contigs (saved arms,
   no families re-run; models of the contig's single annotation for the class column only). Scorer: `bench/copy_support.py` (`xc_*` columns,
   `--chain-floor 3`).
+
+## Amendment D (2026-10-04 12:40, user: "a read that starts at the TSS, has up to 3 junctions and introns in common with the intron chain it is supporting"; written before the run)
+
+Amendments B and C accept any contiguous sub-chain, so a 3' fragment of the right isoform counts as support and a 3' fragment representative
+counts as found. The user's standard anchors support at the transcript start:
+
+- **TSS-anchored support:** a read supports an annotated transcript t iff (i) its 5' end (strand-aware: the alignment start on `+`, the
+  alignment end on `-`) lies within **±150 bp** of t's TSS (the library's measured 5' dispersion, register §6w3; ±50 bp and ±300 bp reported
+  beside, fixed now) and (ii) its first m junctions, read 5' -> 3', equal t's first m introns, m = min(3, |introns(t)|) — so the first m exons
+  after the TSS are spanned exactly; a read with fewer than m junctions does not support t. Models: CAT ∪ RefSeq (each reported alone).
+  Intronless transcripts (m = 0): 5' end within the tolerance and the read covers >= 50% of the exon.
+- **Spliced-expressed copy:** >= 2 TSS-anchored support reads for some model of the copy.
+- **FOUND:** spliced-expressed AND a same-strand locus whose representative satisfies (i) and (ii) itself against a model of the copy; locus
+  level (any transcript of the locus) beside.
+- Reported beside, no rule: the same test against the reads' own chains (the dominant expressed chain of Amendment C with its carrying reads'
+  modal 5' end as the TSS), and Amendments A-C's counts.
+- Applied to the NPIP page (restated under D) and to the representative-rule H3 on the 7 contigs (saved arms; single annotation).

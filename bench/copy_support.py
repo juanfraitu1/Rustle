@@ -149,6 +149,19 @@ def load_loci(path):
     return loci
 
 
+def locus_transcript_exons(gtf):
+    """locus (gene_id) -> list of its transcripts' exon lists."""
+    ex = collections.defaultdict(lambda: collections.defaultdict(list))
+    for ln in open(gtf):
+        f = ln.rstrip("\n").split("\t")
+        if len(f) < 9 or f[2] != "exon":
+            continue
+        g = re.search(r'gene_id "([^"]+)"', f[8]).group(1)
+        t = re.search(r'transcript_id "([^"]+)"', f[8])
+        ex[g][t.group(1) if t else g].append([int(f[3]) - 1, int(f[4])])
+    return {g: [sorted(e) for e in d.values()] for g, d in ex.items()}
+
+
 def locus_transcript_chains(gtf):
     """locus (gene_id) -> list of its transcripts' junction chains (each in order)."""
     ex = collections.defaultdict(lambda: collections.defaultdict(list))
@@ -185,6 +198,7 @@ def main(argv=None):
     ap.add_argument("--loci", action="append", default=[], help="NAME=loci.gff3[,transcripts.gtf] (repeatable); with the GTF the locus-level reading is reported beside")
     ap.add_argument("--nodes", help="pagedata.json of the read-pool page (its node[arm] per cid)")
     ap.add_argument("--chain-floor", type=int, default=3, help="Amendment C: unique reads an identical chain needs to be an expressed chain")
+    ap.add_argument("--tss-tol", type=int, default=150, help="Amendment D: |read 5' end - transcript TSS| tolerance (bp); 50 and 300 reported beside")
     ap.add_argument("--truth2", help="Amendment B: a second annotation's truth GTF (e.g. RefSeq) whose models of the same gene also count")
     ap.add_argument("--copies2", help="the copies table of --truth2 (its cid keys the GTF; genes matched to --copies by name / refseq_name)")
     a = ap.parse_args(argv)
@@ -203,7 +217,7 @@ def main(argv=None):
             if nm in by_name and by_name[nm] in t2:
                 tx2[c["cid"]] = t2[by_name[nm]]
     arms = {}
-    arm_tx, arm_tx_chains = {}, {}
+    arm_tx, arm_tx_chains, arm_tx_exons = {}, {}, {}
     for spec in a.loci:
         name, path = spec.split("=", 1)
         path, _, gtf = path.partition(",")
@@ -211,6 +225,7 @@ def main(argv=None):
         if gtf:
             arm_tx[name] = locus_transcript_junctions(gtf)
             arm_tx_chains[name] = locus_transcript_chains(gtf)
+            arm_tx_exons[name] = locus_transcript_exons(gtf)
     nodes = {}
     if a.nodes:
         pd = json.load(open(a.nodes))
@@ -233,13 +248,50 @@ def main(argv=None):
         chains = chains1 + chains2
         n_intron_b = max((len(ch) for ch in chains), default=0)
         kb = min(2, n_intron_b)
+        # Amendment D: models as (TSS, introns oriented 5'->3', exon union) per annotation
+        def oriented(exs):
+            ex = sorted(exs)
+            intr = introns_of(ex)
+            if strand == "-":
+                return ex[-1][1], list(reversed(intr)), ex
+            return ex[0][0], intr, ex
+        models_d1 = [oriented(ex) for ex in texons.values() if ex]
+        models_d2 = [oriented(ex) for ex in texons2.values() if ex]
+        models_d = models_d1 + models_d2
+
+        def tss_support(p5, js, mdl, tol):
+            """read 5' end p5 and junctions js (sorted by coordinate) vs one model: within tol of the TSS and first m junctions = first m introns."""
+            tss, intr, ex = mdl
+            if abs(p5 - tss) > tol:
+                return False
+            m = min(3, len(intr))
+            if m == 0:
+                return True  # intronless model: the caller checks coverage
+            rj = list(reversed(js)) if strand == "-" else list(js)
+            return len(rj) >= m and rj[:m] == intr[:m]
+
+        def td_count(models, tol, uniq=False):
+            n = 0
+            for (bl, js), q, p5 in zip(reads, read_mapq, read_5p):
+                if uniq and q == 0:
+                    continue
+                for mdl in models:
+                    if tss_support(p5, js, mdl, tol) and (len(mdl[1]) > 0 or inter(bl, mdl[2]) >= COVER * ilen(mdl[2])):
+                        n += 1
+                        break
+            return n
+        td_150 = td_count(models_d, a.tss_tol)
+        td_50, td_300 = td_count(models_d, 50), td_count(models_d, 300)
+        td_cat, td_rs = td_count(models_d1, a.tss_tol), td_count(models_d2, a.tss_tol)
+        td_uniq = td_count(models_d, a.tss_tol, uniq=True)
+        td_expressed = td_150 >= FLOOR
         union = merge([e for ex in texons.values() for e in ex]) or [[int(c["terr_lo0"]), int(c["terr_hi"])]]
         ann_introns = {t: set(introns_of(ex)) for t, ex in texons.items()}
         n_intron = max((len(v) for v in ann_introns.values()), default=0)
         k = min(2, n_intron)
         ann_all = set().union(*ann_introns.values()) if ann_introns else set()
         lo, hi = union[0][0], union[-1][1]
-        reads, read_mapq = [], []
+        reads, read_mapq, read_5p = [], [], []
         for rd in bam.fetch(chrom, lo, hi):
             if rd.is_unmapped or rd.is_secondary or rd.is_supplementary:
                 continue
@@ -251,6 +303,7 @@ def main(argv=None):
             juncs = [j for j in juncs if j[0] >= lo and j[1] <= hi]
             reads.append((blocks, juncs))
             read_mapq.append(rd.mapping_quality)
+            read_5p.append(rd.reference_end if strand == "-" else rd.reference_start)
         jcount = collections.Counter(j for _, js in reads for j in js)
         supported = {j for j, n in jcount.items() if n >= MIN_JUNCTION_READS}
         n_unspliced = sum(1 for _, js in reads if not js)
@@ -295,6 +348,7 @@ def main(argv=None):
         summary["ann_expressed"] += ann_expressed
         summary["chain_expressed"] = summary.get("chain_expressed", 0) + chain_expressed
         summary["xc_expressed"] = summary.get("xc_expressed", 0) + xc_expressed
+        summary["td_expressed"] = summary.get("td_expressed", 0) + td_expressed
         row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
                    ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed),
@@ -304,7 +358,9 @@ def main(argv=None):
                    xc_expressed_chains=len(expressed_chains), xc_expressed_chains_ge2=n_exp2, xc_expressed_chains_ge5=n_exp5,
                    xc_support_reads=xc_support, xc_support_reads_incl_tied=xc_support_all, xc_expressed=int(xc_expressed),
                    xc_dominant_reads=dom_reads, xc_dominant_junctions=len(dom[0]) if dom else 0, xc_dominant_class=dom_cls,
-                   xc_expressed_FSM_ISM=exp_classes["FSM"] + exp_classes["ISM"], xc_expressed_NIC=exp_classes["NIC"], xc_expressed_NNC=exp_classes["NNC"])
+                   xc_expressed_FSM_ISM=exp_classes["FSM"] + exp_classes["ISM"], xc_expressed_NIC=exp_classes["NIC"], xc_expressed_NNC=exp_classes["NNC"],
+                   td_support_reads=td_150, td_support_50=td_50, td_support_300=td_300, td_support_cat=td_cat, td_support_refseq=td_rs,
+                   td_support_unique=td_uniq, td_expressed=int(td_expressed))
         for arm, loci in arms.items():
             same = [L for L in loci.values() if L["chrom"] == chrom and L["strand"] == strand and inter(L["exons"], union) > 0]
             if k == 0:
@@ -339,6 +395,16 @@ def main(argv=None):
             xc_found = xc_expressed and len(xc_loci) > 0
             row[f"{arm}_xc_found"] = int(xc_found)
             summary["arms"][arm]["xc_found"] = summary["arms"][arm].get("xc_found", 0) + xc_found
+            # Amendment D: the representative starts at a model's TSS (± tol) and carries its first m introns
+            def rep_td_ok(L):
+                ex = L["exons"]
+                p5 = ex[-1][1] if strand == "-" else ex[0][0]
+                js = sorted(L["juncs"])
+                return any(tss_support(p5, js, mdl, a.tss_tol) and (len(mdl[1]) > 0 or inter(ex, mdl[2]) >= COVER * ilen(mdl[2])) for mdl in models_d)
+            td_loci = [L for L in same if rep_td_ok(L)]
+            td_found = td_expressed and len(td_loci) > 0
+            row[f"{arm}_td_found"] = int(td_found)
+            summary["arms"][arm]["td_found"] = summary["arms"][arm].get("td_found", 0) + td_found
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
             # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
@@ -373,6 +439,15 @@ def main(argv=None):
                         for n in names_same for t in arm_tx_chains.get(arm, {}).get(n, []))
                 row[f"{arm}_locus_xc_found"] = int(locus_xc_found)
                 summary["arms"][arm]["locus_xc_found"] = summary["arms"][arm].get("locus_xc_found", 0) + locus_xc_found
+                # Amendment D at the locus level: any transcript of the locus starts at a model's TSS and carries its first m introns
+                def tx_td_ok(exs):
+                    ex = sorted(exs)
+                    p5 = ex[-1][1] if strand == "-" else ex[0][0]
+                    js = introns_of(ex)
+                    return any(tss_support(p5, js, mdl, a.tss_tol) and (len(mdl[1]) > 0 or inter(ex, mdl[2]) >= COVER * ilen(mdl[2])) for mdl in models_d)
+                locus_td_found = td_expressed and any(tx_td_ok(exs) for n in names_same for exs in arm_tx_exons.get(arm, {}).get(n, []))
+                row[f"{arm}_locus_td_found"] = int(locus_td_found)
+                summary["arms"][arm]["locus_td_found"] = summary["arms"][arm].get("locus_td_found", 0) + locus_td_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
@@ -381,6 +456,7 @@ def main(argv=None):
                 summary["arms"][arm]["ann_found_in_npip_nodes"] = summary["arms"][arm].get("ann_found_in_npip_nodes", 0) + (own and ann_found)
                 summary["arms"][arm]["chain_found_in_npip_nodes"] = summary["arms"][arm].get("chain_found_in_npip_nodes", 0) + (own and chain_found)
                 summary["arms"][arm]["xc_found_in_npip_nodes"] = summary["arms"][arm].get("xc_found_in_npip_nodes", 0) + (own and xc_found)
+                summary["arms"][arm]["td_found_in_npip_nodes"] = summary["arms"][arm].get("td_found_in_npip_nodes", 0) + (own and td_found)
                 if locus_found is not None:
                     summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)
@@ -390,8 +466,8 @@ def main(argv=None):
         w.writerows(rows)
     json.dump(summary, open(a.out + ".json", "w"), indent=1)
     print(json.dumps(summary))
-    hdr = ["name", "reads", "xc_expressed_chains", "xc_support_reads", "xc_support_reads_incl_tied", "xc_dominant_reads", "xc_dominant_junctions", "xc_dominant_class", "chain_support_reads"] + \
-          [f"{arm}_{x}" for arm in arms for x in ("xc_found", "chain_found") + (("locus_xc_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
+    hdr = ["name", "reads", "td_support_reads", "td_support_50", "td_support_300", "td_support_cat", "td_support_refseq", "td_support_unique", "td_expressed", "xc_support_reads"] + \
+          [f"{arm}_{x}" for arm in arms for x in ("td_found", "xc_found") + (("locus_td_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
     print("\t".join(hdr))
     for r in rows:
         print("\t".join(str(r.get(h, "")) for h in hdr))
