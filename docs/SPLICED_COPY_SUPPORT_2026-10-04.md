@@ -366,3 +366,50 @@ carrying it, at the reads' modal start (±20 bp, Amendment D') and >200 bp away 
   call each cluster of >= 3 a transcription start, and anchor support, the representative and the evaluation there (Amendment E below).
 
 Register row 1243.
+
+## Amendment E re-score (2026-10-04 14:00): the starts are where the capped reads begin
+
+Amendment E (prereg f65f7de3, before the run): capped start = a 20-bp bin holding >= 3 cap-signal reads' 5' ends; anchored expressed chain =
+an identical >= 2-junction chain of >= 3 unique reads starting within ±150 bp of it; a read supports the copy iff it starts within ±150 bp of a
+capped start and carries the first min(3, n) introns of such a chain; FOUND = the node's representative does the same. Columns `tc_*`,
+`cap_reads` in `docs/SPLICED_COPY_SUPPORT_hsa_npip.tsv`.
+
+**NPIP: 22 of 25 copies have capped starts with anchored chains** (PKD1P6-NPIPP1 has 7 cap reads and no start; NPIPB12 and LOC124907808 have a
+start but no chain of 3 unique reads). **FOUND 10 / 6 / 2 within the own nodes 23 / 21 / 24; locus level 19 / 18 / 16** — the same nodes as
+Amendment D', now with the start defined by the cap signal rather than by a modal 5' end.
+
+| copy | reads | cap reads | capped starts (positions) | supporting reads E (unique) | D' | P found / own | GOOD | ALL |
+|---|---|---|---|---|---|---|---|---|
+| NPIPB2 | 432 | 206 | 4 (11977729, 12012730, 12012751, 12012771) | 292 (292) | 305 | 0 / 0 | 0 / 0 | 0 / 1 |
+| NPIPA2 | 348 | 215 | 5 (14740854, 14741044, 14749588, 14749609) | 219 (219) | 227 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA1 | 806 | 176 | 5 (14749609, 14938834, 14938874, 14938895) | 173 (173) | 463 | 1 / 1 | 1 / 1 | 0 / 1 |
+| PKD1P6-NPIPP1 | 253 | 7 | 0 () | 0 (0) | 68 | 0 / 0 | 0 / 0 | 0 / 1 |
+| NPIPA5 | 147 | 85 | 2 (15382704, 15400770) | 77 (77) | 82 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPA6 | 204 | 22 | 1 (16344720) | 23 (23) | 71 | 1 / 1 | 0 / 0 | 0 / 1 |
+| NPIPA7 | 285 | 109 | 3 (16391833, 16391854, 16391873) | 110 (8) | 130 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA8 | 192 | 125 | 4 (18339516, 18339521, 18339542, 18339582) | 121 (10) | 121 | 1 / 1 | 0 / 1 | 0 / 1 |
+| NPIPA9 | 998 | 102 | 2 (18386676, 18394005) | 145 (141) | 557 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC128966608 | 1104 | 116 | 6 (21697613, 21779903, 21780155, 21780165) | 98 (97) | 284 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB4 | 897 | 80 | 1 (22365631) | 46 (46) | 97 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB5 | 785 | 46 | 4 (22696417, 22696457, 22714646, 22797623) | 20 (20) | 72 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB6 | 684 | 421 | 3 (28637415, 28637421, 28637476) | 486 (486) | 516 | 1 / 1 | 0 / 0 | 0 / 1 |
+| NPIPB7 | 164 | 48 | 6 (28751524, 28752737, 28771947, 28771962) | 45 (45) | 48 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB8 | 174 | 98 | 9 (28903474, 28903487, 28903674, 28903697) | 98 (98) | 86 | 1 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB9 | 568 | 315 | 6 (28992127, 28992149, 28992296, 29037610) | 338 (338) | 360 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB10P | 70 | 28 | 1 (29319354) | 17 (17) | 19 | 0 / 1 | 1 / 1 | 1 / 1 |
+| NPIPB11 | 150 | 58 | 1 (29679826) | 40 (40) | 44 | 1 / 1 | 1 / 1 | 0 / 1 |
+| NPIPB12 | 54 | 14 | 1 (29781839) | 0 (0) | 0 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907834 | 634 | 122 | 1 (30523997) | 88 (88) | 170 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB13 | 131 | 15 | 1 (30625966) | 12 (12) | 25 | 0 / 1 | 0 / 1 | 0 / 0 |
+| NPIPB14P | 1255 | 602 | 23 (75799850, 75799911, 75874089, 75875386) | 622 (622) | 729 | 0 / 1 | 0 / 1 | 0 / 1 |
+| NPIPB15 | 220 | 131 | 1 (80195303) | 138 (129) | 138 | 1 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907808 | 73 | 20 | 1 (80309685) | 0 (0) | 6 | 0 / 1 | 0 / 1 | 0 / 1 |
+| LOC124907807 | 96 | 29 | 1 (80424051) | 19 (17) | 24 | 1 / 1 | 0 / 1 | 0 / 1 |
+
+- The capped starts are the transcription starts of this library: NPIPB2 12,012,751 (5 bp from the RefSeq/CAT 9-intron model's TSS; the reads
+  there carry the 5 downstream introns, not the model's first three), NPIPB6 28,637,415-28,637,476, NPIPB15 80,195,303, NPIPB14P 23 starts (a
+  copy with many capped starts along its body).
+- Under E the copies whose D' start was wrong resolve: NPIPA1 173 supporting reads from capped starts at 14,938,834-14,938,895 (D' had taken
+  14,938,049), NPIPA7 110 (8 unique: its capped starts are shared with the A6-A9 siblings), LOC128966608 98, NPIPA6 23, NPIPB5 20.
+
+Register row 1244.

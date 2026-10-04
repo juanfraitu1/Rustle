@@ -363,3 +363,20 @@ min(3, n) introns; D = the same against the annotated models' TSS (re-scored fro
 - The four readings now split 2-2 (A, D for R_J; B, C for R_M) and the family clause (a) still fails on chr6. The decision stays as registered
   (R_M default, R_J opt-in); the next representative rule is pre-registered against the user's standard (D') together with the family
   metrics: the most-read expressed chain that starts at the locus's expressed TSS.
+
+## Amendment E (2026-10-04 14:00): H3 anchored on CAPPED starts
+
+| contig | genes | expressed (>= 2 reads from a capped start with the first 3 introns) | FOUND E R_M | R_J | locus level R_M | R_J |
+|---|---|---|---|---|---|---|
+| human_chr2 | 1,243 | 963 | **572** | **693** | 867 | 882 |
+| human_chr6 | 1,047 | 713 | **431** | **490** | 628 | 636 |
+| human_chr8 | 698 | 495 | **316** | **365** | 451 | 452 |
+| human_chr10 | 729 | 551 | **354** | **404** | 494 | 506 |
+| human_chr16 (dev) | 857 | 617 | **365** | **405** | 539 | 547 |
+| gorilla_NC_073234.2 — NO cap signal in this library: E undefined | 1,119 | 275 | **170** | **190** | 247 | 248 |
+| gorilla_NC_073244.2 (dev) | 1,520 | 280 | **183** | **178** | 255 | 259 |
+
+- Human: the junction-maximal representative is ahead on every contig (held-out chr2 572 vs 693, chr6 431 vs 490, chr8 316 vs 365, chr10 354 vs
+  404), as under D/D' — a TSS-anchored test rewards reaching the 5' end. **Gorilla OR6737 carries no cap signal** (`project_read_proven_ends`,
+  09-27), so E is undefined there (the 280 / 275 "expressed" genes are chance G clips); D' stands for gorilla.
+- Decision unchanged; the next representative rule is pre-registered against E on human and D' on gorilla, with the family metrics.
