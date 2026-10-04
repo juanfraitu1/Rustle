@@ -453,3 +453,48 @@ and the stage has never been run on Amendment 9's no-deletion control. The flip 
     control's numbers are the next prereg's starting point.
 - Reported: candidates per family by class; the attribution counts without a deletion (how many unmapped / poorly placed reads join, and
   what they become); the per-family counters (refine splits, templates by kind).
+
+## Amendment 15 (2026-10-03, written before any re-run): the consensus defect behind Amendment 14's false flags — the correction, the re-runs, a held-out
+
+**What was found, post hoc (2026-10-03, after Amendment 14's verdict; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; Task 5 report in the
+A13 ledger directory, reproduction byte-identical for 33 clusters of 5 families).** The 54 class-c flags of the control diverge from the
+primary assembly by insertions only (no mismatches, no deletions; 99% of the inserted bases in runs >= 20 bp), and 41 of the 54 carry a
+duplication signature: 94% of their genome-inserted bases (22,144 of 23,553) are copies of the union's own sequence (A13: 35 of the 46
+survivor-derived flagged unions, 4 of the 30 D-derived; 3 of 159 sound linked consensus sequences). Mechanism (GWFAM37:c1, 368 reads):
+the template is the medoid, a 3,007-bp read of the majority structure; 85 reads carry a 603-bp segment it lacks; `minimap2 -x splice:hq`
+places each carrier's insertion at a column that depends on where the read starts, paired with a `~` over the template's own bases, so the
+one segment appears as >= 3 identical carriers at SIX columns (618-747); `consensus_from_template` (Amendment 13's long-insertion rule:
+the most frequent identical insertion >= 20 bp with >= 3 carriers, whatever its share of the covering members) inserts it at each, each
+copy also re-inserting 71-200 bp of template that the `~` skipped and that a >= 20-bp deletion never removes (R2). This happens at the
+first polish; the refinement rebuilds the same bytes (its fit test reads `de`, which is gap-compressed, and the read's own coverage, so
+extra consensus sequence is invisible to it). The other 13 class-c unions have other causes (10 mismatch-dominated with few reads, median
+7.5; 2 exact unions whose genome hit is split across ~204 kb).
+
+**The correction (one rule made uniform; no new constant).** A long insertion (>= 20 bp) enters the consensus only when its carriers are a
+majority of the members covering that column (`2 x count >= covering`, with `STRUCT_MIN_SUPPORT` = 3 kept as the floor) — the rule the
+< 20 bp insertions, the substitutions and the deletions already obey. Measured offline before this amendment (Task 5): it clears all six
+stage flags of the three worst control families (GWFAM37 8,201 bp / 0.485 -> 2,988 / 0.9997; GWFAM425 11,627 / 0.494 -> 3,529 / 0.9994;
+GWFAM99 4,240 / 0.591 -> 1,894 / 0.9952) and adds none; two sound A13 consensus sequences stay sound and lose 128-216 bp (minority exons,
+which the cluster consensus no longer carries; the candidate-level union across clusters is unchanged). The alternatives measured and NOT
+taken: the longest eligible member as template (adds a false flag in GWFAM99; breaks A13 GWFAM37 to 0.856) and both together (adds the same
+flag). Known residual, conservative by construction: an exon carried by a majority whose carriers minimap2 splits across columns is
+under-counted and left out (fewer insertions, never duplications). Rulings R2/R5 and Amendment 13's vote are amended to this rule; delta,
+the merge rule, the flag floor, the tie ratio, the net (13b/13c), the template (13d/13e) and the attribution rule are unchanged.
+
+**Re-runs, same bars, nothing re-tuned.**
+- A13 again (the 53-family deletion held-out, the same five batches, `ACC=a13`, the corrected binary): A13-1 (D right >= 0.80 x C, C
+  re-measured from the run's own nets as Amendment 13b says; false moves <= 5%), A13-2 (union keeps >= 95%, pooled reading per R24),
+  A13-3 (<= 40 min).
+- A14 again (the same 53 families, nothing deleted, `ACC=a14`): C1' <= 8 of 53 families with a class b/c/pri flag; C2' false moves <= 5%.
+- **Held-out, never run by the stage: Amendment 10's read set with nothing deleted** — inputs that exist: `refabsent/R0.bam` (Amendment
+  10's 32,219 scored reads of 34 families, cap 2,000 per family, aligned to `_pri` with the pipeline flags) and the 915-copy table
+  `a14/wholebam/W.copies.{tsv,fa}` restricted to those families; truth = Amendment 10's haplotype-only loci (`refabsent/bonly.tsv`, lift +
+  asm20 to mat/pat), classification as Amendment 9. Four of the 34 (GWFAM4, GWFAM169, GWFAM175, GWFAM402) are among the 53 development
+  families, so **the registered held-out is the 30 disjoint families**. H1: families with >= 1 class b/c/pri flag <= 15.7% of 30 = **at
+  most 4** (the same LR >= 3 construction as C1' at A13's detection 25/53). H3: false moves <= 5% of all reads of the 30 families (arm C
+  of Amendment 9 on this read set). Reported, not decided on (dev-overlapping, n = 1): H2, the expressed beyond-delta locus GWFAM175_B0 is
+  flagged (Amendment 10's D1).
+- **Decision:** the default-on flip is re-made iff A13-1/2/3, C1'/C2' and H1/H3 all hold; otherwise the stage stays opt-in (R14) and the
+  outcome is recorded. Reported beside: the identity x coverage of every flagged union to its best genome hit (the number that exposed
+  the defect) and the duplication signature count; the whole-BAM cost of the corrected stage on one 50-family batch (R23 repeated).
+- Not yet scheduled (user's decision on cost, 2026-10-03 23:50): this amendment binds whenever the re-runs happen.
