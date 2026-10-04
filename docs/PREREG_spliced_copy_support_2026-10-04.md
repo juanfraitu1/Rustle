@@ -75,3 +75,25 @@ Applied to: the NPIP page (3 arms, 25 copies; the page is restated once more), a
 (`/mnt/linuxdisk/tmp/rep_rule/`, both arms) — the latter is a re-score of saved outputs, no families re-run; `docs/LOCUS_REPRESENTATIVE_
 RULE_2026-10-04.md` gains the annotation-anchored H3 table and its decision clause (b) is re-evaluated under it (R_J is opt-in already;
 the clause can only confirm or add a second violation). Scorer: `bench/copy_support.py` gains the `ann_*` columns; nothing else changes.
+
+## Amendment B (2026-10-04 12:00, user correction, written before the re-score): the exon-intron CHAIN must align, and both annotations count
+
+Amendment A counts a read for a copy when >= 2 of its junction coordinates are introns of an annotated transcript — anywhere in the read,
+in any order, with anything in between. The user's standard is stricter and is the right one: **a read supports a transcript only where its
+exon-intron chain aligns with the transcript's** — a matched intron must be followed (or preceded) by the transcript's next intron with the
+annotated exon between them spanned exactly, i.e. a read that happens to hit the same junctions with other structure in between is not a read
+of that transcript. Re-registered:
+
+- **Chain support:** a read's junction chain (its junctions in order, inside the copy's span) is a **contiguous sub-chain of the intron chain of
+  some annotated transcript of the copy** (an incomplete splice match in SQANTI's sense), with >= k junctions, k = min(2, the transcript's
+  intron count); every junction of the read inside the span must belong to that sub-chain (no extra junction, no skipped intron); k = 0
+  (intronless copy): coverage >= 50% of the exon union as before. Junction coordinates are exact; introns < 50 bp are dropped on both sides.
+- **Both annotations:** for the human copies the transcript models are the union of the CAT/Liftoff v2.0 models and the RefSeq models of the
+  same gene (the RefSeq-era 26-copy table `copy_recovery_tools/ann/copies.hsa.tsv` + `truth.hsa.gtf`, matched by gene name); a read supports
+  the copy if it chain-matches a model of EITHER annotation; the two are also reported separately. Where only one annotation exists
+  (gorilla RefSeq; the held-out human genes until a RefSeq mapping is wired) the single set is used and said so.
+- **Spliced-expressed:** >= 2 chain-support reads. **FOUND:** spliced-expressed AND a same-strand locus whose representative's junction chain
+  inside the copy's span is a contiguous sub-chain (>= k junctions) of a model of the copy. Locus level (any transcript of the locus) beside.
+- Amendment A's coordinate-match columns and the original read-defined columns stay reported; neither is the verdict.
+
+Applied as Amendment A was: the NPIP page (both annotations) and the representative-rule H3 on the 7 contigs (single annotation).

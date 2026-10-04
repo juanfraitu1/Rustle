@@ -98,6 +98,21 @@ def read_blocks_junctions(rd):
     return merge([b for b in blocks if b[1] > b[0]]), juncs
 
 
+def chain_match(js, chains, k):
+    """Amendment B: `js` (a read's or representative's junctions inside the copy span, in order) is a contiguous sub-chain of >= k junctions of
+    one of `chains` (each a transcript's intron chain, in order). k = 0 never matches here (the caller uses the coverage rule)."""
+    if k == 0 or len(js) < k:
+        return False
+    for ch in chains:
+        n = len(ch)
+        if len(js) > n:
+            continue
+        for i in range(n - len(js) + 1):
+            if ch[i:i + len(js)] == js:
+                return True
+    return False
+
+
 def load_loci(path):
     """locus name -> dict(chrom, strand, exons (merged rep exons), juncs set) from a loci GFF3 (gene + exon rows)."""
     loci = {}
@@ -117,6 +132,19 @@ def load_loci(path):
         v["exons"] = merge(ex)
         v["juncs"] = set(introns_of(ex))
     return loci
+
+
+def locus_transcript_chains(gtf):
+    """locus (gene_id) -> list of its transcripts' junction chains (each in order)."""
+    ex = collections.defaultdict(lambda: collections.defaultdict(list))
+    for ln in open(gtf):
+        f = ln.rstrip("\n").split("\t")
+        if len(f) < 9 or f[2] != "exon":
+            continue
+        g = re.search(r'gene_id "([^"]+)"', f[8]).group(1)
+        t = re.search(r'transcript_id "([^"]+)"', f[8])
+        ex[g][t.group(1) if t else g].append([int(f[3]) - 1, int(f[4])])
+    return {g: [introns_of(sorted(e)) for e in d.values()] for g, d in ex.items()}
 
 
 def locus_transcript_junctions(gtf):
@@ -141,20 +169,32 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--loci", action="append", default=[], help="NAME=loci.gff3[,transcripts.gtf] (repeatable); with the GTF the locus-level reading is reported beside")
     ap.add_argument("--nodes", help="pagedata.json of the read-pool page (its node[arm] per cid)")
+    ap.add_argument("--truth2", help="Amendment B: a second annotation's truth GTF (e.g. RefSeq) whose models of the same gene also count")
+    ap.add_argument("--copies2", help="the copies table of --truth2 (its cid keys the GTF; genes matched to --copies by name / refseq_name)")
     a = ap.parse_args(argv)
 
     copies = [r for r in csv.DictReader(open(a.copies), delimiter="\t") if r["family"] == a.family]
     # the truth GTF keys its genes by the copy id (cid) in the recovery benchmarks' truth files, by the annotation id elsewhere
     genes = {r["isoform_gene"] for r in copies} | {r["cid"] for r in copies}
     tx = gtf_transcripts(a.truth, genes)
+    tx2 = {}
+    if a.truth2 and a.copies2:
+        c2 = list(csv.DictReader(open(a.copies2), delimiter="\t"))
+        by_name = {r["name"]: r["cid"] for r in c2}
+        t2 = gtf_transcripts(a.truth2, {r["cid"] for r in c2})
+        for c in copies:
+            nm = c.get("refseq_name") or c["name"]
+            if nm in by_name and by_name[nm] in t2:
+                tx2[c["cid"]] = t2[by_name[nm]]
     arms = {}
-    arm_tx = {}
+    arm_tx, arm_tx_chains = {}, {}
     for spec in a.loci:
         name, path = spec.split("=", 1)
         path, _, gtf = path.partition(",")
         arms[name] = load_loci(path)
         if gtf:
             arm_tx[name] = locus_transcript_junctions(gtf)
+            arm_tx_chains[name] = locus_transcript_chains(gtf)
     nodes = {}
     if a.nodes:
         pd = json.load(open(a.nodes))
@@ -169,7 +209,14 @@ def main(argv=None):
     for c in copies:
         chrom, strand = c["chrom"], c["strand"]
         texons = tx.get(c["cid"]) or tx.get(c["isoform_gene"], {})
+        texons2 = tx2.get(c["cid"], {})
         label = c.get("refseq_name") or c.get("cat_name") or c["name"]
+        # Amendment B: intron chains of every model (annotation 1, annotation 2, and both)
+        chains1 = [introns_of(ex) for ex in texons.values() if len(introns_of(ex)) >= 1]
+        chains2 = [introns_of(ex) for ex in texons2.values() if len(introns_of(ex)) >= 1]
+        chains = chains1 + chains2
+        n_intron_b = max((len(ch) for ch in chains), default=0)
+        kb = min(2, n_intron_b)
         union = merge([e for ex in texons.values() for e in ex]) or [[int(c["terr_lo0"]), int(c["terr_hi"])]]
         ann_introns = {t: set(introns_of(ex)) for t, ex in texons.items()}
         n_intron = max((len(v) for v in ann_introns.values()), default=0)
@@ -199,14 +246,25 @@ def main(argv=None):
         # Amendment A: support = the copy's OWN annotated introns (k of them; k = 0: coverage of the exon union)
         n_ann_support = n_ann2 if k else n_support
         ann_expressed = n_ann_support >= FLOOR
+        # Amendment B: chain support (contiguous sub-chain of a model; both annotations, and each alone)
+        if kb == 0:
+            n_chain = n_chain1 = n_chain2 = n_support
+        else:
+            n_chain = sum(1 for _, js in reads if chain_match(js, chains, kb))
+            n_chain1 = sum(1 for _, js in reads if chain_match(js, chains1, kb))
+            n_chain2 = sum(1 for _, js in reads if chain_match(js, chains2, kb))
+        chain_expressed = n_chain >= FLOOR
         n_exact = sum(1 for _, js in reads if js and any(set(js) == s for s in ann_introns.values() if s))
         expressed = n_support >= FLOOR
         summary["spliced_expressed"] += expressed
         summary["ann_expressed"] += ann_expressed
+        summary["chain_expressed"] = summary.get("chain_expressed", 0) + chain_expressed
         row = dict(cid=c["cid"], name=label, chrom=chrom, strand=strand, span=f"{lo}-{hi}", n_tx=len(texons), ann_introns=n_intron, k=k,
                    reads=len(reads), unspliced=n_unspliced, one_junction=n_one, supported_junctions=len(supported), support_reads=n_support,
                    ann2_reads=n_ann2, exact_chain_reads=n_exact, spliced_expressed=int(expressed),
-                   ann_support_reads=n_ann_support, ann_expressed=int(ann_expressed))
+                   ann_support_reads=n_ann_support, ann_expressed=int(ann_expressed),
+                   chain_support_reads=n_chain, chain_support_ann1=n_chain1, chain_support_ann2=n_chain2, chain_expressed=int(chain_expressed),
+                   models_ann1=len(chains1), models_ann2=len(chains2))
         for arm, loci in arms.items():
             same = [L for L in loci.values() if L["chrom"] == chrom and L["strand"] == strand and inter(L["exons"], union) > 0]
             if k == 0:
@@ -225,6 +283,14 @@ def main(argv=None):
             row[f"{arm}_rep_ann_junctions_max"] = rep_ann
             row[f"{arm}_ann_found"] = int(ann_found)
             summary["arms"][arm]["ann_found"] = summary["arms"][arm].get("ann_found", 0) + ann_found
+            # Amendment B: the representative's junction chain inside the span must be a contiguous sub-chain of a model
+            def rep_chain_ok(L):
+                js = sorted(j for j in L["juncs"] if j[0] >= lo and j[1] <= hi)
+                return chain_match(js, chains, kb)
+            chain_loci = [L for L in same if (inter(L["exons"], union) >= COVER * ilen(union)) if kb == 0] if kb == 0 else [L for L in same if rep_chain_ok(L)]
+            chain_found = chain_expressed and len(chain_loci) > 0
+            row[f"{arm}_chain_found"] = int(chain_found)
+            summary["arms"][arm]["chain_found"] = summary["arms"][arm].get("chain_found", 0) + chain_found
             summary["arms"][arm]["old_overlap"] += old
             summary["arms"][arm]["strict_found"] += strict
             # locus level (reported beside): any transcript of a same-strand overlapping locus carries >= k supported junctions
@@ -242,12 +308,22 @@ def main(argv=None):
                 row[f"{arm}_locus_ann_junctions_max"] = best_ann
                 row[f"{arm}_locus_ann_found"] = int(locus_ann_found)
                 summary["arms"][arm]["locus_ann_found"] = summary["arms"][arm].get("locus_ann_found", 0) + locus_ann_found
+                # Amendment B at the locus level: any transcript of a same-strand overlapping locus chain-matches a model
+                if kb == 0:
+                    locus_chain_found = chain_expressed and len(chain_loci) > 0
+                else:
+                    locus_chain_found = chain_expressed and any(
+                        chain_match(sorted(j for j in ltx_t if j[0] >= lo and j[1] <= hi), chains, kb)
+                        for n in names_same for ltx_t in [arm_tx_chains.get(arm, {}).get(n, [])] for ltx_t in ltx_t)
+                row[f"{arm}_locus_chain_found"] = int(locus_chain_found)
+                summary["arms"][arm]["locus_chain_found"] = summary["arms"][arm].get("locus_chain_found", 0) + locus_chain_found
             if nodes:
                 own = bool(nodes.get(c["cid"], {}).get(arm, False))
                 row[f"{arm}_page_own_node"] = int(own)
                 summary["arms"][arm]["old_overlap_in_npip_nodes"] += own
                 summary["arms"][arm]["strict_found_in_npip_nodes"] += own and strict
                 summary["arms"][arm]["ann_found_in_npip_nodes"] = summary["arms"][arm].get("ann_found_in_npip_nodes", 0) + (own and ann_found)
+                summary["arms"][arm]["chain_found_in_npip_nodes"] = summary["arms"][arm].get("chain_found_in_npip_nodes", 0) + (own and chain_found)
                 if locus_found is not None:
                     summary["arms"][arm]["locus_level_found_in_npip_nodes"] += own and locus_found
         rows.append(row)
@@ -257,8 +333,8 @@ def main(argv=None):
         w.writerows(rows)
     json.dump(summary, open(a.out + ".json", "w"), indent=1)
     print(json.dumps(summary))
-    hdr = ["name", "reads", "unspliced", "ann_support_reads", "ann_expressed", "support_reads", "exact_chain_reads"] + \
-          [f"{arm}_{x}" for arm in arms for x in ("ann_found", "strict_found") + (("locus_ann_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
+    hdr = ["name", "reads", "chain_support_reads", "chain_support_ann1", "chain_support_ann2", "chain_expressed", "ann_support_reads", "exact_chain_reads"] + \
+          [f"{arm}_{x}" for arm in arms for x in ("chain_found", "ann_found") + (("locus_chain_found",) if arm in arm_tx else ()) + (("page_own_node",) if nodes else ())]
     print("\t".join(hdr))
     for r in rows:
         print("\t".join(str(r.get(h, "")) for h in hdr))
