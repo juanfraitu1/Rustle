@@ -1184,8 +1184,10 @@ def creport(a):
     cl_of = collections.defaultdict(dict)
     for r in tsv(f"{a.w}/{a.prefix}.reads.tsv"):
         cl_of[r["family"]][r["read"]] = r["cluster"]
-    klass = {r["candidate"]: r for r in tsv(f"{a.w}/candidates_classified.tsv")}
-    calls = {r["read"]: r for r in tsv(f"{a.w}/calls.tsv")}
+    klass = {r["candidate"]: r for r in tsv(f"{a.w}/candidates_classified.tsv")} if os.path.exists(f"{a.w}/candidates_classified.tsv") else {}
+    calls = {r["read"]: r for r in tsv(f"{a.w}/calls.tsv")} if os.path.exists(f"{a.w}/calls.tsv") else {}
+    # ACC=a15h classifies and scores with control_test.py (A9's layouts: candidates.tsv / score.json, no candidates_classified.tsv /
+    # calls.tsv): creport then reports the stage / nets / pass-B numbers without the per-flag class and per-read arm-C columns
     netr = tsv(f"{a.w}/net_reads.tsv")
     nets_rows = {r["family"]: r for r in tsv(f"{a.w}/nets.tsv")}
     out = {}
