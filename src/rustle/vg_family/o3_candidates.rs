@@ -227,7 +227,9 @@ pub fn parse_cs(cs: &str) -> anyhow::Result<Vec<CsOp>> {
 const STRUCT_MIN_INDEL: usize = 20;
 /// Members that must cover a column before the vote (or a < 20 bp indel majority) may change the template there.
 const VOTE_MIN_COVER: usize = 3;
-/// Members that must carry an insertion of >= 20 bp for it to be inserted (an exon the template lacks), whatever its share.
+/// Members that must carry an insertion of >= 20 bp before it may enter the consensus (prereg Amendment 15: the floor of 3,
+/// AND a majority of the members covering that column — `2 x count >= covering`; the pre-15 "whatever its share" rule duplicated
+/// one biological insertion at every column a minority carrier happened to land it, see docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md).
 const STRUCT_MIN_SUPPORT: usize = 3;
 /// Members that must cover a template column at either end of the consensus for it to survive the end trim (spec §5.4, ruling R5).
 const END_MIN_COVER: usize = 2;
@@ -417,11 +419,19 @@ pub fn refined_template(template: usize, kept: &[usize], names: &[String], ava: 
 ///   with equal support take the smaller base; fewer than 3 covering members keep the template base;
 /// * the insertions before a column (after the last column when `t == n`) are voted by size class, the long class first (prereg Amendment
 ///   13), and at most ONE of them is inserted. First the insertions >= 20 bp, which are STRUCTURE, not errors (R2): the most frequent one
-///   (ties to the smaller sequence) is inserted when >= 3 members carry it, whatever its share (an exon the template lacks). Only when no long
-///   insertion has 3 carriers, the insertions < 20 bp: the most frequent one (ties to the smaller) is inserted when >= 50% of >= 3 covering
+///   (ties to the smaller sequence) is inserted when >= 3 members carry it AND its carriers are a majority of the members covering that
+///   column (`2 x count >= covering`, prereg Amendment 15 — the pre-15 "whatever its share" rule is what duplicated one biological
+///   insertion at six columns in GWFAM37:c1, reproduced byte for byte in docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md). Only when no
+///   long insertion passes, the insertions < 20 bp: the most frequent one (ties to the smaller) is inserted when >= 50% of >= 3 covering
 ///   members carry it. One winner, because two insertions before one column would make a sequence no member carries (a member's `cs` holds
 ///   at most one insertion there); the long class first, because 3 reads carrying an exon are evidence of an isoform while a short
-///   insertion, even a majority one, is error-sized: 3 carriers of a 24-bp insertion win over 4 of 8 carrying a 1-bp one at that column;
+///   insertion, even a majority one, is error-sized: 3 carriers of a 24-bp insertion win over 4 of 8 carrying a 1-bp one at that column
+///   (when the 3 are a majority of the covering members);
+/// * before the vote, each member's `cs` is normalised (prereg Amendment 15b): an insertion that begins with the template bases its
+///   adjacent skip removes (`+X·E ~|X|`, minimap2 splice:hq's placement of an exon the template lacks, 107 of 134 insertion-plus-skip pairs
+///   in the defective clusters) is shortened by them and the skip becomes matches, so the one event lands at one column; and each distinct
+///   long insertion enters the consensus at most ONCE, at the column with the most carriers (Amendment 15b's one-copy rule: carriers are
+///   not re-counted across columns)
 /// * a deletion < 20 bp removes the column when >= 50% of >= 3 covering members delete it (a plain majority of the covering members, also
 ///   inside an exon that other members skip); a deletion >= 20 bp is STRUCTURE (R2) and never applied (the template's exon stays), so the
 ///   consensus is the exon union of the cluster's isoforms with SNV-level majority voting.
@@ -439,6 +449,8 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
     for (_, h) in member_hits {
         let Some(cs) = h.cs.as_deref() else { continue };
         let ops = parse_cs(cs).map_err(|e| anyhow::anyhow!("member {} against {}: {e}", h.q, h.t))?;
+        // Amendment 15b (a): `+X·E ~|X|` -> `:|X| +E` before the vote (the insertion begins with the skipped template bases)
+        let ops = normalize_cs_ops(ops, template, h.ts);
         let mut t = h.ts;
         for op in ops {
             match op {
@@ -455,6 +467,22 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
             }
         }
     }
+    // Amendment 15b (b): one copy per identical long insertion per consensus. The same biological piece lands at different columns on
+    // different carriers (minimap2 places it relative to where the read starts), so without this rule the vote inserts it once per
+    // column. Aggregated across columns, it is placed at the column with the most carriers (ties to the earliest) and removed elsewhere;
+    // the count at the surviving column stays column-local (Amendment 15's majority test reads carriers against the members covering
+    // THAT column).
+    for p in 0..=n {
+        let seqs: Vec<Vec<u8>> = ins[p].keys().filter(|s| s.len() >= STRUCT_MIN_INDEL).cloned().collect();
+        for seq in seqs {
+            let at = |q: usize| ins[q].get(&seq).copied().unwrap_or(0);
+            let columns: Vec<usize> = (0..=n).filter(|&q| at(q) > 0).collect();
+            if columns.len() > 1 {
+                let keep = columns.iter().copied().max_by_key(|&q| (at(q), std::cmp::Reverse(q))).unwrap();
+                for q in columns { if q != keep { ins[q].remove(&seq); } }
+            }
+        }
+    }
     // spec §5.4 / R5 end trim: columns lo..=hi survive, the leading and trailing ones covered by fewer than END_MIN_COVER members do not; an
     // insertion goes with the column it precedes, so the one after the last column survives only with the last column. No covered column
     // (an empty template, no member) returns here, so n >= 1 below.
@@ -463,10 +491,11 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
     let mut out = Vec::with_capacity(hi - lo + 64);
     for p in lo..=last {
         // A13: the most frequent insertion of one size class before column p (the larger count, then the smaller sequence: a total order, no
-        // hash order reaches the output); the long class first, the short class only when no long insertion has STRUCT_MIN_SUPPORT carriers
+        // hash order reaches the output); the long class first, the short class only when no long insertion passes Amendment 15's test
         let most = |long: bool| ins[p].iter().filter(|(s, _)| (s.len() >= STRUCT_MIN_INDEL) == long).max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)));
         let covering = cover[p.min(n - 1)];
-        if let Some((seq, _)) = most(true).filter(|&(_, &cnt)| cnt >= STRUCT_MIN_SUPPORT) {
+        // Amendment 15 (c): a long insertion needs the floor of 3 carriers AND a majority of the members covering the column
+        if let Some((seq, _)) = most(true).filter(|&(_, &cnt)| cnt >= STRUCT_MIN_SUPPORT && 2 * cnt >= covering) {
             out.extend_from_slice(seq);
         } else if let Some((seq, _)) = most(false).filter(|&(_, &cnt)| covering >= VOTE_MIN_COVER && 2 * cnt >= covering) {
             out.extend_from_slice(seq);
@@ -481,6 +510,48 @@ pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]
         out.push(base);
     }
     Ok(out)
+}
+
+/// Prereg Amendment 15b (a): normalise one member's `cs` before the vote. minimap2 `splice:hq` writes an exon the template lacks as
+/// `+X·E ~|X|` — the insertion begins with the template bases the adjacent skip removes (107 of 134 insertion-plus-skip pairs in the
+/// defective clusters of docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md), and the insertion's column then depends on where the read
+/// starts. When an insertion is immediately followed by a skip over template bases `X` and the insertion begins with exactly those bases,
+/// the pair becomes matches over `X` and the insertion shortened by them (`+X·E ~|X|` -> `:|X| +E`), so one biological event lands at one
+/// column. Chained skips repeat; anything else passes through untouched. `ts` is the hit's start on the template.
+fn normalize_cs_ops(ops: Vec<CsOp>, template: &[u8], ts: usize) -> Vec<CsOp> {
+    let n = template.len();
+    let (mut out, mut t) = (Vec::with_capacity(ops.len()), ts);
+    let mut iter = ops.into_iter().peekable();
+    while let Some(op) = iter.next() {
+        match op {
+            CsOp::Ins(seq) => {
+                let mut seq = seq;
+                while let Some(&CsOp::Intron(skip)) = iter.peek() {
+                    let begins_with_the_skipped = seq.len() >= skip
+                        && t + skip <= n
+                        && seq[..skip].eq_ignore_ascii_case(&template[t..t + skip]);
+                    if !begins_with_the_skipped { break; }
+                    out.push(CsOp::Eq(skip));
+                    t += skip;
+                    seq = seq[skip..].to_vec();
+                    iter.next();
+                    if seq.is_empty() { break; }
+                }
+                if !seq.is_empty() { out.push(CsOp::Ins(seq)); }
+            }
+            other => {
+                match &other {
+                    CsOp::Eq(len) => t = t.saturating_add(*len),
+                    CsOp::Sub(..) => t = t.saturating_add(1),
+                    CsOp::Del(s) => t = t.saturating_add(s.len()),
+                    CsOp::Intron(len) => t = t.saturating_add(*len),
+                    CsOp::Ins(_) => {}
+                }
+                out.push(other);
+            }
+        }
+    }
+    out
 }
 
 /// The number of substitutions in a pairwise `cs`: spec §5.5's k, the columns that distinguish two consensus sequences. Indels are not counted.
@@ -1629,7 +1700,7 @@ mod tests {
         assert_eq!(got, want);
     }
     #[test]
-    fn consensus_treats_indels_of_20_bp_and_more_as_structure_whatever_their_share() {
+    fn consensus_treats_indels_of_20_bp_and_more_as_structure_under_the_amendment_15_majority() {
         let template = rand_seq(120, 43);
         let ins24: &[u8] = b"GATTACAGATTACACCGGTTAACC";
         // deletions: 19 bp follows the 50% majority (4 of 5 -> applied) but 20 bp never does, even when every member carries it
@@ -1637,27 +1708,39 @@ mod tests {
         assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 5, &[Edit::Del(40, 19)])), minus19);
         assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 5, &[Edit::Del(40, 20)])), template);
         assert_eq!(consensus_of(&template, &cluster_of(&template, 5, 5, &[Edit::Del(40, 24)])), template);
-        // insertions: 20 bp with 3 members is inserted although 3 of 8 is only 37.5%, with 2 members it is not ...
+        // insertions (prereg Amendment 15, the consensus-defect fix): a >= 20 bp insertion needs the floor of 3 carriers AND a
+        // majority of the members covering the column. 3 of 8 (37.5%) — inserted under the pre-15 rule, the defect's core case — no longer
+        // enters; 2 carriers never did (the floor), whatever their share ...
         let with = |ins: &[u8]| { let mut v = template.clone(); v.splice(100..100, ins.iter().copied()); v };
-        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 8, &[Edit::Ins(100, &ins24[..20])])), with(&ins24[..20]));
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 8, &[Edit::Ins(100, &ins24[..20])])), template);
         assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 8, &[Edit::Ins(100, &ins24[..20])])), template);
         assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 2, &[Edit::Ins(100, &ins24[..20])])), template);   // 100%, but only 2 members
         assert_eq!(consensus_of(&template, &cluster_of(&template, 2, 3, &[Edit::Ins(100, &ins24[..20])])), template);   // 67% of 3: 20 bp needs 3 carriers
+        // ... a majority does: 4 of 8 (exactly 50%), 5 of 8, and all of 3 ...
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 8, &[Edit::Ins(100, &ins24[..20])])), with(&ins24[..20]));
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 5, 8, &[Edit::Ins(100, &ins24[..20])])), with(&ins24[..20]));
+        assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 3, &[Edit::Ins(100, &ins24[..20])])), with(&ins24[..20]));
         // ... while 19 bp needs 50% of the covering members: 3 of 8 no, 4 of 8 yes
         assert_eq!(consensus_of(&template, &cluster_of(&template, 3, 8, &[Edit::Ins(100, &ins24[..19])])), template);
         assert_eq!(consensus_of(&template, &cluster_of(&template, 4, 8, &[Edit::Ins(100, &ins24[..19])])), with(&ins24[..19]));
     }
     #[test]
     fn consensus_votes_the_insertions_of_20_bp_and_more_before_the_short_majority_at_one_position() {
-        // prereg Amendment 13: at one position the insertions >= 20 bp are considered first. 8 members cover column 100: 3 carry a 24-bp
-        // insertion there, 4 carry a 1-bp insertion there (50% of the covering members) and 1 carries none. The 24-bp one is inserted and the
-        // 1-bp one is not: one winner per position (a member's cs holds one insertion before a column, so no member supports both)
         let template = rand_seq(120, 47);
         let ins24: &[u8] = b"GATTACAGATTACACCGGTTAACC";
         let with = |ins: &[u8]| { let mut v = template.clone(); v.splice(100..100, ins.iter().copied()); v };
+        // prereg Amendments 13 + 15: at one position the insertions >= 20 bp are considered first — but only when their carriers are a
+        // majority of the covering members. 8 members cover column 100: 3 carry a 24-bp insertion there, 4 carry a 1-bp insertion there
+        // (50% of the covering members) and 1 carries none. The 24-bp one is NOT a majority (2x3 = 6 < 8), so the 1-bp one is inserted: one
+        // winner per position (a member's cs holds one insertion before a column, so no member supports both)
         let mut members = cluster_of(&template, 3, 3, &[Edit::Ins(100, ins24)]);
         members.extend(cluster_of(&template, 4, 5, &[Edit::Ins(100, b"T")]));
         assert_eq!(members.len(), 8);
+        assert_eq!(consensus_of(&template, &members), with(b"T"));
+        // when the long insertion IS a majority it still wins over the short one: 5 of 9 carry the 24-bp one, 4 of 9 the 1-bp one
+        let mut members = cluster_of(&template, 5, 5, &[Edit::Ins(100, ins24)]);
+        members.extend(cluster_of(&template, 4, 4, &[Edit::Ins(100, b"T")]));
+        assert_eq!(members.len(), 9);
         assert_eq!(consensus_of(&template, &members), with(ins24));
         // a long insertion under 3 carriers leaves the position to the short rule: 2 carriers of the 24-bp one, 4 of 8 with the 1-bp one
         let mut members = cluster_of(&template, 2, 2, &[Edit::Ins(100, ins24)]);
@@ -1857,6 +1940,92 @@ mod tests {
         assert!(consensus_from_template(&template, &[(read, &after), (read, &after), (read, &after)]).unwrap().is_empty());   // ... and nothing survives the end trim
         let whole = hit(":9", 0);
         assert_eq!(consensus_from_template(b"acgtnacgt", &[(read, &whole), (read, &whole)]).unwrap(), b"ACGTNACGT".to_vec());   // lower-case template: upper-case consensus
+    }
+
+    #[test]
+    fn consensus_a15b_shortens_an_insertion_that_begins_with_the_skipped_template_bases() {
+        // prereg Amendment 15b (a), regression for the `+X·E ~|X|` cs pattern: minimap2 splice:hq writes an exon E the template lacks
+        // with the skipped template bases X prepended, at a column that depends on where the read starts; normalised (`:|X| +E`), the
+        // event lands at ONE column as E alone. 3 carriers of 5 covering: a majority, so E enters — but as 25 bp at column 120, not the
+        // raw 45 bp piece at column 100 the pre-fix vote would have inserted
+        let template = rand_seq(200, 97);
+        let e: &[u8] = b"ACGTTGCAACGTTGCAACGTTGCAA";
+        assert_eq!(e.len(), 25);
+        let x = &template[100..120];
+        let mut piece = x.to_vec();
+        piece.extend_from_slice(e);
+        let carrier = |q: &str| {
+            (
+                Vec::new(),
+                PafHit { q: q.into(), qlen: 160 + piece.len(), qs: 0, qe: 160 + piece.len(), strand: b'+', t: "t".into(), tlen: 200,
+                    ts: 0, te: 200, matches: 160 + e.len(), block: 160 + piece.len(), de: 0.0,
+                    cs: Some(format!(":100+{}~gt20ag:60", lc(&piece))) },
+            )
+        };
+        let plain = || member_of(&template, &[]);
+        let members = vec![carrier("c1"), carrier("c2"), carrier("c3"), plain(), plain()];
+        let mut want = template.clone();
+        want.splice(120..120, e.iter().copied());
+        assert_eq!(consensus_of(&template, &members), want);
+        // chained skips: `+X'·X·E ~10 ~20` — the insertion keeps feeding the next skip and still lands as E at column 120
+        let x2 = &template[90..100];
+        let mut piece2 = x2.to_vec();
+        piece2.extend_from_slice(&piece);
+        let carrier2 = |q: &str| {
+            (
+                Vec::new(),
+                PafHit { q: q.into(), qlen: 150 + piece2.len(), qs: 0, qe: 150 + piece2.len(), strand: b'+', t: "t".into(), tlen: 200,
+                    ts: 0, te: 200, matches: 150 + e.len(), block: 150 + piece2.len(), de: 0.0,
+                    cs: Some(format!(":90+{}~gt10ag~ct20ac:60", lc(&piece2))) },
+            )
+        };
+        let members2 = vec![carrier2("d1"), carrier2("d2"), carrier2("d3"), plain(), plain()];
+        assert_eq!(consensus_of(&template, &members2), want);
+    }
+    #[test]
+    fn consensus_a15b_leaves_an_insertion_that_does_not_begin_with_the_skipped_bases() {
+        // the other cs pattern: `+E ~|X|` where E does NOT begin with the skipped template bases — no normalisation, the insertion
+        // stays where the aligner put it and answers only to the Amendment 15 majority test
+        let template = rand_seq(200, 98);
+        let e: &[u8] = b"TTGCAAGCTTGCAAGCTTGCAAGCT";
+        assert_eq!(e.len(), 25);
+        let carrier = |q: &str| {
+            (
+                Vec::new(),
+                PafHit { q: q.into(), qlen: 160 + e.len(), qs: 0, qe: 160 + e.len(), strand: b'+', t: "t".into(), tlen: 200,
+                    ts: 0, te: 200, matches: 160 + e.len(), block: 160 + e.len(), de: 0.0,
+                    cs: Some(format!(":100+{}~gt20ag:60", lc(e))) },
+            )
+        };
+        let plain = || member_of(&template, &[]);
+        let members = vec![carrier("c1"), carrier("c2"), carrier("c3"), carrier("c4"), carrier("c5"), plain(), plain(), plain()];
+        let mut want = template.clone();
+        want.splice(100..100, e.iter().copied());
+        assert_eq!(consensus_of(&template, &members), want); // 5 of 8 covering: a majority, inserted at column 100 as-is
+    }
+    #[test]
+    fn consensus_a15b_inserts_one_identical_long_insertion_once_at_its_best_supported_column() {
+        // prereg Amendment 15b (b): one copy per identical long insertion per consensus — the same 24-bp piece carried at two columns
+        // (as when carriers' alignments place it differently) enters ONCE, at the column with the most carriers (ties to the earliest).
+        // 5 carriers at each of columns 100 and 150: both pass the majority test on their own (2x5 = 10 >= 10 covering), so the
+        // pre-(b) vote inserted it twice; the one-copy rule keeps column 100 alone
+        let template = rand_seq(200, 99);
+        let ins24: &[u8] = b"GATTACAGATTACACCGGTTAACC";
+        let carrier = |q: &str, at: usize| {
+            (
+                Vec::new(),
+                PafHit { q: q.into(), qlen: 224, qs: 0, qe: 224, strand: b'+', t: "t".into(), tlen: 200, ts: 0, te: 200, matches: 200,
+                    block: 224, de: 0.0, cs: Some(format!(":{at}+{}:{}", lc(ins24), 200 - at)) },
+            )
+        };
+        let mut members = Vec::new();
+        for i in 0..5 { members.push(carrier(&format!("a{i}"), 100)); }
+        for i in 0..5 { members.push(carrier(&format!("b{i}"), 150)); }
+        let mut want = template.clone();
+        want.splice(100..100, ins24.iter().copied());
+        let got = consensus_of(&template, &members);
+        assert_eq!(got.len(), 224, "one 24-bp copy, not two");
+        assert_eq!(got, want);
     }
 
     #[test]
