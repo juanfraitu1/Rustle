@@ -157,7 +157,7 @@ impl Default for DenovoConfig {
             tied_seed: false,
             dna_family_min_identity: 0.90,
             dna_family_max_softmask: 0.30,
-            eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
+            eps_amb: Some(crate::vg_family::collapse_enumerate::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
     }
 }
@@ -1063,7 +1063,7 @@ fn to_split_families(
     out
 }
 
-use crate::vg_family::collapse_gate::{collapse_verdict, Ambiguity, CollapseVerdict};
+use crate::vg_family::collapse_enumerate::collapse_gate::{collapse_verdict, Ambiguity, CollapseVerdict};
 
 /// Ambiguously-placed primary reads over a rep's span.
 ///
@@ -13099,7 +13099,7 @@ mod tests {
         ];
         assert_eq!(
             locus_ambiguity(&rep, &reads),
-            crate::vg_family::collapse_gate::Ambiguity { n: 2, k: 1 }
+            crate::vg_family::collapse_enumerate::collapse_gate::Ambiguity { n: 2, k: 1 }
         );
     }
 

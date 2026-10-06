@@ -129,7 +129,7 @@ struct RegionWork {
     /// Read-seeded copy discovery: candidate new copies clustered from AS-tied reads' out-of-catalog
     /// placements. Empty unless `--discover-copies`. Report only (Task 4 drains this to
     /// `<out>.discovered_copies.tsv`) -- never feeds back into this run's own catalog or assignments.
-    discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy>,
+    discovered: Vec<rustle::vg_family::copy_graph::copy_discovery::DiscoveredCopy>,
     /// `--union-certificate`: what the union pass did in this region (its side-file rows + counts). Default
     /// (empty) unless the flag is on -- the pass runs INSIDE the worker because it needs the read sequences.
     union: rustle::vg_family::denovo_pipeline::UnionSummary,
@@ -1828,7 +1828,7 @@ fn build_catalog_index(rf: &RegionFamilies) -> CatalogIndex {
 /// a target window contributes zero here, unlike `read_ref_end`'s span (`ref_start..ref_end`),
 /// which would wrongly count the whole intron as covering it -- Task 7's reproduction-gate fix.
 fn block_overlap(read: &rustle::vg_family::copy_split::AlignedRead, s: u64, e: u64) -> u64 {
-    rustle::vg_family::copy_discovery::aligned_blocks(read)
+    rustle::vg_family::copy_graph::copy_discovery::aligned_blocks(read)
         .into_iter()
         .map(|(b0, b1)| {
             let (lo, hi) = (b0.max(s), b1.min(e));
@@ -1907,14 +1907,14 @@ fn best_overlap_truth_copy<'a>(
 fn discover_copies_for_family(
     fa: &FamilyAssignment,
     bam_reads: &[BamRead],
-    tied: &[(String, Vec<rustle::vg_family::copy_discovery::TiePlacement>)],
-) -> Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> {
+    tied: &[(String, Vec<rustle::vg_family::copy_graph::copy_discovery::TiePlacement>)],
+) -> Vec<rustle::vg_family::copy_graph::copy_discovery::DiscoveredCopy> {
     let considered: std::collections::HashSet<&str> = fa
         .assignments
         .iter()
         .filter_map(|&(ri, _)| bam_reads.get(ri).map(|br| br.name.as_str()))
         .collect();
-    let mine: Vec<(String, Vec<rustle::vg_family::copy_discovery::TiePlacement>)> =
+    let mine: Vec<(String, Vec<rustle::vg_family::copy_graph::copy_discovery::TiePlacement>)> =
         tied.iter().filter(|(name, _)| considered.contains(name.as_str())).cloned().collect();
     let existing_copies: Vec<(String, u64, u64, String)> = fa
         .copy_spans
@@ -1922,12 +1922,12 @@ fn discover_copies_for_family(
         .zip(fa.copy_tids.iter())
         .map(|((chrom, start, end), tid)| (chrom.clone(), *start, *end, tid.clone()))
         .collect();
-    rustle::vg_family::copy_discovery::cluster_tie_partners(
+    rustle::vg_family::copy_graph::copy_discovery::cluster_tie_partners(
         &mine,
         &fa.family_id,
         &existing_copies,
-        rustle::vg_family::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
-        rustle::vg_family::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
+        rustle::vg_family::copy_graph::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
+        rustle::vg_family::copy_graph::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
     )
 }
 
@@ -5469,7 +5469,7 @@ fn main() -> Result<()> {
     // `--discover-copies`: read-seeded candidate copies found while scanning each region, accumulated the
     // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
     // at the `compute()` call site, so this just drains whatever each region produced.
-    let mut all_discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = Vec::new();
+    let mut all_discovered: Vec<rustle::vg_family::copy_graph::copy_discovery::DiscoveredCopy> = Vec::new();
     // `--union-certificate`: every region's union rows + counts, drained in region order (side file + summary).
     let mut union_all = rustle::vg_family::denovo_pipeline::UnionSummary::default();
     // `RUSTLE_READTHROUGH_JUNCTIONS`: every region's flagged junctions + removals, drained in region order.
@@ -6381,12 +6381,12 @@ fn main() -> Result<()> {
         // Read-seeded copy discovery (opt-in, --discover-copies): cluster AS-tied reads' out-of-catalog
         // placements into candidate new copies. Gated the same way as the O3 block above -- empty Vec, no
         // allocation, when the flag is unset.
-        let discovered: Vec<rustle::vg_family::copy_discovery::DiscoveredCopy> = if args.discover_copies {
+        let discovered: Vec<rustle::vg_family::copy_graph::copy_discovery::DiscoveredCopy> = if args.discover_copies {
             // The region's AS-tied reads are extracted ONCE; `discover_copies_for_family` then restricts
             // them, per family, to the reads that family actually considered (`fa.assignments`) before
             // clustering. Pooling them across families is the cross-family attribution bug the final
             // whole-branch review caught -- see that function's own doc comment.
-            let tied = rustle::vg_family::copy_discovery::tie_partner_placements(&bam_reads);
+            let tied = rustle::vg_family::copy_graph::copy_discovery::tie_partner_placements(&bam_reads);
             fams.iter().flat_map(|fa| discover_copies_for_family(fa, &bam_reads, &tied)).collect()
         } else {
             Vec::new()
@@ -10247,7 +10247,7 @@ mod tests {
         // that read was never B's to reason about. Pre-fix, the whole region's tied list was handed to
         // every family, so the identical site with the identical read list came out under both ids.
         use rustle::vg_family::copy_assign::Assignment;
-        use rustle::vg_family::copy_discovery::tie_partner_placements;
+        use rustle::vg_family::copy_graph::copy_discovery::tie_partner_placements;
         let mk = |name: &str, start: u64, as_score: i32| BamRead {
             chrom: "chr1".to_string(),
             read: rustle::vg_family::copy_split::AlignedRead {

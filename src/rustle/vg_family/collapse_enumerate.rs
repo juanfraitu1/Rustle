@@ -4,11 +4,11 @@
 //!
 //! **STATUS:** OPT-IN — --collapse-enumerate (src/bin/gw_family_catalog.rs:177-178, default_value_t = false) or env RUSTLE_COLLAPSE_ENUMERATE=1 (denovo_pipeline.rs:180); sibl  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 use std::collections::HashMap;
-use crate::vg_family::hidden_copy::HiddenCopyEvidence;
+use crate::vg_family::collapse_enumerate::hidden_copy::HiddenCopyEvidence;
 use crate::vg_family::genome_projection::CopyLocus;
 
 use crate::vg_family::denovo_assemble::{BamRead, reads_in_region};
-use crate::vg_family::hidden_copy::{ReadObs, HiddenCopyParams, detect_hidden_copy};
+use crate::vg_family::collapse_enumerate::hidden_copy::{ReadObs, HiddenCopyParams, detect_hidden_copy};
 use crate::vg_family::genome_projection::{project_family_copies, project_families_batch};
 use crate::genome::GenomeIndex;
 
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn readmit_decision_from_readobs_balanced_vs_het() {
-        use crate::vg_family::hidden_copy::{ReadObs, HiddenCopyParams, detect_hidden_copy};
+        use crate::vg_family::collapse_enumerate::hidden_copy::{ReadObs, HiddenCopyParams, detect_hidden_copy};
         // 20 candidate columns; ~half the reads carry every alt (a co-equal collapsed 2nd copy)
         let cols: Vec<u64> = (0..20).map(|i| 1000 + i * 10).collect();
         let mk = |carry: bool| ReadObs { start: 1000, end: 1200, alts: if carry { cols.clone() } else { vec![] } };
@@ -430,4 +430,450 @@ mod tests {
         // fewer than 2 supported -> None
         assert!(build_expressed_family("c", 0, 9, loci[..1].to_vec(), &supports[..1]).is_none());
     }
+}
+
+// ---- merged 2026-10-05: was `vg_family/hidden_copy.rs`, now the inline module below (one component) ----
+#[allow(clippy::all)]
+pub mod hidden_copy {
+//! Detect gene-family copies PRESENT in the reads but ABSENT from the reference genome
+//! (collapsed segdup / assembly gap / CNV / private duplication).
+//!
+//! A hidden copy's reads have no correct home, so they mismap to the closest sibling reference
+//! copy carrying their PRIVATE SNPs — a COHERENT second haplotype the reference (one copy at
+//! that locus) cannot explain. This detector finds that second haplotype among the locus's
+//! PRIMARY alignments and FLAGS the discrepancy. Per the DAZ3 discipline it DETECTS and reports
+//! evidence ("the reads imply ≥2 copies; the reference models 1") and ABSTAINS from placing or
+//! fabricating the missing copy — it never manufactures a copy.
+//!
+//! Design = synthesis of an independent design panel (statistical / algorithmic / honesty
+//! lenses), which converged on: PRIMARY-alignments-only matrix (the paralog-bleed firewall, since an
+//! in-reference paralog's reads are primary at THEIR locus), candidate columns where the
+//! non-reference allele frequency sits in a balanced band (excludes 0.5% sequencing error and
+//! fixed differences), and a co-segregation/block test (a hidden copy's alt columns co-occur on
+//! ONE read subset — distinguishing it from scattered heterozygous SNPs by requiring many).
+//!
+//! **STATUS:** OPT-IN — `--collapse-enumerate` (src/bin/gw_family_catalog.rs:177-178, `#[arg(long, default_value_t = false)]`)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+/// One primary alignment's observation at the locus: its covered span [start, end) and the positions
+/// where it carries a non-reference allele (a mismatch).
+#[derive(Debug, Clone)]
+pub struct ReadObs {
+    pub start: u64,
+    pub end: u64,
+    pub alts: Vec<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HiddenCopyParams {
+    pub balanced_lo: f64,        // min alt-allele fraction for a candidate column (≫ error rate)
+    pub balanced_hi: f64,        // max alt-allele fraction (above = fixed diff / ref error)
+    pub min_depth: usize,        // min coverage at a candidate column
+    pub min_alt_positions: usize,// min candidate columns to call a hidden copy (≫ a few hets)
+    pub min_alt_reads: usize,    // min reads in the alt haplotype (the hidden copy's depth)
+    pub share_hi: f64,           // a read joins H if alt at ≥ this fraction of candidate cols it covers
+}
+
+impl Default for HiddenCopyParams {
+    fn default() -> Self {
+        HiddenCopyParams {
+            balanced_lo: 0.20,
+            balanced_hi: 0.60,
+            min_depth: 8,
+            min_alt_positions: 12, // het firewall: a diploid het is 1-2 columns; a copy is dozens
+            min_alt_reads: 5,
+            share_hi: 0.60,
+        }
+    }
+}
+
+impl HiddenCopyParams {
+    pub fn from_env() -> Self {
+        let mut p = HiddenCopyParams::default();
+        let getf = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<f64>().ok());
+        let getu = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<usize>().ok());
+        if let Some(v) = getf("RUSTLE_VG_HIDDEN_ALT_LO") { p.balanced_lo = v; }
+        if let Some(v) = getf("RUSTLE_VG_HIDDEN_ALT_HI") { p.balanced_hi = v; }
+        if let Some(v) = getu("RUSTLE_VG_HIDDEN_MIN_DEPTH") { p.min_depth = v; }
+        if let Some(v) = getu("RUSTLE_VG_HIDDEN_MIN_POSITIONS") { p.min_alt_positions = v; }
+        if let Some(v) = getu("RUSTLE_VG_HIDDEN_MIN_READS") { p.min_alt_reads = v; }
+        p
+    }
+}
+
+/// Evidence for a copy not in the reference. DETECT + FLAG only — no placement, no sequence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HiddenCopyEvidence {
+    pub n_primary_reads: usize,
+    pub n_alt_positions: usize, // coherent second-haplotype columns
+    pub n_alt_reads: usize,     // reads in the alt haplotype (the hidden copy's apparent depth)
+    pub alt_read_fraction: f64, // n_alt_reads / n_primary_reads
+    pub flagged: bool,          // evidence of an unmodeled copy at this locus
+}
+
+/// Pure detector over PRIMARY alignments at one reference-copy locus. The caller MUST pass primary
+/// reads only (the paralog-bleed firewall). Deterministic; no I/O.
+pub fn detect_hidden_copy(reads: &[ReadObs], p: &HiddenCopyParams) -> HiddenCopyEvidence {
+    let n = reads.len();
+    let none = HiddenCopyEvidence {
+        n_primary_reads: n, n_alt_positions: 0, n_alt_reads: 0,
+        alt_read_fraction: 0.0, flagged: false,
+    };
+    if n < p.min_depth {
+        return none;
+    }
+
+    // Per-position alt-read count (only positions some read calls alt are candidates).
+    let mut alt_count: crate::types::DetHashMap<u64, usize> = Default::default();
+    for r in reads {
+        for &pos in &r.alts {
+            *alt_count.entry(pos).or_insert(0) += 1;
+        }
+    }
+
+    // Candidate columns: balanced alt fraction over sufficient depth. Error (~0.5%) never
+    // reaches balanced_lo; a fixed difference / reference error sits above balanced_hi.
+    let mut candidates: Vec<u64> = Vec::new();
+    for (&pos, &ac) in &alt_count {
+        if ac < 2 {
+            continue; // a singleton is error, not a haplotype
+        }
+        let cov = reads.iter().filter(|r| r.start <= pos && pos < r.end).count();
+        if cov < p.min_depth {
+            continue;
+        }
+        let frac = ac as f64 / cov as f64;
+        if frac >= p.balanced_lo && frac <= p.balanced_hi {
+            candidates.push(pos);
+        }
+    }
+    candidates.sort_unstable();
+    let n_alt_positions = candidates.len();
+
+    // Co-segregation: a hidden COPY's candidate columns co-occur on ONE read subset (H). Partition
+    // reads by their alt-share over the candidate columns they cover; H = the alt haplotype.
+    let cand_set: crate::types::DetHashSet<u64> = candidates.iter().copied().collect();
+    let n_alt_reads = reads.iter().filter(|r| {
+        let covered = candidates.iter().filter(|&&pos| r.start <= pos && pos < r.end).count();
+        if covered == 0 {
+            return false;
+        }
+        let alt_at = r.alts.iter().filter(|pos| cand_set.contains(pos)).count();
+        (alt_at as f64 / covered as f64) >= p.share_hi
+    }).count();
+
+    // Flag only with MANY co-segregating positions (≫ a het) AND a real alt-haplotype read group.
+    let flagged = n_alt_positions >= p.min_alt_positions && n_alt_reads >= p.min_alt_reads;
+
+    HiddenCopyEvidence {
+        n_primary_reads: n,
+        n_alt_positions,
+        n_alt_reads,
+        alt_read_fraction: if n > 0 { n_alt_reads as f64 / n as f64 } else { 0.0 },
+        flagged,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn p() -> HiddenCopyParams { HiddenCopyParams::default() }
+
+    // n reads all spanning [0, span); `hap` reads carry alt at every position in `shared`,
+    // the rest carry alt at `noise` random-but-distinct positions each (sequencing error).
+    fn reads(n: usize, span: u64, hap: usize, shared: &[u64], noise_per_read: u64) -> Vec<ReadObs> {
+        (0..n).map(|r| {
+            let mut alts: Vec<u64> = if r < hap { shared.to_vec() } else { Vec::new() };
+            // distinct error positions per read (no cross-read coherence)
+            for k in 0..noise_per_read {
+                alts.push(span - 1 - (r as u64 * 17 + k)); // deterministic, scattered, unique-ish
+            }
+            ReadObs { start: 0, end: span, alts }
+        }).collect()
+    }
+
+    #[test]
+    fn hidden_copy_is_flagged() {
+        // 60 reads, 30 carry a 20-position shared alt haplotype → a hidden copy.
+        let shared: Vec<u64> = (100..120).collect();
+        let rs = reads(60, 2000, 30, &shared, 3);
+        let e = detect_hidden_copy(&rs, &p());
+        assert!(e.flagged);
+        assert_eq!(e.n_alt_positions, 20);
+        assert_eq!(e.n_alt_reads, 30);
+        assert!((e.alt_read_fraction - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sequencing_error_is_not_flagged() {
+        // No shared haplotype, just ~9 random errors per read → no candidate columns.
+        let rs = reads(60, 2000, 0, &[], 9);
+        let e = detect_hidden_copy(&rs, &p());
+        assert!(!e.flagged);
+        assert_eq!(e.n_alt_positions, 0);
+    }
+
+    #[test]
+    fn heterozygous_snp_is_not_flagged() {
+        // 30 of 60 reads share just 2 alt positions (a diploid het) → below min_alt_positions.
+        let rs = reads(60, 2000, 30, &[500, 900], 3);
+        let e = detect_hidden_copy(&rs, &p());
+        assert!(!e.flagged, "a het (2 positions) must not be called a hidden copy");
+        assert!(e.n_alt_positions < p().min_alt_positions);
+    }
+
+    #[test]
+    fn fixed_difference_above_band_is_not_a_candidate() {
+        // A position alt in ~all reads (fixed diff / reference error) is above balanced_hi.
+        let rs = reads(40, 2000, 40, &[700], 0); // all 40 alt at 700 → frac 1.0 > 0.60
+        let e = detect_hidden_copy(&rs, &p());
+        assert_eq!(e.n_alt_positions, 0);
+        assert!(!e.flagged);
+    }
+
+    #[test]
+    fn low_depth_abstains() {
+        let shared: Vec<u64> = (100..120).collect();
+        let rs = reads(4, 2000, 2, &shared, 0); // below min_depth
+        assert!(!detect_hidden_copy(&rs, &p()).flagged);
+    }
+}
+}
+
+// ---- merged 2026-10-05: was `vg_family/collapse_gate.rs`, now the inline module below (one component) ----
+#[allow(clippy::all)]
+pub mod collapse_gate {
+//! Collapse gate: is a single-rep locus actually several copies the aligner could not separate?
+//!
+//! SDA (Vollger et al., Nat Methods 2019) detects a collapse by read-depth excess and only THEN defines PSVs,
+//! "requiring sequence coverages consistent with a single-copy locus in order to distinguish PSVs from allelic
+//! variants". We ran that second stage alone, and a single-copy gene (TSPYL1) reported 12 collapsed copies
+//! against DAZ's 3 — see `bench/COLLAPSED_COPY_GATE.md`. **Collapse first, haplotypes second.**
+//!
+//! In DNA a collapse shows as excess depth. In RNA depth is copy number × expression (Clair3-RNA: "the coverage
+//! is uneven across genomic regions in RNA-seq"), and allele-specific expression destroys the allelic balance
+//! that would otherwise separate a het allele from a PSV ("zygosity flipping can happen"). So we keep SDA's
+//! structure and change its instrument: a collapse shows instead as **reads the aligner cannot place uniquely**.
+//!
+//! Measured on GGO Iso-Seq (primary records only): **0 MAPQ-0 primaries across 9449 reads** at five single-copy
+//! loci (TSPYL1, DERPC, ATXN7L3B, GSPT2, EEF1A1), against 19/20 at DAZ2 and 30/34 at TSPY. The statistic is
+//! expression-invariant — TSPYL1 has 2151 reads and no ambiguity; DAZ2 has 20 reads and 95%.
+//!
+//! ⚠⚠ **DEFAULT OFF. The instrument is not what this module's name claims, and a control proved it.**
+//!
+//! MAPQ 0 means "this read maps equally well somewhere else". It does NOT mean "this locus is collapsed". Run
+//! genome-wide, the gate fires on **EEF1A1** — whose MAPQ-0 reads align to its processed pseudogenes on
+//! NC_073224.2 and NC_073227.2, other chromosomes entirely — and reports `chi(H) = 7` for a locus with one copy.
+//!
+//! The logic actually inverts. If a copy were truly ABSENT from the reference, its reads would pile onto the
+//! present copy at HIGH mapping quality, giving depth excess and *no ambiguity at all*. That is precisely why
+//! SDA detects collapses by read depth and not by mapping quality. Ambiguity detects **unresolvable paralogy**
+//! (which is what `read_conflict`'s E_c oracle already does), not collapse.
+//!
+//! On DAZ the gate emits `chi(H) = 2`, matching the annotation — but DAZ2 is present in the reference 20 kb
+//! away, so even there the signal is paralogy, not collapse. What actually failed at DAZ is assembly: DAZ2 has
+//! 20 primary reads and never becomes a rep.
+//!
+//! Kept, off by default, because the machinery and its tests are sound and the p-value is correct for the
+//! question it truly answers. Do not enable it until `chi(H)` is shown to bound copies rather than haplotypes.
+//! See `bench/COLLAPSE_GATE_VALIDATION.md`.
+//!
+//! **STATUS:** REFUTED  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+use crate::vg_family::copy_assign::poisson_binomial_upper_tail;
+use crate::vg_family::readonly_copy_number::chi_h;
+
+/// Ambiguously-placed primary reads (`k`) out of primary reads (`n`) at a locus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ambiguity {
+    pub n: usize,
+    pub k: usize,
+}
+
+/// Background per-read ambiguity rate, under a Jeffreys prior so it is never exactly zero.
+///
+/// `bg` is pooled over the region's uniquely-mappable reps (those that are not gate candidates). The controls
+/// observe `k = 0`, whose MLE is 0 — and a zero rate would make a single stray MAPQ-0 read infinitely
+/// significant. `None` when there is no background to estimate from: the caller must then ABSTAIN, never fire.
+pub fn estimate_eps_amb(bg: Ambiguity) -> Option<f64> {
+    if bg.n == 0 {
+        return None;
+    }
+    Some((bg.k as f64 + 0.5) / (bg.n as f64 + 1.0))
+}
+
+/// Upper-tail probability of seeing `obs.k` or more ambiguous reads among `obs.n`, if the locus were unique.
+///
+/// Under the null `k ~ Binomial(n, eps_amb)`. Reuses the shipped Poisson-binomial tail with a constant
+/// probability vector rather than adding a second distribution implementation. That routine is O(n²) in the
+/// number of trials, and here a trial is a READ rather than a distinguishing position — but `k == 0` returns
+/// immediately, and a clean locus is exactly the `k == 0` case, so uniquely-mapping loci cost nothing.
+pub fn collapse_pvalue(obs: Ambiguity, eps_amb: f64) -> f64 {
+    if obs.k == 0 || obs.n == 0 {
+        return 1.0;
+    }
+    let probs = vec![eps_amb; obs.n];
+    poisson_binomial_upper_tail(obs.k, &probs)
+}
+
+/// What the gate decided about a locus that has only one assembled rep.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CollapseVerdict {
+    /// Collapsed, and its reads resolve into `chi_h >= min_copies` conflicting haplotypes.
+    Fire { chi_h: usize, p_value: f64 },
+    /// The locus places its reads unambiguously, or its haplotypes do not reach `min_copies`.
+    NotCollapsed { p_value: f64 },
+    /// Cannot decide — never fire on an unbounded statistic.
+    Abstain(&'static str),
+}
+
+/// Two legs, in SDA's order. Leg 2 is NOT consulted unless leg 1 fires: a single-copy gene reports plenty of
+/// haplotypes (a het allele *is* a haplotype), and gating on them alone made TSPYL1 report 12 copies.
+///
+/// `eps_amb` is the background per-read ambiguity rate. It must be a **genome-wide** quantity, not a
+/// region-local one: SDA estimates its background from "unique regions" of the genome, and for good reason —
+/// in the DAZ window the only reads that fall outside DAZ1's span are DAZ2's, every one of them ambiguous, so a
+/// region-local background would be ~0.95 and the gate could never fire. Measured on `GGO_mm.bam`:
+/// 5785 MAPQ-0 primaries in 4,404,440, i.e. `eps_amb = 0.0013`, itself conservative because it includes the
+/// genuinely collapsed loci. `None` ⇒ ABSTAIN; never fire on an unbounded statistic.
+///
+/// `haplotypes` are the `allele_vector`s of the **identifiable** copies at the locus.
+///
+/// χ(H) is a **lower bound** on copy number, never an estimate: two copies × two alleles also yields four
+/// haplotypes. That is why the caller emits a copy NUMBER with reads certified tied, not an assignment.
+pub fn collapse_verdict(
+    obs: Ambiguity,
+    eps_amb: Option<f64>,
+    haplotypes: &[Vec<Option<u8>>],
+    alpha: f64,
+    min_copies: usize,
+) -> CollapseVerdict {
+    // leg 1 — is this locus collapsed at all?
+    let Some(eps_amb) = eps_amb else {
+        return CollapseVerdict::Abstain("no background ambiguity rate (pass --eps-amb)");
+    };
+    let p_value = collapse_pvalue(obs, eps_amb);
+    if p_value >= alpha {
+        return CollapseVerdict::NotCollapsed { p_value };
+    }
+    // leg 2 — and how many copies collapsed?
+    let chi = chi_h(haplotypes);
+    if chi < min_copies {
+        return CollapseVerdict::NotCollapsed { p_value };
+    }
+    CollapseVerdict::Fire { chi_h: chi, p_value }
+}
+
+/// Measured background on `GGO_mm.bam`: 5785 MAPQ-0 primaries out of 4,404,440. Conservative — it includes the
+/// genuinely collapsed loci, so the true unique-region rate is lower and the gate is harder to fire, not easier.
+/// Recompute per sample:
+/// `echo $(( $(samtools view -c -F 2308 b.bam) - $(samtools view -c -F 2308 -q 1 b.bam) ))`
+pub const GENOME_WIDE_EPS_AMB: f64 = 0.001313;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DAZ1 itself: 22 ambiguous of 200. Against the genome-wide background this is overwhelming.
+    #[test]
+    fn verdict_fires_on_daz1_against_the_genome_wide_background() {
+        let v = collapse_verdict(
+            Ambiguity { n: 200, k: 22 },
+            Some(GENOME_WIDE_EPS_AMB),
+            &haps(&[b"ACGT", b"ACGA"]),
+            1e-3,
+            2,
+        );
+        assert!(matches!(v, CollapseVerdict::Fire { chi_h: 2, .. }), "DAZ1 must fire, got {v:?}");
+    }
+
+    /// Three stray ambiguous reads in a well-covered locus must NOT fire at alpha = 1e-3.
+    #[test]
+    fn verdict_does_not_fire_on_a_few_stray_ambiguous_reads() {
+        let v = collapse_verdict(
+            Ambiguity { n: 500, k: 3 },
+            Some(GENOME_WIDE_EPS_AMB),
+            &haps(&[b"ACGT", b"ACGA"]),
+            1e-3,
+            2,
+        );
+        assert!(matches!(v, CollapseVerdict::NotCollapsed { .. }), "3 strays must not fire, got {v:?}");
+    }
+
+    #[test]
+    fn eps_amb_is_never_zero_even_when_no_background_read_is_ambiguous() {
+        // The five single-copy controls give 0 ambiguous reads in 9449. The MLE is 0, under which ONE stray
+        // MAPQ-0 read would be infinitely significant. Jeffreys keeps it strictly positive.
+        let eps = estimate_eps_amb(Ambiguity { n: 9449, k: 0 }).unwrap();
+        assert!(eps > 0.0, "eps_amb must be strictly positive, got {eps}");
+        assert!((eps - 0.5 / 9450.0).abs() < 1e-12, "Jeffreys: (k + 1/2) / (n + 1)");
+    }
+
+    #[test]
+    fn eps_amb_abstains_without_background_reads() {
+        assert_eq!(estimate_eps_amb(Ambiguity { n: 0, k: 0 }), None, "no background => cannot estimate => abstain");
+    }
+
+    #[test]
+    fn collapse_pvalue_is_significant_for_daz2_and_not_for_a_clean_locus() {
+        let eps = estimate_eps_amb(Ambiguity { n: 9449, k: 0 }).unwrap();
+        let p_daz2 = collapse_pvalue(Ambiguity { n: 20, k: 19 }, eps); // DAZ2: 19 of 20 ambiguous
+        assert!(p_daz2 < 1e-6, "DAZ2 must be overwhelmingly significant, got {p_daz2}");
+        let p_clean = collapse_pvalue(Ambiguity { n: 2151, k: 0 }, eps); // TSPYL1
+        assert!((p_clean - 1.0).abs() < 1e-12, "k = 0 => p = 1, got {p_clean}");
+    }
+
+    #[test]
+    fn collapse_pvalue_of_a_single_stray_read_is_not_significant_at_alpha() {
+        let eps = estimate_eps_amb(Ambiguity { n: 9449, k: 0 }).unwrap();
+        let p = collapse_pvalue(Ambiguity { n: 500, k: 1 }, eps);
+        assert!(p > 1e-3, "a single stray MAPQ-0 read must not fire the gate, got {p}");
+    }
+
+    /// Allele vectors: haplotypes differing at a shared column conflict, so `chi_h` counts them separately.
+    fn haps(rows: &[&[u8]]) -> Vec<Vec<Option<u8>>> {
+        rows.iter().map(|r| r.iter().map(|&b| if b == b'.' { None } else { Some(b) }).collect()).collect()
+    }
+
+    /// DAZ: 19/20 ambiguous, background clean, two distinguishable haplotypes.
+    #[test]
+    fn verdict_fires_on_a_collapsed_locus_with_two_haplotypes() {
+        let v = collapse_verdict(
+            Ambiguity { n: 20, k: 19 },
+            Some(GENOME_WIDE_EPS_AMB),
+            &haps(&[b"ACGT", b"ACGA"]),
+            1e-3,
+            2,
+        );
+        match v {
+            CollapseVerdict::Fire { chi_h, .. } => assert_eq!(chi_h, 2),
+            other => panic!("expected Fire, got {other:?}"),
+        }
+    }
+
+    /// TSPYL1: a single-copy gene whose reads are ALL uniquely placed. Leg 2 would report many haplotypes
+    /// (het alleles, editing, isoform noise) — leg 1 must stop it before leg 2 is ever consulted.
+    #[test]
+    fn verdict_rejects_a_unique_locus_however_many_haplotypes_it_reports() {
+        let twelve: Vec<Vec<Option<u8>>> = (0..12u8).map(|i| vec![Some(b'A' + i), Some(b'C')]).collect();
+        let v = collapse_verdict(Ambiguity { n: 2151, k: 0 }, Some(GENOME_WIDE_EPS_AMB), &twelve, 1e-3, 2);
+        assert!(matches!(v, CollapseVerdict::NotCollapsed { .. }), "unique locus must never fire, got {v:?}");
+    }
+
+    #[test]
+    fn verdict_abstains_without_a_background_estimate() {
+        let v = collapse_verdict(Ambiguity { n: 20, k: 19 }, None, &haps(&[b"AC", b"AG"]), 1e-3, 2);
+        assert!(matches!(v, CollapseVerdict::Abstain(_)), "no background => abstain, got {v:?}");
+    }
+
+    /// `min_copies` applies to χ(H), not to the rep count: one haplotype is not a family.
+    #[test]
+    fn verdict_rejects_a_collapse_that_resolves_to_one_haplotype() {
+        let v = collapse_verdict(Ambiguity { n: 20, k: 19 }, Some(GENOME_WIDE_EPS_AMB), &haps(&[b"ACGT"]), 1e-3, 2);
+        assert!(
+            matches!(v, CollapseVerdict::NotCollapsed { .. }),
+            "chi_h = 1 < min_copies => no family, got {v:?}"
+        );
+    }
+}
 }

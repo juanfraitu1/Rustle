@@ -10,13 +10,11 @@
 pub mod missing_copy; // O3 RNA-only chain: divergence mixture -> PSV consistency -> patched consensus -> home search -> screens -> verdict (§6ze).
 pub mod run_cache; // on-disk cache of the catalog's representatives and all-vs-all PAFs (RUSTLE_CACHE_DIR), for fast re-runs and analysis.
 pub mod seq_utils; // small sequence utilities: reverse_complement, revcomp_keep_case, hw_distance/aln_id (edlib-HW identity).
-pub mod collapse_gate; // O2: admit a COLLAPSED single-rep locus as a multi-copy family (ambiguity test, then chi(H)).
 pub mod annotation_families;
 pub mod fam_from_gtf; // the `--from-gtf` family stage as a library (loci, all-vs-all, copy table), imported by mcl_families; extracted from src/bin/mcl_families.rs 2026-10-04.
 pub mod bridge_regroup; // OPT-IN `copy_assign --bridge-regroup f1|f1v2`: bridge-aware regrouping of the assembled GTF, bridges kept as fusion_of relations and out of the families input (port of bench/f1_bridge.py + f1v2.py).
 pub mod family_graph; // contiguous-core homology kernel (POA MSA, core coverage + LCS fallback, memo) used by detection, edge confirmation and rescue.
 pub mod mosaic;
-pub mod hidden_copy;
 pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
 // `phasing` (within-locus DIPLOID MEC) was DELETED 2026-08-10: zero call sites, and the flag it
 // named (`--vg-phase`) never existed as a CLI option (`RustleConfig::vg_phase` is set false at
@@ -41,12 +39,9 @@ pub mod readonly_copy_number; // Reference-free per-family copy number (Task R1)
 pub mod single_copy; // O1 baseline: single-copy (chi(H)=1) loci + lambda_global for the copy-number normalizer.
 pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection (is_candidate + RealignParams) for poor-fit/unmapped reads to be re-aligned to O1's family copy-paths.
 pub mod parcn; // OPTIONAL assembly-side parCN supplement (docs/superpowers/specs/2026-07-14-assembly-parcn-design.md); never wired into the RNA-exclusive core.
-pub mod project_all; // OPTIONAL --project-all-families recall leg (generalized projection); never alters the RNA-split catalog.
 pub mod linearize; // Task 1: augment-and-linearize certificate (dinucleotide-preserving decoy shuffle via Altschul-Erikson random-Eulerian-path).
 pub mod catalog_input; // O1->O2 FILE contract: parse a gw_family_catalog copies.tsv (+ copies.fa) back into the copy set `copy_assign --families` assigns to, keeping the catalog's own ids as the JOIN KEY.
 pub mod shared_definition; // OPT-IN RUSTLE_SHARED_DEFINITION: the shared family definition (seeded_family_definition.md §0★★) on the homology catalog: gene-level read-supported nodes + guided edge finders + triangle-supported leaders.
-pub mod seed_projection; // `--seed`: a QUERY over the EMITTED catalog (the block containing s), never a term in the definition; the node set stays seed-free.
-pub mod copy_discovery; // Discovery of candidate gene-family copies from read alignment ties.
 pub mod o3_candidates; // O3 candidate copies: read net -> clusters -> consensus -> flag/link/merge -> union (spec 2026-10-02)
 
 

@@ -292,7 +292,7 @@ fn project_seeds(
     out: &str,
     min_copies: usize,
 ) -> Result<()> {
-    use rustle::vg_family::seed_projection::{
+    use rustle::vg_family::from_genome::seed_projection::{
         format_seed_rows, parse_seed, project_seed, SeedHit, SEED_TSV_HEADER,
     };
     if specs.is_empty() {
@@ -1099,7 +1099,7 @@ fn main() -> Result<()> {
     // primary reads over the locus), written to its own file so the RNA-split catalog (families.tsv/
     // copies.tsv) and the famCN/totalCN batch projection (famcn.tsv) are untouched.
     if project_all {
-        use rustle::vg_family::project_all::{CopyIn, all_copy_consensuses, known_from_fams, dedup_overlapping, overlaps_any, format_allproj_row};
+        use rustle::vg_family::from_genome::project_all::{CopyIn, all_copy_consensuses, known_from_fams, dedup_overlapping, overlaps_any, format_allproj_row};
         // Build (fid, copies) with the SAME fid the catalog uses.
         let fam_copies: Vec<(String, Vec<CopyIn>)> = fams.iter().enumerate().map(|(fi, copies)| {
             (format!("GWFAM{fi}"), copies.iter().map(|c| CopyIn { seq: c.seq.clone(), chrom: c.chrom.clone(), start: c.start, end: c.end }).collect())

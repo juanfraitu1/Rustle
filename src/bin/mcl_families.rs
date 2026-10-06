@@ -1967,7 +1967,8 @@ mod tests {
     /// clusters and fold table, and the two tables equal the dev prototype's (`relations.py`, d90a33da) byte for byte.
     #[test]
     fn relations_from_the_graphs_own_loci_equal_the_python_prototype_on_the_fixture() {
-        use rustle::vg_family::{bridge_regroup, family_relations as fr};
+        use rustle::vg_family::bridge_regroup;
+        use rustle::vg_family::fam_from_gtf::family_relations as fr;
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/bridge_units/");
         let read = |f: &str| std::fs::read_to_string(format!("{dir}{f}")).unwrap();
         let mut lines: Vec<String> = read("plain.gtf").lines().map(str::to_string).collect();
