@@ -25,7 +25,7 @@
 use std::collections::BTreeMap;
 
 use crate::genome::GenomeIndex;
-use crate::vg_family::copy_assign_pipeline::gen2off;
+use crate::vg_family::copy_assign::copy_assign_pipeline::gen2off;
 use crate::vg_family::copy_split::{
     collapsed_copy_to_transcript_from_host_seq, min_p_distinct, strand_symmetric_spectrum,
     CollapsedCandidate,

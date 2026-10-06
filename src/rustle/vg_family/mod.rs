@@ -13,7 +13,6 @@ pub mod seq_utils; // small sequence utilities: reverse_complement, revcomp_keep
 pub mod annotation_families;
 pub mod fam_from_gtf; // the `--from-gtf` family stage as a library (loci, all-vs-all, copy table), imported by mcl_families; extracted from src/bin/mcl_families.rs 2026-10-04.
 pub mod bridge_regroup; // OPT-IN `copy_assign --bridge-regroup f1|f1v2`: bridge-aware regrouping of the assembled GTF, bridges kept as fusion_of relations and out of the families input (port of bench/f1_bridge.py + f1v2.py).
-pub mod family_graph; // contiguous-core homology kernel (POA MSA, core coverage + LCS fallback, memo) used by detection, edge confirmation and rescue.
 pub mod mosaic;
 pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
 // `phasing` (within-locus DIPLOID MEC) was DELETED 2026-08-10: zero call sites, and the flag it
@@ -26,15 +25,12 @@ pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy can
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
-pub mod family_split; // De-novo family DECOMPOSITION: connected components + weighted-modularity Louvain.
 pub mod read_conflict; // OPERATIONAL family criterion: read cross-mapping conflict graph (mutual-mappability).
 pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + general-purpose assemble gate.
 pub mod denovo_pipeline; // Integration: de-novo family DETECTION driver (pass1->gate->collapse->detect->split).
-pub mod copy_assign_pipeline; // Integration: per-read COPY ASSIGNMENT driver (PSV + junction, discover+assign).
 pub mod copy_graph; // Copy-graph objects: pure builder for variation graphs over family copies (Task 1).
 pub mod genome_projection; // Liftoff-style famCN copy enumeration (spec §7): project a family consensus onto the genome via in-engine minimap2 to enumerate near-identical genomic copies, recovering K=0 collapses.
 pub mod from_genome; // DNA-mode front-end: discover duplicated genomic loci by self-alignment -> reps (genomic seq, empty intron chain) for the shared homology_blocks grouping core (--from-genome).
-pub mod em_copy_assign; // EM copy-assignment CORE: pure e_step/m_step/loglik (max-likelihood soft relaxation of SDA PSV correlation-clustering, Vollger 2019, on the PSV-aware VG); logl/pi wiring to Task 1's ReadEvidence arrives separately.
 pub mod readonly_copy_number; // Reference-free per-family copy number (Task R1): chi_h (PSV conflict-structure lower bound, Rust port of family_copy_number.py's copyonly_K) + depth_cn (read-depth E_fam/lambda_global leg, recovers Tier-3 collapsed copies chi_h misses).
 pub mod single_copy; // O1 baseline: single-copy (chi(H)=1) loci + lambda_global for the copy-number normalizer.
 pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection (is_candidate + RealignParams) for poor-fit/unmapped reads to be re-aligned to O1's family copy-paths.

@@ -145,7 +145,7 @@ mod chi_h_junction_tests {
 mod tests {
     use super::*;
     use crate::vg_family::copy_assign::AssignParams;
-    use crate::vg_family::em_copy_assign::{em_assign_family, EmLabel};
+    use crate::vg_family::copy_assign::em_copy_assign::{em_assign_family, EmLabel};
 
     /// Task R2 (O1<->O2 harmony pin): `chi_h` (this module, O1's conflict-graph copy COUNT) and
     /// `em_assign_family` (`em_copy_assign`, O2's EM ASSIGNMENT) both consume the SAME per-copy

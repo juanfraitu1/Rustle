@@ -24,8 +24,8 @@ use rustle::vg_family::denovo_assemble::longest_orf;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::linearize::LinearizeCertificate;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
-use rustle::vg_family::copy_assign_pipeline::read_ref_end;
-use rustle::vg_family::em_copy_assign::em_assign_family;
+use rustle::vg_family::copy_assign::copy_assign_pipeline::read_ref_end;
+use rustle::vg_family::copy_assign::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, assemble_gate_census, pass1_skeletons_widened, reads_in_region,
     tied_secondary_reads_in_region,
@@ -5959,7 +5959,7 @@ fn main() -> Result<()> {
                         // emits into a GTF attribute is 1-based (the exon/transcript rows below, `+ 1`), so
                         // the registered start needs the same `+ 1` or the printed `outside:chrom:start-end`
                         // token is off by one relative to the file it sits in.
-                        rustle::vg_family::copy_assign_pipeline::register_tie_outside_locus(&br.name, &br.chrom, s0 + 1, e0);
+                        rustle::vg_family::copy_assign::copy_assign_pipeline::register_tie_outside_locus(&br.name, &br.chrom, s0 + 1, e0);
                     }
                     if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
@@ -5974,7 +5974,7 @@ fn main() -> Result<()> {
                 }
                 n_outside = flagged.len();
                 for n in flagged {
-                    rustle::vg_family::copy_assign_pipeline::register_tie_outside(n);
+                    rustle::vg_family::copy_assign::copy_assign_pipeline::register_tie_outside(n);
                 }
                 // ⭐ §6hd: aligner self-disagreement. Per molecule: the unit index of its PRIMARY record and of
                 // its best-AS record(s), both by unit-span overlap (same `targets` as above). Disagree ⟹ admit.
@@ -6201,7 +6201,7 @@ fn main() -> Result<()> {
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
                     if let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
                         if let Some((chrom, s, e)) = fa.copy_spans.get(ci) {
-                            let locus = rustle::vg_family::copy_assign_pipeline::locus_extent_of(tid);
+                            let locus = rustle::vg_family::copy_assign::copy_assign_pipeline::locus_extent_of(tid);
                             copy_span_by_cf
                                 .entry(cf.clone())
                                 .or_default()
@@ -6471,7 +6471,7 @@ fn main() -> Result<()> {
             // (the copy its primary's blocks overlap most), as any assembler would use it; the certificate is
             // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
             // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
-            let readthroughs = rustle::vg_family::copy_assign_pipeline::take_readthroughs();
+            let readthroughs = rustle::vg_family::copy_assign::copy_assign_pipeline::take_readthroughs();
             // ⭐ §6gz: under the AS-tied gate every molecule that reaches this point is tied by ALIGNMENT SCORE,
             // and a MAPQ of 60 is the aligner's chaining-stage opinion, not a guarantee — one human read
             // carried a MAPQ-60 primary at AS 1323 with three secondaries at AS 1384, and placement put it at
@@ -6496,7 +6496,7 @@ fn main() -> Result<()> {
                 for fa in fams.iter_mut() {
                     for (ri, a) in fa.assignments.iter_mut() {
                         let mq = mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]);
-                        if mq < 60 || rustle::vg_family::copy_assign_pipeline::is_tie_outside(&bam_reads[*ri]) {
+                        if mq < 60 || rustle::vg_family::copy_assign::copy_assign_pipeline::is_tie_outside(&bam_reads[*ri]) {
                             continue; // §6gz: a competitor O2 never scored forbids placement too
                         }
                         // certified first: a molecule the machinery already assigned keeps that call (it can
@@ -6509,7 +6509,7 @@ fn main() -> Result<()> {
                         let Some(bl) = read_blocks.get(pri) else { continue };
                         let mut best: Option<(usize, u64)> = None;
                         for (ci, (c, s0, e0)) in fa.copy_spans.iter().enumerate() {
-                            if c != contig || fa.copy_tids.get(ci).map_or(false, |t| rustle::vg_family::copy_assign_pipeline::is_partner(t)) {
+                            if c != contig || fa.copy_tids.get(ci).map_or(false, |t| rustle::vg_family::copy_assign::copy_assign_pipeline::is_partner(t)) {
                                 continue; // §6ft: never place a molecule at a partner
                             }
                             let o: u64 = bl.iter().map(|&(bs, be)| be.min(*e0).saturating_sub(bs.max(*s0))).sum();
@@ -6782,8 +6782,8 @@ fn main() -> Result<()> {
                             .map(|(k, _)| k)
                             .unwrap_or(0);
                         let label = match em_result.labels[row_idx] {
-                            rustle::vg_family::em_copy_assign::EmLabel::Certified => "Certified",
-                            rustle::vg_family::em_copy_assign::EmLabel::SoftZone => "SoftZone",
+                            rustle::vg_family::copy_assign::em_copy_assign::EmLabel::Certified => "Certified",
+                            rustle::vg_family::copy_assign::em_copy_assign::EmLabel::SoftZone => "SoftZone",
                         };
                         let post_str = post
                             .iter()
@@ -7288,7 +7288,7 @@ fn main() -> Result<()> {
                                     // placement's own locus instead of a bare "outside" — default off so the
                                     // existing `copies_undecided` schema stays byte-identical.
                                     let loci = if args.name_outside_tie {
-                                        rustle::vg_family::copy_assign_pipeline::tie_outside_loci(name)
+                                        rustle::vg_family::copy_assign::copy_assign_pipeline::tie_outside_loci(name)
                                     } else {
                                         std::collections::BTreeSet::new()
                                     };
@@ -7981,7 +7981,7 @@ fn main() -> Result<()> {
         let outside = if args.no_as_tied_only {
             String::new()
         } else {
-            format!("\t{}\t{}", rustle::vg_family::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8, is_disagreement(&r.read_name) as u8)
+            format!("\t{}\t{}", rustle::vg_family::copy_assign::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8, is_disagreement(&r.read_name) as u8)
         };
         let sibling = if args.sibling_report {
             format!("\t{:.4}\t{}", r.sibling_identity, r.n_cols_vs_nearest_sibling)
@@ -8012,7 +8012,7 @@ fn main() -> Result<()> {
             r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling, eichler
         )?;
     }
-    let indel_stats = rustle::vg_family::copy_assign_pipeline::take_indel_stats();
+    let indel_stats = rustle::vg_family::copy_assign::copy_assign_pipeline::take_indel_stats();
     {
         // §6es hygiene: reads with an aligned base inside a copy. ⚠ Kept for continuity only — it counts
         // secondary-only visitors, so it is NOT the denominator to quote (register 734).
@@ -8479,7 +8479,7 @@ fn main() -> Result<()> {
 
     // ⭐ L6 --dump-star: each molecule's read-star proof (its own columns, its bases, every candidate's bases).
     if args.dump_star {
-        let proofs = rustle::vg_family::copy_assign_pipeline::take_star_proofs();
+        let proofs = rustle::vg_family::copy_assign::copy_assign_pipeline::take_star_proofs();
         let mut sh = std::fs::File::create(format!("{}.star_reads.tsv", args.out))?;
         writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns")?;
         let mut n = 0usize;

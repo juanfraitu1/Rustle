@@ -5361,7 +5361,7 @@ footprint: false,
 #[cfg(test)]
 mod piecewise_reader_tests {
     use super::*;
-    use crate::vg_family::copy_assign_pipeline::read_ref_end;
+    use crate::vg_family::copy_assign::copy_assign_pipeline::read_ref_end;
     use noodles_core::Position;
     use noodles_sam::alignment::io::Write as _;
     use noodles_sam::alignment::Record as _;

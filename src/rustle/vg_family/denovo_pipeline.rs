@@ -22,7 +22,7 @@ use super::absent_copy::{self, AbsentCopyParams, Admission, DnaNeedsRecord};
 use super::copy_assign::{
     assign_read_editing, Assignment, AssignParams, AssignStatus, BubbleGraph, CopyProfile, ReadFeatures,
 };
-use super::copy_assign_pipeline::{
+use super::copy_assign::copy_assign_pipeline::{
     assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy_on, build_family_profiles,
     copy_boundaries, detect_editing_columns, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
 };
@@ -41,7 +41,7 @@ use super::family_detect::{
     DenovoTranscript, DetectParams,
 };
 use super::family_rescue::{FamilyMember, RescueParams};
-use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
+use super::family_detect::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
 use super::read_conflict::{
     as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, locus_unique_mapper_counts,
     reads_distinguish, ConflictParams, Placement, ReadPlacements,
@@ -405,9 +405,9 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
                 && !a.introns.is_empty()
                 && !b.introns.is_empty()
             {
-                let au = crate::vg_family::family_graph::upper_cow(&a.seq);
-                let bu = crate::vg_family::family_graph::upper_cow(&b.seq);
-                if crate::vg_family::family_graph::core_coverage_reaches(&au, &bu, p.len_cap, p.collapse_span_core) {
+                let au = crate::vg_family::family_detect::family_graph::upper_cow(&a.seq);
+                let bu = crate::vg_family::family_detect::family_graph::upper_cow(&b.seq);
+                if crate::vg_family::family_detect::family_graph::core_coverage_reaches(&au, &bu, p.len_cap, p.collapse_span_core) {
                     return true;
                 }
             }
@@ -479,7 +479,7 @@ pub struct FamilyAssignment {
     pub mosaic_reads: usize,
     pub conversions: Vec<crate::vg_family::mosaic::ConversionEvent>,
     /// copy-level historical gene conversions (a copy whose PSV-allele vector is a mosaic of two others).
-    pub copy_conversions: Vec<crate::vg_family::copy_assign_pipeline::CopyConversion>,
+    pub copy_conversions: Vec<crate::vg_family::copy_assign::copy_assign_pipeline::CopyConversion>,
     /// PSV genotype-matrix visualization data: column → forward-genome position, per-copy alleles, and per-read
     /// PSV observations (`read_psv_obs[i]` aligns with `assignments[i]`) — the raw per-molecule evidence that
     /// proves each copy assignment (a read carries one copy's alleles across its covered PSVs).
@@ -1788,7 +1788,7 @@ pub(crate) fn recompute_realign_abundance(
     em_eps: f64,
     em_max_iter: usize,
 ) {
-    let em = super::em_copy_assign::em_assign_family(
+    let em = super::copy_assign::em_copy_assign::em_assign_family(
         &fa.read_psv_obs,
         &fa.copy_psv_alleles,
         &fa.read_junctions,
@@ -2248,7 +2248,7 @@ pub fn detect_and_assign(
         let e2 = homology_edges_all_reps(&reps, &refine)
             .expect("--homology-primary: homology_edges_all_reps failed — is minimap2 on PATH or RUSTLE_MINIMAP2 set?");
         let edges_f64: Vec<(usize, usize, f64)> = e2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
-        let families = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges_f64, 0.20);
+        let families = crate::vg_family::family_detect::family_split::gamma_quasi_clique_partition(reps.len(), &edges_f64, 0.20);
         eprintln!("[detect_and_assign] homology (E_r): {} edges -> {} families", e2.len(), families.len());
         (families, edges_f64)
     };
@@ -2565,7 +2565,7 @@ pub fn detect_and_assign(
         // Unified gene-conversion-vs-artifact discriminator: tag each confirmed event by recurrence
         // (already in `confirmed`) + microhomology at the breakpoint (RT/template-switch signature,
         // from the genome) + DNA support (catalog leg = None here; the bench harness adds it).
-        detail.conversion_class = super::copy_assign_pipeline::classify_conversions(
+        detail.conversion_class = super::copy_assign::copy_assign_pipeline::classify_conversions(
             &detail, genome, |_ev| None,
         );
         if detail.mosaic_reads > 0 || !detail.conversions.is_empty() {
@@ -3255,7 +3255,7 @@ pub fn union_certificate_pass(
                 chroms.push(bam_reads[ri].chrom.clone());
             }
         }
-        let results: HashMap<&str, super::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
+        let results: HashMap<&str, super::copy_assign::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
             let refs: Vec<&DenovoTranscript> = copies.iter().collect();
             let d = assign_family_detailed(&refs, &reads, &p_union, Some(genome), Some(&names), Some(&chroms));
             d.results.into_iter().map(|r| (names[r.read_index].as_str(), r)).collect()
@@ -3627,7 +3627,7 @@ fn families_from_conflict_graph(
 ) -> Vec<Vec<DenovoTranscript>> {
     let float_edges: Vec<(usize, usize, f64)> =
         edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
-    let split = crate::vg_family::family_split::decompose_families(&float_edges, &cfg.split);
+    let split = crate::vg_family::family_detect::family_split::decompose_families(&float_edges, &cfg.split);
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
     for sf in &split {
         if sf.class != FamilyClass::Family {
@@ -3664,7 +3664,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     min_copies: usize,
     cfg: &DenovoConfig,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
-    use super::copy_assign_pipeline::read_ref_end;
+    use super::copy_assign::copy_assign_pipeline::read_ref_end;
     use super::read_conflict::Placement;
     // --- genome-wide reps (same as the same-chrom path) ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
@@ -4220,7 +4220,7 @@ pub(crate) fn restrict_span_edges(
     gamma: f64,
 ) -> (Vec<(usize, usize, f64, f64)>, Vec<(usize, usize, f64, f64)>) {
     let weighted: Vec<(usize, usize, f64)> = tx.iter().map(|&(a, b, _, _)| (a.min(b), a.max(b), 1.0)).collect();
-    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(n, &weighted, gamma);
+    let blocks = crate::vg_family::family_detect::family_split::gamma_quasi_clique_partition(n, &weighted, gamma);
     let mut block_of = vec![usize::MAX; n];
     let mut size = Vec::with_capacity(blocks.len());
     for (bi, b) in blocks.iter().enumerate() {
@@ -4411,7 +4411,7 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
             .map(|&(a, b, i, c)| (a, b, if w_mode == "coverage" { c } else { i }))
             .collect()
     };
-    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
+    let blocks = crate::vg_family::family_detect::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
     let _ = &edges2;
     Ok((blocks, edges_w))
 }
@@ -4438,7 +4438,7 @@ pub fn families_from_edges(
         .map(|&(i, j, _, _)| (i.min(j), i.max(j)))
         .collect();
     let weighted: Vec<(usize, usize, f64)> = kept.iter().map(|&(i, j)| (i, j, 1.0)).collect();
-    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &weighted, gamma);
+    let blocks = crate::vg_family::family_detect::family_split::gamma_quasi_clique_partition(reps.len(), &weighted, gamma);
     let mut out = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
@@ -4663,7 +4663,7 @@ pub(crate) fn certificate_for_weighted(
         n,
         n_edges,
         density,
-        lambda: crate::vg_family::family_split::edge_connectivity(n, &edges),
+        lambda: crate::vg_family::family_detect::family_split::edge_connectivity(n, &edges),
         copy_max_identity: cmax,
         pair_distance: pair_distances(n, &edges),
     }
@@ -11432,7 +11432,7 @@ mod tests {
 
         // copy_abundance must be the EM's ACTUAL recomputed output over the corrected read_psv_obs
         // (both reads now carry copy 1's allele), not the stale pre-correction 0.5/0.5.
-        let expected = crate::vg_family::em_copy_assign::em_assign_family(
+        let expected = crate::vg_family::copy_assign::em_copy_assign::em_assign_family(
             &fa.read_psv_obs,
             &fa.copy_psv_alleles,
             &fa.read_junctions,
@@ -11753,7 +11753,7 @@ mod tests {
         let mut minus = rep_s(50_000, 54_000, vec![(51_000, 52_000)], 18); // disjoint locus, opposite strand
         minus.strand = '-';
         let reps = vec![plus, minus];
-        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
+        let stats = crate::vg_family::family_detect::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
         let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
 
         let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
@@ -11772,7 +11772,7 @@ mod tests {
         let mut minus = rep_s(1_100, 10_900, vec![(6_000, 7_000), (8_000, 9_000)], 5); // overlaps, opposite strand
         minus.strand = '-';
         let reps = vec![plus, minus];
-        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
+        let stats = crate::vg_family::family_detect::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
         let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
 
         let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
@@ -11882,7 +11882,7 @@ mod tests {
                 if shared == 0 {
                     continue;
                 }
-                let cov = crate::vg_family::family_graph::contiguous_core_coverage(&reps[i].seq, &reps[j].seq);
+                let cov = crate::vg_family::family_detect::family_graph::contiguous_core_coverage(&reps[i].seq, &reps[j].seq);
                 eprintln!(
                     "  DIAG {}({}bp) <-> {}({}bp): shared_kmers={} core_cov={:.3}",
                     reps[i].tid, reps[i].seq.len(), reps[j].tid, reps[j].seq.len(), shared, cov
@@ -11924,7 +11924,7 @@ mod tests {
     #[ignore = "diagnostic: needs RUSTLE_DENOVO_SMOKE_{BAM,FASTA} + RUSTLE_DIAG_REGION"]
     fn diag_prefilter_homology() {
         use crate::vg_family::family_detect::canonical_kmer_first_pos;
-        use crate::vg_family::family_graph::contiguous_core_coverage_bounded;
+        use crate::vg_family::family_detect::family_graph::contiguous_core_coverage_bounded;
         use std::collections::{BTreeMap, BTreeSet};
         let (bam, fasta, region) = match (
             std::env::var("RUSTLE_DENOVO_SMOKE_BAM"),
@@ -11986,16 +11986,16 @@ mod tests {
                 let span = if common > 0 { (amax - amin).min(bmax - bmin) as usize } else { 0 };
                 let minlen = reps[i].seq.len().min(reps[j].seq.len());
                 let bar = p.t_core * minlen as f64;
-                let au = crate::vg_family::family_graph::upper_cow(&reps[i].seq);
-                let bu = crate::vg_family::family_graph::upper_cow(&reps[j].seq);
+                let au = crate::vg_family::family_detect::family_graph::upper_cow(&reps[i].seq);
+                let bu = crate::vg_family::family_detect::family_graph::upper_cow(&reps[j].seq);
                 let bru = crate::vg_family::seq_utils::reverse_complement(&bu);
                 let cov = contiguous_core_coverage_bounded(&au, &bu, p.len_cap)
                     .max(contiguous_core_coverage_bounded(&au, &bru, p.len_cap));
                 // forced LCS (robust to poasta's flank-threading collapse): if lcs >> poasta cov on a small
                 // pair, poasta UNDER-counts a real shared core (false family split).
                 let minl = au.len().min(bu.len());
-                let lcs = (crate::vg_family::family_graph::longest_common_substring(&au, &bu)
-                    .max(crate::vg_family::family_graph::longest_common_substring(&au, &bru))) as f64
+                let lcs = (crate::vg_family::family_detect::family_graph::longest_common_substring(&au, &bu)
+                    .max(crate::vg_family::family_detect::family_graph::longest_common_substring(&au, &bru))) as f64
                     / minl as f64;
                 let why = if common < p.k_share { "FAIL:k_share" } else if (span as f64) < bar { "FAIL:span" } else { "PASS" };
                 eprintln!(
@@ -12468,7 +12468,7 @@ mod tests {
 
     #[test]
     fn colocated_families_keeps_mixed_strand_disjoint_copies_in_one_family() {
-        use super::super::family_split::{CommunityStats, FamilyClass, SplitFamily};
+        use super::super::family_detect::family_split::{CommunityStats, FamilyClass, SplitFamily};
         // 4 disjoint-locus copies on c1: two '+' and two '-' (distinct junctions, no containment), all in
         // ONE conflict family. They are four copies of one inverted-duplication family, so they must stay
         // ONE family. This test previously asserted a split into two same-strand families; that split is what
@@ -13287,7 +13287,7 @@ mod tests {
         // the real minimap2-backed `homology_edges_all_reps` when the binary is present.
         let synthetic_edges_f64: Vec<(usize, usize, f64)> = vec![(0, 1, 1.0)];
         let synthetic_families =
-            crate::vg_family::family_split::gamma_quasi_clique_partition(2, &synthetic_edges_f64, 0.20);
+            crate::vg_family::family_detect::family_split::gamma_quasi_clique_partition(2, &synthetic_edges_f64, 0.20);
         assert_eq!(synthetic_families, vec![vec![0, 1]], "homology edge must union both loci into ONE family");
 
         if std::process::Command::new("minimap2").arg("--version").output().is_err() {
@@ -13308,7 +13308,7 @@ mod tests {
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
         assert!(edges.contains(&(0, 1)), "near-identical uniquely-mapping pair must be E_r-linked, got {:?}", edges);
         let edges_f64: Vec<(usize, usize, f64)> = edges.iter().map(|&(a, b)| (a, b, 1.0)).collect();
-        let families = crate::vg_family::family_split::gamma_quasi_clique_partition(2, &edges_f64, 0.20);
+        let families = crate::vg_family::family_detect::family_split::gamma_quasi_clique_partition(2, &edges_f64, 0.20);
         assert_eq!(families, vec![vec![0, 1]], "the real homology oracle must union the uniquely-mappable pair");
     }
 
@@ -13489,7 +13489,7 @@ mod tests {
         // Pre-merge: reps {0,1,2} form a TRIANGLE -> lambda = 2 (2-edge-connected).
         let er_edges = [(0usize, 1usize), (0, 2), (1, 2)];
         assert_eq!(
-            crate::vg_family::family_split::edge_connectivity(3, &er_edges),
+            crate::vg_family::family_detect::family_split::edge_connectivity(3, &er_edges),
             2,
             "the pre-merge block is a triangle"
         );

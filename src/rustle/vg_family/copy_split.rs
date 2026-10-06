@@ -417,7 +417,7 @@ pub(crate) fn collapsed_copy_to_transcript_from_host_seq(
     psv_pos: &[u64],
     host: &crate::vg_family::family_detect::DenovoTranscript,
 ) -> Option<crate::vg_family::family_detect::DenovoTranscript> {
-    use crate::vg_family::copy_assign_pipeline::gen2off;
+    use crate::vg_family::copy_assign::copy_assign_pipeline::gen2off;
     if iso.allele_vector.len() != psv_pos.len() {
         return None; // parallel-vector invariant violated
     }
@@ -528,7 +528,7 @@ pub fn strand_symmetric_spectrum(host_alleles: &[Option<u8>], cand_alleles: &[Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vg_family::copy_assign_pipeline::exon_map;
+    use crate::vg_family::copy_assign::copy_assign_pipeline::exon_map;
     use crate::vg_family::family_detect::DenovoTranscript;
 
     #[test]

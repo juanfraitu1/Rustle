@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::vg_family::copy_assign_pipeline::banded_msa_pair;
+use crate::vg_family::copy_assign::copy_assign_pipeline::banded_msa_pair;
 
 #[derive(Clone, Debug)]
 pub struct Copy {

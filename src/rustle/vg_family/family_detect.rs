@@ -31,7 +31,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::family_graph::{core_coverage_reaches, upper_cow};
+use family_graph::{core_coverage_reaches, upper_cow};
 use super::family_rescue::window_canon_code;
 use crate::vg_family::seq_utils::reverse_complement;
 
@@ -1023,7 +1023,7 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
 /// run IS a common substring — so a large read-through "hub" that homologously contains a copy is still
 /// confirmed (the DSFAM45 case) instead of being lost. Below the cap the exact poasta path is unchanged.
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    use super::family_graph::{contiguous_core_coverage_bounded_with, longest_common_substring, EDGE_CONFIRM_ASTAR};
+    use family_graph::{contiguous_core_coverage_bounded_with, longest_common_substring, EDGE_CONFIRM_ASTAR};
     let au = upper_cow(a);
     let bu = upper_cow(b);
     if p.edge_core == EdgeCore::Lcs {
@@ -1106,8 +1106,8 @@ pub fn poa_core_completion_adds(
         }
         let au = a.to_ascii_uppercase();
         let bu = b.to_ascii_uppercase();
-        let fwd = crate::vg_family::family_graph::longest_common_substring(&au, &bu);
-        let rev = crate::vg_family::family_graph::longest_common_substring(&au, &reverse_complement(&bu));
+        let fwd = crate::vg_family::family_detect::family_graph::longest_common_substring(&au, &bu);
+        let rev = crate::vg_family::family_detect::family_graph::longest_common_substring(&au, &reverse_complement(&bu));
         fwd.max(rev) as f64 / minlen as f64
     };
     // best (family, core) per FREE rep over all family-adjacent candidate pairs that confirm a POA core.
@@ -2102,4 +2102,1920 @@ mod tests {
         let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
         assert!(confirm_edge(&a, &b_lower, &p).is_some());
     }
+}
+
+// ---- merged 2026-10-05: was `vg_family/family_graph.rs`, now the inline module below (one component) ----
+#[allow(clippy::all)]
+pub mod family_graph {
+//! Contiguous-core homology kernel shared by family detection, edge confirmation and rescue.
+//!
+//! `poa_msa_with_costs` (poasta POA MSA with explicit affine costs), the contiguous-core coverage
+//! criterion built on it (`contiguous_core_coverage*`, with the bounded/LCS fallback and the
+//! process-wide memo), `longest_common_substring`, and `core_coverage_reaches`.
+//!
+//! The per-exon `FamilyGraph` object this module was named after (exon-equivalence classes, junction
+//! edges, minimizer-Jaccard merge, `RUSTLE_VG_FAMILY_MERGE_*` / `RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE`)
+//! had no caller in any binary and was removed 2026-09-24; recover it from tag `notebook-2026-09-24`.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+use anyhow::Result;
+
+/// Build a POA graph by progressively aligning each sequence under the given poasta `AlignmentConfig`.
+/// Generic over the config so `poa_msa_with_costs` can pick exact Dijkstra or exact-A* (`AffineMinGapCost`)
+/// without duplicating the loop — both compute the same OPTIMAL-cost alignment (A* only prunes the search).
+fn build_poa_graph<C>(seqs: &[Vec<u8>], config: C) -> Result<poasta::graphs::poa::POAGraph<u32>>
+where
+    C: poasta::aligner::config::AlignmentConfig,
+{
+    use anyhow::anyhow;
+    use poasta::aligner::scoring::AlignmentType;
+    use poasta::aligner::PoastaAligner;
+    use poasta::graphs::poa::{POAGraph, POANodeIndex};
+
+    let aligner = PoastaAligner::new(config, AlignmentType::Global);
+    let mut graph: POAGraph<u32> = POAGraph::new();
+    let unit_weights: Vec<usize> = vec![1; seqs.iter().map(|s| s.len()).max().unwrap_or(0)];
+    for (i, seq) in seqs.iter().enumerate() {
+        let w = &unit_weights[..seq.len()];
+        if graph.is_empty() {
+            // First sequence: add unaligned (no existing graph to align to).
+            graph
+                .add_alignment_with_weights(&format!("seq{i}"), seq, None, w)
+                .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
+        } else {
+            // Subsequent sequences: align against the current graph.
+            let aln_result = aligner.align::<u32, _>(&graph, seq);
+            let alignment = if aln_result.alignment.is_empty() {
+                None
+            } else {
+                Some(&aln_result.alignment as &poasta::aligner::Alignment<POANodeIndex<u32>>)
+            };
+            graph
+                .add_alignment_with_weights(&format!("seq{i}"), seq, alignment, w)
+                .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
+        }
+    }
+    Ok(graph)
+}
+
+/// Multiple sequence alignment via poasta POA graph traversal with EXPLICIT
+/// affine-gap costs: one row per input sequence, in input order, padded with
+/// b'-' for gaps; errors if fewer than 2 sequences are given. The caller picks
+/// the scoring, so a specialised alignment (e.g. the contiguous-core gate) can
+/// anchor a conserved core against divergent flanks.
+///
+/// `GapAffine::new(cost_mismatch, cost_gap_extend, cost_gap_open)`.
+pub fn poa_msa_with_costs(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+
+    if seqs.len() < 2 {
+        return Err(anyhow!("poa_msa requires at least 2 sequences"));
+    }
+
+    // Exact gap-affine global alignment. Default HERE = AffineDijkstra (uniform-cost search).
+    // RUSTLE_POA_ASTAR=1 swaps in AffineMinGapCost = the SAME optimal-cost search with an admissible
+    // min-gap-cost A* heuristic.
+    // VERIFIED (2026-07-12) on real families GSTM(745 cols)/DAZ/RBMY(1542)/PCDHB(3293): A* is BYTE-IDENTICAL to
+    // Dijkstra (families/quant/assignments diff = 0) — so the co-optimal-traceback concern does not bite here —
+    // but gives NO measurable speedup UNDER THE PSV GAP COSTS (0.0/0.5/12.7s, PCDHB marginally slower):
+    // poasta's min-gap heuristic does not prune those paralog alignments. So Dijkstra stays the default on
+    // THIS path.
+    // ⚠ THE SCOPE OF THAT "no speedup" FINDING WAS TOO WIDE. Re-measured 2026-08-09 on the contiguous-core
+    // path, whose gap_open is 32 rather than the PSV costs: A* is 32-44% FASTER there (paired interleaved
+    // n=5, 15/15 wins; TFRC 0.563x, TBP 0.593x, HERC2 0.678x) with all 75 control-panel output files
+    // byte-identical. That path therefore selects A* explicitly via `contiguous_core_coverage`, which calls
+    // `poa_msa_with_costs_cfg` — it does NOT go through this env switch.
+    // (minimap2 via RUSTLE_PSV_MINIMAP2 is fast but LOSES PSVs — 109 vs 3293 on PCDHB, 0 vs 745 on GSTM — as it
+    // clips divergent flanks; not a safe default. The exact-DP cost is inherent to accurate PSV discovery.)
+    // ⚠ WAS `var_os(..).is_some()`, i.e. `RUSTLE_POA_ASTAR=0` TURNED A* ON here. That is the tree's
+    // opt-in idiom (`set and not "0"`) inverted, and it silently invalidates any A/B that disables the
+    // toggle: measured 2026-08-09, a copy_assign GSTM run with `RUSTLE_POA_ASTAR=0` was ~8% FASTER than
+    // the unset default, because the "off" arm had switched THIS path to A*. Parsed as an ordinary
+    // opt-in flag now. The DEFAULT (unset) is unchanged, so no shipped configuration moves.
+    let astar = matches!(std::env::var("RUSTLE_POA_ASTAR"), Ok(ref v) if v != "0" && !v.is_empty());
+    poa_msa_with_costs_cfg_inner(seqs, gap_costs, astar)
+}
+
+/// [`poa_msa_with_costs`] with the aligner variant passed EXPLICITLY instead of read from the environment.
+///
+/// Exists because the two poasta consumers want different defaults and must not share a global switch:
+/// the PSV/MSA path measured A* as no faster under ITS gap costs (see the note above), while the
+/// contiguous-core path (gap_open=32) measured 32-44% faster with byte-identical output. A caller that
+/// picks the variant can be memoized, because the variant is then an explicit part of the cache key
+/// rather than ambient state.
+pub fn poa_msa_with_costs_cfg(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+    astar: bool,
+) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+    if seqs.len() < 2 {
+        return Err(anyhow!("poa_msa requires at least 2 sequences"));
+    }
+    poa_msa_with_costs_cfg_inner(seqs, gap_costs, astar)
+}
+
+fn poa_msa_with_costs_cfg_inner(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+    astar: bool,
+) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+    use poasta::aligner::config::{AffineDijkstra, AffineMinGapCost};
+    use poasta::graphs::poa::POAGraph;
+    use poasta::io::fasta::poa_graph_to_fasta;
+
+    let graph: POAGraph<u32> = if astar {
+        build_poa_graph(seqs, AffineMinGapCost(gap_costs))?
+    } else {
+        build_poa_graph(seqs, AffineDijkstra(gap_costs))?
+    };
+
+    // Extract the MSA rows by using poasta's public poa_graph_to_fasta function,
+    // which walks the graph in topological order and writes aligned FASTA records.
+    // We write into a Vec<u8> buffer and parse the resulting FASTA lines.
+    let mut fasta_buf: Vec<u8> = Vec::new();
+    poa_graph_to_fasta(&graph, &mut fasta_buf)
+        .map_err(|e| anyhow!("poa_graph_to_fasta failed: {e}"))?;
+
+    // Parse the FASTA output: each sequence record is a set of lines starting with '>'.
+    // We collect the sequences in order and convert them to Vec<u8> rows.
+    let mut msa: Vec<Vec<u8>> = Vec::with_capacity(seqs.len());
+    let mut current_seq: Option<Vec<u8>> = None;
+    for line in fasta_buf.split(|&b| b == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        if line[0] == b'>' {
+            if let Some(seq) = current_seq.take() {
+                msa.push(seq);
+            }
+            current_seq = Some(Vec::new());
+        } else if let Some(ref mut seq) = current_seq {
+            seq.extend_from_slice(line);
+        }
+    }
+    if let Some(seq) = current_seq {
+        msa.push(seq);
+    }
+
+    if msa.len() != seqs.len() {
+        return Err(anyhow!(
+            "poa_msa: expected {} rows from graph but got {}",
+            seqs.len(),
+            msa.len()
+        ));
+    }
+
+    // poasta's fasta_aln_for_seq has an off-by-one in the trailing-gap fill for
+    // sequences whose path ends before max_col, so rows can occasionally come
+    // back one column short. Pad with trailing gaps to the max row length —
+    // this is content-neutral for an MSA (gaps are not part of the ungapped
+    // sequence) and the round-trip ungap(row) ≡ original input is preserved.
+    let n_cols = msa.iter().map(|r| r.len()).max().unwrap_or(0);
+    for row in msa.iter_mut() {
+        if row.len() < n_cols {
+            row.extend(std::iter::repeat(b'-').take(n_cols - row.len()));
+        }
+    }
+    Ok(msa)
+}
+
+/// POA-derived CONTIGUOUS-CORE coverage of two sequences.
+///
+/// Aligns `a` and `b` via the 2-sequence POA instance (`poa_msa`, which for a
+/// pair reduces to a single global alignment), then finds the LONGEST run of
+/// consecutive alignment columns where BOTH rows are non-gap AND carry the same
+/// base, and returns that run length divided by `min(a.len(), b.len())`.
+///
+/// This is the validated criterion from `bench/poa_family_definition.py`: a true
+/// paralog copy shares ONE long contiguous homologous core (HIGH coverage, the
+/// prototype's `>= 0.13` band), whereas a domain-sharer co-aligns over only a
+/// short block and then diverges (LOW coverage, indistinguishable from random
+/// cross-family controls). Unlike all-column reciprocal coverage it is NOT
+/// inflated by a global aligner's scattered chance-match filler, because it
+/// requires the matching columns to be CONTIGUOUS.
+///
+/// Purely alignment-column-derived (POA-only): no DNA/protein domain annotation,
+/// no BLAST, no k-mer/minimizer is used. Deterministic (POA is deterministic).
+///
+/// ROBUSTNESS: this uses a DEDICATED alignment config — a STRONG gap-open
+/// (`GapAffine::new(1, 1, 32)`: mismatch=1, gap_extend=1, gap_open=32) — instead
+/// of the main `poa_msa` scoring (gap_open=2). With the weak default gap-open,
+/// poasta is content-dependently unstable on two copies that share a long core
+/// but have DIVERGENT 5' AND 3' flanks: a few CHEAP single-base gaps in the
+/// divergent flanks frame-shift the otherwise-on-diagonal alignment THROUGH the
+/// conserved core, so the core never re-anchors and the longest equal run
+/// collapses to a chance-match ~3 bp (observed core coverage 0.71 -> ~0.01 on
+/// true copies). A strong gap-open makes those scattered frame-shift gaps
+/// uneconomical, so the alignment stays on one diagonal and the identical core
+/// aligns column-for-column (coverage restored to ~ the core fraction).
+///
+/// This mirrors the validated python prototype (`bench/poa_family_definition.py`,
+/// BioPython NW gap_open=-5) which avoided the same instability by gapping the
+/// divergent flank and anchoring the core. The strong gap-open ONLY fixes the
+/// false-collapse of true copies; it leaves domain-sharers / disjoint pairs LOW
+/// (measured: short-block 0.05, reordered-chunk 0.01, disjoint 0.01 — unchanged
+/// from the weak-gap default), so the separation is preserved, not blurred. The
+/// gap-open is the documented robustness lever: gap_open>=16 anchors all tested
+/// divergent-flank cases; 32 is a comfortable margin (poasta's internal Score
+/// arithmetic overflows for gap_open<2 and RAISING MISMATCH was counterproductive
+/// — both empirically falsified, so the strong gap-open is the chosen knob).
+/// poasta 0.1.0's `EndsFree`/semi-global mode is `todo!()` (panics), so an
+/// ends-free alignment was not available; the strong-gap-open config is the
+/// POA-only fix.
+///
+/// Edge cases: returns 0.0 if either sequence is empty or the alignment fails;
+/// identical sequences return ~1.0 (the whole sequence is one matched run).
+pub fn contiguous_core_coverage(a: &[u8], b: &[u8]) -> f64 {
+    contiguous_core_coverage_with(a, b, core_astar())
+}
+
+/// [`contiguous_core_coverage`] with the aligner variant chosen by the caller rather than by
+/// [`core_astar`]. Both variants are exact optimal-cost searches over the same graph and scoring; which
+/// one is faster depends on the SHAPE of the pair, which is a property of the CALL SITE (see
+/// [`contiguous_core_coverage_bounded_with`]).
+pub fn contiguous_core_coverage_with(a: &[u8], b: &[u8], astar: bool) -> f64 {
+    use poasta::aligner::scoring::GapAffine;
+    let minlen = a.len().min(b.len());
+    if minlen == 0 {
+        return 0.0;
+    }
+    // Dedicated strong-gap-open scoring (mismatch=1, gap_extend=1, gap_open=32).
+    // See the doc comment: anchors the conserved core against divergent flanks.
+    let core_gap_costs = GapAffine::new(1, 1, 32);
+    let msa = match poa_msa_with_costs_cfg(&[a.to_vec(), b.to_vec()], core_gap_costs, astar) {
+        Ok(m) => m,
+        Err(_) => return 0.0,
+    };
+    if msa.len() != 2 {
+        return 0.0;
+    }
+    let (row_a, row_b) = (&msa[0], &msa[1]);
+    let n_cols = row_a.len().min(row_b.len());
+    let mut longest = 0usize;
+    let mut run = 0usize;
+    for c in 0..n_cols {
+        let (ca, cb) = (row_a[c], row_b[c]);
+        if ca != b'-' && cb != b'-' && ca == cb {
+            run += 1;
+            if run > longest {
+                longest = run;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    longest as f64 / minlen as f64
+}
+
+/// Longest common SUBSTRING (contiguous, EXACT) of `a` and `b`, in O(min(|a|,|b|)) memory via a suffix
+/// automaton built on the SHORTER sequence and scanned by the longer.
+///
+/// This is the memory-bounded equivalent of [`contiguous_core_coverage`]'s "longest ungapped equal run": a
+/// run there is a maximal stretch of alignment columns that are BOTH non-gap AND equal — i.e. a substring
+/// shared by both sequences (a mismatch resets the run, so there are no internal mismatches). poasta finds it
+/// via a memory-hungry graph alignment that OOMs on a long (e.g. 228 kb read-through) operand; the suffix
+/// automaton finds the GLOBAL longest common substring directly in LINEAR memory, so it never OOMs.
+pub fn longest_common_substring(a: &[u8], b: &[u8]) -> usize {
+    use std::collections::BTreeMap;
+    let (s, t) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    if s.is_empty() || t.is_empty() {
+        return 0;
+    }
+    // suffix automaton over the shorter string `s`. State = (longest len in its endpos class, suffix link,
+    // outgoing transitions). Deterministic (BTreeMap transitions; the result never depends on map order).
+    struct St {
+        len: i32,
+        link: i32,
+        next: BTreeMap<u8, i32>,
+    }
+    let mut st: Vec<St> = Vec::with_capacity(2 * s.len());
+    st.push(St { len: 0, link: -1, next: BTreeMap::new() });
+    let mut last = 0i32;
+    for &c in s {
+        let cur = st.len() as i32;
+        let cur_len = st[last as usize].len + 1;
+        st.push(St { len: cur_len, link: -1, next: BTreeMap::new() });
+        let mut p = last;
+        while p != -1 && !st[p as usize].next.contains_key(&c) {
+            st[p as usize].next.insert(c, cur);
+            p = st[p as usize].link;
+        }
+        if p == -1 {
+            st[cur as usize].link = 0;
+        } else {
+            let q = st[p as usize].next[&c];
+            if st[p as usize].len + 1 == st[q as usize].len {
+                st[cur as usize].link = q;
+            } else {
+                let clone = st.len() as i32;
+                let clone_len = st[p as usize].len + 1;
+                let (qlink, qnext) = (st[q as usize].link, st[q as usize].next.clone());
+                st.push(St { len: clone_len, link: qlink, next: qnext });
+                while p != -1 && st[p as usize].next.get(&c) == Some(&q) {
+                    st[p as usize].next.insert(c, clone);
+                    p = st[p as usize].link;
+                }
+                st[q as usize].link = clone;
+                st[cur as usize].link = clone;
+            }
+        }
+        last = cur;
+    }
+    // scan `t`, tracking the longest match ending at each position (canonical SAM-LCS walk).
+    let (mut v, mut l, mut best) = (0i32, 0i32, 0i32);
+    for &c in t {
+        while v != 0 && !st[v as usize].next.contains_key(&c) {
+            v = st[v as usize].link;
+            l = st[v as usize].len;
+        }
+        match st[v as usize].next.get(&c) {
+            Some(&nx) => {
+                v = nx;
+                l += 1;
+            }
+            None => l = 0, // dead-ended at the root
+        }
+        if l > best {
+            best = l;
+        }
+    }
+    best as usize
+}
+
+/// Which exact aligner the CONTIGUOUS-CORE path uses. A* (`AffineMinGapCost`) is the default here — see the
+/// re-measurement note on [`poa_msa_with_costs`]. `RUSTLE_POA_ASTAR=0` forces the old Dijkstra search back on
+/// this path so the change can be A/B'd without a rebuild; any other value (set or unset) means A*.
+///
+/// Both are EXACT optimal-cost searches over the same graph and scoring, so this selects only how the
+/// optimum is found, not what it is. It is nonetheless part of the memo key below, because co-optimal
+/// traceback is not proven unique and a cache must never serve a value the current setting did not produce.
+pub fn core_astar() -> bool {
+    !matches!(std::env::var("RUSTLE_POA_ASTAR"), Ok(v) if v == "0")
+}
+
+/// ASCII-uppercase VIEW of `s` that allocates only when `s` actually contains a lowercase ASCII letter.
+///
+/// The POA collapse loop uppercased both operands of every candidate pair on every sweep, i.e. two full
+/// sequence copies per pair per iteration — while `GenomeIndex` already uppercases every base at load, so
+/// the copies were almost always identical to their input. The uppercase is still APPLIED (soft-masked
+/// input reaching these paths from elsewhere must behave exactly as before); only the allocation is
+/// conditional, so the bytes handed downstream are unchanged.
+pub fn upper_cow(s: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if s.iter().any(|c| c.is_ascii_lowercase()) {
+        std::borrow::Cow::Owned(s.to_ascii_uppercase())
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Memo for the contiguous-core kernel.
+//
+// WHY: `collapse_parent` re-runs its full O(r^2) candidate sweep until an entire sweep merges nothing, so
+// the LAST sweep — by definition the one that changes no state — re-aligns every surviving pair and throws
+// every result away, and each earlier sweep re-aligns every pair it failed to merge. The kernel is a pure
+// function of its arguments, so those repeats are recomputation with no other effect.
+//
+// THE KEY IS EVERY ARGUMENT THAT CAN CHANGE THE VALUE, and nothing else:
+//   (interned id of `a`'s exact bytes, interned id of `b`'s exact bytes, `poasta_cap`, `core_astar()`)
+// - The two sequences are keyed SEPARATELY AND IN ORDER. `poa_msa_with_costs` builds the graph from the
+//   FIRST sequence, so f(a,b) == f(b,a) is UNPROVEN; normalising the pair order into one key would be a
+//   result-changing edit disguised as a cache. (`memo_order_is_part_of_the_key` pins this.)
+// - `poasta_cap` selects the poasta-vs-suffix-automaton BRANCH, so it changes the value, not just the cost.
+// - The aligner variant is ambient (env), so it is resolved to a bool and stored explicitly.
+// - The gap costs are NOT in the key because they are a hard-coded constant of `contiguous_core_coverage`
+//   (1,1,32). If they ever become a parameter they MUST be added here.
+// - The merge THRESHOLDS (`collapse_span_core`, COLLAPSE_CONTAIN_FRAC, `t_core`) are deliberately ABSENT:
+//   they are applied by the callers to this function's return value and cannot change it. That separation
+//   is what makes a threshold sweep reuse the alignments.
+//
+// Sequences are interned so the table stores each distinct sequence once (O(r) bytes) rather than once per
+// pair (O(r^2) bytes), and the key is the exact bytes — not a hash — so there is no collision path to a
+// silently wrong value.
+// ---------------------------------------------------------------------------------------------------
+
+/// Interned-byte budget. Past this the memo stops INSERTING (it still serves hits), so a genome-wide run
+/// degrades to today's recompute-everything behaviour instead of growing without bound.
+const CORE_MEMO_MAX_BYTES: usize = 512 * 1024 * 1024;
+/// Entry-count budget, same degradation rule. 4M entries of a 4-word key + f64 is ~200 MB.
+const CORE_MEMO_MAX_ENTRIES: usize = 4_000_000;
+
+/// FxHash, not SipHash. The intern map is probed with a FULL SEQUENCE (up to `len_cap` = 20 kb) on EVERY
+/// call including misses, so the hash pass is the memo's entire per-call overhead — free next to a POA
+/// alignment, not free next to a memo HIT or the cheap suffix-automaton branch.
+///
+/// MEASURED, not assumed (medians of 3, warm cache, interleaved builds): on HERC2 — the panel region
+/// where the memo actually fires — SipHash 13.423 s [13.377-13.474] vs FxHash 9.867 s [9.803-10.091],
+/// a 26% difference with both spreads under 0.3 s. Neutral on the regions where the memo rarely hits
+/// (GSTM 0.976, MAGEA 0.987, RABL2 1.001, SDHA 0.997, TBP 0.996).
+///
+/// Exactness is unaffected: `HashMap` still compares keys with `Eq`, so a hash collision costs a byte
+/// comparison, never a wrong value. (Also deterministic — FxHash has no random seed — though nothing
+/// here depends on iteration order.)
+#[derive(Default)]
+struct CoreMemo {
+    ids: crate::types::DetHashMap<Vec<u8>, u32>,
+    interned_bytes: usize,
+    vals: crate::types::DetHashMap<(u32, u32, usize, bool), f64>,
+    hits: u64,
+    misses: u64,
+}
+
+fn core_memo() -> &'static std::sync::Mutex<CoreMemo> {
+    static MEMO: std::sync::OnceLock<std::sync::Mutex<CoreMemo>> = std::sync::OnceLock::new();
+    MEMO.get_or_init(|| std::sync::Mutex::new(CoreMemo::default()))
+}
+
+/// A poisoned memo is still a valid cache (the data is plain values, and a panic mid-update cannot leave a
+/// wrong entry — insertion is the last step), so recover the guard rather than cascading the panic.
+fn core_memo_lock() -> std::sync::MutexGuard<'static, CoreMemo> {
+    core_memo().lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// `(hits, misses)` on the contiguous-core memo since process start. Test/diagnostic hook — this is how
+/// `memo_*` tests prove that a changed key component MISSES rather than silently reusing a stale value.
+pub fn core_memo_stats() -> (u64, u64) {
+    let m = core_memo_lock();
+    (m.hits, m.misses)
+}
+
+/// Is `(a, b, poasta_cap, astar)` — the FULL key — currently cached? Diagnostic, and the hook the memo
+/// key tests use: asserting on presence per key is immune to sibling tests sharing the process-global
+/// table, which a hit/miss counter is not.
+pub fn core_memo_contains(a: &[u8], b: &[u8], poasta_cap: usize, astar: bool) -> bool {
+    let m = core_memo_lock();
+    match (m.ids.get(a), m.ids.get(b)) {
+        (Some(&ia), Some(&ib)) => m.vals.contains_key(&(ia, ib, poasta_cap, astar)),
+        _ => false,
+    }
+}
+
+/// Plant a value under an exact key WITHOUT running the kernel. Test-only: a planted value the kernel
+/// would never return is what makes "this call was served from the cache under THIS key" a deterministic
+/// assertion rather than an inference from a counter.
+#[cfg(test)]
+fn core_memo_plant(a: &[u8], b: &[u8], poasta_cap: usize, astar: bool, v: f64) {
+    let mut m = core_memo_lock();
+    let ia = match m.ids.get(a).copied() {
+        Some(i) => i,
+        None => {
+            let i = m.ids.len() as u32;
+            m.ids.insert(a.to_vec(), i);
+            m.interned_bytes += a.len();
+            i
+        }
+    };
+    let ib = match m.ids.get(b).copied() {
+        Some(i) => i,
+        None => {
+            let i = m.ids.len() as u32;
+            m.ids.insert(b.to_vec(), i);
+            m.interned_bytes += b.len();
+            i
+        }
+    };
+    m.vals.insert((ia, ib, poasta_cap, astar), v);
+}
+
+/// Drop every cached value and interned sequence. Only for tests that need a known starting point.
+pub fn core_memo_clear() {
+    let mut m = core_memo_lock();
+    m.ids.clear();
+    m.vals.clear();
+    m.interned_bytes = 0;
+    m.hits = 0;
+    m.misses = 0;
+}
+
+/// [`contiguous_core_coverage`] with a MEMORY GUARD: when the larger sequence exceeds `poasta_cap`, poasta's
+/// graph aligner would OOM, so use the linear-memory longest-common-substring metric instead (faithful — a
+/// poasta ungapped-equal run IS a common substring). At or below the cap, the exact poasta path is used, so
+/// the validated small-transcript behaviour is byte-identical.
+///
+/// MEMOIZED — see the key documentation above. The memo is transparent: it never changes what this function
+/// returns, only how often the kernel underneath it runs.
+pub fn contiguous_core_coverage_bounded(a: &[u8], b: &[u8], poasta_cap: usize) -> f64 {
+    contiguous_core_coverage_bounded_with(a, b, poasta_cap, core_astar())
+}
+
+/// `contiguous_core_coverage_bounded(a, b, cap) >= threshold`, with an EXACT early exit.
+///
+/// The core is the longest run of equal, non-gap alignment columns, which is a common SUBSTRING of `a` and
+/// `b`; so `core <= longest_common_substring(a, b) / minlen`, and both sides use the same division, so the
+/// float comparison is monotone. When that bound is already below `threshold` the verdict is `false`
+/// without aligning: on divergent 4-6 kb pairs the poasta call costs seconds to tens of seconds (gorilla
+/// NC_073244.2 locus collapse: 331 of 331 POA CPU-s were such pairs before the bound, 89 after), while the
+/// suffix-automaton bound costs milliseconds. Byte-identical verdicts by construction.
+pub fn core_coverage_reaches(a: &[u8], b: &[u8], poasta_cap: usize, threshold: f64) -> bool {
+    let minlen = a.len().min(b.len());
+    // above the cap the kernel IS the LCS ratio, so the bound would only compute it twice
+    if minlen > 0
+        && a.len().max(b.len()) <= poasta_cap
+        && (longest_common_substring(a, b) as f64 / minlen as f64) < threshold
+    {
+        return false;
+    }
+    contiguous_core_coverage_bounded(a, b, poasta_cap) >= threshold
+}
+
+/// A* IS NOT UNIFORMLY BETTER — WHICH VARIANT WINS IS A PROPERTY OF THE CALL SITE, SO THE CALL SITE PICKS.
+///
+/// Measured 2026-08-09, both directions on real data:
+/// - LOCUS COLLAPSE (`collapse_parent` / `distinct_locus_reps`), which aligns long OVERLAPPING transcript
+///   models up to `len_cap` = 20 kb: A* is a large win. 25-region control panel 93.0 s -> 40.8 s overall;
+///   isolating the aligner alone on the POA-bound regions, HERC2 34.9 -> 17.6 s (0.504x).
+/// - EDGE CONFIRMATION (`confirm_edge`, rayon-parallel over candidate rep pairs) and the rescue path: A*
+///   LOSES. `copy_assign` on GSTM, where `RUSTLE_LOCUS_JUNCTION_ONLY=1` shows the collapse costs nothing,
+///   is 30.20 s with A* off vs 31.68 s with it on (medians of 3, interleaved, rotated order) — the
+///   min-gap heuristic's per-node overhead is not repaid on those pairs.
+///
+/// So `EDGE_CONFIRM_ASTAR = false` is not a tuning constant; it is the pre-existing behaviour of that path,
+/// left in place because the measurement that justified changing the collapse does not extend to it.
+pub fn contiguous_core_coverage_bounded_with(
+    a: &[u8],
+    b: &[u8],
+    poasta_cap: usize,
+    astar: bool,
+) -> f64 {
+    // `RUSTLE_POA_MEMO=0` bypasses the memo entirely. Kept because the ONLY way to be sure a cache is
+    // transparent on real data is to be able to re-run the same job without it, and because it is what
+    // measures the memo's contribution separately from the other speed changes.
+    if matches!(std::env::var("RUSTLE_POA_MEMO"), Ok(ref v) if v == "0") {
+        return contiguous_core_coverage_bounded_uncached_with(a, b, poasta_cap, astar);
+    }
+    // Look up first; the lock is held only across two hash probes, never across an alignment.
+    let ids = {
+        let mut m = core_memo_lock();
+        match (m.ids.get(a).copied(), m.ids.get(b).copied()) {
+            (Some(ia), Some(ib)) => {
+                if let Some(&v) = m.vals.get(&(ia, ib, poasta_cap, astar)) {
+                    m.hits += 1;
+                    return v;
+                }
+                m.misses += 1;
+                Some((ia, ib))
+            }
+            _ => {
+                m.misses += 1;
+                None
+            }
+        }
+    };
+
+    let v = contiguous_core_coverage_bounded_uncached_with(a, b, poasta_cap, astar);
+
+    let mut m = core_memo_lock();
+    if m.vals.len() >= CORE_MEMO_MAX_ENTRIES {
+        return v;
+    }
+    let (ia, ib) = match ids {
+        Some(p) => p,
+        None => {
+            if m.interned_bytes.saturating_add(a.len() + b.len()) > CORE_MEMO_MAX_BYTES {
+                return v;
+            }
+            let ia = match m.ids.get(a).copied() {
+                Some(i) => i,
+                None => {
+                    let i = m.ids.len() as u32;
+                    m.ids.insert(a.to_vec(), i);
+                    m.interned_bytes += a.len();
+                    i
+                }
+            };
+            let ib = match m.ids.get(b).copied() {
+                Some(i) => i,
+                None => {
+                    let i = m.ids.len() as u32;
+                    m.ids.insert(b.to_vec(), i);
+                    m.interned_bytes += b.len();
+                    i
+                }
+            };
+            (ia, ib)
+        }
+    };
+    m.vals.insert((ia, ib, poasta_cap, astar), v);
+    v
+}
+
+/// The kernel itself, with no memo in front of it. Kept separate so the memo can be proven transparent by
+/// comparing the two on the same inputs.
+pub fn contiguous_core_coverage_bounded_uncached(a: &[u8], b: &[u8], poasta_cap: usize) -> f64 {
+    contiguous_core_coverage_bounded_uncached_with(a, b, poasta_cap, core_astar())
+}
+
+/// [`contiguous_core_coverage_bounded_uncached`] with the aligner variant chosen by the caller.
+pub fn contiguous_core_coverage_bounded_uncached_with(
+    a: &[u8],
+    b: &[u8],
+    poasta_cap: usize,
+    astar: bool,
+) -> f64 {
+    if a.len().max(b.len()) > poasta_cap {
+        let minlen = a.len().min(b.len());
+        if minlen == 0 {
+            return 0.0;
+        }
+        longest_common_substring(a, b) as f64 / minlen as f64
+    } else {
+        contiguous_core_coverage_with(a, b, astar)
+    }
+}
+
+/// The aligner variant used by EDGE CONFIRMATION and the rescue path (`confirm_edge`,
+/// `family_rescue`): plain Dijkstra, i.e. exactly what those paths did before the collapse path moved to
+/// A*. See [`contiguous_core_coverage_bounded_with`] for the measurement in both directions.
+pub const EDGE_CONFIRM_ASTAR: bool = false;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// SplitMix64 PRNG for deterministic test sequences (no test-time RNG dependency).
+    struct SplitMix64(u64);
+    impl SplitMix64 {
+        fn next_u64(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // POA-derived CONTIGUOUS-CORE coverage criterion (see
+    // bench/poa_family_definition.py). contiguous_core_coverage(a,b) aligns the
+    // two sequences via the 2-sequence POA instance (poa_msa) and reads off the
+    // LONGEST run of consecutive columns where BOTH rows are non-gap AND equal,
+    // divided by the shorter sequence. A true copy shares ONE long homologous
+    // core (HIGH); a domain-sharer shares only a short block then diverges (LOW).
+    // ----------------------------------------------------------------------
+
+    /// Deterministic random DNA of length `n` (SplitMix64, no test-time RNG dep).
+    fn core_rand_seq(n: usize, seed: u64) -> Vec<u8> {
+        let mut rng = SplitMix64(seed);
+        const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+        (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
+    }
+
+    // ----------------------------------------------------------------------
+    // MEMO KEY TESTS for `contiguous_core_coverage_bounded`.
+    //
+    // The rule these enforce: the cache key contains EVERY argument that can change the returned value —
+    // both sequences (in order), the poasta cap, and the resolved aligner variant — and a change to any
+    // of them MISSES. Each test plants a sentinel value (0.4242, which the kernel cannot produce for
+    // these inputs) under one exact key, then shows that only that key is served and every neighbouring
+    // key recomputes.
+    //
+    // Every test uses sequences unique to itself, so the process-global table cannot be perturbed by a
+    // sibling test running concurrently; presence is asserted per key rather than via a global counter.
+    // ----------------------------------------------------------------------
+
+    /// RUSTLE_POA_ASTAR is process-global. Serialize the tests that mutate it.
+    static ASTAR_ENV_LOCK: Mutex<()> = Mutex::new(());
+    const MEMO_SENTINEL: f64 = 0.4242;
+
+    #[test]
+    fn memo_serves_its_key_and_a_changed_cap_misses() {
+        let a = core_rand_seq(300, 0x0BAD_1001);
+        let b = core_rand_seq(300, 0x0BAD_1002);
+        let astar = core_astar();
+
+        // Plant a value the kernel would never produce, under cap = 10_000 only.
+        core_memo_plant(&a, &b, 10_000, astar, MEMO_SENTINEL);
+        assert!(core_memo_contains(&a, &b, 10_000, astar));
+        assert_eq!(
+            contiguous_core_coverage_bounded(&a, &b, 10_000),
+            MEMO_SENTINEL,
+            "a repeat call under the SAME key must be served from the memo"
+        );
+
+        // A DIFFERENT cap is a different key. It must miss -- and it must miss for a real reason: the cap
+        // selects the poasta-vs-suffix-automaton branch, so it genuinely changes the value.
+        assert!(!core_memo_contains(&a, &b, 100, astar));
+        let v_small_cap = contiguous_core_coverage_bounded(&a, &b, 100);
+        assert_ne!(
+            v_small_cap, MEMO_SENTINEL,
+            "changing poasta_cap must MISS the cache, not reuse the value cached for another cap"
+        );
+        assert_eq!(
+            v_small_cap,
+            contiguous_core_coverage_bounded_uncached(&a, &b, 100),
+            "the value computed after the miss must equal the uncached kernel"
+        );
+        // ...and the original key is untouched by the miss.
+        assert_eq!(contiguous_core_coverage_bounded(&a, &b, 10_000), MEMO_SENTINEL);
+    }
+
+    #[test]
+    fn memo_order_is_part_of_the_key() {
+        // poasta builds its graph from the FIRST sequence, so f(a,b) == f(b,a) is UNPROVEN. The key must
+        // therefore be ordered: swapping the operands must recompute, never reuse.
+        let a = core_rand_seq(280, 0x0BAD_2001);
+        let b = core_rand_seq(280, 0x0BAD_2002);
+        let astar = core_astar();
+        core_memo_plant(&a, &b, 10_000, astar, MEMO_SENTINEL);
+
+        assert!(!core_memo_contains(&b, &a, 10_000, astar));
+        let swapped = contiguous_core_coverage_bounded(&b, &a, 10_000);
+        assert_ne!(
+            swapped, MEMO_SENTINEL,
+            "(b,a) must MISS the entry cached for (a,b) -- pair order is part of the key"
+        );
+        assert_eq!(swapped, contiguous_core_coverage_bounded_uncached(&b, &a, 10_000));
+    }
+
+    /// The aligner variant is part of the key: the two variants have SEPARATE entries, and the lookup
+    /// uses whichever variant `core_astar()` currently resolves to.
+    ///
+    /// Deliberately does NOT mutate RUSTLE_POA_ASTAR while an alignment is in flight — that would change
+    /// the aligner under any concurrently-running test. The env plumbing is pinned separately, by
+    /// `core_astar_defaults_to_true_and_only_zero_disables`, which touches no alignment.
+    #[test]
+    fn memo_astar_variant_is_part_of_the_key() {
+        let a = core_rand_seq(260, 0x0BAD_3001);
+        let b = core_rand_seq(260, 0x0BAD_3002);
+        let current = core_astar();
+
+        // Plant DIFFERENT sentinels under the two variants of the same (a, b, cap).
+        core_memo_plant(&a, &b, 10_000, current, MEMO_SENTINEL);
+        core_memo_plant(&a, &b, 10_000, !current, MEMO_SENTINEL + 0.1);
+        assert!(core_memo_contains(&a, &b, 10_000, true));
+        assert!(core_memo_contains(&a, &b, 10_000, false));
+
+        assert_eq!(
+            contiguous_core_coverage_bounded(&a, &b, 10_000),
+            MEMO_SENTINEL,
+            "the lookup must use the CURRENTLY resolved aligner variant, not the other entry"
+        );
+
+        // And with only the OTHER variant cached, the current one must miss and recompute.
+        let c = core_rand_seq(260, 0x0BAD_3003);
+        core_memo_plant(&a, &c, 10_000, !current, MEMO_SENTINEL);
+        assert!(!core_memo_contains(&a, &c, 10_000, current));
+        let v = contiguous_core_coverage_bounded(&a, &c, 10_000);
+        assert_ne!(
+            v, MEMO_SENTINEL,
+            "a value cached for the other aligner variant must NOT be served"
+        );
+        assert_eq!(v, contiguous_core_coverage_bounded_uncached(&a, &c, 10_000));
+    }
+
+    /// `core_astar()` is the env plumbing only — no alignment runs inside the locked window, so mutating
+    /// the process-global variable here cannot perturb a concurrent test's aligner.
+    #[test]
+    fn core_astar_defaults_to_true_and_only_zero_disables() {
+        let _guard = ASTAR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var("RUSTLE_POA_ASTAR").ok();
+        std::env::remove_var("RUSTLE_POA_ASTAR");
+        let unset = core_astar();
+        std::env::set_var("RUSTLE_POA_ASTAR", "0");
+        let zero = core_astar();
+        std::env::set_var("RUSTLE_POA_ASTAR", "1");
+        let one = core_astar();
+        match prior {
+            Some(v) => std::env::set_var("RUSTLE_POA_ASTAR", v),
+            None => std::env::remove_var("RUSTLE_POA_ASTAR"),
+        }
+        assert!(unset, "A* is the DEFAULT on the contiguous-core path (measured 32-44% faster there)");
+        assert!(!zero, "RUSTLE_POA_ASTAR=0 must restore the Dijkstra search on this path");
+        assert!(one);
+    }
+
+    #[test]
+    fn memo_is_transparent_versus_the_uncached_kernel() {
+        // The memo must never change what the function returns -- only how often the kernel runs. Cover
+        // both branches of the cap guard, an identical pair, an empty operand, and a repeat call.
+        let core = core_rand_seq(200, 0x0BAD_4000);
+        let mut a = core_rand_seq(60, 0x0BAD_4001);
+        a.extend_from_slice(&core);
+        let mut b = core_rand_seq(60, 0x0BAD_4002);
+        b.extend_from_slice(&core);
+        let empty: Vec<u8> = Vec::new();
+        let cases: [(&[u8], &[u8], usize); 6] = [
+            (&a, &b, 10_000), // poasta branch
+            (&a, &b, 10),     // suffix-automaton branch (cap exceeded)
+            (&a, &a, 10_000), // identical operands
+            (&a, &b, 10_000), // repeat -> served from cache, must still agree
+            (&empty, &b, 10_000),
+            (&a, &empty, 10),
+        ];
+        for (x, y, cap) in cases {
+            assert_eq!(
+                contiguous_core_coverage_bounded(x, y, cap),
+                contiguous_core_coverage_bounded_uncached(x, y, cap),
+                "memoized result must equal the uncached kernel (cap={cap})"
+            );
+        }
+    }
+
+    #[test]
+    fn upper_cow_borrows_when_already_uppercase_and_still_uppercases() {
+        use std::borrow::Cow;
+        let up = b"ACGTNACGT".to_vec();
+        assert!(matches!(upper_cow(&up), Cow::Borrowed(_)), "no lowercase -> no allocation");
+        let mixed = b"acgtNACgt".to_vec();
+        let got = upper_cow(&mixed);
+        assert!(matches!(got, Cow::Owned(_)), "lowercase present -> must allocate");
+        assert_eq!(
+            got.as_ref(),
+            mixed.to_ascii_uppercase().as_slice(),
+            "the bytes handed downstream must be identical to to_ascii_uppercase()"
+        );
+    }
+
+    #[test]
+    fn contiguous_core_coverage_long_shared_core_is_high() {
+        // Two "true copy" sequences: a long identical 400 bp middle core,
+        // divergent (independent random) flanks on each side.
+        let core = core_rand_seq(400, 0xC0FE_0001);
+        let mut a = core_rand_seq(80, 0xAAAA_0001);
+        a.extend_from_slice(&core);
+        a.extend(core_rand_seq(80, 0xAAAA_0002));
+        let mut b = core_rand_seq(80, 0xBBBB_0001);
+        b.extend_from_slice(&core);
+        b.extend(core_rand_seq(80, 0xBBBB_0002));
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov >= 0.13,
+            "long shared core should give HIGH contiguous-core coverage (got {cov:.3})");
+    }
+
+    /// ROBUSTNESS REGRESSION GUARD (the known defect). Two TRUE copies that share
+    /// a long internal core (400 bp) but have LONG DIVERGENT flanks on BOTH the 5'
+    /// AND 3' ends (120 bp each, independent random per copy) must STILL score a
+    /// HIGH contiguous-core coverage (~ the core fraction 400/640 ≈ 0.62).
+    ///
+    /// Before the fix, poasta's default affine gap costs threaded the divergent
+    /// flanks diagonally rather than gapping them, so the aligner never re-anchored
+    /// the conserved core and coverage collapsed (observed 0.71 -> 0.01). A
+    /// content-dependent collapse like that would wrongly SPLIT real paralog copies
+    /// at the family-merge gate. We require coverage >= 0.5 here (well above the
+    /// 0.13 merge bar, and close to the 0.62 core fraction).
+    #[test]
+    fn contiguous_core_coverage_divergent_flanks_still_high() {
+        // Construction chosen (seed=4) to RELIABLY trigger the threading collapse
+        // under poasta's default affine gap costs: with the old `poa_msa` scoring
+        // this exact input scored ~0.005. The fix must restore it to ~0.62.
+        const FLANK: usize = 120;
+        const S: u64 = 4;
+        let core = core_rand_seq(400, 0xC0FE_0000 ^ (S * 0x1001));
+        // 120 bp DIVERGENT (independent random) flanks on BOTH ends of each copy.
+        let mut a = core_rand_seq(FLANK, 0xAAAA_0000 ^ (S * 0x2002));
+        a.extend_from_slice(&core);
+        a.extend(core_rand_seq(FLANK, 0xAAAA_1000 ^ (S * 0x3003)));
+        let mut b = core_rand_seq(FLANK, 0xBBBB_0000 ^ (S * 0x4004));
+        b.extend_from_slice(&core);
+        b.extend(core_rand_seq(FLANK, 0xBBBB_1000 ^ (S * 0x5005)));
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov >= 0.5,
+            "two true copies sharing a 400 bp core with divergent 5' AND 3' flanks \
+             must score HIGH contiguous-core coverage (~0.62); got {cov:.3} — the \
+             aligner threaded the flanks and lost the core");
+    }
+
+    #[test]
+    fn contiguous_core_coverage_short_domain_sharer_is_low() {
+        // A "domain-sharer": shares only a short ~30 bp block, then both
+        // sequences are otherwise independent random (long, so 30/min is small).
+        let domain = core_rand_seq(30, 0xD0D0_0001);
+        let mut a = core_rand_seq(300, 0xAAAA_1001);
+        a.extend_from_slice(&domain);
+        a.extend(core_rand_seq(300, 0xAAAA_1002));
+        let mut b = core_rand_seq(300, 0xBBBB_1001);
+        b.extend_from_slice(&domain);
+        b.extend(core_rand_seq(300, 0xBBBB_1002));
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov < 0.13,
+            "short shared block should give LOW contiguous-core coverage (got {cov:.3})");
+    }
+
+    #[test]
+    fn contiguous_core_coverage_identical_is_one() {
+        let s = core_rand_seq(200, 0x1234_5678);
+        let cov = contiguous_core_coverage(&s, &s);
+        assert!(cov >= 0.99,
+            "identical sequences should give contiguous-core coverage ~1.0 (got {cov:.3})");
+    }
+
+    #[test]
+    fn contiguous_core_coverage_disjoint_is_near_zero() {
+        // Two independent random sequences: no long shared run, only short
+        // chance-match runs -> near zero.
+        let a = core_rand_seq(300, 0x1111_0001);
+        let b = core_rand_seq(300, 0x2222_0001);
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov < 0.13,
+            "disjoint random sequences should give near-zero contiguous-core coverage (got {cov:.3})");
+    }
+
+    #[test]
+    fn longest_common_substring_basic() {
+        assert_eq!(longest_common_substring(b"ABCDE", b"XBCDY"), 3, "BCD");
+        assert_eq!(longest_common_substring(b"AAAA", b"AAAA"), 4, "identical");
+        assert_eq!(longest_common_substring(b"ABC", b"XYZ"), 0, "disjoint");
+        assert_eq!(longest_common_substring(b"", b"ABC"), 0, "empty");
+        // asymmetric: the short string is a contiguous substring of the long one (the read-through case).
+        assert_eq!(longest_common_substring(b"GATTACA", b"TTTGATTACAGGG"), 7, "short ⊂ long");
+        assert_eq!(longest_common_substring(b"TTTGATTACAGGG", b"GATTACA"), 7, "order-independent");
+    }
+
+    #[test]
+    fn longest_common_substring_matches_naive_on_random() {
+        // cross-check the suffix-automaton LCS against an O(n^2) naive on small random strings.
+        fn naive(a: &[u8], b: &[u8]) -> usize {
+            let mut best = 0;
+            for i in 0..a.len() {
+                for j in 0..b.len() {
+                    let mut k = 0;
+                    while i + k < a.len() && j + k < b.len() && a[i + k] == b[j + k] {
+                        k += 1;
+                    }
+                    if k > best {
+                        best = k;
+                    }
+                }
+            }
+            best
+        }
+        for seed in 0..8u64 {
+            let a = core_rand_seq(120, 0x5151_0000 ^ seed);
+            let b = core_rand_seq(140, 0x6262_0000 ^ (seed * 7));
+            assert_eq!(longest_common_substring(&a, &b), naive(&a, &b), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn bounded_core_coverage_below_cap_is_exact_poasta() {
+        // a true-copy pair (400 bp exact core + divergent flanks); below the cap the bounded form must equal
+        // the exact poasta path bit-for-bit (the validated small-transcript behaviour is untouched).
+        let core = core_rand_seq(400, 0xC0FE_4242);
+        let mut a = core_rand_seq(80, 0xAAAA_4242);
+        a.extend_from_slice(&core);
+        a.extend(core_rand_seq(80, 0xAAAA_4243));
+        let mut b = core_rand_seq(80, 0xBBBB_4242);
+        b.extend_from_slice(&core);
+        b.extend(core_rand_seq(80, 0xBBBB_4243));
+        let poasta = contiguous_core_coverage(&a, &b);
+        assert_eq!(
+            contiguous_core_coverage_bounded(&a, &b, 100_000),
+            poasta,
+            "below cap = exact poasta"
+        );
+        // above the cap the LCS fallback recovers the SAME 400 bp core fraction (no OOM, no loss).
+        let lcs = contiguous_core_coverage_bounded(&a, &b, 10);
+        assert!(lcs >= 0.6, "fallback recovers the 400 bp core fraction (got {lcs:.3})");
+        assert!(
+            (lcs - poasta).abs() < 0.1,
+            "fallback ~ poasta on a clean exact core (lcs {lcs:.3} vs poasta {poasta:.3})"
+        );
+    }
+
+    #[test]
+    fn bounded_core_coverage_fallback_separates_copies_from_disjoint() {
+        // the fallback must preserve the family/non-family separation poasta gives. Two LONG disjoint random
+        // sequences (forcing the fallback) share only chance substrings -> well under the 0.13 family bar.
+        let a = core_rand_seq(5000, 0x1111_9999);
+        let b = core_rand_seq(5000, 0x2222_9999);
+        assert!(
+            contiguous_core_coverage_bounded(&a, &b, 100) < 0.13,
+            "disjoint long sequences stay below the family bar under the fallback"
+        );
+        // a long read-through that CONTAINS a 2 kb copy as a substring -> high coverage of the copy (the
+        // DSFAM45 hub case: the copy joins the family via the bounded fallback instead of OOMing).
+        let copy = core_rand_seq(2000, 0x7777_0001);
+        let mut hub = core_rand_seq(3000, 0x8888_0001);
+        hub.extend_from_slice(&copy);
+        hub.extend(core_rand_seq(3000, 0x8888_0002));
+        assert!(
+            contiguous_core_coverage_bounded(&copy, &hub, 100) >= 0.9,
+            "a copy embedded in a long read-through hub is confirmed via the fallback"
+        );
+    }
+}
+}
+
+// ---- merged 2026-10-05: was `vg_family/family_split.rs`, now the inline module below (one component) ----
+#[allow(clippy::all)]
+pub mod family_split {
+//! De-novo family DECOMPOSITION — the `bench/denovo_family_split.py` core.
+//!
+//! Connected components of the POA-homology edge graph transitively close a SUPERFAMILY (e.g. KRAB-ZNF)
+//! into one blob, because genes that merely share a tandem DOMAIN pairwise-confirm. A real recent-duplicate
+//! family is a DENSE, mutually-homologous subgraph; an over-merge is a SPARSE chain bridged by lower
+//! `core_recip` domain edges. We keep the same POA edges but split large components by **weighted
+//! modularity** (uses the `core_recip` edge weight; no arbitrary similarity cutoff), then FLAG sparse
+//! homology webs (`size >= web_min_size & density < web_max_density`) rather than claim them as families.
+//!
+//! Community detection is a **hand-rolled, deterministic** weighted-modularity Louvain (the Python uses
+//! `networkx.community.louvain_communities`, seeded). Byte-matching networkx is infeasible (its greedy
+//! order + RNG); the Python pipeline established the partition is robust (resolution 1→8 holds 96–96.7%
+//! concordance), so the faithful target is the same modularity DEFINITION with deterministic tie-breaks
+//! (sorted node/community order, strict-improvement moves), not a byte-identical partition.
+//!
+//! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Only decompose connected components this size or larger (small families left intact).
+pub const MIN_DECOMP: usize = 6;
+/// Modularity resolution (`gamma`); 1.0 = standard.
+pub const RESOLUTION: f64 = 1.0;
+/// A final community of `>= WEB_MIN_SIZE` nodes ...
+pub const WEB_MIN_SIZE: usize = 10;
+/// ... and `< WEB_MAX_DENSITY` density is flagged a homology web (a sparse domain-sharing over-merge),
+/// not a family — and Web families are EXCLUDED from copy-assignment (denovo_pipeline.rs).
+///
+/// Set to 0.30 to ALIGN with the validated DNA cDNA-homology manifest bar (`make_dna_family_manifest.py`
+/// drops `overmerge_sparse` at `density < 0.30`). Measured on the real de-novo split (698 families): the
+/// family-density distribution is BIMODAL — median 1.000 (cliques) with NOTHING legitimate in the
+/// [0.15, 0.30) band; the only 4 large (n>=10) families there are multi-chromosome domain-sharing
+/// over-merges (DSFAM0 = a 164-member ZNF spanning 19 chromosomes, etc.) that the old 0.15 bar let
+/// through as "families." `WEB_MIN_SIZE` stays 10 (not the manifest's 4) ON PURPOSE: a SMALL sparse
+/// group can be a real divergent family (e.g. a 7-copy single-chrom MAGEB at density 0.24), so only
+/// LARGE-and-sparse is called a web. See loose end L2 in bench/LOOSE_ENDS_AUDIT.md.
+pub const WEB_MAX_DENSITY: f64 = 0.30;
+
+/// Tunable decomposition parameters (defaults mirror `denovo_family_split.py`).
+#[derive(Clone, Copy, Debug)]
+pub struct SplitParams {
+    pub min_decomp: usize,
+    pub resolution: f64,
+    pub web_min_size: usize,
+    pub web_max_density: f64,
+}
+
+impl Default for SplitParams {
+    fn default() -> Self {
+        SplitParams {
+            min_decomp: MIN_DECOMP,
+            resolution: RESOLUTION,
+            web_min_size: WEB_MIN_SIZE,
+            web_max_density: WEB_MAX_DENSITY,
+        }
+    }
+}
+
+/// A discrete recent-duplicate family vs a non-discretizable homology web.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FamilyClass {
+    Family,
+    Web,
+}
+
+/// Structural diagnostics of a community in the edge graph.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CommunityStats {
+    pub n: usize,
+    pub n_edges: usize,
+    pub density: f64,
+    pub avg_core_recip: f64,
+    pub n_articulation: usize,
+    /// Global edge connectivity λ of the induced subgraph — the minimum number of edges whose removal
+    /// disconnects this community. `λ >= 2` certifies that no single alignment record's loss can split
+    /// it. **Reported, never used to decide membership** (a 2-node family has λ = 1 necessarily); see
+    /// `edge_connectivity`.
+    pub lambda: usize,
+}
+
+/// A final decomposed family with its structural diagnostics and class.
+#[derive(Clone, Debug)]
+pub struct SplitFamily {
+    pub members: Vec<usize>,
+    pub stats: CommunityStats,
+    pub class: FamilyClass,
+}
+
+/// Connected components (each a sorted node list) of the edge graph, keeping components of `>= min_size`.
+/// Nodes are the ids appearing in `edges`; isolated nodes (no edge) are not represented.
+fn uf_find(parent: &mut [usize], mut x: usize) -> usize {
+    while parent[x] != x {
+        parent[x] = parent[parent[x]];
+        x = parent[x];
+    }
+    x
+}
+fn uf_union(parent: &mut [usize], a: usize, b: usize) {
+    let ra = uf_find(parent, a);
+    let rb = uf_find(parent, b);
+    if ra != rb {
+        parent[ra] = rb;
+    }
+}
+
+pub fn connected_components(edges: &[(usize, usize, f64)], min_size: usize) -> Vec<Vec<usize>> {
+    let max_id = match edges.iter().map(|&(a, b, _)| a.max(b)).max() {
+        Some(m) => m,
+        None => return Vec::new(),
+    };
+    let mut parent: Vec<usize> = (0..=max_id).collect();
+    let mut present = vec![false; max_id + 1];
+    for &(a, b, _) in edges {
+        present[a] = true;
+        present[b] = true;
+        uf_union(&mut parent, a, b);
+    }
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for node in 0..=max_id {
+        if present[node] {
+            let r = uf_find(&mut parent, node);
+            groups.entry(r).or_default().push(node);
+        }
+    }
+    let mut comps: Vec<Vec<usize>> = groups
+        .into_values()
+        .filter(|c| c.len() >= min_size)
+        .collect();
+    for c in &mut comps {
+        c.sort_unstable();
+    }
+    // deterministic: size desc, then smallest member.
+    comps.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a[0].cmp(&b[0])));
+    comps
+}
+
+/// Hand-rolled deterministic weighted-modularity Louvain over a graph with local node ids `0..n`.
+/// Returns the communities (each a sorted Vec of local node ids). `resolution` is the modularity gamma.
+pub fn louvain_communities(n: usize, edges: &[(usize, usize, f64)], resolution: f64) -> Vec<Vec<usize>> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let labels = louvain_labels(n, edges, resolution);
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (node, &lab) in labels.iter().enumerate() {
+        groups.entry(lab).or_default().push(node);
+    }
+    let mut comms: Vec<Vec<usize>> = groups.into_values().collect();
+    for c in &mut comms {
+        c.sort_unstable();
+    }
+    comms.sort_by(|a, b| a[0].cmp(&b[0])); // deterministic: by smallest member
+    comms
+}
+
+/// Multi-level Louvain: run local-moving to convergence, aggregate communities into super-nodes, repeat
+/// until a level makes no moves. Returns a community label (renumbered `0..k`) for each original node.
+fn louvain_labels(n: usize, edges: &[(usize, usize, f64)], resolution: f64) -> Vec<usize> {
+    let mut node2super: Vec<usize> = (0..n).collect();
+    let mut cur_n = n;
+    let mut cur_edges: Vec<(usize, usize, f64)> = edges.to_vec();
+    loop {
+        let (labels, moved) = louvain_one_level(cur_n, &cur_edges, resolution);
+        for s in node2super.iter_mut() {
+            *s = labels[*s];
+        }
+        let k = labels.iter().copied().max().map(|m| m + 1).unwrap_or(0);
+        if !moved || k >= cur_n {
+            break;
+        }
+        // aggregate: each community becomes a super-node; internal edges become self-loops.
+        let mut agg: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+        for &(i, j, w) in &cur_edges {
+            let (ci, cj) = (labels[i], labels[j]);
+            *agg.entry((ci.min(cj), ci.max(cj))).or_insert(0.0) += w;
+        }
+        cur_edges = agg.into_iter().map(|((a, b), w)| (a, b, w)).collect();
+        cur_n = k;
+    }
+    // renumber the final super-node ids to a compact 0..K.
+    let mut remap: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut next = 0usize;
+    node2super
+        .iter()
+        .map(|&s| {
+            *remap.entry(s).or_insert_with(|| {
+                let v = next;
+                next += 1;
+                v
+            })
+        })
+        .collect()
+}
+
+/// One Louvain level: greedy local moving to a local modularity optimum. Returns `(labels 0..k, moved)`.
+/// Weighted-modularity gain (python-louvain formulation): moving node `i` into community `C` gains
+/// `remove_cost + w(i,C) - γ·Σ_tot(C)·k_i/(2m)`, where `remove_cost = -w(i,C_old) + γ·(Σ_tot(C_old)-k_i)·k_i/(2m)`.
+/// Determinism: nodes scanned in id order; neighbour communities in sorted (BTreeMap) order; only STRICT
+/// improvements move, so the lowest-id community wins ties and the node stays put on a non-positive best.
+fn louvain_one_level(n: usize, edges: &[(usize, usize, f64)], resolution: f64) -> (Vec<usize>, bool) {
+    let mut deg = vec![0.0f64; n];
+    let mut neigh: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+    let mut m = 0.0f64;
+    for &(i, j, w) in edges {
+        m += w;
+        if i == j {
+            deg[i] += 2.0 * w; // a self-loop counts twice toward degree
+        } else {
+            deg[i] += w;
+            deg[j] += w;
+            neigh[i].push((j, w));
+            neigh[j].push((i, w));
+        }
+    }
+    if m <= 0.0 {
+        return ((0..n).collect(), false);
+    }
+    let two_m = 2.0 * m;
+    let mut com: Vec<usize> = (0..n).collect();
+    let mut com_deg: Vec<f64> = deg.clone(); // Σ_tot of each community (community id ∈ 0..n)
+    let mut any_moved = false;
+    let mut improved = true;
+    while improved {
+        improved = false;
+        for node in 0..n {
+            let c_old = com[node];
+            let dctw = deg[node] / two_m;
+            let mut ncw: BTreeMap<usize, f64> = BTreeMap::new();
+            for &(nb, w) in &neigh[node] {
+                *ncw.entry(com[nb]).or_insert(0.0) += w;
+            }
+            let dnc_old = *ncw.get(&c_old).unwrap_or(&0.0);
+            let remove_cost = -dnc_old + resolution * (com_deg[c_old] - deg[node]) * dctw;
+            com_deg[c_old] -= deg[node]; // isolate the node
+            let mut best_com = c_old;
+            let mut best_inc = 0.0f64;
+            for (&c, &dnc) in &ncw {
+                let inc = remove_cost + dnc - resolution * com_deg[c] * dctw;
+                if inc > best_inc {
+                    best_inc = inc;
+                    best_com = c;
+                }
+            }
+            com_deg[best_com] += deg[node];
+            com[node] = best_com;
+            if best_com != c_old {
+                improved = true;
+                any_moved = true;
+            }
+        }
+    }
+    let mut remap: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut next = 0usize;
+    let labels: Vec<usize> = com
+        .iter()
+        .map(|&c| {
+            *remap.entry(c).or_insert_with(|| {
+                let v = next;
+                next += 1;
+                v
+            })
+        })
+        .collect();
+    (labels, any_moved)
+}
+
+/// Articulation (cut) points of an undirected graph with local node ids `0..n`. Returns sorted ids.
+pub fn articulation_points(n: usize, edges: &[(usize, usize)]) -> Vec<usize> {
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(a, b) in edges {
+        if a != b {
+            adj[a].push(b);
+            adj[b].push(a);
+        }
+    }
+    let mut visited = vec![false; n];
+    let mut disc = vec![0usize; n];
+    let mut low = vec![0usize; n];
+    let mut is_ap = vec![false; n];
+    let mut timer = 0usize;
+    // iterative Tarjan (avoids recursion-depth blowups on large families).
+    for start in 0..n {
+        if visited[start] {
+            continue;
+        }
+        let mut stack: Vec<(usize, isize, usize)> = vec![(start, -1, 0)]; // (node, parent, child cursor)
+        let mut root_children = 0usize;
+        while let Some(&(u, parent, ci)) = stack.last() {
+            if ci == 0 {
+                visited[u] = true;
+                timer += 1;
+                disc[u] = timer;
+                low[u] = timer;
+            }
+            if ci < adj[u].len() {
+                stack.last_mut().unwrap().2 += 1;
+                let v = adj[u][ci];
+                if v as isize == parent {
+                    continue;
+                }
+                if !visited[v] {
+                    if parent == -1 {
+                        root_children += 1;
+                    }
+                    stack.push((v, u as isize, 0));
+                } else {
+                    low[u] = low[u].min(disc[v]);
+                }
+            } else {
+                stack.pop();
+                if let Some(&(p, pparent, _)) = stack.last() {
+                    low[p] = low[p].min(low[u]);
+                    if pparent != -1 && low[u] >= disc[p] {
+                        is_ap[p] = true; // non-root cut vertex
+                    }
+                }
+            }
+        }
+        if root_children > 1 {
+            is_ap[start] = true;
+        }
+    }
+    (0..n).filter(|&i| is_ap[i]).collect()
+}
+
+/// Global EDGE CONNECTIVITY λ of an undirected graph on local ids `0..n` (Stoer–Wagner). Every entry of
+/// `edges` contributes weight 1, so PARALLEL EDGES ADD — de-duplicate before calling if that is not wanted
+/// (`community_stats` passes a de-duplicated induced set).
+///
+/// λ = the minimum number of edges whose removal disconnects the graph. Returns **0** when `n < 2` or when
+/// the graph is already disconnected: in both cases no edge has to be paid to separate two nodes.
+///
+/// WHY THIS EXISTS — and why it is NOT part of the family definition. `λ >= 2` is a per-family
+/// CERTIFICATE: it states that **no single alignment record's loss can split this family**. It is
+/// deliberately not a membership criterion, because a 2-copy family has `λ = 1` NECESSARILY (one edge is
+/// all a 2-node graph can have), so gating membership on `λ >= 2` would delete every 2-copy family —
+/// the most common family there is. It reports confidence; it never decides membership.
+/// See `docs/seeded_family_definition.md` §1★.5.
+///
+/// Deterministic: the maximum-adjacency search breaks ties toward the smallest node id.
+pub fn edge_connectivity(n: usize, edges: &[(usize, usize)]) -> usize {
+    if n < 2 {
+        return 0;
+    }
+    let mut w = vec![vec![0usize; n]; n];
+    for &(a, b) in edges {
+        if a != b && a < n && b < n {
+            w[a][b] += 1;
+            w[b][a] += 1;
+        }
+    }
+    let mut active: Vec<usize> = (0..n).collect();
+    let mut best = usize::MAX;
+    while active.len() > 1 {
+        // maximum-adjacency search over the surviving supernodes
+        let mut in_a = vec![false; n];
+        let mut wsum = vec![0usize; n];
+        let (mut prev, mut last) = (usize::MAX, usize::MAX);
+        for _ in 0..active.len() {
+            let mut sel = usize::MAX;
+            for &v in &active {
+                // strict `>` with `active` ascending => ties go to the smallest id (deterministic)
+                if !in_a[v] && (sel == usize::MAX || wsum[v] > wsum[sel]) {
+                    sel = v;
+                }
+            }
+            in_a[sel] = true;
+            prev = last;
+            last = sel;
+            for &v in &active {
+                if !in_a[v] {
+                    wsum[v] += w[sel][v];
+                }
+            }
+        }
+        // cut-of-the-phase = weight from the last-added node to everything else (all of which are in A)
+        let cut: usize = active.iter().filter(|&&v| v != last).map(|&v| w[last][v]).sum();
+        best = best.min(cut);
+        if best == 0 {
+            return 0; // already disconnected; no smaller cut exists
+        }
+        if prev == usize::MAX {
+            break;
+        }
+        // merge `last` into `prev`
+        for &v in &active {
+            if v != last && v != prev {
+                w[prev][v] += w[last][v];
+                w[v][prev] = w[prev][v];
+            }
+        }
+        active.retain(|&v| v != last);
+    }
+    if best == usize::MAX {
+        0
+    } else {
+        best
+    }
+}
+
+/// Structural diagnostics of the subgraph induced by `members` (global node ids) over `edges`.
+pub(crate) fn community_stats(members: &[usize], edges: &[(usize, usize, f64)]) -> CommunityStats {
+    let set: BTreeSet<usize> = members.iter().copied().collect();
+    let n = set.len();
+    let mut n_edges = 0usize;
+    let mut wsum = 0.0f64;
+    let mut internal: Vec<(usize, usize)> = Vec::new();
+    for &(a, b, w) in edges {
+        if a != b && set.contains(&a) && set.contains(&b) {
+            n_edges += 1;
+            wsum += w;
+            internal.push((a, b));
+        }
+    }
+    let density = if n > 1 {
+        2.0 * n_edges as f64 / (n as f64 * (n as f64 - 1.0))
+    } else {
+        1.0
+    };
+    let avg_core_recip = if n_edges > 0 { wsum / n_edges as f64 } else { 0.0 };
+    // Local relabelling `member -> 0..n`, shared by the articulation and λ passes.
+    let idx: BTreeMap<usize, usize> = set.iter().enumerate().map(|(i, &node)| (node, i)).collect();
+    let local: Vec<(usize, usize)> = internal.iter().map(|&(a, b)| (idx[&a], idx[&b])).collect();
+    // articulation only for n > 2 (python `arts = ... if n > 2 else 0`).
+    let n_articulation = if n > 2 { articulation_points(n, &local).len() } else { 0 };
+    // λ over the DE-DUPLICATED induced edge set: `edges` may list a pair more than once, and
+    // `edge_connectivity` counts every entry as weight 1, which would inflate the cut.
+    let dedup: BTreeSet<(usize, usize)> =
+        local.iter().map(|&(a, b)| (a.min(b), a.max(b))).collect();
+    let lambda = edge_connectivity(n, &dedup.iter().copied().collect::<Vec<_>>());
+    CommunityStats { n, n_edges, density, avg_core_recip, n_articulation, lambda }
+}
+
+/// Classify a community by size + density (web iff `n >= web_min_size && density < web_max_density`).
+pub fn classify(n: usize, density: f64, p: &SplitParams) -> FamilyClass {
+    if n >= p.web_min_size && density < p.web_max_density {
+        FamilyClass::Web
+    } else {
+        FamilyClass::Family
+    }
+}
+
+/// Decompose the POA-homology edge graph into final families: connected components, with components
+/// `>= min_decomp` split by weighted modularity (communities of `>= 2` kept), each annotated with
+/// structural diagnostics and a family/web class. Sorted by size desc, then smallest member.
+pub fn decompose_families(edges: &[(usize, usize, f64)], p: &SplitParams) -> Vec<SplitFamily> {
+    let comps = connected_components(edges, 2);
+    let mut final_members: Vec<Vec<usize>> = Vec::new();
+    for comp in comps {
+        if comp.len() < p.min_decomp {
+            final_members.push(comp);
+            continue;
+        }
+        // decompose: relabel the component to local ids 0..k, Louvain, map communities (>= 2) back.
+        let set: BTreeSet<usize> = comp.iter().copied().collect();
+        let idx: BTreeMap<usize, usize> = comp.iter().enumerate().map(|(i, &nd)| (nd, i)).collect();
+        let local_edges: Vec<(usize, usize, f64)> = edges
+            .iter()
+            .filter(|&&(a, b, _)| a != b && set.contains(&a) && set.contains(&b))
+            .map(|&(a, b, w)| (idx[&a], idx[&b], w))
+            .collect();
+        for community in louvain_communities(comp.len(), &local_edges, p.resolution) {
+            if community.len() >= 2 {
+                final_members.push(community.iter().map(|&li| comp[li]).collect());
+            }
+        }
+    }
+    let mut out: Vec<SplitFamily> = final_members
+        .into_iter()
+        .map(|mut members| {
+            members.sort_unstable();
+            let stats = community_stats(&members, edges);
+            let class = classify(stats.n, stats.density, p);
+            SplitFamily { members, stats, class }
+        })
+        .collect();
+    // deterministic output order: size desc, then smallest member.
+    out.sort_by(|a, b| {
+        b.members
+            .len()
+            .cmp(&a.members.len())
+            .then_with(|| a.members[0].cmp(&b.members[0]))
+    });
+    out
+}
+
+/// Connected components of the graph on nodes `0..n` over `edges`, INCLUDING size-1 (degree-0) singletons.
+/// Unlike `conflict_families` (which drops <2-node components), this guarantees every node in `0..n`
+/// appears in exactly one returned component, so callers can partition ALL of `0..n`. Components and their
+/// members are returned in ascending id order (deterministic).
+fn all_components(n: usize, edges: &[(usize, usize, f64)]) -> Vec<Vec<usize>> {
+    let mut parent: Vec<usize> = (0..n).collect();
+    for &(a, b, _) in edges {
+        if a < n && b < n {
+            uf_union(&mut parent, a, b);
+        }
+    }
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for node in 0..n {
+        let r = uf_find(&mut parent, node);
+        groups.entry(r).or_default().push(node);
+    }
+    groups.into_values().collect()
+}
+
+/// Internal edge density of a node block over the induced subgraph: 2|E|/(|C|(|C|-1)); <=1 node = 1.0.
+fn induced_density(members: &[usize], edges: &[(usize, usize, f64)]) -> f64 {
+    let set: std::collections::HashSet<usize> = members.iter().copied().collect();
+    let n = members.len();
+    if n <= 1 {
+        return 1.0;
+    }
+    let m = edges.iter().filter(|(a, b, _)| set.contains(a) && set.contains(b)).count();
+    2.0 * m as f64 / (n as f64 * (n as f64 - 1.0))
+}
+
+/// Restrict edges to those with both endpoints in `members`, remapped to local indices 0..members.len().
+fn induced_edges(members: &[usize], edges: &[(usize, usize, f64)]) -> (usize, Vec<(usize, usize, f64)>) {
+    let idx: std::collections::HashMap<usize, usize> =
+        members.iter().enumerate().map(|(i, &g)| (g, i)).collect();
+    let local = edges
+        .iter()
+        .filter_map(|&(a, b, w)| match (idx.get(&a), idx.get(&b)) {
+            (Some(&la), Some(&lb)) => Some((la, lb, w)),
+            _ => None,
+        })
+        .collect();
+    (members.len(), local)
+}
+
+/// Guaranteed-progress splitter: adaptive-resolution Louvain, else component split, else deterministic halving.
+/// Returns global-index blocks; never a single block equal to the input when |members| > 2.
+fn split_once(members: &[usize], edges: &[(usize, usize, f64)]) -> Vec<Vec<usize>> {
+    let (n, local) = induced_edges(members, edges);
+    for res in [1.0, 2.0, 4.0, 8.0] {
+        let parts = louvain_communities(n, &local, res);
+        if parts.len() >= 2 {
+            return parts
+                .into_iter()
+                .map(|p| p.into_iter().map(|l| members[l]).collect())
+                .collect();
+        }
+    }
+    // connected-component fallback (also catches a disconnected block). Use `all_components` (NOT
+    // conflict_families) so an isolated member is kept as its own component, never dropped.
+    let comps = all_components(n, &local);
+    if comps.len() >= 2 {
+        return comps
+            .into_iter()
+            .map(|c| c.into_iter().map(|l| members[l]).collect())
+            .collect();
+    }
+    // deterministic halving.
+    let h = members.len() / 2;
+    vec![members[..h].to_vec(), members[h..].to_vec()]
+}
+
+/// gamma-quasi-clique partition: keep a block whole iff it is already a gamma-quasi-clique (or <=2 nodes),
+/// else split (guaranteed-progress) and recurse. Blocks partition 0..n. Deterministic (Louvain is
+/// deterministic here).
+pub fn gamma_quasi_clique_partition(n: usize, edges: &[(usize, usize, f64)], gamma: f64) -> Vec<Vec<usize>> {
+    // start from raw connected components (INCLUDING singletons, so the output partitions ALL of 0..n),
+    // then refine each.
+    let comps = all_components(n, edges);
+    let mut out = Vec::new();
+    let mut stack: Vec<Vec<usize>> = comps;
+    while let Some(block) = stack.pop() {
+        if block.len() <= 2 || induced_density(&block, edges) >= gamma {
+            out.push(block);
+            continue;
+        }
+        let parts = split_once(&block, edges);
+        if parts.len() == 1 && parts[0].len() == block.len() {
+            // provably unreachable: split_once always returns >=2 strictly-smaller parts for len>=3.
+            out.push(block);
+        } else {
+            stack.extend(parts);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn we(a: usize, b: usize) -> (usize, usize, f64) {
+        (a, b, 1.0)
+    }
+
+    // ---- connected_components ----
+
+    #[test]
+    fn cc_two_separate_edges_two_components() {
+        let e = [we(0, 1), we(2, 3)];
+        let mut c = connected_components(&e, 2);
+        c.sort();
+        assert_eq!(c, vec![vec![0, 1], vec![2, 3]]);
+    }
+
+    #[test]
+    fn cc_transitive_one_component() {
+        let e = [we(0, 1), we(1, 2)];
+        assert_eq!(connected_components(&e, 2), vec![vec![0, 1, 2]]);
+    }
+
+    // ---- louvain_communities ----
+
+    #[test]
+    fn louvain_single_edge_one_community() {
+        assert_eq!(louvain_communities(2, &[we(0, 1)], 1.0), vec![vec![0, 1]]);
+    }
+
+    #[test]
+    fn louvain_single_clique_one_community() {
+        let e = [we(0, 1), we(1, 2), we(0, 2)];
+        assert_eq!(louvain_communities(3, &e, 1.0), vec![vec![0, 1, 2]]);
+    }
+
+    #[test]
+    fn louvain_two_cliques_bridge_splits() {
+        // two triangles {0,1,2} and {3,4,5}, strong internal weight, bridged by ONE weak edge.
+        let e = [
+            we(0, 1), we(1, 2), we(0, 2),
+            we(3, 4), we(4, 5), we(3, 5),
+            (0, 3, 0.05),
+        ];
+        let mut comms = louvain_communities(6, &e, 1.0);
+        comms.sort();
+        assert_eq!(comms, vec![vec![0, 1, 2], vec![3, 4, 5]]);
+    }
+
+    // ---- articulation_points ----
+
+    #[test]
+    fn artic_path_middle_is_cut() {
+        assert_eq!(articulation_points(3, &[(0, 1), (1, 2)]), vec![1]);
+    }
+
+    #[test]
+    fn artic_triangle_none() {
+        assert_eq!(articulation_points(3, &[(0, 1), (1, 2), (0, 2)]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn artic_path_of_four_two_cuts() {
+        assert_eq!(articulation_points(4, &[(0, 1), (1, 2), (2, 3)]), vec![1, 2]);
+    }
+
+    // ---- community_stats ----
+
+    #[test]
+    fn stats_clique_density_one() {
+        let e = [(0, 1, 0.5), (1, 2, 0.7), (0, 2, 0.9)];
+        let s = community_stats(&[0, 1, 2], &e);
+        assert_eq!(s.n, 3);
+        assert_eq!(s.n_edges, 3);
+        assert!((s.density - 1.0).abs() < 1e-9);
+        assert!((s.avg_core_recip - (0.5 + 0.7 + 0.9) / 3.0).abs() < 1e-9);
+        assert_eq!(s.n_articulation, 0);
+        assert_eq!(s.lambda, 2, "K3 is 2-edge-connected");
+    }
+
+    // ── λ (EDGE CONNECTIVITY) — the per-family certificate ────────────────────────────────────────
+    //
+    // λ is REPORTED, never used to decide membership. The `lambda_two_node_is_one` case is the reason:
+    // a 2-copy family cannot have λ >= 2, so gating membership on λ would delete every 2-copy family.
+
+    #[test]
+    fn lambda_complete_graph_is_n_minus_one() {
+        for n in 2..=6usize {
+            let edges: Vec<(usize, usize)> =
+                (0..n).flat_map(|i| ((i + 1)..n).map(move |j| (i, j))).collect();
+            assert_eq!(edge_connectivity(n, &edges), n - 1, "K{n} must have lambda = {}", n - 1);
+        }
+    }
+
+    #[test]
+    fn lambda_two_node_is_one() {
+        // THE REASON λ IS NOT A MEMBERSHIP CRITERION: one edge is all a 2-node graph can hold.
+        assert_eq!(edge_connectivity(2, &[(0, 1)]), 1);
+    }
+
+    #[test]
+    fn lambda_path_and_cycle() {
+        // path 0-1-2-3 hangs on any single edge; the 4-cycle needs two cuts.
+        assert_eq!(edge_connectivity(4, &[(0, 1), (1, 2), (2, 3)]), 1);
+        assert_eq!(edge_connectivity(4, &[(0, 1), (1, 2), (2, 3), (3, 0)]), 2);
+    }
+
+    #[test]
+    fn lambda_disconnected_and_degenerate_are_zero() {
+        assert_eq!(edge_connectivity(4, &[(0, 1), (2, 3)]), 0, "already disconnected");
+        assert_eq!(edge_connectivity(3, &[(0, 1)]), 0, "isolated node 2");
+        assert_eq!(edge_connectivity(1, &[]), 0, "single node: no cut to pay");
+        assert_eq!(edge_connectivity(0, &[]), 0);
+    }
+
+    #[test]
+    fn lambda_two_cliques_joined_by_a_bridge_is_one() {
+        // K3 {0,1,2} -- bridge 2-3 -- K3 {3,4,5}: dense, but one record's loss splits it.
+        let edges = [(0, 1), (0, 2), (1, 2), (2, 3), (3, 4), (3, 5), (4, 5)];
+        assert_eq!(edge_connectivity(6, &edges), 1);
+        let s = community_stats(
+            &[0, 1, 2, 3, 4, 5],
+            &edges.iter().map(|&(a, b)| (a, b, 1.0)).collect::<Vec<_>>(),
+        );
+        assert_eq!(s.lambda, 1);
+        assert_eq!(s.n_articulation, 2, "the bridge's two endpoints are cut vertices");
+    }
+
+    #[test]
+    fn lambda_ignores_duplicate_records_for_the_same_pair() {
+        // `community_stats` de-duplicates before λ: three alignment records for one pair is still ONE
+        // edge whose loss splits the family, so λ must stay 1 and not be inflated to 3.
+        let e = [(0, 1, 1.0), (0, 1, 1.0), (0, 1, 1.0)];
+        assert_eq!(community_stats(&[0, 1], &e).lambda, 1);
+    }
+
+    #[test]
+    fn stats_path_density_and_articulation() {
+        // path 0-1-2-3: 3 edges, density = 2*3/(4*3) = 0.5, articulation points {1,2}.
+        let e = [(0, 1, 0.2), (1, 2, 0.2), (2, 3, 0.2)];
+        let s = community_stats(&[0, 1, 2, 3], &e);
+        assert_eq!(s.n_edges, 3);
+        assert!((s.density - 0.5).abs() < 1e-9);
+        assert_eq!(s.n_articulation, 2);
+    }
+
+    #[test]
+    fn stats_only_counts_internal_edges() {
+        // members {0,1} but an edge 1-2 leaves the set -> not counted.
+        let e = [(0, 1, 0.4), (1, 2, 0.9)];
+        let s = community_stats(&[0, 1], &e);
+        assert_eq!(s.n_edges, 1);
+        assert!((s.avg_core_recip - 0.4).abs() < 1e-9);
+    }
+
+    // ---- classify ----
+
+    #[test]
+    fn classify_web_vs_family() {
+        let p = SplitParams::default(); // web_max_density = 0.30, web_min_size = 10
+        assert_eq!(classify(10, 0.10, &p), FamilyClass::Web); // size>=10 & sparse
+        assert_eq!(classify(12, 0.167, &p), FamilyClass::Web); // the DSFAM0-class over-merge (164 ZNF/19 chr): was Family at the old 0.15 bar
+        assert_eq!(classify(10, 0.29, &p), FamilyClass::Web); // just under the aligned 0.30 bar
+        assert_eq!(classify(10, 0.40, &p), FamilyClass::Family); // dense -> family
+        assert_eq!(classify(10, 1.00, &p), FamilyClass::Family); // clique
+        assert_eq!(classify(5, 0.10, &p), FamilyClass::Family); // too SMALL -> family even if sparse (small divergent fam, e.g. MAGEB)
+        assert_eq!(classify(7, 0.24, &p), FamilyClass::Family); // n<10 stays family (the MAGEB-class protection)
+    }
+
+    // ---- decompose_families ----
+
+    #[test]
+    fn decompose_small_component_kept_intact() {
+        let e = [we(0, 1), we(1, 2), we(0, 2)]; // 3 < MIN_DECOMP
+        let fams = decompose_families(&e, &SplitParams::default());
+        assert_eq!(fams.len(), 1);
+        assert_eq!(fams[0].members, vec![0, 1, 2]);
+        assert_eq!(fams[0].class, FamilyClass::Family);
+    }
+
+    #[test]
+    fn decompose_large_component_splits() {
+        // two K4 cliques bridged by one weak edge; 8 nodes >= MIN_DECOMP -> split into two size-4 families.
+        let mut e = vec![];
+        for &(a, b) in &[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)] {
+            e.push(we(a, b));
+        }
+        for &(a, b) in &[(4, 5), (4, 6), (4, 7), (5, 6), (5, 7), (6, 7)] {
+            e.push(we(a, b));
+        }
+        e.push((0, 4, 0.05));
+        let fams = decompose_families(&e, &SplitParams::default());
+        assert_eq!(fams.len(), 2);
+        let mut sizes: Vec<usize> = fams.iter().map(|f| f.members.len()).collect();
+        sizes.sort();
+        assert_eq!(sizes, vec![4, 4]);
+        assert!(fams.iter().all(|f| f.class == FamilyClass::Family));
+    }
+
+    #[test]
+    fn decompose_flags_sparse_web() {
+        // a star: center 0 with 14 leaves. Louvain keeps it one community; n=15, density ~0.133 -> web.
+        let e: Vec<(usize, usize, f64)> = (1..15).map(|leaf| we(0, leaf)).collect();
+        let fams = decompose_families(&e, &SplitParams::default());
+        assert_eq!(fams.len(), 1);
+        assert_eq!(fams[0].members.len(), 15);
+        assert!(fams[0].stats.density < 0.15);
+        assert_eq!(fams[0].class, FamilyClass::Web);
+    }
+
+    #[test]
+    fn louvain_resolution_controls_granularity() {
+        // K6 clique. Low resolution keeps it whole; high resolution shatters it into singletons -- this
+        // directly pins the `gamma` term in the modularity gain.
+        let mut e = vec![];
+        for a in 0..6 {
+            for b in (a + 1)..6 {
+                e.push(we(a, b));
+            }
+        }
+        assert_eq!(louvain_communities(6, &e, 0.5).len(), 1, "low resolution keeps the clique whole");
+        assert_eq!(louvain_communities(6, &e, 2.0).len(), 6, "high resolution shatters K6 into singletons");
+    }
+
+    #[test]
+    fn louvain_multilevel_aggregation_merges_supernodes() {
+        // Hierarchical: two DISCONNECTED groups, each = 4 triangles whose anchor nodes form a strong K4.
+        // Level-1 local-moving forms the per-triangle communities; only the AGGREGATION level coalesces the
+        // 4 triangle super-nodes of a group into one community. The correct partition is 2 groups of 12.
+        let mut e: Vec<(usize, usize, f64)> = vec![];
+        for g in 0..2 {
+            let base = g * 12;
+            let anchors = [base, base + 3, base + 6, base + 9];
+            for t in 0..4 {
+                let (x, y, z) = (base + 3 * t, base + 3 * t + 1, base + 3 * t + 2);
+                e.push(we(x, y));
+                e.push(we(y, z));
+                e.push(we(x, z)); // triangle (weight 1.0)
+            }
+            for i in 0..anchors.len() {
+                for j in (i + 1)..anchors.len() {
+                    e.push((anchors[i], anchors[j], 5.0)); // strong inter-triangle K4 among anchors
+                }
+            }
+        }
+        let mut comms = louvain_communities(24, &e, 1.0);
+        comms.sort();
+        assert_eq!(comms.len(), 2, "two groups");
+        assert!(comms.iter().all(|c| c.len() == 12), "each group is its 12 nodes: {comms:?}");
+        assert_eq!(comms[0], (0..12).collect::<Vec<_>>());
+        assert_eq!(comms[1], (12..24).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn louvain_beats_weakest_edge_cut() {
+        // The single WEAKEST edge (0-2, weight 0.1) is INSIDE community A; the correct split is across the
+        // bridge (2-3, weight 0.3). A "cut the weakest edge" heuristic would wrongly split A; only a real
+        // modularity optimiser recovers {0,1,2},{3,4,5}.
+        let e = [
+            (0, 1, 1.0), (1, 2, 1.0), (0, 2, 0.1), // community A: one weak intra edge
+            (3, 4, 1.0), (4, 5, 1.0), (3, 5, 1.0), // community B: strong triangle
+            (2, 3, 0.3),                           // bridge (stronger than the weakest intra edge)
+        ];
+        let mut comms = louvain_communities(6, &e, 1.0);
+        comms.sort();
+        assert_eq!(comms, vec![vec![0, 1, 2], vec![3, 4, 5]]);
+    }
+
+    #[test]
+    fn decompose_drops_singleton_communities() {
+        // K7 (strong, weight 10) plus a pendant node 7 weakly attached (0-7, weight 0.05). At resolution
+        // 1.1 the clique survives but the pendant detaches into its OWN singleton community, which
+        // decompose drops (`len >= 2`), so node 7 vanishes from all families.
+        let mut e = vec![];
+        for a in 0..7 {
+            for b in (a + 1)..7 {
+                e.push((a, b, 10.0));
+            }
+        }
+        e.push((0, 7, 0.05));
+        let p = SplitParams { resolution: 1.1, ..SplitParams::default() };
+        let fams = decompose_families(&e, &p);
+        assert_eq!(fams.len(), 1, "only the clique family survives");
+        assert_eq!(fams[0].members, (0..7).collect::<Vec<_>>());
+        assert!(!fams[0].members.contains(&7), "the dropped singleton node is gone");
+    }
+
+    // ---- gamma_quasi_clique_partition ----
+
+    #[test]
+    fn gamma_quasi_clique_keeps_array_whole_splits_repeat_chain() {
+        // A 5-node dense clique (a tandem array) stays ONE block.
+        let clique: Vec<(usize, usize, f64)> = {
+            let mut e = Vec::new();
+            for i in 0..5 { for j in (i + 1)..5 { e.push((i, j, 1.0)); } }
+            e
+        };
+        let blocks = gamma_quasi_clique_partition(5, &clique, 0.20);
+        assert_eq!(blocks.len(), 1, "a dense array is one gamma-quasi-clique");
+        assert_eq!(blocks[0].len(), 5);
+
+        // A LONG sparse bridge chain (12-node path: density 2*11/(12*11)=0.167 < gamma=0.20) must split.
+        let chain: Vec<(usize, usize, f64)> = (0..11).map(|i| (i, i + 1, 1.0)).collect();
+        let blocks = gamma_quasi_clique_partition(12, &chain, 0.20);
+        assert!(blocks.len() >= 2, "a sparse repeat-bridge chain is split, got {:?}", blocks);
+    }
+
+    #[test]
+    fn gamma_quasi_clique_partition_preserves_isolated_nodes() {
+        // node 2 has no edge (degree 0). The partition must still COVER all of 0..3.
+        let blocks = gamma_quasi_clique_partition(3, &[(0, 1, 1.0)], 0.2);
+        let mut all: Vec<usize> = blocks.iter().flatten().copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, vec![0, 1, 2], "partition must cover all of 0..n incl isolated node 2");
+        assert!(blocks.iter().any(|b| b == &vec![2]), "isolated node 2 is its own block, got {blocks:?}");
+    }
+
+    #[test]
+    fn community_stats_relabels_noncontiguous_ids() {
+        // members are NON-contiguous global ids forming a path 10-3-27-5; exercises the global->local
+        // relabel the integration layer relies on. Articulation points are the two middle nodes.
+        let e = [(10, 3, 0.2), (3, 27, 0.2), (27, 5, 0.2)];
+        let s = community_stats(&[10, 3, 27, 5], &e);
+        assert_eq!(s.n, 4);
+        assert_eq!(s.n_edges, 3);
+        assert!((s.density - 0.5).abs() < 1e-9);
+        assert_eq!(s.n_articulation, 2);
+    }
+}
 }

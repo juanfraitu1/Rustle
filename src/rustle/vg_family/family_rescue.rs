@@ -216,9 +216,9 @@ pub fn rescue_thin_locus(
     // void the RC fallback on soft-masked input. Forward first; reverse-complement
     // fallback only if forward is below threshold, keeping the max (mirrors the
     // python `_poa_rescue` RC retry).
-    use crate::vg_family::family_graph::{contiguous_core_coverage_bounded_with, EDGE_CONFIRM_ASTAR};
-    let thin_up = crate::vg_family::family_graph::upper_cow(thin_seq);
-    let mem_up = crate::vg_family::family_graph::upper_cow(&m.seq);
+    use crate::vg_family::family_detect::family_graph::{contiguous_core_coverage_bounded_with, EDGE_CONFIRM_ASTAR};
+    let thin_up = crate::vg_family::family_detect::family_graph::upper_cow(thin_seq);
+    let mem_up = crate::vg_family::family_detect::family_graph::upper_cow(&m.seq);
     let mut core_recip =
         contiguous_core_coverage_bounded_with(&thin_up, &mem_up, p.len_cap, EDGE_CONFIRM_ASTAR);
     let mut orientation = Orientation::Forward;
@@ -451,7 +451,7 @@ mod tests {
         // Pin the `core_recip >= t_core` semantics: at t_core == cr the copy is
         // ACCEPTED (inclusive), just above cr it is REJECTED. `cr` is read off the
         // SAME deterministic primitive the function uses (forward orientation).
-        use crate::vg_family::family_graph::contiguous_core_coverage;
+        use crate::vg_family::family_detect::family_graph::contiguous_core_coverage;
         let core = rand_seq(400, 0xC0FE_8001);
         let thin = cat(&[&rand_seq(80, 0xAAAA_8001), &core, &rand_seq(80, 0xAAAA_8002)]);
         let mseq = cat(&[&rand_seq(80, 0xBBBB_8001), &core, &rand_seq(80, 0xBBBB_8002)]);

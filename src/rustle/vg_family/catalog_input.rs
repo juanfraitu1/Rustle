@@ -503,13 +503,13 @@ pub fn to_colocated(
             }
         };
         if let Some(h) = c.core_hull {
-            super::copy_assign_pipeline::register_core_hull(&c.tid, h);
+            super::copy_assign::copy_assign_pipeline::register_core_hull(&c.tid, h);
         }
         if let Some(l) = c.locus {
-            super::copy_assign_pipeline::register_locus_extent(&c.tid, l);
+            super::copy_assign::copy_assign_pipeline::register_locus_extent(&c.tid, l);
         }
         if c.partner {
-            super::copy_assign_pipeline::register_partner(&c.tid);
+            super::copy_assign::copy_assign_pipeline::register_partner(&c.tid);
         }
         copies.push(DenovoTranscript {
             tid: c.tid.clone(),

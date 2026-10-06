@@ -335,7 +335,7 @@ mod tests {
     fn stage_c_body(label_suffix: &str) {
         use crate::vg_family::annotation_families::SdPairs;
         use crate::vg_family::family_detect::{detect_edges, DetectParams};
-        use crate::vg_family::family_split::{decompose_families, SplitParams};
+        use crate::vg_family::family_detect::family_split::{decompose_families, SplitParams};
 
         let fa = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta";
         if std::fs::metadata(fa).is_err() { eprintln!("gorilla genome fasta absent; skip"); return; }
@@ -669,8 +669,8 @@ mod tests {
         dp: &crate::vg_family::family_detect::DetectParams,
     ) {
         use crate::vg_family::family_detect::candidate_pairs;
-        use crate::vg_family::family_graph::{longest_common_substring, upper_cow};
-        use crate::vg_family::family_split::{connected_components, decompose_families, SplitParams};
+        use crate::vg_family::family_detect::family_graph::{longest_common_substring, upper_cow};
+        use crate::vg_family::family_detect::family_split::{connected_components, decompose_families, SplitParams};
         use crate::vg_family::seq_utils::reverse_complement;
         use std::fmt::Write as _;
 
@@ -810,7 +810,7 @@ mod tests {
     /// Writes `<root>/<$RUSTLE_FM_CELL>/{reps.fa,candidates.tsv}` so the `bridge` phase can run on it. No threads.
     fn fm_pairs(root: &str) {
         use crate::vg_family::family_detect::{candidate_pairs, DetectParams};
-        use crate::vg_family::family_graph::{longest_common_substring, upper_cow};
+        use crate::vg_family::family_detect::family_graph::{longest_common_substring, upper_cow};
         use crate::vg_family::seq_utils::reverse_complement;
         use std::fmt::Write as _;
         let tsv = std::env::var("RUSTLE_FM_REPS_TSV").expect("RUSTLE_FM_REPS_TSV");
@@ -858,7 +858,7 @@ mod tests {
     /// (`$RUSTLE_FM_EDGES`: `i<TAB>j<TAB>core` rows, header optional), writing `family_id<TAB>class<TAB>members`
     /// to `$RUSTLE_FM_FAMILIES_OUT`. Lets two edge definitions be partitioned by the identical code.
     fn fm_decompose() {
-        use crate::vg_family::family_split::{decompose_families, SplitParams};
+        use crate::vg_family::family_detect::family_split::{decompose_families, SplitParams};
         use std::fmt::Write as _;
         let edges_path = std::env::var("RUSTLE_FM_EDGES").expect("RUSTLE_FM_EDGES");
         let out_path = std::env::var("RUSTLE_FM_FAMILIES_OUT").expect("RUSTLE_FM_FAMILIES_OUT");
@@ -883,7 +883,7 @@ mod tests {
     /// Bridge phase: exact POA-core `confirm_edge` values (EdgeCore::Poa, no budget) for a list of pairs, serial.
     fn fm_bridge(root: &str) {
         use crate::vg_family::family_detect::{confirm_edge, DetectParams, LEN_CAP, T_CORE};
-        use crate::vg_family::family_graph::{contiguous_core_coverage_bounded_with, longest_common_substring, upper_cow, EDGE_CONFIRM_ASTAR};
+        use crate::vg_family::family_detect::family_graph::{contiguous_core_coverage_bounded_with, longest_common_substring, upper_cow, EDGE_CONFIRM_ASTAR};
         use crate::vg_family::seq_utils::reverse_complement;
         use std::io::Write;
         let pairs_path = std::env::var("RUSTLE_FM_PAIRS").unwrap_or_else(|_| format!("{root}/bridging_pairs.list"));
