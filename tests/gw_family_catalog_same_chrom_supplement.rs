@@ -12,9 +12,12 @@ fn cross_chrom_catalog_emits_same_chrom_family() {
     let out = "tests/fixtures/same_chrom_supplement/out";
     let status = Command::new(bin)
         .args([
-            "--bam", "tests/fixtures/same_chrom_supplement/reads.bam",
-            "--fasta", "tests/fixtures/same_chrom_supplement/genome.fa",
-            "--out", out,
+            "--bam",
+            "tests/fixtures/same_chrom_supplement/reads.bam",
+            "--fasta",
+            "tests/fixtures/same_chrom_supplement/genome.fa",
+            "--out",
+            out,
             "--cross-chrom",
         ])
         .status()
@@ -45,9 +48,17 @@ fn cross_chrom_catalog_emits_same_chrom_family() {
         .lines()
         .skip(1)
         .any(|l| l.split('\t').nth(2) == Some("2"));
-    assert!(has_cross_chrom, "the cross-chromosome family must remain in the catalog\n{}", families);
+    assert!(
+        has_cross_chrom,
+        "the cross-chromosome family must remain in the catalog\n{}",
+        families
+    );
 
-    assert!(copies.lines().count() > 1, "expected at least one copy row\n{}", copies);
+    assert!(
+        copies.lines().count() > 1,
+        "expected at least one copy row\n{}",
+        copies
+    );
 
     // The same-chrom supplement feature (and its sidecar) was removed: no sidecar must be written.
     assert!(

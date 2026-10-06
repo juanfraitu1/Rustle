@@ -42,7 +42,12 @@ struct Node {
 /// A record with NO fusion-junction support is never flagged — absence of evidence is not evidence of
 /// borrowing, and its fraction is NaN. At `max_secondary_frac >= 1.0` nothing is ever flagged. The
 /// comparison is STRICT, so a record exactly at the threshold survives.
-fn classify(primary: u64, secondary: u64, supplementary: u64, max_secondary_frac: f64) -> (bool, f64) {
+fn classify(
+    primary: u64,
+    secondary: u64,
+    supplementary: u64,
+    max_secondary_frac: f64,
+) -> (bool, f64) {
     let tot = primary + secondary + supplementary;
     if tot == 0 {
         return (false, f64::NAN);
@@ -173,7 +178,10 @@ fn load_nodes(nodes_tsv: &str, exonless_tsv: &str) -> Result<HashMap<String, Nod
         };
         nodes.insert(
             id.to_string(),
-            Node { chrom: chrom.to_string(), exons: parse_blocks(exons) },
+            Node {
+                chrom: chrom.to_string(),
+                exons: parse_blocks(exons),
+            },
         );
     }
     if std::path::Path::new(exonless_tsv).exists() {
@@ -192,7 +200,10 @@ fn load_nodes(nodes_tsv: &str, exonless_tsv: &str) -> Result<HashMap<String, Nod
             };
             nodes.insert(
                 id.to_string(),
-                Node { chrom: chrom.to_string(), exons: vec![(s, e)] },
+                Node {
+                    chrom: chrom.to_string(),
+                    exons: vec![(s, e)],
+                },
             );
         }
     }
@@ -231,9 +242,7 @@ fn main() -> Result<()> {
     let mut exonless_tsv = format!("{DEFAULT_DNA_DIR}/exonless.tsv");
     let mut i = 0;
     while i < argv.len() {
-        let need = |i: usize| -> String {
-            argv.get(i + 1).cloned().unwrap_or_else(|| usage())
-        };
+        let need = |i: usize| -> String { argv.get(i + 1).cloned().unwrap_or_else(|| usage()) };
         match argv[i].as_str() {
             "--bam" => bam = need(i),
             "--cuts" => cuts = need(i),
@@ -264,7 +273,9 @@ fn main() -> Result<()> {
         ) else {
             continue;
         };
-        let Some(n) = nodes.get(node_id) else { continue };
+        let Some(n) = nodes.get(node_id) else {
+            continue;
+        };
         let mut ex = n.exons.clone();
         ex.sort_unstable();
         let Some(j) = fusion_junction(&ex, cut.parse()?) else {
@@ -284,9 +295,16 @@ fn main() -> Result<()> {
     } else {
         Box::new(std::fs::File::create(&out)?)
     };
-    writeln!(w, "name\tchrom\tprimary\tsecondary\tsupplementary\tsecondary_frac\tflagged")?;
+    writeln!(
+        w,
+        "name\tchrom\tprimary\tsecondary\tsupplementary\tsecondary_frac\tflagged"
+    )?;
     for (nm, ch, p, s, u, fr, fl) in &recs {
-        let frac = if fr.is_nan() { String::new() } else { format!("{fr:.4}") };
+        let frac = if fr.is_nan() {
+            String::new()
+        } else {
+            format!("{fr:.4}")
+        };
         writeln!(w, "{nm}\t{ch}\t{p}\t{s}\t{u}\t{frac}\t{}", u8::from(*fl))?;
     }
     w.flush()?;
@@ -329,7 +347,10 @@ mod tests {
     fn no_support_is_nan_and_unflagged() {
         let (flagged, frac) = classify(0, 0, 0, 0.5);
         assert!(!flagged);
-        assert!(frac.is_nan(), "absence of evidence must not render as 0.0000");
+        assert!(
+            frac.is_nan(),
+            "absence of evidence must not render as 0.0000"
+        );
     }
 
     #[test]

@@ -26,7 +26,9 @@ use std::process::{Command, Output};
 const FIX: &str = "tests/fixtures/xfam_conflict";
 
 fn scratch(name: &str) -> PathBuf {
-    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("copy_assign_xfam").join(name);
+    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("copy_assign_xfam")
+        .join(name);
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).expect("create scratch dir");
     d
@@ -43,12 +45,29 @@ fn run_mode(dir: &PathBuf, mode: Option<&str>) -> (Output, String) {
     // keeps these tests exercising what they were written to exercise. The gate itself is covered by
     // `as_tied_gate_keeps_only_exact_ties` below.
     let mut c = Command::new(env!("CARGO_BIN_EXE_copy_assign"));
-    c.args(["--no-as-tied-only", "--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
-        .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
-        // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
-        .args(["--no-molecule-observations"])
-        .args(["--region", "x1:0-20000", "--dump-psv", "--phase", "--posterior"])
-        .args(["--out", &out_s]);
+    c.args([
+        "--no-as-tied-only",
+        "--bam",
+        &format!("{FIX}/reads.bam"),
+        "--fasta",
+        &format!("{FIX}/genome.fa"),
+    ])
+    .args([
+        "--families",
+        &format!("{FIX}/copies.tsv"),
+        "--copies-fa",
+        &format!("{FIX}/copies.fa"),
+    ])
+    // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
+    .args(["--no-molecule-observations"])
+    .args([
+        "--region",
+        "x1:0-20000",
+        "--dump-psv",
+        "--phase",
+        "--posterior",
+    ])
+    .args(["--out", &out_s]);
     match mode {
         Some(m) => {
             c.env("RUSTLE_XFAM_RECONCILE", m);
@@ -58,17 +77,23 @@ fn run_mode(dir: &PathBuf, mode: Option<&str>) -> (Output, String) {
         }
     }
     let o = c.output().expect("copy_assign failed to spawn");
-    assert!(o.status.success(), "run ({mode:?}) failed:\n{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        o.status.success(),
+        "run ({mode:?}) failed:\n{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
     (o, out_s)
 }
 
 fn read(out: &str, ext: &str) -> String {
-    std::fs::read_to_string(format!("{out}.{ext}")).unwrap_or_else(|e| panic!("read {out}.{ext}: {e}"))
+    std::fs::read_to_string(format!("{out}.{ext}"))
+        .unwrap_or_else(|e| panic!("read {out}.{ext}: {e}"))
 }
 
 fn md5_of(out: &str, ext: &str) -> String {
     // No md5 crate in-tree; a content hash is all the byte-identity assertions need.
-    let b = std::fs::read(format!("{out}.{ext}")).unwrap_or_else(|e| panic!("read {out}.{ext}: {e}"));
+    let b =
+        std::fs::read(format!("{out}.{ext}")).unwrap_or_else(|e| panic!("read {out}.{ext}: {e}"));
     format!("{:016x}:{}", fxhash(&b), b.len())
 }
 
@@ -114,7 +139,11 @@ fn abstain_demotes_only_the_two_record_contradiction() {
     let d = scratch("abstain");
     let (_, out) = run_mode(&d, Some("abstain"));
     let st = statuses(&read(&out, "assignments.tsv"), 3);
-    let g = |r: &str, f: &str| st.get(&(r.to_string(), f.to_string())).cloned().unwrap_or_default();
+    let g = |r: &str, f: &str| {
+        st.get(&(r.to_string(), f.to_string()))
+            .cloned()
+            .unwrap_or_default()
+    };
 
     // CLAUSE.
     for fam in ["XFA", "XFB"] {
@@ -150,9 +179,21 @@ fn abstain_row_counts_are_exactly_two_demotions() {
     for v in statuses(&a, 3).values() {
         *n.entry(v.clone()).or_insert(0usize) += 1;
     }
-    assert_eq!(n.get("assigned").copied().unwrap_or(0), 52, "assigned rows: {n:?}");
-    assert_eq!(n.get("ambiguous").copied().unwrap_or(0), 2, "ambiguous rows: {n:?}");
-    assert_eq!(a.lines().count() - 1, 54, "total rows must be INVARIANT across modes (no row is deleted)");
+    assert_eq!(
+        n.get("assigned").copied().unwrap_or(0),
+        52,
+        "assigned rows: {n:?}"
+    );
+    assert_eq!(
+        n.get("ambiguous").copied().unwrap_or(0),
+        2,
+        "ambiguous rows: {n:?}"
+    );
+    assert_eq!(
+        a.lines().count() - 1,
+        54,
+        "total rows must be INVARIANT across modes (no row is deleted)"
+    );
 }
 
 // ---- the OFF arm ------------------------------------------------------------------------------------
@@ -165,11 +206,26 @@ fn off_arm_is_byte_identical() {
     let df = scratch("off_explicit");
     let (_, f) = run_mode(&df, Some("off"));
     for ext in [
-        "assignments.tsv", "families.tsv", "quant.tsv", "psv_reads.tsv", "psv_copies.tsv", "psv_cols.tsv",
-        "posterior.tsv", "phased_reads.tsv", "phase_blocks.tsv", "phased_haplotypes.tsv", "phase.gfa",
-        "exon.gfa", "famcn_readonly.tsv", "family_join.tsv",
+        "assignments.tsv",
+        "families.tsv",
+        "quant.tsv",
+        "psv_reads.tsv",
+        "psv_copies.tsv",
+        "psv_cols.tsv",
+        "posterior.tsv",
+        "phased_reads.tsv",
+        "phase_blocks.tsv",
+        "phased_haplotypes.tsv",
+        "phase.gfa",
+        "exon.gfa",
+        "famcn_readonly.tsv",
+        "family_join.tsv",
     ] {
-        assert_eq!(md5_of(&u, ext), md5_of(&f, ext), "unset and off must be byte-identical in {ext}");
+        assert_eq!(
+            md5_of(&u, ext),
+            md5_of(&f, ext),
+            "unset and off must be byte-identical in {ext}"
+        );
     }
     for out in [&u, &f] {
         assert!(
@@ -187,18 +243,36 @@ fn report_arm_changes_no_existing_output() {
     let drep = scratch("rep_on");
     let (o, rep) = run_mode(&drep, Some("report"));
     for ext in [
-        "assignments.tsv", "families.tsv", "quant.tsv", "psv_reads.tsv", "psv_copies.tsv", "psv_cols.tsv",
-        "posterior.tsv", "phased_reads.tsv", "phase_blocks.tsv", "phased_haplotypes.tsv", "phase.gfa",
-        "exon.gfa", "famcn_readonly.tsv", "family_join.tsv",
+        "assignments.tsv",
+        "families.tsv",
+        "quant.tsv",
+        "psv_reads.tsv",
+        "psv_copies.tsv",
+        "psv_cols.tsv",
+        "posterior.tsv",
+        "phased_reads.tsv",
+        "phase_blocks.tsv",
+        "phased_haplotypes.tsv",
+        "phase.gfa",
+        "exon.gfa",
+        "famcn_readonly.tsv",
+        "family_join.tsv",
     ] {
-        assert_eq!(md5_of(&off, ext), md5_of(&rep, ext), "report must not change {ext}");
+        assert_eq!(
+            md5_of(&off, ext),
+            md5_of(&rep, ext),
+            "report must not change {ext}"
+        );
     }
     let c = conflicts(&read(&rep, "xfam_conflicts.tsv"));
 
     // CLAUSE: the three strata are present, and only the contradiction is marked demoted.
     let by: std::collections::BTreeMap<&str, &str> =
         c.iter().map(|(r, s, _)| (r.as_str(), s.as_str())).collect();
-    assert_eq!(by.get("MOL_CONTRA").copied(), Some("cross_family_contradiction"));
+    assert_eq!(
+        by.get("MOL_CONTRA").copied(),
+        Some("cross_family_contradiction")
+    );
     assert_eq!(by.get("MOL_READTHROUGH").copied(), Some("readthrough_span"));
     assert_eq!(by.get("MOL_SHARED").copied(), Some("shared_locus"));
     assert!(
@@ -209,7 +283,10 @@ fn report_arm_changes_no_existing_output() {
     // and the stderr summary must carry its denominators (a rate without one is not reportable here).
     let err = String::from_utf8_lossy(&o.stderr).to_string();
     assert!(err.contains("[xfam] RUSTLE_XFAM_RECONCILE=report"), "{err}");
-    assert!(err.contains("distinct molecules"), "the summary must quote its denominators:\n{err}");
+    assert!(
+        err.contains("distinct molecules"),
+        "the summary must quote its denominators:\n{err}"
+    );
 
     // VALUE, pinned separately: 1 contradiction + 1 readthrough + 9 shared (MOL_SHARED plus the 8
     // support reads at the interval both families claim).
@@ -217,7 +294,11 @@ fn report_arm_changes_no_existing_output() {
     for (_, s, _) in &c {
         *n.entry(s.clone()).or_insert(0usize) += 1;
     }
-    assert_eq!(n.get("cross_family_contradiction").copied().unwrap_or(0), 1, "{n:?}");
+    assert_eq!(
+        n.get("cross_family_contradiction").copied().unwrap_or(0),
+        1,
+        "{n:?}"
+    );
     assert_eq!(n.get("readthrough_span").copied().unwrap_or(0), 1, "{n:?}");
     assert_eq!(n.get("shared_locus").copied().unwrap_or(0), 9, "{n:?}");
     assert_eq!(c.len(), 11, "total contested pairs: {n:?}");
@@ -233,9 +314,17 @@ fn status_consistency_across_outputs() {
     let d = scratch("consistency");
     let (_, out) = run_mode(&d, Some("abstain"));
     let a = statuses(&read(&out, "assignments.tsv"), 3);
-    for (ext, col) in [("psv_reads.tsv", 3), ("posterior.tsv", 2), ("phased_reads.tsv", 5)] {
+    for (ext, col) in [
+        ("psv_reads.tsv", 3),
+        ("posterior.tsv", 2),
+        ("phased_reads.tsv", 5),
+    ] {
         let b = statuses(&read(&out, ext), col);
-        assert_eq!(a.len(), b.len(), "{ext} has a different row set than assignments.tsv");
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "{ext} has a different row set than assignments.tsv"
+        );
         for (k, v) in &a {
             assert_eq!(
                 b.get(k),
@@ -268,7 +357,11 @@ fn quant_is_unmoved_by_demotion() {
         md5_of(&abs, "quant.tsv"),
         "quant.tsv must be byte-identical between report and abstain: a demotion changes STATUS only"
     );
-    assert_eq!(md5_of(&rep, "families.tsv"), md5_of(&abs, "families.tsv"), "families.tsv counters too");
+    assert_eq!(
+        md5_of(&rep, "families.tsv"),
+        md5_of(&abs, "families.tsv"),
+        "families.tsv counters too"
+    );
 }
 
 // ---- the M2 guard ------------------------------------------------------------------------------------
@@ -278,7 +371,12 @@ fn quant_is_unmoved_by_demotion() {
 #[test]
 fn params_certificate_distinguishes_the_arms() {
     let mut seen = Vec::new();
-    for (name, mode) in [("p_unset", None), ("p_off", Some("off")), ("p_rep", Some("report")), ("p_abs", Some("abstain"))] {
+    for (name, mode) in [
+        ("p_unset", None),
+        ("p_off", Some("off")),
+        ("p_rep", Some("report")),
+        ("p_abs", Some("abstain")),
+    ] {
         let d = scratch(name);
         let (_, out) = run_mode(&d, mode);
         let p = read(&out, "params.tsv");
@@ -288,10 +386,17 @@ fn params_certificate_distinguishes_the_arms() {
             .unwrap_or_else(|| panic!("params.tsv has no xfam_reconcile row:\n{p}"))
             .to_string();
         assert!(p.starts_with("key\tvalue\n"), "params.tsv header: {p}");
-        assert!(p.contains("posterior_prior\t"), "RUSTLE_POSTERIOR_PRIOR must be recorded too:\n{p}");
+        assert!(
+            p.contains("posterior_prior\t"),
+            "RUSTLE_POSTERIOR_PRIOR must be recorded too:\n{p}"
+        );
         seen.push(v);
     }
-    assert_eq!(seen, vec!["off", "off", "report", "abstain"], "the EFFECTIVE mode must be recorded");
+    assert_eq!(
+        seen,
+        vec!["off", "off", "report", "abstain"],
+        "the EFFECTIVE mode must be recorded"
+    );
 }
 
 /// An unrecognized value is an ERROR, not a silent `off`: a typo'd flag that quietly disables the pass is
@@ -301,15 +406,29 @@ fn an_unknown_mode_is_refused() {
     let d = scratch("bad_mode");
     let out = d.join("o");
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--no-as-tied-only", "--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
-        .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
+        .args([
+            "--no-as-tied-only",
+            "--bam",
+            &format!("{FIX}/reads.bam"),
+            "--fasta",
+            &format!("{FIX}/genome.fa"),
+        ])
+        .args([
+            "--families",
+            &format!("{FIX}/copies.tsv"),
+            "--copies-fa",
+            &format!("{FIX}/copies.fa"),
+        ])
         // the cross-family contract is stated on the RECORD-level path (§6fb: read-star is the default since 2026-09-05)
         .args(["--no-molecule-observations"])
         .args(["--region", "x1:0-20000", "--out", out.to_str().unwrap()])
         .env("RUSTLE_XFAM_RECONCILE", "reprot")
         .output()
         .expect("spawn");
-    assert!(!o.status.success(), "a typo'd mode must abort, not run as off");
+    assert!(
+        !o.status.success(),
+        "a typo'd mode must abort, not run as off"
+    );
     assert!(
         String::from_utf8_lossy(&o.stderr).contains("off|report|abstain"),
         "{}",
@@ -330,8 +449,19 @@ fn determinism_across_repeats_and_region_threads() {
         let (_, a) = run_mode(&d1, mode);
         let d2 = scratch(&format!("det_b_{tag}"));
         let (_, b) = run_mode(&d2, mode);
-        for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "psv_reads.tsv", "params.tsv", "phase.gfa"] {
-            assert_eq!(md5_of(&a, ext), md5_of(&b, ext), "{tag}: two identical runs differ in {ext}");
+        for ext in [
+            "assignments.tsv",
+            "families.tsv",
+            "quant.tsv",
+            "psv_reads.tsv",
+            "params.tsv",
+            "phase.gfa",
+        ] {
+            assert_eq!(
+                md5_of(&a, ext),
+                md5_of(&b, ext),
+                "{tag}: two identical runs differ in {ext}"
+            );
         }
         if mode.is_some() && mode != Some("off") {
             assert_eq!(
@@ -351,16 +481,36 @@ fn determinism_across_repeats_and_region_threads() {
         rf.push("regions.txt");
         std::fs::write(&rf, "x1:0-9000\nx1:9000-20000\n").unwrap();
         let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-            .args(["--no-as-tied-only", "--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
-            .args(["--regions", rf.to_str().unwrap(), "--region-threads", threads])
+            .args([
+                "--no-as-tied-only",
+                "--bam",
+                &format!("{FIX}/reads.bam"),
+                "--fasta",
+                &format!("{FIX}/genome.fa"),
+            ])
+            .args([
+                "--regions",
+                rf.to_str().unwrap(),
+                "--region-threads",
+                threads,
+            ])
             .args(["--dump-psv", "--no-molecule-observations", "--out", &out])
             .env("RUSTLE_XFAM_RECONCILE", "report")
             .output()
             .expect("spawn");
-        assert!(o.status.success(), "region-threads={threads} failed:\n{}", String::from_utf8_lossy(&o.stderr));
+        assert!(
+            o.status.success(),
+            "region-threads={threads} failed:\n{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
         outs.push(out);
     }
-    for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "xfam_conflicts.tsv"] {
+    for ext in [
+        "assignments.tsv",
+        "families.tsv",
+        "quant.tsv",
+        "xfam_conflicts.tsv",
+    ] {
         assert_eq!(
             md5_of(&outs[0], ext),
             md5_of(&outs[1], ext),
@@ -368,7 +518,6 @@ fn determinism_across_repeats_and_region_threads() {
         );
     }
 }
-
 
 /// The AS-tied gate (default on since 2026-09-09): every row the default run emits is an EXACT AS tie
 /// (runner-up == best), the default emits strictly fewer rows than the escape, and the escape reproduces
@@ -383,9 +532,19 @@ fn as_tied_gate_keeps_only_exact_ties() {
         if escape {
             c.arg("--no-as-tied-only");
         }
-        c.args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
-            .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
-            .args(["--region", "x1:0-20000", "--out", out.to_str().unwrap()]);
+        c.args([
+            "--bam",
+            &format!("{FIX}/reads.bam"),
+            "--fasta",
+            &format!("{FIX}/genome.fa"),
+        ])
+        .args([
+            "--families",
+            &format!("{FIX}/copies.tsv"),
+            "--copies-fa",
+            &format!("{FIX}/copies.fa"),
+        ])
+        .args(["--region", "x1:0-20000", "--out", out.to_str().unwrap()]);
         let o = c.output().unwrap();
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
         std::fs::read_to_string(format!("{}.assignments.tsv", out.display())).unwrap()
@@ -398,10 +557,19 @@ fn as_tied_gate_keeps_only_exact_ties() {
     let n_gate = gate.lines().count() - 1;
     let n_esc = esc.lines().count() - 1;
     assert_eq!(n_esc, 54, "the escape must reproduce the pinned population");
-    assert!(n_gate < n_esc, "the gate must remove the unique mappers ({n_gate} vs {n_esc})");
+    assert!(
+        n_gate < n_esc,
+        "the gate must remove the unique mappers ({n_gate} vs {n_esc})"
+    );
     for l in gate.lines().skip(1) {
         let f: Vec<&str> = l.split('\t').collect();
-        assert_ne!(f[is], "NA", "a single-placement read reached the certificate: {l}");
-        assert_eq!(f[ib], f[is], "a clear-best read reached the certificate: {l}");
+        assert_ne!(
+            f[is], "NA",
+            "a single-placement read reached the certificate: {l}"
+        );
+        assert_eq!(
+            f[ib], f[is],
+            "a clear-best read reached the certificate: {l}"
+        );
     }
 }

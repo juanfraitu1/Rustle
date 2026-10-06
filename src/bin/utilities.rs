@@ -74,9 +74,26 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::GffToGtf { gff, chrom, out } => gff_to_gtf::run(&gff, &chrom, &out),
-        Cmd::LocusBed { pred, out, r#ref, min_overlap } => locus_bed::run(&pred, &out, r#ref.as_deref(), min_overlap),
-        Cmd::MclPort { graph, inflation, prune, max_iter } => mcl_port::run(&graph, inflation, prune, max_iter),
-        Cmd::Parcn { copies_fa, mat, pat, out, minimap2, threads } => parcn::run(&copies_fa, &mat, &pat, &out, &minimap2, threads),
+        Cmd::LocusBed {
+            pred,
+            out,
+            r#ref,
+            min_overlap,
+        } => locus_bed::run(&pred, &out, r#ref.as_deref(), min_overlap),
+        Cmd::MclPort {
+            graph,
+            inflation,
+            prune,
+            max_iter,
+        } => mcl_port::run(&graph, inflation, prune, max_iter),
+        Cmd::Parcn {
+            copies_fa,
+            mat,
+            pat,
+            out,
+            minimap2,
+            threads,
+        } => parcn::run(&copies_fa, &mat, &pat, &out, &minimap2, threads),
     }
 }
 
@@ -118,7 +135,9 @@ mod gff_to_gtf {
             }
             let a = attrs(f[8]);
             if f[2] == "exon" {
-                let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else { continue };
+                let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else {
+                    continue;
+                };
                 for pid in a.get("Parent").copied().unwrap_or("").split(',') {
                     if pid.is_empty() {
                         continue;
@@ -131,13 +150,25 @@ mod gff_to_gtf {
                 }
             } else if let Some(id) = a.get("ID") {
                 if !matches!(f[2], "gene" | "pseudogene" | "CDS" | "region") {
-                    let gene = a.get("gene").or_else(|| a.get("Name")).copied().unwrap_or("");
-                    info.insert(id.to_string(), (a.get("Parent").copied().unwrap_or("").to_string(), gene.to_string()));
+                    let gene = a
+                        .get("gene")
+                        .or_else(|| a.get("Name"))
+                        .copied()
+                        .unwrap_or("");
+                    info.insert(
+                        id.to_string(),
+                        (
+                            a.get("Parent").copied().unwrap_or("").to_string(),
+                            gene.to_string(),
+                        ),
+                    );
                 }
             }
         }
 
-        let mut fo = std::io::BufWriter::new(std::fs::File::create(out).with_context(|| format!("creating {out}"))?);
+        let mut fo = std::io::BufWriter::new(
+            std::fs::File::create(out).with_context(|| format!("creating {out}"))?,
+        );
         let mut n = 0usize;
         for tid in &order {
             let ex = exons.get_mut(tid).expect("ordered id must have exons");
@@ -145,9 +176,18 @@ mod gff_to_gtf {
             let (gid, gname) = info.get(tid).cloned().unwrap_or_default();
             let (src_f, strand) = (ex[0].2.clone(), ex[0].3.clone());
             let at = format!("transcript_id \"{tid}\"; gene_id \"{gid}\"; gene_name \"{gname}\"");
-            writeln!(fo, "{chrom}\t{src_f}\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at}", ex[0].0, ex[ex.len() - 1].1)?;
+            writeln!(
+                fo,
+                "{chrom}\t{src_f}\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at}",
+                ex[0].0,
+                ex[ex.len() - 1].1
+            )?;
             for (i, (s, e, _, _)) in ex.iter().enumerate() {
-                writeln!(fo, "{chrom}\t{src_f}\texon\t{s}\t{e}\t.\t{strand}\t.\t{at}; exon_number \"{}\";", i + 1)?;
+                writeln!(
+                    fo,
+                    "{chrom}\t{src_f}\texon\t{s}\t{e}\t.\t{strand}\t.\t{at}; exon_number \"{}\";",
+                    i + 1
+                )?;
             }
             n += 1;
         }
@@ -186,16 +226,22 @@ mod locus_bed {
             if fs.len() < 9 {
                 continue;
             }
-            let Some(t) = attr(fs[8], "transcript_id") else { continue };
+            let Some(t) = attr(fs[8], "transcript_id") else {
+                continue;
+            };
             if let Some(g) = attr(fs[8], "gene_id") {
-                gene_of.entry(t.to_string()).or_insert_with(|| g.to_string());
+                gene_of
+                    .entry(t.to_string())
+                    .or_insert_with(|| g.to_string());
             }
             if let Some(r) = attr(fs[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
                 let e = reads_of.entry(t.to_string()).or_insert(0);
                 *e = (*e).max(r);
             }
             if fs[2] == "exon" {
-                let (Ok(a), Ok(b)) = (fs[3].parse::<i64>(), fs[4].parse::<i64>()) else { continue };
+                let (Ok(a), Ok(b)) = (fs[3].parse::<i64>(), fs[4].parse::<i64>()) else {
+                    continue;
+                };
                 tx.entry(t.to_string())
                     .or_insert_with(|| {
                         tx_order.push(t.to_string());
@@ -210,7 +256,12 @@ mod locus_bed {
             let ex = tx.get_mut(t).expect("ordered tid must have exons");
             ex.sort_by_key(|x| x.1);
             let g = gene_of.get(t).cloned().unwrap_or_else(|| t.clone());
-            let (c, s, e, st) = (ex[0].0.clone(), ex[0].1, ex[ex.len() - 1].2, ex[0].3.clone());
+            let (c, s, e, st) = (
+                ex[0].0.clone(),
+                ex[0].1,
+                ex[ex.len() - 1].2,
+                ex[0].3.clone(),
+            );
             let r = reads_of.get(t).copied().unwrap_or(0);
             match out.get_mut(&g) {
                 Some(v) => {
@@ -233,7 +284,11 @@ mod locus_bed {
         rows.sort_by(|a, b| a.1 .0.cmp(&b.1 .0).then(a.1 .1.cmp(&b.1 .1)));
         let mut fo = std::io::BufWriter::new(std::fs::File::create(path)?);
         for (g, (c, s, e, st, r, _)) in rows {
-            let strand = if st == "+" || st == "-" { st.as_str() } else { "." };
+            let strand = if st == "+" || st == "-" {
+                st.as_str()
+            } else {
+                "."
+            };
             writeln!(fo, "{c}\t{s}\t{e}\t{g}\t{}\t{strand}", (*r).min(1000))?;
         }
         Ok(())
@@ -264,14 +319,23 @@ mod locus_bed {
                 if ov <= 0 {
                     continue;
                 }
-                let rec = (ov as f64 / (pv.2 - pv.1).max(1) as f64).min(ov as f64 / (rv.2 - rv.1).max(1) as f64);
+                let rec = (ov as f64 / (pv.2 - pv.1).max(1) as f64)
+                    .min(ov as f64 / (rv.2 - rv.1).max(1) as f64);
                 if rec >= min_ov {
                     cands.push((rec, pg, rg));
                 }
             }
         }
-        cands.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(b.1)).then(a.2.cmp(b.2)));
-        let (mut usedp, mut usedr) = (std::collections::HashSet::new(), std::collections::HashSet::new());
+        cands.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap()
+                .then(a.1.cmp(b.1))
+                .then(a.2.cmp(b.2))
+        });
+        let (mut usedp, mut usedr) = (
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
+        );
         let mut pairs: Vec<(&String, &String, f64)> = Vec::new();
         for (rec, pg, rg) in &cands {
             if usedp.contains(*pg) || usedr.contains(*rg) {
@@ -282,7 +346,8 @@ mod locus_bed {
             pairs.push((pg, rg, *rec));
         }
 
-        let mut fo = std::io::BufWriter::new(std::fs::File::create(format!("{out}.locus_match.tsv"))?);
+        let mut fo =
+            std::io::BufWriter::new(std::fs::File::create(format!("{out}.locus_match.tsv"))?);
         writeln!(fo, "pred_locus\tref_locus\tchrom\tpred_start\tpred_end\tref_start\tref_end\tpred_span\tref_span\tsize_ratio\trecip_overlap\tpred_reads\tpred_n_tx")?;
         pairs.sort_by(|a, b| a.0.cmp(b.0));
         let mut ratios: Vec<f64> = Vec::new();
@@ -290,7 +355,11 @@ mod locus_bed {
             let (pc, ps, pe, _, pr, pn) = &p[*pg];
             let (_, rs, re_, _, _, _) = &r[*rg];
             let (psp, rsp) = (pe - ps, re_ - rs);
-            let ratio = if rsp != 0 { psp as f64 / rsp as f64 } else { f64::NAN };
+            let ratio = if rsp != 0 {
+                psp as f64 / rsp as f64
+            } else {
+                f64::NAN
+            };
             ratios.push(ratio);
             writeln!(fo, "{pg}\t{rg}\t{pc}\t{ps}\t{pe}\t{rs}\t{re_}\t{psp}\t{rsp}\t{ratio:.4}\t{rec:.4}\t{pr}\t{pn}")?;
         }
@@ -298,14 +367,32 @@ mod locus_bed {
         ratios.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let n = ratios.len();
         let within = |lo: f64, hi: f64| ratios.iter().filter(|&&x| x >= lo && x <= hi).count();
-        println!("\n  GREEDY one-to-one matching (evaluation only), min reciprocal overlap {min_ov}");
-        println!("    matched pairs            : {n}  of {} predicted / {} annotated", p.len(), r.len());
-        println!("    predicted loci unmatched : {}    annotated loci unmatched: {}", p.len() - n, r.len() - n);
+        println!(
+            "\n  GREEDY one-to-one matching (evaluation only), min reciprocal overlap {min_ov}"
+        );
+        println!(
+            "    matched pairs            : {n}  of {} predicted / {} annotated",
+            p.len(),
+            r.len()
+        );
+        println!(
+            "    predicted loci unmatched : {}    annotated loci unmatched: {}",
+            p.len() - n,
+            r.len() - n
+        );
         if n > 0 {
-            println!("    size ratio pred/ref      : median {:.3}  q25 {:.3}  q75 {:.3}", ratios[n / 2], ratios[n / 4], ratios[3 * n / 4]);
+            println!(
+                "    size ratio pred/ref      : median {:.3}  q25 {:.3}  q75 {:.3}",
+                ratios[n / 2],
+                ratios[n / 4],
+                ratios[3 * n / 4]
+            );
             for (lo, hi) in [(0.9, 1.1), (0.8, 1.25), (0.5, 2.0)] {
                 let w = within(lo, hi);
-                println!("      within [{lo},{hi}]        : {w} ({:.1}%)", 100.0 * w as f64 / n as f64);
+                println!(
+                    "      within [{lo},{hi}]        : {w} ({:.1}%)",
+                    100.0 * w as f64 / n as f64
+                );
             }
         }
         println!("    -> {out}.locus_match.tsv");
@@ -350,7 +437,12 @@ mod mcl_port {
                 }
                 indptr[j + 1] = indices.len();
             }
-            Csc { n, indptr, indices, data }
+            Csc {
+                n,
+                indptr,
+                indices,
+                data,
+            }
         }
 
         fn matmul(&self, b: &Csc) -> Csc {
@@ -387,7 +479,12 @@ mod mcl_port {
                 }
                 indptr[j + 1] = indices.len();
             }
-            Csc { n, indptr, indices, data }
+            Csc {
+                n,
+                indptr,
+                indices,
+                data,
+            }
         }
 
         fn norm(&self) -> Csc {
@@ -416,7 +513,12 @@ mod mcl_port {
                 }
                 indptr[j + 1] = indices.len();
             }
-            Csc { n, indptr, indices, data }
+            Csc {
+                n,
+                indptr,
+                indices,
+                data,
+            }
         }
 
         fn diff_stats(&self, m: &Csc) -> (bool, f64) {
@@ -445,12 +547,19 @@ mod mcl_port {
         }
     }
 
-    fn mcl(nodes: &[String], edges: &[(usize, usize, f64)], inflation: f64, prune: f64, max_iter: usize) -> Vec<Vec<String>> {
+    fn mcl(
+        nodes: &[String],
+        edges: &[(usize, usize, f64)],
+        inflation: f64,
+        prune: f64,
+        max_iter: usize,
+    ) -> Vec<Vec<String>> {
         let n = nodes.len();
         if n == 0 {
             return Vec::new();
         }
-        let (mut rows, mut cols, mut vals): (Vec<usize>, Vec<usize>, Vec<f64>) = ((0..n).collect(), (0..n).collect(), vec![1.0; n]);
+        let (mut rows, mut cols, mut vals): (Vec<usize>, Vec<usize>, Vec<f64>) =
+            ((0..n).collect(), (0..n).collect(), vec![1.0; n]);
         for &(a, b, w) in edges {
             if a == b {
                 continue;
@@ -466,10 +575,17 @@ mod mcl_port {
                 *x = x.powf(inflation);
             }
             let mut keep_ip = vec![0usize; n + 1];
-            let (mut ki, mut kd) = (Vec::with_capacity(nn.indices.len()), Vec::with_capacity(nn.data.len()));
+            let (mut ki, mut kd) = (
+                Vec::with_capacity(nn.indices.len()),
+                Vec::with_capacity(nn.data.len()),
+            );
             for j in 0..n {
                 for kk in nn.indptr[j]..nn.indptr[j + 1] {
-                    let v = if nn.data[kk] < prune { 0.0 } else { nn.data[kk] };
+                    let v = if nn.data[kk] < prune {
+                        0.0
+                    } else {
+                        nn.data[kk]
+                    };
                     if v != 0.0 {
                         ki.push(nn.indices[kk]);
                         kd.push(v);
@@ -477,7 +593,13 @@ mod mcl_port {
                 }
                 keep_ip[j + 1] = ki.len();
             }
-            nn = Csc { n, indptr: keep_ip, indices: ki, data: kd }.norm();
+            nn = Csc {
+                n,
+                indptr: keep_ip,
+                indices: ki,
+                data: kd,
+            }
+            .norm();
             let (empty, mx) = nn.diff_stats(&m);
             let done = empty || mx < 1e-7;
             m = nn;
@@ -519,7 +641,10 @@ mod mcl_port {
             }
             groups.entry(r).or_default().push(nodes[i].clone());
         }
-        order.into_iter().map(|r| groups.remove(&r).unwrap()).collect()
+        order
+            .into_iter()
+            .map(|r| groups.remove(&r).unwrap())
+            .collect()
     }
 
     pub fn run(graph: &str, inflation: f64, prune: f64, max_iter: usize) -> Result<()> {
@@ -532,11 +657,21 @@ mod mcl_port {
                 raw.push((fs[0].to_string(), fs[1].to_string(), fs[2].parse::<f64>()?));
             }
         }
-        let mut nodes: Vec<String> = raw.iter().flat_map(|(u, v, _)| [u.clone(), v.clone()]).collect();
+        let mut nodes: Vec<String> = raw
+            .iter()
+            .flat_map(|(u, v, _)| [u.clone(), v.clone()])
+            .collect();
         nodes.sort();
         nodes.dedup();
-        let ix: HashMap<&str, usize> = nodes.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
-        let edges: Vec<(usize, usize, f64)> = raw.iter().map(|(u, v, w)| (ix[u.as_str()], ix[v.as_str()], *w)).collect();
+        let ix: HashMap<&str, usize> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_str(), i))
+            .collect();
+        let edges: Vec<(usize, usize, f64)> = raw
+            .iter()
+            .map(|(u, v, w)| (ix[u.as_str()], ix[v.as_str()], *w))
+            .collect();
         let out = std::io::stdout();
         let mut w = std::io::BufWriter::new(out.lock());
         for c in mcl(&nodes, &edges, inflation, prune, max_iter) {
@@ -551,8 +686,19 @@ mod mcl_port {
 
         #[test]
         fn two_triangles_joined_by_one_weak_edge_split_at_the_bridge() {
-            let nodes: Vec<String> = ["a", "b", "c", "d", "e", "f"].iter().map(|s| s.to_string()).collect();
-            let edges = vec![(0, 1, 1.0), (1, 2, 1.0), (0, 2, 1.0), (3, 4, 1.0), (4, 5, 1.0), (3, 5, 1.0), (2, 3, 0.05)];
+            let nodes: Vec<String> = ["a", "b", "c", "d", "e", "f"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            let edges = vec![
+                (0, 1, 1.0),
+                (1, 2, 1.0),
+                (0, 2, 1.0),
+                (3, 4, 1.0),
+                (4, 5, 1.0),
+                (3, 5, 1.0),
+                (2, 3, 0.05),
+            ];
             let c = mcl(&nodes, &edges, 2.8, 1e-9, 100);
             assert_eq!(c, vec![vec!["a", "b", "c"], vec!["d", "e", "f"]]);
             let n4: Vec<String> = ["p", "q", "r", "s"].iter().map(|s| s.to_string()).collect();
@@ -571,12 +717,23 @@ mod parcn {
 
     use rustle::family::genome_projection::project_with_cs;
     use rustle::family::parcn::{
-        assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa, sun_positions,
-        tabulate, Assignment, CopySun, Locus,
+        assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa,
+        sun_positions, tabulate, Assignment, CopySun, Locus,
     };
 
-    pub fn run(copies_fa: &str, mat: &str, pat: &str, out: &str, minimap2: &str, threads: usize) -> Result<()> {
-        if std::process::Command::new(minimap2).arg("--version").output().is_err() {
+    pub fn run(
+        copies_fa: &str,
+        mat: &str,
+        pat: &str,
+        out: &str,
+        minimap2: &str,
+        threads: usize,
+    ) -> Result<()> {
+        if std::process::Command::new(minimap2)
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             anyhow::bail!("minimap2 ('{minimap2}') not found on PATH — parcn requires minimap2");
         }
 
@@ -589,8 +746,10 @@ mod parcn {
             }
         }
 
-        let suns_by_fam: BTreeMap<String, Vec<CopySun>> =
-            fams.iter().map(|(f, c)| (f.clone(), sun_positions(c, band_for(c)))).collect();
+        let suns_by_fam: BTreeMap<String, Vec<CopySun>> = fams
+            .iter()
+            .map(|(f, c)| (f.clone(), sun_positions(c, band_for(c))))
+            .collect();
 
         let mat_by_fam = project_and_assign(&queries, mat, minimap2, threads, &suns_by_fam)
             .with_context(|| format!("projecting onto maternal haplotype {mat}"))?;
@@ -599,9 +758,14 @@ mod parcn {
 
         let parcn_path = format!("{}.parcn.tsv", out);
         let fam_path = format!("{}.parcn_families.tsv", out);
-        let mut pw = std::fs::File::create(&parcn_path).with_context(|| format!("creating {parcn_path}"))?;
-        let mut fw = std::fs::File::create(&fam_path).with_context(|| format!("creating {fam_path}"))?;
-        writeln!(pw, "family_id\tcopy_id\tsun_tier\tloci_mat\tloci_pat\tparCN\tassign_method")?;
+        let mut pw =
+            std::fs::File::create(&parcn_path).with_context(|| format!("creating {parcn_path}"))?;
+        let mut fw =
+            std::fs::File::create(&fam_path).with_context(|| format!("creating {fam_path}"))?;
+        writeln!(
+            pw,
+            "family_id\tcopy_id\tsun_tier\tloci_mat\tloci_pat\tparCN\tassign_method"
+        )?;
         writeln!(fw, "family_id\tn_copies\tfamCN_diploid\tn_unresolved_loci")?;
 
         let empty: Vec<Assignment> = Vec::new();
@@ -639,7 +803,9 @@ mod parcn {
         }
         let mut by_fam: HashMap<String, Vec<Locus>> = HashMap::new();
         for h in &hits {
-            let Some((fam, copy)) = h.qname.split_once('|') else { continue };
+            let Some((fam, copy)) = h.qname.split_once('|') else {
+                continue;
+            };
             by_fam.entry(fam.to_string()).or_default().push(Locus {
                 chrom: h.chrom.clone(),
                 start: h.start,
@@ -655,11 +821,15 @@ mod parcn {
         }
         let mut out: HashMap<String, Vec<Assignment>> = HashMap::new();
         for (fam, loci) in by_fam {
-            let Some(suns) = suns_by_fam.get(&fam) else { continue };
+            let Some(suns) = suns_by_fam.get(&fam) else {
+                continue;
+            };
             let deduped = dedup_loci(loci);
             let mut assignments = Vec::with_capacity(deduped.len());
             for locus in &deduped {
-                let Some(sun) = suns.iter().find(|s| s.copy_id == locus.best_copy) else { continue };
+                let Some(sun) = suns.iter().find(|s| s.copy_id == locus.best_copy) else {
+                    continue;
+                };
                 assignments.push(assign_locus(locus, sun));
             }
             out.insert(fam, assignments);
@@ -673,7 +843,13 @@ mod parcn {
 
         #[test]
         fn parcn_end_to_end_heterozygous_mat_pat_split() {
-            if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+            if std::process::Command::new("minimap2")
+                .arg("--version")
+                .output()
+                .is_err()
+            {
+                return;
+            }
             let dir = std::env::temp_dir();
             let tag = std::process::id();
             let splitmix = |i: u64| -> u64 {
@@ -685,7 +861,10 @@ mod parcn {
             let bases = [b'A', b'C', b'G', b'T'];
             let gen_seq = |seed: u64, len: u64| -> Vec<u8> {
                 (0..len)
-                    .map(|i| bases[(splitmix(seed.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(i)) % 4) as usize])
+                    .map(|i| {
+                        bases[(splitmix(seed.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(i))
+                            % 4) as usize]
+                    })
                     .collect::<Vec<u8>>()
             };
             let base = gen_seq(1, 400);
@@ -698,25 +877,50 @@ mod parcn {
                 p += 8;
             }
             let copies_fa = dir.join(format!("parcn_e2e_copies_{tag}.fa"));
-            std::fs::write(&copies_fa, format!(">F|0|c:1-1|+|nexon=1\n{}\n>F|1|c:1-1|+|nexon=1\n{}\n", String::from_utf8_lossy(&c0), String::from_utf8_lossy(&c1))).unwrap();
+            std::fs::write(
+                &copies_fa,
+                format!(
+                    ">F|0|c:1-1|+|nexon=1\n{}\n>F|1|c:1-1|+|nexon=1\n{}\n",
+                    String::from_utf8_lossy(&c0),
+                    String::from_utf8_lossy(&c1)
+                ),
+            )
+            .unwrap();
             let pad = gen_seq(99, 300);
-            let mut mat_seq = c0.clone(); mat_seq.extend(&pad); mat_seq.extend(&c1); mat_seq.extend(&pad);
-            let mut pat_seq = c0.clone(); pat_seq.extend(&pad);
+            let mut mat_seq = c0.clone();
+            mat_seq.extend(&pad);
+            mat_seq.extend(&c1);
+            mat_seq.extend(&pad);
+            let mut pat_seq = c0.clone();
+            pat_seq.extend(&pad);
             let write_hap = |name: &str, seq: &[u8]| {
                 let p = dir.join(format!("parcn_e2e_{name}_{tag}.fa"));
-                std::fs::write(&p, format!(">h_{name}\n{}\n", String::from_utf8_lossy(seq))).unwrap();
+                std::fs::write(&p, format!(">h_{name}\n{}\n", String::from_utf8_lossy(seq)))
+                    .unwrap();
                 p
             };
             let mat = write_hap("mat", &mat_seq);
             let pat = write_hap("pat", &pat_seq);
             let out = dir.join(format!("parcn_e2e_out_{tag}"));
-            run(copies_fa.to_string_lossy().as_ref(), mat.to_string_lossy().as_ref(), pat.to_string_lossy().as_ref(), out.to_string_lossy().as_ref(), "minimap2", 2).unwrap();
-            let parcn = std::fs::read_to_string(format!("{}.parcn.tsv", out.to_string_lossy())).unwrap();
+            run(
+                copies_fa.to_string_lossy().as_ref(),
+                mat.to_string_lossy().as_ref(),
+                pat.to_string_lossy().as_ref(),
+                out.to_string_lossy().as_ref(),
+                "minimap2",
+                2,
+            )
+            .unwrap();
+            let parcn =
+                std::fs::read_to_string(format!("{}.parcn.tsv", out.to_string_lossy())).unwrap();
 
             let row = |cp: &str| -> Vec<String> {
                 parcn
                     .lines()
-                    .find(|l| { let f: Vec<&str> = l.split('\t').collect(); f.len() > 1 && f[0] == "F" && f[1] == cp })
+                    .find(|l| {
+                        let f: Vec<&str> = l.split('\t').collect();
+                        f.len() > 1 && f[0] == "F" && f[1] == cp
+                    })
                     .unwrap_or_else(|| panic!("no row for copy {cp} in:\n{parcn}"))
                     .split('\t')
                     .map(|s| s.to_string())
@@ -734,7 +938,9 @@ mod parcn {
             assert_eq!(r1[6], "SUN", "c1 method: {r1:?}");
             assert_ne!(r1[3], r1[4], "c1 must show a real mat/pat split: {r1:?}");
 
-            for p in [copies_fa, mat, pat] { std::fs::remove_file(p).ok(); }
+            for p in [copies_fa, mat, pat] {
+                std::fs::remove_file(p).ok();
+            }
             std::fs::remove_file(format!("{}.parcn.tsv", out.to_string_lossy())).ok();
             std::fs::remove_file(format!("{}.parcn_families.tsv", out.to_string_lossy())).ok();
         }

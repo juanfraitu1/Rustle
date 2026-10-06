@@ -10,38 +10,37 @@
 //! Writes `<out>.families.tsv` (per-family roster + two-pass + unique-mapper agreement stats) and
 //! `<out>.assignments.tsv` (per-read copy assignment). A `.bai` next to the BAM makes the region read fast.
 
-use rustle::types::{DetHashMap, DetHashSet};
 use anyhow::{Context, Result};
 use clap::Parser;
 use lru::LruCache;
+use rustle::types::{DetHashMap, DetHashSet};
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
-use rustle::genome::GenomeIndex;
-use rustle::family::denovo_assemble::longest_orf;
 use rustle::family::absent_copy::DnaNeedsRecord;
-use rustle::family::linearize::LinearizeCertificate;
-use rustle::family::copy_assign::{AssignParams, AssignStatus};
+use rustle::family::catalog_input::{
+    group_families, parse_copies_fa, parse_copies_tsv, parse_family_list, select_families,
+    to_colocated, CatalogFamily, SeqIndex,
+};
 use rustle::family::copy_assign::copy_assign_pipeline::read_ref_end;
 use rustle::family::copy_assign::em_copy_assign::em_assign_family;
+use rustle::family::copy_assign::{AssignParams, AssignStatus, Assignment};
+use rustle::family::denovo_assemble::longest_orf;
 use rustle::family::denovo_assemble::{
     assemble_gate, assemble_gate_census, pass1_skeletons_widened, reads_in_region,
-    tied_secondary_reads_in_region,
-    BamIndexCache, BamRead, GATE_MIN_READS,
-};
-use rustle::family::catalog_input::{
-    group_families, parse_copies_fa, parse_copies_tsv, parse_family_list, select_families, to_colocated, CatalogFamily,
-    SeqIndex,
+    tied_secondary_reads_in_region, BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
 };
 use rustle::family::denovo_pipeline::{
-    catalog_overlaps, detect_and_assign, ColocatedFamily, DenovoConfig, FallbackEdge, FamilyAssignment,
-    OverlapKind,
+    catalog_overlaps, detect_and_assign, ColocatedFamily, DenovoConfig, FallbackEdge,
+    FamilyAssignment, OverlapKind,
 };
 use rustle::family::family_detect::collapse_loci_groups;
+use rustle::family::linearize::LinearizeCertificate;
 use rustle::family::read_conflict::{as_evidence, AsEvidence};
 use rustle::family::readonly_copy_number::{chi_h_with_junctions, depth_cn};
+use rustle::genome::GenomeIndex;
 
 /// Read one GTF attribute out of an attribute string (`key "value";`). Used by `--productivity` to recover
 /// the family and copy it already wrote, rather than threading them separately.
@@ -1382,9 +1381,9 @@ impl XfamMode {
             None | Some("") | Some("off") => Ok(XfamMode::Off),
             Some("report") => Ok(XfamMode::Report),
             Some("abstain") => Ok(XfamMode::Abstain),
-            Some(other) => anyhow::bail!(
-                "RUSTLE_XFAM_RECONCILE={other:?} is not one of off|report|abstain"
-            ),
+            Some(other) => {
+                anyhow::bail!("RUSTLE_XFAM_RECONCILE={other:?} is not one of off|report|abstain")
+            }
         }
     }
     fn as_str(self) -> &'static str {
@@ -1441,7 +1440,10 @@ struct XfamConflict {
 fn xfam_pass1(
     works: &[RegionWork],
     named_families: bool,
-) -> (Vec<XfamConflict>, std::collections::BTreeSet<(String, usize, usize)>) {
+) -> (
+    Vec<XfamConflict>,
+    std::collections::BTreeSet<(String, usize, usize)>,
+) {
     use std::collections::{BTreeMap, BTreeSet};
     // The family ids the DRAIN will mint, recomputed here with the same counter so the side file names
     // families exactly as `.assignments.tsv` does. Declared before `by_read` so it outlives the borrow.
@@ -1450,7 +1452,11 @@ fn xfam_pass1(
     for work in works.iter() {
         let mut here = Vec::with_capacity(work.fams.len());
         for fa in &work.fams {
-            here.push(if named_families { fa.family_id.clone() } else { format!("CAFAM{gfam}") });
+            here.push(if named_families {
+                fa.family_id.clone()
+            } else {
+                format!("CAFAM{gfam}")
+            });
             gfam += 1;
         }
         fids.push(here);
@@ -1462,16 +1468,29 @@ fn xfam_pass1(
                 if !matches!(a.status, AssignStatus::Assigned) {
                     continue;
                 }
-                let Some(span) = fa.copy_spans.get(a.best_copy).cloned() else { continue };
+                let Some(span) = fa.copy_spans.get(a.best_copy).cloned() else {
+                    continue;
+                };
                 let (rs, re, fl) = work.read_spans.get(*ri).copied().unwrap_or((0, 0, 0));
-                by_read.entry(work.read_names[*ri].as_str()).or_default().push(XfamClaim {
-                    g,
-                    f,
-                    fid: fids[g][f].as_str(),
-                    copy: a.best_copy,
-                    span,
-                    rec: (work.read_chrom.get(*ri).cloned().unwrap_or_else(|| work.contig.clone()), rs, re, fl),
-                });
+                by_read
+                    .entry(work.read_names[*ri].as_str())
+                    .or_default()
+                    .push(XfamClaim {
+                        g,
+                        f,
+                        fid: fids[g][f].as_str(),
+                        copy: a.best_copy,
+                        span,
+                        rec: (
+                            work.read_chrom
+                                .get(*ri)
+                                .cloned()
+                                .unwrap_or_else(|| work.contig.clone()),
+                            rs,
+                            re,
+                            fl,
+                        ),
+                    });
             }
         }
     }
@@ -1492,8 +1511,7 @@ fn xfam_pass1(
                 if (a.g, a.f) == (b.g, b.f) {
                     continue; // same family: the intra-family reduction already owns this case
                 }
-                let overlaps =
-                    a.span.0 == b.span.0 && a.span.1 < b.span.2 && b.span.1 < a.span.2;
+                let overlaps = a.span.0 == b.span.0 && a.span.1 < b.span.2 && b.span.1 < a.span.2;
                 let same_record = a.rec == b.rec;
                 let stratum = if overlaps {
                     "shared_locus"
@@ -1541,7 +1559,15 @@ fn xfam_pass1(
 
 /// GFA W-line SampleId sanitizer (a walk id must be a whitespace-free GFA token).
 fn sanitize_gfa_id(s: &str) -> String {
-    s.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':') { c } else { '_' }).collect()
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// Per-copy status shared by `build_copy_graph` (v1, PSV-bubble graph) and `build_exon_graph` (v2,
@@ -1565,8 +1591,11 @@ fn copy_status(
 ) -> rustle::family::copy_graph::CopyStatus {
     use rustle::family::copy_graph::CopyStatus;
     let n = fa.copy_tids.len();
-    let is_coupled =
-        |k: usize| -> bool { fa.assignments.iter().any(|(_, a)| a.discovery_coupled && a.best_copy == k) };
+    let is_coupled = |k: usize| -> bool {
+        fa.assignments
+            .iter()
+            .any(|(_, a)| a.discovery_coupled && a.best_copy == k)
+    };
     if !is_coupled(ci) {
         return annotation_status(fa, ci, ann);
     }
@@ -1579,7 +1608,11 @@ fn copy_status(
     // AbsentCollapsed iff this absent copy's span overlaps some IN-GENOME (non-coupled) copy — a hidden
     // co-located haplotype; else it is dispersed / unlocalized => AbsentDivergent.
     let collapsed = (0..n).any(|k| k != ci && !is_coupled(k) && span_overlap(ci, k));
-    if collapsed { CopyStatus::AbsentCollapsed } else { CopyStatus::AbsentDivergent }
+    if collapsed {
+        CopyStatus::AbsentCollapsed
+    } else {
+        CopyStatus::AbsentDivergent
+    }
 }
 
 /// Build one family's copy-graph (`--phase`): the REFERENCE walk + every copy as a tagged, corroborable
@@ -1605,12 +1638,20 @@ fn build_copy_graph(
     for (j, p) in fa.psv_col_pos.iter().enumerate() {
         if let Some(pos) = p {
             if let Some(rb) = ref_base(&fa.chrom, *pos) {
-                cols.push(PsvColumn { col: j, genome_pos: Some(*pos), ref_allele: Some(rb) });
+                cols.push(PsvColumn {
+                    col: j,
+                    genome_pos: Some(*pos),
+                    ref_allele: Some(rb),
+                });
                 keep.push(j);
             }
         }
     }
-    let sel = |row: &Vec<Option<u8>>| keep.iter().map(|&j| row.get(j).copied().flatten()).collect::<Vec<_>>();
+    let sel = |row: &Vec<Option<u8>>| {
+        keep.iter()
+            .map(|&j| row.get(j).copied().flatten())
+            .collect::<Vec<_>>()
+    };
     let backbone = vec![b"NNNNNNNNNN".to_vec(); cols.len() + 1];
 
     let n = fa.copy_tids.len();
@@ -1625,9 +1666,17 @@ fn build_copy_graph(
                 .count() as u32;
             CopyPath {
                 id: format!("{}_copy{}", fid, ci),
-                alleles: fa.copy_psv_alleles.get(ci).map(|r| sel(r)).unwrap_or_default(),
+                alleles: fa
+                    .copy_psv_alleles
+                    .get(ci)
+                    .map(|r| sel(r))
+                    .unwrap_or_default(),
                 status,
-                corrob: Corrob { reads: Some(reads), suns: None, map_identity: fa.copy_map_identity.get(ci).copied().flatten() },
+                corrob: Corrob {
+                    reads: Some(reads),
+                    suns: None,
+                    map_identity: fa.copy_map_identity.get(ci).copied().flatten(),
+                },
             }
         })
         .collect();
@@ -1642,13 +1691,27 @@ fn build_copy_graph(
             ReadWalk {
                 name: sanitize_gfa_id(&format!("{}_{}", fid, bam_reads[*ri])),
                 obs: sel(obs),
-                assigned_copy: if matches!(st, AssignStatus::Assigned) { Some(a.best_copy) } else { None },
-                cert: Some(ReadCert { p_value: a.p_value, min_p_value: a.min_p_value, status: st }),
+                assigned_copy: if matches!(st, AssignStatus::Assigned) {
+                    Some(a.best_copy)
+                } else {
+                    None
+                },
+                cert: Some(ReadCert {
+                    p_value: a.p_value,
+                    min_p_value: a.min_p_value,
+                    status: st,
+                }),
             }
         })
         .collect();
 
-    CopyGraph { family: fid.to_string(), columns: cols, backbone, copies, reads }
+    CopyGraph {
+        family: fid.to_string(),
+        columns: cols,
+        backbone,
+        copies,
+        reads,
+    }
 }
 
 /// Build one family's exon presence/absence graph (`--phase` v2): reconstructs each copy's genomic exon
@@ -1672,8 +1735,11 @@ fn build_exon_graph(
         .map(|ci| {
             // Guard: `.get(ci)` never panics on a length-0/short fixture — missing span/introns => an
             // empty-exon copy (still walks zero classes; from_copies skips zero-length intervals anyway).
-            let (chrom, start, end) =
-                fa.copy_spans.get(ci).cloned().unwrap_or_else(|| (fa.chrom.clone(), 0, 0));
+            let (chrom, start, end) = fa
+                .copy_spans
+                .get(ci)
+                .cloned()
+                .unwrap_or_else(|| (fa.chrom.clone(), 0, 0));
             let introns = fa.copy_introns.get(ci).cloned().unwrap_or_default();
             // genomic exons from the intron chain + outer span bounds:
             let mut exons = Vec::with_capacity(introns.len() + 1);
@@ -1709,10 +1775,20 @@ fn annotation_status(
     ann: Option<&[(String, u64, u64)]>,
 ) -> rustle::family::copy_graph::CopyStatus {
     use rustle::family::copy_graph::CopyStatus;
-    let Some(ann) = ann else { return CopyStatus::AnnotationUnknown };
-    let Some((c, s, e)) = fa.copy_spans.get(ci) else { return CopyStatus::AnnotationUnknown };
-    let hit = ann.iter().any(|(ac, as_, ae)| ac == c && *as_ < *e && *s < *ae);
-    if hit { CopyStatus::InGenomeAnnotated } else { CopyStatus::InGenomeUnannotated }
+    let Some(ann) = ann else {
+        return CopyStatus::AnnotationUnknown;
+    };
+    let Some((c, s, e)) = fa.copy_spans.get(ci) else {
+        return CopyStatus::AnnotationUnknown;
+    };
+    let hit = ann
+        .iter()
+        .any(|(ac, as_, ae)| ac == c && *as_ < *e && *s < *ae);
+    if hit {
+        CopyStatus::InGenomeAnnotated
+    } else {
+        CopyStatus::InGenomeUnannotated
+    }
 }
 
 /// Parse a gene annotation file (`--gff`) into `(chrom, start0, end)` intervals: accepts BED (0-based, cols
@@ -1724,27 +1800,45 @@ fn annotation_status(
 /// `.bed` => BED; `.gff`/`.gff2`/`.gff3`/`.gtf` => GFF/GTF. An unknown extension falls back to the per-line
 /// numeric heuristic (GFF cols 3/4 preferred, else BED cols 1/2) for best-effort on mislabeled files.
 fn parse_annotation(path: &str) -> anyhow::Result<Vec<(String, u64, u64)>> {
-    enum Fmt { Bed, Gff, Auto }
+    enum Fmt {
+        Bed,
+        Gff,
+        Auto,
+    }
     let lower = path.to_ascii_lowercase();
     let fmt = if lower.ends_with(".bed") {
         Fmt::Bed
-    } else if lower.ends_with(".gff") || lower.ends_with(".gff2") || lower.ends_with(".gff3") || lower.ends_with(".gtf") {
+    } else if lower.ends_with(".gff")
+        || lower.ends_with(".gff2")
+        || lower.ends_with(".gff3")
+        || lower.ends_with(".gtf")
+    {
         Fmt::Gff
     } else {
         Fmt::Auto
     };
     let mut out = Vec::new();
     for line in std::fs::read_to_string(path)?.lines() {
-        if line.starts_with('#') || line.trim().is_empty() { continue; }
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
         let f: Vec<&str> = line.split('\t').collect();
         let bed = |f: &[&str], out: &mut Vec<(String, u64, u64)>| {
-            if f.len() < 3 { return; }
-            let (Ok(s), Ok(e)) = (f[1].parse::<u64>(), f[2].parse::<u64>()) else { return }; // BED 0-based
+            if f.len() < 3 {
+                return;
+            }
+            let (Ok(s), Ok(e)) = (f[1].parse::<u64>(), f[2].parse::<u64>()) else {
+                return;
+            }; // BED 0-based
             out.push((f[0].to_string(), s, e));
         };
         let gff = |f: &[&str], out: &mut Vec<(String, u64, u64)>| {
-            if f.len() < 5 { return; }
-            let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else { return }; // GFF/GTF 1-based
+            if f.len() < 5 {
+                return;
+            }
+            let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else {
+                return;
+            }; // GFF/GTF 1-based
             out.push((f[0].to_string(), s.saturating_sub(1), e));
         };
         match fmt {
@@ -1754,7 +1848,9 @@ fn parse_annotation(path: &str) -> anyhow::Result<Vec<(String, u64, u64)>> {
             Fmt::Auto => {
                 let before = out.len();
                 gff(&f, &mut out);
-                if out.len() == before { bed(&f, &mut out); }
+                if out.len() == before {
+                    bed(&f, &mut out);
+                }
             }
         }
     }
@@ -1763,9 +1859,17 @@ fn parse_annotation(path: &str) -> anyhow::Result<Vec<(String, u64, u64)>> {
 
 fn parse_region(s: &str) -> Result<(String, u64, u64)> {
     let tok = s.split_whitespace().next().context("empty region")?;
-    let (chrom, range) = tok.split_once(':').context("region must be chrom:start-end")?;
-    let (lo_s, hi_s) = range.split_once('-').context("region must be chrom:start-end")?;
-    Ok((chrom.to_string(), lo_s.parse().context("bad region start")?, hi_s.parse().context("bad region end")?))
+    let (chrom, range) = tok
+        .split_once(':')
+        .context("region must be chrom:start-end")?;
+    let (lo_s, hi_s) = range
+        .split_once('-')
+        .context("region must be chrom:start-end")?;
+    Ok((
+        chrom.to_string(),
+        lo_s.parse().context("bad region start")?,
+        hi_s.parse().context("bad region end")?,
+    ))
 }
 
 /// Every `(contig, lo, hi)` from `--region`/`--regions` becomes its own independently-swept `RegionWork`
@@ -1773,7 +1877,9 @@ fn parse_region(s: &str) -> Result<(String, u64, u64)> {
 /// see and report the physical alignment records in the overlap — silently duplicating rows in
 /// `--read-provenance` (and, unaudited, possibly other per-record outputs). Half-open `[lo, hi)`: touching
 /// (one ends exactly where the next starts) is NOT an overlap.
-fn validate_no_overlapping_regions(by_contig: &std::collections::BTreeMap<String, Vec<(u64, u64)>>) -> Result<()> {
+fn validate_no_overlapping_regions(
+    by_contig: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
+) -> Result<()> {
     for (contig, windows) in by_contig {
         let mut sorted = windows.clone();
         sorted.sort_unstable();
@@ -1832,7 +1938,11 @@ fn block_overlap(read: &rustle::family::copy_split::AlignedRead, s: u64, e: u64)
         .into_iter()
         .map(|(b0, b1)| {
             let (lo, hi) = (b0.max(s), b1.min(e));
-            if hi > lo { hi - lo } else { 0 }
+            if hi > lo {
+                hi - lo
+            } else {
+                0
+            }
         })
         .sum()
 }
@@ -1861,7 +1971,10 @@ fn best_overlap_truth_copy<'a>(
     catalog_index: Option<&CatalogIndex>,
 ) -> DetHashMap<&'a str, ((String, String), u64)> {
     let mut truth_copy: DetHashMap<&str, ((String, String), u64)> = DetHashMap::default();
-    for br in bam_reads.iter().filter(|br| !br.is_secondary && !br.is_supplementary) {
+    for br in bam_reads
+        .iter()
+        .filter(|br| !br.is_secondary && !br.is_supplementary)
+    {
         let end = read_ref_end(&br.read); // cheap span bound, to skip non-overlapping copies fast
         for (ci, (c, s, e)) in copy_spans.iter().enumerate() {
             if br.chrom != *c || end <= *s || br.read.ref_start >= *e {
@@ -1871,8 +1984,12 @@ fn best_overlap_truth_copy<'a>(
             if ov == 0 {
                 continue;
             }
-            let Some(tid) = copy_tids.get(ci) else { continue };
-            let Some((cf, cidx)) = catalog_index.and_then(|ix| ix.get(tid)) else { continue };
+            let Some(tid) = copy_tids.get(ci) else {
+                continue;
+            };
+            let Some((cf, cidx)) = catalog_index.and_then(|ix| ix.get(tid)) else {
+                continue;
+            };
             match truth_copy.get(br.name.as_str()) {
                 Some((_, best_ov)) if *best_ov >= ov => {}
                 _ => {
@@ -1907,15 +2024,24 @@ fn best_overlap_truth_copy<'a>(
 fn discover_copies_for_family(
     fa: &FamilyAssignment,
     bam_reads: &[BamRead],
-    tied: &[(String, Vec<rustle::family::copy_graph::copy_discovery::TiePlacement>)],
+    tied: &[(
+        String,
+        Vec<rustle::family::copy_graph::copy_discovery::TiePlacement>,
+    )],
 ) -> Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> {
     let considered: DetHashSet<&str> = fa
         .assignments
         .iter()
         .filter_map(|&(ri, _)| bam_reads.get(ri).map(|br| br.name.as_str()))
         .collect();
-    let mine: Vec<(String, Vec<rustle::family::copy_graph::copy_discovery::TiePlacement>)> =
-        tied.iter().filter(|(name, _)| considered.contains(name.as_str())).cloned().collect();
+    let mine: Vec<(
+        String,
+        Vec<rustle::family::copy_graph::copy_discovery::TiePlacement>,
+    )> = tied
+        .iter()
+        .filter(|(name, _)| considered.contains(name.as_str()))
+        .cloned()
+        .collect();
     let existing_copies: Vec<(String, u64, u64, String)> = fa
         .copy_spans
         .iter()
@@ -1941,7 +2067,11 @@ fn discover_copies_for_family(
 fn load_supplied_families(
     args: &Args,
     by_contig: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
-) -> Result<(Option<RegionFamilies>, Option<SeqIndex>, Option<RegionWindows>)> {
+) -> Result<(
+    Option<RegionFamilies>,
+    Option<SeqIndex>,
+    Option<RegionWindows>,
+)> {
     let Some(path) = args.families.as_deref() else {
         if args.copies_fa.is_some() {
             anyhow::bail!("--copies-fa is only meaningful with --families (it supplies the copies' sequences)");
@@ -1961,12 +2091,36 @@ fn load_supplied_families(
     // the supplied one, and each of these adds or removes copies. --vg-realign-correct is deliberately NOT
     // here: it re-threads reads among the GIVEN copies and never touches the roster.
     for (on, flag, why) in [
-        (args.absent_copies, "--absent-copies", "admits reference-absent copies"),
-        (args.vg_realign, "--vg-realign", "admits novel read pools as new copies"),
-        (args.iterative_prune, "--iterative-prune", "merges/drops copies"),
-        (args.collapse_gate, "--collapse-gate", "admits collapsed loci as extra copies"),
-        (args.tied_seed, "--tied-seed", "seeds additional loci as copies"),
-        (args.recover_copies, "--recover-copies", "feeds tied secondaries into copy rescue"),
+        (
+            args.absent_copies,
+            "--absent-copies",
+            "admits reference-absent copies",
+        ),
+        (
+            args.vg_realign,
+            "--vg-realign",
+            "admits novel read pools as new copies",
+        ),
+        (
+            args.iterative_prune,
+            "--iterative-prune",
+            "merges/drops copies",
+        ),
+        (
+            args.collapse_gate,
+            "--collapse-gate",
+            "admits collapsed loci as extra copies",
+        ),
+        (
+            args.tied_seed,
+            "--tied-seed",
+            "seeds additional loci as copies",
+        ),
+        (
+            args.recover_copies,
+            "--recover-copies",
+            "feeds tied secondaries into copy rescue",
+        ),
     ] {
         if on {
             anyhow::bail!(
@@ -1986,33 +2140,55 @@ fn load_supplied_families(
              supplied catalog, not E_c or E_r)."
         );
     }
-    let text = std::fs::read_to_string(path).with_context(|| format!("reading --families {path}"))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading --families {path}"))?;
     let rows = parse_copies_tsv(&text).with_context(|| format!("parsing --families {path}"))?;
     // --only-families / --skip-families: select the rows BEFORE every check below, so the contract binds exactly the
     // families assigned. Neither given: `select_families` returns the rows untouched and nothing is printed.
-    let read_list = |flag: &str, p: &Option<String>| -> Result<Option<std::collections::BTreeSet<String>>> {
-        p.as_deref()
-            .map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {flag} {p}")).map(|t| parse_family_list(&t)))
-            .transpose()
-    };
-    let (only, skip) = (read_list("--only-families", &args.only_families)?, read_list("--skip-families", &args.skip_families)?);
-    let n_listed = rows.iter().map(|c| c.family_id.as_str()).collect::<std::collections::BTreeSet<_>>().len();
-    let rows = select_families(rows, only.as_ref(), skip.as_ref()).with_context(|| format!("selecting from --families {path}"))?;
+    let read_list =
+        |flag: &str, p: &Option<String>| -> Result<Option<std::collections::BTreeSet<String>>> {
+            p.as_deref()
+                .map(|p| {
+                    std::fs::read_to_string(p)
+                        .with_context(|| format!("reading {flag} {p}"))
+                        .map(|t| parse_family_list(&t))
+                })
+                .transpose()
+        };
+    let (only, skip) = (
+        read_list("--only-families", &args.only_families)?,
+        read_list("--skip-families", &args.skip_families)?,
+    );
+    let n_listed = rows
+        .iter()
+        .map(|c| c.family_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let rows = select_families(rows, only.as_ref(), skip.as_ref())
+        .with_context(|| format!("selecting from --families {path}"))?;
     if only.is_some() || skip.is_some() {
-        let kept = rows.iter().map(|c| c.family_id.as_str()).collect::<std::collections::BTreeSet<_>>().len();
+        let kept = rows
+            .iter()
+            .map(|c| c.family_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
         eprintln!(
             "[copy_assign] --families {path}: {kept} of {n_listed} families selected ({})",
-            [("--only-families", &args.only_families), ("--skip-families", &args.skip_families)]
-                .iter()
-                .filter_map(|(f, p)| p.as_deref().map(|p| format!("{f} {p}")))
-                .collect::<Vec<_>>()
-                .join(", ")
+            [
+                ("--only-families", &args.only_families),
+                ("--skip-families", &args.skip_families)
+            ]
+            .iter()
+            .filter_map(|(f, p)| p.as_deref().map(|p| format!("{f} {p}")))
+            .collect::<Vec<_>>()
+            .join(", ")
         );
     }
     let fams = group_families(rows)?;
     let seqs = match args.copies_fa.as_deref() {
         Some(p) => {
-            let t = std::fs::read_to_string(p).with_context(|| format!("reading --copies-fa {p}"))?;
+            let t =
+                std::fs::read_to_string(p).with_context(|| format!("reading --copies-fa {p}"))?;
             Some(parse_copies_fa(&t).with_context(|| format!("parsing --copies-fa {p}"))?)
         }
         None => None,
@@ -2028,7 +2204,12 @@ fn load_supplied_families(
     let contained_in = |chrom: &str, start: u64, end: u64| -> Vec<(u64, u64)> {
         by_contig
             .get(chrom)
-            .map(|rs| rs.iter().copied().filter(|&(lo, hi)| start >= lo && end <= hi).collect())
+            .map(|rs| {
+                rs.iter()
+                    .copied()
+                    .filter(|&(lo, hi)| start >= lo && end <= hi)
+                    .collect()
+            })
             .unwrap_or_default()
     };
     // Bind each family to the ONE swept region that contains it. Containment (not overlap) is required:
@@ -2038,8 +2219,10 @@ fn load_supplied_families(
     // Per-family, per-chromosome clip bounds: the (lo, hi) of the one real region each chromosome's span
     // falls inside, keyed by the region key the family is BOUND to (same-chrom: its one real key;
     // cross-chrom: its one synthetic key) so the window builder below can look them up uniformly.
-    let mut clip_bounds: std::collections::BTreeMap<RegionKey, std::collections::BTreeMap<String, (u64, u64)>> =
-        std::collections::BTreeMap::new();
+    let mut clip_bounds: std::collections::BTreeMap<
+        RegionKey,
+        std::collections::BTreeMap<String, (u64, u64)>,
+    > = std::collections::BTreeMap::new();
     for f in same_chrom {
         let hits = contained_in(&f.chrom, f.start, f.end);
         match hits.len() {
@@ -2073,7 +2256,8 @@ fn load_supplied_families(
     let mut n_cross_chrom = 0usize;
     for f in cross_chrom {
         let key: RegionKey = (format!("~xchrom~{}", f.family_id), 0, 0);
-        let mut per_chrom_bounds: std::collections::BTreeMap<String, (u64, u64)> = std::collections::BTreeMap::new();
+        let mut per_chrom_bounds: std::collections::BTreeMap<String, (u64, u64)> =
+            std::collections::BTreeMap::new();
         for (chrom, (start, end)) in f.chrom_spans() {
             let hits = contained_in(&chrom, start, end);
             match hits.len() {
@@ -2125,7 +2309,10 @@ fn load_supplied_families(
             .flat_map(|f| f.copies.iter())
             .filter_map(|c| {
                 let (rlo, rhi) = *bounds_for?.get(&c.chrom)?;
-                let (lo, hi) = (c.start.saturating_sub(COPY_READ_PAD).max(rlo), (c.end + COPY_READ_PAD).min(rhi));
+                let (lo, hi) = (
+                    c.start.saturating_sub(COPY_READ_PAD).max(rlo),
+                    (c.end + COPY_READ_PAD).min(rhi),
+                );
                 (lo < hi).then_some((c.chrom.clone(), lo, hi))
             })
             .collect();
@@ -2162,15 +2349,26 @@ fn load_supplied_families(
 /// pre-2026-09-09 columns byte-for-byte.
 fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> Vec<AsEvidence> {
     let aligned_len = |br: &BamRead| -> u32 {
-        br.read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32
+        br.read
+            .cigar
+            .iter()
+            .filter(|(op, _)| matches!(op, 'M' | '=' | 'X'))
+            .map(|(_, n)| *n)
+            .sum::<u64>() as u32
     };
     // ⚠ A SUPPLEMENTARY record is another SEGMENT of the same read (a split/chimeric alignment), not an
     // alternative placement of it, so it can never be a tie partner: a primary + supplementary with equal
     // AS is one MAPQ-60 read in two pieces, and counting it as a tie let one such molecule through the
     // AS-tied gate and into `placement_assign` (§6gz addendum). Only primary + secondary records vote.
     let mut by_name: DetHashMap<&str, Vec<(i32, u32)>> = DetHashMap::default();
-    for br in bam_reads.iter().filter(|br| !(exclude_supplementary && br.is_supplementary)) {
-        by_name.entry(br.name.as_str()).or_default().push((br.as_score, aligned_len(br)));
+    for br in bam_reads
+        .iter()
+        .filter(|br| !(exclude_supplementary && br.is_supplementary))
+    {
+        by_name
+            .entry(br.name.as_str())
+            .or_default()
+            .push((br.as_score, aligned_len(br)));
     }
     bam_reads
         .iter()
@@ -2195,9 +2393,16 @@ static GATE_REC_TIED: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomic
 static GATE_MOL_OUTSIDE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// `--gtf-copy-set`: per AS-tied molecule, the CATALOG copy indices at its tied placements and whether a tied
 /// placement lies outside every unit (the copy SET an undecided isoform is emitted with).
-static TIE_SET: std::sync::OnceLock<Mutex<DetHashMap<String, (std::collections::BTreeSet<String>, bool)>>> = std::sync::OnceLock::new();
+static TIE_SET: std::sync::OnceLock<
+    Mutex<DetHashMap<String, (std::collections::BTreeSet<String>, bool)>>,
+> = std::sync::OnceLock::new();
 fn tie_set_of(name: &str) -> Option<(std::collections::BTreeSet<String>, bool)> {
-    TIE_SET.get_or_init(Default::default).lock().unwrap().get(name).cloned()
+    TIE_SET
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .get(name)
+        .cloned()
 }
 
 /// One minimap2 fragment between two copy spans as blocks `(q_lo, q_hi, t_lo, sign)`: `q ∈ [q_lo, q_hi)` maps
@@ -2227,7 +2432,13 @@ impl LiftBlocks {
                     }
                     t += num;
                 }
-                b'I' => { if minus { q -= num } else { q += num } }
+                b'I' => {
+                    if minus {
+                        q -= num
+                    } else {
+                        q += num
+                    }
+                }
                 b'D' | b'N' => t += num,
                 _ => {}
             }
@@ -2237,13 +2448,23 @@ impl LiftBlocks {
         LiftBlocks { blocks }
     }
     fn inverse(&self) -> LiftBlocks {
-        let mut blocks: Vec<(u64, u64, u64, i8)> = self.blocks.iter().map(|&(ql, qh, tl, s)| (tl, tl + (qh - ql), ql, s)).collect();
+        let mut blocks: Vec<(u64, u64, u64, i8)> = self
+            .blocks
+            .iter()
+            .map(|&(ql, qh, tl, s)| (tl, tl + (qh - ql), ql, s))
+            .collect();
         blocks.sort_unstable();
         LiftBlocks { blocks }
     }
     /// `(mapped position, distance to the nearest aligned base)`; `None` when the fragment has no block.
     fn map(&self, q: u64) -> Option<(u64, u64)> {
-        let at = |&(ql, qh, tl, s): &(u64, u64, u64, i8), x: u64| -> u64 { if s > 0 { tl + (x - ql) } else { tl + (qh - 1 - x) } };
+        let at = |&(ql, qh, tl, s): &(u64, u64, u64, i8), x: u64| -> u64 {
+            if s > 0 {
+                tl + (x - ql)
+            } else {
+                tl + (qh - 1 - x)
+            }
+        };
         let i = self.blocks.partition_point(|b| b.0 <= q);
         if i > 0 {
             let b = self.blocks[i - 1];
@@ -2267,11 +2488,17 @@ impl LiftBlocks {
     }
 }
 /// All-vs-all copy-span lifts: `(a, b)` → the fragments mapping span `a` (relative) into span `b` (relative).
-fn copy_span_lifts(spans: &[(String, u64, u64)], gi: &GenomeIndex, tag: &str) -> DetHashMap<(usize, usize), Vec<LiftBlocks>> {
+fn copy_span_lifts(
+    spans: &[(String, u64, u64)],
+    gi: &GenomeIndex,
+    tag: &str,
+) -> DetHashMap<(usize, usize), Vec<LiftBlocks>> {
     let mut out: DetHashMap<(usize, usize), Vec<LiftBlocks>> = DetHashMap::default();
     let fa = format!("{tag}.copyset_spans.fa");
     {
-        let Ok(mut fh) = std::fs::File::create(&fa) else { return out };
+        let Ok(mut fh) = std::fs::File::create(&fa) else {
+            return out;
+        };
         for (i, (c, s0, e0)) in spans.iter().enumerate() {
             let seq = gi.fetch_sequence(c, *s0, *e0).unwrap_or_default();
             let _ = writeln!(fh, ">{i}");
@@ -2293,11 +2520,25 @@ fn copy_span_lifts(spans: &[(String, u64, u64)], gi: &GenomeIndex, tag: &str) ->
         if f.len() < 12 {
             continue;
         }
-        let (Ok(qi), Ok(qs), Ok(qe), Ok(ti), Ok(ts)) = (f[0].parse::<usize>(), f[2].parse::<u64>(), f[3].parse::<u64>(), f[5].parse::<usize>(), f[7].parse::<u64>()) else { continue };
+        let (Ok(qi), Ok(qs), Ok(qe), Ok(ti), Ok(ts)) = (
+            f[0].parse::<usize>(),
+            f[2].parse::<u64>(),
+            f[3].parse::<u64>(),
+            f[5].parse::<usize>(),
+            f[7].parse::<u64>(),
+        ) else {
+            continue;
+        };
         if qi == ti {
             continue;
         }
-        let Some(cg) = f[12..].iter().copied().find_map(|t| t.strip_prefix("cg:Z:")) else { continue };
+        let Some(cg) = f[12..]
+            .iter()
+            .copied()
+            .find_map(|t| t.strip_prefix("cg:Z:"))
+        else {
+            continue;
+        };
         let fwd = LiftBlocks::from_cigar(qs, qe, ts, f[4] == "-", cg);
         out.entry((ti, qi)).or_default().push(fwd.inverse());
         out.entry((qi, ti)).or_default().push(fwd);
@@ -2306,9 +2547,20 @@ fn copy_span_lifts(spans: &[(String, u64, u64)], gi: &GenomeIndex, tag: &str) ->
 }
 static GATE_MOL_DISAGREE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// §6hd: molecules admitted to the gate by aligner self-disagreement rather than an AS tie.
-static DISAGREE: std::sync::OnceLock<std::sync::Mutex<DetHashSet<String>>> = std::sync::OnceLock::new();
-fn register_disagreement(n: &str) { DISAGREE.get_or_init(Default::default).lock().unwrap().insert(n.to_string()); }
-fn is_disagreement(n: &str) -> bool { DISAGREE.get().map_or(false, |m| m.lock().unwrap().contains(n)) }
+static DISAGREE: std::sync::OnceLock<std::sync::Mutex<DetHashSet<String>>> =
+    std::sync::OnceLock::new();
+fn register_disagreement(n: &str) {
+    DISAGREE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .insert(n.to_string());
+}
+fn is_disagreement(n: &str) -> bool {
+    DISAGREE
+        .get()
+        .map_or(false, |m| m.lock().unwrap().contains(n))
+}
 
 fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
     match ev.second {
@@ -2334,7 +2586,11 @@ fn fmt_chain(chain: &[(u64, u64)]) -> String {
     if chain.is_empty() {
         "none".to_string()
     } else {
-        chain.iter().map(|(d, a)| format!("{d}-{a}")).collect::<Vec<_>>().join(",")
+        chain
+            .iter()
+            .map(|(d, a)| format!("{d}-{a}"))
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -2476,7 +2732,11 @@ fn read_lambda_file(path: &str) -> Option<f64> {
 /// `best_copies` and `mapqs` are parallel over the family's assignments. Reproduces, in-binary, the experiment's
 /// `samtools view -c -F 2308 -q 1 <copy_span>` bound.
 fn anchored_support(best_copies: &[usize], mapqs: &[u8], ci: usize) -> usize {
-    best_copies.iter().zip(mapqs.iter()).filter(|(&bc, &mq)| bc == ci && mq > 0).count()
+    best_copies
+        .iter()
+        .zip(mapqs.iter())
+        .filter(|(&bc, &mq)| bc == ci && mq > 0)
+        .count()
 }
 
 fn resolve_lambda(explicit: Option<f64>, from_file: Option<f64>) -> Option<f64> {
@@ -2496,7 +2756,13 @@ fn verdict_str(v: rustle::family::linearize::Verdict) -> &'static str {
 /// augment-and-linearize certificate (Task 4's `linearize_certs`). `NA` for NaN fracs/perm_p
 /// (the `n_pool < min_pool` short-circuit in `linearize_certificate`).
 fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate) -> String {
-    let f = |x: f64| if x.is_nan() { "NA".to_string() } else { format!("{:.3}", x) };
+    let f = |x: f64| {
+        if x.is_nan() {
+            "NA".to_string()
+        } else {
+            format!("{:.3}", x)
+        }
+    };
     format!(
         "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         fam,
@@ -2507,11 +2773,14 @@ fn linearize_tsv_row(fam: &str, loc: (&str, u64, u64), c: &LinearizeCertificate)
         f(c.linearized_frac_real),
         f(c.mean_frac_decoy),
         f(c.delta),
-        if c.perm_p.is_nan() { "NA".to_string() } else { format!("{:.4}", c.perm_p) },
+        if c.perm_p.is_nan() {
+            "NA".to_string()
+        } else {
+            format!("{:.4}", c.perm_p)
+        },
         verdict_str(c.verdict)
     )
 }
-
 
 /// `--gtf-regroup` (RG3): the counts of one regroup pass (the log line and `params.tsv`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -2562,7 +2831,7 @@ struct RegroupStats {
 /// `_<digits>` or `.<digits>`, never `.rg<digits>`).
 fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
     use rustle::family::bridge_regroup::{parse, rg3_pieces};
-    
+
     // ---- parse (rg3.py `parse`) ----
     let txs = parse(lines, "--gtf-regroup")?;
     let mut genes: Vec<&str> = Vec::new(); // input gene_ids in first-line order
@@ -2580,11 +2849,18 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
     }
 
     // ---- pieces and naming (rg3.py `pieces`, adj = "exon", + `regroup`), one gene_id at a time ----
-    let mut st = RegroupStats { gene_ids: genes.len(), ..Default::default() };
+    let mut st = RegroupStats {
+        gene_ids: genes.len(),
+        ..Default::default()
+    };
     let mut new: Vec<Option<String>> = vec![None; txs.len()]; // each transcript's output gene_id
-    // assert 3: no new name equals an input gene_id or transcript_id; asserts 2/4: every output gene_id holds
-    // exactly one piece of exactly one input gene_id (split-only)
-    let inputs: DetHashSet<&str> = genes.iter().copied().chain(txs.iter().map(|t| t.tid.as_str())).collect();
+                                                              // assert 3: no new name equals an input gene_id or transcript_id; asserts 2/4: every output gene_id holds
+                                                              // exactly one piece of exactly one input gene_id (split-only)
+    let inputs: DetHashSet<&str> = genes
+        .iter()
+        .copied()
+        .chain(txs.iter().map(|t| t.tid.as_str()))
+        .collect();
     let mut owner: DetHashSet<String> = DetHashSet::default();
     for g in &genes {
         let (comps, names) = rg3_pieces(&txs, g, &members[g]);
@@ -2594,7 +2870,9 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
         }
         for (c, n) in comps.iter().zip(&names) {
             if n != g && inputs.contains(n.as_str()) {
-                anyhow::bail!("--gtf-regroup: the new name {n} equals an input gene_id or transcript_id");
+                anyhow::bail!(
+                    "--gtf-regroup: the new name {n} equals an input gene_id or transcript_id"
+                );
             }
             if !owner.insert(n.clone()) {
                 anyhow::bail!("--gtf-regroup: output gene_id {n} would hold two pieces");
@@ -2604,10 +2882,16 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
             }
         }
     }
-    st.transcripts_relabelled =
-        txs.iter().enumerate().filter(|(i, t)| t.gene.is_some() && new[*i].as_deref() != t.gene.as_deref()).count();
-    let new_of: DetHashMap<&str, &str> =
-        txs.iter().enumerate().filter_map(|(i, t)| new[i].as_deref().map(|n| (t.tid.as_str(), n))).collect();
+    st.transcripts_relabelled = txs
+        .iter()
+        .enumerate()
+        .filter(|(i, t)| t.gene.is_some() && new[*i].as_deref() != t.gene.as_deref())
+        .count();
+    let new_of: DetHashMap<&str, &str> = txs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| new[i].as_deref().map(|n| (t.tid.as_str(), n)))
+        .collect();
 
     // ---- rewrite (rg3.py `rewrite`): gene_id "<old>" -> gene_id "<new>", first occurrence, relabelled lines only ----
     for line in lines.iter_mut() {
@@ -2618,12 +2902,21 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
         if f.len() < 9 {
             continue;
         }
-        let (Some(tid), Some(old)) = (re_attr(f[8], "transcript_id"), re_attr(f[8], "gene_id")) else { continue };
-        let Some(&nv) = new_of.get(tid.as_str()) else { continue };
+        let (Some(tid), Some(old)) = (re_attr(f[8], "transcript_id"), re_attr(f[8], "gene_id"))
+        else {
+            continue;
+        };
+        let Some(&nv) = new_of.get(tid.as_str()) else {
+            continue;
+        };
         if nv == old {
             continue;
         }
-        let attrs = f[8].replacen(&format!("gene_id \"{old}\""), &format!("gene_id \"{nv}\""), 1);
+        let attrs = f[8].replacen(
+            &format!("gene_id \"{old}\""),
+            &format!("gene_id \"{nv}\""),
+            1,
+        );
         let mut out: Vec<&str> = f.clone();
         out[8] = &attrs;
         *line = out.join("\t");
@@ -2656,8 +2949,19 @@ fn polish_gtf_lines(
     retained_ratio: f64,
 ) -> (usize, usize, usize, u64, usize) {
     let (drop, _sites, counts) = polish_drop_set(
-        lines, mode, mono_quantile, isoform_fraction, mono_shadow, ism_absolute_escape, ism_3p_anchored, ism_ratio,
-        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio,
+        lines,
+        mode,
+        mono_quantile,
+        isoform_fraction,
+        mono_shadow,
+        ism_absolute_escape,
+        ism_3p_anchored,
+        ism_ratio,
+        fraction_exempt,
+        fuzzy,
+        fuzzy_ism,
+        fraction_min_reads,
+        retained_ratio,
     );
     retain_transcripts(lines, &drop);
     counts
@@ -2701,13 +3005,18 @@ fn polish_drop_set(
     DetHashMap<String, &'static str>,
     (usize, usize, usize, u64, usize),
 ) {
-    
     if mode == "none" {
-        return (DetHashSet::default(), DetHashMap::default(), (0, 0, 0, 0, 0));
+        return (
+            DetHashSet::default(),
+            DetHashMap::default(),
+            (0, 0, 0, 0, 0),
+        );
     }
     // the step that dropped each transcript, recorded after every step (no step's decision reads it)
     let mut sites: DetHashMap<String, &'static str> = DetHashMap::default();
-    let mark = |drop: &DetHashSet<String>, sites: &mut DetHashMap<String, &'static str>, step: &'static str| {
+    let mark = |drop: &DetHashSet<String>,
+                sites: &mut DetHashMap<String, &'static str>,
+                step: &'static str| {
         for t in drop.iter() {
             if !sites.contains_key(t) {
                 sites.insert(t.clone(), step);
@@ -2724,7 +3033,9 @@ fn polish_drop_set(
         if f.len() < 9 {
             continue;
         }
-        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        let Some(tid) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
         if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
             let e = reads.entry(tid.clone()).or_insert(0);
             *e = (*e).max(r);
@@ -2735,15 +3046,23 @@ fn polish_drop_set(
         if f[2] != "exon" {
             continue;
         }
-        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else {
+            continue;
+        };
         exons.entry(tid.clone()).or_default().push((a - 1, b));
-        key.entry(tid).or_insert_with(|| (f[0].to_string(), f[6].to_string()));
+        key.entry(tid)
+            .or_insert_with(|| (f[0].to_string(), f[6].to_string()));
     }
     let mut chain: DetHashMap<String, Vec<(i64, i64)>> = DetHashMap::default();
     let mut span: DetHashMap<String, (i64, i64)> = DetHashMap::default();
     for (tid, ex) in exons.iter_mut() {
         ex.sort_unstable();
-        chain.insert(tid.clone(), (0..ex.len().saturating_sub(1)).map(|i| (ex[i].1, ex[i + 1].0)).collect());
+        chain.insert(
+            tid.clone(),
+            (0..ex.len().saturating_sub(1))
+                .map(|i| (ex[i].1, ex[i + 1].0))
+                .collect(),
+        );
         span.insert(tid.clone(), (ex[0].0, ex[ex.len() - 1].1));
     }
 
@@ -2764,7 +3083,8 @@ fn polish_drop_set(
 
     // §6q6 fuzzy junction comparison (isoseq's `--max-fuzzy-junction`): equality and sub-chain
     // containment up to a per-junction tolerance.
-    let near = |a: (i64, i64), b: (i64, i64)| (a.0 - b.0).abs() <= fuzzy && (a.1 - b.1).abs() <= fuzzy;
+    let near =
+        |a: (i64, i64), b: (i64, i64)| (a.0 - b.0).abs() <= fuzzy && (a.1 - b.1).abs() <= fuzzy;
     let chain_eq = |x: &[(i64, i64)], y: &[(i64, i64)]| -> bool {
         x.len() == y.len() && x.iter().zip(y.iter()).all(|(&a, &b)| near(a, b))
     };
@@ -2781,7 +3101,10 @@ fn polish_drop_set(
                 continue;
             }
             if let Some(k) = key.get(t) {
-                buckets.entry((k.0.as_str(), k.1.as_str(), c.len())).or_default().push(t);
+                buckets
+                    .entry((k.0.as_str(), k.1.as_str(), c.len()))
+                    .or_default()
+                    .push(t);
             }
         }
         let mut keys: Vec<_> = buckets.keys().copied().collect();
@@ -2790,7 +3113,12 @@ fn polish_drop_set(
             let mut ts = buckets.remove(&bk).unwrap();
             // best-supported first, ties by id, so the kept representative is deterministic
             ts.sort_by(|a, b| {
-                reads.get(*b).copied().unwrap_or(0).cmp(&reads.get(*a).copied().unwrap_or(0)).then_with(|| a.cmp(b))
+                reads
+                    .get(*b)
+                    .copied()
+                    .unwrap_or(0)
+                    .cmp(&reads.get(*a).copied().unwrap_or(0))
+                    .then_with(|| a.cmp(b))
             });
             for i in 0..ts.len() {
                 if drop.contains(ts[i]) {
@@ -2846,7 +3174,9 @@ fn polish_drop_set(
                 }
                 let cx = &chain[*x];
                 let candidates: Vec<&String> = if exact_index {
-                    cx.iter().flat_map(|j| by_first.get(j).into_iter().flatten().copied()).collect()
+                    cx.iter()
+                        .flat_map(|j| by_first.get(j).into_iter().flatten().copied())
+                        .collect()
                 } else {
                     multi.clone()
                 };
@@ -2885,19 +3215,27 @@ fn polish_drop_set(
             // contains the mono's span. Offline: monos by end descending, multis inserted by end descending into
             // a prefix-min Fenwick over their (sorted) starts holding their `multi` rank; the query is the min
             // rank among starts ≤ mono.start. Same host as the scan, so byte-identical.
-            let alive: Vec<(usize, (i64, i64))> =
-                multi.iter().enumerate().filter(|(_, m)| !drop.contains(**m)).map(|(r, m)| (r, span[*m])).collect();
+            let alive: Vec<(usize, (i64, i64))> = multi
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| !drop.contains(**m))
+                .map(|(r, m)| (r, span[*m]))
+                .collect();
             let mut starts: Vec<i64> = alive.iter().map(|(_, s)| s.0).collect();
             starts.sort_unstable();
             starts.dedup();
             let nfen = starts.len();
             let mut fen: Vec<usize> = vec![usize::MAX; nfen + 1];
-            let mut by_end: Vec<(i64, usize, i64)> = alive.iter().map(|(r, s)| (s.1, *r, s.0)).collect();
+            let mut by_end: Vec<(i64, usize, i64)> =
+                alive.iter().map(|(r, s)| (s.1, *r, s.0)).collect();
             by_end.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
             let mut tids: Vec<&String> = tids.iter().collect();
             tids.sort();
-            let mut monos: Vec<(&String, (i64, i64))> =
-                tids.iter().filter(|t| chain[**t].is_empty() && !drop.contains(**t)).map(|t| (*t, span[*t])).collect();
+            let mut monos: Vec<(&String, (i64, i64))> = tids
+                .iter()
+                .filter(|t| chain[**t].is_empty() && !drop.contains(**t))
+                .map(|t| (*t, span[*t]))
+                .collect();
             monos.sort_by(|a, b| b.1 .1.cmp(&a.1 .1).then_with(|| a.0.cmp(b.0)));
             let mut p = 0usize;
             for (t, s) in monos {
@@ -2927,7 +3265,14 @@ fn polish_drop_set(
     let n_ism = drop.len() - n_fuzzy;
     for t in drop.iter() {
         if !sites.contains_key(t) {
-            sites.insert(t.clone(), if chain.get(t).is_some_and(|c| !c.is_empty()) { "ism" } else { "ism_mono" });
+            sites.insert(
+                t.clone(),
+                if chain.get(t).is_some_and(|c| !c.is_empty()) {
+                    "ism"
+                } else {
+                    "ism_mono"
+                },
+            );
         }
     }
 
@@ -2942,7 +3287,8 @@ fn polish_drop_set(
     let floor = if multi_reads.is_empty() || mono_quantile <= 0.0 {
         0
     } else {
-        multi_reads[((mono_quantile * multi_reads.len() as f64) as usize).min(multi_reads.len() - 1)]
+        multi_reads
+            [((mono_quantile * multi_reads.len() as f64) as usize).min(multi_reads.len() - 1)]
     };
     if floor > 0 {
         for (t, c) in chain.iter() {
@@ -2964,9 +3310,15 @@ fn polish_drop_set(
                 continue;
             }
             let Some(k) = key.get(t) else { continue };
-            spans_same.entry((k.0.as_str(), k.1.as_str())).or_default().push(span[t]);
+            spans_same
+                .entry((k.0.as_str(), k.1.as_str()))
+                .or_default()
+                .push(span[t]);
             if let Some(ex) = exons.get(t) {
-                exons_any.entry(k.0.as_str()).or_default().extend(ex.iter().copied());
+                exons_any
+                    .entry(k.0.as_str())
+                    .or_default()
+                    .extend(ex.iter().copied());
             }
         }
         // merge each interval list so the overlap probe is a single sorted scan
@@ -2992,14 +3344,19 @@ fn polish_drop_set(
             let hi = v.partition_point(|&(a, _)| a <= e);
             hi > 0 && v[hi - 1].1 >= s
         };
-        let mut mono: Vec<&String> =
-            chain.iter().filter(|(t, c)| c.is_empty() && !drop.contains(*t)).map(|(t, _)| t).collect();
+        let mut mono: Vec<&String> = chain
+            .iter()
+            .filter(|(t, c)| c.is_empty() && !drop.contains(*t))
+            .map(|(t, _)| t)
+            .collect();
         mono.sort();
         for t in mono {
             let Some(k) = key.get(t) else { continue };
             let (s, e) = span[t];
             let exon_hit = exons_any.get(k.0.as_str()).is_some_and(|v| hits(v, s, e));
-            let span_hit = spans_same.get(&(k.0.as_str(), k.1.as_str())).is_some_and(|v| hits(v, s, e));
+            let span_hit = spans_same
+                .get(&(k.0.as_str(), k.1.as_str()))
+                .is_some_and(|v| hits(v, s, e));
             if exon_hit || span_hit {
                 drop.insert(t.clone());
             }
@@ -3059,7 +3416,9 @@ fn polish_drop_set(
                 *support.entry((k.0.as_str(), k.1.as_str(), j)).or_insert(0) += r;
             }
             if let Some(g) = gene.get(t) {
-                gj.entry((g.as_str(), k.1.as_str())).or_default().extend(c.iter().copied());
+                gj.entry((g.as_str(), k.1.as_str()))
+                    .or_default()
+                    .extend(c.iter().copied());
             }
         }
         for v in gj.values_mut() {
@@ -3070,8 +3429,12 @@ fn polish_drop_set(
         cands.sort();
         let mut newly: DetHashSet<String> = DetHashSet::default();
         for t in cands {
-            let (Some(g), Some(k), Some(ex)) = (gene.get(t), key.get(t), exons.get(t)) else { continue };
-            let Some(js) = gj.get(&(g.as_str(), k.1.as_str())) else { continue };
+            let (Some(g), Some(k), Some(ex)) = (gene.get(t), key.get(t), exons.get(t)) else {
+                continue;
+            };
+            let Some(js) = gj.get(&(g.as_str(), k.1.as_str())) else {
+                continue;
+            };
             let own: DetHashSet<(i64, i64)> = chain[t].iter().copied().collect();
             let rt = reads.get(t).copied().unwrap_or(0);
             for &j in js.iter() {
@@ -3079,7 +3442,13 @@ fn polish_drop_set(
                     continue;
                 }
                 let inside = ex.iter().any(|&(a, b)| a < j.0 && j.1 < b);
-                if inside && (support.get(&(k.0.as_str(), k.1.as_str(), j)).copied().unwrap_or(0) as f64) >= retained_ratio * rt as f64 {
+                if inside
+                    && (support
+                        .get(&(k.0.as_str(), k.1.as_str(), j))
+                        .copied()
+                        .unwrap_or(0) as f64)
+                        >= retained_ratio * rt as f64
+                {
                     newly.insert(t.clone());
                     break;
                 }
@@ -3107,7 +3476,9 @@ fn gtf_attr_digits(attrs: &str, key: &str) -> Option<u64> {
             continue;
         }
         let v0 = at + pat.len();
-        let Some(len) = attrs[v0..].find('"') else { continue };
+        let Some(len) = attrs[v0..].find('"') else {
+            continue;
+        };
         let v = &attrs[v0..v0 + len];
         if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) {
             if let Ok(n) = v.parse::<u64>() {
@@ -3125,8 +3496,13 @@ fn gtf_attr_digits(attrs: &str, key: &str) -> Option<u64> {
 /// ties to the first `transcript_id` in byte order. Decided on the input set: nothing is removed here.
 /// Port of `compat_collapse.py` e14c5646 (unguarded); the key includes the contig, so one call over many
 /// contigs equals the per-contig calls concatenated. Also returns the number of multi-exon transcripts.
-fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (String, &'static str)>, usize) {
-    use std::collections::{BTreeMap};
+fn subchain_flags(
+    lines: &[String],
+) -> (
+    std::collections::BTreeMap<String, (String, &'static str)>,
+    usize,
+) {
+    use std::collections::BTreeMap;
     // transcript line: (gene_id, contig, strand, reads); exons (0-based half-open) per transcript_id
     let mut info: DetHashMap<String, (String, String, String, u64)> = DetHashMap::default();
     let mut exons: DetHashMap<String, Vec<(i64, i64)>> = DetHashMap::default();
@@ -3135,13 +3511,19 @@ fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (Stri
         if f.len() < 9 {
             continue;
         }
-        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        let Some(tid) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
         if f[2] == "transcript" {
-            let Some(g) = re_attr(f[8], "gene_id") else { continue };
+            let Some(g) = re_attr(f[8], "gene_id") else {
+                continue;
+            };
             let r = gtf_attr_digits(f[8], "reads").unwrap_or(0);
             info.insert(tid, (g, f[0].to_string(), f[6].to_string(), r));
         } else if f[2] == "exon" {
-            let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+            let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else {
+                continue;
+            };
             exons.entry(tid).or_default().push((a - 1, b));
         }
     }
@@ -3151,15 +3533,23 @@ fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (Stri
     let mut chain: BTreeMap<&str, Vec<(i64, i64)>> = BTreeMap::new();
     for (t, e) in exons.iter() {
         if info.contains_key(t) {
-            chain.insert(t.as_str(), (0..e.len().saturating_sub(1)).map(|i| (e[i].1, e[i + 1].0)).collect());
+            chain.insert(
+                t.as_str(),
+                (0..e.len().saturating_sub(1))
+                    .map(|i| (e[i].1, e[i + 1].0))
+                    .collect(),
+            );
         }
     }
     // junction -> (transcript, its index in that transcript's chain), per locus key
-    let mut by_j: DetHashMap<(&str, &str, &str, (i64, i64)), Vec<(&str, usize)>> = DetHashMap::default();
+    let mut by_j: DetHashMap<(&str, &str, &str, (i64, i64)), Vec<(&str, usize)>> =
+        DetHashMap::default();
     for (&t, c) in chain.iter() {
         let (g, ctg, s, _) = &info[t];
         for (i, &j) in c.iter().enumerate() {
-            by_j.entry((g.as_str(), ctg.as_str(), s.as_str(), j)).or_default().push((t, i));
+            by_j.entry((g.as_str(), ctg.as_str(), s.as_str(), j))
+                .or_default()
+                .push((t, i));
         }
     }
     for v in by_j.values_mut() {
@@ -3174,7 +3564,11 @@ fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (Stri
         let m = cy.len();
         let (ey0, ey1) = (exons[y][0].0, exons[y][exons[y].len() - 1].1);
         let mut best: Option<(&str, u64, &'static str)> = None;
-        for &(x, k) in by_j.get(&(g.as_str(), ctg.as_str(), s.as_str(), cy[0])).into_iter().flatten() {
+        for &(x, k) in by_j
+            .get(&(g.as_str(), ctg.as_str(), s.as_str(), cy[0]))
+            .into_iter()
+            .flatten()
+        {
             let cx = &chain[x];
             if x == y || cx.len() <= m || k + m > cx.len() || cx[k..k + m] != cy[..] {
                 continue;
@@ -3189,8 +3583,18 @@ fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (Stri
             }
             // junctions of x's chain left out on the genomic left (k) and right; `-` reads right to left
             let (left, right) = (k, cx.len() - m - k);
-            let (m5, m3) = if s != "-" { (left, right) } else { (right, left) };
-            let missing = if m3 == 0 { "5p" } else if m5 == 0 { "3p" } else { "both" };
+            let (m5, m3) = if s != "-" {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            let missing = if m3 == 0 {
+                "5p"
+            } else if m5 == 0 {
+                "3p"
+            } else {
+                "both"
+            };
             if best.map_or(true, |b| rx > b.1) {
                 best = Some((x, rx, missing));
             }
@@ -3204,7 +3608,10 @@ fn subchain_flags(lines: &[String]) -> (std::collections::BTreeMap<String, (Stri
 }
 
 /// `--polish-subchain drop`: remove every line of a flagged transcript.
-fn subchain_drop(lines: &mut Vec<String>, flags: &std::collections::BTreeMap<String, (String, &'static str)>) {
+fn subchain_drop(
+    lines: &mut Vec<String>,
+    flags: &std::collections::BTreeMap<String, (String, &'static str)>,
+) {
     if flags.is_empty() {
         return;
     }
@@ -3222,7 +3629,10 @@ fn subchain_drop(lines: &mut Vec<String>, flags: &std::collections::BTreeMap<Str
 
 /// `--polish-subchain tag`: append `subchain_of "<x>"; subchain_missing "<5p|3p|both>";` to the transcript
 /// line of every flagged transcript; every other byte is unchanged.
-fn subchain_tag(lines: &mut [String], flags: &std::collections::BTreeMap<String, (String, &'static str)>) {
+fn subchain_tag(
+    lines: &mut [String],
+    flags: &std::collections::BTreeMap<String, (String, &'static str)>,
+) {
     if flags.is_empty() {
         return;
     }
@@ -3231,13 +3641,16 @@ fn subchain_tag(lines: &mut [String], flags: &std::collections::BTreeMap<String,
         if f.len() < 9 || f[2] != "transcript" {
             continue;
         }
-        let Some(t) = re_attr(f[8], "transcript_id") else { continue };
+        let Some(t) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
         if let Some((x, missing)) = flags.get(&t) {
-            line.push_str(&format!(" subchain_of \"{x}\"; subchain_missing \"{missing}\";"));
+            line.push_str(&format!(
+                " subchain_of \"{x}\"; subchain_missing \"{missing}\";"
+            ));
         }
     }
 }
-
 
 /// §6r5: add `cov` and `TPM` to every transcript line of an emitted GTF, from its `reads` attribute.
 ///
@@ -3264,8 +3677,11 @@ fn annotate_tpm(lines: &mut [String]) -> usize {
         if f.len() < 9 || f[2] != "exon" {
             continue;
         }
-        let (Some(t), Ok(a), Ok(b)) = (re_attr(f[8], "transcript_id"), f[3].parse::<i64>(), f[4].parse::<i64>())
-        else {
+        let (Some(t), Ok(a), Ok(b)) = (
+            re_attr(f[8], "transcript_id"),
+            f[3].parse::<i64>(),
+            f[4].parse::<i64>(),
+        ) else {
             continue;
         };
         *len.entry(t).or_insert(0) += b - a + 1;
@@ -3278,7 +3694,11 @@ fn annotate_tpm(lines: &mut [String]) -> usize {
             re_attr(f[8], "transcript_id")
         };
         let l = tid.and_then(|t| len.get(&t).copied()).unwrap_or(0).max(1) as f64;
-        line.push_str(&format!(" cov \"{:.6}\"; TPM \"{:.6}\";", r / (l / 1000.0), r / total * 1e6));
+        line.push_str(&format!(
+            " cov \"{:.6}\"; TPM \"{:.6}\";",
+            r / (l / 1000.0),
+            r / total * 1e6
+        ));
         n += 1;
     }
     n
@@ -3329,7 +3749,10 @@ struct SnapTx {
 
 impl SnapTx {
     fn chain(&self) -> Vec<SnapJn> {
-        self.exons.windows(2).map(|w| (w[0].1, w[1].0 - 1)).collect()
+        self.exons
+            .windows(2)
+            .map(|w| (w[0].1, w[1].0 - 1))
+            .collect()
     }
 }
 
@@ -3343,9 +3766,17 @@ fn snap_parse(lines: &[String]) -> Vec<SnapTx> {
         if f.len() < 9 {
             continue;
         }
-        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        let Some(tid) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
         let k = *at.entry(tid.clone()).or_insert_with(|| {
-            order.push(SnapTx { tid, gene: String::new(), strand: String::new(), exons: Vec::new(), reads: 0 });
+            order.push(SnapTx {
+                tid,
+                gene: String::new(),
+                strand: String::new(),
+                exons: Vec::new(),
+                reads: 0,
+            });
             order.len() - 1
         });
         let t = &mut order[k];
@@ -3394,7 +3825,10 @@ fn snap_equivalent(seq: &[u8], j1: SnapJn, j2: SnapJn) -> bool {
 
 /// Canonical class of intron `j` in transcript orientation: 0 = GT-AG, 1 = GC-AG, 2 = AT-AC, 3 = anything else.
 fn snap_motif_rank(seq: &[u8], j: SnapJn, strand: &str) -> u8 {
-    let (Some(don), Some(acc)) = (snap_slice(seq, j.0, j.0 + 2), snap_slice(seq, j.1 - 2, j.1)) else { return 3 };
+    let (Some(don), Some(acc)) = (snap_slice(seq, j.0, j.0 + 2), snap_slice(seq, j.1 - 2, j.1))
+    else {
+        return 3;
+    };
     let m: Vec<u8> = if strand == "-" {
         let rc = rustle::family::seq_utils::reverse_complement;
         [rc(acc), rc(don)].concat()
@@ -3465,13 +3899,20 @@ fn snap_tally_read(
         }
         *n += 1;
         used = true;
-        let seg = &read[qx.saturating_sub(SNAP_FLANK).min(read.len())..(qx + SNAP_FLANK).min(read.len())];
+        let seg =
+            &read[qx.saturating_sub(SNAP_FLANK).min(read.len())..(qx + SNAP_FLANK).min(read.len())];
         let own = hw_distance(seg, &wins[&x]);
         for &y in partners.get(&x).map(|v| v.as_slice()).unwrap_or(&[]) {
             let other = hw_distance(seg, &wins[&y]);
             let e = ev.entry((x, y)).or_insert([0; 4]);
             e[0] += 1;
-            e[if own < other { 1 } else if own == other { 2 } else { 3 }] += 1;
+            e[if own < other {
+                1
+            } else if own == other {
+                2
+            } else {
+                3
+            }] += 1;
         }
     }
     used
@@ -3479,7 +3920,9 @@ fn snap_tally_read(
 
 /// The indexed BAM `--polish-junction-snap reads` re-reads over the near pairs (opened once per run).
 struct SnapBam {
-    reader: noodles_bam::io::Reader<noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>>,
+    reader: noodles_bam::io::Reader<
+        noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>,
+    >,
     header: noodles_sam::Header,
     index: noodles_bam::bai::Index,
 }
@@ -3487,7 +3930,10 @@ struct SnapBam {
 impl SnapBam {
     fn open(bam: &str) -> Result<Self> {
         // the assembler's own reader settings (`reads_in_region`): 1 MiB buffer, min(4, cores) inflate workers
-        let workers = std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1).max(1);
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(1)
+            .max(1);
         let file = std::fs::File::open(bam).with_context(|| format!("opening {bam}"))?;
         let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(
             NonZeroUsize::new(workers).unwrap_or(NonZeroUsize::MIN),
@@ -3495,8 +3941,13 @@ impl SnapBam {
         );
         let mut reader = noodles_bam::io::Reader::from(bgzf);
         let header = reader.read_header()?;
-        let index = noodles_bam::bai::read(format!("{bam}.bai")).with_context(|| format!("reading {bam}.bai"))?;
-        Ok(Self { reader, header, index })
+        let index = noodles_bam::bai::read(format!("{bam}.bai"))
+            .with_context(|| format!("reading {bam}.bai"))?;
+        Ok(Self {
+            reader,
+            header,
+            index,
+        })
     }
 
     /// Evidence for every junction of `partners` on `chrom` (see [`snap_tally_read`]) from ONE indexed pass over
@@ -3510,12 +3961,16 @@ impl SnapBam {
         seq: &[u8],
         partners: &std::collections::BTreeMap<SnapJn, Vec<SnapJn>>,
     ) -> Result<(SnapEvidence, usize, usize)> {
-        let wins: DetHashMap<SnapJn, Vec<u8>> = partners.keys().map(|&j| (j, snap_window(seq, j))).collect();
+        let wins: DetHashMap<SnapJn, Vec<u8>> =
+            partners.keys().map(|&j| (j, snap_window(seq, j))).collect();
         let want: DetHashSet<SnapJn> = partners.keys().copied().collect();
         let mut ev = SnapEvidence::default();
         let mut nreads: DetHashMap<SnapJn, u32> = DetHashMap::default();
         let (mut used, mut records) = (0usize, 0usize);
-        let (Some(lo), Some(hi)) = (partners.keys().map(|j| j.0).min(), partners.keys().map(|j| j.0).max()) else {
+        let (Some(lo), Some(hi)) = (
+            partners.keys().map(|j| j.0).min(),
+            partners.keys().map(|j| j.0).max(),
+        ) else {
             return Ok((ev, used, records));
         };
         let mut ops: Vec<(u8, i64)> = Vec::with_capacity(256);
@@ -3528,7 +3983,9 @@ impl SnapBam {
             if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
                 continue;
             }
-            let Some(start) = record.alignment_start() else { continue };
+            let Some(start) = record.alignment_start() else {
+                continue;
+            };
             let ref_start = usize::from(start?) as i64 - 1;
             ops.clear();
             let mut carries = false;
@@ -3560,7 +4017,16 @@ impl SnapBam {
             }
             read.clear();
             read.extend(s.iter().map(|b| b.to_ascii_uppercase()));
-            if snap_tally_read(ref_start, &ops, &read, &want, &wins, partners, &mut nreads, &mut ev) {
+            if snap_tally_read(
+                ref_start,
+                &ops,
+                &read,
+                &want,
+                &wins,
+                partners,
+                &mut nreads,
+                &mut ev,
+            ) {
                 used += 1;
             }
         }
@@ -3575,10 +4041,17 @@ impl SnapBam {
 fn snap_remap(
     mode: &str,
     seq: &[u8],
-    groups: &std::collections::BTreeMap<(String, String), std::collections::BTreeMap<SnapJn, Vec<SnapJn>>>,
+    groups: &std::collections::BTreeMap<
+        (String, String),
+        std::collections::BTreeMap<SnapJn, Vec<SnapJn>>,
+    >,
     support: &DetHashMap<(String, SnapJn), u64>,
     ev: &SnapEvidence,
-) -> (std::collections::BTreeMap<(String, String, SnapJn), SnapJn>, usize, usize) {
+) -> (
+    std::collections::BTreeMap<(String, String, SnapJn), SnapJn>,
+    usize,
+    usize,
+) {
     use std::cmp::Reverse;
     let min_reads = rustle::family::denovo_assemble::PASS1_MIN_READS;
     let mut remap = std::collections::BTreeMap::new();
@@ -3591,7 +4064,8 @@ fn snap_remap(
         } else {
             order.sort_by_key(|&j| (snap_motif_rank(seq, j, strand), Reverse(sup(j)), j));
         }
-        let rank: DetHashMap<SnapJn, usize> = order.iter().enumerate().map(|(i, &j)| (j, i)).collect();
+        let rank: DetHashMap<SnapJn, usize> =
+            order.iter().enumerate().map(|(i, &j)| (j, i)).collect();
         let mut absorbed: DetHashSet<SnapJn> = DetHashSet::default();
         let mut reps: DetHashSet<SnapJn> = DetHashSet::default();
         for &big in order.iter() {
@@ -3640,10 +4114,16 @@ fn snap_remap(
 
 /// Replace the value of the attribute `re_attr` reads (the first `key "`) in `line`'s attribute column.
 fn snap_set_attr(line: &mut String, key: &str, value: &str) {
-    let Some(col) = line.match_indices('\t').nth(7).map(|(i, _)| i + 1) else { return };
+    let Some(col) = line.match_indices('\t').nth(7).map(|(i, _)| i + 1) else {
+        return;
+    };
     let pat = format!("{key} \"");
-    let Some(i) = line[col..].find(&pat).map(|p| col + p + pat.len()) else { return };
-    let Some(j) = line[i..].find('"').map(|p| i + p) else { return };
+    let Some(i) = line[col..].find(&pat).map(|p| col + p + pat.len()) else {
+        return;
+    };
+    let Some(j) = line[i..].find('"').map(|p| i + p) else {
+        return;
+    };
     line.replace_range(i..j, value);
 }
 
@@ -3654,7 +4134,9 @@ fn junction_snap(
     lines: &mut Vec<String>,
     mode: &str,
     seq: &[u8],
-    mut evidence: impl FnMut(&std::collections::BTreeMap<SnapJn, Vec<SnapJn>>) -> Result<(SnapEvidence, usize, usize)>,
+    mut evidence: impl FnMut(
+        &std::collections::BTreeMap<SnapJn, Vec<SnapJn>>,
+    ) -> Result<(SnapEvidence, usize, usize)>,
 ) -> Result<SnapStats> {
     use std::collections::{BTreeMap, BTreeSet};
     let mut st = SnapStats::default();
@@ -3668,7 +4150,9 @@ fn junction_snap(
     for t in txs.iter() {
         for j in t.chain() {
             *support.entry((t.strand.clone(), j)).or_insert(0) += t.reads;
-            loci.entry((t.strand.clone(), t.gene.clone())).or_default().insert(j);
+            loci.entry((t.strand.clone(), t.gene.clone()))
+                .or_default()
+                .insert(j);
         }
     }
     // near pairs per locus, and the partners of every junction over the contig (evidence is per junction pair)
@@ -3699,7 +4183,10 @@ fn junction_snap(
         return Ok(st);
     }
     let ev = if mode == "reads" {
-        let p: BTreeMap<SnapJn, Vec<SnapJn>> = partners.into_iter().map(|(k, v)| (k, v.into_iter().collect())).collect();
+        let p: BTreeMap<SnapJn, Vec<SnapJn>> = partners
+            .into_iter()
+            .map(|(k, v)| (k, v.into_iter().collect()))
+            .collect();
         let (ev, used, records) = evidence(&p)?;
         st.evidence_reads = used;
         st.records = records;
@@ -3722,7 +4209,9 @@ fn junction_snap(
         let mut ex = t.exons.clone();
         let mut changed = false;
         for (k, j) in t.chain().into_iter().enumerate() {
-            let Some(&nj) = remap.get(&(t.strand.clone(), t.gene.clone(), j)) else { continue };
+            let Some(&nj) = remap.get(&(t.strand.clone(), t.gene.clone(), j)) else {
+                continue;
+            };
             if nj == j {
                 continue;
             }
@@ -3746,7 +4235,9 @@ fn junction_snap(
     let mut same: BTreeMap<(String, Vec<SnapJn>), Vec<usize>> = BTreeMap::new();
     for (i, t) in txs.iter().enumerate() {
         if t.exons.len() >= 2 {
-            same.entry((t.strand.clone(), chain_of(i))).or_default().push(i);
+            same.entry((t.strand.clone(), chain_of(i)))
+                .or_default()
+                .push(i);
         }
     }
     let mut drop: DetHashSet<String> = DetHashSet::default();
@@ -3756,11 +4247,19 @@ fn junction_snap(
         if members.len() < 2 || !members.iter().any(|i| moved.contains_key(i)) {
             continue;
         }
-        members.sort_by(|&a, &b| txs[b].reads.cmp(&txs[a].reads).then_with(|| txs[a].tid.cmp(&txs[b].tid)));
+        members.sort_by(|&a, &b| {
+            txs[b]
+                .reads
+                .cmp(&txs[a].reads)
+                .then_with(|| txs[a].tid.cmp(&txs[b].tid))
+        });
         let rep = &txs[members[0]];
         new_reads.insert(rep.tid.clone(), members.iter().map(|&i| txs[i].reads).sum());
         let from: Vec<&str> = members[1..].iter().map(|&i| txs[i].tid.as_str()).collect();
-        tags.insert(rep.tid.clone(), format!(" snapped_from \"{}\";", from.join(",")));
+        tags.insert(
+            rep.tid.clone(),
+            format!(" snapped_from \"{}\";", from.join(",")),
+        );
         drop.extend(from.iter().map(|s| s.to_string()));
     }
     st.collapsed = drop.len();
@@ -3771,7 +4270,15 @@ fn junction_snap(
         if drop.contains(&t.tid) {
             continue;
         }
-        edits.insert(t.tid.as_str(), t.exons.iter().copied().zip(ex.iter().copied()).filter(|(a, b)| a != b).collect());
+        edits.insert(
+            t.tid.as_str(),
+            t.exons
+                .iter()
+                .copied()
+                .zip(ex.iter().copied())
+                .filter(|(a, b)| a != b)
+                .collect(),
+        );
         let tag = tags.entry(t.tid.clone()).or_default();
         *tag = format!(" snapped \"1\";{tag}");
     }
@@ -3780,20 +4287,34 @@ fn junction_snap(
         // None = drop the line, Some(None) = keep it unchanged, Some(Some(s)) = replace it by s
         let action: Option<Option<String>> = {
             let f: Vec<&str> = line.split('\t').collect();
-            match (f.len() >= 9).then(|| re_attr(f[8], "transcript_id")).flatten() {
+            match (f.len() >= 9)
+                .then(|| re_attr(f[8], "transcript_id"))
+                .flatten()
+            {
                 None => Some(None),
                 Some(tid) if drop.contains(&tid) => None,
                 Some(tid) if f[2] == "exon" => {
-                    let old = (f[3].parse::<i64>().unwrap_or(-1), f[4].parse::<i64>().unwrap_or(-1));
-                    Some(edits.get(tid.as_str()).and_then(|m| m.get(&old)).map(|&(a, b)| {
-                        let (a, b) = (a.to_string(), b.to_string());
-                        let mut g = f.clone();
-                        g[3] = &a;
-                        g[4] = &b;
-                        g.join("\t")
-                    }))
+                    let old = (
+                        f[3].parse::<i64>().unwrap_or(-1),
+                        f[4].parse::<i64>().unwrap_or(-1),
+                    );
+                    Some(
+                        edits
+                            .get(tid.as_str())
+                            .and_then(|m| m.get(&old))
+                            .map(|&(a, b)| {
+                                let (a, b) = (a.to_string(), b.to_string());
+                                let mut g = f.clone();
+                                g[3] = &a;
+                                g[4] = &b;
+                                g.join("\t")
+                            }),
+                    )
                 }
-                Some(tid) if f[2] == "transcript" && (new_reads.contains_key(&tid) || tags.contains_key(&tid)) => {
+                Some(tid)
+                    if f[2] == "transcript"
+                        && (new_reads.contains_key(&tid) || tags.contains_key(&tid)) =>
+                {
                     let mut l = line.clone();
                     if let Some(r) = new_reads.get(&tid) {
                         snap_set_attr(&mut l, "reads", &r.to_string());
@@ -3902,7 +4423,13 @@ fn tss_betacf(a: f64, b: f64, x: f64) -> f64 {
 
 /// Regularized incomplete beta I_x(a, b); `y` = 1 - x computed by the caller without cancellation.
 fn tss_betai(a: f64, b: f64, x: f64, y: f64) -> f64 {
-    tss_betai_ln(a, b, x, y, tss_ln_gamma(a + b) - tss_ln_gamma(a) - tss_ln_gamma(b))
+    tss_betai_ln(
+        a,
+        b,
+        x,
+        y,
+        tss_ln_gamma(a + b) - tss_ln_gamma(a) - tss_ln_gamma(b),
+    )
 }
 
 /// [`tss_betai`] with ln(1/B(a, b)) supplied (the NB tail sums it exactly for an integer `a`).
@@ -4027,7 +4554,7 @@ struct TssTx {
 }
 
 fn tss_parse(lines: &[String]) -> std::collections::BTreeMap<String, TssTx> {
-    use std::collections::{BTreeMap};
+    use std::collections::BTreeMap;
     let mut exons: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new();
     let mut strand: DetHashMap<String, String> = DetHashMap::default();
     let mut reads: DetHashMap<String, u64> = DetHashMap::default();
@@ -4037,7 +4564,9 @@ fn tss_parse(lines: &[String]) -> std::collections::BTreeMap<String, TssTx> {
         if f.len() < 9 {
             continue;
         }
-        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        let Some(tid) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
         if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
             let e = reads.entry(tid.clone()).or_insert(0);
             *e = (*e).max(r);
@@ -4048,7 +4577,9 @@ fn tss_parse(lines: &[String]) -> std::collections::BTreeMap<String, TssTx> {
         if f[2] != "exon" {
             continue;
         }
-        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else {
+            continue;
+        };
         exons.entry(tid.clone()).or_default().push((a - 1, b));
         strand.entry(tid).or_insert_with(|| f[6].to_string());
     }
@@ -4056,12 +4587,23 @@ fn tss_parse(lines: &[String]) -> std::collections::BTreeMap<String, TssTx> {
     for (tid, mut ex) in exons {
         ex.sort_unstable();
         let minus = strand.get(&tid).is_some_and(|s| s == "-");
-        let mut oex: Vec<(i64, i64)> =
-            ex.iter().map(|&(s0, e0)| if minus { (-e0, -(s0 + 1)) } else { (s0 + 1, e0) }).collect();
+        let mut oex: Vec<(i64, i64)> = ex
+            .iter()
+            .map(|&(s0, e0)| {
+                if minus {
+                    (-e0, -(s0 + 1))
+                } else {
+                    (s0 + 1, e0)
+                }
+            })
+            .collect();
         oex.sort_unstable();
-        let ochain: Vec<(i64, i64)> = (0..oex.len().saturating_sub(1)).map(|i| (oex[i].1 + 1, oex[i + 1].0 - 1)).collect();
-        let gchain: Vec<(u64, u64)> =
-            (0..ex.len().saturating_sub(1)).map(|i| (ex[i].1 as u64, ex[i + 1].0 as u64)).collect();
+        let ochain: Vec<(i64, i64)> = (0..oex.len().saturating_sub(1))
+            .map(|i| (oex[i].1 + 1, oex[i + 1].0 - 1))
+            .collect();
+        let gchain: Vec<(u64, u64)> = (0..ex.len().saturating_sub(1))
+            .map(|i| (ex[i].1 as u64, ex[i + 1].0 as u64))
+            .collect();
         let t = TssTx {
             minus,
             gene: gene.get(&tid).cloned().unwrap_or_default(),
@@ -4087,9 +4629,15 @@ fn tss_index(recs: &[rustle::family::denovo_assemble::TssRead]) -> TssIndex {
     let mut ix = TssIndex::default();
     for r in recs {
         let Some(&j1) = r.oin.first() else { continue };
-        ix.first5.entry((r.minus, j1)).or_default().push((r.o5, r.capped, r.chain));
+        ix.first5
+            .entry((r.minus, j1))
+            .or_default()
+            .push((r.o5, r.capped, r.chain));
         for i in 1..r.oin.len() {
-            ix.links.entry((r.minus, r.oin[i])).or_default().push(r.oin[i - 1].1 + 1);
+            ix.links
+                .entry((r.minus, r.oin[i]))
+                .or_default()
+                .push(r.oin[i - 1].1 + 1);
         }
     }
     for v in ix.first5.values_mut() {
@@ -4113,7 +4661,8 @@ struct TssProf {
 fn tss_profile(starts: &[(i64, bool)], links: &[i64], lo: i64, hi: i64) -> TssProf {
     let len = (hi - lo + 1).max(0) as usize;
     let (mut n, mut cap, mut arr) = (vec![0u64; len], vec![0u64; len], vec![0u64; len]);
-    let mut run = (starts.partition_point(|s| s.0 < lo) + links.partition_point(|&a| a < lo)) as u64;
+    let mut run =
+        (starts.partition_point(|s| s.0 < lo) + links.partition_point(|&a| a < lo)) as u64;
     for &(o, c) in starts {
         if o >= lo && o <= hi {
             let i = (o - lo) as usize;
@@ -4157,7 +4706,8 @@ struct TssNull {
 /// excess (r(0..+10) > 1) as extra variance, while the proof uses `a` with the stratified mean; `a` is therefore
 /// slightly inflated, which is conservative (tss_review F5; as tss_design §1 specifies).
 fn tss_fit_null(base: &[&TssTx], ix: &TssIndex) -> Option<TssNull> {
-    let mut exons: std::collections::BTreeMap<(bool, (i64, i64), i64), i64> = std::collections::BTreeMap::new();
+    let mut exons: std::collections::BTreeMap<(bool, (i64, i64), i64), i64> =
+        std::collections::BTreeMap::new();
     for t in base {
         for j in 1..t.oex.len().saturating_sub(1) {
             exons.insert((t.minus, t.ochain[j], t.oex[j].0), t.oex[j].1);
@@ -4166,7 +4716,10 @@ fn tss_fit_null(base: &[&TssTx], ix: &TssIndex) -> Option<TssNull> {
     let empty_s: Vec<(i64, bool)> = Vec::new();
     let empty_l: Vec<i64> = Vec::new();
     let starts_of = |k: &(bool, (i64, i64))| -> Vec<(i64, bool)> {
-        ix.first5.get(k).map(|v| v.iter().map(|e| (e.0, e.1)).collect()).unwrap_or_default()
+        ix.first5
+            .get(k)
+            .map(|v| v.iter().map(|e| (e.0, e.1)).collect())
+            .unwrap_or_default()
     };
     let (mut tn, mut tat) = (0u64, 0u64);
     let mut profs: Vec<TssProf> = Vec::with_capacity(exons.len());
@@ -4212,8 +4765,22 @@ fn tss_fit_null(base: &[&TssTx], ix: &TssIndex) -> Option<TssNull> {
             atd[i] += p.at[i];
         }
     }
-    let r = (0..TSS_W).map(|i| if atd[i] > 0 { (nd[i] as f64 / atd[i] as f64 / h).max(1.0) } else { 1.0 }).collect();
-    Some(TssNull { h, a, r, bg_capped, bg_n })
+    let r = (0..TSS_W)
+        .map(|i| {
+            if atd[i] > 0 {
+                (nd[i] as f64 / atd[i] as f64 / h).max(1.0)
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    Some(TssNull {
+        h,
+        a,
+        r,
+        bg_capped,
+        bg_n,
+    })
 }
 
 /// Cumulative expected starts over [lo, lo + at.len()): ce[i+1] = ce[i] + h * rho(t) * N(t), rho(t) = the largest
@@ -4276,12 +4843,19 @@ struct TssCluster {
 /// link acceptors <= t; significant W-windows at p * ceil(L/W) * `fam` < alpha, overlapping windows merged, and two
 /// consecutive clusters kept apart only when some W-window strictly between them has observed <= expected (a valley).
 fn tss_chain_clusters(t: &TssTx, ix: &TssIndex, null: &TssNull, fam: usize) -> Vec<TssCluster> {
-    let Some(&j1) = t.ochain.first() else { return Vec::new() };
+    let Some(&j1) = t.ochain.first() else {
+        return Vec::new();
+    };
     let (ta, tb) = t.oex[0];
     let starts: Vec<(i64, bool)> = ix
         .first5
         .get(&(t.minus, j1))
-        .map(|v| v.iter().filter(|e| e.2 == t.chain && e.0 >= ta && e.0 <= tb).map(|e| (e.0, e.1)).collect())
+        .map(|v| {
+            v.iter()
+                .filter(|e| e.2 == t.chain && e.0 >= ta && e.0 <= tb)
+                .map(|e| (e.0, e.1))
+                .collect()
+        })
         .unwrap_or_default();
     if starts.is_empty() {
         return Vec::new();
@@ -4422,7 +4996,10 @@ fn tss_decide_with(
     mode: &str,
     null_given: Option<TssNull>,
 ) -> TssOutcome {
-    tss_gate(tss_prove_with(contig, lines, drop0, sites, recs, mode, null_given), mode)
+    tss_gate(
+        tss_prove_with(contig, lines, drop0, sites, recs, mode, null_given),
+        mode,
+    )
 }
 
 /// The no-cap gate (tss_review F1; tss_critique A2 "where there is no signal, rescue nothing and say so", B1 "split
@@ -4462,15 +5039,25 @@ fn tss_prove_with(
     mode: &str,
     null_given: Option<TssNull>,
 ) -> TssOutcome {
-    use std::collections::{BTreeMap};
-    let mut out = TssOutcome { stats: TssStats { contig: contig.to_string(), ..Default::default() }, ..Default::default() };
+    use std::collections::BTreeMap;
+    let mut out = TssOutcome {
+        stats: TssStats {
+            contig: contig.to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     let txs = tss_parse(lines);
     let ix = tss_index(recs);
-    let base: Vec<(&String, &TssTx)> =
-        txs.iter().filter(|(tid, t)| !t.ochain.is_empty() && !drop0.contains(*tid)).collect();
+    let base: Vec<(&String, &TssTx)> = txs
+        .iter()
+        .filter(|(tid, t)| !t.ochain.is_empty() && !drop0.contains(*tid))
+        .collect();
     out.stats.multi = base.len();
     let base_tx: Vec<&TssTx> = base.iter().map(|(_, t)| *t).collect();
-    let Some(null) = null_given.or_else(|| tss_fit_null(&base_tx, &ix)) else { return out };
+    let Some(null) = null_given.or_else(|| tss_fit_null(&base_tx, &ix)) else {
+        return out;
+    };
     out.stats.fitted = true;
     out.stats.h = null.h;
     out.stats.a = null.a;
@@ -4479,7 +5066,14 @@ fn tss_prove_with(
     out.stats.bg_n = null.bg_n;
     let fmt_clusters = |t: &TssTx, cl: &[TssCluster]| -> String {
         cl.iter()
-            .map(|c| format!("{}:{}/{}", if t.minus { -c.mode } else { c.mode }, c.capped, c.n))
+            .map(|c| {
+                format!(
+                    "{}:{}/{}",
+                    if t.minus { -c.mode } else { c.mode },
+                    c.capped,
+                    c.n
+                )
+            })
             .collect::<Vec<_>>()
             .join(",")
     };
@@ -4505,19 +5099,32 @@ fn tss_prove_with(
         && tss_binom_half_cdf(out.stats.bg_capped, out.stats.bg_n) < TSS_ALPHA;
     out.stats.cap_signal = cap;
     // CASE A: y = the 3'-flush chain of a longer x (same gene_id, strand; x adds >= 1 upstream exon)
-    let mut by_j: DetHashMap<(&str, bool, (i64, i64)), Vec<(&String, usize)>> = DetHashMap::default();
+    let mut by_j: DetHashMap<(&str, bool, (i64, i64)), Vec<(&String, usize)>> =
+        DetHashMap::default();
     for (tid, t) in txs.iter() {
         for (i, &j) in t.ochain.iter().enumerate() {
-            by_j.entry((t.gene.as_str(), t.minus, j)).or_default().push((tid, i));
+            by_j.entry((t.gene.as_str(), t.minus, j))
+                .or_default()
+                .push((tid, i));
         }
     }
     let mut cands: Vec<(&String, &String, usize)> = Vec::new();
     for (y, ty) in txs.iter() {
-        let Some(&j1) = ty.ochain.first() else { continue };
+        let Some(&j1) = ty.ochain.first() else {
+            continue;
+        };
         let mut best: Option<(&String, usize)> = None;
-        for &(x, k) in by_j.get(&(ty.gene.as_str(), ty.minus, j1)).into_iter().flatten() {
+        for &(x, k) in by_j
+            .get(&(ty.gene.as_str(), ty.minus, j1))
+            .into_iter()
+            .flatten()
+        {
             let tx = &txs[x];
-            if x == y || k < 1 || tx.ochain.len() != k + ty.ochain.len() || tx.ochain[k..] != ty.ochain[..] {
+            if x == y
+                || k < 1
+                || tx.ochain.len() != k + ty.ochain.len()
+                || tx.ochain[k..] != ty.ochain[..]
+            {
                 continue;
             }
             let better = match best {
@@ -4540,8 +5147,11 @@ fn tss_prove_with(
         let (ya, yb) = ty.oex[0];
         let xa = tx.oex[k].0;
         let lo = ya.min(xa);
-        let starts: Vec<(i64, bool)> =
-            ix.first5.get(&(ty.minus, j1)).map(|v| v.iter().map(|e| (e.0, e.1)).collect()).unwrap_or_default();
+        let starts: Vec<(i64, bool)> = ix
+            .first5
+            .get(&(ty.minus, j1))
+            .map(|v| v.iter().map(|e| (e.0, e.1)).collect())
+            .unwrap_or_default();
         if starts.is_empty() {
             continue;
         }
@@ -4586,7 +5196,10 @@ fn tss_prove_with(
         // neither protected nor rescued (tss_review F4, tss2_review G1).
         let mut own = vec![0u64; l];
         if let Some(v) = ix.first5.get(&(ty.minus, j1)) {
-            for e in v.iter().filter(|e| e.2 == ty.chain && e.0 >= lo && e.0 <= yb) {
+            for e in v
+                .iter()
+                .filter(|e| e.2 == ty.chain && e.0 >= lo && e.0 <= yb)
+            {
                 own[(e.0 - lo) as usize] += 1;
             }
         }
@@ -4614,7 +5227,8 @@ fn tss_prove_with(
     // tss_clusters of the output's multi-exon transcripts: the polished chains, plus the rescued ones (their own first
     // exon, before the 5' end moves)
     for (tid, cl) in chain_cl.iter() {
-        out.clusters.insert((*tid).clone(), fmt_clusters(&txs[*tid], cl));
+        out.clusters
+            .insert((*tid).clone(), fmt_clusters(&txs[*tid], cl));
     }
     for y in out.rescued.keys() {
         let cl = tss_chain_clusters(&txs[y], &ix, &null, base.len());
@@ -4635,7 +5249,12 @@ fn tss_prove_with(
             let own: Vec<i64> = ix
                 .first5
                 .get(&(t.minus, j1))
-                .map(|v| v.iter().filter(|e| e.2 == t.chain && e.0 >= ta && e.0 <= tb).map(|e| e.0).collect())
+                .map(|v| {
+                    v.iter()
+                        .filter(|e| e.2 == t.chain && e.0 >= ta && e.0 <= tb)
+                        .map(|e| e.0)
+                        .collect()
+                })
                 .unwrap_or_default();
             let mut pieces: Vec<(i64, u64)> = Vec::with_capacity(kept.len());
             let mut later = 0u64;
@@ -4662,7 +5281,13 @@ fn tss_prove_with(
 /// Rewrite one transcript's block of GTF lines: its 5' end (the oriented first exon's start) moves to oriented
 /// position `o5` in the transcript line and in its 5'-most exon line; `reads` replaces the `reads` attribute; `rename`
 /// replaces the `transcript_id`.
-fn tss_rewrite_block(block: &[String], minus: bool, o5: i64, reads: Option<u64>, rename: Option<(&str, &str)>) -> Vec<String> {
+fn tss_rewrite_block(
+    block: &[String],
+    minus: bool,
+    o5: i64,
+    reads: Option<u64>,
+    rename: Option<(&str, &str)>,
+) -> Vec<String> {
     // the 5'-most exon line: the smallest start on `+`, the largest end on `-`
     let mut target: Option<(usize, i64)> = None;
     for (i, l) in block.iter().enumerate() {
@@ -4670,7 +5295,11 @@ fn tss_rewrite_block(block: &[String], minus: bool, o5: i64, reads: Option<u64>,
         if f.len() < 9 || f[2] != "exon" {
             continue;
         }
-        let v: i64 = if minus { f[4].parse().unwrap_or(i64::MIN) } else { -f[3].parse::<i64>().unwrap_or(i64::MAX) };
+        let v: i64 = if minus {
+            f[4].parse().unwrap_or(i64::MIN)
+        } else {
+            -f[3].parse::<i64>().unwrap_or(i64::MAX)
+        };
         if target.map_or(true, |(_, b)| v > b) {
             target = Some((i, v));
         }
@@ -4697,7 +5326,11 @@ fn tss_rewrite_block(block: &[String], minus: bool, o5: i64, reads: Option<u64>,
                 }
             }
             if let Some((from, to)) = rename {
-                f[8] = f[8].replacen(&format!("transcript_id \"{from}\";"), &format!("transcript_id \"{to}\";"), 1);
+                f[8] = f[8].replacen(
+                    &format!("transcript_id \"{from}\";"),
+                    &format!("transcript_id \"{to}\";"),
+                    1,
+                );
             }
             f.join("\t")
         })
@@ -4715,7 +5348,9 @@ fn tss_set_reads(attrs: &str, reads: u64) -> String {
             continue;
         }
         let v0 = at + pat.len();
-        let Some(len) = attrs[v0..].find('"') else { continue };
+        let Some(len) = attrs[v0..].find('"') else {
+            continue;
+        };
         return format!("{}{}{}", &attrs[..v0], reads, &attrs[v0 + len..]);
     }
     attrs.to_string()
@@ -4724,7 +5359,11 @@ fn tss_set_reads(attrs: &str, reads: u64) -> String {
 /// Apply a contig's `--polish-tss` outcome to its polished lines (the rescued transcripts are already in them): move
 /// each rescued form's 5' end to its proven mode, and emit each split chain as its pieces (the twins right after it).
 /// Returns the lines and the (twin -> parent) map.
-fn tss_apply(lines: Vec<String>, out: &TssOutcome, txs: &std::collections::BTreeMap<String, TssTx>) -> (Vec<String>, Vec<(String, String)>) {
+fn tss_apply(
+    lines: Vec<String>,
+    out: &TssOutcome,
+    txs: &std::collections::BTreeMap<String, TssTx>,
+) -> (Vec<String>, Vec<(String, String)>) {
     let mut res: Vec<String> = Vec::with_capacity(lines.len());
     let mut twins: Vec<(String, String)> = Vec::new();
     let tid_of = |l: &str| -> Option<String> {
@@ -4750,10 +5389,22 @@ fn tss_apply(lines: Vec<String>, out: &TssOutcome, txs: &std::collections::BTree
         if let Some(&(_, o5)) = out.rescued.get(&tid) {
             res.extend(tss_rewrite_block(block, minus, o5, None, None));
         } else if let Some(pieces) = out.split.get(&tid) {
-            res.extend(tss_rewrite_block(block, minus, pieces[0].0, Some(pieces[0].1), None));
+            res.extend(tss_rewrite_block(
+                block,
+                minus,
+                pieces[0].0,
+                Some(pieces[0].1),
+                None,
+            ));
             for (k, &(o5, r)) in pieces.iter().enumerate().skip(1) {
                 let name = format!("{tid}_tss{}", k + 1);
-                res.extend(tss_rewrite_block(block, minus, o5, Some(r), Some((tid.as_str(), name.as_str()))));
+                res.extend(tss_rewrite_block(
+                    block,
+                    minus,
+                    o5,
+                    Some(r),
+                    Some((tid.as_str(), name.as_str())),
+                ));
                 twins.push((name, tid.clone()));
             }
         } else {
@@ -4771,13 +5422,19 @@ fn tss_attr_strings(out: &TssOutcome) -> std::collections::BTreeMap<String, Stri
         m.insert(tid.clone(), format!(" tss_clusters \"{v}\";"));
     }
     for (tid, (site, _)) in &out.rescued {
-        m.entry(tid.clone()).or_default().push_str(&format!(" tss_rescued \"{site}\";"));
+        m.entry(tid.clone())
+            .or_default()
+            .push_str(&format!(" tss_rescued \"{site}\";"));
     }
     for (tid, pieces) in &out.split {
         let base = m.get(tid).cloned().unwrap_or_default();
         let k = pieces.len();
         for j in 0..k {
-            let name = if j == 0 { tid.clone() } else { format!("{tid}_tss{}", j + 1) };
+            let name = if j == 0 {
+                tid.clone()
+            } else {
+                format!("{tid}_tss{}", j + 1)
+            };
             m.insert(name, format!("{base} tss_split \"{}/{k}\";", j + 1));
         }
     }
@@ -4828,7 +5485,9 @@ fn tss_tag(lines: &mut [String], attrs: &DetHashMap<String, String>) {
         if f.len() < 9 || f[2] != "transcript" {
             continue;
         }
-        let Some(t) = re_attr(f[8], "transcript_id") else { continue };
+        let Some(t) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
         if let Some(a) = attrs.get(&t) {
             line.push_str(a);
         }
@@ -4933,7 +5592,11 @@ fn tes_clusters(ends: &[i64], seq: &[u8], minus: bool) -> Vec<TesCluster> {
                 k = e;
             }
             let proven = tes_pas(seq, minus, mode) && !tes_primed(seq, minus, mode);
-            out.push(TesCluster { mode, n: j - i, proven });
+            out.push(TesCluster {
+                mode,
+                n: j - i,
+                proven,
+            });
         }
         i = j;
     }
@@ -5008,7 +5671,11 @@ fn tes_decide(
                 primed = tes_primed(seq, t.minus, new);
             }
         }
-        let mut a = format!(" tes_clusters \"{n_proven}\"; tes_pas \"{}\"; tes_primed \"{}\";", yn(pas), yn(primed));
+        let mut a = format!(
+            " tes_clusters \"{n_proven}\"; tes_pas \"{}\"; tes_primed \"{}\";",
+            yn(pas),
+            yn(primed)
+        );
         if let Some(g) = moved_from {
             a.push_str(&format!(" tes_end_moved_from \"{g}\";"));
         }
@@ -5026,7 +5693,11 @@ fn tes_rewrite_block(block: &[String], minus: bool, o3: i64) -> Vec<String> {
         if f.len() < 9 || f[2] != "exon" {
             continue;
         }
-        let v: i64 = if minus { -f[3].parse::<i64>().unwrap_or(i64::MAX) } else { f[4].parse().unwrap_or(i64::MIN) };
+        let v: i64 = if minus {
+            -f[3].parse::<i64>().unwrap_or(i64::MAX)
+        } else {
+            f[4].parse().unwrap_or(i64::MIN)
+        };
         if target.map_or(true, |(_, b)| v > b) {
             target = Some((i, v));
         }
@@ -5097,7 +5768,10 @@ fn resolve_bridge_mode(args: &Args) -> Result<Option<rustle::family::bridge_regr
     let can_run = args.assemble_only && args.families.is_none();
     let (mode, label) = match args.bridge_regroup.as_deref() {
         Some(arm) => (Mode::parse(arm)?, ""),
-        None => (if can_run { Some(Mode::F1v2) } else { None }, " (the default)"),
+        None => (
+            if can_run { Some(Mode::F1v2) } else { None },
+            " (the default)",
+        ),
     };
     if let Some(m) = mode {
         anyhow::ensure!(
@@ -5121,7 +5795,9 @@ fn resolve_bridge_units_list(
     mode: Option<rustle::family::bridge_regroup::Mode>,
 ) -> Result<Option<rustle::family::bridge_regroup::UnitsList>> {
     use rustle::family::bridge_regroup::{Mode, UnitsList};
-    let Some(path) = args.bridge_units_list.as_deref() else { return Ok(None) };
+    let Some(path) = args.bridge_units_list.as_deref() else {
+        return Ok(None);
+    };
     anyhow::ensure!(
         mode == Some(Mode::F1Units),
         "--bridge-units-list names the units of --bridge-regroup f1units: pass --bridge-regroup f1units with it"
@@ -5133,7 +5809,10 @@ fn main() -> Result<()> {
     let mut args = Args::parse();
     // Bound rayon's GLOBAL pool to --threads (the locus collapse's POA alignments use `par_iter`; the
     // `--region-threads` path installs its own scoped pool and is unaffected). Output-neutral.
-    rayon::ThreadPoolBuilder::new().num_threads(args.threads.max(1)).build_global().ok();
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads.max(1))
+        .build_global()
+        .ok();
     // §6p6: --assemble-only IS the assembly product, so it implies --gtf. Setting it here means every
     // existing `if args.gtf` gate fires unchanged rather than each one needing a second condition.
     if args.assemble_only {
@@ -5157,7 +5836,9 @@ fn main() -> Result<()> {
                 }
             }
             "majority" => {}
-            other => anyhow::bail!("--assembly-junctions must be `strict` or `majority`, got `{other}`"),
+            other => {
+                anyhow::bail!("--assembly-junctions must be `strict` or `majority`, got `{other}`")
+            }
         }
         eprintln!(
             "[copy_assign] ASSEMBLE-ONLY junctions: {} (RUSTLE_JUNCTION_MAJORITY={})",
@@ -5196,7 +5877,10 @@ fn main() -> Result<()> {
     }
     // `--gtf-regroup` rewrites gene_id on the emitted GTF: refuse a run where it could only do nothing
     if args.gtf_regroup {
-        anyhow::ensure!(args.gtf, "--gtf-regroup needs the assembled GTF (--gtf or --assemble-only)");
+        anyhow::ensure!(
+            args.gtf,
+            "--gtf-regroup needs the assembled GTF (--gtf or --assemble-only)"
+        );
     }
     // `--bridge-regroup` reads its own evidence in the --assemble-only pass-1 reader and rewrites the emitted GTF;
     // unset = f1v2 where it can run (the default since 2026-09-29), off elsewhere
@@ -5256,15 +5940,22 @@ fn main() -> Result<()> {
         && matches!(std::env::var("RUSTLE_READTHROUGH_JUNCTIONS_ALL"), Ok(v) if v != "0" && !v.is_empty());
     // §6eu: the pipeline reads RUSTLE_PSV_READFILTER; an explicit env value wins, else the flag decides.
     if std::env::var_os("RUSTLE_PSV_READFILTER").is_none() {
-        std::env::set_var("RUSTLE_PSV_READFILTER", if args.psv_read_filter { "1" } else { "0" });
+        std::env::set_var(
+            "RUSTLE_PSV_READFILTER",
+            if args.psv_read_filter { "1" } else { "0" },
+        );
     }
     if args.igv {
         args.dump_psv = true; // --igv is a bundle: the PSV matrix feeds bench/igv_tracks.py -> tagged BAM + PSV VCF
     }
     // --gff: parsed ONCE before the sweep into the annotation axis intervals (None => every in-genome copy in
     // the --phase copy graph stays AnnotationUnknown, byte-identical to the no-flag path).
-    let annotation: Option<Vec<(String, u64, u64)>> =
-        args.gff.as_deref().map(parse_annotation).transpose().context("parsing --gff")?;
+    let annotation: Option<Vec<(String, u64, u64)>> = args
+        .gff
+        .as_deref()
+        .map(parse_annotation)
+        .transpose()
+        .context("parsing --gff")?;
     // Minor (final whole-branch review): `bench/missing_copy_flag_pass.py`'s reference requires `--gff` to reach its
     // `annotated_no_unit` orphan-locus class at all (no gene intervals -> every locus is either
     // `other_family` or `unannotated`) -- without it, `--flag-missing-copies` silently never produces an
@@ -5291,22 +5982,37 @@ fn main() -> Result<()> {
         (None, None, true) => {
             // §6zb: every reference sequence with >= 1 mapped record in the .bai, in header order
             use noodles_csi::binning_index::ReferenceSequence as _;
-            let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(&args.bam)?;
+            let mut reader =
+                noodles_bam::io::reader::Builder::default().build_from_path(&args.bam)?;
             let header = reader.read_header()?;
-            let index = noodles_bam::bai::read(format!("{}.bai", args.bam)).context("--genome-wide needs a .bai")?;
+            let index = noodles_bam::bai::read(format!("{}.bai", args.bam))
+                .context("--genome-wide needs a .bai")?;
             let mut v = Vec::new();
             for (i, (name, rs)) in header.reference_sequences().iter().enumerate() {
-                let mapped = index.reference_sequences().get(i).and_then(|r| r.metadata()).map(|m| m.mapped_record_count()).unwrap_or(0);
+                let mapped = index
+                    .reference_sequences()
+                    .get(i)
+                    .and_then(|r| r.metadata())
+                    .map(|m| m.mapped_record_count())
+                    .unwrap_or(0);
                 if mapped > 0 {
-                    v.push((String::from_utf8_lossy(name).to_string(), 0, usize::from(rs.length()) as u64));
+                    v.push((
+                        String::from_utf8_lossy(name).to_string(),
+                        0,
+                        usize::from(rs.length()) as u64,
+                    ));
                 }
             }
-            eprintln!("[copy_assign] --genome-wide: {} contig(s) with mapped reads", v.len());
+            eprintln!(
+                "[copy_assign] --genome-wide: {} contig(s) with mapped reads",
+                v.len()
+            );
             v
         }
         _ => anyhow::bail!("provide exactly one of --region, --regions or --genome-wide"),
     };
-    let mut by_contig: std::collections::BTreeMap<String, Vec<(u64, u64)>> = std::collections::BTreeMap::new();
+    let mut by_contig: std::collections::BTreeMap<String, Vec<(u64, u64)>> =
+        std::collections::BTreeMap::new();
     for (c, lo, hi) in regions {
         by_contig.entry(c).or_default().push((lo, hi));
     }
@@ -5340,19 +6046,26 @@ fn main() -> Result<()> {
     // malformed or unassignable roster fails in the first second rather than after an hour of alignment.
     // `region_families` is keyed by the exact `(contig, lo, hi)` triple the sweep iterates, so each region's
     // worker gets its own families with no re-derivation and no ambiguity about which region owns a family.
-    let (region_families, catalog_seqs, region_windows) = load_supplied_families(&args, &by_contig)?;
+    let (region_families, catalog_seqs, region_windows) =
+        load_supplied_families(&args, &by_contig)?;
     let catalog_index: Option<CatalogIndex> = region_families.as_ref().map(build_catalog_index);
 
     // O3: built ONCE, read-only across every parallel region worker (same pattern as genome_cache/
     // bam_cache below) -- only when the flag is set, so the unset path pays nothing.
     let o3_all_units_by_chrom: std::collections::BTreeMap<String, Vec<(u64, u64, String, String)>> =
         if args.flag_missing_copies {
-            let mut m: std::collections::BTreeMap<String, Vec<(u64, u64, String, String)>> = std::collections::BTreeMap::new();
+            let mut m: std::collections::BTreeMap<String, Vec<(u64, u64, String, String)>> =
+                std::collections::BTreeMap::new();
             if let Some(rf) = &region_families {
                 for fams in rf.values() {
                     for f in fams {
                         for c in &f.copies {
-                            m.entry(c.chrom.clone()).or_default().push((c.start, c.end, c.family_id.clone(), c.copy_idx.to_string()));
+                            m.entry(c.chrom.clone()).or_default().push((
+                                c.start,
+                                c.end,
+                                c.family_id.clone(),
+                                c.copy_idx.to_string(),
+                            ));
                         }
                     }
                 }
@@ -5364,17 +6077,19 @@ fn main() -> Result<()> {
     // Reuses `annotation` (parsed once above, unconditionally, for the AnnotationUnknown axis) instead of
     // re-reading/re-parsing --gff a second time -- same (chrom, start, end) rows the O3 orphan-locus
     // classifier needs, just bucketed by chrom. `annotation` is borrowed, not consumed, here.
-    let o3_genes_by_chrom: std::collections::BTreeMap<String, Vec<(u64, u64)>> = if args.flag_missing_copies {
-        let mut m: std::collections::BTreeMap<String, Vec<(u64, u64)>> = std::collections::BTreeMap::new();
-        if let Some(ann) = &annotation {
-            for (chrom, s, e) in ann {
-                m.entry(chrom.clone()).or_default().push((*s, *e));
+    let o3_genes_by_chrom: std::collections::BTreeMap<String, Vec<(u64, u64)>> =
+        if args.flag_missing_copies {
+            let mut m: std::collections::BTreeMap<String, Vec<(u64, u64)>> =
+                std::collections::BTreeMap::new();
+            if let Some(ann) = &annotation {
+                for (chrom, s, e) in ann {
+                    m.entry(chrom.clone()).or_default().push((*s, *e));
+                }
             }
-        }
-        m
-    } else {
-        std::collections::BTreeMap::new()
-    };
+            m
+        } else {
+            std::collections::BTreeMap::new()
+        };
     // Fix 2 (Task 6, carried forward from Task 5's review): gated behind the same flag as its sibling
     // indices `o3_all_units_by_chrom`/`o3_genes_by_chrom` above, for literal consistency with the stated
     // design constraint ("no allocation happens on the unset path") -- a 3-field POD with no side effect,
@@ -5389,7 +6104,10 @@ fn main() -> Result<()> {
         rustle::family::missing_copy::missing_copy_flag_pass::O3Params::default()
     };
 
-    let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
+    let lambda = resolve_lambda(
+        args.lambda_global,
+        args.lambda_file.as_deref().and_then(read_lambda_file),
+    );
     let mut cfg = DenovoConfig::from_env();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign || args.vg_realign_correct; // VG correction leg (re-thread hard reads)
@@ -5437,14 +6155,18 @@ fn main() -> Result<()> {
         origin_consistency_check: args.origin_consistency_check,
         ..AssignParams::default()
     };
-    eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
+    eprintln!(
+        "[copy_assign] decisive-margin tau={} error_rate={}",
+        args.margin, args.error_rate
+    );
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut placement_assigned_total = 0usize; // §6fq: uncontested molecules assigned to their placement
     let mut primary_local_rows = 0usize; // register 734: the enforced per-family denominator
     let mut assign_rows: Vec<AssignRow> = Vec::new();
     let mut posterior_lines: Vec<String> = Vec::new();
     // EM-abundance prior for the posterior (else uniform).
-    let prior_abundance = std::env::var("RUSTLE_POSTERIOR_PRIOR").ok().as_deref() == Some("abundance");
+    let prior_abundance =
+        std::env::var("RUSTLE_POSTERIOR_PRIOR").ok().as_deref() == Some("abundance");
     // Cross-family reconciliation mode (see `XfamMode`). Parsed HERE, before any read is touched, so an
     // unrecognized value fails in the first second rather than silently running as `off`.
     let xfam_mode = XfamMode::from_env()?;
@@ -5464,12 +6186,16 @@ fn main() -> Result<()> {
     // O3 Phase 2 (Task 6): accumulated across the WHOLE serial drain (every region, every family) -- the
     // genome-wide Bonferroni flag threshold in `finalize_flags` can only be computed once every region has
     // drained, so nothing downstream of `compute()` can act on these until the loop below finishes.
-    let mut o3_all_raw_pairs: Vec<rustle::family::missing_copy::missing_copy_flag_pass::RawPair> = Vec::new();
-    let mut o3_all_orphan_loci: Vec<rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus> = Vec::new();
+    let mut o3_all_raw_pairs: Vec<rustle::family::missing_copy::missing_copy_flag_pass::RawPair> =
+        Vec::new();
+    let mut o3_all_orphan_loci: Vec<
+        rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus,
+    > = Vec::new();
     // `--discover-copies`: read-seeded candidate copies found while scanning each region, accumulated the
     // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
     // at the `compute()` call site, so this just drains whatever each region produced.
-    let mut all_discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> = Vec::new();
+    let mut all_discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> =
+        Vec::new();
     // `--union-certificate`: every region's union rows + counts, drained in region order (side file + summary).
     let mut union_all = rustle::family::denovo_pipeline::UnionSummary::default();
     // `RUSTLE_READTHROUGH_JUNCTIONS`: every region's flagged junctions + removals, drained in region order.
@@ -5497,15 +6223,15 @@ fn main() -> Result<()> {
     let mut psv_read_lines: Vec<String> = Vec::new(); // --dump-psv: per-read genotype (alleles at every PSV col)
     let mut psv_copy_lines: Vec<String> = Vec::new(); // --dump-psv: per-copy PSV alleles
     let mut psv_col_lines: Vec<String> = Vec::new(); // --dump-psv: PSV column -> genome position
-    let mut em_lines: Vec<String> = Vec::new();           // --em: per-read soft posterior + K-frontier label
-    let mut em_abundance_lines: Vec<String> = Vec::new();  // --em: per-copy recovered abundance
-    let mut phase_block_lines: Vec<String> = Vec::new();  // --phase: one phase set (PS) per family
-    let mut phased_hap_lines: Vec<String> = Vec::new();   // --phase: each haplotype's PSV variant string
-    let mut phased_read_lines: Vec<String> = Vec::new();  // --phase: read -> haplotype (HP) haplotag
-    // --phase: a self-contained variation graph (GFA) of the phasing — PSV columns = BUBBLES
-    // (one segment per allele), copies = PATHS through the bubbles. Loadable in Bandage/vg.
-    let mut gfa_segs: DetHashSet<String> = DetHashSet::default();        // dedup'd S-lines (shared allele = shared node = bubble anchor)
-    let mut gfa_links: DetHashSet<String> = DetHashSet::default();        // dedup'd full "L\t..." strings (copy_graph emits complete lines)
+    let mut em_lines: Vec<String> = Vec::new(); // --em: per-read soft posterior + K-frontier label
+    let mut em_abundance_lines: Vec<String> = Vec::new(); // --em: per-copy recovered abundance
+    let mut phase_block_lines: Vec<String> = Vec::new(); // --phase: one phase set (PS) per family
+    let mut phased_hap_lines: Vec<String> = Vec::new(); // --phase: each haplotype's PSV variant string
+    let mut phased_read_lines: Vec<String> = Vec::new(); // --phase: read -> haplotype (HP) haplotag
+                                                         // --phase: a self-contained variation graph (GFA) of the phasing — PSV columns = BUBBLES
+                                                         // (one segment per allele), copies = PATHS through the bubbles. Loadable in Bandage/vg.
+    let mut gfa_segs: DetHashSet<String> = DetHashSet::default(); // dedup'd S-lines (shared allele = shared node = bubble anchor)
+    let mut gfa_links: DetHashSet<String> = DetHashSet::default(); // dedup'd full "L\t..." strings (copy_graph emits complete lines)
     let mut gfa_paths: Vec<String> = Vec::new();
     // VG read-threading (the Canzar flip, materialized): each read WALKS the PSV-bubble nodes for the alleles
     // it observes, REUSING a copy's node wherever their alleles agree — so multimapping reads become shared
@@ -5513,22 +6239,23 @@ fn main() -> Result<()> {
     let mut gfa_walks: Vec<String> = Vec::new();
     let mut gfa_colors: Vec<String> = Vec::new(); // "name,colour" for Bandage (copies distinct, reads by assigned copy)
     let mut legend_rows: Vec<String> = Vec::new(); // "status\tcolour" (de-duplicated at write time)
-    // --phase v2: one exon presence/absence graph per family (built during the drain, where `fa` is in
-    // scope; sequence-free — `to_gfa` fetches reference bases lazily at write time via `genome_for`).
+                                                   // --phase v2: one exon presence/absence graph per family (built during the drain, where `fa` is in
+                                                   // scope; sequence-free — `to_gfa` fetches reference bases lazily at write time via `genome_for`).
     let mut exon_graphs: Vec<rustle::family::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut prov_rows: Vec<String> = Vec::new(); // --read-provenance: one row per AS-tied alignment record
-    // --absent-copies + opt-in --linearize/--linearize-gate: linearize certificates, one per Stage-2-admitted
-    // candidate (Task 4), written to `<out>.linearize.tsv` below (Task 5) when `do_linearize`. Empty otherwise
-    // (the cert is skipped in `detect_and_assign`). `--linearize-gate` also uses the verdict to gate admission
-    // itself, so a demoted candidate shows up here but not in `fams`.
-    let mut linearize_certs_all: Vec<(String, LinearizeCertificate, (String, u64, u64))> = Vec::new();
+                                                 // --absent-copies + opt-in --linearize/--linearize-gate: linearize certificates, one per Stage-2-admitted
+                                                 // candidate (Task 4), written to `<out>.linearize.tsv` below (Task 5) when `do_linearize`. Empty otherwise
+                                                 // (the cert is skipped in `detect_and_assign`). `--linearize-gate` also uses the verdict to gate admission
+                                                 // itself, so a demoted candidate shows up here but not in `fams`.
+    let mut linearize_certs_all: Vec<(String, LinearizeCertificate, (String, u64, u64))> =
+        Vec::new();
     let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
     let mut gfam = 0usize; // global family counter (unique ids across regions)
     let mut gtf_lines: Vec<String> = Vec::new(); // --gtf: FLAIR-style isoform GTF (transcript + exon rows)
-    // --productivity: (attribute string, transcript id, ORF in aa) — the `productive` call needs the family's
-    // best ORF, which is only known after every region is drained, so it is a second pass over the GTF below
+                                                 // --productivity: (attribute string, transcript id, ORF in aa) — the `productive` call needs the family's
+                                                 // best ORF, which is only known after every region is drained, so it is a second pass over the GTF below
     let mut prod_rows: Vec<(String, String, String, usize)> = Vec::new(); // family, copy, transcript, ORF aa
 
     // `--skip-poa-diagnostic` is read by `detect_and_assign` via this env var (it is purely diagnostic and
@@ -5621,7 +6348,10 @@ fn main() -> Result<()> {
             GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)
                 .with_context(|| format!("loading {} for {contig}", args.fasta))?,
         );
-        genome_cache.lock().unwrap().put(contig.to_string(), g.clone());
+        genome_cache
+            .lock()
+            .unwrap()
+            .put(contig.to_string(), g.clone());
         Ok(g)
     };
     // A region's genome, generalized to however many chromosomes its windows actually touch. The
@@ -5629,19 +6359,25 @@ fn main() -> Result<()> {
     // cached `genome_for` above and is therefore byte-for-byte the same load as before; a cross-chromosome
     // family's multi-element set builds one combined, uncached `GenomeIndex` instead (cross-chromosome
     // families are rare enough that a dedicated per-contig cache slot for them is not worth the complexity).
-    let genome_for_multi = |contigs: &std::collections::BTreeSet<String>| -> Result<Arc<GenomeIndex>> {
-        match contigs.len() {
-            1 => genome_for(contigs.iter().next().expect("len == 1")),
-            _ => {
-                let wanted: DetHashSet<String> = contigs.iter().cloned().collect();
-                Ok(Arc::new(
-                    GenomeIndex::from_fasta_contigs(&args.fasta, &wanted).with_context(|| {
-                        format!("loading {} for cross-chromosome contigs {:?}", args.fasta, contigs)
-                    })?,
-                ))
+    let genome_for_multi =
+        |contigs: &std::collections::BTreeSet<String>| -> Result<Arc<GenomeIndex>> {
+            match contigs.len() {
+                1 => genome_for(contigs.iter().next().expect("len == 1")),
+                _ => {
+                    let wanted: DetHashSet<String> = contigs.iter().cloned().collect();
+                    Ok(Arc::new(
+                        GenomeIndex::from_fasta_contigs(&args.fasta, &wanted).with_context(
+                            || {
+                                format!(
+                                    "loading {} for cross-chromosome contigs {:?}",
+                                    args.fasta, contigs
+                                )
+                            },
+                        )?,
+                    ))
+                }
             }
-        }
-    };
+        };
     // Ruling R15 (2026-10-02): the read windows of every cross-chromosome family (the windows of its `~xchrom~`
     // key, each tagged with its real chromosome), built once. A sweep bound to no family reads it to tell whether
     // its region holds such a family (the §6gz block in `compute`). Empty for a catalog without cross-chromosome
@@ -5672,7 +6408,8 @@ fn main() -> Result<()> {
         // for every region before cross-chromosome families existed this is the single-element set
         // `{contig}`, so `genome_for_multi` delegates to the ORIGINAL cached single-contig `genome_for`
         // and behaviour is unchanged; a cross-chromosome family's windows pull in its other chromosomes.
-        let win_contigs: std::collections::BTreeSet<String> = wins.iter().map(|(c, _, _)| c.clone()).collect();
+        let win_contigs: std::collections::BTreeSet<String> =
+            wins.iter().map(|(c, _, _)| c.clone()).collect();
         let genome = genome_for_multi(&win_contigs)?;
         let t_read = std::time::Instant::now();
         // §6zb streaming pass-1 (`docs/PREREG_streaming_assembly_2026-09-23.md`): under --assemble-only with
@@ -5708,10 +6445,17 @@ fn main() -> Result<()> {
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
                 n_mapped_streamed += rustle::family::denovo_assemble::stream_pass1_region(
-                    &args.bam, wchrom, *wlo, *whi,
+                    &args.bam,
+                    wchrom,
+                    *wlo,
+                    *whi,
                     rustle::family::denovo_assemble::gtf_secondary_enabled(),
                     !args.keep_coordinate_duplicates,
-                    if args.keep_coordinate_duplicates { &fetched } else { &[] },
+                    if args.keep_coordinate_duplicates {
+                        &fetched
+                    } else {
+                        &[]
+                    },
                     &mut acc,
                 )
                 .with_context(|| format!("streaming {wchrom}:{wlo}-{whi}"))?;
@@ -5736,23 +6480,35 @@ fn main() -> Result<()> {
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::family::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
-                rustle::family::denovo_assemble::tss_evidence_region(&args.bam, wchrom, *wlo, *whi, &mut ev)
-                    .with_context(|| format!("--polish-tss/--polish-tes evidence {wchrom}:{wlo}-{whi}"))?;
+                rustle::family::denovo_assemble::tss_evidence_region(
+                    &args.bam, wchrom, *wlo, *whi, &mut ev,
+                )
+                .with_context(|| {
+                    format!("--polish-tss/--polish-tes evidence {wchrom}:{wlo}-{whi}")
+                })?;
             }
             tss_ev = Some(ev);
         }
         if !streaming && bridge_evidence_on {
             let mut ev = rustle::family::bridge_regroup::BridgeEvidence::default();
             for (wchrom, wlo, whi) in &wins {
-                rustle::family::bridge_regroup::bridge_evidence_region(&args.bam, wchrom, *wlo, *whi, &mut ev)
-                    .with_context(|| format!("--bridge-regroup evidence {wchrom}:{wlo}-{whi}"))?;
+                rustle::family::bridge_regroup::bridge_evidence_region(
+                    &args.bam, wchrom, *wlo, *whi, &mut ev,
+                )
+                .with_context(|| format!("--bridge-regroup evidence {wchrom}:{wlo}-{whi}"))?;
             }
             ev.seal();
             bridge_ev = Some(ev);
         }
         // the buffered paths' statistics, fed from the materialised records below (never on the streaming path)
-        let mut rt_buf = if streaming { None } else { rt_switch.as_ref().map(|s| s.stats()) };
-        let (primary, mut bam_reads) = if streaming { (Vec::new(), Vec::new()) } else {
+        let mut rt_buf = if streaming {
+            None
+        } else {
+            rt_switch.as_ref().map(|s| s.stats())
+        };
+        let (primary, mut bam_reads) = if streaming {
+            (Vec::new(), Vec::new())
+        } else {
             let mut pr: Vec<_> = Vec::new();
             let mut br: Vec<_> = Vec::new();
             // Windows already fetched for this region. A read spanning a window boundary is returned by
@@ -5782,7 +6538,9 @@ fn main() -> Result<()> {
                 .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
                 for x in p {
                     let keep = if args.keep_coordinate_duplicates {
-                        !fetched.iter().any(|(c, l, h)| c == &x.chrom && x.ref_start < *h && x.ref_end > *l)
+                        !fetched
+                            .iter()
+                            .any(|(c, l, h)| c == &x.chrom && x.ref_start < *h && x.ref_end > *l)
                     } else {
                         // historical key: PrimaryRead has no name; (chrom, span, intron chain) stands in
                         seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))
@@ -5845,7 +6603,8 @@ fn main() -> Result<()> {
             );
         }
         let extra = if args.recover_copies || args.tied_seed {
-            tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio).unwrap_or_default()
+            tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio)
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -5855,7 +6614,10 @@ fn main() -> Result<()> {
         let supplied: Option<Vec<ColocatedFamily>> = match &region_families {
             None => None,
             Some(rf) => {
-                let mine = rf.get(&(contig.clone(), lo, hi)).map(|v| v.as_slice()).unwrap_or(&[]);
+                let mine = rf
+                    .get(&(contig.clone(), lo, hi))
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
                 let mut v: Vec<ColocatedFamily> = Vec::with_capacity(mine.len());
                 for f in mine {
                     let (cf, _src) = to_colocated(f, catalog_seqs.as_ref(), &genome)?;
@@ -5873,7 +6635,10 @@ fn main() -> Result<()> {
                         // §6ft: a catalog copy the catalog itself marks unexpressed (`n_reads 0`, an annotated model
                         // kept as the unit) or a partner may legitimately have no read here — it stays a target
                         // (and, spec 2026-10-02 §7, an O3 candidate: `CatalogCopy::may_have_no_reads`)
-                        let catalog_zero = f.copies.iter().any(|cc| cc.tid == c.tid && cc.may_have_no_reads());
+                        let catalog_zero = f
+                            .copies
+                            .iter()
+                            .any(|cc| cc.tid == c.tid && cc.may_have_no_reads());
                         if n == 0 && !catalog_zero {
                             anyhow::bail!(
                                 "--families: {} copy {} ({}:{}-{}) has NO reads in {contig}:{lo}-{hi} of \
@@ -5904,7 +6669,8 @@ fn main() -> Result<()> {
                 }
             }
             let (n_all, n_tied, n_rec) = (all.len(), tied.len(), bam_reads.len());
-            let mut tied_owned: DetHashSet<String> = tied.into_iter().map(|s| s.to_string()).collect();
+            let mut tied_owned: DetHashSet<String> =
+                tied.into_iter().map(|s| s.to_string()).collect();
             // ⭐ §6gz: which tied molecules have a tied placement OUTSIDE every supplied family UNIT?
             // ⚠ The test is against the UNIT SPAN (`start`/`end`, the read-supported exon chain), NOT the
             // padded read-star locus: the locus is exactly what swallowed EIF3C into NPIP copy 16 (its locus
@@ -5924,7 +6690,9 @@ fn main() -> Result<()> {
             // units and skip with it (§6hd admits nothing without a unit anyway).
             let mut n_outside = 0usize;
             let skip_family_less = supplied.as_deref().is_some_and(|s| s.is_empty())
-                && xchrom_windows.iter().any(|(c, a, b)| c == contig && *a < hi && *b > lo);
+                && xchrom_windows
+                    .iter()
+                    .any(|(c, a, b)| c == contig && *a < hi && *b > lo);
             if let Some(sup) = supplied.as_deref().filter(|_| !skip_family_less) {
                 let targets: Vec<(String, u64, u64)> = sup
                     .iter()
@@ -5935,7 +6703,13 @@ fn main() -> Result<()> {
                 let target_idx: Vec<String> = sup
                     .iter()
                     .flat_map(|f| f.copies.iter())
-                    .map(|c| catalog_index.as_ref().and_then(|ix| ix.get(&c.tid)).map(|(_, i)| i.to_string()).unwrap_or_default())
+                    .map(|c| {
+                        catalog_index
+                            .as_ref()
+                            .and_then(|ix| ix.get(&c.tid))
+                            .map(|(_, i)| i.to_string())
+                            .unwrap_or_default()
+                    })
                     .collect();
                 let best_as: DetHashMap<&str, i32> = bam_reads
                     .iter()
@@ -5946,12 +6720,17 @@ fn main() -> Result<()> {
                         m
                     });
                 let mut flagged: DetHashSet<&str> = DetHashSet::default();
-                for br in bam_reads.iter().filter(|br| tied_owned.contains(&br.name) && !br.is_supplementary) {
+                for br in bam_reads
+                    .iter()
+                    .filter(|br| tied_owned.contains(&br.name) && !br.is_supplementary)
+                {
                     if br.as_score < best_as[br.name.as_str()] {
                         continue; // not one of the tied placements
                     }
                     let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
-                    let inside = targets.iter().any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
+                    let inside = targets
+                        .iter()
+                        .any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
                     if !inside {
                         flagged.insert(br.name.as_str());
                         // A6: name the outside placement's own locus, not just the fact it exists.
@@ -5963,11 +6742,17 @@ fn main() -> Result<()> {
                     }
                     if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
-                        let hit = targets.iter().position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
+                        let hit = targets
+                            .iter()
+                            .position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
                         let mut reg = TIE_SET.get_or_init(Default::default).lock().unwrap();
-                        let e = reg.entry(br.name.clone()).or_insert_with(|| (std::collections::BTreeSet::new(), false));
+                        let e = reg
+                            .entry(br.name.clone())
+                            .or_insert_with(|| (std::collections::BTreeSet::new(), false));
                         match hit.and_then(|i| target_idx.get(i)) {
-                            Some(idx) => { e.0.insert(idx.clone()); }
+                            Some(idx) => {
+                                e.0.insert(idx.clone());
+                            }
                             None => e.1 = true,
                         }
                     }
@@ -5981,16 +6766,21 @@ fn main() -> Result<()> {
                 if args.admit_aligner_disagreement {
                     let unit_of = |br: &rustle::family::denovo_assemble::BamRead| -> Option<usize> {
                         let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
-                        targets.iter().position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a)
+                        targets
+                            .iter()
+                            .position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a)
                     };
                     let mut prim: DetHashMap<&str, Option<usize>> = DetHashMap::default();
-                    let mut best: DetHashMap<&str, (i32, Vec<Option<usize>>)> = DetHashMap::default();
+                    let mut best: DetHashMap<&str, (i32, Vec<Option<usize>>)> =
+                        DetHashMap::default();
                     for br in bam_reads.iter().filter(|br| !br.is_supplementary) {
                         let u = unit_of(br);
                         if !br.is_secondary {
                             prim.insert(br.name.as_str(), u);
                         }
-                        let e = best.entry(br.name.as_str()).or_insert((br.as_score, Vec::new()));
+                        let e = best
+                            .entry(br.name.as_str())
+                            .or_insert((br.as_score, Vec::new()));
                         if br.as_score > e.0 {
                             *e = (br.as_score, vec![u]);
                         } else if br.as_score == e.0 {
@@ -6003,7 +6793,9 @@ fn main() -> Result<()> {
                             continue; // already admitted by the AS tie
                         }
                         let Some(pu) = pu else { continue }; // primary outside every unit: not this family's
-                        let Some((_, bus)) = best.get(name) else { continue };
+                        let Some((_, bus)) = best.get(name) else {
+                            continue;
+                        };
                         // disagreement = the primary's unit is NOT among the best-AS units, and some best-AS
                         // record IS inside a unit (a best-AS placement outside every unit is the §6gz case)
                         if !bus.contains(&Some(*pu)) && bus.iter().any(|u| u.is_some()) {
@@ -6017,10 +6809,21 @@ fn main() -> Result<()> {
             }
             GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
             if (args.gtf_copy_set && !args.no_gtf_copy_set) {
-                for br in bam_reads.iter().filter(|br| !tied_owned.contains(&br.name) && !br.is_secondary && !br.is_supplementary) {
+                for br in bam_reads.iter().filter(|br| {
+                    !tied_owned.contains(&br.name) && !br.is_secondary && !br.is_supplementary
+                }) {
                     let bl = br.read.exon_blocks();
-                    let chain: Vec<(u64, u64)> = bl.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect();
-                    uniq_reads.push((br.chrom.clone(), br.read.ref_start, read_ref_end(&br.read), chain));
+                    let chain: Vec<(u64, u64)> = bl
+                        .windows(2)
+                        .map(|w| (w[0].1, w[1].0))
+                        .filter(|&(a, b)| b > a)
+                        .collect();
+                    uniq_reads.push((
+                        br.chrom.clone(),
+                        br.read.ref_start,
+                        read_ref_end(&br.read),
+                        chain,
+                    ));
                 }
             }
             bam_reads.retain(|br| tied_owned.contains(&br.name));
@@ -6036,20 +6839,36 @@ fn main() -> Result<()> {
             (Vec::new(), Vec::new(), Vec::new(), Vec::new())
         } else {
             detect_and_assign(
-                &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
-                args.absent_copies, do_linearize, args.linearize_gate, &args.fasta,
+                &primary,
+                &bam_reads,
+                &genome,
+                &cfg,
+                args.win,
+                args.min_copies,
+                &params,
+                &extra,
+                args.absent_copies,
+                do_linearize,
+                args.linearize_gate,
+                &args.fasta,
                 supplied.as_deref(),
             )
         };
         if timing && !args.assemble_only {
-            eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
+            eprintln!(
+                "[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s",
+                t_da.elapsed().as_secs_f64()
+            );
         }
         // ⭐ --union-certificate: one certificate over the union of each cross-family / outside-tied
         // molecule's candidates, applied to every family's row IN PLACE (`fa.assignments`), so the four
         // status emit sites in the drain agree by construction. It must run HERE: the read sequences the
         // certificate aligns exist only inside this worker (`RegionWork` drops them), which is why
         // `xfam_pass1` -- which runs later, without them -- can only report or demote, never re-score.
-        let union = match (args.union_certificate && !args.assemble_only, supplied.as_deref()) {
+        let union = match (
+            args.union_certificate && !args.assemble_only,
+            supplied.as_deref(),
+        ) {
             (true, Some(sup)) => {
                 let t_u = std::time::Instant::now();
                 let label = |fid: &str, tid: &str, ci: usize| -> String {
@@ -6074,6 +6893,91 @@ fn main() -> Result<()> {
             }
             _ => rustle::family::denovo_pipeline::UnionSummary::default(),
         };
+        // ⭐ Part A: route each molecule's GTF assembly contribution through its O2 PSV-resolved origin
+        // instead of the aligner's primary flag. Under --assemble-only (or when no family was detected) the
+        // historical primary pool is used byte-identically.
+        let resolved_primary: Vec<PrimaryRead> = if args.assemble_only || fams.is_empty() {
+            primary.clone()
+        } else {
+            // Helper: reduce a BamRead (primary or routed secondary/supplementary) to the Pass-1 input shape.
+            let bam_to_primary = |br: &BamRead| -> PrimaryRead {
+                let exons = br.read.exon_blocks();
+                let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                PrimaryRead {
+                    chrom: br.chrom.clone(),
+                    ref_start: br.read.ref_start,
+                    ref_end: exons.last().map(|e| e.1).unwrap_or(br.read.ref_start),
+                    introns,
+                    reverse: br.reverse,
+                }
+            };
+            // 1. read_name -> best (bam_reads index, Assignment) across all families.
+            //    Prefer Assigned > Tied > Ambiguous; break ties by n_decisive then log_lr_margin.
+            let mut best_by_name: DetHashMap<String, (usize, &Assignment)> = DetHashMap::default();
+            for fa in &fams {
+                for &(ri, ref assignment) in &fa.assignments {
+                    if let Some(br) = bam_reads.get(ri) {
+                        let name = br.name.clone();
+                        let keep = match best_by_name.get(&name) {
+                            None => true,
+                            Some((_, cur)) => {
+                                let rank = |s: AssignStatus| match s {
+                                    AssignStatus::Assigned => 2,
+                                    AssignStatus::Tied => 1,
+                                    AssignStatus::Ambiguous => 0,
+                                };
+                                let (r_new, r_cur) = (rank(assignment.status), rank(cur.status));
+                                r_new > r_cur
+                                    || (r_new == r_cur
+                                        && (assignment.n_decisive > cur.n_decisive
+                                            || (assignment.n_decisive == cur.n_decisive
+                                                && assignment.log_lr_margin > cur.log_lr_margin)))
+                            }
+                        };
+                        if keep {
+                            best_by_name.insert(name, (ri, assignment));
+                        }
+                    }
+                }
+            }
+            // 2. Look up each input primary record by coordinate key to recover its molecule name, then swap
+            //    in the PSV-resolved BamRead (with secondary/supplementary flags cleared) when available.
+            let mut key_to_idx: DetHashMap<(String, u64, u64, Vec<(u64, u64)>), usize> =
+                DetHashMap::default();
+            for (ri, br) in bam_reads.iter().enumerate() {
+                if br.is_secondary || br.is_supplementary {
+                    continue;
+                }
+                let exons = br.read.exon_blocks();
+                let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                let ref_end = exons.last().map(|e| e.1).unwrap_or(br.read.ref_start);
+                let key = (br.chrom.clone(), br.read.ref_start, ref_end, introns);
+                key_to_idx.entry(key).or_insert(ri);
+            }
+            primary
+                .iter()
+                .map(|pr| {
+                    let key = (
+                        pr.chrom.clone(),
+                        pr.ref_start,
+                        pr.ref_end,
+                        pr.introns.clone(),
+                    );
+                    if let Some(&pri_idx) = key_to_idx.get(&key) {
+                        let name = &bam_reads[pri_idx].name;
+                        if let Some(&(ri, _assignment)) = best_by_name.get(name) {
+                            if let Some(br) = bam_reads.get(ri) {
+                                let mut rep = br.clone();
+                                rep.is_secondary = false;
+                                rep.is_supplementary = false;
+                                return bam_to_primary(&rep);
+                            }
+                        }
+                    }
+                    pr.clone()
+                })
+                .collect()
+        };
         // FLAIR-style isoform assembly for the optional GTF (intron-chain collapse -> gate -> gene grouping).
         // Recomputed here only under --gtf (cheap: pass1/gate are ~0s); independent of the assignment.
         let transcripts: Vec<TranscriptRec> = if args.gtf {
@@ -6081,16 +6985,25 @@ fn main() -> Result<()> {
             // explicit no-op, so this line is byte-identical to the previous `pass1_skeletons` call.
             let skeletons = match streamed.take() {
                 Some(s) => s,
-                None => pass1_skeletons_widened(&primary, cfg.pass1_min_reads, 1, None, args.read_isoform_k),
+                None => pass1_skeletons_widened(
+                    &resolved_primary,
+                    cfg.pass1_min_reads,
+                    1,
+                    None,
+                    args.read_isoform_k,
+                ),
             };
             // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —
             // register r842 — and removed 2026-09-24, tag `notebook-2026-09-24`.)
             // §6m6 follow-up: localise where pass-1 skeletons die before the GTF. `RUSTLE_GATE_CENSUS=1`
             // only PRINTS — the transcripts are the same objects either way.
-            let iso = if matches!(std::env::var("RUSTLE_GATE_CENSUS"), Ok(v) if v != "0" && !v.is_empty()) {
+            let iso = if matches!(std::env::var("RUSTLE_GATE_CENSUS"), Ok(v) if v != "0" && !v.is_empty())
+            {
                 let use_rs = matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
                 let margin: f64 = std::env::var("RUSTLE_READ_STRAND_MARGIN")
-                    .ok().and_then(|v| v.parse().ok()).unwrap_or(0.90);
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0.90);
                 let (iso, c) = assemble_gate_census(&skeletons, &genome, &cfg.gate, use_rs, margin);
                 eprintln!(
                     "[gate-census] {} skeletons -> kept {} | rejected: reads {} span {} seq(motif/coords) {} len {}",
@@ -6130,17 +7043,40 @@ fn main() -> Result<()> {
                 )
             })
             .collect();
-        let read_blocks: Vec<Vec<(u64, u64)>> = bam_reads.iter().map(|r| r.read.exon_blocks()).collect();
+        let read_blocks: Vec<Vec<(u64, u64)>> =
+            bam_reads.iter().map(|r| r.read.exon_blocks()).collect();
         let read_strand: Vec<char> = bam_reads
             .iter()
             .map(|r| match (r.ts, r.reverse) {
-                (Some('+'), rev) => if rev { '-' } else { '+' },
-                (Some('-'), rev) => if rev { '+' } else { '-' },
-                (_, rev) => if rev { '-' } else { '+' },
+                (Some('+'), rev) => {
+                    if rev {
+                        '-'
+                    } else {
+                        '+'
+                    }
+                }
+                (Some('-'), rev) => {
+                    if rev {
+                        '+'
+                    } else {
+                        '-'
+                    }
+                }
+                (_, rev) => {
+                    if rev {
+                        '-'
+                    } else {
+                        '+'
+                    }
+                }
             })
             .collect();
         let as_ev = as_evidence_per_read(&bam_reads, !args.no_as_tied_only);
-        let n_mapped = if streaming { n_mapped_streamed } else { bam_reads.len() };
+        let n_mapped = if streaming {
+            n_mapped_streamed
+        } else {
+            bam_reads.len()
+        };
         // O3 (Task 5, Phase 1 of the flag-pass wiring): per-family raw pair statistics + orphan-locus scan.
         // Only runs when the flag is set -- the `if` guards every allocation and every minimap2 realign
         // call, so the unset path is untouched (byte-identical `RegionWork` in every other field).
@@ -6167,7 +7103,9 @@ fn main() -> Result<()> {
                     .assignments
                     .iter()
                     .filter_map(|&(ri, ref a)| {
-                        bam_reads.get(ri).map(|br| (br.name.as_str(), (a.origin_rejected, a.n_candidates)))
+                        bam_reads
+                            .get(ri)
+                            .map(|br| (br.name.as_str(), (a.origin_rejected, a.n_candidates)))
                     })
                     .collect();
                 // Resolve catalog_copy_idx -> (chrom, start, end, locus_extent): fa.copy_spans is indexed by
@@ -6201,7 +7139,10 @@ fn main() -> Result<()> {
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
                     if let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
                         if let Some((chrom, s, e)) = fa.copy_spans.get(ci) {
-                            let locus = rustle::family::copy_assign::copy_assign_pipeline::locus_extent_of(tid);
+                            let locus =
+                                rustle::family::copy_assign::copy_assign_pipeline::locus_extent_of(
+                                    tid,
+                                );
                             copy_span_by_cf
                                 .entry(cf.clone())
                                 .or_default()
@@ -6227,7 +7168,12 @@ fn main() -> Result<()> {
                 // over `cp.items()`'s insertion order). Built once per family from `bam_reads` (already
                 // resident for the region) instead of a second BAM fetch. Extracted as `best_overlap_truth_copy`
                 // (below) so the tie-break is directly unit-testable.
-                let truth_copy = best_overlap_truth_copy(&bam_reads, &fa.copy_spans, &fa.copy_tids, catalog_index.as_ref());
+                let truth_copy = best_overlap_truth_copy(
+                    &bam_reads,
+                    &fa.copy_spans,
+                    &fa.copy_tids,
+                    catalog_index.as_ref(),
+                );
                 // Group this family's bam_reads by best-candidate catalog_copy_idx, split into rejected
                 // (origin_rejected==true) and accepted (this family's own certificate-passed reads at that
                 // copy), NOW bucketed by (cf, cidx) rather than bare cidx (Fix 1 above -- `cf` here is the
@@ -6236,14 +7182,24 @@ fn main() -> Result<()> {
                 // (an index into `copy_tids`/`copy_spans`, the same namespace `ci` uses above -- `.get()`,
                 // not direct indexing, since no invariant here guarantees every family's assignments stay
                 // in range), `status: AssignStatus` (Assigned/Ambiguous/Tied) and `origin_rejected: bool`.
-                let mut rejected_by_cf: DetHashMap<String, DetHashMap<String, Vec<(String, Vec<u8>)>>> =
-                    DetHashMap::default();
-                let mut accepted_by_cf: DetHashMap<String, DetHashMap<String, Vec<(String, Vec<u8>)>>> =
-                    DetHashMap::default();
+                let mut rejected_by_cf: DetHashMap<
+                    String,
+                    DetHashMap<String, Vec<(String, Vec<u8>)>>,
+                > = DetHashMap::default();
+                let mut accepted_by_cf: DetHashMap<
+                    String,
+                    DetHashMap<String, Vec<(String, Vec<u8>)>>,
+                > = DetHashMap::default();
                 for &(read_i, ref assignment) in &fa.assignments {
-                    let Some(br) = bam_reads.get(read_i) else { continue };
-                    let Some(tid) = fa.copy_tids.get(assignment.best_copy) else { continue };
-                    let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) else { continue };
+                    let Some(br) = bam_reads.get(read_i) else {
+                        continue;
+                    };
+                    let Some(tid) = fa.copy_tids.get(assignment.best_copy) else {
+                        continue;
+                    };
+                    let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) else {
+                        continue;
+                    };
                     let cidx = cidx.to_string();
                     // Python's `n in truth` gate: rejected reads need a primary overlapping ANY of this
                     // family's copies (grouped by O2's own best-copy call, which may differ from the
@@ -6262,12 +7218,24 @@ fn main() -> Result<()> {
                     // (the pre-fix comparison) can succeed for the WRONG reason when two catalog copies from
                     // DIFFERENT families share a bare index inside the same `fa` (see `best_overlap_truth_copy`'s
                     // own doc comment).
-                    let Some(((truth_cf, truth_cidx), _)) = truth_copy.get(br.name.as_str()) else { continue };
+                    let Some(((truth_cf, truth_cidx), _)) = truth_copy.get(br.name.as_str()) else {
+                        continue;
+                    };
                     let entry = (br.name.clone(), br.read.seq.clone());
                     if assignment.origin_rejected {
-                        rejected_by_cf.entry(cf.clone()).or_default().entry(cidx).or_default().push(entry);
+                        rejected_by_cf
+                            .entry(cf.clone())
+                            .or_default()
+                            .entry(cidx)
+                            .or_default()
+                            .push(entry);
                     } else if truth_cf == cf && *truth_cidx == cidx {
-                        accepted_by_cf.entry(cf.clone()).or_default().entry(cidx).or_default().push(entry);
+                        accepted_by_cf
+                            .entry(cf.clone())
+                            .or_default()
+                            .entry(cidx)
+                            .or_default()
+                            .push(entry);
                     }
                 }
                 // Fix 1: one `detect_missing_copy_pairs` call PER real catalog family (`cf`) present among
@@ -6286,15 +7254,19 @@ fn main() -> Result<()> {
                     // Fix 3 (Task 6, carried forward from Task 5's review): iterating a DetHashMap's `.keys()`
                     // is nondeterministic order -- sort by `copy_idx` so `o3_raw_pairs` (and therefore its
                     // `family_join.tsv`/`missing_copy_loci.tsv` row order) is stable run-to-run.
-                    let mut inputs: Vec<rustle::family::missing_copy::missing_copy_flag_pass::PairInput> = spans
+                    let mut inputs: Vec<
+                        rustle::family::missing_copy::missing_copy_flag_pass::PairInput,
+                    > = spans
                         .keys()
-                        .map(|cidx| rustle::family::missing_copy::missing_copy_flag_pass::PairInput {
-                            copy_idx: cidx.clone(),
-                            // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
-                            // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
-                            is_partner: false,
-                            rejected: rej.get(cidx).cloned().unwrap_or_default(),
-                            accepted: acc.get(cidx).cloned().unwrap_or_default(),
+                        .map(|cidx| {
+                            rustle::family::missing_copy::missing_copy_flag_pass::PairInput {
+                                copy_idx: cidx.clone(),
+                                // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
+                                // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
+                                is_partner: false,
+                                rejected: rej.get(cidx).cloned().unwrap_or_default(),
+                                accepted: acc.get(cidx).cloned().unwrap_or_default(),
+                            }
                         })
                         .collect();
                     inputs.sort_by(|a, b| a.copy_idx.cmp(&b.copy_idx));
@@ -6316,7 +7288,9 @@ fn main() -> Result<()> {
                         // `N` CIGAR op) merely SPANS a unit without any aligned block actually landing inside
                         // it was wrongly counted "inside", undercounting orphans. Now uses the same
                         // aligned-block overlap `block_overlap()` (M/=/X runs only) the truth gate uses.
-                        !fam_units.iter().any(|(c, s, e)| br.chrom == *c && block_overlap(&br.read, *s, *e) > 0)
+                        !fam_units
+                            .iter()
+                            .any(|(c, s, e)| br.chrom == *c && block_overlap(&br.read, *s, *e) > 0)
                     })
                     // Fix 1 (Task 6, revised): restrict to reads that are demonstrably ORPHANED for `fa`
                     // specifically -- present in `fa`'s own assignments (i.e. `fa` actually considered this
@@ -6331,7 +7305,9 @@ fn main() -> Result<()> {
                             .map_or(false, |&(rejected, n_cand)| rejected || n_cand == 0)
                     })
                     .collect();
-                outside.sort_by(|a, b| (a.chrom.as_str(), a.read.ref_start).cmp(&(b.chrom.as_str(), b.read.ref_start)));
+                outside.sort_by(|a, b| {
+                    (a.chrom.as_str(), a.read.ref_start).cmp(&(b.chrom.as_str(), b.read.ref_start))
+                });
                 // Follow-up fix (final whole-branch review, round 2): `classify_orphan_locus`'s exclusion
                 // test also used to take `&fa.family_id` -- the LOCAL co-located group's own (possibly
                 // arbitrary) label, not necessarily any real catalog family id. Since `fa` can bundle more
@@ -6348,7 +7324,9 @@ fn main() -> Result<()> {
                 let mut clusters: Vec<(String, u64, u64, usize, usize)> = Vec::new();
                 for br in &outside {
                     let end = read_ref_end(&br.read);
-                    let is_true_orphan = fa_verdict.get(br.name.as_str()).map_or(false, |&(_, n_cand)| n_cand == 0);
+                    let is_true_orphan = fa_verdict
+                        .get(br.name.as_str())
+                        .map_or(false, |&(_, n_cand)| n_cand == 0);
                     if let Some(last) = clusters.last_mut() {
                         if last.0 == br.chrom && br.read.ref_start.saturating_sub(last.2) <= 5000 {
                             last.2 = last.2.max(end);
@@ -6359,19 +7337,39 @@ fn main() -> Result<()> {
                             continue;
                         }
                     }
-                    clusters.push((br.chrom.clone(), br.read.ref_start, end, 1, if is_true_orphan { 1 } else { 0 }));
+                    clusters.push((
+                        br.chrom.clone(),
+                        br.read.ref_start,
+                        end,
+                        1,
+                        if is_true_orphan { 1 } else { 0 },
+                    ));
                 }
                 for (chrom, start, end, n_reads, n_orphans) in clusters {
                     if n_reads < 3 {
                         continue;
                     }
-                    let (class, n_genes, other_units) = rustle::family::missing_copy::missing_copy_flag_pass::classify_orphan_locus(
-                        &chrom, start, end, &own_family_ids, &o3_all_units_by_chrom, &o3_genes_by_chrom,
+                    let (class, n_genes, other_units) =
+                        rustle::family::missing_copy::missing_copy_flag_pass::classify_orphan_locus(
+                            &chrom,
+                            start,
+                            end,
+                            &own_family_ids,
+                            &o3_all_units_by_chrom,
+                            &o3_genes_by_chrom,
+                        );
+                    loci.push(
+                        rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus {
+                            chrom,
+                            start,
+                            end,
+                            n_reads,
+                            n_orphans,
+                            class,
+                            n_genes_overlapping: n_genes,
+                            other_family_units: other_units,
+                        },
                     );
-                    loci.push(rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus {
-                        chrom, start, end, n_reads, n_orphans, class,
-                        n_genes_overlapping: n_genes, other_family_units: other_units,
-                    });
                 }
             }
             (pairs, loci)
@@ -6381,24 +7379,58 @@ fn main() -> Result<()> {
         // Read-seeded copy discovery (opt-in, --discover-copies): cluster AS-tied reads' out-of-catalog
         // placements into candidate new copies. Gated the same way as the O3 block above -- empty Vec, no
         // allocation, when the flag is unset.
-        let discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> = if args.discover_copies {
-            // The region's AS-tied reads are extracted ONCE; `discover_copies_for_family` then restricts
-            // them, per family, to the reads that family actually considered (`fa.assignments`) before
-            // clustering. Pooling them across families is the cross-family attribution bug the final
-            // whole-branch review caught -- see that function's own doc comment.
-            let tied = rustle::family::copy_graph::copy_discovery::tie_partner_placements(&bam_reads);
-            fams.iter().flat_map(|fa| discover_copies_for_family(fa, &bam_reads, &tied)).collect()
-        } else {
-            Vec::new()
-        };
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_chrom, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss: tss_ev, bridge: bridge_ev })
+        let discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> =
+            if args.discover_copies {
+                // The region's AS-tied reads are extracted ONCE; `discover_copies_for_family` then restricts
+                // them, per family, to the reads that family actually considered (`fa.assignments`) before
+                // clustering. Pooling them across families is the cross-family attribution bug the final
+                // whole-branch review caught -- see that function's own doc comment.
+                let tied =
+                    rustle::family::copy_graph::copy_discovery::tie_partner_placements(&bam_reads);
+                fams.iter()
+                    .flat_map(|fa| discover_copies_for_family(fa, &bam_reads, &tied))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+        Ok(RegionWork {
+            contig: contig.clone(),
+            lo,
+            hi,
+            read_names,
+            read_chrom,
+            read_mapqs,
+            read_spans,
+            read_blocks,
+            read_strand,
+            as_ev,
+            n_mapped,
+            fams,
+            fallback,
+            dna_needs,
+            linearize_certs,
+            transcripts,
+            uniq_reads,
+            o3_raw_pairs,
+            o3_orphan_loci,
+            discovered,
+            union,
+            readthrough,
+            tss: tss_ev,
+            bridge: bridge_ev,
+        })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
         Some(pool) => pool.install(|| {
-            flat.par_iter().map(|(c, lo, hi)| compute(c, *lo, *hi)).collect::<Result<Vec<_>>>()
+            flat.par_iter()
+                .map(|(c, lo, hi)| compute(c, *lo, *hi))
+                .collect::<Result<Vec<_>>>()
         })?,
-        None => flat.iter().map(|(c, lo, hi)| compute(c, *lo, *hi)).collect::<Result<Vec<_>>>()?,
+        None => flat
+            .iter()
+            .map(|(c, lo, hi)| compute(c, *lo, *hi))
+            .collect::<Result<Vec<_>>>()?,
     };
     // PASS 1 (read-only): cross-family reconciliation. It must run BEFORE the drain, not as a post-pass
     // over `assign_rows`, because a molecule's status is emitted from `fa.assignments` at FOUR sites
@@ -6414,7 +7446,11 @@ fn main() -> Result<()> {
     // The status a row is EMITTED with. Under `off`/`report` (and for every non-demoted key) this is
     // `a.status` verbatim, so those arms are byte-identical BY CONSTRUCTION. The `Abstain` test comes
     // FIRST so the other two modes never even build the lookup key.
-    let eff_astatus = |read_name: &str, g: usize, f: usize, a: &rustle::family::copy_assign::Assignment| -> AssignStatus {
+    let eff_astatus = |read_name: &str,
+                       g: usize,
+                       f: usize,
+                       a: &rustle::family::copy_assign::Assignment|
+     -> AssignStatus {
         if xfam_mode == XfamMode::Abstain
             && matches!(a.status, AssignStatus::Assigned)
             && xfam_demote.contains(&(read_name.to_string(), g, f))
@@ -6428,14 +7464,41 @@ fn main() -> Result<()> {
             a.status
         }
     };
-    let eff_status = |read_name: &str, g: usize, f: usize, a: &rustle::family::copy_assign::Assignment| -> &'static str {
-        status_str(eff_astatus(read_name, g, f, a))
-    };
+    let eff_status = |read_name: &str,
+                      g: usize,
+                      f: usize,
+                      a: &rustle::family::copy_assign::Assignment|
+     -> &'static str { status_str(eff_astatus(read_name, g, f, a)) };
     // SERIAL drain (PASS 2) in the original region order — every row push + the `gfam` id counter is
     // exactly the serial path, so the output is byte-identical.
     {
         for (gwork, work) in works.into_iter().enumerate() {
-            let RegionWork { contig, lo, hi, read_names, read_chrom: _, read_mapqs, read_spans, read_blocks, read_strand, as_ev, n_mapped, fams, fallback, dna_needs, linearize_certs, transcripts, uniq_reads, o3_raw_pairs, o3_orphan_loci, discovered, union, readthrough, tss, bridge } = work;
+            let RegionWork {
+                contig,
+                lo,
+                hi,
+                read_names,
+                read_chrom: _,
+                read_mapqs,
+                read_spans,
+                read_blocks,
+                read_strand,
+                as_ev,
+                n_mapped,
+                fams,
+                fallback,
+                dna_needs,
+                linearize_certs,
+                transcripts,
+                uniq_reads,
+                o3_raw_pairs,
+                o3_orphan_loci,
+                discovered,
+                union,
+                readthrough,
+                tss,
+                bridge,
+            } = work;
             // O3 Phase 2 (Task 6): fold this region's raw pair stats + orphan loci into the genome-wide
             // vectors. Nothing is written here -- the Bonferroni threshold in `finalize_flags` needs every
             // region's pairs first, so `family_join.tsv`/`missing_copy_loci.tsv` are written once, after
@@ -6471,13 +7534,17 @@ fn main() -> Result<()> {
             // (the copy its primary's blocks overlap most), as any assembler would use it; the certificate is
             // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
             // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
-            let readthroughs = rustle::family::copy_assign::copy_assign_pipeline::take_readthroughs();
+            let readthroughs =
+                rustle::family::copy_assign::copy_assign_pipeline::take_readthroughs();
             // ⭐ §6gz: under the AS-tied gate every molecule that reaches this point is tied by ALIGNMENT SCORE,
             // and a MAPQ of 60 is the aligner's chaining-stage opinion, not a guarantee — one human read
             // carried a MAPQ-60 primary at AS 1323 with three secondaries at AS 1384, and placement put it at
             // the primary's copy after the certificate had rejected every candidate. No tied molecule is ever
             // placed by its primary; placement exists only on the escape path.
-            let placement_assign = args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign && args.no_as_tied_only;
+            let placement_assign = args.molecule_observations
+                && !args.no_molecule_observations
+                && !args.no_placement_assign
+                && args.no_as_tied_only;
             let mut placement_assigned = 0usize;
             let mut fams = fams;
             // the molecule's PRIMARY record (its highest-MAPQ record): the row's `ri` is the read-star
@@ -6495,30 +7562,52 @@ fn main() -> Result<()> {
             if placement_assign {
                 for fa in fams.iter_mut() {
                     for (ri, a) in fa.assignments.iter_mut() {
-                        let mq = mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]);
-                        if mq < 60 || rustle::family::copy_assign::copy_assign_pipeline::is_tie_outside(&bam_reads[*ri]) {
+                        let mq = mol_mapq
+                            .get(bam_reads[*ri].as_str())
+                            .copied()
+                            .unwrap_or(read_mapqs[*ri]);
+                        if mq < 60
+                            || rustle::family::copy_assign::copy_assign_pipeline::is_tie_outside(
+                                &bam_reads[*ri],
+                            )
+                        {
                             continue; // §6gz: a competitor O2 never scored forbids placement too
                         }
                         // certified first: a molecule the machinery already assigned keeps that call (it can
                         // correct a placement: 4 % of MAPQ-60 simulated reads sit at the wrong copy, §6fq);
                         // the placement is the fallback when the machinery abstains or ties
-                        if !args.placement_first && a.status == rustle::family::copy_assign::AssignStatus::Assigned {
+                        if !args.placement_first
+                            && a.status == rustle::family::copy_assign::AssignStatus::Assigned
+                        {
                             continue;
                         }
-                        let pri = mol_primary.get(bam_reads[*ri].as_str()).copied().unwrap_or(*ri);
-                        let Some(bl) = read_blocks.get(pri) else { continue };
+                        let pri = mol_primary
+                            .get(bam_reads[*ri].as_str())
+                            .copied()
+                            .unwrap_or(*ri);
+                        let Some(bl) = read_blocks.get(pri) else {
+                            continue;
+                        };
                         let mut best: Option<(usize, u64)> = None;
                         for (ci, (c, s0, e0)) in fa.copy_spans.iter().enumerate() {
-                            if c != contig || fa.copy_tids.get(ci).map_or(false, |t| rustle::family::copy_assign::copy_assign_pipeline::is_partner(t)) {
+                            if c != contig
+                                || fa.copy_tids.get(ci).map_or(false, |t| {
+                                    rustle::family::copy_assign::copy_assign_pipeline::is_partner(t)
+                                })
+                            {
                                 continue; // §6ft: never place a molecule at a partner
                             }
-                            let o: u64 = bl.iter().map(|&(bs, be)| be.min(*e0).saturating_sub(bs.max(*s0))).sum();
+                            let o: u64 = bl
+                                .iter()
+                                .map(|&(bs, be)| be.min(*e0).saturating_sub(bs.max(*s0)))
+                                .sum();
                             if o > 0 && best.map_or(true, |(_, bo)| o > bo) {
                                 best = Some((ci, o));
                             }
                         }
                         let Some((pc, _)) = best else { continue };
-                        if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() && placement_assigned < 5 {
+                        if std::env::var_os("RUSTLE_STAR_DEBUG").is_some() && placement_assigned < 5
+                        {
                             eprintln!("[placement] read {} mapq {mq} blocks {:?} -> copy {pc} span {:?} (was best_copy {} status {:?}); spans {:?}", bam_reads[*ri], &bl[..bl.len().min(3)], fa.copy_spans.get(pc), a.best_copy, a.status, &fa.copy_spans[..fa.copy_spans.len().min(3)]);
                         }
                         a.status = rustle::family::copy_assign::AssignStatus::Assigned;
@@ -6540,7 +7629,11 @@ fn main() -> Result<()> {
                 // precisely why the O1 and O2 tables could not be joined. With `--families` the family
                 // KEEPS the catalog's own `GWFAM{i}` — no id is minted, so `family_id` means the same
                 // thing in both tables. `gfam` still advances so the two modes cannot alias.
-                let fid = if region_families.is_some() { fa.family_id.clone() } else { format!("CAFAM{gfam}") };
+                let fid = if region_families.is_some() {
+                    fa.family_id.clone()
+                } else {
+                    format!("CAFAM{gfam}")
+                };
                 gfam += 1;
                 if args.gtf {
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
@@ -6558,20 +7651,31 @@ fn main() -> Result<()> {
                     .filter(|(i, _)| read_spans.get(*i).map_or(false, |sp| sp.2 == 0))
                     .filter(|(i, _)| {
                         read_blocks.get(*i).map_or(false, |bl| {
-                            bl.iter().any(|&(bs, be)| fa.copy_spans.iter().any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0))
+                            bl.iter().any(|&(bs, be)| {
+                                fa.copy_spans
+                                    .iter()
+                                    .any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0)
+                            })
                         })
                     })
                     .map(|(_, n)| n.as_str())
                     .collect();
                 let cat_idx_of = |ci: usize| -> String {
                     match (&catalog_index, fa.copy_tids.get(ci)) {
-                        (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| "NA".into()),
+                        (Some(ix), Some(tid)) => ix
+                            .get(tid)
+                            .map(|(_, i)| i.to_string())
+                            .unwrap_or_else(|| "NA".into()),
                         _ => "NA".into(),
                     }
                 };
                 for (ri, a) in &fa.assignments {
                     let in_copy = read_blocks.get(*ri).map_or(false, |bl| {
-                        bl.iter().any(|&(bs, be)| fa.copy_spans.iter().any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0))
+                        bl.iter().any(|&(bs, be)| {
+                            fa.copy_spans
+                                .iter()
+                                .any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0)
+                        })
                     });
                     assign_rows.push(AssignRow {
                         read_name: bam_reads[*ri].clone(),
@@ -6588,7 +7692,11 @@ fn main() -> Result<()> {
                         n_candidates: a.n_candidates,
                         in_copy,
                         primary_local: primary_local.contains(bam_reads[*ri].as_str()),
-                        contested: mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]) < 60,
+                        contested: mol_mapq
+                            .get(bam_reads[*ri].as_str())
+                            .copied()
+                            .unwrap_or(read_mapqs[*ri])
+                            < 60,
                         readthrough_into: match readthroughs.get(bam_reads[*ri].as_str()) {
                             Some(&(pc, _)) if pc == usize::MAX => "cut".to_string(),
                             Some(&(pc, _)) => cat_idx_of(pc),
@@ -6630,14 +7738,21 @@ fn main() -> Result<()> {
                             }
                         }
                         // consistent zone = copies above the floor; its genomic extent + the posterior string.
-                        let mut idx: Vec<usize> = (0..post.len()).filter(|&c| post[c] > FLOOR).collect();
+                        let mut idx: Vec<usize> =
+                            (0..post.len()).filter(|&c| post[c] > FLOOR).collect();
                         idx.sort_by(|&a2, &b2| post[b2].partial_cmp(&post[a2]).unwrap());
-                        let zone: Vec<u64> = idx.iter().filter_map(|&c| loci[c].as_ref().map(|l| l.1)).collect();
+                        let zone: Vec<u64> = idx
+                            .iter()
+                            .filter_map(|&c| loci[c].as_ref().map(|l| l.1))
+                            .collect();
                         let chrom = idx
                             .iter()
                             .find_map(|&c| loci[c].as_ref().map(|l| l.0.clone()))
                             .unwrap_or_default();
-                        let (zs, ze) = (zone.iter().min().copied().unwrap_or(0), zone.iter().max().copied().unwrap_or(0));
+                        let (zs, ze) = (
+                            zone.iter().min().copied().unwrap_or(0),
+                            zone.iter().max().copied().unwrap_or(0),
+                        );
                         let pstr = idx
                             .iter()
                             .map(|&c| format!("{}:{:.3}", c, post[c]))
@@ -6645,7 +7760,14 @@ fn main() -> Result<()> {
                             .join(",");
                         posterior_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                            bam_reads[*ri], fid, eff_status(&bam_reads[*ri], gwork, fwork, a), idx.len(), chrom, zs, ze, pstr
+                            bam_reads[*ri],
+                            fid,
+                            eff_status(&bam_reads[*ri], gwork, fwork, a),
+                            idx.len(),
+                            chrom,
+                            zs,
+                            ze,
+                            pstr
                         ));
                     }
                 }
@@ -6658,7 +7780,12 @@ fn main() -> Result<()> {
                 let mqs: Vec<u8> = fa
                     .assignments
                     .iter()
-                    .map(|(ri, _)| mol_mapq.get(bam_reads[*ri].as_str()).copied().unwrap_or(read_mapqs[*ri]))
+                    .map(|(ri, _)| {
+                        mol_mapq
+                            .get(bam_reads[*ri].as_str())
+                            .copied()
+                            .unwrap_or(read_mapqs[*ri])
+                    })
                     .collect();
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
                     let anchored = anchored_support(&bcs, &mqs, ci);
@@ -6666,17 +7793,33 @@ fn main() -> Result<()> {
                         family_id: fid.clone(),
                         copy_index: ci,
                         copy_tid: tid.clone(),
-                        copy_chrom: fa.copy_spans.get(ci).map(|s| s.0.clone()).unwrap_or_default(),
+                        copy_chrom: fa
+                            .copy_spans
+                            .get(ci)
+                            .map(|s| s.0.clone())
+                            .unwrap_or_default(),
                         copy_start: fa.copy_spans.get(ci).map_or(0, |s| s.1),
                         copy_end: fa.copy_spans.get(ci).map_or(0, |s| s.2),
                         abundance: fa.copy_abundance.get(ci).copied().unwrap_or(0.0),
                         ci: fa.copy_abundance_ci.get(ci).copied().unwrap_or(0.0),
                         // an ORPHAN (no candidate, §6fg) is nobody's hard read (it carried copy 0's index by default)
-                        n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci && !(a.origin_rejected && a.n_candidates == 0)).count(),
-                        n_soft: fa.assignments.iter().filter(|(_, a)| !a.origin_rejected).map(|(_, a)| a.posterior.get(ci).copied().unwrap_or(0.0)).sum(),
+                        n_hard: fa
+                            .assignments
+                            .iter()
+                            .filter(|(_, a)| {
+                                a.best_copy == ci && !(a.origin_rejected && a.n_candidates == 0)
+                            })
+                            .count(),
+                        n_soft: fa
+                            .assignments
+                            .iter()
+                            .filter(|(_, a)| !a.origin_rejected)
+                            .map(|(_, a)| a.posterior.get(ci).copied().unwrap_or(0.0))
+                            .sum(),
                         anchored,
                         tie_invariant: anchored as u32 >= GATE_MIN_READS,
-                        junction_invariant: fa.copy_junction_support.get(ci).copied().unwrap_or(0) as u32
+                        junction_invariant: fa.copy_junction_support.get(ci).copied().unwrap_or(0)
+                            as u32
                             >= GATE_MIN_READS,
                     });
                     // `--families`: name the catalog row this copy IS. Looked up by the catalog `tid`
@@ -6692,10 +7835,16 @@ fn main() -> Result<()> {
                         join_rows.push(JoinRow {
                             line: format!(
                                 "{fid}\t{ci}\t{tid}\t{cf}\t{cidx}\t{}\t{}\t{}\t{}",
-                                fa.copy_spans.get(ci).map(|s| s.0.clone()).unwrap_or_default(),
+                                fa.copy_spans
+                                    .get(ci)
+                                    .map(|s| s.0.clone())
+                                    .unwrap_or_default(),
                                 fa.copy_spans.get(ci).map_or(0, |s| s.1),
                                 fa.copy_spans.get(ci).map_or(0, |s| s.2),
-                                fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
+                                fa.assignments
+                                    .iter()
+                                    .filter(|(_, a)| a.best_copy == ci)
+                                    .count(),
                             ),
                             family_id: cf.clone(),
                             copy_idx: cidx.clone(),
@@ -6726,7 +7875,11 @@ fn main() -> Result<()> {
                 for cv in &fa.copy_conversions {
                     copyconv_rows.push(CopyConvRow {
                         family_id: fid.clone(),
-                        copy_c: fa.copy_tids.get(cv.copy_c).cloned().unwrap_or_else(|| cv.copy_c.to_string()),
+                        copy_c: fa
+                            .copy_tids
+                            .get(cv.copy_c)
+                            .cloned()
+                            .unwrap_or_else(|| cv.copy_c.to_string()),
                         copy_a: cv.copy_a,
                         copy_b: cv.copy_b,
                         bp_lo: cv.breakpoint.0,
@@ -6737,22 +7890,39 @@ fn main() -> Result<()> {
                 // raw per-molecule PSV genotype evidence (the assignment-proof matrix)
                 if args.dump_psv {
                     let allele_str = |v: &Vec<Option<u8>>| -> String {
-                        v.iter().map(|o| o.map(|b| b as char).unwrap_or('.')).collect()
+                        v.iter()
+                            .map(|o| o.map(|b| b as char).unwrap_or('.'))
+                            .collect()
                     };
                     for ((ri, a), obs) in fa.assignments.iter().zip(fa.read_psv_obs.iter()) {
                         psv_read_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
-                            bam_reads[*ri], fid, a.best_copy, eff_status(&bam_reads[*ri], gwork, fwork, a),
-                            a.log_lr_margin, a.n_decisive, allele_str(obs)
+                            bam_reads[*ri],
+                            fid,
+                            a.best_copy,
+                            eff_status(&bam_reads[*ri], gwork, fwork, a),
+                            a.log_lr_margin,
+                            a.n_decisive,
+                            allele_str(obs)
                         ));
                     }
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
-                        let alleles = fa.copy_psv_alleles.get(ci).map(allele_str).unwrap_or_default();
+                        let alleles = fa
+                            .copy_psv_alleles
+                            .get(ci)
+                            .map(allele_str)
+                            .unwrap_or_default();
                         let strand = fa.copy_strand.get(ci).copied().unwrap_or('+');
-                        psv_copy_lines.push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, alleles, strand));
+                        psv_copy_lines
+                            .push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, alleles, strand));
                     }
                     for (col, pos) in fa.psv_col_pos.iter().enumerate() {
-                        psv_col_lines.push(format!("{}\t{}\t{}", fid, col, pos.map(|x| x as i64).unwrap_or(-1)));
+                        psv_col_lines.push(format!(
+                            "{}\t{}\t{}",
+                            fid,
+                            col,
+                            pos.map(|x| x as i64).unwrap_or(-1)
+                        ));
                     }
                 }
                 // EM soft-relaxation (opt-in): re-runs the family's PSV evidence through the maximum-
@@ -6782,8 +7952,12 @@ fn main() -> Result<()> {
                             .map(|(k, _)| k)
                             .unwrap_or(0);
                         let label = match em_result.labels[row_idx] {
-                            rustle::family::copy_assign::em_copy_assign::EmLabel::Certified => "Certified",
-                            rustle::family::copy_assign::em_copy_assign::EmLabel::SoftZone => "SoftZone",
+                            rustle::family::copy_assign::em_copy_assign::EmLabel::Certified => {
+                                "Certified"
+                            }
+                            rustle::family::copy_assign::em_copy_assign::EmLabel::SoftZone => {
+                                "SoftZone"
+                            }
                         };
                         let post_str = post
                             .iter()
@@ -6797,7 +7971,11 @@ fn main() -> Result<()> {
                         ));
                     }
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
-                        let n_reads_soft: f64 = em_result.posteriors.iter().map(|p| p.get(ci).copied().unwrap_or(0.0)).sum();
+                        let n_reads_soft: f64 = em_result
+                            .posteriors
+                            .iter()
+                            .map(|p| p.get(ci).copied().unwrap_or(0.0))
+                            .sum();
                         em_abundance_lines.push(format!(
                             "{}\t{}\t{:.4}\t{:.2}",
                             fid,
@@ -6820,10 +7998,17 @@ fn main() -> Result<()> {
                         .iter()
                         .map(|(ri, a)| eff_astatus(&bam_reads[*ri], gwork, fwork, a))
                         .collect();
-                    let n_phased = eff.iter().filter(|s| matches!(s, AssignStatus::Assigned)).count();
+                    let n_phased = eff
+                        .iter()
+                        .filter(|s| matches!(s, AssignStatus::Assigned))
+                        .count();
                     phase_block_lines.push(format!(
                         "{}\t{}\t{}\t{}\t{}\t{}",
-                        fid, fa.chrom, fa.n_copies, fa.psv_cols, n_phased,
+                        fid,
+                        fa.chrom,
+                        fa.n_copies,
+                        fa.psv_cols,
+                        n_phased,
                         fa.assignments.len() - n_phased
                     ));
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
@@ -6842,9 +8027,12 @@ fn main() -> Result<()> {
                             .assignments
                             .iter()
                             .zip(eff.iter())
-                            .filter(|((_, a), s)| a.best_copy == ci && matches!(s, AssignStatus::Assigned))
+                            .filter(|((_, a), s)| {
+                                a.best_copy == ci && matches!(s, AssignStatus::Assigned)
+                            })
                             .count();
-                        phased_hap_lines.push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, n_sup, vs));
+                        phased_hap_lines
+                            .push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, n_sup, vs));
                     }
                     for ((ri, a), es) in fa.assignments.iter().zip(eff.iter()) {
                         let hap: i64 = if matches!(es, AssignStatus::Assigned) {
@@ -6854,7 +8042,12 @@ fn main() -> Result<()> {
                         };
                         phased_read_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{:.3}\t{}",
-                            bam_reads[*ri], fid, hap, a.n_decisive, a.log_lr_margin, status_str(*es)
+                            bam_reads[*ri],
+                            fid,
+                            hap,
+                            a.n_decisive,
+                            a.log_lr_margin,
+                            status_str(*es)
                         ));
                     }
 
@@ -6862,17 +8055,31 @@ fn main() -> Result<()> {
                     // walks over the shared PSV-bubble nodes) and fold its GFA lines / Bandage colours /
                     // status legend into the region's accumulators. Replaces the inline emitter above.
                     let ref_base = |chrom: &str, pos: u64| {
-                        genome_for(chrom).ok()
+                        genome_for(chrom)
+                            .ok()
                             .and_then(|g| g.fetch_sequence(chrom, pos, pos + 1))
                             .and_then(|v| v.first().copied())
                     };
-                    let cg = build_copy_graph(&fid, fa, ref_base, bam_reads, annotation.as_deref(), &eff);
+                    let cg = build_copy_graph(
+                        &fid,
+                        fa,
+                        ref_base,
+                        bam_reads,
+                        annotation.as_deref(),
+                        &eff,
+                    );
                     let gl = cg.gfa_lines();
-                    for s in gl.segs { gfa_segs.insert(s); }
-                    for l in gl.links { gfa_links.insert(l); }
+                    for s in gl.segs {
+                        gfa_segs.insert(s);
+                    }
+                    for l in gl.links {
+                        gfa_links.insert(l);
+                    }
                     gfa_paths.extend(gl.paths);
                     gfa_walks.extend(gl.walks);
-                    for row in cg.colours_csv().lines() { gfa_colors.push(row.to_string()); }
+                    for row in cg.colours_csv().lines() {
+                        gfa_colors.push(row.to_string());
+                    }
                     legend_rows.extend(cg.legend_tsv().lines().map(|s| s.to_string()));
 
                     // v2: this family's exon presence/absence graph (copies = walks over shared exon
@@ -6892,8 +8099,14 @@ fn main() -> Result<()> {
                     n_copies: fa.n_copies,
                     n_reads: fa.n_reads,
                     chi_h: chi_h_with_junctions(&fa.copy_psv_alleles, &fa.copy_junctions),
-                    depth_cn: lambda.map(|lam| depth_cn(fa.n_reads, lam)).unwrap_or(f64::NAN),
-                    regime: if fa.collapsed_copies > 0 { "reference_collapsed" } else { "reference_resolved" },
+                    depth_cn: lambda
+                        .map(|lam| depth_cn(fa.n_reads, lam))
+                        .unwrap_or(f64::NAN),
+                    regime: if fa.collapsed_copies > 0 {
+                        "reference_collapsed"
+                    } else {
+                        "reference_resolved"
+                    },
                 });
                 family_rows.push(FamilyRow {
                     family_id: fid,
@@ -6911,7 +8124,11 @@ fn main() -> Result<()> {
                     rescued_copies: fa.rescued_copies,
                 });
             }
-            eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", n_mapped, fams.len());
+            eprintln!(
+                "[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families",
+                n_mapped,
+                fams.len()
+            );
             // --gtf: emit every isoform of this region (transcript + exon rows), tagging family-copy genes.
             //
             // ⭐ §6gl. Three fixes over the first form, all here:
@@ -6929,10 +8146,17 @@ fn main() -> Result<()> {
             //      tell" and "we did not look".
             let read_chain: Vec<Vec<(u64, u64)>> = read_blocks
                 .iter()
-                .map(|bl| bl.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect())
+                .map(|bl| {
+                    bl.windows(2)
+                        .map(|w| (w[0].1, w[1].0))
+                        .filter(|&(a, b)| b > a)
+                        .collect()
+                })
                 .collect();
-            let verdict: DetHashMap<&str, &AssignRow> =
-                assign_rows.iter().map(|r| (r.read_name.as_str(), r)).collect();
+            let verdict: DetHashMap<&str, &AssignRow> = assign_rows
+                .iter()
+                .map(|r| (r.read_name.as_str(), r))
+                .collect();
             // ⚠ §6gl: `DenovoTranscript::tid` is `DN_<contig>_<start>_<n_exon>`, which COLLIDES — two distinct
             // isoforms sharing a start and an exon count get the same id. On NPIP 53 ids covered 122 of the
             // 886 transcript rows, and any consumer keyed on `transcript_id` (IGV, gffcompare, bedtools, our
@@ -6950,16 +8174,33 @@ fn main() -> Result<()> {
             let mut unspliced_gate_passed: Vec<(u64, u64, String)> = Vec::new();
             let mut prod_genome: Option<std::sync::Arc<GenomeIndex>> = None;
             // --gtf-copy-set: held-back family transcripts, placed by evidence after the loop
-            struct PendingTx<'a> { fw: usize, cidx: String, tline: String, elines: Vec<String>, t: &'a TranscriptRec, uniq: std::collections::BTreeMap<String, usize>, asg: std::collections::BTreeMap<String, usize>, abst: Vec<String>, uniq_tid: String }
+            struct PendingTx<'a> {
+                fw: usize,
+                cidx: String,
+                tline: String,
+                elines: Vec<String>,
+                t: &'a TranscriptRec,
+                uniq: std::collections::BTreeMap<String, usize>,
+                asg: std::collections::BTreeMap<String, usize>,
+                abst: Vec<String>,
+                uniq_tid: String,
+            }
             let mut pending: Vec<PendingTx> = Vec::new();
             // unique mappers by (chrom, intron chain) -> their primary spans (evidence for a copy, §6hn)
-            let mut uniq_by_chain: DetHashMap<(&str, &[(u64, u64)]), Vec<(u64, u64)>> = DetHashMap::default();
+            let mut uniq_by_chain: DetHashMap<(&str, &[(u64, u64)]), Vec<(u64, u64)>> =
+                DetHashMap::default();
             for (c, s0, e0, ch) in &uniq_reads {
-                uniq_by_chain.entry((c.as_str(), ch.as_slice())).or_default().push((*s0, *e0));
+                uniq_by_chain
+                    .entry((c.as_str(), ch.as_slice()))
+                    .or_default()
+                    .push((*s0, *e0));
             }
             let sweep_to_catalog = |fw: usize, ci: usize| -> String {
                 match (&catalog_index, fams[fw].copy_tids.get(ci)) {
-                    (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| ci.to_string()),
+                    (Some(ix), Some(tid)) => ix
+                        .get(tid)
+                        .map(|(_, i)| i.to_string())
+                        .unwrap_or_else(|| ci.to_string()),
                     _ => ci.to_string(),
                 }
             };
@@ -6991,19 +8232,27 @@ fn main() -> Result<()> {
                     }
                     let total: u64 = idxs.iter().map(|&i| transcripts[i].n_reads as u64).sum();
                     // RIGHT (largest `end`): the farthest bucket vs. the next-farthest.
-                    let mut by_end: std::collections::BTreeMap<u64, (u64, Vec<usize>)> = std::collections::BTreeMap::new();
+                    let mut by_end: std::collections::BTreeMap<u64, (u64, Vec<usize>)> =
+                        std::collections::BTreeMap::new();
                     for &i in idxs {
-                        let e = by_end.entry(bucket(transcripts[i].end)).or_insert((0, Vec::new()));
+                        let e = by_end
+                            .entry(bucket(transcripts[i].end))
+                            .or_insert((0, Vec::new()));
                         e.0 += transcripts[i].n_reads as u64;
                         e.1.push(i);
                     }
                     if by_end.len() >= 2 {
-                        let mut v: Vec<(u64, u64, Vec<usize>)> = by_end.into_iter().map(|(b, (r, idx))| (b * 50, r, idx)).collect();
+                        let mut v: Vec<(u64, u64, Vec<usize>)> = by_end
+                            .into_iter()
+                            .map(|(b, (r, idx))| (b * 50, r, idx))
+                            .collect();
                         v.sort_unstable_by_key(|&(pos, _, _)| pos);
                         let (far_pos, far_reads, far_idx) = v.pop().unwrap();
                         let second_pos = v.last().unwrap().0;
                         let gap = far_pos.saturating_sub(second_pos);
-                        if gap > args.min_boundary_gap && (far_reads as f64 / total.max(1) as f64) < args.min_boundary_fraction {
+                        if gap > args.min_boundary_gap
+                            && (far_reads as f64 / total.max(1) as f64) < args.min_boundary_fraction
+                        {
                             for i in far_idx {
                                 let e = boundary_far.entry(i).or_insert((false, false, 0, 0));
                                 e.1 = true;
@@ -7012,18 +8261,26 @@ fn main() -> Result<()> {
                         }
                     }
                     // LEFT (smallest `start`): the farthest bucket vs. the next-farthest.
-                    let mut by_start: std::collections::BTreeMap<u64, (u64, Vec<usize>)> = std::collections::BTreeMap::new();
+                    let mut by_start: std::collections::BTreeMap<u64, (u64, Vec<usize>)> =
+                        std::collections::BTreeMap::new();
                     for &i in idxs {
-                        let e = by_start.entry(bucket(transcripts[i].start)).or_insert((0, Vec::new()));
+                        let e = by_start
+                            .entry(bucket(transcripts[i].start))
+                            .or_insert((0, Vec::new()));
                         e.0 += transcripts[i].n_reads as u64;
                         e.1.push(i);
                     }
                     if by_start.len() >= 2 {
-                        let v: Vec<(u64, u64, Vec<usize>)> = by_start.into_iter().map(|(b, (r, idx))| (b * 50, r, idx)).collect();
+                        let v: Vec<(u64, u64, Vec<usize>)> = by_start
+                            .into_iter()
+                            .map(|(b, (r, idx))| (b * 50, r, idx))
+                            .collect();
                         let (far_pos, far_reads, far_idx) = v[0].clone();
                         let second_pos = v[1].0;
                         let gap = second_pos.saturating_sub(far_pos);
-                        if gap > args.min_boundary_gap && (far_reads as f64 / total.max(1) as f64) < args.min_boundary_fraction {
+                        if gap > args.min_boundary_gap
+                            && (far_reads as f64 / total.max(1) as f64) < args.min_boundary_fraction
+                        {
                             for i in far_idx {
                                 let e = boundary_far.entry(i).or_insert((false, false, 0, 0));
                                 e.0 = true;
@@ -7036,38 +8293,69 @@ fn main() -> Result<()> {
             for (ti, t) in transcripts.iter().enumerate() {
                 let n = tid_seen.entry(t.tid.as_str()).or_insert(0);
                 *n += 1;
-                let uniq_tid = if *n == 1 { t.tid.clone() } else { format!("{}.{}", t.tid, *n) };
+                let uniq_tid = if *n == 1 {
+                    t.tid.clone()
+                } else {
+                    format!("{}.{}", t.tid, *n)
+                };
                 if t.introns.is_empty() {
                     unspliced_gate_passed.push((t.start, t.end, uniq_tid.clone()));
                 } else {
-                    chain_uniq_tid.entry(t.introns.clone()).or_insert_with(|| uniq_tid.clone());
+                    chain_uniq_tid
+                        .entry(t.introns.clone())
+                        .or_insert_with(|| uniq_tid.clone());
                 }
-                let isoform_fraction = t.n_reads as f64 / (*group_total_reads.get(t.gene_tid.as_str()).unwrap_or(&1)).max(1) as f64;
-                let depth_low = args.min_isoform_fraction > 0.0 && isoform_fraction < args.min_isoform_fraction;
-                let (b_left, b_right, gap_left, gap_right) = boundary_far.get(&ti).copied().unwrap_or((false, false, 0, 0));
+                let isoform_fraction = t.n_reads as f64
+                    / (*group_total_reads.get(t.gene_tid.as_str()).unwrap_or(&1)).max(1) as f64;
+                let depth_low =
+                    args.min_isoform_fraction > 0.0 && isoform_fraction < args.min_isoform_fraction;
+                let (b_left, b_right, gap_left, gap_right) = boundary_far
+                    .get(&ti)
+                    .copied()
+                    .unwrap_or((false, false, 0, 0));
                 let boundary_low = b_left || b_right;
                 let low_confidence = depth_low || boundary_low;
                 // (1) positional: the catalog copy this isoform overlaps most
-                let best = fams.iter().enumerate().flat_map(|(fw, fa)| {
-                    fa.copy_spans.iter().enumerate().map(move |(ci, (c, s0, e0))| (fw, ci, c, *s0, *e0))
-                }).filter(|(_, _, c, s0, e0)| *c == &t.chrom && t.end > *s0 && t.start < *e0)
-                  .max_by_key(|(_, _, _, s0, e0)| t.end.min(*e0).saturating_sub(t.start.max(*s0)));
+                let best = fams
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(fw, fa)| {
+                        fa.copy_spans
+                            .iter()
+                            .enumerate()
+                            .map(move |(ci, (c, s0, e0))| (fw, ci, c, *s0, *e0))
+                    })
+                    .filter(|(_, _, c, s0, e0)| *c == &t.chrom && t.end > *s0 && t.start < *e0)
+                    .max_by_key(|(_, _, _, s0, e0)| {
+                        t.end.min(*e0).saturating_sub(t.start.max(*s0))
+                    });
                 let (fam_attr, multicopy) = match best {
                     Some((fw, ci, _, _, _)) => {
-                        let fid = if region_families.is_some() { fams[fw].family_id.clone() } else { String::new() };
+                        let fid = if region_families.is_some() {
+                            fams[fw].family_id.clone()
+                        } else {
+                            String::new()
+                        };
                         // report the CATALOG copy index, the same namespace `assigned_copy` uses below — the
                         // sweep's own index differs (sweep 4 == catalog 24 on NPIP), and printing the two
                         // schemes on one line reads as a disagreement when they in fact agree
                         let idx = match (&catalog_index, fams[fw].copy_tids.get(ci)) {
-                            (Some(ix), Some(tid)) => ix.get(tid).map(|(_, i)| i.to_string()).unwrap_or_else(|| ci.to_string()),
+                            (Some(ix), Some(tid)) => ix
+                                .get(tid)
+                                .map(|(_, i)| i.to_string())
+                                .unwrap_or_else(|| ci.to_string()),
                             _ => ci.to_string(),
                         };
-                        (format!(" family_id \"{fid}\"; copy_index \"{idx}\";"), "true")
+                        (
+                            format!(" family_id \"{fid}\"; copy_index \"{idx}\";"),
+                            "true",
+                        )
                     }
                     None => (String::new(), "false"),
                 };
                 // (2)+(3) the copy its own reads were assigned to, and how sure that is
-                let mut votes: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+                let mut votes: std::collections::BTreeMap<&str, usize> =
+                    std::collections::BTreeMap::new();
                 let (mut seen, mut matched) = (0usize, 0usize);
                 let mut matched_ri: Vec<usize> = Vec::new();
                 for (ri, ch) in read_chain.iter().enumerate() {
@@ -7105,7 +8393,9 @@ fn main() -> Result<()> {
                     None => format!(" copy_status \"unadjudicated\"; matched_reads \"{matched}\";"),
                 };
                 let fam_attr = format!("{fam_attr}{copy_attr}");
-                let fam_attr = if args.min_isoform_fraction > 0.0 || args.min_boundary_fraction > 0.0 {
+                let fam_attr = if args.min_isoform_fraction > 0.0
+                    || args.min_boundary_fraction > 0.0
+                {
                     let reason = match (depth_low, boundary_low) {
                         (true, true) => "both",
                         (true, false) => "depth",
@@ -7183,23 +8473,51 @@ fn main() -> Result<()> {
                     t.chrom, es + 1, ee, t.strand, t.gene_tid, uniq_tid, k + 1
                 )).collect();
                 // --gtf-copy-set: multi-intron family transcripts are held back and placed by evidence below
-                if (args.gtf_copy_set && !args.no_gtf_copy_set) && t.introns.len() >= 2 && best.is_some() && !low_confidence {
+                if (args.gtf_copy_set && !args.no_gtf_copy_set)
+                    && t.introns.len() >= 2
+                    && best.is_some()
+                    && !low_confidence
+                {
                     let (fw, ci, _, _, _) = best.unwrap();
-                    let (mut uniq, mut asg, mut abst) = (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), Vec::new());
+                    let (mut uniq, mut asg, mut abst) = (
+                        std::collections::BTreeMap::new(),
+                        std::collections::BTreeMap::new(),
+                        Vec::new(),
+                    );
                     // unique mappers (gate-dropped primaries) with this chain: evidence at the copy their primary lies in
-                    for &(s0, e0) in uniq_by_chain.get(&(t.chrom.as_str(), t.introns.as_slice())).map(|v| v.as_slice()).unwrap_or(&[]) {
-                        if let Some(pc) = fams[fw].copy_spans.iter().position(|(c, a, b)| *c == t.chrom && s0 < *b && e0 > *a) {
+                    for &(s0, e0) in uniq_by_chain
+                        .get(&(t.chrom.as_str(), t.introns.as_slice()))
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[])
+                    {
+                        if let Some(pc) = fams[fw]
+                            .copy_spans
+                            .iter()
+                            .position(|(c, a, b)| *c == t.chrom && s0 < *b && e0 > *a)
+                        {
                             *uniq.entry(sweep_to_catalog(fw, pc)).or_insert(0usize) += 1;
                         }
                     }
                     for &ri in &matched_ri {
                         match verdict.get(bam_reads[ri].as_str()) {
-                            Some(r) if r.status == "assigned" && !r.origin_rejected => { *asg.entry(r.catalog_copy_idx.clone()).or_insert(0usize) += 1; }
+                            Some(r) if r.status == "assigned" && !r.origin_rejected => {
+                                *asg.entry(r.catalog_copy_idx.clone()).or_insert(0usize) += 1;
+                            }
                             Some(_) => abst.push(bam_reads[ri].clone()),
                             None => {} // an AS-tied read without a row (no catalog placement): no evidence
                         }
                     }
-                    pending.push(PendingTx { fw, cidx: sweep_to_catalog(fw, ci), tline, elines, t, uniq, asg, abst, uniq_tid: uniq_tid.clone() });
+                    pending.push(PendingTx {
+                        fw,
+                        cidx: sweep_to_catalog(fw, ci),
+                        tline,
+                        elines,
+                        t,
+                        uniq,
+                        asg,
+                        abst,
+                        uniq_tid: uniq_tid.clone(),
+                    });
                 } else {
                     gtf_lines.push(tline);
                     gtf_lines.extend(elines);
@@ -7208,28 +8526,74 @@ fn main() -> Result<()> {
             if (args.gtf_copy_set && !args.no_gtf_copy_set) && !pending.is_empty() {
                 // ⭐ §6hn: group the held transcripts across copies by LIFT, then place each group by evidence.
                 let tol = args.gtf_lift_tol;
-                let gi = match prod_genome.as_ref() { Some(g) => g.clone(), None => { let g = genome_for(&contig)?; prod_genome = Some(g.clone()); g } };
-                let mut lifts_by_fam: DetHashMap<usize, DetHashMap<(usize, usize), Vec<LiftBlocks>>> = DetHashMap::default();
-                let fam_ids: std::collections::BTreeSet<usize> = pending.iter().map(|p| p.fw).collect();
+                let gi = match prod_genome.as_ref() {
+                    Some(g) => g.clone(),
+                    None => {
+                        let g = genome_for(&contig)?;
+                        prod_genome = Some(g.clone());
+                        g
+                    }
+                };
+                let mut lifts_by_fam: DetHashMap<
+                    usize,
+                    DetHashMap<(usize, usize), Vec<LiftBlocks>>,
+                > = DetHashMap::default();
+                let fam_ids: std::collections::BTreeSet<usize> =
+                    pending.iter().map(|p| p.fw).collect();
                 for &fw in &fam_ids {
-                    lifts_by_fam.insert(fw, copy_span_lifts(&fams[fw].copy_spans, &gi, &format!("{}.{}", args.out, fw)));
+                    lifts_by_fam.insert(
+                        fw,
+                        copy_span_lifts(&fams[fw].copy_spans, &gi, &format!("{}.{}", args.out, fw)),
+                    );
                 }
-                let strand_of: DetHashMap<String, char> = region_families.as_ref().map(|rf| rf.values().flatten().flat_map(|f| f.copies.iter()).map(|c| (c.copy_idx.to_string(), c.strand)).collect()).unwrap_or_default();
-                let sweep_ci = |fw: usize, cidx: &str| -> Option<usize> { (0..fams[fw].copy_spans.len()).find(|&ci| sweep_to_catalog(fw, ci) == cidx) };
+                let strand_of: DetHashMap<String, char> = region_families
+                    .as_ref()
+                    .map(|rf| {
+                        rf.values()
+                            .flatten()
+                            .flat_map(|f| f.copies.iter())
+                            .map(|c| (c.copy_idx.to_string(), c.strand))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let sweep_ci = |fw: usize, cidx: &str| -> Option<usize> {
+                    (0..fams[fw].copy_spans.len()).find(|&ci| sweep_to_catalog(fw, ci) == cidx)
+                };
                 let lift_pos = |fw: usize, g: u64, a: usize, b: usize| -> Option<(u64, u64)> {
                     let (_, sa, _) = &fams[fw].copy_spans[a];
                     let (_, sb, _) = &fams[fw].copy_spans[b];
                     let rel = g.checked_sub(*sa)?;
-                    lifts_by_fam.get(&fw)?.get(&(a, b))?.iter().filter_map(|l| l.map(rel)).min_by_key(|&(_, d)| d).map(|(t, d)| (t + sb, d))
+                    lifts_by_fam
+                        .get(&fw)?
+                        .get(&(a, b))?
+                        .iter()
+                        .filter_map(|l| l.map(rel))
+                        .min_by_key(|&(_, d)| d)
+                        .map(|(t, d)| (t + sb, d))
                 };
-                fn find(p: &mut Vec<usize>, mut x: usize) -> usize { while p[x] != x { p[x] = p[p[x]]; x = p[x]; } x }
+                fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+                    while p[x] != x {
+                        p[x] = p[p[x]];
+                        x = p[x];
+                    }
+                    x
+                }
                 let n = pending.len();
                 let mut parent: Vec<usize> = (0..n).collect();
                 for i in 0..n {
                     for j in (i + 1)..n {
                         let (p, q) = (&pending[i], &pending[j]);
-                        if p.fw != q.fw || p.cidx == q.cidx || p.t.strand != q.t.strand || p.t.introns.len() != q.t.introns.len() { continue; }
-                        let (Some(a), Some(b)) = (sweep_ci(p.fw, &p.cidx), sweep_ci(q.fw, &q.cidx)) else { continue };
+                        if p.fw != q.fw
+                            || p.cidx == q.cidx
+                            || p.t.strand != q.t.strand
+                            || p.t.introns.len() != q.t.introns.len()
+                        {
+                            continue;
+                        }
+                        let (Some(a), Some(b)) = (sweep_ci(p.fw, &p.cidx), sweep_ci(q.fw, &q.cidx))
+                        else {
+                            continue;
+                        };
                         // same isoform: every boundary lifts onto the other's within `tol`. The lift may extrapolate
                         // past an aligned block's end (a last exon beyond the alignment): agreement of the
                         // extrapolated coordinate is what counts here (the measured rule, `bench/gtf_copy_set.py`);
@@ -7238,26 +8602,74 @@ fn main() -> Result<()> {
                             matches!((lift_pos(p.fw, x0, a, b), lift_pos(p.fw, x1, a, b)), (Some((l0, _)), Some((l1, _))) if l0.abs_diff(y0) <= tol && l1.abs_diff(y1) <= tol)
                         });
                         if let Some(dbg) = std::env::var_os("RUSTLE_COPYSET_DEBUG_TID") {
-                            if p.uniq_tid == dbg.to_string_lossy() || q.uniq_tid == dbg.to_string_lossy() {
-                                let detail: Vec<String> = p.t.introns.iter().zip(q.t.introns.iter()).map(|(&(x0, x1), &(y0, y1))| format!("{}-{}=>{:?}/{:?} vs {}-{}", x0, x1, lift_pos(p.fw, x0, a, b), lift_pos(p.fw, x1, a, b), y0, y1)).collect();
-                                eprintln!("[copyset] pair {}@{} vs {}@{}: ok={ok} {}", p.uniq_tid, p.cidx, q.uniq_tid, q.cidx, detail.join(" | "));
+                            if p.uniq_tid == dbg.to_string_lossy()
+                                || q.uniq_tid == dbg.to_string_lossy()
+                            {
+                                let detail: Vec<String> =
+                                    p.t.introns
+                                        .iter()
+                                        .zip(q.t.introns.iter())
+                                        .map(|(&(x0, x1), &(y0, y1))| {
+                                            format!(
+                                                "{}-{}=>{:?}/{:?} vs {}-{}",
+                                                x0,
+                                                x1,
+                                                lift_pos(p.fw, x0, a, b),
+                                                lift_pos(p.fw, x1, a, b),
+                                                y0,
+                                                y1
+                                            )
+                                        })
+                                        .collect();
+                                eprintln!(
+                                    "[copyset] pair {}@{} vs {}@{}: ok={ok} {}",
+                                    p.uniq_tid,
+                                    p.cidx,
+                                    q.uniq_tid,
+                                    q.cidx,
+                                    detail.join(" | ")
+                                );
                             }
                         }
-                        if ok { let (ri, rj) = (find(&mut parent, i), find(&mut parent, j)); parent[ri] = rj; }
+                        if ok {
+                            let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                            parent[ri] = rj;
+                        }
                     }
                 }
-                let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
-                for i in 0..n { let r = find(&mut parent, i); groups.entry(r).or_default().push(i); }
-                let (mut n_kept, mut n_drop, mut n_lift, mut n_lift_fail, mut n_und) = (0usize, 0usize, 0usize, 0usize, 0usize);
+                let mut groups: std::collections::BTreeMap<usize, Vec<usize>> =
+                    std::collections::BTreeMap::new();
+                for i in 0..n {
+                    let r = find(&mut parent, i);
+                    groups.entry(r).or_default().push(i);
+                }
+                let (mut n_kept, mut n_drop, mut n_lift, mut n_lift_fail, mut n_und) =
+                    (0usize, 0usize, 0usize, 0usize, 0usize);
                 // ⭐ B1 (`docs/OPEN_ITEMS_2026-09-09.md`): a lift failure used to be an anonymous count — a
                 // certificate-assigned read's evidence at a copy silently had no transcript anywhere, which
                 // contradicts "the GTF O2 believes". Named here (source transcript, source copy, target
                 // copy) and printed explicitly below, so it is auditable instead of a bare "N lifts failed".
                 let mut lift_fail_detail: Vec<(String, String, String)> = Vec::new();
-                let fmt_map = |m: &std::collections::BTreeMap<String, usize>| -> String { let mut v: Vec<(&String, &usize)> = m.iter().collect(); v.sort_by_key(|(k, _)| k.parse::<i64>().unwrap_or(i64::MAX)); v.iter().map(|(k, c)| format!("{k}:{c}")).collect::<Vec<_>>().join(",") };
+                let fmt_map = |m: &std::collections::BTreeMap<String, usize>| -> String {
+                    let mut v: Vec<(&String, &usize)> = m.iter().collect();
+                    v.sort_by_key(|(k, _)| k.parse::<i64>().unwrap_or(i64::MAX));
+                    v.iter()
+                        .map(|(k, c)| format!("{k}:{c}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                };
                 // `starts_with("outside")` (not `==`) so this sorts correctly whether A6's
                 // `--name-outside-tie` is on (`outside:chrom:start-end`) or off (bare `outside`).
-                let fmt_set = |s: &std::collections::BTreeSet<String>| -> String { let mut v: Vec<&String> = s.iter().collect(); v.sort_by_key(|k| (k.starts_with("outside"), k.parse::<i64>().unwrap_or(i64::MAX))); v.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(",") };
+                let fmt_set = |s: &std::collections::BTreeSet<String>| -> String {
+                    let mut v: Vec<&String> = s.iter().collect();
+                    v.sort_by_key(|k| {
+                        (
+                            k.starts_with("outside"),
+                            k.parse::<i64>().unwrap_or(i64::MAX),
+                        )
+                    });
+                    v.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(",")
+                };
                 let copyset_debug = std::env::var_os("RUSTLE_COPYSET_DEBUG").is_some();
                 if copyset_debug {
                     for &fw in &fam_ids {
@@ -7269,16 +8681,31 @@ fn main() -> Result<()> {
                 for (_, members) in groups {
                     let fw = pending[members[0]].fw;
                     if copyset_debug {
-                        eprintln!("[copyset] group: {}", members.iter().map(|&i| format!("{}@{}", pending[i].uniq_tid, pending[i].cidx)).collect::<Vec<_>>().join(" "));
+                        eprintln!(
+                            "[copyset] group: {}",
+                            members
+                                .iter()
+                                .map(|&i| format!("{}@{}", pending[i].uniq_tid, pending[i].cidx))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        );
                     }
-                    let (mut uniq, mut asg) = (std::collections::BTreeMap::<String, usize>::new(), std::collections::BTreeMap::<String, usize>::new());
-                    let mut und: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                    let (mut uniq, mut asg) = (
+                        std::collections::BTreeMap::<String, usize>::new(),
+                        std::collections::BTreeMap::<String, usize>::new(),
+                    );
+                    let mut und: std::collections::BTreeSet<String> =
+                        std::collections::BTreeSet::new();
                     let mut n_abst = 0usize;
                     let mut outside_bare = false; // ran out of locus info for >=1 outside tie
                     let mut outside_raw: Vec<(String, u64, u64)> = Vec::new(); // pre-merge, A6
                     for &i in &members {
-                        for (k, c) in &pending[i].uniq { *uniq.entry(k.clone()).or_insert(0) += c; }
-                        for (k, c) in &pending[i].asg { *asg.entry(k.clone()).or_insert(0) += c; }
+                        for (k, c) in &pending[i].uniq {
+                            *uniq.entry(k.clone()).or_insert(0) += c;
+                        }
+                        for (k, c) in &pending[i].asg {
+                            *asg.entry(k.clone()).or_insert(0) += c;
+                        }
                         for name in &pending[i].abst {
                             n_abst += 1;
                             if let Some((set, outside)) = tie_set_of(name) {
@@ -7298,7 +8725,9 @@ fn main() -> Result<()> {
                                         for l in loci {
                                             if let Some((c, rest)) = l.split_once(':') {
                                                 if let Some((s, e)) = rest.split_once('-') {
-                                                    if let (Ok(s), Ok(e)) = (s.parse::<u64>(), e.parse::<u64>()) {
+                                                    if let (Ok(s), Ok(e)) =
+                                                        (s.parse::<u64>(), e.parse::<u64>())
+                                                    {
                                                         outside_raw.push((c.to_string(), s, e));
                                                     }
                                                 }
@@ -7331,9 +8760,17 @@ fn main() -> Result<()> {
                             und.insert(format!("outside:{c}:{s}-{e}"));
                         }
                     }
-                    let evidence: std::collections::BTreeSet<String> = uniq.keys().chain(asg.keys()).cloned().collect();
+                    let evidence: std::collections::BTreeSet<String> =
+                        uniq.keys().chain(asg.keys()).cloned().collect();
                     let base_attr = format!(" evidence_unique \"{}\"; evidence_assigned \"{}\"; reads_undecided \"{}\";", fmt_map(&uniq), fmt_map(&asg), n_abst);
-                    let rep = *members.iter().max_by_key(|&&i| pending[i].uniq.values().sum::<usize>() + pending[i].asg.values().sum::<usize>() + pending[i].abst.len()).unwrap();
+                    let rep = *members
+                        .iter()
+                        .max_by_key(|&&i| {
+                            pending[i].uniq.values().sum::<usize>()
+                                + pending[i].asg.values().sum::<usize>()
+                                + pending[i].abst.len()
+                        })
+                        .unwrap();
                     if evidence.is_empty() {
                         let p = &pending[rep];
                         gtf_lines.push(format!("{}{} copies \"{}\"; placed_by \"aligner_primary\"; copy_status_final \"undecidable\";", p.tline, base_attr, fmt_set(&und)));
@@ -7342,14 +8779,26 @@ fn main() -> Result<()> {
                         n_drop += members.len() - 1;
                         continue;
                     }
-                    let und_only: std::collections::BTreeSet<String> = und.difference(&evidence).cloned().collect();
-                    let mut have: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                    let und_only: std::collections::BTreeSet<String> =
+                        und.difference(&evidence).cloned().collect();
+                    let mut have: std::collections::BTreeSet<String> =
+                        std::collections::BTreeSet::new();
                     for &i in &members {
                         let p = &pending[i];
                         if evidence.contains(&p.cidx) {
                             have.insert(p.cidx.clone());
-                            let by = if uniq.contains_key(&p.cidx) { "unique_mapper" } else { "assigned_read" };
-                            gtf_lines.push(format!("{}{} copies \"{}\"; copies_undecided \"{}\"; placed_by \"{by}\";", p.tline, base_attr, fmt_set(&evidence), fmt_set(&und_only)));
+                            let by = if uniq.contains_key(&p.cidx) {
+                                "unique_mapper"
+                            } else {
+                                "assigned_read"
+                            };
+                            gtf_lines.push(format!(
+                                "{}{} copies \"{}\"; copies_undecided \"{}\"; placed_by \"{by}\";",
+                                p.tline,
+                                base_attr,
+                                fmt_set(&evidence),
+                                fmt_set(&und_only)
+                            ));
                             gtf_lines.extend(p.elines.iter().cloned());
                             n_kept += 1;
                         } else {
@@ -7365,14 +8814,22 @@ fn main() -> Result<()> {
                         };
                         let mut prev = p.t.start;
                         let mut exons: Vec<(u64, u64)> = Vec::new();
-                        for &(d, aa) in &p.t.introns { exons.push((prev, d)); prev = aa; }
+                        for &(d, aa) in &p.t.introns {
+                            exons.push((prev, d));
+                            prev = aa;
+                        }
                         exons.push((prev, p.t.end));
                         let mut lifted: Vec<(u64, u64)> = Vec::new();
                         let mut ok = true;
                         for &(es, ee) in &exons {
                             match (lift_pos(fw, es, a, b), lift_pos(fw, ee, a, b)) {
-                                (Some((l0, d0)), Some((l1, d1))) if d0 <= tol && d1 <= tol => lifted.push((l0.min(l1), l0.max(l1))),
-                                _ => { ok = false; break; }
+                                (Some((l0, d0)), Some((l1, d1))) if d0 <= tol && d1 <= tol => {
+                                    lifted.push((l0.min(l1), l0.max(l1)))
+                                }
+                                _ => {
+                                    ok = false;
+                                    break;
+                                }
                             }
                         }
                         lifted.sort_unstable();
@@ -7386,15 +8843,33 @@ fn main() -> Result<()> {
                         let tid = format!("{}_lift{}", p.uniq_tid, c);
                         let gene = format!("{}_copy{}", p.t.gene_tid, c);
                         let attrs = p.tline.splitn(9, '\t').nth(8).unwrap_or("").to_string();
-                        let attrs = attrs.replace(&format!("transcript_id \"{}\"", p.uniq_tid), &format!("transcript_id \"{tid}\""))
-                            .replace(&format!("gene_id \"{}\"", p.t.gene_tid), &format!("gene_id \"{gene}\""));
+                        let attrs = attrs
+                            .replace(
+                                &format!("transcript_id \"{}\"", p.uniq_tid),
+                                &format!("transcript_id \"{tid}\""),
+                            )
+                            .replace(
+                                &format!("gene_id \"{}\"", p.t.gene_tid),
+                                &format!("gene_id \"{gene}\""),
+                            );
                         let attrs = match attrs.find("copy_index \"") {
-                            Some(i) => match attrs[i + 12..].find('"') { Some(j) => format!("{}copy_index \"{c}{}", &attrs[..i], &attrs[i + 12 + j..]), None => attrs },
+                            Some(i) => match attrs[i + 12..].find('"') {
+                                Some(j) => format!(
+                                    "{}copy_index \"{c}{}",
+                                    &attrs[..i],
+                                    &attrs[i + 12 + j..]
+                                ),
+                                None => attrs,
+                            },
                             None => attrs,
                         };
                         gtf_lines.push(format!("{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\t{}{} copies \"{}\"; copies_undecided \"{}\"; placed_by \"assigned_read\"; lifted_from \"{}\";",
                             chrom, lifted[0].0 + 1, lifted[lifted.len() - 1].1, strand, attrs, base_attr, fmt_set(&evidence), fmt_set(&und_only), p.uniq_tid));
-                        let order: Vec<(u64, u64)> = if strand == '+' { lifted.clone() } else { lifted.iter().rev().cloned().collect() };
+                        let order: Vec<(u64, u64)> = if strand == '+' {
+                            lifted.clone()
+                        } else {
+                            lifted.iter().rev().cloned().collect()
+                        };
                         for (k, (es, ee)) in order.iter().enumerate() {
                             gtf_lines.push(format!("{}\trustle\texon\t{}\t{}\t.\t{}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; exon_number \"{}\";", chrom, es + 1, ee, strand, k + 1));
                         }
@@ -7432,15 +8907,22 @@ fn main() -> Result<()> {
             if args.gtf && (args.rescue_singletons || args.read_provenance) {
                 // Gate-passed lookup, position-aware for the empty (unspliced) chain — see the comment at
                 // `chain_uniq_tid`'s declaration above. Never match an unspliced record by chain alone.
-                let gate_passed_tid_for = |chain: &[(u64, u64)], s0: u64, e0: u64| -> Option<&str> {
-                    if chain.is_empty() {
-                        unspliced_gate_passed.iter().find(|(ts, te, _)| s0 < *te && *ts < e0).map(|(_, _, tid)| tid.as_str())
-                    } else {
-                        chain_uniq_tid.get(chain).map(|s| s.as_str())
-                    }
-                };
+                let gate_passed_tid_for =
+                    |chain: &[(u64, u64)], s0: u64, e0: u64| -> Option<&str> {
+                        if chain.is_empty() {
+                            unspliced_gate_passed
+                                .iter()
+                                .find(|(ts, te, _)| s0 < *te && *ts < e0)
+                                .map(|(_, _, tid)| tid.as_str())
+                        } else {
+                            chain_uniq_tid.get(chain).map(|s| s.as_str())
+                        }
+                    };
                 let copy_span_of = |fid: &str, ci: usize| -> Option<(String, u64, u64)> {
-                    fams.iter().find(|f| f.family_id == fid).and_then(|f| f.copy_spans.get(ci)).cloned()
+                    fams.iter()
+                        .find(|f| f.family_id == fid)
+                        .and_then(|f| f.copy_spans.get(ci))
+                        .cloned()
                 };
                 enum Rec<'a> {
                     ExcludedNoSpan,
@@ -7449,13 +8931,29 @@ fn main() -> Result<()> {
                     ExcludedNoCertificate,
                     ExcludedNotAssigned(&'a str),
                     ExcludedOffLocus(String),
-                    Eligible { chain: Vec<(u64, u64)>, s0: u64, e0: u64, strand: char, catalog_idx: &'a str },
+                    Eligible {
+                        chain: Vec<(u64, u64)>,
+                        s0: u64,
+                        e0: u64,
+                        strand: char,
+                        catalog_idx: &'a str,
+                    },
                 }
-                struct Resc { starts: Vec<u64>, ends: Vec<u64>, introns: Vec<(u64, u64)>, catalog_idx: String, n: usize, fwd: u32, rev: u32 }
-                let mut groups: std::collections::BTreeMap<Vec<(u64, u64)>, Resc> = std::collections::BTreeMap::new();
+                struct Resc {
+                    starts: Vec<u64>,
+                    ends: Vec<u64>,
+                    introns: Vec<(u64, u64)>,
+                    catalog_idx: String,
+                    n: usize,
+                    fwd: u32,
+                    rev: u32,
+                }
+                let mut groups: std::collections::BTreeMap<Vec<(u64, u64)>, Resc> =
+                    std::collections::BTreeMap::new();
                 let mut classified: Vec<(usize, Rec)> = Vec::with_capacity(bam_reads.len());
                 for (ri, name) in bam_reads.iter().enumerate() {
-                    let is_supplementary = read_spans.get(ri).map_or(false, |&(_, _, f)| f & 2 != 0);
+                    let is_supplementary =
+                        read_spans.get(ri).map_or(false, |&(_, _, f)| f & 2 != 0);
                     let chain = read_chain.get(ri).cloned().unwrap_or_default();
                     let rec = if read_blocks.get(ri).map_or(true, |b| b.is_empty()) {
                         Rec::ExcludedNoSpan
@@ -7471,12 +8969,20 @@ fn main() -> Result<()> {
                                 Rec::ExcludedNotAssigned(row.status)
                             } else {
                                 let span = copy_span_of(&row.family_id, row.assigned_copy);
-                                let overlaps = span.as_ref().is_some_and(|(c, s, e)| c == contig && s0 < *e && e0 > *s);
+                                let overlaps = span
+                                    .as_ref()
+                                    .is_some_and(|(c, s, e)| c == contig && s0 < *e && e0 > *s);
                                 if !overlaps {
                                     Rec::ExcludedOffLocus(row.catalog_copy_idx.clone())
                                 } else {
                                     let strand = read_strand.get(ri).copied().unwrap_or('+');
-                                    Rec::Eligible { chain, s0, e0, strand, catalog_idx: row.catalog_copy_idx.as_str() }
+                                    Rec::Eligible {
+                                        chain,
+                                        s0,
+                                        e0,
+                                        strand,
+                                        catalog_idx: row.catalog_copy_idx.as_str(),
+                                    }
                                 }
                             }
                         } else {
@@ -7487,17 +8993,34 @@ fn main() -> Result<()> {
                 }
                 if args.rescue_singletons {
                     for (_, rec) in &classified {
-                        if let Rec::Eligible { chain, s0, e0, strand, catalog_idx } = rec {
+                        if let Rec::Eligible {
+                            chain,
+                            s0,
+                            e0,
+                            strand,
+                            catalog_idx,
+                        } = rec
+                        {
                             // `chain` is guaranteed to have found no gate-passed match here (that is exactly
                             // the condition classification checked before ever producing `Rec::Eligible`),
                             // via `gate_passed_tid_for`'s position-aware lookup — not raw chain membership.
                             let e = groups.entry(chain.clone()).or_insert_with(|| Resc {
-                                starts: Vec::new(), ends: Vec::new(), introns: chain.clone(), catalog_idx: catalog_idx.to_string(), n: 0, fwd: 0, rev: 0,
+                                starts: Vec::new(),
+                                ends: Vec::new(),
+                                introns: chain.clone(),
+                                catalog_idx: catalog_idx.to_string(),
+                                n: 0,
+                                fwd: 0,
+                                rev: 0,
                             });
                             e.starts.push(*s0);
                             e.ends.push(*e0);
                             e.n += 1;
-                            if *strand == '-' { e.rev += 1 } else { e.fwd += 1 }
+                            if *strand == '-' {
+                                e.rev += 1
+                            } else {
+                                e.fwd += 1
+                            }
                         }
                     }
                 }
@@ -7525,7 +9048,11 @@ fn main() -> Result<()> {
                             prev = a;
                         }
                         exons.push((prev, e0));
-                        let order: Vec<(u64, u64)> = if strand == '+' { exons.clone() } else { exons.iter().rev().cloned().collect() };
+                        let order: Vec<(u64, u64)> = if strand == '+' {
+                            exons.clone()
+                        } else {
+                            exons.iter().rev().cloned().collect()
+                        };
                         for (k, &(es, ee)) in order.iter().enumerate() {
                             gtf_lines.push(format!("{contig}\trustle\texon\t{}\t{}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; exon_number \"{}\";", es + 1, ee, k + 1));
                         }
@@ -7540,22 +9067,55 @@ fn main() -> Result<()> {
                     for (ri, rec) in &classified {
                         let name = &bam_reads[*ri];
                         let (chain_str, tid, reason) = match rec {
-                            Rec::ExcludedNoSpan => ("NA".to_string(), "NA".to_string(), "excluded_no_aligned_span"),
-                            Rec::ExcludedSupplementary => ("NA".to_string(), "NA".to_string(), "excluded_supplementary"),
-                            Rec::ContributesGatePassed(tid) => (fmt_chain(&read_chain[*ri]), tid.to_string(), "contributed_gate_passed"),
-                            Rec::ExcludedNoCertificate => ("NA".to_string(), "NA".to_string(), "excluded_no_certificate_row"),
-                            Rec::ExcludedNotAssigned(st) => (fmt_chain(&read_chain[*ri]), "NA".to_string(),
-                                match *st { "ambiguous" => "excluded_ambiguous", "tied" => "excluded_tied", _ => "excluded_unassigned" }),
-                            Rec::ExcludedOffLocus(cidx) => (fmt_chain(&read_chain[*ri]), format!("NA(assigned_copy={cidx})"), "excluded_chain_at_unassigned_locus"),
+                            Rec::ExcludedNoSpan => (
+                                "NA".to_string(),
+                                "NA".to_string(),
+                                "excluded_no_aligned_span",
+                            ),
+                            Rec::ExcludedSupplementary => {
+                                ("NA".to_string(), "NA".to_string(), "excluded_supplementary")
+                            }
+                            Rec::ContributesGatePassed(tid) => (
+                                fmt_chain(&read_chain[*ri]),
+                                tid.to_string(),
+                                "contributed_gate_passed",
+                            ),
+                            Rec::ExcludedNoCertificate => (
+                                "NA".to_string(),
+                                "NA".to_string(),
+                                "excluded_no_certificate_row",
+                            ),
+                            Rec::ExcludedNotAssigned(st) => (
+                                fmt_chain(&read_chain[*ri]),
+                                "NA".to_string(),
+                                match *st {
+                                    "ambiguous" => "excluded_ambiguous",
+                                    "tied" => "excluded_tied",
+                                    _ => "excluded_unassigned",
+                                },
+                            ),
+                            Rec::ExcludedOffLocus(cidx) => (
+                                fmt_chain(&read_chain[*ri]),
+                                format!("NA(assigned_copy={cidx})"),
+                                "excluded_chain_at_unassigned_locus",
+                            ),
                             Rec::Eligible { chain, .. } => {
                                 if !args.rescue_singletons {
-                                    (fmt_chain(chain), "NA".to_string(), "eligible_for_rescue_flag_off")
+                                    (
+                                        fmt_chain(chain),
+                                        "NA".to_string(),
+                                        "eligible_for_rescue_flag_off",
+                                    )
                                 } else if let Some(t) = rescue_tid_of.get(chain) {
                                     (fmt_chain(chain), t.clone(), "contributed_rescued_singleton")
                                 } else {
                                     // defensive only: every `Eligible` chain is grouped and emitted above,
                                     // so `rescue_tid_of` always has an entry here in practice.
-                                    (fmt_chain(chain), "NA".to_string(), "excluded_unexpected_no_rescue_tid")
+                                    (
+                                        fmt_chain(chain),
+                                        "NA".to_string(),
+                                        "excluded_unexpected_no_rescue_tid",
+                                    )
                                 }
                             }
                         };
@@ -7614,15 +9174,22 @@ fn main() -> Result<()> {
                 if !line.contains("\ttranscript\t") {
                     continue;
                 }
-                let Some(tid) = re_attr(line, "transcript_id") else { continue };
-                let Some(&(fid, _, aa)) = by_tid.get(tid.as_str()) else { continue };
+                let Some(tid) = re_attr(line, "transcript_id") else {
+                    continue;
+                };
+                let Some(&(fid, _, aa)) = by_tid.get(tid.as_str()) else {
+                    continue;
+                };
                 let bar = best.get(fid).copied().unwrap_or(0);
                 let prod = bar > 0 && aa * 2 >= bar;
-                line.push_str(&format!(" productive \"{prod}\"; family_median_orf_aa \"{bar}\";"));
+                line.push_str(&format!(
+                    " productive \"{prod}\"; family_median_orf_aa \"{bar}\";"
+                ));
             }
             let mut ph = std::fs::File::create(format!("{}.productivity.tsv", args.out))?;
             writeln!(ph, "family_id\tcopy\tisoforms\tproductive\tmedian_orf_aa\tmax_orf_aa\tfamily_median_orf_aa")?;
-            let mut per: std::collections::BTreeMap<(&str, &str), Vec<usize>> = std::collections::BTreeMap::new();
+            let mut per: std::collections::BTreeMap<(&str, &str), Vec<usize>> =
+                std::collections::BTreeMap::new();
             for (f, c, _, aa) in &prod_rows {
                 per.entry((f.as_str(), c.as_str())).or_default().push(*aa);
             }
@@ -7632,7 +9199,13 @@ fn main() -> Result<()> {
                 let n_prod = v.iter().filter(|&&aa| bar > 0 && aa * 2 >= bar).count();
                 let f = if f.is_empty() { "NA" } else { f };
                 let c = if c.is_empty() { "NA" } else { c };
-                writeln!(ph, "{f}\t{c}\t{}\t{n_prod}\t{}\t{}\t{bar}", v.len(), v[v.len() / 2], v[v.len() - 1])?;
+                writeln!(
+                    ph,
+                    "{f}\t{c}\t{}\t{n_prod}\t{}\t{}\t{bar}",
+                    v.len(),
+                    v[v.len() / 2],
+                    v[v.len() - 1]
+                )?;
             }
             eprintln!("[copy_assign] wrote {}.productivity.tsv ({} isoform(s) with an ORF, bar = half the family median ORF)",
                 args.out, prod_rows.len());
@@ -7642,11 +9215,17 @@ fn main() -> Result<()> {
             // multi-exon support, validated per chromosome (§6p8-§6q4) and reproduced by the per-contig
             // sweep; a `--genome-wide` run in one process must not pool that quantile across contigs. For a
             // single-region run this is exactly the former single call (one contig), byte-identical.
-            let before = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
+            let before = gtf_lines
+                .iter()
+                .filter(|l| l.contains("\ttranscript\t"))
+                .count();
             let mut contigs: Vec<String> = Vec::new();
             for l in gtf_lines.iter() {
                 if let Some(c) = l.split('\t').next() {
-                    if !l.starts_with('#') && contigs.last().map_or(true, |p| p != c) && !contigs.iter().any(|p| p == c) {
+                    if !l.starts_with('#')
+                        && contigs.last().map_or(true, |p| p != c)
+                        && !contigs.iter().any(|p| p == c)
+                    {
                         contigs.push(c.to_string());
                     }
                 }
@@ -7657,18 +9236,30 @@ fn main() -> Result<()> {
             // --polish-junction-snap reads: one indexed BAM reader for the whole loop, opened on first use
             let mut snap_bam: Option<SnapBam> = None;
             for c in &contigs {
-                let mut part: Vec<String> = gtf_lines.iter().filter(|l| !l.starts_with('#') && l.split('\t').next() == Some(c.as_str())).cloned().collect();
+                let mut part: Vec<String> = gtf_lines
+                    .iter()
+                    .filter(|l| !l.starts_with('#') && l.split('\t').next() == Some(c.as_str()))
+                    .cloned()
+                    .collect();
                 // --polish-junction-snap: on the polish INPUT, before every polish step (off: never entered)
                 if args.polish_junction_snap != "off" {
                     let t0 = std::time::Instant::now();
                     let g = genome_for(c)?;
-                    let seq: &[u8] = g.chroms().find(|(n, _)| *n == c.as_str()).map(|(_, s)| s).unwrap_or(&[]);
-                    let st = junction_snap(&mut part, &args.polish_junction_snap, seq, |partners| {
-                        if snap_bam.is_none() {
-                            snap_bam = Some(SnapBam::open(&args.bam)?);
-                        }
-                        snap_bam.as_mut().expect("opened above").evidence(c, seq, partners)
-                    })?;
+                    let seq: &[u8] = g
+                        .chroms()
+                        .find(|(n, _)| *n == c.as_str())
+                        .map(|(_, s)| s)
+                        .unwrap_or(&[]);
+                    let st =
+                        junction_snap(&mut part, &args.polish_junction_snap, seq, |partners| {
+                            if snap_bam.is_none() {
+                                snap_bam = Some(SnapBam::open(&args.bam)?);
+                            }
+                            snap_bam
+                                .as_mut()
+                                .expect("opened above")
+                                .evidence(c, seq, partners)
+                        })?;
                     eprintln!(
                         "[copy_assign] JUNCTION SNAP ({}) {}: {} near junction pairs (same locus and strand, \
                          |d|,|a| <= {} bp) -> {} sequence-equivalent + {} read-contradicted junctions re-placed -> {} \
@@ -7701,7 +9292,11 @@ fn main() -> Result<()> {
                         args.polish_fraction_min_reads,
                         args.polish_retained_ratio,
                     );
-                    n_ism += a; n_mono += b; n_frac += d; n_ret += e; floors.push(floor);
+                    n_ism += a;
+                    n_mono += b;
+                    n_frac += d;
+                    n_ret += e;
+                    floors.push(floor);
                 } else {
                     // --polish-tss: the unprotected polish decides everything; the proof only takes proven short forms
                     // back out of its ISM / fraction / retained drops (so the output holds every `off` transcript)
@@ -7720,7 +9315,11 @@ fn main() -> Result<()> {
                         args.polish_fraction_min_reads,
                         args.polish_retained_ratio,
                     );
-                    n_ism += a; n_mono += b; n_frac += d; n_ret += e; floors.push(floor);
+                    n_ism += a;
+                    n_mono += b;
+                    n_frac += d;
+                    n_ret += e;
+                    floors.push(floor);
                     let out = tss_decide(c, &part, &drop0, &sites, &recs, &args.polish_tss);
                     let (on, _off, _twins) = tss_emit(&part, &drop0, &out);
                     part = on;
@@ -7757,7 +9356,11 @@ fn main() -> Result<()> {
                 if args.polish_tes != "off" {
                     // --polish-tes on the contig's final transcripts (after --polish-tss): the genome is the proof
                     let g = genome_for(c)?;
-                    let seq: &[u8] = g.chroms().find(|(n, _)| *n == c.as_str()).map(|(_, s)| s).unwrap_or(&[]);
+                    let seq: &[u8] = g
+                        .chroms()
+                        .find(|(n, _)| *n == c.as_str())
+                        .map(|(_, s)| s)
+                        .unwrap_or(&[]);
                     let out = tes_decide(&part, &recs, seq, &args.polish_tes);
                     part = tes_apply(part, &out);
                     tes_attrs.extend(out.attrs.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -7774,10 +9377,21 @@ fn main() -> Result<()> {
                 std::mem::drop(recs);
                 polished.extend(part);
             }
-            let comments: Vec<String> = gtf_lines.iter().filter(|l| l.starts_with('#')).cloned().collect();
+            let comments: Vec<String> = gtf_lines
+                .iter()
+                .filter(|l| l.starts_with('#'))
+                .cloned()
+                .collect();
             gtf_lines = comments.into_iter().chain(polished).collect();
-            let after = gtf_lines.iter().filter(|l| l.contains("\ttranscript\t")).count();
-            let floor_s = if floors.len() == 1 { floors[0].to_string() } else { format!("{:?} (per contig)", floors) };
+            let after = gtf_lines
+                .iter()
+                .filter(|l| l.contains("\ttranscript\t"))
+                .count();
+            let floor_s = if floors.len() == 1 {
+                floors[0].to_string()
+            } else {
+                format!("{:?} (per contig)", floors)
+            };
             eprintln!(
                 "[copy_assign] ⭐ ASSEMBLY POLISH ({}): {before} transcripts -> ISM dropped {n_ism} -> \
                  mono floor {floor_s} reads dropped {n_mono} -> isoform fraction {} dropped {n_frac} -> \
@@ -7791,14 +9405,16 @@ fn main() -> Result<()> {
         // move: tss_review F3), so every rescued form and split piece carries its own correct flag; under
         // --polish-tss rescue|split `drop` spares the proven short forms of the contigs where they acted.
         let tss_changes = args.polish_tss == "rescue" || args.polish_tss == "split";
-        let mut subchain: std::collections::BTreeMap<String, (String, &'static str)> = std::collections::BTreeMap::new();
+        let mut subchain: std::collections::BTreeMap<String, (String, &'static str)> =
+            std::collections::BTreeMap::new();
         if args.polish_subchain != "off" {
             let (flags, multi) = subchain_flags(&gtf_lines);
             subchain = flags;
             let by = |m: &str| subchain.values().filter(|v| v.1 == m).count();
             subchain_counts = (subchain.len(), by("5p"), by("3p"), by("both"), multi);
             if tss_changes {
-                tss_subchain_spared = tss_subchain_guard(&mut subchain, &tss_protect, args.polish_subchain == "drop");
+                tss_subchain_spared =
+                    tss_subchain_guard(&mut subchain, &tss_protect, args.polish_subchain == "drop");
             }
             if args.polish_subchain == "drop" {
                 subchain_drop(&mut gtf_lines, &subchain);
@@ -7847,9 +9463,16 @@ fn main() -> Result<()> {
         if let Some(mode) = bridge_mode {
             // F1's UP-proof is --polish-tes's 3' cluster rule, whose constants f1_bridge.py froze
             const _: () = assert!(
-                TSS_W == 21 && TES_MIN_READS == 2 && TES_PAS_FAR == 35 && TES_PAS_NEAR == 10 && TES_PRIME_BP == 20
+                TSS_W == 21
+                    && TES_MIN_READS == 2
+                    && TES_PAS_FAR == 35
+                    && TES_PAS_NEAR == 10
+                    && TES_PRIME_BP == 20
             );
-            let end_clusters = |ends: &[i64], seq: &[u8], minus: bool| -> Vec<rustle::family::bridge_regroup::EndCluster> {
+            let end_clusters = |ends: &[i64],
+                                seq: &[u8],
+                                minus: bool|
+             -> Vec<rustle::family::bridge_regroup::EndCluster> {
                 tes_clusters(ends, seq, minus)
                     .into_iter()
                     .map(|c| rustle::family::bridge_regroup::EndCluster {
@@ -7863,7 +9486,13 @@ fn main() -> Result<()> {
             let (t0, n_records) = (std::time::Instant::now(), bridge_all.len());
             let out = match &bridge_list {
                 Some(list) => rustle::family::bridge_regroup::run_list(&mut gtf_lines, list)?,
-                None => rustle::family::bridge_regroup::run(&mut gtf_lines, mode, &mut bridge_all, &genome_for, &end_clusters)?,
+                None => rustle::family::bridge_regroup::run(
+                    &mut gtf_lines,
+                    mode,
+                    &mut bridge_all,
+                    &genome_for,
+                    &end_clusters,
+                )?,
             };
             let st = &out.stats;
             if out.evidence_used {
@@ -7896,7 +9525,10 @@ fn main() -> Result<()> {
         eprintln!("[copy_assign] wrote {}.gtf ({} GTF rows = FLAIR-style isoforms; family copies tagged multicopy)",
             args.out, gtf_lines.len());
         if let Some(out) = bridge_out {
-            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{}.families.gtf", args.out))?);
+            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!(
+                "{}.families.gtf",
+                args.out
+            ))?);
             match &out.units {
                 // f1units: each bridge transcript is replaced, at its line position, by its units
                 Some(u) => {
@@ -7912,7 +9544,10 @@ fn main() -> Result<()> {
             }
             fh.flush()?;
             if out.evidence_used {
-                std::fs::write(format!("{}.bridge_junctions.tsv", args.out), &out.junctions_tsv)?;
+                std::fs::write(
+                    format!("{}.bridge_junctions.tsv", args.out),
+                    &out.junctions_tsv,
+                )?;
             }
             if let Some(t) = &out.bridges_tsv {
                 std::fs::write(format!("{}.bridges.tsv", args.out), t)?;
@@ -7949,8 +9584,19 @@ fn main() -> Result<()> {
         writeln!(
             fh,
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            r.family_id, r.chrom, r.n_copies, r.rescued_copies, r.collapsed_copies, r.n_reads, r.psv_cols,
-            r.resolvable_psv, r.resolvable_j, r.junction_only, r.assigned_j, r.uniq_agree, r.uniq
+            r.family_id,
+            r.chrom,
+            r.n_copies,
+            r.rescued_copies,
+            r.collapsed_copies,
+            r.n_reads,
+            r.psv_cols,
+            r.resolvable_psv,
+            r.resolvable_j,
+            r.junction_only,
+            r.assigned_j,
+            r.uniq_agree,
+            r.uniq
         )?;
     }
     if args.read_provenance {
@@ -7963,16 +9609,35 @@ fn main() -> Result<()> {
         for r in &prov_rows {
             writeln!(pvh, "{r}")?;
         }
-        eprintln!("[copy_assign] wrote {}.read_provenance.tsv ({} record(s))", args.out, prov_rows.len());
+        eprintln!(
+            "[copy_assign] wrote {}.read_provenance.tsv ({} record(s))",
+            args.out,
+            prov_rows.len()
+        );
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
     // `tie_outside_catalog` (§6gz) exists only under the gate, so `--no-as-tied-only` stays byte-identical
     // to the pre-2026-09-09 schema.
     let hdr = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local";
-    let sibling_hdr = if args.sibling_report { "\tsibling_identity\tn_cols_vs_sibling" } else { "" };
+    let sibling_hdr = if args.sibling_report {
+        "\tsibling_identity\tn_cols_vs_sibling"
+    } else {
+        ""
+    };
     // §6u6: appended LAST so every existing column keeps its position.
-    let eichler_hdr = if args.eichler_margin.is_some() { "\teichler_call\teichler_same_copy" } else { "" };
-    if args.no_as_tied_only { writeln!(ah, "{hdr}{sibling_hdr}{eichler_hdr}")?; } else { writeln!(ah, "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}{eichler_hdr}")?; }
+    let eichler_hdr = if args.eichler_margin.is_some() {
+        "\teichler_call\teichler_same_copy"
+    } else {
+        ""
+    };
+    if args.no_as_tied_only {
+        writeln!(ah, "{hdr}{sibling_hdr}{eichler_hdr}")?;
+    } else {
+        writeln!(
+            ah,
+            "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}{eichler_hdr}"
+        )?;
+    }
     for r in &assign_rows {
         // L3: a CONTESTED molecule assigned with exactly one candidate is a sole candidate (§6fi); an uncontested
         // one is assigned to its placement (§6fq) whatever its candidate count
@@ -7981,10 +9646,18 @@ fn main() -> Result<()> {
         let outside = if args.no_as_tied_only {
             String::new()
         } else {
-            format!("\t{}\t{}", rustle::family::copy_assign::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8, is_disagreement(&r.read_name) as u8)
+            format!(
+                "\t{}\t{}",
+                rustle::family::copy_assign::copy_assign_pipeline::is_tie_outside(&r.read_name)
+                    as u8,
+                is_disagreement(&r.read_name) as u8
+            )
         };
         let sibling = if args.sibling_report {
-            format!("\t{:.4}\t{}", r.sibling_identity, r.n_cols_vs_nearest_sibling)
+            format!(
+                "\t{:.4}\t{}",
+                r.sibling_identity, r.n_cols_vs_nearest_sibling
+            )
         } else {
             String::new()
         };
@@ -8065,25 +9738,45 @@ fn main() -> Result<()> {
         // posed a question. One row per MOLECULE (a molecule's records share their AS evidence).
         {
             let mut seen: DetHashSet<&str> = DetHashSet::default();
-            let mols: Vec<&AssignRow> =
-                assign_rows.iter().filter(|r| seen.insert(r.read_name.as_str())).collect();
+            let mols: Vec<&AssignRow> = assign_rows
+                .iter()
+                .filter(|r| seen.insert(r.read_name.as_str()))
+                .collect();
             // Under the gate only the gated width is meaningful: molecules outside it never reached the
             // certificate, so a wider decomposition would re-count the same rows. Both widths print only
             // with `--no-as-tied-only`.
-            let widths: Vec<f64> = if args.no_as_tied_only { vec![1.0, 0.98] } else { vec![args.as_tie_ratio] };
+            let widths: Vec<f64> = if args.no_as_tied_only {
+                vec![1.0, 0.98]
+            } else {
+                vec![args.as_tie_ratio]
+            };
             for ratio in widths {
-                let el: Vec<&&AssignRow> = mols.iter().filter(|r| as_tied(&r.as_ev, ratio) || is_disagreement(&r.read_name)).collect();
+                let el: Vec<&&AssignRow> = mols
+                    .iter()
+                    .filter(|r| as_tied(&r.as_ev, ratio) || is_disagreement(&r.read_name))
+                    .collect();
                 // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
                 // explain (origin-rejected — O3's material) and molecules with a single candidate locus
                 // (nothing to choose). The two arms fail this in OPPOSITE ways — gorilla MCL1 is 95.6 %
                 // origin-rejected with 0 single-candidate, human MCL0 is 62.0 % single-candidate (§6gv) —
                 // so the decomposition is printed, never a single pooled rate.
                 let rej = el.iter().filter(|r| r.origin_rejected).count();
-                let one = el.iter().filter(|r| !r.origin_rejected && r.n_candidates < 2).count();
-                let con: Vec<&&&AssignRow> =
-                    el.iter().filter(|r| !r.origin_rejected && r.n_candidates >= 2).collect();
+                let one = el
+                    .iter()
+                    .filter(|r| !r.origin_rejected && r.n_candidates < 2)
+                    .count();
+                let con: Vec<&&&AssignRow> = el
+                    .iter()
+                    .filter(|r| !r.origin_rejected && r.n_candidates >= 2)
+                    .collect();
                 let c = |st: &str| con.iter().filter(|r| r.status == st).count();
-                let pc = |n: usize| if con.is_empty() { 0.0 } else { 100.0 * n as f64 / con.len() as f64 };
+                let pc = |n: usize| {
+                    if con.is_empty() {
+                        0.0
+                    } else {
+                        100.0 * n as f64 / con.len() as f64
+                    }
+                };
                 eprintln!(
                     "[copy_assign] AS-TIED @ratio {:.2}: {} of {} molecules — origin-rejected {} (O3's) / \
                      single-candidate {} (nothing to choose) / CONTESTED {}",
@@ -8092,15 +9785,25 @@ fn main() -> Result<()> {
                 eprintln!(
                     "[copy_assign]   ⭐ over the CONTESTED set (O2's actual subject): \
                      assigned {} ({:.1}%) / tied {} ({:.1}%) / ambiguous {} ({:.1}%)",
-                    c("assigned"), pc(c("assigned")), c("tied"), pc(c("tied")),
-                    c("ambiguous"), pc(c("ambiguous"))
+                    c("assigned"),
+                    pc(c("assigned")),
+                    c("tied"),
+                    pc(c("tied")),
+                    c("ambiguous"),
+                    pc(c("ambiguous"))
                 );
             }
         }
         // ⭐ register 734: THE denominator. Molecules with a PRIMARY alignment inside a copy of their family.
         let loc: Vec<&AssignRow> = assign_rows.iter().filter(|r| r.primary_local).collect();
         let lcnt = |st: &str| loc.iter().filter(|r| r.status == st).count();
-        let pct = |n: usize| if loc.is_empty() { 0.0 } else { 100.0 * n as f64 / loc.len() as f64 };
+        let pct = |n: usize| {
+            if loc.is_empty() {
+                0.0
+            } else {
+                100.0 * n as f64 / loc.len() as f64
+            }
+        };
         eprintln!(
             "[copy_assign] ⭐ RATES ARE OVER THIS SET — molecules with a PRIMARY alignment in a copy: {} of {} rows \
              ({} secondary-only visitors excluded) — assigned {} ({:.1}%) / tied {} ({:.1}%) / ambiguous {} ({:.1}%)",
@@ -8116,10 +9819,17 @@ fn main() -> Result<()> {
 
     if args.junction_conflict_abstain {
         let mut cf = std::fs::File::create(format!("{}.conflicts.tsv", args.out))?;
-        writeln!(cf, "read_name\tfamily_id\tpsv_best_copy\tstatus\tn_decisive\tmin_p_value")?;
+        writeln!(
+            cf,
+            "read_name\tfamily_id\tpsv_best_copy\tstatus\tn_decisive\tmin_p_value"
+        )?;
         let mut n = 0usize;
         for r in assign_rows.iter().filter(|r| r.junction_conflict) {
-            writeln!(cf, "{}\t{}\t{}\t{}\t{}\t{:.3e}", r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.min_p_value)?;
+            writeln!(
+                cf,
+                "{}\t{}\t{}\t{}\t{}\t{:.3e}",
+                r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.min_p_value
+            )?;
             n += 1;
         }
         eprintln!("[copy_assign] junction-conflict-abstain: {n} read(s) whose splice junctions contradict their PSV-best copy -> ambiguous ({}.conflicts.tsv)", args.out);
@@ -8130,7 +9840,10 @@ fn main() -> Result<()> {
     // --lambda-global was supplied -- else "NA"). famcn_readonly = the max of the two lower
     // bounds, so it recovers Tier-3 collapsed copies chi_H alone misses.
     let mut cnh = std::fs::File::create(format!("{}.famcn_readonly.tsv", args.out))?;
-    writeln!(cnh, "family_id\tchrom\tn_copies\tn_reads\tchi_H\tdepth_cn\tregime\tfamcn_readonly")?;
+    writeln!(
+        cnh,
+        "family_id\tchrom\tn_copies\tn_reads\tchi_H\tdepth_cn\tregime\tfamcn_readonly"
+    )?;
     for r in &famcn_rows {
         if r.depth_cn.is_finite() {
             let famcn = (r.chi_h as f64).max(r.depth_cn);
@@ -8147,8 +9860,16 @@ fn main() -> Result<()> {
             )?;
         }
     }
-    eprintln!("[copy_assign] wrote {}.famcn_readonly.tsv ({} families; depth_cn={})",
-        args.out, famcn_rows.len(), if lambda.is_some() { "on" } else { "NA (pass --lambda-global or --lambda-file)" });
+    eprintln!(
+        "[copy_assign] wrote {}.famcn_readonly.tsv ({} families; depth_cn={})",
+        args.out,
+        famcn_rows.len(),
+        if lambda.is_some() {
+            "on"
+        } else {
+            "NA (pass --lambda-global or --lambda-file)"
+        }
+    );
 
     // per-read posterior + consistent zone (opt-in via --posterior).
     if args.posterior {
@@ -8157,15 +9878,26 @@ fn main() -> Result<()> {
         for line in &posterior_lines {
             writeln!(ph, "{line}")?;
         }
-        eprintln!("[copy_assign] wrote {}.posterior.tsv ({} reads, prior={})",
-            args.out, posterior_lines.len(), if prior_abundance { "abundance" } else { "uniform" });
+        eprintln!(
+            "[copy_assign] wrote {}.posterior.tsv ({} reads, prior={})",
+            args.out,
+            posterior_lines.len(),
+            if prior_abundance {
+                "abundance"
+            } else {
+                "uniform"
+            }
+        );
     }
 
     // EM soft-relaxation outputs (opt-in via --em): per-read soft posterior + K-frontier label, and the
     // recovered per-copy abundance. Only written under --em; the hard outputs above are unaffected either way.
     if args.em {
         let mut eh = std::fs::File::create(format!("{}.em.tsv", args.out))?;
-        writeln!(eh, "read_name\tfamily_id\targmax_copy\tlabel\tposterior\tn_iter")?;
+        writeln!(
+            eh,
+            "read_name\tfamily_id\targmax_copy\tlabel\tposterior\tn_iter"
+        )?;
         for l in &em_lines {
             writeln!(eh, "{l}")?;
         }
@@ -8176,7 +9908,9 @@ fn main() -> Result<()> {
         }
         eprintln!(
             "[copy_assign] wrote {}.em.tsv ({} reads) + {}.em_abundance.tsv",
-            args.out, em_lines.len(), args.out
+            args.out,
+            em_lines.len(),
+            args.out
         );
     }
 
@@ -8193,14 +9927,34 @@ fn main() -> Result<()> {
     let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
     writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant\tjunction_invariant\tn_reads_soft")?;
     for r in &quant_rows {
-        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{:.2}", r.family_id, r.copy_index, r.copy_tid,
-            r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard, r.anchored, r.tie_invariant,
-            r.junction_invariant, r.n_soft)?;
+        writeln!(
+            qh,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{:.2}",
+            r.family_id,
+            r.copy_index,
+            r.copy_tid,
+            r.copy_chrom,
+            r.copy_start,
+            r.copy_end,
+            r.abundance,
+            r.ci,
+            r.n_hard,
+            r.anchored,
+            r.tie_invariant,
+            r.junction_invariant,
+            r.n_soft
+        )?;
     }
     // A copy is invariant to the arbitrary primary/secondary label if it is pinned by unique mappers OR by a
     // copy-specific junction (splice structure identifies it regardless of the label). Report the OR bottom line.
-    let n_inv = quant_rows.iter().filter(|r| r.tie_invariant || r.junction_invariant).count();
-    let n_inv_junction_only = quant_rows.iter().filter(|r| !r.tie_invariant && r.junction_invariant).count();
+    let n_inv = quant_rows
+        .iter()
+        .filter(|r| r.tie_invariant || r.junction_invariant)
+        .count();
+    let n_inv_junction_only = quant_rows
+        .iter()
+        .filter(|r| !r.tie_invariant && r.junction_invariant)
+        .count();
     eprintln!(
         "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label). \
          ⚠ the unique-mapper half is near-vacuous under the default AS-tied gate (A5, register 786) — {n_inv_junction_only} of those {n_inv} are invariant ONLY via copy-specific junctions",
@@ -8216,19 +9970,27 @@ fn main() -> Result<()> {
         // every region has drained into `o3_all_raw_pairs` -- `finalize_flags`'s threshold is
         // `alpha / n_pairs_with_a_p_value` over the WHOLE run, so it cannot be computed per-region or
         // per-family. Keyed by `(family_id, copy_idx)`, the same join key `JoinRow` now carries.
-        let o3_flags: DetHashMap<(String, String), rustle::family::missing_copy::missing_copy_flag_pass::FlaggedPair> =
-            if args.flag_missing_copies {
-                rustle::family::missing_copy::missing_copy_flag_pass::finalize_flags(&o3_all_raw_pairs, args.missing_copy_alpha)
-                    .into_iter()
-                    .map(|fp| ((fp.pair.family_id.clone(), fp.pair.copy_idx.clone()), fp))
-                    .collect()
-            } else {
-                DetHashMap::default()
-            };
+        let o3_flags: DetHashMap<
+            (String, String),
+            rustle::family::missing_copy::missing_copy_flag_pass::FlaggedPair,
+        > = if args.flag_missing_copies {
+            rustle::family::missing_copy::missing_copy_flag_pass::finalize_flags(
+                &o3_all_raw_pairs,
+                args.missing_copy_alpha,
+            )
+            .into_iter()
+            .map(|fp| ((fp.pair.family_id.clone(), fp.pair.copy_idx.clone()), fp))
+            .collect()
+        } else {
+            DetHashMap::default()
+        };
         let mut jh = std::fs::File::create(format!("{}.family_join.tsv", args.out))?;
         let header = "family_id\tcopy_index\tcopy_tid\tcatalog_family_id\tcatalog_copy_idx\tchrom\tstart\tend\tn_reads_hard";
         if args.flag_missing_copies {
-            writeln!(jh, "{header}\to3_flag\to3_class\to3_rate_per_kb\to3_p\to3_n_rejected")?;
+            writeln!(
+                jh,
+                "{header}\to3_flag\to3_class\to3_rate_per_kb\to3_p\to3_n_rejected"
+            )?;
         } else {
             writeln!(jh, "{header}")?;
         }
@@ -8245,9 +10007,20 @@ fn main() -> Result<()> {
                             rustle::family::missing_copy::missing_copy_flag_pass::Class::Divergent => "divergent",
                             rustle::family::missing_copy::missing_copy_flag_pass::Class::Structural => "structural",
                         };
-                        let rate = if fp.pair.covered_kb > 0.0 { fp.pair.n_sites as f64 / fp.pair.covered_kb } else { 0.0 };
-                        let p_str = fp.pair.p_uncorrected.map_or("NA".to_string(), |p| format!("{p:.3e}"));
-                        writeln!(jh, "{}\t{flag_str}\t{class_str}\t{rate:.2}\t{p_str}\t{}", r.line, fp.pair.n_rejected)?;
+                        let rate = if fp.pair.covered_kb > 0.0 {
+                            fp.pair.n_sites as f64 / fp.pair.covered_kb
+                        } else {
+                            0.0
+                        };
+                        let p_str = fp
+                            .pair
+                            .p_uncorrected
+                            .map_or("NA".to_string(), |p| format!("{p:.3e}"));
+                        writeln!(
+                            jh,
+                            "{}\t{flag_str}\t{class_str}\t{rate:.2}\t{p_str}\t{}",
+                            r.line, fp.pair.n_rejected
+                        )?;
                     }
                     // Fix 2 (final whole-branch review): a genuine `o3_flags` lookup miss (never reached
                     // `detect_missing_copy_pairs` at all -- skipped for <3 rejected reads, or, before Fix 1,
@@ -8265,7 +10038,10 @@ fn main() -> Result<()> {
             .iter()
             .filter_map(|r| r.line.split('\t').nth(2))
             .collect();
-        let missing: Vec<&String> = ix.keys().filter(|t| !emitted.contains(t.as_str())).collect();
+        let missing: Vec<&String> = ix
+            .keys()
+            .filter(|t| !emitted.contains(t.as_str()))
+            .collect();
         if !missing.is_empty() {
             anyhow::bail!(
                 "--families: {} of {} supplied copies did not come back as assigned copies ({}). A supplied \
@@ -8288,7 +10064,10 @@ fn main() -> Result<()> {
     // the `if let Some(ix) = &catalog_index` block above, gated only on the flag itself.
     if args.flag_missing_copies {
         let mut lh = std::fs::File::create(format!("{}.missing_copy_loci.tsv", args.out))?;
-        writeln!(lh, "chrom\tstart\tend\tn_reads\tn_orphans\tclass\tn_genes_overlapping\tother_family_units")?;
+        writeln!(
+            lh,
+            "chrom\tstart\tend\tn_reads\tn_orphans\tclass\tn_genes_overlapping\tother_family_units"
+        )?;
         for l in &o3_all_orphan_loci {
             let class_str = match l.class {
                 rustle::family::missing_copy::missing_copy_flag_pass::LocusClass::OtherFamily => "other_family",
@@ -8296,12 +10075,26 @@ fn main() -> Result<()> {
                 rustle::family::missing_copy::missing_copy_flag_pass::LocusClass::Unannotated => "unannotated",
             };
             writeln!(
-                lh, "{}\t{}\t{}\t{}\t{}\t{class_str}\t{}\t{}",
-                l.chrom, l.start, l.end, l.n_reads, l.n_orphans, l.n_genes_overlapping,
-                if l.other_family_units.is_empty() { "-".to_string() } else { l.other_family_units.join(";") },
+                lh,
+                "{}\t{}\t{}\t{}\t{}\t{class_str}\t{}\t{}",
+                l.chrom,
+                l.start,
+                l.end,
+                l.n_reads,
+                l.n_orphans,
+                l.n_genes_overlapping,
+                if l.other_family_units.is_empty() {
+                    "-".to_string()
+                } else {
+                    l.other_family_units.join(";")
+                },
             )?;
         }
-        eprintln!("[copy_assign] wrote {}.missing_copy_loci.tsv ({} loci)", args.out, o3_all_orphan_loci.len());
+        eprintln!(
+            "[copy_assign] wrote {}.missing_copy_loci.tsv ({} loci)",
+            args.out,
+            o3_all_orphan_loci.len()
+        );
     }
 
     // `--discover-copies`: read-seeded candidate copies accumulated across every region above. Report only
@@ -8312,9 +10105,16 @@ fn main() -> Result<()> {
         writeln!(dh, "family_id\tchrom\tstart\tend\tstrand\tn_supporting_reads\tread_names\tnearest_copy_tid\tnearest_copy_distance")?;
         for d in &all_discovered {
             writeln!(
-                dh, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                d.family_id, d.chrom, d.start, d.end, d.strand, d.n_supporting_reads,
-                d.read_names.join(","), d.nearest_copy_tid,
+                dh,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                d.family_id,
+                d.chrom,
+                d.start,
+                d.end,
+                d.strand,
+                d.n_supporting_reads,
+                d.read_names.join(","),
+                d.nearest_copy_tid,
                 // `NA` when the family has no copy on this chromosome at all (`nearest_copy_tid == "NA"`),
                 // the same convention `opt_i32`/`opt_f32` use above -- never a `u64::MAX` sentinel printed
                 // verbatim as 18446744073709551615.
@@ -8323,7 +10123,13 @@ fn main() -> Result<()> {
         }
         eprintln!(
             "[copy_assign] --discover-copies: {} candidate cop{} -> {}.discovered_copies.tsv",
-            all_discovered.len(), if all_discovered.len() == 1 { "y" } else { "ies" }, args.out
+            all_discovered.len(),
+            if all_discovered.len() == 1 {
+                "y"
+            } else {
+                "ies"
+            },
+            args.out
         );
     }
 
@@ -8331,17 +10137,26 @@ fn main() -> Result<()> {
     // PSV variant string, and read -> haplotype (HP) haplotag. Only written under --phase.
     if args.phase {
         let mut pb = std::fs::File::create(format!("{}.phase_blocks.tsv", args.out))?;
-        writeln!(pb, "block_id\tchrom\tn_haplotypes\tn_psv_sites\tn_reads_phased\tn_unphased")?;
+        writeln!(
+            pb,
+            "block_id\tchrom\tn_haplotypes\tn_psv_sites\tn_reads_phased\tn_unphased"
+        )?;
         for l in &phase_block_lines {
             writeln!(pb, "{}", l)?;
         }
         let mut ph = std::fs::File::create(format!("{}.phased_haplotypes.tsv", args.out))?;
-        writeln!(ph, "block_id\thaplotype\tcopy_tid\tn_support_reads\tvariants")?;
+        writeln!(
+            ph,
+            "block_id\thaplotype\tcopy_tid\tn_support_reads\tvariants"
+        )?;
         for l in &phased_hap_lines {
             writeln!(ph, "{}", l)?;
         }
         let mut pr = std::fs::File::create(format!("{}.phased_reads.tsv", args.out))?;
-        writeln!(pr, "read_name\tblock_id\thaplotype\tn_psv_spanned\tmargin\tstatus")?;
+        writeln!(
+            pr,
+            "read_name\tblock_id\thaplotype\tn_psv_spanned\tmargin\tstatus"
+        )?;
         for l in &phased_read_lines {
             writeln!(pr, "{}", l)?;
         }
@@ -8385,7 +10200,10 @@ fn main() -> Result<()> {
                 }
             }
         }
-        let n_phased = phased_read_lines.iter().filter(|l| !l.contains("\t-1\t")).count();
+        let n_phased = phased_read_lines
+            .iter()
+            .filter(|l| !l.contains("\t-1\t"))
+            .count();
         eprintln!(
             "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths, {} read-walks; Bandage colours -> {}.phase.gfa.colours.csv, legend -> {}.phase.gfa.legend.tsv)",
             phase_block_lines.len(), phased_hap_lines.len(), n_phased, phased_read_lines.len(),
@@ -8450,7 +10268,14 @@ fn main() -> Result<()> {
             writeln!(
                 mh,
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                r.family_id, r.copy_a, r.copy_b, r.bp_lo, r.bp_hi, r.n_reads, r.dispersion, r.confirmed as u8
+                r.family_id,
+                r.copy_a,
+                r.copy_b,
+                r.bp_lo,
+                r.bp_hi,
+                r.n_reads,
+                r.dispersion,
+                r.confirmed as u8
             )?;
         }
         let conf = mosaic_rows.iter().filter(|r| r.confirmed).count();
@@ -8464,16 +10289,21 @@ fn main() -> Result<()> {
     // others) -- the APOBEC3/RFPL signal, baked into the copy sequence. Written only when found.
     if !copyconv_rows.is_empty() {
         let mut ch = std::fs::File::create(format!("{}.copy_conversions.tsv", args.out))?;
-        writeln!(ch, "family_id\tconverted_copy\tdonor_a\tdonor_b\tbreakpoint_lo\tbreakpoint_hi\tn_decisive")?;
+        writeln!(
+            ch,
+            "family_id\tconverted_copy\tdonor_a\tdonor_b\tbreakpoint_lo\tbreakpoint_hi\tn_decisive"
+        )?;
         for r in &copyconv_rows {
             writeln!(
-                ch, "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                ch,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 r.family_id, r.copy_c, r.copy_a, r.copy_b, r.bp_lo, r.bp_hi, r.n_decisive
             )?;
         }
         eprintln!(
             "[copy_assign] {} COPY-level historical gene conversion(s) -> {}.copy_conversions.tsv",
-            copyconv_rows.len(), args.out
+            copyconv_rows.len(),
+            args.out
         );
     }
 
@@ -8484,22 +10314,39 @@ fn main() -> Result<()> {
         writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns")?;
         let mut n = 0usize;
         for r in &assign_rows {
-            let Some(pf) = proofs.get(&r.read_name) else { continue };
+            let Some(pf) = proofs.get(&r.read_name) else {
+                continue;
+            };
             let ch = |o: Option<u8>| o.map(|b| b as char).unwrap_or('.');
             let cols: Vec<String> = pf
                 .cols
                 .iter()
                 .enumerate()
                 .map(|(j, &pos)| {
-                    let cands: String = pf.alleles.iter().map(|al| ch(al.get(j).copied().flatten())).collect();
+                    let cands: String = pf
+                        .alleles
+                        .iter()
+                        .map(|al| ch(al.get(j).copied().flatten()))
+                        .collect();
                     format!("{pos}:{}:{cands}", ch(pf.obs.get(j).copied().flatten()))
                 })
                 .collect();
             writeln!(
                 sh,
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                r.read_name, r.family_id, r.status, r.assigned_copy, r.catalog_copy_idx, r.n_candidates,
-                pf.cand.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","), pf.cols.len(), cols.join(",")
+                r.read_name,
+                r.family_id,
+                r.status,
+                r.assigned_copy,
+                r.catalog_copy_idx,
+                r.n_candidates,
+                pf.cand
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                pf.cols.len(),
+                cols.join(",")
             )?;
             n += 1;
         }
@@ -8509,7 +10356,10 @@ fn main() -> Result<()> {
     // (each read's base + its assignment), the per-copy alleles, and the column→genome map — for the figure.
     if args.dump_psv {
         let mut rh = std::fs::File::create(format!("{}.psv_reads.tsv", args.out))?;
-        writeln!(rh, "read_name\tfamily_id\tassigned_copy\tstatus\tmargin\tn_decisive\talleles")?;
+        writeln!(
+            rh,
+            "read_name\tfamily_id\tassigned_copy\tstatus\tmargin\tn_decisive\talleles"
+        )?;
         for l in &psv_read_lines {
             writeln!(rh, "{l}")?;
         }
@@ -8540,7 +10390,10 @@ fn main() -> Result<()> {
     // exceeded), so edges resting on the approximate metric are auditable. Only written when the fallback ran.
     if !fallback_all.is_empty() {
         let mut sh = std::fs::File::create(format!("{}.fallback.tsv", args.out))?;
-        writeln!(sh, "chrom\ttid_a\tstart_a\tend_a\tlen_a\ttid_b\tstart_b\tend_b\tlen_b")?;
+        writeln!(
+            sh,
+            "chrom\ttid_a\tstart_a\tend_a\tlen_a\ttid_b\tstart_b\tend_b\tlen_b"
+        )?;
         for s in &fallback_all {
             writeln!(
                 sh,
@@ -8562,7 +10415,11 @@ fn main() -> Result<()> {
         let mut dh = std::fs::File::create(format!("{}.dna_needs.tsv", args.out))?;
         writeln!(dh, "chrom\tstart\tend\tn_clusters\tread_count\treason")?;
         for r in &dna_needs_rows {
-            writeln!(dh, "{}\t{}\t{}\t{}\t{}\t{}", r.chrom, r.start, r.end, r.n_clusters, r.read_count, r.reason)?;
+            writeln!(
+                dh,
+                "{}\t{}\t{}\t{}\t{}\t{}",
+                r.chrom, r.start, r.end, r.n_clusters, r.read_count, r.reason
+            )?;
         }
         eprintln!(
             "[copy_assign] {} DNA-needs candidate(s) -> {}.dna_needs.tsv",
@@ -8581,13 +10438,21 @@ fn main() -> Result<()> {
                 "family_id\tchrom\tstart\tend\tn_pool\tlinearized_frac_real\tmean_frac_decoy\tdelta\tperm_p\tverdict"
             )?;
             for (fam, cert, (chrom, start, end)) in &linearize_certs_all {
-                writeln!(lh, "{}", linearize_tsv_row(fam, (chrom, *start, *end), cert))?;
+                writeln!(
+                    lh,
+                    "{}",
+                    linearize_tsv_row(fam, (chrom, *start, *end), cert)
+                )?;
             }
             eprintln!(
                 "[copy_assign] {} linearize certificate(s) -> {}.linearize.tsv{}",
                 linearize_certs_all.len(),
                 args.out,
-                if args.linearize_gate { " (--linearize-gate: non-LINEARIZES candidates demoted to .dna_needs.tsv)" } else { "" }
+                if args.linearize_gate {
+                    " (--linearize-gate: non-LINEARIZES candidates demoted to .dna_needs.tsv)"
+                } else {
+                    ""
+                }
             );
         }
     }
@@ -8598,7 +10463,10 @@ fn main() -> Result<()> {
     // and-suspenders with the flag check).
     if args.vg_realign || args.vg_realign_correct {
         let mut vh = std::fs::File::create(format!("{}.vg_realign.tsv", args.out))?;
-        writeln!(vh, "read_name\tfamily_id\taction\ttarget_copy\tid_best\tlinear_copy")?;
+        writeln!(
+            vh,
+            "read_name\tfamily_id\taction\ttarget_copy\tid_best\tlinear_copy"
+        )?;
         for l in &vg_realign_lines {
             writeln!(vh, "{l}")?;
         }
@@ -8609,7 +10477,9 @@ fn main() -> Result<()> {
         );
     }
 
-    let (uniq, agree): (usize, usize) = family_rows.iter().fold((0, 0), |(u, g), f| (u + f.uniq, g + f.uniq_agree));
+    let (uniq, agree): (usize, usize) = family_rows
+        .iter()
+        .fold((0, 0), |(u, g), f| (u + f.uniq, g + f.uniq_agree));
     eprintln!(
         "[copy_assign] {} families, {} read assignments",
         family_rows.len(),
@@ -8621,12 +10491,22 @@ fn main() -> Result<()> {
     // stay byte-identical, and the ON arm announces itself by this file plus its `params.tsv` row.
     if args.union_certificate {
         let mut uh = std::fs::File::create(format!("{}.union_certificate.tsv", args.out))?;
-        writeln!(uh, "read_name\tn_candidates\tcandidates\twinner\tn_decisive\tmargin\tp_value\tverdict")?;
+        writeln!(
+            uh,
+            "read_name\tn_candidates\tcandidates\twinner\tn_decisive\tmargin\tp_value\tverdict"
+        )?;
         for r in &union_all.rows {
             writeln!(
                 uh,
                 "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{}",
-                r.read_name, r.n_candidates, r.candidates, r.winner, r.n_decisive, r.margin, r.p_value, r.verdict
+                r.read_name,
+                r.n_candidates,
+                r.candidates,
+                r.winner,
+                r.n_decisive,
+                r.margin,
+                r.p_value,
+                r.verdict
             )?;
         }
         eprintln!(
@@ -8646,7 +10526,8 @@ fn main() -> Result<()> {
         let path = format!("{}.readthrough_junctions.tsv", args.out);
         readthrough_all.write_tsv(&path)?;
         if rt_dump_all {
-            readthrough_all.write_all_tsv(&format!("{}.readthrough_junctions.all.tsv", args.out))?;
+            readthrough_all
+                .write_all_tsv(&format!("{}.readthrough_junctions.all.tsv", args.out))?;
         }
         eprintln!(
             "[readthrough] RUSTLE_READTHROUGH_JUNCTIONS={}: {} junction(s) with S>=2, {} canonical R-pass, {} flagged; \
@@ -8669,26 +10550,62 @@ fn main() -> Result<()> {
             writeln!(
                 xh,
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                c.read_name, c.stratum, c.fid_a, c.copy_a, c.span_a.0, c.span_a.1, c.span_a.2,
-                c.fid_b, c.copy_b, c.span_b.0, c.span_b.1, c.span_b.2, c.same_record, c.sep_bp, c.demoted
+                c.read_name,
+                c.stratum,
+                c.fid_a,
+                c.copy_a,
+                c.span_a.0,
+                c.span_a.1,
+                c.span_a.2,
+                c.fid_b,
+                c.copy_b,
+                c.span_b.0,
+                c.span_b.1,
+                c.span_b.2,
+                c.same_record,
+                c.sep_bp,
+                c.demoted
             )?;
         }
         // Every rate with its denominator (a rate without one is how four headlines died here).
         let n_pairs = xfam_conflicts.len();
-        let n_shared = xfam_conflicts.iter().filter(|c| c.stratum == "shared_locus").count();
-        let n_rt = xfam_conflicts.iter().filter(|c| c.stratum == "readthrough_span").count();
-        let n_contra = xfam_conflicts.iter().filter(|c| c.stratum == "cross_family_contradiction").count();
-        let contested_reads: std::collections::BTreeSet<&str> =
-            xfam_conflicts.iter().map(|c| c.read_name.as_str()).collect();
+        let n_shared = xfam_conflicts
+            .iter()
+            .filter(|c| c.stratum == "shared_locus")
+            .count();
+        let n_rt = xfam_conflicts
+            .iter()
+            .filter(|c| c.stratum == "readthrough_span")
+            .count();
+        let n_contra = xfam_conflicts
+            .iter()
+            .filter(|c| c.stratum == "cross_family_contradiction")
+            .count();
+        let contested_reads: std::collections::BTreeSet<&str> = xfam_conflicts
+            .iter()
+            .map(|c| c.read_name.as_str())
+            .collect();
         let contested_rows: std::collections::BTreeSet<(&str, &str)> = xfam_conflicts
             .iter()
-            .flat_map(|c| [(c.read_name.as_str(), c.fid_a.as_str()), (c.read_name.as_str(), c.fid_b.as_str())])
+            .flat_map(|c| {
+                [
+                    (c.read_name.as_str(), c.fid_a.as_str()),
+                    (c.read_name.as_str(), c.fid_b.as_str()),
+                ]
+            })
             .collect();
         // Denominator = the assigned rows the OFF arm would have emitted. A demotion only ever turns
         // "assigned" into "ambiguous", so that is the post-demotion count plus the demotions — quoting the
         // POST-demotion count would shrink the denominator by exactly the numerator.
-        let n_assigned = assign_rows.iter().filter(|r| r.status == "assigned").count()
-            + if xfam_mode == XfamMode::Abstain { xfam_demote.len() } else { 0 };
+        let n_assigned = assign_rows
+            .iter()
+            .filter(|r| r.status == "assigned")
+            .count()
+            + if xfam_mode == XfamMode::Abstain {
+                xfam_demote.len()
+            } else {
+                0
+            };
         let distinct_reads: std::collections::BTreeSet<&str> =
             assign_rows.iter().map(|r| r.read_name.as_str()).collect();
         let demoted_mols: std::collections::BTreeSet<&str> =
@@ -8706,7 +10623,11 @@ fn main() -> Result<()> {
              {}/{} distinct molecules — {n_shared} shared_locus, {n_rt} readthrough_span, \
              {n_contra} cross_family_contradiction (the only demoting stratum). \
              Contested (read,family) rows: {}. -> {}.xfam_conflicts.tsv",
-            xfam_mode.as_str(), contested_reads.len(), distinct_reads.len(), contested_rows.len(), args.out
+            xfam_mode.as_str(),
+            contested_reads.len(),
+            distinct_reads.len(),
+            contested_rows.len(),
+            args.out
         );
         if xfam_mode == XfamMode::Abstain {
             let n_dem = xfam_demote.len();
@@ -8751,18 +10672,39 @@ fn main() -> Result<()> {
         // RUSTLE_READTHROUGH_JUNCTIONS: rows only when set (the unset / `off` params.tsv stays byte-identical)
         if let Some(rule) = rt_rule {
             row("readthrough_junctions", rule.as_str().to_string())?;
-            row("readthrough_junctions_flagged", format!("{}", readthrough_all.rows.len()))?;
-            row("readthrough_junctions_chains_removed", format!("{}", readthrough_all.chains_removed))?;
-            row("readthrough_junctions_alignments_removed", format!("{}", readthrough_all.alignments_removed))?;
+            row(
+                "readthrough_junctions_flagged",
+                format!("{}", readthrough_all.rows.len()),
+            )?;
+            row(
+                "readthrough_junctions_chains_removed",
+                format!("{}", readthrough_all.chains_removed),
+            )?;
+            row(
+                "readthrough_junctions_alignments_removed",
+                format!("{}", readthrough_all.alignments_removed),
+            )?;
             // arms r2 / r3 only: the flagged junctions by tier (A + B = flagged) and tier A's exempted junctions; r3
             // adds tier B's guarded junctions (V1 <= N_span, not flagged)
             if rule.is_tiered() {
-                row("readthrough_junctions_tier_a", format!("{}", readthrough_all.n_tier_a))?;
-                row("readthrough_junctions_tier_b_only", format!("{}", readthrough_all.n_tier_b))?;
-                row("readthrough_junctions_tier_a_exempt", format!("{}", readthrough_all.n_ale_exempt))?;
+                row(
+                    "readthrough_junctions_tier_a",
+                    format!("{}", readthrough_all.n_tier_a),
+                )?;
+                row(
+                    "readthrough_junctions_tier_b_only",
+                    format!("{}", readthrough_all.n_tier_b),
+                )?;
+                row(
+                    "readthrough_junctions_tier_a_exempt",
+                    format!("{}", readthrough_all.n_ale_exempt),
+                )?;
             }
             if rule == rustle::family::denovo_assemble::ReadthroughRule::R3 {
-                row("readthrough_junctions_tier_b_guarded", format!("{}", readthrough_all.n_tier_b_guarded))?;
+                row(
+                    "readthrough_junctions_tier_b_guarded",
+                    format!("{}", readthrough_all.n_tier_b_guarded),
+                )?;
             }
             // the list arm only: which list, and how many distinct junctions it holds (flagged = those on the
             // assembled regions)
@@ -8775,28 +10717,86 @@ fn main() -> Result<()> {
         if args.polish_subchain != "off" {
             row("polish_subchain", args.polish_subchain.clone())?;
             row("polish_subchain_tol_bp", format!("{SUBCHAIN_TOL_BP}"))?;
-            row("polish_subchain_min_container_reads_ratio", "0.5".to_string())?;
-            row("polish_subchain_multi_exon", format!("{}", subchain_counts.4))?;
+            row(
+                "polish_subchain_min_container_reads_ratio",
+                "0.5".to_string(),
+            )?;
+            row(
+                "polish_subchain_multi_exon",
+                format!("{}", subchain_counts.4),
+            )?;
             row("polish_subchain_flagged", format!("{}", subchain_counts.0))?;
-            row("polish_subchain_missing_5p", format!("{}", subchain_counts.1))?;
-            row("polish_subchain_missing_3p", format!("{}", subchain_counts.2))?;
-            row("polish_subchain_missing_both", format!("{}", subchain_counts.3))?;
+            row(
+                "polish_subchain_missing_5p",
+                format!("{}", subchain_counts.1),
+            )?;
+            row(
+                "polish_subchain_missing_3p",
+                format!("{}", subchain_counts.2),
+            )?;
+            row(
+                "polish_subchain_missing_both",
+                format!("{}", subchain_counts.3),
+            )?;
         }
         // --polish-tss: rows only when not `off` (the default params.tsv stays byte-identical); fitted quantities per
         // contig ("contig:value;..."), counts summed over contigs
         if args.polish_tss != "off" {
             let per = |f: &dyn Fn(&TssStats) -> String| -> String {
-                tss_stats.iter().map(|st| format!("{}:{}", st.contig, f(st))).collect::<Vec<_>>().join(";")
+                tss_stats
+                    .iter()
+                    .map(|st| format!("{}:{}", st.contig, f(st)))
+                    .collect::<Vec<_>>()
+                    .join(";")
             };
-            let sum = |f: &dyn Fn(&TssStats) -> usize| -> String { format!("{}", tss_stats.iter().map(f).sum::<usize>()) };
+            let sum = |f: &dyn Fn(&TssStats) -> usize| -> String {
+                format!("{}", tss_stats.iter().map(f).sum::<usize>())
+            };
             row("polish_tss", args.polish_tss.clone())?;
             row("polish_tss_alpha", format!("{TSS_ALPHA}"))?;
             row("polish_tss_tol_bp", format!("{TSS_TOL}"))?;
-            row("polish_tss_h", per(&|st| if st.fitted { format!("{:.6e}", st.h) } else { "NA".into() }))?;
-            row("polish_tss_nb_a", per(&|st| if st.fitted { format!("{:.6}", st.a) } else { "NA".into() }))?;
-            row("polish_tss_acceptor_r", per(&|st| st.r.iter().map(|x| format!("{x:.2}")).collect::<Vec<_>>().join(",")))?;
-            row("polish_tss_cap_signal", per(&|st| format!(
-                "{} (clusters {}/{}, bodies {}/{})", if st.cap_signal { "yes" } else { "no" }, st.pk_capped, st.pk_n, st.bg_capped, st.bg_n)))?;
+            row(
+                "polish_tss_h",
+                per(&|st| {
+                    if st.fitted {
+                        format!("{:.6e}", st.h)
+                    } else {
+                        "NA".into()
+                    }
+                }),
+            )?;
+            row(
+                "polish_tss_nb_a",
+                per(&|st| {
+                    if st.fitted {
+                        format!("{:.6}", st.a)
+                    } else {
+                        "NA".into()
+                    }
+                }),
+            )?;
+            row(
+                "polish_tss_acceptor_r",
+                per(&|st| {
+                    st.r.iter()
+                        .map(|x| format!("{x:.2}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                }),
+            )?;
+            row(
+                "polish_tss_cap_signal",
+                per(&|st| {
+                    format!(
+                        "{} (clusters {}/{}, bodies {}/{})",
+                        if st.cap_signal { "yes" } else { "no" },
+                        st.pk_capped,
+                        st.pk_n,
+                        st.bg_capped,
+                        st.bg_n
+                    )
+                }),
+            )?;
             row("polish_tss_multi_exon", sum(&|st| st.multi))?;
             row("polish_tss_candidates", sum(&|st| st.candidates))?;
             row("polish_tss_proven", sum(&|st| st.proven))?;
@@ -8804,28 +10804,55 @@ fn main() -> Result<()> {
             row("polish_tss_rescued_ism", sum(&|st| st.rescued_ism))?;
             row("polish_tss_rescued_fraction", sum(&|st| st.rescued_frac))?;
             row("polish_tss_rescued_retained", sum(&|st| st.rescued_ret))?;
-            row("polish_tss_chains_with_cluster", sum(&|st| st.chains_clustered))?;
+            row(
+                "polish_tss_chains_with_cluster",
+                sum(&|st| st.chains_clustered),
+            )?;
             row("polish_tss_chains_ge2_clusters", sum(&|st| st.chains_ge2))?;
             row("polish_tss_split_chains", sum(&|st| st.split_chains))?;
             row("polish_tss_split_added", sum(&|st| st.split_added))?;
-            row("polish_tss_subchain_spared", format!("{tss_subchain_spared}"))?;
+            row(
+                "polish_tss_subchain_spared",
+                format!("{tss_subchain_spared}"),
+            )?;
             // tss_review F1 / F4
-            row("polish_tss_applied", per(&|st| {
-                if st.applied { "yes".to_string() } else { "no (no cap signal: output = tag)".to_string() }
-            }))?;
-            row("polish_tss_withheld_rescued", sum(&|st| st.withheld_rescued))?;
+            row(
+                "polish_tss_applied",
+                per(&|st| {
+                    if st.applied {
+                        "yes".to_string()
+                    } else {
+                        "no (no cap signal: output = tag)".to_string()
+                    }
+                }),
+            )?;
+            row(
+                "polish_tss_withheld_rescued",
+                sum(&|st| st.withheld_rescued),
+            )?;
             row("polish_tss_withheld_split", sum(&|st| st.withheld_split))?;
-            row("polish_tss_proven_no_own_start", sum(&|st| st.proven_no_own_start))?;
+            row(
+                "polish_tss_proven_no_own_start",
+                sum(&|st| st.proven_no_own_start),
+            )?;
         }
         // --polish-tes: rows only when not `off` (the default params.tsv stays byte-identical); counts summed
         if args.polish_tes != "off" {
-            let sum = |f: &dyn Fn(&TesStats) -> usize| -> String { format!("{}", tes_stats.iter().map(f).sum::<usize>()) };
+            let sum = |f: &dyn Fn(&TesStats) -> usize| -> String {
+                format!("{}", tes_stats.iter().map(f).sum::<usize>())
+            };
             row("polish_tes", args.polish_tes.clone())?;
             row("polish_tes_link_bp", format!("{TSS_W}"))?;
             row("polish_tes_min_cluster_reads", format!("{TES_MIN_READS}"))?;
             row("polish_tes_hexamers", "AATAAA,ATTAAA".to_string())?;
-            row("polish_tes_pas_window", format!("{TES_PAS_NEAR}-{TES_PAS_FAR}"))?;
-            row("polish_tes_primed_rule", format!(">={TES_PRIME_FRAC} A in {TES_PRIME_BP} bp downstream or A6"))?;
+            row(
+                "polish_tes_pas_window",
+                format!("{TES_PAS_NEAR}-{TES_PAS_FAR}"),
+            )?;
+            row(
+                "polish_tes_primed_rule",
+                format!(">={TES_PRIME_FRAC} A in {TES_PRIME_BP} bp downstream or A6"),
+            )?;
             row("polish_tes_multi_exon", sum(&|st| st.multi))?;
             row("polish_tes_chains_with_cluster", sum(&|st| st.with_cluster))?;
             row("polish_tes_chains_with_proven", sum(&|st| st.with_proven))?;
@@ -8837,108 +10864,293 @@ fn main() -> Result<()> {
         // --polish-junction-snap: rows only when not `off` (the default params.tsv stays byte-identical); counts
         // summed over contigs
         if args.polish_junction_snap != "off" {
-            let sum = |f: &dyn Fn(&SnapStats) -> usize| -> String { format!("{}", snap_stats.iter().map(f).sum::<usize>()) };
+            let sum = |f: &dyn Fn(&SnapStats) -> usize| -> String {
+                format!("{}", snap_stats.iter().map(f).sum::<usize>())
+            };
             row("polish_junction_snap", args.polish_junction_snap.clone())?;
             row("polish_junction_snap_tol_bp", format!("{SNAP_TOL_BP}"))?;
             if args.polish_junction_snap == "reads" {
-                row("polish_junction_snap_min_reads", format!("{}", rustle::family::denovo_assemble::PASS1_MIN_READS))?;
-                row("polish_junction_snap_read_flank_bp", format!("{SNAP_FLANK}"))?;
-                row("polish_junction_snap_ref_window_bp", format!("{}", SNAP_FLANK + SNAP_PAD))?;
+                row(
+                    "polish_junction_snap_min_reads",
+                    format!("{}", rustle::family::denovo_assemble::PASS1_MIN_READS),
+                )?;
+                row(
+                    "polish_junction_snap_read_flank_bp",
+                    format!("{SNAP_FLANK}"),
+                )?;
+                row(
+                    "polish_junction_snap_ref_window_bp",
+                    format!("{}", SNAP_FLANK + SNAP_PAD),
+                )?;
                 row("polish_junction_snap_read_cap", format!("{SNAP_CAP}"))?;
             }
             row("polish_junction_snap_near_pairs", sum(&|st| st.near_pairs))?;
             row("polish_junction_snap_equivalent", sum(&|st| st.equivalent))?;
-            row("polish_junction_snap_read_snapped", sum(&|st| st.read_snapped))?;
+            row(
+                "polish_junction_snap_read_snapped",
+                sum(&|st| st.read_snapped),
+            )?;
             row("polish_junction_snap_rewritten", sum(&|st| st.rewritten))?;
             row("polish_junction_snap_collapsed", sum(&|st| st.collapsed))?;
-            row("polish_junction_snap_evidence_reads", sum(&|st| st.evidence_reads))?;
+            row(
+                "polish_junction_snap_evidence_reads",
+                sum(&|st| st.evidence_reads),
+            )?;
         }
         // --gtf-regroup: rows only when set (the default params.tsv stays byte-identical)
         if let Some(st) = regroup_stats {
             row("gtf_regroup", "rg3".to_string())?;
-            row("gtf_regroup_gene_ids_split", format!("{}", st.gene_ids_split))?;
+            row(
+                "gtf_regroup_gene_ids_split",
+                format!("{}", st.gene_ids_split),
+            )?;
             row("gtf_regroup_loci_added", format!("{}", st.pieces_added))?;
-            row("gtf_regroup_transcripts_relabelled", format!("{}", st.transcripts_relabelled))?;
+            row(
+                "gtf_regroup_transcripts_relabelled",
+                format!("{}", st.transcripts_relabelled),
+            )?;
         }
         // --bridge-regroup: rows only when set (the default params.tsv stays byte-identical)
         if let (Some(mode), Some(st)) = (bridge_mode, &bridge_stats) {
             row("bridge_regroup", mode.as_str().to_string())?;
             row("bridge_regroup_transcripts", format!("{}", st.transcripts))?;
             row("bridge_regroup_gene_ids", format!("{}", st.gene_ids))?;
-            row("bridge_regroup_structural_junctions", format!("{}", st.structural_junctions))?;
+            row(
+                "bridge_regroup_structural_junctions",
+                format!("{}", st.structural_junctions),
+            )?;
             row("bridge_regroup_up_proof", format!("{}", st.up_proof))?;
             row("bridge_regroup_down_proof", format!("{}", st.down_proof))?;
-            row("bridge_regroup_f1_bridge_junctions", format!("{}", st.f1_bridge_junctions))?;
-            row("bridge_regroup_bridge_junctions", format!("{}", st.bridge_junctions))?;
-            row("bridge_regroup_bridge_transcripts", format!("{}", st.bridge_transcripts))?;
-            row("bridge_regroup_gene_ids_with_bridge", format!("{}", st.gene_ids_with_bridge))?;
-            row("bridge_regroup_gene_ids_split", format!("{}", st.gene_ids_split))?;
-            row("bridge_regroup_gene_ids_after", format!("{}", st.gene_ids_after))?;
-            row("bridge_regroup_families_gene_ids", format!("{}", st.families_gene_ids))?;
-            row("bridge_regroup_lines_changed", format!("{}", st.lines_changed))?;
-            row("bridge_regroup_family_lines_dropped", format!("{}", st.family_lines_dropped))?;
+            row(
+                "bridge_regroup_f1_bridge_junctions",
+                format!("{}", st.f1_bridge_junctions),
+            )?;
+            row(
+                "bridge_regroup_bridge_junctions",
+                format!("{}", st.bridge_junctions),
+            )?;
+            row(
+                "bridge_regroup_bridge_transcripts",
+                format!("{}", st.bridge_transcripts),
+            )?;
+            row(
+                "bridge_regroup_gene_ids_with_bridge",
+                format!("{}", st.gene_ids_with_bridge),
+            )?;
+            row(
+                "bridge_regroup_gene_ids_split",
+                format!("{}", st.gene_ids_split),
+            )?;
+            row(
+                "bridge_regroup_gene_ids_after",
+                format!("{}", st.gene_ids_after),
+            )?;
+            row(
+                "bridge_regroup_families_gene_ids",
+                format!("{}", st.families_gene_ids),
+            )?;
+            row(
+                "bridge_regroup_lines_changed",
+                format!("{}", st.lines_changed),
+            )?;
+            row(
+                "bridge_regroup_family_lines_dropped",
+                format!("{}", st.family_lines_dropped),
+            )?;
             // f1units only: its own rows (the f1 / f1v2 params.tsv keeps exactly the rows above)
             if let Some(d) = &bridge_detector {
                 row("bridge_units_detector", d.clone())?;
                 if let Some(path) = &args.bridge_units_list {
                     row("bridge_units_list", path.clone())?;
-                    row("bridge_units_list_unmatched", format!("{}", st.unit_list_unmatched))?;
+                    row(
+                        "bridge_units_list_unmatched",
+                        format!("{}", st.unit_list_unmatched),
+                    )?;
                 }
-                row("bridge_units_transcripts", format!("{}", st.unit_transcripts))?;
+                row(
+                    "bridge_units_transcripts",
+                    format!("{}", st.unit_transcripts),
+                )?;
                 row("bridge_units_cuts", format!("{}", st.unit_cuts))?;
                 row("bridge_units_units", format!("{}", st.units))?;
-                row("bridge_units_single_exon", format!("{}", st.unit_single_exon))?;
+                row(
+                    "bridge_units_single_exon",
+                    format!("{}", st.unit_single_exon),
+                )?;
                 row("bridge_units_attached", format!("{}", st.unit_attached))?;
-                row("bridge_units_gene_ids_touched", format!("{}", st.unit_gene_ids_touched))?;
+                row(
+                    "bridge_units_gene_ids_touched",
+                    format!("{}", st.unit_gene_ids_touched),
+                )?;
             }
         }
-        row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
+        row(
+            "posterior_prior",
+            if prior_abundance {
+                "abundance".into()
+            } else {
+                "uniform".to_string()
+            },
+        )?;
         row("margin", format!("{}", args.margin))?;
         row("error_rate", format!("{}", args.error_rate))?;
         row("alpha", format!("{}", args.alpha))?;
         row("margin_gate", format!("{}", args.margin_gate))?;
         row("rna_editing_filter", format!("{}", !args.no_editing_filter))?;
-        row("junction_conflict_abstain", format!("{}", args.junction_conflict_abstain))?;
+        row(
+            "junction_conflict_abstain",
+            format!("{}", args.junction_conflict_abstain),
+        )?;
         row("psv_genomic", format!("{}", args.psv_genomic))?;
-        row("psv_read_filter", std::env::var("RUSTLE_PSV_READFILTER").unwrap_or_else(|_| "unset".into()))?;
-        row("molecule_observations", format!("{}", args.molecule_observations && !args.no_molecule_observations))?;
-        row("origin_rejected", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected).count()))?;
-        row("orphans", format!("{}", assign_rows.iter().filter(|r| r.origin_rejected && r.n_candidates == 0).count()))?;
-        row("origin_substitutions_only", format!("{}", args.origin_substitutions_only))?;
-        row("origin_drop_indels", format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels))?;
-        row("best_by_duel", format!("{}", args.best_by_duel && !args.no_best_by_duel))?;
-        row("gtf_copy_set", format!("{}", (args.gtf_copy_set && !args.no_gtf_copy_set)))?;
-        row("min_isoform_fraction", format!("{}", args.min_isoform_fraction))?;
-        row("min_boundary_fraction", format!("{}", args.min_boundary_fraction))?;
+        row(
+            "psv_read_filter",
+            std::env::var("RUSTLE_PSV_READFILTER").unwrap_or_else(|_| "unset".into()),
+        )?;
+        row(
+            "molecule_observations",
+            format!(
+                "{}",
+                args.molecule_observations && !args.no_molecule_observations
+            ),
+        )?;
+        row(
+            "origin_rejected",
+            format!(
+                "{}",
+                assign_rows.iter().filter(|r| r.origin_rejected).count()
+            ),
+        )?;
+        row(
+            "orphans",
+            format!(
+                "{}",
+                assign_rows
+                    .iter()
+                    .filter(|r| r.origin_rejected && r.n_candidates == 0)
+                    .count()
+            ),
+        )?;
+        row(
+            "origin_substitutions_only",
+            format!("{}", args.origin_substitutions_only),
+        )?;
+        row(
+            "origin_drop_indels",
+            format!("{}", args.origin_drop_indels && !args.no_origin_drop_indels),
+        )?;
+        row(
+            "best_by_duel",
+            format!("{}", args.best_by_duel && !args.no_best_by_duel),
+        )?;
+        row(
+            "gtf_copy_set",
+            format!("{}", (args.gtf_copy_set && !args.no_gtf_copy_set)),
+        )?;
+        row(
+            "min_isoform_fraction",
+            format!("{}", args.min_isoform_fraction),
+        )?;
+        row(
+            "min_boundary_fraction",
+            format!("{}", args.min_boundary_fraction),
+        )?;
         row("min_boundary_gap", format!("{}", args.min_boundary_gap))?;
         row("indel_psv", format!("{}", args.indel_psv))?;
         row("indel_psv_min_len", format!("{}", args.indel_psv_min_len))?;
         row("indel_psv_molecules", format!("{}", indel_stats.0))?;
         row("indel_psv_columns", format!("{}", indel_stats.1))?;
         row("indel_psv_columns_ge10", format!("{}", indel_stats.2))?;
-        row("admit_aligner_disagreement", format!("{}", args.admit_aligner_disagreement))?;
-        row("read_star_junctions", format!("{}", args.read_star_junctions))?;
-        row("read_star_genomic", format!("{}", args.read_star_genomic && !args.read_star_unit))?;
-        row("read_star_catalog_locus", format!("{}", !args.read_star_pad_locus))?;
+        row(
+            "admit_aligner_disagreement",
+            format!("{}", args.admit_aligner_disagreement),
+        )?;
+        row(
+            "read_star_junctions",
+            format!("{}", args.read_star_junctions),
+        )?;
+        row(
+            "read_star_genomic",
+            format!("{}", args.read_star_genomic && !args.read_star_unit),
+        )?;
+        row(
+            "read_star_catalog_locus",
+            format!("{}", !args.read_star_pad_locus),
+        )?;
         row("sole_candidate", format!("{}", !args.no_sole_candidate))?;
-        row("sole_candidates", format!("{}", assign_rows.iter().filter(|r| r.status == "assigned" && r.n_candidates == 1 && r.contested).count()))?;
-        row("placement_assign", format!("{}", args.molecule_observations && !args.no_molecule_observations && !args.no_placement_assign))?;
-        row("placement_assigned", format!("{}", placement_assigned_total))?;
+        row(
+            "sole_candidates",
+            format!(
+                "{}",
+                assign_rows
+                    .iter()
+                    .filter(|r| r.status == "assigned" && r.n_candidates == 1 && r.contested)
+                    .count()
+            ),
+        )?;
+        row(
+            "placement_assign",
+            format!(
+                "{}",
+                args.molecule_observations
+                    && !args.no_molecule_observations
+                    && !args.no_placement_assign
+            ),
+        )?;
+        row(
+            "placement_assigned",
+            format!("{}", placement_assigned_total),
+        )?;
         row("primary_local_rows", format!("{primary_local_rows}"))?;
         row("placement_first", format!("{}", args.placement_first))?;
-        row("readthrough_certificate", format!("{}", !args.no_readthrough_certificate))?;
-        row("readthrough_explained", format!("{}", assign_rows.iter().filter(|r| r.readthrough_into != "-").count()))?;
-        row("contested_rows", format!("{}", assign_rows.iter().filter(|r| r.contested).count()))?;
+        row(
+            "readthrough_certificate",
+            format!("{}", !args.no_readthrough_certificate),
+        )?;
+        row(
+            "readthrough_explained",
+            format!(
+                "{}",
+                assign_rows
+                    .iter()
+                    .filter(|r| r.readthrough_into != "-")
+                    .count()
+            ),
+        )?;
+        row(
+            "contested_rows",
+            format!("{}", assign_rows.iter().filter(|r| r.contested).count()),
+        )?;
         row("dump_star", format!("{}", args.dump_star))?;
-        row("read_star_hit_in_unit", format!("{}", !args.no_read_star_hit_in_unit))?;
-        row("read_star_two_form", format!("{}", !args.read_star_genomic_only))?;
-        row("junction_conflicts", format!("{}", assign_rows.iter().filter(|r| r.junction_conflict).count()))?;
+        row(
+            "read_star_hit_in_unit",
+            format!("{}", !args.no_read_star_hit_in_unit),
+        )?;
+        row(
+            "read_star_two_form",
+            format!("{}", !args.read_star_genomic_only),
+        )?;
+        row(
+            "junction_conflicts",
+            format!(
+                "{}",
+                assign_rows.iter().filter(|r| r.junction_conflict).count()
+            ),
+        )?;
         row("edit_rate", format!("{}", args.edit_rate))?;
         row("iterative_prune", format!("{}", args.iterative_prune))?;
-        row("families", args.families.clone().unwrap_or_else(|| "NONE".to_string()))?;
-        row("copies_fa", args.copies_fa.clone().unwrap_or_else(|| "NONE".to_string()))?;
+        row(
+            "families",
+            args.families.clone().unwrap_or_else(|| "NONE".to_string()),
+        )?;
+        row(
+            "copies_fa",
+            args.copies_fa.clone().unwrap_or_else(|| "NONE".to_string()),
+        )?;
         // written only when given, so a run without them keeps its certificate byte-identical
-        for (key, list) in [("only_families", &args.only_families), ("skip_families", &args.skip_families)] {
+        for (key, list) in [
+            ("only_families", &args.only_families),
+            ("skip_families", &args.skip_families),
+        ] {
             if let Some(p) = list {
                 row(key, p.clone())?;
             }
@@ -8948,7 +11160,10 @@ fn main() -> Result<()> {
         row("posterior", format!("{}", args.posterior))?;
         row("em", format!("{}", args.em))?;
         row("gtf", format!("{}", args.gtf))?;
-        eprintln!("[copy_assign] wrote {}.params.tsv (run certificate)", args.out);
+        eprintln!(
+            "[copy_assign] wrote {}.params.tsv (run certificate)",
+            args.out
+        );
     }
 
     // Same-locus artifact: two copies of ONE family whose genomic spans OVERLAP are one locus admitted
@@ -8958,7 +11173,14 @@ fn main() -> Result<()> {
     {
         let catalog: Vec<(String, String, u64, u64)> = quant_rows
             .iter()
-            .map(|r| (r.family_id.clone(), r.copy_chrom.clone(), r.copy_start, r.copy_end))
+            .map(|r| {
+                (
+                    r.family_id.clone(),
+                    r.copy_chrom.clone(),
+                    r.copy_start,
+                    r.copy_end,
+                )
+            })
             .collect();
         let flagged = catalog_overlaps(&catalog);
         if !flagged.is_empty() {
@@ -8971,9 +11193,18 @@ fn main() -> Result<()> {
             //    is inflated — NOT the min_p == 1 masquerade. It cannot be pruned without also deleting
             //    genuine overlapping tandem paralogs (they occupy the same feature cell), so it is reported,
             //    not removed.
-            let n_dup = flagged.iter().filter(|f| f.3 == OverlapKind::DuplicateLocus).count();
-            let n_contain = flagged.iter().filter(|f| f.3 == OverlapKind::Containment).count();
-            let n_shared = flagged.iter().filter(|f| f.3 == OverlapKind::SharedAcrossFamilies).count();
+            let n_dup = flagged
+                .iter()
+                .filter(|f| f.3 == OverlapKind::DuplicateLocus)
+                .count();
+            let n_contain = flagged
+                .iter()
+                .filter(|f| f.3 == OverlapKind::Containment)
+                .count();
+            let n_shared = flagged
+                .iter()
+                .filter(|f| f.3 == OverlapKind::SharedAcrossFamilies)
+                .count();
             eprintln!(
                 "[copy_assign] WARNING: {} copy pair(s) share genomic sequence \
                  ({n_dup} DuplicateLocus, {n_contain} Containment, {n_shared} SharedAcrossFamilies). \
@@ -8989,17 +11220,20 @@ fn main() -> Result<()> {
             // reason that stratum is reported rather than demoted (demoting it would strip these copies
             // of most of their hard support and charge an O1 partition defect to O2's abstention rate).
             // `catalog` is built from `quant_rows` in order, so index i IS quant row i.
-            let mut qidx: std::collections::BTreeMap<(&str, usize), usize> = std::collections::BTreeMap::new();
+            let mut qidx: std::collections::BTreeMap<(&str, usize), usize> =
+                std::collections::BTreeMap::new();
             for (i, r) in quant_rows.iter().enumerate() {
                 qidx.insert((r.family_id.as_str(), r.copy_index), i);
             }
-            let mut claims: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
+            let mut claims: std::collections::BTreeMap<&str, Vec<usize>> =
+                std::collections::BTreeMap::new();
             for r in assign_rows.iter().filter(|r| r.status == "assigned") {
                 if let Some(&i) = qidx.get(&(r.family_id.as_str(), r.assigned_copy)) {
                     claims.entry(r.read_name.as_str()).or_default().push(i);
                 }
             }
-            let mut double: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
+            let mut double: std::collections::BTreeMap<(usize, usize), usize> =
+                std::collections::BTreeMap::new();
             for v in claims.values().filter(|v| v.len() >= 2) {
                 for a in 0..v.len() {
                     for b in (a + 1)..v.len() {
@@ -9032,7 +11266,10 @@ fn main() -> Result<()> {
             100.0 * agree as f64 / uniq as f64
         );
     }
-    eprintln!("[copy_assign] wrote {0}.families.tsv + {0}.assignments.tsv + {0}.quant.tsv", args.out);
+    eprintln!(
+        "[copy_assign] wrote {0}.families.tsv + {0}.assignments.tsv + {0}.quant.tsv",
+        args.out
+    );
     Ok(())
 }
 
@@ -9046,22 +11283,67 @@ mod tests {
         use rustle::family::bridge_regroup::Mode;
         let parse = |extra: &[&str]| {
             super::Args::try_parse_from(
-                ["copy_assign", "--bam", "r.bam", "--fasta", "g.fa", "--out", "o"].iter().chain(extra.iter()),
+                [
+                    "copy_assign",
+                    "--bam",
+                    "r.bam",
+                    "--fasta",
+                    "g.fa",
+                    "--out",
+                    "o",
+                ]
+                .iter()
+                .chain(extra.iter()),
             )
             .expect("parse")
         };
         let a = parse(&["--assemble-only", "--region", "c:1-2"]);
-        assert_eq!(a.bridge_regroup, None, "the flag itself has no default value");
+        assert_eq!(
+            a.bridge_regroup, None,
+            "the flag itself has no default value"
+        );
         assert_eq!(super::resolve_bridge_mode(&a).unwrap(), Some(Mode::F1v2));
-        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--bridge-regroup", "off"])).unwrap(), None);
-        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--bridge-regroup", "f1"])).unwrap(), Some(Mode::F1));
-        assert_eq!(super::resolve_bridge_mode(&parse(&["--gtf"])).unwrap(), None, "not the assemble-only GTF: off");
-        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--families", "c.tsv"])).unwrap(), None);
-        let err = super::resolve_bridge_mode(&parse(&["--gtf", "--bridge-regroup", "f1v2"])).unwrap_err().to_string();
+        assert_eq!(
+            super::resolve_bridge_mode(&parse(&["--assemble-only", "--bridge-regroup", "off"]))
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            super::resolve_bridge_mode(&parse(&["--assemble-only", "--bridge-regroup", "f1"]))
+                .unwrap(),
+            Some(Mode::F1)
+        );
+        assert_eq!(
+            super::resolve_bridge_mode(&parse(&["--gtf"])).unwrap(),
+            None,
+            "not the assemble-only GTF: off"
+        );
+        assert_eq!(
+            super::resolve_bridge_mode(&parse(&["--assemble-only", "--families", "c.tsv"]))
+                .unwrap(),
+            None
+        );
+        let err = super::resolve_bridge_mode(&parse(&["--gtf", "--bridge-regroup", "f1v2"]))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("--assemble-only"), "{err}");
-        let err = super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup"])).unwrap_err().to_string();
-        assert!(err.contains("f1v2 (the default)") && err.contains("--bridge-regroup off"), "{err}");
-        assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup", "--bridge-regroup", "off"])).unwrap(), None);
+        let err = super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup"]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("f1v2 (the default)") && err.contains("--bridge-regroup off"),
+            "{err}"
+        );
+        assert_eq!(
+            super::resolve_bridge_mode(&parse(&[
+                "--assemble-only",
+                "--gtf-regroup",
+                "--bridge-regroup",
+                "off"
+            ]))
+            .unwrap(),
+            None
+        );
     }
 
     /// `--bridge-regroup f1units` (OPT-IN) is never the default, is refused with `--gtf-regroup` and where the other arms are
@@ -9072,21 +11354,72 @@ mod tests {
         use rustle::family::bridge_regroup::Mode;
         let parse = |extra: &[&str]| {
             super::Args::try_parse_from(
-                ["copy_assign", "--bam", "r.bam", "--fasta", "g.fa", "--out", "o"].iter().chain(extra.iter()),
+                [
+                    "copy_assign",
+                    "--bam",
+                    "r.bam",
+                    "--fasta",
+                    "g.fa",
+                    "--out",
+                    "o",
+                ]
+                .iter()
+                .chain(extra.iter()),
             )
             .expect("parse")
         };
         let mode = |extra: &[&str]| super::resolve_bridge_mode(&parse(extra));
-        assert_eq!(mode(&["--assemble-only", "--bridge-regroup", "f1units"]).unwrap(), Some(Mode::F1Units));
+        assert_eq!(
+            mode(&["--assemble-only", "--bridge-regroup", "f1units"]).unwrap(),
+            Some(Mode::F1Units)
+        );
         assert_eq!(Mode::F1Units.as_str(), "f1units");
-        assert_eq!(mode(&["--assemble-only"]).unwrap(), Some(Mode::F1v2), "f1units is never the default");
-        let err = mode(&["--assemble-only", "--bridge-regroup", "f1units", "--gtf-regroup"]).unwrap_err().to_string();
-        assert!(err.contains("--bridge-regroup f1units") && err.contains("pass one of them"), "{err}");
-        let err = mode(&["--gtf", "--bridge-regroup", "f1units"]).unwrap_err().to_string();
-        assert!(err.contains("--bridge-regroup f1units") && err.contains("--assemble-only"), "{err}");
-        let err = mode(&["--assemble-only", "--families", "c.tsv", "--bridge-regroup", "f1units"]).unwrap_err().to_string();
+        assert_eq!(
+            mode(&["--assemble-only"]).unwrap(),
+            Some(Mode::F1v2),
+            "f1units is never the default"
+        );
+        let err = mode(&[
+            "--assemble-only",
+            "--bridge-regroup",
+            "f1units",
+            "--gtf-regroup",
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("--bridge-regroup f1units") && err.contains("pass one of them"),
+            "{err}"
+        );
+        let err = mode(&["--gtf", "--bridge-regroup", "f1units"])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("--bridge-regroup f1units") && err.contains("--assemble-only"),
+            "{err}"
+        );
+        let err = mode(&[
+            "--assemble-only",
+            "--families",
+            "c.tsv",
+            "--bridge-regroup",
+            "f1units",
+        ])
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("without --families"), "{err}");
-        assert!(super::Args::try_parse_from(["copy_assign", "--bam", "b", "--fasta", "f", "--out", "o", "--bridge-regroup", "f2"]).is_err());
+        assert!(super::Args::try_parse_from([
+            "copy_assign",
+            "--bam",
+            "b",
+            "--fasta",
+            "f",
+            "--out",
+            "o",
+            "--bridge-regroup",
+            "f2"
+        ])
+        .is_err());
 
         // the list: only with f1units, and read (so a missing file fails) before any read is touched
         let dir = std::env::temp_dir().join(format!("rustle_units_list_{}", std::process::id()));
@@ -9101,17 +11434,43 @@ mod tests {
             let m = super::resolve_bridge_mode(&a)?;
             super::resolve_bridge_units_list(&a, m)
         };
-        let l = with_list(&["--bridge-regroup", units]).unwrap().expect("the list");
+        let l = with_list(&["--bridge-regroup", units])
+            .unwrap()
+            .expect("the list");
         assert_eq!((l.rows.len(), l.detector().as_str()), (1, "list:l.tsv"));
-        for arm in [&["--bridge-regroup", "f1"][..], &["--bridge-regroup", "f1v2"], &["--bridge-regroup", "off"], &[]] {
+        for arm in [
+            &["--bridge-regroup", "f1"][..],
+            &["--bridge-regroup", "f1v2"],
+            &["--bridge-regroup", "off"],
+            &[],
+        ] {
             let err = with_list(arm).unwrap_err().to_string();
-            assert!(err.contains("pass --bridge-regroup f1units with it"), "{arm:?}: {err}");
+            assert!(
+                err.contains("pass --bridge-regroup f1units with it"),
+                "{arm:?}: {err}"
+            );
         }
-        let a = parse(&["--assemble-only", "--bridge-regroup", units, "--bridge-units-list", "/nonexistent/l.tsv"]);
-        let err = super::resolve_bridge_units_list(&a, super::resolve_bridge_mode(&a).unwrap()).unwrap_err().to_string();
-        assert!(err.contains("/nonexistent/l.tsv: cannot read the list"), "{err}");
+        let a = parse(&[
+            "--assemble-only",
+            "--bridge-regroup",
+            units,
+            "--bridge-units-list",
+            "/nonexistent/l.tsv",
+        ]);
+        let err = super::resolve_bridge_units_list(&a, super::resolve_bridge_mode(&a).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("/nonexistent/l.tsv: cannot read the list"),
+            "{err}"
+        );
         let a = parse(&["--assemble-only", "--bridge-regroup", units]);
-        assert!(super::resolve_bridge_units_list(&a, Some(Mode::F1Units)).unwrap().is_none(), "no list: F1's evidence decides");
+        assert!(
+            super::resolve_bridge_units_list(&a, Some(Mode::F1Units))
+                .unwrap()
+                .is_none(),
+            "no list: F1's evidence decides"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -9128,10 +11487,14 @@ mod tests {
             let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
             let mut v = vec![format!(
                 "chr1\trustle\ttranscript\t{}\t{}\t.\t+\t.\t{at} reads \"{reads}\";",
-                exons[0].0, exons[exons.len() - 1].1
+                exons[0].0,
+                exons[exons.len() - 1].1
             )];
             for (k, (s, e)) in exons.iter().enumerate() {
-                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";", k + 1));
+                v.push(format!(
+                    "chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";",
+                    k + 1
+                ));
             }
             v
         }
@@ -9154,26 +11517,37 @@ mod tests {
 
         // none is a no-op
         let mut l = build();
-        assert_eq!(polish_gtf_lines(&mut l, "none", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0), (0, 0, 0, 0, 0));
+        assert_eq!(
+            polish_gtf_lines(
+                &mut l, "none", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0
+            ),
+            (0, 0, 0, 0, 0)
+        );
         assert_eq!(l, build());
 
         // mono: floor = p75 of {9, 2, 9} = 9, so both 1-read mono transcripts go, MONOHI stays
         let mut l = build();
-        let (ism, mono, _, floor, _) = polish_gtf_lines(&mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        let (ism, mono, _, floor, _) = polish_gtf_lines(
+            &mut l, "mono", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!((ism, floor), (0, 9));
         assert_eq!(mono, 2);
         assert_eq!(tids(&l), vec!["LONG", "SHORT", "STRONG", "MONOHI"]);
 
         // full: SHORT is an unsupported sub-chain, MONOLO an unsupported mono inside LONG
         let mut l = build();
-        let (ism, mono, _, _, _) = polish_gtf_lines(&mut l, "full", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        let (ism, mono, _, _, _) = polish_gtf_lines(
+            &mut l, "full", 0.75, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(ism, 2);
         assert_eq!(mono, 1); // FREE has no host, so only the floor removes it
         assert_eq!(tids(&l), vec!["LONG", "STRONG", "MONOHI"]);
 
         // quantile 0 disables the floor entirely
         let mut l = build();
-        let (_, mono, _, floor, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        let (_, mono, _, floor, _) = polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!((mono, floor), (0, 0));
         assert!(tids(&l).contains(&"FREE".to_string()));
     }
@@ -9186,17 +11560,31 @@ mod tests {
             let at = format!("gene_id \"{gene}\"; transcript_id \"{tid}\";");
             let mut v = vec![format!(
                 "chr1\trustle\ttranscript\t{}\t{}\t.\t+\t.\t{at} reads \"{reads}\";",
-                exons[0].0, exons[exons.len() - 1].1
+                exons[0].0,
+                exons[exons.len() - 1].1
             )];
             for (k, (s, e)) in exons.iter().enumerate() {
-                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";", k + 1));
+                v.push(format!(
+                    "chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";",
+                    k + 1
+                ));
             }
             v
         }
         let build = || {
             let mut l = Vec::new();
-            l.extend(gtf("BIG", "g_LOCUS", 100, &[(100, 200), (300, 400), (500, 600)]));
-            l.extend(gtf("TINY", "g_LOCUS", 1, &[(100, 200), (350, 400), (500, 600)]));
+            l.extend(gtf(
+                "BIG",
+                "g_LOCUS",
+                100,
+                &[(100, 200), (300, 400), (500, 600)],
+            ));
+            l.extend(gtf(
+                "TINY",
+                "g_LOCUS",
+                1,
+                &[(100, 200), (350, 400), (500, 600)],
+            ));
             l.extend(gtf("SOLO", "g_OTHER", 1, &[(9000, 9100), (9300, 9400)]));
             l
         };
@@ -9208,17 +11596,23 @@ mod tests {
         };
         // TINY is 1% of BIG, so F = 0.02 removes it; SOLO is its own locus's dominant and survives
         let mut l = build();
-        let (_, _, frac, _, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.02, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        let (_, _, frac, _, _) = polish_gtf_lines(
+            &mut l, "full", 0.0, 0.02, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(frac, 1);
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
         // F below TINY's share keeps everything
         let mut l = build();
-        let (_, _, frac, _, _) = polish_gtf_lines(&mut l, "full", 0.0, 0.005, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        let (_, _, frac, _, _) = polish_gtf_lines(
+            &mut l, "full", 0.0, 0.005, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(frac, 0);
         assert_eq!(tids(&l), vec!["BIG", "TINY", "SOLO"]);
         // even a huge F never empties a locus: the dominant of each gene_id survives
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.99, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.99, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(tids(&l), vec!["BIG", "SOLO"]);
     }
 
@@ -9230,10 +11624,14 @@ mod tests {
             let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
             let mut v = vec![format!(
                 "chr1\trustle\ttranscript\t{}\t{}\t.\t+\t.\t{at} reads \"{reads}\";",
-                exons[0].0, exons[exons.len() - 1].1
+                exons[0].0,
+                exons[exons.len() - 1].1
             )];
             for (k, (s, e)) in exons.iter().enumerate() {
-                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";", k + 1));
+                v.push(format!(
+                    "chr1\trustle\texon\t{s}\t{e}\t.\t+\t.\t{at} exon_number \"{}\";",
+                    k + 1
+                ));
             }
             v
         }
@@ -9253,15 +11651,21 @@ mod tests {
         };
         // tolerance 0 (the default): nothing merges
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(tids(&l).len(), 3);
         // tolerance 5: WOBBLE folds into BEST (the better-supported member survives), FAR does not
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0, 0.0);
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0, 0.0,
+        );
         assert_eq!(tids(&l), vec!["BEST", "FAR"]);
         // tolerance 10: FAR folds in too
         let mut l = build();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 10, false, 0, 0.0);
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 10, false, 0, 0.0,
+        );
         assert_eq!(tids(&l), vec!["BEST"]);
     }
 
@@ -9279,7 +11683,9 @@ mod tests {
                 exons[0].0, exons[exons.len() - 1].1
             )];
             for (a, b) in exons {
-                v.push(format!("c\tr\texon\t{a}\t{b}\t.\t+\t.\tgene_id \"G\"; transcript_id \"{tid}\";"));
+                v.push(format!(
+                    "c\tr\texon\t{a}\t{b}\t.\t+\t.\tgene_id \"G\"; transcript_id \"{tid}\";"
+                ));
             }
             v
         };
@@ -9287,19 +11693,35 @@ mod tests {
         // reads — its middle exon contains SPLICED's 401-499 intron, and its chain is NOT a contiguous
         // sub-chain of SPLICED's (it skips one junction), so the ISM pass leaves it to this rule.
         let base = || {
-            let mut l = mk("SPLICED", 50, &[(100, 200), (300, 400), (500, 600), (700, 800)]);
+            let mut l = mk(
+                "SPLICED",
+                50,
+                &[(100, 200), (300, 400), (500, 600), (700, 800)],
+            );
             l.extend(mk("RETAIN", 4, &[(100, 200), (300, 600), (700, 800)]));
             l
         };
         let mut l = base();
-        let (_, _, _, _, n_ret) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 10.0);
+        let (_, _, _, _, n_ret) = polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 10.0,
+        );
         assert_eq!(n_ret, 1, "50 >= 10 x 4: the read-through chain is dropped");
-        assert!(!l.iter().any(|x| x.contains("\"RETAIN\"")) && l.iter().any(|x| x.contains("\"SPLICED\"")));
+        assert!(
+            !l.iter().any(|x| x.contains("\"RETAIN\""))
+                && l.iter().any(|x| x.contains("\"SPLICED\""))
+        );
         let mut l = base();
-        let (_, _, _, _, n_ret) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 20.0);
-        assert_eq!(n_ret, 0, "50 < 20 x 4: a minor isoform with real share survives");
+        let (_, _, _, _, n_ret) = polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 20.0,
+        );
+        assert_eq!(
+            n_ret, 0,
+            "50 < 20 x 4: a minor isoform with real share survives"
+        );
         let mut l = base();
-        let (_, _, _, _, n_ret) = polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        let (_, _, _, _, n_ret) = polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(n_ret, 0, "ratio 0 is off");
     }
 
@@ -9309,10 +11731,14 @@ mod tests {
             let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
             let mut v = vec![format!(
                 "chr1\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\";",
-                exons[0].0, exons[exons.len() - 1].1
+                exons[0].0,
+                exons[exons.len() - 1].1
             )];
             for (k, (s, e)) in exons.iter().enumerate() {
-                v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";", k + 1));
+                v.push(format!(
+                    "chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";",
+                    k + 1
+                ));
             }
             v
         }
@@ -9326,19 +11752,23 @@ mod tests {
         let shadow = || {
             let mut l = Vec::new();
             l.extend(gtf("PLUS", "+", 20, &[(100, 200), (300, 400), (500, 600)]));
-            l.extend(gtf("SAMEEX", "+", 20, &[(150, 190)]));  // same-strand exon  -> drop
-            l.extend(gtf("ANTIEX", "-", 20, &[(150, 190)]));  // anti-strand exon  -> drop
-            l.extend(gtf("SAMEIN", "+", 20, &[(220, 280)]));  // same-strand intron (span) -> drop
-            l.extend(gtf("ANTIIN", "-", 20, &[(220, 280)]));  // anti-strand SPAN only -> KEEP
-            l.extend(gtf("FAR", "+", 20, &[(9000, 9500)]));   // no overlap -> KEEP
+            l.extend(gtf("SAMEEX", "+", 20, &[(150, 190)])); // same-strand exon  -> drop
+            l.extend(gtf("ANTIEX", "-", 20, &[(150, 190)])); // anti-strand exon  -> drop
+            l.extend(gtf("SAMEIN", "+", 20, &[(220, 280)])); // same-strand intron (span) -> drop
+            l.extend(gtf("ANTIIN", "-", 20, &[(220, 280)])); // anti-strand SPAN only -> KEEP
+            l.extend(gtf("FAR", "+", 20, &[(9000, 9500)])); // no overlap -> KEEP
             l
         };
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0);
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(tids(&l), vec!["PLUS", "ANTIIN", "FAR"]);
         // shadow off leaves them all
         let mut l = shadow();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
         assert_eq!(tids(&l).len(), 6);
 
         // ISM escape: FRAG's chain is a sub-chain of DEEP's; 10 reads is below DEEP's 100 but reaches the
@@ -9351,15 +11781,33 @@ mod tests {
             l
         };
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0);
-        assert_eq!(tids(&l), vec!["DEEP", "OTHER"], "without the escape the fragment is absorbed");
+        polish_gtf_lines(
+            &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
+        );
+        assert_eq!(
+            tids(&l),
+            vec!["DEEP", "OTHER"],
+            "without the escape the fragment is absorbed"
+        );
         let mut l = ism();
-        polish_gtf_lines(&mut l, "full", 0.10, 0.0, false, true, false, 1.0, false, 0, false, 0, 0.0);
-        assert_eq!(tids(&l), vec!["DEEP", "FRAG", "OTHER"], "with the escape a well-supported fragment survives");
+        polish_gtf_lines(
+            &mut l, "full", 0.10, 0.0, false, true, false, 1.0, false, 0, false, 0, 0.0,
+        );
+        assert_eq!(
+            tids(&l),
+            vec!["DEEP", "FRAG", "OTHER"],
+            "with the escape a well-supported fragment survives"
+        );
     }
 
     /// `--polish-subchain` fixtures: one transcript as GTF lines (1-based inclusive exons, `c`/`G` defaults).
-    fn sc_gtf(tid: &str, gene: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+    fn sc_gtf(
+        tid: &str,
+        gene: &str,
+        strand: &str,
+        reads: u64,
+        exons: &[(i64, i64)],
+    ) -> Vec<String> {
         let at = format!("gene_id \"{gene}\"; transcript_id \"{tid}\";");
         let mut v = vec![format!(
             "c\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\"; matched_reads \"0\";",
@@ -9367,14 +11815,21 @@ mod tests {
             exons[exons.len() - 1].1
         )];
         for (k, (s, e)) in exons.iter().enumerate() {
-            v.push(format!("c\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";", k + 1));
+            v.push(format!(
+                "c\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";",
+                k + 1
+            ));
         }
         v
     }
     /// X: 4 exons 101-200 / 301-400 / 501-600 / 701-800 (introns 201-300, 401-500, 601-700), 10 reads.
     const SC_X: [(i64, i64); 4] = [(101, 200), (301, 400), (501, 600), (701, 800)];
     fn sc_flags(l: &[String]) -> Vec<(String, String, String)> {
-        subchain_flags(l).0.into_iter().map(|(y, (x, m))| (y, x, m.to_string())).collect()
+        subchain_flags(l)
+            .0
+            .into_iter()
+            .map(|(y, (x, m))| (y, x, m.to_string()))
+            .collect()
     }
     fn sc_one(y: &str, x: &str, m: &str) -> Vec<(String, String, String)> {
         vec![(y.to_string(), x.to_string(), m.to_string())]
@@ -9384,12 +11839,24 @@ mod tests {
     fn subchain_needs_a_contiguous_block_of_exact_junctions() {
         // X's last two junctions, ends inside X's exons 2 and 4: a contiguous block lacking X's first junction
         let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
-        l.extend(sc_gtf("Y", "G", "+", 4, &[(350, 400), (501, 600), (701, 750)]));
+        l.extend(sc_gtf(
+            "Y",
+            "G",
+            "+",
+            4,
+            &[(350, 400), (501, 600), (701, 750)],
+        ));
         assert_eq!(sc_flags(&l), sc_one("Y", "X", "5p"));
         assert_eq!(subchain_flags(&l).1, 2, "two multi-exon transcripts");
         // junctions 1 and 3 of X with junction 2 skipped over (a retained intron): not a contiguous block
         let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
-        l.extend(sc_gtf("Y", "G", "+", 4, &[(150, 200), (301, 600), (701, 750)]));
+        l.extend(sc_gtf(
+            "Y",
+            "G",
+            "+",
+            4,
+            &[(150, 200), (301, 600), (701, 750)],
+        ));
         assert!(sc_flags(&l).is_empty());
         // one junction 1 bp off X's (donor 401 instead of 400): no exact match, not flagged
         let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
@@ -9400,7 +11867,13 @@ mod tests {
     #[test]
     fn subchain_end_tolerance_is_10_bp_at_both_ends() {
         // Y = X's intron 2 alone; X's exon 2 starts at 301 and exon 3 ends at 600
-        for (start, end, hit) in [(291, 600, true), (290, 600, false), (301, 610, true), (301, 611, false), (291, 610, true)] {
+        for (start, end, hit) in [
+            (291, 600, true),
+            (290, 600, false),
+            (301, 610, true),
+            (301, 611, false),
+            (291, 610, true),
+        ] {
             let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
             l.extend(sc_gtf("Y", "G", "+", 4, &[(start, 400), (501, end)]));
             assert_eq!(!sc_flags(&l).is_empty(), hit, "Y {start}-{end}");
@@ -9409,10 +11882,20 @@ mod tests {
 
     #[test]
     fn subchain_needs_the_container_to_carry_half_the_reads() {
-        for (rx, ry, hit) in [(5, 10, true), (5, 11, false), (0, 0, true), (0, 1, false), (6, 11, true)] {
+        for (rx, ry, hit) in [
+            (5, 10, true),
+            (5, 11, false),
+            (0, 0, true),
+            (0, 1, false),
+            (6, 11, true),
+        ] {
             let mut l = sc_gtf("X", "G", "+", rx, &SC_X);
             l.extend(sc_gtf("Y", "G", "+", ry, &[(301, 400), (501, 600)]));
-            assert_eq!(!sc_flags(&l).is_empty(), hit, "reads(x) {rx}, reads(y) {ry}");
+            assert_eq!(
+                !sc_flags(&l).is_empty(),
+                hit,
+                "reads(x) {rx}, reads(y) {ry}"
+            );
         }
     }
 
@@ -9438,23 +11921,55 @@ mod tests {
         // three containers of Y (X's intron 2); B has the most reads
         let base = |ra: u64, rb: u64, rc: u64| {
             let mut l = sc_gtf("C", "G", "+", rc, &SC_X);
-            l.extend(sc_gtf("A", "G", "+", ra, &[(101, 200), (301, 400), (501, 600)]));
-            l.extend(sc_gtf("B", "G", "+", rb, &[(301, 400), (501, 600), (701, 800)]));
+            l.extend(sc_gtf(
+                "A",
+                "G",
+                "+",
+                ra,
+                &[(101, 200), (301, 400), (501, 600)],
+            ));
+            l.extend(sc_gtf(
+                "B",
+                "G",
+                "+",
+                rb,
+                &[(301, 400), (501, 600), (701, 800)],
+            ));
             l.extend(sc_gtf("Y", "G", "+", 4, &[(301, 400), (501, 600)]));
             l
         };
-        let y_of = |l: &[String]| sc_flags(l).into_iter().find(|f| f.0 == "Y").map(|f| (f.1, f.2));
+        let y_of = |l: &[String]| {
+            sc_flags(l)
+                .into_iter()
+                .find(|f| f.0 == "Y")
+                .map(|f| (f.1, f.2))
+        };
         // B (Y lacks its right junction) beats C (both ends) and A (its left junction) on reads
-        assert_eq!(y_of(&base(5, 9, 7)), Some(("B".to_string(), "3p".to_string())));
+        assert_eq!(
+            y_of(&base(5, 9, 7)),
+            Some(("B".to_string(), "3p".to_string()))
+        );
         // equal reads: the first transcript_id in byte order (A before B before C), whatever the line order
-        assert_eq!(y_of(&base(9, 9, 9)), Some(("A".to_string(), "5p".to_string())));
-        assert_eq!(y_of(&base(8, 9, 9)), Some(("B".to_string(), "3p".to_string())));
+        assert_eq!(
+            y_of(&base(9, 9, 9)),
+            Some(("A".to_string(), "5p".to_string()))
+        );
+        assert_eq!(
+            y_of(&base(8, 9, 9)),
+            Some(("B".to_string(), "3p".to_string()))
+        );
         // a container below half of Y's reads is not a candidate, however long
-        assert_eq!(y_of(&base(1, 1, 2)), Some(("C".to_string(), "both".to_string())));
+        assert_eq!(
+            y_of(&base(1, 1, 2)),
+            Some(("C".to_string(), "both".to_string()))
+        );
         // A and B are themselves sub-chains of C, and still name containers of Y: every flag is decided on the
         // input set
         let f = sc_flags(&base(9, 9, 9));
-        assert_eq!(f.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["A", "B", "Y"]);
+        assert_eq!(
+            f.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+            vec!["A", "B", "Y"]
+        );
     }
 
     #[test]
@@ -9470,16 +11985,29 @@ mod tests {
         let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
         l.extend(sc_gtf("OTHERGENE", "H", "+", 4, &y));
         l.extend(sc_gtf("OTHERSTRAND", "G", "-", 4, &y));
-        l.extend(sc_gtf("OTHERCONTIG", "G", "+", 4, &y).into_iter().map(|s| s.replacen("c\t", "d\t", 1)));
+        l.extend(
+            sc_gtf("OTHERCONTIG", "G", "+", 4, &y)
+                .into_iter()
+                .map(|s| s.replacen("c\t", "d\t", 1)),
+        );
         assert!(sc_flags(&l).is_empty());
     }
 
     #[test]
     fn subchain_reads_attribute_is_matched_at_an_attribute_boundary() {
-        assert_eq!(gtf_attr_digits("gene_id \"g\"; matched_reads \"7\"; reads \"3\";", "reads"), Some(3));
+        assert_eq!(
+            gtf_attr_digits("gene_id \"g\"; matched_reads \"7\"; reads \"3\";", "reads"),
+            Some(3)
+        );
         assert_eq!(gtf_attr_digits("reads \"12\"; x \"1\";", "reads"), Some(12));
-        assert_eq!(gtf_attr_digits("gene_id \"g\"; matched_reads \"7\";", "reads"), None);
-        assert_eq!(gtf_attr_digits("gene_id \"g\"; reads \"1.5\"; reads \"2\";", "reads"), Some(2));
+        assert_eq!(
+            gtf_attr_digits("gene_id \"g\"; matched_reads \"7\";", "reads"),
+            None
+        );
+        assert_eq!(
+            gtf_attr_digits("gene_id \"g\"; reads \"1.5\"; reads \"2\";", "reads"),
+            Some(2)
+        );
     }
 
     #[test]
@@ -9496,14 +12024,21 @@ mod tests {
         subchain_tag(&mut t, &flags);
         for (a, b) in l0.iter().zip(t.iter()) {
             if a.contains("\ttranscript\t") && a.contains("transcript_id \"Y\"") {
-                assert_eq!(*b, format!("{a} subchain_of \"X\"; subchain_missing \"5p\";"));
+                assert_eq!(
+                    *b,
+                    format!("{a} subchain_of \"X\"; subchain_missing \"5p\";")
+                );
             } else {
                 assert_eq!(a, b);
             }
         }
         let mut d = l0.clone();
         subchain_drop(&mut d, &flags);
-        let kept: Vec<String> = l0.iter().filter(|x| !x.contains("transcript_id \"Y\"")).cloned().collect();
+        let kept: Vec<String> = l0
+            .iter()
+            .filter(|x| !x.contains("transcript_id \"Y\""))
+            .cloned()
+            .collect();
         assert_eq!(d, kept);
         assert_eq!(d.len(), l0.len() - 3);
     }
@@ -9516,17 +12051,48 @@ mod tests {
     fn tss_null(h: f64, r_m2: f64, bg: (u64, u64)) -> TssNull {
         let mut r = vec![1.0; TSS_W];
         r[(TSS_TOL - 2) as usize] = r_m2;
-        TssNull { h, a: 0.0, r, bg_capped: bg.0, bg_n: bg.1 }
+        TssNull {
+            h,
+            a: 0.0,
+            r,
+            bg_capped: bg.0,
+            bg_n: bg.1,
+        }
     }
     /// `k` primary reads on contig `c` (distinct 3' ends, so none deduplicates): 5' end `five` and 3' end `three`
     /// (1-based genomic; on `-` the 5' end is the right end), introns 1-based inclusive intronic bases.
-    fn tss_push(ev: &mut TssEvidence, minus: bool, five: i64, three: i64, introns_1b: &[(i64, i64)], k: usize, capped: bool) {
-        let introns: Vec<(u64, u64)> = introns_1b.iter().map(|&(a, b)| ((a - 1) as u64, b as u64)).collect();
+    fn tss_push(
+        ev: &mut TssEvidence,
+        minus: bool,
+        five: i64,
+        three: i64,
+        introns_1b: &[(i64, i64)],
+        k: usize,
+        capped: bool,
+    ) {
+        let introns: Vec<(u64, u64)> = introns_1b
+            .iter()
+            .map(|&(a, b)| ((a - 1) as u64, b as u64))
+            .collect();
         for i in 0..k as i64 {
             if minus {
-                ev.push("c", true, (three - 1 - i) as u64, five as u64, &introns, capped);
+                ev.push(
+                    "c",
+                    true,
+                    (three - 1 - i) as u64,
+                    five as u64,
+                    &introns,
+                    capped,
+                );
             } else {
-                ev.push("c", false, (five - 1) as u64, (three + i) as u64, &introns, capped);
+                ev.push(
+                    "c",
+                    false,
+                    (five - 1) as u64,
+                    (three + i) as u64,
+                    &introns,
+                    capped,
+                );
             }
         }
     }
@@ -9535,7 +12101,9 @@ mod tests {
     }
     /// The driver's polish (full, fraction 0.02, shadow, quantile 0.82, ISM 0.7, retained 10) on `l`.
     fn tss_polish(l: &[String]) -> (DetHashSet<String>, DetHashMap<String, &'static str>) {
-        let (d, s, _) = polish_drop_set(l, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0);
+        let (d, s, _) = polish_drop_set(
+            l, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0,
+        );
         (d, s)
     }
     /// Case-A fixture, `+`: X = 101-200 / 1001-1100 / 1201-1300 (10 reads), Y = 501-1100 / 1201-1300 (2 reads, dropped
@@ -9546,7 +12114,15 @@ mod tests {
         let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
         l.extend(sc_gtf("Y", "G", "+", 2, &TSS_Y));
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, x_capped);
+        tss_push(
+            &mut ev,
+            false,
+            101,
+            1300,
+            &[(201, 1000), (1101, 1200)],
+            10,
+            x_capped,
+        );
         (l, ev)
     }
     /// The proof WITHOUT the no-cap gate (the mechanics tests run on uncapped fixtures; the gate has its own test).
@@ -9559,17 +12135,32 @@ mod tests {
     fn tss_nb_tail_is_the_poisson_tail_at_zero_dispersion_and_matches_the_pmf_sum() {
         // P(X >= 3 | mu = 1) = 1 - 2.5/e
         let want = 1.0 - 2.5 / std::f64::consts::E;
-        assert!((tss_nb_sf(3, 1.0, 0.0) - want).abs() < 1e-12, "{}", tss_nb_sf(3, 1.0, 0.0));
-        assert!((tss_nb_sf(3, 1.0, 1e-9) - want).abs() < 1e-7, "a -> 0 is the Poisson limit");
+        assert!(
+            (tss_nb_sf(3, 1.0, 0.0) - want).abs() < 1e-12,
+            "{}",
+            tss_nb_sf(3, 1.0, 0.0)
+        );
+        assert!(
+            (tss_nb_sf(3, 1.0, 1e-9) - want).abs() < 1e-7,
+            "a -> 0 is the Poisson limit"
+        );
         assert_eq!(tss_nb_sf(0, 1.0, 1.0), 1.0);
         // NB(mu = 0.5, a = 1.15): 1 - sum_{k<4} pmf(k)
         let (mu, a) = (0.5f64, 1.15f64);
         let r = 1.0 / a;
         let q = mu / (r + mu);
-        let pmf = |k: u64| (tss_ln_gamma(k as f64 + r) - tss_ln_gamma(r) - tss_ln_gamma(k as f64 + 1.0)
-            + r * (r / (r + mu)).ln() + k as f64 * q.ln()).exp();
+        let pmf = |k: u64| {
+            (tss_ln_gamma(k as f64 + r) - tss_ln_gamma(r) - tss_ln_gamma(k as f64 + 1.0)
+                + r * (r / (r + mu)).ln()
+                + k as f64 * q.ln())
+            .exp()
+        };
         let want = 1.0 - (0..4).map(pmf).sum::<f64>();
-        assert!((tss_nb_sf(4, mu, a) - want).abs() < 1e-12 * want.max(1e-300) + 1e-15, "{} vs {want}", tss_nb_sf(4, mu, a));
+        assert!(
+            (tss_nb_sf(4, mu, a) - want).abs() < 1e-12 * want.max(1e-300) + 1e-15,
+            "{} vs {want}",
+            tss_nb_sf(4, mu, a)
+        );
         // deep tail, relative accuracy
         let tail: f64 = (30..200).map(pmf).sum();
         assert!(((tss_nb_sf(30, mu, a) - tail) / tail).abs() < 1e-9);
@@ -9590,9 +12181,20 @@ mod tests {
         ev.push("c", true, 99, 1300, &[(200, 1000)], false); // the other strand is another key
         let r = &ev.by_chrom["c"];
         assert_eq!(r.len(), 2);
-        assert_eq!((r[0].o5, r[0].capped, r[0].oin.clone()), (100, true, vec![(201, 1000)]));
-        assert_eq!((r[1].o5, r[1].oin.clone()), (-1300, vec![(-1000, -201)]), "- : o5 = -end, introns mirrored");
-        assert_eq!((r[0].o3, r[1].o3), (1300, -100), "o3 = end on +, -(start + 1) on - (1-based, oriented)");
+        assert_eq!(
+            (r[0].o5, r[0].capped, r[0].oin.clone()),
+            (100, true, vec![(201, 1000)])
+        );
+        assert_eq!(
+            (r[1].o5, r[1].oin.clone()),
+            (-1300, vec![(-1000, -201)]),
+            "- : o5 = -end, introns mirrored"
+        );
+        assert_eq!(
+            (r[0].o3, r[1].o3),
+            (1300, -100),
+            "o3 = end on +, -(start + 1) on - (1-based, oriented)"
+        );
         let mut other = TssEvidence::default();
         other.push("c", false, 99, 1300, &[(200, 1000)], false);
         other.push("c", false, 50, 1300, &[(200, 1000)], false);
@@ -9600,14 +12202,22 @@ mod tests {
         assert_eq!(ev.len(), 3, "absorb skips a key already held");
         // admission: primary spliced only
         let exons = [(99u64, 200u64), (1000, 1300)];
-        let ops = [Op::new(K::SoftClip, 1), Op::new(K::Match, 101), Op::new(K::Skip, 800), Op::new(K::Match, 300)];
+        let ops = [
+            Op::new(K::SoftClip, 1),
+            Op::new(K::Match, 101),
+            Op::new(K::Skip, 800),
+            Op::new(K::Match, 300),
+        ];
         let seq = |_: usize| Some(b'G');
         let mut ev = TssEvidence::default();
         ev.push_alignment("c", Flags::SECONDARY, 99, &exons, &ops, 402, seq);
         ev.push_alignment("c", Flags::SUPPLEMENTARY, 99, &exons, &ops, 402, seq);
         ev.push_alignment("c", Flags::QC_FAIL, 99, &exons, &ops, 402, seq);
         ev.push_alignment("c", Flags::empty(), 99, &exons[..1], &ops, 402, seq);
-        assert!(ev.is_empty(), "secondary / supplementary / QC-fail / unspliced never enter");
+        assert!(
+            ev.is_empty(),
+            "secondary / supplementary / QC-fail / unspliced never enter"
+        );
         ev.push_alignment("c", Flags::empty(), 99, &exons, &ops, 402, seq);
         assert_eq!(ev.len(), 1);
         assert!(ev.by_chrom["c"][0].capped);
@@ -9619,14 +12229,34 @@ mod tests {
         let h2 = [Op::new(K::HardClip, 2), Op::new(K::Match, 10)];
         let m = [Op::new(K::Match, 10), Op::new(K::SoftClip, 2)];
         assert!(tss_cap_clip_t(&s3, false, 13, g));
-        assert!(!tss_cap_clip_t(&s4, false, 14, g), "4 bp is not the signature");
-        assert!(!tss_cap_clip_t(&h2, false, 10, g), "a hard clip has no bases");
-        assert!(!tss_cap_clip_t(&s3, false, 13, |i| Some(if i == 1 { b'A' } else { b'G' })), "G only");
-        assert!(!tss_cap_clip_t(&m, false, 12, g), "a forward read's 5' end is its first op");
-        assert!(tss_cap_clip_t(&m, true, 12, c), "reverse: the trailing clip, C in SEQ = G in the read");
+        assert!(
+            !tss_cap_clip_t(&s4, false, 14, g),
+            "4 bp is not the signature"
+        );
+        assert!(
+            !tss_cap_clip_t(&h2, false, 10, g),
+            "a hard clip has no bases"
+        );
+        assert!(
+            !tss_cap_clip_t(&s3, false, 13, |i| Some(if i == 1 { b'A' } else { b'G' })),
+            "G only"
+        );
+        assert!(
+            !tss_cap_clip_t(&m, false, 12, g),
+            "a forward read's 5' end is its first op"
+        );
+        assert!(
+            tss_cap_clip_t(&m, true, 12, c),
+            "reverse: the trailing clip, C in SEQ = G in the read"
+        );
         assert!(!tss_cap_clip_t(&m, true, 12, g));
     }
-    fn tss_cap_clip_t(ops: &[noodles_sam::alignment::record::cigar::Op], rev: bool, n: usize, b: impl Fn(usize) -> Option<u8>) -> bool {
+    fn tss_cap_clip_t(
+        ops: &[noodles_sam::alignment::record::cigar::Op],
+        rev: bool,
+        n: usize,
+        b: impl Fn(usize) -> Option<u8>,
+    ) -> bool {
         rustle::family::denovo_assemble::tss_cap_clip(ops, rev, n, b)
     }
 
@@ -9639,16 +12269,39 @@ mod tests {
         assert_eq!(p.at, vec![1, 2, 4, 4, 4]);
         // uniform starts over two internal exons -> a floored at 0; clumped starts -> a > 0
         let fit = |clump: bool| -> TssNull {
-            let mut l = sc_gtf("T", "G", "+", 10, &[(101, 200), (301, 700), (801, 1200), (1301, 1400)]);
+            let mut l = sc_gtf(
+                "T",
+                "G",
+                "+",
+                10,
+                &[(101, 200), (301, 700), (801, 1200), (1301, 1400)],
+            );
             l.extend(sc_gtf("U", "G", "+", 10, &[(2101, 2200), (2301, 2400)]));
             let mut ev = TssEvidence::default();
-            for (a, b, js) in [(301i64, 700i64, vec![(701i64, 800i64), (1201, 1300)]), (801, 1200, vec![(1201, 1300)])] {
+            for (a, b, js) in [
+                (301i64, 700i64, vec![(701i64, 800i64), (1201, 1300)]),
+                (801, 1200, vec![(1201, 1300)]),
+            ] {
                 // 1000 molecules cross both exons, so the at-risk count is nearly flat and uniform starts ARE a
                 // constant hazard
-                tss_push(&mut ev, false, 101, 1400, &[(201, 300), (701, 800), (1201, 1300)], 1000, false);
+                tss_push(
+                    &mut ev,
+                    false,
+                    101,
+                    1400,
+                    &[(201, 300), (701, 800), (1201, 1300)],
+                    1000,
+                    false,
+                );
                 let mut t = a;
                 while t <= b {
-                    let k = if clump && (t - a) % 84 == 0 { 8 } else if clump { 0 } else { 1 };
+                    let k = if clump && (t - a) % 84 == 0 {
+                        8
+                    } else if clump {
+                        0
+                    } else {
+                        1
+                    };
                     tss_push(&mut ev, false, t, 1400, &js, k, false);
                     t += if clump { 1 } else { 4 };
                 }
@@ -9665,7 +12318,11 @@ mod tests {
         // the stratum: rho = the largest r(t - c) over acceptors within TOL, else 1
         let n = tss_null(0.5, 100.0, (0, 0));
         let ce = tss_cum_expect(&n, 0, &[1, 1, 1, 1], &[3, 40]);
-        assert_eq!(ce, vec![0.0, 0.5, 50.5, 51.0, 51.5], "t = 1 is d = -2 from the acceptor at 3");
+        assert_eq!(
+            ce,
+            vec![0.0, 0.5, 50.5, 51.0, 51.5],
+            "t = 1 is d = -2 from the acceptor at 3"
+        );
     }
 
     #[test]
@@ -9679,7 +12336,11 @@ mod tests {
             assert_eq!(o.rescued.contains_key("Y"), proven, "k = {k}");
             assert_eq!(o.protect.contains("Y"), proven);
             if proven {
-                assert_eq!(o.rescued["Y"], ("ism", 700), "rescued at the ISM, 5' end = the window's mode");
+                assert_eq!(
+                    o.rescued["Y"],
+                    ("ism", 700),
+                    "rescued at the ISM, 5' end = the window's mode"
+                );
             }
         }
         // a larger candidate family turns the pass into a fail: p*29 = 5.723e-3, x8 < 0.05, x9 > 0.05
@@ -9688,8 +12349,20 @@ mod tests {
             tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 2, false);
             for i in 0..extra {
                 let g = format!("G{i}");
-                l.extend(sc_gtf(&format!("X{i}"), &g, "+", 10, &[(5101, 5200), (5301, 5400), (5501, 5600)]));
-                l.extend(sc_gtf(&format!("Y{i}"), &g, "+", 1, &[(5351, 5400), (5501, 5600)]));
+                l.extend(sc_gtf(
+                    &format!("X{i}"),
+                    &g,
+                    "+",
+                    10,
+                    &[(5101, 5200), (5301, 5400), (5501, 5600)],
+                ));
+                l.extend(sc_gtf(
+                    &format!("Y{i}"),
+                    &g,
+                    "+",
+                    1,
+                    &[(5351, 5400), (5501, 5600)],
+                ));
             }
             let o = tss_run(&l, &ev, "rescue", tss_null(0.01, 1.0, (0, 100)));
             assert_eq!(o.stats.candidates, 1 + extra);
@@ -9705,27 +12378,59 @@ mod tests {
         let (d, _) = tss_polish(&l);
         let (on, off, twins) = tss_emit(&l, &d, &o);
         assert!(twins.is_empty());
-        assert!(on.iter().any(|x| x.starts_with("c\trustle\ttranscript\t700\t1300\t") && x.contains("\"Y\"")));
-        assert!(on.iter().any(|x| x.starts_with("c\trustle\texon\t700\t1100\t") && x.contains("\"Y\"")));
+        assert!(on
+            .iter()
+            .any(|x| x.starts_with("c\trustle\ttranscript\t700\t1300\t") && x.contains("\"Y\"")));
+        assert!(on
+            .iter()
+            .any(|x| x.starts_with("c\trustle\texon\t700\t1100\t") && x.contains("\"Y\"")));
         assert!(!off.iter().any(|x| x.contains("\"Y\"")), "off drops Y");
         // F4: the 5' end is a mode among Y's OWN reads. A pile of another chain's reads (first junction J1, then a
         // junction Y lacks) at 690 outnumbers Y's own 2 starts at 695 in the proven window [675, 695]: the end is 695
         let (l, mut ev) = tss_fixture_a(false);
-        tss_push(&mut ev, false, 690, 1500, &[(1101, 1200), (1301, 1400)], 4, false);
+        tss_push(
+            &mut ev,
+            false,
+            690,
+            1500,
+            &[(1101, 1200), (1301, 1400)],
+            4,
+            false,
+        );
         tss_push(&mut ev, false, 695, 1300, &[(1101, 1200)], 2, false);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
-        assert_eq!(o.rescued["Y"], ("ism", 695), "own reads, not the window's overall mode (690)");
+        assert_eq!(
+            o.rescued["Y"],
+            ("ism", 695),
+            "own reads, not the window's overall mode (690)"
+        );
         assert_eq!(o.stats.proven_no_own_start, 0);
         // no own start in the proven window: the window proves another chain's TSS, not Y's -> Y stays dropped
         let (l, mut ev) = tss_fixture_a(false);
-        tss_push(&mut ev, false, 690, 1500, &[(1101, 1200), (1301, 1400)], 4, false);
+        tss_push(
+            &mut ev,
+            false,
+            690,
+            1500,
+            &[(1101, 1200), (1301, 1400)],
+            4,
+            false,
+        );
         tss_push(&mut ev, false, 900, 1300, &[(1101, 1200)], 1, false);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
         assert!(!o.rescued.contains_key("Y") && !o.protect.contains("Y"));
         assert_eq!(o.stats.proven_no_own_start, 1);
         // no own read at all: not protected, not rescued
         let (l, mut ev) = tss_fixture_a(false);
-        tss_push(&mut ev, false, 690, 1500, &[(1101, 1200), (1301, 1400)], 4, false);
+        tss_push(
+            &mut ev,
+            false,
+            690,
+            1500,
+            &[(1101, 1200), (1301, 1400)],
+            4,
+            false,
+        );
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
         assert!(!o.rescued.contains_key("Y") && !o.protect.contains("Y"));
         assert_eq!(o.stats.proven_no_own_start, 1);
@@ -9733,33 +12438,71 @@ mod tests {
         let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
         l.extend(sc_gtf("Y", "G", "+", 2, &[(151, 1100), (1201, 1300)]));
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, false);
+        tss_push(
+            &mut ev,
+            false,
+            101,
+            1300,
+            &[(201, 1000), (1101, 1200)],
+            10,
+            false,
+        );
         tss_push(&mut ev, false, 160, 1300, &[(1101, 1200)], 3, false);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
         assert_eq!((o.stats.proven, o.stats.in_scope), (1, 0));
         assert!(o.rescued.is_empty() && o.protect.is_empty());
         // the `-` strand mirror (p -> 3001 - p) takes the same decision and moves the genomic END
-        let mut l = sc_gtf("X", "G", "-", 10, &[(1701, 1800), (1901, 2000), (2801, 2900)]);
+        let mut l = sc_gtf(
+            "X",
+            "G",
+            "-",
+            10,
+            &[(1701, 1800), (1901, 2000), (2801, 2900)],
+        );
         l.extend(sc_gtf("Y", "G", "-", 2, &[(1701, 1800), (1901, 2500)]));
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, true, 2900, 1701, &[(1801, 1900), (2001, 2800)], 10, false);
+        tss_push(
+            &mut ev,
+            true,
+            2900,
+            1701,
+            &[(1801, 1900), (2001, 2800)],
+            10,
+            false,
+        );
         tss_push(&mut ev, true, 2301, 1701, &[(1801, 1900)], 2, false);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.01, 1.0, (0, 100)));
         assert_eq!(o.rescued.get("Y"), Some(&("ism", -2301)));
         let (d, _) = tss_polish(&l);
         let (on, _, _) = tss_emit(&l, &d, &o);
-        assert!(on.iter().any(|x| x.starts_with("c\trustle\ttranscript\t1701\t2301\t") && x.contains("\"Y\"")));
-        assert!(on.iter().any(|x| x.starts_with("c\trustle\texon\t1901\t2301\t") && x.contains("\"Y\"")));
+        assert!(on
+            .iter()
+            .any(|x| x.starts_with("c\trustle\ttranscript\t1701\t2301\t") && x.contains("\"Y\"")));
+        assert!(on
+            .iter()
+            .any(|x| x.starts_with("c\trustle\texon\t1901\t2301\t") && x.contains("\"Y\"")));
         // truncation at a constant hazard (1000 molecules enter X's exon k, one start every 5 bp) proves nothing
         let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
         l.extend(sc_gtf("Y", "G", "+", 2, &[(1011, 1100), (1201, 1300)]));
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 1000, false);
+        tss_push(
+            &mut ev,
+            false,
+            101,
+            1300,
+            &[(201, 1000), (1101, 1200)],
+            1000,
+            false,
+        );
         for t in (1001..=1100).step_by(5) {
             tss_push(&mut ev, false, t, 1300, &[(1101, 1200)], 1, false);
         }
         let o = tss_run(&l, &ev, "rescue", tss_null(2e-4, 1.0, (0, 100)));
-        assert_eq!((o.stats.candidates, o.stats.proven), (1, 0), "starts at the null's own hazard");
+        assert_eq!(
+            (o.stats.candidates, o.stats.proven),
+            (1, 0),
+            "starts at the null's own hazard"
+        );
     }
 
     #[test]
@@ -9774,14 +12517,20 @@ mod tests {
         }
         // cap signal (X's TSS cluster capped, bodies uncapped): an uncapped pile no longer proves, a capped one does;
         // without the signal (X uncapped) the uncapped pile proves (the NB fallback)
-        for (x_capped, y_capped, signal, proven) in
-            [(true, false, true, false), (true, true, true, true), (false, false, false, true)]
-        {
+        for (x_capped, y_capped, signal, proven) in [
+            (true, false, true, false),
+            (true, true, true, true),
+            (false, false, false, true),
+        ] {
             let (l, mut ev) = tss_fixture_a(x_capped);
             tss_push(&mut ev, false, 700, 1300, &[(1101, 1200)], 3, y_capped);
             let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (5, 100)));
             assert_eq!(o.stats.cap_signal, signal);
-            assert_eq!(o.rescued.contains_key("Y"), proven, "x capped {x_capped}, y capped {y_capped}");
+            assert_eq!(
+                o.rescued.contains_key("Y"),
+                proven,
+                "x capped {x_capped}, y capped {y_capped}"
+            );
         }
         // a background that is itself mostly capped is no cap signal
         let (l, mut ev) = tss_fixture_a(true);
@@ -9794,7 +12543,8 @@ mod tests {
     fn tss_rescue_undoes_only_ism_fraction_and_retained_drops_and_is_monotone() {
         // ISM (Y 2 reads vs X 10), fraction (Y 8 survives the ISM, the locus max is 1000), retained (Z's junction
         // 701-800 lies inside Y's first exon with 100 >= 10 x 8 reads)
-        let spike = |ev: &mut TssEvidence| tss_push(ev, false, 700, 1300, &[(1101, 1200)], 3, false);
+        let spike =
+            |ev: &mut TssEvidence| tss_push(ev, false, 700, 1300, &[(1101, 1200)], 3, false);
         let (l, mut ev) = tss_fixture_a(false);
         spike(&mut ev);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
@@ -9803,16 +12553,35 @@ mod tests {
         l.extend(sc_gtf("Y", "G", "+", 8, &TSS_Y));
         l.extend(sc_gtf("W", "G", "+", 1000, &[(2001, 2100), (2201, 2300)]));
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, false);
+        tss_push(
+            &mut ev,
+            false,
+            101,
+            1300,
+            &[(201, 1000), (1101, 1200)],
+            10,
+            false,
+        );
         spike(&mut ev);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
         assert_eq!(o.rescued.get("Y").map(|v| v.0), Some("frac"));
-        assert!(!o.rescued.contains_key("X"), "X is not a proven short form: it stays dropped");
+        assert!(
+            !o.rescued.contains_key("X"),
+            "X is not a proven short form: it stays dropped"
+        );
         let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
         l.extend(sc_gtf("Y", "G", "+", 8, &TSS_Y));
         l.extend(sc_gtf("Z", "G", "+", 100, &[(601, 700), (801, 900)]));
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, false, 101, 1300, &[(201, 1000), (1101, 1200)], 10, false);
+        tss_push(
+            &mut ev,
+            false,
+            101,
+            1300,
+            &[(201, 1000), (1101, 1200)],
+            10,
+            false,
+        );
         spike(&mut ev);
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
         assert_eq!(o.rescued.get("Y").map(|v| v.0), Some("ret"));
@@ -9821,14 +12590,19 @@ mod tests {
         spike(&mut ev);
         l.extend(sc_gtf("M", "H", "+", 1, &[(9001, 9100)])); // a mono-exonic transcript the floor drops
         l.extend(sc_gtf("V", "G", "+", 1, &[(1051, 1100), (1201, 1300)])); // unproven short form: stays dropped
-        // (tag and rescue only: split rewrites the chains it splits, see the split test)
+                                                                           // (tag and rescue only: split rewrites the chains it splits, see the split test)
         for mode in ["tag", "rescue"] {
             let (d, _) = tss_polish(&l);
             let o = tss_run(&l, &ev, mode, tss_null(0.001, 1.0, (0, 100)));
             let (on, off, _) = tss_emit(&l, &d, &o);
             let mut it = on.iter();
-            assert!(off.iter().all(|x| it.any(|y| y == x)), "{mode}: off is a subsequence of on");
-            assert!(!on.iter().any(|x| x.contains("\"V\"") || x.contains("\"M\"")));
+            assert!(
+                off.iter().all(|x| it.any(|y| y == x)),
+                "{mode}: off is a subsequence of on"
+            );
+            assert!(!on
+                .iter()
+                .any(|x| x.contains("\"V\"") || x.contains("\"M\"")));
             assert_eq!(on.iter().any(|x| x.contains("\"Y\"")), mode != "tag");
         }
         // off is the plain polish, byte for byte
@@ -9836,7 +12610,9 @@ mod tests {
         let o = tss_run(&l, &ev, "rescue", tss_null(0.001, 1.0, (0, 100)));
         let (_, off, _) = tss_emit(&l, &d, &o);
         let mut plain = l.clone();
-        polish_gtf_lines(&mut plain, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0);
+        polish_gtf_lines(
+            &mut plain, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0,
+        );
         assert_eq!(off, plain);
     }
 
@@ -9854,26 +12630,60 @@ mod tests {
                 tss_push(&mut ev, false, 5101, 5400, &[(5201, 5300)], 30, true);
             }
             let (d, s) = tss_polish(&l);
-            let o = tss_prove_with("c", &l, &d, &s, &tss_recs(&ev), "split", Some(tss_null(0.001, 1.0, (5, 100))));
+            let o = tss_prove_with(
+                "c",
+                &l,
+                &d,
+                &s,
+                &tss_recs(&ev),
+                "split",
+                Some(tss_null(0.001, 1.0, (5, 100))),
+            );
             let (on, _, _) = tss_emit(&l, &d, &o);
             (o, on)
         };
         let (o, on) = run(201, false, false);
-        assert_eq!(o.split.get("T"), Some(&vec![(101, 10), (201, 10)]), "two clusters with a valley");
-        assert_eq!(o.clusters.get("T").map(|s| s.as_str()), Some("101:0/10,201:0/10"));
-        let t2: Vec<&String> = on.iter().filter(|x| x.contains("transcript_id \"T_tss2\";")).collect();
+        assert_eq!(
+            o.split.get("T"),
+            Some(&vec![(101, 10), (201, 10)]),
+            "two clusters with a valley"
+        );
+        assert_eq!(
+            o.clusters.get("T").map(|s| s.as_str()),
+            Some("101:0/10,201:0/10")
+        );
+        let t2: Vec<&String> = on
+            .iter()
+            .filter(|x| x.contains("transcript_id \"T_tss2\";"))
+            .collect();
         assert_eq!(t2.len(), 3, "the twin: transcript + 2 exons");
-        assert!(t2[0].starts_with("c\trustle\ttranscript\t201\t500\t") && t2[0].contains("gene_id \"G\"") && t2[0].contains("reads \"10\""));
+        assert!(
+            t2[0].starts_with("c\trustle\ttranscript\t201\t500\t")
+                && t2[0].contains("gene_id \"G\"")
+                && t2[0].contains("reads \"10\"")
+        );
         assert!(t2[1].starts_with("c\trustle\texon\t201\t300\t"));
-        let tl = on.iter().find(|x| x.contains("transcript_id \"T\";") && x.contains("\ttranscript\t")).unwrap();
-        assert!(tl.starts_with("c\trustle\ttranscript\t101\t500\t") && tl.contains("reads \"10\""), "{tl}");
+        let tl = on
+            .iter()
+            .find(|x| x.contains("transcript_id \"T\";") && x.contains("\ttranscript\t"))
+            .unwrap();
+        assert!(
+            tl.starts_with("c\trustle\ttranscript\t101\t500\t") && tl.contains("reads \"10\""),
+            "{tl}"
+        );
         // the twin is neither an ISM fragment nor a sub-chain of T (equal chains)
         let (d, _) = tss_polish(&on);
         assert!(!d.contains("T_tss2") && !d.contains("T"));
         assert!(subchain_flags(&on).0.is_empty());
         let a = tss_attr_strings(&o);
-        assert_eq!(a["T"], " tss_clusters \"101:0/10,201:0/10\"; tss_split \"1/2\";");
-        assert_eq!(a["T_tss2"], " tss_clusters \"101:0/10,201:0/10\"; tss_split \"2/2\";");
+        assert_eq!(
+            a["T"],
+            " tss_clusters \"101:0/10,201:0/10\"; tss_split \"1/2\";"
+        );
+        assert_eq!(
+            a["T_tss2"],
+            " tss_clusters \"101:0/10,201:0/10\"; tss_split \"2/2\";"
+        );
         // 49 bp apart: no W-window fits between the clusters, so no valley: one cluster, no split
         let (o, _) = run(150, false, false);
         assert!(o.split.is_empty());
@@ -9894,14 +12704,33 @@ mod tests {
         o2.split.insert("T".to_string(), vec![(111, 10), (201, 10)]);
         let (on, off, twins) = tss_emit(&l, &d, &o2);
         assert_eq!(twins, vec![("T_tss2".to_string(), "T".to_string())]);
-        let t_off: Vec<&String> = off.iter().filter(|x| x.contains("transcript_id \"T\";")).collect();
-        let t_on: Vec<&String> = on.iter().filter(|x| x.contains("transcript_id \"T\";")).collect();
+        let t_off: Vec<&String> = off
+            .iter()
+            .filter(|x| x.contains("transcript_id \"T\";"))
+            .collect();
+        let t_on: Vec<&String> = on
+            .iter()
+            .filter(|x| x.contains("transcript_id \"T\";"))
+            .collect();
         assert_ne!(t_off, t_on, "the split chain is rewritten");
-        assert!(t_on[0].starts_with("c\trustle\ttranscript\t111\t500\t") && t_on[0].contains("reads \"10\""));
-        let rest_off: Vec<&String> = off.iter().filter(|x| !x.contains("transcript_id \"T\";")).collect();
-        let rest_on: Vec<&String> =
-            on.iter().filter(|x| !x.contains("transcript_id \"T\";") && !x.contains("transcript_id \"T_tss2\";")).collect();
-        assert_eq!(rest_off, rest_on, "every other off transcript unchanged, in order");
+        assert!(
+            t_on[0].starts_with("c\trustle\ttranscript\t111\t500\t")
+                && t_on[0].contains("reads \"10\"")
+        );
+        let rest_off: Vec<&String> = off
+            .iter()
+            .filter(|x| !x.contains("transcript_id \"T\";"))
+            .collect();
+        let rest_on: Vec<&String> = on
+            .iter()
+            .filter(|x| {
+                !x.contains("transcript_id \"T\";") && !x.contains("transcript_id \"T_tss2\";")
+            })
+            .collect();
+        assert_eq!(
+            rest_off, rest_on,
+            "every other off transcript unchanged, in order"
+        );
         assert!(o.split.contains_key("T"));
         // rescue mode never splits
         let l = sc_gtf("T", "G", "+", 20, &t);
@@ -9909,7 +12738,15 @@ mod tests {
         tss_push(&mut ev, false, 101, 500, &[(301, 400)], 10, false);
         tss_push(&mut ev, false, 201, 480, &[(301, 400)], 10, false);
         let (d, s) = tss_polish(&l);
-        let o = tss_prove_with("c", &l, &d, &s, &tss_recs(&ev), "rescue", Some(tss_null(0.001, 1.0, (0, 100))));
+        let o = tss_prove_with(
+            "c",
+            &l,
+            &d,
+            &s,
+            &tss_recs(&ev),
+            "rescue",
+            Some(tss_null(0.001, 1.0, (0, 100))),
+        );
         assert!(o.split.is_empty() && o.clusters.contains_key("T"));
     }
 
@@ -9925,14 +12762,28 @@ mod tests {
         let (d, s) = tss_polish(&l);
         let null = || Some(tss_null(0.001, 1.0, (0, 100)));
         let ungated = tss_prove_with("c", &l, &d, &s, &tss_recs(&ev), "split", null());
-        assert!(!ungated.stats.cap_signal && ungated.rescued.contains_key("Y") && ungated.split.contains_key("T"));
+        assert!(
+            !ungated.stats.cap_signal
+                && ungated.rescued.contains_key("Y")
+                && ungated.split.contains_key("T")
+        );
         let tag = tss_decide_with("c", &l, &d, &s, &tss_recs(&ev), "tag", null());
         for mode in ["rescue", "split"] {
             let o = tss_decide_with("c", &l, &d, &s, &tss_recs(&ev), mode, null());
             assert!(!o.stats.applied, "{mode}");
-            assert!(o.rescued.is_empty() && o.split.is_empty() && o.protect.is_empty(), "{mode}");
-            assert_eq!(o.clusters, tag.clusters, "{mode}: the tag attributes are still written");
-            assert_eq!(tss_emit(&l, &d, &o).0, tss_emit(&l, &d, &tag).0, "{mode}: lines = tag's");
+            assert!(
+                o.rescued.is_empty() && o.split.is_empty() && o.protect.is_empty(),
+                "{mode}"
+            );
+            assert_eq!(
+                o.clusters, tag.clusters,
+                "{mode}: the tag attributes are still written"
+            );
+            assert_eq!(
+                tss_emit(&l, &d, &o).0,
+                tss_emit(&l, &d, &tag).0,
+                "{mode}: lines = tag's"
+            );
             assert_eq!(o.stats.withheld_rescued, 1);
             assert_eq!(o.stats.withheld_split, usize::from(mode == "split"));
             assert_eq!((o.stats.rescued_ism, o.stats.split_chains), (0, 0));
@@ -9962,8 +12813,14 @@ mod tests {
         let (d, _) = tss_polish(&l);
         let (on, _, _) = tss_emit(&l, &d, &o);
         assert_eq!(sc_flags(&on), sc_one("Y", "X", "5p"));
-        let raw_y: Vec<String> = sc_gtf("X", "G", "+", 10, &TSS_X).into_iter().chain(sc_gtf("Y", "G", "+", 2, &TSS_Y)).collect();
-        assert!(sc_flags(&raw_y).is_empty(), "at its raw 5' end Y is not end-compatible");
+        let raw_y: Vec<String> = sc_gtf("X", "G", "+", 10, &TSS_X)
+            .into_iter()
+            .chain(sc_gtf("Y", "G", "+", 2, &TSS_Y))
+            .collect();
+        assert!(
+            sc_flags(&raw_y).is_empty(),
+            "at its raw 5' end Y is not end-compatible"
+        );
         // drop spares it (the proven in-scope guard), tag keeps the flag
         let mut f = subchain_flags(&on).0;
         let protect: DetHashSet<String> = o.protect.iter().cloned().collect();
@@ -9974,7 +12831,8 @@ mod tests {
 
     #[test]
     fn tss_subchain_guard_spares_proven_forms_only_under_drop() {
-        let mut f: std::collections::BTreeMap<String, (String, &'static str)> = std::collections::BTreeMap::new();
+        let mut f: std::collections::BTreeMap<String, (String, &'static str)> =
+            std::collections::BTreeMap::new();
         f.insert("Y1".into(), ("X".into(), "5p"));
         f.insert("Y2".into(), ("X".into(), "5p"));
         f.insert("T".into(), ("X".into(), "3p"));
@@ -9983,7 +12841,11 @@ mod tests {
         assert_eq!(tss_subchain_guard(&mut d, &protect, true), 1);
         assert_eq!(d.keys().cloned().collect::<Vec<_>>(), vec!["T", "Y2"]);
         let mut t = f.clone();
-        assert_eq!(tss_subchain_guard(&mut t, &protect, false), 0, "tag is structural");
+        assert_eq!(
+            tss_subchain_guard(&mut t, &protect, false),
+            0,
+            "tag is structural"
+        );
         assert_eq!(t, f);
     }
 
@@ -9999,7 +12861,15 @@ mod tests {
         // its acceptor 301 (links); truncated ones pile at 299 (d = -2) far above the exon-body hazard
         let l = sc_gtf("T", "G", "+", 10, &[(101, 200), (301, 700), (801, 900)]);
         let mut ev = TssEvidence::default();
-        tss_push(&mut ev, false, 101, 900, &[(201, 300), (701, 800)], 1000, false);
+        tss_push(
+            &mut ev,
+            false,
+            101,
+            900,
+            &[(201, 300), (701, 800)],
+            1000,
+            false,
+        );
         tss_push(&mut ev, false, 299, 900, &[(701, 800)], 50, false);
         let mut t = 320;
         while t <= 700 {
@@ -10011,7 +12881,11 @@ mod tests {
         let null = tss_fit_null(&base, &tss_index(&tss_recs(&ev))).expect("fitted");
         let r_m2 = null.r[(TSS_TOL - 2) as usize];
         assert!(r_m2 > 20.0, "r(-2) {r_m2}");
-        assert!(null.r.iter().enumerate().all(|(i, &x)| i == (TSS_TOL - 2) as usize || x < r_m2));
+        assert!(null
+            .r
+            .iter()
+            .enumerate()
+            .all(|(i, &x)| i == (TSS_TOL - 2) as usize || x < r_m2));
     }
 
     // ------------------------------------------------------------------------------------------ --polish-tes
@@ -10024,13 +12898,37 @@ mod tests {
         s
     }
     /// `k` primary reads with 3' end `three` (1-based genomic; on `-` the 3' end is the LEFT end) and distinct 5' ends.
-    fn tes_push(ev: &mut TssEvidence, minus: bool, five: i64, three: i64, introns_1b: &[(i64, i64)], k: usize) {
-        let introns: Vec<(u64, u64)> = introns_1b.iter().map(|&(a, b)| ((a - 1) as u64, b as u64)).collect();
+    fn tes_push(
+        ev: &mut TssEvidence,
+        minus: bool,
+        five: i64,
+        three: i64,
+        introns_1b: &[(i64, i64)],
+        k: usize,
+    ) {
+        let introns: Vec<(u64, u64)> = introns_1b
+            .iter()
+            .map(|&(a, b)| ((a - 1) as u64, b as u64))
+            .collect();
         for i in 0..k as i64 {
             if minus {
-                ev.push("c", true, (three - 1) as u64, (five - i) as u64, &introns, false);
+                ev.push(
+                    "c",
+                    true,
+                    (three - 1) as u64,
+                    (five - i) as u64,
+                    &introns,
+                    false,
+                );
             } else {
-                ev.push("c", false, (five - 1 + i) as u64, three as u64, &introns, false);
+                ev.push(
+                    "c",
+                    false,
+                    (five - 1 + i) as u64,
+                    three as u64,
+                    &introns,
+                    false,
+                );
             }
         }
     }
@@ -10043,8 +12941,14 @@ mod tests {
             let s = tes_seq(2000, &[(at, "AATAAA")]);
             assert_eq!(tes_pas(&s, false, c), want, "AATAAA at {at}");
         }
-        assert!(tes_pas(&tes_seq(2000, &[(970, "ATTAAA")]), false, c), "ATTAAA is canonical");
-        assert!(!tes_pas(&tes_seq(2000, &[(970, "AGTAAA")]), false, c), "a variant hexamer is not");
+        assert!(
+            tes_pas(&tes_seq(2000, &[(970, "ATTAAA")]), false, c),
+            "ATTAAA is canonical"
+        );
+        assert!(
+            !tes_pas(&tes_seq(2000, &[(970, "AGTAAA")]), false, c),
+            "a variant hexamer is not"
+        );
         // `-`: transcript orientation is the reverse complement (genomic TTTATT at c+10..c+35 reads AATAAA)
         assert!(tes_pas(&tes_seq(2000, &[(1020, "TTTATT")]), true, -c));
         assert!(!tes_pas(&tes_seq(2000, &[(1020, "AATAAA")]), true, -c));
@@ -10052,28 +12956,69 @@ mod tests {
         let a12 = "AAACAAACACACACACACAC"; // 12 A, longest run 3
         assert_eq!(a12.bytes().filter(|&b| b == b'A').count(), 12);
         assert!(tes_primed(&tes_seq(2000, &[(1001, a12)]), false, c));
-        assert!(!tes_primed(&tes_seq(2000, &[(1001, "ACACACACACACACACACAC")]), false, c), "10 A");
-        assert!(!tes_primed(&tes_seq(2000, &[(1001, "AACACACACACACACACACA")]), false, c), "11 A");
-        assert!(tes_primed(&tes_seq(2000, &[(1010, "AAAAAA")]), false, c), "A6 run");
+        assert!(
+            !tes_primed(&tes_seq(2000, &[(1001, "ACACACACACACACACACAC")]), false, c),
+            "10 A"
+        );
+        assert!(
+            !tes_primed(&tes_seq(2000, &[(1001, "AACACACACACACACACACA")]), false, c),
+            "11 A"
+        );
+        assert!(
+            tes_primed(&tes_seq(2000, &[(1010, "AAAAAA")]), false, c),
+            "A6 run"
+        );
         assert!(!tes_primed(&tes_seq(2000, &[(1010, "AAAAA")]), false, c));
-        assert!(!tes_primed(&tes_seq(2000, &[(1021, "AAAAAAAA")]), false, c), "beyond the 20 bp");
-        assert!(tes_primed(&tes_seq(2000, &[(985, "TTTTTT")]), true, -c), "- : genomic T upstream = A downstream");
-        assert!(!tes_primed(&tes_seq(2000, &[(1005, "TTTTTT")]), true, -c), "- : genomic T downstream is upstream");
-        assert!(!tes_primed(&tes_seq(1000, &[]), false, c), "no downstream sequence: not primed");
+        assert!(
+            !tes_primed(&tes_seq(2000, &[(1021, "AAAAAAAA")]), false, c),
+            "beyond the 20 bp"
+        );
+        assert!(
+            tes_primed(&tes_seq(2000, &[(985, "TTTTTT")]), true, -c),
+            "- : genomic T upstream = A downstream"
+        );
+        assert!(
+            !tes_primed(&tes_seq(2000, &[(1005, "TTTTTT")]), true, -c),
+            "- : genomic T downstream is upstream"
+        );
+        assert!(
+            !tes_primed(&tes_seq(1000, &[]), false, c),
+            "no downstream sequence: not primed"
+        );
     }
 
     #[test]
     fn tes_clusters_need_two_reads_link_within_w_and_the_mode_ties_3prime() {
         let s = tes_seq(2000, &[(520, "AATAAA")]); // a PAS for a mode at 535..555 (window [c-35, c-10])
-        assert!(tes_clusters(&[550], &s, false).is_empty(), "one read never makes a cluster");
-        assert!(tes_clusters(&[500, 550], &s, false).is_empty(), "50 bp apart: two single-read clusters");
+        assert!(
+            tes_clusters(&[550], &s, false).is_empty(),
+            "one read never makes a cluster"
+        );
+        assert!(
+            tes_clusters(&[500, 550], &s, false).is_empty(),
+            "50 bp apart: two single-read clusters"
+        );
         let cl = tes_clusters(&[530, 550, 550, 551, 551], &s, false);
-        assert_eq!(cl, vec![TesCluster { mode: 551, n: 5, proven: true }], "gap <= 21 links; tie 550/551 -> 3'");
+        assert_eq!(
+            cl,
+            vec![TesCluster {
+                mode: 551,
+                n: 5,
+                proven: true
+            }],
+            "gap <= 21 links; tie 550/551 -> 3'"
+        );
         let cl = tes_clusters(&[550, 550, 572, 572, 572], &s, false);
         assert_eq!(cl.len(), 2, "a 22 bp gap splits");
-        assert!(cl[0].proven && !cl[1].proven, "572: the PAS at 520-525 lies > 35 bp upstream");
+        assert!(
+            cl[0].proven && !cl[1].proven,
+            "572: the PAS at 520-525 lies > 35 bp upstream"
+        );
         let primed = tes_seq(2000, &[(520, "AATAAA"), (555, "AAAAAA")]);
-        assert!(!tes_clusters(&[550, 550], &primed, false)[0].proven, "an internally primed mode is not proven");
+        assert!(
+            !tes_clusters(&[550, 550], &primed, false)[0].proven,
+            "an internally primed mode is not proven"
+        );
     }
 
     #[test]
@@ -10091,23 +13036,51 @@ mod tests {
         let recs = tss_recs(&ev);
         let o = tes_decide(&l, &recs, &s, "tag");
         assert!(o.moved.is_empty());
-        assert_eq!(o.attrs["T"], " tes_clusters \"2\"; tes_pas \"no\"; tes_primed \"yes\";");
+        assert_eq!(
+            o.attrs["T"],
+            " tes_clusters \"2\"; tes_pas \"no\"; tes_primed \"yes\";"
+        );
         assert_eq!(tes_apply(l.clone(), &o), l, "tag is output-only");
         let o = tes_decide(&l, &recs, &s, "pas-end");
-        assert_eq!(o.moved.get("T"), Some(&550), "the most-3' proven cluster, never the reads beyond the end (650)");
-        assert_eq!(o.attrs["T"], " tes_clusters \"2\"; tes_pas \"yes\"; tes_primed \"no\"; tes_end_moved_from \"600\";");
-        assert_eq!((o.stats.multi, o.stats.with_proven, o.stats.end_primed, o.stats.moved), (1, 1, 1, 1));
+        assert_eq!(
+            o.moved.get("T"),
+            Some(&550),
+            "the most-3' proven cluster, never the reads beyond the end (650)"
+        );
+        assert_eq!(
+            o.attrs["T"],
+            " tes_clusters \"2\"; tes_pas \"yes\"; tes_primed \"no\"; tes_end_moved_from \"600\";"
+        );
+        assert_eq!(
+            (
+                o.stats.multi,
+                o.stats.with_proven,
+                o.stats.end_primed,
+                o.stats.moved
+            ),
+            (1, 1, 1, 1)
+        );
         let on = tes_apply(l.clone(), &o);
-        assert!(on[0].starts_with("c\trustle\ttranscript\t101\t550\t"), "{}", on[0]);
+        assert!(
+            on[0].starts_with("c\trustle\ttranscript\t101\t550\t"),
+            "{}",
+            on[0]
+        );
         assert!(on[1].starts_with("c\trustle\texon\t101\t300\t"));
         assert!(on[2].starts_with("c\trustle\texon\t401\t550\t"));
         // an end that is not primed, or no proven cluster: nothing moves
         let s2 = tes_seq(3000, &[(470, "AATAAA"), (520, "AATAAA")]);
-        assert!(tes_decide(&l, &recs, &s2, "pas-end").moved.is_empty(), "the emitted end is not primed");
+        assert!(
+            tes_decide(&l, &recs, &s2, "pas-end").moved.is_empty(),
+            "the emitted end is not primed"
+        );
         let s3 = tes_seq(3000, &[(605, "AAAAAAAA")]);
         let o = tes_decide(&l, &recs, &s3, "pas-end");
         assert!(o.moved.is_empty());
-        assert_eq!(o.attrs["T"], " tes_clusters \"0\"; tes_pas \"no\"; tes_primed \"yes\";");
+        assert_eq!(
+            o.attrs["T"],
+            " tes_clusters \"0\"; tes_pas \"no\"; tes_primed \"yes\";"
+        );
         // mono-exonic transcripts carry nothing
         let m = sc_gtf("M", "H", "+", 5, &[(1001, 1500)]);
         assert!(tes_decide(&m, &recs, &s, "pas-end").attrs.is_empty());
@@ -10125,9 +13098,16 @@ mod tests {
         tes_push(&mut ev, true, 2890, 2401, &[(2601, 2700)], 1);
         let o = tes_decide(&l, &tss_recs(&ev), &s, "pas-end");
         assert_eq!(o.moved.get("T"), Some(&-2451));
-        assert_eq!(o.attrs["T"], " tes_clusters \"1\"; tes_pas \"yes\"; tes_primed \"no\"; tes_end_moved_from \"2401\";");
+        assert_eq!(
+            o.attrs["T"],
+            " tes_clusters \"1\"; tes_pas \"yes\"; tes_primed \"no\"; tes_end_moved_from \"2401\";"
+        );
         let on = tes_apply(l.clone(), &o);
-        assert!(on[0].starts_with("c\trustle\ttranscript\t2451\t2900\t"), "{}", on[0]);
+        assert!(
+            on[0].starts_with("c\trustle\ttranscript\t2451\t2900\t"),
+            "{}",
+            on[0]
+        );
         assert!(on[1].starts_with("c\trustle\texon\t2451\t2600\t"));
         assert!(on[2].starts_with("c\trustle\texon\t2701\t2900\t"));
     }
@@ -10137,9 +13117,21 @@ mod tests {
         // '+': query 0..10 aligned to target 100..110 with a 2-bp query insertion after 4 and a 3-bp deletion after 7
         let f = LiftBlocks::from_cigar(0, 12, 100, false, "4=2I3=3D3=");
         assert_eq!(f.map(2), Some((102, 0)));
-        assert_eq!(f.map(6), Some((104, 0)), "after the insertion the query is 2 ahead");
-        assert_eq!(f.map(9), Some((110, 0)), "after the deletion the target is 3 ahead");
-        assert_eq!(f.map(4), Some((104, 1)), "inside the insertion: nearest edge (q=3 -> t=103) plus the offset, distance 1");
+        assert_eq!(
+            f.map(6),
+            Some((104, 0)),
+            "after the insertion the query is 2 ahead"
+        );
+        assert_eq!(
+            f.map(9),
+            Some((110, 0)),
+            "after the deletion the target is 3 ahead"
+        );
+        assert_eq!(
+            f.map(4),
+            Some((104, 1)),
+            "inside the insertion: nearest edge (q=3 -> t=103) plus the offset, distance 1"
+        );
         let inv = f.inverse();
         assert_eq!(inv.map(102), Some((2, 0)));
         assert_eq!(inv.map(110), Some((9, 0)));
@@ -10153,7 +13145,9 @@ mod tests {
         assert_eq!(rinv.map(205), Some((4, 0)));
         // round trip on the '+' case
         for q in [0u64, 3, 7, 9, 11] {
-            if let Some((t, 0)) = f.map(q) { assert_eq!(inv.map(t), Some((q, 0)), "round trip at {q}"); }
+            if let Some((t, 0)) = f.map(q) {
+                assert_eq!(inv.map(t), Some((q, 0)), "round trip at {q}");
+            }
         }
     }
 
@@ -10171,9 +13165,17 @@ mod tests {
             seq: vec![],
             qual: vec![],
         };
-        assert_eq!(block_overlap(&read, 100, 200), 0, "window sits entirely inside the spliced-out intron");
+        assert_eq!(
+            block_overlap(&read, 100, 200),
+            0,
+            "window sits entirely inside the spliced-out intron"
+        );
         // sanity: a window over the trailing M block still scores correctly.
-        assert_eq!(block_overlap(&read, 5010, 5020), 10, "window exactly covers the second aligned block");
+        assert_eq!(
+            block_overlap(&read, 5010, 5020),
+            10,
+            "window exactly covers the second aligned block"
+        );
     }
 
     #[test]
@@ -10197,17 +13199,38 @@ mod tests {
     fn best_overlap_truth_copy_picks_the_copy_with_more_overlap() {
         // A read whose primary alignment ("M",100 from ref_start 0) overlaps copy A's span [0,80) by 80bp
         // and copy B's span [60,100) by only 40bp -- the truth copy must be A ("best overlap wins").
-        let read = rustle::family::copy_split::AlignedRead { ref_start: 0, cigar: vec![('M', 100)], seq: vec![], qual: vec![] };
-        let br = BamRead {
-            chrom: "chr1".to_string(), read, mapq: 0, name: "r1".to_string(), as_score: 0, de: 0.0,
-            is_supplementary: false, is_secondary: false, reverse: false, ts: None,
+        let read = rustle::family::copy_split::AlignedRead {
+            ref_start: 0,
+            cigar: vec![('M', 100)],
+            seq: vec![],
+            qual: vec![],
         };
-        let copy_spans = vec![("chr1".to_string(), 0u64, 80u64), ("chr1".to_string(), 60u64, 100u64)];
+        let br = BamRead {
+            chrom: "chr1".to_string(),
+            read,
+            mapq: 0,
+            name: "r1".to_string(),
+            as_score: 0,
+            de: 0.0,
+            is_supplementary: false,
+            is_secondary: false,
+            reverse: false,
+            ts: None,
+        };
+        let copy_spans = vec![
+            ("chr1".to_string(), 0u64, 80u64),
+            ("chr1".to_string(), 60u64, 100u64),
+        ];
         let copy_tids = vec!["tidA".to_string(), "tidB".to_string()];
         let mut catalog_index: CatalogIndex = DetHashMap::default();
         catalog_index.insert("tidA".to_string(), ("famA".to_string(), 0usize));
         catalog_index.insert("tidB".to_string(), ("famB".to_string(), 1usize));
-        let truth = best_overlap_truth_copy(std::slice::from_ref(&br), &copy_spans, &copy_tids, Some(&catalog_index));
+        let truth = best_overlap_truth_copy(
+            std::slice::from_ref(&br),
+            &copy_spans,
+            &copy_tids,
+            Some(&catalog_index),
+        );
         assert_eq!(
             truth.get("r1"),
             Some(&(("famA".to_string(), "0".to_string()), 80)),
@@ -10220,17 +13243,38 @@ mod tests {
         // Two candidate copies with EQUAL overlap (50bp each): the first one in `copy_spans`' iteration
         // order wins, matching Python's strict `>` compare over `cp.items()`'s insertion order -- a later
         // equal-overlap candidate never displaces it.
-        let read = rustle::family::copy_split::AlignedRead { ref_start: 0, cigar: vec![('M', 100)], seq: vec![], qual: vec![] };
-        let br = BamRead {
-            chrom: "chr1".to_string(), read, mapq: 0, name: "r1".to_string(), as_score: 0, de: 0.0,
-            is_supplementary: false, is_secondary: false, reverse: false, ts: None,
+        let read = rustle::family::copy_split::AlignedRead {
+            ref_start: 0,
+            cigar: vec![('M', 100)],
+            seq: vec![],
+            qual: vec![],
         };
-        let copy_spans = vec![("chr1".to_string(), 0u64, 50u64), ("chr1".to_string(), 50u64, 100u64)];
+        let br = BamRead {
+            chrom: "chr1".to_string(),
+            read,
+            mapq: 0,
+            name: "r1".to_string(),
+            as_score: 0,
+            de: 0.0,
+            is_supplementary: false,
+            is_secondary: false,
+            reverse: false,
+            ts: None,
+        };
+        let copy_spans = vec![
+            ("chr1".to_string(), 0u64, 50u64),
+            ("chr1".to_string(), 50u64, 100u64),
+        ];
         let copy_tids = vec!["tidA".to_string(), "tidB".to_string()];
         let mut catalog_index: CatalogIndex = DetHashMap::default();
         catalog_index.insert("tidA".to_string(), ("famA".to_string(), 0usize));
         catalog_index.insert("tidB".to_string(), ("famB".to_string(), 1usize));
-        let truth = best_overlap_truth_copy(std::slice::from_ref(&br), &copy_spans, &copy_tids, Some(&catalog_index));
+        let truth = best_overlap_truth_copy(
+            std::slice::from_ref(&br),
+            &copy_spans,
+            &copy_tids,
+            Some(&catalog_index),
+        );
         assert_eq!(
             truth.get("r1"),
             Some(&(("famA".to_string(), "0".to_string()), 50)),
@@ -10251,21 +13295,42 @@ mod tests {
         let mk = |name: &str, start: u64, as_score: i32| BamRead {
             chrom: "chr1".to_string(),
             read: rustle::family::copy_split::AlignedRead {
-                ref_start: start, cigar: vec![('M', 100)], seq: vec![], qual: vec![],
+                ref_start: start,
+                cigar: vec![('M', 100)],
+                seq: vec![],
+                qual: vec![],
             },
-            mapq: 0, name: name.to_string(), as_score, de: 0.0,
-            is_supplementary: false, is_secondary: start != 1000, reverse: false, ts: None,
+            mapq: 0,
+            name: name.to_string(),
+            as_score,
+            de: 0.0,
+            is_supplementary: false,
+            is_secondary: start != 1000,
+            reverse: false,
+            ts: None,
         };
         // Two reads, each AS-tied across two placements; only `tied_a` belongs to family A.
         let bam_reads = vec![
-            mk("tied_a", 1000, 200), mk("tied_a", 5000, 200),
-            mk("tied_b", 2000, 300), mk("tied_b", 7000, 300),
+            mk("tied_a", 1000, 200),
+            mk("tied_a", 5000, 200),
+            mk("tied_b", 2000, 300),
+            mk("tied_b", 7000, 300),
         ];
         let assign = || Assignment {
-            best_copy: 0, log_lr_margin: 0.0, n_decisive: 0, resolvable: false,
-            status: AssignStatus::Tied, p_value: 1.0, min_p_value: 1.0, discovery_coupled: false,
-            junction_conflict: false, origin_rejected: false, n_candidates: 0,
-            posterior: vec![1.0], sibling_identity: 1.0, n_cols_vs_nearest_sibling: 0,
+            best_copy: 0,
+            log_lr_margin: 0.0,
+            n_decisive: 0,
+            resolvable: false,
+            status: AssignStatus::Tied,
+            p_value: 1.0,
+            min_p_value: 1.0,
+            discovery_coupled: false,
+            junction_conflict: false,
+            origin_rejected: false,
+            n_candidates: 0,
+            posterior: vec![1.0],
+            sibling_identity: 1.0,
+            n_cols_vs_nearest_sibling: 0,
         };
         let mut fam_a = FamilyAssignment::empty();
         fam_a.family_id = "FAM_A".to_string();
@@ -10279,7 +13344,11 @@ mod tests {
         fam_b.assignments = vec![(2, assign()), (3, assign())]; // indices of tied_b's two records
 
         let tied = tie_partner_placements(&bam_reads);
-        assert_eq!(tied.len(), 2, "both reads are AS-tied across two placements each");
+        assert_eq!(
+            tied.len(),
+            2,
+            "both reads are AS-tied across two placements each"
+        );
 
         // min_support is 2, so a single read cannot clear it -- give each family's own read a second,
         // co-located supporter that the OTHER family still never considered.
@@ -10298,18 +13367,41 @@ mod tests {
         let a = discover_copies_for_family(&fam_a, &bam_reads, &tied);
         let b = discover_copies_for_family(&fam_b, &bam_reads, &tied);
 
-        assert_eq!(a.len(), 1, "family A must report exactly its own out-of-catalog site: {a:#?}");
+        assert_eq!(
+            a.len(),
+            1,
+            "family A must report exactly its own out-of-catalog site: {a:#?}"
+        );
         assert_eq!(a[0].family_id, "FAM_A");
-        assert_eq!((a[0].chrom.as_str(), a[0].start, a[0].end), ("chr1", 5000, 5150));
-        assert_eq!(a[0].read_names, vec!["tied_a".to_string(), "tied_a2".to_string()]);
+        assert_eq!(
+            (a[0].chrom.as_str(), a[0].start, a[0].end),
+            ("chr1", 5000, 5150)
+        );
+        assert_eq!(
+            a[0].read_names,
+            vec!["tied_a".to_string(), "tied_a2".to_string()]
+        );
         assert_eq!(a[0].nearest_copy_tid, "tidA");
         // and the 7000 site, which only family B's reads support, must NOT appear under A:
-        assert!(!a.iter().any(|d| d.start >= 7000), "family A must not inherit family B's reads: {a:#?}");
+        assert!(
+            !a.iter().any(|d| d.start >= 7000),
+            "family A must not inherit family B's reads: {a:#?}"
+        );
 
-        assert_eq!(b.len(), 1, "family B likewise reports only its own site: {b:#?}");
+        assert_eq!(
+            b.len(),
+            1,
+            "family B likewise reports only its own site: {b:#?}"
+        );
         assert_eq!(b[0].family_id, "FAM_B");
-        assert_eq!((b[0].chrom.as_str(), b[0].start, b[0].end), ("chr1", 7000, 7150));
-        assert!(!b.iter().any(|d| d.start == 5000), "family B must not inherit family A's reads: {b:#?}");
+        assert_eq!(
+            (b[0].chrom.as_str(), b[0].start, b[0].end),
+            ("chr1", 7000, 7150)
+        );
+        assert!(
+            !b.iter().any(|d| d.start == 5000),
+            "family B must not inherit family A's reads: {b:#?}"
+        );
 
         // The second half of the same fix: `existing_copies` comes from `fa.copy_spans`/`copy_tids`, so a
         // family with NO catalog copy at the tie's own position still excludes its own copies -- here,
@@ -10319,9 +13411,17 @@ mod tests {
         fam_a_no_copies.copy_spans.clear();
         fam_a_no_copies.copy_tids.clear();
         let a2 = discover_copies_for_family(&fam_a_no_copies, &bam_reads, &tied);
-        assert_eq!(a2.len(), 2, "with no catalog copies both of A's tied sites are out-of-catalog: {a2:#?}");
+        assert_eq!(
+            a2.len(),
+            2,
+            "with no catalog copies both of A's tied sites are out-of-catalog: {a2:#?}"
+        );
         assert_eq!(a2[0].nearest_copy_tid, "NA");
-        assert_eq!(opt_u64(a2[0].nearest_copy_distance), "NA", "no copy at all -> NA distance, not a sentinel");
+        assert_eq!(
+            opt_u64(a2[0].nearest_copy_distance),
+            "NA",
+            "no copy at all -> NA distance, not a sentinel"
+        );
     }
 
     #[test]
@@ -10351,10 +13451,19 @@ mod tests {
     #[test]
     fn linearize_tsv_row_formats() {
         use rustle::family::linearize::{LinearizeCertificate, Verdict};
-        let c = LinearizeCertificate { n_pool: 40, linearized_frac_real: 0.82, mean_frac_decoy: 0.01,
-            delta: 0.81, perm_p: 0.05, verdict: Verdict::Linearizes };
+        let c = LinearizeCertificate {
+            n_pool: 40,
+            linearized_frac_real: 0.82,
+            mean_frac_decoy: 0.01,
+            delta: 0.81,
+            perm_p: 0.05,
+            verdict: Verdict::Linearizes,
+        };
         let row = linearize_tsv_row("GWFAM1", ("chr9", 100, 200), &c);
-        assert_eq!(row, "GWFAM1\tchr9\t100\t200\t40\t0.820\t0.010\t0.810\t0.0500\tLINEARIZES");
+        assert_eq!(
+            row,
+            "GWFAM1\tchr9\t100\t200\t40\t0.820\t0.010\t0.810\t0.0500\tLINEARIZES"
+        );
     }
 
     #[test]
@@ -10389,8 +13498,16 @@ mod tests {
         // mapq>0 reads (the mapq=0 read is a tie-break-arbitrary primary and does not count).
         let bcs = [0usize, 0, 1, 0];
         let mqs = [60u8, 0, 60, 60];
-        assert_eq!(anchored_support(&bcs, &mqs, 0), 2, "copy 0: two mapq>0 reads, the mapq=0 excluded");
-        assert_eq!(anchored_support(&bcs, &mqs, 1), 1, "copy 1: one mapq>0 read");
+        assert_eq!(
+            anchored_support(&bcs, &mqs, 0),
+            2,
+            "copy 0: two mapq>0 reads, the mapq=0 excluded"
+        );
+        assert_eq!(
+            anchored_support(&bcs, &mqs, 1),
+            1,
+            "copy 1: one mapq>0 read"
+        );
         assert_eq!(anchored_support(&bcs, &mqs, 2), 0, "copy 2: no reads");
     }
 
@@ -10438,23 +13555,29 @@ mod tests {
 
     // A discovery_coupled Assignment for read `ri` pinned to copy `best_copy` (status Assigned) — the ONLY
     // signal that makes a copy absent. Mirrors the default Assignment (copy_assign.rs) with the flag flipped.
-    fn coupled_assignment(ri: usize, best_copy: usize) -> (usize, rustle::family::copy_assign::Assignment) {
-        (ri, rustle::family::copy_assign::Assignment {
-            best_copy,
-            log_lr_margin: 10.0,
-            n_decisive: 1,
-            resolvable: true,
-            status: AssignStatus::Assigned,
-            p_value: 0.0,
-            min_p_value: 0.0,
-            discovery_coupled: true,
-            junction_conflict: false,
-            origin_rejected: false,
-            n_candidates: 0,
-            posterior: vec![],
-            sibling_identity: 1.0,
-            n_cols_vs_nearest_sibling: 0,
-        })
+    fn coupled_assignment(
+        ri: usize,
+        best_copy: usize,
+    ) -> (usize, rustle::family::copy_assign::Assignment) {
+        (
+            ri,
+            rustle::family::copy_assign::Assignment {
+                best_copy,
+                log_lr_margin: 10.0,
+                n_decisive: 1,
+                resolvable: true,
+                status: AssignStatus::Assigned,
+                p_value: 0.0,
+                min_p_value: 0.0,
+                discovery_coupled: true,
+                junction_conflict: false,
+                origin_rejected: false,
+                n_candidates: 0,
+                posterior: vec![],
+                sibling_identity: 1.0,
+                n_cols_vs_nearest_sibling: 0,
+            },
+        )
     }
 
     #[test]
@@ -10462,8 +13585,8 @@ mod tests {
         // Absence is driven by a discovery_coupled read, NOT the collapsed/rescued counts. copy1 has a
         // coupled read AND its span overlaps copy0's span => AbsentCollapsed (hidden co-located haplotype).
         // copy0 (no coupled read) stays AnnotationUnknown (no _ABSENT).
-        use rustle::family::denovo_pipeline::FamilyAssignment;
         use rustle::family::copy_graph::CopyStatus;
+        use rustle::family::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 2;
@@ -10482,20 +13605,32 @@ mod tests {
         assert_eq!(g.copies[1].status, CopyStatus::AbsentCollapsed);
         assert!(g.copies[1].status.is_absent());
         let gfa = g.to_gfa();
-        assert!(gfa.contains("_copy1_ABSENT"), "coupled co-located copy must render _ABSENT:\n{}", gfa);
-        assert!(gfa.contains("ST:Z:absent-collapsed"), "expected ST:Z:absent-collapsed in:\n{}", gfa);
+        assert!(
+            gfa.contains("_copy1_ABSENT"),
+            "coupled co-located copy must render _ABSENT:\n{}",
+            gfa
+        );
+        assert!(
+            gfa.contains("ST:Z:absent-collapsed"),
+            "expected ST:Z:absent-collapsed in:\n{}",
+            gfa
+        );
         // copy 0 is NOT absent (no coupled read) => AnnotationUnknown, no _ABSENT.
         assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
         assert!(!g.copies[0].status.is_absent());
-        assert!(!gfa.contains("_copy0_ABSENT"), "non-coupled copy must NOT be _ABSENT:\n{}", gfa);
+        assert!(
+            !gfa.contains("_copy0_ABSENT"),
+            "non-coupled copy must NOT be _ABSENT:\n{}",
+            gfa
+        );
     }
 
     #[test]
     fn build_copy_graph_coupled_copy_dispersed_is_absent_divergent() {
         // copy1 has a coupled read but its span is DISJOINT from copy0's (different chrom) => AbsentDivergent
         // (dispersed, no overlapping in-genome copy).
-        use rustle::family::denovo_pipeline::FamilyAssignment;
         use rustle::family::copy_graph::CopyStatus;
+        use rustle::family::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 2;
@@ -10511,8 +13646,16 @@ mod tests {
         let g = build_copy_graph("CAFAM0", &fa, ref_base, &["read0".to_string()], None, &eff);
         assert_eq!(g.copies[1].status, CopyStatus::AbsentDivergent);
         let gfa = g.to_gfa();
-        assert!(gfa.contains("_copy1_ABSENT"), "dispersed coupled copy must render _ABSENT:\n{}", gfa);
-        assert!(gfa.contains("ST:Z:absent-divergent"), "expected ST:Z:absent-divergent in:\n{}", gfa);
+        assert!(
+            gfa.contains("_copy1_ABSENT"),
+            "dispersed coupled copy must render _ABSENT:\n{}",
+            gfa
+        );
+        assert!(
+            gfa.contains("ST:Z:absent-divergent"),
+            "expected ST:Z:absent-divergent in:\n{}",
+            gfa
+        );
         assert_eq!(g.copies[0].status, CopyStatus::AnnotationUnknown);
     }
 
@@ -10521,8 +13664,8 @@ mod tests {
         // REGRESSION for the GSTM bug: collapsed_copies (9) >> n_copies (3) with NO discovery_coupled reads.
         // The old code let absent_tail_start underflow to 0 and mislabeled ALL 3 in-genome copies _ABSENT.
         // Correct behavior: no coupled read => NO copy is absent; all are AnnotationUnknown, no _ABSENT.
-        use rustle::family::denovo_pipeline::FamilyAssignment;
         use rustle::family::copy_graph::CopyStatus;
+        use rustle::family::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 3;
@@ -10531,25 +13674,42 @@ mod tests {
         fa.copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'C')], vec![Some(b'G')]];
         fa.read_psv_obs = vec![];
         fa.assignments = vec![]; // NO discovery_coupled reads (no --absent-copies)
-        fa.collapsed_copies = 9;  // diagnostic count, far exceeds n_copies — must NOT force absence.
+        fa.collapsed_copies = 9; // diagnostic count, far exceeds n_copies — must NOT force absence.
         fa.rescued_copies = 0;
         let ref_base = |_c: &str, _p: u64| Some(b'A');
         let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
         let g = build_copy_graph("CAFAM0", &fa, ref_base, &[], None, &eff);
         assert_eq!(g.copies.len(), 3);
         for ci in 0..3 {
-            assert_eq!(g.copies[ci].status, CopyStatus::AnnotationUnknown, "copy {} must be in-genome", ci);
-            assert!(!g.copies[ci].status.is_absent(), "copy {} must NOT be absent", ci);
+            assert_eq!(
+                g.copies[ci].status,
+                CopyStatus::AnnotationUnknown,
+                "copy {} must be in-genome",
+                ci
+            );
+            assert!(
+                !g.copies[ci].status.is_absent(),
+                "copy {} must NOT be absent",
+                ci
+            );
         }
         let gfa = g.to_gfa();
-        assert!(!gfa.contains("_ABSENT"), "no copy may render _ABSENT when no read is discovery_coupled:\n{}", gfa);
-        assert!(!gfa.contains("absent-collapsed"), "no absent-collapsed tag expected:\n{}", gfa);
+        assert!(
+            !gfa.contains("_ABSENT"),
+            "no copy may render _ABSENT when no read is discovery_coupled:\n{}",
+            gfa
+        );
+        assert!(
+            !gfa.contains("absent-collapsed"),
+            "no absent-collapsed tag expected:\n{}",
+            gfa
+        );
     }
 
     #[test]
     fn build_copy_graph_fills_mi_from_copy_map_identity() {
-        use rustle::family::denovo_pipeline::FamilyAssignment;
         use rustle::family::copy_graph::CopyStatus;
+        use rustle::family::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.copy_tids = vec!["c0".into(), "c1".into()];
@@ -10562,15 +13722,33 @@ mod tests {
         let eff: Vec<AssignStatus> = fa.assignments.iter().map(|(_, a)| a.status).collect();
         let g = build_copy_graph("CAFAM0", &fa, |_c, _p| Some(b'A'), &[], None, &eff);
         // copy1 is in-genome, NOT absent (the LOCK on the copy_map_identity-drives-absence bug).
-        assert_eq!(g.copies[1].status, CopyStatus::AnnotationUnknown, "copy_map_identity alone must NOT make a copy absent");
+        assert_eq!(
+            g.copies[1].status,
+            CopyStatus::AnnotationUnknown,
+            "copy_map_identity alone must NOT make a copy absent"
+        );
         assert!(!g.copies[1].status.is_absent());
         let gfa = g.to_gfa();
         // P-line name is EXACTLY CAFAM0_copy1 (the trailing tab excludes CAFAM0_copy1_ABSENT).
-        let c1 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy1\t")).expect("copy1 must be P\\tCAFAM0_copy1 (NOT _ABSENT)");
-        assert!(!gfa.contains("CAFAM0_copy1_ABSENT"), "copy_map_identity must not render _ABSENT:\n{}", gfa);
+        let c1 = gfa
+            .lines()
+            .find(|l| l.starts_with("P\tCAFAM0_copy1\t"))
+            .expect("copy1 must be P\\tCAFAM0_copy1 (NOT _ABSENT)");
+        assert!(
+            !gfa.contains("CAFAM0_copy1_ABSENT"),
+            "copy_map_identity must not render _ABSENT:\n{}",
+            gfa
+        );
         assert!(c1.contains("MI:f:0.952"), "copy1 MI missing: {}", c1);
-        assert!(c1.contains("ST:Z:annotation-unknown"), "copy1 must carry a non-absent ST:Z: status: {}", c1);
-        let c0 = gfa.lines().find(|l| l.starts_with("P\tCAFAM0_copy0\t")).unwrap();
+        assert!(
+            c1.contains("ST:Z:annotation-unknown"),
+            "copy1 must carry a non-absent ST:Z: status: {}",
+            c1
+        );
+        let c0 = gfa
+            .lines()
+            .find(|l| l.starts_with("P\tCAFAM0_copy0\t"))
+            .unwrap();
         assert!(!c0.contains("MI:f:"), "copy0 must omit MI: {}", c0);
     }
 
@@ -10582,7 +13760,7 @@ mod tests {
         fa.copy_tids = vec!["c0".into(), "c1".into()];
         fa.copy_spans = vec![("chr1".into(), 0, 400), ("chr1".into(), 0, 400)];
         // copy0 introns skip 100-300 (exons 0-100, 300-400); copy1 has an extra exon (exons 0-100,150-250,300-400)
-        fa.copy_introns = vec![ vec![(100,300)], vec![(100,150),(250,300)] ];
+        fa.copy_introns = vec![vec![(100, 300)], vec![(100, 150), (250, 300)]];
         fa.copy_map_identity = vec![None, Some(0.95)];
         // copy1 is reference-ABSENT via a discovery_coupled read (the v1 absence mechanism — NOT
         // copy_map_identity, which feeds only the MI tag); its span overlaps copy0 => AbsentCollapsed.
@@ -10591,15 +13769,15 @@ mod tests {
         let g = build_exon_graph("CAFAM0", &fa, None, &eff);
         // copy1 walks one more class than copy0
         assert!(g.copies[1].exon_nodes.len() > g.copies[0].exon_nodes.len());
-        let gfa = g.to_gfa(|ec| vec![b'A'; (ec.end-ec.start) as usize]);
+        let gfa = g.to_gfa(|ec| vec![b'A'; (ec.end - ec.start) as usize]);
         assert!(gfa.contains("P\tCAFAM0_REFERENCE"));
         assert!(gfa.lines().any(|l| l.starts_with("P\tCAFAM0_copy1_ABSENT")));
     }
 
     #[test]
     fn annotation_axis_from_intervals() {
-        use rustle::family::denovo_pipeline::FamilyAssignment;
         use rustle::family::copy_graph::CopyStatus;
+        use rustle::family::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.copy_tids = vec!["c0".into(), "c1".into()];
@@ -10612,7 +13790,10 @@ mod tests {
         let s1 = annotation_status(&fa, 1, Some(&ann));
         assert_eq!(s0, CopyStatus::InGenomeAnnotated);
         assert_eq!(s1, CopyStatus::InGenomeUnannotated);
-        assert_eq!(annotation_status(&fa, 1, None), CopyStatus::AnnotationUnknown);
+        assert_eq!(
+            annotation_status(&fa, 1, None),
+            CopyStatus::AnnotationUnknown
+        );
     }
 
     #[test]
@@ -10624,14 +13805,26 @@ mod tests {
         std::fs::write(&bed, "chr1\t1000\t2000\t5\t0\t+\n").unwrap();
         let got = parse_annotation(bed.to_str().unwrap()).unwrap();
         std::fs::remove_file(&bed).ok();
-        assert_eq!(got, vec![("chr1".to_string(), 1000u64, 2000u64)], "BED numeric-name line must NOT parse as (4,5)");
+        assert_eq!(
+            got,
+            vec![("chr1".to_string(), 1000u64, 2000u64)],
+            "BED numeric-name line must NOT parse as (4,5)"
+        );
 
         // A GFF/GTF file still parses cols 3/4 with the 1-based -> 0-based start conversion.
         let gff = dir.join(format!("rustle_task8_ann_{}.gff3", std::process::id()));
-        std::fs::write(&gff, "##gff-version 3\nchr1\tsrc\tgene\t1000\t2000\t.\t+\t.\tID=g1\n").unwrap();
+        std::fs::write(
+            &gff,
+            "##gff-version 3\nchr1\tsrc\tgene\t1000\t2000\t.\t+\t.\tID=g1\n",
+        )
+        .unwrap();
         let got = parse_annotation(gff.to_str().unwrap()).unwrap();
         std::fs::remove_file(&gff).ok();
-        assert_eq!(got, vec![("chr1".to_string(), 999u64, 2000u64)], "GFF cols 3/4, 1-based start -> 0-based");
+        assert_eq!(
+            got,
+            vec![("chr1".to_string(), 999u64, 2000u64)],
+            "GFF cols 3/4, 1-based start -> 0-based"
+        );
     }
 
     // ------------------------------------------------------------------------------------ --polish-junction-snap
@@ -10641,13 +13834,21 @@ mod tests {
         let mut x: u64 = 0x2545_F491_4F6C_DD1D;
         (0..n)
             .map(|_| {
-                x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 b"ACGT"[(x >> 62) as usize]
             })
             .collect()
     }
 
-    fn snap_tx(tid: &str, gene: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+    fn snap_tx(
+        tid: &str,
+        gene: &str,
+        strand: &str,
+        reads: u64,
+        exons: &[(i64, i64)],
+    ) -> Vec<String> {
         let at = format!("gene_id \"{gene}\"; transcript_id \"{tid}\";");
         let mut v = vec![format!(
             "chr1\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\"; matched_reads \"0\";",
@@ -10655,7 +13856,10 @@ mod tests {
             exons[exons.len() - 1].1
         )];
         for (k, (s, e)) in exons.iter().enumerate() {
-            v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";", k + 1));
+            v.push(format!(
+                "chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at} exon_number \"{}\";",
+                k + 1
+            ));
         }
         v
     }
@@ -10670,7 +13874,13 @@ mod tests {
         let mut l = Vec::new();
         l.extend(snap_tx("MAJ", "G", "+", 10, &[(101, 200), (301, 400)]));
         l.extend(snap_tx("MIN", "G", "+", 2, &[(101, 200), (304, 400)]));
-        l.extend(snap_tx("MIN2", "G", "+", 1, &[(101, 200), (304, 400), (501, 600)]));
+        l.extend(snap_tx(
+            "MIN2",
+            "G",
+            "+",
+            1,
+            &[(101, 200), (304, 400), (501, 600)],
+        ));
         l
     }
     const SNAP_J: (i64, i64) = (200, 300);
@@ -10682,15 +13892,24 @@ mod tests {
     fn junction_snap_off_is_byte_identical() {
         let seq = snap_seq(1000);
         let mut l = snap_fixture();
-        let st = junction_snap(&mut l, "off", &seq, |_| panic!("off must not read evidence")).unwrap();
+        let st = junction_snap(&mut l, "off", &seq, |_| {
+            panic!("off must not read evidence")
+        })
+        .unwrap();
         assert_eq!(l, snap_fixture());
         assert_eq!((st.near_pairs, st.rewritten, st.collapsed), (0, 0, 0));
         // the design's WOBBLE case: K's own reads carry the 3 nt, so K is proven and nothing moves
-        let proven = snap_ev(&[(SNAP_K, SNAP_J, [3, 3, 0, 0]), (SNAP_J, SNAP_K, [10, 10, 0, 0])]);
+        let proven = snap_ev(&[
+            (SNAP_K, SNAP_J, [3, 3, 0, 0]),
+            (SNAP_J, SNAP_K, [10, 10, 0, 0]),
+        ]);
         let mut l = snap_fixture();
         let st = junction_snap(&mut l, "reads", &seq, |_| Ok((proven.clone(), 13, 20))).unwrap();
         assert_eq!(l, snap_fixture());
-        assert_eq!((st.near_pairs, st.read_snapped, st.rewritten, st.collapsed), (1, 0, 0, 0));
+        assert_eq!(
+            (st.near_pairs, st.read_snapped, st.rewritten, st.collapsed),
+            (1, 0, 0, 0)
+        );
     }
 
     /// Sequence equivalence = the same shift on both sides AND a direct repeat of the moved bases. A NAGNAG
@@ -10706,30 +13925,51 @@ mod tests {
         }
         assert!(snap_equivalent(&seq, (100, 200), (102, 202)));
         assert!(snap_equivalent(&seq, (100, 200), (97, 197)));
-        assert!(!snap_equivalent(&seq, (100, 200), (100, 203)), "acceptor-only (NAGNAG) shift");
-        assert!(!snap_equivalent(&seq, (100, 200), (104, 200)), "donor-only shift");
-        assert!(!snap_equivalent(&seq, (100, 200), (102, 203)), "unequal shifts");
+        assert!(
+            !snap_equivalent(&seq, (100, 200), (100, 203)),
+            "acceptor-only (NAGNAG) shift"
+        );
+        assert!(
+            !snap_equivalent(&seq, (100, 200), (104, 200)),
+            "donor-only shift"
+        );
+        assert!(
+            !snap_equivalent(&seq, (100, 200), (102, 203)),
+            "unequal shifts"
+        );
         let mut other = seq.clone();
         other[201] = if seq[101] == b'A' { b'C' } else { b'A' };
-        assert!(!snap_equivalent(&other, (100, 200), (102, 202)), "no direct repeat");
-        assert!(!snap_equivalent(&seq, (100, 200), (100, 200)), "a junction is not a shift of itself");
+        assert!(
+            !snap_equivalent(&other, (100, 200), (102, 202)),
+            "no direct repeat"
+        );
+        assert!(
+            !snap_equivalent(&seq, (100, 200), (100, 200)),
+            "a junction is not a shift of itself"
+        );
     }
 
     /// `equiv`: the representative is the canonical class first, then pooled support, then leftmost; the rep keeps
     /// its junction and the other moves onto it whatever the supports.
     #[test]
     fn equiv_prefers_canonical_then_support_then_left() {
-        use std::collections::{BTreeMap};
+        use std::collections::BTreeMap;
         let base = snap_seq(1000);
         // J1 = (100, 200) and J2 = (101, 201) are equivalent (g[100] == g[200])
         let mut seq = base.clone();
         seq[200] = seq[100];
         let (j1, j2) = ((100, 200), (101, 201));
         assert!(snap_equivalent(&seq, j1, j2));
-        let groups: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> =
-            [(("+".to_string(), "G".to_string()), [(j1, vec![j2]), (j2, vec![j1])].into_iter().collect())].into_iter().collect();
+        let groups: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> = [(
+            ("+".to_string(), "G".to_string()),
+            [(j1, vec![j2]), (j2, vec![j1])].into_iter().collect(),
+        )]
+        .into_iter()
+        .collect();
         let sup = |a: u64, b: u64| -> DetHashMap<(String, (i64, i64)), u64> {
-            [(("+".to_string(), j1), a), (("+".to_string(), j2), b)].into_iter().collect()
+            [(("+".to_string(), j1), a), (("+".to_string(), j2), b)]
+                .into_iter()
+                .collect()
         };
         let rep_of = |seq: &[u8], s: &DetHashMap<(String, (i64, i64)), u64>| {
             let (m, n_eq, n_reads) = snap_remap("equiv", seq, &groups, s, &SnapEvidence::default());
@@ -10765,7 +14005,10 @@ mod tests {
     #[test]
     fn read_contradicted_minor_is_snapped_and_collapsed() {
         let seq = snap_seq(1000);
-        let ev = snap_ev(&[(SNAP_K, SNAP_J, [3, 1, 1, 1]), (SNAP_J, SNAP_K, [10, 9, 1, 0])]);
+        let ev = snap_ev(&[
+            (SNAP_K, SNAP_J, [3, 1, 1, 1]),
+            (SNAP_J, SNAP_K, [10, 9, 1, 0]),
+        ]);
         let mut l = snap_fixture();
         let mut asked = 0;
         let st = junction_snap(&mut l, "reads", &seq, |p| {
@@ -10775,13 +14018,36 @@ mod tests {
         })
         .unwrap();
         assert_eq!(asked, 1);
-        assert_eq!((st.near_pairs, st.equivalent, st.read_snapped, st.rewritten, st.collapsed), (1, 0, 1, 2, 1));
+        assert_eq!(
+            (
+                st.near_pairs,
+                st.equivalent,
+                st.read_snapped,
+                st.rewritten,
+                st.collapsed
+            ),
+            (1, 0, 1, 2, 1)
+        );
         assert_eq!((st.evidence_reads, st.records), (13, 40));
         let tx: Vec<&String> = l.iter().filter(|x| x.contains("\ttranscript\t")).collect();
         assert_eq!(tx.len(), 2);
-        assert!(tx[0].contains("transcript_id \"MAJ\"; reads \"12\"; matched_reads \"0\"; snapped_from \"MIN\";"), "{}", tx[0]);
-        assert!(tx[1].contains("transcript_id \"MIN2\"; reads \"1\";") && tx[1].ends_with(" snapped \"1\";"), "{}", tx[1]);
-        assert!(!l.iter().any(|x| x.contains("transcript_id \"MIN\";")), "the collapsed member's lines are gone");
+        assert!(
+            tx[0].contains(
+                "transcript_id \"MAJ\"; reads \"12\"; matched_reads \"0\"; snapped_from \"MIN\";"
+            ),
+            "{}",
+            tx[0]
+        );
+        assert!(
+            tx[1].contains("transcript_id \"MIN2\"; reads \"1\";")
+                && tx[1].ends_with(" snapped \"1\";"),
+            "{}",
+            tx[1]
+        );
+        assert!(
+            !l.iter().any(|x| x.contains("transcript_id \"MIN\";")),
+            "the collapsed member's lines are gone"
+        );
         let min2: Vec<(i64, i64)> = l
             .iter()
             .filter(|x| x.contains("\texon\t") && x.contains("\"MIN2\""))
@@ -10792,8 +14058,14 @@ mod tests {
             .collect();
         assert_eq!(min2, vec![(101, 200), (301, 400), (501, 600)]);
         annotate_tpm(&mut l);
-        let maj = l.iter().find(|x| x.contains("\ttranscript\t") && x.contains("\"MAJ\"")).unwrap();
-        assert!(maj.contains(&format!("TPM \"{:.6}\"", 12.0 / 13.0 * 1e6)), "{maj}");
+        let maj = l
+            .iter()
+            .find(|x| x.contains("\ttranscript\t") && x.contains("\"MAJ\""))
+            .unwrap();
+        assert!(
+            maj.contains(&format!("TPM \"{:.6}\"", 12.0 / 13.0 * 1e6)),
+            "{maj}"
+        );
     }
 
     /// A junction whose own reads prove it stays, even when a better-supported partner's reads prove the partner.
@@ -10801,7 +14073,10 @@ mod tests {
     fn read_proven_nagnag_is_kept() {
         let seq = snap_seq(1000);
         // exactly the floor (2) of K's reads prove K
-        let ev = snap_ev(&[(SNAP_K, SNAP_J, [2, 2, 0, 0]), (SNAP_J, SNAP_K, [10, 10, 0, 0])]);
+        let ev = snap_ev(&[
+            (SNAP_K, SNAP_J, [2, 2, 0, 0]),
+            (SNAP_J, SNAP_K, [10, 10, 0, 0]),
+        ]);
         let mut l = snap_fixture();
         junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 12, 12))).unwrap();
         assert_eq!(l, snap_fixture());
@@ -10811,7 +14086,10 @@ mod tests {
         junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 10, 10))).unwrap();
         assert_eq!(l, snap_fixture());
         // and J must be proven: J's reads that do not beat K leave K where it is
-        let ev = snap_ev(&[(SNAP_K, SNAP_J, [3, 0, 3, 0]), (SNAP_J, SNAP_K, [10, 1, 9, 0])]);
+        let ev = snap_ev(&[
+            (SNAP_K, SNAP_J, [3, 0, 3, 0]),
+            (SNAP_J, SNAP_K, [10, 1, 9, 0]),
+        ]);
         let mut l = snap_fixture();
         junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 13, 13))).unwrap();
         assert_eq!(l, snap_fixture());
@@ -10825,32 +14103,58 @@ mod tests {
         let mut l = Vec::new();
         l.extend(snap_tx("MAJ", "G", "+", 10, &[(101, 200), (311, 400)]));
         // SHORT's second exon is 304..306: moving its acceptor to 311 would empty it
-        l.extend(snap_tx("SHORT", "G", "+", 2, &[(101, 200), (304, 306), (401, 500)]));
-        l.extend(snap_tx("LONG", "G", "+", 1, &[(101, 200), (304, 350), (401, 500)]));
+        l.extend(snap_tx(
+            "SHORT",
+            "G",
+            "+",
+            2,
+            &[(101, 200), (304, 306), (401, 500)],
+        ));
+        l.extend(snap_tx(
+            "LONG",
+            "G",
+            "+",
+            1,
+            &[(101, 200), (304, 350), (401, 500)],
+        ));
         let before = l.clone();
         let ev = snap_ev(&[(k, j, [3, 0, 0, 3]), (j, k, [10, 10, 0, 0])]);
         let st = junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 13, 13))).unwrap();
         assert_eq!((st.read_snapped, st.rewritten, st.collapsed), (1, 1, 0));
-        let short = |v: &[String]| -> Vec<String> { v.iter().filter(|x| x.contains("\"SHORT\"")).cloned().collect() };
+        let short = |v: &[String]| -> Vec<String> {
+            v.iter()
+                .filter(|x| x.contains("\"SHORT\""))
+                .cloned()
+                .collect()
+        };
         assert_eq!(short(&l), short(&before));
-        assert!(l.iter().any(|x| x.contains("\texon\t311\t350\t") && x.contains("\"LONG\"")));
+        assert!(l
+            .iter()
+            .any(|x| x.contains("\texon\t311\t350\t") && x.contains("\"LONG\"")));
     }
 
     /// A junction that was snapped never absorbs a third one, and one that absorbed is never snapped itself.
     #[test]
     fn absorbed_junction_never_absorbs() {
-        use std::collections::{BTreeMap};
+        use std::collections::BTreeMap;
         let seq = snap_seq(1000);
         // J = (200, 300) 10 reads; K = (200, 308) 5 reads, within 10 bp of J and of L; L = (200, 316) 1 read, 16 bp from J
         let (j, k, lj) = ((200, 300), (200, 308), (200, 316));
         let groups: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> = [(
             ("+".to_string(), "G".to_string()),
-            [(j, vec![k]), (k, vec![j, lj]), (lj, vec![k])].into_iter().collect(),
+            [(j, vec![k]), (k, vec![j, lj]), (lj, vec![k])]
+                .into_iter()
+                .collect(),
         )]
         .into_iter()
         .collect();
-        let sup: DetHashMap<(String, (i64, i64)), u64> =
-            [(("+".to_string(), j), 10), (("+".to_string(), k), 5), (("+".to_string(), lj), 1)].into_iter().collect();
+        let sup: DetHashMap<(String, (i64, i64)), u64> = [
+            (("+".to_string(), j), 10),
+            (("+".to_string(), k), 5),
+            (("+".to_string(), lj), 1),
+        ]
+        .into_iter()
+        .collect();
         // every contradicted/proven relation holds: K is not proven against J or L, L not against K
         let ev = snap_ev(&[
             (k, j, [5, 0, 5, 0]),
@@ -10860,7 +14164,10 @@ mod tests {
         ]);
         let (m, _, n) = snap_remap("reads", &seq, &groups, &sup, &ev);
         assert_eq!(n, 1);
-        assert_eq!(m.into_iter().collect::<Vec<_>>(), vec![(("+".to_string(), "G".to_string(), k), j)]);
+        assert_eq!(
+            m.into_iter().collect::<Vec<_>>(),
+            vec![(("+".to_string(), "G".to_string(), k), j)]
+        );
         // a junction that absorbed one is never snapped: A = (200, 300) and B = (200, 308) tie at 5 reads (A first,
         // leftmost; both acceptors TT so the canonical rank ties too), C = (200, 292) 1 read is 8 bp from A and 16 from
         // B. A absorbs C; B's reads prove B over A and A's do not prove A over B, which would snap A onto B, but A is
@@ -10873,15 +14180,28 @@ mod tests {
         let (a, b, c) = ((200, 300), (200, 308), (200, 292));
         let groups2: BTreeMap<(String, String), BTreeMap<(i64, i64), Vec<(i64, i64)>>> = [(
             ("+".to_string(), "G".to_string()),
-            [(a, vec![b, c]), (b, vec![a]), (c, vec![a])].into_iter().collect(),
+            [(a, vec![b, c]), (b, vec![a]), (c, vec![a])]
+                .into_iter()
+                .collect(),
         )]
         .into_iter()
         .collect();
-        let sup2: DetHashMap<(String, (i64, i64)), u64> =
-            [(("+".to_string(), a), 5), (("+".to_string(), b), 5), (("+".to_string(), c), 1)].into_iter().collect();
-        let ev2 = snap_ev(&[(c, a, [1, 0, 1, 0]), (a, c, [5, 5, 0, 0]), (a, b, [5, 0, 5, 0]), (b, a, [5, 5, 0, 0])]);
+        let sup2: DetHashMap<(String, (i64, i64)), u64> = [
+            (("+".to_string(), a), 5),
+            (("+".to_string(), b), 5),
+            (("+".to_string(), c), 1),
+        ]
+        .into_iter()
+        .collect();
+        let ev2 = snap_ev(&[
+            (c, a, [1, 0, 1, 0]),
+            (a, c, [5, 5, 0, 0]),
+            (a, b, [5, 0, 5, 0]),
+            (b, a, [5, 5, 0, 0]),
+        ]);
         let (m2, _, _) = snap_remap("reads", &seq2, &groups2, &sup2, &ev2);
-        let got: Vec<((i64, i64), (i64, i64))> = m2.into_iter().map(|((_, _, x), y)| (x, y)).collect();
+        let got: Vec<((i64, i64), (i64, i64))> =
+            m2.into_iter().map(|((_, _, x), y)| (x, y)).collect();
         assert_eq!(got, vec![(c, a)]);
     }
 
@@ -10895,7 +14215,10 @@ mod tests {
             l.extend(snap_tx("MAJ", "G", "+", 10, &[(101, 200), (301, 400)]));
             l.extend(snap_tx("MIN", gene, strand, 2, &[(101, 200), (304, 400)]));
             let before = l.clone();
-            let st = junction_snap(&mut l, "reads", &seq, |_| panic!("no near pair, no evidence")).unwrap();
+            let st = junction_snap(&mut l, "reads", &seq, |_| {
+                panic!("no near pair, no evidence")
+            })
+            .unwrap();
             assert_eq!(st.near_pairs, 0);
             assert_eq!(l, before);
         }
@@ -10914,15 +14237,26 @@ mod tests {
             l
         };
         let fuzzy_sites = |l: &[String]| {
-            let (drop, sites, _) =
-                polish_drop_set(l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0, 0.0);
-            let mut d: Vec<(String, &str)> = drop.into_iter().map(|t| { let s = sites[&t]; (t, s) }).collect();
+            let (drop, sites, _) = polish_drop_set(
+                l, "full", 0.0, 0.0, false, false, false, 1.0, false, 5, false, 0, 0.0,
+            );
+            let mut d: Vec<(String, &str)> = drop
+                .into_iter()
+                .map(|t| {
+                    let s = sites[&t];
+                    (t, s)
+                })
+                .collect();
             d.sort();
             d
         };
         // fuzzy alone: OTHER (11) is the bucket's best and absorbs MAJ and MIN
         let alone = fuzzy_sites(&build());
-        assert!(alone.contains(&("MAJ".to_string(), "fuzzy")) && alone.contains(&("MIN".to_string(), "fuzzy")), "{alone:?}");
+        assert!(
+            alone.contains(&("MAJ".to_string(), "fuzzy"))
+                && alone.contains(&("MIN".to_string(), "fuzzy")),
+            "{alone:?}"
+        );
         // snap first (OTHER, J and K are each proven against each other except K against J)
         let ev = snap_ev(&[
             (SNAP_K, SNAP_J, [2, 0, 2, 0]),
@@ -10936,39 +14270,78 @@ mod tests {
         junction_snap(&mut l, "reads", &seq, |_| Ok((ev.clone(), 23, 23))).unwrap();
         let after = fuzzy_sites(&l);
         assert!(after.contains(&("OTHER".to_string(), "fuzzy")), "{after:?}");
-        assert!(!after.iter().any(|(t, _)| t == "MAJ" || t == "MIN"), "{after:?}");
+        assert!(
+            !after.iter().any(|(t, _)| t == "MAJ" || t == "MIN"),
+            "{after:?}"
+        );
     }
 
     /// One read's evidence: its own bases around the junction point (soft clip counted in the query offset) align
     /// exactly at X and worse at a 3-bp acceptor shift; a read past the per-junction cap is not examined.
     #[test]
     fn snap_tally_read_counts_own_placement() {
-        use std::collections::{BTreeMap};
+        use std::collections::BTreeMap;
         let seq = snap_seq(1000);
         let (x, y) = ((200, 300), (200, 303));
-        let partners: BTreeMap<(i64, i64), Vec<(i64, i64)>> = [(x, vec![y]), (y, vec![x])].into_iter().collect();
-        let wins: DetHashMap<(i64, i64), Vec<u8>> = [x, y].iter().map(|&j| (j, snap_window(&seq, j))).collect();
+        let partners: BTreeMap<(i64, i64), Vec<(i64, i64)>> =
+            [(x, vec![y]), (y, vec![x])].into_iter().collect();
+        let wins: DetHashMap<(i64, i64), Vec<u8>> =
+            [x, y].iter().map(|&j| (j, snap_window(&seq, j))).collect();
         let want: DetHashSet<(i64, i64)> = [x, y].into_iter().collect();
         // 5 soft-clipped bases, then seq[100..200] + seq[300..400]: 100M 100N 100M from 100
         let read: Vec<u8> = [&b"NNNNN"[..], &seq[100..200], &seq[300..400]].concat();
         let ops = [(b'S', 5), (b'M', 100), (b'N', 100), (b'M', 100)];
         let (mut nreads, mut ev) = (DetHashMap::default(), SnapEvidence::default());
-        assert!(snap_tally_read(100, &ops, &read, &want, &wins, &partners, &mut nreads, &mut ev));
+        assert!(snap_tally_read(
+            100,
+            &ops,
+            &read,
+            &want,
+            &wins,
+            &partners,
+            &mut nreads,
+            &mut ev
+        ));
         assert_eq!(ev[&(x, y)], [1, 1, 0, 0]);
         assert!(!ev.contains_key(&(y, x)), "the read does not carry Y");
         // a read without X exactly (acceptor at 301) contributes nothing
         let ops2 = [(b'M', 100), (b'N', 101), (b'M', 99)];
-        assert!(!snap_tally_read(100, &ops2, &read[5..], &want, &wins, &partners, &mut nreads, &mut ev));
+        assert!(!snap_tally_read(
+            100,
+            &ops2,
+            &read[5..],
+            &want,
+            &wins,
+            &partners,
+            &mut nreads,
+            &mut ev
+        ));
         // the cap
         nreads.insert(x, SNAP_CAP);
-        assert!(!snap_tally_read(100, &ops, &read, &want, &wins, &partners, &mut nreads, &mut ev));
+        assert!(!snap_tally_read(
+            100,
+            &ops,
+            &read,
+            &want,
+            &wins,
+            &partners,
+            &mut nreads,
+            &mut ev
+        ));
         assert_eq!(ev[&(x, y)], [1, 1, 0, 0]);
     }
 
     // ---- --gtf-regroup (RG3): the fixtures of the frozen `test_rg3.py` 03e10572, in the same order ----
 
     /// One transcript's GTF lines the way the assembler emits them (transcript line, then exons).
-    fn rg_tx(chrom: &str, gene: &str, tid: &str, reads: u64, exons: &[(i64, i64)], strand: &str) -> Vec<String> {
+    fn rg_tx(
+        chrom: &str,
+        gene: &str,
+        tid: &str,
+        reads: u64,
+        exons: &[(i64, i64)],
+        strand: &str,
+    ) -> Vec<String> {
         let (s, e) = (exons[0].0, exons[exons.len() - 1].1);
         let mut v = vec![format!(
             "{chrom}\trustle\ttranscript\t{s}\t{e}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; reads \"{reads}\";"
@@ -10991,14 +14364,19 @@ mod tests {
             .filter(|x| x.contains("\ttranscript\t"))
             .map(|x| {
                 let a = x.split('\t').nth(8).unwrap();
-                (re_attr(a, "transcript_id").unwrap(), re_attr(a, "gene_id").unwrap_or_default())
+                (
+                    re_attr(a, "transcript_id").unwrap(),
+                    re_attr(a, "gene_id").unwrap_or_default(),
+                )
             })
             .collect();
         (got, st, l)
     }
 
     fn rg_pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
-        v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+        v.iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect()
     }
 
     /// A line with its `gene_id "..."` attribute removed (rg3.py's assert 1: nothing else may change).
@@ -11022,7 +14400,13 @@ mod tests {
         assert_eq!(got, rg_pairs(&[("a", "G"), ("c", "G.rg2")]));
         assert_eq!(
             st,
-            RegroupStats { gene_ids: 1, gene_ids_split: 1, pieces_added: 1, transcripts_relabelled: 1, lines_changed: 3 }
+            RegroupStats {
+                gene_ids: 1,
+                gene_ids_split: 1,
+                pieces_added: 1,
+                transcripts_relabelled: 1,
+                lines_changed: 3
+            }
         );
         assert_eq!(out.len(), src.len());
         for (a, b) in src.iter().zip(out.iter()) {
@@ -11055,22 +14439,46 @@ mod tests {
         src.extend(rg_tx("c1", "DN_c1_0_2", "y", 1, &[(1, 10), (20, 40)], "+"));
         let (got, st, out) = rg_run(src.clone());
         assert_eq!(got, rg_pairs(&[("x.2", "DN_c1_0_2"), ("y", "DN_c1_0_2")]));
-        assert_eq!(st, RegroupStats { gene_ids: 1, ..Default::default() });
+        assert_eq!(
+            st,
+            RegroupStats {
+                gene_ids: 1,
+                ..Default::default()
+            }
+        );
         assert_eq!(out, src);
         // split-only: two gene_ids that overlap stay two gene_ids
         let mut src = rg_tx("c1", "G", "a", 3, &[(1, 10), (20, 30)], "+");
         src.extend(rg_tx("c1", "H", "b", 3, &[(1, 10), (20, 30)], "+"));
         let (got, st, out) = rg_run(src.clone());
         assert_eq!(got, rg_pairs(&[("a", "G"), ("b", "H")]));
-        assert_eq!(st, RegroupStats { gene_ids: 2, ..Default::default() });
+        assert_eq!(
+            st,
+            RegroupStats {
+                gene_ids: 2,
+                ..Default::default()
+            }
+        );
         assert_eq!(out, src);
         // comment lines and a transcript without a gene_id pass through untouched
         let mut src = vec!["# header".to_string()];
-        src.push("c1\trustle\ttranscript\t1\t30\t.\t+\t.\ttranscript_id \"nogene\"; reads \"5\";".to_string());
-        src.push("c1\trustle\texon\t1\t30\t.\t+\t.\ttranscript_id \"nogene\"; exon_number \"1\";".to_string());
+        src.push(
+            "c1\trustle\ttranscript\t1\t30\t.\t+\t.\ttranscript_id \"nogene\"; reads \"5\";"
+                .to_string(),
+        );
+        src.push(
+            "c1\trustle\texon\t1\t30\t.\t+\t.\ttranscript_id \"nogene\"; exon_number \"1\";"
+                .to_string(),
+        );
         src.extend(rg_tx("c1", "G", "a", 3, &[(1, 10), (20, 30)], "+"));
         let (_, st, out) = rg_run(src.clone());
-        assert_eq!(st, RegroupStats { gene_ids: 1, ..Default::default() });
+        assert_eq!(
+            st,
+            RegroupStats {
+                gene_ids: 1,
+                ..Default::default()
+            }
+        );
         assert_eq!(out, src);
     }
 
@@ -11147,7 +14555,13 @@ mod tests {
         assert_eq!(got, rg_pairs(&[("p", "G.rg2"), ("q", "G"), ("r", "G.rg3")]));
         assert_eq!(
             st,
-            RegroupStats { gene_ids: 1, gene_ids_split: 1, pieces_added: 2, transcripts_relabelled: 2, lines_changed: 6 }
+            RegroupStats {
+                gene_ids: 1,
+                gene_ids_split: 1,
+                pieces_added: 2,
+                transcripts_relabelled: 2,
+                lines_changed: 6
+            }
         );
     }
 

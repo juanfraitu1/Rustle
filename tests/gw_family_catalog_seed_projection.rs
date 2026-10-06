@@ -18,7 +18,11 @@ fn run(out: &str, extra: &[&str]) -> std::process::Output {
 }
 
 fn tmp(name: &str) -> String {
-    std::env::temp_dir().join(name).to_str().unwrap().to_string()
+    std::env::temp_dir()
+        .join(name)
+        .to_str()
+        .unwrap()
+        .to_string()
 }
 
 /// The fixture emits one family, GWFAM0, with four copies: c1:0-260, c1:250-460, c1:380-550,
@@ -38,7 +42,10 @@ fn seed_inside_a_copy_returns_the_whole_component() {
     );
     assert!(rows.iter().all(|r| r.contains("\tHIT\tGWFAM0\t")), "{tsv}");
     // exactly one member is flagged as the one the seed landed on
-    let seeded: Vec<&&str> = rows.iter().filter(|r| r.split('\t').nth(8) == Some("true")).collect();
+    let seeded: Vec<&&str> = rows
+        .iter()
+        .filter(|r| r.split('\t').nth(8) == Some("true"))
+        .collect();
     assert_eq!(seeded.len(), 1, "{tsv}");
     let f: Vec<&str> = seeded[0].split('\t').collect();
     assert_eq!((f[5], f[6], f[7]), ("c1", "0", "260"), "{tsv}");
@@ -59,7 +66,11 @@ fn straddling_seed_goes_to_the_copy_it_overlaps_most() {
         .collect();
     assert_eq!(seeded.len(), 1, "{tsv}");
     let f: Vec<&str> = seeded[0].split('\t').collect();
-    assert_eq!((f[5], f[6], f[7], f[9]), ("c1", "380", "550", "151"), "{tsv}");
+    assert_eq!(
+        (f[5], f[6], f[7], f[9]),
+        ("c1", "380", "550", "151"),
+        "{tsv}"
+    );
 }
 
 #[test]
@@ -69,12 +80,25 @@ fn seed_off_every_copy_abstains_and_does_not_snap_to_a_neighbour() {
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let tsv = std::fs::read_to_string(format!("{out}.seed.tsv")).unwrap();
     let rows: Vec<&str> = tsv.lines().skip(1).collect();
-    assert_eq!(rows.len(), 2, "one ABSTAIN row per seed, no guessing:\n{tsv}");
-    assert!(rows.iter().all(|r| r.contains("ABSTAIN_NO_OVERLAP")), "{tsv}");
-    assert!(rows[0].starts_with("c1:900-1000\t") && rows[1].starts_with("cZ:1-100\t"), "{tsv}");
+    assert_eq!(
+        rows.len(),
+        2,
+        "one ABSTAIN row per seed, no guessing:\n{tsv}"
+    );
+    assert!(
+        rows.iter().all(|r| r.contains("ABSTAIN_NO_OVERLAP")),
+        "{tsv}"
+    );
+    assert!(
+        rows[0].starts_with("c1:900-1000\t") && rows[1].starts_with("cZ:1-100\t"),
+        "{tsv}"
+    );
     // the operator is told what an abstention does and does not mean
     let err = String::from_utf8_lossy(&o.stderr);
-    assert!(err.contains("--min-copies 1"), "abstention must name the singleton caveat:\n{err}");
+    assert!(
+        err.contains("--min-copies 1"),
+        "abstention must name the singleton caveat:\n{err}"
+    );
 }
 
 /// THE property. `--seed` may add `<out>.seed.tsv` and nothing else.
@@ -87,7 +111,10 @@ fn seed_does_not_change_the_catalog() {
     for ext in ["families.tsv", "copies.tsv", "copies.fa"] {
         let a = std::fs::read(format!("{plain}.{ext}")).unwrap();
         let b = std::fs::read(format!("{seeded}.{ext}")).unwrap();
-        assert_eq!(a, b, "--seed changed {ext}; it must be a projection, not an input");
+        assert_eq!(
+            a, b,
+            "--seed changed {ext}; it must be a projection, not an input"
+        );
     }
     assert!(
         std::fs::metadata(format!("{plain}.seed.tsv")).is_err(),
@@ -102,7 +129,14 @@ fn any_member_of_a_component_returns_the_same_component() {
     let out = tmp("seedproj_invariance");
     let o = run(
         &out,
-        &["--seed", "c1:1-260", "--seed", "c1:251-460", "--seed", "c2:1-260"],
+        &[
+            "--seed",
+            "c1:1-260",
+            "--seed",
+            "c1:251-460",
+            "--seed",
+            "c2:1-260",
+        ],
     );
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let tsv = std::fs::read_to_string(format!("{out}.seed.tsv")).unwrap();
@@ -115,15 +149,24 @@ fn any_member_of_a_component_returns_the_same_component() {
     }
     assert_eq!(by_seed.len(), 3, "{tsv}");
     let sets: Vec<&Vec<String>> = by_seed.values().collect();
-    assert_eq!(sets[0], sets[1], "F(s) must not depend on which member seeded it:\n{tsv}");
-    assert_eq!(sets[0], sets[2], "F(s) must not depend on which member seeded it:\n{tsv}");
+    assert_eq!(
+        sets[0], sets[1],
+        "F(s) must not depend on which member seeded it:\n{tsv}"
+    );
+    assert_eq!(
+        sets[0], sets[2],
+        "F(s) must not depend on which member seeded it:\n{tsv}"
+    );
 }
 
 #[test]
 fn a_malformed_seed_fails_loudly_instead_of_silently_abstaining() {
     let out = tmp("seedproj_bad");
     let o = run(&out, &["--seed", "c1:not-a-number"]);
-    assert!(!o.status.success(), "a typo must not be reported as 'no family here'");
+    assert!(
+        !o.status.success(),
+        "a typo must not be reported as 'no family here'"
+    );
     assert!(
         std::fs::metadata(format!("{out}.seed.tsv")).is_err(),
         "a rejected seed must not leave a partial .seed.tsv"

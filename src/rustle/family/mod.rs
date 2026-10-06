@@ -17,32 +17,31 @@ pub mod missing_copy; // O3 RNA-only chain: divergence mixture -> PSV consistenc
 pub mod o3; // O3 candidate copies and reference-absent admission gate.
 
 // Re-export merged submodules so existing `crate::family::<name>` paths keep compiling.
-pub use arms::catalog_input as catalog_input;
-pub use arms::collapse_enumerate as collapse_enumerate;
-pub use arms::copy_graph as copy_graph;
-pub use arms::copy_split as copy_split;
-pub use arms::from_genome as from_genome;
-pub use arms::genome_projection as genome_projection;
-pub use arms::linearize as linearize;
-pub use arms::parcn as parcn;
-pub use arms::readonly_copy_number as readonly_copy_number;
-pub use arms::run_cache as run_cache;
-pub use arms::seq_utils as seq_utils;
-pub use arms::shared_definition as shared_definition;
-pub use arms::single_copy as single_copy;
-pub use arms::vg_realign as vg_realign;
+pub use arms::catalog_input;
+pub use arms::collapse_enumerate;
+pub use arms::copy_graph;
+pub use arms::copy_split;
+pub use arms::from_genome;
+pub use arms::genome_projection;
+pub use arms::linearize;
+pub use arms::parcn;
+pub use arms::readonly_copy_number;
+pub use arms::run_cache;
+pub use arms::seq_utils;
+pub use arms::shared_definition;
+pub use arms::single_copy;
+pub use arms::vg_realign;
 
-pub use denovo_pipeline::denovo_assemble as denovo_assemble;
+pub use denovo_pipeline::denovo_assemble;
 
-pub use fam_from_gtf::annotation_families as annotation_families;
+pub use fam_from_gtf::annotation_families;
 
-pub use family_detect::family_rescue as family_rescue;
-pub use family_detect::mosaic as mosaic;
-pub use family_detect::read_conflict as read_conflict;
+pub use family_detect::family_rescue;
+pub use family_detect::mosaic;
+pub use family_detect::read_conflict;
 
-pub use o3::absent_copy as absent_copy;
-pub use o3::o3_candidates as o3_candidates;
-
+pub use o3::absent_copy;
+pub use o3::o3_candidates;
 
 #[cfg(test)]
 mod module_status_tests {
@@ -58,13 +57,13 @@ mod module_status_tests {
     use std::collections::BTreeSet;
 
     const TAGS: &[&str] = &[
-        "SHIPPED-DEFAULT",   // reachable with no env var and no non-default flag — this is the method
-        "OPT-IN",            // built and wired, behind a flag that defaults OFF — an arm, not the method
-        "OTHER-BINARY",      // live, but only from a binary other than gw_family_catalog / copy_assign
-        "REFUTED",           // implemented, MEASURED, and the measurement went against it — kept as an instrument
-        "TEST-ONLY",         // no non-test callers anywhere in src/ — dead in every shipped binary
-        "INFRASTRUCTURE",    // shared utility with no independent objective claim
-        "AMBIGUOUS",         // could not be determined — must not be the resting state of a module
+        "SHIPPED-DEFAULT", // reachable with no env var and no non-default flag — this is the method
+        "OPT-IN", // built and wired, behind a flag that defaults OFF — an arm, not the method
+        "OTHER-BINARY", // live, but only from a binary other than gw_family_catalog / copy_assign
+        "REFUTED", // implemented, MEASURED, and the measurement went against it — kept as an instrument
+        "TEST-ONLY", // no non-test callers anywhere in src/ — dead in every shipped binary
+        "INFRASTRUCTURE", // shared utility with no independent objective claim
+        "AMBIGUOUS", // could not be determined — must not be the resting state of a module
     ];
 
     fn module_files() -> Vec<(String, String)> {
@@ -106,15 +105,21 @@ mod module_status_tests {
             missing.is_empty(),
             "these modules declare no `//! **STATUS:** <TAG>` line (see docs/MODULE_STATUS.md): {missing:#?}"
         );
-        assert!(bad.is_empty(), "unknown status tag; allowed are {TAGS:?}: {bad:#?}");
+        assert!(
+            bad.is_empty(),
+            "unknown status tag; allowed are {TAGS:?}: {bad:#?}"
+        );
     }
 
     /// The registry and the module set must not drift apart — a module added or removed without
     /// updating `docs/MODULE_STATUS.md` is exactly how "what is shipped" stops being knowable.
     #[test]
     fn module_status_registry_covers_exactly_the_module_set() {
-        let doc = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/MODULE_STATUS.md"))
-            .expect("docs/MODULE_STATUS.md must exist");
+        let doc = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/MODULE_STATUS.md"
+        ))
+        .expect("docs/MODULE_STATUS.md must exist");
         let listed: BTreeSet<String> = doc
             .lines()
             .filter_map(|l| l.split('`').nth(1).map(|s| s.to_string()))
@@ -123,7 +128,13 @@ mod module_status_tests {
         let actual: BTreeSet<String> = module_files().into_iter().map(|(n, _)| n).collect();
         let unlisted: Vec<&String> = actual.difference(&listed).collect();
         let stale: Vec<&String> = listed.difference(&actual).collect();
-        assert!(unlisted.is_empty(), "modules missing from docs/MODULE_STATUS.md: {unlisted:#?}");
-        assert!(stale.is_empty(), "docs/MODULE_STATUS.md lists modules that no longer exist: {stale:#?}");
+        assert!(
+            unlisted.is_empty(),
+            "modules missing from docs/MODULE_STATUS.md: {unlisted:#?}"
+        );
+        assert!(
+            stale.is_empty(),
+            "docs/MODULE_STATUS.md lists modules that no longer exist: {stale:#?}"
+        );
     }
 }

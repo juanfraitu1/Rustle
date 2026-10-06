@@ -23,7 +23,10 @@ fn default_cross_chrom_output_is_unchanged() {
     let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
     let golden = "tests/fixtures/same_chrom_supplement/out_default";
     let scratch = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("gwcat_default");
-    let out = scratch.to_str().expect("scratch path is valid UTF-8").to_string();
+    let out = scratch
+        .to_str()
+        .expect("scratch path is valid UTF-8")
+        .to_string();
 
     let status = Command::new(bin)
         .arg("--bam")
@@ -66,7 +69,10 @@ fn default_cross_chrom_output_is_unchanged() {
             f.len() >= 3 && f[2] == "1" && f[1].parse::<usize>().map(|n| n >= 2).unwrap_or(false)
         })
         .count();
-    assert_eq!(same_chrom, 1, "golden must retain the same-chrom family\n{families}");
+    assert_eq!(
+        same_chrom, 1,
+        "golden must retain the same-chrom family\n{families}"
+    );
 }
 
 /// ⭐ 2026-08-20: THE O1 CATALOG HAS EXACTLY ONE PATH.
@@ -82,7 +88,10 @@ fn default_cross_chrom_output_is_unchanged() {
 fn refine_is_rejected_on_the_o1_catalog() {
     let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
     let scratch = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("gwcat_one_path");
-    let out = scratch.to_str().expect("scratch path is valid UTF-8").to_string();
+    let out = scratch
+        .to_str()
+        .expect("scratch path is valid UTF-8")
+        .to_string();
 
     for flag in ["--refine", "--refine-introns"] {
         let res = Command::new(bin)
@@ -118,5 +127,8 @@ fn refine_is_rejected_on_the_o1_catalog() {
         .arg("--refine")
         .status()
         .expect("gw_family_catalog failed to run");
-    assert!(ok.success(), "refine must still work on --cross-chrom, its documented home");
+    assert!(
+        ok.success(),
+        "refine must still work on --cross-chrom, its documented home"
+    );
 }

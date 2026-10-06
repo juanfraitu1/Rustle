@@ -46,7 +46,9 @@ use std::io::{BufRead, BufReader, Write};
 const ALL: &str = "ALL";
 
 #[derive(Parser, Debug)]
-#[command(about = "Score mode clusters against a family truth (sens / prec / bipartite F / collapse)")]
+#[command(
+    about = "Score mode clusters against a family truth (sens / prec / bipartite F / collapse)"
+)]
 struct Args {
     /// `mcl_families` clusters TSV (needs columns cluster_id, chrom, start, end)
     #[arg(long)]
@@ -118,7 +120,10 @@ fn truth_rows_gw(path: &str) -> Result<Vec<(Option<String>, String, String)>> {
     };
     let col = |name: &str| hdr.iter().position(|h| h == name);
     let Some(ci_c) = TRUTH_CONTIG_COLUMNS.iter().find_map(|c| col(c)) else {
-        return Ok(soto_truth(path)?.into_iter().map(|(g, f)| (None, g, f)).collect());
+        return Ok(soto_truth(path)?
+            .into_iter()
+            .map(|(g, f)| (None, g, f))
+            .collect());
     };
     let (ci_f, ci_g) = (col("Family ID"), col("Gene Name"));
     let mut seen: HashSet<(String, String)> = HashSet::new();
@@ -128,7 +133,12 @@ fn truth_rows_gw(path: &str) -> Result<Vec<(Option<String>, String, String)>> {
         let r: Vec<&str> = line.split('\t').collect();
         let get = |i: Option<usize>| i.and_then(|i| r.get(i)).map(|s| s.trim()).unwrap_or("");
         let (fam, g, c) = (get(ci_f), get(ci_g), get(Some(ci_c)));
-        if !fam.is_empty() && fam != "N/A" && !g.is_empty() && !c.is_empty() && seen.insert((c.to_string(), g.to_string())) {
+        if !fam.is_empty()
+            && fam != "N/A"
+            && !g.is_empty()
+            && !c.is_empty()
+            && seen.insert((c.to_string(), g.to_string()))
+        {
             out.push((Some(c.to_string()), g.to_string(), fam.to_string()));
         }
     }
@@ -152,11 +162,18 @@ fn gene_spans(gff: &str, chrom: Option<&str>) -> Result<BTreeMap<String, Vec<(i6
             continue;
         }
         let fs: Vec<&str> = line.trim_end_matches('\n').split('\t').collect();
-        if fs.len() < 9 || chrom.is_some_and(|c| fs[0] != c) || !matches!(fs[2], "gene" | "pseudogene" | "ncRNA_gene") {
+        if fs.len() < 9
+            || chrom.is_some_and(|c| fs[0] != c)
+            || !matches!(fs[2], "gene" | "pseudogene" | "ncRNA_gene")
+        {
             continue;
         }
         if let Some(n) = name_attr(fs[8]) {
-            out.entry(fs[0].to_string()).or_default().push((fs[3].parse::<i64>()?, fs[4].parse::<i64>()?, n.to_string()));
+            out.entry(fs[0].to_string()).or_default().push((
+                fs[3].parse::<i64>()?,
+                fs[4].parse::<i64>()?,
+                n.to_string(),
+            ));
         }
     }
     for v in out.values_mut() {
@@ -177,7 +194,10 @@ fn load_clusters(path: &str, chrom: Option<&str>) -> Result<Vec<(String, Vec<Loc
     let ci: HashMap<&str, usize> = hdr.iter().enumerate().map(|(i, h)| (*h, i)).collect();
     for need in ["cluster_id", "chrom", "start", "end"] {
         if !ci.contains_key(need) {
-            anyhow::bail!("{path}: expected columns cluster_id/chrom/start/end, got {:?}", &hdr[..hdr.len().min(8)]);
+            anyhow::bail!(
+                "{path}: expected columns cluster_id/chrom/start/end, got {:?}",
+                &hdr[..hdr.len().min(8)]
+            );
         }
     }
     let mut order: Vec<String> = Vec::new();
@@ -192,9 +212,18 @@ fn load_clusters(path: &str, chrom: Option<&str>) -> Result<Vec<(String, Vec<Loc
         if !members.contains_key(&cid) {
             order.push(cid.clone());
         }
-        members.entry(cid).or_default().push((r[ci["chrom"]].to_string(), s, e));
+        members
+            .entry(cid)
+            .or_default()
+            .push((r[ci["chrom"]].to_string(), s, e));
     }
-    Ok(order.into_iter().map(|c| { let m = members.remove(&c).unwrap_or_default(); (c, m) }).collect())
+    Ok(order
+        .into_iter()
+        .map(|c| {
+            let m = members.remove(&c).unwrap_or_default();
+            (c, m)
+        })
+        .collect())
 }
 
 /// Best gene for a locus by max overlap, FIRST maximum wins (strict `>`), scanning the sorted spans.
@@ -311,8 +340,15 @@ fn max_overlap_assignment(m: &[Vec<i64>]) -> Vec<(usize, usize)> {
         lsap_min_cost(n, k, &cost).into_iter().enumerate().collect()
     } else {
         // transpose, solve, map back — scipy does exactly this for nr > nc
-        let cost: Vec<i64> = (0..k).flat_map(|j| (0..n).map(move |i| (i, j))).map(|(i, j)| -m[i][j]).collect();
-        lsap_min_cost(k, n, &cost).into_iter().enumerate().map(|(j, i)| (i, j)).collect()
+        let cost: Vec<i64> = (0..k)
+            .flat_map(|j| (0..n).map(move |i| (i, j)))
+            .map(|(i, j)| -m[i][j])
+            .collect();
+        lsap_min_cost(k, n, &cost)
+            .into_iter()
+            .enumerate()
+            .map(|(j, i)| (i, j))
+            .collect()
     }
 }
 
@@ -334,12 +370,19 @@ struct Score {
 
 fn score(a: &Args) -> Result<Score> {
     let genome_wide = a.chrom == ALL;
-    let only = if genome_wide { None } else { Some(a.chrom.as_str()) };
+    let only = if genome_wide {
+        None
+    } else {
+        Some(a.chrom.as_str())
+    };
     // (contig, Name, family): the per-chromosome mode reads the truth exactly as it always has
     let rows: Vec<(Option<String>, String, String)> = if genome_wide {
         truth_rows_gw(&a.soto)?
     } else {
-        soto_truth(&a.soto)?.into_iter().map(|(g, f)| (None, g, f)).collect()
+        soto_truth(&a.soto)?
+            .into_iter()
+            .map(|(g, f)| (None, g, f))
+            .collect()
     };
     let spans = gene_spans(&a.gff, only)?;
     let clusters = load_clusters(&a.clusters, only)?;
@@ -351,7 +394,10 @@ fn score(a: &Args) -> Result<Score> {
     for (cid, members) in &clusters {
         for (c, s, e) in members {
             if let Some(g) = gene_at(spans_of(c), *s, *e) {
-                locus_gene.insert((cid.clone(), (c.clone(), *s, *e)), (c.clone(), g.to_string()));
+                locus_gene.insert(
+                    (cid.clone(), (c.clone(), *s, *e)),
+                    (c.clone(), g.to_string()),
+                );
             }
         }
     }
@@ -360,7 +406,10 @@ fn score(a: &Args) -> Result<Score> {
     let mut contigs_of: HashMap<&str, BTreeSet<&str>> = HashMap::new();
     for (c, v) in &spans {
         for x in v {
-            contigs_of.entry(x.2.as_str()).or_default().insert(c.as_str());
+            contigs_of
+                .entry(x.2.as_str())
+                .or_default()
+                .insert(c.as_str());
         }
     }
     let mut truth_order: Vec<String> = Vec::new();
@@ -387,7 +436,11 @@ fn score(a: &Args) -> Result<Score> {
     }
     let t_order: Vec<String> = truth_order
         .into_iter()
-        .filter(|f| a.family.as_ref().map_or(true, |sub| truth[f].iter().any(|g| g.1.contains(sub.as_str()))))
+        .filter(|f| {
+            a.family.as_ref().map_or(true, |sub| {
+                truth[f].iter().any(|g| g.1.contains(sub.as_str()))
+            })
+        })
         .filter(|f| truth[f].len() >= 2)
         .collect();
     let universe: HashSet<&Gene> = t_order.iter().flat_map(|f| truth[f].iter()).collect();
@@ -408,12 +461,26 @@ fn score(a: &Args) -> Result<Score> {
         }
     }
     if t_order.is_empty() || p_order.is_empty() {
-        return Ok(Score { t_order, truth, p_order, pred, assignment: Vec::new(), m: Vec::new(), collapsed: 0, missing: 0 });
+        return Ok(Score {
+            t_order,
+            truth,
+            p_order,
+            pred,
+            assignment: Vec::new(),
+            m: Vec::new(),
+            collapsed: 0,
+            missing: 0,
+        });
     }
 
     let m: Vec<Vec<i64>> = t_order
         .iter()
-        .map(|tf| p_order.iter().map(|pc| truth[tf].intersection(&pred[pc]).count() as i64).collect())
+        .map(|tf| {
+            p_order
+                .iter()
+                .map(|pc| truth[tf].intersection(&pred[pc]).count() as i64)
+                .collect()
+        })
         .collect();
     let assignment = max_overlap_assignment(&m);
 
@@ -428,15 +495,24 @@ fn score(a: &Args) -> Result<Score> {
     let mut loci_by_contig: HashMap<&str, Vec<(&str, i64, i64)>> = HashMap::new();
     for (cid, ms) in &clusters {
         for (c, s, e) in ms {
-            loci_by_contig.entry(c.as_str()).or_default().push((cid.as_str(), *s, *e));
+            loci_by_contig
+                .entry(c.as_str())
+                .or_default()
+                .push((cid.as_str(), *s, *e));
         }
     }
     let mut share: BTreeMap<(&str, &str, i64, i64), usize> = BTreeMap::new();
     let mut placed = 0usize;
     for g in &universe {
-        let Some(&(gs, ge)) = gene_span.get(*g) else { continue };
+        let Some(&(gs, ge)) = gene_span.get(*g) else {
+            continue;
+        };
         let mut best: Option<(i64, (&str, &str, i64, i64))> = None;
-        for &(cid, s, e) in loci_by_contig.get(g.0.as_str()).map(|v| v.as_slice()).unwrap_or(&[]) {
+        for &(cid, s, e) in loci_by_contig
+            .get(g.0.as_str())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+        {
             let ov = ge.min(e) - gs.max(s);
             if ov > 0 && best.map_or(true, |b| ov > b.0) {
                 best = Some((ov, (cid, g.0.as_str(), s, e)));
@@ -449,7 +525,16 @@ fn score(a: &Args) -> Result<Score> {
     }
     let collapsed: usize = share.values().filter(|&&n| n > 1).map(|&n| n - 1).sum();
     let missing = universe.len() - placed;
-    Ok(Score { t_order, truth, p_order, pred, assignment, m, collapsed, missing })
+    Ok(Score {
+        t_order,
+        truth,
+        p_order,
+        pred,
+        assignment,
+        m,
+        collapsed,
+        missing,
+    })
 }
 
 /// Pairwise view over the truth universe: genes interned to ids (sorted gene order), the predicted pair set (a
@@ -479,8 +564,16 @@ fn pair_counts(sc: &Score) -> Pairs {
     let mut genes: Vec<&Gene> = sc.t_order.iter().flat_map(|f| sc.truth[f].iter()).collect();
     genes.sort();
     genes.dedup();
-    let ids: HashMap<Gene, u32> = genes.iter().enumerate().map(|(i, g)| ((*g).clone(), i as u32)).collect();
-    let predicted: HashSet<(u32, u32)> = sc.p_order.iter().flat_map(|c| id_pairs(&sc.pred[c], &ids)).collect();
+    let ids: HashMap<Gene, u32> = genes
+        .iter()
+        .enumerate()
+        .map(|(i, g)| ((*g).clone(), i as u32))
+        .collect();
+    let predicted: HashSet<(u32, u32)> = sc
+        .p_order
+        .iter()
+        .flat_map(|c| id_pairs(&sc.pred[c], &ids))
+        .collect();
     let (mut n_truth, mut tp) = (0usize, 0usize);
     for f in &sc.t_order {
         for p in id_pairs(&sc.truth[f], &ids) {
@@ -488,17 +581,28 @@ fn pair_counts(sc: &Score) -> Pairs {
             tp += usize::from(predicted.contains(&p));
         }
     }
-    Pairs { ids, predicted, n_truth, tp }
+    Pairs {
+        ids,
+        predicted,
+        n_truth,
+        tp,
+    }
 }
 
 fn gene_label(g: &Gene, genome_wide: bool) -> String {
-    if genome_wide { format!("{}:{}", g.0, g.1) } else { g.1.clone() }
+    if genome_wide {
+        format!("{}:{}", g.0, g.1)
+    } else {
+        g.1.clone()
+    }
 }
 
 /// `--per-family`: one row per truth family in first-seen order (the definitions of `score_arm`).
 fn write_per_family(path: &str, sc: &Score, pairs: &Pairs, genome_wide: bool) -> Result<()> {
     let assigned: HashMap<usize, usize> = sc.assignment.iter().copied().collect();
-    let mut fh = std::io::BufWriter::new(std::fs::File::create(path).with_context(|| format!("creating {path}"))?);
+    let mut fh = std::io::BufWriter::new(
+        std::fs::File::create(path).with_context(|| format!("creating {path}"))?,
+    );
     writeln!(
         fh,
         "family_id\tn_truth\tcluster\tn_pred\thit\tsens\tprec\tf\tjaccard\ttruth_pairs\ttp_pairs\tn_contigs\tmembers\thit_members"
@@ -506,7 +610,10 @@ fn write_per_family(path: &str, sc: &Score, pairs: &Pairs, genome_wide: bool) ->
     for (i, fam) in sc.t_order.iter().enumerate() {
         let tset = &sc.truth[fam];
         let nt = tset.len();
-        let hit_j = assigned.get(&i).copied().filter(|&j| sc.m.get(i).is_some_and(|r| r[j] > 0));
+        let hit_j = assigned
+            .get(&i)
+            .copied()
+            .filter(|&j| sc.m.get(i).is_some_and(|r| r[j] > 0));
         let (cluster, npred, hit, members_hit): (String, usize, usize, Vec<&Gene>) = match hit_j {
             Some(j) => {
                 let c = &sc.p_order[j];
@@ -516,15 +623,39 @@ fn write_per_family(path: &str, sc: &Score, pairs: &Pairs, genome_wide: bool) ->
             }
             None => ("-".into(), 0, 0, Vec::new()),
         };
-        let (s, p) = if hit > 0 { (hit as f64 / nt as f64, hit as f64 / npred as f64) } else { (0.0, 0.0) };
-        let f = if s + p > 0.0 { 2.0 * s * p / (s + p) } else { 0.0 };
-        let jac = if hit > 0 { hit as f64 / (nt + npred - hit) as f64 } else { 0.0 };
+        let (s, p) = if hit > 0 {
+            (hit as f64 / nt as f64, hit as f64 / npred as f64)
+        } else {
+            (0.0, 0.0)
+        };
+        let f = if s + p > 0.0 {
+            2.0 * s * p / (s + p)
+        } else {
+            0.0
+        };
+        let jac = if hit > 0 {
+            hit as f64 / (nt + npred - hit) as f64
+        } else {
+            0.0
+        };
         let fam_pairs = id_pairs(tset, &pairs.ids);
-        let tp_pairs = fam_pairs.iter().filter(|p| pairs.predicted.contains(*p)).count();
+        let tp_pairs = fam_pairs
+            .iter()
+            .filter(|p| pairs.predicted.contains(*p))
+            .count();
         let mut members: Vec<&Gene> = tset.iter().collect();
         members.sort();
-        let n_contigs = members.iter().map(|g| g.0.as_str()).collect::<BTreeSet<_>>().len();
-        let join = |v: &[&Gene]| v.iter().map(|g| gene_label(g, genome_wide)).collect::<Vec<_>>().join(",");
+        let n_contigs = members
+            .iter()
+            .map(|g| g.0.as_str())
+            .collect::<BTreeSet<_>>()
+            .len();
+        let join = |v: &[&Gene]| {
+            v.iter()
+                .map(|g| gene_label(g, genome_wide))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
         writeln!(
             fh,
             "{fam}\t{nt}\t{cluster}\t{npred}\t{hit}\t{s:.6}\t{p:.6}\t{f:.6}\t{jac:.6}\t{}\t{tp_pairs}\t{n_contigs}\t{}\t{}",
@@ -557,9 +688,21 @@ fn main() -> Result<()> {
             .filter(|&&(i, j)| sc.m[i][j] > 0)
             .map(|&(_, j)| sc.pred[&sc.p_order[j]].len())
             .sum();
-        let sens = if tot_truth > 0 { matched as f64 / tot_truth as f64 } else { 0.0 };
-        let prec = if tot_pred > 0 { matched as f64 / tot_pred as f64 } else { 0.0 };
-        let f1 = if sens + prec > 0.0 { 2.0 * sens * prec / (sens + prec) } else { 0.0 };
+        let sens = if tot_truth > 0 {
+            matched as f64 / tot_truth as f64
+        } else {
+            0.0
+        };
+        let prec = if tot_pred > 0 {
+            matched as f64 / tot_pred as f64
+        } else {
+            0.0
+        };
+        let f1 = if sens + prec > 0.0 {
+            2.0 * sens * prec / (sens + prec)
+        } else {
+            0.0
+        };
         println!(
             "{:>14} | truth {} fams / {} genes | clusters {} | sens {:.3} prec {:.3} F {:.3} | collapsed {} | no-locus {}",
             a.label, sc.t_order.len(), tot_truth, sc.p_order.len(), sens, prec, f1, sc.collapsed, sc.missing
@@ -567,9 +710,19 @@ fn main() -> Result<()> {
     }
     if let (true, Some(pr)) = (a.pairwise, &pairs) {
         let (n_tpairs, n_ppairs, n_tp) = (pr.n_truth, pr.predicted.len(), pr.tp);
-        let ps = if n_tpairs > 0 { n_tp as f64 / n_tpairs as f64 } else { 0.0 };
+        let ps = if n_tpairs > 0 {
+            n_tp as f64 / n_tpairs as f64
+        } else {
+            0.0
+        };
         let pp = (n_ppairs > 0).then(|| n_tp as f64 / n_ppairs as f64);
-        let pf = pp.map(|p| if ps + p > 0.0 { 2.0 * ps * p / (ps + p) } else { 0.0 });
+        let pf = pp.map(|p| {
+            if ps + p > 0.0 {
+                2.0 * ps * p / (ps + p)
+            } else {
+                0.0
+            }
+        });
         let fmt = |x: Option<f64>| x.map_or("NA".to_string(), |v| format!("{v:.3}"));
         println!(
             "{:>14} | pairwise | truth pairs {n_tpairs} | predicted pairs {n_ppairs} | tp {n_tp} | sens {ps:.3} prec {} F {}",
@@ -605,7 +758,11 @@ mod tests {
 
     #[test]
     fn gene_at_is_first_max_overlap() {
-        let spans = vec![(100, 200, "A".to_string()), (150, 400, "B".to_string()), (900, 950, "C".to_string())];
+        let spans = vec![
+            (100, 200, "A".to_string()),
+            (150, 400, "B".to_string()),
+            (900, 950, "C".to_string()),
+        ];
         assert_eq!(gene_at(&spans, 120, 260), Some("B")); // B overlaps 110, A overlaps 80
         assert_eq!(gene_at(&spans, 100, 200), Some("A")); // tie 100 vs 50 -> A
         assert_eq!(gene_at(&spans, 500, 800), None);
@@ -614,7 +771,8 @@ mod tests {
     // ---- genome-wide mode and the opt-in outputs (2026-09-25) ----
 
     fn tmp(tag: &str, body: &str) -> String {
-        let p = std::env::temp_dir().join(format!("family_score_test_{}_{tag}", std::process::id()));
+        let p =
+            std::env::temp_dir().join(format!("family_score_test_{}_{tag}", std::process::id()));
         std::fs::write(&p, body).unwrap();
         p.display().to_string()
     }
@@ -639,17 +797,36 @@ mod tests {
     /// (families, truth genes, scored clusters, matched, matched-cluster members, collapsed, no-locus)
     fn summary(sc: &Score) -> (usize, usize, usize, i64, usize, usize, usize) {
         let matched: i64 = sc.assignment.iter().map(|&(i, j)| sc.m[i][j]).sum();
-        let tot_pred: usize =
-            sc.assignment.iter().filter(|&&(i, j)| sc.m[i][j] > 0).map(|&(_, j)| sc.pred[&sc.p_order[j]].len()).sum();
+        let tot_pred: usize = sc
+            .assignment
+            .iter()
+            .filter(|&&(i, j)| sc.m[i][j] > 0)
+            .map(|&(_, j)| sc.pred[&sc.p_order[j]].len())
+            .sum();
         let tot_truth: usize = sc.t_order.iter().map(|f| sc.truth[f].len()).sum();
-        (sc.t_order.len(), tot_truth, sc.p_order.len(), matched, tot_pred, sc.collapsed, sc.missing)
+        (
+            sc.t_order.len(),
+            tot_truth,
+            sc.p_order.len(),
+            matched,
+            tot_pred,
+            sc.collapsed,
+            sc.missing,
+        )
     }
 
     #[test]
     fn genome_wide_on_one_contig_is_the_per_chromosome_mode() {
         let mut gff = String::from("##gff-version 3\n");
-        for (s, e, n) in [(100, 900, "A"), (1_000, 1_900, "B"), (3_000, 3_900, "C"), (5_000, 5_900, "D"),
-                          (7_000, 7_900, "E"), (9_000, 9_500, "A"), (11_000, 11_900, "F")] {
+        for (s, e, n) in [
+            (100, 900, "A"),
+            (1_000, 1_900, "B"),
+            (3_000, 3_900, "C"),
+            (5_000, 5_900, "D"),
+            (7_000, 7_900, "E"),
+            (9_000, 9_500, "A"),
+            (11_000, 11_900, "F"),
+        ] {
             gff += &gff_line("chr1", s, e, n);
         }
         let gff = tmp("one.gff", &gff);
@@ -659,7 +836,10 @@ mod tests {
              K1\tchr1\t150\t850\nK1\tchr1\t1050\t1850\nK2\tchr1\t3050\t3850\n\
              K3\tchr1\t5050\t5850\nK3\tchr1\t7050\t7850\nK3\tchr1\t10950\t11850\nK4\tchr1\t9050\t9450\n",
         );
-        let truth = tmp("one.truth.tsv", "Gene Name\tFamily ID\nA\tf1\nB\tf1\nC\tf1\nD\tf2\nE\tf2\nZ\tf3\nF\tf2\n");
+        let truth = tmp(
+            "one.truth.tsv",
+            "Gene Name\tFamily ID\nA\tf1\nB\tf1\nC\tf1\nD\tf2\nE\tf2\nZ\tf3\nF\tf2\n",
+        );
         let per = score(&args(&cl, &gff, &truth, "chr1")).unwrap();
         let gw = score(&args(&cl, &gff, &truth, ALL)).unwrap();
         assert_eq!(summary(&per), summary(&gw));
@@ -674,7 +854,9 @@ mod tests {
         // P is a pseudoautosomal-like gene: the same Name on chrX and chrY
         let gff = tmp(
             &format!("{tag}.par.gff"),
-            &(gff_line("chrX", 100, 200, "P") + &gff_line("chrY", 100, 200, "P") + &gff_line("chr1", 1_000, 2_000, "Q")),
+            &(gff_line("chrX", 100, 200, "P")
+                + &gff_line("chrY", 100, 200, "P")
+                + &gff_line("chr1", 1_000, 2_000, "Q")),
         );
         let cl = tmp(
             &format!("{tag}.par.clusters.tsv"),
@@ -693,15 +875,30 @@ mod tests {
         fam.sort();
         assert_eq!(
             fam,
-            vec![&("chr1".to_string(), "Q".to_string()), &("chrX".into(), "P".into()), &("chrY".into(), "P".into())]
+            vec![
+                &("chr1".to_string(), "Q".to_string()),
+                &("chrX".into(), "P".into()),
+                &("chrY".into(), "P".into())
+            ]
         );
-        assert_eq!(summary(&sc), (1, 3, 2, 2, 2, 0, 0), "F -> K1 (chrX:P + chr1:Q); chrY:P sits in K2");
+        assert_eq!(
+            summary(&sc),
+            (1, 3, 2, 2, 2, 0, 0),
+            "F -> K1 (chrX:P + chr1:Q); chrY:P sits in K2"
+        );
         let pr = pair_counts(&sc);
         assert_eq!((pr.n_truth, pr.predicted.len(), pr.tp), (3, 1, 1));
         // a contig column names one (contig, Name) gene per row
-        let truth_c = tmp("par.truth_c.tsv", "Gene Name\tFamily ID\tChrom\nP\tF\tchrX\nQ\tF\tchr1\n");
+        let truth_c = tmp(
+            "par.truth_c.tsv",
+            "Gene Name\tFamily ID\tChrom\nP\tF\tchrX\nQ\tF\tchr1\n",
+        );
         let sc = score(&args(&cl, &gff, &truth_c, ALL)).unwrap();
-        assert_eq!(summary(&sc), (1, 2, 1, 2, 2, 0, 0), "exactly K1; chrY:P is outside the universe");
+        assert_eq!(
+            summary(&sc),
+            (1, 2, 1, 2, 2, 0, 0),
+            "exactly K1; chrY:P is outside the universe"
+        );
         // the per-chromosome mode ignores the contig column and is unchanged: on chrX, P alone is no family
         let sc = score(&args(&cl, &gff, &truth_c, "chrX")).unwrap();
         assert!(sc.t_order.is_empty());
@@ -712,7 +909,10 @@ mod tests {
         let (gff, cl) = par_fixture("rows");
         let truth = tmp("par2.truth.tsv", "Gene Name\tFamily ID\nP\tF\nQ\tF\n");
         let sc = score(&args(&cl, &gff, &truth, ALL)).unwrap();
-        let out = std::env::temp_dir().join(format!("family_score_test_{}_per_family.tsv", std::process::id()));
+        let out = std::env::temp_dir().join(format!(
+            "family_score_test_{}_per_family.tsv",
+            std::process::id()
+        ));
         write_per_family(out.to_str().unwrap(), &sc, &pair_counts(&sc), true).unwrap();
         let text = std::fs::read_to_string(&out).unwrap();
         let rows: Vec<Vec<&str>> = text.lines().map(|l| l.split('\t').collect()).collect();
@@ -720,9 +920,22 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(
             rows[1],
-            vec!["F", "3", "K1", "2", "2", "0.666667", "1.000000", "0.800000", "0.666667", "3", "1", "3",
-                 "chr1:Q,chrX:P,chrY:P", "chr1:Q,chrX:P"]
+            vec![
+                "F",
+                "3",
+                "K1",
+                "2",
+                "2",
+                "0.666667",
+                "1.000000",
+                "0.800000",
+                "0.666667",
+                "3",
+                "1",
+                "3",
+                "chr1:Q,chrX:P,chrY:P",
+                "chr1:Q,chrX:P"
+            ]
         );
     }
-
 }

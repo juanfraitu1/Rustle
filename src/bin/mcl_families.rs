@@ -16,12 +16,13 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::family::annotation_families::{
-    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl, sd_blocks, Cluster, CoreStatus,
-    GeneKey, GraphParams, SdPairs,
+    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl,
+    sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, SdPairs,
 };
 use rustle::family::fam_from_gtf::{
-    clip_extents_to_neighbours, exonic_blocks, gene_strands, gtf_loci, junction_count, lengths_from_blocks, loci_from_gtf,
-    relation_loci, rep_frac_in, write_locus_rep_copies, GtfLocus, RepCopyStats, Representative,
+    clip_extents_to_neighbours, exonic_blocks, gene_strands, gtf_loci, junction_count,
+    lengths_from_blocks, loci_from_gtf, relation_loci, rep_frac_in, write_locus_rep_copies,
+    GtfLocus, RepCopyStats, Representative,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -395,10 +396,14 @@ struct Args {
     out: String,
 }
 
-
 /// Aligned blocks and introns of a read, 0-based half-open on the reference (`D` extends a block; `N` closes it).
-fn blocks_and_introns(br: &rustle::family::denovo_assemble::BamRead) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
-    (br.read.exon_blocks(), rustle::family::copy_split::intron_chain_of(&br.read))
+fn blocks_and_introns(
+    br: &rustle::family::denovo_assemble::BamRead,
+) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
+    (
+        br.read.exon_blocks(),
+        rustle::family::copy_split::intron_chain_of(&br.read),
+    )
 }
 
 /// The mis-chain rule shared by the chain and the extent (§6el; one shipped constant pair: 50 kb / `min_reads`):
@@ -422,7 +427,8 @@ fn kept_segment(
             segs.last_mut().unwrap().push(blocks[k + 1]);
         }
     }
-    segs.into_iter().find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi))
+    segs.into_iter()
+        .find(|sg| sg.iter().any(|&(s, e)| e > lo && s < hi))
 }
 
 /// ⭐ L2: the read-supported EXTENT of a unit — the union, over every PRIMARY record (`-F 2308`, the project
@@ -433,10 +439,17 @@ fn kept_segment(
 /// Primaries with a block in the chain are the molecules O2 aligns for this copy. This is O2's alignment
 /// target (`copies.tsv` `locus_start`/`locus_end`), replacing the padding rule O2 invented in §6fd. `None`
 /// when no primary record has a block in the chain.
-fn read_extent(reads: &[rustle::family::denovo_assemble::BamRead], chain: &[(u64, u64)], min_reads: usize) -> Option<(u64, u64)> {
+fn read_extent(
+    reads: &[rustle::family::denovo_assemble::BamRead],
+    chain: &[(u64, u64)],
+    min_reads: usize,
+) -> Option<(u64, u64)> {
     let (lo, hi) = (chain.first()?.0, chain.last()?.1);
-    let parsed: Vec<(Vec<(u64, u64)>, Vec<(u64, u64)>)> =
-        reads.iter().filter(|br| !br.is_supplementary && !br.is_secondary).map(blocks_and_introns).collect();
+    let parsed: Vec<(Vec<(u64, u64)>, Vec<(u64, u64)>)> = reads
+        .iter()
+        .filter(|br| !br.is_supplementary && !br.is_secondary)
+        .map(blocks_and_introns)
+        .collect();
     let mut support: BTreeMap<(u64, u64), usize> = BTreeMap::new();
     for (_, introns) in &parsed {
         for &i in introns {
@@ -446,11 +459,13 @@ fn read_extent(reads: &[rustle::family::denovo_assemble::BamRead], chain: &[(u64
     parsed
         .iter()
         .filter_map(|(b, i)| kept_segment(b, i, lo, hi, &support, min_reads))
-        .filter(|sg| sg.iter().any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e)))
+        .filter(|sg| {
+            sg.iter()
+                .any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e))
+        })
         .map(|sg| (sg[0].0, sg.last().unwrap().1))
         .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
 }
-
 
 /// ⭐ The read-supported exon chain of one locus `[lo, hi)` (§6el rule; one shipped constant pair: 50 kb / 3).
 /// Returns `(blocks, strand, n_reads)`; `blocks` empty when fewer than `min_reads` reads or no base reaches it.
@@ -469,13 +484,21 @@ fn read_chain(
             let strand = match br.ts {
                 Some(t) => {
                     if br.reverse {
-                        if t == '+' { '-' } else { '+' }
+                        if t == '+' {
+                            '-'
+                        } else {
+                            '+'
+                        }
                     } else {
                         t
                     }
                 }
                 None => {
-                    if br.reverse { '-' } else { '+' }
+                    if br.reverse {
+                        '-'
+                    } else {
+                        '+'
+                    }
                 }
             };
             (b, i, strand)
@@ -508,7 +531,11 @@ fn read_chain(
     // (adj/worst2, rna_units_v3_unbounded). The annotation bounds the locus; the reads shape it inside.
     let (wlo, whi) = match follow {
         Some((blo, bhi)) => {
-            let (a, b) = kept.iter().flatten().flatten().fold((lo, hi), |(a, b), &(s, e)| (a.min(s), b.max(e)));
+            let (a, b) = kept
+                .iter()
+                .flatten()
+                .flatten()
+                .fold((lo, hi), |(a, b), &(s, e)| (a.min(s), b.max(e)));
             (a.max(blo.min(lo)), b.min(bhi.max(hi)))
         }
         None => (lo, hi),
@@ -540,20 +567,30 @@ fn read_chain(
         }
     }
     // majority strand; ties -> '+' (python `Counter.most_common` order-dependence removed on purpose)
-    let strand = strands.iter().max_by_key(|(c, n)| (**n, if **c == '+' { 1 } else { 0 })).map(|(c, _)| *c);
+    let strand = strands
+        .iter()
+        .max_by_key(|(c, n)| (**n, if **c == '+' { 1 } else { 0 }))
+        .map(|(c, _)| *c);
     (blocks, strand, n_reads)
 }
 
 /// Introns of a read that LEAVE the emitted chain: the read must have an aligned block inside `chain`
 /// (`-F 2308` is the caller's job) and the intron's far end must lie beyond the chain's last exon.
 /// These are the candidate read-through junctions; the far end is resolved against the catalog later.
-fn leaving_introns(blocks: &[(u64, u64)], introns: &[(u64, u64)], chain: &[(u64, u64)]) -> Vec<(u64, u64)> {
+fn leaving_introns(
+    blocks: &[(u64, u64)],
+    introns: &[(u64, u64)],
+    chain: &[(u64, u64)],
+) -> Vec<(u64, u64)> {
     if chain.is_empty() {
         return Vec::new();
     }
     let (clo, chi) = (chain[0].0, chain.last().unwrap().1);
     let _ = clo;
-    if !blocks.iter().any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e)) {
+    if !blocks
+        .iter()
+        .any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e))
+    {
         return Vec::new();
     }
     // only the DOWNSTREAM direction: the mirrored case is found when the other unit is the source.
@@ -571,7 +608,12 @@ fn leaving_introns(blocks: &[(u64, u64)], introns: &[(u64, u64)], chain: &[(u64,
 
 /// The emitted unit whose chain CONTAINS the first base after the intron (`intron.1`), i.e. where the
 /// read-through lands. `units` is `(contig, exon chain)` per candidate unit; the source unit never matches.
-fn readthrough_target(intron: (u64, u64), contig: &str, src: usize, units: &[(String, Vec<(u64, u64)>)]) -> Option<usize> {
+fn readthrough_target(
+    intron: (u64, u64),
+    contig: &str,
+    src: usize,
+    units: &[(String, Vec<(u64, u64)>)],
+) -> Option<usize> {
     units.iter().enumerate().position(|(k, (c, ch))| {
         k != src && c == contig && ch.iter().any(|&(s, e)| intron.1 >= s && intron.1 < e)
     })
@@ -579,24 +621,38 @@ fn readthrough_target(intron: (u64, u64), contig: &str, src: usize, units: &[(St
 
 /// A canonical intron on `strand`: `GT..AG`, `GC..AG` or `AT..AC` read 5'→3' on the transcript.
 /// On `-` the genomic dinucleotides are the reverse complements (`CT..AC`, `CT..GC`, `GT..AT`).
-fn canonical_intron(genome: &rustle::genome::GenomeIndex, contig: &str, s: u64, e: u64, strand: char) -> bool {
+fn canonical_intron(
+    genome: &rustle::genome::GenomeIndex,
+    contig: &str,
+    s: u64,
+    e: u64,
+    strand: char,
+) -> bool {
     if e < s + 4 {
         return false;
     }
-    let (Some(d), Some(a)) = (genome.fetch_sequence(contig, s, s + 2), genome.fetch_sequence(contig, e - 2, e)) else {
+    let (Some(d), Some(a)) = (
+        genome.fetch_sequence(contig, s, s + 2),
+        genome.fetch_sequence(contig, e - 2, e),
+    ) else {
         return false;
     };
     let up = |v: &[u8]| -> String { String::from_utf8_lossy(v).to_uppercase() };
     let (d, a) = (up(&d), up(&a));
     if strand == '-' {
-        matches!((d.as_str(), a.as_str()), ("CT", "AC") | ("CT", "GC") | ("GT", "AT"))
+        matches!(
+            (d.as_str(), a.as_str()),
+            ("CT", "AC") | ("CT", "GC") | ("GT", "AT")
+        )
     } else {
-        matches!((d.as_str(), a.as_str()), ("GT", "AG") | ("GC", "AG") | ("AT", "AC"))
+        matches!(
+            (d.as_str(), a.as_str()),
+            ("GT", "AG") | ("GC", "AG") | ("AT", "AC")
+        )
     }
 }
 
 use rustle::family::denovo_assemble::longest_orf;
-
 
 /// Does this read have at least one ALIGNED BLOCK inside `[start-1, end)`?
 ///
@@ -639,7 +695,10 @@ fn load_rmsk(path: &str) -> Result<BTreeMap<String, Vec<(u64, u64)>>> {
             continue;
         }
         let class = f[10].split('/').next().unwrap_or("");
-        if !matches!(class, "LINE" | "SINE" | "LTR" | "Retroposon" | "DNA" | "RC" | "Unknown") {
+        if !matches!(
+            class,
+            "LINE" | "SINE" | "LTR" | "Retroposon" | "DNA" | "RC" | "Unknown"
+        ) {
             continue;
         }
         if let (Ok(a), Ok(b)) = (f[5].parse::<u64>(), f[6].parse::<u64>()) {
@@ -651,7 +710,6 @@ fn load_rmsk(path: &str) -> Result<BTreeMap<String, Vec<(u64, u64)>>> {
     }
     Ok(m)
 }
-
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
@@ -670,14 +728,21 @@ fn main() -> Result<()> {
     // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
     let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
     if let Some(gtf) = args.from_gtf.clone() {
-        let fasta = args.fasta.clone().context("--from-gtf needs --fasta (the genome the GTF was assembled on)")?;
-        let (gff3, fa, paf, loci) = loci_from_gtf(&gtf, &fasta, &args.out, args.threads, args.representative)?;
+        let fasta = args
+            .fasta
+            .clone()
+            .context("--from-gtf needs --fasta (the genome the GTF was assembled on)")?;
+        let (gff3, fa, paf, loci) =
+            loci_from_gtf(&gtf, &fasta, &args.out, args.threads, args.representative)?;
         args.gff = Some(gff3);
         args.paf = paf;
         gtf_loci_list = Some(loci);
         eprintln!("[mcl_families] --from-gtf: loci in {fa}");
     }
-    anyhow::ensure!(!args.paf.is_empty(), "--paf is required unless --from-gtf is given");
+    anyhow::ensure!(
+        !args.paf.is_empty(),
+        "--paf is required unless --from-gtf is given"
+    );
     // §6er (S2): the unit is the catalog row. Stages engage on their inputs; escape hatches reproduce the
     // record-level catalogs (`--no-merge-overlapping-loci`, `--no-core-refine`, `--no-emit-units`).
     if args.no_merge_overlapping_loci {
@@ -727,9 +792,13 @@ fn main() -> Result<()> {
         }
     };
     let exonic = lengths_from_blocks(&blocks);
-    eprintln!("[mcl_families] exon-union lengths for {} genes", exonic.len());
+    eprintln!(
+        "[mcl_families] exon-union lengths for {} genes",
+        exonic.len()
+    );
 
-    let paf = std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
+    let paf =
+        std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
     let loci = if args.merge_overlapping_loci && !args.fold_within_clusters {
         let mut m = loci_from_exon_blocks(&blocks);
         m.attribute_edges = args.locus_attribute_edges;
@@ -856,7 +925,10 @@ fn main() -> Result<()> {
                 .filter(|p| p.len() >= args.min_size)
                 .flat_map(|p| p.iter().map(|&i| g.genes[i].clone()))
                 .collect();
-            eprintln!("[mcl_families] corroborating {} member(s) against {bam}", members.len());
+            eprintln!(
+                "[mcl_families] corroborating {} member(s) against {bam}",
+                members.len()
+            );
             let mut ok = BTreeSet::new();
             for m in &members {
                 // `start` is GFF 1-based; the BAM query wants 0-based half-open.
@@ -868,7 +940,10 @@ fn main() -> Result<()> {
                     1,
                 )
                 .with_context(|| format!("reading {}:{}-{}", m.0, m.1, m.2))?;
-                let n = reads.iter().filter(|br| !br.is_supplementary && has_block_in(br, m)).count();
+                let n = reads
+                    .iter()
+                    .filter(|br| !br.is_supplementary && has_block_in(br, m))
+                    .count();
                 if n >= args.min_reads {
                     ok.insert(m.clone());
                 }
@@ -884,9 +959,15 @@ fn main() -> Result<()> {
         build_clusters(&g, &parts, args.min_size, pred.as_ref().map(|b| b.as_ref()));
 
     let mut ch = std::fs::File::create(format!("{}.clusters.tsv", args.out))?;
-    writeln!(ch, "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend")?;
+    writeln!(
+        ch,
+        "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend"
+    )?;
     for (i, c) in clusters.iter().enumerate() {
-        let corr = c.corroborated.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
+        let corr = c
+            .corroborated
+            .map(|v| format!("{v:.4}"))
+            .unwrap_or_else(|| "NA".into());
         for m in &c.members {
             writeln!(
                 ch,
@@ -913,7 +994,9 @@ fn main() -> Result<()> {
         for (i, c) in clusters.iter().enumerate() {
             for j in 0..c.members.len() {
                 for k in (j + 1)..c.members.len() {
-                    let (Some(&a), Some(&b)) = (node_idx.get(&c.members[j]), node_idx.get(&c.members[k])) else {
+                    let (Some(&a), Some(&b)) =
+                        (node_idx.get(&c.members[j]), node_idx.get(&c.members[k]))
+                    else {
                         continue;
                     };
                     let key = if a < b { (a, b) } else { (b, a) };
@@ -921,15 +1004,22 @@ fn main() -> Result<()> {
                         writeln!(
                             pf,
                             "MCL{i}\t{}:{}-{}\t{}:{}-{}\t{identity:.4}",
-                            c.members[j].0, c.members[j].1, c.members[j].2,
-                            c.members[k].0, c.members[k].1, c.members[k].2
+                            c.members[j].0,
+                            c.members[j].1,
+                            c.members[j].2,
+                            c.members[k].0,
+                            c.members[k].1,
+                            c.members[k].2
                         )?;
                         n_pairs += 1;
                     }
                 }
             }
         }
-        eprintln!("[mcl_families] --dump-pairs: {n_pairs} within-cluster edges -> {}.pairs.tsv", args.out);
+        eprintln!(
+            "[mcl_families] --dump-pairs: {n_pairs} within-cluster edges -> {}.pairs.tsv",
+            args.out
+        );
     }
 
     // ⭐ Duplicon-first core refinement (§6eh). Post-MCL, per cluster; clusters.tsv above is untouched.
@@ -939,13 +1029,18 @@ fn main() -> Result<()> {
     if args.core_refine {
         let sd = match args.sedef.as_ref() {
             Some(bed) => {
-                let text = std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?;
+                let text =
+                    std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?;
                 let sd = SdPairs::from_bed_str(&text);
-                eprintln!("[mcl_families] core-refine: {} SEDEF pair(s) loaded from {bed}", sd.n_pairs());
+                eprintln!(
+                    "[mcl_families] core-refine: {} SEDEF pair(s) loaded from {bed}",
+                    sd.n_pairs()
+                );
                 sd
             }
             None => {
-                let text = std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
+                let text = std::fs::read_to_string(&args.paf)
+                    .with_context(|| format!("reading {}", args.paf))?;
                 let sd = SdPairs::from_paf_str(&text);
                 eprintln!("[mcl_families] core-refine: {} pair(s) derived from the input PAF (--core-from-paf)", sd.n_pairs());
                 sd
@@ -953,11 +1048,21 @@ fn main() -> Result<()> {
         };
         sd_pairs = Some(sd.clone());
         let mut cf = std::fs::File::create(format!("{}.cores.tsv", args.out))?;
-        writeln!(cf, "cluster_id\tmember\tgate\tmax_depth\tcore_bp\tspan\tmedian_core\tstatus\tcore_hull")?;
+        writeln!(
+            cf,
+            "cluster_id\tmember\tgate\tmax_depth\tcore_bp\tspan\tmedian_core\tstatus\tcore_hull"
+        )?;
         let mut rf = std::fs::File::create(format!("{}.refined.clusters.tsv", args.out))?;
-        writeln!(rf, "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\tstatus")?;
+        writeln!(
+            rf,
+            "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\tstatus"
+        )?;
         for (i, c) in clusters.iter().enumerate() {
-            let recs = rustle::family::annotation_families::refine_cluster_cores_with(&c.members, &sd, args.core_majority_inclusive);
+            let recs = rustle::family::annotation_families::refine_cluster_cores_with(
+                &c.members,
+                &sd,
+                args.core_majority_inclusive,
+            );
             core_records.push(recs.clone());
             let gate = recs.first().map_or(false, |r| r.gate_passed);
             if gate {
@@ -965,9 +1070,14 @@ fn main() -> Result<()> {
             } else {
                 core_stats.4 += 1;
             }
-            let corr = c.corroborated.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
-            let kept: Vec<&rustle::family::annotation_families::CoreRecord> =
-                recs.iter().filter(|r| r.status != CoreStatus::Dropped).collect();
+            let corr = c
+                .corroborated
+                .map(|v| format!("{v:.4}"))
+                .unwrap_or_else(|| "NA".into());
+            let kept: Vec<&rustle::family::annotation_families::CoreRecord> = recs
+                .iter()
+                .filter(|r| r.status != CoreStatus::Dropped)
+                .collect();
             for r in &recs {
                 let st = match r.status {
                     CoreStatus::Untouched => "untouched",
@@ -981,11 +1091,21 @@ fn main() -> Result<()> {
                     CoreStatus::Dropped => core_stats.3 += 1,
                     CoreStatus::Untouched => {}
                 }
-                let hull = r.hull.map(|(a, b)| format!("{a}-{b}")).unwrap_or_else(|| "NA".into());
+                let hull = r
+                    .hull
+                    .map(|(a, b)| format!("{a}-{b}"))
+                    .unwrap_or_else(|| "NA".into());
                 writeln!(
                     cf,
                     "MCL{i}\t{}:{}-{}\t{}\t{}\t{}\t{}\t{}\t{st}\t{hull}",
-                    r.member.0, r.member.1, r.member.2, gate, r.max_depth, r.core_bp, r.span, r.median_core
+                    r.member.0,
+                    r.member.1,
+                    r.member.2,
+                    gate,
+                    r.max_depth,
+                    r.core_bp,
+                    r.span,
+                    r.median_core
                 )?;
                 if r.status != CoreStatus::Dropped {
                     let (s0, e0) = match (r.status, r.hull) {
@@ -1019,7 +1139,10 @@ fn main() -> Result<()> {
                 }
             }
         }
-        let hulls: Vec<(String, u64, u64)> = owners.iter().map(|(_, m, h)| (m.0.clone(), h.0, h.1)).collect();
+        let hulls: Vec<(String, u64, u64)> = owners
+            .iter()
+            .map(|(_, m, h)| (m.0.clone(), h.0, h.1))
+            .collect();
         let (blocks, links) = sd_blocks(&hulls, &sd);
         // direct SD partners per cluster: clusters holding a hull joined to one of this cluster's hulls by ONE pair
         let mut direct: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
@@ -1036,22 +1159,42 @@ fn main() -> Result<()> {
         }
         let mut bf = std::fs::File::create(format!("{}.blocks.tsv", args.out))?;
         writeln!(bf, "cluster_id\tmember\tcore_hull\tsd_block\tblock_n_hulls\tblock_clusters\tdirect_sd_partner_clusters")?;
-        let n_of_block: BTreeMap<usize, usize> = blocks.iter().fold(BTreeMap::new(), |mut m, &b| {
-            *m.entry(b).or_insert(0) += 1;
-            m
-        });
+        let n_of_block: BTreeMap<usize, usize> =
+            blocks.iter().fold(BTreeMap::new(), |mut m, &b| {
+                *m.entry(b).or_insert(0) += 1;
+                m
+            });
         for ((ci, m, h), &b) in owners.iter().zip(blocks.iter()) {
-            let cl: Vec<String> = clusters_of_block[&b].iter().map(|c| format!("MCL{c}")).collect();
-            let dp: Vec<String> = direct.get(ci).map(|s| s.iter().map(|c| format!("MCL{c}")).collect()).unwrap_or_default();
+            let cl: Vec<String> = clusters_of_block[&b]
+                .iter()
+                .map(|c| format!("MCL{c}"))
+                .collect();
+            let dp: Vec<String> = direct
+                .get(ci)
+                .map(|s| s.iter().map(|c| format!("MCL{c}")).collect())
+                .unwrap_or_default();
             writeln!(
                 bf,
                 "MCL{ci}\t{}:{}-{}\t{}-{}\tSDB{b}\t{}\t{}\t{}",
-                m.0, m.1, m.2, h.0, h.1, n_of_block[&b], cl.join(","),
-                if dp.is_empty() { "-".to_string() } else { dp.join(",") }
+                m.0,
+                m.1,
+                m.2,
+                h.0,
+                h.1,
+                n_of_block[&b],
+                cl.join(","),
+                if dp.is_empty() {
+                    "-".to_string()
+                } else {
+                    dp.join(",")
+                }
             )?;
         }
-        let shared: Vec<(usize, &BTreeSet<usize>)> =
-            clusters_of_block.iter().filter(|(_, cs)| cs.len() > 1).map(|(b, cs)| (*b, cs)).collect();
+        let shared: Vec<(usize, &BTreeSet<usize>)> = clusters_of_block
+            .iter()
+            .filter(|(_, cs)| cs.len() > 1)
+            .map(|(b, cs)| (*b, cs))
+            .collect();
         eprintln!(
             "[mcl_families] duplication blocks: {} hull(s) in {} block(s); {} block(s) shared by >1 cluster (e.g. {})",
             owners.len(),
@@ -1093,8 +1236,8 @@ fn main() -> Result<()> {
     let mut readthrough_units = 0usize;
     let mut noncoding_units = 0usize; // --coding-core: members demoted for not preserving the family's frame
     let mut rt_rejected = (0usize, 0usize, 0usize); // (opposite strand, duplicate flanks, donor not ours)
-    // ⭐ `--from-gtf --emit-units`: the copy table of the de novo families (`write_locus_rep_copies`); the read-chain
-    // units below are the ANNOTATION mode's (`--paf --gff --bam`), unchanged.
+                                                    // ⭐ `--from-gtf --emit-units`: the copy table of the de novo families (`write_locus_rep_copies`); the read-chain
+                                                    // units below are the ANNOTATION mode's (`--paf --gff --bam`), unchanged.
     let mut rep_copy_stats: Option<RepCopyStats> = None;
     if args.emit_units && gtf_loci_list.is_some() {
         anyhow::ensure!(
@@ -1107,7 +1250,10 @@ fn main() -> Result<()> {
             "--no-cross-family-exon-overlap is not available with --from-gtf (a copy is the locus representative \
              as assembled; it is never trimmed)"
         );
-        let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--from-gtf --emit-units needs --fasta"))?;
+        let fasta = args
+            .fasta
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--from-gtf --emit-units needs --fasta"))?;
         let rmsk = match &args.rmsk {
             Some(path) => Some(load_rmsk(path)?),
             None => None,
@@ -1139,8 +1285,14 @@ fn main() -> Result<()> {
         );
         rep_copy_stats = Some(s);
     } else if args.emit_units {
-        let bam = args.bam.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
-        let fasta = args.fasta.as_ref().ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
+        let bam = args
+            .bam
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--emit-units needs --bam"))?;
+        let fasta = args
+            .fasta
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--emit-units needs --fasta"))?;
         let genome = rustle::genome::GenomeIndex::from_fasta(fasta)?;
         let strands = match &args.gff {
             Some(g) => gene_strands(g)?,
@@ -1157,8 +1309,10 @@ fn main() -> Result<()> {
             Some(path) => load_rmsk(path)?,
             None => BTreeMap::new(),
         };
-        let rep_frac = |chrom: &str, exons: &[(u64, u64)]| -> Option<f64> { rep_frac_in(&rmsk, chrom, exons) };
-        let node_idx: BTreeMap<&GeneKey, usize> = g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
+        let rep_frac =
+            |chrom: &str, exons: &[(u64, u64)]| -> Option<f64> { rep_frac_in(&rmsk, chrom, exons) };
+        let node_idx: BTreeMap<&GeneKey, usize> =
+            g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
         // every family's units are staged first: the L2 clipping (below) needs EVERY unit on a contig, whatever
         // its family — a locus never contains another catalog unit
         let mut staged: Vec<(String, Vec<PendingUnit>, Vec<Option<usize>>)> = Vec::new();
@@ -1170,11 +1324,19 @@ fn main() -> Result<()> {
             for (mi, m) in c.members.iter().enumerate() {
                 // locus = core hull (trimmed) / member span; dropped members are not units
                 // the member's SEDEF core hull (0-based half-open), for `copy_assign --psv-genomic` (§6ep)
-                let hull_col = match core_records.get(i).and_then(|v| v.get(mi)).and_then(|r| r.hull) {
+                let hull_col = match core_records
+                    .get(i)
+                    .and_then(|v| v.get(mi))
+                    .and_then(|r| r.hull)
+                {
                     Some((a, b)) => format!("{}-{}", a.saturating_sub(1), b),
                     None => "NA".to_string(),
                 };
-                let status: &'static str = match core_records.get(i).and_then(|v| v.get(mi)).map(|r| r.status) {
+                let status: &'static str = match core_records
+                    .get(i)
+                    .and_then(|v| v.get(mi))
+                    .map(|r| r.status)
+                {
                     Some(CoreStatus::Dropped) => "dropped",
                     Some(CoreStatus::KeptTrimmed) => "kept_trimmed",
                     Some(_) => "kept_full",
@@ -1194,16 +1356,29 @@ fn main() -> Result<()> {
                     },
                     _ => (m.1.saturating_sub(1), m.2),
                 };
-                let (_, reads) = rustle::family::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
-                    .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
-                let (chain, rstrand, n_reads) = read_chain(&reads, lo, hi, args.min_reads, args.units_follow_reads.then(|| (m.1.saturating_sub(1), m.2)));
+                let (_, reads) =
+                    rustle::family::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
+                        .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
+                let (chain, rstrand, n_reads) = read_chain(
+                    &reads,
+                    lo,
+                    hi,
+                    args.min_reads,
+                    args.units_follow_reads
+                        .then(|| (m.1.saturating_sub(1), m.2)),
+                );
                 let gff_strand = strands.get(m).copied().unwrap_or('+');
                 let (exons, strand, source): (Vec<(u64, u64)>, char, &str) = if !chain.is_empty() {
                     (chain, rstrand.unwrap_or(gff_strand), "read_chain")
                 } else {
                     let ex: Vec<(u64, u64)> = blocks
                         .get(m)
-                        .map(|v| v.iter().filter(|&&(s, e)| e > lo && s < hi).map(|&(s, e)| (s.max(lo), e.min(hi))).collect())
+                        .map(|v| {
+                            v.iter()
+                                .filter(|&&(s, e)| e > lo && s < hi)
+                                .map(|&(s, e)| (s.max(lo), e.min(hi)))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     if ex.is_empty() {
                         unit_stats.2 += 1;
@@ -1218,10 +1393,12 @@ fn main() -> Result<()> {
                     .filter(|br| !br.is_supplementary && !br.is_secondary)
                     .filter(|br| {
                         let (bl, _) = blocks_and_introns(br);
-                        bl.iter().any(|&(bs, be)| exons.iter().any(|&(s, e)| be > s && bs < e))
+                        bl.iter()
+                            .any(|&(bs, be)| exons.iter().any(|&(s, e)| be > s && bs < e))
                     })
                     .count();
-                let keep_unexpressed = args.units_keep_unexpressed && !args.no_units_keep_unexpressed;
+                let keep_unexpressed =
+                    args.units_keep_unexpressed && !args.no_units_keep_unexpressed;
                 if n_in_chain == 0 && !(keep_unexpressed && source == "gff_fallback") {
                     unit_stats.2 += 1;
                     continue;
@@ -1232,8 +1409,12 @@ fn main() -> Result<()> {
                 // read-through evidence: introns of primaries with a block in this chain that leave it
                 // downstream. Molecules are counted by name so a split record cannot vote twice.
                 if args.emit_readthrough_units {
-                    let mut seen: BTreeMap<(u64, u64), std::collections::BTreeSet<String>> = BTreeMap::new();
-                    for br in reads.iter().filter(|br| !br.is_supplementary && !br.is_secondary) {
+                    let mut seen: BTreeMap<(u64, u64), std::collections::BTreeSet<String>> =
+                        BTreeMap::new();
+                    for br in reads
+                        .iter()
+                        .filter(|br| !br.is_supplementary && !br.is_secondary)
+                    {
                         let (bl, itr) = blocks_and_introns(br);
                         for j in leaving_introns(&bl, &itr, &exons) {
                             seen.entry(j).or_default().insert(br.name.clone());
@@ -1267,8 +1448,12 @@ fn main() -> Result<()> {
                         .filter_map(|b| g.idents.get(&(a.min(b), a.max(b))).copied())
                         .fold(0.0f64, f64::max)
                 });
-                let nearest_col = nearest.map(|v| format!("{v:.4}")).unwrap_or_else(|| "NA".into());
-                let rep_col = rep_frac(&m.0, &exons).map(|v| format!("{v:.3}")).unwrap_or_else(|| "NA".into());
+                let nearest_col = nearest
+                    .map(|v| format!("{v:.4}"))
+                    .unwrap_or_else(|| "NA".into());
+                let rep_col = rep_frac(&m.0, &exons)
+                    .map(|v| format!("{v:.3}"))
+                    .unwrap_or_else(|| "NA".into());
                 let locus = {
                     let (us, ue) = (exons[0].0, exons.last().unwrap().1);
                     match read_extent(&reads, &exons, args.min_reads) {
@@ -1280,7 +1465,11 @@ fn main() -> Result<()> {
                     units_dropped_emitted += 1;
                 }
                 pending.push(PendingUnit {
-                    orf: if args.coding_core { longest_orf(&seq) } else { 0 },
+                    orf: if args.coding_core {
+                        longest_orf(&seq)
+                    } else {
+                        0
+                    },
                     member: m.clone(),
                     exons,
                     strand,
@@ -1300,7 +1489,12 @@ fn main() -> Result<()> {
             // best — the family, not an absolute aa cutoff, is the reference. Failing members become
             // `noncoding` candidates. Dropped members are left alone: the core rule already spoke.
             if args.coding_core {
-                let best_orf = pending.iter().filter(|u| u.status != "dropped").map(|u| u.orf).max().unwrap_or(0);
+                let best_orf = pending
+                    .iter()
+                    .filter(|u| u.status != "dropped")
+                    .map(|u| u.orf)
+                    .max()
+                    .unwrap_or(0);
                 if best_orf > 0 {
                     for u in pending.iter_mut() {
                         if u.status != "dropped" && u.orf * 2 < best_orf {
@@ -1315,50 +1509,62 @@ fn main() -> Result<()> {
             // its exons, 13,000 reads counted three times, every one of them a K = 0 tie under read-star). A base
             // cannot belong to two copies. Representative = the longest exon union; the others are recorded in
             // `<out>.units.merged.tsv`. `--no-merge-overlapping-units` keeps every unit (byte-identical to before).
-            let merged_into: Vec<Option<usize>> = if args.merge_overlapping_units && !args.no_merge_overlapping_units {
-                let n = pending.len();
-                let mut parent: Vec<usize> = (0..n).collect();
-                fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
-                    while p[x] != x {
-                        p[x] = p[p[x]];
-                        x = p[x];
-                    }
-                    x
-                }
-                for a in 0..n {
-                    for b in (a + 1)..n {
-                        if pending[a].member.0 != pending[b].member.0 {
-                            continue;
+            let merged_into: Vec<Option<usize>> =
+                if args.merge_overlapping_units && !args.no_merge_overlapping_units {
+                    let n = pending.len();
+                    let mut parent: Vec<usize> = (0..n).collect();
+                    fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+                        while p[x] != x {
+                            p[x] = p[p[x]];
+                            x = p[x];
                         }
-                        let share = pending[a].exons.iter().any(|&(s1, e1)| pending[b].exons.iter().any(|&(s2, e2)| s1 < e2 && s2 < e1));
-                        if share {
-                            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
-                            if ra != rb {
-                                parent[ra.max(rb)] = ra.min(rb);
+                        x
+                    }
+                    for a in 0..n {
+                        for b in (a + 1)..n {
+                            if pending[a].member.0 != pending[b].member.0 {
+                                continue;
+                            }
+                            let share = pending[a].exons.iter().any(|&(s1, e1)| {
+                                pending[b].exons.iter().any(|&(s2, e2)| s1 < e2 && s2 < e1)
+                            });
+                            if share {
+                                let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                                if ra != rb {
+                                    parent[ra.max(rb)] = ra.min(rb);
+                                }
                             }
                         }
                     }
-                }
-                // representative = kept before dropped (L1), then the longest exon union
-                let rank = |u: &PendingUnit| (u.status != "dropped", u.exons.iter().map(|(s, e)| e - s).sum::<u64>());
-                let mut rep_of_root: BTreeMap<usize, usize> = BTreeMap::new();
-                for k in 0..n {
-                    let r = find(&mut parent, k);
-                    let e = rep_of_root.entry(r).or_insert(k);
-                    if rank(&pending[k]) > rank(&pending[*e]) {
-                        *e = k;
-                    }
-                }
-                (0..n)
-                    .map(|k| {
+                    // representative = kept before dropped (L1), then the longest exon union
+                    let rank = |u: &PendingUnit| {
+                        (
+                            u.status != "dropped",
+                            u.exons.iter().map(|(s, e)| e - s).sum::<u64>(),
+                        )
+                    };
+                    let mut rep_of_root: BTreeMap<usize, usize> = BTreeMap::new();
+                    for k in 0..n {
                         let r = find(&mut parent, k);
-                        let rep = rep_of_root[&r];
-                        if rep == k { None } else { Some(rep) }
-                    })
-                    .collect()
-            } else {
-                vec![None; pending.len()]
-            };
+                        let e = rep_of_root.entry(r).or_insert(k);
+                        if rank(&pending[k]) > rank(&pending[*e]) {
+                            *e = k;
+                        }
+                    }
+                    (0..n)
+                        .map(|k| {
+                            let r = find(&mut parent, k);
+                            let rep = rep_of_root[&r];
+                            if rep == k {
+                                None
+                            } else {
+                                Some(rep)
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![None; pending.len()]
+                };
             staged.push((fid, pending, merged_into));
         }
         // ⭐ §6ge: cross-family exon overlap. Two units of different families claiming the same bases turn an
@@ -1380,13 +1586,18 @@ fn main() -> Result<()> {
                         if fa == fb {
                             continue; // §6fb owns same-family overlap
                         }
-                        let (ea, eb) = (staged[fa].1[ka].exons.clone(), staged[fb].1[kb].exons.clone());
+                        let (ea, eb) = (
+                            staged[fa].1[ka].exons.clone(),
+                            staged[fb].1[kb].exons.clone(),
+                        );
                         let shared: Vec<(u64, u64)> = ea
                             .iter()
-                            .flat_map(|&(s1, e1)| eb.iter().filter_map(move |&(s2, e2)| {
-                                let (lo, hi) = (s1.max(s2), e1.min(e2));
-                                (hi > lo).then_some((lo, hi))
-                            }))
+                            .flat_map(|&(s1, e1)| {
+                                eb.iter().filter_map(move |&(s2, e2)| {
+                                    let (lo, hi) = (s1.max(s2), e1.min(e2));
+                                    (hi > lo).then_some((lo, hi))
+                                })
+                            })
                             .collect();
                         if shared.is_empty() {
                             continue;
@@ -1394,11 +1605,18 @@ fn main() -> Result<()> {
                         // owner: whose ANNOTATED member span holds more of the contested bases; ties -> reads
                         let inside = |u: &PendingUnit| -> u64 {
                             let (ms, me) = (u.member.1.saturating_sub(1), u.member.2);
-                            shared.iter().map(|&(s, e)| e.min(me).saturating_sub(s.max(ms))).sum()
+                            shared
+                                .iter()
+                                .map(|&(s, e)| e.min(me).saturating_sub(s.max(ms)))
+                                .sum()
                         };
                         let (ia, ib) = (inside(&staged[fa].1[ka]), inside(&staged[fb].1[kb]));
                         let loser = if ia != ib {
-                            if ia < ib { (fa, ka) } else { (fb, kb) }
+                            if ia < ib {
+                                (fa, ka)
+                            } else {
+                                (fb, kb)
+                            }
                         } else if staged[fa].1[ka].n_reads <= staged[fb].1[kb].n_reads {
                             (fa, ka)
                         } else {
@@ -1413,9 +1631,16 @@ fn main() -> Result<()> {
                                     .into_iter()
                                     .flat_map(|(a0, b0)| {
                                         let mut v = Vec::new();
-                                        if a0 < cs.min(b0) { v.push((a0, cs.min(b0))); }
-                                        if ce.max(a0) < b0 { v.push((ce.max(a0), b0)); }
-                                        if ce <= a0 || cs >= b0 { v.clear(); v.push((a0, b0)); }
+                                        if a0 < cs.min(b0) {
+                                            v.push((a0, cs.min(b0)));
+                                        }
+                                        if ce.max(a0) < b0 {
+                                            v.push((ce.max(a0), b0));
+                                        }
+                                        if ce <= a0 || cs >= b0 {
+                                            v.clear();
+                                            v.push((a0, b0));
+                                        }
                                         v
                                     })
                                     .filter(|&(a0, b0)| b0 > a0)
@@ -1435,7 +1660,9 @@ fn main() -> Result<()> {
             for (_, pending, _) in staged.iter_mut() {
                 pending.retain(|u| !u.exons.is_empty());
             }
-            eprintln!("[mcl_families] no-cross-family-exon-overlap: {cross_trimmed} unit(s) trimmed");
+            eprintln!(
+                "[mcl_families] no-cross-family-exon-overlap: {cross_trimmed} unit(s) trimmed"
+            );
         }
         // ⭐ L2: clip every emitted unit's extent at the chain ends of its neighbours on the contig — units of
         // EVERY family (§6fm: MCL1971's 951-kb extent contained MCL42's unit and other genes; reads of those
@@ -1450,7 +1677,10 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            let mut out: Vec<Vec<(u64, u64)>> = staged.iter().map(|(_, p, _)| p.iter().map(|u| u.locus).collect()).collect();
+            let mut out: Vec<Vec<(u64, u64)>> = staged
+                .iter()
+                .map(|(_, p, _)| p.iter().map(|u| u.locus).collect())
+                .collect();
             for ks in by_ctg.values() {
                 let spans: Vec<(u64, u64, (u64, u64))> = ks
                     .iter()
@@ -1468,65 +1698,74 @@ fn main() -> Result<()> {
         // ⭐ The conjoined read-through as its own unit (PREREG_readthrough_object, md5 1a51fa3b). Resolved
         // only now: the far end of a junction must land in an EMITTED chain, which is known after staging.
         // Rows are (family index, source pending index, target family, target pending, intron, molecules).
-        let readthrough_rows: Vec<(usize, usize, usize, usize, (u64, u64), usize)> = if args.emit_readthrough_units {
-            let mut flat: Vec<(String, Vec<(u64, u64)>)> = Vec::new();
-            let mut where_of: Vec<(usize, usize)> = Vec::new();
-            for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
-                for (k, u) in pending.iter().enumerate() {
-                    if merged_into[k].is_none() {
-                        flat.push((u.member.0.clone(), u.exons.clone()));
-                        where_of.push((fi, k));
-                    }
-                }
-            }
-            let pos_of: BTreeMap<(usize, usize), usize> = where_of.iter().enumerate().map(|(a, &b)| (b, a)).collect();
-            let mut best: BTreeMap<(usize, usize, usize, usize), ((u64, u64), usize)> = BTreeMap::new();
-            for &(fi, k, j, n) in &rt_evidence {
-                if n < args.min_reads {
-                    continue;
-                }
-                let Some(&src) = pos_of.get(&(fi, k)) else { continue };
-                let u = &staged[fi].1[k];
-                // ⭐ §6ge: re-check the DONOR against the FINAL chain. The evidence above was gathered during
-                // staging, before the cross-family trim, so a junction whose donor was trimmed away belongs to
-                // the neighbouring gene and is its ordinary intron, not a read-through out of this unit.
-                if !u.exons.iter().any(|&(_, ce)| ce == j.0) {
-                    rt_rejected.2 += 1;
-                    continue;
-                }
-                let Some(tgt) = readthrough_target(j, &u.member.0, src, &flat) else { continue };
-                if !canonical_intron(&genome, &u.member.0, j.0, j.1, u.strand) {
-                    continue;
-                }
-                let (tfi, tk) = where_of[tgt];
-                // ⭐ §6fw guard (default ON): the two units must share a strand — a transcript cannot join
-                // opposite strands — and their donor/acceptor flanks must NOT be duplicates of one another,
-                // since that is exactly what a cross-copy mis-chain needs in order to jump. PAD is the 2 kb
-                // window the adjudication used. Without SD pairs only the strand half of the guard can run.
-                if !args.no_readthrough_guard {
-                    const PAD: u64 = 2_000;
-                    if staged[tfi].1[tk].strand != u.strand {
-                        rt_rejected.0 += 1;
-                        continue;
-                    }
-                    if let Some(sd) = sd_pairs.as_ref() {
-                        let donor = (j.0.saturating_sub(PAD), j.0 + PAD);
-                        let acceptor = (j.1.saturating_sub(PAD), j.1 + PAD);
-                        if sd.links(&u.member.0, donor, acceptor) {
-                            rt_rejected.1 += 1;
-                            continue;
+        let readthrough_rows: Vec<(usize, usize, usize, usize, (u64, u64), usize)> =
+            if args.emit_readthrough_units {
+                let mut flat: Vec<(String, Vec<(u64, u64)>)> = Vec::new();
+                let mut where_of: Vec<(usize, usize)> = Vec::new();
+                for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
+                    for (k, u) in pending.iter().enumerate() {
+                        if merged_into[k].is_none() {
+                            flat.push((u.member.0.clone(), u.exons.clone()));
+                            where_of.push((fi, k));
                         }
                     }
                 }
-                let e = best.entry((fi, k, tfi, tk)).or_insert((j, 0));
-                if n > e.1 {
-                    *e = (j, n);
+                let pos_of: BTreeMap<(usize, usize), usize> =
+                    where_of.iter().enumerate().map(|(a, &b)| (b, a)).collect();
+                let mut best: BTreeMap<(usize, usize, usize, usize), ((u64, u64), usize)> =
+                    BTreeMap::new();
+                for &(fi, k, j, n) in &rt_evidence {
+                    if n < args.min_reads {
+                        continue;
+                    }
+                    let Some(&src) = pos_of.get(&(fi, k)) else {
+                        continue;
+                    };
+                    let u = &staged[fi].1[k];
+                    // ⭐ §6ge: re-check the DONOR against the FINAL chain. The evidence above was gathered during
+                    // staging, before the cross-family trim, so a junction whose donor was trimmed away belongs to
+                    // the neighbouring gene and is its ordinary intron, not a read-through out of this unit.
+                    if !u.exons.iter().any(|&(_, ce)| ce == j.0) {
+                        rt_rejected.2 += 1;
+                        continue;
+                    }
+                    let Some(tgt) = readthrough_target(j, &u.member.0, src, &flat) else {
+                        continue;
+                    };
+                    if !canonical_intron(&genome, &u.member.0, j.0, j.1, u.strand) {
+                        continue;
+                    }
+                    let (tfi, tk) = where_of[tgt];
+                    // ⭐ §6fw guard (default ON): the two units must share a strand — a transcript cannot join
+                    // opposite strands — and their donor/acceptor flanks must NOT be duplicates of one another,
+                    // since that is exactly what a cross-copy mis-chain needs in order to jump. PAD is the 2 kb
+                    // window the adjudication used. Without SD pairs only the strand half of the guard can run.
+                    if !args.no_readthrough_guard {
+                        const PAD: u64 = 2_000;
+                        if staged[tfi].1[tk].strand != u.strand {
+                            rt_rejected.0 += 1;
+                            continue;
+                        }
+                        if let Some(sd) = sd_pairs.as_ref() {
+                            let donor = (j.0.saturating_sub(PAD), j.0 + PAD);
+                            let acceptor = (j.1.saturating_sub(PAD), j.1 + PAD);
+                            if sd.links(&u.member.0, donor, acceptor) {
+                                rt_rejected.1 += 1;
+                                continue;
+                            }
+                        }
+                    }
+                    let e = best.entry((fi, k, tfi, tk)).or_insert((j, 0));
+                    if n > e.1 {
+                        *e = (j, n);
+                    }
                 }
-            }
-            best.into_iter().map(|((a, b, c, d), (j, n))| (a, b, c, d, j, n)).collect()
-        } else {
-            Vec::new()
-        };
+                best.into_iter()
+                    .map(|((a, b, c, d), (j, n))| (a, b, c, d, j, n))
+                    .collect()
+            } else {
+                Vec::new()
+            };
         readthrough_units = readthrough_rows.len();
         // side file: which two units each read-through joins, and through which intron (the 19-column
         // units.tsv contract is untouched, so nothing downstream has to change to read this)
@@ -1536,9 +1775,20 @@ fn main() -> Result<()> {
             for &(sfi, sk, tfi, tk, j, n) in &readthrough_rows {
                 let (a, b) = (&staged[sfi].1[sk], &staged[tfi].1[tk]);
                 writeln!(
-                    rf, "{}\t{}\t{}:{}-{}\t{}\t{}:{}-{}\t{}\t{}\t{}\t{n}",
-                    staged[sfi].0, a.member.0, a.member.0, a.exons[0].0, a.exons.last().unwrap().1,
-                    staged[tfi].0, b.member.0, b.exons[0].0, b.exons.last().unwrap().1, j.0, j.1, j.1 - j.0
+                    rf,
+                    "{}\t{}\t{}:{}-{}\t{}\t{}:{}-{}\t{}\t{}\t{}\t{n}",
+                    staged[sfi].0,
+                    a.member.0,
+                    a.member.0,
+                    a.exons[0].0,
+                    a.exons.last().unwrap().1,
+                    staged[tfi].0,
+                    b.member.0,
+                    b.exons[0].0,
+                    b.exons.last().unwrap().1,
+                    j.0,
+                    j.1,
+                    j.1 - j.0
                 )?;
             }
         }
@@ -1548,7 +1798,11 @@ fn main() -> Result<()> {
             for (k, u) in pending.iter().enumerate() {
                 if let Some(rep) = merged_into[k] {
                     let r = &pending[rep];
-                    writeln!(um, "{fid}\t{}:{}-{}\t{}:{}-{}", u.member.0, u.member.1, u.member.2, r.member.0, r.member.1, r.member.2)?;
+                    writeln!(
+                        um,
+                        "{fid}\t{}:{}-{}\t{}:{}-{}",
+                        u.member.0, u.member.1, u.member.2, r.member.0, r.member.1, r.member.2
+                    )?;
                     unit_stats.3 += 1;
                     continue;
                 }
@@ -1569,7 +1823,12 @@ fn main() -> Result<()> {
                     exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
                     u.hull_col, u.sd_depth, u.core_bp, u.nearest_col, u.rep_col, u.status, clipped[fi][k].0, clipped[fi][k].1
                 )?;
-                writeln!(uf, ">{fid}|{idx}|{}:{us}-{ue}|{strand}|nexon={}", m.0, exons.len())?;
+                writeln!(
+                    uf,
+                    ">{fid}|{idx}|{}:{us}-{ue}|{strand}|nexon={}",
+                    m.0,
+                    exons.len()
+                )?;
                 uf.write_all(&u.seq)?;
                 writeln!(uf)?;
                 let h = hulls.entry(m.0.clone()).or_insert((us, ue));
@@ -1581,15 +1840,18 @@ fn main() -> Result<()> {
                 let (a, b) = (&staged[sfi].1[sk], &staged[tfi].1[tk]);
                 // the two chains may share bases (a unit's read-followed chain can reach into its neighbour),
                 // and the copies.tsv contract requires ascending disjoint blocks: coalesce after sorting
-                let mut exons: Vec<(u64, u64)> = a.exons.iter().chain(b.exons.iter()).copied().collect();
+                let mut exons: Vec<(u64, u64)> =
+                    a.exons.iter().chain(b.exons.iter()).copied().collect();
                 exons.sort_unstable();
-                exons = exons.into_iter().fold(Vec::new(), |mut acc: Vec<(u64, u64)>, (s, e)| {
-                    match acc.last_mut() {
-                        Some(l) if s <= l.1 => l.1 = l.1.max(e),
-                        _ => acc.push((s, e)),
-                    }
-                    acc
-                });
+                exons = exons
+                    .into_iter()
+                    .fold(Vec::new(), |mut acc: Vec<(u64, u64)>, (s, e)| {
+                        match acc.last_mut() {
+                            Some(l) if s <= l.1 => l.1 = l.1.max(e),
+                            _ => acc.push((s, e)),
+                        }
+                        acc
+                    });
                 let (us, ue) = (exons[0].0, exons.last().unwrap().1);
                 let ctg = &a.member.0;
                 let mut seq: Vec<u8> = Vec::new();
@@ -1609,7 +1871,12 @@ fn main() -> Result<()> {
                     a.strand,
                     exons.iter().map(|(s, e)| format!("{s}-{e}")).collect::<Vec<_>>().join(","),
                 )?;
-                writeln!(uf, ">{fid}|{idx}|{ctg}:{us}-{ue}|{}|nexon={}|readthrough", a.strand, exons.len())?;
+                writeln!(
+                    uf,
+                    ">{fid}|{idx}|{ctg}:{us}-{ue}|{}|nexon={}|readthrough",
+                    a.strand,
+                    exons.len()
+                )?;
                 uf.write_all(&seq)?;
                 writeln!(uf)?;
                 let h = hulls.entry(ctg.clone()).or_insert((us, ue));
@@ -1618,7 +1885,12 @@ fn main() -> Result<()> {
                 idx += 1;
             }
             for (ctg, (a, b)) in hulls {
-                writeln!(ur, "{fid}\t{ctg}:{}-{}", a.saturating_sub(5_000).max(1), b + 5_000)?;
+                writeln!(
+                    ur,
+                    "{fid}\t{ctg}:{}-{}",
+                    a.saturating_sub(5_000).max(1),
+                    b + 5_000
+                )?;
             }
         }
         eprintln!(
@@ -1645,8 +1917,14 @@ fn main() -> Result<()> {
     let mut container_counts: Option<[(&str, i64); 3]> = None;
     if args.emit_container {
         use rustle::family::fam_from_gtf::family_container as fc;
-        let gtf = args.from_gtf.as_deref().expect("--emit-container is checked to come with --from-gtf");
-        let gff3 = args.gff.as_deref().expect("--from-gtf sets --gff to <out>.loci.gff3");
+        let gtf = args
+            .from_gtf
+            .as_deref()
+            .expect("--emit-container is checked to come with --from-gtf");
+        let gff3 = args
+            .gff
+            .as_deref()
+            .expect("--from-gtf sets --gff to <out>.loci.gff3");
         let clusters_path = format!("{}.clusters.tsv", args.out);
         // the fold table exists iff this run wrote it (never a stale one from an earlier run)
         let loci_tsv = loci.as_ref().map(|_| format!("{}.loci.tsv", args.out));
@@ -1678,7 +1956,10 @@ fn main() -> Result<()> {
         container_counts = Some([
             ("container_blocks", c.count("blocks")),
             ("container_accessory_blocks", c.count("accessory_blocks")),
-            ("container_family_relations", c.count("family_relations_directed")),
+            (
+                "container_family_relations",
+                c.count("family_relations_directed"),
+            ),
         ]);
     }
 
@@ -1688,7 +1969,10 @@ fn main() -> Result<()> {
     let mut relation_counts: Option<[(&'static str, usize); 7]> = None;
     if args.emit_relations {
         use rustle::family::fam_from_gtf::{family_container as fc, family_relations as fr};
-        let gtf = args.from_gtf.as_deref().expect("--emit-relations is checked to come with --from-gtf");
+        let gtf = args
+            .from_gtf
+            .as_deref()
+            .expect("--emit-relations is checked to come with --from-gtf");
         let loci_in = relation_loci(gtf_loci_list.as_deref().unwrap_or(&[]));
         let clusters_path = format!("{}.clusters.tsv", args.out);
         // the fold table exists iff this run wrote it (never a stale one from an earlier run)
@@ -1705,7 +1989,11 @@ fn main() -> Result<()> {
         )
         .context("--emit-relations")?;
         r.write(&args.out)?;
-        let outcomes: Vec<String> = r.outcome_counts().iter().map(|(k, n)| format!("{n} {k}")).collect();
+        let outcomes: Vec<String> = r
+            .outcome_counts()
+            .iter()
+            .map(|(k, n)| format!("{n} {k}"))
+            .collect();
         let c = r.counts();
         eprintln!(
             "[mcl_families] relations: {} split transcript(s){}, {} `cover`, {} separated; {} member(s) by locus ({} fused, \
@@ -1728,52 +2016,161 @@ fn main() -> Result<()> {
     let mut ph = std::fs::File::create(format!("{}.params.tsv", args.out))?;
     for (k, v) in [
         ("paf".to_string(), args.paf.clone()),
-        ("gff".to_string(), args.gff.clone().unwrap_or_else(|| "<unset>".into())),
-        ("exonic_denominator".to_string(), (!exonic.is_empty()).to_string()),
-        ("exonic_lengths_loaded".to_string(), exonic.len().to_string()),
-        ("nodes_fell_back_to_span".to_string(), g.missing_exonic.to_string()),
-        ("exonic_overlap".to_string(), args.exonic_overlap.to_string()),
-        ("exonic_overlap_joined".to_string(), g.exonic_overlap_joined.to_string()),
-        ("exonic_overlap_missing".to_string(), g.exonic_overlap_missing.to_string()),
-        ("reject_overlapping".to_string(), args.reject_overlapping.to_string()),
-        ("rejected_overlapping".to_string(), g.rejected_overlapping.to_string()),
+        (
+            "gff".to_string(),
+            args.gff.clone().unwrap_or_else(|| "<unset>".into()),
+        ),
+        (
+            "exonic_denominator".to_string(),
+            (!exonic.is_empty()).to_string(),
+        ),
+        (
+            "exonic_lengths_loaded".to_string(),
+            exonic.len().to_string(),
+        ),
+        (
+            "nodes_fell_back_to_span".to_string(),
+            g.missing_exonic.to_string(),
+        ),
+        (
+            "exonic_overlap".to_string(),
+            args.exonic_overlap.to_string(),
+        ),
+        (
+            "exonic_overlap_joined".to_string(),
+            g.exonic_overlap_joined.to_string(),
+        ),
+        (
+            "exonic_overlap_missing".to_string(),
+            g.exonic_overlap_missing.to_string(),
+        ),
+        (
+            "reject_overlapping".to_string(),
+            args.reject_overlapping.to_string(),
+        ),
+        (
+            "rejected_overlapping".to_string(),
+            g.rejected_overlapping.to_string(),
+        ),
         ("min_exonic_bp".to_string(), args.min_exonic_bp.to_string()),
-        ("rejected_no_exonic".to_string(), g.rejected_no_exonic.to_string()),
-        ("min_shared_exon_frac".to_string(), args.min_shared_exon_frac.to_string()),
-        ("rejected_low_shared_exon".to_string(), g.rejected_low_shared_exon.to_string()),
-        ("merge_overlapping_loci".to_string(), args.merge_overlapping_loci.to_string()),
-        ("locus_attribute_edges".to_string(), args.locus_attribute_edges.to_string()),
-        ("annotations_folded_into_loci".to_string(), loci.as_ref().map_or(0, |m| m.n_merged()).to_string()),
-        ("paf_records_same_locus_skipped".to_string(), g.same_locus_records.to_string()),
+        (
+            "rejected_no_exonic".to_string(),
+            g.rejected_no_exonic.to_string(),
+        ),
+        (
+            "min_shared_exon_frac".to_string(),
+            args.min_shared_exon_frac.to_string(),
+        ),
+        (
+            "rejected_low_shared_exon".to_string(),
+            g.rejected_low_shared_exon.to_string(),
+        ),
+        (
+            "merge_overlapping_loci".to_string(),
+            args.merge_overlapping_loci.to_string(),
+        ),
+        (
+            "locus_attribute_edges".to_string(),
+            args.locus_attribute_edges.to_string(),
+        ),
+        (
+            "annotations_folded_into_loci".to_string(),
+            loci.as_ref().map_or(0, |m| m.n_merged()).to_string(),
+        ),
+        (
+            "paf_records_same_locus_skipped".to_string(),
+            g.same_locus_records.to_string(),
+        ),
         ("core_refine".to_string(), args.core_refine.to_string()),
-        ("sedef".to_string(), args.sedef.clone().unwrap_or_else(|| "<unset>".into())),
-        ("core_from_paf".to_string(), (args.core_from_paf && args.sedef.is_none()).to_string()),
+        (
+            "sedef".to_string(),
+            args.sedef.clone().unwrap_or_else(|| "<unset>".into()),
+        ),
+        (
+            "core_from_paf".to_string(),
+            (args.core_from_paf && args.sedef.is_none()).to_string(),
+        ),
         ("core_clusters_gated".to_string(), core_stats.0.to_string()),
-        ("core_members_kept_full".to_string(), core_stats.1.to_string()),
+        (
+            "core_members_kept_full".to_string(),
+            core_stats.1.to_string(),
+        ),
         ("core_members_trimmed".to_string(), core_stats.2.to_string()),
         ("core_members_dropped".to_string(), core_stats.3.to_string()),
         ("emit_units".to_string(), args.emit_units.to_string()),
-        ("units_follow_reads".to_string(), args.units_follow_reads.to_string()),
-        ("fold_within_clusters".to_string(), args.fold_within_clusters.to_string()),
+        (
+            "units_follow_reads".to_string(),
+            args.units_follow_reads.to_string(),
+        ),
+        (
+            "fold_within_clusters".to_string(),
+            args.fold_within_clusters.to_string(),
+        ),
         ("exonless_span".to_string(), args.exonless_span.to_string()),
-        ("exonic_both_sides".to_string(), args.exonic_both_sides.to_string()),
-        ("merge_overlapping_units".to_string(), (args.merge_overlapping_units && !args.no_merge_overlapping_units).to_string()),
+        (
+            "exonic_both_sides".to_string(),
+            args.exonic_both_sides.to_string(),
+        ),
+        (
+            "merge_overlapping_units".to_string(),
+            (args.merge_overlapping_units && !args.no_merge_overlapping_units).to_string(),
+        ),
         ("units_merged".to_string(), unit_stats.3.to_string()),
-        ("units_include_dropped".to_string(), args.units_include_dropped.to_string()),
-        ("emit_readthrough_units".to_string(), args.emit_readthrough_units.to_string()),
-        ("readthrough_units".to_string(), readthrough_units.to_string()),
-        ("readthrough_guard".to_string(), (!args.no_readthrough_guard).to_string()),
+        (
+            "units_include_dropped".to_string(),
+            args.units_include_dropped.to_string(),
+        ),
+        (
+            "emit_readthrough_units".to_string(),
+            args.emit_readthrough_units.to_string(),
+        ),
+        (
+            "readthrough_units".to_string(),
+            readthrough_units.to_string(),
+        ),
+        (
+            "readthrough_guard".to_string(),
+            (!args.no_readthrough_guard).to_string(),
+        ),
         ("coding_core".to_string(), args.coding_core.to_string()),
-        ("no_cross_family_exon_overlap".to_string(), (args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap).to_string()),
+        (
+            "no_cross_family_exon_overlap".to_string(),
+            (args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap)
+                .to_string(),
+        ),
         ("noncoding_units".to_string(), noncoding_units.to_string()),
-        ("readthrough_rejected_strand".to_string(), rt_rejected.0.to_string()),
-        ("readthrough_rejected_duplicate_flanks".to_string(), rt_rejected.1.to_string()),
-        ("readthrough_rejected_foreign_donor".to_string(), rt_rejected.2.to_string()),
-        ("units_dropped_emitted".to_string(), units_dropped_emitted.to_string()),
-        ("units_keep_unexpressed".to_string(), (args.units_keep_unexpressed && !args.no_units_keep_unexpressed).to_string()),
-        ("units_unexpressed".to_string(), units_unexpressed.to_string()),
-        ("core_majority_inclusive".to_string(), args.core_majority_inclusive.to_string()),
-        ("rmsk".to_string(), args.rmsk.clone().unwrap_or_else(|| "NA".into())),
+        (
+            "readthrough_rejected_strand".to_string(),
+            rt_rejected.0.to_string(),
+        ),
+        (
+            "readthrough_rejected_duplicate_flanks".to_string(),
+            rt_rejected.1.to_string(),
+        ),
+        (
+            "readthrough_rejected_foreign_donor".to_string(),
+            rt_rejected.2.to_string(),
+        ),
+        (
+            "units_dropped_emitted".to_string(),
+            units_dropped_emitted.to_string(),
+        ),
+        (
+            "units_keep_unexpressed".to_string(),
+            (args.units_keep_unexpressed && !args.no_units_keep_unexpressed).to_string(),
+        ),
+        (
+            "units_unexpressed".to_string(),
+            units_unexpressed.to_string(),
+        ),
+        (
+            "core_majority_inclusive".to_string(),
+            args.core_majority_inclusive.to_string(),
+        ),
+        (
+            "rmsk".to_string(),
+            args.rmsk.clone().unwrap_or_else(|| "NA".into()),
+        ),
         ("units_read_chain".to_string(), unit_stats.0.to_string()),
         ("units_gff_fallback".to_string(), unit_stats.1.to_string()),
         ("inflation".to_string(), args.inflation.to_string()),
@@ -1782,15 +2179,24 @@ fn main() -> Result<()> {
         ("min_cov_longer".to_string(), p.min_cov_longer.to_string()),
         ("min_bp".to_string(), p.min_bp.to_string()),
         ("min_size".to_string(), args.min_size.to_string()),
-        ("bam".to_string(), args.bam.clone().unwrap_or_else(|| "<unset>".into())),
-        ("corroboration_min_reads".to_string(), args.min_reads.to_string()),
+        (
+            "bam".to_string(),
+            args.bam.clone().unwrap_or_else(|| "<unset>".into()),
+        ),
+        (
+            "corroboration_min_reads".to_string(),
+            args.min_reads.to_string(),
+        ),
         ("dump_pairs".to_string(), args.dump_pairs.to_string()),
         ("n_nodes".to_string(), g.n_nodes().to_string()),
         ("n_edges".to_string(), g.n_edges().to_string()),
         ("n_clusters".to_string(), clusters.len().to_string()),
         // §6x4, appended LAST so every existing positional reader of params.tsv is unaffected (r936).
         ("min_cov_shorter".to_string(), p.min_cov_shorter.to_string()),
-        ("admitted_by_containment".to_string(), g.admitted_by_containment.to_string()),
+        (
+            "admitted_by_containment".to_string(),
+            g.admitted_by_containment.to_string(),
+        ),
     ] {
         writeln!(ph, "{k}\t{v}")?;
     }
@@ -1800,7 +2206,10 @@ fn main() -> Result<()> {
             ("copies_from_gtf", "true".to_string()),
             ("copies_written", s.copies.to_string()),
             ("copies_families", s.families.to_string()),
-            ("copies_multi_copy_families", s.multi_copy_families.to_string()),
+            (
+                "copies_multi_copy_families",
+                s.multi_copy_families.to_string(),
+            ),
             ("copies_unstranded_as_plus", s.unstranded.to_string()),
             ("copies_gene_key_collisions", s.key_collisions.to_string()),
             ("copies_exons_coalesced", s.coalesced.to_string()),
@@ -1829,7 +2238,10 @@ fn main() -> Result<()> {
 
     let members: usize = clusters.iter().map(|c| c.members.len()).sum();
     let largest = clusters.iter().map(|c| c.members.len()).max().unwrap_or(0);
-    let zero = clusters.iter().filter(|c| c.corroborated == Some(0.0)).count();
+    let zero = clusters
+        .iter()
+        .filter(|c| c.corroborated == Some(0.0))
+        .count();
     eprintln!(
         "[mcl_families] {} cluster(s) >= {} members, {members} members, largest {largest}",
         clusters.len(),
@@ -1841,7 +2253,10 @@ fn main() -> Result<()> {
             clusters.len()
         );
     }
-    eprintln!("[mcl_families] wrote {}.clusters.tsv + {}.params.tsv", args.out, args.out);
+    eprintln!(
+        "[mcl_families] wrote {}.clusters.tsv + {}.params.tsv",
+        args.out, args.out
+    );
     Ok(())
 }
 
@@ -1857,16 +2272,30 @@ mod tests {
     fn min_cov_shorter_defaults_to_0_70_and_zero_turns_it_off() {
         let a = Args::try_parse_from(["mcl_families", "--out", "o"]).expect("parse");
         assert_eq!(a.min_cov_shorter, 0.70);
-        let a = Args::try_parse_from(["mcl_families", "--out", "o", "--min-cov-shorter", "0"]).expect("parse");
+        let a = Args::try_parse_from(["mcl_families", "--out", "o", "--min-cov-shorter", "0"])
+            .expect("parse");
         assert_eq!(a.min_cov_shorter, 0.0);
-        assert_eq!(GraphParams::default().min_cov_shorter, 0.0, "the library default stays off: only the CLI flips");
+        assert_eq!(
+            GraphParams::default().min_cov_shorter,
+            0.0,
+            "the library default stays off: only the CLI flips"
+        );
     }
 
     fn br(start: u64, cigar: &[(char, u64)]) -> BamRead {
-        let n: u64 = cigar.iter().filter(|(o, _)| matches!(o, 'M' | '=' | 'X' | 'I' | 'S')).map(|(_, l)| l).sum();
+        let n: u64 = cigar
+            .iter()
+            .filter(|(o, _)| matches!(o, 'M' | '=' | 'X' | 'I' | 'S'))
+            .map(|(_, l)| l)
+            .sum();
         BamRead {
             chrom: "c".into(),
-            read: AlignedRead { ref_start: start, cigar: cigar.to_vec(), seq: vec![b'A'; n as usize], qual: vec![] },
+            read: AlignedRead {
+                ref_start: start,
+                cigar: cigar.to_vec(),
+                seq: vec![b'A'; n as usize],
+                qual: vec![],
+            },
             mapq: 60,
             name: String::new(),
             as_score: 0,
@@ -1882,7 +2311,9 @@ mod tests {
     /// that lies OUTSIDE the locus window 900-1200 and splice into 1000-1100 inside it.
     #[test]
     fn read_chain_follows_reads_beyond_the_window_only_when_asked() {
-        let reads: Vec<BamRead> = (0..3).map(|_| br(100, &[('M', 100), ('N', 800), ('M', 100)])).collect();
+        let reads: Vec<BamRead> = (0..3)
+            .map(|_| br(100, &[('M', 100), ('N', 800), ('M', 100)]))
+            .collect();
         let (clipped, _, n) = read_chain(&reads, 900, 1200, 3, None);
         assert_eq!((clipped, n), (vec![(1000, 1100)], 3));
         let (followed, strand, _) = read_chain(&reads, 900, 1200, 3, Some((0, 2000)));
@@ -1903,12 +2334,23 @@ mod tests {
     /// nested or interleaved unit does not clip.
     #[test]
     fn clip_extents_stop_at_the_neighbouring_units_of_the_family() {
-        let units = [(1000, 2000, (100, 5000)), (3000, 4000, (1500, 9000)), (1200, 1300, (900, 1400)), (8000, 8500, (7000, 9500))];
+        let units = [
+            (1000, 2000, (100, 5000)),
+            (3000, 4000, (1500, 9000)),
+            (1200, 1300, (900, 1400)),
+            (8000, 8500, (7000, 9500)),
+        ];
         // unit 0 stops at unit 1's chain (3000); unit 1 starts at unit 0's chain end (2000) and stops at unit 3's
         // start (8000); the nested unit 2 is not clipped by its host (they overlap) and stops at 3000 → 1400 is
         // its own bound; unit 3's own extent (7000) is inside every bound
-        assert_eq!(clip_extents_to_neighbours(&units), vec![(100, 3000), (2000, 8000), (900, 1400), (7000, 9500)]);
-        assert_eq!(clip_extents_to_neighbours(&[(10, 20, (5, 50))]), vec![(5, 50)]);
+        assert_eq!(
+            clip_extents_to_neighbours(&units),
+            vec![(100, 3000), (2000, 8000), (900, 1400), (7000, 9500)]
+        );
+        assert_eq!(
+            clip_extents_to_neighbours(&[(10, 20, (5, 50))]),
+            vec![(5, 50)]
+        );
     }
 
     /// The ORF scan is frame-aware, takes the LONGEST ATG..stop across the three forward frames, is
@@ -1918,14 +2360,22 @@ mod tests {
     #[test]
     fn longest_orf_takes_the_best_complete_reading_frame() {
         assert_eq!(longest_orf(b""), 0);
-        assert_eq!(longest_orf(b"ATGAAACCC"), 0, "no stop codon: not a complete ORF");
+        assert_eq!(
+            longest_orf(b"ATGAAACCC"),
+            0,
+            "no stop codon: not a complete ORF"
+        );
         assert_eq!(longest_orf(b"ATGAAATAA"), 9);
         assert_eq!(longest_orf(b"atgaaataa"), 9, "case-insensitive");
         // frame 1: a leading base pushes the same ORF into another frame
         assert_eq!(longest_orf(b"CATGAAATAA"), 9);
         // a single-base insertion after the start breaks the frame, so the ORF collapses
         assert_eq!(longest_orf(b"ATGAAACCCTAA"), 12);
-        assert_eq!(longest_orf(b"ATGAAAGCCCTAA"), 0, "frameshift removes the in-frame stop");
+        assert_eq!(
+            longest_orf(b"ATGAAAGCCCTAA"),
+            0,
+            "frameshift removes the in-frame stop"
+        );
         // the longer of two ORFs wins
         assert_eq!(longest_orf(b"ATGTAAGGGATGAAACCCTAA"), 12);
     }
@@ -1945,14 +2395,35 @@ mod tests {
         let (b, i) = blocks_and_introns(&r);
         assert!(leaving_introns(&b, &i, &chain).is_empty());
         // anchored, intron leaving downstream FROM THIS CHAIN'S OWN DONOR (4120 is an exon end): a candidate
-        let r = br(1000, &[('M', 100), ('N', 2900), ('M', 120), ('N', 15_000), ('M', 200)]);
+        let r = br(
+            1000,
+            &[
+                ('M', 100),
+                ('N', 2900),
+                ('M', 120),
+                ('N', 15_000),
+                ('M', 200),
+            ],
+        );
         let (b, i) = blocks_and_introns(&r);
         assert_eq!(leaving_introns(&b, &i, &chain), vec![(4120, 19_120)]);
         // ⭐ §6ge: anchored, but the intron starts BEYOND the chain — the donor belongs to the next gene, so
         // this is that gene's ordinary intron and not a read-through out of this unit
-        let r = br(1000, &[('M', 100), ('N', 2900), ('M', 5000), ('N', 15_000), ('M', 200)]);
+        let r = br(
+            1000,
+            &[
+                ('M', 100),
+                ('N', 2900),
+                ('M', 5000),
+                ('N', 15_000),
+                ('M', 200),
+            ],
+        );
         let (b, i) = blocks_and_introns(&r);
-        assert!(leaving_introns(&b, &i, &chain).is_empty(), "donor is not this chain's exon end");
+        assert!(
+            leaving_introns(&b, &i, &chain).is_empty(),
+            "donor is not this chain's exon end"
+        );
         // an empty chain is never a source
         assert!(leaving_introns(&b, &i, &[]).is_empty());
     }
@@ -1973,7 +2444,13 @@ mod tests {
         let read = |f: &str| std::fs::read_to_string(format!("{dir}{f}")).unwrap();
         let mut lines: Vec<String> = read("plain.gtf").lines().map(str::to_string).collect();
         let list = bridge_regroup::UnitsList::read(&format!("{dir}cuts.tsv")).unwrap();
-        let gtf = bridge_regroup::run_list(&mut lines, &list).unwrap().units.unwrap().families_lines.join("\n") + "\n";
+        let gtf = bridge_regroup::run_list(&mut lines, &list)
+            .unwrap()
+            .units
+            .unwrap()
+            .families_lines
+            .join("\n")
+            + "\n";
         let loci = gtf_loci(std::io::Cursor::new(gtf.clone()), Representative::MostReads).unwrap();
         let r = fr::run(
             &mut std::io::Cursor::new(gtf.clone()),
@@ -1985,7 +2462,8 @@ mod tests {
         assert_eq!(r.relations_tsv(), read("expected.relations.tsv"));
         assert_eq!(r.members_tsv(), read("expected.members_by_locus.tsv"));
         // the flag needs --from-gtf, like --emit-container
-        let a = Args::try_parse_from(["mcl_families", "--out", "o", "--emit-relations"]).expect("parse");
+        let a = Args::try_parse_from(["mcl_families", "--out", "o", "--emit-relations"])
+            .expect("parse");
         assert!(a.emit_relations && a.from_gtf.is_none());
     }
 
@@ -1998,13 +2476,17 @@ mod tests {
     #[test]
     fn locus_rep_copies_are_in_the_catalog_contract() {
         use rustle::family::annotation_families::HomologyGraph;
-        use rustle::family::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, to_colocated};
+        use rustle::family::catalog_input::{
+            group_families, parse_copies_fa, parse_copies_tsv, to_colocated,
+        };
         let dir = tempfile::tempdir().unwrap();
         let mut x: u64 = 12345;
         let mut rnd = |n: usize| -> String {
             (0..n)
                 .map(|_| {
-                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    x = x
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
                     b"ACGT"[(x >> 62) as usize] as char
                 })
                 .collect()
@@ -2012,7 +2494,14 @@ mod tests {
         let (c1, c2) = (rnd(4000), rnd(2000));
         let fasta = dir.path().join("g.fa");
         std::fs::write(&fasta, format!(">c1\n{c1}\n>c2 description\n{c2}\n")).unwrap();
-        let locus = |g: &str, chrom: &str, s: u64, e: u64, rep: &str, reads: u64, st: &str, ex: &[(u64, u64)]| GtfLocus {
+        let locus = |g: &str,
+                     chrom: &str,
+                     s: u64,
+                     e: u64,
+                     rep: &str,
+                     reads: u64,
+                     st: &str,
+                     ex: &[(u64, u64)]| GtfLocus {
             gene_id: g.into(),
             chrom: chrom.into(),
             start: s,
@@ -2023,8 +2512,26 @@ mod tests {
             rep_exons: ex.iter().map(|&(a, b)| (chrom.to_string(), a, b)).collect(),
         };
         let loci = vec![
-            locus("G1", "c1", 101, 900, "T1", 7, "+", &[(101, 200), (301, 400)]),
-            locus("G2", "c1", 2001, 2900, "T2", 4, "-", &[(2001, 2100), (2301, 2500)]),
+            locus(
+                "G1",
+                "c1",
+                101,
+                900,
+                "T1",
+                7,
+                "+",
+                &[(101, 200), (301, 400)],
+            ),
+            locus(
+                "G2",
+                "c1",
+                2001,
+                2900,
+                "T2",
+                4,
+                "-",
+                &[(2001, 2100), (2301, 2500)],
+            ),
             locus("G3", "c2", 101, 600, "T3", 0, ".", &[(101, 600)]),
             locus("G5", "c1", 151, 260, "T5", 9, "+", &[(151, 260)]), // shares exon bases with G1
             locus("G4", "c1", 3001, 3500, "T4", 2, "+", &[(3001, 3500)]), // no family
@@ -2042,36 +2549,112 @@ mod tests {
             corroborated: None,
         }];
         let out = dir.path().join("fam").to_string_lossy().to_string();
-        let st = write_locus_rep_copies(&out, &fasta.to_string_lossy(), &clusters, &g, &[], &loci, None, true, true, false)
-            .unwrap();
-        assert_eq!((st.copies, st.families, st.multi_copy_families, st.merged, st.unstranded), (3, 1, 1, 1, 1));
+        let st = write_locus_rep_copies(
+            &out,
+            &fasta.to_string_lossy(),
+            &clusters,
+            &g,
+            &[],
+            &loci,
+            None,
+            true,
+            true,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                st.copies,
+                st.families,
+                st.multi_copy_families,
+                st.merged,
+                st.unstranded
+            ),
+            (3, 1, 1, 1, 1)
+        );
         let tsv = std::fs::read_to_string(format!("{out}.copies.tsv")).unwrap();
         let header: Vec<&str> = tsv.lines().next().unwrap().split('\t').collect();
         assert_eq!(
             header[..11],
-            ["family_id", "copy_idx", "tid", "chrom", "start", "end", "n_exon", "strand", "n_reads", "exons", "max_family_identity"]
+            [
+                "family_id",
+                "copy_idx",
+                "tid",
+                "chrom",
+                "start",
+                "end",
+                "n_exon",
+                "strand",
+                "n_reads",
+                "exons",
+                "max_family_identity"
+            ]
         );
         let copies = parse_copies_tsv(&tsv).unwrap();
-        let got: Vec<(&str, usize, &str, u64, u64, char, u32)> =
-            copies.iter().map(|c| (c.tid.as_str(), c.copy_idx, c.chrom.as_str(), c.start, c.end, c.strand, c.n_reads)).collect();
+        let got: Vec<(&str, usize, &str, u64, u64, char, u32)> = copies
+            .iter()
+            .map(|c| {
+                (
+                    c.tid.as_str(),
+                    c.copy_idx,
+                    c.chrom.as_str(),
+                    c.start,
+                    c.end,
+                    c.strand,
+                    c.n_reads,
+                )
+            })
+            .collect();
         assert_eq!(
             got,
-            vec![("T1", 0, "c1", 100, 400, '+', 7), ("T2", 1, "c1", 2000, 2500, '-', 4), ("T3", 2, "c2", 100, 600, '+', 0)]
+            vec![
+                ("T1", 0, "c1", 100, 400, '+', 7),
+                ("T2", 1, "c1", 2000, 2500, '-', 4),
+                ("T3", 2, "c2", 100, 600, '+', 0)
+            ]
         );
         assert_eq!(copies[0].exons, vec![(100, 200), (300, 400)]);
         // the L2 extent: the locus span, clipped at the neighbouring copy's chain on the contig
-        assert_eq!(copies.iter().map(|c| c.locus.unwrap()).collect::<Vec<_>>(), vec![(100, 900), (2000, 2900), (100, 600)]);
-        let ident: Vec<&str> = tsv.lines().skip(1).map(|l| l.split('\t').nth(10).unwrap()).collect();
-        assert_eq!(ident, vec!["0.990000", "0.950000", "0.900000"], "best direct edge, merged member's included");
+        assert_eq!(
+            copies.iter().map(|c| c.locus.unwrap()).collect::<Vec<_>>(),
+            vec![(100, 900), (2000, 2900), (100, 600)]
+        );
+        let ident: Vec<&str> = tsv
+            .lines()
+            .skip(1)
+            .map(|l| l.split('\t').nth(10).unwrap())
+            .collect();
+        assert_eq!(
+            ident,
+            vec!["0.990000", "0.950000", "0.900000"],
+            "best direct edge, merged member's included"
+        );
         let merged = std::fs::read_to_string(format!("{out}.copies.merged.tsv")).unwrap();
-        assert_eq!(merged.lines().nth(1).unwrap(), "MCL0\tc1:151-260\tT5\tc1:101-900\tT1");
+        assert_eq!(
+            merged.lines().nth(1).unwrap(),
+            "MCL0\tc1:151-260\tT5\tc1:101-900\tT1"
+        );
         let fa = std::fs::read_to_string(format!("{out}.copies.fa")).unwrap();
         let seqs = parse_copies_fa(&fa).unwrap();
         let rc = |s: &str| -> String {
-            s.bytes().rev().map(|b| match b { b'A' => 'T', b'C' => 'G', b'G' => 'C', _ => 'A' }).collect()
+            s.bytes()
+                .rev()
+                .map(|b| match b {
+                    b'A' => 'T',
+                    b'C' => 'G',
+                    b'G' => 'C',
+                    _ => 'A',
+                })
+                .collect()
         };
-        assert_eq!(String::from_utf8(seqs[&("MCL0".to_string(), 0)].seq.clone()).unwrap(), format!("{}{}", &c1[100..200], &c1[300..400]));
-        assert_eq!(String::from_utf8(seqs[&("MCL0".to_string(), 1)].seq.clone()).unwrap(), rc(&format!("{}{}", &c1[2000..2100], &c1[2300..2500])));
+        assert_eq!(
+            String::from_utf8(seqs[&("MCL0".to_string(), 0)].seq.clone()).unwrap(),
+            format!("{}{}", &c1[100..200], &c1[300..400])
+        );
+        assert_eq!(
+            String::from_utf8(seqs[&("MCL0".to_string(), 1)].seq.clone()).unwrap(),
+            rc(&format!("{}{}", &c1[2000..2100], &c1[2300..2500]))
+        );
         let genome = rustle::genome::GenomeIndex::from_fasta(&fasta.to_string_lossy()).unwrap();
         let fams = group_families(copies).unwrap();
         assert_eq!(fams.len(), 1);
@@ -2107,7 +2690,10 @@ mod tests {
         let chain = [(1000u64, 1100u64)];
         assert_eq!(read_extent(&[], &chain, 3), None);
         assert_eq!(read_extent(&[br(1000, &[('M', 100)])], &[], 3), None);
-        let mut reads = vec![br(1000, &[('M', 100)]), br(500, &[('M', 50), ('N', 3000), ('M', 20)])];
+        let mut reads = vec![
+            br(1000, &[('M', 100)]),
+            br(500, &[('M', 50), ('N', 3000), ('M', 20)]),
+        ];
         // intron 550-3550 spans the chain with no block in it: the first read alone counts
         assert_eq!(read_extent(&reads, &chain, 3), Some((1000, 1100)));
         // a primary WITH a block in the chain extends it through its 3-kb intron
@@ -2131,28 +2717,53 @@ mod tests {
     /// GTF lines of one assembled transcript on `c1`, `+`: the `transcript` line with its `reads`, then one `exon` line per
     /// `(start, end)` (GFF 1-based closed) in the order given.
     fn gtf_tx(gene: &str, tid: &str, reads: u64, exons: &[(u64, u64)]) -> String {
-        let (s, e) = (exons.iter().map(|x| x.0).min().unwrap(), exons.iter().map(|x| x.1).max().unwrap());
+        let (s, e) = (
+            exons.iter().map(|x| x.0).min().unwrap(),
+            exons.iter().map(|x| x.1).max().unwrap(),
+        );
         let mut out = format!("c1\tr\ttranscript\t{s}\t{e}\t.\t+\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; reads \"{reads}\";\n");
         for (a, b) in exons {
-            out += &format!("c1\tr\texon\t{a}\t{b}\t.\t+\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\";\n");
+            out += &format!(
+                "c1\tr\texon\t{a}\t{b}\t.\t+\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\";\n"
+            );
         }
         out
     }
 
     /// `(gene_id, representative transcript_id)` of every locus of `gtf` under `rule`, in locus order.
     fn reps_of(gtf: &str, rule: Representative) -> Vec<(String, String)> {
-        gtf_loci(std::io::Cursor::new(gtf.to_string()), rule).unwrap().into_iter().map(|l| (l.gene_id, l.rep)).collect()
+        gtf_loci(std::io::Cursor::new(gtf.to_string()), rule)
+            .unwrap()
+            .into_iter()
+            .map(|l| (l.gene_id, l.rep))
+            .collect()
     }
 
     /// `--representative`: `most-reads` is the default (every product before 2026-10-04), `most-junctions` the opt-in arm,
     /// anything else is refused at parse time.
     #[test]
     fn representative_defaults_to_most_reads_and_accepts_exactly_the_two_rules() {
-        let parse = |v: &[&str]| Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied()));
-        assert_eq!(parse(&[]).expect("parse").representative, Representative::MostReads);
-        assert_eq!(parse(&["--representative", "most-reads"]).expect("parse").representative, Representative::MostReads);
+        let parse = |v: &[&str]| {
+            Args::try_parse_from(
+                ["mcl_families", "--out", "o"]
+                    .into_iter()
+                    .chain(v.iter().copied()),
+            )
+        };
         assert_eq!(
-            parse(&["--representative", "most-junctions"]).expect("parse").representative,
+            parse(&[]).expect("parse").representative,
+            Representative::MostReads
+        );
+        assert_eq!(
+            parse(&["--representative", "most-reads"])
+                .expect("parse")
+                .representative,
+            Representative::MostReads
+        );
+        assert_eq!(
+            parse(&["--representative", "most-junctions"])
+                .expect("parse")
+                .representative,
             Representative::MostJunctions
         );
         assert!(parse(&["--representative", "longest-span"]).is_err());
@@ -2162,18 +2773,50 @@ mod tests {
     /// ending at 200, an exon starting at 251 leaves bases 201-250, a 50-bp gap (the boundary); 250 leaves 49.
     #[test]
     fn junction_count_is_the_gaps_of_at_least_50_bp_between_consecutive_exons() {
-        let ex = |v: &[(u64, u64)]| -> Vec<(String, u64, u64)> { v.iter().map(|&(a, b)| ("c1".to_string(), a, b)).collect() };
+        let ex = |v: &[(u64, u64)]| -> Vec<(String, u64, u64)> {
+            v.iter().map(|&(a, b)| ("c1".to_string(), a, b)).collect()
+        };
         assert_eq!(junction_count(&ex(&[])), 0);
-        assert_eq!(junction_count(&ex(&[(101, 200)])), 0, "one exon: no junction");
-        assert_eq!(junction_count(&ex(&[(101, 200), (251, 300)])), 1, "a 50-bp gap is a junction");
-        assert_eq!(junction_count(&ex(&[(101, 200), (250, 300)])), 0, "a 49-bp gap is not");
-        assert_eq!(junction_count(&ex(&[(101, 200), (231, 300)])), 0, "a 30-bp gap is not");
-        assert_eq!(junction_count(&ex(&[(101, 200), (201, 300)])), 0, "abutting exons leave no gap");
-        assert_eq!(junction_count(&ex(&[(101, 200), (150, 300)])), 0, "overlapping exons leave no gap");
+        assert_eq!(
+            junction_count(&ex(&[(101, 200)])),
+            0,
+            "one exon: no junction"
+        );
+        assert_eq!(
+            junction_count(&ex(&[(101, 200), (251, 300)])),
+            1,
+            "a 50-bp gap is a junction"
+        );
+        assert_eq!(
+            junction_count(&ex(&[(101, 200), (250, 300)])),
+            0,
+            "a 49-bp gap is not"
+        );
+        assert_eq!(
+            junction_count(&ex(&[(101, 200), (231, 300)])),
+            0,
+            "a 30-bp gap is not"
+        );
+        assert_eq!(
+            junction_count(&ex(&[(101, 200), (201, 300)])),
+            0,
+            "abutting exons leave no gap"
+        );
+        assert_eq!(
+            junction_count(&ex(&[(101, 200), (150, 300)])),
+            0,
+            "overlapping exons leave no gap"
+        );
         // coordinate order, not listing order
-        assert_eq!(junction_count(&ex(&[(501, 600), (101, 200), (301, 400)])), 2);
+        assert_eq!(
+            junction_count(&ex(&[(501, 600), (101, 200), (301, 400)])),
+            2
+        );
         // a short gap is skipped, the two long ones are counted
-        assert_eq!(junction_count(&ex(&[(101, 200), (231, 300), (501, 600), (1001, 1100)])), 2);
+        assert_eq!(
+            junction_count(&ex(&[(101, 200), (231, 300), (501, 600), (1001, 1100)])),
+            2
+        );
     }
 
     /// ⭐ `most-junctions` (5'-truncated libraries, where the most-read transcript is a 3' fragment): a 1-junction transcript
@@ -2182,18 +2825,29 @@ mod tests {
     /// no spliced transcript, are the same under both rules.
     #[test]
     fn most_junctions_beats_reads_where_the_most_read_transcript_is_a_fragment() {
-        let full = [(101, 200), (301, 400), (501, 600), (701, 800), (901, 1000), (1101, 1200)];
+        let full = [
+            (101, 200),
+            (301, 400),
+            (501, 600),
+            (701, 800),
+            (901, 1000),
+            (1101, 1200),
+        ];
         let gtf = gtf_tx("G1", "Tfrag", 10, &full[4..])
             + &gtf_tx("G1", "Tfull", 2, &full)
             + &gtf_tx("G2", "Tshort", 5, &[(5001, 5100)])
             + &gtf_tx("G2", "Tlong", 2, &[(5001, 5300)]);
         let by_reads = gtf_loci(std::io::Cursor::new(&gtf), Representative::MostReads).unwrap();
-        let by_junctions = gtf_loci(std::io::Cursor::new(&gtf), Representative::MostJunctions).unwrap();
+        let by_junctions =
+            gtf_loci(std::io::Cursor::new(&gtf), Representative::MostJunctions).unwrap();
         let shape = |l: &GtfLocus| (l.rep.clone(), l.rep_reads, l.rep_exons.len());
         assert_eq!(shape(&by_reads[0]), ("Tfrag".to_string(), 10, 2));
         assert_eq!(shape(&by_junctions[0]), ("Tfull".to_string(), 2, 6));
         assert_eq!((by_junctions[0].start, by_junctions[0].end), (101, 1200));
-        assert_eq!(by_reads[0].end, 1200, "the span is the locus's, not the representative's");
+        assert_eq!(
+            by_reads[0].end, 1200,
+            "the span is the locus's, not the representative's"
+        );
         // no spliced transcript in G2: 0 junctions each, so `most-junctions` falls back to reads (then span, then id)
         assert_eq!(by_reads[1], by_junctions[1]);
         assert_eq!(by_junctions[1].rep, "Tshort");
@@ -2223,10 +2877,15 @@ mod tests {
             decoy("G3"),
         ]
         .concat();
-        let want: Vec<(String, String)> = [("G1", "Ta"), ("G2", "Tc"), ("G3", "Th")].iter().map(|&(g, t)| (g.into(), t.into())).collect();
+        let want: Vec<(String, String)> = [("G1", "Ta"), ("G2", "Tc"), ("G3", "Th")]
+            .iter()
+            .map(|&(g, t)| (g.into(), t.into()))
+            .collect();
         assert_eq!(reps_of(&gtf, Representative::MostJunctions), want);
         // `most-reads` takes the decoy everywhere: the junction count is the one thing it does not look at
-        assert!(reps_of(&gtf, Representative::MostReads).iter().all(|(_, t)| t.starts_with("Tz_")));
+        assert!(reps_of(&gtf, Representative::MostReads)
+            .iter()
+            .all(|(_, t)| t.starts_with("Tz_")));
     }
 
     /// A gap under 50 bp is not a junction: a transcript whose exons are split by 30-bp gaps has none, so a one-junction
@@ -2235,8 +2894,14 @@ mod tests {
     fn most_junctions_does_not_count_a_30_bp_gap() {
         let gtf = gtf_tx("G1", "Tgap", 9, &[(101, 200), (231, 330), (361, 460)]) // 30-bp gaps: 0 junctions
             + &gtf_tx("G1", "Tone", 1, &[(101, 200), (401, 500)]); // one 200-bp intron: 1 junction
-        assert_eq!(reps_of(&gtf, Representative::MostJunctions), vec![("G1".to_string(), "Tone".to_string())]);
-        assert_eq!(reps_of(&gtf, Representative::MostReads), vec![("G1".to_string(), "Tgap".to_string())]);
+        assert_eq!(
+            reps_of(&gtf, Representative::MostJunctions),
+            vec![("G1".to_string(), "Tone".to_string())]
+        );
+        assert_eq!(
+            reps_of(&gtf, Representative::MostReads),
+            vec![("G1".to_string(), "Tgap".to_string())]
+        );
     }
 
     /// `--from-gtf` loci: a locus is a `gene_id` group spanning all its transcripts; its representative is the
@@ -2274,6 +2939,13 @@ c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; re
                 rep_exons: vec![("c1".into(), 101, 200), ("c1".into(), 301, 450)],
             }
         );
-        assert_eq!((loci[1].rep.as_str(), loci[1].strand.as_str(), loci[1].rep_reads), ("Tb", "-", 3));
+        assert_eq!(
+            (
+                loci[1].rep.as_str(),
+                loci[1].strand.as_str(),
+                loci[1].rep_reads
+            ),
+            ("Tb", "-", 3)
+        );
     }
 }

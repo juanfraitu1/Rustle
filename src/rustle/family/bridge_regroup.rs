@@ -96,8 +96,8 @@ use noodles_sam::alignment::record::cigar::op::Kind;
 use noodles_sam::alignment::record::cigar::Op;
 use noodles_sam::alignment::record::data::field::Value;
 
-use crate::genome::GenomeIndex;
 use crate::family::denovo_assemble::{rt_real_starts, rt_v1};
+use crate::genome::GenomeIndex;
 
 /// `--bridge-regroup`'s arms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,7 +119,9 @@ impl Mode {
             "f1" => Ok(Some(Mode::F1)),
             "f1v2" => Ok(Some(Mode::F1v2)),
             "f1units" => Ok(Some(Mode::F1Units)),
-            other => anyhow::bail!("--bridge-regroup must be off, f1, f1v2 or f1units, got `{other}`"),
+            other => {
+                anyhow::bail!("--bridge-regroup must be off, f1, f1v2 or f1units, got `{other}`")
+            }
         }
     }
 
@@ -159,7 +161,14 @@ impl BridgeEvidence {
     /// One PRIMARY alignment (the caller excludes unmapped, secondary and supplementary records): its 0-based start,
     /// its CIGAR ops and its `ts == '+'` (asked only when the record has an intron). The script's CIGAR walk: every
     /// `N` is an intron `(pos + 1, pos + len)`, and M/D/N/=/X advance the reference position.
-    pub fn push(&mut self, chrom: &str, reverse: bool, ref_start: u64, ops: &[Op], ts_plus: impl FnOnce() -> bool) {
+    pub fn push(
+        &mut self,
+        chrom: &str,
+        reverse: bool,
+        ref_start: u64,
+        ops: &[Op],
+        ts_plus: impl FnOnce() -> bool,
+    ) {
         let BridgeEvidence { contigs, introns } = self;
         introns.clear();
         let mut pos = ref_start;
@@ -170,7 +179,9 @@ impl BridgeEvidence {
                     introns.push((pos + 1, pos + len));
                     pos += len;
                 }
-                Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => pos += len,
+                Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                    pos += len
+                }
                 _ => {}
             }
         }
@@ -184,11 +195,21 @@ impl BridgeEvidence {
         }
         let c = contigs.get_mut(chrom).expect("inserted above");
         let k = usize::from(minus);
-        let (e5, e3) = if minus { (ref_end, ref_start + 1) } else { (ref_start + 1, ref_end) };
+        let (e5, e3) = if minus {
+            (ref_end, ref_start + 1)
+        } else {
+            (ref_start + 1, ref_end)
+        };
         // the read's own first donor in transcript orientation (the script's `first_donor`)
-        let donor = if minus { introns[introns.len() - 1].1 + 1 } else { introns[0].0 - 1 };
+        let donor = if minus {
+            introns[introns.len() - 1].1 + 1
+        } else {
+            introns[0].0 - 1
+        };
         c.rows[k].push((e5, e3, donor));
-        if c.seen.insert(record_key(minus, ref_start, ref_end, introns)) {
+        if c.seen
+            .insert(record_key(minus, ref_start, ref_end, introns))
+        {
             c.ends[k].push((e3, e5));
         }
     }
@@ -221,7 +242,10 @@ impl BridgeEvidence {
 
     /// Records held (spliced primaries, every contig).
     pub fn len(&self) -> usize {
-        self.contigs.values().map(|c| c.rows[0].len() + c.rows[1].len()).sum()
+        self.contigs
+            .values()
+            .map(|c| c.rows[0].len() + c.rows[1].len())
+            .sum()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -263,12 +287,22 @@ pub fn ts_is_plus<R: noodles_sam::alignment::Record + ?Sized>(record: &R) -> boo
 
 /// The buffered path's evidence (the `--assemble-only` runs that do not stream, e.g. `--materialize-reads`): one
 /// indexed pass over `[lo, hi)` of `chrom`, feeding `ev` exactly as the streaming reader does.
-pub fn bridge_evidence_region(bam_path: &str, chrom: &str, lo: u64, hi: u64, ev: &mut BridgeEvidence) -> Result<()> {
+pub fn bridge_evidence_region(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    ev: &mut BridgeEvidence,
+) -> Result<()> {
     let bai_path = format!("{bam_path}.bai");
-    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "--bridge-regroup needs a .bai index");
+    anyhow::ensure!(
+        std::path::Path::new(&bai_path).exists(),
+        "--bridge-regroup needs a .bai index"
+    );
     let file = std::fs::File::open(bam_path)?;
     let buf = std::io::BufReader::with_capacity(1 << 20, file);
-    let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(std::num::NonZeroUsize::MIN, buf);
+    let bgzf =
+        noodles_bgzf::MultithreadedReader::with_worker_count(std::num::NonZeroUsize::MIN, buf);
     let mut reader = noodles_bam::io::Reader::from(bgzf);
     let header = reader.read_header()?;
     let index = noodles_bam::bai::read(&bai_path)?;
@@ -280,13 +314,21 @@ pub fn bridge_evidence_region(bam_path: &str, chrom: &str, lo: u64, hi: u64, ev:
         if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
             continue;
         }
-        let Some(start) = record.alignment_start() else { continue };
+        let Some(start) = record.alignment_start() else {
+            continue;
+        };
         let ref_start = (usize::from(start?) as u64).saturating_sub(1);
         ops.clear();
         for op in record.cigar().iter() {
             ops.push(op?);
         }
-        ev.push(chrom, flags.is_reverse_complemented(), ref_start, &ops, || ts_is_plus(&record));
+        ev.push(
+            chrom,
+            flags.is_reverse_complemented(),
+            ref_start,
+            &ops,
+            || ts_is_plus(&record),
+        );
     }
     Ok(())
 }
@@ -353,14 +395,28 @@ pub fn parse(lines: &[String], flag: &str) -> Result<Vec<Tx>> {
         if f.len() < 9 {
             continue;
         }
-        let Some(tid) = attr(f[8], "transcript_id") else { continue };
+        let Some(tid) = attr(f[8], "transcript_id") else {
+            continue;
+        };
         if f[2] == "transcript" {
-            anyhow::ensure!(!by_id.contains_key(tid), "{flag}: duplicate transcript line for {tid}");
-            let start: i64 = f[3].parse().with_context(|| format!("{flag}: bad start on transcript {tid}"))?;
-            let end: i64 = f[4].parse().with_context(|| format!("{flag}: bad end on transcript {tid}"))?;
+            anyhow::ensure!(
+                !by_id.contains_key(tid),
+                "{flag}: duplicate transcript line for {tid}"
+            );
+            let start: i64 = f[3]
+                .parse()
+                .with_context(|| format!("{flag}: bad start on transcript {tid}"))?;
+            let end: i64 = f[4]
+                .parse()
+                .with_context(|| format!("{flag}: bad end on transcript {tid}"))?;
             // the scripts: `int(rv) if rv.lstrip('-').isdigit() else 0`
             let reads = attr(f[8], "reads")
-                .filter(|v| v.strip_prefix('-').unwrap_or(v).chars().all(|c| c.is_ascii_digit()))
+                .filter(|v| {
+                    v.strip_prefix('-')
+                        .unwrap_or(v)
+                        .chars()
+                        .all(|c| c.is_ascii_digit())
+                })
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(0);
             by_id.insert(tid.to_string(), txs.len());
@@ -377,16 +433,28 @@ pub fn parse(lines: &[String], flag: &str) -> Result<Vec<Tx>> {
             let Some(&i) = by_id.get(tid) else {
                 anyhow::bail!("{flag}: exon line before the transcript line of {tid}");
             };
-            let a: i64 = f[3].parse().with_context(|| format!("{flag}: bad exon start on {tid}"))?;
-            let b: i64 = f[4].parse().with_context(|| format!("{flag}: bad exon end on {tid}"))?;
+            let a: i64 = f[3]
+                .parse()
+                .with_context(|| format!("{flag}: bad exon start on {tid}"))?;
+            let b: i64 = f[4]
+                .parse()
+                .with_context(|| format!("{flag}: bad exon end on {tid}"))?;
             txs[i].exons.push((a, b));
         }
     }
     for t in txs.iter_mut() {
-        anyhow::ensure!(!t.exons.is_empty(), "{flag}: transcript {} has no exon line", t.tid);
+        anyhow::ensure!(
+            !t.exons.is_empty(),
+            "{flag}: transcript {} has no exon line",
+            t.tid
+        );
         t.exons.sort_unstable();
         for &(a, b) in &t.exons {
-            anyhow::ensure!(a <= b, "{flag}: transcript {} has an exon {a}-{b} whose end precedes its start", t.tid);
+            anyhow::ensure!(
+                a <= b,
+                "{flag}: transcript {} has an exon {a}-{b} whose end precedes its start",
+                t.tid
+            );
         }
         // strictly ordered and non-overlapping, so every intron of `introns()` has s <= e + 1 (a duplicated or
         // overlapping exon pair would give an intron with e < s - 1, and `ContigProof::up`'s ends[lo..hi] a lo > hi)
@@ -472,9 +540,18 @@ pub fn rg3_pieces(txs: &[Tx], gene: &str, ts: &[usize]) -> (Vec<Vec<usize>>, Vec
             })
             .push(t);
     }
-    let comps: Vec<Vec<usize>> = chroms.iter().flat_map(|c| components(txs, &by_chrom[c])).collect();
-    let reps: Vec<usize> =
-        comps.iter().map(|c| *c.iter().max_by_key(|&&t| key(t)).expect("a component has a member")).collect();
+    let comps: Vec<Vec<usize>> = chroms
+        .iter()
+        .flat_map(|c| components(txs, &by_chrom[c]))
+        .collect();
+    let reps: Vec<usize> = comps
+        .iter()
+        .map(|c| {
+            *c.iter()
+                .max_by_key(|&&t| key(t))
+                .expect("a component has a member")
+        })
+        .collect();
     let mut name: Vec<String> = vec![String::new(); comps.len()];
     if let Some(keep) = (0..comps.len()).max_by_key(|&i| key(reps[i])) {
         let mut order: Vec<usize> = (0..comps.len()).collect();
@@ -502,8 +579,16 @@ enum Side {
 
 /// The scripts' `side`: where a component lies against the intron [s, e], in transcript orientation.
 fn side(txs: &[Tx], comp: &[usize], s: i64, e: i64, strand: &str) -> Side {
-    let lo = comp.iter().map(|&t| txs[t].exons[0].0).min().expect("a component has a member");
-    let hi = comp.iter().map(|&t| txs[t].exons[txs[t].exons.len() - 1].1).max().expect("a component has a member");
+    let lo = comp
+        .iter()
+        .map(|&t| txs[t].exons[0].0)
+        .min()
+        .expect("a component has a member");
+    let hi = comp
+        .iter()
+        .map(|&t| txs[t].exons[txs[t].exons.len() - 1].1)
+        .max()
+        .expect("a component has a member");
     match (lo < s, hi > e) {
         (true, true) => Side::Straddle,
         (false, false) => Side::Inside,
@@ -581,17 +666,38 @@ impl ContigProof {
             _ => return (0, Vec::new()),
         };
         let ends = &self.ev.ends[k];
-        let (lo, hi) = (ends.partition_point(|x| (x.0 as i64) < s), ends.partition_point(|x| (x.0 as i64) <= e));
+        let (lo, hi) = (
+            ends.partition_point(|x| (x.0 as i64) < s),
+            ends.partition_point(|x| (x.0 as i64) <= e),
+        );
         let mut up: Vec<i64> = ends[lo..hi]
             .iter()
-            .filter(|&&(_, e5)| if minus { (e5 as i64) > e } else { (e5 as i64) < s })
+            .filter(|&&(_, e5)| {
+                if minus {
+                    (e5 as i64) > e
+                } else {
+                    (e5 as i64) < s
+                }
+            })
             .map(|&(e3, _)| if minus { -(e3 as i64) } else { e3 as i64 })
             .collect();
         up.sort_unstable();
-        let seq: &[u8] = self.genome.chroms().find(|(n, _)| *n == chrom).map(|(_, s)| s).unwrap_or(&[]);
+        let seq: &[u8] = self
+            .genome
+            .chroms()
+            .find(|(n, _)| *n == chrom)
+            .map(|(_, s)| s)
+            .unwrap_or(&[]);
         let cl = end_clusters(&up, seq, minus)
             .into_iter()
-            .map(|c| (if minus { -c.mode } else { c.mode }, c.n, c.proven, c.unprimed))
+            .map(|c| {
+                (
+                    if minus { -c.mode } else { c.mode },
+                    c.n,
+                    c.proven,
+                    c.unprimed,
+                )
+            })
             .collect();
         (up.len(), cl)
     }
@@ -620,7 +726,10 @@ fn decide(
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut slot: HashMap<(&str, &str), usize> = HashMap::new();
     for &i in &order {
-        let key = (txs[i].gene.as_deref().expect("filtered above"), txs[i].chrom.as_str());
+        let key = (
+            txs[i].gene.as_deref().expect("filtered above"),
+            txs[i].chrom.as_str(),
+        );
         let k = *slot.entry(key).or_insert_with(|| {
             groups.push(Vec::new());
             groups.len() - 1
@@ -634,16 +743,26 @@ fn decide(
         if ts.len() < 3 {
             continue;
         }
-        let (gene, chrom) = (txs[ts[0]].gene.as_deref().expect("filtered above"), txs[ts[0]].chrom.as_str());
+        let (gene, chrom) = (
+            txs[ts[0]].gene.as_deref().expect("filtered above"),
+            txs[ts[0]].chrom.as_str(),
+        );
         let mut by_junction: BTreeMap<((i64, i64), &str), Vec<usize>> = BTreeMap::new();
         for &t in ts {
             for iv in txs[t].introns() {
-                by_junction.entry((iv, txs[t].strand.as_str())).or_default().push(t);
+                by_junction
+                    .entry((iv, txs[t].strand.as_str()))
+                    .or_default()
+                    .push(t);
             }
         }
         for (((s, e), strand), tj) in by_junction {
             let tj_set: HashSet<usize> = tj.iter().copied().collect();
-            let r: Vec<usize> = ts.iter().copied().filter(|t| txs[*t].strand == strand && !tj_set.contains(t)).collect();
+            let r: Vec<usize> = ts
+                .iter()
+                .copied()
+                .filter(|t| txs[*t].strand == strand && !tj_set.contains(t))
+                .collect();
             if r.len() < 2 {
                 continue;
             }
@@ -665,7 +784,12 @@ fn decide(
             let v1 = p.v1(s, e, strand);
             let down_proof = v1 >= 1;
             let members = |x: Side| -> Vec<usize> {
-                comps.iter().zip(&sides).filter(|(_, &y)| y == x).flat_map(|(c, _)| c.iter().copied()).collect()
+                comps
+                    .iter()
+                    .zip(&sides)
+                    .filter(|(_, &y)| y == x)
+                    .flat_map(|(c, _)| c.iter().copied())
+                    .collect()
             };
             rows.push(Junction {
                 gene: gene.to_string(),
@@ -722,7 +846,12 @@ fn evidence_string(txs: &[Tx], j: &Junction) -> String {
 /// F1v2's MINORITY(J) and its table row (`f1v2.py`'s `decide_v2`). T_J is the set of transcripts using J.
 fn minority_row(txs: &[Tx], j: &Junction) -> (bool, String) {
     let (tj, rb, ru, rd) = link_reads(txs, j);
-    let max = |v: &[usize]| v.iter().map(|&t| txs[t].reads).max().expect("a side has a transcript");
+    let max = |v: &[usize]| {
+        v.iter()
+            .map(|&t| txs[t].reads)
+            .max()
+            .expect("a side has a transcript")
+    };
     let share = link_share(rb, ru, rd);
     let keep = rb < ru && rb < rd;
     let row = format!(
@@ -800,7 +929,11 @@ fn regroup(
     for g in genes {
         let ts = &members[g];
         // the pieces: RG3's exon-overlap components of the non-bridge transcripts, named as RG3 names them
-        let non_bridge: Vec<usize> = ts.iter().copied().filter(|t| !bridges.contains(t)).collect();
+        let non_bridge: Vec<usize> = ts
+            .iter()
+            .copied()
+            .filter(|t| !bridges.contains(t))
+            .collect();
         let (comps, name) = rg3_pieces(txs, g, &non_bridge);
         for (i, c) in comps.iter().enumerate() {
             for &t in c {
@@ -823,10 +956,17 @@ fn regroup(
                 for (i, pc) in comps.iter().enumerate() {
                     let touches = pc.iter().any(|&x| {
                         txs[x].strand == tx.strand
-                            && txs[x].exons.iter().any(|&(a, b)| tx.exons.iter().any(|&(c0, d)| a <= d && c0 <= b))
+                            && txs[x]
+                                .exons
+                                .iter()
+                                .any(|&(a, b)| tx.exons.iter().any(|&(c0, d)| a <= d && c0 <= b))
                     });
                     if touches {
-                        let lo = pc.iter().map(|&x| txs[x].exons[0].0).min().expect("a component has a member");
+                        let lo = pc
+                            .iter()
+                            .map(|&x| txs[x].exons[0].0)
+                            .min()
+                            .expect("a component has a member");
                         pieces.push((lo, name[i].as_str()));
                     }
                 }
@@ -871,14 +1011,21 @@ fn f1_cut_plan(txs: &[Tx], junctions: &[Junction], kept: &[bool]) -> CutPlan {
     for (j, _) in junctions.iter().zip(kept).filter(|(_, &k)| k) {
         let evidence = evidence_string(txs, j);
         for &t in &j.tj {
-            cuts.entry(t).or_default().push(Cut { s: j.s, e: j.e, evidence: Some(evidence.clone()) });
+            cuts.entry(t).or_default().push(Cut {
+                s: j.s,
+                e: j.e,
+                evidence: Some(evidence.clone()),
+            });
         }
     }
     for v in cuts.values_mut() {
         v.sort_by_key(|c| (c.s, c.e));
         v.dedup_by_key(|c| (c.s, c.e));
     }
-    CutPlan { detector: "f1".to_string(), cuts }
+    CutPlan {
+        detector: "f1".to_string(),
+        cuts,
+    }
 }
 
 /// One cut of `--bridge-units-list`: the intron and, when the list wrote them, its contig and strand.
@@ -915,7 +1062,10 @@ impl UnitsList {
     /// See [`UnitsList`]; `path` only names the file in errors.
     pub fn parse(path: &str, text: &str) -> Result<UnitsList> {
         let mut cols: Option<(usize, usize)> = None;
-        let mut out = UnitsList { path: path.to_string(), rows: Vec::new() };
+        let mut out = UnitsList {
+            path: path.to_string(),
+            rows: Vec::new(),
+        };
         let mut at: HashMap<String, usize> = HashMap::new();
         for (i, line) in text.lines().enumerate() {
             let line = line.trim_end_matches('\r');
@@ -936,22 +1086,43 @@ impl UnitsList {
                 continue;
             };
             let field = |k: usize| -> Result<&str> {
-                f.get(k).map(|x| x.trim()).ok_or_else(|| anyhow::anyhow!("{path}:{}: {} field(s), column {} missing", i + 1, f.len(), k + 1))
+                f.get(k).map(|x| x.trim()).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{path}:{}: {} field(s), column {} missing",
+                        i + 1,
+                        f.len(),
+                        k + 1
+                    )
+                })
             };
             let tid = field(ti)?;
             anyhow::ensure!(!tid.is_empty(), "{path}:{}: empty transcript id", i + 1);
             let mut cuts: Vec<ListedCut> = Vec::new();
-            for tok in field(ji)?.split([',', ';']).map(str::trim).filter(|t| !t.is_empty()) {
-                cuts.push(parse_listed_cut(tok).map_err(|e| anyhow::anyhow!("{path}:{}: {tid}: {e}", i + 1))?);
+            for tok in field(ji)?
+                .split([',', ';'])
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+            {
+                cuts.push(
+                    parse_listed_cut(tok)
+                        .map_err(|e| anyhow::anyhow!("{path}:{}: {tid}: {e}", i + 1))?,
+                );
             }
-            anyhow::ensure!(!cuts.is_empty(), "{path}:{}: {tid} names no junction", i + 1);
+            anyhow::ensure!(
+                !cuts.is_empty(),
+                "{path}:{}: {tid} names no junction",
+                i + 1
+            );
             let k = *at.entry(tid.to_string()).or_insert_with(|| {
                 out.rows.push((tid.to_string(), Vec::new()));
                 out.rows.len() - 1
             });
             out.rows[k].1.extend(cuts);
         }
-        anyhow::ensure!(cols.is_some(), "{path}: no header line (empty list: run without --bridge-units-list)");
+        anyhow::ensure!(
+            cols.is_some(),
+            "{path}: no header line (empty list: run without --bridge-units-list)"
+        );
         anyhow::ensure!(
             !out.rows.is_empty(),
             "{path}: the units list holds no transcript row (empty list: run without --bridge-units-list)"
@@ -965,7 +1136,10 @@ impl UnitsList {
 
     /// `list:<file name>`: how the units and the relations name this detector.
     pub fn detector(&self) -> String {
-        let name = std::path::Path::new(&self.path).file_name().and_then(|n| n.to_str()).unwrap_or(&self.path);
+        let name = std::path::Path::new(&self.path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&self.path);
         format!("list:{name}")
     }
 }
@@ -975,28 +1149,43 @@ fn parse_listed_cut(tok: &str) -> std::result::Result<ListedCut, String> {
     let (qual, range) = match tok.rsplit_once(':') {
         None => (None, tok),
         Some((rest, strand)) => {
-            let (contig, range) = rest.rsplit_once(':').ok_or_else(|| format!("{tok:?} is not S-E or CONTIG:S-E:STRAND"))?;
+            let (contig, range) = rest
+                .rsplit_once(':')
+                .ok_or_else(|| format!("{tok:?} is not S-E or CONTIG:S-E:STRAND"))?;
             if strand != "+" && strand != "-" {
                 return Err(format!("{tok:?}: strand must be + or -"));
             }
             (Some((contig.to_string(), strand.to_string())), range)
         }
     };
-    let (a, b) = range.split_once('-').ok_or_else(|| format!("{tok:?} is not S-E or CONTIG:S-E:STRAND"))?;
+    let (a, b) = range
+        .split_once('-')
+        .ok_or_else(|| format!("{tok:?} is not S-E or CONTIG:S-E:STRAND"))?;
     let (s, e) = match (a.parse::<i64>(), b.parse::<i64>()) {
         (Ok(s), Ok(e)) => (s, e),
         _ => return Err(format!("{tok:?}: S and E must be integers")),
     };
     if s < 1 || e < s {
-        return Err(format!("{tok:?}: the intron must be 1-based closed with 1 <= S <= E"));
+        return Err(format!(
+            "{tok:?}: the intron must be 1-based closed with 1 <= S <= E"
+        ));
     }
     let (contig, strand) = qual.unzip();
-    Ok(ListedCut { s, e, contig, strand })
+    Ok(ListedCut {
+        s,
+        e,
+        contig,
+        strand,
+    })
 }
 
 /// The cuts a list names, per transcript of the GTF, and how many listed transcripts the GTF lacks.
 fn list_cut_plan(txs: &[Tx], list: &UnitsList) -> Result<(CutPlan, usize)> {
-    let by_id: HashMap<&str, usize> = txs.iter().enumerate().map(|(i, t)| (t.tid.as_str(), i)).collect();
+    let by_id: HashMap<&str, usize> = txs
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.tid.as_str(), i))
+        .collect();
     let mut cuts: BTreeMap<usize, Vec<Cut>> = BTreeMap::new();
     let mut unmatched = 0usize;
     for (tid, listed) in &list.rows {
@@ -1016,7 +1205,8 @@ fn list_cut_plan(txs: &[Tx], list: &UnitsList) -> Result<(CutPlan, usize)> {
                 c.e
             );
             anyhow::ensure!(
-                c.contig.as_deref().is_none_or(|x| x == t.chrom) && c.strand.as_deref().is_none_or(|x| x == t.strand),
+                c.contig.as_deref().is_none_or(|x| x == t.chrom)
+                    && c.strand.as_deref().is_none_or(|x| x == t.strand),
                 "{}: {tid}: {}-{} names another contig or strand than the transcript ({}, {})",
                 list.path,
                 c.s,
@@ -1024,7 +1214,11 @@ fn list_cut_plan(txs: &[Tx], list: &UnitsList) -> Result<(CutPlan, usize)> {
                 t.chrom,
                 t.strand
             );
-            v.push(Cut { s: c.s, e: c.e, evidence: None });
+            v.push(Cut {
+                s: c.s,
+                e: c.e,
+                evidence: None,
+            });
         }
         v.sort_by_key(|c| (c.s, c.e));
         v.dedup_by_key(|c| (c.s, c.e));
@@ -1036,7 +1230,13 @@ fn list_cut_plan(txs: &[Tx], list: &UnitsList) -> Result<(CutPlan, usize)> {
         list.path,
         list.rows.len()
     );
-    Ok((CutPlan { detector: list.detector(), cuts }, unmatched))
+    Ok((
+        CutPlan {
+            detector: list.detector(),
+            cuts,
+        },
+        unmatched,
+    ))
 }
 
 /// `t`'s exons cut at the introns `cuts`: one exon run per unit, in TRANSCRIPTION order (the genomic order reversed on
@@ -1116,7 +1316,9 @@ fn attach_single_exon_units(txs: &[Tx], is_unit: &[bool]) -> Vec<(usize, usize)>
     let mut by: HashMap<(&str, &str), Vec<(i64, i64, usize)>> = HashMap::new();
     for (i, t) in txs.iter().enumerate() {
         if t.exons.len() >= 2 {
-            by.entry((t.chrom.as_str(), t.strand.as_str())).or_default().extend(t.exons.iter().map(|&(a, b)| (a, b, i)));
+            by.entry((t.chrom.as_str(), t.strand.as_str()))
+                .or_default()
+                .extend(t.exons.iter().map(|&(a, b)| (a, b, i)));
         }
     }
     // per key: the exons by start, their starts, and the running maximum end (non-decreasing)
@@ -1141,16 +1343,25 @@ fn attach_single_exon_units(txs: &[Tx], is_unit: &[bool]) -> Vec<(usize, usize)>
         if t.exons.len() != 1 || !is_unit[i] {
             continue;
         }
-        let Some((v, starts, prefix_max)) = index.get(&(t.chrom.as_str(), t.strand.as_str())) else { continue };
+        let Some((v, starts, prefix_max)) = index.get(&(t.chrom.as_str(), t.strand.as_str()))
+        else {
+            continue;
+        };
         let (a, b) = t.exons[0];
-        let (lo, hi) = (prefix_max.partition_point(|&m| m < a), starts.partition_point(|&s| s <= b));
+        let (lo, hi) = (
+            prefix_max.partition_point(|&m| m < a),
+            starts.partition_point(|&s| s <= b),
+        );
         let mut shared: BTreeMap<usize, i64> = BTreeMap::new();
         for &(ea, eb, j) in v.get(lo..hi).unwrap_or(&[]) {
             if eb >= a {
                 *shared.entry(j).or_insert(0) += b.min(eb) - a.max(ea) + 1;
             }
         }
-        if let Some((&j, _)) = shared.iter().max_by_key(|(&j, &n)| (n, std::cmp::Reverse(j))) {
+        if let Some((&j, _)) = shared
+            .iter()
+            .max_by_key(|(&j, &n)| (n, std::cmp::Reverse(j)))
+        {
             moved.push((i, j));
         }
     }
@@ -1181,7 +1392,10 @@ fn name_groups(txs: &[Tx], groups: &[Vec<usize>]) -> Vec<Option<String>> {
     let mut name: Vec<Option<String>> = vec![None; groups.len()];
     for o in order {
         let gl = &by_gene[o];
-        let keep = *gl.iter().max_by_key(|&&g| key(reps[g])).expect("a gene has a component");
+        let keep = *gl
+            .iter()
+            .max_by_key(|&&g| key(reps[g]))
+            .expect("a gene has a component");
         let mut by_rep = gl.clone();
         by_rep.sort_unstable_by_key(|&g| reps[g]);
         let mut k = 2;
@@ -1214,7 +1428,11 @@ fn native_names(txs: &[Tx], is_unit: &[bool]) -> (Vec<Option<String>>, Vec<(usiz
     }
     let moved = attach_single_exon_units(txs, is_unit);
     for &(i, j) in &moved {
-        debug_assert_eq!(groups[gid[i]], vec![i], "a single-exon transcript is a component of its own before attachment");
+        debug_assert_eq!(
+            groups[gid[i]],
+            vec![i],
+            "a single-exon transcript is a component of its own before attachment"
+        );
         groups[gid[i]].clear();
         groups[gid[j]].push(i);
     }
@@ -1243,7 +1461,11 @@ struct FamInput {
 }
 
 fn family_input(txs: &[Tx], plan: &CutPlan) -> FamInput {
-    let mut out = FamInput { txs: Vec::new(), unit: Vec::new(), first: Vec::new() };
+    let mut out = FamInput {
+        txs: Vec::new(),
+        unit: Vec::new(),
+        first: Vec::new(),
+    };
     for (i, t) in txs.iter().enumerate() {
         out.first.push(out.txs.len());
         let Some(cuts) = plan.cuts.get(&i) else {
@@ -1276,8 +1498,10 @@ fn family_input(txs: &[Tx], plan: &CutPlan) -> FamInput {
 /// a unit attached to a transcript of such a gene_id takes that transcript's name.
 fn regroup_units(fam: &FamInput) -> (Vec<Option<String>>, Vec<(usize, usize)>) {
     let txs = &fam.txs;
-    let touched: HashSet<&str> =
-        (0..txs.len()).filter(|&i| fam.unit[i].0 > 0).filter_map(|i| txs[i].gene.as_deref()).collect();
+    let touched: HashSet<&str> = (0..txs.len())
+        .filter(|&i| fam.unit[i].0 > 0)
+        .filter_map(|i| txs[i].gene.as_deref())
+        .collect();
     let mut names: Vec<Option<String>> = vec![None; txs.len()];
     let mut genes: Vec<&str> = Vec::new();
     let mut members: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -1342,7 +1566,9 @@ struct UnitCounts {
 /// gene_id, the transcript has no new name, or the two are equal (the line is unchanged).
 fn with_gene(attrs: &str, old: Option<&str>, new: Option<&str>) -> Option<String> {
     match (old, new) {
-        (Some(o), Some(n)) if o != n => Some(attrs.replacen(&format!("gene_id \"{o}\""), &format!("gene_id \"{n}\""), 1)),
+        (Some(o), Some(n)) if o != n => {
+            Some(attrs.replacen(&format!("gene_id \"{o}\""), &format!("gene_id \"{n}\""), 1))
+        }
         _ => None,
     }
 }
@@ -1366,7 +1592,11 @@ fn build_units(lines: &[String], txs: &[Tx], plan: &CutPlan) -> Result<(UnitsOut
             l.2 = l.2.max(hi);
         }
     }
-    let id_of: HashMap<&str, usize> = txs.iter().enumerate().map(|(i, t)| (t.tid.as_str(), i)).collect();
+    let id_of: HashMap<&str, usize> = txs
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.tid.as_str(), i))
+        .collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len() + 2 * plan.cuts.len());
     let mut table = String::from(UNITS_HEADER);
     let mut counts = UnitCounts {
@@ -1380,7 +1610,9 @@ fn build_units(lines: &[String], txs: &[Tx], plan: &CutPlan) -> Result<(UnitsOut
         let ti = if line.is_empty() || line.starts_with('#') || f.len() < 9 {
             None
         } else {
-            attr(f[8], "transcript_id").and_then(|t| id_of.get(t)).copied()
+            attr(f[8], "transcript_id")
+                .and_then(|t| id_of.get(t))
+                .copied()
         };
         let Some(ti) = ti else {
             out.push(line.clone());
@@ -1401,15 +1633,36 @@ fn build_units(lines: &[String], txs: &[Tx], plan: &CutPlan) -> Result<(UnitsOut
             continue; // the exon lines of a cut transcript: the units' own follow its transcript line
         }
         let t = &txs[ti];
-        let junctions: Vec<String> = cuts.iter().map(|c| format!("{}:{}-{}:{}", t.chrom, c.s, c.e, t.strand)).collect();
-        let evidence: Option<String> =
-            cuts.iter().map(|c| c.evidence.as_deref()).collect::<Option<Vec<&str>>>().map(|v| v.join(","));
-        let cut_col = cuts.iter().map(|c| format!("{}-{}", c.s, c.e)).collect::<Vec<_>>().join(";");
+        let junctions: Vec<String> = cuts
+            .iter()
+            .map(|c| format!("{}:{}-{}:{}", t.chrom, c.s, c.e, t.strand))
+            .collect();
+        let evidence: Option<String> = cuts
+            .iter()
+            .map(|c| c.evidence.as_deref())
+            .collect::<Option<Vec<&str>>>()
+            .map(|v| v.join(","));
+        let cut_col = cuts
+            .iter()
+            .map(|c| format!("{}-{}", c.s, c.e))
+            .collect::<Vec<_>>()
+            .join(";");
         let (start, n_units) = (fam.first[ti], fam.unit[fam.first[ti]].1);
-        for (fi, (u, name)) in fam.txs.iter().zip(&names).enumerate().skip(start).take(n_units) {
+        for (fi, (u, name)) in fam
+            .txs
+            .iter()
+            .zip(&names)
+            .enumerate()
+            .skip(start)
+            .take(n_units)
+        {
             let new_gene = name.as_deref();
             let (lo, hi) = (u.exons[0].0, u.exons[u.exons.len() - 1].1);
-            let mut attrs = f[8].replacen(&format!("transcript_id \"{}\"", t.tid), &format!("transcript_id \"{}\"", u.tid), 1);
+            let mut attrs = f[8].replacen(
+                &format!("transcript_id \"{}\"", t.tid),
+                &format!("transcript_id \"{}\"", u.tid),
+                1,
+            );
             attrs = with_gene(&attrs, t.gene.as_deref(), new_gene).unwrap_or(attrs);
             let mut tags = format!(
                 " fusion_of \"{}\"; fusion_unit \"{}/{}\"; fusion_junction \"{}\";",
@@ -1420,7 +1673,9 @@ fn build_units(lines: &[String], txs: &[Tx], plan: &CutPlan) -> Result<(UnitsOut
             );
             if let Some(g) = t.gene.as_deref() {
                 let (c, a, b) = locus[g];
-                tags.push_str(&format!(" fusion_locus \"{c}:{a}-{b}\"; fusion_gene \"{g}\";"));
+                tags.push_str(&format!(
+                    " fusion_locus \"{c}:{a}-{b}\"; fusion_gene \"{g}\";"
+                ));
             }
             tags.push_str(&format!(" fusion_detector \"{}\";", plan.detector));
             if let Some(ev) = &evidence {
@@ -1434,7 +1689,9 @@ fn build_units(lines: &[String], txs: &[Tx], plan: &CutPlan) -> Result<(UnitsOut
             g[8] = &full;
             out.push(g.join("\t"));
             for (k, &(a, b)) in u.exons.iter().enumerate() {
-                let gene = new_gene.map(|n| format!("gene_id \"{n}\"; ")).unwrap_or_default();
+                let gene = new_gene
+                    .map(|n| format!("gene_id \"{n}\"; "))
+                    .unwrap_or_default();
                 out.push(format!(
                     "{}\t{}\texon\t{a}\t{b}\t.\t{}\t.\t{gene}transcript_id \"{}\"; exon_number \"{}\";",
                     t.chrom,
@@ -1465,10 +1722,20 @@ fn build_units(lines: &[String], txs: &[Tx], plan: &CutPlan) -> Result<(UnitsOut
         }
     }
     table.push('\n');
-    counts.gene_ids_touched =
-        (0..fam.txs.len()).filter(|&i| fam.unit[i].0 > 0).filter_map(|i| fam.txs[i].gene.as_deref()).collect::<HashSet<_>>().len();
+    counts.gene_ids_touched = (0..fam.txs.len())
+        .filter(|&i| fam.unit[i].0 > 0)
+        .filter_map(|i| fam.txs[i].gene.as_deref())
+        .collect::<HashSet<_>>()
+        .len();
     counts.families_gene_ids = names.iter().flatten().collect::<HashSet<_>>().len();
-    Ok((UnitsOutcome { families_lines: out, table_tsv: table, detector: plan.detector.clone() }, counts))
+    Ok((
+        UnitsOutcome {
+            families_lines: out,
+            table_tsv: table,
+            detector: plan.detector.clone(),
+        },
+        counts,
+    ))
 }
 
 /// What one `--bridge-regroup` pass decided (the log line and `params.tsv`).
@@ -1571,7 +1838,18 @@ pub fn run(
         let clusters: Vec<String> = j
             .clusters
             .iter()
-            .map(|&(m, n, p, u)| format!("{m}:{n}:{}", if p { "P" } else if u { "u" } else { "-" }))
+            .map(|&(m, n, p, u)| {
+                format!(
+                    "{m}:{n}:{}",
+                    if p {
+                        "P"
+                    } else if u {
+                        "u"
+                    } else {
+                        "-"
+                    }
+                )
+            })
             .collect();
         junctions_tsv.push_str(&format!(
             "\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -1586,7 +1864,11 @@ pub fn run(
             j.n_down,
             j.n_inside,
             j.u,
-            if clusters.is_empty() { ".".to_string() } else { clusters.join(";") },
+            if clusters.is_empty() {
+                ".".to_string()
+            } else {
+                clusters.join(";")
+            },
             py_bool(j.up_proof),
             j.v1,
             py_bool(j.down_proof),
@@ -1608,7 +1890,11 @@ pub fn run(
             })
             .collect();
         // f1v2.py takes its header from its first row: a table without rows is the lone column `gene`
-        let mut out = String::from(if rows.is_empty() { "gene" } else { BRIDGES_HEADER });
+        let mut out = String::from(if rows.is_empty() {
+            "gene"
+        } else {
+            BRIDGES_HEADER
+        });
         for (i, keep, row) in rows {
             kept[i] = keep;
             out.push('\n');
@@ -1633,7 +1919,16 @@ pub fn run(
         f1_bridge_junctions: junctions.iter().filter(|j| j.bridge).count(),
         bridge_junctions: kept.iter().filter(|&&k| k).count(),
     };
-    finish(lines, &txs, &bridges, &bj, plan.as_ref(), &counts, (junctions_tsv, true), bridges_tsv)
+    finish(
+        lines,
+        &txs,
+        &bridges,
+        &bj,
+        plan.as_ref(),
+        &counts,
+        (junctions_tsv, true),
+        bridges_tsv,
+    )
 }
 
 /// `--bridge-regroup f1units --bridge-units-list FILE`: the same units execution as [`run`]'s `Mode::F1Units`, with the
@@ -1649,8 +1944,20 @@ pub fn run_list(lines: &mut [String], list: &UnitsList) -> Result<Outcome> {
             bj.insert((txs[t].chrom.as_str(), c.s, c.e, txs[t].strand.as_str()));
         }
     }
-    let counts = DetectorCounts { bridge_junctions: bj.len(), ..Default::default() };
-    let mut out = finish(lines, &txs, &bridges, &bj, Some(&plan), &counts, (String::new(), false), None)?;
+    let counts = DetectorCounts {
+        bridge_junctions: bj.len(),
+        ..Default::default()
+    };
+    let mut out = finish(
+        lines,
+        &txs,
+        &bridges,
+        &bj,
+        Some(&plan),
+        &counts,
+        (String::new(), false),
+        None,
+    )?;
     out.stats.unit_list_unmatched = unmatched;
     Ok(out)
 }
@@ -1677,7 +1984,11 @@ fn finish(
 
     // the scripts' `rewrite`: gene_id "<old>" -> gene_id "<new>" (first occurrence) on every line of a relabelled
     // transcript, then the relation appended to a bridge's `transcript` line
-    let id_of: HashMap<&str, usize> = txs.iter().enumerate().map(|(i, t)| (t.tid.as_str(), i)).collect();
+    let id_of: HashMap<&str, usize> = txs
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.tid.as_str(), i))
+        .collect();
     let (mut lines_changed, mut family_lines_dropped) = (0usize, 0usize);
     for line in lines.iter_mut() {
         if line.is_empty() || line.starts_with('#') {
@@ -1687,15 +1998,19 @@ fn finish(
         if f.len() < 9 {
             continue;
         }
-        let Some(&i) = attr(f[8], "transcript_id").and_then(|t| id_of.get(t)) else { continue };
+        let Some(&i) = attr(f[8], "transcript_id").and_then(|t| id_of.get(t)) else {
+            continue;
+        };
         let mut attrs = with_gene(f[8], attr(f[8], "gene_id"), new[i].as_deref());
         lines_changed += usize::from(attrs.is_some());
         if let Some((fusion_of, junction)) = rel.get(&i) {
             family_lines_dropped += 1;
             if f[2] == "transcript" {
                 let base = attrs.take().unwrap_or_else(|| f[8].to_string());
-                attrs =
-                    Some(format!("{} fusion_of \"{fusion_of}\"; fusion_junction \"{junction}\";", base.trim_end()));
+                attrs = Some(format!(
+                    "{} fusion_of \"{fusion_of}\"; fusion_junction \"{junction}\";",
+                    base.trim_end()
+                ));
             }
         }
         if let Some(a) = attrs {
@@ -1705,17 +2020,26 @@ fn finish(
         }
     }
 
-    let bgenes: HashSet<&str> = bridges.iter().filter_map(|&t| txs[t].gene.as_deref()).collect();
+    let bgenes: HashSet<&str> = bridges
+        .iter()
+        .filter_map(|&t| txs[t].gene.as_deref())
+        .collect();
     let mut split: HashSet<&str> = txs
         .iter()
         .enumerate()
-        .filter(|(i, t)| !bridges.contains(i) && t.gene.is_some() && new[*i].as_deref() != t.gene.as_deref())
+        .filter(|(i, t)| {
+            !bridges.contains(i) && t.gene.is_some() && new[*i].as_deref() != t.gene.as_deref()
+        })
         .filter_map(|(_, t)| t.gene.as_deref())
         .collect();
     split.extend(bgenes.iter().copied());
     let mut stats = Stats {
         transcripts: txs.len(),
-        gene_ids: txs.iter().filter_map(|t| t.gene.as_deref()).collect::<HashSet<_>>().len(),
+        gene_ids: txs
+            .iter()
+            .filter_map(|t| t.gene.as_deref())
+            .collect::<HashSet<_>>()
+            .len(),
         structural_junctions: counts.structural_junctions,
         up_proof: counts.up_proof,
         down_proof: counts.down_proof,
@@ -1761,10 +2085,20 @@ mod tests {
     use super::*;
 
     /// A transcript's GTF lines (`transcript` + `exon`s; 1-based closed exons).
-    fn tx(chrom: &str, gene: &str, tid: &str, reads: i64, exons: &[(i64, i64)], strand: &str) -> Vec<String> {
-        let a = format!("gene_id \"{gene}\"; transcript_id \"{tid}\"; reads \"{reads}\"; TPM \"1.0\";");
+    fn tx(
+        chrom: &str,
+        gene: &str,
+        tid: &str,
+        reads: i64,
+        exons: &[(i64, i64)],
+        strand: &str,
+    ) -> Vec<String> {
+        let a =
+            format!("gene_id \"{gene}\"; transcript_id \"{tid}\"; reads \"{reads}\"; TPM \"1.0\";");
         let (lo, hi) = (exons[0].0, exons[exons.len() - 1].1);
-        let mut v = vec![format!("{chrom}\trustle\ttranscript\t{lo}\t{hi}\t.\t{strand}\t.\t{a}")];
+        let mut v = vec![format!(
+            "{chrom}\trustle\ttranscript\t{lo}\t{hi}\t.\t{strand}\t.\t{a}"
+        )];
         for (k, &(s, e)) in exons.iter().enumerate() {
             v.push(format!(
                 "{chrom}\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; exon_number \"{}\";",
@@ -1796,7 +2130,12 @@ mod tests {
             if ends.len() < 2 {
                 return Vec::new();
             }
-            vec![EndCluster { mode: *ends.last().unwrap(), n: ends.len(), proven: pas, unprimed: true }]
+            vec![EndCluster {
+                mode: *ends.last().unwrap(),
+                n: ends.len(),
+                proven: pas,
+                unprimed: true,
+            }]
         }
     }
 
@@ -1808,8 +2147,22 @@ mod tests {
     /// Y's last two exons through J; Y (reads 8) starts inside J at its own promoter.
     fn plus_locus(rx: i64, rb: i64) -> Vec<String> {
         let mut v = tx("c1", "G", "X", rx, &[(101, 200), (301, 400)], "+");
-        v.extend(tx("c1", "G", "B", rb, &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)], "+"));
-        v.extend(tx("c1", "G", "Y", 8, &[(1101, 1200), (1301, 1400), (1501, 1600)], "+"));
+        v.extend(tx(
+            "c1",
+            "G",
+            "B",
+            rb,
+            &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)],
+            "+",
+        ));
+        v.extend(tx(
+            "c1",
+            "G",
+            "Y",
+            8,
+            &[(1101, 1200), (1301, 1400), (1501, 1600)],
+            "+",
+        ));
         v
     }
 
@@ -1818,7 +2171,10 @@ mod tests {
     fn locus_evidence(minus: bool, with_y: bool) -> BridgeEvidence {
         let m = |ex: &[(u64, u64)]| -> Vec<(u64, u64)> {
             if minus {
-                ex.iter().rev().map(|&(a, b)| (2001 - b, 2001 - a)).collect()
+                ex.iter()
+                    .rev()
+                    .map(|&(a, b)| (2001 - b, 2001 - a))
+                    .collect()
             } else {
                 ex.to_vec()
             }
@@ -1829,7 +2185,11 @@ mod tests {
         }
         if with_y {
             for _ in 0..3 {
-                push(&mut ev, &m(&[(1101, 1200), (1301, 1400), (1501, 1600)]), minus);
+                push(
+                    &mut ev,
+                    &m(&[(1101, 1200), (1301, 1400), (1501, 1600)]),
+                    minus,
+                );
             }
         }
         ev
@@ -1840,25 +2200,57 @@ mod tests {
     }
 
     fn gene_of(lines: &[String], tid: &str) -> String {
-        let l = lines.iter().find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(tid)).unwrap();
+        let l = lines
+            .iter()
+            .find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(tid))
+            .unwrap();
         attr(l, "gene_id").unwrap().to_string()
     }
 
     #[test]
     fn evidence_takes_every_n_and_ends_one_past_the_last_reference_base() {
         let mut ev = BridgeEvidence::default();
-        let (m, d, n, i, s) = (Kind::Match, Kind::Deletion, Kind::Skip, Kind::Insertion, Kind::SoftClip);
+        let (m, d, n, i, s) = (
+            Kind::Match,
+            Kind::Deletion,
+            Kind::Skip,
+            Kind::Insertion,
+            Kind::SoftClip,
+        );
         // 10M 5D 100N 3I 20M 2S from 1-based 1000: intron [1015, 1114], last base 1134, first donor 1014
-        let ops = [Op::new(m, 10), Op::new(d, 5), Op::new(n, 100), Op::new(i, 3), Op::new(m, 20), Op::new(s, 2)];
+        let ops = [
+            Op::new(m, 10),
+            Op::new(d, 5),
+            Op::new(n, 100),
+            Op::new(i, 3),
+            Op::new(m, 20),
+            Op::new(s, 2),
+        ];
         ev.push("c1", false, 999, &ops, || true);
         assert_eq!(ev.contigs["c1"].rows[0], vec![(1000, 1134, 1014)]);
         assert_eq!(ev.contigs["c1"].ends[0], vec![(1134, 1000)]);
         // a leading N and N-I-N are introns of their own (the script's walk, not the assembler's exon blocks)
-        let ops = [Op::new(n, 50), Op::new(m, 10), Op::new(n, 20), Op::new(i, 2), Op::new(n, 30), Op::new(m, 10)];
+        let ops = [
+            Op::new(n, 50),
+            Op::new(m, 10),
+            Op::new(n, 20),
+            Op::new(i, 2),
+            Op::new(n, 30),
+            Op::new(m, 10),
+        ];
         ev.push("c2", false, 0, &ops, || true);
         assert_eq!(ev.contigs["c2"].rows[0], vec![(1, 120, 0)]);
         // `=` / `X` advance the reference; an unspliced record is never kept and its `ts` never read
-        ev.push("c3", false, 0, &[Op::new(Kind::SequenceMatch, 5), Op::new(Kind::SequenceMismatch, 1)], || panic!("ts read"));
+        ev.push(
+            "c3",
+            false,
+            0,
+            &[
+                Op::new(Kind::SequenceMatch, 5),
+                Op::new(Kind::SequenceMismatch, 1),
+            ],
+            || panic!("ts read"),
+        );
         assert!(!ev.contigs.contains_key("c3"));
         assert_eq!(ev.len(), 2);
     }
@@ -1875,7 +2267,11 @@ mod tests {
         assert_eq!(c.rows[0], vec![(101, 400, 200), (101, 400, 200)]);
         // `-`: 5' end = the last base, 3' end = the first, first donor = the base after the last intron
         assert_eq!(c.rows[1], vec![(400, 101, 301), (400, 101, 301)]);
-        assert_eq!((c.ends[0].len(), c.ends[1].len()), (1, 1), "one U record per strand after deduplication");
+        assert_eq!(
+            (c.ends[0].len(), c.ends[1].len()),
+            (1, 1),
+            "one U record per strand after deduplication"
+        );
     }
 
     #[test]
@@ -1892,10 +2288,18 @@ mod tests {
 
     #[test]
     fn seal_drops_the_keys_and_absorb_refuses_a_contig_read_twice() {
-        let (mut all, mut region, mut other) = (BridgeEvidence::default(), locus_evidence(false, true), BridgeEvidence::default());
+        let (mut all, mut region, mut other) = (
+            BridgeEvidence::default(),
+            locus_evidence(false, true),
+            BridgeEvidence::default(),
+        );
         region.seal();
         assert!(region.contigs["c1"].seen.is_empty());
-        assert_eq!((region.contigs["c1"].ends[0].len(), region.len()), (4, 7), "the evidence itself is kept");
+        assert_eq!(
+            (region.contigs["c1"].ends[0].len(), region.len()),
+            (4, 7),
+            "the evidence itself is kept"
+        );
         all.absorb(region).unwrap();
         push(&mut other, &[(101, 200), (301, 400)], false);
         assert!(all.absorb(other).is_err());
@@ -1908,21 +2312,42 @@ mod tests {
         let rec = |v: Option<BufValue>| {
             let data: noodles_sam::alignment::record_buf::Data =
                 v.map(|v| (Tag::new(b't', b's'), v)).into_iter().collect();
-            noodles_sam::alignment::RecordBuf::builder().set_data(data).build()
+            noodles_sam::alignment::RecordBuf::builder()
+                .set_data(data)
+                .build()
         };
         assert!(ts_is_plus(&rec(None)), "absent = +");
         assert!(ts_is_plus(&rec(Some(BufValue::Character(b'+')))));
         assert!(!ts_is_plus(&rec(Some(BufValue::Character(b'-')))));
-        assert!(ts_is_plus(&rec(Some(BufValue::String("+".into())))), "ts:Z:+ compares by value");
-        assert!(!ts_is_plus(&rec(Some(BufValue::Int32(43)))), "another type is not '+'");
+        assert!(
+            ts_is_plus(&rec(Some(BufValue::String("+".into())))),
+            "ts:Z:+ compares by value"
+        );
+        assert!(
+            !ts_is_plus(&rec(Some(BufValue::Int32(43)))),
+            "another type is not '+'"
+        );
     }
 
     #[test]
     fn attr_is_the_first_key_quote_match() {
         let a = "gene_id \"G\"; matched_reads \"0\"; reads \"7\";";
-        assert_eq!(attr(a, "reads"), Some("0"), "as the scripts' attr: the first `reads \"` wins");
-        assert_eq!(attr("reads \"7\"; matched_reads \"0\";", "reads"), Some("7"));
-        assert_eq!(attr("transcript_idx \"a\"; transcript_id \"b\";", "transcript_id"), Some("b"));
+        assert_eq!(
+            attr(a, "reads"),
+            Some("0"),
+            "as the scripts' attr: the first `reads \"` wins"
+        );
+        assert_eq!(
+            attr("reads \"7\"; matched_reads \"0\";", "reads"),
+            Some("7")
+        );
+        assert_eq!(
+            attr(
+                "transcript_idx \"a\"; transcript_id \"b\";",
+                "transcript_id"
+            ),
+            Some("b")
+        );
         assert_eq!(attr("gene_id \"G;", "gene_id"), None);
     }
 
@@ -1934,8 +2359,14 @@ mod tests {
         lines.extend(tx("c1", "G", "d", 1, &[(320, 380)], "+"));
         let txs = parse(&lines, "--bridge-regroup").unwrap();
         let s = |t: usize, strand: &str| side(&txs, &[t], 300, 400, strand);
-        assert_eq!((s(0, "+"), s(1, "+"), s(2, "+"), s(3, "+")), (Side::Up, Side::Down, Side::Straddle, Side::Inside));
-        assert_eq!((s(0, "-"), s(1, "-"), s(2, "-"), s(3, "-")), (Side::Down, Side::Up, Side::Straddle, Side::Inside));
+        assert_eq!(
+            (s(0, "+"), s(1, "+"), s(2, "+"), s(3, "+")),
+            (Side::Up, Side::Down, Side::Straddle, Side::Inside)
+        );
+        assert_eq!(
+            (s(0, "-"), s(1, "-"), s(2, "-"), s(3, "-")),
+            (Side::Down, Side::Up, Side::Straddle, Side::Inside)
+        );
     }
 
     #[test]
@@ -1946,7 +2377,10 @@ mod tests {
         lines.extend(tx("c1", "G", "d", 1, &[(650, 800)], "-")); // other strand
         lines.extend(tx("c1", "G", "e", 1, &[(790, 900)], "+")); // chains through nothing on its strand
         let txs = parse(&lines, "--bridge-regroup").unwrap();
-        assert_eq!(components(&txs, &[0, 1, 2, 3, 4]), vec![vec![0, 2], vec![1], vec![3], vec![4]]);
+        assert_eq!(
+            components(&txs, &[0, 1, 2, 3, 4]),
+            vec![vec![0, 2], vec![1], vec![3], vec![4]]
+        );
     }
 
     /// RG3's naming on three pieces over two contigs: the best representative (reads, then span, then the earliest
@@ -1960,8 +2394,14 @@ mod tests {
         let txs = parse(&lines, "--bridge-regroup").unwrap();
         let (comps, names) = rg3_pieces(&txs, "G", &[0, 1, 2, 3]);
         assert_eq!(comps, vec![vec![0, 3], vec![1], vec![2]]);
-        assert_eq!(names, vec!["G.rg2".to_string(), "G.rg3".to_string(), "G".to_string()]);
-        assert_eq!(rg3_pieces(&txs, "G", &[0, 3]), (vec![vec![0, 3]], vec!["G".to_string()]));
+        assert_eq!(
+            names,
+            vec!["G.rg2".to_string(), "G.rg3".to_string(), "G".to_string()]
+        );
+        assert_eq!(
+            rg3_pieces(&txs, "G", &[0, 3]),
+            (vec![vec![0, 3]], vec!["G".to_string()])
+        );
         assert_eq!(rg3_pieces(&txs, "G", &[]), (Vec::new(), Vec::new()));
     }
 
@@ -1972,7 +2412,14 @@ mod tests {
         let src = plus_locus(10, 2);
         let mut lines = src.clone();
         let out = run_on(&mut lines, Mode::F1, locus_evidence(false, true), true);
-        assert_eq!((gene_of(&lines, "X"), gene_of(&lines, "Y"), gene_of(&lines, "B")), ("G".into(), "G.rg2".into(), "G.fus1".into()));
+        assert_eq!(
+            (
+                gene_of(&lines, "X"),
+                gene_of(&lines, "Y"),
+                gene_of(&lines, "B")
+            ),
+            ("G".into(), "G.rg2".into(), "G.fus1".into())
+        );
         assert_eq!(
             lines[3],
             "c1\trustle\ttranscript\t101\t1600\t.\t+\t.\tgene_id \"G.fus1\"; transcript_id \"B\"; reads \"2\"; TPM \"1.0\"; \
@@ -1980,7 +2427,11 @@ mod tests {
         );
         assert_eq!(lines.len(), src.len());
         for (a, b) in src.iter().zip(&lines) {
-            assert_eq!(a.split('\t').take(8).collect::<Vec<_>>(), b.split('\t').take(8).collect::<Vec<_>>(), "coordinates never move");
+            assert_eq!(
+                a.split('\t').take(8).collect::<Vec<_>>(),
+                b.split('\t').take(8).collect::<Vec<_>>(),
+                "coordinates never move"
+            );
         }
         assert_eq!(
             out.junctions_tsv,
@@ -1988,12 +2439,36 @@ mod tests {
         );
         assert!(out.bridges_tsv.is_none());
         let fam: Vec<&String> = lines.iter().filter(|l| out.in_families(l)).collect();
-        assert_eq!(fam.len(), src.len() - 5, "the bridge's transcript and 4 exon lines leave the families input");
+        assert_eq!(
+            fam.len(),
+            src.len() - 5,
+            "the bridge's transcript and 4 exon lines leave the families input"
+        );
         assert!(fam.iter().all(|l| attr(l, "transcript_id") != Some("B")));
         let st = &out.stats;
-        assert_eq!((st.structural_junctions, st.f1_bridge_junctions, st.bridge_junctions, st.bridge_transcripts), (1, 1, 1, 1));
-        assert_eq!((st.gene_ids, st.gene_ids_split, st.gene_ids_after, st.families_gene_ids), (1, 1, 3, 2));
-        assert_eq!((st.lines_changed, st.family_lines_dropped), (9, 5), "Y: 4 lines relabelled, B: 5");
+        assert_eq!(
+            (
+                st.structural_junctions,
+                st.f1_bridge_junctions,
+                st.bridge_junctions,
+                st.bridge_transcripts
+            ),
+            (1, 1, 1, 1)
+        );
+        assert_eq!(
+            (
+                st.gene_ids,
+                st.gene_ids_split,
+                st.gene_ids_after,
+                st.families_gene_ids
+            ),
+            (1, 1, 3, 2)
+        );
+        assert_eq!(
+            (st.lines_changed, st.family_lines_dropped),
+            (9, 5),
+            "Y: 4 lines relabelled, B: 5"
+        );
     }
 
     /// Without either proof there is no bridge, and without a bridge the output is the input (one exon-overlap piece).
@@ -2014,14 +2489,40 @@ mod tests {
     /// The `-` strand mirrors every test: UP is the 3'-side genomic RIGHT, `fusion_of` runs 5' to 3'.
     #[test]
     fn the_minus_strand_mirrors() {
-        let m = |ex: &[(i64, i64)]| -> Vec<(i64, i64)> { ex.iter().rev().map(|&(a, b)| (2001 - b, 2001 - a)).collect() };
+        let m = |ex: &[(i64, i64)]| -> Vec<(i64, i64)> {
+            ex.iter()
+                .rev()
+                .map(|&(a, b)| (2001 - b, 2001 - a))
+                .collect()
+        };
         let mut lines = tx("c1", "G", "X", 10, &m(&[(101, 200), (301, 400)]), "-");
-        lines.extend(tx("c1", "G", "B", 2, &m(&[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]), "-"));
-        lines.extend(tx("c1", "G", "Y", 8, &m(&[(1101, 1200), (1301, 1400), (1501, 1600)]), "-"));
+        lines.extend(tx(
+            "c1",
+            "G",
+            "B",
+            2,
+            &m(&[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]),
+            "-",
+        ));
+        lines.extend(tx(
+            "c1",
+            "G",
+            "Y",
+            8,
+            &m(&[(1101, 1200), (1301, 1400), (1501, 1600)]),
+            "-",
+        ));
         let out = run_on(&mut lines, Mode::F1, locus_evidence(true, true), true);
-        assert!(lines[3].ends_with("fusion_of \"G,G.rg2\"; fusion_junction \"c1:701-1650:-\";"), "{}", lines[3]);
+        assert!(
+            lines[3].ends_with("fusion_of \"G,G.rg2\"; fusion_junction \"c1:701-1650:-\";"),
+            "{}",
+            lines[3]
+        );
         assert_eq!(gene_of(&lines, "Y"), "G.rg2");
-        assert_eq!(out.junctions_tsv.lines().nth(1).unwrap(), "G\tc1\t701\t1650\t-\t1\t2\t1\t1\t0\t3\t1601:3:P\tTrue\t3\tTrue\tTrue\tB");
+        assert_eq!(
+            out.junctions_tsv.lines().nth(1).unwrap(),
+            "G\tc1\t701\t1650\t-\t1\t2\t1\t1\t0\t3\t1601:3:P\tTrue\t3\tTrue\tTrue\tB"
+        );
     }
 
     /// F1v2: the link must carry fewer reads than EACH side (share < 1/2); a tie with a side abstains.
@@ -2030,18 +2531,36 @@ mod tests {
         let row = |rb: i64| {
             let mut lines = plus_locus(10, rb);
             let out = run_on(&mut lines, Mode::F1v2, locus_evidence(false, true), true);
-            (out.bridges_tsv.unwrap().lines().nth(1).unwrap().to_string(), gene_of(&lines, "B"), out.stats)
+            (
+                out.bridges_tsv.unwrap().lines().nth(1).unwrap().to_string(),
+                gene_of(&lines, "B"),
+                out.stats,
+            )
         };
         let (r, g, st) = row(2);
-        assert_eq!(r, "G\tc1\t351\t1300\t+\t1\t2\t2\t1\t10\t10\t1\t8\t8\t0.2\tTrue\tB");
-        assert_eq!((g.as_str(), st.f1_bridge_junctions, st.bridge_junctions), ("G.fus1", 1, 1));
+        assert_eq!(
+            r,
+            "G\tc1\t351\t1300\t+\t1\t2\t2\t1\t10\t10\t1\t8\t8\t0.2\tTrue\tB"
+        );
+        assert_eq!(
+            (g.as_str(), st.f1_bridge_junctions, st.bridge_junctions),
+            ("G.fus1", 1, 1)
+        );
         let (r, g, st) = row(7);
         assert!(r.ends_with("\t0.4667\tTrue\tB"), "{r}");
         assert_eq!((g.as_str(), st.bridge_junctions), ("G.fus1", 1));
         // 8 = Y's 8: fewer than X's 10 but not fewer than Y's, share exactly 1/2 -> not a bridge; nothing changes
         let (r, g, st) = row(8);
         assert!(r.ends_with("\t0.5\tFalse\tB"), "{r}");
-        assert_eq!((g.as_str(), st.f1_bridge_junctions, st.bridge_junctions, st.bridge_transcripts), ("G", 1, 0, 0));
+        assert_eq!(
+            (
+                g.as_str(),
+                st.f1_bridge_junctions,
+                st.bridge_junctions,
+                st.bridge_transcripts
+            ),
+            ("G", 1, 0, 0)
+        );
         let (r, _, st) = row(12);
         assert!(r.ends_with("\t0.6\tFalse\tB"), "{r}");
         assert_eq!(st.bridge_junctions, 0);
@@ -2056,7 +2575,13 @@ mod tests {
 
     #[test]
     fn py_round4_is_python_round_then_repr() {
-        let cases = [(1.0, "1.0"), (0.0, "0.0"), (0.5, "0.5"), (1.0 / 3.0, "0.3333"), (2.0 / 3.0, "0.6667")];
+        let cases = [
+            (1.0, "1.0"),
+            (0.0, "0.0"),
+            (0.5, "0.5"),
+            (1.0 / 3.0, "0.3333"),
+            (2.0 / 3.0, "0.6667"),
+        ];
         for (x, want) in cases {
             assert_eq!(py_round4(x), want);
         }
@@ -2070,8 +2595,17 @@ mod tests {
     fn gene_ids_under_three_transcripts_and_gene_less_lines_are_left_alone() {
         let mut lines = vec!["# a comment".to_string()];
         lines.extend(tx("c1", "G", "X", 10, &[(101, 200), (301, 400)], "+"));
-        lines.extend(tx("c1", "G", "B", 2, &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)], "+"));
-        lines.push("c1\trustle\ttranscript\t5\t9\t.\t+\t.\ttranscript_id \"N\"; reads \"3\";".to_string());
+        lines.extend(tx(
+            "c1",
+            "G",
+            "B",
+            2,
+            &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)],
+            "+",
+        ));
+        lines.push(
+            "c1\trustle\ttranscript\t5\t9\t.\t+\t.\ttranscript_id \"N\"; reads \"3\";".to_string(),
+        );
         lines.push("c1\trustle\texon\t5\t9\t.\t+\t.\ttranscript_id \"N\";".to_string());
         let src = lines.clone();
         let out = run_on(&mut lines, Mode::F1, locus_evidence(false, true), true);
@@ -2087,20 +2621,36 @@ mod tests {
         let mut dup = tx("c1", "G", "X", 1, &[(1, 10)], "+");
         dup.extend(tx("c1", "G", "X", 1, &[(20, 30)], "+"));
         assert!(p(&dup).is_err());
-        let orphan = vec!["c1\trustle\texon\t1\t10\t.\t+\t.\tgene_id \"G\"; transcript_id \"X\";".to_string()];
+        let orphan = vec![
+            "c1\trustle\texon\t1\t10\t.\t+\t.\tgene_id \"G\"; transcript_id \"X\";".to_string(),
+        ];
         assert!(p(&orphan).is_err());
-        let bare = vec!["c1\trustle\ttranscript\t1\t10\t.\t+\t.\tgene_id \"G\"; transcript_id \"X\";".to_string()];
+        let bare = vec![
+            "c1\trustle\ttranscript\t1\t10\t.\t+\t.\tgene_id \"G\"; transcript_id \"X\";"
+                .to_string(),
+        ];
         assert!(p(&bare).is_err(), "a transcript without exon lines");
         for (exons, what) in [
             (vec![(100, 200), (100, 200)], "a duplicated exon line"),
             (vec![(100, 200), (150, 300)], "overlapping exons"),
             (vec![(100, 200), (200, 300)], "exons sharing a base"),
-            (vec![(100, 200), (300, 250)], "an exon whose end precedes its start"),
+            (
+                vec![(100, 200), (300, 250)],
+                "an exon whose end precedes its start",
+            ),
         ] {
-            let e = p(&tx("c1", "G", "X", 1, &exons, "+")).err().unwrap_or_else(|| panic!("{what} must be an error"));
-            assert!(e.to_string().contains("--bridge-regroup: transcript X has"), "{what}: {e}");
+            let e = p(&tx("c1", "G", "X", 1, &exons, "+"))
+                .err()
+                .unwrap_or_else(|| panic!("{what} must be an error"));
+            assert!(
+                e.to_string().contains("--bridge-regroup: transcript X has"),
+                "{what}: {e}"
+            );
         }
-        assert!(p(&tx("c1", "G", "X", 1, &[(100, 200), (201, 300)], "+")).is_ok(), "adjacent exons are ordered");
+        assert!(
+            p(&tx("c1", "G", "X", 1, &[(100, 200), (201, 300)], "+")).is_ok(),
+            "adjacent exons are ordered"
+        );
     }
 
     /// The review's scenario: a duplicated exon in a transcript whose junction is STRUCTURAL (a transcript wholly
@@ -2114,14 +2664,27 @@ mod tests {
         let mut ev = BridgeEvidence::default();
         push(&mut ev, &[(100, 150), (160, 200)], false);
         let src = lines.clone();
-        let err = run(&mut lines, Mode::F1, &mut ev, &genome, &fake_clusters(true)).err().expect("an error");
-        assert!(err.to_string().contains("transcript D has overlapping or duplicated exons 100-200 and 100-200"), "{err}");
+        let err = run(&mut lines, Mode::F1, &mut ev, &genome, &fake_clusters(true))
+            .err()
+            .expect("an error");
+        assert!(
+            err.to_string()
+                .contains("transcript D has overlapping or duplicated exons 100-200 and 100-200"),
+            "{err}"
+        );
         assert_eq!(lines, src, "nothing was rewritten");
     }
 
     // ================================================================================================ units (f1units)
 
-    fn mk(tid: &str, gene: &str, chrom: &str, strand: &str, reads: i64, exons: &[(i64, i64)]) -> Tx {
+    fn mk(
+        tid: &str,
+        gene: &str,
+        chrom: &str,
+        strand: &str,
+        reads: i64,
+        exons: &[(i64, i64)],
+    ) -> Tx {
         Tx {
             tid: tid.into(),
             gene: Some(gene.into()),
@@ -2169,7 +2732,8 @@ mod tests {
     fn native_components_equal_collapse_loci_groups() {
         use crate::family::family_detect::{collapse_loci_groups, DenovoTranscript};
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
-        let (mut shared, mut cross_strand, mut collisions, mut ties) = (0usize, 0usize, 0usize, 0usize);
+        let (mut shared, mut cross_strand, mut collisions, mut ties) =
+            (0usize, 0usize, 0usize, 0usize);
         for round in 0..500 {
             let n = 4 + rng.below(40) as usize;
             let mut txs: Vec<Tx> = Vec::new();
@@ -2187,7 +2751,14 @@ mod tests {
                 pos.sort_unstable();
                 let exons: Vec<(i64, i64)> = pos.chunks(2).map(|c| (c[0] + 1, c[1])).collect();
                 let tid = format!("DN_{chrom}_{}_{nex}", exons[0].0 - 1);
-                txs.push(mk(&tid, &format!("g{i}"), chrom, strand, 1 + rng.below(4) as i64, &exons));
+                txs.push(mk(
+                    &tid,
+                    &format!("g{i}"),
+                    chrom,
+                    strand,
+                    1 + rng.below(4) as i64,
+                    &exons,
+                ));
             }
             let den: Vec<DenovoTranscript> = txs
                 .iter()
@@ -2198,7 +2769,11 @@ mod tests {
                     end: t.exons[t.exons.len() - 1].1 as u64,
                     n_reads: t.reads as u32,
                     strand: t.strand.chars().next().unwrap(),
-                    introns: t.exons.windows(2).map(|w| (w[0].1 as u64, (w[1].0 - 1) as u64)).collect(),
+                    introns: t
+                        .exons
+                        .windows(2)
+                        .map(|w| (w[0].1 as u64, (w[1].0 - 1) as u64))
+                        .collect(),
                     ..Default::default()
                 })
                 .collect();
@@ -2207,15 +2782,34 @@ mod tests {
             assert_eq!(got, want, "round {round}");
             let comps = native_components(&txs);
             for (m, name) in comps.iter().zip(name_groups(&txs, &comps)) {
-                assert_eq!(name.as_deref(), Some(format!("g{}", want[m[0]]).as_str()), "round {round}: the component of {m:?}");
+                assert_eq!(
+                    name.as_deref(),
+                    Some(format!("g{}", want[m[0]]).as_str()),
+                    "round {round}: the component of {m:?}"
+                );
             }
             let reps: std::collections::BTreeSet<usize> = got.iter().copied().collect();
             shared += usize::from(reps.len() < txs.len());
-            cross_strand += usize::from((0..n).any(|i| (0..n).any(|j| got[i] == got[j] && txs[i].strand != txs[j].strand)));
-            collisions += usize::from(reps.iter().any(|&a| reps.iter().any(|&b| a < b && txs[a].tid == txs[b].tid)));
-            ties += usize::from((0..n).any(|i| (0..n).any(|j| i < j && got[i] == got[j] && txs[i].reads == txs[j].reads && txs[i].span == txs[j].span)));
+            cross_strand += usize::from(
+                (0..n).any(|i| (0..n).any(|j| got[i] == got[j] && txs[i].strand != txs[j].strand)),
+            );
+            collisions += usize::from(
+                reps.iter()
+                    .any(|&a| reps.iter().any(|&b| a < b && txs[a].tid == txs[b].tid)),
+            );
+            ties += usize::from((0..n).any(|i| {
+                (0..n).any(|j| {
+                    i < j
+                        && got[i] == got[j]
+                        && txs[i].reads == txs[j].reads
+                        && txs[i].span == txs[j].span
+                })
+            }));
         }
-        assert!(shared > 400 && cross_strand > 100 && collisions > 10 && ties > 10, "{shared} {cross_strand} {collisions} {ties}");
+        assert!(
+            shared > 400 && cross_strand > 100 && collisions > 10 && ties > 10,
+            "{shared} {cross_strand} {collisions} {ties}"
+        );
     }
 
     #[test]
@@ -2223,23 +2817,49 @@ mod tests {
         // a and b share the intron 201-299: one component; its representative is the most-read transcript (b)
         let t = [
             mk("a", "g1", "c1", "+", 5, &[(100, 200), (300, 400)]),
-            mk("b", "g1", "c1", "+", 9, &[(100, 200), (300, 450), (600, 700)]),
+            mk(
+                "b",
+                "g1",
+                "c1",
+                "+",
+                9,
+                &[(100, 200), (300, 450), (600, 700)],
+            ),
             mk("c", "g2", "c1", "+", 9, &[(1000, 1100), (1200, 1300)]),
         ];
         assert_eq!(native_components(&t), vec![vec![0, 1], vec![2]]);
         assert_eq!(reps_of(&t), vec![1, 1, 2]);
         // reads tie -> longest span -> earliest index
-        let t = [mk("a", "g", "c1", "+", 5, &[(100, 200), (300, 400)]), mk("b", "g", "c1", "+", 5, &[(100, 200), (300, 400)])];
+        let t = [
+            mk("a", "g", "c1", "+", 5, &[(100, 200), (300, 400)]),
+            mk("b", "g", "c1", "+", 5, &[(100, 200), (300, 400)]),
+        ];
         assert_eq!(reps_of(&t), vec![0, 0]);
-        let t = [mk("a", "g", "c1", "+", 5, &[(100, 200), (300, 400)]), mk("b", "g", "c1", "+", 5, &[(100, 200), (300, 500), (700, 800)])];
+        let t = [
+            mk("a", "g", "c1", "+", 5, &[(100, 200), (300, 400)]),
+            mk(
+                "b",
+                "g",
+                "c1",
+                "+",
+                5,
+                &[(100, 200), (300, 500), (700, 800)],
+            ),
+        ];
         assert_eq!(reps_of(&t), vec![1, 1], "the longer span wins the read tie");
         // strand-blind, contig-keyed
-        let mut t = [mk("a", "g1", "c1", "+", 5, &[(100, 200), (300, 400)]), mk("b", "g2", "c1", "-", 5, &[(100, 200), (300, 400)])];
+        let mut t = [
+            mk("a", "g1", "c1", "+", 5, &[(100, 200), (300, 400)]),
+            mk("b", "g2", "c1", "-", 5, &[(100, 200), (300, 400)]),
+        ];
         assert_eq!(native_components(&t), vec![vec![0, 1]]);
         t[1].chrom = "c2".into();
         assert_eq!(native_components(&t), vec![vec![0], vec![1]]);
         // a single-exon transcript has no junction: a component of its own even inside another's exon
-        let t = [mk("a", "g", "c1", "+", 5, &[(100, 200), (300, 400)]), mk("s", "g", "c1", "+", 5, &[(120, 180)])];
+        let t = [
+            mk("a", "g", "c1", "+", 5, &[(100, 200), (300, 400)]),
+            mk("s", "g", "c1", "+", 5, &[(120, 180)]),
+        ];
         assert_eq!(native_components(&t), vec![vec![0], vec![1]]);
     }
 
@@ -2250,19 +2870,43 @@ mod tests {
         let minus = mk("t", "g", "c1", "-", 4, &ex);
         // m = 1
         let runs = split_units(&plus, &[(401, 499)]);
-        assert_eq!(runs, vec![vec![(100, 200), (300, 400)], vec![(500, 600), (700, 800)]]);
+        assert_eq!(
+            runs,
+            vec![vec![(100, 200), (300, 400)], vec![(500, 600), (700, 800)]]
+        );
         let runs = split_units(&minus, &[(401, 499)]);
-        assert_eq!(runs, vec![vec![(500, 600), (700, 800)], vec![(100, 200), (300, 400)]], "`-`: U1 is the genomic right");
+        assert_eq!(
+            runs,
+            vec![vec![(500, 600), (700, 800)], vec![(100, 200), (300, 400)]],
+            "`-`: U1 is the genomic right"
+        );
         // m = 2: a run with no cut inside stays whole, the cuts are given in any order
         let runs = split_units(&plus, &[(601, 699), (201, 299)]);
-        assert_eq!(runs, vec![vec![(100, 200)], vec![(300, 400), (500, 600)], vec![(700, 800)]]);
+        assert_eq!(
+            runs,
+            vec![
+                vec![(100, 200)],
+                vec![(300, 400), (500, 600)],
+                vec![(700, 800)]
+            ]
+        );
         let runs = split_units(&minus, &[(601, 699), (201, 299)]);
-        assert_eq!(runs, vec![vec![(700, 800)], vec![(300, 400), (500, 600)], vec![(100, 200)]]);
+        assert_eq!(
+            runs,
+            vec![
+                vec![(700, 800)],
+                vec![(300, 400), (500, 600)],
+                vec![(100, 200)]
+            ]
+        );
         // m = 3: every exon is a unit
         let all = [(201, 299), (401, 499), (601, 699)];
         assert_eq!(split_units(&plus, &all).concat(), ex.to_vec());
         assert_eq!(split_units(&plus, &all).len(), 4);
-        assert_eq!(split_units(&minus, &all).concat(), ex.iter().rev().copied().collect::<Vec<_>>());
+        assert_eq!(
+            split_units(&minus, &all).concat(),
+            ex.iter().rev().copied().collect::<Vec<_>>()
+        );
         // every exon of T is in exactly one unit, in every case
         for cuts in [&all[..1], &all[1..], &all[..2], &all[..]] {
             for t in [&plus, &minus] {
@@ -2280,10 +2924,27 @@ mod tests {
     fn the_units_of_a_cut_transcript_take_its_place_its_reads_and_its_gene() {
         let txs = vec![
             mk("A", "g", "c1", "+", 30, &[(100, 200), (300, 400)]),
-            mk("F", "g", "c1", "-", 7, &[(100, 200), (300, 400), (2000, 2100)]),
+            mk(
+                "F",
+                "g",
+                "c1",
+                "-",
+                7,
+                &[(100, 200), (300, 400), (2000, 2100)],
+            ),
             mk("B", "g", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]),
         ];
-        let plan = CutPlan { detector: "x".into(), cuts: BTreeMap::from([(1, vec![Cut { s: 401, e: 1999, evidence: None }])]) };
+        let plan = CutPlan {
+            detector: "x".into(),
+            cuts: BTreeMap::from([(
+                1,
+                vec![Cut {
+                    s: 401,
+                    e: 1999,
+                    evidence: None,
+                }],
+            )]),
+        };
         let fam = family_input(&txs, &plan);
         let ids: Vec<&str> = fam.txs.iter().map(|t| t.tid.as_str()).collect();
         assert_eq!(ids, ["A", "F.U1", "F.U2", "B"]);
@@ -2292,7 +2953,9 @@ mod tests {
         // `-`: U1 is the genomic right (the single exon), U2 the two left exons; reads and gene are T's, the span the unit's
         assert_eq!(fam.txs[1].exons, vec![(2000, 2100)]);
         assert_eq!(fam.txs[2].exons, vec![(100, 200), (300, 400)]);
-        assert!(fam.txs[1..3].iter().all(|t| t.reads == 7 && t.gene.as_deref() == Some("g") && t.strand == "-"));
+        assert!(fam.txs[1..3]
+            .iter()
+            .all(|t| t.reads == 7 && t.gene.as_deref() == Some("g") && t.strand == "-"));
         assert_eq!((fam.txs[1].span, fam.txs[2].span), (101, 301));
     }
 
@@ -2301,36 +2964,69 @@ mod tests {
         // F's single-exon unit (index 3) overlaps B's two exons by 51 + 51 bases and nothing else
         let txs = vec![
             mk("A", "gL", "c1", "+", 30, &[(100, 200), (300, 400)]),
-            mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300), (2400, 2500)]),
+            mk(
+                "B",
+                "gR",
+                "c1",
+                "+",
+                30,
+                &[(2000, 2100), (2200, 2300), (2400, 2500)],
+            ),
             mk("F.U1", "gL", "c1", "+", 10, &[(100, 200), (300, 400)]),
             mk("F.U2", "gL", "c1", "+", 10, &[(2050, 2250)]),
         ];
         let unit = [false, false, true, true];
         assert_eq!(attach_single_exon_units(&txs, &unit), vec![(3, 1)]);
         // an ORIGINAL single-exon transcript is never attached (it is not a unit)
-        let t2 = vec![mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]), mk("S", "gS", "c1", "+", 3, &[(2050, 2090)])];
+        let t2 = vec![
+            mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]),
+            mk("S", "gS", "c1", "+", 3, &[(2050, 2090)]),
+        ];
         assert!(attach_single_exon_units(&t2, &[false, false]).is_empty());
-        assert_eq!(attach_single_exon_units(&t2, &[false, true]), vec![(1, 0)], "the same transcript as a unit attaches");
+        assert_eq!(
+            attach_single_exon_units(&t2, &[false, true]),
+            vec![(1, 0)],
+            "the same transcript as a unit attaches"
+        );
         // the other strand / contig / no overlap: alone
-        let t3 = vec![mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]), mk("S", "gS", "c1", "-", 3, &[(2050, 2090)])];
+        let t3 = vec![
+            mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]),
+            mk("S", "gS", "c1", "-", 3, &[(2050, 2090)]),
+        ];
         assert!(attach_single_exon_units(&t3, &[false, true]).is_empty());
-        let t4 = vec![mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]), mk("S", "gS", "c1", "+", 3, &[(2101, 2199)])];
-        assert!(attach_single_exon_units(&t4, &[false, true]).is_empty(), "an intron is not an exon base");
+        let t4 = vec![
+            mk("B", "gR", "c1", "+", 30, &[(2000, 2100), (2200, 2300)]),
+            mk("S", "gS", "c1", "+", 3, &[(2101, 2199)]),
+        ];
+        assert!(
+            attach_single_exon_units(&t4, &[false, true]).is_empty(),
+            "an intron is not an exon base"
+        );
         // equal overlap with two transcripts: the lower index; more overlap beats a lower index
         let t5 = vec![
             mk("B1", "g1", "c1", "+", 5, &[(2000, 2100), (2200, 2300)]),
             mk("B2", "g2", "c1", "+", 50, &[(2000, 2100), (2500, 2600)]),
             mk("S", "gS", "c1", "+", 3, &[(2000, 2100)]),
         ];
-        assert_eq!(attach_single_exon_units(&t5, &[false, false, true]), vec![(2, 0)]);
+        assert_eq!(
+            attach_single_exon_units(&t5, &[false, false, true]),
+            vec![(2, 0)]
+        );
         let t5b = vec![
             mk("B1", "g1", "c1", "+", 5, &[(2000, 2100), (2200, 2300)]),
             mk("B2", "g2", "c1", "+", 50, &[(2085, 2260), (2500, 2600)]),
             mk("S", "gS", "c1", "+", 3, &[(2090, 2250)]),
         ];
-        assert_eq!(attach_single_exon_units(&t5b, &[false, false, true]), vec![(2, 1)], "161 shared bases against 62");
+        assert_eq!(
+            attach_single_exon_units(&t5b, &[false, false, true]),
+            vec![(2, 1)],
+            "161 shared bases against 62"
+        );
         // it can join a transcript of another gene_id and another unit of the same families input
-        let t6 = vec![mk("U", "gA", "c1", "+", 5, &[(10, 20), (30, 40)]), mk("S", "gB", "c1", "+", 3, &[(35, 38)])];
+        let t6 = vec![
+            mk("U", "gA", "c1", "+", 5, &[(10, 20), (30, 40)]),
+            mk("S", "gB", "c1", "+", 3, &[(35, 38)]),
+        ];
         assert_eq!(attach_single_exon_units(&t6, &[true, true]), vec![(1, 0)]);
         // the prefix-max index finds a long exon that starts far left of the unit
         let t7 = vec![
@@ -2338,14 +3034,23 @@ mod tests {
             mk("M", "g", "c1", "+", 5, &[(200, 300), (400, 500)]),
             mk("S", "g", "c1", "+", 3, &[(8000, 8100)]),
         ];
-        assert_eq!(attach_single_exon_units(&t7, &[false, false, true]), vec![(2, 0)]);
+        assert_eq!(
+            attach_single_exon_units(&t7, &[false, false, true]),
+            vec![(2, 0)]
+        );
     }
 
     /// Names: the best component of an input gene keeps it, the others are `<g>.nat<k>` in representative order, a taken
     /// name is skipped, and the representative is taken AFTER an attached unit joins (a unit carries its parent's reads).
     #[test]
     fn components_are_named_as_the_assembler_names_them() {
-        let names = |txs: &[Tx]| native_names(txs, &vec![false; txs.len()]).0.into_iter().map(|n| n.unwrap()).collect::<Vec<_>>();
+        let names = |txs: &[Tx]| {
+            native_names(txs, &vec![false; txs.len()])
+                .0
+                .into_iter()
+                .map(|n| n.unwrap())
+                .collect::<Vec<_>>()
+        };
         let t = [
             mk("A", "g", "c1", "+", 30, &[(100, 200), (300, 400)]),
             mk("B", "g", "c1", "+", 20, &[(2000, 2100), (2200, 2300)]),
@@ -2373,7 +3078,11 @@ mod tests {
         let (n, moved) = native_names(&txs, &[false, false, true]);
         assert_eq!(moved, vec![(2, 1)]);
         let n: Vec<String> = n.into_iter().map(|x| x.unwrap()).collect();
-        assert_eq!(n, ["g.nat2", "g", "g"], "B's component (rep F.U2, 50 reads) now beats A's (30)");
+        assert_eq!(
+            n,
+            ["g.nat2", "g", "g"],
+            "B's component (rep F.U2, 50 reads) now beats A's (30)"
+        );
     }
 
     /// An attachment joins a unit to ONE component and never merges two: a single-exon unit over the exons of two components
@@ -2389,8 +3098,16 @@ mod tests {
         let (n, moved) = native_names(&txs, &[false, false, true]);
         assert_eq!(moved, vec![(2, 0)]);
         let n: Vec<String> = n.into_iter().map(|x| x.unwrap()).collect();
-        assert_eq!(n, ["g", "g.nat2", "g"], "S joins A's component (its reads make it the representative); B stays apart");
-        assert_eq!(native_components(&txs).len(), 3, "before the attachment there are three components, after it two: no merge");
+        assert_eq!(
+            n,
+            ["g", "g.nat2", "g"],
+            "S joins A's component (its reads make it the representative); B stays apart"
+        );
+        assert_eq!(
+            native_components(&txs).len(),
+            3,
+            "before the attachment there are three components, after it two: no merge"
+        );
     }
 
     #[test]
@@ -2403,10 +3120,29 @@ mod tests {
     /// X keeps `G` (10 reads), B is the F1 bridge (3 reads), Y (8 reads): the bridge's units join X's and Y's components.
     fn arm_lines(mode: Mode, rb: i64, pas: bool, minus: bool) -> (Vec<String>, Outcome) {
         let mut lines = if minus {
-            let m = |ex: &[(i64, i64)]| -> Vec<(i64, i64)> { ex.iter().rev().map(|&(a, b)| (2001 - b, 2001 - a)).collect() };
+            let m = |ex: &[(i64, i64)]| -> Vec<(i64, i64)> {
+                ex.iter()
+                    .rev()
+                    .map(|&(a, b)| (2001 - b, 2001 - a))
+                    .collect()
+            };
             let mut v = tx("c1", "G", "X", 10, &m(&[(101, 200), (301, 400)]), "-");
-            v.extend(tx("c1", "G", "B", rb, &m(&[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]), "-"));
-            v.extend(tx("c1", "G", "Y", 8, &m(&[(1101, 1200), (1301, 1400), (1501, 1600)]), "-"));
+            v.extend(tx(
+                "c1",
+                "G",
+                "B",
+                rb,
+                &m(&[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]),
+                "-",
+            ));
+            v.extend(tx(
+                "c1",
+                "G",
+                "Y",
+                8,
+                &m(&[(1101, 1200), (1301, 1400), (1501, 1600)]),
+                "-",
+            ));
             v
         } else {
             plus_locus(10, rb)
@@ -2416,7 +3152,10 @@ mod tests {
     }
 
     fn line_of<'a>(lines: &'a [String], tid: &str) -> &'a String {
-        lines.iter().find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(tid)).unwrap()
+        lines
+            .iter()
+            .find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(tid))
+            .unwrap()
     }
 
     #[test]
@@ -2435,33 +3174,68 @@ mod tests {
         let genes: Vec<(String, String)> = fam
             .iter()
             .filter(|l| l.contains("\ttranscript\t"))
-            .map(|l| (attr(l, "transcript_id").unwrap().to_string(), attr(l, "gene_id").unwrap().to_string()))
+            .map(|l| {
+                (
+                    attr(l, "transcript_id").unwrap().to_string(),
+                    attr(l, "gene_id").unwrap().to_string(),
+                )
+            })
             .collect();
-        let want = |v: &[(&str, &str)]| v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect::<Vec<_>>();
-        assert_eq!(genes, want(&[("X", "G"), ("B.U1", "G"), ("B.U2", "G.nat2"), ("Y", "G.nat2")]));
+        let want = |v: &[(&str, &str)]| {
+            v.iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            genes,
+            want(&[
+                ("X", "G"),
+                ("B.U1", "G"),
+                ("B.U2", "G.nat2"),
+                ("Y", "G.nat2")
+            ])
+        );
         assert_eq!(
             line_of(fam, "B.U1"),
             "c1\trustle\ttranscript\t101\t350\t.\t+\t.\tgene_id \"G\"; transcript_id \"B.U1\"; reads \"2\"; TPM \"1.0\"; \
              fusion_of \"B\"; fusion_unit \"1/2\"; fusion_junction \"c1:351-1300:+\"; fusion_locus \"c1:101-1600\"; \
              fusion_gene \"G\"; fusion_detector \"f1\"; fusion_evidence \"2;10;8;0.2\";"
         );
-        let i = fam.iter().position(|l| l.contains("transcript_id \"B.U2\"")).unwrap();
+        let i = fam
+            .iter()
+            .position(|l| l.contains("transcript_id \"B.U2\""))
+            .unwrap();
         assert_eq!(fam[i].split('\t').nth(3), Some("1301"));
         assert_eq!(
             fam[i + 1],
             "c1\trustle\texon\t1301\t1400\t.\t+\t.\tgene_id \"G.nat2\"; transcript_id \"B.U2\"; exon_number \"1\";"
         );
         assert_eq!(fam.len(), lines.len() - 5 + 3 + 3, "B's transcript line and 4 exon lines leave, two units of a transcript and 2 exon lines each come");
-        assert_eq!(out.units_table_rows(), vec![
-            "B.U1\tB\tG\tG\t1\t2\tc1\t+\t2\t150\t101\t350\t2\tf1\t351-1300\t2;10;8;0.2".to_string(),
-            "B.U2\tB\tG\tG.nat2\t2\t2\tc1\t+\t2\t200\t1301\t1600\t2\tf1\t351-1300\t2;10;8;0.2".to_string(),
-        ]);
+        assert_eq!(
+            out.units_table_rows(),
+            vec![
+                "B.U1\tB\tG\tG\t1\t2\tc1\t+\t2\t150\t101\t350\t2\tf1\t351-1300\t2;10;8;0.2"
+                    .to_string(),
+                "B.U2\tB\tG\tG.nat2\t2\t2\tc1\t+\t2\t200\t1301\t1600\t2\tf1\t351-1300\t2;10;8;0.2"
+                    .to_string(),
+            ]
+        );
         let st = &out.stats;
         assert_eq!(
-            (st.unit_transcripts, st.unit_cuts, st.units, st.unit_single_exon, st.unit_attached, st.unit_gene_ids_touched),
+            (
+                st.unit_transcripts,
+                st.unit_cuts,
+                st.units,
+                st.unit_single_exon,
+                st.unit_attached,
+                st.unit_gene_ids_touched
+            ),
             (1, 1, 2, 0, 0, 1)
         );
-        assert_eq!(st.families_gene_ids, 2, "G and G.nat2 (F1's own count of the families input is 2 as well)");
+        assert_eq!(
+            st.families_gene_ids, 2,
+            "G and G.nat2 (F1's own count of the families input is 2 as well)"
+        );
     }
 
     fn units_arm() -> (Vec<String>, Outcome) {
@@ -2471,7 +3245,14 @@ mod tests {
     impl Outcome {
         /// the units table rows without the header (tests)
         fn units_table_rows(&self) -> Vec<String> {
-            self.units.as_ref().unwrap().table_tsv.lines().skip(1).map(str::to_string).collect()
+            self.units
+                .as_ref()
+                .unwrap()
+                .table_tsv
+                .lines()
+                .skip(1)
+                .map(str::to_string)
+                .collect()
         }
     }
 
@@ -2486,7 +3267,10 @@ mod tests {
         // the bridge intron is the mirror of 351-1300 = 701-1650
         let u1 = line_of(&fam, "B.U1");
         assert_eq!(u1.split('\t').nth(3), Some("1651"));
-        assert!(u1.contains("fusion_unit \"1/2\"") && u1.contains("fusion_junction \"c1:701-1650:-\""), "{u1}");
+        assert!(
+            u1.contains("fusion_unit \"1/2\"") && u1.contains("fusion_junction \"c1:701-1650:-\""),
+            "{u1}"
+        );
         assert_eq!(line_of(&fam, "B.U2").split('\t').nth(4), Some("700"));
         assert_eq!(out.stats.units, 2);
     }
@@ -2517,7 +3301,14 @@ mod tests {
         let f1 = run_on(&mut lines, Mode::F1, BridgeEvidence::default(), true);
         let un = run_on(&mut again, Mode::F1Units, BridgeEvidence::default(), true);
         assert_eq!(gene_of(&lines, "p"), "G.rg2");
-        assert_eq!(un.units.unwrap().families_lines, lines.iter().filter(|l| f1.in_families(l)).cloned().collect::<Vec<_>>());
+        assert_eq!(
+            un.units.unwrap().families_lines,
+            lines
+                .iter()
+                .filter(|l| f1.in_families(l))
+                .cloned()
+                .collect::<Vec<_>>()
+        );
     }
 
     /// The scoped form: a gene_id with no cut keeps RG3's names even when the native rule would name it otherwise
@@ -2525,38 +3316,97 @@ mod tests {
     #[test]
     fn only_the_gene_ids_that_hold_a_cut_are_regrouped_natively() {
         let mut lines = tx("c1", "G", "X", 10, &[(101, 200), (301, 400)], "+");
-        lines.extend(tx("c1", "G", "B", 2, &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)], "+"));
-        lines.extend(tx("c1", "G", "Y", 8, &[(1101, 1200), (1301, 1400), (1501, 1600)], "+"));
+        lines.extend(tx(
+            "c1",
+            "G",
+            "B",
+            2,
+            &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)],
+            "+",
+        ));
+        lines.extend(tx(
+            "c1",
+            "G",
+            "Y",
+            8,
+            &[(1101, 1200), (1301, 1400), (1501, 1600)],
+            "+",
+        ));
         // H: untouched; its two strands share a junction (native: one gene; RG3: one piece per strand)
         lines.extend(tx("c1", "H", "h1", 10, &[(5101, 5200), (5301, 5400)], "+"));
         lines.extend(tx("c1", "H", "h2", 11, &[(5101, 5200), (5301, 5400)], "-"));
         let mut ev = locus_evidence(false, true);
         let mut l = lines.clone();
-        let out = run(&mut l, Mode::F1Units, &mut ev, &genome, &fake_clusters(true)).unwrap();
+        let out = run(
+            &mut l,
+            Mode::F1Units,
+            &mut ev,
+            &genome,
+            &fake_clusters(true),
+        )
+        .unwrap();
         let fam = out.units.unwrap().families_lines;
         let g = |tid: &str| attr(line_of(&fam, tid), "gene_id").unwrap().to_string();
-        assert_eq!((g("h2"), g("h1")), ("H".to_string(), "H.rg2".to_string()), "RG3: one piece per strand, the better keeps H");
-        assert_eq!((g("B.U1"), g("B.U2")), ("G".to_string(), "G.nat2".to_string()));
+        assert_eq!(
+            (g("h2"), g("h1")),
+            ("H".to_string(), "H.rg2".to_string()),
+            "RG3: one piece per strand, the better keeps H"
+        );
+        assert_eq!(
+            (g("B.U1"), g("B.U2")),
+            ("G".to_string(), "G.nat2".to_string())
+        );
     }
 
     // ---- the units list
 
     #[test]
     fn a_units_list_is_tid_and_junctions_with_a_header() {
-        let l = UnitsList::parse("dir/bridges.tsv", "# c\ntid\tjunctions\nB\t351-1300\nB\t351-1300,2001-2100\n").unwrap();
+        let l = UnitsList::parse(
+            "dir/bridges.tsv",
+            "# c\ntid\tjunctions\nB\t351-1300\nB\t351-1300,2001-2100\n",
+        )
+        .unwrap();
         assert_eq!(l.rows.len(), 1);
         assert_eq!(l.rows[0].0, "B");
         let cuts: Vec<(i64, i64)> = l.rows[0].1.iter().map(|c| (c.s, c.e)).collect();
-        assert_eq!(cuts, [(351, 1300), (2001, 2100)], "a transcript listed twice gets the union, sorted");
-        assert_eq!(l.detector(), "list:bridges.tsv", "the file name, not its directory");
+        assert_eq!(
+            cuts,
+            [(351, 1300), (2001, 2100)],
+            "a transcript listed twice gets the union, sorted"
+        );
+        assert_eq!(
+            l.detector(),
+            "list:bridges.tsv",
+            "the file name, not its directory"
+        );
         // both token forms, both separators, other columns ignored
-        let l = UnitsList::parse("l", "transcript_id\tx\tjunction\nT\t9\tc1:5-9:+;7-8,c2:1-4:-\n").unwrap();
+        let l = UnitsList::parse(
+            "l",
+            "transcript_id\tx\tjunction\nT\t9\tc1:5-9:+;7-8,c2:1-4:-\n",
+        )
+        .unwrap();
         assert_eq!(
             l.rows[0].1,
             vec![
-                ListedCut { s: 1, e: 4, contig: Some("c2".into()), strand: Some("-".into()) },
-                ListedCut { s: 5, e: 9, contig: Some("c1".into()), strand: Some("+".into()) },
-                ListedCut { s: 7, e: 8, contig: None, strand: None },
+                ListedCut {
+                    s: 1,
+                    e: 4,
+                    contig: Some("c2".into()),
+                    strand: Some("-".into())
+                },
+                ListedCut {
+                    s: 5,
+                    e: 9,
+                    contig: Some("c1".into()),
+                    strand: Some("+".into())
+                },
+                ListedCut {
+                    s: 7,
+                    e: 8,
+                    contig: None,
+                    strand: None
+                },
             ]
         );
         for (text, what) in [
@@ -2578,21 +3428,38 @@ mod tests {
     #[test]
     fn a_list_names_the_cuts_and_f1s_evidence_is_not_read() {
         let mut lines = plus_locus(10, 2);
-        let list = UnitsList::parse("bridges.tsv", "tid\tjunctions\nB\tc1:351-1300:+\nNOPE\t1-2\n").unwrap();
+        let list = UnitsList::parse(
+            "bridges.tsv",
+            "tid\tjunctions\nB\tc1:351-1300:+\nNOPE\t1-2\n",
+        )
+        .unwrap();
         let out = run_list(&mut lines, &list).unwrap();
         // the list names B, so <out>.gtf is f1's regrouping with B as the bridge: same as the evidence arm's
         let (f1_gtf, _) = arm_lines(Mode::F1, 2, true, false);
         assert_eq!(lines, f1_gtf);
-        assert!(!out.evidence_used && out.junctions_tsv.is_empty(), "no junction table without evidence");
+        assert!(
+            !out.evidence_used && out.junctions_tsv.is_empty(),
+            "no junction table without evidence"
+        );
         let u = out.units.as_ref().unwrap();
         assert_eq!(u.detector, "list:bridges.tsv");
         let line = line_of(&u.families_lines, "B.U1");
-        assert!(line.ends_with("fusion_gene \"G\"; fusion_detector \"list:bridges.tsv\";"), "no evidence attribute: {line}");
+        assert!(
+            line.ends_with("fusion_gene \"G\"; fusion_detector \"list:bridges.tsv\";"),
+            "no evidence attribute: {line}"
+        );
         assert_eq!(
             out.units_table_rows()[0],
             "B.U1\tB\tG\tG\t1\t2\tc1\t+\t2\t150\t101\t350\t2\tlist:bridges.tsv\t351-1300\t."
         );
-        assert_eq!((out.stats.unit_list_unmatched, out.stats.bridge_junctions, out.stats.bridge_transcripts), (1, 1, 1));
+        assert_eq!(
+            (
+                out.stats.unit_list_unmatched,
+                out.stats.bridge_junctions,
+                out.stats.bridge_transcripts
+            ),
+            (1, 1, 1)
+        );
         assert_eq!(out.stats.structural_junctions, 0);
         // the families input is the evidence arm's, except for the detector and the evidence attributes
         let (_, ev_out) = units_arm();
@@ -2607,7 +3474,13 @@ mod tests {
             s
         };
         let a: Vec<String> = u.families_lines.iter().map(strip).collect();
-        let b: Vec<String> = ev_out.units.unwrap().families_lines.iter().map(strip).collect();
+        let b: Vec<String> = ev_out
+            .units
+            .unwrap()
+            .families_lines
+            .iter()
+            .map(strip)
+            .collect();
         assert_eq!(a, b);
     }
 
@@ -2616,30 +3489,48 @@ mod tests {
         let run_l = |text: &str| {
             let mut lines = plus_locus(10, 2);
             let src = lines.clone();
-            let err = run_list(&mut lines, &UnitsList::parse("l.tsv", text).unwrap()).err().map(|e| e.to_string());
+            let err = run_list(&mut lines, &UnitsList::parse("l.tsv", text).unwrap())
+                .err()
+                .map(|e| e.to_string());
             if err.is_some() {
                 assert_eq!(lines, src, "nothing is rewritten on an error");
             }
             err
         };
-        assert!(run_l("tid\tjunctions\nB\t352-1300\n").unwrap().contains("352-1300 is not an intron of that transcript"));
-        assert!(run_l("tid\tjunctions\nB\tc9:351-1300:+\n").unwrap().contains("another contig or strand"));
-        assert!(run_l("tid\tjunctions\nB\tc1:351-1300:-\n").unwrap().contains("another contig or strand"));
-        assert!(run_l("tid\tjunctions\nNOPE\t1-2\n").unwrap().contains("none of its 1 transcripts is in this GTF"));
+        assert!(run_l("tid\tjunctions\nB\t352-1300\n")
+            .unwrap()
+            .contains("352-1300 is not an intron of that transcript"));
+        assert!(run_l("tid\tjunctions\nB\tc9:351-1300:+\n")
+            .unwrap()
+            .contains("another contig or strand"));
+        assert!(run_l("tid\tjunctions\nB\tc1:351-1300:-\n")
+            .unwrap()
+            .contains("another contig or strand"));
+        assert!(run_l("tid\tjunctions\nNOPE\t1-2\n")
+            .unwrap()
+            .contains("none of its 1 transcripts is in this GTF"));
         assert!(run_l("tid\tjunctions\nB\t351-1300\n").is_none());
     }
 
     // ---- the prototype
 
     fn fixture(name: &str) -> String {
-        let p = format!("{}/tests/fixtures/bridge_units/{name}", env!("CARGO_MANIFEST_DIR"));
+        let p = format!(
+            "{}/tests/fixtures/bridge_units/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        );
         std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {p}: {e}"))
     }
 
     /// Remove the attributes the dev prototype (`units2.py`) does not write, to compare with its GTF byte for byte.
     fn strip_extras(line: &str) -> String {
         let mut s = line.to_string();
-        for k in ["fusion_locus", "fusion_gene", "fusion_detector", "fusion_evidence"] {
+        for k in [
+            "fusion_locus",
+            "fusion_gene",
+            "fusion_detector",
+            "fusion_evidence",
+        ] {
             if let Some(i) = s.find(&format!(" {k} \"")) {
                 let j = s[i..].find("\";").expect("a closed attribute") + i + 2;
                 s.replace_range(i..j, "");
@@ -2651,9 +3542,18 @@ mod tests {
     /// Run `run_list` on a fixture (`plain`, `cuts`) and compare with the prototype's files (`expected` GTF and units table): the
     /// families GTF line for line once the four attributes the prototype does not write are removed, the units table column
     /// for column up to `cuts` (the prototype's `oracle_label` is benchmark-only; ours ends with `evidence`).
-    fn assert_equals_prototype(plain: &str, cuts: &str, expected_gtf: &str, expected_tsv: &str) -> (Vec<String>, Outcome) {
+    fn assert_equals_prototype(
+        plain: &str,
+        cuts: &str,
+        expected_gtf: &str,
+        expected_tsv: &str,
+    ) -> (Vec<String>, Outcome) {
         let mut lines: Vec<String> = fixture(plain).lines().map(str::to_string).collect();
-        let list = UnitsList::read(&format!("{}/tests/fixtures/bridge_units/{cuts}", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let list = UnitsList::read(&format!(
+            "{}/tests/fixtures/bridge_units/{cuts}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
         let out = run_list(&mut lines, &list).unwrap();
         let u = out.units.as_ref().unwrap();
         assert_eq!(u.detector, format!("list:{cuts}"));
@@ -2663,7 +3563,11 @@ mod tests {
         for (i, (a, b)) in got.iter().zip(&want).enumerate() {
             assert_eq!(a, b, "{expected_gtf} line {}", i + 1);
         }
-        let cols = |t: &str| -> Vec<Vec<String>> { t.lines().map(|l| l.split('\t').take(15).map(str::to_string).collect()).collect() };
+        let cols = |t: &str| -> Vec<Vec<String>> {
+            t.lines()
+                .map(|l| l.split('\t').take(15).map(str::to_string).collect())
+                .collect()
+        };
         let (mine, theirs) = (cols(&u.table_tsv), cols(&fixture(expected_tsv)));
         assert_eq!(mine.len(), theirs.len());
         for (a, b) in mine.iter().zip(&theirs) {
@@ -2678,14 +3582,34 @@ mod tests {
     /// and on a tie; `.nat<k>`, `.rg<k>` and RG3 names; contigs): gene_id for gene_id, line for line, and its units table.
     #[test]
     fn units_equal_the_python_prototype_on_the_fixture() {
-        let (lines, out) = assert_equals_prototype("plain.gtf", "cuts.tsv", "expected.units.gtf", "expected.units.tsv");
+        let (lines, out) = assert_equals_prototype(
+            "plain.gtf",
+            "cuts.tsv",
+            "expected.units.gtf",
+            "expected.units.tsv",
+        );
         let st = &out.stats;
-        assert_eq!((st.unit_transcripts, st.unit_cuts, st.units, st.unit_single_exon, st.unit_attached), (5, 8, 13, 2, 2));
+        assert_eq!(
+            (
+                st.unit_transcripts,
+                st.unit_cuts,
+                st.units,
+                st.unit_single_exon,
+                st.unit_attached
+            ),
+            (5, 8, 13, 2, 2)
+        );
         // the pre-split locus of each cut transcript is carried for the relation records
         let f3 = line_of(&out.units.as_ref().unwrap().families_lines, "F3.U2");
-        assert!(f3.contains("fusion_locus \"c1:20000-24100\"; fusion_gene \"g3\";"), "{f3}");
+        assert!(
+            f3.contains("fusion_locus \"c1:20000-24100\"; fusion_gene \"g3\";"),
+            "{f3}"
+        );
         // the assembled GTF keeps every transcript whole, as f1 writes it
-        assert_eq!(lines.iter().filter(|l| l.contains("fusion_of \"")).count(), 5);
+        assert_eq!(
+            lines.iter().filter(|l| l.contains("fusion_of \"")).count(),
+            5
+        );
         assert!(lines.iter().all(|l| !l.contains("fusion_unit")));
     }
 
@@ -2693,9 +3617,22 @@ mod tests {
     /// an F1 bridge, on both strands, and two others) with the four bridges F1 found (`R.cuts.tsv` of the units study).
     #[test]
     fn units_equal_the_python_prototype_on_real_gorilla_loci() {
-        let (_, out) = assert_equals_prototype("s_f0.5.plain.gtf", "s_f0.5.cuts.tsv", "s_f0.5.expected.units.gtf", "s_f0.5.expected.units.tsv");
+        let (_, out) = assert_equals_prototype(
+            "s_f0.5.plain.gtf",
+            "s_f0.5.cuts.tsv",
+            "s_f0.5.expected.units.gtf",
+            "s_f0.5.expected.units.tsv",
+        );
         let st = &out.stats;
-        assert_eq!((st.unit_transcripts, st.unit_cuts, st.units, st.unit_gene_ids_touched), (4, 4, 8, 4));
+        assert_eq!(
+            (
+                st.unit_transcripts,
+                st.unit_cuts,
+                st.units,
+                st.unit_gene_ids_touched
+            ),
+            (4, 4, 8, 4)
+        );
     }
 
     /// The scoped form's invariant: a single-exon unit attached to a transcript of an UNTOUCHED gene lands in that
@@ -2705,19 +3642,42 @@ mod tests {
     #[test]
     fn an_attached_unit_lands_in_its_targets_gene_id() {
         let mut lines = tx("c1", "G", "A", 20, &[(100, 200), (300, 400)], "+");
-        lines.extend(tx("c1", "G", "F", 7, &[(100, 200), (300, 400), (5050, 5090)], "+"));
+        lines.extend(tx(
+            "c1",
+            "G",
+            "F",
+            7,
+            &[(100, 200), (300, 400), (5050, 5090)],
+            "+",
+        ));
         lines.extend(tx("c1", "H", "H1", 10, &[(1000, 1100), (1200, 1300)], "+"));
         lines.extend(tx("c1", "H", "H2", 5, &[(5000, 5100), (5200, 5300)], "+"));
         let list = UnitsList::parse("l.tsv", "tid\tjunctions\nF\t401-5049\n").unwrap();
         let out = run_list(&mut lines, &list).unwrap();
         let fam = &out.units.as_ref().unwrap().families_lines;
         let gene = |t: &str| attr(line_of(fam, t), "gene_id").unwrap().to_string();
-        assert_eq!((gene("H1"), gene("H2")), ("H".to_string(), "H.rg2".to_string()), "RG3's pieces of the untouched gene H");
-        assert_eq!((gene("A"), gene("F.U1")), ("G".to_string(), "G".to_string()), "the other unit is natively in A's component");
+        assert_eq!(
+            (gene("H1"), gene("H2")),
+            ("H".to_string(), "H.rg2".to_string()),
+            "RG3's pieces of the untouched gene H"
+        );
+        assert_eq!(
+            (gene("A"), gene("F.U1")),
+            ("G".to_string(), "G".to_string()),
+            "the other unit is natively in A's component"
+        );
         assert_eq!(out.stats.unit_attached, 1);
-        assert_eq!(gene("F.U2"), "H.rg2", "the single-exon unit is in its target's gene_id, not in `G.nat2`");
+        assert_eq!(
+            gene("F.U2"),
+            "H.rg2",
+            "the single-exon unit is in its target's gene_id, not in `G.nat2`"
+        );
         // and so it is a member of H2's locus in the units table, whose `new_gene` column says the same
-        assert!(out.units_table_rows()[1].starts_with("F.U2\tF\tG\tH.rg2\t2\t2\t"), "{}", out.units_table_rows()[1]);
+        assert!(
+            out.units_table_rows()[1].starts_with("F.U2\tF\tG\tH.rg2\t2\t2\t"),
+            "{}",
+            out.units_table_rows()[1]
+        );
     }
 
     /// One bridge transcript with TWO bridge introns (X - J1 - Y - J2 - Z): three units in transcription order, every unit line
@@ -2727,7 +3687,14 @@ mod tests {
     #[test]
     fn two_cuts_of_one_transcript_join_their_junctions_and_evidence() {
         let mut lines = tx("c1", "G", "X", 10, &[(101, 200), (301, 400)], "+");
-        lines.extend(tx("c1", "G", "T", 2, &[(101, 200), (301, 350), (1301, 1350), (2301, 2400)], "+"));
+        lines.extend(tx(
+            "c1",
+            "G",
+            "T",
+            2,
+            &[(101, 200), (301, 350), (1301, 1350), (2301, 2400)],
+            "+",
+        ));
         lines.extend(tx("c1", "G", "Y", 10, &[(1101, 1200), (1301, 1400)], "+"));
         lines.extend(tx("c1", "G", "Z", 10, &[(2101, 2200), (2301, 2400)], "+"));
         let mut ev = BridgeEvidence::default();
@@ -2741,22 +3708,63 @@ mod tests {
             push(&mut ev, &[(2101, 2200), (2301, 2400)], false); // Z: starts inside J2
         }
         let out = run_on(&mut lines, Mode::F1Units, ev, true);
-        assert_eq!((out.stats.f1_bridge_junctions, out.stats.bridge_transcripts), (2, 1), "T uses both bridge introns");
+        assert_eq!(
+            (out.stats.f1_bridge_junctions, out.stats.bridge_transcripts),
+            (2, 1),
+            "T uses both bridge introns"
+        );
         let fam = &out.units.as_ref().unwrap().families_lines;
         let evidence = "2;10;20;0.1667,2;20;10;0.1667"; // J1: link 2 reads, UP = X 10, DOWN = Y + Z 20; J2: UP = X + Y 20, DOWN = Z 10
-        for (k, (tid, span)) in [("T.U1", (101, 350)), ("T.U2", (1301, 1350)), ("T.U3", (2301, 2400))].iter().enumerate() {
+        for (k, (tid, span)) in [
+            ("T.U1", (101, 350)),
+            ("T.U2", (1301, 1350)),
+            ("T.U3", (2301, 2400)),
+        ]
+        .iter()
+        .enumerate()
+        {
             let l = line_of(fam, tid);
             assert!(l.contains(&format!("fusion_unit \"{}/3\"", k + 1)), "{l}");
-            assert!(l.contains("fusion_junction \"c1:351-1300:+,c1:1351-2300:+\";"), "{l}");
-            assert!(l.ends_with(&format!("fusion_evidence \"{evidence}\";")), "{l}");
-            assert_eq!(l.split('\t').nth(3).and_then(|x| x.parse::<i64>().ok()), Some(span.0), "{l}");
+            assert!(
+                l.contains("fusion_junction \"c1:351-1300:+,c1:1351-2300:+\";"),
+                "{l}"
+            );
+            assert!(
+                l.ends_with(&format!("fusion_evidence \"{evidence}\";")),
+                "{l}"
+            );
+            assert_eq!(
+                l.split('\t').nth(3).and_then(|x| x.parse::<i64>().ok()),
+                Some(span.0),
+                "{l}"
+            );
         }
-        let genes: Vec<String> = ["X", "T.U1", "T.U2", "Y", "T.U3", "Z"].iter().map(|t| attr(line_of(fam, t), "gene_id").unwrap().to_string()).collect();
-        assert_eq!(genes, ["G", "G", "G.nat2", "G.nat2", "G.nat3", "G.nat3"], "U2 joins Y's component, U3 Z's, U1 X's");
+        let genes: Vec<String> = ["X", "T.U1", "T.U2", "Y", "T.U3", "Z"]
+            .iter()
+            .map(|t| attr(line_of(fam, t), "gene_id").unwrap().to_string())
+            .collect();
+        assert_eq!(
+            genes,
+            ["G", "G", "G.nat2", "G.nat2", "G.nat3", "G.nat3"],
+            "U2 joins Y's component, U3 Z's, U1 X's"
+        );
         let st = &out.stats;
-        assert_eq!((st.unit_transcripts, st.unit_cuts, st.units, st.unit_single_exon, st.unit_attached), (1, 2, 3, 2, 2));
+        assert_eq!(
+            (
+                st.unit_transcripts,
+                st.unit_cuts,
+                st.units,
+                st.unit_single_exon,
+                st.unit_attached
+            ),
+            (1, 2, 3, 2, 2)
+        );
         let rows = out.units_table_rows();
-        assert!(rows[1].ends_with(&format!("\t2\tf1\t351-1300;1351-2300\t{evidence}")), "{}", rows[1]);
+        assert!(
+            rows[1].ends_with(&format!("\t2\tf1\t351-1300;1351-2300\t{evidence}")),
+            "{}",
+            rows[1]
+        );
     }
 
     /// An intron listed twice (as `S-E`, as `CONTIG:S-E:STRAND`, on two rows of one transcript) is cut once: one cut, two
@@ -2764,21 +3772,43 @@ mod tests {
     #[test]
     fn a_cut_listed_twice_is_cut_once() {
         let mut lines = plus_locus(10, 2);
-        let list = UnitsList::parse("l.tsv", "tid\tjunctions\nB\t351-1300,c1:351-1300:+;351-1300\nB\t351-1300\n").unwrap();
+        let list = UnitsList::parse(
+            "l.tsv",
+            "tid\tjunctions\nB\t351-1300,c1:351-1300:+;351-1300\nB\t351-1300\n",
+        )
+        .unwrap();
         let out = run_list(&mut lines, &list).unwrap();
-        assert_eq!((out.stats.unit_cuts, out.stats.units, out.stats.bridge_junctions), (1, 2, 1));
+        assert_eq!(
+            (
+                out.stats.unit_cuts,
+                out.stats.units,
+                out.stats.bridge_junctions
+            ),
+            (1, 2, 1)
+        );
         let u = line_of(&out.units.as_ref().unwrap().families_lines, "B.U1");
         assert!(u.contains("fusion_junction \"c1:351-1300:+\"; "), "{u}");
-        assert!(out.units_table_rows()[0].contains("\t351-1300\t"), "{}", out.units_table_rows()[0]);
+        assert!(
+            out.units_table_rows()[0].contains("\t351-1300\t"),
+            "{}",
+            out.units_table_rows()[0]
+        );
     }
 
     /// A list with a header and no transcript (or no header at all) is an ERROR, not "cut nothing": a list written for a
     /// sample with no annotated fusion would otherwise run as the default arm under another name. The message names the way out.
     #[test]
     fn a_header_only_list_is_an_error_that_says_what_to_do() {
-        for text in ["tid\tjunctions\n", "# only a comment\ntid\tjunctions\n\n", ""] {
+        for text in [
+            "tid\tjunctions\n",
+            "# only a comment\ntid\tjunctions\n\n",
+            "",
+        ] {
             let e = UnitsList::parse("l.tsv", text).unwrap_err().to_string();
-            assert!(e.contains("empty list: run without --bridge-units-list"), "{text:?}: {e}");
+            assert!(
+                e.contains("empty list: run without --bridge-units-list"),
+                "{text:?}: {e}"
+            );
         }
     }
 }

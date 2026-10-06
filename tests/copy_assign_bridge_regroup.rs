@@ -29,7 +29,9 @@ const Y: &str = "DN_c1_1997_3";
 const Z: &str = "DN_c1_2600_3";
 
 fn scratch(name: &str) -> PathBuf {
-    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("copy_assign_bridge_regroup").join(name);
+    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("copy_assign_bridge_regroup")
+        .join(name);
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).expect("create scratch dir");
     d
@@ -86,11 +88,22 @@ fn write_fixture(dir: &Path, pas: bool, ghost: bool) -> (String, String) {
         put(1270, b"AATAAA");
     }
     let fasta = dir.join("genome.fa");
-    std::fs::write(&fasta, format!(">c1\n{}\n", String::from_utf8(seq).unwrap())).unwrap();
-    std::fs::write(dir.join("genome.fa.fai"), format!("c1\t{L}\t4\t{L}\t{}\n", L + 1)).unwrap();
+    std::fs::write(
+        &fasta,
+        format!(">c1\n{}\n", String::from_utf8(seq).unwrap()),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("genome.fa.fai"),
+        format!("c1\t{L}\t4\t{L}\t{}\n", L + 1),
+    )
+    .unwrap();
 
     let header = noodles_sam::Header::builder()
-        .add_reference_sequence("c1", Map::<ReferenceSequence>::new(std::num::NonZeroUsize::try_from(L).unwrap()))
+        .add_reference_sequence(
+            "c1",
+            Map::<ReferenceSequence>::new(std::num::NonZeroUsize::try_from(L).unwrap()),
+        )
         .build();
     let mut recs: Vec<RecordBuf> = reads(ghost)
         .iter()
@@ -102,7 +115,9 @@ fn write_fixture(dir: &Path, pas: bool, ghost: bool) -> (String, String) {
                 ops.push(Op::new(Kind::Match, (w[1].1 - w[1].0 + 1) as usize));
             }
             let data: noodles_sam::alignment::record_buf::Data =
-                [(Tag::new(b't', b's'), Value::Character(b'+'))].into_iter().collect();
+                [(Tag::new(b't', b's'), Value::Character(b'+'))]
+                    .into_iter()
+                    .collect();
             RecordBuf::builder()
                 .set_name(format!("r{i}"))
                 .set_flags(Flags::empty())
@@ -136,11 +151,19 @@ fn write_fixture(dir: &Path, pas: bool, ghost: bool) -> (String, String) {
             record.alignment_start().transpose().unwrap(),
             record.alignment_end().transpose().unwrap(),
         ) {
-            (Some(id), Some(start), Some(end)) => Some((id, start, end, !record.flags().is_unmapped())),
+            (Some(id), Some(start), Some(end)) => {
+                Some((id, start, end, !record.flags().is_unmapped()))
+            }
             _ => None,
         };
         indexer
-            .add_record(ctx, noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(chunk_start, chunk_end))
+            .add_record(
+                ctx,
+                noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(
+                    chunk_start,
+                    chunk_end,
+                ),
+            )
             .unwrap();
         chunk_start = chunk_end;
     }
@@ -153,7 +176,17 @@ fn write_fixture(dir: &Path, pas: bool, ghost: bool) -> (String, String) {
 fn run(dir: &Path, fx: &(String, String), out: &str, extra: &[&str]) -> (Output, String) {
     let out = dir.join(out).display().to_string();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &fx.0, "--fasta", &fx.1, "--region", "c1:1-3000", "--assemble-only", "--out", &out])
+        .args([
+            "--bam",
+            &fx.0,
+            "--fasta",
+            &fx.1,
+            "--region",
+            "c1:1-3000",
+            "--assemble-only",
+            "--out",
+            &out,
+        ])
         .args(extra)
         .output()
         .expect("copy_assign failed to spawn");
@@ -161,7 +194,11 @@ fn run(dir: &Path, fx: &(String, String), out: &str, extra: &[&str]) -> (Output,
 }
 
 fn ok(o: &Output) {
-    assert!(o.status.success(), "copy_assign failed:\n{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        o.status.success(),
+        "copy_assign failed:\n{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
 }
 
 fn read(path: &str) -> String {
@@ -178,17 +215,28 @@ fn attr<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 fn genes(gtf: &str) -> Vec<(String, String)> {
     gtf.lines()
         .filter(|l| l.split('\t').nth(2) == Some("transcript"))
-        .map(|l| (attr(l, "transcript_id").unwrap().to_string(), attr(l, "gene_id").unwrap().to_string()))
+        .map(|l| {
+            (
+                attr(l, "transcript_id").unwrap().to_string(),
+                attr(l, "gene_id").unwrap().to_string(),
+            )
+        })
         .collect()
 }
 
 fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
-    v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    v.iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect()
 }
 
 /// A line without its gene_id and relation attributes (what `--bridge-regroup` may not change).
 fn strip(line: &str) -> String {
-    let mut s = line.replacen(&format!("gene_id \"{}\"", attr(line, "gene_id").unwrap_or("")), "", 1);
+    let mut s = line.replacen(
+        &format!("gene_id \"{}\"", attr(line, "gene_id").unwrap_or("")),
+        "",
+        1,
+    );
     if let Some(i) = s.find(" fusion_of \"") {
         s.truncate(i);
     }
@@ -201,37 +249,69 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
     let fx = write_fixture(&dir, true, false);
     let (o, off) = run(&dir, &fx, "off", &["--bridge-regroup", "off"]);
     ok(&o);
-    assert_eq!(genes(&read(&format!("{off}.gtf"))), pairs(&[(X, G), (B, G), (Y, G)]), "the fused locus");
+    assert_eq!(
+        genes(&read(&format!("{off}.gtf"))),
+        pairs(&[(X, G), (B, G), (Y, G)]),
+        "the fused locus"
+    );
     for ext in ["families.gtf", "bridge_junctions.tsv", "bridges.tsv"] {
-        assert!(!Path::new(&format!("{off}.{ext}")).exists(), "off writes no {ext}");
+        assert!(
+            !Path::new(&format!("{off}.{ext}")).exists(),
+            "off writes no {ext}"
+        );
     }
 
     let (o, f1) = run(&dir, &fx, "f1", &["--bridge-regroup", "f1"]);
     ok(&o);
     let gtf = read(&format!("{f1}.gtf"));
     let (g2, fus) = (format!("{G}.rg2"), format!("{G}.fus1"));
-    assert_eq!(genes(&gtf), pairs(&[(X, G), (B, &fus), (Y, &g2)]), "X keeps the name (5 reads > 4)");
-    let b_line = gtf.lines().find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(B)).unwrap();
+    assert_eq!(
+        genes(&gtf),
+        pairs(&[(X, G), (B, &fus), (Y, &g2)]),
+        "X keeps the name (5 reads > 4)"
+    );
+    let b_line = gtf
+        .lines()
+        .find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(B))
+        .unwrap();
     assert!(
         b_line.ends_with(&format!("low_confidence_reason \"none\"; fusion_of \"{G},{g2}\"; fusion_junction \"c1:1251-2200:+\";")),
         "{b_line}"
     );
     let off_gtf = read(&format!("{off}.gtf"));
-    assert_eq!(off_gtf.lines().map(strip).collect::<Vec<_>>(), gtf.lines().map(strip).collect::<Vec<_>>(), "only names move");
+    assert_eq!(
+        off_gtf.lines().map(strip).collect::<Vec<_>>(),
+        gtf.lines().map(strip).collect::<Vec<_>>(),
+        "only names move"
+    );
     let fam = read(&format!("{f1}.families.gtf"));
     assert_eq!(
         fam.lines().collect::<Vec<_>>(),
-        gtf.lines().filter(|l| attr(l, "transcript_id") != Some(B)).collect::<Vec<_>>(),
+        gtf.lines()
+            .filter(|l| attr(l, "transcript_id") != Some(B))
+            .collect::<Vec<_>>(),
         "the families input is the GTF without the bridge's 5 lines"
     );
     let junctions = "gene\tchrom\ts\te\tstrand\tn_TJ\treads_TJ\tup\tdown\tinside\tU\tclusters\tup_proof\tV1\tdown_proof\tbridge\tTJ\n\
                      DN_c1_1000_2\tc1\t1251\t2200\t+\t1\t3\t1\t1\t0\t5\t1300:5:P\tTrue\t5\tTrue\tTrue\tDN_c1_1000_4\n";
     assert_eq!(read(&format!("{f1}.bridge_junctions.tsv")), junctions);
-    assert!(!Path::new(&format!("{f1}.bridges.tsv")).exists(), "bridges.tsv is F1v2's table");
-    let (p_off, p_f1) = (read(&format!("{off}.params.tsv")), read(&format!("{f1}.params.tsv")));
-    let added: Vec<&str> = p_f1.lines().filter(|l| !p_off.lines().any(|x| x == *l)).collect();
+    assert!(
+        !Path::new(&format!("{f1}.bridges.tsv")).exists(),
+        "bridges.tsv is F1v2's table"
+    );
+    let (p_off, p_f1) = (
+        read(&format!("{off}.params.tsv")),
+        read(&format!("{f1}.params.tsv")),
+    );
+    let added: Vec<&str> = p_f1
+        .lines()
+        .filter(|l| !p_off.lines().any(|x| x == *l))
+        .collect();
     assert_eq!(added.len(), 15, "{added:?}");
-    assert!(added.contains(&"bridge_regroup\tf1") && added.contains(&"bridge_regroup_bridge_transcripts\t1"));
+    assert!(
+        added.contains(&"bridge_regroup\tf1")
+            && added.contains(&"bridge_regroup_bridge_transcripts\t1")
+    );
 
     // F1v2: 3 reads < 5 (X) and < 4 (Y): a minority link, so the same regrouping, plus its table
     let (o, v2) = run(&dir, &fx, "f1v2", &["--bridge-regroup", "f1v2"]);
@@ -248,16 +328,38 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
     // the default (no flag) is f1v2 since 2026-09-29: every product of the explicit arm, byte for byte
     let (o, def) = run(&dir, &fx, "default", &[]);
     ok(&o);
-    for ext in ["gtf", "families.gtf", "bridge_junctions.tsv", "bridges.tsv", "params.tsv"] {
-        assert_eq!(read(&format!("{def}.{ext}")), read(&format!("{v2}.{ext}")), "{ext}: the default is f1v2");
+    for ext in [
+        "gtf",
+        "families.gtf",
+        "bridge_junctions.tsv",
+        "bridges.tsv",
+        "params.tsv",
+    ] {
+        assert_eq!(
+            read(&format!("{def}.{ext}")),
+            read(&format!("{v2}.{ext}")),
+            "{ext}: the default is f1v2"
+        );
     }
-    assert!(String::from_utf8_lossy(&o.stderr).contains("BRIDGE REGROUP (f1v2)"), "the default logs its arm");
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("BRIDGE REGROUP (f1v2)"),
+        "the default logs its arm"
+    );
 
     // the buffered reader (its own indexed evidence pass) decides the same
-    let (o, buf) = run(&dir, &fx, "buf", &["--bridge-regroup", "f1", "--materialize-reads"]);
+    let (o, buf) = run(
+        &dir,
+        &fx,
+        "buf",
+        &["--bridge-regroup", "f1", "--materialize-reads"],
+    );
     ok(&o);
     for ext in ["gtf", "families.gtf", "bridge_junctions.tsv"] {
-        assert_eq!(read(&format!("{buf}.{ext}")), read(&format!("{f1}.{ext}")), "{ext}: buffered vs streaming");
+        assert_eq!(
+            read(&format!("{buf}.{ext}")),
+            read(&format!("{f1}.{ext}")),
+            "{ext}: buffered vs streaming"
+        );
     }
 }
 
@@ -269,22 +371,62 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
 fn without_a_pas_there_is_no_bridge_and_the_names_are_rg3s() {
     let dir = scratch("no_pas");
     let fx = write_fixture(&dir, false, true);
-    let (o, off) = run(&dir, &fx, "off", &["--assembly-polish", "mono", "--bridge-regroup", "off"]);
+    let (o, off) = run(
+        &dir,
+        &fx,
+        "off",
+        &["--assembly-polish", "mono", "--bridge-regroup", "off"],
+    );
     ok(&o);
-    let (o, rg3) = run(&dir, &fx, "rg3", &["--assembly-polish", "mono", "--gtf-regroup", "--bridge-regroup", "off"]);
+    let (o, rg3) = run(
+        &dir,
+        &fx,
+        "rg3",
+        &[
+            "--assembly-polish",
+            "mono",
+            "--gtf-regroup",
+            "--bridge-regroup",
+            "off",
+        ],
+    );
     ok(&o);
-    let (o, f1) = run(&dir, &fx, "f1", &["--assembly-polish", "mono", "--bridge-regroup", "f1"]);
+    let (o, f1) = run(
+        &dir,
+        &fx,
+        "f1",
+        &["--assembly-polish", "mono", "--bridge-regroup", "f1"],
+    );
     ok(&o);
     let off_gtf = read(&format!("{off}.gtf"));
-    assert_eq!(genes(&off_gtf), pairs(&[(X, Z), (B, Z), (Y, Z), (Z, Z)]), "one gene_id; the ghost C was dropped");
+    assert_eq!(
+        genes(&off_gtf),
+        pairs(&[(X, Z), (B, Z), (Y, Z), (Z, Z)]),
+        "one gene_id; the ghost C was dropped"
+    );
     let gtf = read(&format!("{f1}.gtf"));
     let rg2 = format!("{Z}.rg2");
-    assert_eq!(genes(&gtf), pairs(&[(X, &rg2), (B, &rg2), (Y, &rg2), (Z, Z)]), "Z (20 reads) keeps the name");
-    assert_eq!(gtf, read(&format!("{rg3}.gtf")), "no bridge: the names are --gtf-regroup's");
+    assert_eq!(
+        genes(&gtf),
+        pairs(&[(X, &rg2), (B, &rg2), (Y, &rg2), (Z, Z)]),
+        "Z (20 reads) keeps the name"
+    );
+    assert_eq!(
+        gtf,
+        read(&format!("{rg3}.gtf")),
+        "no bridge: the names are --gtf-regroup's"
+    );
     assert_ne!(gtf, off_gtf);
     assert_eq!(read(&format!("{f1}.families.gtf")), gtf);
     let table = read(&format!("{f1}.bridge_junctions.tsv"));
-    assert!(table.lines().nth(1).unwrap().ends_with("\t1300:5:u\tFalse\t5\tTrue\tFalse\tDN_c1_1000_4"), "{table}");
+    assert!(
+        table
+            .lines()
+            .nth(1)
+            .unwrap()
+            .ends_with("\t1300:5:u\tFalse\t5\tTrue\tFalse\tDN_c1_1000_4"),
+        "{table}"
+    );
 }
 
 #[test]
@@ -292,29 +434,71 @@ fn bridge_regroup_is_refused_where_it_cannot_run() {
     let dir = scratch("refused");
     let fx = write_fixture(&dir, true, false);
     let err = |o: &Output| String::from_utf8_lossy(&o.stderr).to_string();
-    let (o, _) = run(&dir, &fx, "both", &["--bridge-regroup", "f1", "--gtf-regroup"]);
-    assert!(!o.status.success() && err(&o).contains("pass one of them"), "{}", err(&o));
+    let (o, _) = run(
+        &dir,
+        &fx,
+        "both",
+        &["--bridge-regroup", "f1", "--gtf-regroup"],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("pass one of them"),
+        "{}",
+        err(&o)
+    );
     // the default arm (f1v2) contains --gtf-regroup's split too: RG3 alone needs an explicit off
     let (o, _) = run(&dir, &fx, "rg3_alone", &["--gtf-regroup"]);
     assert!(
-        !o.status.success() && err(&o).contains("f1v2 (the default)") && err(&o).contains("--bridge-regroup off"),
+        !o.status.success()
+            && err(&o).contains("f1v2 (the default)")
+            && err(&o).contains("--bridge-regroup off"),
         "{}",
         err(&o)
     );
     let regions = dir.join("regions.txt");
     std::fs::write(&regions, "c1:1-1500\nc1:1501-3000\n").unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &fx.0, "--fasta", &fx.1, "--regions", regions.to_str().unwrap(), "--assemble-only"])
-        .args(["--bridge-regroup", "f1", "--out", dir.join("two").to_str().unwrap()])
+        .args([
+            "--bam",
+            &fx.0,
+            "--fasta",
+            &fx.1,
+            "--regions",
+            regions.to_str().unwrap(),
+            "--assemble-only",
+        ])
+        .args([
+            "--bridge-regroup",
+            "f1",
+            "--out",
+            dir.join("two").to_str().unwrap(),
+        ])
         .output()
         .unwrap();
-    assert!(!o.status.success() && err(&o).contains("one region per contig"), "{}", err(&o));
+    assert!(
+        !o.status.success() && err(&o).contains("one region per contig"),
+        "{}",
+        err(&o)
+    );
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &fx.0, "--fasta", &fx.1, "--region", "c1:1-3000", "--gtf", "--bridge-regroup", "f1"])
+        .args([
+            "--bam",
+            &fx.0,
+            "--fasta",
+            &fx.1,
+            "--region",
+            "c1:1-3000",
+            "--gtf",
+            "--bridge-regroup",
+            "f1",
+        ])
         .args(["--out", dir.join("gtf").to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(!o.status.success() && err(&o).contains("--assemble-only"), "{}", err(&o));
+    assert!(
+        !o.status.success() && err(&o).contains("--assemble-only"),
+        "{}",
+        err(&o)
+    );
 }
 
 /// `--bridge-regroup f1units`: F1's bridge becomes two UNITS of the families input; `<out>.gtf` and the junction table are
@@ -329,13 +513,27 @@ fn f1units_replaces_the_bridge_by_its_units_in_the_families_input() {
     let (o, un) = run(&dir, &fx, "units", &["--bridge-regroup", "f1units"]);
     ok(&o);
     for ext in ["gtf", "bridge_junctions.tsv"] {
-        assert_eq!(read(&format!("{un}.{ext}")), read(&format!("{f1}.{ext}")), "{ext}: f1units writes f1's");
+        assert_eq!(
+            read(&format!("{un}.{ext}")),
+            read(&format!("{f1}.{ext}")),
+            "{ext}: f1units writes f1's"
+        );
     }
-    assert!(!Path::new(&format!("{un}.bridges.tsv")).exists(), "bridges.tsv is F1v2's table");
+    assert!(
+        !Path::new(&format!("{un}.bridges.tsv")).exists(),
+        "bridges.tsv is F1v2's table"
+    );
     let fam = read(&format!("{un}.families.gtf"));
     let (u1, u2, nat2) = (format!("{B}.U1"), format!("{B}.U2"), format!("{G}.nat2"));
-    assert_eq!(genes(&fam), pairs(&[(X, G), (&u1, G), (&u2, &nat2), (Y, &nat2)]), "B is replaced at its line position");
-    let l1 = fam.lines().find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(&u1)).unwrap();
+    assert_eq!(
+        genes(&fam),
+        pairs(&[(X, G), (&u1, G), (&u2, &nat2), (Y, &nat2)]),
+        "B is replaced at its line position"
+    );
+    let l1 = fam
+        .lines()
+        .find(|l| l.contains("\ttranscript\t") && attr(l, "transcript_id") == Some(&u1))
+        .unwrap();
     assert!(
         l1.ends_with(&format!(
             "fusion_of \"{B}\"; fusion_unit \"1/2\"; fusion_junction \"c1:1251-2200:+\"; fusion_locus \"c1:1001-2500\"; \
@@ -354,15 +552,33 @@ fn f1units_replaces_the_bridge_by_its_units_in_the_families_input() {
             .map(|l| l.replace(".nat2\"", ".rg2\""))
             .collect::<Vec<_>>()
     };
-    assert_eq!(rest(&fam), f1_fam.lines().map(str::to_string).collect::<Vec<_>>());
+    assert_eq!(
+        rest(&fam),
+        f1_fam.lines().map(str::to_string).collect::<Vec<_>>()
+    );
     // the units table and the certificate
     let table = read(&format!("{un}.bridge_units.tsv"));
     let rows: Vec<&str> = table.lines().collect();
     assert_eq!(rows.len(), 3);
-    assert_eq!(rows[1], format!("{u1}\t{B}\t{G}\t{G}\t1\t2\tc1\t+\t2\t150\t1001\t1250\t3\tf1\t1251-2200\t3;5;4;0.4286"));
-    assert!(rows[2].starts_with(&format!("{u2}\t{B}\t{G}\t{nat2}\t2\t2\t")), "{}", rows[2]);
-    let (p_f1, p_un) = (read(&format!("{f1}.params.tsv")), read(&format!("{un}.params.tsv")));
-    let added: Vec<&str> = p_un.lines().filter(|l| !p_f1.lines().any(|x| x == *l)).collect();
+    assert_eq!(
+        rows[1],
+        format!(
+            "{u1}\t{B}\t{G}\t{G}\t1\t2\tc1\t+\t2\t150\t1001\t1250\t3\tf1\t1251-2200\t3;5;4;0.4286"
+        )
+    );
+    assert!(
+        rows[2].starts_with(&format!("{u2}\t{B}\t{G}\t{nat2}\t2\t2\t")),
+        "{}",
+        rows[2]
+    );
+    let (p_f1, p_un) = (
+        read(&format!("{f1}.params.tsv")),
+        read(&format!("{un}.params.tsv")),
+    );
+    let added: Vec<&str> = p_un
+        .lines()
+        .filter(|l| !p_f1.lines().any(|x| x == *l))
+        .collect();
     for want in [
         "bridge_regroup\tf1units",
         "bridge_units_detector\tf1",
@@ -375,23 +591,56 @@ fn f1units_replaces_the_bridge_by_its_units_in_the_families_input() {
     ] {
         assert!(added.contains(&want), "{want} not in {added:?}");
     }
-    assert_eq!(added.len(), 8, "the mode row, the detector and six counts: {added:?}");
-    assert!(String::from_utf8_lossy(&o.stderr).contains("BRIDGE UNITS (f1units, detector f1): 1 bridge transcripts cut at 1 introns into 2 units"));
+    assert_eq!(
+        added.len(),
+        8,
+        "the mode row, the detector and six counts: {added:?}"
+    );
+    assert!(String::from_utf8_lossy(&o.stderr).contains(
+        "BRIDGE UNITS (f1units, detector f1): 1 bridge transcripts cut at 1 introns into 2 units"
+    ));
 
     // the buffered reader decides the same
-    let (o, buf) = run(&dir, &fx, "units_buf", &["--bridge-regroup", "f1units", "--materialize-reads"]);
+    let (o, buf) = run(
+        &dir,
+        &fx,
+        "units_buf",
+        &["--bridge-regroup", "f1units", "--materialize-reads"],
+    );
     ok(&o);
-    for ext in ["gtf", "families.gtf", "bridge_junctions.tsv", "bridge_units.tsv"] {
-        assert_eq!(read(&format!("{buf}.{ext}")), read(&format!("{un}.{ext}")), "{ext}: buffered vs streaming");
+    for ext in [
+        "gtf",
+        "families.gtf",
+        "bridge_junctions.tsv",
+        "bridge_units.tsv",
+    ] {
+        assert_eq!(
+            read(&format!("{buf}.{ext}")),
+            read(&format!("{un}.{ext}")),
+            "{ext}: buffered vs streaming"
+        );
     }
 
     // a list names the cuts (F1's evidence is not read: no junction table): the same units, its own detector
     let list = dir.join("bridges.tsv");
     std::fs::write(&list, format!("tid\tjunctions\n{B}\tc1:1251-2200:+\n")).unwrap();
-    let (o, li) = run(&dir, &fx, "list", &["--bridge-regroup", "f1units", "--bridge-units-list", list.to_str().unwrap()]);
+    let (o, li) = run(
+        &dir,
+        &fx,
+        "list",
+        &[
+            "--bridge-regroup",
+            "f1units",
+            "--bridge-units-list",
+            list.to_str().unwrap(),
+        ],
+    );
     ok(&o);
     assert_eq!(read(&format!("{li}.gtf")), read(&format!("{f1}.gtf")));
-    assert!(!Path::new(&format!("{li}.bridge_junctions.tsv")).exists(), "no evidence, no junction table");
+    assert!(
+        !Path::new(&format!("{li}.bridge_junctions.tsv")).exists(),
+        "no evidence, no junction table"
+    );
     let strip = |t: String| {
         t.lines()
             .map(|l| {
@@ -406,11 +655,17 @@ fn f1units_replaces_the_bridge_by_its_units_in_the_families_input() {
             })
             .collect::<Vec<_>>()
     };
-    assert_eq!(strip(read(&format!("{li}.families.gtf"))), strip(fam.clone()));
+    assert_eq!(
+        strip(read(&format!("{li}.families.gtf"))),
+        strip(fam.clone())
+    );
     assert!(read(&format!("{li}.families.gtf")).contains("fusion_detector \"list:bridges.tsv\";"));
     assert!(read(&format!("{li}.bridge_units.tsv")).contains("\tlist:bridges.tsv\t1251-2200\t.\n"));
     let p_li = read(&format!("{li}.params.tsv"));
-    assert!(p_li.contains("bridge_units_detector\tlist:bridges.tsv\n") && p_li.contains("bridge_units_list_unmatched\t0\n"));
+    assert!(
+        p_li.contains("bridge_units_detector\tlist:bridges.tsv\n")
+            && p_li.contains("bridge_units_list_unmatched\t0\n")
+    );
 }
 
 /// Without a PAS there is no bridge: `f1units`' families input is exactly `f1`'s (no unit, no rename the default arm
@@ -420,17 +675,40 @@ fn f1units_without_a_bridge_writes_the_default_arms_families_input() {
     let dir = scratch("units_none");
     let fx = write_fixture(&dir, false, true);
     let base = ["--assembly-polish", "mono"];
-    let (o, f1) = run(&dir, &fx, "f1", &[&base[..], &["--bridge-regroup", "f1"]].concat());
+    let (o, f1) = run(
+        &dir,
+        &fx,
+        "f1",
+        &[&base[..], &["--bridge-regroup", "f1"]].concat(),
+    );
     ok(&o);
-    let (o, un) = run(&dir, &fx, "units", &[&base[..], &["--bridge-regroup", "f1units"]].concat());
+    let (o, un) = run(
+        &dir,
+        &fx,
+        "units",
+        &[&base[..], &["--bridge-regroup", "f1units"]].concat(),
+    );
     ok(&o);
-    let (o, v2) = run(&dir, &fx, "f1v2", &[&base[..], &["--bridge-regroup", "f1v2"]].concat());
+    let (o, v2) = run(
+        &dir,
+        &fx,
+        "f1v2",
+        &[&base[..], &["--bridge-regroup", "f1v2"]].concat(),
+    );
     ok(&o);
     for ext in ["gtf", "families.gtf", "bridge_junctions.tsv"] {
-        assert_eq!(read(&format!("{un}.{ext}")), read(&format!("{f1}.{ext}")), "{ext}");
+        assert_eq!(
+            read(&format!("{un}.{ext}")),
+            read(&format!("{f1}.{ext}")),
+            "{ext}"
+        );
     }
     for ext in ["gtf", "families.gtf"] {
-        assert_eq!(read(&format!("{un}.{ext}")), read(&format!("{v2}.{ext}")), "{ext}: the default arm's too");
+        assert_eq!(
+            read(&format!("{un}.{ext}")),
+            read(&format!("{v2}.{ext}")),
+            "{ext}: the default arm's too"
+        );
     }
     let table = read(&format!("{un}.bridge_units.tsv"));
     assert_eq!(table.lines().count(), 1, "{table}");
@@ -445,36 +723,119 @@ fn f1units_and_its_list_are_refused_where_they_cannot_run() {
     let list = dir.join("bridges.tsv");
     let l = list.to_str().unwrap();
     std::fs::write(&list, format!("tid\tjunctions\n{B}\t1251-2200\n")).unwrap();
-    let (o, _) = run(&dir, &fx, "both", &["--bridge-regroup", "f1units", "--gtf-regroup"]);
-    assert!(!o.status.success() && err(&o).contains("pass one of them"), "{}", err(&o));
-    for arm in [&["--bridge-regroup", "f1"][..], &["--bridge-regroup", "off"], &[]] {
-        let (o, _) = run(&dir, &fx, "list_alone", &[arm, &["--bridge-units-list", l]].concat());
-        assert!(!o.status.success() && err(&o).contains("pass --bridge-regroup f1units with it"), "{arm:?}: {}", err(&o));
+    let (o, _) = run(
+        &dir,
+        &fx,
+        "both",
+        &["--bridge-regroup", "f1units", "--gtf-regroup"],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("pass one of them"),
+        "{}",
+        err(&o)
+    );
+    for arm in [
+        &["--bridge-regroup", "f1"][..],
+        &["--bridge-regroup", "off"],
+        &[],
+    ] {
+        let (o, _) = run(
+            &dir,
+            &fx,
+            "list_alone",
+            &[arm, &["--bridge-units-list", l]].concat(),
+        );
+        assert!(
+            !o.status.success() && err(&o).contains("pass --bridge-regroup f1units with it"),
+            "{arm:?}: {}",
+            err(&o)
+        );
     }
     // a list that names what the GTF does not have fails before anything is written
     std::fs::write(&list, format!("tid\tjunctions\n{B}\t1251-2199\n")).unwrap();
-    let (o, out) = run(&dir, &fx, "bad_intron", &["--bridge-regroup", "f1units", "--bridge-units-list", l]);
-    assert!(!o.status.success() && err(&o).contains("1251-2199 is not an intron of that transcript"), "{}", err(&o));
+    let (o, out) = run(
+        &dir,
+        &fx,
+        "bad_intron",
+        &["--bridge-regroup", "f1units", "--bridge-units-list", l],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("1251-2199 is not an intron of that transcript"),
+        "{}",
+        err(&o)
+    );
     assert!(!Path::new(&format!("{out}.families.gtf")).exists());
     std::fs::write(&list, "tid\tjunctions\nNOPE\t1-2\n").unwrap();
-    let (o, _) = run(&dir, &fx, "no_tid", &["--bridge-regroup", "f1units", "--bridge-units-list", l]);
-    assert!(!o.status.success() && err(&o).contains("none of its 1 transcripts is in this GTF"), "{}", err(&o));
+    let (o, _) = run(
+        &dir,
+        &fx,
+        "no_tid",
+        &["--bridge-regroup", "f1units", "--bridge-units-list", l],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("none of its 1 transcripts is in this GTF"),
+        "{}",
+        err(&o)
+    );
     // a list with a header and no transcript (a sample with no annotated fusion) is an error that names the way out
     std::fs::write(&list, "tid\tjunctions\n").unwrap();
-    let (o, out) = run(&dir, &fx, "header_only", &["--bridge-regroup", "f1units", "--bridge-units-list", l]);
-    assert!(!o.status.success() && err(&o).contains("empty list: run without --bridge-units-list"), "{}", err(&o));
-    assert!(!Path::new(&format!("{out}.families.gtf")).exists(), "nothing is written");
-    let (o, _) = run(&dir, &fx, "missing", &["--bridge-regroup", "f1units", "--bridge-units-list", "/nonexistent/l.tsv"]);
-    assert!(!o.status.success() && err(&o).contains("cannot read the list"), "{}", err(&o));
+    let (o, out) = run(
+        &dir,
+        &fx,
+        "header_only",
+        &["--bridge-regroup", "f1units", "--bridge-units-list", l],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("empty list: run without --bridge-units-list"),
+        "{}",
+        err(&o)
+    );
+    assert!(
+        !Path::new(&format!("{out}.families.gtf")).exists(),
+        "nothing is written"
+    );
+    let (o, _) = run(
+        &dir,
+        &fx,
+        "missing",
+        &[
+            "--bridge-regroup",
+            "f1units",
+            "--bridge-units-list",
+            "/nonexistent/l.tsv",
+        ],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("cannot read the list"),
+        "{}",
+        err(&o)
+    );
     // F1's evidence reads each contig's records once: f1units keeps that refusal (a list does not read them)
     let regions = dir.join("regions.txt");
     std::fs::write(&regions, "c1:1-1500\nc1:1501-3000\n").unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &fx.0, "--fasta", &fx.1, "--regions", regions.to_str().unwrap(), "--assemble-only"])
-        .args(["--bridge-regroup", "f1units", "--out", dir.join("two").to_str().unwrap()])
+        .args([
+            "--bam",
+            &fx.0,
+            "--fasta",
+            &fx.1,
+            "--regions",
+            regions.to_str().unwrap(),
+            "--assemble-only",
+        ])
+        .args([
+            "--bridge-regroup",
+            "f1units",
+            "--out",
+            dir.join("two").to_str().unwrap(),
+        ])
         .output()
         .unwrap();
-    assert!(!o.status.success() && err(&o).contains("one region per contig"), "{}", err(&o));
+    assert!(
+        !o.status.success() && err(&o).contains("one region per contig"),
+        "{}",
+        err(&o)
+    );
 }
 
 /// A list names the cuts, so F1's evidence pass does NOT run. Two observable consequences. (1) The pass is the only reader of
@@ -490,9 +851,25 @@ fn a_list_runs_no_evidence_pass() {
     std::fs::write(&list, format!("tid\tjunctions\n{B}\t1251-2200\n")).unwrap();
     let l = list.to_str().unwrap();
     let err = |o: &Output| String::from_utf8_lossy(&o.stderr).to_string();
-    let (o, one) = run(&dir, &fx, "indexed", &["--bridge-regroup", "f1units", "--bridge-units-list", l, "--materialize-reads"]);
+    let (o, one) = run(
+        &dir,
+        &fx,
+        "indexed",
+        &[
+            "--bridge-regroup",
+            "f1units",
+            "--bridge-units-list",
+            l,
+            "--materialize-reads",
+        ],
+    );
     ok(&o);
-    assert!(err(&o).contains("BRIDGE UNITS (f1units, detector list:bridges.tsv)") && !err(&o).contains("BRIDGE REGROUP ("), "{}", err(&o));
+    assert!(
+        err(&o).contains("BRIDGE UNITS (f1units, detector list:bridges.tsv)")
+            && !err(&o).contains("BRIDGE REGROUP ("),
+        "{}",
+        err(&o)
+    );
 
     // (1) no index: the list run assembles (the buffered reader does not need one), the evidence run is refused
     let nobai = dir.join("nobai");
@@ -501,13 +878,37 @@ fn a_list_runs_no_evidence_pass() {
     std::fs::copy(&fx.0, &bam).unwrap();
     assert!(!nobai.join("reads.bam.bai").exists());
     let fx2 = (bam.display().to_string(), fx.1.clone());
-    let (o, two) = run(&dir, &fx2, "no_index", &["--bridge-regroup", "f1units", "--bridge-units-list", l, "--materialize-reads"]);
+    let (o, two) = run(
+        &dir,
+        &fx2,
+        "no_index",
+        &[
+            "--bridge-regroup",
+            "f1units",
+            "--bridge-units-list",
+            l,
+            "--materialize-reads",
+        ],
+    );
     ok(&o);
     for ext in ["gtf", "families.gtf", "bridge_units.tsv"] {
-        assert_eq!(read(&format!("{two}.{ext}")), read(&format!("{one}.{ext}")), "{ext}: the index is not read");
+        assert_eq!(
+            read(&format!("{two}.{ext}")),
+            read(&format!("{one}.{ext}")),
+            "{ext}: the index is not read"
+        );
     }
-    let (o, _) = run(&dir, &fx2, "no_index_evidence", &["--bridge-regroup", "f1units", "--materialize-reads"]);
-    assert!(!o.status.success() && err(&o).contains("--bridge-regroup needs a .bai index"), "{}", err(&o));
+    let (o, _) = run(
+        &dir,
+        &fx2,
+        "no_index_evidence",
+        &["--bridge-regroup", "f1units", "--materialize-reads"],
+    );
+    assert!(
+        !o.status.success() && err(&o).contains("--bridge-regroup needs a .bai index"),
+        "{}",
+        err(&o)
+    );
 
     // (2) two windows of one contig that split no locus
     let regions = dir.join("regions.txt");
@@ -515,7 +916,17 @@ fn a_list_runs_no_evidence_pass() {
     let two_regions = |out: &str, extra: &[&str]| {
         let out = dir.join(out).display().to_string();
         let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-            .args(["--bam", &fx.0, "--fasta", &fx.1, "--regions", regions.to_str().unwrap(), "--assemble-only", "--out", &out])
+            .args([
+                "--bam",
+                &fx.0,
+                "--fasta",
+                &fx.1,
+                "--regions",
+                regions.to_str().unwrap(),
+                "--assemble-only",
+                "--out",
+                &out,
+            ])
             .args(["--bridge-regroup", "f1units"])
             .args(extra)
             .output()
@@ -525,8 +936,16 @@ fn a_list_runs_no_evidence_pass() {
     let (o, three) = two_regions("two_regions", &["--bridge-units-list", l]);
     ok(&o);
     for ext in ["families.gtf", "bridge_units.tsv"] {
-        assert_eq!(read(&format!("{three}.{ext}")), read(&format!("{one}.{ext}")), "{ext}: two windows = one");
+        assert_eq!(
+            read(&format!("{three}.{ext}")),
+            read(&format!("{one}.{ext}")),
+            "{ext}: two windows = one"
+        );
     }
     let (o, _) = two_regions("two_regions_evidence", &[]);
-    assert!(!o.status.success() && err(&o).contains("one region per contig"), "{}", err(&o));
+    assert!(
+        !o.status.success() && err(&o).contains("one region per contig"),
+        "{}",
+        err(&o)
+    );
 }

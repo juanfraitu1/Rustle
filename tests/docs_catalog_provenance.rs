@@ -20,8 +20,17 @@ const BANNER: &str = "CATALOG PROVENANCE.";
 
 /// Inline tokens that make a single line self-describing without the document-level banner.
 const INLINE: &[&str] = &[
-    "494-family", "494 catalog", "superseded", "Jul-17", "2026-07-17", "HISTORICAL",
-    "1415 copies", "1,415 copies", "pre-guard", "guard OFF", "shipped catalog",
+    "494-family",
+    "494 catalog",
+    "superseded",
+    "Jul-17",
+    "2026-07-17",
+    "HISTORICAL",
+    "1415 copies",
+    "1,415 copies",
+    "pre-guard",
+    "guard OFF",
+    "shipped catalog",
 ];
 
 #[test]
@@ -43,7 +52,10 @@ fn no_unlabelled_stale_catalog_references_in_docs() {
         let stale = |l: &str| {
             ["/494", "/1415"].iter().any(|pat| {
                 l.match_indices(pat).any(|(i, _)| {
-                    !l[i + pat.len()..].chars().next().is_some_and(|c| c.is_ascii_digit())
+                    !l[i + pat.len()..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_digit())
                 })
             })
         };

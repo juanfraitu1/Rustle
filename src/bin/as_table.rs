@@ -26,7 +26,9 @@ use clap::Parser;
 use std::io::Write;
 
 #[derive(Parser, Debug)]
-#[command(about = "Genome-wide best AS per molecule (one BAM scan) for RUSTLE_GTF_SECONDARY_AS_TABLE.")]
+#[command(
+    about = "Genome-wide best AS per molecule (one BAM scan) for RUSTLE_GTF_SECONDARY_AS_TABLE."
+)]
 struct Args {
     /// Input BAM (any order; the whole file is read once).
     #[arg(long)]
@@ -54,7 +56,11 @@ fn main() -> Result<()> {
     let t0 = std::time::Instant::now();
     let mut reader = rustle::bam::open_bam(&args.bam, args.threads.max(1))?;
     let header = reader.read_header()?;
-    let contigs: Vec<String> = header.reference_sequences().keys().map(|k| k.to_string()).collect();
+    let contigs: Vec<String> = header
+        .reference_sequences()
+        .keys()
+        .map(|k| k.to_string())
+        .collect();
     let mut mols: std::collections::HashMap<String, Mol> = std::collections::HashMap::new();
     let mut n_records = 0u64;
     for result in reader.records() {
@@ -70,7 +76,13 @@ fn main() -> Result<()> {
             Some(n) => n.to_string(),
             None => continue,
         };
-        let m = mols.entry(name).or_insert(Mol { best: -1, second: -1, n: 0, primary_ref: u32::MAX, primary_as: 0 });
+        let m = mols.entry(name).or_insert(Mol {
+            best: -1,
+            second: -1,
+            n: 0,
+            primary_ref: u32::MAX,
+            primary_as: 0,
+        });
         m.n += 1;
         if as_ > m.best {
             m.second = m.best;
@@ -87,23 +99,43 @@ fn main() -> Result<()> {
             m.primary_as = as_;
         }
         if n_records % 5_000_000 == 0 {
-            eprintln!("[as-table] {n_records} records, {} molecules, {:.0} s", mols.len(), t0.elapsed().as_secs_f64());
+            eprintln!(
+                "[as-table] {n_records} records, {} molecules, {:.0} s",
+                mols.len(),
+                t0.elapsed().as_secs_f64()
+            );
         }
     }
     let mut names: Vec<&String> = mols.keys().collect();
     names.sort_unstable();
     let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&args.out)?);
     // provenance header (skipped by `global_best_as`): the driver reuses a table only when `bam=` is its BAM
-    let bam_abs = std::fs::canonicalize(&args.bam).map(|p| p.display().to_string()).unwrap_or_else(|_| args.bam.clone());
-    writeln!(out, "#as_table\tbam={bam_abs}\trecords={n_records}\tmolecules={}", mols.len())?;
+    let bam_abs = std::fs::canonicalize(&args.bam)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| args.bam.clone());
+    writeln!(
+        out,
+        "#as_table\tbam={bam_abs}\trecords={n_records}\tmolecules={}",
+        mols.len()
+    )?;
     for name in names {
         let m = &mols[name];
         let (pchrom, pas) = if m.primary_ref == u32::MAX {
             ("NA".to_string(), "NA".to_string())
         } else {
-            (contigs.get(m.primary_ref as usize).cloned().unwrap_or_else(|| "NA".to_string()), m.primary_as.to_string())
+            (
+                contigs
+                    .get(m.primary_ref as usize)
+                    .cloned()
+                    .unwrap_or_else(|| "NA".to_string()),
+                m.primary_as.to_string(),
+            )
         };
-        writeln!(out, "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}", m.best, m.second, m.n)?;
+        writeln!(
+            out,
+            "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}",
+            m.best, m.second, m.n
+        )?;
     }
     out.flush()?;
     drop(out);
@@ -125,7 +157,10 @@ fn main() -> Result<()> {
                 t.len(),
                 t1.elapsed().as_secs_f64()
             ),
-            None => eprintln!("[as-table] WARNING: could not re-read {} to build its sidecar", args.out),
+            None => eprintln!(
+                "[as-table] WARNING: could not re-read {} to build its sidecar",
+                args.out
+            ),
         }
     }
     Ok(())

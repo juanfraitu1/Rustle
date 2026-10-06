@@ -17,12 +17,13 @@ use clap::Parser;
 use std::io::Write;
 
 use rustle::family::denovo_pipeline::{
-    detect_single_copy_baseline_genome_wide,
-    detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
-    detect_homology_catalog_genome_wide, detect_homology_catalog_piecewise, families_from_reps_certified,
-    family_protein_coheres, homology_refine_params, refine_families_exon_sum, write_joint_rna_dna_certificate,
-    DenovoConfig, certificates_for_families, FamilyCertificate, PieceBudget, Piecewise, RefineParams, Substrate,
-    MINIMAP2_RESUMABLE, RESUMABLE_EXIT};
+    certificates_for_families, detect_conflict_catalog_genome_wide,
+    detect_conflict_catalog_genome_wide_xchrom, detect_homology_catalog_genome_wide,
+    detect_homology_catalog_piecewise, detect_single_copy_baseline_genome_wide,
+    families_from_reps_certified, family_protein_coheres, homology_refine_params,
+    refine_families_exon_sum, write_joint_rna_dna_certificate, DenovoConfig, FamilyCertificate,
+    PieceBudget, Piecewise, RefineParams, Substrate, MINIMAP2_RESUMABLE, RESUMABLE_EXIT,
+};
 
 /// Exit status of a call that left work for the next call: `--piecewise` pieces pending (or computed under a
 /// budget with the merge still to do), or a resumable all-vs-all wrapper (`RUSTLE_MINIMAP2=tools/mm2_shard.sh`)
@@ -33,7 +34,9 @@ const PIECES_PENDING_EXIT: i32 = RESUMABLE_EXIT;
 fn resumable<T>(r: Result<T>) -> Result<T> {
     match r {
         Err(e) if format!("{e:#}").contains(MINIMAP2_RESUMABLE) => {
-            eprintln!("[gw-catalog] {e:#}; no catalog written in this call (exit {PIECES_PENDING_EXIT})");
+            eprintln!(
+                "[gw-catalog] {e:#}; no catalog written in this call (exit {PIECES_PENDING_EXIT})"
+            );
             std::process::exit(PIECES_PENDING_EXIT);
         }
         r => r,
@@ -42,7 +45,9 @@ fn resumable<T>(r: Result<T>) -> Result<T> {
 use rustle::family::family_detect::DenovoTranscript;
 
 #[derive(Parser, Debug)]
-#[command(about = "Genome-wide de-tie read-conflict multi-copy-family catalog (no similarity threshold).")]
+#[command(
+    about = "Genome-wide de-tie read-conflict multi-copy-family catalog (no similarity threshold)."
+)]
 struct Args {
     /// Coordinate-sorted BAM (a `.bai` next to it enables the fast per-contig region query). Required
     /// unless `--from-genome` is given.
@@ -301,15 +306,20 @@ fn project_seeds(
     let view: Vec<Vec<(String, u64, u64)>> = fams
         .iter()
         .map(|copies| {
-            let mut v: Vec<(String, u64, u64)> =
-                copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
+            let mut v: Vec<(String, u64, u64)> = copies
+                .iter()
+                .map(|c| (c.chrom.clone(), c.start, c.end))
+                .collect();
             v.sort_by(|a, b| (a.0.as_str(), a.1).cmp(&(b.0.as_str(), b.1)));
             v
         })
         .collect();
     // Parse EVERY seed before writing anything, so a typo in the third seed does not leave a
     // half-written .seed.tsv beside a good catalog.
-    let seeds = specs.iter().map(|s| parse_seed(s)).collect::<Result<Vec<_>>>()?;
+    let seeds = specs
+        .iter()
+        .map(|s| parse_seed(s))
+        .collect::<Result<Vec<_>>>()?;
     let mut fh = std::fs::File::create(format!("{out}.seed.tsv"))?;
     writeln!(fh, "{SEED_TSV_HEADER}")?;
     println!("{SEED_TSV_HEADER}");
@@ -501,7 +511,8 @@ fn emit_catalog(
             .enumerate()
             .map(|(oi, (c, m))| (c, m, oi))
             .collect();
-        sorted.sort_by(|a, b| (a.0.chrom.as_str(), a.0.start).cmp(&(b.0.chrom.as_str(), b.0.start)));
+        sorted
+            .sort_by(|a, b| (a.0.chrom.as_str(), a.0.start).cmp(&(b.0.chrom.as_str(), b.0.start)));
         // §6by: what BACKS each co-membership assertion. A family asserts every pair of its members,
         // but a pair joined by an alignment record (d=1) held precision 0.6308 against Soto 2025's
         // families where a pair joined only through a chain (d>=2) held 0.2156. REPORTED, never a gate.
@@ -510,7 +521,11 @@ fn emit_catalog(
                 for ci in 0..sorted.len() {
                     for cj in (ci + 1)..sorted.len() {
                         let d = cert.pair_distance[sorted[ci].2][sorted[cj].2];
-                        let d_s = if d == u32::MAX { "NA".to_string() } else { d.to_string() };
+                        let d_s = if d == u32::MAX {
+                            "NA".to_string()
+                        } else {
+                            d.to_string()
+                        };
                         writeln!(
                             ph,
                             "{fid}\t{ci}\t{cj}\t{}\t{}\t{}\t{}\t{}\t{}\t{d_s}\t{}",
@@ -527,7 +542,11 @@ fn emit_catalog(
             }
         }
         for (ci, (c, mid, _)) in sorted.iter().enumerate() {
-            let mid_s = if mid.is_finite() { format!("{mid:.6}") } else { "NA".to_string() };
+            let mid_s = if mid.is_finite() {
+                format!("{mid:.6}")
+            } else {
+                "NA".to_string()
+            };
             writeln!(
                 ch,
                 "{fid}\t{ci}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{mid_s}",
@@ -618,13 +637,18 @@ fn main() -> Result<()> {
     // Bound rayon's global pool to --threads: the locus collapse runs its POA alignments with `par_iter`, and
     // an unbounded pool would run one poasta alignment per core whatever --threads says (09-12: poasta
     // OOM at 25.7 GB). `.ok()`: a pool already built (tests) is left as it is.
-    rayon::ThreadPoolBuilder::new().num_threads(args.threads.max(1)).build_global().ok();
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads.max(1))
+        .build_global()
+        .ok();
     // O1 mode. Homology (E_r) is THE mode and the default; the two conflict-graph catalogs are legacy and
     // must now be asked for by name. Derived once here rather than read off `args.homology_primary`, which
     // is a no-op compatibility flag and would be true even when a legacy catalog was requested.
     let o1_homology = !args.cross_chrom && !args.window_catalog;
     if args.cross_chrom && args.window_catalog {
-        anyhow::bail!("--cross-chrom and --window-catalog select different legacy catalogs; pass at most one");
+        anyhow::bail!(
+            "--cross-chrom and --window-catalog select different legacy catalogs; pass at most one"
+        );
     }
     // ONE DEFAULT PATH (2026-08-20). Refine re-clusters by CONNECTED COMPONENTS over its own substrates,
     // which is not the γ-quasi-clique(E_r) object the definition names, so it cannot be requested on the
@@ -655,7 +679,12 @@ fn main() -> Result<()> {
             "--joint-dna-rna currently requires the standard nucleotide E_r tiers; RUSTLE_SHARED_EXON is a different edge definition"
         );
     }
-    if (args.max_pieces > 0 || args.budget_s > 0.0 || args.piece_records > 0 || args.piece.is_some()) && !args.piecewise {
+    if (args.max_pieces > 0
+        || args.budget_s > 0.0
+        || args.piece_records > 0
+        || args.piece.is_some())
+        && !args.piecewise
+    {
         anyhow::bail!("--max-pieces / --budget-s / --piece-records / --piece shape a --piecewise run; pass --piecewise");
     }
     if args.piecewise
@@ -695,7 +724,9 @@ fn main() -> Result<()> {
     cfg.collapse_enumerate = args.collapse_enumerate || cfg.collapse_enumerate;
     cfg.collapse_expressed = args.collapse_expressed || cfg.collapse_expressed;
     cfg.dna_family_fallback = args.dna_family_fallback || cfg.dna_family_fallback;
-    if let Some(x) = args.dna_family_min_identity { cfg.dna_family_min_identity = x; }
+    if let Some(x) = args.dna_family_min_identity {
+        cfg.dna_family_min_identity = x;
+    }
 
     // --from-genome: read-free/annotation-free DNA family catalog. Discovers duplicated genomic loci by
     // self-alignment, then groups them with the SAME homology_blocks core the RNA --homology-primary path
@@ -703,7 +734,9 @@ fn main() -> Result<()> {
     if args.from_genome.is_some() || args.from_genome_sd.is_some() {
         use rustle::family::from_genome::{genome_reps, windows_from_sd_bed, GenomeRepParams};
         if args.from_genome.is_some() && args.from_genome_sd.is_some() {
-            anyhow::bail!("--from-genome and --from-genome-sd are mutually exclusive (two window sources)");
+            anyhow::bail!(
+                "--from-genome and --from-genome-sd are mutually exclusive (two window sources)"
+            );
         }
         if args.bam.is_some() {
             anyhow::bail!(
@@ -740,10 +773,14 @@ fn main() -> Result<()> {
         //   RUSTLE_GENOME_GAMMA — γ-quasi-clique density for family blocks. Default 0.20. Raising it demands
         //     denser within-family connectivity, splitting blocks held together by a few bridge edges.
         if let Ok(v) = std::env::var("RUSTLE_GENOME_MIN_COVERAGE") {
-            if let Ok(x) = v.parse::<f64>() { refine_params.min_coverage = x; }
+            if let Ok(x) = v.parse::<f64>() {
+                refine_params.min_coverage = x;
+            }
         }
         let gamma: f64 = std::env::var("RUSTLE_GENOME_GAMMA")
-            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.20);
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.20);
         eprintln!(
             "[gw-catalog-genome] grouping: min_identity={:.2} min_coverage={:.2} gamma={:.2}",
             refine_params.min_identity, refine_params.min_coverage, gamma
@@ -759,12 +796,17 @@ fn main() -> Result<()> {
         // `--min-identity` sets BOTH floors: the SD locus-discovery floor here AND the family-grouping floor
         // (via refine_params above). Env RUSTLE_GENOME_MIN_IDENTITY (already applied by from_env) is overridden
         // only when the flag is given, so `--from-genome --min-identity 0.98` = SD98 discovery + grouping.
-        if let Some(mi) = args.min_identity { gp.min_identity = mi; }
+        if let Some(mi) = args.min_identity {
+            gp.min_identity = mi;
+        }
         let reps = genome_reps(&args.fasta, &windows, &gp)?;
-        eprintln!("[gw-catalog-genome] {} windows -> {} duplicated-locus reps", windows.len(), reps.len());
-        let (dna_fams, dna_certs) = families_from_reps_certified(
-            reps, &refine_params, gamma, args.min_copies, 0,
-        )?;
+        eprintln!(
+            "[gw-catalog-genome] {} windows -> {} duplicated-locus reps",
+            windows.len(),
+            reps.len()
+        );
+        let (dna_fams, dna_certs) =
+            families_from_reps_certified(reps, &refine_params, gamma, args.min_copies, 0)?;
         let dna_fams = emit_catalog(&args.out, dna_fams, Some(dna_certs), &refine_params)?;
         project_seeds(&args.seed, &dna_fams, &args.out, args.min_copies)?;
         return Ok(());
@@ -779,12 +821,25 @@ fn main() -> Result<()> {
     if args.single_copy_baseline {
         use rustle::family::single_copy::lambda_global;
         let loci = detect_single_copy_baseline_genome_wide(
-            bam, &args.fasta, args.threads, args.win, args.min_copies, !args.no_refine, &cfg,
+            bam,
+            &args.fasta,
+            args.threads,
+            args.win,
+            args.min_copies,
+            !args.no_refine,
+            &cfg,
         )?;
         let mut sc = std::fs::File::create(format!("{}.single_copy.tsv", args.out))?;
-        writeln!(sc, "chrom\tstart\tend\tstrand\tn_reads\tn_exons\tchi_h\tn_psv")?;
+        writeln!(
+            sc,
+            "chrom\tstart\tend\tstrand\tn_reads\tn_exons\tchi_h\tn_psv"
+        )?;
         for l in &loci {
-            writeln!(sc, "{}\t{}\t{}\t{}\t{}\t{}\t1\t0", l.chrom, l.start, l.end, l.strand, l.n_reads, l.n_exons)?;
+            writeln!(
+                sc,
+                "{}\t{}\t{}\t{}\t{}\t{}\t1\t0",
+                l.chrom, l.start, l.end, l.strand, l.n_reads, l.n_exons
+            )?;
         }
         let lam = lambda_global(&loci);
         let lam_str = lam.map(|x| format!("{x}")).unwrap_or_else(|| "NA".into());
@@ -807,7 +862,9 @@ fn main() -> Result<()> {
     // coverage rather than inferred -- e.g. NPIPB12, whose 13 homology edges all reach >= 0.89 identity but
     // top out at 0.25 coverage (bench/soto/merge_quality_analysis.md §24).
     if let Ok(v) = std::env::var("RUSTLE_GENOME_MIN_COVERAGE") {
-        if let Ok(x) = v.parse::<f64>() { refine_params.min_coverage = x; }
+        if let Ok(x) = v.parse::<f64>() {
+            refine_params.min_coverage = x;
+        }
     }
     // `--protein-tail` also promotes protein homology to a genome-wide E_r DEFINITION edge in the
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
@@ -837,14 +894,20 @@ fn main() -> Result<()> {
     }
     // The genomic-span edge union (`RUSTLE_ER_UNION_GENOMIC_SPAN=1`) computes a second E_r edge set on each rep's genomic
     // span and needs the reference for it. Set ONLY when the flag is on, so the OFF path stays byte-identical.
-    if std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+    if std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
+    {
         refine_params.intron_fasta = Some(args.fasta.clone());
     }
     // The repeat-justified edge rule (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`) reads the RepeatMasker soft-mask
     // from the reference, through the case-preserving `genome::IndexedFasta` rather than
     // `GenomeIndex` (which uppercases at load). It needs the same field. Set ONLY when the flag is on, so
     // the OFF path stays byte-identical.
-    if std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+    if std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
+    {
         refine_params.intron_fasta = Some(args.fasta.clone());
     }
     let (raw, raw_certs, collapsed, expressed, dna_families): (
@@ -860,12 +923,27 @@ fn main() -> Result<()> {
             piece_records: args.piece_records,
             only: args.piece.clone(),
         };
-        let gamma = std::env::var("RUSTLE_GENOME_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.20);
+        let gamma = std::env::var("RUSTLE_GENOME_GAMMA")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.20);
         match resumable(detect_homology_catalog_piecewise(
-            bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, gamma, budget,
+            bam,
+            &args.fasta,
+            args.threads,
+            args.min_copies,
+            &cfg,
+            &refine_params,
+            gamma,
+            budget,
         ))? {
             Piecewise::Done(catalog) => catalog,
-            Piecewise::Pending { done, total, unplanned, computed } => {
+            Piecewise::Pending {
+                done,
+                total,
+                unplanned,
+                computed,
+            } => {
                 eprintln!(
                     "[gw-catalog] --piecewise: {done} of {total} pieces cached{}; {computed} units computed in this \
                      call; no catalog written yet — call again (exit {PIECES_PENDING_EXIT})",
@@ -885,14 +963,21 @@ fn main() -> Result<()> {
             // γ-quasi-clique density floor. Same knob the --from-genome path reads, so the two E_r
             // callers cannot drift apart. Default 0.20; 0.40 is the high-precision setting, which splits
             // low-density blocks instead of admitting them as one family.
-            std::env::var("RUSTLE_GENOME_GAMMA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.20),
+            std::env::var("RUSTLE_GENOME_GAMMA")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.20),
         ))?
     } else if args.cross_chrom {
         // CONFLICT catalogs build no E_r graph, so there is no λ to certify: an EMPTY certificate vector
         // makes the column print "NA" rather than a fabricated 0.
         (
             detect_conflict_catalog_genome_wide_xchrom(
-                bam, &args.fasta, args.threads, args.min_copies, &cfg,
+                bam,
+                &args.fasta,
+                args.threads,
+                args.min_copies,
+                &cfg,
             )?,
             Vec::new(),
             Vec::new(),
@@ -901,7 +986,12 @@ fn main() -> Result<()> {
         )
     } else {
         let catalog = detect_conflict_catalog_genome_wide(
-            bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+            bam,
+            &args.fasta,
+            args.threads,
+            args.win,
+            args.min_copies,
+            &cfg,
         )?;
         (
             catalog.into_iter().map(|c| c.copies).collect(),
@@ -929,7 +1019,11 @@ fn main() -> Result<()> {
     // are never carried across — a wrong λ is worse than an absent one. Since 2026-08-19 they are
     // RECOMPUTED over the refined rows instead of dropped, so the column is a number rather than "NA"
     // and it describes what is actually written.
-    let mut certs: Option<Vec<FamilyCertificate>> = if raw_certs.is_empty() { None } else { Some(raw_certs) };
+    let mut certs: Option<Vec<FamilyCertificate>> = if raw_certs.is_empty() {
+        None
+    } else {
+        Some(raw_certs)
+    };
     let fams: Vec<Vec<DenovoTranscript>> = if refine {
         certs = None;
         let n_raw = raw.len();
@@ -963,7 +1057,9 @@ fn main() -> Result<()> {
         certs = match certificates_for_families(&refined, &params) {
             Ok(c) => Some(c),
             Err(e) => {
-                eprintln!("[gw-catalog] refine: λ certificate not recomputed ({e}); column stays NA");
+                eprintln!(
+                    "[gw-catalog] refine: λ certificate not recomputed ({e}); column stays NA"
+                );
                 None
             }
         };
@@ -995,20 +1091,44 @@ fn main() -> Result<()> {
     // and byte-identical-OFF holds.
     if cfg.collapse_enumerate && !collapsed.is_empty() {
         let mut cf = std::fs::File::create(format!("{}.collapsed.tsv", args.out))?;
-        writeln!(cf, "family_id\tchrom\tstart\tend\tfamCN\tn_alt_reads\talt_frac\tstatus\tprojection_loci")?;
+        writeln!(
+            cf,
+            "family_id\tchrom\tstart\tend\tfamCN\tn_alt_reads\talt_frac\tstatus\tprojection_loci"
+        )?;
         for (i, fam) in collapsed.iter().enumerate() {
-            writeln!(cf, "{}", rustle::family::collapse_enumerate::format_collapsed_row(&format!("GWFAMc{i}"), fam))?;
+            writeln!(
+                cf,
+                "{}",
+                rustle::family::collapse_enumerate::format_collapsed_row(
+                    &format!("GWFAMc{i}"),
+                    fam
+                )
+            )?;
         }
-        eprintln!("[gw-catalog] wrote {} K=0-collapsed families -> {}.collapsed.tsv", collapsed.len(), args.out);
+        eprintln!(
+            "[gw-catalog] wrote {} K=0-collapsed families -> {}.collapsed.tsv",
+            collapsed.len(),
+            args.out
+        );
     }
 
     // K0_COLLAPSED_EXPRESSED families re-admitted by Task 3 (`--collapse-expressed`): same isolation as
     // `--collapse-enumerate` above -- OFF path (flag off or nothing expressed-collapsed) writes no file.
     if cfg.collapse_expressed && !expressed.is_empty() {
         let mut ef = std::fs::File::create(format!("{}.expressed_collapsed.tsv", args.out))?;
-        writeln!(ef, "family_id\tchrom\tstart\tend\tfamCN\tmin_locus_reads\tstatus\tprojection_loci")?;
+        writeln!(
+            ef,
+            "family_id\tchrom\tstart\tend\tfamCN\tmin_locus_reads\tstatus\tprojection_loci"
+        )?;
         for (i, fam) in expressed.iter().enumerate() {
-            writeln!(ef, "{}", rustle::family::collapse_enumerate::format_expressed_collapsed_row(&format!("GWFAMe{i}"), fam))?;
+            writeln!(
+                ef,
+                "{}",
+                rustle::family::collapse_enumerate::format_expressed_collapsed_row(
+                    &format!("GWFAMe{i}"),
+                    fam
+                )
+            )?;
         }
         eprintln!("[gw-catalog] collapse-expressed: {} K0_COLLAPSED_EXPRESSED families -> {}.expressed_collapsed.tsv", expressed.len(), args.out);
     }
@@ -1017,9 +1137,19 @@ fn main() -> Result<()> {
     // isolation contract -- OFF path (flag off or nothing recovered) writes no file (byte-identical).
     if cfg.dna_family_fallback && !dna_families.is_empty() {
         let mut df = std::fs::File::create(format!("{}.dna_family.tsv", args.out))?;
-        writeln!(df, "family_id\tchrom\tstart\tend\tfamCN\tmin_locus_reads\tstatus\tprojection_loci")?;
+        writeln!(
+            df,
+            "family_id\tchrom\tstart\tend\tfamCN\tmin_locus_reads\tstatus\tprojection_loci"
+        )?;
         for (i, fam) in dna_families.iter().enumerate() {
-            writeln!(df, "{}", rustle::family::collapse_enumerate::format_dna_family_row(&format!("GWFAMdna{i}"), fam))?;
+            writeln!(
+                df,
+                "{}",
+                rustle::family::collapse_enumerate::format_dna_family_row(
+                    &format!("GWFAMdna{i}"),
+                    fam
+                )
+            )?;
         }
         eprintln!("[gw-catalog] dna-family-fallback: {} DNA_FAMILY_RNA_NONHOMOLOGOUS loci -> {}.dna_family.tsv", dna_families.len(), args.out);
     }
@@ -1045,7 +1175,11 @@ fn main() -> Result<()> {
             .iter()
             .enumerate()
             .map(|(fi, copies)| {
-                let cons = copies.iter().max_by_key(|c| c.n_reads).map(|c| c.seq.clone()).unwrap_or_default();
+                let cons = copies
+                    .iter()
+                    .max_by_key(|c| c.n_reads)
+                    .map(|c| c.seq.clone())
+                    .unwrap_or_default();
                 (format!("GWFAM{fi}"), cons)
             })
             .collect();
@@ -1053,12 +1187,21 @@ fn main() -> Result<()> {
             .iter()
             .enumerate()
             .map(|(fi, copies)| {
-                let loci: Vec<(String, u64, u64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
+                let loci: Vec<(String, u64, u64)> = copies
+                    .iter()
+                    .map(|c| (c.chrom.clone(), c.start, c.end))
+                    .collect();
                 (format!("GWFAM{fi}"), loci)
             })
             .collect();
         let proj_by_fam = match rustle::family::genome_projection::project_families_batch(
-            &consensuses, &args.fasta, &known, 0.80, 0.80, &refine_params.minimap2, args.threads,
+            &consensuses,
+            &args.fasta,
+            &known,
+            0.80,
+            0.80,
+            &refine_params.minimap2,
+            args.threads,
         ) {
             Ok(m) => m,
             Err(e) => {
@@ -1067,7 +1210,10 @@ fn main() -> Result<()> {
             }
         };
         let mut ff = std::fs::File::create(format!("{}.famcn.tsv", args.out))?;
-        writeln!(ff, "family_id\tn_rna_copies\tfamCN\ttotalCN\tprojection_loci")?;
+        writeln!(
+            ff,
+            "family_id\tn_rna_copies\tfamCN\ttotalCN\tprojection_loci"
+        )?;
         for (fi, copies) in fams.iter().enumerate() {
             let fid = format!("GWFAM{fi}");
             let n_rna = copies.len();
@@ -1078,7 +1224,10 @@ fn main() -> Result<()> {
             // famCN: Soto SD98 near-identical FULL-LENGTH copies only (id>=0.98 AND cov>=0.90) -- excludes
             // fragment/partial hits that would otherwise inflate the Soto-comparable metric. cov>=0.90 is
             // a subset of the returned cov>=0.80 loci.
-            let n_fam_loci = proj.iter().filter(|p| p.identity >= 0.98 && p.cov >= 0.90).count();
+            let n_fam_loci = proj
+                .iter()
+                .filter(|p| p.identity >= 0.98 && p.cov >= 0.90)
+                .count();
             let total_cn = n_rna + n_total_loci;
             let fam_cn = n_rna + n_fam_loci;
             // projection_loci lists all totalCN-contributing loci (id>=0.80, cov>=0.80).
@@ -1090,7 +1239,10 @@ fn main() -> Result<()> {
                 .join(";");
             writeln!(ff, "{fid}\t{n_rna}\t{fam_cn}\t{total_cn}\t{loci}")?;
         }
-        eprintln!("[gw-catalog] famCN/totalCN batch projection -> {}.famcn.tsv", args.out);
+        eprintln!(
+            "[gw-catalog] famCN/totalCN batch projection -> {}.famcn.tsv",
+            args.out
+        );
     }
 
     // Generalized projection (`--project-all-families`): project EVERY resolved copy's consensus (not just
@@ -1099,33 +1251,76 @@ fn main() -> Result<()> {
     // primary reads over the locus), written to its own file so the RNA-split catalog (families.tsv/
     // copies.tsv) and the famCN/totalCN batch projection (famcn.tsv) are untouched.
     if project_all {
-        use rustle::family::from_genome::project_all::{CopyIn, all_copy_consensuses, known_from_fams, dedup_overlapping, overlaps_any, format_allproj_row};
+        use rustle::family::from_genome::project_all::{
+            all_copy_consensuses, dedup_overlapping, format_allproj_row, known_from_fams,
+            overlaps_any, CopyIn,
+        };
         // Build (fid, copies) with the SAME fid the catalog uses.
-        let fam_copies: Vec<(String, Vec<CopyIn>)> = fams.iter().enumerate().map(|(fi, copies)| {
-            (format!("GWFAM{fi}"), copies.iter().map(|c| CopyIn { seq: c.seq.clone(), chrom: c.chrom.clone(), start: c.start, end: c.end }).collect())
-        }).collect();
+        let fam_copies: Vec<(String, Vec<CopyIn>)> = fams
+            .iter()
+            .enumerate()
+            .map(|(fi, copies)| {
+                (
+                    format!("GWFAM{fi}"),
+                    copies
+                        .iter()
+                        .map(|c| CopyIn {
+                            seq: c.seq.clone(),
+                            chrom: c.chrom.clone(),
+                            start: c.start,
+                            end: c.end,
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
         let consensuses = all_copy_consensuses(&fam_copies);
         let known = known_from_fams(&fam_copies);
         let proj = rustle::family::genome_projection::project_families_batch(
-            &consensuses, &args.fasta, &known, 0.98, 0.90, &refine_params.minimap2, args.threads,
-        ).unwrap_or_default();
-        let spans_by_fam: std::collections::HashMap<&String, &Vec<(String,u64,u64)>> = known.iter().collect();
+            &consensuses,
+            &args.fasta,
+            &known,
+            0.98,
+            0.90,
+            &refine_params.minimap2,
+            args.threads,
+        )
+        .unwrap_or_default();
+        let spans_by_fam: std::collections::HashMap<&String, &Vec<(String, u64, u64)>> =
+            known.iter().collect();
         let mut rows: Vec<String> = Vec::new();
         for (fid, locs) in &proj {
             for l in dedup_overlapping(locs.clone()) {
                 // read-support gate: >=3 primary reads over the locus
-                let n_support = rustle::family::denovo_assemble::reads_in_region(bam, &l.chrom, l.start, l.end, args.threads)
-                    .map(|(p, _)| p.len()).unwrap_or(0);
-                if n_support < 3 { continue; }
-                let overlaps = spans_by_fam.get(fid).map(|s| overlaps_any(&l.chrom, l.start, l.end, s)).unwrap_or(false);
+                let n_support = rustle::family::denovo_assemble::reads_in_region(
+                    bam,
+                    &l.chrom,
+                    l.start,
+                    l.end,
+                    args.threads,
+                )
+                .map(|(p, _)| p.len())
+                .unwrap_or(0);
+                if n_support < 3 {
+                    continue;
+                }
+                let overlaps = spans_by_fam
+                    .get(fid)
+                    .map(|s| overlaps_any(&l.chrom, l.start, l.end, s))
+                    .unwrap_or(false);
                 rows.push(format_allproj_row(fid, &l, n_support, overlaps));
             }
         }
         rows.sort(); // `proj` is a HashMap (random iteration order); sort so allproj.tsv is reproducible run-to-run
         if !rows.is_empty() {
             let mut af = std::fs::File::create(format!("{}.allproj.tsv", args.out))?;
-            writeln!(af, "family_id\tchrom\tstart\tend\tidentity\tn_support_reads\toverlaps_existing_copy")?;
-            for r in &rows { writeln!(af, "{r}")?; }
+            writeln!(
+                af,
+                "family_id\tchrom\tstart\tend\tidentity\tn_support_reads\toverlaps_existing_copy"
+            )?;
+            for r in &rows {
+                writeln!(af, "{r}")?;
+            }
             eprintln!("[gw-catalog] project-all-families: {} loci (id>=0.98, >=3 reads) -> {}.allproj.tsv", rows.len(), args.out);
         }
     }
@@ -1173,10 +1368,16 @@ mod tests {
         // written as "1500-1200" which a consumer would read as a valid interval.
         let t = tx(1000, 2000, vec![(1500, 1200), (900, 950)]);
         let blocks = exon_blocks(&t);
-        assert_eq!(blocks, "1000-2000", "malformed introns must not produce reversed blocks");
+        assert_eq!(
+            blocks, "1000-2000",
+            "malformed introns must not produce reversed blocks"
+        );
         for b in blocks.split(',') {
             let (s, e) = b.split_once('-').unwrap();
-            assert!(s.parse::<u64>().unwrap() < e.parse::<u64>().unwrap(), "reversed block {b}");
+            assert!(
+                s.parse::<u64>().unwrap() < e.parse::<u64>().unwrap(),
+                "reversed block {b}"
+            );
         }
     }
 
@@ -1204,8 +1405,14 @@ mod tests {
         // that turns refine on here — the opt-in was removed because it is what let the shipped
         // 494-family catalog be built with a different object than the default produced, unnoticed for
         // six weeks (docs/o1_catalog_provenance.md). `--refine` on this path is rejected in main().
-        assert!(!refine_enabled(true, false), "default O1 run must be γ-QC(E_r) alone");
-        assert!(!refine_enabled(true, true), "--no-refine changes nothing: refine was never on here");
+        assert!(
+            !refine_enabled(true, false),
+            "default O1 run must be γ-QC(E_r) alone"
+        );
+        assert!(
+            !refine_enabled(true, true),
+            "--no-refine changes nothing: refine was never on here"
+        );
     }
 
     #[test]

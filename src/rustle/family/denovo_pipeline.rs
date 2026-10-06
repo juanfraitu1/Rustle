@@ -15,39 +15,45 @@
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::types::{DetHashMap, DetHashSet};
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 
 use super::absent_copy::{self, AbsentCopyParams, Admission, DnaNeedsRecord};
-use super::copy_assign::{
-    assign_read_editing, Assignment, AssignParams, AssignStatus, BubbleGraph, CopyProfile, ReadFeatures,
-};
 use super::copy_assign::copy_assign_pipeline::{
-    assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy_on, build_family_profiles,
-    copy_boundaries, detect_editing_columns, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
+    assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy_on,
+    build_family_profiles, copy_boundaries, detect_editing_columns, freeze_merge, gen2off,
+    read_ref_end, FamilyProfiles,
+};
+use super::copy_assign::{
+    assign_read_editing, AssignParams, AssignStatus, Assignment, BubbleGraph, CopyProfile,
+    ReadFeatures,
 };
 use super::copy_split::{
-    split_locus_copies, discover_locus_psvs, AlignedRead, CollapsedCandidate, CopyIsoform,
+    discover_locus_psvs, split_locus_copies, AlignedRead, CollapsedCandidate, CopyIsoform,
 };
 #[cfg(test)]
 use super::denovo_assemble::pass1_skeletons;
 use super::denovo_assemble::{
-    assemble_gate, pass1_skeletons_robust, primary_reads_from_bam,
-    reads_in_region, split_mischained_reads, tied_seed_skeletons, BamRead, GateParams, PrimaryRead,
-    GATE_MIN_READS, PASS1_MIN_READS,
+    assemble_gate, pass1_skeletons_robust, primary_reads_from_bam, reads_in_region,
+    split_mischained_reads, tied_seed_skeletons, BamRead, GateParams, PrimaryRead, GATE_MIN_READS,
+    PASS1_MIN_READS,
+};
+use super::family_detect::family_split::{
+    classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams,
 };
 use super::family_detect::{
-    collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges, detect_edges_reporting,
-    DenovoTranscript, DetectParams,
+    collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges,
+    detect_edges_reporting, DenovoTranscript, DetectParams,
+};
+use super::family_rescue::rescue_pipeline::{
+    rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT,
 };
 use super::family_rescue::{FamilyMember, RescueParams};
-use super::family_detect::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
 use super::read_conflict::{
-    as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, locus_unique_mapper_counts,
-    reads_distinguish, ConflictParams, Placement, ReadPlacements,
+    as_tie_edges, conflict_edges, conflict_families, family_mapq0_support,
+    locus_unique_mapper_counts, reads_distinguish, ConflictParams, Placement, ReadPlacements,
 };
-use super::family_rescue::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
 
 /// Configuration for the de-novo detection pipeline (defaults mirror the python stages).
@@ -189,13 +195,17 @@ impl DenovoConfig {
     /// re-deriving why that CLI-only path was chosen.
     pub fn from_env() -> Self {
         DenovoConfig {
-            collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref() == Some("1"),
-            collapse_expressed: std::env::var("RUSTLE_COLLAPSE_EXPRESSED").ok().as_deref() == Some("1"),
-            dna_family_fallback: std::env::var("RUSTLE_DNA_FAMILY_FALLBACK").ok().as_deref() == Some("1"),
+            collapse_enumerate: std::env::var("RUSTLE_COLLAPSE_ENUMERATE").ok().as_deref()
+                == Some("1"),
+            collapse_expressed: std::env::var("RUSTLE_COLLAPSE_EXPRESSED").ok().as_deref()
+                == Some("1"),
+            dna_family_fallback: std::env::var("RUSTLE_DNA_FAMILY_FALLBACK").ok().as_deref()
+                == Some("1"),
             dna_family_max_softmask: env_num("RUSTLE_DNA_FAMILY_MAX_SOFTMASK", 0.30),
             // Readthrough/mis-chain gate SENSITIVITY toggle: RUSTLE_KEEP_READTHROUGH=1 disables both gates
             // (readthroughs that connect copies are then NOT filtered). Default (unset) = gates ON = today.
-            filter_readthrough: std::env::var("RUSTLE_KEEP_READTHROUGH").ok().as_deref() != Some("1"),
+            filter_readthrough: std::env::var("RUSTLE_KEEP_READTHROUGH").ok().as_deref()
+                != Some("1"),
             mischain_salvage: std::env::var("RUSTLE_MISCHAIN_SALVAGE").ok().as_deref() == Some("1"),
             // Edge-core definition (docs/o1_ledger.md §6jd): LCS by default; RUSTLE_EDGE_CORE=poa restores poasta.
             detect: DetectParams {
@@ -231,7 +241,11 @@ pub struct DenovoResult {
 }
 
 /// Run the de-novo family DETECTION pipeline from parsed primary reads + a loaded genome.
-pub fn detect_families(reads: &[PrimaryRead], genome: &GenomeIndex, cfg: &DenovoConfig) -> DenovoResult {
+pub fn detect_families(
+    reads: &[PrimaryRead],
+    genome: &GenomeIndex,
+    cfg: &DenovoConfig,
+) -> DenovoResult {
     // Same `k` as every other path: a locus must have ONE canonical extent across objectives. The three
     // genome-wide O1 catalogs already trim at `cfg.min_terminal_support`; this path silently used k = 1.
     let skeletons = pass1_skeletons_robust(reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -316,7 +330,8 @@ pub fn colocated_families(
         // discarding the paralogs. Mixed-strand families are safe downstream: each copy carries its own
         // strand, `copy_assign_pipeline` reverse-complements read bases per copy, and two inverted-duplicate
         // mRNAs are both in transcription orientation, so they align forward to each other.
-        let mut by_key: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
+        let mut by_key: std::collections::BTreeMap<&str, Vec<usize>> =
+            std::collections::BTreeMap::new();
         for &m in &fam.members {
             by_key.entry(reps[m].chrom.as_str()).or_default().push(m);
         }
@@ -336,7 +351,13 @@ pub fn colocated_families(
             if span <= win {
                 let start = copies.iter().map(|c| c.start).min().unwrap();
                 let end = copies.iter().map(|c| c.end).max().unwrap();
-                out.push(ColocatedFamily { family_id: format!("DSFAM{fi}"), chrom: chrom.to_string(), start, end, copies });
+                out.push(ColocatedFamily {
+                    family_id: format!("DSFAM{fi}"),
+                    chrom: chrom.to_string(),
+                    start,
+                    end,
+                    copies,
+                });
             }
         }
     }
@@ -408,7 +429,12 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
             {
                 let au = crate::family::family_detect::family_graph::upper_cow(&a.seq);
                 let bu = crate::family::family_detect::family_graph::upper_cow(&b.seq);
-                if crate::family::family_detect::family_graph::core_coverage_reaches(&au, &bu, p.len_cap, p.collapse_span_core) {
+                if crate::family::family_detect::family_graph::core_coverage_reaches(
+                    &au,
+                    &bu,
+                    p.len_cap,
+                    p.collapse_span_core,
+                ) {
                     return true;
                 }
             }
@@ -427,7 +453,6 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
         .map(|(_, c)| c)
         .collect()
 }
-
 
 /// Per-co-located-family read-assignment summary, with the two-pass (PSV-only vs PSV+junction) breakdown
 /// and the unique-mapper agreement (the accuracy proxy on real data — `copy_assign.py`).
@@ -580,7 +605,10 @@ pub struct FallbackEdge {
 /// TWICE in the BAM (once at each locus), not just to overlap two loci from a single alignment.
 /// Supplementary (chimeric/split) records are excluded — they are not multimapping alternative placements.
 /// The de-tie criterion uses `de` (gap-compressed divergence) to discriminate tied from resolvable placements.
-pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscript]) -> Vec<ReadPlacements> {
+pub(super) fn build_read_placements(
+    bam_reads: &[BamRead],
+    reps: &[DenovoTranscript],
+) -> Vec<ReadPlacements> {
     use std::collections::BTreeMap;
     let mut by_name: BTreeMap<&str, Vec<Placement>> = BTreeMap::new();
     // Per-chromosome index of reps sorted by start, with the widest rep span: a rep overlapping [s, e) has
@@ -601,43 +629,57 @@ pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscr
             continue; // chimeric/split read is not a multimapping alternative placement
         }
         let read_end = read_ref_end(&br.read);
-        let best: Option<(usize, &DenovoTranscript)> = idx.get(br.chrom.as_str()).and_then(|(starts, max_span)| {
-            let lo = br.read.ref_start.saturating_sub(*max_span);
-            let first = starts.partition_point(|&(st, _)| st < lo);
-            let mut best: Option<(u64, usize)> = None;
-            for &(st, i) in &starts[first..] {
-                if st >= read_end {
-                    break;
-                }
-                let rep = &reps[i];
-                if br.read.ref_start < rep.end && read_end > rep.start {
-                    let ov = rep.end.min(read_end) - rep.start.max(br.read.ref_start);
-                    if best.map_or(true, |(bo, bi)| (ov, i) > (bo, bi)) {
-                        best = Some((ov, i));
+        let best: Option<(usize, &DenovoTranscript)> =
+            idx.get(br.chrom.as_str()).and_then(|(starts, max_span)| {
+                let lo = br.read.ref_start.saturating_sub(*max_span);
+                let first = starts.partition_point(|&(st, _)| st < lo);
+                let mut best: Option<(u64, usize)> = None;
+                for &(st, i) in &starts[first..] {
+                    if st >= read_end {
+                        break;
+                    }
+                    let rep = &reps[i];
+                    if br.read.ref_start < rep.end && read_end > rep.start {
+                        let ov = rep.end.min(read_end) - rep.start.max(br.read.ref_start);
+                        if best.map_or(true, |(bo, bi)| (ov, i) > (bo, bi)) {
+                            best = Some((ov, i));
+                        }
                     }
                 }
-            }
-            best.map(|(_, i)| (i, &reps[i]))
-        });
-        if let Some((li, _)) = best {
-            let aln_len = br.read.cigar.iter()
-                .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
-            by_name.entry(br.name.as_str()).or_default().push(Placement {
-                locus: li, de: br.de, mapq: br.mapq, as_score: br.as_score, aln_len,
+                best.map(|(_, i)| (i, &reps[i]))
             });
+        if let Some((li, _)) = best {
+            let aln_len = br
+                .read
+                .cigar
+                .iter()
+                .filter(|(op, _)| matches!(op, 'M' | '=' | 'X'))
+                .map(|(_, n)| *n)
+                .sum::<u64>() as u32;
+            by_name
+                .entry(br.name.as_str())
+                .or_default()
+                .push(Placement {
+                    locus: li,
+                    de: br.de,
+                    mapq: br.mapq,
+                    as_score: br.as_score,
+                    aln_len,
+                });
         }
     }
     by_name.into_values().collect()
 }
 
-
 /// Read-depth floor defining the core (`RUSTLE_ER_CORE_DEPTH`, default 10). Measured edge-level on
 /// chr1+chr15: depth >= 10 separated best; depth >= 3 barely trims the span (core/span median 0.93) and a
 /// relative floor (10% of the locus max) was slightly worse.
 fn core_depth_floor() -> u32 {
-    std::env::var("RUSTLE_ER_CORE_DEPTH").ok().and_then(|v| v.parse().ok()).unwrap_or(10)
+    std::env::var("RUSTLE_ER_CORE_DEPTH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10)
 }
-
 
 /// SECOND coverage floor, charged on the LONGER sequence (`RUSTLE_ER_COVERAGE_LONGER_FLOOR`,
 /// unset = off = byte-identical). This ADDS a clause; the shipped shorter-side floor is untouched, so
@@ -656,7 +698,9 @@ fn core_depth_floor() -> u32 {
 /// its own one-sided test.
 fn er_cov_longer_floor() -> Option<f64> {
     let v = std::env::var("RUSTLE_ER_COVERAGE_LONGER_FLOOR").ok()?;
-    if v.is_empty() || v == "0" { return None; }
+    if v.is_empty() || v == "0" {
+        return None;
+    }
     v.parse::<f64>().ok().filter(|x| *x > 0.0)
 }
 
@@ -664,7 +708,9 @@ fn er_cov_longer_floor() -> Option<f64> {
 /// (`RUSTLE_LOCUS_DE_EXTENT`, unset = off = byte-identical). Measured optimum 0.0005.
 fn locus_de_extent() -> Option<f32> {
     let v = std::env::var("RUSTLE_LOCUS_DE_EXTENT").ok()?;
-    if v.is_empty() || v == "0" { return None; }
+    if v.is_empty() || v == "0" {
+        return None;
+    }
     v.parse::<f32>().ok().filter(|x| *x > 0.0)
 }
 
@@ -743,7 +789,9 @@ pub(super) fn locus_confident_extent(
 /// (`RUSTLE_LOCUS_GROWTH_EXTENT=1`, default off = byte-identical). See `locus_growth_extent`;
 /// PREREG `docs/PREREG_locus_growth_extent_2026-09-10.md` (md5 8d5a63fb70875996d599c9f4218cd83c).
 fn growth_extent_enabled() -> bool {
-    std::env::var("RUSTLE_LOCUS_GROWTH_EXTENT").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+    std::env::var("RUSTLE_LOCUS_GROWTH_EXTENT")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
 }
 
 /// Gap multiplier `k` for `locus_growth_extent` (`RUSTLE_LOCUS_GROWTH_K`, default 3.0).
@@ -802,7 +850,10 @@ pub(super) fn locus_growth_extent(
         if br.is_supplementary || br.is_secondary {
             continue;
         }
-        by_chrom.entry(br.chrom.as_str()).or_default().push((br.read.ref_start, read_ref_end(&br.read)));
+        by_chrom
+            .entry(br.chrom.as_str())
+            .or_default()
+            .push((br.read.ref_start, read_ref_end(&br.read)));
     }
     for v in by_chrom.values_mut() {
         v.sort_unstable();
@@ -811,7 +862,9 @@ pub(super) fn locus_growth_extent(
     reps.iter()
         .zip(seeds.iter())
         .map(|(r, &(s0, e0))| {
-            let Some(v) = by_chrom.get(r.chrom.as_str()) else { return (s0, e0) };
+            let Some(v) = by_chrom.get(r.chrom.as_str()) else {
+                return (s0, e0);
+            };
             let lo_bound = s0.saturating_sub(MAX_FLANK);
             let hi_bound = e0 + MAX_FLANK;
             let mut bins: BTreeMap<u64, u32> = BTreeMap::new();
@@ -845,11 +898,15 @@ pub(super) fn locus_growth_extent(
 
             let seed_lo_bin = s0 / BIN;
             let seed_hi_bin = e0.saturating_sub(1) / BIN;
-            let seed_reads: u32 = (seed_lo_bin..=seed_hi_bin).map(|b| *bins.get(&b).unwrap_or(&0)).sum::<u32>().max(1);
+            let seed_reads: u32 = (seed_lo_bin..=seed_hi_bin)
+                .map(|b| *bins.get(&b).unwrap_or(&0))
+                .sum::<u32>()
+                .max(1);
 
             let mut hi_bin = seed_hi_bin;
             let mut included = seed_reads;
-            while let Some((&nb, &bridge_reads)) = bins.range((hi_bin + 1)..).find(|&(_, &c)| c > 0) {
+            while let Some((&nb, &bridge_reads)) = bins.range((hi_bin + 1)..).find(|&(_, &c)| c > 0)
+            {
                 let gap_bp = (nb - hi_bin) * BIN;
                 let frac = bridge_reads as f64 / included as f64;
                 if gap_bp as f64 > k * ref_gap as f64 && frac < min_frac {
@@ -865,7 +922,9 @@ pub(super) fn locus_growth_extent(
             let mut lo_bin = seed_lo_bin;
             let mut included_l = seed_reads;
             while lo_bin > 0 {
-                let Some((&pb, &bridge_reads)) = bins.range(..lo_bin).next_back() else { break };
+                let Some((&pb, &bridge_reads)) = bins.range(..lo_bin).next_back() else {
+                    break;
+                };
                 if bridge_reads == 0 {
                     break;
                 }
@@ -899,7 +958,9 @@ pub(super) fn locus_growth_extent(
 /// A genuinely intronless copy (`stub == false` despite one exon) is unaffected: it has no spliced evidence
 /// at its locus, so it is a real intronless gene rather than a fragment of a spliced one.
 fn er_no_stub_edges() -> bool {
-    std::env::var("RUSTLE_ER_NO_STUB_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+    std::env::var("RUSTLE_ER_NO_STUB_EDGES")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
 }
 
 /// Require an E_r edge to be justified by NON-REPEAT sequence (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`,
@@ -924,7 +985,9 @@ fn er_no_stub_edges() -> bool {
 /// ⚠ Deliberately NOT the `identity >= 0.90` cut, which separates the same panel better (22/22 false
 /// killed for 2/67 true) but is a post-hoc threshold fitted on that panel.
 fn er_repeat_masked_edges() -> bool {
-    std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+    std::env::var("RUSTLE_ER_REPEAT_MASKED_EDGES")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
 }
 
 /// Whether reads at each rep's locus assert a splice junction carried by `>= min_reads` reads.
@@ -958,7 +1021,8 @@ pub(super) fn locus_has_spliced_evidence(
     reps.iter()
         .map(|r| {
             by_chrom.get(r.chrom.as_str()).is_some_and(|m| {
-                m.range((r.start, 0)..(r.end, u64::MAX)).any(|(_, &c)| c >= min_reads)
+                m.range((r.start, 0)..(r.end, u64::MAX))
+                    .any(|(_, &c)| c >= min_reads)
             })
         })
         .collect()
@@ -972,7 +1036,11 @@ pub(super) fn locus_has_spliced_evidence(
 ///
 /// Depth counts every primary read overlapping the span, matching what `samtools depth` reports there, so
 /// the value is independent of how reads were attributed to loci.
-pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], min_depth: u32) -> Vec<u64> {
+pub(super) fn locus_core_bp(
+    bam_reads: &[BamRead],
+    reps: &[DenovoTranscript],
+    min_depth: u32,
+) -> Vec<u64> {
     use std::collections::BTreeMap;
     let mut by_chrom: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
     for br in bam_reads {
@@ -989,11 +1057,23 @@ pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], mi
     }
     // widest read per chromosome: a read with s + max_len <= r.start ends at or before r.start and adds no
     // event, so each rep's scan can start at the first read past that bound (was: from index 0 per rep)
-    let max_len: DetHashMap<&str, u64> =
-        by_chrom.iter().map(|(c, v)| (*c, v.iter().map(|&(s, e)| e.saturating_sub(s)).max().unwrap_or(0))).collect();
+    let max_len: DetHashMap<&str, u64> = by_chrom
+        .iter()
+        .map(|(c, v)| {
+            (
+                *c,
+                v.iter()
+                    .map(|&(s, e)| e.saturating_sub(s))
+                    .max()
+                    .unwrap_or(0),
+            )
+        })
+        .collect();
     reps.iter()
         .map(|r| {
-            let Some(v) = by_chrom.get(r.chrom.as_str()) else { return 0 };
+            let Some(v) = by_chrom.get(r.chrom.as_str()) else {
+                return 0;
+            };
             let ml = max_len.get(r.chrom.as_str()).copied().unwrap_or(0);
             let first = v.partition_point(|&(s, _)| s.saturating_add(ml) <= r.start);
             // Sweep only the read endpoints that fall in this rep's span; a position's depth changes only
@@ -1054,17 +1134,26 @@ fn to_split_families(
             m.sort_unstable();
             let stats = community_stats(&m, edges);
             let class = classify(stats.n, stats.density, p);
-            SplitFamily { members: m, stats, class }
+            SplitFamily {
+                members: m,
+                stats,
+                class,
+            }
         })
         .collect();
     // deterministic: size desc, then smallest member.
     out.sort_by(|a, b| {
-        b.members.len().cmp(&a.members.len()).then_with(|| a.members[0].cmp(&b.members[0]))
+        b.members
+            .len()
+            .cmp(&a.members.len())
+            .then_with(|| a.members[0].cmp(&b.members[0]))
     });
     out
 }
 
-use crate::family::collapse_enumerate::collapse_gate::{collapse_verdict, Ambiguity, CollapseVerdict};
+use crate::family::collapse_enumerate::collapse_gate::{
+    collapse_verdict, Ambiguity, CollapseVerdict,
+};
 
 /// Ambiguously-placed primary reads over a rep's span.
 ///
@@ -1092,7 +1181,12 @@ fn locus_ambiguity(rep: &DenovoTranscript, bam_reads: &[BamRead]) -> Ambiguity {
 /// A family whose copies were never assembled: `n_copies` is χ(H), every read is certified `Tied`, and NO
 /// per-copy consensus exists — so no assignment can be wrong. `min_p_value = 1.0` is the honest certificate:
 /// no distinguishing column was available to this read, because no copy sequences were materialised.
-fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, family_id: String) -> FamilyAssignment {
+fn gated_family(
+    rep: &DenovoTranscript,
+    bam_reads: &[BamRead],
+    chi: usize,
+    family_id: String,
+) -> FamilyAssignment {
     let assignments: Vec<(usize, Assignment)> = bam_reads
         .iter()
         .enumerate()
@@ -1115,8 +1209,8 @@ fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, famil
                     min_p_value: 1.0,
                     discovery_coupled: false,
                     junction_conflict: false,
-                        origin_rejected: false,
-                        n_candidates: 0,
+                    origin_rejected: false,
+                    n_candidates: 0,
                     posterior: vec![1.0 / chi as f64; chi],
                     sibling_identity: 1.0,
                     n_cols_vs_nearest_sibling: 0,
@@ -1206,7 +1300,12 @@ pub const MISCHAIN_MIN_JUNCTION_READS: usize = GATE_MIN_READS as usize;
 /// distinctive to that copy, identifying it by splice structure regardless of which locus holds its primary
 /// alignment. Bucketed per `best_copy`; an out-of-range copy index is ignored. Mirrors the family-level
 /// `junction_only` tally, per copy — the DAZ2-rescue signal.
-pub fn add_junction_support(support: &mut [usize], best_copy: usize, combined_decisive: bool, psv_decisive: bool) {
+pub fn add_junction_support(
+    support: &mut [usize],
+    best_copy: usize,
+    combined_decisive: bool,
+    psv_decisive: bool,
+) {
     if combined_decisive && !psv_decisive {
         if let Some(s) = support.get_mut(best_copy) {
             *s += 1;
@@ -1234,7 +1333,10 @@ pub fn read_junction_support(reads: &[PrimaryRead]) -> DetHashMap<(String, u64, 
 /// run is byte-identical. Lets `bench/soto/gate_sensitivity_sweep.sh` vary the readthrough/mis-chain gates
 /// without recompiling.
 fn env_num<T: std::str::FromStr>(key: &str, default: T) -> T {
-    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 pub fn retain_non_readthrough(
@@ -1260,10 +1362,17 @@ pub fn retain_non_readthrough(
         let rt = t.introns.is_empty()
             && jidx.get(t.chrom.as_str()).map_or(0, |v| {
                 let first = v.partition_point(|&(d, _)| d < t.start);
-                v[first..].iter().take_while(|&&(d, _)| d <= t.end).filter(|&&(_, a)| a <= t.end).count()
+                v[first..]
+                    .iter()
+                    .take_while(|&&(d, _)| d <= t.end)
+                    .filter(|&&(_, a)| a <= t.end)
+                    .count()
             }) >= min_distinct;
         if rt {
-            dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
+            dropped.push(format!(
+                "{}:{}-{} ({} reads)",
+                t.chrom, t.start, t.end, t.n_reads
+            ));
         }
         !rt
     });
@@ -1337,7 +1446,11 @@ pub fn is_giant_intron_mischain(
 ) -> bool {
     rep.introns.iter().any(|&(d, a)| {
         a.saturating_sub(d) > giant_bp
-            && junction_support.get(&(rep.chrom.clone(), d, a)).copied().unwrap_or(0) < min_junction_reads
+            && junction_support
+                .get(&(rep.chrom.clone(), d, a))
+                .copied()
+                .unwrap_or(0)
+                < min_junction_reads
     })
 }
 
@@ -1354,7 +1467,10 @@ pub fn retain_non_mischain(
     transcripts.retain(|t| {
         let mc = is_giant_intron_mischain(t, support, giant_bp, min_reads);
         if mc {
-            dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
+            dropped.push(format!(
+                "{}:{}-{} ({} reads)",
+                t.chrom, t.start, t.end, t.n_reads
+            ));
         }
         !mc
     });
@@ -1387,7 +1503,9 @@ fn locus_bridge_cut_enabled() -> bool {
 /// are never bridges. Prereg Addendum I (`docs/PREREG_core_definition_2026-09-12.md`): TBC1D3-NPEPPSP1 readthrough
 /// transcripts share junctions with both genes and otherwise fuse them into one locus whose rep lies in NPEPPSP1.
 pub fn bridge_transcripts(transcripts: &[DenovoTranscript]) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..transcripts.len()).filter(|&i| !transcripts[i].introns.is_empty()).collect();
+    let mut order: Vec<usize> = (0..transcripts.len())
+        .filter(|&i| !transcripts[i].introns.is_empty())
+        .collect();
     order.sort_by(|&a, &b| {
         let (ta, tb) = (&transcripts[a], &transcripts[b]);
         tb.n_reads
@@ -1416,7 +1534,12 @@ pub fn bridge_transcripts(transcripts: &[DenovoTranscript]) -> Vec<usize> {
             .collect();
         roots.sort_unstable();
         roots.dedup();
-        if roots.iter().filter(|&&r| support[r] > t.n_reads as u64).count() >= 2 {
+        if roots
+            .iter()
+            .filter(|&&r| support[r] > t.n_reads as u64)
+            .count()
+            >= 2
+        {
             bridges.push(i);
             continue;
         }
@@ -1459,7 +1582,14 @@ pub fn retain_non_bridge(transcripts: &mut Vec<DenovoTranscript>, tag: &str) {
     }
     for &i in &drop {
         let t = &transcripts[i];
-        eprintln!("[{tag}]   bridge {}:{}-{} ({} introns, {} reads)", t.chrom, t.start, t.end, t.introns.len(), t.n_reads);
+        eprintln!(
+            "[{tag}]   bridge {}:{}-{} ({} introns, {} reads)",
+            t.chrom,
+            t.start,
+            t.end,
+            t.introns.len(),
+            t.n_reads
+        );
     }
     let mut k = 0;
     transcripts.retain(|_| {
@@ -1493,7 +1623,9 @@ pub fn retain_non_bridge(transcripts: &mut Vec<DenovoTranscript>, tag: &str) {
 /// [`MISCHAIN_MIN_JUNCTION_READS`] — so [`is_giant_intron_mischain`] returns `false` for every dominant
 /// mis-chain at that locus while this predicate returns `true` for every one of its reads.
 pub fn is_mischained_read(r: &PrimaryRead, giant_bp: u64) -> bool {
-    r.introns.iter().any(|&(d, a)| a.saturating_sub(d) > giant_bp)
+    r.introns
+        .iter()
+        .any(|&(d, a)| a.saturating_sub(d) > giant_bp)
 }
 
 /// Drop mis-chained reads ([`is_mischained_read`]) before any locus-scoped per-read statistic. Returns the
@@ -1545,9 +1677,16 @@ pub enum OverlapKind {
 /// Every pair of catalog copies that wrongly shares genomic sequence, classified. Copies are
 /// `(family_id, chrom, start, end)`. Sorted sweep, so it is linear in the output size, not quadratic in
 /// the catalog. Structural: needs no annotation and no reference truth.
-pub fn catalog_overlaps(copies: &[(String, String, u64, u64)]) -> Vec<(usize, usize, f64, OverlapKind)> {
+pub fn catalog_overlaps(
+    copies: &[(String, String, u64, u64)],
+) -> Vec<(usize, usize, f64, OverlapKind)> {
     let mut idx: Vec<usize> = (0..copies.len()).collect();
-    idx.sort_by(|&a, &b| copies[a].1.cmp(&copies[b].1).then(copies[a].2.cmp(&copies[b].2)));
+    idx.sort_by(|&a, &b| {
+        copies[a]
+            .1
+            .cmp(&copies[b].1)
+            .then(copies[a].2.cmp(&copies[b].2))
+    });
     let mut out = Vec::new();
     for (pos, &i) in idx.iter().enumerate() {
         for &j in idx[pos + 1..].iter() {
@@ -1556,7 +1695,11 @@ pub fn catalog_overlaps(copies: &[(String, String, u64, u64)]) -> Vec<(usize, us
             }
             let overlap = (copies[i].3.min(copies[j].3) - copies[j].2) as f64;
             let longest = (copies[i].3 - copies[i].2).max(copies[j].3 - copies[j].2) as f64;
-            let recip = if longest > 0.0 { overlap / longest } else { 1.0 };
+            let recip = if longest > 0.0 {
+                overlap / longest
+            } else {
+                1.0
+            };
             let kind = if copies[i].0 != copies[j].0 {
                 OverlapKind::SharedAcrossFamilies
             } else if recip > 0.9 {
@@ -1579,12 +1722,19 @@ pub fn catalog_overlaps(copies: &[(String, String, u64, u64)]) -> Vec<(usize, us
 ///
 /// The phantom safeguard is intrinsic: a fully-tied locus does not split (copy-specific PSVs are
 /// required), so only copies with real distinguishing evidence enter the candidate list.
-fn recover_collapsed_candidates(reps: &[DenovoTranscript], bam_reads: &[BamRead]) -> Vec<CollapsedCandidate> {
+fn recover_collapsed_candidates(
+    reps: &[DenovoTranscript],
+    bam_reads: &[BamRead],
+) -> Vec<CollapsedCandidate> {
     let mut out: Vec<CollapsedCandidate> = Vec::new();
     for rep in reps {
         let reads: Vec<AlignedRead> = bam_reads
             .iter()
-            .filter(|br| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_ref_end(&br.read) > rep.start)
+            .filter(|br| {
+                br.chrom == rep.chrom
+                    && br.read.ref_start < rep.end
+                    && read_ref_end(&br.read) > rep.start
+            })
             .map(|br| br.read.clone())
             .collect();
         if reads.len() < 6 {
@@ -1670,7 +1820,10 @@ fn psv_positions_for(
 ) -> Vec<usize> {
     col_gpos
         .iter()
-        .map(|g| g.and_then(|g| gen2off_map.get(&g).copied()).unwrap_or(sentinel))
+        .map(|g| {
+            g.and_then(|g| gen2off_map.get(&g).copied())
+                .unwrap_or(sentinel)
+        })
         .collect()
 }
 
@@ -1739,34 +1892,35 @@ pub(crate) fn apply_realign_patch(
                 psv_qual: Vec::new(),
                 junctions: fa.read_junctions[pos].clone(),
             };
-            fa.assignments[pos].1 = match assign_read_editing(&rf, &graph, &copy_profiles, p, &editing_cols) {
-                Some(a) => a,
-                None => {
-                    // `copy_profiles` is empty (no copies at all) -- can't happen in practice (a
-                    // correction implies >= 1 candidate copy existed), but fall back to a
-                    // consistent one-hot Assignment rather than leaving anything stale.
-                    let mut posterior = vec![0.0; copy_profiles.len()];
-                    if let Some(slot) = posterior.get_mut(new_copy) {
-                        *slot = 1.0;
+            fa.assignments[pos].1 =
+                match assign_read_editing(&rf, &graph, &copy_profiles, p, &editing_cols) {
+                    Some(a) => a,
+                    None => {
+                        // `copy_profiles` is empty (no copies at all) -- can't happen in practice (a
+                        // correction implies >= 1 candidate copy existed), but fall back to a
+                        // consistent one-hot Assignment rather than leaving anything stale.
+                        let mut posterior = vec![0.0; copy_profiles.len()];
+                        if let Some(slot) = posterior.get_mut(new_copy) {
+                            *slot = 1.0;
+                        }
+                        Assignment {
+                            best_copy: new_copy,
+                            log_lr_margin: 0.0,
+                            n_decisive: 0,
+                            resolvable: false,
+                            status: AssignStatus::Assigned,
+                            p_value: 0.0,
+                            min_p_value: 0.0,
+                            discovery_coupled: false,
+                            junction_conflict: false,
+                            origin_rejected: false,
+                            n_candidates: 0,
+                            posterior,
+                            sibling_identity: 1.0,
+                            n_cols_vs_nearest_sibling: 0,
+                        }
                     }
-                    Assignment {
-                        best_copy: new_copy,
-                        log_lr_margin: 0.0,
-                        n_decisive: 0,
-                        resolvable: false,
-                        status: AssignStatus::Assigned,
-                        p_value: 0.0,
-                        min_p_value: 0.0,
-                        discovery_coupled: false,
-                        junction_conflict: false,
-                        origin_rejected: false,
-                        n_candidates: 0,
-                        posterior,
-                        sibling_identity: 1.0,
-                        n_cols_vs_nearest_sibling: 0,
-                    }
-                }
-            };
+                };
             fa.read_psv_obs[pos] = obs;
         }
     }
@@ -1897,7 +2051,13 @@ fn admit_novel_pools(
 ) {
     admit_novel_pools_with_admitter(fa, pools, bam_reads, all_copies, profiles, |cand, host| {
         // `from_env` == `default` unless RUSTLE_ABSENT_MIN_CLUSTERS is set (removal-ablation only).
-        absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::from_env())
+        absent_copy::admit_candidate(
+            cand,
+            host,
+            genome,
+            fasta_path,
+            &AbsentCopyParams::from_env(),
+        )
     })
 }
 
@@ -1924,7 +2084,8 @@ fn admit_novel_pools_with_admitter<F>(
     let host_col_gpos = family_col_genomic_pos(profiles, host_idx);
 
     for pool in pools {
-        let pool_reads: Vec<AlignedRead> = pool.iter().map(|&gi| bam_reads[gi].read.clone()).collect();
+        let pool_reads: Vec<AlignedRead> =
+            pool.iter().map(|&gi| bam_reads[gi].read.clone()).collect();
         let psv_pos = discover_locus_psvs(&pool_reads, 3);
         if psv_pos.len() < 2 {
             continue; // too few distinguishing columns -- left as a "novel-candidate" record.
@@ -1953,7 +2114,10 @@ fn admit_novel_pools_with_admitter<F>(
 
         let t_g2o = gen2off(&t);
         let positions = psv_positions_for(&host_col_gpos, &t_g2o, t.seq.len());
-        let alleles: Vec<Option<u8>> = positions.iter().map(|&off| t.seq.get(off).copied()).collect();
+        let alleles: Vec<Option<u8>> = positions
+            .iter()
+            .map(|&off| t.seq.get(off).copied())
+            .collect();
         let new_copy = fa.copy_psv_alleles.len();
         fa.copy_psv_alleles.push(alleles);
         fa.copy_junctions.push(copy_boundaries(&t));
@@ -2013,7 +2177,13 @@ fn colocated_from_copies(idx: usize, mut copies: Vec<DenovoTranscript>) -> Coloc
     let chrom = copies.first().map(|c| c.chrom.clone()).unwrap_or_default();
     let start = copies.iter().map(|c| c.start).min().unwrap_or(0);
     let end = copies.iter().map(|c| c.end).max().unwrap_or(0);
-    ColocatedFamily { family_id: format!("CAFAM{idx}"), chrom, start, end, copies }
+    ColocatedFamily {
+        family_id: format!("CAFAM{idx}"),
+        chrom,
+        start,
+        end,
+        copies,
+    }
 }
 
 /// FNV-1a of `t_seq`, reduced to a `linearize_certificate` seed. Deterministic (same candidate ->
@@ -2046,7 +2216,16 @@ fn family_linearize_cert(
     pool: &[Vec<u8>],
     realign: impl Fn(&[Vec<u8>], &[Vec<u8>]) -> Vec<Option<(usize, u32)>>,
 ) -> super::linearize::LinearizeCertificate {
-    super::linearize::linearize_certificate(t_seq, copy_seqs, pool, 20, fnv1a_seed(t_seq), 5, 0.05, realign)
+    super::linearize::linearize_certificate(
+        t_seq,
+        copy_seqs,
+        pool,
+        20,
+        fnv1a_seed(t_seq),
+        5,
+        0.05,
+        realign,
+    )
 }
 
 /// The augment-and-linearize OPT-IN guard: compute the certificate for one admitted candidate ONLY when
@@ -2111,14 +2290,22 @@ pub fn detect_and_assign(
     Vec<FamilyAssignment>,
     Vec<FallbackEdge>,
     Vec<DnaNeedsRecord>,
-    Vec<(String, super::linearize::LinearizeCertificate, (String, u64, u64))>,
+    Vec<(
+        String,
+        super::linearize::LinearizeCertificate,
+        (String, u64, u64),
+    )>,
 ) {
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let mut t_lap = std::time::Instant::now();
     macro_rules! lap {
         ($name:expr) => {
             if timing {
-                eprintln!("[timing]   {}: {:.1}s", $name, t_lap.elapsed().as_secs_f64());
+                eprintln!(
+                    "[timing]   {}: {:.1}s",
+                    $name,
+                    t_lap.elapsed().as_secs_f64()
+                );
                 t_lap = std::time::Instant::now();
             }
         };
@@ -2131,7 +2318,11 @@ pub fn detect_and_assign(
     // than as five separate `if supplied` guards that could drift apart.
     let supplied = supplied_families.is_some();
     // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
-    let salvaged = if supplied { None } else { maybe_salvage_mischain(primary_reads, cfg) };
+    let salvaged = if supplied {
+        None
+    } else {
+        maybe_salvage_mischain(primary_reads, cfg)
+    };
     let seed_reads: &[PrimaryRead] = salvaged.as_deref().unwrap_or(primary_reads);
     let skeletons = if supplied {
         Vec::new()
@@ -2149,18 +2340,42 @@ pub fn detect_and_assign(
         // primary-read coverage at its span. RUSTLE_TIED_SEED_DEBUG=<path>.
         if let Ok(dbg_path) = std::env::var("RUSTLE_TIED_SEED_DEBUG") {
             use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&dbg_path) {
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&dbg_path)
+            {
                 for t in &tied_sk {
-                    let ov = |p: &PrimaryRead| p.chrom == t.chrom && p.ref_start < t.end && t.start < p.ref_end;
+                    let ov = |p: &PrimaryRead| {
+                        p.chrom == t.chrom && p.ref_start < t.end && t.start < p.ref_end
+                    };
                     let np = primary_reads.iter().filter(|p| ov(p)).count();
-                    let np_uns = primary_reads.iter().filter(|p| ov(p) && p.introns.is_empty()).count();
-                    let np_spl = primary_reads.iter().filter(|p| ov(p) && !p.introns.is_empty()).count();
+                    let np_uns = primary_reads
+                        .iter()
+                        .filter(|p| ov(p) && p.introns.is_empty())
+                        .count();
+                    let np_spl = primary_reads
+                        .iter()
+                        .filter(|p| ov(p) && !p.introns.is_empty())
+                        .count();
                     let n_tied_ov = rescue_extra.iter().filter(|p| ov(p)).count();
-                    let n_sk = skeletons.iter().filter(|s| s.chrom == t.chrom && s.start < t.end && t.start < s.end).count();
+                    let n_sk = skeletons
+                        .iter()
+                        .filter(|s| s.chrom == t.chrom && s.start < t.end && t.start < s.end)
+                        .count();
                     let _ = writeln!(
-                        f, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        t.chrom, t.start, t.end, t.n_reads, t.introns.is_empty(),
-                        np, np_uns, np_spl, n_tied_ov, n_sk
+                        f,
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        t.chrom,
+                        t.start,
+                        t.end,
+                        t.n_reads,
+                        t.introns.is_empty(),
+                        np,
+                        np_uns,
+                        np_spl,
+                        n_tied_ov,
+                        n_sk
                     );
                 }
             }
@@ -2206,7 +2421,11 @@ pub fn detect_and_assign(
     // AMBIGUITY oracle, not a homology oracle). Everything downstream of `families`/`edges_f64`
     // (colocated_families, PSV discovery, assignment, EM, chi_H) is unchanged by which oracle ran.
     let placements = build_read_placements(bam_reads, &reps);
-    lap!(format!("build_read_placements ({} reads x {} reps)", bam_reads.len(), reps.len()));
+    lap!(format!(
+        "build_read_placements ({} reads x {} reps)",
+        bam_reads.len(),
+        reps.len()
+    ));
     // Per-copy unique-mapper support (Task 3, identifiability-merge): record each rep's count of MAPQ>0
     // (unambiguous) placements — free, `placements` is already built above — so `distinct_locus_reps`'s
     // same-strand merge guard (inside `refine_families_exon_sum` below) has real read evidence instead of
@@ -2215,7 +2434,9 @@ pub fn detect_and_assign(
     for (i, c) in reps.iter_mut().enumerate() {
         c.distinguishing_uniq = uniq_counts[i];
     }
-    let (families, edges_f64): (Vec<Vec<usize>>, Vec<(usize, usize, f64)>) = if !cfg.homology_primary {
+    let (families, edges_f64): (Vec<Vec<usize>>, Vec<(usize, usize, f64)>) = if !cfg
+        .homology_primary
+    {
         let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
         let c_fams = conflict_families(reps.len(), &c_edges);
         // audit: the de-tie edge set must be a subset of the AS-tie edge set (the bake-off invariant).
@@ -2227,17 +2448,28 @@ pub fn detect_and_assign(
         );
         for (fi, fam) in c_fams.iter().enumerate() {
             let members: Vec<&str> = fam.iter().map(|&i| reps[i].tid.as_str()).collect();
-            let coords: Vec<String> = fam.iter()
-                .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end)).collect();
-            let edge_weights: Vec<usize> = c_edges.iter()
-                .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b)).map(|&(_, _, w)| w).collect();
+            let coords: Vec<String> = fam
+                .iter()
+                .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end))
+                .collect();
+            let edge_weights: Vec<usize> = c_edges
+                .iter()
+                .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b))
+                .map(|&(_, _, w)| w)
+                .collect();
             let (mq_support, mq_both0) = family_mapq0_support(&placements, fam, &cfg.conflict);
             eprintln!(
                 "  conflict-fam{fi} n={} reads_linking={:?} mapq0_frac={}/{}: {} @ {}",
-                fam.len(), edge_weights, mq_both0, mq_support, members.join(","), coords.join(" | "),
+                fam.len(),
+                edge_weights,
+                mq_both0,
+                mq_support,
+                members.join(","),
+                coords.join(" | "),
             );
         }
-        let edges_f64: Vec<(usize, usize, f64)> = c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+        let edges_f64: Vec<(usize, usize, f64)> =
+            c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
         (c_fams, edges_f64)
     } else {
         // Loud abort on failure — NEVER silently fall back to E_c (precedent: the famCN
@@ -2249,8 +2481,16 @@ pub fn detect_and_assign(
         let e2 = homology_edges_all_reps(&reps, &refine)
             .expect("--homology-primary: homology_edges_all_reps failed — is minimap2 on PATH or RUSTLE_MINIMAP2 set?");
         let edges_f64: Vec<(usize, usize, f64)> = e2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
-        let families = crate::family::family_detect::family_split::gamma_quasi_clique_partition(reps.len(), &edges_f64, 0.20);
-        eprintln!("[detect_and_assign] homology (E_r): {} edges -> {} families", e2.len(), families.len());
+        let families = crate::family::family_detect::family_split::gamma_quasi_clique_partition(
+            reps.len(),
+            &edges_f64,
+            0.20,
+        );
+        eprintln!(
+            "[detect_and_assign] homology (E_r): {} edges -> {} families",
+            e2.len(),
+            families.len()
+        );
         (families, edges_f64)
     };
     let split = to_split_families(&families, &edges_f64, &cfg.split);
@@ -2269,16 +2509,27 @@ pub fn detect_and_assign(
     };
     eprintln!(
         "[detect_and_assign] POA homology (diagnostic): {} edges ({} via large-seq fallback){}",
-        poa_edges.len(), fallback_pairs.len(),
-        if skip_poa { " [SKIPPED via RUSTLE_SKIP_POA_DIAGNOSTIC]" } else { "" },
+        poa_edges.len(),
+        fallback_pairs.len(),
+        if skip_poa {
+            " [SKIPPED via RUSTLE_SKIP_POA_DIAGNOSTIC]"
+        } else {
+            ""
+        },
     );
     lap!("conflict-graph + POA homology diagnostic");
     let fallback: Vec<FallbackEdge> = fallback_pairs
         .iter()
         .map(|&(a, b)| FallbackEdge {
             chrom: reps[a].chrom.clone(),
-            tid_a: reps[a].tid.clone(), start_a: reps[a].start, end_a: reps[a].end, len_a: reps[a].seq.len(),
-            tid_b: reps[b].tid.clone(), start_b: reps[b].start, end_b: reps[b].end, len_b: reps[b].seq.len(),
+            tid_a: reps[a].tid.clone(),
+            start_a: reps[a].start,
+            end_a: reps[a].end,
+            len_a: reps[a].seq.len(),
+            tid_b: reps[b].tid.clone(),
+            start_b: reps[b].start,
+            end_b: reps[b].end,
+            len_b: reps[b].seq.len(),
         })
         .collect();
     if !rescue_extra.is_empty() {
@@ -2294,8 +2545,11 @@ pub fn detect_and_assign(
     // Report-first augment-and-linearize certificate (Task 4): one entry per Stage-2-admitted reference-absent
     // copy, computed against that candidate's MAPQ-0 read pool. Admission itself is unchanged here (Task 5
     // adds the opt-in `--linearize-gate`); this is purely additive reporting threaded out to the caller.
-    let mut linearize_certs: Vec<(String, super::linearize::LinearizeCertificate, (String, u64, u64))> =
-        Vec::new();
+    let mut linearize_certs: Vec<(
+        String,
+        super::linearize::LinearizeCertificate,
+        (String, u64, u64),
+    )> = Vec::new();
     // Co-located families, then (default) the SAME mutual-homology + distinct-locus refinement gate that
     // `gw_family_catalog` applies — so the per-region path and the genome-wide catalog agree on what a family is.
     // Without it the conflict oracle admits large-gene mis-chains (PBX1) and repeat-bridges (see
@@ -2329,7 +2583,8 @@ pub fn detect_and_assign(
     };
     if cfg.refine && !supplied {
         let before = colocated.len();
-        let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
+        let copysets: Vec<Vec<DenovoTranscript>> =
+            colocated.iter().map(|c| c.copies.clone()).collect();
         // RNA exon-sum substrate -> the forward-only E_r guard applies (DEFAULT ON 2026-08-19).
         let refine_params = RefineParams {
             intron_fasta: Some(fasta_path.to_string()),
@@ -2351,7 +2606,11 @@ pub fn detect_and_assign(
             log_floor,
             refine_params.min_coverage
         );
-        colocated = refined.into_iter().enumerate().map(|(i, c)| colocated_from_copies(i, c)).collect();
+        colocated = refined
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| colocated_from_copies(i, c))
+            .collect();
     }
     for cf in colocated {
         // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
@@ -2369,7 +2628,11 @@ pub fn detect_and_assign(
         let member_spans: Vec<MemberSpan> = cf
             .copies
             .iter()
-            .map(|c| MemberSpan { chrom: c.chrom.clone(), start: c.start, end: c.end })
+            .map(|c| MemberSpan {
+                chrom: c.chrom.clone(),
+                start: c.start,
+                end: c.end,
+            })
             .collect();
         // scan a ±1 Mb NEIGHBOURHOOD around the family span (the python rescue `WIN`) so under-assembled
         // copies just outside the tight cluster are reachable — not only the detected-copy span.
@@ -2387,7 +2650,14 @@ pub fn detect_and_assign(
                 .cloned()
                 .collect();
             let loci = thin_loci(&region_primary, RESCUE_MIN_SUPPORT);
-            rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3)
+            rescue_thin_loci_iterative(
+                &loci,
+                &members,
+                &member_spans,
+                genome,
+                &RescueParams::default(),
+                3,
+            )
         };
         let rescued_copies = rescued.len();
         // tid -> discovery remap identity, for reference-ABSENT copies admitted below (Stage-2). Keyed on
@@ -2405,7 +2675,8 @@ pub fn detect_and_assign(
                 strand: rc.strand,
                 introns: rc.locus.introns.clone(),
                 seq: rc.seq.clone(),
-             ..Default::default() });
+                ..Default::default()
+            });
         }
         // The reads this family is assigned (assign overlaps by coordinate, so they are pre-filtered by chromosome):
         // (1) those on `cf.chrom` overlapping its span, as ever -- for a supplied cross-chromosome family that span
@@ -2424,7 +2695,10 @@ pub fn detect_and_assign(
                 h.0 = h.0.min(c.start);
                 h.1 = h.1.max(c.end);
             }
-            hulls.into_iter().map(|(c, (lo, hi))| (c.to_string(), lo, hi)).collect()
+            hulls
+                .into_iter()
+                .map(|(c, (lo, hi))| (c.to_string(), lo, hi))
+                .collect()
         };
         let mut idx_map = Vec::new();
         let mut region = Vec::new();
@@ -2433,9 +2707,9 @@ pub fn detect_and_assign(
             let in_region = if br.chrom == cf.chrom {
                 br.read.ref_start < cf.end && read_ref_end(&br.read) > cf.start
             } else {
-                other_hulls
-                    .iter()
-                    .any(|(c, lo, hi)| *c == br.chrom && br.read.ref_start < *hi && read_ref_end(&br.read) > *lo)
+                other_hulls.iter().any(|(c, lo, hi)| {
+                    *c == br.chrom && br.read.ref_start < *hi && read_ref_end(&br.read) > *lo
+                })
             };
             if in_region {
                 idx_map.push(i);
@@ -2446,12 +2720,16 @@ pub fn detect_and_assign(
         // O2.14: `region` holds alignment RECORDS; a multimapping molecule appears once per placement (the
         // shipped BAM is `-Y`, so its secondary records carry the full SEQ and each is independently
         // scorable). The names make the MOLECULE the unit of a result — see `assign_family_detailed_once`.
-        let region_names: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].name.clone()).collect();
+        let region_names: Vec<String> =
+            idx_map.iter().map(|&i| bam_reads[i].name.clone()).collect();
         // The records' chromosomes, in `region` order: a read overlaps only the family's copies on its own
         // chromosome (`AlignedRead` carries none). For a family on one chromosome every record here is on
         // `cf.chrom`, so this changes nothing; for a cross-chromosome family it keeps a read on one chromosome
         // from being counted as overlapping a copy on another that spans the same numbers.
-        let region_chroms: Vec<String> = idx_map.iter().map(|&i| bam_reads[i].chrom.clone()).collect();
+        let region_chroms: Vec<String> = idx_map
+            .iter()
+            .map(|&i| bam_reads[i].chrom.clone())
+            .collect();
         // Unique-mapper support is a property of the MOLECULE ("this molecule has a mapq>0 placement"),
         // not of whichever of its records represents it after the reduction — only the PRIMARY record
         // carries mapq>0, and the representative need not be the primary. Taking the max over a molecule's
@@ -2466,11 +2744,21 @@ pub fn detect_and_assign(
         };
         // Stage-1 and Stage-2 run WITHOUT iterative pruning so freeze_merge and downstream bookkeeping stay
         // in the original index space. Pruning, when requested, is applied as a final post-process below.
-        let p_once = AssignParams { iterative_prune: false, ..*p };
+        let p_once = AssignParams {
+            iterative_prune: false,
+            ..*p
+        };
         // Stage-1: assign over the reference copies only (borrow scoped so `all_copies` stays reassignable).
         let mut detail = {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            assign_family_detailed(&copies, &region, &p_once, Some(genome), Some(&region_names), Some(&region_chroms))
+            assign_family_detailed(
+                &copies,
+                &region,
+                &p_once,
+                Some(genome),
+                Some(&region_names),
+                Some(&region_chroms),
+            )
         };
         // Task 5 (opt-in): two-stage freeze for reference-ABSENT (collapsed) copies. OFF => this whole block
         // is skipped, so the loop below is byte-for-byte the pre-Task-5 path (`all_copies`/`detail` unchanged).
@@ -2483,8 +2771,12 @@ pub fn detect_and_assign(
             // so build them once here rather than per candidate. Empty (no minimap2 work) when opt-out.
             let (pool, copy_seqs): (Vec<Vec<u8>>, Vec<Vec<u8>>) = if do_linearize {
                 (
-                    region.iter().zip(region_mapq.iter())
-                        .filter(|(_, &q)| q == 0).map(|(r, _)| r.seq.clone()).collect(),
+                    region
+                        .iter()
+                        .zip(region_mapq.iter())
+                        .filter(|(_, &q)| q == 0)
+                        .map(|(r, _)| r.seq.clone())
+                        .collect(),
                     all_copies.iter().map(|c| c.seq.clone()).collect(),
                 )
             } else {
@@ -2493,7 +2785,13 @@ pub fn detect_and_assign(
             for cand in &cands {
                 if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
                     // `from_env` == `default` unless RUSTLE_ABSENT_MIN_CLUSTERS is set (removal-ablation only).
-                    match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::from_env()) {
+                    match absent_copy::admit_candidate(
+                        cand,
+                        host,
+                        genome,
+                        fasta_path,
+                        &AbsentCopyParams::from_env(),
+                    ) {
                         Admission::Copy(t, id) => {
                             if let Some(v) = id {
                                 remap_id_by_tid.insert(t.tid.clone(), v);
@@ -2504,17 +2802,30 @@ pub fn detect_and_assign(
                             // SKIPPED entirely (no minimap2, no push) when `do_linearize` is false, so plain
                             // `--absent-copies` keeps its prior admission cost and emits no certificate.
                             if let Some(cert) = linearize_cert_if_enabled(
-                                do_linearize, &t.seq, &copy_seqs, &pool, absent_copy::realign_pool_minimap2,
+                                do_linearize,
+                                &t.seq,
+                                &copy_seqs,
+                                &pool,
+                                absent_copy::realign_pool_minimap2,
                             ) {
                                 let verdict = cert.verdict;
-                                linearize_certs.push((cf.family_id.clone(), cert, (t.chrom.clone(), t.start, t.end)));
+                                linearize_certs.push((
+                                    cf.family_id.clone(),
+                                    cert,
+                                    (t.chrom.clone(), t.start, t.end),
+                                ));
                                 // Opt-in gate (Task 5): a candidate that does NOT linearize is demoted to a
                                 // DNA-needs record instead of admitted, when `--linearize-gate` is set. Only
                                 // reachable when the cert was computed (do_linearize implied by the gate).
-                                if linearize_gate && !matches!(verdict, super::linearize::Verdict::Linearizes) {
+                                if linearize_gate
+                                    && !matches!(verdict, super::linearize::Verdict::Linearizes)
+                                {
                                     // UNDETERMINED (perm_p is NaN, pool below min) is a distinct cause from a
                                     // computed non-linearizing perm_p >= alpha — report the true reason.
-                                    let reason = if matches!(verdict, super::linearize::Verdict::Undetermined) {
+                                    let reason = if matches!(
+                                        verdict,
+                                        super::linearize::Verdict::Undetermined
+                                    ) {
                                         "pool too small for linearize certificate"
                                     } else {
                                         "did not linearize (perm_p >= alpha)"
@@ -2546,8 +2857,16 @@ pub fn detect_and_assign(
                 // surviving absent-copy assignment is flagged `discovery_coupled`). Matched by read_index.
                 {
                     let copies2: Vec<&DenovoTranscript> = copies2_owned.iter().collect();
-                    let mut d2 = assign_family_detailed(&copies2, &region, &p_once, Some(genome), Some(&region_names), Some(&region_chroms));
-                    d2.results = freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
+                    let mut d2 = assign_family_detailed(
+                        &copies2,
+                        &region,
+                        &p_once,
+                        Some(genome),
+                        Some(&region_names),
+                        Some(&region_chroms),
+                    );
+                    d2.results =
+                        freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
                     detail = d2;
                 }
                 // The ref copies keep indices 0..n_ref, so every per-read `best_copy` stays valid; the augmented
@@ -2560,20 +2879,41 @@ pub fn detect_and_assign(
         // post-process so the output copy roster is internally consistent.
         if p.iterative_prune && all_copies.len() >= 2 {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            detail = assign_family_detailed_pruned(&copies, &region, p, Some(genome), Some(&region_names), Some(&region_chroms));
-            all_copies = detail.copy_indices.iter().map(|&i| all_copies[i].clone()).collect();
+            detail = assign_family_detailed_pruned(
+                &copies,
+                &region,
+                p,
+                Some(genome),
+                Some(&region_names),
+                Some(&region_chroms),
+            );
+            all_copies = detail
+                .copy_indices
+                .iter()
+                .map(|&i| all_copies[i].clone())
+                .collect();
         }
         // Unified gene-conversion-vs-artifact discriminator: tag each confirmed event by recurrence
         // (already in `confirmed`) + microhomology at the breakpoint (RT/template-switch signature,
         // from the genome) + DNA support (catalog leg = None here; the bench harness adds it).
         detail.conversion_class = super::copy_assign::copy_assign_pipeline::classify_conversions(
-            &detail, genome, |_ev| None,
+            &detail,
+            genome,
+            |_ev| None,
         );
         if detail.mosaic_reads > 0 || !detail.conversions.is_empty() {
             use super::mosaic::Classification as Cl;
             let confirmed = detail.conversions.iter().filter(|e| e.confirmed).count();
-            let rt = detail.conversion_class.iter().filter(|&&c| c == Cl::RtSwitchArtifact).count();
-            let gc = detail.conversion_class.iter().filter(|&&c| c == Cl::GeneConversion).count();
+            let rt = detail
+                .conversion_class
+                .iter()
+                .filter(|&&c| c == Cl::RtSwitchArtifact)
+                .count();
+            let gc = detail
+                .conversion_class
+                .iter()
+                .filter(|&&c| c == Cl::GeneConversion)
+                .count();
             eprintln!(
                 "[mosaic] {} {}: {} mosaic-path reads, {} conversion events ({} confirmed -> {} gene_conversion, {} rt_switch_artifact)",
                 cf.family_id, cf.chrom, detail.mosaic_reads, detail.conversions.len(), confirmed, gc, rt
@@ -2598,7 +2938,8 @@ pub fn detect_and_assign(
         // (see `apply_realign_patch`/`admit_novel_pools`).
         let mut vg_realign_apply: Option<(super::vg_realign::RealignApply, FamilyProfiles)> = None;
         if cfg.vg_realign {
-            let family_bam_reads: Vec<BamRead> = idx_map.iter().map(|&i| bam_reads[i].clone()).collect();
+            let family_bam_reads: Vec<BamRead> =
+                idx_map.iter().map(|&i| bam_reads[i].clone()).collect();
             let copy_refs: Vec<&DenovoTranscript> = all_copies.iter().collect();
             // The family's PSV columns in EACH copy's own spliced-consensus offset frame (what
             // `apply_realign`'s `path_obs_at` re-extraction needs): `build_family_profiles` keys PSV
@@ -2632,7 +2973,11 @@ pub fn detect_and_assign(
             // `apply`'s indices are LOCAL to `family_bam_reads`; translate to the GLOBAL `bam_reads`
             // indices `fa.assignments`/`idx_map[r.read_index]` are keyed on.
             let apply_global = super::vg_realign::RealignApply {
-                corrected: apply.corrected.into_iter().map(|(l, v)| (idx_map[l], v)).collect(),
+                corrected: apply
+                    .corrected
+                    .into_iter()
+                    .map(|(l, v)| (idx_map[l], v))
+                    .collect(),
                 novel_pools: apply
                     .novel_pools
                     .iter()
@@ -2660,7 +3005,10 @@ pub fn detect_and_assign(
             rescued_copies,
             assignments: Vec::with_capacity(detail.results.len()),
             copy_tids: all_copies.iter().map(|c| c.tid.clone()).collect(),
-            copy_spans: all_copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect(),
+            copy_spans: all_copies
+                .iter()
+                .map(|c| (c.chrom.clone(), c.start, c.end))
+                .collect(),
             copy_abundance: detail.copy_abundance.clone(),
             copy_abundance_ci: detail.copy_abundance_ci.clone(),
             mosaic_reads: detail.mosaic_reads,
@@ -2672,7 +3020,10 @@ pub fn detect_and_assign(
             read_psv_obs: Vec::with_capacity(detail.results.len()),
             copy_junctions: detail.copy_junctions.clone(),
             copy_introns: all_copies.iter().map(|c| c.introns.clone()).collect(),
-            copy_map_identity: all_copies.iter().map(|c| remap_id_by_tid.get(&c.tid).copied()).collect(),
+            copy_map_identity: all_copies
+                .iter()
+                .map(|c| remap_id_by_tid.get(&c.tid).copied())
+                .collect(),
             read_junctions: Vec::with_capacity(detail.results.len()),
             realign_records: Vec::new(),
         };
@@ -2709,7 +3060,15 @@ pub fn detect_and_assign(
             // Admission (roster-widening, genome-touching, O4-frontier FP risk) is gated SEPARATELY from the
             // correction leg: correction-only re-threads + reassigns among EXISTING copies, admits none.
             if cfg.vg_realign_admit {
-                admit_novel_pools(&mut fa, &novel_pools, bam_reads, &all_copies, genome, fasta_path, &profiles);
+                admit_novel_pools(
+                    &mut fa,
+                    &novel_pools,
+                    bam_reads,
+                    &all_copies,
+                    genome,
+                    fasta_path,
+                    &profiles,
+                );
             } else {
                 let _ = (&novel_pools, &profiles);
             }
@@ -2726,8 +3085,10 @@ pub fn detect_and_assign(
     // made the single-copy gene TSPYL1 report 12 copies against DAZ's 3 (`bench/COLLAPSED_COPY_GATE.md`).
     if cfg.collapse_gate {
         // owned, so `out` is free to grow below
-        let familied: DetHashSet<String> =
-            out.iter().flat_map(|fa| fa.copy_tids.iter().cloned()).collect();
+        let familied: DetHashSet<String> = out
+            .iter()
+            .flat_map(|fa| fa.copy_tids.iter().cloned())
+            .collect();
         for rep in reps.iter().filter(|r| !familied.contains(&r.tid)) {
             let obs = locus_ambiguity(rep, bam_reads);
             let reads: Vec<AlignedRead> = bam_reads
@@ -2769,8 +3130,10 @@ pub fn detect_and_assign(
     // locus no emitted copy occupies becomes a singleton `TSFAM` family that ties every overlapping read
     // (detected, unassignable). Additive-only: never merges or drops a primary copy.
     if cfg.tied_seed && !tied_reps.is_empty() {
-        let emitted: Vec<(String, u64, u64)> =
-            out.iter().flat_map(|fa| fa.copy_spans.iter().cloned()).collect();
+        let emitted: Vec<(String, u64, u64)> = out
+            .iter()
+            .flat_map(|fa| fa.copy_spans.iter().cloned())
+            .collect();
         let tied_fams = tied_existence_families(&tied_reps, &emitted, bam_reads, out.len());
         eprintln!(
             "[detect_and_assign] tied-seed existence-only: {} tied reps -> {} appended (non-overlapping)",
@@ -2866,14 +3229,21 @@ impl UnionSummary {
 /// tie partner only at the maximum).
 pub fn tied_record_indices(bam_reads: &[BamRead]) -> BTreeMap<String, Vec<usize>> {
     let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
-    for (i, br) in bam_reads.iter().enumerate().filter(|(_, b)| !b.is_supplementary) {
+    for (i, br) in bam_reads
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| !b.is_supplementary)
+    {
         by_name.entry(br.name.as_str()).or_default().push(i);
     }
     by_name
         .into_iter()
         .filter_map(|(name, idx)| {
             let max_as = idx.iter().map(|&i| bam_reads[i].as_score).max()?;
-            let tied: Vec<usize> = idx.into_iter().filter(|&i| bam_reads[i].as_score == max_as).collect();
+            let tied: Vec<usize> = idx
+                .into_iter()
+                .filter(|&i| bam_reads[i].as_score == max_as)
+                .collect();
             (tied.len() >= 2).then(|| (name.to_string(), tied))
         })
         .collect()
@@ -2884,9 +3254,27 @@ pub fn tied_record_indices(bam_reads: &[BamRead]) -> BTreeMap<String, Vec<usize>
 /// to read it from) — the rule the binary's `read_strand` column uses.
 pub fn record_genomic_strand(br: &BamRead) -> char {
     match (br.ts, br.reverse) {
-        (Some('+'), rev) => if rev { '-' } else { '+' },
-        (Some('-'), rev) => if rev { '+' } else { '-' },
-        (_, rev) => if rev { '-' } else { '+' },
+        (Some('+'), rev) => {
+            if rev {
+                '-'
+            } else {
+                '+'
+            }
+        }
+        (Some('-'), rev) => {
+            if rev {
+                '+'
+            } else {
+                '-'
+            }
+        }
+        (_, rev) => {
+            if rev {
+                '-'
+            } else {
+                '+'
+            }
+        }
     }
 }
 
@@ -2897,17 +3285,40 @@ pub fn record_genomic_strand(br: &BamRead) -> char {
 /// the chain (a non-canonical junction the read nevertheless carries), the blocks are concatenated as aligned
 /// and reverse-complemented on `-`, so the placement is still scored rather than silently dropped. `tid` =
 /// `outside:<chrom>:<start1>-<end>` (1-based start — the token `register_tie_outside_locus` emits).
-pub fn outside_pseudo_copy(chrom: &str, blocks: &[(u64, u64)], strand: char, genome: &GenomeIndex) -> Option<DenovoTranscript> {
+pub fn outside_pseudo_copy(
+    chrom: &str,
+    blocks: &[(u64, u64)],
+    strand: char,
+    genome: &GenomeIndex,
+) -> Option<DenovoTranscript> {
     let (&(start, _), &(_, end)) = (blocks.first()?, blocks.last()?);
-    let introns: Vec<(u64, u64)> = blocks.windows(2).map(|w| (w[0].1, w[1].0)).filter(|&(a, b)| b > a).collect();
-    let (seq, strand) = match super::denovo_assemble::build_spliced_seq(genome, chrom, start, end, &introns, Some(strand)) {
+    let introns: Vec<(u64, u64)> = blocks
+        .windows(2)
+        .map(|w| (w[0].1, w[1].0))
+        .filter(|&(a, b)| b > a)
+        .collect();
+    let (seq, strand) = match super::denovo_assemble::build_spliced_seq(
+        genome,
+        chrom,
+        start,
+        end,
+        &introns,
+        Some(strand),
+    ) {
         Some(v) => v,
         None => {
             let mut s = Vec::new();
             for &(a, b) in blocks {
                 s.extend(genome.fetch_sequence(chrom, a, b)?);
             }
-            (if strand == '-' { super::seq_utils::revcomp_keep_case(&s) } else { s }, strand)
+            (
+                if strand == '-' {
+                    super::seq_utils::revcomp_keep_case(&s)
+                } else {
+                    s
+                },
+                strand,
+            )
         }
     };
     if seq.is_empty() {
@@ -2949,8 +3360,16 @@ fn tie_row(a: &mut Assignment, n_copies: usize) {
 /// (`assigned_j`, `resolvable_j`; on the read-star path `psv` IS `combined`, so those two follow). `uniq`/
 /// `uniq_agree` need each row's `mapped_copy`, which `FamilyAssignment` does not keep -- left as computed.
 fn recount_after_union(fa: &mut FamilyAssignment, psv_is_combined: bool) {
-    fa.assigned_j = fa.assignments.iter().filter(|(_, a)| a.status == AssignStatus::Assigned).count();
-    fa.resolvable_j = fa.assignments.iter().filter(|(_, a)| a.n_decisive >= 1).count();
+    fa.assigned_j = fa
+        .assignments
+        .iter()
+        .filter(|(_, a)| a.status == AssignStatus::Assigned)
+        .count();
+    fa.resolvable_j = fa
+        .assignments
+        .iter()
+        .filter(|(_, a)| a.n_decisive >= 1)
+        .count();
     if psv_is_combined {
         fa.assigned_psv = fa.assigned_j;
         fa.resolvable_psv = fa.resolvable_j;
@@ -2966,8 +3385,15 @@ fn project_posterior(
     union_post: &[f64],
     one_hot: Option<usize>,
 ) -> Vec<f64> {
-    let mut post: Vec<f64> =
-        (0..n_f).map(|k| pos_of.get(&(f, k)).and_then(|&u| union_post.get(u)).copied().unwrap_or(0.0)).collect();
+    let mut post: Vec<f64> = (0..n_f)
+        .map(|k| {
+            pos_of
+                .get(&(f, k))
+                .and_then(|&u| union_post.get(u))
+                .copied()
+                .unwrap_or(0.0)
+        })
+        .collect();
     let z: f64 = post.iter().sum();
     if z > 0.0 {
         for x in &mut post {
@@ -3000,7 +3426,13 @@ fn exon_intervals(t: &DenovoTranscript) -> Vec<(u64, u64)> {
 
 /// Aligned-bp overlap of two exon interval lists (both sorted, same chromosome assumed by the caller).
 fn exonic_overlap(a: &[(u64, u64)], b: &[(u64, u64)]) -> u64 {
-    a.iter().map(|&(s, e)| b.iter().map(|&(s2, e2)| e.min(e2).saturating_sub(s.max(s2))).sum::<u64>()).sum()
+    a.iter()
+        .map(|&(s, e)| {
+            b.iter()
+                .map(|&(s2, e2)| e.min(e2).saturating_sub(s.max(s2)))
+                .sum::<u64>()
+        })
+        .sum()
 }
 
 /// Merge candidates that are ONE LOCUS into one candidate. Input: `(chrom, start, end, member, transcript,
@@ -3023,7 +3455,10 @@ fn merge_same_locus(
 ) -> Vec<(DenovoTranscript, Vec<Member>, String)> {
     let n = raw.len();
     let exons: Vec<Vec<(u64, u64)>> = raw.iter().map(|r| exon_intervals(&r.4)).collect();
-    let exonic_len: Vec<u64> = exons.iter().map(|v| v.iter().map(|&(s, e)| e - s).sum()).collect();
+    let exonic_len: Vec<u64> = exons
+        .iter()
+        .map(|v| v.iter().map(|&(s, e)| e - s).sum())
+        .collect();
     let mut parent: Vec<usize> = (0..n).collect();
     fn find(p: &mut Vec<usize>, i: usize) -> usize {
         let mut r = i;
@@ -3058,11 +3493,18 @@ fn merge_same_locus(
         let r = find(&mut parent, i);
         comps.entry(r).or_default().push(i);
     }
-    let mut raw: Vec<Option<(String, u64, u64, Member, DenovoTranscript, String)>> = raw.into_iter().map(Some).collect();
+    let mut raw: Vec<Option<(String, u64, u64, Member, DenovoTranscript, String)>> =
+        raw.into_iter().map(Some).collect();
     let mut out = Vec::new();
     for (_, idxs) in comps {
         // representative: the longest-exonic member (first on a tie)
-        let rep = idxs.iter().copied().fold(idxs[0], |best, i| if exonic_len[i] > exonic_len[best] { i } else { best });
+        let rep = idxs.iter().copied().fold(idxs[0], |best, i| {
+            if exonic_len[i] > exonic_len[best] {
+                i
+            } else {
+                best
+            }
+        });
         let mut members = Vec::with_capacity(idxs.len());
         let mut labels = Vec::with_capacity(idxs.len());
         let mut rep_t: Option<DenovoTranscript> = None;
@@ -3074,7 +3516,11 @@ fn merge_same_locus(
                 rep_t = Some(t);
             }
         }
-        out.push((rep_t.expect("the representative is a member"), members, labels.join("+")));
+        out.push((
+            rep_t.expect("the representative is a member"),
+            members,
+            labels.join("+"),
+        ));
     }
     out
 }
@@ -3133,18 +3579,30 @@ pub fn union_certificate_pass(
     use DetHashMap;
     let mut sum = UnionSummary::default();
     // catalog copies by tid (the sequence lives here), then per family in `copy_tids` order
-    let by_tid: DetHashMap<&str, &DenovoTranscript> =
-        supplied.iter().flat_map(|f| f.copies.iter()).map(|c| (c.tid.as_str(), c)).collect();
+    let by_tid: DetHashMap<&str, &DenovoTranscript> = supplied
+        .iter()
+        .flat_map(|f| f.copies.iter())
+        .map(|c| (c.tid.as_str(), c))
+        .collect();
     let fam_copies: Vec<Option<Vec<&DenovoTranscript>>> = fams
         .iter()
-        .map(|fa| fa.copy_tids.iter().map(|t| by_tid.get(t.as_str()).copied()).collect())
+        .map(|fa| {
+            fa.copy_tids
+                .iter()
+                .map(|t| by_tid.get(t.as_str()).copied())
+                .collect()
+        })
         .collect();
     // every unit of every candidate-bearing family: (f, chrom, start, end) -- the §6gz `targets`
     let units: Vec<(usize, &str, u64, u64)> = fams
         .iter()
         .enumerate()
         .filter(|(f, _)| fam_copies[*f].is_some())
-        .flat_map(|(f, fa)| fa.copy_spans.iter().map(move |(c, s, e)| (f, c.as_str(), *s, *e)))
+        .flat_map(|(f, fa)| {
+            fa.copy_spans
+                .iter()
+                .map(move |(c, s, e)| (f, c.as_str(), *s, *e))
+        })
         .collect();
     // molecule -> its rows: (f, index into fams[f].assignments)
     let mut rows_of: DetHashMap<&str, Vec<(usize, usize)>> = DetHashMap::default();
@@ -3173,7 +3631,9 @@ pub fn union_certificate_pass(
     }
     let mut groups: BTreeMap<Key, Vec<(String, Vec<usize>)>> = BTreeMap::new();
     for (name, recs) in tied_record_indices(bam_reads) {
-        let Some(rows) = rows_of.get(name.as_str()) else { continue };
+        let Some(rows) = rows_of.get(name.as_str()) else {
+            continue;
+        };
         let mut cand_fams: BTreeSet<usize> = BTreeSet::new();
         let mut outside: BTreeSet<(String, Vec<(u64, u64)>, char)> = BTreeSet::new();
         for &ri in &recs {
@@ -3187,7 +3647,11 @@ pub fn union_certificate_pass(
                 }
             }
             if !inside {
-                outside.insert((br.chrom.clone(), br.read.exon_blocks(), record_genomic_strand(br)));
+                outside.insert((
+                    br.chrom.clone(),
+                    br.read.exon_blocks(),
+                    record_genomic_strand(br),
+                ));
             }
         }
         for &(f, _) in rows {
@@ -3203,27 +3667,54 @@ pub fn union_certificate_pass(
             sum.n_other_region += 1;
             continue;
         }
-        let key = Key { fams: cand_fams.into_iter().collect(), outside: outside.into_iter().collect() };
+        let key = Key {
+            fams: cand_fams.into_iter().collect(),
+            outside: outside.into_iter().collect(),
+        };
         groups.entry(key).or_default().push((name, recs));
     }
     sum.n_groups = groups.len();
-    let p_union = AssignParams { tie_outside_scored: true, dump_star: false, iterative_prune: false, ..*p };
+    let p_union = AssignParams {
+        tie_outside_scored: true,
+        dump_star: false,
+        iterative_prune: false,
+        ..*p
+    };
     let mut touched: BTreeSet<usize> = BTreeSet::new();
     for (key, mols) in groups {
         // the union copy set: every copy of every candidate family, then the pseudo-copies; overlapping
         // spans merged into locus candidates
         let mut raw: Vec<(String, u64, u64, Member, DenovoTranscript, String)> = Vec::new();
         for &f in &key.fams {
-            for (ci, c) in fam_copies[f].as_ref().expect("candidate families have catalog copies").iter().enumerate() {
+            for (ci, c) in fam_copies[f]
+                .as_ref()
+                .expect("candidate families have catalog copies")
+                .iter()
+                .enumerate()
+            {
                 let label = copy_label(&fams[f].family_id, &c.tid, ci);
-                raw.push((c.chrom.clone(), c.start, c.end, Member::Family(f, ci, label.clone()), (*c).clone(), label));
+                raw.push((
+                    c.chrom.clone(),
+                    c.start,
+                    c.end,
+                    Member::Family(f, ci, label.clone()),
+                    (*c).clone(),
+                    label,
+                ));
             }
         }
         for (chrom, blocks, strand) in &key.outside {
             match outside_pseudo_copy(chrom, blocks, *strand, genome) {
                 Some(t) => {
                     let label = t.tid.clone();
-                    raw.push((t.chrom.clone(), t.start, t.end, Member::Outside(label.clone()), t, label));
+                    raw.push((
+                        t.chrom.clone(),
+                        t.start,
+                        t.end,
+                        Member::Outside(label.clone()),
+                        t,
+                        label,
+                    ));
                 }
                 None => sum.n_pseudo_unbuildable += 1,
             }
@@ -3256,57 +3747,85 @@ pub fn union_certificate_pass(
                 chroms.push(bam_reads[ri].chrom.clone());
             }
         }
-        let results: DetHashMap<&str, super::copy_assign::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
-            let refs: Vec<&DenovoTranscript> = copies.iter().collect();
-            let d = assign_family_detailed(&refs, &reads, &p_union, Some(genome), Some(&names), Some(&chroms));
-            d.results.into_iter().map(|r| (names[r.read_index].as_str(), r)).collect()
-        } else {
-            DetHashMap::default()
-        };
+        let results: DetHashMap<&str, super::copy_assign::copy_assign_pipeline::ReadResult> =
+            if copies.len() >= 2 {
+                let refs: Vec<&DenovoTranscript> = copies.iter().collect();
+                let d = assign_family_detailed(
+                    &refs,
+                    &reads,
+                    &p_union,
+                    Some(genome),
+                    Some(&names),
+                    Some(&chroms),
+                );
+                d.results
+                    .into_iter()
+                    .map(|r| (names[r.read_index].as_str(), r))
+                    .collect()
+            } else {
+                DetHashMap::default()
+            };
         let candidates = labels.join(",");
         for (name, recs) in &mols {
             let rows = &rows_of[name.as_str()];
             let Some(r) = results.get(name.as_str()) else {
                 sum.n_no_result += 1;
                 sum.rows.push(UnionRow {
-                    read_name: name.clone(), n_candidates: copies.len(), candidates: candidates.clone(),
-                    winner: "-".into(), n_decisive: 0, margin: 0.0, p_value: 1.0, verdict: "no_result".into(),
+                    read_name: name.clone(),
+                    n_candidates: copies.len(),
+                    candidates: candidates.clone(),
+                    winner: "-".into(),
+                    n_decisive: 0,
+                    margin: 0.0,
+                    p_value: 1.0,
+                    verdict: "no_result".into(),
                 });
                 continue;
             };
             let a = &r.combined;
             // the catalog member of the winning candidate the molecule lies in most (aligned-block overlap
             // of its tied records with the member's unit; first member on a tie)
-            let winning_member: Option<(usize, usize, String)> = if a.status == AssignStatus::Assigned {
-                let mut best: Option<((usize, usize, String), u64)> = None;
-                for m in origin.get(a.best_copy).map(|v| v.as_slice()).unwrap_or(&[]) {
-                    if let Member::Family(f, ci, label) = m {
-                        let (c, s, e) = &fams[*f].copy_spans[*ci];
-                        let ov: u64 = recs
-                            .iter()
-                            .map(|&ri| {
-                                let br = &bam_reads[ri];
-                                if br.chrom != *c {
-                                    return 0;
-                                }
-                                br.read.exon_blocks().iter().map(|&(bs, be)| be.min(*e).saturating_sub(bs.max(*s))).sum()
-                            })
-                            .max()
-                            .unwrap_or(0);
-                        if best.as_ref().map_or(true, |(_, b)| ov > *b) {
-                            best = Some(((*f, *ci, label.clone()), ov));
+            let winning_member: Option<(usize, usize, String)> =
+                if a.status == AssignStatus::Assigned {
+                    let mut best: Option<((usize, usize, String), u64)> = None;
+                    for m in origin.get(a.best_copy).map(|v| v.as_slice()).unwrap_or(&[]) {
+                        if let Member::Family(f, ci, label) = m {
+                            let (c, s, e) = &fams[*f].copy_spans[*ci];
+                            let ov: u64 = recs
+                                .iter()
+                                .map(|&ri| {
+                                    let br = &bam_reads[ri];
+                                    if br.chrom != *c {
+                                        return 0;
+                                    }
+                                    br.read
+                                        .exon_blocks()
+                                        .iter()
+                                        .map(|&(bs, be)| be.min(*e).saturating_sub(bs.max(*s)))
+                                        .sum()
+                                })
+                                .max()
+                                .unwrap_or(0);
+                            if best.as_ref().map_or(true, |(_, b)| ov > *b) {
+                                best = Some(((*f, *ci, label.clone()), ov));
+                            }
                         }
                     }
-                }
-                best.map(|(m, _)| m)
-            } else {
-                None
-            };
+                    best.map(|(m, _)| m)
+                } else {
+                    None
+                };
             let (verdict, winner) = match (a.status, winning_member) {
                 (AssignStatus::Assigned, Some((f, ci, label))) => {
                     // the winning family's row: the union's verdict and evidence; its posterior = the union's
                     // mass over this family's copies, renormalized (one-hot at the winner if it carries none)
-                    let post = project_posterior(fams[f].copy_tids.len(), f, &pos_of, &a.posterior, Some(ci));
+                    let post = project_posterior(
+                        fams[f].copy_tids.len(),
+                        f,
+                        &pos_of,
+                        &a.posterior,
+                        Some(ci),
+                    );
                     let mut have_row = false;
                     for &(g, k) in rows {
                         let fa = &mut fams[g];
@@ -3341,7 +3860,9 @@ pub fn union_certificate_pass(
                             .find(|&ri| {
                                 let br = &bam_reads[ri];
                                 fams[f].copy_spans.iter().any(|(c, s, e)| {
-                                    *c == br.chrom && br.read.ref_start < *e && read_ref_end(&br.read) > *s
+                                    *c == br.chrom
+                                        && br.read.ref_start < *e
+                                        && read_ref_end(&br.read) > *s
                                 })
                             })
                             .unwrap_or(recs[0]);
@@ -3382,7 +3903,13 @@ pub fn union_certificate_pass(
                         touched.insert(g);
                     }
                     sum.n_assigned_outside += 1;
-                    ("assigned_outside", labels.get(a.best_copy).cloned().unwrap_or_else(|| "-".into()))
+                    (
+                        "assigned_outside",
+                        labels
+                            .get(a.best_copy)
+                            .cloned()
+                            .unwrap_or_else(|| "-".into()),
+                    )
                 }
                 (AssignStatus::Tied, _) => {
                     // the union's own tie: its posterior (the consistent zone), projected per family
@@ -3405,7 +3932,8 @@ pub fn union_certificate_pass(
                 (AssignStatus::Ambiguous, _) => {
                     for &(g, k) in rows {
                         let fa = &mut fams[g];
-                        let post = project_posterior(fa.copy_tids.len(), g, &pos_of, &a.posterior, None);
+                        let post =
+                            project_posterior(fa.copy_tids.len(), g, &pos_of, &a.posterior, None);
                         let ass = &mut fa.assignments[k].1;
                         ass.status = AssignStatus::Ambiguous;
                         ass.resolvable = false;
@@ -3469,7 +3997,11 @@ fn gw_reps_and_catalog(
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
-    let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
+    let rt_support = if cfg.filter_readthrough {
+        Some(read_junction_support(&reads))
+    } else {
+        None
+    };
     drop(reads); // free the ~1.7M primaries before the per-chrom read load
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
     if let Some(sup) = &rt_support {
@@ -3489,7 +4021,8 @@ fn gw_reps_and_catalog(
     );
 
     // global rep indices grouped by chrom (for per-chrom processing + local↔global remap).
-    let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
+    let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> =
+        std::collections::BTreeMap::new();
     for (gi, rep) in reps.iter().enumerate() {
         by_chrom.entry(rep.chrom.as_str()).or_default().push(gi);
     }
@@ -3502,13 +4035,20 @@ fn gw_reps_and_catalog(
     // workers caps concurrent chromosome read-loads (WSL2 memory), and each chrom decodes single-threaded
     // since the parallelism is now across chromosomes (avoids threads^2 BGZF oversubscription).
     use rayon::prelude::*;
-    let chrom_work: Vec<(&str, &Vec<usize>)> =
-        by_chrom.iter().filter(|(_, g)| g.len() >= 2).map(|(c, g)| (*c, g)).collect();
+    let chrom_work: Vec<(&str, &Vec<usize>)> = by_chrom
+        .iter()
+        .filter(|(_, g)| g.len() >= 2)
+        .map(|(c, g)| (*c, g))
+        .collect();
     // Per-copy unique-mapper support (Task 3, identifiability-merge), piggybacked on this SAME per-chrom
     // placement build: `(global_rep_idx, mapq>0_placement_count)` pairs, free — `placements` is already
     // built here for `conflict_edges`. Feeds `distinct_locus_reps`'s same-strand merge guard downstream
     // (via `refine_families_exon_sum`) so it sees real read evidence instead of unconditionally collapsing.
-    type ChromEdges = (Vec<(usize, usize, usize)>, Vec<(usize, usize)>, (String, usize, usize, usize));
+    type ChromEdges = (
+        Vec<(usize, usize, usize)>,
+        Vec<(usize, usize)>,
+        (String, usize, usize, usize),
+    );
     let run = |&(chrom, glob): &(&str, &Vec<usize>)| -> Option<ChromEdges> {
         let clen = genome.chrom_len(chrom);
         let (_primary, bam_reads) = reads_in_region(bam_path, chrom, 0, clen, 1).ok()?;
@@ -3516,14 +4056,31 @@ fn gw_reps_and_catalog(
         let placements = build_read_placements(&bam_reads, &chrom_reps);
         let edges = conflict_edges(chrom_reps.len(), &placements, &cfg.conflict);
         let uniq_local = locus_unique_mapper_counts(&placements, chrom_reps.len());
-        let uniq_global: Vec<(usize, usize)> =
-            uniq_local.into_iter().enumerate().map(|(li, cnt)| (glob[li], cnt)).collect();
+        let uniq_global: Vec<(usize, usize)> = uniq_local
+            .into_iter()
+            .enumerate()
+            .map(|(li, cnt)| (glob[li], cnt))
+            .collect();
         let n_edges = edges.len(); // this chrom's edge count (not the cumulative total)
-        let remapped: Vec<(usize, usize, usize)> =
-            edges.into_iter().map(|(i, j, w)| (glob[i], glob[j], w)).collect(); // local → global rep index
-        Some((remapped, uniq_global, (chrom.to_string(), chrom_reps.len(), bam_reads.len(), n_edges)))
+        let remapped: Vec<(usize, usize, usize)> = edges
+            .into_iter()
+            .map(|(i, j, w)| (glob[i], glob[j], w))
+            .collect(); // local → global rep index
+        Some((
+            remapped,
+            uniq_global,
+            (
+                chrom.to_string(),
+                chrom_reps.len(),
+                bam_reads.len(),
+                n_edges,
+            ),
+        ))
     };
-    let per_chrom: Vec<ChromEdges> = match rayon::ThreadPoolBuilder::new().num_threads(threads.max(1)).build() {
+    let per_chrom: Vec<ChromEdges> = match rayon::ThreadPoolBuilder::new()
+        .num_threads(threads.max(1))
+        .build()
+    {
         Ok(pool) => pool.install(|| chrom_work.par_iter().filter_map(&run).collect()),
         Err(_) => chrom_work.iter().filter_map(&run).collect(), // serial fallback (byte-identical)
     };
@@ -3562,7 +4119,8 @@ pub fn detect_conflict_catalog_genome_wide(
     min_copies: usize,
     cfg: &DenovoConfig,
 ) -> Result<Vec<ColocatedFamily>> {
-    let (_reps, _rep_totals, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
+    let (_reps, _rep_totals, catalog) =
+        gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
     Ok(catalog)
 }
 
@@ -3584,7 +4142,8 @@ pub fn detect_single_copy_baseline_genome_wide(
     // copy_assign. Without refining first, an FP conflict "family" (a large-gene mis-chain or repeat-bridge)
     // would wrongly EXCLUDE its genuinely-single-copy reps from the baseline. `--no-refine` skips it.
     let families: Vec<ColocatedFamily> = if refine {
-        let copysets: Vec<Vec<DenovoTranscript>> = catalog.iter().map(|c| c.copies.clone()).collect();
+        let copysets: Vec<Vec<DenovoTranscript>> =
+            catalog.iter().map(|c| c.copies.clone()).collect();
         let refine_params =
             // RNA exon-sum substrate -> forward-only guard applies (DEFAULT ON 2026-08-19).
             RefineParams {
@@ -3594,17 +4153,26 @@ pub fn detect_single_copy_baseline_genome_wide(
                 substrate: Substrate::TranscriptOriented,
                 ..Default::default()
             };
-        let refined = refine_families_exon_sum(copysets, &refine_params, None, cfg.conflict.min_reads)?;
+        let refined =
+            refine_families_exon_sum(copysets, &refine_params, None, cfg.conflict.min_reads)?;
         eprintln!(
             "[gw-catalog] single-copy: refined {} raw -> {} homology-gated families for the multi-copy exclusion",
             catalog.len(),
             refined.len()
         );
-        refined.into_iter().enumerate().map(|(i, c)| colocated_from_copies(i, c)).collect()
+        refined
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| colocated_from_copies(i, c))
+            .collect()
     } else {
         catalog
     };
-    Ok(crate::family::single_copy::single_copy_loci(&reps, &rep_totals, &families))
+    Ok(crate::family::single_copy::single_copy_loci(
+        &reps,
+        &rep_totals,
+        &families,
+    ))
 }
 
 /// O1 family emission from a de-tie read-conflict graph: Louvain-decompose each raw connected component
@@ -3628,13 +4196,15 @@ fn families_from_conflict_graph(
 ) -> Vec<Vec<DenovoTranscript>> {
     let float_edges: Vec<(usize, usize, f64)> =
         edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
-    let split = crate::family::family_detect::family_split::decompose_families(&float_edges, &cfg.split);
+    let split =
+        crate::family::family_detect::family_split::decompose_families(&float_edges, &cfg.split);
     let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
     for sf in &split {
         if sf.class != FamilyClass::Family {
             continue; // drop sparse over-merge webs (repeat-driven transitive blobs)
         }
-        let comp_reps: Vec<DenovoTranscript> = sf.members.iter().map(|&i| reps[i].clone()).collect();
+        let comp_reps: Vec<DenovoTranscript> =
+            sf.members.iter().map(|&i| reps[i].clone()).collect();
         // same-locus artifacts (incl. same-locus antisense overlap); distinct-loci copies (incl. inverted
         // duplications and cross-chrom) are kept.
         let clean = prune_same_locus(comp_reps, &cfg.detect);
@@ -3675,22 +4245,43 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // `RUSTLE_DEBUG_LOCUS=chr:start-end` traces one locus through every stage, so a member that vanishes can
     // be attributed to the stage that dropped it instead of inferred. Off by default; pure logging.
-    let dbg_locus: Option<(String, u64, u64)> = std::env::var("RUSTLE_DEBUG_LOCUS").ok().and_then(|v| {
-        let (c, r) = v.split_once(':')?;
-        let (a, b) = r.split_once('-')?;
-        Some((c.to_string(), a.trim().parse().ok()?, b.trim().parse().ok()?))
-    });
+    let dbg_locus: Option<(String, u64, u64)> =
+        std::env::var("RUSTLE_DEBUG_LOCUS").ok().and_then(|v| {
+            let (c, r) = v.split_once(':')?;
+            let (a, b) = r.split_once('-')?;
+            Some((
+                c.to_string(),
+                a.trim().parse().ok()?,
+                b.trim().parse().ok()?,
+            ))
+        });
     if let Some((c, a, b)) = &dbg_locus {
-        let n = reads.iter().filter(|r| &r.chrom == c && r.ref_start < *b && r.ref_end > *a).count();
-        let mut sk: Vec<_> = skeletons.iter().filter(|s| &s.chrom == c && s.start < *b && s.end > *a).collect();
+        let n = reads
+            .iter()
+            .filter(|r| &r.chrom == c && r.ref_start < *b && r.ref_end > *a)
+            .count();
+        let mut sk: Vec<_> = skeletons
+            .iter()
+            .filter(|s| &s.chrom == c && s.start < *b && s.end > *a)
+            .collect();
         sk.sort_by_key(|s| std::cmp::Reverse(s.n_reads));
         eprintln!("[dbg {c}:{a}-{b}] reads={n}  skeletons={}", sk.len());
         for s in sk.iter().take(6) {
-            eprintln!("[dbg]   skeleton {}-{} introns={} reads={}", s.start, s.end, s.introns.len(), s.n_reads);
+            eprintln!(
+                "[dbg]   skeleton {}-{} introns={} reads={}",
+                s.start,
+                s.end,
+                s.introns.len(),
+                s.n_reads
+            );
         }
     }
     // Support map before the free; see the same-chrom catalog for why.
-    let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
+    let rt_support = if cfg.filter_readthrough {
+        Some(read_junction_support(&reads))
+    } else {
+        None
+    };
     drop(reads);
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
     if let Some(sup) = &rt_support {
@@ -3698,17 +4289,33 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
         retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
     if let Some((c, a, b)) = &dbg_locus {
-        let t: Vec<&DenovoTranscript> = transcripts.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
-        eprintln!("[dbg {c}:{a}-{b}] transcripts after gate+filters={}", t.len());
-        let mut t = t; t.sort_by_key(|x| std::cmp::Reverse(x.n_reads));
+        let t: Vec<&DenovoTranscript> = transcripts
+            .iter()
+            .filter(|t| &t.chrom == c && t.start < *b && t.end > *a)
+            .collect();
+        eprintln!(
+            "[dbg {c}:{a}-{b}] transcripts after gate+filters={}",
+            t.len()
+        );
+        let mut t = t;
+        t.sort_by_key(|x| std::cmp::Reverse(x.n_reads));
         for x in t.iter().take(6) {
-            eprintln!("[dbg]   tx {}-{} exons={} reads={} strand={} seq={}bp",
-                      x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand, x.seq.len());
+            eprintln!(
+                "[dbg]   tx {}-{} exons={} reads={} strand={} seq={}bp",
+                x.start,
+                x.end,
+                x.introns.len() + 1,
+                x.n_reads,
+                x.strand,
+                x.seq.len()
+            );
         }
     }
     // Exon-union substrate (`RUSTLE_LOCUS_EXON_UNION=1`, default off = byte-identical): rebuild each locus
     // rep from the union of its group's exons rather than its single best chain. See `union_locus_reps`.
-    let union_reps = std::env::var("RUSTLE_LOCUS_EXON_UNION").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let union_reps = std::env::var("RUSTLE_LOCUS_EXON_UNION")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
     let union_floor: u32 = std::env::var("RUSTLE_LOCUS_UNION_MIN_READS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -3722,23 +4329,40 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     };
     if let Some((c, a, b)) = &dbg_locus {
-        let r: Vec<&DenovoTranscript> = reps.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
+        let r: Vec<&DenovoTranscript> = reps
+            .iter()
+            .filter(|t| &t.chrom == c && t.start < *b && t.end > *a)
+            .collect();
         eprintln!("[dbg {c}:{a}-{b}] REPS after collapse={}", r.len());
         for x in r.iter().take(8) {
-            eprintln!("[dbg]   rep {}-{} exons={} reads={} strand={}", x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand);
+            eprintln!(
+                "[dbg]   rep {}-{} exons={} reads={} strand={}",
+                x.start,
+                x.end,
+                x.introns.len() + 1,
+                x.n_reads,
+                x.strand
+            );
         }
     }
     drop(transcripts);
-    let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
+    let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> =
+        std::collections::BTreeMap::new();
     for (gi, rep) in reps.iter().enumerate() {
         by_chrom.entry(rep.chrom.as_str()).or_default().push(gi);
     }
-    eprintln!("[gw-catalog-xchrom] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
+    eprintln!(
+        "[gw-catalog-xchrom] {} skeletons -> {} reps over {} contigs",
+        skeletons.len(),
+        reps.len(),
+        contigs.len()
+    );
 
     // --- GLOBAL placement accumulation: a read's placements (across chroms) keyed by name, GLOBAL idx ---
     let mut name_map: DetHashMap<String, Vec<Placement>> = DetHashMap::default();
     // Per-rep read 3' ends, collected only when the TES extension is enabled (O(reads) extra memory).
-    let tes_wanted = matches!(std::env::var("RUSTLE_TES_EXTEND"), Ok(v) if v != "0" && !v.is_empty());
+    let tes_wanted =
+        matches!(std::env::var("RUSTLE_TES_EXTEND"), Ok(v) if v != "0" && !v.is_empty());
     let mut tes_ends: DetHashMap<usize, Vec<u64>> = DetHashMap::default();
     for (chrom, glob) in &by_chrom {
         let clen = genome.chrom_len(chrom);
@@ -3762,18 +4386,30 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                 // from the REP's transcription strand rather than the read flag, since a read's own strand
                 // reflects library orientation and the rep is what the exon-sum is built in.
                 if tes_wanted {
-                    let three = if reps[*gi].strand == '-' { br.read.ref_start } else { read_end };
+                    let three = if reps[*gi].strand == '-' {
+                        br.read.ref_start
+                    } else {
+                        read_end
+                    };
                     tes_ends.entry(*gi).or_insert_with(Vec::new).push(three);
                 }
-                let aln_len = br.read.cigar.iter()
-                    .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
-                name_map.entry(br.name.clone()).or_default().push(Placement {
-                    locus: *gi,
-                    de: br.de,
-                    mapq: br.mapq,
-                    as_score: br.as_score,
-                    aln_len,
-                });
+                let aln_len = br
+                    .read
+                    .cigar
+                    .iter()
+                    .filter(|(op, _)| matches!(op, 'M' | '=' | 'X'))
+                    .map(|(_, n)| *n)
+                    .sum::<u64>() as u32;
+                name_map
+                    .entry(br.name.clone())
+                    .or_default()
+                    .push(Placement {
+                        locus: *gi,
+                        de: br.de,
+                        mapq: br.mapq,
+                        as_score: br.as_score,
+                        aln_len,
+                    });
             }
         }
     }
@@ -3787,8 +4423,14 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     // Counted over the UNFILTERED name_map: the `v.len() >= 2` filter below keeps only multi-placement
     // (ambiguous) reads, which is precisely the complement of the unique mappers that are the evidence here.
     if tes_wanted {
-        let win: u64 = std::env::var("RUSTLE_TES_WINDOW").ok().and_then(|v| v.parse().ok()).unwrap_or(400);
-        let frac: f64 = std::env::var("RUSTLE_TES_FRAC").ok().and_then(|v| v.parse().ok()).unwrap_or(0.30);
+        let win: u64 = std::env::var("RUSTLE_TES_WINDOW")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(400);
+        let frac: f64 = std::env::var("RUSTLE_TES_FRAC")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.30);
         let mut n_set = 0usize;
         for (gi, ends) in &tes_ends {
             let fwd = reps[*gi].strand != '-';
@@ -3809,8 +4451,11 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                 n_ext += 1;
             }
         }
-        eprintln!("[gw-catalog-xchrom] TES extension: sharp 3' terminus on {n_set}/{} reps; \
-                   extended {n_ext} exon-sums by {ext_bp} bp total", reps.len());
+        eprintln!(
+            "[gw-catalog-xchrom] TES extension: sharp 3' terminus on {n_set}/{} reps; \
+                   extended {n_ext} exon-sums by {ext_bp} bp total",
+            reps.len()
+        );
     }
     let all_placements: Vec<ReadPlacements> = name_map.values().cloned().collect();
     let uniq_counts = locus_unique_mapper_counts(&all_placements, reps.len());
@@ -3818,8 +4463,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     for (i, c) in reps.iter_mut().enumerate() {
         c.distinguishing_uniq = uniq_counts[i];
     }
-    let placements: Vec<ReadPlacements> =
-        name_map.into_values().filter(|v| v.len() >= 2).collect();
+    let placements: Vec<ReadPlacements> = name_map.into_values().filter(|v| v.len() >= 2).collect();
 
     // --- global conflict graph (cross-chrom edges now present) ---
     let edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
@@ -3840,7 +4484,13 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let mut out = families_from_conflict_graph(&reps, &edges, min_copies, cfg);
     let n_xchrom = out
         .iter()
-        .filter(|fam| fam.iter().map(|c| c.chrom.as_str()).collect::<BTreeSet<_>>().len() > 1)
+        .filter(|fam| {
+            fam.iter()
+                .map(|c| c.chrom.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+                > 1
+        })
         .count();
     eprintln!(
         "[gw-catalog-xchrom] {} families (>= {} copies), of which {} CROSS-CHROMOSOME",
@@ -3853,13 +4503,21 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     // (it links only copies reads confuse). Seeded by the families above ("when assignment is determined
     // needed"); bounded by the minimizer prefilter to family-adjacent candidates. Default OFF -> no-op.
     if cfg.complete_poa_core {
-        let tid2idx: DetHashMap<&str, usize> =
-            reps.iter().enumerate().map(|(i, r)| (r.tid.as_str(), i)).collect();
+        let tid2idx: DetHashMap<&str, usize> = reps
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.tid.as_str(), i))
+            .collect();
         let fam_repidx: Vec<Vec<usize>> = out
             .iter()
-            .map(|fam| fam.iter().filter_map(|c| tid2idx.get(c.tid.as_str()).copied()).collect())
+            .map(|fam| {
+                fam.iter()
+                    .filter_map(|c| tid2idx.get(c.tid.as_str()).copied())
+                    .collect()
+            })
             .collect();
-        let adds = crate::family::family_detect::poa_core_completion_adds(&reps, &fam_repidx, &cfg.detect);
+        let adds =
+            crate::family::family_detect::poa_core_completion_adds(&reps, &fam_repidx, &cfg.detect);
         let mut n_added = 0usize;
         for (f, extra) in adds.iter().enumerate() {
             for &ri in extra {
@@ -3891,7 +4549,10 @@ impl RefineParams {
 }
 
 pub fn homology_refine_params(min_identity: Option<f64>, threads: usize) -> RefineParams {
-    let mut p = RefineParams { threads, ..Default::default() };
+    let mut p = RefineParams {
+        threads,
+        ..Default::default()
+    };
     if let Some(mi) = min_identity {
         p.min_identity = mi;
         p.sensitive_identity = mi; // BOTH tiers -> effective floor = mi (not .min())
@@ -3966,12 +4627,23 @@ pub(crate) fn coverage_edges_all_reps(
     if seqs.iter().all(|s| s.is_empty()) {
         return Ok(BTreeSet::new());
     }
-    let mut edges: BTreeSet<(usize, usize)> =
-        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, min_cov, params)?
-            .into_iter()
-            .collect();
+    let mut edges: BTreeSet<(usize, usize)> = nucleotide_edges(
+        &seqs,
+        &["-x", "asm20"],
+        params.min_identity,
+        min_cov,
+        params,
+    )?
+    .into_iter()
+    .collect();
     if params.nucleotide_sensitive {
-        edges.extend(nucleotide_edges(&seqs, ER_SENSITIVE_SEED, params.sensitive_identity, min_cov, params)?);
+        edges.extend(nucleotide_edges(
+            &seqs,
+            ER_SENSITIVE_SEED,
+            params.sensitive_identity,
+            min_cov,
+            params,
+        )?);
     }
     Ok(edges)
 }
@@ -4015,7 +4687,8 @@ pub(crate) fn coverage_split_block(
     for (i, j) in local {
         uf_union(&mut parent, i, j);
     }
-    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> =
+        std::collections::BTreeMap::new();
     for i in 0..block.len() {
         let r = uf_find(&mut parent, i);
         groups.entry(r).or_default().push(block[i]);
@@ -4068,16 +4741,26 @@ fn tier2_rescue(
     // reads alive for a feature that is off by default.
     let reads = match primary_reads_from_bam(bam_path, threads) {
         Ok(r) => r,
-        Err(e) => { eprintln!("[tier2] skipped: cannot re-read {bam_path}: {e}"); return Vec::new(); }
+        Err(e) => {
+            eprintln!("[tier2] skipped: cannot re-read {bam_path}: {e}");
+            return Vec::new();
+        }
     };
     let reads = &reads[..];
     // Existing reps block their own regions: a locus that already has a rep needs no rescue.
     let blockers: Vec<Skeleton> = reps
         .iter()
         .map(|r| Skeleton {
-            chrom: r.chrom.clone(), start: r.start, end: r.end, n_reads: min_reads.max(1),
-            introns: r.introns.clone(), tied_seeded: false, footprint: false,
-            read_strand: None, read_rev: 0, read_tot: 0,
+            chrom: r.chrom.clone(),
+            start: r.start,
+            end: r.end,
+            n_reads: min_reads.max(1),
+            introns: r.introns.clone(),
+            tied_seeded: false,
+            footprint: false,
+            read_strand: None,
+            read_rev: 0,
+            read_tot: 0,
         })
         .collect();
     let cands = footprint_skeletons(reads, &blockers, min_reads);
@@ -4088,7 +4771,12 @@ fn tier2_rescue(
     let mut cand_seq: Vec<(usize, Vec<u8>, char)> = Vec::new();
     for (i, sk) in cands.iter().enumerate() {
         if let Some((seq, strand)) = build_footprint_seq(
-            genome, &sk.chrom, sk.start, sk.end, &sk.introns, sk.read_strand,
+            genome,
+            &sk.chrom,
+            sk.start,
+            sk.end,
+            &sk.introns,
+            sk.read_strand,
         ) {
             if seq.len() >= 300 {
                 cand_seq.push((i, seq, strand));
@@ -4101,15 +4789,24 @@ fn tier2_rescue(
     // Align candidates against the EXISTING reps with the shipped E_r invocation.
     let dir = std::env::temp_dir();
     let pid = std::process::id();
-    let (cp, rp) = (dir.join(format!("t2c_{pid}.fa")), dir.join(format!("t2r_{pid}.fa")));
+    let (cp, rp) = (
+        dir.join(format!("t2c_{pid}.fa")),
+        dir.join(format!("t2r_{pid}.fa")),
+    );
     {
-        let mut f = match std::fs::File::create(&cp) { Ok(f) => f, Err(_) => return Vec::new() };
+        let mut f = match std::fs::File::create(&cp) {
+            Ok(f) => f,
+            Err(_) => return Vec::new(),
+        };
         for (i, seq, _) in &cand_seq {
             let _ = writeln!(f, ">C{i}");
             let _ = f.write_all(seq);
             let _ = writeln!(f);
         }
-        let mut g = match std::fs::File::create(&rp) { Ok(g) => g, Err(_) => return Vec::new() };
+        let mut g = match std::fs::File::create(&rp) {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
         for (j, r) in reps.iter().enumerate() {
             let _ = writeln!(g, ">R{j}");
             let _ = g.write_all(&r.seq);
@@ -4131,17 +4828,36 @@ fn tier2_rescue(
     };
     let _ = std::fs::remove_file(&cp);
     let _ = std::fs::remove_file(&rp);
-    let out = match out { Ok(o) => o, Err(_) => return Vec::new() };
+    let out = match out {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
     let mut admitted: DetHashSet<usize> = DetHashSet::default();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
         let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 12 { continue; }
-        let (Ok(ql), Ok(qs), Ok(qe)) = (f[1].parse::<f64>(), f[2].parse::<f64>(), f[3].parse::<f64>())
-        else { continue };
-        let (Ok(tl), Ok(ts), Ok(te)) = (f[6].parse::<f64>(), f[7].parse::<f64>(), f[8].parse::<f64>())
-        else { continue };
-        let (Ok(nm), Ok(bl)) = (f[9].parse::<f64>(), f[10].parse::<f64>()) else { continue };
-        if f[4] != "+" || bl <= 0.0 || ql <= 0.0 || tl <= 0.0 { continue; }
+        if f.len() < 12 {
+            continue;
+        }
+        let (Ok(ql), Ok(qs), Ok(qe)) = (
+            f[1].parse::<f64>(),
+            f[2].parse::<f64>(),
+            f[3].parse::<f64>(),
+        ) else {
+            continue;
+        };
+        let (Ok(tl), Ok(ts), Ok(te)) = (
+            f[6].parse::<f64>(),
+            f[7].parse::<f64>(),
+            f[8].parse::<f64>(),
+        ) else {
+            continue;
+        };
+        let (Ok(nm), Ok(bl)) = (f[9].parse::<f64>(), f[10].parse::<f64>()) else {
+            continue;
+        };
+        if f[4] != "+" || bl <= 0.0 || ql <= 0.0 || tl <= 0.0 {
+            continue;
+        }
         // the SAME rule: identity >= floor AND coverage >= floor of the SHORTER, axis follows denominator.
         //
         // ⚠ THE ESTIMATOR MUST MATCH `nucleotide_edges_scored`, and it silently did not. E_r prefers the
@@ -4154,8 +4870,15 @@ fn tier2_rescue(
         let de = f[12..]
             .iter()
             .find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
-        let ident = match de { Some(d) => 1.0 - d, None => nm / bl };
-        let cov = if ql <= tl { (qe - qs) / ql } else { (te - ts) / tl };
+        let ident = match de {
+            Some(d) => 1.0 - d,
+            None => nm / bl,
+        };
+        let cov = if ql <= tl {
+            (qe - qs) / ql
+        } else {
+            (te - ts) / tl
+        };
         if ident >= params.sensitive_identity && cov >= params.min_coverage {
             if let Some(i) = f[0].strip_prefix('C').and_then(|x| x.parse::<usize>().ok()) {
                 admitted.insert(i);
@@ -4169,8 +4892,14 @@ fn tier2_rescue(
             let sk = &cands[i];
             DenovoTranscript {
                 tid: format!("T2~{}_{}_{}", sk.chrom, sk.start, sk.end),
-                chrom: sk.chrom.clone(), start: sk.start, end: sk.end, n_reads: sk.n_reads,
-                strand, introns: sk.introns.clone(), seq, ..Default::default()
+                chrom: sk.chrom.clone(),
+                start: sk.start,
+                end: sk.end,
+                n_reads: sk.n_reads,
+                strand,
+                introns: sk.introns.clone(),
+                seq,
+                ..Default::default()
             }
         })
         .collect()
@@ -4193,13 +4922,23 @@ fn er_union_lcs_enabled() -> bool {
 /// (register 321), the union only adds pairs; ledger §6js/§6jt: NPIP copies are held together by gene body while AMY
 /// copies are held together by coding sequence, so neither substrate alone serves both.
 pub(crate) fn er_union_genomic_span_enabled() -> bool {
-    span_union_mode(std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN").ok().as_deref()).0
+    span_union_mode(
+        std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN")
+            .ok()
+            .as_deref(),
+    )
+    .0
 }
 
 /// `RUSTLE_ER_UNION_GENOMIC_SPAN=restricted`: genomic-span (DNA) edges may attach a rep to an exon-sum (RNA) family but
 /// may never merge two RNA-established families (prereg Addendum X).
 pub(crate) fn er_union_genomic_span_restricted() -> bool {
-    span_union_mode(std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN").ok().as_deref()).1
+    span_union_mode(
+        std::env::var("RUSTLE_ER_UNION_GENOMIC_SPAN")
+            .ok()
+            .as_deref(),
+    )
+    .1
 }
 
 /// (enabled, restricted) for a value of `RUSTLE_ER_UNION_GENOMIC_SPAN`: unset, empty or "0" = off; "restricted" = on and
@@ -4220,8 +4959,13 @@ pub(crate) fn restrict_span_edges(
     span: &[(usize, usize, f64, f64)],
     gamma: f64,
 ) -> (Vec<(usize, usize, f64, f64)>, Vec<(usize, usize, f64, f64)>) {
-    let weighted: Vec<(usize, usize, f64)> = tx.iter().map(|&(a, b, _, _)| (a.min(b), a.max(b), 1.0)).collect();
-    let blocks = crate::family::family_detect::family_split::gamma_quasi_clique_partition(n, &weighted, gamma);
+    let weighted: Vec<(usize, usize, f64)> = tx
+        .iter()
+        .map(|&(a, b, _, _)| (a.min(b), a.max(b), 1.0))
+        .collect();
+    let blocks = crate::family::family_detect::family_split::gamma_quasi_clique_partition(
+        n, &weighted, gamma,
+    );
     let mut block_of = vec![usize::MAX; n];
     let mut size = Vec::with_capacity(blocks.len());
     for (bi, b) in blocks.iter().enumerate() {
@@ -4232,7 +4976,10 @@ pub(crate) fn restrict_span_edges(
         }
         size.push(b.len());
     }
-    let present: BTreeSet<(usize, usize)> = tx.iter().map(|&(a, b, _, _)| (a.min(b), a.max(b))).collect();
+    let present: BTreeSet<(usize, usize)> = tx
+        .iter()
+        .map(|&(a, b, _, _)| (a.min(b), a.max(b)))
+        .collect();
     let (mut admitted, mut rejected) = (Vec::new(), Vec::new());
     for &(a, b, i, c) in span {
         let key = (a.min(b), a.max(b));
@@ -4255,8 +5002,10 @@ pub(crate) fn union_edge_sets(
     base: Vec<(usize, usize, f64, f64)>,
     extra: Vec<(usize, usize, f64, f64)>,
 ) -> (Vec<(usize, usize, f64, f64)>, usize) {
-    let mut by_pair: BTreeMap<(usize, usize), (f64, f64)> =
-        base.into_iter().map(|(a, b, i, c)| ((a.min(b), a.max(b)), (i, c))).collect();
+    let mut by_pair: BTreeMap<(usize, usize), (f64, f64)> = base
+        .into_iter()
+        .map(|(a, b, i, c)| ((a.min(b), a.max(b)), (i, c)))
+        .collect();
     let mut added = 0usize;
     for (a, b, i, c) in extra {
         if a == b {
@@ -4267,7 +5016,13 @@ pub(crate) fn union_edge_sets(
             added += 1;
         }
     }
-    (by_pair.into_iter().map(|((a, b), (i, c))| (a, b, i, c)).collect(), added)
+    (
+        by_pair
+            .into_iter()
+            .map(|((a, b), (i, c))| (a, b, i, c))
+            .collect(),
+        added,
+    )
 }
 
 /// Returns `edges` plus LCS-confirmed candidate pairs it lacks, sorted by pair, and how many were added. An existing
@@ -4278,9 +5033,14 @@ fn union_lcs_edges(
     edges: Vec<(usize, usize, f64, f64)>,
 ) -> (Vec<(usize, usize, f64, f64)>, usize) {
     use crate::family::family_detect::{candidate_pairs, confirm_edge, DetectParams, EdgeCore};
-    let p = DetectParams { edge_core: EdgeCore::Lcs, ..DetectParams::default() };
-    let mut by_pair: BTreeMap<(usize, usize), (f64, f64)> =
-        edges.into_iter().map(|(a, b, i, c)| ((a.min(b), a.max(b)), (i, c))).collect();
+    let p = DetectParams {
+        edge_core: EdgeCore::Lcs,
+        ..DetectParams::default()
+    };
+    let mut by_pair: BTreeMap<(usize, usize), (f64, f64)> = edges
+        .into_iter()
+        .map(|(a, b, i, c)| ((a.min(b), a.max(b)), (i, c)))
+        .collect();
     let mut added = 0usize;
     for (a, b) in candidate_pairs(reps, &p) {
         let key = (a.min(b), a.max(b));
@@ -4292,7 +5052,13 @@ fn union_lcs_edges(
             added += 1;
         }
     }
-    (by_pair.into_iter().map(|((a, b), (i, c))| (a, b, i, c)).collect(), added)
+    (
+        by_pair
+            .into_iter()
+            .map(|((a, b), (i, c))| (a, b, i, c))
+            .collect(),
+        added,
+    )
 }
 
 /// The `E_r` homology blocks, optionally pooling every isoform's exons into the shared-exon rule, together
@@ -4309,14 +5075,25 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
     let edges_w = homology_edges_all_reps_pooled_weighted(reps, pooled, refine)?;
     let edges_w = if er_union_lcs_enabled() {
         let n_er = edges_w.len();
-        let before: std::collections::BTreeSet<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
+        let before: std::collections::BTreeSet<(usize, usize)> =
+            edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
         let (union, added) = union_lcs_edges(reps, edges_w);
-        eprintln!("[homology] RUSTLE_ER_UNION_LCS: E_r {n_er} edges + {added} LCS edges = {}", union.len());
+        eprintln!(
+            "[homology] RUSTLE_ER_UNION_LCS: E_r {n_er} edges + {added} LCS edges = {}",
+            union.len()
+        );
         if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
             if !prefix.is_empty() {
-                let mut s = String::from("rep_i\trep_j\tnode_key_i\tnode_key_j\tcoverage_lcs_over_min\n");
-                for &(a, b, _, c) in union.iter().filter(|&&(a, b, _, _)| !before.contains(&(a, b))) {
-                    s.push_str(&format!("{a}\t{b}\t{}\t{}\t{c:.6}\n", reps[a].tid, reps[b].tid));
+                let mut s =
+                    String::from("rep_i\trep_j\tnode_key_i\tnode_key_j\tcoverage_lcs_over_min\n");
+                for &(a, b, _, c) in union
+                    .iter()
+                    .filter(|&&(a, b, _, _)| !before.contains(&(a, b)))
+                {
+                    s.push_str(&format!(
+                        "{a}\t{b}\t{}\t{}\t{c:.6}\n",
+                        reps[a].tid, reps[b].tid
+                    ));
                 }
                 if let Err(e) = std::fs::write(format!("{prefix}.lcs_union_edges.tsv"), s) {
                     eprintln!("[homology] could not write LCS union edge dump: {e}");
@@ -4333,9 +5110,11 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
             span_params.homology_genomic_span = true;
             let span_edges = homology_edges_all_reps_pooled_weighted(reps, None, &span_params)?;
             let n_base = edges_w.len();
-            let before: std::collections::BTreeSet<(usize, usize)> = edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
+            let before: std::collections::BTreeSet<(usize, usize)> =
+                edges_w.iter().map(|&(a, b, _, _)| (a, b)).collect();
             let span_edges = if er_union_genomic_span_restricted() {
-                let (admitted, rejected) = restrict_span_edges(reps.len(), &edges_w, &span_edges, gamma);
+                let (admitted, rejected) =
+                    restrict_span_edges(reps.len(), &edges_w, &span_edges, gamma);
                 eprintln!(
                     "[homology] RUSTLE_ER_UNION_GENOMIC_SPAN=restricted: {} genomic-span-only pairs admitted, {} rejected (would merge two exon-sum blocks)",
                     admitted.len(),
@@ -4347,7 +5126,9 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
                         for &(a, b, i, c) in &rejected {
                             out.push_str(&format!("{a}\t{b}\t{i:.6}\t{c:.6}\n"));
                         }
-                        if let Err(e) = std::fs::write(format!("{prefix}.genomic_span_rejected_edges.tsv"), out) {
+                        if let Err(e) =
+                            std::fs::write(format!("{prefix}.genomic_span_rejected_edges.tsv"), out)
+                        {
                             eprintln!("[homology] could not write rejected-edge dump: {e}");
                         }
                     }
@@ -4360,18 +5141,29 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
             eprintln!("[homology] RUSTLE_ER_UNION_GENOMIC_SPAN: E_r {n_base} edges + {added} genomic-span edges = {}", union.len());
             if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
                 if !prefix.is_empty() {
-                    let mut out = String::from("rep_i\trep_j\tnode_key_i\tnode_key_j\tidentity\tcoverage\n");
-                    for &(a, b, i, c) in union.iter().filter(|&&(a, b, _, _)| !before.contains(&(a, b))) {
-                        out.push_str(&format!("{a}\t{b}\t{}\t{}\t{i:.6}\t{c:.6}\n", reps[a].tid, reps[b].tid));
+                    let mut out =
+                        String::from("rep_i\trep_j\tnode_key_i\tnode_key_j\tidentity\tcoverage\n");
+                    for &(a, b, i, c) in union
+                        .iter()
+                        .filter(|&&(a, b, _, _)| !before.contains(&(a, b)))
+                    {
+                        out.push_str(&format!(
+                            "{a}\t{b}\t{}\t{}\t{i:.6}\t{c:.6}\n",
+                            reps[a].tid, reps[b].tid
+                        ));
                     }
-                    if let Err(e) = std::fs::write(format!("{prefix}.genomic_span_union_edges.tsv"), out) {
+                    if let Err(e) =
+                        std::fs::write(format!("{prefix}.genomic_span_union_edges.tsv"), out)
+                    {
                         eprintln!("[homology] could not write genomic-span union edge dump: {e}");
                     }
                 }
             }
             union
         } else {
-            eprintln!("[homology] RUSTLE_ER_UNION_GENOMIC_SPAN needs the genome path; edges unchanged");
+            eprintln!(
+                "[homology] RUSTLE_ER_UNION_GENOMIC_SPAN needs the genome path; edges unchanged"
+            );
             edges_w
         }
     } else {
@@ -4405,14 +5197,23 @@ pub(crate) fn homology_blocks_pooled_with_edges_weighted(
     } else {
         eprintln!(
             "[partition] WEIGHTED by {} over {} edges",
-            if w_mode == "coverage" { "coverage" } else { "identity" }, edges_w.len()
+            if w_mode == "coverage" {
+                "coverage"
+            } else {
+                "identity"
+            },
+            edges_w.len()
         );
         edges_w
             .iter()
             .map(|&(a, b, i, c)| (a, b, if w_mode == "coverage" { c } else { i }))
             .collect()
     };
-    let blocks = crate::family::family_detect::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
+    let blocks = crate::family::family_detect::family_split::gamma_quasi_clique_partition(
+        reps.len(),
+        &edges3,
+        gamma,
+    );
     let _ = &edges2;
     Ok((blocks, edges_w))
 }
@@ -4435,16 +5236,24 @@ pub fn families_from_edges(
 ) -> Vec<Vec<DenovoTranscript>> {
     let kept: BTreeSet<(usize, usize)> = edges
         .iter()
-        .filter(|&&(i, j, id, cov)| i != j && i < reps.len() && j < reps.len() && id >= min_identity && cov >= min_coverage)
+        .filter(|&&(i, j, id, cov)| {
+            i != j && i < reps.len() && j < reps.len() && id >= min_identity && cov >= min_coverage
+        })
         .map(|&(i, j, _, _)| (i.min(j), i.max(j)))
         .collect();
     let weighted: Vec<(usize, usize, f64)> = kept.iter().map(|&(i, j)| (i, j, 1.0)).collect();
-    let blocks = crate::family::family_detect::family_split::gamma_quasi_clique_partition(reps.len(), &weighted, gamma);
+    let blocks = crate::family::family_detect::family_split::gamma_quasi_clique_partition(
+        reps.len(),
+        &weighted,
+        gamma,
+    );
     let mut out = Vec::new();
     for block in blocks {
         let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
-        let loci: Vec<DenovoTranscript> =
-            distinct_locus_reps_grouped(copies, min_reads).into_iter().map(|(t, _)| t).collect();
+        let loci: Vec<DenovoTranscript> = distinct_locus_reps_grouped(copies, min_reads)
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
         if block.len() >= min_copies && loci.len() >= min_copies {
             out.push(loci);
         }
@@ -4558,7 +5367,8 @@ pub fn families_from_reps_certified(
     min_copies: usize,
     min_reads: usize,
 ) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<FamilyCertificate>)> {
-    let (blocks, er_edges) = homology_blocks_pooled_with_edges_weighted(&reps, None, refine, gamma)?;
+    let (blocks, er_edges) =
+        homology_blocks_pooled_with_edges_weighted(&reps, None, refine, gamma)?;
     let cov_split = coverage_split_floor();
     let cov_edges = coverage_edges_all_reps(&reps, cov_split, refine)?;
     let mut out = Vec::new();
@@ -4619,8 +5429,10 @@ pub(crate) fn certificate_for(
     groups: &[Vec<usize>],
     er_edges: &[(usize, usize)],
 ) -> FamilyCertificate {
-    let w: Vec<(usize, usize, f64, f64)> =
-        er_edges.iter().map(|&(a, b)| (a, b, f64::NAN, f64::NAN)).collect();
+    let w: Vec<(usize, usize, f64, f64)> = er_edges
+        .iter()
+        .map(|&(a, b)| (a, b, f64::NAN, f64::NAN))
+        .collect();
     certificate_for_weighted(groups, &w)
 }
 
@@ -4629,7 +5441,7 @@ pub(crate) fn certificate_for_weighted(
     groups: &[Vec<usize>],
     er_edges: &[(usize, usize, f64, f64)],
 ) -> FamilyCertificate {
-    use std::collections::{BTreeSet};
+    use std::collections::BTreeSet;
     let n = groups.len();
     let mut owner: DetHashMap<usize, usize> = DetHashMap::default();
     for (gi, g) in groups.iter().enumerate() {
@@ -4645,7 +5457,11 @@ pub(crate) fn certificate_for_weighted(
         if let (Some(&ga), Some(&gb)) = (owner.get(&a), owner.get(&b)) {
             if ident.is_finite() {
                 for g in [ga, gb] {
-                    cmax[g] = if cmax[g].is_nan() { ident } else { cmax[g].max(ident) };
+                    cmax[g] = if cmax[g].is_nan() {
+                        ident
+                    } else {
+                        cmax[g].max(ident)
+                    };
                 }
             }
             if ga != gb {
@@ -4675,7 +5491,8 @@ pub(crate) fn certificate_for_weighted(
 pub const RESUMABLE_EXIT: i32 = 75;
 
 /// Error text of an E_r all-vs-all whose aligner exited [`RESUMABLE_EXIT`]; `gw_family_catalog` exits 75 on it.
-pub const MINIMAP2_RESUMABLE: &str = "the all-vs-all aligner stopped with its progress kept (exit 75): call again";
+pub const MINIMAP2_RESUMABLE: &str =
+    "the all-vs-all aligner stopped with its progress kept (exit 75): call again";
 
 /// What the homology catalog returns: the families, one λ certificate per family (SAME order), and the three
 /// opt-in copy-number re-admission lists (K=0 collapsed, K0_COLLAPSED_EXPRESSED, DNA-family fallback).
@@ -4700,7 +5517,9 @@ type CatalogReps = (
 /// (shared definition, pooled isoform exons, tier-2 rescue) cannot.
 fn catalog_reps_cacheable() -> bool {
     !crate::family::shared_definition::enabled()
-        && !std::env::var("RUSTLE_SHARED_EXON_ISOFORMS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false)
+        && !std::env::var("RUSTLE_SHARED_EXON_ISOFORMS")
+            .map(|v| v != "0" && !v.is_empty())
+            .unwrap_or(false)
         && !tier2_enabled()
 }
 
@@ -4724,7 +5543,12 @@ fn catalog_reps_key_body(bam_path: &str, fasta_path: &str, cfg: &DenovoConfig) -
 
 /// Representatives cache key: `span` = `None` is the whole-BAM key (unchanged byte for byte), `Some` one
 /// `--piecewise` piece (`contig=chr1` for a whole contig, `contig=chr1:lo-hi` for a read-free sub-range).
-fn catalog_reps_key(bam_path: &str, fasta_path: &str, cfg: &DenovoConfig, span: Option<&crate::bam::ContigSpan>) -> String {
+fn catalog_reps_key(
+    bam_path: &str,
+    fasta_path: &str,
+    cfg: &DenovoConfig,
+    span: Option<&crate::bam::ContigSpan>,
+) -> String {
     let head = match span {
         None => "rustle catalog reps v1\n".to_string(),
         Some(sp) => format!("rustle catalog reps v1 contig={}\n", sp.label()),
@@ -4735,13 +5559,19 @@ fn catalog_reps_key(bam_path: &str, fasta_path: &str, cfg: &DenovoConfig, span: 
 /// `genome` for representatives that were LOADED (cache hit or merged pieces) rather than built: read downstream
 /// only by the opt-in K=0 re-admission paths, so it is loaded only then (an empty contig set would make
 /// `from_fasta_contigs` load the WHOLE genome: 12 s on CHM13).
-fn genome_for_loaded_reps(reps: &[DenovoTranscript], fasta_path: &str, cfg: &DenovoConfig) -> Result<GenomeIndex> {
-    Ok(if cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback {
-        let contigs: DetHashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
-        GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
-    } else {
-        GenomeIndex::empty()
-    })
+fn genome_for_loaded_reps(
+    reps: &[DenovoTranscript],
+    fasta_path: &str,
+    cfg: &DenovoConfig,
+) -> Result<GenomeIndex> {
+    Ok(
+        if cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback {
+            let contigs: DetHashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
+            GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
+        } else {
+            GenomeIndex::empty()
+        },
+    )
 }
 
 /// How much of the piecewise representatives stage one call may do ([`detect_homology_catalog_piecewise`]).
@@ -4773,14 +5603,23 @@ impl PieceBudget {
 pub enum Piecewise {
     /// Pieces remain, or this call computed pieces under a budget: nothing downstream ran; call again.
     /// `total` counts the pieces known so far; `unplanned` contigs still need their cut plan.
-    Pending { done: usize, total: usize, unplanned: usize, computed: usize },
+    Pending {
+        done: usize,
+        total: usize,
+        unplanned: usize,
+        computed: usize,
+    },
     /// Every piece was cached: the merged representatives went through the whole catalog.
     Done(HomologyCatalog),
 }
 
 /// Why the piecewise mode cannot reproduce the genome-wide representatives under the current settings, if so.
 pub fn piecewise_unsupported_reason() -> Option<String> {
-    let on = |k: &str| std::env::var(k).map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let on = |k: &str| {
+        std::env::var(k)
+            .map(|v| v != "0" && !v.is_empty())
+            .unwrap_or(false)
+    };
     if !catalog_reps_cacheable() {
         return Some(
             "RUSTLE_SHARED_DEFINITION / RUSTLE_SHARED_EXON_ISOFORMS / RUSTLE_TIER2_ADMIT carry state across the \
@@ -4790,7 +5629,9 @@ pub fn piecewise_unsupported_reason() -> Option<String> {
     }
     for k in ["RUSTLE_FOOTPRINT_NODES", "RUSTLE_LOCUS_EXON_UNION"] {
         if on(k) {
-            return Some(format!("{k} builds representatives in an order the per-contig merge does not reproduce"));
+            return Some(format!(
+                "{k} builds representatives in an order the per-contig merge does not reproduce"
+            ));
         }
     }
     if cothread_rep_floor().is_some() {
@@ -4864,7 +5705,10 @@ fn piece_plan_key(bam_path: &str, contig: &str, piece_records: u64) -> String {
 fn piece_label_contig(label: &str) -> &str {
     if let Some((c, range)) = label.rsplit_once(':') {
         if let Some((a, b)) = range.split_once('-') {
-            if !a.is_empty() && a.bytes().all(|x| x.is_ascii_digit()) && (b == "end" || (!b.is_empty() && b.bytes().all(|x| x.is_ascii_digit()))) {
+            if !a.is_empty()
+                && a.bytes().all(|x| x.is_ascii_digit())
+                && (b == "end" || (!b.is_empty() && b.bytes().all(|x| x.is_ascii_digit())))
+            {
                 return c;
             }
         }
@@ -4876,20 +5720,41 @@ fn piece_label_contig(label: &str) -> &str {
 fn write_piece_plan(dir: &std::path::Path, cuts: &[(crate::bam::ContigSpan, u64)]) -> Result<()> {
     let mut t = String::from("lo\thi\trecords\n");
     for (sp, n) in cuts {
-        let hi = if sp.hi == u64::MAX { "end".to_string() } else { sp.hi.to_string() };
+        let hi = if sp.hi == u64::MAX {
+            "end".to_string()
+        } else {
+            sp.hi.to_string()
+        };
         t.push_str(&format!("{}\t{hi}\t{n}\n", sp.lo));
     }
     std::fs::write(dir.join("pieces.tsv"), t)?;
     Ok(())
 }
 
-fn read_piece_plan(dir: &std::path::Path, contig: &str) -> Result<Vec<(crate::bam::ContigSpan, Option<u64>)>> {
+fn read_piece_plan(
+    dir: &std::path::Path,
+    contig: &str,
+) -> Result<Vec<(crate::bam::ContigSpan, Option<u64>)>> {
     let mut out = Vec::new();
-    for line in std::fs::read_to_string(dir.join("pieces.tsv"))?.lines().skip(1) {
+    for line in std::fs::read_to_string(dir.join("pieces.tsv"))?
+        .lines()
+        .skip(1)
+    {
         let f: Vec<&str> = line.split('\t').collect();
         anyhow::ensure!(f.len() == 3, "pieces.tsv: bad row {line:?}");
-        let hi = if f[1] == "end" { u64::MAX } else { f[1].parse()? };
-        out.push((crate::bam::ContigSpan { contig: contig.to_string(), lo: f[0].parse()?, hi }, Some(f[2].parse()?)));
+        let hi = if f[1] == "end" {
+            u64::MAX
+        } else {
+            f[1].parse()?
+        };
+        out.push((
+            crate::bam::ContigSpan {
+                contig: contig.to_string(),
+                lo: f[0].parse()?,
+                hi,
+            },
+            Some(f[2].parse()?),
+        ));
     }
     anyhow::ensure!(!out.is_empty(), "pieces.tsv: empty plan for {contig}");
     if out.len() == 1 {
@@ -4902,7 +5767,11 @@ fn read_piece_plan(dir: &std::path::Path, contig: &str) -> Result<Vec<(crate::ba
 fn process_peak_rss() -> String {
     std::fs::read_to_string("/proc/self/status")
         .ok()
-        .and_then(|s| s.lines().find(|l| l.starts_with("VmHWM:")).map(|l| l[6..].trim().to_string()))
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmHWM:"))
+                .map(|l| l[6..].trim().to_string())
+        })
         .unwrap_or_else(|| "?".into())
 }
 
@@ -4937,20 +5806,29 @@ pub fn detect_homology_catalog_piecewise(
         anyhow::anyhow!("--piecewise keeps its pieces in the cache: set RUSTLE_CACHE_DIR (the pipeline driver sets PREFIX.cache)")
     })?;
     use crate::bam::ContigSpan;
-    let contigs: Vec<(String, Option<u64>)> =
-        crate::bam::contig_record_counts(bam_path)?.into_iter().filter(|(_, n)| *n != Some(0)).collect();
-    let split = |n: Option<u64>| budget.piece_records > 0 && n.is_some_and(|x| x > budget.piece_records);
+    let contigs: Vec<(String, Option<u64>)> = crate::bam::contig_record_counts(bam_path)?
+        .into_iter()
+        .filter(|(_, n)| *n != Some(0))
+        .collect();
+    let split =
+        |n: Option<u64>| budget.piece_records > 0 && n.is_some_and(|x| x > budget.piece_records);
     // Every UNIT of work (a contig's cut plan, or one piece) runs if it is the call's first, or if the budget
     // predicts it fits (this call's seconds per record so far x the unit's records).
     let (mut computed, mut spent_s, mut spent_records) = (0usize, 0.0f64, 0u64);
-    let may_start = |computed: usize, spent_s: f64, spent_records: u64, records: Option<u64>| -> bool {
-        computed == 0
-            || ((budget.max_pieces == 0 || computed < budget.max_pieces)
-                && (budget.budget_s <= 0.0 || {
-                    let rate = if spent_records > 0 { spent_s / spent_records as f64 } else { 0.0 };
-                    t_phase.elapsed().as_secs_f64() + rate * records.unwrap_or(0) as f64 <= budget.budget_s
-                }))
-    };
+    let may_start =
+        |computed: usize, spent_s: f64, spent_records: u64, records: Option<u64>| -> bool {
+            computed == 0
+                || ((budget.max_pieces == 0 || computed < budget.max_pieces)
+                    && (budget.budget_s <= 0.0 || {
+                        let rate = if spent_records > 0 {
+                            spent_s / spent_records as f64
+                        } else {
+                            0.0
+                        };
+                        t_phase.elapsed().as_secs_f64() + rate * records.unwrap_or(0) as f64
+                            <= budget.budget_s
+                    }))
+        };
     // pieces in header order (sub-ranges in coordinate order); a contig still without its cut plan is `unplanned`
     let mut pieces: Vec<(ContigSpan, Option<u64>, rc::Entry)> = Vec::new();
     let mut unplanned = 0usize;
@@ -4958,7 +5836,11 @@ pub fn detect_homology_catalog_piecewise(
         let spans: Option<Vec<(ContigSpan, Option<u64>)>> = if !split(*n) {
             Some(vec![(ContigSpan::whole(c), *n)])
         } else {
-            let pe = rc::Entry::new(&root, "plan", piece_plan_key(bam_path, c, budget.piece_records));
+            let pe = rc::Entry::new(
+                &root,
+                "plan",
+                piece_plan_key(bam_path, c, budget.piece_records),
+            );
             if pe.is_hit() {
                 Some(read_piece_plan(&pe.dir, c)?)
             } else if match &budget.only {
@@ -4989,7 +5871,11 @@ pub fn detect_homology_catalog_piecewise(
         match spans {
             Some(v) => {
                 for (sp, m) in v {
-                    let e = rc::Entry::new(&root, "reps", catalog_reps_key(bam_path, fasta_path, cfg, Some(&sp)));
+                    let e = rc::Entry::new(
+                        &root,
+                        "reps",
+                        catalog_reps_key(bam_path, fasta_path, cfg, Some(&sp)),
+                    );
                     pieces.push((sp, m, e));
                 }
             }
@@ -5001,7 +5887,11 @@ pub fn detect_homology_catalog_piecewise(
         format!(
             "rustle catalog reps v1 piecewise-merge\n{}pieces\t{}\n",
             catalog_reps_key_body(bam_path, fasta_path, cfg),
-            pieces.iter().map(|(sp, _, _)| sp.label()).collect::<Vec<_>>().join(",")
+            pieces
+                .iter()
+                .map(|(sp, _, _)| sp.label())
+                .collect::<Vec<_>>()
+                .join(",")
         )
     });
     let merge_entry = merge_key.map(|k| rc::Entry::new(&root, "reps", k));
@@ -5009,7 +5899,10 @@ pub fn detect_homology_catalog_piecewise(
         Some(e) => match rc::read_reps(&e.dir) {
             Ok(r) => Some(r),
             Err(err) => {
-                eprintln!("[piecewise] unreadable merged entry {} ({err:#}); re-merging", e.dir.display());
+                eprintln!(
+                    "[piecewise] unreadable merged entry {} ({err:#}); re-merging",
+                    e.dir.display()
+                );
                 None
             }
         },
@@ -5018,7 +5911,10 @@ pub fn detect_homology_catalog_piecewise(
     let reps = if let Some(r) = merged {
         eprintln!(
             "[piecewise] merged representatives loaded from {} ({} reps)",
-            merge_entry.as_ref().map(|e| e.dir.display().to_string()).unwrap_or_default(),
+            merge_entry
+                .as_ref()
+                .map(|e| e.dir.display().to_string())
+                .unwrap_or_default(),
             r.len()
         );
         r
@@ -5033,7 +5929,8 @@ pub fn detect_homology_catalog_piecewise(
                 continue;
             }
             let t0 = std::time::Instant::now();
-            let (r, _, _, _) = build_catalog_reps(bam_path, fasta_path, threads, cfg, refine, Some(sp))?;
+            let (r, _, _, _) =
+                build_catalog_reps(bam_path, fasta_path, threads, cfg, refine, Some(sp))?;
             let st = e.staging()?;
             rc::write_reps(&st, &r)?;
             e.commit(&st)?;
@@ -5052,7 +5949,11 @@ pub fn detect_homology_catalog_piecewise(
             );
         }
         let done = pieces.iter().filter(|p| p.2.is_hit()).count();
-        if done < total || unplanned > 0 || (budget.limited() && computed > 0) || budget.only.is_some() {
+        if done < total
+            || unplanned > 0
+            || (budget.limited() && computed > 0)
+            || budget.only.is_some()
+        {
             eprintln!(
                 "[piecewise] {done} of {total} pieces cached{} ({computed} units computed in this call); {}",
                 if unplanned > 0 { format!(", {unplanned} contig(s) still to plan") } else { String::new() },
@@ -5062,7 +5963,12 @@ pub fn detect_homology_catalog_piecewise(
                     "the next call merges them and builds the catalog"
                 }
             );
-            return Ok(Piecewise::Pending { done, total, unplanned, computed });
+            return Ok(Piecewise::Pending {
+                done,
+                total,
+                unplanned,
+                computed,
+            });
         }
         let mut loaded = Vec::with_capacity(total);
         for (sp, _, e) in &pieces {
@@ -5074,8 +5980,15 @@ pub fn detect_homology_catalog_piecewise(
             rc::write_reps(&st, &reps)?;
             me.commit(&st)
         }) {
-            Ok(()) => eprintln!("[piecewise] merged {} representatives from {total} pieces -> {}", reps.len(), me.dir.display()),
-            Err(err) => eprintln!("[piecewise] could not write {} ({err:#}); continuing", me.dir.display()),
+            Ok(()) => eprintln!(
+                "[piecewise] merged {} representatives from {total} pieces -> {}",
+                reps.len(),
+                me.dir.display()
+            ),
+            Err(err) => eprintln!(
+                "[piecewise] could not write {} ({err:#}); continuing",
+                me.dir.display()
+            ),
         }
         reps
     };
@@ -5120,7 +6033,13 @@ pub fn detect_homology_catalog_genome_wide(
     let cacheable = catalog_reps_cacheable();
     let reps_entry = crate::family::run_cache::cache_root()
         .filter(|_| cacheable)
-        .map(|root| crate::family::run_cache::Entry::new(&root, "reps", catalog_reps_key(bam_path, fasta_path, cfg, None)));
+        .map(|root| {
+            crate::family::run_cache::Entry::new(
+                &root,
+                "reps",
+                catalog_reps_key(bam_path, fasta_path, cfg, None),
+            )
+        });
     let cached_reps: Option<Vec<DenovoTranscript>> = reps_entry.as_ref().filter(|e| e.is_hit()).and_then(|e| {
         match crate::family::run_cache::read_reps(&e.dir) {
             Ok(r) => {
@@ -5149,12 +6068,17 @@ pub fn detect_homology_catalog_genome_wide(
                 e.commit(&st)
             }) {
                 Ok(()) => eprintln!("[cache] representatives written to {}", e.dir.display()),
-                Err(err) => eprintln!("[cache] could not write {} ({err:#}); continuing", e.dir.display()),
+                Err(err) => eprintln!(
+                    "[cache] could not write {} ({err:#}); continuing",
+                    e.dir.display()
+                ),
             }
         }
         built
     };
-    homology_catalog_from_reps(state, bam_path, fasta_path, threads, min_copies, cfg, refine, gamma, t_phase)
+    homology_catalog_from_reps(
+        state, bam_path, fasta_path, threads, min_copies, cfg, refine, gamma, t_phase,
+    )
 }
 
 /// The catalog's collapsed locus REPRESENTATIVES: both BAM passes, the gate, the filters and the locus collapse,
@@ -5190,7 +6114,11 @@ fn build_catalog_reps(
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     // Support map before the free; see the same-chrom catalog for why.
-    let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
+    let rt_support = if cfg.filter_readthrough {
+        Some(read_junction_support(&reads))
+    } else {
+        None
+    };
     // `RUSTLE_DEBUG_LOCUS` (comma-separated chr:start-end) traces each locus through every stage of THIS
     // path. The xchrom path has its own copy; `--homology-primary` runs HERE, and a first attempt to trace
     // through the xchrom hook produced ZERO output because of that. Pure logging; no behaviour change.
@@ -5201,7 +6129,11 @@ fn build_catalog_reps(
                 .filter_map(|one| {
                     let (c, r) = one.trim().split_once(':')?;
                     let (a, b) = r.split_once('-')?;
-                    Some((c.to_string(), a.trim().parse().ok()?, b.trim().parse().ok()?))
+                    Some((
+                        c.to_string(),
+                        a.trim().parse().ok()?,
+                        b.trim().parse().ok()?,
+                    ))
                 })
                 .collect()
         })
@@ -5209,7 +6141,10 @@ fn build_catalog_reps(
     if !dbg_loci.is_empty() {
         let pooled = super::denovo_assemble::locus_support(&skeletons);
         for (c, a, b) in &dbg_loci {
-            let n = reads.iter().filter(|r| &r.chrom == c && r.ref_start < *b && r.ref_end > *a).count();
+            let n = reads
+                .iter()
+                .filter(|r| &r.chrom == c && r.ref_start < *b && r.ref_end > *a)
+                .count();
             let mut sk: Vec<(usize, &super::denovo_assemble::Skeleton)> = skeletons
                 .iter()
                 .enumerate()
@@ -5230,7 +6165,12 @@ fn build_catalog_reps(
                 .unwrap_or("KEPT");
                 eprintln!(
                     "[dbg]   skeleton {}-{} introns={} reads={} pooled={} -> {}",
-                    sx.start, sx.end, sx.introns.len(), sx.n_reads, sup, why
+                    sx.start,
+                    sx.end,
+                    sx.introns.len(),
+                    sx.n_reads,
+                    sup,
+                    why
                 );
             }
         }
@@ -5244,7 +6184,9 @@ fn build_catalog_reps(
     if locus_bridge_cut_enabled() {
         retain_non_bridge(&mut transcripts, "gw-catalog");
     }
-    let union_reps =std::env::var("RUSTLE_LOCUS_EXON_UNION").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let union_reps = std::env::var("RUSTLE_LOCUS_EXON_UNION")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
     let union_floor: u32 = std::env::var("RUSTLE_LOCUS_UNION_MIN_READS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -5267,10 +6209,17 @@ fn build_catalog_reps(
         cothread_locus_reps(&transcripts, &cfg.detect, &genome, fl)
     } else if pool_isoforms {
         let (rep_idx, members) =
-            crate::family::family_detect::collapse_loci_span_aware_with_members(&transcripts, &cfg.detect);
+            crate::family::family_detect::collapse_loci_span_aware_with_members(
+                &transcripts,
+                &cfg.detect,
+            );
         pooled_exons = members
             .iter()
-            .map(|ms| ms.iter().flat_map(|&i| exon_seqs_of(&transcripts[i], 0)).collect())
+            .map(|ms| {
+                ms.iter()
+                    .flat_map(|&i| exon_seqs_of(&transcripts[i], 0))
+                    .collect()
+            })
             .collect();
         let n_ex: usize = pooled_exons.iter().map(|v| v.len()).sum();
         eprintln!(
@@ -5283,7 +6232,10 @@ fn build_catalog_reps(
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     } else if growth_extent_enabled() {
         let (rep_idx, members) =
-            crate::family::family_detect::collapse_loci_span_aware_with_members(&transcripts, &cfg.detect);
+            crate::family::family_detect::collapse_loci_span_aware_with_members(
+                &transcripts,
+                &cfg.detect,
+            );
         growth_seeds = Some(
             members
                 .iter()
@@ -5300,15 +6252,24 @@ fn build_catalog_reps(
         rep_idx.iter().map(|&i| transcripts[i].clone()).collect()
     };
     for (c, a, b) in &dbg_loci {
-        let t = transcripts.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).count();
-        let mut r: Vec<&DenovoTranscript> =
-            reps.iter().filter(|t| &t.chrom == c && t.start < *b && t.end > *a).collect();
+        let t = transcripts
+            .iter()
+            .filter(|t| &t.chrom == c && t.start < *b && t.end > *a)
+            .count();
+        let mut r: Vec<&DenovoTranscript> = reps
+            .iter()
+            .filter(|t| &t.chrom == c && t.start < *b && t.end > *a)
+            .collect();
         r.sort_by_key(|x| std::cmp::Reverse(x.n_reads));
         eprintln!("[dbg {c}:{a}-{b}] transcripts={t} REPS={}", r.len());
         for x in r.iter().take(6) {
             eprintln!(
                 "[dbg]   rep {}-{} exons={} reads={} strand={}",
-                x.start, x.end, x.introns.len() + 1, x.n_reads, x.strand
+                x.start,
+                x.end,
+                x.introns.len() + 1,
+                x.n_reads,
+                x.strand
             );
         }
     }
@@ -5316,14 +6277,28 @@ fn build_catalog_reps(
     // TIER-2 ADMISSION (`RUSTLE_TIER2_ADMIT`, default off = byte-identical). Purely additive: it only
     // adds reps at read clusters no existing rep covers.
     if tier2_enabled() {
-        let extra = tier2_rescue(bam_path, threads, &reps, &genome, refine,
-            crate::family::denovo_assemble::GATE_MIN_READS);
+        let extra = tier2_rescue(
+            bam_path,
+            threads,
+            &reps,
+            &genome,
+            refine,
+            crate::family::denovo_assemble::GATE_MIN_READS,
+        );
         if !extra.is_empty() {
-            eprintln!("[tier2] admitted {} loci by similarity to an existing rep (tid prefix T2~)", extra.len());
+            eprintln!(
+                "[tier2] admitted {} loci by similarity to an existing rep (tid prefix T2~)",
+                extra.len()
+            );
         }
         reps.extend(extra);
     }
-    eprintln!("[gw-catalog-homology] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
+    eprintln!(
+        "[gw-catalog-homology] {} skeletons -> {} reps over {} contigs",
+        skeletons.len(),
+        reps.len(),
+        contigs.len()
+    );
 
     // Per-copy unique-mapper support (Task 3, identifiability-merge): `distinct_locus_reps`'s same-strand
     // merge guard below needs read evidence, but `reads` above is `PrimaryRead` (no MAPQ) and is already
@@ -5334,7 +6309,8 @@ fn build_catalog_reps(
     // no existing catalog field except which same-strand co-located pairs the merge below collapses.
     // Coordinates-only reader (2026-09-24): nothing below reads `.seq`/`.qual` (placements, core bp, spliced
     // evidence, the extent/linkage options, `read_blocks`), so the sequence/quality decode is skipped.
-    let mapq_reads = crate::family::denovo_assemble::aligned_reads_from_bam_coords_in(bam_path, threads, span)?;
+    let mapq_reads =
+        crate::family::denovo_assemble::aligned_reads_from_bam_coords_in(bam_path, threads, span)?;
     // OPT-IN shared definition (`RUSTLE_SHARED_DEFINITION`): its read-locus nodes need the reads' exon blocks,
     // taken here because the reads are dropped before grouping. `None` (no cost) when unset.
     let sd_reads = crate::family::shared_definition::enabled()
@@ -5347,7 +6323,8 @@ fn build_catalog_reps(
     // Boundaries are derived from the SAME borrow, before the reads are dropped. Cloning them instead
     // roughly doubles peak RSS on a multimapper-rich BAM (94% of alignments secondary here) and made an
     // 18-minute arm thrash for an hour at 15.5 GB.
-    let de_extent = locus_de_extent().map(|max_de| locus_confident_extent(&mapq_reads, &reps, max_de));
+    let de_extent =
+        locus_de_extent().map(|max_de| locus_confident_extent(&mapq_reads, &reps, max_de));
     // OPT-IN linked-locus merge (§6cj) — computed from the SAME borrow, for the same reason as
     // `de_extent` above: the reads are dropped on the next line to keep peak RSS down, and cloning them
     // instead roughly doubles it on a multimapper-rich BAM. `None` when the flag is unset, so the
@@ -5368,12 +6345,18 @@ fn build_catalog_reps(
         let (mut set, mut kept) = (0usize, 0usize);
         for (i, c) in reps.iter_mut().enumerate() {
             match ext[i] {
-                Some((lo, hi)) => { c.start = lo; c.end = hi; set += 1; }
+                Some((lo, hi)) => {
+                    c.start = lo;
+                    c.end = hi;
+                    set += 1;
+                }
                 None => kept += 1,
             }
         }
-        eprintln!("[locus-extent] confident-read boundaries: {set} reps re-bounded, \
-                   {kept} kept (no qualifying read)");
+        eprintln!(
+            "[locus-extent] confident-read boundaries: {set} reps re-bounded, \
+                   {kept} kept (no qualifying read)"
+        );
     }
     if let Some(grown) = growth_result {
         if had_de_extent {
@@ -5384,18 +6367,31 @@ fn build_catalog_reps(
             c.start = grown[i].0;
             c.end = grown[i].1;
         }
-        eprintln!("[locus-extent] growth boundaries applied to {} reps (k={}, min_frac={})",
-                   grown.len(), growth_k(), growth_min_frac());
+        eprintln!(
+            "[locus-extent] growth boundaries applied to {} reps (k={}, min_frac={})",
+            grown.len(),
+            growth_k(),
+            growth_min_frac()
+        );
     }
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent → catalogs byte-identical): dump the rep table
     // that `distinct_locus_reps` (the ">= 2 spatially-distinct loci" certificate) is about to run on, so
     // the merge predicate can be re-derived offline. One line per rep, tab-separated.
-    if std::env::var("RUSTLE_LOCUS_AUDIT").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+    if std::env::var("RUSTLE_LOCUS_AUDIT")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
+    {
         for (i, c) in reps.iter().enumerate() {
             eprintln!(
                 "[rep-audit]\t{i}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                c.chrom, c.start, c.end, c.strand, c.n_reads, c.distinguishing_uniq,
-                c.introns.len() + 1, c.seq.len()
+                c.chrom,
+                c.start,
+                c.end,
+                c.strand,
+                c.n_reads,
+                c.distinguishing_uniq,
+                c.introns.len() + 1,
+                c.seq.len()
             );
         }
     }
@@ -5423,9 +6419,15 @@ fn homology_catalog_from_reps(
     // (`shared_definition` module docs; prereg Addendum AF-1 requires family-for-family parity with
     // `bench/denovo_shared_def.py`). Unset: this block is skipped and the catalog is byte-identical.
     if let Some(sd_reads) = sd_reads {
-        let (nodes, fams, pairs) =
-            crate::family::shared_definition::build(&reps, &sd_reads, &genome, &refine.minimap2, threads)?;
-        let edges4: Vec<(usize, usize, f64, f64)> = pairs.iter().map(|&(a, b)| (a, b, 1.0, 1.0)).collect();
+        let (nodes, fams, pairs) = crate::family::shared_definition::build(
+            &reps,
+            &sd_reads,
+            &genome,
+            &refine.minimap2,
+            threads,
+        )?;
+        let edges4: Vec<(usize, usize, f64, f64)> =
+            pairs.iter().map(|&(a, b)| (a, b, 1.0, 1.0)).collect();
         let (mut out, mut certs) = (Vec::new(), Vec::new());
         for f in fams {
             if f.len() < min_copies.max(2) {
@@ -5433,23 +6435,35 @@ fn homology_catalog_from_reps(
             }
             let groups: Vec<Vec<usize>> = f.iter().map(|&i| vec![i]).collect();
             certs.push(certificate_for_weighted(&groups, &edges4));
-            out.push(f.iter().map(|&i| crate::family::shared_definition::node_transcript(&nodes[i], &genome)).collect());
+            out.push(
+                f.iter()
+                    .map(|&i| crate::family::shared_definition::node_transcript(&nodes[i], &genome))
+                    .collect(),
+            );
         }
-        eprintln!("[gw-catalog-homology] shared definition: {} families (>= {} loci)", out.len(), min_copies.max(2));
+        eprintln!(
+            "[gw-catalog-homology] shared definition: {} families (>= {} loci)",
+            out.len(),
+            min_copies.max(2)
+        );
         return Ok((out, certs, Vec::new(), Vec::new(), Vec::new()));
     }
     // --- E_r edges + γ-quasi-clique blocks ---
     // `er_edges` is kept (not discarded as before) solely to compute each emitted family's λ certificate.
     let (blocks, er_edges) = homology_blocks_pooled_with_edges_weighted(
         &reps,
-        if pooled_exons.is_empty() { None } else { Some(pooled_exons.as_slice()) },
+        if pooled_exons.is_empty() {
+            None
+        } else {
+            Some(pooled_exons.as_slice())
+        },
         refine,
         gamma,
     )?;
     let t_edges = t_phase.elapsed().as_secs_f64() - t_reps;
     let n_blocks = blocks.len(); // captured before the loop below consumes `blocks` (for the diagnostic eprintln)
-    // Within-family COVERAGE split (see `coverage_split_block`). Applied to the formed blocks, so it can
-    // only split. `RUSTLE_COVERAGE_SPLIT=0` restores the pre-split catalog.
+                                 // Within-family COVERAGE split (see `coverage_split_block`). Applied to the formed blocks, so it can
+                                 // only split. `RUSTLE_COVERAGE_SPLIT=0` restores the pre-split catalog.
     let cov_split = coverage_split_floor();
     let cov_edges = coverage_edges_all_reps(&reps, cov_split, refine)?;
     let blocks: Vec<Vec<usize>> = {
@@ -5488,7 +6502,9 @@ fn homology_catalog_from_reps(
                 .collect();
             certs.push(certificate_for_weighted(&groups, &er_edges));
             out.push(loci);
-        } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback) && loci.len() < 2 {
+        } else if (cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback)
+            && loci.len() < 2
+        {
             // GENUINE collapse only (< 2 RNA-distinct loci), independent of min_copies: a block with
             // >= 2 distinct loci that merely falls short of a higher --min-copies is a resolved (not
             // collapsed) candidate and must NOT get a mixed-locus union re-admission window.
@@ -5498,10 +6514,22 @@ fn homology_catalog_from_reps(
             let chrom = copies[0].chrom.clone();
             let lo = copies.iter().map(|c| c.start).min().unwrap_or(0);
             let hi = copies.iter().map(|c| c.end).max().unwrap_or(0);
-            let consensus = copies.iter().max_by_key(|c| c.seq.len()).map(|c| c.seq.clone()).unwrap_or_default();
+            let consensus = copies
+                .iter()
+                .max_by_key(|c| c.seq.len())
+                .map(|c| c.seq.clone())
+                .unwrap_or_default();
             if cfg.collapse_enumerate {
                 if let Some(cf) = crate::family::collapse_enumerate::readmit_locus(
-                    bam_path, &chrom, lo, hi, &consensus, &genome, fasta_path, &refine.minimap2, threads,
+                    bam_path,
+                    &chrom,
+                    lo,
+                    hi,
+                    &consensus,
+                    &genome,
+                    fasta_path,
+                    &refine.minimap2,
+                    threads,
                 ) {
                     collapsed.push(cf);
                 }
@@ -5518,20 +6546,35 @@ fn homology_catalog_from_reps(
     }
     let expressed = if cfg.collapse_expressed {
         crate::family::collapse_enumerate::readmit_expressed_batch(
-            &expressed_candidates, bam_path, fasta_path, &refine.minimap2, threads, 0.98,
+            &expressed_candidates,
+            bam_path,
+            fasta_path,
+            &refine.minimap2,
+            threads,
+            0.98,
         )
     } else {
         Vec::new()
     };
     let dna_families = if cfg.dna_family_fallback {
         crate::family::collapse_enumerate::readmit_dna_family_batch(
-            &dna_candidates, bam_path, fasta_path, &refine.minimap2, threads, cfg.dna_family_min_identity,
+            &dna_candidates,
+            bam_path,
+            fasta_path,
+            &refine.minimap2,
+            threads,
+            cfg.dna_family_min_identity,
             cfg.dna_family_max_softmask,
         )
     } else {
         Vec::new()
     };
-    eprintln!("[gw-catalog-homology] {} γ-quasi-clique blocks -> {} families (>= {} distinct loci)", n_blocks, out.len(), min_copies);
+    eprintln!(
+        "[gw-catalog-homology] {} γ-quasi-clique blocks -> {} families (>= {} distinct loci)",
+        n_blocks,
+        out.len(),
+        min_copies
+    );
     eprintln!(
         "[gw-catalog-timing] representatives {t_reps:.1} s (BAM passes + collapse, or cache) | E_r edges + blocks {t_edges:.1} s | families {:.1} s",
         t_phase.elapsed().as_secs_f64() - t_reps - t_edges
@@ -5545,10 +6588,13 @@ fn homology_catalog_from_reps(
     if !dna_families.is_empty() {
         eprintln!("[gw-catalog-homology] dna-family-fallback: {} DNA_FAMILY_RNA_NONHOMOLOGOUS loci re-admitted (copy-number only)", dna_families.len());
     }
-    debug_assert_eq!(out.len(), certs.len(), "one certificate per emitted family, same order");
+    debug_assert_eq!(
+        out.len(),
+        certs.len(),
+        "one certificate per emitted family, same order"
+    );
     Ok((out, certs, collapsed, expressed, dna_families))
 }
-
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
 /// point (`bench/validate_exon_sum.py`): minimap2 asm20, identity >= 0.80 (asm20's native divergence
@@ -5638,7 +6684,10 @@ impl Default for RefineParams {
         RefineParams {
             min_identity: 0.80,
             // `RUSTLE_ER_MIN_COVERAGE` (§6zi single-rule prereg): the coverage floor on the shorter sequence; 0.50 shipped.
-            min_coverage: std::env::var("RUSTLE_ER_MIN_COVERAGE").ok().and_then(|v| v.parse().ok()).unwrap_or(0.50),
+            min_coverage: std::env::var("RUSTLE_ER_MIN_COVERAGE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.50),
             minimap2: std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string()),
             threads: 4,
             include_introns: false,
@@ -5762,7 +6811,8 @@ pub fn refine_families_exon_sum(
     } else {
         match params.intron_fasta.as_ref() {
             Some(path) => {
-                let contigs: DetHashSet<String> = families.iter().flatten().map(|c| c.chrom.clone()).collect();
+                let contigs: DetHashSet<String> =
+                    families.iter().flatten().map(|c| c.chrom.clone()).collect();
                 match GenomeIndex::from_fasta_contigs(path, &contigs) {
                     Ok(g) => Some(g),
                     Err(e) if params.include_introns => {
@@ -5819,7 +6869,9 @@ pub fn refine_families_exon_sum(
     // derived from data the function already computes, nothing feeds back into a decision, and the whole
     // block writes only when the env var is set. Behaviour-neutrality is asserted by the control panel
     // staying byte-identical with the var set and unset.
-    let audit_on = std::env::var("RUSTLE_UNION_AUDIT").map(|v| !v.is_empty()).unwrap_or(false);
+    let audit_on = std::env::var("RUSTLE_UNION_AUDIT")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
     let mut au_fam_examined = 0usize; // families with >= 2 copies (the gate's denominator)
     let mut au_gate_false = 0usize; // ... where edges_connect_all(primary) was FALSE
     let mut au_genomic_calls = 0usize; // ... where the genomic-span tier actually ran (genome present)
@@ -5841,7 +6893,10 @@ pub fn refine_families_exon_sum(
         // core tier: exon-sum (spliced) for a clean, intron-length-independent identity; genomic span only when
         // include_introns is explicitly set (the genomic-span tier below is the additive default-on path).
         let core_genome = if params.include_introns { genome } else { None };
-        let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, core_genome)).collect();
+        let seqs: Vec<Vec<u8>> = fam
+            .iter()
+            .map(|c| refine_copy_seq(c, core_genome))
+            .collect();
         dump_reps += fam.len();
         dump_lens.extend(seqs.iter().map(|s| s.len()));
         // base detector: the PRIMARY tier on the configured sequence.
@@ -5866,7 +6921,11 @@ pub fn refine_families_exon_sum(
         // Snapshot of the PRIMARY (exon-sum core) edge set, before any additive tier unions into it. This is
         // the object every "union is a no-op" claim on record was actually measured on; keeping it lets the
         // audit compare the two partitions on the SHIPPED object instead of on an externally built PAF.
-        let au_primary: BTreeSet<(usize, usize)> = if audit_on { edge_set.clone() } else { BTreeSet::new() };
+        let au_primary: BTreeSet<(usize, usize)> = if audit_on {
+            edge_set.clone()
+        } else {
+            BTreeSet::new()
+        };
         au_edges_primary_total += edge_set.len();
         // The additive tiers only UNION more edges. If the asm20 exon-sum core already connects every copy into a
         // single homology component, they are a provable no-op (`homology_components` on a superset of a connected
@@ -5891,7 +6950,8 @@ pub fn refine_families_exon_sum(
             // `CoreIsGenomic` and `NotPresent` fall through silently as the outer `if` did, `NoGenome` is
             // the old `else`. Behaviour-identical by construction; what changed is that it is now READABLE.
             if genomic_tier.armed() {
-                let g = genome.expect("GenomicTier::Armed is returned only when a genome is available");
+                let g =
+                    genome.expect("GenomicTier::Armed is returned only when a genome is available");
                 au_genomic_calls += 1;
                 let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
                 // SAME primary tier as the core run — a different SUBSTRATE, never a different rule. The
@@ -5930,7 +6990,9 @@ pub fn refine_families_exon_sum(
             // edges already in `prov`. Skipped, which removes one minimap2 subprocess per unconnected family
             // and cannot move the edge set. (With `include_introns` the core ran on GENOMIC sequence, so the
             // exon-sum run is still a distinct substrate and does run.)
-            if params.nucleotide_sensitive && !(er_sensitive_only(params) && !params.include_introns) {
+            if params.nucleotide_sensitive
+                && !(er_sensitive_only(params) && !params.include_introns)
+            {
                 let exon_seqs: Vec<Vec<u8>> = fam.iter().map(|c| c.seq.clone()).collect();
                 // Identity floor comes from `params.sensitive_identity` (the SAME knob as the E_r path).
                 // This was a hard-coded 0.70 that `--min-identity` could not reach, so `--min-identity 0.98`
@@ -6017,8 +7079,10 @@ pub fn refine_families_exon_sum(
             let loci = distinct_locus_reps(comp_copies, min_reads);
             if loci.len() >= 2 {
                 if let Some(span) = loci.first() {
-                    let uniq: Vec<String> =
-                        sole.iter().map(|(&m, &n)| format!("{}={}", tier_names(m), n)).collect();
+                    let uniq: Vec<String> = sole
+                        .iter()
+                        .map(|(&m, &n)| format!("{}={}", tier_names(m), n))
+                        .collect();
                     eprintln!(
                         "[provenance] family @ {}:{}-{} ({} loci): tiers={} sole-support[{}]",
                         span.chrom,
@@ -6045,9 +7109,14 @@ pub fn refine_families_exon_sum(
     if audit_on {
         if let Ok(path) = std::env::var("RUSTLE_UNION_AUDIT") {
             use std::io::Write;
-            static UNION_AUDIT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            static UNION_AUDIT_SEQ: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
             let call = UNION_AUDIT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
                 let _ = writeln!(
                     f,
                     "#call\t{call}\tlabel\t{}",
@@ -6072,10 +7141,14 @@ pub fn refine_families_exon_sum(
     }
     if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
         if !prefix.is_empty() {
-            static REFINE_DUMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            static REFINE_DUMP_SEQ: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
             let n = REFINE_DUMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stem =
-                if n == 0 { format!("{prefix}.refine") } else { format!("{prefix}.refine.call{}", n + 1) };
+            let stem = if n == 0 {
+                format!("{prefix}.refine")
+            } else {
+                format!("{prefix}.refine.call{}", n + 1)
+            };
             // ⭐ O-3 — `genomic_tier` is THE VARIABLE THE GATE BRANCHED ON, not a second derivation of the
             // same condition. That is the whole point: a certificate re-deriving its own answer can be
             // right about the code and wrong about the run.
@@ -6093,9 +7166,18 @@ pub fn refine_families_exon_sum(
                 ("n_families_out".into(), refined.len().to_string()),
                 ("n_reps".into(), dump_reps.to_string()),
                 ("n_edges".into(), dump_edges.to_string()),
-                ("min_identity_asm20".into(), format!("{:.6}", params.min_identity)),
-                ("sensitive_identity".into(), format!("{:.6}", params.sensitive_identity)),
-                ("nucleotide_sensitive".into(), params.nucleotide_sensitive.to_string()),
+                (
+                    "min_identity_asm20".into(),
+                    format!("{:.6}", params.min_identity),
+                ),
+                (
+                    "sensitive_identity".into(),
+                    format!("{:.6}", params.sensitive_identity),
+                ),
+                (
+                    "nucleotide_sensitive".into(),
+                    params.nucleotide_sensitive.to_string(),
+                ),
                 ("protein_tail".into(), params.protein_tail.to_string()),
                 ("include_introns".into(), params.include_introns.to_string()),
                 ("threads".into(), params.threads.to_string()),
@@ -6104,19 +7186,45 @@ pub fn refine_families_exon_sum(
                 // say what happened. Both are needed: an armed leg that never fires and a leg that
                 // rebuilt the whole edge set print the same rule row and must not print the same run.
                 ("n_families_examined".into(), au_fam_examined.to_string()),
-                ("n_families_core_unconnected".into(), au_gate_false.to_string()),
-                ("n_families_genomic_tier_ran".into(), au_genomic_calls.to_string()),
-                ("n_families_genomic_tier_skipped_nogenome".into(), au_genomic_skipped_nogenome.to_string()),
-                ("n_families_genomic_tier_added_edges".into(), au_fam_genomic_added.to_string()),
+                (
+                    "n_families_core_unconnected".into(),
+                    au_gate_false.to_string(),
+                ),
+                (
+                    "n_families_genomic_tier_ran".into(),
+                    au_genomic_calls.to_string(),
+                ),
+                (
+                    "n_families_genomic_tier_skipped_nogenome".into(),
+                    au_genomic_skipped_nogenome.to_string(),
+                ),
+                (
+                    "n_families_genomic_tier_added_edges".into(),
+                    au_fam_genomic_added.to_string(),
+                ),
                 // The number every "the union is a no-op" claim is about: edges present in `E_x ∪ E_g`
                 // and NOT in the exon-sum core's `E_x`. 0 here is the no-op, measured on the object the
                 // binary actually emits.
-                ("n_edges_genomic_tier_added".into(), au_edges_genomic_new.to_string()),
-                ("n_edges_core_tier".into(), au_edges_primary_total.to_string()),
-                ("additive_genomic_tier_fired".into(), (au_edges_genomic_new > 0).to_string()),
-                ("paf_glob_for_this_edge_set".into(), format!("{prefix}.refine.*.paf")),
+                (
+                    "n_edges_genomic_tier_added".into(),
+                    au_edges_genomic_new.to_string(),
+                ),
+                (
+                    "n_edges_core_tier".into(),
+                    au_edges_primary_total.to_string(),
+                ),
+                (
+                    "additive_genomic_tier_fired".into(),
+                    (au_edges_genomic_new > 0).to_string(),
+                ),
+                (
+                    "paf_glob_for_this_edge_set".into(),
+                    format!("{prefix}.refine.*.paf"),
+                ),
                 ("substrate_median_len_bp".into(), {
-                    median_len(&dump_lens).map(|m| m.to_string()).unwrap_or_else(|| "NA".into())
+                    median_len(&dump_lens)
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|| "NA".into())
                 }),
                 ("coverage_floor_median_bp_demand".into(), {
                     coverage_floor_bp_demand(params.min_coverage, &dump_lens)
@@ -6136,7 +7244,9 @@ pub fn refine_families_exon_sum(
 fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec<u8> {
     match genome {
         Some(g) => {
-            let mut s = g.fetch_sequence(&copy.chrom, copy.start, copy.end).unwrap_or_default();
+            let mut s = g
+                .fetch_sequence(&copy.chrom, copy.start, copy.end)
+                .unwrap_or_default();
             if s.is_empty() {
                 return copy.seq.clone(); // fetch miss → fall back to the exon-sum
             }
@@ -6166,14 +7276,17 @@ fn hard_mask_repeats(
     genomic_span: bool,
 ) -> Result<(usize, u64)> {
     use crate::genome::IndexedFasta;
-    let fa = IndexedFasta::open(fasta)
-        .map_err(|e| anyhow::anyhow!("repeat mask: cannot open {fasta} (need a .fai sidecar): {e}"))?;
+    let fa = IndexedFasta::open(fasta).map_err(|e| {
+        anyhow::anyhow!("repeat mask: cannot open {fasta} (need a .fai sidecar): {e}")
+    })?;
     // Build every mask BEFORE mutating anything, so a mismatch anywhere leaves `seqs` untouched.
     let mut masks: Vec<Vec<bool>> = Vec::with_capacity(reps.len());
     for (i, r) in reps.iter().enumerate() {
         let mut lower: Vec<bool> = Vec::with_capacity(seqs[i].len());
         if genomic_span {
-            let b = fa.fetch(&r.chrom, r.start as i64, r.end as i64).unwrap_or_default();
+            let b = fa
+                .fetch(&r.chrom, r.start as i64, r.end as i64)
+                .unwrap_or_default();
             lower.extend(b.iter().map(|c: &u8| c.is_ascii_lowercase()));
         } else {
             let blocks = crate::family::catalog_input::exon_blocks(r.start, r.end, &r.introns);
@@ -6229,10 +7342,14 @@ pub(crate) fn extend_exon_sum_to_tes(copy: &DenovoTranscript, g: &GenomeIndex) -
     // Extension window in genomic coordinates, in the 3' direction for this strand. An inward or flush TES
     // yields no window — this may only ever ADD sequence, never trim.
     let (lo, hi) = if copy.strand == '-' {
-        if tes >= copy.start { return None; }
+        if tes >= copy.start {
+            return None;
+        }
         (tes, copy.start)
     } else {
-        if tes <= copy.end { return None; }
+        if tes <= copy.end {
+            return None;
+        }
         (copy.end, tes)
     };
     let mut ext = g.fetch_sequence(&copy.chrom, lo, hi)?;
@@ -6289,9 +7406,16 @@ pub(crate) const ER_COVERAGE_FORM: &str = "aligned span on the SHORTER sequence 
     (ql<=tl ? (qe-qs)/ql : (te-ts)/tl); axis follows the denominator";
 
 /// Build the shipped-tier `minimap2` invocation. **The only place a `Command` for E_r is constructed.**
-pub(crate) fn er_tier_command(minimap2: &str, threads: usize, mm_args: &[&str]) -> std::process::Command {
+pub(crate) fn er_tier_command(
+    minimap2: &str,
+    threads: usize,
+    mm_args: &[&str],
+) -> std::process::Command {
     let mut cmd = std::process::Command::new(minimap2);
-    cmd.args(ER_TIER_FLAGS).arg("-t").arg(threads.max(1).to_string()).args(mm_args);
+    cmd.args(ER_TIER_FLAGS)
+        .arg("-t")
+        .arg(threads.max(1).to_string())
+        .args(mm_args);
     cmd
 }
 
@@ -6311,7 +7435,9 @@ pub(crate) const ER_SENSITIVE_SEED: &[&str] = &["-k", "11", "-w", "5"];
 /// The predicate now lives here and both callers read it, so the tier cannot drift per call site again.
 pub(crate) fn er_sensitive_only(params: &RefineParams) -> bool {
     params.nucleotide_sensitive
-        && std::env::var("RUSTLE_ER_SENSITIVE_ONLY").map(|v| v != "0" && !v.is_empty()).unwrap_or(true)
+        && std::env::var("RUSTLE_ER_SENSITIVE_ONLY")
+            .map(|v| v != "0" && !v.is_empty())
+            .unwrap_or(true)
 }
 
 /// The PRIMARY E_r tier as `(seed args, identity floor, tier bit)` — **the single definition of "what
@@ -6322,7 +7448,11 @@ pub(crate) fn er_sensitive_only(params: &RefineParams) -> bool {
 /// `primary_seed_args()` (`-x asm20`, or `RUSTLE_MM2_SEED`) at `min_identity`.
 pub(crate) fn er_primary_tier(params: &RefineParams) -> (Vec<String>, f64, TierMask) {
     if er_sensitive_only(params) {
-        (ER_SENSITIVE_SEED.iter().map(|s| (*s).to_string()).collect(), params.sensitive_identity, TIER_SENSITIVE)
+        (
+            ER_SENSITIVE_SEED.iter().map(|s| (*s).to_string()).collect(),
+            params.sensitive_identity,
+            TIER_SENSITIVE,
+        )
     } else {
         (primary_seed_args(), params.min_identity, TIER_ASM20)
     }
@@ -6436,13 +7566,17 @@ pub(crate) struct ErRuleSite {
 /// diff and the certificate stops meaning anything.
 pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(String, String)> {
     let (seed, floor, mask) = er_primary_tier(params);
-    let longer = matches!(std::env::var("RUSTLE_ER_COVERAGE_LONGER"), Ok(v) if v != "0" && !v.is_empty());
+    let longer =
+        matches!(std::env::var("RUSTLE_ER_COVERAGE_LONGER"), Ok(v) if v != "0" && !v.is_empty());
     vec![
         ("mm_flags".into(), ER_TIER_FLAGS.join(" ")),
         ("primary_tier_seed".into(), seed.join(" ")),
         ("primary_tier_identity".into(), format!("{floor:.6}")),
         ("primary_tier_name".into(), tier_names(mask)),
-        ("sensitive_only".into(), er_sensitive_only(params).to_string()),
+        (
+            "sensitive_only".into(),
+            er_sensitive_only(params).to_string(),
+        ),
         // The ADDITIVE sensitive run. Under sensitive-only on the exon-sum it is the primary tier itself,
         // so re-running it would be a byte-identical no-op; that is stated here rather than left implicit.
         ("additive_sensitive_tier".into(), {
@@ -6451,21 +7585,31 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
             } else if er_sensitive_only(params) && !site.substrate_genomic {
                 "same-as-primary (not re-run)".into()
             } else {
-                format!("{} @ {:.6}", ER_SENSITIVE_SEED.join(" "), params.sensitive_identity)
+                format!(
+                    "{} @ {:.6}",
+                    ER_SENSITIVE_SEED.join(" "),
+                    params.sensitive_identity
+                )
             }
         }),
         ("protein_tier".into(), params.protein_tail.to_string()),
         ("min_coverage".into(), format!("{:.6}", params.min_coverage)),
         // The SECOND, longer-side coverage floor. A RULE row: it decides edges, so an ON arm must
         // be distinguishable from an OFF arm by the certificate alone (defect M2).
-        ("min_coverage_longer".into(), match er_cov_longer_floor() {
-            Some(f) => format!("{f:.6}"),
-            None => "<unset>".into(),
-        }),
+        (
+            "min_coverage_longer".into(),
+            match er_cov_longer_floor() {
+                Some(f) => format!("{f:.6}"),
+                None => "<unset>".into(),
+            },
+        ),
         // ⚠ NAMED `core_substrate`, NOT `substrate`. A run whose edge set is `E_x ∪ E_g` has no single
         // substrate, and the old key invited exactly the misreading it produced: `substrate = exon-sum`
         // printed on a run that unioned genomic-span edges in (O-3 / joint-run finding F6).
-        ("core_substrate".into(), substrate_name(site.substrate_genomic).into()),
+        (
+            "core_substrate".into(),
+            substrate_name(site.substrate_genomic).into(),
+        ),
         // The ADDITIVE GENOMIC-SPAN leg. This is a RULE row: whether the leg is armed decides edges. How
         // often it FIRED and how many edges it contributed are data, and live in `params.tsv`.
         ("additive_genomic_tier".into(), site.genomic_tier.label()),
@@ -6484,9 +7628,19 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         ),
         // (The opt-in read-supported-core denominator, RUSTLE_ER_CORE_COVERAGE, was refuted — pipeline
         // −0.072 F1 — and removed 2026-09-24; the row keeps its unset value.)
-        ("coverage_denominator".into(), if longer { "span(max)".into() } else { "span(min)".into() }),
+        (
+            "coverage_denominator".into(),
+            if longer {
+                "span(max)".into()
+            } else {
+                "span(min)".into()
+            },
+        ),
         ("coverage_form".into(), ER_COVERAGE_FORM.into()),
-        ("identity_metric".into(), "1-de (fallback nmatch/blocklen when de:f: absent)".into()),
+        (
+            "identity_metric".into(),
+            "1-de (fallback nmatch/blocklen when de:f: absent)".into(),
+        ),
         (
             "alignment_orientation".into(),
             if params.forward_only_active() {
@@ -6495,7 +7649,10 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
                 "both (+/-)".into()
             },
         ),
-        ("edge_rule".into(), "ANY single record clearing both floors".into()),
+        (
+            "edge_rule".into(),
+            "ANY single record clearing both floors".into(),
+        ),
         // The opt-in summed-coverage rule (RUSTLE_ER_SUM_COVERAGE) was refuted (register r1097) and removed
         // 2026-09-24; the row keeps the value every run without it printed, so rule.tsv stays comparable.
         ("summed_coverage".into(), "<unset>".into()),
@@ -6504,8 +7661,14 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
             "locus_link_min_reads".into(),
             "<unset>".into(), // switch removed 2026-09-24 (r816 refuted); row kept so params.tsv is unchanged
         ),
-        ("shared_exon_mode".into(), std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into())),
-        ("repeat_hub_gate".into(), std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into())),
+        (
+            "shared_exon_mode".into(),
+            std::env::var("RUSTLE_SHARED_EXON").unwrap_or_else(|_| "<unset>".into()),
+        ),
+        (
+            "repeat_hub_gate".into(),
+            std::env::var("RUSTLE_ER_REPEAT_GATE").unwrap_or_else(|_| "<unset>".into()),
+        ),
         // Changes WHICH SUBSTRATE E_r is computed on, so an ON and an OFF catalog must not have
         // byte-identical params.tsv (the M2 defect). `_active` is emitted separately at the edge site
         // because the flag ABSTAINS without a --fasta or on any mask/seq length mismatch: a requested but
@@ -6517,27 +7680,60 @@ pub(crate) fn er_rule_rows(params: &RefineParams, site: &ErRuleSite) -> Vec<(Str
         // DEFAULT FLIPPED 2026-09-21: unset means ON (majority); only "0" is strict. Report the EFFECTIVE
         // state, not the raw env var, so an unset run's params.tsv does not read as "nothing happening"
         // when a real default is in force (the M2 defect this file's neighbouring rows already guard).
-        ("junction_majority".into(), match std::env::var("RUSTLE_JUNCTION_MAJORITY") {
-            Ok(v) if v == "0" => "0 (strict, explicit)".into(),
-            Ok(v) => format!("{v} (majority)"),
-            Err(_) => "1 (majority, default)".into(),
-        }),
+        (
+            "junction_majority".into(),
+            match std::env::var("RUSTLE_JUNCTION_MAJORITY") {
+                Ok(v) if v == "0" => "0 (strict, explicit)".into(),
+                Ok(v) => format!("{v} (majority)"),
+                Err(_) => "1 (majority, default)".into(),
+            },
+        ),
         // Changes WHICH SKELETONS BECOME NODES, so an ON and an OFF catalog must not have byte-identical
         // params.tsv (the M2 defect).
-        ("gate_min_reads".into(), super::denovo_assemble::gate_min_reads().to_string()),
+        (
+            "gate_min_reads".into(),
+            super::denovo_assemble::gate_min_reads().to_string(),
+        ),
         // Changes WHICH SITES ARE PROPOSED (every placement, not just the primary-flagged one), so an ON
         // and an OFF catalog must not have byte-identical params.tsv (the M2 defect).
-        ("flagfree_sites".into(), std::env::var("RUSTLE_FLAGFREE_SITES").unwrap_or_else(|_| "<unset>".into())),
-        ("junction_nc_max_bp".into(), std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").unwrap_or_else(|_| "10000 (default)".into())),
-        ("footprint_nodes".into(), std::env::var("RUSTLE_FOOTPRINT_NODES").unwrap_or_else(|_| "<unset>".into())),
-        ("footprint_min_cov".into(), std::env::var("RUSTLE_FOOTPRINT_MIN_COV").unwrap_or_else(|_| "2 (default)".into())),
-        ("footprint_windows".into(), std::env::var("RUSTLE_FOOTPRINT_WINDOWS").unwrap_or_else(|_| "<unset>".into())),
-        ("weighted_partition".into(), std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_else(|_| "<unset>".into())),
-        ("tier2_admit".into(), std::env::var("RUSTLE_TIER2_ADMIT").unwrap_or_else(|_| "<unset>".into())),
-        ("collapse_exonic".into(), std::env::var("RUSTLE_COLLAPSE_EXONIC").unwrap_or_else(|_| "<unset>".into())),
+        (
+            "flagfree_sites".into(),
+            std::env::var("RUSTLE_FLAGFREE_SITES").unwrap_or_else(|_| "<unset>".into()),
+        ),
+        (
+            "junction_nc_max_bp".into(),
+            std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").unwrap_or_else(|_| "10000 (default)".into()),
+        ),
+        (
+            "footprint_nodes".into(),
+            std::env::var("RUSTLE_FOOTPRINT_NODES").unwrap_or_else(|_| "<unset>".into()),
+        ),
+        (
+            "footprint_min_cov".into(),
+            std::env::var("RUSTLE_FOOTPRINT_MIN_COV").unwrap_or_else(|_| "2 (default)".into()),
+        ),
+        (
+            "footprint_windows".into(),
+            std::env::var("RUSTLE_FOOTPRINT_WINDOWS").unwrap_or_else(|_| "<unset>".into()),
+        ),
+        (
+            "weighted_partition".into(),
+            std::env::var("RUSTLE_ER_WEIGHTED_PARTITION").unwrap_or_else(|_| "<unset>".into()),
+        ),
+        (
+            "tier2_admit".into(),
+            std::env::var("RUSTLE_TIER2_ADMIT").unwrap_or_else(|_| "<unset>".into()),
+        ),
+        (
+            "collapse_exonic".into(),
+            std::env::var("RUSTLE_COLLAPSE_EXONIC").unwrap_or_else(|_| "<unset>".into()),
+        ),
         // Changes WHICH TRANSCRIPTS COLLAPSE INTO ONE LOCUS -- i.e. what a NODE IS -- so an ON and an OFF
         // catalog must not have byte-identical params.tsv (the M2 defect).
-        ("collapse_unstranded".into(), std::env::var("RUSTLE_COLLAPSE_UNSTRANDED").unwrap_or_else(|_| "<unset>".into())),
+        (
+            "collapse_unstranded".into(),
+            std::env::var("RUSTLE_COLLAPSE_UNSTRANDED").unwrap_or_else(|_| "<unset>".into()),
+        ),
         ("minimap2".into(), params.minimap2.clone()),
     ]
 }
@@ -6561,7 +7757,11 @@ fn write_kv_tsv(path: &str, rows: &[(String, String)]) {
 /// The same invocation as a string, for logs / `.args` dumps / `params.tsv`. Derived from
 /// `er_tier_command`'s constants so a dump can never describe a command that was not run.
 pub(crate) fn er_tier_cmdline(minimap2: &str, threads: usize, mm_args: &[&str]) -> String {
-    let mut s = format!("{minimap2} {} -t {}", ER_TIER_FLAGS.join(" "), threads.max(1));
+    let mut s = format!(
+        "{minimap2} {} -t {}",
+        ER_TIER_FLAGS.join(" "),
+        threads.max(1)
+    );
     if !mm_args.is_empty() {
         s.push(' ');
         s.push_str(&mm_args.join(" "));
@@ -6598,10 +7798,12 @@ pub(crate) fn nucleotide_edges_tagged(
     params: &RefineParams,
     dump_tag: Option<&str>,
 ) -> Result<Vec<(usize, usize)>> {
-    Ok(nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, params, dump_tag, None)?
-        .into_iter()
-        .map(|(i, j, _ident, _cov)| (i, j))
-        .collect())
+    Ok(
+        nucleotide_edges_scored(seqs, mm_args, min_id, min_cov, params, dump_tag, None)?
+            .into_iter()
+            .map(|(i, j, _ident, _cov)| (i, j))
+            .collect(),
+    )
 }
 
 /// ADDITIVE DISCLOSURE for one E_r edge (`docs/o1_ledger.md` §6ay/§6az), read off the SAME exemplar PAF
@@ -6652,12 +7854,24 @@ pub(crate) fn er_edge_flank(
     te: f64,
     q_is_i: bool,
 ) -> ErEdgeFlank {
-    let (long_aln, long_len) = if ql >= tl { (qe - qs, ql) } else { (te - ts, tl) };
+    let (long_aln, long_len) = if ql >= tl {
+        (qe - qs, ql)
+    } else {
+        (te - ts, tl)
+    };
     let cov_longer = long_aln / long_len.max(1.0);
     let q_unaln = (qs + (ql - qe)).max(0.0).round() as u64;
     let t_unaln = (ts + (tl - te)).max(0.0).round() as u64;
-    let (unaln_i, unaln_j) = if q_is_i { (q_unaln, t_unaln) } else { (t_unaln, q_unaln) };
-    ErEdgeFlank { cov_longer, unaln_i, unaln_j }
+    let (unaln_i, unaln_j) = if q_is_i {
+        (q_unaln, t_unaln)
+    } else {
+        (t_unaln, q_unaln)
+    };
+    ErEdgeFlank {
+        cov_longer,
+        unaln_i,
+        unaln_j,
+    }
 }
 
 /// As `nucleotide_edges`, but also returns the EXEMPLAR identity and coverage of each edge — the passing
@@ -6689,7 +7903,14 @@ fn nucleotide_edges_scored(
     guard_exempt: Option<&dyn Fn(usize, usize) -> bool>,
 ) -> Result<Vec<(usize, usize, f64, f64)>> {
     nucleotide_edges_scored_disclosed(
-        seqs, mm_args, min_id, min_cov, params, dump_tag, guard_exempt, None,
+        seqs,
+        mm_args,
+        min_id,
+        min_cov,
+        params,
+        dump_tag,
+        guard_exempt,
+        None,
     )
 }
 
@@ -6718,7 +7939,11 @@ fn nucleotide_edges_scored_disclosed(
     use std::io::Write;
     let dir = std::env::temp_dir();
     let pid = std::process::id();
-    let nonce = seqs.iter().map(|s| s.len()).sum::<usize>().wrapping_mul(1000003)
+    let nonce = seqs
+        .iter()
+        .map(|s| s.len())
+        .sum::<usize>()
+        .wrapping_mul(1000003)
         ^ seqs.len()
         ^ mm_args.len().wrapping_mul(7);
     // The nonce is a pure function of (total length, count, arg count), so two CONCURRENT calls of the same
@@ -6777,32 +8002,47 @@ fn nucleotide_edges_scored_disclosed(
     // genome-wide catalog unrunnable — a run reached 23.7 GB RSS + 10.2 GB swap, `D` state, ~11% CPU
     // (the parent blocked accumulating the child's stdout) and had to be killed at 1h34m.
     // Memory is now bounded by one line regardless of PAF size. Records, order and edges are unchanged.
-    let (mut child, child_stdout): (Option<std::process::Child>, Box<dyn std::io::Read>) = if let Some(f) = replay {
-        let e = paf_entry.as_ref().expect("a replay implies an entry");
-        eprintln!("[cache] all-vs-all PAF replayed from {} (minimap2 skipped)", e.dir.display());
-        (None, Box::new(f))
-    } else {
-        let mut child = er_tier_command(&params.minimap2, params.threads, mm_args)
-            .arg(&path)
-            .arg(&path)
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| anyhow::anyhow!("failed to run minimap2 ('{}') for refinement: {e}", params.minimap2))?;
-        let out = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("minimap2 stdout pipe unavailable"))?;
-        (Some(child), Box::new(out))
-    };
+    let (mut child, child_stdout): (Option<std::process::Child>, Box<dyn std::io::Read>) =
+        if let Some(f) = replay {
+            let e = paf_entry.as_ref().expect("a replay implies an entry");
+            eprintln!(
+                "[cache] all-vs-all PAF replayed from {} (minimap2 skipped)",
+                e.dir.display()
+            );
+            (None, Box::new(f))
+        } else {
+            let mut child = er_tier_command(&params.minimap2, params.threads, mm_args)
+                .arg(&path)
+                .arg(&path)
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "failed to run minimap2 ('{}') for refinement: {e}",
+                        params.minimap2
+                    )
+                })?;
+            let out = child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("minimap2 stdout pipe unavailable"))?;
+            (Some(child), Box::new(out))
+        };
     // tee into a staging entry while streaming (committed only after minimap2 exits 0 and every write succeeded)
     let mut paf_cache_poisoned = false;
-    let mut paf_cache_w: Option<(std::path::PathBuf, std::io::BufWriter<std::fs::File>)> = if paf_hit {
-        None
-    } else {
-        paf_entry.as_ref().and_then(|e| e.staging().ok()).and_then(|st| {
-            std::fs::File::create(st.join("out.paf")).ok().map(|f| (st, std::io::BufWriter::new(f)))
-        })
-    };
+    let mut paf_cache_w: Option<(std::path::PathBuf, std::io::BufWriter<std::fs::File>)> =
+        if paf_hit {
+            None
+        } else {
+            paf_entry
+                .as_ref()
+                .and_then(|e| e.staging().ok())
+                .and_then(|st| {
+                    std::fs::File::create(st.join("out.paf"))
+                        .ok()
+                        .map(|f| (st, std::io::BufWriter::new(f)))
+                })
+        };
     // Opt-in: hand the parity differ the EXACT bytes this rule was applied to. Without this the Python
     // mirror has to re-run minimap2 itself, and any difference in that invocation (the on-disk fixture PAF
     // was made with `-x asm20 ... -N 200 -p 0.02` and NO `-X`, i.e. both orientations of every pair) is
@@ -6819,7 +8059,9 @@ fn nucleotide_edges_scored_disclosed(
                 .chars()
                 .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
                 .collect();
-            let tag = dump_tag.map(|t| format!("{t}.")).unwrap_or_else(|| "refine.".to_string());
+            let tag = dump_tag
+                .map(|t| format!("{t}."))
+                .unwrap_or_else(|| "refine.".to_string());
             let stem = format!("{prefix}.{tag}{argsig}.{uniq}");
             if let Ok(f) = std::fs::File::create(format!("{stem}.paf")) {
                 dump_w = Some(std::io::BufWriter::new(f));
@@ -6859,7 +8101,8 @@ fn nucleotide_edges_scored_disclosed(
             _ => continue,
         };
         let strand = f[4].chars().next().unwrap_or('+');
-        if params.forward_only_active() && strand != '+' && !guard_exempt.is_some_and(|ex| ex(q, t)) {
+        if params.forward_only_active() && strand != '+' && !guard_exempt.is_some_and(|ex| ex(q, t))
+        {
             // A MINUS-strand record means the two stored sequences disagree in orientation. That is
             // evidence of antisense only when BOTH strands were actually measured: a rep whose strand was
             // never junction-determined carries the `'+'` placeholder, so it may simply be stored
@@ -6878,7 +8121,9 @@ fn nucleotide_edges_scored_disclosed(
         // forward-target orientation, so `te - ts` is a length regardless of the strand column.
         let ts = f[7].parse::<f64>().unwrap_or(0.0);
         let te = f[8].parse::<f64>().unwrap_or(0.0);
-        let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
+        let de = f[12..]
+            .iter()
+            .find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
         let ident = match de {
             Some(d) => 1.0 - d,
             None => {
@@ -6936,7 +8181,11 @@ fn nucleotide_edges_scored_disclosed(
         // Note this choice is orientation-independent: if a record arrived with q and t swapped, the
         // flag flips with it and the SAME physical sequence is still selected.
         let side_is_query = if longer_cov { ql >= tl } else { ql <= tl };
-        let shorter = if longer_cov { ql.max(tl).max(1.0) } else { ql.min(tl).max(1.0) };
+        let shorter = if longer_cov {
+            ql.max(tl).max(1.0)
+        } else {
+            ql.min(tl).max(1.0)
+        };
         let floor = min_cov;
         let aln_on_denom_axis = if side_is_query { qe - qs } else { te - ts };
         let cov = aln_on_denom_axis / shorter;
@@ -6982,9 +8231,9 @@ fn nucleotide_edges_scored_disclosed(
     // discarded here rather than returned.
     let (status_ok, status, status_code) = match child.as_mut() {
         Some(c) => {
-            let st = c
-                .wait()
-                .map_err(|e| anyhow::anyhow!("waiting for minimap2 ('{}'): {e}", params.minimap2))?;
+            let st = c.wait().map_err(|e| {
+                anyhow::anyhow!("waiting for minimap2 ('{}'): {e}", params.minimap2)
+            })?;
             (st.success(), st.to_string(), st.code())
         }
         None => (true, "replayed from cache".to_string(), Some(0)),
@@ -7005,7 +8254,11 @@ fn nucleotide_edges_scored_disclosed(
     // its progress kept. That is NOT an empty edge set: it is an error the binaries turn into their own exit 75
     // ("call again"). minimap2 itself never exits 75, so every real run is unchanged.
     if status_code == Some(RESUMABLE_EXIT) {
-        anyhow::bail!("{MINIMAP2_RESUMABLE} ('{}', args {:?})", params.minimap2, mm_args);
+        anyhow::bail!(
+            "{MINIMAP2_RESUMABLE} ('{}', args {:?})",
+            params.minimap2,
+            mm_args
+        );
     }
     if !status_ok {
         if std::env::var("RUSTLE_ER_EDGE_DUMP").is_ok() {
@@ -7043,9 +8296,17 @@ fn nucleotide_edges_scored_disclosed(
     if let Some(out) = disclose {
         out.clear();
         // The filter is the assertion that this map never outruns the edge set.
-        out.extend(flanks.iter().filter(|(k, _)| edge_set.contains_key(k)).map(|(k, v)| (*k, *v)));
+        out.extend(
+            flanks
+                .iter()
+                .filter(|(k, _)| edge_set.contains_key(k))
+                .map(|(k, v)| (*k, *v)),
+        );
     }
-    Ok(edge_set.into_iter().map(|((i, j), (id, cov))| (i, j, id, cov)).collect())
+    Ok(edge_set
+        .into_iter()
+        .map(|((i, j), (id, cov))| (i, j, id, cov))
+        .collect())
 }
 
 /// Run the standard nucleotide E_r tier(s) on one explicit sequence substrate. This is the small shared
@@ -7064,7 +8325,9 @@ fn nucleotide_rule_edge_set(
         floor,
         params.min_coverage,
         params,
-        Some(dump_tag), None)?
+        Some(dump_tag),
+        None,
+    )?
     .into_iter()
     .map(|(i, j, _, _)| (i, j))
     .collect();
@@ -7079,7 +8342,9 @@ fn nucleotide_rule_edge_set(
                 params.sensitive_identity,
                 params.min_coverage,
                 params,
-                Some(dump_tag), None)?
+                Some(dump_tag),
+                None,
+            )?
             .into_iter()
             .map(|(i, j, _, _)| (i, j)),
         );
@@ -7157,7 +8422,11 @@ pub fn write_joint_rna_dna_certificate(
         let mut sorted = fam.clone();
         sorted.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
         for (ci, rep) in sorted.into_iter().enumerate() {
-            nodes.push(Node { family: fi, copy: ci, rep });
+            nodes.push(Node {
+                family: fi,
+                copy: ci,
+                rep,
+            });
         }
     }
     let contigs: DetHashSet<String> = nodes.iter().map(|n| n.rep.chrom.clone()).collect();
@@ -7169,7 +8438,10 @@ pub fn write_joint_rna_dna_certificate(
         GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
     };
     let rna_seqs: Vec<Vec<u8>> = nodes.iter().map(|n| n.rep.seq.clone()).collect();
-    let dna_seqs: Vec<Vec<u8>> = nodes.iter().map(|n| refine_copy_seq(&n.rep, Some(&genome))).collect();
+    let dna_seqs: Vec<Vec<u8>> = nodes
+        .iter()
+        .map(|n| refine_copy_seq(&n.rep, Some(&genome)))
+        .collect();
 
     let mut rna_params = params.clone();
     rna_params.homology_genomic_span = false;
@@ -7280,7 +8552,11 @@ pub fn write_joint_rna_dna_certificate(
             "DISCORDANT"
         };
         let union_n = both + rna_only + dna_only;
-        let jaccard = if union_n == 0 { 1.0 } else { both as f64 / union_n as f64 };
+        let jaccard = if union_n == 0 {
+            1.0
+        } else {
+            both as f64 / union_n as f64
+        };
         writeln!(
             ff,
             "GWFAM{fi}\t{}\t{}\t{}\t{both}\t{rna_only}\t{dna_only}\t{jaccard:.4}\t{rc}\t{dc}\t{status}\t{kappa}",
@@ -7294,11 +8570,31 @@ pub fn write_joint_rna_dna_certificate(
     writeln!(rf, "key\tvalue")?;
     writeln!(rf, "node_universe\tRNA-detected emitted loci")?;
     writeln!(rf, "membership_effect\tnone (report/certificate only)")?;
-    writeln!(rf, "rna_substrate\tspliced exon-sum, transcription orientation")?;
-    writeln!(rf, "rna_orientation\t{}", if rna_params.require_forward_alignment { "forward-only (+)" } else { "both (+/-)" })?;
-    writeln!(rf, "dna_substrate\tcomplete genomic span of the same RNA locus, transcript-normalised")?;
-    writeln!(rf, "dna_orientation\tboth (+/-); inverted structural duplication remains valid")?;
-    writeln!(rf, "protein_edges\texcluded (nucleotide substrate comparison)")?;
+    writeln!(
+        rf,
+        "rna_substrate\tspliced exon-sum, transcription orientation"
+    )?;
+    writeln!(
+        rf,
+        "rna_orientation\t{}",
+        if rna_params.require_forward_alignment {
+            "forward-only (+)"
+        } else {
+            "both (+/-)"
+        }
+    )?;
+    writeln!(
+        rf,
+        "dna_substrate\tcomplete genomic span of the same RNA locus, transcript-normalised"
+    )?;
+    writeln!(
+        rf,
+        "dna_orientation\tboth (+/-); inverted structural duplication remains valid"
+    )?;
+    writeln!(
+        rf,
+        "protein_edges\texcluded (nucleotide substrate comparison)"
+    )?;
     writeln!(rf, "primary_identity\t{:.6}", er_primary_tier(params).1)?;
     writeln!(rf, "min_coverage\t{:.6}", params.min_coverage)?;
     writeln!(rf, "edge_classes\tRNA_DNA,RNA_ONLY,DNA_ONLY")?;
@@ -7376,7 +8672,12 @@ fn cothread_locus_reps(
     for members in locus_groups(transcripts, detect) {
         let rep_i = *members
             .iter()
-            .max_by_key(|&&i| (transcripts[i].n_reads, transcripts[i].end - transcripts[i].start))
+            .max_by_key(|&&i| {
+                (
+                    transcripts[i].n_reads,
+                    transcripts[i].end - transcripts[i].start,
+                )
+            })
             .expect("locus group is never empty");
         let base = &transcripts[rep_i];
         // Fall back to today's representative whenever no read-witnessed chain clears the floor, so the
@@ -7416,7 +8717,13 @@ fn cothread_locus_reps(
             seq = reverse_complement(&seq);
         }
         built += 1;
-        out.push(DenovoTranscript { start, end, introns, seq, ..base.clone() });
+        out.push(DenovoTranscript {
+            start,
+            end,
+            introns,
+            seq,
+            ..base.clone()
+        });
     }
     eprintln!(
         "[cothread-rep] {} locus reps: {} rebuilt from the splice graph, {} kept as-is \
@@ -7434,7 +8741,10 @@ fn cothread_locus_reps(
 /// own exons are always kept. Exists because register 303's refutation of the plain union was driven by
 /// exons seen in exactly ONE transcript -- 63.5% of what the union adds.
 fn union_min_tx() -> u32 {
-    std::env::var("RUSTLE_LOCUS_UNION_MIN_TX").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+    std::env::var("RUSTLE_LOCUS_UNION_MIN_TX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
 }
 
 fn union_locus_reps(
@@ -7450,12 +8760,20 @@ fn union_locus_reps(
     for members in locus_groups(transcripts, detect) {
         let rep_i = *members
             .iter()
-            .max_by_key(|&&i| (transcripts[i].n_reads, transcripts[i].end - transcripts[i].start))
+            .max_by_key(|&&i| {
+                (
+                    transcripts[i].n_reads,
+                    transcripts[i].end - transcripts[i].start,
+                )
+            })
             .expect("locus group is never empty");
         let base = &transcripts[rep_i];
-        let Some((start, end, introns)) =
-            union_locus_geometry_corroborated(transcripts, &members, min_chain_reads, union_min_tx())
-        else {
+        let Some((start, end, introns)) = union_locus_geometry_corroborated(
+            transcripts,
+            &members,
+            min_chain_reads,
+            union_min_tx(),
+        ) else {
             dropped += 1;
             continue;
         };
@@ -7489,7 +8807,13 @@ fn union_locus_reps(
         if seq.len() > base.seq.len() {
             widened += 1;
         }
-        out.push(DenovoTranscript { start, end, introns, seq, ..base.clone() });
+        out.push(DenovoTranscript {
+            start,
+            end,
+            introns,
+            seq,
+            ..base.clone()
+        });
     }
     eprintln!(
         "[exon-union] {} locus reps ({} widened vs single-chain, {} dropped: no chain >= {} reads)",
@@ -7554,7 +8878,9 @@ fn nucleotide_edges_indexed(
         };
         let qs = f[2].parse::<f64>().unwrap_or(0.0);
         let qe = f[3].parse::<f64>().unwrap_or(0.0);
-        let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
+        let de = f[12..]
+            .iter()
+            .find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
         let ident = match de {
             Some(d) => 1.0 - d,
             None => {
@@ -7654,7 +8980,15 @@ pub fn shared_exon_edges_pooled(
             }
         }
     }
-    edges_from_exon_pool(seqs, owner, reps, min_identity, min_bp, params, "shared-exon-pooled")
+    edges_from_exon_pool(
+        seqs,
+        owner,
+        reps,
+        min_identity,
+        min_bp,
+        params,
+        "shared-exon-pooled",
+    )
 }
 
 /// Shared engine for both shared-exon variants: one all-vs-all over every exon, then lift exon pairs to
@@ -7697,7 +9031,8 @@ fn edges_from_exon_pool(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
-    let mut support: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
+    let mut support: std::collections::BTreeMap<(usize, usize), usize> =
+        std::collections::BTreeMap::new();
     let pairs = nucleotide_edges_indexed(&seqs, &["-x", "asm20"], min_identity, min_bp, params)?;
     let mut self_overlap = 0usize;
     for (a, b) in pairs {
@@ -7757,7 +9092,15 @@ pub fn shared_exon_edges(
             owner.push(ri);
         }
     }
-    edges_from_exon_pool(seqs, owner, reps, min_identity, min_bp, params, "shared-exon")
+    edges_from_exon_pool(
+        seqs,
+        owner,
+        reps,
+        min_identity,
+        min_bp,
+        params,
+        "shared-exon",
+    )
 }
 
 /// E_r homology edges over ALL reps' exon-sum sequences: asm20 (recent) ∪ sensitive -k11 -w5 (ancient) ∪
@@ -7796,7 +9139,11 @@ fn repeat_gate_threshold() -> Option<u32> {
 /// ⚠ `-X` is deliberately ABSENT. `-X` is minimap2's all-vs-all mode and implies `--dual=no`; this is a
 /// query-vs-reference mapping, where it would be wrong. `-p` and `-N` are stated explicitly because a
 /// copy count is meaningless without them (MAPKBP1 gives 1/1 at `-p 0.8` and 9/8 at `-p 0.1`).
-fn genome_multiplicity(seqs: &[Vec<u8>], genome_path: &str, params: &RefineParams) -> Result<Vec<u32>> {
+fn genome_multiplicity(
+    seqs: &[Vec<u8>],
+    genome_path: &str,
+    params: &RefineParams,
+) -> Result<Vec<u32>> {
     use std::io::{BufRead, Write};
     const MIN_ID: f64 = 0.90;
     const MIN_COV: f64 = 0.50;
@@ -7829,9 +9176,15 @@ fn genome_multiplicity(seqs: &[Vec<u8>], genome_path: &str, params: &RefineParam
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
     let mut child = cmd.spawn().map_err(|e| {
-        anyhow::anyhow!("failed to run minimap2 ('{}') for the repeat gate: {e}", params.minimap2)
+        anyhow::anyhow!(
+            "failed to run minimap2 ('{}') for the repeat gate: {e}",
+            params.minimap2
+        )
     })?;
-    let out = child.stdout.take().ok_or_else(|| anyhow::anyhow!("minimap2 stdout unavailable"))?;
+    let out = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("minimap2 stdout unavailable"))?;
     let mut hits: Vec<Vec<(String, u64, u64)>> = vec![Vec::new(); seqs.len()];
     for line in std::io::BufReader::new(out).lines() {
         let line = line?;
@@ -7839,14 +9192,20 @@ fn genome_multiplicity(seqs: &[Vec<u8>], genome_path: &str, params: &RefineParam
         if f.len() < 11 {
             continue;
         }
-        let (Ok(q), Ok(ql), Ok(qs), Ok(qe)) =
-            (f[0].parse::<usize>(), f[1].parse::<f64>(), f[2].parse::<f64>(), f[3].parse::<f64>())
-        else {
+        let (Ok(q), Ok(ql), Ok(qs), Ok(qe)) = (
+            f[0].parse::<usize>(),
+            f[1].parse::<f64>(),
+            f[2].parse::<f64>(),
+            f[3].parse::<f64>(),
+        ) else {
             continue;
         };
-        let (Ok(ts), Ok(te), Ok(nm), Ok(bl)) =
-            (f[7].parse::<u64>(), f[8].parse::<u64>(), f[9].parse::<f64>(), f[10].parse::<f64>())
-        else {
+        let (Ok(ts), Ok(te), Ok(nm), Ok(bl)) = (
+            f[7].parse::<u64>(),
+            f[8].parse::<u64>(),
+            f[9].parse::<f64>(),
+            f[10].parse::<f64>(),
+        ) else {
             continue;
         };
         if q >= hits.len() || ql <= 0.0 || bl <= 0.0 {
@@ -7895,10 +9254,12 @@ pub(crate) fn homology_edges_all_reps_pooled(
     pooled: Option<&[Vec<Vec<u8>>]>,
     params: &RefineParams,
 ) -> Result<Vec<(usize, usize)>> {
-    Ok(homology_edges_all_reps_pooled_weighted(reps, pooled, params)?
-        .into_iter()
-        .map(|(a, b, _, _)| (a, b))
-        .collect())
+    Ok(
+        homology_edges_all_reps_pooled_weighted(reps, pooled, params)?
+            .into_iter()
+            .map(|(a, b, _, _)| (a, b))
+            .collect(),
+    )
 }
 
 pub(crate) fn homology_edges_all_reps_pooled_weighted(
@@ -7925,7 +9286,9 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
                     Ok(g) => Some(g),
                     Err(e) => {
                         // best-effort: fall back to exon-sum edges rather than fail the catalog
-                        eprintln!("[homology] genomic-span edges skipped: genome load failed ({e})");
+                        eprintln!(
+                            "[homology] genomic-span edges skipped: genome load failed ({e})"
+                        );
                         None
                     }
                 }
@@ -7939,9 +9302,15 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
         None
     };
     if span_genome.is_some() {
-        eprintln!("[homology] E_r edge substrate: GENOMIC SPAN ({} reps)", reps.len());
+        eprintln!(
+            "[homology] E_r edge substrate: GENOMIC SPAN ({} reps)",
+            reps.len()
+        );
     }
-    let mut seqs: Vec<Vec<u8>> = reps.iter().map(|r| refine_copy_seq(r, span_genome.as_ref())).collect();
+    let mut seqs: Vec<Vec<u8>> = reps
+        .iter()
+        .map(|r| refine_copy_seq(r, span_genome.as_ref()))
+        .collect();
     // REPEAT-JUSTIFIED EDGES (`RUSTLE_ER_REPEAT_MASKED_EDGES=1`, default OFF = byte-identical).
     // Masks the LOCAL `seqs` only -- never `reps[..].seq`, which is what `gw_family_catalog` writes to
     // `copies.fa` and what `copy_assign --copies-fa`, `parcn` and the consensus path then read.
@@ -7992,31 +9361,42 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     // ⚠ The HUMAN 150-window negative panel CANNOT adjudicate this: it offers 0 qualifying pairs (its
     // windows are single-locus, so its 25 guard-blocked pairs are all CO-LOCATED and the disjoint-span
     // clause excludes them). Its 2/150 result under this flag is uninformative, not a pass.
-    let guard_exempt: Option<Box<dyn Fn(usize, usize) -> bool>> =
-        if matches!(std::env::var("RUSTLE_ER_GUARD_SCOPED"), Ok(v) if v != "0" && !v.is_empty()) {
-            let meta: Vec<(String, u64, u64, bool)> = reps
-                .iter()
-                .map(|r| (r.chrom.clone(), r.start, r.end, r.introns.is_empty()))
-                .collect();
-            Some(Box::new(move |a: usize, b: usize| {
-                let (Some(x), Some(y)) = (meta.get(a), meta.get(b)) else { return false };
-                let unmeasured = x.3 || y.3; // a junction-less rep has no measured strand
-                let overlap = x.0 == y.0 && x.2.min(y.2) > x.1.max(y.1);
-                unmeasured && !overlap
-            }))
-        } else {
-            None
-        };
+    let guard_exempt: Option<Box<dyn Fn(usize, usize) -> bool>> = if matches!(std::env::var("RUSTLE_ER_GUARD_SCOPED"), Ok(v) if v != "0" && !v.is_empty())
+    {
+        let meta: Vec<(String, u64, u64, bool)> = reps
+            .iter()
+            .map(|r| (r.chrom.clone(), r.start, r.end, r.introns.is_empty()))
+            .collect();
+        Some(Box::new(move |a: usize, b: usize| {
+            let (Some(x), Some(y)) = (meta.get(a), meta.get(b)) else {
+                return false;
+            };
+            let unmeasured = x.3 || y.3; // a junction-less rep has no measured strand
+            let overlap = x.0 == y.0 && x.2.min(y.2) > x.1.max(y.1);
+            unmeasured && !overlap
+        }))
+    } else {
+        None
+    };
     let drop_stub_edges = er_no_stub_edges();
     // SHARED-EXON mode (`RUSTLE_SHARED_EXON=1`): replace the exon-sum rule with Soto's criterion --
     // any single shared exon links two loci. Not a tier that unions in; it REPLACES the nucleotide runs,
     // so the two definitions can be compared rather than blended.
-    if std::env::var("RUSTLE_SHARED_EXON").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) {
+    if std::env::var("RUSTLE_SHARED_EXON")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false)
+    {
         let se_id: f64 = std::env::var("RUSTLE_SHARED_EXON_IDENTITY")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.98);
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.98);
         let se_bp: u64 = std::env::var("RUSTLE_SHARED_EXON_MIN_BP")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
-        eprintln!("[shared-exon] MODE ACTIVE: replacing the exon-sum rule (id >= {se_id}, >= {se_bp} bp)");
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100);
+        eprintln!(
+            "[shared-exon] MODE ACTIVE: replacing the exon-sum rule (id >= {se_id}, >= {se_bp} bp)"
+        );
         let se = match pooled {
             Some(p) => shared_exon_edges_pooled(reps, p, se_id, se_bp, params)?,
             None => shared_exon_edges(reps, se_id, se_bp, params)?,
@@ -8060,7 +9440,18 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
         let seed = primary_seed_args();
         let seed_ref: Vec<&str> = seed.iter().map(String::as_str).collect();
         let mut tier_flanks: BTreeMap<(usize, usize), ErEdgeFlank> = BTreeMap::new();
-        let scored = nucleotide_edges_scored_disclosed(&seqs, &seed_ref, params.min_identity, params.min_coverage, params, Some("er"), guard_exempt.as_ref().map(|f| f as &dyn Fn(usize, usize) -> bool), Some(&mut tier_flanks))?;
+        let scored = nucleotide_edges_scored_disclosed(
+            &seqs,
+            &seed_ref,
+            params.min_identity,
+            params.min_coverage,
+            params,
+            Some("er"),
+            guard_exempt
+                .as_ref()
+                .map(|f| f as &dyn Fn(usize, usize) -> bool),
+            Some(&mut tier_flanks),
+        )?;
         for (i, j, ident, cov) in scored {
             *prov.entry((i, j)).or_insert(0) |= TIER_ASM20;
             if record_edge_metric(&mut metrics, (i, j), ident, cov, TIER_ASM20) {
@@ -8079,7 +9470,10 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
             params.sensitive_identity,
             params.min_coverage,
             params,
-            Some("er"), None, Some(&mut tier_flanks))?;
+            Some("er"),
+            None,
+            Some(&mut tier_flanks),
+        )?;
         for (i, j, ident, cov) in scored {
             set.insert((i, j));
             *prov.entry((i, j)).or_insert(0) |= TIER_SENSITIVE;
@@ -8089,7 +9483,12 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
         }
     }
     if params.protein_tail {
-        let prot = batch_protein_edges(std::slice::from_ref(&reps.to_vec()), 0.50, params.min_coverage, params)?;
+        let prot = batch_protein_edges(
+            std::slice::from_ref(&reps.to_vec()),
+            0.50,
+            params.min_coverage,
+            params,
+        )?;
         if let Some(edges) = prot.first() {
             for &e in edges {
                 set.insert(e);
@@ -8114,18 +9513,38 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     }
     let fmt: Vec<String> = total
         .iter()
-        .map(|(&b, &n)| format!("{}={} (sole {})", tier_names(b), n, only.get(&b).copied().unwrap_or(0)))
+        .map(|(&b, &n)| {
+            format!(
+                "{}={} (sole {})",
+                tier_names(b),
+                n,
+                only.get(&b).copied().unwrap_or(0)
+            )
+        })
         .collect();
-    eprintln!("[provenance] E_r edges by tier: {} | total {}", fmt.join(" "), prov.len());
+    eprintln!(
+        "[provenance] E_r edges by tier: {} | total {}",
+        fmt.join(" "),
+        prov.len()
+    );
     if let Ok(path) = std::env::var("RUSTLE_EDGE_PROVENANCE") {
         use std::io::Write;
         if let Ok(mut fh) = std::fs::File::create(&path) {
-            let _ = writeln!(fh, "rep_i\trep_j\tchrom_i\tstart_i\tchrom_j\tstart_j\ttiers");
+            let _ = writeln!(
+                fh,
+                "rep_i\trep_j\tchrom_i\tstart_i\tchrom_j\tstart_j\ttiers"
+            );
             for (&(i, j), &m) in prov.iter() {
                 let _ = writeln!(
                     fh,
                     "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                    i, j, reps[i].chrom, reps[i].start, reps[j].chrom, reps[j].start, tier_names(m)
+                    i,
+                    j,
+                    reps[i].chrom,
+                    reps[i].start,
+                    reps[j].chrom,
+                    reps[j].start,
+                    tier_names(m)
                 );
             }
             eprintln!("[provenance] wrote per-edge tiers to {path}");
@@ -8135,7 +9554,10 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
         let before = set.len();
         set.retain(|&(i, j)| !reps[i].stub && !reps[j].stub);
         let n_stub = reps.iter().filter(|r| r.stub).count();
-        let n_intronless = reps.iter().filter(|r| r.introns.is_empty() && !r.stub).count();
+        let n_intronless = reps
+            .iter()
+            .filter(|r| r.introns.is_empty() && !r.stub)
+            .count();
         eprintln!(
             "[homology] stub-edge guard: {n_stub} stubs and {n_intronless} genuinely intronless reps; \
              edges {before} -> {} (loci all retained)",
@@ -8176,7 +9598,9 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
                 }
                 Err(e) => eprintln!("[homology] repeat-hub veto SKIPPED (kept all edges): {e}"),
             },
-            None => eprintln!("[homology] repeat-hub veto SKIPPED (kept all edges): no genome path"),
+            None => {
+                eprintln!("[homology] repeat-hub veto SKIPPED (kept all edges): no genome path")
+            }
         }
     }
     // Opt-in parity dump. Placed HERE, after the stub guard, so what it writes is exactly what this
@@ -8184,13 +9608,27 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     // `set.retain` never filters, so under `RUSTLE_ER_NO_STUB_EDGES=1` that file is a strict superset.
     if let Ok(prefix) = std::env::var("RUSTLE_ER_EDGE_DUMP") {
         if !prefix.is_empty() {
-            write_er_edge_dump(&prefix, reps, &seqs, &set, &prov, &metrics, &flanks, params, span_genome.is_some());
+            write_er_edge_dump(
+                &prefix,
+                reps,
+                &seqs,
+                &set,
+                &prov,
+                &metrics,
+                &flanks,
+                params,
+                span_genome.is_some(),
+            );
         }
     }
     Ok(set
         .into_iter()
         .map(|(a, b)| {
-            let (i, c, _) = metrics.get(&(a, b)).copied().unwrap_or((1.0, 1.0, TierMask::default()));
+            let (i, c, _) =
+                metrics
+                    .get(&(a, b))
+                    .copied()
+                    .unwrap_or((1.0, 1.0, TierMask::default()));
             (a, b, i, c)
         })
         .collect())
@@ -8322,7 +9760,11 @@ fn write_er_edge_dump(
     use std::io::Write;
     static DUMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = DUMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let stem = if n == 0 { prefix.to_string() } else { format!("{prefix}.call{}", n + 1) };
+    let stem = if n == 0 {
+        prefix.to_string()
+    } else {
+        format!("{prefix}.call{}", n + 1)
+    };
     let key = |r: &DenovoTranscript| format!("L~{}_{}_{}", r.chrom, r.start, r.end);
 
     // --- nodes ---------------------------------------------------------------------------------
@@ -8344,7 +9786,8 @@ fn write_er_edge_dump(
                 // sequence absent from every node" -- the ambiguity that invalidated the 2026-08-21
                 // SD-gap audit. `copies.tsv` has carried exons since it was written; the 15,905 reps
                 // that join NO family are exactly the ones that had no other way to be seen.
-                let exons = crate::family::catalog_input::exon_blocks_str(r.start, r.end, &r.introns);
+                let exons =
+                    crate::family::catalog_input::exon_blocks_str(r.start, r.end, &r.introns);
                 // Emitted alongside `exon_sum_len` (= the spliced seq length) ON PURPOSE: the two are
                 // computed by different paths and must agree. A mismatch means the malformed-chain
                 // guard dropped a block, which is a data defect the consumer should see rather than a
@@ -8353,7 +9796,13 @@ fn write_er_edge_dump(
                     .split(',')
                     .filter(|b| !b.is_empty())
                     .filter_map(|b| b.split_once('-'))
-                    .filter_map(|(a, z)| Some(z.parse::<u64>().ok()?.saturating_sub(a.parse::<u64>().ok()?)))
+                    .filter_map(|(a, z)| {
+                        Some(
+                            z.parse::<u64>()
+                                .ok()?
+                                .saturating_sub(a.parse::<u64>().ok()?),
+                        )
+                    })
                     .sum();
                 let _ = writeln!(
                     fh,
@@ -8455,12 +9904,27 @@ fn write_er_edge_dump(
         ("site".into(), "homology_edges_all_reps_pooled".into()),
         ("n_reps".into(), reps.len().to_string()),
         ("n_edges".into(), set.len().to_string()),
-        ("min_identity_asm20".into(), format!("{:.6}", params.min_identity)),
-        ("sensitive_identity".into(), format!("{:.6}", params.sensitive_identity)),
-        ("nucleotide_sensitive".into(), params.nucleotide_sensitive.to_string()),
+        (
+            "min_identity_asm20".into(),
+            format!("{:.6}", params.min_identity),
+        ),
+        (
+            "sensitive_identity".into(),
+            format!("{:.6}", params.sensitive_identity),
+        ),
+        (
+            "nucleotide_sensitive".into(),
+            params.nucleotide_sensitive.to_string(),
+        ),
         ("protein_tail".into(), params.protein_tail.to_string()),
-        ("homology_genomic_span".into(), params.homology_genomic_span.to_string()),
-        ("genomic_span_active".into(), genomic_span_active.to_string()),
+        (
+            "homology_genomic_span".into(),
+            params.homology_genomic_span.to_string(),
+        ),
+        (
+            "genomic_span_active".into(),
+            genomic_span_active.to_string(),
+        ),
         ("threads".into(), params.threads.to_string()),
         // Derived from ER_TIER_FLAGS, never re-typed: this row used to be a fourth hardcoded copy of the
         // tier and could therefore describe a command the binary did not run.
@@ -8470,12 +9934,17 @@ fn write_er_edge_dump(
         ),
         // THE ONLY PAFs THAT BUILT THIS EDGE SET. A run also drops `<prefix>.refine.*.paf` from the
         // downstream per-family refinement; diffing against one of those compares nothing.
-        ("paf_glob_for_this_edge_set".into(), format!("{stem_hint}.er.*.paf")),
+        (
+            "paf_glob_for_this_edge_set".into(),
+            format!("{stem_hint}.er.*.paf"),
+        ),
         // D2: the coverage clause is a FRACTION, so the substrate silently sets its absolute demand.
         // Record both so no catalog can be quoted without its scale (docs/seeded_family_definition.md §1a).
         ("substrate_median_len_bp".into(), {
             let lens: Vec<usize> = seqs.iter().map(|s| s.len()).collect();
-            median_len(&lens).map(|m| m.to_string()).unwrap_or_else(|| "NA".into())
+            median_len(&lens)
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| "NA".into())
         }),
         ("coverage_floor_median_bp_demand".into(), {
             let lens: Vec<usize> = seqs.iter().map(|s| s.len()).collect();
@@ -8483,20 +9952,41 @@ fn write_er_edge_dump(
                 .map(|b| b.to_string())
                 .unwrap_or_else(|| "NA".into())
         }),
-        ("env.RUSTLE_ER_SENSITIVE_ONLY".into(), env("RUSTLE_ER_SENSITIVE_ONLY")),
+        (
+            "env.RUSTLE_ER_SENSITIVE_ONLY".into(),
+            env("RUSTLE_ER_SENSITIVE_ONLY"),
+        ),
         // Removed switches (2026-09-24): their rows keep the `<unset>` every run printed, so params.tsv files
         // from before and after the removal stay line-for-line comparable.
         ("env.RUSTLE_ER_SUM_COVERAGE".into(), "<unset>".into()),
         ("env.RUSTLE_ER_SUM_MIN_BLOCK".into(), "<unset>".into()),
         ("env.RUSTLE_ER_CORE_COVERAGE".into(), "<unset>".into()),
-        ("env.RUSTLE_ER_CORE_DEPTH".into(), env("RUSTLE_ER_CORE_DEPTH")),
-        ("env.RUSTLE_ER_COVERAGE_LONGER".into(), env("RUSTLE_ER_COVERAGE_LONGER")),
-        ("env.RUSTLE_ER_NO_STUB_EDGES".into(), env("RUSTLE_ER_NO_STUB_EDGES")),
+        (
+            "env.RUSTLE_ER_CORE_DEPTH".into(),
+            env("RUSTLE_ER_CORE_DEPTH"),
+        ),
+        (
+            "env.RUSTLE_ER_COVERAGE_LONGER".into(),
+            env("RUSTLE_ER_COVERAGE_LONGER"),
+        ),
+        (
+            "env.RUSTLE_ER_NO_STUB_EDGES".into(),
+            env("RUSTLE_ER_NO_STUB_EDGES"),
+        ),
         ("env.RUSTLE_SHARED_EXON".into(), env("RUSTLE_SHARED_EXON")),
-        ("env.RUSTLE_SENSITIVE_IDENTITY".into(), env("RUSTLE_SENSITIVE_IDENTITY")),
-        ("env.RUSTLE_GENOME_MIN_COVERAGE".into(), env("RUSTLE_GENOME_MIN_COVERAGE")),
+        (
+            "env.RUSTLE_SENSITIVE_IDENTITY".into(),
+            env("RUSTLE_SENSITIVE_IDENTITY"),
+        ),
+        (
+            "env.RUSTLE_GENOME_MIN_COVERAGE".into(),
+            env("RUSTLE_GENOME_MIN_COVERAGE"),
+        ),
         ("env.RUSTLE_GENOME_GAMMA".into(), env("RUSTLE_GENOME_GAMMA")),
-        ("env.RUSTLE_LOCUS_EXON_UNION".into(), env("RUSTLE_LOCUS_EXON_UNION")),
+        (
+            "env.RUSTLE_LOCUS_EXON_UNION".into(),
+            env("RUSTLE_LOCUS_EXON_UNION"),
+        ),
         ("env.RUSTLE_COTHREAD_REP".into(), env("RUSTLE_COTHREAD_REP")),
         // Third member of the set above: like EXON_UNION and COTHREAD_REP it changes what a rep IS --
         // here the `strand` column AND the stored sequence bytes of every unspliced rep. Without this row
@@ -8507,13 +9997,19 @@ fn write_er_edge_dump(
         // indistinguishable from their params.tsv. `RUSTLE_SPLICED_REP` changes rep selection
         // (`family_detect::locus_reps`) AND the unspliced-strand collapse clause (`collapse_parent`), yet
         // an ON and an OFF pair of SPLICED_REP arms had byte-identical params.tsv until this row existed.
-        ("env.RUSTLE_READ_STRAND_MARGIN".into(), env("RUSTLE_READ_STRAND_MARGIN")),
+        (
+            "env.RUSTLE_READ_STRAND_MARGIN".into(),
+            env("RUSTLE_READ_STRAND_MARGIN"),
+        ),
         ("env.RUSTLE_SPLICED_REP".into(), "<unset>".into()), // switch removed 2026-09-24; row kept so params.tsv is unchanged
         // Also an opt-in that changes the EDGE RULE, so a catalog must be able to name it. Omitting
         // this row is the M2 defect from the read-strand work, repeated: without it an ON and an OFF
         // arm have byte-identical params.tsv and a null result cannot be distinguished from a flag
         // that never reached the process.
-        ("env.RUSTLE_ER_GUARD_SCOPED".into(), env("RUSTLE_ER_GUARD_SCOPED")),
+        (
+            "env.RUSTLE_ER_GUARD_SCOPED".into(),
+            env("RUSTLE_ER_GUARD_SCOPED"),
+        ),
     ];
     // The rule rows land LAST, so `params.tsv` remains a strict superset of `rule.tsv` on both sides.
     rows.extend(rule);
@@ -8682,7 +10178,10 @@ fn longest_orf_aa(seq: &[u8]) -> Vec<u8> {
 /// Orthogonal protein QC (NEVER a definition edge): does each nt-defined family also cohere at the protein
 /// level? `Some(true)` = its ORFs form a connected protein-homology graph, `Some(false)` = they do not,
 /// `None` = mmseqs unavailable / protein tier off (no effect on membership).
-pub fn family_protein_coheres(families: &[Vec<DenovoTranscript>], params: &RefineParams) -> Vec<Option<bool>> {
+pub fn family_protein_coheres(
+    families: &[Vec<DenovoTranscript>],
+    params: &RefineParams,
+) -> Vec<Option<bool>> {
     if !params.protein_tail {
         return vec![None; families.len()];
     }
@@ -8690,11 +10189,21 @@ pub fn family_protein_coheres(families: &[Vec<DenovoTranscript>], params: &Refin
         Ok(e) => e,
         Err(_) => return vec![None; families.len()],
     };
-    families.iter().enumerate().map(|(fi, fam)| {
-        let fe = edges.get(fi).cloned().unwrap_or_default();
-        if fam.len() < 2 { return Some(true); }
-        Some(homology_components(fam.len(), &fe).iter().any(|c| c.len() == fam.len()))
-    }).collect()
+    families
+        .iter()
+        .enumerate()
+        .map(|(fi, fam)| {
+            let fe = edges.get(fi).cloned().unwrap_or_default();
+            if fam.len() < 2 {
+                return Some(true);
+            }
+            Some(
+                homology_components(fam.len(), &fe)
+                    .iter()
+                    .any(|c| c.len() == fam.len()),
+            )
+        })
+        .collect()
 }
 
 /// Connected components of the homology graph over `n` copies.
@@ -8746,7 +10255,10 @@ const ANTISENSE_MINORITY_DENOM: u32 = 10;
 /// new threshold. The representative of a locus is the MOST-supported copy (most reads — the real one, not
 /// the minority artifact — then widest span).
 fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<DenovoTranscript> {
-    distinct_locus_reps_grouped(copies, min_reads).into_iter().map(|(t, _)| t).collect()
+    distinct_locus_reps_grouped(copies, min_reads)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect()
 }
 
 /// As `distinct_locus_reps`, but ALSO returns, for each emitted locus, the indices into the input
@@ -8759,18 +10271,23 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>, min_reads: usize) -> Vec<D
 /// "never judge a change to what a NODE IS on node-level metrics".
 fn distinct_locus_reps_grouped(
     copies: Vec<DenovoTranscript>,
-    min_reads: usize) -> Vec<(DenovoTranscript, Vec<usize>)> {
+    min_reads: usize,
+) -> Vec<(DenovoTranscript, Vec<usize>)> {
     let n = copies.len();
     // AUDIT ONLY (`RUSTLE_LOCUS_AUDIT=1`, default silent): log every co-located pair this merge examines
     // and its verdict, so "how many merges does the >=2-distinct-loci certificate perform, and at what
     // overlap fraction" is measurable without re-deriving the block structure offline.
-    let audit = std::env::var("RUSTLE_LOCUS_AUDIT").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let audit = std::env::var("RUSTLE_LOCUS_AUDIT")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
     // A/B KNOB (`RUSTLE_LOCUS_MERGE_MIN_COVER`, default 0.0 = today's "any overlap"): additionally require
     // the overlap to cover >= this fraction of the SHORTER copy before the co-located merge may fire — i.e.
     // the same containment bar `collapse_parent` (the candidate->locus merge) uses. Exists to MEASURE the
     // advisor's proposed harmonisation of the two overlap rules; not a shipped default.
     let merge_min_cover: f64 = std::env::var("RUSTLE_LOCUS_MERGE_MIN_COVER")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let mut parent: Vec<usize> = (0..n).collect();
     // Counts pairs whose MERGE/KEEP verdict came from `reads_distinguish` — O2's χ(H) predicate — i.e.
     // the sole place O1's node set consults read evidence. Reported unconditionally below so the
@@ -8872,7 +10389,12 @@ fn distinct_locus_reps_grouped(
                 // distinguishability requires at least 1 unique read, so a misconfigured
                 // `RUSTLE_CONFLICT_MIN_READS=0` can never flip `reads_distinguish(0, 0, false, 0)` to `true`
                 // and invert this guard into "nothing ever merges" (see `ConflictParams::from_env`).
-                !reads_distinguish(a.distinguishing_uniq, b.distinguishing_uniq, /*shared_psv_or_junction=*/false, min_reads.max(1))
+                !reads_distinguish(
+                    a.distinguishing_uniq,
+                    b.distinguishing_uniq,
+                    /*shared_psv_or_junction=*/ false,
+                    min_reads.max(1),
+                )
             } else {
                 let (lo, hi) = (a.n_reads.min(b.n_reads), a.n_reads.max(b.n_reads));
                 lo.saturating_mul(ANTISENSE_MINORITY_DENOM) < hi // minority antisense = artifact
@@ -8882,9 +10404,19 @@ fn distinct_locus_reps_grouped(
                 let minlen = (a.end - a.start).min(b.end - b.start).max(1);
                 eprintln!(
                     "[locus-audit]\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
-                    a.chrom, a.start, a.end, a.strand, a.n_reads, a.distinguishing_uniq,
-                    b.start, b.end, b.strand, b.n_reads, b.distinguishing_uniq,
-                    ov, ov as f64 / minlen as f64,
+                    a.chrom,
+                    a.start,
+                    a.end,
+                    a.strand,
+                    a.n_reads,
+                    a.distinguishing_uniq,
+                    b.start,
+                    b.end,
+                    b.strand,
+                    b.n_reads,
+                    b.distinguishing_uniq,
+                    ov,
+                    ov as f64 / minlen as f64,
                     // distinguish the unspliced-fragment collapse so "how many merges came from the
                     // junction-less rule" is countable straight out of the audit log.
                     match (collapse, unspliced_fragment) {
@@ -8914,7 +10446,8 @@ fn distinct_locus_reps_grouped(
     let key = |t: &DenovoTranscript| (t.n_reads, t.end - t.start);
     let roots: Vec<usize> = (0..n).map(|i| uf_find(&mut parent, i)).collect();
     let mut by_locus: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new(); // root -> rep idx
-    let mut members: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    let mut members: std::collections::BTreeMap<usize, Vec<usize>> =
+        std::collections::BTreeMap::new();
     for i in 0..n {
         let r = roots[i];
         let rep = by_locus.entry(r).or_insert(i);
@@ -8929,21 +10462,26 @@ fn distinct_locus_reps_grouped(
         .map(|(root, rep)| (rep, members.remove(&root).unwrap_or_default()))
         .collect();
     out.sort_by_key(|&(rep, _)| rep);
-    out.into_iter().map(|(rep, mem)| (copies[rep].clone(), mem)).collect()
+    out.into_iter()
+        .map(|(rep, mem)| (copies[rep].clone(), mem))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::types::{DetHashMap, DetHashSet};
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
+    use crate::types::{DetHashMap, DetHashSet};
 
     /// Deterministic LCG for the oracle tests below (no `rand` dependency).
     struct Lcg(u64);
     impl Lcg {
         fn next(&mut self, m: u64) -> u64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (self.0 >> 33) % m.max(1)
         }
     }
@@ -8954,7 +10492,11 @@ mod tests {
             .map(|i| {
                 let s = r.next(4000);
                 let e = s + 1 + r.next(1200);
-                let introns = if r.next(3) == 0 { vec![] } else { vec![(s + (e - s) / 3, s + (e - s) / 2 + 1)] };
+                let introns = if r.next(3) == 0 {
+                    vec![]
+                } else {
+                    vec![(s + (e - s) / 3, s + (e - s) / 2 + 1)]
+                };
                 DenovoTranscript {
                     tid: format!("r{i}"),
                     chrom: chroms[r.next(3) as usize].to_string(),
@@ -8981,7 +10523,12 @@ mod tests {
                 }
                 BamRead {
                     chrom: chroms[r.next(4) as usize].to_string(),
-                    read: AlignedRead { ref_start: start, cigar, seq: vec![], qual: vec![] },
+                    read: AlignedRead {
+                        ref_start: start,
+                        cigar,
+                        seq: vec![],
+                        qual: vec![],
+                    },
                     mapq: r.next(61) as u8,
                     name: format!("q{}", r.next((n / 2).max(1) as u64)), // shared names = multi-record molecules
                     as_score: r.next(500) as i32,
@@ -8996,7 +10543,10 @@ mod tests {
     }
 
     /// The pre-2026-09-24 body of `build_read_placements`, kept verbatim as the oracle for the indexed rewrite.
-    fn naive_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscript]) -> Vec<ReadPlacements> {
+    fn naive_read_placements(
+        bam_reads: &[BamRead],
+        reps: &[DenovoTranscript],
+    ) -> Vec<ReadPlacements> {
         let mut by_name: BTreeMap<&str, Vec<Placement>> = BTreeMap::new();
         for br in bam_reads {
             if br.is_supplementary {
@@ -9006,14 +10556,28 @@ mod tests {
             let best = reps
                 .iter()
                 .enumerate()
-                .filter(|(_, rep)| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_end > rep.start)
+                .filter(|(_, rep)| {
+                    br.chrom == rep.chrom && br.read.ref_start < rep.end && read_end > rep.start
+                })
                 .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
             if let Some((li, _)) = best {
-                let aln_len = br.read.cigar.iter()
-                    .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
-                by_name.entry(br.name.as_str()).or_default().push(Placement {
-                    locus: li, de: br.de, mapq: br.mapq, as_score: br.as_score, aln_len,
-                });
+                let aln_len = br
+                    .read
+                    .cigar
+                    .iter()
+                    .filter(|(op, _)| matches!(op, 'M' | '=' | 'X'))
+                    .map(|(_, n)| *n)
+                    .sum::<u64>() as u32;
+                by_name
+                    .entry(br.name.as_str())
+                    .or_default()
+                    .push(Placement {
+                        locus: li,
+                        de: br.de,
+                        mapq: br.mapq,
+                        as_score: br.as_score,
+                        aln_len,
+                    });
             }
         }
         by_name.into_values().collect()
@@ -9026,14 +10590,19 @@ mod tests {
             if br.is_supplementary {
                 continue;
             }
-            by_chrom.entry(br.chrom.as_str()).or_default().push((br.read.ref_start, read_ref_end(&br.read)));
+            by_chrom
+                .entry(br.chrom.as_str())
+                .or_default()
+                .push((br.read.ref_start, read_ref_end(&br.read)));
         }
         for v in by_chrom.values_mut() {
             v.sort_unstable();
         }
         reps.iter()
             .map(|r| {
-                let Some(v) = by_chrom.get(r.chrom.as_str()) else { return 0 };
+                let Some(v) = by_chrom.get(r.chrom.as_str()) else {
+                    return 0;
+                };
                 let mut events: Vec<(u64, i32)> = Vec::new();
                 for &(s, e) in v.iter() {
                     if s >= r.end {
@@ -9069,9 +10638,17 @@ mod tests {
             let n_reps = 1 + r.next(50) as usize;
             let reps = random_reps(&mut r, n_reps);
             let reads = random_reads(&mut r, 300);
-            assert_eq!(build_read_placements(&reads, &reps), naive_read_placements(&reads, &reps), "placements, trial {trial}");
+            assert_eq!(
+                build_read_placements(&reads, &reps),
+                naive_read_placements(&reads, &reps),
+                "placements, trial {trial}"
+            );
             for depth in [1u32, 2, 5] {
-                assert_eq!(locus_core_bp(&reads, &reps, depth), naive_core_bp(&reads, &reps, depth), "core_bp, trial {trial}");
+                assert_eq!(
+                    locus_core_bp(&reads, &reps, depth),
+                    naive_core_bp(&reads, &reps, depth),
+                    "core_bp, trial {trial}"
+                );
             }
             // readthrough: the same kept set as the per-transcript predicate over the whole junction map
             let mut support: DetHashMap<(String, u64, u64), usize> = DetHashMap::default();
@@ -9079,17 +10656,26 @@ mod tests {
             for _ in 0..n_junctions {
                 let d = r.next(5000);
                 let a = d + 1 + r.next(800);
-                support.insert((["c1", "c2", "c3"][r.next(3) as usize].to_string(), d, a), r.next(4) as usize);
+                support.insert(
+                    (["c1", "c2", "c3"][r.next(3) as usize].to_string(), d, a),
+                    r.next(4) as usize,
+                );
             }
             let min_distinct = env_num("RUSTLE_READTHROUGH_MIN_DISTINCT", READTHROUGH_MIN_DISTINCT);
             let expect: Vec<String> = reps
                 .iter()
-                .filter(|t| !is_unspliced_readthrough(t, &support, READTHROUGH_MIN_SUPPORT, min_distinct))
+                .filter(|t| {
+                    !is_unspliced_readthrough(t, &support, READTHROUGH_MIN_SUPPORT, min_distinct)
+                })
                 .map(|t| t.tid.clone())
                 .collect();
             let mut kept = reps.clone();
             retain_non_readthrough(&mut kept, &support, "test");
-            assert_eq!(kept.iter().map(|t| t.tid.clone()).collect::<Vec<_>>(), expect, "readthrough, trial {trial}");
+            assert_eq!(
+                kept.iter().map(|t| t.tid.clone()).collect::<Vec<_>>(),
+                expect,
+                "readthrough, trial {trial}"
+            );
         }
     }
 
@@ -9119,8 +10705,10 @@ mod tests {
         // The COMMAND and the CMDLINE must not be able to disagree -- a .args dump that describes a
         // command the binary did not run is worse than no dump.
         let cmd = er_tier_command("minimap2", 4, ER_SENSITIVE_SEED);
-        let argv: Vec<String> =
-            cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let argv: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
         assert_eq!(
             format!("{} {}", cmd.get_program().to_string_lossy(), argv.join(" ")),
             er_tier_cmdline("minimap2", 4, ER_SENSITIVE_SEED)
@@ -9135,8 +10723,14 @@ mod tests {
         let whole = include_str!("denovo_pipeline.rs");
         // Count only SHIPPING code. The test module legitimately re-types the tier once, to PIN its
         // value (`er_tier_value_is_the_shipped_tier_and_is_unchanged`); that copy is the point.
-        let src = whole.split("\n#[cfg(test)]\nmod tests {").next().expect("test module marker");
-        assert!(src.len() < whole.len(), "test-module split failed; the guard would scan itself");
+        let src = whole
+            .split("\n#[cfg(test)]\nmod tests {")
+            .next()
+            .expect("test module marker");
+        assert!(
+            src.len() < whole.len(),
+            "test-module split failed; the guard would scan itself"
+        );
         // Assembled at runtime so this test's own text is not the thing it counts.
         let needle = format!("\"--no-{}\"", "long-join");
         let n = src.matches(needle.as_str()).count();
@@ -9146,7 +10740,10 @@ mod tests {
              ER_TIER_FLAGS. A second copy is how B1 happened. Use er_tier_command()."
         );
         let k11 = src.matches("\"-k\", \"11\", \"-w\", \"5\"").count();
-        assert_eq!(k11, 1, "the sensitive seed is re-typed {k11} times; use ER_SENSITIVE_SEED.");
+        assert_eq!(
+            k11, 1,
+            "the sensitive seed is re-typed {k11} times; use ER_SENSITIVE_SEED."
+        );
     }
 
     // ── M1: THE COVERAGE STATISTIC IS A FRACTION ────────────────────────────────────────────────
@@ -9158,7 +10755,11 @@ mod tests {
         // (ql, qs, qe, tl, ts, te)
         fn cov(ql: f64, qs: f64, qe: f64, tl: f64, ts: f64, te: f64, longer: bool) -> f64 {
             let side_is_query = if longer { ql >= tl } else { ql <= tl };
-            let denom = if longer { ql.max(tl).max(1.0) } else { ql.min(tl).max(1.0) };
+            let denom = if longer {
+                ql.max(tl).max(1.0)
+            } else {
+                ql.min(tl).max(1.0)
+            };
             let aln = if side_is_query { qe - qs } else { te - ts };
             aln / denom
         }
@@ -9166,7 +10767,10 @@ mod tests {
         // query aligning 9,000 bp against a 2,000 bp target. Old form = 9000/2000 = 4.5, a "fraction"
         // of 450%. New form reads the target axis: 1800/2000 = 0.90.
         let old = (9000.0 - 0.0) / 2000.0_f64.min(10000.0);
-        assert!(old > 1.0, "the pre-fix form must be reproducible as >1 to prove it was not a fraction");
+        assert!(
+            old > 1.0,
+            "the pre-fix form must be reproducible as >1 to prove it was not a fraction"
+        );
         let new = cov(10000.0, 0.0, 9000.0, 2000.0, 100.0, 1900.0, false);
         assert!((new - 0.90).abs() < 1e-9, "got {new}");
         // A fraction can never exceed 1: the aligned span on a sequence is bounded by its length.
@@ -9183,7 +10787,10 @@ mod tests {
         for lg in [false, true] {
             let a = cov(10000.0, 0.0, 9000.0, 2000.0, 100.0, 1900.0, lg);
             let b = cov(2000.0, 100.0, 1900.0, 10000.0, 0.0, 9000.0, lg);
-            assert!((a - b).abs() < 1e-9, "coverage must be symmetric under q/t swap (longer={lg})");
+            assert!(
+                (a - b).abs() < 1e-9,
+                "coverage must be symmetric under q/t swap (longer={lg})"
+            );
         }
     }
 
@@ -9198,15 +10805,27 @@ mod tests {
         let mut rng: u64 = 0x5eed_1234;
         let long: Vec<u8> = (0..6000)
             .map(|_| {
-                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                rng = rng
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 b"ACGT"[((rng >> 33) % 4) as usize]
             })
             .collect();
         let short = long[2000..4000].to_vec();
-        let p = RefineParams { threads: 1, ..Default::default() };
-        let scored =
-            nucleotide_edges_scored(&[long, short], ER_SENSITIVE_SEED, 0.60, 0.50, &p, None, None)
-                .expect("alignment");
+        let p = RefineParams {
+            threads: 1,
+            ..Default::default()
+        };
+        let scored = nucleotide_edges_scored(
+            &[long, short],
+            ER_SENSITIVE_SEED,
+            0.60,
+            0.50,
+            &p,
+            None,
+            None,
+        )
+        .expect("alignment");
         assert_eq!(scored.len(), 1, "the pair must produce exactly one edge");
         let cov = scored[0].3;
         assert!(
@@ -9214,7 +10833,10 @@ mod tests {
             "coverage {cov} exceeds 1.0 -- the statistic is not a fraction (M1 has regressed)"
         );
         // Coverage-of-the-SHORTER of an exact subsequence is ~1.0 whichever axis minimap2 chose.
-        assert!(cov > 0.90, "coverage {cov} -- an exact 2 kb subsequence must cover the shorter fully");
+        assert!(
+            cov > 0.90,
+            "coverage {cov} -- an exact 2 kb subsequence must cover the shorter fully"
+        );
     }
 
     /// §6az DISCLOSURE ARITHMETIC. Pins `cov_longer` and the two flank lengths on a synthetic record
@@ -9234,7 +10856,10 @@ mod tests {
         // The shipped statistic, recomputed here rather than assumed: aligned span on the SHORTER axis
         // over the SHORTER length. This is the number that looks perfect.
         let coverage = (qe - qs) / ql;
-        assert!((coverage - 1.0).abs() < 1e-12, "coverage {coverage} — the control must look perfect");
+        assert!(
+            (coverage - 1.0).abs() < 1e-12,
+            "coverage {coverage} — the control must look perfect"
+        );
 
         // 5,000 aligned bases on the LONGER axis over 7,000 bp.
         assert!(
@@ -9243,7 +10868,10 @@ mod tests {
             f.cov_longer
         );
         assert_eq!(f.unaln_i, 0, "the shorter member aligns end to end");
-        assert_eq!(f.unaln_j, 2000, "1,000 bp hangs off EACH end of the longer member");
+        assert_eq!(
+            f.unaln_j, 2000,
+            "1,000 bp hangs off EACH end of the longer member"
+        );
 
         // Whenever the lengths differ and the aligned span is the same on both axes, the larger
         // denominator makes `cov_longer` STRICTLY smaller. That is the whole content of the concession.
@@ -9257,13 +10885,24 @@ mod tests {
         // query, so the same record with q and t swapped must move the flanks to the other column and
         // leave `cov_longer` — a property of the PAIR — exactly where it was.
         let g = er_edge_flank(tl, ts, te, ql, qs, qe, /* q_is_i */ true);
-        assert!((g.cov_longer - f.cov_longer).abs() < 1e-12, "cov_longer must not depend on the axis order");
-        assert_eq!((g.unaln_i, g.unaln_j), (2000, 0), "swapping q/t must swap the flanks");
+        assert!(
+            (g.cov_longer - f.cov_longer).abs() < 1e-12,
+            "cov_longer must not depend on the axis order"
+        );
+        assert_eq!(
+            (g.unaln_i, g.unaln_j),
+            (2000, 0),
+            "swapping q/t must swap the flanks"
+        );
 
         // Equal lengths: no member is "the longer", the denominators coincide, and the inequality above
         // becomes an equality rather than reversing.
         let h = er_edge_flank(4000.0, 100.0, 3900.0, 4000.0, 50.0, 3850.0, true);
-        assert!((h.cov_longer - 3800.0 / 4000.0).abs() < 1e-12, "cov_longer {}", h.cov_longer);
+        assert!(
+            (h.cov_longer - 3800.0 / 4000.0).abs() < 1e-12,
+            "cov_longer {}",
+            h.cov_longer
+        );
         assert_eq!((h.unaln_i, h.unaln_j), (200, 200));
     }
 
@@ -9272,19 +10911,28 @@ mod tests {
     /// the same transcript orientation and must not form an RNA E_r edge when the guard is armed.
     #[test]
     fn rna_forward_only_rejects_a_reverse_complement_only_edge() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let mut rng: u64 = 0x0a11_ce55_2026;
         let seq: Vec<u8> = (0..5000)
             .map(|_| {
-                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                rng = rng
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 b"ACGT"[((rng >> 33) % 4) as usize]
             })
             .collect();
         let rev = crate::family::seq_utils::reverse_complement(&seq);
 
-        let permissive = RefineParams { threads: 1, ..Default::default() };
+        let permissive = RefineParams {
+            threads: 1,
+            ..Default::default()
+        };
         let old = nucleotide_edges_scored(
             &[seq.clone(), rev.clone()],
             ER_SENSITIVE_SEED,
@@ -9295,7 +10943,11 @@ mod tests {
             None,
         )
         .expect("strand-agnostic alignment");
-        assert_eq!(old.len(), 1, "the historical rule must admit the reverse-complement pair");
+        assert_eq!(
+            old.len(),
+            1,
+            "the historical rule must admit the reverse-complement pair"
+        );
 
         // ⚠ The SUBSTRATE arms the guard, not the flag alone — this is the RNA half of the typed rule,
         // so it must declare transcript orientation. (`forward_only_guard_is_inert_on_a_reference_\
@@ -9316,7 +10968,10 @@ mod tests {
             None, // the scoped exemption is opt-in; this test pins the UNSCOPED guard
         )
         .expect("forward-only alignment");
-        assert!(new.is_empty(), "a reverse-only match must not become an RNA family edge");
+        assert!(
+            new.is_empty(),
+            "a reverse-only match must not become an RNA family edge"
+        );
     }
 
     /// The other half of the typed rule: reference-oriented DNA reps must continue to admit a real
@@ -9335,7 +10990,11 @@ mod tests {
         assert_eq!(d[0][1], 1, "adjacent copies are a DIRECT edge");
         assert_eq!(d[0][2], 2);
         assert_eq!(d[0][3], 3, "distance is the chain length, not merely >1");
-        assert_eq!(d[0][4], u32::MAX, "an unreachable pair must not report a finite distance");
+        assert_eq!(
+            d[0][4],
+            u32::MAX,
+            "an unreachable pair must not report a finite distance"
+        );
         assert_eq!(d[3][0], 3, "the matrix is symmetric");
 
         // a shortcut must WIN: adding 0-3 collapses that pair to a direct edge and 0-2 to 2.
@@ -9347,8 +11006,14 @@ mod tests {
         let cert = certificate_for(&[vec![0], vec![1], vec![2]], &[(0, 1), (1, 2)]);
         assert_eq!(cert.pair_distance.len(), 3);
         assert_eq!(cert.pair_distance[0][1], 1);
-        assert_eq!(cert.pair_distance[0][2], 2, "a transitive pair is reported as such");
-        assert_eq!(cert.n_edges, 2, "the edge count is unchanged by the new field");
+        assert_eq!(
+            cert.pair_distance[0][2], 2,
+            "a transitive pair is reported as such"
+        );
+        assert_eq!(
+            cert.n_edges, 2,
+            "the edge count is unchanged by the new field"
+        );
     }
 
     #[test]
@@ -9366,21 +11031,33 @@ mod tests {
             seq: seq.as_bytes().to_vec(),
             ..Default::default()
         };
-        let body: String = std::iter::repeat("ACGTTGCAAGGCTTACGGATCCTTAGGCAT").take(40).collect();
+        let body: String = std::iter::repeat("ACGTTGCAAGGCTTACGGATCCTTAGGCAT")
+            .take(40)
+            .collect();
         let fams = vec![
             vec![mk("a", 1_000, &body), mk("b", 900_000, &body)],
             vec![mk("c", 2_000_000, &body)],
         ];
-        let params = RefineParams { threads: 1, ..Default::default() };
+        let params = RefineParams {
+            threads: 1,
+            ..Default::default()
+        };
         let certs = match certificates_for_families(&fams, &params) {
             Ok(c) => c,
             // minimap2 absent in this environment -> the wiring is what matters, skip silently
             Err(_) => return,
         };
-        assert_eq!(certs.len(), fams.len(), "one certificate per emitted family, same order");
+        assert_eq!(
+            certs.len(),
+            fams.len(),
+            "one certificate per emitted family, same order"
+        );
         assert_eq!(certs[0].n, 2, "the certificate counts the EMITTED rows");
         assert_eq!(certs[1].n, 1);
-        assert_eq!(certs[1].lambda, 0, "a single-copy family has no cut to certify");
+        assert_eq!(
+            certs[1].lambda, 0,
+            "a single-copy family has no cut to certify"
+        );
     }
 
     #[test]
@@ -9423,24 +11100,36 @@ mod tests {
             substrate: Substrate::TranscriptOriented,
             ..Default::default()
         };
-        assert!(rna.forward_only_active(), "declared RNA substrate + flag set must arm the guard");
+        assert!(
+            rna.forward_only_active(),
+            "declared RNA substrate + flag set must arm the guard"
+        );
         let rna_off = RefineParams {
             require_forward_alignment: false,
             substrate: Substrate::TranscriptOriented,
             ..Default::default()
         };
-        assert!(!rna_off.forward_only_active(), "--no-rna-forward-only must still disarm it");
+        assert!(
+            !rna_off.forward_only_active(),
+            "--no-rna-forward-only must still disarm it"
+        );
     }
 
     #[test]
     fn genome_mode_grouping_keeps_an_inverted_duplication() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let mut rng: u64 = 0xd1a0_1a57;
         let seq: Vec<u8> = (0..5000)
             .map(|_| {
-                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                rng = rng
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 b"ACGT"[((rng >> 33) % 4) as usize]
             })
             .collect();
@@ -9467,10 +11156,17 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let params = RefineParams { threads: 1, ..Default::default() };
-        let (fams, _) = families_from_reps_certified(reps, &params, 0.20, 2, 0)
-            .expect("DNA grouping");
-        assert_eq!(fams.len(), 1, "the inverted DNA duplication must remain one family");
+        let params = RefineParams {
+            threads: 1,
+            ..Default::default()
+        };
+        let (fams, _) =
+            families_from_reps_certified(reps, &params, 0.20, 2, 0).expect("DNA grouping");
+        assert_eq!(
+            fams.len(),
+            1,
+            "the inverted DNA duplication must remain one family"
+        );
         assert_eq!(fams[0].len(), 2);
     }
 
@@ -9510,20 +11206,27 @@ mod tests {
         assert_eq!(value(&off), "both (+/-)");
         assert!(value(&on).starts_with("forward-only (+)"));
         assert_eq!(
-            value(&off), value(&dna),
+            value(&off),
+            value(&dna),
             "the flag must be inert on a reference-oriented substrate — same certificate as off"
         );
     }
 
     #[test]
     fn joint_certificate_reports_corroborated_edges_without_changing_membership() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let mut rng: u64 = 0xd1a0_2026;
         let genomic: Vec<u8> = (0..5000)
             .map(|_| {
-                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                rng = rng
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 b"ACGT"[((rng >> 33) % 4) as usize]
             })
             .collect();
@@ -9571,9 +11274,22 @@ mod tests {
         .expect("joint certificate");
 
         let edges = std::fs::read_to_string(out.with_extension("joint_edges.tsv")).expect("edges");
-        assert!(edges.lines().skip(1).any(|r| r.contains("\ttrue\ttrue\tRNA_DNA\ttrue")), "{edges}");
-        let families = std::fs::read_to_string(out.with_extension("joint_families.tsv")).expect("families");
-        assert!(families.lines().skip(1).any(|r| r.ends_with("\tBOTH_CONNECTED\tCONCORDANT")), "{families}");
+        assert!(
+            edges
+                .lines()
+                .skip(1)
+                .any(|r| r.contains("\ttrue\ttrue\tRNA_DNA\ttrue")),
+            "{edges}"
+        );
+        let families =
+            std::fs::read_to_string(out.with_extension("joint_families.tsv")).expect("families");
+        assert!(
+            families
+                .lines()
+                .skip(1)
+                .any(|r| r.ends_with("\tBOTH_CONNECTED\tCONCORDANT")),
+            "{families}"
+        );
         let rules = std::fs::read_to_string(out.with_extension("joint_rule.tsv")).expect("rules");
         assert!(rules.contains("membership_effect\tnone (report/certificate only)"));
     }
@@ -9595,8 +11311,17 @@ mod tests {
         std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY");
         let p = RefineParams::default();
         let (seed, floor, mask) = er_primary_tier(&p);
-        assert_eq!(seed, ER_SENSITIVE_SEED.iter().map(|s| s.to_string()).collect::<Vec<_>>());
-        assert_eq!(floor, p.sensitive_identity, "the floor must travel WITH the seed, not stay at min_identity");
+        assert_eq!(
+            seed,
+            ER_SENSITIVE_SEED
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            floor, p.sensitive_identity,
+            "the floor must travel WITH the seed, not stay at min_identity"
+        );
         assert_eq!(mask, TIER_SENSITIVE);
         // Opting out restores the legacy primary EXACTLY, floor included.
         std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", "0");
@@ -9609,7 +11334,10 @@ mod tests {
             None => std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY"),
         }
         // `--no-sensitive` also falls back to asm20 without touching the env var.
-        let off = RefineParams { nucleotide_sensitive: false, ..RefineParams::default() };
+        let off = RefineParams {
+            nucleotide_sensitive: false,
+            ..RefineParams::default()
+        };
         assert_eq!(er_primary_tier(&off).2, TIER_ASM20);
     }
 
@@ -9640,7 +11368,10 @@ mod tests {
             Some(v) => std::env::set_var("RUSTLE_ER_SENSITIVE_ONLY", v),
             None => std::env::remove_var("RUSTLE_ER_SENSITIVE_ONLY"),
         }
-        assert_eq!(o1, o2, "O1 and O2 must emit the same E_r rule at shipped defaults");
+        assert_eq!(
+            o1, o2,
+            "O1 and O2 must emit the same E_r rule at shipped defaults"
+        );
         let m: std::collections::BTreeMap<&str, &str> =
             o1.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         assert_eq!(m["primary_tier_seed"], "-k 11 -w 5");
@@ -9702,7 +11433,10 @@ mod tests {
             "the O1/O2 rule diff must show the additive genomic leg and NOTHING else; got {diff:?}"
         );
         let get = |rows: &[(String, String)], k: &str| {
-            rows.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap_or_default()
+            rows.iter()
+                .find(|(a, _)| a == k)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
         };
         assert!(get(&o2, "additive_genomic_tier").starts_with("armed"));
         assert!(get(&o1, "additive_genomic_tier").starts_with("absent"));
@@ -9742,7 +11476,10 @@ mod tests {
         let a = get(&o1, "site_divergence_policy").expect("O1 certificate must declare the policy");
         let b = get(&o2, "site_divergence_policy").expect("O2 certificate must declare the policy");
         // CONSTANT across sites: the policy explains the diff, it must never widen it.
-        assert_eq!(a, b, "the policy row is a constant; if it differs it becomes a second drift axis");
+        assert_eq!(
+            a, b,
+            "the policy row is a constant; if it differs it becomes a second drift axis"
+        );
         // It must name the key that actually differs, or it explains the wrong line.
         assert!(
             a.contains("additive_genomic_tier"),
@@ -9750,7 +11487,10 @@ mod tests {
         );
         // ⚠ THE GUARD THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT: the cited evidence must be in the tree.
         let cited = "bench/FALSE_NEGATIVES.md";
-        assert!(a.contains(cited), "the policy must cite its evidence; got `{a}`");
+        assert!(
+            a.contains(cited),
+            "the policy must cite its evidence; got `{a}`"
+        );
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(cited);
         assert!(
             path.is_file(),
@@ -9771,7 +11511,10 @@ mod tests {
     #[test]
     fn additive_genomic_tier_states_are_exhaustive_and_self_explaining() {
         let mut p = RefineParams::default();
-        assert!(!p.include_introns, "shipped default: the core tier is the exon-sum");
+        assert!(
+            !p.include_introns,
+            "shipped default: the core tier is the exon-sum"
+        );
         assert_eq!(additive_genomic_tier(&p, true), GenomicTier::Armed);
         assert_eq!(additive_genomic_tier(&p, false), GenomicTier::NoGenome);
         p.include_introns = true;
@@ -9780,7 +11523,11 @@ mod tests {
         assert_eq!(additive_genomic_tier(&p, true), GenomicTier::CoreIsGenomic);
         assert_eq!(additive_genomic_tier(&p, false), GenomicTier::CoreIsGenomic);
         assert!(GenomicTier::Armed.armed());
-        for t in [GenomicTier::CoreIsGenomic, GenomicTier::NoGenome, GenomicTier::NotPresent] {
+        for t in [
+            GenomicTier::CoreIsGenomic,
+            GenomicTier::NoGenome,
+            GenomicTier::NotPresent,
+        ] {
             assert!(!t.armed(), "{t:?} must not arm the leg");
             let l = t.label();
             assert!(
@@ -9804,11 +11551,18 @@ mod tests {
             "/src/rustle/family/denovo_pipeline.rs"
         ))
         .expect("read denovo_pipeline.rs");
-        let start = src.find("pub fn refine_families_exon_sum(").expect("refine_families_exon_sum not found");
-        let end = src[start..].find("\n/// The sequence used to compare a copy").expect("end of refine not found");
+        let start = src
+            .find("pub fn refine_families_exon_sum(")
+            .expect("refine_families_exon_sum not found");
+        let end = src[start..]
+            .find("\n/// The sequence used to compare a copy")
+            .expect("end of refine not found");
         let body = &src[start..start + end];
-        let code: String =
-            body.lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        let code: String = body
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert_eq!(
             code.matches("additive_genomic_tier(").count(),
             1,
@@ -9840,8 +11594,12 @@ mod tests {
             "/src/rustle/family/denovo_pipeline.rs"
         ))
         .expect("read denovo_pipeline.rs");
-        let start = src.find("pub fn refine_families_exon_sum(").expect("refine_families_exon_sum not found");
-        let end = src[start..].find("\n/// The sequence used to compare a copy").expect("end of refine not found");
+        let start = src
+            .find("pub fn refine_families_exon_sum(")
+            .expect("refine_families_exon_sum not found");
+        let end = src[start..]
+            .find("\n/// The sequence used to compare a copy")
+            .expect("end of refine not found");
         let body = &src[start..start + end];
         // CODE only — the function's own commentary NAMES the retired call in order to explain why it is
         // retired, and a scan that cannot tell those apart fails on its own documentation.
@@ -9855,7 +11613,10 @@ mod tests {
             "refine must resolve its seed via `er_primary_tier`; a direct `primary_seed_args()` call \
              ignores RUSTLE_ER_SENSITIVE_ONLY and silently re-splits O1 and O2 into two tiers"
         );
-        assert!(code.contains("er_primary_tier(params)"), "refine must call `er_primary_tier`");
+        assert!(
+            code.contains("er_primary_tier(params)"),
+            "refine must call `er_primary_tier`"
+        );
         assert!(
             code.contains("er_rule_rows(params, &site)"),
             "refine must emit the shared rule rows, or the O1/O2 params diff is unavailable inside copy_assign"
@@ -9878,11 +11639,18 @@ mod tests {
     #[test]
     fn refine_certificate_reports_the_additive_genomic_tier_that_actually_ran() {
         use crate::family::family_detect::DenovoTranscript;
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("minimap2 absent; skip");
             return;
         }
-        let fa = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/from_genome/subset.fa");
+        let fa = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/from_genome/subset.fa"
+        );
         if std::fs::metadata(fa).is_err() {
             eprintln!("fixture absent; skip");
             return;
@@ -9919,13 +11687,20 @@ mod tests {
         ];
         let mut p = homology_refine_params(Some(0.90), 2);
         p.intron_fasta = Some(fa.to_string());
-        assert!(!p.include_introns, "the core substrate must be the exon-sum for this test to mean anything");
+        assert!(
+            !p.include_introns,
+            "the core substrate must be the exon-sum for this test to mean anything"
+        );
         std::env::set_var("RUSTLE_ER_EDGE_DUMP", prefix.to_str().unwrap());
         let out = refine_families_exon_sum(vec![fam], &p, None, 1);
         std::env::remove_var("RUSTLE_ER_EDGE_DUMP");
         let out = out.expect("refine");
         // The family exists ONLY via the additive genomic leg: the exon-sums are disjoint 400-mers.
-        assert_eq!(out.len(), 1, "the genomic-span tier must union the two disjoint exon-sums into one family");
+        assert_eq!(
+            out.len(),
+            1,
+            "the genomic-span tier must union the two disjoint exon-sums into one family"
+        );
 
         let kv = |path: &std::path::Path| -> std::collections::BTreeMap<String, String> {
             std::fs::read_to_string(path)
@@ -9940,7 +11715,10 @@ mod tests {
         // second and later refine calls in the process to `.call<N>`, and OTHER tests' refine calls land
         // in this directory too while the env var is set (that is not hypothetical — it is what the
         // first full-suite run of this test caught).
-        let mut mine: Vec<(std::path::PathBuf, std::collections::BTreeMap<String, String>)> = Vec::new();
+        let mut mine: Vec<(
+            std::path::PathBuf,
+            std::collections::BTreeMap<String, String>,
+        )> = Vec::new();
         let mut seen: Vec<String> = Vec::new();
         for e in std::fs::read_dir(&dir).expect("read dump dir") {
             let path = e.expect("dirent").path();
@@ -9968,12 +11746,16 @@ mod tests {
             "the 431 bp / 2-rep / 1-family fingerprint must identify exactly one dump; saw {seen:#?}"
         );
         let (ppath, par) = mine.pop().expect("checked len == 1");
-        let rpath = std::path::PathBuf::from(ppath.to_string_lossy().replace(".params.tsv", ".rule.tsv"));
+        let rpath =
+            std::path::PathBuf::from(ppath.to_string_lossy().replace(".params.tsv", ".rule.tsv"));
         let rule = kv(&rpath);
         let shown = std::fs::read_to_string(&rpath).unwrap_or_default();
 
         // (1) THE RULE FILE — the parity object — must say the additive tier was armed.
-        let tier = rule.get("additive_genomic_tier").map(String::as_str).unwrap_or("<MISSING>");
+        let tier = rule
+            .get("additive_genomic_tier")
+            .map(String::as_str)
+            .unwrap_or("<MISSING>");
         assert!(
             tier.starts_with("armed"),
             "rule.tsv must record the additive GENOMIC-SPAN tier as armed on a run whose edge set is \
@@ -9993,8 +11775,10 @@ mod tests {
             "params.tsv must record that the genomic leg RAN on this family; got {:?}",
             par.get("n_families_genomic_tier_ran")
         );
-        let added: usize =
-            par.get("n_edges_genomic_tier_added").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let added: usize = par
+            .get("n_edges_genomic_tier_added")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         assert!(
             added >= 1,
             "params.tsv must record the edges the genomic leg CONTRIBUTED (the family only exists \
@@ -10003,7 +11787,10 @@ mod tests {
         );
         // `RUSTLE_O3_KEEP_DUMP=1` leaves the emitted certificate on disk: the before/after bytes of this
         // dump ARE the evidence that the fix landed, and a passing test that deletes them is unquotable.
-        if std::env::var("RUSTLE_O3_KEEP_DUMP").map(|v| v.is_empty()).unwrap_or(true) {
+        if std::env::var("RUSTLE_O3_KEEP_DUMP")
+            .map(|v| v.is_empty())
+            .unwrap_or(true)
+        {
             let _ = std::fs::remove_dir_all(&dir);
         } else {
             eprintln!("[o3] certificate kept at {}", dir.display());
@@ -10014,14 +11801,20 @@ mod tests {
     fn primary_seed_args_defaults_to_asm20_and_is_overridable() {
         // Default must stay asm20 so no existing catalog moves.
         std::env::remove_var("RUSTLE_MM2_SEED");
-        assert_eq!(primary_seed_args(), vec!["-x".to_string(), "asm20".to_string()]);
+        assert_eq!(
+            primary_seed_args(),
+            vec!["-x".to_string(), "asm20".to_string()]
+        );
         // An override is split on whitespace into separate argv entries -- passing "-k 9 -w 3" as ONE
         // argument would make minimap2 reject it.
         std::env::set_var("RUSTLE_MM2_SEED", "-k 9 -w 3");
         assert_eq!(primary_seed_args(), vec!["-k", "9", "-w", "3"]);
         // Blank / whitespace-only falls back rather than passing an empty argv.
         std::env::set_var("RUSTLE_MM2_SEED", "   ");
-        assert_eq!(primary_seed_args(), vec!["-x".to_string(), "asm20".to_string()]);
+        assert_eq!(
+            primary_seed_args(),
+            vec!["-x".to_string(), "asm20".to_string()]
+        );
         std::env::remove_var("RUSTLE_MM2_SEED");
     }
 
@@ -10032,8 +11825,12 @@ mod tests {
         // 104..110 in transcription orientation. With the env knob OFF nothing may change -- that is what
         // keeps every existing catalog byte-identical.
         let base = DenovoTranscript {
-            chrom: "c1".into(), start: 100, end: 104, strand: '+',
-            seq: b"ACGT".to_vec(), ..Default::default()
+            chrom: "c1".into(),
+            start: 100,
+            end: 104,
+            strand: '+',
+            seq: b"ACGT".to_vec(),
+            ..Default::default()
         };
         // A real genome so the extension can actually be fetched. An earlier version of this test passed
         // `None` for the genome, which made every case a trivial no-op and hid that the production call site
@@ -10048,22 +11845,63 @@ mod tests {
         let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
 
         // '+' strand, exon-sum ends at 104, sharp TES at 110 -> append genome[104..110] = "CCCCCC".
-        let fwd = DenovoTranscript { tes: Some(110), ..base.clone() };
-        assert_eq!(extend_exon_sum_to_tes(&fwd, &g), Some(b"ACGTCCCCCC".to_vec()));
+        let fwd = DenovoTranscript {
+            tes: Some(110),
+            ..base.clone()
+        };
+        assert_eq!(
+            extend_exon_sum_to_tes(&fwd, &g),
+            Some(b"ACGTCCCCCC".to_vec())
+        );
 
         // An INWARD tes must never trim: extension may only ADD sequence.
-        assert_eq!(extend_exon_sum_to_tes(&DenovoTranscript { tes: Some(102), ..base.clone() }, &g), None);
+        assert_eq!(
+            extend_exon_sum_to_tes(
+                &DenovoTranscript {
+                    tes: Some(102),
+                    ..base.clone()
+                },
+                &g
+            ),
+            None
+        );
         // tes == end is a no-op, not a zero-length fetch.
-        assert_eq!(extend_exon_sum_to_tes(&DenovoTranscript { tes: Some(104), ..base.clone() }, &g), None);
+        assert_eq!(
+            extend_exon_sum_to_tes(
+                &DenovoTranscript {
+                    tes: Some(104),
+                    ..base.clone()
+                },
+                &g
+            ),
+            None
+        );
         // no tes at all -> nothing to do
         assert_eq!(extend_exon_sum_to_tes(&base, &g), None);
 
         // '-' strand extends from `start` DOWNWARD, reverse-complemented. start=100, tes=90 -> genome[90..100]
         // is "AAAAAAAAAA", revcomp "TTTTTTTTTT", appended in transcription orientation.
-        let rev = DenovoTranscript { strand: '-', tes: Some(90), ..base.clone() };
-        assert_eq!(extend_exon_sum_to_tes(&rev, &g), Some(b"ACGTTTTTTTTTTT".to_vec()));
+        let rev = DenovoTranscript {
+            strand: '-',
+            tes: Some(90),
+            ..base.clone()
+        };
+        assert_eq!(
+            extend_exon_sum_to_tes(&rev, &g),
+            Some(b"ACGTTTTTTTTTTT".to_vec())
+        );
         // a '-' tes ABOVE start is inward -> no-op
-        assert_eq!(extend_exon_sum_to_tes(&DenovoTranscript { strand: '-', tes: Some(200), ..base.clone() }, &g), None);
+        assert_eq!(
+            extend_exon_sum_to_tes(
+                &DenovoTranscript {
+                    strand: '-',
+                    tes: Some(200),
+                    ..base.clone()
+                },
+                &g
+            ),
+            None
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -10085,7 +11923,11 @@ mod tests {
         assert_eq!(sup, vec![0, 1, 0]);
         // PSVs already resolved it -> not junction-only -> no change.
         add_junction_support(&mut sup, 1, true, true);
-        assert_eq!(sup, vec![0, 1, 0], "PSV-decisive read is not junction-only support");
+        assert_eq!(
+            sup,
+            vec![0, 1, 0],
+            "PSV-decisive read is not junction-only support"
+        );
         // combined not decisive -> no junction pinned it -> no change.
         add_junction_support(&mut sup, 2, false, false);
         assert_eq!(sup, vec![0, 1, 0]);
@@ -10113,16 +11955,35 @@ mod tests {
     /// contigs hold the same 600 bp motif twice.
     #[test]
     fn genomic_span_edges_link_fragments_that_exon_sum_cannot() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
         let fa = "tests/fixtures/from_genome/subset.fa";
-        if std::fs::metadata(fa).is_err() { eprintln!("fixture absent; skip"); return; }
+        if std::fs::metadata(fa).is_err() {
+            eprintln!("fixture absent; skip");
+            return;
+        }
         // Two copies of the SAME family (NCF1 / NCF1B contigs are ~99% identical), but their "assembled"
         // exon-sums are DISJOINT slices: copy A carries the head, copy B the tail. They cannot align.
-        let head: Vec<u8> = b"A".repeat(400);            // stand-in fragment A (no similarity to B)
-        let tail: Vec<u8> = b"C".repeat(400);            // stand-in fragment B
+        let head: Vec<u8> = b"A".repeat(400); // stand-in fragment A (no similarity to B)
+        let tail: Vec<u8> = b"C".repeat(400); // stand-in fragment B
         let mk = |tid: &str, chrom: &str, start: u64, end: u64, seq: Vec<u8>| DenovoTranscript {
-            tid: tid.into(), chrom: chrom.into(), start, end,
-            n_reads: 5, strand: '+', introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: chrom.into(),
+            start,
+            end,
+            n_reads: 5,
+            strand: '+',
+            introns: vec![],
+            seq,
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         let reps = vec![
             mk("a", "NCF1", 0, 15440, head),
@@ -10131,12 +11992,18 @@ mod tests {
         let mut p = homology_refine_params(Some(0.90), 2);
         // exon-sum substrate: the disjoint fragments cannot align -> no edge
         let e_exon = homology_edges_all_reps(&reps, &p).unwrap();
-        assert!(e_exon.is_empty(), "disjoint exon-sums must NOT link, got {e_exon:?}");
+        assert!(
+            e_exon.is_empty(),
+            "disjoint exon-sums must NOT link, got {e_exon:?}"
+        );
         // genomic-span substrate: the underlying loci are ~99% identical -> edge forms
         p.homology_genomic_span = true;
         p.intron_fasta = Some(fa.to_string());
         let e_span = homology_edges_all_reps(&reps, &p).unwrap();
-        assert!(!e_span.is_empty(), "genomic spans of the two paralogous loci must link");
+        assert!(
+            !e_span.is_empty(),
+            "genomic spans of the two paralogous loci must link"
+        );
     }
 
     /// O1 INDEPENDENCE GUARD. The `--homology-primary` claim we make to the advisor is that family
@@ -10161,13 +12028,26 @@ mod tests {
     /// would destroy recall, and one that never fires is inert.
     #[test]
     fn coverage_split_separates_fragment_sharers_and_keeps_full_length_pairs() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
-            tid: tid.into(), chrom: "chr1".into(), start: 0, end: seq.len() as u64,
-            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(),
-            distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: "chr1".into(),
+            start: 0,
+            end: seq.len() as u64,
+            n_reads: 5,
+            strand: '+',
+            introns: vec![],
+            seq: seq.to_vec(),
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         let core = rand_seq(600, 0xA11CE);
         let tail_a = rand_seq(1400, 0xBEEF);
@@ -10183,13 +12063,25 @@ mod tests {
         let edges = coverage_edges_all_reps(&reps, 0.90, &params).unwrap();
         let groups = coverage_split_block(&[0, 1, 2], &edges);
         let of = |i: usize| groups.iter().position(|g| g.contains(&i)).unwrap();
-        assert_eq!(of(0), of(1), "full-length near-identical copies must stay together");
-        assert_ne!(of(0), of(2), "a copy sharing only a fragment must split off at coverage 0.90");
+        assert_eq!(
+            of(0),
+            of(1),
+            "full-length near-identical copies must stay together"
+        );
+        assert_ne!(
+            of(0),
+            of(2),
+            "a copy sharing only a fragment must split off at coverage 0.90"
+        );
 
         // floor 0 disables the split entirely (the opt-out contract)
         let none = coverage_edges_all_reps(&reps, 0.0, &params).unwrap();
         assert!(none.is_empty(), "min_cov 0 must yield no split edges");
-        assert_eq!(coverage_split_block(&[0, 1, 2], &none).len(), 1, "no edges must leave the block whole");
+        assert_eq!(
+            coverage_split_block(&[0, 1, 2], &none).len(),
+            1,
+            "no edges must leave the block whole"
+        );
         // a singleton block is returned unchanged
         assert_eq!(coverage_split_block(&[0], &edges), vec![vec![0]]);
     }
@@ -10199,21 +12091,38 @@ mod tests {
     /// 2-copy family into singletons and made `homology_catalog_groups_fixture_family` return `[]`.
     #[test]
     fn coverage_split_leaves_a_block_intact_when_the_aligner_finds_nothing() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let mk = |tid: &str, seq: &[u8]| DenovoTranscript {
-            tid: tid.into(), chrom: "c1".into(), start: 0, end: seq.len() as u64,
-            n_reads: 9, strand: '+', introns: vec![], seq: seq.to_vec(),
-            distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: "c1".into(),
+            start: 0,
+            end: seq.len() as u64,
+            n_reads: 9,
+            strand: '+',
+            introns: vec![],
+            seq: seq.to_vec(),
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         // two unrelated ~110 bp sequences: far too short for a reliable alignment
-        let reps = vec![mk("s1", &rand_seq(110, 0x1234)), mk("s2", &rand_seq(110, 0x9876))];
+        let reps = vec![
+            mk("s1", &rand_seq(110, 0x1234)),
+            mk("s2", &rand_seq(110, 0x9876)),
+        ];
         let params = homology_refine_params(None, 2);
         let edges = coverage_edges_all_reps(&reps, 0.90, &params).unwrap();
         let groups = coverage_split_block(&[0, 1], &edges);
         assert_eq!(
-            groups.len(), 1,
+            groups.len(),
+            1,
             "no alignment signal must mean NO split -- silence is not evidence of separateness"
         );
     }
@@ -10232,7 +12141,11 @@ mod tests {
     /// did not (2,601/2,795), 84.01% of it on OPPOSITE strands -- a locus matching its own antisense model.
     #[test]
     fn shared_exon_does_not_link_a_locus_to_itself_across_two_representatives() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let ex = rand_seq(400, 0xC0FFEE);
@@ -10241,15 +12154,27 @@ mod tests {
         // fail the `off + l > seq.len()` bound and the locus contributes NO exons at all -- which would
         // make this test pass its guard assertion for the wrong reason.
         let mk = |tid: &str, chrom: &str, start: u64, strand: char| DenovoTranscript {
-            tid: tid.into(), chrom: chrom.into(), start, end: start + ex.len() as u64, n_reads: 9, strand,
-            introns: vec![], seq: ex.clone(), distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: chrom.into(),
+            start,
+            end: start + ex.len() as u64,
+            n_reads: 9,
+            strand,
+            introns: vec![],
+            seq: ex.clone(),
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         let params = homology_refine_params(Some(0.90), 2);
 
         // Same span, opposite strands -- the dominant real-data shape.
         let overlapping = vec![mk("a", "chr1", 1_000, '+'), mk("b", "chr1", 1_200, '-')];
         assert!(
-            shared_exon_edges(&overlapping, 0.90, 200, &params).unwrap().is_empty(),
+            shared_exon_edges(&overlapping, 0.90, 200, &params)
+                .unwrap()
+                .is_empty(),
             "two representatives over one genomic locus must not link to each other"
         );
 
@@ -10257,19 +12182,35 @@ mod tests {
         // so the guard is not simply suppressing every edge.
         let disjoint = vec![mk("a", "chr1", 1_000, '+'), mk("b", "chr2", 9_000_000, '+')];
         assert!(
-            shared_exon_edges(&disjoint, 0.90, 200, &params).unwrap().contains(&(0, 1)),
+            shared_exon_edges(&disjoint, 0.90, 200, &params)
+                .unwrap()
+                .contains(&(0, 1)),
             "control: the same exon at two DISJOINT loci must still form an edge"
         );
     }
 
     #[test]
     fn pooled_isoform_exons_recover_what_a_stub_representative_lacks() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         let mk = |tid: &str, start: u64, introns: Vec<(u64, u64)>, seq: Vec<u8>| DenovoTranscript {
-            tid: tid.into(), chrom: "chr1".into(), start, end: start + 1200,
-            n_reads: 9, strand: '+', introns, seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: "chr1".into(),
+            start,
+            end: start + 1200,
+            n_reads: 9,
+            strand: '+',
+            introns,
+            seq,
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         let ex_a = rand_seq(400, 0x5EED1);
         let ex_b = rand_seq(400, 0x5EED2);
@@ -10278,8 +12219,15 @@ mod tests {
         let stub = mk("stub", 0, vec![], rand_seq(600, 0xF11E));
         let spliced: Vec<u8> = ex_a.iter().chain(ex_b.iter()).copied().collect();
         // locus 2: a full transcript sharing exon A with locus 1's discarded isoform.
-        let other: Vec<u8> = ex_a.iter().chain(rand_seq(400, 0xBEEF).iter()).copied().collect();
-        let reps = vec![stub.clone(), mk("other", 50_000, vec![(50_400, 50_500)], other)];
+        let other: Vec<u8> = ex_a
+            .iter()
+            .chain(rand_seq(400, 0xBEEF).iter())
+            .copied()
+            .collect();
+        let reps = vec![
+            stub.clone(),
+            mk("other", 50_000, vec![(50_400, 50_500)], other),
+        ];
 
         let params = homology_refine_params(Some(0.90), 2);
         let rep_only = shared_exon_edges(&reps, 0.90, 200, &params).unwrap();
@@ -10347,8 +12295,13 @@ mod tests {
         // is not an exemption — every entry is a place the "membership by SEQUENCE alone" claim must be
         // qualified, and the spec qualifies it. Adding to this list is a THESIS EDIT, not a code edit.
         let ec_imports: Vec<String> = {
-            let u = src.find("use super::read_conflict::{").expect("read_conflict import not found");
-            let close = src[u..].find("};").expect("unterminated read_conflict import") + u;
+            let u = src
+                .find("use super::read_conflict::{")
+                .expect("read_conflict import not found");
+            let close = src[u..]
+                .find("};")
+                .expect("unterminated read_conflict import")
+                + u;
             src[u + "use super::read_conflict::{".len()..close]
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -10401,8 +12354,11 @@ mod tests {
                 }
                 scanned.push('\n');
                 scanned.push_str(
-                    &src[h..hend].lines().map(|l| l.split("//").next().unwrap_or(""))
-                        .collect::<Vec<_>>().join("\n"),
+                    &src[h..hend]
+                        .lines()
+                        .map(|l| l.split("//").next().unwrap_or(""))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                 );
             }
         }
@@ -10488,10 +12444,19 @@ mod tests {
             "overlapping records at one locus must not inflate multiplicity"
         );
         // same contig, disjoint -> two; abutting (s == prev end) is disjoint by half-open convention
-        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100), l("c1", 200, 300)]), 2);
-        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100), l("c1", 100, 200)]), 2);
+        assert_eq!(
+            count_distinct_loci(vec![l("c1", 0, 100), l("c1", 200, 300)]),
+            2
+        );
+        assert_eq!(
+            count_distinct_loci(vec![l("c1", 0, 100), l("c1", 100, 200)]),
+            2
+        );
         // a hit on a DIFFERENT contig is always its own occurrence, even at identical coordinates
-        assert_eq!(count_distinct_loci(vec![l("c1", 0, 100), l("c2", 0, 100)]), 2);
+        assert_eq!(
+            count_distinct_loci(vec![l("c1", 0, 100), l("c2", 0, 100)]),
+            2
+        );
         // NPIP-shaped: 31 disjoint occurrences trip any M=20 hub test purely by copy number, which is
         // the confound that refuted the veto (§4x).
         let npip: Vec<_> = (0..31).map(|i| l("c1", i * 1000, i * 1000 + 500)).collect();
@@ -10510,38 +12475,76 @@ mod tests {
         assert_eq!(parse(None), None, "unset = OFF");
         assert_eq!(parse(Some("")), None, "empty = OFF");
         assert_eq!(parse(Some("0")), None, "explicit 0 = OFF");
-        assert_eq!(parse(Some("nonsense")), None, "unparseable = OFF, never a silent default");
+        assert_eq!(
+            parse(Some("nonsense")),
+            None,
+            "unparseable = OFF, never a silent default"
+        );
         assert_eq!(parse(Some("20")), Some(20), "the §4x threshold");
     }
 
     #[test]
     fn homology_blocks_groups_identical_reps_and_isolates_unrelated() {
         // three reps: two identical sequences (should share an E_r edge -> one block) + one unrelated.
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
         let mk = |tid: &str, chrom: &str, start: u64, seq: &[u8]| DenovoTranscript {
-            tid: tid.into(), chrom: chrom.into(), start, end: start + seq.len() as u64,
-            n_reads: 5, strand: '+', introns: vec![], seq: seq.to_vec(), distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: chrom.into(),
+            start,
+            end: start + seq.len() as u64,
+            n_reads: 5,
+            strand: '+',
+            introns: vec![],
+            seq: seq.to_vec(),
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         // a 400 bp "gene" duplicated at two loci, plus an unrelated 400 bp sequence.
         let a: Vec<u8> = b"ACGT".iter().cycle().take(400).copied().collect();
         let b: Vec<u8> = b"TGCA".iter().cycle().take(400).copied().collect();
         let reps = vec![
             mk("d1", "chr1", 1000, &a),
-            mk("d2", "chr9", 5000, &a),   // identical to d1 -> same family
-            mk("d3", "chr1", 9000, &b),   // unrelated -> its own block
+            mk("d2", "chr9", 5000, &a), // identical to d1 -> same family
+            mk("d3", "chr1", 9000, &b), // unrelated -> its own block
         ];
         let refine = homology_refine_params(None, 2);
         let blocks = homology_blocks(&reps, &refine, 0.20).unwrap();
         // d1 and d2 land in the same block; d3 is alone.
         let block_of = |i: usize| blocks.iter().position(|bl| bl.contains(&i)).unwrap();
-        assert_eq!(block_of(0), block_of(1), "identical reps must share a block");
-        assert_ne!(block_of(0), block_of(2), "unrelated rep must be a separate block");
+        assert_eq!(
+            block_of(0),
+            block_of(1),
+            "identical reps must share a block"
+        );
+        assert_ne!(
+            block_of(0),
+            block_of(2),
+            "unrelated rep must be a separate block"
+        );
     }
 
     fn union_rep(tid: &str, start: u64, seq: Vec<u8>) -> DenovoTranscript {
         DenovoTranscript {
-            tid: tid.into(), chrom: "chrU".into(), start, end: start + seq.len() as u64, n_reads: 5, strand: '+',
-            introns: vec![], seq, distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: tid.into(),
+            chrom: "chrU".into(),
+            start,
+            end: start + seq.len() as u64,
+            n_reads: 5,
+            strand: '+',
+            introns: vec![],
+            seq,
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         }
     }
 
@@ -10550,7 +12553,12 @@ mod tests {
     #[test]
     fn restrict_span_edges_never_merges_two_exon_sum_blocks() {
         let tx = vec![(0, 1, 0.99, 0.9), (2, 3, 0.99, 0.9)];
-        let span = vec![(1, 2, 0.95, 0.8), (3, 4, 0.95, 0.8), (0, 1, 0.99, 1.0), (4, 4, 1.0, 1.0)];
+        let span = vec![
+            (1, 2, 0.95, 0.8),
+            (3, 4, 0.95, 0.8),
+            (0, 1, 0.99, 1.0),
+            (4, 4, 1.0, 1.0),
+        ];
         let (admitted, rejected) = restrict_span_edges(5, &tx, &span, 0.20);
         assert_eq!(admitted, vec![(3, 4, 0.95, 0.8)]);
         assert_eq!(rejected, vec![(1, 2, 0.95, 0.8)]);
@@ -10576,10 +12584,18 @@ mod tests {
     #[test]
     fn union_edge_sets_keeps_base_metrics_and_adds_only_missing_pairs() {
         let base = vec![(0, 1, 0.95, 0.80), (2, 3, 0.90, 0.60)];
-        let extra = vec![(1, 0, 0.99, 1.00), (3, 1, 0.85, 0.70), (1, 3, 0.10, 0.10), (2, 2, 1.0, 1.0)];
+        let extra = vec![
+            (1, 0, 0.99, 1.00),
+            (3, 1, 0.85, 0.70),
+            (1, 3, 0.10, 0.10),
+            (2, 2, 1.0, 1.0),
+        ];
         let (out, added) = union_edge_sets(base, extra);
         assert_eq!(added, 1);
-        assert_eq!(out, vec![(0, 1, 0.95, 0.80), (1, 3, 0.85, 0.70), (2, 3, 0.90, 0.60)]);
+        assert_eq!(
+            out,
+            vec![(0, 1, 0.95, 0.80), (1, 3, 0.85, 0.70), (2, 3, 0.90, 0.60)]
+        );
     }
 
     #[test]
@@ -10594,14 +12610,24 @@ mod tests {
         let a = [rand_seq(300, 0x52), core.clone(), rand_seq(250, 0x53)].concat();
         let b = [rand_seq(900, 0x54), core, rand_seq(400, 0x55)].concat();
         let c = rand_seq(1100, 0x56);
-        let reps = vec![union_rep("a", 0, a.clone()), union_rep("b", 10_000, b), union_rep("c", 20_000, c)];
+        let reps = vec![
+            union_rep("a", 0, a.clone()),
+            union_rep("b", 10_000, b),
+            union_rep("c", 20_000, c),
+        ];
         let (out, added) = union_lcs_edges(&reps, Vec::new());
         assert_eq!(added, 1);
         assert_eq!(out.len(), 1);
         let (i, j, ident, cov) = out[0];
         assert_eq!((i, j), (0, 1));
-        assert_eq!(ident, 1.0, "an exact common substring is 100% identical over its span");
-        assert!((cov - 500.0 / a.len() as f64).abs() < 0.01, "coverage = LCS / shorter length, got {cov}");
+        assert_eq!(
+            ident, 1.0,
+            "an exact common substring is 100% identical over its span"
+        );
+        assert!(
+            (cov - 500.0 / a.len() as f64).abs() < 0.01,
+            "coverage = LCS / shorter length, got {cov}"
+        );
     }
 
     #[test]
@@ -10613,14 +12639,23 @@ mod tests {
         let existing = vec![(0usize, 1usize, 0.87, 0.64)];
         let (out, added) = union_lcs_edges(&reps, existing.clone());
         assert_eq!(added, 0);
-        assert_eq!(out, existing, "a pair E_r already joined keeps its alignment identity/coverage");
+        assert_eq!(
+            out, existing,
+            "a pair E_r already joined keeps its alignment identity/coverage"
+        );
     }
 
     #[test]
     fn union_lcs_edges_output_is_sorted_by_pair() {
         let core = rand_seq(500, 0x71);
-        let seqs: Vec<Vec<u8>> = (0..3u64).map(|k| [rand_seq(200 + 50 * k as usize, 0x72 + k), core.clone()].concat()).collect();
-        let reps: Vec<DenovoTranscript> = seqs.into_iter().enumerate().map(|(k, s)| union_rep(&format!("r{k}"), 10_000 * k as u64, s)).collect();
+        let seqs: Vec<Vec<u8>> = (0..3u64)
+            .map(|k| [rand_seq(200 + 50 * k as usize, 0x72 + k), core.clone()].concat())
+            .collect();
+        let reps: Vec<DenovoTranscript> = seqs
+            .into_iter()
+            .enumerate()
+            .map(|(k, s)| union_rep(&format!("r{k}"), 10_000 * k as u64, s))
+            .collect();
         let (out, _) = union_lcs_edges(&reps, vec![(1, 2, 0.9, 0.9)]);
         let keys: Vec<(usize, usize)> = out.iter().map(|&(a, b, _, _)| (a, b)).collect();
         assert_eq!(keys, vec![(0, 1), (0, 2), (1, 2)]);
@@ -10633,8 +12668,11 @@ mod tests {
     /// effective floor. This pins the invariant the CLI advertises.
     #[test]
     fn refine_params_carry_the_sensitive_floor_too() {
-        let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gw_family_catalog.rs"))
-            .expect("read gw_family_catalog.rs");
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/bin/gw_family_catalog.rs"
+        ))
+        .expect("read gw_family_catalog.rs");
         // Anchor on the refine gate in main(). (Was `let refine = !args.no_refine;` before the D1 fix
         // made refine opt-in on the homology catalog; see `refine_enabled`.)
         let start = src
@@ -10650,7 +12688,10 @@ mod tests {
             + src[start..]
                 .find("let params = RefineParams {")
                 .expect("the --refine RefineParams literal must follow the refine gate");
-        let open = lit + src[lit..].find('{').expect("RefineParams literal has no body");
+        let open = lit
+            + src[lit..]
+                .find('{')
+                .expect("RefineParams literal has no body");
         let mut depth = 0usize;
         let mut close = src.len();
         for (off, ch) in src[open..].char_indices() {
@@ -10667,9 +12708,11 @@ mod tests {
             }
         }
         let block = &src[lit..close];
-        for field in ["min_identity: refine_params.min_identity",
-                      "min_coverage: refine_params.min_coverage",
-                      "sensitive_identity: refine_params.sensitive_identity"] {
+        for field in [
+            "min_identity: refine_params.min_identity",
+            "min_coverage: refine_params.min_coverage",
+            "sensitive_identity: refine_params.sensitive_identity",
+        ] {
             assert!(
                 block.contains(field),
                 "the --refine RefineParams must inherit `{field}` from refine_params; dropping one lets \
@@ -10693,7 +12736,10 @@ mod tests {
         assert_eq!(coverage_floor_bp_demand(0.50, &[1790]), Some(895));
         // lower median for even n, so the value is deterministic across runs
         assert_eq!(coverage_floor_bp_demand(0.50, &[1000, 2000]), Some(500));
-        assert_eq!(coverage_floor_bp_demand(0.50, &[100, 1790, 9000]), Some(895));
+        assert_eq!(
+            coverage_floor_bp_demand(0.50, &[100, 1790, 9000]),
+            Some(895)
+        );
         // empty node set has no scale to report -- must be NA, never 0 (0 reads as "no floor at all").
         assert_eq!(coverage_floor_bp_demand(0.50, &[]), None);
     }
@@ -10750,9 +12796,14 @@ mod tests {
         ))
         .expect("read denovo_pipeline.rs");
         let body = fn_body(&src, "fn write_er_edge_dump(");
-        for key in ["substrate_median_len_bp", "coverage_floor_median_bp_demand", "homology_genomic_span"] {
+        let normalized: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        for key in [
+            "substrate_median_len_bp",
+            "coverage_floor_median_bp_demand",
+            "homology_genomic_span",
+        ] {
             assert!(
-                body.contains(&format!("(\"{key}\".into()")),
+                normalized.contains(&format!("(\"{key}\".into(),")),
                 "{stem}.params.tsv must record `{key}` -- the E_r edge substrate sets the ABSOLUTE \
                  demand of the 0.50 coverage floor (8,810 bp on genomic span vs 895 bp on a rep \
                  transcript), so a catalog quoted without it is unattributable",
@@ -10824,20 +12875,40 @@ mod tests {
             .expect("the dump must write a nodes.tsv");
         let text = std::fs::read_to_string(&f).expect("read nodes.tsv");
         let hdr: Vec<&str> = text.lines().next().expect("header").split('\t').collect();
-        let row: Vec<&str> = text.lines().nth(1).expect("one data row").split('\t').collect();
+        let row: Vec<&str> = text
+            .lines()
+            .nth(1)
+            .expect("one data row")
+            .split('\t')
+            .collect();
         let col = |n: &str| {
-            row[hdr.iter().position(|h| *h == n).unwrap_or_else(|| panic!("no column {n}"))]
+            row[hdr
+                .iter()
+                .position(|h| *h == n)
+                .unwrap_or_else(|| panic!("no column {n}"))]
         };
-        assert_eq!(col("exons"), "1000-1100,1300-1500,1800-2000", "genomic-ascending half-open blocks");
+        assert_eq!(
+            col("exons"),
+            "1000-1100,1300-1500,1800-2000",
+            "genomic-ascending half-open blocks"
+        );
         assert_eq!(col("n_exon"), "3");
         // The invariant the two columns exist to expose: computed by different paths, they must agree.
         // A mismatch means the malformed-chain guard dropped a block -- visible, not silent.
         assert_eq!(col("exon_bp"), "500");
-        assert_eq!(col("exon_bp"), col("exon_sum_len"), "exon_bp must equal the spliced length");
+        assert_eq!(
+            col("exon_bp"),
+            col("exon_sum_len"),
+            "exon_bp must equal the spliced length"
+        );
         // And the reason the array is needed at all: n_exon + span cannot recover this.
-        let span = col("end").parse::<u64>().expect("end") - col("start").parse::<u64>().expect("start");
+        let span =
+            col("end").parse::<u64>().expect("end") - col("start").parse::<u64>().expect("start");
         assert_eq!(span, 1000);
-        assert!(span > col("exon_bp").parse::<u64>().expect("exon_bp"), "span exceeds the exon-sum");
+        assert!(
+            span > col("exon_bp").parse::<u64>().expect("exon_bp"),
+            "span exceeds the exon-sum"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -10847,29 +12918,60 @@ mod tests {
     #[test]
     fn scoped_guard_exempts_only_unmeasured_strand_at_disjoint_loci() {
         let mk = |chrom: &str, start: u64, end: u64, spliced: bool| DenovoTranscript {
-            tid: "t".into(), chrom: chrom.into(), start, end, n_reads: 5, strand: '+',
-            introns: if spliced { vec![(start + 10, start + 20)] } else { vec![] },
-            seq: vec![b'A'; 50], distinguishing_uniq: 0, core_bp: 0, stub: false, tes: None,
+            tid: "t".into(),
+            chrom: chrom.into(),
+            start,
+            end,
+            n_reads: 5,
+            strand: '+',
+            introns: if spliced {
+                vec![(start + 10, start + 20)]
+            } else {
+                vec![]
+            },
+            seq: vec![b'A'; 50],
+            distinguishing_uniq: 0,
+            core_bp: 0,
+            stub: false,
+            tes: None,
         };
         // index 0 unspliced (strand NOT measured), 1 spliced elsewhere, 2 spliced OVERLAPPING 0.
-        let reps = vec![mk("c1", 1_000, 2_000, false), mk("c2", 9_000, 9_500, true), mk("c1", 1_500, 2_500, true)];
-        let meta: Vec<(String, u64, u64, bool)> =
-            reps.iter().map(|r| (r.chrom.clone(), r.start, r.end, r.introns.is_empty())).collect();
+        let reps = vec![
+            mk("c1", 1_000, 2_000, false),
+            mk("c2", 9_000, 9_500, true),
+            mk("c1", 1_500, 2_500, true),
+        ];
+        let meta: Vec<(String, u64, u64, bool)> = reps
+            .iter()
+            .map(|r| (r.chrom.clone(), r.start, r.end, r.introns.is_empty()))
+            .collect();
         let ex = |a: usize, b: usize| {
             let (x, y) = (&meta[a], &meta[b]);
             (x.3 || y.3) && !(x.0 == y.0 && x.2.min(y.2) > x.1.max(y.1))
         };
         assert!(ex(0, 1), "unmeasured strand at a DISJOINT locus: exempt");
-        assert!(!ex(0, 2), "unmeasured strand but OVERLAPPING spans: NOT exempt (one locus counted twice)");
-        assert!(!ex(1, 2), "both strands junction-determined: NOT exempt — a real antisense candidate");
-        assert!(ex(1, 0) == ex(0, 1), "the predicate must be symmetric in its arguments");
+        assert!(
+            !ex(0, 2),
+            "unmeasured strand but OVERLAPPING spans: NOT exempt (one locus counted twice)"
+        );
+        assert!(
+            !ex(1, 2),
+            "both strands junction-determined: NOT exempt — a real antisense candidate"
+        );
+        assert!(
+            ex(1, 0) == ex(0, 1),
+            "the predicate must be symmetric in its arguments"
+        );
     }
 
     #[test]
     fn homology_refine_params_min_identity_sets_both_tiers() {
         let p = homology_refine_params(Some(0.98), 4);
         assert_eq!(p.min_identity, 0.98);
-        assert_eq!(p.sensitive_identity, 0.98, "Soto mode: sensitive tier must also be 0.98, not left at 0.60");
+        assert_eq!(
+            p.sensitive_identity, 0.98,
+            "Soto mode: sensitive tier must also be 0.98, not left at 0.60"
+        );
         let d = homology_refine_params(None, 4);
         assert_eq!(d.min_identity, 0.80);
         assert_eq!(d.sensitive_identity, 0.60);
@@ -10891,10 +12993,28 @@ mod tests {
         let pool: Vec<Vec<u8>> = (0..8).map(|_| cand.clone()).collect();
         let realign = |refs: &[Vec<u8>], reads: &[Vec<u8>]| {
             let ci = refs.len() - 1;
-            reads.iter().map(|r| if r == &refs[ci] { Some((ci, 60u32)) } else { Some((0, 0)) }).collect::<Vec<_>>()
+            reads
+                .iter()
+                .map(|r| {
+                    if r == &refs[ci] {
+                        Some((ci, 60u32))
+                    } else {
+                        Some((0, 0))
+                    }
+                })
+                .collect::<Vec<_>>()
         };
-        let cert = family_linearize_cert(&cand, &[b"TTTTGGGGCCCCAAAAAAAATTTTGGGG".to_vec()], &pool, realign);
-        assert!(matches!(cert.verdict, Verdict::Linearizes), "cert = {:?}", cert);
+        let cert = family_linearize_cert(
+            &cand,
+            &[b"TTTTGGGGCCCCAAAAAAAATTTTGGGG".to_vec()],
+            &pool,
+            realign,
+        );
+        assert!(
+            matches!(cert.verdict, Verdict::Linearizes),
+            "cert = {:?}",
+            cert
+        );
     }
 
     struct SplitMix64(u64);
@@ -10913,7 +13033,13 @@ mod tests {
         (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
     }
     fn read(chrom: &str, s: u64, e: u64, introns: &[(u64, u64)]) -> PrimaryRead {
-        PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns: introns.to_vec(), reverse: false }
+        PrimaryRead {
+            chrom: chrom.into(),
+            ref_start: s,
+            ref_end: e,
+            introns: introns.to_vec(),
+            reverse: false,
+        }
     }
     fn cat(parts: &[&[u8]]) -> Vec<u8> {
         parts.iter().flat_map(|p| p.iter().copied()).collect()
@@ -10955,7 +13081,10 @@ mod tests {
         let r = detect_families(&reads, &genome, &DenovoConfig::default());
         assert_eq!(r.n_transcripts, 2, "two gated transcripts (one per gene)");
         assert_eq!(r.n_loci, 2, "distinct intron chains -> two loci");
-        assert_eq!(r.n_edges, 1, "the two paralogs share a homologous core -> one POA edge");
+        assert_eq!(
+            r.n_edges, 1,
+            "the two paralogs share a homologous core -> one POA edge"
+        );
         assert_eq!(r.families.len(), 1, "one decomposed family");
         let fam = &r.families[0];
         assert_eq!(fam.members.len(), 2);
@@ -10963,7 +13092,10 @@ mod tests {
         assert_eq!(fam.class, FamilyClass::Family);
         let mut members = fam.members.clone();
         members.sort();
-        assert_eq!(members, vec!["DN_c1_0_2".to_string(), "DN_c1_1000_2".to_string()]);
+        assert_eq!(
+            members,
+            vec!["DN_c1_0_2".to_string(), "DN_c1_1000_2".to_string()]
+        );
     }
 
     /// Two paralogs sharing a core but DIFFERING at 3 PSV offsets (so detection finds a family AND reads are
@@ -10983,7 +13115,9 @@ mod tests {
         two_paralogs_with_psvs_impl(false)
     }
 
-    fn two_paralogs_with_psvs_impl(same_seq: bool) -> (GenomeIndex, Vec<PrimaryRead>, Vec<BamRead>) {
+    fn two_paralogs_with_psvs_impl(
+        same_seq: bool,
+    ) -> (GenomeIndex, Vec<PrimaryRead>, Vec<BamRead>) {
         let base = rand_seq(300, 0xC0FE_D1FF);
         let psv = [60usize, 150, 240];
         let (mut core_a, mut core_b) = (base.clone(), base);
@@ -10996,7 +13130,8 @@ mod tests {
         let mut g = vec![b'A'; 1500];
         let mut put = |g: &mut Vec<u8>, at: usize, s: &[u8]| g[at..at + s.len()].copy_from_slice(s);
         // copyA at 0, copyB at 1000: exon1 = flank(50)+core[0:150], intron GT..AG, exon2 = core[150:300]+flank(50)
-        for (base_off, f1, core, f2) in [(0usize, &fa1, &core_a, &fa2), (1000, &fb1, &core_b, &fb2)] {
+        for (base_off, f1, core, f2) in [(0usize, &fa1, &core_a, &fa2), (1000, &fb1, &core_b, &fb2)]
+        {
             put(&mut g, base_off, f1);
             put(&mut g, base_off + 50, &core[0..150]);
             g[base_off + 200] = b'G';
@@ -11021,12 +13156,40 @@ mod tests {
         // de 0.010/0.012 (both < 0.05, |Δ|=0.002 < 0.005) -> de-tied -> conflict edge. min_reads=3 satisfied.
         let mk = |name: &str, primary_seq: Vec<u8>, secondary_seq: Vec<u8>| {
             vec![
-                BamRead { chrom: "c1".into(),
-                    read: AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: primary_seq, qual: vec![] },
-                    mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false, is_secondary: false, reverse: false, ts: None },
-                BamRead { chrom: "c1".into(),
-                    read: AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: secondary_seq, qual: vec![] },
-                    mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false, is_secondary: false, reverse: false, ts: None },
+                BamRead {
+                    chrom: "c1".into(),
+                    read: AlignedRead {
+                        ref_start: 0,
+                        cigar: vec![('M', 200), ('N', 20), ('M', 200)],
+                        seq: primary_seq,
+                        qual: vec![],
+                    },
+                    mapq: 60,
+                    name: name.into(),
+                    as_score: 380,
+                    de: 0.010,
+                    is_supplementary: false,
+                    is_secondary: false,
+                    reverse: false,
+                    ts: None,
+                },
+                BamRead {
+                    chrom: "c1".into(),
+                    read: AlignedRead {
+                        ref_start: 1000,
+                        cigar: vec![('M', 200), ('N', 20), ('M', 200)],
+                        seq: secondary_seq,
+                        qual: vec![],
+                    },
+                    mapq: 0,
+                    name: name.into(),
+                    as_score: 379,
+                    de: 0.012,
+                    is_supplementary: false,
+                    is_secondary: false,
+                    reverse: false,
+                    ts: None,
+                },
             ]
         };
         let mut bam = Vec::new();
@@ -11072,7 +13235,11 @@ mod tests {
         let mut contigs = DetHashSet::default();
         contigs.insert(chrom.to_string());
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
-        eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
+        eprintln!(
+            "region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads",
+            primary.len(),
+            bam_reads.len()
+        );
         let (fas, fallback, _dna_needs, _linearize_certs) = detect_and_assign(
             &primary,
             &bam_reads,
@@ -11089,11 +13256,20 @@ mod tests {
             None,
         );
         if !fallback.is_empty() {
-            eprintln!("family edges via large-seq fallback (auditable): {}", fallback.len());
+            eprintln!(
+                "family edges via large-seq fallback (auditable): {}",
+                fallback.len()
+            );
         }
         eprintln!("co-located families with assignments: {}", fas.len());
         for fa in &fas {
-            let pct = |x: usize| if fa.n_reads > 0 { 100.0 * x as f64 / fa.n_reads as f64 } else { 0.0 };
+            let pct = |x: usize| {
+                if fa.n_reads > 0 {
+                    100.0 * x as f64 / fa.n_reads as f64
+                } else {
+                    0.0
+                }
+            };
             eprintln!(
                 "  {} {} copies={} reads={} PSVcols={} resolv_PSV={:.0}% resolv_+J={:.0}% J_only={} assign_+J={:.0}% uniq_agree={}/{}",
                 fa.family_id, fa.chrom, fa.n_copies, fa.n_reads, fa.psv_cols,
@@ -11101,9 +13277,14 @@ mod tests {
                 pct(fa.assigned_j), fa.uniq_agree, fa.uniq,
             );
         }
-        let (tot_uniq, tot_agree): (usize, usize) = fas.iter().fold((0, 0), |(u, a), f| (u + f.uniq, a + f.uniq_agree));
+        let (tot_uniq, tot_agree): (usize, usize) = fas
+            .iter()
+            .fold((0, 0), |(u, a), f| (u + f.uniq, a + f.uniq_agree));
         if tot_uniq > 0 {
-            eprintln!("AGGREGATE unique-mapper agreement: {tot_agree}/{tot_uniq} ({:.1}%)", 100.0 * tot_agree as f64 / tot_uniq as f64);
+            eprintln!(
+                "AGGREGATE unique-mapper agreement: {tot_agree}/{tot_uniq} ({:.1}%)",
+                100.0 * tot_agree as f64 / tot_uniq as f64
+            );
         }
     }
 
@@ -11125,8 +13306,14 @@ mod tests {
             "",
             None,
         );
-        assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
-        assert!(dna_needs.is_empty(), "absent_copies=false must return empty dna_needs vec");
+        assert!(
+            fallback.is_empty(),
+            "small paralogs use the exact poasta path, no fallback"
+        );
+        assert!(
+            dna_needs.is_empty(),
+            "absent_copies=false must return empty dna_needs vec"
+        );
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
@@ -11138,9 +13325,21 @@ mod tests {
         // so the primary flag says "copy 0" for all six. Three of them carry copyB's transcript and must
         // come back copy 1: resolution is by SEQUENCE, against the primary flag.
         use super::super::copy_assign::AssignStatus as St;
-        let to_b = fa.assignments.iter().filter(|(_, a)| a.best_copy == 1 && a.status == St::Assigned).count();
-        let to_a = fa.assignments.iter().filter(|(_, a)| a.best_copy == 0 && a.status == St::Assigned).count();
-        assert_eq!((to_a, to_b), (3, 3), "3 copyA molecules -> copy 0, 3 copyB molecules -> copy 1");
+        let to_b = fa
+            .assignments
+            .iter()
+            .filter(|(_, a)| a.best_copy == 1 && a.status == St::Assigned)
+            .count();
+        let to_a = fa
+            .assignments
+            .iter()
+            .filter(|(_, a)| a.best_copy == 0 && a.status == St::Assigned)
+            .count();
+        assert_eq!(
+            (to_a, to_b),
+            (3, 3),
+            "3 copyA molecules -> copy 0, 3 copyB molecules -> copy 1"
+        );
     }
 
     /// O2.14. A molecule has ONE copy of origin, so two records of one molecule that are both `Assigned`
@@ -11195,16 +13394,31 @@ mod tests {
             panic!("realign must not be called when do_linearize is false");
         };
         let off = linearize_cert_if_enabled(false, &cand, &copy_seqs, &pool, panic_realign);
-        assert!(off.is_none(), "do_linearize=false must skip the certificate entirely");
+        assert!(
+            off.is_none(),
+            "do_linearize=false must skip the certificate entirely"
+        );
 
         // ON: certificate COMPUTED (Some) — populated, using a fake realign (no minimap2).
         let ok_realign = |refs: &[Vec<u8>], reads: &[Vec<u8>]| {
             let ci = refs.len() - 1;
-            reads.iter().map(|r| if r == &refs[ci] { Some((ci, 60u32)) } else { Some((0, 0)) }).collect::<Vec<_>>()
+            reads
+                .iter()
+                .map(|r| {
+                    if r == &refs[ci] {
+                        Some((ci, 60u32))
+                    } else {
+                        Some((0, 0))
+                    }
+                })
+                .collect::<Vec<_>>()
         };
         let on = linearize_cert_if_enabled(true, &cand, &copy_seqs, &pool, ok_realign);
         let cert = on.expect("do_linearize=true must compute the certificate");
-        assert!(matches!(cert.verdict, Verdict::Linearizes), "cert = {cert:?}");
+        assert!(
+            matches!(cert.verdict, Verdict::Linearizes),
+            "cert = {cert:?}"
+        );
     }
 
     /// End-to-end complement: under `absent_copies=true` but `do_linearize=false`, `detect_and_assign`'s
@@ -11227,7 +13441,7 @@ mod tests {
             false, // do_linearize OFF — but the certificate is skipped
             false, // linearize_gate OFF
             "",
-            None,  // families DERIVED here (the O1->O2 --families contract is the other test)
+            None, // families DERIVED here (the O1->O2 --families contract is the other test)
         );
         assert!(
             linearize_certs.is_empty(),
@@ -11293,12 +13507,23 @@ mod tests {
         assert!(dna_needs.is_empty());
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
-        assert!(fa.realign_records.is_empty(), "vg_realign OFF -> the vg_realign block must not run at all");
+        assert!(
+            fa.realign_records.is_empty(),
+            "vg_realign OFF -> the vg_realign block must not run at all"
+        );
         assert_eq!(fa.n_copies, 2);
         assert_eq!(fa.assignments.len(), 6, "6 molecules (12 records)");
         // Same assignments the pre-Task-3 test (`detect_and_assign_resolves_multimapper_end_to_end`) pins.
-        let to_b = fa.assignments.iter().filter(|(_, a)| a.best_copy == 1 && a.status == AssignStatus::Assigned).count();
-        let to_a = fa.assignments.iter().filter(|(_, a)| a.best_copy == 0 && a.status == AssignStatus::Assigned).count();
+        let to_b = fa
+            .assignments
+            .iter()
+            .filter(|(_, a)| a.best_copy == 1 && a.status == AssignStatus::Assigned)
+            .count();
+        let to_a = fa
+            .assignments
+            .iter()
+            .filter(|(_, a)| a.best_copy == 0 && a.status == AssignStatus::Assigned)
+            .count();
         assert_eq!((to_a, to_b), (3, 3));
     }
 
@@ -11415,9 +13640,20 @@ mod tests {
         assert_eq!(fa.realign_records.len(), 1, "records must be set on fa");
         assert_eq!(fa.realign_records[0].action, "reassigned");
 
-        let pos = fa.assignments.iter().position(|(ri, _)| *ri == 10).expect("read 10 still present");
-        assert_eq!(fa.assignments[pos].1.best_copy, 1, "correction must move read 10 to copy 1");
-        assert_eq!(fa.read_psv_obs[pos], vec![Some(b'C')], "read_psv_obs must be overwritten in lockstep");
+        let pos = fa
+            .assignments
+            .iter()
+            .position(|(ri, _)| *ri == 10)
+            .expect("read 10 still present");
+        assert_eq!(
+            fa.assignments[pos].1.best_copy, 1,
+            "correction must move read 10 to copy 1"
+        );
+        assert_eq!(
+            fa.read_psv_obs[pos],
+            vec![Some(b'C')],
+            "read_psv_obs must be overwritten in lockstep"
+        );
         // read 11 (untouched) must be unaffected.
         let pos11 = fa.assignments.iter().position(|(ri, _)| *ri == 11).unwrap();
         assert_eq!(fa.assignments[pos11].1.best_copy, 1);
@@ -11444,7 +13680,10 @@ mod tests {
             500,
         )
         .abundances;
-        assert_eq!(fa.copy_abundance, expected, "copy_abundance must equal em_assign_family's own recompute");
+        assert_eq!(
+            fa.copy_abundance, expected,
+            "copy_abundance must equal em_assign_family's own recompute"
+        );
         assert!(
             fa.copy_abundance[1] > fa.copy_abundance[0],
             "both reads now favor copy 1 post-correction: abundance = {:?}",
@@ -11499,8 +13738,8 @@ mod tests {
                     min_p_value: 1.0,
                     discovery_coupled: false,
                     junction_conflict: false,
-                        origin_rejected: false,
-                        n_candidates: 0,
+                    origin_rejected: false,
+                    n_candidates: 0,
                     posterior: vec![0.5, 0.5],
                     sibling_identity: 1.0,
                     n_cols_vs_nearest_sibling: 0,
@@ -11541,14 +13780,37 @@ mod tests {
         let p = AssignParams::default();
         apply_realign_patch(&mut fa, apply, &p);
 
-        let pos = fa.assignments.iter().position(|(ri, _)| *ri == 20).expect("read 20 still present");
+        let pos = fa
+            .assignments
+            .iter()
+            .position(|(ri, _)| *ri == 20)
+            .expect("read 20 still present");
         let a = &fa.assignments[pos].1;
         assert_eq!(a.best_copy, 1, "must move to copy 1");
-        assert_eq!(a.status, AssignStatus::Assigned, "must NOT keep the stale Tied status");
-        assert!(a.posterior[1] > 0.9, "posterior must be one-hot-ish on copy 1, got {:?}", a.posterior);
-        assert!(a.posterior[0] < 0.1, "posterior must not keep the stale flat 0.5, got {:?}", a.posterior);
-        assert!(a.p_value < 1e-3, "p_value must reflect the fresh decisive certificate, not the stale 1.0, got {}", a.p_value);
-        assert!(a.n_decisive >= 1, "n_decisive must reflect the fresh spanned columns, not the stale 0");
+        assert_eq!(
+            a.status,
+            AssignStatus::Assigned,
+            "must NOT keep the stale Tied status"
+        );
+        assert!(
+            a.posterior[1] > 0.9,
+            "posterior must be one-hot-ish on copy 1, got {:?}",
+            a.posterior
+        );
+        assert!(
+            a.posterior[0] < 0.1,
+            "posterior must not keep the stale flat 0.5, got {:?}",
+            a.posterior
+        );
+        assert!(
+            a.p_value < 1e-3,
+            "p_value must reflect the fresh decisive certificate, not the stale 1.0, got {}",
+            a.p_value
+        );
+        assert!(
+            a.n_decisive >= 1,
+            "n_decisive must reflect the fresh spanned columns, not the stale 0"
+        );
     }
 
     /// I2 fix: `copy_abundance` must be recomputed AFTER admission widens the copy roster, not
@@ -11566,17 +13828,31 @@ mod tests {
         let mut mutated = backbone.clone();
         for &pos in &[10usize, 40usize] {
             let orig = backbone[pos];
-            mutated[pos] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != orig).unwrap();
+            mutated[pos] = [b'A', b'C', b'G', b'T']
+                .into_iter()
+                .find(|&b| b != orig)
+                .unwrap();
         }
 
         let host = DenovoTranscript {
-            tid: "host".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 7, strand: '+',
-            introns: vec![], seq: backbone.clone(),
-         ..Default::default() };
+            tid: "host".into(),
+            chrom: "chr1".into(),
+            start: 0,
+            end: 80,
+            n_reads: 7,
+            strand: '+',
+            introns: vec![],
+            seq: backbone.clone(),
+            ..Default::default()
+        };
         let all_copies = vec![host.clone()];
 
         let profiles = FamilyProfiles {
-            profiles: vec![CopyProfile { copy_id: 0, alleles: vec![Some(backbone[10])], junctions: vec![] }],
+            profiles: vec![CopyProfile {
+                copy_id: 0,
+                alleles: vec![Some(backbone[10])],
+                junctions: vec![],
+            }],
             copy_gpos: vec![vec![(0usize, 10u64)]],
             gen2off: vec![gen2off(&host)],
             strand: vec!['+'],
@@ -11622,13 +13898,21 @@ mod tests {
             let len = seq.len() as u64;
             BamRead {
                 chrom: "chr1".into(),
-                read: AlignedRead { ref_start: 0, cigar: vec![('M', len)], seq, qual: vec![] },
+                read: AlignedRead {
+                    ref_start: 0,
+                    cigar: vec![('M', len)],
+                    seq,
+                    qual: vec![],
+                },
                 mapq: 3,
                 name: name.into(),
                 as_score: 0,
                 de: 0.0,
                 is_supplementary: false,
-                is_secondary: false, reverse: false, ts: None }
+                is_secondary: false,
+                reverse: false,
+                ts: None,
+            }
         }
 
         // 3 reads carrying the host's own backbone (haplotype A) + 4 reads carrying the mutated
@@ -11645,36 +13929,63 @@ mod tests {
         let pools = vec![(0..7).collect::<Vec<usize>>()];
 
         let admitted_t = DenovoTranscript {
-            tid: "admitted1".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 4, strand: '+',
-            introns: vec![(30, 40)], seq: mutated.clone(),
-         ..Default::default() };
+            tid: "admitted1".into(),
+            chrom: "chr1".into(),
+            start: 0,
+            end: 80,
+            n_reads: 4,
+            strand: '+',
+            introns: vec![(30, 40)],
+            seq: mutated.clone(),
+            ..Default::default()
+        };
 
         // The mocked admitter reports a remap identity (as `absent_copy::admit_candidate` does for a
         // real reference-ABSENT admission) so this test also pins that `copy_map_identity` carries it
         // through, aligned 1:1 with the widened `copy_tids`/`copy_introns` roster.
-        admit_novel_pools_with_admitter(&mut fa, &pools, &bam_reads, &all_copies, &profiles, |_c, _h| {
-            Admission::Copy(admitted_t.clone(), Some(0.987))
-        });
+        admit_novel_pools_with_admitter(
+            &mut fa,
+            &pools,
+            &bam_reads,
+            &all_copies,
+            &profiles,
+            |_c, _h| Admission::Copy(admitted_t.clone(), Some(0.987)),
+        );
 
         assert_eq!(fa.n_copies, 2, "the pool must be admitted as a new copy");
         assert_eq!(fa.copy_psv_alleles.len(), 2);
-        assert_eq!(fa.copy_tids, vec!["host".to_string(), "admitted1".to_string()]);
-        assert_eq!(fa.assignments.len(), 7, "all 7 pool reads must be assigned (none pre-existed)");
         assert_eq!(
-            fa.copy_introns.len(), fa.copy_tids.len(),
+            fa.copy_tids,
+            vec!["host".to_string(), "admitted1".to_string()]
+        );
+        assert_eq!(
+            fa.assignments.len(),
+            7,
+            "all 7 pool reads must be assigned (none pre-existed)"
+        );
+        assert_eq!(
+            fa.copy_introns.len(),
+            fa.copy_tids.len(),
             "copy_introns must stay aligned with copy_tids after admission"
         );
         assert_eq!(
-            fa.copy_map_identity.len(), fa.copy_tids.len(),
+            fa.copy_map_identity.len(),
+            fa.copy_tids.len(),
             "copy_map_identity must stay aligned with copy_tids after admission"
         );
-        assert_eq!(fa.copy_map_identity[0], None, "host is in-genome, never remapped");
+        assert_eq!(
+            fa.copy_map_identity[0], None,
+            "host is in-genome, never remapped"
+        );
         assert!(
             fa.copy_map_identity[1].is_some(),
             "the admitted (reference-ABSENT) copy's map identity must be captured, got {:?}",
             fa.copy_map_identity[1]
         );
-        assert_eq!(fa.copy_introns[1], admitted_t.introns, "admitted copy's intron chain must propagate");
+        assert_eq!(
+            fa.copy_introns[1], admitted_t.introns,
+            "admitted copy's intron chain must propagate"
+        );
 
         let p = AssignParams::default();
         recompute_realign_abundance(&mut fa, &p, 1e-6, 500);
@@ -11690,7 +14001,11 @@ mod tests {
              allele, got {:?}",
             fa.copy_abundance
         );
-        assert_eq!(fa.copy_abundance_ci.len(), 2, "copy_abundance_ci must be widened too");
+        assert_eq!(
+            fa.copy_abundance_ci.len(),
+            2,
+            "copy_abundance_ci must be widened too"
+        );
     }
 
     /// Full-pipeline smoke test with `cfg.vg_realign = true`: exercises the `psv_pos_per_copy`
@@ -11723,23 +14038,47 @@ mod tests {
         assert!(dna_needs.is_empty());
         assert_eq!(fas.len(), 1);
         let fa = &fas[0];
-        assert_eq!(fa.n_copies, 2, "no spurious admissions on this clean fixture");
+        assert_eq!(
+            fa.n_copies, 2,
+            "no spurious admissions on this clean fixture"
+        );
         assert_eq!(fa.assignments.len(), 6, "6 molecules (12 records)");
-        assert!(!fa.realign_records.is_empty(), "the low-MAPQ secondary records must be candidates");
         assert!(
-            fa.realign_records.iter().all(|r| r.action == "reassigned" || r.action == "rejected"),
+            !fa.realign_records.is_empty(),
+            "the low-MAPQ secondary records must be candidates"
+        );
+        assert!(
+            fa.realign_records
+                .iter()
+                .all(|r| r.action == "reassigned" || r.action == "rejected"),
             "no unfit/novel reads on this fixture: {:?}",
             fa.realign_records
         );
         // The vg-realign path must agree with (not regress) the one-shot PSV gate's already-correct
         // calls on this fixture.
-        let to_b = fa.assignments.iter().filter(|(_, a)| a.best_copy == 1 && a.status == AssignStatus::Assigned).count();
-        let to_a = fa.assignments.iter().filter(|(_, a)| a.best_copy == 0 && a.status == AssignStatus::Assigned).count();
-        assert_eq!((to_a, to_b), (3, 3), "the vg-realign path must not regress the PSV gate's calls");
+        let to_b = fa
+            .assignments
+            .iter()
+            .filter(|(_, a)| a.best_copy == 1 && a.status == AssignStatus::Assigned)
+            .count();
+        let to_a = fa
+            .assignments
+            .iter()
+            .filter(|(_, a)| a.best_copy == 0 && a.status == AssignStatus::Assigned)
+            .count();
+        assert_eq!(
+            (to_a, to_b),
+            (3, 3),
+            "the vg-realign path must not regress the PSV gate's calls"
+        );
         // copy_abundance was recomputed via em_assign_family -- still a valid distribution.
         assert_eq!(fa.copy_abundance.len(), 2);
         let sum: f64 = fa.copy_abundance.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-6, "copy_abundance must sum to 1, got {:?}", fa.copy_abundance);
+        assert!(
+            (sum - 1.0).abs() < 1e-6,
+            "copy_abundance must sum to 1, got {:?}",
+            fa.copy_abundance
+        );
     }
 
     /// MAGEA4 (`+`) / MAGEA10 (`-`) and RFPL2 (`-`) / RFPL3 (`+`) are real INVERTED DUPLICATE paralog pairs:
@@ -11755,14 +14094,39 @@ mod tests {
         let mut minus = rep_s(50_000, 54_000, vec![(51_000, 52_000)], 18); // disjoint locus, opposite strand
         minus.strand = '-';
         let reps = vec![plus, minus];
-        let stats = crate::family::family_detect::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
-        let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
+        let stats = crate::family::family_detect::family_split::CommunityStats {
+            n: 2,
+            n_edges: 1,
+            density: 1.0,
+            avg_core_recip: 1.0,
+            n_articulation: 0,
+            lambda: 1,
+        };
+        let fams = vec![SplitFamily {
+            members: vec![0, 1],
+            class: FamilyClass::Family,
+            stats,
+        }];
 
         let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
-        assert_eq!(out.len(), 1, "an inverted duplicate pair is ONE co-located family");
-        assert_eq!(out[0].copies.len(), 2, "both copies survive: {:?}", out[0].copies.iter().map(|c| c.strand).collect::<Vec<_>>());
-        let strands: std::collections::BTreeSet<char> = out[0].copies.iter().map(|c| c.strand).collect();
-        assert_eq!(strands, ['+', '-'].into_iter().collect(), "the family spans both strands");
+        assert_eq!(
+            out.len(),
+            1,
+            "an inverted duplicate pair is ONE co-located family"
+        );
+        assert_eq!(
+            out[0].copies.len(),
+            2,
+            "both copies survive: {:?}",
+            out[0].copies.iter().map(|c| c.strand).collect::<Vec<_>>()
+        );
+        let strands: std::collections::BTreeSet<char> =
+            out[0].copies.iter().map(|c| c.strand).collect();
+        assert_eq!(
+            strands,
+            ['+', '-'].into_iter().collect(),
+            "the family spans both strands"
+        );
     }
 
     /// The protection the strand split was really providing must survive: a `+` gene and a `-` gene whose
@@ -11774,11 +14138,25 @@ mod tests {
         let mut minus = rep_s(1_100, 10_900, vec![(6_000, 7_000), (8_000, 9_000)], 5); // overlaps, opposite strand
         minus.strand = '-';
         let reps = vec![plus, minus];
-        let stats = crate::family::family_detect::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0, lambda: 1 };
-        let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
+        let stats = crate::family::family_detect::family_split::CommunityStats {
+            n: 2,
+            n_edges: 1,
+            density: 1.0,
+            avg_core_recip: 1.0,
+            n_articulation: 0,
+            lambda: 1,
+        };
+        let fams = vec![SplitFamily {
+            members: vec![0, 1],
+            class: FamilyClass::Family,
+            stats,
+        }];
 
         let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
-        assert!(out.is_empty(), "antisense overlap collapses to ONE copy, which is below min_copies=2");
+        assert!(
+            out.is_empty(),
+            "antisense overlap collapses to ONE copy, which is below min_copies=2"
+        );
     }
 
     #[test]
@@ -11795,20 +14173,31 @@ mod tests {
             g[base_off + 258] = b'A';
             g[base_off + 259] = b'G';
             put(&mut g, base_off + 260, &core[160..400]);
-            put(&mut g, base_off + 500, &rand_seq(80, 0xE0 + base_off as u64));
+            put(
+                &mut g,
+                base_off + 500,
+                &rand_seq(80, 0xE0 + base_off as u64),
+            );
         }
         let genome = GenomeIndex::from_seqs(&[("c1", &g)]);
         let mut primary = Vec::new();
         for base_off in [0u64, 1000] {
             for _ in 0..3 {
-                primary.push(read("c1", base_off, base_off + 580, &[(base_off + 240, base_off + 260)]));
+                primary.push(read(
+                    "c1",
+                    base_off,
+                    base_off + 580,
+                    &[(base_off + 240, base_off + 260)],
+                ));
             }
         }
         let cfg = DenovoConfig::default();
         let skeletons = pass1_skeletons(&primary, cfg.pass1_min_reads);
         let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
-        let reps: Vec<DenovoTranscript> =
-            collapse_loci(&transcripts).iter().map(|&i| transcripts[i].clone()).collect();
+        let reps: Vec<DenovoTranscript> = collapse_loci(&transcripts)
+            .iter()
+            .map(|&i| transcripts[i].clone())
+            .collect();
         let split = decompose_families(&detect_edges(&reps, &cfg.detect), &cfg.split);
         let colo = colocated_families(&reps, &split, 5_000_000, 2, &cfg.detect);
         assert_eq!(colo.len(), 1);
@@ -11884,16 +14273,28 @@ mod tests {
                 if shared == 0 {
                     continue;
                 }
-                let cov = crate::family::family_detect::family_graph::contiguous_core_coverage(&reps[i].seq, &reps[j].seq);
+                let cov = crate::family::family_detect::family_graph::contiguous_core_coverage(
+                    &reps[i].seq,
+                    &reps[j].seq,
+                );
                 eprintln!(
                     "  DIAG {}({}bp) <-> {}({}bp): shared_kmers={} core_cov={:.3}",
-                    reps[i].tid, reps[i].seq.len(), reps[j].tid, reps[j].seq.len(), shared, cov
+                    reps[i].tid,
+                    reps[i].seq.len(),
+                    reps[j].tid,
+                    reps[j].seq.len(),
+                    shared,
+                    cov
                 );
             }
         }
 
         let r = detect_families(&reads, &genome, &cfg);
-        let webs = r.families.iter().filter(|f| f.class == FamilyClass::Web).count();
+        let webs = r
+            .families
+            .iter()
+            .filter(|f| f.class == FamilyClass::Web)
+            .count();
         eprintln!(
             "DETECT: {} loci -> {} edges -> {} families ({} discrete + {} webs)",
             r.n_loci,
@@ -11947,21 +14348,42 @@ mod tests {
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         let skeletons = pass1_skeletons(&reads, cfg.pass1_min_reads);
         let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
-        let reps: Vec<DenovoTranscript> =
-            collapse_loci(&transcripts).iter().map(|&i| transcripts[i].clone()).collect();
-        eprintln!("=== {} reps (cnt_min={} cnt_max={} k_share={} t_core={}) ===", reps.len(), p.cnt_min, p.cnt_max, p.k_share, p.t_core);
+        let reps: Vec<DenovoTranscript> = collapse_loci(&transcripts)
+            .iter()
+            .map(|&i| transcripts[i].clone())
+            .collect();
+        eprintln!(
+            "=== {} reps (cnt_min={} cnt_max={} k_share={} t_core={}) ===",
+            reps.len(),
+            p.cnt_min,
+            p.cnt_max,
+            p.k_share,
+            p.t_core
+        );
         for (i, r) in reps.iter().enumerate() {
-            eprintln!("  [{i}] {} len={} exons={}", r.tid, r.seq.len(), r.introns.len() + 1);
+            eprintln!(
+                "  [{i}] {} len={} exons={}",
+                r.tid,
+                r.seq.len(),
+                r.introns.len() + 1
+            );
         }
         // replicate candidate_pairs internals: per-rep k-mers, ownership, informative set, informative sig.
-        let rep_kmers: Vec<BTreeMap<u64, u32>> = reps.iter().map(|r| canonical_kmer_first_pos(&r.seq)).collect();
+        let rep_kmers: Vec<BTreeMap<u64, u32>> = reps
+            .iter()
+            .map(|r| canonical_kmer_first_pos(&r.seq))
+            .collect();
         let mut owner: BTreeMap<u64, usize> = BTreeMap::new();
         for km in &rep_kmers {
             for c in km.keys() {
                 *owner.entry(*c).or_insert(0) += 1;
             }
         }
-        let info: BTreeSet<u64> = owner.iter().filter(|(_, &c)| c >= p.cnt_min && c <= p.cnt_max).map(|(&c, _)| c).collect();
+        let info: BTreeSet<u64> = owner
+            .iter()
+            .filter(|(_, &c)| c >= p.cnt_min && c <= p.cnt_max)
+            .map(|(&c, _)| c)
+            .collect();
         let sig: Vec<BTreeMap<u64, u32>> = rep_kmers
             .iter()
             .map(|km| {
@@ -11974,8 +14396,12 @@ mod tests {
         eprintln!("=== pairwise (raw=all shared k-mers, info=shared INFORMATIVE, span=prefilter core, bar=t_core*minlen, cov=ground-truth homology) ===");
         for i in 0..reps.len() {
             for j in (i + 1)..reps.len() {
-                let raw = rep_kmers[i].keys().filter(|c| rep_kmers[j].contains_key(*c)).count();
-                let (mut amin, mut amax, mut bmin, mut bmax, mut common) = (u32::MAX, 0u32, u32::MAX, 0u32, 0usize);
+                let raw = rep_kmers[i]
+                    .keys()
+                    .filter(|c| rep_kmers[j].contains_key(*c))
+                    .count();
+                let (mut amin, mut amax, mut bmin, mut bmax, mut common) =
+                    (u32::MAX, 0u32, u32::MAX, 0u32, 0usize);
                 for (c, &pa) in &sig[i] {
                     if let Some(&pb) = sig[j].get(c) {
                         common += 1;
@@ -11985,7 +14411,11 @@ mod tests {
                         bmax = bmax.max(pb);
                     }
                 }
-                let span = if common > 0 { (amax - amin).min(bmax - bmin) as usize } else { 0 };
+                let span = if common > 0 {
+                    (amax - amin).min(bmax - bmin) as usize
+                } else {
+                    0
+                };
                 let minlen = reps[i].seq.len().min(reps[j].seq.len());
                 let bar = p.t_core * minlen as f64;
                 let au = crate::family::family_detect::family_graph::upper_cow(&reps[i].seq);
@@ -11996,10 +14426,21 @@ mod tests {
                 // forced LCS (robust to poasta's flank-threading collapse): if lcs >> poasta cov on a small
                 // pair, poasta UNDER-counts a real shared core (false family split).
                 let minl = au.len().min(bu.len());
-                let lcs = (crate::family::family_detect::family_graph::longest_common_substring(&au, &bu)
-                    .max(crate::family::family_detect::family_graph::longest_common_substring(&au, &bru))) as f64
-                    / minl as f64;
-                let why = if common < p.k_share { "FAIL:k_share" } else if (span as f64) < bar { "FAIL:span" } else { "PASS" };
+                let lcs =
+                    (crate::family::family_detect::family_graph::longest_common_substring(&au, &bu)
+                        .max(
+                            crate::family::family_detect::family_graph::longest_common_substring(
+                                &au, &bru,
+                            ),
+                        )) as f64
+                        / minl as f64;
+                let why = if common < p.k_share {
+                    "FAIL:k_share"
+                } else if (span as f64) < bar {
+                    "FAIL:span"
+                } else {
+                    "PASS"
+                };
                 eprintln!(
                     "  [{i}]x[{j}] raw={raw} info={common} span={span} bar={bar:.0} poasta={cov:.3} lcs={lcs:.3} {why}{}",
                     if cov.max(lcs) >= p.t_core { "  <-HOMOLOG" } else { "" }
@@ -12010,13 +14451,33 @@ mod tests {
         eprintln!("candidate_pairs accepts: {cps:?}");
     }
 
-    fn bam_read(chrom: &str, start: u64, end: u64, name: &str, de: f32, is_secondary: bool) -> BamRead {
+    fn bam_read(
+        chrom: &str,
+        start: u64,
+        end: u64,
+        name: &str,
+        de: f32,
+        is_secondary: bool,
+    ) -> BamRead {
         let mapq = if is_secondary { 0 } else { 60 };
         let len = (end - start) as u64;
         BamRead {
             chrom: chrom.into(),
-            read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize], qual: vec![] },
-            mapq, name: name.into(), as_score: 500, de, is_supplementary: false, is_secondary, reverse: false, ts: None }
+            read: AlignedRead {
+                ref_start: start,
+                cigar: vec![('M', len)],
+                seq: vec![b'A'; len as usize],
+                qual: vec![],
+            },
+            mapq,
+            name: name.into(),
+            as_score: 500,
+            de,
+            is_supplementary: false,
+            is_secondary,
+            reverse: false,
+            ts: None,
+        }
     }
 
     #[test]
@@ -12054,17 +14515,28 @@ mod tests {
         let reads = vec![clean_a, clean_b, bleed];
         let r = rep("c1", 900, 5_200);
         let got = locus_confident_extent(&reads, std::slice::from_ref(&r), 0.0005);
-        assert_eq!(got, vec![Some((1_000, 2_100))], "the 0.02-divergence read must not set the boundary");
+        assert_eq!(
+            got,
+            vec![Some((1_000, 2_100))],
+            "the 0.02-divergence read must not set the boundary"
+        );
 
         // A locus whose reads are ALL divergent yields None, so the caller keeps today's span.
         let only_bleed = vec![bam_read("c1", 1_000, 5_000, "b", 0.02, false)];
-        assert_eq!(locus_confident_extent(&only_bleed, std::slice::from_ref(&r), 0.0005), vec![None]);
+        assert_eq!(
+            locus_confident_extent(&only_bleed, std::slice::from_ref(&r), 0.0005),
+            vec![None]
+        );
 
         // Clamping: a junction outside the confident-read extent still has to be contained.
         let mut spliced = rep("c1", 900, 5_200);
         spliced.introns = vec![(2_500, 3_000)];
         let got = locus_confident_extent(&reads, std::slice::from_ref(&spliced), 0.0005);
-        assert_eq!(got, vec![Some((1_000, 3_000))], "must not shrink past an asserted junction");
+        assert_eq!(
+            got,
+            vec![Some((1_000, 3_000))],
+            "must not shrink past an asserted junction"
+        );
     }
 
     fn rep(chrom: &str, start: u64, end: u64) -> DenovoTranscript {
@@ -12077,7 +14549,8 @@ mod tests {
             strand: '+',
             introns: vec![],
             seq: vec![b'A'; (end - start) as usize],
-         ..Default::default() }
+            ..Default::default()
+        }
     }
 
     /// Build a rep with explicit introns + read count (for prune_same_locus structural tests).
@@ -12091,20 +14564,46 @@ mod tests {
             strand: '-',
             introns,
             seq: vec![b'A'; (end - start) as usize],
-         ..Default::default() }
+            ..Default::default()
+        }
     }
 
     #[test]
     fn prune_same_locus_drops_unspliced_readthrough_keeps_tandems() {
         // The CAFAM0 shape: a 12-exon copy + its 1-exon unspliced read-through (contains it) + a genuine
         // tandem paralog at a disjoint locus with its OWN junctions.
-        let spliced = rep_s(82594889, 82620183, (0..11).map(|k| (82595000 + k * 1000, 82595500 + k * 1000)).collect(), 15);
+        let spliced = rep_s(
+            82594889,
+            82620183,
+            (0..11)
+                .map(|k| (82595000 + k * 1000, 82595500 + k * 1000))
+                .collect(),
+            15,
+        );
         let unspliced = rep_s(82594891, 82781357, vec![], 4); // 1 exon, contains `spliced`
-        let tandem = rep_s(82739824, 82765535, (0..7).map(|k| (82740000 + k * 1000, 82740500 + k * 1000)).collect(), 14);
-        let kept = prune_same_locus(vec![spliced.clone(), unspliced, tandem.clone()], &DetectParams::default());
+        let tandem = rep_s(
+            82739824,
+            82765535,
+            (0..7)
+                .map(|k| (82740000 + k * 1000, 82740500 + k * 1000))
+                .collect(),
+            14,
+        );
+        let kept = prune_same_locus(
+            vec![spliced.clone(), unspliced, tandem.clone()],
+            &DetectParams::default(),
+        );
         let starts: Vec<u64> = kept.iter().map(|c| c.start).collect();
-        assert_eq!(starts, vec![82594889, 82739824], "unspliced read-through dropped; spliced + tandem kept");
-        assert_eq!(kept[0].introns.len(), 11, "kept the 12-exon spliced representative, not the 1-exon");
+        assert_eq!(
+            starts,
+            vec![82594889, 82739824],
+            "unspliced read-through dropped; spliced + tandem kept"
+        );
+        assert_eq!(
+            kept[0].introns.len(),
+            11,
+            "kept the 12-exon spliced representative, not the 1-exon"
+        );
     }
 
     #[test]
@@ -12113,7 +14612,11 @@ mod tests {
         let iso_a = rep_s(100, 900, vec![(200, 300), (400, 500)], 5);
         let iso_b = rep_s(100, 700, vec![(200, 300)], 8); // shares junction (200,300)
         let kept = prune_same_locus(vec![iso_a, iso_b], &DetectParams::default());
-        assert_eq!(kept.len(), 1, "shared-junction isoforms collapse to one locus");
+        assert_eq!(
+            kept.len(),
+            1,
+            "shared-junction isoforms collapse to one locus"
+        );
         assert_eq!(kept[0].introns.len(), 2, "kept the 3-exon isoform");
     }
 
@@ -12128,7 +14631,11 @@ mod tests {
         para.strand = '-';
         let loci = distinct_locus_reps(vec![wide.clone(), frag, para.clone()], 3);
         let starts: Vec<u64> = loci.iter().map(|c| c.start).collect();
-        assert_eq!(starts, vec![1000, 50000], "nested fragment collapses into its locus; disjoint paralog kept");
+        assert_eq!(
+            starts,
+            vec![1000, 50000],
+            "nested fragment collapses into its locus; disjoint paralog kept"
+        );
     }
 
     #[test]
@@ -12139,7 +14646,11 @@ mod tests {
         let mut minus = rep_s(1000, 5000, vec![(2000, 3000)], 80);
         minus.strand = '-';
         let loci = distinct_locus_reps(vec![plus, minus], 3);
-        assert_eq!(loci.len(), 2, "balanced opposite-strand overlapping spans are distinct loci");
+        assert_eq!(
+            loci.len(),
+            2,
+            "balanced opposite-strand overlapping spans are distinct loci"
+        );
     }
 
     #[test]
@@ -12152,8 +14663,15 @@ mod tests {
         let mut anti = rep_s(105549018, 105552021, vec![], 3); // overlaps dom, opposite strand, 3 reads
         anti.strand = '-';
         let loci = distinct_locus_reps(vec![dom, anti], 3);
-        assert_eq!(loci.len(), 1, "minority antisense copy collapses into the real locus");
-        assert_eq!(loci[0].n_reads, 666, "the dominant (real) copy is the representative");
+        assert_eq!(
+            loci.len(),
+            1,
+            "minority antisense copy collapses into the real locus"
+        );
+        assert_eq!(
+            loci[0].n_reads, 666,
+            "the dominant (real) copy is the representative"
+        );
     }
 
     #[test]
@@ -12173,7 +14691,10 @@ mod tests {
         unspliced.distinguishing_uniq = 40; // would "distinguish" under the same-strand read rule too
         let loci = distinct_locus_reps(vec![spliced, unspliced], 3);
         assert_eq!(loci.len(), 1, "an overlapping junction-less rep is the locus's unspliced fraction, not a second locus");
-        assert_eq!(loci[0].n_reads, 100, "the spliced (real) copy is the representative");
+        assert_eq!(
+            loci[0].n_reads, 100,
+            "the spliced (real) copy is the representative"
+        );
     }
 
     #[test]
@@ -12183,7 +14704,11 @@ mod tests {
         let a = rep("chrX", 100, 200);
         let b = rep("chrX", 5000, 5100);
         let loci = distinct_locus_reps(vec![a, b], 3);
-        assert_eq!(loci.len(), 2, "disjoint junction-less copies are distinct loci");
+        assert_eq!(
+            loci.len(),
+            2,
+            "disjoint junction-less copies are distinct loci"
+        );
     }
 
     #[test]
@@ -12195,7 +14720,11 @@ mod tests {
         a.distinguishing_uniq = 40;
         let b = rep("chrX", 150, 250);
         let loci = distinct_locus_reps(vec![a, b], 3);
-        assert_eq!(loci.len(), 2, "two junction-less copies are decided by reads, not by the unspliced rule");
+        assert_eq!(
+            loci.len(),
+            2,
+            "two junction-less copies are decided by reads, not by the unspliced rule"
+        );
     }
 
     #[test]
@@ -12206,7 +14735,11 @@ mod tests {
         let mut unspliced = rep_s(127034654, 127036246, vec![], 19); // 1 bp past the spliced end
         unspliced.strand = '+';
         let loci = distinct_locus_reps(vec![spliced, unspliced], 3);
-        assert_eq!(loci.len(), 1, "a 1 bp overhang must not defeat the unspliced-fragment collapse");
+        assert_eq!(
+            loci.len(),
+            1,
+            "a 1 bp overhang must not defeat the unspliced-fragment collapse"
+        );
     }
 
     #[test]
@@ -12219,7 +14752,11 @@ mod tests {
         a.distinguishing_uniq = 40;
         let b = rep("chrX", 150, 250);
         let loci = distinct_locus_reps(vec![a, b], 3);
-        assert_eq!(loci.len(), 2, "a copy with 40 unique reads must not be merged");
+        assert_eq!(
+            loci.len(),
+            2,
+            "a copy with 40 unique reads must not be merged"
+        );
     }
 
     #[test]
@@ -12228,7 +14765,11 @@ mod tests {
         let a = rep("chrX", 100, 200);
         let b = rep("chrX", 150, 250);
         let loci = distinct_locus_reps(vec![a, b], 3);
-        assert_eq!(loci.len(), 1, "indistinguishable co-located copies still merge (K=0)");
+        assert_eq!(
+            loci.len(),
+            1,
+            "indistinguishable co-located copies still merge (K=0)"
+        );
     }
 
     #[test]
@@ -12237,9 +14778,23 @@ mod tests {
         // `reads_distinguish(0, 0, false, 0)` would be `0 >= 0` = true (spuriously "distinguishable"),
         // so `distinct_locus_reps` clamps `min_reads` to `.max(1)` before calling it. Two co-located
         // same-strand copies with zero unique-mapper support must still merge to one locus, not two.
-        let mut a = DenovoTranscript { chrom: "chrX".into(), start: 100, end: 200, strand: '+', n_reads: 3, ..Default::default() };
+        let mut a = DenovoTranscript {
+            chrom: "chrX".into(),
+            start: 100,
+            end: 200,
+            strand: '+',
+            n_reads: 3,
+            ..Default::default()
+        };
         a.distinguishing_uniq = 0;
-        let mut b = DenovoTranscript { chrom: "chrX".into(), start: 150, end: 250, strand: '+', n_reads: 3, ..Default::default() };
+        let mut b = DenovoTranscript {
+            chrom: "chrX".into(),
+            start: 150,
+            end: 250,
+            strand: '+',
+            n_reads: 3,
+            ..Default::default()
+        };
         b.distinguishing_uniq = 0;
         let loci = distinct_locus_reps(vec![a, b], 0);
         assert_eq!(loci.len(), 1, "min_reads=0 must still merge indistinguishable co-located copies, not invert the guard");
@@ -12253,7 +14808,11 @@ mod tests {
         // a stop (TAA) breaks the run; the longer side is kept.
         let with_stop = b"ATGAAATAAGGGTTTTGTCCCAAA"; // frame0: MK * GFCPK -> longest stop-free = "GFCPK"
         let orf = longest_orf_aa(with_stop);
-        assert!(orf.len() >= 5, "kept the longest stop-free run, got {:?}", String::from_utf8_lossy(&orf));
+        assert!(
+            orf.len() >= 5,
+            "kept the longest stop-free run, got {:?}",
+            String::from_utf8_lossy(&orf)
+        );
         assert!(!orf.contains(&b'*'), "ORF must not contain stop codons");
     }
 
@@ -12322,13 +14881,26 @@ mod tests {
         };
         // exons 100-200 (100 bp) and 300-450 (150 bp) => 250 bp exon-sum
         let mut t = DenovoTranscript {
-            chrom: "c".into(), start: 100, end: 450, introns: vec![(200, 300)],
-            seq: vec![b'A'; 250], strand: '+', ..Default::default()
+            chrom: "c".into(),
+            start: 100,
+            end: 450,
+            introns: vec![(200, 300)],
+            seq: vec![b'A'; 250],
+            strand: '+',
+            ..Default::default()
         };
         assert_eq!(lens(&t), vec![100, 150]);
-        assert_eq!(lens(&t).iter().sum::<usize>(), t.seq.len(), "slices must tile the exon-sum exactly");
+        assert_eq!(
+            lens(&t).iter().sum::<usize>(),
+            t.seq.len(),
+            "slices must tile the exon-sum exactly"
+        );
         t.strand = '-';
-        assert_eq!(lens(&t), vec![150, 100], "minus strand reverses the exon order in the stored seq");
+        assert_eq!(
+            lens(&t),
+            vec![150, 100],
+            "minus strand reverses the exon order in the stored seq"
+        );
         assert_eq!(lens(&t).iter().sum::<usize>(), t.seq.len());
     }
 
@@ -12369,10 +14941,16 @@ mod tests {
         // `--min-identity 0.98` silently admitted 0.70 edges. Both tiers must now move together.
         let p = homology_refine_params(Some(0.98), 4);
         assert_eq!(p.min_identity, 0.98);
-        assert_eq!(p.sensitive_identity, 0.98, "sensitive tier must track --min-identity, not stay at 0.70");
+        assert_eq!(
+            p.sensitive_identity, 0.98,
+            "sensitive tier must track --min-identity, not stay at 0.70"
+        );
         let d = RefineParams::default();
         assert_eq!(d.min_identity, 0.80);
-        assert_eq!(d.sensitive_identity, 0.60, "default sensitive floor is 0.60 -- the EFFECTIVE E_r floor");
+        assert_eq!(
+            d.sensitive_identity, 0.60,
+            "default sensitive floor is 0.60 -- the EFFECTIVE E_r floor"
+        );
     }
 
     #[test]
@@ -12389,13 +14967,37 @@ mod tests {
     fn protein_coheres_is_none_without_mmseqs() {
         // With protein_tail off / mmseqs absent the flag is None (no membership effect).
         let fam = vec![vec![
-            DenovoTranscript{tid:"a".into(),chrom:"c1".into(),start:0,end:300,n_reads:5,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec(), ..Default::default() },
-            DenovoTranscript{tid:"b".into(),chrom:"c1".into(),start:9000,end:9300,n_reads:4,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec(), ..Default::default() },
+            DenovoTranscript {
+                tid: "a".into(),
+                chrom: "c1".into(),
+                start: 0,
+                end: 300,
+                n_reads: 5,
+                strand: '+',
+                introns: vec![],
+                seq: b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec(),
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "b".into(),
+                chrom: "c1".into(),
+                start: 9000,
+                end: 9300,
+                n_reads: 4,
+                strand: '+',
+                introns: vec![],
+                seq: b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec(),
+                ..Default::default()
+            },
         ]];
-        let mut p = RefineParams::default(); p.protein_tail = false;
+        let mut p = RefineParams::default();
+        p.protein_tail = false;
         let flags = family_protein_coheres(&fam, &p);
         assert_eq!(flags.len(), 1);
-        assert_eq!(flags[0], None, "protein QC is None when protein tier is off");
+        assert_eq!(
+            flags[0], None,
+            "protein QC is None when protein tier is off"
+        );
     }
 
     #[test]
@@ -12407,7 +15009,11 @@ mod tests {
         let mut cp2 = rep_s(2200, 4200, vec![(2500, 2600), (3000, 3100)], 9); // overlaps 1000-3000 by 800bp
         cp2.seq = rand_seq(2000, 0xB2);
         let kept = prune_same_locus(vec![cp1, cp2], &DetectParams::default());
-        assert_eq!(kept.len(), 2, "disjoint-junction tandem copies preserved despite span overlap");
+        assert_eq!(
+            kept.len(),
+            2,
+            "disjoint-junction tandem copies preserved despite span overlap"
+        );
     }
 
     #[test]
@@ -12421,7 +15027,11 @@ mod tests {
         b.chrom = "NC_086018.1".into();
         b.strand = '-'; // opposite strand, different chrom — still a genuine paralog pair
         let kept = prune_same_locus(vec![a, b], &DetectParams::default());
-        assert_eq!(kept.len(), 2, "cross-chrom (even opposite-strand) copies are distinct loci → both kept");
+        assert_eq!(
+            kept.len(),
+            2,
+            "cross-chrom (even opposite-strand) copies are distinct loci → both kept"
+        );
     }
 
     #[test]
@@ -12433,8 +15043,15 @@ mod tests {
         let mut minus = rep_s(1100, 10900, vec![(6000, 7000), (8000, 9000)], 5); // overlaps plus, opposite strand
         minus.strand = '-';
         let kept = prune_same_locus(vec![plus, minus], &DetectParams::default());
-        assert_eq!(kept.len(), 1, "same-locus antisense overlap collapses to one");
-        assert_eq!(kept[0].strand, '+', "kept the more-structured/more-read (15-read 4-exon) copy");
+        assert_eq!(
+            kept.len(),
+            1,
+            "same-locus antisense overlap collapses to one"
+        );
+        assert_eq!(
+            kept[0].strand, '+',
+            "kept the more-structured/more-read (15-read 4-exon) copy"
+        );
     }
 
     #[test]
@@ -12449,7 +15066,11 @@ mod tests {
             1,
             "span-aware prune merges disjoint-junction isoforms with high span homology"
         );
-        assert_eq!(kept[0].introns.len(), 2, "kept the more-structured representative");
+        assert_eq!(
+            kept[0].introns.len(),
+            2,
+            "kept the more-structured representative"
+        );
     }
 
     #[test]
@@ -12491,14 +15112,29 @@ mod tests {
         ];
         let fam = SplitFamily {
             members: vec![0, 1, 2, 3],
-            stats: CommunityStats { n: 4, n_edges: 0, density: 1.0, avg_core_recip: 0.0, n_articulation: 0, lambda: 0 },
+            stats: CommunityStats {
+                n: 4,
+                n_edges: 0,
+                density: 1.0,
+                avg_core_recip: 0.0,
+                n_articulation: 0,
+                lambda: 0,
+            },
             class: FamilyClass::Family,
         };
         let colo = colocated_families(&reps, &[fam], 5_000_000, 2, &DetectParams::default());
-        assert_eq!(colo.len(), 1, "disjoint copies on one chromosome are ONE family regardless of strand");
+        assert_eq!(
+            colo.len(),
+            1,
+            "disjoint copies on one chromosome are ONE family regardless of strand"
+        );
         assert_eq!(colo[0].copies.len(), 4, "all four disjoint copies are kept");
         let strands: DetHashSet<char> = colo[0].copies.iter().map(|x| x.strand).collect();
-        assert_eq!(strands.len(), 2, "the family spans both strands (inverted duplication)");
+        assert_eq!(
+            strands.len(),
+            2,
+            "the family spans both strands (inverted duplication)"
+        );
     }
 
     #[test]
@@ -12518,12 +15154,25 @@ mod tests {
         let reps = vec![plus, minus];
         let edges = vec![(0usize, 1usize, 5usize)]; // reads de-tie the two copies
         let fams = families_from_conflict_graph(&reps, &edges, 2, &DenovoConfig::default());
-        assert_eq!(fams.len(), 1, "the inverted-duplication pair forms one O1 family");
-        assert_eq!(fams[0].len(), 2, "both copies retained (no strand split, no win cap)");
-        let chroms: std::collections::BTreeSet<&str> = fams[0].iter().map(|c| c.chrom.as_str()).collect();
+        assert_eq!(
+            fams.len(),
+            1,
+            "the inverted-duplication pair forms one O1 family"
+        );
+        assert_eq!(
+            fams[0].len(),
+            2,
+            "both copies retained (no strand split, no win cap)"
+        );
+        let chroms: std::collections::BTreeSet<&str> =
+            fams[0].iter().map(|c| c.chrom.as_str()).collect();
         assert_eq!(chroms.len(), 1, "it is a SAME-chromosome family");
         let strands: std::collections::BTreeSet<char> = fams[0].iter().map(|c| c.strand).collect();
-        assert_eq!(strands.len(), 2, "the two copies are on opposite strands (inverted duplication)");
+        assert_eq!(
+            strands.len(),
+            2,
+            "the two copies are on opposite strands (inverted duplication)"
+        );
     }
 
     #[test]
@@ -12535,8 +15184,19 @@ mod tests {
         ];
         let placements = build_read_placements(&bam, &reps);
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
-        assert!(!edges.is_empty(), "de-tied cross-locus read must produce a conflict edge");
+            2,
+            &placements,
+            &ConflictParams {
+                delta: 0.005,
+                de_max: 0.05,
+                min_reads: 1,
+                sig: None,
+            },
+        );
+        assert!(
+            !edges.is_empty(),
+            "de-tied cross-locus read must produce a conflict edge"
+        );
         assert_eq!(conflict_families(2, &edges), vec![vec![0, 1]]);
     }
 
@@ -12546,7 +15206,15 @@ mod tests {
         let bam = vec![bam_read("c1", 0, 200, "read_Y", 0.010, false)];
         let placements = build_read_placements(&bam, &reps);
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            2,
+            &placements,
+            &ConflictParams {
+                delta: 0.005,
+                de_max: 0.05,
+                min_reads: 1,
+                sig: None,
+            },
+        );
         assert!(edges.is_empty());
         assert!(conflict_families(2, &edges).is_empty());
     }
@@ -12557,9 +15225,20 @@ mod tests {
         let bam = vec![bam_read("c1", 450, 550, "unique_read", 0.010, false)];
         let placements = build_read_placements(&bam, &reps);
         let total: usize = placements.iter().map(|p| p.len()).sum();
-        assert_eq!(total, 1, "one record -> one best-overlap placement -> no cross-locus pair");
+        assert_eq!(
+            total, 1,
+            "one record -> one best-overlap placement -> no cross-locus pair"
+        );
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            2,
+            &placements,
+            &ConflictParams {
+                delta: 0.005,
+                de_max: 0.05,
+                min_reads: 1,
+                sig: None,
+            },
+        );
         assert!(edges.is_empty());
     }
 
@@ -12577,13 +15256,28 @@ mod tests {
             .map(|i| bam_read("c1", 1000, 6000, &format!("frag_read_{i}"), 0.004, false))
             .collect();
         let placements = build_read_placements(&bam, &reps);
-        assert!(placements.iter().all(|p| p.len() == 1),
-            "each record attributes to one best-overlap locus -> no cross-locus pair");
+        assert!(
+            placements.iter().all(|p| p.len() == 1),
+            "each record attributes to one best-overlap locus -> no cross-locus pair"
+        );
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3, sig: None });
-        assert!(edges.is_empty(), "over-split fragments must not form a conflict edge");
-        assert!(conflict_families(2, &edges).is_empty(),
-            "an over-split single locus is not a multi-copy family");
+            2,
+            &placements,
+            &ConflictParams {
+                delta: 0.005,
+                de_max: 0.05,
+                min_reads: 3,
+                sig: None,
+            },
+        );
+        assert!(
+            edges.is_empty(),
+            "over-split fragments must not form a conflict edge"
+        );
+        assert!(
+            conflict_families(2, &edges).is_empty(),
+            "an over-split single locus is not a multi-copy family"
+        );
     }
 
     #[test]
@@ -12596,8 +15290,19 @@ mod tests {
         ];
         let placements = build_read_placements(&bam, &reps);
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
-        assert!(edges.is_empty(), "diverged secondary (large de gap) is resolvable, not a conflict");
+            2,
+            &placements,
+            &ConflictParams {
+                delta: 0.005,
+                de_max: 0.05,
+                min_reads: 1,
+                sig: None,
+            },
+        );
+        assert!(
+            edges.is_empty(),
+            "diverged secondary (large de gap) is resolvable, not a conflict"
+        );
     }
 
     #[test]
@@ -12609,9 +15314,20 @@ mod tests {
         let bam = vec![bam_read("c1", 0, 200, "read_S", 0.010, false), supp];
         let placements = build_read_placements(&bam, &reps);
         let total: usize = placements.iter().map(|p| p.len()).sum();
-        assert_eq!(total, 1, "supplementary record excluded -> only the primary placement remains");
+        assert_eq!(
+            total, 1,
+            "supplementary record excluded -> only the primary placement remains"
+        );
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            2,
+            &placements,
+            &ConflictParams {
+                delta: 0.005,
+                de_max: 0.05,
+                min_reads: 1,
+                sig: None,
+            },
+        );
         assert!(edges.is_empty());
     }
 
@@ -12637,7 +15353,10 @@ mod tests {
         assert_eq!(split[1].members, vec![2, 3]);
         // density of a 2-node clique (1 edge / 1 possible) = 1.0.
         for sf in &split {
-            assert!((sf.stats.density - 1.0).abs() < 1e-9, "2-node clique density must be 1.0");
+            assert!(
+                (sf.stats.density - 1.0).abs() < 1e-9,
+                "2-node clique density must be 1.0"
+            );
         }
     }
 
@@ -12662,7 +15381,6 @@ mod tests {
         }
     }
 
-
     /// The real GSTM catalog: CAFAM1 correctly holds GSTM5 and GSTM1 as two disjoint copies, while CAFAM0
     /// holds GSTM3 plus a 30 kb single-intron readthrough transcript spanning BOTH of them. The readthrough
     /// shares sequence with two copies of another family — a defect no within-family check can see.
@@ -12676,9 +15394,16 @@ mod tests {
             c("CAFAM1", 129_211_328, 129_222_730), // GSTM1
         ];
         let found = catalog_overlaps(&copies);
-        let shared: Vec<_> =
-            found.iter().filter(|f| f.3 == OverlapKind::SharedAcrossFamilies).map(|f| (f.0, f.1)).collect();
-        assert_eq!(shared, vec![(1, 2), (1, 3)], "the readthrough must be flagged against BOTH real copies");
+        let shared: Vec<_> = found
+            .iter()
+            .filter(|f| f.3 == OverlapKind::SharedAcrossFamilies)
+            .map(|f| (f.0, f.1))
+            .collect();
+        assert_eq!(
+            shared,
+            vec![(1, 2), (1, 3)],
+            "the readthrough must be flagged against BOTH real copies"
+        );
         // GSTM3 is disjoint, and GSTM5/GSTM1 are disjoint from each other: no other pair.
         assert_eq!(found.len(), 2, "no spurious pairs: {found:?}");
     }
@@ -12687,10 +15412,16 @@ mod tests {
     fn catalog_overlaps_separates_duplicate_locus_from_containment() {
         let c = |f: &str, s: u64, e: u64| (f.to_string(), "c1".to_string(), s, e);
         // wobble: same interval twice, one family
-        let dup = vec![c("F", 164_381_222, 164_384_848), c("F", 164_381_237, 164_384_845)];
+        let dup = vec![
+            c("F", 164_381_222, 164_384_848),
+            c("F", 164_381_237, 164_384_845),
+        ];
         assert_eq!(catalog_overlaps(&dup)[0].3, OverlapKind::DuplicateLocus);
         // containment: a long readthrough enclosing a fragment, one family
-        let con = vec![c("F", 20_202_981, 20_390_694), c("F", 20_243_056, 20_379_683)];
+        let con = vec![
+            c("F", 20_202_981, 20_390_694),
+            c("F", 20_243_056, 20_379_683),
+        ];
         let g = catalog_overlaps(&con);
         assert_eq!(g[0].3, OverlapKind::Containment);
         assert!(g[0].2 < 0.9);
@@ -12700,7 +15431,9 @@ mod tests {
     }
 
     fn junc(list: &[(u64, u64, usize)]) -> DetHashMap<(String, u64, u64), usize> {
-        list.iter().map(|&(d, a, n)| (("c1".to_string(), d, a), n)).collect()
+        list.iter()
+            .map(|&(d, a, n)| (("c1".to_string(), d, a), n))
+            .collect()
     }
 
     /// The GSTM / DAZ / BPY2 shape: a single-exon span engulfing many distinct junctions is unspliced pre-mRNA.
@@ -12708,18 +15441,38 @@ mod tests {
     fn readthrough_single_exon_engulfing_many_junctions_is_flagged() {
         let mut rt = rep_s(1_000, 100_000, vec![], 12);
         rt.introns.clear();
-        let j = junc(&[(10_000, 11_000, 5), (20_000, 21_000, 4), (30_000, 31_000, 9),
-                       (40_000, 41_000, 3), (50_000, 51_000, 7)]);
-        assert!(is_unspliced_readthrough(&rt, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+        let j = junc(&[
+            (10_000, 11_000, 5),
+            (20_000, 21_000, 4),
+            (30_000, 31_000, 9),
+            (40_000, 41_000, 3),
+            (50_000, 51_000, 7),
+        ]);
+        assert!(is_unspliced_readthrough(
+            &rt,
+            &j,
+            READTHROUGH_MIN_SUPPORT,
+            READTHROUGH_MIN_DISTINCT
+        ));
     }
 
     /// A SPLICED transcript is a transcript model, never a readthrough — the rule must not touch it.
     #[test]
     fn readthrough_never_flags_a_spliced_transcript() {
         let spliced = rep_s(1_000, 100_000, vec![(10_000, 11_000), (20_000, 21_000)], 40);
-        let j = junc(&[(10_000, 11_000, 5), (20_000, 21_000, 4), (30_000, 31_000, 9),
-                       (40_000, 41_000, 3), (50_000, 51_000, 7)]);
-        assert!(!is_unspliced_readthrough(&spliced, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+        let j = junc(&[
+            (10_000, 11_000, 5),
+            (20_000, 21_000, 4),
+            (30_000, 31_000, 9),
+            (40_000, 41_000, 3),
+            (50_000, 51_000, 7),
+        ]);
+        assert!(!is_unspliced_readthrough(
+            &spliced,
+            &j,
+            READTHROUGH_MIN_SUPPORT,
+            READTHROUGH_MIN_DISTINCT
+        ));
     }
 
     /// TSPYL1: a real intronless gene with a handful of stray junctions inside its span (4 distinct) — KEPT.
@@ -12728,8 +15481,18 @@ mod tests {
     fn readthrough_keeps_real_intronless_gene_with_stray_junctions() {
         let mut gene = rep_s(1_000, 15_000, vec![], 2080);
         gene.introns.clear();
-        let j = junc(&[(2_000, 2_500, 3), (3_000, 3_500, 2), (4_000, 4_500, 5), (5_000, 5_500, 4)]);
-        assert!(!is_unspliced_readthrough(&gene, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+        let j = junc(&[
+            (2_000, 2_500, 3),
+            (3_000, 3_500, 2),
+            (4_000, 4_500, 5),
+            (5_000, 5_500, 4),
+        ]);
+        assert!(!is_unspliced_readthrough(
+            &gene,
+            &j,
+            READTHROUGH_MIN_SUPPORT,
+            READTHROUGH_MIN_DISTINCT
+        ));
     }
 
     /// A giant 115 kb intron carried by only 2 reads (below the locus gate) is a spurious splice — flagged.
@@ -12737,7 +15500,12 @@ mod tests {
     fn mischain_flags_sub_gate_giant_intron() {
         let sub_gate = rep_s(92_076_242, 92_198_994, vec![(92_077_601, 92_193_251)], 5); // 115.6 kb intron
         let j = junc(&[(92_077_601, 92_193_251, 2)]); // only 2 reads cross the giant intron -> below gate
-        assert!(is_giant_intron_mischain(&sub_gate, &j, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS));
+        assert!(is_giant_intron_mischain(
+            &sub_gate,
+            &j,
+            MISCHAIN_GIANT_INTRON_BP,
+            MISCHAIN_MIN_JUNCTION_READS
+        ));
     }
 
     /// A real large-gene paralog (POTE): its 48 kb intron is under the giant threshold AND well-supported (7
@@ -12747,11 +15515,21 @@ mod tests {
         // 48 kb intron < 50 kb giant threshold: not even examined.
         let pote = rep_s(32_266_748, 32_352_771, vec![(32_280_000, 32_328_000)], 6);
         let j = junc(&[(32_280_000, 32_328_000, 7)]);
-        assert!(!is_giant_intron_mischain(&pote, &j, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS));
+        assert!(!is_giant_intron_mischain(
+            &pote,
+            &j,
+            MISCHAIN_GIANT_INTRON_BP,
+            MISCHAIN_MIN_JUNCTION_READS
+        ));
         // and even a GIANT (60 kb) intron is kept when well-supported (>= 3 reads) — a real deep large gene.
         let big = rep_s(0, 200_000, vec![(20_000, 80_000)], 643);
         let jb = junc(&[(20_000, 80_000, 643)]);
-        assert!(!is_giant_intron_mischain(&big, &jb, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS));
+        assert!(!is_giant_intron_mischain(
+            &big,
+            &jb,
+            MISCHAIN_GIANT_INTRON_BP,
+            MISCHAIN_MIN_JUNCTION_READS
+        ));
     }
 
     /// retain_non_mischain drops the mis-chain and keeps the real large gene.
@@ -12759,12 +15537,15 @@ mod tests {
     fn retain_non_mischain_drops_only_the_mischain() {
         let mut txs = vec![
             rep_s(92_076_242, 92_198_994, vec![(92_077_601, 92_193_251)], 5), // mis-chain: 115kb / 2 reads
-            rep_s(0, 200_000, vec![(20_000, 80_000)], 643),                    // real: 60kb / 643 reads
+            rep_s(0, 200_000, vec![(20_000, 80_000)], 643), // real: 60kb / 643 reads
         ];
         let j = junc(&[(92_077_601, 92_193_251, 2), (20_000, 80_000, 643)]);
         retain_non_mischain(&mut txs, &j, "test");
         assert_eq!(txs.len(), 1);
-        assert_eq!(txs[0].start, 0, "the well-supported large gene survives; the mis-chain is dropped");
+        assert_eq!(
+            txs[0].start, 0,
+            "the well-supported large gene survives; the mis-chain is dropped"
+        );
     }
 
     fn locus_at(chrom: &str, start: u64, end: u64) -> DenovoTranscript {
@@ -12783,23 +15564,33 @@ mod tests {
     /// an out-of-range index are ignored; a lone pair still makes a 2-copy family.
     #[test]
     fn families_from_edges_applies_both_floors_and_groups_by_the_partition() {
-        let reps: Vec<DenovoTranscript> = (0..6).map(|k| locus_at("c1", k * 100_000, k * 100_000 + 20_000)).collect();
+        let reps: Vec<DenovoTranscript> = (0..6)
+            .map(|k| locus_at("c1", k * 100_000, k * 100_000 + 20_000))
+            .collect();
         let edges = vec![
-            (0, 1, 0.95, 0.90), (1, 2, 0.95, 0.90), (0, 2, 0.95, 0.90), // family {0,1,2}
-            (3, 4, 0.99, 0.60),                                         // family {3,4}
-            (2, 3, 0.79, 0.90),                                         // identity below floor
-            (4, 5, 0.95, 0.49),                                         // coverage below floor
-            (5, 5, 1.00, 1.00),                                         // self-edge
-            (5, 9, 1.00, 1.00),                                         // out of range
+            (0, 1, 0.95, 0.90),
+            (1, 2, 0.95, 0.90),
+            (0, 2, 0.95, 0.90), // family {0,1,2}
+            (3, 4, 0.99, 0.60), // family {3,4}
+            (2, 3, 0.79, 0.90), // identity below floor
+            (4, 5, 0.95, 0.49), // coverage below floor
+            (5, 5, 1.00, 1.00), // self-edge
+            (5, 9, 1.00, 1.00), // out of range
         ];
         let mut fams = families_from_edges(reps, &edges, 0.80, 0.50, 0.20, 2, 0);
         fams.sort_by_key(|f| std::cmp::Reverse(f.len()));
-        let starts: Vec<Vec<u64>> = fams.iter().map(|f| {
-            let mut s: Vec<u64> = f.iter().map(|t| t.start).collect();
-            s.sort_unstable();
-            s
-        }).collect();
-        assert_eq!(starts, vec![vec![0, 100_000, 200_000], vec![300_000, 400_000]]);
+        let starts: Vec<Vec<u64>> = fams
+            .iter()
+            .map(|f| {
+                let mut s: Vec<u64> = f.iter().map(|t| t.start).collect();
+                s.sort_unstable();
+                s
+            })
+            .collect();
+        assert_eq!(
+            starts,
+            vec![vec![0, 100_000, 200_000], vec![300_000, 400_000]]
+        );
     }
 
     /// Overlapping nodes are one locus, so a block of two overlapping nodes is not a family (< 2 distinct loci).
@@ -12821,10 +15612,15 @@ mod tests {
     #[test]
     fn bridge_transcripts_flags_the_weaker_readthrough_between_two_genes() {
         let txs = vec![
-            rep_s(0, 10_000, vec![(1_000, 2_000), (3_000, 4_000)], 37),           // gene A
-            rep_s(500, 9_000, vec![(3_000, 4_000), (5_000, 6_000)], 20),         // gene A isoform
+            rep_s(0, 10_000, vec![(1_000, 2_000), (3_000, 4_000)], 37), // gene A
+            rep_s(500, 9_000, vec![(3_000, 4_000), (5_000, 6_000)], 20), // gene A isoform
             rep_s(20_000, 30_000, vec![(21_000, 22_000), (23_000, 24_000)], 25), // gene B
-            rep_s(0, 30_000, vec![(5_000, 6_000), (12_000, 21_000), (21_000, 22_000)], 14), // readthrough
+            rep_s(
+                0,
+                30_000,
+                vec![(5_000, 6_000), (12_000, 21_000), (21_000, 22_000)],
+                14,
+            ), // readthrough
         ];
         assert_eq!(bridge_transcripts(&txs), vec![3]);
         let mut v = txs.clone();
@@ -12863,7 +15659,13 @@ mod tests {
     // ---------------------------------------------------------------------------------------------
 
     fn pread(s: u64, e: u64, introns: Vec<(u64, u64)>) -> PrimaryRead {
-        PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: e, introns, reverse: false }
+        PrimaryRead {
+            chrom: "c1".into(),
+            ref_start: s,
+            ref_end: e,
+            introns,
+            reverse: false,
+        }
     }
 
     /// THE REGRESSION. The real `GWFAM244:2` shape, measured on the matched-individual BAM
@@ -12903,15 +15705,17 @@ mod tests {
     fn retain_local_reads_drops_only_the_escaping_reads_and_counts_them() {
         let mut reads = vec![
             pread(122_741_457, 122_743_192, vec![(122_741_900, 122_744_037)]), // 2,137 bp — a real intron
-            pread(0, 200_000, vec![(20_000, 68_000)]),                          // 48 kb POTE — under giant
-            pread(122_741_457, 123_746_276, vec![(122_919_265, 123_746_276)]),  // 827 kb — escapes
-            pread(19_611_985, 20_383_478, vec![(19_611_985, 20_383_478)]),      // 771 kb — escapes
-            pread(1_000, 4_000, vec![]),                                        // unspliced local
+            pread(0, 200_000, vec![(20_000, 68_000)]), // 48 kb POTE — under giant
+            pread(122_741_457, 123_746_276, vec![(122_919_265, 123_746_276)]), // 827 kb — escapes
+            pread(19_611_985, 20_383_478, vec![(19_611_985, 20_383_478)]), // 771 kb — escapes
+            pread(1_000, 4_000, vec![]),               // unspliced local
         ];
         let dropped = retain_local_reads(&mut reads);
         assert_eq!(dropped, 2, "exactly the two giant-gap reads");
         assert_eq!(reads.len(), 3);
-        assert!(reads.iter().all(|r| !is_mischained_read(r, MISCHAIN_GIANT_INTRON_BP)));
+        assert!(reads
+            .iter()
+            .all(|r| !is_mischained_read(r, MISCHAIN_GIANT_INTRON_BP)));
     }
 
     /// GUARD — ONE SOURCE OF TRUTH FOR THE THRESHOLD.
@@ -12928,7 +15732,9 @@ mod tests {
     #[test]
     fn mischain_threshold_has_exactly_one_definition_site() {
         fn rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
             for e in rd.flatten() {
                 let p = e.path();
                 if p.is_dir() {
@@ -12941,7 +15747,11 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut files = Vec::new();
         rs_files(&root, &mut files);
-        assert!(files.len() > 5, "scan found {} .rs files under {root:?} — the scan is broken, not the code", files.len());
+        assert!(
+            files.len() > 5,
+            "scan found {} .rs files under {root:?} — the scan is broken, not the code",
+            files.len()
+        );
 
         // The needle is ASSEMBLED AT RUNTIME. Spelling it as one literal would put the needle into this
         // very file and the guard would count ITSELF as a second definition — which is exactly what it
@@ -12951,7 +15761,9 @@ mod tests {
         let needle = format!("pub {} {}", "const", "MISCHAIN_GIANT_INTRON_BP");
         let mut defs: Vec<String> = Vec::new();
         for f in &files {
-            let Ok(txt) = std::fs::read_to_string(f) else { continue };
+            let Ok(txt) = std::fs::read_to_string(f) else {
+                continue;
+            };
             for (i, line) in txt.lines().enumerate() {
                 let t = line.trim_start();
                 if t.starts_with("//") {
@@ -12967,7 +15779,10 @@ mod tests {
             1,
             "MISCHAIN_GIANT_INTRON_BP must have exactly ONE definition site; found {defs:?}"
         );
-        assert_eq!(MISCHAIN_GIANT_INTRON_BP, 50_000, "the parsed-by-Python literal changed value");
+        assert_eq!(
+            MISCHAIN_GIANT_INTRON_BP, 50_000,
+            "the parsed-by-Python literal changed value"
+        );
     }
 
     /// Integration: `maybe_salvage_mischain` before `pass1_skeletons_robust` recovers LOCAL seeding at both
@@ -12994,21 +15809,39 @@ mod tests {
     #[test]
     fn salvage_seeds_local_locus_that_a_mischain_bridge_would_lose() {
         use crate::family::denovo_assemble::{pass1_skeletons_robust, PrimaryRead, Skeleton};
-        let mk = |s: u64, e: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "chr1".into(), ref_start: s, ref_end: e, introns, reverse: false };
+        let mk = |s: u64, e: u64, introns: Vec<(u64, u64)>| PrimaryRead {
+            chrom: "chr1".into(),
+            ref_start: s,
+            ref_end: e,
+            introns,
+            reverse: false,
+        };
         let mut reads = vec![];
-        for _ in 0..3 { reads.push(mk(1000, 1100, vec![])); } // locus A natives
-        for _ in 0..3 { reads.push(mk(900_000, 900_100, vec![])); } // locus B natives
-        // 2 (not 3!) spurious bridge reads: their shared junction (1100, 900_000) is then supported by
-        // exactly 2 reads -- BELOW MISCHAIN_MIN_JUNCTION_READS (3), so `is_giant_intron_mischain`'s own
-        // criterion (and split_mischained_reads', which reuses it) flags it as spurious. At 3 reads it would
-        // sit AT the gate (not "fewer than") and never be cut -- see `mischain_keeps_real_large_gene_with_well_supported_intron`.
-        for _ in 0..2 { reads.push(mk(1000, 900_100, vec![(1100, 900_000)])); }
+        for _ in 0..3 {
+            reads.push(mk(1000, 1100, vec![]));
+        } // locus A natives
+        for _ in 0..3 {
+            reads.push(mk(900_000, 900_100, vec![]));
+        } // locus B natives
+          // 2 (not 3!) spurious bridge reads: their shared junction (1100, 900_000) is then supported by
+          // exactly 2 reads -- BELOW MISCHAIN_MIN_JUNCTION_READS (3), so `is_giant_intron_mischain`'s own
+          // criterion (and split_mischained_reads', which reuses it) flags it as spurious. At 3 reads it would
+          // sit AT the gate (not "fewer than") and never be cut -- see `mischain_keeps_real_large_gene_with_well_supported_intron`.
+        for _ in 0..2 {
+            reads.push(mk(1000, 900_100, vec![(1100, 900_000)]));
+        }
 
         let cfg_off = DenovoConfig::default();
-        let cfg_on = DenovoConfig { mischain_salvage: true, ..DenovoConfig::default() };
+        let cfg_on = DenovoConfig {
+            mischain_salvage: true,
+            ..DenovoConfig::default()
+        };
 
         // OFF must not transform reads at all.
-        assert!(maybe_salvage_mischain(&reads, &cfg_off).is_none(), "OFF must not transform reads");
+        assert!(
+            maybe_salvage_mischain(&reads, &cfg_off).is_none(),
+            "OFF must not transform reads"
+        );
 
         let reads_off = maybe_salvage_mischain(&reads, &cfg_off).unwrap_or_else(|| reads.clone());
         let reads_on = maybe_salvage_mischain(&reads, &cfg_on).unwrap_or_else(|| reads.clone());
@@ -13017,21 +15850,43 @@ mod tests {
 
         let bounded_at = |sk: &[Skeleton], lo: u64, hi: u64| -> Option<u32> {
             sk.iter()
-                .find(|s| s.chrom == "chr1" && s.start <= hi && s.end >= lo && s.end - s.start < 300_000)
+                .find(|s| {
+                    s.chrom == "chr1" && s.start <= hi && s.end >= lo && s.end - s.start < 300_000
+                })
                 .map(|s| s.n_reads)
         };
 
         // OFF: each locus seeded by its 3 native reads only; the bridge reads contribute nothing (their
         // 2-read chain never reaches the skeleton min-reads gate).
-        assert_eq!(bounded_at(&sk_off, 1000, 1100), Some(3), "OFF: locus A seeded only by native reads");
-        assert_eq!(bounded_at(&sk_off, 900_000, 900_100), Some(3), "OFF: locus B seeded only by native reads");
-        assert_eq!(sk_off.len(), 2, "OFF: no phantom/giant skeleton from the sub-gate bridge chain");
+        assert_eq!(
+            bounded_at(&sk_off, 1000, 1100),
+            Some(3),
+            "OFF: locus A seeded only by native reads"
+        );
+        assert_eq!(
+            bounded_at(&sk_off, 900_000, 900_100),
+            Some(3),
+            "OFF: locus B seeded only by native reads"
+        );
+        assert_eq!(
+            sk_off.len(),
+            2,
+            "OFF: no phantom/giant skeleton from the sub-gate bridge chain"
+        );
 
         // ON: the salvaged local segments join each locus's native cluster -- strictly MORE read support at
         // BOTH ends, the real invariant (not just "a skeleton exists", which is already true OFF).
         assert!(bounded_at(&sk_on, 900_000, 900_100).unwrap_or(0) >= 1);
-        assert_eq!(bounded_at(&sk_on, 1000, 1100), Some(5), "ON: locus A gains the 2 salvaged local segments");
-        assert_eq!(bounded_at(&sk_on, 900_000, 900_100), Some(5), "ON: locus B gains the 2 salvaged local segments");
+        assert_eq!(
+            bounded_at(&sk_on, 1000, 1100),
+            Some(5),
+            "ON: locus A gains the 2 salvaged local segments"
+        );
+        assert_eq!(
+            bounded_at(&sk_on, 900_000, 900_100),
+            Some(5),
+            "ON: locus B gains the 2 salvaged local segments"
+        );
         assert!(
             bounded_at(&sk_on, 1000, 1100).unwrap() > bounded_at(&sk_off, 1000, 1100).unwrap(),
             "salvage must add strictly more bounded local support at A, not merely re-derive OFF's count"
@@ -13040,7 +15895,11 @@ mod tests {
             bounded_at(&sk_on, 900_000, 900_100).unwrap() > bounded_at(&sk_off, 900_000, 900_100).unwrap(),
             "salvage must add strictly more bounded local support at B, not merely re-derive OFF's count"
         );
-        assert_eq!(sk_on.len(), 2, "ON: still exactly the two real loci, no phantom bridge skeleton");
+        assert_eq!(
+            sk_on.len(),
+            2,
+            "ON: still exactly the two real loci, no phantom bridge skeleton"
+        );
     }
 
     /// EEF1A1 -> LOC109023808: a retrocopy has NO introns, so the spliced parent's cross-mapping reads align
@@ -13049,7 +15908,12 @@ mod tests {
     fn readthrough_keeps_an_intronless_retrocopy() {
         let mut retro = rep_s(97_380_144, 97_381_766, vec![], 15);
         retro.introns.clear();
-        assert!(!is_unspliced_readthrough(&retro, &junc(&[]), READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+        assert!(!is_unspliced_readthrough(
+            &retro,
+            &junc(&[]),
+            READTHROUGH_MIN_SUPPORT,
+            READTHROUGH_MIN_DISTINCT
+        ));
     }
 
     /// A junction must lie ENTIRELY inside the span. A gene nested in another gene's intron sees the host's
@@ -13059,9 +15923,20 @@ mod tests {
         let mut nested = rep_s(10_000, 11_000, vec![], 50);
         nested.introns.clear();
         // the host gene's intron spans the nested gene entirely: donor before, acceptor after.
-        let j = junc(&[(9_000, 12_000, 90), (8_000, 13_000, 80), (7_000, 14_000, 70),
-                       (6_000, 15_000, 60), (5_000, 16_000, 50), (4_000, 17_000, 40)]);
-        assert!(!is_unspliced_readthrough(&nested, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+        let j = junc(&[
+            (9_000, 12_000, 90),
+            (8_000, 13_000, 80),
+            (7_000, 14_000, 70),
+            (6_000, 15_000, 60),
+            (5_000, 16_000, 50),
+            (4_000, 17_000, 40),
+        ]);
+        assert!(!is_unspliced_readthrough(
+            &nested,
+            &j,
+            READTHROUGH_MIN_SUPPORT,
+            READTHROUGH_MIN_DISTINCT
+        ));
     }
 
     /// Junctions below the support floor are alignment noise, not splicing evidence.
@@ -13069,9 +15944,20 @@ mod tests {
     fn readthrough_ignores_singleton_junctions() {
         let mut rt = rep_s(1_000, 100_000, vec![], 12);
         rt.introns.clear();
-        let j = junc(&[(10_000, 11_000, 1), (20_000, 21_000, 1), (30_000, 31_000, 1),
-                       (40_000, 41_000, 1), (50_000, 51_000, 1), (60_000, 61_000, 1)]);
-        assert!(!is_unspliced_readthrough(&rt, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+        let j = junc(&[
+            (10_000, 11_000, 1),
+            (20_000, 21_000, 1),
+            (30_000, 31_000, 1),
+            (40_000, 41_000, 1),
+            (50_000, 51_000, 1),
+            (60_000, 61_000, 1),
+        ]);
+        assert!(!is_unspliced_readthrough(
+            &rt,
+            &j,
+            READTHROUGH_MIN_SUPPORT,
+            READTHROUGH_MIN_DISTINCT
+        ));
     }
 
     /// A locus contributes ambiguity only from PRIMARY reads that overlap it. Supplementary records are
@@ -13092,7 +15978,10 @@ mod tests {
             as_score: 100,
             de: 0.01,
             is_supplementary: supp,
-            is_secondary: false, reverse: false, ts: None };
+            is_secondary: false,
+            reverse: false,
+            ts: None,
+        };
         let reads = vec![
             mk(1_100, 0, false),  // ambiguous, inside  -> numerator + denominator
             mk(1_200, 60, false), // unique, inside     -> denominator only
@@ -13111,12 +16000,23 @@ mod tests {
     fn single_copy_baseline_excludes_family_copies() {
         use crate::family::single_copy::single_copy_loci;
         let mk = |tid: &str, start: u64| DenovoTranscript {
-            tid: tid.into(), chrom: "c1".into(), start, end: start + 100, n_reads: 12, strand: '+',
-            introns: vec![], seq: vec![],
-         ..Default::default() };
+            tid: tid.into(),
+            chrom: "c1".into(),
+            start,
+            end: start + 100,
+            n_reads: 12,
+            strand: '+',
+            introns: vec![],
+            seq: vec![],
+            ..Default::default()
+        };
         let (a, b, c) = (mk("a", 0), mk("b", 1000), mk("c", 2000));
         let families = vec![ColocatedFamily {
-            family_id: "F0".into(), chrom: "c1".into(), start: 0, end: 1100, copies: vec![a.clone(), b.clone()],
+            family_id: "F0".into(),
+            chrom: "c1".into(),
+            start: 0,
+            end: 1100,
+            copies: vec![a.clone(), b.clone()],
         }];
         let sc = single_copy_loci(&[a, b, c], &[12, 12, 12], &families);
         assert_eq!(sc.len(), 1);
@@ -13135,7 +16035,10 @@ mod tests {
     #[test]
     fn collapse_enumerate_defaults_off_and_reads_env() {
         let d = DenovoConfig::default();
-        assert!(!d.collapse_enumerate, "must default OFF for byte-identical behavior");
+        assert!(
+            !d.collapse_enumerate,
+            "must default OFF for byte-identical behavior"
+        );
         std::env::set_var("RUSTLE_COLLAPSE_ENUMERATE", "1");
         assert!(DenovoConfig::from_env().collapse_enumerate);
         std::env::remove_var("RUSTLE_COLLAPSE_ENUMERATE");
@@ -13149,23 +16052,41 @@ mod tests {
         let rep = rep_s(1_000, 2_000, vec![], 10);
         let mk = |start: u64| BamRead {
             chrom: "c1".into(),
-            read: AlignedRead { ref_start: start, cigar: vec![('M', 100)], seq: vec![b'A'; 100], qual: vec![30; 100] },
+            read: AlignedRead {
+                ref_start: start,
+                cigar: vec![('M', 100)],
+                seq: vec![b'A'; 100],
+                qual: vec![30; 100],
+            },
             mapq: 0,
             name: format!("r{start}"),
             as_score: 100,
             de: 0.01,
             is_supplementary: false,
-            is_secondary: false, reverse: false, ts: None };
+            is_secondary: false,
+            reverse: false,
+            ts: None,
+        };
         let reads = vec![mk(1_100), mk(1_200), mk(9_000)];
         let fa = gated_family(&rep, &reads, 3, "DSFAM7".into());
         assert_eq!(fa.n_copies, 3, "n_copies is chi(H)");
         assert_eq!(fa.collapsed_copies, 3, "records how the count was obtained");
-        assert_eq!(fa.copy_tids.len(), 1, "only the assembled rep has a sequence");
+        assert_eq!(
+            fa.copy_tids.len(),
+            1,
+            "only the assembled rep has a sequence"
+        );
         assert_eq!(fa.n_reads, 2, "only the two overlapping reads");
-        assert!(fa.copy_psv_alleles.is_empty(), "no per-copy consensus is materialised");
+        assert!(
+            fa.copy_psv_alleles.is_empty(),
+            "no per-copy consensus is materialised"
+        );
         for (_, a) in &fa.assignments {
             assert_eq!(a.status, AssignStatus::Tied);
-            assert_eq!(a.min_p_value, 1.0, "no distinguishing column exists: that is the honest certificate");
+            assert_eq!(
+                a.min_p_value, 1.0,
+                "no distinguishing column exists: that is the honest certificate"
+            );
         }
     }
 
@@ -13175,24 +16096,49 @@ mod tests {
         // occupies, and every read on them abstains (Tied). Overlapping tied reps are dropped.
         let mk = |start: u64| BamRead {
             chrom: "c1".into(),
-            read: AlignedRead { ref_start: start, cigar: vec![('M', 100)], seq: vec![b'A'; 100], qual: vec![30; 100] },
+            read: AlignedRead {
+                ref_start: start,
+                cigar: vec![('M', 100)],
+                seq: vec![b'A'; 100],
+                qual: vec![30; 100],
+            },
             mapq: 0,
             name: format!("r{start}"),
             as_score: 100,
             de: 0.01,
             is_supplementary: false,
-            is_secondary: false, reverse: false, ts: None };
-        let tied = vec![rep_s(1_000, 1_500, vec![], 5), rep_s(5_000, 5_500, vec![], 5)];
+            is_secondary: false,
+            reverse: false,
+            ts: None,
+        };
+        let tied = vec![
+            rep_s(1_000, 1_500, vec![], 5),
+            rep_s(5_000, 5_500, vec![], 5),
+        ];
         let emitted = vec![("c1".to_string(), 900u64, 1_100u64)]; // overlaps the first tied rep only
         let reads = vec![mk(1_050), mk(5_100)];
         let fams = tied_existence_families(&tied, &emitted, &reads, 3);
-        assert_eq!(fams.len(), 1, "only the tied rep at the free locus is appended");
-        assert_eq!(fams[0].family_id, "TSFAM3", "id continues from next_family_index");
+        assert_eq!(
+            fams.len(),
+            1,
+            "only the tied rep at the free locus is appended"
+        );
+        assert_eq!(
+            fams[0].family_id, "TSFAM3",
+            "id continues from next_family_index"
+        );
         assert_eq!(fams[0].n_copies, 1, "singleton existence copy");
         assert_eq!(fams[0].copy_spans, vec![("c1".to_string(), 5_000, 5_500)]);
-        assert!(!fams[0].assignments.is_empty(), "the overlapping read is tied to it");
+        assert!(
+            !fams[0].assignments.is_empty(),
+            "the overlapping read is tied to it"
+        );
         for (_, a) in &fams[0].assignments {
-            assert_eq!(a.status, AssignStatus::Tied, "existence-only: every read abstains (K=0)");
+            assert_eq!(
+                a.status,
+                AssignStatus::Tied,
+                "existence-only: every read abstains (K=0)"
+            );
         }
     }
 
@@ -13201,8 +16147,18 @@ mod tests {
     /// secondaries, inflating the DAZ readthrough span from 56 to 154 distinct junctions.
     #[test]
     fn read_junction_support_counts_each_primary_read_once() {
-        let pr = |s: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: s + 400, introns, reverse: false };
-        let reads = vec![pr(50, vec![(100, 200)]), pr(60, vec![(100, 200)]), pr(70, vec![(300, 400)])];
+        let pr = |s: u64, introns: Vec<(u64, u64)>| PrimaryRead {
+            chrom: "c1".into(),
+            ref_start: s,
+            ref_end: s + 400,
+            introns,
+            reverse: false,
+        };
+        let reads = vec![
+            pr(50, vec![(100, 200)]),
+            pr(60, vec![(100, 200)]),
+            pr(70, vec![(300, 400)]),
+        ];
         let sup = read_junction_support(&reads);
         assert_eq!(sup.get(&("c1".to_string(), 100, 200)), Some(&2));
         assert_eq!(sup.get(&("c1".to_string(), 300, 400)), Some(&1));
@@ -13218,9 +16174,16 @@ mod tests {
             support.insert(("c1".to_string(), i * 100, i * 100 + 50), 2usize);
         }
         let mk = |tid: &str, introns: Vec<(u64, u64)>| DenovoTranscript {
-            tid: tid.into(), chrom: "c1".into(), start: 0, end: 1000, n_reads: 5, strand: '+', introns,
+            tid: tid.into(),
+            chrom: "c1".into(),
+            start: 0,
+            end: 1000,
+            n_reads: 5,
+            strand: '+',
+            introns,
             seq: vec![b'A'; 50],
-         ..Default::default() };
+            ..Default::default()
+        };
         let mut ts = vec![mk("readthrough", vec![]), mk("spliced", vec![(100, 150)])];
         retain_non_readthrough(&mut ts, &support, "test");
         assert_eq!(ts.len(), 1, "the single-exon engulfer is dropped");
@@ -13232,11 +16195,22 @@ mod tests {
     /// the same locus had different boundaries in O1 and O2.
     #[test]
     fn skeleton_terminal_trim_is_uniform_k() {
-        let mk = |s: u64| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: 500, introns: vec![(200, 300)], reverse: false };
+        let mk = |s: u64| PrimaryRead {
+            chrom: "c1".into(),
+            ref_start: s,
+            ref_end: 500,
+            introns: vec![(200, 300)],
+            reverse: false,
+        };
         let reads = vec![mk(100), mk(100), mk(100), mk(10)]; // one runaway 5' read
-        assert_eq!(pass1_skeletons(&reads, 2)[0].start, 10, "k=1 keeps the runaway");
         assert_eq!(
-            pass1_skeletons_robust(&reads, 2, DenovoConfig::default().min_terminal_support)[0].start,
+            pass1_skeletons(&reads, 2)[0].start,
+            10,
+            "k=1 keeps the runaway"
+        );
+        assert_eq!(
+            pass1_skeletons_robust(&reads, 2, DenovoConfig::default().min_terminal_support)[0]
+                .start,
             100,
             "the k every path now uses trims it"
         );
@@ -13244,7 +16218,10 @@ mod tests {
 
     #[test]
     fn denovoconfig_default_homology_primary_is_off() {
-        assert!(!DenovoConfig::default().homology_primary, "default must be byte-identical to today (E_c oracle)");
+        assert!(
+            !DenovoConfig::default().homology_primary,
+            "default must be byte-identical to today (E_c oracle)"
+        );
     }
 
     /// Task 2 (O1<->O2 harmony): `detect_and_assign`'s `cfg.homology_primary == false` branch composes
@@ -13260,7 +16237,8 @@ mod tests {
         let p = SplitParams::default();
 
         // exactly the `!cfg.homology_primary` branch body in `detect_and_assign`:
-        let edges_f64: Vec<(usize, usize, f64)> = c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+        let edges_f64: Vec<(usize, usize, f64)> =
+            c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
         let via_off_branch = to_split_families(&c_fams, &edges_f64, &p);
 
         // the pre-existing path:
@@ -13282,17 +16260,32 @@ mod tests {
     fn homology_oracle_unions_uniquely_mappable_pair() {
         // E_c: no conflict edge between the two loci at all -> conflict_families finds NO family (both
         // copies would vanish from the family roster, the exact drop this task fixes).
-        assert!(conflict_families(2, &[]).is_empty(), "no conflict edge => E_c forms no family at all");
+        assert!(
+            conflict_families(2, &[]).is_empty(),
+            "no conflict edge => E_c forms no family at all"
+        );
 
         // The partition step (`gamma_quasi_clique_partition`) unions a homology edge into one family. This
         // is proven with a SYNTHETIC edge first (independent of minimap2 availability), then confirmed with
         // the real minimap2-backed `homology_edges_all_reps` when the binary is present.
         let synthetic_edges_f64: Vec<(usize, usize, f64)> = vec![(0, 1, 1.0)];
         let synthetic_families =
-            crate::family::family_detect::family_split::gamma_quasi_clique_partition(2, &synthetic_edges_f64, 0.20);
-        assert_eq!(synthetic_families, vec![vec![0, 1]], "homology edge must union both loci into ONE family");
+            crate::family::family_detect::family_split::gamma_quasi_clique_partition(
+                2,
+                &synthetic_edges_f64,
+                0.20,
+            );
+        assert_eq!(
+            synthetic_families,
+            vec![vec![0, 1]],
+            "homology edge must union both loci into ONE family"
+        );
 
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("minimap2 absent; skipping the real homology_edges_all_reps confirmation");
             return;
         }
@@ -13301,37 +16294,113 @@ mod tests {
         // paralog pair, i.e. exactly the copies read-conflict (E_c) can never link.
         let base = rand_seq(900, 0x22);
         let mut para = base.clone();
-        for k in (0..para.len()).step_by(25) { para[k] = b"ACGT"[(para[k] as usize + 1) % 4]; }
+        for k in (0..para.len()).step_by(25) {
+            para[k] = b"ACGT"[(para[k] as usize + 1) % 4];
+        }
         let reps = vec![
-            DenovoTranscript { tid: "u0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base, ..Default::default() },
-            DenovoTranscript { tid: "u1".into(), chrom: "c2".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: para, ..Default::default() },
+            DenovoTranscript {
+                tid: "u0".into(),
+                chrom: "c1".into(),
+                start: 0,
+                end: 900,
+                n_reads: 10,
+                strand: '+',
+                introns: vec![],
+                seq: base,
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "u1".into(),
+                chrom: "c2".into(),
+                start: 0,
+                end: 900,
+                n_reads: 10,
+                strand: '+',
+                introns: vec![],
+                seq: para,
+                ..Default::default()
+            },
         ];
         let params = RefineParams::default();
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
-        assert!(edges.contains(&(0, 1)), "near-identical uniquely-mapping pair must be E_r-linked, got {:?}", edges);
+        assert!(
+            edges.contains(&(0, 1)),
+            "near-identical uniquely-mapping pair must be E_r-linked, got {:?}",
+            edges
+        );
         let edges_f64: Vec<(usize, usize, f64)> = edges.iter().map(|&(a, b)| (a, b, 1.0)).collect();
-        let families = crate::family::family_detect::family_split::gamma_quasi_clique_partition(2, &edges_f64, 0.20);
-        assert_eq!(families, vec![vec![0, 1]], "the real homology oracle must union the uniquely-mappable pair");
+        let families = crate::family::family_detect::family_split::gamma_quasi_clique_partition(
+            2, &edges_f64, 0.20,
+        );
+        assert_eq!(
+            families,
+            vec![vec![0, 1]],
+            "the real homology oracle must union the uniquely-mappable pair"
+        );
     }
 
     #[test]
     fn homology_edges_links_two_similar_reps_not_divergent() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
-            eprintln!("minimap2 absent; skipping"); return;
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("minimap2 absent; skipping");
+            return;
         }
         // rep 0 and rep 1: same 900bp sequence with ~5% mismatch (an ancient paralog); rep 2: random (unrelated).
         let base = rand_seq(900, 0x11);
         let mut para = base.clone();
-        for k in (0..para.len()).step_by(20) { para[k] = b"ACGT"[(para[k] as usize + 1) % 4]; } // ~5% divergence
+        for k in (0..para.len()).step_by(20) {
+            para[k] = b"ACGT"[(para[k] as usize + 1) % 4];
+        } // ~5% divergence
         let reps = vec![
-            DenovoTranscript { tid: "r0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base, ..Default::default() },
-            DenovoTranscript { tid: "r1".into(), chrom: "c1".into(), start: 5000, end: 5900, n_reads: 8, strand: '+', introns: vec![], seq: para, ..Default::default() },
-            DenovoTranscript { tid: "r2".into(), chrom: "c1".into(), start: 9000, end: 9900, n_reads: 5, strand: '+', introns: vec![], seq: rand_seq(900, 0x99), ..Default::default() },
+            DenovoTranscript {
+                tid: "r0".into(),
+                chrom: "c1".into(),
+                start: 0,
+                end: 900,
+                n_reads: 10,
+                strand: '+',
+                introns: vec![],
+                seq: base,
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "r1".into(),
+                chrom: "c1".into(),
+                start: 5000,
+                end: 5900,
+                n_reads: 8,
+                strand: '+',
+                introns: vec![],
+                seq: para,
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "r2".into(),
+                chrom: "c1".into(),
+                start: 9000,
+                end: 9900,
+                n_reads: 5,
+                strand: '+',
+                introns: vec![],
+                seq: rand_seq(900, 0x99),
+                ..Default::default()
+            },
         ];
         let params = RefineParams::default(); // min_identity 0.80, sensitive_identity 0.60, min_coverage 0.50
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
-        assert!(edges.contains(&(0, 1)), "the two paralog reps must be E_r-linked, got {:?}", edges);
-        assert!(!edges.contains(&(0, 2)) && !edges.contains(&(1, 2)), "the unrelated rep must not link");
+        assert!(
+            edges.contains(&(0, 1)),
+            "the two paralog reps must be E_r-linked, got {:?}",
+            edges
+        );
+        assert!(
+            !edges.contains(&(0, 2)) && !edges.contains(&(1, 2)),
+            "the unrelated rep must not link"
+        );
     }
 
     // --- codon-aware fixture builder for the protein-tail rescue test ------------------------------------
@@ -13340,29 +16409,74 @@ mod tests {
     // synonymously-recoded (+ conservative-substitution) sibling whose nucleotide sequence diverges hard
     // while the encoded protein stays near-identical.
     const CODON_TABLE: &[(u8, &[u8; 3])] = &[
-        (b'F', b"TTT"), (b'F', b"TTC"),
-        (b'L', b"TTA"), (b'L', b"TTG"), (b'L', b"CTT"), (b'L', b"CTC"), (b'L', b"CTA"), (b'L', b"CTG"),
-        (b'I', b"ATT"), (b'I', b"ATC"), (b'I', b"ATA"),
+        (b'F', b"TTT"),
+        (b'F', b"TTC"),
+        (b'L', b"TTA"),
+        (b'L', b"TTG"),
+        (b'L', b"CTT"),
+        (b'L', b"CTC"),
+        (b'L', b"CTA"),
+        (b'L', b"CTG"),
+        (b'I', b"ATT"),
+        (b'I', b"ATC"),
+        (b'I', b"ATA"),
         (b'M', b"ATG"),
-        (b'V', b"GTT"), (b'V', b"GTC"), (b'V', b"GTA"), (b'V', b"GTG"),
-        (b'S', b"TCT"), (b'S', b"TCC"), (b'S', b"TCA"), (b'S', b"TCG"), (b'S', b"AGT"), (b'S', b"AGC"),
-        (b'P', b"CCT"), (b'P', b"CCC"), (b'P', b"CCA"), (b'P', b"CCG"),
-        (b'T', b"ACT"), (b'T', b"ACC"), (b'T', b"ACA"), (b'T', b"ACG"),
-        (b'A', b"GCT"), (b'A', b"GCC"), (b'A', b"GCA"), (b'A', b"GCG"),
-        (b'Y', b"TAT"), (b'Y', b"TAC"),
-        (b'H', b"CAT"), (b'H', b"CAC"),
-        (b'Q', b"CAA"), (b'Q', b"CAG"),
-        (b'N', b"AAT"), (b'N', b"AAC"),
-        (b'K', b"AAA"), (b'K', b"AAG"),
-        (b'D', b"GAT"), (b'D', b"GAC"),
-        (b'E', b"GAA"), (b'E', b"GAG"),
-        (b'C', b"TGT"), (b'C', b"TGC"),
+        (b'V', b"GTT"),
+        (b'V', b"GTC"),
+        (b'V', b"GTA"),
+        (b'V', b"GTG"),
+        (b'S', b"TCT"),
+        (b'S', b"TCC"),
+        (b'S', b"TCA"),
+        (b'S', b"TCG"),
+        (b'S', b"AGT"),
+        (b'S', b"AGC"),
+        (b'P', b"CCT"),
+        (b'P', b"CCC"),
+        (b'P', b"CCA"),
+        (b'P', b"CCG"),
+        (b'T', b"ACT"),
+        (b'T', b"ACC"),
+        (b'T', b"ACA"),
+        (b'T', b"ACG"),
+        (b'A', b"GCT"),
+        (b'A', b"GCC"),
+        (b'A', b"GCA"),
+        (b'A', b"GCG"),
+        (b'Y', b"TAT"),
+        (b'Y', b"TAC"),
+        (b'H', b"CAT"),
+        (b'H', b"CAC"),
+        (b'Q', b"CAA"),
+        (b'Q', b"CAG"),
+        (b'N', b"AAT"),
+        (b'N', b"AAC"),
+        (b'K', b"AAA"),
+        (b'K', b"AAG"),
+        (b'D', b"GAT"),
+        (b'D', b"GAC"),
+        (b'E', b"GAA"),
+        (b'E', b"GAG"),
+        (b'C', b"TGT"),
+        (b'C', b"TGC"),
         (b'W', b"TGG"),
-        (b'R', b"CGT"), (b'R', b"CGC"), (b'R', b"CGA"), (b'R', b"CGG"), (b'R', b"AGA"), (b'R', b"AGG"),
-        (b'G', b"GGT"), (b'G', b"GGC"), (b'G', b"GGA"), (b'G', b"GGG"),
+        (b'R', b"CGT"),
+        (b'R', b"CGC"),
+        (b'R', b"CGA"),
+        (b'R', b"CGG"),
+        (b'R', b"AGA"),
+        (b'R', b"AGG"),
+        (b'G', b"GGT"),
+        (b'G', b"GGC"),
+        (b'G', b"GGA"),
+        (b'G', b"GGG"),
     ];
     fn codons_for(aa: u8) -> Vec<&'static [u8; 3]> {
-        CODON_TABLE.iter().filter(|(a, _)| *a == aa).map(|(_, c)| *c).collect()
+        CODON_TABLE
+            .iter()
+            .filter(|(a, _)| *a == aa)
+            .map(|(_, c)| *c)
+            .collect()
     }
     fn all_aas() -> Vec<u8> {
         let mut v: Vec<u8> = CODON_TABLE.iter().map(|(a, _)| *a).collect();
@@ -13376,7 +16490,10 @@ mod tests {
     /// The codon for `aa` that differs MAXIMALLY (Hamming, over the 3 nt positions) from `from`.
     fn max_divergent_codon(aa: u8, from: &[u8; 3]) -> [u8; 3] {
         let opts = codons_for(aa);
-        **opts.iter().max_by_key(|c| hamming3(c, from)).expect("every table aa has >=1 codon")
+        **opts
+            .iter()
+            .max_by_key(|c| hamming3(c, from))
+            .expect("every table aa has >=1 codon")
     }
     /// A conservative (same biochemical class) amino-acid substitution group.
     fn conservative_group(aa: u8) -> &'static [u8] {
@@ -13392,11 +16509,21 @@ mod tests {
 
     #[test]
     fn homology_edges_protein_rescues_nt_divergent_pair() {
-        if std::process::Command::new("mmseqs").arg("version").output().is_err() {
-            eprintln!("mmseqs absent; skipping (protein-tail rescue NOT verified in this environment)");
+        if std::process::Command::new("mmseqs")
+            .arg("version")
+            .output()
+            .is_err()
+        {
+            eprintln!(
+                "mmseqs absent; skipping (protein-tail rescue NOT verified in this environment)"
+            );
             return;
         }
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("minimap2 absent; skipping");
             return;
         }
@@ -13421,7 +16548,11 @@ mod tests {
             let aa_b = if i % 7 == 0 {
                 let group = conservative_group(aa_a);
                 let alt: Vec<u8> = group.iter().copied().filter(|&a| a != aa_a).collect();
-                if alt.is_empty() { aa_a } else { alt[(rng.next_u64() as usize) % alt.len()] }
+                if alt.is_empty() {
+                    aa_a
+                } else {
+                    alt[(rng.next_u64() as usize) % alt.len()]
+                }
             } else {
                 aa_a
             };
@@ -13432,49 +16563,118 @@ mod tests {
         assert_eq!(seq_b.len(), 750);
 
         // Proxy identity (no indels by construction -> same length, position-wise Hamming) for reporting.
-        let same = seq_a.iter().zip(seq_b.iter()).filter(|(x, y)| x == y).count();
+        let same = seq_a
+            .iter()
+            .zip(seq_b.iter())
+            .filter(|(x, y)| x == y)
+            .count();
         let proxy_identity = same as f64 / seq_a.len() as f64;
-        eprintln!("[test] constructed pair proxy (position-wise) nt identity = {proxy_identity:.3}");
-        assert!(proxy_identity < 0.60, "RNG did not produce enough nt divergence: proxy identity {proxy_identity:.3}");
+        eprintln!(
+            "[test] constructed pair proxy (position-wise) nt identity = {proxy_identity:.3}"
+        );
+        assert!(
+            proxy_identity < 0.60,
+            "RNG did not produce enough nt divergence: proxy identity {proxy_identity:.3}"
+        );
 
         // Confirm via the pipeline's own aligner: BOTH nt tiers must find NO edge at this divergence.
         let p = RefineParams::default();
         let sensitive_edges = nucleotide_edges(
-            &[seq_a.clone(), seq_b.clone()], ER_SENSITIVE_SEED, 0.60, 0.50, &p,
-        ).unwrap();
-        assert!(sensitive_edges.is_empty(), "pair must be genuinely nt-unresolvable (< 0.60), got {:?}", sensitive_edges);
+            &[seq_a.clone(), seq_b.clone()],
+            ER_SENSITIVE_SEED,
+            0.60,
+            0.50,
+            &p,
+        )
+        .unwrap();
+        assert!(
+            sensitive_edges.is_empty(),
+            "pair must be genuinely nt-unresolvable (< 0.60), got {:?}",
+            sensitive_edges
+        );
 
         let reps = vec![
-            DenovoTranscript { tid: "protA".into(), chrom: "c1".into(), start: 1_000, end: 1_750, n_reads: 20, strand: '+', introns: vec![], seq: seq_a, ..Default::default() },
-            DenovoTranscript { tid: "protB".into(), chrom: "c1".into(), start: 50_000, end: 50_750, n_reads: 18, strand: '+', introns: vec![], seq: seq_b, ..Default::default() },
+            DenovoTranscript {
+                tid: "protA".into(),
+                chrom: "c1".into(),
+                start: 1_000,
+                end: 1_750,
+                n_reads: 20,
+                strand: '+',
+                introns: vec![],
+                seq: seq_a,
+                ..Default::default()
+            },
+            DenovoTranscript {
+                tid: "protB".into(),
+                chrom: "c1".into(),
+                start: 50_000,
+                end: 50_750,
+                n_reads: 18,
+                strand: '+',
+                introns: vec![],
+                seq: seq_b,
+                ..Default::default()
+            },
         ];
 
         let mut params_off = RefineParams::default();
         params_off.protein_tail = false;
         let edges_off = homology_edges_all_reps(&reps, &params_off).unwrap();
-        assert!(!edges_off.contains(&(0, 1)), "without protein_tail the nt-divergent pair must NOT link, got {:?}", edges_off);
+        assert!(
+            !edges_off.contains(&(0, 1)),
+            "without protein_tail the nt-divergent pair must NOT link, got {:?}",
+            edges_off
+        );
 
         let mut params_on = RefineParams::default();
         params_on.protein_tail = true;
         let edges_on = homology_edges_all_reps(&reps, &params_on).unwrap();
-        assert!(edges_on.contains(&(0, 1)), "protein_tail=true must RESCUE the nt-divergent, protein-conserved pair, got {:?}", edges_on);
+        assert!(
+            edges_on.contains(&(0, 1)),
+            "protein_tail=true must RESCUE the nt-divergent, protein-conserved pair, got {:?}",
+            edges_on
+        );
     }
 
     #[test]
     fn homology_catalog_groups_fixture_family() {
-        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        if std::process::Command::new("minimap2")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
         let (fams, certs, _collapsed, _expressed, _dna) = detect_homology_catalog_genome_wide(
             "tests/fixtures/same_chrom_supplement/reads.bam",
             "tests/fixtures/same_chrom_supplement/genome.fa",
-            2, 2, &DenovoConfig::default(), &RefineParams::default(), 0.20,
-        ).unwrap();
+            2,
+            2,
+            &DenovoConfig::default(),
+            &RefineParams::default(),
+            0.20,
+        )
+        .unwrap();
         // the fixture's two homologous loci (c1:A + c2:X) must land in one family of >= 2 distinct loci.
-        assert!(fams.iter().any(|f| f.len() >= 2), "expected a >=2-copy homology family, got {:?}", fams.iter().map(|f| f.len()).collect::<Vec<_>>());
+        assert!(
+            fams.iter().any(|f| f.len() >= 2),
+            "expected a >=2-copy homology family, got {:?}",
+            fams.iter().map(|f| f.len()).collect::<Vec<_>>()
+        );
         // ONE CERTIFICATE PER EMITTED FAMILY, SAME ORDER -- the column would otherwise attach each
         // family's lambda to a different family's row.
-        assert_eq!(certs.len(), fams.len(), "one certificate per emitted family");
+        assert_eq!(
+            certs.len(),
+            fams.len(),
+            "one certificate per emitted family"
+        );
         for (c, f) in certs.iter().zip(fams.iter()) {
-            assert_eq!(c.n, f.len(), "certificate node count must be the EMITTED copy count");
+            assert_eq!(
+                c.n,
+                f.len(),
+                "certificate node count must be the EMITTED copy count"
+            );
         }
     }
 
@@ -13500,9 +16700,18 @@ mod tests {
         let groups = vec![vec![0usize, 1usize], vec![2usize]];
         let cert = certificate_for(&groups, &er_edges);
         assert_eq!(cert.n, 2, "two EMITTED copies, not three reps");
-        assert_eq!(cert.n_edges, 1, "(0,2) and (1,2) are the SAME emitted edge and must not double-count");
-        assert_eq!(cert.lambda, 1, "measured on the emitted node set, the family hangs on one edge");
-        assert!((cert.density - 1.0).abs() < 1e-9, "2 nodes, 1 edge => density 1.0");
+        assert_eq!(
+            cert.n_edges, 1,
+            "(0,2) and (1,2) are the SAME emitted edge and must not double-count"
+        );
+        assert_eq!(
+            cert.lambda, 1,
+            "measured on the emitted node set, the family hangs on one edge"
+        );
+        assert!(
+            (cert.density - 1.0).abs() < 1e-9,
+            "2 nodes, 1 edge => density 1.0"
+        );
     }
 
     #[test]
@@ -13523,7 +16732,10 @@ mod tests {
         let cert = certificate_for(&[vec![0], vec![1]], &[(0usize, 1usize)]);
         assert_eq!(cert.n, 2);
         assert_eq!(cert.lambda, 1);
-        assert!(cert.lambda < 2, "cut_certified=false here is NOT a defect flag");
+        assert!(
+            cert.lambda < 2,
+            "cut_certified=false here is NOT a defect flag"
+        );
     }
 
     // ---- union certificate (`union_certificate_pass`) -----------------------------------------------
@@ -13549,31 +16761,65 @@ mod tests {
             }
             s
         };
-        let (a0, a1, b0, b1, c) =
-            (variant(&pa, b'A'), variant(&pa, b'C'), variant(&pb, b'A'), variant(&pb, b'C'), variant(&pc, b'T'));
+        let (a0, a1, b0, b1, c) = (
+            variant(&pa, b'A'),
+            variant(&pa, b'C'),
+            variant(&pb, b'A'),
+            variant(&pb, b'C'),
+            variant(&pc, b'T'),
+        );
         let mut g = rand_seq(20_000, 0xF1A7_F1A7);
-        let loci: [(usize, &Vec<u8>); 5] = [(1000, &a0), (3000, &a1), (8000, &b0), (10_000, &b1), (15_000, &c)];
+        let loci: [(usize, &Vec<u8>); 5] = [
+            (1000, &a0),
+            (3000, &a1),
+            (8000, &b0),
+            (10_000, &b1),
+            (15_000, &c),
+        ];
         for (at, s) in loci {
             g[at..at + 600].copy_from_slice(s);
         }
         let genome = GenomeIndex::from_seqs(&[("u1", &g)]);
         let copy = |tid: &str, at: u64, seq: &[u8]| DenovoTranscript {
-            tid: tid.into(), chrom: "u1".into(), start: at, end: at + 600, n_reads: 3, strand: '+',
-            introns: vec![], seq: seq.to_vec(), ..Default::default()
+            tid: tid.into(),
+            chrom: "u1".into(),
+            start: at,
+            end: at + 600,
+            n_reads: 3,
+            strand: '+',
+            introns: vec![],
+            seq: seq.to_vec(),
+            ..Default::default()
         };
         let fam = |id: &str, copies: Vec<DenovoTranscript>| ColocatedFamily {
-            family_id: id.into(), chrom: "u1".into(), start: copies[0].start, end: copies[1].end, copies,
+            family_id: id.into(),
+            chrom: "u1".into(),
+            start: copies[0].start,
+            end: copies[1].end,
+            copies,
         };
         let supplied = vec![
             fam("UA", vec![copy("a0", 1000, &a0), copy("a1", 3000, &a1)]),
             fam("UB", vec![copy("b0", 8000, &b0), copy("b1", 10_000, &b1)]),
         ];
-        let rec = |name: &str, at: u64, seq: &[u8], secondary: bool, as_score: i32, mapq: u8| BamRead {
-            chrom: "u1".into(),
-            read: AlignedRead { ref_start: at, cigar: vec![('M', 600)], seq: seq.to_vec(), qual: vec![] },
-            mapq, name: name.into(), as_score, de: 0.0, is_supplementary: false, is_secondary: secondary,
-            reverse: false, ts: None,
-        };
+        let rec =
+            |name: &str, at: u64, seq: &[u8], secondary: bool, as_score: i32, mapq: u8| BamRead {
+                chrom: "u1".into(),
+                read: AlignedRead {
+                    ref_start: at,
+                    cigar: vec![('M', 600)],
+                    seq: seq.to_vec(),
+                    qual: vec![],
+                },
+                mapq,
+                name: name.into(),
+                as_score,
+                de: 0.0,
+                is_supplementary: false,
+                is_secondary: secondary,
+                reverse: false,
+                ts: None,
+            };
         let mut bam = Vec::new();
         for (i, (at, s)) in loci.iter().enumerate().take(4) {
             for k in 0..3 {
@@ -13588,7 +16834,11 @@ mod tests {
     }
 
     /// `(family_id, assignment)` for every row of molecule `name`, in family order.
-    fn rows_named(fams: &[FamilyAssignment], bam: &[BamRead], name: &str) -> Vec<(String, Assignment)> {
+    fn rows_named(
+        fams: &[FamilyAssignment],
+        bam: &[BamRead],
+        name: &str,
+    ) -> Vec<(String, Assignment)> {
         fams.iter()
             .flat_map(|fa| {
                 fa.assignments
@@ -13601,16 +16851,39 @@ mod tests {
 
     /// Today's per-family rows (`detect_and_assign` over the supplied catalog, record-level certificate so no
     /// external aligner is needed), then the union pass over a clone: `(before, after, summary, bam)`.
-    fn run_union_fixture() -> (Vec<FamilyAssignment>, Vec<FamilyAssignment>, UnionSummary, Vec<BamRead>) {
+    fn run_union_fixture() -> (
+        Vec<FamilyAssignment>,
+        Vec<FamilyAssignment>,
+        UnionSummary,
+        Vec<BamRead>,
+    ) {
         let (genome, supplied, bam) = union_fixture();
         let p = super::super::copy_assign::AssignParams::default();
         let (fams, _, _, _) = detect_and_assign(
-            &[], &bam, &genome, &DenovoConfig::default(), 5_000_000, 2, &p, &[], false, false, false, "",
+            &[],
+            &bam,
+            &genome,
+            &DenovoConfig::default(),
+            5_000_000,
+            2,
+            &p,
+            &[],
+            false,
+            false,
+            false,
+            "",
             Some(&supplied),
         );
         let before = fams.clone();
         let mut after = fams;
-        let s = union_certificate_pass(&mut after, &supplied, &bam, &genome, &p, &|fid, _tid, ci| format!("{fid}:{ci}"));
+        let s = union_certificate_pass(
+            &mut after,
+            &supplied,
+            &bam,
+            &genome,
+            &p,
+            &|fid, _tid, ci| format!("{fid}:{ci}"),
+        );
         (before, after, s, bam)
     }
 
@@ -13624,16 +16897,40 @@ mod tests {
         assert_eq!(b.len(), 2, "today: one row per family for M1, {b:?}");
         let a = rows_named(&after, &bam, "M1");
         assert_eq!(a.len(), 2);
-        let ua = a.iter().find(|(f, _)| f == "UA").map(|(_, x)| x).expect("UA row");
-        let ub = a.iter().find(|(f, _)| f == "UB").map(|(_, x)| x).expect("UB row");
+        let ua = a
+            .iter()
+            .find(|(f, _)| f == "UA")
+            .map(|(_, x)| x)
+            .expect("UA row");
+        let ub = a
+            .iter()
+            .find(|(f, _)| f == "UB")
+            .map(|(_, x)| x)
+            .expect("UB row");
         assert_eq!(ua.status, AssignStatus::Assigned, "{ua:?}");
         assert_eq!(ua.best_copy, 1, "M1 carries a1's transcript");
         assert!(ua.n_decisive >= 1 && ua.p_value < 1e-3, "{ua:?}");
-        assert_eq!(ua.posterior.len(), 2, "posterior stays in UA's own copy frame");
+        assert_eq!(
+            ua.posterior.len(),
+            2,
+            "posterior stays in UA's own copy frame"
+        );
         assert_eq!(ub.status, AssignStatus::Tied, "{ub:?}");
-        let r = s.rows.iter().find(|r| r.read_name == "M1").expect("a side-file row for M1");
-        assert_eq!((r.verdict.as_str(), r.winner.as_str(), r.n_candidates), ("assigned_family", "UA:1", 4), "{r:?}");
-        assert!(r.candidates.contains("UA:0") && r.candidates.contains("UB:1"), "{}", r.candidates);
+        let r = s
+            .rows
+            .iter()
+            .find(|r| r.read_name == "M1")
+            .expect("a side-file row for M1");
+        assert_eq!(
+            (r.verdict.as_str(), r.winner.as_str(), r.n_candidates),
+            ("assigned_family", "UA:1", 4),
+            "{r:?}"
+        );
+        assert!(
+            r.candidates.contains("UA:0") && r.candidates.contains("UB:1"),
+            "{}",
+            r.candidates
+        );
         // untouched rows are byte-for-byte today's
         for k in 0..4 {
             for j in 0..3 {
@@ -13642,7 +16939,11 @@ mod tests {
                 assert_eq!(x.len(), y.len(), "{n}");
                 for ((fx, ax), (fy, ay)) in x.iter().zip(y.iter()) {
                     assert_eq!(fx, fy);
-                    assert_eq!((ax.status, ax.best_copy, ax.n_decisive), (ay.status, ay.best_copy, ay.n_decisive), "{n}");
+                    assert_eq!(
+                        (ax.status, ax.best_copy, ax.n_decisive),
+                        (ay.status, ay.best_copy, ay.n_decisive),
+                        "{n}"
+                    );
                 }
             }
         }
@@ -13656,14 +16957,25 @@ mod tests {
     fn union_certificate_outside_locus_wins_and_ties_every_family() {
         let (before, after, s, bam) = run_union_fixture();
         let b = rows_named(&before, &bam, "M2");
-        assert_eq!(b.len(), 1, "today: UA alone judged M2 (its record at a0), {b:?}");
+        assert_eq!(
+            b.len(),
+            1,
+            "today: UA alone judged M2 (its record at a0), {b:?}"
+        );
         let a = rows_named(&after, &bam, "M2");
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].0, "UA");
         assert_eq!(a[0].1.status, AssignStatus::Tied, "{:?}", a[0].1);
-        let r = s.rows.iter().find(|r| r.read_name == "M2").expect("a side-file row for M2");
+        let r = s
+            .rows
+            .iter()
+            .find(|r| r.read_name == "M2")
+            .expect("a side-file row for M2");
         assert_eq!(r.verdict, "assigned_outside", "{r:?}");
-        assert_eq!(r.winner, "outside:u1:15001-15600", "1-based start, the §6gz token");
+        assert_eq!(
+            r.winner, "outside:u1:15001-15600",
+            "1-based start, the §6gz token"
+        );
         assert_eq!(r.n_candidates, 3, "a0, a1 and the pseudo-copy");
         assert_eq!(s.n_assigned_outside, 1);
         assert_eq!(s.n_pseudo_unbuildable, 0);
@@ -13684,7 +16996,11 @@ mod tests {
             let (x, y) = (rows_named(&before, &bam, n), rows_named(&after, &bam, n));
             assert_eq!(x.len(), y.len());
             for ((fx, ax), (fy, ay)) in x.iter().zip(y.iter()) {
-                assert_eq!((fx, ax.status, ax.best_copy), (fy, ay.status, ay.best_copy), "{n}");
+                assert_eq!(
+                    (fx, ax.status, ax.best_copy),
+                    (fy, ay.status, ay.best_copy),
+                    "{n}"
+                );
             }
         }
     }
@@ -13697,27 +17013,82 @@ mod tests {
     fn merge_same_locus_collapses_substantial_exonic_overlap_only() {
         let g: Vec<u8> = rand_seq(20_000, 7);
         let t = |tid: &str, s: u64, e: u64, introns: Vec<(u64, u64)>| DenovoTranscript {
-            tid: tid.into(), chrom: "m1".into(), start: s, end: e, strand: '+', introns,
-            seq: g[s as usize..e as usize].to_vec(), ..Default::default()
+            tid: tid.into(),
+            chrom: "m1".into(),
+            start: s,
+            end: e,
+            strand: '+',
+            introns,
+            seq: g[s as usize..e as usize].to_vec(),
+            ..Default::default()
         };
         let fam = |f: usize, ci: usize| Member::Family(f, ci, format!("F{f}:{ci}"));
         let raw = vec![
             // A:0 100-700 and B:0 400-900: 300 bp exonic overlap = 60% of B:0's 500 -> merged, rep = A:0 (600 > 500)
-            ("m1".to_string(), 100, 700, fam(0, 0), t("x", 100, 700, vec![]), "F0:0".to_string()),
-            ("m1".to_string(), 400, 900, fam(1, 0), t("z", 400, 900, vec![]), "F1:0".to_string()),
+            (
+                "m1".to_string(),
+                100,
+                700,
+                fam(0, 0),
+                t("x", 100, 700, vec![]),
+                "F0:0".to_string(),
+            ),
+            (
+                "m1".to_string(),
+                400,
+                900,
+                fam(1, 0),
+                t("z", 400, 900, vec![]),
+                "F1:0".to_string(),
+            ),
             // A:1 2000-2600 disjoint
-            ("m1".to_string(), 2000, 2600, fam(0, 1), t("y", 2000, 2600, vec![]), "F0:1".to_string()),
+            (
+                "m1".to_string(),
+                2000,
+                2600,
+                fam(0, 1),
+                t("y", 2000, 2600, vec![]),
+                "F0:1".to_string(),
+            ),
             // C:0 5000-5600 against a long 2-exon unit D:0 5573-15000 (exon 5573-5700, intron, exon 14000-15000):
             // 27 bp exonic overlap of C:0's 600 -> NOT merged (the GWFAM50:1 / GWFAM164:2 lesson)
-            ("m1".to_string(), 5000, 5600, fam(2, 0), t("c", 5000, 5600, vec![]), "F2:0".to_string()),
-            ("m1".to_string(), 5573, 15_000, fam(3, 0), t("d", 5573, 15_000, vec![(5700, 14_000)]), "F3:0".to_string()),
+            (
+                "m1".to_string(),
+                5000,
+                5600,
+                fam(2, 0),
+                t("c", 5000, 5600, vec![]),
+                "F2:0".to_string(),
+            ),
+            (
+                "m1".to_string(),
+                5573,
+                15_000,
+                fam(3, 0),
+                t("d", 5573, 15_000, vec![(5700, 14_000)]),
+                "F3:0".to_string(),
+            ),
             // an outside locus inside D:0's INTRON: span overlap, zero exonic overlap -> NOT merged
-            ("m1".to_string(), 8000, 8600, Member::Outside("outside:m1:8001-8600".into()), t("o", 8000, 8600, vec![]), "outside:m1:8001-8600".to_string()),
+            (
+                "m1".to_string(),
+                8000,
+                8600,
+                Member::Outside("outside:m1:8001-8600".into()),
+                t("o", 8000, 8600, vec![]),
+                "outside:m1:8001-8600".to_string(),
+            ),
         ];
         let m = merge_same_locus(raw);
         let labels: Vec<&str> = m.iter().map(|x| x.2.as_str()).collect();
-        assert_eq!(labels, vec!["F0:0+F1:0", "F0:1", "F2:0", "F3:0", "outside:m1:8001-8600"], "{labels:?}");
-        assert_eq!(m[0].0.tid, "x", "the longest-exonic member's OWN transcript represents the locus");
+        assert_eq!(
+            labels,
+            vec!["F0:0+F1:0", "F0:1", "F2:0", "F3:0", "outside:m1:8001-8600"],
+            "{labels:?}"
+        );
+        assert_eq!(
+            m[0].0.tid, "x",
+            "the longest-exonic member's OWN transcript represents the locus"
+        );
         assert_eq!((m[0].0.start, m[0].0.end), (100, 700));
         assert_eq!(m[0].1.len(), 2);
         assert_eq!(m[3].0.tid, "d");
@@ -13725,7 +17096,21 @@ mod tests {
 
     #[test]
     fn exon_blocks_extend_through_deletions_and_split_on_introns() {
-        let r = AlignedRead { ref_start: 10, cigar: vec![('S', 5), ('M', 100), ('D', 5), ('=', 50), ('N', 1000), ('X', 20), ('I', 3), ('M', 7)], seq: vec![], qual: vec![] };
+        let r = AlignedRead {
+            ref_start: 10,
+            cigar: vec![
+                ('S', 5),
+                ('M', 100),
+                ('D', 5),
+                ('=', 50),
+                ('N', 1000),
+                ('X', 20),
+                ('I', 3),
+                ('M', 7),
+            ],
+            seq: vec![],
+            qual: vec![],
+        };
         assert_eq!(r.exon_blocks(), vec![(10, 165), (1165, 1192)]);
     }
 
@@ -13733,16 +17118,36 @@ mod tests {
     fn tied_record_indices_takes_max_as_non_supplementary_records_of_multi_record_molecules() {
         let rec = |name: &str, at: u64, as_score: i32, supp: bool| BamRead {
             chrom: "c".into(),
-            read: AlignedRead { ref_start: at, cigar: vec![('M', 10)], seq: vec![], qual: vec![] },
-            mapq: 0, name: name.into(), as_score, de: 0.0, is_supplementary: supp, is_secondary: at > 0, reverse: false, ts: None,
+            read: AlignedRead {
+                ref_start: at,
+                cigar: vec![('M', 10)],
+                seq: vec![],
+                qual: vec![],
+            },
+            mapq: 0,
+            name: name.into(),
+            as_score,
+            de: 0.0,
+            is_supplementary: supp,
+            is_secondary: at > 0,
+            reverse: false,
+            ts: None,
         };
         let bam = vec![
-            rec("a", 0, 100, false), rec("a", 500, 100, false), rec("a", 900, 90, false), rec("a", 1200, 100, true),
-            rec("b", 0, 100, false), rec("b", 300, 99, false),
+            rec("a", 0, 100, false),
+            rec("a", 500, 100, false),
+            rec("a", 900, 90, false),
+            rec("a", 1200, 100, true),
+            rec("b", 0, 100, false),
+            rec("b", 300, 99, false),
             rec("c", 0, 50, false),
         ];
         let t = tied_record_indices(&bam);
-        assert_eq!(t.get("a"), Some(&vec![0usize, 1]), "max-AS records only; the supplementary one never counts");
+        assert_eq!(
+            t.get("a"),
+            Some(&vec![0usize, 1]),
+            "max-AS records only; the supplementary one never counts"
+        );
         assert!(!t.contains_key("b"), "a clear best is not a tie");
         assert!(!t.contains_key("c"), "a single record is not a tie");
     }
@@ -13774,8 +17179,11 @@ mod tests {
             s
         };
         let (x0, x1) = (variant(b'A'), variant(b'C'));
-        let mut chroms: Vec<(&str, Vec<u8>)> =
-            ["u1", "u2", "u3"].iter().enumerate().map(|(i, c)| (*c, rand_seq(20_000, 0xC4A0 + i as u64))).collect();
+        let mut chroms: Vec<(&str, Vec<u8>)> = ["u1", "u2", "u3"]
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (*c, rand_seq(20_000, 0xC4A0 + i as u64)))
+            .collect();
         for (c, g) in chroms.iter_mut() {
             if *c == "u1" {
                 g[1000..1600].copy_from_slice(&x0);
@@ -13787,18 +17195,40 @@ mod tests {
         let pairs: Vec<(&str, &[u8])> = chroms.iter().map(|(c, g)| (*c, g.as_slice())).collect();
         let genome = GenomeIndex::from_seqs(&pairs);
         let copy = |tid: &str, chrom: &str, at: u64, seq: &[u8]| DenovoTranscript {
-            tid: tid.into(), chrom: chrom.into(), start: at, end: at + 600, n_reads: 3, strand: '+',
-            introns: vec![], seq: seq.to_vec(), ..Default::default()
+            tid: tid.into(),
+            chrom: chrom.into(),
+            start: at,
+            end: at + 600,
+            n_reads: 3,
+            strand: '+',
+            introns: vec![],
+            seq: seq.to_vec(),
+            ..Default::default()
         };
         let copies = vec![copy("x0", "u1", 1000, &x0), copy("x1", second, 3000, &x1)];
         let supplied = vec![ColocatedFamily {
-            family_id: "XC".into(), chrom: "u1".into(), start: 1000, end: 3600, copies,
+            family_id: "XC".into(),
+            chrom: "u1".into(),
+            start: 1000,
+            end: 3600,
+            copies,
         }];
         let rec = |name: &str, chrom: &str, at: u64, seq: &[u8], mapq: u8| BamRead {
             chrom: chrom.into(),
-            read: AlignedRead { ref_start: at, cigar: vec![('M', 600)], seq: seq.to_vec(), qual: vec![] },
-            mapq, name: name.into(), as_score: 600, de: 0.0, is_supplementary: false, is_secondary: false,
-            reverse: false, ts: None,
+            read: AlignedRead {
+                ref_start: at,
+                cigar: vec![('M', 600)],
+                seq: seq.to_vec(),
+                qual: vec![],
+            },
+            mapq,
+            name: name.into(),
+            as_score: 600,
+            de: 0.0,
+            is_supplementary: false,
+            is_secondary: false,
+            reverse: false,
+            ts: None,
         };
         let mut bam = Vec::new();
         for k in 0..3 {
@@ -13815,7 +17245,18 @@ mod tests {
         }
         let p = super::super::copy_assign::AssignParams::default();
         let (fams, _, _, _) = detect_and_assign(
-            &[], &bam, &genome, &DenovoConfig::default(), 5_000_000, 2, &p, &[], false, false, false, "",
+            &[],
+            &bam,
+            &genome,
+            &DenovoConfig::default(),
+            5_000_000,
+            2,
+            &p,
+            &[],
+            false,
+            false,
+            false,
+            "",
             Some(&supplied),
         );
         (fams, bam)
@@ -13833,18 +17274,41 @@ mod tests {
         for k in 0..3 {
             let a = rows(&format!("a_{k}"));
             assert_eq!(a.len(), 1, "a_{k}: {a:?}");
-            assert_eq!((a[0].1.best_copy, a[0].1.status), (0, AssignStatus::Assigned), "a_{k}: {:?}", a[0].1);
+            assert_eq!(
+                (a[0].1.best_copy, a[0].1.status),
+                (0, AssignStatus::Assigned),
+                "a_{k}: {:?}",
+                a[0].1
+            );
             let b = rows(&format!("b_{k}"));
-            assert_eq!(b.len(), 1, "b_{k} is on the family's SECOND chromosome and must enter assignment: {b:?}");
-            assert_eq!((b[0].1.best_copy, b[0].1.status), (1, AssignStatus::Assigned), "b_{k}: {:?}", b[0].1);
+            assert_eq!(
+                b.len(),
+                1,
+                "b_{k} is on the family's SECOND chromosome and must enter assignment: {b:?}"
+            );
+            assert_eq!(
+                (b[0].1.best_copy, b[0].1.status),
+                (1, AssignStatus::Assigned),
+                "b_{k}: {:?}",
+                b[0].1
+            );
         }
-        assert!(rows("decoy_wrong_chrom").is_empty(), "a u1 read at the u2 copy's numbers overlaps no copy on u1");
-        assert!(rows("decoy_off_family").is_empty(), "u3 carries no copy of the family: its reads never enter");
+        assert!(
+            rows("decoy_wrong_chrom").is_empty(),
+            "a u1 read at the u2 copy's numbers overlaps no copy on u1"
+        );
+        assert!(
+            rows("decoy_off_family").is_empty(),
+            "u3 carries no copy of the family: its reads never enter"
+        );
         // the molecules whose MAPQ-60 record lies off every copy (on u3; on u2 outside the u2 copy's hull) are
         // judged on their u1 record alone, so they are not unique-mapped within the family
         assert_eq!((rows("m_dc").len(), rows("m_hull").len()), (1, 1));
         assert_eq!(fams[0].assignments.len(), 8);
-        assert_eq!(fams[0].uniq, 6, "only a_* and b_* are unique-mapped: a record off every copy must not enter");
+        assert_eq!(
+            fams[0].uniq, 6,
+            "only a_* and b_* are unique-mapped: a record off every copy must not enter"
+        );
     }
 
     /// The guard for the widening: a SINGLE-chromosome family is assigned exactly the reads it always was --
@@ -13858,13 +17322,29 @@ mod tests {
         for k in 0..3 {
             let (a, b) = (rows(&format!("a_{k}")), rows(&format!("b_{k}")));
             assert_eq!((a.len(), b.len()), (1, 1), "a_{k}/b_{k}");
-            assert_eq!((a[0].1.best_copy, a[0].1.status), (0, AssignStatus::Assigned), "a_{k}: {:?}", a[0].1);
-            assert_eq!((b[0].1.best_copy, b[0].1.status), (1, AssignStatus::Assigned), "b_{k}: {:?}", b[0].1);
+            assert_eq!(
+                (a[0].1.best_copy, a[0].1.status),
+                (0, AssignStatus::Assigned),
+                "a_{k}: {:?}",
+                a[0].1
+            );
+            assert_eq!(
+                (b[0].1.best_copy, b[0].1.status),
+                (1, AssignStatus::Assigned),
+                "b_{k}: {:?}",
+                b[0].1
+            );
         }
-        assert!(rows("decoy_off_family").is_empty(), "u2 carries no copy of the family: its reads never enter");
+        assert!(
+            rows("decoy_off_family").is_empty(),
+            "u2 carries no copy of the family: its reads never enter"
+        );
         assert_eq!(rows("m_dc").len(), 1);
         assert_eq!(fams[0].assignments.len(), 7);
-        assert_eq!(fams[0].uniq, 6, "m_dc's MAPQ-60 record is on u2, where the family has no copy: it must not enter");
+        assert_eq!(
+            fams[0].uniq, 6,
+            "m_dc's MAPQ-60 record is on u2, where the family has no copy: it must not enter"
+        );
     }
 }
 
@@ -13878,7 +17358,13 @@ mod piecewise_tests {
     use crate::family::denovo_assemble::{pass1_skeletons_robust, PrimaryRead};
 
     fn rep(chrom: &str, start: u64, introns: Vec<(u64, u64)>) -> DenovoTranscript {
-        DenovoTranscript { chrom: chrom.into(), start, end: start + 5_000, introns, ..Default::default() }
+        DenovoTranscript {
+            chrom: chrom.into(),
+            start,
+            end: start + 5_000,
+            introns,
+            ..Default::default()
+        }
     }
 
     fn w(c: &str) -> ContigSpan {
@@ -13886,18 +17372,34 @@ mod piecewise_tests {
     }
 
     fn sub(c: &str, lo: u64, hi: u64) -> ContigSpan {
-        ContigSpan { contig: c.into(), lo, hi }
+        ContigSpan {
+            contig: c.into(),
+            lo,
+            hi,
+        }
     }
 
     fn key(v: &[DenovoTranscript]) -> Vec<(String, u64, usize)> {
-        v.iter().map(|r| (r.chrom.clone(), r.start, r.introns.len())).collect()
+        v.iter()
+            .map(|r| (r.chrom.clone(), r.start, r.introns.len()))
+            .collect()
     }
 
     #[test]
     fn merge_puts_spliced_before_unspliced_and_contigs_in_byte_order() {
         let pieces = vec![
-            (w("c2"), vec![rep("c2", 10, vec![(20, 30)]), rep("c2", 5, vec![])]),
-            (w("c1"), vec![rep("c1", 7, vec![(9, 11)]), rep("c1", 3, vec![(4, 6)]), rep("c1", 1, vec![])]),
+            (
+                w("c2"),
+                vec![rep("c2", 10, vec![(20, 30)]), rep("c2", 5, vec![])],
+            ),
+            (
+                w("c1"),
+                vec![
+                    rep("c1", 7, vec![(9, 11)]),
+                    rep("c1", 3, vec![(4, 6)]),
+                    rep("c1", 1, vec![]),
+                ],
+            ),
             (w("c10"), vec![rep("c10", 2, vec![])]),
             (w("c3"), vec![]),
         ];
@@ -13918,10 +17420,19 @@ mod piecewise_tests {
 
     #[test]
     fn merge_refuses_what_breaks_the_order_argument() {
-        let mixed = vec![(w("c1"), vec![rep("c1", 1, vec![]), rep("c1", 9, vec![(10, 20)])])];
-        assert!(merge_piece_reps(mixed).is_err(), "a spliced rep after an unspliced one cannot be placed");
+        let mixed = vec![(
+            w("c1"),
+            vec![rep("c1", 1, vec![]), rep("c1", 9, vec![(10, 20)])],
+        )];
+        assert!(
+            merge_piece_reps(mixed).is_err(),
+            "a spliced rep after an unspliced one cannot be placed"
+        );
         let foreign = vec![(w("c1"), vec![rep("c2", 1, vec![(10, 20)])])];
-        assert!(merge_piece_reps(foreign).is_err(), "a piece holding another contig's rep is an error");
+        assert!(
+            merge_piece_reps(foreign).is_err(),
+            "a piece holding another contig's rep is an error"
+        );
     }
 
     /// The order argument at its source: pass-1 over ALL reads yields the skeletons (hence transcripts, hence
@@ -13960,13 +17471,33 @@ mod piecewise_tests {
         };
         let whole = as_reps(pass1_skeletons_robust(&reads, 3, 1));
         let full = |v: &[DenovoTranscript]| -> Vec<(String, u64, u64, Vec<(u64, u64)>, u32)> {
-            v.iter().map(|r| (r.chrom.clone(), r.start, r.end, r.introns.clone(), r.n_reads)).collect()
+            v.iter()
+                .map(|r| {
+                    (
+                        r.chrom.clone(),
+                        r.start,
+                        r.end,
+                        r.introns.clone(),
+                        r.n_reads,
+                    )
+                })
+                .collect()
         };
-        assert_eq!(whole.len(), 12, "fixture: 2 chains + 2 piles on each of 3 contigs");
+        assert_eq!(
+            whole.len(),
+            12,
+            "fixture: 2 chains + 2 piles on each of 3 contigs"
+        );
         // whole contigs, and c1 also cut at its read-free positions 5,000 and 9,000 (given in shuffled order)
         for cut_c1 in [false, true] {
             let spans: Vec<ContigSpan> = if cut_c1 {
-                vec![w("c2"), sub("c1", 9_000, u64::MAX), w("c10"), sub("c1", 0, 5_000), sub("c1", 5_000, 9_000)]
+                vec![
+                    w("c2"),
+                    sub("c1", 9_000, u64::MAX),
+                    w("c10"),
+                    sub("c1", 0, 5_000),
+                    sub("c1", 5_000, 9_000),
+                ]
             } else {
                 vec![w("c2"), w("c10"), w("c1")]
             };
@@ -13975,7 +17506,9 @@ mod piecewise_tests {
                 .map(|sp| {
                     let rs: Vec<PrimaryRead> = reads
                         .iter()
-                        .filter(|r| r.chrom == sp.contig && r.ref_start >= sp.lo && r.ref_start < sp.hi)
+                        .filter(|r| {
+                            r.chrom == sp.contig && r.ref_start >= sp.lo && r.ref_start < sp.hi
+                        })
                         .cloned()
                         .collect();
                     let reps = as_reps(pass1_skeletons_robust(&rs, 3, 1));
@@ -13992,18 +17525,46 @@ mod piecewise_tests {
         assert_eq!(piece_label_contig("chr13:65273-15760749"), "chr13");
         assert_eq!(piece_label_contig("chr13:65273-end"), "chr13");
         assert_eq!(piece_label_contig("chrM"), "chrM");
-        assert_eq!(piece_label_contig("HLA-A*01:01:01:01"), "HLA-A*01:01:01:01", "a colon in a name is not a range");
-        for sp in [sub("NC_072418.2", 0, 15_632_461), sub("c", 9, u64::MAX), w("c")] {
-            assert_eq!(piece_label_contig(&sp.label()), sp.contig, "round trip of {}", sp.label());
+        assert_eq!(
+            piece_label_contig("HLA-A*01:01:01:01"),
+            "HLA-A*01:01:01:01",
+            "a colon in a name is not a range"
+        );
+        for sp in [
+            sub("NC_072418.2", 0, 15_632_461),
+            sub("c", 9, u64::MAX),
+            w("c"),
+        ] {
+            assert_eq!(
+                piece_label_contig(&sp.label()),
+                sp.contig,
+                "round trip of {}",
+                sp.label()
+            );
         }
     }
 
     #[test]
     fn a_budget_is_limited_only_when_set() {
         assert!(!PieceBudget::default().limited());
-        assert!(PieceBudget { max_pieces: 1, ..Default::default() }.limited());
-        assert!(PieceBudget { budget_s: 300.0, ..Default::default() }.limited());
-        assert!(!PieceBudget { piece_records: 1_000_000, ..Default::default() }.limited(), "splitting is not a budget");
+        assert!(PieceBudget {
+            max_pieces: 1,
+            ..Default::default()
+        }
+        .limited());
+        assert!(PieceBudget {
+            budget_s: 300.0,
+            ..Default::default()
+        }
+        .limited());
+        assert!(
+            !PieceBudget {
+                piece_records: 1_000_000,
+                ..Default::default()
+            }
+            .limited(),
+            "splitting is not a budget"
+        );
     }
 }
 
@@ -14033,8 +17594,8 @@ pub mod denovo_assemble {
     use crate::family::family_detect::DenovoTranscript;
     // `AS:i` / `de:f` / `ts:A` readers, generic over `RecordBuf` and lazy records (shared with `as_table`).
     use crate::bam::{record_as, record_de, record_ts};
-    use crate::genome::GenomeIndex;
     use crate::family::seq_utils::reverse_complement;
+    use crate::genome::GenomeIndex;
 
     /// Pass-1 read support to keep a skeleton (`twopass_denovo_gw_pass1.py::MIN_READS`).
     pub const PASS1_MIN_READS: u32 = 2;
@@ -14189,7 +17750,11 @@ pub mod denovo_assemble {
         if (best_n as f64) / (v.len() as f64) < min_frac {
             return None; // broad scatter -> no TES call
         }
-        Some(if is_forward { v[best_lo + best_n - 1] } else { v[best_lo] })
+        Some(if is_forward {
+            v[best_lo + best_n - 1]
+        } else {
+            v[best_lo]
+        })
     }
 
     /// Sharp-boundary refinement (opt-in; `RUSTLE_TSS_SNAP`).
@@ -14212,7 +17777,13 @@ pub mod denovo_assemble {
     /// of 43 copies' boundaries; the edge rule changes 2, all by <= 20 bp.
     ///
     /// Pure + deterministic so it is unit-testable without reads.
-    pub fn snap_boundary(positions: &[u64], fallback: u64, window: u64, min_frac: f64, is_start: bool) -> u64 {
+    pub fn snap_boundary(
+        positions: &[u64],
+        fallback: u64,
+        window: u64,
+        min_frac: f64,
+        is_start: bool,
+    ) -> u64 {
         if positions.len() < 10 {
             return fallback; // too few reads to distinguish a peak from noise
         }
@@ -14230,7 +17801,11 @@ pub mod denovo_assemble {
         if (best_n as f64) / (v.len() as f64) < min_frac {
             return fallback; // broad scatter: the robust quantile is the right answer
         }
-        let peak = if is_start { v[best_lo] } else { v[best_lo + best_n - 1] };
+        let peak = if is_start {
+            v[best_lo]
+        } else {
+            v[best_lo + best_n - 1]
+        };
         // The snap moves the boundary to the peak's outer edge, which may LENGTHEN or SHORTEN the transcript --
         // measured over chr1/7/15/16 it lengthens 12 copies and shortens 15. (Two earlier versions of this
         // comment claimed "never shortens" and then "necessarily shortens"; both were wrong, see
@@ -14239,7 +17814,11 @@ pub mod denovo_assemble {
         // chr7 loses a 10-exon/105-read copy. Net effect on size agreement is undetectable (paired p = 0.69),
         // so this stays opt-in for absence of benefit rather than demonstrated harm.
         if is_start {
-            if fallback < peak.saturating_sub(window) { peak } else { fallback.min(peak) }
+            if fallback < peak.saturating_sub(window) {
+                peak
+            } else {
+                fallback.min(peak)
+            }
         } else if fallback > peak.saturating_add(window) {
             peak
         } else {
@@ -14247,14 +17826,24 @@ pub mod denovo_assemble {
         }
     }
 
-    pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_terminal_support: u32) -> Vec<Skeleton> {
+    pub fn pass1_skeletons_robust(
+        reads: &[PrimaryRead],
+        min_reads: u32,
+        min_terminal_support: u32,
+    ) -> Vec<Skeleton> {
         // Opt-in sharp-boundary refinement (see `snap_boundary`). OFF by default so every existing catalog stays
         // byte-identical; when on, all starts/ends are retained per group (O(reads) extra memory) so the peak
         // can be located, which is why it is not simply always on.
         let snap: Option<(u64, f64)> = match std::env::var("RUSTLE_TSS_SNAP") {
             Ok(v) if v != "0" && !v.is_empty() => {
-                let win = std::env::var("RUSTLE_TSS_SNAP_WINDOW").ok().and_then(|x| x.parse().ok()).unwrap_or(400u64);
-                let frac = std::env::var("RUSTLE_TSS_SNAP_FRAC").ok().and_then(|x| x.parse().ok()).unwrap_or(0.30f64);
+                let win = std::env::var("RUSTLE_TSS_SNAP_WINDOW")
+                    .ok()
+                    .and_then(|x| x.parse().ok())
+                    .unwrap_or(400u64);
+                let frac = std::env::var("RUSTLE_TSS_SNAP_FRAC")
+                    .ok()
+                    .and_then(|x| x.parse().ok())
+                    .unwrap_or(0.30f64);
                 Some((win, frac))
             }
             _ => None,
@@ -14302,7 +17891,11 @@ pub mod denovo_assemble {
         // body (the accumulator IS that body, split so a streaming reader can feed it one record at a time
         // without materialising the reads; see `docs/PREREG_streaming_assembly_2026-09-23.md`).
         let mut acc = Pass1Acc::new(min_terminal_support, snap);
-        let jsup = if isoform_k > 0 { Some(junction_support(reads)) } else { None };
+        let jsup = if isoform_k > 0 {
+            Some(junction_support(reads))
+        } else {
+            None
+        };
         for r in reads {
             acc.push_read(r);
         }
@@ -14312,7 +17905,10 @@ pub mod denovo_assemble {
         if footprint_nodes_enabled() {
             let extra = footprint_skeletons(reads, &skels, min_reads);
             if !extra.is_empty() {
-                eprintln!("[footprint] added {} nodes at regions no chain-based pass could reach", extra.len());
+                eprintln!(
+                    "[footprint] added {} nodes at regions no chain-based pass could reach",
+                    extra.len()
+                );
             }
             skels.extend(extra);
         }
@@ -14320,7 +17916,9 @@ pub mod denovo_assemble {
     }
 
     /// Per-junction read support over every spliced read, the quantity `--read-isoform-k` tests.
-    pub fn junction_support(reads: &[PrimaryRead]) -> std::collections::BTreeMap<(String, (u64, u64)), u32> {
+    pub fn junction_support(
+        reads: &[PrimaryRead],
+    ) -> std::collections::BTreeMap<(String, (u64, u64)), u32> {
         let mut jsup = std::collections::BTreeMap::new();
         for r in reads {
             for &j in &r.introns {
@@ -14340,7 +17938,8 @@ pub mod denovo_assemble {
         keep_all: bool,
         snap: Option<(u64, f64)>,
         // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc, n_reverse).
-        groups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
+        groups:
+            std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
         // all starts/ends per group, populated only when `snap` needs them
         allpos: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)>,
         /// Unspliced reads, in arrival order, for the position-aware seeding pass.
@@ -14386,7 +17985,14 @@ pub mod denovo_assemble {
 
         /// One read. An unspliced read is retained whole (empty chain would pool chromosome-wide; it is
         /// seeded position-aware in `finish`); a spliced read is reduced to its group's counters.
-        pub fn push(&mut self, chrom: &str, ref_start: u64, ref_end: u64, introns: &[(u64, u64)], reverse: bool) {
+        pub fn push(
+            &mut self,
+            chrom: &str,
+            ref_start: u64,
+            ref_end: u64,
+            introns: &[(u64, u64)],
+            reverse: bool,
+        ) {
             self.n_pushed += 1;
             if introns.is_empty() {
                 self.unspliced.push(PrimaryRead {
@@ -14444,7 +18050,8 @@ pub mod denovo_assemble {
                 }
                 !hit
             });
-            self.allpos.retain(|(chrom, introns), _| !flags.carries(chrom, introns));
+            self.allpos
+                .retain(|(chrom, introns), _| !flags.carries(chrom, introns));
             (groups, reads)
         }
 
@@ -14465,7 +18072,9 @@ pub mod denovo_assemble {
                         || (isoform_k > 0
                             && !introns.is_empty()
                             && jsup.is_some_and(|js| {
-                                introns.iter().all(|j| js.get(&(chrom.clone(), *j)).copied().unwrap_or(0) >= isoform_k)
+                                introns.iter().all(|j| {
+                                    js.get(&(chrom.clone(), *j)).copied().unwrap_or(0) >= isoform_k
+                                })
                             }))
                 })
                 .map(|((chrom, introns), (n, starts, ends, n_rev))| {
@@ -14475,7 +18084,8 @@ pub mod denovo_assemble {
                     let ei = k.min(ends.len()).saturating_sub(1);
                     let (mut start, mut end) = (starts[si], ends[ei]);
                     if let Some((win, frac)) = snap {
-                        if let Some((all_s, all_e)) = allpos.get(&(chrom.clone(), introns.clone())) {
+                        if let Some((all_s, all_e)) = allpos.get(&(chrom.clone(), introns.clone()))
+                        {
                             start = snap_boundary(all_s, start, win, frac, true);
                             end = snap_boundary(all_e, end, win, frac, false);
                             if end <= start {
@@ -14559,7 +18169,11 @@ pub mod denovo_assemble {
         if c == 0 || c > 3 || seq_len < c {
             return false;
         }
-        let (from, want) = if reverse { (seq_len - c, b'C') } else { (0, b'G') };
+        let (from, want) = if reverse {
+            (seq_len - c, b'C')
+        } else {
+            (0, b'G')
+        };
         (from..from + c).all(|i| base_at(i).map(|b| b.to_ascii_uppercase()) == Some(want))
     }
 
@@ -14579,7 +18193,15 @@ pub mod denovo_assemble {
     impl TssEvidence {
         /// One primary spliced alignment (the caller has excluded secondary / supplementary / unmapped / QC-fail and
         /// unspliced records). `introns` are genomic `(donor, acceptor)`, 0-based half-open, ascending.
-        pub fn push(&mut self, chrom: &str, minus: bool, ref_start: u64, ref_end: u64, introns: &[(u64, u64)], capped: bool) {
+        pub fn push(
+            &mut self,
+            chrom: &str,
+            minus: bool,
+            ref_start: u64,
+            ref_end: u64,
+            introns: &[(u64, u64)],
+            capped: bool,
+        ) {
             use std::hash::{Hash, Hasher};
             if introns.is_empty() {
                 return;
@@ -14594,12 +18216,31 @@ pub mod denovo_assemble {
                 (
                     -(ref_end as i64),
                     -(ref_start as i64 + 1),
-                    introns.iter().rev().map(|&(d, a)| (-(a as i64), -(d as i64 + 1))).collect(),
+                    introns
+                        .iter()
+                        .rev()
+                        .map(|&(d, a)| (-(a as i64), -(d as i64 + 1)))
+                        .collect(),
                 )
             } else {
-                (ref_start as i64 + 1, ref_end as i64, introns.iter().map(|&(d, a)| (d as i64 + 1, a as i64)).collect())
+                (
+                    ref_start as i64 + 1,
+                    ref_end as i64,
+                    introns
+                        .iter()
+                        .map(|&(d, a)| (d as i64 + 1, a as i64))
+                        .collect(),
+                )
             };
-            let rec = TssRead { key, minus, o5, o3, capped, chain: tss_chain_hash(introns), oin };
+            let rec = TssRead {
+                key,
+                minus,
+                o5,
+                o3,
+                capped,
+                chain: tss_chain_hash(introns),
+                oin,
+            };
             match self.by_chrom.get_mut(chrom) {
                 Some(v) => v.push(rec),
                 None => {
@@ -14647,25 +18288,47 @@ pub mod denovo_assemble {
             seq_len: usize,
             base_at: impl Fn(usize) -> Option<u8>,
         ) {
-            if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() || flags.is_qc_fail() || exons.len() < 2 {
+            if flags.is_unmapped()
+                || flags.is_secondary()
+                || flags.is_supplementary()
+                || flags.is_qc_fail()
+                || exons.len() < 2
+            {
                 return;
             }
             let rev = flags.is_reverse_complemented();
             let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
             let capped = tss_cap_clip(ops, rev, seq_len, base_at);
-            self.push(chrom, rev, ref_start, exons[exons.len() - 1].1, &introns, capped);
+            self.push(
+                chrom,
+                rev,
+                ref_start,
+                exons[exons.len() - 1].1,
+                &introns,
+                capped,
+            );
         }
     }
 
     /// `copy_assign --polish-tss` on the BUFFERED (`--materialize-reads`) path: one indexed lazy pass over `[lo, hi)` of
     /// `chrom` feeding `ev` through [`TssEvidence::push_alignment`], exactly as the streaming reader feeds it. The
     /// materialised pool drops read sequences, so the cap signature is read here instead.
-    pub fn tss_evidence_region(bam_path: &str, chrom: &str, lo: u64, hi: u64, ev: &mut TssEvidence) -> Result<()> {
+    pub fn tss_evidence_region(
+        bam_path: &str,
+        chrom: &str,
+        lo: u64,
+        hi: u64,
+        ev: &mut TssEvidence,
+    ) -> Result<()> {
         let bai_path = format!("{bam_path}.bai");
-        anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "--polish-tss needs a .bai index");
+        anyhow::ensure!(
+            std::path::Path::new(&bai_path).exists(),
+            "--polish-tss needs a .bai index"
+        );
         let file = std::fs::File::open(bam_path)?;
         let buf = std::io::BufReader::with_capacity(1 << 20, file);
-        let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(std::num::NonZeroUsize::MIN, buf);
+        let bgzf =
+            noodles_bgzf::MultithreadedReader::with_worker_count(std::num::NonZeroUsize::MIN, buf);
         let mut reader = noodles_bam::io::Reader::from(bgzf);
         let header = reader.read_header()?;
         let index = noodles_bam::bai::read(&bai_path)?;
@@ -14677,19 +18340,25 @@ pub mod denovo_assemble {
             if flags.is_unmapped() || flags.is_supplementary() {
                 continue;
             }
-            let Some(start) = record.alignment_start() else { continue };
+            let Some(start) = record.alignment_start() else {
+                continue;
+            };
             let ref_start = (usize::from(start?) as u64).saturating_sub(1);
             ops.clear();
             for op in record.cigar().iter() {
                 ops.push(op?);
             }
             let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());
-            let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else { continue };
+            let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else {
+                continue;
+            };
             if exons.is_empty() {
                 continue;
             }
             let seq = record.sequence();
-            ev.push_alignment(chrom, flags, ref_start, &exons, &ops, seq.len(), |i| seq.get(i));
+            ev.push_alignment(chrom, flags, ref_start, &exons, &ops, seq.len(), |i| {
+                seq.get(i)
+            });
         }
         Ok(())
     }
@@ -14712,21 +18381,30 @@ pub mod denovo_assemble {
     /// A window also BOUNDS the gap-grouping that the genome-wide scan gets wrong: inside a window, runs are
     /// joined regardless of `max_gap`, because the window itself asserts they belong to one locus.
     pub fn footprint_windows() -> Option<Vec<(String, u64, u64)>> {
-        let path = std::env::var("RUSTLE_FOOTPRINT_WINDOWS").ok().filter(|p| !p.is_empty())?;
+        let path = std::env::var("RUSTLE_FOOTPRINT_WINDOWS")
+            .ok()
+            .filter(|p| !p.is_empty())?;
         let text = std::fs::read_to_string(&path)
             .map_err(|e| eprintln!("[footprint] cannot read windows {path}: {e}"))
             .ok()?;
         let mut out = Vec::new();
         for line in text.lines() {
-            if line.starts_with('#') || line.trim().is_empty() { continue; }
+            if line.starts_with('#') || line.trim().is_empty() {
+                continue;
+            }
             let f: Vec<&str> = line.split('\t').collect();
-            if f.len() < 3 { continue; }
+            if f.len() < 3 {
+                continue;
+            }
             match (f[1].parse::<u64>(), f[2].parse::<u64>()) {
                 (Ok(a), Ok(b)) if b > a => out.push((f[0].to_string(), a, b)),
                 _ => {}
             }
         }
-        eprintln!("[footprint] {} search windows loaded from {path}", out.len());
+        eprintln!(
+            "[footprint] {} search windows loaded from {path}",
+            out.len()
+        );
         Some(out)
     }
 
@@ -14755,7 +18433,9 @@ pub mod denovo_assemble {
     ) -> Vec<Skeleton> {
         use DetHashMap;
         let min_cov: u32 = std::env::var("RUSTLE_FOOTPRINT_MIN_COV")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2);
         // ⚠ 5 kb, not 100 kb. This grouping runs GENOME-WIDE, and at 100 kb it chains every covered region
         // on a contig into a handful of giant nodes: measured on NC_073244.2, 100 kb gives 73 islands with a
         // max span of 4.6 Mb, which is why the first ON arm added only 14 nodes and moved nothing. Chosen so
@@ -14763,9 +18443,13 @@ pub mod denovo_assemble {
         // gap 2 kb -> 3,245 islands / median 2.4 kb; 5 kb -> 1,443 / 7.1 kb; 10 kb -> 721 / 20 kb;
         // 20 kb -> 353 / 47 kb. The shipped catalog holds ~950 reps per contig, so 5 kb is the right scale.
         let max_gap: u64 = std::env::var("RUSTLE_FOOTPRINT_MAX_GAP")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(5_000);
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5_000);
         let min_bp: u64 = std::env::var("RUSTLE_FOOTPRINT_MIN_BP")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(300);
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300);
         const BIN: u64 = 50;
         let mut by_chrom: DetHashMap<&str, Vec<&PrimaryRead>> = DetHashMap::default();
         for r in reads {
@@ -14779,7 +18463,10 @@ pub mod denovo_assemble {
         // it must not reserve the region.
         let mut taken: DetHashMap<&str, Vec<(u64, u64)>> = DetHashMap::default();
         for sk in existing.iter().filter(|sk| sk.n_reads >= min_reads) {
-            taken.entry(sk.chrom.as_str()).or_default().push((sk.start, sk.end));
+            taken
+                .entry(sk.chrom.as_str())
+                .or_default()
+                .push((sk.start, sk.end));
         }
         let mut out = Vec::new();
         // WINDOWED MODE: one node per supplied window, built from the reads inside it. The window supplies
@@ -14787,7 +18474,9 @@ pub mod denovo_assemble {
         // window itself asserts that its runs belong to one locus.
         if let Some(wins) = footprint_windows() {
             for (wc, ws, we) in &wins {
-                let Some(rs) = by_chrom.get(wc.as_str()) else { continue };
+                let Some(rs) = by_chrom.get(wc.as_str()) else {
+                    continue;
+                };
                 let inside: Vec<&&PrimaryRead> = rs
                     .iter()
                     .filter(|r| {
@@ -14795,14 +18484,20 @@ pub mod denovo_assemble {
                         b > a && (b.min(*we).saturating_sub(a.max(*ws))) * 2 >= (b - a)
                     })
                     .collect();
-                if (inside.len() as u32) < min_cov { continue; }
+                if (inside.len() as u32) < min_cov {
+                    continue;
+                }
                 // A window is "already served" only when existing nodes cover MOST of it. Blocking on ANY
                 // contained rep was wrong: measured on the 26 seeded NPIP windows, existing reps cover a
                 // MEDIAN 3.7% of a window and 24/26 are under half covered, so that test discarded the
                 // uncovered ~96% and only 2 of 26 windows ever emitted a node.
                 let mut iv: Vec<(u64, u64)> = existing
                     .iter()
-                    .filter(|sk| sk.n_reads >= min_reads && sk.chrom == *wc && we.min(&sk.end) > ws.max(&sk.start))
+                    .filter(|sk| {
+                        sk.n_reads >= min_reads
+                            && sk.chrom == *wc
+                            && we.min(&sk.end) > ws.max(&sk.start)
+                    })
                     .map(|sk| (sk.start.max(*ws), sk.end.min(*we)))
                     .collect();
                 iv.sort_unstable();
@@ -14810,38 +18505,68 @@ pub mod denovo_assemble {
                 if !iv.is_empty() {
                     let (mut cs, mut ce) = iv[0];
                     for &(a, b) in &iv[1..] {
-                        if a <= ce { ce = ce.max(b); } else { served += ce - cs; cs = a; ce = b; }
+                        if a <= ce {
+                            ce = ce.max(b);
+                        } else {
+                            served += ce - cs;
+                            cs = a;
+                            ce = b;
+                        }
                     }
                     served += ce - cs;
                 }
-                if served * 2 >= we - ws { continue; }
+                if served * 2 >= we - ws {
+                    continue;
+                }
                 let mut depth: DetHashMap<u64, u32> = DetHashMap::default();
                 let mut rev = 0u32;
                 for r in &inside {
-                    if r.reverse { rev += 1; }
+                    if r.reverse {
+                        rev += 1;
+                    }
                     for (a, b) in exon_blocks_of(r) {
                         for bin in (a.max(*ws) / BIN)..=(b.min(*we) / BIN) {
                             *depth.entry(bin).or_insert(0) += 1;
                         }
                     }
                 }
-                let mut bins: Vec<u64> = depth.iter().filter(|(_, &d)| d >= min_cov).map(|(&b, _)| b).collect();
-                if bins.is_empty() { continue; }
+                let mut bins: Vec<u64> = depth
+                    .iter()
+                    .filter(|(_, &d)| d >= min_cov)
+                    .map(|(&b, _)| b)
+                    .collect();
+                if bins.is_empty() {
+                    continue;
+                }
                 bins.sort_unstable();
                 let mut runs: Vec<(u64, u64)> = Vec::new();
                 let (mut st, mut pv) = (bins[0], bins[0]);
                 for &b in &bins[1..] {
-                    if b == pv + 1 { pv = b; } else { runs.push((st * BIN, (pv + 1) * BIN)); st = b; pv = b; }
+                    if b == pv + 1 {
+                        pv = b;
+                    } else {
+                        runs.push((st * BIN, (pv + 1) * BIN));
+                        st = b;
+                        pv = b;
+                    }
                 }
                 runs.push((st * BIN, (pv + 1) * BIN));
                 let bp: u64 = runs.iter().map(|(a, b)| b - a).sum();
-                if bp < min_bp { continue; }
+                if bp < min_bp {
+                    continue;
+                }
                 let introns: Vec<(u64, u64)> = runs.windows(2).map(|w| (w[0].1, w[1].0)).collect();
                 out.push(Skeleton {
-                    chrom: wc.clone(), start: runs[0].0, end: runs[runs.len() - 1].1,
-                    n_reads: inside.len() as u32, introns, tied_seeded: false, footprint: true,
+                    chrom: wc.clone(),
+                    start: runs[0].0,
+                    end: runs[runs.len() - 1].1,
+                    n_reads: inside.len() as u32,
+                    introns,
+                    tied_seeded: false,
+                    footprint: true,
                     read_strand: Some(majority_read_strand(rev, inside.len() as u32)),
-                    read_rev: rev, read_tot: inside.len() as u32,
+                    read_rev: rev,
+                    read_tot: inside.len() as u32,
                 });
             }
             return out;
@@ -14851,26 +18576,44 @@ pub mod denovo_assemble {
             let mut depth: DetHashMap<u64, u32> = DetHashMap::default();
             let mut rev = 0u32;
             for r in &rs {
-                if r.reverse { rev += 1; }
+                if r.reverse {
+                    rev += 1;
+                }
                 for (a, b) in exon_blocks_of(r) {
                     let (lo, hi) = (a / BIN, b / BIN);
-                    for bin in lo..=hi { *depth.entry(bin).or_insert(0) += 1; }
+                    for bin in lo..=hi {
+                        *depth.entry(bin).or_insert(0) += 1;
+                    }
                 }
             }
-            let mut bins: Vec<u64> = depth.iter().filter(|(_, &d)| d >= min_cov).map(|(&b, _)| b).collect();
-            if bins.is_empty() { continue; }
+            let mut bins: Vec<u64> = depth
+                .iter()
+                .filter(|(_, &d)| d >= min_cov)
+                .map(|(&b, _)| b)
+                .collect();
+            if bins.is_empty() {
+                continue;
+            }
             bins.sort_unstable();
             // contiguous bins -> covered runs
             let mut runs: Vec<(u64, u64)> = Vec::new();
             let (mut st, mut pv) = (bins[0], bins[0]);
             for &b in &bins[1..] {
-                if b == pv + 1 { pv = b; } else { runs.push((st * BIN, (pv + 1) * BIN)); st = b; pv = b; }
+                if b == pv + 1 {
+                    pv = b;
+                } else {
+                    runs.push((st * BIN, (pv + 1) * BIN));
+                    st = b;
+                    pv = b;
+                }
             }
             runs.push((st * BIN, (pv + 1) * BIN));
             // runs closer than max_gap belong to one locus
             let mut group: Vec<(u64, u64)> = Vec::new();
             let mut flush = |g: &mut Vec<(u64, u64)>, out: &mut Vec<Skeleton>| {
-                if g.is_empty() { return; }
+                if g.is_empty() {
+                    return;
+                }
                 let bp: u64 = g.iter().map(|(a, b)| b - a).sum();
                 let (s0, e0) = (g[0].0, g[g.len() - 1].1);
                 // A region is "already served" only when existing nodes cover MOST of it. Blocking on ANY
@@ -14881,34 +18624,55 @@ pub mod denovo_assemble {
                 // was tier-1, and tier-2's +3 came indirectly from reps added elsewhere.
                 let mut iv: Vec<(u64, u64)> = taken
                     .get(chrom)
-                    .map(|v| v.iter().filter(|&&(a, b)| e0.min(b) > s0.max(a))
-                              .map(|&(a, b)| (a.max(s0), b.min(e0))).collect())
+                    .map(|v| {
+                        v.iter()
+                            .filter(|&&(a, b)| e0.min(b) > s0.max(a))
+                            .map(|&(a, b)| (a.max(s0), b.min(e0)))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 iv.sort_unstable();
                 let mut served = 0u64;
                 if !iv.is_empty() {
                     let (mut cs, mut ce) = iv[0];
                     for &(a, b) in &iv[1..] {
-                        if a <= ce { ce = ce.max(b); } else { served += ce - cs; cs = a; ce = b; }
+                        if a <= ce {
+                            ce = ce.max(b);
+                        } else {
+                            served += ce - cs;
+                            cs = a;
+                            ce = b;
+                        }
                     }
                     served += ce - cs;
                 }
                 let overlaps = e0 > s0 && served * 2 >= e0 - s0;
                 if bp >= min_bp && !overlaps {
                     let introns: Vec<(u64, u64)> = g.windows(2).map(|w| (w[0].1, w[1].0)).collect();
-                    let n = rs.iter().filter(|r| r.ref_end.min(e0) > r.ref_start.max(s0)).count() as u32;
+                    let n = rs
+                        .iter()
+                        .filter(|r| r.ref_end.min(e0) > r.ref_start.max(s0))
+                        .count() as u32;
                     out.push(Skeleton {
-                        chrom: chrom.to_string(), start: s0, end: e0, n_reads: n, introns,
-                        tied_seeded: false, footprint: true,
+                        chrom: chrom.to_string(),
+                        start: s0,
+                        end: e0,
+                        n_reads: n,
+                        introns,
+                        tied_seeded: false,
+                        footprint: true,
                         read_strand: Some(majority_read_strand(rev, rs.len() as u32)),
-                        read_rev: rev, read_tot: rs.len() as u32,
+                        read_rev: rev,
+                        read_tot: rs.len() as u32,
                     });
                 }
                 g.clear();
             };
             for r in runs {
                 if let Some(&(_, prev_end)) = group.last() {
-                    if r.0.saturating_sub(prev_end) > max_gap { flush(&mut group, &mut out); }
+                    if r.0.saturating_sub(prev_end) > max_gap {
+                        flush(&mut group, &mut out);
+                    }
                 }
                 group.push(r);
             }
@@ -14922,10 +18686,14 @@ pub mod denovo_assemble {
         let mut out = Vec::new();
         let mut cur = r.ref_start;
         for &(a, b) in &r.introns {
-            if a > cur { out.push((cur, a)); }
+            if a > cur {
+                out.push((cur, a));
+            }
             cur = b;
         }
-        if r.ref_end > cur { out.push((cur, r.ref_end)); }
+        if r.ref_end > cur {
+            out.push((cur, r.ref_end));
+        }
         out
     }
 
@@ -14978,7 +18746,7 @@ pub mod denovo_assemble {
                     end,
                     n_reads: n,
                     introns,
-    footprint: false,
+                    footprint: false,
                     tied_seeded: true,
                     // SPLICED: the strand comes from the junction motifs, which never consult `read_strand`.
                     // The unspliced tied seeds below go through `cluster_unspliced`, which does measure it.
@@ -15056,7 +18824,10 @@ pub mod denovo_assemble {
     /// read's primary is already counted in the main set; these tied secondaries restore the STARVED sibling
     /// copy's read support so the rescue can assemble it. A truly indistinguishable (no copy-specific feature)
     /// phantom is still rejected downstream by the identifiability / PSV gate — this only feeds candidates in.
-    pub fn tied_secondary_reads(aln: &[(String, bool, i32, f32, PrimaryRead)], as_ratio: f64) -> Vec<PrimaryRead> {
+    pub fn tied_secondary_reads(
+        aln: &[(String, bool, i32, f32, PrimaryRead)],
+        as_ratio: f64,
+    ) -> Vec<PrimaryRead> {
         use DetHashMap;
         // Optional de-tie gate (`RUSTLE_TIED_SEED_DE=1`): admit a secondary iff it DE-ties with the read's best
         // placement — `|Δde| <= DE_DELTA` AND both `de <= DE_MAX` — the SAME criterion the read-conflict graph
@@ -15066,7 +18837,9 @@ pub mod denovo_assemble {
         // legacy AS gate = byte-identical.
         const DE_DELTA: f64 = 0.005;
         const DE_MAX: f64 = 0.05;
-        let use_de = std::env::var("RUSTLE_TIED_SEED_DE").map(|v| v != "0").unwrap_or(false);
+        let use_de = std::env::var("RUSTLE_TIED_SEED_DE")
+            .map(|v| v != "0")
+            .unwrap_or(false);
         // best placement per read = highest AS; carry its `de` as the tie reference.
         let mut best: DetHashMap<&str, (i32, f32)> = DetHashMap::default();
         for (name, _, as_, de, _) in aln {
@@ -15095,7 +18868,10 @@ pub mod denovo_assemble {
     /// is_secondary, AS, de)` for the tie gate. AS ratio is the default gate; the `de:f` gap-compressed divergence
     /// is carried so the de-tie gate (`RUSTLE_TIED_SEED_DE`) can use the same criterion the conflict graph uses.
     /// Unmapped / supplementary / no-AS / no-exon records are skipped.
-    pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryRead, String, bool, i32, f32)> {
+    pub fn any_read_from_record(
+        record: &RecordBuf,
+        chrom: &str,
+    ) -> Option<(PrimaryRead, String, bool, i32, f32)> {
         let flags = record.flags();
         if flags.is_unmapped() || flags.is_supplementary() {
             return None;
@@ -15176,7 +18952,11 @@ pub mod denovo_assemble {
                     Some(r) if r < id => continue,
                     _ => break, // the next contig, or the unplaced reads at the end of the file
                 }
-                match sp.place(record.alignment_start().map(|p| (p.get() as u64).saturating_sub(1))) {
+                match sp.place(
+                    record
+                        .alignment_start()
+                        .map(|p| (p.get() as u64).saturating_sub(1)),
+                ) {
                     std::cmp::Ordering::Less => continue,
                     std::cmp::Ordering::Greater => break,
                     std::cmp::Ordering::Equal => {}
@@ -15194,7 +18974,11 @@ pub mod denovo_assemble {
                 if flagfree {
                     use std::hash::{Hash, Hasher};
                     let mut h = std::collections::hash_map::DefaultHasher::new();
-                    record.name().map(|n| n.to_string()).unwrap_or_default().hash(&mut h);
+                    record
+                        .name()
+                        .map(|n| n.to_string())
+                        .unwrap_or_default()
+                        .hash(&mut h);
                     pr.chrom.hash(&mut h);
                     pr.ref_start.hash(&mut h);
                     pr.ref_end.hash(&mut h);
@@ -15233,10 +19017,14 @@ pub mod denovo_assemble {
             // `RUSTLE_FLAGFREE_UNSPLICED=1` restores the refuted behaviour, for A/B only.
             let bar = !matches!(std::env::var("RUSTLE_FLAGFREE_UNSPLICED"), Ok(v) if v != "0" && !v.is_empty());
             if bar {
-                let mut prim_uns: std::collections::BTreeMap<String, Vec<(u64, u64)>> = Default::default();
+                let mut prim_uns: std::collections::BTreeMap<String, Vec<(u64, u64)>> =
+                    Default::default();
                 for (i, r) in out.iter().enumerate() {
                     if r.introns.is_empty() && !sec_flag.get(i).copied().unwrap_or(false) {
-                        prim_uns.entry(r.chrom.clone()).or_default().push((r.ref_start, r.ref_end));
+                        prim_uns
+                            .entry(r.chrom.clone())
+                            .or_default()
+                            .push((r.ref_start, r.ref_end));
                     }
                 }
                 for v in prim_uns.values_mut() {
@@ -15254,7 +19042,11 @@ pub mod denovo_assemble {
                             None => false,
                             Some(v) => {
                                 let j = v.partition_point(|&(st, _)| st < r.ref_end);
-                                v[..j].iter().rev().take(512).any(|&(_, en)| en > r.ref_start)
+                                v[..j]
+                                    .iter()
+                                    .rev()
+                                    .take(512)
+                                    .any(|&(_, en)| en > r.ref_start)
                             }
                         }
                     })
@@ -15328,14 +19120,17 @@ pub mod denovo_assemble {
     ///
     /// A flag rather than a parameter because `aligned_read_from_record` has several call sites and this must
     /// not change any of their signatures. Default false = every existing path is unchanged.
-    pub static SKIP_READ_SEQUENCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    pub static SKIP_READ_SEQUENCE: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
 
     /// Whether read sequence/quality should be dropped at parse time (see [`SKIP_READ_SEQUENCE`]).
     pub fn skip_read_sequence() -> bool {
         SKIP_READ_SEQUENCE.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String, i32, f32, bool, bool)> {
+    pub fn aligned_read_from_record(
+        record: &RecordBuf,
+    ) -> Option<(AlignedRead, u8, String, i32, f32, bool, bool)> {
         if record.flags().is_unmapped() {
             return None;
         }
@@ -15347,10 +19142,18 @@ pub mod denovo_assemble {
             .map(|op| (cigar_kind_to_char(op.kind()), op.len() as u64))
             .collect();
         let skip_seq = skip_read_sequence();
-        let seq: Vec<u8> = if skip_seq { Vec::new() } else { record.sequence().as_ref().to_vec() };
+        let seq: Vec<u8> = if skip_seq {
+            Vec::new()
+        } else {
+            record.sequence().as_ref().to_vec()
+        };
         // Per-base Phred qualities, parallel to `seq` (both keep soft-clips). Empty if the BAM
         // carried no quality string -> the PSV likelihood falls back to the flat error rate.
-        let qual: Vec<u8> = if skip_seq { Vec::new() } else { record.quality_scores().as_ref().to_vec() };
+        let qual: Vec<u8> = if skip_seq {
+            Vec::new()
+        } else {
+            record.quality_scores().as_ref().to_vec()
+        };
         let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
         let name = record.name().map(|n| n.to_string()).unwrap_or_default();
         let as_score = record_as(record).unwrap_or(0);
@@ -15360,7 +19163,20 @@ pub mod denovo_assemble {
         let de = record_de(record).unwrap_or(0.0);
         let is_supplementary = record.flags().is_supplementary();
         let is_secondary = record.flags().is_secondary();
-        Some((AlignedRead { ref_start, cigar, seq, qual }, mapq, name, as_score, de, is_supplementary, is_secondary))
+        Some((
+            AlignedRead {
+                ref_start,
+                cigar,
+                seq,
+                qual,
+            },
+            mapq,
+            name,
+            as_score,
+            de,
+            is_supplementary,
+            is_secondary,
+        ))
     }
 
     /// Scan every mapped alignment in a BAM into `BamRead`s (the copy-assignment read input). I/O driver,
@@ -15379,9 +19195,22 @@ pub mod denovo_assemble {
                 Some((name, _)) => format!("{name}"),
                 None => continue,
             };
-            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
+            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
+                aligned_read_from_record(&record)
+            {
                 let (reverse, ts) = (record.flags().is_reverse_complemented(), record_ts(&record));
-                out.push(BamRead { chrom, read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                out.push(BamRead {
+                    chrom,
+                    read,
+                    mapq,
+                    name,
+                    as_score,
+                    de,
+                    is_supplementary,
+                    is_secondary,
+                    reverse,
+                    ts,
+                });
             }
         }
         Ok(out)
@@ -15408,7 +19237,11 @@ pub mod denovo_assemble {
     ) -> Result<Vec<BamRead>> {
         let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
         let header = reader.read_header()?;
-        let contigs: Vec<String> = header.reference_sequences().keys().map(|k| format!("{k}")).collect();
+        let contigs: Vec<String> = header
+            .reference_sequences()
+            .keys()
+            .map(|k| format!("{k}"))
+            .collect();
         let only: Option<usize> = match span {
             None => None,
             Some(sp) => match crate::bam::seek_to_span(&mut reader, &header, bam_path, sp)? {
@@ -15436,14 +19269,20 @@ pub mod denovo_assemble {
                     std::cmp::Ordering::Equal => {}
                 }
             }
-            let Some(chrom) = record.reference_sequence_id().and_then(|r| r.ok()).and_then(|id| contigs.get(id)) else {
+            let Some(chrom) = record
+                .reference_sequence_id()
+                .and_then(|r| r.ok())
+                .and_then(|id| contigs.get(id))
+            else {
                 continue;
             };
             let flags = record.flags();
             if flags.is_unmapped() {
                 continue;
             }
-            let Some(start) = record.alignment_start() else { continue };
+            let Some(start) = record.alignment_start() else {
+                continue;
+            };
             let ref_start = (usize::from(start?) as u64).saturating_sub(1);
             let mut cigar: Vec<(char, u64)> = Vec::new();
             for op in record.cigar().iter() {
@@ -15457,7 +19296,12 @@ pub mod denovo_assemble {
             let (as_score, de, ts) = crate::bam::record_as_de_ts(&record)?;
             out.push(BamRead {
                 chrom: chrom.clone(),
-                read: AlignedRead { ref_start, cigar, seq: Vec::new(), qual: Vec::new() },
+                read: AlignedRead {
+                    ref_start,
+                    cigar,
+                    seq: Vec::new(),
+                    qual: Vec::new(),
+                },
                 mapq,
                 name,
                 as_score: as_score.unwrap_or(0),
@@ -15501,7 +19345,10 @@ pub mod denovo_assemble {
     /// ties only. The same principle (and the same 0.98 default width) as `copy_assign --as-ratio`, applied to
     /// site construction instead of assignment.
     pub fn gtf_secondary_as_ratio() -> f64 {
-        std::env::var("RUSTLE_GTF_SECONDARY_AS_RATIO").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0)
+        std::env::var("RUSTLE_GTF_SECONDARY_AS_RATIO")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0)
     }
 
     /// Which records of a region survive the AS-tie filter, by index into `recs`.
@@ -15623,14 +19470,24 @@ pub mod denovo_assemble {
 
         /// From strictly increasing keys and their values; `None` when that does not hold.
         fn from_sorted(keys: Vec<u64>, vals: Vec<i32>) -> Option<Self> {
-            if keys.len() != vals.len() || keys.len() > u32::MAX as usize || keys.windows(2).any(|w| w[0] >= w[1]) {
+            if keys.len() != vals.len()
+                || keys.len() > u32::MAX as usize
+                || keys.windows(2).any(|w| w[0] >= w[1])
+            {
                 return None;
             }
             // ~4 keys per bucket: 2^(ceil(log2 n) - 2) buckets
-            let bits = (usize::BITS - keys.len().saturating_sub(1).leading_zeros()).saturating_sub(2).min(32);
+            let bits = (usize::BITS - keys.len().saturating_sub(1).leading_zeros())
+                .saturating_sub(2)
+                .min(32);
             let shift = 64 - bits;
             let nb = 1usize << bits;
-            let mut t = AsTable { keys, vals, index: vec![0; nb + 1], shift };
+            let mut t = AsTable {
+                keys,
+                vals,
+                index: vec![0; nb + 1],
+                shift,
+            };
             let mut p = 0usize;
             for b in 0..nb {
                 while p < t.keys.len() && t.bucket(t.keys[p]) < b {
@@ -15653,8 +19510,14 @@ pub mod denovo_assemble {
         /// The best AS of the molecule whose name hashes to `key`.
         pub fn get(&self, key: &u64) -> Option<&i32> {
             let b = self.bucket(*key);
-            let (lo, hi) = (*self.index.get(b)? as usize, *self.index.get(b + 1)? as usize);
-            self.keys[lo..hi].binary_search(key).ok().map(|i| &self.vals[lo + i])
+            let (lo, hi) = (
+                *self.index.get(b)? as usize,
+                *self.index.get(b + 1)? as usize,
+            );
+            self.keys[lo..hi]
+                .binary_search(key)
+                .ok()
+                .map(|i| &self.vals[lo + i])
         }
 
         pub fn len(&self) -> usize {
@@ -15719,7 +19582,9 @@ pub mod denovo_assemble {
             let m = std::fs::metadata(path).ok()?;
             let mut f = std::fs::File::open(path).ok()?;
             let mut header = Vec::new();
-            std::io::BufReader::new(&mut f).read_until(b'\n', &mut header).ok()?;
+            std::io::BufReader::new(&mut f)
+                .read_until(b'\n', &mut header)
+                .ok()?;
             if !header.starts_with(b"#") {
                 header.clear();
             }
@@ -15728,14 +19593,26 @@ pub mod denovo_assemble {
             let block = 4096u64;
             let mut buf: Vec<u8> = Vec::with_capacity(block as usize);
             for i in 0..16u64 {
-                let at = if size <= block { 0 } else { (size - block) * i / 15 };
+                let at = if size <= block {
+                    0
+                } else {
+                    (size - block) * i / 15
+                };
                 f.seek(SeekFrom::Start(at)).ok()?;
                 buf.clear();
                 (&mut f).take(block).read_to_end(&mut buf).ok()?;
                 fnv.update(&at.to_le_bytes());
                 fnv.update(&buf);
             }
-            Some(Self { size, mtime_s: m.mtime(), mtime_ns: m.mtime_nsec() as u32, ino: m.ino(), dev: m.dev(), sample: fnv.finish(), header })
+            Some(Self {
+                size,
+                mtime_s: m.mtime(),
+                mtime_ns: m.mtime_nsec() as u32,
+                ino: m.ino(),
+                dev: m.dev(),
+                sample: fnv.finish(),
+                header,
+            })
         }
 
         #[cfg(not(unix))]
@@ -15762,7 +19639,9 @@ pub mod denovo_assemble {
             h = (h ^ k).rotate_left(23).wrapping_mul(0xff51_afd7_ed55_8ccd);
         }
         for &v in vals {
-            h = (h ^ v as u32 as u64).rotate_left(23).wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+            h = (h ^ v as u32 as u64)
+                .rotate_left(23)
+                .wrapping_mul(0xc4ce_b9fe_1a85_ec53);
         }
         h
     }
@@ -15789,7 +19668,10 @@ pub mod denovo_assemble {
         r.read_exact(&mut magic).ok()?;
         let mut version = [0u8; 4];
         r.read_exact(&mut version).ok()?;
-        if &magic != AS_SIDECAR_MAGIC || u32::from_le_bytes(version) != AS_SIDECAR_VERSION || read_u64(&mut r)? != as_sidecar_probe() {
+        if &magic != AS_SIDECAR_MAGIC
+            || u32::from_le_bytes(version) != AS_SIDECAR_VERSION
+            || read_u64(&mut r)? != as_sidecar_probe()
+        {
             return None;
         }
         let n = read_u64(&mut r)?;
@@ -15797,7 +19679,12 @@ pub mod denovo_assemble {
         id.encode(&mut want);
         let mut got = vec![0u8; want.len()];
         r.read_exact(&mut got).ok()?;
-        if got != want || len != (8 + 4 + 8 + 8 + want.len() as u64).checked_add(n.checked_mul(12)?)?.checked_add(8)? {
+        if got != want
+            || len
+                != (8 + 4 + 8 + 8 + want.len() as u64)
+                    .checked_add(n.checked_mul(12)?)?
+                    .checked_add(8)?
+        {
             return None;
         }
         let n = n as usize;
@@ -15807,7 +19694,11 @@ pub mod denovo_assemble {
         while left > 0 {
             let k = left.min(buf.len());
             r.read_exact(&mut buf[..k]).ok()?;
-            keys.extend(buf[..k].chunks_exact(8).map(|b| u64::from_le_bytes(b.try_into().unwrap())));
+            keys.extend(
+                buf[..k]
+                    .chunks_exact(8)
+                    .map(|b| u64::from_le_bytes(b.try_into().unwrap())),
+            );
             left -= k;
         }
         let mut vals: Vec<i32> = Vec::with_capacity(n);
@@ -15815,7 +19706,11 @@ pub mod denovo_assemble {
         while left > 0 {
             let k = left.min(buf.len());
             r.read_exact(&mut buf[..k]).ok()?;
-            vals.extend(buf[..k].chunks_exact(4).map(|b| i32::from_le_bytes(b.try_into().unwrap())));
+            vals.extend(
+                buf[..k]
+                    .chunks_exact(4)
+                    .map(|b| i32::from_le_bytes(b.try_into().unwrap())),
+            );
             left -= k;
         }
         if read_u64(&mut r)? != as_sidecar_checksum(&keys, &vals) {
@@ -15860,7 +19755,10 @@ pub mod denovo_assemble {
         use std::io::BufRead;
         let f = std::fs::File::open(path).ok()?;
         let mut pairs: Vec<(u64, i32)> = Vec::new();
-        for line in std::io::BufReader::with_capacity(1 << 20, f).lines().map_while(Result::ok) {
+        for line in std::io::BufReader::with_capacity(1 << 20, f)
+            .lines()
+            .map_while(Result::ok)
+        {
             if line.starts_with('#') {
                 continue; // `as_table` provenance header (`#as_table\tbam=...`)
             }
@@ -15878,7 +19776,11 @@ pub mod denovo_assemble {
     /// parse a new sidecar is written when the TSV did not change during the parse (a failed write only warns).
     /// Without it, the TSV alone (the reference arm). `None` when the TSV cannot be opened.
     pub fn load_as_table(tsv: &str, sidecar: bool) -> Option<(AsTable, AsTableSource)> {
-        let id = if sidecar { AsTsvIdentity::of(tsv) } else { None };
+        let id = if sidecar {
+            AsTsvIdentity::of(tsv)
+        } else {
+            None
+        };
         if let Some(id) = id.as_ref() {
             if let Some(t) = read_as_sidecar(tsv, id) {
                 return Some((t, AsTableSource::Sidecar));
@@ -15890,7 +19792,10 @@ pub mod denovo_assemble {
             if !t.is_empty() && AsTsvIdentity::of(tsv).as_ref() == Some(&id) {
                 match write_as_sidecar(tsv, &id, &t) {
                     Ok(()) => wrote = true,
-                    Err(e) => eprintln!("[as-table] WARNING: could not write {}: {e} (the TSV is read every time)", as_sidecar_path(tsv)),
+                    Err(e) => eprintln!(
+                        "[as-table] WARNING: could not write {}: {e} (the TSV is read every time)",
+                        as_sidecar_path(tsv)
+                    ),
                 }
             }
         }
@@ -15944,7 +19849,8 @@ pub mod denovo_assemble {
         /// truncated sidecar and a flipped byte are all rejected and rebuilt; `sidecar = false` never reads one.
         #[test]
         fn as_table_sidecar_roundtrip_and_staleness() {
-            let dir = std::env::temp_dir().join(format!("rustle_as_table_sidecar_{}", std::process::id()));
+            let dir = std::env::temp_dir()
+                .join(format!("rustle_as_table_sidecar_{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let tsv = dir.join("t.molecules.tsv").display().to_string();
             let side = as_sidecar_path(&tsv);
@@ -15954,35 +19860,66 @@ pub mod denovo_assemble {
             std::fs::write(&tsv, text("100")).unwrap();
             let (t0, s0) = load_as_table(&tsv, false).unwrap();
             assert_eq!(s0, AsTableSource::Tsv(false));
-            assert!(!std::path::Path::new(&side).exists(), "sidecar = false writes nothing");
-            assert_eq!((t0.len(), t0.get(&read_name_hash("r1")), t0.get(&read_name_hash("r3"))), (2, Some(&100), None));
+            assert!(
+                !std::path::Path::new(&side).exists(),
+                "sidecar = false writes nothing"
+            );
+            assert_eq!(
+                (
+                    t0.len(),
+                    t0.get(&read_name_hash("r1")),
+                    t0.get(&read_name_hash("r3"))
+                ),
+                (2, Some(&100), None)
+            );
             let (t1, s1) = load_as_table(&tsv, true).unwrap();
             assert_eq!((s1, &t1), (AsTableSource::Tsv(true), &t0));
             let (t2, s2) = load_as_table(&tsv, true).unwrap();
             assert_eq!((s2, &t2), (AsTableSource::Sidecar, &t0));
-            assert_eq!(load_as_table(&tsv, false).unwrap().1, AsTableSource::Tsv(false), "the reference arm ignores it");
+            assert_eq!(
+                load_as_table(&tsv, false).unwrap().1,
+                AsTableSource::Tsv(false),
+                "the reference arm ignores it"
+            );
             // same size, same inode, mtime restored: only the content differs
             let mtime = std::fs::metadata(&tsv).unwrap().modified().unwrap();
             std::fs::write(&tsv, text("101")).unwrap();
-            std::fs::File::options().write(true).open(&tsv).unwrap().set_modified(mtime).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&tsv)
+                .unwrap()
+                .set_modified(mtime)
+                .unwrap();
             let (t3, s3) = load_as_table(&tsv, true).unwrap();
-            assert_eq!((s3, t3.get(&read_name_hash("r1"))), (AsTableSource::Tsv(true), Some(&101)));
+            assert_eq!(
+                (s3, t3.get(&read_name_hash("r1"))),
+                (AsTableSource::Tsv(true), Some(&101))
+            );
             assert_eq!(load_as_table(&tsv, true).unwrap().1, AsTableSource::Sidecar);
             // a truncated sidecar, then one with a flipped value byte (checksum)
             let good = std::fs::read(&side).unwrap();
             std::fs::write(&side, &good[..good.len() - 1]).unwrap();
-            assert_eq!(load_as_table(&tsv, true).unwrap().1, AsTableSource::Tsv(true));
+            assert_eq!(
+                load_as_table(&tsv, true).unwrap().1,
+                AsTableSource::Tsv(true)
+            );
             let mut bad = std::fs::read(&side).unwrap();
             let at = bad.len() - 9;
             bad[at] ^= 1;
             std::fs::write(&side, &bad).unwrap();
             let (t4, s4) = load_as_table(&tsv, true).unwrap();
-            assert_eq!((s4, t4.get(&read_name_hash("r1"))), (AsTableSource::Tsv(true), Some(&101)));
+            assert_eq!(
+                (s4, t4.get(&read_name_hash("r1"))),
+                (AsTableSource::Tsv(true), Some(&101))
+            );
             // a sidecar from another hasher (probe) is not read
             let mut other = std::fs::read(&side).unwrap();
             other[12] ^= 1;
             std::fs::write(&side, &other).unwrap();
-            assert_eq!(load_as_table(&tsv, true).unwrap().1, AsTableSource::Tsv(true));
+            assert_eq!(
+                load_as_table(&tsv, true).unwrap().1,
+                AsTableSource::Tsv(true)
+            );
             std::fs::remove_dir_all(&dir).ok();
         }
     }
@@ -16026,10 +19963,22 @@ pub mod denovo_assemble {
                 if f[0] == "read_name" {
                     continue;
                 }
-                anyhow::ensure!(f.len() >= 4, "read-home table line {}: expected read_name, chrom, start, end", ln + 1);
-                let start: u64 = f[2].parse().with_context(|| format!("read-home table line {}: bad start {:?}", ln + 1, f[2]))?;
-                let end: u64 = f[3].parse().with_context(|| format!("read-home table line {}: bad end {:?}", ln + 1, f[3]))?;
-                anyhow::ensure!(end > start, "read-home table line {}: empty home span {start}-{end}", ln + 1);
+                anyhow::ensure!(
+                    f.len() >= 4,
+                    "read-home table line {}: expected read_name, chrom, start, end",
+                    ln + 1
+                );
+                let start: u64 = f[2].parse().with_context(|| {
+                    format!("read-home table line {}: bad start {:?}", ln + 1, f[2])
+                })?;
+                let end: u64 = f[3].parse().with_context(|| {
+                    format!("read-home table line {}: bad end {:?}", ln + 1, f[3])
+                })?;
+                anyhow::ensure!(
+                    end > start,
+                    "read-home table line {}: empty home span {start}-{end}",
+                    ln + 1
+                );
                 let ci = match index.get(f[1]) {
                     Some(&i) => i,
                     None => {
@@ -16039,7 +19988,10 @@ pub mod denovo_assemble {
                         i
                     }
                 };
-                t.homes.entry(read_name_hash(f[0])).or_default().push((ci, start, end));
+                t.homes
+                    .entry(read_name_hash(f[0]))
+                    .or_default()
+                    .push((ci, start, end));
             }
             Ok(t)
         }
@@ -16052,15 +20004,28 @@ pub mod denovo_assemble {
         /// The decision for one record of molecule `name` placed at `chrom:ref_start` with CIGAR `ops`: `None` = the
         /// molecule is not listed (the caller's base rule applies), `Some(true)` = keep it (an aligned block lies on a
         /// home), `Some(false)` = drop it (a placement away from home).
-        pub fn decide(&self, name: &str, chrom: &str, ref_start: u64, ops: &[noodles_sam::alignment::record::cigar::Op]) -> Option<bool> {
+        pub fn decide(
+            &self,
+            name: &str,
+            chrom: &str,
+            ref_start: u64,
+            ops: &[noodles_sam::alignment::record::cigar::Op],
+        ) -> Option<bool> {
             let homes = self.homes.get(&read_name_hash(name))?;
-            Some(homes.iter().any(|&(ci, s, e)| self.contigs[ci as usize] == chrom && aligned_blocks_overlap(ref_start, ops, s, e)))
+            Some(homes.iter().any(|&(ci, s, e)| {
+                self.contigs[ci as usize] == chrom && aligned_blocks_overlap(ref_start, ops, s, e)
+            }))
         }
     }
 
     /// Does any aligned block (M/=/X run; `D` and `N` advance the reference without aligning) of a record starting at
     /// 0-based `ref_start` overlap `[s, e)`? The rule `bench/loop_home.py` checks with pysam's `get_blocks()`.
-    pub fn aligned_blocks_overlap(ref_start: u64, ops: &[noodles_sam::alignment::record::cigar::Op], s: u64, e: u64) -> bool {
+    pub fn aligned_blocks_overlap(
+        ref_start: u64,
+        ops: &[noodles_sam::alignment::record::cigar::Op],
+        s: u64,
+        e: u64,
+    ) -> bool {
         let mut pos = ref_start;
         for op in ops {
             let len = op.len() as u64;
@@ -16083,11 +20048,18 @@ pub mod denovo_assemble {
         static TABLE: std::sync::OnceLock<Option<ReadHomeTable>> = std::sync::OnceLock::new();
         TABLE
             .get_or_init(|| {
-                let path = std::env::var("RUSTLE_READ_HOME_TABLE").ok().filter(|p| !p.is_empty())?;
-                let text = std::fs::read_to_string(&path)
-                    .unwrap_or_else(|e| panic!("RUSTLE_READ_HOME_TABLE={path}: cannot read the table: {e}"));
-                let t = ReadHomeTable::parse(&text).unwrap_or_else(|e| panic!("RUSTLE_READ_HOME_TABLE={path}: {e:#}"));
-                eprintln!("[read-home] {} molecule(s) with a home copy loaded from {path}", t.n_molecules());
+                let path = std::env::var("RUSTLE_READ_HOME_TABLE")
+                    .ok()
+                    .filter(|p| !p.is_empty())?;
+                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("RUSTLE_READ_HOME_TABLE={path}: cannot read the table: {e}")
+                });
+                let t = ReadHomeTable::parse(&text)
+                    .unwrap_or_else(|e| panic!("RUSTLE_READ_HOME_TABLE={path}: {e:#}"));
+                eprintln!(
+                    "[read-home] {} molecule(s) with a home copy loaded from {path}",
+                    t.n_molecules()
+                );
                 Some(t)
             })
             .as_ref()
@@ -16158,7 +20130,14 @@ pub mod denovo_assemble {
 
     /// Apply a home decision to a materialised record: push its pass-1 read when kept (a secondary is taken whatever the
     /// base rule says), and count it against `base_admits` (would the caller's base rule have taken it?).
-    fn home_apply_buf(keep: bool, rb: &RecordBuf, chrom: &str, base_admits: bool, primary: &mut Vec<PrimaryRead>, c: &mut HomeCounts) {
+    fn home_apply_buf(
+        keep: bool,
+        rb: &RecordBuf,
+        chrom: &str,
+        base_admits: bool,
+        primary: &mut Vec<PrimaryRead>,
+        c: &mut HomeCounts,
+    ) {
         if keep {
             if let Some(pr) = alignment_read_from_record(rb, chrom, true) {
                 c.record(true, base_admits);
@@ -16303,9 +20282,15 @@ pub mod denovo_assemble {
             let t = v.trim();
             if t.len() >= 5 && t.is_char_boundary(5) && t[..5].eq_ignore_ascii_case("list:") {
                 let path = t[5..].trim();
-                anyhow::ensure!(!path.is_empty(), "RUSTLE_READTHROUGH_JUNCTIONS=list:<path> needs a path, got {v:?}");
+                anyhow::ensure!(
+                    !path.is_empty(),
+                    "RUSTLE_READTHROUGH_JUNCTIONS=list:<path> needs a path, got {v:?}"
+                );
                 let list = ReadthroughList::read(path)?;
-                return Ok(Some(ReadthroughSwitch { rule: ReadthroughRule::List, list: Some(std::sync::Arc::new(list)) }));
+                return Ok(Some(ReadthroughSwitch {
+                    rule: ReadthroughRule::List,
+                    list: Some(std::sync::Arc::new(list)),
+                }));
             }
             Ok(ReadthroughRule::parse(Some(v))?.map(|rule| ReadthroughSwitch { rule, list: None }))
         }
@@ -16340,14 +20325,16 @@ pub mod denovo_assemble {
         pub path: String,
         /// contig -> listed `(donor, acceptor, minus)` in the pool's intron coordinates (0-based first intron base,
         /// 0-based exclusive end), i.e. `(donor_1b - 1, acceptor_1b)`
-        pub junctions: std::collections::BTreeMap<String, std::collections::BTreeSet<(u64, u64, bool)>>,
+        pub junctions:
+            std::collections::BTreeMap<String, std::collections::BTreeSet<(u64, u64, bool)>>,
     }
 
     impl ReadthroughList {
         pub fn read(path: &str) -> Result<ReadthroughList> {
             use anyhow::Context as _;
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("RUSTLE_READTHROUGH_JUNCTIONS=list:{path}: cannot read the junction list"))?;
+            let text = std::fs::read_to_string(path).with_context(|| {
+                format!("RUSTLE_READTHROUGH_JUNCTIONS=list:{path}: cannot read the junction list")
+            })?;
             Self::parse(path, &text)
         }
 
@@ -16355,7 +20342,10 @@ pub mod denovo_assemble {
         pub fn parse(path: &str, text: &str) -> Result<ReadthroughList> {
             use anyhow::Context as _;
             let mut cols: Option<(usize, usize, usize, usize)> = None;
-            let mut out = ReadthroughList { path: path.to_string(), ..Default::default() };
+            let mut out = ReadthroughList {
+                path: path.to_string(),
+                ..Default::default()
+            };
             for (i, line) in text.lines().enumerate() {
                 let line = line.trim_end_matches('\r');
                 if line.starts_with('#') || line.trim().is_empty() {
@@ -16375,13 +20365,25 @@ pub mod denovo_assemble {
                     continue;
                 };
                 let field = |k: usize| -> Result<&str> {
-                    f.get(k).map(|x| x.trim()).ok_or_else(|| anyhow::anyhow!("{path}:{}: {} field(s), column {} missing", i + 1, f.len(), k + 1))
+                    f.get(k).map(|x| x.trim()).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "{path}:{}: {} field(s), column {} missing",
+                            i + 1,
+                            f.len(),
+                            k + 1
+                        )
+                    })
                 };
                 let contig = field(ci)?;
                 anyhow::ensure!(!contig.is_empty(), "{path}:{}: empty contig", i + 1);
                 let num = |k: usize, what: &str| -> Result<u64> {
                     let x = field(k)?;
-                    x.parse::<u64>().with_context(|| format!("{path}:{}: {what} {x:?} is not a non-negative integer", i + 1))
+                    x.parse::<u64>().with_context(|| {
+                        format!(
+                            "{path}:{}: {what} {x:?} is not a non-negative integer",
+                            i + 1
+                        )
+                    })
                 };
                 let (donor, acceptor) = (num(di, "donor")?, num(ai, "acceptor")?);
                 anyhow::ensure!(
@@ -16394,10 +20396,19 @@ pub mod denovo_assemble {
                     "-" => true,
                     s => anyhow::bail!("{path}:{}: strand must be `+` or `-`, got {s:?}", i + 1),
                 };
-                out.junctions.entry(contig.to_string()).or_default().insert((donor - 1, acceptor, minus));
+                out.junctions
+                    .entry(contig.to_string())
+                    .or_default()
+                    .insert((donor - 1, acceptor, minus));
             }
-            anyhow::ensure!(cols.is_some(), "{path}: no header line (an empty junction list)");
-            anyhow::ensure!(!out.junctions.is_empty(), "{path}: the junction list holds no junction row");
+            anyhow::ensure!(
+                cols.is_some(),
+                "{path}: no header line (an empty junction list)"
+            );
+            anyhow::ensure!(
+                !out.junctions.is_empty(),
+                "{path}: the junction list holds no junction row"
+            );
             Ok(out)
         }
 
@@ -16419,7 +20430,12 @@ pub mod denovo_assemble {
                     anyhow::bail!("{}: contig {c:?} ({} listed junction(s)) is not a reference sequence of the BAM", self.path, set.len())
                 };
                 if let Some(&(d, a, _)) = set.iter().find(|&&(_, a, _)| a > len) {
-                    anyhow::bail!("{}: junction {c}:{}-{} lies beyond the contig's length {len}", self.path, d + 1, a);
+                    anyhow::bail!(
+                        "{}: junction {c}:{}-{} lies beyond the contig's length {len}",
+                        self.path,
+                        d + 1,
+                        a
+                    );
                 }
             }
             Ok(())
@@ -16429,11 +20445,19 @@ pub mod denovo_assemble {
         fn in_windows(
             &self,
             windows: &[(String, u64, u64)],
-        ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<(u64, u64, bool)>> {
-            let mut out: std::collections::BTreeMap<String, std::collections::BTreeSet<(u64, u64, bool)>> = Default::default();
+        ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<(u64, u64, bool)>>
+        {
+            let mut out: std::collections::BTreeMap<
+                String,
+                std::collections::BTreeSet<(u64, u64, bool)>,
+            > = Default::default();
             for (c, lo, hi) in windows {
                 if let Some(set) = self.junctions.get(c) {
-                    let hit: Vec<(u64, u64, bool)> = set.iter().copied().filter(|&(d, a, _)| d < *hi && a > *lo).collect();
+                    let hit: Vec<(u64, u64, bool)> = set
+                        .iter()
+                        .copied()
+                        .filter(|&(d, a, _)| d < *hi && a > *lo)
+                        .collect();
                     if !hit.is_empty() {
                         out.entry(c.clone()).or_default().extend(hit);
                     }
@@ -16484,7 +20508,9 @@ pub mod denovo_assemble {
                 ReadthroughRule::R => self.r_pass,
                 ReadthroughRule::Rq1 => self.r_pass && self.q1_pass,
                 ReadthroughRule::R2 => (self.r_pass && !self.ale_exempt) || self.tier_b,
-                ReadthroughRule::R3 => (self.r_pass && !self.ale_exempt) || (self.tier_b && !self.b_guarded()),
+                ReadthroughRule::R3 => {
+                    (self.r_pass && !self.ale_exempt) || (self.tier_b && !self.b_guarded())
+                }
                 ReadthroughRule::List => false,
             }
         }
@@ -16561,7 +20587,12 @@ pub mod denovo_assemble {
     impl ReadthroughStats {
         /// `r` / `rq1`; the list arm is built by [`ReadthroughSwitch::stats`].
         pub fn new(rule: ReadthroughRule) -> Self {
-            ReadthroughStats { rule, contigs: Default::default(), done: Vec::new(), list: None }
+            ReadthroughStats {
+                rule,
+                contigs: Default::default(),
+                done: Vec::new(),
+                list: None,
+            }
         }
 
         /// One PRIMARY alignment (the caller filters secondary / supplementary / unmapped) with its exon blocks from
@@ -16572,7 +20603,11 @@ pub mod denovo_assemble {
                 return;
             }
             let ref_end = exons[exons.len() - 1].1;
-            if self.done.iter().any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l) {
+            if self
+                .done
+                .iter()
+                .any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l)
+            {
                 return;
             }
             if !self.contigs.contains_key(chrom) {
@@ -16590,7 +20625,11 @@ pub mod denovo_assemble {
             }
             // `L`: the read's last splice in transcript orientation (its acceptor exon is the read's terminal exon)
             let n = exons.len();
-            let last = if minus { (exons[0].1, exons[1].0, true) } else { (exons[n - 2].1, exons[n - 1].0, false) };
+            let last = if minus {
+                (exons[0].1, exons[1].0, true)
+            } else {
+                (exons[n - 2].1, exons[n - 1].0, false)
+            };
             *c.l.entry(last).or_insert(0) += 1;
         }
 
@@ -16604,10 +20643,15 @@ pub mod denovo_assemble {
                 .read
                 .cigar
                 .iter()
-                .filter_map(|&(c, n)| cigar_char_to_kind(c).map(|k| noodles_sam::alignment::record::cigar::Op::new(k, n as usize)))
+                .filter_map(|&(c, n)| {
+                    cigar_char_to_kind(c)
+                        .map(|k| noodles_sam::alignment::record::cigar::Op::new(k, n as usize))
+                })
                 .collect();
             let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops);
-            let Ok(exons) = crate::bam::exons_from_cigar(br.read.ref_start, &cigar) else { return };
+            let Ok(exons) = crate::bam::exons_from_cigar(br.read.ref_start, &cigar) else {
+                return;
+            };
             let minus = (br.ts.unwrap_or('+') == '+') == br.reverse;
             self.push(&br.chrom, br.read.ref_start, &exons, minus);
         }
@@ -16627,8 +20671,16 @@ pub mod denovo_assemble {
         /// included); each is scored in full so its row reports S, U and V1. `n_junctions` / `n_r_pass` keep their
         /// meaning (junctions with S >= 2; canonical R-pass junctions).
         pub fn flag(self, genome: &GenomeIndex, dump_all: bool) -> ReadthroughFlags {
-            let ReadthroughStats { rule, mut contigs, done, list } = self;
-            let mut out = ReadthroughFlags { rule: Some(rule), ..Default::default() };
+            let ReadthroughStats {
+                rule,
+                mut contigs,
+                done,
+                list,
+            } = self;
+            let mut out = ReadthroughFlags {
+                rule: Some(rule),
+                ..Default::default()
+            };
             let listed_all = match (rule, &list) {
                 (ReadthroughRule::List, Some(l)) => l.in_windows(&done),
                 _ => Default::default(),
@@ -16640,9 +20692,15 @@ pub mod denovo_assemble {
                 let listed = listed_all.get(&chrom);
                 // listed junctions below the scoring floor are scored too (S < 2 never enters `juncs`)
                 let extra: Vec<((u64, u64, bool), u32)> = listed
-                    .map(|l| l.iter().map(|k| (*k, c.s.get(k).copied().unwrap_or(0))).filter(|&(_, s)| s < RT_MIN_S).collect())
+                    .map(|l| {
+                        l.iter()
+                            .map(|k| (*k, c.s.get(k).copied().unwrap_or(0)))
+                            .filter(|&(_, s)| s < RT_MIN_S)
+                            .collect()
+                    })
                     .unwrap_or_default();
-                let mut juncs: Vec<((u64, u64, bool), u32)> = c.s.drain().filter(|&(_, s)| s >= RT_MIN_S).collect();
+                let mut juncs: Vec<((u64, u64, bool), u32)> =
+                    c.s.drain().filter(|&(_, s)| s >= RT_MIN_S).collect();
                 out.n_junctions += juncs.len();
                 juncs.extend(extra);
                 juncs.sort_unstable();
@@ -16650,7 +20708,8 @@ pub mod denovo_assemble {
                     let rows = &mut c.rows[usize::from(minus)];
                     rows.sort_unstable(); // by (p5, p3, pf): 5′ order, and equal-ends groups contiguous
                     let real = rt_real_starts(rows);
-                    let mut by3: Vec<(u64, u64)> = rows.iter().map(|&(p5, p3, _)| (p3, p5)).collect();
+                    let mut by3: Vec<(u64, u64)> =
+                        rows.iter().map(|&(p5, p3, _)| (p3, p5)).collect();
                     by3.sort_unstable();
                     // this strand's scored junctions (with `is_listed`), decided below once `r3`'s N_span is known
                     let mut scored: Vec<(ReadthroughJunction, bool)> = Vec::new();
@@ -16659,16 +20718,27 @@ pub mod denovo_assemble {
                         let full = dump_all || is_listed;
                         // the early stops: the least U at which the arm's rule can flag (`r`/`rq1`: R's 20·S)
                         let need = rule.min_u_factor() * u64::from(s);
-                        let (lo, hi) = (by3.partition_point(|x| x.0 < d), by3.partition_point(|x| x.0 < a));
+                        let (lo, hi) = (
+                            by3.partition_point(|x| x.0 < d),
+                            by3.partition_point(|x| x.0 < a),
+                        );
                         let t = (hi - lo) as u64;
                         if !full && t < need {
                             continue;
                         }
-                        let u = by3[lo..hi].iter().filter(|&&(_, p5)| if minus { p5 >= a } else { p5 < d }).count() as u64;
+                        let u = by3[lo..hi]
+                            .iter()
+                            .filter(|&&(_, p5)| if minus { p5 >= a } else { p5 < d })
+                            .count() as u64;
                         if !full && u < need {
                             continue;
                         }
-                        let canonical = genome.is_canonical_junction(&chrom, d, a, if minus { '-' } else { '+' });
+                        let canonical = genome.is_canonical_junction(
+                            &chrom,
+                            d,
+                            a,
+                            if minus { '-' } else { '+' },
+                        );
                         if !full && !canonical {
                             continue;
                         }
@@ -16679,8 +20749,10 @@ pub mod denovo_assemble {
                         let q1_pass = RT_Q1_NUM * v1 >= RT_Q1_DEN * s64;
                         let l = c.l.get(&(d, a, minus)).copied().unwrap_or(0);
                         let ale_exempt = RT_EXEMPT_L_NUM * u64::from(l) >= s64 && !q1_pass;
-                        let tier_b =
-                            s >= RT_MIN_S && canonical && u >= RT_B_U_FACTOR * s64 && v1 >= RT_B_V1_FACTOR * s64;
+                        let tier_b = s >= RT_MIN_S
+                            && canonical
+                            && u >= RT_B_U_FACTOR * s64
+                            && v1 >= RT_B_V1_FACTOR * s64;
                         let j = ReadthroughJunction {
                             chrom: chrom.clone(),
                             donor: d,
@@ -16702,9 +20774,13 @@ pub mod denovo_assemble {
                     }
                     // `r3`: N_span for the junctions passing the rest of tier B, one offline sweep over this strand's rows
                     if rule == ReadthroughRule::R3 {
-                        let cand: Vec<usize> = (0..scored.len()).filter(|&i| scored[i].0.tier_b).collect();
+                        let cand: Vec<usize> =
+                            (0..scored.len()).filter(|&i| scored[i].0.tier_b).collect();
                         if !cand.is_empty() {
-                            let q: Vec<(u64, u64)> = cand.iter().map(|&i| (scored[i].0.donor, scored[i].0.acceptor)).collect();
+                            let q: Vec<(u64, u64)> = cand
+                                .iter()
+                                .map(|&i| (scored[i].0.donor, scored[i].0.acceptor))
+                                .collect();
                             for (&i, n) in cand.iter().zip(rt_span_counts(rows, minus, &q)) {
                                 scored[i].0.n_span = Some(n);
                             }
@@ -16727,7 +20803,10 @@ pub mod denovo_assemble {
                             }
                         }
                         if hit {
-                            out.flagged.entry(chrom.clone()).or_default().insert((j.donor, j.acceptor));
+                            out.flagged
+                                .entry(chrom.clone())
+                                .or_default()
+                                .insert((j.donor, j.acceptor));
                             out.rows.push(j.clone());
                         }
                         if dump_all && s >= RT_MIN_S {
@@ -16767,7 +20846,10 @@ pub mod denovo_assemble {
     /// ends inside the intron. The pool's rows are 0-based with `(d, a)` = (first intron base, exclusive end); the same
     /// comparisons hold for 1-based rows queried with `(s, e + 1)` of a 1-based closed intron `[s, e]`.
     pub fn rt_v1(rows: &[(u64, u64, u64)], real: &[bool], d: u64, a: u64, minus: bool) -> u64 {
-        let (a5, b5) = (rows.partition_point(|x| x.0 < d), rows.partition_point(|x| x.0 < a));
+        let (a5, b5) = (
+            rows.partition_point(|x| x.0 < d),
+            rows.partition_point(|x| x.0 < a),
+        );
         let mut v1 = 0u64;
         let mut k = a5;
         while k < b5 {
@@ -16801,7 +20883,10 @@ pub mod denovo_assemble {
             return Vec::new();
         }
         // (genomic first base, genomic last base) per row, by last base descending
-        let mut spans: Vec<(u64, u64)> = rows.iter().map(|&(p5, p3, _)| if minus { (p3, p5) } else { (p5, p3) }).collect();
+        let mut spans: Vec<(u64, u64)> = rows
+            .iter()
+            .map(|&(p5, p3, _)| if minus { (p3, p5) } else { (p5, p3) })
+            .collect();
         let mut firsts: Vec<u64> = spans.iter().map(|x| x.0).collect();
         firsts.sort_unstable();
         firsts.dedup();
@@ -16877,7 +20962,8 @@ pub mod denovo_assemble {
             if self.flagged.is_empty() {
                 return pool;
             }
-            let mut chains: std::collections::BTreeSet<(String, Vec<(u64, u64)>)> = Default::default();
+            let mut chains: std::collections::BTreeSet<(String, Vec<(u64, u64)>)> =
+                Default::default();
             let mut kept = Vec::with_capacity(pool.len());
             for r in pool {
                 if self.carries(&r.chrom, &r.introns) {
@@ -16971,11 +21057,26 @@ pub mod denovo_assemble {
         pub fn write_tsv(&self, path: &str) -> Result<()> {
             use std::io::Write as _;
             let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
-            writeln!(w, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule{}", self.tier_columns())?;
+            writeln!(
+                w,
+                "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule{}",
+                self.tier_columns()
+            )?;
             let listed = self.rule == Some(ReadthroughRule::List);
             for j in &self.rows {
                 let rule = if listed { "list" } else { j.rule_label() };
-                write!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", j.chrom, j.donor + 1, j.acceptor, j.strand(), j.s, j.u, j.v1, rule)?;
+                write!(
+                    w,
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    j.chrom,
+                    j.donor + 1,
+                    j.acceptor,
+                    j.strand(),
+                    j.s,
+                    j.u,
+                    j.v1,
+                    rule
+                )?;
                 writeln!(w, "{}", self.tier_values(j))?;
             }
             w.flush()?;
@@ -16992,12 +21093,25 @@ pub mod denovo_assemble {
         pub fn write_all_tsv(&self, path: &str) -> Result<()> {
             use std::io::Write as _;
             let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
-            writeln!(w, "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule{}", self.tier_columns())?;
+            writeln!(
+                w,
+                "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule{}",
+                self.tier_columns()
+            )?;
             for j in &self.all {
                 write!(
                     w,
                     "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                    j.chrom, j.donor + 1, j.acceptor, j.strand(), j.s, j.t, j.u, j.v1, j.canonical, j.rule_label()
+                    j.chrom,
+                    j.donor + 1,
+                    j.acceptor,
+                    j.strand(),
+                    j.s,
+                    j.t,
+                    j.u,
+                    j.v1,
+                    j.canonical,
+                    j.rule_label()
                 )?;
                 writeln!(w, "{}", self.tier_values(j))?;
             }
@@ -17067,12 +21181,15 @@ pub mod denovo_assemble {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or_else(|| {
-                std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1)
+                std::thread::available_parallelism()
+                    .map(|n| n.get().min(4))
+                    .unwrap_or(1)
             })
             .max(1);
         let file = std::fs::File::open(bam_path)?;
         let buf = std::io::BufReader::with_capacity(1 << 20, file);
-        let worker = std::num::NonZeroUsize::new(bam_threads).unwrap_or(std::num::NonZeroUsize::MIN);
+        let worker =
+            std::num::NonZeroUsize::new(bam_threads).unwrap_or(std::num::NonZeroUsize::MIN);
         let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker, buf);
         let mut reader = noodles_bam::io::Reader::from(bgzf);
         let header = reader.read_header()?;
@@ -17104,9 +21221,22 @@ pub mod denovo_assemble {
                 } else if let Some(pr) = alignment_read_from_record(&rb, chrom, allow_secondary) {
                     primary.push(pr);
                 }
-                if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
+                if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
+                    aligned_read_from_record(&rb)
+                {
                     let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
-                    bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                    bam_reads.push(BamRead {
+                        chrom: chrom.to_string(),
+                        read,
+                        mapq,
+                        name,
+                        as_score,
+                        de,
+                        is_supplementary,
+                        is_secondary,
+                        reverse,
+                        ts,
+                    });
                 }
             }
             home_report(chrom, lo, hi, &hc);
@@ -17126,23 +21256,41 @@ pub mod denovo_assemble {
                 (
                     rb.flags().is_secondary(),
                     rb.name().map(|n| n.to_string()).unwrap_or_default(),
-                    if rb.flags().is_supplementary() { None } else { record_as(rb) },
+                    if rb.flags().is_supplementary() {
+                        None
+                    } else {
+                        record_as(rb)
+                    },
                 )
             })
             .collect();
         let keep = as_tie_keep_with(&keys, ratio, global_best_as());
         for (i, rb) in buf.iter().enumerate() {
             if let Some(home_keep) = home_decide_buf(home, rb, chrom) {
-                let base = keep[i] && alignment_read_from_record(rb, chrom, gtf_secondary_enabled()).is_some();
+                let base = keep[i]
+                    && alignment_read_from_record(rb, chrom, gtf_secondary_enabled()).is_some();
                 home_apply_buf(home_keep, rb, chrom, base, &mut primary, &mut hc);
             } else if keep[i] {
                 if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
                     primary.push(pr);
                 }
             }
-            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(rb) {
+            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
+                aligned_read_from_record(rb)
+            {
                 let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
-                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                bam_reads.push(BamRead {
+                    chrom: chrom.to_string(),
+                    read,
+                    mapq,
+                    name,
+                    as_score,
+                    de,
+                    is_supplementary,
+                    is_secondary,
+                    reverse,
+                    ts,
+                });
             }
         }
         home_report(chrom, lo, hi, &hc);
@@ -17177,7 +21325,17 @@ pub mod denovo_assemble {
         fetched: &[(String, u64, u64)],
         acc: &mut Pass1Acc,
     ) -> Result<usize> {
-        stream_pass1_region_with(bam_path, chrom, lo, hi, allow_secondary, dedupe_coords, fetched, acc, read_home_table())
+        stream_pass1_region_with(
+            bam_path,
+            chrom,
+            lo,
+            hi,
+            allow_secondary,
+            dedupe_coords,
+            fetched,
+            acc,
+            read_home_table(),
+        )
     }
 
     /// [`stream_pass1_region`] with the read-home table passed explicitly (tests; `None` = no filter).
@@ -17199,11 +21357,16 @@ pub mod denovo_assemble {
         let bam_threads = std::env::var("RUSTLE_BAM_THREADS")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1))
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|n| n.get().min(4))
+                    .unwrap_or(1)
+            })
             .max(1);
         let file = std::fs::File::open(bam_path)?;
         let buf = std::io::BufReader::with_capacity(1 << 20, file);
-        let worker = std::num::NonZeroUsize::new(bam_threads).unwrap_or(std::num::NonZeroUsize::MIN);
+        let worker =
+            std::num::NonZeroUsize::new(bam_threads).unwrap_or(std::num::NonZeroUsize::MIN);
         let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker, buf);
         let mut reader = noodles_bam::io::Reader::from(bgzf);
         let header = reader.read_header()?;
@@ -17218,8 +21381,16 @@ pub mod denovo_assemble {
         // rule with the local-best half dropped: for a table built from the SAME BAM the global best is >= every
         // local best, so the two paths agree. No entry / no AS = keep (absence of evidence), as there. Names and
         // tags are decoded ONLY for secondaries under this rule, so the default path stays untouched.
-        let tie_ratio = if allow_secondary { gtf_secondary_as_ratio() } else { 0.0 };
-        let tie_table = if tie_ratio > 0.0 { global_best_as() } else { None };
+        let tie_ratio = if allow_secondary {
+            gtf_secondary_as_ratio()
+        } else {
+            0.0
+        };
+        let tie_table = if tie_ratio > 0.0 {
+            global_best_as()
+        } else {
+            None
+        };
         let mut n_tie_dropped = 0usize;
         let mut n_tie_unknown = 0usize; // secondaries whose molecule the table does not know (kept; a table from ANOTHER BAM shows here)
         let mut hc = HomeCounts::default();
@@ -17229,7 +21400,9 @@ pub mod denovo_assemble {
             if flags.is_unmapped() || flags.is_supplementary() {
                 continue;
             }
-            let Some(start) = record.alignment_start() else { continue };
+            let Some(start) = record.alignment_start() else {
+                continue;
+            };
             let ref_start = (usize::from(start?) as u64).saturating_sub(1);
             ops.clear();
             for op in record.cigar().iter() {
@@ -17239,22 +21412,29 @@ pub mod denovo_assemble {
             // `N`, before every rule below and before the exon walk (f1_bridge.py's population and its own CIGAR walk)
             if let Some(ev) = acc.bridge.as_mut() {
                 if !flags.is_secondary() {
-                    ev.push(chrom, flags.is_reverse_complemented(), ref_start, &ops, || {
-                        crate::family::bridge_regroup::ts_is_plus(&record)
-                    });
+                    ev.push(
+                        chrom,
+                        flags.is_reverse_complemented(),
+                        ref_start,
+                        &ops,
+                        || crate::family::bridge_regroup::ts_is_plus(&record),
+                    );
                 }
             }
             let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());
-            let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else { continue };
+            let Ok(exons) = crate::bam::exons_from_cigar(ref_start, &cigar) else {
+                continue;
+            };
             if exons.is_empty() {
                 continue;
             }
             n_mapped += 1; // every record `aligned_read_from_record` would have kept
-            // `RUSTLE_READTHROUGH_JUNCTIONS` (opt-in; `None` unless set): the rule's statistics come from EVERY primary
-            // spliced record, before the home / AS-tie / window / dedupe rules below (the population it was measured on)
+                           // `RUSTLE_READTHROUGH_JUNCTIONS` (opt-in; `None` unless set): the rule's statistics come from EVERY primary
+                           // spliced record, before the home / AS-tie / window / dedupe rules below (the population it was measured on)
             if let Some(rt) = acc.readthrough.as_mut() {
                 if !flags.is_secondary() && exons.len() > 1 {
-                    let minus = (record_ts(&record).unwrap_or('+') == '+') == flags.is_reverse_complemented();
+                    let minus = (record_ts(&record).unwrap_or('+') == '+')
+                        == flags.is_reverse_complemented();
                     rt.push(chrom, ref_start, &exons, minus);
                 }
             }
@@ -17262,7 +21442,9 @@ pub mod denovo_assemble {
             // record here too, before the pool's own rules (it deduplicates on its own key)
             if let Some(ev) = acc.tss.as_mut() {
                 let seq = record.sequence();
-                ev.push_alignment(chrom, flags, ref_start, &exons, &ops, seq.len(), |i| seq.get(i));
+                ev.push_alignment(chrom, flags, ref_start, &exons, &ops, seq.len(), |i| {
+                    seq.get(i)
+                });
             }
             // the closed loop's pass-2 filter (`RUSTLE_READ_HOME_TABLE`, opt-in; `home` is `None` unless set): a LISTED
             // molecule's record is kept iff an aligned block lies on its home copy, whatever its flag and AS, and
@@ -17319,7 +21501,10 @@ pub mod denovo_assemble {
             }
             let ref_end = exons.last().map(|e| e.1).unwrap_or(ref_start);
             let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
-            if fetched.iter().any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l) {
+            if fetched
+                .iter()
+                .any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l)
+            {
                 continue;
             }
             if dedupe_coords {
@@ -17329,7 +21514,13 @@ pub mod denovo_assemble {
                     continue;
                 }
             }
-            acc.push(chrom, ref_start, ref_end, &introns, flags.is_reverse_complemented());
+            acc.push(
+                chrom,
+                ref_start,
+                ref_end,
+                &introns,
+                flags.is_reverse_complemented(),
+            );
         }
         if n_tie_dropped > 0 || n_tie_unknown > 0 {
             eprintln!(
@@ -17340,7 +21531,6 @@ pub mod denovo_assemble {
         home_report(chrom, lo, hi, &hc);
         Ok(n_mapped)
     }
-
 
     pub struct BamIndexCache {
         header: noodles_sam::Header,
@@ -17353,7 +21543,8 @@ pub mod denovo_assemble {
         pub fn open(bam_path: &str) -> Result<Self> {
             let bai_path = format!("{bam_path}.bai");
             anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
-            let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+            let mut reader =
+                noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
             let header = reader.read_header()?;
             let index = noodles_bam::bai::read(&bai_path)?;
             Ok(Self { header, index })
@@ -17368,7 +21559,8 @@ pub mod denovo_assemble {
             lo: u64,
             hi: u64,
         ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
-            let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+            let mut reader =
+                noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
             let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
             let query = reader.query(&self.header, &self.index, &region)?;
             let mut primary = Vec::new();
@@ -17381,14 +21573,30 @@ pub mod denovo_assemble {
                     let record = result?;
                     let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
                     if let Some(home_keep) = home_decide_buf(home, &rb, chrom) {
-                        let base = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()).is_some();
+                        let base = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled())
+                            .is_some();
                         home_apply_buf(home_keep, &rb, chrom, base, &mut primary, &mut hc);
-                    } else if let Some(pr) = alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()) {
+                    } else if let Some(pr) =
+                        alignment_read_from_record(&rb, chrom, gtf_secondary_enabled())
+                    {
                         primary.push(pr);
                     }
-                    if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&rb) {
+                    if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
+                        aligned_read_from_record(&rb)
+                    {
                         let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(&rb));
-                        bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                        bam_reads.push(BamRead {
+                            chrom: chrom.to_string(),
+                            read,
+                            mapq,
+                            name,
+                            as_score,
+                            de,
+                            is_supplementary,
+                            is_secondary,
+                            reverse,
+                            ts,
+                        });
                     }
                 }
                 home_report(chrom, lo, hi, &hc);
@@ -17408,23 +21616,42 @@ pub mod denovo_assemble {
                     (
                         rb.flags().is_secondary(),
                         rb.name().map(|n| n.to_string()).unwrap_or_default(),
-                        if rb.flags().is_supplementary() { None } else { record_as(rb) }, // as above: no supplementary AS in the local best
+                        if rb.flags().is_supplementary() {
+                            None
+                        } else {
+                            record_as(rb)
+                        }, // as above: no supplementary AS in the local best
                     )
                 })
                 .collect();
             let keep = as_tie_keep_with(&keys, ratio, global_best_as());
             for (i, rb) in buf.iter().enumerate() {
                 if let Some(home_keep) = home_decide_buf(home, rb, chrom) {
-                    let base = keep[i] && alignment_read_from_record(rb, chrom, gtf_secondary_enabled()).is_some();
+                    let base = keep[i]
+                        && alignment_read_from_record(rb, chrom, gtf_secondary_enabled()).is_some();
                     home_apply_buf(home_keep, rb, chrom, base, &mut primary, &mut hc);
                 } else if keep[i] {
-                    if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
+                    if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled())
+                    {
                         primary.push(pr);
                     }
                 }
-                if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(rb) {
+                if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
+                    aligned_read_from_record(rb)
+                {
                     let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
-                    bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                    bam_reads.push(BamRead {
+                        chrom: chrom.to_string(),
+                        read,
+                        mapq,
+                        name,
+                        as_score,
+                        de,
+                        is_supplementary,
+                        is_secondary,
+                        reverse,
+                        ts,
+                    });
                 }
             }
             home_report(chrom, lo, hi, &hc);
@@ -17499,9 +21726,22 @@ pub mod denovo_assemble {
             } else if let Some(pr) = primary_read_from_record(&record, chrom) {
                 primary.push(pr);
             }
-            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) = aligned_read_from_record(&record) {
+            if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
+                aligned_read_from_record(&record)
+            {
                 let (reverse, ts) = (record.flags().is_reverse_complemented(), record_ts(&record));
-                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts });
+                bam_reads.push(BamRead {
+                    chrom: chrom.to_string(),
+                    read,
+                    mapq,
+                    name,
+                    as_score,
+                    de,
+                    is_supplementary,
+                    is_secondary,
+                    reverse,
+                    ts,
+                });
             }
         }
         home_report(chrom, lo, hi, &hc);
@@ -17564,7 +21804,12 @@ pub mod denovo_assemble {
 
     /// Classify a junction's transcription strand from its donor/acceptor dinucleotides: `Some('+')` for a
     /// plus-canonical motif (GT-AG/GC-AG/AT-AC), `Some('-')` for the reverse-strand motif, else `None`.
-    fn junction_strand(genome: &GenomeIndex, chrom: &str, donor: u64, acceptor: u64) -> Option<char> {
+    fn junction_strand(
+        genome: &GenomeIndex,
+        chrom: &str,
+        donor: u64,
+        acceptor: u64,
+    ) -> Option<char> {
         if genome.is_canonical_junction(chrom, donor, acceptor, '+') {
             Some('+')
         } else if genome.is_canonical_junction(chrom, donor, acceptor, '-') {
@@ -17595,8 +21840,20 @@ pub mod denovo_assemble {
         // Majority is now the default; `RUSTLE_JUNCTION_MAJORITY=0` is the only way back to the old STRICT
         // behaviour for byte-for-byte reproduction of any pre-2026-09-21 catalog.
         let majority = !matches!(std::env::var("RUSTLE_JUNCTION_MAJORITY"), Ok(v) if v == "0");
-        let nc_max: u64 = std::env::var("RUSTLE_JUNCTION_NC_MAX_BP").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
-        build_spliced_seq_with(genome, chrom, start, end, introns, read_strand, majority, nc_max)
+        let nc_max: u64 = std::env::var("RUSTLE_JUNCTION_NC_MAX_BP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10_000);
+        build_spliced_seq_with(
+            genome,
+            chrom,
+            start,
+            end,
+            introns,
+            read_strand,
+            majority,
+            nc_max,
+        )
     }
 
     /// `build_spliced_seq` with the junction-mode switches passed explicitly instead of read from the
@@ -17753,7 +22010,11 @@ pub mod denovo_assemble {
                 return None; // a SPLICED model with no canonical junction has no strand evidence
             }
             // A real conflict is both strands substantially supported; a lone dissenter is tolerated.
-            let (hi, lo) = if plus >= minus { (plus, minus) } else { (minus, plus) };
+            let (hi, lo) = if plus >= minus {
+                (plus, minus)
+            } else {
+                (minus, plus)
+            };
             if lo * 2 > hi {
                 return None;
             }
@@ -17834,19 +22095,28 @@ pub mod denovo_assemble {
     /// so a genuine full-length isoform — even one that is the only chain carrying some junction pair — is never
     /// flagged. DAZ2's nine chains all overlap within `42879944-42943604` and are unaffected.
     fn is_chimeric_bridge(i: usize, skeletons: &[Skeleton], neighbours: &[Vec<usize>]) -> bool {
-        let disjoint = |a: &Skeleton, b: &Skeleton| a.chrom != b.chrom || a.end <= b.start || b.end <= a.start;
+        let disjoint =
+            |a: &Skeleton, b: &Skeleton| a.chrom != b.chrom || a.end <= b.start || b.end <= a.start;
         let nb = &neighbours[i];
-        nb.iter().enumerate().any(|(x, &j)| nb[x + 1..].iter().any(|&k| disjoint(&skeletons[j], &skeletons[k])))
+        nb.iter().enumerate().any(|(x, &j)| {
+            nb[x + 1..]
+                .iter()
+                .any(|&k| disjoint(&skeletons[j], &skeletons[k]))
+        })
     }
 
     /// Read support of the LOCUS each skeleton belongs to (see the doc above). Chimeric bridges are excluded from
     /// pooling and keep only their own read count, so a 2-read chimera can never inherit a real locus's support.
     pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
         // adjacency: two skeletons share an exact (chrom, donor, acceptor)
-        let mut by_junction: std::collections::BTreeMap<(&str, u64, u64), Vec<usize>> = std::collections::BTreeMap::new();
+        let mut by_junction: std::collections::BTreeMap<(&str, u64, u64), Vec<usize>> =
+            std::collections::BTreeMap::new();
         for (i, sk) in skeletons.iter().enumerate() {
             for &(d, a) in &sk.introns {
-                by_junction.entry((sk.chrom.as_str(), d, a)).or_default().push(i);
+                by_junction
+                    .entry((sk.chrom.as_str(), d, a))
+                    .or_default()
+                    .push(i);
             }
         }
         let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); skeletons.len()];
@@ -17862,7 +22132,9 @@ pub mod denovo_assemble {
             nb.sort_unstable();
             nb.dedup();
         }
-        let chimeric: Vec<bool> = (0..skeletons.len()).map(|i| is_chimeric_bridge(i, skeletons, &neighbours)).collect();
+        let chimeric: Vec<bool> = (0..skeletons.len())
+            .map(|i| is_chimeric_bridge(i, skeletons, &neighbours))
+            .collect();
 
         let mut parent: Vec<usize> = (0..skeletons.len()).collect();
         fn find(parent: &mut [usize], mut x: usize) -> usize {
@@ -17892,7 +22164,14 @@ pub mod denovo_assemble {
             *sum.entry(r).or_insert(0) += sk.n_reads;
         }
         (0..skeletons.len())
-            .map(|i| if chimeric[i] { skeletons[i].n_reads } else { let r = find(&mut parent, i); sum[&r] })
+            .map(|i| {
+                if chimeric[i] {
+                    skeletons[i].n_reads
+                } else {
+                    let r = find(&mut parent, i);
+                    sum[&r]
+                }
+            })
             .collect()
     }
 
@@ -17924,8 +22203,11 @@ pub mod denovo_assemble {
         if sk.end.saturating_sub(sk.start) > p.max_span {
             return Some("max_span");
         }
-        let strand_arg =
-            if use_read_strand && sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None };
+        let strand_arg = if use_read_strand && sk.read_strand_frac() >= strand_margin {
+            sk.read_strand
+        } else {
+            None
+        };
         let built = if sk.footprint {
             build_footprint_seq(
                 genome,
@@ -17933,7 +22215,11 @@ pub mod denovo_assemble {
                 sk.start,
                 sk.end,
                 &sk.introns,
-                if sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
+                if sk.read_strand_frac() >= strand_margin {
+                    sk.read_strand
+                } else {
+                    None
+                },
             )
         } else {
             build_spliced_seq(genome, &sk.chrom, sk.start, sk.end, &sk.introns, strand_arg)
@@ -17962,7 +22248,11 @@ pub mod denovo_assemble {
             let mut i = frame;
             while i + 3 <= seq.len() {
                 let c = &seq[i..i + 3];
-                let up = [c[0].to_ascii_uppercase(), c[1].to_ascii_uppercase(), c[2].to_ascii_uppercase()];
+                let up = [
+                    c[0].to_ascii_uppercase(),
+                    c[1].to_ascii_uppercase(),
+                    c[2].to_ascii_uppercase(),
+                ];
                 if start.is_none() && up == *b"ATG" {
                     start = Some(i);
                 } else if let Some(st) = start {
@@ -17977,11 +22267,16 @@ pub mod denovo_assemble {
         best
     }
 
-    pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParams) -> Vec<DenovoTranscript> {
+    pub fn assemble_gate(
+        skeletons: &[Skeleton],
+        genome: &GenomeIndex,
+        p: &GateParams,
+    ) -> Vec<DenovoTranscript> {
         // Opt-in read-orientation strand for UNSPLICED models (`RUSTLE_READ_STRAND`, see `build_spliced_seq`).
         // OFF by default so every existing catalog stays byte-identical; the delta gets measured before it is
         // flipped.
-        let use_read_strand = matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
+        let use_read_strand =
+            matches!(std::env::var("RUSTLE_READ_STRAND"), Ok(v) if v != "0" && !v.is_empty());
         // ABSTENTION THRESHOLD (`RUSTLE_READ_STRAND_MARGIN`, default 0.90). A bare majority is right 0.9600 of
         // the time; at 0.90 it is 0.9934 -- a 6.1x drop in wrong calls -- while still flipping 0.93 of the reps
         // a bare majority would. See `Skeleton::read_strand_frac` for the full curve and why abstaining is not
@@ -18040,8 +22335,11 @@ pub mod denovo_assemble {
         use_read_strand: bool,
         strand_margin: f64,
     ) -> (Vec<DenovoTranscript>, GateCensus) {
-        let support: Vec<u32> =
-            if p.pool_locus_support { locus_support(skeletons) } else { skeletons.iter().map(|s| s.n_reads).collect() };
+        let support: Vec<u32> = if p.pool_locus_support {
+            locus_support(skeletons)
+        } else {
+            skeletons.iter().map(|s| s.n_reads).collect()
+        };
         let mut out = Vec::new();
         let mut census = GateCensus::default();
         for (i, sk) in skeletons.iter().enumerate() {
@@ -18060,26 +22358,46 @@ pub mod denovo_assemble {
             // byte-identical.
             let (seq, strand) = if sk.footprint {
                 match build_footprint_seq(
-                    genome, &sk.chrom, sk.start, sk.end, &sk.introns,
-                    if sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
+                    genome,
+                    &sk.chrom,
+                    sk.start,
+                    sk.end,
+                    &sk.introns,
+                    if sk.read_strand_frac() >= strand_margin {
+                        sk.read_strand
+                    } else {
+                        None
+                    },
                 ) {
                     Some(v) => v,
-                    None => { census.rej_seq += 1; continue }
+                    None => {
+                        census.rej_seq += 1;
+                        continue;
+                    }
                 }
-            } else { match build_spliced_seq(
-                genome,
-                &sk.chrom,
-                sk.start,
-                sk.end,
-                &sk.introns,
-                // ABSTAIN unless the reads were decisive: below the margin the skeleton keeps the historical
-                // `'+'` placeholder, so a non-decisive vote degrades to the status quo ante instead of
-                // corrupting a locus (`family_detect.rs` collapses co-located reps ON STRAND).
-                if use_read_strand && sk.read_strand_frac() >= strand_margin { sk.read_strand } else { None },
-            ) {
-                Some(v) => v,
-                None => { census.rej_seq += 1; continue }
-            }};
+            } else {
+                match build_spliced_seq(
+                    genome,
+                    &sk.chrom,
+                    sk.start,
+                    sk.end,
+                    &sk.introns,
+                    // ABSTAIN unless the reads were decisive: below the margin the skeleton keeps the historical
+                    // `'+'` placeholder, so a non-decisive vote degrades to the status quo ante instead of
+                    // corrupting a locus (`family_detect.rs` collapses co-located reps ON STRAND).
+                    if use_read_strand && sk.read_strand_frac() >= strand_margin {
+                        sk.read_strand
+                    } else {
+                        None
+                    },
+                ) {
+                    Some(v) => v,
+                    None => {
+                        census.rej_seq += 1;
+                        continue;
+                    }
+                }
+            };
             if seq.len() < p.min_spliced || seq.len() > p.max_spliced {
                 census.rej_len += 1;
                 continue;
@@ -18095,7 +22413,8 @@ pub mod denovo_assemble {
                 strand,
                 introns: sk.introns.clone(),
                 seq,
-             ..Default::default() });
+                ..Default::default()
+            });
         }
         (out, census)
     }
@@ -18146,9 +22465,10 @@ pub mod denovo_assemble {
                         n_reads: n,
                         introns: Vec::new(),
                         tied_seeded: false,
-    footprint: false,
+                        footprint: false,
                         read_strand: Some(majority_read_strand(n_rev, n)),
-                        read_rev: n_rev, read_tot: n,
+                        read_rev: n_rev,
+                        read_tot: n,
                     });
                 }
                 i = j;
@@ -18227,7 +22547,18 @@ pub mod denovo_assemble {
         use super::*;
 
         fn sk(chrom: &str, start: u64, end: u64, n_reads: u32, introns: &[(u64, u64)]) -> Skeleton {
-            Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec(), tied_seeded: false, footprint: false, read_strand: None, read_rev: 0, read_tot: 0 }
+            Skeleton {
+                chrom: chrom.into(),
+                start,
+                end,
+                n_reads,
+                introns: introns.to_vec(),
+                tied_seeded: false,
+                footprint: false,
+                read_strand: None,
+                read_rev: 0,
+                read_tot: 0,
+            }
         }
 
         /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
@@ -18248,24 +22579,38 @@ pub mod denovo_assemble {
             let seq = format!("{ex}{bad}{ex}{good}{ex}{good}{ex}");
             std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
             let contigs: DetHashSet<String> = ["c1".to_string()].into_iter().collect();
-            let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
+            let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs)
+                .unwrap();
             let introns = vec![(100, 200), (300, 400), (500, 600)];
 
             // DEFAULT FLIPPED 2026-09-21: unset now means MAJORITY; `=0` is STRICT.
             std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "0");
-            assert!(build_spliced_seq(&g, "c1", 0, 700, &introns, None).is_none(),
-                    "strict mode (=0) must drop a transcript with one non-canonical junction");
+            assert!(
+                build_spliced_seq(&g, "c1", 0, 700, &introns, None).is_none(),
+                "strict mode (=0) must drop a transcript with one non-canonical junction"
+            );
 
             std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
             let got = build_spliced_seq(&g, "c1", 0, 700, &introns, None);
             assert!(got.is_some(), "majority mode must keep it");
-            assert_eq!(got.unwrap().1, '-', "strand comes from the two canonical CT..AC junctions");
+            assert_eq!(
+                got.unwrap().1,
+                '-',
+                "strand comes from the two canonical CT..AC junctions"
+            );
 
             // The flipped DEFAULT (unset) must behave exactly like the explicit "1" above.
             std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
             let got_default = build_spliced_seq(&g, "c1", 0, 700, &introns, None);
-            assert!(got_default.is_some(), "unset (the new default) must behave as majority mode");
-            assert_eq!(got_default.unwrap().1, '-', "unset default matches explicit majority mode exactly");
+            assert!(
+                got_default.is_some(),
+                "unset (the new default) must behave as majority mode"
+            );
+            assert_eq!(
+                got_default.unwrap().1,
+                '-',
+                "unset default matches explicit majority mode exactly"
+            );
 
             // REGRESSION: an UNSPLICED candidate has no junctions, so the canonical counters are vacuously
             // (0, 0). The majority path used to read that as "no strand evidence" and reject, which silently
@@ -18279,22 +22624,31 @@ pub mod denovo_assemble {
             };
             std::env::set_var("RUSTLE_JUNCTION_MAJORITY", "1");
             let majority_unspliced = build_spliced_seq(&g, "c1", 0, 100, &un, None);
-            assert!(strict_unspliced.is_some(), "strict mode (=0) admits an unspliced model (control)");
+            assert!(
+                strict_unspliced.is_some(),
+                "strict mode (=0) admits an unspliced model (control)"
+            );
             assert!(
                 majority_unspliced.is_some(),
                 "majority mode must NOT reject an unspliced candidate -- it has no junctions to be canonical"
             );
-            assert_eq!(strict_unspliced.unwrap().1, majority_unspliced.unwrap().1,
-                       "both modes must give an unspliced model the same placeholder strand");
+            assert_eq!(
+                strict_unspliced.unwrap().1,
+                majority_unspliced.unwrap().1,
+                "both modes must give an unspliced model the same placeholder strand"
+            );
 
             // A genuine CONFLICT -- one canonical '+' against one canonical '-' -- must still be rejected, so a
             // chimeric model is never admitted.
             let gtag = "GT".to_string() + &"G".repeat(96) + "AG";
             let seq2 = format!("{ex}{gtag}{ex}{good}{ex}");
             std::fs::write(&fa, format!(">c1\n{seq2}\n")).unwrap();
-            let g2 = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
-            assert!(build_spliced_seq(&g2, "c1", 0, 500, &vec![(100, 200), (300, 400)], None).is_none(),
-                    "a 1-vs-1 strand conflict must be rejected even in majority mode");
+            let g2 = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs)
+                .unwrap();
+            assert!(
+                build_spliced_seq(&g2, "c1", 0, 500, &vec![(100, 200), (300, 400)], None).is_none(),
+                "a 1-vs-1 strand conflict must be rejected even in majority mode"
+            );
             std::env::remove_var("RUSTLE_JUNCTION_MAJORITY");
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -18306,8 +22660,16 @@ pub mod denovo_assemble {
             let mut sharp: Vec<u64> = (0..18).map(|i| 5_000 + i * 2).collect();
             sharp.push(90_000);
             sharp.push(95_000);
-            assert_eq!(sharp_tes(&sharp, 400, 0.30, true), Some(5_034), "forward: outermost of the peak");
-            assert_eq!(sharp_tes(&sharp, 400, 0.30, false), Some(5_000), "reverse: innermost of the peak");
+            assert_eq!(
+                sharp_tes(&sharp, 400, 0.30, true),
+                Some(5_034),
+                "forward: outermost of the peak"
+            );
+            assert_eq!(
+                sharp_tes(&sharp, 400, 0.30, false),
+                Some(5_000),
+                "reverse: innermost of the peak"
+            );
 
             // BROAD: uniform scatter is differential coverage, not a polyA site -> abstain.
             let broad: Vec<u64> = (0..40).map(|i| i * 5_000).collect();
@@ -18327,8 +22689,8 @@ pub mod denovo_assemble {
             for i in 0..20u64 {
                 reads.push(PrimaryRead {
                     chrom: "c1".into(),
-                    ref_start: 10_000 + i % 5,          // tight peak: 10000..10004
-                    ref_end: 30_000 + i * 500,          // broad scatter: 30000..39500
+                    ref_start: 10_000 + i % 5, // tight peak: 10000..10004
+                    ref_end: 30_000 + i * 500, // broad scatter: 30000..39500
                     introns: vec![(12_000, 20_000)],
                     reverse: false,
                 });
@@ -18375,7 +22737,11 @@ pub mod denovo_assemble {
 
             // BROAD: uniformly scattered ends (differential coverage, not a TSS) -> keep the fallback.
             let broad: Vec<u64> = (0..40).map(|i| i * 5_000).collect();
-            assert_eq!(snap_boundary(&broad, 777, 400, 0.30, true), 777, "broad scatter must not snap");
+            assert_eq!(
+                snap_boundary(&broad, 777, 400, 0.30, true),
+                777,
+                "broad scatter must not snap"
+            );
             assert_eq!(snap_boundary(&broad, 777, 400, 0.30, false), 777);
 
             // too few reads to judge -> fallback
@@ -18399,20 +22765,49 @@ pub mod denovo_assemble {
             let sks: Vec<Skeleton> = (0..3)
                 .map(|i| {
                     let d = 42_900_000 + i * 1_000;
-                    sk("NC_073248.2", 42_879_944, 42_943_604, 2, &[(d, d + 500), TERMINAL])
+                    sk(
+                        "NC_073248.2",
+                        42_879_944,
+                        42_943_604,
+                        2,
+                        &[(d, d + 500), TERMINAL],
+                    )
                 })
                 .collect();
             let sup = locus_support(&sks);
-            assert_eq!(sup, vec![6, 6, 6], "three 2-read chains sharing a junction are ONE locus with 6 reads");
-            assert!(sup.iter().all(|&s| s >= GATE_MIN_READS), "the pooled locus clears the gate that killed each chain");
+            assert_eq!(
+                sup,
+                vec![6, 6, 6],
+                "three 2-read chains sharing a junction are ONE locus with 6 reads"
+            );
+            assert!(
+                sup.iter().all(|&s| s >= GATE_MIN_READS),
+                "the pooled locus clears the gate that killed each chain"
+            );
         }
 
         /// DAZ1 and DAZ2 share ZERO junctions (measured). Pooling must not bridge them.
         #[test]
         fn locus_support_does_not_bridge_loci_with_no_shared_junction() {
-            let daz1 = sk("NC_073248.2", 42_783_133, 42_859_657, 44, &[(42_800_000, 42_801_000)]);
-            let daz2 = sk("NC_073248.2", 42_879_944, 42_943_604, 2, &[(42_939_630, 42_943_604)]);
-            assert_eq!(locus_support(&[daz1, daz2]), vec![44, 2], "disjoint junction sets => disjoint loci");
+            let daz1 = sk(
+                "NC_073248.2",
+                42_783_133,
+                42_859_657,
+                44,
+                &[(42_800_000, 42_801_000)],
+            );
+            let daz2 = sk(
+                "NC_073248.2",
+                42_879_944,
+                42_943_604,
+                2,
+                &[(42_939_630, 42_943_604)],
+            );
+            assert_eq!(
+                locus_support(&[daz1, daz2]),
+                vec![44, 2],
+                "disjoint junction sets => disjoint loci"
+            );
         }
 
         /// THE safety property. A single-exon skeleton has no junctions, so it is adjacent to nothing and its
@@ -18425,7 +22820,11 @@ pub mod denovo_assemble {
                 sk("c1", 5_000_000, 5_000_100, 1, &[]),
                 sk("c1", 900, 1_000, 1, &[]),
             ];
-            assert_eq!(locus_support(&sks), vec![1, 1, 1], "the empty intron chain must never pool");
+            assert_eq!(
+                locus_support(&sks),
+                vec![1, 1, 1],
+                "the empty intron chain must never pool"
+            );
         }
 
         /// The real GSTM regression. A 2-read chain carrying junctions of BOTH GSTM5 and GSTM1 -- two genes whose
@@ -18439,7 +22838,11 @@ pub mod denovo_assemble {
             let gstm1 = sk("c1", 129_216_297, 129_222_748, 90, &[J1]);
             let bridge = sk("c1", 129_191_743, 129_222_260, 2, &[J5, J1]); // spliced GSTM5->GSTM1 readthrough
             let sup = locus_support(&[gstm5, gstm1, bridge]);
-            assert_eq!(sup, vec![40, 90, 2], "the chimera keeps only its own 2 reads; the paralogs stay separate");
+            assert_eq!(
+                sup,
+                vec![40, 90, 2],
+                "the chimera keeps only its own 2 reads; the paralogs stay separate"
+            );
             assert!(sup[2] < GATE_MIN_READS, "and it therefore dies at the gate");
         }
 
@@ -18449,7 +22852,11 @@ pub mod denovo_assemble {
             let a = sk("c1", 1_000, 5_000, 2, &[(1_500, 2_000)]);
             let hub = sk("c1", 1_000, 6_000, 2, &[(1_500, 2_000), (4_000, 4_500)]);
             let b = sk("c1", 1_200, 6_000, 2, &[(4_000, 4_500)]); // overlaps `a`, so `hub` bridges nothing disjoint
-            assert_eq!(locus_support(&[a, hub, b]), vec![6, 6, 6], "one locus, three isoforms");
+            assert_eq!(
+                locus_support(&[a, hub, b]),
+                vec![6, 6, 6],
+                "one locus, three isoforms"
+            );
         }
 
         #[test]
@@ -18465,7 +22872,11 @@ pub mod denovo_assemble {
         fn locus_support_keeps_same_junction_on_different_chroms_separate() {
             let a = sk("c1", 0, 100, 3, &[(10, 20)]);
             let b = sk("c2", 0, 100, 5, &[(10, 20)]);
-            assert_eq!(locus_support(&[a, b]), vec![3, 5], "a junction is (chrom, donor, acceptor)");
+            assert_eq!(
+                locus_support(&[a, b]),
+                vec![3, 5],
+                "a junction is (chrom, donor, acceptor)"
+            );
         }
     }
 
@@ -18474,7 +22885,13 @@ pub mod denovo_assemble {
         use super::*;
 
         fn pr(chrom: &str, start: u64, end: u64, introns: &[(u64, u64)]) -> PrimaryRead {
-            PrimaryRead { chrom: chrom.into(), ref_start: start, ref_end: end, introns: introns.to_vec(), reverse: false }
+            PrimaryRead {
+                chrom: chrom.into(),
+                ref_start: start,
+                ref_end: end,
+                introns: introns.to_vec(),
+                reverse: false,
+            }
         }
 
         /// A footprint node is the union of READ-COVERED exonic blocks, so its "introns" are uncovered GAPS.
@@ -18498,26 +22915,44 @@ pub mod denovo_assemble {
             let seq = format!("{}{}{}", "A".repeat(100), "G".repeat(100), "C".repeat(100));
             std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
             let contigs: DetHashSet<String> = ["c1".to_string()].into_iter().collect();
-            let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
+            let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs)
+                .unwrap();
             let gaps = vec![(100u64, 200u64)];
 
             let fp = build_footprint_seq(&g, "c1", 0, 300, &gaps, Some('+'));
-            assert!(fp.is_some(), "a footprint must not be rejected for lacking a splice motif");
+            assert!(
+                fp.is_some(),
+                "a footprint must not be rejected for lacking a splice motif"
+            );
             let (fseq, strand) = fp.unwrap();
             assert_eq!(strand, '+');
-            assert_eq!(fseq.len(), 200, "gap bases must be EXCLUDED and the flanks concatenated");
-            assert!(!fseq.contains(&b'G'), "the gap's bases must not appear in the sequence");
+            assert_eq!(
+                fseq.len(),
+                200,
+                "gap bases must be EXCLUDED and the flanks concatenated"
+            );
+            assert!(
+                !fseq.contains(&b'G'),
+                "the gap's bases must not appear in the sequence"
+            );
 
             // the same intervals through the spliced builder ARE rejected — the bug, pinned in place
-            let spliced = build_spliced_seq_with(&g, "c1", 0, 300, &gaps, Some('+'), true, u64::MAX);
-            assert!(spliced.is_none(),
-                    "the spliced path applies the motif test even at nc_max = MAX — that WAS the bug");
+            let spliced =
+                build_spliced_seq_with(&g, "c1", 0, 300, &gaps, Some('+'), true, u64::MAX);
+            assert!(
+                spliced.is_none(),
+                "the spliced path applies the motif test even at nc_max = MAX — that WAS the bug"
+            );
             let _ = std::fs::remove_dir_all(&dir);
         }
         #[test]
         fn a_footprint_node_covers_exons_and_gaps_become_introns() {
             let mk = |s: u64, e: u64, iv: Vec<(u64, u64)>| PrimaryRead {
-                chrom: "c1".into(), ref_start: s, ref_end: e, introns: iv, reverse: false,
+                chrom: "c1".into(),
+                ref_start: s,
+                ref_end: e,
+                introns: iv,
+                reverse: false,
             };
             // three reads over one gene: exons ~[1000,1500] and ~[4000,4500], intron between.
             let reads = vec![
@@ -18528,13 +22963,27 @@ pub mod denovo_assemble {
             let out = footprint_skeletons(&reads, &[], 3);
             assert_eq!(out.len(), 1, "one covered locus = one footprint node");
             let sk = &out[0];
-            assert!(sk.footprint, "must be marked so the canonical-motif test is skipped");
-            assert_eq!(sk.introns.len(), 1, "the uncovered INTRON becomes the one gap");
+            assert!(
+                sk.footprint,
+                "must be marked so the canonical-motif test is skipped"
+            );
+            assert_eq!(
+                sk.introns.len(),
+                1,
+                "the uncovered INTRON becomes the one gap"
+            );
             let (a, b) = sk.introns[0];
-            assert!(a >= 1450 && b <= 4050, "gap must track the intron, got {a}..{b}");
+            assert!(
+                a >= 1450 && b <= 4050,
+                "gap must track the intron, got {a}..{b}"
+            );
             // the intron is NOT counted as covered: exonic bp is ~1000, not the ~3500 span
-            let exonic: u64 = (sk.end - sk.start) - sk.introns.iter().map(|(x, y)| y - x).sum::<u64>();
-            assert!(exonic < 1500, "intronic bases must not enter the footprint, got {exonic}");
+            let exonic: u64 =
+                (sk.end - sk.start) - sk.introns.iter().map(|(x, y)| y - x).sum::<u64>();
+            assert!(
+                exonic < 1500,
+                "intronic bases must not enter the footprint, got {exonic}"
+            );
         }
 
         /// The pass must never touch a region an ordinary skeleton already claimed — that is what lets it ADD
@@ -18542,15 +22991,34 @@ pub mod denovo_assemble {
         #[test]
         fn footprints_never_overlap_an_existing_skeleton() {
             let mk = |s: u64, e: u64| PrimaryRead {
-                chrom: "c1".into(), ref_start: s, ref_end: e, introns: vec![], reverse: false,
+                chrom: "c1".into(),
+                ref_start: s,
+                ref_end: e,
+                introns: vec![],
+                reverse: false,
             };
             let reads = vec![mk(1000, 3000), mk(1000, 3000), mk(1100, 2900)];
-            assert_eq!(footprint_skeletons(&reads, &[], 3).len(), 1, "unclaimed region yields a node");
+            assert_eq!(
+                footprint_skeletons(&reads, &[], 3).len(),
+                1,
+                "unclaimed region yields a node"
+            );
             let existing = vec![Skeleton {
-                chrom: "c1".into(), start: 900, end: 3100, n_reads: 5, introns: vec![],
-                tied_seeded: false, footprint: false, read_strand: Some('+'), read_rev: 0, read_tot: 5,
+                chrom: "c1".into(),
+                start: 900,
+                end: 3100,
+                n_reads: 5,
+                introns: vec![],
+                tied_seeded: false,
+                footprint: false,
+                read_strand: Some('+'),
+                read_rev: 0,
+                read_tot: 5,
             }];
-            assert!(footprint_skeletons(&reads, &existing, 3).is_empty(), "claimed region yields nothing");
+            assert!(
+                footprint_skeletons(&reads, &existing, 3).is_empty(),
+                "claimed region yields nothing"
+            );
         }
 
         #[test]
@@ -18559,14 +23027,29 @@ pub mod denovo_assemble {
             // copyB's support. r2: spillover (secondary AS 300 << 500) -> dropped. r3: primary-only -> never emitted.
             let aln = vec![
                 ("r1".to_string(), false, 500, 0.0f32, pr("c1", 0, 100, &[])),
-                ("r1".to_string(), true, 500, 0.0f32, pr("c1", 1000, 1100, &[])),
+                (
+                    "r1".to_string(),
+                    true,
+                    500,
+                    0.0f32,
+                    pr("c1", 1000, 1100, &[]),
+                ),
                 ("r2".to_string(), false, 500, 0.0f32, pr("c1", 0, 100, &[])),
-                ("r2".to_string(), true, 300, 0.0f32, pr("c1", 1000, 1100, &[])),
+                (
+                    "r2".to_string(),
+                    true,
+                    300,
+                    0.0f32,
+                    pr("c1", 1000, 1100, &[]),
+                ),
                 ("r3".to_string(), false, 400, 0.0f32, pr("c1", 0, 100, &[])),
             ];
             let out = tied_secondary_reads(&aln, 0.98);
             assert_eq!(out.len(), 1, "only the tied secondary (r1) survives");
-            assert_eq!(out[0].ref_start, 1000, "and it sits at the STARVED copyB position");
+            assert_eq!(
+                out[0].ref_start, 1000,
+                "and it sits at the STARVED copyB position"
+            );
         }
 
         #[test]
@@ -18603,7 +23086,11 @@ pub mod denovo_assemble {
             let r = rec(
                 Flags::default(),
                 101,
-                vec![Op::new(Kind::Match, 80), Op::new(Kind::Skip, 20), Op::new(Kind::Match, 80)],
+                vec![
+                    Op::new(Kind::Match, 80),
+                    Op::new(Kind::Skip, 20),
+                    Op::new(Kind::Match, 80),
+                ],
             );
             let p = primary_read_from_record(&r, "c1").expect("primary mapped read");
             assert_eq!(p.chrom, "c1");
@@ -18620,7 +23107,13 @@ pub mod denovo_assemble {
         /// 2h+ catalog run uninterpretable ("did it do nothing, or was it never wired?").
         #[test]
         fn record_ingest_captures_read_orientation() {
-            let ops = || vec![Op::new(Kind::Match, 80), Op::new(Kind::Skip, 20), Op::new(Kind::Match, 80)];
+            let ops = || {
+                vec![
+                    Op::new(Kind::Match, 80),
+                    Op::new(Kind::Skip, 20),
+                    Op::new(Kind::Match, 80),
+                ]
+            };
             let fwd = primary_read_from_record(&rec(Flags::default(), 101, ops()), "c1")
                 .expect("forward primary");
             assert!(!fwd.reverse, "a forward record must not be marked reverse");
@@ -18628,21 +23121,34 @@ pub mod denovo_assemble {
                 .expect("reverse primary");
             assert!(rev.reverse, "FLAG 0x10 must reach PrimaryRead.reverse");
             // Orientation must not perturb the coordinates it travels beside.
-            assert_eq!((rev.ref_start, rev.ref_end, rev.introns.clone()), (fwd.ref_start, fwd.ref_end, fwd.introns.clone()));
+            assert_eq!(
+                (rev.ref_start, rev.ref_end, rev.introns.clone()),
+                (fwd.ref_start, fwd.ref_end, fwd.introns.clone())
+            );
 
             // The same ingest via `alignment_read_from_record`, which the secondary-tolerant path uses.
-            let ar = alignment_read_from_record(&rec(Flags::REVERSE_COMPLEMENTED, 101, ops()), "c1", false)
-                .expect("reverse primary via alignment_read_from_record");
-            assert!(ar.reverse, "FLAG 0x10 must reach PrimaryRead.reverse on the alignment_read path too");
+            let ar = alignment_read_from_record(
+                &rec(Flags::REVERSE_COMPLEMENTED, 101, ops()),
+                "c1",
+                false,
+            )
+            .expect("reverse primary via alignment_read_from_record");
+            assert!(
+                ar.reverse,
+                "FLAG 0x10 must reach PrimaryRead.reverse on the alignment_read path too"
+            );
         }
 
         #[test]
         fn aligned_read_from_record_extracts_cigar_and_seq() {
             use noodles_sam::alignment::record_buf::Sequence;
-            let cigar: Cigar =
-                vec![Op::new(Kind::Match, 5), Op::new(Kind::Skip, 10), Op::new(Kind::Match, 5)]
-                    .into_iter()
-                    .collect();
+            let cigar: Cigar = vec![
+                Op::new(Kind::Match, 5),
+                Op::new(Kind::Skip, 10),
+                Op::new(Kind::Match, 5),
+            ]
+            .into_iter()
+            .collect();
             let seq: Sequence = Sequence::from(b"AAAAACCCCC".to_vec());
             let r = RecordBuf::builder()
                 .set_flags(Flags::default())
@@ -18650,7 +23156,8 @@ pub mod denovo_assemble {
                 .set_cigar(cigar)
                 .set_sequence(seq)
                 .build();
-            let (ar, _mapq, _name, _as_score, _de, _is_supp, _is_secondary) = aligned_read_from_record(&r).expect("mapped read");
+            let (ar, _mapq, _name, _as_score, _de, _is_supp, _is_secondary) =
+                aligned_read_from_record(&r).expect("mapped read");
             assert_eq!(ar.ref_start, 100); // 1-based 101 -> 0-based
             assert_eq!(ar.cigar, vec![('M', 5), ('N', 10), ('M', 5)]);
             assert_eq!(ar.seq, b"AAAAACCCCC".to_vec());
@@ -18683,7 +23190,10 @@ pub mod denovo_assemble {
             assert!(!reads.is_empty(), "a real BAM should yield primary reads");
             let sk = pass1_skeletons(&reads, PASS1_MIN_READS);
             let multi = sk.iter().filter(|s| !s.introns.is_empty()).count();
-            assert!(!sk.is_empty(), "primary reads should form read-coherence skeletons");
+            assert!(
+                !sk.is_empty(),
+                "primary reads should form read-coherence skeletons"
+            );
             eprintln!(
                 "smoke: {} primary reads -> {} skeletons (>= {} reads); {} multi-exon",
                 reads.len(),
@@ -18695,18 +23205,35 @@ pub mod denovo_assemble {
 
         #[test]
         fn record_to_primary_read_skips_secondary_supplementary_unmapped() {
-            let ops = || vec![Op::new(Kind::Match, 80), Op::new(Kind::Skip, 20), Op::new(Kind::Match, 80)];
+            let ops = || {
+                vec![
+                    Op::new(Kind::Match, 80),
+                    Op::new(Kind::Skip, 20),
+                    Op::new(Kind::Match, 80),
+                ]
+            };
             assert!(primary_read_from_record(&rec(Flags::SECONDARY, 101, ops()), "c1").is_none());
-            assert!(primary_read_from_record(&rec(Flags::SUPPLEMENTARY, 101, ops()), "c1").is_none());
+            assert!(
+                primary_read_from_record(&rec(Flags::SUPPLEMENTARY, 101, ops()), "c1").is_none()
+            );
             assert!(primary_read_from_record(&rec(Flags::UNMAPPED, 101, ops()), "c1").is_none());
         }
         fn skel(chrom: &str, start: u64, end: u64, n: u32, introns: &[(u64, u64)]) -> Skeleton {
-            Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec(), tied_seeded: false,
-                       // `pr` builds FORWARD reads, so the group's vote is unanimously '+' (read_rev = 0) over
-                       // all `n` of them -- `read_tot` must track `n`, not a constant, or every equality
-                       // assertion against a real pass1 output fails on the count alone.
-    footprint: false,
-                       read_strand: Some('+'), read_rev: 0, read_tot: n }
+            Skeleton {
+                chrom: chrom.into(),
+                start,
+                end,
+                n_reads: n,
+                introns: introns.to_vec(),
+                tied_seeded: false,
+                // `pr` builds FORWARD reads, so the group's vote is unanimously '+' (read_rev = 0) over
+                // all `n` of them -- `read_tot` must track `n`, not a constant, or every equality
+                // assertion against a real pass1 output fails on the count alone.
+                footprint: false,
+                read_strand: Some('+'),
+                read_rev: 0,
+                read_tot: n,
+            }
         }
         /// Genome: exon1 [0,80), intron [80,100) with the given dinucleotides, exon2 [100,180). 160 bp spliced.
         fn genome_one_intron(donor: &[u8; 2], acc: &[u8; 2]) -> GenomeIndex {
@@ -18741,25 +23268,41 @@ pub mod denovo_assemble {
                 pr("c1", 1, 9000, &[(200, 300)]), // runaway: starts way left, ends way right
             ];
             // k=1 (legacy union) lets the runaway dominate: 1..9000.
-            assert_eq!(pass1_skeletons_robust(&reads, 2, 1), vec![skel("c1", 1, 9000, 4, &[(200, 300)])]);
+            assert_eq!(
+                pass1_skeletons_robust(&reads, 2, 1),
+                vec![skel("c1", 1, 9000, 4, &[(200, 300)])]
+            );
             // k=2 trims it to the 2nd-smallest start (100) and 2nd-largest end (520).
-            assert_eq!(pass1_skeletons_robust(&reads, 2, 2), vec![skel("c1", 100, 520, 4, &[(200, 300)])]);
+            assert_eq!(
+                pass1_skeletons_robust(&reads, 2, 2),
+                vec![skel("c1", 100, 520, 4, &[(200, 300)])]
+            );
         }
 
         #[test]
         fn as_tie_keep_drops_only_clear_loser_secondaries() {
             let r = |sec: bool, n: &str, a: Option<i32>| (sec, n.to_string(), a);
             let recs = vec![
-                r(false, "m1", Some(1000)),  // primary, always kept
-                r(true, "m1", Some(995)),    // near-tie -> kept at 0.98
-                r(true, "m1", Some(400)),    // clear loser -> dropped at 0.98
-                r(true, "m2", None),         // no AS -> kept (absence of evidence)
-                r(true, "m3", Some(500)),    // molecule has no other placement here -> its own best -> kept
+                r(false, "m1", Some(1000)), // primary, always kept
+                r(true, "m1", Some(995)),   // near-tie -> kept at 0.98
+                r(true, "m1", Some(400)),   // clear loser -> dropped at 0.98
+                r(true, "m2", None),        // no AS -> kept (absence of evidence)
+                r(true, "m3", Some(500)), // molecule has no other placement here -> its own best -> kept
             ];
-            assert_eq!(as_tie_keep(&recs, 0.0), vec![true; 5], "ratio 0 must be the admit-all no-op");
-            assert_eq!(as_tie_keep(&recs, 0.98), vec![true, true, false, true, true]);
+            assert_eq!(
+                as_tie_keep(&recs, 0.0),
+                vec![true; 5],
+                "ratio 0 must be the admit-all no-op"
+            );
+            assert_eq!(
+                as_tie_keep(&recs, 0.98),
+                vec![true, true, false, true, true]
+            );
             // exact ties only: the 995 secondary now loses too, the primary still does not
-            assert_eq!(as_tie_keep(&recs, 1.0), vec![true, false, false, true, true]);
+            assert_eq!(
+                as_tie_keep(&recs, 1.0),
+                vec![true, false, false, true, true]
+            );
             // a primary is never dropped, whatever the ratio
             assert!(as_tie_keep(&recs, 1.0)[0]);
         }
@@ -18768,14 +23311,26 @@ pub mod denovo_assemble {
         fn gtf_secondary_flag_is_off_by_default_and_only_it_admits_secondaries() {
             // The flag must be OFF unless explicitly set, so every existing catalog stays byte-identical, and
             // it must be the ONLY thing that changes whether a secondary record becomes a site.
-            assert!(!gtf_secondary_enabled(), "RUSTLE_GTF_SECONDARY must default to off");
+            assert!(
+                !gtf_secondary_enabled(),
+                "RUSTLE_GTF_SECONDARY must default to off"
+            );
             // A secondary record is admitted iff allow_secondary is true; supplementary never is.
             let cig = vec![Op::new(Kind::Match, 100)];
             let sec = rec(Flags::SECONDARY, 101, cig.clone());
-            assert!(alignment_read_from_record(&sec, "c1", false).is_none(), "secondary must be excluded when off");
-            assert!(alignment_read_from_record(&sec, "c1", true).is_some(), "secondary must be admitted when on");
+            assert!(
+                alignment_read_from_record(&sec, "c1", false).is_none(),
+                "secondary must be excluded when off"
+            );
+            assert!(
+                alignment_read_from_record(&sec, "c1", true).is_some(),
+                "secondary must be admitted when on"
+            );
             let sup = rec(Flags::SUPPLEMENTARY, 101, cig);
-            assert!(alignment_read_from_record(&sup, "c1", true).is_none(), "supplementary stays excluded in both modes");
+            assert!(
+                alignment_read_from_record(&sup, "c1", true).is_none(),
+                "supplementary stays excluded in both modes"
+            );
         }
 
         #[test]
@@ -18783,21 +23338,33 @@ pub mod denovo_assemble {
             // c1 has a canonical GT..AG intron at [80,100); the gate keeps a supported skeleton and the census
             // must place EVERY skeleton in exactly one bucket.
             let g = genome_one_intron(b"GT", b"AG");
-            let p = GateParams { min_reads: 2, max_span: 10_000, min_spliced: 1, max_spliced: 100_000,
-                                 pool_locus_support: false };
+            let p = GateParams {
+                min_reads: 2,
+                max_span: 10_000,
+                min_spliced: 1,
+                max_spliced: 100_000,
+                pool_locus_support: false,
+            };
             let skels = vec![
-                skel("c1", 0, 180, 5, &[(80, 100)]),      // kept
-                skel("c1", 0, 180, 1, &[(80, 100)]),      // rejected: reads
-                skel("c1", 0, 90_000, 5, &[(80, 100)]),   // rejected: span
+                skel("c1", 0, 180, 5, &[(80, 100)]),    // kept
+                skel("c1", 0, 180, 1, &[(80, 100)]),    // rejected: reads
+                skel("c1", 0, 90_000, 5, &[(80, 100)]), // rejected: span
             ];
             let (out, c) = assemble_gate_census(&skels, &g, &p, false, 0.90);
-            assert_eq!(c.total(), skels.len(), "every skeleton must land in exactly one bucket");
+            assert_eq!(
+                c.total(),
+                skels.len(),
+                "every skeleton must land in exactly one bucket"
+            );
             assert_eq!(c.kept, out.len());
             assert_eq!((c.rej_reads, c.rej_span), (1, 1));
             // the census path must return exactly what the plain gate returns
             let plain = assemble_gate_with(&skels, &g, &p, false, 0.90);
             assert_eq!(out.len(), plain.len());
-            assert!(out.iter().zip(&plain).all(|(a, b)| a.tid == b.tid && a.seq == b.seq && a.introns == b.introns));
+            assert!(out
+                .iter()
+                .zip(&plain)
+                .all(|(a, b)| a.tid == b.tid && a.seq == b.seq && a.introns == b.introns));
         }
 
         #[test]
@@ -18847,7 +23414,10 @@ pub mod denovo_assemble {
             let reads = [pr("c1", 100, 500, &[]), pr("c1", 120, 520, &[])];
             let on = pass1_skeletons_widened(&reads, 9, 1, None, 1);
             assert!(on.iter().all(|s| !s.introns.is_empty() || s.n_reads >= 1));
-            assert!(on.iter().all(|s| s.introns.is_empty()), "only cluster_unspliced may emit these");
+            assert!(
+                on.iter().all(|s| s.introns.is_empty()),
+                "only cluster_unspliced may emit these"
+            );
         }
 
         #[test]
@@ -18882,7 +23452,10 @@ pub mod denovo_assemble {
 
         #[test]
         fn pass1_different_chrom_separate() {
-            let reads = [pr("c1", 100, 500, &[(200, 300)]), pr("c2", 100, 500, &[(200, 300)])];
+            let reads = [
+                pr("c1", 100, 500, &[(200, 300)]),
+                pr("c2", 100, 500, &[(200, 300)]),
+            ];
             assert_eq!(pass1_skeletons(&reads, 1).len(), 2);
         }
 
@@ -18905,8 +23478,15 @@ pub mod denovo_assemble {
             let sk = pass1_skeletons_robust(&reads, 2, 1);
             // 1 spliced skeleton + 2 distinct unspliced skeletons = 3; NOT a single giant unspliced one
             let unspliced_sk: Vec<_> = sk.iter().filter(|s| s.introns.is_empty()).collect();
-            assert_eq!(unspliced_sk.len(), 2, "the two distant unspliced piles seed separately");
-            assert!(unspliced_sk.iter().all(|s| s.end - s.start < 300_000), "no chromosome-spanning unspliced skeleton");
+            assert_eq!(
+                unspliced_sk.len(),
+                2,
+                "the two distant unspliced piles seed separately"
+            );
+            assert!(
+                unspliced_sk.iter().all(|s| s.end - s.start < 300_000),
+                "no chromosome-spanning unspliced skeleton"
+            );
         }
 
         // ---- assemble_gate ----
@@ -18914,7 +23494,11 @@ pub mod denovo_assemble {
         #[test]
         fn gate_plus_strand_builds_transcript() {
             let g = genome_one_intron(b"GT", b"AG");
-            let out = assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &GateParams::default());
+            let out = assemble_gate(
+                &[skel("c1", 0, 180, 3, &[(80, 100)])],
+                &g,
+                &GateParams::default(),
+            );
             assert_eq!(out.len(), 1);
             let t = &out[0];
             assert_eq!(t.tid, "DN_c1_0_2");
@@ -18922,23 +23506,38 @@ pub mod denovo_assemble {
             assert_eq!(t.introns, vec![(80, 100)]);
             assert_eq!(t.seq.len(), 160, "exon1 80 + exon2 80");
             assert_eq!(t.strand, '+');
-            assert!(t.seq.iter().all(|&b| b == b'A'), "plus strand: not reverse-complemented");
+            assert!(
+                t.seq.iter().all(|&b| b == b'A'),
+                "plus strand: not reverse-complemented"
+            );
         }
 
         #[test]
         fn gate_minus_strand_reverse_complements() {
             // CT-AC is the reverse-strand motif -> strand '-' -> spliced seq is reverse-complemented.
             let g = genome_one_intron(b"CT", b"AC");
-            let out = assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &GateParams::default());
+            let out = assemble_gate(
+                &[skel("c1", 0, 180, 3, &[(80, 100)])],
+                &g,
+                &GateParams::default(),
+            );
             assert_eq!(out.len(), 1);
             assert_eq!(out[0].strand, '-');
-            assert!(out[0].seq.iter().all(|&b| b == b'T'), "revcomp of all-A is all-T");
+            assert!(
+                out[0].seq.iter().all(|&b| b == b'T'),
+                "revcomp of all-A is all-T"
+            );
         }
 
         #[test]
         fn gate_rejects_noncanonical_junction() {
             let g = genome_one_intron(b"AA", b"AG"); // donor AA is not a canonical motif
-            assert!(assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &GateParams::default()).is_empty());
+            assert!(assemble_gate(
+                &[skel("c1", 0, 180, 3, &[(80, 100)])],
+                &g,
+                &GateParams::default()
+            )
+            .is_empty());
         }
 
         #[test]
@@ -18948,9 +23547,15 @@ pub mod denovo_assemble {
             // 2-read skeleton is dropped -- true only while the floor was 3, so it failed the moment the
             // O1 node floor moved to `NODE_MIN_READS` = 2 (§6ac). The floor's VALUE is pinned separately below.
             let g = genome_one_intron(b"GT", b"AG");
-            let p = GateParams { min_reads: 3, ..GateParams::default() };
+            let p = GateParams {
+                min_reads: 3,
+                ..GateParams::default()
+            };
             assert!(assemble_gate(&[skel("c1", 0, 180, 2, &[(80, 100)])], &g, &p).is_empty());
-            assert_eq!(assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &p).len(), 1);
+            assert_eq!(
+                assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &p).len(),
+                1
+            );
         }
 
         #[test]
@@ -18963,7 +23568,12 @@ pub mod denovo_assemble {
             assert_eq!(GATE_MIN_READS, 3);
             let g = genome_one_intron(b"GT", b"AG");
             assert_eq!(
-                assemble_gate(&[skel("c1", 0, 180, 2, &[(80, 100)])], &g, &GateParams::default()).len(),
+                assemble_gate(
+                    &[skel("c1", 0, 180, 2, &[(80, 100)])],
+                    &g,
+                    &GateParams::default()
+                )
+                .len(),
                 1,
                 "a 2-read chain must now become a node -- Pass-1 already accepted it at 2"
             );
@@ -18972,7 +23582,10 @@ pub mod denovo_assemble {
         #[test]
         fn gate_rejects_oversized_span() {
             let g = genome_one_intron(b"GT", b"AG");
-            let p = GateParams { max_span: 100, ..GateParams::default() };
+            let p = GateParams {
+                max_span: 100,
+                ..GateParams::default()
+            };
             assert!(assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &p).is_empty());
         }
 
@@ -18985,7 +23598,12 @@ pub mod denovo_assemble {
             s[28] = b'A';
             s[29] = b'G';
             let g = GenomeIndex::from_seqs(&[("c1", &s)]);
-            assert!(assemble_gate(&[skel("c1", 0, 40, 3, &[(10, 30)])], &g, &GateParams::default()).is_empty());
+            assert!(assemble_gate(
+                &[skel("c1", 0, 40, 3, &[(10, 30)])],
+                &g,
+                &GateParams::default()
+            )
+            .is_empty());
         }
 
         #[test]
@@ -19022,7 +23640,9 @@ pub mod denovo_assemble {
             use noodles_sam::alignment::record::data::field::Tag;
             use noodles_sam::alignment::record_buf::data::field::Value as BufValue;
             let mut record = RecordBuf::builder().set_flags(Flags::default()).build();
-            record.data_mut().insert(Tag::new(b'd', b'e'), BufValue::Float(0.0123));
+            record
+                .data_mut()
+                .insert(Tag::new(b'd', b'e'), BufValue::Float(0.0123));
             let de = record_de(&record).expect("de tag present");
             assert!((de - 0.0123).abs() < 1e-6);
         }
@@ -19047,7 +23667,9 @@ pub mod denovo_assemble {
                 .set_cigar(cigar)
                 .set_sequence(Sequence::from(b"ACGT".to_vec()))
                 .build();
-            record.data_mut().insert(Tag::new(b'd', b'e'), BufValue::Float(0.02));
+            record
+                .data_mut()
+                .insert(Tag::new(b'd', b'e'), BufValue::Float(0.02));
             let (_ar, _mapq, _name, _as, de, is_supp, _is_secondary) =
                 aligned_read_from_record(&record).expect("mapped");
             assert!((de - 0.02).abs() < 1e-6);
@@ -19060,12 +23682,23 @@ pub mod denovo_assemble {
         fn cluster_unspliced_separates_distant_loci() {
             // two unspliced read groups 50kb apart -> TWO skeletons, not one chromosome-spanning giant
             let reads = vec![
-                pr("c1", 1000, 3000, &[]), pr("c1", 1100, 3100, &[]), pr("c1", 1200, 3200, &[]),
-                pr("c1", 51000, 53000, &[]), pr("c1", 51100, 53100, &[]), pr("c1", 51200, 53200, &[]),
+                pr("c1", 1000, 3000, &[]),
+                pr("c1", 1100, 3100, &[]),
+                pr("c1", 1200, 3200, &[]),
+                pr("c1", 51000, 53000, &[]),
+                pr("c1", 51100, 53100, &[]),
+                pr("c1", 51200, 53200, &[]),
             ];
             let sk = cluster_unspliced(&reads, 3, 1);
-            assert_eq!(sk.len(), 2, "distant unspliced loci must seed as separate skeletons");
-            assert!(sk.iter().all(|s| s.end - s.start < 300_000), "each skeleton spans one locus, not the chromosome");
+            assert_eq!(
+                sk.len(),
+                2,
+                "distant unspliced loci must seed as separate skeletons"
+            );
+            assert!(
+                sk.iter().all(|s| s.end - s.start < 300_000),
+                "each skeleton spans one locus, not the chromosome"
+            );
             assert!(sk.iter().all(|s| s.introns.is_empty()));
         }
 
@@ -19073,11 +23706,17 @@ pub mod denovo_assemble {
         fn cluster_unspliced_merges_overlapping_and_filters_min_reads() {
             // one overlapping pile -> ONE skeleton; a lone read below min_reads -> dropped
             let reads = vec![
-                pr("c1", 100, 400, &[]), pr("c1", 150, 450, &[]), pr("c1", 200, 500, &[]),
+                pr("c1", 100, 400, &[]),
+                pr("c1", 150, 450, &[]),
+                pr("c1", 200, 500, &[]),
                 pr("c1", 90000, 90200, &[]), // singleton, below min_reads=2
             ];
             let sk = cluster_unspliced(&reads, 2, 1);
-            assert_eq!(sk.len(), 1, "overlapping unspliced reads merge; the singleton is below min_reads");
+            assert_eq!(
+                sk.len(),
+                1,
+                "overlapping unspliced reads merge; the singleton is below min_reads"
+            );
             assert_eq!(sk[0].n_reads, 3);
         }
 
@@ -19100,28 +23739,66 @@ pub mod denovo_assemble {
 
             for &majority in &[false, true] {
                 // OFF (`read_strand = None`): today's answer, in both modes.
-                let sp = build_spliced_seq_with(&g, "c1", 0, 180, &spliced, None, majority, 10_000).unwrap();
+                let sp = build_spliced_seq_with(&g, "c1", 0, 180, &spliced, None, majority, 10_000)
+                    .unwrap();
                 assert_eq!(sp.1, '+', "the junction motifs say '+'");
                 assert_eq!(sp.0.len(), 160, "the 20 bp intron is spliced out");
-                let un = build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, None, majority, 10_000).unwrap();
-                assert_eq!(un.1, '+', "no junctions and no read evidence -> the historical placeholder");
+                let un =
+                    build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, None, majority, 10_000)
+                        .unwrap();
+                assert_eq!(
+                    un.1, '+',
+                    "no junctions and no read evidence -> the historical placeholder"
+                );
                 assert_eq!(un.0.len(), 180);
 
                 // THE FIX FIRES: the measured read strand replaces the placeholder, and the STORED SEQUENCE
                 // flips with it -- which is the point, since a rep stored in the wrong orientation is what the
                 // orientation guard drops (3,951 of 4,009 guard-blocked pairs involve a single-exon rep).
-                let flipped =
-                    build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, Some('-'), majority, 10_000).unwrap();
-                assert_eq!(flipped.1, '-', "majority={majority}: the read strand must win over the placeholder");
-                assert_eq!(flipped.0, reverse_complement(&un.0), "the sequence must flip with the strand");
+                let flipped = build_spliced_seq_with(
+                    &g,
+                    "c1",
+                    0,
+                    180,
+                    &unspliced,
+                    Some('-'),
+                    majority,
+                    10_000,
+                )
+                .unwrap();
+                assert_eq!(
+                    flipped.1, '-',
+                    "majority={majority}: the read strand must win over the placeholder"
+                );
+                assert_eq!(
+                    flipped.0,
+                    reverse_complement(&un.0),
+                    "the sequence must flip with the strand"
+                );
 
                 // ...and a measured '+' is a no-op rather than merely coinciding.
-                assert_eq!(build_spliced_seq_with(&g, "c1", 0, 180, &unspliced, Some('+'), majority, 10_000), Some(un));
+                assert_eq!(
+                    build_spliced_seq_with(
+                        &g,
+                        "c1",
+                        0,
+                        180,
+                        &unspliced,
+                        Some('+'),
+                        majority,
+                        10_000
+                    ),
+                    Some(un)
+                );
 
                 // SPLICED UNTOUCHED: junction evidence beats read orientation, always.
                 let sp_rev =
-                    build_spliced_seq_with(&g, "c1", 0, 180, &spliced, Some('-'), majority, 10_000).unwrap();
-                assert_eq!(sp_rev, sp, "a spliced model's strand IS evidence and must not move");
+                    build_spliced_seq_with(&g, "c1", 0, 180, &spliced, Some('-'), majority, 10_000)
+                        .unwrap();
+                assert_eq!(
+                    sp_rev, sp,
+                    "a spliced model's strand IS evidence and must not move"
+                );
             }
         }
 
@@ -19132,16 +23809,27 @@ pub mod denovo_assemble {
             let g = genome_one_intron(b"GT", b"AG");
             let mut sk = skel("c1", 0, 180, 3, &[]);
             sk.read_strand = Some('-');
-            sk.read_rev = 3; sk.read_tot = 3; // unanimous, clears any threshold
+            sk.read_rev = 3;
+            sk.read_tot = 3; // unanimous, clears any threshold
 
             let off = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), false, 0.90);
             assert_eq!(off.len(), 1);
-            assert_eq!(off[0].strand, '+', "default OFF: the skeleton's measured strand is not consulted");
+            assert_eq!(
+                off[0].strand, '+',
+                "default OFF: the skeleton's measured strand is not consulted"
+            );
 
             let on = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), true, 0.90);
             assert_eq!(on.len(), 1);
-            assert_eq!(on[0].strand, '-', "ON: a decisive vote reaches build_spliced_seq");
-            assert_eq!(on[0].seq, reverse_complement(&off[0].seq), "and the emitted sequence flips with it");
+            assert_eq!(
+                on[0].strand, '-',
+                "ON: a decisive vote reaches build_spliced_seq"
+            );
+            assert_eq!(
+                on[0].seq,
+                reverse_complement(&off[0].seq),
+                "and the emitted sequence flips with it"
+            );
         }
 
         /// ABSTENTION. A vote that does not clear the margin must leave the skeleton on the `'+'` placeholder,
@@ -19152,16 +23840,27 @@ pub mod denovo_assemble {
             let g = genome_one_intron(b"GT", b"AG");
             let mut sk = skel("c1", 0, 180, 3, &[]);
             sk.read_strand = Some('-');
-            sk.read_rev = 3; sk.read_tot = 5; // 0.60 — a real majority, below the 0.90 default
+            sk.read_rev = 3;
+            sk.read_tot = 5; // 0.60 — a real majority, below the 0.90 default
 
             let strict = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), true, 0.90);
-            assert_eq!(strict[0].strand, '+', "0.60 < 0.90: ABSTAIN, keep the placeholder");
+            assert_eq!(
+                strict[0].strand, '+',
+                "0.60 < 0.90: ABSTAIN, keep the placeholder"
+            );
 
             // ...and the same skeleton flips once the threshold is lowered beneath its margin, so the guard is
             // the threshold and not some other property of this skeleton.
             let loose = assemble_gate_with(&[sk.clone()], &g, &GateParams::default(), true, 0.50);
-            assert_eq!(loose[0].strand, '-', "0.60 >= 0.50: the same vote is now decisive");
-            assert_eq!(strict[0].seq, reverse_complement(&loose[0].seq), "and the sequence follows the call");
+            assert_eq!(
+                loose[0].strand, '-',
+                "0.60 >= 0.50: the same vote is now decisive"
+            );
+            assert_eq!(
+                strict[0].seq,
+                reverse_complement(&loose[0].seq),
+                "and the sequence follows the call"
+            );
         }
 
         /// `read_strand_frac` is the observed majority fraction, and 0.0 for an empty group (which abstains
@@ -19169,9 +23868,19 @@ pub mod denovo_assemble {
         #[test]
         fn read_strand_fraction_is_the_observed_majority() {
             assert!((read_strand_fraction(3, 4) - 0.75).abs() < 1e-12);
-            assert!((read_strand_fraction(1, 4) - 0.75).abs() < 1e-12, "symmetric: it is the WINNER's share");
-            assert!((read_strand_fraction(2, 4) - 0.50).abs() < 1e-12, "a tie is 0.50");
-            assert_eq!(read_strand_fraction(0, 0), 0.0, "no reads => abstain under any positive margin");
+            assert!(
+                (read_strand_fraction(1, 4) - 0.75).abs() < 1e-12,
+                "symmetric: it is the WINNER's share"
+            );
+            assert!(
+                (read_strand_fraction(2, 4) - 0.50).abs() < 1e-12,
+                "a tie is 0.50"
+            );
+            assert_eq!(
+                read_strand_fraction(0, 0),
+                0.0,
+                "no reads => abstain under any positive margin"
+            );
             assert!((read_strand_fraction(5, 5) - 1.0).abs() < 1e-12);
         }
 
@@ -19180,7 +23889,11 @@ pub mod denovo_assemble {
         #[test]
         fn read_strand_is_a_strict_majority_and_ignores_read_order() {
             let un = |s: u64, e: u64, rev: bool| PrimaryRead {
-                chrom: "c1".into(), ref_start: s, ref_end: e, introns: vec![], reverse: rev,
+                chrom: "c1".into(),
+                ref_start: s,
+                ref_end: e,
+                introns: vec![],
+                reverse: rev,
             };
 
             // 2 reverse vs 1 forward -> '-'
@@ -19188,7 +23901,11 @@ pub mod denovo_assemble {
             assert_eq!(cluster_unspliced(&reads, 3, 1)[0].read_strand, Some('-'));
             // 1 vs 1 is NOT a majority: the vote only moves a skeleton when the reads outvote the placeholder.
             let tie = vec![un(100, 400, true), un(150, 450, false)];
-            assert_eq!(cluster_unspliced(&tie, 2, 1)[0].read_strand, Some('+'), "a tie keeps the placeholder");
+            assert_eq!(
+                cluster_unspliced(&tie, 2, 1)[0].read_strand,
+                Some('+'),
+                "a tie keeps the placeholder"
+            );
             // 1 reverse vs 2 forward -> '+'
             let fwd = vec![un(100, 400, true), un(150, 450, false), un(200, 500, false)];
             assert_eq!(cluster_unspliced(&fwd, 3, 1)[0].read_strand, Some('+'));
@@ -19199,18 +23916,32 @@ pub mod denovo_assemble {
             for k in 0..same.len() {
                 let mut perm = same.clone();
                 perm.rotate_left(k);
-                assert_eq!(cluster_unspliced(&perm, 3, 1), cluster_unspliced(&same, 3, 1), "rotation {k}");
+                assert_eq!(
+                    cluster_unspliced(&perm, 3, 1),
+                    cluster_unspliced(&same, 3, 1),
+                    "rotation {k}"
+                );
             }
 
             // Same for the spliced grouping in pass1. The field is recorded there too (a skeleton is a skeleton),
             // though only an unspliced model ever consults it.
             let sp = |s: u64, rev: bool| PrimaryRead {
-                chrom: "c1".into(), ref_start: s, ref_end: s + 400, introns: vec![(200, 300)], reverse: rev,
+                chrom: "c1".into(),
+                ref_start: s,
+                ref_end: s + 400,
+                introns: vec![(200, 300)],
+                reverse: rev,
             };
             let g1 = vec![sp(100, true), sp(101, true), sp(102, false)];
             let g2 = vec![sp(102, false), sp(101, true), sp(100, true)];
-            assert_eq!(pass1_skeletons_robust_with(&g1, 2, 1, None), pass1_skeletons_robust_with(&g2, 2, 1, None));
-            assert_eq!(pass1_skeletons_robust_with(&g1, 2, 1, None)[0].read_strand, Some('-'));
+            assert_eq!(
+                pass1_skeletons_robust_with(&g1, 2, 1, None),
+                pass1_skeletons_robust_with(&g2, 2, 1, None)
+            );
+            assert_eq!(
+                pass1_skeletons_robust_with(&g1, 2, 1, None)[0].read_strand,
+                Some('-')
+            );
         }
 
         // ---- tied_seed_skeletons ----
@@ -19262,9 +23993,16 @@ pub mod denovo_assemble {
                 pr("chr1", 100, 500, &[(200, 300)]),
             ];
             let primaries = vec![Skeleton {
-                chrom: "chr1".into(), start: 90, end: 480, n_reads: 5,
-                introns: vec![(200, 300)], footprint: false,
-                tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
+                chrom: "chr1".into(),
+                start: 90,
+                end: 480,
+                n_reads: 5,
+                introns: vec![(200, 300)],
+                footprint: false,
+                tied_seeded: false,
+                read_strand: None,
+                read_rev: 0,
+                read_tot: 0,
             }];
             assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
         }
@@ -19294,9 +24032,16 @@ pub mod denovo_assemble {
                 pr("chr1", 1005, 1995, &[]),
             ];
             let primaries = vec![Skeleton {
-                chrom: "chr1".into(), start: 900, end: 1900, n_reads: 5,
-                introns: vec![], footprint: false,
-                tied_seeded: false, read_strand: None, read_rev: 0, read_tot: 0,
+                chrom: "chr1".into(),
+                start: 900,
+                end: 1900,
+                n_reads: 5,
+                introns: vec![],
+                footprint: false,
+                tied_seeded: false,
+                read_strand: None,
+                read_rev: 0,
+                read_tot: 0,
             }];
             assert_eq!(tied_seed_skeletons(&tied, &primaries, 3).len(), 0);
         }
@@ -19305,24 +24050,45 @@ pub mod denovo_assemble {
         fn split_cuts_spurious_giant_intron_keeping_both_segments() {
             use DetHashMap;
             let reads = vec![PrimaryRead {
-                chrom: "chr1".into(), ref_start: 100, ref_end: 80_100,
+                chrom: "chr1".into(),
+                ref_start: 100,
+                ref_end: 80_100,
                 introns: vec![(200, 210), (300, 80_000)], // small internal intron, then a giant bridge
                 reverse: false,
             }];
             let mut support = DetHashMap::default();
             support.insert(("chr1".to_string(), 300, 80_000), 1); // giant, sub-threshold -> CUT
             let out = split_mischained_reads(&reads, &support, 50_000, 3);
-            assert_eq!(out, vec![
-                PrimaryRead { chrom: "chr1".into(), ref_start: 100,    ref_end: 300,    introns: vec![(200, 210)], reverse: false },
-                PrimaryRead { chrom: "chr1".into(), ref_start: 80_000, ref_end: 80_100, introns: vec![], reverse: false },
-            ]);
+            assert_eq!(
+                out,
+                vec![
+                    PrimaryRead {
+                        chrom: "chr1".into(),
+                        ref_start: 100,
+                        ref_end: 300,
+                        introns: vec![(200, 210)],
+                        reverse: false
+                    },
+                    PrimaryRead {
+                        chrom: "chr1".into(),
+                        ref_start: 80_000,
+                        ref_end: 80_100,
+                        introns: vec![],
+                        reverse: false
+                    },
+                ]
+            );
         }
 
         #[test]
         fn split_does_not_cut_well_supported_large_intron() {
             use DetHashMap;
             let reads = vec![PrimaryRead {
-                chrom: "chr1".into(), ref_start: 100, ref_end: 80_100, introns: vec![(300, 80_000)], reverse: false,
+                chrom: "chr1".into(),
+                ref_start: 100,
+                ref_end: 80_100,
+                introns: vec![(300, 80_000)],
+                reverse: false,
             }];
             let mut support = DetHashMap::default();
             support.insert(("chr1".to_string(), 300, 80_000), 3); // >= min_reads -> real large-gene intron, NOT a mis-chain
@@ -19334,7 +24100,11 @@ pub mod denovo_assemble {
         fn split_ignores_sub_giant_introns() {
             use DetHashMap;
             let reads = vec![PrimaryRead {
-                chrom: "chr1".into(), ref_start: 100, ref_end: 500, introns: vec![(200, 210), (300, 320)], reverse: false,
+                chrom: "chr1".into(),
+                ref_start: 100,
+                ref_end: 500,
+                introns: vec![(200, 210), (300, 320)],
+                reverse: false,
             }];
             let out = split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3); // no intron exceeds giant_bp
             assert_eq!(out, reads);
@@ -19344,26 +24114,64 @@ pub mod denovo_assemble {
         fn split_handles_two_giant_introns_into_three_segments() {
             use DetHashMap;
             let reads = vec![PrimaryRead {
-                chrom: "chr1".into(), ref_start: 0, ref_end: 160_050,
+                chrom: "chr1".into(),
+                ref_start: 0,
+                ref_end: 160_050,
                 introns: vec![(50, 80_000), (80_050, 160_000)], // two giant sub-threshold bridges
                 reverse: false,
             }];
             let out = split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3); // absent support => 0 < 3 => both cut
-            assert_eq!(out, vec![
-                PrimaryRead { chrom: "chr1".into(), ref_start: 0,       ref_end: 50,      introns: vec![], reverse: false },
-                PrimaryRead { chrom: "chr1".into(), ref_start: 80_000,  ref_end: 80_050,  introns: vec![], reverse: false },
-                PrimaryRead { chrom: "chr1".into(), ref_start: 160_000, ref_end: 160_050, introns: vec![], reverse: false },
-            ]);
+            assert_eq!(
+                out,
+                vec![
+                    PrimaryRead {
+                        chrom: "chr1".into(),
+                        ref_start: 0,
+                        ref_end: 50,
+                        introns: vec![],
+                        reverse: false
+                    },
+                    PrimaryRead {
+                        chrom: "chr1".into(),
+                        ref_start: 80_000,
+                        ref_end: 80_050,
+                        introns: vec![],
+                        reverse: false
+                    },
+                    PrimaryRead {
+                        chrom: "chr1".into(),
+                        ref_start: 160_000,
+                        ref_end: 160_050,
+                        introns: vec![],
+                        reverse: false
+                    },
+                ]
+            );
         }
 
         #[test]
         fn split_passes_reads_through_unchanged_when_no_cut() {
             use DetHashMap;
             let reads = vec![
-                PrimaryRead { chrom: "chr1".into(), ref_start: 0, ref_end: 100, introns: vec![], reverse: false },
-                PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)], reverse: false },
+                PrimaryRead {
+                    chrom: "chr1".into(),
+                    ref_start: 0,
+                    ref_end: 100,
+                    introns: vec![],
+                    reverse: false,
+                },
+                PrimaryRead {
+                    chrom: "chr2".into(),
+                    ref_start: 5,
+                    ref_end: 400,
+                    introns: vec![(100, 200)],
+                    reverse: false,
+                },
             ];
-            assert_eq!(split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3), reads);
+            assert_eq!(
+                split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3),
+                reads
+            );
         }
     }
 
@@ -19375,9 +24183,9 @@ pub mod denovo_assemble {
         use crate::family::copy_assign::copy_assign_pipeline::read_ref_end;
         use noodles_core::Position;
         use noodles_sam::alignment::io::Write as _;
-        use noodles_sam::alignment::Record as _;
         use noodles_sam::alignment::record::cigar::{op::Kind, Op};
         use noodles_sam::alignment::record::{Flags, MappingQuality};
+        use noodles_sam::alignment::Record as _;
         use noodles_sam::header::record::value::{map::ReferenceSequence, Map};
         use std::num::NonZeroUsize;
 
@@ -19405,15 +24213,33 @@ pub mod denovo_assemble {
             let n = |n: usize| Op::new(Kind::Skip, n);
             let mut recs = Vec::new();
             // c1: spliced primary, unspliced primary, a secondary and a supplementary
-            recs.push(mk("r1", 0, 101, Flags::default(), vec![m(50), n(200), m(50)]));
+            recs.push(mk(
+                "r1",
+                0,
+                101,
+                Flags::default(),
+                vec![m(50), n(200), m(50)],
+            ));
             recs.push(mk("r2", 0, 120, Flags::REVERSE_COMPLEMENTED, vec![m(300)]));
-            recs.push(mk("r3", 0, 5_001, Flags::SECONDARY, vec![m(80), n(100), m(20)]));
+            recs.push(mk(
+                "r3",
+                0,
+                5_001,
+                Flags::SECONDARY,
+                vec![m(80), n(100), m(20)],
+            ));
             recs.push(mk("r4", 0, 9_001, Flags::SUPPLEMENTARY, vec![m(60)]));
             // c2: many records, so its start is not at a block boundary and several blocks are crossed; 30 piles of
             // 100 overlapping reads, 10 kb apart, so there are read-free positions to cut at (between piles only)
             for k in 0..30usize {
                 for i in 0..100usize {
-                    recs.push(mk(&format!("s{k}_{i}"), 1, 1 + k * 10_000 + i * 3, Flags::default(), vec![m(40), n(500), m(40)]));
+                    recs.push(mk(
+                        &format!("s{k}_{i}"),
+                        1,
+                        1 + k * 10_000 + i * 3,
+                        Flags::default(),
+                        vec![m(40), n(500), m(40)],
+                    ));
                 }
             }
             // c3: nothing. c4: two reads, one placed-unmapped
@@ -19427,7 +24253,10 @@ pub mod denovo_assemble {
                     w.write_alignment_record(&header, r).unwrap();
                 }
                 // an unplaced unmapped read at the end of the file
-                let u = RecordBuf::builder().set_name("u").set_flags(Flags::UNMAPPED).build();
+                let u = RecordBuf::builder()
+                    .set_name("u")
+                    .set_flags(Flags::UNMAPPED)
+                    .build();
                 w.write_alignment_record(&header, &u).unwrap();
                 w.try_finish().unwrap();
             }
@@ -19444,11 +24273,19 @@ pub mod denovo_assemble {
                     record.alignment_start().transpose().unwrap(),
                     record.alignment_end().transpose().unwrap(),
                 ) {
-                    (Some(id), Some(start), Some(end)) => Some((id, start, end, !record.flags().is_unmapped())),
+                    (Some(id), Some(start), Some(end)) => {
+                        Some((id, start, end, !record.flags().is_unmapped()))
+                    }
                     _ => None,
                 };
                 indexer
-                    .add_record(ctx, noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(chunk_start, chunk_end))
+                    .add_record(
+                        ctx,
+                        noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(
+                            chunk_start,
+                            chunk_end,
+                        ),
+                    )
                     .unwrap();
                 chunk_start = chunk_end;
             }
@@ -19459,54 +24296,100 @@ pub mod denovo_assemble {
 
         #[test]
         fn per_contig_readers_equal_the_whole_file_restricted_to_the_contig() {
-            let dir = std::env::temp_dir().join(format!("rustle_piecewise_reader_{}", std::process::id()));
+            let dir = std::env::temp_dir()
+                .join(format!("rustle_piecewise_reader_{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let bam = fixture_bam(&dir);
             let whole = primary_reads_from_bam_in(&bam, 2, None).unwrap();
             let whole_aln = aligned_reads_from_bam_coords_in(&bam, 2, None).unwrap();
-            assert_eq!(whole.len(), 2 + 3_000 + 1, "fixture: primaries on c1, c2 and c4");
+            assert_eq!(
+                whole.len(),
+                2 + 3_000 + 1,
+                "fixture: primaries on c1, c2 and c4"
+            );
             let mut n_seen = (0usize, 0usize);
             for c in ["c1", "c2", "c3", "c4"] {
-                let piece = primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole(c))).unwrap();
-                let expect: Vec<PrimaryRead> = whole.iter().filter(|r| r.chrom == c).cloned().collect();
+                let piece =
+                    primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole(c)))
+                        .unwrap();
+                let expect: Vec<PrimaryRead> =
+                    whole.iter().filter(|r| r.chrom == c).cloned().collect();
                 assert_eq!(piece, expect, "primary reads of {c}");
-                let piece_aln: Vec<String> =
-                    aligned_reads_from_bam_coords_in(&bam, 2, Some(&crate::bam::ContigSpan::whole(c))).unwrap().iter().map(|r| format!("{r:?}")).collect();
-                let expect_aln: Vec<String> =
-                    whole_aln.iter().filter(|r| r.chrom == c).map(|r| format!("{r:?}")).collect();
+                let piece_aln: Vec<String> = aligned_reads_from_bam_coords_in(
+                    &bam,
+                    2,
+                    Some(&crate::bam::ContigSpan::whole(c)),
+                )
+                .unwrap()
+                .iter()
+                .map(|r| format!("{r:?}"))
+                .collect();
+                let expect_aln: Vec<String> = whole_aln
+                    .iter()
+                    .filter(|r| r.chrom == c)
+                    .map(|r| format!("{r:?}"))
+                    .collect();
                 assert_eq!(piece_aln, expect_aln, "all mapped records of {c}");
                 n_seen.0 += piece.len();
                 n_seen.1 += piece_aln.len();
             }
-            assert_eq!(n_seen, (whole.len(), whole_aln.len()), "the pieces partition the whole-file scan");
-            assert!(primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole("c3"))).unwrap().is_empty(), "an empty contig reads nothing");
-            assert!(primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole("chrNope"))).is_err(), "an unknown contig is an error");
+            assert_eq!(
+                n_seen,
+                (whole.len(), whole_aln.len()),
+                "the pieces partition the whole-file scan"
+            );
+            assert!(
+                primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole("c3")))
+                    .unwrap()
+                    .is_empty(),
+                "an empty contig reads nothing"
+            );
+            assert!(
+                primary_reads_from_bam_in(&bam, 2, Some(&crate::bam::ContigSpan::whole("chrNope")))
+                    .is_err(),
+                "an unknown contig is an error"
+            );
             // sub-contig spans cut at read-free positions, at most 450 records where possible: 7 spans of 4 piles and
             // one of 2; each span reads exactly the records that START inside it, and no record crosses a cut
             let cuts = crate::bam::read_free_cuts(&bam, "c2", 450).unwrap();
             let sizes: Vec<u64> = cuts.iter().map(|(_, n)| *n).collect();
-            assert_eq!(sizes, vec![400, 400, 400, 400, 400, 400, 400, 200], "{cuts:?}");
+            assert_eq!(
+                sizes,
+                vec![400, 400, 400, 400, 400, 400, 400, 200],
+                "{cuts:?}"
+            );
             assert_eq!(cuts[0].0.lo, 0);
             assert_eq!(cuts[7].0.hi, u64::MAX);
             // no read-free position within reach: one larger span rather than an inexact cut
-            assert_eq!(crate::bam::read_free_cuts(&bam, "c2", 50).unwrap().len(), 30, "a pile is never cut");
+            assert_eq!(
+                crate::bam::read_free_cuts(&bam, "c2", 50).unwrap().len(),
+                30,
+                "a pile is never cut"
+            );
             let c2: Vec<&BamRead> = whole_aln.iter().filter(|r| r.chrom == "c2").collect();
             for w in cuts.windows(2) {
                 let x = w[0].0.hi;
                 assert_eq!(x, w[1].0.lo, "spans are consecutive");
                 assert!(
-                    c2.iter().all(|r| !(r.read.ref_start < x && read_ref_end(&r.read) > x)),
+                    c2.iter()
+                        .all(|r| !(r.read.ref_start < x && read_ref_end(&r.read) > x)),
                     "no record crosses the cut at {x}"
                 );
             }
             let mut joined: Vec<PrimaryRead> = Vec::new();
             for (sp, _) in &cuts {
                 let got = primary_reads_from_bam_in(&bam, 2, Some(sp)).unwrap();
-                let expect: Vec<PrimaryRead> =
-                    whole.iter().filter(|r| r.chrom == "c2" && r.ref_start >= sp.lo && r.ref_start < sp.hi).cloned().collect();
+                let expect: Vec<PrimaryRead> = whole
+                    .iter()
+                    .filter(|r| r.chrom == "c2" && r.ref_start >= sp.lo && r.ref_start < sp.hi)
+                    .cloned()
+                    .collect();
                 assert_eq!(got, expect, "primary reads of {}", sp.label());
-                let got_aln: Vec<String> =
-                    aligned_reads_from_bam_coords_in(&bam, 2, Some(sp)).unwrap().iter().map(|r| format!("{r:?}")).collect();
+                let got_aln: Vec<String> = aligned_reads_from_bam_coords_in(&bam, 2, Some(sp))
+                    .unwrap()
+                    .iter()
+                    .map(|r| format!("{r:?}"))
+                    .collect();
                 let expect_aln: Vec<String> = c2
                     .iter()
                     .filter(|r| r.read.ref_start >= sp.lo && r.read.ref_start < sp.hi)
@@ -19515,11 +24398,20 @@ pub mod denovo_assemble {
                 assert_eq!(got_aln, expect_aln, "all mapped records of {}", sp.label());
                 joined.extend(got);
             }
-            let whole_c2: Vec<PrimaryRead> = whole.iter().filter(|r| r.chrom == "c2").cloned().collect();
+            let whole_c2: Vec<PrimaryRead> =
+                whole.iter().filter(|r| r.chrom == "c2").cloned().collect();
             assert_eq!(joined, whole_c2, "the spans partition the contig, in order");
-            assert_eq!(crate::bam::read_free_cuts(&bam, "c2", 0).unwrap().len(), 30, "one span per pile at max 0");
+            assert_eq!(
+                crate::bam::read_free_cuts(&bam, "c2", 0).unwrap().len(),
+                30,
+                "one span per pile at max 0"
+            );
             // c1: r1/r2 overlap, r3 and r4 each start past every earlier end -> cuts at 5000 and 9000
-            let c1: Vec<(u64, u64)> = crate::bam::read_free_cuts(&bam, "c1", 1).unwrap().iter().map(|(sp, _)| (sp.lo, sp.hi)).collect();
+            let c1: Vec<(u64, u64)> = crate::bam::read_free_cuts(&bam, "c1", 1)
+                .unwrap()
+                .iter()
+                .map(|(sp, _)| (sp.lo, sp.hi))
+                .collect();
             assert_eq!(c1, vec![(0, 5_000), (5_000, 9_000), (9_000, u64::MAX)]);
             let counts = crate::bam::contig_record_counts(&bam).unwrap();
             let names: Vec<&str> = counts.iter().map(|(c, _)| c.as_str()).collect();
@@ -19538,9 +24430,9 @@ pub mod denovo_assemble {
         use super::*;
         use noodles_core::Position;
         use noodles_sam::alignment::io::Write as _;
-        use noodles_sam::alignment::Record as _;
         use noodles_sam::alignment::record::cigar::{op::Kind, Op};
         use noodles_sam::alignment::record::{Flags, MappingQuality};
+        use noodles_sam::alignment::Record as _;
         use noodles_sam::header::record::value::{map::ReferenceSequence, Map};
         use std::num::NonZeroUsize;
 
@@ -19562,34 +24454,79 @@ pub mod denovo_assemble {
 
         #[test]
         fn parse_refuses_malformed_rows() {
-            assert!(ReadHomeTable::parse("r1\tc1\t100\n").is_err(), "too few columns");
-            assert!(ReadHomeTable::parse("r1\tc1\tx\t200\n").is_err(), "bad start");
-            assert!(ReadHomeTable::parse("r1\tc1\t200\t200\n").is_err(), "empty span");
+            assert!(
+                ReadHomeTable::parse("r1\tc1\t100\n").is_err(),
+                "too few columns"
+            );
+            assert!(
+                ReadHomeTable::parse("r1\tc1\tx\t200\n").is_err(),
+                "bad start"
+            );
+            assert!(
+                ReadHomeTable::parse("r1\tc1\t200\t200\n").is_err(),
+                "empty span"
+            );
         }
 
         #[test]
         fn aligned_blocks_count_match_ops_only() {
             // 10S 50M 2000N 50M 5I 20M 30D 10M : blocks [1000,1050) [3050,3100) [3100,3120) [3150,3160)
             let ops = vec![
-                Op::new(Kind::SoftClip, 10), m(50), Op::new(Kind::Skip, 2000), m(50), Op::new(Kind::Insertion, 5), m(20),
-                Op::new(Kind::Deletion, 30), m(10),
+                Op::new(Kind::SoftClip, 10),
+                m(50),
+                Op::new(Kind::Skip, 2000),
+                m(50),
+                Op::new(Kind::Insertion, 5),
+                m(20),
+                Op::new(Kind::Deletion, 30),
+                m(10),
             ];
-            assert!(aligned_blocks_overlap(1000, &ops, 1049, 1050), "last base of block 1");
-            assert!(!aligned_blocks_overlap(1000, &ops, 1050, 3050), "inside the intron only");
-            assert!(!aligned_blocks_overlap(1000, &ops, 990, 1000), "the soft clip does not reach back");
-            assert!(!aligned_blocks_overlap(1000, &ops, 3120, 3150), "inside the deletion only");
-            assert!(aligned_blocks_overlap(1000, &ops, 3155, 4000), "the block after the deletion");
-            assert!(!aligned_blocks_overlap(1000, &ops, 3160, 9000), "past the end");
+            assert!(
+                aligned_blocks_overlap(1000, &ops, 1049, 1050),
+                "last base of block 1"
+            );
+            assert!(
+                !aligned_blocks_overlap(1000, &ops, 1050, 3050),
+                "inside the intron only"
+            );
+            assert!(
+                !aligned_blocks_overlap(1000, &ops, 990, 1000),
+                "the soft clip does not reach back"
+            );
+            assert!(
+                !aligned_blocks_overlap(1000, &ops, 3120, 3150),
+                "inside the deletion only"
+            );
+            assert!(
+                aligned_blocks_overlap(1000, &ops, 3155, 4000),
+                "the block after the deletion"
+            );
+            assert!(
+                !aligned_blocks_overlap(1000, &ops, 3160, 9000),
+                "past the end"
+            );
         }
 
         #[test]
         fn decide_keeps_at_home_drops_away_and_ignores_unlisted_molecules() {
             let t = ReadHomeTable::parse("r1\tc1\t50000\t50200\nr2\tc2\t0\t100\n").unwrap();
             let ops = vec![m(100)];
-            assert_eq!(t.decide("r0", "c1", 50000, &ops), None, "unlisted: the base rule applies");
+            assert_eq!(
+                t.decide("r0", "c1", 50000, &ops),
+                None,
+                "unlisted: the base rule applies"
+            );
             assert_eq!(t.decide("r1", "c1", 50100, &ops), Some(true));
-            assert_eq!(t.decide("r1", "c1", 1000, &ops), Some(false), "the primary away from home is dropped too");
-            assert_eq!(t.decide("r2", "c1", 0, &ops), Some(false), "same coordinates, other contig");
+            assert_eq!(
+                t.decide("r1", "c1", 1000, &ops),
+                Some(false),
+                "the primary away from home is dropped too"
+            );
+            assert_eq!(
+                t.decide("r2", "c1", 0, &ops),
+                Some(false),
+                "same coordinates, other contig"
+            );
         }
 
         #[test]
@@ -19600,7 +24537,15 @@ pub mod denovo_assemble {
             c.record(false, true);
             c.record(false, true);
             c.record(false, false);
-            assert_eq!(c, HomeCounts { kept: 1, added: 1, dropped: 2, dropped_inert: 1 });
+            assert_eq!(
+                c,
+                HomeCounts {
+                    kept: 1,
+                    added: 1,
+                    dropped: 2,
+                    dropped_inert: 1
+                }
+            );
         }
 
         fn rec(name: &str, flags: Flags, rid: usize, pos: usize, ops: Vec<Op>) -> RecordBuf {
@@ -19621,8 +24566,16 @@ pub mod denovo_assemble {
             let prim_away = rec("r1", Flags::default(), 0, 1_001, vec![m(100)]);
             let sup_home = rec("r1", Flags::SUPPLEMENTARY, 0, 50_001, vec![m(100)]);
             let other = rec("r9", Flags::default(), 0, 1_001, vec![m(100)]);
-            assert_eq!(home_decide_buf(None, &sec_home, "c1"), None, "no table, no decision");
-            assert_eq!(home_decide_buf(Some(&t), &sup_home, "c1"), None, "a supplementary never enters a pool");
+            assert_eq!(
+                home_decide_buf(None, &sec_home, "c1"),
+                None,
+                "no table, no decision"
+            );
+            assert_eq!(
+                home_decide_buf(Some(&t), &sup_home, "c1"),
+                None,
+                "a supplementary never enters a pool"
+            );
             assert_eq!(home_decide_buf(Some(&t), &other, "c1"), None);
             let (mut pool, mut c) = (Vec::new(), HomeCounts::default());
             let d = home_decide_buf(Some(&t), &sec_home, "c1").unwrap();
@@ -19631,7 +24584,15 @@ pub mod denovo_assemble {
             home_apply_buf(d, &prim_away, "c1", true, &mut pool, &mut c);
             assert_eq!(pool.len(), 1);
             assert_eq!((pool[0].ref_start, pool[0].ref_end), (50_000, 50_100));
-            assert_eq!(c, HomeCounts { kept: 0, added: 1, dropped: 1, dropped_inert: 0 });
+            assert_eq!(
+                c,
+                HomeCounts {
+                    kept: 0,
+                    added: 1,
+                    dropped: 1,
+                    dropped_inert: 0
+                }
+            );
         }
 
         /// One contig, coordinate-sorted, indexed with noodles' own indexer (as the piecewise-reader fixture).
@@ -19641,13 +24602,19 @@ pub mod denovo_assemble {
                 .add_reference_sequence("c1", Map::<ReferenceSequence>::new(len))
                 .build();
             let recs = vec![
-                rec("m1", Flags::default(), 0, 1_001, vec![m(100)]),           // listed; primary away from home
-                rec("m2", Flags::default(), 0, 1_001, vec![m(100)]),           // unlisted primary
-                rec("m7", Flags::default(), 0, 1_001, vec![m(100)]),           // listed with its home on another contig
-                rec("m1", Flags::SECONDARY, 0, 50_001, vec![m(100)]),          // listed; secondary at home
-                rec("m2", Flags::SECONDARY, 0, 50_001, vec![m(100)]),          // unlisted secondary (base: primaries only)
-                rec("m3", Flags::default(), 0, 50_021, vec![m(50)]),           // listed; primary at home
-                rec("m4", Flags::default(), 0, 69_001, vec![m(50), Op::new(Kind::Skip, 2_000), m(50)]), // intron over home
+                rec("m1", Flags::default(), 0, 1_001, vec![m(100)]), // listed; primary away from home
+                rec("m2", Flags::default(), 0, 1_001, vec![m(100)]), // unlisted primary
+                rec("m7", Flags::default(), 0, 1_001, vec![m(100)]), // listed with its home on another contig
+                rec("m1", Flags::SECONDARY, 0, 50_001, vec![m(100)]), // listed; secondary at home
+                rec("m2", Flags::SECONDARY, 0, 50_001, vec![m(100)]), // unlisted secondary (base: primaries only)
+                rec("m3", Flags::default(), 0, 50_021, vec![m(50)]),  // listed; primary at home
+                rec(
+                    "m4",
+                    Flags::default(),
+                    0,
+                    69_001,
+                    vec![m(50), Op::new(Kind::Skip, 2_000), m(50)],
+                ), // intron over home
             ];
             let path = dir.join("home.bam");
             {
@@ -19670,11 +24637,19 @@ pub mod denovo_assemble {
                     record.alignment_start().transpose().unwrap(),
                     record.alignment_end().transpose().unwrap(),
                 ) {
-                    (Some(id), Some(start), Some(end)) => Some((id, start, end, !record.flags().is_unmapped())),
+                    (Some(id), Some(start), Some(end)) => {
+                        Some((id, start, end, !record.flags().is_unmapped()))
+                    }
                     _ => None,
                 };
                 indexer
-                    .add_record(ctx, noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(chunk_start, chunk_end))
+                    .add_record(
+                        ctx,
+                        noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(
+                            chunk_start,
+                            chunk_end,
+                        ),
+                    )
                     .unwrap();
                 chunk_start = chunk_end;
             }
@@ -19684,14 +24659,17 @@ pub mod denovo_assemble {
         }
 
         fn spans(v: &[PrimaryRead]) -> Vec<(u64, u64, usize)> {
-            v.iter().map(|r| (r.ref_start, r.ref_end, r.introns.len())).collect()
+            v.iter()
+                .map(|r| (r.ref_start, r.ref_end, r.introns.len()))
+                .collect()
         }
 
         /// The streaming reader's pool: every pushed read (the fixture's only spliced read is m4, which the table
         /// drops, so `unspliced` is the whole pool when `n_pushed` equals its length).
         fn streamed(bam: &str, home: Option<&ReadHomeTable>) -> (usize, Vec<PrimaryRead>) {
             let mut acc = Pass1Acc::new(1, None);
-            stream_pass1_region_with(bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, home).unwrap();
+            stream_pass1_region_with(bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, home)
+                .unwrap();
             (acc.n_pushed, acc.unspliced)
         }
 
@@ -19701,10 +24679,21 @@ pub mod denovo_assemble {
             let bam = fixture_bam(dir.path());
             // no table and an EMPTY table: the base pool (primaries only here), identical on both readers
             let empty = ReadHomeTable::parse("read_name\tchrom\tstart\tend\n").unwrap();
-            let (base_buf, _) = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, None).unwrap();
-            let (empty_buf, _) = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&empty)).unwrap();
+            let (base_buf, _) =
+                reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, None).unwrap();
+            let (empty_buf, _) =
+                reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&empty)).unwrap();
             assert_eq!(base_buf, empty_buf);
-            assert_eq!(spans(&base_buf), vec![(1000, 1100, 0), (1000, 1100, 0), (1000, 1100, 0), (50020, 50070, 0), (69000, 71100, 1)]);
+            assert_eq!(
+                spans(&base_buf),
+                vec![
+                    (1000, 1100, 0),
+                    (1000, 1100, 0),
+                    (1000, 1100, 0),
+                    (50020, 50070, 0),
+                    (69000, 71100, 1)
+                ]
+            );
             let (n0, un0) = streamed(&bam, None);
             let (n0e, un0e) = streamed(&bam, Some(&empty));
             assert_eq!((n0, &un0), (n0e, &un0e));
@@ -19712,8 +24701,13 @@ pub mod denovo_assemble {
             assert_eq!(spans(&un0), spans(&base_buf[..4]));
             // the table: m1 goes home (its secondary replaces its primary), m3 stays, m4 and m7 have no record at home
             let t = ReadHomeTable::parse("m1\tc1\t50000\t50200\nm3\tc1\t50000\t50200\nm4\tc1\t70000\t70100\nm7\tc2\t0\t5000\n").unwrap();
-            let (buf, bam_reads) = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&t)).unwrap();
-            assert_eq!(spans(&buf), vec![(1000, 1100, 0), (50000, 50100, 0), (50020, 50070, 0)], "m2, m1 at home, m3");
+            let (buf, bam_reads) =
+                reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&t)).unwrap();
+            assert_eq!(
+                spans(&buf),
+                vec![(1000, 1100, 0), (50000, 50100, 0), (50020, 50070, 0)],
+                "m2, m1 at home, m3"
+            );
             assert_eq!(bam_reads.len(), 7, "the assignment input is never filtered");
             let (n, un) = streamed(&bam, Some(&t));
             assert_eq!(n, 3);
@@ -19733,11 +24727,11 @@ pub mod denovo_assemble {
         use super::*;
         use noodles_core::Position;
         use noodles_sam::alignment::io::Write as _;
-        use noodles_sam::alignment::Record as _;
         use noodles_sam::alignment::record::cigar::{op::Kind, Op};
         use noodles_sam::alignment::record::data::field::Tag;
         use noodles_sam::alignment::record::{Flags, MappingQuality};
         use noodles_sam::alignment::record_buf::data::field::Value;
+        use noodles_sam::alignment::Record as _;
         use noodles_sam::header::record::value::{map::ReferenceSequence, Map};
         use std::num::NonZeroUsize;
 
@@ -19762,7 +24756,12 @@ pub mod denovo_assemble {
             vec![(1000 + i % 7, 1100), (2000, 2400 + i)]
         }
         fn j_read(i: u64) -> Vec<(u64, u64)> {
-            vec![(1000 + i, 1100), (2000, 2100), (6000, 6200), (7000, 7150 + i)]
+            vec![
+                (1000 + i, 1100),
+                (2000, 2100),
+                (6000, 6200),
+                (7000, 7150 + i),
+            ]
         }
         /// B with its own first exon inside J's intron (a >= 3-read start cluster when the starts are close)
         fn b_read(i: u64) -> Vec<(u64, u64)> {
@@ -19778,14 +24777,24 @@ pub mod denovo_assemble {
         }
 
         fn locus(n_a: u64, n_b: u64) -> Vec<(Vec<(u64, u64)>, bool)> {
-            let mut v: Vec<(Vec<(u64, u64)>, bool)> = (0..n_a).map(|i| (a_read(i), false)).collect();
+            let mut v: Vec<(Vec<(u64, u64)>, bool)> =
+                (0..n_a).map(|i| (a_read(i), false)).collect();
             v.extend((0..3).map(|i| (j_read(i), false)));
             v.extend((0..n_b).map(|i| (b_read(i), false)));
             v
         }
 
-        fn flagged(rule: ReadthroughRule, reads: &[(Vec<(u64, u64)>, bool)], g: &GenomeIndex) -> Vec<(u64, u64, u32, u32, u32)> {
-            stats(rule, reads).flag(g, false).rows.iter().map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1)).collect()
+        fn flagged(
+            rule: ReadthroughRule,
+            reads: &[(Vec<(u64, u64)>, bool)],
+            g: &GenomeIndex,
+        ) -> Vec<(u64, u64, u32, u32, u32)> {
+            stats(rule, reads)
+                .flag(g, false)
+                .rows
+                .iter()
+                .map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1))
+                .collect()
         }
 
         #[test]
@@ -19794,10 +24803,19 @@ pub mod denovo_assemble {
             assert_eq!(ReadthroughRule::parse(Some("")).unwrap(), None);
             assert_eq!(ReadthroughRule::parse(Some("off")).unwrap(), None);
             assert_eq!(ReadthroughRule::parse(Some("OFF")).unwrap(), None);
-            assert_eq!(ReadthroughRule::parse(Some("r")).unwrap(), Some(ReadthroughRule::R));
-            assert_eq!(ReadthroughRule::parse(Some("RQ1")).unwrap(), Some(ReadthroughRule::Rq1));
+            assert_eq!(
+                ReadthroughRule::parse(Some("r")).unwrap(),
+                Some(ReadthroughRule::R)
+            );
+            assert_eq!(
+                ReadthroughRule::parse(Some("RQ1")).unwrap(),
+                Some(ReadthroughRule::Rq1)
+            );
             for bad in ["0", "1", "rq", "q1", "R&Q1", "on", "true"] {
-                assert!(ReadthroughRule::parse(Some(bad)).is_err(), "{bad} must be fatal");
+                assert!(
+                    ReadthroughRule::parse(Some(bad)).is_err(),
+                    "{bad} must be fatal"
+                );
             }
             assert_eq!(ReadthroughRule::Rq1.as_str(), "rq1");
         }
@@ -19806,12 +24824,23 @@ pub mod denovo_assemble {
         fn r_flags_a_run_on_past_a_polya_site_and_the_tie_counts() {
             let g = genome();
             // U = 60 = 20 S: R = 20/21, printed 0.9524, flags (the frozen θ is that tie)
-            assert_eq!(flagged(ReadthroughRule::R, &locus(60, 5), &g), vec![(J.0, J.1, 3, 60, 5)]);
-            assert_eq!(flagged(ReadthroughRule::Rq1, &locus(60, 5), &g), vec![(J.0, J.1, 3, 60, 5)], "3*5 >= 5*3: the Q1 tie too");
+            assert_eq!(
+                flagged(ReadthroughRule::R, &locus(60, 5), &g),
+                vec![(J.0, J.1, 3, 60, 5)]
+            );
+            assert_eq!(
+                flagged(ReadthroughRule::Rq1, &locus(60, 5), &g),
+                vec![(J.0, J.1, 3, 60, 5)],
+                "3*5 >= 5*3: the Q1 tie too"
+            );
             // U = 59 < 20 S
             assert!(flagged(ReadthroughRule::R, &locus(59, 5), &g).is_empty());
             let s = stats(ReadthroughRule::R, &locus(60, 5)).flag(&g, false);
-            assert_eq!((s.n_junctions, s.n_r_pass), (4, 1), "A's intron, J, B's two introns; only J passes R");
+            assert_eq!(
+                (s.n_junctions, s.n_r_pass),
+                (4, 1),
+                "A's intron, J, B's two introns; only J passes R"
+            );
             assert_eq!(s.rows[0].rule_label(), "rq1");
         }
 
@@ -19830,7 +24859,16 @@ pub mod denovo_assemble {
             assert!(flagged(ReadthroughRule::Rq1, &v, &g).is_empty());
             // B's own first exons, but the starts are > 100 bp apart: no real start cluster
             let mut v = locus(60, 0);
-            v.extend((0..5).map(|i| (vec![(3000 + 300 * i, 3050 + 300 * i), (6000, 6200), (7000, 7150 + i)], false)));
+            v.extend((0..5).map(|i| {
+                (
+                    vec![
+                        (3000 + 300 * i, 3050 + 300 * i),
+                        (6000, 6200),
+                        (7000, 7150 + i),
+                    ],
+                    false,
+                )
+            }));
             assert!(flagged(ReadthroughRule::Rq1, &v, &g).is_empty());
             assert_eq!(flagged(ReadthroughRule::R, &v, &g).len(), 1);
         }
@@ -19842,7 +24880,10 @@ pub mod denovo_assemble {
             let g = genome();
             let mut v = locus(60, 4);
             v.push((vec![(5000, 6200), (7000, 7150)], false));
-            assert_eq!(flagged(ReadthroughRule::Rq1, &v, &g), vec![(J.0, J.1, 3, 60, 5)]);
+            assert_eq!(
+                flagged(ReadthroughRule::Rq1, &v, &g),
+                vec![(J.0, J.1, 3, 60, 5)]
+            );
             // the same read with its 3′ end moved by 1 bp shares nothing: V1 = 4
             let mut v = locus(60, 4);
             v.push((vec![(5000, 6200), (7000, 7151)], false));
@@ -19856,7 +24897,11 @@ pub mod denovo_assemble {
             v.extend((0..20).map(|i| (vec![(3000, 3100), (3500, 3600 + i)], false)));
             let all = stats(ReadthroughRule::R, &v).flag(&g, true);
             let j = all.all.iter().find(|x| (x.donor, x.acceptor) == J).unwrap();
-            assert_eq!((j.s, j.t, j.u), (3, 79, 59), "T counts C's ends, U only the reads starting upstream of the donor");
+            assert_eq!(
+                (j.s, j.t, j.u),
+                (3, 79, 59),
+                "T counts C's ends, U only the reads starting upstream of the donor"
+            );
             assert!(all.rows.is_empty());
         }
 
@@ -19868,7 +24913,10 @@ pub mod denovo_assemble {
             v.push((j_read(0), false));
             let f = stats(ReadthroughRule::R, &v).flag(&g, true);
             assert!(f.rows.is_empty());
-            assert!(f.all.iter().all(|x| (x.donor, x.acceptor) != J), "S < 2 is never scored");
+            assert!(
+                f.all.iter().all(|x| (x.donor, x.acceptor) != J),
+                "S < 2 is never scored"
+            );
             // J's motif broken
             let mut s = genome_seq();
             s[J.0 as usize..J.0 as usize + 2].copy_from_slice(b"CC");
@@ -19876,7 +24924,10 @@ pub mod denovo_assemble {
             let f = stats(ReadthroughRule::R, &locus(60, 5)).flag(&g2, true);
             assert!(f.rows.is_empty());
             let j = f.all.iter().find(|x| (x.donor, x.acceptor) == J).unwrap();
-            assert_eq!((j.u, j.canonical, j.r_pass, j.rule_label()), (60, false, false, "-"));
+            assert_eq!(
+                (j.u, j.canonical, j.r_pass, j.rule_label()),
+                (60, false, false, "-")
+            );
         }
 
         fn mirror(ex: &[(u64, u64)]) -> Vec<(u64, u64)> {
@@ -19888,40 +24939,86 @@ pub mod denovo_assemble {
             let rc: Vec<u8> = reverse_complement(&genome_seq());
             let g = GenomeIndex::from_seqs(&[("c1", &rc)]);
             for rule in [ReadthroughRule::R, ReadthroughRule::Rq1] {
-                for (n_a, n_b, hit) in [(60u64, 5u64, true), (59, 5, false), (60, 4, rule == ReadthroughRule::R)] {
-                    let v: Vec<(Vec<(u64, u64)>, bool)> = locus(n_a, n_b).iter().map(|(ex, _)| (mirror(ex), true)).collect();
+                for (n_a, n_b, hit) in [
+                    (60u64, 5u64, true),
+                    (59, 5, false),
+                    (60, 4, rule == ReadthroughRule::R),
+                ] {
+                    let v: Vec<(Vec<(u64, u64)>, bool)> = locus(n_a, n_b)
+                        .iter()
+                        .map(|(ex, _)| (mirror(ex), true))
+                        .collect();
                     let f = stats(rule, &v).flag(&g, false);
-                    let want: Vec<(u64, u64, bool, u32, u32, u32)> =
-                        if hit { vec![(L - J.1, L - J.0, true, 3, n_a as u32, n_b as u32)] } else { vec![] };
-                    let got: Vec<_> = f.rows.iter().map(|j| (j.donor, j.acceptor, j.minus, j.s, j.u, j.v1)).collect();
+                    let want: Vec<(u64, u64, bool, u32, u32, u32)> = if hit {
+                        vec![(L - J.1, L - J.0, true, 3, n_a as u32, n_b as u32)]
+                    } else {
+                        vec![]
+                    };
+                    let got: Vec<_> = f
+                        .rows
+                        .iter()
+                        .map(|j| (j.donor, j.acceptor, j.minus, j.s, j.u, j.v1))
+                        .collect();
                     assert_eq!(got, want, "{rule:?} A={n_a} B={n_b}");
                 }
             }
             // the same reads labelled `+` on the reverse-complemented genome: J's motif is canonical on `-` only
-            let v: Vec<(Vec<(u64, u64)>, bool)> = locus(60, 5).iter().map(|(ex, _)| (mirror(ex), false)).collect();
-            assert!(stats(ReadthroughRule::R, &v).flag(&g, false).rows.is_empty());
+            let v: Vec<(Vec<(u64, u64)>, bool)> = locus(60, 5)
+                .iter()
+                .map(|(ex, _)| (mirror(ex), false))
+                .collect();
+            assert!(stats(ReadthroughRule::R, &v)
+                .flag(&g, false)
+                .rows
+                .is_empty());
         }
 
         #[test]
         fn drop_chains_removes_only_chains_holding_a_flagged_junction() {
             let mut acc = Pass1Acc::new(1, Some((400, 0.30))); // snap on: `allpos` is populated and must follow
-            for ex in [a_read(0), a_read(1), j_read(0), j_read(1), b_read(0), b_read(1)] {
+            for ex in [
+                a_read(0),
+                a_read(1),
+                j_read(0),
+                j_read(1),
+                b_read(0),
+                b_read(1),
+            ] {
                 let introns: Vec<(u64, u64)> = ex.windows(2).map(|w| (w[0].1, w[1].0)).collect();
                 acc.push("c1", ex[0].0, ex[ex.len() - 1].1, &introns, false);
             }
             acc.push("c1", 8000, 8500, &[], false);
             acc.push("c1", 8010, 8500, &[], false);
-            assert_eq!(acc.drop_chains_with(&ReadthroughFlags::default()), (0, 0), "nothing flagged: a no-op");
+            assert_eq!(
+                acc.drop_chains_with(&ReadthroughFlags::default()),
+                (0, 0),
+                "nothing flagged: a no-op"
+            );
             let mut f = ReadthroughFlags::default();
             f.flagged.entry("c1".into()).or_default().insert(J);
-            f.flagged.entry("c2".into()).or_default().insert((1100, 2000)); // another contig: must not match c1's A
+            f.flagged
+                .entry("c2".into())
+                .or_default()
+                .insert((1100, 2000)); // another contig: must not match c1's A
             assert_eq!(acc.drop_chains_with(&f), (1, 2));
             assert_eq!(acc.allpos.len(), 2);
-            assert_eq!(acc.unspliced.len(), 2, "unspliced reads carry no junction and stay");
+            assert_eq!(
+                acc.unspliced.len(),
+                2,
+                "unspliced reads carry no junction and stay"
+            );
             let sk = acc.finish(2, 0, None);
-            assert_eq!(sk.iter().filter(|s| !s.introns.is_empty()).count(), 2, "A and B remain");
+            assert_eq!(
+                sk.iter().filter(|s| !s.introns.is_empty()).count(),
+                2,
+                "A and B remain"
+            );
             assert!(sk.iter().all(|s| !s.introns.contains(&J)));
-            assert_eq!(sk.iter().filter(|s| s.introns.is_empty()).count(), 1, "the unspliced pair seeds one skeleton");
+            assert_eq!(
+                sk.iter().filter(|s| s.introns.is_empty()).count(),
+                1,
+                "the unspliced pair seeds one skeleton"
+            );
         }
 
         #[test]
@@ -19935,11 +25032,25 @@ pub mod denovo_assemble {
                 introns: ex.windows(2).map(|w| (w[0].1, w[1].0)).collect(),
                 reverse: false,
             };
-            let pool = vec![pr(a_read(0)), pr(j_read(0)), pr(j_read(1)), pr(vec![(2000, 2100), (6000, 6100)]), pr(b_read(0))];
+            let pool = vec![
+                pr(a_read(0)),
+                pr(j_read(0)),
+                pr(j_read(1)),
+                pr(vec![(2000, 2100), (6000, 6100)]),
+                pr(b_read(0)),
+            ];
             let kept = f.filter_pool(pool);
             assert_eq!(kept.len(), 2);
-            assert_eq!((f.alignments_removed, f.chains_removed), (3, 2), "two J-reads share a chain; the partial read is its own");
-            assert_eq!(ReadthroughFlags::default().filter_pool(kept.clone()), kept, "nothing flagged: untouched");
+            assert_eq!(
+                (f.alignments_removed, f.chains_removed),
+                (3, 2),
+                "two J-reads share a chain; the partial read is its own"
+            );
+            assert_eq!(
+                ReadthroughFlags::default().filter_pool(kept.clone()),
+                kept,
+                "nothing flagged: untouched"
+            );
         }
 
         // ------------------------------------------------------------------ BAM-level: both readers, one rule
@@ -19954,8 +25065,10 @@ pub mod denovo_assemble {
         }
 
         fn rec(name: &str, flags: Flags, ex: &[(u64, u64)], ts: Option<u8>) -> RecordBuf {
-            let data: noodles_sam::alignment::record_buf::Data =
-                ts.map(|c| (Tag::new(b't', b's'), Value::Character(c))).into_iter().collect();
+            let data: noodles_sam::alignment::record_buf::Data = ts
+                .map(|c| (Tag::new(b't', b's'), Value::Character(c)))
+                .into_iter()
+                .collect();
             RecordBuf::builder()
                 .set_name(name)
                 .set_flags(flags)
@@ -19977,18 +25090,38 @@ pub mod denovo_assemble {
             let mut v = Vec::new();
             for i in 0..59u64 {
                 let rev = i % 2 == 1;
-                let ts = if i == 58 { None } else if rev { Some(b'-') } else { Some(b'+') };
-                let fl = if rev { Flags::REVERSE_COMPLEMENTED } else { Flags::default() };
+                let ts = if i == 58 {
+                    None
+                } else if rev {
+                    Some(b'-')
+                } else {
+                    Some(b'+')
+                };
+                let fl = if rev {
+                    Flags::REVERSE_COMPLEMENTED
+                } else {
+                    Flags::default()
+                };
                 v.push(rec(&format!("a{i}"), fl, &a_read(i), ts));
             }
             v.push(rec("a_dup", Flags::default(), &a_read(0), Some(b'+')));
             for i in 0..3 {
-                v.push(rec(&format!("j{i}"), Flags::default(), &j_read(i), Some(b'+')));
+                v.push(rec(
+                    &format!("j{i}"),
+                    Flags::default(),
+                    &j_read(i),
+                    Some(b'+'),
+                ));
             }
             v.push(rec("x_sec", Flags::SECONDARY, &j_read(5), Some(b'+'))); // own ends: the coordinate dedupe keeps it
             v.push(rec("x_sup", Flags::SUPPLEMENTARY, &j_read(1), Some(b'+')));
             for i in 0..5 {
-                v.push(rec(&format!("b{i}"), Flags::default(), &b_read(i), Some(b'+')));
+                v.push(rec(
+                    &format!("b{i}"),
+                    Flags::default(),
+                    &b_read(i),
+                    Some(b'+'),
+                ));
             }
             v.sort_by_key(|r| r.alignment_start().map(|p| p.get()).unwrap_or(0));
             v
@@ -20020,11 +25153,19 @@ pub mod denovo_assemble {
                     record.alignment_start().transpose().unwrap(),
                     record.alignment_end().transpose().unwrap(),
                 ) {
-                    (Some(id), Some(start), Some(end)) => Some((id, start, end, !record.flags().is_unmapped())),
+                    (Some(id), Some(start), Some(end)) => {
+                        Some((id, start, end, !record.flags().is_unmapped()))
+                    }
                     _ => None,
                 };
                 indexer
-                    .add_record(ctx, noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(chunk_start, chunk_end))
+                    .add_record(
+                        ctx,
+                        noodles_csi::binning_index::index::reference_sequence::bin::Chunk::new(
+                            chunk_start,
+                            chunk_end,
+                        ),
+                    )
                     .unwrap();
                 chunk_start = chunk_end;
             }
@@ -20034,14 +25175,25 @@ pub mod denovo_assemble {
         }
 
         /// The streaming path as `copy_assign` runs it: statistics during the stream, flags, drop, finish.
-        fn streamed(bam: &str, rule: Option<ReadthroughRule>, allow_secondary: bool, g: &GenomeIndex) -> (Vec<Skeleton>, ReadthroughFlags) {
+        fn streamed(
+            bam: &str,
+            rule: Option<ReadthroughRule>,
+            allow_secondary: bool,
+            g: &GenomeIndex,
+        ) -> (Vec<Skeleton>, ReadthroughFlags) {
             streamed_with(bam, rule.map(ReadthroughStats::new), allow_secondary, g)
         }
 
-        fn streamed_with(bam: &str, stats: Option<ReadthroughStats>, allow_secondary: bool, g: &GenomeIndex) -> (Vec<Skeleton>, ReadthroughFlags) {
+        fn streamed_with(
+            bam: &str,
+            stats: Option<ReadthroughStats>,
+            allow_secondary: bool,
+            g: &GenomeIndex,
+        ) -> (Vec<Skeleton>, ReadthroughFlags) {
             let mut acc = Pass1Acc::new(1, None);
             acc.readthrough = stats;
-            stream_pass1_region_with(bam, "c1", 0, L, allow_secondary, true, &[], &mut acc, None).unwrap();
+            stream_pass1_region_with(bam, "c1", 0, L, allow_secondary, true, &[], &mut acc, None)
+                .unwrap();
             if let Some(rt) = acc.readthrough.as_mut() {
                 rt.window_done("c1", 0, L);
             }
@@ -20057,15 +25209,27 @@ pub mod denovo_assemble {
 
         /// The buffered path as `copy_assign` runs it: materialised records, statistics from `BamRead`s, the driver's
         /// coordinate dedupe, the pool filter, then pass 1.
-        fn buffered(bam: &str, rule: Option<ReadthroughRule>, g: &GenomeIndex) -> (Vec<Skeleton>, ReadthroughFlags) {
+        fn buffered(
+            bam: &str,
+            rule: Option<ReadthroughRule>,
+            g: &GenomeIndex,
+        ) -> (Vec<Skeleton>, ReadthroughFlags) {
             buffered_with(bam, rule.map(ReadthroughStats::new), g)
         }
 
-        fn buffered_with(bam: &str, stats: Option<ReadthroughStats>, g: &GenomeIndex) -> (Vec<Skeleton>, ReadthroughFlags) {
+        fn buffered_with(
+            bam: &str,
+            stats: Option<ReadthroughStats>,
+            g: &GenomeIndex,
+        ) -> (Vec<Skeleton>, ReadthroughFlags) {
             let (primary, bam_reads) = reads_in_region_indexed_with(bam, "c1", 0, L, None).unwrap();
             let mut seen = DetHashSet::default();
-            let pool: Vec<PrimaryRead> =
-                primary.into_iter().filter(|x| seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))).collect();
+            let pool: Vec<PrimaryRead> = primary
+                .into_iter()
+                .filter(|x| {
+                    seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))
+                })
+                .collect();
             let mut fl = ReadthroughFlags::default();
             let pool = match stats {
                 Some(mut s) => {
@@ -20078,7 +25242,10 @@ pub mod denovo_assemble {
                 }
                 None => pool,
             };
-            (pass1_skeletons_widened(&pool, PASS1_MIN_READS, 1, None, 0), fl)
+            (
+                pass1_skeletons_widened(&pool, PASS1_MIN_READS, 1, None, 0),
+                fl,
+            )
         }
 
         #[test]
@@ -20088,20 +25255,37 @@ pub mod denovo_assemble {
             let g = genome();
             let (off_s, off_fl) = streamed(&bam, None, false, &g);
             let (off_b, _) = buffered(&bam, None, &g);
-            assert_eq!(off_s, off_b, "the unset readers agree (the existing parity)");
+            assert_eq!(
+                off_s, off_b,
+                "the unset readers agree (the existing parity)"
+            );
             assert!(off_fl.rule.is_none() && off_fl.rows.is_empty());
-            assert!(off_s.iter().any(|s| s.introns.contains(&J)), "base: J's chain is a skeleton");
+            assert!(
+                off_s.iter().any(|s| s.introns.contains(&J)),
+                "base: J's chain is a skeleton"
+            );
             for rule in [ReadthroughRule::R, ReadthroughRule::Rq1] {
                 let (s, sfl) = streamed(&bam, Some(rule), false, &g);
                 let (b, bfl) = buffered(&bam, Some(rule), &g);
                 assert_eq!(s, b, "{rule:?}: identical skeletons");
                 assert_eq!(sfl.rows, bfl.rows, "{rule:?}: identical flags");
-                assert_eq!((sfl.alignments_removed, sfl.chains_removed), (bfl.alignments_removed, bfl.chains_removed));
+                assert_eq!(
+                    (sfl.alignments_removed, sfl.chains_removed),
+                    (bfl.alignments_removed, bfl.chains_removed)
+                );
                 // S = 3 primaries (the secondary and the supplementary never count), U = 60 records (the duplicate
                 // counts, reverse `ts:A:-` and tagless reads are `+`), V1 = 5
-                let got: Vec<_> = sfl.rows.iter().map(|j| (j.donor, j.acceptor, j.minus, j.s, j.u, j.v1)).collect();
+                let got: Vec<_> = sfl
+                    .rows
+                    .iter()
+                    .map(|j| (j.donor, j.acceptor, j.minus, j.s, j.u, j.v1))
+                    .collect();
                 assert_eq!(got, vec![(J.0, J.1, false, 3, 60, 5)], "{rule:?}");
-                assert_eq!((sfl.alignments_removed, sfl.chains_removed), (3, 1), "{rule:?}: J's 3 primaries, one chain");
+                assert_eq!(
+                    (sfl.alignments_removed, sfl.chains_removed),
+                    (3, 1),
+                    "{rule:?}: J's 3 primaries, one chain"
+                );
                 assert!(s.iter().all(|k| !k.introns.contains(&J)));
                 assert_eq!(s.len(), off_s.len() - 1, "{rule:?}: only J's chain leaves");
                 let a = s.iter().find(|k| k.introns == vec![(1100, 2000)]).unwrap();
@@ -20109,7 +25293,10 @@ pub mod denovo_assemble {
             }
             // a seeded secondary carrying J leaves with J's chain (it never counted in S)
             let (s, fl) = streamed(&bam, Some(ReadthroughRule::Rq1), true, &g);
-            assert_eq!((fl.rows.len(), fl.rows[0].s, fl.alignments_removed), (1, 3, 4));
+            assert_eq!(
+                (fl.rows.len(), fl.rows[0].s, fl.alignments_removed),
+                (1, 3, 4)
+            );
             assert!(s.iter().all(|k| !k.introns.contains(&J)));
         }
 
@@ -20118,23 +25305,38 @@ pub mod denovo_assemble {
             let dir = tempfile::tempdir().unwrap();
             let bam = write_indexed_bam(dir.path(), &locus_records());
             let g = genome();
-            let gate = GateParams { min_reads: 2, max_span: MAX_SPAN, min_spliced: MIN_SPLICED, max_spliced: MAX_SPLICED, pool_locus_support: true };
+            let gate = GateParams {
+                min_reads: 2,
+                max_span: MAX_SPAN,
+                min_spliced: MIN_SPLICED,
+                max_spliced: MAX_SPLICED,
+                pool_locus_support: true,
+            };
             let loci = |sk: &[Skeleton]| -> (usize, Vec<Vec<(u64, u64)>>) {
                 let iso = assemble_gate_with(sk, &g, &gate, false, 0.90);
                 let groups = crate::family::family_detect::collapse_loci_groups(&iso);
                 let mut reps: Vec<usize> = groups.clone();
                 reps.sort_unstable();
                 reps.dedup();
-                (reps.len(), reps.iter().map(|&r| iso[r].introns.clone()).collect())
+                (
+                    reps.len(),
+                    reps.iter().map(|&r| iso[r].introns.clone()).collect(),
+                )
             };
             let (off, _) = streamed(&bam, None, false, &g);
             let (n_off, _) = loci(&off);
-            assert_eq!(n_off, 1, "base: J shares A's intron and B's second intron, one fused locus");
+            assert_eq!(
+                n_off, 1,
+                "base: J shares A's intron and B's second intron, one fused locus"
+            );
             let (on, _) = streamed(&bam, Some(ReadthroughRule::Rq1), false, &g);
             let (n_on, reps) = loci(&on);
             assert_eq!(n_on, 2, "on: A and B are separate loci");
             assert!(reps.contains(&vec![(1100, 2000)]), "A's representative");
-            assert!(reps.contains(&vec![(5100, 6000), (6200, 7000)]), "B's own representative, from its own first exon");
+            assert!(
+                reps.contains(&vec![(5100, 6000), (6200, 7000)]),
+                "B's own representative, from its own first exon"
+            );
         }
 
         // ------------------------------------------------------------------ `list:<path>` (the NULL arm)
@@ -20154,7 +25356,9 @@ pub mod denovo_assemble {
 
         fn list_switch(dir: &std::path::Path, text: &str) -> ReadthroughSwitch {
             let p = list_file(dir, "list.tsv", text);
-            ReadthroughSwitch::parse(Some(&format!("list:{p}"))).unwrap().unwrap()
+            ReadthroughSwitch::parse(Some(&format!("list:{p}")))
+                .unwrap()
+                .unwrap()
         }
 
         #[test]
@@ -20165,38 +25369,69 @@ pub mod denovo_assemble {
             assert_eq!(sw.rule.as_str(), "list");
             let l = sw.list.as_ref().unwrap();
             // 1-based inclusive -> the pool's (0-based first intron base, exclusive end); the duplicate row counts once
-            let want: std::collections::BTreeSet<(u64, u64, bool)> = [(J.0, J.1, false), (3000, 3500, true)].into_iter().collect();
+            let want: std::collections::BTreeSet<(u64, u64, bool)> =
+                [(J.0, J.1, false), (3000, 3500, true)]
+                    .into_iter()
+                    .collect();
             assert_eq!(l.junctions.get("c1"), Some(&want));
             assert_eq!((l.len(), l.junctions.len()), (2, 1));
             // the prefix in any case, surrounding blanks, CRLF line ends
             let p = list_file(dir.path(), "crlf.tsv", &NULL_LIST.replace('\n', "\r\n"));
-            let sw2 = ReadthroughSwitch::parse(Some(&format!("  LIST:{p} "))).unwrap().unwrap();
+            let sw2 = ReadthroughSwitch::parse(Some(&format!("  LIST:{p} ")))
+                .unwrap()
+                .unwrap();
             assert_eq!(sw2.list.as_ref().unwrap().junctions, l.junctions);
             // an arm's own `<out>.readthrough_junctions.tsv` round-trips through the list reader
             let fl = stats(ReadthroughRule::Rq1, &locus(60, 5)).flag(&genome(), false);
             let dump = dir.path().join("rq1.readthrough_junctions.tsv");
             fl.write_tsv(dump.to_str().unwrap()).unwrap();
             let back = ReadthroughList::read(dump.to_str().unwrap()).unwrap();
-            assert_eq!(back.junctions.get("c1").unwrap().iter().map(|&(d, a, _)| (d, a)).collect::<Vec<_>>(), vec![J]);
+            assert_eq!(
+                back.junctions
+                    .get("c1")
+                    .unwrap()
+                    .iter()
+                    .map(|&(d, a, _)| (d, a))
+                    .collect::<Vec<_>>(),
+                vec![J]
+            );
             // r / rq1 / off keep their meaning and carry no list
             let r = ReadthroughSwitch::parse(Some("r")).unwrap().unwrap();
             assert_eq!((r.rule, r.list.is_none()), (ReadthroughRule::R, true));
-            assert_eq!(ReadthroughSwitch::parse(Some("RQ1")).unwrap().unwrap().rule, ReadthroughRule::Rq1);
+            assert_eq!(
+                ReadthroughSwitch::parse(Some("RQ1")).unwrap().unwrap().rule,
+                ReadthroughRule::Rq1
+            );
             for off in [None, Some(""), Some("off"), Some(" OFF ")] {
                 assert!(ReadthroughSwitch::parse(off).unwrap().is_none(), "{off:?}");
             }
             // the contig check against the BAM's reference sequences
             assert!(l.check_contigs(|c| (c == "c1").then_some(L)).is_ok());
-            assert!(l.check_contigs(|c| (c == "chr1").then_some(L)).is_err(), "a list for another naming scheme is fatal");
-            assert!(l.check_contigs(|c| (c == "c1").then_some(5_999)).is_err(), "an intron past the contig's end is fatal");
+            assert!(
+                l.check_contigs(|c| (c == "chr1").then_some(L)).is_err(),
+                "a list for another naming scheme is fatal"
+            );
+            assert!(
+                l.check_contigs(|c| (c == "c1").then_some(5_999)).is_err(),
+                "an intron past the contig's end is fatal"
+            );
         }
 
         #[test]
         fn list_switch_bad_values_and_bad_files_are_fatal() {
             let dir = tempfile::tempdir().unwrap();
             let missing = dir.path().join("absent.tsv").display().to_string();
-            for bad in ["list".to_string(), "list:".to_string(), "list:   ".to_string(), "null".to_string(), format!("list:{missing}")] {
-                assert!(ReadthroughSwitch::parse(Some(&bad)).is_err(), "{bad:?} must be fatal");
+            for bad in [
+                "list".to_string(),
+                "list:".to_string(),
+                "list:   ".to_string(),
+                "null".to_string(),
+                format!("list:{missing}"),
+            ] {
+                assert!(
+                    ReadthroughSwitch::parse(Some(&bad)).is_err(),
+                    "{bad:?} must be fatal"
+                );
             }
             assert!(ReadthroughRule::parse(Some("list")).is_err());
             let hdr = "chrom\tintron_start_1b\tintron_end_1b\tstrand\n";
@@ -20204,9 +25439,15 @@ pub mod denovo_assemble {
                 ("empty file", String::new()),
                 ("comments only", "# nothing\n\n".into()),
                 ("header only", hdr.into()),
-                ("no strand column", "chrom\tintron_start_1b\tintron_end_1b\nc1\t2101\t6000\n".into()),
+                (
+                    "no strand column",
+                    "chrom\tintron_start_1b\tintron_end_1b\nc1\t2101\t6000\n".into(),
+                ),
                 ("no header", "c1\t2101\t6000\t+\n".into()),
-                ("space-separated", "chrom intron_start_1b intron_end_1b strand\nc1 2101 6000 +\n".into()),
+                (
+                    "space-separated",
+                    "chrom intron_start_1b intron_end_1b strand\nc1 2101 6000 +\n".into(),
+                ),
                 ("non-integer donor", format!("{hdr}c1\t2101.5\t6000\t+\n")),
                 ("negative acceptor", format!("{hdr}c1\t2101\t-6000\t+\n")),
                 ("donor 0", format!("{hdr}c1\t0\t6000\t+\n")),
@@ -20239,21 +25480,59 @@ pub mod denovo_assemble {
             st.window_done("c1", 0, L);
             let mut fl = st.flag(&g, false);
             assert_eq!(fl.rule, Some(ReadthroughRule::List));
-            let got: Vec<_> = fl.rows.iter().map(|j| (j.chrom.as_str(), j.donor, j.acceptor, j.minus, j.s, j.u, j.v1)).collect();
-            assert_eq!(got, vec![("c1", J.0, J.1, false, 3, 10, 5), ("c1", 3000, 3500, true, 0, 0, 0)], "every listed junction of the region, scored");
-            let set: std::collections::BTreeSet<(u64, u64)> = [J, (3000, 3500)].into_iter().collect();
+            let got: Vec<_> = fl
+                .rows
+                .iter()
+                .map(|j| {
+                    (
+                        j.chrom.as_str(),
+                        j.donor,
+                        j.acceptor,
+                        j.minus,
+                        j.s,
+                        j.u,
+                        j.v1,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                got,
+                vec![
+                    ("c1", J.0, J.1, false, 3, 10, 5),
+                    ("c1", 3000, 3500, true, 0, 0, 0)
+                ],
+                "every listed junction of the region, scored"
+            );
+            let set: std::collections::BTreeSet<(u64, u64)> =
+                [J, (3000, 3500)].into_iter().collect();
             assert_eq!(fl.flagged.get("c1"), Some(&set));
-            assert!(!fl.flagged.contains_key("c2"), "c2 was not a window of this region");
-            assert_eq!(fl.n_r_pass, 0, "the statistics keep their meaning: nothing passes R");
+            assert!(
+                !fl.flagged.contains_key("c2"),
+                "c2 was not a window of this region"
+            );
+            assert_eq!(
+                fl.n_r_pass, 0,
+                "the statistics keep their meaning: nothing passes R"
+            );
             // the TSV names the arm `list`
             let out = dir.path().join("null.readthrough_junctions.tsv");
             fl.write_tsv(out.to_str().unwrap()).unwrap();
             let tsv = std::fs::read_to_string(&out).unwrap();
-            assert_eq!(tsv.lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t10\t5\tlist");
+            assert_eq!(
+                tsv.lines().nth(1).unwrap(),
+                "c1\t2101\t6000\t+\t3\t10\t5\tlist"
+            );
             assert_eq!(tsv.lines().count(), 3);
             // the streaming drop: J's chain leaves; A, B and the unspliced reads stay
             let mut acc = Pass1Acc::new(1, None);
-            for ex in [a_read(0), a_read(1), j_read(0), j_read(1), b_read(0), b_read(1)] {
+            for ex in [
+                a_read(0),
+                a_read(1),
+                j_read(0),
+                j_read(1),
+                b_read(0),
+                b_read(1),
+            ] {
                 let introns: Vec<(u64, u64)> = ex.windows(2).map(|w| (w[0].1, w[1].0)).collect();
                 acc.push("c1", ex[0].0, ex[ex.len() - 1].1, &introns, false);
             }
@@ -20263,8 +25542,15 @@ pub mod denovo_assemble {
             let sk = acc.finish(1, 0, None);
             assert!(sk.iter().all(|s| !s.introns.contains(&J)));
             assert!(sk.iter().any(|s| s.introns == vec![(1100, 2000)]), "A kept");
-            assert!(sk.iter().any(|s| s.introns == vec![(5100, 6000), (6200, 7000)]), "B kept");
-            assert!(sk.iter().any(|s| s.introns == vec![(3100, 3200)]), "a chain is removed by its own junctions only");
+            assert!(
+                sk.iter()
+                    .any(|s| s.introns == vec![(5100, 6000), (6200, 7000)]),
+                "B kept"
+            );
+            assert!(
+                sk.iter().any(|s| s.introns == vec![(3100, 3200)]),
+                "a chain is removed by its own junctions only"
+            );
             // the buffered drop: the same reads leave
             let pr = |ex: Vec<(u64, u64)>| PrimaryRead {
                 chrom: "c1".into(),
@@ -20273,10 +25559,20 @@ pub mod denovo_assemble {
                 introns: ex.windows(2).map(|w| (w[0].1, w[1].0)).collect(),
                 reverse: false,
             };
-            let pool = vec![pr(a_read(0)), pr(j_read(0)), pr(j_read(1)), pr(vec![(2900, 3000), (3500, 3600)]), pr(b_read(0))];
+            let pool = vec![
+                pr(a_read(0)),
+                pr(j_read(0)),
+                pr(j_read(1)),
+                pr(vec![(2900, 3000), (3500, 3600)]),
+                pr(b_read(0)),
+            ];
             let kept = fl.filter_pool(pool);
             assert_eq!(kept.len(), 2, "A and B stay");
-            assert_eq!((fl.alignments_removed, fl.chains_removed), (3, 2), "J's two reads (one chain) + the S = 0 listed junction's read");
+            assert_eq!(
+                (fl.alignments_removed, fl.chains_removed),
+                (3, 2),
+                "J's two reads (one chain) + the S = 0 listed junction's read"
+            );
         }
 
         #[test]
@@ -20305,10 +25601,24 @@ pub mod denovo_assemble {
             let (b, bfl) = buffered_with(&bam, Some(sw.stats()), &g);
             assert_eq!(s, b, "identical skeletons");
             assert_eq!(sfl.rows, bfl.rows, "identical rows");
-            assert_eq!((sfl.alignments_removed, sfl.chains_removed), (bfl.alignments_removed, bfl.chains_removed));
-            assert_eq!((sfl.alignments_removed, sfl.chains_removed), (3, 1), "J's 3 primaries, one chain");
-            let got: Vec<_> = sfl.rows.iter().map(|j| (j.donor, j.acceptor, j.minus, j.s, j.u, j.v1)).collect();
-            assert_eq!(got, vec![(J.0, J.1, false, 3, 60, 5), (3000, 3500, true, 0, 0, 0)]);
+            assert_eq!(
+                (sfl.alignments_removed, sfl.chains_removed),
+                (bfl.alignments_removed, bfl.chains_removed)
+            );
+            assert_eq!(
+                (sfl.alignments_removed, sfl.chains_removed),
+                (3, 1),
+                "J's 3 primaries, one chain"
+            );
+            let got: Vec<_> = sfl
+                .rows
+                .iter()
+                .map(|j| (j.donor, j.acceptor, j.minus, j.s, j.u, j.v1))
+                .collect();
+            assert_eq!(
+                got,
+                vec![(J.0, J.1, false, 3, 60, 5), (3000, 3500, true, 0, 0, 0)]
+            );
             // the rq1 arm flags exactly J on this fixture: listing J gives the rq1 arm's pool, skeleton for skeleton
             let (rq1, _) = streamed(&bam, Some(ReadthroughRule::Rq1), false, &g);
             assert_eq!(s, rq1);
@@ -20330,7 +25640,8 @@ pub mod denovo_assemble {
         /// `n_a` A reads (U), `n_last` J reads ending in J's acceptor exon (S and L), `n_mid` J reads continuing past it
         /// (S only), `n_b` B reads (V1).
         fn locus2(n_a: u64, n_last: u64, n_mid: u64, n_b: u64) -> Vec<(Vec<(u64, u64)>, bool)> {
-            let mut v: Vec<(Vec<(u64, u64)>, bool)> = (0..n_a).map(|i| (a_read(i), false)).collect();
+            let mut v: Vec<(Vec<(u64, u64)>, bool)> =
+                (0..n_a).map(|i| (a_read(i), false)).collect();
             v.extend((0..n_last).map(|i| (j_last_read(i), false)));
             v.extend((0..n_mid).map(|i| (j_read(i), false)));
             v.extend((0..n_b).map(|i| (b_read(i), false)));
@@ -20338,20 +25649,47 @@ pub mod denovo_assemble {
         }
 
         /// J's row in the ALL dump under `rule`: (S, U, V1, L, tier label, flagged by `rule`).
-        fn j_row(rule: ReadthroughRule, reads: &[(Vec<(u64, u64)>, bool)], g: &GenomeIndex) -> (u32, u32, u32, u32, &'static str, bool) {
+        fn j_row(
+            rule: ReadthroughRule,
+            reads: &[(Vec<(u64, u64)>, bool)],
+            g: &GenomeIndex,
+        ) -> (u32, u32, u32, u32, &'static str, bool) {
             let f = stats(rule, reads).flag(g, true);
-            let j = f.all.iter().find(|x| (x.donor, x.acceptor) == J).expect("J has S >= 2");
-            (j.s, j.u, j.v1, j.l, j.tier_label(), f.flagged.get("c1").is_some_and(|set| set.contains(&J)))
+            let j = f
+                .all
+                .iter()
+                .find(|x| (x.donor, x.acceptor) == J)
+                .expect("J has S >= 2");
+            (
+                j.s,
+                j.u,
+                j.v1,
+                j.l,
+                j.tier_label(),
+                f.flagged.get("c1").is_some_and(|set| set.contains(&J)),
+            )
         }
 
         #[test]
         fn r2_parses_and_is_its_own_arm() {
-            assert_eq!(ReadthroughRule::parse(Some("r2")).unwrap(), Some(ReadthroughRule::R2));
-            assert_eq!(ReadthroughRule::parse(Some(" R2 ")).unwrap(), Some(ReadthroughRule::R2));
-            assert_eq!(ReadthroughSwitch::parse(Some("r2")).unwrap().unwrap().rule, ReadthroughRule::R2);
+            assert_eq!(
+                ReadthroughRule::parse(Some("r2")).unwrap(),
+                Some(ReadthroughRule::R2)
+            );
+            assert_eq!(
+                ReadthroughRule::parse(Some(" R2 ")).unwrap(),
+                Some(ReadthroughRule::R2)
+            );
+            assert_eq!(
+                ReadthroughSwitch::parse(Some("r2")).unwrap().unwrap().rule,
+                ReadthroughRule::R2
+            );
             assert_eq!(ReadthroughRule::R2.as_str(), "r2");
             for bad in ["r4", "r2q1", "v2", "r 2"] {
-                assert!(ReadthroughRule::parse(Some(bad)).is_err(), "{bad} must be fatal");
+                assert!(
+                    ReadthroughRule::parse(Some(bad)).is_err(),
+                    "{bad} must be fatal"
+                );
             }
         }
 
@@ -20363,10 +25701,24 @@ pub mod denovo_assemble {
             assert_eq!((s, u, v1, l), (5, 60, 5, 2));
             // B's last intron (6200, 7000) is the last splice of every J-mid and every B read; A's intron of every A read
             let f = stats(ReadthroughRule::R2, &locus2(60, 2, 3, 5)).flag(&g, true);
-            let row = |d: u64, a: u64| f.all.iter().find(|x| (x.donor, x.acceptor) == (d, a)).map(|x| (x.s, x.l)).unwrap();
+            let row = |d: u64, a: u64| {
+                f.all
+                    .iter()
+                    .find(|x| (x.donor, x.acceptor) == (d, a))
+                    .map(|x| (x.s, x.l))
+                    .unwrap()
+            };
             assert_eq!(row(6200, 7000), (8, 8));
-            assert_eq!(row(1100, 2000), (65, 60), "a J read's first splice is A's intron but not its last");
-            assert_eq!(row(5100, 6000), (5, 0), "B's first splice is never its last");
+            assert_eq!(
+                row(1100, 2000),
+                (65, 60),
+                "a J read's first splice is A's intron but not its last"
+            );
+            assert_eq!(
+                row(5100, 6000),
+                (5, 0),
+                "B's first splice is never its last"
+            );
             // the same numbers under every arm (L is always collected; only r2 reads it)
             for rule in [ReadthroughRule::R, ReadthroughRule::Rq1] {
                 assert_eq!(j_row(rule, &locus2(60, 2, 3, 5), &g).3, 2, "{rule:?}");
@@ -20377,10 +25729,16 @@ pub mod denovo_assemble {
         fn r2_tier_a_alone_flags_as_r_does() {
             let g = genome();
             // J continues past its acceptor exon in every read (L = 0), no B promoter (V1 = 0): R's run-on, flagged
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 0, 3, 0), &g), (3, 60, 0, 0, "A", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(60, 0, 3, 0), &g),
+                (3, 60, 0, 0, "A", true)
+            );
             assert_eq!(j_row(ReadthroughRule::R, &locus2(60, 0, 3, 0), &g).5, true);
             // U = 59 < 20 S and V1 = 0 < 4 S: neither tier
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(59, 0, 3, 0), &g), (3, 59, 0, 0, "-", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(59, 0, 3, 0), &g),
+                (3, 59, 0, 0, "-", false)
+            );
             assert!(flagged(ReadthroughRule::R2, &locus2(59, 0, 3, 0), &g).is_empty());
         }
 
@@ -20389,33 +25747,62 @@ pub mod denovo_assemble {
             let g = genome();
             // every J read ends in J's acceptor exon (L = S = 3), nothing starts in the intron (V1 = 0)
             let reads = locus2(60, 3, 0, 0);
-            assert_eq!(j_row(ReadthroughRule::R, &reads, &g).5, true, "R removes it");
-            assert_eq!(j_row(ReadthroughRule::R2, &reads, &g), (3, 60, 0, 3, "A_exempt", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R, &reads, &g).5,
+                true,
+                "R removes it"
+            );
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &reads, &g),
+                (3, 60, 0, 3, "A_exempt", false)
+            );
             let f = stats(ReadthroughRule::R2, &reads).flag(&g, false);
             assert!(f.rows.is_empty() && f.flagged.is_empty());
-            assert_eq!((f.n_r_pass, f.n_tier_a, f.n_tier_b, f.n_ale_exempt), (1, 0, 0, 1), "R-pass keeps its meaning");
+            assert_eq!(
+                (f.n_r_pass, f.n_tier_a, f.n_tier_b, f.n_ale_exempt),
+                (1, 0, 0, 1),
+                "R-pass keeps its meaning"
+            );
         }
 
         #[test]
         fn r2_ties_at_2l_equal_s_exempt() {
             let g = genome();
             // S = 4, L = 2: 2 L = S, the tie exempts
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(80, 2, 2, 0), &g), (4, 80, 0, 2, "A_exempt", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(80, 2, 2, 0), &g),
+                (4, 80, 0, 2, "A_exempt", false)
+            );
             // S = 4, L = 1: 2 L < S, flagged by tier A
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(80, 1, 3, 0), &g), (4, 80, 0, 1, "A", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(80, 1, 3, 0), &g),
+                (4, 80, 0, 1, "A", true)
+            );
             // S = 5, L = 2: 2 L = 4 < 5
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(100, 2, 3, 0), &g), (5, 100, 0, 2, "A", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(100, 2, 3, 0), &g),
+                (5, 100, 0, 2, "A", true)
+            );
             // S = 5, L = 3: 2 L = 6 >= 5
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(100, 3, 2, 0), &g), (5, 100, 0, 3, "A_exempt", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(100, 3, 2, 0), &g),
+                (5, 100, 0, 3, "A_exempt", false)
+            );
         }
 
         #[test]
         fn r2_ties_at_3v1_equal_5s_are_not_exempt() {
             let g = genome();
             // S = L = 3, V1 = 5: 3 V1 = 5 S = Q1's tie, so B's own promoter is there and the exemption does not apply
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 3, 0, 5), &g), (3, 60, 5, 3, "A", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(60, 3, 0, 5), &g),
+                (3, 60, 5, 3, "A", true)
+            );
             // V1 = 4: 3 V1 = 12 < 15, exempt
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 3, 0, 4), &g), (3, 60, 4, 3, "A_exempt", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(60, 3, 0, 4), &g),
+                (3, 60, 4, 3, "A_exempt", false)
+            );
         }
 
         #[test]
@@ -20423,23 +25810,52 @@ pub mod denovo_assemble {
             let g = genome();
             // U = S = 3 (R = 1/2) and V1 = 4 S = 12 (Q1 = 4/5): both ties flag
             let reads = locus2(3, 0, 3, 12);
-            assert_eq!(j_row(ReadthroughRule::R, &reads, &g).5, false, "R keeps it (U < 20 S)");
-            assert_eq!(j_row(ReadthroughRule::R2, &reads, &g), (3, 3, 12, 0, "B", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R, &reads, &g).5,
+                false,
+                "R keeps it (U < 20 S)"
+            );
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &reads, &g),
+                (3, 3, 12, 0, "B", true)
+            );
             // the early stop of a non-dump run must not skip it (U >= S only)
-            assert_eq!(flagged(ReadthroughRule::R2, &reads, &g), vec![(J.0, J.1, 3, 3, 12)]);
+            assert_eq!(
+                flagged(ReadthroughRule::R2, &reads, &g),
+                vec![(J.0, J.1, 3, 3, 12)]
+            );
             let f = stats(ReadthroughRule::R2, &reads).flag(&g, false);
-            assert_eq!((f.n_r_pass, f.n_tier_a, f.n_tier_b, f.n_ale_exempt), (0, 0, 1, 0));
-            assert_eq!(f.rows[0].rule_label(), "-", "`rule` names the frozen rules only");
+            assert_eq!(
+                (f.n_r_pass, f.n_tier_a, f.n_tier_b, f.n_ale_exempt),
+                (0, 0, 1, 0)
+            );
+            assert_eq!(
+                f.rows[0].rule_label(),
+                "-",
+                "`rule` names the frozen rules only"
+            );
             // V1 = 11 < 4 S
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(3, 0, 3, 11), &g), (3, 3, 11, 0, "-", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(3, 0, 3, 11), &g),
+                (3, 3, 11, 0, "-", false)
+            );
             assert!(flagged(ReadthroughRule::R2, &locus2(3, 0, 3, 11), &g).is_empty());
             // U = 2 < S
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(2, 0, 3, 12), &g), (3, 2, 12, 0, "-", false));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(2, 0, 3, 12), &g),
+                (3, 2, 12, 0, "-", false)
+            );
             assert!(flagged(ReadthroughRule::R2, &locus2(2, 0, 3, 12), &g).is_empty());
             // tier B ignores L (its V1 >= 4 S already fails the exemption's 3 V1 < 5 S)
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(3, 3, 0, 12), &g), (3, 3, 12, 3, "B", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(3, 3, 0, 12), &g),
+                (3, 3, 12, 3, "B", true)
+            );
             // both tiers: `A` takes precedence
-            assert_eq!(j_row(ReadthroughRule::R2, &locus2(60, 0, 3, 12), &g), (3, 60, 12, 0, "A", true));
+            assert_eq!(
+                j_row(ReadthroughRule::R2, &locus2(60, 0, 3, 12), &g),
+                (3, 60, 12, 0, "A", true)
+            );
             // tier B keeps the scope: a broken motif never flags
             let mut sq = genome_seq();
             sq[J.0 as usize..J.0 as usize + 2].copy_from_slice(b"CC");
@@ -20459,17 +25875,44 @@ pub mod denovo_assemble {
             let g = GenomeIndex::from_seqs(&[("c1", &rc)]);
             let mj = (L - J.1, L - J.0);
             let mrow = |reads: Vec<(Vec<(u64, u64)>, bool)>, rule: ReadthroughRule| {
-                let v: Vec<(Vec<(u64, u64)>, bool)> = reads.iter().map(|(ex, _)| (mirror(ex), true)).collect();
+                let v: Vec<(Vec<(u64, u64)>, bool)> =
+                    reads.iter().map(|(ex, _)| (mirror(ex), true)).collect();
                 let f = stats(rule, &v).flag(&g, true);
-                let j = f.all.iter().find(|x| (x.donor, x.acceptor) == mj).unwrap().clone();
-                (j.minus, j.s, j.l, j.tier_label(), f.flagged.get("c1").is_some_and(|s| s.contains(&mj)))
+                let j = f
+                    .all
+                    .iter()
+                    .find(|x| (x.donor, x.acceptor) == mj)
+                    .unwrap()
+                    .clone();
+                (
+                    j.minus,
+                    j.s,
+                    j.l,
+                    j.tier_label(),
+                    f.flagged.get("c1").is_some_and(|s| s.contains(&mj)),
+                )
             };
-            assert_eq!(mrow(locus2(60, 3, 0, 0), ReadthroughRule::R2), (true, 3, 3, "A_exempt", false));
-            assert_eq!(mrow(locus2(60, 3, 0, 0), ReadthroughRule::R), (true, 3, 3, "A_exempt", true));
-            assert_eq!(mrow(locus2(60, 0, 3, 0), ReadthroughRule::R2), (true, 3, 0, "A", true));
-            assert_eq!(mrow(locus2(3, 0, 3, 12), ReadthroughRule::R2), (true, 3, 0, "B", true));
+            assert_eq!(
+                mrow(locus2(60, 3, 0, 0), ReadthroughRule::R2),
+                (true, 3, 3, "A_exempt", false)
+            );
+            assert_eq!(
+                mrow(locus2(60, 3, 0, 0), ReadthroughRule::R),
+                (true, 3, 3, "A_exempt", true)
+            );
+            assert_eq!(
+                mrow(locus2(60, 0, 3, 0), ReadthroughRule::R2),
+                (true, 3, 0, "A", true)
+            );
+            assert_eq!(
+                mrow(locus2(3, 0, 3, 12), ReadthroughRule::R2),
+                (true, 3, 0, "B", true)
+            );
             // the mirrored reads labelled `+`: their genomically LAST splice is B's mirrored first intron, never J
-            let v: Vec<(Vec<(u64, u64)>, bool)> = locus2(60, 3, 0, 0).iter().map(|(ex, _)| (mirror(ex), false)).collect();
+            let v: Vec<(Vec<(u64, u64)>, bool)> = locus2(60, 3, 0, 0)
+                .iter()
+                .map(|(ex, _)| (mirror(ex), false))
+                .collect();
             let f = stats(ReadthroughRule::R2, &v).flag(&g, true);
             let j = f.all.iter().find(|x| (x.donor, x.acceptor) == mj).unwrap();
             assert_eq!((j.minus, j.l, j.canonical), (false, 0, false));
@@ -20481,29 +25924,53 @@ pub mod denovo_assemble {
             let g = genome();
             let tsv = |fl: &ReadthroughFlags, name: &str, all: bool| -> String {
                 let p = dir.path().join(name);
-                if all { fl.write_all_tsv(p.to_str().unwrap()).unwrap() } else { fl.write_tsv(p.to_str().unwrap()).unwrap() }
+                if all {
+                    fl.write_all_tsv(p.to_str().unwrap()).unwrap()
+                } else {
+                    fl.write_tsv(p.to_str().unwrap()).unwrap()
+                }
                 std::fs::read_to_string(&p).unwrap()
             };
             // tier B: flagged, `rule` = `-`
             let fb = stats(ReadthroughRule::R2, &locus2(3, 0, 3, 12)).flag(&g, true);
             let t = tsv(&fb, "b.tsv", false);
-            assert_eq!(t.lines().next().unwrap(), "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier");
-            assert_eq!(t.lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB");
+            assert_eq!(
+                t.lines().next().unwrap(),
+                "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier"
+            );
+            assert_eq!(
+                t.lines().nth(1).unwrap(),
+                "c1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB"
+            );
             assert_eq!(t.lines().count(), 2);
             // the exempted junction: absent from the flagged TSV, `A_exempt` in the ALL dump
             let fe = stats(ReadthroughRule::R2, &locus2(60, 3, 0, 0)).flag(&g, true);
             assert_eq!(tsv(&fe, "e.tsv", false).lines().count(), 1, "header only");
             let all = tsv(&fe, "e.all.tsv", true);
-            assert_eq!(all.lines().next().unwrap(), "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\tL\ttier");
-            assert!(all.lines().any(|l| l == "c1\t2101\t6000\t+\t3\t60\t60\t0\ttrue\tr\t3\tA_exempt"), "{all}");
+            assert_eq!(
+                all.lines().next().unwrap(),
+                "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\tL\ttier"
+            );
+            assert!(
+                all.lines()
+                    .any(|l| l == "c1\t2101\t6000\t+\t3\t60\t60\t0\ttrue\tr\t3\tA_exempt"),
+                "{all}"
+            );
             // tier A: its `rule` column says r
             let fa = stats(ReadthroughRule::R2, &locus2(60, 1, 2, 0)).flag(&g, false);
-            assert_eq!(tsv(&fa, "a.tsv", false).lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA");
+            assert_eq!(
+                tsv(&fa, "a.tsv", false).lines().nth(1).unwrap(),
+                "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA"
+            );
             // r: the columns of the current tree, the same row
             let fr = stats(ReadthroughRule::R, &locus2(60, 1, 2, 0)).flag(&g, true);
             let t = tsv(&fr, "r.tsv", false);
-            assert_eq!(t, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\nc1\t2101\t6000\t+\t3\t60\t0\tr\n");
-            assert!(tsv(&fr, "r.all.tsv", true).starts_with("contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\n"));
+            assert_eq!(
+                t,
+                "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\nc1\t2101\t6000\t+\t3\t60\t0\tr\n"
+            );
+            assert!(tsv(&fr, "r.all.tsv", true)
+                .starts_with("contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\n"));
             assert_eq!(fr.tier_summary(), "", "r's log lines are unchanged");
             // r2's own TSV is a valid `list:` file (the columns it reads are the first four)
             let back = ReadthroughList::read(dir.path().join("b.tsv").to_str().unwrap()).unwrap();
@@ -20513,7 +25980,10 @@ pub mod denovo_assemble {
             tot.absorb(fb);
             tot.absorb(fe);
             tot.absorb(fa);
-            assert_eq!((tot.n_tier_a, tot.n_tier_b, tot.n_ale_exempt, tot.rows.len()), (1, 1, 1, 2));
+            assert_eq!(
+                (tot.n_tier_a, tot.n_tier_b, tot.n_ale_exempt, tot.rows.len()),
+                (1, 1, 1, 2)
+            );
         }
 
         /// The BAM locus with J's primaries split into 2 reads ending in J's acceptor exon (one a reverse alignment with
@@ -20521,14 +25991,29 @@ pub mod denovo_assemble {
         fn r2_records(n_b: u64) -> Vec<RecordBuf> {
             let mut v = Vec::new();
             for i in 0..60u64 {
-                v.push(rec(&format!("a{i}"), Flags::default(), &a_read(i), Some(b'+')));
+                v.push(rec(
+                    &format!("a{i}"),
+                    Flags::default(),
+                    &a_read(i),
+                    Some(b'+'),
+                ));
             }
             v.push(rec("jl0", Flags::default(), &j_last_read(0), Some(b'+')));
-            v.push(rec("jl1", Flags::REVERSE_COMPLEMENTED, &j_last_read(1), Some(b'-')));
+            v.push(rec(
+                "jl1",
+                Flags::REVERSE_COMPLEMENTED,
+                &j_last_read(1),
+                Some(b'-'),
+            ));
             v.push(rec("jm0", Flags::default(), &j_read(0), Some(b'+')));
             v.push(rec("x_sec", Flags::SECONDARY, &j_last_read(5), Some(b'+'))); // never in S or L
             for i in 0..n_b {
-                v.push(rec(&format!("b{i}"), Flags::default(), &b_read(i), Some(b'+')));
+                v.push(rec(
+                    &format!("b{i}"),
+                    Flags::default(),
+                    &b_read(i),
+                    Some(b'+'),
+                ));
             }
             v.sort_by_key(|r| r.alignment_start().map(|p| p.get()).unwrap_or(0));
             v
@@ -20546,12 +26031,26 @@ pub mod denovo_assemble {
                 let (b, bfl) = buffered(&bam, Some(ReadthroughRule::R2), &g);
                 assert_eq!(s, b, "n_b={n_b}: identical skeletons");
                 assert_eq!(sfl.rows, bfl.rows, "n_b={n_b}: identical flags");
-                assert_eq!((sfl.n_tier_a, sfl.n_tier_b, sfl.n_ale_exempt), (bfl.n_tier_a, bfl.n_tier_b, bfl.n_ale_exempt));
-                assert_eq!((sfl.alignments_removed, sfl.chains_removed), (bfl.alignments_removed, bfl.chains_removed));
+                assert_eq!(
+                    (sfl.n_tier_a, sfl.n_tier_b, sfl.n_ale_exempt),
+                    (bfl.n_tier_a, bfl.n_tier_b, bfl.n_ale_exempt)
+                );
+                assert_eq!(
+                    (sfl.alignments_removed, sfl.chains_removed),
+                    (bfl.alignments_removed, bfl.chains_removed)
+                );
                 if hit {
-                    let got: Vec<_> = sfl.rows.iter().map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1, j.l, j.tier_label())).collect();
+                    let got: Vec<_> = sfl
+                        .rows
+                        .iter()
+                        .map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1, j.l, j.tier_label()))
+                        .collect();
                     assert_eq!(got, vec![(J.0, J.1, 3, 60, 5, 2, "A")]);
-                    assert_eq!((sfl.alignments_removed, sfl.chains_removed), (3, 2), "J's 3 primaries in 2 chains");
+                    assert_eq!(
+                        (sfl.alignments_removed, sfl.chains_removed),
+                        (3, 2),
+                        "J's 3 primaries in 2 chains"
+                    );
                     assert!(s.iter().all(|k| !k.introns.contains(&J)));
                 } else {
                     assert!(sfl.rows.is_empty() && sfl.flagged.is_empty());
@@ -20569,7 +26068,13 @@ pub mod denovo_assemble {
         /// A molecule that BYPASSES J: from A's first exon to B's last exon through an exon inside J's intron (J skips
         /// it), so it spans J's whole intron without using J.
         fn k_read(i: u64) -> Vec<(u64, u64)> {
-            vec![(1000 + i, 1100), (2000, 2100), (5000, 5100), (6000, 6200), (7000, 7150 + i)]
+            vec![
+                (1000 + i, 1100),
+                (2000, 2100),
+                (5000, 5100),
+                (6000, 6200),
+                (7000, 7150 + i),
+            ]
         }
 
         /// The tier-B locus of the r2 tests (U = S = 3, V1 = 12 = 4 S: `B` under r2) plus `n_k` bypass molecules, so
@@ -20585,21 +26090,53 @@ pub mod denovo_assemble {
         /// J's row under `rule`: (S, U, V1, N_span, tier label, flagged by the dump run, flagged by the early-stop run).
         fn j3(rule: ReadthroughRule, reads: &[(Vec<(u64, u64)>, bool)], g: &GenomeIndex) -> J3 {
             let f = stats(rule, reads).flag(g, true);
-            let j = f.all.iter().find(|x| (x.donor, x.acceptor) == J).expect("J has S >= 2");
-            let quick = stats(rule, reads).flag(g, false).flagged.get("c1").is_some_and(|set| set.contains(&J));
-            (j.s, j.u, j.v1, j.n_span, j.tier_label(), f.flagged.get("c1").is_some_and(|set| set.contains(&J)), quick)
+            let j = f
+                .all
+                .iter()
+                .find(|x| (x.donor, x.acceptor) == J)
+                .expect("J has S >= 2");
+            let quick = stats(rule, reads)
+                .flag(g, false)
+                .flagged
+                .get("c1")
+                .is_some_and(|set| set.contains(&J));
+            (
+                j.s,
+                j.u,
+                j.v1,
+                j.n_span,
+                j.tier_label(),
+                f.flagged.get("c1").is_some_and(|set| set.contains(&J)),
+                quick,
+            )
         }
 
         #[test]
         fn r3_parses_and_is_its_own_arm() {
-            assert_eq!(ReadthroughRule::parse(Some("r3")).unwrap(), Some(ReadthroughRule::R3));
-            assert_eq!(ReadthroughRule::parse(Some(" R3 ")).unwrap(), Some(ReadthroughRule::R3));
-            assert_eq!(ReadthroughSwitch::parse(Some("r3")).unwrap().unwrap().rule, ReadthroughRule::R3);
+            assert_eq!(
+                ReadthroughRule::parse(Some("r3")).unwrap(),
+                Some(ReadthroughRule::R3)
+            );
+            assert_eq!(
+                ReadthroughRule::parse(Some(" R3 ")).unwrap(),
+                Some(ReadthroughRule::R3)
+            );
+            assert_eq!(
+                ReadthroughSwitch::parse(Some("r3")).unwrap().unwrap().rule,
+                ReadthroughRule::R3
+            );
             assert_eq!(ReadthroughRule::R3.as_str(), "r3");
             assert!(ReadthroughRule::R3.is_tiered() && ReadthroughRule::R2.is_tiered());
-            assert!(!ReadthroughRule::R.is_tiered() && !ReadthroughRule::Rq1.is_tiered() && !ReadthroughRule::List.is_tiered());
+            assert!(
+                !ReadthroughRule::R.is_tiered()
+                    && !ReadthroughRule::Rq1.is_tiered()
+                    && !ReadthroughRule::List.is_tiered()
+            );
             for bad in ["r4", "r3g", "r2g", "r 3"] {
-                assert!(ReadthroughRule::parse(Some(bad)).is_err(), "{bad} must be fatal");
+                assert!(
+                    ReadthroughRule::parse(Some(bad)).is_err(),
+                    "{bad} must be fatal"
+                );
             }
         }
 
@@ -20631,10 +26168,22 @@ pub mod denovo_assemble {
                     let want: Vec<u32> = q
                         .iter()
                         .map(|&(d, a)| {
-                            rows.iter().filter(|&&(p5, p3, _)| if minus { p5 >= a && p3 < d } else { p5 < d && p3 >= a }).count() as u32
+                            rows.iter()
+                                .filter(|&&(p5, p3, _)| {
+                                    if minus {
+                                        p5 >= a && p3 < d
+                                    } else {
+                                        p5 < d && p3 >= a
+                                    }
+                                })
+                                .count() as u32
                         })
                         .collect();
-                    assert_eq!(rt_span_counts(&rows, minus, &q), want, "minus={minus} rows={n} queries={nq}");
+                    assert_eq!(
+                        rt_span_counts(&rows, minus, &q),
+                        want,
+                        "minus={minus} rows={n} queries={nq}"
+                    );
                 }
             }
             assert!(rt_span_counts(&[(0, 5, 0)], false, &[]).is_empty());
@@ -20646,30 +26195,61 @@ pub mod denovo_assemble {
             let g = genome();
             // 9 bypass molecules + J's own 3 reads: N_span = 12 = V1, the tie protects. K = 9 < V1 alone would flag, so
             // this is also the check that J's reads count.
-            assert_eq!(j3(ReadthroughRule::R3, &locus3(9), &g), (3, 3, 12, Some(12), "B_guarded", false, false));
+            assert_eq!(
+                j3(ReadthroughRule::R3, &locus3(9), &g),
+                (3, 3, 12, Some(12), "B_guarded", false, false)
+            );
             // 8 bypass molecules: N_span = 11 < V1 = 12, flagged by tier B
-            assert_eq!(j3(ReadthroughRule::R3, &locus3(8), &g), (3, 3, 12, Some(11), "B", true, true));
+            assert_eq!(
+                j3(ReadthroughRule::R3, &locus3(8), &g),
+                (3, 3, 12, Some(11), "B", true, true)
+            );
             // J's reads count whatever follows J (one of the 3 ends in J's acceptor exon here)
             let mut v = locus2(3, 1, 2, 12);
             v.extend((0..9).map(|i| (k_read(i), false)));
-            assert_eq!(j3(ReadthroughRule::R3, &v, &g), (3, 3, 12, Some(12), "B_guarded", false, false));
+            assert_eq!(
+                j3(ReadthroughRule::R3, &v, &g),
+                (3, 3, 12, Some(12), "B_guarded", false, false)
+            );
             // r2 ignores N_span: both flagged, `B`, N_span never counted
             for k in [8, 9] {
-                assert_eq!(j3(ReadthroughRule::R2, &locus3(k), &g), (3, 3, 12, None, "B", true, true), "k={k}");
+                assert_eq!(
+                    j3(ReadthroughRule::R2, &locus3(k), &g),
+                    (3, 3, 12, None, "B", true, true),
+                    "k={k}"
+                );
             }
             // r3's counts: the guarded junction is neither flagged nor tier B
             let f = stats(ReadthroughRule::R3, &locus3(9)).flag(&g, false);
             assert!(f.rows.is_empty() && f.flagged.is_empty());
-            assert_eq!((f.n_tier_a, f.n_tier_b, f.n_ale_exempt, f.n_tier_b_guarded), (0, 0, 0, 1));
+            assert_eq!(
+                (f.n_tier_a, f.n_tier_b, f.n_ale_exempt, f.n_tier_b_guarded),
+                (0, 0, 0, 1)
+            );
             let f = stats(ReadthroughRule::R3, &locus3(8)).flag(&g, false);
-            assert_eq!((f.n_tier_a, f.n_tier_b, f.n_ale_exempt, f.n_tier_b_guarded, f.rows.len()), (0, 1, 0, 0, 1));
+            assert_eq!(
+                (
+                    f.n_tier_a,
+                    f.n_tier_b,
+                    f.n_ale_exempt,
+                    f.n_tier_b_guarded,
+                    f.rows.len()
+                ),
+                (0, 1, 0, 0, 1)
+            );
             assert_eq!(f.rows[0].n_span, Some(11));
             // tier A is untouched by the guard (the same 9 bypass molecules, U = 60): `A`, flagged, N_span still counted
             let mut v = locus2(60, 0, 3, 12);
             v.extend((0..9).map(|i| (k_read(i), false)));
-            assert_eq!(j3(ReadthroughRule::R3, &v, &g), (3, 60, 12, Some(12), "A", true, true));
+            assert_eq!(
+                j3(ReadthroughRule::R3, &v, &g),
+                (3, 60, 12, Some(12), "A", true, true)
+            );
             // a junction failing tier B has no N_span (r3 counts it for tier-B candidates only)
-            assert_eq!(j3(ReadthroughRule::R3, &locus2(60, 1, 2, 0), &g), (3, 60, 0, None, "A", true, true));
+            assert_eq!(
+                j3(ReadthroughRule::R3, &locus2(60, 1, 2, 0), &g),
+                (3, 60, 0, None, "A", true, true)
+            );
         }
 
         #[test]
@@ -20708,15 +26288,37 @@ pub mod denovo_assemble {
             let mj = (L - J.1, L - J.0);
             let row = |reads: &[(Vec<(u64, u64)>, bool)], rule: ReadthroughRule| {
                 let f = stats(rule, reads).flag(&g, true);
-                let j = f.all.iter().find(|x| (x.donor, x.acceptor) == mj).unwrap().clone();
-                (j.minus, j.s, j.u, j.v1, j.n_span, j.tier_label(), f.flagged.get("c1").is_some_and(|s| s.contains(&mj)))
+                let j = f
+                    .all
+                    .iter()
+                    .find(|x| (x.donor, x.acceptor) == mj)
+                    .unwrap()
+                    .clone();
+                (
+                    j.minus,
+                    j.s,
+                    j.u,
+                    j.v1,
+                    j.n_span,
+                    j.tier_label(),
+                    f.flagged.get("c1").is_some_and(|s| s.contains(&mj)),
+                )
             };
             let m = |reads: Vec<(Vec<(u64, u64)>, bool)>| -> Vec<(Vec<(u64, u64)>, bool)> {
                 reads.iter().map(|(ex, _)| (mirror(ex), true)).collect()
             };
-            assert_eq!(row(&m(locus3(9)), ReadthroughRule::R3), (true, 3, 3, 12, Some(12), "B_guarded", false));
-            assert_eq!(row(&m(locus3(8)), ReadthroughRule::R3), (true, 3, 3, 12, Some(11), "B", true));
-            assert_eq!(row(&m(locus3(9)), ReadthroughRule::R2), (true, 3, 3, 12, None, "B", true));
+            assert_eq!(
+                row(&m(locus3(9)), ReadthroughRule::R3),
+                (true, 3, 3, 12, Some(12), "B_guarded", false)
+            );
+            assert_eq!(
+                row(&m(locus3(8)), ReadthroughRule::R3),
+                (true, 3, 3, 12, Some(11), "B", true)
+            );
+            assert_eq!(
+                row(&m(locus3(9)), ReadthroughRule::R2),
+                (true, 3, 3, 12, None, "B", true)
+            );
             // the boundaries, mirrored: 5′ on the donor exon's last base and 3′ on the acceptor exon's first base count;
             // 3′ on the acceptor base (the intron's last base in transcript orientation) and 5′ on the donor base do not
             for (extra, want) in [
@@ -20732,7 +26334,10 @@ pub mod denovo_assemble {
             // `+` molecules across the same intron never count for the `-` junction
             let mut v = m(locus3(8));
             v.extend((0..5).map(|i| (mirror(&k_read(i)), false)));
-            assert_eq!(row(&v, ReadthroughRule::R3), (true, 3, 3, 12, Some(11), "B", true));
+            assert_eq!(
+                row(&v, ReadthroughRule::R3),
+                (true, 3, 3, 12, Some(11), "B", true)
+            );
         }
 
         #[test]
@@ -20741,7 +26346,11 @@ pub mod denovo_assemble {
             let g = genome();
             let text = |fl: &ReadthroughFlags, name: &str, all: bool| -> String {
                 let p = dir.path().join(name);
-                if all { fl.write_all_tsv(p.to_str().unwrap()).unwrap() } else { fl.write_tsv(p.to_str().unwrap()).unwrap() }
+                if all {
+                    fl.write_all_tsv(p.to_str().unwrap()).unwrap()
+                } else {
+                    fl.write_tsv(p.to_str().unwrap()).unwrap()
+                }
                 std::fs::read_to_string(&p).unwrap()
             };
             // tier B flagged: N after tier
@@ -20752,35 +26361,65 @@ pub mod denovo_assemble {
             );
             // the guarded junction: absent from the flagged TSV, `B_guarded` with its N in the ALL dump
             let fg = stats(ReadthroughRule::R3, &locus3(9)).flag(&g, true);
-            assert_eq!(text(&fg, "g.tsv", false), "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\tN\n");
+            assert_eq!(
+                text(&fg, "g.tsv", false),
+                "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\tN\n"
+            );
             let all = text(&fg, "g.all.tsv", true);
-            assert_eq!(all.lines().next().unwrap(), "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\tL\ttier\tN");
-            assert!(all.lines().any(|l| l == "c1\t2101\t6000\t+\t3\t3\t3\t12\ttrue\t-\t0\tB_guarded\t12"), "{all}");
+            assert_eq!(
+                all.lines().next().unwrap(),
+                "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule\tL\ttier\tN"
+            );
+            assert!(
+                all.lines()
+                    .any(|l| l == "c1\t2101\t6000\t+\t3\t3\t3\t12\ttrue\t-\t0\tB_guarded\t12"),
+                "{all}"
+            );
             // the rows failing tier B carry N = NA
-            assert!(all.lines().skip(1).filter(|l| !l.starts_with("c1\t2101\t6000\t")).all(|l| l.ends_with("\tNA")), "{all}");
+            assert!(
+                all.lines()
+                    .skip(1)
+                    .filter(|l| !l.starts_with("c1\t2101\t6000\t"))
+                    .all(|l| l.ends_with("\tNA")),
+                "{all}"
+            );
             assert!(all.lines().count() > 2);
             // tier A rows: N counted only when tier B holds too
             let fa = stats(ReadthroughRule::R3, &locus2(60, 1, 2, 0)).flag(&g, false);
-            assert_eq!(text(&fa, "a.tsv", false).lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA\tNA");
+            assert_eq!(
+                text(&fa, "a.tsv", false).lines().nth(1).unwrap(),
+                "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA\tNA"
+            );
             let fab = stats(ReadthroughRule::R3, &locus2(60, 0, 3, 12)).flag(&g, false);
-            assert_eq!(text(&fab, "ab.tsv", false).lines().nth(1).unwrap(), "c1\t2101\t6000\t+\t3\t60\t12\trq1\t0\tA\t3");
+            assert_eq!(
+                text(&fab, "ab.tsv", false).lines().nth(1).unwrap(),
+                "c1\t2101\t6000\t+\t3\t60\t12\trq1\t0\tA\t3"
+            );
             // r2 on the same reads: its own columns and its `B` label, no N
             let f2 = stats(ReadthroughRule::R2, &locus3(9)).flag(&g, true);
             assert_eq!(
                 text(&f2, "r2.tsv", false),
                 "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\nc1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB\n"
             );
-            assert!(text(&f2, "r2.all.tsv", true).lines().all(|l| !l.contains("B_guarded") && !l.ends_with("\tNA")));
+            assert!(text(&f2, "r2.all.tsv", true)
+                .lines()
+                .all(|l| !l.contains("B_guarded") && !l.ends_with("\tNA")));
             // the log suffix: r3 names its guarded count; r2's is unchanged
             assert_eq!(fg.tier_summary(), " | tier A 0 | tier B only 0 | tier A exempt (ALE) 0 | tier B guarded (V1 <= N_span) 1");
-            assert_eq!(f2.tier_summary(), " | tier A 0 | tier B only 1 | tier A exempt (ALE) 0");
+            assert_eq!(
+                f2.tier_summary(),
+                " | tier A 0 | tier B only 1 | tier A exempt (ALE) 0"
+            );
             // r3's own TSV is a valid `list:` file; absorb adds the guarded count
             let back = ReadthroughList::read(dir.path().join("b.tsv").to_str().unwrap()).unwrap();
             assert_eq!(back.len(), 1);
             let mut tot = ReadthroughFlags::default();
             tot.absorb(fg);
             tot.absorb(fb);
-            assert_eq!((tot.n_tier_b, tot.n_tier_b_guarded, tot.rows.len()), (1, 1, 1));
+            assert_eq!(
+                (tot.n_tier_b, tot.n_tier_b_guarded, tot.rows.len()),
+                (1, 1, 1)
+            );
         }
 
         /// r3's BAM locus: 3 A, 3 J and 12 B primaries, `n_k` bypass primaries (the first a reverse alignment with
@@ -20789,14 +26428,33 @@ pub mod denovo_assemble {
         fn r3_records(n_k: u64) -> Vec<RecordBuf> {
             let mut v = Vec::new();
             for i in 0..3u64 {
-                v.push(rec(&format!("a{i}"), Flags::default(), &a_read(i), Some(b'+')));
-                v.push(rec(&format!("j{i}"), Flags::default(), &j_read(i), Some(b'+')));
+                v.push(rec(
+                    &format!("a{i}"),
+                    Flags::default(),
+                    &a_read(i),
+                    Some(b'+'),
+                ));
+                v.push(rec(
+                    &format!("j{i}"),
+                    Flags::default(),
+                    &j_read(i),
+                    Some(b'+'),
+                ));
             }
             for i in 0..12u64 {
-                v.push(rec(&format!("b{i}"), Flags::default(), &b_read(i), Some(b'+')));
+                v.push(rec(
+                    &format!("b{i}"),
+                    Flags::default(),
+                    &b_read(i),
+                    Some(b'+'),
+                ));
             }
             for i in 0..n_k {
-                let (fl, ts) = if i == 0 { (Flags::REVERSE_COMPLEMENTED, b'-') } else { (Flags::default(), b'+') };
+                let (fl, ts) = if i == 0 {
+                    (Flags::REVERSE_COMPLEMENTED, b'-')
+                } else {
+                    (Flags::default(), b'+')
+                };
                 v.push(rec(&format!("k{i}"), fl, &k_read(i), Some(ts)));
             }
             v.push(rec("k_sec", Flags::SECONDARY, &k_read(30), Some(b'+')));
@@ -20819,17 +26477,48 @@ pub mod denovo_assemble {
                 assert_eq!(s, b, "n_k={n_k}: identical skeletons");
                 assert_eq!(sfl.rows, bfl.rows, "n_k={n_k}: identical flags");
                 assert_eq!(
-                    (sfl.n_tier_a, sfl.n_tier_b, sfl.n_ale_exempt, sfl.n_tier_b_guarded),
-                    (bfl.n_tier_a, bfl.n_tier_b, bfl.n_ale_exempt, bfl.n_tier_b_guarded)
+                    (
+                        sfl.n_tier_a,
+                        sfl.n_tier_b,
+                        sfl.n_ale_exempt,
+                        sfl.n_tier_b_guarded
+                    ),
+                    (
+                        bfl.n_tier_a,
+                        bfl.n_tier_b,
+                        bfl.n_ale_exempt,
+                        bfl.n_tier_b_guarded
+                    )
                 );
-                assert_eq!((sfl.alignments_removed, sfl.chains_removed), (bfl.alignments_removed, bfl.chains_removed));
+                assert_eq!(
+                    (sfl.alignments_removed, sfl.chains_removed),
+                    (bfl.alignments_removed, bfl.chains_removed)
+                );
                 let (r2, r2fl) = streamed(&bam, Some(ReadthroughRule::R2), false, &g);
                 assert_eq!(r2fl.rows.len(), 1, "n_k={n_k}: r2 removes J either way");
                 assert!(r2.iter().all(|k| !k.introns.contains(&J)));
                 if hit {
-                    let got: Vec<_> = sfl.rows.iter().map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1, j.n_span, j.tier_label())).collect();
+                    let got: Vec<_> = sfl
+                        .rows
+                        .iter()
+                        .map(|j| {
+                            (
+                                j.donor,
+                                j.acceptor,
+                                j.s,
+                                j.u,
+                                j.v1,
+                                j.n_span,
+                                j.tier_label(),
+                            )
+                        })
+                        .collect();
                     assert_eq!(got, vec![(J.0, J.1, 3, 3, 12, Some(11), "B")]);
-                    assert_eq!((sfl.alignments_removed, sfl.chains_removed), (3, 1), "J's 3 primaries, one chain");
+                    assert_eq!(
+                        (sfl.alignments_removed, sfl.chains_removed),
+                        (3, 1),
+                        "J's 3 primaries, one chain"
+                    );
                     assert!(s.iter().all(|k| !k.introns.contains(&J)));
                     assert_eq!(s, r2, "r3 = r2 when the guard does not hold");
                 } else {

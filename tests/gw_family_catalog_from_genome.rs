@@ -23,10 +23,14 @@ fn from_genome_recovers_family_and_excludes_decoys() {
 
     let status = Command::new(env!("CARGO_BIN_EXE_gw_family_catalog"))
         .args([
-            "--from-genome", win,
-            "--fasta", fa,
-            "--min-identity", "0.90",
-            "--out", out_s,
+            "--from-genome",
+            win,
+            "--fasta",
+            fa,
+            "--min-identity",
+            "0.90",
+            "--out",
+            out_s,
         ])
         .status()
         .expect("run gw_family_catalog --from-genome");
@@ -36,11 +40,16 @@ fn from_genome_recovers_family_and_excludes_decoys() {
     let copies = std::fs::read_to_string(format!("{out_s}.copies.tsv")).expect("copies.tsv");
 
     // >=1 family with n_copies >= 2 (column 2 = n_copies).
-    let has_multicopy = fams
-        .lines()
-        .skip(1)
-        .any(|l| l.split('\t').nth(1).and_then(|n| n.parse::<usize>().ok()).map_or(false, |n| n >= 2));
-    assert!(has_multicopy, "expected a >=2-copy family from the genome; families.tsv:\n{fams}");
+    let has_multicopy = fams.lines().skip(1).any(|l| {
+        l.split('\t')
+            .nth(1)
+            .and_then(|n| n.parse::<usize>().ok())
+            .map_or(false, |n| n >= 2)
+    });
+    assert!(
+        has_multicopy,
+        "expected a >=2-copy family from the genome; families.tsv:\n{fams}"
+    );
 
     // the three NCF1 copies must all appear as copies (column 4 = chrom/contig).
     let copy_contigs: Vec<&str> = copies
@@ -49,10 +58,16 @@ fn from_genome_recovers_family_and_excludes_decoys() {
         .filter_map(|l| l.split('\t').nth(3))
         .collect();
     for want in ["NCF1", "NCF1B", "NCF1C"] {
-        assert!(copy_contigs.contains(&want), "family copy {want} missing; copies.tsv:\n{copies}");
+        assert!(
+            copy_contigs.contains(&want),
+            "family copy {want} missing; copies.tsv:\n{copies}"
+        );
     }
     // precision: the unrelated decoys must NOT be grouped into any family.
     for decoy in ["DECOY1", "DECOY2"] {
-        assert!(!copy_contigs.contains(&decoy), "decoy {decoy} wrongly grouped; copies.tsv:\n{copies}");
+        assert!(
+            !copy_contigs.contains(&decoy),
+            "decoy {decoy} wrongly grouped; copies.tsv:\n{copies}"
+        );
     }
 }

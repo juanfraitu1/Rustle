@@ -17,12 +17,15 @@ use std::process::{Command, Output};
 
 const FIX: &str = "tests/fixtures/same_chrom_supplement";
 /// The fixture's one SAME-CHROMOSOME catalog family: c1:250-460 + c1:380-550.
-const GWFAM1_TSV: &str = "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\n\
+const GWFAM1_TSV: &str =
+    "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\n\
 GWFAM1\t0\tDN_c1_250_2\tc1\t250\t460\t2\t+\t6\t250-299,371-460\n\
 GWFAM1\t1\tDN_c1_380_2\tc1\t380\t550\t2\t+\t3\t380-419,451-550\n";
 
 fn scratch(name: &str) -> PathBuf {
-    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("copy_assign_families").join(name);
+    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("copy_assign_families")
+        .join(name);
     std::fs::create_dir_all(&d).expect("create scratch dir");
     d
 }
@@ -39,7 +42,12 @@ fn run(dir: &PathBuf, extra: &[&str]) -> (Output, String) {
     let out = dir.join("o");
     let out_s = out.to_str().expect("utf-8 path").to_string();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args([
+            "--bam",
+            &format!("{FIX}/reads.bam"),
+            "--fasta",
+            &format!("{FIX}/genome.fa"),
+        ])
         .args(["--region", "c1:200-600", "--out", &out_s])
         .args(extra)
         .output()
@@ -48,12 +56,17 @@ fn run(dir: &PathBuf, extra: &[&str]) -> (Output, String) {
 }
 
 fn read(out: &str, ext: &str) -> String {
-    std::fs::read_to_string(format!("{out}.{ext}")).unwrap_or_else(|e| panic!("read {out}.{ext}: {e}"))
+    std::fs::read_to_string(format!("{out}.{ext}"))
+        .unwrap_or_else(|e| panic!("read {out}.{ext}: {e}"))
 }
 
 /// Column `col` of every non-header row.
 fn col(text: &str, col: usize) -> Vec<String> {
-    text.lines().skip(1).filter(|l| !l.trim().is_empty()).map(|l| l.split('\t').nth(col).unwrap_or("").to_string()).collect()
+    text.lines()
+        .skip(1)
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.split('\t').nth(col).unwrap_or("").to_string())
+        .collect()
 }
 
 fn stderr(o: &Output) -> String {
@@ -67,20 +80,41 @@ fn stderr(o: &Output) -> String {
 fn families_flag_assigns_exactly_the_supplied_copy_set() {
     let d = scratch("flag");
     let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
-    let (o, out) = run(&d, &["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa")]);
+    let (o, out) = run(
+        &d,
+        &[
+            "--families",
+            &fam,
+            "--copies-fa",
+            &format!("{FIX}/out_default.copies.fa"),
+        ],
+    );
     assert!(o.status.success(), "run failed:\n{}", stderr(&o));
 
     let quant = read(&out, "quant.tsv");
     let mut tids = col(&quant, 2);
     tids.sort();
-    assert_eq!(tids, vec!["DN_c1_250_2", "DN_c1_380_2"], "the copy set must be the supplied catalog's, exactly");
+    assert_eq!(
+        tids,
+        vec!["DN_c1_250_2", "DN_c1_380_2"],
+        "the copy set must be the supplied catalog's, exactly"
+    );
 
     // and family CONSTRUCTION must not have run: no detection, no refine, no rescue.
     let err = stderr(&o);
-    assert!(err.contains("assigned AS GIVEN"), "expected the as-given banner in:\n{err}");
-    assert!(!err.contains("[detect_and_assign] refine:"), "refine must not run on a supplied roster:\n{err}");
+    assert!(
+        err.contains("assigned AS GIVEN"),
+        "expected the as-given banner in:\n{err}"
+    );
+    assert!(
+        !err.contains("[detect_and_assign] refine:"),
+        "refine must not run on a supplied roster:\n{err}"
+    );
     let rescued: Vec<String> = col(&read(&out, "families.tsv"), 3); // rescued_copies
-    assert!(rescued.iter().all(|v| v == "0"), "rescue must not widen a supplied roster: {rescued:?}");
+    assert!(
+        rescued.iter().all(|v| v == "0"),
+        "rescue must not widen a supplied roster: {rescued:?}"
+    );
 }
 
 /// Without `--copies-fa`, the sequences are rebuilt from `--fasta` at the catalog's own exon coordinates —
@@ -91,7 +125,11 @@ fn families_without_copies_fa_rebuilds_the_sequences_from_the_genome() {
     let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
     let (o, out) = run(&d, &["--families", &fam]);
     assert!(o.status.success(), "run failed:\n{}", stderr(&o));
-    assert!(stderr(&o).contains("rebuilt at the catalog's exon coordinates"), "{}", stderr(&o));
+    assert!(
+        stderr(&o).contains("rebuilt at the catalog's exon coordinates"),
+        "{}",
+        stderr(&o)
+    );
     let mut tids = col(&read(&out, "quant.tsv"), 2);
     tids.sort();
     assert_eq!(tids, vec!["DN_c1_250_2", "DN_c1_380_2"]);
@@ -120,30 +158,64 @@ fn discover_copies_off_by_default_is_byte_identical() {
     let fam = write(&d_cat, "cat.copies.tsv", GWFAM1_TSV);
 
     let d_off = scratch("discover_off");
-    let (o_off, out_off) =
-        run(&d_off, &["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa")]);
-    assert!(o_off.status.success(), "flag-off run failed:\n{}", stderr(&o_off));
+    let (o_off, out_off) = run(
+        &d_off,
+        &[
+            "--families",
+            &fam,
+            "--copies-fa",
+            &format!("{FIX}/out_default.copies.fa"),
+        ],
+    );
+    assert!(
+        o_off.status.success(),
+        "flag-off run failed:\n{}",
+        stderr(&o_off)
+    );
 
     let d_on = scratch("discover_on");
     let (o_on, out_on) = run(
         &d_on,
-        &["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa"), "--discover-copies"],
+        &[
+            "--families",
+            &fam,
+            "--copies-fa",
+            &format!("{FIX}/out_default.copies.fa"),
+            "--discover-copies",
+        ],
     );
-    assert!(o_on.status.success(), "flag-on run failed:\n{}", stderr(&o_on));
+    assert!(
+        o_on.status.success(),
+        "flag-on run failed:\n{}",
+        stderr(&o_on)
+    );
 
     // The parity comparison is only meaningful if these files actually carry rows.
-    assert!(!col(&read(&out_off, "quant.tsv"), 2).is_empty(), "the flag-off arm must produce real quant rows");
+    assert!(
+        !col(&read(&out_off, "quant.tsv"), 2).is_empty(),
+        "the flag-off arm must produce real quant rows"
+    );
     assert!(
         !col(&read(&out_off, "assignments.tsv"), 0).is_empty(),
         "the flag-off arm must produce real assignment rows"
     );
 
-    for ext in ["assignments.tsv", "families.tsv", "quant.tsv", "famcn_readonly.tsv", "params.tsv", "family_join.tsv"] {
+    for ext in [
+        "assignments.tsv",
+        "families.tsv",
+        "quant.tsv",
+        "famcn_readonly.tsv",
+        "params.tsv",
+        "family_join.tsv",
+    ] {
         let off_path = format!("{out_off}.{ext}");
         let on_path = format!("{out_on}.{ext}");
         let a = std::fs::read(&off_path).unwrap_or_else(|e| panic!("read {off_path}: {e}"));
         let b = std::fs::read(&on_path).unwrap_or_else(|e| panic!("read {on_path}: {e}"));
-        assert_eq!(a, b, "--discover-copies must not perturb .{ext} (unset vs set)");
+        assert_eq!(
+            a, b,
+            "--discover-copies must not perturb .{ext} (unset vs set)"
+        );
     }
 
     // The flag's own report is additive, not a rename of an existing file: absent when unset, present
@@ -189,15 +261,28 @@ fn discovered_copies_are_never_pooled_across_families() {
     const FAMX_TSV: &str = "FAMX\t0\tX0\tc1\t0\t59\t1\t+\t3\t0-59\n\
 FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
     let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
-    let fam0: String = tsv.lines().filter(|l| l.starts_with("GWFAM0\t")).collect::<Vec<_>>().join("\n");
+    let fam0: String = tsv
+        .lines()
+        .filter(|l| l.starts_with("GWFAM0\t"))
+        .collect::<Vec<_>>()
+        .join("\n");
     // GWFAM1_TSV already carries the header row; FAMX/GWFAM0 rows append to it.
     let (hdr, gwfam1) = GWFAM1_TSV.split_at(GWFAM1_TSV.find('\n').unwrap() + 1);
-    let fam = write(&d, "three.copies.tsv", &format!("{hdr}{FAMX_TSV}{gwfam1}{fam0}\n"));
+    let fam = write(
+        &d,
+        "three.copies.tsv",
+        &format!("{hdr}{FAMX_TSV}{gwfam1}{fam0}\n"),
+    );
     let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
     let out = d.join("o");
     let out_s = out.to_str().expect("utf-8 path").to_string();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args([
+            "--bam",
+            &format!("{FIX}/reads.bam"),
+            "--fasta",
+            &format!("{FIX}/genome.fa"),
+        ])
         .args(["--regions", &regions, "--out", &out_s])
         .args(["--families", &fam])
         .arg("--discover-copies")
@@ -211,7 +296,11 @@ FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
     fams.dedup();
     assert_eq!(
         fams,
-        vec!["FAMX".to_string(), "GWFAM0".to_string(), "GWFAM1".to_string()],
+        vec![
+            "FAMX".to_string(),
+            "GWFAM0".to_string(),
+            "GWFAM1".to_string()
+        ],
         "all three catalog families must be assigned"
     );
 
@@ -224,7 +313,10 @@ FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
     // Non-vacuous: this fixture really does yield a candidate (GWFAM0's own tied reads have a max-AS
     // placement at c1:380-550, outside every GWFAM0 copy). Without a row, everything below is empty-set
     // true and the test would prove nothing.
-    assert!(report.lines().skip(1).any(|l| !l.trim().is_empty()), "expected at least one candidate:\n{report}");
+    assert!(
+        report.lines().skip(1).any(|l| !l.trim().is_empty()),
+        "expected at least one candidate:\n{report}"
+    );
 
     // (1) THE DIRECT INVARIANT: every read named by a discovered row must be a read the REPORTING family
     // actually considered. `assignments.tsv` is that ground truth, emitted from the same `fa.assignments`
@@ -235,7 +327,10 @@ FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
         std::collections::HashMap::new();
     for l in assignments.lines().skip(1).filter(|l| !l.trim().is_empty()) {
         let f: Vec<&str> = l.split('\t').collect();
-        considered.entry(f[1].to_string()).or_default().insert(f[0].to_string());
+        considered
+            .entry(f[1].to_string())
+            .or_default()
+            .insert(f[0].to_string());
     }
 
     // (2) and no two families may claim the SAME site with the SAME supporting reads.
@@ -254,20 +349,35 @@ FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
             );
         }
         by_site
-            .entry((f[1].to_string(), f[2].to_string(), f[3].to_string(), names.to_string()))
+            .entry((
+                f[1].to_string(),
+                f[2].to_string(),
+                f[3].to_string(),
+                names.to_string(),
+            ))
             .or_default()
             .push(fid);
     }
     for (site, ids) in &by_site {
-        assert_eq!(ids.len(), 1, "site {site:?} reported under {ids:?} -- cross-family pooling:\n{report}");
+        assert_eq!(
+            ids.len(),
+            1,
+            "site {site:?} reported under {ids:?} -- cross-family pooling:\n{report}"
+        );
     }
     // Strand must be a real call, never blank or a placeholder character.
     for s in col(&report, 4) {
-        assert!(s == "+" || s == "-", "strand column must be + or -, got {s:?}:\n{report}");
+        assert!(
+            s == "+" || s == "-",
+            "strand column must be + or -, got {s:?}:\n{report}"
+        );
     }
     // And the distance column must never be a raw `u64::MAX` sentinel (final whole-branch review, Minor 6).
     for d in col(&report, 8) {
-        assert_ne!(d, "18446744073709551615", "absent nearest copy must print NA:\n{report}");
+        assert_ne!(
+            d, "18446744073709551615",
+            "absent nearest copy must print NA:\n{report}"
+        );
     }
 }
 
@@ -279,21 +389,43 @@ FAMX\t1\tX1\tc1\t100\t150\t1\t+\t3\t100-150\n";
 fn families_flag_emits_the_catalog_id_as_the_join_key() {
     let d = scratch("join");
     let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
-    let (o, out) = run(&d, &["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa")]);
+    let (o, out) = run(
+        &d,
+        &[
+            "--families",
+            &fam,
+            "--copies-fa",
+            &format!("{FIX}/out_default.copies.fa"),
+        ],
+    );
     assert!(o.status.success(), "run failed:\n{}", stderr(&o));
 
     let fams = read(&out, "families.tsv");
-    assert_eq!(col(&fams, 0), vec!["GWFAM1"], "family_id must BE the catalog id, not a minted CAFAM id");
+    assert_eq!(
+        col(&fams, 0),
+        vec!["GWFAM1"],
+        "family_id must BE the catalog id, not a minted CAFAM id"
+    );
 
     let join = read(&out, "family_join.tsv");
-    assert!(join.starts_with("family_id\tcopy_index\tcopy_tid\tcatalog_family_id\tcatalog_copy_idx\t"), "{join}");
-    let rows: Vec<Vec<&str>> = join.lines().skip(1).map(|l| l.split('\t').collect()).collect();
+    assert!(
+        join.starts_with("family_id\tcopy_index\tcopy_tid\tcatalog_family_id\tcatalog_copy_idx\t"),
+        "{join}"
+    );
+    let rows: Vec<Vec<&str>> = join
+        .lines()
+        .skip(1)
+        .map(|l| l.split('\t').collect())
+        .collect();
     assert_eq!(rows.len(), 2, "one join row per assigned copy: {join}");
     for r in &rows {
         assert_eq!(r[3], "GWFAM1", "catalog_family_id");
         // the join must be able to look the copy back up in the catalog table it came from
         let want = format!("GWFAM1\t{}\t{}\t", r[4], r[2]);
-        assert!(GWFAM1_TSV.contains(&want), "row {r:?} does not join back to copies.tsv (looked for {want:?})");
+        assert!(
+            GWFAM1_TSV.contains(&want),
+            "row {r:?} does not join back to copies.tsv (looked for {want:?})"
+        );
     }
 }
 
@@ -309,7 +441,10 @@ fn without_families_ids_are_minted_and_no_join_file_is_written() {
         "the join file must only exist under --families"
     );
     for id in col(&read(&out, "families.tsv"), 0) {
-        assert!(id.starts_with("CAFAM") || id.starts_with("DSFAM") || id.starts_with("TSFAM"), "{id}");
+        assert!(
+            id.starts_with("CAFAM") || id.starts_with("DSFAM") || id.starts_with("TSFAM"),
+            "{id}"
+        );
     }
 }
 
@@ -338,28 +473,56 @@ fn a_cross_chrom_family_is_assigned_not_refused() {
     let out = d.join("o");
     let out_s = out.to_str().expect("utf-8 path").to_string();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args([
+            "--bam",
+            &format!("{FIX}/reads.bam"),
+            "--fasta",
+            &format!("{FIX}/genome.fa"),
+        ])
         .args(["--regions", &regions, "--out", &out_s])
-        .args(["--families", &fam, "--copies-fa", &format!("{FIX}/out_default.copies.fa")])
+        .args([
+            "--families",
+            &fam,
+            "--copies-fa",
+            &format!("{FIX}/out_default.copies.fa"),
+        ])
         .output()
         .expect("copy_assign failed to spawn");
-    assert!(o.status.success(), "a cross-chrom family must now be assignable:\n{}", stderr(&o));
+    assert!(
+        o.status.success(),
+        "a cross-chrom family must now be assignable:\n{}",
+        stderr(&o)
+    );
     let e = stderr(&o);
-    assert!(e.contains("spans 2 chromosomes"), "expected the cross-chrom banner in:\n{e}");
+    assert!(
+        e.contains("spans 2 chromosomes"),
+        "expected the cross-chrom banner in:\n{e}"
+    );
     assert!(e.contains("cross-chromosome pass"), "{e}");
 
     let quant = read(&out_s, "quant.tsv");
     let mut tids = col(&quant, 2);
     tids.sort();
-    assert_eq!(tids, vec!["DN_c1_0_2", "DN_c2_0_2"], "both cross-chrom copies must be assignable: {quant}");
+    assert_eq!(
+        tids,
+        vec!["DN_c1_0_2", "DN_c2_0_2"],
+        "both cross-chrom copies must be assignable: {quant}"
+    );
 
     // The property this fix actually guarantees: read_cross_0/1/2's records on BOTH c1 and c2 survive the
     // per-region read-gathering and dedup (before the fix a same-name, same-offset record on a SECOND
     // chromosome was silently collapsed onto the first one — the exact truncation this feature exists to
     // avoid) and the run completes rather than refusing the family outright.
     let assignments = read(&out_s, "assignments.tsv");
-    let cross_rows: Vec<&str> = assignments.lines().filter(|l| l.contains("read_cross_")).collect();
-    assert_eq!(cross_rows.len(), 3, "all 3 read_cross_* molecules must appear in the assignment output:\n{assignments}");
+    let cross_rows: Vec<&str> = assignments
+        .lines()
+        .filter(|l| l.contains("read_cross_"))
+        .collect();
+    assert_eq!(
+        cross_rows.len(),
+        3,
+        "all 3 read_cross_* molecules must appear in the assignment output:\n{assignments}"
+    );
     // Not asserted here: whether a molecule AS-tied ACROSS the two chromosomes is scored as `n_candidates == 2`.
     // The certificate now takes each read's chromosome (`read_chroms`) and `detect_and_assign` hands the family
     // its reads on BOTH c1 and c2, so a read overlaps only the copies on its own chromosome even where `c1:0-260`
@@ -376,8 +539,15 @@ GWFAM1\t0\tDN_c1_0_1\tc1\t0\t60\t1\t+\t6\t0-60\n\
 GWFAM1\t1\tDN_c1_380_2\tc1\t380\t550\t2\t+\t3\t380-419,451-550\n";
     let fam = write(&d, "o.copies.tsv", tsv);
     let (o, _out) = run(&d, &["--families", &fam]); // region is c1:200-600; the family starts at 0
-    assert!(!o.status.success(), "a family outside the swept regions must abort");
-    assert!(stderr(&o).contains("lies outside every --region"), "{}", stderr(&o));
+    assert!(
+        !o.status.success(),
+        "a family outside the swept regions must abort"
+    );
+    assert!(
+        stderr(&o).contains("lies outside every --region"),
+        "{}",
+        stderr(&o)
+    );
 }
 
 /// A supplied copy with no reads in the region cannot be assigned; dropping it silently would understate
@@ -394,7 +564,10 @@ GWFAM7\t1\tDN_c1_578_1\tc1\t578\t598\t1\t+\t3\t578-598\n";
     assert!(!o.status.success(), "a read-less supplied copy must abort");
     let e = stderr(&o);
     assert!(e.contains("has NO reads"), "{e}");
-    assert!(e.contains("subset BAM"), "the message should name the recurring cause: {e}");
+    assert!(
+        e.contains("subset BAM"),
+        "the message should name the recurring cause: {e}"
+    );
 }
 
 /// `--copies-fa` that does not cover every supplied copy is a mismatched pair of files, not a licence to
@@ -404,10 +577,18 @@ fn a_copies_fa_missing_a_record_aborts() {
     let d = scratch("nofa");
     let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
     // only the FIRST of GWFAM1's two copies
-    let fa = write(&d, "partial.copies.fa", ">GWFAM1|0|c1:250-460|+|nexon=2\nACGTACGTAC\n");
+    let fa = write(
+        &d,
+        "partial.copies.fa",
+        ">GWFAM1|0|c1:250-460|+|nexon=2\nACGTACGTAC\n",
+    );
     let (o, _out) = run(&d, &["--families", &fam, "--copies-fa", &fa]);
     assert!(!o.status.success(), "an incomplete --copies-fa must abort");
-    assert!(stderr(&o).contains("has no record for GWFAM1 copy 1"), "{}", stderr(&o));
+    assert!(
+        stderr(&o).contains("has no record for GWFAM1 copy 1"),
+        "{}",
+        stderr(&o)
+    );
 }
 
 /// A `--copies-fa` record whose header disagrees with its `copies.tsv` row means the two files are from
@@ -432,10 +613,24 @@ fn a_copies_fa_record_disagreeing_with_the_tsv_aborts() {
 fn roster_changing_flags_are_refused_under_families() {
     let d = scratch("incompat");
     let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
-    for flag in ["--absent-copies", "--vg-realign", "--iterative-prune", "--collapse-gate", "--tied-seed", "--recover-copies"] {
+    for flag in [
+        "--absent-copies",
+        "--vg-realign",
+        "--iterative-prune",
+        "--collapse-gate",
+        "--tied-seed",
+        "--recover-copies",
+    ] {
         let (o, _out) = run(&d, &["--families", &fam, flag]);
-        assert!(!o.status.success(), "{flag} must be refused under --families");
-        assert!(stderr(&o).contains(&format!("--families is incompatible with {flag}")), "{}", stderr(&o));
+        assert!(
+            !o.status.success(),
+            "{flag} must be refused under --families"
+        );
+        assert!(
+            stderr(&o).contains(&format!("--families is incompatible with {flag}")),
+            "{}",
+            stderr(&o)
+        );
     }
 }
 
@@ -443,9 +638,16 @@ fn roster_changing_flags_are_refused_under_families() {
 #[test]
 fn copies_fa_without_families_is_an_error() {
     let d = scratch("orphanfa");
-    let (o, _out) = run(&d, &["--copies-fa", &format!("{FIX}/out_default.copies.fa")]);
+    let (o, _out) = run(
+        &d,
+        &["--copies-fa", &format!("{FIX}/out_default.copies.fa")],
+    );
     assert!(!o.status.success());
-    assert!(stderr(&o).contains("only meaningful with --families"), "{}", stderr(&o));
+    assert!(
+        stderr(&o).contains("only meaningful with --families"),
+        "{}",
+        stderr(&o)
+    );
 }
 
 /// `--only-families` / `--skip-families` (spec 2026-10-02 §7, the driver's two-run O2 split over the families with an O3
@@ -458,9 +660,19 @@ fn only_and_skip_families_split_the_supplied_roster() {
     let go = |name: &str, extra: &[&str]| -> (Output, String) {
         let out = d.join(name).to_str().expect("utf-8 path").to_string();
         let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-            .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+            .args([
+                "--bam",
+                &format!("{FIX}/reads.bam"),
+                "--fasta",
+                &format!("{FIX}/genome.fa"),
+            ])
             .args(["--regions", &regions, "--out", &out])
-            .args(["--families", &format!("{FIX}/out_default.copies.tsv"), "--copies-fa", &format!("{FIX}/out_default.copies.fa")])
+            .args([
+                "--families",
+                &format!("{FIX}/out_default.copies.tsv"),
+                "--copies-fa",
+                &format!("{FIX}/out_default.copies.fa"),
+            ])
             .args(extra)
             .output()
             .expect("copy_assign failed to spawn");
@@ -469,10 +681,17 @@ fn only_and_skip_families_split_the_supplied_roster() {
     let list = write(&d, "gwfam0.txt", "GWFAM0\n");
     let (o, all) = go("all", &[]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert!(!stderr(&o).contains("families selected"), "no list: nothing selected, nothing said");
+    assert!(
+        !stderr(&o).contains("families selected"),
+        "no list: nothing selected, nothing said"
+    );
     let (o, only) = go("only", &["--only-families", &list]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert!(stderr(&o).contains("1 of 2 families selected (--only-families"), "{}", stderr(&o));
+    assert!(
+        stderr(&o).contains("1 of 2 families selected (--only-families"),
+        "{}",
+        stderr(&o)
+    );
     let (o, skip) = go("skip", &["--skip-families", &list]);
     assert!(o.status.success(), "{}", stderr(&o));
     let mut fams_all = col(&read(&all, "families.tsv"), 0);
@@ -481,23 +700,46 @@ fn only_and_skip_families_split_the_supplied_roster() {
     assert_eq!(col(&read(&only, "families.tsv"), 0), vec!["GWFAM0"]);
     assert_eq!(col(&read(&skip, "families.tsv"), 0), vec!["GWFAM1"]);
     for (out, fam) in [(&only, "GWFAM0"), (&skip, "GWFAM1")] {
-        for t in ["assignments.tsv", "quant.tsv", "family_join.tsv", "famcn_readonly.tsv"] {
+        for t in [
+            "assignments.tsv",
+            "quant.tsv",
+            "family_join.tsv",
+            "famcn_readonly.tsv",
+        ] {
             let ids = col(&read(out, t), 0 + (t == "assignments.tsv") as usize);
-            assert!(ids.iter().all(|f| f == fam), "{out}.{t} holds another family: {ids:?}");
+            assert!(
+                ids.iter().all(|f| f == fam),
+                "{out}.{t} holds another family: {ids:?}"
+            );
         }
     }
     // the run certificate names the list it was given, and only then
     assert!(read(&only, "params.tsv").contains(&format!("only_families\t{list}\n")));
     assert!(read(&skip, "params.tsv").contains(&format!("skip_families\t{list}\n")));
-    assert!(!read(&all, "params.tsv").contains("_families\t"), "no list, no row");
+    assert!(
+        !read(&all, "params.tsv").contains("_families\t"),
+        "no list, no row"
+    );
     let typo = write(&d, "typo.txt", "GWFAM0\nGWFAM9\n");
     let (o, _) = go("typo", &["--only-families", &typo]);
-    assert!(!o.status.success() && stderr(&o).contains("GWFAM9"), "{}", stderr(&o));
+    assert!(
+        !o.status.success() && stderr(&o).contains("GWFAM9"),
+        "{}",
+        stderr(&o)
+    );
     let both = write(&d, "both.txt", "GWFAM0\nGWFAM1\n");
     let (o, _) = go("none", &["--skip-families", &both]);
-    assert!(!o.status.success() && stderr(&o).contains("leave no family"), "{}", stderr(&o));
+    assert!(
+        !o.status.success() && stderr(&o).contains("leave no family"),
+        "{}",
+        stderr(&o)
+    );
     let (o, _) = run(&d, &["--only-families", &list]);
-    assert!(!o.status.success() && stderr(&o).contains("only meaningful with --families"), "{}", stderr(&o));
+    assert!(
+        !o.status.success() && stderr(&o).contains("only meaningful with --families"),
+        "{}",
+        stderr(&o)
+    );
 }
 
 /// Task 9 review (spec 2026-10-02 §7): a family made cross-chromosome by a zero-read copy on another contig, which is
@@ -516,44 +758,111 @@ fn a_zero_read_copy_on_another_contig_does_not_mark_the_family_tied_outside() {
     let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
     let fa = std::fs::read_to_string(format!("{FIX}/out_default.copies.fa")).unwrap();
     let genome = std::fs::read_to_string(format!("{FIX}/genome.fa")).unwrap();
-    let c2: String = genome.split('>').find(|r| r.starts_with("c2")).expect("c2 in genome.fa").lines().skip(1).collect();
-    let tsv_b = write(&d, "b.copies.tsv", &format!("{tsv}GWFAM1\t2\tCAND_c2\tc2\t270\t320\t1\t+\t0\t270-320\t0\n"));
-    let fa_b = write(&d, "b.copies.fa", &format!("{fa}>GWFAM1|2|c2:270-320|+|nexon=1\n{}\n", &c2[270..320]));
+    let c2: String = genome
+        .split('>')
+        .find(|r| r.starts_with("c2"))
+        .expect("c2 in genome.fa")
+        .lines()
+        .skip(1)
+        .collect();
+    let tsv_b = write(
+        &d,
+        "b.copies.tsv",
+        &format!("{tsv}GWFAM1\t2\tCAND_c2\tc2\t270\t320\t1\t+\t0\t270-320\t0\n"),
+    );
+    let fa_b = write(
+        &d,
+        "b.copies.fa",
+        &format!("{fa}>GWFAM1|2|c2:270-320|+|nexon=1\n{}\n", &c2[270..320]),
+    );
     let go = |name: &str, tsv: &str, fa: &str| -> (Output, String) {
         let out = d.join(name).to_str().expect("utf-8 path").to_string();
         let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-            .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
-            .args(["--regions", &regions, "--families", tsv, "--copies-fa", fa, "--only-families", &only, "--out", &out])
+            .args([
+                "--bam",
+                &format!("{FIX}/reads.bam"),
+                "--fasta",
+                &format!("{FIX}/genome.fa"),
+            ])
+            .args([
+                "--regions",
+                &regions,
+                "--families",
+                tsv,
+                "--copies-fa",
+                fa,
+                "--only-families",
+                &only,
+                "--out",
+                &out,
+            ])
             .output()
             .expect("copy_assign failed to spawn");
         (o, out)
     };
-    let (o, a) = go("a", &format!("{FIX}/out_default.copies.tsv"), &format!("{FIX}/out_default.copies.fa"));
+    let (o, a) = go(
+        "a",
+        &format!("{FIX}/out_default.copies.tsv"),
+        &format!("{FIX}/out_default.copies.fa"),
+    );
     assert!(o.status.success(), "{}", stderr(&o));
     let (o, b) = go("b", &tsv_b, &fa_b);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert!(stderr(&o).contains("GWFAM1 spans 2 chromosomes"), "the extra copy must make GWFAM1 cross-chromosome:\n{}", stderr(&o));
+    assert!(
+        stderr(&o).contains("GWFAM1 spans 2 chromosomes"),
+        "the extra copy must make GWFAM1 cross-chromosome:\n{}",
+        stderr(&o)
+    );
     // read -> (status, tie_outside_catalog), columns by name
     let rows = |out: &str| -> std::collections::BTreeMap<String, (String, String)> {
         let t = read(out, "assignments.tsv");
         let head: Vec<&str> = t.lines().next().unwrap().split('\t').collect();
-        let at = |name: &str| head.iter().position(|c| *c == name).unwrap_or_else(|| panic!("no {name} column"));
+        let at = |name: &str| {
+            head.iter()
+                .position(|c| *c == name)
+                .unwrap_or_else(|| panic!("no {name} column"))
+        };
         let (i_read, i_status, i_out) = (at("read_name"), at("status"), at("tie_outside_catalog"));
         t.lines()
             .skip(1)
             .map(|l| l.split('\t').collect::<Vec<_>>())
-            .map(|f| (f[i_read].to_string(), (f[i_status].to_string(), f[i_out].to_string())))
+            .map(|f| {
+                (
+                    f[i_read].to_string(),
+                    (f[i_status].to_string(), f[i_out].to_string()),
+                )
+            })
             .collect()
     };
     let (ra, rb) = (rows(&a), rows(&b));
-    assert!(!ra.is_empty(), "the single-chromosome run must have rows to compare");
+    assert!(
+        !ra.is_empty(),
+        "the single-chromosome run must have rows to compare"
+    );
     for (read, v) in &ra {
-        assert_eq!(v.1, "0", "{read}: tied only between GWFAM1's own copies in the single-chromosome run");
-        assert_eq!(rb.get(read), Some(v), "{read}: status / tie_outside_catalog changed by the zero-read c2 copy");
+        assert_eq!(
+            v.1, "0",
+            "{read}: tied only between GWFAM1's own copies in the single-chromosome run"
+        );
+        assert_eq!(
+            rb.get(read),
+            Some(v),
+            "{read}: status / tie_outside_catalog changed by the zero-read c2 copy"
+        );
     }
-    let cross: Vec<(&String, &(String, String))> = rb.iter().filter(|(r, _)| r.starts_with("read_cross_")).collect();
-    assert_eq!(cross.len(), 3, "the c2 copy pools the 3 read_cross molecules: {rb:?}");
-    assert!(cross.iter().all(|(_, v)| v.1 == "1"), "their c2 placement is outside every GWFAM1 unit: {cross:?}");
+    let cross: Vec<(&String, &(String, String))> = rb
+        .iter()
+        .filter(|(r, _)| r.starts_with("read_cross_"))
+        .collect();
+    assert_eq!(
+        cross.len(),
+        3,
+        "the c2 copy pools the 3 read_cross molecules: {rb:?}"
+    );
+    assert!(
+        cross.iter().all(|(_, v)| v.1 == "1"),
+        "their c2 placement is outside every GWFAM1 unit: {cross:?}"
+    );
 }
 
 /// Ruling R15 (final review C2, 2026-10-02): the tie-outside skip that keeps a cross-chromosome family's verdicts (the test
@@ -571,20 +880,55 @@ fn a_family_less_region_without_a_cross_chromosome_window_still_registers_ties_o
     let only = write(&d, "only.txt", "GWFAM2\n");
     let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
     let fa = std::fs::read_to_string(format!("{FIX}/out_default.copies.fa")).unwrap();
-    let c2_copy: String =
-        fa.split('>').find(|r| r.starts_with("GWFAM0|1|")).expect("GWFAM0 copy 1 in the fixture FASTA").lines().skip(1).collect();
-    let tsv_c = write(&d, "c.copies.tsv", &format!("{tsv}GWFAM2\t0\tDN_c2_0_2\tc2\t0\t260\t2\t+\t3\t0-59,211-260\t1.000000\n"));
-    let fa_c = write(&d, "c.copies.fa", &format!("{fa}>GWFAM2|0|c2:0-260|+|nexon=2\n{c2_copy}\n"));
+    let c2_copy: String = fa
+        .split('>')
+        .find(|r| r.starts_with("GWFAM0|1|"))
+        .expect("GWFAM0 copy 1 in the fixture FASTA")
+        .lines()
+        .skip(1)
+        .collect();
+    let tsv_c = write(
+        &d,
+        "c.copies.tsv",
+        &format!("{tsv}GWFAM2\t0\tDN_c2_0_2\tc2\t0\t260\t2\t+\t3\t0-59,211-260\t1.000000\n"),
+    );
+    let fa_c = write(
+        &d,
+        "c.copies.fa",
+        &format!("{fa}>GWFAM2|0|c2:0-260|+|nexon=2\n{c2_copy}\n"),
+    );
     let out = d.join("o").to_str().expect("utf-8 path").to_string();
     let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
-        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
-        .args(["--regions", &regions, "--families", &tsv_c, "--copies-fa", &fa_c, "--only-families", &only, "--out", &out])
+        .args([
+            "--bam",
+            &format!("{FIX}/reads.bam"),
+            "--fasta",
+            &format!("{FIX}/genome.fa"),
+        ])
+        .args([
+            "--regions",
+            &regions,
+            "--families",
+            &tsv_c,
+            "--copies-fa",
+            &fa_c,
+            "--only-families",
+            &only,
+            "--out",
+            &out,
+        ])
         .output()
         .expect("copy_assign failed to spawn");
     let err = stderr(&o);
     assert!(o.status.success(), "{err}");
-    assert!(err.contains("1 of 3 families selected (--only-families"), "{err}");
-    assert!(!err.contains("spans 2 chromosomes"), "no cross-chromosome family may be left after the selection:\n{err}");
+    assert!(
+        err.contains("1 of 3 families selected (--only-families"),
+        "{err}"
+    );
+    assert!(
+        !err.contains("spans 2 chromosomes"),
+        "no cross-chromosome family may be left after the selection:\n{err}"
+    );
     assert!(
         err.contains("⚠ 3 of those tied molecules have a tied placement OUTSIDE every supplied family"),
         "the 3 read_same_* molecules tied inside the family-less region c1:0-600 must be registered as tied outside:\n{err}"
