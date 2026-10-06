@@ -39,8 +39,9 @@ gates)
   { echo "date	$(date -Is)"; echo "head	$(git -C "$REPO" rev-parse --short HEAD)"; stamp; } > "$W/gates.log"
   light python3 "$REPO/bench/copy_support.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --bam "$BAM" --family NPIP --out "$W/g0" \
     "${LOCI_FROZEN[@]}" --nodes "$FROZEN/pagedata.json" > "$W/g0.stdout"
-  python3 "$HERE/nodes.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --family NPIP \
-    --arm "P=$FROZEN/P.gff3,$FROZEN/P.fam.clusters.tsv" --arm "GOOD=$FROZEN/GOOD.gff3,$FROZEN/GOOD.fam.clusters.tsv" --arm "ALL=$FROZEN/ALL.gff3,$FROZEN/ALL.fam.clusters.tsv" \
+  # G1 on P and GOOD: the frozen ALL arm has two loci on one span (DN_chr16_33611806_2 and _3), which pagedata.py's span join resolved silently and nodes.py refuses
+  python3 "$HERE/nodes.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --family NPIP --exons-json "$FROZEN/npip_read_pool.json" \
+    --arm "P=$FROZEN/P.gff3,$FROZEN/P.fam.clusters.tsv" --arm "GOOD=$FROZEN/GOOD.gff3,$FROZEN/GOOD.fam.clusters.tsv" \
     --out "$W/g1.nodes.json" --check "$FROZEN/pagedata.json" --check-out "$W/g1.json"
   python3 "$HERE/score_families.py" --fs "$BIN/family_score" --clusters "$CH/data/human_A119b/fam/chr16/D.fam.clusters.tsv" --contig chr16 --label g3_D --out "$W/g3.json" --work "$W/fs"
   echo "[default_rescore] gates written to $W/{g0,g1,g3}.json" ;;
@@ -65,7 +66,7 @@ fam)
 score)
   PD=$W/DEF/human_A119b.chr16; PP=$W/PRE/human_A119b.chr16
   for f in "$PD.fam.loci.gff3" "$PD.families.gtf" "$PP.fam.loci.gff3" "$PP.gtf"; do [ -s "$f" ] || { echo "missing $f: run asm and fam for both arms" >&2; exit 2; }; done
-  python3 "$HERE/nodes.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --family NPIP \
+  python3 "$HERE/nodes.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --family NPIP --exons-json "$FROZEN/npip_read_pool.json" \
     --arm "DEF=$PD.fam.loci.gff3,$PD.fam.clusters.tsv" --arm "PRE=$PP.fam.loci.gff3,$PP.fam.clusters.tsv" --out "$W/nodes.json"
   for seed in 0 1; do
     PYTHONHASHSEED=$seed light python3 "$REPO/bench/copy_support.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --bam "$BAM" --family NPIP \

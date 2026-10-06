@@ -44,6 +44,8 @@ def main():
     ap.add_argument("--family", required=True)
     ap.add_argument("--arm", action="append", required=True, help="NAME=loci.gff3,clusters.tsv")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--exons-json", help="npip_read_pool.json: the copy exons as the registered own-node rule took them (copies[].exons, the CAT gene's exon blocks); "
+                    "default: the union of the copy's transcripts in --truth (the two differ at PKD1P6-NPIPP1)")
     ap.add_argument("--check", help="a pagedata.json: compare every arm it names (node[arm] per cid) with this run's flags")
     ap.add_argument("--check-out", help="write {compared, mismatches, detail} of --check here")
     a = ap.parse_args()
@@ -54,6 +56,9 @@ def main():
     for c in copies:
         texons = tx.get(c["cid"]) or tx.get(c["isoform_gene"], {})
         cu[c["cid"]] = cs.merge([e for ex in texons.values() for e in ex]) or [[int(c["terr_lo0"]), int(c["terr_hi"])]]
+    if a.exons_json:
+        ej = {c["cid"]: cs.merge([list(e) for e in c["exons"]]) for c in json.load(open(a.exons_json))["copies"]}
+        cu = {cid: ej[cid] for cid in cu}
     node = {c["cid"]: {} for c in copies}
     for spec in a.arm:
         name, rest = spec.split("=", 1)

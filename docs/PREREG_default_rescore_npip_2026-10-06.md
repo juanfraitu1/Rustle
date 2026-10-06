@@ -26,7 +26,7 @@ slice is not recorded as run). Does the default at HEAD do no worse than the reg
 
 - `bench/copy_support.py` (Amendment E, unchanged since 2026-10-04; sha1 in every log), arms given as `--loci NAME=loci.gff3,transcripts.gtf`
   (DEF: `PREFIX.families.gtf`, the GTF the families were built from; PRE: `PREFIX.gtf`) and `--nodes`.
-- `bench/default_rescore/nodes.py`: the own-node rule of `bench/npip_read_pool/pagedata.py` (an NPIP cluster = a cluster that holds a locus overlapping a
+- `bench/default_rescore/nodes.py`: the own-node rule of `bench/npip_read_pool/pagedata.py`, with the copy exons of the registered scoring (`npip_read_pool.json`) (an NPIP cluster = a cluster that holds a locus overlapping a
   same-strand NPIP copy; a copy has an own node iff such a locus overlaps it).
 - `family_score` of the HEAD build through `bench/default_rescore/score_families.py` (clusters and truth restricted to chr16, `--chrom ALL --pairwise
   --per-family`, truths compara / u2 / soto of `families_gw/species/human`).
@@ -37,7 +37,7 @@ slice is not recorded as run). Does the default at HEAD do no worse than the reg
 
 - **G0** the HEAD scorer on the frozen arms reproduces `support_hsa_E.json` exactly for each arm: `old_overlap_in_npip_nodes` 23 / 21 / 24,
   `tc_found_in_npip_nodes` 10 / 6 / 2, `locus_tc_found` 19 / 18 / 16, `tc_found` 10 / 6 / 2.
-- **G1** `nodes.py` on the frozen arms reproduces every stored `pagedata.json` node flag (25 copies x 3 arms).
+- **G1** `nodes.py` on the frozen arms P and GOOD reproduces every stored `pagedata.json` node flag (25 copies x 2 arms; copy exons from `npip_read_pool.json`, see Amendment 1).
 - **G3** the HEAD `family_score` on the stored e163d955 default clusters (`container_headroom/data/human_A119b/fam/chr16/D.fam.clusters.tsv`) reproduces the
   stored U2 (sens .588, prec .714, F .645) and Compara chr16 (sens .500, prec 1.000, F .667).
   (Before this registration I ran the HEAD `family_score` once on those stored clusters, U2 only, to learn its output format: it printed .588 / .714 / .645.
@@ -70,3 +70,13 @@ comparison on the development block. Strict FOUND is the registered rule of `doc
 cap signal of this library, which gorilla lacks.
 
 Runner: `bench/default_rescore/run.sh gates | asm DEF | fam DEF | asm PRE | fam PRE | score | verdict`.
+
+## Amendment 1 (2026-10-06, written after the first gate run and before any DEF or PRE product exists)
+
+The first run of G1 failed, on the frozen arms only (no DEF or PRE product was generated or read): `nodes.py` gave own-node counts 24 / 22 for P / GOOD
+against the stored 23 / 21. Two causes, both in how the stored rule was run, not in the arms: (a) the stored rule took each copy's exons from the CAT gene's
+exon blocks (`npip_read_pool.json`, `copies[].exons`), while `nodes.py` took the union of the copy's transcripts in `truth.hsa.gtf`; they differ at
+PKD1P6-NPIPP1, where the stored flags are False in both arms; (b) the frozen `ALL` arm has two loci on one span (`DN_chr16_33611806_2` and `_3`), which
+`pagedata.py`'s span join resolved silently and `nodes.py` refuses. Changes: `nodes.py` takes the copy exons from `npip_read_pool.json` (`--exons-json`; used for
+DEF and PRE too, so the own-node rule is the registered one), and G1 is checked on P and GOOD, the two arms whose loci are unique. With the change G1 compares
+50 flags and finds 0 mismatches. G0 still uses all three frozen arms (it reads the stored `pagedata.json`, not `nodes.py`). The rules R1 to R4 are unchanged.
