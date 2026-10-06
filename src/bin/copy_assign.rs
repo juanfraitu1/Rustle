@@ -123,9 +123,9 @@ struct RegionWork {
     /// (chrom, start, end, intron chain) — the EVIDENCE that places an isoform at a copy (§6hn)
     uniq_reads: Vec<(String, u64, u64, Vec<(u64, u64)>)>,
     /// O3: this family's raw (uncorrected) missing-copy pair statistics. Empty unless `--flag-missing-copies`.
-    o3_raw_pairs: Vec<rustle::vg_family::missing_copy_flag_pass::RawPair>,
+    o3_raw_pairs: Vec<rustle::vg_family::missing_copy::missing_copy_flag_pass::RawPair>,
     /// O3: candidate orphan-read loci outside every unit of this family. Empty unless `--flag-missing-copies`.
-    o3_orphan_loci: Vec<rustle::vg_family::missing_copy_flag_pass::OrphanLocus>,
+    o3_orphan_loci: Vec<rustle::vg_family::missing_copy::missing_copy_flag_pass::OrphanLocus>,
     /// Read-seeded copy discovery: candidate new copies clustered from AS-tied reads' out-of-catalog
     /// placements. Empty unless `--discover-copies`. Report only (Task 4 drains this to
     /// `<out>.discovered_copies.tsv`) -- never feeds back into this run's own catalog or assignments.
@@ -5380,13 +5380,13 @@ fn main() -> Result<()> {
     // design constraint ("no allocation happens on the unset path") -- a 3-field POD with no side effect,
     // so this changes nothing observable, just tidiness.
     let o3_params = if args.flag_missing_copies {
-        rustle::vg_family::missing_copy_flag_pass::O3Params {
+        rustle::vg_family::missing_copy::missing_copy_flag_pass::O3Params {
             alpha: args.missing_copy_alpha,
             max_reads: args.missing_copy_max_reads,
             min_reads: 3,
         }
     } else {
-        rustle::vg_family::missing_copy_flag_pass::O3Params::default()
+        rustle::vg_family::missing_copy::missing_copy_flag_pass::O3Params::default()
     };
 
     let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
@@ -5464,8 +5464,8 @@ fn main() -> Result<()> {
     // O3 Phase 2 (Task 6): accumulated across the WHOLE serial drain (every region, every family) -- the
     // genome-wide Bonferroni flag threshold in `finalize_flags` can only be computed once every region has
     // drained, so nothing downstream of `compute()` can act on these until the loop below finishes.
-    let mut o3_all_raw_pairs: Vec<rustle::vg_family::missing_copy_flag_pass::RawPair> = Vec::new();
-    let mut o3_all_orphan_loci: Vec<rustle::vg_family::missing_copy_flag_pass::OrphanLocus> = Vec::new();
+    let mut o3_all_raw_pairs: Vec<rustle::vg_family::missing_copy::missing_copy_flag_pass::RawPair> = Vec::new();
+    let mut o3_all_orphan_loci: Vec<rustle::vg_family::missing_copy::missing_copy_flag_pass::OrphanLocus> = Vec::new();
     // `--discover-copies`: read-seeded candidate copies found while scanning each region, accumulated the
     // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
     // at the `compute()` call site, so this just drains whatever each region produced.
@@ -6286,9 +6286,9 @@ fn main() -> Result<()> {
                     // Fix 3 (Task 6, carried forward from Task 5's review): iterating a HashMap's `.keys()`
                     // is nondeterministic order -- sort by `copy_idx` so `o3_raw_pairs` (and therefore its
                     // `family_join.tsv`/`missing_copy_loci.tsv` row order) is stable run-to-run.
-                    let mut inputs: Vec<rustle::vg_family::missing_copy_flag_pass::PairInput> = spans
+                    let mut inputs: Vec<rustle::vg_family::missing_copy::missing_copy_flag_pass::PairInput> = spans
                         .keys()
-                        .map(|cidx| rustle::vg_family::missing_copy_flag_pass::PairInput {
+                        .map(|cidx| rustle::vg_family::missing_copy::missing_copy_flag_pass::PairInput {
                             copy_idx: cidx.clone(),
                             // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
                             // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
@@ -6298,7 +6298,7 @@ fn main() -> Result<()> {
                         })
                         .collect();
                     inputs.sort_by(|a, b| a.copy_idx.cmp(&b.copy_idx));
-                    pairs.extend(rustle::vg_family::missing_copy_flag_pass::detect_missing_copy_pairs(
+                    pairs.extend(rustle::vg_family::missing_copy::missing_copy_flag_pass::detect_missing_copy_pairs(
                         cf, spans, &genome, &inputs, &o3_params,
                     ));
                 }
@@ -6365,10 +6365,10 @@ fn main() -> Result<()> {
                     if n_reads < 3 {
                         continue;
                     }
-                    let (class, n_genes, other_units) = rustle::vg_family::missing_copy_flag_pass::classify_orphan_locus(
+                    let (class, n_genes, other_units) = rustle::vg_family::missing_copy::missing_copy_flag_pass::classify_orphan_locus(
                         &chrom, start, end, &own_family_ids, &o3_all_units_by_chrom, &o3_genes_by_chrom,
                     );
-                    loci.push(rustle::vg_family::missing_copy_flag_pass::OrphanLocus {
+                    loci.push(rustle::vg_family::missing_copy::missing_copy_flag_pass::OrphanLocus {
                         chrom, start, end, n_reads, n_orphans, class,
                         n_genes_overlapping: n_genes, other_family_units: other_units,
                     });
@@ -8216,9 +8216,9 @@ fn main() -> Result<()> {
         // every region has drained into `o3_all_raw_pairs` -- `finalize_flags`'s threshold is
         // `alpha / n_pairs_with_a_p_value` over the WHOLE run, so it cannot be computed per-region or
         // per-family. Keyed by `(family_id, copy_idx)`, the same join key `JoinRow` now carries.
-        let o3_flags: std::collections::HashMap<(String, String), rustle::vg_family::missing_copy_flag_pass::FlaggedPair> =
+        let o3_flags: std::collections::HashMap<(String, String), rustle::vg_family::missing_copy::missing_copy_flag_pass::FlaggedPair> =
             if args.flag_missing_copies {
-                rustle::vg_family::missing_copy_flag_pass::finalize_flags(&o3_all_raw_pairs, args.missing_copy_alpha)
+                rustle::vg_family::missing_copy::missing_copy_flag_pass::finalize_flags(&o3_all_raw_pairs, args.missing_copy_alpha)
                     .into_iter()
                     .map(|fp| ((fp.pair.family_id.clone(), fp.pair.copy_idx.clone()), fp))
                     .collect()
@@ -8237,13 +8237,13 @@ fn main() -> Result<()> {
                 match o3_flags.get(&(r.family_id.clone(), r.copy_idx.clone())) {
                     Some(fp) => {
                         let flag_str = match fp.flag {
-                            rustle::vg_family::missing_copy_flag_pass::Flag::MissingCopy => "missing_copy",
-                            rustle::vg_family::missing_copy_flag_pass::Flag::Untestable => "untestable",
-                            rustle::vg_family::missing_copy_flag_pass::Flag::NoFlag => "none",
+                            rustle::vg_family::missing_copy::missing_copy_flag_pass::Flag::MissingCopy => "missing_copy",
+                            rustle::vg_family::missing_copy::missing_copy_flag_pass::Flag::Untestable => "untestable",
+                            rustle::vg_family::missing_copy::missing_copy_flag_pass::Flag::NoFlag => "none",
                         };
                         let class_str = match fp.pair.class {
-                            rustle::vg_family::missing_copy_flag_pass::Class::Divergent => "divergent",
-                            rustle::vg_family::missing_copy_flag_pass::Class::Structural => "structural",
+                            rustle::vg_family::missing_copy::missing_copy_flag_pass::Class::Divergent => "divergent",
+                            rustle::vg_family::missing_copy::missing_copy_flag_pass::Class::Structural => "structural",
                         };
                         let rate = if fp.pair.covered_kb > 0.0 { fp.pair.n_sites as f64 / fp.pair.covered_kb } else { 0.0 };
                         let p_str = fp.pair.p_uncorrected.map_or("NA".to_string(), |p| format!("{p:.3e}"));
@@ -8291,9 +8291,9 @@ fn main() -> Result<()> {
         writeln!(lh, "chrom\tstart\tend\tn_reads\tn_orphans\tclass\tn_genes_overlapping\tother_family_units")?;
         for l in &o3_all_orphan_loci {
             let class_str = match l.class {
-                rustle::vg_family::missing_copy_flag_pass::LocusClass::OtherFamily => "other_family",
-                rustle::vg_family::missing_copy_flag_pass::LocusClass::AnnotatedNoUnit => "annotated_no_unit",
-                rustle::vg_family::missing_copy_flag_pass::LocusClass::Unannotated => "unannotated",
+                rustle::vg_family::missing_copy::missing_copy_flag_pass::LocusClass::OtherFamily => "other_family",
+                rustle::vg_family::missing_copy::missing_copy_flag_pass::LocusClass::AnnotatedNoUnit => "annotated_no_unit",
+                rustle::vg_family::missing_copy::missing_copy_flag_pass::LocusClass::Unannotated => "unannotated",
             };
             writeln!(
                 lh, "{}\t{}\t{}\t{}\t{}\t{class_str}\t{}\t{}",

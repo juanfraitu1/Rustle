@@ -27,7 +27,6 @@ pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collaps
 // docs/copy_assignment_definition.md §10.
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
-pub mod missing_copy_flag_pass; // O3 flag-pass detector: ports bench/missing_copy_flag_pass.py's missing-copy detector natively; see docs/superpowers/specs/2026-09-10-o3-flag-pass-integration-design.md
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
