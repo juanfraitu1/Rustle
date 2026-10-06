@@ -1,6 +1,9 @@
 # Performance And Io (consolidated)
 
 > Merged from 3 source docs (verbatim, git keeps the originals' history). Each section below was a separate `bench/*.md`.
+> **2026-10-04:** the genome-wide entry point and its stage timings + byte-identity proofs live in **`bench/MERGED_PIPELINE.md`**
+> (`rustle_pipeline.sh merged`: gorilla genome-wide 62.8 min staged → 8.4 min warm-cache merged; minimap2 all-vs-all
+> is 90% of the cold wall-clock; the `.asbin` sidecar and `fam.params.tsv` path rows are the only by-design diffs).
 
 **Contents:** [PERFORMANCE_OPTIMIZATION](#performance-optimization) · [input_formats_and_ties](#input-formats-and-ties) · [winnowmap_vs_minimap2](#winnowmap-vs-minimap2)
 

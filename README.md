@@ -34,8 +34,8 @@ pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` run
 assembled GTF in one command, with the copy table the assignment consumes), `gw_family_catalog` (the LEGACY copy
 catalog, assigned only with the driver's `--legacy-catalog`), `o3_candidates` (the opt-in candidates stage: candidate
 copies absent from the reference, from each family's reads), `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — and six comparators and converters: `family_score`, `mcl_port`, `readthrough_filter`, `locus_bed`, `gff_to_gtf`, `parcn`.
-`tools/rustle_pipeline.sh assemble|families|candidates|catalog|assign|flag|all` runs any stage, or all of them (`all` =
-assemble, families, assign, flag), with the shipped defaults (since 2026-09-29 these include bridge-aware regrouping,
+`tools/rustle_pipeline.sh assemble|families|candidates|catalog|assign|merged|flag|all` runs any stage, or all of them (`all` =
+assemble, families, assign, flag); `merged` is the genome-wide entry point (assemble + families + assign on the families copy table, byte-identical, resumable — bench/MERGED_PIPELINE.md), with the shipped defaults (since 2026-09-29 these include bridge-aware regrouping,
 `copy_assign --bridge-regroup f1v2`, and the containment escape `mcl_families --min-cov-shorter 0.70`; since 2026-10-02
 `assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`, and `candidates` — O3 candidate
 copies from each family's reads, `o3_candidates` — is OPT-IN, `--candidates`, because its pre-registered acceptance failed:
