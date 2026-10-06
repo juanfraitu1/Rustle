@@ -618,9 +618,9 @@ pub fn gtf_loci<R: std::io::BufRead>(reader: R, rule: Representative) -> Result<
 }
 
 /// The loci of `--from-gtf` as `--emit-relations` reads them: the graph's own keys and representatives.
-pub fn relation_loci(loci: &[GtfLocus]) -> Vec<crate::vg_family::family_relations::LocusIn> {
+pub fn relation_loci(loci: &[GtfLocus]) -> Vec<crate::vg_family::fam_from_gtf::family_relations::LocusIn> {
     loci.iter()
-        .map(|l| crate::vg_family::family_relations::LocusIn {
+        .map(|l| crate::vg_family::fam_from_gtf::family_relations::LocusIn {
             gene_id: l.gene_id.clone(),
             key: (l.chrom.clone(), l.start as i64, l.end as i64),
             rep: l.rep.clone(),
@@ -808,4 +808,2164 @@ mod paf_cache_key_tests {
         assert!(!rc::Entry::new(&root, "paf", k2).pinned().is_hit_verify(false), "a changed loci FASTA is a miss");
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+// ---- merged 2026-10-05: was `vg_family/family_container.rs`, now the inline module below (one component) ----
+#[allow(clippy::all)]
+pub mod family_container {
+//! The CONTAINER of a family member's extra pieces (its ACCESSORY exon blocks) and their relations to other
+//! families: the Rust port of `bench/family_container.py` (frozen sha1 e197ccb3, the binding definition of
+//! `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1), run by `mcl_families --from-gtf
+//! --emit-container` after the families are written. It reads the families products and never changes a family.
+//!
+//! **STATUS:** OPT-IN  (docs/MODULE_STATUS.md; `mcl_families --emit-container`, default off; driver `RUSTLE_FAMILY_CONTAINER=1`)
+//!
+//! Definition (prereg §1, Amendment 1):
+//! * LOCUS m = a member row of `clusters.tsv` (a graph node key `CONTIG:START-END`) plus every annotation record that
+//!   `loci.tsv` folds into it; FAMILY F = its `cluster_id`. A record is one assembled `gene_id`: `loci.gff3`'s `gene`
+//!   line gives its key and `Name=` its gene_id (two gene_ids with the same span share one key and are both taken).
+//! * EXON BLOCKS of m = the union of the exons of ALL transcripts of ALL gene_ids of m's records, merged where they
+//!   OVERLAP (share >= 1 base; abutting exons stay separate).
+//! * Block b of m is CORE iff some PAF record between a record of m and a record of another member m' of F has an
+//!   aligned column (CIGAR M/=/X) whose m-side base lies in b and whose m'-side base is an exon base of m' (m''s own
+//!   all-transcript blocks). Every PAF record counts, whatever its identity, length or primary flag. ACCESSORY = not
+//!   core.
+//! * RELATION: each accessory block gets the same test against the members of every OTHER family F'; the family
+//!   relation F -> F' exists iff some member of F carries such a block; `reciprocal` says whether F' -> F exists too.
+//!   Core blocks are not tested for relations (their relation columns are `.`).
+//! * Unclustered loci get no rows and are never partners. Records between two records of the same locus are skipped.
+//!
+//! Coordinates: loci.fa / PAF names are record keys `CONTIG:START-END` (GFF 1-based closed) and a record's sequence is
+//! the genome's FORWARD strand from START to END, so PAF offset o is genome base START + o (0-based START - 1 + o).
+//! PAF `+`: the CIGAR walks target [ts,te) and query [qs,qe) ascending; `-`: target ascending against the reverse
+//! complement of query [qs,qe), i.e. forward query offsets from qe-1 downwards. M/=/X consume both sides, I the query,
+//! D/N the target; any other op, a CIGAR whose lengths disagree with the PAF columns, or a projected record without
+//! `cg:Z` is an error. Outputs are GFF 1-based closed, blocks numbered in GENOMIC order.
+//!
+//! Outputs (`write`): `<out>.container.tsv` (one row per clustered locus x exon block), `<out>.container_relations.tsv`
+//! (one row per directed family relation) and `<out>.container_summary.tsv` (counts): byte for byte the frozen
+//! script's `OUT.blocks.tsv`, `OUT.relations.tsv` and `OUT.summary.tsv`, including its input conventions (the first
+//! `key "` occurrence of a GTF attribute, an empty `gene_id` read as the transcript id, the fold table's
+//! last-write-wins value at the first-write position, Python's `int()` on the decimal fields). Only a lone `\r` line
+//! break (which Python's universal newlines would split on) is not reproduced.
+use anyhow::{bail, Context, Result};
+use std::collections::{HashMap, HashSet};
+use std::io::BufRead;
+
+/// A record / locus key `(CONTIG, START, END)`, GFF 1-based closed.
+pub type Key = (String, i64, i64);
+
+pub const BLOCK_HEADER: [&str; 17] = [
+    "family_id",
+    "locus",
+    "chrom",
+    "strand",
+    "gene_ids",
+    "n_records",
+    "block",
+    "n_blocks",
+    "start",
+    "end",
+    "bp",
+    "class",
+    "core_bp",
+    "core_partners",
+    "rel_families",
+    "rel_bp",
+    "rel_partners",
+];
+pub const REL_HEADER: [&str; 7] = ["family_id", "related_family", "n_members", "n_blocks", "bp", "reciprocal", "members"];
+pub const SUMMARY_KEYS: [&str; 26] = [
+    "families",
+    "loci",
+    "folded_records",
+    "loci_gff3_keys",
+    "gene_key_collisions",
+    "records_with_key_collision",
+    "records_span_mismatch",
+    "blocks",
+    "core_blocks",
+    "accessory_blocks",
+    "core_block_bp",
+    "accessory_bp",
+    "accessory_blocks_related",
+    "loci_all_core",
+    "loci_with_accessory",
+    "families_with_relation",
+    "family_relations_directed",
+    "family_relations_reciprocal",
+    "paf_records",
+    "paf_malformed",
+    "paf_self",
+    "paf_unclustered",
+    "paf_same_locus",
+    "paf_no_exon_interval",
+    "paf_projected",
+    "paf_exon_exon",
+];
+
+pub fn key_str(k: &Key) -> String {
+    format!("{}:{}-{}", k.0, k.1, k.2)
+}
+
+/// Python's `int(s)` on a decimal field: surrounding whitespace, an optional sign, ASCII digits with single `_`
+/// between them. `None` where Python raises `ValueError` (and beyond i64).
+pub fn py_int(s: &str) -> Option<i64> {
+    let t = s.trim();
+    let (neg, body) = match t.as_bytes().first() {
+        Some(b'+') => (false, &t[1..]),
+        Some(b'-') => (true, &t[1..]),
+        _ => (false, t),
+    };
+    if body.is_empty() || body.starts_with('_') || body.ends_with('_') || body.contains("__") {
+        return None;
+    }
+    let digits: String = body.chars().filter(|&c| c != '_').collect();
+    if !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let v: i64 = digits.parse().ok()?;
+    Some(if neg { -v } else { v })
+}
+
+fn int_field(s: &str, what: &str) -> Result<i64> {
+    py_int(s).with_context(|| format!("invalid literal for int(): {s:?} ({what})"))
+}
+
+/// `CONTIG:START-END` -> key (the LAST `:` splits the contig, the FIRST `-` after it the range); `None` if malformed.
+pub fn parse_key(name: &str) -> Option<Key> {
+    let (c, r) = name.rsplit_once(':')?;
+    let (a, b) = r.split_once('-')?;
+    Some((c.to_string(), py_int(a)?, py_int(b)?))
+}
+
+/// The value of `key "..."` in a GTF attribute column: the FIRST occurrence of `key "` (the same substring rule as
+/// `mcl_families::gtf_loci`), up to the next `"`.
+pub(crate) fn gtf_attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
+    let pat = format!("{key} \"");
+    let i = s.find(&pat)? + pat.len();
+    let j = s[i..].find('"')? + i;
+    Some(&s[i..j])
+}
+
+/// Merge 0-based half-open intervals that OVERLAP (share >= 1 base); abutting intervals stay separate.
+pub fn merge_blocks(mut iv: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
+    iv.sort();
+    let mut out: Vec<(i64, i64)> = Vec::new();
+    for (s, e) in iv {
+        if let Some(last) = out.last_mut() {
+            if s < last.1 {
+                if e > last.1 {
+                    last.1 = e;
+                }
+                continue;
+            }
+        }
+        out.push((s, e));
+    }
+    out
+}
+
+/// Bases covered by 0-based half-open intervals (overlapping or abutting).
+pub fn union_len<'a, I: IntoIterator<Item = &'a (i64, i64)>>(iv: I) -> i64 {
+    let mut v: Vec<(i64, i64)> = iv.into_iter().copied().collect();
+    v.sort();
+    let mut n = 0;
+    let mut cur: Option<(i64, i64)> = None;
+    for (s, e) in v {
+        cur = match cur {
+            None => Some((s, e)),
+            Some((cs, ce)) if s > ce => {
+                n += ce - cs;
+                Some((s, e))
+            }
+            Some((cs, ce)) => Some((cs, ce.max(e))),
+        };
+    }
+    if let Some((cs, ce)) = cur {
+        n += ce - cs;
+    }
+    n
+}
+
+/// `(\d+)([MIDNSHP=X])` tokens whose concatenation is the whole CIGAR, else an error.
+fn parse_cigar(cigar: &str) -> Result<Vec<(i64, u8)>> {
+    let b = cigar.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let j = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == j || i >= b.len() || !b"MIDNSHP=X".contains(&b[i]) {
+            bail!("unparseable CIGAR {:?}", &cigar[..cigar.len().min(60)]);
+        }
+        let n: i64 = cigar[j..i].parse().with_context(|| format!("CIGAR length {:?}", &cigar[j..i]))?;
+        out.push((n, b[i]));
+        i += 1;
+    }
+    Ok(out)
+}
+
+/// The aligned runs of one PAF record, in the record's own offset frame: `(t0, q0, n)` = n aligned columns; column i
+/// joins target offset t0 + i with query offset q0 + i on `+`, and with q0 + n - 1 - i on `-` (so [q0, q0 + n) is the
+/// run's query interval on both strands).
+pub fn aligned_runs(cigar: &str, strand: &str, qs: i64, qe: i64, ts: i64, te: i64) -> Result<Vec<(i64, i64, i64)>> {
+    let ops = parse_cigar(cigar)?;
+    if strand != "+" && strand != "-" {
+        bail!("PAF strand {strand:?}");
+    }
+    let fwd = strand == "+";
+    let (mut t, mut qc) = (ts, 0i64);
+    let mut out = Vec::new();
+    for (n, op) in ops {
+        match op {
+            b'M' | b'=' | b'X' => {
+                out.push((t, if fwd { qs + qc } else { qe - qc - n }, n));
+                t += n;
+                qc += n;
+            }
+            b'I' => qc += n,
+            b'D' | b'N' => t += n,
+            _ => bail!("CIGAR op {} not allowed in a PAF record", op as char),
+        }
+    }
+    if t != te || qc != qe - qs {
+        bail!("CIGAR consumes target {} / query {qc} but the record spans {} / {}", t - ts, te - ts, qe - qs);
+    }
+    Ok(out)
+}
+
+/// `(lo, hi, block_index)` for every block of a locus (sorted, disjoint `starts`/`ends`) intersecting [a, b).
+fn mask_ranges(starts: &[i64], ends: &[i64], a: i64, b: i64) -> Vec<(i64, i64, usize)> {
+    let mut out = Vec::new();
+    let mut i = ends.partition_point(|&e| e <= a);
+    while i < starts.len() && starts[i] < b {
+        let (lo, hi) = (starts[i].max(a), ends[i].min(b));
+        if hi > lo {
+            out.push((lo, hi, i));
+        }
+        i += 1;
+    }
+    out
+}
+
+fn overlaps_any(starts: &[i64], ends: &[i64], a: i64, b: i64) -> bool {
+    let i = ends.partition_point(|&e| e <= a);
+    i < starts.len() && starts[i] < b
+}
+
+/// One exon-exon stretch of a record: `(q_lo, q_hi, q_block, t_lo, t_hi, t_block)` in genome coordinates; the two
+/// intervals have the same length and are joined column by column (reversed on `-`).
+pub type ExonColumns = (i64, i64, usize, i64, i64, usize);
+
+/// Aligned columns of one record joining an exon base of the query locus to an exon base of the target locus.
+/// `q_off` / `t_off`: the genome 0-based coordinate of offset 0 of the query / target record; `q_blocks` / `t_blocks`:
+/// `(starts, ends)` of the query / target LOCUS blocks, genome 0-based half-open.
+#[allow(clippy::too_many_arguments)]
+pub fn exon_columns(
+    cigar: &str,
+    strand: &str,
+    qs: i64,
+    qe: i64,
+    ts: i64,
+    te: i64,
+    q_off: i64,
+    t_off: i64,
+    q_blocks: (&[i64], &[i64]),
+    t_blocks: (&[i64], &[i64]),
+) -> Result<Vec<ExonColumns>> {
+    let (qst, qen) = q_blocks;
+    let (tst, ten) = t_blocks;
+    let fwd = strand == "+";
+    let mut out = Vec::new();
+    for (t0, q0, n) in aligned_runs(cigar, strand, qs, qe, ts, te)? {
+        let (tg, qg) = (t_off + t0, q_off + q0);
+        let tr: Vec<(i64, i64, usize)> =
+            mask_ranges(tst, ten, tg, tg + n).into_iter().map(|(lo, hi, bi)| (lo - tg, hi - tg, bi)).collect();
+        if tr.is_empty() {
+            continue;
+        }
+        let qm = mask_ranges(qst, qen, qg, qg + n);
+        if qm.is_empty() {
+            continue;
+        }
+        let qr: Vec<(i64, i64, usize)> = if fwd {
+            qm.into_iter().map(|(lo, hi, bi)| (lo - qg, hi - qg, bi)).collect()
+        } else {
+            // column i <-> query qg + n - 1 - i, so query [lo, hi) <-> i in [qg + n - hi, qg + n - lo)
+            qm.into_iter().rev().map(|(lo, hi, bi)| (qg + n - hi, qg + n - lo, bi)).collect()
+        };
+        let (mut x, mut y) = (0, 0);
+        while x < qr.len() && y < tr.len() {
+            let (lo, hi) = (qr[x].0.max(tr[y].0), qr[x].1.min(tr[y].1));
+            if hi > lo {
+                let (ql, qh) = if fwd { (qg + lo, qg + hi) } else { (qg + n - hi, qg + n - lo) };
+                out.push((ql, qh, qr[x].2, tg + lo, tg + hi, tr[y].2));
+            }
+            if qr[x].1 <= tr[y].1 {
+                x += 1;
+            } else {
+                y += 1;
+            }
+        }
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------------------------------------- inputs
+
+/// A text input, gzip-decoded when the path ends in `.gz` (as the script's `open_text`).
+pub fn open_text(path: &str) -> Result<Box<dyn BufRead>> {
+    let f = std::fs::File::open(path).with_context(|| format!("opening {path}"))?;
+    Ok(if path.ends_with(".gz") {
+        Box::new(std::io::BufReader::with_capacity(1 << 20, flate2::read::MultiGzDecoder::new(f)))
+    } else {
+        Box::new(std::io::BufReader::with_capacity(1 << 20, f))
+    })
+}
+
+/// `clusters.tsv`: the family of each member key, the members per family in file order (families in
+/// first-appearance order), and the member keys in first-appearance order.
+struct Clusters {
+    fam_of: HashMap<Key, usize>,
+    fam_ids: Vec<String>,
+    members: Vec<Vec<Key>>,
+    keys: Vec<Key>,
+}
+
+fn read_clusters(r: &mut dyn BufRead, path: &str) -> Result<Clusters> {
+    let mut lines = r.lines();
+    let header_line = lines.next().transpose()?.unwrap_or_default();
+    let header: Vec<&str> = header_line.split('\t').collect();
+    let mut col: HashMap<&str, usize> = HashMap::new();
+    for (i, h) in header.iter().enumerate() {
+        col.insert(h, i);
+    }
+    for need in ["cluster_id", "chrom", "start", "end"] {
+        if !col.contains_key(need) {
+            bail!("{path}: no {need} column (header {header:?})");
+        }
+    }
+    let (ci, cc, cs, ce) = (col["cluster_id"], col["chrom"], col["start"], col["end"]);
+    let mut out = Clusters { fam_of: HashMap::new(), fam_ids: Vec::new(), members: Vec::new(), keys: Vec::new() };
+    let mut order: HashMap<String, usize> = HashMap::new();
+    for line in lines {
+        let line = line?;
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < header.len() {
+            continue;
+        }
+        let fid = r[ci];
+        let key: Key = (r[cc].to_string(), int_field(r[cs], "clusters start")?, int_field(r[ce], "clusters end")?);
+        if let Some(&f) = out.fam_of.get(&key) {
+            if out.fam_ids[f] != fid {
+                bail!("{path}: {} is in {} and {fid} (not a strict partition)", key_str(&key), out.fam_ids[f]);
+            }
+            continue;
+        }
+        let f = match order.get(fid) {
+            Some(&f) => f,
+            None => {
+                order.insert(fid.to_string(), out.fam_ids.len());
+                out.fam_ids.push(fid.to_string());
+                out.members.push(Vec::new());
+                out.fam_ids.len() - 1
+            }
+        };
+        out.fam_of.insert(key.clone(), f);
+        out.members[f].push(key.clone());
+        out.keys.push(key);
+    }
+    Ok(out)
+}
+
+/// `loci.tsv` (`annotation representative`) -> the folds `annotation -> representative` (a != b), in first-insertion
+/// order with the last value (a Python dict's semantics).
+fn read_folds(r: &mut dyn BufRead, path: &str) -> Result<Vec<(Key, Key)>> {
+    let mut lines = r.lines();
+    let header_line = lines.next().transpose()?.unwrap_or_default();
+    let header: Vec<&str> = header_line.split('\t').collect();
+    if header.len() < 2 || header[0] != "annotation" || header[1] != "representative" {
+        bail!("{path}: header {header:?} is not `annotation representative`");
+    }
+    let mut folds: Vec<(Key, Key)> = Vec::new();
+    let mut at: HashMap<Key, usize> = HashMap::new();
+    for line in lines {
+        let line = line?;
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < 2 {
+            continue;
+        }
+        let (Some(a), Some(b)) = (parse_key(r[0]), parse_key(r[1])) else {
+            bail!("{path}: malformed keys {:?}", &r[..2]);
+        };
+        if a != b {
+            match at.get(&a) {
+                Some(&i) => folds[i].1 = b,
+                None => {
+                    at.insert(a.clone(), folds.len());
+                    folds.push((a, b));
+                }
+            }
+        }
+    }
+    Ok(folds)
+}
+
+/// `loci.gff3` `gene` lines -> ({key: [gene_id, ...]}, {key: strand of its first gene line}).
+fn read_loci_gff3(r: &mut dyn BufRead, path: &str) -> Result<(HashMap<Key, Vec<String>>, HashMap<Key, String>)> {
+    let mut genes: HashMap<Key, Vec<String>> = HashMap::new();
+    let mut strand: HashMap<Key, String> = HashMap::new();
+    for line in r.lines() {
+        let line = line?;
+        if line.starts_with('#') {
+            continue;
+        }
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < 9 || r[2] != "gene" {
+            continue;
+        }
+        let key: Key = (r[0].to_string(), int_field(r[3], "gff3 start")?, int_field(r[4], "gff3 end")?);
+        let Some(name) = r[8].split(';').find_map(|kv| kv.strip_prefix("Name=")) else {
+            bail!("{path}: gene line without Name=: {}", line.trim());
+        };
+        genes.entry(key.clone()).or_default().push(name.to_string());
+        strand.entry(key).or_insert_with(|| r[6].to_string());
+    }
+    Ok((genes, strand))
+}
+
+/// Assembled GTF -> {gene_id: [(chrom, start1, end1), ...]} over all its transcripts, for the wanted gene_ids.
+/// Transcript -> gene comes from `transcript` lines and exons join by `transcript_id`, as `mcl_families::gtf_loci`.
+fn read_gtf(r: &mut dyn BufRead, wanted: &HashSet<String>) -> Result<HashMap<String, Vec<(String, i64, i64)>>> {
+    let mut gene_of: HashMap<String, String> = HashMap::new();
+    let mut exons: HashMap<String, Vec<(String, i64, i64)>> = HashMap::new();
+    for line in r.lines() {
+        let line = line?;
+        if line.starts_with('#') {
+            continue;
+        }
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < 9 {
+            continue;
+        }
+        let Some(t) = gtf_attr(r[8], "transcript_id") else { continue };
+        if r[2] == "transcript" {
+            let g = gtf_attr(r[8], "gene_id").filter(|g| !g.is_empty()).unwrap_or(t);
+            if wanted.contains(g) {
+                gene_of.insert(t.to_string(), g.to_string());
+            }
+        } else if r[2] == "exon" {
+            let ex = (r[0].to_string(), int_field(r[3], "gtf exon start")?, int_field(r[4], "gtf exon end")?);
+            exons.entry(t.to_string()).or_default().push(ex);
+        }
+    }
+    let mut out: HashMap<String, Vec<(String, i64, i64)>> = HashMap::new();
+    for (t, g) in gene_of {
+        let v = out.entry(g).or_default();
+        if let Some(ex) = exons.get(&t) {
+            v.extend(ex.iter().cloned());
+        }
+    }
+    Ok(out)
+}
+
+// ------------------------------------------------------------------------------------------------------------ core
+
+/// One clustered locus: its records (the member key first, then the folded ones), gene_ids, exon blocks (genome
+/// 0-based half-open, sorted, disjoint) and family.
+struct Locus {
+    key: Key,
+    family: usize,
+    records: Vec<Key>,
+    gene_ids: Vec<String>,
+    starts: Vec<i64>,
+    ends: Vec<i64>,
+}
+
+#[derive(Default)]
+struct Counts(HashMap<&'static str, i64>);
+impl Counts {
+    fn add(&mut self, k: &'static str, n: i64) {
+        *self.0.entry(k).or_insert(0) += n;
+    }
+    fn inc(&mut self, k: &'static str) {
+        self.add(k, 1);
+    }
+    fn get(&self, k: &str) -> i64 {
+        self.0.get(k).copied().unwrap_or(0)
+    }
+}
+
+fn build_loci(
+    cl: &Clusters,
+    folds: &[(Key, Key)],
+    loci_genes: &HashMap<Key, Vec<String>>,
+    gene_exons: &HashMap<String, Vec<(String, i64, i64)>>,
+    cnt: &mut Counts,
+) -> Result<(Vec<Locus>, HashMap<Key, usize>)> {
+    let idx_of: HashMap<&Key, usize> = cl.keys.iter().enumerate().map(|(i, k)| (k, i)).collect();
+    let mut records: Vec<Vec<Key>> = cl.keys.iter().map(|m| vec![m.clone()]).collect();
+    for (ann, rep) in folds {
+        if let Some(&i) = idx_of.get(rep) {
+            if cl.fam_of.contains_key(ann) {
+                bail!("loci.tsv folds {} into {} but it is itself a cluster member", key_str(ann), key_str(rep));
+            }
+            records[i].push(ann.clone());
+            cnt.inc("folded_records");
+        }
+    }
+    let mut locus_of_record: HashMap<Key, usize> = HashMap::new();
+    let mut loci = Vec::with_capacity(records.len());
+    for (i, recs) in records.into_iter().enumerate() {
+        let m = &cl.keys[i];
+        let mut gids: Vec<String> = Vec::new();
+        let mut exs: Vec<(i64, i64)> = Vec::new();
+        for rec in &recs {
+            if locus_of_record.contains_key(rec) {
+                bail!("record {} belongs to two loci", key_str(rec));
+            }
+            locus_of_record.insert(rec.clone(), i);
+            let Some(names) = loci_genes.get(rec) else {
+                bail!("{} has no gene line in loci.gff3 (was the families stage run --from-gtf?)", key_str(rec));
+            };
+            let mut rec_ex: Vec<&(String, i64, i64)> = Vec::new();
+            for g in names {
+                match gene_exons.get(g) {
+                    Some(v) if !v.is_empty() => rec_ex.extend(v.iter()),
+                    _ => bail!("gene_id {g} of {} has no exons in the GTF", key_str(rec)),
+                }
+                gids.push(g.clone());
+            }
+            if names.len() > 1 {
+                cnt.inc("records_with_key_collision");
+            }
+            if rec_ex.iter().any(|(c, _, _)| *c != rec.0) {
+                bail!("{} has exons on another contig", key_str(rec));
+            }
+            let lo = rec_ex.iter().map(|x| x.1).min().unwrap();
+            let hi = rec_ex.iter().map(|x| x.2).max().unwrap();
+            if (lo, hi) != (rec.1, rec.2) {
+                cnt.inc("records_span_mismatch"); // the key is not the gene's all-transcript span
+            }
+            exs.extend(rec_ex.iter().map(|x| (x.1 - 1, x.2)));
+        }
+        let blocks = merge_blocks(exs);
+        loci.push(Locus {
+            key: m.clone(),
+            family: cl.fam_of[m],
+            records: recs,
+            gene_ids: gids,
+            starts: blocks.iter().map(|b| b.0).collect(),
+            ends: blocks.iter().map(|b| b.1).collect(),
+        });
+    }
+    Ok((loci, locus_of_record))
+}
+
+/// hits[m][block][partner] = genome intervals of m's block joined to an exon base of partner (loci by index).
+type Hits = Vec<HashMap<usize, HashMap<usize, Vec<(i64, i64)>>>>;
+
+fn add_iv(lst: &mut Vec<(i64, i64)>, lo: i64, hi: i64) {
+    // coalesce with the last interval when they touch (the union is what is ever read)
+    if let Some(last) = lst.last_mut() {
+        if lo <= last.1 && hi >= last.0 {
+            *last = (lo.min(last.0), hi.max(last.1));
+            return;
+        }
+    }
+    lst.push((lo, hi));
+}
+
+fn project_paf(
+    r: &mut dyn BufRead,
+    path: &str,
+    loci: &[Locus],
+    locus_of_record: &HashMap<Key, usize>,
+    cnt: &mut Counts,
+) -> Result<Hits> {
+    let mut hits: Hits = (0..loci.len()).map(|_| HashMap::new()).collect();
+    // record name -> (its key's contig start, its locus), memoised on the raw name (names repeat on every record)
+    let mut memo: HashMap<String, Option<(i64, usize)>> = HashMap::new();
+    let mut lookup = |name: &str| -> Option<(i64, usize)> {
+        if let Some(v) = memo.get(name) {
+            return *v;
+        }
+        let v = parse_key(name).and_then(|k| locus_of_record.get(&k).map(|&l| (k.1, l)));
+        memo.insert(name.to_string(), v);
+        v
+    };
+    for line in r.lines() {
+        let line = line?;
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 {
+            cnt.inc("paf_malformed");
+            continue;
+        }
+        cnt.inc("paf_records");
+        if f[0] == f[5] {
+            cnt.inc("paf_self");
+            continue;
+        }
+        let (Some((q_start, lq)), Some((t_start, lt))) = (lookup(f[0]), lookup(f[5])) else {
+            cnt.inc("paf_unclustered");
+            continue;
+        };
+        if lq == lt {
+            cnt.inc("paf_same_locus");
+            continue;
+        }
+        let (qs, qe) = (int_field(f[2], "PAF qs")?, int_field(f[3], "PAF qe")?);
+        let strand = f[4];
+        let (ts, te) = (int_field(f[7], "PAF ts")?, int_field(f[8], "PAF te")?);
+        let (q_off, t_off) = (q_start - 1, t_start - 1);
+        let (lqq, ltt) = (&loci[lq], &loci[lt]);
+        if !(overlaps_any(&lqq.starts, &lqq.ends, q_off + qs, q_off + qe)
+            && overlaps_any(&ltt.starts, &ltt.ends, t_off + ts, t_off + te))
+        {
+            cnt.inc("paf_no_exon_interval");
+            continue;
+        }
+        let Some(cg) = f[12..].iter().find_map(|x| x.strip_prefix("cg:Z:")) else {
+            bail!("{path}: record {} -> {} has no cg:Z CIGAR (the families PAF is run with -c)", f[0], f[5]);
+        };
+        cnt.inc("paf_projected");
+        let cols = exon_columns(
+            cg,
+            strand,
+            qs,
+            qe,
+            ts,
+            te,
+            q_off,
+            t_off,
+            (&lqq.starts, &lqq.ends),
+            (&ltt.starts, &ltt.ends),
+        )?;
+        for &(ql, qh, qb, tl, th, tb) in &cols {
+            add_iv(hits[lq].entry(qb).or_default().entry(lt).or_default(), ql, qh);
+            add_iv(hits[lt].entry(tb).or_default().entry(lq).or_default(), tl, th);
+        }
+        if !cols.is_empty() {
+            cnt.inc("paf_exon_exon");
+        }
+    }
+    Ok(hits)
+}
+
+/// The container of one families run: the rows of the three tables (fields as written) and the counts.
+pub struct Container {
+    pub blocks: Vec<Vec<String>>,
+    pub relations: Vec<Vec<String>>,
+    counts: Counts,
+}
+
+fn classify(cl: &Clusters, loci: &[Locus], hits: &Hits, strand_of: &HashMap<Key, String>) -> Container {
+    let mut cnt = Counts::default();
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    // (family, related family) -> (members, n_blocks, bp); a family index IS its first-appearance order
+    let mut rel: HashMap<(usize, usize), (Vec<usize>, i64, i64)> = HashMap::new();
+    let locus_idx: HashMap<&Key, usize> = loci.iter().enumerate().map(|(i, l)| (&l.key, i)).collect();
+    let empty: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
+    for (fid, fam_members) in cl.members.iter().enumerate() {
+        for mk in fam_members {
+            let mi = locus_idx[mk];
+            let l = &loci[mi];
+            let nb = l.starts.len();
+            let mut has_acc = false;
+            for bi in 0..nb {
+                let (s, e) = (l.starts[bi], l.ends[bi]);
+                let partners = hits[mi].get(&bi).unwrap_or(&empty);
+                let mut same: Vec<usize> = partners.keys().copied().filter(|&p| loci[p].family == fid).collect();
+                same.sort_by(|&a, &b| loci[a].key.cmp(&loci[b].key));
+                let mut row: Vec<String> = vec![
+                    cl.fam_ids[fid].clone(),
+                    key_str(&l.key),
+                    l.key.0.clone(),
+                    strand_of.get(&l.key).cloned().unwrap_or_else(|| ".".into()),
+                    l.gene_ids.join(","),
+                    l.records.len().to_string(),
+                    (bi + 1).to_string(),
+                    nb.to_string(),
+                    (s + 1).to_string(),
+                    e.to_string(),
+                    (e - s).to_string(),
+                ];
+                cnt.inc("blocks");
+                if !same.is_empty() {
+                    let core_bp = union_len(same.iter().flat_map(|p| partners[p].iter()));
+                    let core_partners: Vec<String> = same
+                        .iter()
+                        .map(|p| format!("{}={}", key_str(&loci[*p].key), union_len(partners[p].iter())))
+                        .collect();
+                    row.extend([
+                        "core".to_string(),
+                        core_bp.to_string(),
+                        core_partners.join(","),
+                        ".".into(),
+                        ".".into(),
+                        ".".into(),
+                    ]);
+                    cnt.inc("core_blocks");
+                    cnt.add("core_block_bp", e - s);
+                } else {
+                    has_acc = true;
+                    let mut other: Vec<usize> = partners.keys().copied().filter(|&p| loci[p].family != fid).collect();
+                    other.sort_by(|&a, &b| (loci[a].family, &loci[a].key).cmp(&(loci[b].family, &loci[b].key)));
+                    row.extend(["accessory".to_string(), "0".into(), ".".into()]);
+                    cnt.inc("accessory_blocks");
+                    cnt.add("accessory_bp", e - s);
+                    if !other.is_empty() {
+                        let mut fams: Vec<usize> = other.iter().map(|&p| loci[p].family).collect();
+                        fams.dedup(); // `other` is sorted by family order
+                        let rel_bp = union_len(other.iter().flat_map(|p| partners[p].iter()));
+                        let rel_partners: Vec<String> = other
+                            .iter()
+                            .map(|&p| {
+                                format!(
+                                    "{}|{}={}",
+                                    cl.fam_ids[loci[p].family],
+                                    key_str(&loci[p].key),
+                                    union_len(partners[&p].iter())
+                                )
+                            })
+                            .collect();
+                        row.extend([
+                            fams.iter().map(|&f| cl.fam_ids[f].as_str()).collect::<Vec<_>>().join(","),
+                            rel_bp.to_string(),
+                            rel_partners.join(","),
+                        ]);
+                        cnt.inc("accessory_blocks_related");
+                        for &f2 in &fams {
+                            let r = rel.entry((fid, f2)).or_default();
+                            if r.0.last() != Some(&mi) {
+                                r.0.push(mi);
+                            }
+                            r.1 += 1;
+                            r.2 += union_len(
+                                other.iter().filter(|&&p| loci[p].family == f2).flat_map(|p| partners[p].iter()),
+                            );
+                        }
+                    } else {
+                        row.extend([".".to_string(), "0".into(), ".".into()]);
+                    }
+                }
+                rows.push(row);
+            }
+            cnt.inc("loci");
+            cnt.inc(if has_acc { "loci_with_accessory" } else { "loci_all_core" });
+        }
+    }
+    let mut keys: Vec<(usize, usize)> = rel.keys().copied().collect();
+    keys.sort();
+    let mut rel_rows = Vec::with_capacity(keys.len());
+    for (f1, f2) in keys {
+        let r = &rel[&(f1, f2)];
+        let reciprocal = rel.contains_key(&(f2, f1));
+        rel_rows.push(vec![
+            cl.fam_ids[f1].clone(),
+            cl.fam_ids[f2].clone(),
+            r.0.len().to_string(),
+            r.1.to_string(),
+            r.2.to_string(),
+            if reciprocal { "yes" } else { "no" }.to_string(),
+            r.0.iter().map(|&m| key_str(&loci[m].key)).collect::<Vec<_>>().join(","),
+        ]);
+        if reciprocal {
+            cnt.inc("family_relations_reciprocal");
+        }
+    }
+    cnt.add("family_relations_directed", rel_rows.len() as i64);
+    cnt.add("families", cl.members.len() as i64);
+    cnt.add("families_with_relation", rel.keys().map(|k| k.0).collect::<HashSet<_>>().len() as i64);
+    Container { blocks: rows, relations: rel_rows, counts: cnt }
+}
+
+/// The whole container on open inputs: the assembled GTF, the families' `clusters.tsv`, `loci.gff3`, the fold table
+/// `loci.tsv` (None = no folded records) and the all-vs-all PAF (with `cg:Z`). `paf_name` names the PAF in errors.
+pub fn run(
+    gtf: &mut dyn BufRead,
+    clusters: &mut dyn BufRead,
+    loci_gff3: &mut dyn BufRead,
+    loci_tsv: Option<&mut dyn BufRead>,
+    paf: &mut dyn BufRead,
+    paf_name: &str,
+) -> Result<Container> {
+    let cl = read_clusters(clusters, "clusters.tsv")?;
+    let folds = match loci_tsv {
+        Some(r) => read_folds(r, "loci.tsv")?,
+        None => Vec::new(),
+    };
+    let (loci_genes, strand_of) = read_loci_gff3(loci_gff3, "loci.gff3")?;
+    let mut wanted: HashSet<String> = HashSet::new();
+    for m in &cl.keys {
+        wanted.extend(loci_genes.get(m).into_iter().flatten().cloned());
+    }
+    for (ann, rep) in &folds {
+        if cl.fam_of.contains_key(rep) {
+            wanted.extend(loci_genes.get(ann).into_iter().flatten().cloned());
+        }
+    }
+    let gene_exons = read_gtf(gtf, &wanted)?;
+    let mut cnt = Counts::default();
+    let (loci, locus_of_record) = build_loci(&cl, &folds, &loci_genes, &gene_exons, &mut cnt)?;
+    cnt.add("loci_gff3_keys", loci_genes.len() as i64);
+    cnt.add("gene_key_collisions", loci_genes.values().filter(|v| v.len() > 1).count() as i64);
+    let hits = project_paf(paf, paf_name, &loci, &locus_of_record, &mut cnt)?;
+    let mut c = classify(&cl, &loci, &hits, &strand_of);
+    for (k, v) in cnt.0 {
+        c.counts.add(k, v);
+    }
+    Ok(c)
+}
+
+/// [`run`] on file paths (`.gz` read through gzip, as the script); `loci_tsv` None or a missing file = no folds.
+pub fn run_paths(gtf: &str, clusters: &str, loci_gff3: &str, loci_tsv: Option<&str>, paf: &str) -> Result<Container> {
+    let mut lt = match loci_tsv {
+        Some(p) if std::path::Path::new(p).exists() => Some(open_text(p)?),
+        _ => None,
+    };
+    run(
+        &mut *open_text(gtf)?,
+        &mut *open_text(clusters)?,
+        &mut *open_text(loci_gff3)?,
+        lt.as_deref_mut().map(|r| r as &mut dyn BufRead),
+        &mut *open_text(paf)?,
+        paf,
+    )
+}
+
+fn tsv(header: &[&str], rows: &[Vec<String>]) -> String {
+    let mut s = header.join("\t");
+    s.push('\n');
+    for r in rows {
+        s.push_str(&r.join("\t"));
+        s.push('\n');
+    }
+    s
+}
+
+impl Container {
+    pub fn count(&self, k: &str) -> i64 {
+        self.counts.get(k)
+    }
+    /// `<out>.container.tsv` (the script's `OUT.blocks.tsv`).
+    pub fn blocks_tsv(&self) -> String {
+        tsv(&BLOCK_HEADER, &self.blocks)
+    }
+    /// `<out>.container_relations.tsv` (the script's `OUT.relations.tsv`).
+    pub fn relations_tsv(&self) -> String {
+        tsv(&REL_HEADER, &self.relations)
+    }
+    /// `<out>.container_summary.tsv` (the script's `OUT.summary.tsv`).
+    pub fn summary_tsv(&self) -> String {
+        let mut s = String::from("key\tvalue\n");
+        for k in SUMMARY_KEYS {
+            s.push_str(&format!("{k}\t{}\n", self.count(k)));
+        }
+        s
+    }
+    /// The script's stderr summary line.
+    pub fn summary_line(&self) -> String {
+        let kv: Vec<String> = SUMMARY_KEYS.iter().map(|k| format!("{k}={}", self.count(k))).collect();
+        format!("[family_container] {}", kv.join(" "))
+    }
+    /// Write the three tables next to the families products (`<out>.container.tsv`, `<out>.container_relations.tsv`,
+    /// `<out>.container_summary.tsv`).
+    pub fn write(&self, out: &str) -> Result<()> {
+        for (suffix, text) in [
+            ("container.tsv", self.blocks_tsv()),
+            ("container_relations.tsv", self.relations_tsv()),
+            ("container_summary.tsv", self.summary_tsv()),
+        ] {
+            let path = format!("{out}.{suffix}");
+            std::fs::write(&path, text).with_context(|| format!("writing {path}"))?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The frozen script's 20 unit tests (`bench/test_family_container.py`, sha1 a2f4a13d), ported one to one on the
+    //! same hand-made fixture, plus byte-identity of all three tables against the script's own outputs on that
+    //! fixture (`testdata/family_container/`, written by the frozen script).
+    //!
+    //! The fixture (GFF 1-based closed; PAF offsets are 0-based within each record, record key START = offset 0):
+    //!
+    //!   family MCL0: A = c1:1001-2000  gA  tA1 1001-1100,1301-1400,1901-2000 ; tA2 1051-1150,1901-1950
+    //!                  + folded record A2 = c1:1951-2100 (gA2, one exon 1951-2100)  => blocks 1001-1150, 1301-1400, 1901-2100
+    //!                B = c1:5001-6000  gB  tB1 5001-5150, 5301-5400, 5701-6000
+    //!   family MCL1: D = c2:1001-2000  gD  tD1 1001-1200, 1601-2000
+    //!                E = c2:5001-6000  gE  tE1 5001-5200, 5501-5600, 5901-6000
+    //!   unclustered: U = c3:1001-2000  gU  tU1 1001-1100, 1901-2000
+    //!
+    //!   R1  A->B  +  q[0,150)    t[0,150)   50M2I48M2D50M     A.b1/B.b1 exon-exon, 148 aligned columns each side
+    //!   R2  A->B  +  q[399,900)  t[399,900) 501M              touches A.b2/B.b2 by exactly 1 base; ends 0 bases before A.b3
+    //!   R3  A->D  -  q[700,1000) t[100,400) 100M5D95M5I100M   reverse strand: only the first 100M is exon-exon
+    //!   R4  B->A  +  q[700,760)  t[450,510) 60M               B.b3 onto A's INTRON: not evidence
+    //!   R5  B->U  +  q[800,900)  t[0,100)   100M              U unclustered: skipped
+    //!   R6  A2->D +  q[100,150)  t[650,700) 50M               the folded record counts for A (A.b3 genome 2051-2100)
+    //!   R7  A->A2 +  q[950,1000) t[0,50)    50M               same locus: skipped
+    //!   R8  D->E  +  q[600,650)  t[0,50)    50M               D.b2 / E.b1 core
+    //!   R9  A->U  +  q[900,1000) t[900,1000) 100M             U unclustered: skipped
+    //!   R10 E->B  +  q[500,600)  t[0,100)   100M              E.b2 accessory related to MCL0 (B.b1 is core already)
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::io::Write;
+
+    type Genes = Vec<(&'static str, &'static str, &'static str, Vec<(&'static str, Vec<(i64, i64)>)>)>;
+    fn genes() -> Genes {
+        vec![
+            ("gA", "c1", "+", vec![("tA1", vec![(1001, 1100), (1301, 1400), (1901, 2000)]), ("tA2", vec![(1051, 1150), (1901, 1950)])]),
+            ("gA2", "c1", "+", vec![("tA2x", vec![(1951, 2100)])]),
+            ("gB", "c1", "+", vec![("tB1", vec![(5001, 5150), (5301, 5400), (5701, 6000)])]),
+            ("gD", "c2", "-", vec![("tD1", vec![(1001, 1200), (1601, 2000)])]),
+            ("gE", "c2", "-", vec![("tE1", vec![(5001, 5200), (5501, 5600), (5901, 6000)])]),
+            ("gU", "c3", "+", vec![("tU1", vec![(1001, 1100), (1901, 2000)])]),
+        ]
+    }
+    fn key(g: &str) -> &'static str {
+        match g {
+            "gA" => "c1:1001-2000",
+            "gA2" => "c1:1951-2100",
+            "gB" => "c1:5001-6000",
+            "gD" => "c2:1001-2000",
+            "gE" => "c2:5001-6000",
+            "gU" => "c3:1001-2000",
+            _ => panic!("{g}"),
+        }
+    }
+    const CLUSTERS: [(&str, &str); 4] = [("MCL0", "gA"), ("MCL0", "gB"), ("MCL1", "gD"), ("MCL1", "gE")];
+    type PafRow = (&'static str, i64, i64, &'static str, &'static str, i64, i64, &'static str);
+    const PAF: [PafRow; 10] = [
+        ("gA", 0, 150, "+", "gB", 0, 150, "50M2I48M2D50M"),
+        ("gA", 399, 900, "+", "gB", 399, 900, "501M"),
+        ("gA", 700, 1000, "-", "gD", 100, 400, "100M5D95M5I100M"),
+        ("gB", 700, 760, "+", "gA", 450, 510, "60M"),
+        ("gB", 800, 900, "+", "gU", 0, 100, "100M"),
+        ("gA2", 100, 150, "+", "gD", 650, 700, "50M"),
+        ("gA", 950, 1000, "+", "gA2", 0, 50, "50M"),
+        ("gD", 600, 650, "+", "gE", 0, 50, "50M"),
+        ("gA", 900, 1000, "+", "gU", 900, 1000, "100M"),
+        ("gE", 500, 600, "+", "gB", 0, 100, "100M"),
+    ];
+    fn key_len(g: &str) -> i64 {
+        let k = parse_key(key(g)).unwrap();
+        k.2 - k.1 + 1
+    }
+
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("rustle_family_container_{tag}_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// `write_fixture` of the Python tests, byte for byte. Returns (gtf, fam prefix).
+    fn write_fixture(d: &std::path::Path, clusters: &[(&str, &str)], folds: &[(&str, &str)], with_cg: bool) -> (String, String) {
+        let gtf = d.join("x.gtf").display().to_string();
+        let mut fh = std::fs::File::create(&gtf).unwrap();
+        for (g, c, st, txs) in genes() {
+            for (t, exs) in &txs {
+                writeln!(fh, "{c}\trustle\ttranscript\t{}\t{}\t.\t{st}\t.\tgene_id \"{g}\"; transcript_id \"{t}\"; reads \"5\";", exs[0].0, exs[exs.len() - 1].1).unwrap();
+                for (i, (s, e)) in exs.iter().enumerate() {
+                    writeln!(fh, "{c}\trustle\texon\t{s}\t{e}\t.\t{st}\t.\tgene_id \"{g}\"; transcript_id \"{t}\"; exon_number \"{}\";", i + 1).unwrap();
+                }
+            }
+        }
+        let fam = d.join("x.fam").display().to_string();
+        let mut fh = std::fs::File::create(format!("{fam}.loci.gff3")).unwrap();
+        writeln!(fh, "##gff-version 3").unwrap();
+        for (g, c, st, txs) in genes() {
+            let k = parse_key(key(g)).unwrap();
+            writeln!(fh, "{c}\t.\tgene\t{}\t{}\t.\t{st}\t.\tID=gene-{g};Name={g}", k.1, k.2).unwrap();
+            for (s, e) in &txs[0].1 {
+                writeln!(fh, "{c}\t.\texon\t{s}\t{e}\t.\t{st}\t.\tParent=gene-{g};gene={g}").unwrap();
+            }
+        }
+        let mut fh = std::fs::File::create(format!("{fam}.clusters.tsv")).unwrap();
+        writeln!(fh, "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend").unwrap();
+        for (fid, g) in clusters {
+            let k = parse_key(key(g)).unwrap();
+            let n = clusters.iter().filter(|(f, _)| f == fid).count();
+            writeln!(fh, "{fid}\t{n}\t1.0000\t1.0000\tNA\t{}\t{}\t{}", k.0, k.1, k.2).unwrap();
+        }
+        let mut fh = std::fs::File::create(format!("{fam}.loci.tsv")).unwrap();
+        writeln!(fh, "annotation\trepresentative").unwrap();
+        for (a, r) in folds {
+            writeln!(fh, "{}\t{}", key(a), key(r)).unwrap();
+        }
+        let mut fh = std::fs::File::create(format!("{fam}.loci.paf")).unwrap();
+        for (qg, qs, qe, st, tg, ts, te, cg) in PAF {
+            let tags = if with_cg { format!("\tNM:i:0\ttp:A:P\tcg:Z:{cg}") } else { "\tNM:i:0\ttp:A:P".to_string() };
+            writeln!(
+                fh,
+                "{}\t{}\t{qs}\t{qe}\t{st}\t{}\t{}\t{ts}\t{te}\t{}\t{}\t60{tags}",
+                key(qg),
+                key_len(qg),
+                key(tg),
+                key_len(tg),
+                qe - qs,
+                (qe - qs).max(te - ts)
+            )
+            .unwrap();
+        }
+        (gtf, fam)
+    }
+
+    fn run_fam(gtf: &str, fam: &str) -> Result<Container> {
+        run_paths(
+            gtf,
+            &format!("{fam}.clusters.tsv"),
+            &format!("{fam}.loci.gff3"),
+            Some(&format!("{fam}.loci.tsv")),
+            &format!("{fam}.loci.paf"),
+        )
+    }
+
+    /// The `Container` class fixture: the main fixture, run and written, read back as the Python tests read it.
+    struct Out {
+        header: Vec<String>,
+        rows: BTreeMap<(String, i64), BTreeMap<String, String>>,
+        rel: Vec<BTreeMap<String, String>>,
+        summary: BTreeMap<String, i64>,
+    }
+    fn container_fixture() -> Out {
+        let d = tmpdir("main");
+        let (gtf, fam) = write_fixture(&d, &CLUSTERS, &[("gA2", "gA")], true);
+        let out = d.join("out").display().to_string();
+        run_fam(&gtf, &fam).unwrap().write(&out).unwrap();
+        let read = |p: String| std::fs::read_to_string(p).unwrap();
+        let blocks = read(format!("{out}.container.tsv"));
+        let mut lines = blocks.lines();
+        let header: Vec<String> = lines.next().unwrap().split('\t').map(String::from).collect();
+        let mut rows = BTreeMap::new();
+        for l in lines {
+            let r: BTreeMap<String, String> = header.iter().cloned().zip(l.split('\t').map(String::from)).collect();
+            rows.insert((r["locus"].clone(), r["block"].parse().unwrap()), r);
+        }
+        let rels = read(format!("{out}.container_relations.tsv"));
+        let mut lines = rels.lines();
+        let rh: Vec<String> = lines.next().unwrap().split('\t').map(String::from).collect();
+        let rel = lines.map(|l| rh.iter().cloned().zip(l.split('\t').map(String::from)).collect()).collect();
+        let summary = read(format!("{out}.container_summary.tsv"))
+            .lines()
+            .skip(1)
+            .map(|l| {
+                let (k, v) = l.split_once('\t').unwrap();
+                (k.to_string(), v.parse().unwrap())
+            })
+            .collect();
+        let _ = std::fs::remove_dir_all(&d);
+        Out { header, rows, rel, summary }
+    }
+    impl Out {
+        fn row(&self, g: &str, b: i64) -> &BTreeMap<String, String> {
+            &self.rows[&(key(g).to_string(), b)]
+        }
+    }
+    fn f<'a>(r: &'a BTreeMap<String, String>, k: &str) -> &'a str {
+        r[k].as_str()
+    }
+
+    // ---------------------------------------------------------------------------------------- Primitives (6)
+
+    #[test]
+    fn merge_blocks_overlap_merges_abutting_stays_separate() {
+        assert_eq!(merge_blocks(vec![(10, 20), (0, 10), (15, 30), (40, 50), (45, 46)]), vec![(0, 10), (10, 30), (40, 50)]);
+    }
+
+    #[test]
+    fn union_len_counts_overlapping_and_abutting_once() {
+        assert_eq!(union_len(&[(0, 10), (10, 20), (15, 25), (30, 31)]), 26);
+        assert_eq!(union_len(&[]), 0);
+    }
+
+    #[test]
+    fn aligned_runs_forward_with_eq_x_and_n() {
+        let runs = aligned_runs("10=2X3N4I5M1D6M", "+", 100, 127, 50, 77).unwrap();
+        assert_eq!(runs, vec![(50, 100, 10), (60, 110, 2), (65, 116, 5), (71, 121, 6)]);
+    }
+
+    #[test]
+    fn aligned_runs_reverse() {
+        // '-': query consumed from qe downwards; run query interval [qe - consumed - n, qe - consumed)
+        let runs = aligned_runs("100M5D95M5I100M", "-", 700, 1000, 100, 400).unwrap();
+        assert_eq!(runs, vec![(100, 900, 100), (205, 805, 95), (300, 700, 100)]);
+    }
+
+    #[test]
+    fn cigar_length_mismatch_and_bad_ops_raise() {
+        assert!(aligned_runs("10M", "+", 0, 11, 0, 10).is_err());
+        assert!(aligned_runs("5S10M", "+", 0, 10, 0, 10).is_err());
+        assert!(aligned_runs("10M", ".", 0, 10, 0, 10).is_err());
+    }
+
+    #[test]
+    fn exon_columns_reverse_maps_each_column_exactly() {
+        // query record offset 0 = genome 0; target offset 0 = genome 1000. Query exon [3,5), target exon [1000,1002):
+        // '-' 10M on q[0,10) / t[0,10): column i joins t 1000+i with q 9-i, so t [1000,1002) <-> q [8,10) -- not an
+        // exon on the query -- and q [3,5) <-> t [1005,1007) -- not an exon on the target. No exon-exon column.
+        let q: (&[i64], &[i64]) = (&[3], &[5]);
+        assert!(exon_columns("10M", "-", 0, 10, 0, 10, 0, 1000, q, (&[1000], &[1002])).unwrap().is_empty());
+        // a target exon at [1005,1007) is exactly the mirror of the query exon: two columns
+        let t: (&[i64], &[i64]) = (&[1005], &[1007]);
+        assert_eq!(exon_columns("10M", "-", 0, 10, 0, 10, 0, 1000, q, t).unwrap(), vec![(3, 5, 0, 1005, 1007, 0)]);
+        // and on '+' the same exons do not meet (q [3,5) <-> t [1003,1005))
+        assert!(exon_columns("10M", "+", 0, 10, 0, 10, 0, 1000, q, t).unwrap().is_empty());
+    }
+
+    // ----------------------------------------------------------------------------------------- Container (11)
+
+    #[test]
+    fn container_header() {
+        assert_eq!(container_fixture().header, BLOCK_HEADER.to_vec());
+    }
+
+    #[test]
+    fn multi_transcript_and_folded_record_union() {
+        let o = container_fixture();
+        let a: Vec<_> = (1..=3).map(|b| o.row("gA", b)).collect();
+        let spans: Vec<(i64, i64)> = a.iter().map(|r| (f(r, "start").parse().unwrap(), f(r, "end").parse().unwrap())).collect();
+        assert_eq!(spans, vec![(1001, 1150), (1301, 1400), (1901, 2100)]);
+        assert_eq!(f(a[0], "gene_ids"), "gA,gA2");
+        assert_eq!(f(a[0], "n_records"), "2");
+        assert_eq!(f(a[0], "n_blocks"), "3");
+        assert!(!o.rows.contains_key(&(key("gA2").to_string(), 1)), "a folded record is part of its locus, not a row of its own");
+    }
+
+    #[test]
+    fn forward_cigar_with_insertion_and_deletion() {
+        let o = container_fixture();
+        let (a1, b1) = (o.row("gA", 1), o.row("gB", 1));
+        assert_eq!((f(a1, "class"), f(a1, "core_bp"), f(a1, "core_partners")), ("core", "148", format!("{}=148", key("gB")).as_str()));
+        assert_eq!((f(b1, "class"), f(b1, "core_bp")), ("core", "148"));
+        assert_eq!(f(a1, "rel_families"), ".");
+    }
+
+    #[test]
+    fn one_base_touch_is_core_zero_is_accessory() {
+        let o = container_fixture();
+        assert_eq!((f(o.row("gA", 2), "class"), f(o.row("gA", 2), "core_bp")), ("core", "1"));
+        assert_eq!((f(o.row("gB", 2), "class"), f(o.row("gB", 2), "core_bp")), ("core", "1"));
+        let a3 = o.row("gA", 3); // R2 ends one base before it; its partner base there IS a B exon base
+        assert_eq!(f(a3, "class"), "accessory");
+        assert_eq!(f(a3, "core_partners"), ".");
+    }
+
+    #[test]
+    fn reverse_strand_projection_and_relation() {
+        let o = container_fixture();
+        let a3 = o.row("gA", 3);
+        assert_eq!(f(a3, "rel_families"), "MCL1");
+        assert_eq!(f(a3, "rel_bp"), "150"); // R3's 100 (genome 1901-2000) + R6's 50 via the folded record
+        assert_eq!(f(a3, "rel_partners"), format!("MCL1|{}=150", key("gD")));
+        let d1 = o.row("gD", 1);
+        assert_eq!((f(d1, "class"), f(d1, "rel_families"), f(d1, "rel_bp")), ("accessory", "MCL0", "100"));
+        assert_eq!(f(d1, "rel_partners"), format!("MCL0|{}=100", key("gA")));
+    }
+
+    #[test]
+    fn partner_intron_is_not_evidence_and_unclustered_is_ignored() {
+        let o = container_fixture();
+        let b3 = o.row("gB", 3);
+        assert_eq!((f(b3, "class"), f(b3, "rel_families"), f(b3, "rel_bp")), ("accessory", ".", "0"));
+    }
+
+    #[test]
+    fn core_blocks_are_not_tested_for_relations() {
+        let o = container_fixture();
+        let (d2, e1, b1) = (o.row("gD", 2), o.row("gE", 1), o.row("gB", 1));
+        assert_eq!((f(d2, "class"), f(d2, "core_bp"), f(d2, "rel_families")), ("core", "50", "."));
+        assert_eq!((f(e1, "class"), f(e1, "core_bp")), ("core", "50"));
+        assert_eq!(f(b1, "rel_families"), "."); // R10 hits B.b1 from MCL1 but B.b1 is core
+    }
+
+    #[test]
+    fn accessory_without_any_alignment() {
+        let o = container_fixture();
+        let e3 = o.row("gE", 3);
+        assert_eq!((f(e3, "class"), f(e3, "rel_families"), f(e3, "bp")), ("accessory", ".", "100"));
+        let e2 = o.row("gE", 2);
+        assert_eq!((f(e2, "class"), f(e2, "rel_families"), f(e2, "rel_bp")), ("accessory", "MCL0", "100"));
+    }
+
+    #[test]
+    fn unclustered_locus_has_no_rows() {
+        let o = container_fixture();
+        assert!(!o.rows.keys().any(|k| k.0 == key("gU")));
+        assert_eq!(o.rows.len(), 3 + 3 + 2 + 3);
+    }
+
+    #[test]
+    fn family_relation_table() {
+        let o = container_fixture();
+        let got: Vec<Vec<&str>> = o
+            .rel
+            .iter()
+            .map(|r| ["family_id", "related_family", "n_members", "n_blocks", "bp", "reciprocal", "members"].iter().map(|k| f(r, k)).collect())
+            .collect();
+        let both = format!("{},{}", key("gD"), key("gE"));
+        assert_eq!(
+            got,
+            vec![vec!["MCL0", "MCL1", "1", "1", "150", "yes", key("gA")], vec!["MCL1", "MCL0", "2", "2", "200", "yes", both.as_str()]]
+        );
+    }
+
+    #[test]
+    fn summary_counts() {
+        let s = container_fixture().summary;
+        let g = |k: &str| s[k];
+        assert_eq!((g("families"), g("loci"), g("folded_records"), g("blocks")), (2, 4, 1, 11));
+        assert_eq!((g("core_blocks"), g("accessory_blocks"), g("accessory_blocks_related")), (6, 5, 3));
+        assert_eq!((g("paf_records"), g("paf_unclustered"), g("paf_same_locus"), g("paf_no_exon_interval")), (10, 2, 1, 1));
+        assert_eq!((g("paf_projected"), g("paf_exon_exon")), (6, 6));
+        assert_eq!((g("loci_all_core"), g("loci_with_accessory")), (0, 4));
+        assert_eq!(g("records_span_mismatch"), 0);
+    }
+
+    // --------------------------------------------------------------------------------------------- Guards (3)
+
+    #[test]
+    fn record_without_cigar_raises() {
+        let d = tmpdir("nocg");
+        let (gtf, fam) = write_fixture(&d, &CLUSTERS, &[("gA2", "gA")], false);
+        assert!(run_fam(&gtf, &fam).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn member_in_two_families_raises() {
+        let d = tmpdir("twofam");
+        let mut cl = CLUSTERS.to_vec();
+        cl.push(("MCL1", "gA"));
+        let (gtf, fam) = write_fixture(&d, &cl, &[("gA2", "gA")], true);
+        assert!(run_fam(&gtf, &fam).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn without_the_fold_the_folded_record_is_unclustered() {
+        let d = tmpdir("nofold");
+        let (gtf, fam) = write_fixture(&d, &CLUSTERS, &[], true);
+        let c = run_fam(&gtf, &fam).unwrap();
+        let col = |name: &str| BLOCK_HEADER.iter().position(|h| *h == name).unwrap();
+        let a: Vec<&Vec<String>> = c.blocks.iter().filter(|r| r[col("locus")] == key("gA")).collect();
+        let spans: Vec<(&str, &str)> = a.iter().map(|r| (r[col("start")].as_str(), r[col("end")].as_str())).collect();
+        assert_eq!(spans, vec![("1001", "1150"), ("1301", "1400"), ("1901", "2000")]);
+        assert_eq!(a[2][col("rel_bp")], "100"); // R6 (from the no-longer-folded record) no longer counts
+        assert_eq!(c.count("paf_same_locus"), 0);
+        assert_eq!(c.count("paf_unclustered"), 4); // R5, R6, R7, R9
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // ---------------------------------------------------------------- byte identity with the frozen script
+
+    /// All three tables, byte for byte, against the frozen script's outputs on the same fixture (main and no-fold).
+    #[test]
+    fn tables_are_byte_identical_to_the_frozen_script() {
+        for (tag, folds, blocks, rels, summary) in [
+            (
+                "main",
+                &[("gA2", "gA")][..],
+                include_str!("testdata/family_container/main.blocks.tsv"),
+                include_str!("testdata/family_container/main.relations.tsv"),
+                include_str!("testdata/family_container/main.summary.tsv"),
+            ),
+            (
+                "nofold",
+                &[][..],
+                include_str!("testdata/family_container/nofold.blocks.tsv"),
+                include_str!("testdata/family_container/nofold.relations.tsv"),
+                include_str!("testdata/family_container/nofold.summary.tsv"),
+            ),
+        ] {
+            let d = tmpdir(tag);
+            let (gtf, fam) = write_fixture(&d, &CLUSTERS, folds, true);
+            let c = run_fam(&gtf, &fam).unwrap();
+            assert_eq!(c.blocks_tsv(), blocks, "{tag} blocks");
+            assert_eq!(c.relations_tsv(), rels, "{tag} relations");
+            assert_eq!(c.summary_tsv(), summary, "{tag} summary");
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn python_int_and_key_parsing() {
+        assert_eq!(py_int(" 12 "), Some(12));
+        assert_eq!(py_int("+7"), Some(7));
+        assert_eq!(py_int("-3"), Some(-3));
+        assert_eq!(py_int("1_000"), Some(1000));
+        for bad in ["", "1__0", "_1", "1_", "1.0", "0x1", "+-1", "1e3"] {
+            assert_eq!(py_int(bad), None, "{bad:?}");
+        }
+        assert_eq!(parse_key("chrUn:KI270:1-20"), Some(("chrUn:KI270".to_string(), 1, 20)));
+        assert_eq!(parse_key("c1:0100-200"), Some(("c1".to_string(), 100, 200)));
+        assert_eq!(parse_key("c1:1-2-3"), None);
+        assert_eq!(parse_key("c1"), None);
+        assert_eq!(gtf_attr("gene_id \"\"; transcript_id \"t\";", "gene_id"), Some(""));
+    }
+}
+}
+
+// ---- merged 2026-10-05: was `vg_family/family_relations.rs`, now the inline module below (one component) ----
+#[allow(clippy::all)]
+pub mod family_relations {
+//! The RELATION RECORDS of split transcripts and the MEMBERS of each family BY LOCUS: the container output spec v2
+//! (`docs/PREREG_container_units_v2_dev_2026-09-30.md` §6.3 / Part C), run by `mcl_families --from-gtf --emit-relations`
+//! after the families are written. It reads the families products and never changes a family. The port of the dev
+//! prototype `relations.py` (scratch `container_units_v2/lib/`, d90a33da); on the same inputs it writes its tables byte
+//! for byte (columns 1-17; column 18 is new, see below).
+//!
+//! **STATUS:** OPT-IN  (docs/MODULE_STATUS.md; `mcl_families --emit-relations`, default off; driver `RUSTLE_FAMILY_RELATIONS=1`)
+//!
+//! INPUT. The families-input GTF of `copy_assign --bridge-regroup f1units`: the UNIT transcripts `<T>.U<i>` (attributes
+//! `fusion_of` = the original transcript T, `fusion_unit` `i/n`, `fusion_junction` = every cut of T,
+//! `fusion_locus` = the pre-split locus key `CONTIG:START-END` (the span of ALL transcripts of T's input gene_id),
+//! `fusion_gene` = that gene_id, `fusion_detector`, optional `fusion_evidence`), the clusters (`<out>.clusters.tsv`),
+//! the fold table (`<out>.loci.tsv`) and the loci of the graph (one per `gene_id` of the GTF: `mcl_families`' own list,
+//! so a locus key here IS a node key there). A GTF without units gives no relation rows and every locus `whole`.
+//!
+//! `<out>.relations.tsv`: one row per SPLIT transcript T, ranked `REL<k>` by (pre-split locus key, line of T's first
+//! unit). Columns: `relation_id transcript fused_gene_id fused_locus strand n_units cut_introns detector unit_ids
+//! unit_loci unit_families unit_family_sizes outcome relation separated ref_lenient ref_strict`, then
+//! `detector_evidence` when the detector gave any (F1: `reads_TJ;reads_up;reads_down;share` per cut, comma-joined).
+//! `cut_introns` = `S-E` per cut in genomic order (the contig is in `fused_locus`, the strand is column 5); `unit_loci` = the units'
+//! new locus keys in transcription order (equal keys = one locus); `unit_families` = `MCL<k>` or `-`; `outcome` = SAME
+//! (every unit in one family, none unclustered: the split is invisible) / DIFF (>= 2 families) / ONE_UNCL (some unit
+//! unclustered, some clustered) / ALL_UNCL; `relation` = `cover` iff DIFF (the fused locus belongs to >= 2 families,
+//! related in transcription order), else `.`; `separated` = every unit of T is in a new gene_id of its own (ALL units in
+//! pairwise distinct gene_ids, the prototype's rule: not only adjacent pairs, so an A-B-A' fusion whose first and last unit
+//! share a gene_id is `false`; and gene_ids, not the printed `unit_loci` keys: two gene_ids of one span count as two);
+//! `ref_lenient` / `ref_strict` are BENCHMARK-ONLY (a scorer fills them against a reference partition): always `.`.
+//!
+//! `<out>.members_by_locus.tsv`: one row per (family, locus), a locus inheriting the families of its units, ONE member
+//! per locus per family. Columns: `family locus gene_id kind via_unit_loci n_unit_loci_in_family other_families rep_tid
+//! family_size_by_locus`. A clustered new locus whose gene_id holds a unit is the PRE-SPLIT locus (`kind` `fused`, `locus`
+//! = its `fusion_locus`, `gene_id` = the `fusion_gene` of the last unit of that gene_id in file order, as the
+//! prototype's last-write-wins map); any other is itself (`whole`). Two unit loci of one fused locus in the same family
+//! are counted once (`n_unit_loci_in_family` > 1 marks it). Families, loci and keys sort as strings (Python's `sorted`).
+//!
+//! INVARIANTS (errors, not assertions): every unit line belongs to a complete, consistently numbered `fusion_unit`
+//! group; every member of `clusters.tsv` is a locus of the GTF or a key the fold table folds; `unit_families` is
+//! `clusters.tsv`'s answer for each unit locus by construction (a test recomputes it).
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io::BufRead;
+
+use anyhow::{bail, ensure, Context, Result};
+
+// the families stage's own attribute rule (the first `key "` of the column), shared with the container
+use crate::vg_family::fam_from_gtf::family_container::{gtf_attr as attr, key_str, parse_key, py_int, Key};
+
+pub const RELATIONS_HEADER: [&str; 17] = [
+    "relation_id",
+    "transcript",
+    "fused_gene_id",
+    "fused_locus",
+    "strand",
+    "n_units",
+    "cut_introns",
+    "detector",
+    "unit_ids",
+    "unit_loci",
+    "unit_families",
+    "unit_family_sizes",
+    "outcome",
+    "relation",
+    "separated",
+    "ref_lenient",
+    "ref_strict",
+];
+pub const EVIDENCE_COLUMN: &str = "detector_evidence";
+pub const MEMBERS_HEADER: [&str; 9] = [
+    "family",
+    "locus",
+    "gene_id",
+    "kind",
+    "via_unit_loci",
+    "n_unit_loci_in_family",
+    "other_families",
+    "rep_tid",
+    "family_size_by_locus",
+];
+
+/// One locus of the graph: a `gene_id` of the families GTF, its key (`CONTIG:START-END`, GFF 1-based closed, over ALL
+/// its transcripts) and its representative transcript (most `reads`, ties to the longer span, then the
+/// lexicographically last id): `mcl_families::gtf_loci`'s record, in first-appearance order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocusIn {
+    pub gene_id: String,
+    pub key: Key,
+    pub rep: String,
+    pub rep_reads: i64,
+}
+
+/// One unit transcript of the GTF.
+struct UnitLine {
+    /// line index among the GTF's lines (ranks the relations of one fused locus)
+    line: usize,
+    tid: String,
+    gene: String,
+    strand: String,
+    parent: String,
+    unit: usize,
+    of: usize,
+    cuts: String,
+    locus: Key,
+    input_gene: Option<String>,
+    detector: String,
+    evidence: Option<String>,
+}
+
+/// Every `transcript` line carrying `fusion_unit`.
+fn read_units(r: &mut dyn BufRead, path: &str) -> Result<Vec<UnitLine>> {
+    let mut out = Vec::new();
+    for (n, line) in r.lines().enumerate() {
+        let line = line?;
+        if line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "transcript" {
+            continue;
+        }
+        let Some(fu) = attr(f[8], "fusion_unit") else { continue };
+        let what = |k: &str| format!("{path}:{}: a unit line without {k}: {}", n + 1, line.trim());
+        let tid = attr(f[8], "transcript_id").with_context(|| what("transcript_id"))?;
+        let (unit, of) = fu
+            .split_once('/')
+            .and_then(|(a, b)| Some((py_int(a)?, py_int(b)?)))
+            .filter(|&(a, b)| a >= 1 && b >= a)
+            .with_context(|| format!("{path}:{}: fusion_unit {fu:?} is not `i/n` with 1 <= i <= n", n + 1))?;
+        let parent = attr(f[8], "fusion_of").with_context(|| what("fusion_of"))?;
+        let locus = attr(f[8], "fusion_locus").with_context(|| what("fusion_locus"))?;
+        let locus = parse_key(locus).with_context(|| format!("{path}:{}: fusion_locus {locus:?} is not CONTIG:START-END", n + 1))?;
+        let junction = attr(f[8], "fusion_junction").with_context(|| what("fusion_junction"))?;
+        let mut cuts: Vec<&str> = Vec::new();
+        for tok in junction.split(',').filter(|t| !t.is_empty()) {
+            // CONTIG:S-E:STRAND -> S-E
+            cuts.push(tok.rsplit(':').nth(1).with_context(|| format!("{path}:{}: fusion_junction {junction:?}", n + 1))?);
+        }
+        out.push(UnitLine {
+            line: n,
+            tid: tid.to_string(),
+            gene: attr(f[8], "gene_id").unwrap_or(tid).to_string(),
+            strand: f[6].to_string(),
+            parent: parent.to_string(),
+            unit: unit as usize,
+            of: of as usize,
+            cuts: cuts.join(","),
+            locus,
+            input_gene: attr(f[8], "fusion_gene").map(str::to_string),
+            detector: attr(f[8], "fusion_detector").unwrap_or(".").to_string(),
+            evidence: attr(f[8], "fusion_evidence").map(str::to_string),
+        });
+    }
+    Ok(out)
+}
+
+/// `clusters.tsv`: member key -> cluster id, and the cluster ids with their member counts, in file order.
+struct Clusters {
+    of: HashMap<Key, usize>,
+    ids: Vec<String>,
+    size: Vec<usize>,
+    keys: Vec<Key>,
+}
+
+fn read_clusters(r: &mut dyn BufRead, path: &str) -> Result<Clusters> {
+    let mut lines = r.lines();
+    let header_line = lines.next().transpose()?.unwrap_or_default();
+    let header: Vec<&str> = header_line.split('\t').collect();
+    let col = |name: &str| header.iter().position(|h| *h == name).with_context(|| format!("{path}: no {name} column (header {header:?})"));
+    let (ci, cc, cs, ce) = (col("cluster_id")?, col("chrom")?, col("start")?, col("end")?);
+    let mut out = Clusters { of: HashMap::new(), ids: Vec::new(), size: Vec::new(), keys: Vec::new() };
+    let mut index: HashMap<String, usize> = HashMap::new();
+    for line in lines {
+        let line = line?;
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < header.len() {
+            continue;
+        }
+        let key: Key = (
+            r[cc].to_string(),
+            py_int(r[cs]).with_context(|| format!("{path}: start {:?}", r[cs]))?,
+            py_int(r[ce]).with_context(|| format!("{path}: end {:?}", r[ce]))?,
+        );
+        let c = *index.entry(r[ci].to_string()).or_insert_with(|| {
+            out.ids.push(r[ci].to_string());
+            out.size.push(0);
+            out.ids.len() - 1
+        });
+        if let Some(&prev) = out.of.get(&key) {
+            ensure!(prev == c, "{path}: {} is in {} and {} (not a strict partition)", key_str(&key), out.ids[prev], r[ci]);
+            continue;
+        }
+        out.of.insert(key.clone(), c);
+        out.size[c] += 1;
+        out.keys.push(key);
+    }
+    Ok(out)
+}
+
+/// `loci.tsv` (`annotation representative`): the last value per annotation key.
+fn read_folds(r: &mut dyn BufRead, path: &str) -> Result<HashMap<Key, Key>> {
+    let mut lines = r.lines();
+    let header_line = lines.next().transpose()?.unwrap_or_default();
+    let header: Vec<&str> = header_line.split('\t').collect();
+    ensure!(
+        header.len() >= 2 && header[0] == "annotation" && header[1] == "representative",
+        "{path}: header {header:?} is not `annotation representative`"
+    );
+    let mut folds = HashMap::new();
+    for line in lines {
+        let line = line?;
+        let r: Vec<&str> = line.split('\t').collect();
+        if r.len() < 2 {
+            continue;
+        }
+        let (Some(a), Some(b)) = (parse_key(r[0]), parse_key(r[1])) else { bail!("{path}: malformed keys {:?}", &r[..2]) };
+        folds.insert(a, b);
+    }
+    Ok(folds)
+}
+
+/// SAME / DIFF / ONE_UNCL / ALL_UNCL of the units' families (`None` = unclustered).
+fn outcome(fams: &[Option<usize>]) -> &'static str {
+    let clustered: BTreeSet<usize> = fams.iter().flatten().copied().collect();
+    let unclustered = fams.iter().filter(|f| f.is_none()).count();
+    if clustered.is_empty() {
+        "ALL_UNCL"
+    } else if unclustered > 0 {
+        "ONE_UNCL"
+    } else if clustered.len() == 1 {
+        "SAME"
+    } else {
+        "DIFF"
+    }
+}
+
+/// One row of `relations.tsv`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelationRow {
+    pub id: String,
+    pub transcript: String,
+    pub fused_gene_id: String,
+    pub fused_locus: String,
+    pub strand: String,
+    pub n_units: usize,
+    pub cut_introns: String,
+    pub detector: String,
+    pub unit_ids: Vec<String>,
+    pub unit_loci: Vec<String>,
+    /// `MCL<k>` or `-`
+    pub unit_families: Vec<String>,
+    pub unit_family_sizes: Vec<usize>,
+    pub outcome: &'static str,
+    pub separated: bool,
+    pub evidence: Option<String>,
+}
+
+impl RelationRow {
+    pub fn relation(&self) -> &'static str {
+        if self.outcome == "DIFF" {
+            "cover"
+        } else {
+            "."
+        }
+    }
+}
+
+/// One row of `members_by_locus.tsv`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemberRow {
+    pub family: String,
+    pub locus: String,
+    pub gene_id: String,
+    pub fused: bool,
+    /// the distinct unit-locus keys that put the locus in this family, sorted as strings
+    pub via: Vec<String>,
+    pub other_families: Vec<String>,
+    pub rep_tid: String,
+    pub family_size_by_locus: usize,
+}
+
+#[derive(Debug)]
+pub struct Relations {
+    pub relations: Vec<RelationRow>,
+    pub members: Vec<MemberRow>,
+}
+
+/// The tables. `gtf`: the families-input GTF; `clusters` / `loci_tsv`: `mcl_families`' products of the same run
+/// (`loci_tsv` only if that run wrote a fold table); `loci`: the graph's loci (see [`LocusIn`]).
+pub fn run(
+    gtf: &mut dyn BufRead,
+    clusters: &mut dyn BufRead,
+    loci_tsv: Option<&mut dyn BufRead>,
+    loci: &[LocusIn],
+) -> Result<Relations> {
+    let units = read_units(gtf, "the families GTF")?;
+    let cl = read_clusters(clusters, "clusters.tsv")?;
+    let fold = match loci_tsv {
+        Some(r) => read_folds(r, "loci.tsv")?,
+        None => HashMap::new(),
+    };
+    let cluster_of = |key: &Key| -> Option<usize> {
+        let u = if cl.of.contains_key(key) { Some(key) } else { fold.get(key) };
+        u.and_then(|u| cl.of.get(u)).copied()
+    };
+    let fam_name = |f: Option<usize>| f.map_or("-".to_string(), |c| cl.ids[c].clone());
+    let locus_of: HashMap<&str, &LocusIn> = loci.iter().map(|l| (l.gene_id.as_str(), l)).collect();
+
+    // one group per split transcript, in order of first appearance
+    let mut groups: Vec<(String, Vec<&UnitLine>)> = Vec::new();
+    let mut at: HashMap<&str, usize> = HashMap::new();
+    for u in &units {
+        let k = *at.entry(u.parent.as_str()).or_insert_with(|| {
+            groups.push((u.parent.clone(), Vec::new()));
+            groups.len() - 1
+        });
+        groups[k].1.push(u);
+    }
+    for (parent, us) in groups.iter_mut() {
+        us.sort_by_key(|u| u.unit);
+        let n = us[0].of;
+        ensure!(
+            us.len() == n && us.iter().enumerate().all(|(i, u)| u.unit == i + 1 && u.of == n),
+            "the units of {parent} are not exactly 1..{n} of {n} (fusion_unit {:?})",
+            us.iter().map(|u| format!("{}/{}", u.unit, u.of)).collect::<Vec<_>>()
+        );
+        ensure!(
+            us.iter().all(|u| u.locus == us[0].locus && u.cuts == us[0].cuts),
+            "the units of {parent} disagree on fusion_locus or fusion_junction"
+        );
+    }
+    // ranked by the pre-split locus, then by the line of the transcript's first unit (units replace T in its position)
+    let first_line = |us: &[&UnitLine]| us.iter().map(|u| u.line).min().expect("a group has a unit");
+    groups.sort_by(|a, b| (&a.1[0].locus, first_line(&a.1)).cmp(&(&b.1[0].locus, first_line(&b.1))));
+
+    let mut relations: Vec<RelationRow> = Vec::new();
+    for (k, (parent, us)) in groups.iter().enumerate() {
+        let mut keys: Vec<Key> = Vec::new();
+        for u in us {
+            let l = locus_of.get(u.gene.as_str()).with_context(|| {
+                format!("unit {} is in gene_id {}, which is not a locus of the families GTF (are the loci of another GTF?)", u.tid, u.gene)
+            })?;
+            keys.push(l.key.clone());
+        }
+        let fams: Vec<Option<usize>> = keys.iter().map(&cluster_of).collect();
+        let genes: BTreeSet<&str> = us.iter().map(|u| u.gene.as_str()).collect();
+        relations.push(RelationRow {
+            id: format!("REL{}", k + 1),
+            transcript: parent.clone(),
+            fused_gene_id: us[0].input_gene.clone().unwrap_or_else(|| ".".to_string()),
+            fused_locus: key_str(&us[0].locus),
+            strand: us[0].strand.clone(),
+            n_units: us.len(),
+            cut_introns: us[0].cuts.clone(),
+            detector: us[0].detector.clone(),
+            unit_ids: us.iter().map(|u| u.tid.clone()).collect(),
+            unit_loci: keys.iter().map(key_str).collect(),
+            unit_families: fams.iter().map(|&f| fam_name(f)).collect(),
+            unit_family_sizes: fams.iter().map(|f| f.map_or(0, |c| cl.size[c])).collect(),
+            outcome: outcome(&fams),
+            separated: genes.len() == us.len(),
+            evidence: us[0].evidence.clone(),
+        });
+    }
+
+    // members by locus: a new locus that holds a unit is its pre-split locus, any other is itself
+    let mut input_gene: HashMap<&str, &UnitLine> = HashMap::new(); // new gene_id -> its LAST unit line
+    let mut pre_split: HashMap<&str, &Key> = HashMap::new(); // input gene_id -> its pre-split locus
+    for u in &units {
+        input_gene.insert(u.gene.as_str(), u);
+        if let Some(g) = u.input_gene.as_deref() {
+            pre_split.insert(g, &u.locus);
+        }
+    }
+    struct Acc {
+        family: usize,
+        locus: String,
+        gene_id: String,
+        fused: bool,
+        via: Vec<String>,
+        rep: (i64, String),
+    }
+    let mut mem: Vec<Acc> = Vec::new();
+    let mut slot: HashMap<(usize, String), usize> = HashMap::new();
+    for l in loci {
+        let Some(c) = cluster_of(&l.key) else { continue };
+        let (gene_id, locus, fused) = match input_gene.get(l.gene_id.as_str()) {
+            Some(u) => {
+                let ig = u.input_gene.as_deref().with_context(|| format!("unit {} has no fusion_gene", u.tid))?;
+                let pre = pre_split.get(ig).with_context(|| format!("no fusion_locus for the gene_id {ig}"))?;
+                (ig.to_string(), key_str(pre), true)
+            }
+            None => (l.gene_id.clone(), key_str(&l.key), false),
+        };
+        let k = *slot.entry((c, locus.clone())).or_insert_with(|| {
+            mem.push(Acc { family: c, locus, gene_id, fused, via: Vec::new(), rep: (i64::MIN, String::new()) });
+            mem.len() - 1
+        });
+        let a = &mut mem[k];
+        a.via.push(key_str(&l.key));
+        // max (reads, tid); a locus's representative ties never repeat a transcript id
+        if a.rep.1.is_empty() || (l.rep_reads, l.rep.as_str()) > (a.rep.0, a.rep.1.as_str()) {
+            a.rep = (l.rep_reads, l.rep.clone());
+        }
+    }
+    let mut fams_of: HashMap<&str, BTreeSet<usize>> = HashMap::new();
+    for a in &mem {
+        fams_of.entry(a.locus.as_str()).or_default().insert(a.family);
+    }
+    let mut by_family: HashMap<usize, usize> = HashMap::new();
+    for a in &mem {
+        *by_family.entry(a.family).or_insert(0) += 1;
+    }
+    let members: Vec<MemberRow> = mem
+        .iter()
+        .map(|a| {
+            let mut via: Vec<String> = a.via.clone();
+            via.sort();
+            via.dedup();
+            let mut other: Vec<String> =
+                fams_of[a.locus.as_str()].iter().filter(|&&f| f != a.family).map(|&f| cl.ids[f].clone()).collect();
+            other.sort();
+            MemberRow {
+                family: cl.ids[a.family].clone(),
+                locus: a.locus.clone(),
+                gene_id: a.gene_id.clone(),
+                fused: a.fused,
+                via,
+                other_families: other,
+                rep_tid: a.rep.1.clone(),
+                family_size_by_locus: by_family[&a.family],
+            }
+        })
+        .collect();
+
+    // invariants
+    let known: BTreeSet<&Key> = loci.iter().map(|l| &l.key).chain(fold.keys()).collect();
+    if let Some(k) = cl.keys.iter().find(|k| !known.contains(k)) {
+        bail!("{} is a member of clusters.tsv but no locus of the families GTF (clusters of another run?)", key_str(k));
+    }
+    Ok(Relations { relations, members })
+}
+
+impl Relations {
+    /// `relations.tsv` text: 17 columns, then `detector_evidence` iff any row has evidence.
+    pub fn relations_tsv(&self) -> String {
+        let with_evidence = self.relations.iter().any(|r| r.evidence.is_some());
+        let mut out = RELATIONS_HEADER.join("\t");
+        if with_evidence {
+            out.push('\t');
+            out.push_str(EVIDENCE_COLUMN);
+        }
+        out.push('\n');
+        for r in &self.relations {
+            let sizes: Vec<String> = r.unit_family_sizes.iter().map(|n| n.to_string()).collect();
+            let cols: [String; 17] = [
+                r.id.clone(),
+                r.transcript.clone(),
+                r.fused_gene_id.clone(),
+                r.fused_locus.clone(),
+                r.strand.clone(),
+                r.n_units.to_string(),
+                r.cut_introns.clone(),
+                r.detector.clone(),
+                r.unit_ids.join(","),
+                r.unit_loci.join(","),
+                r.unit_families.join(","),
+                sizes.join(","),
+                r.outcome.to_string(),
+                r.relation().to_string(),
+                r.separated.to_string(),
+                ".".to_string(),
+                ".".to_string(),
+            ];
+            out.push_str(&cols.join("\t"));
+            if with_evidence {
+                out.push('\t');
+                out.push_str(r.evidence.as_deref().unwrap_or("."));
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    /// `members_by_locus.tsv` text.
+    pub fn members_tsv(&self) -> String {
+        let mut out = MEMBERS_HEADER.join("\t");
+        out.push('\n');
+        for m in &self.members {
+            let list = |v: &[String]| if v.is_empty() { ".".to_string() } else { v.join(",") };
+            let cols: [String; 9] = [
+                m.family.clone(),
+                m.locus.clone(),
+                m.gene_id.clone(),
+                if m.fused { "fused" } else { "whole" }.to_string(),
+                if m.fused { list(&m.via) } else { ".".to_string() },
+                m.via.len().to_string(),
+                list(&m.other_families),
+                m.rep_tid.clone(),
+                m.family_size_by_locus.to_string(),
+            ];
+            out.push_str(&cols.join("\t"));
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Write `<out>.relations.tsv` and `<out>.members_by_locus.tsv`.
+    pub fn write(&self, out: &str) -> Result<()> {
+        std::fs::write(format!("{out}.relations.tsv"), self.relations_tsv()).with_context(|| format!("writing {out}.relations.tsv"))?;
+        std::fs::write(format!("{out}.members_by_locus.tsv"), self.members_tsv())
+            .with_context(|| format!("writing {out}.members_by_locus.tsv"))?;
+        Ok(())
+    }
+
+    /// Counts for the log and `params.tsv` (the rows' names): relation rows, `cover` rows, separated rows, member rows,
+    /// fused members, fused loci in >= 2 families, members counted once for two unit loci.
+    pub fn counts(&self) -> [(&'static str, usize); 7] {
+        let fused_multi: BTreeSet<&str> =
+            self.members.iter().filter(|m| m.fused && !m.other_families.is_empty()).map(|m| m.locus.as_str()).collect();
+        [
+            ("relations_records", self.relations.len()),
+            ("relations_cover", self.relations.iter().filter(|r| r.outcome == "DIFF").count()),
+            ("relations_separated", self.relations.iter().filter(|r| r.separated).count()),
+            ("relations_members_by_locus", self.members.len()),
+            ("relations_members_fused", self.members.iter().filter(|m| m.fused).count()),
+            ("relations_fused_loci_in_ge2_families", fused_multi.len()),
+            ("relations_members_double_counted", self.members.iter().filter(|m| m.via.len() > 1).count()),
+        ]
+    }
+
+    /// The outcome classes of the relation rows, for the log (`SAME`, `DIFF`, ... with their counts).
+    pub fn outcome_counts(&self) -> BTreeMap<&'static str, usize> {
+        let mut m = BTreeMap::new();
+        for r in &self.relations {
+            *m.entry(r.outcome).or_insert(0) += 1;
+        }
+        m
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// A `transcript` line (and one exon line) of a plain or unit transcript.
+    fn line(chrom: &str, gene: &str, tid: &str, reads: i64, exon: (i64, i64), strand: &str, extra: &str) -> String {
+        format!(
+            "{chrom}\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; reads \"{reads}\";{extra}\n\
+             {chrom}\trustle\texon\t{}\t{}\t.\t{strand}\t.\tgene_id \"{gene}\"; transcript_id \"{tid}\"; exon_number \"1\";",
+            exon.0, exon.1, exon.0, exon.1
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn unit(gene: &str, tid: &str, exon: (i64, i64), strand: &str, i: usize, n: usize, parent: &str, locus: &str, ig: &str) -> String {
+        let extra = format!(
+            " fusion_of \"{parent}\"; fusion_unit \"{i}/{n}\"; fusion_junction \"c1:401-1999:{strand},c1:2501-2599:{strand}\"; \
+             fusion_locus \"{locus}\"; fusion_gene \"{ig}\"; fusion_detector \"f1\"; fusion_evidence \"3;5;4;0.4286\";"
+        );
+        line("c1", gene, tid, 10, exon, strand, &extra)
+    }
+
+    /// The loci the graph would see: gene_id groups in first-appearance order with their span and representative.
+    fn loci_of(gtf: &str) -> Vec<LocusIn> {
+        let mut order: Vec<String> = Vec::new();
+        type Tr = (String, i64, i64, i64, i64); // tid, reads, span, lo, hi
+        let mut by: HashMap<String, Vec<Tr>> = HashMap::new();
+        let mut chrom: HashMap<String, String> = HashMap::new();
+        for l in gtf.lines().filter(|l| l.split('\t').nth(2) == Some("transcript")) {
+            let f: Vec<&str> = l.split('\t').collect();
+            let (g, t) = (attr(f[8], "gene_id").unwrap().to_string(), attr(f[8], "transcript_id").unwrap().to_string());
+            if !by.contains_key(&g) {
+                order.push(g.clone());
+                chrom.insert(g.clone(), f[0].to_string());
+            }
+            let (lo, hi): (i64, i64) = (f[3].parse().unwrap(), f[4].parse().unwrap());
+            by.entry(g).or_default().push((t, attr(f[8], "reads").unwrap().parse().unwrap(), hi - lo, lo, hi));
+        }
+        order
+            .into_iter()
+            .map(|g| {
+                let ts = &by[&g];
+                let mut sorted = ts.clone();
+                sorted.sort();
+                let rep = sorted.iter().max_by_key(|t| (t.1, t.2)).unwrap().clone();
+                let (lo, hi) = (ts.iter().map(|t| t.3).min().unwrap(), ts.iter().map(|t| t.4).max().unwrap());
+                LocusIn { key: (chrom[&g].clone(), lo, hi), gene_id: g, rep: rep.0, rep_reads: rep.1 }
+            })
+            .collect()
+    }
+
+    fn rel(gtf: &str, clusters: &str, folds: Option<&str>) -> Result<Relations> {
+        let loci = loci_of(gtf);
+        let mut fr = folds.map(|f| std::io::Cursor::new(f.to_string()));
+        run(
+            &mut std::io::Cursor::new(gtf.to_string()),
+            &mut std::io::Cursor::new(clusters.to_string()),
+            fr.as_mut().map(|r| r as &mut dyn BufRead),
+            &loci,
+        )
+    }
+
+    fn clusters(rows: &[(&str, i64, i64)]) -> String {
+        let mut s = String::from("cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\n");
+        for (c, a, b) in rows {
+            s.push_str(&format!("{c}\t9\t1\t1\tNA\tc1\t{a}\t{b}\n"));
+        }
+        s
+    }
+
+    /// Two loci: the left gene L (A, and the fusion's first unit) and the right gene R (B and its second unit); the
+    /// fusion F of the plain GTF was in gene `g` with A and B (locus c1:100-2600) and is replaced by F.U1, F.U2.
+    fn two_loci() -> (String, String) {
+        let rows = [
+            line("c1", "gL", "A", 30, (100, 600), "+", ""),
+            unit("gL", "F.U1", (100, 600), "+", 1, 2, "F", "c1:100-2600", "g"),
+            line("c1", "gR", "B", 30, (2000, 2600), "+", ""),
+            unit("gR", "F.U2", (2000, 2600), "+", 2, 2, "F", "c1:100-2600", "g"),
+        ];
+        (rows.join("\n") + "\n", clusters(&[("MCL0", 100, 600), ("MCL0", 5000, 5600), ("MCL1", 2000, 2600), ("MCL1", 7000, 7600)]))
+    }
+
+    #[test]
+    fn a_split_transcript_is_a_relation_and_its_locus_is_a_member_of_both_families() {
+        let (gtf, cl) = two_loci();
+        // the clusters name loci the GTF does not have (5000-5600, 7000-7600): invalid input, refused
+        assert!(rel(&gtf, &cl, None).unwrap_err().to_string().contains("no locus of the families GTF"));
+        let gtf = format!(
+            "{gtf}{}\n{}\n",
+            line("c1", "gX", "X", 5, (5000, 5600), "+", ""),
+            line("c1", "gY", "Y", 5, (7000, 7600), "+", "")
+        );
+        let r = rel(&gtf, &cl, None).unwrap();
+        assert_eq!(r.relations.len(), 1);
+        let row = &r.relations[0];
+        assert_eq!(
+            (row.id.as_str(), row.transcript.as_str(), row.fused_gene_id.as_str(), row.fused_locus.as_str()),
+            ("REL1", "F", "g", "c1:100-2600")
+        );
+        assert_eq!((row.n_units, row.cut_introns.as_str(), row.detector.as_str()), (2, "401-1999,2501-2599", "f1"));
+        assert_eq!(row.unit_ids, ["F.U1", "F.U2"]);
+        assert_eq!(row.unit_loci, ["c1:100-600", "c1:2000-2600"]);
+        assert_eq!(row.unit_families, ["MCL0", "MCL1"]);
+        assert_eq!(row.unit_family_sizes, [2, 2]);
+        assert_eq!((row.outcome, row.relation(), row.separated), ("DIFF", "cover", true));
+        assert_eq!(row.evidence.as_deref(), Some("3;5;4;0.4286"));
+        let text = r.relations_tsv();
+        let header = text.lines().next().unwrap();
+        assert!(header.ends_with("\tref_lenient\tref_strict\tdetector_evidence"), "{header}");
+        assert_eq!(
+            text.lines().nth(1).unwrap(),
+            "REL1\tF\tg\tc1:100-2600\t+\t2\t401-1999,2501-2599\tf1\tF.U1,F.U2\tc1:100-600,c1:2000-2600\tMCL0,MCL1\t2,2\tDIFF\tcover\ttrue\t.\t.\t3;5;4;0.4286"
+        );
+        // both unit loci are `fused` members (the pre-split locus), one per family, each naming the other family
+        let m: Vec<(String, &str, &str, bool, String, &str)> = r
+            .members
+            .iter()
+            .map(|m| (m.family.clone(), m.locus.as_str(), m.gene_id.as_str(), m.fused, m.other_families.join(","), m.rep_tid.as_str()))
+            .collect();
+        let want = |a: &str, b: &'static str, c: &'static str, d: bool, e: &str, f: &'static str| (a.to_string(), b, c, d, e.to_string(), f);
+        assert_eq!(
+            m,
+            [
+                want("MCL0", "c1:100-2600", "g", true, "MCL1", "A"),
+                want("MCL1", "c1:100-2600", "g", true, "MCL0", "B"),
+                want("MCL0", "c1:5000-5600", "gX", false, "", "X"),
+                want("MCL1", "c1:7000-7600", "gY", false, "", "Y"),
+            ]
+        );
+        // the gene_ids gL and gR hold a unit each, so A (in gL) and B (in gR) are not members of their own
+        assert_eq!(r.members.iter().filter(|m| m.fused).count(), 2);
+        let mtext = r.members_tsv();
+        assert_eq!(mtext.lines().nth(1).unwrap(), "MCL0\tc1:100-2600\tg\tfused\tc1:100-600\t1\tMCL1\tA\t2");
+        assert_eq!(mtext.lines().nth(3).unwrap(), "MCL0\tc1:5000-5600\tgX\twhole\t.\t1\t.\tX\t2");
+    }
+
+    #[test]
+    fn a_gtf_without_units_has_no_relations_and_every_locus_whole_and_no_evidence_column_without_evidence() {
+        let gtf = format!("{}\n{}\n", line("c1", "gX", "X", 5, (5000, 5600), "+", ""), line("c1", "gY", "Y", 5, (7000, 7600), "+", ""));
+        let r = rel(&gtf, &clusters(&[("MCL0", 5000, 5600), ("MCL0", 7000, 7600)]), None).unwrap();
+        assert!(r.relations.is_empty());
+        assert_eq!(r.relations_tsv(), format!("{}\n", RELATIONS_HEADER.join("\t")));
+        assert_eq!(r.members.len(), 2);
+        assert!(r.members.iter().all(|m| !m.fused && m.family_size_by_locus == 2));
+        // a unit without evidence (a list detector): exactly the 17 columns
+        let (g, _) = two_loci();
+        let g = g.replace(" fusion_evidence \"3;5;4;0.4286\";", "");
+        let r = rel(&g, &clusters(&[("MCL0", 100, 600), ("MCL1", 2000, 2600)]), None).unwrap();
+        assert_eq!(r.relations_tsv().lines().next().unwrap().split('\t').count(), 17);
+    }
+
+    #[test]
+    fn outcomes_and_cover_follow_the_units_families() {
+        let f = |v: &[Option<usize>]| outcome(v);
+        assert_eq!(f(&[Some(1), Some(1)]), "SAME");
+        assert_eq!(f(&[Some(1), Some(2)]), "DIFF");
+        assert_eq!(f(&[Some(1), None]), "ONE_UNCL");
+        assert_eq!(f(&[None, None]), "ALL_UNCL");
+        assert_eq!(f(&[Some(1), Some(2), None]), "ONE_UNCL");
+        // a split whose units sit in ONE family: the two unit loci of the fused locus are one member, counted once
+        let gtf = [
+            unit("gL", "F.U1", (100, 600), "+", 1, 2, "F", "c1:100-2600", "g"),
+            unit("gR", "F.U2", (2000, 2600), "+", 2, 2, "F", "c1:100-2600", "g"),
+            line("c1", "gX", "X", 5, (5000, 5600), "+", ""),
+        ]
+        .join("\n");
+        let r = rel(&format!("{gtf}\n"), &clusters(&[("MCL0", 100, 600), ("MCL0", 2000, 2600), ("MCL0", 5000, 5600)]), None).unwrap();
+        assert_eq!((r.relations[0].outcome, r.relations[0].relation()), ("SAME", "."));
+        assert_eq!(r.members.len(), 2, "F (fused, counted once) and X");
+        let fused = &r.members[0];
+        assert_eq!((fused.fused, fused.via.clone(), fused.family_size_by_locus), (true, vec!["c1:100-600".to_string(), "c1:2000-2600".to_string()], 2));
+        assert_eq!(r.members_tsv().lines().nth(1).unwrap(), "MCL0\tc1:100-2600\tg\tfused\tc1:100-600,c1:2000-2600\t2\t.\tF.U2\t2");
+        assert_eq!(r.counts()[6], ("relations_members_double_counted", 1));
+    }
+
+    /// Strings sort as strings: `MCL10` before `MCL2` in `other_families` and in `via_unit_loci`.
+    #[test]
+    fn families_and_keys_sort_as_python_sorts_strings() {
+        let gtf = [
+            unit("g1", "F.U1", (100, 600), "+", 1, 3, "F", "c1:100-9000", "g"),
+            unit("g2", "F.U2", (2000, 2600), "+", 2, 3, "F", "c1:100-9000", "g"),
+            unit("g3", "F.U3", (8000, 9000), "+", 3, 3, "F", "c1:100-9000", "g"),
+        ]
+        .join("\n");
+        let r = rel(&format!("{gtf}\n"), &clusters(&[("MCL2", 100, 600), ("MCL10", 2000, 2600), ("MCL1", 8000, 9000)]), None).unwrap();
+        let by_family: HashMap<&str, &MemberRow> = r.members.iter().map(|m| (m.family.as_str(), m)).collect();
+        assert_eq!(by_family["MCL2"].other_families, ["MCL1", "MCL10"]);
+        assert_eq!(r.relations[0].unit_families, ["MCL2", "MCL10", "MCL1"]);
+        assert_eq!(r.relations[0].unit_family_sizes, [1, 1, 1]);
+    }
+
+    #[test]
+    fn rows_rank_by_pre_split_locus_then_line_and_units_by_number() {
+        // two split transcripts of one fused locus, given out of order in the file, and one of an earlier locus
+        let gtf = [
+            unit("g2", "F2.U2", (2000, 2600), "+", 2, 2, "F2", "c1:100-2600", "g"),
+            unit("g1", "F2.U1", (100, 600), "+", 1, 2, "F2", "c1:100-2600", "g"),
+            unit("g3", "F1.U1", (100, 600), "+", 1, 2, "F1", "c1:100-2600", "g"),
+            unit("g4", "F1.U2", (2000, 2600), "+", 2, 2, "F1", "c1:100-2600", "g"),
+            unit("g5", "E.U1", (50, 60), "+", 1, 2, "E", "c1:50-99", "h"),
+            unit("g6", "E.U2", (80, 99), "+", 2, 2, "E", "c1:50-99", "h"),
+        ]
+        .join("\n");
+        let r = rel(&format!("{gtf}\n"), &clusters(&[]), None).unwrap();
+        let order: Vec<(&str, &str)> = r.relations.iter().map(|x| (x.id.as_str(), x.transcript.as_str())).collect();
+        assert_eq!(order, [("REL1", "E"), ("REL2", "F2"), ("REL3", "F1")], "locus key first, then the first unit's line");
+        assert_eq!(r.relations[1].unit_ids, ["F2.U1", "F2.U2"]);
+        assert!(r.relations.iter().all(|x| x.outcome == "ALL_UNCL" && x.relation() == "."));
+    }
+
+    #[test]
+    fn a_broken_unit_group_is_an_error() {
+        let ok = unit("gL", "F.U1", (100, 600), "+", 1, 2, "F", "c1:100-2600", "g");
+        let e = rel(&format!("{ok}\n"), &clusters(&[]), None).unwrap_err().to_string();
+        assert!(e.contains("not exactly 1..2 of 2"), "{e}");
+        let no_locus = ok.replace(" fusion_locus \"c1:100-2600\";", "");
+        let e = rel(&format!("{no_locus}\n"), &clusters(&[]), None).unwrap_err().to_string();
+        assert!(e.contains("without fusion_locus"), "{e}");
+    }
+
+    #[test]
+    fn a_locus_folded_into_a_representative_takes_the_representatives_family() {
+        // gX (5000-5600) lies inside gZ (4000-7000): the graph has one node, gZ's, and gX is folded into it
+        let gtf = format!("{}\n{}\n", line("c1", "gX", "X", 5, (5000, 5600), "+", ""), line("c1", "gZ", "Z", 9, (4000, 7000), "+", ""));
+        let folds = "annotation\trepresentative\nc1:5000-5600\tc1:4000-7000\n";
+        let r = rel(&gtf, &clusters(&[("MCL0", 4000, 7000)]), Some(folds)).unwrap();
+        let m: Vec<(&str, &str)> = r.members.iter().map(|m| (m.family.as_str(), m.locus.as_str())).collect();
+        assert_eq!(m, [("MCL0", "c1:5000-5600"), ("MCL0", "c1:4000-7000")], "both loci are members, in GTF order");
+        // without the fold table the clustered node is alone
+        let r = rel(&gtf, &clusters(&[("MCL0", 4000, 7000)]), None).unwrap();
+        assert_eq!(r.members.len(), 1);
+        let bad = "annotation\tnope\n";
+        assert!(rel(&gtf, &clusters(&[("MCL0", 4000, 7000)]), Some(bad)).is_err());
+    }
+
+    fn fixture(name: &str) -> String {
+        let p = format!("{}/tests/fixtures/bridge_units/{name}", env!("CARGO_MANIFEST_DIR"));
+        std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {p}: {e}"))
+    }
+
+    /// The chain on the synthetic fixture of `tests/fixtures/bridge_units`: `run_list` writes the families input, this
+    /// module writes the two tables, and they equal the dev prototype's (`relations.py --detector list:cuts.tsv`, d90a33da)
+    /// byte for byte: DIFF (F1, FF with a double-counted fused locus, F5 through a fold), ONE_UNCL (F3: its second unit
+    /// joined an unclustered locus), ALL_UNCL (FM), a locus of two gene_ids with one key, strings sorted as strings.
+    #[test]
+    fn the_tables_equal_the_python_prototype_on_the_fixture() {
+        use crate::vg_family::bridge_regroup::{run_list, UnitsList};
+        let mut lines: Vec<String> = fixture("plain.gtf").lines().map(str::to_string).collect();
+        let list = UnitsList::read(&format!("{}/tests/fixtures/bridge_units/cuts.tsv", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let gtf = run_list(&mut lines, &list).unwrap().units.unwrap().families_lines.join("\n") + "\n";
+        let r = rel(&gtf, &fixture("clusters.tsv"), Some(&fixture("loci.tsv"))).unwrap();
+        assert_eq!(r.relations_tsv(), fixture("expected.relations.tsv"));
+        assert_eq!(r.members_tsv(), fixture("expected.members_by_locus.tsv"));
+        assert_eq!(r.outcome_counts().into_iter().collect::<Vec<_>>(), [("ALL_UNCL", 1), ("DIFF", 3), ("ONE_UNCL", 1)]);
+        let c = r.counts();
+        assert_eq!(c.iter().map(|x| x.1).collect::<Vec<_>>(), [5, 3, 5, 13, 7, 3, 1]);
+        // the invariants on real-shaped output: every unit is in one row, `unit_families` is the clusters' answer for its locus
+        let units: usize = r.relations.iter().map(|x| x.n_units).sum();
+        assert_eq!(units, gtf.lines().filter(|l| l.contains("\ttranscript\t") && l.contains("fusion_unit \"")).count());
+        let family_of: HashMap<String, String> = fixture("clusters.tsv")
+            .lines()
+            .skip(1)
+            .map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                (format!("{}:{}-{}", f[5], f[6], f[7]), f[0].to_string())
+            })
+            .collect();
+        let fold: HashMap<String, String> =
+            fixture("loci.tsv").lines().skip(1).map(|l| l.split_once('\t').map(|(a, b)| (a.to_string(), b.to_string())).unwrap()).collect();
+        for row in &r.relations {
+            let want: Vec<String> = row
+                .unit_loci
+                .iter()
+                .map(|k| family_of.get(k).or_else(|| fold.get(k).and_then(|u| family_of.get(u))).cloned().unwrap_or_else(|| "-".to_string()))
+                .collect();
+            assert_eq!(row.unit_families, want, "{}", row.id);
+        }
+        let keys: HashSet<(&str, &str)> = r.members.iter().map(|m| (m.family.as_str(), m.locus.as_str())).collect();
+        assert_eq!(keys.len(), r.members.len(), "one member per locus per family");
+    }
+
+    /// `separated` = every unit of T is in a gene_id of its own, as the prototype computes it: an A-B-A' fusion (U1 and U3 in
+    /// gene gA, U2 in gB) is NOT separated although no ADJACENT pair shares a locus, and two gene_ids of ONE span (gX, gY:
+    /// equal `unit_loci` keys) ARE separated, the rule being about gene_ids and not about the printed keys. The F row also
+    /// carries two cuts' evidence comma-joined, which the table's last column repeats verbatim.
+    #[test]
+    fn separated_means_every_unit_in_a_gene_id_of_its_own() {
+        let evidence = "2;10;20;0.1667,2;20;10;0.1667";
+        let gtf = [
+            unit("gA", "F.U1", (100, 600), "+", 1, 3, "F", "c1:100-5600", "g").replace("3;5;4;0.4286", evidence),
+            unit("gB", "F.U2", (2000, 2600), "+", 2, 3, "F", "c1:100-5600", "g").replace("3;5;4;0.4286", evidence),
+            unit("gA", "F.U3", (5000, 5600), "+", 3, 3, "F", "c1:100-5600", "g").replace("3;5;4;0.4286", evidence),
+            unit("gX", "E.U1", (7000, 7600), "+", 1, 2, "E", "c1:7000-7600", "h"),
+            unit("gY", "E.U2", (7000, 7600), "+", 2, 2, "E", "c1:7000-7600", "h"),
+        ]
+        .join("\n");
+        let r = rel(&format!("{gtf}\n"), &clusters(&[]), None).unwrap();
+        assert_eq!(r.relations.len(), 2);
+        let (f, e) = (&r.relations[0], &r.relations[1]);
+        assert_eq!((f.transcript.as_str(), e.transcript.as_str()), ("F", "E"));
+        assert_eq!(f.unit_loci, ["c1:100-5600", "c1:2000-2600", "c1:100-5600"], "adjacent units never share a locus");
+        assert!(!f.separated, "U1 and U3 share gene_id gA");
+        assert_eq!(e.unit_loci, ["c1:7000-7600", "c1:7000-7600"], "one printed key");
+        assert!(e.separated, "gX and gY are two gene_ids");
+        let text = r.relations_tsv();
+        let col = |row: usize, k: usize| text.lines().nth(row).unwrap().split('\t').nth(k).unwrap().to_string();
+        assert_eq!((col(1, 14).as_str(), col(2, 14).as_str()), ("false", "true"), "column 15: separated");
+        // the evidence (m = 2) is column 18 verbatim; the second record has none and a `.`
+        assert_eq!(text.lines().next().unwrap().split('\t').nth(17), Some("detector_evidence"));
+        assert_eq!(col(1, 17), evidence);
+        assert_eq!(col(2, 17), "3;5;4;0.4286");
+    }
+}
 }

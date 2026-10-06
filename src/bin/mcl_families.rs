@@ -1644,7 +1644,7 @@ fn main() -> Result<()> {
     // wrote, the PAF, the GTF); it changes nothing already written.
     let mut container_counts: Option<[(&str, i64); 3]> = None;
     if args.emit_container {
-        use rustle::vg_family::family_container as fc;
+        use rustle::vg_family::fam_from_gtf::family_container as fc;
         let gtf = args.from_gtf.as_deref().expect("--emit-container is checked to come with --from-gtf");
         let gff3 = args.gff.as_deref().expect("--from-gtf sets --gff to <out>.loci.gff3");
         let clusters_path = format!("{}.clusters.tsv", args.out);
@@ -1687,7 +1687,7 @@ fn main() -> Result<()> {
     // run's own `gtf_loci`, so a key here is a node key there); it changes nothing already written.
     let mut relation_counts: Option<[(&'static str, usize); 7]> = None;
     if args.emit_relations {
-        use rustle::vg_family::{family_container as fc, family_relations as fr};
+        use rustle::vg_family::fam_from_gtf::{family_container as fc, family_relations as fr};
         let gtf = args.from_gtf.as_deref().expect("--emit-relations is checked to come with --from-gtf");
         let loci_in = relation_loci(gtf_loci_list.as_deref().unwrap_or(&[]));
         let clusters_path = format!("{}.clusters.tsv", args.out);
