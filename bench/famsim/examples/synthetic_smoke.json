@@ -1,0 +1,11 @@
+{"name":"smoke","seed":3,
+ "background":{"source":"random","length":120000},
+ "template":{"source":"synthetic","exons":[220,150,300,130,90,600],"introns":[1200,2500,800,1500,900]},
+ "copies":[
+  {"id":"A","ops":[]},
+  {"id":"A2","ops":[{"op":"snp","rate":0.02},{"op":"exon_delete","exon":3}]},
+  {"id":"A3","strand":"-","ops":[{"op":"snp","rate":0.01},{"op":"exon_insert","after":2,"length":120},{"op":"invert","intron":4}]},
+  {"id":"A4","in_reference":false,"ops":[{"op":"snp","rate":0.03},{"op":"invert","exon":4},{"op":"truncate","side":3,"exons":1}]},
+  {"id":"A5","expression":0,"ops":[{"op":"splice_kill","exon":2},{"op":"exon_shuffle","a":3,"b":5},{"op":"convert","from":"A2","exon":2}]}
+ ],
+ "reads":{"per_copy":20}}

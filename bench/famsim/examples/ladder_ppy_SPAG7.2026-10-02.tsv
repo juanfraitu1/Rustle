@@ -1,0 +1,23 @@
+rung	condition	verify	denovo_intact	guided_intact	denovo_F	guided_F	loci_found	o2_wrong	o2_tied_correct	o2_tied_abstain	o3
+identical	A and A' 100% identical	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.4000	NA;NA;NA;NA;NA
+snp_0.001	A' at divergence 0.001	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.4000	NA;NA;NA;NA;NA
+snp_0.005	A' at divergence 0.005	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+snp_0.01	A' at divergence 0.01	PASS	0	0	0.0000	0.0000	1.0000				NA;NA;NA;NA;NA
+snp_0.02	A' at divergence 0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+snp_0.05	A' at divergence 0.05	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+snp_0.1	A' at divergence 0.1	PASS	0	0	0.0000	0.0000	1.0000				NA;NA;NA;NA;NA
+exon_loss	A' lacks exon 4 (DNA + RNA), d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+splice_kill	A' skips exon 4 (RNA only), d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+inv_exon	exon 4 of A' inverted, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+exon_gain	A' has a new 120 bp exon after exon 1, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+exon_dup	A' carries exon 2 twice, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+shuffle	exons 2 and 3 of A' swapped, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+inv_intron	intron 1 of A' inverted (silent at RNA), d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+inv_whole	A' on the other strand, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+truncated	A' lacks the first 2 exons, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+conversion	A' at d=0.05 with exon 2 converted from A	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+three_copies	A, A' (0.01), A'' (0.03)	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA;NA
+dispersed	A' on a second contig, d=0.02	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA
+unexpressed	A' has no reads, d=0.02 (semi-guided case)	PASS	n/a	1	0.0000	1.0000	1.0000				NA;NA;NA;NA
+absent	A' absent from the reference, d=0.02 (O3 case)	PASS	n/a	n/a	0.0000	0.0000	1.0000				reference_absent_candidate;reference_absent_candidate;NA;NA;NA
+combined	A' d=0.03, exon 4 deleted, intron 1 inverted, last exon lost	PASS	1	1	1.0000	1.0000	1.0000	0.0000	0.0000	0.0000	NA;NA;NA;NA;NA

@@ -1,0 +1,7 @@
+{"name": "ppy_SPAG7", "seed": 12,
+ "background": {"source": "fasta", "path": "/mnt/linuxdisk/home/juanfraitu/winloci_data/GCF_028885625.2_NHGRI_mPonPyg2-v2.0_pri_genomic.fna", "region": "NC_072392.2:60000000-60300000"},
+ "template": {"source": "annotation", "genome": "/mnt/linuxdisk/home/juanfraitu/winloci_data/GCF_028885625.2_NHGRI_mPonPyg2-v2.0_pri_genomic.fna",
+              "annotation": "/mnt/linuxdisk/home/juanfraitu/winloci_data/PPY_genomic.gff", "gene": "SPAG7", "chrom": "NC_072392.2"},
+ "copies": [],
+ "decoys": {"n": 3, "min_exons": 3, "max_span": 30000, "chrom": "NC_072392.2"},
+ "reads": {"per_copy": 50, "err": 0.001, "indel": 0.0003, "jitter": 30}}

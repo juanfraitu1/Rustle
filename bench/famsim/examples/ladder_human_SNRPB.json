@@ -1,0 +1,7 @@
+{"name": "human_SNRPB", "seed": 11,
+ "background": {"source": "fasta", "path": "/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/chr20.fa", "region": "chr20:20000000-20300000"},
+ "template": {"source": "annotation", "genome": "/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/chr20.fa",
+              "annotation": "/mnt/linuxdisk/home/juanfraitu/bakeoff/human_chr20/chr20_ref_cat.gtf", "gene": "SNRPB", "chrom": "chr20"},
+ "copies": [],
+ "decoys": {"n": 3, "min_exons": 3, "max_span": 30000, "chrom": "chr20"},
+ "reads": {"per_copy": 50, "err": 0.001, "indel": 0.0003, "jitter": 30}}
