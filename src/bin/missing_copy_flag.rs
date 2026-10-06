@@ -248,7 +248,8 @@ fn parse_assignments(text: &str) -> Result<HashMap<String, Assignment>> {
         if status != "assigned" && status != "tied" {
             continue;
         }
-        let in_copy = at(i_incopy)? == "1";
+        let in_copy_val = at(i_incopy)?;
+        let in_copy = in_copy_val == "1" || in_copy_val == "true";
         let read_name = at(i_read)?.to_string();
         let family_id = at(i_fam)?.to_string();
         let assigned_copy = at(i_copy)?.parse::<usize>().with_context(|| {
@@ -318,6 +319,34 @@ fn read_may_attribute_to_locus(
     a.family_id == lk.0 && a.assigned_copy == lk.1
 }
 
+/// Decide whether ANY alignment record (primary, secondary, or supplementary)
+/// should be attributed to a locus under `--assignments`.
+///
+/// For primary records this is exactly [`read_may_attribute_to_locus`].
+/// Non-primary records are normally ignored by the pile-up, but when O2 has
+/// resolved their molecule to a specific copy we trust that resolution over
+/// the aligner's primary flag: a secondary/supplementary record is included
+/// only if the read has a usable assignment and the locus label encodes the
+/// same `(family_id, copy_index)`.
+fn record_may_attribute_to_locus(
+    name: &str,
+    flags: &noodles_sam::alignment::record::Flags,
+    locus_key: Option<&(String, usize)>,
+    assignments: Option<&HashMap<String, Assignment>>,
+) -> bool {
+    if flags.is_secondary() || flags.is_supplementary() {
+        let Some(lk) = locus_key else { return false };
+        let Some(am) = assignments else { return false };
+        let Some(a) = am.get(name) else { return false };
+        if (a.status != "assigned" && a.status != "tied") || !a.in_copy {
+            return false;
+        }
+        a.family_id == lk.0 && a.assigned_copy == lk.1
+    } else {
+        read_may_attribute_to_locus(name, locus_key, assignments)
+    }
+}
+
 /// Primary reads (`-F 2308`) overlapping a region, capped by name order. With `only`, records whose name is not
 /// in the set are skipped BEFORE the RecordBuf decode (the decode is the cost: a structural-only locus needs its
 /// few insertion-carrying reads, not the whole pile).
@@ -340,22 +369,20 @@ fn pile(
     for result in reader.query(header, index, &region)? {
         let record = result?;
         let flags = record.flags();
-        if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+        if flags.is_unmapped() {
             continue;
-        }
-        if let Some(set) = only {
-            let keep = record.name().map_or(false, |n| {
-                set.contains(std::str::from_utf8(n.as_ref()).unwrap_or(""))
-            });
-            if !keep {
-                continue;
-            }
         }
         let rb = RecordBuf::try_from_alignment_record(header, &record)?;
         let Some((read, _mapq, name, _as, de, _sup, _sec)) = aligned_read_from_record(&rb) else {
             continue;
         };
-        if !read_may_attribute_to_locus(&name, locus_key, assignments) {
+        if let Some(set) = only {
+            let keep = set.contains(&name.as_str());
+            if !keep {
+                continue;
+            }
+        }
+        if !record_may_attribute_to_locus(&name, &flags, locus_key, assignments) {
             continue;
         }
         out.push(PileRead {
@@ -585,7 +612,14 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         for result in reader.query(&header, &index, &region)? {
             let record = result?;
             let flags = record.flags();
-            if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+            if flags.is_unmapped() {
+                continue;
+            }
+            // Without --assignments we keep the historical primary-only behaviour.  With --assignments
+            // we also admit secondary/supplementary records whose O2-resolved copy matches a locus,
+            // because the primary overlap alone can contradict the assignment.
+            let admit_non_primary = assignments.is_some();
+            if !admit_non_primary && (flags.is_secondary() || flags.is_supplementary()) {
                 continue;
             }
             let Some(start) = record.alignment_start() else {
@@ -635,8 +669,9 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             for &k in &active {
                 let l = &loci[order[k]];
                 if l.2 < re && l.3 > rs {
-                    if !read_may_attribute_to_locus(
+                    if !record_may_attribute_to_locus(
                         &name,
+                        &flags,
                         locus_keys[order[k]].as_ref(),
                         assignments.as_ref(),
                     ) {
