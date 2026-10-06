@@ -19,8 +19,9 @@ labels. `docs/THESIS_OBJECTIVES.md` states them in full.
 ## Build, test, run
 
 ```bash
-cargo build --release          # binaries in target/release/
-cargo test --release           # ~860 tests; fixtures are in tests/fixtures and src/rustle/vg_family/testdata
+cargo build --release          # binaries in target/release/ (real numbers always come from --release)
+cargo test --release           # ~1150 tests; fixtures are in tests/fixtures and src/rustle/vg_family/testdata
+cargo test --profile dev-opt   # the iteration loop: full suite in minutes (opt 2, no LTO; see AGENTS.md §4)
 ```
 
 `REPRODUCE.md` is the recipe book: every shipped number, the command that produces it, and the expected

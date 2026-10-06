@@ -33,7 +33,16 @@ CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo build --rele
 CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo test --release > test.log 2>&1
 ```
 Always `--release`; send cargo output to a file (a pipe hides the exit code). Behaviour-preserving changes are proven
-by `cmp` of the products against a build of the previous commit on the same inputs.
+by `cmp` of the products against a build of the previous commit on the same inputs; `tools/identity_check.sh golden|check`
+(scripted version: full suite + an end-to-end MCL cmp; `FULL=1` adds a real-data slice) is the harness used for
+the 2026-10-05 consolidation and stays the one command to run after any refactor.
+
+**Profiles for iterating (debug mode).** The tree is debug-insensitive (no `debug_assertions` blocks, no timing
+tests). Plain `dev` (opt 0) is 10-30x too slow for the alignment-heavy runs; use the pre-defined profiles:
+- `cargo test --profile dev-opt` — opt 2, no LTO: the full suite in minutes. THE iterate-on-a-decision loop:
+  edit → `cargo test --profile dev-opt` → real numbers still come from `--release` (unchanged rule).
+- `cargo build --profile dev-opt --bins` — a run/debug build tolerable on real slices (roughly 1.5-2x release).
+- `cargo check --profile quick` — fastest compile for type-check iterations (opt 0, 256 CGUs).
 
 ## 5. Machine rules (WSL2, 5 cores, crashes under load)
 One heavy process at a time, in the foreground; big outputs and `TMPDIR` under `/mnt/linuxdisk`; never `pkill -f`
