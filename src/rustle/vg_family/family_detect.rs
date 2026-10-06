@@ -29,6 +29,7 @@
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
+use crate::types::{DetHashMap, DetHashSet};
 use std::collections::{BTreeMap, BTreeSet};
 
 use family_graph::{core_coverage_reaches, upper_cow};
@@ -872,7 +873,7 @@ pub fn collapse_loci_span_aware_with_members(
     let parent = collapse_parent(transcripts, p);
     let reps = locus_reps(transcripts, &parent);
     let mut ptmp = parent.clone();
-    let mut by_root: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    let mut by_root: DetHashMap<usize, Vec<usize>> = DetHashMap::default();
     for i in 0..transcripts.len() {
         let r = uf_find(&mut ptmp, i);
         by_root.entry(r).or_default().push(i);
@@ -901,7 +902,7 @@ pub fn collapse_loci_span_aware_with_totals(
     let parent = collapse_parent(transcripts, p);
     let reps = locus_reps(transcripts, &parent);
     let mut ptmp = parent.clone();
-    let mut sum_by_root: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    let mut sum_by_root: DetHashMap<usize, u32> = DetHashMap::default();
     for (i, t) in transcripts.iter().enumerate() {
         let r = uf_find(&mut ptmp, i);
         *sum_by_root.entry(r).or_insert(0) += t.n_reads;
@@ -1088,8 +1089,8 @@ pub fn poa_core_completion_adds(
     families: &[Vec<usize>],
     p: &DetectParams,
 ) -> Vec<Vec<usize>> {
-    use std::collections::HashMap;
-    let mut in_fam: HashMap<usize, usize> = HashMap::new();
+    use DetHashMap;
+    let mut in_fam: DetHashMap<usize, usize> = DetHashMap::default();
     for (f, members) in families.iter().enumerate() {
         for &m in members {
             in_fam.insert(m, f);
@@ -1111,7 +1112,7 @@ pub fn poa_core_completion_adds(
         fwd.max(rev) as f64 / minlen as f64
     };
     // best (family, core) per FREE rep over all family-adjacent candidate pairs that confirm a POA core.
-    let mut best: HashMap<usize, (usize, f64)> = HashMap::new();
+    let mut best: DetHashMap<usize, (usize, f64)> = DetHashMap::default();
     for (i, j) in candidate_pairs(reps, p) {
         let (fam, free) = match (in_fam.get(&i), in_fam.get(&j)) {
             (Some(&f), None) => (f, j),
@@ -1981,12 +1982,12 @@ mod tests {
     #[test]
     #[ignore = "ad-hoc measurement against an external real-catalog pairs manifest, not a CI assertion"]
     fn dump_real_catalog_core_recip() {
-        use std::collections::HashMap;
+        use DetHashMap;
 
-        fn read_fasta_map(path: &str) -> HashMap<String, Vec<u8>> {
+        fn read_fasta_map(path: &str) -> DetHashMap<String, Vec<u8>> {
             let content = std::fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("read {path}: {e}"));
-            let mut out = HashMap::new();
+            let mut out = DetHashMap::default();
             let mut name = String::new();
             let mut seq = Vec::new();
             for line in content.lines() {
@@ -2118,6 +2119,7 @@ pub mod family_graph {
 //! had no caller in any binary and was removed 2026-09-24; recover it from tag `notebook-2026-09-24`.
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+    use crate::types::{DetHashMap, DetHashSet};
 
 use anyhow::Result;
 
@@ -2515,7 +2517,7 @@ const CORE_MEMO_MAX_ENTRIES: usize = 4_000_000;
 /// a 26% difference with both spreads under 0.3 s. Neutral on the regions where the memo rarely hits
 /// (GSTM 0.976, MAGEA 0.987, RABL2 1.001, SDHA 0.997, TBP 0.996).
 ///
-/// Exactness is unaffected: `HashMap` still compares keys with `Eq`, so a hash collision costs a byte
+/// Exactness is unaffected: `DetHashMap` still compares keys with `Eq`, so a hash collision costs a byte
 /// comparison, never a wrong value. (Also deterministic — FxHash has no random seed — though nothing
 /// here depends on iteration order.)
 #[derive(Default)]
@@ -3122,6 +3124,7 @@ pub mod family_split {
 //! (sorted node/community order, strict-improvement moves), not a byte-identical partition.
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+    use crate::types::{DetHashMap, DetHashSet};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -3613,7 +3616,7 @@ fn all_components(n: usize, edges: &[(usize, usize, f64)]) -> Vec<Vec<usize>> {
 
 /// Internal edge density of a node block over the induced subgraph: 2|E|/(|C|(|C|-1)); <=1 node = 1.0.
 fn induced_density(members: &[usize], edges: &[(usize, usize, f64)]) -> f64 {
-    let set: std::collections::HashSet<usize> = members.iter().copied().collect();
+    let set: DetHashSet<usize> = members.iter().copied().collect();
     let n = members.len();
     if n <= 1 {
         return 1.0;
@@ -3624,7 +3627,7 @@ fn induced_density(members: &[usize], edges: &[(usize, usize, f64)]) -> f64 {
 
 /// Restrict edges to those with both endpoints in `members`, remapped to local indices 0..members.len().
 fn induced_edges(members: &[usize], edges: &[(usize, usize, f64)]) -> (usize, Vec<(usize, usize, f64)>) {
-    let idx: std::collections::HashMap<usize, usize> =
+    let idx: DetHashMap<usize, usize> =
         members.iter().enumerate().map(|(i, &g)| (g, i)).collect();
     let local = edges
         .iter()

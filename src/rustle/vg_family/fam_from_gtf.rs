@@ -11,6 +11,7 @@ use crate::genome::GenomeIndex;
 use crate::vg_family::annotation_families::{Cluster, CoreRecord, CoreStatus, GeneKey};
 use crate::vg_family::denovo_assemble::longest_orf;
 use std::collections::BTreeMap;
+use crate::types::DetHashSet;
 use std::io::Write;
 
 /// Header of `<out>.copies.tsv` (`--from-gtf --emit-units`). Columns 1-11 are `gw_family_catalog`'s `copies.tsv`
@@ -252,7 +253,7 @@ pub fn write_locus_rep_copies(
             }
         }
     }
-    let contigs: std::collections::HashSet<String> =
+    let contigs: DetHashSet<String> =
         clusters.iter().flat_map(|c| c.members.iter().map(|m| m.0.clone())).collect();
     // ⚠ `from_fasta_contigs` with an EMPTY set loads the whole genome: no family, no genome
     let genome = if contigs.is_empty() {
@@ -690,7 +691,7 @@ pub fn loci_from_gtf_reader<R: std::io::BufRead>(
     }
     use crate::vg_family::run_cache as rc;
     let root = rc::cache_root();
-    let contigs: HashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
+    let contigs: DetHashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta, &contigs)?;
     let fa_hash = write_loci_fa(&genome, &spans, &fa_path, fasta, root.is_some())?;
     eprintln!("[mcl_families] --from-gtf: {} loci -> all-vs-all", spans.len());
@@ -848,6 +849,7 @@ pub mod family_container {
 //! `key "` occurrence of a GTF attribute, an empty `gene_id` read as the transcript id, the fold table's
 //! last-write-wins value at the first-write position, Python's `int()` on the decimal fields). Only a lone `\r` line
 //! break (which Python's universal newlines would split on) is not reproduced.
+    use crate::types::DetHashSet;
 use anyhow::{bail, Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::io::BufRead;

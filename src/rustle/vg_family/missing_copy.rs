@@ -15,7 +15,8 @@
 //! Nothing here uses read depth to decide — expression is not dosage (RESULTS_DETECTOR.md); the expected
 //! DNA depth ratio is reported as what DNA would have to show.
 
-use std::collections::{BTreeMap, HashMap};
+use crate::types::{DetHashMap, DetHashSet};
+use std::collections::{BTreeMap};
 
 /// One primary read of a locus pile: `de:f`, 0-based reference start, `--eqx` CIGAR ops, sequence
 /// (soft-clips kept, as `AlignedRead::seq`), name.
@@ -109,9 +110,9 @@ pub fn split_pile(reads: &[PileRead], m_min: f64, delta_min: f64, min_sub: usize
 /// mismatching read base per position (majority taken later).
 #[derive(Default)]
 struct Tally {
-    cov: HashMap<u64, u32>,
-    mism: HashMap<u64, u32>,
-    bases: HashMap<u64, HashMap<u8, u32>>,
+    cov: DetHashMap<u64, u32>,
+    mism: DetHashMap<u64, u32>,
+    bases: DetHashMap<u64, DetHashMap<u8, u32>>,
     total_mism: u64,
 }
 
@@ -219,7 +220,7 @@ pub fn consistency(sub: &[&PileRead], host: &[&PileRead], ref_seq: &[u8], ref_of
 /// The spliced patched consensus: the template read's `=`/`X` blocks taken from the reference and patched at
 /// PSV sites. Returns `(sequence, blocks)`; blocks are 0-based half-open reference intervals.
 pub fn patched_consensus(template: &PileRead, sites: &[PsvSite], ref_seq: &[u8], ref_offset: u64) -> (Vec<u8>, Vec<(u64, u64)>) {
-    let patch: HashMap<u64, u8> = sites.iter().map(|s| (s.pos, s.base)).collect();
+    let patch: DetHashMap<u64, u8> = sites.iter().map(|s| (s.pos, s.base)).collect();
     let mut seq = Vec::new();
     let mut blocks: Vec<(u64, u64)> = Vec::new();
     let mut rp = template.ref_start;
@@ -292,11 +293,11 @@ fn place_insertion(ins: &[u8], target: &[u8], min_len: usize) -> Option<(usize, 
     if ins.len() < K || target.len() < K {
         return None;
     }
-    let mut index: HashMap<&[u8], Vec<usize>> = HashMap::new();
+    let mut index: DetHashMap<&[u8], Vec<usize>> = DetHashMap::default();
     for i in 0..=target.len() - K {
         index.entry(&target[i..i + K]).or_default().push(i);
     }
-    let mut votes: HashMap<i64, u32> = HashMap::new();
+    let mut votes: DetHashMap<i64, u32> = DetHashMap::default();
     let mut i = 0;
     while i + K <= ins.len() {
         if let Some(ps) = index.get(&ins[i..i + K]) {
@@ -631,7 +632,7 @@ pub fn load_loci(path: &str) -> anyhow::Result<Vec<(String, String, u64, u64, St
     let is_bed = path.ends_with(".bed");
     let is_gff = path.ends_with(".gff") || path.ends_with(".gff3") || path.ends_with(".gff.gz");
     let mut order: Vec<String> = Vec::new();
-    let mut spans: HashMap<String, (String, u64, u64, String)> = HashMap::new();
+    let mut spans: DetHashMap<String, (String, u64, u64, String)> = DetHashMap::default();
     for line in std::io::BufReader::new(f).lines() {
         let line = line?;
         if line.starts_with('#') || line.is_empty() {
@@ -660,7 +661,7 @@ pub fn load_loci(path: &str) -> anyhow::Result<Vec<(String, String, u64, u64, St
             if fs[2] != "gene" && fs[2] != "pseudogene" {
                 continue;
             }
-            let attrs: HashMap<&str, &str> = fs[8].split(';').filter_map(|kv| kv.split_once('=')).collect();
+            let attrs: DetHashMap<&str, &str> = fs[8].split(';').filter_map(|kv| kv.split_once('=')).collect();
             let id = attrs.get("ID").map(|s| s.to_string()).unwrap_or_else(|| format!("{}:{}-{}", fs[0], s, e));
             let name = attrs.get("Name").or(attrs.get("gene")).map(|s| s.to_string()).unwrap_or_else(|| id.clone());
             if spans.insert(id.clone(), (fs[0].to_string(), s, e, name)).is_none() {
@@ -705,10 +706,10 @@ fn gtf_attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
 }
 
 /// Annotation genes for the hypermutation screen: per chrom, `(start0, end, is_ig_tr)`.
-pub fn load_ig_tr(gff: &str) -> anyhow::Result<HashMap<String, Vec<(u64, u64)>>> {
+pub fn load_ig_tr(gff: &str) -> anyhow::Result<DetHashMap<String, Vec<(u64, u64)>>> {
     use std::io::BufRead;
     let f = std::fs::File::open(gff).map_err(|e| anyhow::anyhow!("opening {gff}: {e}"))?;
-    let mut out: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+    let mut out: DetHashMap<String, Vec<(u64, u64)>> = DetHashMap::default();
     for line in std::io::BufReader::new(f).lines() {
         let line = line?;
         if line.starts_with('#') {
@@ -718,7 +719,7 @@ pub fn load_ig_tr(gff: &str) -> anyhow::Result<HashMap<String, Vec<(u64, u64)>>>
         if fs.len() < 9 || (fs[2] != "gene" && fs[2] != "pseudogene") {
             continue;
         }
-        let attrs: HashMap<&str, &str> = fs[8].split(';').filter_map(|kv| kv.split_once('=')).collect();
+        let attrs: DetHashMap<&str, &str> = fs[8].split(';').filter_map(|kv| kv.split_once('=')).collect();
         let name = attrs.get("Name").or(attrs.get("gene")).copied().unwrap_or("");
         let desc = attrs.get("description").copied().unwrap_or("");
         if is_ig_tr(name, desc) {
@@ -732,6 +733,7 @@ pub fn load_ig_tr(gff: &str) -> anyhow::Result<HashMap<String, Vec<(u64, u64)>>>
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::*;
 
     fn read(name: &str, de: f64, start: u64, cigar: &str, seq: &str) -> PileRead {
@@ -967,6 +969,7 @@ pub mod missing_copy_flag_pass {
 //! ports `bench/missing_copy_flag_pass.py`'s missing-copy detector natively into `copy_assign`.
 //!
 //! **STATUS:** OPT-IN  (reachable via `copy_assign --flag-missing-copies`, src/bin/copy_assign.rs; default off)
+    use crate::types::{DetHashMap, DetHashSet};
 
 
 // `lgamma` lived in the retired ASJ module (dropped objective, tag notebook-2026-09-23c); kept here verbatim.
@@ -1105,7 +1108,7 @@ pub fn finalize_flags(all_pairs: &[RawPair], alpha: f64) -> Vec<FlaggedPair> {
 pub(crate) struct AlignmentSummary {
     pub covered_kb: f64,
     pub n_sites: usize,
-    pub per_read: std::collections::HashMap<String, (usize, i64, usize)>,
+    pub per_read: DetHashMap<String, (usize, i64, usize)>,
 }
 
 /// Parses `minimap2 -x splice -c --eqx -N 1` PAF output. Target-position coverage/mismatch tallies (no
@@ -1113,9 +1116,9 @@ pub(crate) struct AlignmentSummary {
 /// PAF columns used: [0]=query name [1]=query len [2]=query start [3]=query end [7]=target start,
 /// [12..]=tags (the `cg:Z:` CIGAR tag).
 pub(crate) fn parse_paf_consistency(paf_text: &str) -> AlignmentSummary {
-    let mut cov: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
-    let mut mism: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
-    let mut per_read: std::collections::HashMap<String, (usize, i64, usize)> = std::collections::HashMap::new();
+    let mut cov: DetHashMap<u64, u32> = DetHashMap::default();
+    let mut mism: DetHashMap<u64, u32> = DetHashMap::default();
+    let mut per_read: DetHashMap<String, (usize, i64, usize)> = DetHashMap::default();
     for line in paf_text.lines() {
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 13 {
@@ -1239,6 +1242,7 @@ mod paf_tests {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::*;
 
     fn pair(p: Option<f64>) -> RawPair {
@@ -1317,7 +1321,7 @@ pub fn classify_orphan_locus(
     chrom: &str,
     start: u64,
     end: u64,
-    own_family_ids: &std::collections::HashSet<String>,
+    own_family_ids: &DetHashSet<String>,
     all_units_by_chrom: &std::collections::BTreeMap<String, Vec<(u64, u64, String, String)>>,
     genes_by_chrom: &std::collections::BTreeMap<String, Vec<(u64, u64)>>,
 ) -> (LocusClass, usize, Vec<String>) {
@@ -1363,8 +1367,8 @@ mod locus_tests {
         m
     }
 
-    fn myfam() -> std::collections::HashSet<String> {
-        std::collections::HashSet::from(["MYFAM".to_string()])
+    fn myfam() -> DetHashSet<String> {
+        ["MYFAM".to_string()].into_iter().collect()
     }
 
     #[test]
@@ -1434,7 +1438,7 @@ mod locus_tests {
                 (100, 200, "TRULY_OTHER".to_string(), "0".to_string()), // NOT part of the caller's group
             ],
         );
-        let own = std::collections::HashSet::from(["SIBLING_A".to_string(), "SIBLING_B".to_string()]);
+        let own = ["SIBLING_A".to_string(), "SIBLING_B".to_string()].into_iter().collect();
         let (class, _, units_hit) = classify_orphan_locus("chr1", 100, 200, &own, &u, &BTreeMap::new());
         assert_eq!(class, LocusClass::OtherFamily, "TRULY_OTHER's unit is real external evidence");
         assert_eq!(
@@ -1459,7 +1463,7 @@ mod locus_tests {
                 (100, 200, "SIBLING_B".to_string(), "0".to_string()),
             ],
         );
-        let own = std::collections::HashSet::from(["SIBLING_A".to_string(), "SIBLING_B".to_string()]);
+        let own = ["SIBLING_A".to_string(), "SIBLING_B".to_string()].into_iter().collect();
         let (class, _, units_hit) = classify_orphan_locus("chr1", 100, 200, &own, &u, &genes());
         assert_eq!(class, LocusClass::Unannotated);
         assert!(units_hit.is_empty());
@@ -1482,7 +1486,7 @@ pub struct PairInput {
 fn realign_batch(target_seq: &[u8], reads: &[(String, Vec<u8>)]) -> anyhow::Result<AlignmentSummary> {
     use std::io::Write;
     if reads.is_empty() {
-        return Ok(AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: std::collections::HashMap::new() });
+        return Ok(AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: DetHashMap::default() });
     }
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let dir = std::env::temp_dir();
@@ -1567,7 +1571,7 @@ fn locus_or_padded_window(s: u64, e: u64, locus: Option<(u64, u64)>, longest_rej
 /// vs the unfixed Rust 59.81/kb).
 pub fn detect_missing_copy_pairs(
     family_id: &str,
-    copy_span_by_catalog_idx: &std::collections::HashMap<String, (String, u64, u64, Option<(u64, u64)>)>,
+    copy_span_by_catalog_idx: &DetHashMap<String, (String, u64, u64, Option<(u64, u64)>)>,
     genome: &crate::genome::GenomeIndex,
     inputs: &[PairInput],
     params: &O3Params,
@@ -1610,11 +1614,11 @@ pub fn detect_missing_copy_pairs(
                 Ok(s) => s,
                 Err(err) => {
                     eprintln!("[o3-flag-pass] control realignment failed for {family_id}:{}: {err}", input.copy_idx);
-                    AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: std::collections::HashMap::new() }
+                    AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: DetHashMap::default() }
                 }
             }
         } else {
-            AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: std::collections::HashMap::new() }
+            AlignmentSummary { covered_kb: 0.0, n_sites: 0, per_read: DetHashMap::default() }
         };
         // rate floored at 1 site over the control's covered kb, so a control with zero observed sites
         // never claims a zero rate (which would trivially pass every test) -- design doc, RawPair section.
@@ -1661,7 +1665,7 @@ mod pair_detector_tests {
     #[test]
     fn fewer_than_min_reads_is_skipped_entirely() {
         let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 100])]);
-        let mut spans = std::collections::HashMap::new();
+        let mut spans = DetHashMap::default();
         spans.insert("0".to_string(), ("chrT".to_string(), 0u64, 100u64, None));
         let inputs = vec![PairInput {
             copy_idx: "0".to_string(),
@@ -1676,7 +1680,7 @@ mod pair_detector_tests {
     #[test]
     fn missing_copy_span_is_skipped_not_errored() {
         let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 100])]);
-        let spans = std::collections::HashMap::new(); // no span for "0"
+        let spans = DetHashMap::default(); // no span for "0"
         let inputs = vec![PairInput {
             copy_idx: "0".to_string(),
             is_partner: false,
@@ -1721,7 +1725,7 @@ mod pair_detector_tests {
         // The Some(locus) destructure and locus_or_padded_window call logic are covered separately
         // by the three locus_or_padded_window unit tests directly above.
         let genome = GenomeIndex::from_seqs(&[("chrT", &[b'A'; 300])]);
-        let mut spans = std::collections::HashMap::new();
+        let mut spans = DetHashMap::default();
         // locus extent (0,300) is wider than the bare copy span (100,200).
         spans.insert("0".to_string(), ("chrT".to_string(), 100u64, 200u64, Some((0u64, 300u64))));
         let inputs = vec![PairInput {

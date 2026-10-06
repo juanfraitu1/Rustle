@@ -4,9 +4,10 @@
 //!
 //! **STATUS:** OTHER-BINARY — reached only from the `o3_candidates` binary (`src/bin/o3_candidates.rs`; the driver's `candidates` stage runs that binary, an OPT-IN stage since ruling R14: Amendment 12 failed, its re-run A13 passed (docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md); and Amendment 14 failed, docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
+use crate::types::{DetHashMap, DetHashSet};
 use crate::vg_family::run_cache as rc;
 use anyhow::Context;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 use std::io::Write;
 use std::path::Path;
 
@@ -102,8 +103,8 @@ fn parse_paf_line(line: &str) -> Option<PafHit> {
 }
 
 /// Per query name, the hit with the most matching bases; a tie keeps the first encountered (stable).
-pub fn best_by_matches(hits: &[PafHit]) -> HashMap<String, PafHit> {
-    let mut best: HashMap<String, PafHit> = HashMap::new();
+pub fn best_by_matches(hits: &[PafHit]) -> DetHashMap<String, PafHit> {
+    let mut best: DetHashMap<String, PafHit> = DetHashMap::default();
     for h in hits { if best.get(&h.q).map_or(true, |b| h.matches > b.matches) { best.insert(h.q.clone(), h.clone()); } }
     best
 }
@@ -111,8 +112,8 @@ pub fn best_by_matches(hits: &[PafHit]) -> HashMap<String, PafHit> {
 /// Per query name, the hit with the highest identity x coverage (`id_cov`); a tie keeps the first encountered (stable). This chooses the GENOME
 /// hit that `classify` judges (ruling R4), as `best_hits` of `bench/rna_allele/link_test.py` does; pairwise (all-vs-all) hits keep
 /// `best_by_matches`, as `best_pairs` of `bench/rna_allele/merge_test.py` does.
-pub fn best_by_id_cov(hits: &[PafHit]) -> HashMap<String, PafHit> {
-    let mut best: HashMap<String, PafHit> = HashMap::new();
+pub fn best_by_id_cov(hits: &[PafHit]) -> DetHashMap<String, PafHit> {
+    let mut best: DetHashMap<String, PafHit> = DetHashMap::default();
     for h in hits { if best.get(&h.q).map_or(true, |b| id_cov(h) > id_cov(b)) { best.insert(h.q.clone(), h.clone()); } }
     best
 }
@@ -125,8 +126,8 @@ pub fn best_by_id_cov(hits: &[PafHit]) -> HashMap<String, PafHit> {
 /// is <= `ATTRIB_MAX_DE`. A best hit that fails either joins the read to no family: a lesser hit never stands in (a read whose best hit is a
 /// 40% shared exon of another family's copy stays out). A target absent from the map (a partner row, a record the copies table does not
 /// hold) is ignored. Returns read -> family.
-pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &HashMap<String, String>) -> HashMap<String, String> {
-    let mut best: HashMap<&str, (&PafHit, &String)> = HashMap::new();
+pub fn attribute_by_hits(hits: &[PafHit], family_of_target: &DetHashMap<String, String>) -> DetHashMap<String, String> {
+    let mut best: DetHashMap<&str, (&PafHit, &String)> = DetHashMap::default();
     for h in hits {
         let Some(family) = family_of_target.get(&h.t) else { continue };
         if best.get(h.q.as_str()).map_or(true, |(b, _)| h.matches > b.matches) {
@@ -242,8 +243,8 @@ const END_MIN_COVER: usize = 2;
 /// index). The clusters are a function of the set of joined pairs, so neither the hash order of the pair table nor the order of `ava`
 /// (beyond the first-wins tie rule) reaches the output.
 pub fn cluster_reads(names: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<usize>> {
-    let idx: HashMap<&str, usize> = names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
-    let mut best: HashMap<(usize, usize), &PafHit> = HashMap::new();
+    let idx: DetHashMap<&str, usize> = names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+    let mut best: DetHashMap<(usize, usize), &PafHit> = DetHashMap::default();
     for h in ava {
         let (Some(&a), Some(&b)) = (idx.get(h.q.as_str()), idx.get(h.t.as_str())) else { continue };
         if a == b { continue; }
@@ -258,7 +259,7 @@ pub fn cluster_reads(names: &[String], ava: &[PafHit], delta: f64) -> Vec<Vec<us
             if ra != rb { par[ra.max(rb)] = ra.min(rb); }
         }
     }
-    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut groups: DetHashMap<usize, Vec<usize>> = DetHashMap::default();
     for i in 0..names.len() { let r = find(&mut par, i); groups.entry(r).or_default().push(i); }   // pushed in index order: each group is ascending
     let mut out: Vec<Vec<usize>> = groups.into_values().collect();
     out.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));                                // first indices are distinct: a total order
@@ -339,7 +340,7 @@ impl TemplateChoice {
 /// `members` and self hits are ignored. `members` index `names` (the net's reads, distinct) and are distinct. Returned in `members` order; a malformed `cs` of a pair's
 /// best hit is an error naming the pair (never a silent 0). No hash order reaches the result (pairs are visited in index order).
 pub fn structural_scores(members: &[usize], names: &[String], ava: &[PafHit]) -> anyhow::Result<Vec<StructuralScore>> {
-    let idx: HashMap<&str, usize> = members.iter().enumerate().map(|(i, &m)| (names[m].as_str(), i)).collect();
+    let idx: DetHashMap<&str, usize> = members.iter().enumerate().map(|(i, &m)| (names[m].as_str(), i)).collect();
     let mut best: BTreeMap<(usize, usize), &PafHit> = BTreeMap::new();
     for h in ava {
         let (Some(&a), Some(&b)) = (idx.get(h.q.as_str()), idx.get(h.t.as_str())) else { continue };
@@ -443,9 +444,9 @@ pub fn refined_template(template: usize, kept: &[usize], names: &[String], ava: 
 pub fn consensus_from_template(template: &[u8], member_hits: &[(&[u8], &PafHit)]) -> anyhow::Result<Vec<u8>> {
     let n = template.len();
     let mut cover = vec![0usize; n];
-    let mut subs: Vec<HashMap<u8, usize>> = vec![HashMap::new(); n];
+    let mut subs: Vec<DetHashMap<u8, usize>> = vec![DetHashMap::default(); n];
     let mut dels = vec![0usize; n];
-    let mut ins: Vec<HashMap<Vec<u8>, usize>> = vec![HashMap::new(); n + 1];
+    let mut ins: Vec<DetHashMap<Vec<u8>, usize>> = vec![DetHashMap::default(); n + 1];
     for (_, h) in member_hits {
         let Some(cs) = h.cs.as_deref() else { continue };
         let ops = parse_cs(cs).map_err(|e| anyhow::anyhow!("member {} against {}: {e}", h.q, h.t))?;
@@ -1168,7 +1169,7 @@ mod tests {
         PafHit { q: read.into(), qlen, qs: 0, qe: span, strand: b'+', t: copy.into(), tlen: 5000, ts: 100, te: 100 + span, matches, block: span, de, cs: None }
     }
     /// The `--copies-fa` record names of two families' copies -> their family (F1 has two copies).
-    fn copy_families() -> HashMap<String, String> {
+    fn copy_families() -> DetHashMap<String, String> {
         [("F1|0|chr1:100-5100|+|nexon=1", "F1"), ("F1|1|chr1:9000-14000|+|nexon=1", "F1"), ("F2|0|chr2:100-5100|+|nexon=1", "F2")]
             .into_iter()
             .map(|(t, f)| (t.to_string(), f.to_string()))

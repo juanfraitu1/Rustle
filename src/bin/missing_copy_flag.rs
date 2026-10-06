@@ -254,11 +254,11 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         None => loci,
     };
     eprintln!("[missing_copy_flag] {} loci", loci.len());
-    let ig: HashMap<String, Vec<(u64, u64)>> = match &args.gff {
+    let ig: rustle::types::DetHashMap<String, Vec<(u64, u64)>> = match &args.gff {
         Some(g) => load_ig_tr(g)?,
-        None => HashMap::new(),
+        None => Default::default(),
     };
-    let contigs: std::collections::HashSet<String> = loci.iter().map(|l| l.1.clone()).collect();
+    let contigs: rustle::types::DetHashSet<String> = loci.iter().map(|l| l.1.clone()).collect();
     let genome = rustle::genome::GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)?;
     let bai = format!("{}.bai", args.bam);
     let file = std::fs::File::open(&args.bam)?;

@@ -14,7 +14,8 @@
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
-use std::collections::{BTreeSet, HashSet, BTreeMap};
+use crate::types::{DetHashMap, DetHashSet};
+use std::collections::{BTreeSet, BTreeMap};
 
 use anyhow::Result;
 
@@ -418,7 +419,7 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
         }
     }
     // keep the chosen representatives in the input (start-sorted) order.
-    let keep: std::collections::HashSet<usize> = kept_idx.into_iter().collect();
+    let keep: DetHashSet<usize> = kept_idx.into_iter().collect();
     copies
         .into_iter()
         .enumerate()
@@ -586,7 +587,7 @@ pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscr
     // start < e and start > s - max_span, so only that window of the sorted list is scanned (was: every rep
     // for every record, O(records x reps)). The winner is the same: max overlap, ties to the HIGHEST rep index
     // — what `Iterator::max_by_key` over `reps.iter().enumerate()` returned (it keeps the LAST maximum).
-    let mut idx: std::collections::HashMap<&str, (Vec<(u64, usize)>, u64)> = std::collections::HashMap::new();
+    let mut idx: DetHashMap<&str, (Vec<(u64, usize)>, u64)> = DetHashMap::default();
     for (i, rep) in reps.iter().enumerate() {
         let e = idx.entry(rep.chrom.as_str()).or_default();
         e.0.push((rep.start, i));
@@ -988,7 +989,7 @@ pub(super) fn locus_core_bp(bam_reads: &[BamRead], reps: &[DenovoTranscript], mi
     }
     // widest read per chromosome: a read with s + max_len <= r.start ends at or before r.start and adds no
     // event, so each rep's scan can start at the first read past that bound (was: from index 0 per rep)
-    let max_len: std::collections::HashMap<&str, u64> =
+    let max_len: DetHashMap<&str, u64> =
         by_chrom.iter().map(|(c, v)| (*c, v.iter().map(|&(s, e)| e.saturating_sub(s)).max().unwrap_or(0))).collect();
     reps.iter()
         .map(|r| {
@@ -1213,8 +1214,8 @@ pub fn add_junction_support(support: &mut [usize], best_copy: usize, combined_de
     }
 }
 
-pub fn read_junction_support(reads: &[PrimaryRead]) -> std::collections::HashMap<(String, u64, u64), usize> {
-    let mut sup = std::collections::HashMap::new();
+pub fn read_junction_support(reads: &[PrimaryRead]) -> DetHashMap<(String, u64, u64), usize> {
+    let mut sup = DetHashMap::default();
     for pr in reads {
         for &(d, a) in &pr.introns {
             *sup.entry((pr.chrom.clone(), d, a)).or_insert(0) += 1;
@@ -1238,14 +1239,14 @@ fn env_num<T: std::str::FromStr>(key: &str, default: T) -> T {
 
 pub fn retain_non_readthrough(
     transcripts: &mut Vec<DenovoTranscript>,
-    support: &std::collections::HashMap<(String, u64, u64), usize>,
+    support: &DetHashMap<(String, u64, u64), usize>,
     tag: &str,
 ) {
     let min_distinct = env_num("RUSTLE_READTHROUGH_MIN_DISTINCT", READTHROUGH_MIN_DISTINCT);
     // Same predicate as `is_unspliced_readthrough`, over a per-chromosome list of supported junctions sorted
     // by donor: engulfed junctions have start <= donor and acceptor <= end (so donor < end), found by a binary
     // search and a scan of that window (was: the whole junction map per single-exon transcript).
-    let mut jidx: std::collections::HashMap<&str, Vec<(u64, u64)>> = std::collections::HashMap::new();
+    let mut jidx: DetHashMap<&str, Vec<(u64, u64)>> = DetHashMap::default();
     for ((chrom, d, a), &n) in support.iter() {
         if n >= READTHROUGH_MIN_SUPPORT {
             jidx.entry(chrom.as_str()).or_default().push((*d, *a));
@@ -1299,7 +1300,7 @@ pub fn retain_non_readthrough(
 /// ratio (no separation); exonic coverage breadth (the GSTM readthrough is better covered than TSPYL1).
 pub fn is_unspliced_readthrough(
     rep: &DenovoTranscript,
-    junction_support: &std::collections::HashMap<(String, u64, u64), usize>,
+    junction_support: &DetHashMap<(String, u64, u64), usize>,
     min_support: usize,
     min_distinct: usize,
 ) -> bool {
@@ -1330,7 +1331,7 @@ pub fn is_unspliced_readthrough(
 /// not the assembler's. Distinct from [`is_unspliced_readthrough`] (single-exon only).
 pub fn is_giant_intron_mischain(
     rep: &DenovoTranscript,
-    junction_support: &std::collections::HashMap<(String, u64, u64), usize>,
+    junction_support: &DetHashMap<(String, u64, u64), usize>,
     giant_bp: u64,
     min_junction_reads: usize,
 ) -> bool {
@@ -1344,7 +1345,7 @@ pub fn is_giant_intron_mischain(
 /// [`retain_non_readthrough`]; reuses the same primary-read junction-support map. Emits a per-drop diagnostic.
 pub fn retain_non_mischain(
     transcripts: &mut Vec<DenovoTranscript>,
-    support: &std::collections::HashMap<(String, u64, u64), usize>,
+    support: &DetHashMap<(String, u64, u64), usize>,
     tag: &str,
 ) {
     let giant_bp = env_num("RUSTLE_MISCHAIN_GIANT_BP", MISCHAIN_GIANT_INTRON_BP);
@@ -1394,7 +1395,7 @@ pub fn bridge_transcripts(transcripts: &[DenovoTranscript]) -> Vec<usize> {
             .then((tb.end - tb.start).cmp(&(ta.end - ta.start)))
             .then(a.cmp(&b))
     });
-    let mut id: std::collections::HashMap<(&str, u64, u64), usize> = std::collections::HashMap::new();
+    let mut id: DetHashMap<(&str, u64, u64), usize> = DetHashMap::default();
     let mut parent: Vec<usize> = Vec::new();
     let mut support: Vec<u64> = Vec::new();
     fn find(parent: &mut [usize], mut x: usize) -> usize {
@@ -1452,7 +1453,7 @@ pub fn bridge_transcripts(transcripts: &[DenovoTranscript]) -> Vec<usize> {
 
 /// Drop [`bridge_transcripts`] in place, logging each. Runs on transcripts before the locus collapse.
 pub fn retain_non_bridge(transcripts: &mut Vec<DenovoTranscript>, tag: &str) {
-    let drop: std::collections::HashSet<usize> = bridge_transcripts(transcripts).into_iter().collect();
+    let drop: DetHashSet<usize> = bridge_transcripts(transcripts).into_iter().collect();
     if drop.is_empty() {
         return;
     }
@@ -2392,7 +2393,7 @@ pub fn detect_and_assign(
         // tid -> discovery remap identity, for reference-ABSENT copies admitted below (Stage-2). Keyed on
         // tid (not index) so it survives the pruning/reassignment `all_copies` undergoes afterward; an
         // in-genome copy is simply absent from this map, which the main build below reads as `None`.
-        let mut remap_id_by_tid: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut remap_id_by_tid: DetHashMap<String, f64> = DetHashMap::default();
         let mut all_copies: Vec<DenovoTranscript> = cf.copies.clone();
         for rc in &rescued {
             all_copies.push(DenovoTranscript {
@@ -2456,7 +2457,7 @@ pub fn detect_and_assign(
         // carries mapq>0, and the representative need not be the primary. Taking the max over a molecule's
         // records keeps `uniq`/`anchored` counting exactly the molecules they counted before the reduction.
         let region_mapq_mol: Vec<u8> = {
-            let mut best: std::collections::HashMap<&str, u8> = std::collections::HashMap::new();
+            let mut best: DetHashMap<&str, u8> = DetHashMap::default();
             for (n, &q) in region_names.iter().zip(region_mapq.iter()) {
                 let e = best.entry(n.as_str()).or_insert(0);
                 *e = (*e).max(q);
@@ -2725,7 +2726,7 @@ pub fn detect_and_assign(
     // made the single-copy gene TSPYL1 report 12 copies against DAZ's 3 (`bench/COLLAPSED_COPY_GATE.md`).
     if cfg.collapse_gate {
         // owned, so `out` is free to grow below
-        let familied: std::collections::HashSet<String> =
+        let familied: DetHashSet<String> =
             out.iter().flat_map(|fa| fa.copy_tids.iter().cloned()).collect();
         for rep in reps.iter().filter(|r| !familied.contains(&r.tid)) {
             let obs = locus_ambiguity(rep, bam_reads);
@@ -2961,7 +2962,7 @@ fn recount_after_union(fa: &mut FamilyAssignment, psv_is_combined: bool) {
 fn project_posterior(
     n_f: usize,
     f: usize,
-    pos_of: &std::collections::HashMap<(usize, usize), usize>,
+    pos_of: &DetHashMap<(usize, usize), usize>,
     union_post: &[f64],
     one_hot: Option<usize>,
 ) -> Vec<f64> {
@@ -3129,10 +3130,10 @@ pub fn union_certificate_pass(
     p: &AssignParams,
     copy_label: &dyn Fn(&str, &str, usize) -> String,
 ) -> UnionSummary {
-    use std::collections::HashMap;
+    use DetHashMap;
     let mut sum = UnionSummary::default();
     // catalog copies by tid (the sequence lives here), then per family in `copy_tids` order
-    let by_tid: HashMap<&str, &DenovoTranscript> =
+    let by_tid: DetHashMap<&str, &DenovoTranscript> =
         supplied.iter().flat_map(|f| f.copies.iter()).map(|c| (c.tid.as_str(), c)).collect();
     let fam_copies: Vec<Option<Vec<&DenovoTranscript>>> = fams
         .iter()
@@ -3146,7 +3147,7 @@ pub fn union_certificate_pass(
         .flat_map(|(f, fa)| fa.copy_spans.iter().map(move |(c, s, e)| (f, c.as_str(), *s, *e)))
         .collect();
     // molecule -> its rows: (f, index into fams[f].assignments)
-    let mut rows_of: HashMap<&str, Vec<(usize, usize)>> = HashMap::new();
+    let mut rows_of: DetHashMap<&str, Vec<(usize, usize)>> = DetHashMap::default();
     for (f, fa) in fams.iter().enumerate() {
         for (k, (ri, _)) in fa.assignments.iter().enumerate() {
             if let Some(br) = bam_reads.get(*ri) {
@@ -3164,7 +3165,7 @@ pub fn union_certificate_pass(
     // chaining score, so a molecule's primary can sit below its tied secondaries in AS (the gate's own
     // `best_as` is the max over all non-supplementary records); testing only the tied records would file such
     // a molecule under "tie partner in another region" although every placement is loaded (review 2026-09-24).
-    let mut primary_loaded: HashSet<&str> = HashSet::new();
+    let mut primary_loaded: DetHashSet<&str> = DetHashSet::default();
     for br in bam_reads.iter() {
         if !br.is_secondary && !br.is_supplementary {
             primary_loaded.insert(br.name.as_str());
@@ -3231,7 +3232,7 @@ pub fn union_certificate_pass(
         let mut copies: Vec<DenovoTranscript> = Vec::with_capacity(merged.len());
         let mut origin: Vec<Vec<Member>> = Vec::with_capacity(merged.len());
         let mut labels: Vec<String> = Vec::with_capacity(merged.len());
-        let mut pos_of: HashMap<(usize, usize), usize> = HashMap::new();
+        let mut pos_of: DetHashMap<(usize, usize), usize> = DetHashMap::default();
         for (t, members, label) in merged {
             for m in &members {
                 if let Member::Family(f, ci, _) = m {
@@ -3255,12 +3256,12 @@ pub fn union_certificate_pass(
                 chroms.push(bam_reads[ri].chrom.clone());
             }
         }
-        let results: HashMap<&str, super::copy_assign::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
+        let results: DetHashMap<&str, super::copy_assign::copy_assign_pipeline::ReadResult> = if copies.len() >= 2 {
             let refs: Vec<&DenovoTranscript> = copies.iter().collect();
             let d = assign_family_detailed(&refs, &reads, &p_union, Some(genome), Some(&names), Some(&chroms));
             d.results.into_iter().map(|r| (names[r.read_index].as_str(), r)).collect()
         } else {
-            HashMap::new()
+            DetHashMap::default()
         };
         let candidates = labels.join(",");
         for (name, recs) in &mols {
@@ -3464,7 +3465,7 @@ fn gw_reps_and_catalog(
 ) -> Result<(Vec<DenovoTranscript>, Vec<u32>, Vec<ColocatedFamily>)> {
     // --- (1) genome-wide reps ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
-    let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
+    let contigs: DetHashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -3668,7 +3669,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     use super::read_conflict::Placement;
     // --- genome-wide reps (same as the same-chrom path) ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
-    let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
+    let contigs: DetHashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -3735,10 +3736,10 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     eprintln!("[gw-catalog-xchrom] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
 
     // --- GLOBAL placement accumulation: a read's placements (across chroms) keyed by name, GLOBAL idx ---
-    let mut name_map: std::collections::HashMap<String, Vec<Placement>> = std::collections::HashMap::new();
+    let mut name_map: DetHashMap<String, Vec<Placement>> = DetHashMap::default();
     // Per-rep read 3' ends, collected only when the TES extension is enabled (O(reads) extra memory).
     let tes_wanted = matches!(std::env::var("RUSTLE_TES_EXTEND"), Ok(v) if v != "0" && !v.is_empty());
-    let mut tes_ends: std::collections::HashMap<usize, Vec<u64>> = std::collections::HashMap::new();
+    let mut tes_ends: DetHashMap<usize, Vec<u64>> = DetHashMap::default();
     for (chrom, glob) in &by_chrom {
         let clen = genome.chrom_len(chrom);
         let (_primary, bam_reads) = match reads_in_region(bam_path, chrom, 0, clen, threads) {
@@ -3852,7 +3853,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     // (it links only copies reads confuse). Seeded by the families above ("when assignment is determined
     // needed"); bounded by the minimizer prefilter to family-adjacent candidates. Default OFF -> no-op.
     if cfg.complete_poa_core {
-        let tid2idx: std::collections::HashMap<&str, usize> =
+        let tid2idx: DetHashMap<&str, usize> =
             reps.iter().enumerate().map(|(i, r)| (r.tid.as_str(), i)).collect();
         let fam_repidx: Vec<Vec<usize>> = out
             .iter()
@@ -4131,7 +4132,7 @@ fn tier2_rescue(
     let _ = std::fs::remove_file(&cp);
     let _ = std::fs::remove_file(&rp);
     let out = match out { Ok(o) => o, Err(_) => return Vec::new() };
-    let mut admitted: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut admitted: DetHashSet<usize> = DetHashSet::default();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 12 { continue; }
@@ -4628,9 +4629,9 @@ pub(crate) fn certificate_for_weighted(
     groups: &[Vec<usize>],
     er_edges: &[(usize, usize, f64, f64)],
 ) -> FamilyCertificate {
-    use std::collections::{BTreeSet, HashMap};
+    use std::collections::{BTreeSet};
     let n = groups.len();
-    let mut owner: HashMap<usize, usize> = HashMap::new();
+    let mut owner: DetHashMap<usize, usize> = DetHashMap::default();
     for (gi, g) in groups.iter().enumerate() {
         for &r in g {
             owner.insert(r, gi);
@@ -4736,7 +4737,7 @@ fn catalog_reps_key(bam_path: &str, fasta_path: &str, cfg: &DenovoConfig, span: 
 /// `from_fasta_contigs` load the WHOLE genome: 12 s on CHM13).
 fn genome_for_loaded_reps(reps: &[DenovoTranscript], fasta_path: &str, cfg: &DenovoConfig) -> Result<GenomeIndex> {
     Ok(if cfg.collapse_enumerate || cfg.collapse_expressed || cfg.dna_family_fallback {
-        let contigs: HashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
+        let contigs: DetHashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
         GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?
     } else {
         GenomeIndex::empty()
@@ -5184,7 +5185,7 @@ fn build_catalog_reps(
     if span.is_some() && reads.is_empty() {
         return Ok((Vec::new(), GenomeIndex::empty(), Vec::new(), None));
     }
-    let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
+    let contigs: DetHashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -5761,7 +5762,7 @@ pub fn refine_families_exon_sum(
     } else {
         match params.intron_fasta.as_ref() {
             Some(path) => {
-                let contigs: HashSet<String> = families.iter().flatten().map(|c| c.chrom.clone()).collect();
+                let contigs: DetHashSet<String> = families.iter().flatten().map(|c| c.chrom.clone()).collect();
                 match GenomeIndex::from_fasta_contigs(path, &contigs) {
                     Ok(g) => Some(g),
                     Err(e) if params.include_introns => {
@@ -7159,7 +7160,7 @@ pub fn write_joint_rna_dna_certificate(
             nodes.push(Node { family: fi, copy: ci, rep });
         }
     }
-    let contigs: HashSet<String> = nodes.iter().map(|n| n.rep.chrom.clone()).collect();
+    let contigs: DetHashSet<String> = nodes.iter().map(|n| n.rep.chrom.clone()).collect();
     // An empty emitted catalog must produce empty joint reports cheaply, not trigger the FASTA loader's
     // intentional empty-contig fallback to loading the entire genome.
     let genome = if nodes.is_empty() {
@@ -7919,7 +7920,7 @@ pub(crate) fn homology_edges_all_reps_pooled_weighted(
     let span_genome: Option<GenomeIndex> = if params.homology_genomic_span {
         match params.intron_fasta.as_ref() {
             Some(path) => {
-                let contigs: HashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
+                let contigs: DetHashSet<String> = reps.iter().map(|r| r.chrom.clone()).collect();
                 match GenomeIndex::from_fasta_contigs(path, &contigs) {
                     Ok(g) => Some(g),
                     Err(e) => {
@@ -8933,6 +8934,7 @@ fn distinct_locus_reps_grouped(
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
@@ -9072,7 +9074,7 @@ mod tests {
                 assert_eq!(locus_core_bp(&reads, &reps, depth), naive_core_bp(&reads, &reps, depth), "core_bp, trial {trial}");
             }
             // readthrough: the same kept set as the per-transcript predicate over the whole junction map
-            let mut support: std::collections::HashMap<(String, u64, u64), usize> = std::collections::HashMap::new();
+            let mut support: DetHashMap<(String, u64, u64), usize> = DetHashMap::default();
             let n_junctions = r.next(80) as usize;
             for _ in 0..n_junctions {
                 let d = r.next(5000);
@@ -10042,7 +10044,7 @@ mod tests {
         // c1: 100 A's, then 10 C's at 100..110, then T's
         let seq: String = "A".repeat(100) + &"C".repeat(10) + &"T".repeat(50);
         std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
-        let contigs: std::collections::HashSet<String> = ["c1".to_string()].into_iter().collect();
+        let contigs: DetHashSet<String> = ["c1".to_string()].into_iter().collect();
         let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
 
         // '+' strand, exon-sum ends at 104, sharp TES at 110 -> append genome[104..110] = "CCCCCC".
@@ -11067,7 +11069,7 @@ mod tests {
         let (lo, hi) = range.split_once('-').unwrap();
         let (lo, hi): (u64, u64) = (lo.parse().unwrap(), hi.parse().unwrap());
         let (primary, bam_reads) = reads_in_region(&bam, chrom, lo, hi, 4).expect("read region");
-        let mut contigs = std::collections::HashSet::new();
+        let mut contigs = DetHashSet::default();
         contigs.insert(chrom.to_string());
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
@@ -11309,7 +11311,7 @@ mod tests {
     #[test]
     fn correction_updates_assignment_and_recomputes_em() {
         use crate::vg_family::vg_realign::{RealignApply, RealignRecord};
-        use std::collections::HashMap;
+        use DetHashMap;
 
         // One PSV column distinguishing copy 0 ('A') from copy 1 ('C').
         let copy_psv_alleles = vec![vec![Some(b'A')], vec![Some(b'C')]];
@@ -11393,7 +11395,7 @@ mod tests {
             realign_records: Vec::new(),
         };
 
-        let mut corrected = HashMap::new();
+        let mut corrected = DetHashMap::default();
         corrected.insert(10usize, (1usize, vec![Some(b'C')]));
         let apply = RealignApply {
             corrected,
@@ -11457,7 +11459,7 @@ mod tests {
     #[test]
     fn correction_rederives_full_assignment_not_just_best_copy() {
         use crate::vg_family::vg_realign::{RealignApply, RealignRecord};
-        use std::collections::HashMap;
+        use DetHashMap;
 
         // Two PSV columns cleanly distinguishing copy 0 ('A','A') from copy 1 ('C','C') -- well
         // clear of the alpha=1e-3 Bonferroni bound (min_p ~= (0.003/3)^2 = 1e-6 << 1e-3), so the
@@ -11522,7 +11524,7 @@ mod tests {
             realign_records: Vec::new(),
         };
 
-        let mut corrected = HashMap::new();
+        let mut corrected = DetHashMap::default();
         corrected.insert(20usize, (1usize, vec![Some(b'C'), Some(b'C')]));
         let apply = RealignApply {
             corrected,
@@ -11835,7 +11837,7 @@ mod tests {
     #[test]
     #[ignore = "needs a real BAM + FASTA via RUSTLE_DENOVO_SMOKE_{BAM,FASTA}"]
     fn smoke_detect_families_on_real_data() {
-        use std::collections::HashSet as Set;
+        use DetHashSet as Set;
         let (bam, fasta) = match (
             std::env::var("RUSTLE_DENOVO_SMOKE_BAM"),
             std::env::var("RUSTLE_DENOVO_SMOKE_FASTA"),
@@ -11941,7 +11943,7 @@ mod tests {
         reads.retain(|r| r.chrom == chrom && r.ref_start < hi && r.ref_end > lo);
         let cfg = DenovoConfig::default();
         let p = &cfg.detect;
-        let contigs: HashSet<String> = std::iter::once(chrom.to_string()).collect();
+        let contigs: DetHashSet<String> = std::iter::once(chrom.to_string()).collect();
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         let skeletons = pass1_skeletons(&reads, cfg.pass1_min_reads);
         let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
@@ -12495,7 +12497,7 @@ mod tests {
         let colo = colocated_families(&reps, &[fam], 5_000_000, 2, &DetectParams::default());
         assert_eq!(colo.len(), 1, "disjoint copies on one chromosome are ONE family regardless of strand");
         assert_eq!(colo[0].copies.len(), 4, "all four disjoint copies are kept");
-        let strands: std::collections::HashSet<char> = colo[0].copies.iter().map(|x| x.strand).collect();
+        let strands: DetHashSet<char> = colo[0].copies.iter().map(|x| x.strand).collect();
         assert_eq!(strands.len(), 2, "the family spans both strands (inverted duplication)");
     }
 
@@ -12697,7 +12699,7 @@ mod tests {
         assert!(catalog_overlaps(&ok).is_empty());
     }
 
-    fn junc(list: &[(u64, u64, usize)]) -> std::collections::HashMap<(String, u64, u64), usize> {
+    fn junc(list: &[(u64, u64, usize)]) -> DetHashMap<(String, u64, u64), usize> {
         list.iter().map(|&(d, a, n)| (("c1".to_string(), d, a), n)).collect()
     }
 
@@ -13211,7 +13213,7 @@ mod tests {
     /// is dropped; a spliced transcript over the same span is kept.
     #[test]
     fn retain_non_readthrough_drops_engulfing_single_exon_keeps_spliced() {
-        let mut support = std::collections::HashMap::new();
+        let mut support = DetHashMap::default();
         for i in 1..=6u64 {
             support.insert(("c1".to_string(), i * 100, i * 100 + 50), 2usize);
         }

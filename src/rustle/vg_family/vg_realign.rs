@@ -427,7 +427,7 @@ pub struct RealignApply {
     /// `RealignAction::Reassign`) to a DIFFERENT copy than the read's existing linear
     /// attribution, plus the read's base at each of the new copy's PSV columns (from
     /// `align_traceback` + `path_obs_at` against the new copy's consensus).
-    pub corrected: std::collections::HashMap<usize, (usize, Vec<Option<u8>>)>,
+    pub corrected: crate::types::DetHashMap<usize, (usize, Vec<Option<u8>>)>,
     /// Clusters (each `>= rp.min_reads` members) of read INDICES (into `bam_reads`) that fit no
     /// existing copy-path at all (`realign_to_paths` returned `None`) but are mutually similar
     /// enough (`pool_novel`, `min_id ~= 0.9`) to be candidate novel/reference-absent copies. Not
@@ -479,7 +479,7 @@ pub fn apply_realign(
 ) -> RealignApply {
     let _ = copies; // parallel to copy_seqs; not read directly here (see doc).
 
-    let mut corrected = std::collections::HashMap::new();
+    let mut corrected = crate::types::DetHashMap::default();
     let mut records = Vec::new();
     let mut unfit: Vec<(String, Vec<u8>)> = Vec::new();
     let mut unfit_idx: Vec<usize> = Vec::new();

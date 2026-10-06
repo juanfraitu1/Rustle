@@ -13,6 +13,7 @@
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
+use crate::types::{DetHashMap, DetHashSet};
 use crate::vg_family::copy_split::{allele_at, AlignedRead};
 
 /// Per-copy feature profile over the family's PSV columns + intron-boundary set.
@@ -704,6 +705,7 @@ pub fn read_psv_obs(read: &AlignedRead, psv_positions: &[u64]) -> Vec<Option<u8>
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::*;
 
     fn cp(copy_id: usize, alleles: &[Option<u8>], junctions: &[i64]) -> CopyProfile {
@@ -1318,6 +1320,7 @@ pub mod em_copy_assign {
 //! Task 1's `ReadEvidence.logl` arrives in Task 3.
 //!
 //! **STATUS:** OPT-IN — `--em` (src/bin/copy_assign.rs:310-311, `#[arg(long, default_value_t = false)]`) OR `--vg-realign` (src/bin/copy_assign.rs:340-341, default false)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+    use crate::types::{DetHashMap, DetHashSet};
 
 /// log-sum-exp over a slice, ignoring `-inf` terms so no NaN is produced when
 /// some copies have zero prior mass (`ln 0 = -inf`).
@@ -1746,6 +1749,7 @@ mod em_driver_tests {
 ///   posterior must track the abundance prior exactly (no forced 1/k hard call), at every coverage.
 #[cfg(test)]
 mod coverage_sweep {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::super::{read_copy_evidence, AssignParams, BubbleGraph, CopyProfile, ReadFeatures};
     use super::{em_assign, EmLabel};
 
@@ -1857,8 +1861,8 @@ mod coverage_sweep {
         let mut seed: u64 = 0xC0FFEE_2026_u64;
         let graph = BubbleGraph::from_copies(&copies);
 
-        let mut l1_by_cov = std::collections::HashMap::new();
-        let mut acc_by_cov = std::collections::HashMap::new();
+        let mut l1_by_cov = DetHashMap::default();
+        let mut acc_by_cov = DetHashMap::default();
 
         println!(
             "{:>8} {:>8} {:>15} {:>15} {:>14}",
@@ -1954,6 +1958,7 @@ mod coverage_sweep {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::{e_step, loglik, m_step};
 
     #[test]
@@ -2016,6 +2021,7 @@ pub mod copy_assign_pipeline {
 //!      its intron boundaries (mapped to spliced space) → a feature vector → `assign_read`.
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+    use crate::types::{DetHashMap, DetHashSet};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -2574,21 +2580,21 @@ pub struct StarProof {
     pub cand: Vec<usize>,
     pub alleles: Vec<Vec<Option<u8>>>,
 }
-static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, StarProof>>> =
+static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, StarProof>>> =
     std::sync::OnceLock::new();
 pub fn register_star_proof(read_name: &str, proof: StarProof) {
     STAR_PROOFS.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string(), proof);
 }
 /// ⭐ §6ft read-through certificate: molecule name → (partner copy index, read positions the partner or the
 /// mis-chain cut explains). Same side-table device as `STAR_PROOFS`; drained by the binary.
-static READTHROUGH: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (usize, usize)>>> =
+static READTHROUGH: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, (usize, usize)>>> =
     std::sync::OnceLock::new();
 pub fn register_readthrough(read_name: &str, partner: usize, n_explained: usize) {
     READTHROUGH.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string(), (partner, n_explained));
 }
 /// §6ft partners: catalog units of ANOTHER family (`member_status = partner`) — aligned so a read-through tail
 /// is explained, never a candidate for assignment or placement.
-static PARTNERS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+static PARTNERS: std::sync::OnceLock<std::sync::Mutex<DetHashSet<String>>> = std::sync::OnceLock::new();
 pub fn register_partner(tid: &str) {
     PARTNERS.get_or_init(Default::default).lock().unwrap().insert(tid.to_string());
 }
@@ -2601,7 +2607,7 @@ pub fn is_partner(tid: &str) -> bool {
 /// read-extended locus). Such a molecule is NEVER `Assigned`: the certificate only ever compared it against
 /// this family's copies, and the advisor's rule is that no tied placement is privileged. Registered by the
 /// binary at the AS-tied gate; consumed at the verdict.
-static TIE_OUTSIDE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+static TIE_OUTSIDE: std::sync::OnceLock<std::sync::Mutex<DetHashSet<String>>> = std::sync::OnceLock::new();
 pub fn register_tie_outside(read_name: &str) {
     TIE_OUTSIDE.get_or_init(Default::default).lock().unwrap().insert(read_name.to_string());
 }
@@ -2614,7 +2620,7 @@ pub fn is_tie_outside(read_name: &str) -> bool {
 /// gate, per record); previously only the boolean "some placement was outside" was kept, so `copies
 /// "A,outside"` in the GTF never said WHERE outside — unnamed and unactionable (register row 790, e.g. the
 /// EIF3C/EIF3CL class, 8,944 human molecules).
-static TIE_OUTSIDE_LOCUS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, std::collections::BTreeSet<String>>>> = std::sync::OnceLock::new();
+static TIE_OUTSIDE_LOCUS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, std::collections::BTreeSet<String>>>> = std::sync::OnceLock::new();
 pub fn register_tie_outside_locus(read_name: &str, chrom: &str, start: u64, end: u64) {
     TIE_OUTSIDE_LOCUS
         .get_or_init(Default::default)
@@ -2627,12 +2633,12 @@ pub fn register_tie_outside_locus(read_name: &str, chrom: &str, start: u64, end:
 pub fn tie_outside_loci(read_name: &str) -> std::collections::BTreeSet<String> {
     TIE_OUTSIDE_LOCUS.get().and_then(|m| m.lock().unwrap().get(read_name).cloned()).unwrap_or_default()
 }
-pub fn take_readthroughs() -> std::collections::HashMap<String, (usize, usize)> {
+pub fn take_readthroughs() -> DetHashMap<String, (usize, usize)> {
     READTHROUGH.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
 }
 
 /// Drain the table (the caller owns the proofs of every molecule assigned so far).
-pub fn take_star_proofs() -> std::collections::HashMap<String, StarProof> {
+pub fn take_star_proofs() -> DetHashMap<String, StarProof> {
     STAR_PROOFS.get().map(|m| std::mem::take(&mut *m.lock().unwrap())).unwrap_or_default()
 }
 
@@ -3188,7 +3194,7 @@ pub fn discover_intron_psvs(
 /// column and read by `discover_genomic_psvs`. A process-wide side table keyed by copy `tid`: adding a field
 /// to `DenovoTranscript` would touch 81 constructors for an opt-in lever (same rationale as the env-var
 /// levers). Only `--psv-genomic` consults it.
-static CORE_HULLS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (u64, u64)>>> =
+static CORE_HULLS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, (u64, u64)>>> =
     std::sync::OnceLock::new();
 pub fn register_core_hull(tid: &str, hull: (u64, u64)) {
     CORE_HULLS.get_or_init(Default::default).lock().unwrap().insert(tid.to_string(), hull);
@@ -3198,7 +3204,7 @@ pub fn core_hull_of(tid: &str) -> Option<(u64, u64)> {
 }
 /// ⭐ L2: per-copy read-supported locus extents (`locus_start`/`locus_end` of the catalog), the genomic
 /// read-star's alignment target when present. Same side-table rationale as `CORE_HULLS`.
-static LOCUS_EXTENTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (u64, u64)>>> =
+static LOCUS_EXTENTS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, (u64, u64)>>> =
     std::sync::OnceLock::new();
 pub fn register_locus_extent(tid: &str, extent: (u64, u64)) {
     LOCUS_EXTENTS.get_or_init(Default::default).lock().unwrap().insert(tid.to_string(), extent);
@@ -4425,7 +4431,7 @@ fn assign_family_detailed_once(
     let per_read: Vec<Option<PerRead>> = if pooled {
         let names = mol_names.expect("pooled requires mol_names");
         debug_assert_eq!(names.len(), reads.len());
-        let mut groups: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+        let mut groups: DetHashMap<&str, Vec<usize>> = DetHashMap::default();
         let mut order: Vec<&str> = Vec::new();
         for (i, n) in names.iter().enumerate().take(reads.len()) {
             let e = groups.entry(n.as_str()).or_insert_with(|| {
@@ -4526,8 +4532,8 @@ fn assign_family_detailed_once(
         }
         // §6ft: intron support over every record of the family (the O1 mis-chain rule's count), for the
         // read-through certificate's cut at giant unsupported introns
-        let intron_support: std::collections::HashMap<(u64, u64), usize> = {
-            let mut m: std::collections::HashMap<(u64, u64), usize> = std::collections::HashMap::new();
+        let intron_support: DetHashMap<(u64, u64), usize> = {
+            let mut m: DetHashMap<(u64, u64), usize> = DetHashMap::default();
             for r in reads.iter() {
                 let mut pos = r.ref_start;
                 for &(op, n) in &r.cigar {
@@ -4567,7 +4573,7 @@ fn assign_family_detailed_once(
                     .fold(None, |m: Option<f64>, r| Some(m.map_or(r, |x| x.min(r))));
                 // a single candidate has no competitor to certify against: `assign_read` returns Tied for it
                 // (margin ∞, nothing rejected), so the molecule stays in the output as a tie, never as a claim.
-                let partner_k: std::collections::HashSet<usize> = (0..cand.len()).filter(|&k| is_partner(&copies[cand[k]].tid)).collect();
+                let partner_k: DetHashSet<usize> = (0..cand.len()).filter(|&k| is_partner(&copies[cand[k]].tid)).collect();
                 if cand.len() == partner_k.len() {
                     // ⭐ §6fg ORPHAN: the molecule overlaps a copy but NO locus of the family aligns it (§6ft: a
                     // hit on a partner alone is no candidate) — reported, not dropped
@@ -4690,7 +4696,7 @@ fn assign_family_detailed_once(
                 };
                 let best_cov = cov_of(bk);
                 let n_best_cov = best_cov.iter().filter(|&&b| b).count();
-                let mut partners: std::collections::HashSet<usize> = std::collections::HashSet::new();
+                let mut partners: DetHashSet<usize> = DetHashSet::default();
                 let mut explained = vec![false; rlen];
                 let mut partner_best: Option<(usize, usize)> = None;
                 for &k in &partner_k {
@@ -5038,8 +5044,8 @@ fn assign_family_detailed_once(
         None => per_read,
         Some(names) => {
             debug_assert_eq!(names.len(), reads.len());
-            let mut groups: std::collections::HashMap<&str, Vec<usize>> =
-                std::collections::HashMap::new();
+            let mut groups: DetHashMap<&str, Vec<usize>> =
+                DetHashMap::default();
             let mut order: Vec<&str> = Vec::new();
             for (i, n) in names.iter().enumerate().take(per_read.len()) {
                 let e = groups.entry(n.as_str()).or_insert_with(|| {
@@ -5266,6 +5272,7 @@ pub fn assign_family(
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     #[test]
     fn maximin_best_prefers_the_condorcet_winner_over_the_column_count() {
         // three candidates; 0 beats 1 and 2 pairwise (min +6.9) but carries fewer columns; 2 carries many

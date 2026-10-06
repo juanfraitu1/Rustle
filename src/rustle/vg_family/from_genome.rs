@@ -47,7 +47,7 @@ pub fn genome_reps(
     windows: &[(String, u64, u64)],
     p: &GenomeRepParams,
 ) -> Result<Vec<DenovoTranscript>> {
-    let contigs: HashSet<String> = windows.iter().map(|(c, _, _)| c.clone()).collect();
+    let contigs: crate::types::DetHashSet<String> = windows.iter().map(|(c, _, _)| c.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
 
     // (1) SD detector: each window's sequence is a query; project_families_batch returns every genome
@@ -144,6 +144,7 @@ fn merge_overlapping(loci: &[(String, u64, u64)]) -> Vec<(String, u64, u64)> {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::*;
 
     #[test]
@@ -217,7 +218,7 @@ mod tests {
         }
         assert_eq!(windows.len(), 31, "expected all 31 oracle loci");
 
-        let contigs: HashSet<String> = windows.iter().map(|(c, _, _)| c.clone()).collect();
+        let contigs: crate::types::DetHashSet<String> = windows.iter().map(|(c, _, _)| c.clone()).collect();
         let genome = GenomeIndex::from_fasta_contigs(fa, &contigs).expect("genome index");
         let consensuses: Vec<(String, Vec<u8>)> = windows.iter().enumerate().filter_map(|(i, (c, s, e))| {
             genome.fetch_sequence(c, *s, *e).map(|seq| (format!("w{i}"), seq))
@@ -451,7 +452,7 @@ mod tests {
         // --- PROPOSAL #1: correct spans of baseline reps overlapping an oracle locus ---
         let sedef_text = std::fs::read_to_string(sedef_bed).unwrap();
         let sd_pairs = SdPairs::from_bed_str(&sedef_text);
-        let contigs: HashSet<String> = baseline.iter().map(|r| r.chrom.clone())
+        let contigs: DetHashSet<String> = baseline.iter().map(|r| r.chrom.clone())
             .chain(oracle.iter().map(|(c, _, _)| c.clone())).collect();
         let genome = GenomeIndex::from_fasta_contigs(fa, &contigs).expect("genome index");
         let mut corrected = baseline.clone();
@@ -628,7 +629,7 @@ mod tests {
         // --- PROPOSAL #1: identical to stage_c_body ---
         let sedef_text = std::fs::read_to_string(sedef_bed).unwrap();
         let sd_pairs = SdPairs::from_bed_str(&sedef_text);
-        let contigs: HashSet<String> = baseline.iter().map(|r| r.chrom.clone())
+        let contigs: DetHashSet<String> = baseline.iter().map(|r| r.chrom.clone())
             .chain(oracle.iter().map(|(c, _, _)| c.clone())).collect();
         let genome = GenomeIndex::from_fasta_contigs(fa, &contigs).expect("genome index");
         let mut corrected = baseline.clone();
@@ -1095,6 +1096,7 @@ pub fn known_from_fams(fams: &[(String, Vec<CopyIn>)]) -> HashMap<String, Vec<(S
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::*;
 
     #[test]
@@ -1328,6 +1330,7 @@ pub fn format_seed_rows(seed: &SeedLocus, fams: &[Vec<(String, u64, u64)>], hit:
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DetHashMap, DetHashSet};
     use super::*;
 
     fn fams() -> Vec<Vec<(String, u64, u64)>> {

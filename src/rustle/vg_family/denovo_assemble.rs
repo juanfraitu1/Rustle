@@ -14,6 +14,7 @@
 //!
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
+use crate::types::{DetHashMap, DetHashSet};
 use anyhow::Result;
 use noodles_sam::alignment::record::cigar::op::Kind;
 use noodles_sam::alignment::RecordBuf;
@@ -560,7 +561,7 @@ pub fn tss_cap_clip(
 /// record of a duplicate key wins, so the cap flag of a duplicate is the first record's).
 #[derive(Clone, Debug, Default)]
 pub struct TssEvidence {
-    seen: std::collections::HashSet<u64>,
+    seen: DetHashSet<u64>,
     /// chromosome -> its deduplicated records, in arrival order
     pub by_chrom: std::collections::BTreeMap<String, Vec<TssRead>>,
 }
@@ -742,7 +743,7 @@ pub fn footprint_skeletons(
     existing: &[Skeleton],
     min_reads: u32,
 ) -> Vec<Skeleton> {
-    use std::collections::HashMap;
+    use DetHashMap;
     let min_cov: u32 = std::env::var("RUSTLE_FOOTPRINT_MIN_COV")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     // ⚠ 5 kb, not 100 kb. This grouping runs GENOME-WIDE, and at 100 kb it chains every covered region
@@ -756,7 +757,7 @@ pub fn footprint_skeletons(
     let min_bp: u64 = std::env::var("RUSTLE_FOOTPRINT_MIN_BP")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(300);
     const BIN: u64 = 50;
-    let mut by_chrom: HashMap<&str, Vec<&PrimaryRead>> = HashMap::new();
+    let mut by_chrom: DetHashMap<&str, Vec<&PrimaryRead>> = DetHashMap::default();
     for r in reads {
         by_chrom.entry(r.chrom.as_str()).or_default().push(r);
     }
@@ -766,7 +767,7 @@ pub fn footprint_skeletons(
     // blocking on all candidates blocked the footprint everywhere it was needed: the first run added 14
     // nodes genome-wide and moved nothing. A chain below `min_reads` cannot become a node on its own, so
     // it must not reserve the region.
-    let mut taken: HashMap<&str, Vec<(u64, u64)>> = HashMap::new();
+    let mut taken: DetHashMap<&str, Vec<(u64, u64)>> = DetHashMap::default();
     for sk in existing.iter().filter(|sk| sk.n_reads >= min_reads) {
         taken.entry(sk.chrom.as_str()).or_default().push((sk.start, sk.end));
     }
@@ -804,7 +805,7 @@ pub fn footprint_skeletons(
                 served += ce - cs;
             }
             if served * 2 >= we - ws { continue; }
-            let mut depth: HashMap<u64, u32> = HashMap::new();
+            let mut depth: DetHashMap<u64, u32> = DetHashMap::default();
             let mut rev = 0u32;
             for r in &inside {
                 if r.reverse { rev += 1; }
@@ -837,7 +838,7 @@ pub fn footprint_skeletons(
     }
     for (chrom, rs) in by_chrom {
         // bin coverage over EXONIC blocks; a read's introns contribute nothing
-        let mut depth: HashMap<u64, u32> = HashMap::new();
+        let mut depth: DetHashMap<u64, u32> = DetHashMap::default();
         let mut rev = 0u32;
         for r in &rs {
             if r.reverse { rev += 1; }
@@ -1046,7 +1047,7 @@ pub fn alignment_read_from_record(
 /// copy's read support so the rescue can assemble it. A truly indistinguishable (no copy-specific feature)
 /// phantom is still rejected downstream by the identifiability / PSV gate — this only feeds candidates in.
 pub fn tied_secondary_reads(aln: &[(String, bool, i32, f32, PrimaryRead)], as_ratio: f64) -> Vec<PrimaryRead> {
-    use std::collections::HashMap;
+    use DetHashMap;
     // Optional de-tie gate (`RUSTLE_TIED_SEED_DE=1`): admit a secondary iff it DE-ties with the read's best
     // placement — `|Δde| <= DE_DELTA` AND both `de <= DE_MAX` — the SAME criterion the read-conflict graph
     // uses (`ConflictParams` delta=0.005, de_max=0.05). Unlike the relative AS ratio (no absolute quality
@@ -1057,7 +1058,7 @@ pub fn tied_secondary_reads(aln: &[(String, bool, i32, f32, PrimaryRead)], as_ra
     const DE_MAX: f64 = 0.05;
     let use_de = std::env::var("RUSTLE_TIED_SEED_DE").map(|v| v != "0").unwrap_or(false);
     // best placement per read = highest AS; carry its `de` as the tie reference.
-    let mut best: HashMap<&str, (i32, f32)> = HashMap::new();
+    let mut best: DetHashMap<&str, (i32, f32)> = DetHashMap::default();
     for (name, _, as_, de, _) in aln {
         let e = best.entry(name.as_str()).or_insert((i32::MIN, 0.0));
         if *as_ > e.0 {
@@ -1157,7 +1158,7 @@ pub fn primary_reads_from_bam_in(
     let (mut n_prim, mut n_sec, mut n_dup) = (0usize, 0usize, 0usize);
     let mut n_bar = 0usize;
     let mut sec_flag: Vec<bool> = Vec::new();
-    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut seen: DetHashSet<u64> = DetHashSet::default();
     while reader.read_record_buf(&header, &mut record)? > 0 {
         if let (Some(id), Some(sp)) = (only, span) {
             match record.reference_sequence_id() {
@@ -1515,7 +1516,7 @@ pub fn as_tie_keep_with(
     if ratio <= 0.0 {
         return vec![true; recs.len()];
     }
-    let mut best: std::collections::HashMap<&str, i32> = std::collections::HashMap::new();
+    let mut best: DetHashMap<&str, i32> = DetHashMap::default();
     for (_, name, as_score) in recs {
         if let Some(a) = as_score {
             let e = best.entry(name.as_str()).or_insert(i32::MIN);
@@ -1582,7 +1583,7 @@ pub fn global_best_as() -> Option<&'static AsTable> {
 
 /// The genome-wide best-AS table: molecule-name hash ([`read_name_hash`]) -> best AS. Sorted parallel arrays with
 /// a bucket index on the key's top bits, so it loads as two flat arrays and takes ~12 bytes per molecule. `get`
-/// answers exactly what the former `HashMap<u64, i32>` answered, duplicate keys included (the last row wins).
+/// answers exactly what the former `DetHashMap<u64, i32>` answered, duplicate keys included (the last row wins).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AsTable {
     keys: Vec<u64>,
@@ -1594,7 +1595,7 @@ pub struct AsTable {
 }
 
 impl AsTable {
-    /// From (key, value) pairs in file order. A key seen twice keeps its LAST value, as `HashMap::insert` did.
+    /// From (key, value) pairs in file order. A key seen twice keeps its LAST value, as `DetHashMap::insert` did.
     pub fn from_pairs(mut pairs: Vec<(u64, i32)>) -> Self {
         pairs.sort_by_key(|p| p.0); // stable: equal keys stay in file order
         let mut keys: Vec<u64> = Vec::with_capacity(pairs.len());
@@ -1897,7 +1898,7 @@ mod as_table_tests {
         *x
     }
 
-    /// The sorted table answers exactly what the former `HashMap<u64, i32>` answered, for every size (the one-bucket
+    /// The sorted table answers exactly what the former `DetHashMap<u64, i32>` answered, for every size (the one-bucket
     /// case included), with repeated keys keeping their LAST value, and for absent keys.
     #[test]
     fn as_table_lookup_equals_hashmap_last_wins() {
@@ -1913,7 +1914,7 @@ mod as_table_tests {
                 pairs.push((0, 7));
                 pairs.push((u64::MAX, 9));
             }
-            let mut hm: std::collections::HashMap<u64, i32> = std::collections::HashMap::new();
+            let mut hm: DetHashMap<u64, i32> = DetHashMap::default();
             for &(k, v) in pairs.iter() {
                 hm.insert(k, v);
             }
@@ -1999,14 +2000,14 @@ mod as_table_tests {
 #[derive(Debug, Default)]
 pub struct ReadHomeTable {
     contigs: Vec<String>,
-    homes: std::collections::HashMap<u64, Vec<(u32, u64, u64)>>,
+    homes: DetHashMap<u64, Vec<(u32, u64, u64)>>,
 }
 
 impl ReadHomeTable {
     pub fn parse(text: &str) -> Result<Self> {
         use anyhow::Context as _;
         let mut t = ReadHomeTable::default();
-        let mut index: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut index: DetHashMap<String, u32> = DetHashMap::default();
         for (ln, line) in text.lines().enumerate() {
             if line.trim().is_empty() || line.starts_with('#') {
                 continue;
@@ -2530,8 +2531,8 @@ impl ReadthroughJunction {
 #[derive(Debug, Default, Clone)]
 struct RtContig {
     rows: [Vec<(u64, u64, u64)>; 2],
-    s: std::collections::HashMap<(u64, u64, bool), u32>,
-    l: std::collections::HashMap<(u64, u64, bool), u32>,
+    s: DetHashMap<(u64, u64, bool), u32>,
+    l: DetHashMap<(u64, u64, bool), u32>,
 }
 
 /// The statistics accumulator. Fed one record at a time by the streaming reader (a field of [`Pass1Acc`]) or from
@@ -3198,7 +3199,7 @@ pub fn stream_pass1_region_with(
     let header = reader.read_header()?;
     let index = noodles_bam::bai::read(&bai_path)?;
     let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
-    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut seen: DetHashSet<u64> = DetHashSet::default();
     let mut n_mapped = 0usize;
     let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
     // GOOD seeding on the streaming path (r1060/r1100, `docs/PREREG_locus_read_pool_2026-09-22.md`): with
@@ -3875,7 +3876,7 @@ pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
             }
         }
     }
-    let mut sum: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    let mut sum: DetHashMap<usize, u32> = DetHashMap::default();
     for (i, sk) in skeletons.iter().enumerate() {
         let r = find(&mut parent, i);
         *sum.entry(r).or_insert(0) += sk.n_reads;
@@ -4153,7 +4154,7 @@ footprint: false,
 /// ORIGINAL read set. Deterministic; sub-reads replace their parent in 5'→3' order.
 pub fn split_mischained_reads(
     reads: &[PrimaryRead],
-    support: &std::collections::HashMap<(String, u64, u64), usize>,
+    support: &DetHashMap<(String, u64, u64), usize>,
     giant_bp: u64,
     min_reads: usize,
 ) -> Vec<PrimaryRead> {
@@ -4236,7 +4237,7 @@ mod locus_support_tests {
         let good = "CT".to_string() + &"G".repeat(96) + "AC";
         let seq = format!("{ex}{bad}{ex}{good}{ex}{good}{ex}");
         std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
-        let contigs: std::collections::HashSet<String> = ["c1".to_string()].into_iter().collect();
+        let contigs: DetHashSet<String> = ["c1".to_string()].into_iter().collect();
         let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
         let introns = vec![(100, 200), (300, 400), (500, 600)];
 
@@ -4486,7 +4487,7 @@ mod tests {
         let fa = dir.join("g.fa");
         let seq = format!("{}{}{}", "A".repeat(100), "G".repeat(100), "C".repeat(100));
         std::fs::write(&fa, format!(">c1\n{seq}\n")).unwrap();
-        let contigs: std::collections::HashSet<String> = ["c1".to_string()].into_iter().collect();
+        let contigs: DetHashSet<String> = ["c1".to_string()].into_iter().collect();
         let g = crate::genome::GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &contigs).unwrap();
         let gaps = vec![(100u64, 200u64)];
 
@@ -5292,13 +5293,13 @@ footprint: false,
 
     #[test]
     fn split_cuts_spurious_giant_intron_keeping_both_segments() {
-        use std::collections::HashMap;
+        use DetHashMap;
         let reads = vec![PrimaryRead {
             chrom: "chr1".into(), ref_start: 100, ref_end: 80_100,
             introns: vec![(200, 210), (300, 80_000)], // small internal intron, then a giant bridge
             reverse: false,
         }];
-        let mut support = HashMap::new();
+        let mut support = DetHashMap::default();
         support.insert(("chr1".to_string(), 300, 80_000), 1); // giant, sub-threshold -> CUT
         let out = split_mischained_reads(&reads, &support, 50_000, 3);
         assert_eq!(out, vec![
@@ -5309,11 +5310,11 @@ footprint: false,
 
     #[test]
     fn split_does_not_cut_well_supported_large_intron() {
-        use std::collections::HashMap;
+        use DetHashMap;
         let reads = vec![PrimaryRead {
             chrom: "chr1".into(), ref_start: 100, ref_end: 80_100, introns: vec![(300, 80_000)], reverse: false,
         }];
-        let mut support = HashMap::new();
+        let mut support = DetHashMap::default();
         support.insert(("chr1".to_string(), 300, 80_000), 3); // >= min_reads -> real large-gene intron, NOT a mis-chain
         let out = split_mischained_reads(&reads, &support, 50_000, 3);
         assert_eq!(out, reads); // unchanged
@@ -5321,23 +5322,23 @@ footprint: false,
 
     #[test]
     fn split_ignores_sub_giant_introns() {
-        use std::collections::HashMap;
+        use DetHashMap;
         let reads = vec![PrimaryRead {
             chrom: "chr1".into(), ref_start: 100, ref_end: 500, introns: vec![(200, 210), (300, 320)], reverse: false,
         }];
-        let out = split_mischained_reads(&reads, &HashMap::new(), 50_000, 3); // no intron exceeds giant_bp
+        let out = split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3); // no intron exceeds giant_bp
         assert_eq!(out, reads);
     }
 
     #[test]
     fn split_handles_two_giant_introns_into_three_segments() {
-        use std::collections::HashMap;
+        use DetHashMap;
         let reads = vec![PrimaryRead {
             chrom: "chr1".into(), ref_start: 0, ref_end: 160_050,
             introns: vec![(50, 80_000), (80_050, 160_000)], // two giant sub-threshold bridges
             reverse: false,
         }];
-        let out = split_mischained_reads(&reads, &HashMap::new(), 50_000, 3); // absent support => 0 < 3 => both cut
+        let out = split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3); // absent support => 0 < 3 => both cut
         assert_eq!(out, vec![
             PrimaryRead { chrom: "chr1".into(), ref_start: 0,       ref_end: 50,      introns: vec![], reverse: false },
             PrimaryRead { chrom: "chr1".into(), ref_start: 80_000,  ref_end: 80_050,  introns: vec![], reverse: false },
@@ -5347,12 +5348,12 @@ footprint: false,
 
     #[test]
     fn split_passes_reads_through_unchanged_when_no_cut() {
-        use std::collections::HashMap;
+        use DetHashMap;
         let reads = vec![
             PrimaryRead { chrom: "chr1".into(), ref_start: 0, ref_end: 100, introns: vec![], reverse: false },
             PrimaryRead { chrom: "chr2".into(), ref_start: 5, ref_end: 400, introns: vec![(100, 200)], reverse: false },
         ];
-        assert_eq!(split_mischained_reads(&reads, &HashMap::new(), 50_000, 3), reads);
+        assert_eq!(split_mischained_reads(&reads, &DetHashMap::default(), 50_000, 3), reads);
     }
 }
 
@@ -6052,7 +6053,7 @@ mod readthrough_junction_tests {
 
     fn buffered_with(bam: &str, stats: Option<ReadthroughStats>, g: &GenomeIndex) -> (Vec<Skeleton>, ReadthroughFlags) {
         let (primary, bam_reads) = reads_in_region_indexed_with(bam, "c1", 0, L, None).unwrap();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = DetHashSet::default();
         let pool: Vec<PrimaryRead> =
             primary.into_iter().filter(|x| seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))).collect();
         let mut fl = ReadthroughFlags::default();

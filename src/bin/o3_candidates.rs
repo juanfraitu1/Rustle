@@ -18,6 +18,7 @@
 //! input file that does not exist, a copy on a contig the BAM header does not name, minimap2 that cannot be started (spec §8).
 //! Deterministic: seeded sampling over sorted names, stable orders; threads only inside minimap2 and the BAM decompression.
 
+use rustle::types::{DetHashMap, DetHashSet};
 use anyhow::{Context, Result};
 use noodles_core::{Position, Region};
 use rustle::vg_family::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily};
@@ -34,7 +35,7 @@ use rustle::bam::record_de;
 use rustle::vg_family::run_cache as rc;
 use rustle::vg_family::seq_utils::reverse_complement;
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -264,7 +265,7 @@ fn run(raw: &[String]) -> Result<()> {
     fresh_dir(&dir)?;
     let n_consensus: usize = work.iter().map(|w| w.clusters.len()).sum();
     let best = if n_consensus == 0 {
-        HashMap::new()
+        DetHashMap::default()
     } else {
         let fa = dir.join("consensus.fa");
         write_fasta(&fa, work.iter().flat_map(|w| w.clusters.iter().map(|c| (c.id.clone(), c.seq.as_slice()))))?;
@@ -318,7 +319,7 @@ fn run(raw: &[String]) -> Result<()> {
 
     // the nets of the families with a flagged candidate, whole (before the cap: the patch realignment and O2 need every read), each read once
     // (R9: the first family in --copies order keeps a read two nets share)
-    let mut written: HashSet<&str> = HashSet::new();
+    let mut written: DetHashSet<&str> = DetHashSet::default();
     let nets_for_patch: Vec<(String, Vec<(String, Vec<u8>)>)> = flagged_families
         .iter()
         .map(|&fi| {
@@ -348,7 +349,7 @@ fn run(raw: &[String]) -> Result<()> {
 /// them), checked against its row, by the name minimap2 reports -> its family (`copy_targets`). `partner` rows (another family's unit,
 /// `catalog_input::CatalogCopy::partner`) are no copy of the family: they bring no reads into its net, and a hit on their record attributes
 /// no read.
-fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, HashMap<String, String>)> {
+fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, DetHashMap<String, String>)> {
     let text = std::fs::read_to_string(&args.copies).map_err(|e| exit_two(format!("--copies {}: {e}", args.copies)))?;
     if text.trim().is_empty() {
         return Err(exit_two(format!("--copies {} is empty", args.copies)));
@@ -360,7 +361,7 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, HashMap<String, Strin
     }
     let fa = std::fs::read_to_string(&args.copies_fa).map_err(|e| exit_two(format!("--copies-fa {}: {e}", args.copies_fa)))?;
     let seqs = parse_copies_fa(&fa).map_err(|e| exit_two(format!("--copies-fa {}: {e:#}", args.copies_fa)))?;
-    let mut checked: HashSet<(&str, usize)> = HashSet::new();
+    let mut checked: DetHashSet<(&str, usize)> = DetHashSet::default();
     for c in all.iter().flat_map(|f| f.copies.iter()).filter(|c| !c.partner) {
         seqs.get(&(c.family_id.clone(), c.copy_idx))
             .filter(|s| (s.chrom.as_str(), s.start, s.end) == (c.chrom.as_str(), c.start, c.end))
@@ -377,7 +378,7 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, HashMap<String, Strin
     let families = match &args.families {
         None => all,
         Some(want) => {
-            let known: HashSet<&str> = all.iter().map(|f| f.family_id.as_str()).collect();
+            let known: DetHashSet<&str> = all.iter().map(|f| f.family_id.as_str()).collect();
             let unknown: Vec<&String> = want.iter().filter(|w| !known.contains(w.as_str())).collect();
             if !unknown.is_empty() {
                 return Err(exit_two(format!("--families: {unknown:?} not in --copies {}", args.copies)));
@@ -390,7 +391,7 @@ fn load_copies(args: &Args) -> Result<(Vec<CatalogFamily>, HashMap<String, Strin
 
 /// The `--copies-fa` records of the `checked` copies, by the name minimap2 reports for each (its header up to the first whitespace) -> its
 /// family: a header's `{family}|{copy_idx}` prefix is its `parse_copies_fa` key, and a record whose key is no checked copy maps to nothing.
-fn copy_targets(fa: &str, checked: &HashSet<(&str, usize)>) -> HashMap<String, String> {
+fn copy_targets(fa: &str, checked: &DetHashSet<(&str, usize)>) -> DetHashMap<String, String> {
     fa.lines()
         .filter_map(|l| l.strip_prefix('>'))
         .filter_map(|h| {
@@ -447,7 +448,7 @@ fn store_stage(e: &rc::Entry, out: &str) {
 /// each read's sequence as sequenced.
 struct Nets {
     names: Vec<Vec<String>>,
-    seqs: HashMap<String, Vec<u8>>,
+    seqs: DetHashMap<String, Vec<u8>>,
 }
 
 /// The read's sequence as sequenced: the record's, reverse-complemented when the record is reverse.
@@ -472,8 +473,8 @@ fn oriented_sequence(record: &noodles_bam::Record) -> Vec<u8> {
 /// read given to a family the stage runs on joins its net (before the `--max-reads` cap), its sequence read back from the FASTA in the pass
 /// that also counts the aligned and the attributed reads of each class (`read_back`). A read whose sequence never appears (a secondary-only
 /// name without a primary record in the BAM) stays out of every net.
-fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMap<String, String>, tmp: &Path, mm: &Mm2) -> Result<Nets> {
-    let mut seqs: HashMap<String, Vec<u8>> = HashMap::new();
+fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &DetHashMap<String, String>, tmp: &Path, mm: &Mm2) -> Result<Nets> {
+    let mut seqs: DetHashMap<String, Vec<u8>> = DetHashMap::default();
     let mut names: Vec<BTreeSet<String>> = vec![BTreeSet::new(); families.len()];
     let (mut n_primary, mut n_secondary) = (0usize, 0usize);
     {
@@ -515,9 +516,9 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
             }
         }
     }
-    let need: HashSet<String> = names.iter().flatten().filter(|n| !seqs.contains_key(*n)).cloned().collect();
+    let need: DetHashSet<String> = names.iter().flatten().filter(|n| !seqs.contains_key(*n)).cloned().collect();
     // ruling R18: "no record on a family copy" means in no net of THIS run (pass A's scope)
-    let netted: HashSet<String> = names.iter().flatten().cloned().collect();
+    let netted: DetHashSet<String> = names.iter().flatten().cloned().collect();
     let attrib_fa = tmp.join("attrib.fa");
     let mut attrib = std::io::BufWriter::new(std::fs::File::create(&attrib_fa).with_context(|| format!("creating {}", attrib_fa.display()))?);
     let (mut n_found, mut n_unmapped, mut n_poor, mut n_poor_short, mut n_no_de) = (0usize, 0usize, 0usize, 0usize, 0usize);
@@ -583,12 +584,12 @@ fn collect_nets(args: &Args, families: &[CatalogFamily], family_of_copy: &HashMa
         }
         let hits = mm.run(MM2_ATTRIB, &targets_fa, &attrib_fa, &tmp.join("attrib.paf"))?;
         // the reads with a hit on a target: the only names kept while the FASTA is read back (no name -> class map of the whole set)
-        let aligned: HashSet<String> = hits.iter().filter(|h| family_of_target.contains_key(&h.t)).map(|h| h.q.clone()).collect();
+        let aligned: DetHashSet<String> = hits.iter().filter(|h| family_of_target.contains_key(&h.t)).map(|h| h.q.clone()).collect();
         let attributed = attribute_by_hits(&hits, &family_of_target);
         drop(hits);
         n_attributed = attributed.len();
-        let fam_pos: HashMap<&str, usize> = families.iter().enumerate().map(|(i, f)| (f.family_id.as_str(), i)).collect();
-        let joining: HashMap<String, usize> =
+        let fam_pos: DetHashMap<&str, usize> = families.iter().enumerate().map(|(i, f)| (f.family_id.as_str(), i)).collect();
+        let joining: DetHashMap<String, usize> =
             attributed.iter().filter_map(|(read, family)| fam_pos.get(family.as_str()).map(|&fi| (read.clone(), fi))).collect();
         n_joined = joining.len();
         if !aligned.is_empty() {
@@ -665,11 +666,11 @@ struct ClassCounts {
 /// adds nothing. A header without a known class is not the sweep's record: an `InvalidData` error naming it.
 fn read_back(
     fasta: impl BufRead,
-    mut aligned: HashSet<String>,
-    attributed: &HashMap<String, String>,
-    joining: &HashMap<String, usize>,
+    mut aligned: DetHashSet<String>,
+    attributed: &DetHashMap<String, String>,
+    joining: &DetHashMap<String, usize>,
     names: &mut [BTreeSet<String>],
-    seqs: &mut HashMap<String, Vec<u8>>,
+    seqs: &mut DetHashMap<String, Vec<u8>>,
 ) -> std::io::Result<ClassCounts> {
     let mut counts = ClassCounts::default();
     let mut current: Option<(String, usize)> = None;
@@ -710,10 +711,10 @@ fn read_back(
 fn write_attrib_targets(
     w: &mut impl Write,
     nets: &[(&str, &BTreeSet<String>)],
-    seqs: &HashMap<String, Vec<u8>>,
+    seqs: &DetHashMap<String, Vec<u8>>,
     mut copies: impl std::io::Read,
-) -> std::io::Result<HashMap<String, String>> {
-    let mut family_of_target = HashMap::new();
+) -> std::io::Result<DetHashMap<String, String>> {
+    let mut family_of_target = DetHashMap::default();
     for &(family, reads) in nets {
         for read in reads {
             let Some(seq) = seqs.get(read) else { continue };
@@ -733,7 +734,7 @@ struct Net<'a> {
     fasta: PathBuf,
 }
 impl<'a> Net<'a> {
-    fn write(dir: &Path, names: Vec<String>, all: &'a HashMap<String, Vec<u8>>) -> Result<Net<'a>> {
+    fn write(dir: &Path, names: Vec<String>, all: &'a DetHashMap<String, Vec<u8>>) -> Result<Net<'a>> {
         let seqs: Vec<&[u8]> = names.iter().map(|n| all[n].as_slice()).collect();
         let fasta = dir.join("net.fa");
         write_fasta(&fasta, names.iter().cloned().zip(seqs.iter().copied()))?;
@@ -792,7 +793,7 @@ fn pair_key(a: &[usize], b: &[usize]) -> (Vec<usize>, Vec<usize>) {
 /// their order. Returns the clusters, the number of clusters absorbed, and per undone absorption the absorber's and the absorbed cluster's
 /// member lists (`(absorber, absorbed)`, in cluster order), which `merge` vetoes in later rounds.
 fn apply_absorptions(clusters: Vec<Cluster>, absorbed_by: &[Option<usize>], mut merged: BTreeMap<usize, Cluster>) -> (Vec<Cluster>, usize, Vec<(Vec<usize>, Vec<usize>)>) {
-    let undone_by: HashSet<usize> = merged.iter().filter(|(_, c)| c.consensus.is_empty()).map(|(&x, _)| x).collect();
+    let undone_by: DetHashSet<usize> = merged.iter().filter(|(_, c)| c.consensus.is_empty()).map(|(&x, _)| x).collect();
     let undone: Vec<(Vec<usize>, Vec<usize>)> = absorbed_by
         .iter()
         .enumerate()
@@ -858,10 +859,10 @@ fn hits_on_own_target(net: &Net, dir: &Path, tag: &str, targets: &[&[u8]], group
     let (fa, paf) = (dir.join(format!("{tag}.fa")), dir.join(format!("{tag}.paf")));
     write_fasta(&fa, targets.iter().enumerate().map(|(k, s)| (format!("{tag}{k}"), *s)))?;
     let hits = mm.run(MM2_MEMBERS, &fa, &net.fasta, &paf)?;
-    let owner: HashMap<&str, (usize, usize)> =
+    let owner: DetHashMap<&str, (usize, usize)> =
         groups.iter().enumerate().flat_map(|(k, g)| g.iter().map(move |&m| (net.names[m].as_str(), (k, m)))).collect();
-    let target_of: HashMap<String, usize> = (0..targets.len()).map(|k| (format!("{tag}{k}"), k)).collect();
-    let mut best: HashMap<usize, PafHit> = HashMap::new();
+    let target_of: DetHashMap<String, usize> = (0..targets.len()).map(|k| (format!("{tag}{k}"), k)).collect();
+    let mut best: DetHashMap<usize, PafHit> = DetHashMap::default();
     for h in hits {
         let Some(&(k, m)) = owner.get(h.q.as_str()) else { continue };
         if target_of.get(&h.t) != Some(&k) {
@@ -952,7 +953,7 @@ fn refine(fam: &Family, args: &Args, dir: &Path, mm: &Mm2, clusters: Vec<Cluster
     let (mut slots, mut retemplate, mut split): (Vec<Option<Cluster>>, Vec<(usize, Vec<usize>, usize)>, Vec<Vec<usize>>) = (Vec::new(), Vec::new(), Vec::new());
     for ((c, on_template), on_cons) in clusters.into_iter().zip(template_hits).zip(on_consensus) {
         let pairs: Vec<(&[u8], &PafHit)> = on_cons.iter().map(|(m, h)| (net.seqs[*m], h)).collect();
-        let fit: HashSet<usize> = refine_cluster(&c.consensus, &pairs, args.delta).0.into_iter().map(|i| on_cons[i].0).collect();
+        let fit: DetHashSet<usize> = refine_cluster(&c.consensus, &pairs, args.delta).0.into_iter().map(|i| on_cons[i].0).collect();
         if fit.len() == c.members.len() {
             slots.push(Some(c));
             continue;
@@ -1003,7 +1004,7 @@ fn refine(fam: &Family, args: &Args, dir: &Path, mm: &Mm2, clusters: Vec<Cluster
 /// Per unordered pair of `names`, the hit with the most matches (the first on a tie), whichever of the two is the query: the pair rule of
 /// `cluster_reads`. Ordered by pair.
 fn best_pairs<'h>(names: &[String], hits: &'h [PafHit]) -> BTreeMap<(usize, usize), &'h PafHit> {
-    let idx: HashMap<&str, usize> = names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+    let idx: DetHashMap<&str, usize> = names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
     let mut best: BTreeMap<(usize, usize), &PafHit> = BTreeMap::new();
     for h in hits {
         let (Some(&a), Some(&b)) = (idx.get(h.q.as_str()), idx.get(h.t.as_str())) else { continue };
@@ -1030,7 +1031,7 @@ fn best_pairs<'h>(names: &[String], hits: &'h [PafHit]) -> BTreeMap<(usize, usiz
 /// again, and the veto is what ends the rounds (each round either merges, so the number of clusters falls, or vetoes a new pair of unchanged
 /// clusters, of which there are finitely many). A cluster that absorbs another is a new cluster for the veto. Rounds repeat until none merges.
 fn merge(fam: &Family, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: f64, log: &mut ClusterLog) -> Result<Vec<Cluster>> {
-    let mut vetoed: HashSet<(Vec<usize>, Vec<usize>)> = HashSet::new();
+    let mut vetoed: DetHashSet<(Vec<usize>, Vec<usize>)> = DetHashSet::default();
     while clusters.len() >= 2 {
         log.rounds += 1;
         let names: Vec<String> = (0..clusters.len()).map(|k| format!("M{k}")).collect();
@@ -1038,7 +1039,7 @@ fn merge(fam: &Family, dir: &Path, mm: &Mm2, mut clusters: Vec<Cluster>, alpha: 
         write_fasta(&fa, names.iter().cloned().zip(clusters.iter().map(|c| c.consensus.as_slice())))?;
         let hits = mm.run(MM2_AVA, &fa, &fa, &dir.join("merge.paf"))?;
         let sketches: Vec<Vec<u64>> = clusters.iter().map(|c| minimizer_sketch(&c.consensus, KMER_K, SKETCH_W)).collect();
-        let mut joins: HashSet<(usize, usize)> = HashSet::new();
+        let mut joins: DetHashSet<(usize, usize)> = DetHashSet::default();
         for (&(a, b), h) in &best_pairs(&names, &hits) {
             if sketch_share(&sketches[a], &sketches[b]) < MERGE_MIN_SKETCH_SHARE {
                 continue;
@@ -1202,7 +1203,7 @@ mod tests {
         // family only when that copy was checked against --copies (F9's record is not: a partner row or a record the table lacks); F1 copy 1
         // has a sixth field with a space, which minimap2 cuts
         let fa = ">F1|0|chr1:100-200|+|nexon=1\nACGT\n>F1|1|chr1:300-400|-|nexon=2|lib A\nAC\nGT\n>F2|0|chr2:1-50|+|nexon=1\nAC\n>F9|4|chr9:1-9|+|nexon=1\nA\n";
-        let checked: HashSet<(&str, usize)> = [("F1", 0), ("F1", 1), ("F2", 0)].into_iter().collect();
+        let checked: DetHashSet<(&str, usize)> = [("F1", 0), ("F1", 1), ("F2", 0)].into_iter().collect();
         let mut got: Vec<(String, String)> = copy_targets(fa, &checked).into_iter().collect();
         got.sort();
         let want: Vec<(String, String)> = [("F1|0|chr1:100-200|+|nexon=1", "F1"), ("F1|1|chr1:300-400|-|nexon=2|lib", "F1"), ("F2|0|chr2:1-50|+|nexon=1", "F2")]
@@ -1210,7 +1211,7 @@ mod tests {
             .map(|(t, f)| (t.to_string(), f.to_string()))
             .collect();
         assert_eq!(got, want);
-        assert!(copy_targets(fa, &HashSet::new()).is_empty());
+        assert!(copy_targets(fa, &DetHashSet::default()).is_empty());
     }
 
     #[test]
@@ -1230,13 +1231,13 @@ mod tests {
             attrib_record(&mut fasta, name, class, seq.as_bytes()).unwrap();
         }
         assert!(fasta.starts_with(b">u1 unmapped\nACGTACGTAA\n>u2 unmapped\n"), "{}", String::from_utf8_lossy(&fasta));
-        let owned = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<HashSet<String>>();
+        let owned = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<DetHashSet<String>>();
         let aligned = owned(&["u1", "p3", "u4", "p5", "p6", "u9"]);
-        let attributed: HashMap<String, String> = [("u1", "F2"), ("p3", "F1"), ("u4", "F2"), ("p5", "F7"), ("u9", "F1")].iter().map(|(r, f)| (r.to_string(), f.to_string())).collect();
-        let joining: HashMap<String, usize> = [("u1", 1), ("p3", 0), ("u4", 1), ("u9", 0)].iter().map(|(r, f)| (r.to_string(), *f)).collect();
+        let attributed: DetHashMap<String, String> = [("u1", "F2"), ("p3", "F1"), ("u4", "F2"), ("p5", "F7"), ("u9", "F1")].iter().map(|(r, f)| (r.to_string(), f.to_string())).collect();
+        let joining: DetHashMap<String, usize> = [("u1", 1), ("p3", 0), ("u4", 1), ("u9", 0)].iter().map(|(r, f)| (r.to_string(), *f)).collect();
         let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
         let mut names = vec![BTreeSet::new(), set(&["p1"])];
-        let mut seqs: HashMap<String, Vec<u8>> = [("p1", "AAAA"), ("u4", "KEPT")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
+        let mut seqs: DetHashMap<String, Vec<u8>> = [("p1", "AAAA"), ("u4", "KEPT")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
         let counts = read_back(&fasta[..], aligned, &attributed, &joining, &mut names, &mut seqs).unwrap();
         assert_eq!(counts, ClassCounts { aligned_unmapped: 2, aligned_poor: 3, attributed_unmapped: 2, attributed_poor: 2 });
         assert_eq!(names, vec![set(&["p3"]), set(&["p1", "u1", "u4"])]);
@@ -1288,7 +1289,7 @@ mod tests {
         // target of each; r3 has no sequence and is left out), then --copies-fa byte for byte; the net-read targets map to their family
         let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
         let (f1, f2) = (set(&["r1", "r2"]), set(&["r2", "r3"]));
-        let seqs: HashMap<String, Vec<u8>> = [("r1", "ACGT"), ("r2", "GGA")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
+        let seqs: DetHashMap<String, Vec<u8>> = [("r1", "ACGT"), ("r2", "GGA")].iter().map(|(r, s)| (r.to_string(), s.as_bytes().to_vec())).collect();
         let copies = ">F1|0|chrT:1-5|+|nexon=1\nACGTA\n>F2|0|chrT:9-12|-|nexon=1\nTTG\n";
         let mut out: Vec<u8> = Vec::new();
         let map = write_attrib_targets(&mut out, &[("F1", &f1), ("F2", &f2)], &seqs, copies.as_bytes()).unwrap();

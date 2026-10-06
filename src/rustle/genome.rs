@@ -4,7 +4,7 @@
 //! - `IndexedFasta` reads `[start, end)` straight from the file through its `.fai`, case preserved
 //!   (soft-mask kept) — moved here from the removed `vg_family::repeat_catalog` (2026-09-24).
 
-use crate::types::DetHashMap as HashMap;
+use crate::types::{DetHashMap as HashMap, DetHashSet};
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -60,7 +60,7 @@ impl GenomeIndex {
     /// indexed — so the result is never worse than loading everything.
     pub fn from_fasta_contigs(
         path: &str,
-        wanted: &std::collections::HashSet<String>,
+        wanted: &DetHashSet<String>,
     ) -> Result<Self> {
         let fai = match std::fs::read_to_string(format!("{}.fai", path)) {
             Ok(s) => s,
@@ -450,7 +450,7 @@ mod tests {
             "c1\t14\t4\t10\t11\nc2\t10\t24\t10\t11\n",
         )
         .unwrap();
-        let mut wanted = std::collections::HashSet::new();
+        let mut wanted = DetHashSet::default();
         wanted.insert("c1".to_string());
         let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &wanted).unwrap();
         assert_eq!(
@@ -469,7 +469,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let fa = dir.path().join("g.fa");
         std::fs::write(&fa, ">c1\nACGT\n>c2\nTTTT\n").unwrap(); // no .fai written
-        let mut wanted = std::collections::HashSet::new();
+        let mut wanted = DetHashSet::default();
         wanted.insert("c1".to_string());
         let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &wanted).unwrap();
         // fallback = full load -> both contigs present
@@ -669,7 +669,7 @@ mod tests {
             let fa = dir.path().join("g.fa");
             std::fs::write(&fa, bytes).unwrap();
             std::fs::write(format!("{}.fai", fa.display()), fai).unwrap();
-            let mut want = std::collections::HashSet::new();
+            let mut want = DetHashSet::default();
             want.insert("c1".to_string());
             let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &want).unwrap();
             assert_eq!(
