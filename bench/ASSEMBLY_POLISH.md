@@ -719,3 +719,138 @@ tests (`f1_heldout/`, `f1v2/<s>/`, and the gorilla F1v2 dev arm `f1v2/dev/<s>/mi
   asserted files byte for byte.
 - **Cost.** The pass takes 5-16 s per sample (A119b: 16 s, 490 s for the whole run). The memory is about 40 B per
   spliced primary plus the contig sequences for the PAS test, bounded by the genome cache.
+
+## 2026-09-30 addendum 4 — `--bridge-regroup f1units` and `--bridge-units-list`: the bridges kept as UNITS in the families input (**OPT-IN**; `mcl_families --emit-relations`)
+
+The Rust port of the execution that `docs/PREREG_container_units_v2_dev_2026-09-30.md` (Part C, frozen rule U1) validated
+in a Python prototype (`units2.py --regroup scoped`, `relations.py`). Nothing is on by default: with the flags unset
+every product is byte-identical to the e163d955 build (proof below). F1 and F1v2 take a bridge transcript T OUT of the
+families input, so its copy half and its partner half are never related. `f1units` keeps every read and every exon:
+
+- **What is cut.** F1's bridge junctions with NO read-share rule (F1v2's share rule existed because F1 removed the bridge;
+  a unit split keeps every read). T, which uses the bridge intron(s) J_1 < .. < J_m, is cut into m + 1 UNITS. With
+  `--bridge-units-list FILE` any other detector names the cuts (F1's read evidence is then not read at all): in GUIDED mode
+  annotation overlap, `python3 bench/units_from_annotation.py ANNOT.gff run.gtf > list.tsv` (every spliced transcript over
+  >= 2 annotated same-strand genes, cut at the widest intron between the genes; RefSeq `readthrough` records excluded;
+  shared-exon and nested-gene transcripts go to a side report). The list needs the assembled GTF's transcript ids, so
+  assemble once with `off`, build the list from `run.gtf`, assemble again with `f1units` (the ids are reproduced). The helper
+  reads `.gz` annotation and GTF; with nothing to cut it writes a header-only list, says so on stderr and exits 0, and
+  `copy_assign` refuses a list with no transcript row (`empty list: run without --bridge-units-list`): a sample with no
+  annotated fusion runs without the flag.
+- **Where.** In `<out>.families.gtf` only: T is replaced, at its line position, by `<T>.U1 .. <T>.U<m+1>` in transcription
+  order (`-` strand: U1 is the genomic right), with T's `reads` and the attributes `fusion_of "<T>"`, `fusion_unit "i/n"`,
+  `fusion_junction` (every cut of T, genomic order), `fusion_locus` (the pre-split locus key: the span of ALL transcripts of
+  T's input gene_id), `fusion_gene` (that gene_id), `fusion_detector` (`f1` or `list:<file name>`) and, for F1,
+  `fusion_evidence` (`reads_TJ;reads_up;reads_down;share` per cut; the share is reported, never applied).
+  **`<out>.gtf` under `f1units` is exactly what `--bridge-regroup f1` writes: it tags exactly the transcripts that were cut
+  (`fusion_of` / `fusion_junction`, in `<g>.fus<k>`; T stays whole there), and every other gene_id has RG3's names.**
+  `<out>.bridge_junctions.tsv` is f1's table too (not with a list), so the assembled chains, `quant`, `assignments` and every
+  consumer of `<out>.gtf` see T whole and never a unit.
+- **gene_ids of the families input (SCOPED native regroup).** Inside every input gene_id that holds a unit, the assembler's own
+  locus rule (`native_components` + `best_rep` of `bridge_regroup.rs` = `family_detect::collapse_loci_groups` on GTF transcripts,
+  property-tested equal on those production helpers: junction-sharing union-find keyed (contig, donor, acceptor), strand-blind,
+  representative max (reads, span, -line)); a
+  single-exon unit joins the junction-bearing same-strand transcript it shares most exonic bases with (ties: the lower
+  line; the overlap index covers the whole families input, so a unit can join a neighbouring gene's piece, which keeps its
+  RG3 name); the best component of each input gene keeps its gene_id (the representative taken after the attachment) and
+  the others are `<g>.nat<k>`. Every other gene_id keeps today's RG3 pieces, which is what removes the regroup's side effects
+  on loci no cut touches (the native rule alone, without a cut, lost a Compara member and 12 Compara pairs on chr16, and
+  put a partner into NPIP on the simulation at f = 1).
+- **Products.** `<out>.families.gtf` (the units), `<out>.bridge_units.tsv` (one row per unit: `unit_tid parent_tid
+  input_gene new_gene unit of chrom strand n_exon exonic_bp start end reads label cuts evidence`), `<out>.bridge_junctions.tsv`
+  (F1's table; not with a list), `params.tsv` rows `bridge_units_*` (detector, list, transcripts, cuts, units, single-exon,
+  attached, gene_ids touched) and one `BRIDGE UNITS` log line. Then `mcl_families --emit-relations` (driver
+  `RUSTLE_FAMILY_RELATIONS=1`) writes `<out>.relations.tsv` (one record per split transcript: its units, their loci and
+  families, `outcome` SAME / DIFF / ONE_UNCL / ALL_UNCL, `relation` = `cover` iff the pre-split locus is in >= 2 families,
+  `separated` = every unit of the transcript in a gene_id of its own in the families input (units A-B-A' with A and A' in
+  one gene_id: false); a last column `detector_evidence` when the detector gave any; the two benchmark-only columns are `.`) and
+  `<out>.members_by_locus.tsv` (one member per family x locus: a locus inheriting the families of its units, counted once per
+  family, with `other_families`, `rep_tid`, `family_size_by_locus`). The clusters are the families stage's as always; the copy
+  table keeps its format (a unit-locus representative's `tid` is a unit id, `parent_tid` is in `relations.tsv`).
+- **How to run.**
+
+```
+RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_FAMILY_RELATIONS=1 tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX
+RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_BRIDGE_UNITS_LIST=list.tsv tools/rustle_pipeline.sh assemble --bam B --fasta G --out PREFIX
+copy_assign --assemble-only --genome-wide ... --bridge-regroup f1units [--bridge-units-list list.tsv]      # direct
+mcl_families --from-gtf PREFIX.families.gtf --fasta G ... --emit-relations --out PREFIX.fam                # direct
+```
+
+  `families` (and `flag` without `--gff`) read `PREFIX.families.gtf` as under f1 / f1v2, behind the same `fam_gtf_guard`
+  (a missing or older families GTF is refused). `copy_assign` refuses `f1units` where the other arms are refused (outside
+  `--assemble-only`, with `--families`, with `--gtf-regroup`, two regions of one contig unless a list names the cuts), and
+  `--bridge-units-list` without `f1units`; a list must name introns of its transcripts and at least one transcript of the GTF
+  (an empty list is refused, see above). A list runs no evidence pass: no `.bai` is read for F1, and the two-regions refusal
+  does not apply.
+
+### Read before quoting
+
+- **Dev evidence only** (gorilla fusion simulation S: 10 fusions, one seed; human A119b chr16), never a default: with F1's
+  evidence the execution gains +2 / +4 fused copies in NPIP at fusion share .5 / .9 on S (R finds 4-5 of the 10 fusions,
+  all correct), nothing at f = 1 (no standalone side) and nothing on chr16 (family-neutral, 27 junctions cut, 0 members lost). The annotation-overlap
+  list shows the headroom: S 9 / 9 / 9 / 9 of 10, chr16 +1 NPIP copy and +10 Compara pairs. The literal pre-registered
+  verdict of the global-native execution was NOT (`docs/PREREG_container_units_v2_dev_2026-09-30.md` Outcome); the scoped
+  form is SAFE on both dev substrates. F1's read evidence reaches none of the dominant readthroughs; W (alignment witnesses)
+  was NOT ported (it floods: thousands of cuts on chr16).
+- **The copy of a fused member is its unit**, the copy minus its terminal exon where the partner took it (at f >= .9 on S):
+  O1 membership holds, O2's copy sequence is truncated there. A single-exon unit can carry a fused locus's representative.
+- **The F1-evidence relation table has false `cover` records:** on chr16, 24 of its 30 are the isoforms of one gene
+  (SMG1P1); the `detector_evidence` column (share) is there to judge them.
+
+### Verification (2026-09-30)
+
+Inputs: the dev runs of the units study (`container_units_v2/`, the e163d955 binaries) and the same BAMs, best-AS tables and
+driver flags with the new binary. **Units, gene_ids and tables equal the prototype's on all six arms** (gorilla S f = .5 and
+f = 1, human A119b chr16; each with F1's evidence, `f1units`, and with the annotation-overlap list of the mechanism test,
+`--bridge-units-list`): the families GTF equals `units2.py --regroup scoped --attach units` line for line (once the four
+attributes the prototype does not write are removed), the units table equals its `.units.tsv`, and `mcl_families` on the Rust
+families GTF gives `clusters.tsv`, `loci.tsv`, `copies.tsv` / `.fa` byte-identical to the prototype's runs, whose tables
+`relations.tsv` (columns 1-17) and `members_by_locus.tsv` equal `relations.py`'s on the same inputs. The same holds for the three
+emissions of the study (`a3/`: S f = .5, S f = 1, H, the global-native oracle arm A1 fed to the Rust emitter through
+`fusion_*` attributes). `<out>.gtf` and `<out>.bridge_junctions.tsv` equal `--bridge-regroup f1` of the e163d955 build on
+S f = .5 / 1 and chr16, and at f = 1 (no bridge) `<out>.families.gtf` equals f1's.
+
+| arm | transcripts cut / units / single-exon / attached | relation records (cover) | members by locus |
+|---|---|---|---|
+| S f = .5, F1 evidence | 4 / 8 / 0 / 0 | 4 (4) | 130 |
+| S f = .5, list | 10 / 20 / 0 / 0 | 10 (9) | 136 |
+| S f = 1, F1 evidence (no bridge) | 0 / 0 / 0 / 0 | 0 | 126 |
+| S f = 1, list | 10 / 20 / 0 / 0 | 10 (9) | 135 |
+| chr16, F1 evidence | 170 / 349 / 20 / 19 | 170 (30) | 564 |
+| chr16, list (253 transcripts, 256 cuts) | 253 / 509 / 122 / 93 | 253 (100) | 574 |
+
+- **Unset flags.** With no flag (the driver's defaults, `f1v2`) the products of the e163d955 build and of this build are byte-identical
+  on human_testis and gorilla OR6737 (the HEAD driver and `copy_assign` against the working tree's, same BAMs and best-AS tables):
+  `assemble` on both samples, genome-wide (9 products: `gtf`, `families.gtf`, `bridge_junctions.tsv`, `bridges.tsv`, `params.tsv`,
+  `families.tsv`, `assignments.tsv`, `quant.tsv`, `famcn_readonly.tsv`), and `families` on the human_testis families input
+  (10 products: `clusters`, `loci` `.tsv` / `.gff3` / `.fa` / `.paf`, `copies` `.tsv` / `.fa` / `.regions` / `.merged.tsv`,
+  `params`) and on the OR6737 dev contig NC_073244.2 (the genome-wide OR6737 all-vs-all, 9.7 GB, did not finish inside the
+  28-minute test budget and was not run). Peak RSS of the unset `assemble`: 0.89 / 1.82 GB, as before.
+- **Helper.** `bench/units_from_annotation.py` on the RefSeq CHM13 GFF and the chr16 assembly writes the mechanism test's
+  annotation-overlap list (`H/oracle.tsv`: 253 transcripts, 256 cuts; 582 transcripts over >= 2 genes, 329 uncuttable: 326 shared-exon, 3
+  nested) byte for byte, with `--label-prefix H:`. That oracle also added 26 curated NPIP (Dishuck) records to the gene set
+  (NPIP-specific; `--replace-genes` takes such records): they change no transcript of this list, so the general helper
+  needs none of them.
+- **Tests.** `cargo test --release`: 1,041 passed, 0 failed, 13 ignored (1,002 before the port): the property test
+  `native_components_equal_collapse_loci_groups` (500 random sets, on the production helpers `native_components` + `best_rep`,
+  and `name_groups`), the unit split (`+` / `-`, m = 1, 2, 3), the single-exon attachment, the naming, the scoped regroup against
+  f1 where no cut, the prototype fixture (`tests/fixtures/bridge_units/`, byte for byte, gene_id for gene_id), the relation and
+  member invariants, three end-to-end tests on the synthetic readthrough locus plus one that pins that a list runs no evidence
+  pass, three driver tests (`tests/pipeline_driver_units.rs`, a stub `mcl_families`) and the `docs/MODULE_STATUS.md` registry
+  test. `python3 bench/test_units_from_annotation.py`: 10 tests.
+- **After the independent review** (verdict mergeable, no output byte changed: the products of the reviewed binaries equal the
+  frozen ones, below): six tests added for what no test pinned, each shown to fail on its mutant. (1) A single-exon unit attached
+  to a transcript of an untouched gene's non-keeper RG3 piece lands in that gene_id (`an_attached_unit_lands_in_its_targets_gene_id`;
+  mutant: the name override of the attachment removed). (2) `separated` is "every unit in a gene_id of its own", also for
+  A-B-A' (`separated_means_every_unit_in_a_gene_id_of_its_own`). (3) The `fusion_evidence` of a transcript with two cuts is
+  comma-joined in cut order, in the unit lines, the table and relations column 18 (`two_cuts_of_one_transcript_join_their_junctions_and_evidence`).
+  (4) An intron listed twice, in either spelling, is cut once (`a_cut_listed_twice_is_cut_once`). (5) A list given: no F1
+  evidence pass (`a_list_runs_no_evidence_pass`: a BAM without `.bai` assembles under `--materialize-reads` with a list and is refused
+  without one; two windows of one contig that split no locus give the single-window units with a list and are refused without).
+  (6) A header-only list is an error whose message says to run without the flag (Rust: unit test and CLI test; the helper writes
+  such a list and exits 0). The test-only wrapper `native_groups` is gone, the helper reads `.gz`.
+- **Cost.** The whole bridge pass (F1's decision and the units) takes 7.6 s on human_testis (35 bridge transcripts, 70 units),
+  13.5 s on gorilla OR6737 (253 / 506) and 27.2 s on human A119b (6,037 transcripts cut at 6,972 introns into 13,009 units, 835
+  single-exon, 737 attached), each with the peak RSS of the default arm (0.89, 1.82 and 3.10 GB; A119b under `f1`: 3.09 GB; the
+  families GTF is a second copy of the GTF lines, ~0.4 GB there). The relation tables cost nothing next to the all-vs-all (chr16:
+  170 split transcripts, 564 members).

@@ -1,0 +1,14 @@
+unit_tid	parent_tid	input_gene	new_gene	unit	of	chrom	strand	n_exon	exonic_bp	start	end	reads	label	cuts	oracle_label
+F1.U1	F1	g1	g1	1	2	c1	+	3	303	1000	1500	4	list:cuts.tsv	1501-4999	fixture
+F1.U2	F1	g1	g1.nat2	2	2	c1	+	3	303	5000	5500	4	list:cuts.tsv	1501-4999	fixture
+FF.U1	FF	g2	g2.nat3	1	3	c1	-	2	202	16000	16300	3	list:cuts.tsv	10301-12999;13301-15999	fixture
+FF.U2	FF	g2	g2	2	3	c1	-	2	202	13000	13300	3	list:cuts.tsv	10301-12999;13301-15999	fixture
+FF.U3	FF	g2	g2.nat2	3	3	c1	-	2	202	10000	10300	3	list:cuts.tsv	10301-12999;13301-15999	fixture
+F3.U1	F3	g3	g3	1	2	c1	+	2	202	20000	20300	5	list:cuts.tsv	20301-21999	fixture
+F3.U2	F3	g3	g4	2	2	c1	+	1	501	22000	22500	5	list:cuts.tsv	20301-21999	fixture
+F5.U1	F5	g3	g3.nat2	1	2	c1	+	2	202	23000	23300	5	list:cuts.tsv	23301-23999	fixture
+F5.U2	F5	g3	g5	2	2	c1	+	1	101	24000	24100	5	list:cuts.tsv	23301-23999	fixture
+FM.U1	FM	g10	g10.nat2	1	4	c1	+	2	202	70000	70300	2	list:cuts.tsv	70301-71999;72301-73999;74301-75999	fixture
+FM.U2	FM	g10	g10.nat3	2	4	c1	+	2	202	72000	72300	2	list:cuts.tsv	70301-71999;72301-73999;74301-75999	fixture
+FM.U3	FM	g10	g10.nat4	3	4	c1	+	2	202	74000	74300	2	list:cuts.tsv	70301-71999;72301-73999;74301-75999	fixture
+FM.U4	FM	g10	g10	4	4	c1	+	2	202	76000	76300	2	list:cuts.tsv	70301-71999;72301-73999;74301-75999	fixture

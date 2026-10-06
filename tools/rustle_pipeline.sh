@@ -22,6 +22,11 @@
 #             one call (no batching; the binary's `--families` batches): the attribution targets are then all families' nets, so
 #             its peak memory exceeds that batch's 10.7 GB — an OOM risk on this machine.
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
+#   assign    per-read copy assignment on the catalog (assign/abstain)  copy_assign --families
+#   merged    THE genome-wide entry point: assemble + families + assign on the FAMILIES copy table, one command,
+#             byte-identical products, with the genome-wide levers ON by default (--skip-poa-diagnostic and
+#             --region-threads, both cmp-proven byte-identical) and per-phase resume (a finished phase is never
+#             redone; the families all-vs-all PAF replays from PREFIX.cache when the loci FASTA is unchanged).
 #   assign    per-read copy assignment (assign/abstain) on the families'  copy_assign --families
 #             copy table PREFIX.fam.copies.*; with --candidates and flagged candidates, two runs (the candidate families
 #             on PREFIX.aug.*, each assigned as a family that includes its candidate copies; the others on the originals)
@@ -80,10 +85,16 @@
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
 #   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off; needs
 #     RUSTLE_BRIDGE_REGROUP=off, whose default contains RG3's split);
-#   RUSTLE_BRIDGE_REGROUP=off|f1|f1v2 sets `--bridge-regroup` on `assemble` (unset = f1v2, THE DEFAULT since 2026-09-29;
-#     off = the 2026-09-25 products, byte for byte). With f1 or f1v2, `families`, and `flag` without --gff, read
-#     PREFIX.families.gtf, the assembly without its bridge transcripts (bridges are relations, not loci, for every
-#     downstream stage); every stage derives the mode the same way (BRIDGE_MODE below);
+#   RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units sets `--bridge-regroup` on `assemble` (unset = f1v2, THE DEFAULT since
+#     2026-09-29; off = the 2026-09-25 products, byte for byte). With f1, f1v2 or f1units, `families`, and `flag` without
+#     --gff, read PREFIX.families.gtf (f1 / f1v2: the assembly without its bridge transcripts, bridges are relations, not
+#     loci; f1units, OPT-IN: each bridge transcript replaced by its UNITS, the exon runs between its bridge introns, see
+#     copy_assign --help); every stage derives the mode the same way (BRIDGE_MODE below);
+#   RUSTLE_BRIDGE_UNITS_LIST=FILE (f1units only; no whitespace in the path) adds `--bridge-units-list FILE` to `assemble`:
+#     the transcripts and introns to cut come from FILE (any detector, e.g. bench/units_from_annotation.py) and F1's own
+#     read evidence is not consulted;
+#   RUSTLE_FAMILY_RELATIONS=1 adds `--emit-relations` to `families` (PREFIX.fam.relations.tsv, PREFIX.fam.members_by_locus.tsv:
+#     one relation record per split transcript and the members of each family by locus; default unset = off);
 #   RUSTLE_MIN_COV_SHORTER=C sets `mcl_families --min-cov-shorter C` on `families` (unset = the binary's own default,
 #     0.70 since 2026-09-29, nothing passed; 0 = the 2026-09-25 edge weights);
 #   RUSTLE_REPRESENTATIVE=most-reads|most-junctions sets `mcl_families --representative` on `families`, the transcript that
@@ -190,7 +201,7 @@ case "${RUSTLE_GTF_REGROUP:-}" in
   1) POLISH="$POLISH --gtf-regroup" ;;
   *) echo "[rustle_pipeline] RUSTLE_GTF_REGROUP must be 0 or 1 (got '$RUSTLE_GTF_REGROUP')" >&2; exit 2 ;;
 esac
-# RUSTLE_BRIDGE_REGROUP=off|f1|f1v2 (unset = f1v2, THE DEFAULT since 2026-09-29 by the user's decision on the F1v2 held-out
+# RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units (unset = f1v2, THE DEFAULT since 2026-09-29 by the user's decision on the F1v2 held-out
 # Outcome and its family-level side result, docs/PREREG_o1_cover_growth_2026-09-29.md; off = the 2026-09-25 products,
 # byte for byte): copy_assign --bridge-regroup, passed explicitly by `assemble`. A transcript that is the only link
 # between two pieces of its gene_id, when reads end at a PAS inside its intron and other reads start there at their own
@@ -200,16 +211,26 @@ esac
 # (docs/PREREG_f1_bridge_locus_2026-09-28.md, docs/PREREG_f1v2_readshare_2026-09-29.md), as does `flag`'s scan of the
 # de novo loci (without --gff): a bridge is a relation, never a locus to scan. See its --help.
 # BRIDGE_MODE is the one derivation every stage uses (assemble's flag, families' and flag's input, the guard below).
+# f1units (OPT-IN, docs/PREREG_container_units_v2_dev_2026-09-30.md Part C): F1's bridges without its read-share rule are
+# kept in PREFIX.families.gtf as units instead of being left out (PREFIX.gtf is exactly f1's: only the transcripts that were cut are
+# tagged); RUSTLE_BRIDGE_UNITS_LIST names the cuts instead of F1.
 BRIDGE_MODE=${RUSTLE_BRIDGE_REGROUP:-f1v2}
 FAM_GTF=$OUT.gtf
 case "$BRIDGE_MODE" in
   off) ;;
-  f1|f1v2)
+  f1|f1v2|f1units)
     [ "${RUSTLE_GTF_REGROUP:-0}" = 0 ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP=$BRIDGE_MODE (unset = f1v2) already splits every gene_id as RUSTLE_GTF_REGROUP does: set RUSTLE_BRIDGE_REGROUP=off with RUSTLE_GTF_REGROUP=1" >&2; exit 2; }
     FAM_GTF=$OUT.families.gtf ;;
-  *) echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP must be off, f1 or f1v2 (got '$RUSTLE_BRIDGE_REGROUP')" >&2; exit 2 ;;
+  *) echo "[rustle_pipeline] RUSTLE_BRIDGE_REGROUP must be off, f1, f1v2 or f1units (got '$RUSTLE_BRIDGE_REGROUP')" >&2; exit 2 ;;
 esac
 POLISH="$POLISH --bridge-regroup $BRIDGE_MODE"
+case "${RUSTLE_BRIDGE_UNITS_LIST:-}" in
+  "") ;;
+  *[[:space:]]*) echo "[rustle_pipeline] RUSTLE_BRIDGE_UNITS_LIST must not contain whitespace (got '$RUSTLE_BRIDGE_UNITS_LIST')" >&2; exit 2 ;;
+  *) [ "$BRIDGE_MODE" = f1units ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_UNITS_LIST names the units of RUSTLE_BRIDGE_REGROUP=f1units (got '$BRIDGE_MODE')" >&2; exit 2; }
+     [ -s "$RUSTLE_BRIDGE_UNITS_LIST" ] || { echo "[rustle_pipeline] RUSTLE_BRIDGE_UNITS_LIST=$RUSTLE_BRIDGE_UNITS_LIST is missing or empty" >&2; exit 2; }
+     POLISH="$POLISH --bridge-units-list $RUSTLE_BRIDGE_UNITS_LIST" ;;
+esac
 # RUSTLE_MIN_COV_SHORTER=C (unset = nothing passed: the binary's default, 0.70 since 2026-09-29 by the user's decision,
 # register 1006/1014; 0 = the 2026-09-25 edge weights, byte-identical to every catalog built before the flip):
 # mcl_families --min-cov-shorter C, the §6x4 containment escape — a pair whose coverage of the LONGER locus fails also
@@ -232,8 +253,18 @@ case "${RUSTLE_FAMILY_CONTAINER:-}" in
   1) FAM_EXTRA=(--emit-container) ;;
   *) echo "[rustle_pipeline] RUSTLE_FAMILY_CONTAINER must be 0 or 1 (got '$RUSTLE_FAMILY_CONTAINER')" >&2; exit 2 ;;
 esac
+# RUSTLE_FAMILY_RELATIONS=1 (opt-in; unset or 0 = off, the same command): mcl_families --emit-relations, the relation
+# record of every unit-split transcript (RUSTLE_BRIDGE_REGROUP=f1units) and the members of each family by locus ->
+# PREFIX.fam.relations.tsv / PREFIX.fam.members_by_locus.tsv (docs/PREREG_container_units_v2_dev_2026-09-30.md Part C).
+# It never changes a family. Without units the relations table is empty and every locus is a `whole` member.
+FAM_REL=()
+case "${RUSTLE_FAMILY_RELATIONS:-}" in
+  ""|0) ;;
+  1) FAM_REL=(--emit-relations) ;;
+  *) echo "[rustle_pipeline] RUSTLE_FAMILY_RELATIONS must be 0 or 1 (got '$RUSTLE_FAMILY_RELATIONS')" >&2; exit 2 ;;
+esac
 say() { echo "[rustle_pipeline] $(date +%H:%M:%S) $*" >&2; }
-# The de novo loci a stage reads ($FAM_GTF: PREFIX.families.gtf when BRIDGE_MODE is f1 or f1v2, else PREFIX.gtf) must
+# The de novo loci a stage reads ($FAM_GTF: PREFIX.families.gtf when BRIDGE_MODE is f1, f1v2 or f1units, else PREFIX.gtf) must
 # come from the assembly on disk: with a bridge mode (the default), PREFIX.families.gtf must exist and be no older than
 # PREFIX.gtf; with off, a newer PREFIX.families.gtf means the GTF was assembled with a bridge mode and its bridges would
 # be read as loci. $1 = the stage.
@@ -258,7 +289,9 @@ stage_assemble() {
   env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only --genome-wide --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
-  if [ "$FAM_GTF" != "$OUT.gtf" ]; then
+  if [ "$BRIDGE_MODE" = f1units ]; then
+    say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts cut into $(awk -F'\t' '$3=="transcript"' "$FAM_GTF" | grep -c 'fusion_unit "') units in the families input $FAM_GTF ($OUT.bridge_units.tsv)"
+  elif [ "$FAM_GTF" != "$OUT.gtf" ]; then
     say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts kept as fusion_of relations; families input $FAM_GTF"
   fi
 }
@@ -282,6 +315,9 @@ stage_families() {
   if [ ${#FAM_COV[@]} -gt 0 ] && [[ "$help" != *'--min-cov-shorter'* ]]; then
     echo "[rustle_pipeline] RUSTLE_MIN_COV_SHORTER is set but $BIN/mcl_families predates --min-cov-shorter; rebuild it" >&2; exit 2
   fi
+  if [ ${#FAM_REL[@]} -gt 0 ] && [[ "$help" != *'--emit-relations'* ]]; then
+    echo "[rustle_pipeline] RUSTLE_FAMILY_RELATIONS=1 but $BIN/mcl_families predates --emit-relations; rebuild it" >&2; exit 2
+  fi
   # RUSTLE_REPRESENTATIVE=most-reads|most-junctions (unset = nothing passed: the binary's default, most-reads, the earlier
   # products byte for byte; `most-reads` names that default): mcl_families --representative, which transcript represents each
   # de novo locus (docs/PREREG_locus_representative_rule_2026-10-04.md). Read here, in this stage's code alone, so that
@@ -295,10 +331,13 @@ stage_families() {
     *) echo "[rustle_pipeline] RUSTLE_REPRESENTATIVE must be most-reads or most-junctions (got '$RUSTLE_REPRESENTATIVE')" >&2; exit 2 ;;
   esac
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"
+  fi
+  if [ ${#FAM_REL[@]} -gt 0 ]; then
+    say "families: relations $(awk 'NR>1' "$OUT.fam.relations.tsv" | wc -l) split transcripts, $(awk -F'\t' 'NR>1 && $14=="cover"' "$OUT.fam.relations.tsv" | wc -l) cover, $(awk 'NR>1' "$OUT.fam.members_by_locus.tsv" | wc -l) members by locus ($OUT.fam.relations.tsv, $OUT.fam.members_by_locus.tsv)"
   fi
   if [ ${#FAM_EXTRA[@]} -gt 0 ]; then
     say "families: container $(awk -F'\t' '$1=="blocks"{b=$2} $1=="accessory_blocks"{a=$2} $1=="family_relations_directed"{r=$2} END{print b" blocks, "a" accessory, "r" directed family relations"}' "$OUT.fam.container_summary.tsv") ($OUT.fam.container.tsv)"
@@ -491,6 +530,45 @@ stage_assign() {
     || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
 }
+# assign on the FAMILIES copy table (the merged stage's phase 3): the same byte-identical levers the genome-wide
+# sweep pre-registers recommended — `--skip-poa-diagnostic` (the POA homology pass is purely diagnostic; measured
+# 6.8x on the heaviest family) and `--region-threads` (cross-contig rayon pool; byte-identical by construction) —
+# are ON here by default instead of opt-in. Products: PREFIX.assign_fam.* (the catalog assign keeps PREFIX.assign.*).
+stage_assign_fam() {
+  say "assign: per-read copy assignment on $OUT.fam.copies (families table; --skip-poa-diagnostic --region-threads $THREADS)"
+  samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.regions.txt"
+  "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
+    --families "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
+    --skip-poa-diagnostic --region-threads "$THREADS" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_fam" > "$OUT.assign_fam.log" 2>&1
+  say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign_fam.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign_fam.assignments.tsv" | wc -l) (one row per read x family)"
+}
+# The genome-wide entry point: assemble -> families -> assign(fam), one command. Resume: PREFIX.merged.env records
+# the exact inputs/settings of a COMPLETED merged run (written only when all three phases finished); a phase is
+# skipped only when that file matches AND the phase's product exists, so a stale product from another BAM/genome is
+# never silently reused. A crashed run redoes the phases (the families all-vs-all replays from PREFIX.cache when
+# the loci FASTA is unchanged — the expensive step is never repeated).
+merged_env() { printf 'bam=%s\nfasta=%s\nthreads=%s\nseed_sec=%s\nbridge=%s\n' "$(readlink -f "$BAM")" "$(readlink -f "$FASTA")" "$THREADS" "$SEED_SEC" "$BRIDGE_MODE"; }
+stage_merged() {
+  local env_ok=0
+  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; fi
+  if [ "$env_ok" = 1 ] && [ -s "$OUT.gtf" ]; then
+    say "merged: phase 1 assemble SKIPPED ($OUT.gtf present, env matches)"
+  else
+    stage_assemble
+  fi
+  if [ "$env_ok" = 1 ] && [ -s "$OUT.fam.copies.tsv" ]; then
+    say "merged: phase 2 families SKIPPED ($OUT.fam.copies.tsv present, env matches)"
+  else
+    stage_families
+  fi
+  if [ "$env_ok" = 1 ] && [ -s "$OUT.assign_fam.assignments.tsv" ]; then
+    say "merged: phase 3 assign SKIPPED ($OUT.assign_fam.assignments.tsv present, env matches)"
+  else
+    stage_assign_fam
+  fi
+  merged_env > "$OUT.merged.env"
+  say "merged: done (env recorded in $OUT.merged.env; phases skip on the next identical run)"
+}
 stage_flag() {
   [ -n "$INDEX" ] || { echo "flag needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
   # the loci to scan: the annotation with --gff, else the de novo loci `families` reads (bridges are relations, not loci)
@@ -513,6 +591,9 @@ stage_flag() {
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
 }
 case "$STAGE" in
+  assemble) stage_assemble;; families) stage_families;; catalog) stage_catalog;; assign) stage_assign;; flag) stage_flag;;
+  merged) stage_merged;;
+  all) stage_assemble; stage_families; stage_catalog; stage_assign; stage_flag;;
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage

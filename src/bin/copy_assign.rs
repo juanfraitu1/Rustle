@@ -374,9 +374,28 @@ struct Args {
     /// its family-level side result, `docs/PREREG_o1_cover_growth_2026-09-29.md` Outcome); `--bridge-regroup off`
     /// restores the 2026-09-25 products byte for byte (no families GTF, no side tables, no `params.tsv` rows).
     /// Outside `--assemble-only`, or with `--families`, the default is off and an explicit arm is refused.
-    /// Driver: `RUSTLE_BRIDGE_REGROUP=off|f1|f1v2` (unset = f1v2).
-    #[arg(long, value_parser = ["off", "f1", "f1v2"])]
+    /// `f1units` (OPT-IN, `docs/PREREG_container_units_v2_dev_2026-09-30.md` Part C): F1's bridge junctions with NO
+    /// read-share rule, and instead of leaving each bridge transcript T out of the families input it is REPLACED there
+    /// by its UNITS `<T>.U1 ..` (the exon runs between its bridge introns, in transcription order, T's `reads`, the
+    /// attributes `fusion_of` / `fusion_unit` / `fusion_junction` / `fusion_locus` / `fusion_gene` / `fusion_detector` /
+    /// `fusion_evidence`); the gene_ids of the families input are re-derived with the assembler's own junction-sharing
+    /// locus rule inside the input gene_ids that hold a unit (single-exon units attached by exon overlap, names
+    /// `<g>` / `<g>.nat<k>`) and stay RG3's elsewhere. `<out>.gtf` is exactly what `f1` writes: the transcripts that were cut
+    /// stay whole there and are the only ones tagged `fusion_of` / `fusion_junction`. `<out>.families.gtf` holds the units;
+    /// `<out>.bridge_units.tsv` lists them. Read the families with `mcl_families --emit-relations`.
+    /// Driver: `RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units` (unset = f1v2).
+    #[arg(long, value_parser = ["off", "f1", "f1v2", "f1units"])]
     bridge_regroup: Option<String>,
+
+    /// `--bridge-regroup f1units` only: the transcripts to cut into units and where, read from this tab-separated file
+    /// (header with a `tid` and a `junctions` column; `S-E` or `CONTIG:S-E:STRAND` introns, `,` or `;` separated; `#`
+    /// lines skipped) instead of from F1's read evidence, which is then not consulted at all (no `bridge_junctions.tsv`,
+    /// no evidence pass). The pluggable detector: in GUIDED mode annotation overlap, `bench/units_from_annotation.py`.
+    /// Every listed intron must be an intron of its transcript in the assembled GTF and the list must name at least one
+    /// of its transcripts. A list with no transcript row is an error (a sample with no annotated fusion: run without the
+    /// flag). The units' detector is `list:<file name>`. Driver: `RUSTLE_BRIDGE_UNITS_LIST`.
+    #[arg(long)]
+    bridge_units_list: Option<String>,
 
     /// §6r2 ABSOLUTE FLOOR EXEMPTION for `--polish-isoform-fraction`: never drop a transcript carrying at
     /// least this many reads for being a minor fraction of its locus. Distinct from
@@ -5096,6 +5115,20 @@ fn resolve_bridge_mode(args: &Args) -> Result<Option<rustle::vg_family::bridge_r
     Ok(mode)
 }
 
+/// `--bridge-units-list`: read now, before any read is touched, and only where the arm that uses it runs.
+fn resolve_bridge_units_list(
+    args: &Args,
+    mode: Option<rustle::vg_family::bridge_regroup::Mode>,
+) -> Result<Option<rustle::vg_family::bridge_regroup::UnitsList>> {
+    use rustle::vg_family::bridge_regroup::{Mode, UnitsList};
+    let Some(path) = args.bridge_units_list.as_deref() else { return Ok(None) };
+    anyhow::ensure!(
+        mode == Some(Mode::F1Units),
+        "--bridge-units-list names the units of --bridge-regroup f1units: pass --bridge-regroup f1units with it"
+    );
+    Ok(Some(UnitsList::read(path)?))
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     // Bound rayon's GLOBAL pool to --threads (the locus collapse's POA alignments use `par_iter`; the
@@ -5168,6 +5201,9 @@ fn main() -> Result<()> {
     // `--bridge-regroup` reads its own evidence in the --assemble-only pass-1 reader and rewrites the emitted GTF;
     // unset = f1v2 where it can run (the default since 2026-09-29), off elsewhere
     let bridge_mode = resolve_bridge_mode(&args)?;
+    let bridge_list = resolve_bridge_units_list(&args, bridge_mode)?;
+    // F1's read evidence is read unless a units list names the cuts
+    let bridge_evidence_on = bridge_mode.is_some() && bridge_list.is_none();
     // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
     let rt_switch = rustle::vg_family::denovo_assemble::ReadthroughSwitch::from_env()?;
@@ -5282,7 +5318,7 @@ fn main() -> Result<()> {
     validate_no_overlapping_regions(&by_contig)?;
     // `--bridge-regroup`'s V1 counts every primary record once: two regions of one contig would both read a record
     // crossing their boundary
-    if let Some(mode) = bridge_mode {
+    if let Some(mode) = bridge_mode.filter(|_| bridge_evidence_on) {
         if let Some((c, v)) = by_contig.iter().find(|(_, v)| v.len() > 1) {
             anyhow::bail!(
                 "--bridge-regroup {}{} reads each contig's records once: give one region per contig (--genome-wide, \
@@ -5666,7 +5702,7 @@ fn main() -> Result<()> {
             if args.polish_tss != "off" || args.polish_tes != "off" {
                 acc.tss = Some(rustle::vg_family::denovo_assemble::TssEvidence::default());
             }
-            if bridge_mode.is_some() {
+            if bridge_evidence_on {
                 acc.bridge = Some(rustle::vg_family::bridge_regroup::BridgeEvidence::default());
             }
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
@@ -5705,7 +5741,7 @@ fn main() -> Result<()> {
             }
             tss_ev = Some(ev);
         }
-        if !streaming && bridge_mode.is_some() {
+        if !streaming && bridge_evidence_on {
             let mut ev = rustle::vg_family::bridge_regroup::BridgeEvidence::default();
             for (wchrom, wlo, whi) in &wins {
                 rustle::vg_family::bridge_regroup::bridge_evidence_region(&args.bam, wchrom, *wlo, *whi, &mut ev)
@@ -7547,6 +7583,8 @@ fn main() -> Result<()> {
     let mut regroup_stats: Option<RegroupStats> = None;
     // --bridge-regroup: the pass's counts (params.tsv rows only when set)
     let mut bridge_stats: Option<rustle::vg_family::bridge_regroup::Stats> = None;
+    // --bridge-regroup f1units: what nominated the cuts (`f1` or `list:<file name>`)
+    let mut bridge_detector: Option<String> = None;
     if args.gtf {
         // §6gp: the `productive` call is RELATIVE to the family's best ORF, which is only known once every
         // region has been drained — so it is stamped here, in a second pass over the finished GTF lines.
@@ -7823,16 +7861,32 @@ fn main() -> Result<()> {
                     .collect()
             };
             let (t0, n_records) = (std::time::Instant::now(), bridge_all.len());
-            let out = rustle::vg_family::bridge_regroup::run(&mut gtf_lines, mode, &mut bridge_all, &genome_for, &end_clusters)?;
+            let out = match &bridge_list {
+                Some(list) => rustle::vg_family::bridge_regroup::run_list(&mut gtf_lines, list)?,
+                None => rustle::vg_family::bridge_regroup::run(&mut gtf_lines, mode, &mut bridge_all, &genome_for, &end_clusters)?,
+            };
             let st = &out.stats;
-            eprintln!(
-                "[copy_assign] ⭐ BRIDGE REGROUP ({}): {} structural junctions ({} UP-proven, {} DOWN-proven) -> {} F1 \
-                 bridge junctions -> {} kept -> {} bridge transcripts in {} gene_ids; {} gene_ids split -> {} gene_ids \
-                 ({} in the families input), {} lines relabelled; evidence {} spliced primaries; {:.1} s",
-                mode.as_str(), st.structural_junctions, st.up_proof, st.down_proof, st.f1_bridge_junctions,
-                st.bridge_junctions, st.bridge_transcripts, st.gene_ids_with_bridge, st.gene_ids_split, st.gene_ids_after,
-                st.families_gene_ids, st.lines_changed, n_records, t0.elapsed().as_secs_f64()
-            );
+            if out.evidence_used {
+                eprintln!(
+                    "[copy_assign] ⭐ BRIDGE REGROUP ({}): {} structural junctions ({} UP-proven, {} DOWN-proven) -> {} F1 \
+                     bridge junctions -> {} kept -> {} bridge transcripts in {} gene_ids; {} gene_ids split -> {} gene_ids \
+                     ({} in the families input), {} lines relabelled; evidence {} spliced primaries; {:.1} s",
+                    mode.as_str(), st.structural_junctions, st.up_proof, st.down_proof, st.f1_bridge_junctions,
+                    st.bridge_junctions, st.bridge_transcripts, st.gene_ids_with_bridge, st.gene_ids_split, st.gene_ids_after,
+                    st.families_gene_ids, st.lines_changed, n_records, t0.elapsed().as_secs_f64()
+                );
+            }
+            if let Some(u) = &out.units {
+                eprintln!(
+                    "[copy_assign] ⭐ BRIDGE UNITS ({}, detector {}): {} bridge transcripts cut at {} introns into {} units \
+                     ({} single-exon, {} attached to a junction-bearing transcript) inside {} input gene_ids; {} gene_ids \
+                     in the families input, {} lines relabelled in the GTF{}; {:.1} s",
+                    mode.as_str(), u.detector, st.unit_transcripts, st.unit_cuts, st.units, st.unit_single_exon,
+                    st.unit_attached, st.unit_gene_ids_touched, st.families_gene_ids, st.lines_changed,
+                    if bridge_list.is_some() { format!("; {} listed transcripts not in the GTF", st.unit_list_unmatched) } else { String::new() },
+                    t0.elapsed().as_secs_f64()
+                );
+            }
             bridge_out = Some(out);
         }
         let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
@@ -7843,21 +7897,46 @@ fn main() -> Result<()> {
             args.out, gtf_lines.len());
         if let Some(out) = bridge_out {
             let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{}.families.gtf", args.out))?);
-            for line in gtf_lines.iter().filter(|l| out.in_families(l)) {
-                writeln!(fh, "{line}")?;
+            match &out.units {
+                // f1units: each bridge transcript is replaced, at its line position, by its units
+                Some(u) => {
+                    for line in &u.families_lines {
+                        writeln!(fh, "{line}")?;
+                    }
+                }
+                None => {
+                    for line in gtf_lines.iter().filter(|l| out.in_families(l)) {
+                        writeln!(fh, "{line}")?;
+                    }
+                }
             }
             fh.flush()?;
-            std::fs::write(format!("{}.bridge_junctions.tsv", args.out), &out.junctions_tsv)?;
+            if out.evidence_used {
+                std::fs::write(format!("{}.bridge_junctions.tsv", args.out), &out.junctions_tsv)?;
+            }
             if let Some(t) = &out.bridges_tsv {
                 std::fs::write(format!("{}.bridges.tsv", args.out), t)?;
             }
-            eprintln!(
-                "[copy_assign] wrote {0}.families.gtf (the GTF without its {1} bridge transcripts: the families input), \
-                 {0}.bridge_junctions.tsv{2}",
-                args.out,
-                out.stats.bridge_transcripts,
-                if out.bridges_tsv.is_some() { format!(", {}.bridges.tsv", args.out) } else { String::new() }
-            );
+            if let Some(u) = &out.units {
+                std::fs::write(format!("{}.bridge_units.tsv", args.out), &u.table_tsv)?;
+                eprintln!(
+                    "[copy_assign] wrote {0}.families.gtf (the GTF with its {1} bridge transcripts replaced by {2} units: the \
+                     families input), {0}.bridge_units.tsv{3}",
+                    args.out,
+                    out.stats.unit_transcripts,
+                    out.stats.units,
+                    if out.evidence_used { format!(", {}.bridge_junctions.tsv", args.out) } else { String::new() }
+                );
+                bridge_detector = Some(u.detector.clone());
+            } else {
+                eprintln!(
+                    "[copy_assign] wrote {0}.families.gtf (the GTF without its {1} bridge transcripts: the families input), \
+                     {0}.bridge_junctions.tsv{2}",
+                    args.out,
+                    out.stats.bridge_transcripts,
+                    if out.bridges_tsv.is_some() { format!(", {}.bridges.tsv", args.out) } else { String::new() }
+                );
+            }
             bridge_stats = Some(out.stats);
         }
     }
@@ -8798,6 +8877,20 @@ fn main() -> Result<()> {
             row("bridge_regroup_families_gene_ids", format!("{}", st.families_gene_ids))?;
             row("bridge_regroup_lines_changed", format!("{}", st.lines_changed))?;
             row("bridge_regroup_family_lines_dropped", format!("{}", st.family_lines_dropped))?;
+            // f1units only: its own rows (the f1 / f1v2 params.tsv keeps exactly the rows above)
+            if let Some(d) = &bridge_detector {
+                row("bridge_units_detector", d.clone())?;
+                if let Some(path) = &args.bridge_units_list {
+                    row("bridge_units_list", path.clone())?;
+                    row("bridge_units_list_unmatched", format!("{}", st.unit_list_unmatched))?;
+                }
+                row("bridge_units_transcripts", format!("{}", st.unit_transcripts))?;
+                row("bridge_units_cuts", format!("{}", st.unit_cuts))?;
+                row("bridge_units_units", format!("{}", st.units))?;
+                row("bridge_units_single_exon", format!("{}", st.unit_single_exon))?;
+                row("bridge_units_attached", format!("{}", st.unit_attached))?;
+                row("bridge_units_gene_ids_touched", format!("{}", st.unit_gene_ids_touched))?;
+            }
         }
         row("posterior_prior", if prior_abundance { "abundance".into() } else { "uniform".to_string() })?;
         row("margin", format!("{}", args.margin))?;
@@ -8969,6 +9062,57 @@ mod tests {
         let err = super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup"])).unwrap_err().to_string();
         assert!(err.contains("f1v2 (the default)") && err.contains("--bridge-regroup off"), "{err}");
         assert_eq!(super::resolve_bridge_mode(&parse(&["--assemble-only", "--gtf-regroup", "--bridge-regroup", "off"])).unwrap(), None);
+    }
+
+    /// `--bridge-regroup f1units` (OPT-IN) is never the default, is refused with `--gtf-regroup` and where the other arms are
+    /// (outside `--assemble-only`, with `--families`), and `--bridge-units-list` belongs to it alone.
+    #[test]
+    fn f1units_is_opt_in_and_the_units_list_belongs_to_it() {
+        use clap::Parser;
+        use rustle::vg_family::bridge_regroup::Mode;
+        let parse = |extra: &[&str]| {
+            super::Args::try_parse_from(
+                ["copy_assign", "--bam", "r.bam", "--fasta", "g.fa", "--out", "o"].iter().chain(extra.iter()),
+            )
+            .expect("parse")
+        };
+        let mode = |extra: &[&str]| super::resolve_bridge_mode(&parse(extra));
+        assert_eq!(mode(&["--assemble-only", "--bridge-regroup", "f1units"]).unwrap(), Some(Mode::F1Units));
+        assert_eq!(Mode::F1Units.as_str(), "f1units");
+        assert_eq!(mode(&["--assemble-only"]).unwrap(), Some(Mode::F1v2), "f1units is never the default");
+        let err = mode(&["--assemble-only", "--bridge-regroup", "f1units", "--gtf-regroup"]).unwrap_err().to_string();
+        assert!(err.contains("--bridge-regroup f1units") && err.contains("pass one of them"), "{err}");
+        let err = mode(&["--gtf", "--bridge-regroup", "f1units"]).unwrap_err().to_string();
+        assert!(err.contains("--bridge-regroup f1units") && err.contains("--assemble-only"), "{err}");
+        let err = mode(&["--assemble-only", "--families", "c.tsv", "--bridge-regroup", "f1units"]).unwrap_err().to_string();
+        assert!(err.contains("without --families"), "{err}");
+        assert!(super::Args::try_parse_from(["copy_assign", "--bam", "b", "--fasta", "f", "--out", "o", "--bridge-regroup", "f2"]).is_err());
+
+        // the list: only with f1units, and read (so a missing file fails) before any read is touched
+        let dir = std::env::temp_dir().join(format!("rustle_units_list_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let list = dir.join("l.tsv");
+        std::fs::write(&list, "tid\tjunctions\nB\t351-1300\n").unwrap();
+        let (list_s, units) = (list.to_str().unwrap(), "f1units");
+        let with_list = |arm: &[&str]| {
+            let mut argv = vec!["--assemble-only", "--bridge-units-list", list_s];
+            argv.extend_from_slice(arm);
+            let a = parse(&argv);
+            let m = super::resolve_bridge_mode(&a)?;
+            super::resolve_bridge_units_list(&a, m)
+        };
+        let l = with_list(&["--bridge-regroup", units]).unwrap().expect("the list");
+        assert_eq!((l.rows.len(), l.detector().as_str()), (1, "list:l.tsv"));
+        for arm in [&["--bridge-regroup", "f1"][..], &["--bridge-regroup", "f1v2"], &["--bridge-regroup", "off"], &[]] {
+            let err = with_list(arm).unwrap_err().to_string();
+            assert!(err.contains("pass --bridge-regroup f1units with it"), "{arm:?}: {err}");
+        }
+        let a = parse(&["--assemble-only", "--bridge-regroup", units, "--bridge-units-list", "/nonexistent/l.tsv"]);
+        let err = super::resolve_bridge_units_list(&a, super::resolve_bridge_mode(&a).unwrap()).unwrap_err().to_string();
+        assert!(err.contains("/nonexistent/l.tsv: cannot read the list"), "{err}");
+        let a = parse(&["--assemble-only", "--bridge-regroup", units]);
+        assert!(super::resolve_bridge_units_list(&a, Some(Mode::F1Units)).unwrap().is_none(), "no list: F1's evidence decides");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// §6p8: build a tiny GTF and check both polish passes. Layout on chr1/+:

@@ -126,7 +126,7 @@ pub fn parse_key(name: &str) -> Option<Key> {
 
 /// The value of `key "..."` in a GTF attribute column: the FIRST occurrence of `key "` (the same substring rule as
 /// `mcl_families::gtf_loci`), up to the next `"`.
-fn gtf_attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
+pub(crate) fn gtf_attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
     let pat = format!("{key} \"");
     let i = s.find(&pat)? + pat.len();
     let j = s[i..].find('"')? + i;

@@ -1,0 +1,6 @@
+relation_id	transcript	fused_gene_id	fused_locus	strand	n_units	cut_introns	detector	unit_ids	unit_loci	unit_families	unit_family_sizes	outcome	relation	separated	ref_lenient	ref_strict
+REL1	F1	g1	c1:1000-7300	+	2	1501-4999	list:cuts.tsv	F1.U1,F1.U2	c1:1000-1500,c1:5000-5500	MCL0,MCL1	3,2	DIFF	cover	true	.	.
+REL2	FF	g2	c1:10000-16300	-	3	10301-12999,13301-15999	list:cuts.tsv	FF.U1,FF.U2,FF.U3	c1:16000-16300,c1:13000-13300,c1:10000-10300	MCL2,MCL3,MCL2	3,2,3	DIFF	cover	true	.	.
+REL3	F3	g3	c1:20000-24100	+	2	20301-21999	list:cuts.tsv	F3.U1,F3.U2	c1:20000-20300,c1:22000-22600	MCL4,-	2,0	ONE_UNCL	.	true	.	.
+REL4	F5	g3	c1:20000-24100	+	2	23301-23999	list:cuts.tsv	F5.U1,F5.U2	c1:23000-23300,c1:24000-24400	MCL5,MCL3	1,2	DIFF	cover	true	.	.
+REL5	FM	g10	c1:70000-76300	+	4	70301-71999,72301-73999,74301-75999	list:cuts.tsv	FM.U1,FM.U2,FM.U3,FM.U4	c1:70000-70300,c1:72000-72300,c1:74000-74300,c1:76000-76300	-,-,-,-	0,0,0,0	ALL_UNCL	.	true	.	.

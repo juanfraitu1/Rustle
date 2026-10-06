@@ -361,6 +361,13 @@ RUSTLE_BRIDGE_REGROUP=f1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GE
 # assign ran on the legacy catalog, hence --legacy-catalog since 2026-10-02; assign on a catalog with cross-chromosome
 # families differs since then, see `copy_assign --help`, --families):
 RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 tools/rustle_pipeline.sh all --legacy-catalog --bam READS.bam --fasta GENOME.fa --out run ...
+# OPT-IN (bench/ASSEMBLY_POLISH.md 2026-09-30 addendum 4): F1's bridges kept as UNITS of the families input instead of left
+RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_FAMILY_RELATIONS=1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
+# the GUIDED detector (annotation overlap; two assemblies: the list needs the ids of an assembled GTF, which are reproduced; .gz inputs are read;
+RUSTLE_BRIDGE_REGROUP=off tools/rustle_pipeline.sh assemble --bam READS.bam --fasta GENOME.fa --out pass1
+python3 bench/units_from_annotation.py ANNOT.gff pass1.gtf --report run.units.uncuttable.tsv --out run.units.list.tsv
+RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_BRIDGE_UNITS_LIST=run.units.list.tsv RUSTLE_FAMILY_RELATIONS=1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
+python3 bench/test_units_from_annotation.py                                                # the helper's 10 tests
 ```
 
 ## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)

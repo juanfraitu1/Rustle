@@ -103,6 +103,8 @@ SUBCOMMANDS
                matching (`--only bipartite`); default `--only all` prints both, in that order. --split/--half
                scores one half of the frozen DEV / HELD-OUT split; --drop-family removes a truth family.
     ladder     the copy-number ladder above (sequence only -> our famCN -> S1C famCN), one line per rung.
+    nesting    Soto is a refinement of ours: Soto families inside our clusters / our clusters as unions of Soto families,
+               per copy-number rung (2026-09-30).
 
 IN-REPO INPUTS (resolved relative to this file, not the CWD)
     soto_famCN_S1C.tsv                 Soto Table S1C (truth, famCN, biotypes; pinned by REPRODUCE.md)
@@ -2313,6 +2315,92 @@ def cmd_ladder(a):
         print(f"| {label} | " + " | ".join(cells) + " |")
 
 
+def cmd_nesting(a):
+    """Soto is a REFINEMENT of ours (2026-09-30): how many of Soto's multi-gene families sit WHOLLY inside one of OUR
+    clusters, and how many of our clusters are exact unions of whole Soto families.
+
+    OUR clusters = the families of the reconciled recipe (exon map-back edges x the per-pair rule, `cluster --pair-mad`)
+    under a chosen copy-number gate: none (sequence only: the connected components of the >= 98% exon-sharing graph),
+    or a MAD < m gate on our own famCN (268 samples, Soto's interval) or on Soto's published S1C famCN. SOTO families =
+    the S1C families with >= 2 clean members (a gene in two Soto families is left out, as everywhere else here). One
+    row per rung: `inside` = Soto families whose clean members all carry ONE label of ours (an unlabeled gene counts
+    as its own label, so a Soto family with a gene we do not cluster is not inside); `union` = our clusters (>= 2
+    genes) such that every Soto family they touch lies wholly in them. Sequence only is the coarsest partition of the
+    rungs: Soto = our sequence components split by copy number, so `inside` rises to the ceiling as the gate loosens.
+    The exceptions of the first rung are listed (family, size, pieces, gene names). No constant is fitted: the gate
+    grid is a display of the ladder, not a choice.
+    """
+    genes, _bt = load_geneset(a.geneset)
+    full_genes_all, _fb = load_geneset(a.full_geneset) if a.full_geneset else (set(genes), {})
+    edges = read_edges(a.shared)
+    clean_truth, ambiguous = load_truth(a.truth)
+    names = {}
+    with open(a.truth) as fh:
+        for r in csv.DictReader(fh, delimiter="\t"):
+            names[r["Gene ID"]] = r.get("Gene Name") or r["Gene ID"]
+    members = defaultdict(set)
+    for g, f in clean_truth.items():
+        if f and not f.startswith("Unassigned"):
+            members[f].add(g)
+    soto = {f: m for f, m in members.items() if len(m) >= 2}
+    g2f = {g: f for f, m in soto.items() for g in m}
+    universe = (full_genes_all | genes) - ambiguous
+    grid = [float(x) for x in a.mad_grid.split(",")] if a.mad_grid else [1.0]
+    arms = [("sequence only (no copy-number gate)", None, None, None)]
+    for label, path, col in ((("our famCN, 268 samples, Soto's interval", a.famcn_ours, "famCN_sotoiv"),) if a.famcn_ours else ()) + \
+            (("S1C famCN (Soto's published values)", a.truth, "Median famCN"),):
+        for m in grid:
+            arms.append((f"{label}, MAD < {m:g}", path, col, m))
+    print(f"Soto families with >= 2 clean members: {len(soto)}")
+    print("| rung | Soto families inside one of our clusters | our clusters that are unions of whole Soto families |")
+    print("|---|---|---|")
+    exceptions = []
+    for label, path, col, m in arms:
+        famcn = {} if path is None else {g: v for g, v in load_famcn(path, col).items() if g in genes}
+        cover, kept, leaf_of = pair_families(edges, genes, full_genes_all, famcn, gate=path is not None,
+                                             mad_threshold=m if m is not None else 1.0)
+        pred = collapse_cover(cover, leaf_of, genes)
+        lab = lambda g: pred.get(g) or f"__o{g}"
+        inside = [f for f, mem in soto.items() if len({lab(g) for g in mem}) == 1
+                  and not lab(next(iter(mem))).startswith("__o")]
+        clusters = defaultdict(set)
+        for g in universe:
+            if pred.get(g):
+                clusters[pred[g]].add(g)
+        clusters = [v for v in clusters.values() if len(v) >= 2]
+        union = 0
+        for v in clusters:
+            touched = {g2f[g] for g in v if g in g2f}
+            if all(soto[f] <= v for f in touched):
+                union += 1
+        pct = lambda x, n: f"{x}/{n} ({100.0 * x / n:.1f}%)" if n else "0/0"
+        print(f"| {label} | {pct(len(inside), len(soto))} | {pct(union, len(clusters))} |")
+        if path is None:
+            split = []
+            for v in clusters:
+                touched = {g2f[g] for g in v if g in g2f}
+                if len(touched) >= 2:
+                    split.append((len(touched), len(v), sorted(touched, key=lambda f: -len(soto[f])), v))
+            split.sort(key=lambda t: (-t[0], -t[1]))
+            ins = set(inside)
+            for f in sorted(set(soto) - ins):
+                pieces = defaultdict(list)
+                for g in soto[f]:
+                    pieces[lab(g)].append(names.get(g, g))
+                shown = " / ".join(",".join(sorted(v)[:5]) + ("..." if len(v) > 5 else "") for v in pieces.values())
+                exceptions.append(f"  {f} ({len(soto[f])} genes, {len(pieces)} pieces): {shown}")
+    print()
+    print("Exceptions of the sequence-only rung (Soto families NOT inside one of our clusters):")
+    print("\n".join(exceptions) if exceptions else "  none")
+    print()
+    n_multi = sum(1 for t in split)
+    print(f"Sequence-only clusters that Soto splits into >= 2 of its families: {n_multi} "
+          f"(holding {sum(t[0] for t in split)} Soto families; the rest of our clusters hold <= 1)")
+    print("Largest (Soto families in the cluster, genes in the cluster, the Soto families by size, example genes):")
+    for k, n, fams, v in split[:10]:
+        ex = ",".join(sorted(names.get(g, g) for g in v)[:4])
+        print(f"  {k} Soto families / {n} genes: {','.join(fams[:6])}{'...' if len(fams) > 6 else ''}  e.g. {ex}")
+
 def cmd_score(a):
     """Score a predicted gene->family_id assignment against Soto's own published truth (S1C).
 
@@ -2568,6 +2656,17 @@ def main(argv=None):
     p.add_argument("--drop-family", action="append", metavar="ID", help="adds an ALL-ARI-without column")
     p.add_argument("--mad", type=float, default=1.0)
     p.set_defaults(func=cmd_ladder)
+
+    p = sub.add_parser("nesting", help="Soto is a refinement of ours: Soto families inside our clusters, our clusters "
+                                       "as unions of Soto families, per copy-number rung (2026-09-30)",
+                       description=cmd_nesting.__doc__)
+    p.add_argument("--shared", required=True, help="exon map-back edges (bench/soto/shared_exons_5154_exon_mapback.tsv)")
+    p.add_argument("--geneset", required=True, help="the 1,793 eligible genes (`genesets --out-eligible`)")
+    p.add_argument("--full-geneset", help="the 2,334-gene universe (`genesets --out-full`)")
+    p.add_argument("--famcn-ours", help="famcn_ours_allwssd.tsv (column famCN_sotoiv, 268 samples)")
+    p.add_argument("--truth", default=S1C, help="S1C (default: %(default)s); also the S1C famCN rung")
+    p.add_argument("--mad-grid", default="1,2,4,8,16", help="MAD thresholds of the copy-number rungs (default %(default)s)")
+    p.set_defaults(func=cmd_nesting)
 
     a = ap.parse_args(argv)
     a.func(a)

@@ -12,8 +12,10 @@ pub mod run_cache; // on-disk cache of the catalog's representatives and all-vs-
 pub mod seq_utils; // small sequence utilities: reverse_complement, revcomp_keep_case, hw_distance/aln_id (edlib-HW identity).
 pub mod collapse_gate; // O2: admit a COLLAPSED single-rep locus as a multi-copy family (ambiguity test, then chi(H)).
 pub mod annotation_families;
+pub mod fam_from_gtf; // the `--from-gtf` family stage as a library (loci, all-vs-all, copy table), imported by mcl_families; extracted from src/bin/mcl_families.rs 2026-10-04.
 pub mod bridge_regroup; // OPT-IN `copy_assign --bridge-regroup f1|f1v2`: bridge-aware regrouping of the assembled GTF, bridges kept as fusion_of relations and out of the families input (port of bench/f1_bridge.py + f1v2.py).
 pub mod family_container; // OPT-IN `mcl_families --emit-container`: core/accessory exon blocks of each family member and the family relations of the accessory ones (port of bench/family_container.py).
+pub mod family_relations; // OPT-IN `mcl_families --emit-relations`: one relation record per unit-split transcript (`copy_assign --bridge-regroup f1units`) and the members of each family by locus (port of the dev prototype relations.py).
 pub mod family_graph; // contiguous-core homology kernel (POA MSA, core coverage + LCS fallback, memo) used by detection, edge confirmation and rescue.
 pub mod mosaic;
 pub mod hidden_copy;

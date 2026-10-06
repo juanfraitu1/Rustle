@@ -1,0 +1,6 @@
+tid	chrom	strand	junctions	label	gene
+F1	c1	+	1501-4999	fixture	g1
+FF	c1	-	10301-12999;13301-15999	fixture	g2
+F3	c1	+	20301-21999	fixture	g3
+F5	c1	+	23301-23999	fixture	g3
+FM	c1	+	70301-71999;72301-73999;74301-75999	fixture	g10
