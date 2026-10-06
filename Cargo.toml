@@ -61,15 +61,13 @@ lto = false
 codegen-units = 256 # Maximum parallelism
 panic = "unwind"
 
+[dev-dependencies]
+tempfile = "3"
+serde_json = "1.0" # test fixtures (seq_utils aln_id parity, genome IndexedFasta vs pysam)
+
 [[bin]]
 name = "mcl_families"
 path = "src/bin/mcl_families.rs"
-
-
-
-
-
-
 
 [[bin]]
 name = "copy_assign"
@@ -79,26 +77,6 @@ path = "src/bin/copy_assign.rs"
 name = "gw_family_catalog"
 path = "src/bin/gw_family_catalog.rs"
 
-
-
-
-[[bin]]
-name = "parcn"
-path = "src/bin/parcn.rs"
-
-
-[dev-dependencies]
-tempfile = "3"
-serde_json = "1.0" # test fixtures (seq_utils aln_id parity, genome IndexedFasta vs pysam)
-
-[[bin]]
-name = "gff_to_gtf"
-path = "src/bin/gff_to_gtf.rs"
-
-[[bin]]
-name = "locus_bed"
-path = "src/bin/locus_bed.rs"
-
 [[bin]]
 name = "readthrough_filter"
 path = "src/bin/readthrough_filter.rs"
@@ -106,11 +84,6 @@ path = "src/bin/readthrough_filter.rs"
 [[bin]]
 name = "family_score"
 path = "src/bin/family_score.rs"
-
-
-[[bin]]
-name = "mcl_port"
-path = "src/bin/mcl_port.rs"
 
 [[bin]]
 name = "missing_copy_flag"
@@ -123,3 +96,7 @@ path = "src/bin/o3_candidates.rs"
 [[bin]]
 name = "as_table"
 path = "src/bin/as_table.rs"
+
+[[bin]]
+name = "utilities"
+path = "src/bin/utilities.rs"

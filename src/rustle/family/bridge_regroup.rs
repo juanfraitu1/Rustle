@@ -97,7 +97,7 @@ use noodles_sam::alignment::record::cigar::Op;
 use noodles_sam::alignment::record::data::field::Value;
 
 use crate::genome::GenomeIndex;
-use crate::vg_family::denovo_assemble::{rt_real_starts, rt_v1};
+use crate::family::denovo_assemble::{rt_real_starts, rt_v1};
 
 /// `--bridge-regroup`'s arms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2167,7 +2167,7 @@ mod tests {
     /// here) after the representative `collapse_loci_groups` chose.
     #[test]
     fn native_components_equal_collapse_loci_groups() {
-        use crate::vg_family::family_detect::{collapse_loci_groups, DenovoTranscript};
+        use crate::family::family_detect::{collapse_loci_groups, DenovoTranscript};
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
         let (mut shared, mut cross_strand, mut collisions, mut ties) = (0usize, 0usize, 0usize, 0usize);
         for round in 0..500 {

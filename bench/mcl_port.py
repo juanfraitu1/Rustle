@@ -16,7 +16,8 @@ import subprocess
 import tempfile
 
 _BIN = os.environ.get('RUSTLE_MCL_PORT_BIN',
-                      '/mnt/linuxdisk/home/juanfraitu/rustle_target/release/mcl_port')
+                      '/mnt/linuxdisk/home/juanfraitu/rustle_target/release/utilities')
+_MCL_PORT_SUBCOMMAND = os.environ.get('RUSTLE_MCL_PORT_CMD', 'mcl-port')
 
 
 def mcl(edges, inflation=2.8, prune=1e-9, max_iter=100):
@@ -33,7 +34,7 @@ def mcl(edges, inflation=2.8, prune=1e-9, max_iter=100):
                 if '\t' in a or '\n' in a or '\t' in b or '\n' in b:
                     raise ValueError('mcl_port.mcl: node ids may not contain tab or newline')
                 fh.write(f'{a}\t{b}\t{float(w)!r}\n')   # repr round-trips the f64 exactly
-        out = subprocess.run([_BIN, '--graph', path, '--inflation', repr(float(inflation)),
+        out = subprocess.run([_BIN, _MCL_PORT_SUBCOMMAND, '--graph', path, '--inflation', repr(float(inflation)),
                               '--prune', repr(float(prune)), '--max-iter', str(int(max_iter))],
                              capture_output=True, text=True, check=True).stdout
     finally:

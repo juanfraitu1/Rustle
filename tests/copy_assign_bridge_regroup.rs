@@ -1,4 +1,4 @@
-//! `copy_assign --assemble-only --bridge-regroup` end to end on a synthetic readthrough locus (`vg_family::bridge_regroup`).
+//! `copy_assign --assemble-only --bridge-regroup` end to end on a synthetic readthrough locus (`family::bridge_regroup`).
 //!
 //! Gene X's reads end at a canonical PAS inside the intron [1251, 2200] that a 3-read bridge B skips on its way to
 //! gene Y, whose reads start inside that intron at their own promoter. The assembler emits X, B and Y under one

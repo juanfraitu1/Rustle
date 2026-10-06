@@ -39,7 +39,7 @@ conda install -c bioconda stringtie gffcompare samtools minimap2
 conda create -n flair -c bioconda flair          # optional, FLAIR 3.0.0
 conda install -c bioconda isoseq                 # optional
 ```
-⚠ `gffread` is not required — the `gff_to_gtf` binary builds the per-chromosome reference GTFs.
+⚠ `gffread` is not required — the `utilities gff-to-gtf` subcommand builds the per-chromosome reference GTFs.
 
 ## 3. Data
 
@@ -49,7 +49,7 @@ aligned Iso-Seq BAM, then slice one chromosome:
 ```sh
 samtools view -@3 -b <library>.bam chr20 -o chr20.bam && samtools index chr20.bam
 samtools faidx <genome>.fa chr20 > chr20.fa && samtools faidx chr20.fa
-target/release/gff_to_gtf chm13v2.0_RefSeq_full.gff.gz chr20 chr20_ref.gtf
+target/release/utilities gff-to-gtf chm13v2.0_RefSeq_full.gff.gz chr20 chr20_ref.gtf
 ```
 
 ⚠ Two human libraries appear in the ledger and **their numbers are not comparable** (register row 867):
@@ -106,7 +106,7 @@ RUSTLE_JUNCTION_MAJORITY=1 target/release/copy_assign --assemble-only --read-iso
 target/release/copy_assign --assemble-only --gtf-tpm ... --out run
 
 # loci as BED, plus a one-to-one match against the annotation showing size agreement
-target/release/locus_bed run.gtf --out run --ref chr20_ref.gtf
+target/release/utilities locus-bed run.gtf --out run --ref chr20_ref.gtf
 #   run.loci.bed / run.ref_loci.bed / run.locus_match.tsv
 ```
 `TPM_i = reads_i / Σ reads * 1e6` — **not** length-normalised, because a long read is one molecule.

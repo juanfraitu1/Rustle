@@ -1,4 +1,4 @@
-//! Variation-graph family analysis for novel gene-family copies.
+//! Family analysis for novel gene-family copies.
 //!
 //! Family detection and definition (O1), copy assignment under MAPQ-0 ambiguity (O2) and
 //! missing/reference-absent copies (O3), with the structural detectors (mosaic, hidden_copy)
@@ -7,38 +7,41 @@
 //!
 //! **STATUS:** INFRASTRUCTURE  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
-pub mod missing_copy; // O3 RNA-only chain: divergence mixture -> PSV consistency -> patched consensus -> home search -> screens -> verdict (§6ze).
-pub mod run_cache; // on-disk cache of the catalog's representatives and all-vs-all PAFs (RUSTLE_CACHE_DIR), for fast re-runs and analysis.
-pub mod seq_utils; // small sequence utilities: reverse_complement, revcomp_keep_case, hw_distance/aln_id (edlib-HW identity).
-pub mod annotation_families;
-pub mod fam_from_gtf; // the `--from-gtf` family stage as a library (loci, all-vs-all, copy table), imported by mcl_families; extracted from src/bin/mcl_families.rs 2026-10-04.
+pub mod arms;
 pub mod bridge_regroup; // OPT-IN `copy_assign --bridge-regroup f1|f1v2`: bridge-aware regrouping of the assembled GTF, bridges kept as fusion_of relations and out of the families input (port of bench/f1_bridge.py + f1v2.py).
-pub mod mosaic;
-pub mod collapse_enumerate; // K=0-collapsed family re-admission gate (--collapse-enumerate): pure three-signal admission decision (hidden_copy flagged + balanced alt fraction + >=2 genome-projected loci).
-// `phasing` (within-locus DIPLOID MEC) was DELETED 2026-08-10: zero call sites, and the flag it
-// named (`--vg-phase`) never existed as a CLI option (`RustleConfig::vg_phase` is set false at
-// construction and never read). It was also the wrong object for O2 — binary alleles, h_B = !h_A,
-// one locus — where O2 is k-copy over 4-letter alleles across a family. Verdict + evidence:
-// docs/copy_assignment_definition.md §10.
-pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
-pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
-pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
-pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
-pub mod read_conflict; // OPERATIONAL family criterion: read cross-mapping conflict graph (mutual-mappability).
-pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + general-purpose assemble gate.
 pub mod denovo_pipeline; // Integration: de-novo family DETECTION driver (pass1->gate->collapse->detect->split).
-pub mod copy_graph; // Copy-graph objects: pure builder for variation graphs over family copies (Task 1).
-pub mod genome_projection; // Liftoff-style famCN copy enumeration (spec §7): project a family consensus onto the genome via in-engine minimap2 to enumerate near-identical genomic copies, recovering K=0 collapses.
-pub mod from_genome; // DNA-mode front-end: discover duplicated genomic loci by self-alignment -> reps (genomic seq, empty intron chain) for the shared homology_blocks grouping core (--from-genome).
-pub mod readonly_copy_number; // Reference-free per-family copy number (Task R1): chi_h (PSV conflict-structure lower bound, Rust port of family_copy_number.py's copyonly_K) + depth_cn (read-depth E_fam/lambda_global leg, recovers Tier-3 collapsed copies chi_h misses).
-pub mod single_copy; // O1 baseline: single-copy (chi(H)=1) loci + lambda_global for the copy-number normalizer.
-pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection (is_candidate + RealignParams) for poor-fit/unmapped reads to be re-aligned to O1's family copy-paths.
-pub mod parcn; // OPTIONAL assembly-side parCN supplement (docs/superpowers/specs/2026-07-14-assembly-parcn-design.md); never wired into the RNA-exclusive core.
-pub mod linearize; // Task 1: augment-and-linearize certificate (dinucleotide-preserving decoy shuffle via Altschul-Erikson random-Eulerian-path).
-pub mod catalog_input; // O1->O2 FILE contract: parse a gw_family_catalog copies.tsv (+ copies.fa) back into the copy set `copy_assign --families` assigns to, keeping the catalog's own ids as the JOIN KEY.
-pub mod shared_definition; // OPT-IN RUSTLE_SHARED_DEFINITION: the shared family definition (seeded_family_definition.md §0★★) on the homology catalog: gene-level read-supported nodes + guided edge finders + triangle-supported leaders.
-pub mod o3_candidates; // O3 candidate copies: read net -> clusters -> consensus -> flag/link/merge -> union (spec 2026-10-02)
+pub mod fam_from_gtf; // the `--from-gtf` family stage as a library (loci, all-vs-all, copy table), imported by mcl_families.
+pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
+pub mod missing_copy; // O3 RNA-only chain: divergence mixture -> PSV consistency -> patched consensus -> home search -> screens -> verdict (§6ze).
+pub mod o3; // O3 candidate copies and reference-absent admission gate.
+
+// Re-export merged submodules so existing `crate::family::<name>` paths keep compiling.
+pub use arms::catalog_input as catalog_input;
+pub use arms::collapse_enumerate as collapse_enumerate;
+pub use arms::copy_graph as copy_graph;
+pub use arms::copy_split as copy_split;
+pub use arms::from_genome as from_genome;
+pub use arms::genome_projection as genome_projection;
+pub use arms::linearize as linearize;
+pub use arms::parcn as parcn;
+pub use arms::readonly_copy_number as readonly_copy_number;
+pub use arms::run_cache as run_cache;
+pub use arms::seq_utils as seq_utils;
+pub use arms::shared_definition as shared_definition;
+pub use arms::single_copy as single_copy;
+pub use arms::vg_realign as vg_realign;
+
+pub use denovo_pipeline::denovo_assemble as denovo_assemble;
+
+pub use fam_from_gtf::annotation_families as annotation_families;
+
+pub use family_detect::family_rescue as family_rescue;
+pub use family_detect::mosaic as mosaic;
+pub use family_detect::read_conflict as read_conflict;
+
+pub use o3::absent_copy as absent_copy;
+pub use o3::o3_candidates as o3_candidates;
 
 
 #[cfg(test)]
@@ -65,9 +68,9 @@ mod module_status_tests {
     ];
 
     fn module_files() -> Vec<(String, String)> {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/rustle/vg_family");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/rustle/family");
         let mut out = Vec::new();
-        for e in std::fs::read_dir(dir).expect("vg_family dir") {
+        for e in std::fs::read_dir(dir).expect("family dir") {
             let p = e.expect("dir entry").path();
             if p.extension().and_then(|x| x.to_str()) != Some("rs") {
                 continue;

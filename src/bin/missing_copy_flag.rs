@@ -25,8 +25,8 @@
 
 use anyhow::{Context, Result};
 use noodles_sam::alignment::record_buf::RecordBuf;
-use rustle::vg_family::denovo_assemble::aligned_read_from_record;
-use rustle::vg_family::missing_copy::*;
+use rustle::family::denovo_assemble::aligned_read_from_record;
+use rustle::family::missing_copy::*;
 use std::collections::HashMap;
 use std::io::Write;
 

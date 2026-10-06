@@ -80,7 +80,7 @@ What the current §6q7 workflow actually invokes. Touch these with care; they ar
 | `copy_assign` | ⭐ the main pipeline: loci → isoform assembly → GTF; `--assemble-only` is the assembler product, `--assembly-polish` the §6p8-§6q6 filters; O2 assignment lives here too |
 | `mcl_families` | the DNA-level family definition (`--min-exonic-bp`, `--min-shared-exon-frac`) |
 | `family_define`, `mcl_refine`, `gw_family_catalog` | family catalog construction and refinement |
-| `gamma_refine`, `parcn`, `filter_bam_by_as`, `index_bam`, `bam_header` | supporting steps |
+| `gamma_refine`, `utilities parcn`, `filter_bam_by_as`, `index_bam`, `bam_header` | supporting steps |
 | `asj`, `asj_verify` | ⚠ ASJ is a DROPPED objective — kept for provenance, not in the live path |
 | `debug_poa` | diagnostic only |
 
@@ -91,8 +91,8 @@ What the current §6q7 workflow actually invokes. Touch these with care; they ar
 | `bench/assembly_polish.py` | Python mirror of the Rust `--assembly-polish` passes; byte-identical parity oracle | §6q6, 2026-09-19 |
 | `readthrough_filter` (Rust bin) | ⭐ secondary-dominated readthrough flagging (opt-in, `--max-secondary-frac`, default 1.0 = no-op). Needs no `samtools` and no off-repo `dna_cert`; `--nodes`/`--exonless` default to the family_cert substrate | §6s4, 2026-09-20 |
 | `bench/readthrough_secondary_filter.py` | the Python it was ported from; kept as the byte-parity oracle | §6n9/§6o0 |
-| `gff_to_gtf` (Rust bin) | RefSeq GFF3 → gffread-style GTF; validated at 4,574 = 4,574 vs `chr20_ref.gtf`. **Needed because `gffread` is not installed on this machine.** | §6p9-§6r9 |
-| `locus_bed` (Rust bin) | loci as BED + one-to-one match against an annotation (`size_ratio`) | §6r5-§6r9 |
+| `utilities gff-to-gtf` (Rust bin subcommand) | RefSeq GFF3 → gffread-style GTF; validated at 4,574 = 4,574 vs `chr20_ref.gtf`. **Needed because `gffread` is not installed on this machine.** | §6p9-§6r9 |
+| `utilities locus-bed` (Rust bin subcommand) | loci as BED + one-to-one match against an annotation (`size_ratio`) | §6r5-§6r9 |
 | `tools/audit_cleanup_candidates.py` | this audit; read-only, re-runnable | §6q8 |
 | `bench/layer_order/npip_tbc1d3.py` + `lattice_common.py` | the 2026-09-16 NPIP/TBC1D3 nested edge-test lattice + layer-order study (L3 at 0.98, not the shipped 0.985); one subcommand per stage (wave 7 folded the 12 `lo_*`/`lattice_*`/`soto_map` files into these 2). §6p1–§6p5 used the off-repo `lattice_rules/engine.py`, which reads `light/members.corrected.tsv` from `corrected-tables` | 2026-09-16 (outputs frozen); rerun-verified 2026-09-24 |
 

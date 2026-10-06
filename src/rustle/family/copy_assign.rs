@@ -14,7 +14,7 @@
 //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
 use crate::types::{DetHashMap, DetHashSet};
-use crate::vg_family::copy_split::{allele_at, AlignedRead};
+use crate::family::copy_split::{allele_at, AlignedRead};
 
 /// Per-copy feature profile over the family's PSV columns + intron-boundary set.
 #[derive(Clone, Debug)]
@@ -408,7 +408,7 @@ pub fn copy_pair_significance(
         if let (Some(ba), Some(ca)) = (ba, ca) {
             if ba != ca {
                 let e = match read.psv_qual.get(j).copied().flatten() {
-                    Some(q) => crate::vg_family::copy_split::phred_err(q),
+                    Some(q) => crate::family::copy_split::phred_err(q),
                     None => p.error_rate,
                 };
                 let mut eps_j = (e / 3.0).clamp(0.0, 1.0);
@@ -511,7 +511,7 @@ pub(crate) fn read_copy_evidence(
             None => continue, // read does not span this bubble
         };
         let e = match read.psv_qual.get(b.col).copied().flatten() {
-            Some(q) => crate::vg_family::copy_split::phred_err(q),
+            Some(q) => crate::family::copy_split::phred_err(q),
             None => p.error_rate,
         };
         let lp_match = (1.0 - e).ln();
@@ -1587,7 +1587,7 @@ pub fn em_assign_family(
             junctions: copy_junctions.get(k).cloned().unwrap_or_default(),
         })
         .collect();
-    let editing = crate::vg_family::copy_assign::copy_assign_pipeline::detect_editing_columns(read_obs, &copies);
+    let editing = crate::family::copy_assign::copy_assign_pipeline::detect_editing_columns(read_obs, &copies);
     let graph = super::BubbleGraph::from_copies(&copies);
     let evidence: Vec<super::ReadEvidence> = read_obs
         .iter()
@@ -2033,9 +2033,9 @@ use super::{
 };
 #[cfg(test)]
 use super::assign_read;
-use crate::vg_family::copy_split::{intron_chain_of, AlignedRead};
-use crate::vg_family::family_detect::DenovoTranscript;
-use crate::vg_family::family_detect::family_graph::poa_msa_with_costs;
+use crate::family::copy_split::{intron_chain_of, AlignedRead};
+use crate::family::family_detect::DenovoTranscript;
+use crate::family::family_detect::family_graph::poa_msa_with_costs;
 
 /// erf via Abramowitz–Stegun 7.1.26 (|error| < 1.5e-7), enough for a tail test at alpha ~ 1e-3.
 fn erf_approx(x: f64) -> f64 {
@@ -3702,10 +3702,10 @@ pub struct FamilyDetail {
     pub mosaic_reads: usize,
     /// family-confirmed gene conversions: the breakpoint RECURS across independent molecules (vs a one-off
     /// chimera). The enriched per-molecule signal the multimappers carry beyond presence/abundance.
-    pub conversions: Vec<crate::vg_family::mosaic::ConversionEvent>,
+    pub conversions: Vec<crate::family::mosaic::ConversionEvent>,
     /// per-`conversions` unified verdict (gene conversion vs RT/template-switch artifact vs chimera/ambiguous)
     /// from the recurrence + microhomology + DNA legs. Empty unless the caller classifies (genome-dependent).
-    pub conversion_class: Vec<crate::vg_family::mosaic::Classification>,
+    pub conversion_class: Vec<crate::family::mosaic::Classification>,
     /// COPY-level historical gene conversions: a de-novo copy whose PSV-allele vector is itself a mosaic of two
     /// OTHER copies (the APOBEC3/RFPL signal — baked into the copy sequence, invisible to the read-level scan).
     pub copy_conversions: Vec<CopyConversion>,
@@ -3743,9 +3743,9 @@ pub struct CopyConversion {
 pub fn scan_copy_conversions(
     profiles: &[CopyProfile],
     col_gpos: &[Option<u64>],
-    p: &crate::vg_family::mosaic::MosaicParams,
+    p: &crate::family::mosaic::MosaicParams,
 ) -> Vec<CopyConversion> {
-    use crate::vg_family::mosaic::{detect_mosaic, SiteObs};
+    use crate::family::mosaic::{detect_mosaic, SiteObs};
     let n = profiles.len();
     if n < 3 {
         return Vec::new(); // a copy can only be a mosaic of two OTHERS if there are >= 3 copies
@@ -4299,7 +4299,7 @@ fn assign_family_detailed_once(
         assert_eq!(c.len(), reads.len(), "read_chroms must hold one chromosome per read");
     }
     let chrom_of = |i: usize| read_chroms.map(|c| c[i].as_str());
-    use crate::vg_family::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
+    use crate::family::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
     const MOSAIC_EPS: f64 = 0.01; // HiFi per-base error for the mosaic likelihood
     const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
@@ -4381,7 +4381,7 @@ fn assign_family_detailed_once(
     // call; it adds an EM observation only if `combined` assigns; and a `ReadResult` only if `psv` also
     // assigns.
     struct PerRead {
-        mcall: crate::vg_family::mosaic::MosaicCall,
+        mcall: crate::family::mosaic::MosaicCall,
         obs_for_em: Option<Vec<Option<u8>>>,
         result: Option<ReadResult>,
     }
@@ -5220,12 +5220,12 @@ pub fn star_soft_abundance(results: &[ReadResult], n_copies: usize) -> (Vec<f64>
 pub fn classify_conversions(
     detail: &super::copy_assign_pipeline::FamilyDetail,
     genome: &crate::genome::GenomeIndex,
-    dna_support: impl Fn(&crate::vg_family::mosaic::ConversionEvent) -> Option<bool>,
-) -> Vec<crate::vg_family::mosaic::Classification> {
+    dna_support: impl Fn(&crate::family::mosaic::ConversionEvent) -> Option<bool>,
+) -> Vec<crate::family::mosaic::Classification> {
     detail
         .conversions
         .iter()
-        .map(|ev| crate::vg_family::mosaic::classify_event(ev, event_microhomology(genome, ev), dna_support(ev)))
+        .map(|ev| crate::family::mosaic::classify_event(ev, event_microhomology(genome, ev), dna_support(ev)))
         .collect()
 }
 
@@ -5233,7 +5233,7 @@ pub fn classify_conversions(
 /// bracket, on the event's own chromosome. `None` when the bracket is unusable (coord 0).
 pub fn event_microhomology(
     genome: &crate::genome::GenomeIndex,
-    ev: &crate::vg_family::mosaic::ConversionEvent,
+    ev: &crate::family::mosaic::ConversionEvent,
 ) -> Option<bool> {
     const MH_KMIN: u64 = 6;
     const MH_KMAX: u64 = 12;
@@ -6053,7 +6053,7 @@ mod tests {
     #[test]
     fn smoke_sim5x_ground_truth() {
         use crate::genome::GenomeIndex;
-        use crate::vg_family::denovo_assemble::aligned_reads_from_bam;
+        use crate::family::denovo_assemble::aligned_reads_from_bam;
         let dir = match std::env::var("RUSTLE_SIM5X_DIR") {
             Ok(d) => d,
             Err(_) => return,

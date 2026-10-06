@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use family_graph::{core_coverage_reaches, upper_cow};
 use super::family_rescue::window_canon_code;
-use crate::vg_family::seq_utils::reverse_complement;
+use crate::family::seq_utils::reverse_complement;
 
 /// Canonical k-mer length (matches `family_rescue::KMER` and `denovo_families.py::KMER`).
 pub const KMER: usize = 18;
@@ -1107,8 +1107,8 @@ pub fn poa_core_completion_adds(
         }
         let au = a.to_ascii_uppercase();
         let bu = b.to_ascii_uppercase();
-        let fwd = crate::vg_family::family_detect::family_graph::longest_common_substring(&au, &bu);
-        let rev = crate::vg_family::family_detect::family_graph::longest_common_substring(&au, &reverse_complement(&bu));
+        let fwd = crate::family::family_detect::family_graph::longest_common_substring(&au, &bu);
+        let rev = crate::family::family_detect::family_graph::longest_common_substring(&au, &reverse_complement(&bu));
         fwd.max(rev) as f64 / minlen as f64
     };
     // best (family, core) per FREE rep over all family-adjacent candidate pairs that confirm a POA core.
@@ -1914,7 +1914,7 @@ mod tests {
     /// derived `d_max(L) = 1 - exp(-ln(L)/(0.13*L))` formula against the ACTUAL production mechanism
     /// (poasta POA / its bounded fallback) instead of the minimap2 proxy the original 20/20 validation used.
     /// Run with: `RUSTLE_ORACLE_DIR=/mnt/linuxdisk/home/juanfraitu/o1_oracle cargo test --release
-    /// --lib vg_family::family_detect::tests::dump_oracle_npip_core_recip -- --ignored --nocapture
+    /// --lib family::family_detect::tests::dump_oracle_npip_core_recip -- --ignored --nocapture
     /// > /tmp/oracle_core_recip.tsv`
     #[test]
     #[ignore = "ad-hoc measurement against external NPIP oracle fixtures, not a CI assertion"]
@@ -1978,7 +1978,7 @@ mod tests {
     /// equal-sized random cross-family sample as a contrast population.
     /// Run with: `RUSTLE_PAIRS_MANIFEST=<tsv with key_a,key_b,ground_truth_same_family>
     /// RUSTLE_PAIRS_FASTA=<fasta with '>family_id|copy_idx' headers> cargo test --release --lib
-    /// vg_family::family_detect::tests::dump_real_catalog_core_recip -- --ignored --nocapture`
+    /// family::family_detect::tests::dump_real_catalog_core_recip -- --ignored --nocapture`
     #[test]
     #[ignore = "ad-hoc measurement against an external real-catalog pairs manifest, not a CI assertion"]
     fn dump_real_catalog_core_recip() {
@@ -4021,4 +4021,2136 @@ mod tests {
         assert_eq!(s.n_articulation, 2);
     }
 }
+}
+
+pub mod mosaic {
+    //! Gene-conversion mosaic-read detection (audit theme: "VG finds unusual exon combinations").
+    //!
+    //! A paralog family has near-identical copies that differ at a set of *diagnostic sites*.
+    //! For a read, at each diagnostic site it covers we know which copies' expected base it
+    //! matches. A GENE-CONVERSION recombinant read's per-site copy pattern SWITCHES from one
+    //! copy to another at a contiguous breakpoint (copy A for a run of sites, then copy B) —
+    //! an "unusual combination" directly observed in ONE read, not enumerated. This module
+    //! detects that switch and rejects the look-alikes: sequencing-error flips, non-identifiable
+    //! reads, low-power reads, and (at the family layer) one-off chimeras.
+    //!
+    //! Design = synthesis of an independent design panel (statistical / algorithmic / biological
+    //! lenses). The per-read core `detect_mosaic` is a PURE function over the per-site match
+    //! structure; `aggregate_family` confirms a conversion only when the breakpoint RECURS across
+    //! independent molecules (the conversion-vs-chimera discriminator). Default-OFF in the
+    //! pipeline (RUSTLE_VG_MOSAIC_ON); additive — the existing per-copy EM scoring is untouched.
+    //!
+    //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+    /// Per-site observation handed to the detector: which copies the read matches at one
+    /// diagnostic site. `match_bits[c]` = (read base == copy c's expected base). Sites are in
+    /// genomic order.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct SiteObs {
+        pub ref_pos: u64,
+        pub match_bits: Vec<bool>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum MosaicStatus {
+        LowPower,         // too few decisive sites to call anything
+        NonIdentifiable,  // copies tie at too many sites — no per-site signal; abstain
+        SingleCopy,       // all decisive sites point at one copy
+        NoSwitch,         // a switch was scored but failed the gates (error scatter / weak)
+        Mosaic,           // a confident contiguous copy switch
+    }
+
+    /// Per-read verdict. Abstain/SingleCopy/NoSwitch are all `is_mosaic()==false`; the EM's
+    /// existing per-copy scoring is independent of this (additive metadata).
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct MosaicCall {
+        pub status: MosaicStatus,
+        pub n_sites: usize,
+        pub n_decisive: usize,
+        pub copy_a: Option<usize>,            // 5'-proximal tract copy
+        pub copy_b: Option<usize>,            // 3'-proximal tract copy
+        pub breakpoint_ref: Option<(u64, u64)>, // (last A-site, first B-site) — honest bracket
+        pub tract_a_sites: usize,
+        pub tract_b_sites: usize,
+        pub left_purity: f64,
+        pub right_purity: f64,
+        pub margin: i32,                      // decisive sites the split explains beyond best single
+        pub lr_switch: f64,                   // 2*(two-segment loglik − best single-copy loglik)
+        pub threshold_used: f64,
+        pub score: f64,                       // lr_switch − threshold_used (>0 iff Mosaic)
+    }
+
+    impl MosaicCall {
+        pub fn is_mosaic(&self) -> bool {
+            self.status == MosaicStatus::Mosaic
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct MosaicParams {
+        pub min_decisive_sites: usize, // D below this → LowPower
+        pub min_tract_sites: usize,    // each flank must have ≥ this many agreeing decisive sites
+        pub min_improvement: i32,      // split must explain ≥ this many more decisive sites
+        pub min_seg_purity: f64,       // per-tract agreement fraction on both sides
+        pub max_ambig_frac: f64,       // > this fraction Ambig → NonIdentifiable
+        pub alpha_target: f64,         // target per-read FPR (Bonferroni-corrected internally)
+        pub bic_penalty_coeff: f64,    // coeff on ln(S) in the model-complexity penalty
+        pub eps_floor: f64,            // lower clamp on per-read error rate
+        pub eps_cap: f64,              // upper clamp (and fail-safe when read.de is absent)
+        // family aggregation
+        pub family_min_supporting_reads: usize,
+        pub breakpoint_tol: u64,
+        pub max_breakpoint_dispersion: u64,
+    }
+
+    impl Default for MosaicParams {
+        fn default() -> Self {
+            MosaicParams {
+                min_decisive_sites: 6,
+                min_tract_sites: 3,
+                min_improvement: 3,
+                min_seg_purity: 0.85,
+                max_ambig_frac: 0.5,
+                alpha_target: 0.01,
+                bic_penalty_coeff: 2.0,
+                eps_floor: 0.005,
+                eps_cap: 0.05,
+                family_min_supporting_reads: 3,
+                breakpoint_tol: 50,
+                max_breakpoint_dispersion: 50,
+            }
+        }
+    }
+
+    impl MosaicParams {
+        /// Build from RUSTLE_VG_MOSAIC_* env overrides, falling back to defaults.
+        pub fn from_env() -> Self {
+            let mut p = MosaicParams::default();
+            let getf = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<f64>().ok());
+            let getu = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<usize>().ok());
+            if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_DECISIVE") { p.min_decisive_sites = v; }
+            if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_TRACT") { p.min_tract_sites = v; }
+            if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_IMPROVEMENT") { p.min_improvement = v as i32; }
+            if let Some(v) = getf("RUSTLE_VG_MOSAIC_MIN_PURITY") { p.min_seg_purity = v; }
+            if let Some(v) = getf("RUSTLE_VG_MOSAIC_ALPHA") { p.alpha_target = v; }
+            if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_READS") { p.family_min_supporting_reads = v; }
+            p
+        }
+    }
+
+    /// Pure per-read detector. `obs` = ordered per-site match structure; `eps` = per-site error
+    /// rate (clamped by the caller). Deterministic, no I/O. With decisive-site agreements the
+    /// likelihood-ratio reduces to `2·margin·ln((1−eps)/eps)`, and the χ²(2df) null quantile is
+    /// exactly `−2·ln(α)` — so the threshold is closed-form (the spec's bootstrap_reps=0 path).
+    pub fn detect_mosaic(obs: &[SiteObs], n_copies: usize, eps: f64, p: &MosaicParams) -> MosaicCall {
+        let s = obs.len();
+        let mk = |status: MosaicStatus, d: usize| MosaicCall {
+            status, n_sites: s, n_decisive: d,
+            copy_a: None, copy_b: None, breakpoint_ref: None,
+            tract_a_sites: 0, tract_b_sites: 0, left_purity: 0.0, right_purity: 0.0,
+            margin: 0, lr_switch: 0.0, threshold_used: 0.0, score: 0.0,
+        };
+
+        // Tokenize: a DECISIVE site has exactly one matching copy; ≥2 = Ambig (non-identifiable
+        // here); 0 = Novel (read base matches no modeled copy) — a wildcard, ignored.
+        let mut decisive_copy: Vec<usize> = Vec::with_capacity(s);
+        let mut decisive_pos: Vec<u64> = Vec::with_capacity(s);
+        let mut n_ambig = 0usize;
+        for o in obs {
+            let mut matched = usize::MAX;
+            let mut n_match = 0usize;
+            for c in 0..n_copies {
+                if o.match_bits.get(c).copied().unwrap_or(false) {
+                    n_match += 1;
+                    matched = c;
+                }
+            }
+            if n_match == 1 {
+                decisive_copy.push(matched);
+                decisive_pos.push(o.ref_pos);
+            } else if n_match >= 2 {
+                n_ambig += 1;
+            }
+        }
+        let d = decisive_copy.len();
+
+        // Gates (abstain before any switch test). NonIdentifiable takes precedence over
+        // LowPower: a read swamped by ties has no per-site signal even if it covers many sites
+        // (and an all-ambiguous read has d=0, which would otherwise read as LowPower).
+        if s > 0 && (n_ambig as f64) > p.max_ambig_frac * s as f64 {
+            return mk(MosaicStatus::NonIdentifiable, d);
+        }
+        if d < p.min_decisive_sites {
+            return mk(MosaicStatus::LowPower, d);
+        }
+        // Distinct copies among decisive sites, ASCENDING (a dense Vec, not a BTreeSet: avoids a
+        // per-read heap allocation + tree walk in the hot scan below; ascending order preserves the
+        // old tie-break — `max_by_key` keeps the highest copy id among ties).
+        let mut distinct: Vec<usize> = decisive_copy.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        if distinct.len() <= 1 {
+            return mk(MosaicStatus::SingleCopy, d);
+        }
+
+        // Prefix counts make a range agreement count O(1): `prefix[c][i]` = #copy-c decisive sites
+        // in `decisive_copy[0..i]`. Replaces the per-(k, copy) linear re-scan
+        // (O(d²·copies) → O(d·copies)); one allocation reused across all k.
+        let ncap = distinct.last().copied().unwrap_or(0) + 1;
+        let mut prefix: Vec<Vec<u32>> = vec![vec![0u32; d + 1]; ncap];
+        for i in 0..d {
+            for c in 0..ncap {
+                prefix[c][i + 1] = prefix[c][i];
+            }
+            prefix[decisive_copy[i]][i + 1] += 1;
+        }
+        let agree_for = |c: usize, lo: usize, hi: usize| -> usize {
+            (prefix[c][hi] - prefix[c][lo]) as usize
+        };
+        let best_single = distinct.iter().map(|&c| agree_for(c, 0, d)).max().unwrap_or(0);
+
+        // Exhaustive single-changepoint scan over decisive-site split indices, maximizing the
+        // number of decisive sites explained by (copy a left of k, copy b right of k), a≠b.
+        let mut best_split = best_single;
+        let mut best_kab: Option<(usize, usize, usize)> = None;
+        for k in 1..d {
+            let a = *distinct.iter().max_by_key(|&&c| agree_for(c, 0, k)).unwrap();
+            let b = *distinct.iter().max_by_key(|&&c| agree_for(c, k, d)).unwrap();
+            if a == b {
+                continue;
+            }
+            let explained = agree_for(a, 0, k) + agree_for(b, k, d);
+            // First k to reach a new best (or to match the single-copy best) wins the tie.
+            if explained > best_split || (explained == best_split && best_kab.is_none()) {
+                best_split = explained;
+                best_kab = Some((k, a, b));
+            }
+        }
+
+        let (k, a, b) = match best_kab {
+            Some(x) => x,
+            None => return mk(MosaicStatus::SingleCopy, d), // no a≠b split improves on single copy
+        };
+
+        let tract_a_sites = agree_for(a, 0, k);
+        let tract_b_sites = agree_for(b, k, d);
+        let left_purity = tract_a_sites as f64 / k as f64;
+        let right_purity = tract_b_sites as f64 / (d - k) as f64;
+        let margin = best_split as i32 - best_single as i32;
+
+        // Likelihood-ratio over decisive sites: 2·margin·ln((1−eps)/eps).
+        let lr = 2.0 * margin as f64 * ((1.0 - eps) / eps).ln();
+        // Threshold = BIC complexity penalty + χ²(2df) quantile at the Bonferroni-corrected α.
+        let n_pairs = (n_copies * n_copies.saturating_sub(1) / 2).max(1) as f64;
+        let alpha_corr = (p.alpha_target / (s as f64 * n_pairs)).max(1e-12);
+        let threshold = p.bic_penalty_coeff * (s as f64).ln() + (-2.0 * alpha_corr.ln());
+
+        let mut call = mk(MosaicStatus::NoSwitch, d);
+        call.copy_a = Some(a);
+        call.copy_b = Some(b);
+        call.breakpoint_ref = Some((decisive_pos[k - 1], decisive_pos[k]));
+        call.tract_a_sites = tract_a_sites;
+        call.tract_b_sites = tract_b_sites;
+        call.left_purity = left_purity;
+        call.right_purity = right_purity;
+        call.margin = margin;
+        call.lr_switch = lr;
+        call.threshold_used = threshold;
+        call.score = lr - threshold;
+
+        // Dual gate: calibrated LR AND hard integer/run-length backstops (the backstops hold
+        // even when the i.i.d. error null is violated by correlated/homopolymer error bursts).
+        let pass = a != b
+            && tract_a_sites >= p.min_tract_sites
+            && tract_b_sites >= p.min_tract_sites
+            && margin >= p.min_improvement
+            && left_purity >= p.min_seg_purity
+            && right_purity >= p.min_seg_purity
+            && lr > threshold;
+        if pass {
+            call.status = MosaicStatus::Mosaic;
+        }
+        call
+    }
+
+    /// A family-level confirmed (or suspected) gene-conversion event.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct ConversionEvent {
+        pub copy_a: usize,
+        pub copy_b: usize,
+        pub chrom: String,              // chromosome the breakpoint coordinates live on (for the microhomology check)
+        pub breakpoint_ref: (u64, u64), // consensus bracket (min last-A, max first-B)
+        pub n_supporting_reads: usize,
+        pub breakpoint_dispersion: u64, // spread of per-read breakpoint midpoints
+        pub confirmed: bool,            // false = ChimeraSuspect
+    }
+
+    /// Family aggregation: a genuine conversion RECURS at a fixed breakpoint across independent
+    /// molecules; a one-off chimera does not. Inputs are per-read Mosaic calls (caller dedupes
+    /// to distinct molecules first). Clusters by oriented (a→b) pair and breakpoint midpoint
+    /// within `breakpoint_tol`; confirms a cluster with ≥ `family_min_supporting_reads` molecules
+    /// and tight dispersion.
+    pub fn aggregate_family(calls: &[MosaicCall], chroms: &[&str], p: &MosaicParams) -> Vec<ConversionEvent> {
+        // `chroms[i]` is the chromosome `calls[i]`'s breakpoint coordinates live on (parallel array). The
+        // chrom is part of the cluster KEY: breakpoints at coincidentally-similar positions on DIFFERENT
+        // chromosomes (multi-chrom paralog families, e.g. RABL2A/RABL2B) must not cluster together, and the
+        // emitted event needs its chrom for the downstream microhomology check.
+        let mut mosaics: Vec<(usize, usize, &str, u64, (u64, u64))> = calls
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.is_mosaic())
+            .filter_map(|(i, c)| match (c.copy_a, c.copy_b, c.breakpoint_ref) {
+                (Some(a), Some(b), Some(br)) => {
+                    Some((a, b, chroms.get(i).copied().unwrap_or(""), (br.0 + br.1) / 2, br))
+                }
+                _ => None,
+            })
+            .collect();
+        // Stable order by (a, b, chrom, midpoint).
+        mosaics.sort_by(|x, y| (x.0, x.1, x.2, x.3).cmp(&(y.0, y.1, y.2, y.3)));
+
+        let mut events: Vec<ConversionEvent> = Vec::new();
+        let mut i = 0usize;
+        while i < mosaics.len() {
+            let (a, b, chrom, _, _) = mosaics[i];
+            // Greedily grow a cluster of same oriented pair ON THE SAME CHROM within breakpoint_tol.
+            let mut j = i;
+            let mut mids: Vec<u64> = Vec::new();
+            let mut br_lo = u64::MAX;
+            let mut br_hi = 0u64;
+            while j < mosaics.len() {
+                let (aj, bj, chromj, midj, brj) = mosaics[j];
+                if aj != a || bj != b || chromj != chrom {
+                    break;
+                }
+                if let Some(&last) = mids.last() {
+                    if midj.saturating_sub(last) > p.breakpoint_tol {
+                        break;
+                    }
+                }
+                mids.push(midj);
+                br_lo = br_lo.min(brj.0);
+                br_hi = br_hi.max(brj.1);
+                j += 1;
+            }
+            let n = mids.len();
+            let dispersion = mids.last().copied().unwrap_or(0).saturating_sub(mids[0]);
+            let confirmed = n >= p.family_min_supporting_reads && dispersion <= p.max_breakpoint_dispersion;
+            events.push(ConversionEvent {
+                copy_a: a,
+                copy_b: b,
+                chrom: chrom.to_string(),
+                breakpoint_ref: (br_lo, br_hi),
+                n_supporting_reads: n,
+                breakpoint_dispersion: dispersion,
+                confirmed,
+            });
+            i = j;
+        }
+        events
+    }
+
+    /// Unified gene-conversion-vs-artifact verdict for a mosaic family event. `aggregate_family`'s
+    /// `confirmed` flag captures only ONE leg (recurrence across molecules); but recurrence alone is
+    /// insufficient — a sequence-driven template-switch hotspot (microhomology at the same point)
+    /// produces RT-switch chimeras that ALSO recur, so they pass the recurrence gate. The discriminator
+    /// therefore needs two ORTHOGONAL legs in addition to recurrence:
+    ///   * **microhomology** at the breakpoint = the RT/template-switch signature (a direct repeat
+    ///     flanking the switch point — `genome::is_rt_switch` applied to the breakpoint bracket);
+    ///   * **DNA support** = heritability: a real (historical) gene conversion is in the genome and so
+    ///     recurs in matched DNA reads; an RT/template switch is an RNA-library artifact, absent from DNA.
+    /// Both legs are passed in as `Option<bool>` so "no evidence available" (`None`) is distinct from
+    /// "negative evidence" (`Some(false)`). The DNA leg can act as a **veto** (`Some(false)` → `Ambiguous`)
+    /// when a RELIABLE absence source exists; this lets the two cheap legs (recurrence + microhomology)
+    /// ship without the DNA catalog wired, while a reliable DNA source strengthens or vetoes the call.
+    ///
+    /// MEASURED (bench/mosaic_discriminator/dna_support.py, T2T DNA PSV catalog): the catalog signal is
+    /// real (42% of multi-copy families show a heritable-conversion DNA mosaic) but SPARSE and ref0-centric
+    /// (only ~2.9% of the genome is in a ref0 interval; localized mosaics return "absent" almost everywhere
+    /// even in families that HAVE one). So catalog "absent" is UNRELIABLE negative evidence — a catalog-
+    /// backed DNA closure must return `Some(true)` / `None` only (positive corroboration), NEVER
+    /// `Some(false)`, or it would wrongly downgrade real conversions. The production paths pass `None`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Classification {
+        /// recurrent + present in DNA + no template-switch signature → real biological gene conversion.
+        GeneConversion,
+        /// direct-repeat/microhomology at the breakpoint and NOT DNA-confirmed → RT/template-switch artifact.
+        RtSwitchArtifact,
+        /// sporadic (did not recur) with no template-switch signature → one-off chimera, lean artifact.
+        ChimeraSuspect,
+        /// conflicting or insufficient evidence (e.g. microhomology AND DNA support; or recurrent but DNA unknown).
+        Ambiguous,
+    }
+
+    /// Classify one family event from the three orthogonal legs (recurrence via `ev.confirmed`,
+    /// `microhomology`, `dna_supported`). Pure: the caller supplies the two genome/DNA-derived signals.
+    /// Evaluation order matters — the microhomology-artifact rule fires BEFORE the gene-conversion rule,
+    /// so a recurrent-but-RT-signature event is correctly called an artifact rather than a conversion.
+    pub fn classify_event(
+        ev: &ConversionEvent,
+        microhomology: Option<bool>,
+        dna_supported: Option<bool>,
+    ) -> Classification {
+        let mh = microhomology == Some(true);
+        let dna_present = dna_supported == Some(true);
+        let dna_absent = dna_supported == Some(false);
+        if mh && !dna_present {
+            // template-switch signature, not rescued by positive DNA support → artifact (even if it recurs).
+            Classification::RtSwitchArtifact
+        } else if ev.confirmed && !mh && !dna_absent {
+            // recurrent + no template signature + DNA not contradicting (present or unchecked) → conversion.
+            Classification::GeneConversion
+        } else if !ev.confirmed && !mh {
+            // sporadic, no signature → one-off chimera.
+            Classification::ChimeraSuspect
+        } else {
+            // microhomology∧DNA-present conflict, or recurrent-but-DNA-absent (heritability contradicted).
+            Classification::Ambiguous
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        // Build per-site obs from a label string where each char is the copy index that the read
+        // uniquely matches; '*' = Ambig (all copies match), '.' = Novel (no copy matches).
+        fn obs_from(labels: &str, n_copies: usize) -> Vec<SiteObs> {
+            labels
+                .chars()
+                .enumerate()
+                .map(|(i, ch)| {
+                    let mut match_bits = vec![false; n_copies];
+                    match ch {
+                        '*' => match_bits.iter_mut().for_each(|m| *m = true),
+                        '.' => {}
+                        c => {
+                            let idx = c.to_digit(10).unwrap() as usize;
+                            match_bits[idx] = true;
+                        }
+                    }
+                    SiteObs { ref_pos: 1000 + i as u64 * 10, match_bits }
+                })
+                .collect()
+        }
+
+        fn p() -> MosaicParams { MosaicParams::default() }
+
+        #[test]
+        fn clean_switch_is_mosaic() {
+            let c = detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p());
+            assert_eq!(c.status, MosaicStatus::Mosaic);
+            assert_eq!((c.copy_a, c.copy_b), (Some(0), Some(1)));
+            assert_eq!((c.tract_a_sites, c.tract_b_sites), (3, 3));
+            assert_eq!(c.margin, 3);
+            // breakpoint bracket between the last 0-site and the first 1-site.
+            assert_eq!(c.breakpoint_ref, Some((1000 + 2 * 10, 1000 + 3 * 10)));
+        }
+
+        #[test]
+        fn reversed_switch_records_direction() {
+            let c = detect_mosaic(&obs_from("111000", 2), 2, 0.005, &p());
+            assert!(c.is_mosaic());
+            assert_eq!((c.copy_a, c.copy_b), (Some(1), Some(0)));
+        }
+
+        #[test]
+        fn isolated_error_flip_is_not_mosaic() {
+            // D=8, one interior flip; no a≠b contiguous split improves → margin 0.
+            let c = detect_mosaic(&obs_from("00000100", 2), 2, 0.005, &p());
+            assert!(!c.is_mosaic());
+            assert!(c.margin < p().min_improvement);
+        }
+
+        #[test]
+        fn pure_copy_is_single_copy() {
+            let c = detect_mosaic(&obs_from("000000", 2), 2, 0.005, &p());
+            assert_eq!(c.status, MosaicStatus::SingleCopy);
+            assert!(!c.is_mosaic());
+        }
+
+        #[test]
+        fn all_ambiguous_abstains_nonidentifiable() {
+            let c = detect_mosaic(&obs_from("******", 2), 2, 0.005, &p());
+            assert_eq!(c.status, MosaicStatus::NonIdentifiable);
+        }
+
+        #[test]
+        fn too_few_sites_abstains_lowpower() {
+            let c = detect_mosaic(&obs_from("0011", 2), 2, 0.005, &p());
+            assert_eq!(c.status, MosaicStatus::LowPower);
+        }
+
+        #[test]
+        fn short_right_tract_fails_min_tract() {
+            // D=7, right tract only 2 sites (< min_tract_sites=3) → not Mosaic.
+            let c = detect_mosaic(&obs_from("0000011", 2), 2, 0.005, &p());
+            assert!(!c.is_mosaic());
+            assert!(c.tract_b_sites < p().min_tract_sites);
+        }
+
+        #[test]
+        fn novel_wildcard_does_not_break_tracts() {
+            // '.' (Novel) between clean 3+3 tracts is neutral.
+            let c = detect_mosaic(&obs_from("000.111", 2), 2, 0.005, &p());
+            assert!(c.is_mosaic());
+            assert_eq!((c.tract_a_sites, c.tract_b_sites), (3, 3));
+        }
+
+        #[test]
+        fn ambiguous_sites_are_neutral_in_tracts() {
+            let c = detect_mosaic(&obs_from("00*00111*1", 2), 2, 0.005, &p());
+            assert!(c.is_mosaic());
+            assert_eq!((c.copy_a, c.copy_b), (Some(0), Some(1)));
+        }
+
+        #[test]
+        fn three_copy_family_picks_discriminating_pair() {
+            // copies 0 and 2 are the switching pair in a 3-copy family.
+            let c = detect_mosaic(&obs_from("000222", 3), 3, 0.005, &p());
+            assert!(c.is_mosaic());
+            assert_eq!((c.copy_a, c.copy_b), (Some(0), Some(2)));
+        }
+
+        #[test]
+        fn de_none_uses_wider_eps_is_fail_safe() {
+            // A borderline call must clear a HARDER bar at the larger (fail-safe) eps.
+            let lo = detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p());
+            let hi = detect_mosaic(&obs_from("000111", 2), 2, 0.05, &p());
+            assert!(lo.score > hi.score); // larger eps → smaller LR → smaller margin-over-threshold
+        }
+
+        #[test]
+        fn family_confirms_reproducible_breakpoint() {
+            // 3 independent reads with the SAME switch/breakpoint → Confirmed.
+            let calls: Vec<MosaicCall> = (0..3)
+                .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
+                .collect();
+            let events = aggregate_family(&calls, &vec!["c1"; calls.len()], &p());
+            assert_eq!(events.len(), 1);
+            assert!(events[0].confirmed);
+            assert_eq!(events[0].n_supporting_reads, 3);
+        }
+
+        #[test]
+        fn family_event_carries_its_chrom() {
+            let calls: Vec<MosaicCall> = (0..3)
+                .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
+                .collect();
+            let events = aggregate_family(&calls, &vec!["chrX"; calls.len()], &p());
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].chrom, "chrX");
+        }
+
+        #[test]
+        fn same_breakpoint_on_different_chroms_does_not_cluster() {
+            // 3 reads on chrom A + 3 reads on chrom B, all with the IDENTICAL switch/midpoint. They must
+            // form TWO separate events (one per chrom), not one merged cluster — the multi-chrom paralog
+            // (e.g. RABL2A/RABL2B) case. Chrom is part of the cluster key.
+            let calls: Vec<MosaicCall> = (0..6)
+                .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
+                .collect();
+            let chroms = ["cA", "cA", "cA", "cB", "cB", "cB"];
+            let events = aggregate_family(&calls, &chroms, &p());
+            assert_eq!(events.len(), 2, "different chroms must not cluster together");
+            let mut cs: Vec<&str> = events.iter().map(|e| e.chrom.as_str()).collect();
+            cs.sort();
+            assert_eq!(cs, vec!["cA", "cB"]);
+            assert!(events.iter().all(|e| e.confirmed && e.n_supporting_reads == 3));
+        }
+
+        #[test]
+        fn family_rejects_singleton_as_chimera_suspect() {
+            let calls = vec![detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p())];
+            let events = aggregate_family(&calls, &vec!["c1"; calls.len()], &p());
+            assert_eq!(events.len(), 1);
+            assert!(!events[0].confirmed); // 1 molecule < family_min_supporting_reads
+        }
+
+        // ----- classify_event (unified gene-conversion-vs-artifact discriminator) -----
+
+        fn ev(confirmed: bool) -> ConversionEvent {
+            ConversionEvent {
+                copy_a: 0,
+                copy_b: 1,
+                chrom: "c1".to_string(),
+                breakpoint_ref: (1000, 1010),
+                n_supporting_reads: if confirmed { 5 } else { 1 },
+                breakpoint_dispersion: 0,
+                confirmed,
+            }
+        }
+
+        #[test]
+        fn classify_recurrent_dna_no_microhomology_is_gene_conversion() {
+            assert_eq!(
+                classify_event(&ev(true), Some(false), Some(true)),
+                Classification::GeneConversion
+            );
+        }
+
+        #[test]
+        fn classify_microhomology_without_dna_is_rt_switch_even_if_recurrent() {
+            // the load-bearing case: recurrence ALONE would have called this confirmed, but the
+            // template-switch signature (microhomology) + no DNA support overrides it to artifact.
+            assert_eq!(
+                classify_event(&ev(true), Some(true), Some(false)),
+                Classification::RtSwitchArtifact
+            );
+            assert_eq!(
+                classify_event(&ev(true), Some(true), None),
+                Classification::RtSwitchArtifact
+            );
+        }
+
+        #[test]
+        fn classify_sporadic_no_signature_is_chimera_suspect() {
+            assert_eq!(
+                classify_event(&ev(false), Some(false), None),
+                Classification::ChimeraSuspect
+            );
+        }
+
+        #[test]
+        fn classify_microhomology_and_dna_conflict_is_ambiguous() {
+            // direct repeat AND present in DNA: could be a real conversion at a repeat-prone site — abstain.
+            assert_eq!(
+                classify_event(&ev(true), Some(true), Some(true)),
+                Classification::Ambiguous
+            );
+        }
+
+        #[test]
+        fn classify_recurrent_no_microhomology_dna_unchecked_is_gene_conversion() {
+            // DNA is a VETO, not a requirement: unchecked (None) does not block the two cheap legs.
+            assert_eq!(
+                classify_event(&ev(true), Some(false), None),
+                Classification::GeneConversion
+            );
+        }
+
+        #[test]
+        fn classify_recurrent_but_dna_absent_is_ambiguous() {
+            // DNA was CHECKED and the breakpoint is ABSENT from the genome → contradicts heritability.
+            assert_eq!(
+                classify_event(&ev(true), Some(false), Some(false)),
+                Classification::Ambiguous
+            );
+        }
+
+        // ----- ground-truth confusion matrix: full real path (detect -> aggregate -> genome
+        //       microhomology -> classify), BOTH directions, over a constructed genome -----
+
+        /// Build N recurrent recombinant reads that switch copy 0 -> copy 1 at site index `bp`, with
+        /// their breakpoint bracket placed at genome positions `(left, right)` (so the genome's sequence
+        /// at those coords decides microhomology). Returns the aggregated (single) confirmed event.
+        fn recurrent_event_at(bp_left: u64, bp_right: u64, n_reads: usize) -> ConversionEvent {
+            // 6 decisive sites in ASCENDING genomic order: three copy-0 sites ending exactly at `bp_left`,
+            // then three copy-1 sites starting exactly at `bp_right` = a clean "000111" 0->1 switch whose
+            // breakpoint bracket is (bp_left, bp_right).
+            let positions = [
+                (bp_left - 20, 0usize),
+                (bp_left - 10, 0),
+                (bp_left, 0),
+                (bp_right, 1),
+                (bp_right + 10, 1),
+                (bp_right + 20, 1),
+            ];
+            let mut calls = Vec::new();
+            for _ in 0..n_reads {
+                let obs: Vec<SiteObs> = positions
+                    .iter()
+                    .map(|&(ref_pos, copy)| {
+                        let mut mb = vec![false; 2];
+                        mb[copy] = true;
+                        SiteObs { ref_pos, match_bits: mb }
+                    })
+                    .collect();
+                calls.push(detect_mosaic(&obs, 2, 0.005, &p()));
+            }
+            let mut events = aggregate_family(&calls, &vec!["c1"; calls.len()], &p());
+            assert_eq!(events.len(), 1, "one oriented breakpoint cluster");
+            let ev = events.pop().unwrap();
+            assert!(ev.confirmed, "recurrent across {} molecules -> confirmed", n_reads);
+            ev
+        }
+
+        #[test]
+        fn ground_truth_conversion_vs_rt_switch_confusion_matrix() {
+            use crate::genome::GenomeIndex;
+            // One genome, two breakpoint loci:
+            //  * CONVERSION locus: breakpoint flanks DIFFER -> no microhomology -> GeneConversion.
+            //  * RT-SWITCH locus: breakpoint sits at an exact direct repeat -> microhomology -> artifact.
+            let mut seq = vec![b'A'; 400];
+            // RT-switch direct repeat: 8 bp ending at 200 == 8 bp ending at 240.
+            seq[192..200].copy_from_slice(b"CGTACGTA");
+            seq[232..240].copy_from_slice(b"CGTACGTA");
+            // Conversion locus: flanks ending at 300 vs 340 deliberately DIFFER.
+            seq[292..300].copy_from_slice(b"CGTACGTA");
+            seq[332..340].copy_from_slice(b"TTGGAACC");
+            let g = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+
+            let mh = |left: u64, right: u64| g.breakpoint_microhomology("c1", left, right, 6, 12);
+
+            // RT-switch breakpoint bracket (200, 240): direct repeat present.
+            let rt_ev = recurrent_event_at(200, 240, 5);
+            assert!(mh(200, 240), "direct repeat at the RT-switch breakpoint");
+            assert_eq!(
+                classify_event(&rt_ev, Some(mh(200, 240)), None),
+                Classification::RtSwitchArtifact,
+                "recurrent + microhomology + DNA-unchecked -> artifact (recurrence alone would have mis-called it)"
+            );
+
+            // Conversion breakpoint bracket (300, 340): no direct repeat.
+            let gc_ev = recurrent_event_at(300, 340, 5);
+            assert!(!mh(300, 340), "no direct repeat at the conversion breakpoint");
+            assert_eq!(
+                classify_event(&gc_ev, Some(mh(300, 340)), None),
+                Classification::GeneConversion,
+                "recurrent + no microhomology + DNA-not-contradicting -> gene conversion"
+            );
+
+            // DNA leg as a veto: same clean conversion, but ABSENT from DNA -> downgraded to Ambiguous.
+            assert_eq!(
+                classify_event(&gc_ev, Some(mh(300, 340)), Some(false)),
+                Classification::Ambiguous,
+            );
+        }
+    }
+}
+
+pub mod read_conflict {
+    //! Read-conflict (mutual-mappability) graph — the operational SCOPE for copy-resolution and the SEED for the
+    //! family catalog. NOT a rival definition of a family (`bench/family_def_readconflict.md`).
+    //!
+    //! DEFINITION vs SCOPE. The family DEFINITION is homology: a γ-quasi-clique component of the transcribed-
+    //! homology graph over ≥ 2 loci (`family_definition.rs`, the E_r oracle; `docs/RETIREMENT_AND_MIGRATION.md`,
+    //! `DEFINITIONS_FORMAL.md`). This module builds a DIFFERENT graph — over the SAME loci but with a different
+    //! edge — that answers the question copy-assignment actually cares about: **do reads cross-map between these
+    //! loci?** Two loci are linked iff some read has a placement in BOTH with TIED alignment scores (a genuine
+    //! alternative placement — the multimapping conflict). Homology says which loci ARE one family; read-conflict
+    //! says how many COPIES they hide and how the assignment decomposes. So it is the SCOPE (which loci must be
+    //! co-resolved) and the SEED for the catalog, not the definition of membership.
+    //!
+    //! Why this is the right SCOPE: (1) no tuned similarity threshold — the boundary is the alignment-score tie
+    //! (with `RUSTLE_CONFLICT_SIG`, the SAME significance level α the assignment gate uses), a property of the
+    //! data; (2) reads never cross-map outside their component, so the assignment problem decomposes EXACTLY
+    //! across families with no information lost; (3) it never groups domain-sharers (a read over a shared exon
+    //! maps to one locus — no alternative placement), and it picks out exactly the families where assignment is
+    //! needed (validated on Compara labels: 0 conflict on 7/7 domain-sharers, fires on RABL2/APOBEC3, silent on
+    //! the resolvable RFPL).
+    //!
+    //! This is the portable KERNEL: `conflict_edges` (read placements → weighted edges) + `conflict_families`
+    //! (edges → connected-component families). The remaining integration is plumbing per-locus secondary
+    //! placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage.
+    //!
+    //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+    /// One read's placement on a candidate locus: the locus index plus the signals the conflict criterion uses —
+    /// `de` (gap-compressed divergence, the tie discriminant), `mapq` (both-0 = genuine-multimapper corroboration),
+    /// and `as_score` (kept only to log the `de-tie ⊆ AS-tie` invariant).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Placement {
+        pub locus: usize,
+        pub de: f32,
+        pub mapq: u8,
+        pub as_score: i32,
+        /// Aligned-block length (number of M/=/X columns) of this placement. Used only by the SIGNIFICANCE
+        /// de-tie criterion to convert the divergence rate `de` into a mismatch COUNT (`m = de * aln_len`);
+        /// the legacy delta-based `de_tied` ignores it, so existing behaviour is unaffected when sig is off.
+        pub aln_len: u32,
+    }
+
+    /// One read's placements over the family's candidate loci. Built from the BAM by the adapter.
+    pub type ReadPlacements = Vec<Placement>;
+
+    /// Tunables for the read-conflict criterion (de-tie). Defaults are the bake-off operating point
+    /// (`bench/family_criterion_bakeoff.md`); env-overridable via `RUSTLE_CONFLICT_DE_DELTA/DE_MAX/MIN_READS`.
+    #[derive(Clone, Copy, Debug)]
+    pub struct ConflictParams {
+        /// Two placements conflict iff their divergences are within `delta` AND both `<= de_max` (both fit).
+        pub delta: f64,
+        pub de_max: f64,
+        /// Minimum conflicting-read count for an edge (guards the noise floor).
+        pub min_reads: usize,
+        /// SIGNIFICANCE de-tie (the UNIFICATION with the copy-assignment gate): when `Some((eps, alpha))`, a read
+        /// de-ties between two loci iff it CANNOT significantly distinguish them under the SAME IsoCon real-vs-error
+        /// test the assignment gate uses — `eps^delta >= alpha`, where `delta = |m_a - m_b|` is the excess mismatch
+        /// count (the per-read distinguishing-column proxy, mirroring Theorem 4's `min_p = eps^delta`). The
+        /// `de_max` quality floor still applies. `None` (default) = the legacy fixed-`delta` `de_tied`, so OFF is
+        /// byte-identical. Replaces the arbitrary `delta=0.005` with the error-model-derived tie threshold.
+        pub sig: Option<(f64, f64)>,
+    }
+
+    impl Default for ConflictParams {
+        fn default() -> Self {
+            ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3, sig: None }
+        }
+    }
+
+    impl ConflictParams {
+        /// Read overrides from `RUSTLE_CONFLICT_DE_DELTA`, `RUSTLE_CONFLICT_DE_MAX`, `RUSTLE_CONFLICT_MIN_READS`.
+        pub fn from_env() -> Self {
+            let d = Self::default();
+            let f = |k: &str, v: f64| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(v);
+            let u = |k: &str, v: usize| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(v);
+            // Significance de-tie is DEFAULT ON: the conflict edge uses the SAME IsoCon real-vs-error test (and the
+            // SAME level `alpha`) as the assignment gate, so no hand-set score-gap `delta` decides the conflict
+            // scope. eps = per-distinguishing-column error proxy (e/3 ~ 0.001 HiFi), alpha = significance.
+            // RUSTLE_CONFLICT_SIG=0 reverts to the legacy `delta` tie-width (A/B comparison / legacy reproduction).
+            let sig = if std::env::var("RUSTLE_CONFLICT_SIG").ok().as_deref() == Some("0") {
+                None
+            } else {
+                Some((f("RUSTLE_CONFLICT_EPS", 0.001), f("RUSTLE_CONFLICT_ALPHA", 1e-3)))
+            };
+            ConflictParams {
+                delta: f("RUSTLE_CONFLICT_DE_DELTA", d.delta),
+                de_max: f("RUSTLE_CONFLICT_DE_MAX", d.de_max),
+                min_reads: u("RUSTLE_CONFLICT_MIN_READS", d.min_reads),
+                sig,
+            }
+        }
+    }
+
+    /// de-tie: `|de_a − de_b| <= delta` AND `max(de_a, de_b) <= de_max` (the read fits both copies, comparably).
+    fn de_tied(a: &Placement, b: &Placement, p: &ConflictParams) -> bool {
+        let (da, db) = (a.de as f64, b.de as f64);
+        (da - db).abs() <= p.delta && da.max(db) <= p.de_max
+    }
+
+    /// SIGNIFICANCE de-tie — the unification with the copy-assignment gate. A read counts as conflict evidence
+    /// between two loci iff it CANNOT significantly distinguish them: with `m_x = de_x * aln_len_x` the mismatch
+    /// count to locus `x`, the excess `delta = |m_a - m_b|` is the per-read distinguishing-column proxy, and the
+    /// read is tied iff `eps^delta >= alpha` — exactly the assignment gate's `min_p >= alpha` (Theorem 4). The
+    /// `de_max` quality floor still applies (both alignments must genuinely fit). No arbitrary `delta` constant.
+    fn sig_tied(a: &Placement, b: &Placement, de_max: f64, eps: f64, alpha: f64) -> bool {
+        let (da, db) = (a.de as f64, b.de as f64);
+        if da.max(db) > de_max {
+            return false;
+        }
+        let ma = da * a.aln_len as f64;
+        let mb = db * b.aln_len as f64;
+        let delta_cols = (ma - mb).abs();
+        eps.powf(delta_cols) >= alpha
+    }
+
+    /// Whether a read's two placements conflict (de-tie), under either criterion (significance if `p.sig` is set).
+    fn tied(a: &Placement, b: &Placement, p: &ConflictParams) -> bool {
+        match p.sig {
+            Some((eps, alpha)) => sig_tied(a, b, p.de_max, eps, alpha),
+            None => de_tied(a, b, p),
+        }
+    }
+
+    /// A read's alignment-score evidence: the best and runner-up `AS:i` over its placements, both raw and
+    /// normalized by aligned length.
+    ///
+    /// AS is REPORTED, never decisive — `de` decides. Raw AS is an absolute score that grows with aligned
+    /// length, so a genuine multimapper whose second placement is a PARTIAL alignment scores far lower there
+    /// even at identical per-base quality. Measured on GGO Iso-Seq: median runner-up/best AS ratio 0.713 while
+    /// the aligned-length ratio is 0.897. That length confound is why `de` (a rate) replaced AS (a total), and
+    /// why `de-tie ⊆ AS-tie` does NOT hold on real data. `per_base` divides out the confound and is the value
+    /// to compare across placements.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct AsEvidence {
+        pub best: i32,
+        pub second: Option<i32>,
+        pub best_per_base: f32,
+        pub second_per_base: Option<f32>,
+    }
+
+    impl AsEvidence {
+        /// `best - second`; `None` when the read has a single placement (nothing to be ambiguous between).
+        pub fn margin(&self) -> Option<i32> {
+            self.second.map(|s| self.best - s)
+        }
+    }
+
+    /// Best and runner-up alignment score over one read's placements, as `(as_score, aligned_len)` pairs.
+    /// Ranks on RAW `AS` (that is the quantity people quote and Eichler's `AS >= 10` rule uses); the per-base
+    /// values are carried alongside for the length-fair comparison. `None` if the read has no placements.
+    /// Zero-length placements get a per-base score of 0.0 rather than a division by zero.
+    pub fn as_evidence(placements: &[(i32, u32)]) -> Option<AsEvidence> {
+        let per_base = |(s, l): (i32, u32)| if l == 0 { 0.0 } else { s as f32 / l as f32 };
+        let mut sorted: Vec<(i32, u32)> = placements.to_vec();
+        sorted.sort_by(|a, b| b.0.cmp(&a.0));
+        let &first = sorted.first()?;
+        let second = sorted.get(1).copied();
+        Some(AsEvidence {
+            best: first.0,
+            second: second.map(|s| s.0),
+            best_per_base: per_base(first),
+            second_per_base: second.map(per_base),
+        })
+    }
+
+    /// `min(a,b) >= as_tie * max(a,b)` — the legacy AS-tie predicate, kept only for the audit edge-set.
+    fn as_tied(a: i32, b: i32, as_tie: f64) -> bool {
+        let (hi, lo) = (a.max(b), a.min(b));
+        hi > 0 && (lo as f64) >= as_tie * (hi as f64)
+    }
+
+    /// Build the read-conflict edges over `n_loci` under the **de-tie** criterion. For each read, every pair of its
+    /// placements that de-ties contributes one conflict observation to that locus pair. Returns `(i, j, weight)`
+    /// with `i < j` for pairs whose count `>= p.min_reads`, sorted. Self-pairs (same locus) ignored.
+    pub fn conflict_edges(n_loci: usize, reads: &[ReadPlacements], p: &ConflictParams) -> Vec<(usize, usize, usize)> {
+        use std::collections::BTreeMap;
+        let mut weight: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+        for placements in reads {
+            for a in 0..placements.len() {
+                for b in (a + 1)..placements.len() {
+                    let (pa, pb) = (&placements[a], &placements[b]);
+                    if pa.locus == pb.locus || pa.locus >= n_loci || pb.locus >= n_loci {
+                        continue;
+                    }
+                    if tied(pa, pb, p) {
+                        let key = (pa.locus.min(pb.locus), pa.locus.max(pb.locus));
+                        *weight.entry(key).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        weight.into_iter().filter(|&(_, w)| w >= p.min_reads).map(|((i, j), w)| (i, j, w)).collect()
+    }
+
+    /// AS-tie edge node-pairs over `n_loci` — the legacy criterion, kept only as a logged comparison edge-set.
+    ///
+    /// ⚠ `de-tie ⊆ AS-tie` holds only when both placements are FULL-LENGTH (the unit tests and the planted sims).
+    /// On real Iso-Seq it is FALSE: secondary placements are partial, raw AS scales with aligned length, so a
+    /// de-tied pair can fail `as_tied` outright. Every real GGO region logs `de⊆AS=false`. Do not treat the
+    /// audit line as a regression invariant on real data — it is a diagnostic.
+    pub fn as_tie_edges(n_loci: usize, reads: &[ReadPlacements], as_tie: f64, min_reads: usize) -> std::collections::BTreeSet<(usize, usize)> {
+        use std::collections::BTreeMap;
+        let mut weight: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+        for placements in reads {
+            for a in 0..placements.len() {
+                for b in (a + 1)..placements.len() {
+                    let (pa, pb) = (&placements[a], &placements[b]);
+                    if pa.locus == pb.locus || pa.locus >= n_loci || pb.locus >= n_loci {
+                        continue;
+                    }
+                    if as_tied(pa.as_score, pb.as_score, as_tie) {
+                        *weight.entry((pa.locus.min(pb.locus), pa.locus.max(pb.locus))).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        weight.into_iter().filter(|&(_, w)| w >= min_reads).map(|((i, j), _)| (i, j)).collect()
+    }
+
+    /// Count reads supporting a conflict family and how many of those reads have BOTH placements at mapq==0
+    /// (the genuine-multimapper corroboration). A read is counted when it contributes at least one de-tied pair
+    /// whose two loci are BOTH in `family`; of those, a `both_mapq0` read has mapq==0 on BOTH placements in
+    /// that pair. Returns `(supporting_reads, both_mapq0_reads)`. Log-only: does NOT gate any edge.
+    ///
+    /// For a read with placements on >=3 family loci the mapq0 check is applied to the FIRST qualifying pair by
+    /// iteration order, so the `both_mapq0` count is CONSERVATIVE for multi-copy families (it can undercount but
+    /// never overstate multimapper evidence) — exact for the common 2-locus family.
+    pub fn family_mapq0_support(reads: &[ReadPlacements], family: &[usize], p: &ConflictParams) -> (usize, usize) {
+        let fset: std::collections::BTreeSet<usize> = family.iter().copied().collect();
+        let mut support = 0usize;
+        let mut both_mapq0 = 0usize;
+        'read: for placements in reads {
+            // Scan every pair within this read; stop at the first pair that fires (count once per read).
+            for ai in 0..placements.len() {
+                for bi in (ai + 1)..placements.len() {
+                    let (pa, pb) = (&placements[ai], &placements[bi]);
+                    if !fset.contains(&pa.locus) || !fset.contains(&pb.locus) {
+                        continue;
+                    }
+                    if pa.locus == pb.locus {
+                        continue;
+                    }
+                    if tied(pa, pb, p) {
+                        support += 1;
+                        if pa.mapq == 0 && pb.mapq == 0 {
+                            both_mapq0 += 1;
+                        }
+                        continue 'read;
+                    }
+                }
+            }
+        }
+        (support, both_mapq0)
+    }
+
+    /// True ⟹ the two co-located copies are DISTINGUISHABLE by reads and must be kept separate;
+    /// false ⟹ no read separates them (true K=0) and they may collapse. This is the χ(H) edge
+    /// predicate restricted to a co-located pair. No new threshold: `min_reads` is the conflict
+    /// floor, and the PSV/junction flag is gated upstream at `PSV_MIN_ALLELE_READS`.
+    pub fn reads_distinguish(uniq_i: usize, uniq_j: usize, shared_psv_or_junction: bool, min_reads: usize) -> bool {
+        uniq_i >= min_reads || uniq_j >= min_reads || shared_psv_or_junction
+    }
+
+    /// Per-locus UNIQUE-mapper count from placements: for each locus, how many reads place there with
+    /// `mapq > 0` — the aligner's own uniqueness verdict (it found no competing placement to tie against). This
+    /// is the raw per-copy signal carried on `DenovoTranscript::distinguishing_uniq` and consumed by
+    /// `distinct_locus_reps`'s same-strand merge guard via `reads_distinguish`. Independent of `ConflictParams`:
+    /// MAPQ, not the de-tie criterion, decides uniqueness here. Placements at an out-of-range locus are ignored
+    /// (defensive; callers always size `n_loci` to the rep set the placements were built against).
+    pub fn locus_unique_mapper_counts(reads: &[ReadPlacements], n_loci: usize) -> Vec<usize> {
+        let mut counts = vec![0usize; n_loci];
+        for placements in reads {
+            for p in placements {
+                if p.locus < n_loci && p.mapq > 0 {
+                    counts[p.locus] += 1;
+                }
+            }
+        }
+        counts
+    }
+
+    /// Connected-component families over the conflict edges (union-find). Returns components of size `>= 2`
+    /// (a locus with no conflict needs no resolution — it is not a family), each sorted ascending, the list
+    /// sorted by first member (deterministic).
+    pub fn conflict_families(n_loci: usize, edges: &[(usize, usize, usize)]) -> Vec<Vec<usize>> {
+        let mut parent: Vec<usize> = (0..n_loci).collect();
+        fn find(parent: &mut [usize], x: usize) -> usize {
+            let mut r = x;
+            while parent[r] != r {
+                r = parent[r];
+            }
+            let mut c = x;
+            while parent[c] != r {
+                let next = parent[c];
+                parent[c] = r;
+                c = next;
+            }
+            r
+        }
+        for &(a, b, _) in edges {
+            if a < n_loci && b < n_loci {
+                let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                if ra != rb {
+                    parent[ra.max(rb)] = ra.min(rb);
+                }
+            }
+        }
+        let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+        for x in 0..n_loci {
+            let r = find(&mut parent, x);
+            groups.entry(r).or_default().push(x);
+        }
+        let mut out: Vec<Vec<usize>> = groups.into_values().filter(|g| g.len() >= 2).collect();
+        for g in &mut out {
+            g.sort_unstable();
+        }
+        out.sort_by_key(|g| g[0]);
+        out
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        fn p(locus: usize, de: f32) -> Placement { Placement { locus, de, mapq: 0, as_score: 100, aln_len: 2000 } }
+
+        #[test]
+        fn de_tied_placements_make_an_edge_and_a_family() {
+            // both copies fit comparably (de 0.010 vs 0.012, both < 0.05) -> tie -> edge -> family.
+            let reads = vec![vec![p(0, 0.010), p(1, 0.012)]];
+            let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            assert_eq!(edges, vec![(0, 1, 1)]);
+            assert_eq!(conflict_families(2, &edges), vec![vec![0, 1]]);
+        }
+
+        #[test]
+        fn sig_criterion_ties_ambiguous_resolves_distinguishing() {
+            // The UNIFICATION: significance edge mirrors the assignment gate's min_p>=alpha (eps^delta>=alpha).
+            let sig = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: Some((1e-3, 1e-3)) };
+            // tau = floor(ln(alpha)/ln(eps)) = floor(ln(1e-3)/ln(1e-3)) = 1: tied iff excess-mismatches <= 1.
+            // AMBIGUOUS read: equal divergence on both copies (delta_cols = 0) -> tied -> edge.
+            let amb = vec![vec![
+                Placement { locus: 0, de: 0.0050, mapq: 0, as_score: 100, aln_len: 2000 },
+                Placement { locus: 1, de: 0.0050, mapq: 0, as_score: 100, aln_len: 2000 },
+            ]];
+            assert_eq!(conflict_edges(2, &amb, &sig), vec![(0, 1, 1)]);
+            // DISTINGUISHING read: m_a=0.0005*2000=1, m_b=0.0050*2000=10 -> delta_cols=9 >> tau -> NO edge
+            // (the boundary is now eps^delta>=alpha, not a hand-set 0.005).
+            let dist = vec![vec![
+                Placement { locus: 0, de: 0.0005, mapq: 0, as_score: 100, aln_len: 2000 },
+                Placement { locus: 1, de: 0.0050, mapq: 0, as_score: 100, aln_len: 2000 },
+            ]];
+            assert!(conflict_edges(2, &dist, &sig).is_empty());
+        }
+
+        #[test]
+        fn sig_edge_is_a_refinement_of_de_tied_equal_length() {
+            // Exhaustive over a divergence grid (equal aligned length, default eps/alpha): every SIG-tie is also a
+            // de-tie, so the significance edge set is a SUBSET of the de-tie edge set -> SIG can only shrink/split
+            // families, never invent them (the rigorous refinement claim behind the 81->71 catalog narrowing).
+            let de_p = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None };
+            let (eps, alpha, l) = (1e-3f64, 1e-3f64, 2000u32);
+            for ia in 0..=60u32 {
+                for ib in 0..=60u32 {
+                    let (da, db) = (ia as f32 * 0.001, ib as f32 * 0.001);
+                    let a = Placement { locus: 0, de: da, mapq: 0, as_score: 0, aln_len: l };
+                    let b = Placement { locus: 1, de: db, mapq: 0, as_score: 0, aln_len: l };
+                    if sig_tied(&a, &b, de_p.de_max, eps, alpha) {
+                        assert!(de_tied(&a, &b, &de_p), "sig-tie not a de-tie at de=({da},{db})");
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn sig_off_default_is_byte_identical_to_de_tied() {
+            // With sig: None (default), `tied` == `de_tied` exactly: same edges as the legacy criterion.
+            let reads = vec![
+                vec![p(0, 0.010), p(1, 0.012)],            // tied under delta=0.005
+                vec![p(0, 0.001), p(1, 0.020)],            // resolved under delta=0.005
+            ];
+            let legacy = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None };
+            assert_eq!(conflict_edges(2, &reads, &legacy), vec![(0, 1, 1)]);   // only the first read ties
+            assert_eq!(ConflictParams::default().sig, None);                    // default ships OFF
+        }
+
+        #[test]
+        fn divergence_gap_beyond_delta_is_not_a_conflict() {
+            // read fits copy 0 (de 0.001) far better than copy 1 (de 0.020): |Δ|=0.019 > 0.005 -> resolvable.
+            let reads = vec![vec![p(0, 0.001), p(1, 0.020)]];
+            let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            assert!(edges.is_empty());
+        }
+
+        #[test]
+        fn both_high_divergence_blocked_by_ceiling() {
+            // de_a 0.06 ~ de_b 0.061 (tied within delta) but both exceed de_max 0.05 -> read fits neither.
+            let reads = vec![vec![p(0, 0.060), p(1, 0.061)]];
+            let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            assert!(edges.is_empty());
+        }
+
+        #[test]
+        fn single_placement_read_is_a_singleton_not_a_family() {
+            let reads = vec![vec![p(0, 0.01)], vec![p(1, 0.01)]];
+            let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            assert!(edges.is_empty());
+            assert!(conflict_families(2, &edges).is_empty());
+        }
+
+        #[test]
+        fn min_reads_threshold_drops_thin_conflicts() {
+            let one = vec![vec![p(0, 0.01), p(1, 0.012)]];
+            let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3, sig: None };
+            assert!(conflict_edges(2, &one, &pr).is_empty());
+            let three = vec![one[0].clone(), one[0].clone(), one[0].clone()];
+            assert_eq!(conflict_edges(2, &three, &pr), vec![(0, 1, 3)]);
+        }
+
+        #[test]
+        fn transitive_conflict_closes_into_one_family() {
+            let reads = vec![vec![p(0, 0.010), p(1, 0.012)], vec![p(1, 0.010), p(2, 0.013)]];
+            let edges = conflict_edges(3, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            assert_eq!(conflict_families(3, &edges), vec![vec![0, 1, 2]]);
+        }
+
+        #[test]
+        fn disjoint_conflicts_form_separate_families() {
+            let reads = vec![
+                vec![p(0, 0.01), p(1, 0.012)],
+                vec![p(2, 0.01), p(3, 0.012)],
+                vec![p(4, 0.01)],
+            ];
+            let edges = conflict_edges(5, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            assert_eq!(conflict_families(5, &edges), vec![vec![0, 1], vec![2, 3]]);
+        }
+
+        #[test]
+        fn default_params_are_the_operating_point() {
+            let d = ConflictParams::default();
+            assert!((d.delta - 0.005).abs() < 1e-9);
+            assert!((d.de_max - 0.05).abs() < 1e-9);
+            assert_eq!(d.min_reads, 3);
+        }
+
+        #[test]
+        fn deterministic_under_placement_order() {
+            // Shuffling placement order within a read and across reads must not change the edge/family output.
+            let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None };
+            // two reads, each with placements on loci {0,1,2} in different orders.
+            let forward = vec![
+                vec![p(0, 0.010), p(1, 0.012), p(2, 0.030)],
+                vec![p(1, 0.011), p(0, 0.013)],
+            ];
+            let reversed = vec![
+                vec![p(2, 0.030), p(1, 0.012), p(0, 0.010)],
+                vec![p(0, 0.013), p(1, 0.011)],
+            ];
+            let reads_swapped = vec![forward[1].clone(), forward[0].clone()];
+            let e_fwd = conflict_edges(3, &forward, &pr);
+            let e_rev = conflict_edges(3, &reversed, &pr);
+            let e_swp = conflict_edges(3, &reads_swapped, &pr);
+            assert_eq!(e_fwd, e_rev, "placement order within reads must not change edges");
+            assert_eq!(e_fwd, e_swp, "read order must not change edges");
+            assert_eq!(conflict_families(3, &e_fwd), conflict_families(3, &e_rev));
+            assert_eq!(conflict_families(3, &e_fwd), conflict_families(3, &e_swp));
+        }
+
+        #[test]
+        fn de_max_boundary_exactly_at_threshold_fires_just_over_is_blocked() {
+            // Safely inside: de 0.049 vs 0.049 — max(de)=0.049 < 0.05, |Δ|=0 ≤ 0.005 → should fire.
+            let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None };
+            let inside = vec![vec![p(0, 0.049), p(1, 0.049)]];
+            let e_inside = conflict_edges(2, &inside, &pr);
+            assert_eq!(e_inside, vec![(0, 1, 1)], "de=0.049 <= de_max=0.05 must fire");
+            // NOTE: exactly 0.05f32 widens above 0.05f64 after f32→f64 cast → on the precision boundary;
+            // we test the clearly-over case (0.051) which is blocked regardless.
+            let over = vec![vec![p(0, 0.051), p(1, 0.051)]];
+            let e_over = conflict_edges(2, &over, &pr);
+            assert!(e_over.is_empty(), "de=0.051 > de_max=0.05 must be blocked");
+        }
+
+        #[test]
+        fn family_mapq0_support_counts_correctly() {
+            let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None };
+            let family = vec![0usize, 1];
+            // read A: both loci de-tied, both mapq==0 → counts in support AND both_mapq0.
+            let read_a: ReadPlacements = vec![
+                Placement { locus: 0, de: 0.010, mapq: 0, as_score: 100, aln_len: 2000 },
+                Placement { locus: 1, de: 0.012, mapq: 0, as_score: 100, aln_len: 2000 },
+            ];
+            // read B: both loci de-tied, but mapq>0 on one → counts in support but NOT both_mapq0.
+            let read_b: ReadPlacements = vec![
+                Placement { locus: 0, de: 0.010, mapq: 60, as_score: 100, aln_len: 2000 },
+                Placement { locus: 1, de: 0.012, mapq: 0, as_score: 100, aln_len: 2000 },
+            ];
+            // read C: de NOT tied (gap too large) → not counted at all.
+            let read_c: ReadPlacements = vec![
+                Placement { locus: 0, de: 0.001, mapq: 0, as_score: 100, aln_len: 2000 },
+                Placement { locus: 1, de: 0.020, mapq: 0, as_score: 100, aln_len: 2000 },
+            ];
+            let reads = vec![read_a, read_b, read_c];
+            let (support, mapq0) = family_mapq0_support(&reads, &family, &pr);
+            assert_eq!(support, 2, "read_a and read_b both contribute a de-tied pair in the family");
+            assert_eq!(mapq0, 1, "only read_a has both placements mapq==0");
+        }
+
+        #[test]
+        fn as_tie_edges_superset_of_de_edges() {
+            // AS ties two placements that de SPLITS (de 0.001 vs 0.020): AS-edge exists, de-edge does not.
+            let reads = vec![vec![
+                Placement { locus: 0, de: 0.001, mapq: 0, as_score: 500, aln_len: 2000 },
+                Placement { locus: 1, de: 0.020, mapq: 0, as_score: 498, aln_len: 2000 },
+            ]];
+            let de_edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
+            let as_edges = as_tie_edges(2, &reads, 0.9, 1);
+            assert!(de_edges.is_empty());
+            assert_eq!(as_edges, std::collections::BTreeSet::from([(0, 1)]));
+        }
+
+        #[test]
+        fn as_evidence_none_without_placements() {
+            assert_eq!(as_evidence(&[]), None);
+        }
+
+        #[test]
+        fn as_evidence_single_placement_has_no_second_or_margin() {
+            let e = as_evidence(&[(1842, 916)]).unwrap();
+            assert_eq!(e.best, 1842);
+            assert_eq!(e.second, None);
+            assert_eq!(e.second_per_base, None);
+            assert_eq!(e.margin(), None, "one placement => nothing to be ambiguous between");
+        }
+
+        #[test]
+        fn as_evidence_ranks_best_and_runner_up_over_three_placements() {
+            let e = as_evidence(&[(1310, 800), (1842, 916), (900, 500)]).unwrap();
+            assert_eq!(e.best, 1842);
+            assert_eq!(e.second, Some(1310));
+            assert_eq!(e.margin(), Some(532));
+            assert!((e.best_per_base - 1842.0 / 916.0).abs() < 1e-6);
+            assert!((e.second_per_base.unwrap() - 1310.0 / 800.0).abs() < 1e-6);
+        }
+
+        #[test]
+        fn as_evidence_zero_length_placement_does_not_divide_by_zero() {
+            let e = as_evidence(&[(50, 0)]).unwrap();
+            assert_eq!(e.best_per_base, 0.0);
+        }
+
+        /// The measured real-data confound, pinned: two placements of EQUAL per-base quality where the runner-up
+        /// is a partial alignment. Raw AS says "not a tie" (ratio 0.60 < 0.90) while per-base AS says they are
+        /// indistinguishable. This is why AS is reported and `de` decides.
+        #[test]
+        fn raw_as_misjudges_a_partial_placement_that_per_base_as_calls_equal() {
+            let (full, partial) = ((2000, 1000), (1200, 600)); // both exactly 2.0 AS per aligned base
+            let e = as_evidence(&[full, partial]).unwrap();
+            assert_eq!(e.margin(), Some(800), "raw AS shows a large margin...");
+            assert!(!as_tied(full.0, partial.0, 0.9), "...so the legacy AS-tie predicate rejects the pair");
+            assert_eq!(
+                e.best_per_base,
+                e.second_per_base.unwrap(),
+                "...yet per-aligned-base they are identical: the margin is pure length confound"
+            );
+        }
+
+        #[test]
+        fn reads_distinguish_keeps_separate_when_unique_mappers_present() {
+            // one copy has 40 unique reads (the ID_26 case): distinguishable -> keep separate
+            assert!(reads_distinguish(40, 0, false, 3));
+            // both sides above the floor: distinguishable
+            assert!(reads_distinguish(11, 8, false, 3));
+            // a read-supported PSV/junction separates them even with no unique mappers
+            assert!(reads_distinguish(0, 0, true, 3));
+        }
+
+        #[test]
+        fn locus_unique_mapper_counts_counts_mapq_positive_placements_per_locus() {
+            let reads = vec![
+                vec![Placement { locus: 0, de: 0.01, mapq: 60, as_score: 100, aln_len: 2000 }], // uniq @0
+                vec![Placement { locus: 0, de: 0.01, mapq: 0, as_score: 100, aln_len: 2000 }],  // ambiguous, not counted
+                vec![Placement { locus: 1, de: 0.01, mapq: 40, as_score: 100, aln_len: 2000 }], // uniq @1
+                vec![Placement { locus: 1, de: 0.01, mapq: 40, as_score: 100, aln_len: 2000 }], // uniq @1
+            ];
+            assert_eq!(locus_unique_mapper_counts(&reads, 2), vec![1, 2]);
+        }
+
+        #[test]
+        fn reads_distinguish_merges_true_k0() {
+            // no unique mappers either side, no distinguishing PSV/junction -> K=0 -> merge
+            assert!(!reads_distinguish(0, 0, false, 3));
+            // unique support below the floor is noise, not a distinction -> merge
+            assert!(!reads_distinguish(2, 1, false, 3));
+        }
+    }
+}
+
+pub mod family_rescue {
+    //! Family-aware copy RESCUE (borrow strength / partial pooling): recover an
+    //! under-ASSEMBLED copy that falls below the general-assembly read gate but is
+    //! sequence-homologous to a CONFIRMED de-novo family.
+    //!
+    //! Rationale (mirrors `bench/family_rescue.py`): a single confident
+    //! canonical-junction read forming a multi-exon chain that POA-confirms against
+    //! an existing family is strong evidence of a real copy -- the family PRIOR
+    //! overcomes thin read support. This recovers expression-limited copies (e.g.
+    //! RFPL2, a single read) WITHOUT lowering the genome-wide `>= 3`-read gate
+    //! (fuzzy / low-gate experiments only added noise; see the pipeline record).
+    //!
+    //! This module is the testable DECISION CORE. The BAM-neighbourhood scan that
+    //! builds the thin candidate loci (intron-chain collapse, member-span exclusion,
+    //! canonical-junction strand check, spliced-sequence construction) is the
+    //! integration layer (`gen2off`-style boundary mapping + BAM/FASTA), kept out of
+    //! here so the rescue logic is unit-testable against `contiguous_core_coverage`.
+    //!
+    //! The decision, per candidate thin locus:
+    //!   1. A CANONICAL exact base-4 k-mer pre-filter (`canonical_kmer_set`,
+    //!      `KMER = 18`, strand-symmetric) selects the SINGLE best family member by
+    //!      shared-k-mer overlap (`>= K_RESCUE`). This bounds POA to true candidates
+    //!      and never decides membership -- POA does.
+    //!   2. POA-confirm the thin locus against that one member via the validated
+    //!      `contiguous_core_coverage` primitive, trying BOTH orientations (forward,
+    //!      then a reverse-complement fallback for copies assembled on the opposite
+    //!      strand). Rescue iff the contiguous-core coverage `>= T_CORE = 0.13`.
+    //!
+    //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+    use crate::types::DetHashSet;
+    use crate::family::seq_utils::reverse_complement;
+
+    /// Exact k-mer length for the canonical pre-filter. `KMER = 18` gives a
+    /// `4^18 ~ 6.9e10` space (negligible coincidental sharing) and fits in `u64`
+    /// (36 bits). Matches `bench/denovo_families.py::KMER`.
+    pub const KMER: usize = 18;
+
+    /// POA contiguous-core coverage threshold to confirm a rescued copy. A true
+    /// recent-duplicate copy shares one long homologous core (`>= 0.13` of the
+    /// shorter sequence); a domain-sharer co-aligns over only a short block.
+    /// Matches `bench/family_rescue.py::T_CORE`.
+    pub const T_CORE: f64 = 0.13;
+
+    /// Minimum number of shared canonical k-mers a thin locus must have with a
+    /// family member to even reach POA (real copies share many; common-domain
+    /// sharers share few). Matches `bench/family_rescue.py::K_RESCUE`.
+    pub const K_RESCUE: usize = 20;
+
+    /// Length cap (bp) on the POA inputs (cost guard; POA is O(L^2)). Matches
+    /// `bench/family_rescue.py::LEN_CAP`.
+    pub const LEN_CAP: usize = 9000;
+
+    /// 2-bit base code A=0, C=1, G=2, T=3 (lowercase accepted), matching the python
+    /// `_CODE` table. Returns `None` for any non-ACGT base (so a window touching it
+    /// is dropped, as in the python `badwin` mask).
+    fn base_code(b: u8) -> Option<u8> {
+        match b {
+            b'A' | b'a' => Some(0),
+            b'C' | b'c' => Some(1),
+            b'G' | b'g' => Some(2),
+            b'T' | b't' => Some(3),
+            _ => None,
+        }
+    }
+
+    /// CANONICAL base-4 code of a single window = `min(forward, reverse-complement)`
+    /// so a window and its reverse-complement collapse to the SAME code (strand
+    /// symmetry). Returns `None` if the window touches any non-ACGT base.
+    ///
+    /// Faithful to `bench/denovo_families.py::kmer_hashes`: forward Horner code
+    /// `Σ base_t · 4^(k-1-t)`; reverse-complement code substitutes `3 - base` and
+    /// reverses the position order.
+    ///
+    /// `pub(crate)` so the family-detection layer can reuse the exact same canonical
+    /// encoder for its position-aware k-mer signatures.
+    pub(crate) fn window_canon_code(window: &[u8]) -> Option<u64> {
+        let mut fwd: u64 = 0;
+        let mut rc: u64 = 0;
+        for (i, &b) in window.iter().enumerate() {
+            let c = base_code(b)?; // None drops a window touching a non-ACGT base
+            fwd = (fwd << 2) | c as u64;
+            // reverse-complement code: complement (3 - c), placed in reverse order.
+            rc |= ((3 - c) as u64) << (2 * i);
+        }
+        Some(fwd.min(rc))
+    }
+
+    /// CANONICAL exact base-4 k-mer set (`KMER`-mers, `min(fwd, rc)` per window;
+    /// windows touching a non-ACGT base dropped). A sequence and its reverse
+    /// complement yield the SAME set, so rescue is strand-symmetric. Mirrors
+    /// `set(kmer_hashes(seq))` in the python pipeline.
+    pub fn canonical_kmer_set(seq: &[u8]) -> DetHashSet<u64> {
+        let mut set = DetHashSet::default();
+        if seq.len() < KMER {
+            return set;
+        }
+        for w in seq.windows(KMER) {
+            if let Some(code) = window_canon_code(w) {
+                set.insert(code);
+            }
+        }
+        set
+    }
+
+    /// Number of shared canonical k-mers between two sets (the pre-filter overlap).
+    pub fn kmer_overlap(a: &DetHashSet<u64>, b: &DetHashSet<u64>) -> usize {
+        // Iterate the smaller set for speed; the count is order-independent.
+        let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+        small.iter().filter(|k| large.contains(k)).count()
+    }
+
+    /// A confirmed de-novo family member the rescue compares thin loci against. Its
+    /// canonical k-mer set is precomputed once (the python pipeline caches
+    /// `memkmers[t]`).
+    #[derive(Clone, Debug)]
+    pub struct FamilyMember {
+        /// Member transcript id (e.g. a de-novo transcript id).
+        pub tid: String,
+        /// The family this member belongs to.
+        pub family_id: String,
+        /// The member's spliced sequence in transcription orientation.
+        pub seq: Vec<u8>,
+        /// Precomputed canonical k-mer set of `seq`.
+        pub kmers: DetHashSet<u64>,
+    }
+
+    impl FamilyMember {
+        /// Build a member, computing its canonical k-mer set from `seq`.
+        pub fn new(tid: String, family_id: String, seq: Vec<u8>) -> Self {
+            let kmers = canonical_kmer_set(&seq);
+            FamilyMember { tid, family_id, seq, kmers }
+        }
+    }
+
+    /// Which orientation of the member the contiguous core was found in.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Orientation {
+        /// The member's stored orientation aligned the core directly.
+        Forward,
+        /// The reverse-complement of the member aligned the core (opposite-strand
+        /// assembly).
+        ReverseComplement,
+    }
+
+    /// Tunable rescue parameters (defaults mirror `bench/family_rescue.py`).
+    #[derive(Clone, Copy, Debug)]
+    pub struct RescueParams {
+        /// POA contiguous-core coverage required to confirm a copy.
+        pub t_core: f64,
+        /// Minimum shared canonical k-mers with the best member to reach POA.
+        pub k_rescue: usize,
+        /// Length cap on POA inputs.
+        pub len_cap: usize,
+    }
+
+    impl Default for RescueParams {
+        fn default() -> Self {
+            RescueParams { t_core: T_CORE, k_rescue: K_RESCUE, len_cap: LEN_CAP }
+        }
+    }
+
+    /// A rescued copy: which family it joins, the member that confirmed it, the POA
+    /// contiguous-core coverage, and the orientation the core aligned in.
+    #[derive(Clone, Debug)]
+    pub struct RescueOutcome {
+        pub family_id: String,
+        pub best_member: String,
+        pub core_recip: f64,
+        pub orientation: Orientation,
+    }
+
+    /// Decide whether a thin-locus spliced sequence is a rescued copy of one of the
+    /// confirmed families represented by `members`.
+    ///
+    /// `members` is the candidate neighbourhood the integration layer already
+    /// windowed (the python `WIN = 1 Mb` member set near the locus). The function
+    /// pre-filters to the SINGLE best member by canonical-k-mer overlap
+    /// (`>= p.k_rescue`), then POA-confirms via `contiguous_core_coverage` in the
+    /// forward orientation, falling back to the reverse complement if forward is
+    /// below `p.t_core`. Returns the rescue iff the best coverage reaches
+    /// `p.t_core`. Deterministic: members are scanned in slice order and the best
+    /// overlap ties to the earliest member (matching the python `if ov > best_ov`).
+    pub fn rescue_thin_locus(
+        thin_seq: &[u8],
+        members: &[FamilyMember],
+        p: &RescueParams,
+    ) -> Option<RescueOutcome> {
+        let kset = canonical_kmer_set(thin_seq);
+        if kset.is_empty() {
+            return None;
+        }
+
+        // Pre-filter: the SINGLE best member by canonical-k-mer overlap. `best_ov`
+        // starts at `k_rescue - 1` so a member must clear `>= k_rescue` to be picked
+        // (python `best_ov = K_RESCUE - 1; if ov > best_ov`). Strict `>` ties to the
+        // earliest member in slice order (determinism).
+        let mut best: Option<&FamilyMember> = None;
+        let mut best_ov = p.k_rescue.saturating_sub(1);
+        for m in members {
+            // POA cost guard (python `_poa_rescue`: skip if min(len) > LEN_CAP).
+            if thin_seq.len().min(m.seq.len()) > p.len_cap {
+                continue;
+            }
+            let ov = kmer_overlap(&kset, &m.kmers);
+            if ov > best_ov {
+                best_ov = ov;
+                best = Some(m);
+            }
+        }
+        let m = best?;
+
+        // POA-confirm against that one member. The k-mer pre-filter is
+        // case-insensitive (like python's `_CODE` table), so uppercase the POA
+        // operands here to match it: python's `poa_pair_stats` uppercases its inputs,
+        // and `reverse_complement` maps lowercase -> N, which would otherwise silently
+        // void the RC fallback on soft-masked input. Forward first; reverse-complement
+        // fallback only if forward is below threshold, keeping the max (mirrors the
+        // python `_poa_rescue` RC retry).
+        use crate::family::family_detect::family_graph::{contiguous_core_coverage_bounded_with, EDGE_CONFIRM_ASTAR};
+        let thin_up = crate::family::family_detect::family_graph::upper_cow(thin_seq);
+        let mem_up = crate::family::family_detect::family_graph::upper_cow(&m.seq);
+        let mut core_recip =
+            contiguous_core_coverage_bounded_with(&thin_up, &mem_up, p.len_cap, EDGE_CONFIRM_ASTAR);
+        let mut orientation = Orientation::Forward;
+        if core_recip < p.t_core {
+            let rc = contiguous_core_coverage_bounded_with(
+                &thin_up,
+                &reverse_complement(&mem_up),
+                p.len_cap,
+                EDGE_CONFIRM_ASTAR,
+            );
+            if rc > core_recip {
+                core_recip = rc;
+                orientation = Orientation::ReverseComplement;
+            }
+        }
+
+        if core_recip >= p.t_core {
+            Some(RescueOutcome {
+                family_id: m.family_id.clone(),
+                best_member: m.tid.clone(),
+                core_recip,
+                orientation,
+            })
+        } else {
+            None
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        // Deterministic DNA (SplitMix64), mirroring family_graph's core-coverage tests.
+        struct SplitMix64(u64);
+        impl SplitMix64 {
+            fn next_u64(&mut self) -> u64 {
+                self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = self.0;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^ (z >> 31)
+            }
+        }
+        fn rand_seq(n: usize, seed: u64) -> Vec<u8> {
+            let mut rng = SplitMix64(seed);
+            const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+            (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
+        }
+        fn cat(parts: &[&[u8]]) -> Vec<u8> {
+            parts.iter().flat_map(|p| p.iter().copied()).collect()
+        }
+        fn member(tid: &str, fid: &str, seq: Vec<u8>) -> FamilyMember {
+            FamilyMember::new(tid.to_string(), fid.to_string(), seq)
+        }
+
+        // ---- canonical k-mer encoding (faithful to python base-4 codes) ----
+
+        #[test]
+        fn window_canon_code_is_base4_and_strand_canonical() {
+            // A=0,C=1,G=2,T=3 ; fwd("AC")=0*4+1=1 ; RC("AC")="GT"=2*4+3=11 ; min=1.
+            assert_eq!(window_canon_code(b"AC"), Some(1));
+            // "GT" is the reverse-complement of "AC" -> SAME canonical code.
+            assert_eq!(window_canon_code(b"GT"), Some(1));
+            // a window containing a non-ACGT base is dropped.
+            assert_eq!(window_canon_code(b"AN"), None);
+        }
+
+        #[test]
+        fn canonical_kmer_set_is_strand_symmetric() {
+            let s = rand_seq(200, 0x5EED_0001);
+            let rc = reverse_complement(&s);
+            assert_eq!(canonical_kmer_set(&s), canonical_kmer_set(&rc));
+            assert!(!canonical_kmer_set(&s).is_empty());
+        }
+
+        #[test]
+        fn canonical_kmer_set_drops_only_windows_touching_n() {
+            // 60 bp random -> 60-18+1 = 43 windows; random 18-mers are distinct.
+            let s = rand_seq(60, 0x5EED_0002);
+            let full = canonical_kmer_set(&s);
+            assert_eq!(full.len(), 60 - KMER + 1, "distinct random 18-mers");
+            let mut withn = s.clone();
+            withn[30] = b'N';
+            let dropped = canonical_kmer_set(&withn);
+            // windows with start in [13, 30] cover index 30 -> 18 windows removed.
+            assert_eq!(full.len() - dropped.len(), 18);
+        }
+
+        #[test]
+        fn kmer_overlap_counts_shared_canonical_kmers() {
+            let s = rand_seq(60, 0x7001);
+            let a = canonical_kmer_set(&s);
+            let b = canonical_kmer_set(&reverse_complement(&s));
+            assert_eq!(kmer_overlap(&a, &b), a.len()); // identical canonical sets
+            let c = canonical_kmer_set(&rand_seq(60, 0x7002));
+            assert!(kmer_overlap(&a, &c) < a.len()); // independent seqs share ~none
+        }
+
+        // ---- rescue decision ----
+
+        #[test]
+        fn rescue_confirms_homologous_copy() {
+            // thin locus and a member share a 400 bp identical core (>> K_RESCUE
+            // shared 18-mers, contiguous-core coverage >= 0.13), divergent flanks.
+            let core = rand_seq(400, 0xC0FE_2001);
+            let thin = cat(&[&rand_seq(80, 0xAAAA_2001), &core, &rand_seq(80, 0xAAAA_2002)]);
+            let mseq = cat(&[&rand_seq(80, 0xBBBB_2001), &core, &rand_seq(80, 0xBBBB_2002)]);
+            let members = [member("M1", "FAM7", mseq)];
+            let out = rescue_thin_locus(&thin, &members, &RescueParams::default())
+                .expect("homologous copy should be rescued");
+            assert_eq!(out.family_id, "FAM7");
+            assert_eq!(out.best_member, "M1");
+            assert_eq!(out.orientation, Orientation::Forward);
+            assert!(out.core_recip >= T_CORE, "core_recip {} >= {}", out.core_recip, T_CORE);
+        }
+
+        #[test]
+        fn rescue_rejects_domain_sharer_below_core_threshold() {
+            // shares a 40 bp block (40-18+1 = 23 shared 18-mers >= K_RESCUE so the
+            // PRE-FILTER passes) but in long otherwise-independent sequences, so the
+            // POA contiguous-core coverage is < T_CORE -> NOT rescued (POA decides).
+            let block = rand_seq(40, 0xD0D0_3001);
+            let thin = cat(&[&rand_seq(350, 0xAAAA_3001), &block, &rand_seq(350, 0xAAAA_3002)]);
+            let mseq = cat(&[&rand_seq(350, 0xBBBB_3001), &block, &rand_seq(350, 0xBBBB_3002)]);
+            let members = [member("M1", "FAM3", mseq)];
+            // precondition: the pre-filter DOES pass (>= K_RESCUE shared k-mers).
+            let thin_k = canonical_kmer_set(&thin);
+            assert!(kmer_overlap(&thin_k, &members[0].kmers) >= K_RESCUE,
+                "pre-filter precondition: shared k-mers >= K_RESCUE");
+            assert!(rescue_thin_locus(&thin, &members, &RescueParams::default()).is_none());
+        }
+
+        #[test]
+        fn rescue_pre_filter_rejects_too_few_shared_kmers() {
+            // shares only a 25 bp block -> 25-18+1 = 8 shared 18-mers < K_RESCUE
+            // -> NO member clears the pre-filter -> no POA, no rescue.
+            let block = rand_seq(25, 0xD0D0_4001);
+            let thin = cat(&[&rand_seq(300, 0xAAAA_4001), &block, &rand_seq(300, 0xAAAA_4002)]);
+            let mseq = cat(&[&rand_seq(300, 0xBBBB_4001), &block, &rand_seq(300, 0xBBBB_4002)]);
+            let members = [member("M1", "FAM4", mseq)];
+            assert!(rescue_thin_locus(&thin, &members, &RescueParams::default()).is_none());
+        }
+
+        #[test]
+        fn rescue_detects_reverse_complement_copy() {
+            // A member stored on the OPPOSITE strand: canonical k-mers still match
+            // (strand-symmetric), forward POA is LOW, RC fallback POA is HIGH.
+            let core = rand_seq(400, 0xC0FE_5001);
+            let thin = cat(&[&rand_seq(80, 0xAAAA_5001), &core, &rand_seq(80, 0xAAAA_5002)]);
+            let mfwd = cat(&[&rand_seq(80, 0xBBBB_5001), &core, &rand_seq(80, 0xBBBB_5002)]);
+            let mseq = reverse_complement(&mfwd); // member assembled on the other strand
+            let members = [member("M1", "FAM5", mseq)];
+            let out = rescue_thin_locus(&thin, &members, &RescueParams::default())
+                .expect("RC homologous copy should be rescued via the RC fallback");
+            assert_eq!(out.orientation, Orientation::ReverseComplement);
+            assert!(out.core_recip >= T_CORE, "core_recip {} >= {}", out.core_recip, T_CORE);
+        }
+
+        #[test]
+        fn rescue_picks_best_kmer_matching_member() {
+            // thin shares its full 400 bp core with M2 (many k-mers) and nothing with
+            // M1 (unrelated); POA must confirm against M2 and report it.
+            let core = rand_seq(400, 0xC0FE_6001);
+            let thin = cat(&[&rand_seq(80, 0xAAAA_6001), &core, &rand_seq(80, 0xAAAA_6002)]);
+            let m1 = rand_seq(660, 0x1111_6001); // fully unrelated
+            let m2 = cat(&[&rand_seq(80, 0xBBBB_6001), &core, &rand_seq(80, 0xBBBB_6002)]);
+            let members = [member("M1", "FAMx", m1), member("M2", "FAM6", m2)];
+            let out = rescue_thin_locus(&thin, &members, &RescueParams::default())
+                .expect("should rescue via M2");
+            assert_eq!(out.best_member, "M2");
+            assert_eq!(out.family_id, "FAM6");
+        }
+
+        #[test]
+        fn rescue_empty_members_returns_none() {
+            let thin = rand_seq(300, 0x9001);
+            assert!(rescue_thin_locus(&thin, &[], &RescueParams::default()).is_none());
+        }
+
+        #[test]
+        fn rescue_thin_seq_shorter_than_kmer_returns_none() {
+            let thin = rand_seq(10, 0x9002); // < KMER -> empty k-mer set -> None
+            let m = member("M1", "F", rand_seq(400, 0x9003));
+            assert!(rescue_thin_locus(&thin, &[m], &RescueParams::default()).is_none());
+        }
+
+        #[test]
+        fn rescue_detects_reverse_complement_copy_lowercase() {
+            // Soft-masked (lowercase) inputs must behave IDENTICALLY to uppercase. The
+            // k-mer pre-filter is case-insensitive, so a lowercase opposite-strand copy
+            // reaches POA; the RC fallback must not be silently killed by a
+            // case-sensitive reverse_complement (which maps lowercase -> N). Same
+            // geometry as rescue_detects_reverse_complement_copy, just lowercased.
+            let core = rand_seq(400, 0xC0FE_5001);
+            let thin = cat(&[&rand_seq(80, 0xAAAA_5001), &core, &rand_seq(80, 0xAAAA_5002)]);
+            let mfwd = cat(&[&rand_seq(80, 0xBBBB_5001), &core, &rand_seq(80, 0xBBBB_5002)]);
+            let thin_lc = thin.to_ascii_lowercase();
+            let mseq_lc = reverse_complement(&mfwd).to_ascii_lowercase();
+            let members = [member("M1", "FAM5", mseq_lc)];
+            let out = rescue_thin_locus(&thin_lc, &members, &RescueParams::default())
+                .expect("lowercase RC homologous copy should still be rescued via the RC fallback");
+            assert_eq!(out.orientation, Orientation::ReverseComplement);
+            assert!(out.core_recip >= T_CORE, "core_recip {} >= {}", out.core_recip, T_CORE);
+        }
+
+        #[test]
+        fn rescue_tie_break_picks_earliest_member() {
+            // Two members with the IDENTICAL sequence (so provably EQUAL k-mer overlap
+            // with the thin locus); the strict `>` update must keep the FIRST in slice
+            // order. (Distinct random flanks do NOT guarantee equal overlap — a flank
+            // k-mer can coincidentally collide — so identical seqs pin the tie exactly.)
+            let core = rand_seq(400, 0xC0FE_7001);
+            let thin = cat(&[&rand_seq(80, 0xAAAA_7001), &core, &rand_seq(80, 0xAAAA_7002)]);
+            let mseq = cat(&[&rand_seq(80, 0x1111_7001), &core, &rand_seq(80, 0x1111_7002)]);
+            let members = [member("FIRST", "FAM7", mseq.clone()), member("SECOND", "FAM7", mseq)];
+            // precondition: the two overlaps are genuinely equal (the tie under test).
+            let tk = canonical_kmer_set(&thin);
+            assert_eq!(
+                kmer_overlap(&tk, &members[0].kmers),
+                kmer_overlap(&tk, &members[1].kmers),
+                "members must have equal overlap for this to test the tie-break"
+            );
+            let out = rescue_thin_locus(&thin, &members, &RescueParams::default())
+                .expect("should rescue");
+            assert_eq!(out.best_member, "FIRST", "equal overlap must tie to the earliest member");
+        }
+
+        #[test]
+        fn rescue_threshold_boundary_is_inclusive() {
+            // Pin the `core_recip >= t_core` semantics: at t_core == cr the copy is
+            // ACCEPTED (inclusive), just above cr it is REJECTED. `cr` is read off the
+            // SAME deterministic primitive the function uses (forward orientation).
+            use crate::family::family_detect::family_graph::contiguous_core_coverage;
+            let core = rand_seq(400, 0xC0FE_8001);
+            let thin = cat(&[&rand_seq(80, 0xAAAA_8001), &core, &rand_seq(80, 0xAAAA_8002)]);
+            let mseq = cat(&[&rand_seq(80, 0xBBBB_8001), &core, &rand_seq(80, 0xBBBB_8002)]);
+            let cr = contiguous_core_coverage(&thin, &mseq);
+            let members = [member("M1", "FAM8", mseq)];
+            let at = RescueParams { t_core: cr, ..RescueParams::default() };
+            assert!(rescue_thin_locus(&thin, &members, &at).is_some(),
+                "t_core == cr ({cr}) must be ACCEPTED (inclusive >=)");
+            let above = RescueParams { t_core: cr + 1e-6, ..RescueParams::default() };
+            assert!(rescue_thin_locus(&thin, &members, &above).is_none(),
+                "t_core just above cr ({cr}) must be REJECTED");
+        }
+    }
+
+    // ---- merged 2026-10-05: was `vg_family/rescue_pipeline.rs`, now the inline module below (one component) ----
+    #[allow(clippy::all)]
+    pub mod rescue_pipeline {
+    //! Family-aware RESCUE thin-locus scan (integration stage 4b) — the BAM-neighbourhood orchestration of
+    //! `bench/family_rescue.py`.
+    //!
+    //! Recover an under-ASSEMBLED copy that falls below the general-assembly `>= 3`-read gate but is
+    //! sequence-homologous to a CONFIRMED de-novo family (borrow strength / partial pooling). The decision core
+    //! (`family_rescue::rescue_thin_locus`: canonical-k-mer pre-filter + both-orientation POA) is already
+    //! ported; this builds the thin candidate loci from reads in the family neighbourhood:
+    //!   1. group reads by exact intron chain, collapse OVERLAPPING chains into loci (best-supported chain wins);
+    //!   2. drop loci overlapping an already-assembled family member span;
+    //!   3. build each thin locus's spliced sequence (canonical-junction gate, reverse-complement for `-`);
+    //!   4. POA-confirm against the family members; dedup by locus, keep the best core coverage.
+    //!
+    //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use crate::family::denovo_assemble::{build_spliced_seq, PrimaryRead};
+    use super::{rescue_thin_locus, FamilyMember, RescueOutcome, RescueParams};
+    use crate::genome::GenomeIndex;
+
+    /// Minimum read support for a thin candidate locus (`family_rescue.py::MIN_SUPPORT`).
+    pub const RESCUE_MIN_SUPPORT: u32 = 1;
+    /// Minimum spliced length of a thin locus to attempt rescue.
+    pub const RESCUE_MIN_LEN: usize = 200;
+
+    /// A thin candidate locus: a (collapsed) intron chain with read support, below the general-assembly gate.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct ThinLocus {
+        pub chrom: String,
+        pub start: u64,
+        pub end: u64,
+        pub support: u32,
+        pub introns: Vec<(u64, u64)>,
+    }
+
+    /// An already-assembled family member's genomic span (used to EXCLUDE overlapping thin loci).
+    #[derive(Clone, Debug)]
+    pub struct MemberSpan {
+        pub chrom: String,
+        pub start: u64,
+        pub end: u64,
+    }
+
+    /// A rescued copy: the thin locus, the family/member that confirmed it (+ core coverage + orientation), the
+    /// transcription strand, and the spliced sequence (so the rescued copy is assignable).
+    #[derive(Clone, Debug)]
+    pub struct RescuedCopy {
+        pub locus: ThinLocus,
+        pub outcome: RescueOutcome,
+        pub strand: char,
+        pub seq: Vec<u8>,
+    }
+
+    /// Group reads by exact intron chain, then collapse OVERLAPPING chains (by span) into loci, keeping the
+    /// best-supported chain (by support, then span) as each locus's representative. Multi-exon only. Mirrors
+    /// `family_rescue.py`'s per-interval locus collapse. Deterministic (sorted by start, ties by chain).
+    pub fn thin_loci(reads: &[PrimaryRead], min_support: u32) -> Vec<ThinLocus> {
+        // group reads by (chrom, exact intron chain) -> (support, min_start, max_end); multi-exon only.
+        let mut chains: BTreeMap<(&str, Vec<(u64, u64)>), (u32, u64, u64)> = BTreeMap::new();
+        for r in reads {
+            if r.introns.is_empty() {
+                continue;
+            }
+            let e = chains.entry((r.chrom.as_str(), r.introns.clone())).or_insert((0, u64::MAX, 0));
+            e.0 += 1;
+            e.1 = e.1.min(r.ref_start);
+            e.2 = e.2.max(r.ref_end);
+        }
+        // per chrom: collapse overlapping chains (single-linkage by span); the rep is the best (support, span).
+        let mut by_chrom: BTreeMap<&str, Vec<(Vec<(u64, u64)>, u32, u64, u64)>> = BTreeMap::new();
+        for ((chrom, chain), (sup, s, e)) in chains {
+            by_chrom.entry(chrom).or_default().push((chain, sup, s, e));
+        }
+        struct Loc {
+            s: u64,
+            e: u64,
+            sup: u32,
+            s2: u64,
+            e2: u64,
+            intr: Vec<(u64, u64)>,
+        }
+        let mut out = Vec::new();
+        for (chrom, mut group) in by_chrom {
+            group.sort_by_key(|&(_, _, s, _)| s); // stable: ties keep (chrom,chain) order
+            let mut loci: Vec<Loc> = Vec::new();
+            for (intr, sup, s, e) in group {
+                if sup < min_support {
+                    continue;
+                }
+                let mut merged = false;
+                for l in loci.iter_mut() {
+                    if s <= l.e && e >= l.s {
+                        l.s = l.s.min(s);
+                        l.e = l.e.max(e);
+                        if (sup, e - s) > (l.sup, l.e2 - l.s2) {
+                            l.sup = sup;
+                            l.s2 = s;
+                            l.e2 = e;
+                            l.intr = intr.clone();
+                        }
+                        merged = true;
+                        break;
+                    }
+                }
+                if !merged {
+                    loci.push(Loc { s, e, sup, s2: s, e2: e, intr });
+                }
+            }
+            for l in loci {
+                out.push(ThinLocus {
+                    chrom: chrom.to_string(),
+                    start: l.s2,
+                    end: l.e2,
+                    support: l.sup,
+                    introns: l.intr,
+                });
+            }
+        }
+        out
+    }
+
+    /// Rescue under-assembled copies: for each thin locus NOT overlapping a member span, build its spliced
+    /// sequence and POA-confirm it against the family `members` (`rescue_thin_locus`). Dedup by locus, keeping
+    /// the best `core_recip`. Mirrors `family_rescue.py`'s scan + dedup.
+    pub fn rescue_thin_loci(
+        loci: &[ThinLocus],
+        members: &[FamilyMember],
+        member_spans: &[MemberSpan],
+        genome: &GenomeIndex,
+        p: &RescueParams,
+    ) -> Vec<RescuedCopy> {
+        let mut by_key: BTreeMap<(String, u64, u64), RescuedCopy> = BTreeMap::new();
+        for locus in loci {
+            // exclude a thin locus that overlaps an already-assembled family member span.
+            if member_spans
+                .iter()
+                .any(|m| m.chrom == locus.chrom && locus.start < m.end && locus.end > m.start)
+            {
+                continue;
+            }
+            let (seq, strand) = match build_spliced_seq(genome, &locus.chrom, locus.start, locus.end, &locus.introns, None) {
+                Some(v) => v,
+                None => continue,
+            };
+            if seq.len() < RESCUE_MIN_LEN || seq.len() > p.len_cap {
+                continue;
+            }
+            if let Some(outcome) = rescue_thin_locus(&seq, members, p) {
+                let key = (locus.chrom.clone(), locus.start, locus.end);
+                let better = by_key
+                    .get(&key)
+                    .map_or(true, |prev| outcome.core_recip > prev.outcome.core_recip);
+                if better {
+                    by_key.insert(key, RescuedCopy { locus: locus.clone(), outcome, strand, seq });
+                }
+            }
+        }
+        by_key.into_values().collect()
+    }
+
+    /// ITERATIVE family-aware rescue (borrow strength across passes). A rescued copy is itself a new family
+    /// member that can bridge to OTHER under-assembled copies the first pass couldn't reach (homologous to the
+    /// rescued copy but not the original family). So: rescue, fold the rescued copies in as members + spans,
+    /// rescue the remaining loci again, until a pass recovers nothing new (or `max_iters`). Deterministic.
+    pub fn rescue_thin_loci_iterative(
+        loci: &[ThinLocus],
+        members: &[FamilyMember],
+        member_spans: &[MemberSpan],
+        genome: &GenomeIndex,
+        p: &RescueParams,
+        max_iters: usize,
+    ) -> Vec<RescuedCopy> {
+        let mut all_members: Vec<FamilyMember> = members.to_vec();
+        let mut all_spans: Vec<MemberSpan> = member_spans.to_vec();
+        let mut remaining: Vec<ThinLocus> = loci.to_vec();
+        let mut rescued_all: Vec<RescuedCopy> = Vec::new();
+        for _ in 0..max_iters {
+            let rescued = rescue_thin_loci(&remaining, &all_members, &all_spans, genome, p);
+            if rescued.is_empty() {
+                break;
+            }
+            // each rescued copy becomes a member (so it can bridge) and a span (so it is not re-rescued).
+            let done: BTreeSet<(String, u64, u64)> =
+                rescued.iter().map(|rc| (rc.locus.chrom.clone(), rc.locus.start, rc.locus.end)).collect();
+            for rc in &rescued {
+                all_members.push(FamilyMember::new(
+                    format!("RC_{}_{}", rc.locus.chrom, rc.locus.start),
+                    rc.outcome.family_id.clone(),
+                    rc.seq.clone(),
+                ));
+                all_spans.push(MemberSpan {
+                    chrom: rc.locus.chrom.clone(),
+                    start: rc.locus.start,
+                    end: rc.locus.end,
+                });
+            }
+            remaining.retain(|l| !done.contains(&(l.chrom.clone(), l.start, l.end)));
+            rescued_all.extend(rescued);
+            if remaining.is_empty() {
+                break;
+            }
+        }
+        rescued_all
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        struct SplitMix64(u64);
+        impl SplitMix64 {
+            fn next_u64(&mut self) -> u64 {
+                self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = self.0;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^ (z >> 31)
+            }
+        }
+        fn rand_seq(n: usize, seed: u64) -> Vec<u8> {
+            let mut rng = SplitMix64(seed);
+            const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+            (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
+        }
+        fn cat(parts: &[&[u8]]) -> Vec<u8> {
+            parts.iter().flat_map(|p| p.iter().copied()).collect()
+        }
+        fn read(chrom: &str, s: u64, e: u64, introns: &[(u64, u64)]) -> PrimaryRead {
+            PrimaryRead { chrom: chrom.into(), ref_start: s, ref_end: e, introns: introns.to_vec(), reverse: false }
+        }
+
+        /// Genome with one thin gene: exon1 [0,200), canonical intron [200,220) GT..AG, exon2 [220,420);
+        /// spliced = flank(50) + `core`(300) + flank(50). Returns the genome.
+        fn thin_gene_genome(core: &[u8]) -> GenomeIndex {
+            let mut g = vec![b'A'; 500];
+            g[0..50].copy_from_slice(&rand_seq(50, 0x71));
+            g[50..200].copy_from_slice(&core[0..150]);
+            g[200] = b'G';
+            g[201] = b'T';
+            g[218] = b'A';
+            g[219] = b'G';
+            g[220..370].copy_from_slice(&core[150..300]);
+            g[370..420].copy_from_slice(&rand_seq(50, 0x72));
+            GenomeIndex::from_seqs(&[("c1", &g)])
+        }
+
+        // ---- thin_loci ----
+
+        #[test]
+        fn thin_loci_groups_and_keeps_multi_exon() {
+            let reads = [
+                read("c1", 0, 400, &[(100, 200)]),
+                read("c1", 5, 410, &[(100, 200)]),
+                read("c1", 0, 400, &[]), // single-exon -> ignored
+            ];
+            let loci = thin_loci(&reads, 1);
+            assert_eq!(loci.len(), 1);
+            assert_eq!(loci[0].support, 2);
+            assert_eq!(loci[0].introns, vec![(100, 200)]);
+        }
+
+        #[test]
+        fn thin_loci_collapses_overlapping_chains_best_supported() {
+            // chain A [0,400) support 2, chain B [100,500) support 1 overlap -> one locus, rep = chain A.
+            let reads = [
+                read("c1", 0, 400, &[(100, 200)]),
+                read("c1", 0, 400, &[(100, 200)]),
+                read("c1", 100, 500, &[(150, 250)]),
+            ];
+            let loci = thin_loci(&reads, 1);
+            assert_eq!(loci.len(), 1, "overlapping chains collapse to one locus");
+            assert_eq!(loci[0].support, 2, "best-supported chain wins");
+            assert_eq!(loci[0].introns, vec![(100, 200)]);
+            assert_eq!((loci[0].start, loci[0].end), (0, 400));
+        }
+
+        #[test]
+        fn thin_loci_separates_nonoverlapping() {
+            let reads = [
+                read("c1", 0, 300, &[(100, 200)]),
+                read("c1", 1000, 1300, &[(1100, 1200)]),
+            ];
+            assert_eq!(thin_loci(&reads, 1).len(), 2);
+        }
+
+        // ---- rescue_thin_loci ----
+
+        #[test]
+        fn rescue_recovers_thin_locus_homologous_to_family() {
+            let core = rand_seq(300, 0xC0FE_F00D);
+            let genome = thin_gene_genome(&core);
+            // a family member sharing the same core (distinct flanks)
+            let mseq = cat(&[&rand_seq(50, 0x81), &core, &rand_seq(50, 0x82)]);
+            let members = [FamilyMember::new("M1".into(), "FAM1".into(), mseq)];
+            // a SINGLE read (support 1, below the >=3 gate) forming the thin locus
+            let reads = [read("c1", 0, 420, &[(200, 220)])];
+            let loci = thin_loci(&reads, RESCUE_MIN_SUPPORT);
+            assert_eq!(loci.len(), 1);
+            let rescued = rescue_thin_loci(&loci, &members, &[], &genome, &RescueParams::default());
+            assert_eq!(rescued.len(), 1, "the thin copy is rescued into the family");
+            assert_eq!(rescued[0].outcome.family_id, "FAM1");
+            assert!(rescued[0].outcome.core_recip >= 0.13);
+            assert_eq!(rescued[0].seq.len(), 400);
+        }
+
+        #[test]
+        fn rescue_excludes_loci_overlapping_a_member_span() {
+            let core = rand_seq(300, 0xC0FE_F00D);
+            let genome = thin_gene_genome(&core);
+            let mseq = cat(&[&rand_seq(50, 0x81), &core, &rand_seq(50, 0x82)]);
+            let members = [FamilyMember::new("M1".into(), "FAM1".into(), mseq)];
+            let reads = [read("c1", 0, 420, &[(200, 220)])];
+            let loci = thin_loci(&reads, RESCUE_MIN_SUPPORT);
+            // a member already assembled across the locus span -> the thin locus is NOT a new copy.
+            let spans = [MemberSpan { chrom: "c1".into(), start: 100, end: 300 }];
+            let rescued = rescue_thin_loci(&loci, &members, &spans, &genome, &RescueParams::default());
+            assert!(rescued.is_empty(), "locus overlapping an assembled member is excluded");
+        }
+
+        #[test]
+        fn rescue_rejects_non_homologous_thin_locus() {
+            let genome = thin_gene_genome(&rand_seq(300, 0xC0FE_F00D));
+            // a family member with a DIFFERENT, unrelated core -> no rescue.
+            let mseq = cat(&[&rand_seq(50, 0x81), &rand_seq(300, 0xDEAD_BEEF), &rand_seq(50, 0x82)]);
+            let members = [FamilyMember::new("M1".into(), "FAM1".into(), mseq)];
+            let reads = [read("c1", 0, 420, &[(200, 220)])];
+            let loci = thin_loci(&reads, RESCUE_MIN_SUPPORT);
+            let rescued = rescue_thin_loci(&loci, &members, &[], &genome, &RescueParams::default());
+            assert!(rescued.is_empty(), "a non-homologous thin locus is not rescued");
+        }
+
+        #[test]
+        fn iterative_rescue_recovers_a_bridged_copy() {
+            // M1 = flank + core1. L1 spliced = core1 + core2 (rescued pass 1 via core1, shared with M1).
+            // L2 spliced = core2 + flank (homologous to L1's core2 but NOT to M1) -> rescued ONLY in pass 2,
+            // once L1 is a member. Single-pass recovers 1; iterative recovers 2.
+            let core1 = rand_seq(200, 0xC0DE_0001);
+            let core2 = rand_seq(200, 0xC0DE_0002);
+            let mut g = vec![b'A'; 1600];
+            // L1 = core1 | core2 ; L2 = flankL | core2 ; M1 = core1 | flankM. Shared cores sit at the SAME
+            // relative position (no offset) so POA anchors them cleanly.
+            g[0..200].copy_from_slice(&core1);
+            g[200] = b'G';
+            g[201] = b'T';
+            g[218] = b'A';
+            g[219] = b'G';
+            g[220..420].copy_from_slice(&core2);
+            g[1000..1200].copy_from_slice(&rand_seq(200, 0xF00D)); // flankL
+            g[1200] = b'G';
+            g[1201] = b'T';
+            g[1218] = b'A';
+            g[1219] = b'G';
+            g[1220..1420].copy_from_slice(&core2);
+            let genome = GenomeIndex::from_seqs(&[("c1", &g)]);
+            let m1 = FamilyMember::new("M1".into(), "FAM1".into(), cat(&[&core1, &rand_seq(200, 0xAA)]));
+            let loci = [
+                ThinLocus { chrom: "c1".into(), start: 0, end: 420, support: 1, introns: vec![(200, 220)] },
+                ThinLocus { chrom: "c1".into(), start: 1000, end: 1420, support: 1, introns: vec![(1200, 1220)] },
+            ];
+            let single = rescue_thin_loci(&loci, std::slice::from_ref(&m1), &[], &genome, &RescueParams::default());
+            assert_eq!(single.len(), 1, "single-pass rescues only the directly-homologous locus");
+            let iter = rescue_thin_loci_iterative(&loci, &[m1], &[], &genome, &RescueParams::default(), 5);
+            assert_eq!(iter.len(), 2, "iterative recovers the bridged locus via the first rescued copy");
+        }
+    }
+    }
 }

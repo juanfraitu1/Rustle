@@ -1,7 +1,7 @@
 //! `o3_candidates` — O3 candidate copies from each family's read net (spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`
 //! §5; plan `docs/superpowers/plans/2026-10-02-o3-candidates.md` task 8): the reads of a family -> clusters at delta -> one consensus per
 //! cluster -> one refinement pass -> the significance merge -> flag / link against the genome -> components of the new-copy clusters
-//! (candidate copies), each represented by the exon union of its clusters. The algorithm is `rustle::vg_family::o3_candidates`; this file is
+//! (candidate copies), each represented by the exon union of its clusters. The algorithm is `rustle::family::o3_candidates`; this file is
 //! the glue: arguments, the two BAM passes, the batched minimap2 calls, the per-family loop, the outputs and the stage cache.
 //!
 //! usage: o3_candidates --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi --out P.cand
@@ -21,9 +21,9 @@
 use rustle::types::{DetHashMap, DetHashSet};
 use anyhow::{Context, Result};
 use noodles_core::{Position, Region};
-use rustle::vg_family::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily};
-use rustle::vg_family::copy_assign::AssignParams;
-use rustle::vg_family::o3_candidates::{
+use rustle::family::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily};
+use rustle::family::copy_assign::AssignParams;
+use rustle::family::o3_candidates::{
     attribute_by_hits, best_by_id_cov, best_by_matches, candidate_id, classify, cluster_reads, components, consensus_from_template,
     distinguishing_columns, is_flagged, is_poorly_placed, minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf,
     refine_cluster, refined_template, sample_net, sketch_share, structural_template, union_sequence_with_note, variant_is_real, write_cluster_members,
@@ -32,8 +32,8 @@ use rustle::vg_family::o3_candidates::{
     MM2_GENOME, MM2_MEMBERS, MM2_UNION, POORLY_PLACED_DE, SKETCH_W,
 };
 use rustle::bam::record_de;
-use rustle::vg_family::run_cache as rc;
-use rustle::vg_family::seq_utils::reverse_complement;
+use rustle::family::run_cache as rc;
+use rustle::family::seq_utils::reverse_complement;
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};

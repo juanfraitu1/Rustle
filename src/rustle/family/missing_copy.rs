@@ -1133,7 +1133,7 @@ pub(crate) fn parse_paf_consistency(paf_text: &str) -> AlignmentSummary {
         let qend: i64 = f[3].parse().unwrap_or(0);
         let mut t: u64 = f[7].parse().unwrap_or(0);
         let mut nx: usize = 0;
-        for (num, op) in crate::vg_family::shared_definition::cigar_ops(cg) {
+        for (num, op) in crate::family::shared_definition::cigar_ops(cg) {
             match op {
                 '=' => {
                     for k in 0..num {
