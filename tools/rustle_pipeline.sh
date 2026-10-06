@@ -591,9 +591,7 @@ stage_flag() {
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
 }
 case "$STAGE" in
-  assemble) stage_assemble;; families) stage_families;; catalog) stage_catalog;; assign) stage_assign;; flag) stage_flag;;
   merged) stage_merged;;
-  all) stage_assemble; stage_families; stage_catalog; stage_assign; stage_flag;;
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
