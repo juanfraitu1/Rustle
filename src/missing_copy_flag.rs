@@ -14,7 +14,7 @@
 //!        [--candidates P.cand.candidates.tsv] [--assignments P.assignments.tsv]
 //!
 //! Outputs `<PREFIX>.missing_copy.tsv` (one row per locus with >= --min-reads reads) and `<PREFIX>.consensus.fa`.
-//! With `--candidates` (the `o3_candidates` stage's table, spec 2026-10-02 §7) the table gains a last column
+//! With `--candidates` (the `candidate_copies` stage's table, spec 2026-10-02 §7) the table gains a last column
 //! `o3_candidate`: the flagged candidate copies whose nearest reference locus (`nearest_locus`, the consensus's best
 //! genome hit) lies on the row's chromosome and overlaps its span, comma-separated, else `-` — the two O3 sources
 //! corroborating each other. Without it the table is unchanged.
@@ -30,8 +30,8 @@
 
 use anyhow::{Context, Result};
 use noodles_sam::alignment::record_buf::RecordBuf;
-use rustle::family::denovo_assemble::aligned_read_from_record;
-use rustle::family::missing_copy::*;
+use rustle::denovo_assemble::aligned_read_from_record;
+use rustle::missing_copy::*;
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -126,7 +126,7 @@ fn parse_args() -> Result<Args> {
     })
 }
 
-/// A flagged `o3_candidates` candidate copy and its nearest reference locus (0-based half-open, as `nearest_locus`).
+/// A flagged `candidate_copies` candidate copy and its nearest reference locus (0-based half-open, as `nearest_locus`).
 #[derive(Clone, Debug, PartialEq)]
 struct FlaggedCandidate {
     id: String,
@@ -135,13 +135,13 @@ struct FlaggedCandidate {
     end: u64,
 }
 
-/// The flagged rows of an `o3_candidates` `<prefix>.candidates.tsv` (columns by name) that carry a nearest locus
+/// The flagged rows of a `candidate_copies` `<prefix>.candidates.tsv` (columns by name) that carry a nearest locus
 /// (`chrom:start-end`; `none` = no genome hit, nothing to corroborate), in table order.
 fn parse_flagged_candidates(text: &str) -> Result<Vec<FlaggedCandidate>> {
     let mut lines = text.lines();
     let header = lines
         .next()
-        .context("--candidates: empty file (expected an o3_candidates candidates.tsv)")?;
+        .context("--candidates: empty file (expected a candidate_copies candidates.tsv)")?;
     let cols: Vec<&str> = header.split('\t').collect();
     let idx = |name: &str| {
         cols.iter()

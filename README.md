@@ -29,17 +29,17 @@ output. `docs/DATA.md` lists the BAMs, genomes and annotations those recipes rea
 the repository). `docs/MODULE_STATUS.md` says which modules are reachable at defaults, which are opt-in, and
 which only a side binary uses — enforced by a test.
 
-Main binaries (`src/bin/`, nine): the pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
+Main binaries (`src/`, nine): the pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
 streams a whole BAM into loci and isoforms; `--families` is the copy assignment; `--flag-missing-copies` the
 pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` runs the de novo stage from an
 assembled GTF in one command, with the copy table the assignment consumes), `gw_family_catalog` (the LEGACY copy
-catalog, assigned only with the driver's `--legacy-catalog`), `o3_candidates` (the opt-in candidates stage: candidate
+catalog, assigned only with the driver's `--legacy-catalog`), `candidate_copies` (the opt-in candidates stage: candidate
 copies absent from the reference, from each family's reads), `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — the `utilities` binary (four converters as subcommands: `mcl-port`, `locus-bed`, `gff-to-gtf`, `parcn`), plus the standalone comparator `family_score` and filter `readthrough_filter`.
 `tools/rustle_pipeline.sh assemble|families|candidates|catalog|assign|merged|flag|all` runs any stage, or all of them (`all` =
 assemble, families, assign, flag); `merged` is the genome-wide entry point (assemble + families + assign on the families copy table, byte-identical, resumable — bench/MERGED_PIPELINE.md), with the shipped defaults (since 2026-09-29 these include bridge-aware regrouping,
 `copy_assign --bridge-regroup f1v2`, and the containment escape `mcl_families --min-cov-shorter 0.70`; since 2026-10-02
 `assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`, and `candidates` — O3 candidate
-copies from each family's reads, `o3_candidates` — is OPT-IN, `--candidates`, because its pre-registered acceptance failed:
+copies from each family's reads, `candidate_copies` — is OPT-IN, `--candidates`, because its pre-registered acceptance failed:
 `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; the re-run acceptance passed on 2026-10-03, but its no-deletion control failed
 and the default flip was reverted the same day, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; on a full BAM one batch of 50
 families did not finish in a 10-minute call, spec §9b, R23; the driver runs every family in one call, only the binary's `--families` batches, so its peak memory exceeds that batch's 10.7 GB). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is

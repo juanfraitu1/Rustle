@@ -150,10 +150,10 @@ fn main() -> Result<()> {
     if std::env::var("RUSTLE_AS_TABLE_SIDECAR").map_or(true, |v| v != "0") {
         drop(mols);
         let t1 = std::time::Instant::now();
-        match rustle::family::denovo_assemble::load_as_table(&args.out, true) {
+        match rustle::denovo_assemble::load_as_table(&args.out, true) {
             Some((t, src)) => eprintln!(
                 "[as-table] sidecar {}: {} molecules ({src}) in {:.1} s",
-                rustle::family::denovo_assemble::as_sidecar_path(&args.out),
+                rustle::denovo_assemble::as_sidecar_path(&args.out),
                 t.len(),
                 t1.elapsed().as_secs_f64()
             ),

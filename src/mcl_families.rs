@@ -15,11 +15,11 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use rustle::family::annotation_families::{
+use rustle::annotation_families::{
     build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl,
     sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, SdPairs,
 };
-use rustle::family::fam_from_gtf::{
+use rustle::fam_from_gtf::{
     clip_extents_to_neighbours, exonic_blocks, gene_strands, gtf_loci, junction_count,
     lengths_from_blocks, loci_from_gtf, relation_loci, rep_frac_in, write_locus_rep_copies,
     GtfLocus, RepCopyStats, Representative,
@@ -215,7 +215,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_emit_units: bool,
     /// With `--from-gtf` only; default OFF (every product byte-identical without it). The CONTAINER of each family
-    /// member's extra pieces (`rustle::family::family_container`, the port of the frozen `bench/family_container.py`,
+    /// member's extra pieces (`rustle::family_container`, the port of the frozen `bench/family_container.py`,
     /// `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1): after the families are written, every
     /// clustered locus (with the records `loci.tsv` folds into it) gets its exon blocks = the union of the exons of
     /// ALL transcripts of its gene_ids in the `--from-gtf` GTF; a block is `core` iff one aligned CIGAR column of
@@ -228,7 +228,7 @@ struct Args {
     emit_container: bool,
     /// With `--from-gtf` only; default OFF (every product byte-identical without it). The RELATION RECORDS of the
     /// unit-split transcripts of `copy_assign --assemble-only --bridge-regroup f1units` and the MEMBERS of each family
-    /// BY LOCUS (`rustle::family::family_relations`, the container output spec v2 of
+    /// BY LOCUS (`rustle::family_relations`, the container output spec v2 of
     /// `docs/PREREG_container_units_v2_dev_2026-09-30.md`): after the families are written, every unit transcript
     /// (`fusion_unit` in the `--from-gtf` GTF) is grouped under the transcript it was cut from. Writes
     /// `<out>.relations.tsv` (one row per split transcript: its units, their loci and families, SAME / DIFF /
@@ -397,12 +397,10 @@ struct Args {
 }
 
 /// Aligned blocks and introns of a read, 0-based half-open on the reference (`D` extends a block; `N` closes it).
-fn blocks_and_introns(
-    br: &rustle::family::denovo_assemble::BamRead,
-) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
+fn blocks_and_introns(br: &rustle::denovo_assemble::BamRead) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
     (
         br.read.exon_blocks(),
-        rustle::family::copy_split::intron_chain_of(&br.read),
+        rustle::copy_split::intron_chain_of(&br.read),
     )
 }
 
@@ -440,7 +438,7 @@ fn kept_segment(
 /// target (`copies.tsv` `locus_start`/`locus_end`), replacing the padding rule O2 invented in §6fd. `None`
 /// when no primary record has a block in the chain.
 fn read_extent(
-    reads: &[rustle::family::denovo_assemble::BamRead],
+    reads: &[rustle::denovo_assemble::BamRead],
     chain: &[(u64, u64)],
     min_reads: usize,
 ) -> Option<(u64, u64)> {
@@ -470,7 +468,7 @@ fn read_extent(
 /// ⭐ The read-supported exon chain of one locus `[lo, hi)` (§6el rule; one shipped constant pair: 50 kb / 3).
 /// Returns `(blocks, strand, n_reads)`; `blocks` empty when fewer than `min_reads` reads or no base reaches it.
 fn read_chain(
-    reads: &[rustle::family::denovo_assemble::BamRead],
+    reads: &[rustle::denovo_assemble::BamRead],
     lo: u64,
     hi: u64,
     min_reads: usize,
@@ -652,7 +650,7 @@ fn canonical_intron(
     }
 }
 
-use rustle::family::denovo_assemble::longest_orf;
+use rustle::denovo_assemble::longest_orf;
 
 /// Does this read have at least one ALIGNED BLOCK inside `[start-1, end)`?
 ///
@@ -661,7 +659,7 @@ use rustle::family::denovo_assemble::longest_orf;
 /// inflated a headline 3.4x and produced a retracted mechanism (ledger §6cm) — 71.6% of the reads
 /// "supporting" one locus were merely passing through it. Supplementary records are excluded by the
 /// caller so one molecule is never two witnesses.
-fn has_block_in(br: &rustle::family::denovo_assemble::BamRead, m: &GeneKey) -> bool {
+fn has_block_in(br: &rustle::denovo_assemble::BamRead, m: &GeneKey) -> bool {
     let (lo, hi) = (m.1.saturating_sub(1), m.2);
     let mut p = br.read.ref_start;
     let mut cur: Option<(u64, u64)> = None;
@@ -932,7 +930,7 @@ fn main() -> Result<()> {
             let mut ok = BTreeSet::new();
             for m in &members {
                 // `start` is GFF 1-based; the BAM query wants 0-based half-open.
-                let (_, reads) = rustle::family::denovo_assemble::reads_in_region(
+                let (_, reads) = rustle::denovo_assemble::reads_in_region(
                     bam,
                     &m.0,
                     m.1.saturating_sub(1),
@@ -1024,7 +1022,7 @@ fn main() -> Result<()> {
 
     // ⭐ Duplicon-first core refinement (§6eh). Post-MCL, per cluster; clusters.tsv above is untouched.
     let mut core_stats = (0usize, 0usize, 0usize, 0usize, 0usize); // gated clusters, kept-full, trimmed, dropped, untouched clusters
-    let mut core_records: Vec<Vec<rustle::family::annotation_families::CoreRecord>> = Vec::new();
+    let mut core_records: Vec<Vec<rustle::annotation_families::CoreRecord>> = Vec::new();
     let mut sd_pairs: Option<SdPairs> = None; // kept for the §6fw read-through guard
     if args.core_refine {
         let sd = match args.sedef.as_ref() {
@@ -1058,7 +1056,7 @@ fn main() -> Result<()> {
             "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\tstatus"
         )?;
         for (i, c) in clusters.iter().enumerate() {
-            let recs = rustle::family::annotation_families::refine_cluster_cores_with(
+            let recs = rustle::annotation_families::refine_cluster_cores_with(
                 &c.members,
                 &sd,
                 args.core_majority_inclusive,
@@ -1074,7 +1072,7 @@ fn main() -> Result<()> {
                 .corroborated
                 .map(|v| format!("{v:.4}"))
                 .unwrap_or_else(|| "NA".into());
-            let kept: Vec<&rustle::family::annotation_families::CoreRecord> = recs
+            let kept: Vec<&rustle::annotation_families::CoreRecord> = recs
                 .iter()
                 .filter(|r| r.status != CoreStatus::Dropped)
                 .collect();
@@ -1356,9 +1354,8 @@ fn main() -> Result<()> {
                     },
                     _ => (m.1.saturating_sub(1), m.2),
                 };
-                let (_, reads) =
-                    rustle::family::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
-                        .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
+                let (_, reads) = rustle::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
+                    .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
                 let (chain, rstrand, n_reads) = read_chain(
                     &reads,
                     lo,
@@ -1433,7 +1430,7 @@ fn main() -> Result<()> {
                     seq.extend_from_slice(&part);
                 }
                 if strand == '-' {
-                    seq = rustle::family::seq_utils::revcomp_keep_case(&seq);
+                    seq = rustle::seq_utils::revcomp_keep_case(&seq);
                 }
                 let (sd_depth, core_bp) = core_records
                     .get(i)
@@ -1862,7 +1859,7 @@ fn main() -> Result<()> {
                     seq.extend_from_slice(&part);
                 }
                 if a.strand == '-' {
-                    seq = rustle::family::seq_utils::revcomp_keep_case(&seq);
+                    seq = rustle::seq_utils::revcomp_keep_case(&seq);
                 }
                 writeln!(
                     ut,
@@ -1916,7 +1913,7 @@ fn main() -> Result<()> {
     // wrote, the PAF, the GTF); it changes nothing already written.
     let mut container_counts: Option<[(&str, i64); 3]> = None;
     if args.emit_container {
-        use rustle::family::fam_from_gtf::family_container as fc;
+        use rustle::fam_from_gtf::family_container as fc;
         let gtf = args
             .from_gtf
             .as_deref()
@@ -1968,7 +1965,7 @@ fn main() -> Result<()> {
     // run's own `gtf_loci`, so a key here is a node key there); it changes nothing already written.
     let mut relation_counts: Option<[(&'static str, usize); 7]> = None;
     if args.emit_relations {
-        use rustle::family::fam_from_gtf::{family_container as fc, family_relations as fr};
+        use rustle::fam_from_gtf::{family_container as fc, family_relations as fr};
         let gtf = args
             .from_gtf
             .as_deref()
@@ -2263,8 +2260,8 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustle::family::copy_split::AlignedRead;
-    use rustle::family::denovo_assemble::BamRead;
+    use rustle::copy_split::AlignedRead;
+    use rustle::denovo_assemble::BamRead;
 
     /// `--min-cov-shorter` defaults to 0.70 (2026-09-29); `0` is the explicit OFF that `graph_from_paf` treats as
     /// "no escape" (`p.min_cov_shorter > 0.0`), the edge weights of every catalog built before the flip.
@@ -2438,8 +2435,8 @@ mod tests {
     /// clusters and fold table, and the two tables equal the dev prototype's (`relations.py`, d90a33da) byte for byte.
     #[test]
     fn relations_from_the_graphs_own_loci_equal_the_python_prototype_on_the_fixture() {
-        use rustle::family::bridge_regroup;
-        use rustle::family::fam_from_gtf::family_relations as fr;
+        use rustle::bridge_regroup;
+        use rustle::fam_from_gtf::family_relations as fr;
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/bridge_units/");
         let read = |f: &str| std::fs::read_to_string(format!("{dir}{f}")).unwrap();
         let mut lines: Vec<String> = read("plain.gtf").lines().map(str::to_string).collect();
@@ -2475,8 +2472,8 @@ mod tests {
     /// extent is the de novo locus span clipped at the neighbouring copy's chain.
     #[test]
     fn locus_rep_copies_are_in_the_catalog_contract() {
-        use rustle::family::annotation_families::HomologyGraph;
-        use rustle::family::catalog_input::{
+        use rustle::annotation_families::HomologyGraph;
+        use rustle::catalog_input::{
             group_families, parse_copies_fa, parse_copies_tsv, to_colocated,
         };
         let dir = tempfile::tempdir().unwrap();

@@ -1,10 +1,10 @@
-//! `o3_candidates` — O3 candidate copies from each family's read net (spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`
+//! `candidate_copies` — O3 candidate copies from each family's read net (spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md`
 //! §5; plan `docs/superpowers/plans/2026-10-02-o3-candidates.md` task 8): the reads of a family -> clusters at delta -> one consensus per
 //! cluster -> one refinement pass -> the significance merge -> flag / link against the genome -> components of the new-copy clusters
-//! (candidate copies), each represented by the exon union of its clusters. The algorithm is `rustle::family::o3_candidates`; this file is
+//! (candidate copies), each represented by the exon union of its clusters. The algorithm is `rustle::candidate_copies::detect`; this file is
 //! the glue: arguments, the two BAM passes, the batched minimap2 calls, the per-family loop, the outputs and the stage cache.
 //!
-//! usage: o3_candidates --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi --out P.cand
+//! usage: candidate_copies --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi --out P.cand
 //!        [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2]
 //!
 //! Products (`<out>.`): from `write_outputs`, `candidates.tsv`, `clusters.tsv` (the new-copy and the linked clusters; the in-reference
@@ -21,11 +21,7 @@
 use anyhow::{Context, Result};
 use noodles_core::{Position, Region};
 use rustle::bam::record_de;
-use rustle::family::catalog_input::{
-    group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily,
-};
-use rustle::family::copy_assign::AssignParams;
-use rustle::family::o3_candidates::{
+use rustle::candidates::detect::{
     attribute_by_hits, best_by_id_cov, best_by_matches, candidate_id, classify, cluster_reads,
     components, consensus_from_template, distinguishing_columns, is_flagged, is_poorly_placed,
     minimap2, minimap2_binary, minimap2_keyed, minimizer_sketch, parse_cs, parse_paf,
@@ -35,8 +31,10 @@ use rustle::family::o3_candidates::{
     ATTRIB_MAX_DE, ATTRIB_MIN_READ_COV, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA, MM2_GENOME,
     MM2_MEMBERS, MM2_UNION, POORLY_PLACED_DE, SKETCH_W,
 };
-use rustle::family::run_cache as rc;
-use rustle::family::seq_utils::reverse_complement;
+use rustle::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily};
+use rustle::copy_assign::AssignParams;
+use rustle::run_cache as rc;
+use rustle::seq_utils::reverse_complement;
 use rustle::types::{DetHashMap, DetHashSet};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,7 +42,7 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-const USAGE: &str = "usage: o3_candidates --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi \
+const USAGE: &str = "usage: candidate_copies --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi \
 --out P.cand [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2]";
 
 /// spec §5.5: the per-column error proxy eps of the significance merge (`read_conflict.rs:77`, the default of `RUSTLE_CONFLICT_EPS`).
@@ -82,7 +80,7 @@ fn main() {
         return;
     }
     if let Err(e) = run(&raw) {
-        eprintln!("o3_candidates: {e:#}");
+        eprintln!("candidate_copies: {e:#}");
         std::process::exit(if e.downcast_ref::<ExitTwo>().is_some() {
             2
         } else {
@@ -277,7 +275,7 @@ fn run(raw: &[String]) -> Result<()> {
     }
     let (families, family_of_copy) = load_copies(&args)?;
     eprintln!(
-        "[o3_candidates] {} families from {} ({} copy records of {} are attribution targets beside the nets)",
+        "[candidate_copies] {} families from {} ({} copy records of {} are attribution targets beside the nets)",
         families.len(), args.copies, family_of_copy.len(), args.copies_fa
     );
 
@@ -288,7 +286,7 @@ fn run(raw: &[String]) -> Result<()> {
         .map(|root| rc::Entry::new(root, "cand", stage_key(&args, &mm2)).pinned());
     if let Some(e) = stage.as_ref() {
         if replay_stage(e, &args.out) {
-            eprintln!("[cache] o3_candidates: stage result replayed from {} (BAM passes and minimap2 skipped)", e.dir.display());
+            eprintln!("[cache] candidate_copies: stage result replayed from {} (BAM passes and minimap2 skipped)", e.dir.display());
             return Ok(());
         }
     }
@@ -333,7 +331,7 @@ fn run(raw: &[String]) -> Result<()> {
             let net = Net::write(&dir, used, &nets.seqs)?;
             let (clusters, log) = family_clusters(&net, &args, &dir, &mm, alpha)?;
             eprintln!(
-                "[o3_candidates] {}: net {} reads ({} used) | {}",
+                "[candidate_copies] {}: net {} reads ({} used) | {}",
                 w.family, w.n_net, w.n_used, log
             );
             for (k, c) in clusters.into_iter().enumerate() {
@@ -349,7 +347,7 @@ fn run(raw: &[String]) -> Result<()> {
             }
             std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
         } else {
-            eprintln!("[o3_candidates] {}: net {} reads ({} used) | fewer than --min-cluster {}: no cluster", w.family, w.n_net, w.n_used, args.min_cluster);
+            eprintln!("[candidate_copies] {}: net {} reads ({} used) | fewer than --min-cluster {}: no cluster", w.family, w.n_net, w.n_used, args.min_cluster);
         }
         work.push(w);
     }
@@ -426,7 +424,7 @@ fn run(raw: &[String]) -> Result<()> {
         }
         if fc.n_clusters > 0 {
             eprintln!(
-                "[o3_candidates] {}: {} clusters: {} in the reference, {} linked, {} new copy -> {} candidates ({} flagged)",
+                "[candidate_copies] {}: {} clusters: {} in the reference, {} linked, {} new copy -> {} candidates ({} flagged)",
                 fc.family, fc.n_clusters, fc.n_in_reference, fc.n_linked, fc.n_new, fc.n_candidates, fc.n_flagged
             );
         }
@@ -459,7 +457,7 @@ fn run(raw: &[String]) -> Result<()> {
     std::fs::remove_dir_all(&tmp).with_context(|| format!("removing {}", tmp.display()))?;
     let n_flagged: usize = counts.iter().map(|c| c.n_flagged).sum();
     eprintln!(
-        "[o3_candidates] done: {} families, {} clusters, {} candidates, {} flagged in {} families; {} minimap2 calls; {:.1} s (nets {:.1} s, clusters {:.1} s, genome {:.1} s)",
+        "[candidate_copies] done: {} families, {} clusters, {} candidates, {} flagged in {} families; {} minimap2 calls; {:.1} s (nets {:.1} s, clusters {:.1} s, genome {:.1} s)",
         counts.len(), n_consensus, cands.len(), n_flagged, flagged_families.len(), mm.calls.get(), t0.elapsed().as_secs_f64(),
         t_nets, t_clusters - t_nets, t_genome - t_clusters
     );
@@ -562,7 +560,7 @@ fn copy_targets(fa: &str, checked: &DetHashSet<(&str, usize)>) -> DetHashMap<Str
 fn stage_key(args: &Args, mm2: &str) -> String {
     let fp = |p: &str| rc::file_fingerprint(p);
     format!(
-        "rustle o3 candidates v1\ncmd\t{}\nexe\t{}\nminimap2\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncopies\t{}\ncopies_fa\t{}\nindex\t{}\n{}",
+        "rustle candidate_copies v1\ncmd\t{}\nexe\t{}\nminimap2\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncopies\t{}\ncopies_fa\t{}\nindex\t{}\n{}",
         args.key_cmd,
         rc::exe_fingerprint(),
         rc::minimap2_version(mm2),
@@ -596,7 +594,7 @@ fn store_stage(e: &rc::Entry, out: &str) {
     });
     match stored {
         Ok(()) => eprintln!(
-            "[cache] o3_candidates: stage result stored in {}",
+            "[cache] candidate_copies: stage result stored in {}",
             e.dir.display()
         ),
         Err(err) => eprintln!("[cache] could not store the stage result ({err:#}); continuing"),
@@ -840,12 +838,12 @@ fn collect_nets(
         .filter(|n| !seqs.contains_key(n.as_str()))
         .count();
     eprintln!(
-        "[o3_candidates] BAM: pass A {n_primary} reads by a primary record and {n_secondary} secondary records on the copies; pass B {n_found} of {} \
+        "[candidate_copies] BAM: pass A {n_primary} reads by a primary record and {n_secondary} secondary records on the copies; pass B {n_found} of {} \
          secondary-only reads found by their primary record ({n_lost} without one: left out)",
         need.len()
     );
     eprintln!(
-        "[o3_candidates] pass B: unmapped >= {MIN_UNMAPPED_LEN} bp {n_unmapped}; poorly placed >= {MIN_UNMAPPED_LEN} bp {n_poor} (de > {POORLY_PLACED_DE} \
+        "[candidate_copies] pass B: unmapped >= {MIN_UNMAPPED_LEN} bp {n_unmapped}; poorly placed >= {MIN_UNMAPPED_LEN} bp {n_poor} (de > {POORLY_PLACED_DE} \
          or MAPQ 0, in no net of this run; {n_poor_short} below the floor); aligned {}: unmapped {}, poorly placed {}; attributed {n_attributed} (read \
          coverage >= {ATTRIB_MIN_READ_COV}, de <= {ATTRIB_MAX_DE:.2}): unmapped {}, poorly placed {}; joined this run's families {n_joined}",
         counts.aligned_unmapped + counts.aligned_poor,
@@ -855,7 +853,7 @@ fn collect_nets(
         counts.attributed_poor
     );
     if n_no_de > 0 {
-        eprintln!("[o3_candidates] pass B: {n_no_de} primary records of reads in no net carry no de tag: judged by their MAPQ alone");
+        eprintln!("[candidate_copies] pass B: {n_no_de} primary records of reads in no net carry no de tag: judged by their MAPQ alone");
     }
     let names = names
         .into_iter()
@@ -1614,7 +1612,7 @@ fn family_candidates(
         }
         if note.no_hit + note.skipped_minus > 0 {
             eprintln!(
-                "[o3_candidates] {}: union of {} members: {} without a hit on the union, {} on the - strand (skipped)",
+                "[candidate_copies] {}: union of {} members: {} without a hit on the union, {} on the - strand (skipped)",
                 candidate_id(&w.family, k), members.len(), note.no_hit, note.skipped_minus
             );
         }
@@ -1667,7 +1665,7 @@ mod tests {
         // R12: `--out` is an output path, not an input, so a re-run under another prefix hits; the thread count never enters a key (R10)
         let key = |extra: &[&str]| stage_key(&parsed(extra), "/nonexistent/minimap2");
         let base = key(&["--out", "runs/a/P.cand"]);
-        assert!(base.starts_with("rustle o3 candidates v1\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
+        assert!(base.starts_with("rustle candidate_copies v1\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
         assert!(
             !base.contains("P.cand"),
             "the output prefix must not be in the key: {base}"

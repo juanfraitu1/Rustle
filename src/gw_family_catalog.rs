@@ -16,7 +16,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::io::Write;
 
-use rustle::family::denovo_pipeline::{
+use rustle::denovo_pipeline::{
     certificates_for_families, detect_conflict_catalog_genome_wide,
     detect_conflict_catalog_genome_wide_xchrom, detect_homology_catalog_genome_wide,
     detect_homology_catalog_piecewise, detect_single_copy_baseline_genome_wide,
@@ -42,7 +42,7 @@ fn resumable<T>(r: Result<T>) -> Result<T> {
         r => r,
     }
 }
-use rustle::family::family_detect::DenovoTranscript;
+use rustle::family_detect::DenovoTranscript;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -248,7 +248,7 @@ struct Args {
     ///
     /// Coordinates are 1-based inclusive (GFF/samtools convention). Seeds that overlap no emitted
     /// copy ABSTAIN; they are not snapped to a nearest locus. See
-    /// `src/rustle/family/seed_projection.rs` for why a seed-DERIVED node set (the
+    /// `src/seed_projection.rs` for why a seed-DERIVED node set (the
     /// `bench/crossspecies` probe) is not seed-invariant and is not what this queries.
     #[arg(long)]
     seed: Vec<String>,
@@ -297,7 +297,7 @@ fn project_seeds(
     out: &str,
     min_copies: usize,
 ) -> Result<()> {
-    use rustle::family::from_genome::seed_projection::{
+    use rustle::from_genome::seed_projection::{
         format_seed_rows, parse_seed, project_seed, SeedHit, SEED_TSV_HEADER,
     };
     if specs.is_empty() {
@@ -381,7 +381,7 @@ fn exon_blocks(c: &DenovoTranscript) -> String {
     // ONE implementation, shared with `write_er_edge_dump`'s node dump: a second copy here would let
     // `copies.tsv` and `nodes.tsv` drift apart on the malformed-chain rule, and joining them on exons
     // is the whole point of emitting the array.
-    rustle::family::catalog_input::exon_blocks_str(c.start, c.end, &c.introns)
+    rustle::catalog_input::exon_blocks_str(c.start, c.end, &c.introns)
 }
 
 fn emit_catalog(
@@ -732,7 +732,7 @@ fn main() -> Result<()> {
     // self-alignment, then groups them with the SAME homology_blocks core the RNA --homology-primary path
     // uses (via families_from_reps_certified). Returns before any BAM-consuming path.
     if args.from_genome.is_some() || args.from_genome_sd.is_some() {
-        use rustle::family::from_genome::{genome_reps, windows_from_sd_bed, GenomeRepParams};
+        use rustle::from_genome::{genome_reps, windows_from_sd_bed, GenomeRepParams};
         if args.from_genome.is_some() && args.from_genome_sd.is_some() {
             anyhow::bail!(
                 "--from-genome and --from-genome-sd are mutually exclusive (two window sources)"
@@ -819,7 +819,7 @@ fn main() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("--bam is required unless --from-genome is given"))?;
 
     if args.single_copy_baseline {
-        use rustle::family::single_copy::lambda_global;
+        use rustle::single_copy::lambda_global;
         let loci = detect_single_copy_baseline_genome_wide(
             bam,
             &args.fasta,
@@ -913,9 +913,9 @@ fn main() -> Result<()> {
     let (raw, raw_certs, collapsed, expressed, dna_families): (
         Vec<Vec<DenovoTranscript>>,
         Vec<FamilyCertificate>,
-        Vec<rustle::family::collapse_enumerate::CollapsedFamily>,
-        Vec<rustle::family::collapse_enumerate::ExpressedCollapsedFamily>,
-        Vec<rustle::family::collapse_enumerate::ExpressedCollapsedFamily>,
+        Vec<rustle::collapse_enumerate::CollapsedFamily>,
+        Vec<rustle::collapse_enumerate::ExpressedCollapsedFamily>,
+        Vec<rustle::collapse_enumerate::ExpressedCollapsedFamily>,
     ) = if o1_homology && args.piecewise {
         let budget = PieceBudget {
             max_pieces: args.max_pieces,
@@ -1099,10 +1099,7 @@ fn main() -> Result<()> {
             writeln!(
                 cf,
                 "{}",
-                rustle::family::collapse_enumerate::format_collapsed_row(
-                    &format!("GWFAMc{i}"),
-                    fam
-                )
+                rustle::collapse_enumerate::format_collapsed_row(&format!("GWFAMc{i}"), fam)
             )?;
         }
         eprintln!(
@@ -1124,7 +1121,7 @@ fn main() -> Result<()> {
             writeln!(
                 ef,
                 "{}",
-                rustle::family::collapse_enumerate::format_expressed_collapsed_row(
+                rustle::collapse_enumerate::format_expressed_collapsed_row(
                     &format!("GWFAMe{i}"),
                     fam
                 )
@@ -1145,10 +1142,7 @@ fn main() -> Result<()> {
             writeln!(
                 df,
                 "{}",
-                rustle::family::collapse_enumerate::format_dna_family_row(
-                    &format!("GWFAMdna{i}"),
-                    fam
-                )
+                rustle::collapse_enumerate::format_dna_family_row(&format!("GWFAMdna{i}"), fam)
             )?;
         }
         eprintln!("[gw-catalog] dna-family-fallback: {} DNA_FAMILY_RNA_NONHOMOLOGOUS loci -> {}.dna_family.tsv", dna_families.len(), args.out);
@@ -1194,7 +1188,7 @@ fn main() -> Result<()> {
                 (format!("GWFAM{fi}"), loci)
             })
             .collect();
-        let proj_by_fam = match rustle::family::genome_projection::project_families_batch(
+        let proj_by_fam = match rustle::genome_projection::project_families_batch(
             &consensuses,
             &args.fasta,
             &known,
@@ -1251,7 +1245,7 @@ fn main() -> Result<()> {
     // primary reads over the locus), written to its own file so the RNA-split catalog (families.tsv/
     // copies.tsv) and the famCN/totalCN batch projection (famcn.tsv) are untouched.
     if project_all {
-        use rustle::family::from_genome::project_all::{
+        use rustle::from_genome::project_all::{
             all_copy_consensuses, dedup_overlapping, format_allproj_row, known_from_fams,
             overlaps_any, CopyIn,
         };
@@ -1276,7 +1270,7 @@ fn main() -> Result<()> {
             .collect();
         let consensuses = all_copy_consensuses(&fam_copies);
         let known = known_from_fams(&fam_copies);
-        let proj = rustle::family::genome_projection::project_families_batch(
+        let proj = rustle::genome_projection::project_families_batch(
             &consensuses,
             &args.fasta,
             &known,
@@ -1292,7 +1286,7 @@ fn main() -> Result<()> {
         for (fid, locs) in &proj {
             for l in dedup_overlapping(locs.clone()) {
                 // read-support gate: >=3 primary reads over the locus
-                let n_support = rustle::family::denovo_assemble::reads_in_region(
+                let n_support = rustle::denovo_assemble::reads_in_region(
                     bam,
                     &l.chrom,
                     l.start,

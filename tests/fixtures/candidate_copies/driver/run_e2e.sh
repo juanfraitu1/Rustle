@@ -1,13 +1,13 @@
 #!/bin/bash
-# run_e2e.sh — end-to-end check of the pipeline's candidates stage on the o3_candidates fixture (spec 2026-10-02 §7,
+# run_e2e.sh — end-to-end check of the pipeline's candidates stage on the candidate_copies fixture (spec 2026-10-02 §7,
 # ruling R13: O2's scope is AS-tied molecules, so a read that realigns uniquely to a candidate is PLACED there by the
 # aligner and never enters the certificate; the candidate family is assigned as a 2-copy family with the gate unchanged).
 #
-# usage: bash tests/fixtures/o3_candidates/driver/run_e2e.sh --bin DIR --out SCRATCH_DIR [--threads N]
-#   --bin  the cargo release directory (o3_candidates, copy_assign), passed to tools/rustle_pipeline.sh --bin
+# usage: bash tests/fixtures/candidate_copies/driver/run_e2e.sh --bin DIR --out SCRATCH_DIR [--threads N]
+#   --bin  the cargo release directory (candidate_copies, copy_assign), passed to tools/rustle_pipeline.sh --bin
 #   --out  a scratch directory (created; earlier products in it are overwritten)
 # It runs minimap2 and the driver and takes no lock itself: run it under the machine's heavy lock,
-#   bash tools/rlock.sh heavy bash tests/fixtures/o3_candidates/driver/run_e2e.sh --bin <target>/release --out <scratch>
+#   bash tools/rlock.sh heavy bash tests/fixtures/candidate_copies/driver/run_e2e.sh --bin <target>/release --out <scratch>
 # Needs minimap2, samtools and python3 on PATH (as the driver does).
 #
 # INPUTS. The fixture has no O1 products (its one locus gives the families stage no family), so the families stage's
@@ -41,7 +41,7 @@ set -euo pipefail
 usage() { echo "usage: bash $0 --bin DIR --out SCRATCH_DIR [--threads N]" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../../.." && pwd)
-fx=$repo/tests/fixtures/o3_candidates
+fx=$repo/tests/fixtures/candidate_copies
 BIN=""; OUT=""; THREADS=2
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,7 +50,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$BIN" ] && [ -n "$OUT" ] || usage
-for b in o3_candidates copy_assign; do
+for b in candidate_copies copy_assign; do
   [ -x "$BIN/$b" ] || { echo "run_e2e: $BIN/$b is missing (cargo build --release)" >&2; exit 2; }
 done
 for t in minimap2 samtools python3; do

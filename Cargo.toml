@@ -5,7 +5,7 @@ edition = "2021"
 autobins = false
 
 [lib]
-path = "src/rustle/lib.rs"
+path = "src/lib.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -30,9 +30,9 @@ fxhash = "0.2"
 # Parallel processing
 rayon = "1.10"
 
-lru = "0.12" # src/bin/copy_assign.rs contig cache
+lru = "0.12" # src/copy_assign_bin.rs contig cache
 
-flate2 = "1.1" # src/bin/gff_to_gtf.rs — plain .gz GFF3 input (bgzf is noodles' job)
+flate2 = "1.1" # src/utilities.rs gff-to-gtf — plain .gz GFF3 input (bgzf is noodles' job)
 poasta = "0.1.0"
 
 [profile.release]
@@ -67,36 +67,36 @@ serde_json = "1.0" # test fixtures (seq_utils aln_id parity, genome IndexedFasta
 
 [[bin]]
 name = "mcl_families"
-path = "src/bin/mcl_families.rs"
+path = "src/mcl_families.rs"
 
 [[bin]]
 name = "copy_assign"
-path = "src/bin/copy_assign.rs"
+path = "src/copy_assign_bin.rs"
 
 [[bin]]
 name = "gw_family_catalog"
-path = "src/bin/gw_family_catalog.rs"
+path = "src/gw_family_catalog.rs"
 
 [[bin]]
 name = "readthrough_filter"
-path = "src/bin/readthrough_filter.rs"
+path = "src/readthrough_filter.rs"
 
 [[bin]]
 name = "family_score"
-path = "src/bin/family_score.rs"
+path = "src/family_score.rs"
 
 [[bin]]
 name = "missing_copy_flag"
-path = "src/bin/missing_copy_flag.rs"
+path = "src/missing_copy_flag.rs"
 
 [[bin]]
-name = "o3_candidates"
-path = "src/bin/o3_candidates.rs"
+name = "candidate_copies"
+path = "src/candidate_copies.rs"
 
 [[bin]]
 name = "as_table"
-path = "src/bin/as_table.rs"
+path = "src/as_table.rs"
 
 [[bin]]
 name = "utilities"
-path = "src/bin/utilities.rs"
+path = "src/utilities.rs"

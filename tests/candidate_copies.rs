@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, Output};
 
-const FX: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/o3_candidates");
+const FX: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/candidate_copies"
+);
 
 /// The stage on the fixture's genome, copies and splice index (built in `dir`), with `bam` as the reads; the products' prefix is `dir/t.cand`.
 fn run_stage(dir: &Path, bam: &str) -> (Output, String) {
@@ -17,7 +20,7 @@ fn run_stage(dir: &Path, bam: &str) -> (Output, String) {
             .success()
     );
     let out = dir.join("t.cand");
-    let o = Command::new(env!("CARGO_BIN_EXE_o3_candidates"))
+    let o = Command::new(env!("CARGO_BIN_EXE_candidate_copies"))
         .args([
             "--bam",
             bam,
@@ -138,7 +141,7 @@ fn pass_b_attributes_the_unmapped_copy_b_reads_and_keeps_reads_under_the_floor_o
     let log = String::from_utf8_lossy(&o.stderr);
     let pass_b = log
         .lines()
-        .find(|l| l.starts_with("[o3_candidates] pass B: unmapped"))
+        .find(|l| l.starts_with("[candidate_copies] pass B: unmapped"))
         .unwrap_or_else(|| panic!("no pass B line: {log}"));
     for want in [
         "unmapped >= 300 bp 60;",

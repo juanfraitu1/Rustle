@@ -25,7 +25,8 @@ representative-rule scorer). The same collision exists for `make_bam.py` (two in
 | `rlock.sh` | the WSL2 job locks every heavy/light call runs under (`heavy`/`light`) |
 | `mm2_shard.sh` | the one minimap2-sharding wrapper (PAF caches, long all-vs-alls) |
 | `rustle_reassemble.sh` | the closed-loop pass 2 (`union → home → pass2 → g0`; figure 9's loop; cited by `figures/fig_loop.py` + `figures/captions/fig9.md`) |
-| `o3_augment.py` | the `candidates` stage's augmentation (copies table + FASTA + regions + name-collision guard) |
+| `utilities candidate-augment` | the `candidates` stage's augmentation (copies table + FASTA + regions + name-collision guard) |
+| `candidate_augment.py.legacy` | frozen Python reference implementation, kept for provenance |
 | `protein_attach.py` | protein-family attachment (PREREG_protein_attach_2026-09-25) |
 | `audit_cleanup_candidates.py` | the cleanup-candidate audit (ACTIVE_WORKING_SET; register r1046) |
 

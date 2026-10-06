@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Generate the fixture of `tests/o3_candidates.rs` (plan docs/superpowers/plans/2026-10-02-o3-candidates.md, task 8): a two-copy family
-whose second copy is ABSENT from the reference, so `o3_candidates` must flag exactly one candidate copy.
+"""Generate the fixture of `tests/candidate_copies.rs` (plan docs/superpowers/plans/2026-10-02-o3-candidates.md, task 8): a two-copy family
+whose second copy is ABSENT from the reference, so `candidate_copies` must flag exactly one candidate copy.
 
 Layout (contig `chrT`, 60 kb random sequence; the gene is on `+`):
 

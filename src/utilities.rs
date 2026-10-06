@@ -5,6 +5,8 @@
 //!   utilities locus-bed PRED.gtf --out PREFIX [--ref REF.gtf] [--min-overlap 0.10]
 //!   utilities mcl-port --graph EDGES.tsv [--inflation 2.8] [--prune 1e-9] [--max-iter 100]
 //!   utilities parcn --copies-fa FA --mat FA --pat FA --out PREFIX [--minimap2 PATH] [--threads 4]
+//!   utilities candidate-augment --fasta G.fa --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa
+//!                        --regions P.fam.copies.regions --cand P.cand --out P.aug
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -68,6 +70,21 @@ enum Cmd {
         #[arg(long, default_value_t = 4)]
         threads: usize,
     },
+    /// Augment the genome and copies table with flagged candidates.
+    CandidateAugment {
+        #[arg(long)]
+        fasta: String,
+        #[arg(long)]
+        copies: String,
+        #[arg(long)]
+        copies_fa: String,
+        #[arg(long)]
+        regions: String,
+        #[arg(long)]
+        cand: String,
+        #[arg(long)]
+        out: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -94,6 +111,22 @@ fn main() -> Result<()> {
             minimap2,
             threads,
         } => parcn::run(&copies_fa, &mat, &pat, &out, &minimap2, threads),
+        Cmd::CandidateAugment {
+            fasta,
+            copies,
+            copies_fa,
+            regions,
+            cand,
+            out,
+        } => {
+            if let Err(e) =
+                candidate_augment::run(&fasta, &copies, &copies_fa, &regions, &cand, &out)
+            {
+                eprintln!("candidate_augment: {e}");
+                std::process::exit(2);
+            }
+            Ok(())
+        }
     }
 }
 
@@ -715,8 +748,8 @@ mod parcn {
     use std::collections::{BTreeMap, HashMap};
     use std::io::Write;
 
-    use rustle::family::genome_projection::project_with_cs;
-    use rustle::family::parcn::{
+    use rustle::genome_projection::project_with_cs;
+    use rustle::parcn::{
         assign_locus, dedup_loci, format_family_row, format_parcn_row, parse_copies_fa,
         sun_positions, tabulate, Assignment, CopySun, Locus,
     };
@@ -783,7 +816,7 @@ mod parcn {
         Ok(())
     }
 
-    fn band_for(copies: &[rustle::family::parcn::Copy]) -> usize {
+    fn band_for(copies: &[rustle::parcn::Copy]) -> usize {
         let lens = copies.iter().map(|c| c.seq.len());
         let (lo, hi) = lens.fold((usize::MAX, 0usize), |(lo, hi), l| (lo.min(l), hi.max(l)));
         (if hi < lo { 64 } else { (hi - lo) + 64 }).min(8192)
@@ -943,6 +976,492 @@ mod parcn {
             }
             std::fs::remove_file(format!("{}.parcn.tsv", out.to_string_lossy())).ok();
             std::fs::remove_file(format!("{}.parcn_families.tsv", out.to_string_lossy())).ok();
+        }
+    }
+}
+
+/// Augment the genome, copies table, copies FASTA and regions with flagged o3 candidates
+/// (spec `docs/superpowers/specs/2026-10-02-o3-candidates-design.md` §4, §7).
+mod candidate_augment {
+    use anyhow::{anyhow, bail, Context, Result};
+    use std::collections::{HashMap, HashSet};
+    use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+
+    const COPY_REQUIRED: &[&str] = &[
+        "family_id",
+        "copy_idx",
+        "tid",
+        "chrom",
+        "start",
+        "end",
+        "n_exon",
+        "strand",
+        "n_reads",
+        "exons",
+    ];
+    const CAND_REQUIRED: &[&str] = &["family", "candidate", "flagged", "union_len"];
+
+    pub fn run(
+        fasta: &str,
+        copies: &str,
+        copies_fa: &str,
+        regions: &str,
+        cand: &str,
+        out: &str,
+    ) -> Result<()> {
+        let cand_path = format!("{cand}.candidates.tsv");
+        let contigs_path = format!("{cand}.contigs.fa");
+
+        let cand_table = read_table(&cand_path, CAND_REQUIRED, "candidates table")?;
+        let flagged: Vec<usize> = cand_table
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| cand_table.get_by_row(r, "flagged") == Some("1"))
+            .map(|(i, _)| i)
+            .collect();
+        if flagged.is_empty() {
+            bail!("{cand_path} has no flagged candidate: nothing to augment");
+        }
+        let contigs = read_fasta(&contigs_path, "contigs")?;
+        let (genome_names, names_src) = genome_names(fasta)?;
+
+        let mut seen: HashSet<&str> = HashSet::new();
+        for &ri in &flagged {
+            let r = &cand_table.rows[ri];
+            let cid = cand_table.get_by_row(r, "candidate").unwrap();
+            if genome_names.contains(cid) {
+                bail!("candidate {cid} already names a sequence of {fasta} ({names_src}); refusing to write {out}.*");
+            }
+            if !seen.insert(cid) {
+                bail!("candidate {cid} is flagged twice in {cand_path}");
+            }
+            let seq = contigs.get(cid).with_context(|| {
+                format!("flagged candidate {cid} has no record in {contigs_path}")
+            })?;
+            let union_len = cand_table.get_by_row(r, "union_len").unwrap();
+            if !union_len.chars().all(|c| c.is_ascii_digit())
+                || union_len.parse::<usize>().unwrap_or(0) != seq.len()
+                || seq.is_empty()
+            {
+                bail!(
+                    "{cid}: contig of {} bp but union_len {union_len:?} in {cand_path}",
+                    seq.len()
+                );
+            }
+        }
+
+        let copy_table = read_table(copies, COPY_REQUIRED, "copies table")?;
+        let mut next_idx: HashMap<String, usize> = HashMap::new();
+        for r in &copy_table.rows {
+            let fid = copy_table.get_by_row(r, "family_id").unwrap().to_string();
+            let idx_str = copy_table.get_by_row(r, "copy_idx").unwrap();
+            let idx = idx_str
+                .parse::<usize>()
+                .with_context(|| format!("{copies}: bad copy_idx {idx_str:?} for {fid}"))?;
+            next_idx
+                .entry(fid)
+                .and_modify(|v| *v = (*v).max(idx + 1))
+                .or_insert(idx + 1);
+        }
+
+        let mut new_rows: Vec<String> = Vec::new();
+        let mut new_fa: Vec<String> = Vec::new();
+        let mut cand_regions: Vec<String> = Vec::new();
+        let mut families: Vec<String> = Vec::new();
+        let mut families_set: HashSet<&str> = HashSet::new();
+
+        for &ri in &flagged {
+            let r = &cand_table.rows[ri];
+            let fid = cand_table.get_by_row(r, "family").unwrap();
+            let cid = cand_table.get_by_row(r, "candidate").unwrap();
+            let n = contigs[cid].len();
+            let idx = *next_idx
+                .get(fid)
+                .ok_or_else(|| anyhow!("candidate {cid}: family {fid} has no row in {copies}"))?;
+            next_idx.insert(fid.to_string(), idx + 1);
+
+            let mut val: HashMap<String, String> = HashMap::new();
+            val.insert("family_id".to_string(), fid.to_string());
+            val.insert("copy_idx".to_string(), idx.to_string());
+            val.insert("tid".to_string(), cid.to_string());
+            val.insert("chrom".to_string(), cid.to_string());
+            val.insert("start".to_string(), "0".to_string());
+            val.insert("end".to_string(), n.to_string());
+            val.insert("n_exon".to_string(), "1".to_string());
+            val.insert("strand".to_string(), "+".to_string());
+            val.insert("n_reads".to_string(), "0".to_string());
+            val.insert("exons".to_string(), format!("0-{n}"));
+            val.insert("max_family_identity".to_string(), "0".to_string());
+            val.insert("source".to_string(), "o3_candidate".to_string());
+            val.insert("gene_id".to_string(), ".".to_string());
+            val.insert("core_hull".to_string(), "NA".to_string());
+            val.insert("sd_depth".to_string(), "0".to_string());
+            val.insert("core_bp".to_string(), "0".to_string());
+            val.insert("rep_frac".to_string(), "0".to_string());
+            val.insert("member_status".to_string(), "candidate".to_string());
+            val.insert("locus_start".to_string(), "0".to_string());
+            val.insert("locus_end".to_string(), n.to_string());
+
+            new_rows.push(
+                copy_table
+                    .header
+                    .iter()
+                    .map(|c| val.get(c).unwrap_or(&"NA".to_string()).clone())
+                    .collect::<Vec<_>>()
+                    .join("\t"),
+            );
+            new_fa.push(format!(
+                ">{fid}|{idx}|{cid}:0-{n}|+|nexon=1\n{}\n",
+                contigs[cid]
+            ));
+            cand_regions.push(format!("{cid}:0-{n}"));
+            if families_set.insert(fid) {
+                families.push(fid.to_string());
+            }
+        }
+
+        let fam_set: HashSet<String> = families.iter().cloned().collect();
+        let mut intervals: Vec<(String, i64, i64)> = Vec::new();
+        let mut with_region: HashSet<String> = HashSet::new();
+        let reg_file = std::fs::File::open(regions)
+            .with_context(|| format!("cannot read --regions {regions}"))?;
+        for (n, line) in BufReader::new(reg_file).lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let fs: Vec<&str> = line.split('\t').collect();
+            if fs.len() < 2 {
+                bail!(
+                    "{regions} line {}: expected `family<TAB>chrom:start-end`",
+                    n + 1
+                );
+            }
+            if fam_set.contains(fs[0]) {
+                intervals.push(parse_region(fs[1], &format!("{regions} line {}", n + 1))?);
+                with_region.insert(fs[0].to_string());
+            }
+        }
+        let lost: Vec<&str> = families
+            .iter()
+            .map(|s| s.as_str())
+            .filter(|f| !with_region.contains(*f))
+            .collect();
+        if !lost.is_empty() {
+            let suffix = if lost.len() == 1 { "y" } else { "ies" };
+            bail!(
+                "{regions} has no region for the candidate famil{suffix} {}",
+                lost.join(", ")
+            );
+        }
+
+        // Write every product to `.tmp`, then rename them all. An I/O error removes every `.tmp`
+        // file and every product already renamed, then exits 2.
+        let mut tmp_files: Vec<(String, String)> = Vec::new();
+        let mut done_files: Vec<String> = Vec::new();
+
+        let r: Result<()> = (|| {
+            // P.aug.fa
+            let fa_tmp = format!("{out}.fa.tmp");
+            {
+                let mut g = std::fs::File::open(fasta)
+                    .with_context(|| format!("cannot read --fasta {fasta}"))?;
+                let mut w = std::fs::File::create(&fa_tmp)
+                    .with_context(|| format!("cannot create {fa_tmp}"))?;
+                let size = std::io::copy(&mut g, &mut w)
+                    .with_context(|| format!("cannot copy --fasta {fasta}"))?;
+                if size > 0 {
+                    g.seek(SeekFrom::End(-1))?;
+                    let mut buf = [0u8; 1];
+                    g.read_exact(&mut buf)?;
+                    if buf[0] != b'\n' {
+                        w.write_all(b"\n")?;
+                    }
+                }
+                for &ri in &flagged {
+                    let r = &cand_table.rows[ri];
+                    let cid = cand_table.get_by_row(r, "candidate").unwrap();
+                    let seq = &contigs[cid];
+                    write!(w, ">{cid}\n{seq}\n")?;
+                }
+            }
+            tmp_files.push(("fa".to_string(), fa_tmp));
+
+            // P.aug.copies.tsv and P.aug.copies.fa
+            for (suffix, src, extra) in [
+                ("copies.tsv", copies, &new_rows as &[String]),
+                ("copies.fa", copies_fa, &new_fa as &[String]),
+            ] {
+                let tmp = format!("{out}.{suffix}.tmp");
+                let text =
+                    std::fs::read_to_string(src).with_context(|| format!("cannot read {src}"))?;
+                let mut w =
+                    std::fs::File::create(&tmp).with_context(|| format!("cannot create {tmp}"))?;
+                w.write_all(text.as_bytes())?;
+                if !text.is_empty() && !text.ends_with('\n') {
+                    w.write_all(b"\n")?;
+                }
+                for line in extra {
+                    w.write_all(line.as_bytes())?;
+                    if !line.ends_with('\n') {
+                        w.write_all(b"\n")?;
+                    }
+                }
+                tmp_files.push((suffix.to_string(), tmp));
+            }
+
+            // P.aug.regions.txt
+            let reg_tmp = format!("{out}.regions.txt.tmp");
+            {
+                let mut w = std::fs::File::create(&reg_tmp)
+                    .with_context(|| format!("cannot create {reg_tmp}"))?;
+                for line in merge_regions(&mut intervals) {
+                    writeln!(w, "{line}")?;
+                }
+                for reg in &cand_regions {
+                    writeln!(w, "{reg}")?;
+                }
+            }
+            tmp_files.push(("regions.txt".to_string(), reg_tmp));
+
+            // P.aug.families.txt
+            let fam_tmp = format!("{out}.families.txt.tmp");
+            {
+                let mut w = std::fs::File::create(&fam_tmp)
+                    .with_context(|| format!("cannot create {fam_tmp}"))?;
+                for fid in &families {
+                    writeln!(w, "{fid}")?;
+                }
+            }
+            tmp_files.push(("families.txt".to_string(), fam_tmp));
+
+            // Commit: rename every `.tmp` to its final path.
+            for (suffix, tmp) in &tmp_files {
+                let final_path = format!("{out}.{suffix}");
+                std::fs::rename(tmp, &final_path)
+                    .with_context(|| format!("cannot rename {tmp} to {final_path}"))?;
+                done_files.push(final_path);
+            }
+            Ok(())
+        })();
+
+        if let Err(e) = r {
+            for p in &done_files {
+                let _ = std::fs::remove_file(p);
+            }
+            for (_, p) in &tmp_files {
+                let _ = std::fs::remove_file(p);
+            }
+            bail!("cannot make {out}.*: {e} (nothing written)");
+        }
+
+        let family_word = if families.len() == 1 {
+            "family"
+        } else {
+            "families"
+        };
+        eprintln!(
+            "candidate_augment: {} candidate contig(s) of {} {family_word} -> {out}.{{fa,copies.tsv,copies.fa,regions.txt,families.txt}}",
+            flagged.len(),
+            families.len()
+        );
+        Ok(())
+    }
+
+    struct Table {
+        header: Vec<String>,
+        rows: Vec<Vec<String>>,
+    }
+
+    impl Table {
+        fn get_by_row<'a>(&'a self, row: &'a [String], col: &str) -> Option<&'a str> {
+            self.header
+                .iter()
+                .position(|h| h == col)
+                .map(|i| row[i].as_str())
+        }
+    }
+
+    fn read_table(path: &str, required: &[&str], what: &str) -> Result<Table> {
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("cannot read {what} {path}"))?;
+        let mut lines = content.lines();
+        let header_line = lines
+            .next()
+            .ok_or_else(|| anyhow!("{what} {path} is empty (expected a header line)"))?;
+        if header_line.is_empty() {
+            bail!("{what} {path} is empty (expected a header line)");
+        }
+        let header: Vec<String> = header_line.split('\t').map(String::from).collect();
+        let missing: Vec<_> = required
+            .iter()
+            .filter(|c| !header.contains(&c.to_string()))
+            .copied()
+            .collect();
+        if !missing.is_empty() {
+            bail!(
+                "{what} {path} has no column {} (header: {header_line:?})",
+                missing.join(", ")
+            );
+        }
+        let mut rows = Vec::new();
+        for (n, line) in lines.enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let fields: Vec<String> = line.split('\t').map(String::from).collect();
+            if fields.len() < header.len() {
+                bail!(
+                    "{what} {path} line {} has {} fields, the header {}",
+                    n + 2,
+                    fields.len(),
+                    header.len()
+                );
+            }
+            rows.push(fields);
+        }
+        Ok(Table { header, rows })
+    }
+
+    fn read_fasta(path: &str, what: &str) -> Result<HashMap<String, String>> {
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("cannot read {what} {path}"))?;
+        let mut seqs: HashMap<String, String> = HashMap::new();
+        let mut name: Option<String> = None;
+        let mut seq = String::new();
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with('>') {
+                if let Some(n) = name.take() {
+                    seqs.insert(n, std::mem::take(&mut seq));
+                }
+                let new_name = line[1..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                if seqs.contains_key(&new_name) {
+                    bail!("{what} {path} holds {new_name} twice");
+                }
+                name = Some(new_name);
+            } else if !line.is_empty() {
+                if name.is_none() {
+                    bail!("{what} {path} has sequence before its first header");
+                }
+                seq.push_str(line);
+            }
+        }
+        if let Some(n) = name.take() {
+            seqs.insert(n, seq);
+        }
+        Ok(seqs)
+    }
+
+    fn genome_names(fasta: &str) -> Result<(HashSet<String>, String)> {
+        let mut g =
+            std::fs::File::open(fasta).with_context(|| format!("cannot read --fasta {fasta}"))?;
+        let mut magic = [0u8; 2];
+        let n = g
+            .read(&mut magic)
+            .with_context(|| format!("cannot read --fasta {fasta}"))?;
+        if n == 2 && magic == [0x1f, 0x8b] {
+            bail!("{fasta} is compressed: the augmentation appends contigs to a plain FASTA");
+        }
+        drop(g);
+        let fai = format!("{fasta}.fai");
+        if std::path::Path::new(&fai).exists() {
+            let f = std::fs::File::open(&fai)
+                .with_context(|| format!("cannot read the sequence names of --fasta {fasta}"))?;
+            let mut names = HashSet::new();
+            for line in BufReader::new(f).lines() {
+                let line = line?;
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let name = line.split('\t').next().unwrap_or("").to_string();
+                names.insert(name);
+            }
+            return Ok((names, fai));
+        }
+        let f = std::fs::File::open(fasta)
+            .with_context(|| format!("cannot read the sequence names of --fasta {fasta}"))?;
+        let mut names = HashSet::new();
+        for line in BufReader::new(f).lines() {
+            let line = line?;
+            if line.starts_with('>') {
+                let name = line[1..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                names.insert(name);
+            }
+        }
+        Ok((names, format!("the headers of {fasta}")))
+    }
+
+    fn parse_region(text: &str, where_: &str) -> Result<(String, i64, i64)> {
+        let (chrom, span) = text
+            .rsplit_once(':')
+            .ok_or_else(|| anyhow!("bad region {text:?} in {where_} (expected chrom:start-end)"))?;
+        let (lo, hi) = span
+            .split_once('-')
+            .ok_or_else(|| anyhow!("bad region {text:?} in {where_} (expected chrom:start-end)"))?;
+        if chrom.is_empty()
+            || !lo.chars().all(|c| c.is_ascii_digit())
+            || !hi.chars().all(|c| c.is_ascii_digit())
+        {
+            bail!("bad region {text:?} in {where_} (expected chrom:start-end)");
+        }
+        Ok((chrom.to_string(), lo.parse()?, hi.parse()?))
+    }
+
+    fn merge_regions(intervals: &mut Vec<(String, i64, i64)>) -> Vec<String> {
+        intervals.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        let mut out: Vec<(String, i64, i64)> = Vec::new();
+        for (c, lo, hi) in intervals.drain(..) {
+            if let Some(last) = out.last_mut() {
+                if last.0 == c && lo <= last.2 {
+                    last.2 = last.2.max(hi);
+                    continue;
+                }
+            }
+            out.push((c, lo, hi));
+        }
+        out.into_iter()
+            .map(|(c, lo, hi)| format!("{c}:{lo}-{hi}"))
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn merge_regions_merges_touching_and_preserves_sort() {
+            let mut v = vec![
+                ("c1".to_string(), 10, 20),
+                ("c1".to_string(), 20, 30),
+                ("c2".to_string(), 5, 15),
+                ("c1".to_string(), 40, 50),
+            ];
+            assert_eq!(
+                merge_regions(&mut v),
+                vec!["c1:10-30", "c1:40-50", "c2:5-15"]
+            );
+        }
+
+        #[test]
+        fn parse_region_splits_on_last_colon() {
+            assert_eq!(
+                parse_region("chr1:2-3", "test").unwrap(),
+                ("chr1".to_string(), 2, 3)
+            );
+            assert_eq!(
+                parse_region("chr1:foo:2-3", "test").unwrap(),
+                ("chr1:foo".to_string(), 2, 3)
+            );
         }
     }
 }

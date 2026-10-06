@@ -19,28 +19,28 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
-use rustle::family::absent_copy::DnaNeedsRecord;
-use rustle::family::catalog_input::{
+use rustle::absent_copy::DnaNeedsRecord;
+use rustle::catalog_input::{
     group_families, parse_copies_fa, parse_copies_tsv, parse_family_list, select_families,
     to_colocated, CatalogFamily, SeqIndex,
 };
-use rustle::family::copy_assign::copy_assign_pipeline::read_ref_end;
-use rustle::family::copy_assign::em_copy_assign::em_assign_family;
-use rustle::family::copy_assign::{AssignParams, AssignStatus, Assignment};
-use rustle::family::denovo_assemble::longest_orf;
-use rustle::family::denovo_assemble::{
+use rustle::copy_assign::copy_assign_pipeline::read_ref_end;
+use rustle::copy_assign::em_copy_assign::em_assign_family;
+use rustle::copy_assign::{AssignParams, AssignStatus, Assignment};
+use rustle::denovo_assemble::longest_orf;
+use rustle::denovo_assemble::{
     assemble_gate, assemble_gate_census, pass1_skeletons_widened, reads_in_region,
     tied_secondary_reads_in_region, BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
 };
-use rustle::family::denovo_pipeline::{
+use rustle::denovo_pipeline::{
     catalog_overlaps, detect_and_assign, ColocatedFamily, DenovoConfig, FallbackEdge,
     FamilyAssignment, OverlapKind,
 };
-use rustle::family::family_detect::collapse_loci_groups;
-use rustle::family::linearize::LinearizeCertificate;
-use rustle::family::read_conflict::{as_evidence, AsEvidence};
-use rustle::family::readonly_copy_number::{chi_h_with_junctions, depth_cn};
+use rustle::family_detect::collapse_loci_groups;
 use rustle::genome::GenomeIndex;
+use rustle::linearize::LinearizeCertificate;
+use rustle::read_conflict::{as_evidence, AsEvidence};
+use rustle::readonly_copy_number::{chi_h_with_junctions, depth_cn};
 
 /// Read one GTF attribute out of an attribute string (`key "value";`). Used by `--productivity` to recover
 /// the family and copy it already wrote, rather than threading them separately.
@@ -122,23 +122,23 @@ struct RegionWork {
     /// (chrom, start, end, intron chain) — the EVIDENCE that places an isoform at a copy (§6hn)
     uniq_reads: Vec<(String, u64, u64, Vec<(u64, u64)>)>,
     /// O3: this family's raw (uncorrected) missing-copy pair statistics. Empty unless `--flag-missing-copies`.
-    o3_raw_pairs: Vec<rustle::family::missing_copy::missing_copy_flag_pass::RawPair>,
+    o3_raw_pairs: Vec<rustle::missing_copy::missing_copy_flag_pass::RawPair>,
     /// O3: candidate orphan-read loci outside every unit of this family. Empty unless `--flag-missing-copies`.
-    o3_orphan_loci: Vec<rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus>,
+    o3_orphan_loci: Vec<rustle::missing_copy::missing_copy_flag_pass::OrphanLocus>,
     /// Read-seeded copy discovery: candidate new copies clustered from AS-tied reads' out-of-catalog
     /// placements. Empty unless `--discover-copies`. Report only (Task 4 drains this to
     /// `<out>.discovered_copies.tsv`) -- never feeds back into this run's own catalog or assignments.
-    discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy>,
+    discovered: Vec<rustle::copy_graph::copy_discovery::DiscoveredCopy>,
     /// `--union-certificate`: what the union pass did in this region (its side-file rows + counts). Default
     /// (empty) unless the flag is on -- the pass runs INSIDE the worker because it needs the read sequences.
-    union: rustle::family::denovo_pipeline::UnionSummary,
+    union: rustle::denovo_pipeline::UnionSummary,
     /// `RUSTLE_READTHROUGH_JUNCTIONS`: this region's flagged junctions and pool removals. Default (empty,
     /// `rule` = `None`) unless the knob is set.
-    readthrough: rustle::family::denovo_assemble::ReadthroughFlags,
+    readthrough: rustle::denovo_assemble::ReadthroughFlags,
     /// `--polish-tss`: this region's 5'-end evidence (`None` unless the option is on).
-    tss: Option<rustle::family::denovo_assemble::TssEvidence>,
+    tss: Option<rustle::denovo_assemble::TssEvidence>,
     /// `--bridge-regroup`: this region's read evidence (`None` unless the option is on).
-    bridge: Option<rustle::family::bridge_regroup::BridgeEvidence>,
+    bridge: Option<rustle::bridge_regroup::BridgeEvidence>,
 }
 
 #[derive(Parser, Debug)]
@@ -602,7 +602,7 @@ struct Args {
     /// Per-family multimapper read-pool cap (`o2_materialize::READ_CAP`, `MaterializeConfig::read_cap`).
     /// EXPOSED HERE FOR AUDITABILITY ONLY: `o2_materialize` is a Rust byte-parity port of the Python
     /// genome-wide-catalog materializer (`bench/o2_vg_visualization.py::materialize_family`) that no
-    /// `src/bin/*.rs` binary — including this one — imports, so this flag is currently a NO-OP in
+    /// `src/*.rs` binary — including this one — imports, so this flag is currently a NO-OP in
     /// `copy_assign` (parses so `RUSTLE_READ_CAP`/CLI usage never hard-errors; a non-default value warns at
     /// startup rather than silently doing nothing). Default 6000 matches the constant.
     #[arg(long, default_value_t = 6_000)]
@@ -1585,11 +1585,11 @@ fn sanitize_gfa_id(s: &str) -> String {
 /// Non-absent in-genome copies are tagged by `annotation_status`: `InGenomeAnnotated`/`InGenomeUnannotated`
 /// when `--gff` was given, else `AnnotationUnknown` (we never claim "unannotated" unchecked).
 fn copy_status(
-    fa: &rustle::family::denovo_pipeline::FamilyAssignment,
+    fa: &rustle::denovo_pipeline::FamilyAssignment,
     ci: usize,
     ann: Option<&[(String, u64, u64)]>,
-) -> rustle::family::copy_graph::CopyStatus {
-    use rustle::family::copy_graph::CopyStatus;
+) -> rustle::copy_graph::CopyStatus {
+    use rustle::copy_graph::CopyStatus;
     let n = fa.copy_tids.len();
     let is_coupled = |k: usize| -> bool {
         fa.assignments
@@ -1625,13 +1625,13 @@ fn copy_status(
 /// `a.status` so the graph's `Assigned` filters cannot disagree with `.assignments.tsv`.
 fn build_copy_graph(
     fid: &str,
-    fa: &rustle::family::denovo_pipeline::FamilyAssignment,
+    fa: &rustle::denovo_pipeline::FamilyAssignment,
     ref_base: impl Fn(&str, u64) -> Option<u8>,
     bam_reads: &[String],
     ann: Option<&[(String, u64, u64)]>,
     eff: &[AssignStatus],
-) -> rustle::family::copy_graph::CopyGraph {
-    use rustle::family::copy_graph::*;
+) -> rustle::copy_graph::CopyGraph {
+    use rustle::copy_graph::*;
     // usable columns (both a genome position and a reference base), remembering the original index.
     let mut cols: Vec<PsvColumn> = Vec::new();
     let mut keep: Vec<usize> = Vec::new();
@@ -1725,11 +1725,11 @@ fn build_copy_graph(
 /// `eff` — see `build_copy_graph`.
 fn build_exon_graph(
     fid: &str,
-    fa: &rustle::family::denovo_pipeline::FamilyAssignment,
+    fa: &rustle::denovo_pipeline::FamilyAssignment,
     ann: Option<&[(String, u64, u64)]>,
     eff: &[AssignStatus],
-) -> rustle::family::copy_graph::ExonGraph {
-    use rustle::family::copy_graph::*;
+) -> rustle::copy_graph::ExonGraph {
+    use rustle::copy_graph::*;
     let n = fa.copy_tids.len();
     let copies: Vec<(String, CopyStatus, Corrob, String, Vec<(u64, u64)>)> = (0..n)
         .map(|ci| {
@@ -1770,11 +1770,11 @@ fn build_exon_graph(
 /// In-genome annotation axis: overlap of copy `ci`'s span with any annotated interval.
 /// `None` intervals => AnnotationUnknown (we never claim "unannotated" unchecked).
 fn annotation_status(
-    fa: &rustle::family::denovo_pipeline::FamilyAssignment,
+    fa: &rustle::denovo_pipeline::FamilyAssignment,
     ci: usize,
     ann: Option<&[(String, u64, u64)]>,
-) -> rustle::family::copy_graph::CopyStatus {
-    use rustle::family::copy_graph::CopyStatus;
+) -> rustle::copy_graph::CopyStatus {
+    use rustle::copy_graph::CopyStatus;
     let Some(ann) = ann else {
         return CopyStatus::AnnotationUnknown;
     };
@@ -1933,8 +1933,8 @@ fn build_catalog_index(rf: &RegionFamilies) -> CatalogIndex {
 /// advance the reference position without contributing overlap. A large intron (`N`) that merely SPANS
 /// a target window contributes zero here, unlike `read_ref_end`'s span (`ref_start..ref_end`),
 /// which would wrongly count the whole intron as covering it -- Task 7's reproduction-gate fix.
-fn block_overlap(read: &rustle::family::copy_split::AlignedRead, s: u64, e: u64) -> u64 {
-    rustle::family::copy_graph::copy_discovery::aligned_blocks(read)
+fn block_overlap(read: &rustle::copy_split::AlignedRead, s: u64, e: u64) -> u64 {
+    rustle::copy_graph::copy_discovery::aligned_blocks(read)
         .into_iter()
         .map(|(b0, b1)| {
             let (lo, hi) = (b0.max(s), b1.min(e));
@@ -2026,9 +2026,9 @@ fn discover_copies_for_family(
     bam_reads: &[BamRead],
     tied: &[(
         String,
-        Vec<rustle::family::copy_graph::copy_discovery::TiePlacement>,
+        Vec<rustle::copy_graph::copy_discovery::TiePlacement>,
     )],
-) -> Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> {
+) -> Vec<rustle::copy_graph::copy_discovery::DiscoveredCopy> {
     let considered: DetHashSet<&str> = fa
         .assignments
         .iter()
@@ -2036,7 +2036,7 @@ fn discover_copies_for_family(
         .collect();
     let mine: Vec<(
         String,
-        Vec<rustle::family::copy_graph::copy_discovery::TiePlacement>,
+        Vec<rustle::copy_graph::copy_discovery::TiePlacement>,
     )> = tied
         .iter()
         .filter(|(name, _)| considered.contains(name.as_str()))
@@ -2048,12 +2048,12 @@ fn discover_copies_for_family(
         .zip(fa.copy_tids.iter())
         .map(|((chrom, start, end), tid)| (chrom.clone(), *start, *end, tid.clone()))
         .collect();
-    rustle::family::copy_graph::copy_discovery::cluster_tie_partners(
+    rustle::copy_graph::copy_discovery::cluster_tie_partners(
         &mine,
         &fa.family_id,
         &existing_copies,
-        rustle::family::copy_graph::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
-        rustle::family::copy_graph::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
+        rustle::copy_graph::copy_discovery::TIE_PARTNER_MERGE_DISTANCE_BP,
+        rustle::copy_graph::copy_discovery::TIE_PARTNER_MIN_SUPPORT,
     )
 }
 
@@ -2743,8 +2743,8 @@ fn resolve_lambda(explicit: Option<f64>, from_file: Option<f64>) -> Option<f64> 
     explicit.or(from_file)
 }
 
-fn verdict_str(v: rustle::family::linearize::Verdict) -> &'static str {
-    use rustle::family::linearize::Verdict::*;
+fn verdict_str(v: rustle::linearize::Verdict) -> &'static str {
+    use rustle::linearize::Verdict::*;
     match v {
         Linearizes => "LINEARIZES",
         Not => "NOT",
@@ -2820,7 +2820,7 @@ struct RegroupStats {
 /// and an emitted `gene_id` embeds its contig (`DN_<chrom>_...`), so a `--genome-wide` run equals the concatenation
 /// of its per-contig runs. Transcript lines without a `gene_id` are never regrouped or relabelled.
 ///
-/// The transcript record, the parser and the pieces-and-names rule are `rustle::family::bridge_regroup`'s
+/// The transcript record, the parser and the pieces-and-names rule are `rustle::bridge_regroup`'s
 /// `parse` and `rg3_pieces`, the same functions `--bridge-regroup` applies to a gene's non-bridge transcripts:
 /// without a bridge that flag's names are this flag's by construction. This function adds rg3.py's asserts, the
 /// stats and the rewrite.
@@ -2830,7 +2830,7 @@ struct RegroupStats {
 /// overlapping exons, or a new name equal to an input `gene_id` or `transcript_id` (emitted names end in
 /// `_<digits>` or `.<digits>`, never `.rg<digits>`).
 fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
-    use rustle::family::bridge_regroup::{parse, rg3_pieces};
+    use rustle::bridge_regroup::{parse, rg3_pieces};
 
     // ---- parse (rg3.py `parse`) ----
     let txs = parse(lines, "--gtf-regroup")?;
@@ -3830,7 +3830,7 @@ fn snap_motif_rank(seq: &[u8], j: SnapJn, strand: &str) -> u8 {
         return 3;
     };
     let m: Vec<u8> = if strand == "-" {
-        let rc = rustle::family::seq_utils::reverse_complement;
+        let rc = rustle::seq_utils::reverse_complement;
         [rc(acc), rc(don)].concat()
     } else {
         [don, acc].concat()
@@ -3871,7 +3871,7 @@ fn snap_tally_read(
     nreads: &mut DetHashMap<SnapJn, u32>,
     ev: &mut SnapEvidence,
 ) -> bool {
-    use rustle::family::seq_utils::hw_distance;
+    use rustle::seq_utils::hw_distance;
     let (mut pos, mut q) = (ref_start, 0usize);
     let mut hits: Vec<(SnapJn, usize)> = Vec::new();
     for &(op, len) in ops {
@@ -4053,7 +4053,7 @@ fn snap_remap(
     usize,
 ) {
     use std::cmp::Reverse;
-    let min_reads = rustle::family::denovo_assemble::PASS1_MIN_READS;
+    let min_reads = rustle::denovo_assemble::PASS1_MIN_READS;
     let mut remap = std::collections::BTreeMap::new();
     let (mut n_eq, mut n_reads) = (0usize, 0usize);
     for ((strand, gene), near) in groups.iter() {
@@ -4610,7 +4610,7 @@ fn tss_parse(lines: &[String]) -> std::collections::BTreeMap<String, TssTx> {
             reads: reads.get(&tid).copied().unwrap_or(0),
             oex,
             ochain,
-            chain: rustle::family::denovo_assemble::tss_chain_hash(&gchain),
+            chain: rustle::denovo_assemble::tss_chain_hash(&gchain),
         };
         out.insert(tid, t);
     }
@@ -4625,7 +4625,7 @@ struct TssIndex {
     links: DetHashMap<(bool, (i64, i64)), Vec<i64>>,
 }
 
-fn tss_index(recs: &[rustle::family::denovo_assemble::TssRead]) -> TssIndex {
+fn tss_index(recs: &[rustle::denovo_assemble::TssRead]) -> TssIndex {
     let mut ix = TssIndex::default();
     for r in recs {
         let Some(&j1) = r.oin.first() else { continue };
@@ -4979,7 +4979,7 @@ fn tss_decide(
     lines: &[String],
     drop0: &DetHashSet<String>,
     sites: &DetHashMap<String, &'static str>,
-    recs: &[rustle::family::denovo_assemble::TssRead],
+    recs: &[rustle::denovo_assemble::TssRead],
     mode: &str,
 ) -> TssOutcome {
     tss_decide_with(contig, lines, drop0, sites, recs, mode, None)
@@ -4992,7 +4992,7 @@ fn tss_decide_with(
     lines: &[String],
     drop0: &DetHashSet<String>,
     sites: &DetHashMap<String, &'static str>,
-    recs: &[rustle::family::denovo_assemble::TssRead],
+    recs: &[rustle::denovo_assemble::TssRead],
     mode: &str,
     null_given: Option<TssNull>,
 ) -> TssOutcome {
@@ -5035,7 +5035,7 @@ fn tss_prove_with(
     lines: &[String],
     drop0: &DetHashSet<String>,
     sites: &DetHashMap<String, &'static str>,
-    recs: &[rustle::family::denovo_assemble::TssRead],
+    recs: &[rustle::denovo_assemble::TssRead],
     mode: &str,
     null_given: Option<TssNull>,
 ) -> TssOutcome {
@@ -5630,7 +5630,7 @@ struct TesOutcome {
 /// sequence (uppercase), `mode` = tag | pas-end. Pure (nothing is written).
 fn tes_decide(
     lines: &[String],
-    recs: &[rustle::family::denovo_assemble::TssRead],
+    recs: &[rustle::denovo_assemble::TssRead],
     seq: &[u8],
     mode: &str,
 ) -> TesOutcome {
@@ -5763,8 +5763,8 @@ fn tes_apply(lines: Vec<String>, out: &TesOutcome) -> Vec<String> {
 /// `--bridge-regroup`'s effective arm. Unset = `f1v2` where it can run (`--assemble-only` without `--families`; the
 /// default since 2026-09-29) and off elsewhere. An explicit arm is refused where it cannot run, and any arm, default
 /// included, is refused with `--gtf-regroup`, whose split it contains: `--bridge-regroup off --gtf-regroup` is RG3.
-fn resolve_bridge_mode(args: &Args) -> Result<Option<rustle::family::bridge_regroup::Mode>> {
-    use rustle::family::bridge_regroup::Mode;
+fn resolve_bridge_mode(args: &Args) -> Result<Option<rustle::bridge_regroup::Mode>> {
+    use rustle::bridge_regroup::Mode;
     let can_run = args.assemble_only && args.families.is_none();
     let (mode, label) = match args.bridge_regroup.as_deref() {
         Some(arm) => (Mode::parse(arm)?, ""),
@@ -5792,9 +5792,9 @@ fn resolve_bridge_mode(args: &Args) -> Result<Option<rustle::family::bridge_regr
 /// `--bridge-units-list`: read now, before any read is touched, and only where the arm that uses it runs.
 fn resolve_bridge_units_list(
     args: &Args,
-    mode: Option<rustle::family::bridge_regroup::Mode>,
-) -> Result<Option<rustle::family::bridge_regroup::UnitsList>> {
-    use rustle::family::bridge_regroup::{Mode, UnitsList};
+    mode: Option<rustle::bridge_regroup::Mode>,
+) -> Result<Option<rustle::bridge_regroup::UnitsList>> {
+    use rustle::bridge_regroup::{Mode, UnitsList};
     let Some(path) = args.bridge_units_list.as_deref() else {
         return Ok(None);
     };
@@ -5820,7 +5820,7 @@ fn main() -> Result<()> {
         // §6r8: assembly never reads a read's bases or qualities (only its CIGAR/introns), and O2 — the
         // only consumer — is skipped in this mode. Dropping them at parse time is where the memory is:
         // peak RSS was 8.4-11.8 GB for one chromosome, which capped concurrency at 2 and OOM-killed 4.
-        rustle::family::denovo_assemble::SKIP_READ_SEQUENCE
+        rustle::denovo_assemble::SKIP_READ_SEQUENCE
             .store(true, std::sync::atomic::Ordering::Relaxed);
         eprintln!(
             "[copy_assign] ASSEMBLE-ONLY: family detection, homology refinement and copy assignment are \
@@ -5890,7 +5890,7 @@ fn main() -> Result<()> {
     let bridge_evidence_on = bridge_mode.is_some() && bridge_list.is_none();
     // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
-    let rt_switch = rustle::family::denovo_assemble::ReadthroughSwitch::from_env()?;
+    let rt_switch = rustle::denovo_assemble::ReadthroughSwitch::from_env()?;
     let rt_rule = rt_switch.as_ref().map(|s| s.rule);
     if let Some(rule) = rt_rule {
         anyhow::ensure!(
@@ -5923,11 +5923,11 @@ fn main() -> Result<()> {
                  read pool before pass 1 (R: U >= 20*S{})",
                 rule.as_str(),
                 match rule {
-                    rustle::family::denovo_assemble::ReadthroughRule::Rq1 => "; Q1: 3*V1 >= 5*S",
-                    rustle::family::denovo_assemble::ReadthroughRule::R2 => {
+                    rustle::denovo_assemble::ReadthroughRule::Rq1 => "; Q1: 3*V1 >= 5*S",
+                    rustle::denovo_assemble::ReadthroughRule::R2 => {
                         ", unless 2*L >= S and 3*V1 < 5*S (an alternative last exon); or U >= S and V1 >= 4*S (own promoter)"
                     }
-                    rustle::family::denovo_assemble::ReadthroughRule::R3 => {
+                    rustle::denovo_assemble::ReadthroughRule::R3 => {
                         ", unless 2*L >= S and 3*V1 < 5*S (an alternative last exon); or U >= S, V1 >= 4*S and V1 > N_span \
                          (own promoter, not outnumbered by the molecules spanning the intron)"
                     }
@@ -6095,13 +6095,13 @@ fn main() -> Result<()> {
     // design constraint ("no allocation happens on the unset path") -- a 3-field POD with no side effect,
     // so this changes nothing observable, just tidiness.
     let o3_params = if args.flag_missing_copies {
-        rustle::family::missing_copy::missing_copy_flag_pass::O3Params {
+        rustle::missing_copy::missing_copy_flag_pass::O3Params {
             alpha: args.missing_copy_alpha,
             max_reads: args.missing_copy_max_reads,
             min_reads: 3,
         }
     } else {
-        rustle::family::missing_copy::missing_copy_flag_pass::O3Params::default()
+        rustle::missing_copy::missing_copy_flag_pass::O3Params::default()
     };
 
     let lambda = resolve_lambda(
@@ -6186,24 +6186,22 @@ fn main() -> Result<()> {
     // O3 Phase 2 (Task 6): accumulated across the WHOLE serial drain (every region, every family) -- the
     // genome-wide Bonferroni flag threshold in `finalize_flags` can only be computed once every region has
     // drained, so nothing downstream of `compute()` can act on these until the loop below finishes.
-    let mut o3_all_raw_pairs: Vec<rustle::family::missing_copy::missing_copy_flag_pass::RawPair> =
+    let mut o3_all_raw_pairs: Vec<rustle::missing_copy::missing_copy_flag_pass::RawPair> =
         Vec::new();
-    let mut o3_all_orphan_loci: Vec<
-        rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus,
-    > = Vec::new();
+    let mut o3_all_orphan_loci: Vec<rustle::missing_copy::missing_copy_flag_pass::OrphanLocus> =
+        Vec::new();
     // `--discover-copies`: read-seeded candidate copies found while scanning each region, accumulated the
     // same way as the O3 vectors above -- `RegionWork.discovered` is already gated on `args.discover_copies`
     // at the `compute()` call site, so this just drains whatever each region produced.
-    let mut all_discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> =
-        Vec::new();
+    let mut all_discovered: Vec<rustle::copy_graph::copy_discovery::DiscoveredCopy> = Vec::new();
     // `--union-certificate`: every region's union rows + counts, drained in region order (side file + summary).
-    let mut union_all = rustle::family::denovo_pipeline::UnionSummary::default();
+    let mut union_all = rustle::denovo_pipeline::UnionSummary::default();
     // `RUSTLE_READTHROUGH_JUNCTIONS`: every region's flagged junctions + removals, drained in region order.
-    let mut readthrough_all = rustle::family::denovo_assemble::ReadthroughFlags::default();
+    let mut readthrough_all = rustle::denovo_assemble::ReadthroughFlags::default();
     // `--polish-tss`: every region's 5'-end evidence, per chromosome (empty unless the option is on).
-    let mut tss_all = rustle::family::denovo_assemble::TssEvidence::default();
+    let mut tss_all = rustle::denovo_assemble::TssEvidence::default();
     // `--bridge-regroup`: every region's read evidence, per chromosome (empty unless the option is on).
-    let mut bridge_all = rustle::family::bridge_regroup::BridgeEvidence::default();
+    let mut bridge_all = rustle::bridge_regroup::BridgeEvidence::default();
     // `--families`: one row per ASSIGNED copy, naming the catalog row it came from. The explicit join
     // between `<out>.quant.tsv` and the O1 `copies.tsv`, and the place a copy that failed to survive
     // assignment would be visible as a missing row.
@@ -6241,7 +6239,7 @@ fn main() -> Result<()> {
     let mut legend_rows: Vec<String> = Vec::new(); // "status\tcolour" (de-duplicated at write time)
                                                    // --phase v2: one exon presence/absence graph per family (built during the drain, where `fa` is in
                                                    // scope; sequence-free — `to_gfa` fetches reference bases lazily at write time via `genome_for`).
-    let mut exon_graphs: Vec<rustle::family::copy_graph::ExonGraph> = Vec::new();
+    let mut exon_graphs: Vec<rustle::copy_graph::ExonGraph> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut prov_rows: Vec<String> = Vec::new(); // --read-provenance: one row per AS-tied alignment record
@@ -6279,7 +6277,7 @@ fn main() -> Result<()> {
     // unset run is byte-identical and (b) a caller who exported RUSTLE_ABSENT_MIN_CLUSTERS
     // directly is not silently clobbered by the flag's default.
     if let Some(n) = args.absent_min_clusters {
-        std::env::set_var(rustle::family::absent_copy::MIN_CLUSTERS_ENV, n.to_string());
+        std::env::set_var(rustle::absent_copy::MIN_CLUSTERS_ENV, n.to_string());
         if !args.absent_copies {
             eprintln!(
                 "[copy_assign] WARNING: --absent-min-clusters={n} has no effect without --absent-copies"
@@ -6287,7 +6285,7 @@ fn main() -> Result<()> {
         }
     }
     // `--read-cap` is a NO-OP in copy_assign (see the flag's help): `o2_materialize::READ_CAP` has no
-    // consumer in any `src/bin/*.rs` binary. Warn rather than silently ignore a non-default value.
+    // consumer in any `src/*.rs` binary. Warn rather than silently ignore a non-default value.
     if args.read_cap != 6_000 {
         eprintln!(
             "[copy_assign] WARNING: --read-cap={} has no consumer in this binary (o2_materialize's READ_CAP \
@@ -6418,38 +6416,38 @@ fn main() -> Result<()> {
         let streaming = args.assemble_only
             && !args.materialize_reads
             && args.read_isoform_k == 0
-            && !rustle::family::denovo_assemble::footprint_nodes_enabled()
+            && !rustle::denovo_assemble::footprint_nodes_enabled()
             && !(args.recover_copies || args.tied_seed)
             // GOOD seeding (r1060/r1100) streams too once a genome-wide best-AS table is loaded: the
             // streaming reader applies `AS >= ratio x table best` itself (`stream_pass1_region`); without a
             // table the ratio needs the region's buffered records to know a local best, as before.
-            && (rustle::family::denovo_assemble::gtf_secondary_as_ratio() <= 0.0
-                || rustle::family::denovo_assemble::global_best_as().is_some());
-        let mut streamed: Option<Vec<rustle::family::denovo_assemble::Skeleton>> = None;
+            && (rustle::denovo_assemble::gtf_secondary_as_ratio() <= 0.0
+                || rustle::denovo_assemble::global_best_as().is_some());
+        let mut streamed: Option<Vec<rustle::denovo_assemble::Skeleton>> = None;
         let mut n_mapped_streamed = 0usize;
         // RUSTLE_READTHROUGH_JUNCTIONS: the region's flags and removals (default = off, nothing flagged)
-        let mut readthrough = rustle::family::denovo_assemble::ReadthroughFlags::default();
+        let mut readthrough = rustle::denovo_assemble::ReadthroughFlags::default();
         // `--polish-tss`: the 5'-end evidence (streaming: fed by the pass-1 reader; buffered: one lazy pass below)
-        let mut tss_ev: Option<rustle::family::denovo_assemble::TssEvidence> = None;
+        let mut tss_ev: Option<rustle::denovo_assemble::TssEvidence> = None;
         // `--bridge-regroup`: its read evidence (streaming: fed by the pass-1 reader; buffered: one lazy pass below)
-        let mut bridge_ev: Option<rustle::family::bridge_regroup::BridgeEvidence> = None;
+        let mut bridge_ev: Option<rustle::bridge_regroup::BridgeEvidence> = None;
         if streaming {
-            let mut acc = rustle::family::denovo_assemble::Pass1Acc::new(1, None);
+            let mut acc = rustle::denovo_assemble::Pass1Acc::new(1, None);
             acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
             if args.polish_tss != "off" || args.polish_tes != "off" {
-                acc.tss = Some(rustle::family::denovo_assemble::TssEvidence::default());
+                acc.tss = Some(rustle::denovo_assemble::TssEvidence::default());
             }
             if bridge_evidence_on {
-                acc.bridge = Some(rustle::family::bridge_regroup::BridgeEvidence::default());
+                acc.bridge = Some(rustle::bridge_regroup::BridgeEvidence::default());
             }
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
-                n_mapped_streamed += rustle::family::denovo_assemble::stream_pass1_region(
+                n_mapped_streamed += rustle::denovo_assemble::stream_pass1_region(
                     &args.bam,
                     wchrom,
                     *wlo,
                     *whi,
-                    rustle::family::denovo_assemble::gtf_secondary_enabled(),
+                    rustle::denovo_assemble::gtf_secondary_enabled(),
                     !args.keep_coordinate_duplicates,
                     if args.keep_coordinate_duplicates {
                         &fetched
@@ -6478,9 +6476,9 @@ fn main() -> Result<()> {
             });
             streamed = Some(acc.finish(cfg.pass1_min_reads, 0, None));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
-            let mut ev = rustle::family::denovo_assemble::TssEvidence::default();
+            let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
-                rustle::family::denovo_assemble::tss_evidence_region(
+                rustle::denovo_assemble::tss_evidence_region(
                     &args.bam, wchrom, *wlo, *whi, &mut ev,
                 )
                 .with_context(|| {
@@ -6490,9 +6488,9 @@ fn main() -> Result<()> {
             tss_ev = Some(ev);
         }
         if !streaming && bridge_evidence_on {
-            let mut ev = rustle::family::bridge_regroup::BridgeEvidence::default();
+            let mut ev = rustle::bridge_regroup::BridgeEvidence::default();
             for (wchrom, wlo, whi) in &wins {
-                rustle::family::bridge_regroup::bridge_evidence_region(
+                rustle::bridge_regroup::bridge_evidence_region(
                     &args.bam, wchrom, *wlo, *whi, &mut ev,
                 )
                 .with_context(|| format!("--bridge-regroup evidence {wchrom}:{wlo}-{whi}"))?;
@@ -6569,7 +6567,7 @@ fn main() -> Result<()> {
             // silently dropped as a "duplicate" — exactly the kind of silent truncation this whole feature
             // exists to avoid.
             let mut bseen = DetHashSet::default();
-            br.retain(|x: &rustle::family::denovo_assemble::BamRead| {
+            br.retain(|x: &rustle::denovo_assemble::BamRead| {
                 bseen.insert((x.name.clone(), x.chrom.clone(), x.read.ref_start))
             });
             (pr, br)
@@ -6738,7 +6736,12 @@ fn main() -> Result<()> {
                         // emits into a GTF attribute is 1-based (the exon/transcript rows below, `+ 1`), so
                         // the registered start needs the same `+ 1` or the printed `outside:chrom:start-end`
                         // token is off by one relative to the file it sits in.
-                        rustle::family::copy_assign::copy_assign_pipeline::register_tie_outside_locus(&br.name, &br.chrom, s0 + 1, e0);
+                        rustle::copy_assign::copy_assign_pipeline::register_tie_outside_locus(
+                            &br.name,
+                            &br.chrom,
+                            s0 + 1,
+                            e0,
+                        );
                     }
                     if (args.gtf_copy_set && !args.no_gtf_copy_set) {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
@@ -6759,12 +6762,12 @@ fn main() -> Result<()> {
                 }
                 n_outside = flagged.len();
                 for n in flagged {
-                    rustle::family::copy_assign::copy_assign_pipeline::register_tie_outside(n);
+                    rustle::copy_assign::copy_assign_pipeline::register_tie_outside(n);
                 }
                 // ⭐ §6hd: aligner self-disagreement. Per molecule: the unit index of its PRIMARY record and of
                 // its best-AS record(s), both by unit-span overlap (same `targets` as above). Disagree ⟹ admit.
                 if args.admit_aligner_disagreement {
-                    let unit_of = |br: &rustle::family::denovo_assemble::BamRead| -> Option<usize> {
+                    let unit_of = |br: &rustle::denovo_assemble::BamRead| -> Option<usize> {
                         let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
                         targets
                             .iter()
@@ -6877,7 +6880,7 @@ fn main() -> Result<()> {
                         None => format!("{fid}:#{ci}"),
                     }
                 };
-                let s = rustle::family::denovo_pipeline::union_certificate_pass(
+                let s = rustle::denovo_pipeline::union_certificate_pass(
                     &mut fams, sup, &bam_reads, &genome, &params, &label,
                 );
                 eprintln!(
@@ -6891,7 +6894,7 @@ fn main() -> Result<()> {
                 );
                 s
             }
-            _ => rustle::family::denovo_pipeline::UnionSummary::default(),
+            _ => rustle::denovo_pipeline::UnionSummary::default(),
         };
         // ⭐ Part A: route each molecule's GTF assembly contribution through its O2 PSV-resolved origin
         // instead of the aligner's primary flag. Under --assemble-only (or when no family was detected) the
@@ -7140,9 +7143,7 @@ fn main() -> Result<()> {
                     if let Some((cf, cidx)) = catalog_index.as_ref().and_then(|ix| ix.get(tid)) {
                         if let Some((chrom, s, e)) = fa.copy_spans.get(ci) {
                             let locus =
-                                rustle::family::copy_assign::copy_assign_pipeline::locus_extent_of(
-                                    tid,
-                                );
+                                rustle::copy_assign::copy_assign_pipeline::locus_extent_of(tid);
                             copy_span_by_cf
                                 .entry(cf.clone())
                                 .or_default()
@@ -7178,7 +7179,7 @@ fn main() -> Result<()> {
                 // (origin_rejected==true) and accepted (this family's own certificate-passed reads at that
                 // copy), NOW bucketed by (cf, cidx) rather than bare cidx (Fix 1 above -- `cf` here is the
                 // TRUE catalog family of `assignment.best_copy`'s own tid, captured instead of discarded).
-                // `Assignment` (src/rustle/family/copy_assign.rs:101-146) carries `best_copy: usize`
+                // `Assignment` (src/copy_assign.rs:101-146) carries `best_copy: usize`
                 // (an index into `copy_tids`/`copy_spans`, the same namespace `ci` uses above -- `.get()`,
                 // not direct indexing, since no invariant here guarantees every family's assignments stay
                 // in range), `status: AssignStatus` (Assigned/Ambiguous/Tied) and `origin_rejected: bool`.
@@ -7254,25 +7255,26 @@ fn main() -> Result<()> {
                     // Fix 3 (Task 6, carried forward from Task 5's review): iterating a DetHashMap's `.keys()`
                     // is nondeterministic order -- sort by `copy_idx` so `o3_raw_pairs` (and therefore its
                     // `family_join.tsv`/`missing_copy_loci.tsv` row order) is stable run-to-run.
-                    let mut inputs: Vec<
-                        rustle::family::missing_copy::missing_copy_flag_pass::PairInput,
-                    > = spans
-                        .keys()
-                        .map(|cidx| {
-                            rustle::family::missing_copy::missing_copy_flag_pass::PairInput {
-                                copy_idx: cidx.clone(),
-                                // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
-                                // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
-                                is_partner: false,
-                                rejected: rej.get(cidx).cloned().unwrap_or_default(),
-                                accepted: acc.get(cidx).cloned().unwrap_or_default(),
-                            }
-                        })
-                        .collect();
+                    let mut inputs: Vec<rustle::missing_copy::missing_copy_flag_pass::PairInput> =
+                        spans
+                            .keys()
+                            .map(|cidx| {
+                                rustle::missing_copy::missing_copy_flag_pass::PairInput {
+                                    copy_idx: cidx.clone(),
+                                    // CatalogCopy::partner is not threaded through FamilyAssignment yet -- default
+                                    // false never OVER-claims a partner exclusion (see the design doc's is_partner note).
+                                    is_partner: false,
+                                    rejected: rej.get(cidx).cloned().unwrap_or_default(),
+                                    accepted: acc.get(cidx).cloned().unwrap_or_default(),
+                                }
+                            })
+                            .collect();
                     inputs.sort_by(|a, b| a.copy_idx.cmp(&b.copy_idx));
-                    pairs.extend(rustle::family::missing_copy::missing_copy_flag_pass::detect_missing_copy_pairs(
-                        cf, spans, &genome, &inputs, &o3_params,
-                    ));
+                    pairs.extend(
+                        rustle::missing_copy::missing_copy_flag_pass::detect_missing_copy_pairs(
+                            cf, spans, &genome, &inputs, &o3_params,
+                        ),
+                    );
                 }
                 // Orphan-locus scan: bam_reads whose primary lands outside every unit of this family,
                 // clustered by proximity (<=5kb gap, matching bench/missing_copy_flag_pass.py), classified via the
@@ -7350,7 +7352,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                     let (class, n_genes, other_units) =
-                        rustle::family::missing_copy::missing_copy_flag_pass::classify_orphan_locus(
+                        rustle::missing_copy::missing_copy_flag_pass::classify_orphan_locus(
                             &chrom,
                             start,
                             end,
@@ -7358,18 +7360,16 @@ fn main() -> Result<()> {
                             &o3_all_units_by_chrom,
                             &o3_genes_by_chrom,
                         );
-                    loci.push(
-                        rustle::family::missing_copy::missing_copy_flag_pass::OrphanLocus {
-                            chrom,
-                            start,
-                            end,
-                            n_reads,
-                            n_orphans,
-                            class,
-                            n_genes_overlapping: n_genes,
-                            other_family_units: other_units,
-                        },
-                    );
+                    loci.push(rustle::missing_copy::missing_copy_flag_pass::OrphanLocus {
+                        chrom,
+                        start,
+                        end,
+                        n_reads,
+                        n_orphans,
+                        class,
+                        n_genes_overlapping: n_genes,
+                        other_family_units: other_units,
+                    });
                 }
             }
             (pairs, loci)
@@ -7379,14 +7379,13 @@ fn main() -> Result<()> {
         // Read-seeded copy discovery (opt-in, --discover-copies): cluster AS-tied reads' out-of-catalog
         // placements into candidate new copies. Gated the same way as the O3 block above -- empty Vec, no
         // allocation, when the flag is unset.
-        let discovered: Vec<rustle::family::copy_graph::copy_discovery::DiscoveredCopy> =
+        let discovered: Vec<rustle::copy_graph::copy_discovery::DiscoveredCopy> =
             if args.discover_copies {
                 // The region's AS-tied reads are extracted ONCE; `discover_copies_for_family` then restricts
                 // them, per family, to the reads that family actually considered (`fa.assignments`) before
                 // clustering. Pooling them across families is the cross-family attribution bug the final
                 // whole-branch review caught -- see that function's own doc comment.
-                let tied =
-                    rustle::family::copy_graph::copy_discovery::tie_partner_placements(&bam_reads);
+                let tied = rustle::copy_graph::copy_discovery::tie_partner_placements(&bam_reads);
                 fams.iter()
                     .flat_map(|fa| discover_copies_for_family(fa, &bam_reads, &tied))
                     .collect()
@@ -7449,7 +7448,7 @@ fn main() -> Result<()> {
     let eff_astatus = |read_name: &str,
                        g: usize,
                        f: usize,
-                       a: &rustle::family::copy_assign::Assignment|
+                       a: &rustle::copy_assign::Assignment|
      -> AssignStatus {
         if xfam_mode == XfamMode::Abstain
             && matches!(a.status, AssignStatus::Assigned)
@@ -7467,7 +7466,7 @@ fn main() -> Result<()> {
     let eff_status = |read_name: &str,
                       g: usize,
                       f: usize,
-                      a: &rustle::family::copy_assign::Assignment|
+                      a: &rustle::copy_assign::Assignment|
      -> &'static str { status_str(eff_astatus(read_name, g, f, a)) };
     // SERIAL drain (PASS 2) in the original region order — every row push + the `gfam` id counter is
     // exactly the serial path, so the output is byte-identical.
@@ -7534,8 +7533,7 @@ fn main() -> Result<()> {
             // (the copy its primary's blocks overlap most), as any assembler would use it; the certificate is
             // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
             // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
-            let readthroughs =
-                rustle::family::copy_assign::copy_assign_pipeline::take_readthroughs();
+            let readthroughs = rustle::copy_assign::copy_assign_pipeline::take_readthroughs();
             // ⭐ §6gz: under the AS-tied gate every molecule that reaches this point is tied by ALIGNMENT SCORE,
             // and a MAPQ of 60 is the aligner's chaining-stage opinion, not a guarantee — one human read
             // carried a MAPQ-60 primary at AS 1323 with three secondaries at AS 1384, and placement put it at
@@ -7567,7 +7565,7 @@ fn main() -> Result<()> {
                             .copied()
                             .unwrap_or(read_mapqs[*ri]);
                         if mq < 60
-                            || rustle::family::copy_assign::copy_assign_pipeline::is_tie_outside(
+                            || rustle::copy_assign::copy_assign_pipeline::is_tie_outside(
                                 &bam_reads[*ri],
                             )
                         {
@@ -7577,7 +7575,7 @@ fn main() -> Result<()> {
                         // correct a placement: 4 % of MAPQ-60 simulated reads sit at the wrong copy, §6fq);
                         // the placement is the fallback when the machinery abstains or ties
                         if !args.placement_first
-                            && a.status == rustle::family::copy_assign::AssignStatus::Assigned
+                            && a.status == rustle::copy_assign::AssignStatus::Assigned
                         {
                             continue;
                         }
@@ -7592,7 +7590,7 @@ fn main() -> Result<()> {
                         for (ci, (c, s0, e0)) in fa.copy_spans.iter().enumerate() {
                             if c != contig
                                 || fa.copy_tids.get(ci).map_or(false, |t| {
-                                    rustle::family::copy_assign::copy_assign_pipeline::is_partner(t)
+                                    rustle::copy_assign::copy_assign_pipeline::is_partner(t)
                                 })
                             {
                                 continue; // §6ft: never place a molecule at a partner
@@ -7610,7 +7608,7 @@ fn main() -> Result<()> {
                         {
                             eprintln!("[placement] read {} mapq {mq} blocks {:?} -> copy {pc} span {:?} (was best_copy {} status {:?}); spans {:?}", bam_reads[*ri], &bl[..bl.len().min(3)], fa.copy_spans.get(pc), a.best_copy, a.status, &fa.copy_spans[..fa.copy_spans.len().min(3)]);
                         }
-                        a.status = rustle::family::copy_assign::AssignStatus::Assigned;
+                        a.status = rustle::copy_assign::AssignStatus::Assigned;
                         a.best_copy = pc;
                         a.resolvable = true;
                         let mut one = vec![0.0f64; fa.copy_spans.len()];
@@ -7952,12 +7950,8 @@ fn main() -> Result<()> {
                             .map(|(k, _)| k)
                             .unwrap_or(0);
                         let label = match em_result.labels[row_idx] {
-                            rustle::family::copy_assign::em_copy_assign::EmLabel::Certified => {
-                                "Certified"
-                            }
-                            rustle::family::copy_assign::em_copy_assign::EmLabel::SoftZone => {
-                                "SoftZone"
-                            }
+                            rustle::copy_assign::em_copy_assign::EmLabel::Certified => "Certified",
+                            rustle::copy_assign::em_copy_assign::EmLabel::SoftZone => "SoftZone",
                         };
                         let post_str = post
                             .iter()
@@ -8438,7 +8432,7 @@ fn main() -> Result<()> {
                         }
                     }
                     if t.strand == '-' {
-                        seq = rustle::family::seq_utils::revcomp_keep_case(&seq);
+                        seq = rustle::seq_utils::revcomp_keep_case(&seq);
                     }
                     Some(longest_orf(&seq) / 3)
                 } else {
@@ -8715,7 +8709,9 @@ fn main() -> Result<()> {
                                     // placement's own locus instead of a bare "outside" — default off so the
                                     // existing `copies_undecided` schema stays byte-identical.
                                     let loci = if args.name_outside_tie {
-                                        rustle::family::copy_assign::copy_assign_pipeline::tie_outside_loci(name)
+                                        rustle::copy_assign::copy_assign_pipeline::tie_outside_loci(
+                                            name,
+                                        )
                                     } else {
                                         std::collections::BTreeSet::new()
                                     };
@@ -9142,7 +9138,7 @@ fn main() -> Result<()> {
     // --gtf-regroup: the pass's counts (params.tsv rows only when set)
     let mut regroup_stats: Option<RegroupStats> = None;
     // --bridge-regroup: the pass's counts (params.tsv rows only when set)
-    let mut bridge_stats: Option<rustle::family::bridge_regroup::Stats> = None;
+    let mut bridge_stats: Option<rustle::bridge_regroup::Stats> = None;
     // --bridge-regroup f1units: what nominated the cuts (`f1` or `list:<file name>`)
     let mut bridge_detector: Option<String> = None;
     if args.gtf {
@@ -9459,7 +9455,7 @@ fn main() -> Result<()> {
         tss_tag(&mut gtf_lines, &tes_attrs);
         // --bridge-regroup (F1 / F1v2): LAST, on the final lines, as f1_bridge.py post-processed the emitted GTF (the
         // attribute passes above are keyed by transcript_id and never read gene_id). Off = this block is never entered.
-        let mut bridge_out: Option<rustle::family::bridge_regroup::Outcome> = None;
+        let mut bridge_out: Option<rustle::bridge_regroup::Outcome> = None;
         if let Some(mode) = bridge_mode {
             // F1's UP-proof is --polish-tes's 3' cluster rule, whose constants f1_bridge.py froze
             const _: () = assert!(
@@ -9472,10 +9468,10 @@ fn main() -> Result<()> {
             let end_clusters = |ends: &[i64],
                                 seq: &[u8],
                                 minus: bool|
-             -> Vec<rustle::family::bridge_regroup::EndCluster> {
+             -> Vec<rustle::bridge_regroup::EndCluster> {
                 tes_clusters(ends, seq, minus)
                     .into_iter()
-                    .map(|c| rustle::family::bridge_regroup::EndCluster {
+                    .map(|c| rustle::bridge_regroup::EndCluster {
                         mode: c.mode,
                         n: c.n,
                         proven: c.proven,
@@ -9485,8 +9481,8 @@ fn main() -> Result<()> {
             };
             let (t0, n_records) = (std::time::Instant::now(), bridge_all.len());
             let out = match &bridge_list {
-                Some(list) => rustle::family::bridge_regroup::run_list(&mut gtf_lines, list)?,
-                None => rustle::family::bridge_regroup::run(
+                Some(list) => rustle::bridge_regroup::run_list(&mut gtf_lines, list)?,
+                None => rustle::bridge_regroup::run(
                     &mut gtf_lines,
                     mode,
                     &mut bridge_all,
@@ -9648,8 +9644,7 @@ fn main() -> Result<()> {
         } else {
             format!(
                 "\t{}\t{}",
-                rustle::family::copy_assign::copy_assign_pipeline::is_tie_outside(&r.read_name)
-                    as u8,
+                rustle::copy_assign::copy_assign_pipeline::is_tie_outside(&r.read_name) as u8,
                 is_disagreement(&r.read_name) as u8
             )
         };
@@ -9685,7 +9680,7 @@ fn main() -> Result<()> {
             r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling, eichler
         )?;
     }
-    let indel_stats = rustle::family::copy_assign::copy_assign_pipeline::take_indel_stats();
+    let indel_stats = rustle::copy_assign::copy_assign_pipeline::take_indel_stats();
     {
         // §6es hygiene: reads with an aligned base inside a copy. ⚠ Kept for continuity only — it counts
         // secondary-only visitors, so it is NOT the denominator to quote (register 734).
@@ -9972,9 +9967,9 @@ fn main() -> Result<()> {
         // per-family. Keyed by `(family_id, copy_idx)`, the same join key `JoinRow` now carries.
         let o3_flags: DetHashMap<
             (String, String),
-            rustle::family::missing_copy::missing_copy_flag_pass::FlaggedPair,
+            rustle::missing_copy::missing_copy_flag_pass::FlaggedPair,
         > = if args.flag_missing_copies {
-            rustle::family::missing_copy::missing_copy_flag_pass::finalize_flags(
+            rustle::missing_copy::missing_copy_flag_pass::finalize_flags(
                 &o3_all_raw_pairs,
                 args.missing_copy_alpha,
             )
@@ -9999,13 +9994,21 @@ fn main() -> Result<()> {
                 match o3_flags.get(&(r.family_id.clone(), r.copy_idx.clone())) {
                     Some(fp) => {
                         let flag_str = match fp.flag {
-                            rustle::family::missing_copy::missing_copy_flag_pass::Flag::MissingCopy => "missing_copy",
-                            rustle::family::missing_copy::missing_copy_flag_pass::Flag::Untestable => "untestable",
-                            rustle::family::missing_copy::missing_copy_flag_pass::Flag::NoFlag => "none",
+                            rustle::missing_copy::missing_copy_flag_pass::Flag::MissingCopy => {
+                                "missing_copy"
+                            }
+                            rustle::missing_copy::missing_copy_flag_pass::Flag::Untestable => {
+                                "untestable"
+                            }
+                            rustle::missing_copy::missing_copy_flag_pass::Flag::NoFlag => "none",
                         };
                         let class_str = match fp.pair.class {
-                            rustle::family::missing_copy::missing_copy_flag_pass::Class::Divergent => "divergent",
-                            rustle::family::missing_copy::missing_copy_flag_pass::Class::Structural => "structural",
+                            rustle::missing_copy::missing_copy_flag_pass::Class::Divergent => {
+                                "divergent"
+                            }
+                            rustle::missing_copy::missing_copy_flag_pass::Class::Structural => {
+                                "structural"
+                            }
                         };
                         let rate = if fp.pair.covered_kb > 0.0 {
                             fp.pair.n_sites as f64 / fp.pair.covered_kb
@@ -10070,9 +10073,15 @@ fn main() -> Result<()> {
         )?;
         for l in &o3_all_orphan_loci {
             let class_str = match l.class {
-                rustle::family::missing_copy::missing_copy_flag_pass::LocusClass::OtherFamily => "other_family",
-                rustle::family::missing_copy::missing_copy_flag_pass::LocusClass::AnnotatedNoUnit => "annotated_no_unit",
-                rustle::family::missing_copy::missing_copy_flag_pass::LocusClass::Unannotated => "unannotated",
+                rustle::missing_copy::missing_copy_flag_pass::LocusClass::OtherFamily => {
+                    "other_family"
+                }
+                rustle::missing_copy::missing_copy_flag_pass::LocusClass::AnnotatedNoUnit => {
+                    "annotated_no_unit"
+                }
+                rustle::missing_copy::missing_copy_flag_pass::LocusClass::Unannotated => {
+                    "unannotated"
+                }
             };
             writeln!(
                 lh,
@@ -10215,7 +10224,7 @@ fn main() -> Result<()> {
         // builder itself only lays out intervals) — a missing/uncovered stretch falls back to an N-run,
         // counted rather than silently faked (never claim sequence we didn't fetch).
         let n_seq_fallback = std::cell::Cell::new(0usize);
-        let exon_seq = |ec: &rustle::family::copy_graph::ExonClass| -> Vec<u8> {
+        let exon_seq = |ec: &rustle::copy_graph::ExonClass| -> Vec<u8> {
             genome_for(&ec.chrom)
                 .ok()
                 .and_then(|g| g.fetch_sequence(&ec.chrom, ec.start, ec.end))
@@ -10309,7 +10318,7 @@ fn main() -> Result<()> {
 
     // ⭐ L6 --dump-star: each molecule's read-star proof (its own columns, its bases, every candidate's bases).
     if args.dump_star {
-        let proofs = rustle::family::copy_assign::copy_assign_pipeline::take_star_proofs();
+        let proofs = rustle::copy_assign::copy_assign_pipeline::take_star_proofs();
         let mut sh = std::fs::File::create(format!("{}.star_reads.tsv", args.out))?;
         writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns")?;
         let mut n = 0usize;
@@ -10700,7 +10709,7 @@ fn main() -> Result<()> {
                     format!("{}", readthrough_all.n_ale_exempt),
                 )?;
             }
-            if rule == rustle::family::denovo_assemble::ReadthroughRule::R3 {
+            if rule == rustle::denovo_assemble::ReadthroughRule::R3 {
                 row(
                     "readthrough_junctions_tier_b_guarded",
                     format!("{}", readthrough_all.n_tier_b_guarded),
@@ -10872,7 +10881,7 @@ fn main() -> Result<()> {
             if args.polish_junction_snap == "reads" {
                 row(
                     "polish_junction_snap_min_reads",
-                    format!("{}", rustle::family::denovo_assemble::PASS1_MIN_READS),
+                    format!("{}", rustle::denovo_assemble::PASS1_MIN_READS),
                 )?;
                 row(
                     "polish_junction_snap_read_flank_bp",
@@ -11280,7 +11289,7 @@ mod tests {
     #[test]
     fn bridge_regroup_defaults_to_f1v2_under_assemble_only_only() {
         use clap::Parser;
-        use rustle::family::bridge_regroup::Mode;
+        use rustle::bridge_regroup::Mode;
         let parse = |extra: &[&str]| {
             super::Args::try_parse_from(
                 [
@@ -11351,7 +11360,7 @@ mod tests {
     #[test]
     fn f1units_is_opt_in_and_the_units_list_belongs_to_it() {
         use clap::Parser;
-        use rustle::family::bridge_regroup::Mode;
+        use rustle::bridge_regroup::Mode;
         let parse = |extra: &[&str]| {
             super::Args::try_parse_from(
                 [
@@ -12044,7 +12053,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------------------------------ --polish-tss
-    use rustle::family::denovo_assemble::TssEvidence;
+    use rustle::denovo_assemble::TssEvidence;
 
     /// A fixed null (tests: hand-computable): hazard `h`, Poisson (a = 0), r(-2) = `r_m2` (1 elsewhere), and the
     /// internal-exon-body cap background `bg` = (capped, all).
@@ -12096,7 +12105,7 @@ mod tests {
             }
         }
     }
-    fn tss_recs(ev: &TssEvidence) -> Vec<rustle::family::denovo_assemble::TssRead> {
+    fn tss_recs(ev: &TssEvidence) -> Vec<rustle::denovo_assemble::TssRead> {
         ev.by_chrom.get("c").cloned().unwrap_or_default()
     }
     /// The driver's polish (full, fraction 0.02, shadow, quantile 0.82, ISM 0.7, retained 10) on `l`.
@@ -12257,7 +12266,7 @@ mod tests {
         n: usize,
         b: impl Fn(usize) -> Option<u8>,
     ) -> bool {
-        rustle::family::denovo_assemble::tss_cap_clip(ops, rev, n, b)
+        rustle::denovo_assemble::tss_cap_clip(ops, rev, n, b)
     }
 
     #[test]
@@ -12851,7 +12860,7 @@ mod tests {
 
     #[test]
     fn tss_off_collects_nothing() {
-        let acc = rustle::family::denovo_assemble::Pass1Acc::new(1, None);
+        let acc = rustle::denovo_assemble::Pass1Acc::new(1, None);
         assert!(acc.tss.is_none(), "Pass1Acc::new leaves the evidence off");
     }
 
@@ -13159,7 +13168,7 @@ mod tests {
         // [10,5010) with no M/=/X inside it. A window fully inside the intron (e.g. [100,200)) must
         // score 0 overlap, even though it lies strictly between the read's ref_start and ref_end --
         // this is the exact bug `read_ref_end`-based span checks were vulnerable to.
-        let read = rustle::family::copy_split::AlignedRead {
+        let read = rustle::copy_split::AlignedRead {
             ref_start: 0,
             cigar: vec![('M', 10), ('N', 5000), ('M', 10)],
             seq: vec![],
@@ -13182,7 +13191,7 @@ mod tests {
     fn block_overlap_counts_the_real_match_run_inside_the_window() {
         // ref_start=100, "50M": a simple hand-computable case -- window [110,130) is fully inside the
         // aligned block [100,150), so overlap is the window's own width, 20.
-        let read = rustle::family::copy_split::AlignedRead {
+        let read = rustle::copy_split::AlignedRead {
             ref_start: 100,
             cigar: vec![('M', 50)],
             seq: vec![],
@@ -13199,7 +13208,7 @@ mod tests {
     fn best_overlap_truth_copy_picks_the_copy_with_more_overlap() {
         // A read whose primary alignment ("M",100 from ref_start 0) overlaps copy A's span [0,80) by 80bp
         // and copy B's span [60,100) by only 40bp -- the truth copy must be A ("best overlap wins").
-        let read = rustle::family::copy_split::AlignedRead {
+        let read = rustle::copy_split::AlignedRead {
             ref_start: 0,
             cigar: vec![('M', 100)],
             seq: vec![],
@@ -13243,7 +13252,7 @@ mod tests {
         // Two candidate copies with EQUAL overlap (50bp each): the first one in `copy_spans`' iteration
         // order wins, matching Python's strict `>` compare over `cp.items()`'s insertion order -- a later
         // equal-overlap candidate never displaces it.
-        let read = rustle::family::copy_split::AlignedRead {
+        let read = rustle::copy_split::AlignedRead {
             ref_start: 0,
             cigar: vec![('M', 100)],
             seq: vec![],
@@ -13290,11 +13299,11 @@ mod tests {
         // catalog) -- so A should report the 5000-5100 site and B should report NOTHING AT ALL, because
         // that read was never B's to reason about. Pre-fix, the whole region's tied list was handed to
         // every family, so the identical site with the identical read list came out under both ids.
-        use rustle::family::copy_assign::Assignment;
-        use rustle::family::copy_graph::copy_discovery::tie_partner_placements;
+        use rustle::copy_assign::Assignment;
+        use rustle::copy_graph::copy_discovery::tie_partner_placements;
         let mk = |name: &str, start: u64, as_score: i32| BamRead {
             chrom: "chr1".to_string(),
-            read: rustle::family::copy_split::AlignedRead {
+            read: rustle::copy_split::AlignedRead {
                 ref_start: start,
                 cigar: vec![('M', 100)],
                 seq: vec![],
@@ -13450,7 +13459,7 @@ mod tests {
 
     #[test]
     fn linearize_tsv_row_formats() {
-        use rustle::family::linearize::{LinearizeCertificate, Verdict};
+        use rustle::linearize::{LinearizeCertificate, Verdict};
         let c = LinearizeCertificate {
             n_pool: 40,
             linearized_frac_real: 0.82,
@@ -13523,7 +13532,7 @@ mod tests {
 
     #[test]
     fn tie_invariant_threshold_is_the_locus_gate() {
-        use rustle::family::denovo_assemble::GATE_MIN_READS;
+        use rustle::denovo_assemble::GATE_MIN_READS;
         // The certificate boolean is anchored >= GATE_MIN_READS (=3): 2 -> false, 3 -> true.
         assert!(!(2u32 >= GATE_MIN_READS));
         assert!(3u32 >= GATE_MIN_READS);
@@ -13531,7 +13540,7 @@ mod tests {
 
     #[test]
     fn build_copy_graph_maps_family_to_graph() {
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 2;
@@ -13555,13 +13564,10 @@ mod tests {
 
     // A discovery_coupled Assignment for read `ri` pinned to copy `best_copy` (status Assigned) — the ONLY
     // signal that makes a copy absent. Mirrors the default Assignment (copy_assign.rs) with the flag flipped.
-    fn coupled_assignment(
-        ri: usize,
-        best_copy: usize,
-    ) -> (usize, rustle::family::copy_assign::Assignment) {
+    fn coupled_assignment(ri: usize, best_copy: usize) -> (usize, rustle::copy_assign::Assignment) {
         (
             ri,
-            rustle::family::copy_assign::Assignment {
+            rustle::copy_assign::Assignment {
                 best_copy,
                 log_lr_margin: 10.0,
                 n_decisive: 1,
@@ -13585,8 +13591,8 @@ mod tests {
         // Absence is driven by a discovery_coupled read, NOT the collapsed/rescued counts. copy1 has a
         // coupled read AND its span overlaps copy0's span => AbsentCollapsed (hidden co-located haplotype).
         // copy0 (no coupled read) stays AnnotationUnknown (no _ABSENT).
-        use rustle::family::copy_graph::CopyStatus;
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::copy_graph::CopyStatus;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 2;
@@ -13629,8 +13635,8 @@ mod tests {
     fn build_copy_graph_coupled_copy_dispersed_is_absent_divergent() {
         // copy1 has a coupled read but its span is DISJOINT from copy0's (different chrom) => AbsentDivergent
         // (dispersed, no overlapping in-genome copy).
-        use rustle::family::copy_graph::CopyStatus;
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::copy_graph::CopyStatus;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 2;
@@ -13664,8 +13670,8 @@ mod tests {
         // REGRESSION for the GSTM bug: collapsed_copies (9) >> n_copies (3) with NO discovery_coupled reads.
         // The old code let absent_tail_start underflow to 0 and mislabeled ALL 3 in-genome copies _ABSENT.
         // Correct behavior: no coupled read => NO copy is absent; all are AnnotationUnknown, no _ABSENT.
-        use rustle::family::copy_graph::CopyStatus;
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::copy_graph::CopyStatus;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.n_copies = 3;
@@ -13708,8 +13714,8 @@ mod tests {
 
     #[test]
     fn build_copy_graph_fills_mi_from_copy_map_identity() {
-        use rustle::family::copy_graph::CopyStatus;
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::copy_graph::CopyStatus;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.copy_tids = vec!["c0".into(), "c1".into()];
@@ -13754,7 +13760,7 @@ mod tests {
 
     #[test]
     fn build_exon_graph_makes_copy_specific_arm() {
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.copy_tids = vec!["c0".into(), "c1".into()];
@@ -13776,8 +13782,8 @@ mod tests {
 
     #[test]
     fn annotation_axis_from_intervals() {
-        use rustle::family::copy_graph::CopyStatus;
-        use rustle::family::denovo_pipeline::FamilyAssignment;
+        use rustle::copy_graph::CopyStatus;
+        use rustle::denovo_pipeline::FamilyAssignment;
         let mut fa = FamilyAssignment::empty();
         fa.chrom = "chr1".into();
         fa.copy_tids = vec!["c0".into(), "c1".into()];

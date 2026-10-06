@@ -5,7 +5,7 @@
 #   families  gene families from the de novo loci (all-vs-all -> MCL)   mcl_families --from-gtf --emit-units
 #             = THE default de novo family definition (user decision 2026-09-25): one copy per member locus =
 #             its representative transcript (PREFIX.fam.copies.tsv/.fa, the copy table copy assignment consumes)
-#   candidates  reference-absent copies from each family's own reads    o3_candidates + tools/o3_augment.py + minimap2
+#   candidates  reference-absent copies from each family's own reads    candidate_copies + utilities candidate-augment + minimap2
 #             OPT-IN (ruling R14, 2026-10-02: its pre-registered acceptance, Amendment 12, FAILED —
 #             docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; 2026-10-03: the re-run, Amendment 13, passed, but the no-deletion
 #             control, Amendment 14, failed, so the default flip was reverted — docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md):
@@ -369,12 +369,12 @@ stage_catalog() {
 # its pre-registered acceptance, Amendment 12, FAILED, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; the re-run, Amendment 13,
 # passed, but its no-deletion control, Amendment 14, failed, so the 2026-10-03 default flip was reverted,
 # docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md — naming the stage runs it, `all` runs it only with --candidates, and assign
-# and flag use its products only with --candidates): o3_candidates turns each family's read net (reads with a record on its
+# and flag use its products only with --candidates): candidate_copies turns each family's read net (reads with a record on its
 # copies, plus the unmapped and the poorly placed reads >= 300 bp that align, map-ont, over >= 50% of their length at
 # de <= 0.20 to the run's net reads or copies: Amendment 13b) into read clusters at --delta, one consensus per cluster on its
 # structurally central member (Amendments 13d/13e), and candidate copies (clusters beyond delta of every reference locus,
 # merged by the significance test, flagged with >= 6 reads), each represented by the exon union of its clusters ->
-# PREFIX.cand.{candidates.tsv,contigs.fa,nets.fa,...}. With a flagged candidate: tools/o3_augment.py writes PREFIX.aug.{fa,copies.tsv,copies.fa,regions.txt,
+# PREFIX.cand.{candidates.tsv,contigs.fa,nets.fa,...}. With a flagged candidate: `utilities candidate-augment` writes PREFIX.aug.{fa,copies.tsv,copies.fa,regions.txt,
 # families.txt} (each candidate a contig `cand_<family>_<k>` of PREFIX.aug.fa and a `member_status candidate` row of its
 # family), and the reads of the candidate families (PREFIX.cand.nets.fa, every read of each such family's net) are
 # realigned to PREFIX.aug.fa with the pipeline's own minimap2 flags -> PREFIX.aug.bam, the reads `assign --candidates` gives
@@ -389,15 +389,15 @@ stage_candidates() {
   if [ "$(awk 'NR > 1 && NF' "$OUT.fam.copies.tsv" | wc -l)" = 0 ]; then
     say "candidates: $OUT.fam.copies.tsv lists no copy (no family): nothing to do"; return 0
   fi
-  say "candidates: o3_candidates on $OUT.fam.copies.tsv (delta $DELTA, at most $CAND_MAX reads per family)"
-  "$BIN/o3_candidates" --bam "$BAM" --fasta "$FASTA" --copies "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
+  say "candidates: candidate_copies on $OUT.fam.copies.tsv (delta $DELTA, at most $CAND_MAX reads per family)"
+  "$BIN/candidate_copies" --bam "$BAM" --fasta "$FASTA" --copies "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
     --index "$INDEX" --delta "$DELTA" --max-reads "$CAND_MAX" --threads "$THREADS" --out "$OUT.cand" > "$OUT.candidates.log" 2>&1 \
-    || { local rc=$?; say "candidates: o3_candidates failed (exit $rc), see $OUT.candidates.log"; exit "$rc"; }
+    || { local rc=$?; say "candidates: candidate_copies failed (exit $rc), see $OUT.candidates.log"; exit "$rc"; }
   local n
   n=$(awk -F'\t' 'NR>1 && $5==1' "$OUT.cand.candidates.tsv" | wc -l)
   say "candidates: $n flagged candidate copies in $(awk -F'\t' 'NR>1 && $5==1' "$OUT.cand.candidates.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.cand.candidates.tsv)"
   [ "$n" -gt 0 ] || return 0
-  python3 "$(dirname "$0")/o3_augment.py" --fasta "$FASTA" --copies "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
+  "$BIN/utilities" candidate-augment --fasta "$FASTA" --copies "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
     --regions "$OUT.fam.copies.regions" --cand "$OUT.cand" --out "$OUT.aug" || exit $?
   samtools faidx "$OUT.aug.fa"
   say "candidates: realigning the $(grep -c '^>' "$OUT.cand.nets.fa") reads of the candidate families to $OUT.aug.fa"
@@ -422,7 +422,7 @@ stage_assign() {
   # overlap and nest wherever families interleave (human chr16: 92 overlapping neighbours among 111 regions), so the
   # second column cannot be passed as it is. Every family's own interval lies inside exactly one merged region, which is
   # what binds it; its reads are still gathered around each copy (copy_assign's copy windows), not over the region.
-  # tools/o3_augment.py merges the candidate families' rows by the same rule (PREFIX.aug.regions.txt).
+  # `utilities candidate-augment` merges the candidate families' rows by the same rule (PREFIX.aug.regions.txt).
   fam_regions() {
     local mode=$1 list=${2:-/dev/null}
     awk -F'\t' -v OFS='\t' -v mode="$mode" -v list="$list" '

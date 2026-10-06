@@ -1,6 +1,6 @@
 Driver end-to-end on this fixture: tools/rustle_pipeline.sh's candidates and assign stages (spec 2026-10-02 §7).
 
-  bash tools/rlock.sh heavy bash tests/fixtures/o3_candidates/driver/run_e2e.sh --bin <CARGO_TARGET_DIR>/release --out <scratch>
+  bash tools/rlock.sh heavy bash tests/fixtures/candidate_copies/driver/run_e2e.sh --bin <CARGO_TARGET_DIR>/release --out <scratch>
 
 run_e2e.sh builds the families stage's three products from the fixture (the fixture has no O1 products: its one locus
 gives the families stage no family): fx.fam.copies.tsv/.fa = the fixture's copy table (MCL0, copy A) plus a control family
