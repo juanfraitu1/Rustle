@@ -88,3 +88,11 @@ different phenomenon (few-read consensus) for a future amendment, not this one.
 | `a14a15/` | the corrected A14 run (classify, arm C, creport) + `wholebam/` R23 probe |
 | `a15h/` | the held-out H run (classify, arm C) |
 | `/tmp/dupsig.*.names` | the per-union off-diagonal sets behind the signature counts (session scratch) |
+
+## Corrections (2026-10-06)
+
+Found by an adversarial re-check of the Locus Anatomy page against the run products; each recomputed here from the products. The verdicts above (A13-1/2/3 PASS, C1' and H1 FAIL) do not change.
+
+1. **A13-1, D right.** The uncorrected run's value is **7,898** (108.1 % of C) with 323/41,727 false moves (`a13/comparator.out`, `a13/score.out`), not 7,882. The correction cost 16 correct placements (-0.2 %) and one false move. "Identical to the uncorrected run's 7,882 — the correction lost no correct placements" (A13 section, first bullet) is wrong, and so is "unchanged by the fix" in register row 1247.
+2. **A13-3, time.** The registered measure is the sum of the five batches' `/usr/bin/time` Elapsed: corrected **2,002.1 s = 33.4 min** (205.88 + 330.65 + 513.44 + 557.72 + 394.39), uncorrected **1,555.8 s = 25.9 min**: the majority test costs **+29 %**, not "~15 %". The 30.0 min above is the stage's own monotonic clock (1,802.9 s), which runs about 11 % behind Elapsed. The bar (40 min) is met on either clock.
+3. **GWFAM175_0 and GWFAM331_0 are not few-read flags.** GWFAM175_0 has 183 reads (it is the class-a true copy, GWFAM175_B0) in both the A13 and A14 corrected runs; GWFAM331_0 has 143 reads in A13 and 129 in A14 (`cand.candidates.tsv`). The "few-read flags counted in C1'" sentence of the duplication-signature bullet holds for neither.
