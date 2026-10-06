@@ -46,7 +46,7 @@ use super::read_conflict::{
     as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, locus_unique_mapper_counts,
     reads_distinguish, ConflictParams, Placement, ReadPlacements,
 };
-use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
+use super::family_rescue::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
 
 /// Configuration for the de-novo detection pipeline (defaults mirror the python stages).

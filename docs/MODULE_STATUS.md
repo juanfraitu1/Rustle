@@ -32,7 +32,7 @@ this file must list exactly the module set.
 
 | tag | count |
 |---|---|
-| **SHIPPED-DEFAULT** | 17 |
+| **SHIPPED-DEFAULT** | 16 |
 | **OPT-IN** | 17 |
 | **OTHER-BINARY** | 3 |
 | **REFUTED** | 1 |
@@ -81,13 +81,12 @@ Reachable from a shipped binary with **no env var and no non-default flag**. Thi
 | `family_detect.rs` | - | MEASURED: denovo_pipeline.rs:3690 calls `collapse_loci_span_aware(&transcripts, &cfg.detect)` in the final unconditional `else` branch of the rep-selection chain (the three earlier branches are the env-gated RUSTLE_LOCUS_EXON_UNIO |
 | `shared_definition.rs` | OPT-IN | MEASURED: reached only from denovo_pipeline.rs when `RUSTLE_SHARED_DEFINITION` is set (shared_definition::enabled()); unset leaves the catalog byte-identical. Read-isoform widening (ISOFORM_MIN_READS = 5) is ON inside that path by default, off with `RUSTLE_SD_READ_ISOFORM=0` (ledger 6m0). |
 | `family_graph.rs` | - | MEASURED: contiguous_core_coverage_bounded is imported unconditionally at denovo_pipeline.rs:27 and family_detect.rs:32 (the default POA edge criterion); poa_msa_with_costs is called at copy_assign_pipeline.rs:428 and :539; family |
-| `family_rescue.rs` | - | MEASURED: denovo_pipeline.rs:2176 calls `rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3)` inside the `for cf in colocated` loop of detect_and_assign. The only guard is `let rescued = |
+| `family_rescue.rs` (absorbed `rescue_pipeline` 2026-10-05) | - | MEASURED: denovo_pipeline.rs:2176 calls `rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3)` inside the `for cf in colocated` loop of detect_and_assign. The only guard is `let rescued = |
 | `family_split.rs` | - | MEASURED: denovo_pipeline.rs:3348 calls `family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma)` unconditionally inside homology_blocks — the RUSTLE_ER_WEIGHTED_PARTITION read at :3335 only chooses whether edge wei |
 | `fam_from_gtf.rs` | - | 2026-10-04: extracted verbatim from `src/bin/mcl_families.rs` (the `--from-gtf` loci, all-vs-all + PAF cache, and `write_locus_rep_copies` copy table) into the library; `mcl_families` re-imports every moved function unchanged. Byte-identity of its products cmp-checked against the pre-extraction binary (bench/MERGED_PIPELINE.md). |
 | `mosaic.rs` | - | MEASURED: `detect_mosaic` is called unconditionally at src/rustle/vg_family/copy_assign_pipeline.rs:1541 inside `assign_family_detailed_once` (copy_assign_pipeline.rs:1421), which is reached from `assign_family_detailed` at src/ru |
 | `read_conflict.rs` | - (no gate; opt-OUT only via cfg.homology_primary. Tuning env RUSTLE_CONFLICT_SIG / RUSTLE_CONFLICT_MIN_READS  | MEASURED: locus_unique_mapper_counts runs unconditionally inside detect_and_assign at src/rustle/vg_family/denovo_pipeline.rs:2000, and conflict_edges/conflict_families is the DEFAULT membership oracle at denovo_pipeline.rs:2004-2 |
 | `readonly_copy_number.rs` | - for the chi_h leg. The depth_cn leg is gated by `--lambda-global` (src/bin/copy_assign.rs:322 doc, consumed  | MEASURED: src/bin/copy_assign.rs:1983 calls chi_h_with_junctions in the unconditional famcn_rows.push loop; src/bin/copy_assign.rs:1354 comments the table as "always emitted" and copy_assign.rs:2071 writes <out>.famcn_readonly.tsv |
-| `rescue_pipeline.rs` | - (no flag, no env var). Suppressed only when copy_assign is run with --families (src/bin/copy_assign.rs:452,  | MEASURED: thin_loci at src/rustle/vg_family/denovo_pipeline.rs:2175 and rescue_thin_loci_iterative at :2176, inside detect_and_assign's per-family `for cf in colocated` loop (prod; test mod starts at denovo_pipeline.rs:7362); dete |
 
 ## OPT-IN (17)
 
@@ -165,4 +164,3 @@ Each describes itself as doing something its callers do not support.
 | `mosaic.rs` | SHIPPED-DEFAULT | MEASURED — THE BIGGEST ONE IN THIS SLICE: mosaic.rs:14-15 states "Default-OFF in the pipeline (RUSTLE_VG_MOSAIC_ON)". `grep -rn 'RUSTLE_VG_MOSAIC_ON\/MOSAIC_ON' src/ tests/` returns exactly ONE hit — that docstring line itself. The env var is never read; the d |
 | `read_conflict.rs` | SHIPPED-DEFAULT | MEASURED: the header at src/rustle/vg_family/read_conflict.rs:22-23 says "The remaining integration is plumbing per-locus secondary placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage" — i.e. it presents the module as NOT |
 | `readonly_copy_number.rs` | SHIPPED-DEFAULT | MEASURED (minor, but it is a severed claim): readonly_copy_number.rs:10 is a dangling fragment — "//!  families e.g. `chi_H=1` on a locus whose true copy number is ~11." — the sentence it belonged to is gone, so the stated lower-bound caveat reads as a floatin |
-| `rescue_pipeline.rs` | SHIPPED-DEFAULT | - (header calls it "integration stage 4b", which matches). Scope note only: gw_family_catalog does NOT call detect_and_assign (it imports detect_conflict_catalog_genome_wide* / detect_homology_catalog_genome_wide at gw_family_catalog.rs:19-24), so rescue is de |
