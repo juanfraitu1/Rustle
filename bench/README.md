@@ -1,10 +1,113 @@
 # bench/ — the analysis scripts and per-topic reports
 
-Regenerated 2026-09-24 after wave 7. bench/ holds **98 files**: **9 Python files** (6 command-line scripts, 3
-libraries), 4 data tables, 80 reports, this README and 4 orphan READMEs. Wave 7 folded the **42** Python files that
-waves 5 and 6 had kept (21 top-level, 12 in `layer_order/`, 9 in `soto/`) into these 9: 39 were removed, 6 are new and
-3 were kept. Each replaced command was checked byte-identical against the old script on its recorded inputs; the
-exceptions are listed under "Where the output is not the old output".
+**Script index 2026-10-05 (read this first).** bench/ + tools/ hold **93 scripts** (86 .py, 7 .sh; the wave-7 header
+counts below are that wave's own). They are tiered — from "runs in the shipped pipeline" to "safe to ignore":
+
+| tier | what | where |
+|---|---|---|
+| **1. SHIPPED PIPELINE** | called by `tools/rustle_pipeline.sh` / the binaries in a normal run | `tools/` (7 files, table below) |
+| **2. CORE LIBRARY** | the wave-7 scoring/simulation/truth hubs; most-cited scripts in the repo | `bench/` root, 9 files (table below) |
+| **3. STUDY SCRIPTS** | one directory per study, each owned by a registered doc (named in each table); run only to reproduce that study | `bench/rna_allele/`, `bench/soto_m2/`, `bench/annotation/`, `bench/npip_read_pool/`, `bench/mechanism/`, `bench/rep_rule/`, `bench/layer_order/` |
+| **4. ACCESSORY** | page builders, figure scripts, fixture generators; not part of any registered command | `bench/soto_m2/page/`, `figures/`, `tests/fixtures/` |
+
+Rules of thumb: a path cited in a PREREG / the register / REPRODUCE.md is frozen — never move or rename it (86 of the
+93 are). A script in tier 4 can be ignored unless you are rebuilding its one artifact. "Which `score.py`?" — there are
+four, for four different analyses: `bench/score.py` (the wave-7 hub), `bench/rna_allele/score.py` (the RNA-allele
+prereg's H-bar scorer), `bench/npip_read_pool/score.py` (the read-pool scorer), `bench/rep_rule/score.py` (the
+representative-rule scorer). The same collision exists for `make_bam.py` (two independent fixture generators) and the
+`truth_*` names; the owning doc in each table disambiguates.
+
+## Tier 1 — the shipped pipeline (`tools/`, 7)
+
+| file | role |
+|---|---|
+| `rustle_pipeline.sh` | THE pipeline driver: `assemble\|families\|catalog\|assign\|merged\|flag\|all` (AGENTS.md §3; the opt-in `candidates` stage) |
+| `rlock.sh` | the WSL2 job locks every heavy/light call runs under (`heavy`/`light`) |
+| `mm2_shard.sh` | the one minimap2-sharding wrapper (PAF caches, long all-vs-alls) |
+| `rustle_reassemble.sh` | the closed-loop pass 2 (`union → home → pass2 → g0`; figure 9's loop; cited by `figures/fig_loop.py` + `figures/captions/fig9.md`) |
+| `o3_augment.py` | the `candidates` stage's augmentation (copies table + FASTA + regions + name-collision guard) |
+| `protein_attach.py` | protein-family attachment (PREREG_protein_attach_2026-09-25) |
+| `audit_cleanup_candidates.py` | the cleanup-candidate audit (ACTIVE_WORKING_SET; register r1046) |
+
+## Tier 3 — study scripts (run only to reproduce their study)
+
+### `bench/rna_allele/` (26) — the RNA-only allele-count study and the O3 candidates chain
+Owning docs: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md`, `docs/RNA_ALLELE_*_2026-10-01.md`,
+`docs/O3_CANDIDATES_*`, `docs/YAG_CHAIN_*`.
+
+| file | role |
+|---|---|
+| `accept_o3_candidates.sh` / `.py` | the `o3_candidates` acceptance harness (ACC=a12\|a13\|a14\|a15h modes; the A13/A14/H re-runs of 2026-10-03/05) |
+| `panel_to_copies.py` | `panel.json` → the copies table/FASTA the stage consumes (A12/A14/H inputs) |
+| `merge_test.py` | Amendment 8's merge-rule test; also the A12/A13/A14/H arm-M scorer |
+| `control_test.py` | Amendment 9's no-deletion control (candidate classification + arm-C score) |
+| `link_test.py` + `iso_batch.sh` | Amendment 7's δ-linking test |
+| `caller.py` | the RNA-only caller (library; imported by `excise_readout.py`) |
+| `chrmap.py`, `genes.py`, `sets.py` | the frozen truth's chromosome map / gene / sets tables |
+| `truth_classes.py`, `truth_lift.py` | truth classification and the lift to mat/pat |
+| `refabsent_truth.py`, `refabsent_score.py` | Amendment 10's reference-absent truth + scoring |
+| `excise_readout.py` | the 53-family excision panel |
+| `heldout_prep.py`, `heldout_score.py` | the held-out panel build + score |
+| `isocon_sim.py`, `isocon_score_sim.py`, `isocon_score_real.py` | the IsoCon comparator arms (sim + real) |
+| `yag_test.py` | the Y-chain δ_Y runs |
+| `rep_choice.py` | the representative-choice measure (which representative keeps the reads) |
+| `score.py` | the prereg's H-bar scorer (role-cited, never named by path) |
+| `align_driver.sh` | the alignment driver behind the frozen truth |
+
+### `bench/soto_m2/` (13 + 3 helpers + the page web) — the Soto-vs-ours meeting evidence (2026-09-30)
+Owning docs: `docs/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`, `docs/PREREG_soto_*` / `PREREG_unit_cover*` /
+`PREREG_our_homology*` / `PREREG_quasiclique_soto*`, `docs/REGISTER_DRAFTS_machine2.md`.
+
+| file | role |
+|---|---|
+| `soto_m2_union.py`, `soto_m2_our_homology.py`, `soto_m2_families.py` | the union / homology / family tables |
+| `soto_m2_duplicons.py`, `soto_m2_npip_fusion_duplicons.py`, `soto_m2_sedef_exonid.py` | duplicon analyses |
+| `soto_m2_unit_cover.py`, `soto_m2_unit_cover_cn.py` | the unit-cover and its copy number |
+| `soto_m2_loosen.py`, `soto_m2_audit.py` | the loosening arm and the audit |
+| `soto_m2_cat_labels.py`, `soto_m2_gene_ends.py`, `soto_m2_sd_regions.py` | helpers for the page builders |
+| `page/` (9 .py) | **accessory**: the meeting HTML page and its tabs (`build_page.py` is the entry; the rest are its import web) |
+
+### `bench/annotation/` (6) — the CAT/Liftoff v2.0 default-annotation re-run (2026-10-01)
+Owning docs: `docs/ANNOTATION_CAT_DEFAULT_2026-10-01.md`, `docs/CAT_RERUN_PROTOCOL_2026-10-01.md`,
+`docs/SQANTI3_CAT_2026-10-01.md`, `docs/HELDOUT_FAMILIES_CAT_2026-10-01.md`, `docs/CAT_RERUN_STEP5_PLAN_2026-10-01.md`.
+
+| file | role |
+|---|---|
+| `cat_setup.py`, `cat_ref_gtf.py` | the CAT re-run setup and reference GTF |
+| `sq3_cat_run.sh`, `gffcmp_cat_table.py` | SQANTI3 + gffcompare tables (the SQANTI3_CAT doc names these two) |
+| `heldout_cat.py` | the held-out families arm (×7 doc mentions) |
+| `cat_layer_order.py` | the CAT layer-order instrument (STEP5 plan) |
+
+### `bench/npip_read_pool/` (6) — `docs/NPIP_READ_POOL_2026-10-01.md`
+`arm.sh` (the arms driver), `score.py` (the read-pool scorer), `cointoss.py`, `figdata.py`, `pagedata.py` (figure/page
+data), `posthoc.py` (post-hoc readout; also cited by COPY_RECOVERY_TOOLS).
+
+### `bench/mechanism/` (5) — `docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md`, `docs/ADVISOR_JACCARD_ANCHORS_2026-09-25.md`
+`readthrough_rules.py`, `readthrough_eval.py`, `readthrough_tags.py`, `readthrough_combined.py` (the readthrough
+machinery), `jaccard_anchor_test.py` (the advisor's anchor test).
+
+### `bench/rep_rule/` (2) — `docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`
+`run.sh` (the R_M/R_J arms driver), `score.py` (the H3/Amendment-A-E scorer).
+
+### `bench/` root, post-wave-7 additions (5 + 2 tested)
+| file | role |
+|---|---|
+| `copy_support.py` | the spliced-copy-support scorer (SPLICED_COPY_SUPPORT; Amendments A-E; register rows 1232-1244) |
+| `npip_chains.py` | the chain-level CAT/RefSeq/read comparison (NPIP_CHAIN_COMPARISON, register 1239) |
+| `loop_home.py` | the tied-read home loop (PREREG_tied_read_loop_2026-09-25; driven by `tools/rustle_reassemble.sh`) |
+| `f1_bridge.py` | the frozen F1 port (cited with a frozen sha by `tests/copy_assign_bridge_regroup.rs`) |
+| `family_container.py` + `test_family_container.py` | the family-container analysis; **20 unit tests** (PREREG_fusion_container_sim_2026-09-28) |
+
+### Tier 4 pointers
+- `figures/` (20 .py, own `figures/README.md`): the figure builders; shared `figlib.py`; `test_lrc.py` (**7 unit tests**).
+- `tests/fixtures/` (4): two independent `make_bam.py` fixture generators + `make_fixture.py` + `run_e2e.sh`.
+
+## The wave-7 history (2026-09-24)
+
+Wave 7 folded the **42** Python files that waves 5 and 6 had kept (21 top-level, 12 in
+`layer_order/`, 9 in `soto/`) into the 9 core files below: 39 were removed, 6 are new and 3 were kept. Each replaced
+command was checked byte-identical against the old script on its recorded inputs; the exceptions are listed under
+"Where the output is not the old output".
 
 **Where the old files are.** At git tag `notebook-2026-09-24` (`git show notebook-2026-09-24:bench/<old path>`; to rerun a
 provenance command exactly, `git checkout notebook-2026-09-24 -- bench/<old path>`), and copied to
@@ -85,7 +188,7 @@ inside the subcommands that use them.
 | `soto_replication.py ladder` | scratch `soto_reconcile_verify/v_ourcn.py`, `soto_famcn269/run.py` | Sequence only 0.73 → our famCN (10 / 268 samples; exons / Soto's interval) 0.92 / 0.89 / 0.93 → S1C 0.97, with exact families and the ARI without FAM90A. | register 1169, 1170 |
 | `parcn_assembly.py regions` … `analyze` | scratch `soto_parcn_asm/{build_q,kc30.c,kn30.c,analyze}.py` | S1E regions + controls → 30-mers → exact counts per assembly (meryl or numpy; the C counters' tables are read as they are) → SPEC / FAM rule → parCN, famCN, clauses. | `PREREG_soto_parcn_assembly_2026-09-29`; register 1171-1174 |
 
-## Old name → new command (every file wave 7 removed)
+## Old name → new command (every file wave 7 removed — and the 2026-10-05 retirements)
 
 A document that cites one of these paths or names resolves here. The old file itself is at tag `notebook-2026-09-24`.
 The arguments are unchanged unless the "note" column says otherwise.
@@ -139,6 +242,9 @@ The arguments are unchanged unless the "note" column says otherwise.
 | `bench/soto/soto_attach_noncoding_members.py …` | `soto_replication.py cluster --full-geneset …` | its `main()` was already superseded in §6ii (same partition); `attach()` kept |
 | `bench/soto/soto_replicate_clustering.py …` | not replaced | its minimap2 map-back path was superseded by the SEDEF path (§6ie); `load_exons()` kept |
 | `bench/soto/rustlib.py` | not replaced | 0 importers since wave 5; cited only as provenance of the frozen E_r mirror (`docs/seeded_family_definition.md`, register 1044, `denovo_pipeline.rs` doc comments) |
+| `bench/annotation/cat_rekey_truth.py` | retired 2026-10-05 (script index) | zero references outside its own docstring; the CAT_RERUN_PROTOCOL describes step 1 by ruling only. Recover: `git show 7e9421bd:bench/annotation/cat_rekey_truth.py` |
+| `bench/annotation/sq3_cat_table.py` | retired 2026-10-05 (script index) | superseded by `gffcmp_cat_table.py` (the SQANTI3_CAT doc names `gffcmp_cat_table.py` + `sq3_cat_run.sh`, never this). Recover: `git show 7e9421bd:bench/annotation/sq3_cat_table.py` |
+| `bench/rna_allele/catalog.py` | retired 2026-10-05 (script index) | zero references of any kind (the prereg describes its role, never its path). Recover: `git show 7e9421bd:bench/rna_allele/catalog.py` |
 
 **Earlier names of the same code.** Older documents cite some of these scripts by names they had before wave 7. Three
 of those names never sat at a notebook tag; read them with `git show 8db314c7:bench/<name>`. A run older than the tag
