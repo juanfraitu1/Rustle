@@ -3,7 +3,7 @@
 Protocol: `docs/PREREG_ideal_expression_2026-10-06.md` (v1 56637089, Amendment 1 d745c6a9). Tools: `bench/ideal_expression/`. Products: `/mnt/linuxdisk/tmp/ideal_expression_2026-10-06/{NPIP,TBC1D3}/rep{1,2}/`.
 HEAD release binaries (`copy_assign` 87824d91, `mcl_families` a6308244, `as_table` 48786e8f, `family_score` 542923fd), human CHM13 v2.0, CAT/Liftoff v2.0. **DEV, human only, circular by construction** (the reads come from the annotation that scores them):
 the numbers say whether the default pipeline can find these copies when expression, truncation, readthrough and depth do not limit; they do not predict recovery from a real library.
-Two independent read replicates per family (seeds 20261006 and 20261007): NPIP 20,660 reads from 2,066 transcripts of 547 genes, TBC1D3 16,680 reads from 1,668 transcripts of 519 genes (every CAT/Liftoff transcript within +-500 kb of a copy, 10 full-length jittered reads each, error .001).
+Two independent read replicates per family (seeds 20261006 and 20261007): NPIP 20,660 reads from 2,066 simulated transcripts of 474 genes (547 genes and 2,147 transcripts lie in the windows), TBC1D3 16,680 reads from 1,668 transcripts of 464 genes (519 genes, 1,725 transcripts in the windows) (every CAT/Liftoff transcript within +-500 kb of a copy, 10 full-length jittered reads each, error .001).
 
 ## Answer
 
