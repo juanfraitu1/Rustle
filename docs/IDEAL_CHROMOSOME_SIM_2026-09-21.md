@@ -505,3 +505,10 @@ winner-take-all by span.
 `cover_and_jn_definition.py`), not only in some downstream consumer — so this is very likely **undercounting
 this project's own measured recall** wherever a de novo locus spans more than one gene, on every chromosome
 scored this session, not only chr16's 23 genes.
+
+## Correction (2026-10-06): the simulated reads lack each transcript's leftmost exon
+
+`bench/sim.py` `load_transcripts` (used only by `sim.py chromosome`) keeps an exon only if its transcript row came EARLIER in the file. The RefSeq GFF is sorted by start then end, so each transcript's leftmost exon row (same start, shorter end) precedes the transcript row and is dropped: 6,950 of 80,664 chr16 exon rows,
+and 2,280 transcripts vanish whole. On the first 300 testable multi-exon transcripts the simulator's exon list equals the annotated list minus its leftmost exon in 300 of 300, and 298 of 300 reads lack that exon's sequence. The reads therefore carry 4,370 transcripts of 1,407 genes (not all 4,411 / 1,443 of this document, which are the pre-filter loader counts)
+and none is full length; they were also mapped to `chr16.fa` only. Every number of this document describes those reads. The corrected ceilings are not computed.
+
