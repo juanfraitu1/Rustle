@@ -41,3 +41,16 @@ An arm is a CANDIDATE iff, pooled over the four runs, IDEAL-FOUND (R plus E) is 
 ## 7. Limits declared in advance
 
 Same two windows, same simulator, ideal reads, the arms were motivated by what the dev windows showed; the primary-supported marks come from a second assembly of the same reads (an approximation of 'the read's best placement is here'); Rule 2 uses no read evidence, so on real data it can cut a legitimate linking isoform (the truth oracle shows 5% of non-entangled genes split); the seeding gain for copies with no primaries is invisible in these windows.
+
+## Amendment 1 (before any arm exists; the module and its unit tests were written after the section above)
+
+Writing the unit tests showed that Rule 2 as worded ('a separator is an articulation point') also cuts an isoform that is the only link to a one-transcript attachment (A1 = j1 j2, A2 = j1 j2 j3, leaf = j3 j77: A2 would be removed from the families input). The truth-chain oracle of the dev windows (one replicate per family; connected components, three separator definitions; 108 junction-sharing entangled genes, 20 non-sharing, 513 non-entangled) chose the wording:
+
+| rule | separators | junction-sharing entangled genes resolved / merged / split | non-entangled genes split (components: 128) |
+|---|---|---|---|
+| components (current loci) | 0 | 0 / 90 / 18 | 128 |
+| articulation transcript (the first wording) | 92 | 17 / 64 / 27 | 155 |
+| articulation transcript that contains the junction set of a transcript of two groups | 23 | 2 / 87 / 19 | 137 |
+| **articulation transcript whose chain runs from a junction of one group, through a junction no group carries, to a junction of another group (private bridge)** | 38 | 16 / 68 / 24 | 140 |
+
+**Rule 2 is the private bridge** (code: `bench/entangled/locus_units.py`, 12 unit tests, `python3 -m unittest test_locus_units`). It keeps nearly all of the articulation rule's gain with 12 false cuts instead of 27 and 38 separators instead of 92; it still resolves only 16 of 108 junction-sharing entangled genes (the other 68 are merged by shared junctions with no bridge: the boundary of a single-vertex rule, stated in section 2). The oracle is a dev analysis on the same windows and is disclosed as such; the family-level arms of section 3 are the test. Predictions Q1-Q6, the decision rule and Rule 1 are unchanged.
