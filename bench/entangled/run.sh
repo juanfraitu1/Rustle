@@ -91,8 +91,8 @@ hier)
     case $arm in D) PRE=$D/asm;; P|PC|C) PRE=$O/lever_$arm;; *) PRE=$O/$arm;; esac
     [ -s "$PRE.fam.clusters.tsv" ] || { echo "[entangled] hier $arm $F rep$R: no arm"; continue; }
     G=$O/hier_$arm.graph.tsv
-    heavy "$BIN/mcl_families" --from-gtf "$PRE.families.gtf" --fasta "$FA" --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --dump-graph "$G" --out "$O/hier_$arm.hg" > "$O/hier_$arm.log" 2>&1
-    if ! cmp -s "$O/hier_$arm.hg.fam.clusters.tsv" "$PRE.fam.clusters.tsv"; then echo "[entangled] hier $arm $F rep$R: INVALID (the re-run clusters differ from the registered ones)"; continue; fi
+    heavy "$BIN/mcl_families" --from-gtf "$PRE.families.gtf" --fasta "$FA" --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --dump-graph "$G" --out "$O/hier_$arm.fam" > "$O/hier_$arm.log" 2>&1
+    if ! cmp -s "$O/hier_$arm.fam.clusters.tsv" "$PRE.fam.clusters.tsv"; then echo "[entangled] hier $arm $F rep$R: INVALID (the re-run clusters differ from the registered ones)"; continue; fi
     python3 "$HERE/hier_clusters.py" --loci "$PRE.fam.loci.gff3" --graph "$G" --out "$O/hierC_$arm" --prefix "$PRE" > /dev/null
     light python3 "$REPO/bench/ideal_expression/score.py" --truth "$D/reads" --strata "$D/strata" --asm "$O/hierC_$arm" --single "$D/strata.single_copy.tsv" --out "$O/scoreC_$arm" > "$O/scoreC_$arm.log" 2>&1
     light python3 "$REPO/bench/ideal_expression/fam_score.py" --fs "$BIN/family_score" --clusters "$O/hierC_$arm.fam.clusters.tsv" --contig "$CH" --windows "$D/reads.windows.tsv" --label "${F}_rep${R}_C_$arm" --out "$O/famscoreC_$arm.json" --work "$O/famscoreC_work_$arm" > "$O/famscoreC_$arm.log" 2>&1
