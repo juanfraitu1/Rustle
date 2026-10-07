@@ -82,3 +82,5 @@ The chrY assignment with the byte-identical levers (Amendment 1) was started det
 family, 30 copies; reads tied between the skipped family and others lose or gain a cross-family demotion). The chrY arm is stated as an approximation of that size; the full chrY run (MCL0 included) is not done and needs a long, unattended, five-core slot.
 Rules B1 to B3, targets, read model and population are unchanged.
 
+Note added 2026-10-06 after the user asked how a 173-copy family can exist: MCL0 is the Yq12 (GGAAT)n satellite array, not a gene family (161 of 173 members single-exon, median 9.2 kb, chrY 31-61 Mb, 33% GGAAT/ATTCC, zlib ratio 0.107 against 0.32 for the other families) and carries 51% of the simulated chrY reads; leaving it out is therefore principled, not only a time saving. Rules, targets and read model are unchanged.
+
