@@ -3,6 +3,7 @@
 #   run.sh tools FAMILY REP    StringTie (-L, no -G) and FLAIR (bam2bed + collapse --trust_ends, no correct, no annotation) on the ideal BAM, the lab's recipes (benchmark_collapse/run_*.sbatch)
 #   run.sh units FAMILY REP    the driver's assemble and families stages with RUSTLE_BRIDGE_REGROUP=f1units (set for these two commands only)
 #   run.sh levers FAMILY REP   Amendment 1: the driver's assemble and families stages with one existing opt-in change each: P = --no-seed-secondaries, C = RUSTLE_POLISH_SUBCHAIN=drop, PC = both (set for these commands only)
+#   run.sh units2 FAMILY REP   docs/PREREG_locus_units_2026-10-06.md: arms Q (Rule 1), S_D (Rule 2 on all), S_Q (Rules 1+2) = locus_units.py on the families input, then mcl_families with the driver's flags, family-level scoring (score.py), Compara F (fam_score.py)
 #   run.sh score FAMILY REP    arms_score.py over every arm whose GTF exists
 #   run.sh pool                pool.py over the four runs
 # Environment: RS_BIN (release dir), RS_IDEAL (the ideal-expression products), RS_WORK (this study's products). Nothing is read from a RUSTLE_* variable of the calling shell.
@@ -20,7 +21,7 @@ leak=$(env | grep '^RUSTLE_' || true)
 [ -z "$leak" ] || { echo "[entangled] refusing: RUSTLE_* set in the calling environment: $leak" >&2; exit 2; }
 light() { bash "$REPO/tools/rlock.sh" light "$@"; }
 heavy() { bash "$REPO/tools/rlock.sh" heavy "$@"; }
-cmd=${1:?tools|units|levers|score|pool}
+cmd=${1:?tools|units|levers|units2|score|pool}
 if [ "$cmd" = pool ]; then python3 "$HERE/pool.py" "$W"; exit 0; fi
 F=${2:?family}; R=${3:?rep}
 D=$IDEAL/$F/rep$R; O=$W/$F/rep$R; mkdir -p "$O/tmp"
@@ -49,16 +50,34 @@ levers)
     /usr/bin/time -v env "${envs[@]}" bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" families --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 "${extra[@]}" > "$A.families.driver.log" 2> "$A.families.driver.stderr"
     echo "[entangled] lever $arm $F rep$R: $(grep -h 'assemble:' "$A.assemble.driver.stderr" | tail -1 | sed 's/.*assemble: //' | cut -c1-110)"
   done ;;
+units2)
+  PFAM=$O/lever_P.families.gtf; DFAM=$D/asm.families.gtf
+  [ -s "$PFAM" ] || { echo "run levers first (the primaries-only families input)" >&2; exit 2; }
+  case "$F" in NPIP) CH=chr16;; *) CH=chr17;; esac
+  { echo "date	$(date -Is)"; echo "locus_units.py	$(sha1sum "$HERE/locus_units.py" | cut -d' ' -f1)"; echo "mcl_families	$(sha1sum "$BIN/mcl_families" | cut -d' ' -f1)"; echo "primary_gtf	$PFAM"; echo "base_gtf	$DFAM"; } > "$O/units2.run.log"
+  python3 "$HERE/locus_units.py" --base "$DFAM" --out "$O/q.families.gtf" --primary-gtf "$PFAM" --rule1
+  python3 "$HERE/locus_units.py" --base "$DFAM" --out "$O/sd.families.gtf" --rule2 all --side "$O/sd.separators.tsv"
+  python3 "$HERE/locus_units.py" --base "$DFAM" --out "$O/sq.families.gtf" --primary-gtf "$PFAM" --rule1 --rule2 primary --side "$O/sq.separators.tsv"
+  for arm in q sd sq; do
+    A=$O/$arm; rm -f "$A".fam.* "$A.families.log"
+    heavy "$BIN/mcl_families" --from-gtf "$A.families.gtf" --fasta "$FA" --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out "$A.fam" > "$A.families.log" 2>&1
+    light python3 "$REPO/bench/ideal_expression/score.py" --truth "$D/reads" --strata "$D/strata" --asm "$A" --single "$D/strata.single_copy.tsv" --out "$O/score_$arm" > "$O/score_$arm.log" 2>&1
+    light python3 "$REPO/bench/ideal_expression/fam_score.py" --fs "$BIN/family_score" --clusters "$A.fam.clusters.tsv" --contig "$CH" --windows "$D/reads.windows.tsv" --label "${F}_rep${R}_$arm" --out "$O/famscore_$arm.json" --work "$O/famscore_work_$arm" > "$O/famscore_$arm.log" 2>&1
+    echo "[entangled] units2 $arm $F rep$R: $(grep -h 'families:' "$A.families.log" | head -1 | cut -c1-100) | $(tail -1 "$O/score_$arm.log" | cut -c1-120)"
+  done ;;
 score)
   args=(--arm "D_asm=$D/asm.gtf" --arm "D_fam=$D/asm.families.gtf")
   [ -s "$O/st.gtf" ] && args+=(--arm "S=$O/st.gtf")
   [ -s "$O/fl.isoforms.gtf" ] && args+=(--arm "F=$O/fl.isoforms.gtf")
   [ -s "$O/units.gtf" ] && args+=(--arm "U_asm=$O/units.gtf")
   [ -s "$O/units.families.gtf" ] && args+=(--arm "U_fam=$O/units.families.gtf")
+  for arm in q sd sq; do
+    [ -s "$O/$arm.families.gtf" ] && args+=(--arm "${arm}_fam=$O/$arm.families.gtf")
+  done
   for arm in P C PC; do
     [ -s "$O/lever_$arm.gtf" ] && args+=(--arm "${arm}_asm=$O/lever_$arm.gtf")
     [ -s "$O/lever_$arm.families.gtf" ] && args+=(--arm "${arm}_fam=$O/lever_$arm.families.gtf")
   done
   light python3 "$HERE/arms_score.py" --truth "$D/reads" "${args[@]}" --out "$O/arms" | tee "$O/arms.log" ;;
-*) echo "usage: run.sh tools|units|levers|score FAMILY REP | pool" >&2; exit 2 ;;
+*) echo "usage: run.sh tools|units|levers|units2|score FAMILY REP | pool" >&2; exit 2 ;;
 esac
