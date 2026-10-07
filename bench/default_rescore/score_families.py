@@ -42,13 +42,14 @@ def main():
     ap.add_argument("--label", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--work", default=None)
+    ap.add_argument("--truths", default=",".join(TRUTHS), help="comma-separated subset of compara,u2,soto (default all three; the u2 truth is NPIP-only, so chr17 uses compara,soto)")
     a = ap.parse_args()
     work = a.work or os.path.dirname(os.path.abspath(a.out))
     os.makedirs(work, exist_ok=True)
     c_in = f"{work}/{a.label}.clusters.tsv"
     keep(a.clusters, "chrom", a.contig, c_in)
     out = dict(label=a.label, clusters=a.clusters, contig=a.contig, truths={})
-    for key, fn in TRUTHS.items():
+    for key, fn in ((k, TRUTHS[k]) for k in a.truths.split(",")):
         t_in, pf = f"{work}/{a.label}.{key}.truth.tsv", f"{work}/{a.label}.{key}.pf.tsv"
         keep(f"{HUM}/{fn}", "Contig", a.contig, t_in)
         text = subprocess.run([a.fs, "--clusters", c_in, "--gff", f"{HUM}/genes_only.gff", "--soto", t_in, "--chrom", "ALL",
