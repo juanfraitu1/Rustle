@@ -136,7 +136,7 @@ class BamTests(unittest.TestCase):
         rec = pysam.AlignedSegment()
         rec.reference_start = 0
         rec.cigarstring = "30=40N30=100N30="
-        self.assertEqual(T.junctions_of(rec), [(60, 160)])
+        self.assertEqual(T.junctions_of(rec), [(100, 200)])      # 30 + 40 (short intron, advances) + 30 = 100
 
 
 class ScoreTests(unittest.TestCase):
