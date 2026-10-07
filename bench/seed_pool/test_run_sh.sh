@@ -13,6 +13,7 @@ cat > "$BIN/copy_assign" <<'EOS'
 #!/bin/bash
 out=""; while [ $# -gt 0 ]; do case "$1" in --out) out=$2; shift 2;; *) shift;; esac; done
 echo x >> "$STUB_DIR/assemble_calls"
+[ -z "${STUB_FAIL_ASM:-}" ] || exit 1
 printf 'chr16\tstub\ttranscript\t1\t100\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n' > "$out.gtf"
 sleep 1
 printf 'chr16\tstub\ttranscript\t1\t100\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n' > "$out.families.gtf"
@@ -29,6 +30,11 @@ if [ -n "${STUB_WRAPPER:-}" ]; then      # act like the shard wrapper: leave a l
     [ "$STUB_WRAPPER" = progress ] && echo "2026-10-07 00:00:01 shard 0/2 done: 5s, 10 records"
     echo "2026-10-07 00:00:02 budget: shard 1/2 not started (remaining 3s, estimate 9s); 1/2 shards done"; } >> "$d/wrapper.log"
   exit 1
+fi
+if [ "${STUB_WRAPPER_OK:-}" = 1 ]; then      # a successful sharded run: it leaves its log (and the shard cache of its key) behind
+  d="$MM2_SHARD_DIR/key/aaa/qkey/t4.B1"; mkdir -p "$d"
+  { echo "2026-10-07 00:00:00 start mode=wrap target=$loci (key) query=$loci flags='x' dir=$d deadline_in=500s"
+    echo "2026-10-07 00:00:01 shard 0/1 done: 5s, 10 records"; echo "2026-10-07 00:00:02 complete"; } >> "$d/wrapper.log"
 fi
 [ -z "${STUB_FAIL_FAM:-}" ] || exit 1
 printf 'cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\nMCL0\t1\t1\t0\tNA\tchr16\t1\t100\n' > "$out.clusters.tsv"
@@ -78,4 +84,45 @@ rm -rf $W/mm2_shard $W/human_chr16/A
 check "a budget stop with progress is 'run again'"                 "$(STUB_WRAPPER=progress run arm human_chr16 A)" 75
 rm -rf $W/mm2_shard $W/human_chr16/A
 check "a budget stop without progress is a failure"                "$(STUB_WRAPPER=none run arm human_chr16 A)" 1
+
+# ---- second verification (wf_f88e1d5c-a0d): markers, the failure message, Rule 1's input binding, clean, adopt ----
+rm -rf $W/mm2_shard $W/human_chr16/A $W/human_chr16/P
+check "a failing assembler is a failure"                 "$(STUB_FAIL_ASM=1 run arm human_chr16 P)" 1
+check "  it says so on the console"                      "$(grep -c 'P: assemble failed' $T/out.log)" 1
+check "  it leaves no marker"                            "$(ls $P.assemble.done $P.families.done 2>/dev/null | wc -l)" 0
+check "a failing families step leaves the assemble marker only" "$(STUB_FAIL_FAM=1 run arm human_chr16 P)" 1
+check "  assemble marker yes, families marker no"        "$(ls $P.assemble.done 2>/dev/null | wc -l)$(ls $P.families.done 2>/dev/null | wc -l)" 10
+A1=$(calls assemble); F1=$(calls families); RC=$(run arm human_chr16 P)
+check "  the rerun skips the assembly and redoes only the families" "$RC $(( $(calls assemble) - A1 )) $(( $(calls families) - F1 ))" "0 0 1"
+
+# Rule 1: a marker bound to the two inputs; a second call changes nothing, a changed input redoes it
+mkdir -p $W/mm2_shard; rm -rf $W/human_chr16/G98 $W/human_chr16/G98_R1
+check "the G98 arm runs"                                 "$(run arm human_chr16 G98)" 0
+R=$W/human_chr16/G98_R1/run
+check "r1 on G98 runs"                                   "$(run r1 human_chr16 G98)" 0
+check "  its marker carries the sha1 of both inputs"     "$(grep -c 'base=[0-9a-f]\{12\} primary=[0-9a-f]\{12\}' $R.rule1.done)" 1
+F1=$(calls families); check "a second r1 call is skipped" "$(run r1 human_chr16 G98) $(( $(calls families) - F1 ))" "0 0"
+printf 'chr16\tstub\ttranscript\t1\t200\t.\t+\t.\tgene_id "g1"; transcript_id "t1b";\n' > $W/human_chr16/G98/run.families.gtf
+check "a changed base input redoes Rule 1 and its families" "$(run r1 human_chr16 G98) $(( $(calls families) - F1 ))" "0 1"
+
+# clean: only finished arms lose their aligner intermediates; the shard cache stays
+mkdir -p $W/mm2_shard/keep; echo x > $W/mm2_shard/keep/f
+for a in P G98; do echo x > $W/human_chr16/$a/run.fam.loci.paf; echo x > $W/human_chr16/$a/run.fam.loci.fa; done
+rm -f $W/human_chr16/G98/run.fam.clusters.tsv        # G98 is unfinished now
+check "clean runs"                                       "$(run clean human_chr16)" 0
+check "  a finished arm lost its intermediates"          "$(ls $W/human_chr16/P/run.fam.loci.paf $W/human_chr16/P/run.fam.loci.fa 2>/dev/null | wc -l)" 0
+check "  an unfinished arm kept them"                    "$(ls $W/human_chr16/G98/run.fam.loci.paf $W/human_chr16/G98/run.fam.loci.fa 2>/dev/null | wc -l)" 2
+check "  the shard cache is untouched"                   "$(cat $W/mm2_shard/keep/f)" x
+
+# a successful sharded arm keeps its wrapper log and deletes only its own key directory
+mkdir -p $W/mm2_shard/foreign/aaa; echo y > $W/mm2_shard/foreign/aaa/f; rm -rf $W/human_chr16/A
+check "a sharded arm that succeeds"                      "$(STUB_WRAPPER_OK=1 run arm human_chr16 A)" 0
+check "  its wrapper log is kept with the products"     "$(ls $W/human_chr16/A/run.wrapper.log 2>/dev/null | wc -l)" 1
+check "  its own key directory is gone"                 "$(ls -d $W/mm2_shard/key 2>/dev/null | wc -l)" 0
+check "  a foreign key directory survives"               "$(cat $W/mm2_shard/foreign/aaa/f)" y
+
+# adopt: attestation by name, but a Rule-1 arm without its inputs gets no marker
+rm -rf $W/human_chr16/G95 $W/human_chr16/G95_R1; mkdir -p $W/human_chr16/G95_R1; echo x > $W/human_chr16/G95_R1/run.fam.clusters.tsv
+check "adopt runs"                                       "$(run adopt human_chr16)" 0
+check "  an R1 arm without its base arm gets no marker"  "$(ls $W/human_chr16/G95_R1/run.rule1.done 2>/dev/null | wc -l)" 0
 exit $fail

@@ -87,9 +87,39 @@ class BannerTests(unittest.TestCase):
         self.gates({"G0": {"ok": True, "note": ""}}, newer=False)
         self.assertIn("older than", T.gate_banner(self.d))
 
+    def test_gates_older_than_a_later_product_are_announced(self):
+        # `score` writes comp.json first and the support and family-score files after it: gates checked in between are not current
+        self.gates({"G0": {"ok": True, "note": ""}}, newer=True)
+        later = os.path.join(self.d, "support.json")
+        with open(later, "w") as fh:
+            fh.write("{}")
+        t = os.path.getmtime(f"{self.d}/gates.json") + 10
+        os.utime(later, (t, t))
+        self.assertIn("older than", T.gate_banner(self.d))
+
+    def test_a_gate_that_was_not_run_is_not_called_not_applicable(self):
+        self.gates({"G4": {"ok": None, "note": "run.sh g4 not run"}, "G0": {"ok": None, "note": "the re-score products exist for human chr16 only"}})
+        b = T.gate_banner(self.d)
+        self.assertIn("not run: G4", b)
+        self.assertIn("not applicable: G0", b)
+
     def test_passing_current_gates_say_so(self):
         self.gates({"G0": {"ok": True, "note": ""}, "G1": {"ok": None, "note": "n/a"}})
         self.assertIn("pass", T.gate_banner(self.d))
+
+
+class FDifferenceTests(unittest.TestCase):
+    """The registered S4 clause is |dF| < .01 on scores printed to three decimals; abs(0.011 - 0.001) < 0.01 is True in floating point."""
+
+    def test_a_difference_of_exactly_one_hundredth_is_not_below_one_hundredth(self):
+        self.assertEqual(T.dthousandths(0.001, 0.011), 10)
+        self.assertEqual(T.dthousandths(0.011, 0.001), 10)
+        self.assertEqual(T.dthousandths(0.5, 0.509), 9)
+        self.assertEqual(T.dthousandths(0.5, 0.5), 0)
+
+    def test_every_pair_exactly_ten_thousandths_apart_counts_ten(self):
+        for i in range(0, 991):
+            self.assertEqual(T.dthousandths(i / 1000, (i + 10) / 1000), 10, i)
 
 
 if __name__ == "__main__":

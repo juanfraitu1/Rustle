@@ -185,6 +185,41 @@ class ReviewFindingsTests(unittest.TestCase):
         self.assertTrue(header.startswith("##gff-version"))
 
 
+class SecondVerificationTests(unittest.TestCase):
+    """Wiring and one rule the first tests left unpinned (second independent verification, 2026-10-07)."""
+
+    def test_a_clustered_locus_on_another_contig_at_a_copys_coordinates_is_no_own_node(self):
+        # LX sits in the family cluster of L2 (a real locus on c2) at the coordinates of c1's first exon, but on chr2
+        loci = {"L2": locus("chr1", 5001, 6100, "+", [(5000, 5100)]), "LX": locus("chr2", 1001, 2100, "+", [(1000, 1100)])}
+        r = C.analyse(loci, [("chr1", 5001, 6100, "MCL0"), ("chr2", 1001, 2100, "MCL0")], COPIES)
+        self.assertEqual(r["own"], ["c2"])
+        self.assertEqual(r["classes"]["on_copy"], 1)
+        self.assertEqual(r["classes"]["elsewhere"], 1)
+
+    def test_emit_node_loci_writes_one_file_per_arm_with_the_node_loci_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(f"{d}/copies.tsv", "w") as fh:
+                fh.write("cid\tfamily\tname\tchrom\tterr_lo0\tterr_hi\tstrand\tisoform_gene\n")
+                fh.write("c1\tFAM\tc1\tchr1\t1000\t2100\t+\tc1\n")
+            with open(f"{d}/truth.gtf", "w") as fh:
+                fh.write('chr1\tx\texon\t1001\t1100\t.\t+\t.\tgene_id "c1"; transcript_id "c1.1";\n')
+            loci = {"L1": ("chr1", 1001, 1100, "+", [(1000, 1100)]), "L7": ("chr1", 5601, 5700, "+", [(5600, 5700)])}   # L7 has no cluster row
+            with open(f"{d}/loci.gff3", "w") as fh:
+                fh.write("##gff-version 3\n")
+                for n, (ch, s1, e, st, exs) in loci.items():
+                    fh.write(f"{ch}\t.\tgene\t{s1}\t{e}\t.\t{st}\t.\tID=gene-{n};Name={n}\n")
+                    for s0, ee in exs:
+                        fh.write(f"{ch}\t.\texon\t{s0 + 1}\t{ee}\t.\t{st}\t.\tParent=gene-{n};gene={n}\n")
+            with open(f"{d}/clusters.tsv", "w") as fh:
+                fh.write("cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\n")
+                fh.write("MCL0\t1\t1\t0\tNA\tchr1\t1001\t1100\n")
+            subprocess.run([sys.executable, os.path.join(HERE, "composition.py"), "--copies", f"{d}/copies.tsv", "--truth", f"{d}/truth.gtf", "--family", "FAM",
+                            "--arm", f"A={d}/loci.gff3,{d}/clusters.tsv", "--out", f"{d}/nodes.json", "--report", f"{d}/comp.json", "--emit-node-loci", f"{d}/nl"],
+                           check=True, capture_output=True)
+            self.assertEqual(sorted(os.listdir(f"{d}/nl")), ["A.nodes.gff3"])
+            self.assertEqual(sorted(C.read_loci(f"{d}/nl/A.nodes.gff3")), ["L1"])
+
+
 class AgreementWithNodesPy(unittest.TestCase):
     """composition.py's own-node flags equal nodes.py's wherever nodes.py is defined (no shared span)."""
 

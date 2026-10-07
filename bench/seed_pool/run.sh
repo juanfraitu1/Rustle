@@ -9,10 +9,12 @@
 #   run.sh all SUB [ARMS]     every primary arm, then the descriptive ones, in order; stops with exit 75 when this call's time is used or the
 #                             all-vs-all of an A-type arm needs another bounded call: run the same command again
 #   run.sh g4 SUB             G4: the P arm clustered again through the shard wrapper (under P_SH), compared with the single-process run
-#   run.sh gates SUB          G0 (human_chr16 only), G1, G1b, G2, G3 from the products
-#   run.sh score SUB          composition (own nodes, node classes), copy_support (twice, PYTHONHASHSEED 0/1), family_score, for every finished arm
+#   run.sh gates SUB          G0 (human_chr16 only), G1, G1b, G2, G3 from the products, and G4 from the P_SH products of `g4`
+#   run.sh score SUB          composition (own nodes, node classes, the node-loci GFF3 files), copy_support three times (PYTHONHASHSEED 0 and 1 over every locus, once over
+#                             the node loci only for M2n), family_score, for every finished arm
 #   run.sh table SUB          the comparison tables, the per-copy matrix, the non-dominated set
-#   run.sh adopt SUB          write the DONE markers for arms made before the markers existed (the human arms and the first gorilla arms), from their names
+#   run.sh adopt SUB          write the DONE markers for arms made before the markers existed (the human arms and the first gorilla arms): an attestation BY NAME,
+#                             nothing is checked beyond the files being there (a Rule-1 arm needs the families input of its base arm and of P for its hash)
 #   run.sh clean SUB          delete the PAF and loci FASTA of finished arms (the shard cache of an arm that is still running is never touched)
 # SUB = human_chr16 (NPIP) | human_chr17 (TBC1D3) | gorilla_npip (NC_073241.2 + NC_073242.2) | gorilla_tbc1d3 (NC_073228.2 + NC_073224.2); the gorilla
 # substrates and their instruments are fixed by Amendment 1 of the prereg (no cap signal: found = Amendment A; no family truth: M4 not scored).
@@ -41,11 +43,11 @@ SUB=${1:?substrate}; shift
 case "$SUB" in
 human_chr16) CONTIG=chr16; FAMILY=NPIP;   BAM=$HB/winloci_data/A119b.t2t.bam; FA=$HB/winloci_data/chm13v2.0.fa; TRUTHS=compara,u2,soto
              COPIES=$ANN/copies.hsa.tsv; TRUTH=$ANN/truth.hsa.gtf; EXONS=(--exons-json "$FROZEN/npip_read_pool.json")
-             TARGETS="compara:CF153;u2:ID_154,ID_149,ID_151;soto:ID_154,ID_149"      # the truth families that hold the NPIP copies (rows of the family scores)
+             TARGETS="compara:CF153;u2:ID_154,ID_149,ID_151;soto:ID_154,ID_149"      # the multi-gene truth families that hold NPIP copies (rows of the family scores; single-gene families also hold some)
              TABLE_SRC=/mnt/linuxdisk/tmp/rustle_figures/runs/human_A119b/human_A119b.molecules.tsv;;
 human_chr17) CONTIG=chr17; FAMILY=TBC1D3; BAM=$HB/winloci_data/A119b.t2t.bam; FA=$HB/winloci_data/chm13v2.0.fa; TRUTHS=compara,soto
              COPIES=$ANN/copies.hsa.tsv; TRUTH=$ANN/truth.hsa.gtf; EXONS=()
-             TARGETS="compara:CF185;soto:ID_468,ID_469"                              # the truth families that hold the TBC1D3 copies
+             TARGETS="compara:CF185;soto:ID_468,ID_469"                              # the multi-gene truth families that hold TBC1D3 copies
              TABLE_SRC=/mnt/linuxdisk/tmp/rustle_figures/runs/human_A119b/human_A119b.molecules.tsv;;
 gorilla_npip|gorilla_tbc1d3)
              GANN=/mnt/linuxdisk/tmp/rustle_figures_dev/copy_recovery_tools/ann
@@ -135,7 +137,7 @@ do_families() {   # ARM PREFIX
 }
 
 step_arm() {   # ARM
-  local arm=$1 pa P mt
+  local arm=$1 pa P mt rc=0
   case "$arm" in *_R1) echo "[seed_pool] arm: $arm is a Rule-1 arm: use 'r1 SUB ${arm%_R1}'" >&2; exit 2;; esac
   pa=$(pool_args "$arm") || exit 2
   P=$(prefix "$arm"); mt=$(marker_text "$arm" "$pa"); mkdir -p "$(dirname "$P")"; need_disk
@@ -144,7 +146,10 @@ step_arm() {   # ARM
     { echo "date	$(date -Is)"; echo "arm	$arm	$pa"; echo "substrate	$SUB"; echo "head	$(git -C "$REPO" rev-parse --short HEAD)"; stamp; } > "$P.run.log"
     # shellcheck disable=SC2086
     /usr/bin/time -v bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" assemble --bam "$BAM" --fasta "$FA" --out "$P" --bin "$BIN" --threads 4 \
-      --no-cache --contig "$CONTIG" --as-table "$W/mol/$MOLNAME" $pa > "$P.assemble.driver.log" 2> "$P.assemble.driver.stderr"
+      --no-cache --contig "$CONTIG" --as-table "$W/mol/$MOLNAME" $pa > "$P.assemble.driver.log" 2> "$P.assemble.driver.stderr" || rc=$?
+    if [ "$rc" != 0 ]; then    # exit 3: the good pool's table was not applied (the driver's message is in the stderr file)
+      say "$arm: assemble failed (exit $rc), see $P.assemble.driver.stderr and $P.assemble.log"; exit "$rc"
+    fi
     echo "$mt" > "$P.assemble.done"
     say "$arm: assemble $(grep Elapsed "$P.assemble.driver.stderr" | awk '{print $NF}'), $(grep -h 'assemble:' "$P.assemble.driver.stderr" | grep transcripts | tail -1 | sed 's/.*assemble: //')"
   else
@@ -237,6 +242,7 @@ adopt)
   done
   for a in P G100 G995 G98 G95 G90 A; do
     R=$(prefix "${a}_R1"); [ -s "$R.fam.clusters.tsv" ] || continue
+    if [ ! -s "$(prefix "$a").families.gtf" ] || [ ! -s "$(prefix P).families.gtf" ]; then say "${a}_R1: not adopted (the families input of $a or of P is missing)"; continue; fi
     rt=$(r1_text "$a"); echo "$rt" > "$R.rule1.done"; echo "$rt" > "$R.families.done"; say "${a}_R1: adopted"
   done;;
 clean)

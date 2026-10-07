@@ -60,6 +60,12 @@ def dominated(v, w):
     return all(b >= a for a, b in zip(v, w)) and any(b > a for a, b in zip(v, w))
 
 
+def dthousandths(a, b):
+    """|a - b| in whole thousandths for two scores printed to three decimals. The registered S4 clause (|dF| < .01) is on these:
+    abs(0.011 - 0.001) < 0.01 is True in floating point although the printed scores differ by exactly .010."""
+    return abs(round(a * 1000) - round(b * 1000))
+
+
 def parse_targets(text):
     """'compara:CF153;u2:ID_154,ID_149' -> {'compara': ['CF153'], 'u2': ['ID_154', 'ID_149']}."""
     out = {}
@@ -94,11 +100,16 @@ def gate_banner(S):
     bad = sorted(k for k, v in gates.items() if v.get("ok") is False)
     if bad:
         return "GATES: FAILED: " + ", ".join(bad) + ": the tables below are INVALID"
-    comp = os.path.join(S, "comp.json")
-    if os.path.exists(comp) and os.path.getmtime(g) < os.path.getmtime(comp):
-        return "GATES: older than the last scoring (comp.json): re-run bench/seed_pool/run.sh gates"
-    na = sorted(k for k, v in gates.items() if v.get("ok") is None)
-    return "GATES: all that apply pass" + (f" (not applicable: {', '.join(na)})" if na else "")
+    # `score` writes comp.json first, then the support and family-score files: the gates are current only if newer than all of them
+    products = [os.path.join(S, n) for n in os.listdir(S) if n in ("comp.json", "nodes.json") or n.startswith(("support", "fs_"))]
+    newest = max((os.path.getmtime(p) for p in products if os.path.isfile(p)), default=None)
+    if newest is not None and os.path.getmtime(g) < newest:
+        return "GATES: older than the last scoring (comp.json, nodes.json, support*, fs_*): re-run bench/seed_pool/run.sh gates"
+    unrun = sorted(k for k, v in gates.items() if v.get("ok") is None and "not run" in (v.get("note") or ""))
+    na = sorted(k for k, v in gates.items() if v.get("ok") is None and k not in unrun)
+    extra = [f"not applicable: {', '.join(na)}"] if na else []
+    extra += [f"not run: {', '.join(unrun)}"] if unrun else []
+    return "GATES: all that apply and ran pass" + (f" ({'; '.join(extra)})" if extra else "")
 
 
 def main():
@@ -171,7 +182,7 @@ def main():
             line += f" {r[f'{t}_sens']:.3f}/{r[f'{t}_prec']:.3f}/{r[f'{t}_F']:.3f}/{(f'{pf:.3f}' if pf is not None else '-')}"
         out(line)
     shared = ", ".join("%s %d" % (r["arm"], r["shared_spans"]) for r in rows if r["shared_spans"]) or "none"
-    out(f"(tx = assembled transcripts in run.gtf (the +R1 rows copy their base arm); asm s / fam s = wall seconds of the driver's assemble / families stage, GB = peak RSS; "
+    out(f"(tx = assembled transcripts in run.gtf (the +R1 rows copy their base arm); asm s / fam s = wall seconds of the driver's assemble / families call, including any wait for the machine's heavy lock, and for an arm whose all-vs-all took several bounded calls only the LAST call (run.wrapper.log has the shard times); GB = peak RSS, kB / 10^6; "
         f"M1 own node of {N}; M2 the instrument's found count: the copy has an own node and SOME same-strand locus overlapping it, node or not, has the exact representative; "
         f"M2n = the same with the exact locus itself a node; M3 locus-level, of {E}; M6 copies in the largest family cluster K*; red = on-copy nodes per copy with a node "
         f"(several loci on one copy count as correct in NP); CP* = copies with a node / nodes; ann/chn = Amendment A/B found within own nodes; family scores are over ALL families of the "
@@ -232,13 +243,13 @@ def main():
     verdict("S3", "NP(P) >= NP(G98) > NP(A)" + (f"  [{g('P','np'):.3f} >= {g('G98','np'):.3f} > {g('A','np'):.3f}]" if has("P", "G98", "A") else ""),
             (g("P", "np") >= g("G98", "np") > g("A", "np")) if has("P", "G98", "A") else None)
 
-    def df(x, y):
-        return max(abs(v[x][f"{t}_F"] - v[y][f"{t}_F"]) for t in f_keys)
+    def df(x, y):      # the largest family-score difference over the truths, in whole thousandths
+        return max(dthousandths(v[x][f"{t}_F"], v[y][f"{t}_F"]) for t in f_keys)
 
     if f_keys:
         verdict("S4", f"M2(G98+R1) >= M2(G98)+1, M1 not lower, |dF| < .01 ({'/'.join(f_keys)})" + (
-            f"  [M2 {g('G98_R1','M2')} vs {g('G98','M2')}, M1 {g('G98_R1','M1')} vs {g('G98','M1')}, max|dF| {df('G98_R1','G98'):.3f}]" if has("G98", "G98_R1") else ""),
-            (g("G98_R1", "M2") >= g("G98", "M2") + 1 and g("G98_R1", "M1") >= g("G98", "M1") and df("G98_R1", "G98") < 0.01) if has("G98", "G98_R1") else None, True)
+            f"  [M2 {g('G98_R1','M2')} vs {g('G98','M2')}, M1 {g('G98_R1','M1')} vs {g('G98','M1')}, max|dF| {df('G98_R1','G98') / 1000:.3f}]" if has("G98", "G98_R1") else ""),
+            (g("G98_R1", "M2") >= g("G98", "M2") + 1 and g("G98_R1", "M1") >= g("G98", "M1") and df("G98_R1", "G98") < 10) if has("G98", "G98_R1") else None, True)
     else:
         verdict("S4g", "M2(G98+R1) >= M2(G98)+1, M1 and M6 not lower (no family truth: the F clause is replaced by M6)" + (
             f"  [M2 {g('G98_R1','M2')} vs {g('G98','M2')}, M1 {g('G98_R1','M1')} vs {g('G98','M1')}, M6 {g('G98_R1','M6')} vs {g('G98','M6')}]" if has("G98", "G98_R1") else ""),
@@ -283,6 +294,8 @@ def main():
     with open(f"{S}/table.md", "w") as fh:
         fh.write("\n".join(md) + "\n")
     with open(f"{S}/cost.md", "w") as fh:
+        fh.write("Wall seconds of the driver call (including any wait for the heavy lock; the LAST bounded call only for a sharded arm) and peak RSS (kB / 10^6). "
+                 "The first good-pool arm of a substrate also pays the one-time parse of the best-AS table (about 6 s on chr16).\n\n")
         fh.write("| arm | assemble s | assemble peak GB | families s | families peak GB |\n|---|---|---|---|---|\n")
         for r in rows:
             fh.write("| %s | %s | %s | %s | %s |\n" % (r["arm"].replace("_R1", "+R1"), fmt(r["asm_s"], 1), fmt(r["asm_gb"], 2), fmt(r["fam_s"], 1), fmt(r["fam_gb"], 2)))

@@ -44,7 +44,7 @@
 #
 # usage: tools/rustle_pipeline.sh STAGE --bam B --fasta G --out PREFIX [--index G.splice.mmi] [--gff ANNOT.gff]
 #        [--confirm NAME=X.mmi ...] [--foreign NAME=X.mmi ...] [--threads N] [--bin DIR]
-#        [--seed-pool primary|good|all [--seed-as-ratio R]] [--as-table FILE] [--contig NAME] [--no-seed-secondaries]
+#        [--seed-pool primary|good|all [--seed-as-ratio R]] [--as-table FILE] [--contig NAME[,NAME...]] [--no-seed-secondaries]
 #        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
@@ -83,7 +83,8 @@
 #   --seed-pool good      primaries + secondaries with AS >= R x the molecule's genome-wide best AS, R = 0.98
 #                         (THE DEFAULT; = --seed-secondaries; needs the as_table pass above)
 #   --seed-pool all       primaries + EVERY secondary (RUSTLE_GTF_SECONDARY=1, no filter, no table): the 2026-09-21 pool; in the
-#                         2026-10-07 study 1.4-1.5x the transcripts of good per contig and about 17-23x the aligner records
+#                         2026-10-07 study 1.4-1.5x the transcripts of good on every contig, and the aligner
+#                         records of good x17.5 (chr16; x22.9 of primary), x14.0 (chr17; x15.0), x3.1 (gorilla NPIP; x3.9)
 #                         (human chr16: 14,183 against 9,473 transcripts, 1,648,588 against 94,433 PAF records;
 #                         docs/SEED_POOL_REAL_READS_2026-10-07.md)
 #   --seed-as-ratio R     the width R of the good pool, a number in (0, 1]; 1 = exact ties only. Refused with another pool.
@@ -324,6 +325,7 @@ stage_assemble() {
   # index), in place of --genome-wide; the products equal the genome-wide run's on those contigs (docs/CONTAINER_HEADROOM_2026-09-30.md gates)
   local scope=(--genome-wide)
   if [ -n "$CONTIG" ]; then
+    case "$CONTIG" in *$'\n'*|*$'\r'*) echo "[rustle_pipeline] --contig: a newline or carriage return in the value (the list is comma separated)" >&2; exit 2;; esac
     case ",$CONTIG," in *,,*) echo "[rustle_pipeline] --contig '$CONTIG': an empty name in the list" >&2; exit 2;; esac
     local items=() c clen regions="" nctg=0 seen=","
     IFS=, read -ra items <<< "$CONTIG"
@@ -334,7 +336,7 @@ stage_assemble() {
       case "$seen" in *",$c,"*) echo "[rustle_pipeline] --contig lists $c twice" >&2; exit 2;; esac
       seen+="$c,"
       clen=""
-      if [ -s "$FASTA.fai" ]; then clen=$(awk -F'\t' -v c="$c" '$1==c{print $2; exit}' "$FASTA.fai"); fi
+      if [ -s "$FASTA.fai" ]; then clen=$(awk -F'\t' -v c="$c" '($1 "")==(c ""){print $2; exit}' "$FASTA.fai"); fi   # as strings: awk would equate 01, 1.0 and 1e0
       [ -n "$clen" ] || { echo "[rustle_pipeline] --contig $c: no such contig in $FASTA.fai (samtools faidx writes it)" >&2; exit 2; }
       regions+="$c:0-$clen"$'\n'; nctg=$((nctg + 1))
     done
@@ -369,7 +371,7 @@ stage_assemble() {
   # the good pool is only the good pool if the binary used the table: an empty table is ignored and the region-local rule applies, a table
   # from another BAM keeps every secondary it does not know; either way the run is wider than --seed-pool good says
   if [ "$SEED_POOL" = good ] && grep -qE 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log"; then
-    echo "[rustle_pipeline] --seed-pool good: copy_assign did not apply the best-AS table ($(grep -m1 -E 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log" | cut -c1-150)); the assembly is not the good pool: rebuild $table (see $OUT.assemble.log)" >&2; exit 3
+    echo "[rustle_pipeline] --seed-pool good: copy_assign did not apply the best-AS table ($(grep -m1 -E 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log" | cut -c1-300)); the assembly is not the good pool: delete $table and $table.asbin, then run again (an absent table is rebuilt; see $OUT.assemble.log)" >&2; exit 3
   fi
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
   if [ "$BRIDGE_MODE" = f1units ]; then

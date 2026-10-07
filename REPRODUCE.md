@@ -395,8 +395,10 @@ RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO=0.98 RUSTLE_GTF_SECONDARY_A
     copy_assign --assemble-only ...                 # the pipeline driver does this by default; --seed-pool primary|good|all picks the pool
                                                     # (primary = --no-seed-secondaries; all = RUSTLE_GTF_SECONDARY=1 with no ratio and no table)
                                                     # Behaviour change (2026-10-07): an exported RUSTLE_GTF_SECONDARY* of the shell used to reach the binary under
-                                                    # --no-seed-secondaries; the driver now unsets those three variables for primary and all. The default and the
-                                                    # legacy flags are otherwise byte-identical (stub-checked, and the default's products equal the 10-06 products).
+                                                    # --no-seed-secondaries; the driver now unsets all three for primary, and for all it sets RUSTLE_GTF_SECONDARY=1 and
+                                                    # unsets the ratio and the table. The default and the legacy flags are otherwise byte-identical (stub-checked, and the
+                                                    # default's products equal the 10-06 products; the regenerated human chr16 G98 equals them byte for byte).
+                                                    # figures run-cache stamps made with a driver older than 2cf1eb32 re-run their stages once (the driver text is hashed).
 # copy assignment with ONE certificate per tied read over every placement it touches (catalog copies across
 # families + outside loci built from the genome); opt-in — on the chr16 truth sim it removes every foreign claim
 # (844 -> 0) and every wrong row, and ties the reads whose tied partner is an identical genomic twin (row 1103)

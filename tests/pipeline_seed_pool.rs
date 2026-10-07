@@ -18,9 +18,17 @@ const DRIVER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tools/rustle_pipeline
 const COPY_ASSIGN_STUB: &str = r#"#!/bin/bash
 out=""; args=("$@")
 while [ $# -gt 0 ]; do case "$1" in --out) out=$2; shift 2;; *) shift;; esac; done
-[ -z "${STUB_WARN:-}" ] || echo "[as-table] WARNING: the best-AS table is empty: table IGNORED (region-local AS-tie rule applies)" >&2
+case "${STUB_WARN:-}" in
+  "") ;;
+  # the line the binary prints when a table is from another BAM (src/family.rs, stream-pass1), as it prints it
+  other_bam) echo "[stream-pass1] chr1:0-248387328: 99581 secondary record(s) below 0.98 x genome-wide best AS dropped; 17 kept with NO table entry — WARNING: the table may come from a different BAM" >&2;;
+  # a warning that has nothing to do with the table
+  benign) echo "[as-table] WARNING: could not write the binary sidecar /x/run.molecules.tsv.asbin: Permission denied" >&2;;
+  *) echo "[as-table] WARNING: the best-AS table is empty: table IGNORED (region-local AS-tie rule applies)" >&2;;
+esac
 printf 'copy_assign sec=%s ratio=%s table=%s\n' "${RUSTLE_GTF_SECONDARY-unset}" "${RUSTLE_GTF_SECONDARY_AS_RATIO-unset}" "${RUSTLE_GTF_SECONDARY_AS_TABLE-unset}" >> "$STUB_LOG"
 printf 'argv %s\n' "${args[*]}" >> "$STUB_LOG"
+printf 'argc %s\n' "${#args[@]}" >> "$STUB_LOG"
 printf 'chr1\tstub\ttranscript\t1\t100\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n' > "$out.gtf"
 "#;
 
@@ -40,6 +48,8 @@ struct Run {
     /// the three seeding variables and nothing else, as the stub `copy_assign` saw them
     seen: String,
     argv: String,
+    /// the number of words copy_assign got (a leaked IFS would split the option strings differently)
+    argc: usize,
     /// whether `as_table` ran
     as_table_ran: bool,
 }
@@ -97,6 +107,7 @@ fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&s
     let log: Vec<String> = std::fs::read_to_string(&stub_log).unwrap_or_default().lines().map(String::from).collect();
     let seen = log.iter().find(|l| l.starts_with("copy_assign ")).cloned().unwrap_or_default();
     let argv = log.iter().find(|l| l.starts_with("argv ")).cloned().unwrap_or_default();
+    let argc = log.iter().find_map(|l| l.strip_prefix("argc ")).and_then(|n| n.parse().ok()).unwrap_or(0);
     Run {
         code: o.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
@@ -105,6 +116,7 @@ fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&s
         log,
         seen: seen.replace(&dir.to_string_lossy().to_string(), "<dir>"),
         argv: argv.replace(&dir.to_string_lossy().to_string(), "<dir>"),
+        argc,
     }
 }
 
@@ -464,4 +476,69 @@ fn a_table_the_binary_ignores_fails_the_good_pool_instead_of_running_a_wider_one
         let r = assemble(&format!("table_ignored_{pool}"), &["--seed-pool", pool], &[("STUB_WARN", "1")]);
         assert_eq!(r.code, 0, "{pool}: {}", r.stderr);
     }
+}
+
+// ---- second independent verification of 2026-10-07 (wf_f88e1d5c-a0d): what the first corrections left ----
+
+#[test]
+fn a_contig_name_that_looks_like_a_number_is_matched_as_a_string() {
+    // awk compares two numeric-looking strings as numbers: '01', '1.0' and '1e0' all equal '1', and '010' equals '10'
+    let fai = "01\t11\t7\t80\t81\n1\t248956422\t252000000\t80\t81\n2\t242193529\t500000000\t80\t81\n";
+    let r = assemble_with("scope_numeric", &["--contig", "1"], &[], Some(fai), &|_| {});
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.argv.contains(" --region 1:0-248956422 "), "the length of '1', not of '01': {}", r.argv);
+    let fai = "1\t248956422\t7\t80\t81\n10\t133797422\t252000000\t80\t81\n";
+    for (i, other) in ["01", "1.0", "1e0", "+1", "001", "010"].iter().enumerate() {
+        let r = assemble_with(&format!("scope_numeric_bad_{i}"), &["--contig", other], &[], Some(fai), &|_| {});
+        assert_eq!(r.code, 2, "'{other}' is no contig of this index: {}", r.stderr);
+        assert!(r.log.is_empty(), "'{other}': ran {:?}", r.log);
+    }
+}
+
+#[test]
+fn a_newline_or_a_return_in_the_contig_value_is_refused_not_cut_at_the_first_line() {
+    for (i, bad) in ["chr1\nchr16", "\n", "chr1\n", "chr1,chr16\nxyz", "chr1\rchr16"].iter().enumerate() {
+        let r = assemble(&format!("contig_nl_{i}"), &["--contig", bad], &[]);
+        assert_eq!(r.code, 2, "{bad:?}: {}", r.stderr);
+        assert!(r.log.is_empty(), "{bad:?}: ran {:?}", r.log);
+    }
+}
+
+#[test]
+fn a_colon_or_a_space_in_a_name_the_index_does_contain_is_still_refused() {
+    // copy_assign splits a region at the first ':'; this is the case where the name check, not the lookup, has to refuse
+    let fai = "HLA:1\t1000\t7\t80\t81\nchr 2\t2000\t2000\t80\t81\n";
+    for (i, name) in ["HLA:1", "chr 2"].iter().enumerate() {
+        let r = assemble_with(&format!("contig_odd_{i}"), &["--contig", name], &[], Some(fai), &|_| {});
+        assert_eq!(r.code, 2, "'{name}': {}", r.stderr);
+        assert!(r.stderr.contains("cannot be a region"), "'{name}': {}", r.stderr);
+        assert!(r.log.is_empty(), "'{name}': ran {:?}", r.log);
+    }
+}
+
+#[test]
+fn the_contig_split_does_not_change_how_the_option_strings_reach_the_binary() {
+    // --genome-wide is one word, --region NAME:0-LEN and --regions FILE are two; a field separator left set by the split of the
+    // contig list would cut the unquoted polish options into different words
+    let whole = assemble("argc_whole", &[], &[]);
+    let one = assemble("argc_one", &["--contig", "chr16"], &[]);
+    let two = assemble("argc_two", &["--contig", "chr1,chr16"], &[]);
+    assert!(whole.argc > 10, "the stub saw {} words: {}", whole.argc, whole.argv);
+    assert_eq!(one.argc, whole.argc + 1, "{} against {}", whole.argv, one.argv);
+    assert_eq!(two.argc, one.argc, "{} against {}", one.argv, two.argv);
+}
+
+#[test]
+fn a_table_from_another_bam_fails_the_good_pool_and_the_message_names_the_whole_cause() {
+    // the line the binary really prints is 180 characters long; the message used to cut it inside the sentence that names the cause
+    let r = assemble("table_other_bam", &["--seed-pool", "good"], &[("STUB_WARN", "other_bam")]);
+    assert_eq!(r.code, 3, "{}", r.stderr);
+    assert!(r.stderr.contains("the table may come from a different BAM"), "{}", r.stderr);
+    assert!(r.stderr.contains("delete"), "the remedy must be one that works for a damaged table: {}", r.stderr);
+}
+
+#[test]
+fn a_warning_that_has_nothing_to_do_with_the_table_does_not_fail_the_good_pool() {
+    let r = assemble("table_benign", &["--seed-pool", "good"], &[("STUB_WARN", "benign")]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
 }
