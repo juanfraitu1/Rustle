@@ -4,6 +4,9 @@
 #   run.sh units FAMILY REP    the driver's assemble and families stages with RUSTLE_BRIDGE_REGROUP=f1units (set for these two commands only)
 #   run.sh levers FAMILY REP   Amendment 1: the driver's assemble and families stages with one existing opt-in change each: P = --no-seed-secondaries, C = RUSTLE_POLISH_SUBCHAIN=drop, PC = both (set for these commands only)
 #   run.sh units2 FAMILY REP   docs/PREREG_locus_units_2026-10-06.md: arms Q (Rule 1), S_D (Rule 2 on all), S_Q (Rules 1+2) = locus_units.py on the families input, then mcl_families with the driver's flags, family-level scoring (score.py), Compara F (fam_score.py)
+#   run.sh f1 FAMILY REP       Amendment 2: the driver with RUSTLE_BRIDGE_REGROUP=f1 (assemble + families), then family-level scoring (arm F1)
+#   run.sh f1q FAMILY REP      Amendment 2: F1's families input with Rule 1 (primary chains of the primaries-only assembly), mcl_families, scoring (arm F1Q)
+#   run.sh hier FAMILY REP     Amendment 2: for every arm, the pre-MCL graph (mcl_families --dump-graph, clusters must equal the registered ones), its components as clusters (hier_clusters.py), score.py and fam_score.py at level C
 #   run.sh score FAMILY REP    arms_score.py over every arm whose GTF exists
 #   run.sh pool                pool.py over the four runs
 # Environment: RS_BIN (release dir), RS_IDEAL (the ideal-expression products), RS_WORK (this study's products). Nothing is read from a RUSTLE_* variable of the calling shell.
@@ -21,7 +24,7 @@ leak=$(env | grep '^RUSTLE_' || true)
 [ -z "$leak" ] || { echo "[entangled] refusing: RUSTLE_* set in the calling environment: $leak" >&2; exit 2; }
 light() { bash "$REPO/tools/rlock.sh" light "$@"; }
 heavy() { bash "$REPO/tools/rlock.sh" heavy "$@"; }
-cmd=${1:?tools|units|levers|units2|score|pool}
+cmd=${1:?tools|units|levers|units2|f1|f1q|hier|score|pool}
 if [ "$cmd" = pool ]; then python3 "$HERE/pool.py" "$W"; exit 0; fi
 F=${2:?family}; R=${3:?rep}
 D=$IDEAL/$F/rep$R; O=$W/$F/rep$R; mkdir -p "$O/tmp"
@@ -65,6 +68,36 @@ units2)
     light python3 "$REPO/bench/ideal_expression/fam_score.py" --fs "$BIN/family_score" --clusters "$A.fam.clusters.tsv" --contig "$CH" --windows "$D/reads.windows.tsv" --label "${F}_rep${R}_$arm" --out "$O/famscore_$arm.json" --work "$O/famscore_work_$arm" > "$O/famscore_$arm.log" 2>&1
     echo "[entangled] units2 $arm $F rep$R: $(grep -h 'families:' "$A.families.log" | head -1 | cut -c1-100) | $(tail -1 "$O/score_$arm.log" | cut -c1-120)"
   done ;;
+f1)
+  A=$O/f1; case "$F" in NPIP) CH=chr16;; *) CH=chr17;; esac
+  { echo "date	$(date -Is)"; echo "bam	$D/reads.bam"; for b in copy_assign mcl_families as_table; do echo "$b	$(sha1sum "$BIN/$b" | cut -d' ' -f1)"; done; echo "mode	RUSTLE_BRIDGE_REGROUP=f1"; } > "$A.run.log"
+  rm -f "$A".fam.* "$A.families.log"
+  /usr/bin/time -v env RUSTLE_BRIDGE_REGROUP=f1 bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" assemble --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 > "$A.assemble.driver.log" 2> "$A.assemble.driver.stderr"
+  /usr/bin/time -v env RUSTLE_BRIDGE_REGROUP=f1 bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" families --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 > "$A.families.driver.log" 2> "$A.families.driver.stderr"
+  light python3 "$REPO/bench/ideal_expression/score.py" --truth "$D/reads" --strata "$D/strata" --asm "$A" --single "$D/strata.single_copy.tsv" --out "$O/score_f1" > "$O/score_f1.log" 2>&1
+  light python3 "$REPO/bench/ideal_expression/fam_score.py" --fs "$BIN/family_score" --clusters "$A.fam.clusters.tsv" --contig "$CH" --windows "$D/reads.windows.tsv" --label "${F}_rep${R}_f1" --out "$O/famscore_f1.json" --work "$O/famscore_work_f1" > "$O/famscore_f1.log" 2>&1
+  echo "[entangled] f1 $F rep$R: $(grep -h 'assemble:' "$A.assemble.driver.stderr" | tail -1 | sed 's/.*assemble: //' | cut -c1-100)" ;;
+f1q)
+  A=$O/f1q; case "$F" in NPIP) CH=chr16;; *) CH=chr17;; esac
+  python3 "$HERE/locus_units.py" --base "$O/f1.families.gtf" --out "$A.families.gtf" --primary-gtf "$O/lever_P.families.gtf" --rule1
+  rm -f "$A".fam.* "$A.families.log"
+  heavy "$BIN/mcl_families" --from-gtf "$A.families.gtf" --fasta "$FA" --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out "$A.fam" > "$A.families.log" 2>&1
+  light python3 "$REPO/bench/ideal_expression/score.py" --truth "$D/reads" --strata "$D/strata" --asm "$A" --single "$D/strata.single_copy.tsv" --out "$O/score_f1q" > "$O/score_f1q.log" 2>&1
+  light python3 "$REPO/bench/ideal_expression/fam_score.py" --fs "$BIN/family_score" --clusters "$A.fam.clusters.tsv" --contig "$CH" --windows "$D/reads.windows.tsv" --label "${F}_rep${R}_f1q" --out "$O/famscore_f1q.json" --work "$O/famscore_work_f1q" > "$O/famscore_f1q.log" 2>&1
+  echo "[entangled] f1q $F rep$R done" ;;
+hier)
+  case "$F" in NPIP) CH=chr16;; *) CH=chr17;; esac
+  for arm in ${HIER_ARMS:-D P PC q sd sq f1 f1q}; do
+    case $arm in D) PRE=$D/asm;; P|PC|C) PRE=$O/lever_$arm;; *) PRE=$O/$arm;; esac
+    [ -s "$PRE.fam.clusters.tsv" ] || { echo "[entangled] hier $arm $F rep$R: no arm"; continue; }
+    G=$O/hier_$arm.graph.tsv
+    heavy "$BIN/mcl_families" --from-gtf "$PRE.families.gtf" --fasta "$FA" --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --dump-graph "$G" --out "$O/hier_$arm.hg" > "$O/hier_$arm.log" 2>&1
+    if ! cmp -s "$O/hier_$arm.hg.fam.clusters.tsv" "$PRE.fam.clusters.tsv"; then echo "[entangled] hier $arm $F rep$R: INVALID (the re-run clusters differ from the registered ones)"; continue; fi
+    python3 "$HERE/hier_clusters.py" --loci "$PRE.fam.loci.gff3" --graph "$G" --out "$O/hierC_$arm" --prefix "$PRE" > /dev/null
+    light python3 "$REPO/bench/ideal_expression/score.py" --truth "$D/reads" --strata "$D/strata" --asm "$O/hierC_$arm" --single "$D/strata.single_copy.tsv" --out "$O/scoreC_$arm" > "$O/scoreC_$arm.log" 2>&1
+    light python3 "$REPO/bench/ideal_expression/fam_score.py" --fs "$BIN/family_score" --clusters "$O/hierC_$arm.fam.clusters.tsv" --contig "$CH" --windows "$D/reads.windows.tsv" --label "${F}_rep${R}_C_$arm" --out "$O/famscoreC_$arm.json" --work "$O/famscoreC_work_$arm" > "$O/famscoreC_$arm.log" 2>&1
+    echo "[entangled] hier $arm $F rep$R: $(grep -h 'graph:' "$O/hier_$arm.log" | head -1 | cut -c1-80) | $(tail -1 "$O/scoreC_$arm.log" | cut -c1-60)"
+  done ;;
 score)
   args=(--arm "D_asm=$D/asm.gtf" --arm "D_fam=$D/asm.families.gtf")
   [ -s "$O/st.gtf" ] && args+=(--arm "S=$O/st.gtf")
@@ -79,5 +112,5 @@ score)
     [ -s "$O/lever_$arm.families.gtf" ] && args+=(--arm "${arm}_fam=$O/lever_$arm.families.gtf")
   done
   light python3 "$HERE/arms_score.py" --truth "$D/reads" "${args[@]}" --out "$O/arms" | tee "$O/arms.log" ;;
-*) echo "usage: run.sh tools|units|levers|units2|score FAMILY REP | pool" >&2; exit 2 ;;
+*) echo "usage: run.sh tools|units|levers|units2|f1|f1q|hier|score FAMILY REP | pool" >&2; exit 2 ;;
 esac
