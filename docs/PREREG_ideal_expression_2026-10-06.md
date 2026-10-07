@@ -94,3 +94,9 @@ the single-copy control; chain-level recall and precision; binary and BAM sha1. 
 ## Not claimed
 
 Anything about real reads, the annotation's correctness, O2, O3, gorilla, or any family beyond these two and the two held-out ones. A YES means the default pipeline has no algorithmic obstacle at these loci when the data are ideal; it does not predict recovery from a real library (5' truncation cost 6 of 26 NPIP copies in 09-18, and real expression differs).
+
+## Amendment 1 (2026-10-06, before any S1 read exists)
+
+The shared-span rule of the holder paragraph is narrowed: two loci on one (chrom, start, end) span make an arm INVALID only when a cluster row or a fold row refers to that span (the join would be ambiguous); shared spans among loci that no cluster or fold row names are ignored.
+The first scorer test on the REAL default chr17 products showed two unclustered loci on one span (`DN_chr17_87073_2` and `_3`), which the draft rule would have declared invalid although no cluster or fold row names them. Nothing else changes.
+
