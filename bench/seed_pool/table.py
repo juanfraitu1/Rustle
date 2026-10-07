@@ -83,6 +83,8 @@ def main():
         r = dict(arm=x, transcripts=count_rows(f"{S}/{x}/run.gtf", "transcript"), loci=c["n_loci"], paf=paf, asm_s=asm_s, fam_s=fam_s,
                  fam_clusters=len(c["family_clusters"]), nodes=c["nodes"], np=c["np"], on_copy=c["classes"]["on_copy"], in_span=c["classes"]["in_span"],
                  antisense=c["classes"]["antisense"], elsewhere=c["classes"]["elsewhere"], shared_spans=c["shared_spans"],
+                 red=(c["classes"]["on_copy"] / c["copies_with_node"]) if c["copies_with_node"] else 0.0,
+                 cpstar=(c["copies_with_node"] / c["nodes"]) if c["nodes"] else 0.0,
                  M1=c["copies_with_node"], M1_cs=s["old_overlap_in_npip_nodes"], M2=s[M2_KEY], M3=s[M3_KEY], M6=c.get("copies_in_kstar"),
                  ann=s.get("ann_found_in_npip_nodes"), chain=s.get("chain_found_in_npip_nodes"))
         for t in truths:
@@ -93,7 +95,7 @@ def main():
     out = lines.append
     crit = "Amendment E (capped start + first three introns)" if K == "tc" else "Amendment A (the representative carries >= k annotated introns)"
     out(f"family {a.family}: N = {N} truth copies, E = {E} expressed under {crit}, arm-independent")
-    hdr = f"{'arm':9}{'tx':>7}{'loci':>6}{'PAF':>9}{'asm s':>6}{'fam s':>7} | {'fcl':>3}{'nodes':>6}{'NP':>6} ({'on/span/anti/else':>17}) | {'M1':>3}{'M2':>4}{'M3':>4}{'M6':>4}{'ann':>4}{'chn':>4} |"
+    hdr = f"{'arm':9}{'tx':>7}{'loci':>6}{'PAF':>9}{'asm s':>6}{'fam s':>7} | {'fcl':>3}{'nodes':>6}{'NP':>6} ({'on/span/anti/else':>17}) {'red':>4}{'CP*':>5} | {'M1':>3}{'M2':>4}{'M3':>4}{'M6':>4}{'ann':>4}{'chn':>4} |"
     for t in truths:
         hdr += f" {t} sens/prec/F/pairF"
     out(hdr)
@@ -105,14 +107,14 @@ def main():
         ann = "-" if r["ann"] is None else r["ann"]
         chn = "-" if r["chain"] is None else r["chain"]
         line = (f"{r['arm']:9}{tx:>7}{r['loci']:>6}{paf:>9}{asm:>6}{fam:>7} | "
-                f"{r['fam_clusters']:>3}{r['nodes']:>6}{r['np']:>6.2f} ({r['on_copy']:>3}/{r['in_span']:>3}/{r['antisense']:>3}/{r['elsewhere']:>4}) | "
+                f"{r['fam_clusters']:>3}{r['nodes']:>6}{r['np']:>6.2f} ({r['on_copy']:>3}/{r['in_span']:>3}/{r['antisense']:>3}/{r['elsewhere']:>4}) {r['red']:>4.1f}{r['cpstar']:>5.2f} | "
                 f"{r['M1']:>3}{r['M2']:>4}{r['M3']:>4}{('-' if r['M6'] is None else r['M6']):>4}{ann:>4}{chn:>4} |")
         for t in truths:
             pf = r[f"{t}_pairF"]
             line += f" {r[f'{t}_sens']:.3f}/{r[f'{t}_prec']:.3f}/{r[f'{t}_F']:.3f}/{(f'{pf:.3f}' if pf is not None else '-')}"
         out(line)
     shared = ", ".join("%s %d" % (r["arm"], r["shared_spans"]) for r in rows if r["shared_spans"]) or "none"
-    out(f"(M1 own node of {N}; M2 E-found within own nodes and M3 locus-level E-found, of {E}; M6 copies in the largest family cluster K*; ann/chn = Amendment A/B found within own nodes; "
+    out(f"(M1 own node of {N}; M2 E-found within own nodes and M3 locus-level E-found, of {E}; M6 copies in the largest family cluster K*; red = on-copy nodes per copy with a node (several loci on one copy count as correct in NP); CP* = copies with a node / nodes; ann/chn = Amendment A/B found within own nodes; "
         f"shared spans per arm: {shared})")
     # (2) per-copy matrix
     with open(f"{S}/support.copies.tsv") as fh:
@@ -188,6 +190,16 @@ def main():
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()), delimiter="\t")
         w.writeheader()
         w.writerows(rows)
+    # a markdown version of the arm table for the results document
+    md = ["| arm | transcripts | loci | PAF records | nodes (on-copy / in-span / antisense / elsewhere) | NP | red | CP* | M1 | M2 | M3 | M6 |" + "".join(f" {t} sens / prec / F |" for t in truths),
+          "|---|---|---|---|---|---|---|---|---|---|---|---|" + "---|" * len(truths)]
+    for r in rows:
+        md.append("| %s | %s | %s | %s | %d (%d / %d / %d / %d) | %.2f | %.1f | %.2f | %d | %d | %d | %s |" % (
+            r["arm"].replace("_R1", "+R1"), "-" if r["transcripts"] is None else f"{r['transcripts']:,}", f"{r['loci']:,}", "-" if r["paf"] is None else f"{r['paf']:,}",
+            r["nodes"], r["on_copy"], r["in_span"], r["antisense"], r["elsewhere"], r["np"], r["red"], r["cpstar"], r["M1"], r["M2"], r["M3"], "-" if r["M6"] is None else r["M6"])
+            + "".join(" %.3f / %.3f / %.3f |" % (r[f"{t}_sens"], r[f"{t}_prec"], r[f"{t}_F"]) for t in truths))
+    with open(f"{S}/table.md", "w") as fh:
+        fh.write("\n".join(md) + "\n")
     with open(f"{S}/matrix.tsv", "w") as fh:
         fh.write("copy\tE\t" + "\t".join(arms) + "\n")
         for m in mat:
