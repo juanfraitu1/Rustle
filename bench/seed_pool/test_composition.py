@@ -124,6 +124,67 @@ class CohesionTests(unittest.TestCase):
         self.assertEqual((r["kstar"], r["copies_in_kstar"]), ("MCL1", 2))
 
 
+class ReviewFindingsTests(unittest.TestCase):
+    """Cases the first tests missed (independent verification wf_7800f946-0ac, mutants that survived)."""
+
+    def test_a_node_in_a_same_strand_span_and_an_opposite_strand_span_is_in_span(self):
+        copies = {"c1": copy("chr1", "+", [[1000, 1100]], (1000, 2000)), "c2": copy("chr1", "-", [[5000, 5100]], (1200, 2500))}
+        loci = {"A": locus("chr1", 1301, 1400, "+", [(1300, 1400)])}          # inside both spans, on neither copy's exons
+        r = C.analyse(loci, [], copies)
+        self.assertEqual(r["classes"]["in_span"], 0)                          # no family cluster: not a node
+        loci["B"] = locus("chr1", 1001, 1100, "+", [(1000, 1100)])            # B is on c1, makes MCL0 a family cluster
+        rows = [("chr1", 1301, 1400, "MCL0"), ("chr1", 1001, 1100, "MCL0")]
+        r = C.analyse(loci, rows, copies)
+        self.assertEqual(r["classes"], {"on_copy": 1, "in_span": 1, "antisense": 0, "elsewhere": 0})
+
+    def test_a_copy_on_another_contig_at_the_same_coordinates_does_not_classify_a_locus(self):
+        copies = {"c1": copy("chr1", "+", [[1000, 1100]], (1000, 2000)), "c9": copy("chr2", "+", [[5000, 5100]], (1200, 2500))}
+        loci = {"B": locus("chr1", 1001, 1100, "+", [(1000, 1100)]), "A": locus("chr1", 2201, 2300, "+", [(2200, 2300)])}
+        rows = [("chr1", 1001, 1100, "MCL0"), ("chr1", 2201, 2300, "MCL0")]
+        r = C.analyse(loci, rows, copies)                                     # A lies in c9's span coordinates but on chr1
+        self.assertEqual(r["classes"], {"on_copy": 1, "in_span": 0, "antisense": 0, "elsewhere": 1})
+
+    def test_read_loci_converts_one_based_exons_without_closing_the_gap_between_adjacent_exons(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(f"{d}/l.gff3", "w") as fh:
+                fh.write("chr1\t.\tgene\t101\t300\t.\t+\t.\tID=gene-L;Name=L\n")
+                fh.write("chr1\t.\texon\t101\t200\t.\t+\t.\tParent=gene-L;gene=L\n")
+                fh.write("chr1\t.\texon\t201\t300\t.\t+\t.\tParent=gene-L;gene=L\n")
+            L = C.read_loci(f"{d}/l.gff3")
+        self.assertEqual(L["L"]["ex"], [(100, 200), (200, 300)])
+        self.assertEqual((L["L"]["s1"], L["L"]["e"]), (101, 300))
+
+    def test_a_copy_without_truth_exons_falls_back_to_its_territory(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(f"{d}/copies.tsv", "w") as fh:
+                fh.write("cid\tfamily\tname\tchrom\tterr_lo0\tterr_hi\tstrand\tisoform_gene\n")
+                fh.write("c1\tFAM\tc1\tchr1\t1000\t2000\t+\tc1\nc2\tFAM\tc2\tchr1\t5000\t6000\t+\tc2\n")
+            with open(f"{d}/truth.gtf", "w") as fh:
+                fh.write('chr1\tx\texon\t1001\t1100\t.\t+\t.\tgene_id "c1"; transcript_id "c1.1";\n')
+            v = C.copy_views(f"{d}/copies.tsv", f"{d}/truth.gtf", "FAM")
+        self.assertEqual(v["c1"]["exons"], [[1000, 1100]])
+        self.assertEqual(v["c2"]["exons"], [[5000, 6000]])
+
+    def test_the_node_names_are_returned_and_the_node_gff3_keeps_only_them(self):
+        loci = {"L1": locus("chr1", 1001, 2100, "+", [(1000, 1100)]), "L6": locus("chr1", 20001, 20100, "+", [(20000, 20100)]),
+                "L7": locus("chr1", 5601, 5700, "+", [(5600, 5700)])}
+        r = C.analyse(loci, [("chr1", 1001, 2100, "MCL0"), ("chr1", 20001, 20100, "MCL0")], COPIES)
+        self.assertEqual(r["node_names"], ["L1", "L6"])                       # L7 has no cluster row: not a node
+        with tempfile.TemporaryDirectory() as d:
+            with open(f"{d}/all.gff3", "w") as fh:
+                fh.write("##gff-version 3\n")
+                for n, v in loci.items():
+                    fh.write(f"{v['c']}\t.\tgene\t{v['s1']}\t{v['e']}\t.\t{v['st']}\t.\tID=gene-{n};Name={n}\n")
+                    for s0, e in v["ex"]:
+                        fh.write(f"{v['c']}\t.\texon\t{s0 + 1}\t{e}\t.\t{v['st']}\t.\tParent=gene-{n};gene={n}\n")
+            C.write_node_gff3(f"{d}/all.gff3", r["node_names"], f"{d}/nodes.gff3")
+            kept = C.read_loci(f"{d}/nodes.gff3")
+            with open(f"{d}/nodes.gff3") as fh:
+                header = fh.readline()
+        self.assertEqual(sorted(kept), ["L1", "L6"])
+        self.assertTrue(header.startswith("##gff-version"))
+
+
 class AgreementWithNodesPy(unittest.TestCase):
     """composition.py's own-node flags equal nodes.py's wherever nodes.py is defined (no shared span)."""
 

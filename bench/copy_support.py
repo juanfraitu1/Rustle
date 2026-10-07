@@ -9,8 +9,10 @@ Per copy (rows of --copies with the given family): the primary reads (-F 2308) o
 junctions = N ops >= 50 bp (exact donor/acceptor); supported junction = carried by >= 3 reads at the copy; k = min(2, annotated introns
 >= 50 bp); structural-support read = >= k supported junctions (k = 0: aligned blocks cover >= 50% of the exon union); spliced-expressed
 = >= 2 such reads. For each --loci set: OLD = a same-strand locus whose rep exons overlap the exon union; STRICT = spliced-expressed and a
-same-strand locus whose rep junctions include >= k supported junctions (k = 0: rep exons cover >= 50% of the union). --nodes restricts
-the loci of each arm to the page's NPIP-cluster nodes (pagedata.json rows: cid -> node[arm]) and reports found-within-NPIP-clusters too.
+same-strand locus whose rep junctions include >= k supported junctions (k = 0: rep exons cover >= 50% of the union). --nodes ANDs a per-copy flag (pagedata.json rows: cid -> node[arm]: the copy has an own node) onto each found test and reports
+`<arm>_*_found_in_npip_nodes`. It does NOT restrict the loci the found test looks at: those are still every same-strand locus of the arm that
+overlaps the copy, node or not (found by the 2026-10-07 verification, docs/SEED_POOL_REAL_READS_2026-10-07.md). To restrict the loci themselves, pass
+--loci a file that holds only the node loci (bench/seed_pool/composition.py --emit-node-loci).
 Amendment A (2026-10-04): the FOUND verdict is annotation-anchored — `ann_support_reads` = reads with >= k of the copy's ANNOTATED introns,
 `ann_expressed` = >= 2 of them, `<arm>_ann_found` = ann_expressed and the representative carries >= k annotated introns (`<arm>_locus_ann_found`
 at the locus level); the read-defined columns (`support_reads`, `<arm>_strict_found`, ...) stay as the annotation-free reading, reported beside.

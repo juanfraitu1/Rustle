@@ -91,7 +91,21 @@ def analyse(loci, rows, copies):
     kstar = min(held, key=lambda i: (-len(held[i]), i)) if held else None
     return dict(n_loci=len(loci), shared_spans=shared, family_clusters=sorted(fam), nodes=len(nodes), classes=classes,
                 np=(classes["on_copy"] / len(nodes)) if nodes else 0.0, own=own, copies_with_node=len(own),
-                kstar=kstar, copies_in_kstar=len(held[kstar]) if kstar else 0)
+                kstar=kstar, copies_in_kstar=len(held[kstar]) if kstar else 0, node_names=sorted(nodes))
+
+
+def write_node_gff3(src, names, out):
+    """The gene and exon rows of the loci `names` from the loci GFF3 `src`, in file order (the arm's NODES, for a node-restricted found count)."""
+    keep = set(names)
+    with open(src) as fh, open(out, "w") as o:
+        o.write("##gff-version 3\n")
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) < 9:
+                continue
+            at = dict(x.split("=", 1) for x in f[8].split(";") if "=" in x)
+            if (f[2] == "gene" and at.get("Name") in keep) or (f[2] == "exon" and at.get("gene") in keep):
+                o.write(ln)
 
 
 def copy_views(copies_tsv, truth, family, exons_json=None):
@@ -118,6 +132,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--report")
     ap.add_argument("--exons-json", help="npip_read_pool.json: the copy exons as the registered own-node rule took them (NPIP only)")
+    ap.add_argument("--emit-node-loci", help="DIR: write DIR/<ARM>.nodes.gff3 with the loci that are nodes of each arm (input of the node-restricted found count)")
     a = ap.parse_args()
     copies = copy_views(a.copies, a.truth, a.family, a.exons_json)
     node = {cid: {} for cid in copies}
@@ -126,6 +141,9 @@ def main():
         name, rest = spec.split("=", 1)
         loci_path, clusters_path = rest.split(",", 1)
         r = analyse(read_loci(loci_path), read_rows(clusters_path), copies)
+        if a.emit_node_loci:
+            os.makedirs(a.emit_node_loci, exist_ok=True)
+            write_node_gff3(loci_path, r["node_names"], f"{a.emit_node_loci}/{name}.nodes.gff3")
         report["arms"][name] = r
         for cid in copies:
             node[cid][name] = cid in r["own"]

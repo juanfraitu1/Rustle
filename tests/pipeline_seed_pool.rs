@@ -18,6 +18,7 @@ const DRIVER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tools/rustle_pipeline
 const COPY_ASSIGN_STUB: &str = r#"#!/bin/bash
 out=""; args=("$@")
 while [ $# -gt 0 ]; do case "$1" in --out) out=$2; shift 2;; *) shift;; esac; done
+[ -z "${STUB_WARN:-}" ] || echo "[as-table] WARNING: the best-AS table is empty: table IGNORED (region-local AS-tie rule applies)" >&2
 printf 'copy_assign sec=%s ratio=%s table=%s\n' "${RUSTLE_GTF_SECONDARY-unset}" "${RUSTLE_GTF_SECONDARY_AS_RATIO-unset}" "${RUSTLE_GTF_SECONDARY_AS_TABLE-unset}" >> "$STUB_LOG"
 printf 'argv %s\n' "${args[*]}" >> "$STUB_LOG"
 printf 'chr1\tstub\ttranscript\t1\t100\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n' > "$out.gtf"
@@ -224,6 +225,7 @@ fn the_pool_is_named_in_the_log() {
         ("log_ratio", vec!["--seed-as-ratio", "0.9"], "seeding pool: good (AS >= 0.9 x the molecule's genome-wide best)"),
     ] {
         let r = assemble(tag, &flags, &[]);
+        assert_eq!(r.code, 0, "{tag}: {}", r.stderr);
         assert!(r.stderr.contains(want), "{tag}: wanted '{want}' in\n{}", r.stderr);
     }
 }
@@ -410,4 +412,56 @@ fn one_unknown_contig_in_a_list_refuses_the_whole_call() {
     assert_eq!(r.code, 2, "{}", r.stderr);
     assert!(r.stderr.contains("chrZ"), "{}", r.stderr);
     assert!(r.log.is_empty(), "ran {:?}", r.log);
+}
+
+// ---- review findings of 2026-10-07 (independent verification wf_7800f946-0ac): edge cases the first tests missed ----
+
+#[test]
+fn a_ratio_that_would_admit_everything_is_refused_in_every_spelling() {
+    for (i, bad) in ["0.0", ".0", "0.00", "00.5", "1.", "1e0", "-0.5", "0.98x", "", " 0.9"].iter().enumerate() {
+        let r = assemble(&format!("ratio_bad_{i}"), &["--seed-as-ratio", bad], &[]);
+        assert_eq!(r.code, 2, "'{bad}': {}", r.stderr);
+        assert!(r.log.is_empty(), "'{bad}': ran {:?}", r.log);
+    }
+}
+
+#[test]
+fn an_as_table_made_for_a_bam_whose_name_extends_this_one_is_rebuilt() {
+    let t = case_dir("table_prefix").join("shared").join("mol.tsv");
+    let setup = |d: &Path| {
+        std::fs::create_dir_all(d.join("shared")).unwrap();
+        std::fs::write(d.join("shared").join("mol.tsv"), format!("#as_table\tbam={}2\trecords=1\tmolecules=1\n", d.join("reads.bam").display())).unwrap();
+    };
+    let r = assemble_with("table_prefix", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &setup);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.as_table_ran, "reads.bam2 is another BAM than reads.bam: rebuild");
+}
+
+#[test]
+fn the_contig_is_found_by_its_exact_name_whatever_the_order_of_the_index() {
+    let fai = "chr10\t133797422\t7\t80\t81\nchr1\t248387328\t252000000\t80\t81\n";
+    let r = assemble_with("scope_exact", &["--contig", "chr1"], &[], Some(fai), &|_| {});
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.argv.contains(" --region chr1:0-248387328 "), "{}", r.argv);
+}
+
+#[test]
+fn an_empty_duplicated_or_odd_contig_list_is_refused_before_anything_runs() {
+    for (i, bad) in ["", ",", "chr1,,chr16", "chr1,chr1", "chr1, chr16", "chr1,", ",chr16", "chr1:5-9"].iter().enumerate() {
+        let r = assemble(&format!("contig_bad_{i}"), &["--contig", bad], &[]);
+        assert_eq!(r.code, 2, "'{bad}': {}", r.stderr);
+        assert!(r.log.is_empty(), "'{bad}': ran {:?}", r.log);
+    }
+}
+
+#[test]
+fn a_table_the_binary_ignores_fails_the_good_pool_instead_of_running_a_wider_one() {
+    let r = assemble("table_ignored", &["--seed-pool", "good"], &[("STUB_WARN", "1")]);
+    assert_eq!(r.code, 3, "{}", r.stderr);
+    assert!(r.stderr.contains("table") && r.stderr.contains("IGNORED"), "{}", r.stderr);
+    // the other pools use no table, so the line cannot matter to them
+    for pool in ["primary", "all"] {
+        let r = assemble(&format!("table_ignored_{pool}"), &["--seed-pool", pool], &[("STUB_WARN", "1")]);
+        assert_eq!(r.code, 0, "{pool}: {}", r.stderr);
+    }
 }

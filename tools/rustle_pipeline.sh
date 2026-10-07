@@ -82,12 +82,19 @@
 #   --seed-pool primary   primary alignments only                                   (= --no-seed-secondaries)
 #   --seed-pool good      primaries + secondaries with AS >= R x the molecule's genome-wide best AS, R = 0.98
 #                         (THE DEFAULT; = --seed-secondaries; needs the as_table pass above)
-#   --seed-pool all       primaries + EVERY secondary (RUSTLE_GTF_SECONDARY=1, no filter, no table): the 2026-09-21 pool,
-#                         about 9x the transcripts of good on NPIP (src/family.rs gtf_secondary_as_ratio)
+#   --seed-pool all       primaries + EVERY secondary (RUSTLE_GTF_SECONDARY=1, no filter, no table): the 2026-09-21 pool; in the
+#                         2026-10-07 study 1.4-1.5x the transcripts of good per contig and about 17-23x the aligner records
+#                         (human chr16: 14,183 against 9,473 transcripts, 1,648,588 against 94,433 PAF records;
+#                         docs/SEED_POOL_REAL_READS_2026-10-07.md)
 #   --seed-as-ratio R     the width R of the good pool, a number in (0, 1]; 1 = exact ties only. Refused with another pool.
-#   RUSTLE_SEED_POOL / RUSTLE_SEED_AS_RATIO set the same two as defaults (a flag wins; an exported ratio is ignored by the
-#   other pools). The pool the flag names is the pool the binary gets: an exported RUSTLE_GTF_SECONDARY* of the shell is
-#   overridden (primary: unset; all: ratio and table unset), so a comparison between pools cannot be contaminated. The
+#   RUSTLE_SEED_POOL / RUSTLE_SEED_AS_RATIO set the same two as defaults (a flag wins; a malformed exported ratio is refused,
+#   a valid one is ignored by the other pools). The pool the flag names is the pool the binary gets: an exported
+#   RUSTLE_GTF_SECONDARY* of the shell is overridden (primary: unset; all: ratio and table unset), so those three variables
+#   cannot contaminate a comparison between pools (other exported RUSTLE_* read-pool knobs still reach the binary;
+#   bench/seed_pool/run.sh refuses any exported RUSTLE_*). One behaviour change: `--no-seed-secondaries` with an exported
+#   RUSTLE_GTF_SECONDARY* used to let it through, and now unsets it (the default and the legacy flags are otherwise
+#   byte-identical to the earlier driver, stub-checked). If the best-AS table is empty or from another BAM the binary says
+#   so in PREFIX.assemble.log and the good pool fails with status 3 instead of running a wider pool. The
 #   pool is announced in the log ("seeding pool: ..."), recorded in PREFIX.merged.env when it is not the default, and
 #   changes nothing but that environment: the arguments of copy_assign are the same for every pool. Use a different
 #   --out PREFIX per pool (bench/seed_pool/run.sh does, and prints the comparison). --as-table FILE reads (or builds, when absent
@@ -128,7 +135,7 @@
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
 set -euo pipefail
 STAGE=${1:-all}; shift || true
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 while [ $# -gt 0 ]; do
@@ -137,7 +144,7 @@ while [ $# -gt 0 ]; do
     --gff) GFF=$2; shift 2;; --threads) THREADS=$2; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;; --as-table) AS_TABLE=$2; shift 2;;
-    --contig) CONTIG=$2; shift 2;;
+    --contig) CONTIG=$2; CONTIG_FLAG=1; shift 2;;
     --seed-secondaries) SEED_POOL=good; shift;; --no-seed-secondaries) SEED_POOL=primary; shift;;
     --cache) CACHE=1; shift;; --no-cache) CACHE=0; shift;; --inspect) INSPECT=1; shift;;
     --piecewise) PIECEWISE=1; shift;; --max-pieces) MAX_PIECES=$2; shift 2;; --budget-s) BUDGET_S=$2; shift 2;;
@@ -165,6 +172,9 @@ case "$STAGE" in
      [[ "$SEED_RATIO" =~ ^(1(\.0+)?|0?\.[0-9]*[1-9][0-9]*)$ ]] || { echo "[rustle_pipeline] --seed-as-ratio (RUSTLE_SEED_AS_RATIO) must be a number in (0, 1] (got '$SEED_RATIO')" >&2; exit 2; }
      if [ "$SEED_RATIO_FLAG" = 1 ] && [ "$SEED_POOL" != good ]; then
        echo "[rustle_pipeline] --seed-as-ratio sets the width of the good pool and only the good pool has one (--seed-pool $SEED_POOL): drop one" >&2; exit 2
+     fi
+     if [ "$CONTIG_FLAG" = 1 ] && [ -z "$CONTIG" ]; then
+       echo "[rustle_pipeline] --contig is empty (an empty shell variable?): name a contig, or drop the flag for a genome-wide run" >&2; exit 2
      fi;;
 esac
 if [ "$STAGE" = cache-clear ]; then
@@ -314,8 +324,15 @@ stage_assemble() {
   # index), in place of --genome-wide; the products equal the genome-wide run's on those contigs (docs/CONTAINER_HEADROOM_2026-09-30.md gates)
   local scope=(--genome-wide)
   if [ -n "$CONTIG" ]; then
-    local c clen regions="" nctg=0
-    for c in ${CONTIG//,/ }; do
+    case ",$CONTIG," in *,,*) echo "[rustle_pipeline] --contig '$CONTIG': an empty name in the list" >&2; exit 2;; esac
+    local items=() c clen regions="" nctg=0 seen=","
+    IFS=, read -ra items <<< "$CONTIG"
+    for c in "${items[@]}"; do
+      case "$c" in
+        *:*|*[[:space:]]*) echo "[rustle_pipeline] --contig '$c': a name with ':' or whitespace cannot be a region (copy_assign splits at the first ':')" >&2; exit 2;;
+      esac
+      case "$seen" in *",$c,"*) echo "[rustle_pipeline] --contig lists $c twice" >&2; exit 2;; esac
+      seen+="$c,"
       clen=""
       if [ -s "$FASTA.fai" ]; then clen=$(awk -F'\t' -v c="$c" '$1==c{print $2; exit}' "$FASTA.fai"); fi
       [ -n "$clen" ] || { echo "[rustle_pipeline] --contig $c: no such contig in $FASTA.fai (samtools faidx writes it)" >&2; exit 2; }
@@ -349,6 +366,11 @@ stage_assemble() {
   fi
   env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
+  # the good pool is only the good pool if the binary used the table: an empty table is ignored and the region-local rule applies, a table
+  # from another BAM keeps every secondary it does not know; either way the run is wider than --seed-pool good says
+  if [ "$SEED_POOL" = good ] && grep -qE 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log"; then
+    echo "[rustle_pipeline] --seed-pool good: copy_assign did not apply the best-AS table ($(grep -m1 -E 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log" | cut -c1-150)); the assembly is not the good pool: rebuild $table (see $OUT.assemble.log)" >&2; exit 3
+  fi
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
   if [ "$BRIDGE_MODE" = f1units ]; then
     say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts cut into $(awk -F'\t' '$3=="transcript"' "$FAM_GTF" | grep -c 'fusion_unit "') units in the families input $FAM_GTF ($OUT.bridge_units.tsv)"

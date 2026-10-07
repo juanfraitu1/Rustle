@@ -394,6 +394,9 @@ as_table --bam reads.bam --out reads.molecules.tsv --threads 4          # 66 s /
 RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO=0.98 RUSTLE_GTF_SECONDARY_AS_TABLE=reads.molecules.tsv \
     copy_assign --assemble-only ...                 # the pipeline driver does this by default; --seed-pool primary|good|all picks the pool
                                                     # (primary = --no-seed-secondaries; all = RUSTLE_GTF_SECONDARY=1 with no ratio and no table)
+                                                    # Behaviour change (2026-10-07): an exported RUSTLE_GTF_SECONDARY* of the shell used to reach the binary under
+                                                    # --no-seed-secondaries; the driver now unsets those three variables for primary and all. The default and the
+                                                    # legacy flags are otherwise byte-identical (stub-checked, and the default's products equal the 10-06 products).
 # copy assignment with ONE certificate per tied read over every placement it touches (catalog copies across
 # families + outside loci built from the genome); opt-in — on the chr16 truth sim it removes every foreign claim
 # (844 -> 0) and every wrong row, and ties the reads whose tied partner is an identical genomic twin (row 1103)
