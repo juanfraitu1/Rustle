@@ -76,6 +76,8 @@ Cost (wall seconds of the driver call and peak RSS from `/usr/bin/time -v`, whic
 
 ## The registered predictions (as `table.py` prints them; no combined verdict)
 
+S2 in every cell and S1 and S3 at NPIP reproduce contrasts that were known before registration (prereg Errata 2), so they were not blind predictions.
+
 | | statement | chr16 NPIP | chr17 TBC1D3 |
 |---|---|---|---|
 | S1 | exact representatives P >= G98 >= A, one strict | HELD (12 >= 8 >= 2) | FAILED (7, 8, 5) |
