@@ -92,8 +92,8 @@
 #   changes nothing but that environment: the arguments of copy_assign are the same for every pool. Use a different
 #   --out PREFIX per pool (bench/seed_pool/run.sh does, and prints the comparison). --as-table FILE reads (or builds, when absent
 #   or made from another BAM) the best-AS table there instead of PREFIX.molecules.tsv, so many pools and widths share one pass over
-#   the BAM. --contig NAME (assemble) assembles that contig only, copy_assign --region NAME:0-LEN with LEN from FASTA.fai, in place
-#   of --genome-wide: the products equal the genome-wide run's on that contig (docs/CONTAINER_HEADROOM_2026-09-30.md) and it
+#   the BAM. --contig NAME[,NAME...] (assemble) assembles those contigs only, copy_assign --region NAME:0-LEN (--regions FILE for
+#   several) with LEN from FASTA.fai, in place of --genome-wide: the products equal the genome-wide run's on that contig (docs/CONTAINER_HEADROOM_2026-09-30.md) and it
 #   makes a pool comparison on one contig a matter of minutes; the families, assign and flag stages read whatever assembly is there.
 # The splice index is needed by `candidates` (the consensus sequences' genome hits) and `flag` (home search); the
 # annotation (--gff) by `flag` only (IG/TR screen).
@@ -310,15 +310,25 @@ fam_gtf_guard() {
 
 stage_assemble() {
   say "assemble: $BAM -> $OUT.gtf"
-  # --contig NAME: this contig only (copy_assign --region NAME:0-LEN, LEN from the FASTA index), in place of --genome-wide; the
-  # products equal the genome-wide run's on that contig (docs/CONTAINER_HEADROOM_2026-09-30.md gates)
+  # --contig NAME[,NAME...]: these contigs only (copy_assign --region NAME:0-LEN, or --regions FILE for several, LEN from the FASTA
+  # index), in place of --genome-wide; the products equal the genome-wide run's on those contigs (docs/CONTAINER_HEADROOM_2026-09-30.md gates)
   local scope=(--genome-wide)
   if [ -n "$CONTIG" ]; then
-    local clen=""
-    if [ -s "$FASTA.fai" ]; then clen=$(awk -F'\t' -v c="$CONTIG" '$1==c{print $2; exit}' "$FASTA.fai"); fi
-    [ -n "$clen" ] || { echo "[rustle_pipeline] --contig $CONTIG: no such contig in $FASTA.fai (samtools faidx writes it)" >&2; exit 2; }
-    scope=(--region "$CONTIG:0-$clen")
-    say "assemble: contig $CONTIG only (--region $CONTIG:0-$clen)"
+    local c clen regions="" nctg=0
+    for c in ${CONTIG//,/ }; do
+      clen=""
+      if [ -s "$FASTA.fai" ]; then clen=$(awk -F'\t' -v c="$c" '$1==c{print $2; exit}' "$FASTA.fai"); fi
+      [ -n "$clen" ] || { echo "[rustle_pipeline] --contig $c: no such contig in $FASTA.fai (samtools faidx writes it)" >&2; exit 2; }
+      regions+="$c:0-$clen"$'\n'; nctg=$((nctg + 1))
+    done
+    if [ "$nctg" = 1 ]; then
+      scope=(--region "${regions%$'\n'}")
+      say "assemble: contig $CONTIG only (--region ${regions%$'\n'})"
+    else
+      printf '%s' "$regions" > "$OUT.assemble_regions.txt"
+      scope=(--regions "$OUT.assemble_regions.txt")
+      say "assemble: contigs $CONTIG only ($nctg regions in $OUT.assemble_regions.txt)"
+    fi
   fi
   # the seeding pool (the SEEDING POOL note above): the three RUSTLE_GTF_SECONDARY* variables the binary reads are set, or
   # unset, for every pool, so a variable exported in the shell cannot change the pool the flag names

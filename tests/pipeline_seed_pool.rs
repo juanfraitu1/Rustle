@@ -393,3 +393,21 @@ fn the_merged_resume_key_records_the_contig() {
     assert_ne!(one, whole, "a finished genome-wide run must not stand in for a one-contig run");
     assert!(one.contains("contig=chr16"), "{one}");
 }
+
+#[test]
+fn several_contigs_become_a_regions_file_one_line_per_contig() {
+    let r = assemble_with("scope_several", &["--contig", "chr1,chr16"], &[], Some(FAI), &|_| {});
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.argv.contains(" --regions <dir>/run.assemble_regions.txt ") && !r.argv.contains("--region ") && !r.argv.contains("--genome-wide"), "{}", r.argv);
+    let text = std::fs::read_to_string(case_dir("scope_several").join("run.assemble_regions.txt")).expect("the regions file");
+    assert_eq!(text, "chr1:0-248387328\nchr16:0-96330374\n");
+    assert!(r.stderr.contains("contigs chr1,chr16 only"), "{}", r.stderr);
+}
+
+#[test]
+fn one_unknown_contig_in_a_list_refuses_the_whole_call() {
+    let r = assemble("scope_several_bad", &["--contig", "chr1,chrZ"], &[]);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(r.stderr.contains("chrZ"), "{}", r.stderr);
+    assert!(r.log.is_empty(), "ran {:?}", r.log);
+}
