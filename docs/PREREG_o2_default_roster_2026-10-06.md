@@ -74,3 +74,11 @@ compared byte for byte with the default `assign` stage's tables (gate GS4). If t
 not, chr16 and chr17 are read from the default `assign` run, chrY from the lever run is flagged as a different arm, and the difference is reported. If the lever run on chrY also exceeds the cap, it is run detached and the arm is stated.
 Rules B1 to B3, targets, read model and population are unchanged.
 
+## Amendment 2 (2026-10-06, written after the chrY lever run was stopped and after the chr16 / chr17 skip tests, before the chrY skip arm was scored; the runner had printed "0 assigned rows of 2,815" for it)
+
+The chrY assignment with the byte-identical levers (Amendment 1) was started detached with no time cap. A child `minimap2 -x splice -N 173` ("star" alignment of 614 sequences of the 173-copy family MCL0 against its 173 copies) used all five cores for 15 minutes without finishing and the run was stopped
+(no table was written). None of the 40 chrY target copies is in MCL0. The chrY arm is therefore run with `copy_assign --skip-families` naming MCL0 (arms O2 `asg.skip`, U2 `asg.skipunion`), and every chrY table excludes MCL0's reads (`report.py --exclude-family MCL0`).
+**This is NOT byte-identical to a full run in general** (gate GS5): skipping the largest family leaves the rows of all other families identical on chr17 (MCL0, 12 copies: 230 / 77 / 214 rows identical) but changes 19 of 3,219 `assignments.tsv` rows, 5 of 110 `families.tsv` rows and 3 of 342 `family_join.tsv` rows on chr16 (skipping MCL1, the NPIP
+family, 30 copies; reads tied between the skipped family and others lose or gain a cross-family demotion). The chrY arm is stated as an approximation of that size; the full chrY run (MCL0 included) is not done and needs a long, unattended, five-core slot.
+Rules B1 to B3, targets, read model and population are unchanged.
+

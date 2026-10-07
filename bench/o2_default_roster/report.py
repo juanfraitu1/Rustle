@@ -135,6 +135,7 @@ def main():
     ap.add_argument("--o2", required=True)
     ap.add_argument("--u2", required=True)
     ap.add_argument("--logs", default=None)
+    ap.add_argument("--exclude-family", action="append", default=[], help="source family left out of the assignment run (Amendment 2); its reads are dropped from every table")
     a = ap.parse_args()
     runs = dict(species="human", sample=f"human_{a.contig}", sim=a.sim, catalog=a.catalog, o2=a.o2, u2=a.u2, catalog_scope="dev")
     logs = _o2.score_logs(runs, a.logs or os.path.join(a.work, "score"))
@@ -145,21 +146,22 @@ def main():
         prim[r["read_name"]] = VERDICT.get(r["PRIMARY"], r["PRIMARY"])
     for r in recs:
         r["primary_outcome"] = prim.get(r["read"], "not_scored")
-    z = [r for r in recs if r["mapq"] == 0]
+    z = [r for r in recs if r["mapq"] == 0 and r["family"] not in a.exclude_family]
+    n_excluded = sum(1 for r in recs if r["mapq"] == 0 and r["family"] in a.exclude_family)
     ros = roster(a.catalog)
     regions = target_regions(a.target, a.contig) if a.target != "none" else []
     inT = {k for k, v in ros.items() if any(v["chrom"] == a.contig and v["strand"] == s and overlap(v["exons"], iv) for s, iv in regions)}
     zt = [r for r in z if (r["family"], r["copy"]) in inT]
     keys = ["own_outcome", "primary_outcome", "any_outcome", "union_outcome"]
     names = {"own_outcome": "OWN", "primary_outcome": "PRIMARY", "any_outcome": "ANY", "union_outcome": "UNION"}
-    out = dict(contig=a.contig, target=a.target, n_sim_reads=len(recs), n_mapq0=len(z), roster_copies=len(ros), target_copies=len(inT),
+    out = dict(contig=a.contig, target=a.target, n_sim_reads=len(recs), n_mapq0=len(z), excluded_families=a.exclude_family, n_mapq0_excluded=n_excluded, roster_copies=len(ros), target_copies=len(inT),
                target_copy_ids=sorted("|".join(k) for k in inT), crosscheck=notes)
     out["aligner_primary_true_copy_among_mapq0"] = dict(
         all=(sum(r["aligner"] == "true_copy" for r in z) / len(z) if z else None),
         target=(sum(r["aligner"] == "true_copy" for r in zt) / len(zt) if zt else None))
     out["all"] = {names[k]: v for k, v in table(z, keys).items()}
     out["target_table"] = {names[k]: v for k, v in table(zt, keys).items()} if a.target != "none" else {}
-    print(f"contig {a.contig}: {len(recs)} simulated reads, {len(z)} at MAPQ 0, roster {len(ros)} copies; target {a.target}: {len(inT)} copies, {len(zt)} MAPQ-0 reads")
+    print(f"contig {a.contig}: {len(recs)} simulated reads, {len(z)} at MAPQ 0 (+{n_excluded} from the excluded families {a.exclude_family}), roster {len(ros)} copies; target {a.target}: {len(inT)} copies, {len(zt)} MAPQ-0 reads")
     for n in notes:
         print("  " + n)
     show(f"ALL MAPQ-0 reads of the roster ({a.contig})", {names[k]: v for k, v in table(z, keys).items()})

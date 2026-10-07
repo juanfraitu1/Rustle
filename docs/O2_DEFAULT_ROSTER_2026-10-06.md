@@ -1,6 +1,6 @@
 # O2 with read-level truth on the default families roster: NPIP, TBC1D3, Y (2026-10-06)
 
-**Status: chr16 (NPIP) and chr17 (TBC1D3) scored; the chrY assignment run is still in progress (section "Y" is filled in when it ends).**
+**Status: chr16 (NPIP), chr17 (TBC1D3) and chrY (approximation: the 173-copy family left out, Amendment 2) scored. The full chrY run (that family included) is NOT done.**
 
 Protocol: `docs/PREREG_o2_default_roster_2026-10-06.md` (committed c8753249, amended 9e2deefa for chrY before any chrY assignment product existed). Runner and report: `bench/o2_default_roster/`.
 Products: `/mnt/linuxdisk/tmp/o2_default_roster_2026-10-06/{chr16,chr17,chrY}/` (`report.txt`, `report.json`, `score/`). HEAD build in `rustle_target_m2/release` (`copy_assign` 87824d91, `mcl_families` a6308244).
@@ -44,14 +44,19 @@ OWN: all 27 assigned reads are in the 99.5-100% identity band, none wrong; 188 o
 Of 887 simulated reads from the 22 target copies, 105 map at MAPQ 60, 782 at MAPQ 1-59 and **none at MAPQ 0**: there is no contested read to assign, so B1, B2 and B3 are UNDERPOWERED with 0 assigned.
 All 134 MAPQ-0 reads of the chr17 roster (other families): OWN 6 correct / 0 wrong (coverage .045); PRIMARY 26 / 0; ANY 26 / 0; union 0 assigned. On this contig the readings a consumer sees are right wherever they assign (26 of 26).
 
-## Y
+## Y (chrY roster; target = roster copies overlapping the body of a RefSeq DAZ, RBMY, TSPY, BPY2, HSFY, VCY, CDY, PRY or XKRY gene: 40 copies in 12 families)
 
-Pending: the assignment of the chrY simulation (458 copies, 64 families, 10,224 reads) did not fit the 550 s foreground cap, with or without the byte-identical levers, and runs detached (13 GB resident).
+**Approximation (Amendment 2): the 173-copy family MCL0 is left out of the assignment run** (it holds none of the 40 target copies). The full assignment stalled in one minimap2 child (`-x splice -N 173`, 614 sequences against 173 copies, five cores, 15 minutes without finishing) and was stopped; skipping a family is byte-identical for the other families on chr17
+and changes 0.6% of the assignment rows on chr16, so the numbers below carry that uncertainty.
+
+Of 10,224 simulated reads, 609 MAPQ-0 reads come from MCL0 (excluded) and 2,425 from the other 63 families; **452 MAPQ-0 reads come from the 40 target copies** (134 from copies with an identical sibling, 201 from the 99.5-100% band, 117 from the 98-99% band).
+**O2 assigns none of them under any reading** (OWN, PRIMARY, ANY and the union arm all give 0 assigned; 438 abstain, 14 have no row), and none of the 2,425 MAPQ-0 reads of the 63 families either. B1, B2 and B3 are UNDERPOWERED (0 assigned). The aligner-primary baseline puts 41% of the 452 reads on their source copy.
+Even the 117 reads of the 98-99% band (copies 1-2% diverged from their closest sibling, where chr16 coverage was 0.80) are not assigned: on this roster the certificate has no decisive column for them.
 
 ## Reading, with its limits
 
 - Under the registered read model the contested reads of these families are rare (NPIP 33 of 1,099, TBC1D3 0 of 887): reads simulated from a copy's own sequence with 0.13% error align best to that copy, so the aligner decides them. The registered bars therefore cannot be tested at NPIP and TBC1D3 on this
   design, and "UNDERPOWERED" is the outcome. Real A119b reads at NPIP are contested far more often (24% of primaries at MAPQ 0, `docs/PSV_CEILING_2026-10-03.md`): that excess comes from sequence variation that the simulation does not have.
 - Where the simulation does have contested reads (all 931 on chr16), the certificate is exact (27 of 27) but assigns 2.9% of them, and the consumer readings are poor (PRIMARY .37, ANY .02): the cross-family claims of `docs/PREREG_o2_read_truth_2026-09-23.md` persist on the default roster. At NPIP, 0 of 29 ANY-assigned reads are right.
-- P1 (OWN 0 wrong, >= 30 assigned at NPIP and TBC1D3): 0 wrong holds, the >= 30 does not (1 and 0). P2 (consumer readings below .95 at NPIP and TBC1D3): holds at NPIP (0.08 and 0.00 on 12 and 29 reads), untestable at TBC1D3. P4 (union assigns almost nothing): holds (0 of 931, 0 of 134).
+- P1 (OWN 0 wrong, >= 30 assigned at NPIP and TBC1D3): 0 wrong holds, the >= 30 does not (1 and 0). P2 (consumer readings below .95 at NPIP and TBC1D3): holds at NPIP (0.08 and 0.00 on 12 and 29 reads), untestable at TBC1D3. P3 (Y UNDERPOWERED on B1): holds (0 assigned, approximation). P4 (union assigns almost nothing): holds (0 of 931, 0 of 134, 0 of 2,425).
 - Upper bound on real-data accuracy: no allelic variation, no readthrough, no uncatalogued copies, one error model, CHM13 sequence as the source.

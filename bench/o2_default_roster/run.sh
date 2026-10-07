@@ -95,9 +95,39 @@ assign-levers)
       if cmp -s "$A.levers.$t.tsv" "$A.assign.$t.tsv"; then echo "  $t.tsv: identical to the default assign stage's"; else echo "  $t.tsv: DIFFERS from the default assign stage's"; fi
     done
   fi ;;
+assign-skip)
+  # Amendment 2: the assignment with one family left out (copy_assign --skip-families) and the byte-identical levers; arms O2 ($A.skip) and U2 ($A.skipunion).
+  # When the full run exists ($A.assign / $A.levers) the rows of every other family are compared with it (GS5).
+  FID=${3:?family id to skip}
+  printf '%s\n' "$FID" > "$A.skip.families.txt"
+  for arm in skip skipunion; do
+    EXTRA=(); [ "$arm" = skipunion ] && EXTRA=(--union-certificate)
+    /usr/bin/time -v bash "$REPO/tools/rlock.sh" heavy "$BIN/copy_assign" --bam "$S.bam" --fasta "$FA" --regions "$A.regions.txt" --families "$A.fam.copies.tsv" \
+      --copies-fa "$A.fam.copies.fa" --skip-poa-diagnostic --region-threads 4 --skip-families "$A.skip.families.txt" "${EXTRA[@]}" --out "$A.$arm" > "$A.$arm.log" 2> "$A.$arm.stderr"
+    echo "[o2_default_roster] assign-skip $C $arm (skipping $FID): $(grep Elapsed "$A.$arm.stderr" | awk '{print $NF}'); $(awk -F'\t' 'NR>1 && $4=="assigned"' "$A.$arm.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$A.$arm.assignments.tsv" | wc -l)"
+  done
+  full=""; [ -e "$A.assign.assignments.tsv" ] && full="$A.assign"
+  if [ -n "$full" ]; then
+    python3 - "$full" "$A.skip" "$FID" <<'PY'
+import sys
+full, skip, fid = sys.argv[1:4]
+for t, col in (("assignments", 1), ("families", 0), ("family_join", 0)):
+    def rows(p, drop):
+        with open(p) as fh:
+            hdr = fh.readline()
+            return hdr, sorted(l for l in fh if l.split("\t")[col] != drop)
+    h1, r1 = rows(f"{full}.{t}.tsv", fid)
+    h2, r2 = rows(f"{skip}.{t}.tsv", fid)
+    same = h1 == h2 and r1 == r2
+    print(f"  {t}.tsv: rows of the other families {'IDENTICAL' if same else 'DIFFER'} ({len(r1)} full vs {len(r2)} skip)")
+    if not same:
+        s1, s2 = set(r1), set(r2)
+        print(f"    only in full: {len(s1 - s2)}; only in skip: {len(s2 - s1)}")
+PY
+  fi ;;
 score)
   case "$C" in chr16) T=NPIP;; chr17) T=TBC1D3;; chrY) T=Y;; *) T=none;; esac
   light() { bash "$REPO/tools/rlock.sh" light "$@"; }
-  light python3 "$HERE/report.py" --work "$D" --contig "$C" --target "$T" --sim "$S" --catalog "$A.fam.copies.tsv" --o2 "${RS_O2:-$A.assign}" --u2 "$A.union" --logs "$D/score" | tee "$D/report.txt" ;;
-*) echo "usage: run.sh roster|sim|assign|assign-levers|score CONTIG" >&2; exit 2 ;;
+  light python3 "$HERE/report.py" --work "$D" --contig "$C" --target "$T" --sim "$S" --catalog "$A.fam.copies.tsv" --o2 "${RS_O2:-$A.assign}" --u2 "${RS_U2:-$A.union}" ${RS_EXCLUDE:+--exclude-family "$RS_EXCLUDE"} --logs "${RS_LOGS:-$D/score}" | tee "$D/report.txt" ;;
+*) echo "usage: run.sh roster|sim|assign|assign-levers|assign-skip|score CONTIG [FAMILY]" >&2; exit 2 ;;
 esac
