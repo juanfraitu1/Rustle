@@ -82,7 +82,8 @@ pool_args() {   # ARM -> the driver's pool flags
 prefix() { echo "$S/$1/run"; }
 need_disk() { local free; free=$(df -BG --output=avail "$W" | tail -1 | tr -dc 0-9); [ "$free" -ge 8 ] || { echo "[seed_pool] only ${free} GB free on the work disk" >&2; exit 2; }; }
 stamp() { for b in copy_assign mcl_families family_score as_table; do echo "$b	$(sha1sum "$BIN/$b" | cut -d' ' -f1)"; done; for f in tools/rustle_pipeline.sh bench/entangled/locus_units.py bench/copy_support.py bench/seed_pool/composition.py; do echo "$f	$(sha1sum "$REPO/$f" | cut -d' ' -f1)"; done; }
-sharded() { case $1 in A|A_R1) return 0;; *) return 1;; esac; }
+# A-type arms always go through the shard wrapper; so does every gorilla arm that widens the pool (G98 on gorilla NPIP took 6 minutes in one process, P 41 s)
+sharded() { case $1 in A|A_R1) return 0;; P|P_R1) return 1;; *) case "$SUB" in gorilla_*) return 0;; *) return 1;; esac;; esac; }
 
 # the driver's families stage on PREFIX (assembled there); the all-vs-all of A-type arms goes through the shard wrapper in a bounded call
 do_families() {   # ARM PREFIX
@@ -145,7 +146,9 @@ r1)  step_r1 "${1:?ARM}";;
 all)
   t0=$(date +%s); limit=${RS_CALL_S:-330}
   case "$SUB" in
-    gorilla_*) list=${1:-"P P_R1 G98 G98_R1 G995 G95 A A_R1"};;      # Amendment 1: the sweep ends G100 / G90 and their Rule-1 arms are not run on gorilla
+    # Amendment 1: the sweep ends G100 / G90 and their Rule-1 arms are not run on gorilla. Amendment 2 (user, 2026-10-07): the all-secondaries
+    # arms are deferred; run them later with `run.sh all gorilla_npip "A_R1"` and `run.sh all gorilla_tbc1d3 "A A_R1"` (gorilla NPIP's A had finished)
+    gorilla_*) list=${1:-"P P_R1 G98 G98_R1 G995 G95"};;
     *)         list=${1:-"P P_R1 G98 G98_R1 A A_R1 G100 G995 G95 G90 G100_R1 G995_R1 G95_R1 G90_R1"};;
   esac
   for a in $list; do
