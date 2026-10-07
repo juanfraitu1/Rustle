@@ -7,6 +7,10 @@
 #   run.sh anno FAMILY REP      G6 positive control: the canonicalized annotation as loci through the driver's `families` stage
 #   run.sh score FAMILY REP     score.py (+ G7) for the arm; `score-anno` for the control
 #   run.sh both FAMILY          verdict.py over the two replicates
+#   run.sh chains FAMILY REP    E1: chains recovered exactly in PREFIX.gtf, over all and over observable chains
+#   run.sh gates FAMILY REP     G1-G4 and G6 from the files, G4 by two scorer runs under different hash seeds (VALID / INVALID)
+#   run.sh copysupport FAMILY REP   the registered like-for-like instruments on the ideal BAM: nodes.py own-node flag and bench/copy_support.py (Amendment A ann_found, chain_found)
+#   run.sh famscore FAMILY REP  family_score on truth rows restricted to the simulated windows (fam_score.py)
 # Environment: RS_BIN (HEAD release dir), RS_WORK (products), RS_PAD (smoke tests only), RS_PARTS. Nothing is read from a RUSTLE_* variable of the calling shell.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd)
@@ -62,5 +66,24 @@ score-anno)
   light python3 "$HERE/score.py" --truth "$P" --strata "$S" --asm "$C" --single "$S.single_copy.tsv" --out "$D/score_anno" | tee "$D/score_anno.log" ;;
 both)
   python3 "$HERE/verdict.py" --rep1 "$W/$F/rep1/score" --rep2 "$W/$F/rep2/score" --out "$W/$F/verdict.json" ;;
+chains)
+  light python3 "$HERE/chains.py" --truth "$P" --strata "$S" --asm "$A" --out "$D/chains" | tee "$D/chains.log" ;;
+gates)
+  for s in 0 1; do PYTHONHASHSEED=$s python3 "$HERE/score.py" --truth "$P" --strata "$S" --asm "$A" --single "$S.single_copy.tsv" --out "$D/g4_s$s" > /dev/null; done
+  python3 "$HERE/gates.py" --dir "$D" --family "$F" --g4a "$D/g4_s0" --g4b "$D/g4_s1" ;;
+copysupport)
+  ANN=/mnt/linuxdisk/tmp/rustle_figures_dev/copy_recovery_tools_cat/ann
+  light python3 "$REPO/bench/default_rescore/nodes.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --family "$F" --arm "ARM=$A.fam.loci.gff3,$A.fam.clusters.tsv" --out "$D/nodes.json" | tee "$D/nodes.log"
+  light python3 "$REPO/bench/copy_support.py" --copies "$ANN/copies.hsa.tsv" --truth "$ANN/truth.hsa.gtf" --bam "$P.bam" --family "$F" --out "$D/support" \
+    --loci "ARM=$A.fam.loci.gff3,$A.families.gtf" --nodes "$D/nodes.json" > "$D/support.stdout"
+  python3 - "$D/support.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); a = d["arms"]["ARM"]
+print({k: a.get(k) for k in ("old_overlap_in_npip_nodes", "ann_found", "ann_found_in_npip_nodes", "chain_found", "locus_level_found", "locus_ann_found", "strict_found")})
+PY
+  ;;
+famscore)
+  case "$F" in NPIP) CH=chr16;; *) CH=chr17;; esac
+  light python3 "$HERE/fam_score.py" --fs "$BIN/family_score" --clusters "$A.fam.clusters.tsv" --contig "$CH" --windows "$P.windows.tsv" --label "${F}_rep$R" --out "$D/famscore.json" --work "$D/famscore_work" | tee "$D/famscore.log" ;;
 *) echo "usage: run.sh truth|map|strata|asm|anno|score|score-anno|both FAMILY [REP]" >&2; exit 2 ;;
 esac

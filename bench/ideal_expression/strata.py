@@ -57,12 +57,16 @@ def main():
     best = {}
     alns = []
     bam = pysam.AlignmentFile(a.bam)
+    all_reads = set()   # every read of the FASTQ: one primary-or-unmapped record each (G3), mapped or not
     for rec in bam.fetch(until_eof=True):
+        if not (rec.is_secondary or rec.is_supplementary):
+            all_reads.add(rec.query_name)
         if rec.is_unmapped:
             continue
         as_ = rec.get_tag("AS") if rec.has_tag("AS") else 0
         q = rec.query_name
-        best[q] = max(best.get(q, as_), as_)
+        if not rec.is_supplementary:
+            best[q] = max(best.get(q, as_), as_)
         js, pos = [], rec.reference_start
         for op, ln in rec.cigartuples:
             if op in (0, 7, 8, 2):
@@ -90,14 +94,13 @@ def main():
                         carry["P2"][key].add(q)
                     if in_p1:
                         carry["P1"][key].add(q)
-    # reads of each copy's own transcripts whose primary overlaps the copy span
+    # reads of each copy's own transcripts whose primary overlaps the copy span (unmapped reads are in the denominator)
     n_reads, back = collections.Counter(), collections.Counter()
     prim = {}
     for q, cat, rname, s, e, as_, js in alns:
         if cat == "P":
             prim[q] = (rname, s, e)
-    fq_reads = collections.Counter()
-    for q in best:
+    for q in all_reads:
         t = q.split("|")[0]
         cid = tx_copy.get(t)
         if cid:
@@ -106,6 +109,14 @@ def main():
             s0, e0 = span.get(cid, (0, 0))
             if p and p[0] == chrom and p[1] < e0 and p[2] > s0:
                 back[cid] += 1
+    chain_rows = []
+    for t in targets:
+        for ch in sorted(chains.get(t["cid"], [])):
+            chain_rows.append(dict(cid=t["cid"], family=t["family"], n_introns=len(ch), chain=",".join(f"{d}-{x}" for d, x in ch),
+                                   reads_P1=len(carry["P1"][(t["cid"], ch)]), reads_P2=len(carry["P2"][(t["cid"], ch)]), reads_P3=len(carry["P3"][(t["cid"], ch)]),
+                                   observable=int(len(carry["P2"][(t["cid"], ch)]) >= 3)))
+    with open(a.out + ".chains.tsv", "w") as fh:
+        w = csv.DictWriter(fh, fieldnames=["cid", "family", "n_introns", "chain", "reads_P1", "reads_P2", "reads_P3", "observable"], delimiter="\t"); w.writeheader(); w.writerows(chain_rows)
     e0rows, rrows = [], []
     for t in targets:
         cid = t["cid"]
@@ -113,7 +124,7 @@ def main():
         cnt = {p: sum(1 for c in ch if len(carry[p][(cid, c)]) >= 3) for p in carry}
         observable = cnt["P2"] >= 1
         in_r = t["stratum"] == "R_in" and observable
-        e0rows.append(dict(cid=cid, name=t["name"], family=t["family"], heldout=t["heldout"], stratum_in=t["stratum"], n_chains=len(ch), reads_sim=n_reads[cid], reads_back_P1=back[cid],
+        e0rows.append(dict(cid=cid, name=t["name"], family=t["family"], heldout=t["heldout"], stratum_in=t["stratum"], is_E=t["entangled"], is_C=t["mono"], is_X=t["rt_image"], n_chains=len(ch), reads_sim=n_reads[cid], reads_back_P1=back[cid],
                            reads_back_share=round(back[cid] / n_reads[cid], 3) if n_reads[cid] else "", observable_chains_P1=cnt["P1"], observable_chains_P2=cnt["P2"],
                            observable_chains_P3=cnt["P3"], aligner_limited=int(t["stratum"] == "R_in" and not observable), in_R=int(in_r)))
         rrows.append(dict(cid=cid, family=t["family"], heldout=t["heldout"], stratum_in=t["stratum"], in_R=int(in_r),
@@ -131,12 +142,13 @@ def main():
             multi.add(tx_gene.get(q.split("|")[0]))
     single = [g for g in gene_span if g not in target_genes and g not in named and g not in multi]
     ok = tot = 0
-    for q, p in prim.items():
+    for q in all_reads:
         g = tx_gene.get(q.split("|")[0])
         if g in single:
             tot += 1
+            p = prim.get(q)
             s0, e0 = gene_span[g]
-            ok += int(p[0] == chrom and p[1] < e0 and p[2] > s0)
+            ok += int(bool(p) and p[0] == chrom and p[1] < e0 and p[2] > s0)
     with open(a.out + ".single_copy.tsv", "w") as fh:
         fh.write("gene\n"); [fh.write(g + "\n") for g in sorted(single)]
     n_main = sum(1 for t in targets if not int(t["heldout"]))

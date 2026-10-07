@@ -45,6 +45,13 @@ def main():
     inside = lambda nm: a.windows == "ALL" or any(s < w1 and e > w0 for s, e in recs.get(nm, []) for w0, w1 in wins)
     c_in = f"{work}/{a.label}.clusters.tsv"
     sf.keep(a.clusters, "chrom", a.contig, c_in)
+    # variant without size-2 clusters (57% of default families are size 2 and exist through MCL floating-point residue)
+    c_in2 = f"{work}/{a.label}.nosize2.clusters.tsv"
+    rowsc = open(c_in).read().splitlines()
+    sizes = {}
+    for ln in rowsc[1:]:
+        sizes[ln.split("\t")[0]] = sizes.get(ln.split("\t")[0], 0) + 1
+    open(c_in2, "w").write("\n".join([rowsc[0]] + [ln for ln in rowsc[1:] if sizes[ln.split("\t")[0]] != 2]) + "\n")
     out = dict(label=a.label, clusters=a.clusters, contig=a.contig, windows=a.windows, truths={})
     for key, fn in sf.TRUTHS.items():
         rows = list(csv.reader(open(f"{sf.HUM}/{fn}"), delimiter="\t"))
@@ -72,6 +79,13 @@ def main():
         with open(pf) as fh:
             h2 = fh.readline().rstrip("\n").split("\t")
             r["per_family"] = [dict(zip(h2, ln.rstrip("\n").split("\t"))) for ln in fh]
+        r["marked"] = {k: [x for x in r["per_family"] if k in x.get("members", "")] for k in ("NPIP", "TBC1D3")}
+        text2 = subprocess.run([a.fs, "--clusters", c_in2, "--gff", f"{sf.HUM}/genes_only.gff", "--soto", t_in, "--chrom", "ALL", "--label", f"{a.label}_{key}_nosize2", "--pairwise"],
+                               capture_output=True, text=True, check=True).stdout
+        m2 = sf.M_POOL.search(text2)
+        if m2:
+            r["no_size2"] = dict(sens=float(m2.group(4)), prec=float(m2.group(5)), f=float(m2.group(6)))
+        r["note"] = "pooled over every truth family of the universe: NOT a result for the target family; per-family rows are in `marked`"
         out["truths"][key] = r
         print(f"{a.label} {key}: universe {len(kept)} genes in {len(cnt)} families | sens {r.get('sens')} prec {r.get('prec')} F {r.get('f')} | pairs tp {r.get('pair_tp')}/{r.get('pair_truth')} truth, {r.get('pair_pred')} predicted")
     json.dump(out, open(a.out, "w"), indent=1)

@@ -24,6 +24,10 @@ def main():
             out[fam] = dict(rep1=s1[fam], rep2=s2.get(fam))
             continue
         v1, v2 = s1[fam]["rule"], s2[fam]["rule"]
+        if s1[fam]["heldout"]:
+            out[fam] = dict(verdict="HELD-OUT (no bar)", rep1=s1[fam]["R_counts"], rep2=s2[fam]["R_counts"], R=(s1[fam]["R"], s2[fam]["R"]), N=s1[fam]["N"])
+            print(f"{fam}: HELD-OUT, no bar | R {s1[fam]['R']}/{s2[fam]['R']} of {s1[fam]['N']} | IDEAL-FOUND on R {s1[fam]['R_counts']['IDEAL_FOUND']}/{s2[fam]['R_counts']['IDEAL_FOUND']}")
+            continue
         if "CEILING-LIMITED" in (v1, v2):
             v = "CEILING-LIMITED"
         elif v1 == v2:
@@ -32,7 +36,7 @@ def main():
             v = "UNSTABLE (" + v1 + " / " + v2 + "; lower = " + (v1 if ORDER[v1] <= ORDER[v2] else v2) + ")"
         f1 = {r["cid"]: r for r in csv.DictReader(open(f"{a.rep1}.{fam}.copies.tsv"), delimiter="\t")}
         f2 = {r["cid"]: r for r in csv.DictReader(open(f"{a.rep2}.{fam}.copies.tsv"), delimiter="\t")}
-        flips = sorted(c for c in f1 if c in f2 and f1[c]["IDEAL_FOUND"] != f2[c]["IDEAL_FOUND"])
+        flips = sorted(c for c in f1 if c in f2 and any(f1[c][k] != f2[c][k] for k in ("in_R", "E2", "E3", "E4", "IDEAL_FOUND")))
         out[fam] = dict(verdict=v, rep1=dict(rule=v1, R=s1[fam]["R"], found_R=s1[fam]["R_counts"]["IDEAL_FOUND"], found_ALL=s1[fam]["ALL_counts"]["IDEAL_FOUND"], N=s1[fam]["N"], CP=s1[fam]["CP"]),
                         rep2=dict(rule=v2, R=s2[fam]["R"], found_R=s2[fam]["R_counts"]["IDEAL_FOUND"], found_ALL=s2[fam]["ALL_counts"]["IDEAL_FOUND"], N=s2[fam]["N"], CP=s2[fam]["CP"]),
                         copies_flipping_between_replicates=flips)
