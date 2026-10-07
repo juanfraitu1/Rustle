@@ -64,3 +64,13 @@ The scorer, the report and the runner are `bench/score.py`, `bench/o2_default_ro
 This is a simulation. Reads are drawn from the roster's own spliced exon sums (CHM13 sequence) with one error model, so there is no allelic variation, no readthrough, no copy the roster missed, and no difference between the sequenced individual and the
 reference (real reads at NPIP copies often match no catalog copy, `docs/PSV_CEILING_2026-10-03.md`): the numbers are an upper bound on real-data accuracy, and the identity-band structure is what transfers. DEV only: chr16 and chr17 are the development blocks of NPIP
 and TBC1D3, and no truth for the Y exists beyond annotation and this simulation. Nothing here measures O3 or the families themselves (O1).
+
+## Amendment 1 (2026-10-06, written after the chr16 and chr17 results and before any chrY assignment product exists)
+
+The driver's `assign` stage on the chrY simulation (458 copies, 64 families, one family of 173 copies, 10,224 reads) did not finish inside the 550 s cap of the runner (`timeout` exit 124, no tables written; the cap exists
+because a foreground call is limited to 10 minutes). The chrY assignment is therefore run with the two levers the driver's merged stage already applies in its assign phase (`stage_assign_fam`) and documents as byte-identical:
+`copy_assign --skip-poa-diagnostic --region-threads 4`, with the driver's own regions file and inputs. To support that equivalence, the same levers are run on chr16 and chr17 and `assignments.tsv`, `families.tsv` and `family_join.tsv` are
+compared byte for byte with the default `assign` stage's tables (gate GS4). If they are identical, the three targets are read from the default `assign` tables (chr16, chr17) and the lever run (chrY) and the equivalence is reported; if
+not, chr16 and chr17 are read from the default `assign` run, chrY from the lever run is flagged as a different arm, and the difference is reported. If the lever run on chrY also exceeds the cap, it is run detached and the arm is stated.
+Rules B1 to B3, targets, read model and population are unchanged.
+

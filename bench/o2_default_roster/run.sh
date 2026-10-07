@@ -3,11 +3,12 @@
 #
 #   run.sh roster CONTIG   HEAD assemble (the driver's `assemble` flags, --region CONTIG) + the driver's `families` stage -> W/CONTIG/roster.fam.copies.{tsv,fa,regions};
 #                          cmp against the stored e163d955 products where they exist
-#   run.sh sim CONTIG      bench/sim.py copies on the roster against the whole-genome splice index, seed 20260925, 2 mapping parts, one part per call:
+#   run.sh sim CONTIG      bench/sim.py copies on the roster against the whole-genome splice index, seed 20260925, PARTS mapping parts (chr16 4, chr17 3, chrY 8), one part per call:
 #                          re-run until it prints "sim complete"
 #   run.sh assign CONTIG   the catalog (roster minus copies without reads), the driver's `assign` stage on the simulated BAM (arm O2) and
 #                          copy_assign --union-certificate (arm U2, beside)
-#   run.sh score CONTIG    bench/o2_default_roster/report.py (CONTIG: chr16 = NPIP, chr17 = TBC1D3, chrY = Y)
+#   run.sh assign-levers CONTIG   the same assignment with --skip-poa-diagnostic --region-threads 4 (documented byte-identical; Amendment 1); compares with the assign stage's tables when they exist
+#   run.sh score CONTIG    bench/o2_default_roster/report.py (RS_O2=PREFIX picks another O2 arm, e.g. $A.levers) (CONTIG: chr16 = NPIP, chr17 = TBC1D3, chrY = Y)
 # Environment: RS_BIN (HEAD release dir), RS_WORK (products). Nothing is read from a RUSTLE_* variable of the calling shell.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd)
@@ -31,6 +32,8 @@ cmd=${1:?roster|sim|assign|score}; C=${2:?contig (chr16|chr17|chrY)}
 D=$W/$C; mkdir -p "$D"
 R=$D/roster          # the roster: HEAD default assemble + families on the contig
 S=$D/sim             # the simulation
+# mapping parts (read-disjoint; they only bound one call's wall time): the part count is fixed per contig and measured at ~0.14 s/read plus a ~1 min index load on the repeat-dense rosters
+case "$C" in chr16) PARTS=${RS_PARTS:-4};; chr17) PARTS=${RS_PARTS:-3};; chrY) PARTS=${RS_PARTS:-8};; *) PARTS=${RS_PARTS:-4};; esac
 A=$D/asg             # the assignment (the driver's assign stage prefix)
 case "$cmd" in
 roster)
@@ -60,7 +63,7 @@ sim)
   { echo "date	$(date -Is)"; echo "seed	$SEED"; stamp; } >> "$S.run.log"
   # the stage's genome-wide mapping, one part per call (the index load, ~1 min, is paid per part); a finished simulation is marked by S.done
   bash "$REPO/tools/rlock.sh" heavy python3 "$REPO/bench/sim.py" copies "$R.fam.copies.tsv" "$R.fam.copies.fa" "$INDEX" "$S" "$SEED" \
-    --threads 4 --parts 2 --max-parts-per-call 1 --reuse-fastq --sibling none >> "$S.log" 2>&1
+    --threads 4 --parts "$PARTS" --max-parts-per-call 1 --reuse-fastq --sibling none >> "$S.log" 2>&1
   if [ -e "$S.done" ]; then echo "[o2_default_roster] sim complete: $(cat "$S.done")"; else echo "[o2_default_roster] sim: parts remain, re-run: $(tail -1 "$S.log")"; fi ;;
 assign)
   [ -e "$S.done" ] || { echo "the simulation is not complete" >&2; exit 2; }
@@ -80,9 +83,21 @@ PY
   /usr/bin/time -v bash "$REPO/tools/rlock.sh" heavy "$BIN/copy_assign" --bam "$S.bam" --fasta "$FA" --regions "$A.regions.txt" --families "$A.fam.copies.tsv" \
     --copies-fa "$A.fam.copies.fa" --union-certificate --out "$A.union" > "$A.union.log" 2> "$A.union.stderr"
   echo "[o2_default_roster] assign $C: O2 $(grep Elapsed "$A.driver.stderr" | awk '{print $NF}'), U2 $(grep Elapsed "$A.union.stderr" | awk '{print $NF}')" ;;
+assign-levers)
+  # the same copy_assign command as the driver's `assign` stage plus the two documented byte-identical levers of the merged stage's phase 3
+  # (`--skip-poa-diagnostic`, `--region-threads`); regions = the driver's (A.regions.txt, written by the assign stage)
+  [ -s "$A.regions.txt" ] || { echo "run assign first (it writes $A.regions.txt)" >&2; exit 2; }
+  /usr/bin/time -v bash "$REPO/tools/rlock.sh" heavy "$BIN/copy_assign" --bam "$S.bam" --fasta "$FA" --regions "$A.regions.txt" --families "$A.fam.copies.tsv" \
+    --copies-fa "$A.fam.copies.fa" --skip-poa-diagnostic --region-threads 4 --out "$A.levers" > "$A.levers.log" 2> "$A.levers.stderr"
+  echo "[o2_default_roster] assign-levers $C: $(grep Elapsed "$A.levers.stderr" | awk '{print $NF}'); $(awk -F'\t' 'NR>1 && $4=="assigned"' "$A.levers.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$A.levers.assignments.tsv" | wc -l)"
+  if [ -e "$A.assign.assignments.tsv" ]; then
+    for t in assignments families family_join; do
+      if cmp -s "$A.levers.$t.tsv" "$A.assign.$t.tsv"; then echo "  $t.tsv: identical to the default assign stage's"; else echo "  $t.tsv: DIFFERS from the default assign stage's"; fi
+    done
+  fi ;;
 score)
   case "$C" in chr16) T=NPIP;; chr17) T=TBC1D3;; chrY) T=Y;; *) T=none;; esac
   light() { bash "$REPO/tools/rlock.sh" light "$@"; }
-  light python3 "$HERE/report.py" --work "$D" --contig "$C" --target "$T" --sim "$S" --catalog "$A.fam.copies.tsv" --o2 "$A.assign" --u2 "$A.union" --logs "$D/score" | tee "$D/report.txt" ;;
-*) echo "usage: run.sh roster|sim|assign|score CONTIG" >&2; exit 2 ;;
+  light python3 "$HERE/report.py" --work "$D" --contig "$C" --target "$T" --sim "$S" --catalog "$A.fam.copies.tsv" --o2 "${RS_O2:-$A.assign}" --u2 "$A.union" --logs "$D/score" | tee "$D/report.txt" ;;
+*) echo "usage: run.sh roster|sim|assign|assign-levers|score CONTIG" >&2; exit 2 ;;
 esac
