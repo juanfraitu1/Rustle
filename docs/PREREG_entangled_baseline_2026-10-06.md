@@ -46,3 +46,17 @@ Simulation with the annotation as truth; ideal reads (no truncation, no readthro
 ## 6. What was run before the freeze
 
 One truth-vs-truth smoke test of `arms_score.py` (the NPIP replicate-1 truth transcripts scored as an arm, no tool output): 2,066 transcripts, 1,899 multi-exon; stratum E 86 genes with 568 chains, stratum N 264 genes with 1,295 chains; every chain recovered, 0 artifacts, 0 merged ids, every gene resolved. Nothing else of S, F or U existed, and D had not been scored by this script.
+
+## Amendment 1 (written after the S, F, D and U arms were scored, before any lever arm exists)
+
+What the first four arms showed (pooled over the four runs; instrument cross-checked against `gffcompare` on NPIP replicate 1: intron-chain sensitivity D 87.8 / S 67.9 / F 72.2, mine 88.7 / 68.5 / 72.9): our assembler recovers more chains than either tool at overlapping genes (E: 1359 / 1606 against S 1015 and F 1159; N: 4637 / 4984 against 3596 and 3753) and emits about twice the in-window artifacts per recovered chain (in-window artifacts 921 against 405 and 380); P1 held, P2 FAILED, P3 held, P4 failed its no-loss clause (U_fam loses 5 chains at N). By the bar of section 4 no arm is BETTER (it fails (b); (c) fails as registered, but the FLAIR number is inflated by a gene_id per 1 kb start bin, 934 ids for 474 genes). Post hoc, not part of the bar: 216 of the 256 entangled genes share an exact junction with another truth gene (readthrough and exon-reusing models), so no gene_id rule can separate them from reads; for the 40 that do not, D resolves 40 / 40 and S 20 / 40. The mechanism sample of our in-window artifacts (NPIP and TBC1D3 replicate 1, 449 transcripts): terminal-trim sub-chains 206, novel junctions 172, displaced junctions 29, internal skips 9, no shared junction 33; read support is not low (fragments mostly 4-10 reads, 207 of the 417 'other' carry exactly 10).
+
+New arms, existing opt-in options only, no new code (the driver commands of `run.sh levers`):
+
+| arm | change to the default | targets |
+|---|---|---|
+| **P** | `--no-seed-secondaries` (primaries-only seeding) | artifacts built from tied secondary alignments of paralogous reads |
+| **C** | `RUSTLE_POLISH_SUBCHAIN=drop` (`--polish-subchain drop`) | terminal-trim sub-chains (the `c` excess of `docs/PREREG_complete_transcripts_2026-09-27.md`) |
+| **PC** | both | both |
+
+Predictions, fixed now: **Q1** P cuts in-window artifacts of class 'other' by >= 30% against D_asm (pooled); **Q2** C cuts in-window fragment artifacts by >= 50% and loses <= 1% of the chains recovered by D_asm (pooled); **Q3** P recovers fewer chains than D_asm at stratum E (by >= 10 of 1606, pooled): the seeding gain made visible; **Q4** none of P, C, PC meets the bar of section 4 (the existing options are not enough). The bar of section 4 is unchanged and is not edited after these arms are scored. Each arm is scored as `X_asm` (`.gtf`) and `X_fam` (`.families.gtf`).

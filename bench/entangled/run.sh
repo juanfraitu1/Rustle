@@ -2,6 +2,7 @@
 # bench/entangled/run.sh — runner of docs/PREREG_entangled_baseline_2026-10-06.md. FAMILY = NPIP | TBC1D3, REP = 1 | 2 (the ideal-expression read sets, bench/ideal_expression).
 #   run.sh tools FAMILY REP    StringTie (-L, no -G) and FLAIR (bam2bed + collapse --trust_ends, no correct, no annotation) on the ideal BAM, the lab's recipes (benchmark_collapse/run_*.sbatch)
 #   run.sh units FAMILY REP    the driver's assemble and families stages with RUSTLE_BRIDGE_REGROUP=f1units (set for these two commands only)
+#   run.sh levers FAMILY REP   Amendment 1: the driver's assemble and families stages with one existing opt-in change each: P = --no-seed-secondaries, C = RUSTLE_POLISH_SUBCHAIN=drop, PC = both (set for these commands only)
 #   run.sh score FAMILY REP    arms_score.py over every arm whose GTF exists
 #   run.sh pool                pool.py over the four runs
 # Environment: RS_BIN (release dir), RS_IDEAL (the ideal-expression products), RS_WORK (this study's products). Nothing is read from a RUSTLE_* variable of the calling shell.
@@ -19,7 +20,7 @@ leak=$(env | grep '^RUSTLE_' || true)
 [ -z "$leak" ] || { echo "[entangled] refusing: RUSTLE_* set in the calling environment: $leak" >&2; exit 2; }
 light() { bash "$REPO/tools/rlock.sh" light "$@"; }
 heavy() { bash "$REPO/tools/rlock.sh" heavy "$@"; }
-cmd=${1:?tools|units|score|pool}
+cmd=${1:?tools|units|levers|score|pool}
 if [ "$cmd" = pool ]; then python3 "$HERE/pool.py" "$W"; exit 0; fi
 F=${2:?family}; R=${3:?rep}
 D=$IDEAL/$F/rep$R; O=$W/$F/rep$R; mkdir -p "$O/tmp"
@@ -38,12 +39,26 @@ units)
   /usr/bin/time -v env RUSTLE_BRIDGE_REGROUP=f1units bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" assemble --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 > "$A.assemble.driver.log" 2> "$A.assemble.driver.stderr"
   /usr/bin/time -v env RUSTLE_BRIDGE_REGROUP=f1units bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" families --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 > "$A.families.driver.log" 2> "$A.families.driver.stderr"
   echo "[entangled] units $F rep$R: $(grep -h 'assemble:' "$A.assemble.driver.stderr" | tail -1 | sed 's/.*assemble: //')" ;;
+levers)
+  for arm in P C PC; do
+    A=$O/lever_$arm; extra=(); envs=()
+    case $arm in P) extra=(--no-seed-secondaries);; C) envs=(RUSTLE_POLISH_SUBCHAIN=drop);; PC) extra=(--no-seed-secondaries); envs=(RUSTLE_POLISH_SUBCHAIN=drop);; esac
+    { echo "date	$(date -Is)"; echo "bam	$D/reads.bam"; for b in copy_assign mcl_families as_table; do echo "$b	$(sha1sum "$BIN/$b" | cut -d' ' -f1)"; done; echo "arm	$arm"; echo "extra	${extra[*]:-}"; echo "env	${envs[*]:-}"; } > "$A.run.log"
+    rm -f "$A".fam.* "$A.families.log"
+    /usr/bin/time -v env "${envs[@]}" bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" assemble --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 "${extra[@]}" > "$A.assemble.driver.log" 2> "$A.assemble.driver.stderr"
+    /usr/bin/time -v env "${envs[@]}" bash "$REPO/tools/rlock.sh" heavy bash "$REPO/tools/rustle_pipeline.sh" families --bam "$D/reads.bam" --fasta "$FA" --out "$A" --bin "$BIN" --threads 4 "${extra[@]}" > "$A.families.driver.log" 2> "$A.families.driver.stderr"
+    echo "[entangled] lever $arm $F rep$R: $(grep -h 'assemble:' "$A.assemble.driver.stderr" | tail -1 | sed 's/.*assemble: //' | cut -c1-110)"
+  done ;;
 score)
   args=(--arm "D_asm=$D/asm.gtf" --arm "D_fam=$D/asm.families.gtf")
   [ -s "$O/st.gtf" ] && args+=(--arm "S=$O/st.gtf")
   [ -s "$O/fl.isoforms.gtf" ] && args+=(--arm "F=$O/fl.isoforms.gtf")
   [ -s "$O/units.gtf" ] && args+=(--arm "U_asm=$O/units.gtf")
   [ -s "$O/units.families.gtf" ] && args+=(--arm "U_fam=$O/units.families.gtf")
+  for arm in P C PC; do
+    [ -s "$O/lever_$arm.gtf" ] && args+=(--arm "${arm}_asm=$O/lever_$arm.gtf")
+    [ -s "$O/lever_$arm.families.gtf" ] && args+=(--arm "${arm}_fam=$O/lever_$arm.families.gtf")
+  done
   light python3 "$HERE/arms_score.py" --truth "$D/reads" "${args[@]}" --out "$O/arms" | tee "$O/arms.log" ;;
-*) echo "usage: run.sh tools|units|score FAMILY REP | pool" >&2; exit 2 ;;
+*) echo "usage: run.sh tools|units|levers|score FAMILY REP | pool" >&2; exit 2 ;;
 esac
