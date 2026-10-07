@@ -148,7 +148,7 @@ Entries are grouped by figure family: 1. data and methods, 2. transcripts (figs 
 - **Occurs.** Every figure; labels in `figlib.TOOL_LABEL` (figlib.py:28–35).
 
 #### Rustle (primaries only), also "Rustle (prim.)"
-- **Code.** The same driver with `--no-seed-secondaries` (rustle_pipeline.sh:45, `SEED_SEC=0`). The seeding
+- **Code.** The same driver with `--no-seed-secondaries` (= `--seed-pool primary`, `SEED_POOL=primary` in rustle_pipeline.sh). The seeding
   variables are unset, so the assembler's read pool holds primary alignments only.
 - **Legend.** "Rustle, primary alignments only (no secondary alignments used)". In dense panels, "Rustle (prim.)"
   is defined once in the legend.

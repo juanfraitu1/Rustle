@@ -392,7 +392,8 @@ python3 bench/score.py pairs --members chr16.copies.tsv --genes chr16_ref.gtf --
 # seeding loci with GOOD secondaries (rows 1060/1100): one pass over the BAM, then the assembler reads the table
 as_table --bam reads.bam --out reads.molecules.tsv --threads 4          # 66 s / 0.8 GB on an 11.7 GB gorilla BAM
 RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO=0.98 RUSTLE_GTF_SECONDARY_AS_TABLE=reads.molecules.tsv \
-    copy_assign --assemble-only ...                 # the pipeline driver does this by default (--no-seed-secondaries turns it off)
+    copy_assign --assemble-only ...                 # the pipeline driver does this by default; --seed-pool primary|good|all picks the pool
+                                                    # (primary = --no-seed-secondaries; all = RUSTLE_GTF_SECONDARY=1 with no ratio and no table)
 # copy assignment with ONE certificate per tied read over every placement it touches (catalog copies across
 # families + outside loci built from the genome); opt-in — on the chr16 truth sim it removes every foreign claim
 # (844 -> 0) and every wrong row, and ties the reads whose tied partner is an identical genomic twin (row 1103)
