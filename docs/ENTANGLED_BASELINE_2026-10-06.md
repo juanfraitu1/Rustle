@@ -1,0 +1,46 @@
+# What StringTie and FLAIR do at overlapping genes, on ideal reads, and where we stand (2026-10-06)
+
+**Status: DEV, human CHM13 v2.0 / CAT-Liftoff only, simulation, circular by construction (reads come from the annotation that scores them). Protocol: `docs/PREREG_entangled_baseline_2026-10-06.md` (committed 651b5255; Amendment 1 9fb174f3, written before the lever arms existed). Tools: `bench/entangled/`. Products: `/mnt/linuxdisk/tmp/entangled_2026-10-06/{NPIP,TBC1D3}/rep{1,2}/` (`arms.json`, `arms.genes.tsv`, the tool GTFs, `pooled.json`).**
+User request: "model the cases in which there are overlapping genes, ideally provide what stringtie and flair do for those loci and then do better than that."
+Substrate: the four ideal-expression read sets (NPIP and TBC1D3 windows, two replicates each; per replicate NPIP 20,660 reads of 2,066 transcripts of 547 genes, TBC1D3 16,680 reads of 1,668 transcripts of 519 genes), one BAM per run seen by every arm. Entangled genes (stratum E) = exon union shares >= 100 bp with another gene on the strand: 256 gene-runs with 1,606 chains; the other genes with a chain (N): 1,026 gene-runs, 4,984 chains.
+
+## Answer
+
+1. **At overlapping genes we already recover more than either tool**: chains recovered at E: ours 1359 / 1606 (84.6%), FLAIR 1159 (72.2%), StringTie 1015 (63.2%); elsewhere (N) 93.0% against 75.3% and 72.2%. The independent `gffcompare` intron-chain sensitivity on NPIP replicate 1 agrees (ours 87.8, FLAIR 72.2, StringTie 67.9; this instrument 88.7, 72.9, 68.5).
+2. **At default settings we also emit about twice the artifacts** (multi-exon transcripts whose chain is no truth chain): 1031 against 412 (FLAIR) and 431 (StringTie); chain precision 85.3% against 92.3% and 91.5%.
+3. **Two existing opt-in options remove that gap without losing the lead**: primaries-only seeding (`--no-seed-secondaries`, arm P) cuts artifacts to 593 (precision 91.0%) at the same recall (91.1%); adding the sub-chain drop (`--polish-subchain drop`, arm PC) gives 451 artifacts, precision 92.9% (FLAIR 92.3%, StringTie 91.5%), recall 89.1% (FLAIR 74.5%, StringTie 70.0%), E recall 82.0% against 72.2% and 63.2%. The direction holds in every one of the four runs (per-run precision: PC 90.8 / 90.5 / 95.9 / 95.6 against FLAIR 90.7 / 90.4 / 94.5 / 94.5).
+4. **By the bar registered in advance, no arm is BETTER** (section 4 of the prereg, absolute counts): PC fails (b) (451 artifacts against 412) and (c) as written (the FLAIR figure is inflated, see below). The rate-based reading in point 3 is post hoc and is not a pass.
+5. **Gene separation**: 216 of the 256 entangled gene-runs share an exact junction with another truth gene (readthrough models and exon-reusing lncRNA / pseudogene models), so no gene_id rule can separate them from reads; for the other 40 our assembler resolves 40 / 40 against StringTie 20 / 40.
+
+## Pooled results (four runs; per-run rows in `arms.json`)
+
+| arm | what | chains E | chains N | recall | artifacts (fragment / fusion / other) | chain precision | F1 |
+|---|---|---|---|---|---|---|---|
+| S | StringTie -L | 1015 (63.2%) | 3596 (72.2%) | 70.0% | 431 (156 / 48 / 227) | 91.5% | .793 |
+| F | FLAIR collapse | 1159 (72.2%) | 3753 (75.3%) | 74.5% | 412 (187 / 19 / 206) | 92.3% | .825 |
+| D_asm | our default | 1359 (84.6%) | 4637 (93.0%) | 91.0% | 1031 (427 / 77 / 527) | 85.3% | .881 |
+| P_asm | primaries only | 1372 (85.4%) | 4632 (92.9%) | 91.1% | 593 (376 / 19 / 198) | 91.0% | .911 |
+| C_asm | sub-chain drop | 1297 (80.8%) | 4559 (91.5%) | 88.9% | 838 (260 / 76 / 502) | 87.5% | .882 |
+| PC_asm | both | 1317 (82.0%) | 4554 (91.4%) | 89.1% | 451 (241 / 18 / 192) | 92.9% | .909 |
+| U_asm | f1units | 1359 (84.6%) | 4637 (93.0%) | 91.0% | 1031 (427 / 77 / 527) | 85.3% | .881 |
+
+Truth: 6,590 chains (1,606 at E, 4,984 at N). Chain precision = exact / (exact + artifacts), artifacts counted over every contig. `_fam` rows (the families input after the regroup) differ from `_asm` by <= 5 chains. Per family: NPIP D precision 81.0 -> PC 90.7 (FLAIR 90.5, StringTie 89.6); TBC1D3 91.3 -> 95.7 (FLAIR 94.5, StringTie 93.8).
+
+## Predictions and the registered bar
+
+- **P1** both tools recover less at E than at N: held (S 63.2 against 72.2, F 72.2 against 75.3). **P2** our default has fewer artifacts per recovered chain than S and F: **FAILED** (0.172 against 0.093 and 0.084). **P3** we recover at least as many chains at E as S and F: held (1359 against 1015 and 1159). **P4** the units arm loses nothing and resolves strictly more E genes than D_fam: **FAILED** on its no-loss clause (U_fam loses 5 chains at N and 1 complete gene; resolved at E 90 against 88).
+- **Q1** P cuts the in-window artifacts of class 'other' by >= 30%: held (527 -> 198, -62%). **Q2** C cuts fragment artifacts by >= 50% and loses <= 1% of the chains: **FAILED** (427 -> 260 is -39%, and 140 chains = -2.3% are lost). **Q3** P recovers fewer chains than D at E by >= 10: **FAILED** (P recovers 13 MORE; the seeding gain is not visible in these windows). **Q4** none of P, C, PC meets the bar: held.
+- **Bar of section 4** (a) chains at E >= the larger of S and F: met by every arm of ours; (b) artifacts <= the smaller of S and F (412): met by none (P 593, PC 451); (c) resolved at E >= the larger of S and F and above D_fam: not met as written; (d) no loss at N relative to D: P loses 5 chains, C and PC lose 78 and 83. **No BETTER arm.**
+- Caveat on (c): FLAIR appears to name genes by a 1 kb start bin ('chr16:11726000'), 934 ids for 474 truth genes in NPIP replicate 1, so its 'resolved' (201 / 256) measures over-splitting, not separation; StringTie fuses (305 ids, resolved 38 / 256).
+
+## What the artifacts are (post hoc; NPIP and TBC1D3 replicate 1, 449 in-window artifacts of the default)
+
+Nearest truth chain by shared junctions: terminal-trim sub-chains 206 (46%), novel junctions 172 (38%), no shared junction 33, displaced junctions within 60 bp 29, internal skips 9. Read support is not low: fragments carry mostly 4-10 reads, 207 of the 417 'other' carry exactly 10 (one transcript's full depth), so depth cannot separate them. Our artifacts outside the windows (other contigs, silent paralogs): 110, against 26 and 32 for the tools; the excess is in the windows. With primaries-only seeding 'other' falls 62% and fusions 75%: the tied secondary alignments of paralogous reads build most of them. Dropping sub-chains removes true annotated sub-chain isoforms too (chains -2.3%), as in `docs/PREREG_complete_transcripts_2026-09-27.md`.
+
+## Gene-level view (post hoc)
+
+Of the 256 entangled gene-runs, 216 (84%) are E_j (share an exact junction with another truth gene on the strand) and 40 are E_x (overlap without a shared junction). Resolved: E_x D 40 / 40, S 20 / 40, F 36 / 40 (inflated); E_j D 53 / 216, S 18 / 216. 26 of the 27 merged gene_ids in NPIP replicate 1 and all 12 in TBC1D3 replicate 1 hold genes whose truth chains share a junction (the readthrough models BOLA2-SMG1P6, PKD1P6-NPIPP1, SLX1B-SULT1A4, CCL15-CCL14, PDXDC2P-NPIPB14P, TBC1D3P1-DHX40P1, and lncRNA models reusing a protein gene's exons). Re-assigning gene_ids by junction-sharing components gives identical scores in all four runs (515 components against 515 gene_ids in NPIP replicate 1): the assembler's loci already are those components. Separating E_j genes needs an annotation or coding evidence, or a representation where a transcript belongs to several gene units.
+
+## Limits
+
+Ideal reads (no truncation, no readthrough, no depth limit), annotation as truth, human only, two replicates of one design (the same windows): the lever arms were chosen after seeing the default's artifacts, so P and PC are development evidence, not held-out. The seeding gain that primaries-only seeding gives up exists in real data (copies with no primaries: gorilla LOC129533806 and LOC129533813, human TBC1D3B and TBC1D3I in `docs/COPY_RECOVERY_TOOLS_2026-09-29.md`) and is invisible here. Versions: StringTie 3.0.3, FLAIR 3.0.0, minimap2 2.30 (lab 3.0.1, 3.0.1, 2.31). isoseq collapse not run. The lab's tools run in their default annotation-free recipes; nothing was tuned for them.
