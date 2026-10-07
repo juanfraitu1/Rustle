@@ -49,10 +49,23 @@ fn write_exec(path: &Path, text: &str) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod stub");
 }
 
+/// The FASTA index every case gets unless it asks for none: two contigs, the second with the length of CHM13 chr16.
+const FAI: &str = "chr1\t248387328\t7\t80\t81\nchr16\t96330374\t252000000\t80\t81\n";
+
+/// The scratch directory of a case (the helper empties it first).
+fn case_dir(tag: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_seed_pool").join(tag)
+}
+
 /// Run `assemble` with `flags`. `env` is added to an otherwise empty environment (PATH only), so an exported
 /// `RUSTLE_*` of the machine cannot reach the driver unless the test puts it there.
 fn assemble(tag: &str, flags: &[&str], env: &[(&str, &str)]) -> Run {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_seed_pool").join(tag);
+    assemble_with(tag, flags, env, Some(FAI), &|_| {})
+}
+
+/// `assemble` with the FASTA index (None: no index at all) and a hook that runs once the case directory exists.
+fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&str>, setup: &dyn Fn(&Path)) -> Run {
+    let dir = case_dir(tag);
     let _ = std::fs::remove_dir_all(&dir);
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).expect("create scratch dir");
@@ -61,6 +74,10 @@ fn assemble(tag: &str, flags: &[&str], env: &[(&str, &str)]) -> Run {
     let (bam, fasta, out) = (dir.join("reads.bam"), dir.join("g.fa"), dir.join("run"));
     std::fs::write(&bam, "").unwrap();
     std::fs::write(&fasta, "").unwrap();
+    if let Some(fai) = fai {
+        std::fs::write(dir.join("g.fa.fai"), fai).unwrap();
+    }
+    setup(&dir);
     let stub_log = dir.join("stub.log");
     let mut cmd = Command::new("bash");
     cmd.arg(DRIVER)
@@ -251,13 +268,17 @@ fn merged_env_block() -> String {
 }
 
 fn merged_env(pool: &str, ratio: &str) -> String {
+    merged_env_for(pool, ratio, "")
+}
+
+fn merged_env_for(pool: &str, ratio: &str, contig: &str) -> String {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_seed_pool").join("merged_env");
     std::fs::create_dir_all(&dir).unwrap();
     let (bam, fasta) = (dir.join("reads.bam"), dir.join("g.fa"));
     std::fs::write(&bam, "").unwrap();
     std::fs::write(&fasta, "").unwrap();
     let script = format!(
-        "set -euo pipefail\nBAM=$1; FASTA=$2; THREADS=4; SEED_POOL=$3; SEED_RATIO=$4; BRIDGE_MODE=f1v2\n{}\nmerged_env\n",
+        "set -euo pipefail\nBAM=$1; FASTA=$2; THREADS=4; SEED_POOL=$3; SEED_RATIO=$4; CONTIG=$5; BRIDGE_MODE=f1v2\n{}\nmerged_env\n",
         merged_env_block()
     );
     let o = Command::new("bash")
@@ -268,6 +289,7 @@ fn merged_env(pool: &str, ratio: &str) -> String {
         .arg(&fasta)
         .arg(pool)
         .arg(ratio)
+        .arg(contig)
         .output()
         .expect("bash failed to spawn");
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
@@ -291,4 +313,83 @@ fn the_merged_resume_key_tells_all_and_other_ratios_apart() {
     assert_ne!(wide, default, "a finished 0.98 run must not stand in for a 0.90 run");
     assert!(wide.contains("seed_ratio=0.90"), "{wide}");
     assert_ne!(all, wide);
+}
+
+// ---- the scope of the assemble stage and the table of the good pool (2026-10-07, for one-contig pool comparisons) ----
+
+#[test]
+fn without_a_contig_the_assembly_is_genome_wide() {
+    let r = assemble("scope_default", &[], &[]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.argv.contains(" --genome-wide ") && !r.argv.contains("--region"), "{}", r.argv);
+}
+
+#[test]
+fn contig_scopes_the_assembly_to_one_region_from_the_fasta_index() {
+    let r = assemble("scope_contig", &["--contig", "chr16"], &[]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.argv.contains(" --region chr16:0-96330374 ") && !r.argv.contains("--genome-wide"), "{}", r.argv);
+    assert_eq!(r.seen, GOOD, "the scope does not change the pool");
+    assert!(r.stderr.contains("contig chr16 only"), "{}", r.stderr);
+}
+
+#[test]
+fn an_unknown_contig_or_a_missing_fasta_index_is_refused_before_anything_runs() {
+    let r = assemble("scope_unknown", &["--contig", "chrZ"], &[]);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(r.stderr.contains("chrZ") && r.stderr.contains("g.fa.fai"), "{}", r.stderr);
+    assert!(r.log.is_empty(), "ran {:?}", r.log);
+    let r = assemble_with("scope_no_fai", &["--contig", "chr16"], &[], None, &|_| {});
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(r.stderr.contains("g.fa.fai"), "{}", r.stderr);
+    assert!(r.log.is_empty(), "ran {:?}", r.log);
+}
+
+#[test]
+fn as_table_names_the_table_the_good_pool_reads_and_builds_it_there_when_absent() {
+    let table = case_dir("table_absent").join("shared").join("mol.tsv");
+    let t = table.to_str().unwrap().to_string();
+    let r = assemble_with("table_absent", &["--as-table", &t], &[], Some(FAI), &|d| std::fs::create_dir_all(d.join("shared")).unwrap());
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.as_table_ran, "absent table: build it");
+    assert_eq!(r.seen, format!("copy_assign sec=1 ratio=0.98 table={}", t.replace(&case_dir("table_absent").to_string_lossy().to_string(), "<dir>")));
+    assert!(table.exists(), "the table is written where --as-table says");
+    assert!(!case_dir("table_absent").join("run.molecules.tsv").exists(), "and not at the default place");
+}
+
+#[test]
+fn an_as_table_built_for_this_bam_is_reused_and_one_for_another_bam_is_rebuilt() {
+    let write = |name: &'static str, bam_of: fn(&Path) -> PathBuf| {
+        move |d: &Path| {
+            std::fs::create_dir_all(d.join("shared")).unwrap();
+            std::fs::write(d.join("shared").join(name), format!("#as_table\tbam={}\trecords=1\tmolecules=1\n", bam_of(d).display())).unwrap();
+        }
+    };
+    let same = |d: &Path| d.join("reads.bam");
+    let other = |_: &Path| PathBuf::from("/some/other.bam");
+    let t = case_dir("table_same").join("shared").join("mol.tsv");
+    let r = assemble_with("table_same", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &write("mol.tsv", same));
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(!r.as_table_ran, "a table made from this BAM is reused");
+    let t = case_dir("table_other").join("shared").join("mol.tsv");
+    let r = assemble_with("table_other", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &write("mol.tsv", other));
+    assert!(r.as_table_ran, "a table made from another BAM is rebuilt");
+}
+
+#[test]
+fn the_other_pools_never_read_or_build_a_table_even_when_one_is_named() {
+    for pool in ["primary", "all"] {
+        let r = assemble(&format!("table_unused_{pool}"), &["--seed-pool", pool, "--as-table", "/nonexistent/mol.tsv"], &[]);
+        assert_eq!(r.code, 0, "{pool}: {}", r.stderr);
+        assert!(!r.as_table_ran, "{pool}");
+    }
+}
+
+#[test]
+fn the_merged_resume_key_records_the_contig() {
+    let whole = merged_env_for("good", "0.98", "");
+    assert_eq!(whole, merged_env("good", "0.98"));
+    let one = merged_env_for("good", "0.98", "chr16");
+    assert_ne!(one, whole, "a finished genome-wide run must not stand in for a one-contig run");
+    assert!(one.contains("contig=chr16"), "{one}");
 }

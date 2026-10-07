@@ -44,7 +44,8 @@
 #
 # usage: tools/rustle_pipeline.sh STAGE --bam B --fasta G --out PREFIX [--index G.splice.mmi] [--gff ANNOT.gff]
 #        [--confirm NAME=X.mmi ...] [--foreign NAME=X.mmi ...] [--threads N] [--bin DIR]
-#        [--seed-pool primary|good|all [--seed-as-ratio R]] [--no-seed-secondaries] [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
+#        [--seed-pool primary|good|all [--seed-as-ratio R]] [--as-table FILE] [--contig NAME] [--no-seed-secondaries]
+#        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
 # --piecewise (catalog only; needs the cache): the catalog's representatives (both BAM passes + the span-overlap
@@ -89,7 +90,11 @@
 #   overridden (primary: unset; all: ratio and table unset), so a comparison between pools cannot be contaminated. The
 #   pool is announced in the log ("seeding pool: ..."), recorded in PREFIX.merged.env when it is not the default, and
 #   changes nothing but that environment: the arguments of copy_assign are the same for every pool. Use a different
-#   --out PREFIX per pool (bench/seed_pool/run.sh does, and prints the comparison).
+#   --out PREFIX per pool (bench/seed_pool/run.sh does, and prints the comparison). --as-table FILE reads (or builds, when absent
+#   or made from another BAM) the best-AS table there instead of PREFIX.molecules.tsv, so many pools and widths share one pass over
+#   the BAM. --contig NAME (assemble) assembles that contig only, copy_assign --region NAME:0-LEN with LEN from FASTA.fai, in place
+#   of --genome-wide: the products equal the genome-wide run's on that contig (docs/CONTAINER_HEADROOM_2026-09-30.md) and it
+#   makes a pool comparison on one contig a matter of minutes; the families, assign and flag stages read whatever assembly is there.
 # The splice index is needed by `candidates` (the consensus sequences' genome hits) and `flag` (home search); the
 # annotation (--gff) by `flag` only (IG/TR screen).
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
@@ -123,7 +128,7 @@
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
 set -euo pipefail
 STAGE=${1:-all}; shift || true
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 while [ $# -gt 0 ]; do
@@ -131,7 +136,8 @@ while [ $# -gt 0 ]; do
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
     --gff) GFF=$2; shift 2;; --threads) THREADS=$2; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
-    --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;;
+    --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;; --as-table) AS_TABLE=$2; shift 2;;
+    --contig) CONTIG=$2; shift 2;;
     --seed-secondaries) SEED_POOL=good; shift;; --no-seed-secondaries) SEED_POOL=primary; shift;;
     --cache) CACHE=1; shift;; --no-cache) CACHE=0; shift;; --inspect) INSPECT=1; shift;;
     --piecewise) PIECEWISE=1; shift;; --max-pieces) MAX_PIECES=$2; shift 2;; --budget-s) BUDGET_S=$2; shift 2;;
@@ -304,23 +310,34 @@ fam_gtf_guard() {
 
 stage_assemble() {
   say "assemble: $BAM -> $OUT.gtf"
+  # --contig NAME: this contig only (copy_assign --region NAME:0-LEN, LEN from the FASTA index), in place of --genome-wide; the
+  # products equal the genome-wide run's on that contig (docs/CONTAINER_HEADROOM_2026-09-30.md gates)
+  local scope=(--genome-wide)
+  if [ -n "$CONTIG" ]; then
+    local clen=""
+    if [ -s "$FASTA.fai" ]; then clen=$(awk -F'\t' -v c="$CONTIG" '$1==c{print $2; exit}' "$FASTA.fai"); fi
+    [ -n "$clen" ] || { echo "[rustle_pipeline] --contig $CONTIG: no such contig in $FASTA.fai (samtools faidx writes it)" >&2; exit 2; }
+    scope=(--region "$CONTIG:0-$clen")
+    say "assemble: contig $CONTIG only (--region $CONTIG:0-$clen)"
+  fi
   # the seeding pool (the SEEDING POOL note above): the three RUSTLE_GTF_SECONDARY* variables the binary reads are set, or
   # unset, for every pool, so a variable exported in the shell cannot change the pool the flag names
   local seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE)
   if [ "$SEED_POOL" = good ]; then
     say "assemble: seeding pool: good (AS >= $SEED_RATIO x the molecule's genome-wide best)"
-    if ! head -1 "$OUT.molecules.tsv" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')"; then   # absent, truncated or from another BAM
-      say "assemble: genome-wide best-AS table -> $OUT.molecules.tsv (one pass over the BAM)"
-      "$BIN/as_table" --bam "$BAM" --out "$OUT.molecules.tsv" --threads "$THREADS" > "$OUT.as_table.log" 2>&1
+    local table=${AS_TABLE:-$OUT.molecules.tsv}   # --as-table: one table for many runs on this BAM (built there when absent)
+    if ! head -1 "$table" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')"; then   # absent, truncated or from another BAM
+      say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
+      "$BIN/as_table" --bam "$BAM" --out "$table" --threads "$THREADS" > "$OUT.as_table.log" 2>&1
     fi
-    seed_env=(RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO="$SEED_RATIO" "RUSTLE_GTF_SECONDARY_AS_TABLE=$OUT.molecules.tsv")
+    seed_env=(RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO="$SEED_RATIO" "RUSTLE_GTF_SECONDARY_AS_TABLE=$table")
   elif [ "$SEED_POOL" = all ]; then
     say "assemble: seeding pool: all (every secondary alignment, no filter)"
     seed_env=(-u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE RUSTLE_GTF_SECONDARY=1)
   else
     say "assemble: seeding pool: primary (primary alignments only)"
   fi
-  env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only --genome-wide --assembly-junctions strict $POLISH --gtf-tpm \
+  env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
   if [ "$BRIDGE_MODE" = f1units ]; then
@@ -588,6 +605,7 @@ merged_env() {
     "$([ "$SEED_POOL" = primary ] && echo 0 || echo 1)" "$BRIDGE_MODE"
   if [ "$SEED_POOL" = all ]; then printf 'seed_pool=all\n'; fi
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
+  if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
 }
 stage_merged() {
   local env_ok=0
