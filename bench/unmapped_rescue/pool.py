@@ -56,5 +56,42 @@ def bedA():
     print("pool:", n, "families with D reads:", len({l[0] for l in lab.values() if l[2] == 'D'}))
 
 
+COPIES = "/mnt/linuxdisk/tmp/rna_allele/refabsent/copies.fa"
+
+
+def targets(bed, erased):
+    """W/<bed>/targets.fa: the 915 catalog copies minus the erased ones (named FAM:idx)"""
+    w, n = False, 0
+    with open(f"{W}/{bed}/targets.fa", "w") as o:
+        for ln in open(COPIES):
+            if ln[0] == ">":
+                w = ln[1:].strip().split()[0] not in erased
+                n += w
+            if w:
+                o.write(ln)
+    return n
+
+
+def bedH():
+    """A13's 53 held-out multi-copy families (rna_allele/linktest): unmapped records of the masked alignment + the 959 background reads"""
+    L = "/mnt/linuxdisk/tmp/rna_allele/linktest"
+    os.makedirs(f"{W}/bedH", exist_ok=True)
+    lab = {r["read"]: (r["family"], r["copy"], r["role"]) for r in csv.DictReader(open(f"{L}/labels.tsv"), delimiter="\t")}
+    subprocess.run(f"samtools view -b -f 4 {L}/R.bam | samtools fasta - > {W}/bedH/unmapped.fa", shell=True, check=True)
+    n = {"D": 0, "S": 0, "other": 0, "bg": 0}
+    with open(f"{W}/bedH/pool.fa", "w") as o, open(f"{W}/bedH/labels.tsv", "w") as t:
+        t.write("read\tfamily\tcopy\trole\n")
+        for src, bg in ((f"{W}/bedH/unmapped.fa", False), (BG, True)):
+            for ln in open(src):
+                if ln[0] == ">":
+                    name = ln[1:].strip().split()[0]
+                    fam, cp, role = ("bg", "bg", "bg") if bg else lab.get(name, (None, None, "other"))
+                    t.write(f"{name}\t{fam or ''}\t{cp or ''}\t{role}\n")
+                    n[role] += 1
+                o.write(ln)
+    erased = {p["mask"][3] for p in json.load(open(f"{L}/panel.json"))}
+    print("pool:", n, "targets:", targets("bedH", erased), "erased:", len(erased))
+
+
 if __name__ == "__main__":
-    {"bedA": bedA}[sys.argv[1]]()
+    {"bedA": bedA, "bedH": bedH}[sys.argv[1]]()

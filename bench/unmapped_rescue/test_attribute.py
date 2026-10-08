@@ -35,6 +35,28 @@ class Family(unittest.TestCase):
         self.assertEqual(A.attribute([row("c", "F1:0", 70)])["c"], ("F1", 70.0, 0.0))
 
 
+class Cover(unittest.TestCase):
+    def test_union_length_merges_overlaps_and_counts_inclusive_bases(self):
+        self.assertEqual(A.union_length([(1, 10), (5, 20), (30, 39)]), 30)
+        self.assertEqual(A.union_length([]), 0)
+
+    def test_family_score_is_the_covered_bases_of_its_best_target(self):
+        hsps = [("c1", "F1:0", 1, 100), ("c1", "F1:0", 50, 150), ("c1", "F1:1", 1, 80), ("c1", "F2:0", 200, 260)]
+        self.assertEqual(A.cover_scores(hsps), {"c1": {"F1": 150, "F2": 61}})
+
+    def test_strand_flipped_hsp_coordinates_are_normalised(self):
+        self.assertEqual(A.cover_scores([("c1", "F1:0", 100, 1)]), {"c1": {"F1": 100}})
+
+    def test_margin_rule(self):
+        sc = {"win": {"F1": 110, "F2": 100}, "tie": {"F1": 100, "F2": 100}, "close": {"F1": 109, "F2": 100}, "alone": {"F1": 5}, "none": {}}
+        out = A.attribute_cover(sc, margin=1.10)
+        self.assertEqual(out["win"], ("F1", 110, 100))
+        self.assertEqual(out["tie"][0], None)
+        self.assertEqual(out["close"][0], None)
+        self.assertEqual(out["alone"], ("F1", 5, 0))
+        self.assertEqual(out["none"], (None, 0, 0))
+
+
 class Pick(unittest.TestCase):
     def test_longest_first_ties_by_name_and_capped(self):
         lens = {"b": 10, "a": 10, "c": 30, "d": 5}
