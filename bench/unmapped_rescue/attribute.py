@@ -87,3 +87,31 @@ def read_blastn(path):
     for ln in open(path):
         f = ln.rstrip("\n").split("\t")
         yield (f[0].split("|")[0], f[1], int(f[6]), int(f[7]))
+
+
+def specific_cover_scores(hsps):
+    """Amendment 2 (exploratory): repeat-robust family score. hsps: [(query, target, qstart, qend)] (1-based inclusive, either order).
+    A family covers a consensus base if ANY of its copies has an HSP over it; a base covered by n families is credited 1/n to each of them, so bases
+    that many families share (repeats) count little and bases only one family covers count in full. -> {query: {family: score}}"""
+    by = collections.defaultdict(lambda: collections.defaultdict(list))
+    for q, t, a, b in hsps:
+        by[q][family_of(t)].append((min(a, b), max(a, b)))
+    out = {}
+    for q, fams in by.items():
+        merged = {}
+        for f, iv in fams.items():
+            m = []
+            for a, b in sorted(iv):
+                if m and a <= m[-1][1]:
+                    m[-1][1] = max(m[-1][1], b)
+                else:
+                    m.append([a, b])
+            merged[f] = m
+        events = sorted({p for m in merged.values() for a, b in m for p in (a, b + 1)})
+        score = {f: 0.0 for f in merged}
+        for lo, hi in zip(events, events[1:]):
+            cov = [f for f, m in merged.items() if any(a <= lo and hi - 1 <= b for a, b in m)]
+            for f in cov:
+                score[f] += (hi - lo) / len(cov)
+        out[q] = score
+    return out

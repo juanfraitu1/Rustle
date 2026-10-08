@@ -63,5 +63,22 @@ class Pick(unittest.TestCase):
         self.assertEqual(C.pick_reads(["a", "b", "c", "d"], lens, 3), ["c", "a", "b"])
 
 
+class Specific(unittest.TestCase):
+    def test_repeat_bases_are_shared_between_the_families_that_cover_them(self):
+        hsps = [("c1", "F1:0", 1, 100), ("c1", "F2:0", 1, 100), ("c1", "F1:0", 200, 300)]
+        sc = A.specific_cover_scores(hsps)
+        self.assertAlmostEqual(sc["c1"]["F1"], 50 + 101)
+        self.assertAlmostEqual(sc["c1"]["F2"], 50)
+
+    def test_any_member_of_a_family_counts_once(self):
+        hsps = [("c1", "F1:0", 1, 10), ("c1", "F1:1", 5, 20), ("c1", "F2:0", 15, 30)]
+        sc = A.specific_cover_scores(hsps)
+        self.assertAlmostEqual(sc["c1"]["F1"], 14 + 6 / 2 + 0)     # 1-14 alone (14), 15-20 shared with F2 (6 bases / 2)
+        self.assertAlmostEqual(sc["c1"]["F2"], 6 / 2 + 10)         # 15-20 shared, 21-30 alone (10)
+
+    def test_a_single_family_gets_its_full_cover(self):
+        self.assertEqual(A.specific_cover_scores([("c", "F1:0", 5, 14)])["c"], {"F1": 10.0})
+
+
 if __name__ == "__main__":
     unittest.main()
