@@ -368,3 +368,21 @@ The detection edge sits where the cutoff says: 0% of the erased copy's reads lea
 **Bars (set now), D >= 1% erased-copy clusters:** (1) gate open on E5, closed on E6 (E6: nothing trimmed). (2) T4 err = 0 in >= 80% and |err| <= 1 in >= 95%. (3) T4 removes templated bases (err < 0) in <= 10% and leaves artifact (err > 0) in <= 10%. (4) T4 has strictly fewer err < 0 clusters than T3. (5) identity x coverage >= 0.999 against the true genome copy in >= 90% of clusters after T4.
 **Real dev A (one bar, rest descriptive):** among consensus sequences with a genome-based pure-G 5' clip of g bases, T4 trims at least g in >= 90% (it does not leave unaligned artifact G's); identity x coverage >= 0.999 after T4 >= 75 of 212; reported: distribution of j_hat and of the trimmed amount against T3's. H descriptive.
 **Decision.** T4 is adopted as the consensus clean-up iff bars (1) to (5) and the dev-A bar hold; otherwise not adopted, with the failure.
+
+### Amendment 16 result (2026-10-08; synthetic world seed 20261013 with forced leading G; real dev A and H)
+
+**Scoring check first.** The control E6 (no artifact, same templates) is exact in 24 of 24 clusters under all three treatments, so the err measure (5' offset against the true transcript + the modal true read start) is sound. (A first scoring run used the E0 read-start table by mistake, gave nonsense errors up to 30, and was discarded before any reading; the per-variant truth tables fixed it, the world is byte-identical.)
+**Synthetic E5 (artifact + 0 to 3 templated leading G), D >= 1%, 24 erased-copy clusters:**
+
+| | untrimmed | T3 (trim all, 1 to 3) | **T4** |
+|---|---|---|---|
+| err = 0 (exact) | 0 | 7 | **14 (58%)** |
+| \|err\| <= 1 | 4 | 16 | **24 (100%)** |
+| templated bases removed (err < 0) | 0 | 7 | **1 (4%)** |
+| artifact G left (err > 0) | 24 | 10 | **9 (38%)** |
+| identity x coverage >= 0.999 | 16 | 20 | **24 (100%)** |
+
+j_hat equals the forced templated count or one less in every cluster (6, 6, 6, 7 clusters for j = 0 to 3). The 9 clusters with a G left all have the modal read start at transcript position 1 (jitter 1: half the reads start at 0, half at 1), where the templated count at the consensus start is one lower than the global estimate: a +1 ambiguity of the start itself.
+**Bars: (1) met** (gate open on E5, closed on E6, nothing trimmed there). **(2) FAILS:** exact 58% (bar 80%); |err| <= 1 in 100% (bar 95%) met. **(3) FAILS:** templated removed 4% (met), artifact left 38% (bar 10%). **(4) met** (1 against T3's 7). **(5) met** (100%).
+**Real dev A (bar: T4 removes at least the unaligned genome clip in >= 90%): FAILS, 64 of 100 (36% under-trimmed).** Of the 100 consensus sequences with a genome G clip, 77 come from clusters of >= 5 reads (T4 applicable): 64 ok, 13 short by one base; the other 23 are clusters of fewer than 5 reads, where T4 does nothing by rule. identity x coverage >= 0.999: 65 -> **80** of 212 (bar >= 75, met). j_hat: 0 in 98 clusters, 1 in 51, 2 in 4 (no estimate for 59 small clusters). T3 would remove more than T4 in 104 clusters (1 base: 65, 2: 30, 3: 9). H (descriptive): 14 -> 17 of 40; 6 of 20 clipped consensus sequences short (4 of them clusters < 5 reads).
+**Decision: T4 is NOT adopted by the registered rule** (bars (2), (3) and the dev-A bar fail). In its favour and descriptively: it is the only treatment with |err| <= 1 everywhere, it removes templated bases 6 times less often than T3, it restores the metric in all synthetic clusters, and on dev A its shortfall is the 1-base start ambiguity (13 of 77) plus clusters too small for the estimate (23 of 100). The bars of (2) and (3) asked for exactness that the 1-base jitter of the read starts rules out.

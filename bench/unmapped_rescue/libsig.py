@@ -12,6 +12,8 @@ RC = str.maketrans("ACGTacgt", "TGCAtgca")
 MAX_CLIP = 3
 ALPHA = 1e-6
 MIN_CLIPS = 20
+MAX_ALL = 8
+FLOOR = 1e-4
 
 
 def five_prime_clip(flag, cigar, seq):
@@ -28,7 +30,7 @@ def five_prime_clip(flag, cigar, seq):
 
 def signature(sam_lines, keep=lambda name: True, max_de=0.0096, min_mapq=10, max_len=MAX_CLIP):
     pure = {b: 0 for b in "ACGT"}
-    g_len, reads, no_clip, other = {}, 0, 0, 0
+    g_len, g_all, reads, no_clip, other = {}, {}, 0, 0, 0
     for ln in sam_lines:
         if ln[0] == "@":
             continue
@@ -40,6 +42,8 @@ def signature(sam_lines, keep=lambda name: True, max_de=0.0096, min_mapq=10, max
             continue
         reads += 1
         n, clip = five_prime_clip(int(f[1]), f[5], f[9])
+        if 0 < n <= MAX_ALL and len(set(clip)) == 1 and clip[0] == "G":
+            g_all[n] = g_all.get(n, 0) + 1
         if n == 0:
             no_clip += 1
         elif n <= max_len and len(set(clip)) == 1 and clip[0] in pure:
@@ -48,7 +52,7 @@ def signature(sam_lines, keep=lambda name: True, max_de=0.0096, min_mapq=10, max
                 g_len[n] = g_len.get(n, 0) + 1
         else:
             other += 1
-    return dict(reads=reads, no_clip=no_clip, pure=pure, g_lengths=g_len, other_clip=other)
+    return dict(reads=reads, no_clip=no_clip, pure=pure, g_lengths=g_len, g_lengths_all=g_all, other_clip=other)
 
 
 def gate(sig, alpha=ALPHA, min_clips=MIN_CLIPS):
@@ -58,3 +62,12 @@ def gate(sig, alpha=ALPHA, min_clips=MIN_CLIPS):
         return False, 1.0
     p = P.binom_tail(sig["pure"]["G"], n, 0.5)
     return p < alpha, p
+
+
+def artifact_distribution(sig, max_len=MAX_ALL, floor=FLOOR):
+    """a(l), l = 0..max_len: the share of clean survivor reads whose 5' clip is a pure G run of l bases (l = 0: no clip); a floor for lengths never seen (Amendment 16)"""
+    n = max(1, sig["reads"])
+    a = {0: max(floor, sig["no_clip"] / n)}
+    for l in range(1, max_len + 1):
+        a[l] = max(floor, sig["g_lengths_all"].get(l, sig["g_lengths_all"].get(str(l), 0)) / n)
+    return a

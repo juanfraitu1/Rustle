@@ -47,9 +47,16 @@ def main(bed, mode="t"):
         subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {W}/{bed}/targets.fa {d}/cons.fa > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
         fams = {n.split("|")[0]: att.get(n.split("|")[0], (None,))[0] for n in cons}
         pref2 = T.prefixes_from_paf(open(paf).read().splitlines(), fams)
-    if mode == "t3":
+    if mode in ("t3", "t4"):
         gate_ok, gate_p, sig = library_gate()
         print(f"library gate: {'OPEN' if gate_ok else 'closed'} p={gate_p:.3g}; clean reads {sig['reads']}, pure clips {sig['pure']}, G lengths {sig['g_lengths']}")
+    if mode == "t4":
+        import libsig
+        import seeds as SD
+        art = libsig.artifact_distribution(sig)
+        pool = SD.read_fa(f"{W}/{bed}/pool.fa")
+        clr = RP.cluster_reads(f"{W}/{bed}")
+        jh, amounts, vs_t3, under, withclip = collections.Counter(), collections.Counter(), collections.Counter(), 0, 0
     over = collections.Counter()
     why = collections.Counter()
     agree = collections.Counter()
@@ -63,7 +70,16 @@ def main(bed, mode="t"):
         qs, qe, qlen = h["qstart"], h["qend"], h["qlen"]
         genome_clip = qs if (0 < qs <= 3 and set(seq[:qs]) == {"G"}) else 0
         fam = att.get(k, (None,))[0]
-        if mode == "t3":
+        if mode == "t4":
+            new, tl, jj = T.correct_cluster(seq, [pool[r] for r in clr[k]], art) if gate_ok else (seq, 0, None)
+            reason = "trimmed" if tl else ("gate_closed" if not gate_ok else "none")
+            jh[jj] += 1
+            amounts[tl] += 1
+            vs_t3[T.trim_leading_g(seq)[1] - tl] += 1
+            if genome_clip:
+                withclip += 1
+                under += tl < genome_clip
+        elif mode == "t3":
             new, tl, reason = T.trim_leading_g(seq) if gate_ok else (seq, 0, "gate_closed")
             if tl:
                 over[tl - genome_clip] += 1
@@ -86,6 +102,9 @@ def main(bed, mode="t"):
     print(f"{bed} [{mode}]: {n} consensus sequences on the erased copy; T decisions {dict(why)}")
     for kk, v in sorted(agree.items(), key=str):
         print("  ", kk, v)
+    if mode == "t4":
+        print(f"  j_hat (templated G's per cluster): {dict(sorted(jh.items(), key=str))}; bases removed: {dict(sorted(amounts.items()))}; T3 removes this many more than T4: {dict(sorted(vs_t3.items()))}")
+        print(f"  consensus sequences with a genome G clip: {withclip}; T4 removes fewer bases than the unaligned clip in {under} ({under / max(1, withclip):.1%}; bar: <= 10%)")
     if mode == "t3":
         trims = sum(over.values())
         print("  trimmed run minus the unaligned genome G clip (bases of templated sequence lost), over the trims:", dict(sorted(over.items())),

@@ -3,6 +3,8 @@
 
 best_copy_prefix: how many consensus bases lie before the first dc-megablast HSP on the attributed family's best-covering surviving copy.
 decide: remove that prefix iff it is 1 to MAX_G bases, all G."""
+import math
+
 import attribute as A
 
 MAX_G = 3
@@ -58,3 +60,26 @@ def trim_leading_g(cons, max_len=MAX_G):
     if n > max_len:
         return cons, 0, "too_long"
     return cons[n:], n, "trimmed"
+
+
+def leading_g_run(seq):
+    return len(seq) - len(seq.lstrip("G"))
+
+
+def estimate_templated(runs, a, jmax=6, floor=1e-4, impossible=1e-6):
+    """j_hat = argmax_j sum_i log a(r_i - j) over the reads' leading G runs r_i; a term with r_i < j counts as `impossible`; ties go to the larger j"""
+    best, best_j = None, 0
+    for j in range(jmax + 1):
+        sc = sum(math.log(a.get(r - j, floor) if r >= j else impossible) for r in runs)
+        if best is None or sc >= best - 1e-9:
+            best, best_j = sc, j
+    return best_j
+
+
+def correct_cluster(cons, read_seqs, a, min_reads=5):
+    """Rule T4 (Amendment 16). -> (consensus, bases removed, j_hat); the first max(0, k - j_hat) bases are removed, k = the consensus' leading G run"""
+    if len(read_seqs) < min_reads:
+        return cons, 0, None
+    j = estimate_templated([leading_g_run(r) for r in read_seqs], a)
+    t = max(0, leading_g_run(cons) - j)
+    return cons[t:], t, j

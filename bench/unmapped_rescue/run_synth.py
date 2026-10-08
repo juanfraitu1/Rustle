@@ -266,6 +266,69 @@ def stage_trim3(V):
     print(f"{V}: gate {'OPEN' if ok else 'closed'} (p={p:.3g}; pure clips {sig['pure']}, clean reads {sig['reads']}); " + ", ".join(f"{r} {c}" for r, c in collections.Counter(v["reason"] for v in log.values()).most_common()))
 
 
+def stage_trim4(V):
+    """rule T4 (Amendment 16): gate + the library's artifact length distribution, per-cluster templated-G estimate from the cluster's own reads"""
+    import libsig
+    import trim5g as T
+    d = f"{W0}/{V}"
+    lab = labels(V)
+    surv = {n for n, r in lab.items() if r["role"] == "S"}
+    sig = libsig.signature(open(f"{d}/ref.sam"), keep=lambda n: n in surv)
+    ok, p = libsig.gate(sig)
+    a = libsig.artifact_distribution(sig)
+    seqs = SD.read_fa(f"{d}/pool.fa")
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
+        cl["cl" + r["cluster"]].append(seqs[r["read"]])
+    cons = cons_seqs(V)
+    out, log = {}, {}
+    for name, seq in cons.items():
+        k = name.split("|")[0]
+        if ok:
+            out[name], n, j = T.correct_cluster(seq, cl[k], a)
+        else:
+            out[name], n, j = seq, 0, None
+        log[k] = dict(trimmed=n, reason="trimmed" if n else ("gate_closed" if not ok else "none"), j_hat=j)
+    SD.write_fa(f"{d}/cons.trimmed4.fa", out, list(out))
+    json.dump(dict(signature=sig, gate=ok, p=p, a=a, clusters=log), open(f"{d}/trim4.json", "w"), indent=1)
+    print(f"{V}: gate {'OPEN' if ok else 'closed'} (p={p:.3g}); trimmed {sum(1 for v in log.values() if v['trimmed'])} of {len(log)}; j_hat {dict(collections.Counter(v['j_hat'] for v in log.values()))}")
+
+
+def modal_starts(V):
+    """{cluster key: modal true chain start of its reads} from the read truth table"""
+    start = {}
+    base = {"E1": "E0", "E3": "E4", "E5": "E6"}.get(V, V)       # the artifact variants reuse their parent's reads, so its truth table
+    for r in csv.DictReader(open(f"{W0}/reads.truth.{base}.tsv"), delimiter="\t"):
+        start[r["read"].replace("|", ".")] = int(r["chain_start"])
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{W0}/{V}/clusters.tsv"), delimiter="\t"):
+        cl["cl" + r["cluster"]].append(start[r["read"]])
+    return {k: collections.Counter(v).most_common(1)[0][0] for k, v in cl.items()}
+
+
+def stage_exactreport(V):
+    """Amendment 16: err = 5' offset against the true transcript + the modal true read start (0 exact, > 0 artifact left, < 0 templated bases removed)"""
+    d = f"{W0}/{V}"
+    cp = copies()
+    best = erased_clusters(V)
+    keys = [k for c, k in best.items() if float(cp[c]["D"]) >= 0.01]
+    sstar = modal_starts(V)
+    t4 = json.load(open(f"{d}/trim4.json"))
+    out = {}
+    for tag, f in (("untrimmed", "truth"), ("T3", "truth.trimmed3"), ("T4", "truth.trimmed4")):
+        tr = json.load(open(f"{d}/{f}.json"))
+        errs = {k: tr[k]["left"] + sstar[k] for k in keys if tr[k]["left"] is not None}
+        ic = [tr[k]["idcov"] for k in keys if tr[k]["idcov"] is not None]
+        out[tag] = dict(n=len(errs), exact=sum(e == 0 for e in errs.values()), within1=sum(abs(e) <= 1 for e in errs.values()), over=sum(e < 0 for e in errs.values()),
+                        under=sum(e > 0 for e in errs.values()), idcov_ok=sum(x >= 0.999 for x in ic), idcov_n=len(ic), errs=dict(sorted(collections.Counter(errs.values()).items())))
+    out["gate"] = t4["gate"]
+    json.dump(out, open(f"{d}/exactreport.json", "w"), indent=1)
+    print(f"gate {'OPEN' if t4['gate'] else 'closed'}; D >= 1% erased-copy clusters:")
+    for tag in ("untrimmed", "T3", "T4"):
+        o = out[tag]
+        print(f"  {tag:10s} n={o['n']:>2} exact {o['exact']:>2}  |err|<=1 {o['within1']:>2}  templated removed (err<0) {o['over']:>2}  artifact left (err>0) {o['under']:>2}  idcov>=.999 {o['idcov_ok']}/{o['idcov_n']}  err counts {o['errs']}")
+
+
 def erased_clusters(V):
     """per erased copy the largest pure cluster of >= 3 reads: {copy: cluster key}"""
     info = cluster_info(V)
@@ -365,4 +428,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])

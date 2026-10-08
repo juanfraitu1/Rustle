@@ -22,7 +22,7 @@ def _seeded(seed, *parts):
     return seeded(seed, *parts)
 
 
-def family_specs(seed=SEED, n_per_class=6, classes=CLASSES, per_copy=80):
+def family_specs(seed=SEED, n_per_class=6, classes=CLASSES, per_copy=80, lead_g=False):
     """famsim specs, one per family: A (template, present), B (present, SNP rate 1.5 D), E (erased, SNP rate D); D = the divergence class."""
     out, k = [], 0
     for D in classes:
@@ -39,6 +39,8 @@ def family_specs(seed=SEED, n_per_class=6, classes=CLASSES, per_copy=80):
                                    {"id": name + "B", "ops": [{"op": "snp", "rate": 1.5 * D}]},
                                    {"id": name + "E", "in_reference": False, "ops": [{"op": "snp", "rate": D}]}],
                         "reads": {"per_copy": per_copy, "err": 0.001, "indel": 0.0003, "jitter": 30}})
+            if lead_g:
+                out[-1]["lead_g"] = k % 4          # the template's first exon begins with this many G (GC-rich 5' ends, Amendment 16)
             k += 1
     return out
 
@@ -91,15 +93,25 @@ def write_fa(path, seqs):
             o.write(f">{k}\n{v}\n")
 
 
-def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
+def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_g=False):
     from famsim import chromosome, reads as FR
     os.makedirs(f"{out}/fam", exist_ok=True)
     ref, truth, copies, trans, targets = {}, {}, [], {}, {}
-    truth_hdr, truth_rows, fq = None, [], {"E0": [], "E2": [], "E4": []}
-    for spec in family_specs(seed, n_per_class, classes):
+    truth_hdr, truth_rows, fq = None, [], {"E0": [], "E2": [], "E4": [], "E6": []}
+    vtruth = {"E0": [], "E2": [], "E4": [], "E6": []}          # per-variant read truth tables (the read starts differ between variants)
+    for spec in family_specs(seed, n_per_class, classes, lead_g=lead_g):
         name, D = spec["name"], spec["divergence_class"]
         fdir = f"{out}/fam/{name}"
-        planted, man = chromosome.build({k: v for k, v in spec.items() if k not in ("divergence_class",)}, fdir, lambda *a, **k: None)
+        fspec = {k: v for k, v in spec.items() if k not in ("divergence_class", "lead_g")}
+        if "lead_g" in spec:
+            from famsim.template import resolve_template
+            os.makedirs(fdir, exist_ok=True)
+            m = resolve_template(spec["template"], _seeded(spec["seed"], "template"))
+            j = spec["lead_g"]
+            m.seq = "G" * j + m.seq[j:]
+            m.save(f"{fdir}/template.in.json")
+            fspec["template"] = {"source": "file", "path": f"{fdir}/template.in.json"}
+        planted, man = chromosome.build(fspec, fdir, lambda *a, **k: None)
         FR.simulate(planted, spec["reads"], fdir, spec["seed"], lambda *a, **k: None)
         e2dir = f"{fdir}/E2"
         os.makedirs(e2dir, exist_ok=True)
@@ -117,8 +129,12 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
         e4dir = f"{fdir}/E4"
         os.makedirs(e4dir, exist_ok=True)
         FR.simulate(planted, dict(spec["reads"], jitter=3), e4dir, spec["seed"] + 2, lambda *a, **k: None)
-        for tag, d in (("E0", fdir), ("E2", e2dir), ("E4", e4dir)):
+        e6dir = f"{fdir}/E6"
+        os.makedirs(e6dir, exist_ok=True)
+        FR.simulate(planted, dict(spec["reads"], jitter=1), e6dir, spec["seed"] + 3, lambda *a, **k: None)
+        for tag, d in (("E0", fdir), ("E2", e2dir), ("E4", e4dir), ("E6", e6dir)):
             fq[tag] += open(f"{d}/reads.fq").read().splitlines()
+            vtruth[tag] += open(f"{d}/reads.truth.tsv").read().splitlines()[1:]
         lines = open(f"{fdir}/reads.truth.tsv").read().splitlines()
         truth_hdr = lines[0]
         truth_rows += lines[1:]
@@ -135,7 +151,11 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
         o.write(truth_hdr + "\n" + "\n".join(truth_rows) + "\n")
     open(f"{out}/reads.E0.fq", "w").write("\n".join(fq["E0"]) + "\n")
     open(f"{out}/reads.E2.fq", "w").write("\n".join(fq["E2"]) + "\n")
+    for tag, rows in vtruth.items():
+        open(f"{out}/reads.truth.{tag}.tsv", "w").write(truth_hdr + "\n" + "\n".join(rows) + "\n")
     open(f"{out}/reads.E4.fq", "w").write("\n".join(fq["E4"]) + "\n")
+    open(f"{out}/reads.E6.fq", "w").write("\n".join(fq["E6"]) + "\n")
+    open(f"{out}/reads.E5.fq", "w").write("\n".join(add_g5(fq["E6"], seed)) + "\n")
     open(f"{out}/reads.E3.fq", "w").write("\n".join(add_g5(fq["E4"], seed)) + "\n")
     open(f"{out}/reads.E1.fq", "w").write("\n".join(add_polya(fq["E0"], seed)) + "\n")
     log(f"world: {len(ref)} reference contigs, {len(truth) - len(ref)} omitted (erased copies), {len(copies)} copies, {len(truth_rows)} reads")
@@ -147,6 +167,7 @@ if __name__ == "__main__":
     ap.add_argument("out")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--n-per-class", type=int, default=6)
+    ap.add_argument("--lead-g", action="store_true", help="force 0-3 leading G on each template's first exon (Amendment 16)")
     ap.add_argument("--classes", default=",".join(str(c) for c in CLASSES), help="comma-separated divergence classes")
     a = ap.parse_args()
-    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")))
+    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g)
