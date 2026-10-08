@@ -66,6 +66,23 @@ class ProperOverlap(unittest.TestCase):
         self.assertEqual(len(list(G.edges([line], 0.00958, 0.5))), 1)
 
 
+class EditDivergence(unittest.TestCase):
+    def line(self, de, nm, blk=2000):
+        return "\t".join(["a", "2100", "0", "2100", "+", "b", "2100", "0", "2100", str(blk - nm), str(blk), "60", f"NM:i:{nm}", f"de:f:{de}"])
+
+    def test_a_long_deletion_hides_in_the_gap_compressed_divergence_but_not_in_the_edit_divergence(self):
+        line = self.line(0.003, 260)                       # de says 0.3%, the alignment has a 260-base deletion
+        self.assertEqual(len(list(G.edges([line], 0.00958, 0.5, proper=True))), 1)
+        self.assertEqual(len(list(G.edges([line], 0.00958, 0.5, proper=True, edit=True))), 0)
+
+    def test_sequencing_indels_pass_the_edit_divergence(self):
+        self.assertEqual(len(list(G.edges([self.line(0.003, 8)], 0.00958, 0.5, proper=True, edit=True))), 1)
+
+    def test_edit_divergence_needs_the_nm_tag(self):
+        line = "\t".join(["a", "2100", "0", "2100", "+", "b", "2100", "0", "2100", "1990", "2000", "60", "de:f:0.003"])
+        self.assertEqual(len(list(G.edges([line], 0.00958, 0.5, proper=True, edit=True))), 0)
+
+
 class Components(unittest.TestCase):
     def test_components_and_the_size_floor(self):
         comp = G.components([("a", "b"), ("b", "c"), ("x", "y")], nodes=["a", "b", "c", "x", "y", "z"])

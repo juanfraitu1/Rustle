@@ -28,14 +28,14 @@ def star_clusters(lens, compat, min_size=3):
 
 def refine(clusters, seqs, allvsall_fn, delta, min_size=3, max_component=MAX_COMPONENT):
     """clusters {id: [reads]} -> {id: [reads]}: components of at most max_component reads are re-clustered by star clustering over the pairs that pass the
-    Amendment 22 edge (allvsall_fn({read: seq}) -> PAF lines); larger components are kept. A refined cluster is named after its representative."""
+    Amendment 22 edge with every gap counted (Amendment 24; allvsall_fn({read: seq}) -> PAF lines); larger components are kept. A refined cluster is named after its representative."""
     out = {}
     for cid, reads in clusters.items():
         if len(reads) > max_component:
             out[cid] = list(reads)
             continue
         sub = {r: seqs[r] for r in reads}
-        compat = set(G.edges(allvsall_fn(sub), delta, 0.5, proper=True))
+        compat = set(G.edges(allvsall_fn(sub), delta, 0.5, proper=True, edit=True))
         for cl in star_clusters({r: len(s) for r, s in sub.items()}, compat, min_size):
             out[cl[0]] = cl
     return out

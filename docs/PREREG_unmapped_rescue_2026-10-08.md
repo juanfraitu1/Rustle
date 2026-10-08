@@ -541,3 +541,24 @@ B1 met (coverage -1.7 points), B2 met, B3 met (1 of 3), B5 met (+23%), **B4 NOT 
 **Change.** In the star step the pair's divergence is the full edit distance over the alignment block, NM / block (every inserted or deleted base counts), instead of the gap-compressed `de`; the pair is compatible iff NM / block <= 0.00958 (the same constant), the block covers half of the shorter read and the overlap is proper. A 260-base deletion in a 2,100-base block is 12%, far above the cutoff; HiFi indel errors (1 to 2 bases) are not. Nothing else changes (the seed rounds and the Amendment 22 edge keep `de`; the star step is applied to components of at most 60 reads).
 **Test.** A fresh chain world, seed 20261018, same design and the same bars as Amendment 23: CHAIN: star clustering recovers >= 80% of the expected transcripts with purity >= 90% and more than the frozen clustering; CTL: recovers every transcript the frozen clustering recovers and loses at most 5 points of read coverage; coverage over both scenarios >= 85%. Real dev A and H reported, not judged (both used before).
 **Decision.** Adopted as the cluster rule (opt-in) iff the bars hold.
+
+### Amendment 24 result (fresh chain world seed 20261018; real beds descriptive)
+
+| chain world | CHAIN expected / recovered | CHAIN reads clustered, purity | CTL expected / recovered | CTL reads clustered |
+|---|---|---|---|---|
+| frozen | 24 / 12 | 192 of 192, 0.50 | 12 / 12 | 192 of 192 |
+| **proper-overlap edge + star step (every gap counted)** | 24 / **24 (100%)** | 191 of 192 (99%), **0.91** | 12 / 12 | 192 of 192 (100%) |
+
+**All bars met** (CHAIN 100% against >= 80% and more than the frozen 50%; purity 0.91 against >= 90%; CTL nothing lost; coverage 99 to 100% against >= 85%). **Adopted as the cluster rule, opt-in:** `run_bed.py --proper` then `run_chain.py` (star step, components of at most 60 reads). Purity 0.91 is the ambiguity of contained fragments, whose bases are identical in both isoforms and which go to the longer representative.
+Real beds, descriptive (both used before; frozen -> proper edge -> + star step):
+
+| | H frozen | H proper | **H + star** | dev A frozen | dev A proper | **dev A + star** |
+|---|---|---|---|---|---|---|
+| clusters on the erased copy | 40 | 49 | **54** | 212 | 304 | **298** |
+| erased-copy reads clustered | 95.7% | 94.0% | **92.8%** | 96.4% | 95.6% | **94.9%** |
+| purity by family | 1.0000 | 1.0000 | **1.0000** | 1.0000 | 1.0000 | **1.0000** |
+| unsupported consensus (Amendment 21) | 3 | 1 | **0** | 24 | 22 | **8** |
+| clusters with > 200 edits | 3 | 2 | **0** | 22 | 27 | **7** |
+| gate-aware identity x coverage >= 0.999 | 17 (43%) | 26 (53%) | **29 (54%)** | 80 (38%) | 143 (47%) | **156 (52%)** |
+
+The chain problem is largely resolved on the real beds: the clusters with more than 200 edits fall from 22 to 7 (dev A) and from 3 to 0 (H), the unsupported consensus sequences from 24 to 8 and from 3 to 0, and the share of erased-copy clusters at 0.999 rises 12 to 14 points; the cost is 1.5 to 2.9 points of read coverage (reads of unsupported chains leave the clustering) and +40% clusters. The 7 dev-A clusters still above 200 edits are the previously unexplained kind (consensus fits its reads, not the erased copy).
