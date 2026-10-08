@@ -63,5 +63,21 @@ class Moves(unittest.TestCase):
         self.assertEqual((m["bg"]["moved"], m["bg"]["moved_to_a_family_cluster"]), (2, 1))
 
 
+class DivergenceRule(unittest.TestCase):
+    def test_consensus_wins_only_with_a_strictly_lower_divergence(self):
+        self.assertEqual(G.new_primary(rec(100, de=0.010), rec(90, de=0.002), rule="divergence")[0], "consensus")   # lower score, closer: moves
+        self.assertEqual(G.new_primary(rec(100, de=0.002), rec(130, de=0.014), rule="divergence")[0], "genome")     # higher score (junction cost), further: stays
+        self.assertEqual(G.new_primary(rec(100, de=0.005), rec(100, de=0.005), rule="divergence")[0], "genome")     # tie stays
+
+    def test_unmapped_reads_follow_the_same_coverage_rule_under_both_rules(self):
+        self.assertEqual(G.new_primary(None, rec(50, qcov=0.8), rule="divergence")[0], "consensus")
+        self.assertEqual(G.new_primary(None, rec(50, qcov=0.79), rule="divergence")[0], "none")
+
+    def test_move_metrics_passes_the_rule_through(self):
+        rows = [("S", "F9", rec(100, 0.002), rec(130, 0.014, ref="cA"), "cA")]
+        self.assertEqual(G.move_metrics(rows, {"cA": "F1"})["S"]["moved"], 1)
+        self.assertEqual(G.move_metrics(rows, {"cA": "F1"}, rule="divergence")["S"]["moved"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

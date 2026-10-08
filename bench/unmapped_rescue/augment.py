@@ -8,17 +8,19 @@ import statistics
 QCOV_MIN = 0.80      # the registered hit-coverage floor
 
 
-def new_primary(genome, cons):
+def new_primary(genome, cons, rule="score"):
     """(source, record): the primary a concatenated genome + consensus reference would give: the consensus record iff its alignment score is strictly
-    higher than the genome primary's; an unmapped read takes a consensus record with query coverage >= 0.80; ties stay on the genome"""
+    higher than the genome primary's; an unmapped read takes a consensus record with query coverage >= 0.80; ties stay on the genome.
+    rule="divergence" (Amendment 11): the consensus iff its divergence `de` is strictly lower than the genome primary's; a spliced genome alignment pays for
+    its junctions, an unspliced transcript alignment does not, so the raw scores are not comparable"""
     if genome is None:
         return ("consensus", cons) if cons is not None and cons["qcov"] >= QCOV_MIN else ("none", None)
-    if cons is not None and cons["score"] > genome["score"]:
+    if cons is not None and (cons["de"] < genome["de"] if rule == "divergence" else cons["score"] > genome["score"]):
         return "consensus", cons
     return "genome", genome
 
 
-def move_metrics(rows, cons_family, min_identity=0.98):
+def move_metrics(rows, cons_family, min_identity=0.98, rule="score"):
     """rows: [(class, true family, genome record | None, consensus record | None, consensus name | None)] with class in D_unm / D_abs / S / bg.
     -> {class: dict(n, moved, moved_to_own_family, move_fraction, median_de_before_moved, median_de_after_moved)}. A move needs the consensus primary
     (and, for unmapped reads, de <= 1 - min_identity); 'own family' = the consensus' cluster majority family equals the read's family."""
@@ -26,7 +28,7 @@ def move_metrics(rows, cons_family, min_identity=0.98):
     for cls, fam, g, c, cname in rows:
         o = out.setdefault(cls, dict(n=0, moved=0, moved_to_own_family=0, moved_to_a_family_cluster=0, _before=[], _after=[]))
         o["n"] += 1
-        src, r = new_primary(g, c)
+        src, r = new_primary(g, c, rule)
         if src != "consensus":
             continue
         if g is None and r["de"] > 1 - min_identity:
