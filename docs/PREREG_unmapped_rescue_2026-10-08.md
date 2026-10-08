@@ -127,3 +127,14 @@ Score = the consensus bases covered by the family's nhmmer hits (union of the al
 
 **Amendment 5 result (H; exploratory).** HMM profile: 4,522 rescued, 125 wrong (2.69%), 22 of 24 copies; restricted dc-megablast baseline in the same universe: 4,279 / 59 (1.36%) / 21 of 24; bit-score variant 4,479 / 183 wrong. The condition (more rescued with wrong joins <= 5%) is met: +243 reads, from two clusters (families with 9 and 5 survivors).
 Costs: the GWFAM163 profile attracts five wrong small clusters; one cluster lost. Families with >= 3 survivors: 496 rescued / 14.3% wrong vs 226 / 20.7%. Not a held-out result.
+
+---
+
+## Amendment 6 (2026-10-08, after a stop-hook review of the claim; written before any hybrid number exists)
+
+**The claim, stated against the existing approach.** The existing net on bed H is A13's (register rows 1221 and 1223): 557 of the 5,312 unmapped deleted-copy reads joined, 99.6% right. The pool-first net with the frozen rule rescues 4,255 (80.1%) of the same reads, 1 wrong cluster of 27, with the same truth. B1 (single-read dc-megablast with the same score and margin) is a variant of the NEW design, not the existing approach;
+it shows the gain over A13 comes from the sensitive nucleotide cover score with a margin, and that pooling adds cost (about 6x less wall-clock) and consensus transcripts but no extra rescued reads (406 vs 410 of 500).
+**Hybrid (parameter-free).** Pool first (clusters, consensus, cluster-level attribution as frozen); then every read NOT rescued by an attributed cluster (reads of abstaining clusters, reads in no cluster, background reads) is attributed alone with the same cover score and margin 1.10 (single-read dc-megablast against the same targets, cap 5000).
+**Reading, read level, per bed (A dev first, then H):** rescued-correct = deleted-copy reads attributed to their own family; wrong = deleted-copy reads attributed to another family plus any background read attributed to a family; cost = the wall-clock of the extra per-read alignments.
+**Decision before looking:** the hybrid supports "pooling does not have to cost rescue" only if on BOTH beds its rescued-correct >= the pooled frozen rule's and >= B1's estimate on the 500-read samples scaled to the bed, with wrong joins <= 5% of joined reads, and its extra alignment work is <= 25% of per-read alignment of the whole pool.
+If it does not meet this, the pool-first net is reported as better than A13 and cheaper than per-read attribution but not as a net that rescues more than per-read attribution.
