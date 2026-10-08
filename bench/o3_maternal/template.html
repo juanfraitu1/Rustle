@@ -1,0 +1,282 @@
+<title>Missing Copies</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* layout: one column of figures on a cool neutral bench; a left/right pair (genome that lacks the copy | genome that has it) is the page's one repeated structure */
+:root{--bg:#F6F8F8;--surface:#FFFFFF;--surface-2:#ECF0F1;--ink:#171B1F;--ink-soft:#434B54;--muted:#69727D;--rule:#D6DCE0;--grid:#E6EAED;--accent:#0072B2;
+ --c-near:#0072B2;--c-oth:#009E73;--c-tie:#A04AA0;--c-unm:#D55E00;--ok:#1B7F5C;--bad:#B3261E;--na:#69727D;
+ --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171A;--surface:#1B1F23;--surface-2:#23282D;--ink:#ECEFF2;--ink-soft:#C2C8CF;--muted:#98A1AB;--rule:#353B42;--grid:#2A3036;--accent:#4DA3DE;--ok:#4CC49A;--bad:#FF8A80;--na:#98A1AB;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171A;--surface:#1B1F23;--surface-2:#23282D;--ink:#ECEFF2;--ink-soft:#C2C8CF;--muted:#98A1AB;--rule:#353B42;--grid:#2A3036;--accent:#4DA3DE;--ok:#4CC49A;--bad:#FF8A80;--na:#98A1AB;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;padding-inline:16px;padding-block:26px 56px}
+.wrap{max-width:1120px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+h1{font-family:var(--mono);font-weight:600;font-size:26px;line-height:1.15;margin:0 0 8px;text-wrap:balance}
+h2{font-family:var(--mono);font-weight:600;font-size:15px;margin:0 0 4px;text-wrap:balance}
+h3{font-family:var(--mono);font-weight:600;font-size:12.5px;margin:0 0 6px;color:var(--ink)}
+.lede{color:var(--ink-soft);margin:0 0 16px;max-width:72ch}
+.cap{font-size:12.5px;color:var(--muted);margin:0 0 10px;max-width:92ch}
+section{margin-top:34px}
+.toggle{display:inline-flex;flex-wrap:wrap;gap:0;border:1px solid var(--rule);border-radius:6px;overflow:hidden;margin:0 0 14px;max-width:100%}
+.toggle button{font:12.5px var(--sans);padding:7px 12px;border:0;background:var(--surface);color:var(--ink-soft);cursor:pointer;text-align:left}
+.toggle button+button{border-left:1px solid var(--rule)}
+.toggle button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:0 0 8px}
+.tile{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0}
+.tile .n{font-family:var(--mono);font-size:24px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile .l{font-size:12px;color:var(--muted);margin-top:3px}
+.fig{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;overflow-x:auto}
+.fig svg{display:block;max-width:100%;height:auto}
+.fig.bars svg{min-width:900px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--ink-soft);margin:6px 0 10px;align-items:center}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:14px;height:10px;border-radius:2px}
+.sw.unm{background:var(--c-unm)}.sw.tie{background:var(--c-tie)}.sw.near{background:var(--c-near)}.sw.oth{background:var(--c-oth)}
+.pick{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.pick button{font:12px var(--mono);padding:5px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--surface);color:var(--ink-soft);cursor:pointer}
+.pick button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 12px}
+.pane{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0}
+.pane .hd{font-family:var(--mono);font-size:12px;color:var(--muted);margin:0 0 6px}
+.pane .hd b{color:var(--ink)}
+.facts{margin:6px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--ink-soft)}
+.facts li{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--grid);padding:3px 0}
+.facts b{font-family:var(--mono);font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.note{font-size:12.5px;color:var(--ink-soft);margin:0 0 12px;max-width:92ch}
+.chip{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:4px;border:1px solid var(--rule);background:var(--surface-2);color:var(--ink);white-space:nowrap}
+.chip.ok{border-color:var(--ok);color:var(--ok)}.chip.bad{border-color:var(--bad);color:var(--bad)}.chip.na{color:var(--na)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0}
+.card p{margin:4px 0}
+.tracks{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tracks svg{width:100%;height:auto;display:block;background:var(--surface);border:1px solid var(--rule);border-radius:8px}
+.paired{max-width:520px;margin:0 auto 12px}
+.rd{display:inline-block;width:9px;height:9px;margin:1px;border-radius:1px}
+.strip{display:flex;flex-wrap:wrap;max-width:560px}
+details{margin-top:10px}summary{cursor:pointer;font-size:12.5px;color:var(--ink-soft)}
+table{border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;min-width:640px}
+th,td{text-align:right;padding:3px 8px;border-bottom:1px solid var(--grid);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.tw{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:6px 8px}
+svg text{font-family:var(--mono);fill:var(--ink)}
+.tk{font-size:10.5px;fill:var(--muted)}.lab{font-size:11px;fill:var(--ink-soft)}.num{font-size:11px;fill:var(--ink)}
+.axis{stroke:var(--rule);stroke-width:1}.dash{stroke:var(--muted);stroke-dasharray:3 3;stroke-width:1}
+footer{margin-top:36px;padding-top:12px;border-top:1px solid var(--rule);font-size:11.5px;color:var(--muted);max-width:110ch}
+footer code{font-family:var(--mono);font-size:11px}
+@media (max-width:720px){.pair,.tracks{grid-template-columns:1fr}}
+</style>
+<div class="wrap">
+  <p class="eyebrow">Rustle · gorilla mGorGor1 · KB3781 fibroblast Iso-Seq, both parental assemblies</p>
+  <h1>Missing copies</h1>
+  <p class="lede">KB3781 carries copies of some genes on one parental haplotype that the other lacks. Align the same Iso-Seq reads to each haplotype and the copy is missing from one genome and present in the other, which shows where the reads of a missing copy go and what a reference-free step can rebuild from them.</p>
+  <div class="toggle" role="group" aria-label="Which genome is the reference" id="dirs"></div>
+  <p class="cap" id="dirnote"></p>
+  <div class="tiles" id="tiles"></div>
+  <p class="cap" id="unm"></p>
+
+  <section>
+    <h2>Where the reads of a missing copy go</h2>
+    <p class="cap">One bar per locus the reference genome lacks, with at least 3 reads. The reads are aligned to the reference genome with the same settings as the original alignment. Verdicts follow the registered bar: REFUTED means at least 80% absorbed with at most 10% unmapped and 10% tied (a missing copy does not hide); SUPPORTED means at least half of the reads are lost. The sex-chromosome copy and the descriptive locus carry no verdict.</p>
+    <div class="legend"><span><i class="sw near"></i>absorbed on the nearest relative</span><span><i class="sw oth"></i>absorbed elsewhere</span><span><i class="sw tie"></i>tied (multi-mapped)</span><span><i class="sw unm"></i>unmapped or partial</span></div>
+    <div class="fig bars" id="bars"></div>
+    <details><summary>Table view</summary><div class="tw" id="tbl"></div></details>
+  </section>
+
+  <section>
+    <h2>One copy, two genomes</h2>
+    <p class="cap">Pick a locus with at least 20 reads. Left: the genome that lacks the copy. Right: the genome that has it. Coverage and mismatch rate are drawn along the relative the reads land on (left) and along the copy itself (right), in 60 bins each; positions are fractions of the interval, not shared coordinates.</p>
+    <div class="pick" id="pick" role="group" aria-label="Locus"></div>
+    <p class="note" id="sentence"></p>
+    <div class="pair" id="facts"></div>
+    <div class="tracks" id="tracks"></div>
+    <h3 style="margin-top:14px">Each read on both genomes</h3>
+    <p class="cap">One line per read, from its divergence (de) on the genome that lacks the copy to its divergence on the genome that has it, coloured by what happened to the read on the left.</p>
+    <div class="paired fig" id="paired"></div>
+    <h3>What the recovery chain sees of the same copy</h3>
+    <div class="pair" id="sidechain"></div>
+  </section>
+
+  <section>
+    <h2>How far the nearest relative is</h2>
+    <p class="cap">Fraction of reads unmapped against the divergence to the nearest relative on the reference genome. Filled dots: loci of this page with at least 20 reads. Hollow dots: the 2026-08-14 experiment that deleted one copy of 162 two-copy families from the full genome of the same animal (synthetic, context only).</p>
+    <div class="fig" id="spec"></div>
+  </section>
+
+  <section>
+    <h2>Can a reference-free step recover them?</h2>
+    <p class="cap">IsoCon clusters the family's reads without the reference; the in-house stage builds candidates from the same reads. Outputs are linked back to the reference when they sit within the allele cutoff (0.00958) of a locus there; the rest are candidate new copies, and a candidate counts as flagged with at least two transcripts. Truth (the other genome) is used only to score. R1: every large copy beyond the cutoff is recovered. R2: no copy within the cutoff is flagged as new. R3: at most 20% of families without such a copy carry a false flag.</p>
+    <div class="cards" id="arms"></div>
+    <p class="note" id="p12line"></p>
+  </section>
+
+  <footer>One animal (KB3781, male), fibroblast Iso-Seq only: the testis library is another animal. Every read in these sets was aligned to the combined primary assembly first, so "unmapped" here means mapped there and lost on this genome; reads unmapped on the primary assembly are counted separately above. Identities are asm20 against the reference genome with <code>-N 50 -p 0.1</code>. Few loci are expressed: this shows each copy, not a rate. The in-house stage includes the Amendment 15/15b consensus fix; its acceptance re-run was not run. The paternal-reference run was started only after the maternal verdicts were written down. Method and bars: <code>docs/PREREG_o3_maternal_reference_2026-10-08.md</code> (Amendments 1 and 2); IsoCon 0.3.3; work dir <code>/mnt/linuxdisk/tmp/o3_mat/</code>.</footer>
+</div>
+<script>
+const DATA = /*DATA*/null;
+const FATE = [["UNMAPPED","unmapped"],["PARTIAL","unmapped"],["TIED","tied"],["ABSORBED_NEAREST","nearest"],["ABSORBED_OTHER","other"]];
+const SEG = {unmapped:"var(--c-unm)", tied:"var(--c-tie)", nearest:"var(--c-near)", other:"var(--c-oth)"};
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a = {}, t) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (t != null) e.textContent = t; return e; };
+const html = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const $ = id => document.getElementById(id);
+const fateColour = f => f === "TIED" ? SEG.tied : f === "ABSORBED_NEAREST" ? SEG.nearest : f === "ABSORBED_OTHER" ? SEG.other : SEG.unmapped;
+const fmt = (x, d = 4) => x == null ? "–" : x.toFixed(d);
+const pct = x => x == null ? "–" : `${(100 * x).toFixed(1)}%`;
+const vtxt = v => v === "BETWEEN_BARS" ? "between bars" : v;
+const NAME = {mat: "mother's genome", pat: "father's genome"};
+const state = {dir: DATA.directions.mat ? "mat" : Object.keys(DATA.directions)[0], loc: null};
+
+function groups(l) { const by = {unmapped: 0, tied: 0, nearest: 0, other: 0}; for (const [f, k] of FATE) by[k] += (l.fates[f] || 0); return by; }
+
+function stackedBars(host, rows) {
+  const W = 990, rowH = 28, lab = 230, bar = 340, h = rows.length * rowH + 8;
+  const svg = el("svg", {viewBox: `0 0 ${W} ${h}`, role: "img", "aria-label": "Fate of the reads of each locus the reference genome lacks"});
+  rows.forEach((r, i) => {
+    const y = 4 + i * rowH, by = groups(r);
+    svg.append(el("text", {x: 0, y: y + 15, class: "lab"}, r.label));
+    let x = lab;
+    for (const k of ["unmapped", "tied", "nearest", "other"]) {
+      const w = r.n ? bar * by[k] / r.n : 0;
+      if (w > 0) { const s = el("rect", {x, y, width: Math.max(0, w - 1), height: 19, fill: SEG[k]}); s.append(el("title", {}, `${k}: ${by[k]} of ${r.n}`)); svg.append(s); }
+      x += w;
+    }
+    if (r.kind === "sex") svg.append(el("rect", {x: lab - 1, y: y - 1, width: bar + 2, height: 21, fill: "none", stroke: "var(--muted)", "stroke-dasharray": "3 3"}));
+    svg.append(el("text", {x: lab + bar + 10, y: y + 14, class: "num"}, `n=${r.n} · id ${fmt(r.paralog_identity)} · de ${fmt(r.de_median)}${r.verdict ? " · " + vtxt(r.verdict) : r.kind === "sex" ? " · sex control" : r.kind === "lrpap1_desc" ? " · descriptive" : ""}`));
+  });
+  host.replaceChildren(svg);
+}
+
+function fateBar(host, l) {
+  const W = 420, by = groups(l), svg = el("svg", {viewBox: `0 0 ${W} 26`, role: "img", "aria-label": "Fate of the reads on the reference genome"});
+  let x = 0;
+  for (const k of ["unmapped", "tied", "nearest", "other"]) {
+    const w = l.n ? W * by[k] / l.n : 0;
+    if (w > 0) { const s = el("rect", {x, y: 2, width: Math.max(0, w - 1), height: 20, fill: SEG[k]}); s.append(el("title", {}, `${k}: ${by[k]} of ${l.n}`)); svg.append(s); }
+    x += w;
+  }
+  host.append(svg);
+}
+
+function spectrum(host, natural, context) {
+  const W = 640, H = 300, m = {l: 48, r: 12, t: 12, b: 36};
+  const X = d => m.l + (W - m.l - m.r) * Math.min(d, 0.30) / 0.30, Y = f => m.t + (H - m.t - m.b) * (1 - f);
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Fraction of reads unmapped against divergence to the nearest relative"});
+  svg.append(el("line", {x1: m.l, y1: Y(0), x2: W - m.r, y2: Y(0), class: "axis"}), el("line", {x1: m.l, y1: Y(0), x2: m.l, y2: Y(1), class: "axis"}));
+  for (const f of [0, .25, .5, .75, 1]) { svg.append(el("text", {x: m.l - 6, y: Y(f) + 4, class: "tk", "text-anchor": "end"}, `${Math.round(f * 100)}%`)); if (f > 0) svg.append(el("line", {x1: m.l, y1: Y(f), x2: W - m.r, y2: Y(f), stroke: "var(--grid)"})); }
+  for (const d of [0, .05, .1, .15, .2, .25, .3]) svg.append(el("text", {x: X(d), y: H - 18, class: "tk", "text-anchor": "middle"}, d.toFixed(2)));
+  svg.append(el("text", {x: W / 2, y: H - 3, class: "lab", "text-anchor": "middle"}, "divergence to the nearest relative"));
+  for (const c of context) if (c.mig_de != null) { const d = el("circle", {cx: X(c.mig_de), cy: Y(c.unaln), r: 3.5, fill: "none", stroke: "var(--c-oth)", "stroke-width": 1.2}); d.append(el("title", {}, `${c.fam}: deleted copy, ${pct(c.unaln)} of its reads unmapped`)); svg.append(d); }
+  for (const p of natural) if (p.fractions && p.paralog_identity != null) { const d = el("circle", {cx: X(1 - p.paralog_identity), cy: Y(p.fractions.unmapped), r: 6, fill: "var(--c-near)", stroke: "var(--surface)", "stroke-width": 2}); d.append(el("title", {}, `${p.label}: ${pct(p.fractions.unmapped)} unmapped, relative ${fmt(1 - p.paralog_identity)} away`)); svg.append(d); }
+  host.replaceChildren(svg);
+}
+
+function pairedDe(host, pairs, refName, otherName) {
+  const W = 420, H = 260, m = {l: 44, r: 44, t: 22, b: 28};
+  const vals = pairs.flatMap(p => [p[2] ?? 0, p[4] ?? 0]);
+  const maxde = Math.min(0.12, Math.max(0.01, ...vals));
+  const Y = d => m.t + (H - m.t - m.b) * (1 - Math.min(d, maxde) / maxde), xl = m.l, xr = W - m.r;
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Divergence of each read on the ${refName} and the ${otherName}`});
+  for (const t of [0, .25, .5, .75, 1]) { svg.append(el("text", {x: m.l - 6, y: Y(maxde * t) + 4, class: "tk", "text-anchor": "end"}, (maxde * t).toFixed(3))); svg.append(el("line", {x1: m.l, y1: Y(maxde * t), x2: W - m.r, y2: Y(maxde * t), stroke: "var(--grid)"})); }
+  svg.append(el("text", {x: xl, y: 12, class: "lab", "text-anchor": "start"}, "copy missing"), el("text", {x: xr, y: 12, class: "lab", "text-anchor": "end"}, "copy present"));
+  svg.append(el("text", {x: xl, y: H - 8, class: "tk", "text-anchor": "start"}, refName), el("text", {x: xr, y: H - 8, class: "tk", "text-anchor": "end"}, otherName));
+  for (const p of pairs) if (p[2] != null && p[4] != null)
+    svg.append(el("line", {x1: xl, y1: Y(p[2]), x2: xr, y2: Y(p[4]), stroke: fateColour(p[1]), "stroke-opacity": .4, "stroke-width": 1}));
+  host.replaceChildren(svg);
+}
+
+function trackPair(host, refTrack, otherTrack, refName, otherName) {
+  const W = 420, H = 150, m = {l: 8, r: 8, t: 16, b: 6};
+  const mk = (tr, title) => {
+    const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${title}: coverage and mismatch rate along the locus`});
+    const n = tr.cov.length, bw = (W - m.l - m.r) / n, cmax = Math.max(1, ...tr.cov), half = 0.5 * (H - m.t - m.b), mid = m.t + half;
+    svg.append(el("text", {x: m.l, y: 11, class: "lab"}, title), el("line", {x1: m.l, y1: mid + 1, x2: W - m.r, y2: mid + 1, class: "axis"}));
+    tr.cov.forEach((c, i) => {
+      const x = m.l + i * bw, h1 = half * c / cmax, h2 = half * Math.min(1, (c ? tr.mis[i] / c : 0) / 0.1);
+      svg.append(el("rect", {x, y: mid - h1, width: Math.max(1, bw - .5), height: h1, fill: "var(--c-near)", "fill-opacity": .55}));
+      svg.append(el("rect", {x, y: mid + 3, width: Math.max(1, bw - .5), height: h2, fill: "var(--c-unm)", "fill-opacity": .9}));
+    });
+    return svg;
+  };
+  host.replaceChildren(mk(refTrack, `${refName}: where the reads land`), mk(otherTrack, `${otherName}: the copy itself`));
+}
+
+function chip(txt, cls) { return html("span", "chip " + cls, txt); }
+function chainCard(host, title, arm, note) {
+  const d = html("div", "card"); d.append(html("h3", null, title));
+  if (!arm) { d.append(html("p", "cap", "not run")); host.append(d); return; }
+  const row = html("p");
+  for (const k of ["R1", "R2", "R3"]) row.append(chip(`${k} ${arm[k].verdict}`, arm[k].verdict === "PASS" ? "ok" : arm[k].verdict === "FAIL" ? "bad" : "na"), document.createTextNode(" "));
+  const r4 = arm.R4;
+  d.append(row, html("p", null, `${arm.candidates} candidates, ${r4.flagged} flagged · ${r4.matched} of ${r4.expressed} expressed copies recovered`));
+  if (arm.R3.fraction != null) d.append(html("p", "cap", `R3: ${arm.R3.false_families.length} of ${arm.R3.denominator} families without a missing copy carry a false flag (${pct(arm.R3.fraction)}; bar 20%)`));
+  if (note) d.append(html("p", "cap", note));
+  host.append(d);
+}
+
+function sideChain(host, cmp, refName, otherName) {
+  const a = html("div", "card"), b = html("div", "card");
+  a.append(html("h3", null, `${refName} as reference: copy missing`));
+  b.append(html("h3", null, `${otherName} as reference: copy present`));
+  if (cmp) {
+    const i = cmp.isocon, h = cmp.inhouse;
+    a.append(html("p", null, `IsoCon: ${i.run_a.outputs} transcript${i.run_a.outputs === 1 ? "" : "s"} of this copy, ${i.run_a.flagged_new} kept as a new copy`),
+             html("p", null, i.run_a.recovering.length ? `recovered by ${i.run_a.recovering.map(r => `${r.candidate} (${r.n_transcripts} transcripts)`).join(", ")}` : "not recovered by a flagged IsoCon candidate"),
+             html("p", null, h.run_a.recovering.length ? `in-house stage: recovered by ${h.run_a.recovering.map(r => r.candidate).join(", ")}` : "in-house stage: not recovered"));
+    b.append(html("p", null, `IsoCon: ${i.run_b.outputs} transcript${i.run_b.outputs === 1 ? "" : "s"} of this copy match the reference, ${i.run_b.flagged_new} kept as new`),
+             html("p", null, h.run_b.near.length ? `in-house stage: ${h.run_b.near.length} candidate${h.run_b.near.length === 1 ? "" : "s"} sit on it, closest d ${fmt(Math.min(...h.run_b.near.map(x => x.d)))}, ${h.run_b.near.filter(x => x.flagged).length} flagged` : "in-house stage: no candidate sits on it"));
+  }
+  host.replaceChildren(a, b);
+}
+
+function largeLoci(d) { return d.loci.filter(l => l.n >= 20 && l.kind !== "sex"); }
+function median(xs) { const s = xs.filter(x => x != null).sort((p, q) => p - q); return s.length ? s[Math.floor(s.length / 2)] : null; }
+
+function render() {
+  const d = DATA.directions[state.dir], ref = NAME[state.dir], oth = NAME[d.other];
+  $("dirs").replaceChildren(...Object.keys(DATA.directions).map(k => { const b = html("button", null, DATA.directions[k].title); b.setAttribute("aria-pressed", k === state.dir); b.onclick = () => { state.dir = k; state.loc = null; render(); }; return b; }));
+  $("dirnote").textContent = state.dir === "mat"
+    ? "Reads of copies that exist on the paternal haplotype but not on the maternal one, aligned to the maternal genome. This is the primary run."
+    : "The reverse: reads of copies that exist on the maternal haplotype but not on the paternal one, aligned to the paternal genome. This run was started after the maternal verdicts were written down.";
+  const bar = d.loci.filter(l => l.verdict), tot = bar.reduce((s, l) => s + l.n, 0), g = {unmapped: 0, tied: 0, nearest: 0, other: 0};
+  for (const l of bar) { const b = groups(l); for (const k in g) g[k] += b[k]; }
+  const tile = (n, l) => { const t = html("div", "tile"); t.append(html("div", "n", n), html("div", "l", l)); return t; };
+  $("tiles").replaceChildren(tile(String(bar.length), "large missing copies judged"), tile(String(tot), "reads of those copies"),
+    tile(pct((g.nearest + g.other) / tot), "absorbed on a relative"), tile(pct(g.tied / tot), "tied (multi-mapped)"), tile(pct(g.unmapped / tot), "unmapped or partial"));
+  $("unm").textContent = DATA.unm ? `Of the ${DATA.unm.total} reads that did not map to the combined primary assembly at all, ${DATA.unm.mat} map to the mother's genome and ${DATA.unm.pat} to the father's.` : "";
+  const rows = d.loci.map(l => l).concat(d.shared ? [Object.assign({}, d.shared, {label: "all other reads (control)", id: "shared"})] : []);
+  stackedBars($("bars"), rows);
+  const th = ["locus", "reads", "unmapped", "partial", "tied", "on nearest", "elsewhere", "de", "id", "verdict"];
+  const tb = html("table"), hr = html("tr"); th.forEach(h => hr.append(html("th", null, h))); tb.append(hr);
+  for (const r of rows) { const tr = html("tr"); [r.label, r.n, r.fates.UNMAPPED, r.fates.PARTIAL, r.fates.TIED, r.fates.ABSORBED_NEAREST, r.fates.ABSORBED_OTHER, fmt(r.de_median), fmt(r.paralog_identity), vtxt(r.verdict || "")].forEach(v => tr.append(html("td", null, String(v)))); tb.append(tr); }
+  $("tbl").replaceChildren(tb);
+
+  const big = largeLoci(d);
+  if (!state.loc || !big.find(l => l.id === state.loc)) state.loc = (big.slice().sort((p, q) => ((q.de_median ?? 0) - (q.de_other_median ?? 0)) - ((p.de_median ?? 0) - (p.de_other_median ?? 0)))[0] || {}).id;
+  $("pick").replaceChildren(...big.map(l => { const b = html("button", null, l.id.replace("LRPAP1_", "LRPAP1 ")); b.setAttribute("aria-pressed", l.id === state.loc); b.onclick = () => { state.loc = l.id; render(); }; return b; }));
+  const L = big.find(l => l.id === state.loc);
+  if (L) {
+    $("sentence").textContent = `${L.label}. ${L.kind === "lrpap1_desc" ? "Descriptive only: it has a diverged counterpart on the reference genome, so it is not a missing copy by the registered rule. " : ""}On the ${ref} the ${L.n} reads land on a relative ${fmt(1 - L.paralog_identity, 4)} away (median divergence ${fmt(L.de_median)}); on the ${oth} the same reads sit on the copy at median divergence ${fmt(L.de_other_median)}.`;
+    const left = html("div", "pane"), right = html("div", "pane");
+    left.append(html("p", "hd", `${ref}: the copy is missing`)); fateBar(left, L);
+    const fl = html("ul", "facts");
+    for (const [k, v] of [["reads", L.n], ["median divergence (de)", fmt(L.de_median)], ["nearest relative, identity", fmt(L.paralog_identity)], ["median MAPQ", L.mapq_ref_median == null ? "–" : L.mapq_ref_median], ["verdict", vtxt(L.verdict) || "none"]]) { const li = html("li"); li.append(html("span", null, k), html("b", null, String(v))); fl.append(li); }
+    left.append(fl);
+    right.append(html("p", "hd", `${oth}: the copy is present`));
+    right.append(html("p", "cap", "A read belongs to this copy by its best placement here, so every read sits on it by definition and no fate is reported for this side."));
+    const fr = html("ul", "facts");
+    for (const [k, v] of [["reads placed on the copy", L.pairs.length], ["median divergence (de)", fmt(L.de_other_median)], ["median MAPQ", L.mapq_other_median == null ? "–" : L.mapq_other_median]]) { const li = html("li"); li.append(html("span", null, k), html("b", null, String(v))); fr.append(li); }
+    right.append(fr);
+    $("facts").replaceChildren(left, right);
+    if (L.ref_track && L.other_track) trackPair($("tracks"), L.ref_track, L.other_track, ref, oth); else $("tracks").replaceChildren(html("p", "cap", "no coverage track for this locus"));
+    pairedDe($("paired"), L.pairs, ref, oth);
+    sideChain($("sidechain"), d.compare[L.id], ref, oth);
+  }
+  spectrum($("spec"), big, DATA.context);
+  const arms = $("arms"); arms.replaceChildren();
+  chainCard(arms, "IsoCon", d.arms.isocon, "Reference-free clustering of the family's reads (version 0.3.3).");
+  chainCard(arms, "In-house stage", d.arms.inhouse, "o3_candidates with the Amendment 15/15b consensus fix; its acceptance re-run was not run.");
+  $("p12line").textContent = d.p12 ? `LRPAP1 5′ fragment p12 (descriptive): IsoCon outputs matching at identity × coverage ≥ 0.999 on p12 (paternal) ${d.p12["p12@pat"].length}, on p14 (paternal) ${d.p12["p14@pat"].length}, on p14 (maternal) ${d.p12["p14@mat"].length}, on a p12 counterpart in the maternal genome ${(d.p12["p12@mat"] || []).length}. p12 and p14 differ by 4 bp in 2,446, below the allele cutoff, so the link step treats p12 as an allele of p14.` : "";
+}
+render();
+</script>
