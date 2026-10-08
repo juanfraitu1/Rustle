@@ -28,10 +28,17 @@ def compact_pairs(rows):
 
 
 def parse_unm(text):
-    """W/unm.txt ('R_unm on <hap>: N reads, K with a primary ...') -> {'total': N, 'mat': K, 'pat': K} or None"""
-    out = {}
-    for hap, n, k in re.findall(r"R_unm on (mat|pat): (\d+) reads, (\d+) with", text):
-        out["total"], out[hap] = int(n), int(k)
+    """W/unm.txt -> {'total': N, 'mat': K, 'pat': K, 'mat_region': {acc, start, end, n}} (the largest region of the reads mapping on mat) or None"""
+    out, hap = {}, None
+    for ln in text.splitlines():
+        m = re.match(r"R_unm on (mat|pat): (\d+) reads, (\d+) with", ln)
+        if m:
+            hap = m.group(1)
+            out["total"], out[hap] = int(m.group(2)), int(m.group(3))
+            continue
+        r = re.match(r"\s+region (\S+):(\d+)-(\d+): (\d+) reads", ln)
+        if r and hap == "mat" and "mat_region" not in out:
+            out["mat_region"] = dict(acc=r.group(1), start=int(r.group(2)), end=int(r.group(3)), n=int(r.group(4)))
     return out or None
 
 
@@ -69,9 +76,13 @@ def direction(a):
 
 
 def main():
+    unm = parse_unm(open(f"{C.W}/unm.txt").read()) if os.path.exists(f"{C.W}/unm.txt") else None
+    if unm and "mat_region" in unm:
+        al = C.alias()
+        unm["mat_region"]["chrom"] = next((num for (h, num), acc in al.items() if h == "mat" and acc == unm["mat_region"]["acc"]), None)
     out = dict(directions={a: direction(a) for a in ("mat", "pat") if os.path.exists(f"{C.W}/{a}/fate/fate.json")},
                context=[dict(fam=r["fam"], unaln=r["unaln"], conc=r["conc"], mig_de=r["mig_de"]) for r in json.load(open(EXC))],
-               unm=parse_unm(open(f"{C.W}/unm.txt").read()) if os.path.exists(f"{C.W}/unm.txt") else None)
+               unm=unm)
     os.makedirs(f"{C.W}/artifact", exist_ok=True)
     json.dump(out, open(f"{C.W}/artifact/data.json", "w"))
     html = open(f"{HERE}/template.html").read().replace("/*DATA*/null", json.dumps(out))

@@ -87,9 +87,14 @@ def evaluate(cands, loci_, fam_net, ref_best, other_best, floor=2):
     r2 = dict(targets=t2, flagged=flagged_within, verdict="FAIL" if flagged_within else "PASS")
     fam_with = {L["family"] for L in expressed}
     den = [f for f in fam_net if f not in fam_with]
-    bad = sorted({c["family"] for c in flagged if c["cls"] != "a_recovered" and c["family"] in den})
+    classes = {}
+    for c in flagged:
+        if c["cls"] != "a_recovered" and c["family"] in den:
+            classes.setdefault(c["family"], set()).add(c["cls"])
+    bad = sorted(classes)
+    other_only = [f for f in bad if classes[f] == {"b_other"}]       # post hoc split: sequence found on the truth haplotype at >= .999 but in no truth locus
     frac = len(bad) / len(den) if den else None
-    r3 = dict(denominator=len(den), false_families=bad, fraction=frac, verdict="NOT TESTABLE" if frac is None else ("PASS" if frac <= 0.20 else "FAIL"))
+    r3 = dict(denominator=len(den), false_families=bad, other_haplotype_only=other_only, unmatched_or_ref=[f for f in bad if f not in other_only], fraction=frac, verdict="NOT TESTABLE" if frac is None else ("PASS" if frac <= 0.20 else "FAIL"))
     idx = {L["locus"]: i for i, L in enumerate(expressed)}
     edges = [(i, idx[l]) for i, c in enumerate(flagged) for l in c["recovers"] if l in idx]
     m = max_matching(edges, len(flagged))

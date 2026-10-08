@@ -106,6 +106,18 @@ class Descriptive(unittest.TestCase):
         self.assertEqual(out["R3"]["false_families"], [])
 
 
+class FalseFlagClasses(unittest.TestCase):
+    def test_false_families_are_split_by_candidate_class(self):
+        loci = [L("BIG", n=281, ident=0.91)]
+        cands = [cand("k1", "F2", 2), cand("k2", "F3", 2), cand("k3", "F3", 3)]
+        pat = {"k1": hit(1.0, "CM9", 1, 9)}                                   # F2: matches the other haplotype at 1.0, no truth locus
+        ref = {"k2": hit(0.5, "M", 1, 2)}                                     # F3: matches neither
+        out = S.evaluate(cands, loci, ["F1", "F2", "F3"], ref, pat)
+        self.assertEqual(out["R3"]["false_families"], ["F2", "F3"])
+        self.assertEqual(out["R3"]["other_haplotype_only"], ["F2"])
+        self.assertEqual(out["R3"]["unmatched_or_ref"], ["F3"])
+
+
 class Types(unittest.TestCase):
     def test_distinct_targets(self):
         mat = {"s1": hit(1.0, "M14", 10, 90)}

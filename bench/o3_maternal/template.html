@@ -77,7 +77,7 @@ footer code{font-family:var(--mono);font-size:11px}
 
   <section>
     <h2>Where the reads of a missing copy go</h2>
-    <p class="cap">One bar per locus the reference genome lacks, with at least 3 reads. The reads are aligned to the reference genome with the same settings as the original alignment. Verdicts follow the registered bar: REFUTED means at least 80% absorbed with at most 10% unmapped and 10% tied (a missing copy does not hide); SUPPORTED means at least half of the reads are lost. The sex-chromosome copy and the descriptive locus carry no verdict.</p>
+    <p class="cap">One bar per locus the reference genome lacks, with at least 3 reads. The reads are aligned to the reference genome with the same settings as the original alignment. Verdicts follow the registered bar: REFUTED means at least 80% absorbed with at most 10% unmapped and 10% tied (a missing copy does not hide); SUPPORTED means at least half of the reads are lost. The sex-chromosome copy and the descriptive locus carry no verdict. Most of these copies have a near-identical relative on the reference genome (identity above 0.99, so reads are absorbed with divergence near zero); only the copies with a lower identity test whether a missing copy hides.</p>
     <div class="legend"><span><i class="sw near"></i>absorbed on the nearest relative</span><span><i class="sw oth"></i>absorbed elsewhere</span><span><i class="sw tie"></i>tied (multi-mapped)</span><span><i class="sw unm"></i>unmapped or partial</span></div>
     <div class="fig bars" id="bars"></div>
     <details><summary>Table view</summary><div class="tw" id="tbl"></div></details>
@@ -210,6 +210,7 @@ function chainCard(host, title, arm, note) {
   const r4 = arm.R4;
   d.append(row, html("p", null, `${arm.candidates} candidates, ${r4.flagged} flagged · ${r4.matched} of ${r4.expressed} expressed copies recovered`));
   if (arm.R3.fraction != null) d.append(html("p", "cap", `R3: ${arm.R3.false_families.length} of ${arm.R3.denominator} families without a missing copy carry a false flag (${pct(arm.R3.fraction)}; bar 20%)`));
+  if (arm.R3.other_haplotype_only && arm.R3.other_haplotype_only.length) d.append(html("p", "cap", `Post hoc: ${arm.R3.other_haplotype_only.length} of those ${arm.R3.false_families.length} families (${arm.R3.other_haplotype_only.join(", ")}) are sequences found on the other genome at ≥ 0.999 that the truth table has no locus for, so they are not false in sequence terms; only ${arm.R3.unmatched_or_ref.length} (${arm.R3.unmatched_or_ref.join(", ") || "none"}) match nothing.`));
   if (note) d.append(html("p", "cap", note));
   host.append(d);
 }
@@ -238,12 +239,13 @@ function render() {
   $("dirnote").textContent = state.dir === "mat"
     ? "Reads of copies that exist on the paternal haplotype but not on the maternal one, aligned to the maternal genome. This is the primary run."
     : "The reverse: reads of copies that exist on the maternal haplotype but not on the paternal one, aligned to the paternal genome. This run was started after the maternal verdicts were written down.";
-  const bar = d.loci.filter(l => l.verdict), tot = bar.reduce((s, l) => s + l.n, 0), g = {unmapped: 0, tied: 0, nearest: 0, other: 0};
-  for (const l of bar) { const b = groups(l); for (const k in g) g[k] += b[k]; }
+  const bar = d.loci.filter(l => l.verdict), far = bar.filter(l => l.paralog_identity != null && 1 - l.paralog_identity > 0.00958);
+  const tot = bar.reduce((s, l) => s + l.n, 0), lost = bar.reduce((s, l) => { const b = groups(l); return s + b.unmapped; }, 0);
   const tile = (n, l) => { const t = html("div", "tile"); t.append(html("div", "n", n), html("div", "l", l)); return t; };
-  $("tiles").replaceChildren(tile(String(bar.length), "large missing copies judged"), tile(String(tot), "reads of those copies"),
-    tile(pct((g.nearest + g.other) / tot), "absorbed on a relative"), tile(pct(g.tied / tot), "tied (multi-mapped)"), tile(pct(g.unmapped / tot), "unmapped or partial"));
-  $("unm").textContent = DATA.unm ? `Of the ${DATA.unm.total} reads that did not map to the combined primary assembly at all, ${DATA.unm.mat} map to the mother's genome and ${DATA.unm.pat} to the father's.` : "";
+  $("tiles").replaceChildren(tile(String(bar.length), "large missing copies judged"), tile(String(far.length), "of them farther than the allele cutoff from any relative on the reference"),
+    tile(`${bar.filter(l => l.verdict === "REFUTED").length} of ${bar.length}`, "with the claim refuted"), tile(String(tot), "reads in those copies (a count, not a rate)"), tile(String(lost), "of those reads unmapped or partial"));
+  const u = DATA.unm, rg = u && u.mat_region;
+  $("unm").textContent = u ? `Of the ${u.total} reads that did not map to the combined primary assembly at all, ${u.mat} map to the mother's genome${rg ? ` (${rg.n} of them in one ${Math.round((rg.end - rg.start) / 1000)}-kb stretch of its chromosome ${rg.chrom}, ${(rg.start / 1e6).toFixed(2)}-${(rg.end / 1e6).toFixed(2)} Mb: an expressed sequence only the mother's genome has, whose reads stay unmapped without it)` : ""} and ${u.pat} to the father's.` : "";
   const rows = d.loci.map(l => l).concat(d.shared ? [Object.assign({}, d.shared, {label: "all other reads (control)", id: "shared"})] : []);
   stackedBars($("bars"), rows);
   const th = ["locus", "reads", "unmapped", "partial", "tied", "on nearest", "elsewhere", "de", "id", "verdict"];
@@ -276,7 +278,7 @@ function render() {
   const arms = $("arms"); arms.replaceChildren();
   chainCard(arms, "IsoCon", d.arms.isocon, "Reference-free clustering of the family's reads (version 0.3.3).");
   chainCard(arms, "In-house stage", d.arms.inhouse, "o3_candidates with the Amendment 15/15b consensus fix; its acceptance re-run was not run.");
-  $("p12line").textContent = d.p12 ? `LRPAP1 5′ fragment p12 (descriptive): IsoCon outputs matching at identity × coverage ≥ 0.999 on p12 (paternal) ${d.p12["p12@pat"].length}, on p14 (paternal) ${d.p12["p14@pat"].length}, on p14 (maternal) ${d.p12["p14@mat"].length}, on a p12 counterpart in the maternal genome ${(d.p12["p12@mat"] || []).length}. p12 and p14 differ by 4 bp in 2,446, below the allele cutoff, so the link step treats p12 as an allele of p14.` : "";
+  $("p12line").textContent = d.p12 ? `LRPAP1 5′ fragment p12 (descriptive): IsoCon outputs matching at identity × coverage ≥ 0.999 on p12 (paternal) ${d.p12["p12@pat"].length}, on p14 (paternal) ${d.p12["p14@pat"].length}, on p14 (maternal) ${d.p12["p14@mat"].length}, on a p12 counterpart in the maternal genome ${(d.p12["p12@mat"] || []).length}. The p12 and p14 outputs differ by 4 bp, below the allele cutoff, so the link step treats p12 as an allele of p14.` : "";
 }
 render();
 </script>

@@ -45,6 +45,19 @@ def verdict(fr):
     return "BETWEEN_BARS"
 
 
+def cluster_regions(hits, gap=100000, largest_first=False):
+    """[(ref, start, end)] -> [(ref, start, end, n)]: hits on one reference within `gap` bp of the region so far join it"""
+    out = []
+    for ref, a, b in sorted(hits):
+        if out and out[-1][0] == ref and a <= out[-1][2] + gap:
+            out[-1][2] = max(out[-1][2], b)
+            out[-1][3] += 1
+        else:
+            out.append([ref, a, b, 1])
+    out = [tuple(x) for x in out]
+    return sorted(out, key=lambda r: -r[3]) if largest_first else out
+
+
 def bar_applies(kind, n):
     """the registered bar is judged per LARGE absent locus: not for the sex control, not for descriptive loci (Amendment 2)"""
     return kind not in ("sex", "lrpap1_desc") and n >= 20
@@ -117,8 +130,12 @@ def cmd_unm():
     lines = []
     for hap in ("mat", "pat"):
         recs = C.read_records(f"{C.W}/map/R_unm.{hap}.bam", al)
-        mapped = sum(1 for rs in recs.values() if any(r.primary and r.qcov >= C.COV_MIN for r in rs))
-        lines.append(f"R_unm on {hap}: {len(recs)} reads, {mapped} with a primary at query coverage >= {C.COV_MIN}")
+        ok = [(n, r[0]) for n, r in recs.items() if r and r[0].primary and r[0].qcov >= C.COV_MIN]
+        lines.append(f"R_unm on {hap}: {len(recs)} reads, {len(ok)} with a primary at query coverage >= {C.COV_MIN}")
+        reg = cluster_regions([(p.ref, p.start, p.end) for _, p in ok], largest_first=True)[:3]
+        for ref, a, b, n in reg:
+            mq = sorted(p.mapq for _, p in ok if p.ref == ref and a <= p.start < b)
+            lines.append(f"  region {ref}:{a}-{b}: {n} reads, median MAPQ {mq[len(mq) // 2]}")
     open(f"{C.W}/unm.txt", "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))
 

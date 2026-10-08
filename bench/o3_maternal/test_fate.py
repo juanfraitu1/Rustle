@@ -44,6 +44,15 @@ class Bar(unittest.TestCase):
         self.assertTrue(F.bar_applies("lrpap1", 83))
 
 
+class Regions(unittest.TestCase):
+    def test_hits_within_the_gap_form_one_region(self):
+        hits = [("A", 100, 200), ("A", 250, 400), ("A", 9000, 9100), ("B", 5, 50), ("A", 150, 260)]
+        self.assertEqual(F.cluster_regions(hits, gap=100), [("A", 100, 400, 3), ("A", 9000, 9100, 1), ("B", 5, 50, 1)])
+
+    def test_largest_first_in_the_summary(self):
+        self.assertEqual(F.cluster_regions([("A", 1, 2), ("B", 1, 2), ("B", 3, 4)], gap=10, largest_first=True)[0][0], "B")
+
+
 class Rows(unittest.TestCase):
     def test_counts_and_de(self):
         recs = {"r1": [rec(ref="P", start=10, end=90, de=0.002)],           # absorbed on the nearest paralog
