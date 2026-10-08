@@ -315,3 +315,23 @@ The detection edge sits where the cutoff says: 0% of the erased copy's reads lea
 - (4) Reported: T's decisions on E3 by D class (trimmed, not trimmed because abstained, not trimmed because prefix too long or not G).
 **Real data (descriptive, dev A first; H is not held out for diagnostics).** Apply T with the real attribution and the real HSPs: how many consensus sequences it trims, agreement with the genome-based finding (a pure-G 1 to 3 bp 5' clip against the erased copy): precision, recall; and identity x coverage >= 0.999 after T by excluding the trimmed prefix from the denominator (no re-alignment needed when the prefix is within the unaligned clip).
 **Decision.** T is adopted as a consensus clean-up step iff (1) holds and (2), (3) hold. If (1) fails, no conclusion about T; if (2) or (3) fails, T is reported as not adopted with the failure.
+
+### Amendment 13 result (fresh world seed 20261010; 24 erased copies with a pure cluster at D >= 1%; 2026-10-08)
+
+| | E4 (jitter 3, no artifact) | E3 (E4 + 5' G run) untrimmed | E3 after T |
+|---|---|---|---|
+| identity x coverage >= 0.999 vs true genome copy | 24 of 24 | **14 of 24 (58%)** | **24 of 24** |
+| 5' offset vs true transcript within [-4, +1] | 24 of 24 | 21 of 24 | 24 of 24 |
+| consensus with an unaligned 5' clip | 0 of 24 | 20 of 24 (lengths 2: 12, 1: 7, 3: 1) | |
+| clusters trimmed by T / over-trimmed (offset below -4) | 0 / 0 | | 21 / 0 |
+
+**Bar (1) NOT met (58% > 50%):** E3 produces the 5' clip itself (20 of 24 consensus sequences, real dev A 129 of 212) but, with an error-free consensus, a 1 to 2 bp clip on a 2.5 kb transcript scores 0.9996 or 0.9992 and still passes 0.999; only runs of 3 or a short transcript fail. The real beds fall to 31 to 35% because the clip adds to other small deviations. Bars (2) and (3) hold. **By the registered decision (needs (1)), T is not adopted.**
+**On the real beds T does almost nothing (descriptive):** dev A: trimmed 4 of 212 (3 agree with the genome-based pure-G clip), prefix longer than 3 in 115, abstained 87; H: trimmed 0 of 40 (prefix too long 25, abstained 13). The dc-megablast HSP does not start at the first consensus base on a real survivor (a short or divergent first exon starts the HSP tens of bases in), so the HSP prefix is the wrong measurement outside the synthetic world, where the first exons are identical. identity x coverage >= 0.999 unchanged (65 and 14).
+
+---
+
+## Amendment 14 (2026-10-08, after the Amendment 13 numbers, before any T2 number): rule T2, aligner-based prefix
+
+**Change.** The 5' prefix is measured by aligning the consensus (minimap2 `-c -x splice:hq -uf -N 5`, the command used for the fidelity metric) to the genomic spans of the surviving copies of its attributed family and taking the consensus bases before the alignment start (PAF query start) of the best record by matches; the decision step is unchanged (1 to 3 bases, all G, else no change; abstained clusters untouched). Nothing else changes.
+**Test.** (a) Fresh synthetic world, seed 20261011 (same design, E3 and E4): bars (2) and (3) of Amendment 13, and bar (1') replacing (1): E3 shows an unaligned 5' clip in >= 50% of the consensus sequences and E4 in 0 (the property the real beds have: 61% dev A). (b) Real dev A, descriptive but with a bar for the decision: among attributed clusters that have a genome-based pure-G 1 to 3 bp 5' clip (against the erased copy), T2 recovers >= 80% of them, and >= 95% of T2's trims coincide with such a clip. H and the identity x coverage count after T2 are reported, not judged.
+**Decision.** T2 is adopted as a consensus clean-up iff (1'), (2), (3) hold on the synthetic world AND the dev-A recall and precision bars hold. Otherwise it is reported as not adopted with the failure.

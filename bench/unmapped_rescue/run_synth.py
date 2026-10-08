@@ -116,10 +116,10 @@ def cluster_info(V):
     return out
 
 
-def stage_truth(V):
+def stage_truth(V, cons_file="cons.fa", out="truth"):
     d = f"{W0}/{V}"
     info = cluster_info(V)
-    cons = cons_seqs(V)
+    cons = RA_read_cons(f"{d}/{cons_file}")
     tx = SD.read_fa(f"{W0}/transcripts.fa")
     cp = copies()
     res, oriented = {}, {}
@@ -130,9 +130,9 @@ def stage_truth(V):
         best, s2 = (a, seq) if a["identity"] >= b["identity"] else (b, rc(seq))   # orientation chosen by the global identity
         oriented[name] = s2
         res[k] = dict(best, orientation="+" if s2 is seq else "-")
-    SD.write_fa(f"{d}/cons.oriented.fa", oriented, list(oriented))
-    paf = f"{d}/cons.truth.paf"
-    subprocess.run(f"minimap2 -c --cs -x splice:hq -uf -N 5 -t 4 {W0}/genome.truth.fa {d}/cons.oriented.fa > {paf}", shell=True, check=True)
+    SD.write_fa(f"{d}/cons.oriented.{out}.fa", oriented, list(oriented))
+    paf = f"{d}/cons.{out}.paf"
+    subprocess.run(f"minimap2 -c --cs -x splice:hq -uf -N 5 -t 4 {W0}/genome.truth.fa {d}/cons.oriented.{out}.fa > {paf}", shell=True, check=True)
     best = {}
     for ln in open(paf):
         f = ln.rstrip("\n").split("\t")
@@ -145,8 +145,8 @@ def stage_truth(V):
         h = best.get(k)
         on = bool(h) and h["ref"] == c["contig"] and h["start"] < int(c["end"]) and int(c["pos0"]) < h["end"]
         r.update(on_true_copy=on, idcov=(h["ident"] * h["cov"]) if on else None, clip5=h["clip5"] if on else None, clip3=h["clip3"] if on else None, nm=h["nm"] if on else None)
-    json.dump(res, open(f"{d}/truth.json", "w"), indent=1)
-    print(f"{V}: compared {len(res)} consensus sequences with their true transcripts and genome copies")
+    json.dump(res, open(f"{d}/{out}.json", "w"), indent=1)
+    print(f"{V}: compared {len(res)} consensus sequences ({cons_file}) with their true transcripts and genome copies -> {out}.json")
 
 
 def stage_attribute(V):
@@ -193,6 +193,70 @@ def stage_augment(V):
                 res[rule][scope][D] = G.move_metrics(sub, cf, rule=rule)
     json.dump(res, open(f"{d}/augment.json", "w"), indent=1)
     print(f"{V}: augmented-reference moves written")
+
+
+def stage_trim(V):
+    """rule T (Amendment 13): trim a 1-3 bp pure-G 5' prefix not covered by the attributed family's best surviving copy"""
+    import trim5g as T
+    d = f"{W0}/{V}"
+    att = json.load(open(f"{d}/attribution.json"))
+    hs = collections.defaultdict(list)
+    for q, t, a, b in A.read_blastn(f"{d}/cons.blastn.tsv"):
+        hs[q].append((q, t, a, b))
+    cons = cons_seqs(V)
+    out, log = {}, {}
+    for name, seq in cons.items():
+        k = name.split("|")[0]
+        fam = att.get(k)
+        if fam is None:
+            out[name], log[k] = seq, dict(trimmed=0, reason="abstained", prefix=None)
+            continue
+        prefix = T.best_copy_prefix(hs.get(k, []), fam)
+        new, n, why = T.decide(seq, prefix)
+        out[name] = new
+        log[k] = dict(trimmed=n, reason=why, prefix=prefix)
+    SD.write_fa(f"{d}/cons.trimmed.fa", out, list(out))
+    json.dump(log, open(f"{d}/trim.json", "w"), indent=1)
+    print(f"{V}: " + ", ".join(f"{r} {c}" for r, c in collections.Counter(v["reason"] for v in log.values()).most_common()))
+
+
+def erased_clusters(V):
+    """per erased copy the largest pure cluster of >= 3 reads: {copy: cluster key}"""
+    info = cluster_info(V)
+    best = {}
+    for k, i in info.items():
+        if i["role"] == "E" and i["purity"] == 1.0 and i["size"] >= 3 and (i["majority"] not in best or i["size"] > info[best[i["majority"]]]["size"]):
+            best[i["majority"]] = k
+    return best
+
+
+def stage_trimreport(V):
+    d = f"{W0}/{V}"
+    cp = copies()
+    tr0, tr1 = json.load(open(f"{d}/truth.json")), json.load(open(f"{d}/truth.trimmed.json"))
+    trim = json.load(open(f"{d}/trim.json"))
+    best = erased_clusters(V)
+    out = {}
+    for D in sorted({r["D"] for r in cp.values()}, key=float):
+        keys = [k for c, k in best.items() if cp[c]["D"] == D]
+        row = dict(clusters=len(keys))
+        for tag, tr in (("untrimmed", tr0), ("trimmed", tr1)):
+            ic = [tr[k]["idcov"] for k in keys if tr[k]["idcov"] is not None]
+            row[tag] = dict(idcov_ge_0_999=sum(x >= 0.999 for x in ic), idcov_n=len(ic), left_in_window=sum(-4 <= tr[k]["left"] <= 1 for k in keys if tr[k]["left"] is not None),
+                            left_below_minus4=sum(tr[k]["left"] < -4 for k in keys if tr[k]["left"] is not None), lefts=sorted(tr[k]["left"] for k in keys if tr[k]["left"] is not None))
+        row["decisions"] = dict(collections.Counter(trim[k]["reason"] for k in keys))
+        out[D] = row
+    json.dump(out, open(f"{d}/trimreport.json", "w"), indent=1)
+    print(f"{'D':>6} {'n':>3} | untrimmed idcov>=.999 | trimmed idcov>=.999 | left in [-4,+1] (before/after) | over-trim (<-4, after) | decisions")
+    tot = collections.Counter()
+    for D, r in out.items():
+        u, t = r["untrimmed"], r["trimmed"]
+        print(f"{D:>6} {r['clusters']:>3} | {u['idcov_ge_0_999']:>3}/{u['idcov_n']:<3}            | {t['idcov_ge_0_999']:>3}/{t['idcov_n']:<3}          | {u['left_in_window']:>3} / {t['left_in_window']:<3}                  | {t['left_below_minus4']:>3}                   | {r['decisions']}")
+        if float(D) >= 0.01:
+            for key, v in (("n", r["clusters"]), ("u_ok", u["idcov_ge_0_999"]), ("t_ok", t["idcov_ge_0_999"]), ("u_win", u["left_in_window"]), ("t_win", t["left_in_window"]), ("t_over", t["left_below_minus4"]),
+                           ("trimmed", r["decisions"].get("trimmed", 0))):
+                tot[key] += v
+    print("D >= 1% totals:", dict(tot))
 
 
 def stage_report(V):
@@ -253,4 +317,5 @@ def stage_report(V):
 
 
 if __name__ == "__main__":
-    {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report}[sys.argv[2]](sys.argv[1])
+    {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
+     "trim": stage_trim, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])

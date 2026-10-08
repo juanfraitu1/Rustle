@@ -53,6 +53,27 @@ def add_polya(fq_lines, seed):
     return out
 
 
+G5_P = 0.95
+G5_LENGTHS = ((1, 0.22), (2, 0.43), (3, 0.24), (4, 0.07), (5, 0.03), (6, 0.01))   # measured on the real dev-A reads (Amendment 13)
+
+
+def add_g5(fq_lines, seed, p=G5_P, lengths=G5_LENGTHS):
+    """an untemplated 5' run of G on a fraction p of the reads of a 4-line FASTQ stream, run length from `lengths` (the E3 read-end variant)"""
+    rng = random.Random(seed)
+    out = []
+    for i in range(0, len(fq_lines), 4):
+        n = 0
+        if rng.random() < p:
+            u, acc = rng.random() * sum(w for _, w in lengths), 0.0
+            for k, w in lengths:
+                acc += w
+                n = k
+                if u <= acc:
+                    break
+        out += [fq_lines[i], "G" * n + fq_lines[i + 1], fq_lines[i + 2], "I" * n + fq_lines[i + 3]]
+    return out
+
+
 def read_fa(path):
     out, name = {}, None
     for ln in open(path):
@@ -74,7 +95,7 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
     from famsim import chromosome, reads as FR
     os.makedirs(f"{out}/fam", exist_ok=True)
     ref, truth, copies, trans, targets = {}, {}, [], {}, {}
-    truth_hdr, truth_rows, fq = None, [], {"E0": [], "E2": []}
+    truth_hdr, truth_rows, fq = None, [], {"E0": [], "E2": [], "E4": []}
     for spec in family_specs(seed, n_per_class, classes):
         name, D = spec["name"], spec["divergence_class"]
         fdir = f"{out}/fam/{name}"
@@ -93,7 +114,10 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
             trans[p.id] = p.model.chain_seq()
             if p.in_reference:
                 targets[f"{name}:{p.id[-1]}"] = ref[ctg][p.pos:p.end]
-        for tag, d in (("E0", fdir), ("E2", e2dir)):
+        e4dir = f"{fdir}/E4"
+        os.makedirs(e4dir, exist_ok=True)
+        FR.simulate(planted, dict(spec["reads"], jitter=3), e4dir, spec["seed"] + 2, lambda *a, **k: None)
+        for tag, d in (("E0", fdir), ("E2", e2dir), ("E4", e4dir)):
             fq[tag] += open(f"{d}/reads.fq").read().splitlines()
         lines = open(f"{fdir}/reads.truth.tsv").read().splitlines()
         truth_hdr = lines[0]
@@ -111,6 +135,8 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
         o.write(truth_hdr + "\n" + "\n".join(truth_rows) + "\n")
     open(f"{out}/reads.E0.fq", "w").write("\n".join(fq["E0"]) + "\n")
     open(f"{out}/reads.E2.fq", "w").write("\n".join(fq["E2"]) + "\n")
+    open(f"{out}/reads.E4.fq", "w").write("\n".join(fq["E4"]) + "\n")
+    open(f"{out}/reads.E3.fq", "w").write("\n".join(add_g5(fq["E4"], seed)) + "\n")
     open(f"{out}/reads.E1.fq", "w").write("\n".join(add_polya(fq["E0"], seed)) + "\n")
     log(f"world: {len(ref)} reference contigs, {len(truth) - len(ref)} omitted (erased copies), {len(copies)} copies, {len(truth_rows)} reads")
 
