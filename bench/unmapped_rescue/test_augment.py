@@ -14,9 +14,9 @@ def rec(score, de=0.01, qcov=1.0, ref="X", mapq=60):
 
 class Primary(unittest.TestCase):
     def test_consensus_wins_only_with_a_strictly_higher_score(self):
-        self.assertEqual(G.new_primary(rec(100), rec(101))[0], "consensus")
-        self.assertEqual(G.new_primary(rec(100), rec(100))[0], "genome")
-        self.assertEqual(G.new_primary(rec(100), rec(99))[0], "genome")
+        self.assertEqual(G.new_primary(rec(100), rec(101), rule="score")[0], "consensus")
+        self.assertEqual(G.new_primary(rec(100), rec(100), rule="score")[0], "genome")
+        self.assertEqual(G.new_primary(rec(100), rec(99), rule="score")[0], "genome")
 
     def test_unmapped_read_takes_a_consensus_record_with_enough_coverage(self):
         self.assertEqual(G.new_primary(None, rec(50, qcov=0.8))[0], "consensus")
@@ -75,8 +75,14 @@ class DivergenceRule(unittest.TestCase):
 
     def test_move_metrics_passes_the_rule_through(self):
         rows = [("S", "F9", rec(100, 0.002), rec(130, 0.014, ref="cA"), "cA")]
-        self.assertEqual(G.move_metrics(rows, {"cA": "F1"})["S"]["moved"], 1)
+        self.assertEqual(G.move_metrics(rows, {"cA": "F1"}, rule="score")["S"]["moved"], 1)
         self.assertEqual(G.move_metrics(rows, {"cA": "F1"}, rule="divergence")["S"]["moved"], 0)
+
+    def test_the_default_rule_is_divergence(self):
+        # higher raw score (junction cost advantage) but further away: stays under the default
+        self.assertEqual(G.new_primary(rec(100, de=0.002), rec(130, de=0.014))[0], "genome")
+        rows = [("S", "F9", rec(100, 0.002), rec(130, 0.014, ref="cA"), "cA")]
+        self.assertEqual(G.move_metrics(rows, {"cA": "F1"})["S"]["moved"], 0)
 
 
 if __name__ == "__main__":

@@ -283,3 +283,20 @@ Two things the synthetic world exposed, followed up on the real beds. Neither is
 **Bars (set now).** (1) Survivor reads moved onto an erased-copy consensus <= 1% in every class (the score rule gave up to 50%). (2) Erased-copy reads in the net land on their own family's consensus >= 90% in every class with a pure cluster for at least 3 copies. (3) Recovery is unchanged by the rule: copies with a pure cluster and attribution results identical to the score-rule run on the same world (the rule only touches the move step). Reported, not judged: erased-copy reads absorbed inside the allele cutoff (not in the net) that move to their own consensus, by class.
 **Also re-run under the new default (reported):** bed H half run (previous: held-out unmapped 2,505 of 2,657, absorbed 2,122, survivors 0 with the divergence rule) and the LRPAP1 example (Amendment 8).
 **Decision rule.** The adoption stands iff bars (1) to (3) hold. If (1) fails in any class, the rule goes back to explicit-option status and the failure is reported.
+
+### Amendment 12 result (fresh world seed 20261009, 32 families; 2026-10-08)
+
+Net 2,015 of 2,560 erased-copy reads, 0 survivor reads; 26 clusters, 26 attributed.
+
+| D | E reads in net | E copies with a pure cluster | survivor reads moved, divergence rule (score rule) | E net reads on own consensus |
+|---|---|---|---|---|
+| 0.5% | 0% | 0 of 4 | 0 of 640 (0) | |
+| 0.75% | 54.7% | 3 of 4 | **0** (320) | 175 of 175 |
+| 1% | 75.0% | 3 of 4 | **0** (240) | 240 of 240 |
+| 1.5% | 100% | 4 of 4 | **0** (241) | 320 of 320 |
+| 2% | 100% | 4 of 4 | **0** (71) | 320 of 320 |
+| 3%, 4%, 8% | 100% | 4 of 4 | 0 (0) | 320 of 320 |
+
+**Bars: (1) survivors moved 0 of 640 in every class (<= 1%): met. (2) erased-copy net reads on own consensus 100% in every class with >= 3 pure clusters: met. (3) recovery unchanged: the move rule acts after clustering and attribution, which are identical to the score-rule run: met.** The adoption stands; `augment.new_primary` and `move_metrics` now default to the divergence rule (`rule="score"` reproduces Amendments 7, 8, 10).
+The detection edge sits where the cutoff says: 0% of the erased copy's reads leave it at 0.5%, 55% at 0.75%, 75% at 1%, all from 1.5%. Reported: erased-copy reads inside the cutoff that move to their own consensus: 65 of 145 at 0.75% (where a consensus exists).
+**Re-runs under the new default.** Bed H half run: held-out unmapped 2,505 of 2,657 (94.3%), absorbed 2,122 of 11,973, survivors 0 of 41,727, background onto a family cluster 0 of 959: the H conclusions do not depend on the rule. LRPAP1 (Amendment 8): held-out net reads 172 of 191 move (90.1%; 162 under the score rule), already-placed reads 1,121 move (1,709 under the score rule; 1,118 to the right copy), other-copy reads 3 of 532 (0.6%; 15 under the score rule).

@@ -70,12 +70,12 @@ def write_fa(path, seqs):
             o.write(f">{k}\n{v}\n")
 
 
-def build_world(out, seed=SEED, log=print):
+def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES):
     from famsim import chromosome, reads as FR
     os.makedirs(f"{out}/fam", exist_ok=True)
     ref, truth, copies, trans, targets = {}, {}, [], {}, {}
     truth_hdr, truth_rows, fq = None, [], {"E0": [], "E2": []}
-    for spec in family_specs(seed):
+    for spec in family_specs(seed, n_per_class, classes):
         name, D = spec["name"], spec["divergence_class"]
         fdir = f"{out}/fam/{name}"
         planted, man = chromosome.build({k: v for k, v in spec.items() if k not in ("divergence_class",)}, fdir, lambda *a, **k: None)
@@ -120,5 +120,7 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["build"])
     ap.add_argument("out")
     ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--n-per-class", type=int, default=6)
+    ap.add_argument("--classes", default=",".join(str(c) for c in CLASSES), help="comma-separated divergence classes")
     a = ap.parse_args()
-    build_world(a.out, a.seed)
+    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")))

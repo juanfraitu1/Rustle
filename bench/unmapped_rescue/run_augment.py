@@ -119,8 +119,7 @@ def map_reads(kind):
     cf = cluster_family(f"{cdir}/clusters.tsv", cons_fa)
     rows = [(cls[n], fam[n], genome.get(n), cons.get(n), (cons[n]["ref"] if n in cons else None)) for n in sorted(cls)]
     res = dict(kind=kind, cons_sequences=len(cf), cons_with_family=sum(v is not None for v in cf.values()), reads_tested=len(rows),
-               all_families=G.move_metrics(rows, cf))
-    res["divergence_rule"] = G.move_metrics(rows, cf, rule="divergence")
+               rule="divergence", all_families=G.move_metrics(rows, cf), score_rule=G.move_metrics(rows, cf, rule="score"))
     withcons = {v for v in cf.values() if v}
     res["families_with_consensus"] = G.move_metrics([r for r in rows if r[0] in ("D_unm", "D_abs") and r[1] in withcons], cf)
     json.dump(res, open(f"{W}/bedHhalf/augment_{kind}.json", "w"), indent=1)

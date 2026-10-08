@@ -145,7 +145,8 @@ def augment(tag):
         else:
             cls = "placed"
         rows.append((cls, truth[n], mat[n], cons.get(n), cons[n]["ref"] if n in cons else None))
-    res = dict(tag=tag, net=len(net), built_from=len(build), consensus=len(cf), reads=len(rows), moves=G.move_metrics(rows, cf))
+    res = dict(tag=tag, rule="divergence", net=len(net), built_from=len(build), consensus=len(cf), reads=len(rows), moves=G.move_metrics(rows, cf),
+               moves_score_rule=G.move_metrics(rows, cf, rule="score"))
     # placed reads by true copy: which copies attract false moves
     fm = {}
     for cls, fam, g, c, cname in rows:

@@ -8,11 +8,11 @@ import statistics
 QCOV_MIN = 0.80      # the registered hit-coverage floor
 
 
-def new_primary(genome, cons, rule="score"):
-    """(source, record): the primary a concatenated genome + consensus reference would give: the consensus record iff its alignment score is strictly
-    higher than the genome primary's; an unmapped read takes a consensus record with query coverage >= 0.80; ties stay on the genome.
-    rule="divergence" (Amendment 11): the consensus iff its divergence `de` is strictly lower than the genome primary's; a spliced genome alignment pays for
-    its junctions, an unspliced transcript alignment does not, so the raw scores are not comparable"""
+def new_primary(genome, cons, rule="divergence"):
+    """(source, record): the primary a genome + consensus reference would give. Default rule (Amendment 12): the consensus iff its divergence `de` is strictly lower
+    than the genome primary's; a spliced genome alignment pays for its junctions (about 8 points each) and an unspliced transcript alignment does not, so raw scores
+    are not comparable. rule="score" (Amendments 7, 8, 10): the consensus iff its alignment score is strictly higher. An unmapped read takes a consensus record with
+    query coverage >= 0.80 under both rules; ties stay on the genome."""
     if genome is None:
         return ("consensus", cons) if cons is not None and cons["qcov"] >= QCOV_MIN else ("none", None)
     if cons is not None and (cons["de"] < genome["de"] if rule == "divergence" else cons["score"] > genome["score"]):
@@ -20,7 +20,7 @@ def new_primary(genome, cons, rule="score"):
     return "genome", genome
 
 
-def move_metrics(rows, cons_family, min_identity=0.98, rule="score"):
+def move_metrics(rows, cons_family, min_identity=0.98, rule="divergence"):
     """rows: [(class, true family, genome record | None, consensus record | None, consensus name | None)] with class in D_unm / D_abs / S / bg.
     -> {class: dict(n, moved, moved_to_own_family, move_fraction, median_de_before_moved, median_de_after_moved)}. A move needs the consensus primary
     (and, for unmapped reads, de <= 1 - min_identity); 'own family' = the consensus' cluster majority family equals the read's family."""

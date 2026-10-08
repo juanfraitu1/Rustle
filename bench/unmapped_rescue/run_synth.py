@@ -21,7 +21,7 @@ import run_augment as RA  # noqa: E402
 import score as S  # noqa: E402
 import seeds as SD  # noqa: E402
 
-W0 = "/mnt/linuxdisk/tmp/o3_rescue/synth"
+W0 = os.environ.get("SYNTH_DIR", "/mnt/linuxdisk/tmp/o3_rescue/synth")
 DELTA = 0.00958
 BLAST = "/home/juanfra/miniforge3/envs/blast/bin"
 RC = str.maketrans("ACGTacgt", "TGCAtgca")
@@ -246,7 +246,7 @@ def stage_report(V):
     print(f"{'D':>6} {'copies':>6} {'inNet':>7} {'pure':>5} {'id>=.999':>8} {'idcov':>7} {'S5 right/net':>13} {'S5 wrong':>8} {'S6 E moved':>11} {'S6 S moved':>11}")
     for D, o in out.items():
         print(f"{D:>6} {o['erased_copies']:>6} {o['frac_in_net']:>7.3f} {o['copies_with_pure_cluster']:>5} {o['consensus_identity_ge_0_999']:>8} {o['idcov_ge_0_999']:>4}/{o['idcov_n']:<2} "
-              f"{o['s5_right']:>5}/{o['erased_reads_in_net']:<7} {o['s5_wrong']:>8} {o['s6_E_net_moved_own']}/{o['s6_E_net_n']:>5} {o['s6_S_moved']}/{o['s6_S_n']}   [divergence rule: E_net own {o['s6d_E_net_moved_own']}, E_abs own {o['s6d_E_abs_moved_own']}/{o['s6d_E_abs_n']}, S moved {o['s6d_S_moved']}]")
+              f"{o['s5_right']:>5}/{o['erased_reads_in_net']:<7} {o['s5_wrong']:>8} {o['s6_E_net_moved_own']!s}/{o['s6_E_net_n']!s:>5} {o['s6_S_moved']}/{o['s6_S_n']}   [divergence rule: E_net own {o['s6d_E_net_moved_own']}, E_abs own {o['s6d_E_abs_moved_own']}/{o['s6d_E_abs_n']}, S moved {o['s6d_S_moved']}]")
     for D, o in out.items():
         print(D, "ends 5' offsets", sorted(o["ends_left"]), "3' offsets", sorted(o["ends_right"]), "genome clips 5'/3' medians",
               (statistics.median(o["clip5"]) if o["clip5"] else None), (statistics.median(o["clip3"]) if o["clip3"] else None))
