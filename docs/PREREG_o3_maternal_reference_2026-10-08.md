@@ -153,3 +153,8 @@ resolved by the registered rule".
 Amendment 2, labelling note (same day, before any fate was computed): on `pat` all 83 reads whose primary record lies on p12 are TIED with p14 (score ratio within 0.98; the two
 copies differ by 4 bp in 2,446), so the registered untied-placement label gives p12 zero reads. Descriptive loci (`lrpap1_desc`) are therefore labelled by the read's
 PRIMARY record on the truth haplotype, ties allowed, restricted to the LRPAP1 net. No catalog locus and no bar uses this rule; the tie itself is reported as a result.
+Amendment 2, arm H identity (same day, before the in-house stage was run): S6 says the in-house arm is `o3_candidates` "as shipped at main b29afa55, Amendment 15 not applied". The
+repository history shows the Amendment 15/15b consensus fix (majority test, cs normalisation; commit a13b817f, 2026-10-05) was implemented after b29afa55, and the binary on disk
+(`rustle_target/release/o3_candidates`, built 2026-10-06 09:09, before the 12:01 source consolidation) post-dates it. Arm H is therefore **`o3_candidates` WITH the Amendment 15/15b
+fix**, whose acceptance re-run (A13/A14/held-out) was not run. Its flags are reported as such; the "known false-flag defect" caption in the plan no longer applies and is replaced by
+"Amendment 15/15b fix present, acceptance not run".
