@@ -35,19 +35,24 @@ def read_cons(path):
     return {k: "".join(v) for k, v in out.items()}
 
 
+def registered(d):
+    """the folder holding clusters.tsv and cons.fa: <bed>/registered, or the folder itself (the LRPAP1 example)"""
+    return f"{d}/registered" if os.path.isdir(f"{d}/registered") else d
+
+
 def cluster_reads(d):
     cl = {}
-    for r in csv.DictReader(open(f"{d}/registered/clusters.tsv"), delimiter="\t"):
+    for r in csv.DictReader(open(f"{registered(d)}/clusters.tsv"), delimiter="\t"):
         cl.setdefault("cl" + r["cluster"], []).append(r["read"])
     return cl
 
 
 def polish_all(bed):
     d = f"{W}/{bed}"
-    out = f"{d}/registered/polish"
+    out = f"{registered(d)}/polish"
     os.makedirs(f"{out}/tmp", exist_ok=True)
     seqs = SD.read_fa(f"{d}/pool.fa")
-    cons = read_cons(f"{d}/registered/cons.fa")
+    cons = read_cons(f"{registered(d)}/cons.fa")
     cl = cluster_reads(d)
     done = json.load(open(f"{out}/polish.json")) if os.path.exists(f"{out}/polish.json") else {}
     t0 = time.time()
