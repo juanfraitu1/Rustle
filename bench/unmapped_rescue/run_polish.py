@@ -24,6 +24,13 @@ PANELS = {"bedA": "/home/juanfra/winloci_scratch/o3_excise/panel.json", "bedH": 
 BATCH_SECONDS = 420
 
 
+import re as _re
+
+
+def R_CIG(cigar):
+    return _re.findall(r"(\d+)([MIDNSHP=X])", cigar)
+
+
 def read_cons(path):
     out, name = {}, None
     for ln in open(path):

@@ -47,6 +47,19 @@ def main(bed, mode="t"):
         subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {W}/{bed}/targets.fa {d}/cons.fa > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
         fams = {n.split("|")[0]: att.get(n.split("|")[0], (None,))[0] for n in cons}
         pref2 = T.prefixes_from_paf(open(paf).read().splitlines(), fams)
+    if mode == "g":
+        import flagmetric as FM
+        gate_ok, gate_p, sig = library_gate()
+        reg_n = ga_n = 0
+        for name, seq in cons.items():
+            k = name.split("|")[0]
+            if k not in sc or not sc[k]["orig"]["on"]:
+                continue
+            h = rec[k]
+            reg_n += FM.registered(h["ident"], h["qstart"], h["qend"], h["qlen"]) >= 0.999
+            ga_n += FM.gate_aware(h["ident"], h["qstart"], h["qend"], h["qlen"], seq[:h["qstart"]], gate_ok) >= 0.999
+        print(f"{bed} [gate-aware metric]: gate {'OPEN' if gate_ok else 'closed'}; identity x coverage >= 0.999: registered {reg_n}, gate-aware {ga_n}")
+        return
     if mode in ("t3", "t4"):
         gate_ok, gate_p, sig = library_gate()
         print(f"library gate: {'OPEN' if gate_ok else 'closed'} p={gate_p:.3g}; clean reads {sig['reads']}, pure clips {sig['pure']}, G lengths {sig['g_lengths']}")

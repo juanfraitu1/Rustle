@@ -16,6 +16,7 @@ sys.path.insert(0, HERE)
 import attribute as A  # noqa: E402
 import augment as G  # noqa: E402
 import ends as E  # noqa: E402
+import flagmetric as FM  # noqa: E402
 import graph as GR  # noqa: E402
 import run_augment as RA  # noqa: E402
 import score as S  # noqa: E402
@@ -116,6 +117,13 @@ def cluster_info(V):
     return out
 
 
+def variant_gate(V):
+    import libsig
+    d = f"{W0}/{V}"
+    surv = {n for n, r in labels(V).items() if r["role"] == "S"}
+    return libsig.gate(libsig.signature(open(f"{d}/ref.sam"), keep=lambda n: n in surv))[0]
+
+
 def stage_truth(V, cons_file="cons.fa", out="truth"):
     d = f"{W0}/{V}"
     info = cluster_info(V)
@@ -139,11 +147,14 @@ def stage_truth(V, cons_file="cons.fa", out="truth"):
         q = f[0].split("|")[0]
         if q not in best or int(f[9]) > best[q]["m"]:
             best[q] = dict(m=int(f[9]), ident=int(f[9]) / max(1, int(f[10])), cov=(int(f[3]) - int(f[2])) / int(f[1]), ref=f[5], start=int(f[7]), end=int(f[8]),
-                           clip5=int(f[2]), clip3=int(f[1]) - int(f[3]), nm=int([t for t in f[12:] if t.startswith("NM:i:")][0][5:]))
+                           clip5=int(f[2]), clip3=int(f[1]) - int(f[3]), nm=int([t for t in f[12:] if t.startswith("NM:i:")][0][5:]), qs=int(f[2]), qe=int(f[3]), qlen=int(f[1]))
+    gate = variant_gate(V)
+    ori_by_key = {n.split("|")[0]: sq for n, sq in oriented.items()}
     for k, r in res.items():
         c = cp[info[k]["majority"]]
         h = best.get(k)
         on = bool(h) and h["ref"] == c["contig"] and h["start"] < int(c["end"]) and int(c["pos0"]) < h["end"]
+        r.update(idcov_gate=FM.gate_aware(h["ident"], h["qs"], h["qe"], h["qlen"], ori_by_key[k][:h["qs"]], gate) if on else None, gate=gate)
         r.update(on_true_copy=on, idcov=(h["ident"] * h["cov"]) if on else None, clip5=h["clip5"] if on else None, clip3=h["clip3"] if on else None, nm=h["nm"] if on else None)
     json.dump(res, open(f"{d}/{out}.json", "w"), indent=1)
     print(f"{V}: compared {len(res)} consensus sequences ({cons_file}) with their true transcripts and genome copies -> {out}.json")
@@ -369,6 +380,20 @@ def stage_trimreport(V, tag="trimmed", trimjson="trim.json"):
     print("D >= 1% totals:", dict(tot))
 
 
+def stage_gatereport(V):
+    """Amendment 17: registered vs gate-aware identity x coverage on the D >= 1% erased-copy clusters; new passes without core identity >= 0.999 are false passes"""
+    d = f"{W0}/{V}"
+    cp = copies()
+    tr = json.load(open(f"{d}/truth.json"))
+    keys = [k for c, k in erased_clusters(V).items() if float(cp[c]["D"]) >= 0.01]
+    n = len(keys)
+    reg = sum(tr[k]["idcov"] >= 0.999 for k in keys)
+    ga = sum(tr[k]["idcov_gate"] >= 0.999 for k in keys)
+    same = sum(abs(tr[k]["idcov"] - tr[k]["idcov_gate"]) < 1e-12 for k in keys)
+    false = sum(1 for k in keys if tr[k]["idcov_gate"] >= 0.999 > tr[k]["idcov"] and (tr[k]["core_identity"] is None or tr[k]["core_identity"] < 0.999))
+    print(f"{V}: gate {'OPEN' if tr[keys[0]]['gate'] else 'closed'}; clusters {n}; registered >= .999: {reg}; gate-aware: {ga} ({ga / n:.0%}); identical in {same}; false new passes: {false}")
+
+
 def stage_report(V):
     d = f"{W0}/{V}"
     lab = labels(V)
@@ -428,4 +453,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
