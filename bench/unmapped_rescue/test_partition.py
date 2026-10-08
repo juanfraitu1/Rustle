@@ -148,5 +148,21 @@ class SplicedCarry(unittest.TestCase):
         self.assertFalse(C[0, 0])
 
 
+class Cap(unittest.TestCase):
+    def test_keeps_the_variants_carried_by_most_reads(self):
+        import numpy as np
+        C = np.zeros((4, 10), dtype=bool)
+        C[0, :2] = True
+        C[1, :6] = True
+        C[2, :4] = True
+        C[3, :1] = True
+        K = np.ones_like(C)
+        V = [("sub", 20, "A"), ("sub", 21, "A"), ("sub", 22, "A"), ("sub", 23, "A")]
+        V2, C2, K2 = PT.cap_variants(V, C, K, 2)
+        self.assertEqual(V2, [("sub", 21, "A"), ("sub", 22, "A")])
+        self.assertEqual(C2.shape, (2, 10))
+        self.assertEqual(PT.cap_variants(V, C, K, 10)[0], V)
+
+
 if __name__ == "__main__":
     unittest.main()

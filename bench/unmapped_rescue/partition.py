@@ -15,6 +15,7 @@ END_WINDOW = 15
 MIN_LEAF = 3
 MIN_SPLIT = 6
 MAX_DEPTH = 6
+MAX_VARIANTS = 1500
 ALPHA = 0.05
 
 
@@ -75,6 +76,14 @@ def read_carry(sam_lines, cons, V, n_as_del=False):
     return names, C, K
 
 
+def cap_variants(V, C, K, limit=MAX_VARIANTS):
+    """keep the `limit` variants carried by the most reads (a very heterogeneous cluster would otherwise make the pair table huge); order preserved"""
+    if len(V) <= limit:
+        return V, C, K
+    keep = sorted(np.argsort(-C.sum(1), kind="stable")[:limit])
+    return [V[i] for i in keep], C[keep], K[keep]
+
+
 def find_blocks(C, K, cols, alpha=ALPHA, min_carry=MIN_LEAF):
     """connected components (>= 2 variants) of the graph whose edges are significantly positively associated variants of different columns: one-sided
     hypergeometric over the reads covering both, p < alpha / (number of pairs), both carried together by >= min_carry reads"""
@@ -132,6 +141,7 @@ def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_D
     if len(V) < 2:
         return leaf
     nm, C, K = read_carry(sam, cons, V, n_as_del)
+    V, C, K = cap_variants(V, C, K)
     blocks = find_blocks(C, K, [v[1] for v in V])
     best = choose_split(blocks, C, K, min_leaf) if blocks else None
     if best is None:

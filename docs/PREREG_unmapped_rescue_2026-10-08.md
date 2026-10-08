@@ -459,3 +459,15 @@ After the Amendment 20 run the leaf composition (`partition.json`) was perfect (
 | **20261016 (Amendment 20, spliced, the registered test)** | **0 / 12 of 12** | **12 -> 24 of 24 (12 of 12 split)** | 24 -> 24 | **0 of 60** | **1.00 / 1.00 / 1.00** |
 
 **Verdicts with the corrected scorer.** Amendment 18 stays NOT adopted (P3 baseline clause: baseline 79% not <= 60%; ISO purity 0.905; `map-hifi` clips long deletions). Amendment 19 would have met P1 to P4 (the original "not adopted" came from the scoring bug; edlib's unit-cost alignment is still a poor aligner for long gaps, and its ISO split worked through correlated noise). **Amendment 20 meets P1 to P4 on the fresh world: PART is adopted as an opt-in post-clustering step** (`partition.py`, `PART_ALIGN=splice`). In the Amendment 20 world the frozen clustering had already separated every sibling pair (24 of 24 at baseline), so that world does not test the sibling gain; the 20261014 and 20261015 worlds, where the frozen edge rule joined 5 and 4 sibling pairs, show it (19 -> 24 and 23 -> 24 with 5 and 1 splits).
+
+### Amendment 18/20 real beds, descriptive (PART with `splice:hq -uf`, N as deletion; candidates aligned to the unmasked genome; the "best candidate" picks, per cluster, the candidate that matches the erased copy best, so it is an oracle upper bound, not a pipeline output)
+
+| | dev A (212 clusters on the erased copy) | H (40; not blind) |
+|---|---|---|
+| clusters split | 72 (34%); leaves per split cluster 2: 33, 3: 9, 4: 8, 5: 9, 6: 6, 7: 5, 12: 1, 14: 1 | 19 (48%); up to 12 leaves |
+| gate-aware identity x coverage >= 0.999: frozen consensus -> best candidate | 80 -> **106** | 17 -> **26** |
+| the split clusters only | 40 -> 66 | 9 -> 18 |
+| edit distance to the erased copy, split clusters | 579 -> 239 | 195 -> 10 |
+| the clusters with > 200 edits (the original motivation) | 22 of 212, **split 0**, best candidate at 0.999: 0 | 3, split 0, 0 |
+
+PART finds structure in a third to a half of the real clusters and, taking the best candidate, raises the count at the registered threshold by 26 (A) and 9 (H); the cluster-level evidence is a real mixture of members. It does NOT touch the 22 clusters with > 200 edits: their reads are not a mixture separable by linked variant columns (they are far from the assembled copy as a whole, probably reads that belong to another copy or isoform structure than the one the genome label points at). Unknown on real data: how many of the 417 candidates are real transcripts (no truth), and whether clusters with 5 to 14 leaves are over-split (the synthetic control splits 0 of 12, but real reads carry correlated errors and read-end heterogeneity the simulation lacks).
