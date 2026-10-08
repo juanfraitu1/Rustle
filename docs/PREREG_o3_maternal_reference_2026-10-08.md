@@ -135,3 +135,21 @@ developed is not validated: the `pat` run is the substrate held back).
 other haplotype where it is present) with the paired-read plot, the divergence pile, the fate bars and the chain's view.
 
 **A1.5 Cost.** About doubles the compute of S6 (second IsoCon pass, second set of in-house batches, second set of contig alignments). No new index.
+
+---
+
+## Amendment 2 (2026-10-08, written during Task 4 after the truth loci were built and BEFORE any read was labelled or mapped to a locus) — p12 is not a mat-absent locus by the registered rule
+
+Finding (from the PAFs the prereg names as the authority, not from the artifact flags): `truth_lift` classes p12 `T?` (lift 0.914, 112 mismatches) and lifts it to
+`CM054594.2:27,426,744-27,441,619`, where `mat` carries a locus matching p12's body at identity 0.972 / coverage 1.0 (asm20 -N 50 -p 0.5). The chr12 LRPAP1 cluster
+has 4 loci on `pat` (22.55, 23.07, 24.79, 30.2 Mb) and 3 on `mat` (25.87, 27.43, 34.29 Mb), but the lifts are many-to-one (c01 and c03 both lift to mat 34.29 Mb, c01 with
+222 mismatches), so the registered synteny rule cannot say WHICH `pat` locus has no `mat` counterpart. Consequence for S3.2 / S5: under the registered rule the only
+LRPAP1 locus absent from `mat` is the chrY copy (sex control); p12 is NOT a mat-absent locus.
+Ruling (no new threshold): p12 is kept as a DESCRIPTIVE locus, kind `lrpap1_desc` = an LRPAP1 locus on a chromosome `_pri` took from the truth haplotype whose lift
+class is `T?`. It gets a fate row, side-by-side panels and the p12 chain line; it carries NO bar verdict, is not counted in R1-R4's expressed set, and is labelled
+in the artifact as "diverged counterpart on the reference". The S5 prediction for p12 ("absorbed on the chr14 ortholog of p14") stands as a prediction about where
+its reads go; it is no longer a test of the mat-absent claim. The copy-number statement for LRPAP1 on chr12 is "4 loci on pat, 3 on mat; which one is extra is not
+resolved by the registered rule".
+Amendment 2, labelling note (same day, before any fate was computed): on `pat` all 83 reads whose primary record lies on p12 are TIED with p14 (score ratio within 0.98; the two
+copies differ by 4 bp in 2,446), so the registered untied-placement label gives p12 zero reads. Descriptive loci (`lrpap1_desc`) are therefore labelled by the read's
+PRIMARY record on the truth haplotype, ties allowed, restricted to the LRPAP1 net. No catalog locus and no bar uses this rule; the tie itself is reported as a result.
