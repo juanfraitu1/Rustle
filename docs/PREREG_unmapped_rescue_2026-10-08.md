@@ -157,3 +157,33 @@ A full-pool version (consensus built from all unmapped reads, mapping the same r
 **Pipeline (the same truth-free steps).** (1) the net = LRPAP1 reads whose primary on `mat` has `de` > 0.00958 (the registered allele cutoff) or is unmapped; (2) seed-round clustering of the net (same edge rule), consensus per cluster; (3) align each consensus to `mat` and `pat` (identity x coverage; which locus it lands on, in particular pat chr12 22.55 Mb, the copy IsoCon's transcripts matched); (4) augmented reference as in Amendment 7 (mat primaries from `R_LRP.mat.bam` plus the consensus sequences): which reads move, their `de` before and after, false moves of reads of other copies;
 (5) the consensus placed among the family's nodes: its identity to each LRPAP1 copy transcript on `mat` (the copies' RefSeq/Liftoff intervals), nearest node first.
 **Readings and bar.** Report each step. Bar for the example to count as a demonstration: a cluster whose consensus matches a pat-only locus at identity x coverage >= 0.999 and a mat locus at < 0.999 (the O3 flag), AND false moves <= 5% of the reads that were on the other copies.
+
+### Amendment 6 result (bed H, 2026-10-08; bed A not run, see below)
+
+| H, 5,313 deleted-copy reads | rescued correct | wrong | unattributed | wrong / joined |
+|---|---|---|---|---|
+| pooled frozen rule | 4,255 (80.1%) | 3 | 1,055 | 0.07% |
+| hybrid (residual reads one by one) | 4,421 (83.2%) | 71 | 864 | 1.58% |
+| B1 estimate (410/500 scaled) | 4,357 (82.0%) | | | |
+
+Residual reads: 2,014 of 6,272 (32.1%); extra BLAST 506 s (about 0.25 s per read, so per-read attribution of the whole pool is about 1,580 s).
+**Decision rule:** rescued-correct >= pooled (4,421 >= 4,255, met), >= B1 scaled (4,421 >= 4,357, met), wrong <= 5% of joined (1.58%, met), extra alignment work <= 25% of the whole pool (32.1%, **NOT met**).
+**Verdict: the hybrid does not meet the registered rule on H.** The pool-first net is reported as better than A13 and cheaper than per-read attribution, not as a net that rescues more than per-read attribution. The hybrid's +166 reads over the pooled rule and +64 over B1 are a descriptive observation, not a claim.
+Bed A was not run: the rule needs BOTH beds, so the H failure fixes the verdict and a dev run cannot change it (disclosed; an hour of BLAST saved).
+
+### Amendment 7 result (bed H, 2026-10-08, `bench/unmapped_rescue/run_augment.py`)
+
+Building half: 2,656 of the 5,313 unmapped deleted-copy reads (seed 1) + the 959 background reads, clustered with the frozen rule (coverage 95.1%, purity 1.0000, 44 clusters, 0 background reads in a family cluster), abPOA consensus per cluster. The other 2,657 unmapped D reads never entered clustering.
+Reads are aligned to the consensus sequences with the baseline command; a read moves iff the consensus alignment score is strictly higher than its genome primary's (unmapped reads: identity >= 0.98, query cover >= 0.80).
+
+| class (non-circular half run) | n | moved | to own family | median de before -> after |
+|---|---|---|---|---|
+| held-out unmapped D | 2,657 | 2,505 (94.3%; 94.6% of the 2,648 whose family has a consensus) | 2,505 | unmapped -> 0.0011 |
+| absorbed D (genome primary on a paralog) | 11,973 | 2,250 (18.8%; 82.4% of the 2,728 whose family has a consensus) | 2,247 | 0.1237 -> 0.0031 |
+| S (survivor copies' reads) | 41,727 | 0 (0.00%) | | |
+| background | 959 | 142 (all onto background-only clusters built from them), 0 onto a family cluster | | |
+
+Bars: (a) >= 80% of held-out unmapped D with a family consensus: 94.6%, **met**. (c) false moves of S <= 5%: 0.00%, **met**; background onto a family cluster <= 5%: 0.0%, **met**. (b) reported: absorbed reads move only when the consensus is closer (median de 12.4% -> 0.3%), 99.9% of the moves onto the own family.
+Full-pool self-consistency (47 consensus from all unmapped D, same reads mapped back): unmapped D 4,973 of 5,313 (93.6%), absorbed D 2,248 (2,243 own family), S 2 of 41,727 (0.005%, both own-family consensus), background 0 onto a family cluster. Not a result; shown to confirm the half run loses little.
+Prediction check: (a) predicted near 90%, observed 94.6%; (b) predicted a minority, observed 18.8% (82% in families with a consensus); (c) predicted below 1%, observed 0.00%.
+Caveats: the score compares a spliced genome alignment with an unspliced transcript alignment; S moving 0 of 41,727 is the control that the comparison does not favor the consensus by construction. A concatenated reference was not built (no 13 GB index); the primary is the one it would give, MAPQ not reproduced.

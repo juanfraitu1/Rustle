@@ -56,5 +56,12 @@ class Moves(unittest.TestCase):
         self.assertEqual((m["D_unm"]["n"], m["D_unm"]["moved"], m["D_unm"]["moved_to_own_family"]), (4, 2, 1))
 
 
+    def test_moves_onto_a_cluster_with_a_family_are_counted_separately(self):
+        cons_fam = {"cA": "F1", "cBG": None}
+        rows = [("bg", "bg", None, rec(100, 0.005, ref="cA"), "cA"), ("bg", "bg", None, rec(100, 0.005, ref="cBG"), "cBG")]
+        m = G.move_metrics(rows, cons_fam)
+        self.assertEqual((m["bg"]["moved"], m["bg"]["moved_to_a_family_cluster"]), (2, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -24,7 +24,7 @@ def move_metrics(rows, cons_family, min_identity=0.98):
     (and, for unmapped reads, de <= 1 - min_identity); 'own family' = the consensus' cluster majority family equals the read's family."""
     out = {}
     for cls, fam, g, c, cname in rows:
-        o = out.setdefault(cls, dict(n=0, moved=0, moved_to_own_family=0, _before=[], _after=[]))
+        o = out.setdefault(cls, dict(n=0, moved=0, moved_to_own_family=0, moved_to_a_family_cluster=0, _before=[], _after=[]))
         o["n"] += 1
         src, r = new_primary(g, c)
         if src != "consensus":
@@ -33,6 +33,7 @@ def move_metrics(rows, cons_family, min_identity=0.98):
             continue
         o["moved"] += 1
         o["moved_to_own_family"] += cons_family.get(cname) == fam
+        o["moved_to_a_family_cluster"] += cons_family.get(cname) is not None
         if g is not None:
             o["_before"].append(g["de"])
         o["_after"].append(r["de"])
