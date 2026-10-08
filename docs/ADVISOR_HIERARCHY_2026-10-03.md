@@ -38,3 +38,8 @@ stricter edge test; confirm which before building anything new.
 ## Do not re-propose
 A subfamily level as a repair for fragmentation (§5k), a broad/recent two-tier hierarchy (rows 9, 311), MCL inflation
 sweeps as a hierarchy (not nested), superfamily components over the cluster graph (row 654).
+
+## Terminology (2026-10-07)
+When he says Soto's or Yoo's sets are "multi-copy gene families", agree: they are, specifically the young SD-embedded
+subset. SD, duplicon and expansion are the layers below the family, not alternatives to it; the wording and the
+sources' own usage are in `docs/TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 10 scoring (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): the chain's candidates (control_test.py classify, run with
+"""Amendment 10 scoring (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): the chain's candidates (control_test.py classify, run with
 --l and --w on the refabsent work dir) against the truth of real reference-absent loci (refabsent_truth.py).
 
   D1  every expressed beyond-delta locus with >= 20 reads gets a FLAG (candidate with >= 2 transcripts) whose best haplotype hit

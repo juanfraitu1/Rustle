@@ -9,7 +9,7 @@ replication (register 858 / 1085: famCN, universe and the 71 curated genes are t
 
 ## 0. The question
 
-The best replication so far is Soto's literal recipe on native CHM13 v1.0 (`docs/SOTO_REPLICATION_STATUS_2026-09-28.md`
+The best replication so far is Soto's literal recipe on native CHM13 v1.0 (`docs/archive/2026-09/SOTO_REPLICATION_STATUS_2026-09-28.md`
 §1.1): ARI 0.7096 / 235 of 491 families exact (median-MAD), 0.7039 / 261 (mean-MAD). Its non-exact families were
 attributed (median arm) to over-merge we cannot split (127), edges we lack (105: 62 fragments at 90-98% identity with no
 map-back hit, **49 where SEDEF has a >= 98% row but minimap2 finds nothing**, 17 linked only via non-eligible members),

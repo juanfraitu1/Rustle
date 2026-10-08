@@ -50,7 +50,7 @@ lines. Nothing about arms B-D has been computed.
 Run on 2026-09-30 after this file was committed (`af100ada`, sha1 `f1cfdab2f50b4d841ee5d36b47fd2da6c73d5d45`). Deviation (form only): the
 arms live in a new script, `bench/soto_m2/soto_m2_unit_cover_cn.py`, so that `soto_m2_unit_cover.py` stays as KEY=unitcover ran it; arm A
 reproduces KEY=unitcover exactly (asserted: 0.439 / 0.473, same exact / recall / precision / clean shares). 9 s, light lock. Output
-`docs/SOTO_UNIT_COVER_CN_2026-09-30.md`, per gene `docs/SOTO_UNIT_COVER_CN_2026-09-30.tsv`.
+`docs/archive/2026-09/SOTO_UNIT_COVER_CN_2026-09-30.md`, per gene `docs/SOTO_UNIT_COVER_CN_2026-09-30.tsv`.
 
 **VERDICT (section 3): REFINES.** Arm D with S1C famCN, held-out: mean Jaccard 0.660 (arm A 0.473), clean-gene false-multi 0.157 (arm A
 0.303), permutation p 0.001.

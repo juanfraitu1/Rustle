@@ -1,6 +1,6 @@
 # famsim — controlled gene-family simulations that prove the condition they test
 
-**2026-10-02.** Design: `docs/FAMSIM_DESIGN_2026-10-02.md`. Code: `bench/famsim/` (Python 3, stdlib + pysam + numpy/scipy;
+**2026-10-02.** Design: `docs/archive/2026-10/FAMSIM_DESIGN_2026-10-02.md`. Code: `bench/famsim/` (Python 3, stdlib + pysam + numpy/scipy;
 minimap2 and samtools on PATH; the Rust binaries from `--bin` / `RUSTLE_BIN`, default
 `/mnt/linuxdisk/home/juanfraitu/rustle_target/release`). Tests: `python3 bench/famsim/test_famsim.py` (16, < 1 s).
 

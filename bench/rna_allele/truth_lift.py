@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Truth for docs/PREREG_rna_allele_haplotype_count_2026-10-01.md, step 3: lift each gene's exon union from `_pri` to its B chromosome
+"""Truth for docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md, step 3: lift each gene's exon union from `_pri` to its B chromosome
 (the other haplotype of KB3781) through the primary minimap2 asm5 alignments, and count exonic differences.
 
 Input PAFs: query = `_pri` chromosome in 10 Mb chunks named `<pri>:<offset>`, target = the B chromosome; `--cs` present.

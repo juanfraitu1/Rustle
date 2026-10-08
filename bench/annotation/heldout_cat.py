@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 3 of docs/CAT_RERUN_PROTOCOL_2026-10-01.md: the held-out family test (docs/PREREG_heldout_families_2026-09-20.md,
+"""Step 3 of docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md: the held-out family test (docs/archive/2026-09/PREREG_heldout_families_2026-09-20.md,
 Test 2) scored with the Soto S1C join by `Gene ID` (rule R5), so it can be run on CAT/Liftoff v2.0.
 
 `score.py heldout --soto` (the registered scorer) keys genes on the GFF `Name=` and joins Soto by `Gene Name`. Under the
@@ -13,7 +13,7 @@ script reuses `score.heldout_load_genes`, `score.heldout_predicted_clusters`, `l
                 --join id   : Soto by `Gene ID` (soto_gene_family_by_id: same exclusion rule, a Gene ID carrying more
                               than one distinct Family ID is excluded; `N/A` / empty dropped).
               Per chromosome: score.py heldout's summary line and JSON (same keys). Per arm: the pooled numbers of
-              docs/HELDOUT_FAMILIES_RESULT_2026-09-20.md (mean over all the arm's truth families of F / sens / prec;
+              docs/archive/2026-09/HELDOUT_FAMILIES_RESULT_2026-09-20.md (mean over all the arm's truth families of F / sens / prec;
               an unmatched family scores 0 and is kept). A .gz GFF is read with the same logic as
               score.heldout_load_genes.
     universe  which Soto genes / families each join puts in each chromosome's truth, and why they differ

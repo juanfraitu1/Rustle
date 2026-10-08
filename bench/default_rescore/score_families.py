@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Family scores of one clusters file on one contig against the human family truths, with `family_score` called as the container-headroom
-run called it (docs/CONTAINER_HEADROOM_2026-09-30.md): clusters and truth restricted to the contig, `--chrom ALL --pairwise --per-family`.
+run called it (docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md): clusters and truth restricted to the contig, `--chrom ALL --pairwise --per-family`.
 
     score_families.py --fs family_score --clusters X.fam.clusters.tsv --contig chr16 --label NAME --out NAME.json [--work DIR]
 

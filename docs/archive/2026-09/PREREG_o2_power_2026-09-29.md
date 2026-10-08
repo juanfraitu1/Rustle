@@ -2,7 +2,7 @@
 
 **Written 2026-09-29 BEFORE any O2 status was tabulated by `n_decisive`, by copy count, or against simulated truth.**
 Analysis only: no change to O2's rule, its defaults, `src/` or `bench/`; nothing is committed. Code and outputs live in
-`/mnt/linuxdisk/tmp/rustle_figures_dev/o2_power/`. Origin of the question: `docs/VAULT_METHODS_AUDIT_2026-09-28.md`
+`/mnt/linuxdisk/tmp/rustle_figures_dev/o2_power/`. Origin of the question: `docs/archive/2026-09/VAULT_METHODS_AUDIT_2026-09-28.md`
 item 3 ("Coverage-power calculation (longcallR: power above 80% only over about 50× at SOR = 2): could justify the O2
 abstain rate. A framing point, not a lever."). Human and gorilla numbers are never pooled.
 

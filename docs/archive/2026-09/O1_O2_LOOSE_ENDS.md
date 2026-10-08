@@ -1,3 +1,5 @@
+> ⚠ **Archived 2026-10-07 — superseded.** The 2026-09-05 queue was worked through (ledger `../../o1_ledger.md` §6fg–§6fl); the O3 flag pass it ends with is now tracked in `../../O3_STATUS.md`. Open items live in `../../PENDING_2026-10-04.md`. Kept for the trail.
+
 # O1 → O2 loose ends — the ordered queue (2026-09-05)
 
 Assessment after §6fg (orphan reporting closed). Six loose ends between O1's catalog and O2's assignment;
@@ -17,11 +19,11 @@ Not in the queue (measured, settled): the opt-in forms of §6fd (`--origin-subst
 `--read-star-unit`) — rows 707–710; MCL15/MCL28 residual artefacts (cell B, never scored); the human PMS2P14-type
 exon-less block spans (Soto slice only); MCL scattering of Soto families (row 694, 9 members).
 
-Cross-references: `docs/ROADMAP_O1_O2.md`, `docs/O1_O2_COMPOSITION.md`, `docs/CHAPTER_O1_O2_COMPOSITION_DRAFT.md`,
+Cross-references: `docs/archive/2026-09/ROADMAP_O1_O2.md`, `docs/archive/2026-09/O1_O2_COMPOSITION.md`, `docs/CHAPTER_O1_O2_COMPOSITION_DRAFT.md`,
 `docs/NEGATIVE_RESULTS_REGISTER.md` rows 689–712, ledger `docs/o1_ledger.md` §6et–§6fg.
 
 ## After the queue: the O3 flag pass (§6fl, 2026-09-06)
-Done (`bench/o3_flag_pass.py`, PREREG `docs/PREREG_o3_flag_pass_2026-09-06.md`; P1 held, P2 held on the 3
+Done (`bench/o3_flag_pass.py`, PREREG `docs/archive/2026-09/PREREG_o3_flag_pass_2026-09-06.md`; P1 held, P2 held on the 3
 contigs and failed genome-wide, P3 missed by 4 points, P4 done). The four follow-ups (2026-09-06, §6fm–§6fn):
 (1) the 15 suspect controls → 13 are the assembly's haplotype at 0.5 %, 2 exposed an L2 defect (extents
 containing other families' units; fixed: clip at every unit, hit must touch the unit; reruns `sweep_v14`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 12 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): the `o3_candidates` input made from Amendment 7's held-out panel.
+"""Amendment 12 (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): the `o3_candidates` input made from Amendment 7's held-out panel.
 
 From `panel.json` (per family: `fam`, `mask` = the deleted copy, `keep` = the surviving copies' clean intervals, 0-based half-open) write:
 

@@ -146,7 +146,7 @@ polish-removed refs have ≥ 2): of the FLAIR-only / isoseq-only refs absent fro
 exactly one such read** (gorilla FLAIR-only: 94.5%). Pass-1 needs two, so those are unreachable by
 construction and FLAIR's "median 5-7 reads" is quantification, not chain evidence. The **13.2% / 11.0%
 residue with ≥ 2 exact-chain reads (75 human cases) is entirely the coordinate de-duplication defect of
-`docs/PREREG_primary_dedupe_2026-09-22.md`** — confirmed, fixed behind `--keep-coordinate-duplicates`, and
+`docs/archive/2026-09/PREREG_primary_dedupe_2026-09-22.md`** — confirmed, fixed behind `--keep-coordinate-duplicates`, and
 refuted as a default because the shipped polish was fitted on the de-duplicated counts (polished chains fall
 on both substrates; gorilla precision rises 3.2 pts, cells 10 → 12/15).
 
@@ -182,7 +182,7 @@ and the tools match it only at singleton level (isoseq). Among the ≥ 2-read su
 extra introns lie at the 5′ side in 54 and the 3′ side in 56 (human), 19 / 12 (gorilla); the ≥ 2-read junction
 shifts are the 3-bp NAGNAG case (16 of 20). Priced and refuted on this residue: an absolute-support exemption
 from the fraction rule (r1063) and an internal-priming-guarded ISM exemption for 3′-shorter isoforms (r1064).
-The one lever left is the polish re-fit on true counts (`docs/PREREG_polish_refit_true_counts_2026-09-23.md`).
+The one lever left is the polish re-fit on true counts (`docs/archive/2026-09/PREREG_polish_refit_true_counts_2026-09-23.md`).
 
 ## Two better universes than the whole annotation (2026-09-23, user's point)
 

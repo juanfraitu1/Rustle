@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Readthrough junctions: what minimap2 -G 50k would remove vs cost, and an annotation-free 'polyA site inside
-the intron' rule. Report: docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md
+the intron' rule. Report: docs/archive/2026-09/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md
 usage: readthrough_rules.py TAG BAM GFF CHROM OUTDIR [FASTA]"""
 import sys, os, re, bisect, collections, pickle
 import pysam

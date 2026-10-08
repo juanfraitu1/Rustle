@@ -49,7 +49,7 @@ possible held-out outcome is SAFE-INERT (§7).
 ### 1.1 Verbatim from the frozen file's docstring (the RULE block)
 
 ```
-RULE (binding once pre-registered; docs/PREREG_o1_cover_growth_2026-09-29.md §1)
+RULE (binding once pre-registered; docs/archive/2026-09/PREREG_o1_cover_growth_2026-09-29.md §1)
   Input: an F1v2 GTF in which every bridge transcript group is its own gene_id and carries `fusion_of`
   (F1v2.gtf), and the shipped families stage run on that GTF (`mcl_families --from-gtf`, driver flags), i.e. its
   `loci.paf`. The graph G = the shipped edge graph of that run (emu.py fac9a560 = the binary, gated byte for byte).

@@ -1,6 +1,6 @@
 # Intron placeholders — tested, and the reason they fail closes the containment question
 
-Run 2026-09-20 against `docs/PREREG_intron_placeholder_2026-09-20.md` (committed `521c2ef9` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_intron_placeholder_2026-09-20.md` (committed `521c2ef9` before any
 placeholder was aligned). Tool: `bench/intron_placeholder_edges.py`. Population: the identical
 **19 TRUE / 57 FALSE** pairs as §6t7 and §6t8 — those the shipped rule rejects at containment ≥ 0.90 on
 held-out chr2/chr8/chr10.

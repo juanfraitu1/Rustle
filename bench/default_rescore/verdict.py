@@ -11,7 +11,7 @@ import argparse
 import csv
 import json
 
-# stored reference values (docs/SPLICED_COPY_SUPPORT_2026-10-04.md Amendment E table; docs/CONTAINER_HEADROOM_2026-09-30.md, out/scores.human.chr16.json)
+# stored reference values (docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md Amendment E table; docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md, out/scores.human.chr16.json)
 REG_E = {"P": dict(own=23, found=10, locus=19, found_any=10), "GOOD": dict(own=21, found=6, locus=18, found_any=6),
          "ALL": dict(own=24, found=2, locus=16, found_any=2)}
 D_STORED = {"u2": (0.588, 0.714, 0.645), "compara": (0.5, 1.0, 0.667)}

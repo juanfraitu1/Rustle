@@ -174,7 +174,7 @@ struct Args {
     /// Output prefix; writes `<out>.families.tsv` and `<out>.assignments.tsv`.
     #[arg(long)]
     out: String,
-    /// ⭐ §6m5 / PREREG `docs/PREREG_assembler_widening_2026-09-18.md`: READ-ISOFORM WIDENING for the
+    /// ⭐ §6m5 / PREREG `docs/archive/2026-09/PREREG_assembler_widening_2026-09-18.md`: READ-ISOFORM WIDENING for the
     /// `--gtf` assembly. The assembler groups reads by EXACT intron chain and filters on that chain's own
     /// read count, so a junction carried by many reads spread over many chains produces no surviving group
     /// and the junction disappears (measured on NPIP: dropped junctions have a median largest-chain of 2
@@ -197,7 +197,7 @@ struct Args {
     /// Composes with the assembly knobs: `--read-isoform-k`, `RUSTLE_JUNCTION_MAJORITY` (default ON since
     /// 2026-09-21; `=0` restores the old strict-canonicity behaviour), `RUSTLE_GTF_SECONDARY`,
     /// `RUSTLE_GATE_CENSUS`, and `RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1|r2|r3|list:<path>` (opt-in, unset/`off`
-    /// byte-identical; `docs/PREREG_readthrough_ends_representatives_2026-09-25.md`): per region (= per contig under
+    /// byte-identical; `docs/archive/2026-09/PREREG_readthrough_ends_representatives_2026-09-25.md`): per region (= per contig under
     /// `--genome-wide`), junctions whose donor's transcripts mostly end inside the intron (`U >= 20*S`; `rq1` also
     /// needs B's own start cluster and first exon, `3*V1 >= 5*S`) are flagged from the primary reads, and every pool
     /// alignment carrying one leaves before pass 1; writes `<out>.readthrough_junctions.tsv` + `params.tsv` rows
@@ -214,7 +214,7 @@ struct Args {
     assemble_only: bool,
 
     /// ⭐ §6za JUNCTION MODE for the `--assemble-only` transcript product
-    /// (`docs/PREREG_assembly_precision_levers_2026-09-23.md`): `strict` = every junction of a transcript
+    /// (`docs/archive/2026-09/PREREG_assembly_precision_levers_2026-09-23.md`): `strict` = every junction of a transcript
     /// must be canonical (GT-AG / GC-AG / AT-AC) on one strand; `majority` = the §6m8 family-recovery rule
     /// that tolerates a minority of short non-canonical junctions when a canonical majority fixes the
     /// strand. The majority rule was adopted for FAMILY recovery (NPIPB12); measured on the transcript
@@ -335,7 +335,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     gtf_tpm: bool,
 
-    /// ⭐ RG3 REGROUP AFTER POLISH (`docs/PREREG_locus_representatives_2026-09-26.md` §2.1; reference
+    /// ⭐ RG3 REGROUP AFTER POLISH (`docs/archive/2026-09/PREREG_locus_representatives_2026-09-26.md` §2.1; reference
     /// implementation `rg3.py` ec17e540, to which the GTF is byte-identical on the dev contigs). A `gene_id`
     /// is the assembler's PRE-polish shared-junction component, named after its representative's non-unique
     /// base tid. The polish can leave one holding transcripts that no longer belong together: a GHOST (the
@@ -360,9 +360,9 @@ struct Args {
     /// J is the only link between the other transcripts of its `gene_id` upstream and downstream of J, when the
     /// upstream side has a PAS-proven 3' cluster of reads ending inside J's intron (`--polish-tes`'s cluster rule) and
     /// the downstream side reads starting inside it at their own promoter (the readthrough filter's V1 >= 1).
-    /// `f1`: every bridge (`docs/PREREG_f1_bridge_locus_2026-09-28.md`: EFFECTIVE on gorilla, ~40 annotated genes cut
+    /// `f1`: every bridge (`docs/archive/2026-09/PREREG_f1_bridge_locus_2026-09-28.md`: EFFECTIVE on gorilla, ~40 annotated genes cut
     /// per sample, fails on human A119b). `f1v2`: only bridges carrying fewer reads than EACH side they separate,
-    /// share < 1/2 (`docs/PREREG_f1v2_readshare_2026-09-29.md`: EFFECTIVE on both human libraries). The other
+    /// share < 1/2 (`docs/archive/2026-09/PREREG_f1v2_readshare_2026-09-29.md`: EFFECTIVE on both human libraries). The other
     /// transcripts of a bridged `gene_id` split into exon-overlap pieces named as `--gtf-regroup` names them (so it
     /// replaces `--gtf-regroup`, and the two are exclusive); bridges become `<gene_id>.fus<k>` with `fusion_of` /
     /// `fusion_junction` attributes. Runs LAST, on the final lines; no line added, removed or moved, chains unchanged.
@@ -370,10 +370,10 @@ struct Args {
     /// (every structural junction with its evidence), `<out>.bridges.tsv` (f1v2: each bridge's reads and decision)
     /// and `params.tsv` rows. Needs `--assemble-only` and one region per contig.
     /// **Default `f1v2` under `--assemble-only`** (2026-09-29, the user's decision on the F1v2 held-out Outcome and
-    /// its family-level side result, `docs/PREREG_o1_cover_growth_2026-09-29.md` Outcome); `--bridge-regroup off`
+    /// its family-level side result, `docs/archive/2026-09/PREREG_o1_cover_growth_2026-09-29.md` Outcome); `--bridge-regroup off`
     /// restores the 2026-09-25 products byte for byte (no families GTF, no side tables, no `params.tsv` rows).
     /// Outside `--assemble-only`, or with `--families`, the default is off and an explicit arm is refused.
-    /// `f1units` (OPT-IN, `docs/PREREG_container_units_v2_dev_2026-09-30.md` Part C): F1's bridge junctions with NO
+    /// `f1units` (OPT-IN, `docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md` Part C): F1's bridge junctions with NO
     /// read-share rule, and instead of leaving each bridge transcript T out of the families input it is REPLACED there
     /// by its UNITS `<T>.U1 ..` (the exon runs between its bridge introns, in transcription order, T's `reads`, the
     /// attributes `fusion_of` / `fusion_unit` / `fusion_junction` / `fusion_locus` / `fusion_gene` / `fusion_detector` /
@@ -403,7 +403,7 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     polish_fraction_min_reads: u64,
 
-    /// ⭐ §6za RETAINED-INTRON FILTER for `--assembly-polish` (`docs/PREREG_assembly_precision_levers_2026-09-23.md`).
+    /// ⭐ §6za RETAINED-INTRON FILTER for `--assembly-polish` (`docs/archive/2026-09/PREREG_assembly_precision_levers_2026-09-23.md`).
     /// Drop a transcript when a junction of ANOTHER transcript at its locus (same `gene_id`, same strand)
     /// lies strictly inside one of its exons and that junction's support — the reads of every surviving
     /// transcript at the locus that carries it — is at least this many times the transcript's own reads.
@@ -688,7 +688,7 @@ struct Args {
     /// under the default AS-tied gate every surviving read has margin 0, so Eichler discards 100% of
     /// them by construction. Run with `--no-as-tied-only` for the honest comparison — measured on the
     /// Y ampliconic genes, 69.8% of reads have margin 0 and his rule discards 83.7% of the
-    /// multi-mapping population, which is precisely O2's subject (`docs/EICHLER_COMPARISON_2026-09-21.md`).
+    /// multi-mapping population, which is precisely O2's subject (`docs/archive/2026-09/EICHLER_COMPARISON_2026-09-21.md`).
     ///
     /// ⚠ T is a convention, not a constant: 4,687 assignments at T=1 vs 1,588 at T=20 on that substrate.
     /// Reporting only; changes no decision. Default off, byte-identical schema when unset.
@@ -1206,7 +1206,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_pool_locus_support: bool,
 
-    /// §6z6 (`docs/PREREG_primary_dedupe_2026-09-22.md`): keep PRIMARY reads that share
+    /// §6z6 (`docs/archive/2026-09/PREREG_primary_dedupe_2026-09-22.md`): keep PRIMARY reads that share
     /// (chrom, start, end, intron chain) with another read of the region instead of collapsing them to one.
     /// The historical key (default) was written to drop a record fetched twice from two overlapping copy
     /// windows, but it also collapses DISTINCT molecules with identical coordinates — 25-32% of primary
@@ -2797,7 +2797,7 @@ struct RegroupStats {
     lines_changed: usize,
 }
 
-/// ⭐ `--gtf-regroup` — RG3, "regroup after polish" (`docs/PREREG_locus_representatives_2026-09-26.md` §2.1). The
+/// ⭐ `--gtf-regroup` — RG3, "regroup after polish" (`docs/archive/2026-09/PREREG_locus_representatives_2026-09-26.md` §2.1). The
 /// frozen reference implementation is `rg3.py` ec17e540; this port is byte-identical to it on the dev contigs, and
 /// the rule below is its docstring.
 ///
@@ -2929,7 +2929,7 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
 /// attribute. `mode` is "none" (no-op), "mono" (mono-exonic support floor) or "full" (floor + the
 /// support-aware ISM collapse). Returns (ism_dropped, mono_dropped, floor) for the log line.
 ///
-/// Validated in `bench/ASSEMBLY_POLISH.md` against `docs/PREREG_assembly_polish_2026-09-19.md`: the mono
+/// Validated in `bench/ASSEMBLY_POLISH.md` against `docs/archive/2026-09/PREREG_assembly_polish_2026-09-19.md`: the mono
 /// floor costs zero matching intron chains on both chr20 and the held-out chr11; the ISM collapse trades
 /// chains for precision.
 #[allow(clippy::too_many_arguments)]
@@ -5888,7 +5888,7 @@ fn main() -> Result<()> {
     let bridge_list = resolve_bridge_units_list(&args, bridge_mode)?;
     // F1's read evidence is read unless a units list names the cuts
     let bridge_evidence_on = bridge_mode.is_some() && bridge_list.is_none();
-    // RUSTLE_READTHROUGH_JUNCTIONS (docs/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
+    // RUSTLE_READTHROUGH_JUNCTIONS (docs/archive/2026-09/PREREG_readthrough_ends_representatives_2026-09-25.md): parsed before any
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
     let rt_switch = rustle::denovo_assemble::ReadthroughSwitch::from_env()?;
     let rt_rule = rt_switch.as_ref().map(|s| s.rule);
@@ -6410,7 +6410,7 @@ fn main() -> Result<()> {
             wins.iter().map(|(c, _, _)| c.clone()).collect();
         let genome = genome_for_multi(&win_contigs)?;
         let t_read = std::time::Instant::now();
-        // §6zb streaming pass-1 (`docs/PREREG_streaming_assembly_2026-09-23.md`): under --assemble-only with
+        // §6zb streaming pass-1 (`docs/archive/2026-09/PREREG_streaming_assembly_2026-09-23.md`): under --assemble-only with
         // no read-level extras, reduce every record on arrival and never materialise the reads. Every other
         // configuration takes the historical path below unchanged.
         let streaming = args.assemble_only
@@ -6513,7 +6513,7 @@ fn main() -> Result<()> {
             // both queries (every reader yields each record overlapping `[lo, hi)`), so a record from
             // window i that overlaps an EARLIER window j was necessarily fetched by j and is skipped here.
             //
-            // ⚠ §6z6 (`docs/PREREG_primary_dedupe_2026-09-22.md`): this used to key on
+            // ⚠ §6z6 (`docs/archive/2026-09/PREREG_primary_dedupe_2026-09-22.md`): this used to key on
             // `(chrom, ref_start, ref_end, intron_chain)` — PrimaryRead has no name — which also collapsed
             // DISTINCT molecules with identical coordinates. On A119b that key dropped 25-32% of primary
             // records per chromosome and pushed ~23% of the 2-read chains below pass-1's floor (chr20:

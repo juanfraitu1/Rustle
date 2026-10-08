@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (rustle crate), minimap2 2.30, the Amendment 12 harness (`bench/rna_allele/accept_o3_candidates.{sh,py}`, `panel_to_copies.py`).
 
-**Spec:** `docs/superpowers/specs/2026-10-02-o3-candidates-design.md` as amended by prereg Amendment 13 in `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` (the amendment is the binding text for every rule below).
+**Spec:** `docs/superpowers/specs/2026-10-02-o3-candidates-design.md` as amended by prereg Amendment 13 in `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` (the amendment is the binding text for every rule below).
 
 ## Global Constraints
 
@@ -50,7 +50,7 @@
 ### Task 3: Acceptance A13 and the default flip
 
 **Files:**
-- Modify: `bench/rna_allele/accept_o3_candidates.sh` (work dir and prefixes parameterised: `A13` into `/mnt/linuxdisk/tmp/rna_allele/a13/`; reuse `A12.copies.*`), `docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md` (new), `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1221+), and — iff A13-1/2/3 all hold — `tools/rustle_pipeline.sh` (`CANDIDATES=1` default, `all` runs the stage, header/usage/README/AGENTS/REPRODUCE/figures docs updated, `run_e2e.sh` adapted) with the spec's §9b note.
+- Modify: `bench/rna_allele/accept_o3_candidates.sh` (work dir and prefixes parameterised: `A13` into `/mnt/linuxdisk/tmp/rna_allele/a13/`; reuse `A12.copies.*`), `docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md` (new), `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1221+), and — iff A13-1/2/3 all hold — `tools/rustle_pipeline.sh` (`CANDIDATES=1` default, `all` runs the stage, header/usage/README/AGENTS/REPRODUCE/figures docs updated, `run_e2e.sh` adapted) with the spec's §9b note.
 
 - [ ] **Step 1:** rebuild the binary; run the stage in batches (as A12: 5 groups via `--families`, each under 10 min, `/usr/bin/time -v`); concatenate.
 - [ ] **Step 2:** arm M exactly as A12 (rename contigs `iso_*`, index, realign the three parts, label contigs from the unmasked genome, `merge_test.py score`); A13-2 with the arm-M preset; A13-3 = summed batch time.
@@ -62,7 +62,7 @@
 
 **Files:**
 - Modify: `bench/rna_allele/accept_o3_candidates.sh` / `.py` (a `CTRL` mode: unmasked `_pri`, `control/R0.bam`, a copies table of all 201 copies, the stage batched as A13, candidates classified against mat/pat with Amendment 9's rule — reuse `bench/rna_allele/control_test.py classify` logic — arm C = `_pri` + flagged unions)
-- Create: `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; modify `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1226+); iff C1'/C2' FAIL: revert `1f49d0f0` (the flip) with a dated note.
+- Create: `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; modify `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1226+); iff C1'/C2' FAIL: revert `1f49d0f0` (the flip) with a dated note.
 
 - [ ] **Step 1:** `panel_to_copies.py --all` -> `A14.copies.{tsv,fa}` (201 copies: `mask` + `keep` of `linktest/panel.json`, sequences from the UNMASKED `_pri`); the stage in 5 batches on `control/R0.bam` with `GGO.splice.mmi`; wall time recorded.
 - [ ] **Step 2:** classify every flagged candidate (unions aligned to mat/pat, `splice:hq -uf -c -N 20`; lift of the copy intervals = `control/copies_lift.tsv`) into a / b / c as Amendment 9; C1' = families with >= 1 class-b/c flag <= 8 (15.7%); also the a+b+c rate and A9's 16/53.

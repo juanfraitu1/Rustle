@@ -18,7 +18,7 @@ c     The hard-locus benchmark: real reads, the lab's StringTie 3.0.1, FLAIR 3.0
       Genome-wide (experiment B of the pre-registration; human A119b and gorilla OR6737, the samples with lab
       baselines): every multi-copy family of the sample's genome-wide catalog, in shards (figures/_o2.plan_shards);
       one point per family with >= 20 hard molecules plus the pooled fraction. Inset: the chr16 NPIP benchmark
-      (docs/PREREG_hard_locus_bakeoff_2026-09-09.md), development.
+      (docs/archive/2026-09/PREREG_hard_locus_bakeoff_2026-09-09.md), development.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ META = {
               "(a hard set our own gate defines; Rustle's arm = copy_assign --gtf): all hard molecules Rustle 0.858, "
               "IsoSeq collapse 0.732, FLAIR 0.473, StringTie 0.441; contested stratum IsoSeq collapse 0.813 and "
               "Rustle 0.692. The genome-wide tables replace these numbers "
-              "(docs/PREREG_genome_wide_copy_assignment_2026-09-25.md)."),
+              "(docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md)."),
     "tables": ["fig5_assign_accuracy_bands", "fig5_hard_locus", "fig5_hard_locus_transcripts"],
 }
 BANDS_TABLE = "fig5_assign_accuracy_bands"
@@ -60,7 +60,7 @@ FAMILY_TABLE = "fig5_hard_locus_families"   # genome-wide only: one row per (sam
 if (figlib.DATA_DIR / f"{FAMILY_TABLE}.tsv").exists():
     META["tables"].append(FAMILY_TABLE)
 # Supplementary Figure 5s (fig5s_margin_rule): Rustle against the alignment-score margin rule of the Eichler lab
-# (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2, experiment C). Simulation tables come from the
+# (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2, experiment C). Simulation tables come from the
 # same runs as a-b; the real-read table from one extra `copy_assign --union-certificate` run per experiment-B shard.
 MR_STRATA_TABLE = "fig5s_margin_rule_sim"
 MR_ACC_TABLE = "fig5s_margin_rule_accuracy"
@@ -707,7 +707,7 @@ def margin_rule_real_rows(per_read, sid: str, species: str) -> list[list]:
 
 
 MR_NOTES = [
-    "experiment C of docs/PREREG_genome_wide_copy_assignment_2026-09-25.md (Amendment 2): margin rule MR(T) = assign a "
+    "experiment C of docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md (Amendment 2): margin rule MR(T) = assign a "
     "read to its best-scoring alignment iff it has no other alignment or best AS - second AS >= T, over every mapped "
     "non-supplementary alignment of the read in the whole genome (-F 2052; missing AS = 0); T = 10 (headline), 1, 20; "
     "computed by bench/score.py eichler --sim from the same sim.bam as Figs 4-5, not from copy_assign --eichler-margin "

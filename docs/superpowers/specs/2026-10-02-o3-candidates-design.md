@@ -1,16 +1,16 @@
 # O3 candidate copies in the pipeline (`o3_candidates`) — design
 
 Date 2026-10-02. Branch `machine2/soto-evidence` (== `main`). Status: implemented 2026-10-02; the pre-registered acceptance
-(Amendment 12) FAILED, so the driver's `candidates` stage went OPT-IN (ruling R14, §9b; `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
+(Amendment 12) FAILED, so the driver's `candidates` stage went OPT-IN (ruling R14, §9b; `docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`).
 Amendment 13 (+ 13b-13e; rulings R16-R21, §9b) changed the net attribution and the template, and the re-run acceptance PASSED
-(`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): commit 1f49d0f0 made the stage a DEFAULT stage of the driver's `all`,
+(`docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`): commit 1f49d0f0 made the stage a DEFAULT stage of the driver's `all`,
 conditional on Amendment 14's no-deletion control (ruling R22, §9b). **2026-10-03: Amendment 14 FAILED (C1': 35 of the 53 families
-carry a false flag with nothing deleted, bar 8; C2' held, 0.54% false moves; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`), so the
+carry a false flag with nothing deleted, bar 8; C2' held, 0.54% false moves; `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`), so the
 default flip (1f49d0f0) was reverted on 2026-10-03 by ruling R22: the stage is OPT-IN again (`--candidates`; §7).**
 
 ## 1. Goal
 
-Make the reference-absent-copy chain validated in `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` (Amendments 7-11) a stage
+Make the reference-absent-copy chain validated in `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` (Amendments 7-11) a stage
 of `tools/rustle_pipeline.sh` between O1 (`families`) and O2 (`assign`), **without IsoCon**: per family, reads -> read clusters -> one
 consensus per cluster -> flag / link / merge -> candidate copies, each represented by the exon union of its component -> O2 run over the
 reference plus the candidates. Only minimap2 stays external, as today.
@@ -218,13 +218,13 @@ place: D right >= 80% of 12,787 and false moves <= 5% -> adopt; the union repres
 `rep_choice.py` measure); wall time <= 2 x IsoCon's (~20 min for 53 families at the 1,000-read cap).
 **Re-run acceptance (prereg Amendment 13 + 13b-13e, written before the A13 run):** A13-1 = D right >= 0.80 x C, C = IsoCon's right D
 reads over the truth-free attainable D reads (ruling R17), and false moves <= 5%; A13-2 = A12-2; A13-3 = A12-3. All three PASSED on
-2026-10-03 (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage was flipped to default-on (1f49d0f0), conditional on
+2026-10-03 (`docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`), so the stage was flipped to default-on (1f49d0f0), conditional on
 Amendment 14's no-deletion control (R22, §9b).
 **No-deletion control (prereg Amendment 14, written before the run):** Amendment 9's control with the stage in place of the IsoCon
 chain (nothing masked; every flagged union classified against the individual's own haplotypes): C1' = families with >= 1 false flag
 <= 8 of 53, C2' = false moves <= 5% of all reads. **C1' FAILED (35/53 = 66.0%, LR 0.71; 54 of the 56 flags match neither haplotype at
 0.999, 1 is an allele, 1 is GWFAM175's real haplotype-only copy); C2' held (318 / 59,013 = 0.54%). The default flip (1f49d0f0) was
-reverted on 2026-10-03 by ruling R22** (`docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`).
+reverted on 2026-10-03 by ruling R22** (`docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`).
 
 ## 9b. Plan rulings (2026-10-02, recorded here so the spec and the plan agree)
 
@@ -255,7 +255,7 @@ reverted on 2026-10-03 by ruling R22** (`docs/O3_CANDIDATES_CONTROL_A14_2026-10-
     assigned as a family that includes its candidate copies, under the unchanged AS-tied gate. Amendment 12 scores placement (arm M);
     the `--no-as-tied-only` route is not taken.
   - **R14** (after Amendment 12): A12-1 and A12-2 FAILED (D right 5,995 vs the bar 10,230; union representatives 90.9% vs 95%;
-    `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`), so the stage does not replace IsoCon yet: the driver's `candidates` stage is
+    `docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`), so the stage does not replace IsoCon yet: the driver's `candidates` stage is
     OPT-IN (`--candidates`; default off; `all` skips it) until a new prereg (A13) passes. The code ships, inert by default.
   - **R15** (final review): in `copy_assign`, a sweep bound to no family skips the §6gz tie-outside registration only when its region
     holds a read window of a cross-chromosome (`~xchrom~`) family (every candidate family is one); a catalog without cross-chromosome
@@ -293,7 +293,7 @@ reverted on 2026-10-03 by ruling R22** (`docs/O3_CANDIDATES_CONTROL_A14_2026-10-
     C1' <= 8 of the 53 families with a false flag, C2' <= 5% false moves without a deletion) holds for the stage; if it fails,
     1f49d0f0 is reverted and the stage stays opt-in (R14).
   - **R23**: the stage's cost on a full BAM is measured in a separate task; until then it is disclosed as not yet measured.
-    **Measured 2026-10-03 (Amendment 14's task, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`): one batch of 50 families on the full
+    **Measured 2026-10-03 (Amendment 14's task, `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`): one batch of 50 families on the full
     gorilla fibroblast Iso-Seq BAM (23 GB, 34.9 M mapped records; the 378-family / 915-copy interval table) did NOT finish in a
     10-minute call.** Its nets phase alone took 397-469 s (two attempts; start to the pass-A/B log lines): pass A + the sequential
     pass-B sweep 146-155 s; the 50 families' net reads written as attribution targets (648,946 reads, 2.6 GB) 28-72 s; the attribution

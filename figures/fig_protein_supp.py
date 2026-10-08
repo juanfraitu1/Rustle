@@ -1,6 +1,6 @@
 """Supplementary figure S-P — the manual extra-sensitive step (protein attachment; `tools/protein_attach.py`, driver
 stage `families-protein`, never in `all`): what it adds to the default de novo families, scored against EXTERNAL
-references (docs/PREREG_protein_attach_2026-09-25.md, section 3).
+references (docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md, section 3).
 
 Protein is not part of the default family definition. The default de novo families (driver `families`: seeded
 assembly loci -> one representative per locus -> mcl_families --from-gtf, exon-sum >= 0.60, MCL 2.8) are read and
@@ -454,7 +454,7 @@ def build(cfg: dict, data_dir: Path, force: bool = False):
                                     (o["missing_attached"] / o["missing"]) if o["missing"] else None,
                                     o["merges"], o["merges_judgeable"], o["merges_true"]])
     notes = [PROVISIONAL] if all(r[2] == "dev" for r in sub_rows) else []
-    gen = "figures/fig_protein_supp.py (tools/protein_attach.py; docs/PREREG_protein_attach_2026-09-25.md)"
+    gen = "figures/fig_protein_supp.py (tools/protein_attach.py; docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md)"
     figlib.write_table(T_SUB, SUB_HEAD, sub_rows, generator=gen, inputs=inputs, notes=notes, data_dir=data_dir)
     figlib.write_table(T_REF, REF_HEAD, ref_rows, generator=gen, inputs=inputs, notes=notes, data_dir=data_dir)
 

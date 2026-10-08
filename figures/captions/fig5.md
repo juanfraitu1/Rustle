@@ -2,7 +2,7 @@
 
 **Status.** Panels a and b are laid out for all six samples, and panel c for the two samples on which the lab ran
 StringTie 3.0.1, FLAIR 3.0.1 and IsoSeq collapse (human A119b, gorilla OR6737 testis), each genome-wide
-(`docs/PREREG_genome_wide_copy_assignment_2026-09-25.md`, experiments A and B). Until those runs finish, the rendered
+(`docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md`, experiments A and B). Until those runs finish, the rendered
 figure shows the development tables: in a and b, human A119b with its chr16 catalog and gorilla OR6737 with its chr20
 (NC_073244.2) catalog; in c, only the chr16 NPIP benchmark (the inset). Every number below is from the development
 tables. The pre-registration fixes, before the genome-wide numbers exist, the bars that decide each claim.
@@ -154,7 +154,7 @@ a precision. Transcripts overlapping two or more copies (conflation): 1, 2, 11 a
 # Figure 5s (supplement): Rustle and the alignment-score margin rule
 
 **Status.** Laid out for all six samples (a, b: simulation) and for human A119b and gorilla OR6737 (c: real reads),
-genome-wide (`docs/PREREG_genome_wide_copy_assignment_2026-09-25.md`, Amendment 2, experiment C, written before any
+genome-wide (`docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md`, Amendment 2, experiment C, written before any
 number below existed). Until the genome-wide runs finish, a and b show the development simulations of Figs 4 and 5
 (human A119b with its chr16 catalog, gorilla OR6737 with its chr20 (NC_073244.2) catalog) and c is empty. The claims
 are decided on the genome-wide runs only. The rule is attributed to the Eichler lab as the user states it; the

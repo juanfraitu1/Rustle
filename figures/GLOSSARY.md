@@ -81,7 +81,7 @@ checking the code. Part B is the glossary. Part C is the style guide.
 7. **"Compara group"** is our connected component of the 290 universe pairs (`_o1.chr16_attribution`,
    `fig6_chr16_groups.tsv:17`), not an Ensembl Compara gene tree or family. Say so.
 8. **The Ensembl Compara release is not recorded.** The table was exported from BioMart (`useast.ensembl.org`,
-   `hsapiens_paralog_*`) on 2026-09-24 (docs/PREREG_identity_spectrum_2026-09-24.md). A publication needs the
+   `hsapiens_paralog_*`) on 2026-09-24 (docs/archive/2026-09/PREREG_identity_spectrum_2026-09-24.md). A publication needs the
    release number. Record it, or re-export from a numbered release.
 9. **(Resolved 2026-09-25: IsoSeq collapse 26.2.0, `isoseq_upload/isoseq_A119b/logs/collapse_A119b_55435595.out:7`
    and the gorilla log.) The IsoSeq collapse version is stated nowhere.** SQANTI3 is "5.5" in README.md:21 and "5.5.4" in fig2.md:3.
@@ -200,7 +200,7 @@ Three different things are called a "mode". They are never mixed, and every pane
     are supplied by the user (`samples.tsv` columns `stringtie_guided_gtf`, `flair_guided_gtf`; `-` for every
     sample today) and are scored by the same code into **separate** tables and figures (`fig1_guided`,
     `fig2_guided_*`, `fig3_guided_bins`; `fig1g_guided`, `fig2g_guided`, `fig3g_guided`), never in a panel with the
-    annotation-free methods (docs/PREREG_guided_transcript_comparison_2026-09-25.md). Until a guided GTF exists
+    annotation-free methods (docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md). Until a guided GTF exists
     every figure prints "Guided comparison: not available (guided StringTie/FLAIR GTFs not supplied)."
   - **Rustle has no annotation-guided transcript assembly.** `copy_assign` reads no annotation while assembling
     (its `--gff` only tags catalog copies as annotated or not in the `--phase` copy graph), no `RUSTLE_*` switch
@@ -402,7 +402,7 @@ Three different things are called a "mode". They are never mixed, and every pane
   1. `tools/rustle_pipeline.sh assemble`: loci from primary alignments plus secondary alignments scoring ≥ 98% of the
      read's genome-wide best alignment score; a locus is one `gene_id`.
   2. The **representative** of a locus is its transcript with the most reads (ties: the longer span). Its **positional
-     exon sum** = its exon coordinates (from the reads) with the genome's bases at them (`docs/PSEUDOCODE_2026-09-08.md`:
+     exon sum** = its exon coordinates (from the reads) with the genome's bases at them (`docs/archive/2026-09/PSEUDOCODE_2026-09-08.md`:
      "the reads supply the coordinates, the genome supplies the bases").
   3. `rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60`: the
      family rule of *De novo mode; guided mode* below, on the loci's genomic spans; MCL (inflation 2.8); families of
@@ -935,7 +935,7 @@ annotation's gene bodies.
 - **Legend.** "Translated protein search (a comparator; not part of Rustle's family rule)."
 
 #### Extra-sensitive (protein) step; family calibration I_F; missing member (supplementary figure S-P)
-- **Code.** `tools/protein_attach.py` (`docs/PREREG_protein_attach_2026-09-25.md`), run by hand after the default
+- **Code.** `tools/protein_attach.py` (`docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md`), run by hand after the default
   families exist; never part of the default. Each locus's protein = the longest stop-to-stop frame of its
   representative's spliced exons (≥ 100 aa, < 50% soft-masked); BLASTP (E ≤ 1e-5) against the members' proteins; a
   hit counts when non-overlapping alignments cover ≥ 30% of the longer protein. **Family calibration I_F** = the

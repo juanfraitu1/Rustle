@@ -276,7 +276,7 @@ the two genome-wide legacy catalogs (chimp_PTR, human_testis) were never compare
 - The user made the driver's `families` stage the ONE default de novo family definition (reads → seeded assembly
   loci → one representative per locus → `mcl_families --from-gtf`, exon-sum ≥ 0.60, MCL 2.8), whose copy table
   (`<id>.fam.copies.tsv`, one copy per member locus with its representative's exons;
-  `docs/PREREG_families_copy_table_2026-09-25.md`) copy assignment consumes; `gw_family_catalog` (`catalog`) is
+  `docs/archive/2026-09/PREREG_families_copy_table_2026-09-25.md`) copy assignment consumes; `gw_family_catalog` (`catalog`) is
   legacy.
 - **C3 and F1 therefore apply to the default families' copy table** in place of the catalog: C3's sensitivities use
   the copies' `exons` column (as for the catalog), and F1's pair test asks whether the covering copies of the source
@@ -287,5 +287,5 @@ the two genome-wide legacy catalogs (chimp_PTR, human_testis) were never compare
   it carries no claim.
 - The same (record, extra copy) pairs, restricted to pairs whose two loci are both read-supported in the sample (the
   C2 rule), are used as a family reference by Figures 6s and 7 (defined in
-  `docs/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1, items 3–4): there the denominator is every
+  `docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1, items 3–4): there the denominator is every
   read-supported pair, not only the covered ones.

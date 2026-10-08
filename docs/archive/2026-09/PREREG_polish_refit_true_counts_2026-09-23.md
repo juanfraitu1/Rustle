@@ -1,7 +1,7 @@
 # Pre-registration — re-fit the assembly polish on TRUE read counts (`--keep-coordinate-duplicates`)
 
 **Written 2026-09-23 (§6z8), before any grid point is scored.** Follows the miss taxonomy of
-`docs/PREREG_external_tool_bakeoff_2026-09-22.md` §"What is missing" and r1058.
+`docs/archive/2026-09/PREREG_external_tool_bakeoff_2026-09-22.md` §"What is missing" and r1058.
 
 ## Why this and nothing else
 

@@ -357,7 +357,7 @@ def pairs_catalog(a, gene_of, kind, tpath):
 
 # ================================================================ spectrum (identity_spectrum tier mode)
 def cmd_spectrum(a):
-    """Identity spectrum (docs/PREREG_identity_spectrum_2026-09-24.md): which alignment tier of the family-edge builder
+    """Identity spectrum (docs/archive/2026-09/PREREG_identity_spectrum_2026-09-24.md): which alignment tier of the family-edge builder
     recovers which Ensembl Compara paralogue pairs, band by band of identity, on one chromosome.
 
     Nodes: one spliced representative per expressed locus (gene_id group; most reads, tie longer). Tiers, all-vs-all on
@@ -684,7 +684,7 @@ def heldout_predicted_clusters(clusters_tsv, genes, exact_only=False, everywhere
 
 
 def cmd_heldout(a):
-    """Score `mcl_families` clusters against symbol-root truth families (docs/PREREG_heldout_families_2026-09-20.md),
+    """Score `mcl_families` clusters against symbol-root truth families (docs/archive/2026-09/PREREG_heldout_families_2026-09-20.md),
     or against Soto S1C families with --soto. Implements the PRE-REGISTERED definitions verbatim:
       truth family  = >= 3 RefSeq `gene`/`pseudogene` records on the chromosome whose `Name=` shares a root,
                       root = re.sub(r'(?:P\\d+|\\d+|[A-Z])$', '', symbol) applied ONCE, roots shorter than 3 chars
@@ -852,7 +852,7 @@ def nucleotide_edges(paf, gene_at):
 
 
 def cmd_edge_gap(a):
-    """Does a protein-level edge close §6o8's no-edge gap? Per `docs/PREREG_protein_edges_2026-09-20.md`.
+    """Does a protein-level edge close §6o8's no-edge gap? Per `docs/archive/2026-09/PREREG_protein_edges_2026-09-20.md`.
 
     For each chromosome: take Soto's published families as truth (external, unchanged from §6s8), then for every
     within-family PAIR ask whether it carries
@@ -1023,7 +1023,7 @@ def cmd_rna_ceiling(a):
 
 # ================================================================ members (member_completeness)
 def cmd_members(a):
-    """Member completeness for the family-scoped pool test (docs/PREREG_family_scoped_pool_2026-09-24.md).
+    """Member completeness for the family-scoped pool test (docs/archive/2026-09/PREREG_family_scoped_pool_2026-09-24.md).
     Universe = referee genes (one per line, 'Gene Name' header) fixed before the arms; runs gffcompare (-r REF_GTF) on
     ARM_GTF (outputs next to it, prefix ARM.gc) and reports: complete members (>= 1 transcript of class '='), partial
     ('=', 'c', 'k'), transcripts per member locus, and gffcompare transcript-level sensitivity/precision."""
@@ -1188,7 +1188,7 @@ def cmd_eichler(a):
                              _eichler_legacy for why its counts are per ROW and region-local)
       --sim PREFIX           simulation (known source copies): the rule computed from PREFIX.bam over every
                              alignment of the read genome-wide, joined with Rustle's per-read answer
-                             (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2, experiment C)
+                             (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2, experiment C)
       --real                 real reads (no truth): the rule from the sample's as_table + the BAM's alignments over
                              the catalog copies, joined with the union test's result (same amendment, C.3)"""
     if getattr(a, 'sim', None):
@@ -1217,7 +1217,7 @@ def _eichler_legacy(a):
     interesting number; the interesting number is what each rule decides on the population the other keeps.
 
     ⚠ (2026-09-25, Amendment 2 of PREREG_genome_wide_copy_assignment) Two limits of THIS reader, kept for continuity
-    with docs/EICHLER_COMPARISON_2026-09-21.md (stdout unchanged): (1) it counts ROWS of the per-family table, and a
+    with docs/archive/2026-09/EICHLER_COMPARISON_2026-09-21.md (stdout unchanged): (1) it counts ROWS of the per-family table, and a
     read has one row per family its placements touch, so "reads" means rows when reads touch several families (a note
     goes to stderr when the two differ); (2) `as_margin` is region-local (copy_assign never sees alignments on other
     contigs or outside its windows, and under --no-as-tied-only it counts supplementary records as rivals). The
@@ -1286,7 +1286,7 @@ def _eichler_legacy(a):
 
 # ---------------------------------------------------------------- margin rule, genome-wide (Amendment 2, experiment C)
 EICHLER_THRESHOLDS = (1, 10, 20)
-# the six strata of docs/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2 (C.2), in display order
+# the six strata of docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2 (C.2), in display order
 MR_STRATA = ['both_same', 'both_differ', 'margin_only', 'rustle_aligner', 'rustle_test', 'neither']
 MR_STRATUM_LABEL = {
     'both_same': 'both assign, same placement',
@@ -1716,7 +1716,7 @@ def cmd_reads(a):
     `family|copy|i`): per MAPQ-0 primary read, correct / wrong / conflict / abstain / lost under three readings of the
     per-family table (OWN = the read's true family's row, PRIMARY = rows with primary_local=1, ANY = any assigned row),
     by divergence bin of the source copy (1 - max_family_identity from the catalog).
-    docs/PREREG_o2_read_truth_2026-09-23.md.
+    docs/archive/2026-09/PREREG_o2_read_truth_2026-09-23.md.
 
     --per-read OUT.tsv also writes one row per scored (MAPQ-0) read, in BAM order: its truth, how many rows the table
     gives it (and how many are assigned, not origin-rejected), the status(es) of its true family's row(s) (sorted,

@@ -1,6 +1,6 @@
 # Would a variation graph solve the containment problem? — No, and the number says why
 
-Run 2026-09-20 against `docs/PREREG_vg_containment_2026-09-20.md` (committed `de0f6949` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_vg_containment_2026-09-20.md` (committed `de0f6949` before any
 multiplicity was computed). Tool: `bench/vg_multiplicity_containment.py`. Population: the **76 pairs
 the shipped rule rejects at containment ≥ 0.90** on held-out chr2/chr8/chr10, both endpoints
 Soto-labelled — **19 TRUE, 57 FALSE**.

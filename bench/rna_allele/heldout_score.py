@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 6 scoring (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md).
+"""Amendment 6 scoring (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md).
 
 Steps (subcommands):
   contigs   collect every family's IsoCon outputs (iso/<fam>/final_candidates.fa) as `<fam>|<id>`; given their PAFs against the masked

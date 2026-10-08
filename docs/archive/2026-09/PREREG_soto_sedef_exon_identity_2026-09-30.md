@@ -48,7 +48,7 @@ Recovered and broken families are reported beside it, with no verdict attached.
 (Filled in after the run, below this line, without editing anything above.)
 
 Run on 2026-09-30 after this file was committed (`cdaa8338`, sha1 `80ca836f39ea7fa5f307a76f545560956ee7a7b9`);
-`bench/soto_m2/soto_m2_sedef_exonid.py` (miniforge python, edlib), 14 s, light lock. Output: `docs/SOTO_SEDEF_EXON_IDENTITY_2026-09-30.md`;
+`bench/soto_m2/soto_m2_sedef_exonid.py` (miniforge python, edlib), 14 s, light lock. Output: `docs/archive/2026-09/SOTO_SEDEF_EXON_IDENTITY_2026-09-30.md`;
 per-link identities: `docs/SOTO_SEDEF_EXON_IDENTITY_LINKS_2026-09-30.tsv`. Implementation choice not fixed above: B and C collapse duplicate
 edges, as KEY=unionedges did.
 

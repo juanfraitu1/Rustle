@@ -3,7 +3,7 @@
 Session goal: *look for empirical rules for reducing false positives and false negatives by performing
 better node formation.* Every claim below is a measurement on the chr20 de novo assembly
 (`a119b_polished.gtf`, 1,779 loci / 5,844 transcripts; chr16 where stated), register rows **1049–1054**
-plus the r1041 chain. Follows `docs/NODE_DEFINITION_2026-09-22.md` (§6x3–§6x7), which had already closed
+plus the r1041 chain. Follows `docs/archive/2026-09/NODE_DEFINITION_2026-09-22.md` (§6x3–§6x7), which had already closed
 splitting, boundary pull-in and the local denominator.
 
 ## TL;DR — what the rules turned out to be

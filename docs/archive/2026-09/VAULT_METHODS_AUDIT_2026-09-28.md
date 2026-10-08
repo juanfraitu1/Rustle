@@ -13,7 +13,7 @@
 | RNA-editing confound (A→G / T→C) | Clair3-RNA | Editing filter in `copy_assign`. |
 | IsoCon significance test | Sahlin 2018 | Run at the assign gate's α: byte-identical output, so the δ = 0.005 threshold was inert. |
 | Phase / linkage consistency across PSVs | longcallR | Covered by `origin_consistency_check` and the PSV co-observation analysis. K≥3 recombination obstruction is machine-checked. |
-| WSSD-style read depth for collapsed or absent copies | Bailey 2002 | A read-depth proxy outscored every structural statistic. WGS trio k-mer copy-number check done (`docs/O3_WGS_TRIO_CN_2026-09-25.md`). |
+| WSSD-style read depth for collapsed or absent copies | Bailey 2002 | A read-depth proxy outscored every structural statistic. WGS trio k-mer copy-number check done (`docs/archive/2026-09/O3_WGS_TRIO_CN_2026-09-25.md`). |
 | Single-linkage protein-identity families | Makova 2024, Pal 2026 | Superseded by the MCL and identity-lattice definition. |
 | SQANTI3 categories, polyA / 5′ end support, SIRV spike-ins | LRGASP | SQANTI3 benchmarked; `--polish-tes` shipped. Only the human testis library is spiked. |
 | StringTie2 / FLAIR / isoseq comparators | Kovaka 2019, Tang 2020 | Bakeoff done. |

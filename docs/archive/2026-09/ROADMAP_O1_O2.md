@@ -1,6 +1,8 @@
+> ⚠ **Archived 2026-10-07 — superseded.** This 2026-09-05 roadmap was executed; its steps are recorded in `../../o1_ledger.md` §6ee–§6fc and the shipped result is the §0★ default in `../../seeded_family_definition.md` (2026-09-25). Current state and open work: `../../HANDOFF_2026-10-04.md`, `../../PENDING_2026-10-04.md`, `../../THESIS_OBJECTIVES.md`. Kept for the trail; nothing here is normative.
+
 # Roadmap: making O1 slide into O2 (2026-09-05)
 
-**Principle (docs/O1_O2_COMPOSITION.md):** O1's vertex set IS O2's path set, and — extended today — O1's
+**Principle (docs/archive/2026-09/O1_O2_COMPOSITION.md):** O1's vertex set IS O2's path set, and — extended today — O1's
 pairwise alignments ARE O2's PSV columns. O2 must consume what O1 emits and re-derive nothing.
 Canonical catalogs: `mcl_ann/rna_bp1_p9` (3 contigs) and `mcl_ann/gw_bp1_p9` (genome-wide), prune 1e-9.
 Every prior plan file is archived under `docs/archive/` (superseded, not wrong); the ledger `o1_ledger.md`
@@ -44,7 +46,7 @@ own PREREG; the sound form scores each molecule's sequence once). Paired sweep t
 decisions, not patches.
 
 ## Definition switch (§6ev, 2026-09-05)
-Both O1 definitions scored on Soto (one truth, one scorer): `docs/O1_DEFINITION_SWITCH.md`. Gaps G1–G5 tracked
+Both O1 definitions scored on Soto (one truth, one scorer): `docs/archive/2026-09/O1_DEFINITION_SWITCH.md`. Gaps G1–G5 tracked
 there with owners; the O1 restatement (§5 of that file) awaits the user's decision; the old definition stays
 opt-in. Next in order: G5 (RNA admission of unannotated loci — the unbuilt pivot stage), G3 (threshold
 sensitivity on the anchors), Q9 (NPIPA/B), D3 pre-registration, the two §6eu default flips.
@@ -121,7 +123,7 @@ is LOCAL identity within sequencing error (NPIP 13 → 12 at 99.85 %: 38 % absor
 reads and the admission prototype on the orphans; recovery needs enough reads on one candidate.
 
 ## Loose ends L1–L3 (§6fh, §6fi, 2026-09-05)
-`docs/O1_O2_LOOSE_ENDS.md` is the ordered queue. L1 (dropped members are O2 candidates, `member_status`) and L2
+`docs/archive/2026-09/O1_O2_LOOSE_ENDS.md` is the ordered queue. L1 (dropped members are O2 candidates, `member_status`) and L2
 (the locus extent is O1's: `locus_start`/`locus_end`, primaries with a block in the chain, mis-chain rule,
 clipped at family neighbours; O2 aligns to it) are closed: canonical `rna_units_v10`, paired 35 on the same units
 46.5 % vs 43.4 % assigned with rejections 4,327 vs 5,508 at 0.9999 agreement. L3 measured, not adopted (`-p 0`:

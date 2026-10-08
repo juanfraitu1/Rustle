@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Figure data for the NPIP read-pool page (docs/PREREG_npip_read_pool_2026-10-01.md): every locus of each arm inside a few chr16
+"""Figure data for the NPIP read-pool page (docs/archive/2026-10/PREREG_npip_read_pool_2026-10-01.md): every locus of each arm inside a few chr16
 windows (span, strand, representative exons, class, and what the family step did with it), plus the per-copy locus counts.
 
     python3 bench/npip_read_pool/figdata.py --dir /mnt/linuxdisk/tmp/readpool_npip --scored npip_read_pool.json --cat-genes genes.tsv \

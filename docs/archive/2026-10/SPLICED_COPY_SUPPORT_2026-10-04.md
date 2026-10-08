@@ -1,6 +1,6 @@
 # What counts as a FOUND copy — spliced support at the 25 human NPIP copies (and gorilla's 25): the page's "own node" overstates recovery about 2x, and the loss is the REPRESENTATIVE, not the reads — 2026-10-04
 
-Prereg: `docs/PREREG_spliced_copy_support_2026-10-04.md` (c5508e2a, before the run). Scorer `bench/copy_support.py`; per-copy tables
+Prereg: `docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md` (c5508e2a, before the run). Scorer `bench/copy_support.py`; per-copy tables
 `docs/SPLICED_COPY_SUPPORT_hsa_npip.tsv`, `docs/SPLICED_COPY_SUPPORT_ggo_npip.tsv`; work dir `/mnt/linuxdisk/tmp/readpool_npip/`
 (`support_hsa.*`, `support_ggo.*`). Prompted by the user on the NPIP Read Pools page (F3gJty4egn598SCZ9RBiM1): a read somewhere between
 a copy's exons and introns is not a spliced transcript of the copy.
@@ -42,7 +42,7 @@ locus), reads matching >= 2 annotated introns, exact-chain reads (E2's notion), 
 ## Gorilla NPIP (OR6737 testis, 25 copies)
 
 8 of 25 copies spliced-expressed (NPIPB4 9 support reads, NPIPB13 9, NPIPB14P 7, NPIPB15 7, NPIPB8 5, NPIPB2 4, NPIPA5 3, LOC124907807 2);
-0-66 reads per copy, 0 exact-chain reads at any copy (as `docs/COPY_RECOVERY_TOOLS_2026-09-29.md` found). The testis library is too thin
+0-66 reads per copy, 0 exact-chain reads at any copy (as `docs/archive/2026-09/COPY_RECOVERY_TOOLS_2026-09-29.md` found). The testis library is too thin
 for a locus-level test there; the fibroblast library has no NPIP.
 
 ## Decision (as registered) and what follows

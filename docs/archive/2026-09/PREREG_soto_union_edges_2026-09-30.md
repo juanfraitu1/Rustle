@@ -46,7 +46,7 @@ The other seven settings (our copy numbers; the three filters) are reported besi
 (Filled in after the run, below this line, without editing anything above.)
 
 Run on 2026-09-30 after this file was committed (`427da056`, sha1 `de32c7946a723c9de791ed4eb8af63d33a379812`);
-`bench/soto_m2/soto_m2_union.py`, 3 s, light lock. Full output: `docs/SOTO_UNION_EDGES_2026-09-30.md`.
+`bench/soto_m2/soto_m2_union.py`, 3 s, light lock. Full output: `docs/archive/2026-09/SOTO_UNION_EDGES_2026-09-30.md`.
 
 **VERDICT (section 4): UNION HURTS.** With S1C copy numbers and all genes, the union graph (12,231 map-back + 1,019 SEDEF-only
 edges) recovers 0 families and breaks 82: exact 479 -> 397, held-out 263 -> 211, ARI 0.9698 -> 0.9304. The broken families mostly

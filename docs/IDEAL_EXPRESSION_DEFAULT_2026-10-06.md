@@ -21,14 +21,14 @@ A control that gives the same scorer PERFECT loci (the canonicalized annotation 
 
 ## Why the reachable copies are missed (NPIP two, TBC1D3 one per replicate)
 
-- **NPIPA2 (h01), both replicates:** its two true chains are assembled (2 / 2 recovered) but the locus also holds three artifact chains built from reads of paralogous copies, and the most-reads representative is one of those (6 exons, representative purity .454): E2 and E3 fail. The representative problem of `docs/SPLICED_COPY_SUPPORT_2026-10-04.md` exists with ideal reads.
+- **NPIPA2 (h01), both replicates:** its two true chains are assembled (2 / 2 recovered) but the locus also holds three artifact chains built from reads of paralogous copies, and the most-reads representative is one of those (6 exons, representative purity .454): E2 and E3 fail. The representative problem of `docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md` exists with ideal reads.
 - **NPIPA7 (h06), both replicates:** the representative is exact (purity 1.0, 7-intron chain), but the locus (gene_id) also contains nine transcripts, most of them 21-30 exon chains of the neighbouring pseudogenes (AC138969.2, PKD1P6): locus purity .112, so E2 fails. What the families stage and O2 receive (the representative) is right.
 - **TBC1D3P4 / TBC1D3P3 (h26, h27), one per replicate:** near-identical copies with one 11-intron chain each. The representative is a coin toss (10 reads against 10) between the copy's own chain and a chain with one intron displaced by about 25-31 bp. The only reads that carry the displaced chain are the paralog's (h27's reads at h26 in replicate 1, h26's reads at h27 in replicate 2), all 10 as secondary alignments at this copy: the aligner put one junction off in the paralog's sequence, and the good-secondary seeding admitted them.
   The assembled transcripts contain every chain of every TBC1D3 copy (31 / 31 chains recovered, both replicates), so this is representative choice, not assembly. Which of the two copies fails flips between replicates.
 
 ## Same copies, same registered instrument, real reads against ideal reads
 
-The real-read column is the current default on A119b (CAT/Liftoff copies, instrument of `docs/PREREG_spliced_copy_support_2026-10-04.md` Amendments A and B, `bench/copy_support.py`). Only these annotation-anchored measures are like-for-like; the registered strict FOUND needs the cap signal and cannot run on simulated reads.
+The real-read column is the current default on A119b (CAT/Liftoff copies, instrument of `docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md` Amendments A and B, `bench/copy_support.py`). Only these annotation-anchored measures are like-for-like; the registered strict FOUND needs the cap signal and cannot run on simulated reads.
 
 | instrument | NPIP real | NPIP ideal (rep1 / rep2) | TBC1D3 real | TBC1D3 ideal (rep1 / rep2) |
 |---|---|---|---|---|

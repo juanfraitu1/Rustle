@@ -1,6 +1,6 @@
 # Per-copy recovery of NPIP and TBC1D3: our assembler and the StringTie, FLAIR and isoseq baselines (2026-09-29)
 
-This document consolidates `docs/PREREG_copy_recovery_tools_2026-09-29.md` for the user and the advisor.
+This document consolidates `docs/archive/2026-09/PREREG_copy_recovery_tools_2026-09-29.md` for the user and the advisor.
 - **Pre-registration.** Frozen on 2026-09-30 (sha1 40b581b8, recorded in `FROZEN.sha1`), before any tool's model or any
   read at a family copy was opened. The Outcome was appended later that night; the text above it is byte-identical to
   the frozen version.
@@ -10,7 +10,7 @@ This document consolidates `docs/PREREG_copy_recovery_tools_2026-09-29.md` for t
   method loses a copy, not who wins.
 - **"Ours"** is the shipped default at commit 3007c3d4 (strict junctions, pass-1 floor 2, good-secondary seeding), so
   it predates the 2026-09-29 default flips. `--bridge-regroup f1v2` leaves intron chains unchanged
-  (`docs/PREREG_f1v2_readshare_2026-09-29.md`), so the chain counts below are not expected to move; they were not rerun.
+  (`docs/archive/2026-09/PREREG_f1v2_readshare_2026-09-29.md`), so the chain counts below are not expected to move; they were not rerun.
 
 ## 1. The question
 
@@ -127,7 +127,7 @@ Gorilla OR6737, **TBC1D3** (14 records; 7 with at least 2 primary reads, 5 with 
 
 - **For the assembler.** On these two families it is as complete as the baselines wherever the reads allow it, has
   models at copies the primary-only baselines cannot see, and its remaining gap is the read-completeness wall that
-  stops every method (gorilla NPIP; `docs/PREREG_ggo_npip_variant_sim_2026-09-29.md`).
+  stops every method (gorilla NPIP; `docs/archive/2026-09/PREREG_ggo_npip_variant_sim_2026-09-29.md`).
 - **Prediction record.** Of 9 predictions, 6 held in full (P1, P2, P3, P5, P7, P8), 2 partly (P4: StringTie, not
   isoseq, recovers single-read chains; P6: our fused count 13 against a bar of 8-12, and gorilla isoseq 11), and 1
   failed or is vacuous (P9). One falsifier fired (F4, §2.3).
@@ -151,10 +151,10 @@ Gorilla OR6737, **TBC1D3** (14 records; 7 with at least 2 primary reads, 5 with 
 
 ## 8. Sources
 
-- **Pre-registration and Outcome (O1-O8):** `docs/PREREG_copy_recovery_tools_2026-09-29.md`. Register rows 1189-1193.
+- **Pre-registration and Outcome (O1-O8):** `docs/archive/2026-09/PREREG_copy_recovery_tools_2026-09-29.md`. Register rows 1189-1193.
 - **Instruments and products (scratch, no backup):** `/mnt/linuxdisk/tmp/rustle_figures_dev/copy_recovery_tools/`.
   `code/` holds `build_truth.py`, `reads.py`, `models.py`, `gc.sh` (gffcompare), `report.py`, `trace_port.py`,
   `arm_hsa.sh`, `polish_port.py` and `posthoc.py`; the frozen sha1s are in prereg §8 and `FROZEN.sha1`. `score/report.md`
   has the per-copy tables and `score/posthoc.json` the post-hoc qualifiers. The instruments are not archived in the repo.
-- **Prior per-copy work reused:** `docs/PREREG_ggo_npip_variant_sim_2026-09-29.md` and
-  `docs/PREREG_ggo_tbc1d3_holdout_2026-09-29.md` (first losing step for ours at gorilla copies).
+- **Prior per-copy work reused:** `docs/archive/2026-09/PREREG_ggo_npip_variant_sim_2026-09-29.md` and
+  `docs/archive/2026-09/PREREG_ggo_tbc1d3_holdout_2026-09-29.md` (first losing step for ours at gorilla copies).

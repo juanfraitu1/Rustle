@@ -1,6 +1,6 @@
 # Is the annotation what is expressed at NPIP? Chain-level comparison of the reads with the CAT and RefSeq models at the 25 chr16 copies — 2026-10-04
 
-Prompted by the user after Amendment B of `docs/PREREG_spliced_copy_support_2026-10-04.md` (12:15: "this is a big issue, let's do the chain-level
+Prompted by the user after Amendment B of `docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md` (12:15: "this is a big issue, let's do the chain-level
 comparison and ensure that only reads that truly support the intron chain are counted"). Descriptive, no decision rule; what is reported was
 fixed in `bench/npip_chains.py`'s docstring before the run. Data: A119b primaries (`-F 2308`, same strand) on the exon union of the CAT ∪
 RefSeq models of each copy; junction = `N` >= 50 bp, exact coordinates; a read's chain = its junctions inside the span, in order. Classes

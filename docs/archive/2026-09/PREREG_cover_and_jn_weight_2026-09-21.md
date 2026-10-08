@@ -119,4 +119,4 @@ the shipped truth floor is >= 3 members, so no 2-member truth family exists. The
 **Held-out (chr4+chr9) was an exact no-op** — dF 0.0000, 0 of 9 families moved, both rules, every
 parameter. It could not have decided anything; the decision rests on development.
 
-Full result: `docs/COVER_AND_JN_DEFINITION_2026-09-21.md`. Register rows 941-947.
+Full result: `docs/archive/2026-09/COVER_AND_JN_DEFINITION_2026-09-21.md`. Register rows 941-947.

@@ -2,7 +2,7 @@
 and its supplements, and the genome-wide helpers Figure 7 shares (samples, exposure, substrates, annotation caches,
 reference families, sharded all-vs-alls).
 
-THE FAMILIES SCORED (user decision 2026-09-25 16:00; docs/PREREG_genome_wide_families_2026-09-25.md, Amendment 1): the
+THE FAMILIES SCORED (user decision 2026-09-25 16:00; docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md, Amendment 1): the
 ONE default de novo family definition = the driver's `families` stage: reads -> seeded assembly loci -> one
 representative per locus (its "positional exon sum": read-derived exon coordinates, genome bases) -> mcl_families
 --from-gtf (exon-sum >= 0.60, MCL 2.8). Its copy table `<id>.fam.copies.tsv` (one copy per member locus; the contract
@@ -791,7 +791,7 @@ def compara_universe_attribution(cfg: dict, members: Path, universe: Path, genes
 
 
 # ================================================================ genome-wide (every sample)
-# docs/PREREG_genome_wide_families_2026-09-25.md fixes every rule below; the constants are its sections 1-4.
+# docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md fixes every rule below; the constants are its sections 1-4.
 PH_DIR_DEFAULT = "/mnt/linuxdisk/tmp/rustle_figures_dev/truth/gw"      # truth.py protein-homology --chrom ALL PREFIXes
 PH_SPECIES_DIR = {"human": "human", "gorilla": "gorilla", "chimpanzee": "chimp", "orangutan": "orangutan"}
 COMPARA_GW_DEFAULT = "/mnt/linuxdisk/tmp/rustle_figures_dev/truth/compara/human_e116.tsv"

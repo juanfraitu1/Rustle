@@ -1,7 +1,7 @@
 # The dominant gap, resolved: §6o8's 0.052 ceiling is a property of the TRUTH's divergence, not of O1
 
 Run 2026-09-20. Tools: `bench/rna_truth_from_protein.py`, `bench/protein_edge_gap.py`.
-Supersedes the framing in `docs/PROTEIN_EDGES_RESULT_2026-09-20.md`, which characterised the gap but
+Supersedes the framing in `docs/archive/2026-09/PROTEIN_EDGES_RESULT_2026-09-20.md`, which characterised the gap but
 did not explain it.
 
 ## What was tried, in order

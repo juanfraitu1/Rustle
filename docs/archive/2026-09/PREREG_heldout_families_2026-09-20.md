@@ -28,7 +28,7 @@ other chromosome is reported as a secondary, weaker arm.
 
 ## 2. The rule — frozen, identical to the chr16 run
 
-Exactly the guided recipe re-verified today in `docs/SLIM_REGRESSION_2026-09-20.md`:
+Exactly the guided recipe re-verified today in `docs/archive/2026-09/SLIM_REGRESSION_2026-09-20.md`:
 
 ```sh
 # 1. gene + pseudogene bodies from RefSeq CHM13 (never HSA_genomic.gff — it drops 29.1% of loci)

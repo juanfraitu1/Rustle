@@ -126,7 +126,7 @@ intron chains, intron-chain 7.8/51.6, transcript 7.4/51.2**.
 
 **`A119b.t2t.bam`, chr20** (1,104,846 records) — `polished` (2026-09-23 defaults) gives **5,522 mRNAs,
 1,059 chains, 24.7/21.0, 23.2/19.2**; `polished_0922` gives 5,844 mRNAs, 1,064 chains, 24.8/19.9, 23.3/18.2
-(`docs/PREREG_assembly_precision_levers_2026-09-23.md`: held-out gorilla precision 33.1 → 35.6 for −0.46% chains). `recall_raw` gives **20,699 mRNAs and 1,259 chains at 29.4/8.2** — past isoseq's
+(`docs/archive/2026-09/PREREG_assembly_precision_levers_2026-09-23.md`: held-out gorilla precision 33.1 → 35.6 for −0.46% chains). `recall_raw` gives **20,699 mRNAs and 1,259 chains at 29.4/8.2** — past isoseq's
 1,253 — while `recall_polished` gives 7,437 mRNAs and 1,101 chains at 25.7/16.4. Against the lab's arms
 on the same BAM: StringTie 861 chains at 20.1/16.8, FLAIR 1,026 at 23.9/7.6, isoseq collapse 1,253 at
 29.2/**3.0** from 64,384 transcripts.
@@ -162,7 +162,7 @@ components of L3 at `w_98 >= 0.985`, with L4 (0.995) applied selectively; see
 `docs/seeded_family_definition.md` §0★★ and ledger §6p0/§6p1/§6p5.
 
 ⚠⚠ **`--min-cov-shorter` default flipped 0 → 0.70 on 2026-09-29** (the user's decision; shipped opt-in in f2144faf,
-register 1006/1014, `docs/PREREG_cov_shorter_adoption_2026-09-22.md`): a pair whose coverage of the LONGER locus fails
+register 1006/1014, `docs/archive/2026-09/PREREG_cov_shorter_adoption_2026-09-22.md`): a pair whose coverage of the LONGER locus fails
 also passes at coverage ≥ 0.70 of the SHORTER locus's exonic length, with that coverage as its edge weight. Every
 `mcl_families` number quoted in this file that does not name the flag was measured at 0 — **`--min-cov-shorter 0`
 (driver `RUSTLE_MIN_COV_SHORTER=0`) reproduces it byte for byte** (proven on human_testis against a 3007c3d4 build).
@@ -194,8 +194,8 @@ Expected (median / mean MAD): ARI **0.6959 / 0.6862**, exact 241/491 / 264/491, 
 at arbitrary intervals) needs pyBigWig (the miniforge python) or `bigBedToBed`; `score` uses scikit-learn's ARI when
 importable (a stdlib one otherwise), numpy and scipy.
 
-**Reconciled recipe (2026-09-29; `docs/PREREG_soto_reconciliation_2026-09-29.md`, register 1162-1166;
-`docs/SOTO_REPLICATION_STATUS_2026-09-28.md` §1).** Two choices of Soto's *released code* — map SD98 exons back
+**Reconciled recipe (2026-09-29; `docs/archive/2026-09/PREREG_soto_reconciliation_2026-09-29.md`, register 1162-1166;
+`docs/archive/2026-09/SOTO_REPLICATION_STATUS_2026-09-28.md` §1).** Two choices of Soto's *released code* — map SD98 exons back
 (not regions) and gate each shared-exon pair by famCN MAD < 1 then grow families through coding genes (not the
 component split) — close the gap to their Table S1C. Both are opt-in flags; the chain above is unchanged.
 
@@ -239,7 +239,7 @@ samples, Soto's interval 0.9277 / .9227 / .9343, 411, 0.9251**; S1C 0.9698 / .97
 are 0.9197 / 0.8853 in the prereg, whose scorer ordered families sharing a smallest member by Python-set order;
 the module's order is deterministic and equals the frozen reconcile output; exact counts are identical.)
 
-**Assembly parCN** (`bench/soto/parcn_assembly.py`; `docs/PREREG_soto_parcn_assembly_2026-09-29.md`, register
+**Assembly parCN** (`bench/soto/parcn_assembly.py`; `docs/archive/2026-09/PREREG_soto_parcn_assembly_2026-09-29.md`, register
 1171-1174; QuicK-mer2 itself needs ~52 GB, register 1167). From the frozen k-mer count tables (`docs/DATA.md`):
 ```sh
 A=/mnt/linuxdisk/tmp/rustle_figures_dev/soto_parcn_asm
@@ -275,7 +275,7 @@ retracted in later ones — the ledger is append-only, so **the latest section w
 
 ## Missing copies from RNA alone: flag, characterise, screen, hand to DNA (thesis O3; §6ze, 2026-09-23)
 
-`docs/PREREG_o3_rna_only_2026-09-23.md`. One BAM (primaries with `de:f` and `--eqx`), a locus set, the primary
+`docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`. One BAM (primaries with `de:f` and `--eqx`), a locus set, the primary
 genome and its minimap2 splice index; optional annotation GFF (IG/TR screen), `--confirm` genomes (a
 haplotype assembly: DNA confirmation) and `--foreign` genomes (another species: contamination screen).
 
@@ -342,8 +342,8 @@ tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index
 # stages, each also runnable alone: assemble -> families (mcl_families --from-gtf; its copy table run.fam.copies.* is what
 #   assign reads since 2026-10-02) -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). OPT-IN:
 #   candidates (o3_candidates + augmentation + patch realignment, between families and assign; `--candidates` runs it in
-#   `all` and makes assign and flag use it; ruling R14: its first acceptance failed, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md (the re-run passed: A13, docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md), and
-#   Amendment 14's no-deletion control failed, docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md).
+#   `all` and makes assign and flag use it; ruling R14: its first acceptance failed, docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md (the re-run passed: A13, docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md), and
+#   Amendment 14's no-deletion control failed, docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md).
 #   LEGACY: catalog (gw_family_catalog), which `--legacy-catalog` builds in `all` and assign then reads (refused together
 #   with --candidates). Products all carry the --out prefix.
 # Intermediates are cached in run.cache/ (default; --no-cache off): the catalog's collapsed representatives and every
@@ -353,8 +353,8 @@ tools/rustle_pipeline.sh catalog --bam READS.bam --fasta GENOME.fa --out run --i
 tools/rustle_pipeline.sh cache-ls --out run                                               # what run.cache holds
 # bridge-aware regrouping (bench/ASSEMBLY_POLISH.md 2026-09-29 addendum 3): f1v2 is THE DEFAULT since 2026-09-29 (the
 # user's decision), so the line above already runs it. On the BAMs and best-AS tables of the 2026-09-25 runs, `assemble`
-# writes the held-out products of docs/PREREG_f1_bridge_locus_2026-09-28.md (f1: gorilla OR6737, KB3781) and
-# docs/PREREG_f1v2_readshare_2026-09-29.md (f1v2: human A119b, testis) byte for byte: run.gtf, the families input
+# writes the held-out products of docs/archive/2026-09/PREREG_f1_bridge_locus_2026-09-28.md (f1: gorilla OR6737, KB3781) and
+# docs/archive/2026-09/PREREG_f1v2_readshare_2026-09-29.md (f1v2: human A119b, testis) byte for byte: run.gtf, the families input
 # run.families.gtf and the side tables. Their FUSED counts are readthrough_eval `a.fused` on the latter.
 RUSTLE_BRIDGE_REGROUP=f1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...   # the F1 arm
 # THE PRE-FLIP PIPELINE, byte for byte (every driver number in this file dated before 2026-09-29 was measured this way; its
@@ -377,7 +377,7 @@ python3 bench/sim.py tandem --fasta chr20.fa --gtf chr20_ref.gtf --out t --layou
     --sweep 0.9,0.95,0.98,0.99,0.995,1.0 --pipeline --bin target/release      # also --layout interleaved, --copies 3
 ```
 Per read: same/other copy, cross-copy chain, MAPQ, AS tie; per condition: assembler transcripts (chimeric), catalog
-copies, assignment. Expected (`docs/PREREG_tandem_copy_sim_2026-09-24.md`): 0 cross-copy chains below identity 1.0.
+copies, assignment. Expected (`docs/archive/2026-09/PREREG_tandem_copy_sim_2026-09-24.md`): 0 cross-copy chains below identity 1.0.
 
 ## Identity spectrum against Ensembl Compara (§6zh, 2026-09-24)
 

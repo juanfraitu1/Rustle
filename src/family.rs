@@ -6527,7 +6527,7 @@ pub mod arms {
             /// `NA`). Under `copy_assign --psv-genomic` the PSV alignment span is this hull — the segment homologous
             /// to ≥ half the family by construction — not the copy's extent.
             pub core_hull: Option<(u64, u64)>,
-            /// ⭐ L2 (`docs/O1_O2_LOOSE_ENDS.md`): the read-supported locus extent (`locus_start`/`locus_end`, 0-based
+            /// ⭐ L2 (`docs/archive/2026-09/O1_O2_LOOSE_ENDS.md`): the read-supported locus extent (`locus_start`/`locus_end`, 0-based
             /// half-open) written by `mcl_families`; under the genomic read-star this is the copy's alignment target
             /// (replacing the §6fd padding rule). Absent on older catalogs.
             pub locus: Option<(u64, u64)>,
@@ -14411,8 +14411,8 @@ pub mod bridge_regroup {
     //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; `copy_assign --bridge-regroup`, default `f1v2` under `--assemble-only` since 2026-09-29, `off` = the 2026-09-25 products; driver `RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units`, unset = f1v2; `f1units` and `--bridge-units-list` are OPT-IN)
     //!
     //! The port of two frozen post-processors of the emitted GTF: **F1** = `bench/f1_bridge.py --mode full` (sha1
-    //! 37ee8e77, `docs/PREREG_f1_bridge_locus_2026-09-28.md` §1) and **F1v2** = F1 filtered by `f1v2.py --rule min` (sha1
-    //! b4e788ad, `docs/PREREG_f1v2_readshare_2026-09-29.md` §1). Held out, F1 was EFFECTIVE on both gorilla samples but cut
+    //! 37ee8e77, `docs/archive/2026-09/PREREG_f1_bridge_locus_2026-09-28.md` §1) and **F1v2** = F1 filtered by `f1v2.py --rule min` (sha1
+    //! b4e788ad, `docs/archive/2026-09/PREREG_f1v2_readshare_2026-09-29.md` §1). Held out, F1 was EFFECTIVE on both gorilla samples but cut
     //! ~40 annotated genes per sample, and on human A119b its bridge splits were 219 SEP / 451 FRAG; F1v2 was EFFECTIVE on
     //! both human libraries. The fused-locus gain is fusions moved into explicit `fusion_of` relation records, not
     //! removed: counting each bridge as its own locus, F1v2 is not better than `--gtf-regroup` (the F1v2 Outcome's
@@ -14453,7 +14453,7 @@ pub mod bridge_regroup {
     //! the families input (`<out>.families.gtf`, [`Outcome::in_families`]) is the GTF without them, so a bridge is never
     //! a locus representative or a family node.
     //!
-    //! UNITS (`--bridge-regroup f1units`, OPT-IN; `docs/PREREG_container_units_v2_dev_2026-09-30.md` Part C, frozen rule U1). The
+    //! UNITS (`--bridge-regroup f1units`, OPT-IN; `docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md` Part C, frozen rule U1). The
     //! bridges above are dropped from the families input, so their copy and partner halves are never related. `f1units` keeps
     //! every read and exon instead: F1's read evidence WITHOUT the share rule (a bridge junction is cut whatever its read
     //! share: the rule existed because F1 removed the bridge) nominates the cut junctions, and each bridge transcript T with
@@ -18525,7 +18525,7 @@ pub mod copy_assign {
         /// (paired 35: 55.7 % assigned at 9,236/9,236 placement agreement, 0 wrong anchors); `false` = the spliced
         /// UNIT form of §6fc (32.1 % @ 99.90 %, ten times faster).
         pub read_star_genomic: bool,
-        /// ⭐ L2 (`docs/O1_O2_LOOSE_ENDS.md`): under the genomic read-star, align against the catalog's
+        /// ⭐ L2 (`docs/archive/2026-09/O1_O2_LOOSE_ENDS.md`): under the genomic read-star, align against the catalog's
         /// read-supported locus extent (`locus_start`/`locus_end`) when the catalog carries it. `false` = the §6fd
         /// padding rule (unit extent ± the family's longest molecule). Catalogs without the columns are unaffected.
         pub read_star_catalog_locus: bool,
@@ -27069,7 +27069,7 @@ pub mod denovo_pipeline {
 
     /// Enable junction-aware greedy locus growth in place of the shipped representative span
     /// (`RUSTLE_LOCUS_GROWTH_EXTENT=1`, default off = byte-identical). See `locus_growth_extent`;
-    /// PREREG `docs/PREREG_locus_growth_extent_2026-09-10.md` (md5 8d5a63fb70875996d599c9f4218cd83c).
+    /// PREREG `docs/archive/2026-09/PREREG_locus_growth_extent_2026-09-10.md` (md5 8d5a63fb70875996d599c9f4218cd83c).
     fn growth_extent_enabled() -> bool {
         std::env::var("RUSTLE_LOCUS_GROWTH_EXTENT")
             .map(|v| v != "0" && !v.is_empty())
@@ -27781,7 +27781,7 @@ pub mod denovo_pipeline {
     /// `(chrom, donor, acceptor)`; a group's support is the summed `n_reads` of the transcripts admitted to it. A
     /// transcript whose junctions touch two or more existing groups EACH supported by more reads than it has is a
     /// bridge and is not admitted; any other transcript unions its junctions and adds its reads. Unspliced transcripts
-    /// are never bridges. Prereg Addendum I (`docs/PREREG_core_definition_2026-09-12.md`): TBC1D3-NPEPPSP1 readthrough
+    /// are never bridges. Prereg Addendum I (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`): TBC1D3-NPEPPSP1 readthrough
     /// transcripts share junctions with both genes and otherwise fuse them into one locus whose rep lies in NPEPPSP1.
     pub fn bridge_transcripts(transcripts: &[DenovoTranscript]) -> Vec<usize> {
         let mut order: Vec<usize> = (0..transcripts.len())
@@ -44286,7 +44286,7 @@ pub mod denovo_pipeline {
         ) -> Vec<Skeleton> {
             // §6zb: push-all-then-finish over the accumulator below — byte-identical to the former single-pass
             // body (the accumulator IS that body, split so a streaming reader can feed it one record at a time
-            // without materialising the reads; see `docs/PREREG_streaming_assembly_2026-09-23.md`).
+            // without materialising the reads; see `docs/archive/2026-09/PREREG_streaming_assembly_2026-09-23.md`).
             let mut acc = Pass1Acc::new(min_terminal_support, snap);
             let jsup = if isoform_k > 0 {
                 Some(junction_support(reads))
@@ -44325,7 +44325,7 @@ pub mod denovo_pipeline {
             jsup
         }
 
-        /// §6zb PASS-1 ACCUMULATOR (`docs/PREREG_streaming_assembly_2026-09-23.md`). The former body of
+        /// §6zb PASS-1 ACCUMULATOR (`docs/archive/2026-09/PREREG_streaming_assembly_2026-09-23.md`). The former body of
         /// [`pass1_skeletons_widened`], split into `push` (one read at a time) and `finish`, so the region reader
         /// can reduce each spliced record to its group's `(n, k-smallest starts, k-largest ends, n_reverse)` on
         /// arrival and never hold a `PrimaryRead`/`BamRead` per record. Unspliced reads are retained (they are
@@ -44360,7 +44360,7 @@ pub mod denovo_pipeline {
             pub fn new(min_terminal_support: u32, snap: Option<(u64, f64)>) -> Self {
                 // The boundary is the k-th most extreme terminal, k = `min_terminal_support`. A depth-adaptive rank
                 // (`RUSTLE_TERMINAL_QUANTILE`, with its `RUSTLE_TERMINAL_K` control arms) was measured WORSE at every
-                // quantile (register r979-r982, `docs/PREREG_depth_adaptive_k_2026-09-22.md`) and removed 2026-09-24.
+                // quantile (register r979-r982, `docs/archive/2026-09/PREREG_depth_adaptive_k_2026-09-22.md`) and removed 2026-09-24.
                 let k = min_terminal_support.max(1) as usize;
                 // the snap needs every terminal, not the k-most-extreme the fixed rank retains
                 let keep_all = snap.is_some();
@@ -45771,7 +45771,7 @@ pub mod denovo_pipeline {
             as_tie_keep_with(recs, ratio, None)
         }
 
-        /// `as_tie_keep` with an optional GENOME-WIDE best-AS table (§6z7, `docs/PREREG_locus_read_pool_2026-09-22.md`).
+        /// `as_tie_keep` with an optional GENOME-WIDE best-AS table (§6z7, `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`).
         ///
         /// r850 found the region-local rule inert: 83.4% of molecules contribute ONE record per region, so their
         /// in-scope "best" is themselves. With a table of each molecule's best AS over the whole BAM, the bar for a
@@ -46340,7 +46340,7 @@ pub mod denovo_pipeline {
         // ================================================================ the closed loop: read-home table (pass 2)
 
         /// ⭐ THE CLOSED LOOP's pass-2 read filter (`RUSTLE_READ_HOME_TABLE=<tsv>`; opt-in, unset ⟹ byte-identical).
-        /// `docs/PREREG_tied_read_loop_2026-09-25.md` §1.4.
+        /// `docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md` §1.4.
         ///
         /// A copy assignment (the union certificate, `copy_assign --families ... --union-certificate`) gives some molecules
         /// ONE home copy; `bench/loop_home.py` lists them with the home span. With the table set, the assembler's read pool
@@ -46565,8 +46565,8 @@ pub mod denovo_pipeline {
         // ================================================================ read-end readthrough junctions (opt-in)
 
         /// ⭐ READ-END READTHROUGH JUNCTION FILTER (`RUSTLE_READTHROUGH_JUNCTIONS=off|r|rq1|r2|list:<path>`; unset, empty or
-        /// `off` ⟹ byte-identical). Pre-registration `docs/PREREG_readthrough_ends_representatives_2026-09-25.md` §2 and its
-        /// Amendment 1; rule and thresholds `docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md` §3 (`R`) and §13-§14
+        /// `off` ⟹ byte-identical). Pre-registration `docs/archive/2026-09/PREREG_readthrough_ends_representatives_2026-09-25.md` §2 and its
+        /// Amendment 1; rule and thresholds `docs/archive/2026-09/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md` §3 (`R`) and §13-§14
         /// (`R & Q1`); instrument `bench/mechanism/readthrough_rules.py`, which this port reproduces junction by junction.
         ///
         /// A readthrough splice J = (donor, acceptor, strand) runs from gene A's terminal exon into gene B. Its signature in
@@ -47728,7 +47728,7 @@ pub mod denovo_pipeline {
         /// queries (the per-region copy-assignment loop, thousands of regions at genome scale) does not re-parse the
         /// multi-MB index for every region. Re-opening the file handle per query is ~free; parsing the index is not.
         /// `reads_in_region` returns exactly what the free function [`reads_in_region`]'s indexed path returns.
-        /// §6zb STREAMING PASS-1 over one region (`docs/PREREG_streaming_assembly_2026-09-23.md`): the indexed
+        /// §6zb STREAMING PASS-1 over one region (`docs/archive/2026-09/PREREG_streaming_assembly_2026-09-23.md`): the indexed
         /// query through the multithreaded BGZF reader on LAZY records — flags, alignment start and the CIGAR ops
         /// only, the ops handed to the very same `exons_from_cigar` the materialised path uses — each record reduced
         /// into `acc` on arrival. No `RecordBuf` (its sequence/quality decode was ~18 s of chr21's 42 s read), no
@@ -47802,7 +47802,7 @@ pub mod denovo_pipeline {
             let mut seen: DetHashSet<u64> = DetHashSet::default();
             let mut n_mapped = 0usize;
             let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
-            // GOOD seeding on the streaming path (r1060/r1100, `docs/PREREG_locus_read_pool_2026-09-22.md`): with
+            // GOOD seeding on the streaming path (r1060/r1100, `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`): with
             // `RUSTLE_GTF_SECONDARY_AS_RATIO` > 0 and a genome-wide best-AS table (`RUSTLE_GTF_SECONDARY_AS_TABLE`,
             // built by `as_table`), a secondary is kept only when `AS >= ratio x best`. This is `as_tie_keep_with`'s
             // rule with the local-best half dropped: for a table built from the SAME BAM the global best is >= every
@@ -50898,7 +50898,7 @@ pub mod denovo_pipeline {
             }
         }
 
-        /// The closed loop's pass-2 read filter (`RUSTLE_READ_HOME_TABLE`, `docs/PREREG_tied_read_loop_2026-09-25.md`
+        /// The closed loop's pass-2 read filter (`RUSTLE_READ_HOME_TABLE`, `docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md`
         /// §1.4): the table parser, the keep/drop rule, and the streaming and buffered pass-1 readers agreeing on a fixture.
         /// Every test passes the table explicitly (no environment variable: tests share one process).
         #[cfg(test)]
@@ -51204,7 +51204,7 @@ pub mod denovo_pipeline {
 
         #[cfg(test)]
         mod readthrough_junction_tests {
-            //! `RUSTLE_READTHROUGH_JUNCTIONS` (`docs/PREREG_readthrough_ends_representatives_2026-09-25.md` + Amendment 1).
+            //! `RUSTLE_READTHROUGH_JUNCTIONS` (`docs/archive/2026-09/PREREG_readthrough_ends_representatives_2026-09-25.md` + Amendment 1).
             //!
             //! One synthetic `+` locus on a 10 kb contig (0-based, half-open exons):
             //! - gene A: exon [1000,1100), intron (1100,2000), last exon [2000, ~2450): its polyA sites lie inside J's intron;
@@ -54025,7 +54025,7 @@ pub mod fam_from_gtf {
     pub mod family_container {
         //! The CONTAINER of a family member's extra pieces (its ACCESSORY exon blocks) and their relations to other
         //! families: the Rust port of `bench/family_container.py` (frozen sha1 e197ccb3, the binding definition of
-        //! `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1), run by `mcl_families --from-gtf
+        //! `docs/archive/2026-09/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1), run by `mcl_families --from-gtf
         //! --emit-container` after the families are written. It reads the families products and never changes a family.
         //!
         //! **STATUS:** OPT-IN  (docs/MODULE_STATUS.md; `mcl_families --emit-container`, default off; driver `RUSTLE_FAMILY_CONTAINER=1`)
@@ -55675,7 +55675,7 @@ pub mod fam_from_gtf {
     #[allow(clippy::all)]
     pub mod family_relations {
         //! The RELATION RECORDS of split transcripts and the MEMBERS of each family BY LOCUS: the container output spec v2
-        //! (`docs/PREREG_container_units_v2_dev_2026-09-30.md` §6.3 / Part C), run by `mcl_families --from-gtf --emit-relations`
+        //! (`docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md` §6.3 / Part C), run by `mcl_families --from-gtf --emit-relations`
         //! after the families are written. It reads the families products and never changes a family. The port of the dev
         //! prototype `relations.py` (scratch `container_units_v2/lib/`, d90a33da); on the same inputs it writes its tables byte
         //! for byte (columns 1-17; column 18 is new, see below).
@@ -59466,7 +59466,7 @@ pub mod family_detect {
         /// Which contiguous core `confirm_edge` measures. `Lcs` (default since docs/o1_ledger.md §6jd) = the longest
         /// exact common substring over `min(len)`, forward then reverse complement: linear time, no alignment.
         /// `Poa` = the global poasta alignment core (the pre-§6jd behaviour; escape hatch `RUSTLE_EDGE_CORE=poa`).
-        /// Evidence, all pre-registered (`docs/PREREG_core_definition_2026-09-12.md`): human pairs LCS F1 0.861 /
+        /// Evidence, all pre-registered (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`): human pairs LCS F1 0.861 /
         /// AUC 0.948 vs POA 0.688 / 0.796 (§6ja); human families ARI 0.681 vs 0.525 (§6jb); held-out gorilla
         /// precision 1.000 for both with recall 0.143 vs 0.063 (§6jb) and 0.140 vs 0.060 on fresh pairs (§6jc).
         pub edge_core: EdgeCore,
@@ -66629,7 +66629,7 @@ pub mod family_detect {
 }
 
 pub mod missing_copy {
-    //! Missing copies from RNA alone (thesis objective O3; §6ze, `docs/PREREG_o3_rna_only_2026-09-23.md`): everything that can be said about a possible
+    //! Missing copies from RNA alone (thesis objective O3; §6ze, `docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`): everything that can be said about a possible
     //! reference-absent copy from one BAM, stopping where only DNA can go (copy number).
     //!
     //! **STATUS:** OTHER-BINARY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
@@ -69799,7 +69799,7 @@ pub mod candidates {
         //! PREREG_rna_allele_haplotype_count Amendments 7-11 without IsoCon. Pure functions here, plus the cached minimap2 runner and the output
         //! writers; the BAM passes and the flow of the stage are in the binary.
         //!
-        //! **STATUS:** OTHER-BINARY — reached only from the `candidate_copies` binary (`src/candidate_copies.rs`; the driver's `candidates` stage runs that binary, an OPT-IN stage since ruling R14: Amendment 12 failed, its re-run A13 passed (docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md); and Amendment 14 failed, docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+        //! **STATUS:** OTHER-BINARY — reached only from the `candidate_copies` binary (`src/candidate_copies.rs`; the driver's `candidates` stage runs that binary, an OPT-IN stage since ruling R14: Amendment 12 failed, its re-run A13 passed (docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md); and Amendment 14 failed, docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
         use crate::run_cache as rc;
         use crate::types::{DetHashMap, DetHashSet};
@@ -70159,7 +70159,7 @@ pub mod candidates {
         const VOTE_MIN_COVER: usize = 3;
         /// Members that must carry an insertion of >= 20 bp before it may enter the consensus (prereg Amendment 15: the floor of 3,
         /// AND a majority of the members covering that column — `2 x count >= covering`; the pre-15 "whatever its share" rule duplicated
-        /// one biological insertion at every column a minority carrier happened to land it, see docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md).
+        /// one biological insertion at every column a minority carrier happened to land it, see docs/archive/2026-10/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md).
         const STRUCT_MIN_SUPPORT: usize = 3;
         /// Members that must cover a template column at either end of the consensus for it to survive the end trim (spec §5.4, ruling R5).
         const END_MIN_COVER: usize = 2;
@@ -70438,7 +70438,7 @@ pub mod candidates {
         ///   13), and at most ONE of them is inserted. First the insertions >= 20 bp, which are STRUCTURE, not errors (R2): the most frequent one
         ///   (ties to the smaller sequence) is inserted when >= 3 members carry it AND its carriers are a majority of the members covering that
         ///   column (`2 x count >= covering`, prereg Amendment 15 — the pre-15 "whatever its share" rule is what duplicated one biological
-        ///   insertion at six columns in GWFAM37:c1, reproduced byte for byte in docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md). Only when no
+        ///   insertion at six columns in GWFAM37:c1, reproduced byte for byte in docs/archive/2026-10/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md). Only when no
         ///   long insertion passes, the insertions < 20 bp: the most frequent one (ties to the smaller) is inserted when >= 50% of >= 3 covering
         ///   members carry it. One winner, because two insertions before one column would make a sequence no member carries (a member's `cs` holds
         ///   at most one insertion there); the long class first, because 3 reads carrying an exon are evidence of an isoform while a short
@@ -70595,7 +70595,7 @@ pub mod candidates {
 
         /// Prereg Amendment 15b (a): normalise one member's `cs` before the vote. minimap2 `splice:hq` writes an exon the template lacks as
         /// `+X·E ~|X|` — the insertion begins with the template bases the adjacent skip removes (107 of 134 insertion-plus-skip pairs in the
-        /// defective clusters of docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md), and the insertion's column then depends on where the read
+        /// defective clusters of docs/archive/2026-10/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md), and the insertion's column then depends on where the read
         /// starts. When an insertion is immediately followed by a skip over template bases `X` and the insertion begins with exactly those bases,
         /// the pair becomes matches over `X` and the insertion shortened by them (`+X·E ~|X|` -> `:|X| +E`), so one biological event lands at one
         /// column. Chained skips repeat; anything else passes through untouched. `ts` is the hit's start on the template.

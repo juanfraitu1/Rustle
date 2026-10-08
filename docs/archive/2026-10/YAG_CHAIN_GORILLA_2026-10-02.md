@@ -1,7 +1,7 @@
 # The reference-absent-copy chain on the Y ampliconic genes — HELD-OUT: gorilla OR6737 testis on mGorGor1 `_pri`, 2026-10-02
 
-Prereg: `docs/PREREG_yag_isocon_chain_2026-10-01.md` (158795c0). Nothing was tuned on this substrate; the rules, delta_Y's definition,
-the masking rule and the flag floor were frozen on the human DEV run (`docs/YAG_CHAIN_HUMAN_2026-10-01.md`). Script
+Prereg: `docs/archive/2026-10/PREREG_yag_isocon_chain_2026-10-01.md` (158795c0). Nothing was tuned on this substrate; the rules, delta_Y's definition,
+the masking rule and the flag floor were frozen on the human DEV run (`docs/archive/2026-10/YAG_CHAIN_HUMAN_2026-10-01.md`). Script
 `bench/rna_allele/yag_test.py --sub gorilla`; work dir `/mnt/linuxdisk/tmp/rna_allele/yag_ggo/`; outputs in
 `docs/YAG_CHAIN_GORILLA_score.out.txt`. Annotation `GGO_genomic.gff` (families by description; chrY NC_073248.2, 67.4 Mb).
 

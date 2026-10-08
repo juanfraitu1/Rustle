@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score the three read-pool arms of docs/PREREG_npip_read_pool_2026-10-01.md on NPIP (human chr16, A119b): locus definition at the
+"""Score the three read-pool arms of docs/archive/2026-10/PREREG_npip_read_pool_2026-10-01.md on NPIP (human chr16, A119b): locus definition at the
 25 CAT NPIP copies, echo loci (zero primary records over the span), annotation class, the NPIP family after the all-vs-all + MCL, and
 the advisor's rule f = (ALL-added echo or off-copy loci that end up in the NPIP family) / (such loci).
 

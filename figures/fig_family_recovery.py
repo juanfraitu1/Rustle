@@ -6,7 +6,7 @@ reads -> seeded assembly loci -> one representative per locus, its "positional e
 copy assignment consumes); guided = the same rule on the annotated gene and pseudogene bodies. It is not a comparison
 with other tools. The thesis goal is to reduce the difference between the modes.
 
-References are EXTERNAL (docs/PREREG_genome_wide_families_2026-09-25.md, Amendment 1): Ensembl Compara families
+References are EXTERNAL (docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md, Amendment 1): Ensembl Compara families
 (duplications within primates; human; the headline), Soto et al. 2025 (human; not independent of the exon threshold),
 the NPIP reference set (human chr16, an inset) and Liftoff copy pairs (the Fig. 8 self-lift; every species; the de
 novo mode only, since Liftoff's extra copies are unannotated by construction). Protein-homology families are a
@@ -56,7 +56,7 @@ DEV_CLAIM = (
     "built.")
 GW_CLAIM = (
     "Genome-wide, every sample; a Rustle-internal comparison of its two modes, not a tool comparison (pre-registered "
-    "claims F7.1-F7.4, docs/PREREG_genome_wide_families_2026-09-25.md, Amendment 1; the numbers are printed by "
+    "claims F7.1-F7.4, docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md, Amendment 1; the numbers are printed by "
     "`python3 figures/fig_family_recovery.py summary` and quoted in captions/fig7.md): Rustle's default de novo "
     "families per sample vs guided families per species against Ensembl Compara families (primates), Soto 2025 and "
     "the NPIP reference set (human), and Liftoff copy pairs (every species; de novo only), on the genome minus "
@@ -914,7 +914,7 @@ def build_genome(cfg: dict, data_dir: Path, force: bool = False):
         raise o1.NotBuilt("fig7 genome scope: nothing scored yet:\n  " + "\n  ".join(missing))
     perfam = [r for r in perfam if (r[3], r[4], r[6]) in hit]
 
-    notes = ["genome-wide, pre-registered in docs/PREREG_genome_wide_families_2026-09-25.md; a Rustle-internal "
+    notes = ["genome-wide, pre-registered in docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md; a Rustle-internal "
              "comparison of its two modes (de novo, guided), not a comparison with other tools"]
     if missing:
         notes.append("provisional: not every sample, mode or reference is built yet — " + " | ".join(missing))

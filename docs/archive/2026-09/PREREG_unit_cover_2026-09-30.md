@@ -61,7 +61,7 @@ several families, and which families, from the single-family genes alone.
 (Filled in after the run, below this line, without editing anything above.)
 
 Run on 2026-09-30 after this file was committed (`cedce819`, sha1 `39ae6af4942b045551d5dbfbcb03a18d71b1f919`);
-`bench/soto_m2/soto_m2_unit_cover.py`, 1 s, light lock. Output `docs/SOTO_UNIT_COVER_2026-09-30.md`, per gene
+`bench/soto_m2/soto_m2_unit_cover.py`, 1 s, light lock. Output `docs/archive/2026-09/SOTO_UNIT_COVER_2026-09-30.md`, per gene
 `docs/SOTO_UNIT_COVER_2026-09-30.tsv`.
 
 **VERDICT (section 4): HOLDS** — held-out and dev alike.

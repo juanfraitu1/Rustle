@@ -1,7 +1,7 @@
 # Pre-registration: readthrough junction filter v3 (arm R3): v2 with a reads-only majority guard on tier B
 
 **Written 2026-09-26, before any held-out number of arm R2, arm R3 or their NULLs exists.** User goal (`/goal`):
-*"develop effective readthrough reads filter"*. This file is the successor of `docs/PREREG_readthrough_v2_2026-09-26.md`
+*"develop effective readthrough reads filter"*. This file is the successor of `docs/archive/2026-09/PREREG_readthrough_v2_2026-09-26.md`
 (the "v2 prereg"), which it **supersedes before v2's held-out stage**. It fixes one rule (R3) and its matched NULL
 (NULL3). Everything else is v2's: the R prereg's metrics, substrates, power floors and scorer, v2's clause D and v2's
 verdict logic, with R3 in place of R2. Where a v2 section still applies it is cited, not copied; every binding

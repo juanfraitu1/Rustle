@@ -4,7 +4,7 @@ UpSet of every sample is the supplementary Figure 4s.
 Reads are simulated from every catalog copy with a spliced sequence of >= 300 bp in a family of >= 2 copies (the copy's
 own spliced sequence; the read name records the source copy), mapped to the whole genome with the shipped minimap2
 settings, and assigned by `copy_assign --families` (default output: one result per read and family) and
-`--union-certificate` (the union test). Genome-wide on every sample (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md;
+`--union-certificate` (the union test). Genome-wide on every sample (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md;
 cfg `o2_scope genome`), or the development tables (`o2_scope dev`: human A119b chr16 catalog, gorilla OR6737 chr20
 (NC_073244.2) catalog). Samples and species are never pooled.
 
@@ -44,7 +44,7 @@ META = {
               "reproduce this: the default output is correct for 60 of the 648 MAPQ-0 reads it assigns, and the "
               "union test assigns none, because 1,255 of the 1,263 have an NM-identical twin at another locus. "
               "Gorilla chr20: 30 MAPQ-0 reads from three copies, none assigned. The genome-wide tables of all six "
-              "samples replace these numbers (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md)."),
+              "samples replace these numbers (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md)."),
     "tables": ["fig4_assignability_upset"],
 }
 TABLE = "fig4_assignability_upset"

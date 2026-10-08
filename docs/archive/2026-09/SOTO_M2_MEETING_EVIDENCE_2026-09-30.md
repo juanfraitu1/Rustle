@@ -1,8 +1,8 @@
 # Soto vs our families: reproduced and extended (2026-09-30)
 
-These are the second-machine tasks of `docs/HANDOFF_SECOND_MACHINE_2026-09-30.md`, run in an isolated clone on this
+These are the second-machine tasks of `docs/archive/2026-09/HANDOFF_SECOND_MACHINE_2026-09-30.md`, run in an isolated clone on this
 machine (`/mnt/linuxdisk/home/juanfraitu/rustle_m2`, branch `machine2/soto-evidence`). They extend
-`docs/SOTO_VS_OURS_MEETING_2026-09-30.md`. Soto's Table S1C is the truth throughout. Species: human CHM13 v1.0.
+`docs/archive/2026-09/SOTO_VS_OURS_MEETING_2026-09-30.md`. Soto's Table S1C is the truth throughout. Species: human CHM13 v1.0.
 
 ## 0. Reproduction: both commands match exactly
 

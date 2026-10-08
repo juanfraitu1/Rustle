@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 6 prep (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): per family of the 2026-08-14 excision panel, the scored
+"""Amendment 6 prep (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): per family of the 2026-08-14 excision panel, the scored
 read set S_f (<= 500 D reads + <= 500 K reads, seed 1, from baseline primaries), the IsoCon input net_f (S_f reads with a masked-arm
 record overlapping K, plus S_f reads unmapped in the masked arm), one FASTA per family, the union FASTA to realign, and the labels.
 

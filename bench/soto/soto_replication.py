@@ -47,7 +47,7 @@ recomputed+uncurated 1,864: ARI 0.6946 / 0.6822 (median / mean), exact 234 / 257
 (`--sedef final_v1.bed` regions too, 1,921 eligible): 0.6981 / 0.6884. Off by default: no other subcommand calls
 any of it (headline chain re-verified byte-identical).
 
-RECONCILED RECIPE (2026-09-29; docs/PREREG_soto_reconciliation_2026-09-29.md, register 1162-1166; docs/
+RECONCILED RECIPE (2026-09-29; docs/archive/2026-09/PREREG_soto_reconciliation_2026-09-29.md, register 1162-1166; docs/
 SOTO_REPLICATION_STATUS_2026-09-28.md §1). Two choices of Soto's RELEASED code, not their prose, carry the whole
 gap between the literal recipe (0.7096) and their Table S1C: (1) map SD98 EXONS back to the genome, not SD98
 regions (`edges --exon-mapback`); (2) apply MAD < 1 to each shared-exon PAIR and grow families through coding /

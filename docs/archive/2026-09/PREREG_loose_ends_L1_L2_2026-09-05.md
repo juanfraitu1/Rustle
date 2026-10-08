@@ -1,6 +1,6 @@
 # PREREG — L1 dropped members as O2 candidates + L2 the locus extent owned by O1 (2026-09-05)
 
-Context: `docs/O1_O2_LOOSE_ENDS.md`. Both change what O1 hands O2; neither changes O2's certificates.
+Context: `docs/archive/2026-09/O1_O2_LOOSE_ENDS.md`. Both change what O1 hands O2; neither changes O2's certificates.
 
 ## L1 — dropped members become candidates
 Now: a member with core = 0 under the family's depth threshold (`CoreStatus::Dropped`) is not emitted as a unit;

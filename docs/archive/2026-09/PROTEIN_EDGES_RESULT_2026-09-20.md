@@ -1,6 +1,6 @@
 # Protein edges vs the §6o8 no-edge gap — result
 
-Run 2026-09-20 against `docs/PREREG_protein_edges_2026-09-20.md` (committed `97a8eac9` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_protein_edges_2026-09-20.md` (committed `97a8eac9` before any
 alignment). Tool: `bench/protein_edge_gap.py`. Truth: Soto et al. 2025 published families, unchanged
 from §6s8. Protein rule copied verbatim from §6ko (longest CDS, blastp e ≤ 1e-5, non-overlapping HSPs
 covering ≥ 0.30 of the longer protein) — not re-tuned.

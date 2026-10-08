@@ -10,7 +10,7 @@ instruments' sha1s.
 ## 0. The question
 
 The replication headline is Soto's literal recipe on native CHM13 v1.0 (**BASE**): ARI 0.7096 / 235 of 491 exact
-(median MAD), 0.7039 / 261 (mean MAD) (`docs/SOTO_REPLICATION_STATUS_2026-09-28.md` §1.1). This is NOT a search for a
+(median MAD), 0.7039 / 261 (mean MAD) (`docs/archive/2026-09/SOTO_REPLICATION_STATUS_2026-09-28.md` §1.1). This is NOT a search for a
 better method. It asks: **which documented choices, set the way Soto's own paper, released code or inputs set them,
 move our output to Soto's own family table, and how far?** The answer must read "BASE x → chosen y (held-out z);
 remaining gap = a (cover) + b (their rule / manual steps) + c (unreachable by any ≥ 98% exon link) + d (other)".
@@ -387,7 +387,7 @@ their family loop completed as it evidently intends) on their genome, annotation
 reproduces 479 of 491 families (ARI 0.97, 0.97 held-out); sequence alone reaches 0.73 and our own copy numbers 0.92,
 so the step to 0.97 is agreement with their published copy numbers, not an independent reconstruction."
 
-**Correction (2026-09-29, later the same day; docs/PREREG_soto_famcn_allwssd_2026-09-29.md):** the "our own copy
+**Correction (2026-09-29, later the same day; docs/archive/2026-09/PREREG_soto_famcn_allwssd_2026-09-29.md):** the "our own copy
 numbers 0.92" in the advisor sentence above came from a 10-sample WSSD table that turned out to be a favourable draw
 (20 random 10-sample draws: ARI 0.870-0.923). With all 268 SGDP samples and Soto's per-gene interval (gene body ∩
 SD98) our own copy numbers give **ARI 0.9277 (held-out 0.9343), 411/491 exact**. Use that figure instead of 0.92/373.

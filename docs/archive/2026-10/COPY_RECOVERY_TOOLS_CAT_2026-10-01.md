@@ -1,8 +1,8 @@
 # Per-copy recovery of NPIP and TBC1D3, re-scored on the CAT/Liftoff v2.0 truth (human, 2026-10-01)
 
-This re-runs the scoring of `docs/COPY_RECOVERY_TOOLS_2026-09-29.md` (pre-registration
-`docs/PREREG_copy_recovery_tools_2026-09-29.md`, sha1 40b581b8) with a truth built from the T2T-CHM13 v2.0 CAT/Liftoff
-annotation, under `docs/CAT_RERUN_PROTOCOL_2026-10-01.md` (R1-R6 and Amendment 1). The registered RefSeq results stand
+This re-runs the scoring of `docs/archive/2026-09/COPY_RECOVERY_TOOLS_2026-09-29.md` (pre-registration
+`docs/archive/2026-09/PREREG_copy_recovery_tools_2026-09-29.md`, sha1 40b581b8) with a truth built from the T2T-CHM13 v2.0 CAT/Liftoff
+annotation, under `docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md` (R1-R6 and Amendment 1). The registered RefSeq results stand
 as registered; both are reported below with the same scorer.
 
 - **Scope.** Human A119b only (NPIP on chr16, TBC1D3 on chr17). Gorilla is not touched.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The RNA-only allele caller of docs/PREREG_rna_allele_haplotype_count_2026-10-01.md (reads `_pri`, the BAM, the annotation-derived
+"""The RNA-only allele caller of docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md (reads `_pri`, the BAM, the annotation-derived
 gene table, the paralog PAF, the genome-wide AS table and the O2 assignments; never the haplotype assemblies).
 
 Per gene G (sets S_fam, S_multi, S_single, S_X):

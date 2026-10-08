@@ -1,6 +1,6 @@
 # Held-out family test — result
 
-Run 2026-09-20 against `docs/PREREG_heldout_families_2026-09-20.md` (pre-registered and committed at
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_heldout_families_2026-09-20.md` (pre-registered and committed at
 `aa4e7b1d`, truth-regex amendment at `42c298a9`, Test 2 at `ac9718ff` — all **before** the scores below).
 Answers `docs/ADVISOR_QUESTIONS.md` §1.3 *"everything you have is one family"* and Q6.
 

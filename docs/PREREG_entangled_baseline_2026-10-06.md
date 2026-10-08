@@ -56,7 +56,7 @@ New arms, existing opt-in options only, no new code (the driver commands of `run
 | arm | change to the default | targets |
 |---|---|---|
 | **P** | `--no-seed-secondaries` (primaries-only seeding) | artifacts built from tied secondary alignments of paralogous reads |
-| **C** | `RUSTLE_POLISH_SUBCHAIN=drop` (`--polish-subchain drop`) | terminal-trim sub-chains (the `c` excess of `docs/PREREG_complete_transcripts_2026-09-27.md`) |
+| **C** | `RUSTLE_POLISH_SUBCHAIN=drop` (`--polish-subchain drop`) | terminal-trim sub-chains (the `c` excess of `docs/archive/2026-09/PREREG_complete_transcripts_2026-09-27.md`) |
 | **PC** | both | both |
 
 Predictions, fixed now: **Q1** P cuts in-window artifacts of class 'other' by >= 30% against D_asm (pooled); **Q2** C cuts in-window fragment artifacts by >= 50% and loses <= 1% of the chains recovered by D_asm (pooled); **Q3** P recovers fewer chains than D_asm at stratum E (by >= 10 of 1606, pooled): the seeding gain made visible; **Q4** none of P, C, PC meets the bar of section 4 (the existing options are not enough). The bar of section 4 is unchanged and is not edited after these arms are scored. Each arm is scored as `X_asm` (`.gtf`) and `X_fam` (`.families.gtf`).

@@ -1,6 +1,6 @@
 # PREREG — the RNA-only reference-absent-copy chain on the Y ampliconic genes (written before any run on these families)
 
-Context: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendments 7-10 established, on gorilla autosomal families, a truth-free
+Context: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendments 7-10 established, on gorilla autosomal families, a truth-free
 chain — family read net -> IsoCon -> flag outputs not in the reference -> LINK outputs within delta of a reference locus (allele) -> MERGE
 the rest into candidate copies at delta -> FLAG = candidate with >= 2 transcripts — with delta = the 99th percentile of allelic (haplotype)
 divergence at single-copy genes. The Y ampliconic genes (YAGs) are where IsoCon (Sahlin et al. 2018) was built and validated, and they are

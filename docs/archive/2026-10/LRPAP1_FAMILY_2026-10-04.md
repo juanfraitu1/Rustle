@@ -27,7 +27,7 @@ shipped tools; every number is reproducible from the files named.
 | LOC129530227 | chrY | NC_073248.2:45,277,394-45,297,429 (+) | 0.980 | RefSeq LOC129530227, pseudogene (chrY) | 1 / 18 | no locus (no reads) | DN_NC_073248.2_45277558_8 (8 exons, 6 reads) | 7 reads, 7 introns | 0 / 14 | 0 / 14 | 45277560 |
 
 
-(chain-support reads = Amendment C of `docs/PREREG_spliced_copy_support_2026-10-04.md`: reads whose junction chain is an expressed chain of
+(chain-support reads = Amendment C of `docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md`: reads whose junction chain is an expressed chain of
 the copy or a 5' piece of it, uniquely placed; TSS-anchored = D', reads starting within 150 bp of the chain's modal start carrying its first
 three introns — the gorilla libraries have no cap signal, so the capped-start rule E does not apply. Fibroblast = KB3781, the assembly's own
 animal; testis = OR6737.)
@@ -40,7 +40,7 @@ animal; testis = OR6737.)
   LOC129530227 1) have no locus — nothing to cluster.
 - **Testis assembly (OR6737): family MCL9 = all eight copies**, density 0.893, no foreign member.
 - Every de novo locus is represented by a 7- or 8-exon transcript (`DN_…_8`): the full LRPAP1 structure, unlike the NPIP fragments of
-  `docs/SPLICED_COPY_SUPPORT_2026-10-04.md`. The dominant expressed chain at LRPAP1 is the RefSeq model XM_031007070.3's intron chain exactly
+  `docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md`. The dominant expressed chain at LRPAP1 is the RefSeq model XM_031007070.3's intron chain exactly
   (1,724 of 1,977 testis reads; 7 introns), and 98-99% of the reads at every expressed copy are that copy's dominant chain or a 5' piece of it.
 - Guided mode (the annotation) knows all eleven loci by name (correction below); the de novo mode finds the same eleven from reads alone. The legacy GWFAM catalog (378
   families) does not contain LRPAP1.

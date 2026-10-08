@@ -1,7 +1,7 @@
 # Second machine (small disk): reproduce and extend the Soto evidence, then merge (2026-09-30)
 
 For a second WSL machine with little disk, running its own Claude. Goal there: reproduce and extend two claims from
-`docs/SOTO_VS_OURS_MEETING_2026-09-30.md`: (A) Soto's families sit inside ours and, with the right conditions, we find what they
+`docs/archive/2026-09/SOTO_VS_OURS_MEETING_2026-09-30.md`: (A) Soto's families sit inside ours and, with the right conditions, we find what they
 find; (B) Soto's families are narrower than sequence homology and include fragments and pseudogenes. Nothing there needs
 a build, a BAM, a genome or the 35 GB of copy-number tracks.
 
@@ -45,7 +45,7 @@ ID_482, ID_62. Expected `ladder` (ALL ARI / exact): sequence only 0.7307 / 345; 
 - **B2, fragments bundled with full-length members (needs `sd98_gene_exons.tsv`):** family members' exonic footprints versus the
   family's largest member; check: 147 of 420 size-comparable families hold a member < 20% next to one ≥ 80%.
 - **B3, Soto finer than ours:** for each of our 33 multi-family sequence clusters, list its Soto families with sizes and the genes that
-  separate them (the copy-number values), and the 83 missing paralog pairs of `docs/SOTO_REPLICATION_STATUS_2026-09-28.md` §3.
+  separate them (the copy-number values), and the 83 missing paralog pairs of `docs/archive/2026-09/SOTO_REPLICATION_STATUS_2026-09-28.md` §3.
 - **A2 (optional):** nesting for Soto's published edges (`shared_exons_2334_finalv1_native.tsv`) versus the exon edges: does the 99.1% depend on the edge set?
 
 Report numbers with the source file and the command. Do not call our families "better": the objectives differ and Soto's

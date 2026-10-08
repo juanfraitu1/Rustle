@@ -1,6 +1,6 @@
 # Cliques, trusses, communities — the operator bakeoff on held-out substrate
 
-Run 2026-09-20 against `docs/PREREG_operator_heldout_2026-09-20.md` (committed `054030c2` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_operator_heldout_2026-09-20.md` (committed `054030c2` before any
 operator was scored). Tool: `bench/operator_bakeoff_heldout.py`. Graph: the **shipped** DNA gene-body
 graph via `mcl_families --dump-graph` (edge set and exon conjunct exactly as shipped). Substrate:
 chr2/chr8/chr10, zero ledger and register exposure. Truth: Soto S1C, same scorer as every other arm.

@@ -1,4 +1,4 @@
-# NPIP algorithmic-ceiling simulation — vs `docs/PREREG_npip_sim_2026-09-18.md` (md5 17be6b031092b79b343421fa0dd14f1e)
+# NPIP algorithmic-ceiling simulation — vs `docs/archive/2026-09/PREREG_npip_sim_2026-09-18.md` (md5 17be6b031092b79b343421fa0dd14f1e)
 
 **Verdict: SIM-1 PASSES at 25/26. Given full-length, distinguishable reads the assembler is essentially
 perfect — it recovers every junction present in the data. The real-data deficit is therefore NOT an

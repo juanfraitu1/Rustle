@@ -97,4 +97,4 @@ remains unexamined and available as a held-out substrate for the next rule.
 
 Cause: the bridges are readthrough transcription, not split loci — at N>=1 only 49.3% of bridged pairs
 share a home gene, at a median 30 kb separation. Full result and the diagnosis reversal it forced:
-`docs/NODE_CONSTRUCTION_OVERMERGE_2026-09-21.md`. Register rows 937-940.
+`docs/archive/2026-09/NODE_CONSTRUCTION_OVERMERGE_2026-09-21.md`. Register rows 937-940.

@@ -1,6 +1,6 @@
 # Figure 8: Loci in the Liftoff framework
 
-**Status.** Pre-registered in `docs/PREREG_liftoff_loci_2026-09-25.md` before any comparison existed. The Liftoff
+**Status.** Pre-registered in `docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md` before any comparison existed. The Liftoff
 baseline is being computed genome-wide, one call per block of records (human 36 calls, gorilla 28, chimpanzee 27,
 orangutan 27; about 5 minutes each); the only number filled in below is the check against a single run (amendment
 3). `python3 figures/fig_loci.py summary` prints every number this caption quotes, with

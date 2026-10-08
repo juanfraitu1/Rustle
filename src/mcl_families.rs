@@ -216,7 +216,7 @@ struct Args {
     no_emit_units: bool,
     /// With `--from-gtf` only; default OFF (every product byte-identical without it). The CONTAINER of each family
     /// member's extra pieces (`rustle::family_container`, the port of the frozen `bench/family_container.py`,
-    /// `docs/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1): after the families are written, every
+    /// `docs/archive/2026-09/PREREG_fusion_container_sim_2026-09-28.md` §1 + Amendment 1): after the families are written, every
     /// clustered locus (with the records `loci.tsv` folds into it) gets its exon blocks = the union of the exons of
     /// ALL transcripts of its gene_ids in the `--from-gtf` GTF; a block is `core` iff one aligned CIGAR column of
     /// `<out>.loci.paf` joins it to an exon base of another member of the same family, else `accessory`, and an
@@ -229,7 +229,7 @@ struct Args {
     /// With `--from-gtf` only; default OFF (every product byte-identical without it). The RELATION RECORDS of the
     /// unit-split transcripts of `copy_assign --assemble-only --bridge-regroup f1units` and the MEMBERS of each family
     /// BY LOCUS (`rustle::family_relations`, the container output spec v2 of
-    /// `docs/PREREG_container_units_v2_dev_2026-09-30.md`): after the families are written, every unit transcript
+    /// `docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md`): after the families are written, every unit transcript
     /// (`fusion_unit` in the `--from-gtf` GTF) is grouped under the transcript it was cut from. Writes
     /// `<out>.relations.tsv` (one row per split transcript: its units, their loci and families, SAME / DIFF /
     /// ONE_UNCL / ALL_UNCL, `cover` iff the pre-split locus belongs to >= 2 families) and `<out>.members_by_locus.tsv`
@@ -241,7 +241,7 @@ struct Args {
     /// With `--from-gtf` only: which transcript of a locus is its representative — the locus's exons in
     /// `loci.gff3` and, with `--emit-units`, the copy's exons in `copies.tsv` (`--min-cov-shorter`'s denominator).
     /// `most-reads` (the default since §6ef) is the shipped rule; `most-junctions` prefers the transcript with the most
-    /// junctions (opt-in; pre-registered test, `docs/PREREG_locus_representative_rule_2026-10-04.md`, NOT adopted on
+    /// junctions (opt-in; pre-registered test, `docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md`, NOT adopted on
     /// the held-out clause (a)). Ties under both rules: most `reads`, then the longer span, then the last
     /// `transcript_id` in sorted order.
     #[arg(long, value_enum, default_value_t = Representative::MostReads)]
@@ -334,7 +334,7 @@ struct Args {
     /// Escape hatch: the behaviour before 2026-09-05 (`--units-follow-reads` off).
     #[arg(long, default_value_t = false)]
     no_units_follow_reads: bool,
-    /// ⭐ L1 (`docs/O1_O2_LOOSE_ENDS.md`): emit cluster members DROPPED by the core rule (core = 0) as units too,
+    /// ⭐ L1 (`docs/archive/2026-09/O1_O2_LOOSE_ENDS.md`): emit cluster members DROPPED by the core rule (core = 0) as units too,
     /// with `member_status = dropped`. Family membership is the flag; O2's candidate set is every locus of the
     /// cluster — MCL clustered the locus by homology, so it competes for the family's reads whatever its core
     /// status (NPIP's ABCC1-region records: 332 reads with no candidate, surfacing as a false "missing copy"

@@ -1,11 +1,11 @@
 # `o3_candidates` re-run on the 53-family held-out (Amendment 13 + 13b-13e): A13-1 PASSES, A13-2 PASSES, A13-3 PASSES — default-on flip made in 1f49d0f0 and reverted in d04b6ae9: Amendment 14's no-deletion control FAILED (R22) — 2026-10-03
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md`, Amendment 13 (`e3e9d4bf`) with 13b (`d69f0e02`), 13c (`065b2b46`),
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md`, Amendment 13 (`e3e9d4bf`) with 13b (`d69f0e02`), 13c (`065b2b46`),
 13d (`f31f663e`) and 13e (`ff869c40`), each written before the A13 run; Amendment 12's rules (A12-1/2/3) unchanged except A13-1's
 comparator (13b, ruling R17). Stage: `o3_candidates` rebuilt from HEAD `0f5824a7` (binary sha1 `0c97f623...`). Recipe:
 `bench/rna_allele/accept_o3_candidates.sh` (`ACC=a13`, the default) + `bench/rna_allele/accept_o3_candidates.py`. Work dir
 `/mnt/linuxdisk/tmp/rna_allele/a13/` (delta reruns in `half/`, `double/`). Scorer and helper outputs copied to
-`docs/O3_CANDIDATES_ACCEPTANCE_A13_score.out.txt`. The previous acceptance: `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md` (A12).
+`docs/O3_CANDIDATES_ACCEPTANCE_A13_score.out.txt`. The previous acceptance: `docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md` (A12).
 
 ## What changed since A12 (the stage under test)
 
@@ -220,7 +220,7 @@ the matching README, AGENTS, REPRODUCE, figures/README + samples.py comments, MO
 held, 1f49d0f0 would ship as committed; if it failed, 1f49d0f0 would be reverted and the stage stay opt-in (R14), this document's
 verdicts above standing unchanged. The stage's cost on a full BAM was left to a separate task (ruling R23).
 
-**Outcome (2026-10-03, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`, register rows 1226-1230): C1' FAILED — 35 of the 53 families
+**Outcome (2026-10-03, `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`, register rows 1226-1230): C1' FAILED — 35 of the 53 families
 carry a false flag with nothing deleted (bar 8; 54 of the 56 flags match neither of KB3781's haplotypes at 0.999) — and C2' held
 (0.54% false moves), so 1f49d0f0 was reverted in d04b6ae9: the stage is opt-in again (R14). The verdicts above stand unchanged. R23:
 one batch of 50 families on the full fibroblast BAM did not finish in a 10-minute call (spec §9b).**
@@ -254,7 +254,7 @@ and the spec's header and §9 keep the record of the flip with the dated outcome
   428, GWFAM54 411, GWFAM173 280, GWFAM268 214, ...). They are not false moves (false moves fall to 323), but in O2 these candidates are
   extra copies. Amendment 14 then ran Amendment 9's no-deletion control for the A13 stage (ruling R22): 35 of the 53 families carry a
   false flag with nothing deleted (C1' fails), and 28 of these 46 survivor-derived flags recur there — the flip was reverted
-  (d04b6ae9; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`).
+  (d04b6ae9; `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`).
 - **One deleted copy, several candidates:** exactly one D-derived candidate in 20 of the 25 found copies; in GWFAM100 the two D-derived
   candidates tie for 368 D reads (D right 477 in A12 -> 110).
 - The registered A13-1 compares the stage's D right over ALL reads with C over the attainable reads; on the attainable reads alone the

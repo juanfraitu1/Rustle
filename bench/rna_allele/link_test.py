@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 7 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): linking IsoCon transcripts to their source locus, held-out on
+"""Amendment 7 (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): linking IsoCon transcripts to their source locus, held-out on
 multi-copy families. Subcommands, run in order:
 
   panel     families with >= 3 copies (all listed, >= 20 clean reads each, spans <= 200 kb); mask the copy last by (chrom, start); G3

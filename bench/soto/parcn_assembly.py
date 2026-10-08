@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Assembly parCN / famCN for Soto 2025's SD98 genes: QuicK-mer2's own k-mer rule, counted EXACTLY in complete
-assemblies (2026-09-29, KEY=soto_parcn_asm; docs/PREREG_soto_parcn_assembly_2026-09-29.md, frozen sha1 2a76a930;
+assemblies (2026-09-29, KEY=soto_parcn_asm; docs/archive/2026-09/PREREG_soto_parcn_assembly_2026-09-29.md, frozen sha1 2a76a930;
 register rows 1171-1174).
 
 WHY. Soto's paralog-specific copy number (Table S1E "Median parCN") is QuicK-mer2 on 2,504 1KGP short-read genomes

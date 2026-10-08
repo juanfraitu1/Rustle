@@ -1,5 +1,5 @@
 #!/bin/bash
-# rustle_reassemble.sh — the closed loop's pass 2, one command per step (docs/PREREG_tied_read_loop_2026-09-25.md).
+# rustle_reassemble.sh — the closed loop's pass 2, one command per step (docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md).
 #
 #   union   copy assignment of tied reads with ONE test per read over every candidate copy (the union certificate),
 #           on the default families' units            copy_assign --families UNITS --union-certificate -> PREFIX.loop.*

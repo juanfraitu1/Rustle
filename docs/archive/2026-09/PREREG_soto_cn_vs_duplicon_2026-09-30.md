@@ -7,7 +7,7 @@ recorded in the result section).
 ## 1. Question
 
 Soto's families are sequence families (genes sharing ≥ 98%-identical exons) cut where copy numbers differ by 2 or more
-(`docs/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`; 33 sequence families hold 87 Soto families). Segmental duplications are
+(`docs/archive/2026-09/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`; 33 sequence families hold 87 Soto families). Segmental duplications are
 mosaics of duplicons (ancestral duplication units, DupMasker). **Does Soto's cut group genes whose exons sit on the same
 duplicons?** If yes, the copy-number gate behaves like a duplicon split, and Soto's families reconcile with duplicons as
 units. If no, the cut is finer than duplicon structure.

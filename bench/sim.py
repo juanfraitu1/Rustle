@@ -155,7 +155,7 @@ def load_transcripts(gff, chrom):
 
 
 def cmd_chromosome(a):
-    """Ideal-scenario chromosome simulation, per `docs/PREREG_ideal_chromosome_sim_2026-09-21.md` (md5 `ff226f41`).
+    """Ideal-scenario chromosome simulation, per `docs/archive/2026-09/PREREG_ideal_chromosome_sim_2026-09-21.md` (md5 `ff226f41`).
 
     Establishes the CEILING of node construction under ideal input, with single-copy genes as the negative control.
     Arms:
@@ -211,8 +211,8 @@ def cmd_chromosome(a):
 
 # ================================================================ missing-copy (was missing_copy_sim.py)
 def cmd_missing_copy(a):
-    """Missing-copy simulations with truth (thesis objective O3; docs/PREREG_o3_reference_bias_2026-09-23.md arm A,
-    docs/PREREG_o3_rna_only_2026-09-23.md control + addendum 2): reads from K annotated genes of CHROM plus an EXTRA
+    """Missing-copy simulations with truth (thesis objective O3; docs/archive/2026-09/PREREG_o3_reference_bias_2026-09-23.md arm A,
+    docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md control + addendum 2): reads from K annotated genes of CHROM plus an EXTRA
     COPY that is absent from the reference, mapped to the unmodified reference with the shipped minimap2 settings.
 
     modes
@@ -451,7 +451,7 @@ def tandem_pipeline(a, prefix, bam, fasta, contig_len, copies, truth_src, placed
 
 
 def cmd_tandem(a):
-    """Tandem-copy simulator (docs/PREREG_tandem_copy_sim_2026-09-24.md): plant k copies of a real two-exon gene into a
+    """Tandem-copy simulator (docs/archive/2026-09/PREREG_tandem_copy_sim_2026-09-24.md): plant k copies of a real two-exon gene into a
     chr20 background at identity p and spacing D, simulate reads from every copy, map with the shipped minimap2
     settings, classify each read's exon placements, and optionally run the pipeline (assembler -> catalog ->
     assignment) on it.
@@ -739,14 +739,14 @@ def _fastq_key(a):
 
 
 def cmd_copies(a):
-    """O2 read-level truth simulation (docs/PREREG_o2_read_truth_2026-09-23.md): every copy of every multi-copy family
+    """O2 read-level truth simulation (docs/archive/2026-09/PREREG_o2_read_truth_2026-09-23.md): every copy of every multi-copy family
     (copies.tsv; >= 2 copies, spliced sequence >= 300 bp) gets min(100, max(10, n_reads)) HiFi-model reads (jittered,
     <= 10% trimmed) named `family|copy|i`, mapped with the shipped minimap2 settings against INDEX (genome-wide for the
     real experiment); also writes OUT.copies_used.tsv and per-copy closest-sibling identity (OUT.sibling.tsv).
     ⚠ copies.tsv is read POSITIONALLY (family_id, copy_idx, tid, chrom, start, end, n_exon, strand, n_reads).
     ⚠ Per-copy seeds are stable_seed(family, copy) since wave 7 (B2): reads differ from every earlier run.
 
-    Genome-wide options (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md; all opt-in, the default run is
+    Genome-wide options (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md; all opt-in, the default run is
     unchanged): --reuse-fastq keeps OUT.fq / OUT.copies_used.tsv when OUT.fq.key (catalog md5s, seed, this file's md5)
     matches, so a call that only maps parts does not re-simulate (~0.3 ms per read); --simulate-only simulates (or
     reuses), splits the parts and stops before mapping; --sibling none skips the closest-sibling all-vs-all (no figure

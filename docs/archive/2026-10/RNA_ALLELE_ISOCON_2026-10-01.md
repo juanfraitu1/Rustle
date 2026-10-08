@@ -1,6 +1,6 @@
 # IsoCon (reference-free) on KB3781: simulation and real fibroblast reads (Amendments 1-3), 2026-10-01
 
-Prereg `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` (Amendments 1-3); truth frozen in `docs/RNA_ALLELE_TRUTH_FROZEN_2026-10-01.md`.
+Prereg `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` (Amendments 1-3); truth frozen in `docs/archive/2026-10/RNA_ALLELE_TRUTH_FROZEN_2026-10-01.md`.
 IsoCon 0.3.3 (PyPI; env `isocon`: python 3.8, networkx 2.3, numpy 1.19.5), `IsoCon pipeline --nr_cores 4`, defaults. Scripts
 `bench/rna_allele/isocon_sim.py`, `isocon_score_sim.py`, `isocon_score_real.py`; work dir `/mnt/linuxdisk/tmp/rna_allele/isocon/`.
 Descriptive arm: no pass/fail.

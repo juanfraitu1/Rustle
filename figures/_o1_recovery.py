@@ -12,7 +12,7 @@ The de novo mode IS Rustle's one default de novo family definition (user decisio
 assembly loci -> one representative per locus ("positional exon sum") -> families; the families its copy table
 feeds to copy assignment. The guided mode is the same family rule on the annotation's gene bodies.
 
-GENOME scope (default, `fig7_scope genome`; docs/PREREG_genome_wide_families_2026-09-25.md, Amendment 1): one
+GENOME scope (default, `fig7_scope genome`; docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md, Amendment 1): one
 genome-wide run per mode. De novo = the run-cache stage `families` of each sample (never run here: `make.py runs`);
 guided = one run per species (it reads no RNA), its all-vs-all with the de novo flags (`-x asm20 -c -X -N 50 -p 0.1
 --secondary=yes`) through tools/mm2_shard.sh (`fig7_guided_flags recipe` = the recorded `-x asm20 -c --eqx -P`).
@@ -631,7 +631,7 @@ def ensure_sources(cfg: dict, wdir: Path, force: bool = False) -> dict:
 
 
 # ================================================================ genome-wide (every sample)
-# docs/PREREG_genome_wide_families_2026-09-25.md sections 2, 3 and 5.
+# docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md sections 2, 3 and 5.
 # main references (external): Compara and Soto (human; family_score), Liftoff copy pairs (every species; de novo only,
 # scored by fig_family_recovery._liftoff_rows); protein-homology families only in the supplement, on request
 GW_TRUTHS = {"human": ["compara", "soto"]}          # every other species: none scored by family_score in the main figure

@@ -1,9 +1,9 @@
 # Merging a missing copy's new-copy transcripts into one candidate copy, without truth (Amendment 8), 2026-10-01
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 8 (commit b44934d6, before any run). Script
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 8 (commit b44934d6, before any run). Script
 `bench/rna_allele/merge_test.py`; work dir `/mnt/linuxdisk/tmp/rna_allele/linktest/merge/` (`components.out`, `score.out`, copies in
 `docs/RNA_ALLELE_MERGE_score.out.txt`). Same 53 families, same reads and same R+I+L alignments as Amendment 7
-(`docs/RNA_ALLELE_LINKING_2026-10-01.md`): nothing was realigned, only which contigs count as one locus changed.
+(`docs/archive/2026-10/RNA_ALLELE_LINKING_2026-10-01.md`): nothing was realigned, only which contigs count as one locus changed.
 
 - **Merge rule:** within a family, the 565 new-copy contigs (46 families) aligned all-vs-all (`minimap2 -c -x asm20 --cs -N 200 -p 0.1`,
   9,805 alignments); two contigs joined when the best alignment of the pair covers >= 50% of the shorter contig and its gap-compressed

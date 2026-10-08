@@ -52,7 +52,7 @@ selection" step 2) was the 90th percentile of the POOLED donor+acceptor offset d
 ("Pool these into a real empirical distribution") — which gave **0bp** (see "Result (initial run)" above).
 The per-junction-max statistic was NOT pre-registered from the start; it is a disclosed, post-hoc
 methodology correction (see "Methodology correction" above) — the same "post-hoc fixes, disclosed" pattern
-this project already uses elsewhere (e.g. `docs/PREREG_core_definition_2026-09-12.md`'s Addendum U and its
+this project already uses elsewhere (e.g. `docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`'s Addendum U and its
 amendments U1'/U1''). It was substituted AFTER the pooled result (0bp) was seen but, crucially, BEFORE any
 gffcompare/SQANTI3 score from this feature was ever computed. That timing — not a claim that the statistic
 itself was chosen unchanged from the outset — is what makes the correction legitimate: no score from this

@@ -1,7 +1,7 @@
 # Figure 4: What happens to the simulated reads the aligner cannot place
 
 **Status.** The figure is laid out for all six samples, each simulated from its own genome-wide copy catalog
-(`docs/PREREG_genome_wide_copy_assignment_2026-09-25.md`, experiment A). Until those runs finish, the rendered figure
+(`docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md`, experiment A). Until those runs finish, the rendered figure
 shows the development tables: human A119b with its chr16 catalog and gorilla OR6737 with its chr20 (NC_073244.2)
 catalog. The other four samples are marked "not run yet". Every number below is from the development tables. The
 genome-wide numbers replace them, and the pre-registration fixes, before they exist, the bars that decide each claim.

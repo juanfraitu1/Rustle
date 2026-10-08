@@ -7,9 +7,9 @@ against the ALL rows of `score.py reads`. That is a check of the instrument on r
 
 ## Question
 
-Real reads carry no copy of origin, so O2's accuracy comes from simulation (`docs/PREREG_o2_read_truth_2026-09-23.md`). On the legacy chr16 catalog the certificate was exact within the
+Real reads carry no copy of origin, so O2's accuracy comes from simulation (`docs/archive/2026-09/PREREG_o2_read_truth_2026-09-23.md`). On the legacy chr16 catalog the certificate was exact within the
 true family (157/157 correct, then 163/163) but the readings a consumer can use were not (PRIMARY accuracy .35, ANY .09 among assigned), and the table `assign` receives in the shipped
-pipeline, the DEFAULT families roster (`mcl_families --emit-units`: one copy per member locus), has never been scored with read truth (`docs/PREREG_families_copy_table_2026-09-25.md`
+pipeline, the DEFAULT families roster (`mcl_families --emit-units`: one copy per member locus), has never been scored with read truth (`docs/archive/2026-09/PREREG_families_copy_table_2026-09-25.md`
 holds engineering checks only). At the three families of this evaluation, on that roster, how many contested reads does O2 assign, and are its assignments right?
 
 ## Design (the registered protocol, on a different roster)
@@ -62,7 +62,7 @@ The scorer, the report and the runner are `bench/score.py`, `bench/o2_default_ro
 ## Not claimed
 
 This is a simulation. Reads are drawn from the roster's own spliced exon sums (CHM13 sequence) with one error model, so there is no allelic variation, no readthrough, no copy the roster missed, and no difference between the sequenced individual and the
-reference (real reads at NPIP copies often match no catalog copy, `docs/PSV_CEILING_2026-10-03.md`): the numbers are an upper bound on real-data accuracy, and the identity-band structure is what transfers. DEV only: chr16 and chr17 are the development blocks of NPIP
+reference (real reads at NPIP copies often match no catalog copy, `docs/archive/2026-10/PSV_CEILING_2026-10-03.md`): the numbers are an upper bound on real-data accuracy, and the identity-band structure is what transfers. DEV only: chr16 and chr17 are the development blocks of NPIP
 and TBC1D3, and no truth for the Y exists beyond annotation and this simulation. Nothing here measures O3 or the families themselves (O1).
 
 ## Amendment 1 (2026-10-06, written after the chr16 and chr17 results and before any chrY assignment product exists)

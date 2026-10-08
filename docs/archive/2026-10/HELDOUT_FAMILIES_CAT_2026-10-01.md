@@ -1,7 +1,7 @@
 # Held-out family test re-run on CAT/Liftoff v2.0 (2026-10-01)
 
-Step 3 of `docs/CAT_RERUN_PROTOCOL_2026-10-01.md`. The benchmark is Test 2 of `docs/PREREG_heldout_families_2026-09-20.md`
-(result: `docs/HELDOUT_FAMILIES_RESULT_2026-09-20.md`, registered against NCBI RefSeq; it stays as registered). Test 1
+Step 3 of `docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md`. The benchmark is Test 2 of `docs/archive/2026-09/PREREG_heldout_families_2026-09-20.md`
+(result: `docs/archive/2026-09/HELDOUT_FAMILIES_RESULT_2026-09-20.md`, registered against NCBI RefSeq; it stays as registered). Test 1
 (symbol-root truth) was declared void in the pre-registration and is not re-run. Nothing was re-tuned (R6). The canonical
 repo, the original outputs in `/mnt/linuxdisk/tmp/heldout/` and `/mnt/linuxdisk/tmp/regress/`, `score.py` and `lib.py`
 are unchanged.

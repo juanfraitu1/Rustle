@@ -1,5 +1,5 @@
 //! `missing_copy_flag` — flag expressed copies the reference does not contain, from RNA alone
-//! (thesis objective O3; §6ze, `docs/PREREG_o3_rna_only_2026-09-23.md`).
+//! (thesis objective O3; §6ze, `docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`).
 //!
 //! For every locus: the per-read `de` divergence mixture (S2 statistic), PSV consistency of the divergent
 //! sub-pile, a spliced patched consensus, a whole-genome home search, the hypermutation / contamination /

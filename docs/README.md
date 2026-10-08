@@ -1,31 +1,41 @@
 # docs/ — what is where
 
-25 documents. Start here rather than grepping; most questions are answered by one of the first five.
+Reorganised 2026-10-07: the undated living documents, this week's open studies and the current handoff stay here;
+closed studies and superseded notes moved, names unchanged, to `archive/2026-09/` and `archive/2026-10/`. Every file,
+one line each, is in [`INDEX.md`](INDEX.md) (regenerate with `python3 tools/docs_index.py > docs/INDEX.md`).
+Grepping a filename still finds it; only the directory changed.
 
 ## Read these first
 
-**21 documents.** Merged 2026-08-25: the four O3 satellites into `o3_missing_copy_evidence.md`, the
-corroboration layer into `o1_ledger.md`, and three small reference docs into `REFERENCE.md`.
-
 | document | what it is |
 |---|---|
-| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | **⭐ THE SCOREBOARD — what is WON / DEAD / OPEN per objective, and the recurring failure modes. Read before proposing anything.** Also scope, and the superseded O1–O5 numbering kept for provenance |
-| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | **⭐ THE DEFENSE DOSSIER — the advisor's standing questions, the "luck or overfitting" cross-examination, and what we concede before he asks.** Read before any meeting with him |
-| [`NUMBERS.md`](NUMBERS.md) | **Every quotable figure with its substrate.** Look a number up here *before* quoting it — the two headline O1 rates are on different species |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | **836 rows**: what was tried, what killed it. **Consult before proposing an approach**; a re-run needs a new mechanism, not a new mood |
-| [`o1_ledger.md`](o1_ledger.md) | **O1 route by route, §3–§4r**, each with the number that decided it. The single densest record of what has and has not worked |
-| [`README.md`](README.md) | Current state, in-flight work, and what to check first after a break |
-| [`ONE_METHOD.md`](ONE_METHOD.md) | The shipped method end to end |
-| [`OBJECTIVES_AND_VERIFICATION.md`](OBJECTIVES_AND_VERIFICATION.md) | The per-row verification ledger |
-| [`o1_catalog_provenance.md`](o1_catalog_provenance.md) | Which catalog a figure belongs to. **The 494/1,415 catalog is superseded**; the lint in `tests/docs_catalog_provenance.rs` enforces this |
-| [`o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`](o1_investigations.md#false-positive-hardening-rules-that-survived-falsification) | The FP-rule search, the 150-window human negative panel, and the genome-anchored repeat gate |
-| [`o1_investigations.md#the-coverage-denominator-repair`](o1_investigations.md#the-coverage-denominator-repair) | The coverage hole: seven repair routes, all closed |
-| [`o1_investigations.md#can-full-length-read-evidence-repair-e-r`](o1_investigations.md#can-full-length-read-evidence-repair-e-r) | Whether reads can be a third evidence source (they cannot) |
-| [`o1_investigations.md#census-of-incorrectly-called-families`](o1_investigations.md#census-of-incorrectly-called-families) | Every error case classified by mechanism |
-| [`o1_investigations.md#block-aware-duplication-provenance-graph`](o1_investigations.md#block-aware-duplication-provenance-graph) | The block-aware provenance graph, and the hierarchy design (emission NO-GO, §4m) |
-| [`seeded_family_definition.md`](seeded_family_definition.md) · [`o1_investigations.md`](o1_investigations.md#the-joint-dna-rna-family-definition-retracted) | The definition's development history |
-| [`copy_assignment_definition.md`](copy_assignment_definition.md) | O2: the assignment/abstention definition |
-| [`copy_assignment_definition.md#reassignment-on-real-reads-with-structural-anchor-truth-2026-08-15`](copy_assignment_definition.md#reassignment-on-real-reads-with-structural-anchor-truth-2026-08-15) | O2's reassignment result and why it is defended on abstention |
-| [`o3_missing_copy_evidence.md`](o3_missing_copy_evidence.md) | **All of O3** — the excision positive control, the unmapped route, the haplotype route (NO-GO), over-collapse, and family rescue |
-| [`REFERENCE.md`](REFERENCE.md) | Glossary, where the data lives, and a worked example (the DAZ locus) |
-| [`RETIREMENT_AND_MIGRATION.md`](RETIREMENT_AND_MIGRATION.md) | What was retired and what replaced it |
+| [`HANDOFF_2026-10-04.md`](HANDOFF_2026-10-04.md) | **Start here.** Everything done 10-03/04 and what is left, with paths |
+| [`PENDING_2026-10-04.md`](PENDING_2026-10-04.md) · [`PENDING_2026-09-23.md`](PENDING_2026-09-23.md) | Parked work: O3 Amendment 15 run, row-1220 run, HG002, chapter drafts; item 3 of 09-23 (O3 DNA step) still open |
+| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | The three objectives (O1 define, O2 assign-or-abstain, O3 detect+flag), scope, what is WON / DEAD / OPEN |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | **Every dead end, one row each. Consult before proposing anything.** Rows cite the study file |
+| [`seeded_family_definition.md`](seeded_family_definition.md) | O1: the shipped family definition (§0★, 2026-09-25) and its full development record; 248 KB, use its INDEX |
+| [`copy_assignment_definition.md`](copy_assignment_definition.md) | O2: assignment and abstention; read its "State as of 2026-10-07" preamble first |
+| [`O3_STATUS.md`](O3_STATUS.md) | O3: where the reference-absent-copy work stands |
+| [`o1_ledger.md`](o1_ledger.md) | The O1 ledger, section by section (§3–§6z); 1.8 MB, search a § number |
+| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions and what we concede; status table at the top |
+| [`TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`](TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md) | Family vs SD / duplicon / expansion: one object, four levels |
+| [`DATA.md`](DATA.md) | Datasets: what they are, where they live, how to rebuild them |
+| [`REFERENCE.md`](REFERENCE.md) | Glossary, disk mount procedure, the DAZ worked example |
+| [`MODULE_STATUS.md`](MODULE_STATUS.md) | Which Rust modules exist and their state (checked by a test in `src/lib.rs`) |
+| [`ACTIVE_WORKING_SET.md`](ACTIVE_WORKING_SET.md) · [`MEMORY_DIGEST.md`](MEMORY_DIGEST.md) · [`REGISTER_DRAFTS_machine2.md`](REGISTER_DRAFTS_machine2.md) | Session bookkeeping: the active file set, compacted memory entries verbatim, register rows drafted on machine 2 |
+
+## Open studies (dated 2026-10-05 to 10-07)
+
+Each study is a `PREREG_<name>_<date>.md` (decision rules, committed before looking) and, once run, a
+`<NAME>_<date>.md` results file; some have a `_REVIEW_DISPOSITION` file. This week: seed pool on real reads,
+entangled baseline, locus units and levels, ideal expression through the default, few-copy ideal cases, default
+re-score of NPIP, O2 default roster, gorilla overlap, hierarchy (duplicon boundary vs family; expansions in
+families; Yoo 2025 concordance), inversion aligner blindness, O3 candidates Amendment 15. See `INDEX.md`.
+
+## Conventions
+
+- Pre-register before looking (`PREREG_*.md`); hold a substrate back; report sensitivity, precision and bipartite
+  matching; never pool human and gorilla numbers; check the register before proposing.
+- When a study closes, move its files to `archive/YYYY-MM/` with `git mv`, regenerate `INDEX.md`, and make sure
+  the register row that records the verdict cites the archived path.
+- `figures/` holds the publication figures' sources; `superpowers/` holds agent plans and specs.

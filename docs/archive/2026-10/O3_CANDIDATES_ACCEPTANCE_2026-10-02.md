@@ -1,6 +1,6 @@
 # `o3_candidates` on the 53-family held-out (Amendment 12): A12-1 FAILS, A12-2 FAILS, A12-3 PASSES — 2026-10-02
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 12 (commit 0458f928, written before the stage existed; flag floor
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 12 (commit 0458f928, written before the stage existed; flag floor
 = ruling R1, `--min-support 6`). Stage: `o3_candidates` at HEAD a3564999 (rebuilt before the run). Recipe:
 `bench/rna_allele/accept_o3_candidates.sh` (steps) + `bench/rna_allele/accept_o3_candidates.py` (helpers) +
 `bench/rna_allele/panel_to_copies.py` (the copies table). Work dir `/mnt/linuxdisk/tmp/rna_allele/a12/` (delta reruns in `half/`,
@@ -49,7 +49,7 @@ Python recomputation of the nets (`accept_o3_candidates.py nets`) equals the sta
   flagged** (>= 6 reads) in 25 families. Flagged by label (best unmasked hit): **26 D-derived, 12 survivor-derived, 1 elsewhere**.
 - **Deleted copies with >= 1 D-derived flagged candidate: 19/53** (IsoCon, Amendment 8: 44/53 — but at a different floor: IsoCon's 44
   counts a candidate of ANY support, >= 1 IsoCon transcript of >= 2 reads; at its >= 2-transcript floor, the floor R1 translated to
-  >= 6 reads, IsoCon finds 41/53, `docs/RNA_ALLELE_CONTROL_2026-10-01.md`). Exactly one D-derived candidate in 13 of
+  >= 6 reads, IsoCon finds 41/53, `docs/archive/2026-10/RNA_ALLELE_CONTROL_2026-10-01.md`). Exactly one D-derived candidate in 13 of
   the 19 (2 in 5, 3 in 1). Candidates per family: 0 in 23 families, 1 in 15, 2 in 7, 3 in 4, 4 in 2, 5 and 6 in one each; clusters per
   flagged candidate: 1 in 32, 2 in 7; reads per flagged candidate median 107 (6-390).
 

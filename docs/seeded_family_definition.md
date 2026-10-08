@@ -20,6 +20,7 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 - ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 - 0. What the definition must survive
 - 1★. THE OBJECT, RESTATED — ONE OBJECT AT TWO LEVELS (2026-08-14)
+  - (pointer, 2026-10-07) family vs SD / duplicon / expansion: one object, four levels; SD-embedded families are a SUBSET of multi-copy gene families → `docs/TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`
 - 1. Definition
 - 2. Properties
 - 3. The certificate (and why it is not the definition)
@@ -46,7 +47,7 @@ The default is:
    (`RUSTLE_BRIDGE_REGROUP=off`: one `gene_id` of `PREFIX.gtf`, the 2026-09-25 rule).
 2. **Locus → representative: the positional exon sum.** The locus's representative is the transcript with the most
    reads (ties: the longer span). Its exon coordinates come from the reads; its bases from the genome ("exon-sum:
-   the reference bases at the candidate's exon ranges", `docs/PSEUDOCODE_2026-09-08.md`). Loci whose exon unions
+   the reference bases at the candidate's exon ranges", `docs/archive/2026-09/PSEUDOCODE_2026-09-08.md`). Loci whose exon unions
    overlap are folded into one node.
 3. **Representatives → families.** `tools/rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1
    --min-shared-exon-frac 0.60`: all-vs-all of the loci's genomic spans (`minimap2 -x asm20 -c -X -N 50 -p 0.1
@@ -59,7 +60,7 @@ The default is:
    (`annotation_families.rs`); Markov clustering, inflation 2.8; families of ≥ 2 loci. Nucleotide only.
 4. **The same families feed copy assignment.** With `--emit-units` the stage writes the copy table
    `PREFIX.fam.copies.tsv/.fa` (one copy per member locus: its representative's exons and spliced exon sum, in the
-   contract `copy_assign --families` reads; `docs/PREREG_families_copy_table_2026-09-25.md`). O2 assigns tied reads
+   contract `copy_assign --families` reads; `docs/archive/2026-09/PREREG_families_copy_table_2026-09-25.md`). O2 assigns tied reads
    among the copies of these families.
 5. **Guided mode** (Fig. 7): the same family rule on the annotated gene and pseudogene bodies. The thesis goal is to
    reduce the difference between the two modes.
@@ -68,7 +69,7 @@ The default is:
 - `gw_family_catalog` (the `catalog` stage: primaries only, span-aware POA collapse, exon-sum k11 E_r edges,
   γ-quasi-clique) is **LEGACY**: kept runnable and scored only as a labelled comparison.
 - **Protein** is an **optional, manually invoked extra-sensitive step** (`tools/protein_attach.py`;
-  `docs/PREREG_protein_attach_2026-09-25.md`): for families with disconnected or strongly diverged members it
+  `docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md`): for families with disconnected or strongly diverged members it
   attaches missing loci at the protein level to ONE existing family, never merges families, never runs by default;
   it appears only in a supplementary figure. `gw_family_catalog --protein-tail` stays an opt-in of the legacy catalog.
   The §0★★ clause-3 "miniprot fallback" is a label idea from the ledger, not code.
@@ -76,10 +77,10 @@ The default is:
   representative variants `RUSTLE_LOCUS_EXON_UNION` / `RUSTLE_LOCUS_UNION_MIN_TX` / `RUSTLE_COTHREAD_REP` are opt-in
   or proposed (register rows 303, 1041, 1055, 393/484/841 for the representative variants).
 - **The closed loop** (families → union-certificate assignment of tied reads → each assigned read given to its copy
-  → re-assembly) is a pre-registered pass-2 experiment (`docs/PREREG_tied_read_loop_2026-09-25.md`), not part of the
+  → re-assembly) is a pre-registered pass-2 experiment (`docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md`), not part of the
   definition; families are frozen from pass 1 in it (register 395).
 
-**How it is judged** (`docs/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1; `figures/README.md`). External
+**How it is judged** (`docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1; `figures/README.md`). External
 references only in the main figures: Ensembl Compara (human; pairs by protein-identity band in Fig. 6, families at
 Primates in Fig. 7), Soto 2025 (labelled not independent: the 0.60 threshold was chosen against it, register 903),
 Liftoff copies (the self-lift's record / extra-copy pairs, every species; Figs 7 and 8). The annotation's

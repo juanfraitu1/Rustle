@@ -1,7 +1,7 @@
 # CAT re-run, steps 5 and 6: plan (written before any CAT result was computed)
 
-2026-10-01. Follows `docs/CAT_RERUN_PROTOCOL_2026-10-01.md` (rulings R1-R6 and Amendment 1, binding; R6: nothing is re-tuned
-on CAT) and `docs/ANNOTATION_CAT_DEFAULT_2026-10-01.md`. Step 5 rebuilds the NPIP/TBC1D3 layer-order / nested-lattice study
+2026-10-01. Follows `docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md` (rulings R1-R6 and Amendment 1, binding; R6: nothing is re-tuned
+on CAT) and `docs/archive/2026-10/ANNOTATION_CAT_DEFAULT_2026-10-01.md`. Step 5 rebuilds the NPIP/TBC1D3 layer-order / nested-lattice study
 (`bench/LAYER_ORDER_NPIP_TBC1D3.md`, `bench/NESTED_LATTICE_NPIP_TBC1D3.md`) with CAT/Liftoff v2.0 in place of RefSeq at every
 input. Step 6 recomputes the family certificates (`bench/FAMILY_CERTIFICATES_NPIP_TBC1D3.md`, D1) on CAT evidence. The report
 comparing both is `docs/LAYER_ORDER_CAT_2026-10-01.md`.

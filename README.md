@@ -11,7 +11,7 @@ kept next to the code and is pre-registered.
 |---|---|---|
 | **family definition** | multi-copy gene families from the reads and the genome — de novo (reads only) and guided (annotation), with the goal of closing the gap between them | `docs/seeded_family_definition.md`, `mcl_families`, `gw_family_catalog` |
 | **copy assignment** | each ambiguous read to one copy, or abstention: PSVs, junctions and divergence, never a 1/k split | `docs/copy_assignment_definition.md`, `copy_assign --families` |
-| **missing copies** | expressed copies the reference does not contain (diverged or with rearranged exons): detect, characterise, screen, and hand copy number to DNA | `docs/O3_STATUS.md`, `docs/PREREG_o3_rna_only_2026-09-23.md`, `missing_copy_flag` |
+| **missing copies** | expressed copies the reference does not contain (diverged or with rearranged exons): detect, characterise, screen, and hand copy number to DNA | `docs/O3_STATUS.md`, `docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`, `missing_copy_flag` |
 
 In the thesis record these are objectives O1, O2 and O3; the ledger, register and pre-registrations use those
 labels. `docs/THESIS_OBJECTIVES.md` states them in full.
@@ -40,8 +40,8 @@ assemble, families, assign, flag); `merged` is the genome-wide entry point (asse
 `copy_assign --bridge-regroup f1v2`, and the containment escape `mcl_families --min-cov-shorter 0.70`; since 2026-10-02
 `assign` reads the families' copy table, the legacy catalog only with `--legacy-catalog`, and `candidates` — O3 candidate
 copies from each family's reads, `candidate_copies` — is OPT-IN, `--candidates`, because its pre-registered acceptance failed:
-`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; the re-run acceptance passed on 2026-10-03, but its no-deletion control failed
-and the default flip was reverted the same day, `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; on a full BAM one batch of 50
+`docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; the re-run acceptance passed on 2026-10-03, but its no-deletion control failed
+and the default flip was reverted the same day, `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; on a full BAM one batch of 50
 families did not finish in a 10-minute call, spec §9b, R23; the driver runs every family in one call, only the binary's `--families` batches, so its peak memory exceeds that batch's 10.7 GB). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
 the earlier pipeline, byte for byte except `assign` on a catalog with cross-chromosome families (2026-10-02, `copy_assign
 --help`, `--families`) — `REPRODUCE.md` §5 and its driver section, `bench/ASSEMBLY_POLISH.md` addendum 3). `bench/` holds the

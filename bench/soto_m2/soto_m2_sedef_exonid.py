@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-registered KEY=sedefexon (docs/PREREG_soto_sedef_exon_identity_2026-09-30.md): SEDEF-projected exon links kept only when
+"""Pre-registered KEY=sedefexon (docs/archive/2026-09/PREREG_soto_sedef_exon_identity_2026-09-30.md): SEDEF-projected exon links kept only when
 the exon pair itself is >= 98% identical.
 
 Re-derives the native CHM13 v1.0 SEDEF links with soto_replication.py's own CIGAR walk (rows >= 0.98 identity, exons covered

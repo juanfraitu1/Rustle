@@ -1,6 +1,6 @@
 # PREREG — the locus representative must carry the locus's structure: most-junctions vs most-reads (written before any run, 2026-10-04)
 
-## Why (from `docs/SPLICED_COPY_SUPPORT_2026-10-04.md`, register rows 1232-1233)
+## Why (from `docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md`, register rows 1232-1233)
 
 The de novo locus (a `gene_id` group of the assembled GTF) is represented downstream by ONE transcript — the one with the most reads
 (`mcl_families --from-gtf`, ties: longer span, then last `transcript_id`; `src/bin/mcl_families.rs` "GtfLocus"). Its exons are the locus's
@@ -49,7 +49,7 @@ locus holds 42 transcripts / 38 read-supported junctions and its representative 
 - **Decision (held-out only):** R_J becomes the default iff, on every one of the 5 held-out contigs, (a) bipartite F against the primary
   reference >= R_M − 0.005 and precision >= R_M − 0.01 where defined; (b) H3 found genes >= R_M; (c) H2 median junctions per copy >= R_M.
   A single violation keeps R_M as the default and R_J stays opt-in; the dev results never override a held-out violation. The outcome,
-  the per-contig tables and the flipped (or not) default go in `docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md` and the register.
+  the per-contig tables and the flipped (or not) default go in `docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md` and the register.
 - Reported beside, no rule: run time of the two arms; the number of loci whose representative changes; O2 is not re-run here (the copy
   table it reads changes with the rule; its effect is a separate measurement).
 

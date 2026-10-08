@@ -28,4 +28,4 @@ the native rule would not), `g9` (untouched, a single-exon transcript overlappin
 `c2` with `g1`'s coordinates: the junction key holds the contig).
 
 Regenerate: `make_fixture.py` (scratch), then the two prototype commands above. The prototype scripts live in the scratch
-directory `container_units_v2/lib/` of the 2026-09-30 units study (`docs/PREREG_container_units_v2_dev_2026-09-30.md`).
+directory `container_units_v2/lib/` of the 2026-09-30 units study (`docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md`).

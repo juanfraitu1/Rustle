@@ -6,7 +6,7 @@ development values", not a validation.
 
 ## Question
 
-The registered strict-FOUND numbers at NPIP (`docs/SPLICED_COPY_SUPPORT_2026-10-04.md`, Amendment E: 10 / 6 / 2 found within own nodes 23 / 21 / 24, locus
+The registered strict-FOUND numbers at NPIP (`docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md`, Amendment E: 10 / 6 / 2 found within own nodes 23 / 21 / 24, locus
 level 19 / 18 / 16, for P / GOOD / ALL) were measured on pre-f1v2 arms from a frozen 2026-10-01 binary. The family scores of the current default
 (f1v2 + `--min-cov-shorter 0.70`, U2 F .645, Compara chr16 F .667, CF153 F .812) were measured on 2026-09-30 at e163d955. No product has the current default's
 loci scored for strict FOUND, and none of these numbers was produced by the HEAD binaries (the 2026-10-06 consolidation changed `src/`, and its real-data
@@ -16,7 +16,7 @@ slice is not recorded as run). Does the default at HEAD do no worse than the reg
 
 - **DEF**, the default: HEAD `copy_assign --assemble-only` with the driver's `assemble` flags (strict junctions, shipped polish, `--gtf-tpm`,
   `--bridge-regroup f1v2`), seeding from the stored genome-wide best-AS table (secondaries >= 0.98 of the best AS, the default `GOOD` pool), on
-  `--region chr16` in place of `--genome-wide` (the two are equal on the contig: the gates of `docs/CONTAINER_HEADROOM_2026-09-30.md`); then the driver's
+  `--region chr16` in place of `--genome-wide` (the two are equal on the contig: the gates of `docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md`); then the driver's
   `families` stage with no override (`--min-cov-shorter 0.70`, most-reads representative, `--min-shared-exon-frac 0.60`).
 - **PRE**, the control: the same HEAD binaries with `--bridge-regroup off` and `RUSTLE_MIN_COV_SHORTER=0` (the 2026-09-25 pipeline). It is what the
   registered `GOOD` arm was meant to be, rebuilt by the binaries under test.
@@ -53,7 +53,7 @@ slice is not recorded as run). Does the default at HEAD do no worse than the reg
 - **R3** U2 bipartite F (`family_score` pooled line) >= 0.645, at three decimals.
 - **R4** NPIPB2 and NPIPB6 each have an own node in DEF (the registered `GOOD` arm had neither; the 09-29 flip separated them from GSPT1 and EIF3CL).
 - **Verdict:** INVALID if G0, G1 or G3 fails; otherwise PASS iff R1 to R4 all hold; otherwise FAIL, naming the rules that fail. No rescue arm and no
-  redefinition follows a FAIL: it is recorded as the finding (the representative problem of `docs/SPLICED_COPY_SUPPORT_2026-10-04.md` would then be a
+  redefinition follows a FAIL: it is recorded as the finding (the representative problem of `docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md` would then be a
   property of the default, not of an older arm).
 
 ## Reported beside, no bar
@@ -66,7 +66,7 @@ Liftoff recall is not recomputed (its scorer is not in the repo's runner).
 ## Not claimed
 
 Anything about held-out NPIP substrates, gorilla, O2 or O3. Nothing about f1v2 or `--min-cov-shorter` as such: DEF against PRE is a descriptive
-comparison on the development block. Strict FOUND is the registered rule of `docs/PREREG_spliced_copy_support_2026-10-04.md` (Amendment E); it depends on the
+comparison on the development block. Strict FOUND is the registered rule of `docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md` (Amendment E); it depends on the
 cap signal of this library, which gorilla lacks.
 
 Runner: `bench/default_rescore/run.sh gates | asm DEF | fam DEF | asm PRE | fam PRE | score | verdict`.

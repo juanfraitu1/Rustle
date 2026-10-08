@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Chain-level comparison of the reads at annotated copies with their annotated transcripts (2026-10-04, after Amendment B of
-docs/PREREG_spliced_copy_support_2026-10-04.md): is the annotation what is expressed?
+docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md): is the annotation what is expressed?
 
     npip_chains.py --copies copies.tsv --truth truth.gtf [--copies2 copies2.tsv --truth2 truth2.gtf] --bam reads.bam --family NPIP --out PREFIX
 

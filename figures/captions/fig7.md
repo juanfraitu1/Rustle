@@ -1,6 +1,6 @@
 # Figure 7 — Family recovery by Rustle's two modes, de novo and guided (a Rustle-internal comparison)
 
-> **Status (2026-09-25).** The genome-wide version is pre-registered (`docs/PREREG_genome_wide_families_2026-09-25.md`,
+> **Status (2026-09-25).** The genome-wide version is pre-registered (`docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`,
 > claims F7.1–F7.4 as amended by Amendment 1, written before any genome-wide family number) and not built yet: it
 > needs the families stage of every sample (with its copy table), the guided run of every species, and, for the
 > Liftoff rows, the Fig. 8 self-lift and read-support tables. Until its tables exist (`fig7_gw_summary`,

@@ -35,7 +35,7 @@ on held-out samples." Figure 9 (`figures/fig_loop.py`, `figures/captions/fig9.md
   - r1101 / r1026 (family-level losses are mostly missing edges): the loop can change loci and chains; no family-level
     claim is made here.
 - Predicted before looking: ⛔ or a small effect (r1102; the union assigns 0 on both development simulations; tied
-  molecules are 2.5% of human and 1.1% of gorilla reads at the 0.98 rule, `docs/PREREG_locus_read_pool_2026-09-22.md`).
+  molecules are 2.5% of human and 1.1% of gorilla reads at the 0.98 rule, `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`).
 
 ## 1. The loop
 
@@ -115,7 +115,7 @@ bounded, the loop is ⛔ as a bounded negative with these counts.**
   and the no-primary facet; matched chains per arm; read-sharing groups (Fig. 3) are the unit; every changed chain is
   listed with its read-sharing group, and a CGB-like / RFPL4A-like array is named when it carries a change (r1110,
   r1116).
-- **M4** loci in the Liftoff framework (`docs/PREREG_liftoff_loci_2026-09-25.md` §3-§4, C2): the fraction of
+- **M4** loci in the Liftoff framework (`docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md` §3-§4, C2): the fraction of
   read-supported Liftoff reference loci found by an arm's de novo locus (cov >= 0.5 of the reference's exon bases), for
   annotated loci in place, moved, and extra copies (sequence_ID >= 0.95 / 0.98 / 0.99 / 1.00), and the fraction of the
   arm's de novo loci at a Liftoff locus. **Two fixed universes**, the same for every arm:
@@ -160,7 +160,7 @@ of a verdict. Species and samples are never pooled.
 
 - Every call <= 10 min and <= 20 GB under `/mnt/linuxdisk/tmp/rustle_heavy.lock`. The genome-wide union assignment is
   the expensive step (the `assign` stage: est. 6 min for chimp_PTR to 5 h for human_A119b in one process); if it does
-  not fit, it is sharded by families as in `docs/PREREG_genome_wide_copy_assignment_2026-09-25.md` (validated shards),
+  not fit, it is sharded by families as in `docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md` (validated shards),
   and if one shard does not fit it stops for the cluster. Pass-2 assembly costs about one pass-1 assembly.
 - If the default families' units (§1.1) do not exist for a verdict sample, its verdict waits; it is never computed on
   the legacy catalog.

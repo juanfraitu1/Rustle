@@ -1,6 +1,6 @@
 # Figure 6 — Rustle's default de novo family definition across the paralogue identity spectrum
 
-> **Status (2026-09-25).** The genome-wide version is pre-registered (`docs/PREREG_genome_wide_families_2026-09-25.md`,
+> **Status (2026-09-25).** The genome-wide version is pre-registered (`docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`,
 > claims F6.1–F6.5 as amended by Amendment 1, written before any genome-wide family number) and not built yet: it
 > needs the `families` stage of both human samples with its copy table (a `mcl_families` that writes
 > `<id>.fam.copies.tsv`) and each sample's genome-wide spectrum. Until its tables exist (`fig6_gw_recall`,
@@ -129,7 +129,7 @@ the tables are marked provisional.
   coverage (query span ÷ shorter length, which can exceed 1), not the family rule's.
 - **Compara below about 50%.** Compara separates old paralogues by gene trees; below about 50% protein identity,
   sensitivity measures agreement with a gene-tree reference that an RNA-level definition does not claim to reproduce.
-- **The seeding default was chosen against a protein referee** (`docs/PREREG_locus_read_pool_2026-09-22.md`, register
+- **The seeding default was chosen against a protein referee** (`docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`, register
   1100, closed); the supplement rescored it on external references, and a new verdict on them needs a new
   pre-registration.
 - **The legacy copy catalog is not shown.** It was the copy-assignment roster before 2026-09-25 (development tables of

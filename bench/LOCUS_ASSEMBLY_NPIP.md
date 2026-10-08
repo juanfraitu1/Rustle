@@ -1,4 +1,4 @@
-# Locus assembly at NPIP — measured against `docs/PREREG_locus_assembly_2026-09-18.md` (md5 02237f9d6da31ec694a8e53cd8cbdf2b)
+# Locus assembly at NPIP — measured against `docs/archive/2026-09/PREREG_locus_assembly_2026-09-18.md` (md5 02237f9d6da31ec694a8e53cd8cbdf2b)
 
 **Verdict: the bottleneck is NOT ambiguity and NOT depth — it is EXACT-CHAIN COLLAPSE in the assembler.**
 O2 ran, assigned 206 contested molecules, and changed the reconstruction by **exactly zero junctions**.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-registered KEY=unitcovercn (docs/PREREG_unit_cover_cn_2026-09-30.md): finer units for the family cover.
+"""Pre-registered KEY=unitcovercn (docs/archive/2026-09/PREREG_unit_cover_cn_2026-09-30.md): finer units for the family cover.
 
 Arms: A = KEY=unitcover (any-overlap usage, duplicon units; must reproduce soto_m2_unit_cover.py), B = sliver-free usage (a gene uses
 a duplicon only if it is the dominant duplicon of one of its exons), C = duplicon x copy-number class units, D = B + C. Copy-number

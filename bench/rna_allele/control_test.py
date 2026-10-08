@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 9 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): the no-deletion control of the IsoCon chain on Amendment 7's 53
+"""Amendment 9 (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): the no-deletion control of the IsoCon chain on Amendment 7's 53
 families against the unmasked `_pri`. Reuses the linktest work dir (--l: panel.json, scored.fa, labels.tsv) and merge_test's merge.
 
   net        IsoCon input per family from R0.bam (a record on ANY copy of the family, or unmapped), <= 1,000 reads (seed 1) -> fam/<fam>.fa

@@ -1,6 +1,6 @@
 # Two candidate definitions tested: cover prediction, and J_N as an MCL weight
 
-**§6u8, 2026-09-21.** Pre-registration `docs/PREREG_cover_and_jn_weight_2026-09-21.md` (md5
+**§6u8, 2026-09-21.** Pre-registration `docs/archive/2026-09/PREREG_cover_and_jn_weight_2026-09-21.md` (md5
 `eed4b0fc`), committed `6f18304b` before any score. Tool `bench/cover_and_jn_definition.py`.
 **NEITHER IS ADOPTED.** ⚠HUMAN substrate (CHM13/Soto) — do not pool with gorilla.
 

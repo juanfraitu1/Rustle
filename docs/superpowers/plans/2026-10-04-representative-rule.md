@@ -6,7 +6,7 @@
 
 **Architecture:** one flag in `mcl_families --from-gtf`'s locus builder (`GtfLocus` representative choice), threaded through `tools/rustle_pipeline.sh families` as `RUSTLE_REPRESENTATIVE`; a bench runner that re-runs the families stage per contig under both rules on the Figure 7 de novo GTFs and scores with Figure 7's own scorers plus `bench/copy_support.py`.
 
-**Spec:** `docs/PREREG_locus_representative_rule_2026-10-04.md` (binding: rules, substrates, readouts, decision).
+**Spec:** `docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md` (binding: rules, substrates, readouts, decision).
 
 ## Global Constraints
 
@@ -37,7 +37,7 @@
 
 ### Task 2: the runner and the registered comparison
 
-**Files:** `bench/rep_rule/run.sh`, `bench/rep_rule/score.py`, `docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`, register rows.
+**Files:** `bench/rep_rule/run.sh`, `bench/rep_rule/score.py`, `docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`, register rows.
 
 - [ ] Per contig (dev: human chr16, gorilla NC_073244.2; held-out: human chr2, chr6, chr8, chr10; gorilla NC_073234.2): copy the Figure 7 `.denovo.gtf` into `/mnt/linuxdisk/tmp/rep_rule/<species>_<contig>/`, run the driver's `families` stage twice (R_M: env unset; R_J: `RUSTLE_REPRESENTATIVE=most-junctions`) with the Task 1 binary, `--bin` the m2 release dir, `/usr/bin/time -v`, logs with the binary sha1; one heavy call per (contig, arm).
 - [ ] H1: score each arm's `fam.clusters.tsv` exactly as Figure 7 does — import `figures/_o1_recovery.py` (`score_arm` / `family_score` against Compara and Soto with the contig's GFF slice; the Liftoff pair sensitivity through its `copy_pairs` / `pair_families` with the existing fig8 read-support products; `npip_u2` on chr16). If a reference product is missing, say so; do not rebuild heavy products.

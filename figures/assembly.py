@@ -51,7 +51,7 @@ StringTie -L without -G, FLAIR bam2bed + collapse without -f/--gtf (flair correc
 tool runs (registry columns stringtie_guided_gtf / flair_guided_gtf, GUIDED_TOOLS) are scored by the same code into
 separate tables and figures (fig1_guided, fig2_guided_*, fig3_guided_bins) that build only when such a GTF exists;
 Rustle has no annotation-guided transcript assembly, so those have no Rustle row (RUSTLE_NO_GUIDED;
-docs/PREREG_guided_transcript_comparison_2026-09-25.md).
+docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md).
 """
 from __future__ import annotations
 

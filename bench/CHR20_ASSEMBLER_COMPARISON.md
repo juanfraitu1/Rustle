@@ -297,7 +297,7 @@ assumed.** Not worth enabling for general assembly either. Left off by default; 
 `RUSTLE_JUNCTION_FUZZ_BP` merges de-novo skeletons whose intron chains match in count and are within a
 per-junction tolerance, instead of requiring a byte-exact match (design spec:
 `docs/superpowers/specs/2026-09-15-fuzzy-junction-merge-design.md`; tolerance pre-registered from real
-chr20 alignment jitter, `docs/PREREG_junction_fuzz_2026-09-15.md`, final corrected value 672bp — see that
+chr20 alignment jitter, `docs/archive/2026-09/PREREG_junction_fuzz_2026-09-15.md`, final corrected value 672bp — see that
 doc's own methodology-correction section for why the first pass at this measurement, 0bp, was itself wrong).
 
 **A real wiring bug was found and fixed first.** The feature's initial wiring (commit `5a2a0928`) targeted

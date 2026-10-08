@@ -49,7 +49,7 @@ If most of the 76 pairs have 0-1 surviving blocks, colinearity is **undefined or
 for most of the population and this signal is underpowered — I will report the block-count distribution
 for TRUE vs FALSE regardless of whether it helps, exactly as §6t8 reported the multiplicity distribution.
 
-## Population — frozen, identical to `docs/PREREG_vg_containment_2026-09-20.md`
+## Population — frozen, identical to `docs/archive/2026-09/PREREG_vg_containment_2026-09-20.md`
 
 The same **76 pairs** the shipped rule rejects with containment ≥ 0.90, both endpoints Soto-labelled,
 on held-out chr2/chr8/chr10 (19 TRUE / 57 FALSE) — same truth (`bench/soto/soto_famCN_S1C.tsv`), same

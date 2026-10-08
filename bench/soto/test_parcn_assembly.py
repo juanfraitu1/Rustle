@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for bench/soto/parcn_assembly.py (docs/PREREG_soto_parcn_assembly_2026-09-29.md §2, C0(a)).
+"""Unit tests for bench/soto/parcn_assembly.py (docs/archive/2026-09/PREREG_soto_parcn_assembly_2026-09-29.md §2, C0(a)).
 
     python3 bench/soto/test_parcn_assembly.py        (stdlib unittest; numpy; meryl / samtools tests skip if absent)
 

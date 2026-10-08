@@ -8,7 +8,7 @@ tied pool (`AS ≥ 0.98 × genome-wide best`, r1060) finds more MEMBERS at preci
 18 → 36/108) but changes chains little. The untested middle: **seed with the tied pool, then pool ALL secondaries
 only INSIDE an already-defined family, only for completing its members' isoforms.**
 
-## Arms (gorilla NC_073244.2, `GGO_mm.bam`; the de novo chain of `docs/PREREG_locus_read_pool_2026-09-22.md`)
+## Arms (gorilla NC_073244.2, `GGO_mm.bam`; the de novo chain of `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`)
 
 | arm | read pool for assembly |
 |---|---|

@@ -6,7 +6,7 @@ The page's "own node" (and its headline 23 / 21 / 24 copies with a node of their
 NPIP clusters has a representative whose exons OVERLAP the copy's exons on the same strand. Figure 6d / Figure 8 call a Liftoff locus
 "read-supported" when >= 2 primary reads have an aligned block on its exon union (`figures/_liftoff.py` `SUPPORT_READS`). Neither asks
 whether any read is a spliced transcript of the copy: a read inside one exon, a read spanning an intron unspliced, or a 6.6-kb unspliced
-stub (NPIPB4's P-arm "own node", `docs/NPIP_READ_SUPPORT_2026-10-03.md`) all count. The tools benchmark (`docs/COPY_RECOVERY_TOOLS_*.md`)
+stub (NPIPB4's P-arm "own node", `docs/archive/2026-10/NPIP_READ_SUPPORT_2026-10-03.md`) all count. The tools benchmark (`docs/COPY_RECOVERY_TOOLS_*.md`)
 already uses the strict notion (E2 = copies with >= 2 exact-chain reads). This prereg fixes ONE standard for "found" and applies it first to
 the page, then to the figure denominators.
 
@@ -100,7 +100,7 @@ Applied as Amendment A was: the NPIP page (both annotations) and the representat
 
 ## Amendment C (2026-10-04 12:25, user: "ensure that only reads that truly support the intron chains are counted"; written before the run): expressed chains, annotation-free
 
-`docs/NPIP_CHAIN_COMPARISON_2026-10-04.md` showed that at NPIP the annotated chains are not what is expressed (27% of multi-junction reads are an
+`docs/archive/2026-10/NPIP_CHAIN_COMPARISON_2026-10-04.md` showed that at NPIP the annotated chains are not what is expressed (27% of multi-junction reads are an
 annotated chain; the dominant chain is unannotated at 13 of 25 copies, by uniquely placed reads at reference divergence). Amendment B's verdict
 therefore measures the annotation as much as the nodes. Amendment C keeps B's chain logic and replaces the annotated models by the reads'
 own expressed chains:
@@ -141,7 +141,7 @@ counts as found. The user's standard anchors support at the transcript start:
 ## Amendment E (2026-10-04 13:58, written before the run): the transcription start is where the CAPPED reads begin
 
 Amendment D' took a chain's modal 5' end as its start; at 7 of 24 NPIP copies that start carries no cap signal while other reads of the copy
-do (`docs/SPLICED_COPY_SUPPORT_2026-10-04.md`, "The cap signal"). Re-registered:
+do (`docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md`, "The cap signal"). Re-registered:
 
 - **Cap read:** a primary whose RNA 5' end carries a 1-3 bp untemplated G (leading soft clip of G on `+`, trailing soft clip of C on `-`;
   `--polish-tss`'s CAP signal). **Capped start (TSS_cap):** a 20-bp bin of cap reads' 5' ends holding >= 3 cap reads; its position = the

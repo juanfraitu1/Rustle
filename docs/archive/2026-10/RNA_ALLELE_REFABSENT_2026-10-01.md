@@ -1,6 +1,6 @@
 # Real reference-absent copies of KB3781: does the RNA-only chain flag them? (Amendment 10), 2026-10-01
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 10 (commit ee32021d; truth built first, rules written before the
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 10 (commit ee32021d; truth built first, rules written before the
 chain ran on these families). Scripts `bench/rna_allele/refabsent_truth.py` (truth), `control_test.py` (the chain, `--l`/`--w` on the
 work dir), `refabsent_score.py` (rules); work dir `/mnt/linuxdisk/tmp/rna_allele/refabsent/`; outputs copied to
 `docs/RNA_ALLELE_REFABSENT_score.out.txt`.

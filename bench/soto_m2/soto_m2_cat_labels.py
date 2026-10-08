@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CAT/Liftoff v2.0 labels for the meeting page's Detection tab (2026-10-01; docs/CAT_RERUN_PROTOCOL_2026-10-01.md).
+"""CAT/Liftoff v2.0 labels for the meeting page's Detection tab (2026-10-01; docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md).
 
 The July detection page (page/july/detection_2026-07-28.html) labels each of Soto's 362 members against NCBI RefSeq and suggests
 excluding three classes as segmental-duplication pieces: unannotated, fragment (< 800 bp), piece of another gene. The script that

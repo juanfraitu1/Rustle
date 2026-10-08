@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """loop_home.py -- the closed loop's read-home table and its development scoring.
 
-docs/PREREG_tied_read_loop_2026-09-25.md: families -> copy assignment of tied reads (union certificate) -> each
+docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md: families -> copy assignment of tied reads (union certificate) -> each
 assigned read given to its copy -> re-assembly with RUSTLE_READ_HOME_TABLE (src/rustle/vg_family/denovo_assemble.rs,
 `ReadHomeTable`). This script builds the table the assembler reads and the counts the pre-registration names.
 

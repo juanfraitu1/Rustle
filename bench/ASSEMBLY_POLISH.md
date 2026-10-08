@@ -1,6 +1,6 @@
 # Assembly polish: matching StringTie in `--assemble-only` mode (§6p8, 2026-09-19)
 
-Pre-registration: `docs/PREREG_assembly_polish_2026-09-19.md` (written before any chr11 number existed).
+Pre-registration: `docs/archive/2026-09/PREREG_assembly_polish_2026-09-19.md` (written before any chr11 number existed).
 Shipped as `copy_assign --assembly-polish <none|mono|full>` (default `none` = byte-identical old output,
 verified: the `none` GTF diffs clean against the published `ours_2026_09_19/base.gtf`).
 
@@ -348,7 +348,7 @@ tuning accident.
 for non-canonical junctions) and `--polish-retained-ratio 10` (drop a chain whose exon contains another
 transcript's junction carrying ≥ 10× its reads — the aligner's short-exon read-through, r1070). Held-out
 gorilla, 26 contigs: intron-chain precision 33.1 → 35.6 for −0.46% matching chains; human chr20-22 16.0 →
-18.7 for −1.6%. Pre-registration and tables: `docs/PREREG_assembly_precision_levers_2026-09-23.md`. The
+18.7 for −1.6%. Pre-registration and tables: `docs/archive/2026-09/PREREG_assembly_precision_levers_2026-09-23.md`. The
 2026-09-22 output is `--assembly-junctions majority --polish-retained-ratio 0`, byte-for-byte.
 
 ## 2026-09-27 addendum — `--polish-subchain off|tag|drop`: sub-chain tag, opt-in drop (register 1128-1130)
@@ -414,7 +414,7 @@ contig-restricted RefSeq.
   - It shrinks 8-11 gene spans per contig by ≤ 10 bp, and `flag` reads those spans.
 
 **Status: opt-in only, not a default candidate.**
-- The held-out pre-registration (`docs/PREREG_complete_transcripts_2026-09-27.md`) was **withdrawn on dev**. The drop
+- The held-out pre-registration (`docs/archive/2026-09/PREREG_complete_transcripts_2026-09-27.md`) was **withdrawn on dev**. The drop
   loses more intron-correct gene labels than the matched random drop on 14 of 15 seed × contig cells (clause C5).
 - 14 reads-only guards failed to fix that (r1129). An annotation oracle shows that the limit is the reads'
   selectivity, not the clauses.
@@ -636,11 +636,11 @@ within 50 bp.
 ## 2026-09-29 addendum 3 — `--bridge-regroup off|f1|f1v2`: bridge-aware regrouping (**default `f1v2` since 2026-09-29**; register 1145-1147)
 
 One pass over the final GTF of `--assemble-only`: the Rust port (`vg_family::bridge_regroup`) of two frozen
-post-processors, **F1** = `bench/f1_bridge.py --mode full` (37ee8e77, `docs/PREREG_f1_bridge_locus_2026-09-28.md`)
-and **F1v2** = F1 plus `f1v2.py --rule min` (b4e788ad, `docs/PREREG_f1v2_readshare_2026-09-29.md`). Shipped opt-in
+post-processors, **F1** = `bench/f1_bridge.py --mode full` (37ee8e77, `docs/archive/2026-09/PREREG_f1_bridge_locus_2026-09-28.md`)
+and **F1v2** = F1 plus `f1v2.py --rule min` (b4e788ad, `docs/archive/2026-09/PREREG_f1v2_readshare_2026-09-29.md`). Shipped opt-in
 (default `off`) and **flipped to `f1v2` on 2026-09-29 by the user's decision**, on the F1v2 held-out verdict and its
 family-level side result (F1v2's families beat BASE on every Compara metric on both human substrates,
-`docs/PREREG_o1_cover_growth_2026-09-29.md` Outcome). `--bridge-regroup off` (driver `RUSTLE_BRIDGE_REGROUP=off`)
+`docs/archive/2026-09/PREREG_o1_cover_growth_2026-09-29.md` Outcome). `--bridge-regroup off` (driver `RUSTLE_BRIDGE_REGROUP=off`)
 restores the earlier products byte for byte: proven on human_testis against a build of 3007c3d4, the last commit
 before the flip (assemble and families products, `cmp`-clean). The rule, verbatim in the module header:
 
@@ -722,7 +722,7 @@ tests (`f1_heldout/`, `f1v2/<s>/`, and the gorilla F1v2 dev arm `f1v2/dev/<s>/mi
 
 ## 2026-09-30 addendum 4 — `--bridge-regroup f1units` and `--bridge-units-list`: the bridges kept as UNITS in the families input (**OPT-IN**; `mcl_families --emit-relations`)
 
-The Rust port of the execution that `docs/PREREG_container_units_v2_dev_2026-09-30.md` (Part C, frozen rule U1) validated
+The Rust port of the execution that `docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md` (Part C, frozen rule U1) validated
 in a Python prototype (`units2.py --regroup scoped`, `relations.py`). Nothing is on by default: with the flags unset
 every product is byte-identical to the e163d955 build (proof below). F1 and F1v2 take a bridge transcript T OUT of the
 families input, so its copy half and its partner half are never related. `f1units` keeps every read and every exon:
@@ -789,7 +789,7 @@ mcl_families --from-gtf PREFIX.families.gtf --fasta G ... --emit-relations --out
   evidence the execution gains +2 / +4 fused copies in NPIP at fusion share .5 / .9 on S (R finds 4-5 of the 10 fusions,
   all correct), nothing at f = 1 (no standalone side) and nothing on chr16 (family-neutral, 27 junctions cut, 0 members lost). The annotation-overlap
   list shows the headroom: S 9 / 9 / 9 / 9 of 10, chr16 +1 NPIP copy and +10 Compara pairs. The literal pre-registered
-  verdict of the global-native execution was NOT (`docs/PREREG_container_units_v2_dev_2026-09-30.md` Outcome); the scoped
+  verdict of the global-native execution was NOT (`docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md` Outcome); the scoped
   form is SAFE on both dev substrates. F1's read evidence reaches none of the dominant readthroughs; W (alignment witnesses)
   was NOT ported (it floods: thousands of cuts on chr16).
 - **The copy of a fused member is its unit**, the copy minus its terminal exon where the partner took it (at f >= .9 on S):

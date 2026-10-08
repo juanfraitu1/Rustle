@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Advisor's proposal (2026-09-25): replace the exon-sum edge rule with (a) read-set JACCARD between loci and
 (b) MULTIMAPPING READS AS CHAINING ANCHORS. Guided nodes (annotated genes, exon unions) so every truth gene is a
-node in every arm; only the EDGE rule changes. Report: docs/ADVISOR_JACCARD_ANCHORS_2026-09-25.md
+node in every arm; only the EDGE rule changes. Report: docs/archive/2026-09/ADVISOR_JACCARD_ANCHORS_2026-09-25.md
 
   S      shipped: asm20 all-vs-all of gene spans -> mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60
   J(t)   Jaccard of molecule sets (primary OR secondary block on the exons), counting a shared molecule only when

@@ -1,7 +1,7 @@
 # Soto 2025 replication: status, gaps, and the "our families are different from theirs" evidence
 
 **Written 2026-09-28 to consolidate that day's work and let the advisor conversation resume from a fixed point;
-§1, §2 and §6 rewritten 2026-09-29 after the reconciliation** (`docs/PREREG_soto_reconciliation_2026-09-29.md`,
+§1, §2 and §6 rewritten 2026-09-29 after the reconciliation** (`docs/archive/2026-09/PREREG_soto_reconciliation_2026-09-29.md`,
 `PREREG_soto_famcn_allwssd_2026-09-29.md`, `PREREG_soto_parcn_assembly_2026-09-29.md`; register rows 1158-1174).
 Context: the advisor doubts the pipeline because we have not reproduced Soto et al. 2025 (Cell) exactly. This
 file separates three things that were previously tangled: (1) how close the replication now gets on their own

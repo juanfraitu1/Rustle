@@ -1,6 +1,6 @@
 """Figure 8 — loci in the Liftoff framework.
 
-Pre-registration: docs/PREREG_liftoff_loci_2026-09-25.md (user decision 2026-09-25: every locus comparison is made in
+Pre-registration: docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md (user decision 2026-09-25: every locus comparison is made in
 the Liftoff framework). Data layer: figures/_liftoff.py.
 
   (a) The baseline, per species: Liftoff v1.6.3 lifts the genome's own RefSeq gene and pseudogene records onto the same
@@ -63,7 +63,7 @@ META = {
               "default de novo families (reads -> seeded loci -> one representative per locus -> families) and its "
               "missing-copy flags (reads + genome) are scored against it as a reference, never as a competitor. Every "
               "match uses Liftoff's own criterion (>= 50% of the reference locus's exon bases). "
-              "Pre-registered claims L1, G1, D1 and F1 (docs/PREREG_liftoff_loci_2026-09-25.md); the numbers are "
+              "Pre-registered claims L1, G1, D1 and F1 (docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md); the numbers are "
               "printed by `python3 figures/fig_loci.py summary`."),
     "tables": _existing_tables(),
 }

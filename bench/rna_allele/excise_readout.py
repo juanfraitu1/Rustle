@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Readouts R1-R3 of Amendment 4 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): NPIPA2 hard-masked, the NPIP-net reads realigned
+"""Readouts R1-R3 of Amendment 4 (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): NPIPA2 hard-masked, the NPIP-net reads realigned
 to the masked and the unmasked genome with the same minimap2.
 
 R1 fate of NPIPA2's reads (baseline primary on its exons): landing copy, concentration, divergence (`de`) before and after.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Final truth classes for docs/PREREG_rna_allele_haplotype_count_2026-10-01.md (truth steps 3-5).
+"""Final truth classes for docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md (truth steps 3-5).
 
 - lift.tsv (truth_lift.py) gives T2d / T2i / T? / T1-candidate per record.
 - A T1-candidate becomes T1 unless a locus anywhere on the B haplotype is strictly closer to its exon sequence than its closest `_pri`

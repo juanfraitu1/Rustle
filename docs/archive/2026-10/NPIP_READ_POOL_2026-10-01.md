@@ -1,6 +1,6 @@
 # Which alignments build the loci, on NPIP (human chr16, A119b): result, 2026-10-01
 
-Pre-registration: `docs/PREREG_npip_read_pool_2026-10-01.md` (commit e5530d37, before any arm ran). Scorers: `bench/npip_read_pool/score.py`
+Pre-registration: `docs/archive/2026-10/PREREG_npip_read_pool_2026-10-01.md` (commit e5530d37, before any arm ran). Scorers: `bench/npip_read_pool/score.py`
 (pre-registered numbers), `bench/npip_read_pool/figdata.py` (figure windows), `bench/npip_read_pool/cointoss.py` (tied primaries, added after the
 prereg). Work dir `/mnt/linuxdisk/tmp/readpool_npip/` (all outputs; drivers `bench/npip_read_pool/arm.sh`, `posthoc.py`, `pagedata.py`, page template `page.tmpl.html`). NPIP copies = the 25 chr16 copies of the
 CAT/Liftoff v2.0 truth (Amendment 2). Human only; nothing here is pooled with gorilla.

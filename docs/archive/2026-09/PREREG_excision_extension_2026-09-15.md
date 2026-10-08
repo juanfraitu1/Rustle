@@ -1,7 +1,7 @@
 # PREREG — EXCISION EXTENSION: does the "missing copy" signature generalize beyond NPIP/ZNF875? (2026-09-15)
 
-Question (advisor, RNA-only, no WGS): the original excision experiment (`docs/PREREG_excision_2026-09-05.md`,
-confirmed reproduced in `docs/PREREG_o3_flag_pass_2026-09-06.md`) showed that erasing an almost-identical copy from
+Question (advisor, RNA-only, no WGS): the original excision experiment (`docs/archive/2026-09/PREREG_excision_2026-09-05.md`,
+confirmed reproduced in `docs/archive/2026-09/PREREG_o3_flag_pass_2026-09-06.md`) showed that erasing an almost-identical copy from
 NPIP/ZNF875 leaves a detectable "consistent sites per kb" signature in the reads that get rejected from their
 best surviving candidate. Both source families are unusual (NPIP = large, gene-conversion-heavy retrogene array;
 ZNF875 = a single near-100% pair). Before trusting the signature as a general missing-copy detector, test it on

@@ -1,5 +1,5 @@
 """_lrc — %LRC (LRGASP long-read coverage) of transcript models: a REPORTING metric only (no filter, no default, no
-decision rule, no tool ranking; docs/PREREG_lrc_metric_2026-09-29.md).
+decision rule, no tool ranking; docs/archive/2026-09/PREREG_lrc_metric_2026-09-29.md).
 
 Definition (LRGASP, Pardo-Palacios et al. 2024, Nat. Methods 21:1349, Box 1): "%LRC — Fraction of the transcript model
 sequence length mapped by one or more long reads." The paper fixes no procedure, so the prereg does:
@@ -430,7 +430,7 @@ def cmd_tables(cfg: dict, keys: list[str], data_dir: Path):
                                 "its input GTF)")
         inputs[f"{sid} bam"] = samples.get(cfg, sid)["bam"]
     base = ["%LRC (LRGASP, Pardo-Palacios et al. 2024, Box 1): fraction of the transcript model sequence length mapped "
-            "by one or more long reads; docs/PREREG_lrc_metric_2026-09-29.md", "reads: " + READ_FILTER,
+            "by one or more long reads; docs/archive/2026-09/PREREG_lrc_metric_2026-09-29.md", "reads: " + READ_FILTER,
             "model = GTF transcript, exons merged; classes > 0.98, 0.75-0.98 (inclusive), < 0.75 (LRGASP Extended "
             "Data Fig. 2); reporting only (no filter, no ranking); samples and species never pooled"]
     gen = "figures/_lrc.py tables"

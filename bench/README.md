@@ -33,7 +33,7 @@ representative-rule scorer). The same collision exists for `make_bam.py` (two in
 ## Tier 3 — study scripts (run only to reproduce their study)
 
 ### `bench/rna_allele/` (26) — the RNA-only allele-count study and the O3 candidates chain
-Owning docs: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md`, `docs/RNA_ALLELE_*_2026-10-01.md`,
+Owning docs: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md`, `docs/RNA_ALLELE_*_2026-10-01.md`,
 `docs/O3_CANDIDATES_*`, `docs/YAG_CHAIN_*`.
 
 | file | role |
@@ -56,7 +56,7 @@ Owning docs: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md`, `docs/RNA_A
 | `align_driver.sh` | the alignment driver behind the frozen truth |
 
 ### `bench/soto_m2/` (13 + 3 helpers + the page web) — the Soto-vs-ours meeting evidence (2026-09-30)
-Owning docs: `docs/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`, `docs/PREREG_soto_*` / `PREREG_unit_cover*` /
+Owning docs: `docs/archive/2026-09/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`, `docs/PREREG_soto_*` / `PREREG_unit_cover*` /
 `PREREG_our_homology*` / `PREREG_quasiclique_soto*`, `docs/REGISTER_DRAFTS_machine2.md`.
 
 | file | role |
@@ -69,8 +69,8 @@ Owning docs: `docs/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`, `docs/PREREG_soto_*`
 | `page/` (9 .py) | **accessory**: the meeting HTML page and its tabs (`build_page.py` is the entry; the rest are its import web) |
 
 ### `bench/annotation/` (6) — the CAT/Liftoff v2.0 default-annotation re-run (2026-10-01)
-Owning docs: `docs/ANNOTATION_CAT_DEFAULT_2026-10-01.md`, `docs/CAT_RERUN_PROTOCOL_2026-10-01.md`,
-`docs/SQANTI3_CAT_2026-10-01.md`, `docs/HELDOUT_FAMILIES_CAT_2026-10-01.md`, `docs/CAT_RERUN_STEP5_PLAN_2026-10-01.md`.
+Owning docs: `docs/archive/2026-10/ANNOTATION_CAT_DEFAULT_2026-10-01.md`, `docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md`,
+`docs/archive/2026-10/SQANTI3_CAT_2026-10-01.md`, `docs/archive/2026-10/HELDOUT_FAMILIES_CAT_2026-10-01.md`, `docs/archive/2026-10/CAT_RERUN_STEP5_PLAN_2026-10-01.md`.
 
 | file | role |
 |---|---|
@@ -79,15 +79,15 @@ Owning docs: `docs/ANNOTATION_CAT_DEFAULT_2026-10-01.md`, `docs/CAT_RERUN_PROTOC
 | `heldout_cat.py` | the held-out families arm (×7 doc mentions) |
 | `cat_layer_order.py` | the CAT layer-order instrument (STEP5 plan) |
 
-### `bench/npip_read_pool/` (6) — `docs/NPIP_READ_POOL_2026-10-01.md`
+### `bench/npip_read_pool/` (6) — `docs/archive/2026-10/NPIP_READ_POOL_2026-10-01.md`
 `arm.sh` (the arms driver), `score.py` (the read-pool scorer), `cointoss.py`, `figdata.py`, `pagedata.py` (figure/page
 data), `posthoc.py` (post-hoc readout; also cited by COPY_RECOVERY_TOOLS).
 
-### `bench/mechanism/` (5) — `docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md`, `docs/ADVISOR_JACCARD_ANCHORS_2026-09-25.md`
+### `bench/mechanism/` (5) — `docs/archive/2026-09/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md`, `docs/archive/2026-09/ADVISOR_JACCARD_ANCHORS_2026-09-25.md`
 `readthrough_rules.py`, `readthrough_eval.py`, `readthrough_tags.py`, `readthrough_combined.py` (the readthrough
 machinery), `jaccard_anchor_test.py` (the advisor's anchor test).
 
-### `bench/rep_rule/` (2) — `docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`
+### `bench/rep_rule/` (2) — `docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`
 `run.sh` (the R_M/R_J arms driver), `score.py` (the H3/Amendment-A-E scorer).
 
 ### `bench/` root, post-wave-7 additions (5 + 2 tested)
@@ -129,11 +129,11 @@ inside the subcommands that use them.
 | `lib.py` | library | `rc`, `ov`, `merge`, `UF`, `pairwise`, `bipartite_items` (item level), `bipartite_families` (family macro), `pair_scores`, `translate_refseq` / `translate_phased`, `longest_cds`, `gene_biotypes`, `gene_key_names`, `gtf_attr`, `load_compara`, `read_referee`, `soto_gene_family`, `families_on`, `paf_identity` / `paf_coverage`, `cigar_introns`, `sam_lines` (streamed samtools), `mcl` (calls `mcl_port`); the read-count rule `aligned_blocks` / `reads_with_block_in` / `reads_overlapping_span` / `spanning_genes` | Shared helpers for `score`, `sim`, `truth`, `guided_pipeline` and `layer_order`. The read-count functions are the ones `docs/THESIS_OBJECTIVES.md` rules 12 and 13 prescribe. |
 | `score.py` | CLI, 14 subcommands | `pairs`, `spectrum`, `heldout`, `referee`, `edge-gap`, `rna-ceiling`, `members`, `adjudicated`, `protein`, `eichler`, `reads`, `bakeoff-calls`, `bakeoff-compare`, `locus-reads` | Scorers: family, pair and copy-assignment scoring against the project's truths. |
 | `sim.py` | CLI, 5 subcommands | `chromosome`, `missing-copy`, `tandem`, `copies`, `excise`; library `simulate_reads`, `write_fastq`, `stable_seed` | Read simulators, with the truth in the read names. |
-| `famsim/` | package + CLI (`python3 bench/famsim`), 8 subcommands | `spec`, `make`, `verify`, `align`, `run`, `score`, `all`, `ladder`; modules `model`, `ops`, `template`, `chromosome`, `reads`, `verify`, `pipeline`, `evaluate`, `scenarios` | Controlled gene-family simulations that PROVE the condition they test (2026-10-02, `docs/FAMSIM_DESIGN_2026-10-02.md`, `bench/FAMSIM.md`): any gene from any annotated genome (or synthetic) planted as copies into an artificial chromosome with SNPs, indels, exon loss/gain/duplication/shuffle, inversions (exon, intron, whole), truncation, gene conversion, reference-absent and unexpressed copies, plus decoys; IsoSeq-like reads with the truth in the names; `verify.tsv` re-derives every planted condition from the products; `run` = the shipped minimap2 + driver stages (assemble, de novo and guided families, assign, flag); `score.tsv` per objective; `ladder` = the 22-rung identical → SNP sweep → structural progression. `famsim/test_famsim.py` = 16 stdlib unit tests. |
+| `famsim/` | package + CLI (`python3 bench/famsim`), 8 subcommands | `spec`, `make`, `verify`, `align`, `run`, `score`, `all`, `ladder`; modules `model`, `ops`, `template`, `chromosome`, `reads`, `verify`, `pipeline`, `evaluate`, `scenarios` | Controlled gene-family simulations that PROVE the condition they test (2026-10-02, `docs/archive/2026-10/FAMSIM_DESIGN_2026-10-02.md`, `bench/FAMSIM.md`): any gene from any annotated genome (or synthetic) planted as copies into an artificial chromosome with SNPs, indels, exon loss/gain/duplication/shuffle, inversions (exon, intron, whole), truncation, gene conversion, reference-absent and unexpressed copies, plus decoys; IsoSeq-like reads with the truth in the names; `verify.tsv` re-derives every planted condition from the products; `run` = the shipped minimap2 + driver stages (assemble, de novo and guided families, assign, flag); `score.tsv` per objective; `ladder` = the 22-rung identical → SNP sweep → structural progression. `famsim/test_famsim.py` = 16 stdlib unit tests. |
 | `truth.py` | CLI, 4 subcommands | `nodes`, `adjudicated`, `protein`, `protein-referee`; library `excluded`, `pair_hsps`, `edges_from`, `load_genes`, `protein_edges`, `blastp_all_vs_all` | Truth builders. |
 | `guided_pipeline.py` | CLI, flags only | `--workdir --gff --genes-gff-gz --genome --mmi --iqtree [--expected-units --reps --threads]`; library `gene_body_chains` (plus `merge`, `ov`, `rc`, `pairwise`, `bipartite`, re-exported from `lib`) | The guided O1 pipeline with the Addendum T fixes, on a leave-out of an annotated truth table. |
 | `mcl_port.py` | library | `mcl(edges, inflation, prune, max_iter)` | Python MCL comparator. It is a thin shim over the bit-faithful Rust bin `mcl_port` (§6z3, r1047; `RUSTLE_MCL_PORT_BIN`). Since wave 7 its only importer is `lib.mcl` (its docstring's "eight bench scripts" is the wave-6 count). |
-| `units_from_annotation.py` | CLI, flags only | `ANNOT.gff GTF [--contigs --replace-genes --label-prefix --report --out]`; library `read_genes`, `read_transcripts`, `cuts_of`, `run` | The GUIDED detector of `copy_assign --bridge-regroup f1units --bridge-units-list` (2026-09-30): every spliced transcript of an assembled GTF over >= 2 annotated same-strand genes is cut at the WIDEST intron between the genes (RefSeq `readthrough` records excluded; shared-exon and nested-gene transcripts go to a side report). On human A119b chr16 it writes exactly the annotation-overlap oracle list of `docs/PREREG_container_units_mechanism_2026-09-30.md` (253 transcripts, 256 cuts), byte for byte. Reads `.gz` annotation and GTF; with nothing to cut it writes a header-only list, notes it on stderr and exits 0 (`copy_assign` refuses that list: run without it). `test_units_from_annotation.py` = 10 stdlib unit tests (`python3 bench/test_units_from_annotation.py`). |
+| `units_from_annotation.py` | CLI, flags only | `ANNOT.gff GTF [--contigs --replace-genes --label-prefix --report --out]`; library `read_genes`, `read_transcripts`, `cuts_of`, `run` | The GUIDED detector of `copy_assign --bridge-regroup f1units --bridge-units-list` (2026-09-30): every spliced transcript of an assembled GTF over >= 2 annotated same-strand genes is cut at the WIDEST intron between the genes (RefSeq `readthrough` records excluded; shared-exon and nested-gene transcripts go to a side report). On human A119b chr16 it writes exactly the annotation-overlap oracle list of `docs/archive/2026-09/PREREG_container_units_mechanism_2026-09-30.md` (253 transcripts, 256 cuts), byte for byte. Reads `.gz` annotation and GTF; with nothing to cut it writes a header-only list, notes it on stderr and exits 0 (`copy_assign` refuses that list: run without it). `test_units_from_annotation.py` = 10 stdlib unit tests (`python3 bench/test_units_from_annotation.py`). |
 | `layer_order/lattice_common.py` | library | paths (`--root` / `LO_ROOT`), THE LEVEL TESTS (`tests`), `UF` / `components` / `truss3`, E1 catalogs (`catalog_context`, `catalog_keys`, `membership`), Soto mapping (`soto_load`, `soto_map_gene`), the EXPR read count (`count_reads`, `IntervalIndex`), clause-5 `c_tree`, scorers (`score_counts`, `score_lo`, `bip_jaccard`) | Library of the 2026-09-16 NPIP/TBC1D3 layer-order and nested edge-test lattice study. It keeps its name and old exports because the off-repo `LAT/corrections_pass2/*.py` import it by path. |
 | `layer_order/npip_tbc1d3.py` | CLI, 11 stages + `all` | `expr-recount`, `corrected-tables`, `layer-order`, `lattice-edges`, `lattice-expr`, `lattice-levels`, `lattice-truth`, `lattice-filtration`, `lattice-check-c2`, `lattice-report`, `all [--with-check-c2]`; global `--root DIR` | Reproduces `LAYER_ORDER_NPIP_TBC1D3.md` and `NESTED_LATTICE_NPIP_TBC1D3.md` (L3 at 0.98, not the shipped 0.985). ⚠ The default root is the frozen results tree and every stage overwrites its outputs there, so point `--root` at a copy. It re-executes itself with `PYTHONHASHSEED=0`. Substrate: `docs/DATA.md`. |
 | `soto/soto_replication.py` | CLI, 8 subcommands | `genesets`, `curate`, `edges` (`--exon-mapback`), `cluster` (`--pair-mad`), `dennislab`, `famcn` (`--interval exons\|sd98`), `score` (`--split`), `ladder` | Soto 2025 family replication. This is CONCORDANCE with Soto, not independent evidence (register T15/858). Headline since 2026-09-29 (register 1162): Soto's released code choices (exon map-back x per-pair MAD) give ARI 0.9698, 479/491 exact (held-out 0.9681); the literal recipe (§6ip, 0.6959 / 49.1%) is the unchanged default. Recipe: `REPRODUCE.md` §5a; substrate: `docs/DATA.md`. |
@@ -303,7 +303,7 @@ They describe outputs, or exporter scripts, that earlier waves archived; the fil
 | `ASSEMBLER_WIDENING.md` | Assembler read-isoform widening + single-exon strand — vs `docs/PREREG_assembler_widening_2026-09-18 | 2026-09-18 |
 | `ASSEMBLE_ONLY_MODE.md` | `--assemble-only`: the assembler product, with none of the all-vs-all work | 2026-09-19 |
 | `ASSEMBLY_POLISH.md` | Assembly polish: matching StringTie in `--assemble-only` mode (§6p8, 2026-09-19) | 2026-09-23 |
-| `CHIMERA_POLICY.md` | `--chimera-policy` — measured against `docs/PREREG_chimera_policy_2026-09-18.md` (md5 57f578ff0c4e2e | 2026-09-18 |
+| `CHIMERA_POLICY.md` | `--chimera-policy` — measured against `docs/archive/2026-09/PREREG_chimera_policy_2026-09-18.md` (md5 57f578ff0c4e2e | 2026-09-18 |
 | `CHR16_JUNCTION_MAJORITY_ARM.md` | The chr16 arm `build_spliced_seq_with` demands before `RUSTLE_JUNCTION_MAJORITY` can be a default | 2026-09-18 |
 | `CHR20_ASSEMBLER_COMPARISON.md` | Chr20 assembler comparison: ours vs StringTie vs FLAIR (gffcompare + SQANTI3) | 2026-09-16 |
 | `CLUSTERING_OPERATOR_BAKEOFF.md` | Clustering-operator bakeoff on the L2 copy graph — DESCRIPTIVE, development families only | 2026-09-18 |
@@ -328,11 +328,11 @@ They describe outputs, or exporter scripts, that earlier waves archived; the fil
 | `LAB_DATASET_BAKEOFF.md` | Against the lab's own isoseq / StringTie / FLAIR runs (§6q7, 2026-09-19) | 2026-09-19 |
 | `LATTICE_RULE_STRENGTHENERS.md` | Strengthening the DNA levels of the nested edge-test lattice: five strengtheners, swept, on NPIP and | 2026-09-17 |
 | `LAYER_ORDER_NPIP_TBC1D3.md` | Layer order for NPIP and TBC1D3 (human T2T-CHM13): protein P, DNA catalog E1 ("D"), subfamily clades | 2026-09-24 |
-| `LOCUS_ASSEMBLY_NPIP.md` | Locus assembly at NPIP — measured against `docs/PREREG_locus_assembly_2026-09-18.md` (md5 02237f9d6d | 2026-09-18 |
+| `LOCUS_ASSEMBLY_NPIP.md` | Locus assembly at NPIP — measured against `docs/archive/2026-09/PREREG_locus_assembly_2026-09-18.md` (md5 02237f9d6d | 2026-09-18 |
 | `LOCUS_WIDTH_GAP.md` | Locus formation (node width and composition) vs annotated gene records — agent 1 of 2 | 2026-09-17 |
 | `MERGED_LOCI_LAYER.md` | The MERGED-LOCUS layer: real fusions recorded as dual membership, outside the partition | 2026-09-19 |
 | `NESTED_LATTICE_NPIP_TBC1D3.md` | Nested edge-test lattice on NPIP and TBC1D3 (human T2T-CHM13) | 2026-09-24 |
-| `NODE_CUT_RULE.md` | The NODE CUT rule — measured against `docs/PREREG_node_cut_2026-09-18.md` (md5 2af3393070d6c2ded8db3 | 2026-09-18 |
+| `NODE_CUT_RULE.md` | The NODE CUT rule — measured against `docs/archive/2026-09/PREREG_node_cut_2026-09-18.md` (md5 2af3393070d6c2ded8db3 | 2026-09-18 |
 | `NO_READTHROUGH_COUNTERFACTUAL.md` | A world with no readthroughs: it does not rescue the family definition, and on real data it cannot b | 2026-09-18 |
 | `NPIP_DISHUCK_TRUTH_CHECK.md` | NPIP subfamily truth checked against Dishuck et al. 2025 | 2026-09-16 |
 | `NPIP_IDEAL_EXPRESSION.md` | Agent 2 of 3 — certificates on the idealized synthetic substrate, plus the RNA-structure conjunct | 2026-09-17 |
@@ -342,7 +342,7 @@ They describe outputs, or exporter scripts, that earlier waves archived; the fil
 | `NPIP_PER_MEMBER_METRICS.md` | NPIP per-member precision / recall / bipartite matching — human CHM13 (2026-09-16) | 2026-09-16 |
 | `NPIP_PER_MEMBER_WHOLECHR16.md` | NPIP per-member metrics on whole-chr16 catalogs, with single-exon mapping variants — human CHM13 (20 | 2026-09-17 |
 | `NPIP_READ_GROUP_NODES.md` | NPIP read-group nodes vs shipped de novo nodes (human CHM13, 2026-09-17) | 2026-09-17 |
-| `NPIP_SIM_CEILING.md` | NPIP algorithmic-ceiling simulation — vs `docs/PREREG_npip_sim_2026-09-18.md` (md5 17be6b031092b79b3 | 2026-09-18 |
+| `NPIP_SIM_CEILING.md` | NPIP algorithmic-ceiling simulation — vs `docs/archive/2026-09/PREREG_npip_sim_2026-09-18.md` (md5 17be6b031092b79b3 | 2026-09-18 |
 | `PERFORMANCE_AND_IO.md` | Performance And Io (consolidated) | 2026-07-09 |
 | `PRECISION_LEVERS_CHR20.md` | Getting more transcripts, or better precision — measured on chr20; and what `-R`/`-Q` actually do | 2026-09-19 |
 | `READ_ISOFORM_LOCUS.md` | Read-isoform locus and node-admission floor, pre-registered — agent 1 of 2 | 2026-09-17 |

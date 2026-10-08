@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CAT re-run step 5/6 (docs/CAT_RERUN_STEP5_PLAN_2026-10-01.md): the CAT/Liftoff v2.0 inputs of the NPIP/TBC1D3 layer-order
+"""CAT re-run step 5/6 (docs/archive/2026-10/CAT_RERUN_STEP5_PLAN_2026-10-01.md): the CAT/Liftoff v2.0 inputs of the NPIP/TBC1D3 layer-order
 and nested-lattice study, written into a COPY of its results tree in the shapes the RefSeq code reads.
 
 Subcommands (all write under --root, a copy of layer_order/npip_tbc1d3; nothing outside it is written):

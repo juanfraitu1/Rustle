@@ -2,7 +2,7 @@
 
 Run 2026-09-20 at `3566682a`, after §6s0–§6s5 removed 3,884 lines of Rust and archived 251 scripts.
 Every row was **re-executed today** against the current binaries; "expected" is the number already
-written down in `REPRODUCE.md`, `bench/LAB_DATASET_BAKEOFF.md` or `docs/PIPELINE_STATE_TEST_2026-09-19.md`.
+written down in `REPRODUCE.md`, `bench/LAB_DATASET_BAKEOFF.md` or `docs/archive/2026-09/PIPELINE_STATE_TEST_2026-09-19.md`.
 
 ## Assembly — all four arms exact, and the head-to-head is unchanged
 
@@ -69,7 +69,7 @@ chr17 guided, same recipe (430 nodes / 478 edges, 90 families, largest 12). **11
 cluster** (TBC1D3, B, D, E, F, G, H, I, K, P1, P2) together with **USP6**, the progenitor TBC1D3 arose
 from — the family is *unshattered*, which is what §6ks/§6kt claimed for `min_shared_exon_frac`. The
 `TBC1D3P1-DHX40P1` readthrough clusters separately (with DHX40), the same boundary behaviour NPIP shows
-with PKD1P; TBC1D3P3/P4 form their own pair. ⚠ `docs/PIPELINE_STATE_TEST_2026-09-19.md` tested chr16
+with PKD1P; TBC1D3P3/P4 form their own pair. ⚠ `docs/archive/2026-09/PIPELINE_STATE_TEST_2026-09-19.md` tested chr16
 only, so there is **no recorded chr17 figure to match against** — this row is a fresh measurement, not a
 reproduction, and should not be quoted as "unchanged".
 

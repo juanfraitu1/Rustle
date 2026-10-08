@@ -1,4 +1,4 @@
-# Assembler read-isoform widening + single-exon strand — vs `docs/PREREG_assembler_widening_2026-09-18.md` (md5 6d586b2d5ec6d7a6b15e014ef7fa5349)
+# Assembler read-isoform widening + single-exon strand — vs `docs/archive/2026-09/PREREG_assembler_widening_2026-09-18.md` (md5 6d586b2d5ec6d7a6b15e014ef7fa5349)
 
 **Verdict: the port is CORRECT and SHIPPED (opt-in), the strand fix WORKS, and neither closes the
 reconstruction gap. W-2 FAILED — the widening is worth +2 junctions on the cluster, not the +21 §6m5

@@ -1,4 +1,4 @@
-# `--chimera-policy` — measured against `docs/PREREG_chimera_policy_2026-09-18.md` (md5 57f578ff0c4e2e4829d7c72bdfc5bb26)
+# `--chimera-policy` — measured against `docs/archive/2026-09/PREREG_chimera_policy_2026-09-18.md` (md5 57f578ff0c4e2e4829d7c72bdfc5bb26)
 
 **Verdict: the lever is well-defined and the chimera set is clean, but it changes no defensible number.
 NOT ADOPTED as a reporting default.** Every apparent gain is disqualified by the pre-registered CP-5

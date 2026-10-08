@@ -2,7 +2,7 @@
 """protein_attach.py — the MANUAL extra-sensitive step of the de novo families: attach loci that the RNA family rule
 left out to an existing family by protein homology. Never part of the default pipeline (driver stage
 `families-protein`, not in `all`); the RNA families are read, never modified; no two families are ever merged
-(proposed merges are only reported). Pre-registered in docs/PREREG_protein_attach_2026-09-25.md (every constant
+(proposed merges are only reported). Pre-registered in docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md (every constant
 below is fixed there; changing one is off the pre-registration).
 
     python3 tools/protein_attach.py --fam PREFIX.fam --fasta GENOME.fa --out PREFIX.fam_protein [--threads 4]
@@ -652,7 +652,7 @@ def main(argv=None):
     write_atomic(a.out + ".null.tsv", "\n".join(nrow) + "\n")
 
     st = collections.Counter(status.values())
-    params = [("prereg", "docs/PREREG_protein_attach_2026-09-25.md"), ("fam", P), ("fasta", a.fasta),
+    params = [("prereg", "docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md"), ("fam", P), ("fasta", a.fasta),
               ("min_orf_aa", MIN_ORF_AA), ("max_masked_frac", MAX_MASKED_FRAC), ("min_cov_longer", MIN_COV),
               ("scope_floor", SCOPE_FLOOR), ("evalue", EVALUE), ("blastp", truth.blastp_version()),
               ("loci", len(loci)), ("families", len(families)), ("member_loci", len(fam_of)),

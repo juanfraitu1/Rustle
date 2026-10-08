@@ -1,5 +1,7 @@
 # REFERENCE — glossary, data locations, and a worked example
 
+> **Status 2026-10-07.** Glossary and worked example still valid; the *Family* entry below was updated (the code it named was retired). For dataset locations prefer `DATA.md` (2026-10-05), which supersedes the "Where the data lives" section here except for the mount procedure. For the family definition that ships, read `seeded_family_definition.md` §0★; for family vs SD / duplicon / expansion, `TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`.
+
 Three short reference documents merged on 2026-08-25. Each was too small to justify its own file,
 and all three answer *"what does this mean / where is it"* rather than recording a result.
 
@@ -52,12 +54,8 @@ loci. In the copy-assignment stage, reads are assigned to a specific copy.
 
 #### Family
 
-A set of copies (gene loci) that are homologous. In code:
+A set of loci that are paralogs: a connected block of the copy graph whose nodes are read-supported genomic intervals and whose edges are contiguous high-coverage homology computed on assembly sequence (`seeded_family_definition.md` §1★; shipped default §0★, 2026-09-25). In code: `family.rs` (edges, components, λ certificate) and `mcl_families.rs` (the DNA-level catalog). Segmental duplication, duplicon and expansion are the layers below the family, not alternatives to it (`TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`). The earlier `detect_edges`/`decompose_families` (γ-quasi-clique) code named here before 2026-10-07 was retired; the old definition survives opt-in as `gw_family_catalog`.
 
-- `detect_edges` (`family_detect.rs`) builds homology edges between locus
-  representatives using POA contiguous-core coverage.
-- `decompose_families` (`family_split.rs`) refines raw connected components
-  into cohesive families (γ-quasi-clique refinement).
 
 #### Physical span / distinct locus
 
@@ -152,7 +150,7 @@ intermediates.
 
 ### Ape and human assembly inventory
 
-The following files were verified readable on 2026-08-17:
+The following files were verified readable on 2026-08-17 (current inventory and the CAT/Liftoff v2 human annotation default since 2026-10-01: `DATA.md`):
 
 | species/haplotype | assembly file | index/status |
 |---|---|---|

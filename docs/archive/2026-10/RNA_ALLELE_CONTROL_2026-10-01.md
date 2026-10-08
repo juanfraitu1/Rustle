@@ -1,6 +1,6 @@
 # The no-deletion control of the IsoCon chain (Amendment 9), 2026-10-01
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 9 (commit 41dace23, before any run). Script
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 9 (commit 41dace23, before any run). Script
 `bench/rna_allele/control_test.py`; work dir `/mnt/linuxdisk/tmp/rna_allele/control/` (`contigs.out`, `classify.out`, `score.out`,
 `candidates.tsv`; copies in `docs/RNA_ALLELE_CONTROL_score.out.txt`). Same 53 families and 59,013 reads as Amendments 7-8, NOTHING
 masked: the chain ran against the full `_pri`, so every candidate copy it names is a flag raised without a deletion.

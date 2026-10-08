@@ -23,7 +23,7 @@ Tables (figures/data/):
                           FLAIR GTF registered, samples.tsv stringtie_guided_gtf / flair_guided_gtf; drawn as
                           fig2g_guided) the samples tables' columns plus `mode` (annotation-guided), guided tools only.
                           Never in a panel with the annotation-free methods; no Rustle row (Rustle has no
-                          annotation-guided transcript assembly; docs/PREREG_guided_transcript_comparison_2026-09-25.md).
+                          annotation-guided transcript assembly; docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md).
 
 Mode: every method of the main and samples tables is ANNOTATION-FREE (de novo): Rustle assemble (reads + genome),
 StringTie -L without -G, FLAIR collapse without annotation (flair correct skipped), IsoSeq collapse; the figure says so
@@ -322,7 +322,7 @@ def write_guided_tables(cfg, data_dir, cat_rows, filt_rows, inputs):
     import assembly
     notes = [_sqanti_note(cfg), "mode: " + assembly.MODE_GUIDED + " (StringTie -G / FLAIR with the annotation, as "
              "supplied in samples.tsv); " + assembly.GUIDED_CAVEAT, assembly.RUSTLE_NO_GUIDED,
-             "pre-registered: docs/PREREG_guided_transcript_comparison_2026-09-25.md; each sample against its own "
+             "pre-registered: docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md; each sample against its own "
              "annotation, genome-wide; never pooled across samples or species"]
     gen = "figures/fig_sqanti.py build"
     figlib.write_table("fig2_guided_categories", GUIDED_LEAD + S.CATEGORY_HEADER, cat_rows, generator=gen,

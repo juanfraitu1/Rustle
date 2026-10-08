@@ -364,7 +364,7 @@ masked splice index. Arm M = masked genome + `P.cand.contigs.fa` (one union per 
 
 ## Amendment 13 (2026-10-03): the stage's net and template — the two causes Amendment 12 measured (written before any change runs)
 
-Amendment 12 failed on two measured causes (`docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`): (1) the k-mer attribution placed 0 of 5,312
+Amendment 12 failed on two measured causes (`docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`): (1) the k-mer attribution placed 0 of 5,312
 unmapped reads, so 25 of 53 deleted copies had no read in their family's net; (2) a longest-read template that retains an intron drags the
 union (two-cluster unions kept 68.7% of reads). This amendment fixes how the stage builds those two things and re-runs Amendment 12's
 rules unchanged. The chain's rules (delta link, component merge at delta, `--min-support 6`, 0.98 tie ratio) do not move.
@@ -435,7 +435,7 @@ longest is taken. Everything else as 13d.
 
 ## Amendment 14 (2026-10-03): the no-deletion control for the Rust stage, before its default-on ships (written before the run)
 
-A13 passed its three rules (`docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`) and the driver's `candidates` stage was flipped to
+A13 passed its three rules (`docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`) and the driver's `candidates` stage was flipped to
 default-on in commit 1f49d0f0 — but the same run raised survivor-derived flags from 12 (A12) to 46 and left 3,527 survivor reads unplaced,
 and the stage has never been run on Amendment 9's no-deletion control. The flip is NOT pushed until this control is measured.
 
@@ -456,7 +456,7 @@ and the stage has never been run on Amendment 9's no-deletion control. The flip 
 
 ## Amendment 15 (2026-10-03, written before any re-run): the consensus defect behind Amendment 14's false flags — the correction, the re-runs, a held-out
 
-**What was found, post hoc (2026-10-03, after Amendment 14's verdict; `docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; Task 5 report, archived as `docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md`, in the
+**What was found, post hoc (2026-10-03, after Amendment 14's verdict; `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`; Task 5 report, archived as `docs/archive/2026-10/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md`, in the
 A13 ledger directory, reproduction byte-identical for 33 clusters of 5 families).** The 54 class-c flags of the control diverge from the
 primary assembly by insertions only (no mismatches, no deletions; 99% of the inserted bases in runs >= 20 bp), and 41 of the 54 carry a
 duplication signature: 94% of their genome-inserted bases (22,144 of 23,553) are copies of the union's own sequence (A13: 35 of the 46

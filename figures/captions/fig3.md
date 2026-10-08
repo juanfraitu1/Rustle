@@ -15,7 +15,7 @@ that no primary alignment reaches.**
 > runs (`samples.tsv` columns `stringtie_guided_gtf`, `flair_guided_gtf`), the same build scores them into a separate
 > table and figure (`fig3_guided_bins`, drawn as fig3g_guided; benchmark samples only, where the reads per transcript are counted), never in a panel with the annotation-free methods. Rustle has no annotation-guided
 > transcript assembly, so that figure has no Rustle row, and the guided tools are there scored against the annotation
-> they were given (docs/PREREG_guided_transcript_comparison_2026-09-25.md; GLOSSARY *Modes*).
+> they were given (docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md; GLOSSARY *Modes*).
 
 **Claim.** The reference is each genome's RefSeq annotation, and a match is an exact intron chain (gffcompare `=`).
 In gorilla OR6737 testis IsoSeq, genome-wide (88,387 multi-exon transcripts with at least one read), Rustle builds

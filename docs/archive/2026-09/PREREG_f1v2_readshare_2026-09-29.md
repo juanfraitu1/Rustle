@@ -384,7 +384,7 @@ A119b; no refute trigger). F1v2 stays opt-in until the user decides; a default f
 
 **Default flipped on 2026-09-29 by the user's decision**: `copy_assign --assemble-only` and the driver now run `f1v2`
 unless told `off`, citing this held-out verdict and the family-level side result of
-`docs/PREREG_o1_cover_growth_2026-09-29.md` (Outcome: F1v2's families, the COVER core, beat BASE on every Compara
+`docs/archive/2026-09/PREREG_o1_cover_growth_2026-09-29.md` (Outcome: F1v2's families, the COVER core, beat BASE on every Compara
 metric on both human substrates and on Liftoff recall on testis). `RUSTLE_BRIDGE_REGROUP=off` reproduces the pre-flip
 products byte for byte (`bench/ASSEMBLY_POLISH.md` addendum 3).
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """readthrough_eval — the pre-registered scorer of the read-end readthrough junction filter.
 
-Binding: docs/PREREG_readthrough_ends_representatives_2026-09-25.md (the "prereg"): §2 arms (BASE, R, RQ1, NULL),
+Binding: docs/archive/2026-09/PREREG_readthrough_ends_representatives_2026-09-25.md (the "prereg"): §2 arms (BASE, R, RQ1, NULL),
 §3 metrics (a)-(e), §4 substrates and power floors, §5 bar and verdicts. Nothing here chooses a threshold: every
 tolerance, floor and bar below is copied from the prereg (constants block). Rule source: docs/READTHROUGH_G50K_AND_
 LAST_EXON_2026-09-25.md and bench/mechanism/readthrough_rules.py (the instrument whose read-strand and read-end
@@ -72,7 +72,7 @@ SUBCOMMANDS
            "G1 or G3 is lower on more than half" is read per clause (G1 on > half, or G3 on > half); the NPIP cap
            (§6) is an input (default unknown = capped), this scorer does not measure NPIP.
       python3 bench/mechanism/readthrough_eval.py verdict <table.tsv> ... [--npip-cap none|capped|unknown]
-      --prereg v2 (docs/PREREG_readthrough_v2_2026-09-26.md §6.3, §7): EFFECTIVE / KEEP OPT-IN / REFUTE per arm
+      --prereg v2 (docs/archive/2026-09/PREREG_readthrough_v2_2026-09-26.md §6.3, §7): EFFECTIVE / KEEP OPT-IN / REFUTE per arm
            that has D rows (arms without D rows: "not judged"), over the SIX held-out substrates (V1-V6, by `score`
            label; any other substrate is ignored). Judged clauses: A1 (with the arm's own NULL), G1, G2, G3 and
            G4.annotated on all six, plus G5 (human: Compara F, sensitivity, precision; apes: Liftoff pair recall) on
@@ -83,7 +83,7 @@ SUBCOMMANDS
            refute_trigger); KEEP OPT-IN iff not EFFECTIVE and the judged failures fall on <= 1 substrate; REFUTE iff
            they fall on >= 2. A substrate absent from the tables makes the arm "undecided" unless >= 2 present
            substrates already fail (REFUTE). A D row that is absent or not measured is not a pass. --npip-cap is v1 only.
-      --prereg v3 (docs/PREREG_readthrough_v3_2026-09-26.md §7): v2's logic for the ONE judged arm R3, whose A1 must
+      --prereg v3 (docs/archive/2026-09/PREREG_readthrough_v3_2026-09-26.md §7): v2's logic for the ONE judged arm R3, whose A1 must
            name its own NULL3 (`score --null R3=NULL3`; else A1 is not a pass, unless it fails on the reduction alone)
            and whose D must be vs R (else not a pass). Every other arm with D rows (R2) is "descriptive" with its D per
            substrate (never in a verdict); an absent R3 is "undecided".
@@ -151,7 +151,7 @@ import assembly  # noqa: E402
 import _liftoff as L  # noqa: E402
 
 # ---------------------------------------------------------------- frozen by the prereg (never tuned here)
-PREREG = "docs/PREREG_readthrough_ends_representatives_2026-09-25.md"
+PREREG = "docs/archive/2026-09/PREREG_readthrough_ends_representatives_2026-09-25.md"
 SEED = 20260925
 TES_TOL, TSS_TOL = 25, 250               # §3b
 TES_GAP, TSS_GAP, CLUSTER_MIN = 25, 100, 3   # §3b read-derived clusters (the doc's §5 / §7 rules)
@@ -172,7 +172,7 @@ GFFCOMPARE_VERSION = "0.12.10"
 CACHE_VERSION = "1"
 PENDING = 75
 # ---------------------------------------------------------------- frozen by the v2 prereg (never tuned here)
-PREREG_V2 = "docs/PREREG_readthrough_v2_2026-09-26.md"
+PREREG_V2 = "docs/archive/2026-09/PREREG_readthrough_v2_2026-09-26.md"
 D_TOL_NUM, D_TOL_DEN = 2, 1000           # D: chains(X) >= chains(C) x (1 - 0.002); FUSED(X) <= FUSED(C) (tolerance 0)
 V2_SUBSTRATES = ("human_A119b:annotated_minus_chr16_chr20", "human_testis:annotated",       # v1 §4 V1-V6
                  "gorilla_OR6737:annotated_minus_NC_073244.2", "gorilla_KB3781:annotated", "chimp_PTR:annotated",
@@ -181,7 +181,7 @@ V2_JUDGED = ("A1", "G1", "G2", "G3", "G4.annotated")   # §7: judged on all six 
 V2_G5_REQUIRED = ("human_testis", "chimp_PTR")   # §6.3: G5 measured and judged there only
 V2_D_MIN_PASS = 5                        # D passes on >= 5 of the 6
 # ---------------------------------------------------------------- frozen by the v3 prereg (never tuned here)
-PREREG_V3 = "docs/PREREG_readthrough_v3_2026-09-26.md"
+PREREG_V3 = "docs/archive/2026-09/PREREG_readthrough_v3_2026-09-26.md"
 V3_ARM, V3_NULL, V3_VERSUS = "R3", "NULL3", "R"   # §3 / §7: the ONE judged arm, its own NULL, clause D's comparator
 # v3 reuses v2's six substrates, judged clauses, G5 scope and D rule (V2_SUBSTRATES, V2_JUDGED, V2_G5_REQUIRED,
 # V2_D_MIN_PASS, D_TOL_*); every other arm with D rows (R2: does the guard transfer?) is descriptive, never judged.
@@ -2483,7 +2483,7 @@ def selftest() -> int:
         assert [r[:6] for r in n1[0]] == [(ctg, 2001, 3000, "+", 3, 1)], n1
         assert n1[1] == (ctg, 2, 0, 4, 4, 1, 3, 3, 1), n1
         ok += 1
-        # ---- v3 (docs/PREREG_readthrough_v3_2026-09-26.md): tier B also needs V1 > N (N = N_span = S + K)
+        # ---- v3 (docs/archive/2026-09/PREREG_readthrough_v3_2026-09-26.md): tier B also needs V1 > N (N = N_span = S + K)
         assert v3_flag(2, 2, 8, 2, 8) == (False, False, False, True, False)     # the tie V1 = N: guarded, not flagged
         assert v3_flag(2, 2, 8, 2, 7) == (False, False, True, False, True)      # V1 = N + 1: flagged
         assert v3_flag(2, 40, 8, 0, 8) == (True, False, False, True, True)      # tier A flags a guarded candidate

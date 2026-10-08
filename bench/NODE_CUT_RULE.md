@@ -1,4 +1,4 @@
-# The NODE CUT rule — measured against `docs/PREREG_node_cut_2026-09-18.md` (md5 2af3393070d6c2ded8db3cd89c0a6dc3)
+# The NODE CUT rule — measured against `docs/archive/2026-09/PREREG_node_cut_2026-09-18.md` (md5 2af3393070d6c2ded8db3cd89c0a6dc3)
 
 **Verdict: SAFE BUT HARMFUL. NOT ADOPTED.** Cutting a chimeric record at its parent boundary loses no
 family member (NC-1 passed everywhere), but it makes every other number worse, and it fails the deciding

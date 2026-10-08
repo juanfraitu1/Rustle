@@ -1,3 +1,5 @@
+> ⚠ **Archived 2026-10-07 — superseded in part.** The composition principle (O1's vertex set IS O2's path set) still holds and is stated in `../../seeded_family_definition.md` §3a ("the three uses of multimapping") and `../../copy_assignment_definition.md`; the (V, E_r) γ-quasi-clique family definition below is the EARLIER definition (opt-in `gw_family_catalog`), not the shipped one (§0★). The one scoped exception to "never conflate O1 and O2" is memory topic `project_o1_perp_o2_scoped`. Kept for the Canzar-2016 positioning argument (§5–§7), which is still used.
+
 > ⚠ **2026-09-05: O1 was restated** (`THESIS_OBJECTIVES.md`, `O1_DEFINITION_SWITCH.md`). The `(V, E_r)` γ-quasi-clique
 > definition below is the EARLIER definition, kept opt-in (`gw_family_catalog`); the thesis definition is the
 > SD-core family with read-supported units (`mcl_families`). The composition principle is unchanged: O1's vertex set
@@ -82,7 +84,7 @@ its only non-test caller is `o2_materialize.rs:866`, which no binary imports, an
 consistent"* — a statement about the given path set, not about the molecule.
 
 ⚠ **The certificate is conditional on the column set — say so, and name the audit that checks it**
-(G4, `docs/FRAMING_AUDIT_2026-09-05.md`). `min_p < α/(n−1)` is an error rate **given the columns fed
+(G4, `docs/archive/2026-09/FRAMING_AUDIT_2026-09-05.md`). `min_p < α/(n−1)` is an error rate **given the columns fed
 to it are the family's true, correctly-attributed PSV set**. §6eu found the column set wrong twice:
 the read-support PSV filter deleted columns belonging to an unexpressed paralog (11 confident wrong
 calls at p 6.7e-9), and a hull-clipped unit let a secondary record carry the decision (190 wrong

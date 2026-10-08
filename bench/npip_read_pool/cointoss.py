@@ -2,7 +2,7 @@
 """Coin-toss check at the 25 CAT NPIP copies (human chr16, A119b): of the primary reads (-F 2308) whose aligned blocks overlap a copy's
 exons, how many are AS-tied genome-wide (second-best AS >= 0.98 x best AS, from the as_table molecules table), and how many tie to
 ANOTHER NPIP copy. A primaries-only locus is unsafe only where its reads are mostly coin tosses (the §6z7 r1061 audit, genome-wide:
-0.3-0.5% of loci majority-tied). Descriptive; added after docs/PREREG_npip_read_pool_2026-10-01.md.
+0.3-0.5% of loci majority-tied). Descriptive; added after docs/archive/2026-10/PREREG_npip_read_pool_2026-10-01.md.
 
     python3 bench/npip_read_pool/cointoss.py --copies copies.hsa.tsv --cat-genes genes.tsv --bam A119b.t2t.bam --table molecules.tsv --out x.json
 """

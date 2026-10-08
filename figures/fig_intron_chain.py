@@ -44,7 +44,7 @@ Tables (figures/data/):
                    samples.tsv stringtie_guided_gtf / flair_guided_gtf) the fig1_samples columns plus `mode`
                    (annotation-guided) and `guided_gtf`, for the guided tools only, drawn as fig1g_guided. Never in a
                    panel or table with the annotation-free methods; no Rustle row (Rustle has no annotation-guided
-                   transcript assembly; docs/PREREG_guided_transcript_comparison_2026-09-25.md). Until then the
+                   transcript assembly; docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md). Until then the
                    figure prints "guided comparison: not available (guided StringTie/FLAIR GTFs not supplied)".
 
   fig1_samples     (supplementary; every sample, Rustle's two configurations) sample, label, species, tissue, genome,
@@ -621,7 +621,7 @@ def build_guided(cfg: dict, data_dir: Path, R, unit: str):
                        notes=["mode: " + assembly.MODE_GUIDED + " (StringTie -G / FLAIR with the annotation, as "
                               "supplied in samples.tsv); " + assembly.GUIDED_CAVEAT,
                               assembly.RUSTLE_NO_GUIDED,
-                              "pre-registered: docs/PREREG_guided_transcript_comparison_2026-09-25.md",
+                              "pre-registered: docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md",
                               "sn / pr / matching = gffcompare 0.12.10 intron-chain level against the sample's own "
                               "annotation (the fig1_samples rule); *_ge2 = sensitivity on the reference chains carried "
                               f"exactly by >= {SAMPLES_MIN_READS} primary alignments"]

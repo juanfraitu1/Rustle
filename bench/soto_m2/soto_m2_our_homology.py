@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-registered KEY=ourhomology (docs/PREREG_our_homology_s1c_cn_2026-09-30.md): our homology method, Soto's copy numbers.
+"""Pre-registered KEY=ourhomology (docs/archive/2026-09/PREREG_our_homology_s1c_cn_2026-09-30.md): our homology method, Soto's copy numbers.
 
 Turns mcl_families' within-family homology edges over the loci of Soto's 2,334 genes into gene-level edges (a locus that folded
 several overlapping annotation records links all its genes, and an edge between two loci links every gene of one to every gene of

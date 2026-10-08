@@ -1,6 +1,6 @@
 # Figure 9: The closed loop — tied reads given to their assigned copy and re-assembled
 
-**Status.** Pre-registered in `docs/PREREG_tied_read_loop_2026-09-25.md` before any pass-2 assembly or real-read
+**Status.** Pre-registered in `docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md` before any pass-2 assembly or real-read
 union-test count existed. The pipeline exists (`tools/rustle_reassemble.sh`, `bench/loop_home.py`, the assembler's
 opt-in `RUSTLE_READ_HOME_TABLE`); no verdict sample has been run. Every panel says "not built" until its table exists.
 The development numbers below (human chr16 simulation) are disclosed in the pre-registration's amendment 1 and are not

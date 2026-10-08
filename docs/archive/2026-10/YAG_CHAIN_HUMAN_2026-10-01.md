@@ -1,6 +1,6 @@
 # The reference-absent-copy chain on the human Y ampliconic genes (DEV: A119b on CHM13v2.0), 2026-10-01
 
-Prereg: `docs/PREREG_yag_isocon_chain_2026-10-01.md` (commit 158795c0, before any run). Script `bench/rna_allele/yag_test.py`; work dir
+Prereg: `docs/archive/2026-10/PREREG_yag_isocon_chain_2026-10-01.md` (commit 158795c0, before any run). Script `bench/rna_allele/yag_test.py`; work dir
 `/mnt/linuxdisk/tmp/rna_allele/yag_hsa/`; outputs copied to `docs/YAG_CHAIN_HUMAN_score.out.txt`. Gorilla OR6737 testis is the
 held-out substrate (separate document).
 

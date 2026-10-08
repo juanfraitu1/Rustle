@@ -1,6 +1,6 @@
 # Linking IsoCon transcripts to their source locus, held-out on 53 multi-copy families (Amendment 7), 2026-10-01
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 7 (commit e66d1c04, before any run). Script
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 7 (commit e66d1c04, before any run). Script
 `bench/rna_allele/link_test.py` (+ `iso_batch.sh`); work dir `/mnt/linuxdisk/tmp/rna_allele/linktest/` (`score.out`).
 
 - **Linking rule:** an IsoCon output flagged "not in the reference" is an allele of its best masked-genome locus when its whole-length

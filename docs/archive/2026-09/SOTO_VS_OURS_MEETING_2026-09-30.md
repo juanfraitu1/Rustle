@@ -41,7 +41,7 @@ Conditions stated plainly: the step from 0.93 to 0.97 is agreement with their pu
 measurement; one family (FAM90A, ID_356) swings the ARI by about 0.035, so quote exact families beside ARI (without it: 0.925 and
 0.965). Their released family-building loop, run exactly as released, scores ARI 0.82-0.87 (it depends on hash order); the 0.97 uses the
 loop completed as it evidently intends. Independent recheck of the 0.97: CONFIRMED WITH CORRECTIONS
-(`docs/PREREG_soto_reconciliation_2026-09-29.md`).
+(`docs/archive/2026-09/PREREG_soto_reconciliation_2026-09-29.md`).
 
 ## 3. Where Soto's families are smaller or incomplete (by sequence homology) — the measured evidence
 
@@ -49,7 +49,7 @@ loop completed as it evidently intends. Independent recheck of the 0.97: CONFIRM
    edge at median identity 0.858 (37 at ≥ 0.90, 30 at ≥ 0.95). Causes, per pair: 65 have no shared-exon
    edge in Soto's edge set (44 on chr15: GOLGA6 vs GOLGA8 and a GOLGA8A isolation; 21 on chr16: NPIP A-clade vs B-clade);
    18 (all chr16 NPIP) have an edge but are split by their copy-number grouping (NPIPA1 vs NPIPA7: copy number 9.05 vs 47.58).
-   (`docs/SOTO_REPLICATION_STATUS_2026-09-28.md` §3; independently re-derived, 83 / 83.)
+   (`docs/archive/2026-09/SOTO_REPLICATION_STATUS_2026-09-28.md` §3; independently re-derived, 83 / 83.)
 2. **Sequence-identical links that Soto's copy-number split separates.** About 700 cross-family exon links at median identity
    0.9948 join genes Soto places in different families (median copy-number gap 15.1) (register 1160).
 3. **Their truth is a cover, not a partition.** 148 of 2,333 genes (6.4%) belong to two or more of Soto's own families.

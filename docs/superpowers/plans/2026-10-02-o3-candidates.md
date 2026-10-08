@@ -32,7 +32,7 @@
 ### Task 1: Prereg Amendment 12 (acceptance), written before any code runs on the held-out
 
 **Files:**
-- Modify: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` (append)
+- Modify: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` (append)
 
 - [ ] **Step 1: Append Amendment 12**
 
@@ -57,7 +57,7 @@ masked splice index. Arm M = masked genome + `P.cand.contigs.fa` (one union per 
 - [ ] **Step 2: Commit**
 
 ```bash
-cd /mnt/linuxdisk/home/juanfraitu/rustle_m2_soto && git add docs/PREREG_rna_allele_haplotype_count_2026-10-01.md && git -c user.name="$(git -C /mnt/c/Users/jfris/Desktop/Rustle config user.name)" -c user.email="$(git -C /mnt/c/Users/jfris/Desktop/Rustle config user.email)" commit -q -m "Prereg Amendment 12: o3_candidates acceptance on the 53-family held-out (rules fixed before the stage exists)
+cd /mnt/linuxdisk/home/juanfraitu/rustle_m2_soto && git add docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md && git -c user.name="$(git -C /mnt/c/Users/jfris/Desktop/Rustle config user.name)" -c user.email="$(git -C /mnt/c/Users/jfris/Desktop/Rustle config user.email)" commit -q -m "Prereg Amendment 12: o3_candidates acceptance on the 53-family held-out (rules fixed before the stage exists)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01DAyQQ6R8drUxY5GsM5wNkb"
@@ -574,7 +574,7 @@ assign_with_candidates() {
 
 **Files:**
 - Create: `bench/rna_allele/accept_o3_candidates.sh` (the exact commands below), `bench/rna_allele/panel_to_copies.py`
-- Create: `docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; modify `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1216+)
+- Create: `docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; modify `docs/NEGATIVE_RESULTS_REGISTER.md` (rows 1216+)
 
 - [ ] **Step 1: Inputs** — `panel_to_copies.py` turns `linktest/panel.json`'s surviving copies into `A12.copies.tsv` (`P.fam.copies.tsv` columns; `start/end` = clean interval, `exons` = `start-end`, `n_reads` counted from `linktest/R.bam`, `source=panel`) and `A12.copies.fa` (genomic interval sequence from `linktest/masked.fa`, `+`, `nexon=1`); `A12.regions` as `{fid}\t{chrom}:{lo-5000}-{hi+5000}`.
 - [ ] **Step 2: Run the stage** (heavy, foreground, timed): `o3_candidates --bam linktest/R.bam --fasta linktest/masked.fa --copies A12.copies.tsv --copies-fa A12.copies.fa --index linktest/masked.splice.mmi --out A12.cand --threads 4` under `/usr/bin/time -v`; record wall time (A12-3).

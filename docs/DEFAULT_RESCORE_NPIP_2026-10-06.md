@@ -37,9 +37,9 @@ The E-found copies in DEF: NPIPB2, NPIPA2, NPIPA1, NPIPA5, NPIPB6, NPIPB8, NPIPB
 
 ## What remains short
 
-- 22 of 25 copies are spliced-expressed under E (PKD1P6-NPIPP1, NPIPB12 and LOC124907808 are not). **14 of those 22 are not found** by the default: the locus representative does not carry the capped start and its first three introns, although a transcript of the same locus does at 13 of them (NPIPB5 at none). The loss is the representative, as `docs/SPLICED_COPY_SUPPORT_2026-10-04.md` found; f1v2 does not repair it (+2 copies, both from node separation).
+- 22 of 25 copies are spliced-expressed under E (PKD1P6-NPIPP1, NPIPB12 and LOC124907808 are not). **14 of those 22 are not found** by the default: the locus representative does not carry the capped start and its first three introns, although a transcript of the same locus does at 13 of them (NPIPB5 at none). The loss is the representative, as `docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md` found; f1v2 does not repair it (+2 copies, both from node separation).
 - Found is 32 % of the copies in own nodes (40 % in the primaries-only arm P before f1v2: P was not re-run on HEAD, so no DEF-versus-P statement is made).
-- Representative rules that would act on this (R_J, most junctions) were tested and are opt-in (`docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`); they were not run here.
+- Representative rules that would act on this (R_J, most junctions) were tested and are opt-in (`docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md`); they were not run here.
 
 ## Provenance: HEAD reproduces the 2026-09-30 products byte for byte
 

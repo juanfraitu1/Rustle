@@ -2,7 +2,7 @@
 
 **Written 2026-09-22, §6x3, before any arm is scored.** User goal: *"improve node definition to avoid
 false positives and false negatives in all modes."* This executes **priority 1 of
-`docs/NODE_GRAPH_ADMISSION_2026-09-21.md`** verbatim: *"Re-score the existing split triggers on graph
+`docs/archive/2026-09/NODE_GRAPH_ADMISSION_2026-09-21.md`** verbatim: *"Re-score the existing split triggers on graph
 admission, not per-copy correctness. r968's turnover trigger moved per-copy +0.78pp and was judged 4×
 short of its bar; its effect on the 406 collateral evictions was never measured. This is a re-scoring of
 work already done, not new machinery."*

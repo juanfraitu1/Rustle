@@ -747,7 +747,7 @@ Shorthand used in the commands:
 ```
 F=/mnt/linuxdisk/tmp/rustle_figures/ct_frozen      BIN=/mnt/linuxdisk/tmp/rustle_figures/rt3_bin_frozen
 C=/mnt/linuxdisk/tmp/rustle_figures/complete_arms  D=/mnt/linuxdisk/tmp/rustle_figures_dev/ct_sirv
-P=/mnt/c/Users/jfris/Desktop/Rustle/docs/PREREG_complete_transcripts_2026-09-27.md
+P=/mnt/c/Users/jfris/Desktop/Rustle/docs/archive/2026-09/PREREG_complete_transcripts_2026-09-27.md
 L="flock -w 900 /mnt/linuxdisk/tmp/rustle_heavy.lock timeout 600"
 SC="python3 $F/complete_eval.py score --heldout --prereg $P --budget-s 540"   # exit 75 = run again
 ```

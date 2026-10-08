@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-registered test KEY=npipfusion (docs/PREREG_npip_fusion_duplicon_2026-09-30.md): are NPIP fusion transcripts
+"""Pre-registered test KEY=npipfusion (docs/archive/2026-09/PREREG_npip_fusion_duplicon_2026-09-30.md): are NPIP fusion transcripts
 duplicon-boundary crossings inside co-duplicated blocks?
 
 Units are distinct splice junctions (>= 2 reads) in long-read alignments at NPIP genes. A switch unit joins an NPIP exon

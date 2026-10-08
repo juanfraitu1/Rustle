@@ -2,13 +2,13 @@
 
 **Written 2026-09-25, before the filter exists in the assembler and before any number of the kind decided here
 exists.** User request: *"improve the locus representatives to try to avoid some readthroughs and account for more
-TES/TSS; the info is in `docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md`; let's just ensure it is beneficial."*
+TES/TSS; the info is in `docs/archive/2026-09/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md`; let's just ensure it is beneficial."*
 This file fixes the intervention, the metrics, the substrates and a multi-part bar for "beneficial". A default flip
 is the user's call whatever the outcome.
 
 ## 0. What existed and what was seen before this file
 
-- **Seen (junction level only):** every number in `docs/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md` (the "doc"),
+- **Seen (junction level only):** every number in `docs/archive/2026-09/READTHROUGH_G50K_AND_LAST_EXON_2026-09-25.md` (the "doc"),
   i.e. the R, R_peak, R & Q, R & Q1 and BAM-tag results on human A119b chr16 (dev) and chr20, and gorilla OR6737
   NC_073244.2. Code read: `bench/mechanism/readthrough_rules.py`, `copy_assign --assemble-only` (pass-1 skeletons,
   `collapse_loci_groups`), `family_detect::{collapse_parent, pick_locus_rep}`, `mcl_families::{gtf_loci,
@@ -142,7 +142,7 @@ multi-exon transcripts (`.tmap`); intron-chain sensitivity = matching reference 
 reported: transcript and locus level, total transcripts, and multi-gene transcripts (the transcript-level form of
 FUSED).
 
-**(d) Loci in the Liftoff framework** (`docs/PREREG_liftoff_loci_2026-09-25.md` §3, C2). Reference loci = the
+**(d) Loci in the Liftoff framework** (`docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md` §3, C2). Reference loci = the
 species' Liftoff table (in place + moved + extra copies, exon union ≥ 200 bp), restricted to read-supported loci of
 the sample. Found iff cov(G | R) ≥ 0.5 for some de novo locus exon union R. **Guard metric:** found fraction,
 annotated and extra copies separately. Descriptive: fraction of de novo loci lying at a Liftoff locus (cov(R | G)

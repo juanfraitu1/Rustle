@@ -1,5 +1,5 @@
 //! `tools/rustle_pipeline.sh` with `RUSTLE_BRIDGE_REGROUP=f1units`, `RUSTLE_BRIDGE_UNITS_LIST` and
-//! `RUSTLE_FAMILY_RELATIONS=1` (`docs/PREREG_container_units_v2_dev_2026-09-30.md` Part C).
+//! `RUSTLE_FAMILY_RELATIONS=1` (`docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md` Part C).
 //!
 //! The driver's `families` stage runs against a STUB `mcl_families` (a shell script that records its command line and
 //! writes the products the driver summarises), so nothing here needs minimap2 or a genome: what is tested is what the

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spliced support per annotated copy (docs/PREREG_spliced_copy_support_2026-10-04.md): is a copy FOUND because reads are spliced
+"""Spliced support per annotated copy (docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md): is a copy FOUND because reads are spliced
 transcripts of it, or only because something overlaps it?
 
     copy_support.py --copies copies.tsv --truth truth.gtf --bam reads.bam --family NPIP --out PREFIX

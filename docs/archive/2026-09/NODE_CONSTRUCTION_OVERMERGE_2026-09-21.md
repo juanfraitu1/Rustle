@@ -2,7 +2,7 @@
 
 **§6u6, 2026-09-21.** Substrate: A119b IsoSeq vs CHM13, chr16 de novo (`--assemble-only`),
 2,550 de novo loci, 2,080 annotated chr16 genes. Pre-registration:
-`docs/PREREG_read_bridged_node_merge_2026-09-21.md` (md5 `10c85736`).
+`docs/archive/2026-09/PREREG_read_bridged_node_merge_2026-09-21.md` (md5 `10c85736`).
 ⚠ HUMAN substrate — do not pool with the gorilla numbers.
 
 ## Headline

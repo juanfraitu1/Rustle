@@ -1,7 +1,7 @@
 # Pre-registration — `copy_assign` collapses distinct molecules with identical coordinates; fix it and price it
 
 **Written 2026-09-22 (§6z6), before the fixed binary is run on any scored substrate.** Follows
-`docs/PREREG_external_tool_bakeoff_2026-09-22.md` §"The second question".
+`docs/archive/2026-09/PREREG_external_tool_bakeoff_2026-09-22.md` §"The second question".
 
 ## The defect, established
 

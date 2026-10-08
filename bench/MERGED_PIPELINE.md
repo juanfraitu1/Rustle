@@ -31,7 +31,7 @@ separate stages run, with three real changes:
 
 What merging does NOT fix: the all-vs-all itself (minimap2, `-x asm20 -c -X -N 50 -p 0.1`, already
 multi-threaded) is CPU-bound; on the 5-core box it is the genome-wide floor. For the human 96 GB
-BAM this stage belongs on the second machine (docs/HANDOFF_SECOND_MACHINE_2026-09-30.md).
+BAM this stage belongs on the second machine (docs/archive/2026-09/HANDOFF_SECOND_MACHINE_2026-09-30.md).
 
 ## Step 0 baseline — current pipeline, gorilla genome-wide (GGO_mm.bam 11.7 GB, mGorGor1)
 

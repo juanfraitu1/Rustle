@@ -1,7 +1,7 @@
 """_o2 — shared data layer for Figures 4 and 5 (copy assignment, simulated reads with known source copies).
 
-The experiment (docs/PREREG_o2_read_truth_2026-09-23.md; genome-wide on every sample:
-docs/PREREG_genome_wide_copy_assignment_2026-09-25.md):
+The experiment (docs/archive/2026-09/PREREG_o2_read_truth_2026-09-23.md; genome-wide on every sample:
+docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md):
 
     copy table copies.tsv/.fa --bench/sim.py copies--> reads named `family|copy|i`, mapped genome-wide
         (shipped minimap2 settings) = SIM.bam, SIM.copies_used.tsv
@@ -630,7 +630,7 @@ def plan_shards(bam, cat_tsv, cat_fa, contigs: list, out_dir: Path, *, kind: str
                 sample_frac: float | None = None, sample_seed: int = 20260925) -> dict:
     """Split the catalog into shards of whole READ-CONNECTED COMPONENTS of families, so that each shard's
     copy_assign run gives exactly the rows the one-run table gives for its families
-    (docs/PREREG_genome_wide_copy_assignment_2026-09-25.md §4). Two families are joined when
+    (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md §4). Two families are joined when
       (a) their read windows (copy +/- COPY_READ_PAD, the records copy_assign loads) overlap or touch on a contig;
       (b) one read has records (any flag) inside a window of each (link_pieces over `bam`);
       (c) a family with copies on several contigs is joined, on each such contig that carries single-contig
@@ -1206,7 +1206,7 @@ def run_notes(runs: dict, reads: list[dict], logs: dict) -> list[str]:
 
 
 # ================================================================ the alignment-score margin rule (experiment C)
-# docs/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2: the Eichler lab's rule MR(T) (assign a read to its
+# docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2: the Eichler lab's rule MR(T) (assign a read to its
 # best alignment iff no other alignment of the read, anywhere in the genome, scores within T AS units; a read with no
 # other alignment is assigned) against Rustle's per-read answer (MAPQ > 0: the aligner's primary; MAPQ 0: the
 # copy-assignment result, union test = reading 'u', source family* = reading 's'). The rule and the join are computed

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for bench/family_container.py (docs/PREREG_fusion_container_sim_2026-09-28.md §5 step 1).
+"""Unit tests for bench/family_container.py (docs/archive/2026-09/PREREG_fusion_container_sim_2026-09-28.md §5 step 1).
 
     python3 bench/test_family_container.py        (stdlib unittest; fixtures are written to a temporary directory)
 

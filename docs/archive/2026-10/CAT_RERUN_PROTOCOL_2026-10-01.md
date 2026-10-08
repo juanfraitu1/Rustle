@@ -1,6 +1,6 @@
 # Re-running the RefSeq benchmarks on CAT/Liftoff v2.0: protocol (2026-10-01)
 
-Written before any benchmark was re-run. Follows `docs/ANNOTATION_CAT_DEFAULT_2026-10-01.md` (user decision: CAT/Liftoff v2.0 is
+Written before any benchmark was re-run. Follows `docs/archive/2026-10/ANNOTATION_CAT_DEFAULT_2026-10-01.md` (user decision: CAT/Liftoff v2.0 is
 the default human annotation; registered RefSeq results stay as registered; each benchmark is re-run on CAT and both are reported).
 Annotation: `winloci_data/gencode_chm13/chm13v2.0_CAT_Liftoff.slim.gff3.gz` (gene `Name=` = CAT gene id; `gene_name=` = symbol).
 Gorilla is untouched. Nothing in the canonical repo is edited; changed copies of scripts live on branch `machine2/soto-evidence`

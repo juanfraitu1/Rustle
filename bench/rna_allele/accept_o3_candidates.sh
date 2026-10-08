@@ -1,5 +1,5 @@
 #!/bin/bash
-# accept_o3_candidates.sh — the `o3_candidates` acceptance on Amendment 7's 53-family held-out (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md),
+# accept_o3_candidates.sh — the `o3_candidates` acceptance on Amendment 7's 53-family held-out (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md),
 # scored by `merge_test.py score` (arm M = masked genome + one union per flagged candidate, each candidate its own component).
 #   ACC=a13 (default): Amendment 13 (+ 13b-13e) — the A13 stage (alignment attribution, structural template), work dir a13/; the copies table,
 #                      FASTA, regions and batch plan of A12 are reused (`link`); A13-1 is decided on the re-registered comparator C (`comparator`).
@@ -10,7 +10,7 @@
 #                      classified against KB3781's mat / pat by Amendment 9's rule (`hap`, `overlap`, `classify`: C1'), arm C = `_pri` + the flagged
 #                      unions (`cindex`, `calign`, `cmerge`, `cscore`: C2'), `creport`; and ruling R23's whole-BAM cost (`wcopies`, `wplan`,
 #                      `wstage`, `wreport`) in a14/wholebam/. Only run `reg`.
-#   ACC=a15h:          Amendment 15's held-out (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md, Amendment 15, registered before
+#   ACC=a15h:          Amendment 15's held-out (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md, Amendment 15, registered before
 #                      any re-run): Amendment 10's read set with nothing deleted — refabsent/R0.bam (32,219 scored reads of 34 families
 #                      on the unmasked `_pri`), the 30 disjoint families (refabsent/bonly.tsv's 34 minus GWFAM4 / GWFAM169 / GWFAM175 /
 #                      GWFAM402, dev-overlapping), the a14/wholebam 915-copy table restricted to them (H.copies.*), refabsent/panel.json,

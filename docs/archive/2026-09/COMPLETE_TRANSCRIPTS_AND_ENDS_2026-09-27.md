@@ -385,8 +385,8 @@ Any later prereg that uses SIRV is its second use.
 - `a3cd54b4`: the held-out Outcome and rows 1136-1139.
 
 **Preregs.**
-- [CT] = `docs/PREREG_complete_transcripts_2026-09-27.md`: text sha1 76791696 (948 lines); withdrawn on dev.
-- [HO] = `docs/PREREG_completeness_heldout_2026-09-27.md`: frozen text a046be8c (254 lines;
+- [CT] = `docs/archive/2026-09/PREREG_complete_transcripts_2026-09-27.md`: text sha1 76791696 (948 lines); withdrawn on dev.
+- [HO] = `docs/archive/2026-09/PREREG_completeness_heldout_2026-09-27.md`: frozen text a046be8c (254 lines;
   `complete_ho/frozen/PREREG.sha1`).
 
 **Frozen scripts.** `compat_collapse.py` e14c5646, `complete_null.py` 9740f092, `ho_eval.py` 597fcd08, `tes_null.py`

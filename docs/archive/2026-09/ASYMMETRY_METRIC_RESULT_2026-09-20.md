@@ -1,6 +1,6 @@
 # A pair metric that tolerates length asymmetry — bakeoff result
 
-Run 2026-09-20 against `docs/PREREG_asymmetry_metric_2026-09-20.md` (committed `b788bbe5` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_asymmetry_metric_2026-09-20.md` (committed `b788bbe5` before any
 new metric was scored). Tool: `bench/pair_metric_sweep.py`. Same truth (Soto S1C ≥ 3 members), same
 scorer, same held-out chromosomes (chr2, chr8, chr10), t always selected on chr16.
 

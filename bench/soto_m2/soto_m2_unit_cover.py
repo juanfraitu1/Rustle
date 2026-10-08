@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-registered KEY=unitcover (docs/PREREG_unit_cover_2026-09-30.md): families as a partition of duplicon units, genes as paths.
+"""Pre-registered KEY=unitcover (docs/archive/2026-09/PREREG_unit_cover_2026-09-30.md): families as a partition of duplicon units, genes as paths.
 
 Owner of a duplicon = the Soto family whose single-family ("clean") genes have the most exonic bases on it (ties: lower family
 number; leave-one-out when the predicted gene is itself clean). A gene's predicted families = the owners of the duplicons its exons

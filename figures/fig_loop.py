@@ -1,6 +1,6 @@
 """Figure 9 — the closed loop: tied reads assigned to one copy, given to that copy, and re-assembled.
 
-Pre-registration: docs/PREREG_tied_read_loop_2026-09-25.md (user decision 2026-09-25 16:00, item 3). Pipeline:
+Pre-registration: docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md (user decision 2026-09-25 16:00, item 3). Pipeline:
 tools/rustle_reassemble.sh (union -> home -> pass2 -> g0) after the driver's assemble and families stages; the home
 table is bench/loop_home.py, the pass-2 read filter is RUSTLE_READ_HOME_TABLE (src/rustle/vg_family/denovo_assemble.rs).
 
@@ -55,7 +55,7 @@ def _existing_tables(data_dir: Path = figlib.DATA_DIR) -> list[str]:
 META = {
     "id": "fig9",
     "title": "The closed loop: tied reads assigned to one copy, given to that copy and re-assembled",
-    "claim": ("Pre-registered (docs/PREREG_tied_read_loop_2026-09-25.md): after pass 1 (the default assembly and "
+    "claim": ("Pre-registered (docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md): after pass 1 (the default assembly and "
               "families), reads with equally good alignments at several copies are assigned by one test over every "
               "candidate copy; each assigned read is then taken only at its copy and the sample is re-assembled. "
               "Judged like the annotation-free tools (Fig. 1, Fig. 3) and in the Liftoff framework (Fig. 8), with "
@@ -101,7 +101,7 @@ def _sim_rows(name: str, m5: Path) -> list[list]:
 
 def build(cfg: dict, data_dir: Path, force: bool = False, recorded: bool = False):
     import samples
-    notes = ["pre-registration docs/PREREG_tied_read_loop_2026-09-25.md; union-certificate verdicts only (r1092); "
+    notes = ["pre-registration docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md; union-certificate verdicts only (r1092); "
              "families frozen from pass 1 (r395); tie widths: assignment exact tie (1.0), seeding 0.98"]
     if recorded:
         dev = Path(cfg.get("fig9_dev_dir") or "/mnt/linuxdisk/tmp/rustle_figures_dev/loop")

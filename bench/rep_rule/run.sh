@@ -1,5 +1,5 @@
 #!/bin/bash
-# bench/rep_rule/run.sh — the runner of docs/PREREG_locus_representative_rule_2026-10-04.md: the de novo locus representative
+# bench/rep_rule/run.sh — the runner of docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md: the de novo locus representative
 # R_M (most-reads, the shipped rule) vs R_J (most-junctions, `mcl_families --representative most-junctions`).
 #
 #   bench/rep_rule/run.sh families SPECIES CONTIG ARM   ARM = R_M | R_J: the driver's `families` stage on the contig's Figure 7
@@ -8,7 +8,7 @@
 #                                                       h3-inputs: human CAT/Liftoff v2.0, gorilla RefSeq), bench/copy_support.py
 #                                                       on both arms' loci in one call (rlock heavy: a whole contig's BAM)
 #   bench/rep_rule/run.sh npip                          H3 on human chr16: the 25 NPIP copies of
-#                                                       docs/SPLICED_COPY_SUPPORT_2026-10-04.md (same copies and truth), both arms
+#                                                       docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md (same copies and truth), both arms
 # SPECIES = human | gorilla. Scoring (H1/H2/H3 tables) and the registered decision: bench/rep_rule/score.py.
 #
 # Inputs, read-only: ${FIG7}/<species>_<contig>.denovo.gtf (the genome-wide de novo assembly restricted to the contig, the

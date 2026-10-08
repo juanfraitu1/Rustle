@@ -1,6 +1,6 @@
 # Neighbourhood Jaccard — a real connectivity metric, and exactly where it is blind
 
-Run 2026-09-21 against `docs/PREREG_neighbourhood_jaccard_2026-09-21.md` (committed `8ab4e902` before
+Run 2026-09-21 against `docs/archive/2026-09/PREREG_neighbourhood_jaccard_2026-09-21.md` (committed `8ab4e902` before
 any value was computed). Tool: `bench/neighbourhood_jaccard.py`. Held-out chr2/chr8/chr10, Soto S1C
 labels, edges scored only where both endpoints are Soto-labelled.
 

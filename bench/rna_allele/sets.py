@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gene sets for docs/PREREG_rna_allele_haplotype_count_2026-10-01.md from the paralog test:
+"""Gene sets for docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md from the paralog test:
 `minimap2 -c -x splice -N 50 GGO.splice.mmi exonsum.fa` (default -p, as registered).
 
   own hit      : on the gene's own chromosome, overlapping its span

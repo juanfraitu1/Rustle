@@ -108,7 +108,7 @@ Every claim is scored under three truths:
 
 ## §1 Derivation
 
-1. **Old truth.** `docs/lit_subclusters_npip_tbc1d3_truth.tsv:24-32` (md5 a79fabc1) has three byte-identical copies: `LIT/lit_truth.tsv`, `LIT/guided_lo/truth.tsv` and `LIT/guided_t/truth.tsv`. The name map was pre-registered as a "declared assumption" (`docs/PREREG_core_definition_2026-09-12.md:223-225`).
+1. **Old truth.** `docs/lit_subclusters_npip_tbc1d3_truth.tsv:24-32` (md5 a79fabc1) has three byte-identical copies: `LIT/lit_truth.tsv`, `LIT/guided_lo/truth.tsv` and `LIT/guided_t/truth.tsv`. The name map was pre-registered as a "declared assumption" (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md:223-225`).
 2. **Figure reading** (Guitart et al., bioRxiv 2024.03.12.584650, posted 2024-03-13, PDF p.45).
    - Words and vector drawings were extracted with pymupdf.
    - Legend colours come from the Panel A key. The 6B axis was calibrated from the tick strokes (91.7 pt/Mb).
@@ -589,10 +589,10 @@ Rules:
 
 ### C. Pre-registrations and register (append only)
 
-10. **`docs/PREREG_core_definition_2026-09-12.md`** → add a new ADDENDUM (next free letter after AP): "post-hoc TBC1D3 level-2 truth amendment".
+10. **`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`** → add a new ADDENDUM (next free letter after AP): "post-hoc TBC1D3 level-2 truth amendment".
     - It gives F, S and V3, and states that no registered reading changes: AA is NOT SUPPORTED in all variants, B2 excludes TBC1D3, and O-4 and P-3 are positional.
     - Tag lines 223-225, 579, 671 and 772 with "[superseded by the TBC1D3 truth addendum]".
-11. **`docs/PREREG_known_subclusters_2026-09-09.md`**
+11. **`docs/archive/2026-09/PREREG_known_subclusters_2026-09-09.md`**
     - `:22` → append "[2026-09-16: withdrawn — Guitart's phylogenetic groups nest inside clusters 1/2 ('specific to either cluster 1 or 2'); see bench/TBC1D3_GUITART_TRUTH_CORRECTION.md]"
     - `:36` → append "[suspended: TBC1D3D's group is unresolved (figure AE, sequence CDKL)]"
 12. **`docs/NEGATIVE_RESULTS_REGISTER.md:1387`** (row 778) → replace "and there is no sequence signal to find" and the "⭐ Our only cut, {D,K} … sister pair" sentence with: "The clusters show no bimodality (between-cluster median 0.9944 inside the within-cluster ranges). Guitart's phylogenetic groups nest inside them (M={B,H} in cluster 1, CDKL={K,TBC1D3} in cluster 2), so 'no signal to find' is withdrawn. Whether the {D,K} cut is a sister pair or a cross-group merge depends on TBC1D3D's unresolved group."

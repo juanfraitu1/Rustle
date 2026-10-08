@@ -17,7 +17,7 @@ records (1) the user's explicit acceptance of this file, of the substrate reuse 
 4. RG3 is opt-in. A default flip is the user's call whatever the outcome.
 
 **What this author read.** `rg3.py`, `rg3_null.py`, `test_rg3.py`, `emu.py` (all frozen, sha1s in §10); the parked
-`docs/PREREG_locus_representatives_2026-09-26.md` (untracked, STATUS PARKED); the scratchpad notes `npf_audit.md`,
+`docs/archive/2026-09/PREREG_locus_representatives_2026-09-26.md` (untracked, STATUS PARKED); the scratchpad notes `npf_audit.md`,
 `npf_variants.md`, `npf_critique.md`, `rt4_ghost.md`, `rep3_RG.md`; the memory files named in the task; the frozen
 binaries' `SHA1SUMS`; the *file-name listing* of every `rt_arms/<sample>/` directory (names only, no size, no
 content); the headers and formats of the **chimp_PTR** BASE families products (`loci.tsv`, `clusters.tsv`,

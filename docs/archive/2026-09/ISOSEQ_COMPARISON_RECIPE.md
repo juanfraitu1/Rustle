@@ -1,3 +1,5 @@
+> ⚠ **Archived 2026-10-07 — superseded.** The `isoseq collapse` vs ours comparison was run: `../2026-09/COPY_RECOVERY_TOOLS_2026-09-29.md` (pre-registered in `PREREG_copy_recovery_tools_2026-09-29.md`, register rows 1189–1193) and the isoform bakeoff in `../../seeded_family_definition.md` §6hz. This recipe is the cluster-side protocol only.
+
 # The fair comparison: `isoseq collapse` vs ours — cluster recipe
 
 **Why this is the right comparison, and StringTie was not.** StringTie's long-read mode is a short-read

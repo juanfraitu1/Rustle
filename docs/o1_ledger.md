@@ -10840,7 +10840,7 @@ default clustering is byte-identical to `rust_pilot.clusters.tsv` once the new c
 
 First run of the RNA leg on the MCL catalog — `--bam fibroblasts/GCA_029281585.2_flnc_mm.bam` (FLNC
 IsoSeq, 23.2 GB; NC_ contigs verified present for all 3 pilot contigs), `--min-exonic-bp 1`, 935 members,
-85 s. **Pre-registered in `docs/PREREG_rna_corroboration_2026-09-04.md` BEFORE the run finished. 4/4
+85 s. **Pre-registered in `docs/archive/2026-09/PREREG_rna_corroboration_2026-09-04.md` BEFORE the run finished. 4/4
 predictions HELD.**
 
 **⛔ THE PRIMARY RESULT — corroboration does not separate real families from hairball slices, and the
@@ -11643,7 +11643,7 @@ Register row 673.
 
 ## §6ef — STEP O1-1: A LOCUS IS THE NODE. Shipped as `--merge-overlapping-loci` (OFF); measured; the NPIP boundary moves (2026-09-04)
 
-`docs/archive/NEXT_STEPS_2026-09-04.md` (superseded by `docs/ROADMAP_O1_O2.md`) step O1-1 / O2-1. Implementation in `annotation_families.rs`
+`docs/archive/NEXT_STEPS_2026-09-04.md` (superseded by `docs/archive/2026-09/ROADMAP_O1_O2.md`) step O1-1 / O2-1. Implementation in `annotation_families.rs`
 (`LocusMap`, `loci_from_exon_blocks`, `graph_from_paf_loci`) and `mcl_families --merge-overlapping-loci`
 (writes `<out>.loci.tsv`, params rows `annotations_folded_into_loci`, `paf_records_same_locus_skipped`).
 Three tests. Default OFF; byte-identity control against `rna_bp1_p9`: IDENTICAL.
@@ -12354,12 +12354,12 @@ user's; D3 needs its own pre-registration.
 
 ## §6ev — THE TWO O1 DEFINITIONS ON ONE TRUTH: the switch costs no measurable precision on Soto's band and gains recall through the node; the annotation node loses members the reads found (2026-09-05)
 
-Pre-registered `soto_mcl/PREREG.md` (md5 507831b1…; copy `docs/PREREG_soto_two_definitions_2026-09-05.md`).
+Pre-registered `soto_mcl/PREREG.md` (md5 507831b1…; copy `docs/archive/2026-09/PREREG_soto_two_definitions_2026-09-05.md`).
 Same slice as §6bx's `arm_off` (362 Soto member regions, `soto.bam`), the annotation's 747 genes/pseudogenes
 overlapping it, `minimap2 -x asm20 -c -X -N 50 -p 0.1` all-vs-all (50,277 records), `mcl_families` at the
 canonical defaults with `--bam --fasta` (457 nodes / 1,544 edges / 71 clusters ≥3 / 408 members / 387 units,
 0/71 zero-corroboration). Adapters `bench/mcl_to_cat_copies.py`, `bench/mcl_edge_dump.py`; scorer unchanged.
-Full table in `docs/O1_DEFINITION_SWITCH.md` §2; log `docs/soto_two_definitions_2026-09-05.log`.
+Full table in `docs/archive/2026-09/O1_DEFINITION_SWITCH.md` §2; log `docs/soto_two_definitions_2026-09-05.log`.
 ≥50 % floor: band [0.90,1.00) precision old **149/153 = 0.974** vs MCL units **460/482 = 0.954** (CIs overlap);
 recall|both detected 0.874 → **0.940**; recall|all Soto pairs 0.173 → 0.580; family exact 21/33 → 40/56;
 detection 0.354 → 0.658. P1 held (units arm; all-members arm 0.949 missed the 0.95 line by one pair in 500),
@@ -12372,7 +12372,7 @@ not applied.
 
 ## §6ew — Q9 (NPIPA vs NPIPB) UNDER THE CORE RULE: the gorilla loci land on B stems, three on both, and the graph never cuts A from B before it fragments B (2026-09-05)
 
-Pre-registered `adj/q9/PREREG.md` (md5 865ba54d…; copy `docs/PREREG_q9_npipAB_2026-09-05.md`). Family = rna_units_v3
+Pre-registered `adj/q9/PREREG.md` (md5 865ba54d…; copy `docs/archive/2026-09/PREREG_q9_npipAB_2026-09-05.md`). Family = rna_units_v3
 MCL3, 29 loci; labels = CHM13 landing of each locus's records: **17 NPIPB-only, 3 NPIPA2+NPIPB13 ("AB"), 9
 ABCC1/SORL1 chimeric models (5 trimmed to a 24-kb LCR16a core, 4 dropped, core 0); no locus lands on NPIPA alone.**
 Edges recomputed with the shipped exonic rule (`bench/gff_exon_union.py`; 221/406 pairs pass).
@@ -12443,7 +12443,7 @@ no edge can reach them; 20 Soto members exist only as such records (NF1P ×3, CN
 Tests: `folding_within_clusters_keeps_overlapping_records_of_different_families_apart`,
 `exonic_both_sides_rejects_a_pair_that_touches_only_the_hosts_exons` (incl. two one-sided records ≠ exon-to-exon).
 
-**Pre-registered** (`docs/PREREG_fold_within_clusters_2026-09-05.md`, md5 a57a848f…); Soto slice, min_size 2,
+**Pre-registered** (`docs/archive/2026-09/PREREG_fold_within_clusters_2026-09-05.md`, md5 a57a848f…); Soto slice, min_size 2,
 ≥50 % floor (`docs/soto_arm_*_2026-09-05.log`):
 | arm | detected | band-[0.90,1) precision | recall∣both | family exact | Soto-silent band asserted |
 |---|---|---|---|---|---|
@@ -12504,7 +12504,7 @@ NC_073242.2:28.30 Mb (LOC101131206, lncRNA, 3.8 kb) → NPIPB13/LOC101929894 at 
 0.978, MAPQ 60 = the 16p13.11 NPIPA-region locus; NC_073242.2:29.39 Mb (LOC101140878, 41 kb) → NPIPB6 + EIF3CL at
 0.978 (MAPQ 7) = a block-level record over the EIF3CL/NPIPB6 pair — flagged, the core rule decides its hull.
 
-**G3 — the thresholds are a point inside a measured plateau** (`docs/PREREG_g3_thresholds_2026-09-05.md`, md5
+**G3 — the thresholds are a point inside a measured plateau** (`docs/archive/2026-09/PREREG_g3_thresholds_2026-09-05.md`, md5
 c955955c…; `docs/g3_threshold_grid_2026-09-05.tsv`; 19 grid points × 2 substrates, one-at-a-time from the defaults):
 | varied | anchors (NPIP, MCL1, MCL3, MCL4 cohesion; NPIP∥LCR16u; L1 blob dissolved) | Soto detection / band precision / recall∣both |
 |---|---|---|
@@ -12523,7 +12523,7 @@ element cluster) and MCL3 break first, and Soto's recall falls at 0.85 (row 699)
 points inside a plateau that spans identity 0.60–0.80, coverage 0.10–0.50 and 100–500 bp on both substrates; the
 walls are at identity 0.85, coverage 0.60 and 1 kb."*
 
-**D3 pre-registered** (`docs/PREREG_d3_molecule_observation_2026-09-05.md`, md5 8090ee0b…): one observation per
+**D3 pre-registered** (`docs/archive/2026-09/PREREG_d3_molecule_observation_2026-09-05.md`, md5 8090ee0b…): one observation per
 molecule, scored on its sequence against every copy's unit; predictions fixed before implementation.
 
 **Duplication blocks (`sd_blocks`, `<out>.blocks.tsv`; user request):** union-find over every member's core hull
@@ -12647,7 +12647,7 @@ enter the candidate set and the columns-every-candidate-covers rule shrinks the 
 The floor stays at 0.3 and is stated as a measured operating point (two points, not a plateau); the principled
 form is a per-pair column rule (columns covered by both members of each pair, certificate per pair) — open.
 
-**Roster admission by read origin** (`docs/PREREG_roster_admission_2026-09-05.md`, md5 fb267f09…;
+**Roster admission by read origin** (`docs/archive/2026-09/PREREG_roster_admission_2026-09-05.md`, md5 fb267f09…;
 `bench/o2_roster_admit.py`): the certificate-rejected unit reads whose PRIMARY lies outside every unit of the
 family, clustered into loci (≥ 3 within 5 kb), become ADDED O2 CANDIDATES (`read_admitted`; chain by the unit
 rule on those primaries, strand by majority, sequence from the genome) — candidates for O2's set, not family
@@ -12677,7 +12677,7 @@ are; posterior = softmax of the pairwise log-LRs. Two further forms were measure
 NPIP's 62 audited anchors: 0 assigned, 0 wrong (59 ambiguous, 1 tied). LCR16u drops (156 → 42 assigned): its
 0.99-identical pseudogenes are K = 0 pairs under the pairwise rule — honest ties where the record-level path
 assigned by placement zone.
-**Admission under the final default** (`docs/PREREG_roster_admission_2026-09-05.md`): on the 21 families,
+**Admission under the final default** (`docs/archive/2026-09/PREREG_roster_admission_2026-09-05.md`): on the 21 families,
 assigned 3,100 → 3,498 (+13 %), origin-rejected 4,658 → 4,521 (−3 %), MAPQ-60 agreement 99.78 → 99.84 %, reads at
 admitted loci 2,514/2,515 assigned to the admitted locus, NPIP anchors 0 wrong. P2, P3, P4 hold; **P1 fails**
 (rejections fall 3 %, not 50 %): the rejected reads' origin is not the admitted loci — under the every-edit
@@ -12688,7 +12688,7 @@ the open item. Suite 857 / 0 / 11 on the final source.
 ## §6fd — GENOMIC READ-STAR: the read against each candidate's LOCUS, splice-aware, with a whole-read origin certificate (2026-09-05)
 
 **Why.** Rows 706–708: on the spliced unit the origin certificate cannot separate isoform structure from origin.
-**Design** (`docs/PREREG_genomic_read_star_2026-09-05.md`, md5 4e559e1f…; `copy_assign --read-star-genomic`): each
+**Design** (`docs/archive/2026-09/PREREG_genomic_read_star_2026-09-05.md`, md5 4e559e1f…; `copy_assign --read-star-genomic`): each
 molecule is aligned `minimap2 -x splice` to every candidate's genomic span (the unit's extent, forward strand);
 introns are `N`, a retained intron or an alternative exon aligns; columns = the read's positions where the
 candidates' aligned genomic bases differ; pairwise certificates as §6fc; origin certificate = X + I + D **+ the
@@ -12743,7 +12743,7 @@ contig (fewer process starts, shared chaining), an engineering item.
 
 ## §6ff — EXCISION: remove a copy, follow its reads, look for "a copy should be here" (O3 in O2's vocabulary) (2026-09-05)
 
-Pre-registered `docs/PREREG_excision_2026-09-05.md` (md5 4ce8e07a…); `bench/o2_excision.py`; the shipped genomic
+Pre-registered `docs/archive/2026-09/PREREG_excision_2026-09-05.md` (md5 4ce8e07a…); `bench/o2_excision.py`; the shipped genomic
 read-star on `rna_units_v9`, one copy removed from the candidate set, nothing else changed. Fate of the excised
 copy's MAPQ-60 reads; the detector = consistent mismatch sites (≥ 3 reads and ≥ 50 % of the reads covering the
 site) among the origin-rejected reads sharing a best candidate Y, per kb of covered locus; controls = Y's own reads
@@ -12787,9 +12787,9 @@ no other candidate cannot be tied to the family by O2 at all: they are O3's orph
 labels them so) and the admission prototype (primaries outside every unit, `bench/o2_roster_admit.py`) is the
 instrument for them. Suite 857 / 0 / 11.
 
-## §6fh — L1 + L2: dropped members are O2 candidates; the locus extent is O1's (PREREG `docs/PREREG_loose_ends_L1_L2_2026-09-05.md`, md5 78181c4f) (2026-09-05)
+## §6fh — L1 + L2: dropped members are O2 candidates; the locus extent is O1's (PREREG `docs/archive/2026-09/PREREG_loose_ends_L1_L2_2026-09-05.md`, md5 78181c4f) (2026-09-05)
 
-**Queue.** `docs/O1_O2_LOOSE_ENDS.md` lists the six O1 → O2 loose ends in order (L1 dropped members, L2 the node
+**Queue.** `docs/archive/2026-09/O1_O2_LOOSE_ENDS.md` lists the six O1 → O2 loose ends in order (L1 dropped members, L2 the node
 ≠ the candidate, L3 single-candidate ties at `-p 0.3`, L4 abundance under read-star, L5 genome-wide regions, L6
 the read-level proof dump). This section closes L1 and L2.
 
@@ -12830,13 +12830,13 @@ NPIP 62 anchors: 16 assigned / 16 right / 0 wrong vs 11 / 11 / 0. MCL4 1,543 vs 
 13 dropped units: 7,532 — assigned 745 (all to the dropped unit itself, 0 stolen from a kept unit), **tied
 6,615**: the EIF3C member's 4,774 reads are single-candidate ties (no other chain at `-p 0.3`) — the reads with
 the most evidence against every NPIP copy carry the label of none. That is L3, pre-registered
-(`docs/PREREG_loose_end_L3_2026-09-05.md`) and run next.
+(`docs/archive/2026-09/PREREG_loose_end_L3_2026-09-05.md`) and run next.
 
 Scripts: `bench/o2_l1l2_score.py` (paired scoring incl. dropped-unit reads and the 62 anchors),
 `bench/o2_sweep_split.py` (passes the three columns through). Results: `adj/l1l2/score_*.txt`,
 `adj/l1l2/p2_v9truth_v10_vs_v12.txt`.
 
-## §6fi — L3: single-candidate ties under the pairwise rule (PREREG `docs/PREREG_loose_end_L3_2026-09-05.md`, md5 85ee0147) (2026-09-05)
+## §6fi — L3: single-candidate ties under the pairwise rule (PREREG `docs/archive/2026-09/PREREG_loose_end_L3_2026-09-05.md`, md5 85ee0147) (2026-09-05)
 
 `RUSTLE_STAR_P=0` on `sweep_v12`'s NPIP and LCR16u, nothing else changed (`adj/l1l2/l3`).
 - **P1 held**: NPIP 62 anchors 15 assigned / 15 right / 0 wrong (arm A′ 16 / 16 / 0).
@@ -12927,7 +12927,7 @@ with a block in a unit that no locus of the family explains. Script `adj/l346/sc
 4.3-GB BAM + 3.6-GB genome, most likely a host-side reading); `sweep_gw_v2/run_chunk.sh` (foreground, 300-s
 launch budget, 240-s per-family cap, skips finished families) ran the rest in six calls.
 
-## §6fl — THE O3 FLAG PASS (PREREG `docs/PREREG_o3_flag_pass_2026-09-06.md`, md5 400028a5; `bench/o3_flag_pass.py`) (2026-09-06)
+## §6fl — THE O3 FLAG PASS (PREREG `docs/archive/2026-09/PREREG_o3_flag_pass_2026-09-06.md`, md5 400028a5; `bench/o3_flag_pass.py`) (2026-09-06)
 
 Every family's origin-rejected unit reads, grouped by best candidate Y, through the §6ff detector (consistent
 sites per covered kb, verbatim) against the control of Y's own certificate-accepted reads, with a Poisson test at
@@ -13005,7 +13005,7 @@ annotated-no-unit / 87 other-family / 4 unannotated) and 417 (120 / 274 / 23, 15
 
 ## §6fn — O3 items 2–4: reconstruction over every flag, the annotated-no-unit loci, the cut certificate (2026-09-06)
 
-**Item 2, reconstruction (PREREG `docs/PREREG_o3_reconstruction_2026-09-06.md`, md5 33de17f2;
+**Item 2, reconstruction (PREREG `docs/archive/2026-09/PREREG_o3_reconstruction_2026-09-06.md`, md5 33de17f2;
 `bench/o3_reconstruct.py`; row 720).** Every flagged pair's Y locus patched with the consistent alleles over
 the covered stretch (§6ff verbatim), aligned to the whole assembly (`GGO.asm20.mmi`, 10.3 GB), identity to Y by
 the same alignment rule. Gate: 3 of the 5 excisions recover X (NPIP 7, ZNF, and NPIP 11's best outside hit is X
@@ -13061,7 +13061,7 @@ is the self-contained fallback for a substrate without an SD call. A depth rule 
 criterion (≥ 0.90 identity, ≥ 1 kb) was not run — it is the obvious next comparison if the fallback is ever the
 default.
 
-## §6fp — ONE SENSITIVITY, ONE SPECIFICITY FOR NPIP: reads of known origin, the two-form certificate, and what still abstains (PREREG `docs/PREREG_npip_known_origin_2026-09-06.md`, md5 c98df4cc + two amendments) (2026-09-06)
+## §6fp — ONE SENSITIVITY, ONE SPECIFICITY FOR NPIP: reads of known origin, the two-form certificate, and what still abstains (PREREG `docs/archive/2026-09/PREREG_npip_known_origin_2026-09-06.md`, md5 c98df4cc + two amendments) (2026-09-06)
 
 **The question restated (user, 15:05).** O2 is for the reads minimap2 cannot place; the unique-mapper agreement
 is a sanity check, not a result. One table over every read, with the same-alignment-score reads as the
@@ -13207,7 +13207,7 @@ read-supported chain) matches the LCR16a core's size (median 0.89) and undershoo
 they are meant to be; quote the pair, not one. The 5 unmatched predictions are the dropped members (no core
 by definition), the 2 unmatched truths the unexpressed member and the 22 %-core locus (§6fr).
 
-## §6ft — O1 EVALUATED BY SENSITIVITY, SPECIFICITY AND BIPARTITE COVERAGE; EVERY NPIP MEMBER ACCEPTED; PARTNERS AND THE READ-THROUGH CERTIFICATE (user, 2026-09-06 17:50; PREREG `docs/PREREG_npip_all_members_2026-09-06.md`, md5 167d233e)
+## §6ft — O1 EVALUATED BY SENSITIVITY, SPECIFICITY AND BIPARTITE COVERAGE; EVERY NPIP MEMBER ACCEPTED; PARTNERS AND THE READ-THROUGH CERTIFICATE (user, 2026-09-06 17:50; PREREG `docs/archive/2026-09/PREREG_npip_all_members_2026-09-06.md`, md5 167d233e)
 
 **O1's evaluation is now `bench/o1_eval.py`:** sensitivity (truth loci rediscovered), specificity (family members
 that are truth; candidates counted separately), and for each matched pair the bipartite 1:1 coverage of the
@@ -13244,7 +13244,7 @@ partner, 31 of them by MCL27's unit 0** — 33 still flagged (the artefacts and 
 0 of them, OPEN), anchors 33 right / 0 wrong, NPIP-proper assigned 706 of 1,001 (70.5 %), certificate flags 378
 → 338. Cost: 130 → 439 s and 3.0 → 7.7 GB on NPIP (80 targets, a 90-Mb region).
 
-## §6fu — THE ANNOTATION IS A PROPOSER, NOT THE DEFINITION: a degradation ablation and a core projection (user, 2026-09-07; PREREG `docs/PREREG_annotation_ablation_2026-09-07.md` md5 65efc5b2 and `docs/PREREG_core_projection_2026-09-07.md` md5 8f7849228fba, AMENDED)
+## §6fu — THE ANNOTATION IS A PROPOSER, NOT THE DEFINITION: a degradation ablation and a core projection (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_annotation_ablation_2026-09-07.md` md5 65efc5b2 and `docs/archive/2026-09/PREREG_core_projection_2026-09-07.md` md5 8f7849228fba, AMENDED)
 
 **The objection.** "The SD-core definition is over-reliant on the annotation." Two parts, answered separately:
 does the annotation carry the family (no), and must a member be annotated to be found (not for a family that
@@ -13297,7 +13297,7 @@ duplicon-scale extent are recoverable from sequence alone with its annotation de
 annotation-bound is the discovery of a family **none** of whose members is annotated — gap G5, the read-proposal
 route, and O3's territory. ⚠ Both experiments are one family on one substrate; nothing here is genome-wide.
 
-## §6fv — THE SD-CORE DEFINITION ON HUMAN NPIP (user, 2026-09-07; PREREG `docs/PREREG_npip_human_2026-09-07.md`, md5 dfbe88b6)
+## §6fv — THE SD-CORE DEFINITION ON HUMAN NPIP (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_npip_human_2026-09-07.md`, md5 dfbe88b6)
 
 ⚠ **Human numbers, never pooled with gorilla's.** New substrate `soto_mcl/npip_hsa` (`bench/npip_human_build.sh`):
 CHM13 v2.0 chr16 + chr18, **3,128 gene/pseudogene spans** → all-vs-all `minimap2 -x asm20 -c -X -N 50 -p 0.1`
@@ -13377,7 +13377,7 @@ its one "error" being a 27th NPIP-carrying locus, not a false merge.
 ⟹ An independent SD caller **sharpens the core** (hull coverage 0.89 → 1.00) and **moves 24 of 383 statuses**;
 `--core-from-paf` remains a usable fallback, not an equivalent.
 
-## §6fw — THE CONJOINED READ-THROUGH IS AN O1 OBJECT (user, 2026-09-07; PREREG `docs/PREREG_readthrough_object_2026-09-07.md`, md5 1a51fa3b)
+## §6fw — THE CONJOINED READ-THROUGH IS AN O1 OBJECT (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_readthrough_object_2026-09-07.md`, md5 1a51fa3b)
 
 **User: "I like your idea of representing the real ones as an object"** — after refusing the alternative of
 feeding annotated junctions to the aligner (`minimap2 --junc-bed`), which would put the annotation inside the
@@ -13462,7 +13462,7 @@ them previously rejected) stands as measured. Non-readthrough rows remain byte-i
 Params rows `readthrough_guard`, `readthrough_rejected_strand`, `readthrough_rejected_duplicate_flanks`.
 Suite **866 passed / 0 failed / 11 ignored** (new: `links_is_true_only_when_one_pair_holds_both_flanks`).
 
-## §6fx — Y AMPLICONIC FAMILIES: DAZ (user, 2026-09-07; PREREG `docs/PREREG_yags_daz_2026-09-07.md`, md5 f66fca74 after AMENDMENT 1)
+## §6fx — Y AMPLICONIC FAMILIES: DAZ (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_yags_daz_2026-09-07.md`, md5 f66fca74 after AMENDMENT 1)
 
 **User: "lets focus on YAGs such as DAZ where readthroughs and reads with same alignment score, unassignable
 otherwise might be."** Human only — gorilla annotates a single `DAZ1` (`NC_073248.2`), so there is no family.
@@ -13556,7 +13556,7 @@ used "primary anywhere in the swept REGION" (n = 1,935) and the binary uses "pri
 of the region-level set with a clean certificate, and the enforced line from the run in preference to either.
 Suite **866 passed / 0 failed / 11 ignored**.
 
-## §6fy — THE FAMILY AS A CLOSURE: a fixed point, measured (user, 2026-09-07; PREREG `docs/PREREG_closure_definition_2026-09-07.md`, md5 8f144fd6)
+## §6fy — THE FAMILY AS A CLOSURE: a fixed point, measured (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_closure_definition_2026-09-07.md`, md5 8f144fd6)
 
 **User: "I need a definition that defines and finds all members of a family, in all their locus length"** —
 and one explainable without Markov chains. Prototype `bench/o1_closure.py`; **MCL is not used at all**.
@@ -13738,7 +13738,7 @@ correct it is the one AMENDMENT 3 introduced for a different purpose: requiring 
 the transcribed exons. ⚠ Whether that lever actually reduces the bias is UNMEASURED, and it is complicated by
 `transcribed_pseudogene` being 110 of the 168 pseudogene members — they are transcribed too.
 
-## §6ga — THE SIZE REFERENCE MOVED TO THE ANNOTATION; THE EXONIC CORE IS NOT THE CORRECTIVE (user, 2026-09-07; PREREG `docs/PREREG_size_reference_2026-09-07.md`, md5 e5c01339)
+## §6ga — THE SIZE REFERENCE MOVED TO THE ANNOTATION; THE EXONIC CORE IS NOT THE CORRECTIVE (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_size_reference_2026-09-07.md`, md5 e5c01339)
 
 ### Part A — bipartite size matching against real gene spans (adopted)
 **User: "do not prefer Soto's size since it might be truncated, use the real size from the annotation."**
@@ -13971,7 +13971,7 @@ name" and "real biology".
 so the junctions must be carried across (align the gorilla conjoined unit sequence to the other genome, then
 ask whether that species' reads use the same junction). Not done.
 
-## §6gc — THE READ-THROUGH JUNCTIONS REPLICATE IN CHIMPANZEE (user, 2026-09-07; PREREG `docs/PREREG_crossspecies_junctions_2026-09-07.md`, md5 b0794d03)
+## §6gc — THE READ-THROUGH JUNCTIONS REPLICATE IN CHIMPANZEE (user, 2026-09-07; PREREG `docs/archive/2026-09/PREREG_crossspecies_junctions_2026-09-07.md`, md5 b0794d03)
 
 **The orthogonal test §6gb addendum 5 named as the only open route, run.** Junction probes, no liftover: a
 300 bp probe = last 150 bp of the upstream exon + first 150 bp of the downstream exon, i.e. sequence that
@@ -14004,7 +14004,7 @@ rate, so **0.71 > 0.39 must not be read as "read-throughs are more conserved tha
 asymmetry, **not shown to be artefacts**: NPIP is fast-evolving and copy-number-variable, and a junction may be
 genuinely gorilla-specific or simply unexpressed in the chimpanzee library.
 
-## §6gd — NO minimap2 SETTING IS THE RIGHT PLACE FOR THIS: the aligner line closes (user, 2026-09-08; PREREG `docs/PREREG_minimap_readthrough_arms_2026-09-07.md`, md5 208648a5 + AMENDMENT 1)
+## §6gd — NO minimap2 SETTING IS THE RIGHT PLACE FOR THIS: the aligner line closes (user, 2026-09-08; PREREG `docs/archive/2026-09/PREREG_minimap_readthrough_arms_2026-09-07.md`, md5 208648a5 + AMENDMENT 1)
 
 **User: "would it be viable to edit minimap2 behavior to see if that can avoid the read throughs".** Now
 answerable rather than arguable: §6gc's cross-species test supplied a **truth set** — the junctions chimpanzee
@@ -14165,7 +14165,7 @@ control replicates in neither.* Not "read-throughs are real biology" as a class.
 
 ## §6gh — THE ADVISOR'S FIVE COMMENTS: answers, and the framing they settle (user, 2026-09-08)
 
-Revised pseudocode: `docs/PSEUDOCODE_2026-09-08.md` (five marked changes, four reporting-only, one behavioural).
+Revised pseudocode: `docs/archive/2026-09/PSEUDOCODE_2026-09-08.md` (five marked changes, four reporting-only, one behavioural).
 
 | # | comment | answer | status |
 |---|---|---|---|
@@ -14451,7 +14451,7 @@ read-throughs — 31 of 32 of which were ordinary introns of one gene — disapp
 that moves 60 unit rows across 8 families on the gorilla contigs, so **it should be pre-registered and flipped
 deliberately, not folded in silently**. Suite **867 passed / 0 failed / 11 ignored**.
 
-## §6gn — ⛔ THE DEFAULT FLIP IS REVERTED: the untested substrate failed (user, 2026-09-08; PREREG `docs/PREREG_cross_family_overlap_default_2026-09-08.md`, md5 92c2c1e0)
+## §6gn — ⛔ THE DEFAULT FLIP IS REVERTED: the untested substrate failed (user, 2026-09-08; PREREG `docs/archive/2026-09/PREREG_cross_family_overlap_default_2026-09-08.md`, md5 92c2c1e0)
 
 The cross-family exon-overlap rule was flipped ON by default and **reverted the same run**. The
 pre-registration named the risk correctly: *"P4 is the real test: the other three substrates were used to
@@ -14675,7 +14675,7 @@ gorilla substrate — no flair run has been made. Do not quote it as a measured 
 
 ## §6gt — THE TOOL BAKEOFF: isoseq collapse vs ours on HUMAN NPIP (2026-09-08)
 
-Pre-registered `docs/PREREG_tool_bakeoff_2026-09-08.md` (md5 `428a588b…`, amendment 1 `acbe7b9c…`) before any
+Pre-registered `docs/archive/2026-09/PREREG_tool_bakeoff_2026-09-08.md` (md5 `428a588b…`, amendment 1 `acbe7b9c…`) before any
 output existed. ⚠⚠ **HUMAN ONLY. The gorilla isoseq run is NOT usable and its numbers appear nowhere here** —
 `GGO_OR6737` is **testis** (movie `m64076_221110_210557`), our substrate is **fibroblast**
 (`SRR27178662/3`, `SRR27438212/3`). Different tissue and different individual ⟹ the isoform sets would differ
@@ -14810,7 +14810,7 @@ alone: the core rule consumes its coordinates, so replacing the edge step with J
 alignment afterwards anyway on the surviving pairs. At 84 s for a panel, the prefilter currently saves nothing
 worth having — which is an argument about where the cost is, not a defence of doing more work than necessary.*
 
-## §6gv — O2's SCOPE CORRECTED: only AS-TIED MULTIMAPPERS (user, 2026-09-09; PREREG `docs/PREREG_as_tied_only_2026-09-09.md`, md5 `268fe69b`)
+## §6gv — O2's SCOPE CORRECTED: only AS-TIED MULTIMAPPERS (user, 2026-09-09; PREREG `docs/archive/2026-09/PREREG_as_tied_only_2026-09-09.md`, md5 `268fe69b`)
 
 **User: "copy assignment should only work for tied-AS multi-mapping reads, nothing else, so we need to ensure
 anything else does not enter O2 at all."** Then, on the advisor's framing: *"all primaries and secondaries when
@@ -14905,7 +14905,7 @@ it leaves O2. The two decisions conflict and the table above is reported with so
 means single placement *here*, not genome-wide uniqueness. ⚠ **The held-back `fam_MCL2_073244` must be scored
 before any headline is restated** (trap 15).
 
-## §6gw — KNOWN SUBCLUSTERS: NPIP AND TBC1D3 vs THE PUBLISHED STRUCTURE (advisor, 2026-09-09; PREREG `docs/PREREG_known_subclusters_2026-09-09.md`, md5 `a443b12a`)
+## §6gw — KNOWN SUBCLUSTERS: NPIP AND TBC1D3 vs THE PUBLISHED STRUCTURE (advisor, 2026-09-09; PREREG `docs/archive/2026-09/PREREG_known_subclusters_2026-09-09.md`, md5 `a443b12a`)
 
 **Advisor: "NPIP and TBC1D3 are known to form subclusters — do our methods detect those?"** The two families
 predict OPPOSITE outcomes, which is what makes this a test rather than a fishing trip.
@@ -15357,7 +15357,7 @@ was the leak, not a result.
 
 The user ran **actual** flair 3.0.1 and StringTie 3.0.1 on the identical substrates our bakeoff uses
 (`benchmark_collapse/`), with a NEW isoseq collapse arm delivered alongside (`isoseq_upload/`). This closes
-the "flair arm never ran" gap named in `docs/O1_O2_OPEN_2026-09-09.md` §E.
+the "flair arm never ran" gap named in `docs/archive/2026-09/O1_O2_OPEN_2026-09-09.md` §E.
 
 ### Provenance, checked first (the standing trap)
 - **A119b (human)**: all three tools ran on `A119b.t2t.bam` — the SAME mapped FLNC our human bakeoff uses.
@@ -15423,7 +15423,7 @@ the hard loci, and none of isoseq/flair/stringtie carries a copy attribute. This
 where §6gs had only source code, and a rigorous gffcompare cross-check alongside the custom scorer.
 
 
-## §6hc — `--origin-drop-indels` + the excision control (2026-09-09; full record in `docs/PREREG_origin_drop_indels_2026-09-09.md` d4e85007 and `docs/PREREG_excision_odi_2026-09-09.md` f8b68981)
+## §6hc — `--origin-drop-indels` + the excision control (2026-09-09; full record in `docs/archive/2026-09/PREREG_origin_drop_indels_2026-09-09.md` d4e85007 and `docs/archive/2026-09/PREREG_excision_odi_2026-09-09.md` f8b68981)
 Under the AS-tied gate + `best_by_psv` (§6ha, PREREG f2cb3c19) the origin certificate suppressed PSV-resolved
 assignments through REAL recurring indels (copy 2: a 57 bp insertion at `358=57I…` in independent reads; copy 22:
 ~476–504 bp). `--origin-drop-indels` (nm = X + unaligned − explained; distinct from `--origin-substitutions-only`,
@@ -16182,7 +16182,7 @@ Verification for all four: `cargo build --release --all-targets` clean, `cargo t
    no file:line citation of its own — the audit's finding had conflated it with row 1059's citations, which
    were the ones actually stale.
 3. **The growth-extent PREREG's unfulfilled "md5 recorded below" promise fixed**: appended an addendum to
-   `docs/PREREG_locus_growth_extent_2026-09-10.md` recording its own frozen-body md5
+   `docs/archive/2026-09/PREREG_locus_growth_extent_2026-09-10.md` recording its own frozen-body md5
    (`8d5a63fb70875996d599c9f4218cd83c`, unchanged since commit) and its true status — implemented, env-gated
    off, NOT measured (the human chr1+chr15 baseline run was killed mid-execution to prioritize this O2
    batch) — rather than editing the pre-registered text itself.
@@ -17857,7 +17857,7 @@ workflow (3 parallel readers + 1 synthesizer) to map both modes precisely off re
 before proposing anything, rather than guess.
 
 **Where the two modes actually live** (they are NOT wired together today — compared only offline,
-head-to-head, in `docs/O1_DEFINITION_SWITCH.md` §2):
+head-to-head, in `docs/archive/2026-09/O1_DEFINITION_SWITCH.md` §2):
 - **De novo mode**: `family_detect.rs` (SHIPPED-DEFAULT) — BAM reads -> Pass-1 skeletons -> assemble gate ->
   `collapse_loci` -> `confirm_edge` (POA contiguous-core coverage, `T_CORE=0.13` flat floor,
   `family_detect.rs:41`/`:905`) -> family decomposition. Plus an OFF-by-default DNA self-alignment front
@@ -17919,8 +17919,8 @@ whether they smuggle annotation into "de novo"):
 **Ruling (user decision):** execute in order **3, then 4**, using 4's result to decide whether the bigger
 engineering lifts (1, 2) are worth building at all. Cheapest/most-diagnostic first.
 
-Related: [[project_o1_tcore_divergence_sensitivity]], `docs/O1_DEFINITION_SWITCH.md`,
-`docs/PREREG_annotation_ablation_2026-09-07.md`, `docs/NEGATIVE_RESULTS_REGISTER.md` rows 294/1072/1222.
+Related: [[project_o1_tcore_divergence_sensitivity]], `docs/archive/2026-09/O1_DEFINITION_SWITCH.md`,
+`docs/archive/2026-09/PREREG_annotation_ablation_2026-09-07.md`, `docs/NEGATIVE_RESULTS_REGISTER.md` rows 294/1072/1222.
 
 ## §6j0 — Proposal #3 re-validated against the REAL mechanism: agreement holds, but two real problems block shipping it (2026-09-11)
 
@@ -18077,7 +18077,7 @@ New/changed files: `src/bin/mcl_refine.rs` (new, +65 lines), `src/bin/mcl_famili
 13 ignored` unchanged before/after (`cargo test --release --lib`). Scratch analysis data (not committed):
 `/mnt/linuxdisk/home/juanfraitu/ablation_407/` (graph dumps, partition outputs, NPIP scoring script).
 
-Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j0, `docs/O1_DEFINITION_SWITCH.md` §3.
+Related: [[project_denovo_vs_annotated_gap]], §6iz, §6j0, `docs/archive/2026-09/O1_DEFINITION_SWITCH.md` §3.
 
 ## §6j2 — Proposal #6 added: Rustle already has an unwired bundle-construction primitive (2026-09-11)
 
@@ -18651,7 +18651,7 @@ User: "is poasta better than minimap2?" -> the real question became which CORE D
 runs global-only (EndsFree is `todo!()`), and `family_graph.rs` itself documents global alignment collapsing a
 real core to ~3 bp; §6j9 saw 8/18 true NPIP-family edges rejected that way. minimap2 was not pursued
 (minimizers are a logged rejected criterion). Pre-registered before any comparison was looked at:
-`docs/PREREG_core_definition_2026-09-12.md` (original md5 fc35d505; Addendum A added after the gorilla LABEL
+`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md` (original md5 fc35d505; Addendum A added after the gorilla LABEL
 counts and 23/192 poasta values, md5 1a0005d4). Arms, all at T_CORE 0.13: **POA** (production `confirm_edge`),
 **LCS** (longest common substring / min length, same orientation rule), **LCS-masked** (repeat bases -> N).
 
@@ -18695,14 +18695,14 @@ budget — `contiguous_core_coverage_bounded_budgeted` (only caller: `confirm_ed
 deleted instead of vendoring poasta. Other poasta users (family_rescue, collapse, PSV MSA) do not use the budget
 and are unaffected.
 
-New/changed: `from_genome.rs` (`fm_pairs` phase, `#[ignore]`d test only), `docs/PREREG_core_definition_2026-09-12.md`.
+New/changed: `from_genome.rs` (`fm_pairs` phase, `#[ignore]`d test only), `docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`.
 Data/scripts (not committed): `/mnt/linuxdisk/home/juanfraitu/o1_falsemerge/{analysis,human,lcs/bridge}`.
 
 Related: [[project_denovo_vs_annotated_gap]], §6j9, §6j8, [[project_o1_tcore_divergence_sensitivity]].
 
 ## §6jb — LCS edge core: opt-in mode, family level, threshold, held-out (2026-09-13)
 
-Four pre-registered steps following §6ja (`docs/PREREG_core_definition_2026-09-12.md`, Addendum B, md5
+Four pre-registered steps following §6ja (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, Addendum B, md5
 ac0e2dc6, written before any step-2/3/4 number).
 
 **Step 1 — opt-in mode (a577d37e).** `DetectParams::edge_core: EdgeCore {Poa (default), Lcs}`, `RUSTLE_EDGE_CORE=lcs`
@@ -18760,7 +18760,7 @@ Related: §6ja, §6j9, [[project_denovo_vs_annotated_gap]], [[project_o1_tcore_d
 
 ## §6jc — Pre-registered confirmation: LCS @ 0.13 beats POA @ 0.13 on fresh held-out pairs — criterion MET (2026-09-13)
 
-`docs/PREREG_core_definition_2026-09-12.md` Addendum C (md5 53ae2997), written after §6jb and before any number:
+`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md` Addendum C (md5 53ae2997), written after §6jb and before any number:
 fresh seeded sample (seed 20260914) of 300 SAME + 300 DIFF from the gorilla genome-wide held-out pool
 (`step4/labeled_pairs.tsv`, NPIP development windows excluded), 0 overlap with the step-4 sample.
 
@@ -18818,7 +18818,7 @@ Related: §6jc, §6jb, §6ja, [[project_denovo_vs_annotated_gap]].
 ## §6je — De novo <-> guided gap: node presence dominates; adding LCS edges to the homology E_r narrows the rest (2026-09-13)
 
 User goal: two O1 modes, DE NOVO (IsoSeq reps) and GUIDED (annotated GFF); reduce the difference. Pre-registered as
-Addendum D of `docs/PREREG_core_definition_2026-09-12.md` (md5 f567d2a3) before any number. Catalogs (existing,
+Addendum D of `docs/archive/2026-09/PREREG_core_definition_2026-09-12.md` (md5 f567d2a3) before any number. Catalogs (existing,
 not rebuilt with today's code): GUIDED `mcl_ann/gw_units_v3` (2026-09-06, 9,565 clustered loci in 2,296 clusters,
 67,844 co-clustered locus pairs); DE NOVO node set = the 17,924 reps of the 2026-08-21 homology run (`o1_reps`),
 held fixed; only the edge definition varies, partitioned by the shipped `decompose_families`. Mapping: span overlap.
@@ -18885,7 +18885,7 @@ Related: §6je, §6jd, [[project_denovo_vs_annotated_gap]].
 ## §6jg — NPIP and TBC1D3: do the modes recover the literature subclusters? Family yes, subfamilies only in pieces (2026-09-13)
 
 Advisor request: show NPIP and TBC1D3 first and check the published subclusters. Pre-registered as Addendum G
-(`docs/PREREG_core_definition_2026-09-12.md`, md5 59a355c2), descriptive (no pass/fail). Truth
+(`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 59a355c2), descriptive (no pass/fail). Truth
 (`docs/lit_subclusters_npip_tbc1d3_truth.tsv`, CHM13 v2.0 RefSeq): NPIP 22 records — NPIPA vs NPIPB, and Dishuck 2025
 paralog groups A2/3, A6-9, B3-5, B6-9, B12/13; TBC1D3 9 protein-coding copies — genomic cluster 1 (B,I,G,H,F) vs
 cluster 2 (E,K,D,TBC1D3), and Guitart/Eichler 2024 phylogenetic groups mapped by name (AE = TBC1D3+E, CDKL = D+K, the
@@ -18935,7 +18935,7 @@ Related: [[reference_npip_biology]], [[reference_eichler_tbc1d3]], [[project_adv
 ## §6jh — NPIP and TBC1D3 subclusters by gene-structure coverage: no arm separates the major boundaries; guided identity on transcripts comes closest to NPIPA/B (2026-09-13)
 
 Follow-up to §6jg: NPIPA/B differ in gene model, so test alignment coverage instead of identity. Pre-registered as
-Addendum H (`docs/PREREG_core_definition_2026-09-12.md`, md5 43e29fd2) before any number existed. Reported as pairwise
+Addendum H (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 43e29fd2) before any number existed. Reported as pairwise
 sensitivity / precision and bipartite (Hungarian, evaluation only) micro/macro recall/precision and exact matches.
 Units: guided = the longest curated RefSeq transcript per gene, spliced; de novo = union of exon blocks of all emitted
 copies overlapping the record, spliced. Arms: UPGMA on 1 - identity, 1 - coverage, 1 - coverage x identity. k = 2 is
@@ -19017,7 +19017,7 @@ a shared copy set.
 
 ## §6ji — Missing and fragmented members: RNA locus switches, a readthrough bridge cut, DNA mode and guided on NPIP/TBC1D3; the bridge cut fails the gorilla hold-out (2026-09-13)
 
-Pre-registered as Addendum I (`docs/PREREG_core_definition_2026-09-12.md`, md5 ce5314bf) before any arm ran.
+Pre-registered as Addendum I (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 ce5314bf) before any arm ran.
 
 **Diagnosis (§6jh follow-up).** All 31 truth records have >= 15 MAPQ>=1 primary IsoSeq reads, so every de novo loss
 is a pipeline loss. TBC1D3 (chr17:39044723-39055625): 404 reads, 54 skeletons (largest 13 introns / 37 reads), 51
@@ -19085,7 +19085,7 @@ Related: §6jg, §6jh, §6j5, [[project_denovo_vs_annotated_gap]].
 
 ## §6jj — RNA fragmentation levers fail the gap hold-out; copy-level DNA nodes (SD atoms) put 4.9x more guided loci in families and are far closer to guided (2026-09-13)
 
-Pre-registered as Addendum J (`docs/PREREG_core_definition_2026-09-12.md`, md5 b345104c) before any arm ran.
+Pre-registered as Addendum J (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 b345104c) before any arm ran.
 
 ### J1 — RNA fragmentation
 
@@ -19169,7 +19169,7 @@ Related: §6as, §6cj, §6ck, §6je, §6ji, [[project_denovo_vs_annotated_gap]].
 
 ## §6jk — Atom edges fixed (ATP5F1A was a retrocopy scored by gap-blind projection); DNA+RNA hybrid and genome-wide gorilla hold-out both pass (2026-09-13)
 
-Pre-registered as Addendum K (`docs/PREREG_core_definition_2026-09-12.md`, md5 4ea1b2ad) before any number below.
+Pre-registered as Addendum K (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 4ea1b2ad) before any number below.
 
 ### K0 — ATP5F1A and the edge fix
 ATP5F1A (NC_073241.2:75,322,349-75,336,975) entered 2-copy family SDFAM837 through one SEDEF pair: its 7,703 bp atom vs
@@ -19255,7 +19255,7 @@ rebuild3 (expressed-guided truth): H R_G 0.6356 / P_G 0.6365; U1 = U2 0.6383 / 0
 
 ## §6jm — Guided mode, first look: leave-out expansion on NPIP and TBC1D3 finds every hidden member at 50%, no over-merge, and single-seed expansion stops at subfamily boundaries (2026-09-13)
 
-Pre-registered as Addendum M (`docs/PREREG_core_definition_2026-09-12.md`, md5 37542422), descriptive. Human CHM13,
+Pre-registered as Addendum M (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 37542422), descriptive. Human CHM13,
 truth `lit_truth.tsv` (NPIP 22, TBC1D3 9; width = RefSeq gene span). Seeds = §6jh guided units (NPIPB14P: gene span),
 aligned once with `minimap2 -c -x splice -N 100 -p 0.1` on the prebuilt k15/w10 index (35 s, 10 GB, 684 hits; 389 pass
 identity >= 0.80 and query coverage >= 0.50). Candidates = passing hits from seeds not overlapping any seed gene,
@@ -19312,7 +19312,7 @@ Data: `lit/guided_lo/{units.fa,units.tsv,units.paf,m.out,m.per_rep.tsv,m.candida
 
 ## §6jn — Guided rules on NPIP/TBC1D3: iteration crosses NPIPB -> NPIPA from some seeds but not on average; isoform and gene-span width rules trade truncation for overextension; zero over-merges (2026-09-13)
 
-Pre-registered as Addendum N (`docs/PREREG_core_definition_2026-09-12.md`, md5 a99c0ab9). `bench/guided_rules.py`
+Pre-registered as Addendum N (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 a99c0ab9). `bench/guided_rules.py`
 (M0 reproduces §6jm exactly). Count correction (disclosed): W2 used 133 queries = 130 annotated transcripts over 28
 genes + 3 fallbacks (the addendum said 139). Iteration ran 4 rounds to a fixed point (382 -> 20 -> 4 -> 4 -> 0 new
 candidates over all replicates and arms); 1 min 24 s, 10.3 GB.
@@ -19503,7 +19503,7 @@ Data: `lit/guided_lo/{p.out,q.out,tree/,tree_proj/}`.
 
 ## §6jq — The guided pipeline on the amylase family (CHM13): the unit that holds the family together is family-specific — AMY is held by coding sequence, NPIP by gene body (2026-09-13)
 
-Pre-registered as Addendum R (`docs/PREREG_core_definition_2026-09-12.md`, md5 10740cac), rules unchanged from M-Q.
+Pre-registered as Addendum R (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 10740cac), rules unchanged from M-Q.
 **Literature level:** Bolognini et al. 2024 Nature (PMC11485256) type copies as AMY1 (salivary), AMY2A/AMY2B (pancreatic),
 AMY2Ap (partial AMY2A lacking ~4.5 kb of 5' end), AMYP1, and build haplotype trees from unique FLANKING sequence;
 Yilmaz et al. 2024 Science: 23 / 23 / 36 fixed coding variants unique to AMY2B / AMY2A / AMY1 — types are defined on
@@ -19555,7 +19555,7 @@ Data: `lit/amy_lo/{truth.tsv,units.*,isoforms.*,genespan.*,o.out,q.out,tree_proj
 
 ## §6jr — Either-finder candidates pass on all three families; exon and intron trees carry different subfamilies (NPIP introns, AMY exons); LOC124905662 is a partial AMY2A copy with a likely mis-joined first exon (2026-09-13)
 
-Pre-registered as Addendum S (`docs/PREREG_core_definition_2026-09-12.md`, md5 57fbbe08). `bench/guided_union.py`.
+Pre-registered as Addendum S (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 57fbbe08). `bench/guided_union.py`.
 Implementation guard added after a first crash (disclosed): a member that never aligns to the tree's reference member
 is an all-gap row IQ-TREE rejects; such members are dropped and listed (AMY half_2 exon 1, half_4 exon 11 -> not treed;
 NPIP half_0/2/3/4 exon 5/6/1/7).
@@ -19629,7 +19629,7 @@ Data: `lit/{guided_lo,amy_lo,amy_lo_v2}/{s.out,s.err,tree_union/}`, `lit/amy_lo/
 ## §6js — Guided fixes consolidated into one tool (`bench/guided_pipeline.py`): members from both finders without duplicates, CDS-envelope gene body, gene-span introns; 2 of 3 families pass every bar, AMY fails one by a mis-joined annotation (2026-09-13)
 
 Pre-registered as Addendum T (md5 c195db89), revised post hoc as Addendum U with amendments U1' and U1'' (all disclosed
-in `docs/PREREG_core_definition_2026-09-12.md`; U1'' was declared the last guided change of this round before it ran).
+in `docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`; U1'' was declared the last guided change of this round before it ran).
 Seed units are checked byte-identical to §6jm-§6jr's. Runtime: AMY 1 min 20 s, NPIP+TBC1D3 3 min 40 s.
 
 **What the tool does (final, U1''):** seeds = annotated genes; finder 1 = the seed's longest curated transcript
@@ -19671,7 +19671,7 @@ Data: `lit/guided_t/{t.out,t_addendumT.out,t_addendumU1p.out,t.candidates.tsv,tr
 
 ## §6jt — "Did some multi-copy families arise from duplicons?" First pre-registered test: NOT SUPPORTED (6/10 core-duplicon families vs >= 7), classifier discriminates retrocopies (0/3) (2026-09-13)
 
-Pre-registered as Addendum W (`docs/PREREG_core_definition_2026-09-12.md`, md5 fddbd538). `bench/duplicon_origin.py`.
+Pre-registered as Addendum W (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 fddbd538). `bench/duplicon_origin.py`.
 Literature core-duplicon families from the review "Human core duplicon gene families: game changers or game players?"
 (PMC6920530: NBPF, RGPD, SMA-GUSBP, PMS2P, SPATA31, TRIM51, GOLGA8, NPIP, TBC1D3, LRRC37; "core or seed duplicons shared
 between all copies"); retrotransposition controls GAPDH, PPIA, EEF1A1. Member region = gene span +/- one gene length;
@@ -19706,7 +19706,7 @@ Register row 818. Data: `lit/duplicon/{w.out,pairs.tsv}`.
 
 ## §6ju — Genomic copy vs RNA-mediated copy on HELD-OUT families: SUPPORTED (segmental-duplication families 9/9 duplicon-derived, retrotransposition families 0/5) (2026-09-13)
 
-Pre-registered as Addendum X (`docs/PREREG_core_definition_2026-09-12.md`, md5 17e047f9), written after §6jt and before
+Pre-registered as Addendum X (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 17e047f9), written after §6jt and before
 any number below. `bench/duplicon_origin.py` (same regions, references, chains and identity floor as W). New per pair:
 SHARED NON-EXONIC = aligned CIGAR bases outside the union exons of BOTH member and reference (counted once per reference
 position when chain records overlap); GENOMIC iff >= 1,000 bp, else RNA-LIKE. Family DUPLICON-DERIVED iff >= 1 aligned pair
@@ -19763,7 +19763,7 @@ Data: `lit/duplicon_x/{x.out,pairs.tsv}`.
 
 ## §6jv — Mechanism layer (genomic copy / retrocopy / TE-derived gene): GENOMIC SUPPORTED (13/13 vs 0/16); RETROCOPY NOT SUPPORTED (5/16; hallmark requirement too strict); TE-DERIVED NOT SUPPORTED (ERV-env 5/8 vs >= 6) (2026-09-14)
 
-Pre-registered as Addendum Y (`docs/PREREG_core_definition_2026-09-12.md`, md5 5bb6b87e). `bench/copy_mechanism.py`.
+Pre-registered as Addendum Y (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 5bb6b87e). `bench/copy_mechanism.py`.
 Inputs: soft-masked CHM13 v2.0; UCSC hs1 RepeatMasker `.out` (downloaded 09-14, md5 5cc807e8 = UCSC md5sum.txt);
 `chm13v2.0_RefSeq_full.gff.gz`. Each member is compared with the family PARENT (protein-coding member with the most
 introns), in order:
@@ -19817,7 +19817,7 @@ Register rows 819 (R1), 820 (R3). Data: `lit/mechanism_y/{y.out,members.tsv,te.t
 
 ## §6jw — Retrocopy = parent-intron loss, on FRESH families: NOT SUPPORTED at family level (10/16 vs >= 12) because 6/8 old retrogenes are unassessable; among assessed copies 213/222 RETROCOPY and SD 0/10 families, 0/19 members (2026-09-14)
 
-Pre-registered as Addendum Z (`docs/PREREG_core_definition_2026-09-12.md`, md5 2b5375e1). `bench/copy_mechanism.py
+Pre-registered as Addendum Z (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 2b5375e1). `bench/copy_mechanism.py
 --addendum z`. The rule is Y's except RETROCOPY = not GENOMIC, parent mRNA record passes (identity >= 0.80, >= 100 aligned
 bases), LOST >= 1 and RETAINED = 0. Poly(A) and TSD are reported only. Every family was new to W/X/Y; Y's families are
 development.
@@ -19857,7 +19857,7 @@ Register row 821. Data: `lit/mechanism_z/{z.out,members.tsv}`.
 
 ## §6jt — De novo: the genomic-span E_r union helps on the development windows and fails the gorilla hold-out's precision guard; exon/intron clades carried over (2026-09-14)
 
-Pre-registered as Addendum V (`docs/PREREG_core_definition_2026-09-12.md`, md5 145081d0). Binary 54154909. Tools:
+Pre-registered as Addendum V (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 145081d0). Binary 54154909. Tools:
 `RUSTLE_ER_UNION_GENOMIC_SPAN=1` (D1, opt-in), `bench/denovo_subfamilies.py` (D2, reusing `bench/guided_pipeline.py`'s trees).
 **Default unchanged and verified:** DN0 on `lit.bam` is byte-identical to §6jg's `dn_default` (copies.tsv md5 f801c72e,
 families.tsv md5 cd521899).
@@ -19904,7 +19904,7 @@ Data: `lit/dn_v/{lit_DN0,lit_DN1,amy_DN0,amy_DN1}.*`, `lit/dn_v/d2_*.out`, `rebu
 
 ## §6jx — Subfamilies as a threshold-free split-dominance tree from variation-graph bubbles: NOT SUPPORTED (literature groups 73 vs IQ-TREE 85), but fewer literature-conflicting splits (49 vs 72); AMY identical to IQ-TREE (2026-09-14)
 
-Pre-registered as Addendum AA (`docs/PREREG_core_definition_2026-09-12.md`, md5 1f597332). `bench/split_tree.py` on the 66
+Pre-registered as Addendum AA (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 1f597332). `bench/split_tree.py` on the 66
 reference-projected alignments of the §6js guided runs (NPIP, TBC1D3, AMY; reference + 5 half + 5 keep-1 leave-outs;
 exon and intron). Construction:
 - Bubble = informative biallelic gap-free column; support(split) = number of bubbles inducing it.
@@ -20403,7 +20403,7 @@ here is a held-out claim.
 
 ## §6ju — Simulated IsoSeq: de novo finds all 12 amylase loci in one family at 40 and 10 reads per locus; the real-data misses were expression (2026-09-14)
 
-Pre-registered as Addendum W (`docs/PREREG_core_definition_2026-09-12.md`, md5 207f253e). `bench/amy_sim.py`.
+Pre-registered as Addendum W (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 207f253e). `bench/amy_sim.py`.
 Sources: 21 transcripts over the 12 AMY v2 loci (RefSeq models; LOC124905662 clipped to exons 2-8; AMYP1 = AMY2A
 NM_000699.4 projected onto its span, 7 exons, 1,060 bp, identity 0.999). Reads: `sim_reads.simulate_reads` (sub 0.003,
 indel 0.0008, <= 30% end truncation), 40 and 10 per locus, `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1
@@ -21111,7 +21111,7 @@ Next, to pre-register and hold out on other Soto families:
 
 ## §6ks — Addendum AP: a fraction-based shared-exon floor (`min_shared_exon_frac`) SUPPORTED on fresh, held-out Soto families — same TBC1D3 family, cleaner GTF2H2/TCAF/GTF2I precision, no recall loss (2026-09-14)
 
-Pre-registered as Addendum AP (`docs/PREREG_core_definition_2026-09-12.md`, md5 5f34278a) before any number on chr5/7/21
+Pre-registered as Addendum AP (`docs/archive/2026-09/PREREG_core_definition_2026-09-12.md`, md5 5f34278a) before any number on chr5/7/21
 existed. Follows §6kr's disagreement audit: `min_exonic_bp=1` (`exonic_both_sides`) is a zero/non-zero structural gate —
 one shared exonic base admits an edge however small a sliver of either gene that base is.
 
@@ -21279,10 +21279,10 @@ detect that conservation long after nucleotide identity has collapsed toward its
 Data and code: `lit/seedlimit/{theory_seed_survival.py,empirical_seeding.py,empirical_results.csv,analysis_output.txt,PRESET_EVIDENCE.txt}`,
 `lit/codonlimit/{degeneracy.py,real_pairs.py,simulate.py,real_detect.py,blosum62.py,real_pairs.tsv,real_detect.tsv}`.
 
-## §6kv — Excision extension (PREREG `docs/PREREG_excision_extension_2026-09-15.md`): the missing-copy signature does NOT generalize past NPIP/ZNF875 — 5/5 new targets orphan instead of origin-rejecting (2026-09-15)
+## §6kv — Excision extension (PREREG `docs/archive/2026-09/PREREG_excision_extension_2026-09-15.md`): the missing-copy signature does NOT generalize past NPIP/ZNF875 — 5/5 new targets orphan instead of origin-rejecting (2026-09-15)
 
 Advisor's ask, restated RNA-only (no WGS): erase an almost-identical copy, see whether its reads get redistributed
-among survivors or go unmapped, and look for a general "a copy is missing" pattern. `docs/PREREG_excision_2026-09-05.md`
+among survivors or go unmapped, and look for a general "a copy is missing" pattern. `docs/archive/2026-09/PREREG_excision_2026-09-05.md`
 answered this for NPIP (4 copies, identity 0.966-0.987) and one ZNF875 pair (>0.99): P1-P3 held, a consistent-sites-
 per-kb signature exists in the origin-rejected reads. This entry asks whether that signature is general or specific
 to those two families.
@@ -23085,11 +23085,11 @@ aligner in an SD is strong but not proof.
 mis-annotation. PKD1P6-NPIPP1 is simultaneously an NPIP copy and a PKD1 copy. Any fix must be in how the
 definition treats a node spanning two parent families (overlapping/soft membership, or a chimera node rule),
 not in cleaning the annotation. Closes the "readthrough annotation-unit" item parked in
-`docs/PENDING_2026-09-17.md`.
+`docs/archive/2026-09/PENDING_2026-09-17.md`.
 
 ## §6m2 — `--chimera-policy`: a truth-side lever for known readthrough records. Well-defined, clean label, NOT ADOPTED — every gain is denominator shrinkage (2026-09-18)
 
-Pre-registered as `docs/PREREG_chimera_policy_2026-09-18.md` (md5 `57f578ff0c4e2e4829d7c72bdfc5bb26`,
+Pre-registered as `docs/archive/2026-09/PREREG_chimera_policy_2026-09-18.md` (md5 `57f578ff0c4e2e4829d7c72bdfc5bb26`,
 commit 376f6a93) BEFORE any metric under any policy existed. User request: *"maybe could we have some or
 more chimeras accepted if they are known and a lever to determine if we count them or not for precision,
 sensitivity and bipartite matching"*. Report `bench/CHIMERA_POLICY.md`; scripts
@@ -23146,7 +23146,7 @@ too small to move a family metric even when the label is perfect.
 
 ## §6m3 — the NODE CUT rule: split a chimeric record at its parent boundary. SAFE (loses no member) but HARMFUL on every other axis — NOT ADOPTED (2026-09-18)
 
-Pre-registered `docs/PREREG_node_cut_2026-09-18.md` (md5 `2af3393070d6c2ded8db3cd89c0a6dc3`, commit
+Pre-registered `docs/archive/2026-09/PREREG_node_cut_2026-09-18.md` (md5 `2af3393070d6c2ded8db3cd89c0a6dc3`, commit
 376f6a93... see the prereg commit) before any metric. Answers the user's question *"What would entail that
 a node is in two families? Can we later cut them somehow?"* — the answer pre-registered was: a record is in
 two families because its PIECES are, one each, so levels stay node partitions and T1/T1′/T2 survive.
@@ -23284,7 +23284,7 @@ junction coverage ≤ 83.9%. A result above either is a bug (or truth leakage), 
 
 ## §6m5 — LOCUS ASSEMBLY at NPIP: the bottleneck is EXACT-CHAIN COLLAPSE, not ambiguity and not depth. O2 contributed 0 junctions (2026-09-18)
 
-Pre-registered `docs/PREREG_locus_assembly_2026-09-18.md` (md5 `02237f9d6da31ec694a8e53cd8cbdf2b`) before the
+Pre-registered `docs/archive/2026-09/PREREG_locus_assembly_2026-09-18.md` (md5 `02237f9d6da31ec694a8e53cd8cbdf2b`) before the
 run. User: *"get all the reads (isoforms) at a locus and reconstruct the full length locus? For ambiguous
 ones we need O2."* No new algorithm — `copy_assign` run as shipped (rebuilt `--release`).
 Report `bench/LOCUS_ASSEMBLY_NPIP.md`; data `/mnt/linuxdisk/home/juanfraitu/locus_asm/`.
@@ -23338,7 +23338,7 @@ codebase. (3) A DISPERSED family needs its copy set supplied (O1's job) or a non
 
 ## §6m6 — assembler read-isoform widening PORTED (opt-in) and single-exon strand fixed; W-2 FAILED, and §6m5's "+21 junctions" projection is RETRACTED (2026-09-18)
 
-Pre-registered `docs/PREREG_assembler_widening_2026-09-18.md` (md5 `6d586b2d5ec6d7a6b15e014ef7fa5349`).
+Pre-registered `docs/archive/2026-09/PREREG_assembler_widening_2026-09-18.md` (md5 `6d586b2d5ec6d7a6b15e014ef7fa5349`).
 Report `bench/ASSEMBLER_WIDENING.md`; code `eb73ebd2`. Lib suite **880 passed / 0 failed** (3 new tests).
 
 **Shipped (opt-in):** `denovo_assemble::pass1_skeletons_widened(..., isoform_k)` — a chain is admitted if
@@ -23608,7 +23608,7 @@ transcript set (209 junctions), which makes it an algorithmic-ceiling test and n
 
 ## §6n0 — NPIP ceiling simulation: 25/26 complete with full-length reads. The assembler has NO algorithmic defect; 5' TRUNCATION costs 6 of 26 copies (2026-09-18)
 
-Pre-registered `docs/PREREG_npip_sim_2026-09-18.md` (md5 `17be6b031092b79b343421fa0dd14f1e`) before a single
+Pre-registered `docs/archive/2026-09/PREREG_npip_sim_2026-09-18.md` (md5 `17be6b031092b79b343421fa0dd14f1e`) before a single
 read existed. Report `bench/NPIP_SIM_CEILING.md`, commit `ee640950`; data `/mnt/linuxdisk/home/juanfraitu/npip_sim/`.
 
 **Substrate.** 26 canonical transcripts (one per spliced NPIP copy), built by merging each copy's exon
@@ -24771,7 +24771,7 @@ denominators or the absolute matching-chain count to compare tools.**
 
 ## §6p8 — assembly polish: `--assemble-only` reaches StringTie's precision band (2026-09-19)
 
-Prereg `docs/PREREG_assembly_polish_2026-09-19.md`, report `bench/ASSEMBLY_POLISH.md`.
+Prereg `docs/archive/2026-09/PREREG_assembly_polish_2026-09-19.md`, report `bench/ASSEMBLY_POLISH.md`.
 Shipped: `copy_assign --assembly-polish <none|mono|full>` (+ `--polish-mono-quantile`, default 0.75).
 `none` is byte-identical to the previous emit.
 
@@ -24806,7 +24806,7 @@ chr20 and only MATCHED on chr11.** Do not claim a precision win over StringTie i
 
 ## §6p9 — locus isoform fraction: `--assemble-only` matches or outperforms StringTie in 19/20 cells (2026-09-19)
 
-Prereg `docs/PREREG_assembly_polish_2026-09-19.md` Addenda A/B, report `bench/ASSEMBLY_POLISH.md` §6p9.
+Prereg `docs/archive/2026-09/PREREG_assembly_polish_2026-09-19.md` Addenda A/B, report `bench/ASSEMBLY_POLISH.md` §6p9.
 Shipped: `copy_assign --polish-isoform-fraction F` (default 0.0 = off), inside `--assembly-polish`.
 
 The §6p8 held-out chr11 precision deficit was **entirely class `j`** (novel junction combination): 589 vs
@@ -24836,7 +24836,7 @@ as the rule.
 
 ## §6q0/§6q1 — the shadow rule: 28/30 cells against StringTie over six chromosomes (2026-09-19)
 
-Prereg `docs/PREREG_assembly_polish_2026-09-19.md` Addendum C, report `bench/ASSEMBLY_POLISH.md`.
+Prereg `docs/archive/2026-09/PREREG_assembly_polish_2026-09-19.md` Addendum C, report `bench/ASSEMBLY_POLISH.md`.
 Shipped: `--polish-mono-shadow`, `--polish-ism-escape` (both default off).
 
 ⭐**SHIPPED RECOMMENDATION:**
@@ -25252,7 +25252,7 @@ this library), so unmatched ≠ error.
 
 ## §6r6 — pipeline state test against O1, O2 and the advisor's questions (2026-09-19)
 
-Report `docs/PIPELINE_STATE_TEST_2026-09-19.md`. Everything below was RUN today against the current
+Report `docs/archive/2026-09/PIPELINE_STATE_TEST_2026-09-19.md`. Everything below was RUN today against the current
 binary; the dossier `docs/ADVISOR_QUESTIONS.md` (last revised 09-16) predates §6o2–§6r5 and is stale in
 five named places.
 

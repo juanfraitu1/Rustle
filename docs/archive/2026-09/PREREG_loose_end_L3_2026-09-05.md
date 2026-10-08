@@ -1,6 +1,6 @@
 # PREREG — L3: single-candidate ties under the pairwise rule (`-p 0`), 2026-09-05
 
-Context: `docs/O1_O2_LOOSE_ENDS.md` L3. Under the genomic read-star a molecule whose only reported chain
+Context: `docs/archive/2026-09/O1_O2_LOOSE_ENDS.md` L3. Under the genomic read-star a molecule whose only reported chain
 (`minimap2 -p 0.3`) is on one candidate is TIED by construction (§6fa: no competitor, no columns). Row 704's
 `-p 0` result ("halves the assigned") was measured under the intersection rule, which §6fc replaced. L1 made this
 pressing: the EIF3C member of the NPIP cluster (4,774 reads, identity 0.903 to NPIP) is now a candidate and its

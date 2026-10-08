@@ -280,14 +280,14 @@ genome-wide run): the Fig. 6 development tables (human A119b chr16: Compara pair
 gorilla OR6737 NC_073244.2: seeding configurations vs that contig's protein-homology families), the Fig. 7
 development tables (human chr16, chr2, chr6, chr8, chr10; gorilla NC_073244.2, NC_073234.2; protein-homology
 families, Soto 2025, NPIP set), register 1101, and the manual protein step's development tables (figS_protein,
-`docs/PREREG_protein_attach_2026-09-25.md`), which include Ensembl Compara judgements of the de novo families of
+`docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md`), which include Ensembl Compara judgements of the de novo families of
 human chr16 and chr6 (chr6: 14 of 14 judgeable family members correct at any duplication age).
 
 *The decision (user, 2026-09-25 16:00).* ONE default de novo family definition, at the RNA level: reads → seeded
 assembly loci → one representative per locus (its "positional exon sum": read-derived exon coordinates, genome
 bases) → families = the driver's `families` stage (`mcl_families --from-gtf --min-exonic-bp 1
 --min-shared-exon-frac 0.60`, MCL inflation 2.8). Copy assignment consumes the same families (the stage's copy table
-`<id>.fam.copies.tsv`, `docs/PREREG_families_copy_table_2026-09-25.md`). The `gw_family_catalog` copy catalog
+`<id>.fam.copies.tsv`, `docs/archive/2026-09/PREREG_families_copy_table_2026-09-25.md`). The `gw_family_catalog` copy catalog
 (`catalog` stage) becomes LEGACY: kept runnable, not the default and not a headline. Protein is not part of the
 default; the manual extra-sensitive step has its own supplementary figure (figS_protein). Main figures use external
 references only: Ensembl Compara (human), Soto 2025 (labelled not independent), Liftoff copies (every species).
@@ -318,7 +318,7 @@ references only: Ensembl Compara (human), Soto 2025 (labelled not independent), 
      counted for every gene and pseudogene record of the annotation, the same rule); sensitivity = pairs with
      copies in one family of the configuration (`score.py pairs --universe`); precision over judgeable
      within-family pairs (both genes have Compara data; an upper bound).
-   - *Liftoff copy pairs (every sample):* the Figure 8 self-lift (`docs/PREREG_liftoff_loci_2026-09-25.md`):
+   - *Liftoff copy pairs (every sample):* the Figure 8 self-lift (`docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md`):
      pairs (a source record's annotated placement, one of its extra copies), extra copy `sequence_ID` ≥ 0.95
      (rows also at 0.98, 0.99, 1.00), both exon unions ≥ 200 bp, both loci read-supported in the sample (≥ 2 reads
      whose primary alignment, `-F 2308`, has an aligned block on the exon union: the C2 rule and table). A pair is

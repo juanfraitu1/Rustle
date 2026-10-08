@@ -1,6 +1,6 @@
 # Pre-registration: %LRC (LRGASP long-read coverage) as a reporting metric — 2026-09-29
 
-Written 2026-09-29 before any %LRC number of ours exists. Source: `docs/VAULT_METHODS_AUDIT_2026-09-28.md`, "Not in
+Written 2026-09-29 before any %LRC number of ours exists. Source: `docs/archive/2026-09/VAULT_METHODS_AUDIT_2026-09-28.md`, "Not in
 the code", item 1. **A reporting metric only: no filter, no default change, no decision rule, no ranking of tools.**
 The audit already says it moves none of O1/O2/O3; it only tightens assembly-level statements ("the models are read
 evidence end to end").

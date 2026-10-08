@@ -1,6 +1,6 @@
 # Supplementary Figure S-P: the manual extra-sensitive step (protein attachment)
 
-**Status.** Pre-registered in `docs/PREREG_protein_attach_2026-09-25.md` before any number of the step existed.
+**Status.** Pre-registered in `docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md` before any number of the step existed.
 Development-scope tables (PROVISIONAL): the de novo families of the Fig. 7 runs on four chromosomes. Genome-wide rows
 appear per sample once the driver's `families-protein` stage has written `${work}/runs/<id>/<id>.fam_protein.*`;
 Liftoff rows appear once the Fig. 8 self-lift of a species is merged. `python3 figures/fig_protein_supp.py data`

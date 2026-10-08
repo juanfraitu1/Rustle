@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score the RNA-only allele calls against the frozen truth (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md, H1, H1b, H2 and the
+"""Score the RNA-only allele calls against the frozen truth (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md, H1, H1b, H2 and the
 blind spot; H3/H4 need every chromosome holding a family and are reported when those are present).
 
     python3 score.py --truth truth.tsv --calls-dir calls [--chroms NC_073244.2,NC_073247.2]

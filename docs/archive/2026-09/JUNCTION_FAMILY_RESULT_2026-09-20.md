@@ -1,6 +1,6 @@
 # A family definition from splice junctions — it exists, it works, and it cannot be the definition
 
-Run 2026-09-20 against `docs/PREREG_junction_family_2026-09-20.md` (committed `ea853f00` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_junction_family_2026-09-20.md` (committed `ea853f00` before any
 junction edge was built). Tool: **`bench/junction_family_edges.py`**. Held-out chr2/chr8/chr10,
 Soto S1C truth, `bench/heldout_family_score.py` — identical to every other arm.
 

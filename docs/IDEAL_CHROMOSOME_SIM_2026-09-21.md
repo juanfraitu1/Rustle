@@ -1,6 +1,6 @@
 # Ideal-scenario chromosome simulation — in theory it does work
 
-**§6v1, 2026-09-21.** Pre-registration `docs/PREREG_ideal_chromosome_sim_2026-09-21.md` (md5
+**§6v1, 2026-09-21.** Pre-registration `docs/archive/2026-09/PREREG_ideal_chromosome_sim_2026-09-21.md` (md5
 `ff226f41`), committed `2a809b76` before any arm was scored. Tool `bench/ideal_chromosome_sim.py`.
 ⚠HUMAN substrate (A119b/CHM13 chr16) — do not pool with gorilla.
 

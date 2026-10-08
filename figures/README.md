@@ -37,7 +37,7 @@ that writes the copy table, `--help` naming `<out>.copies.tsv`). Text is set in 
 | `samples.tsv`, `samples.py` | the sample registry (6 samples, 4 species; cells name keys of the inputs file) and the genome-wide run cache (`make.py samples`, `make.py runs`; see below) |
 | `assembly.py` | shared provisioning for the assembly figures (and the transcript-mode wording, `MODE_DENOVO_METHODS`, `GUIDED_NA`): our assembler in both seeding configurations from the run cache (`${work}/runs/<sample>/<sample>.gtf`, `<sample>.primary.gtf`), every arm and the annotation restricted to the evaluation contigs, gffcompare runs and parsers (`${work}/assembly/<species>/eval_<contigs>/`) |
 | `_sqanti.py`, `_o2.py`, `_o1.py`, `_o1_recovery.py`, `_liftoff.py` | helpers of figures 2, 4-5, 6, 7 and 8 (`_liftoff.copy_pairs` / `pair_families`: the Liftoff copy-pair family reference of figs 6s, 7 and 8) |
-| `_lrc.py`, `test_lrc.py` | %LRC (LRGASP long-read coverage: the share of each model's exonic length under primary aligned read bases), a reporting metric only, no figure reads it: `python3 figures/_lrc.py union|score|tables --sample ID` (cached under `${work}/lrc/`; docs/PREREG_lrc_metric_2026-09-29.md); `python3 figures/test_lrc.py` |
+| `_lrc.py`, `test_lrc.py` | %LRC (LRGASP long-read coverage: the share of each model's exonic length under primary aligned read bases), a reporting metric only, no figure reads it: `python3 figures/_lrc.py union|score|tables --sample ID` (cached under `${work}/lrc/`; docs/archive/2026-09/PREREG_lrc_metric_2026-09-29.md); `python3 figures/test_lrc.py` |
 | `fig_*.py` | one module per figure: `META`, `build(cfg, data_dir, force)`, `plot(data_dir, out_dir)` |
 | `captions/<fig>.md` | caption, claim, provenance and caveats of each figure |
 | `inputs.example.tsv` | every raw input the builders read (this machine's paths), and every optional key as a `# key<TAB>value` comment; copy to `inputs.local.tsv` |
@@ -57,7 +57,7 @@ that writes the copy table, `--help` naming `<out>.copies.tsv`). Text is set in 
   scored by the same code into separate tables and figures (`fig1g_guided`, `fig2g_guided`, `fig3g_guided`) that
   build only when such a GTF exists; until then the figures say "guided comparison: not available (guided
   StringTie/FLAIR GTFs not supplied)". Rustle has no annotation-guided transcript assembly, so the guided figures
-  have no Rustle row (docs/PREREG_guided_transcript_comparison_2026-09-25.md). Figure 7 compares Rustle's two
+  have no Rustle row (docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md). Figure 7 compares Rustle's two
   FAMILY modes with each other (Rustle-internal, not a tool comparison); figure 8 compares Rustle's guided locus
   search with Liftoff like for like and scores the de novo loci against Liftoff as a reference. "Mode" always
   names its level (transcript, family, locus): GLOSSARY *Modes*.
@@ -152,8 +152,8 @@ cache on 2026-09-25 (same inodes; the old names are symlinks) and adopted withou
 | 6 | `fig_family_spectrum.py` | the default de novo families across the protein-identity spectrum of Ensembl Compara pairs (a direct nucleotide alignment vs the families; precision against Compara); human samples. Supplementary `fig6s_seeding` (loci seeded with secondary alignments vs primaries only, each through the families stage, vs Compara ≥ 90% and Liftoff copy pairs; development: gorilla chr20 vs protein-homology families, secondary) and `fig6s_protein` (the translated protein search as a comparator, chr16) | `fig6_gw_*` (genome-wide) or `fig6_chr16_*` (development); supplementary `fig6s_seeding`, `fig6s_protein_tiers`, `fig6_gorilla_*` |
 | 7 | `fig_family_recovery.py` | family recovery of Rustle's two FAMILY modes (de novo = the default definition, guided = the same rule on the annotation; Rustle-internal, not a tool comparison) against Compara families (primates), Soto 2025 (not independent), the NPIP set and Liftoff copy pairs (every species; de novo only): pairwise and one-to-one bipartite sensitivity / precision / F, per-family outcomes. Supplementary `fig7s_protein_homology` (protein-homology families, secondary) | `fig7_gw_*` (genome-wide) or `fig7_summary`, `fig7_per_family` (development) |
 | 8 | `fig_loci.py` | loci in the Liftoff framework: Liftoff's self-lift (`-copies`) as the annotation-guided locus baseline, Rustle's guided search like for like, de novo loci, the default families (legacy catalog rows kept as a comparison) and missing-copy flags scored against it | the tables `fig_loci.py` lists (`fig8_*`) |
-| 9 | `fig_loop.py` | the closed loop: tied reads assigned among the default families' copies (union test), given to their copy, re-assembled (`docs/PREREG_tied_read_loop_2026-09-25.md`; captions/fig9.md) | the tables `fig_loop.py` lists |
-| S-P | `fig_protein_supp.py` | the manual extra-sensitive protein step (not the default) scored against Compara and Liftoff (`docs/PREREG_protein_attach_2026-09-25.md`; captions/figS_protein.md) | `figS_protein_*` |
+| 9 | `fig_loop.py` | the closed loop: tied reads assigned among the default families' copies (union test), given to their copy, re-assembled (`docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md`; captions/fig9.md) | the tables `fig_loop.py` lists |
+| S-P | `fig_protein_supp.py` | the manual extra-sensitive protein step (not the default) scored against Compara and Liftoff (`docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md`; captions/figS_protein.md) | `figS_protein_*` |
 
 The per-figure captions (claims, panels, n, provenance, caveats) are in `captions/`.
 

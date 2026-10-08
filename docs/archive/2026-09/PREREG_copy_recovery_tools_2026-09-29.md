@@ -350,4 +350,4 @@ support, our first losing step) are in the report `scratchpad/figs/copy_recovery
   step.
 - **Rows filed as 1189-1193** with two precision edits: G2 gained the all-26-copies tally (StringTie 12, ours 11,
   isoseq 9, FLAIR 6), and G4's "§7.9" became "prereg §7.9".
-- **Consolidated write-up:** `docs/COPY_RECOVERY_TOOLS_2026-09-29.md`.
+- **Consolidated write-up:** `docs/archive/2026-09/COPY_RECOVERY_TOOLS_2026-09-29.md`.

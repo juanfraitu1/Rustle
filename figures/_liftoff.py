@@ -1,6 +1,6 @@
 """_liftoff — the Liftoff self-lift locus baseline and Liftoff's matching criteria (Figure 8).
 
-Pre-registration (read it first): docs/PREREG_liftoff_loci_2026-09-25.md. User decision 2026-09-25: every locus
+Pre-registration (read it first): docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md. User decision 2026-09-25: every locus
 comparison is made in the Liftoff framework. Per species, `liftoff -copies` lifts the genome's own RefSeq annotation
 (gene + pseudogene records) onto the same genome = the annotation-guided locus baseline; Rustle's guided-mode loci are
 compared with it like for like, and Rustle's de novo loci, default de novo families (the driver's `families` stage

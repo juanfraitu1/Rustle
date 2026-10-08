@@ -1,6 +1,6 @@
 # DP chaining as the pair score — tested, and it cannot help at this level
 
-Run 2026-09-20 against `docs/PREREG_chained_jaccard_2026-09-20.md` (committed `62196fc2` before any
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_chained_jaccard_2026-09-20.md` (committed `62196fc2` before any
 chained arm was scored). Tool: `bench/chained_pair_score.py`. Same truth (Soto S1C ≥ 3 members), same
 scorer, same held-out chromosomes (chr2, chr8, chr10) as §6t3.
 

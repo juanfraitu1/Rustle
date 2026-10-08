@@ -6,7 +6,7 @@
 
 Coordinates are 1-based, closed (GTF / GFF).
 
-Prereg: `docs/PREREG_locus_representative_rule_2026-10-04.md` (3bf6aca1, written before any run). Flag: `mcl_families --representative
+Prereg: `docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md` (3bf6aca1, written before any run). Flag: `mcl_families --representative
 most-junctions` / driver `RUSTLE_REPRESENTATIVE=most-junctions` (559649a9). Runner `bench/rep_rule/run.sh`, scorer `bench/rep_rule/score.py`;
 work dir `/mnt/linuxdisk/tmp/rep_rule/<species>_<contig>/` (`R_M.*`, `R_J.*`, `h3.*`, `score.json`; `decision.json`). Per-gene tables:
 `docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04_h3_changed.tsv` (every gene whose H3 call differs between the arms, 7 contigs),
@@ -199,7 +199,7 @@ contigs: the junction-richest transcript is often shorter in exon bp than the mo
     The junction count is blind to per-junction support: the assembler admits a junction at 2 reads, H3 calls it supported at >= 3.
 - **The 25 NPIP copies (chr16; the page's question).** R_M reproduces the chr16-wide reading of the GOOD arm exactly: strict 10, locus
   level 20, overlap 22. Those figures are in `/mnt/linuxdisk/tmp/readpool_npip/support_hsa.json`.
-  `docs/SPLICED_COPY_SUPPORT_2026-10-04.md` quotes 9 / 19 instead, because it counts only the page's NPIP-cluster nodes.
+  `docs/archive/2026-10/SPLICED_COPY_SUPPORT_2026-10-04.md` quotes 9 / 19 instead, because it counts only the page's NPIP-cluster nodes.
 
   | arm | strict found | locus-level found | any same-strand overlapping locus |
   |---|---|---|---|
@@ -273,7 +273,7 @@ Register rows 1234-1236.
 
 ## Amendment A of the spliced-support prereg (2026-10-04 11:45): H3 re-scored with support anchored on the ANNOTATED introns
 
-The user's correction to `docs/PREREG_spliced_copy_support_2026-10-04.md` (Amendment A, 8735ceeb, before this re-score): a read or a
+The user's correction to `docs/archive/2026-10/PREREG_spliced_copy_support_2026-10-04.md` (Amendment A, 8735ceeb, before this re-score): a read or a
 representative supports a gene only through the gene's own annotated introns (exact splice sites), not through any read-supported junction.
 H3 re-scored from the saved arms (`h3A.support.*` in each contig's work dir; no families re-run; `bench/copy_support.py` `ann_*` columns):
 

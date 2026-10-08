@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Soto 2025 family table (S1C) audits for the 2026-09-30 meeting (second-machine tasks B1-B3 of
-docs/HANDOFF_SECOND_MACHINE_2026-09-30.md). Pure re-reads of S1C plus the frozen exon edges; no new data.
+docs/archive/2026-09/HANDOFF_SECOND_MACHINE_2026-09-30.md). Pure re-reads of S1C plus the frozen exon edges; no new data.
 
     python3 bench/soto_m2/soto_m2_audit.py biotype
     python3 bench/soto_m2/soto_m2_audit.py fragments --exons sd98_gene_exons.tsv

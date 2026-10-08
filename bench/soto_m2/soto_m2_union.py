@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-registered KEY=unionedges (docs/PREREG_soto_union_edges_2026-09-30.md): exon map-back edges vs map-back plus every
+"""Pre-registered KEY=unionedges (docs/archive/2026-09/PREREG_soto_union_edges_2026-09-30.md): exon map-back edges vs map-back plus every
 SEDEF-projected exon link, each family classified exactly as in soto_m2_families.py, with S1C and our copy numbers and the
 four biotype filters; exact families on all / dev / held-out, and per family what the union recovers or breaks.
 

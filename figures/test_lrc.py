@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for figures/_lrc.py (%LRC; docs/PREREG_lrc_metric_2026-09-29.md).
+"""Unit tests for figures/_lrc.py (%LRC; docs/archive/2026-09/PREREG_lrc_metric_2026-09-29.md).
 
     python3 figures/test_lrc.py        (stdlib unittest; the BAM and GTF are written to a temporary directory)
 

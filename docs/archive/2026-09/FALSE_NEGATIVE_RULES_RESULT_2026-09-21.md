@@ -1,6 +1,6 @@
 # False negatives: where they are, and why the obvious rules do not transfer
 
-Run 2026-09-21 against `docs/PREREG_false_negative_rules_2026-09-21.md` (committed `5723b4ff` before
+Run 2026-09-21 against `docs/archive/2026-09/PREREG_false_negative_rules_2026-09-21.md` (committed `5723b4ff` before
 any rule was scored). Held-out chr2/chr8/chr10, Soto S1C truth, same scorer as every other arm.
 
 ## The decomposition — the durable result of this run

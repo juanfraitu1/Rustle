@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The `o3_candidates` acceptance helpers on Amendment 7's 53-family held-out (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md:
+"""The `o3_candidates` acceptance helpers on Amendment 7's 53-family held-out (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md:
 Amendment 12, and Amendment 13 + 13b-13e). `bench/rna_allele/accept_o3_candidates.sh` runs the subcommands in order; the stage and every
 minimap2 call run there (or, for `nets` and `keep`, here) under `tools/rlock.sh heavy`.
 
@@ -928,7 +928,7 @@ def same_transcript(path):
     return pairs
 
 
-A13_DETECTED = 25          # A13's family-level detection rate 25/53 (docs/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md)
+A13_DETECTED = 25          # A13's family-level detection rate 25/53 (docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md)
 C1_MAX_FAMILIES = 8        # Amendment 14: <= 1/3 of 25/53 = 0.157 -> <= 8 of 53 families
 A9_FALSE_FAMILIES = 16     # Amendment 9: the IsoCon chain, 16/53 families with a false candidate at any support
 

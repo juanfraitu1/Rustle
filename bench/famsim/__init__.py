@@ -1,6 +1,6 @@
 """famsim — controlled gene-family simulations that prove the condition they test.
 
-Spec: docs/FAMSIM_DESIGN_2026-10-02.md. Usage: bench/FAMSIM.md. Run as `python3 bench/famsim <command>`.
+Spec: docs/archive/2026-10/FAMSIM_DESIGN_2026-10-02.md. Usage: bench/FAMSIM.md. Run as `python3 bench/famsim <command>`.
 
 Modules
   model       GeneModel: a copy's genomic sequence (transcript orientation) + its exons; the RNA chain derives from it

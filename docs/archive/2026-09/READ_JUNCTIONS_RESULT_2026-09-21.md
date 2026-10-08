@@ -1,6 +1,6 @@
 # Read-derived junctions for the junction family rule — coverage 5×, F worse
 
-Run 2026-09-21 against `docs/PREREG_read_junctions_2026-09-21.md` (committed `66f33f34` before any read
+Run 2026-09-21 against `docs/archive/2026-09/PREREG_read_junctions_2026-09-21.md` (committed `66f33f34` before any read
 junction was extracted). Substrate: **A119b.t2t.bam** on held-out chr2/chr8/chr10 (5.12M / 2.21M / 2.41M
 mapped reads), junctions from CIGAR `N` at `-F 2308`, ≥ 3 supporting reads. Everything downstream is
 §6u1's rule unchanged.

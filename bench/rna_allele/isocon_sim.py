@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm S of Amendment 1 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): truth transcripts of the S_fam copies on both haplotypes
+"""Arm S of Amendment 1 (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): truth transcripts of the S_fam copies on both haplotypes
 of KB3781 and simulated Iso-Seq-like reads from them.
 
 Haplotype A transcript = the copy's exon union on `_pri` (identical to the haplotype `_pri` took that chromosome from). Haplotype B

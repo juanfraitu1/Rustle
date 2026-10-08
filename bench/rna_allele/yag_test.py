@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/PREREG_yag_isocon_chain_2026-10-01.md: the reference-absent-copy chain on the Y ampliconic genes (deletion panel, delta_Y).
+"""docs/archive/2026-10/PREREG_yag_isocon_chain_2026-10-01.md: the reference-absent-copy chain on the Y ampliconic genes (deletion panel, delta_Y).
 Subcommands, in order (shell steps between them are the minimap2 / IsoCon runs, see the doc):
 
   panel      families + copies from the annotation, primaries per copy, the masking rule -> panel.json, masked_tx.fa (CAT transcripts of

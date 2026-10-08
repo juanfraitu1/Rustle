@@ -1,6 +1,6 @@
 # "A simple Jaccard sweep should work" — tested head-to-head
 
-Run 2026-09-20 against `docs/PREREG_jaccard_sweep_2026-09-20.md` (committed `0a38c1d3` before either arm
+Run 2026-09-20 against `docs/archive/2026-09/PREREG_jaccard_sweep_2026-09-20.md` (committed `0a38c1d3` before either arm
 was scored). Same substrate, same external truth (Soto S1C, ≥ 3 members), same scorer
 (`bench/heldout_family_score.py`) for every arm. Held-out chromosomes: chr2, chr8, chr10.
 

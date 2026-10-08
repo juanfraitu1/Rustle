@@ -93,5 +93,5 @@ retraction this month.
 
 - No change to any edge test, grouping operator, or threshold.
 - No claim that a chimera is or is not "a copy". That definitional question stays open in
-  `docs/PENDING_2026-09-17.md` item 1; this lever only makes the two answers comparable.
+  `docs/archive/2026-09/PENDING_2026-09-17.md` item 1; this lever only makes the two answers comparable.
 - No new substrate is consumed. Arm A re-scores catalogs built on 2026-09-14; arm B is development data.

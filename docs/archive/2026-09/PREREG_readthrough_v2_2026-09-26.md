@@ -528,6 +528,6 @@ measured". That caps the verdict (§6.3, §7) unless the clause is outside §6.3
   NC_073244.2 passed.
 - §4 says dev results cannot change the rule. The rule was nevertheless changed: a guard on tier B was selected on the
   same dev contigs (`rt4_tierb_guard.md`). That re-tune is recorded as a new pre-registration,
-  `docs/PREREG_readthrough_v3_2026-09-26.md` (arm R3), and not as an amendment of this file.
+  `docs/archive/2026-09/PREREG_readthrough_v3_2026-09-26.md` (arm R3), and not as an amendment of this file.
 - R2 runs on the held-out substrates only as v3's descriptive "guard transfer" arm. None of its numbers is a v2
   outcome.

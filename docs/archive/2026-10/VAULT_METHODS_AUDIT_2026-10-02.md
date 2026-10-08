@@ -2,7 +2,7 @@
 
 **Question:** the four papers added to `ThesisVault/` on 2026-10-01 (Shaw 2025 devider, Hosseini 2025 pHapCompass,
 Chaisson 2017 polyploid phasing, Bosch 2007 FAM90A), plus the O3 chain built since the 09-28 audit
-(`docs/VAULT_METHODS_AUDIT_2026-09-28.md`): is there a method we have not applied that would move O1/O2/O3?
+(`docs/archive/2026-09/VAULT_METHODS_AUDIT_2026-09-28.md`): is there a method we have not applied that would move O1/O2/O3?
 
 **Answer:** one. devider's positional de Bruijn graph (PDBG) over (PSV site, allele) letters is a published,
 threshold-light replacement for the read-clustering + consensus + merge core of the `o3_candidates` stage

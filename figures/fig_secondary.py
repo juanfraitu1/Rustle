@@ -72,7 +72,7 @@ collapse without annotation (flair correct skipped), IsoSeq collapse; the figure
                   registered, samples.tsv stringtie_guided_gtf / flair_guided_gtf; drawn as fig3g_guided) the fig3_bins
                   columns plus `mode` and `sample`, for the guided tools only, on the same transcripts, categories and
                   clusters (bins_rows_for). Never with the annotation-free methods; no Rustle row (Rustle has no
-                  annotation-guided transcript assembly; docs/PREREG_guided_transcript_comparison_2026-09-25.md).
+                  annotation-guided transcript assembly; docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md).
                   Until then the figure prints "guided comparison: not available (guided StringTie/FLAIR GTFs not
                   supplied)".
 """
@@ -983,7 +983,7 @@ def build(cfg, data_dir, force):
                            notes=["mode: " + assembly.MODE_GUIDED + " (StringTie -G / FLAIR with the annotation, as "
                                   "supplied in samples.tsv); " + assembly.GUIDED_CAVEAT,
                                   assembly.RUSTLE_NO_GUIDED,
-                                  "pre-registered: docs/PREREG_guided_transcript_comparison_2026-09-25.md",
+                                  "pre-registered: docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md",
                                   "the fig3_bins categories, transcripts, clusters and 95% cluster intervals "
                                   "(bins_rows_for), guided tools only; plotted = the panel-a categories"]
                            + [n for n in extra if not n.startswith("mode:")], data_dir=data_dir)

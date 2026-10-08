@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Does Soto's copy-number cut follow duplicon boundaries? (docs/PREREG_soto_cn_vs_duplicon_2026-09-30.md, KEY=cnduplicon)
+"""Does Soto's copy-number cut follow duplicon boundaries? (docs/archive/2026-09/PREREG_soto_cn_vs_duplicon_2026-09-30.md, KEY=cnduplicon)
 
     python3 bench/soto_m2/soto_m2_duplicons.py --geneset elig.tsv --full-geneset full.tsv \
         --exons sd98_gene_exons.tsv --duplicons chm13.draft_v1.0_plus38Y_dupmasker_colors.bed

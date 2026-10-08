@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bench/rep_rule/score.py — the readouts and the registered decision of docs/PREREG_locus_representative_rule_2026-10-04.md:
+"""bench/rep_rule/score.py — the readouts and the registered decision of docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md:
 the de novo locus representative R_M (most-reads, the shipped rule) vs R_J (most-junctions). Products of bench/rep_rule/run.sh.
 
     score.py h3-inputs --species S --contig C --out PREFIX   H3 copies: the contig's annotated protein-coding genes (human CAT/Liftoff

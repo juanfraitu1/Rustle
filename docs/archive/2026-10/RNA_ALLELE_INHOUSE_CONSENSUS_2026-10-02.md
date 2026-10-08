@@ -1,6 +1,6 @@
 # The in-house consensus in place of IsoCon (Amendment 11): FAILS, and why — 2026-10-02
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 11 (commit 092e2c8b, before any run). Work dir
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 11 (commit 092e2c8b, before any run). Work dir
 `/mnt/linuxdisk/tmp/rna_allele/linktest_ih/` (shares Amendment 7's panel, reads, masked genome and R-arm alignments; `ih/` holds the
 `missing_copy_flag` scan and verdicts). Outputs copied to `docs/RNA_ALLELE_INHOUSE_CONSENSUS_score.out.txt`.
 

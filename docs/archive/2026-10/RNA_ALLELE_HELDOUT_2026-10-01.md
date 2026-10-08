@@ -1,6 +1,6 @@
 # Held-out test: IsoCon's reference-absent transcripts as extra copies (Amendment 6), 2026-10-01
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 6 (commit 548f6767, before any run). Substrate never used to
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendment 6 (commit 548f6767, before any run). Substrate never used to
 develop Amendment 5: the 162 two-copy gorilla families of the 2026-08-14 whole-genome excision (one copy D hard-masked per family, the
 other K kept; KB3781 fibroblast Iso-Seq). Scripts `bench/rna_allele/heldout_prep.py`, `heldout_score.py`; work dir
 `/mnt/linuxdisk/tmp/rna_allele/heldout/` (`score.out`).

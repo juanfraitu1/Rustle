@@ -19,7 +19,7 @@ inputs file, which holds every machine path, or literal text; `-` or an empty ce
                  FLAIR with the annotation), supplied by the user; '-' for every sample until then. They feed only the
                  separate guided path of figures 1-3 (assembly.guided_samples), never a panel with the de novo methods.
                  There is no Rustle counterpart column: Rustle has no annotation-guided transcript assembly
-                 (docs/PREREG_guided_transcript_comparison_2026-09-25.md).
+                 (docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md).
 
     registry(cfg)               {id: row} with paths expanded, in file order
     resolve(cfg, key)           sample id for an id or an alias ('gorilla' -> 'gorilla_OR6737', 'human' -> 'human_A119b')

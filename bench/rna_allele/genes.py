@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gene table + exon-sum FASTA for docs/PREREG_rna_allele_haplotype_count_2026-10-01.md (gene sets, step 2).
+"""Gene table + exon-sum FASTA for docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md (gene sets, step 2).
 
 Every RefSeq gene/pseudogene record of `GGO_genomic.gff` on a `_pri` chromosome listed in chrmap.tsv with >= 1 exon: exon union over
 its transcripts (0-based half-open). Plus the S_fam copies (gorilla NPIP/TBC1D3 copy truth of 2026-09-29, gene_id = cid, exons = union of

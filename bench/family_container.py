@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """family_container.py -- the CONTAINER of a family member's extra pieces (accessory exon blocks) and their relations.
 
-docs/PREREG_fusion_container_sim_2026-09-28.md §1 (the binding definition), implemented as a post-processor of the
+docs/archive/2026-09/PREREG_fusion_container_sim_2026-09-28.md §1 (the binding definition), implemented as a post-processor of the
 driver's `families` stage (`tools/rustle_pipeline.sh families` = `mcl_families --from-gtf ... --out PREFIX.fam`).
 It reads the families products and never changes a family.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 8 (docs/PREREG_rna_allele_haplotype_count_2026-10-01.md): merging a missing copy's new-copy transcripts into one candidate
+"""Amendment 8 (docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md): merging a missing copy's new-copy transcripts into one candidate
 copy without truth, scored on Amendment 7's 53 families and its R+I+L alignments (link_test.py's work dir, nothing realigned).
 
   pairs       per family, the new-copy contigs (contigs.tsv linked=0) all-vs-all: minimap2 -c -x asm20 --cs -N 200 -p 0.1

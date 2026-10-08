@@ -6,7 +6,7 @@ of) and our best model at the copy, with each end judged by EXONS against the Re
   shorter  the model starts (ends) past the RefSeq gene's first (last) exon, missing k exon(s) -> -k
   same     the model's end exon overlaps the RefSeq end exon; the bp offset is kept for display
 
-Inputs are the 2026-09-29 copy-recovery instruments (scratch, see docs/COPY_RECOVERY_TOOLS_2026-09-29.md on main): the copy table and
+Inputs are the 2026-09-29 copy-recovery instruments (scratch, see docs/archive/2026-09/COPY_RECOVERY_TOOLS_2026-09-29.md on main): the copy table and
 truth GTF (RefSeq transcripts per copy, CHM13 v2.0), our scored models (models.hsa.ours.json, best = exact chain first, then the
 best gffcompare class, then support) and their GTF; Soto's genes come from the meeting page's families.json (CAT v4, CHM13 v1.0),
 moved to v2.0 by the per-chromosome offsets found by sequence (chr16 -5, chr17 -291, chr18 0).
@@ -14,7 +14,7 @@ moved to v2.0 by the per-chromosome offsets found by sequence (chr16 -5, chr17 -
     python3 bench/soto_m2/soto_m2_gene_ends.py --copies copies.hsa.tsv --truth truth.hsa.gtf --ours-json models.hsa.ours.json \
         --ours-gtf hsa.ours.gtf --cat families.json --out gene_ends.json
 
-CAT reference (2026-10-01, docs/CAT_RERUN_PROTOCOL_2026-10-01.md): pass --ref-genes chm13v2.0_CAT_Liftoff.genes.tsv with the CAT
+CAT reference (2026-10-01, docs/archive/2026-10/CAT_RERUN_PROTOCOL_2026-10-01.md): pass --ref-genes chm13v2.0_CAT_Liftoff.genes.tsv with the CAT
 copy-recovery instruments (copies table with `isoform_gene` = the copy's CAT gene id and `refseq_name`; models scored against the
 CAT truth). The reference gene is then the CAT v2.0 gene, all its transcripts collapsed (its exon-union blocks), in place of the
 RefSeq gene; --truth is not read. Rows keep the RefSeq copy name (cids are shared with the RefSeq run) and carry the CAT id/name.

@@ -1,6 +1,6 @@
 # Pre-registration: which alignments build the loci, shown on NPIP (human chr16, A119b), 2026-10-01
 
-Written before any of the three arms below was run on chr16. Follows `docs/PREREG_locus_read_pool_2026-09-22.md` (§6z7, register
+Written before any of the three arms below was run on chr16. Follows `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md` (§6z7, register
 1059-1061: chr20 + gorilla NC_073244.2), which compared the same three read pools genome-scale but never on NPIP.
 
 ## Question (advisor)

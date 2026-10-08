@@ -7,8 +7,8 @@
 #             its representative transcript (PREFIX.fam.copies.tsv/.fa, the copy table copy assignment consumes)
 #   candidates  reference-absent copies from each family's own reads    candidate_copies + utilities candidate-augment + minimap2
 #             OPT-IN (ruling R14, 2026-10-02: its pre-registered acceptance, Amendment 12, FAILED —
-#             docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; 2026-10-03: the re-run, Amendment 13, passed, but the no-deletion
-#             control, Amendment 14, failed, so the default flip was reverted — docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md):
+#             docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; 2026-10-03: the re-run, Amendment 13, passed, but the no-deletion
+#             control, Amendment 14, failed, so the default flip was reverted — docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md):
 #             naming the stage runs it, `all` runs it only with --candidates.
 #             (read net -> read clusters -> consensus -> flag/link/merge -> one exon-union contig per flagged
 #             candidate, PREFIX.cand.*), then the augmentation (PREFIX.aug.fa = genome + the contigs, PREFIX.aug.copies.*
@@ -101,7 +101,7 @@
 #   --out PREFIX per pool (bench/seed_pool/run.sh does, and prints the comparison). --as-table FILE reads (or builds, when absent
 #   or made from another BAM) the best-AS table there instead of PREFIX.molecules.tsv, so many pools and widths share one pass over
 #   the BAM. --contig NAME[,NAME...] (assemble) assembles those contigs only, copy_assign --region NAME:0-LEN (--regions FILE for
-#   several) with LEN from FASTA.fai, in place of --genome-wide: the products equal the genome-wide run's on that contig (docs/CONTAINER_HEADROOM_2026-09-30.md) and it
+#   several) with LEN from FASTA.fai, in place of --genome-wide: the products equal the genome-wide run's on that contig (docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md) and it
 #   makes a pool comparison on one contig a matter of minutes; the families, assign and flag stages read whatever assembly is there.
 # The splice index is needed by `candidates` (the consensus sequences' genome hits) and `flag` (home search); the
 # annotation (--gff) by `flag` only (IG/TR screen).
@@ -127,8 +127,8 @@
 #     represents each de novo locus (loci.gff3, the copy table). Unset = nothing passed: the binary's default, most-reads
 #     (the transcript with the most reads), byte for byte the earlier products; most-junctions = the transcript with the most
 #     junctions (gaps >= 50 bp between exons), ties to the most reads — OPT-IN: the arm of
-#     docs/PREREG_locus_representative_rule_2026-10-04.md, whose held-out decision (2026-10-04) kept most-reads: chr6 clause (a)
-#     FAILED, Compara F 0.444 -> 0.372, on pre-f1v2 GTFs (docs/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md); an mcl_families
+#     docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md, whose held-out decision (2026-10-04) kept most-reads: chr6 clause (a)
+#     FAILED, Compara F 0.444 -> 0.372, on pre-f1v2 GTFs (docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md); an mcl_families
 #     without the flag is refused;
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
@@ -245,16 +245,16 @@ case "${RUSTLE_GTF_REGROUP:-}" in
   *) echo "[rustle_pipeline] RUSTLE_GTF_REGROUP must be 0 or 1 (got '$RUSTLE_GTF_REGROUP')" >&2; exit 2 ;;
 esac
 # RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units (unset = f1v2, THE DEFAULT since 2026-09-29 by the user's decision on the F1v2 held-out
-# Outcome and its family-level side result, docs/PREREG_o1_cover_growth_2026-09-29.md; off = the 2026-09-25 products,
+# Outcome and its family-level side result, docs/archive/2026-09/PREREG_o1_cover_growth_2026-09-29.md; off = the 2026-09-25 products,
 # byte for byte): copy_assign --bridge-regroup, passed explicitly by `assemble`. A transcript that is the only link
 # between two pieces of its gene_id, when reads end at a PAS inside its intron and other reads start there at their own
 # promoter (f1v2: and it carries fewer reads than each piece), becomes a relation `<gene_id>.fus<k>` with `fusion_of`,
 # and the pieces split as RUSTLE_GTF_REGROUP splits them (so the two are exclusive). With f1 or f1v2, `assemble` also
 # writes PREFIX.families.gtf, the GTF without the bridges, and `families` reads it, as the held-out runs did
-# (docs/PREREG_f1_bridge_locus_2026-09-28.md, docs/PREREG_f1v2_readshare_2026-09-29.md), as does `flag`'s scan of the
+# (docs/archive/2026-09/PREREG_f1_bridge_locus_2026-09-28.md, docs/archive/2026-09/PREREG_f1v2_readshare_2026-09-29.md), as does `flag`'s scan of the
 # de novo loci (without --gff): a bridge is a relation, never a locus to scan. See its --help.
 # BRIDGE_MODE is the one derivation every stage uses (assemble's flag, families' and flag's input, the guard below).
-# f1units (OPT-IN, docs/PREREG_container_units_v2_dev_2026-09-30.md Part C): F1's bridges without its read-share rule are
+# f1units (OPT-IN, docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md Part C): F1's bridges without its read-share rule are
 # kept in PREFIX.families.gtf as units instead of being left out (PREFIX.gtf is exactly f1's: only the transcripts that were cut are
 # tagged); RUSTLE_BRIDGE_UNITS_LIST names the cuts instead of F1.
 BRIDGE_MODE=${RUSTLE_BRIDGE_REGROUP:-f1v2}
@@ -286,7 +286,7 @@ case "${RUSTLE_MIN_COV_SHORTER:-}" in
      FAM_COV=(--min-cov-shorter "$RUSTLE_MIN_COV_SHORTER") ;;
 esac
 # RUSTLE_FAMILY_CONTAINER=1 (opt-in; unset or 0 = off, the same command): mcl_families --emit-container, the container
-# of each family member's extra pieces (docs/PREREG_fusion_container_sim_2026-09-28.md §1): every clustered locus's
+# of each family member's extra pieces (docs/archive/2026-09/PREREG_fusion_container_sim_2026-09-28.md §1): every clustered locus's
 # all-transcript exon blocks, core (aligned to an exon base of another member of its family) or accessory, and the
 # other families each accessory block aligns to -> PREFIX.fam.container.tsv / .container_relations.tsv /
 # .container_summary.tsv. It never changes a family. See its --help
@@ -298,7 +298,7 @@ case "${RUSTLE_FAMILY_CONTAINER:-}" in
 esac
 # RUSTLE_FAMILY_RELATIONS=1 (opt-in; unset or 0 = off, the same command): mcl_families --emit-relations, the relation
 # record of every unit-split transcript (RUSTLE_BRIDGE_REGROUP=f1units) and the members of each family by locus ->
-# PREFIX.fam.relations.tsv / PREFIX.fam.members_by_locus.tsv (docs/PREREG_container_units_v2_dev_2026-09-30.md Part C).
+# PREFIX.fam.relations.tsv / PREFIX.fam.members_by_locus.tsv (docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md Part C).
 # It never changes a family. Without units the relations table is empty and every locus is a `whole` member.
 FAM_REL=()
 case "${RUSTLE_FAMILY_RELATIONS:-}" in
@@ -322,7 +322,7 @@ fam_gtf_guard() {
 stage_assemble() {
   say "assemble: $BAM -> $OUT.gtf"
   # --contig NAME[,NAME...]: these contigs only (copy_assign --region NAME:0-LEN, or --regions FILE for several, LEN from the FASTA
-  # index), in place of --genome-wide; the products equal the genome-wide run's on those contigs (docs/CONTAINER_HEADROOM_2026-09-30.md gates)
+  # index), in place of --genome-wide; the products equal the genome-wide run's on those contigs (docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md gates)
   local scope=(--genome-wide)
   if [ -n "$CONTIG" ]; then
     case "$CONTIG" in *$'\n'*|*$'\r'*) echo "[rustle_pipeline] --contig: a newline or carriage return in the value (the list is comma separated)" >&2; exit 2;; esac
@@ -383,7 +383,7 @@ stage_assemble() {
 # families: the de novo families AND their copy table (--emit-units with --from-gtf: PREFIX.fam.copies.tsv/.fa/.regions,
 # the gw_family_catalog copies contract, one copy per member locus = its representative transcript and its spliced exon
 # sum). clusters.tsv / loci.* are byte-identical to a run without it (cmp-checked 2026-09-25,
-# docs/PREREG_families_copy_table_2026-09-25.md); the copy table is a new product. A binary older than the copy table
+# docs/archive/2026-09/PREREG_families_copy_table_2026-09-25.md); the copy table is a new product. A binary older than the copy table
 # (its --help does not name <out>.copies.tsv) still writes the families, with a warning and no copy table.
 stage_families() {
   fam_gtf_guard families
@@ -405,7 +405,7 @@ stage_families() {
   fi
   # RUSTLE_REPRESENTATIVE=most-reads|most-junctions (unset = nothing passed: the binary's default, most-reads, the earlier
   # products byte for byte; `most-reads` names that default): mcl_families --representative, which transcript represents each
-  # de novo locus (docs/PREREG_locus_representative_rule_2026-10-04.md). Read here, in this stage's code alone, so that
+  # de novo locus (docs/archive/2026-10/PREREG_locus_representative_rule_2026-10-04.md). Read here, in this stage's code alone, so that
   # figures/samples.py's driver_stage_code leaves the other stages' code hashes as they were.
   local rep=()
   case "${RUSTLE_REPRESENTATIVE:-}" in
@@ -451,9 +451,9 @@ stage_catalog() {
   say "catalog: $(awk 'NR>1' "$OUT.cat.copies.tsv" | wc -l) copies in $(awk 'NR>1 && $2>=2' "$OUT.cat.families.tsv" | wc -l) multi-copy families"
 }
 # candidates (O3; spec docs/superpowers/specs/2026-10-02-o3-candidates-design.md §4, §7; OPT-IN since 2026-10-02, ruling R14:
-# its pre-registered acceptance, Amendment 12, FAILED, docs/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; the re-run, Amendment 13,
+# its pre-registered acceptance, Amendment 12, FAILED, docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md; the re-run, Amendment 13,
 # passed, but its no-deletion control, Amendment 14, failed, so the 2026-10-03 default flip was reverted,
-# docs/O3_CANDIDATES_CONTROL_A14_2026-10-03.md — naming the stage runs it, `all` runs it only with --candidates, and assign
+# docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md — naming the stage runs it, `all` runs it only with --candidates, and assign
 # and flag use its products only with --candidates): candidate_copies turns each family's read net (reads with a record on its
 # copies, plus the unmapped and the poorly placed reads >= 300 bp that align, map-ont, over >= 50% of their length at
 # de <= 0.20 to the run's net reads or copies: Amendment 13b) into read clusters at --delta, one consensus per cluster on its

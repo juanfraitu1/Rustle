@@ -2,8 +2,8 @@
 """units_from_annotation.py ANNOT.gff GTF > list.tsv -- the GUIDED detector of `copy_assign --bridge-regroup f1units --bridge-units-list`.
 
 Which transcripts of an assembled GTF are fusions of two annotated genes, and where to cut them into units
-(docs/PREREG_container_units_v2_dev_2026-09-30.md Part C section 4.1b; it is the annotation-overlap oracle of
-docs/PREREG_container_units_mechanism_2026-09-30.md section 3, without its NPIP-specific records).
+(docs/archive/2026-09/PREREG_container_units_v2_dev_2026-09-30.md Part C section 4.1b; it is the annotation-overlap oracle of
+docs/archive/2026-09/PREREG_container_units_mechanism_2026-09-30.md section 3, without its NPIP-specific records).
 
   * GENES = the `gene` / `pseudogene` / `ncRNA_gene` records of ANNOT.gff (GFF3 with ID / Parent / Name / description, NCBI RefSeq
     style); a gene's exons are the union of every `exon` record

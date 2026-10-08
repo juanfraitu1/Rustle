@@ -1,7 +1,7 @@
 # O3 candidates, Amendment 15/15b — the consensus-defect fix and its re-runs, 2026-10-05
 
-Prereg: `docs/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendments 15/15b (written 2026-10-03, before any re-run).
-Defect diagnosis: `docs/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md` (byte-identical reproduction, 33 clusters of 5 families).
+Prereg: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.md` Amendments 15/15b (written 2026-10-03, before any re-run).
+Defect diagnosis: `docs/archive/2026-10/O3_CANDIDATES_CONSENSUS_DEFECT_2026-10-03.md` (byte-identical reproduction, 33 clusters of 5 families).
 Code: commit `a13b817f` (the correction + regression tests); harness commit `209a5fd7` (`ACC=a15h`, env-overridable work dirs).
 This doc records the implementation and every registered re-run; nothing here re-tunes a registered rule.
 

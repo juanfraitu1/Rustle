@@ -5,7 +5,7 @@
 #   run.sh gates         G0 (HEAD scorer on the frozen read-pool arms), G1 (own-node rule vs the stored pagedata flags), G3 (HEAD family_score
 #                        on the stored e163d955 default clusters) -> W/g0.json, g1.json, g3.json
 #   run.sh asm ARM       chr16 assembly with the HEAD copy_assign, the driver's `assemble` command with --region in place of --genome-wide
-#                        (equal to the genome-wide run on the contig: docs/CONTAINER_HEADROOM_2026-09-30.md gates); ARM = DEF (the driver's
+#                        (equal to the genome-wide run on the contig: docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md gates); ARM = DEF (the driver's
 #                        default, --bridge-regroup f1v2) | PRE (--bridge-regroup off, the pre-flip control)
 #   run.sh fam ARM       the driver's `families` stage on that assembly (PRE: RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0)
 #   run.sh score         own nodes, copy_support (DEF and PRE; twice, under two PYTHONHASHSEEDs), family_score (DEF, PRE), provenance diffs

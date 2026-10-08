@@ -1,3 +1,5 @@
+> ⚠ **Archived 2026-10-07 — superseded.** The switch this file argues for was made: the shipped O1 definition is `../../seeded_family_definition.md` §0★ (user decision 2026-09-25), restated in `../../THESIS_OBJECTIVES.md`; the old `gw_family_catalog` definition stays opt-in as described here. Vocabulary (family vs SD / duplicon / expansion): `../../TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`. Kept as the visible trail the advisor asked for.
+
 # O1 — the two definitions, side by side, and the record of why a switch is warranted (2026-09-05)
 
 **Purpose.** The advisor dislikes changes made midway without a visible trail. This file is that trail: both
@@ -30,7 +32,7 @@ of `THESIS_OBJECTIVES.md`; that edit is the user's decision and the proposed wor
 ## 2. One truth, one scorer, both definitions (§6ev; `docs/soto_two_definitions_2026-09-05.log`)
 Soto 2025's 83 families / 362 members on CHM13 v2.0, HUMAN A119b, the SAME slice (`soto_adj/regions.bed`),
 the same reads (`soto.bam`), `bench/soto_adjudicate.py` unchanged; MCL adapted by `bench/mcl_to_cat_copies.py`
-+ `bench/mcl_edge_dump.py`. Pre-registered (`docs/PREREG_soto_two_definitions_2026-09-05.md`, md5 `507831b1…`).
++ `bench/mcl_edge_dump.py`. Pre-registered (`docs/archive/2026-09/PREREG_soto_two_definitions_2026-09-05.md`, md5 `507831b1…`).
 Gene-overlap floor ≥ 50 % (the pre-registered unit); Wilson 95 % in brackets.
 | | E_r / γ (old) | MCL units (RNA disposes) | MCL all members (DNA proposes) |
 |---|---|---|---|

@@ -14,7 +14,7 @@
 > runs (`samples.tsv` columns `stringtie_guided_gtf`, `flair_guided_gtf`), the same build scores them into a separate
 > table and figure (`fig2_guided_categories` and `fig2_guided_filter`, drawn as fig2g_guided), never in a panel with the annotation-free methods. Rustle has no annotation-guided
 > transcript assembly, so that figure has no Rustle row, and the guided tools are there scored against the annotation
-> they were given (docs/PREREG_guided_transcript_comparison_2026-09-25.md; GLOSSARY *Modes*).
+> they were given (docs/archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md; GLOSSARY *Modes*).
 
 **Claim.** SQANTI3 5.5.4 classifies every method's Figure 1 transcripts against the RefSeq annotation. In both
 species, Rustle's two configurations have the highest full-splice-match (FSM) share and the highest share passing
