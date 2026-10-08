@@ -412,3 +412,22 @@ j_hat equals the forced templated count or one less in every cluster (6, 6, 6, 7
 **Bars (set now).** P1 CTL: PART splits at most 1 of the 12 control clusters and recovers every transcript the baseline recovers. P2 ISO: baseline recovers <= 60% of the expected transcripts (the minority isoform is lost, prediction), PART >= 80%. P3 SIB: baseline <= 60%, PART >= 80%. P4: spurious + redundant candidates <= 10% of PART's candidates over the three scenarios, and leaf purity (reads of a leaf that belong to its best-matching transcript) >= 95%.
 **Real dev A, descriptive (not judged; H after, not blind):** clusters split, candidates added, and whether the best candidate against the erased copy raises the gate-aware identity x coverage >= 0.999 count (65 -> 80 with the metric alone) for the clusters with > 200 edits.
 **Decision.** PART is adopted as an opt-in post-clustering step iff P1 to P4 hold; otherwise not adopted, with the failure.
+
+### Amendment 18 result (partition world seed 20261014; 36 families; 43 frozen clusters; 14 split; 57 candidates)
+
+| scenario | expected transcripts | baseline (frozen consensus) recovers | PART recovers | clusters split / clusters | spurious + redundant candidates | leaf purity |
+|---|---|---|---|---|---|---|
+| CTL | 12 | 12 | 12 | 0 / 12 | 0 + 0 of 12 | 1.000 |
+| ISO | 24 | 12 (50%) | **20 (83%)** | 9 / 12 | 0 + 1 of 21 | **0.849** |
+| SIB | 24 | **19 (79%)** | **23 (96%)** | 5 / 19 | 0 + 1 of 24 | 0.958 |
+
+**P1 met** (no control split, nothing lost). **P2 met** (baseline 50%, PART 83%). **P3 NOT met as written:** PART reaches 96% (bar >= 80%) but the baseline clause fails, baseline 79% not <= 60%, because the frozen clustering already separated 7 of the 12 sibling pairs. **P4 spurious + redundant met** (2 of 57 = 3.5%); **leaf purity NOT met for ISO** (0.849; bar 95%). **Decision: PART is not adopted by the registered rule.**
+Cause of the ISO shortfall (3 of 12 clusters not split, all with a skipped exon of 271 to 322 bp; the 9 split include skipped exons of 93 to 310 bp): `minimap2 -x map-hifi` does not bridge a long deletion, it soft-clips the first part of the read (an iso1 read starts at consensus position 604 with a 286-base soft clip) so the skipped exon shows up as a change of coverage, not as a deletion run, and no variant column is found. This is an alignment limitation of the implementation, not of the partition logic.
+
+---
+
+## Amendment 19 (2026-10-08, after the Amendment 18 numbers, before any new number): global alignment for PART, fresh world
+
+**Change.** PART aligns each read to the candidate with a semi-global edit-distance alignment (edlib `HW`: the read aligned in full inside the consensus, `task=path`, no distance cap), which keeps a long deletion as a deletion run, instead of `minimap2 -x map-hifi`. Reads are in transcript orientation (as the frozen pipeline's consensus is). Nothing else in PART changes (same variants, test, blocks, split rule, parameters).
+**Test.** A fresh partition world, seed 20261015 (never run), E4 reads, 12 families per scenario. The bars of Amendment 18 are kept except that the baseline clause of P3 (a prediction about the frozen pipeline, not about PART) is replaced by PART >= baseline in every scenario: P1 (CTL: at most 1 of 12 clusters split, nothing lost); P2 (ISO: PART recovers >= 80%, and more than the baseline); P3 (SIB: PART >= 80%, and not fewer than the baseline); P4 (spurious + redundant <= 10% of PART's candidates over the three scenarios; leaf purity >= 95% in each scenario).
+**Decision.** Adopted as an opt-in post-clustering step iff P1 to P4 hold on the fresh world. Real dev A is reported, not judged.

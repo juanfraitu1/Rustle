@@ -340,6 +340,102 @@ def stage_exactreport(V):
         print(f"  {tag:10s} n={o['n']:>2} exact {o['exact']:>2}  |err|<=1 {o['within1']:>2}  templated removed (err<0) {o['over']:>2}  artifact left (err>0) {o['under']:>2}  idcov>=.999 {o['idcov_ok']}/{o['idcov_n']}  err counts {o['errs']}")
 
 
+def stage_partition(V):
+    """Amendment 18: PART on every cluster of >= 6 reads (seeded sample of <= 400 reads for discovery)"""
+    import random
+    import partition as PT
+    d = f"{W0}/{V}"
+    seqs = SD.read_fa(f"{d}/pool.fa")
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
+        cl["cl" + r["cluster"]].append(r["read"])
+    cons = {n.split("|")[0]: sq for n, sq in cons_seqs(V).items()}
+    align = PT.minimap_align_fn(f"{d}/part_tmp")
+    out, cands, split = {}, {}, 0
+    for k in sorted(cl):
+        names = sorted(cl[k])
+        if len(names) > 400:
+            names = sorted(random.Random(1).sample(names, 400))
+        leaves = PT.partition({n: seqs[n] for n in names}, align, PT.abpoa_consensus, cons=cons[k])
+        split += len(leaves) > 1
+        out[k] = []
+        for j, lf in enumerate(sorted(leaves, key=lambda x: -len(x["reads"]))):
+            nm = f"{k}|p{j}"
+            cands[nm] = lf["cons"]
+            out[k].append(dict(name=nm, reads=lf["reads"]))
+    SD.write_fa(f"{d}/cands.fa", cands, list(cands))
+    json.dump(out, open(f"{d}/partition.json", "w"))
+    print(f"{V}: {len(cl)} clusters, {split} split, {len(cands)} candidates")
+
+
+def stage_parteval(V):
+    d = f"{W0}/{V}"
+    tx = SD.read_fa(f"{W0}/transcripts.fa")
+    cp = copies()
+    lab = labels(V)
+    scen = json.load(open(f"{W0}/world.json"))
+    info = cluster_info(V)
+    part = json.load(open(f"{d}/partition.json"))
+    base = {n.split("|")[0]: sq for n, sq in cons_seqs(V).items()}
+    cands = SD.read_fa(f"{d}/cands.fa")
+
+    def tid(readname):                    # copy.iso.i -> transcript id
+        c, iso = readname.split(".")[:2]
+        return c if iso == "iso0" else f"{c}.{iso}"
+    exp = collections.defaultdict(set)    # family -> expected transcript ids (>= 5 net reads)
+    cnt = collections.Counter(tid(n) for n, r in lab.items() if r["role"] == "E" and r["in_net"] == "1")
+    for t, c in cnt.items():
+        if c >= 5:
+            exp[cp[t.split(".")[0]]["family"]].add(t)
+
+    def best_identity(seq, fam):
+        res = {}
+        for t in exp[fam]:
+            a, b = E.compare(seq, tx[t]), E.compare(rc(seq), tx[t])
+            res[t] = max((x["core_identity"] or 0.0) for x in (a, b))
+        return res
+
+    rows = collections.defaultdict(lambda: collections.Counter())
+    purity = collections.defaultdict(lambda: [0, 0])
+    for arm in ("baseline", "partition"):
+        recovered = collections.defaultdict(set)
+        for k, i in info.items():
+            fam, sc = i["family"], scen[i["family"]]
+            leaves = [(base[k], None)] if arm == "baseline" else [(cands[x["name"]], x["reads"]) for x in part[k]]
+            if arm == "partition":
+                rows[(sc, arm)]["clusters"] += 1
+                rows[(sc, arm)]["split"] += len(leaves) > 1
+            else:
+                rows[(sc, arm)]["clusters"] += 1
+            for seq, reads in leaves:
+                idn = best_identity(seq, fam)
+                if not idn:
+                    continue
+                t, v = max(idn.items(), key=lambda kv: kv[1])
+                rows[(sc, arm)]["candidates"] += 1
+                if v < 0.999:
+                    rows[(sc, arm)]["spurious"] += 1
+                elif t in recovered[fam]:
+                    rows[(sc, arm)]["redundant"] += 1
+                else:
+                    recovered[fam].add(t)
+                if reads:
+                    purity[sc][1] += len(reads)
+                    purity[sc][0] += sum(tid(r) == t for r in reads) if v >= 0.999 else 0
+        for fam, ts in exp.items():
+            rows[(scen[fam], arm)]["expected"] += len(ts)
+            rows[(scen[fam], arm)]["recovered"] += len(recovered[fam] & ts)
+    out = {f"{sc}/{arm}": dict(c) for (sc, arm), c in rows.items()}
+    out["purity"] = {sc: (a / b if b else None) for sc, (a, b) in purity.items()}
+    json.dump(out, open(f"{d}/parteval.json", "w"), indent=1)
+    print(f"{'scenario':8s} {'arm':10s} {'expected':>8s} {'recovered':>9s} {'clusters':>8s} {'split':>5s} {'cands':>5s} {'spurious':>8s} {'redundant':>9s}")
+    for sc in ("CTL", "ISO", "SIB"):
+        for arm in ("baseline", "partition"):
+            r = rows[(sc, arm)]
+            print(f"{sc:8s} {arm:10s} {r['expected']:>8d} {r['recovered']:>9d} {r['clusters']:>8d} {r['split']:>5d} {r['candidates']:>5d} {r['spurious']:>8d} {r['redundant']:>9d}")
+    print("leaf purity:", {k: (round(v, 3) if v is not None else None) for k, v in out["purity"].items()})
+
+
 def erased_clusters(V):
     """per erased copy the largest pure cluster of >= 3 reads: {copy: cluster key}"""
     info = cluster_info(V)
@@ -453,4 +549,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "partition": stage_partition, "parteval": stage_parteval, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])

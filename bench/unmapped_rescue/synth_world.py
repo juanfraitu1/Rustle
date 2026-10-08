@@ -5,6 +5,7 @@ erased from the reference, reads simulated from every copy. Built with bench/fam
     synth_world.py build <out_dir> [--seed 20261008]    # writes <out_dir>/{genome.ref.fa, genome.truth.fa, copies.tsv, transcripts.fa, targets.fa, reads.E0|E1|E2.fq, reads.truth.tsv}
 """
 import argparse
+import json
 import os
 import random
 import sys
@@ -41,6 +42,32 @@ def family_specs(seed=SEED, n_per_class=6, classes=CLASSES, per_copy=80, lead_g=
                         "reads": {"per_copy": per_copy, "err": 0.001, "indel": 0.0003, "jitter": 30}})
             if lead_g:
                 out[-1]["lead_g"] = k % 4          # the template's first exon begins with this many G (GC-rich 5' ends, Amendment 16)
+            k += 1
+    return out
+
+
+def partition_specs(seed=SEED, n_each=12, per_copy=100):
+    """Amendment 18: n_each families of each scenario. CTL: one erased copy, one isoform. ISO: the erased copy also makes an isoform skipping internal exon 3
+    (reads 2 : 1). SIB: two erased copies, E1 the template and E2 0.5% SNPs from it (inside the edge cutoff). Survivors A (2% SNPs) and B (3%)."""
+    out, k = [], 0
+    for sc in ("CTL", "ISO", "SIB"):
+        for _ in range(n_each):
+            name = f"f{k:02d}"
+            rng = _seeded(seed, "family", name)
+            n = rng.randint(5, 10)
+            exons = [rng.randint(100, 250)] + [rng.randint(90, 350) for _ in range(n - 2)] + [rng.randint(250, 800)]
+            introns = [rng.randint(300, 2500) for _ in range(n - 1)]
+            copies = [{"id": name + "A", "ops": [{"op": "snp", "rate": 0.02}]}, {"id": name + "B", "ops": [{"op": "snp", "rate": 0.03}]}]
+            if sc == "SIB":
+                copies += [{"id": name + "E1", "in_reference": False}, {"id": name + "E2", "in_reference": False, "ops": [{"op": "snp", "rate": 0.005}]}]
+            else:
+                e = {"id": name + "E", "in_reference": False}
+                if sc == "ISO":
+                    e["isoforms"] = [{"skip": [3], "weight": 0.5}]
+                copies.append(e)
+            out.append({"name": name, "seed": seed * 1000 + k, "scenario": sc, "divergence_class": 0.02, "background": {"source": "random", "length": 60000},
+                        "template": {"source": "synthetic", "exons": exons, "introns": introns}, "copies": copies,
+                        "reads": {"per_copy": per_copy, "err": 0.001, "indel": 0.0003, "jitter": 30}})
             k += 1
     return out
 
@@ -93,16 +120,16 @@ def write_fa(path, seqs):
             o.write(f">{k}\n{v}\n")
 
 
-def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_g=False):
+def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_g=False, specs=None):
     from famsim import chromosome, reads as FR
     os.makedirs(f"{out}/fam", exist_ok=True)
     ref, truth, copies, trans, targets = {}, {}, [], {}, {}
     truth_hdr, truth_rows, fq = None, [], {"E0": [], "E2": [], "E4": [], "E6": []}
     vtruth = {"E0": [], "E2": [], "E4": [], "E6": []}          # per-variant read truth tables (the read starts differ between variants)
-    for spec in family_specs(seed, n_per_class, classes, lead_g=lead_g):
+    for spec in (specs if specs is not None else family_specs(seed, n_per_class, classes, lead_g=lead_g)):
         name, D = spec["name"], spec["divergence_class"]
         fdir = f"{out}/fam/{name}"
-        fspec = {k: v for k, v in spec.items() if k not in ("divergence_class", "lead_g")}
+        fspec = {k: v for k, v in spec.items() if k not in ("divergence_class", "lead_g", "scenario")}
         if "lead_g" in spec:
             from famsim.template import resolve_template
             os.makedirs(fdir, exist_ok=True)
@@ -124,6 +151,8 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_
             ctg = f"{name}_{p.contig}"
             copies.append((p.id, name, "E" if not p.in_reference else p.id[-1], D, ctg, p.pos, p.end, p.strand, len(p.model.exons), p.in_reference))
             trans[p.id] = p.model.chain_seq()
+            for iso_name, skip, _w in p.isoform_list()[1:]:
+                trans[f"{p.id}.{iso_name}"] = p.model.chain_seq(skip)
             if p.in_reference:
                 targets[f"{name}:{p.id[-1]}"] = ref[ctg][p.pos:p.end]
         e4dir = f"{fdir}/E4"
@@ -139,6 +168,7 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_
         truth_hdr = lines[0]
         truth_rows += lines[1:]
         log(f"{name} D={D}: {len(planted)} copies")
+    json.dump({sp["name"]: sp.get("scenario") for sp in (specs or [])}, open(f"{out}/world.json", "w"))
     write_fa(f"{out}/genome.ref.fa", ref)
     write_fa(f"{out}/genome.truth.fa", truth)
     write_fa(f"{out}/transcripts.fa", trans)
@@ -167,7 +197,8 @@ if __name__ == "__main__":
     ap.add_argument("out")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--n-per-class", type=int, default=6)
+    ap.add_argument("--partition-world", action="store_true", help="Amendment 18 scenarios (CTL / ISO / SIB)")
     ap.add_argument("--lead-g", action="store_true", help="force 0-3 leading G on each template's first exon (Amendment 16)")
     ap.add_argument("--classes", default=",".join(str(c) for c in CLASSES), help="comma-separated divergence classes")
     a = ap.parse_args()
-    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g)
+    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g, specs=partition_specs(a.seed) if a.partition_world else None)
