@@ -480,3 +480,14 @@ PART finds structure in a third to a half of the real clusters and, taking the b
 **Flag Q (truth-free).** A cluster's consensus is UNSUPPORTED if the median divergence of its reads aligned to it exceeds 0.00958 (the allele cutoff the edge rule already uses; no new constant). On dev A: 24 of 212 clusters are flagged, 16 of the 22 with > 200 edits and 8 others (sizes 3 to 75, edits 1 to 151); the 6 unflagged big-edit clusters have a consensus that explains its reads (divergence 0.001 to 0.009) but differs from the erased copy as a whole, which Q cannot see.
 **Test on bed H (not used for the diagnosis).** Bars: Q flags >= 2 of the 3 H clusters with > 200 edits and at most 15% of the other H clusters (dev A: 4%). Reported: the flagged clusters' sizes.
 **Decision.** Q is adopted as a quality flag on the cluster consensus ("consensus unsupported") iff both bars hold; it changes no consensus.
+
+### Amendment 21 result (2026-10-08; `consensus_support.py`)
+
+| | dev A (design) | H (test) |
+|---|---|---|
+| clusters on the erased copy | 212 | 40 |
+| flagged unsupported | 24 (sizes 3 to 75; 17 of them have 3 to 6 reads) | 3 (sizes 3, 8, 14) |
+| of the clusters with > 200 edits flagged | 16 of 22 | **2 of 3** (bar >= 2) |
+| other clusters flagged | 8 of 190 (4.2%) | **1 of 37 (2.7%)** (bar <= 15%) |
+
+**Both bars met: Q is adopted as a quality flag ("consensus unsupported"); it changes no consensus.** What is explained: 16 of the 22 big-edit clusters on dev A (and 2 of 3 on H) are chains of 3 to 12 reads of very different spans whose POA consensus does not explain its own reads (median read divergence 0.016 against 0.0015). What is not: 6 big-edit clusters on dev A (and 1 on H) whose consensus explains its reads (divergence 0.001 to 0.009, 3 to 12 reads) but differs from the erased copy by 238 to 614 edits; their reads align to the unmasked genome individually at median divergence 0.0013, so the cause (reads from another copy or structure than the one the genome label points at, or a consensus that blends two structures the reads cannot expose) is not identified. In read terms the 22 clusters are 126 of about 59,000 reads (0.2%); in copy terms 10% of the clusters.
