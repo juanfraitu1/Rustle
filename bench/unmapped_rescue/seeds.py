@@ -65,7 +65,7 @@ class Pause(Exception):
     """a fresh minimap2 round finished and the call's budget is used up: run the program again (finished rounds are read back from disk)"""
 
 
-def minimap_map_fn(seqs, work, delta, min_frac, threads=4, preset="map-hifi", fresh_budget=1):
+def minimap_map_fn(seqs, work, delta, min_frac, threads=4, preset="map-hifi", fresh_budget=1, proper=False):
     """map_fn for run_rounds: minimap2 -x <preset> -c of the queries against the seed set. A round whose PAF and `.done` marker exist is read back;
     after `fresh_budget` fresh rounds in this call the NEXT fresh round raises Pause (each call stays inside the foreground window)."""
     state = {"i": 0, "fresh": 0}
@@ -82,5 +82,5 @@ def minimap_map_fn(seqs, work, delta, min_frac, threads=4, preset="map-hifi", fr
             subprocess.run(f"minimap2 -x {preset} -c -N 20 -t {threads} {sf} {qf} > {pf} 2> {pf}.log", shell=True, check=True)
             open(pf + ".done", "w").write("ok")
         with open(pf) as fh:
-            return list(G.edges(fh, delta, min_frac))
+            return list(G.edges(fh, delta, min_frac, proper))
     return f

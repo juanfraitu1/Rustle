@@ -30,6 +30,42 @@ class Edges(unittest.TestCase):
         self.assertEqual(sorted(set(G.edges(lines, 0.00958, 0.5))), [("a", "b")])
 
 
+def paf2(q, t, ql, tl, qs, qe, ts, te, de=0.001, strand="+"):
+    blk = max(qe - qs, te - ts)
+    return "\t".join([q, str(ql), str(qs), str(qe), strand, t, str(tl), str(ts), str(te), str(blk - 5), str(blk), "60", f"de:f:{de}"])
+
+
+class ProperOverlap(unittest.TestCase):
+    def kept(self, line):
+        return len(list(G.edges([line], 0.00958, 0.5, proper=True))) == 1
+
+    def test_containment_and_suffix_prefix_pass(self):
+        self.assertTrue(self.kept(paf2("a", "b", 600, 3000, 0, 600, 1000, 1600)))          # a inside b
+        self.assertTrue(self.kept(paf2("a", "b", 3000, 3000, 0, 3000, 0, 3000)))           # identical
+        self.assertTrue(self.kept(paf2("a", "b", 3000, 3000, 1000, 3000, 0, 2000)))        # a's tail on b's head (dovetail)
+
+    def test_a_shared_middle_is_not_an_edge(self):
+        # both reads continue differently on both sides: 1500 of 3000 each
+        self.assertFalse(self.kept(paf2("a", "b", 3000, 3000, 800, 2300, 700, 2200)))
+
+    def test_ragged_ends_within_the_tolerance_pass(self):
+        # remainders of 20 bases on both reads at the right end, block 2900 -> tolerance 27.8
+        self.assertTrue(self.kept(paf2("a", "b", 3000, 3000, 0, 2980, 0, 2980)))
+        self.assertTrue(self.kept(paf2("a", "b", 3000, 3000, 0, 2980, 25, 3005 - 5)))      # shifted start by 25: a reaches its start
+
+    def test_one_end_interior_on_both_reads_fails(self):
+        self.assertFalse(self.kept(paf2("a", "b", 3000, 3000, 0, 2000, 0, 2000)))          # right end: 1000 left on each
+
+    def test_reverse_strand_pairs_the_query_start_with_the_target_end(self):
+        # reverse strand: the query start pairs with the target END and the query end with the target START
+        self.assertTrue(self.kept(paf2("a", "b", 3000, 3000, 0, 2000, 0, 2000, strand="-")))     # a's head at b's tail (b reaches 0 on one end), proper
+        self.assertFalse(self.kept(paf2("a", "b", 3000, 3000, 500, 2500, 500, 2500, strand="-")))  # both reads continue at both ends
+
+    def test_without_the_flag_the_frozen_rule_is_unchanged(self):
+        line = paf2("a", "b", 3000, 3000, 800, 2300, 700, 2200)
+        self.assertEqual(len(list(G.edges([line], 0.00958, 0.5))), 1)
+
+
 class Components(unittest.TestCase):
     def test_components_and_the_size_floor(self):
         comp = G.components([("a", "b"), ("b", "c"), ("x", "y")], nodes=["a", "b", "c", "x", "y", "z"])

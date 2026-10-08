@@ -26,6 +26,7 @@ def main():
     ap.add_argument("--delta", type=float, default=DELTA)
     ap.add_argument("--tag", default="registered")
     ap.add_argument("--seeds", type=int, default=2000)
+    ap.add_argument("--proper", action="store_true", help="Amendment 22: the edge must be a proper overlap")
     a = ap.parse_args()
     d = f"{W}/{a.bed}"
     out = f"{d}/{a.tag}"
@@ -35,7 +36,7 @@ def main():
     lab = {r["read"]: r for r in csv.DictReader(open(f"{d}/labels.tsv"), delimiter="\t")}
     truth = {n: ("bg" if lab[n]["role"] == "bg" else (lab[n]["family"] or None)) for n in seqs}
     dread = {n for n in seqs if lab[n]["role"] == "D"}
-    map_fn = SD.minimap_map_fn(seqs, f"{out}/rounds", a.delta, 0.5)
+    map_fn = SD.minimap_map_fn(seqs, f"{out}/rounds", a.delta, 0.5, proper=a.proper)
     try:
         comp = SD.run_rounds(lens, map_fn, n_seeds=a.seeds, min_size=3, max_rounds=6)
     except SD.Pause as e:
