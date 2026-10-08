@@ -317,6 +317,18 @@ def modal_starts(V):
     return {k: collections.Counter(v).most_common(1)[0][0] for k, v in cl.items()}
 
 
+def all_starts(V):
+    """{cluster key: set of the true chain starts of its reads}"""
+    start = {}
+    base = {"E1": "E0", "E3": "E4", "E5": "E6"}.get(V, V)
+    for r in csv.DictReader(open(f"{W0}/reads.truth.{base}.tsv"), delimiter="\t"):
+        start[r["read"].replace("|", ".")] = int(r["chain_start"])
+    cl = collections.defaultdict(set)
+    for r in csv.DictReader(open(f"{W0}/{V}/clusters.tsv"), delimiter="\t"):
+        cl["cl" + r["cluster"]].add(start[r["read"]])
+    return cl
+
+
 def stage_exactreport(V):
     """Amendment 16: err = 5' offset against the true transcript + the modal true read start (0 exact, > 0 artifact left, < 0 templated bases removed)"""
     d = f"{W0}/{V}"
@@ -324,20 +336,24 @@ def stage_exactreport(V):
     best = erased_clusters(V)
     keys = [k for c, k in best.items() if float(cp[c]["D"]) >= 0.01]
     sstar = modal_starts(V)
+    starts = all_starts(V)
     t4 = json.load(open(f"{d}/trim4.json"))
     out = {}
     for tag, f in (("untrimmed", "truth"), ("T3", "truth.trimmed3"), ("T4", "truth.trimmed4")):
         tr = json.load(open(f"{d}/{f}.json"))
         errs = {k: tr[k]["left"] + sstar[k] for k in keys if tr[k]["left"] is not None}
+        # start-tolerant (independent review): a consensus that begins at ANY observed read start is correct; the modal start is a coin flip when jitter is small
+        etol = {k: min((tr[k]["left"] + x for x in starts[k]), key=lambda e: (abs(e), e)) for k in keys if tr[k]["left"] is not None}
         ic = [tr[k]["idcov"] for k in keys if tr[k]["idcov"] is not None]
         out[tag] = dict(n=len(errs), exact=sum(e == 0 for e in errs.values()), within1=sum(abs(e) <= 1 for e in errs.values()), over=sum(e < 0 for e in errs.values()),
-                        under=sum(e > 0 for e in errs.values()), idcov_ok=sum(x >= 0.999 for x in ic), idcov_n=len(ic), errs=dict(sorted(collections.Counter(errs.values()).items())))
+                        under=sum(e > 0 for e in errs.values()), tol_exact=sum(e == 0 for e in etol.values()), tol_over=sum(e < 0 for e in etol.values()),
+                        tol_under=sum(e > 0 for e in etol.values()), tol_within1=sum(abs(e) <= 1 for e in etol.values()), idcov_ok=sum(x >= 0.999 for x in ic), idcov_n=len(ic), errs=dict(sorted(collections.Counter(errs.values()).items())))
     out["gate"] = t4["gate"]
     json.dump(out, open(f"{d}/exactreport.json", "w"), indent=1)
     print(f"gate {'OPEN' if t4['gate'] else 'closed'}; D >= 1% erased-copy clusters:")
     for tag in ("untrimmed", "T3", "T4"):
         o = out[tag]
-        print(f"  {tag:10s} n={o['n']:>2} exact {o['exact']:>2}  |err|<=1 {o['within1']:>2}  templated removed (err<0) {o['over']:>2}  artifact left (err>0) {o['under']:>2}  idcov>=.999 {o['idcov_ok']}/{o['idcov_n']}  err counts {o['errs']}")
+        print(f"  {tag:10s} n={o['n']:>2} exact {o['exact']:>2}  |err|<=1 {o['within1']:>2}  templated removed (err<0) {o['over']:>2}  artifact left (err>0) {o['under']:>2}  idcov>=.999 {o['idcov_ok']}/{o['idcov_n']}  err counts {o['errs']}\n  {'':10s} start-tolerant: exact {o['tol_exact']:>2}  |err|<=1 {o['tol_within1']:>2}  templated removed {o['tol_over']:>2}  artifact left {o['tol_under']:>2}")
 
 
 def stage_chainrefine(V):
@@ -389,8 +405,8 @@ def stage_chaineval(V):
         sc = scen[fam]
         if not exp[fam]:
             continue
-        idn = {t: (E.oriented_core_identity(cons[k], tx[t]) or 0.0) for t in exp[fam]}
-        t, v = max(idn.items(), key=lambda kv: kv[1])
+        idn = {t: (E.recovered_identity(cons[k], tx[t]) or 0.0) for t in exp[fam]}
+        t, v = max(sorted(idn.items()), key=lambda kv: kv[1])
         rows[sc]["clusters"] += 1
         rows[sc]["reads_clustered"] += len(rs)
         if v < 0.999:
@@ -463,7 +479,7 @@ def stage_parteval(V):
     def best_identity(seq, fam):
         res = {}
         for t in exp[fam]:
-            res[t] = E.oriented_core_identity(seq, tx[t]) or 0.0
+            res[t] = E.recovered_identity(seq, tx[t]) or 0.0
         return res
 
     rows = collections.defaultdict(lambda: collections.Counter())
@@ -482,7 +498,7 @@ def stage_parteval(V):
                 idn = best_identity(seq, fam)
                 if not idn:
                     continue
-                t, v = max(idn.items(), key=lambda kv: kv[1])
+                t, v = max(sorted(idn.items()), key=lambda kv: kv[1])
                 rows[(sc, arm)]["candidates"] += 1
                 if v < 0.999:
                     rows[(sc, arm)]["spurious"] += 1

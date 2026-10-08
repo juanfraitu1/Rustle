@@ -122,5 +122,18 @@ class Ends(unittest.TestCase):
         unrelated = "".join(rng.choice("ACGT") for _ in range(400))
         self.assertLess(E.oriented_core_identity(unrelated, t) or 0.0, 0.9)
 
+    @unittest.skipUnless(__import__("importlib").util.find_spec("edlib"), "edlib needed (miniforge python)")
+    def test_recovered_identity_rejects_fragments_chimeras_and_accepts_overhangs(self):
+        import ends as E
+        import random
+        rng = random.Random(11)
+        t = "".join(rng.choice("ACGT") for _ in range(1000))
+        junk = lambda n: "".join(rng.choice("ACGT") for _ in range(n))
+        self.assertEqual(E.recovered_identity(t, t), 1.0)
+        self.assertIsNone(E.recovered_identity(t[400:], t))                    # the 3' 60%: a fragment is not the transcript
+        self.assertLess(E.recovered_identity(t[:550] + junk(450), t) or 0.0, 0.9)   # half of it plus a random tail: a chimera never reaches the recovery bar
+        self.assertEqual(E.recovered_identity(junk(40) + t, t), 1.0)           # a short junk overhang is an end effect, not an error
+        self.assertLess(E.recovered_identity(t[:300] + t[420:], t), 0.99)      # a skipped segment is internal and counts
+
 if __name__ == "__main__":
     unittest.main()

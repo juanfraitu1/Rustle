@@ -10,7 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import partition as PT  # noqa: E402
 
 L = 300
-BASE = "".join(random.Random(7).choice("ACGT") for _ in range(L))
+_RNG = random.Random(7)
+BASE = "".join(_RNG.choice("ACGT") for _ in range(L))   # one generator: a fresh Random(7) per character made BASE a homopolymer (found by the independent review)
 SIB_COLS = [40, 70, 100, 150, 200, 230]
 
 
@@ -118,15 +119,15 @@ class Blocks(unittest.TestCase):
 
 @unittest.skipUnless(__import__("importlib").util.find_spec("edlib"), "edlib needed (miniforge python)")
 class EdlibAlign(unittest.TestCase):
-    def test_a_long_deletion_stays_a_deletion_run_and_ends_are_free(self):
+    def test_edlib_unit_cost_prefers_a_messy_alignment_to_a_long_deletion(self):
+        # documents the limitation that made Amendment 19's aligner poor: a 100-base skip costs 100 edits, a messy alignment of the read elsewhere costs less, so edlib
+        # does not report the deletion run (the spliced aligner of Amendment 20 does). Found by the independent review, which also found this test asserted the opposite
+        # on a homopolymer fixture.
         cons = BASE
-        read = BASE[20:100] + BASE[200:290]           # skips cons[100:200], starts 20 in, ends before the consensus end
-        sam = PT.edlib_align_fn()(cons, {"r": read})
-        f = sam[0].split("\t")
-        self.assertEqual(f[3], "21")                   # 1-based start on the consensus
-        ops = PT.P.CIG.findall(f[5])
-        self.assertIn(("100", "D"), [(n, o) for n, o in ops])
-        self.assertEqual(sum(int(n) for n, o in ops if o in "=XI"), len(read))
+        read = BASE[20:100] + BASE[200:290]
+        f = PT.edlib_align_fn()(cons, {"r": read})[0].split("\t")
+        ops = [(int(n), o) for n, o in PT.P.CIG.findall(f[5])]
+        self.assertNotIn((100, "D"), ops)
 
     def test_the_skipped_segment_is_found_as_a_block_of_deletions(self):
         full, skip = BASE, BASE[:120] + BASE[220:]

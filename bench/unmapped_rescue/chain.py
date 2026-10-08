@@ -42,6 +42,8 @@ def refine(clusters, seqs, allvsall_fn, delta, min_size=3, max_component=MAX_COM
 
 
 def minimap_allvsall(work, threads=2):
+    """all-vs-all PAF of a read set. -N 500 -p 0.1: minimap2's defaults keep 5 partners and drop an overlap shorter than 80% of the best, which silently deletes edges of a
+    component of 20 or more reads (found by the independent review)"""
     import os
     os.makedirs(work, exist_ok=True)
 
@@ -50,5 +52,5 @@ def minimap_allvsall(work, threads=2):
         with open(p, "w") as o:
             for n, s in reads.items():
                 o.write(f">{n}\n{s}\n")
-        return subprocess.run(f"minimap2 -x map-hifi -c -N 20 -t {threads} {p} {p}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout.splitlines()
+        return subprocess.run(f"minimap2 -x map-hifi -c -N 500 -p 0.1 -t {threads} {p} {p}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout.splitlines()
     return f

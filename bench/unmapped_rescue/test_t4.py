@@ -87,6 +87,13 @@ class Correct(unittest.TestCase):
         new, t, j = T.correct_cluster("GGACGTTACGGATC", reads_with(3, 100, rng), self.A)
         self.assertEqual((t, new), (0, "GGACGTTACGGATC"))
 
+    def test_a_long_templated_run_is_not_cut_back_to_the_search_limit(self):
+        rng = random.Random(9)
+        reads = reads_with(9, 100, rng)
+        cons = "G" * 11 + "ACGTTACGGATC"           # 9 templated + 2 artifact
+        new, t, j = T.correct_cluster(cons, reads, self.A)
+        self.assertEqual((j, t), (9, 2))
+
     def test_small_clusters_are_left_alone(self):
         new, t, j = T.correct_cluster("GGACGT", ["GGACGT"] * 4, self.A)
         self.assertEqual((t, j), (0, None))

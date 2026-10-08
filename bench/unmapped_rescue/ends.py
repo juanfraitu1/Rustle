@@ -53,6 +53,13 @@ def _anchor_index(ops):
     return None
 
 
+def core_columns(ops):
+    """alignment columns between the first and the last run of >= ANCHOR matches (0 if there is no such run)"""
+    a = _anchor_index(ops)
+    b = _anchor_index(list(reversed(ops)))
+    return sum(n for _, n in ops[a:len(ops) - b]) if a is not None and b is not None else 0
+
+
 def core_identity(ops, min_core_frac=0.0, shorter=None):
     """identity between the first and the last run of >= ANCHOR matches: 1 - (X + I + D) / columns, the end gaps excluded"""
     a = _anchor_index(ops)
@@ -75,7 +82,7 @@ def compare(cons, transcript):
     ops = parse_edlib_cigar(r["cigar"])
     left, right = end_offsets(ops)
     cols = sum(n for _, n in ops)
-    return dict(identity=1 - r["editDistance"] / max(1, cols), core_identity=core_identity(ops, 0.5, min(len(cons), len(transcript))), edits=r["editDistance"], left=left, right=right, qlen=len(cons), tlen=len(transcript))
+    return dict(identity=1 - r["editDistance"] / max(1, cols), core_identity=core_identity(ops, 0.5, min(len(cons), len(transcript))), core_cols=core_columns(ops), edits=r["editDistance"], left=left, right=right, qlen=len(cons), tlen=len(transcript))
 
 
 _RC = str.maketrans("ACGT", "TGCA")
@@ -85,3 +92,14 @@ def oriented_core_identity(cons, transcript):
     """core identity in the orientation (forward or reverse complement) with the higher GLOBAL identity; None if there is no core covering at least half of the shorter sequence"""
     a, b = compare(cons, transcript), compare(cons.translate(_RC)[::-1], transcript)
     return (a if a["identity"] >= b["identity"] else b)["core_identity"]
+
+
+def recovered_identity(cons, transcript, min_cover=0.9):
+    """Scoring of a candidate against a true transcript: the orientation with the higher GLOBAL identity; the core (first to last 8-match run) must cover at least
+    min_cover of the transcript AND of the candidate, else None (a fragment, or a chimera of half a transcript and something else, is not a recovery). Short overhangs at
+    the ends are ignored. -> core identity or None"""
+    a, b = compare(cons, transcript), compare(cons.translate(_RC)[::-1], transcript)
+    best = a if a["identity"] >= b["identity"] else b
+    if best["core_cols"] < min_cover * len(transcript) or best["core_cols"] < min_cover * len(cons):
+        return None
+    return best["core_identity"]

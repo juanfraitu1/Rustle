@@ -61,5 +61,26 @@ class Refine(unittest.TestCase):
         self.assertEqual(out, {"r1": ["r1", "r2", "r3"]})
 
 
+@unittest.skipUnless(__import__("shutil").which("minimap2"), "minimap2 needed")
+class AllVsAll(unittest.TestCase):
+    def test_every_overlapping_pair_is_reported_not_only_the_best_20_and_the_80_percent_ones(self):
+        import random
+        import tempfile
+        rng = random.Random(5)
+        base = "".join(rng.choice("ACGT") for _ in range(3000))
+        spans = {f"r{i:02d}": (rng.randint(0, 1200), rng.randint(1800, 3000)) for i in range(40)}       # 40 reads, every pair overlaps >= 600 bases
+        reads = {n: base[a:b] for n, (a, b) in spans.items()}
+        with tempfile.TemporaryDirectory() as d:
+            lines = C.minimap_allvsall(d)(reads)
+        seen = set()
+        for ln in lines:
+            f = ln.split("\t")
+            if f[0] != f[5]:
+                seen.add(tuple(sorted((f[0], f[5]))))
+        names = sorted(reads)
+        want = {(a, b) for i, a in enumerate(names) for b in names[i + 1:]}
+        self.assertEqual(want - seen, set())
+
+
 if __name__ == "__main__":
     unittest.main()

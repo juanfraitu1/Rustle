@@ -71,6 +71,8 @@ def main(bed, mode="t"):
         clr = RP.cluster_reads(f"{W}/{bed}")
         jh, amounts, vs_t3, under, withclip = collections.Counter(), collections.Counter(), collections.Counter(), 0, 0
     over = collections.Counter()
+    over_fixed = collections.Counter()         # corrected accounting (independent review): templated bases lost = trimmed run minus the artifact G's the aligner left unaligned
+    no_unaligned_g = 0
     why = collections.Counter()
     agree = collections.Counter()
     ok_before = ok_after = n = 0
@@ -96,6 +98,9 @@ def main(bed, mode="t"):
             new, tl, reason = T.trim_leading_g(seq) if gate_ok else (seq, 0, "gate_closed")
             if tl:
                 over[tl - genome_clip] += 1
+                lg = len(seq[:qs]) - len(seq[:qs].lstrip("G"))       # leading G's inside the unaligned 5' clip, whatever follows them
+                over_fixed[max(0, tl - lg)] += 1
+                no_unaligned_g += lg == 0
         elif fam is None:
             new, tl, reason = seq, 0, "abstained"
         else:
@@ -120,6 +125,8 @@ def main(bed, mode="t"):
         print(f"  consensus sequences with a genome G clip: {withclip}; T4 removes fewer bases than the unaligned clip in {under} ({under / max(1, withclip):.1%}; bar: <= 10%)")
     if mode == "t3":
         trims = sum(over.values())
+        print(f"  CORRECTED accounting (unaligned leading G's counted even when a non-G follows): lost <= 1 base in {sum(v for k, v in over_fixed.items() if k <= 1)} of {trims}; "
+              f"trims with no unaligned leading G at all: {no_unaligned_g}; distribution {dict(sorted(over_fixed.items()))}")
         print("  trimmed run minus the unaligned genome G clip (bases of templated sequence lost), over the trims:", dict(sorted(over.items())),
               f"-> <= 1 base in {sum(v for k, v in over.items() if k <= 1)} of {trims}")
     print(f"  identity x coverage >= 0.999: before {ok_before}, after the trim {ok_after}")

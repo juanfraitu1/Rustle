@@ -80,6 +80,6 @@ def correct_cluster(cons, read_seqs, a, min_reads=5):
     """Rule T4 (Amendment 16). -> (consensus, bases removed, j_hat); the first max(0, k - j_hat) bases are removed, k = the consensus' leading G run"""
     if len(read_seqs) < min_reads:
         return cons, 0, None
-    j = estimate_templated([leading_g_run(r) for r in read_seqs], a)
+    j = estimate_templated([leading_g_run(r) for r in read_seqs], a, jmax=max(6, leading_g_run(cons)))
     t = max(0, leading_g_run(cons) - j)
     return cons[t:], t, j
