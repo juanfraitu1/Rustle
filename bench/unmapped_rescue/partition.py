@@ -18,16 +18,16 @@ MAX_DEPTH = 6
 ALPHA = 0.05
 
 
-def significant_variants(cons, sam_lines, end=END_WINDOW):
+def significant_variants(cons, sam_lines, end=END_WINDOW, n_as_del=False):
     """[(kind, pos, allele)]: the significant alleles of Amendment 9's test, those the consensus lacks and those it carries as minority, without the first and last
     `end` consensus columns"""
-    applied, minority, _e = P.corrections(cons, P.pileup(sam_lines, cons))
+    applied, minority, _e = P.corrections(cons, P.pileup(sam_lines, cons, n_as_del))
     L = len(cons)
     V = {(v[0], v[1], v[2]) for v in applied} | {(m[0], m[1], m[2]) for m in minority}
     return sorted((v for v in V if end <= v[1] < L - end), key=lambda v: (v[1], v[0], str(v[2])))
 
 
-def read_carry(sam_lines, cons, V):
+def read_carry(sam_lines, cons, V, n_as_del=False):
     """-> (read names, C, K): C[i, r] = read r carries variant i, K[i, r] = read r covers the variant's column (or gap)"""
     cols = {v[1] for v in V if v[0] in ("sub", "del")}
     names, per = [], []
@@ -50,7 +50,7 @@ def read_carry(sam_lines, cons, V):
             elif op == "I":
                 ins[r] = seq[q:q + n]
                 q += n
-            elif op == "D":
+            elif op == "D" or (op == "N" and n_as_del):
                 for _ in range(n):
                     if r in cols:
                         allele[r] = "-"
@@ -119,7 +119,7 @@ def choose_split(blocks, C, K, min_leaf=MIN_LEAF):
     return best
 
 
-def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_DEPTH, min_leaf=MIN_LEAF, min_split=MIN_SPLIT, end=END_WINDOW):
+def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_DEPTH, min_leaf=MIN_LEAF, min_split=MIN_SPLIT, end=END_WINDOW, n_as_del=False):
     """-> [dict(reads=[names], cons=str)]: the leaves, i.e. the candidate transcripts and the reads that support them"""
     names = list(reads)
     if cons is None:
@@ -128,10 +128,10 @@ def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_D
     if len(names) < min_split or depth >= max_depth:
         return leaf
     sam = align_fn(cons, reads)
-    V = significant_variants(cons, sam, end)
+    V = significant_variants(cons, sam, end, n_as_del)
     if len(V) < 2:
         return leaf
-    nm, C, K = read_carry(sam, cons, V)
+    nm, C, K = read_carry(sam, cons, V, n_as_del)
     blocks = find_blocks(C, K, [v[1] for v in V])
     best = choose_split(blocks, C, K, min_leaf) if blocks else None
     if best is None:
@@ -139,7 +139,7 @@ def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_D
     side1 = {nm[i] for i in range(len(nm)) if best[1][i]}
     out = []
     for group in ([n for n in names if n in side1], [n for n in names if n not in side1]):
-        out += partition({n: reads[n] for n in group}, align_fn, consensus_fn, None, depth + 1, max_depth, min_leaf, min_split, end)
+        out += partition({n: reads[n] for n in group}, align_fn, consensus_fn, None, depth + 1, max_depth, min_leaf, min_split, end, n_as_del)
     return out
 
 
@@ -151,7 +151,7 @@ def abpoa_consensus(seqs, k=100):
     return res.cons_seq[0] if res.cons_seq else pick[0]
 
 
-def minimap_align_fn(workdir, threads=2):
+def minimap_align_fn(workdir, threads=2, preset="map-hifi"):
     os.makedirs(workdir, exist_ok=True)
 
     def align(cons, reads):
@@ -160,5 +160,22 @@ def minimap_align_fn(workdir, threads=2):
             for n, s in reads.items():
                 o.write(f">{n}\n{s}\n")
         open(cf, "w").write(f">c\n{cons}\n")
-        return subprocess.run(f"minimap2 -ax map-hifi --eqx -t {threads} {cf} {rf}", shell=True, capture_output=True, text=True, check=True).stdout.splitlines()
+        return subprocess.run(f"minimap2 -ax {preset} --eqx -t {threads} {cf} {rf}", shell=True, capture_output=True, text=True, check=True).stdout.splitlines()
+    return align
+
+
+def edlib_align_fn():
+    """Amendment 19: semi-global edit-distance alignment of each read inside the candidate (edlib HW, no distance cap), as SAM lines with an extended CIGAR. Keeps a
+    long deletion (a skipped exon) as a deletion run, which a seed-chain-extend aligner turns into a soft clip. Needs edlib (miniforge python)."""
+    import edlib
+
+    def align(cons, reads):
+        out = []
+        for name, seq in reads.items():
+            r = edlib.align(seq, cons, mode="HW", task="path", k=-1)
+            if not r["locations"]:
+                continue
+            start = r["locations"][0][0]
+            out.append("\t".join([name, "0", "cons", str(start + 1), "60", r["cigar"], "*", "0", "0", seq, "*"]))
+        return out
     return align

@@ -350,13 +350,15 @@ def stage_partition(V):
     for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
         cl["cl" + r["cluster"]].append(r["read"])
     cons = {n.split("|")[0]: sq for n, sq in cons_seqs(V).items()}
-    align = PT.minimap_align_fn(f"{d}/part_tmp")
+    mode = os.environ.get("PART_ALIGN", "splice")      # splice (Amendment 20) | edlib (Amendment 19) | hifi (Amendment 18)
+    align = {"edlib": PT.edlib_align_fn, "hifi": lambda: PT.minimap_align_fn(f"{d}/part_tmp"),
+             "splice": lambda: PT.minimap_align_fn(f"{d}/part_tmp", preset="splice:hq -uf")}[mode]()
     out, cands, split = {}, {}, 0
     for k in sorted(cl):
         names = sorted(cl[k])
         if len(names) > 400:
             names = sorted(random.Random(1).sample(names, 400))
-        leaves = PT.partition({n: seqs[n] for n in names}, align, PT.abpoa_consensus, cons=cons[k])
+        leaves = PT.partition({n: seqs[n] for n in names}, align, PT.abpoa_consensus, cons=cons[k], n_as_del=(mode == "splice"))
         split += len(leaves) > 1
         out[k] = []
         for j, lf in enumerate(sorted(leaves, key=lambda x: -len(x["reads"]))):

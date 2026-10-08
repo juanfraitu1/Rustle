@@ -28,7 +28,7 @@ def binom_tail(k, n, p):
     return min(1.0, math.exp(m) * math.fsum(math.exp(t - m) for t in terms))
 
 
-def pileup(sam_lines, cons):
+def pileup(sam_lines, cons, n_as_del=False):
     L = len(cons)
     cnt = [[0] * 5 for _ in range(L)]
     ins = [dict() for _ in range(L + 1)]
@@ -56,7 +56,7 @@ def pileup(sam_lines, cons):
                 s = seq[q:q + n]
                 ins[r][s] = ins[r].get(s, 0) + 1
                 q += n
-            elif op == "D":
+            elif op == "D" or (op == "N" and n_as_del):
                 for _ in range(n):
                     cnt[r][4] += 1
                     r += 1

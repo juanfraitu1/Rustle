@@ -116,5 +116,37 @@ class Blocks(unittest.TestCase):
         self.assertEqual(PT.find_blocks(C, np.ones((2, 40), dtype=bool), [5, 5]), [])
 
 
+@unittest.skipUnless(__import__("importlib").util.find_spec("edlib"), "edlib needed (miniforge python)")
+class EdlibAlign(unittest.TestCase):
+    def test_a_long_deletion_stays_a_deletion_run_and_ends_are_free(self):
+        cons = BASE
+        read = BASE[20:100] + BASE[200:290]           # skips cons[100:200], starts 20 in, ends before the consensus end
+        sam = PT.edlib_align_fn()(cons, {"r": read})
+        f = sam[0].split("\t")
+        self.assertEqual(f[3], "21")                   # 1-based start on the consensus
+        ops = PT.P.CIG.findall(f[5])
+        self.assertIn(("100", "D"), [(n, o) for n, o in ops])
+        self.assertEqual(sum(int(n) for n, o in ops if o in "=XI"), len(read))
+
+    def test_the_skipped_segment_is_found_as_a_block_of_deletions(self):
+        full, skip = BASE, BASE[:120] + BASE[220:]
+        reads = {f"a{i}": full for i in range(30)}
+        reads.update({f"b{i}": skip for i in range(15)})
+        leaves = PT.partition(reads, PT.edlib_align_fn(), consensus_fn)
+        self.assertEqual(len(leaves), 2)
+        self.assertEqual(sorted(len(lf["reads"]) for lf in leaves), [15, 30])
+
+
+class SplicedCarry(unittest.TestCase):
+    def test_an_n_gap_makes_a_read_carry_the_deletion_only_with_the_flag(self):
+        cons = BASE
+        line = "\t".join(["r", "0", "cons", "1", "60", "100=50N150=", "*", "0", "0", BASE[:100] + BASE[150:], "*"])
+        V = [("del", 120, None)]
+        _n, C, K = PT.read_carry([line], cons, V, n_as_del=True)
+        self.assertTrue(C[0, 0] and K[0, 0])
+        _n, C, K = PT.read_carry([line], cons, V)
+        self.assertFalse(C[0, 0])
+
+
 if __name__ == "__main__":
     unittest.main()

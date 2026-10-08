@@ -431,3 +431,19 @@ Cause of the ISO shortfall (3 of 12 clusters not split, all with a skipped exon 
 **Change.** PART aligns each read to the candidate with a semi-global edit-distance alignment (edlib `HW`: the read aligned in full inside the consensus, `task=path`, no distance cap), which keeps a long deletion as a deletion run, instead of `minimap2 -x map-hifi`. Reads are in transcript orientation (as the frozen pipeline's consensus is). Nothing else in PART changes (same variants, test, blocks, split rule, parameters).
 **Test.** A fresh partition world, seed 20261015 (never run), E4 reads, 12 families per scenario. The bars of Amendment 18 are kept except that the baseline clause of P3 (a prediction about the frozen pipeline, not about PART) is replaced by PART >= baseline in every scenario: P1 (CTL: at most 1 of 12 clusters split, nothing lost); P2 (ISO: PART recovers >= 80%, and more than the baseline); P3 (SIB: PART >= 80%, and not fewer than the baseline); P4 (spurious + redundant <= 10% of PART's candidates over the three scenarios; leaf purity >= 95% in each scenario).
 **Decision.** Adopted as an opt-in post-clustering step iff P1 to P4 hold on the fresh world. Real dev A is reported, not judged.
+
+### Amendment 19 result (fresh world seed 20261015; 47 frozen clusters, 13 split, 61 candidates; edlib alignment)
+
+| scenario | expected | baseline recovers | PART recovers | split / clusters | spurious + redundant | purity |
+|---|---|---|---|---|---|---|
+| CTL | 12 | 12 | 12 | 0 / 12 | 0 + 0 | 1.000 |
+| ISO | 24 | 12 | **21 (88%)** | 12 / 12 | 0 + **4** | **0.829** |
+| SIB | 24 | 20 | **21 (88%)** | 1 / 23 | 0 + 3 | **0.875** |
+
+P1, P2 and the recovery clauses of P3 met; **P4 NOT met** (spurious + redundant 7 of 61 = 11.5% against 10%; leaf purity 0.829 and 0.875 against 95%). **Decision: not adopted.** Diagnosis (unit test, not a result): a unit-cost edit-distance alignment prefers a messy alignment of 40 mismatches to a clean 100-base deletion, so the isoform shows up through noise correlated across the reads of one isoform, not as a deletion run; the split works by accident and assigns reads loosely, hence the purity.
+
+---
+
+## Amendment 20 (2026-10-08, after the Amendment 19 numbers, before any new number): spliced alignment, N counted as a deletion
+
+**Change.** PART aligns with `minimap2 -ax splice:hq -uf --eqx` (checked on the failing cluster of Amendment 18: all 33 exon-skipping reads come out as ONE alignment with a > 100 bp N gap, where `map-hifi` clips) and counts an N gap as a deletion run in both the pileup and the read-by-variant table (for PART only; the Amendment 9 polish is unchanged). Nothing else changes. **Test:** a fresh world, seed 20261016, same bars as Amendment 19 (P1 to P4). **Decision:** adopted as an opt-in post-clustering step iff P1 to P4 hold.

@@ -156,5 +156,16 @@ class Allelic(unittest.TestCase):
         self.assertIsNone(P.allele_like_share(set(), [("sub", 11, "A")]))
 
 
+class SplicedGaps(unittest.TestCase):
+    def test_n_gaps_count_as_deletions_only_on_request(self):
+        cons = "A" * 20
+        line = sam("r1", 1, "5=10N5=", "AAAAAAAAAA")
+        cnt, _ins, _ng = P.pileup([line], cons)
+        self.assertTrue(all(c[4] == 0 for c in cnt))
+        cnt, _ins, _ng = P.pileup([line], cons, n_as_del=True)
+        self.assertEqual([c[4] for c in cnt[5:15]], [1] * 10)
+        self.assertEqual(sum(cnt[3]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
