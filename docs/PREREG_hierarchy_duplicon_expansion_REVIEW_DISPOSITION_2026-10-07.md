@@ -4,6 +4,8 @@ Reviews: workflow wf_20046203-7d9 (three reviewers: wording 37 findings, logic 2
 
 **Closure review of draft 2** (workflow wf_eea75a23-1c5, 2026-10-07; four read-only reviewers on frozen copies): logic 25 findings, facts 22, wording 36, disposition audit 19 (the JSON files are `/mnt/linuxdisk/tmp/prereg_closure_{logic,facts,wording,disposition}.json`; scratch `/mnt/linuxdisk/tmp/prereg_closure/`). It found two blockers (both the Gate 7 positive control, one from the facts reviewer and one from the disposition audit) and 25 majors. The revised file is DRAFT 3; the closure dispositions are the second table below. In the first table, rows that the closure review found only partly fixed (F1, W15, W17, W22, L9) point to the closure rows that complete them.
 
+**Final regression review of draft 3** (workflow wf_c1c3d967-0ee; three reviewers on the frozen diff): logic 23 findings, facts 20, wording 36 (JSON `/mnt/linuxdisk/tmp/prereg_regress_{logic,facts,wording}.json`; scratch `/mnt/linuxdisk/tmp/prereg_closure2/`). It found one blocker (the floor of 20 control components of T2a cannot be reached) and nine majors; the errata commit that follows draft 3 (DRAFT 3a) answers them, third table below. Rows of the first two tables describe the state of draft 2 and draft 3. Class names, counts, floors and bars in them can be superseded; the state of draft 3a is the prereg file itself and the third table. Pointers for rows the closure review found partly fixed: F1 to CF1 and CF4; W15 to CF5; W17 to CL8 and CL9; W22 to CF1 (the bar is the 6 qualifying records, not 8 loci); L9 to CL9 and CD7.
+
 Dispositions. ACCEPTED: fixed as suggested or in substance. ADAPTED: fixed in a different way, and the row says how and why. REJECTED: not fixed, and the row gives the evidence. NOTED: no change needed. Section numbers refer to the revised prereg. Cross-references such as 'wording 3' point to another row of this table.
 
 ## Counts by disposition
@@ -122,9 +124,9 @@ Counts: ACCEPTED 56, ADAPTED 7 (63 rows; severities: blocker 2, major 25, minor 
 | CL2 | logic | major | Homology-preserving null is reached by construction when strings are nested with the cut (draft-1 L2) | ADAPTED | Class renamed CUT-ALIGNED; section 2 item 3, Read first ('What the classes mean', item 2), Q2 and section 11 state that T1-b and T1-c cannot separate duplicon organisation from shared sequence similarity; Gate 4 gains the nested-strings case (p <= 0.01). The similarity-matched comparator (F_O at inflation 2.0 and 4.0) is not registered, because those cuts differ in granularity and change m1c and m2 mechanically; it is decision 16 and can be added by an Amendment before any run. |
 | CL3 | logic | major | UNDERPOWERED counts strata while p is pooled; one stratum can decide p | ADAPTED | Section 4 'Robustness to one group': per-stratum z_s table, the most negative stratum removed, p recomputed on the same draws, the lower class issued. A sign test over strata was not adopted because it adds a second statistic with less power. |
 | CL4 | logic | major | Gate 6 tie counts over the wrong universe | ACCEPTED | Section 3 Gate 6: 857 of 12,597 labelled merged exons of the genes of V (898 of 13,501 over all 2,334 genes); genes of V with at least one tie exon: 316; 'Only the counts listed in this Gate are tripwires'. |
-| CL5 | logic | major | Sampling frame of the control sets not stated (draft-1 L11 d) | ACCEPTED | Section 8: control pool excludes hubs and components that contribute an expansion; a draw takes a qualifying component uniformly and then one of its matched sets uniformly; the floor counts distinct control components; the component-size class (2, 3 to 5, 6 to 11, 12 to 51) is added to the matching. |
+| CL5 | logic | major | Sampling frame of the control sets not stated (draft-1 L11 d) | ADAPTED | Section 8: control pool excludes hubs and components that contribute an expansion; a draw takes a qualifying component uniformly and then one of its matched sets uniformly; the floor counts distinct control components; the component-size class (2, 3 to 5, 6 to 11, 12 to 51) was added to the matching and the MCL family size stayed a covariate (superseded in draft 3a: row RL1 moves the size class out of the matching). |
 | CL6 | logic | major | Matching variable open (median over which rows, overlap with the expansion, boundary of the caliper) | ACCEPTED | Section 8: integer identities, M = twice the median over the copy rows that join two records of the set, caliper /dM/ <= 10 inclusive (sweep 4, 10, 20), a set without a joining row cannot be a control, components that hold an E-table class are not in the control pool. |
-| CL7 | logic | major | n_testable versus the drop at 20 matched sets; expected size 12 and 21 (draft-1 L12, F5) | ACCEPTED | Section 8 defines n_testable with the floor of 20 control components, evaluated before any class; section 2 item 7, section 7 and Q5 give upper estimates with the Wilson interval (8 to 17 and 14 to 30) and the Poisson chance; siblings count as separate units with a group-once sensitivity (section 7 step 4). |
+| CL7 | logic | major | n_testable versus the drop at 20 matched sets; expected size 12 and 21 (draft-1 L12, F5) | ACCEPTED | Section 8 defines n_testable with a floor of qualifying control components (20 in draft 3, n_min = 8 from draft 3a, row RL1), evaluated before any class; section 2 item 7, section 7 and Q5 give upper estimates with the Wilson interval (8 to 17 and 14 to 30) and the Poisson chance; siblings count as separate units with a group-once sensitivity (section 7 step 4). |
 | CL8 | logic | major | Arm 1 forces its own outcome; 'mixed-family' contradicts the outcome | ACCEPTED | Section 9: phi = the family holding most nodes of expressed derived members; mixed-family = phi holds a node that is not a node of a member of E; outcome, causes and funnel rewritten; the identity check uses E_nodes; the unit is named in the section 3 tables. |
 | CL9 | logic | major | Arm 2 does not measure youth (D is a clade in 1//D/ of random-parent histories) | ADAPTED | Section 9 arm 2 tests E_tree (members of E in the family tree) as a clade that leaves out at least one other family member; the comparator is size-matched within the identity caliper; the text says a clade is a pipeline and gene-conversion check and that a non-clade is the informative outcome; classes are kept because T2b is not authorised and is predicted UNDERPOWERED. |
 | CL10 | logic | minor | Five open cases in the algebra (T2a headline, level sweep, UNDERPOWERED sweep cell, INVALID R3a, arm 2 per library) | ACCEPTED | Section 3 verdict algebra items 4 and 5; section 4 level sweep; section 9. |
@@ -182,6 +184,59 @@ Counts: ACCEPTED 56, ADAPTED 7 (63 rows; severities: blocker 2, major 25, minor 
 | CD8 | disposition | minor | Dump command classed light and heavy | ADAPTED | See CF9. |
 | CD9 | disposition | minor | Row c12: orangutan outlier | ACCEPTED | Input-only table row corrected; section 7 step 2 says the estimate is from three same-genome fits and the Amendment sets the budget per outgroup. |
 
+## Regression review of draft 3: one row per finding (draft 3a)
+
+Counts: ACCEPTED 41, ADAPTED 5 (46 rows; severities: blocker 1, major 9, minor 36). Some minor style proposals of the wording reviewer were merged into one row each. The `confirmed-ok` entries are not listed.
+
+| id | reviewer | severity | location | disposition | where fixed, or why not |
+|---|---|---|---|---|---|
+| RL1 | logic | blocker | Floor of 20 qualifying control components cannot be reached by any expansion; T2a UNDERPOWERED by construction (also facts F3) | ADAPTED | Section 8: the floor is n_min = 8 (the only inherited floor); the component-size class leaves the matching and becomes printed strata with a SIZE-SENSITIVE flag; Gate 6 prints per expansion the qualifying components at calipers 4, 10 and 20. Input-only upper bounds with the size class pooled (author/pool_floor_nosize.py): best window 23 components in KB3781 and 46 in OR6737 for m_j = 2, 8 and 16 or 17 for m_j = 3. Read first item 12, Q5, Q6 and the reachability table now say T2a is likely powered in OR6737 and uncertain in KB3781 (at most about 12 expansions there). Option A (declare T2a UNDERPOWERED) was not chosen because pooling the size class makes a verdict reachable. |
+| RL2 | logic | major | UNDERPOWERED counts dead strata; Gate 4 UNINFORMATIVE case is 8 dead strata | ACCEPTED | Section 3 items 2 and 3 (live strata), Gate 6, C4, Q10, Read first item 12. |
+| RL3 | logic | major | Gate 4 tautology clause contradicts the 8-strata clause | ACCEPTED | Gate 4 clause rewritten on the cluster sizes of the 30 real strata with synthetic strings. |
+| RL4 | logic | minor | Robustness clause at exactly 8 strata | ACCEPTED | Section 4: the class from the remaining strata is the content class of its p alone. |
+| RL5 | logic | minor | Removal clause does not protect against two or three small aligned groups | ACCEPTED | Read first 'What the classes mean' states the limit. |
+| RL6 | logic | minor | Robustness clause details open | ACCEPTED | Section 4: per cell, stratum id, T1-c statistic of s alone, stored draws, skip when no negative z. |
+| RL7 | logic | minor | 'Lower class' is not conservative on the five-point T2a scale | ACCEPTED | Section 3 item 4: the class nearer to NOT-DISTINGUISHED. |
+| RL8 | logic | minor | Component size basis (members versus records >= 200 bp) | ACCEPTED | Moot as a matching variable (RL1); strata use annotated records of exon union >= 200 bp; the quoted shares were deleted. |
+| RL9 | logic | minor | One-to-one node rule for controls; sampling algorithm and order | ACCEPTED | Section 8: rule applies to control sets; components in id order as strings; first 1,000 matched sets in lexicographic order; exploration cap of 1,000,000 candidate sets. |
+| RL10 | logic | minor | Ties in T under float arithmetic | ACCEPTED | Section 8: T compared as an integer (T_num). |
+| RL11 | logic | minor | Two-step draw calibration depends on component size | ADAPTED | The two-step draw is kept; size strata, component member count and MCL family size are printed; SIZE-SENSITIVE flag; the text says that excluding expansion components lowers the control count. |
+| RL12 | logic | minor | Arm 2 measures E-table completeness and branch support, not age | ADAPTED | Section 9: arm 2 is an estimate without class (like arm 1); the text lists what the share measures and cites the simulation. |
+| RL13 | logic | minor | Arm 2 comparator undefined or saturated; Dv versus phi | ACCEPTED | Comparator deleted together with the classes; informative expansion, E_tree and Dv defined. |
+| RL14 | logic | minor | Q3, Q5, Q6, C4 wording | ACCEPTED | Section 10 revised; Q10 added. |
+| RL15 | logic | minor | Gaps between Amendment 1 and R3a | ACCEPTED | Section 6: no Amendment may change a rule R3a uses from the first R1 run; the BASE-cluster check moves to the start of R3a (Gate 6 for that phase); label for the family layer and the library. |
+| RF1 | facts | major | Called-set numbers use a different hub rule from step 1 | ACCEPTED | Section 7 step 2: 300 components, 1,403 records (907 gene, 496 pseudogene), first runs 300, 300, 165, 116, 81; rank order stated; cost 26 to 50 minutes. |
+| RF2 | facts | major | Shares behind the size classes belong to another size definition | ACCEPTED | Moot after RL1; the shares are deleted. |
+| RF3 | facts | major | Floor of 20 unreachable | ADAPTED | See RL1. |
+| RF4 | facts | major | Size-2 stratum: 163 counts rows, 152 counts V_F genes | ACCEPTED | Sections 3 and 4: n_f = 2 in the layer universe = 152 of 362; 163 and the 147 overlap are noted. |
+| RF5 | facts | minor | Coverage wording for the two long LRPAP1 models | ACCEPTED | Gate 7: 16% and 41% of the exon union, at most 49% and 54% of the bases Liftoff counts; not required. |
+| RF6 | facts | minor | Poisson chance on the non-hub frame | ACCEPTED | Section 2 item 7 and Q5: about 12% and 48%. |
+| RF7 | facts | minor | '53 genes differ' versus 54 | ACCEPTED | Gate 6: 82 exons in 54 genes, U1 sets of 53 genes change. |
+| RF8 | facts | minor | Planted negative control may pick pool members | ACCEPTED | Gate 7: no copy row as source and in no pool component. |
+| RF9 | facts | minor | Gate 2 order of chromosomes | ACCEPTED | Gate 2 rewritten. |
+| RW1 | wording | major | Size-2 count | ACCEPTED | See RF4. |
+| RW2 | wording | major | R3a UNDERPOWERED/UNINFORMATIVE handling differs between section 6 and the algebra | ACCEPTED | Section 6 and algebra item 4 now agree (Phase R1 class stands, labelled DEV). |
+| RW3 | wording | major | Read first item 9 describes nesting as pairwise subset | ACCEPTED | Item 9 describes chains. |
+| RW4 | wording | minor | Stale C4 references; 'by construction' | ACCEPTED | Sections 4 and 12 point to Q4. |
+| RW5 | wording | minor | Present-tense 'held-out' in section 12 item 5 | ACCEPTED | Item 5 rewritten. |
+| RW6 | wording | minor | Subject of 390 s lost; light timeout not enforced | ACCEPTED | Section 3 authorisation paragraph. |
+| RW7 | wording | minor | Amendment rule restricted to table rows; unlisted heavy steps | ACCEPTED | Rule covers any heavy step; table rows added. |
+| RW8 | wording | minor | Gate scope does not cover Phase R2 | ACCEPTED | Scope sentence. |
+| RW9 | wording | minor | Per-cell z tables, sweep V_F, largest-stratum Gate 4 case | ACCEPTED | Sections 3 and 4. |
+| RW10 | wording | minor | Controls ride in the same runs as the verdict set | ACCEPTED | Gate 7: controls lifted and checked first. |
+| RW11 | wording | minor | Amendment 1 'must show' the BASE-cluster property before any go | ACCEPTED | Check moved to the start of R3a. |
+| RW12 | wording | minor | Section 12 and the disposition decision list disagree | ACCEPTED | Section 12 items 17 to 21 added; the disposition list now points to section 12. |
+| RW13 | wording | minor | Disposition header pointers and draft-2 names in first-table rows | ACCEPTED | Header note and pointers added. |
+| RW14 | wording | minor | Closure rows CL5, CF9, CD6, CW21 and others not fully true; 'unit' and Q collisions | ADAPTED | CL5 relabelled; the rank-run bound is J; bare 'unit' meaning a statistical unit in six places and the sequence groups Q of Gate 5b are left and disambiguated by context and by Terms. |
+| RW15 | wording | minor | Q5 and expected-size wording contradict n_testable | ACCEPTED | Q5, section 7 and item 12 say 'expansions' before the filters. |
+| RW16 | wording | minor | Section 9 definitions (informative expansion, Dv, family tree) | ACCEPTED | Section 9. |
+| RW17 | wording | minor | Control-pool eligibility and sampling cap | ACCEPTED | Sections 7 and 8. |
+| RW18 | wording | minor | Style: item 11 chaining | ACCEPTED | Read first item 11. |
+| RW19 | wording | minor | Style: item 12 run-on | ACCEPTED | Read first item 12 rewritten. |
+| RW20 | wording | minor | Style: classes not defined for the table | ACCEPTED | 'What the classes mean' extended. |
+| RW21 | wording | minor | Style: voice | ACCEPTED | Neutral voice in the opening paragraph and items 8 and 9. |
+| RW22 | wording | minor | Style: two meanings of 'headline' | ACCEPTED | 'Headline class' and 'headline number'; arm 1 cause wording. |
+
 ## Input-only computations run in this revision
 
 Scratch directory: `/mnt/linuxdisk/tmp/prereg_revision/`. All ran under `tools/rlock.sh light` with `python3 -B -I`. None computes a deficiency, purity, containment, enrichment, S-rate or null draw. None joins a family label to a unit string beyond the marginal counts of section 2 item 1 (reproduced from the logic reviewer's scripts). The scripts `c0` and `c2` read the reviewers' strings file only for the booleans 'has an exonic duplicon' and the clean, multi-family or family-less class; they read family membership and graph structure and no unit string.
@@ -203,23 +258,9 @@ Scratch directory: `/mnt/linuxdisk/tmp/prereg_revision/`. All ran under `tools/r
 
 **Closure round (draft 3).** The author computed nothing new in this round. The closure reviewers' scripts and outputs (synthetic scorer tests, stratum structure, tie universes, pool and direct-row counts, LRPAP1 record geometry, hash recomputations) are in `/mnt/linuxdisk/tmp/prereg_closure/{logic,facts,wording,disposition}/`; none computes a deficiency, purity, containment, enrichment, S-rate or null draw on real labels.
 
-## Design decisions that need the user's confirmation (default chosen in draft 3; consequence of the alternative)
+## Design decisions that need the user's confirmation (draft 3a)
 
-1. **Governing null.** Homology-preserving: labels are permuted inside the connected components of the F_O graph. Alternative: chromosome or SD98-region strata, which give p <= 0.01 by construction. Consequence of the default: T1-b and T1-c speak only for the 30 split groups (25% of the clustered genes).
-2. **What T1-b and T1-c can claim.** The class is named CUT-ALIGNED and the text says it cannot separate duplicon organisation from shared sequence similarity, because strings nested with the cut give the lowest p. Alternative: register a similarity-matched comparator (the F_O cut at inflation 2.0 and 4.0 as competing sequence-only re-cuts of the same group) before any run, to test the stronger claim. It is not in draft 3 because those cuts differ in granularity.
-3. **Robustness clause.** The class is the lower of the class from all strata and the class after removing the stratum with the most negative z. Alternative: a stratum-level sign test (22 of 30 for p <= 0.01), which has less power.
-4. **Audit.** Descriptive; nothing is excused in a decisive statistic. Alternative: excuse 'short' and 'ends-only' inside the statistic, which makes NOT-REFUTED reachable by construction.
-5. **Gorilla T1 arm.** Descriptive, no class, matched human run optional. Alternative: keep an enrichment verdict, which identity selection makes unfailable.
-6. **R3a.** The human_testis BASE snapshot (pre-f1v2, RNA-derived) is a light held-out arm, powered only if the graph dump gives at least 8 strata with two clusters (Q8 is conditional). Alternative: wait for the heavy current-default run (about 17 h for A119b).
-7. **T2 primary recipe.** Tier B with rank-sharded Liftoff runs and `-f types.txt` (about 45 to 60 min heavy; 1,446 records, 132 runs). Alternative: tier A or C primary (1 to 2 h each).
-8. **Gate 7 bar.** The 6 LRPAP1 records with at least 50% of their exon bases in a copy interval; the two long gene models are expected misses. Alternative: use the eight 20-kb copy bodies as synthetic records, which changes the lift recipe.
-9. **T2 hold-back.** By expansion: LRPAP1 only, with the ten contigs printed as a least-exposed subset. Alternative: the ten contigs decide, which is UNDERPOWERED by design.
-10. **T2a controls.** Two-step draw (control component, then matched set), component-size classes added to the matching, floor of 20 control components, T2a headline = the lower class of the two libraries. Alternative: a uniform draw over all matched sets, which samples almost only large components (83% to 86% of expressed pairs lie in hubs).
-11. **T2a statistic.** Mean R_j with absent members counted as non-co-members. Alternative: strict containment c_j.
-12. **T2b.** Arm 1 is an estimate; arm 2 tests E_tree as a clade that leaves out a family member and has classes; no combined verdict; both predicted UNDERPOWERED. Alternative: drop T2b from this registration.
-13. **T1 universe.** Genes that carry an F_O cluster (1,657). Alternative: singleton families for the 485 unclustered genes.
-14. **Amendment 1 timing.** Committed before the first Phase R1 run. Alternative: after R1, which weakens the R3a hold-back.
-15. **Gate 1.** It does not require the 2,259 / 2,290 explanation.
+The decisions and their defaults are items 1 to 21 of section 12 of the prereg, with the same numbering. Those that most change cost or meaning: 1 and 16 (what T1-b and T1-c can claim, and the optional similarity-matched comparator), 5 (R3a as a light arm), 7 (tier B as the E-table recipe), 12 (T2b as estimates), 18 (the Gate 7 bar of 6 records), 19 (T2a controls: two-step draw, size strata, floor of n_min = 8) and 20 (Amendment 1 before the first R1 run).
 
 ## Findings that could not be fully resolved
 
@@ -228,6 +269,7 @@ Scratch directory: `/mnt/linuxdisk/tmp/prereg_revision/`. All ran under `tools/r
 - Rank-sharding removes conflicts inside a pool component, not between unrelated records of one Liftoff run; displaced records are detected only by coverage < 0.5 or by landing on no single in_place outgroup record. The fragments of the LRPAP1 control share runs 1 to 3 with full-length copies, which can make the control fail.
 - Liftoff reports further outgroup copies only at identity >= 0.95, so the multiplicity guard of the E-table is incomplete; tier C is the check.
 - The pool is blind to tandem-only expansions (5 of 307 components lie on one contig).
+- T2a power: with the size class pooled and a floor of 8 control components, the input-only upper bounds allow a verdict in OR6737 and make KB3781 uncertain; the real counts depend on the E-table, the outgroup conditions and the removal of expansion components.
 - T1-b and T1-c cannot separate duplicon organisation from shared sequence similarity; a similarity-matched comparator is an option for an Amendment.
 - The synteny classifier of the old pilot is lost and is rewritten from the README; T2b is predicted UNDERPOWERED.
 - The R3a stratum count needs a graph dump that is not run now (Q8 is conditional), and the peak RSS of the gorilla BASE-PAF dumps is not measured.
@@ -240,14 +282,14 @@ Scratch directory: `/mnt/linuxdisk/tmp/prereg_revision/`. All ran under `tools/r
 | T1-a | REFUTED | yes, and expected |
 | T1-a | NOT-REFUTED | in principle (m1c = 0 and m2 = 0 on 1,657 genes), practically unreachable |
 | T1-b, T1-c (Phase R1) | CUT-ALIGNED, PARTIAL, NOT-DISTINGUISHED | yes, 30 variation-bearing strata; CUT-ALIGNED is expected whenever strings and cut both follow sequence similarity |
-| T1-b, T1-c (Phase R1) | UNDERPOWERED, UNINFORMATIVE | UNDERPOWERED no (30 against n_min 8); UNINFORMATIVE practically unreachable |
+| T1-b, T1-c (Phase R1) | UNDERPOWERED, UNINFORMATIVE | UNDERPOWERED not on the count of 30 strata, but yes if fewer than 8 are live (printed by the cell); UNINFORMATIVE practically unreachable |
 | T1-b, T1-c | SPLIT | only after R3a has run |
 | T1-b, T1-c (R3a) | all classes | possible; UNDERPOWERED if fewer than 8 strata, known only after the BASE graph dump (86 candidate clusters); Q8 is conditional on the count |
 | T1-d (gorilla) | none issued | tau 0.95 (15 pairs) and 0.98 (5 pairs) are flagged UNDERPOWERED |
-| T2a, OR6737 | SPECIFIC, PARTIAL, NOT-DISTINGUISHED, LESS | yes if n_testable >= 8 (at most about 21 expected, 14 to 30 before the section 8 filters) |
-| T2a, KB3781 | all content classes; UNDERPOWERED | borderline (at most about 12 expected, 8 to 17; Poisson chance of fewer than 8 about 9% at 15%) |
+| T2a, OR6737 | SPECIFIC, PARTIAL, NOT-DISTINGUISHED, LESS | yes if n_testable >= 8 (at most about 21 expansions expected, 14 to 30 before the section 8 filters; input-only windows of 16 to 46 control components for m_j = 2) |
+| T2a, KB3781 | all content classes; UNDERPOWERED | borderline (at most about 12 expansions expected, 8 to 17; Poisson chance of fewer than 8 about 12% at 15% on the non-hub frame, about 48% at the lower interval end) |
 | T2a | SPLIT | between the two libraries, only if both are powered |
 | T2a, ten-contig subset | none issued | UNDERPOWERED (3 and 8 supported components) |
 | T2b arm 1 | none issued (estimate) | UNDERPOWERED expected (pilot 3 of 18) |
-| T2b arm 2 | YOUNGER, PARTIAL, NOT-DISTINGUISHED | only with at least 8 informative expansions per library, which is not expected; UNDERPOWERED expected |
+| T2b arm 2 | none issued (estimate) | UNDERPOWERED expected; the share also reflects E-table completeness and branch support |
 | any cell | INVALID | by gate or control failure; Gate 7 can fail |
