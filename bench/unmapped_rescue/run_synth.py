@@ -78,7 +78,7 @@ def stage_cluster(V):
     lens = {n: len(s) for n, s in seqs.items()}
     os.makedirs(f"{d}/rounds", exist_ok=True)
     try:
-        comp = SD.run_rounds(lens, SD.minimap_map_fn(seqs, f"{d}/rounds", DELTA, 0.5), n_seeds=2000, min_size=3, max_rounds=6)
+        comp = SD.run_rounds(lens, SD.minimap_map_fn(seqs, f"{d}/rounds", DELTA, 0.5, proper=bool(os.environ.get("CLUSTER_PROPER"))), n_seeds=2000, min_size=3, max_rounds=6)
     except SD.Pause as e:
         print(f"round {e} finished; run again")
         sys.exit(75)
@@ -340,6 +340,76 @@ def stage_exactreport(V):
         print(f"  {tag:10s} n={o['n']:>2} exact {o['exact']:>2}  |err|<=1 {o['within1']:>2}  templated removed (err<0) {o['over']:>2}  artifact left (err>0) {o['under']:>2}  idcov>=.999 {o['idcov_ok']}/{o['idcov_n']}  err counts {o['errs']}")
 
 
+def stage_chainrefine(V):
+    """Amendment 23: star clustering inside every component of <= 60 reads of the clusters.tsv of this variant directory; rewrites clusters.tsv and cons.fa"""
+    import chain as CH
+    d = f"{W0}/{V}"
+    seqs = SD.read_fa(f"{d}/pool.fa")
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
+        cl[r["cluster"]].append(r["read"])
+    new = CH.refine(cl, seqs, CH.minimap_allvsall(f"{d}/chain_tmp"), DELTA)
+    lab = labels(V)
+    truth = {n: lab[n]["copy"] for n in seqs}
+    with open(f"{d}/clusters.tsv", "w") as o:
+        o.write("read\tcluster\tsize\tmajority\n")
+        for c, rs in new.items():
+            m = S.majority(rs, truth)
+            for r in rs:
+                o.write(f"{r}\t{c}\t{len(rs)}\t{m or ''}\n")
+    subprocess.run([sys.executable, f"{HERE}/consensus.py", f"{d}/pool.fa", f"{d}/clusters.tsv", f"{d}/cons.fa"], check=True)
+    print(f"{V}: {len(cl)} components -> {len(new)} clusters, {sum(len(v) for v in new.values())} of {sum(len(v) for v in cl.values())} reads kept")
+
+
+def stage_chaineval(V):
+    """clusters of this variant directory scored against exact truth (as parteval's baseline arm): recovered transcripts, spurious/redundant, purity, coverage"""
+    d = f"{W0}/{V}"
+    tx = SD.read_fa(f"{W0}/transcripts.fa")
+    cp = copies()
+    lab = labels(V)
+    scen = json.load(open(f"{W0}/world.json"))
+    cons = {n.split("|")[0]: sq for n, sq in cons_seqs(V).items()}
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
+        cl["cl" + r["cluster"]].append(r["read"])
+
+    def tid(n):
+        c, iso = n.split(".")[:2]
+        return c if iso == "iso0" else f"{c}.{iso}"
+    exp = collections.defaultdict(set)
+    cnt = collections.Counter(tid(n) for n, r in lab.items() if r["role"] == "E" and r["in_net"] == "1")
+    for t, c in cnt.items():
+        if c >= 5:
+            exp[cp[t.split(".")[0]]["family"]].add(t)
+    rows = collections.defaultdict(collections.Counter)
+    rec = collections.defaultdict(set)
+    erased_in_net = collections.Counter(cp[n.split(".")[0]]["family"] for n, r in lab.items() if r["role"] == "E" and r["in_net"] == "1")
+    for k, rs in cl.items():
+        fam = cp[rs[0].split(".")[0]]["family"]
+        sc = scen[fam]
+        if not exp[fam]:
+            continue
+        idn = {t: (E.oriented_core_identity(cons[k], tx[t]) or 0.0) for t in exp[fam]}
+        t, v = max(idn.items(), key=lambda kv: kv[1])
+        rows[sc]["clusters"] += 1
+        rows[sc]["reads_clustered"] += len(rs)
+        if v < 0.999:
+            rows[sc]["spurious"] += 1
+        elif t in rec[fam]:
+            rows[sc]["redundant"] += 1
+        else:
+            rec[fam].add(t)
+        rows[sc]["pure_reads"] += sum(tid(r) == t for r in rs) if v >= 0.999 else 0
+    for fam, ts in exp.items():
+        rows[scen[fam]]["expected"] += len(ts)
+        rows[scen[fam]]["recovered"] += len(rec[fam] & ts)
+        rows[scen[fam]]["erased_reads"] += erased_in_net[fam]
+    for sc in sorted(rows):
+        r = rows[sc]
+        print(f"{V:5s} {sc:6s} expected {r['expected']:3d} recovered {r['recovered']:3d} | clusters {r['clusters']:3d} spurious {r['spurious']:2d} redundant {r['redundant']:2d} | "
+              f"reads clustered {r['reads_clustered']}/{r['erased_reads']} ({r['reads_clustered'] / max(1, r['erased_reads']):.0%}), purity {r['pure_reads'] / max(1, r['reads_clustered']):.2f}")
+
+
 def stage_partition(V):
     """Amendment 18: PART on every cluster of >= 6 reads (seeded sample of <= 400 reads for discovery)"""
     import random
@@ -550,4 +620,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "partition": stage_partition, "parteval": stage_parteval, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "chainrefine": stage_chainrefine, "chaineval": stage_chaineval, "partition": stage_partition, "parteval": stage_parteval, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])

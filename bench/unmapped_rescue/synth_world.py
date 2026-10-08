@@ -72,6 +72,28 @@ def partition_specs(seed=SEED, n_each=12, per_copy=100):
     return out
 
 
+def chain_specs(seed=SEED, n_each=12, per_copy=16):
+    """Amendment 23. CTL: one erased copy, one isoform. CHAIN: the erased copy has two equally expressed isoforms (iso1 skips internal exon 4). Low depth and 40% of the
+    reads 5'-truncated by up to 70%, so fragments that start after exon 4 are contained in both isoforms and bridge them. Survivors A (2% SNPs) and B (3%)."""
+    out, k = [], 0
+    for sc in ("CTL", "CHAIN"):
+        for _ in range(n_each):
+            name = f"f{k:02d}"
+            rng = _seeded(seed, "family", name)
+            n = rng.randint(6, 10)
+            exons = [rng.randint(100, 250)] + [rng.randint(90, 350) for _ in range(n - 2)] + [rng.randint(250, 800)]
+            introns = [rng.randint(300, 2500) for _ in range(n - 1)]
+            e = {"id": name + "E", "in_reference": False}
+            if sc == "CHAIN":
+                e["isoforms"] = [{"skip": [4], "weight": 1.0}]
+            out.append({"name": name, "seed": seed * 1000 + k, "scenario": sc, "divergence_class": 0.02, "background": {"source": "random", "length": 60000},
+                        "template": {"source": "synthetic", "exons": exons, "introns": introns},
+                        "copies": [{"id": name + "A", "ops": [{"op": "snp", "rate": 0.02}]}, {"id": name + "B", "ops": [{"op": "snp", "rate": 0.03}]}, e],
+                        "reads": {"per_copy": per_copy, "err": 0.001, "indel": 0.0003, "jitter": 30, "trunc5_frac": 0.4, "trunc5_max": 0.7}})
+            k += 1
+    return out
+
+
 def add_polya(fq_lines, seed):
     """a 3' polyA tail of 20 to 30 A on every read of a 4-line FASTQ stream (the E1 read-end variant)"""
     rng = random.Random(seed)
@@ -197,8 +219,9 @@ if __name__ == "__main__":
     ap.add_argument("out")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--n-per-class", type=int, default=6)
+    ap.add_argument("--chain-world", action="store_true", help="Amendment 23 scenarios (CTL / CHAIN, low depth, fragments)")
     ap.add_argument("--partition-world", action="store_true", help="Amendment 18 scenarios (CTL / ISO / SIB)")
     ap.add_argument("--lead-g", action="store_true", help="force 0-3 leading G on each template's first exon (Amendment 16)")
     ap.add_argument("--classes", default=",".join(str(c) for c in CLASSES), help="comma-separated divergence classes")
     a = ap.parse_args()
-    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g, specs=partition_specs(a.seed) if a.partition_world else None)
+    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g, specs=partition_specs(a.seed) if a.partition_world else (chain_specs(a.seed) if a.chain_world else None))

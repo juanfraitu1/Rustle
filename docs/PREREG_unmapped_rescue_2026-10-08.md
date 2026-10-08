@@ -523,3 +523,21 @@ B1 met (coverage -1.7 points), B2 met, B3 met (1 of 3), B5 met (+23%), **B4 NOT 
 **Test (a, blind, exact truth): a synthetic CHAIN world, seed 20261017.** 24 families: 12 CHAIN (erased copy E with two equally expressed isoforms, iso0 full and iso1 skipping internal exon 4; 16 reads per copy, 40% of the reads 5'-truncated by up to 70%, so that fragments starting after exon 4 are contained in both isoforms) and 12 CTL (one isoform, same depth and truncation). Frozen clustering, Amendment 22 clustering and Amendment 23 clustering are scored the same way as Amendment 18: expected transcripts = (erased copy, isoform) with >= 5 reads in the net; a candidate recovers a transcript if its core identity (orientation by global identity) is >= 0.999 and not lower than to the other expected transcript; purity = reads of a cluster that belong to its best-matching transcript. **Bars:** CHAIN: Amendment 23 recovers >= 80% of the expected transcripts with purity >= 90%, and more than the frozen clustering; CTL: Amendment 23 recovers every transcript the frozen clustering recovers, and loses at most 5 points of read coverage; coverage over both scenarios >= 85%.
 **(b) Real dev A and H, descriptive (both used for Amendment 22):** counts as in Amendment 22.
 **Decision.** Adopted as the cluster rule (opt-in) iff the bars of (a) hold; (b) is reported.
+
+### Amendment 23 result (chain world seed 20261017; 12 CTL + 12 CHAIN families; frozen clustering, proper-overlap clustering, star clustering)
+
+| | CHAIN expected / recovered | CHAIN reads clustered, purity | CTL expected / recovered | CTL reads clustered |
+|---|---|---|---|---|
+| frozen | 24 / 12 | 191 of 191, 0.50 | 12 / 12 | 192 of 192 |
+| Amendment 22 (proper-overlap edge) | 24 / 12 | 191 of 191, 0.50 | 12 / 12 | 192 of 192 |
+| **Amendment 23 (star step)** | 24 / **12 (50%)** | 182 of 191 (95%), **0.52** | 12 / 12 | 192 of 192 (100%) |
+
+**Bar NOT met (CHAIN 50% against >= 80%, purity 0.52 against 90%): not adopted.** The CTL family is untouched (nothing lost, no coverage lost), the star step removes only 9 reads. Diagnosis: a full-length iso0 read and a full-length iso1 read (internal exon 4 skipped) align to each other in ONE alignment with a single 256 to 261 base deletion (block 2,122 of 2,124 bases), whose gap-compressed divergence `de` is 0.003: the pair passes the frozen rule, the proper-overlap test and the star compatibility, so the two isoforms stay together. The gap-compressed divergence hides exon-scale deletions by design.
+
+---
+
+## Amendment 24 (2026-10-08, after the Amendment 23 numbers, before any new number): compatibility counts every gap
+
+**Change.** In the star step the pair's divergence is the full edit distance over the alignment block, NM / block (every inserted or deleted base counts), instead of the gap-compressed `de`; the pair is compatible iff NM / block <= 0.00958 (the same constant), the block covers half of the shorter read and the overlap is proper. A 260-base deletion in a 2,100-base block is 12%, far above the cutoff; HiFi indel errors (1 to 2 bases) are not. Nothing else changes (the seed rounds and the Amendment 22 edge keep `de`; the star step is applied to components of at most 60 reads).
+**Test.** A fresh chain world, seed 20261018, same design and the same bars as Amendment 23: CHAIN: star clustering recovers >= 80% of the expected transcripts with purity >= 90% and more than the frozen clustering; CTL: recovers every transcript the frozen clustering recovers and loses at most 5 points of read coverage; coverage over both scenarios >= 85%. Real dev A and H reported, not judged (both used before).
+**Decision.** Adopted as the cluster rule (opt-in) iff the bars hold.
