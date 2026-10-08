@@ -103,5 +103,24 @@ class Ends(unittest.TestCase):
         self.assertAlmostEqual(E.core_identity(ops), 1 - 5 / 150)
 
 
+    def test_core_identity_needs_a_core_that_covers_most_of_the_shorter_sequence(self):
+        import ends as E
+        ops = [("D", 500), ("=", 20), ("D", 500)]       # garbage: one 20-base run in the middle
+        self.assertIsNone(E.core_identity(ops, min_core_frac=0.5, shorter=520))
+        self.assertEqual(E.core_identity([("=", 100)], min_core_frac=0.5, shorter=100), 1.0)
+
+    @unittest.skipUnless(__import__("importlib").util.find_spec("edlib"), "edlib needed (miniforge python)")
+    def test_orientation_is_chosen_by_global_identity_not_by_a_lucky_core(self):
+        import ends as E
+        import random
+        rng = random.Random(3)
+        t = "".join(rng.choice("ACGT") for _ in range(400))
+        rc = t.translate(str.maketrans("ACGT", "TGCA"))[::-1]
+        self.assertEqual(E.oriented_core_identity(rc, t), 1.0)           # reverse-complemented consensus
+        skipped = t[:150] + t[250:]
+        self.assertLess(E.oriented_core_identity(skipped, t), 0.9)       # a deletion of 100 bases is not identity 1
+        unrelated = "".join(rng.choice("ACGT") for _ in range(400))
+        self.assertLess(E.oriented_core_identity(unrelated, t) or 0.0, 0.9)
+
 if __name__ == "__main__":
     unittest.main()

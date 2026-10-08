@@ -447,3 +447,15 @@ P1, P2 and the recovery clauses of P3 met; **P4 NOT met** (spurious + redundant 
 ## Amendment 20 (2026-10-08, after the Amendment 19 numbers, before any new number): spliced alignment, N counted as a deletion
 
 **Change.** PART aligns with `minimap2 -ax splice:hq -uf --eqx` (checked on the failing cluster of Amendment 18: all 33 exon-skipping reads come out as ONE alignment with a > 100 bp N gap, where `map-hifi` clips) and counts an N gap as a deletion run in both the pileup and the read-by-variant table (for PART only; the Amendment 9 polish is unchanged). Nothing else changes. **Test:** a fresh world, seed 20261016, same bars as Amendment 19 (P1 to P4). **Decision:** adopted as an opt-in post-clustering step iff P1 to P4 hold.
+
+### Correction to the Amendment 18, 19 and 20 numbers (2026-10-08): a scoring bug in `parteval`, found by cross-checking the leaf composition
+
+After the Amendment 20 run the leaf composition (`partition.json`) was perfect (all 12 ISO clusters split into a pure iso0 leaf of 67 reads and a pure iso1 leaf of 33) while the scorer reported purity 0.749 and 5 redundant candidates. The scorer took, for each candidate and expected transcript, the MAXIMUM core identity over the two orientations. A core identity is computed between the first and last run of 8 matches, so a garbage alignment (the wrong orientation, or an isoform against the other isoform) with one lucky run scores 1.0 over a tiny core. Fixed: the orientation is chosen by the GLOBAL identity and a core that covers less than half of the shorter sequence is `None` (tests added). Re-scoring the stored outputs of the three worlds (the partition output itself is unchanged):
+
+| world (alignment) | CTL split / recovers | ISO baseline -> PART | SIB baseline -> PART | spurious + redundant of PART's candidates | purity CTL / ISO / SIB |
+|---|---|---|---|---|---|
+| 20261014 (Amendment 18, `map-hifi`) | 0 / 12 of 12 | 12 -> 21 of 24 (9 of 12 split) | 19 -> 24 | 0 of 57 | 1.00 / 0.905 / 1.00 |
+| 20261015 (Amendment 19, edlib) | 0 / 12 of 12 | 12 -> 24 | 23 -> 24 | 1 of 61 | 1.00 / 0.994 / 1.00 |
+| **20261016 (Amendment 20, spliced, the registered test)** | **0 / 12 of 12** | **12 -> 24 of 24 (12 of 12 split)** | 24 -> 24 | **0 of 60** | **1.00 / 1.00 / 1.00** |
+
+**Verdicts with the corrected scorer.** Amendment 18 stays NOT adopted (P3 baseline clause: baseline 79% not <= 60%; ISO purity 0.905; `map-hifi` clips long deletions). Amendment 19 would have met P1 to P4 (the original "not adopted" came from the scoring bug; edlib's unit-cost alignment is still a poor aligner for long gaps, and its ISO split worked through correlated noise). **Amendment 20 meets P1 to P4 on the fresh world: PART is adopted as an opt-in post-clustering step** (`partition.py`, `PART_ALIGN=splice`). In the Amendment 20 world the frozen clustering had already separated every sibling pair (24 of 24 at baseline), so that world does not test the sibling gain; the 20261014 and 20261015 worlds, where the frozen edge rule joined 5 and 4 sibling pairs, show it (19 -> 24 and 23 -> 24 with 5 and 1 splits).

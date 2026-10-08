@@ -393,8 +393,7 @@ def stage_parteval(V):
     def best_identity(seq, fam):
         res = {}
         for t in exp[fam]:
-            a, b = E.compare(seq, tx[t]), E.compare(rc(seq), tx[t])
-            res[t] = max((x["core_identity"] or 0.0) for x in (a, b))
+            res[t] = E.oriented_core_identity(seq, tx[t]) or 0.0
         return res
 
     rows = collections.defaultdict(lambda: collections.Counter())

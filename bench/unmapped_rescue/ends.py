@@ -53,7 +53,7 @@ def _anchor_index(ops):
     return None
 
 
-def core_identity(ops):
+def core_identity(ops, min_core_frac=0.0, shorter=None):
     """identity between the first and the last run of >= ANCHOR matches: 1 - (X + I + D) / columns, the end gaps excluded"""
     a = _anchor_index(ops)
     rev = list(reversed(ops))
@@ -63,7 +63,9 @@ def core_identity(ops):
     core = ops[a:len(ops) - b]
     cols = sum(n for _, n in core)
     edits = sum(n for op, n in core if op != "=")
-    return 1 - edits / cols if cols else None
+    if not cols or (shorter and cols < min_core_frac * shorter):
+        return None                       # a core that covers little of the sequences says nothing (a lucky 20-base run in a garbage alignment)
+    return 1 - edits / cols
 
 
 def compare(cons, transcript):
@@ -73,4 +75,13 @@ def compare(cons, transcript):
     ops = parse_edlib_cigar(r["cigar"])
     left, right = end_offsets(ops)
     cols = sum(n for _, n in ops)
-    return dict(identity=1 - r["editDistance"] / max(1, cols), core_identity=core_identity(ops), edits=r["editDistance"], left=left, right=right, qlen=len(cons), tlen=len(transcript))
+    return dict(identity=1 - r["editDistance"] / max(1, cols), core_identity=core_identity(ops, 0.5, min(len(cons), len(transcript))), edits=r["editDistance"], left=left, right=right, qlen=len(cons), tlen=len(transcript))
+
+
+_RC = str.maketrans("ACGT", "TGCA")
+
+
+def oriented_core_identity(cons, transcript):
+    """core identity in the orientation (forward or reverse complement) with the higher GLOBAL identity; None if there is no core covering at least half of the shorter sequence"""
+    a, b = compare(cons, transcript), compare(cons.translate(_RC)[::-1], transcript)
+    return (a if a["identity"] >= b["identity"] else b)["core_identity"]
