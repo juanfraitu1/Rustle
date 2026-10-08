@@ -46,7 +46,9 @@ def primaries(sam_lines):
         if flag & 2308 or f[2] == "*":
             continue
         rlen = sum(int(n) for n, op in CIG.findall(f[5]) if op in "M=XIS")
-        out[f[0]] = dict(score=int(tag(f, "AS", 0)), de=float(tag(f, "de", 1.0)), qcov=qcov(f[5], rlen), ref=f[2], mapq=int(f[4]))
+        span = sum(int(n) for n, op in CIG.findall(f[5]) if op in "MDN=X")
+        out[f[0]] = dict(score=int(tag(f, "AS", 0)), de=float(tag(f, "de", 1.0)), qcov=qcov(f[5], rlen), ref=f[2], mapq=int(f[4]),
+                         start=int(f[3]) - 1, end=int(f[3]) - 1 + span)
     return out
 
 

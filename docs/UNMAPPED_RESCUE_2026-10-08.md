@@ -104,6 +104,18 @@ The earlier statement that abstentions are mostly near-ties between two close fa
   What it costs: the GWFAM163 profile attracts small clusters of other families (five clusters of 56, 30, 10, 5 and 3 reads were attributed to it wrongly), 122 wrong reads in nine changed clusters, and the 24-read GWFAM440 cluster that the cover score had right now abstains. Among the 19 families with >= 3 survivors the profile rescues 496 reads with 14.3% wrong joins (baseline 226 with 20.7%), small numbers.
   So a profile helps where a family has many surviving members and needs a specificity guard against hub profiles; two clusters carry the whole gain. It is hypothesis-generating (H is not held out); a new multi-copy erasure bed would be needed to confirm it.
 
+## 6a. Hybrid net (Amendment 6): pool first, then the leftover reads one by one
+
+On bed H, 2,014 of the 6,272 pool reads (32.1%) are not rescued by an attributed cluster; attributing them alone (same cover score, margin 1.10) gives 4,421 rescued (83.2%) against 4,255 for the pooled rule and 4,357 for the B1 estimate scaled to the bed, with 71 wrong joins (1.58% of joined). The extra work is 32.1% of per-read attribution of the whole pool (506 s of about 1,580 s), above the registered 25%, so the registered rule is **not met** and the pool-first net stays "better than A13 (557) and about 6 times cheaper than per-read attribution", not "rescues more than per-read attribution". Bed A was not run: the rule needs both beds, so the H failure already fixes the verdict.
+
+## 6b. The reconstructed loci as extra reference (Amendment 7, bed H)
+
+Consensus sequences from a seeded half of the unmapped deleted-copy reads (plus the 959 background reads) are added to the reference by aligning reads to them and keeping the higher score (the primary a concatenated reference would give). On the other, never-clustered half: **2,505 of 2,657 held-out unmapped reads (94.3%) land on the consensus of their own family at de 0.0011**, absorbed deleted-copy reads move only when the consensus is closer (2,250 of 11,973; 2,247 to their own family; median de 0.1237 -> 0.0031), and **0 of 41,727 survivor reads move**, 0 of 959 background reads move onto a family cluster. All three bars met. This is the augmented-reference test of the earlier NPIPA2 result (row 1223 neighbourhood), now with consensus sequences that were built without any reference.
+
+## 6c. Worked example: LRPAP1 and its gorilla copies (Amendment 8)
+
+With the mother as reference, 381 of 2,875 LRPAP1 reads are poorly placed (de > 0.00958). They form 4 pure clusters (283, 21, 4, 3 reads). The 283-read consensus (1,492 bp) is the paternal c01 (0.9987, the chr12 22.55 Mb copy the mother's assembly lacks within the cutoff); its nearest maternal node is c00 at 0.9886, the registered lift site c01|c03 only 0.9839. The 4-read cluster (2,680 bp) is c01 at 0.9993 with the mother's best 0.9888 and is the one flagged at the registered 0.999 (O3). The 21-read cluster is a c00 allele (0.5% from the mother's), the 3-read cluster matches neither haplotype (0.97). Realigning all reads to the 4 consensus sequences: 84.8% of the held-out net reads move to the consensus of their own copy, and 2.8% of the reads of copies without a consensus move. Details and caveats in the prereg, Amendment 8 result.
+
 ## 7. What did not go as predicted, and caveats
 
 1. Pooling does not rescue more reads than aligning each read with the same sensitive score; it is cheaper and gives the consensus.
