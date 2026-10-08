@@ -20,10 +20,14 @@ def best_hits(paf_lines):
     return {q: v[:5] for q, v in b.items()}
 
 
-def fidelity(clusters, truth, hits, erased):
-    """erased: {family: (chrom, start, end)}. -> dict(clusters, on_erased_copy, identity >= .999, coverage >= .95 among those on the erased copy)"""
-    n = on = hi = both = 0
+def fidelity(clusters, truth, hits, erased, only=None):
+    """erased: {family: (chrom, start, end)}; only: restrict to these cluster ids (e.g. the attributed ones).
+    -> clusters_with_family (truth majority), on_erased_copy (best hit overlaps the erased interval; a property of the truth labels, not a result by itself),
+    identity_ge_0_999, identity_x_coverage_ge_0_999 (the registered metric, among those on the erased copy)"""
+    n = on = hi = reg = 0
     for c, rs in clusters.items():
+        if only is not None and c not in only:
+            continue
         fam = S.majority(rs, truth)
         if fam is None or fam not in erased or c not in hits:
             continue
@@ -33,5 +37,5 @@ def fidelity(clusters, truth, hits, erased):
         if ref == e[0] and a < e[2] and e[1] < b:
             on += 1
             hi += ident >= 0.999
-            both += ident >= 0.999 and cov >= 0.95
-    return dict(clusters_with_family=n, on_erased_copy=on, identity_ge_0_999=hi, identity_ge_0_999_and_coverage_ge_0_95=both)
+            reg += ident * cov >= 0.999
+    return dict(clusters_with_family=n, on_erased_copy=on, identity_ge_0_999=hi, identity_x_coverage_ge_0_999=reg)

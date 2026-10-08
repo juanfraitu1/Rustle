@@ -33,11 +33,13 @@ def main():
     if not os.path.exists(f"{d}/sample.paf"):
         subprocess.run(f"minimap2 -x map-ont -c -N 20 -t 4 {d}/targets.fa {d}/sample.fa > {d}/sample.paf 2> {d}/sample.paf.log", shell=True, check=True)
     if not os.path.exists(f"{d}/sample.blastn.tsv"):
-        subprocess.run(f"PATH={BLAST}:$PATH blastn -task dc-megablast -query {d}/sample.fa -db {d}/targets_db -evalue 1e-5 -num_threads 4 -max_target_seqs 500 "
+        subprocess.run(f"PATH={BLAST}:$PATH blastn -task dc-megablast -query {d}/sample.fa -db {d}/targets_db -evalue 1e-5 -num_threads 4 -max_target_seqs 5000 "
                        f"-outfmt '6 qseqid sseqid bitscore evalue length pident qstart qend' -out {d}/sample.blastn.tsv", shell=True, check=True)
     fam = {n: lab[n]["family"] for n in samp}
     b0 = B.single_read_nucleotide(open(f"{d}/sample.paf"))
-    att1 = A.attribute_cover(A.cover_scores(list(A.read_blastn(f"{d}/sample.blastn.tsv"))), 1.10)
+    hs1 = list(A.read_blastn(f"{d}/sample.blastn.tsv"))
+    assert not A.capped_queries(hs1, 5000), "BLAST target cap reached"
+    att1 = A.attribute_cover(A.cover_scores(hs1), 1.10)
     b1 = {q: v[0] for q, v in att1.items()}
     # the pooled method on the same reads: the read's cluster, attributed by the frozen rule
     pooled_att = A.attribute_cover(A.cover_scores(list(A.read_blastn(f"{d}/registered/cons.blastn.tsv"))), 1.10)

@@ -80,5 +80,16 @@ class Specific(unittest.TestCase):
         self.assertEqual(A.specific_cover_scores([("c", "F1:0", 5, 14)])["c"], {"F1": 10.0})
 
 
+class Cap(unittest.TestCase):
+    def test_queries_that_reached_the_target_cap_are_reported(self):
+        hsps = [("q1", f"F{i}:0", 1, 10) for i in range(5)] + [("q2", "F0:0", 1, 10), ("q2", "F0:0", 20, 30), ("q3", "F1:0", 1, 5)]
+        self.assertEqual(A.capped_queries(hsps, cap=5), ["q1"])
+        self.assertEqual(A.capped_queries(hsps, cap=6), [])
+
+    def test_repeated_hsps_of_one_target_count_once(self):
+        hsps = [("q", "F0:0", i, i + 5) for i in range(1, 50)]
+        self.assertEqual(A.capped_queries(hsps, cap=2), [])
+
+
 if __name__ == "__main__":
     unittest.main()

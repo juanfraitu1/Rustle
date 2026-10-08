@@ -41,6 +41,11 @@ class Rescue(unittest.TestCase):
         self.assertEqual(m["copies_reached"], 1)
         self.assertEqual(m["copies_with_unmapped_reads"], 2)
 
+    def test_survivor_reads_in_an_attributed_cluster_are_unknown_not_dropped(self):
+        truth = {"a1": "A", "a2": "A", "a3": "A", "s1": "A"}
+        m = S.rescue_metrics({1: ["a1", "a2", "a3", "s1"]}, {1: "A"}, truth, {"a1", "a2", "a3"}, other_roles={"s1"})
+        self.assertEqual((m["rescued_correct"], m["wrong_joins"], m["unknown_joined"]), (3, 0, 1))
+
     def test_nothing_attributed(self):
         m = S.rescue_metrics({1: ["a1", "a2", "a3"]}, {1: None}, {"a1": "A", "a2": "A", "a3": "A"}, {"a1", "a2", "a3"})
         self.assertEqual((m["rescued_correct"], m["cluster_accuracy"], m["copies_reached"]), (0, None, 0))

@@ -26,10 +26,11 @@ def cluster_metrics(clusters, truth, d_reads):
                 background_in_clusters=sum(1 for r in in_cluster if truth.get(r) == "bg"))
 
 
-def rescue_metrics(clusters, attribution, truth, d_reads):
+def rescue_metrics(clusters, attribution, truth, d_reads, other_roles=frozenset()):
     """clusters: {id: [reads]}; attribution: {cluster id: family | None (abstain)}; truth as in cluster_metrics; d_reads: the deleted-copy reads.
     rescued_correct = D reads of an attributed cluster attributed to their own family; wrong_joins = D reads attributed to another family plus
-    background reads in an attributed cluster; unknown_joined = reads without a truth label in an attributed cluster (reported, not judged);
+    background reads in an attributed cluster; unknown_joined = reads without a truth label, or in `other_roles` (e.g. surviving-copy reads), in an attributed
+    cluster (reported, not judged);
     cluster_accuracy = attributed clusters whose majority family is the attributed one; copies_reached = families with >= 1 rescued-correct read."""
     ok = wrong = unknown = abstained = 0
     reached = set()
@@ -52,7 +53,7 @@ def rescue_metrics(clusters, attribution, truth, d_reads):
                     wrong += 1
             elif t == "bg":
                 wrong += 1
-            elif t is None:
+            elif t is None or r in other_roles:
                 unknown += 1
     return dict(rescued_correct=ok, wrong_joins=wrong, unknown_joined=unknown, abstained_reads=abstained, clusters_attributed=n_attr,
                 clusters_abstained=n_abs, cluster_accuracy=(n_right / n_attr) if n_attr else None, copies_reached=len(reached),

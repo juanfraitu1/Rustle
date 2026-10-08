@@ -115,3 +115,12 @@ def specific_cover_scores(hsps):
                 score[f] += (hi - lo) / len(cov)
         out[q] = score
     return out
+
+
+def capped_queries(hsps, cap):
+    """queries whose BLAST output reached `cap` distinct targets: -max_target_seqs truncates in an order that is not by score, so a query at the cap
+    can lose its own family's copy. Review of 2026-10-08 found cap 500 truncating 87 of 188 dev consensus sequences."""
+    seen = collections.defaultdict(set)
+    for q, t, _a, _b in hsps:
+        seen[q].add(t)
+    return sorted(q for q, ts in seen.items() if len(ts) >= cap)

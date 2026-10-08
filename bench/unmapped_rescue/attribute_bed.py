@@ -39,7 +39,7 @@ def main():
     if not os.path.exists(f"{r}/cons.blastn.tsv"):
         if not os.path.exists(f"{d}/targets_db.nsq"):
             sh(f"PATH={BLAST}:$PATH makeblastdb -in {d}/targets.fa -dbtype nucl -out {d}/targets_db > /dev/null")
-        sh(f"PATH={BLAST}:$PATH blastn -task dc-megablast -query {r}/cons.fa -db {d}/targets_db -evalue 1e-5 -num_threads 4 -max_target_seqs 500 "
+        sh(f"PATH={BLAST}:$PATH blastn -task dc-megablast -query {r}/cons.fa -db {d}/targets_db -evalue 1e-5 -num_threads 4 -max_target_seqs 5000 "
            f"-outfmt '6 qseqid sseqid bitscore evalue length pident qstart qend' -out {r}/cons.blastn.tsv")
     if not os.path.exists(f"{r}/cons.m8"):
         sh(f"rm -rf {tmp}/mm_tmp_{a.bed}; mmseqs easy-search {r}/cons.fa {d}/targets.fa {r}/cons.m8 {tmp}/mm_tmp_{a.bed} --search-type 2 -e 1e-3 -s 7.5 "
@@ -50,7 +50,10 @@ def main():
     cl = {}
     for x in csv.DictReader(open(f"{r}/clusters.tsv"), delimiter="\t"):
         cl.setdefault("cl" + x["cluster"], []).append(x["read"])
-    sc = A.cover_scores(list(A.read_blastn(f"{r}/cons.blastn.tsv")))
+    hsps = list(A.read_blastn(f"{r}/cons.blastn.tsv"))
+    capped = A.capped_queries(hsps, 5000)
+    assert not capped, f"BLAST target cap reached by {len(capped)} queries"
+    sc = A.cover_scores(hsps)
     out = {"clusters": len(cl), "n_d": len(dread)}
     for name, margin in (("registered_1.10", 1.10), ("strict_1.00", 1.00), ("margin_1.50", 1.50)):
         att = A.attribute_cover(sc, margin)
