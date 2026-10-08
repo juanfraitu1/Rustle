@@ -39,6 +39,22 @@ class Decision(unittest.TestCase):
         self.assertEqual(T.decide("GGGACGT", 3), ("ACGT", 3, "trimmed"))
 
 
+class PafPrefix(unittest.TestCase):
+    def paf(self, q, t, qstart, matches):
+        return "\t".join([q, "2500", str(qstart), "2500", "+", t, "9000", "100", "5000", str(matches), "2500", "60"])
+
+    def test_best_record_by_matches_among_the_family_gives_the_prefix(self):
+        lines = [self.paf("c1", "f01:A", 2, 2400), self.paf("c1", "f01:B", 0, 2300), self.paf("c1", "f02:A", 5, 2499)]
+        self.assertEqual(T.prefixes_from_paf(lines, {"c1": "f01"}), {"c1": 2})
+
+    def test_cluster_names_drop_the_n_suffix_and_unaligned_clusters_are_none(self):
+        lines = [self.paf("c1|n=80", "f01:A", 1, 2400)]
+        self.assertEqual(T.prefixes_from_paf(lines, {"c1": "f01", "c2": "f01"}), {"c1": 1, "c2": None})
+
+    def test_clusters_without_a_family_are_skipped(self):
+        self.assertEqual(T.prefixes_from_paf([self.paf("c1", "f01:A", 1, 2400)], {"c1": None}), {})
+
+
 class G5Reads(unittest.TestCase):
     def fq(self, n):
         out = []

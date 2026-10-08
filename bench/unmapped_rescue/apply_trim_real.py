@@ -13,7 +13,7 @@ import trim5g as T
 W = "/mnt/linuxdisk/tmp/o3_rescue"
 
 
-def main(bed):
+def main(bed, mode="t"):
     d = f"{W}/{bed}/registered"
     cons = RP.read_cons(f"{d}/cons.fa")
     hs = collections.defaultdict(list)
@@ -23,6 +23,12 @@ def main(bed):
     att = A.attribute_cover(A.cover_scores(allh), 1.10)
     rec = RP.best_records(open(f"{d}/polish/both.paf").read().splitlines(), "orig.")
     sc = json.load(open(f"{d}/polish/score.json"))["clusters"]
+    if mode == "t2":
+        import subprocess
+        paf = f"{d}/polish/cons.targets.paf"
+        subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {W}/{bed}/targets.fa {d}/cons.fa > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
+        fams = {n.split("|")[0]: att.get(n.split("|")[0], (None,))[0] for n in cons}
+        pref2 = T.prefixes_from_paf(open(paf).read().splitlines(), fams)
     why = collections.Counter()
     agree = collections.Counter()
     ok_before = ok_after = n = 0
@@ -38,9 +44,11 @@ def main(bed):
         if fam is None:
             new, tl, reason = seq, 0, "abstained"
         else:
-            new, tl, reason = T.decide(seq, T.best_copy_prefix(hs.get(k, []), fam))
+            new, tl, reason = T.decide(seq, pref2.get(k) if mode == "t2" else T.best_copy_prefix(hs.get(k, []), fam))
         why[reason] += 1
         agree[("genome G clip" if genome_clip else "no genome G clip", "T trims" if tl else "T does not trim")] += 1
+        if genome_clip and fam is not None:
+            agree[("attributed with a genome G clip", "T trims" if tl else "T does not trim")] += 1
         if genome_clip and not tl:
             agree[("missed", reason)] += 1
         ident = h["ident"]
@@ -49,11 +57,11 @@ def main(bed):
         after = ident * aligned_after / (qlen - tl)
         ok_before += before >= 0.999
         ok_after += after >= 0.999
-    print(f"{bed}: {n} consensus sequences on the erased copy; T decisions {dict(why)}")
+    print(f"{bed} [{mode}]: {n} consensus sequences on the erased copy; T decisions {dict(why)}")
     for kk, v in sorted(agree.items(), key=str):
         print("  ", kk, v)
     print(f"  identity x coverage >= 0.999: before {ok_before}, after the trim {ok_after}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:])

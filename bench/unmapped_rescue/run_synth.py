@@ -220,6 +220,29 @@ def stage_trim(V):
     print(f"{V}: " + ", ".join(f"{r} {c}" for r, c in collections.Counter(v["reason"] for v in log.values()).most_common()))
 
 
+def stage_trim2(V):
+    """rule T2 (Amendment 14): the 5' prefix is the consensus start of its best alignment to the attributed family's surviving copies"""
+    import trim5g as T
+    d = f"{W0}/{V}"
+    att = json.load(open(f"{d}/attribution.json"))
+    cons = cons_seqs(V)
+    paf = f"{d}/cons.targets.paf"
+    subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {W0}/targets.fa {d}/cons.fa > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
+    fams = {n.split("|")[0]: att.get(n.split("|")[0]) for n in cons}
+    pref = T.prefixes_from_paf(open(paf).read().splitlines(), fams)
+    out, log = {}, {}
+    for name, seq in cons.items():
+        k = name.split("|")[0]
+        if fams[k] is None:
+            out[name], log[k] = seq, dict(trimmed=0, reason="abstained", prefix=None)
+            continue
+        new, n, why = T.decide(seq, pref.get(k))
+        out[name], log[k] = new, dict(trimmed=n, reason=why, prefix=pref.get(k))
+    SD.write_fa(f"{d}/cons.trimmed2.fa", out, list(out))
+    json.dump(log, open(f"{d}/trim2.json", "w"), indent=1)
+    print(f"{V}: " + ", ".join(f"{r} {c}" for r, c in collections.Counter(v["reason"] for v in log.values()).most_common()))
+
+
 def erased_clusters(V):
     """per erased copy the largest pure cluster of >= 3 reads: {copy: cluster key}"""
     info = cluster_info(V)
@@ -230,11 +253,11 @@ def erased_clusters(V):
     return best
 
 
-def stage_trimreport(V):
+def stage_trimreport(V, tag="trimmed", trimjson="trim.json"):
     d = f"{W0}/{V}"
     cp = copies()
-    tr0, tr1 = json.load(open(f"{d}/truth.json")), json.load(open(f"{d}/truth.trimmed.json"))
-    trim = json.load(open(f"{d}/trim.json"))
+    tr0, tr1 = json.load(open(f"{d}/truth.json")), json.load(open(f"{d}/truth.{tag}.json"))
+    trim = json.load(open(f"{d}/{trimjson}"))
     best = erased_clusters(V)
     out = {}
     for D in sorted({r["D"] for r in cp.values()}, key=float):
@@ -246,7 +269,7 @@ def stage_trimreport(V):
                             left_below_minus4=sum(tr[k]["left"] < -4 for k in keys if tr[k]["left"] is not None), lefts=sorted(tr[k]["left"] for k in keys if tr[k]["left"] is not None))
         row["decisions"] = dict(collections.Counter(trim[k]["reason"] for k in keys))
         out[D] = row
-    json.dump(out, open(f"{d}/trimreport.json", "w"), indent=1)
+    json.dump(out, open(f"{d}/trimreport.{tag}.json", "w"), indent=1)
     print(f"{'D':>6} {'n':>3} | untrimmed idcov>=.999 | trimmed idcov>=.999 | left in [-4,+1] (before/after) | over-trim (<-4, after) | decisions")
     tot = collections.Counter()
     for D, r in out.items():
@@ -318,4 +341,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
