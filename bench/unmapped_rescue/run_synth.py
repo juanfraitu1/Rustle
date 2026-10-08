@@ -243,6 +243,29 @@ def stage_trim2(V):
     print(f"{V}: " + ", ".join(f"{r} {c}" for r, c in collections.Counter(v["reason"] for v in log.values()).most_common()))
 
 
+def stage_trim3(V):
+    """rule T3 (Amendment 15): gate on the library's 5' clip signature (survivor reads), then trim a 1-3 bp leading G run of every consensus"""
+    import libsig
+    import trim5g as T
+    d = f"{W0}/{V}"
+    lab = labels(V)
+    surv = {n for n, r in lab.items() if r["role"] == "S"}
+    sig = libsig.signature(open(f"{d}/ref.sam"), keep=lambda n: n in surv)
+    ok, p = libsig.gate(sig)
+    cons = cons_seqs(V)
+    out, log = {}, {}
+    for name, seq in cons.items():
+        k = name.split("|")[0]
+        if ok:
+            out[name], n, why = T.trim_leading_g(seq)
+        else:
+            out[name], n, why = seq, 0, "gate_closed"
+        log[k] = dict(trimmed=n, reason=why)
+    SD.write_fa(f"{d}/cons.trimmed3.fa", out, list(out))
+    json.dump(dict(signature=sig, gate=ok, p=p, clusters=log), open(f"{d}/trim3.json", "w"), indent=1)
+    print(f"{V}: gate {'OPEN' if ok else 'closed'} (p={p:.3g}; pure clips {sig['pure']}, clean reads {sig['reads']}); " + ", ".join(f"{r} {c}" for r, c in collections.Counter(v["reason"] for v in log.values()).most_common()))
+
+
 def erased_clusters(V):
     """per erased copy the largest pure cluster of >= 3 reads: {copy: cluster key}"""
     info = cluster_info(V)
@@ -258,6 +281,7 @@ def stage_trimreport(V, tag="trimmed", trimjson="trim.json"):
     cp = copies()
     tr0, tr1 = json.load(open(f"{d}/truth.json")), json.load(open(f"{d}/truth.{tag}.json"))
     trim = json.load(open(f"{d}/{trimjson}"))
+    trim = trim.get("clusters", trim)
     best = erased_clusters(V)
     out = {}
     for D in sorted({r["D"] for r in cp.values()}, key=float):
@@ -341,4 +365,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trim2": stage_trim2, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])

@@ -48,3 +48,13 @@ def prefixes_from_paf(paf_lines, families):
         if k not in best or m > best[k][0]:
             best[k] = (m, int(f[2]))
     return {k: (best[k][1] if k in best else None) for k, fam in families.items() if fam is not None}
+
+
+def trim_leading_g(cons, max_len=MAX_G):
+    """Rule T3 (Amendment 15): remove the maximal leading run of G if it is 1 to max_len long. -> (consensus, trimmed length, reason: trimmed | no_run | too_long)"""
+    n = len(cons) - len(cons.lstrip("G"))
+    if n == 0:
+        return cons, 0, "no_run"
+    if n > max_len:
+        return cons, 0, "too_long"
+    return cons[n:], n, "trimmed"

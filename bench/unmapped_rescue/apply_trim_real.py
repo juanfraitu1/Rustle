@@ -13,6 +13,24 @@ import trim5g as T
 W = "/mnt/linuxdisk/tmp/o3_rescue"
 
 
+def library_gate():
+    """the 5' clip signature of the real library's cleanly aligned survivor reads (linktest/R.bam, role S) and the gate (Amendment 15)"""
+    import os
+    import subprocess
+    import libsig
+    cache = f"{W}/library_signature.json"
+    if os.path.exists(cache):
+        j = json.load(open(cache))
+        return j["gate"], j["p"], j["signature"]
+    lab = {r["read"]: r for r in csv.DictReader(open("/mnt/linuxdisk/tmp/rna_allele/linktest/labels.tsv"), delimiter="\t")}
+    surv = {n for n, r in lab.items() if r["role"] == "S"}
+    p = subprocess.Popen("samtools view -F 2308 /mnt/linuxdisk/tmp/rna_allele/linktest/R.bam", shell=True, stdout=subprocess.PIPE, text=True)
+    sig = libsig.signature(p.stdout, keep=lambda n: n in surv)
+    ok, pv = libsig.gate(sig)
+    json.dump(dict(gate=ok, p=pv, signature=sig), open(cache, "w"), indent=1)
+    return ok, pv, sig
+
+
 def main(bed, mode="t"):
     d = f"{W}/{bed}/registered"
     cons = RP.read_cons(f"{d}/cons.fa")
@@ -29,6 +47,10 @@ def main(bed, mode="t"):
         subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {W}/{bed}/targets.fa {d}/cons.fa > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
         fams = {n.split("|")[0]: att.get(n.split("|")[0], (None,))[0] for n in cons}
         pref2 = T.prefixes_from_paf(open(paf).read().splitlines(), fams)
+    if mode == "t3":
+        gate_ok, gate_p, sig = library_gate()
+        print(f"library gate: {'OPEN' if gate_ok else 'closed'} p={gate_p:.3g}; clean reads {sig['reads']}, pure clips {sig['pure']}, G lengths {sig['g_lengths']}")
+    over = collections.Counter()
     why = collections.Counter()
     agree = collections.Counter()
     ok_before = ok_after = n = 0
@@ -41,7 +63,11 @@ def main(bed, mode="t"):
         qs, qe, qlen = h["qstart"], h["qend"], h["qlen"]
         genome_clip = qs if (0 < qs <= 3 and set(seq[:qs]) == {"G"}) else 0
         fam = att.get(k, (None,))[0]
-        if fam is None:
+        if mode == "t3":
+            new, tl, reason = T.trim_leading_g(seq) if gate_ok else (seq, 0, "gate_closed")
+            if tl:
+                over[tl - genome_clip] += 1
+        elif fam is None:
             new, tl, reason = seq, 0, "abstained"
         else:
             new, tl, reason = T.decide(seq, pref2.get(k) if mode == "t2" else T.best_copy_prefix(hs.get(k, []), fam))
@@ -60,6 +86,10 @@ def main(bed, mode="t"):
     print(f"{bed} [{mode}]: {n} consensus sequences on the erased copy; T decisions {dict(why)}")
     for kk, v in sorted(agree.items(), key=str):
         print("  ", kk, v)
+    if mode == "t3":
+        trims = sum(over.values())
+        print("  trimmed run minus the unaligned genome G clip (bases of templated sequence lost), over the trims:", dict(sorted(over.items())),
+              f"-> <= 1 base in {sum(v for k, v in over.items() if k <= 1)} of {trims}")
     print(f"  identity x coverage >= 0.999: before {ok_before}, after the trim {ok_after}")
 
 
