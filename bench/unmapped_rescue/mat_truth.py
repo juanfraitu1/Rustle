@@ -285,7 +285,8 @@ def step_outside():
 
 
 GOOD = ("PRESENT", "ALLELE-LIKE")
-RUN = f"{OUT}/net_run"
+TAG = os.environ.get("MATTRUTH_TAG", "")          # "" = Amendment 41's seed-round run; "_binned" = Amendment 42
+RUN = f"{OUT}/net_run{TAG}"
 
 
 def run_clusters():
@@ -309,7 +310,7 @@ def step_flag_reads():
     cl, rows = run_clusters()
     names = sorted({x for r in flagged(rows) for x in cl[r["key"]]})
     seqs = SD.read_fa(f"{OUT}/net_all.fa")
-    SD.write_fa(f"{OUT}/flag_reads.fa", {n: seqs[n] for n in names}, names)
+    SD.write_fa(f"{OUT}/flag{TAG}_reads.fa", {n: seqs[n] for n in names}, names)
     print(f"{len(flagged(rows))} flagged clusters, {len(names)} reads")
 
 
@@ -321,9 +322,9 @@ def step_eval():
     loci = json.load(open(f"{OUT}/loci.json"))
     locus_of = {n: i for i, l in enumerate(loci) for n in l["names"]}
     best_mat = load_best(sorted(glob.glob(f"{OUT}/net_mat/chunk*.paf")))
-    best_pat = load_best(sorted(glob.glob(f"{OUT}/flag_pat/chunk*.paf")))
+    best_pat = load_best(sorted(glob.glob(f"{OUT}/flag{TAG}_pat/chunk*.paf")))
     spec_mat = load_spec(f"{OUT}/truth.net.mat.tsv")
-    spec_pat = load_spec(f"{OUT}/truth.flag.pat.tsv")
+    spec_pat = load_spec(f"{OUT}/truth.flag{TAG}.pat.tsv")
     flags = flagged(rows)
     verdicts, recovered = [], set()
     for r in flags:
@@ -367,7 +368,7 @@ def step_eval():
         print(f"recall over truth loci with >= {floor} mat-specific reads: {len(rec)} of {len(sel)} = {len(rec) / max(1, len(sel)):.3f}; misses by first failing step: {dict(why)}")
     ston = [i for i, l in enumerate(loci) if l["contig"] == "CM054594.2" and l["start"] < 96_100_000 and l["end"] > 95_900_000]
     print("STON1-GTF2A1L positive control recovered:", [(i, i in recovered) for i in ston])
-    json.dump(dict(verdicts=verdicts, recovered=sorted(recovered)), open(f"{OUT}/eval.json", "w"))
+    json.dump(dict(verdicts=verdicts, recovered=sorted(recovered)), open(f"{OUT}/eval{TAG}.json", "w"))
 
 
 if __name__ == "__main__":

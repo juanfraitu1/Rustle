@@ -46,7 +46,7 @@ def main():
                     RN.pause(f"binned clustering ({len(done)} of {len(bins)} bins)")
                 sp = f"{R}/state_{i}.json"               # a large bin is checkpointed pass by pass
                 state = json.load(open(sp)) if os.path.exists(sp) else {}
-                cl = B.cluster_bin(bins[i], lens, cf, af, state=state, stop=lambda: RN.left() < 150)
+                cl = B.cluster_bin(bins[i], lens, cf, af, cap=int(os.environ.get("BIN_CAP", "500")), state=state, stop=lambda: RN.left() < 150)
                 if cl is None:
                     json.dump(state, open(sp, "w"))
                     RN.pause(f"bin {i} ({len(bins[i])} reads) after pass {state['passes']}; {len(done)} of {len(bins)} bins")
