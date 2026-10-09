@@ -90,6 +90,11 @@ def main():
                 for r in rs:
                     o.write(f"{r}\t{k}\t{len(rs)}\n")
         print(f"{len(clusters)} clusters, {sum(len(v) for v in clusters.values())} reads")
+    finish(R, clusters, seqs)
+
+
+def finish(R, clusters, seqs):
+    """stages 3-5 on a clustering {key: [reads]}: local-mode consensus, alignment on the primary, classification (resumable; R = run directory)"""
     # 3. consensus, local mode (resumable)
     cons_p = f"{R}/cons.jsonl"
     cons = jl_load(cons_p)
