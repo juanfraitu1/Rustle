@@ -38,6 +38,44 @@ class Window(unittest.TestCase):
         self.assertEqual(E.ref_span(0, "100="), (0, 100))
 
 
+class Flags(unittest.TestCase):
+    """Amendment 39: an end is single-read when the extreme read sticks out past the next one by more than the spread of all the others"""
+
+    def test_five_prime(self):
+        f = E.end_flags([0, 300, 310, 320], [1000, 1000, 1000, 1000])
+        self.assertTrue(f["flag5"])
+        self.assertEqual(f["gap5"], 300)
+        self.assertFalse(f["flag3"])
+
+    def test_three_prime(self):
+        f = E.end_flags([0, 0, 0, 0], [700, 710, 720, 1100])
+        self.assertTrue(f["flag3"])
+        self.assertEqual(f["gap3"], 380)
+        self.assertFalse(f["flag5"])
+
+    def test_spread_ends_are_not_single_read(self):
+        f = E.end_flags([0, 40, 90, 160, 250], [900, 960, 1000, 1010, 1100])
+        self.assertFalse(f["flag5"])
+        self.assertFalse(f["flag3"])
+
+    def test_equal_ends_never_flag(self):
+        f = E.end_flags([5, 5, 5], [100, 100, 100])
+        self.assertEqual((f["flag5"], f["flag3"], f["gap5"], f["gap3"]), (False, False, 0, 0))
+
+    def test_boundary_is_strict(self):
+        self.assertFalse(E.end_flags([0, 100, 150, 200], [10, 10, 10, 10])["flag5"])   # gap 100 vs spread 100
+        self.assertTrue(E.end_flags([0, 101, 150, 200], [10, 10, 10, 10])["flag5"])
+
+    def test_fewer_than_three_reads_is_undefined(self):
+        f = E.end_flags([0, 300], [1000, 1000])
+        self.assertIsNone(f["flag5"])
+        self.assertIsNone(f["flag3"])
+        self.assertEqual(E.end_flags([], [])["n"], 0)
+
+    def test_order_does_not_matter(self):
+        self.assertEqual(E.end_flags([320, 0, 310, 300], [1000] * 4), E.end_flags([0, 300, 310, 320], [1000] * 4))
+
+
 @unittest.skipUnless(HAVE, "needs minimap2, edlib and pyabpoa")
 class Trim(unittest.TestCase):
     def test_unsupported_tail_is_removed(self):

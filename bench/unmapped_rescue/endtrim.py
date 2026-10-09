@@ -36,8 +36,19 @@ def support_window(length, intervals, min_cover=MIN_COVER):
     return (0, length) if first is None else (first, last + 1)
 
 
-def trim_consensus(cons, reads, tmp, min_cover=MIN_COVER):
-    """reads: list of sequences. -> the consensus cut to its support window"""
+def end_flags(starts, ends):
+    """Amendment 39. starts / ends = alignment starts and ends of the reads on the consensus. The 5' end is single-read when the extreme read extends past the next one by more
+    than the spread of all the others (S[1]-S[0] > S[n-1]-S[1]); the 3' end likewise (E[n-1]-E[n-2] > E[n-2]-E[0]). Fewer than 3 reads: flags None."""
+    S, E = sorted(starts), sorted(ends)
+    n = len(S)
+    if n < 3:
+        return dict(n=n, flag5=None, flag3=None, gap5=None if n < 2 else S[1] - S[0], gap3=None if n < 2 else E[-1] - E[-2])
+    g5, g3 = S[1] - S[0], E[-1] - E[-2]
+    return dict(n=n, flag5=g5 > S[-1] - S[1], flag3=g3 > E[-2] - E[0], gap5=g5, gap3=g3)
+
+
+def read_intervals(cons, reads, tmp):
+    """reference (consensus) intervals of the primary alignments of the reads (list of sequences), splice:hq -uf"""
     os.makedirs(tmp, exist_ok=True)
     open(f"{tmp}/r.fa", "w").write("".join(f">r{i}\n{s}\n" for i, s in enumerate(reads)))
     open(f"{tmp}/c.fa", "w").write(f">c\n{cons}\n")
@@ -50,5 +61,15 @@ def trim_consensus(cons, reads, tmp, min_cover=MIN_COVER):
         if int(f[1]) & 2308 or f[2] == "*":
             continue
         iv.append(ref_span(int(f[3]) - 1, f[5]))
-    a, b = support_window(len(cons), iv, min_cover)
+    return iv
+
+
+def end_support(cons, reads, tmp):
+    iv = read_intervals(cons, reads, tmp)
+    return end_flags([a for a, _ in iv], [b for _, b in iv])
+
+
+def trim_consensus(cons, reads, tmp, min_cover=MIN_COVER):
+    """reads: list of sequences. -> the consensus cut to its support window"""
+    a, b = support_window(len(cons), read_intervals(cons, reads, tmp), min_cover)
     return cons[a:b]

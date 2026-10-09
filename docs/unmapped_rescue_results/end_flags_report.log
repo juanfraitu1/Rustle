@@ -1,0 +1,13 @@
+== control runs: 817 clusters, flag undefined (< 3 aligned reads) in 0
+  PRESENT      n  484  5' flagged 0.161  3' flagged 0.070  either 0.211  median flank 5'/3' 5.0/0.0
+  ALLELE-LIKE  n  326  5' flagged 0.218  3' flagged 0.172  either 0.316  median flank 5'/3' 20.5/0.0
+  DIVERGED     n    5  5' flagged 0.200  3' flagged 0.400  either 0.400  median flank 5'/3' 0/0
+  NOVEL        n    2  5' flagged 0.000  3' flagged 0.000  either 0.000  median flank 5'/3' 5.5/38.0
+== real runs: 106 clusters, flag undefined (< 3 aligned reads) in 0
+  DIVERGED     n    1  5' flagged 1.000  3' flagged 1.000  either 1.000  median flank 5'/3' 108/4
+  NOVEL        n   12  5' flagged 0.083  3' flagged 0.167  either 0.167  median flank 5'/3' 0.0/0.0
+  ELSEWHERE    n   93  5' flagged 0.151  3' flagged 0.086  either 0.204  median flank 5'/3' 0/0
+control clusters whose good/not-good status differs between the global and the local consensus: 69; flagged 32; base rate of flagged among all control clusters 0.253
+local-mode regressions (good -> not good): [('ptr_control_s7', 2650, 5, 'NOVEL', {'f5': False, 'f3': False, 'gap5': 11, 'gap3': 76}), ('ppy_control', 2170, 5, 'DIVERGED', {'f5': False, 'f3': True, 'gap5': 5, 'gap3': 931})]
+the two Amendment-37 tail clusters: [('ptr_control_s7', 2650, 5, 'NOVEL', {'f5': False, 'f3': False, 'gap5': 11, 'gap3': 76}), ('ppy_control', 2170, 5, 'DIVERGED', {'f5': False, 'f3': True, 'gap5': 5, 'gap3': 931})]
+real-run candidates with >= 20 reads: [('a119b', 146, 2826, 'ELSE', False, False, 0, 0), ('a119b', 37, 4029, 'ELSE', False, False, 0, 0), ('a119b', 35, 281, 'ELSE', False, False, 0, 0), ('ggo_testis', 30, 5520, 'ELSE', False, False, 0, 0), ('a119b', 24, 1922, 'ELSE', False, False, 0, 0), ('ptr', 24, 3523, 'ELSE', False, False, 0, 0)]
