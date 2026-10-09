@@ -594,3 +594,32 @@ Bars: read-level stress harness (`stress_part.py`, real `splice:hq` alignment, 1
 **Part B: separating an allele from an absent copy in the O3 flag.** For a cluster consensus: R = identity x coverage (gate-aware) of its best hit on the reference genome, T = the same on the truth genome (the other haplotype assembly, or in a synthetic world the genome with every copy). Registered flag (unchanged): T >= 0.999 and R < 0.999. New classification: COPY = T >= 0.999 and R < 1 - 0.00958 (more than the allele cutoff from every reference locus); ALLELE = T >= 0.999 and 1 - 0.00958 <= R < 0.999; PRESENT = R >= 0.999. Only COPY is an O3 call.
 Bars: synthetic specificity world (seed 20261402, `--spec-world`): 12 NULL families (three copies, all present), 30 ALLELE families (A and B present; the individual is heterozygous at A, the second allele A' differs from A by 0.25%, 0.5%, 1%, 2%, 4%, six families each, A' absent from the reference), 12 ERASED families (copy E at 2% from its nearest survivor, the positive control). (B1) NULL: no cluster is classified COPY and none is flagged by the registered rule. (B2) ALLELE: for A' at 0.25% and 0.5%, 0 COPY calls (the reads either do not enter the net or form clusters classified ALLELE); the table for 1%, 2% and 4% is REPORTED, not judged (an allele more than 1% from its other haplotype is indistinguishable by sequence from a paralog; it is what RNA alone cannot decide). (B3) ERASED: >= 95% of the erased-copy clusters are COPY. (B4) LRPAP1, a sanity check on known data: the c00 allele cluster is ALLELE, the c01 clusters are COPY.
 **Decision.** The guard is adopted into PART iff A1 to A3 hold; the three-way classification is adopted for the O3 call iff B1 to B4 hold. Failures are reported as such.
+
+### Amendment 25 result (2026-10-08; `stress_part.py`, `flagmetric.o3_class`, `run_synth.py o3class`; logs in `docs/unmapped_rescue_results/`)
+
+**Part A, the PART block-purity guard (read-level stress, 12 transcripts per setting, real `splice:hq` alignment).**
+
+| setting | guard OFF (seed 5001) | **guard ON, seed 5001** | **guard ON, seed 5002** |
+|---|---|---|---|
+| independent-error control | 0 of 12 split | **0** | **0** |
+| hotspot, F = 20 columns, p = 0.3 | 10 of 12 | **1** | **0** |
+| hotspot, F = 20, p = 0.5 | 12 of 12 | **0** | **0** |
+| hotspot, F = 40, p = 0.5 | 12 of 12 | **0** | **0** |
+| exon skip in 33% of the reads | 12 of 12 | **12** | **12** |
+| two siblings 0.5% apart | 12 of 12 | **12** | **12** |
+| two linked heterozygous SNPs | 6 of 12 | 6 | 11 |
+
+A1 met (hotspots <= 1 of 12 in every setting, control 0). A2 met for the skip and the siblings (12 of 12; the bar was >= 11); the heterozygous case is not a numeric bar and PART finds two linked SNPs in 6 and 11 of 12 transcripts (a 2-column block is at the edge of its power). A3 met on a fresh partition world (seed 20261401): CTL 0 of 12 split, ISO 24 of 24 recovered (12 of 12 split), SIB 24 of 24, purity 1.00, no spurious or redundant candidate. **The guard is adopted into PART.** Effect on the real beds (descriptive, same reads): dev A 63 of 221 clusters split (73 before), 330 candidates (417), at most 7 leaves (14), best-candidate gate-aware 0.999 count 103 (106); H 17 of 47 (20), 88 candidates (118), at most 10 leaves (12), 24 (26). The guard removes the many-leaf splits; the remaining splits are still not validated against alleles (see the Errata). Reproducibility note: two H clusters' identical consensus sequences gave alignments that differ by one edit between two minimap2 batches, which moves the H frozen count 17 -> 16.
+**Part B, the allele-vs-copy classification (specificity world seed 20261402; E4 reads; library gate closed in this world).**
+
+| scenario | true kind | reads in net | clusters | COPY | ALLELE | registered flag |
+|---|---|---|---|---|---|---|
+| NULL (3 copies, nothing missing) | present | 0 | 0 | 0 | 0 | 0 |
+| ALLELE 0.25% | allele | 0 / 480 | 0 | 0 | 0 | 0 |
+| ALLELE 0.5% | allele | 7 / 480 | 1 | **0** | 1 | 1 |
+| ALLELE 1% | allele | 408 / 480 | 6 | 4 | 2 | 6 |
+| ALLELE 2% | allele | 480 / 480 | 6 | 6 | 0 | 6 |
+| ALLELE 4% | allele | 480 / 480 | 6 | 6 | 0 | 6 |
+| ERASED (positive control) | copy | 960 / 960 | 12 | **12** | 0 | 12 |
+
+B1 met (no cluster at all from the 12 NULL families, so nothing is flagged), B2 met (0 COPY calls for alleles at 0.25% and 0.5%; at 0.5% the one cluster is ALLELE where the registered flag calls it a copy), B3 met (12 of 12 erased copies are COPY). **B4 met on LRPAP1:** the 21-read c00 cluster (mat best 0.9959) is ALLELE, the 283-read and 4-read c01 clusters (mat best 0.9899, 0.9895) are COPY; the 3-read cluster has no call. Reported, not judged: an allele 1% from its other haplotype is already called COPY in 4 of 6 families and 2% or more in all (6 of 6): by sequence alone RNA cannot tell an allele that far apart from a paralog, which is the limit of any RNA-only O3 call; the c01 consensus sits only 0.0005 below the allele cutoff on LRPAP1 (0.9899 against 0.99042). **The three-way classification is adopted for the O3 call; the registered flag (COPY or ALLELE) is kept as the screening statistic.**

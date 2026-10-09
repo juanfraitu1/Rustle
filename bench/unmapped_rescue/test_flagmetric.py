@@ -32,5 +32,25 @@ class GateAware(unittest.TestCase):
         self.assertLess(F.gate_aware(0.995, 2, 1002, 1002, "GG", True), 0.999)
 
 
+class O3Class(unittest.TestCase):
+    def test_copy_allele_present_and_none(self):
+        self.assertEqual(F.o3_class(0.980, 1.0), "COPY")          # more than the allele cutoff from every reference locus
+        self.assertEqual(F.o3_class(0.995, 1.0), "ALLELE")        # within the allele cutoff of a reference locus but not identical
+        self.assertEqual(F.o3_class(0.9995, 1.0), "PRESENT")
+        self.assertEqual(F.o3_class(None, 1.0), "COPY")           # nothing on the reference at all
+        self.assertIsNone(F.o3_class(0.5, 0.9))                   # not reconstructed on the truth genome: no call
+
+    def test_boundaries(self):
+        self.assertEqual(F.o3_class(1 - 0.00958, 0.999), "ALLELE")        # exactly the cutoff is still an allele
+        self.assertEqual(F.o3_class(1 - 0.00958 - 1e-6, 0.999), "COPY")
+        self.assertEqual(F.o3_class(0.999, 0.999), "PRESENT")
+
+    def test_the_registered_flag_is_copy_or_allele(self):
+        self.assertTrue(F.registered_flag(0.995, 1.0))
+        self.assertTrue(F.registered_flag(0.980, 1.0))
+        self.assertFalse(F.registered_flag(0.9995, 1.0))
+        self.assertFalse(F.registered_flag(0.5, 0.9))
+
+
 if __name__ == "__main__":
     unittest.main()

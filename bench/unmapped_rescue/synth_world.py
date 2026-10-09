@@ -94,6 +94,36 @@ def chain_specs(seed=SEED, n_each=12, per_copy=16):
     return out
 
 
+ALLELE_D = (0.0025, 0.005, 0.01, 0.02, 0.04)
+
+
+def spec_specs(seed=SEED, n_null=12, n_allele=6, n_erased=12, per_copy=80):
+    """Amendment 25 specificity world. NULL: three copies A, B, C all present (nothing missing). ALLELE@d: A and B present, the individual is heterozygous at A, the second
+    allele H differs from A by d and is absent from the reference. ERASED: copy E 2% from its nearest survivor, absent (the positive control). `kinds` labels every copy
+    present | allele | copy for the scorer."""
+    plan = [("NULL", None)] * n_null + [(f"ALLELE@{d}", d) for d in ALLELE_D for _ in range(n_allele)] + [("ERASED", None)] * n_erased
+    out = []
+    for k, (sc, d) in enumerate(plan):
+        name = f"f{k:02d}"
+        rng = _seeded(seed, "family", name)
+        n = rng.randint(5, 10)
+        exons = [rng.randint(100, 250)] + [rng.randint(90, 350) for _ in range(n - 2)] + [rng.randint(250, 800)]
+        introns = [rng.randint(300, 2500) for _ in range(n - 1)]
+        if sc == "NULL":
+            copies = [{"id": name + "A"}, {"id": name + "B", "ops": [{"op": "snp", "rate": 0.02}]}, {"id": name + "C", "ops": [{"op": "snp", "rate": 0.03}]}]
+            kinds = {name + "A": "present", name + "B": "present", name + "C": "present"}
+        elif sc == "ERASED":
+            copies = [{"id": name + "A", "ops": [{"op": "snp", "rate": 0.02}]}, {"id": name + "B", "ops": [{"op": "snp", "rate": 0.03}]}, {"id": name + "E", "in_reference": False}]
+            kinds = {name + "A": "present", name + "B": "present", name + "E": "copy"}
+        else:
+            copies = [{"id": name + "A"}, {"id": name + "B", "ops": [{"op": "snp", "rate": 0.03}]}, {"id": name + "H", "in_reference": False, "ops": [{"op": "snp", "rate": d}]}]
+            kinds = {name + "A": "present", name + "B": "present", name + "H": "allele"}
+        out.append({"name": name, "seed": seed * 1000 + k, "scenario": sc, "kinds": kinds, "divergence_class": d or 0.02,
+                    "background": {"source": "random", "length": 60000}, "template": {"source": "synthetic", "exons": exons, "introns": introns}, "copies": copies,
+                    "reads": {"per_copy": per_copy, "err": 0.001, "indel": 0.0003, "jitter": 30}})
+    return out
+
+
 def add_polya(fq_lines, seed):
     """a 3' polyA tail of 20 to 30 A on every read of a 4-line FASTQ stream (the E1 read-end variant)"""
     rng = random.Random(seed)
@@ -151,7 +181,7 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_
     for spec in (specs if specs is not None else family_specs(seed, n_per_class, classes, lead_g=lead_g)):
         name, D = spec["name"], spec["divergence_class"]
         fdir = f"{out}/fam/{name}"
-        fspec = {k: v for k, v in spec.items() if k not in ("divergence_class", "lead_g", "scenario")}
+        fspec = {k: v for k, v in spec.items() if k not in ("divergence_class", "lead_g", "scenario", "kinds")}
         if "lead_g" in spec:
             from famsim.template import resolve_template
             os.makedirs(fdir, exist_ok=True)
@@ -191,6 +221,7 @@ def build_world(out, seed=SEED, log=print, n_per_class=6, classes=CLASSES, lead_
         truth_rows += lines[1:]
         log(f"{name} D={D}: {len(planted)} copies")
     json.dump({sp["name"]: sp.get("scenario") for sp in (specs or [])}, open(f"{out}/world.json", "w"))
+    json.dump({c: kd for sp in (specs or []) for c, kd in sp.get("kinds", {}).items()}, open(f"{out}/kinds.json", "w"))
     write_fa(f"{out}/genome.ref.fa", ref)
     write_fa(f"{out}/genome.truth.fa", truth)
     write_fa(f"{out}/transcripts.fa", trans)
@@ -220,9 +251,10 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--n-per-class", type=int, default=6)
     ap.add_argument("--per-copy", type=int, default=None, help="reads per copy for the chain world (default 16)")
+    ap.add_argument("--spec-world", action="store_true", help="Amendment 25 specificity scenarios (NULL / ALLELE / ERASED)")
     ap.add_argument("--chain-world", action="store_true", help="Amendment 23 scenarios (CTL / CHAIN, low depth, fragments)")
     ap.add_argument("--partition-world", action="store_true", help="Amendment 18 scenarios (CTL / ISO / SIB)")
     ap.add_argument("--lead-g", action="store_true", help="force 0-3 leading G on each template's first exon (Amendment 16)")
     ap.add_argument("--classes", default=",".join(str(c) for c in CLASSES), help="comma-separated divergence classes")
     a = ap.parse_args()
-    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g, specs=partition_specs(a.seed) if a.partition_world else (chain_specs(a.seed, per_copy=a.per_copy or 16) if a.chain_world else None))
+    build_world(a.out, a.seed, n_per_class=a.n_per_class, classes=tuple(float(x) for x in a.classes.split(",")), lead_g=a.lead_g, specs=partition_specs(a.seed) if a.partition_world else (chain_specs(a.seed, per_copy=a.per_copy or 16) if a.chain_world else (spec_specs(a.seed) if a.spec_world else None)))

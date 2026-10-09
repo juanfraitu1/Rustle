@@ -95,6 +95,45 @@ class Partition(unittest.TestCase):
         self.assertEqual(len(leaves), 1)
 
 
+class Guard(unittest.TestCase):
+    def hotspot_reads(self, seed, F=20, p_low=0.5, p_good=0.03, n_good=75, n_low=25):
+        rng = random.Random(seed)
+        fragile = sorted(rng.sample(range(30, L - 30), F))
+        reads = {}
+        for i in range(n_good + n_low):
+            p = p_good if i < n_good else p_low
+            cols = [c for c in fragile if rng.random() < p]
+            reads[f"h{seed}_{i}"] = noisy(mutate(BASE, cols), rng)
+        return reads
+
+    def test_a_recurrent_error_hotspot_in_a_subset_of_reads_is_not_a_block(self):
+        for seed in range(1, 8):
+            leaves = PT.partition(self.hotspot_reads(seed), align_fn, consensus_fn)
+            self.assertEqual(len(leaves), 1, seed)
+
+    def test_real_structure_still_splits_under_the_guard(self):
+        for seed in (1, 2, 3):
+            leaves, truth = Partition().leaves([(30, []), (30, SIB_COLS)], seed)
+            self.assertEqual(len(leaves), 2, seed)
+
+    def test_block_deviation_counts_reads_that_disagree_with_their_own_group(self):
+        import numpy as np
+        C = np.zeros((3, 10), dtype=bool)
+        C[:, :5] = True                      # five reads carry all three variants
+        C[0, 7] = True                       # a non-carrier that has one of them
+        C[1, 2] = False                      # a carrier lacking one
+        K = np.ones_like(C)
+        dev, pairs = PT.block_deviation([0, 1, 2], C, K)
+        self.assertEqual((dev, pairs), (2, 30))
+
+    def test_background_error_ignores_the_variant_columns(self):
+        reads = {f"r{i}": BASE for i in range(10)}
+        reads["x"] = mutate(BASE, [100])                         # one error outside the variant columns
+        sam = align_fn(BASE, reads)
+        e = PT.background_error(BASE, sam, [("sub", 50, "A")])
+        self.assertAlmostEqual(e, 1 / (11 * (L - 1)), places=6)
+
+
 class Blocks(unittest.TestCase):
     def test_linked_variants_form_a_block_and_noise_does_not(self):
         import numpy as np

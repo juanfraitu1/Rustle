@@ -9,6 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 import apply_trim_real as AT  # noqa: E402
+import flagmetric as FM  # noqa: E402
 import libsig  # noqa: E402
 import lrpap1 as L  # noqa: E402
 import run_lrpap1 as RL  # noqa: E402
@@ -56,13 +57,13 @@ def main(tag):
                 top = max(pl.items(), key=lambda kv: kv[1]) if pl else (None, None)
                 best[(k, h, variant)] = top
     print(f"library gate {'OPEN' if gate_open else 'closed'}")
-    print(f"{'cluster':30s} {'maj':4s} {'5p clip':8s} {'pat best (reg / gate)':32s} {'mat best (reg / gate)':32s} flag reg / gate")
+    print(f"{'cluster':30s} {'maj':4s} {'5p clip':8s} {'pat best (reg / gate)':32s} {'mat best (reg / gate)':32s} flag reg / gate / class (Amendment 25)")
     for n in names:
         k = n.split("|")[0]
         pr, pg, mr, mg = best[(k, "pat", "registered")], best[(k, "pat", "gate")], best[(k, "mat", "registered")], best[(k, "mat", "gate")]
         clip = next((r["clip5"] for r in records(f"{d}/cons.pat.sam", al, gate_open).get(k, [])), "")
         print(f"{n:30s} {str(maj.get(n)):4s} {clip[:6]:8s} {pr[0]!s:4s} {pr[1]:.4f} / {pg[1]:.4f}      {mr[0]!s:8s} {mr[1]:.4f} / {mg[1]:.4f}      "
-              f"{L.o3_flag(mr[1], pr[1])} / {L.o3_flag(mg[1], pg[1])}")
+              f"{L.o3_flag(mr[1], pr[1])} / {L.o3_flag(mg[1], pg[1])} / {FM.o3_class(mg[1], pg[1])}")
 
 
 if __name__ == "__main__":

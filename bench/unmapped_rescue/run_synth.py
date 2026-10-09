@@ -426,6 +426,60 @@ def stage_chaineval(V):
               f"reads clustered {r['reads_clustered']}/{r['erased_reads']} ({r['reads_clustered'] / max(1, r['erased_reads']):.0%}), purity {r['pure_reads'] / max(1, r['reads_clustered']):.2f}")
 
 
+def stage_o3class(V):
+    """Amendment 25 part B: classify every cluster consensus as COPY / ALLELE / PRESENT against the reference genome and the truth genome (all copies and alleles)"""
+    d = f"{W0}/{V}"
+    kinds = json.load(open(f"{W0}/kinds.json"))
+    scen = json.load(open(f"{W0}/world.json"))
+    cp = copies()
+    lab = labels(V)
+    gate = variant_gate(V)
+    cons = {n.split("|")[0]: s for n, s in cons_seqs(V).items()}
+    fa = f"{d}/cons.o3.fa"
+    SD.write_fa(fa, cons, list(cons))
+    best = {}
+    for which in ("ref", "truth"):
+        paf = f"{d}/cons.o3.{which}.paf"
+        subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {W0}/genome.{which}.fa {fa} > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
+        b = {}
+        for ln in open(paf):
+            f = ln.rstrip("\n").split("\t")
+            if f[0] not in b or int(f[9]) > b[f[0]][0]:
+                b[f[0]] = (int(f[9]), int(f[9]) / max(1, int(f[10])), int(f[2]), int(f[3]), int(f[1]))
+        best[which] = b
+
+    def score(which, k):
+        h = best[which].get(k)
+        return FM.gate_aware(h[1], h[2], h[3], h[4], cons[k][:h[2]], gate) if h else None
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
+        cl["cl" + r["cluster"]].append(r["read"])
+    tab = collections.defaultdict(collections.Counter)
+    for k, rs in cl.items():
+        origin = collections.Counter(r.split(".")[0] for r in rs).most_common(1)[0][0]
+        fam = cp[origin]["family"]
+        key = (scen[fam], kinds[origin])
+        R, T = score("ref", k), score("truth", k)
+        c = FM.o3_class(R, T)
+        tab[key]["clusters"] += 1
+        tab[key][str(c)] += 1
+        tab[key]["registered_flag"] += FM.registered_flag(R, T)
+    innet = collections.defaultdict(lambda: [0, 0])
+    for n, r in lab.items():
+        c = n.split(".")[0]
+        if kinds[c] != "present":
+            innet[(scen[cp[c]["family"]], kinds[c])][0] += r["in_net"] == "1"
+            innet[(scen[cp[c]["family"]], kinds[c])][1] += 1
+    print(f"{V}: gate {'OPEN' if gate else 'closed'}")
+    print(f"{'scenario':16s} {'true kind':8s} {'reads in net':>14s} {'clusters':>8s} {'COPY':>5s} {'ALLELE':>6s} {'PRESENT':>7s} {'none':>5s} {'registered flag':>15s}")
+    keys = sorted(set(tab) | set(innet), key=lambda x: (x[0] != "NULL", x))
+    for key in keys:
+        t = tab.get(key, collections.Counter())
+        a, b = innet.get(key, [0, 0])
+        print(f"{key[0]:16s} {key[1]:8s} {a:>6d}/{b:<7d} {t['clusters']:>8d} {t['COPY']:>5d} {t['ALLELE']:>6d} {t['PRESENT']:>7d} {t['None']:>5d} {t['registered_flag']:>15d}")
+    json.dump({f"{k[0]}|{k[1]}": dict(v) for k, v in tab.items()}, open(f"{d}/o3class.json", "w"), indent=1)
+
+
 def stage_partition(V):
     """Amendment 18: PART on every cluster of >= 6 reads (seeded sample of <= 400 reads for discovery)"""
     import random
@@ -636,4 +690,4 @@ def stage_report(V):
 
 if __name__ == "__main__":
     {"map": stage_map, "cluster": stage_cluster, "truth": stage_truth, "attribute": stage_attribute, "augment": stage_augment, "report": stage_report,
-     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "chainrefine": stage_chainrefine, "chaineval": stage_chaineval, "partition": stage_partition, "parteval": stage_parteval, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])
+     "trim": stage_trim, "trim2": stage_trim2, "trim3": stage_trim3, "trim4": stage_trim4, "o3class": stage_o3class, "chainrefine": stage_chainrefine, "chaineval": stage_chaineval, "partition": stage_partition, "parteval": stage_parteval, "gatereport": stage_gatereport, "exactreport": stage_exactreport, "trimreport": stage_trimreport}[sys.argv[2]](sys.argv[1], *sys.argv[3:])

@@ -7,7 +7,7 @@ import os
 import subprocess
 
 import numpy as np
-from scipy.stats import hypergeom
+from scipy.stats import binom, hypergeom
 
 import polish as P
 
@@ -115,6 +115,40 @@ def find_blocks(C, K, cols, alpha=ALPHA, min_carry=MIN_LEAF):
     return [b for b in comp.values() if len(b) >= 2]
 
 
+def block_deviation(block, C, K):
+    """Amendment 25: (Dev, pairs) of a candidate block: over the (read, variant) cells the reads cover, Dev counts those where the read disagrees with its own group
+    (a carrier lacking the variant, a non-carrier having it). A real haplotype or isoform is carried entirely or not at all; a hotspot is carried partially."""
+    sub, cov = C[block], K[block]
+    carried, covered = sub.sum(0), cov.sum(0)
+    carriers = (covered > 0) & (2 * carried >= covered)
+    disagree = cov & ((carriers[None, :] & ~sub) | (~carriers[None, :] & sub))
+    return int(disagree.sum()), int(cov.sum())
+
+
+def background_error(cons, sam_lines, V, n_as_del=False, floor=1e-4):
+    """non-consensus allele rate (substitutions and deletions) outside the variant columns, floor 1e-4"""
+    cnt, _ins, _ng = P.pileup(sam_lines, cons, n_as_del)
+    skip = {v[1] for v in V}
+    obs = alt = 0
+    for i, c in enumerate(cnt):
+        if i in skip:
+            continue
+        n = sum(c)
+        obs += n
+        alt += n - (c[P.IDX[cons[i]]] if cons[i] in P.IDX else 0)
+    return max(floor, alt / obs) if obs else floor
+
+
+def pure_blocks(blocks, C, K, e_bg, alpha=ALPHA):
+    """drop the blocks whose disagreement with their own group is more than independent errors at the background rate explain (a recurrent-error hotspot)"""
+    keep = []
+    for b in blocks:
+        dev, pairs = block_deviation(b, C, K)
+        if pairs == 0 or binom.sf(dev - 1, pairs, e_bg) >= alpha / len(blocks):
+            keep.append(b)
+    return keep
+
+
 def choose_split(blocks, C, K, min_leaf=MIN_LEAF):
     """-> (smaller side, carriers boolean vector) of the block whose smaller side is largest (both sides >= min_leaf), or None"""
     n = C.shape[1]
@@ -143,6 +177,8 @@ def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_D
     nm, C, K = read_carry(sam, cons, V, n_as_del)
     V, C, K = cap_variants(V, C, K)
     blocks = find_blocks(C, K, [v[1] for v in V])
+    if blocks:
+        blocks = pure_blocks(blocks, C, K, background_error(cons, sam, V, n_as_del))
     best = choose_split(blocks, C, K, min_leaf) if blocks else None
     if best is None:
         return leaf
