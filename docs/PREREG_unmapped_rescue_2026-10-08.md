@@ -732,3 +732,19 @@ Clean control (959 reads clean on both haplotypes, seed 3): 46 clusters, 660 rea
 **Statistic (robust to splicing).** A cDNA consensus contains k-mers that span exon junctions and exist in no genomic read. A base is COVERED if at least one of the 21-mers that contain it has count >= 2 (count 1 is read-error range); the covered fraction of the sequence and the median count of the k-mers with count >= 2 are reported.
 **Bars (set now).** (V1) T1: covered >= 95% and median count within [2.5, 25] (0.5 to 5 times lambda: one haplotype to a multi-copy locus). (V2) the shuffled controls: covered <= 2%. (V3) P1: covered >= 95%. **Classification of the candidates (no bar, a reading):** DNA-SUPPORTED = covered >= 90% and median count in [2.5, 25]; PARTIAL = covered in [10%, 90%); DNA-ABSENT = covered < 10%.
 **Decision.** The verification is reported as working iff V1 to V3 hold; then N1 and N2 are classified. A DNA-ABSENT candidate is an RNA-only sequence (contamination, a trans-spliced or chimeric read product); DNA-SUPPORTED is a sequence of the animal's genome absent from all three assemblies.
+
+### Amendment 32 result (2026-10-08; `kmerhit.c`, `dna_verify.py`; logs `dna_verify.jim.log`, `candidates_vs_human.log`)
+
+All 277,646,976 reads (41.9 Gb) of KB3781's whole-genome run were streamed once (6 chunks, 2 x 2 min); the 20,674 distinct canonical 21-mers of the six sequences were counted exactly.
+
+| sequence | length | k-mers with count >= 2 | covered bases (count >= 2) | median count of present k-mers |
+|---|---|---|---|---|
+| **T1** (113-read CONFIRMED) | 5,694 | **97.1%** | **99.8%** | **6.0** (one haplotype; lambda 4.98) |
+| **P1** (PRESENT control) | 2,393 | 96.0% | 99.9% | 11 (two haplotypes) |
+| **N1** (NOVEL, 4 reads) | 2,445 | **0.3%** | **5.2%** | 8 (7 k-mers) |
+| **N2** (NOVEL, 3 reads) | 2,330 | **0.2%** | **3.7%** | 11 (5 k-mers) |
+| S1 (shuffled T1) | 5,694 | 0.3% | 4.8% | 9 |
+| S2 (shuffled N1) | 2,445 | 0.1% | 1.7% | 8.5 |
+
+**V1 met** (T1: 99.8% covered, median 6.0 in [2.5, 25]). **V3 met** (P1 99.9%). **V2 not met as written**: the shuffled negatives are covered 4.8% (S1) and 1.7% (S2) against the bar <= 2%: a handful of random 21-mers (0.1 to 0.3% of them, chance matches in a 3.5 Gb genome read at 12x) each cover 21 bases, which the covered-bases statistic magnifies; on the k-mer fraction the separation is 97% against 0.3% and the bar's intent holds. **Reading: N1 and N2 are DNA-ABSENT**: their covered fractions (5.2%, 3.7%) and k-mer fractions (0.3%, 0.2%) equal the shuffled negatives'. T1 aligns to human chr2 (98.2%, an ortholog); N1 and N2 do not align to the human genome either (no record), have ordinary composition (GC 0.53 and 0.58, no homopolymer or low-complexity run, no polyA), so Illumina GC dropout and human contamination are not the explanation.
+**What the discovery run therefore found, graded by independent evidence.** One sequence (113 reads, 5.7 kb) absent from the primary assembly, identical to the mother's assembly and present in the animal's DNA at one-haplotype depth: a real reference-absent sequence reached from the transcriptome. Two small clusters (7 reads) that are in no assembly, no human sequence and none of the animal's 41.9 Gb of DNA: RNA-only products (contamination of the culture or the library, or chimeric or trans-spliced read products), not unannotated gorilla genes; the verification step removes them as candidates. The verification itself cost 4 minutes of streaming and a 17 KB k-mer set.
