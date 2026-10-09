@@ -38,3 +38,20 @@ def o3_class(ref_best, truth_best, delta=DELTA, bar=BAR):
 def registered_flag(ref_best, truth_best, bar=BAR):
     """the registered O3 flag: reconstructed on the truth genome, not present on the reference"""
     return truth_best is not None and truth_best >= bar and (ref_best is None or ref_best < bar)
+
+
+def discovery_class(ref_best, mat_best, pat_best, delta=DELTA, bar=BAR):
+    """Amendment 28. CONFIRMED: more than the allele cutoff from the primary reference and >= bar on the mother's or the father's assembly; NOVEL: more than the cutoff
+    from the primary and < bar on both; ALLELE-LIKE: within the cutoff of the primary but under the bar; PRESENT: >= bar on the primary."""
+    if ref_best is not None and ref_best >= bar:
+        return "PRESENT"
+    if ref_best is not None and ref_best >= 1 - delta - 1e-12:
+        return "ALLELE-LIKE"
+    return "CONFIRMED" if max(mat_best or 0.0, pat_best or 0.0) >= bar else "NOVEL"
+
+
+def gate_aware_total(ident, aligned, qlen, lead_unaligned, prefix, gate_open, max_g=MAX_G):
+    """identity x (aligned bases / consensus length); when the gate is open and the leading unaligned end is 1 to 3 bases, all G, it leaves the denominator"""
+    if gate_open and 0 < lead_unaligned <= max_g and len(prefix) == lead_unaligned and set(prefix) == {"G"}:
+        return ident * aligned / (qlen - lead_unaligned)
+    return ident * aligned / qlen
