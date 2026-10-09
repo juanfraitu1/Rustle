@@ -1,0 +1,156 @@
+{
+ "0.005": {
+  "clusters": 0,
+  "untrimmed": {
+   "idcov_ge_0_999": 0,
+   "idcov_n": 0,
+   "left_in_window": 0,
+   "left_below_minus4": 0,
+   "lefts": []
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 0,
+   "idcov_n": 0,
+   "left_in_window": 0,
+   "left_below_minus4": 0,
+   "lefts": []
+  },
+  "decisions": {}
+ },
+ "0.01": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -2,
+    -2,
+    -1,
+    0,
+    0,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -2,
+    -2,
+    -1,
+    0,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 6
+  }
+ },
+ "0.02": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -2,
+    -1,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -2,
+    -1,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 6
+  }
+ },
+ "0.04": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -1,
+    -1,
+    0,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -1,
+    -1,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 6
+  }
+ },
+ "0.08": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -2,
+    -2,
+    -1,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -2,
+    -2,
+    -1,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 6
+  }
+ }
+}

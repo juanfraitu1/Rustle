@@ -1,0 +1,126 @@
+{
+ "signature": {
+  "reads": 4800,
+  "no_clip": 953,
+  "pure": {
+   "A": 0,
+   "C": 0,
+   "G": 3462,
+   "T": 0
+  },
+  "g_lengths": {
+   "1": 1284,
+   "3": 732,
+   "2": 1446
+  },
+  "g_lengths_all": {
+   "6": 25,
+   "1": 1284,
+   "3": 732,
+   "2": 1446,
+   "4": 219,
+   "5": 101
+  },
+  "other_clip": 385
+ },
+ "gate": true,
+ "p": 0.0,
+ "clusters": {
+  "clf06E.iso0.79": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf07E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf09E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf10E.iso0.9": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf11E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf12E.iso0.78": {
+   "trimmed": 1,
+   "reason": "trimmed"
+  },
+  "clf13E.iso0.79": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf14E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf15E.iso0.75": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf16E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf17E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf18E.iso0.9": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf19E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf20E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed"
+  },
+  "clf21E.iso0.8": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf22E.iso0.77": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf23E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf24E.iso0.79": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf25E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf26E.iso0.79": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf27E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf28E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf29E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf08E.iso0.59": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  }
+ }
+}

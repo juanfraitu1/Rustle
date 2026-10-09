@@ -1,0 +1,46 @@
+{
+ "CTL/baseline": {
+  "clusters": 12,
+  "candidates": 12,
+  "expected": 12,
+  "recovered": 12
+ },
+ "ISO/baseline": {
+  "clusters": 12,
+  "candidates": 12,
+  "expected": 24,
+  "recovered": 12
+ },
+ "SIB/baseline": {
+  "clusters": 24,
+  "candidates": 24,
+  "expected": 24,
+  "recovered": 24
+ },
+ "CTL/partition": {
+  "clusters": 12,
+  "split": 0,
+  "candidates": 12,
+  "expected": 12,
+  "recovered": 12
+ },
+ "ISO/partition": {
+  "clusters": 12,
+  "split": 12,
+  "candidates": 24,
+  "expected": 24,
+  "recovered": 24
+ },
+ "SIB/partition": {
+  "clusters": 24,
+  "split": 0,
+  "candidates": 24,
+  "expected": 24,
+  "recovered": 24
+ },
+ "purity": {
+  "CTL": 1.0,
+  "ISO": 1.0,
+  "SIB": 1.0
+ }
+}

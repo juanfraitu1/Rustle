@@ -1,0 +1,161 @@
+{
+ "signature": {
+  "reads": 4800,
+  "no_clip": 953,
+  "pure": {
+   "A": 0,
+   "C": 0,
+   "G": 3462,
+   "T": 0
+  },
+  "g_lengths": {
+   "1": 1284,
+   "3": 732,
+   "2": 1446
+  },
+  "g_lengths_all": {
+   "6": 25,
+   "1": 1284,
+   "3": 732,
+   "2": 1446,
+   "4": 219,
+   "5": 101
+  },
+  "other_clip": 385
+ },
+ "gate": true,
+ "p": 0.0,
+ "a": {
+  "0": 0.19854166666666667,
+  "1": 0.2675,
+  "2": 0.30125,
+  "3": 0.1525,
+  "4": 0.045625,
+  "5": 0.021041666666666667,
+  "6": 0.005208333333333333,
+  "7": 0.0001,
+  "8": 0.0001
+ },
+ "clusters": {
+  "clf06E.iso0.79": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 2
+  },
+  "clf07E.iso0.8": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 3
+  },
+  "clf09E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf10E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf11E.iso0.8": {
+   "trimmed": 3,
+   "reason": "trimmed",
+   "j_hat": 3
+  },
+  "clf12E.iso0.78": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 0
+  },
+  "clf13E.iso0.79": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf14E.iso0.8": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 2
+  },
+  "clf15E.iso0.75": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 3
+  },
+  "clf16E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 0
+  },
+  "clf17E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 0
+  },
+  "clf18E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 2
+  },
+  "clf19E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf20E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 0
+  },
+  "clf21E.iso0.8": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf22E.iso0.77": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf23E.iso0.8": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 3
+  },
+  "clf24E.iso0.79": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf25E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf26E.iso0.79": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 2
+  },
+  "clf27E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf28E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 0
+  },
+  "clf29E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed",
+   "j_hat": 1
+  },
+  "clf08E.iso0.59": {
+   "trimmed": 2,
+   "reason": "trimmed",
+   "j_hat": 0
+  }
+ }
+}

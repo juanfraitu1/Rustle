@@ -1,0 +1,165 @@
+{
+ "0.005": {
+  "clusters": 2,
+  "untrimmed": {
+   "idcov_ge_0_999": 2,
+   "idcov_n": 2,
+   "left_in_window": 2,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -1
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 2,
+   "idcov_n": 2,
+   "left_in_window": 2,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -1
+   ]
+  },
+  "decisions": {
+   "no_prefix": 2
+  }
+ },
+ "0.01": {
+  "clusters": 5,
+  "untrimmed": {
+   "idcov_ge_0_999": 5,
+   "idcov_n": 5,
+   "left_in_window": 5,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -2,
+    -2,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 5,
+   "idcov_n": 5,
+   "left_in_window": 5,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -2,
+    -2,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 5
+  }
+ },
+ "0.02": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -2,
+    -2,
+    -1,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -2,
+    -2,
+    -1,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 5,
+   "not_g": 1
+  }
+ },
+ "0.04": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -1,
+    -1,
+    0,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -1,
+    -1,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "no_prefix": 6
+  }
+ },
+ "0.08": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "not_g": 1,
+   "too_long": 1,
+   "no_prefix": 4
+  }
+ }
+}

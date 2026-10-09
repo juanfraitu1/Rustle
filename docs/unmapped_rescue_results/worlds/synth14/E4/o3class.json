@@ -1,0 +1,28 @@
+{
+ "ALLELE@0.005|allele": {
+  "clusters": 1,
+  "ALLELE": 1,
+  "registered_flag": 1
+ },
+ "ALLELE@0.01|allele": {
+  "clusters": 6,
+  "COPY": 4,
+  "registered_flag": 6,
+  "ALLELE": 2
+ },
+ "ALLELE@0.02|allele": {
+  "clusters": 6,
+  "COPY": 6,
+  "registered_flag": 6
+ },
+ "ALLELE@0.04|allele": {
+  "clusters": 6,
+  "COPY": 6,
+  "registered_flag": 6
+ },
+ "ERASED|copy": {
+  "clusters": 12,
+  "COPY": 12,
+  "registered_flag": 12
+ }
+}

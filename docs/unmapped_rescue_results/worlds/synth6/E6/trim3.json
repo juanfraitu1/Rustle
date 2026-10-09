@@ -1,0 +1,119 @@
+{
+ "signature": {
+  "reads": 4800,
+  "no_clip": 4764,
+  "pure": {
+   "A": 1,
+   "C": 4,
+   "G": 0,
+   "T": 0
+  },
+  "g_lengths": {},
+  "g_lengths_all": {},
+  "other_clip": 31
+ },
+ "gate": false,
+ "p": 1.0,
+ "clusters": {
+  "clf06E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf08E.iso0.79": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf09E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf11E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf12E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf13E.iso0.75": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf14E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf15E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf16E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf17E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf18E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf19E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf20E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf21E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf22E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf23E.iso0.79": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf24E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf25E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf26E.iso0.77": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf27E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf28E.iso0.8": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf29E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf10E.iso0.9": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf07E.iso0.78": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  },
+  "clf05E.iso0.63": {
+   "trimmed": 0,
+   "reason": "gate_closed"
+  }
+ }
+}

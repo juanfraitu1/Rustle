@@ -1,0 +1,164 @@
+{
+ "0.005": {
+  "clusters": 1,
+  "untrimmed": {
+   "idcov_ge_0_999": 1,
+   "idcov_n": 1,
+   "left_in_window": 1,
+   "left_below_minus4": 0,
+   "lefts": [
+    1
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 1,
+   "idcov_n": 1,
+   "left_in_window": 1,
+   "left_below_minus4": 0,
+   "lefts": [
+    0
+   ]
+  },
+  "decisions": {
+   "trimmed": 1
+  }
+ },
+ "0.01": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 3,
+   "idcov_n": 6,
+   "left_in_window": 3,
+   "left_below_minus4": 0,
+   "lefts": [
+    0,
+    1,
+    1,
+    2,
+    2,
+    2
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -3,
+    -2,
+    -1,
+    0,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "trimmed": 6
+  }
+ },
+ "0.02": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 4,
+   "idcov_n": 6,
+   "left_in_window": 4,
+   "left_below_minus4": 0,
+   "lefts": [
+    0,
+    1,
+    1,
+    1,
+    2,
+    2
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 6,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -1,
+    -1,
+    -1,
+    -1,
+    0,
+    0
+   ]
+  },
+  "decisions": {
+   "trimmed": 6
+  }
+ },
+ "0.04": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 2,
+   "idcov_n": 6,
+   "left_in_window": 3,
+   "left_below_minus4": 0,
+   "lefts": [
+    1,
+    1,
+    1,
+    2,
+    2,
+    3
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 5,
+   "idcov_n": 6,
+   "left_in_window": 5,
+   "left_below_minus4": 0,
+   "lefts": [
+    -2,
+    -1,
+    -1,
+    0,
+    0,
+    2
+   ]
+  },
+  "decisions": {
+   "trimmed": 5,
+   "too_long": 1
+  }
+ },
+ "0.08": {
+  "clusters": 6,
+  "untrimmed": {
+   "idcov_ge_0_999": 3,
+   "idcov_n": 6,
+   "left_in_window": 4,
+   "left_below_minus4": 0,
+   "lefts": [
+    -1,
+    0,
+    1,
+    1,
+    2,
+    2
+   ]
+  },
+  "trimmed": {
+   "idcov_ge_0_999": 5,
+   "idcov_n": 6,
+   "left_in_window": 6,
+   "left_below_minus4": 0,
+   "lefts": [
+    -2,
+    -2,
+    -1,
+    0,
+    0,
+    1
+   ]
+  },
+  "decisions": {
+   "too_long": 1,
+   "trimmed": 5
+  }
+ }
+}

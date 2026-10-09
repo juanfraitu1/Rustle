@@ -1,0 +1,57 @@
+{
+ "untrimmed": {
+  "n": 24,
+  "exact": 21,
+  "within1": 24,
+  "over": 1,
+  "under": 2,
+  "tol_exact": 24,
+  "tol_over": 0,
+  "tol_under": 0,
+  "tol_within1": 24,
+  "idcov_ok": 24,
+  "idcov_n": 24,
+  "errs": {
+   "-1": 1,
+   "0": 21,
+   "1": 2
+  }
+ },
+ "T3": {
+  "n": 24,
+  "exact": 21,
+  "within1": 24,
+  "over": 1,
+  "under": 2,
+  "tol_exact": 24,
+  "tol_over": 0,
+  "tol_under": 0,
+  "tol_within1": 24,
+  "idcov_ok": 24,
+  "idcov_n": 24,
+  "errs": {
+   "-1": 1,
+   "0": 21,
+   "1": 2
+  }
+ },
+ "T4": {
+  "n": 24,
+  "exact": 21,
+  "within1": 24,
+  "over": 1,
+  "under": 2,
+  "tol_exact": 24,
+  "tol_over": 0,
+  "tol_under": 0,
+  "tol_within1": 24,
+  "idcov_ok": 24,
+  "idcov_n": 24,
+  "errs": {
+   "-1": 1,
+   "0": 21,
+   "1": 2
+  }
+ },
+ "gate": false
+}

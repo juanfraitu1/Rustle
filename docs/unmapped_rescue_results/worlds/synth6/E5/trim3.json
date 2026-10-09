@@ -1,0 +1,130 @@
+{
+ "signature": {
+  "reads": 4800,
+  "no_clip": 987,
+  "pure": {
+   "A": 0,
+   "C": 1,
+   "G": 3432,
+   "T": 0
+  },
+  "g_lengths": {
+   "1": 1260,
+   "2": 1450,
+   "3": 722
+  },
+  "g_lengths_all": {
+   "1": 1260,
+   "4": 234,
+   "2": 1450,
+   "3": 722,
+   "5": 88,
+   "6": 27
+  },
+  "other_clip": 380
+ },
+ "gate": true,
+ "p": 0.0,
+ "clusters": {
+  "clf06E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf08E.iso0.74": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf09E.iso0.8": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf11E.iso0.9": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf12E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed"
+  },
+  "clf13E.iso0.75": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf14E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf15E.iso0.9": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf16E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf17E.iso0.9": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf18E.iso0.8": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf19E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf20E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf21E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf22E.iso0.9": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf23E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf24E.iso0.9": {
+   "trimmed": 1,
+   "reason": "trimmed"
+  },
+  "clf25E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf26E.iso0.77": {
+   "trimmed": 1,
+   "reason": "trimmed"
+  },
+  "clf27E.iso0.8": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf28E.iso0.8": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf29E.iso0.9": {
+   "trimmed": 2,
+   "reason": "trimmed"
+  },
+  "clf10E.iso0.9": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  },
+  "clf07E.iso0.78": {
+   "trimmed": 0,
+   "reason": "too_long"
+  },
+  "clf05E.iso0.63": {
+   "trimmed": 3,
+   "reason": "trimmed"
+  }
+ }
+}
