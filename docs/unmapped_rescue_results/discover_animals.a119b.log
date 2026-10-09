@@ -1,0 +1,13 @@
+a119b: 9841 reads, 77 components, 78 clusters after the star step, 742 reads clustered
+a119b: gate OPEN; 78 clusters, 742 reads; PRESENT or ALLELE-LIKE share of clustered reads 0.0
+  ELSEWHERE    clusters   56  reads   584
+  NOVEL        clusters    7  reads    35
+  DIVERGED     clusters    0  reads     0
+  UNSUPPORTED  clusters   15  reads   123
+  ALLELE-LIKE  clusters    0  reads     0
+  PRESENT      clusters    0  reads     0
+  largest clusters (reads, length, class, scores by assembly, median read divergence): [(146, 2998, 'ELSEWHERE', {'R': None, 'GGO': 0.9863}, 0.0012), (37, 4025, 'ELSEWHERE', {'R': None, 'GGO': 0.9723}, 0.0008), (35, 281, 'ELSEWHERE', {'R': None, 'GGO': 0.9858}, 0.0036), (24, 1916, 'ELSEWHERE', {'R': None, 'GGO': 0.9766}, 0.0005), (18, 2473, 'ELSEWHERE', {'R': None, 'GGO': 0.9743}, 0.0004)]
+  ELSEWHERE clusters: 56; reads [146, 37, 35, 24, 18, 17, 16, 16, 16, 16, 14, 13, 12, 11, 10]; lengths [2998, 4025, 281, 1916, 2473, 1827, 2071, 1375, 4464, 1576, 3047, 2955, 2171, 4524, 2629]
+  NOVEL clusters: 7; reads [11, 7, 5, 3, 3, 3, 3]; lengths [2438, 281, 2552, 2942, 1979, 1024, 2184]
+  DIVERGED clusters: 0; reads []; lengths []
+  UNSUPPORTED clusters: 15; reads [17, 15, 15, 13, 11, 8, 8, 7, 6, 6, 4, 4, 3, 3, 3]; lengths [3885, 4292, 2087, 2600, 2529, 6472, 509, 2970, 2645, 1994, 2395, 2606, 2697, 480, 4206]

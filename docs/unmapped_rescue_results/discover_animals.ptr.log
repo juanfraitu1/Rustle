@@ -1,0 +1,13 @@
+ptr: 449 reads, 7 components, 7 clusters after the star step, 58 reads clustered
+ptr: gate OPEN; 7 clusters, 58 reads; PRESENT or ALLELE-LIKE share of clustered reads 0.0
+  ELSEWHERE    clusters    5  reads    26
+  NOVEL        clusters    1  reads     8
+  DIVERGED     clusters    0  reads     0
+  UNSUPPORTED  clusters    1  reads    24
+  ALLELE-LIKE  clusters    0  reads     0
+  PRESENT      clusters    0  reads     0
+  largest clusters (reads, length, class, scores by assembly, median read divergence): [(24, 2972, 'UNSUPPORTED', {'R': None, 'HSA': 0.829, 'GGO': 0.7563}, 0.0344), (11, 2411, 'ELSEWHERE', {'R': None, 'HSA': 0.9751, 'GGO': 0.983}, 0.0), (8, 1113, 'NOVEL', {'R': None, 'HSA': 0.8635, 'GGO': None}, 0.0004), (6, 973, 'ELSEWHERE', {'R': None, 'HSA': 0.9753, 'GGO': 0.9794}, 0.0), (3, 2682, 'ELSEWHERE', {'R': None, 'HSA': 0.9881, 'GGO': 0.9787}, 0.0008)]
+  ELSEWHERE clusters: 5; reads [11, 6, 3, 3, 3]; lengths [2411, 973, 2682, 3825, 3679]
+  NOVEL clusters: 1; reads [8]; lengths [1113]
+  DIVERGED clusters: 0; reads []; lengths []
+  UNSUPPORTED clusters: 1; reads [24]; lengths [2972]
