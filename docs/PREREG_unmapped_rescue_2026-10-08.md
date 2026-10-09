@@ -768,3 +768,21 @@ All 277,646,976 reads (41.9 Gb) of KB3781's whole-genome run were streamed once 
 - **Others (E).** gorilla testis animal: Tm and Tp, the maternal and paternal haplotype assemblies used in Amendment 28 (the "mother's assembly" of the E1 prediction is Tm; the testis animal is not KB3781). Human A119b: the mGorGor1 primary. Chimpanzee and orangutan: CHM13 and the mGorGor1 primary. Orangutan and chimpanzee reference indexes are built from the FASTA at alignment time (no 13 GB index kept; disk is the limit). Cross-species scores are homology, not identity of the same locus: ELSEWHERE against a different species means "a homolog exists", and that reading is the one reported.
 - **Classes.** `flagmetric.elsewhere_class`: PRESENT (R >= 0.999), ALLELE-LIKE (R in [0.99042, 0.999)), ELSEWHERE (E >= 0.9), NOVEL (R and E < 0.9), DIVERGED (R in [0.9, 0.99042) and E < 0.9: a distant paralog or an incomplete alignment inside its own reference; the class existed before and Amendment 33 left it unnamed), UNSUPPORTED (median read divergence > 0.00958 or none). Unit tests in `test_flagmetric.py`, `test_discover.py`.
 - **E1 (made exact).** In `ggo_testis`: a supported cluster of >= 20 reads with Tm >= 0.99 and R < 0.99042.
+
+### Amendment 33 result (2026-10-08; `discover.py`, logs `docs/unmapped_rescue_results/discover_animals.*.log`)
+
+| run | reads -> clustered | clusters | ELSEWHERE (cl/reads) | NOVEL | UNSUPPORTED | PRESENT + ALLELE-LIKE share |
+|---|---|---|---|---|---|---|
+| gorilla testis | 5,506 -> 61 (1.1%) | 9 | 6 / 51 | 3 / 10 | 0 | n/a |
+| gorilla testis control | 959 -> 659 | 79 | 3 / 22 | 0 | 0 | **96.7% (E2 met)** |
+| human A119b | 9,841 -> 742 (7.5%) | 78 | 56 / 584 | 7 / 35 | 15 / 123 | n/a |
+| human control | 959 -> 322 | 55 | 5 / 18 | 1 / 5 | 5 / 20 | **86.7% (E2 NOT met)** |
+| chimpanzee | 449 -> 58 (12.9%) | 7 | 5 / 26 | 1 / 8 | 1 / 24 | n/a |
+| chimpanzee control | 959 -> 495 | 78 | 1 / 5 | 2 / 30 | 4 / 21 | **88.7% (E2 NOT met)** |
+| orangutan | 23,051 -> 53 (0.2%) | 12 | 7 / 32 | 2 / 8 | 3 / 13 | n/a |
+| orangutan control | 959 -> 324 | 49 | 2 / 19 | 0 | 0 | **94.1% (E2 NOT met, 0.9 point short)** |
+
+**E1 met.** The testis gorilla's largest ELSEWHERE cluster has 30 reads, 5,523 bp, no alignment on the primary (R none), Tm = 0.998 at chr12_mat 95,963,504-96,028,675: the STON1-GTF2A1L readthrough locus of Amendment 32. **E2 met in 1 of 4 animals.** The failing controls are not "specific": in every control the non-PRESENT clusters are consensus of 3 to 6 reads from repeat-rich multi-copy loci (chr6, chr7, chrX in the human control) whose consensus aligns to the SAME locus on its own reference at 0.68 to 0.99 (the support rule catches the worst); the rule `ELSEWHERE iff E >= 0.9` fires on them when a second assembly is only slightly worse than R (R 0.988, E 0.965). This is a defect of the rule as written (ELSEWHERE should mean "better explained elsewhere than on R"), disclosed, not repaired here.
+**Observation (after the numbers, not a bar).** Across the 4 controls (261 clusters) 0 ELSEWHERE or NOVEL clusters have NO alignment on the own reference; across the 4 real runs 86 of 87 do.
+**The unmapped sets are a few hundred reads each.** Most unmapped records are short (human 72 bp, orangutan 68 bp median); 0.2% to 13% of them form clusters.
+**Human caveat found while reading.** The largest human clusters (146 reads, DNAJC15 281 bp with 35 reads) are genes every human has, at 0.96 to 0.99 of the gorilla primary and no alignment on CHM13 with `splice:hq`. With the lenient preset `splice`, 19 of the 78 human consensus sequences align to CHM13 (4 of 78 with `splice:hq`). So "absent from the reference" in these libraries is partly the aligner setting (`splice:hq` needs ~99% identity) and partly sequence that is not human.
