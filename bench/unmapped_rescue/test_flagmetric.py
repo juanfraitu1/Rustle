@@ -56,7 +56,8 @@ class Discovery(unittest.TestCase):
     def test_classes(self):
         self.assertEqual(F.discovery_class(0.95, 0.5, 1.0), "CONFIRMED")          # absent from the primary, present in the paternal assembly
         self.assertEqual(F.discovery_class(0.95, 1.0, 0.2), "CONFIRMED")
-        self.assertEqual(F.discovery_class(0.95, 0.9, 0.9), "NOVEL")
+        self.assertEqual(F.discovery_class(0.95, 0.9, 0.9), "DIVERGED")          # a hit exists, nowhere at the bar
+        self.assertEqual(F.discovery_class(0.85, 0.89, 0.5), "NOVEL")            # no assembly holds 90% of it
         self.assertEqual(F.discovery_class(None, None, None), "NOVEL")
         self.assertEqual(F.discovery_class(0.995, 1.0, 1.0), "ALLELE-LIKE")
         self.assertEqual(F.discovery_class(1.0, 1.0, 1.0), "PRESENT")
@@ -64,7 +65,9 @@ class Discovery(unittest.TestCase):
     def test_boundaries(self):
         self.assertEqual(F.discovery_class(1 - 0.00958, 0.0, 0.0), "ALLELE-LIKE")
         self.assertEqual(F.discovery_class(1 - 0.00958 - 1e-6, 0.999, 0.0), "CONFIRMED")
-        self.assertEqual(F.discovery_class(0.95, 0.9989, 0.0), "NOVEL")
+        self.assertEqual(F.discovery_class(0.95, 0.9989, 0.0), "DIVERGED")
+        self.assertEqual(F.discovery_class(0.95, 0.0, 0.0), "DIVERGED")          # the primary itself holds 95%: not absent
+        self.assertEqual(F.discovery_class(0.5, 0.899, 0.0), "NOVEL")
         self.assertEqual(F.discovery_class(0.999, 0.0, 0.0), "PRESENT")
 
 

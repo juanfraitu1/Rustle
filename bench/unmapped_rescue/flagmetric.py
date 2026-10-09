@@ -40,14 +40,21 @@ def registered_flag(ref_best, truth_best, bar=BAR):
     return truth_best is not None and truth_best >= bar and (ref_best is None or ref_best < bar)
 
 
-def discovery_class(ref_best, mat_best, pat_best, delta=DELTA, bar=BAR):
-    """Amendment 28. CONFIRMED: more than the allele cutoff from the primary reference and >= bar on the mother's or the father's assembly; NOVEL: more than the cutoff
-    from the primary and < bar on both; ALLELE-LIKE: within the cutoff of the primary but under the bar; PRESENT: >= bar on the primary."""
+NOVEL_BELOW = 0.9
+
+
+def discovery_class(ref_best, mat_best, pat_best, delta=DELTA, bar=BAR, novel_below=NOVEL_BELOW):
+    """Amendments 28 and 31. PRESENT: >= bar on the primary reference; ALLELE-LIKE: within the allele cutoff of it but under the bar; CONFIRMED: more than the cutoff from the
+    primary and >= bar on the mother's or the father's assembly; NOVEL: no assembly holds even `novel_below` of it; DIVERGED: a hit exists (>= novel_below somewhere) but
+    nowhere at the bar and not within the cutoff of the primary (a paralog, a structural difference, incomplete ends)."""
     if ref_best is not None and ref_best >= bar:
         return "PRESENT"
     if ref_best is not None and ref_best >= 1 - delta - 1e-12:
         return "ALLELE-LIKE"
-    return "CONFIRMED" if max(mat_best or 0.0, pat_best or 0.0) >= bar else "NOVEL"
+    best_t = max(mat_best or 0.0, pat_best or 0.0)
+    if best_t >= bar:
+        return "CONFIRMED"
+    return "NOVEL" if max(ref_best or 0.0, best_t) < novel_below else "DIVERGED"
 
 
 def gate_aware_total(ident, aligned, qlen, lead_unaligned, prefix, gate_open, max_g=MAX_G):

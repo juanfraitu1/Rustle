@@ -116,7 +116,7 @@ def classify(name, confirmable=()):
         by[r["cls"]][0] += 1
         by[r["cls"]][1] += r["reads"]
     print(f"{name}: gate {'OPEN' if gate else 'closed'}")
-    for c in ("CONFIRMED", "NOVEL", "UNSUPPORTED", "ALLELE-LIKE", "PRESENT"):
+    for c in ("CONFIRMED", "NOVEL", "DIVERGED", "UNSUPPORTED", "ALLELE-LIKE", "PRESENT"):
         print(f"  {c:12s} clusters {by[c][0]:4d}  reads {by[c][1]:5d}")
     if confirmable:
         cls_of = {r_: next(x["cls"] for x in rows if x["k"] == k) for k, rs in cl.items() for r_ in rs}
@@ -126,7 +126,7 @@ def classify(name, confirmable=()):
     big = sorted(rows, key=lambda x: -x["reads"])[:5]
     f3 = lambda v: None if v is None else round(v, 4)
     print("  largest clusters (reads, length, class, R, Tm, Tp, median read divergence):", [(x["reads"], x["length"], x["cls"], f3(x["R"]), f3(x["Tm"]), f3(x["Tp"]), f3(x["median_read_divergence"])) for x in big])
-    for c in ("NOVEL", "UNSUPPORTED"):
+    for c in ("NOVEL", "DIVERGED", "UNSUPPORTED"):
         sel = sorted((x for x in rows if x["cls"] == c), key=lambda x: -x["reads"])
         print(f"  {c} clusters: {len(sel)}; reads {[x['reads'] for x in sel][:15]}; lengths {[x['length'] for x in sel][:15]}")
 
@@ -142,6 +142,6 @@ if __name__ == "__main__":
                 if not rd.is_unmapped and not rd.is_secondary and not rd.is_supplementary:
                     s.add(rd.query_name)
         conf = sorted(s)
-    open(f"{W}/discover_{name}/reads_path.txt", "w").write(reads_fa)
+    os.makedirs(f"{W}/discover_{name}", exist_ok=True)
     cluster(name, reads_fa)
     classify(name, conf)
