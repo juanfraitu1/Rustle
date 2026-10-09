@@ -155,14 +155,24 @@ def variant_paths(d, variant=""):
     return dict(cons=f"{d}/cons{v}.fa", paf=f"{d}/cons{v}." + "{}.paf", classes=f"{d}/classes{v}.json", rescored=f"{d}/classes{v}.a35c.json")
 
 
+def split_variant(variant):
+    """variant name -> (abPOA mode, trim to >= 2-read support): g, l, e, and lt = l + trim (Amendment 38)"""
+    return variant[0], variant.endswith("t")
+
+
 def reconsensus(name, mode):
-    """cons.<mode>.fa: the consensus of every cluster of a finished run rebuilt with the given abPOA mode (same reads, same clusters)"""
+    """cons.<variant>.fa: the consensus of every cluster of a finished run rebuilt with the given variant (same reads, same clusters)"""
+    import endtrim
     d = f"{W}/discover_{name}"
     seqs = SD.read_fa(open(f"{d}/reads_path.txt").read().strip())
     cl = collections.defaultdict(list)
     for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
         cl[r["cluster"]].append(r["read"])
-    cons = {f"cl{c}|n={len(rs)}": PT.abpoa_consensus([seqs[r] for r in rs], mode=mode) for c, rs in cl.items()}
+    am, trim = split_variant(mode)
+    cons = {}
+    for c, rs in cl.items():
+        s = PT.abpoa_consensus([seqs[r] for r in rs], mode=am)
+        cons[f"cl{c}|n={len(rs)}"] = endtrim.trim_consensus(s, [seqs[r] for r in sorted(rs, key=lambda r: -len(seqs[r]))[:100]], f"{d}/tmp_trim") if trim else s
     SD.write_fa(variant_paths(d, mode)["cons"], cons, list(cons))
     return len(cons)
 

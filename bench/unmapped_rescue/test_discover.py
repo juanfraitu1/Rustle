@@ -77,6 +77,12 @@ class Variant(unittest.TestCase):
     def test_adopted_mode_is_local(self):
         self.assertEqual(D.CONS_MODE, "l")
 
+    def test_split_variant(self):
+        self.assertEqual(D.split_variant("g"), ("g", False))
+        self.assertEqual(D.split_variant("l"), ("l", False))
+        self.assertEqual(D.split_variant("lt"), ("l", True))
+        self.assertEqual(D.split_variant("et"), ("e", True))
+
     def test_paths(self):
         self.assertEqual(D.variant_paths("/w/d", ""), dict(cons="/w/d/cons.fa", paf="/w/d/cons.{}.paf", classes="/w/d/classes.json", rescored="/w/d/classes.a35c.json"))
         v = D.variant_paths("/w/d", "l")
