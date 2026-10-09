@@ -1,0 +1,8 @@
+HELD-OUT flags 1413: artifacts 838, real 231, undecided 344
+S1 artifacts removed 707/838 = 84.4% (bar >= 80%): MET
+S2 real kept 186/231 = 80.5% (bar >= 90%): NOT met
+   assembly-TRUE: 146 flags, kept 131
+   WRONG: 1267 flags, kept 245
+S3 recall over held-out truth loci with >= 3 reads (114): without the rule 0.456, with it 0.421; relative fall 7.7% (bar <= 10%): MET
+O3 convention on held-out with the rule: recall 0.421 (bar 0.5); WRONG share of kept flags 245/376 = 65.2% (bar <= 10%); without the rule 1267/1413 = 89.7%
+STON1-GTF2A1L recovered with the rule: [(475, True)]
