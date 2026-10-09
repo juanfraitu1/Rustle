@@ -933,3 +933,13 @@ Amendment 34 used the global-mode consensus and the Amendment 33 ELSEWHERE rule.
 **Reading.** Two failures, both at genome scale and both outside what the earlier per-family runs exercised: (1) the seed-round clustering covers 16.7% of the net and chains loci into giant components; 97% of the missed truth loci are never clustered; (2) 92% of the net is reads that are clean on neither haplotype assembly of the animal itself; their clusters have a consensus supported by the reads (UNSUPPORTED 2 of 655) yet about 2% from the primary, and they make most of the flags.
 ### Amendment 41c (2026-10-09, before the run): are the WRONG flags noise, or sequence the assemblies lack?
 Descriptive, no bar. The 584 flagged consensus sequences aligned to the maternal and paternal assemblies (`splice:hq -uf`, best record, identity x coverage with rescue and the library gate). Reported for TRUE and WRONG flags: the share whose consensus reaches >= 0.99042 on either haplotype assembly (a real haplotype sequence whose reads are noisy) versus not (the consensus itself is absent from both assemblies of the animal: systematic read features, assembly gaps, or another source).
+
+### Amendment 41c result (2026-10-09; `diag41c.py`; `docs/unmapped_rescue_results/mattruth_{eval,loci}.json`)
+
+| flag verdict | consensus >= 0.99042 on a haplotype assembly | 0.9 to 0.99042 | < 0.9 |
+|---|---|---|---|
+| TRUE (102) | **97** | 2 | 3 |
+| WRONG (482) | 27 | **412** | 43 |
+
+**The TRUE flags are real haplotype sequence** (97 of 102 consensus sequences on the maternal or paternal assembly). **The WRONG flags are not sequence the assemblies lack**: 455 of 482 consensus sequences are on neither haplotype assembly of the animal, and they score the same on the haplotypes as on the primary (median 0.9785 both). Their reads agree with each other (the support test passes) and disagree with every assembly by about 2% per base: a systematic read-level deviation shared by the reads of a cluster (median 6 reads), not a missing copy. 27 WRONG flags have a haplotype-level consensus but noisy reads (973 of the 9,746 WRONG-flag reads).
+**What this means for O3.** On real reads the pipeline cannot tell, without the assemblies, a cluster of systematically deviating reads (about 2% from every assembly) from a divergent reference-absent copy (also about 2% from the primary). In KB3781 the first outnumber the second about 4.5 to 1 among the flags, and the seed-round clustering reaches 15% of the expressed maternal-specific loci. The detection step works where it reaches (35 recovered, STON1-GTF2A1L among them) and the classification has no specificity on real reads at genome scale.
