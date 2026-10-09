@@ -1,0 +1,21 @@
+ggo_testis  ELSEWHERE          clusters   6 reads   51  same-species share 0.92  best species by reads (>= 0.99, else band): {'GGO': 47, '0.9-0.99': 4}
+ggo_testis  NOVEL              clusters   3 reads   10  same-species share 0.00  best species by reads (>= 0.99, else band): {'<0.9': 3, '0.9-0.99': 7}
+ggo_testis  ELSEWHERE+NOVEL    clusters   9 reads   61  same-species share 0.77  best species by reads (>= 0.99, else band): {'GGO': 47, '0.9-0.99': 11, '<0.9': 3}
+a119b       ELSEWHERE          clusters  56 reads  584  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 488, 'GGO': 11, 'PTR': 85}
+a119b       NOVEL              clusters   7 reads   35  same-species share 0.00  best species by reads (>= 0.99, else band): {'<0.9': 16, '0.9-0.99': 19}
+a119b       UNSUPPORTED        clusters  15 reads  123  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 80, '<0.9': 31, 'GGO': 12}
+a119b       ELSEWHERE+NOVEL    clusters  63 reads  619  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 507, 'GGO': 11, 'PTR': 85, '<0.9': 16}
+ptr         ELSEWHERE          clusters   5 reads   26  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 23, 'GGO': 3}
+ptr         NOVEL              clusters   1 reads    8  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 8}
+ptr         UNSUPPORTED        clusters   1 reads   24  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 24}
+ptr         ELSEWHERE+NOVEL    clusters   6 reads   34  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 31, 'GGO': 3}
+ppy         ELSEWHERE          clusters   7 reads   32  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 32}
+ppy         NOVEL              clusters   2 reads    8  same-species share 0.00  best species by reads (>= 0.99, else band): {'<0.9': 3, '0.9-0.99': 5}
+ppy         UNSUPPORTED        clusters   3 reads   13  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 5, '<0.9': 8}
+ppy         ELSEWHERE+NOVEL    clusters   9 reads   40  same-species share 0.00  best species by reads (>= 0.99, else band): {'0.9-0.99': 37, '<0.9': 3}
+ggo_testis [(30, 5523, 'ELSE', {'HSA': 0.982, 'GGO': 0.998, 'PTR': 0.983, 'PPY': 0.972}), (7, 3135, 'ELSE', {'HSA': 0.988, 'GGO': 0.998, 'PTR': 0.987, 'PPY': 0.967}), (4, 5570, 'ELSE', {'HSA': 0.98, 'GGO': 1.0, 'PTR': 0.981, 'PPY': 0.972}), (4, 1369, 'ELSE', {'HSA': 0.913, 'GGO': 0.927, 'PTR': 0.914, 'PPY': 0.898}), (4, 269, 'NOVE', {'HSA': 0.0, 'GGO': 0.0, 'PTR': 0.967, 'PPY': 0.97}), (3, 1896, 'ELSE', {'HSA': 0.987, 'GGO': 0.998, 'PTR': 0.987, 'PPY': 0.965})]
+a119b [(146, 2998, 'ELSE', {'HSA': 0.0, 'GGO': 0.986, 'PTR': 0.777, 'PPY': 0.943}), (37, 4025, 'ELSE', {'HSA': 0.0, 'GGO': 0.976, 'PTR': 0.977, 'PPY': 0.957}), (35, 281, 'ELSE', {'HSA': 0.0, 'GGO': 0.986, 'PTR': 0.996, 'PPY': 0.968}), (24, 1916, 'ELSE', {'HSA': 0.0, 'GGO': 0.981, 'PTR': 0.945, 'PPY': 0.979}), (18, 2473, 'ELSE', {'HSA': 0.0, 'GGO': 0.983, 'PTR': 0.984, 'PPY': 0.965}), (17, 1827, 'ELSE', {'HSA': 0.0, 'GGO': 0.978, 'PTR': 0.974, 'PPY': 0.966})]
+ptr [(24, 2972, 'UNSU', {'HSA': 0.908, 'GGO': 0.905, 'PTR': 0.0, 'PPY': 0.88}), (11, 2411, 'ELSE', {'HSA': 0.976, 'GGO': 0.983, 'PTR': 0.084, 'PPY': 0.958}), (8, 1113, 'NOVE', {'HSA': 0.869, 'GGO': 0.0, 'PTR': 0.0, 'PPY': 0.947}), (6, 973, 'ELSE', {'HSA': 0.973, 'GGO': 0.978, 'PTR': 0.0, 'PPY': 0.909}), (3, 2682, 'ELSE', {'HSA': 0.988, 'GGO': 0.979, 'PTR': 0.0, 'PPY': 0.955}), (3, 3825, 'ELSE', {'HSA': 0.181, 'GGO': 0.992, 'PTR': 0.168, 'PPY': 0.941})]
+ppy [(6, 559, 'ELSE', {'HSA': 0.919, 'GGO': 0.962, 'PTR': 0.971, 'PPY': 0.447}), (6, 487, 'ELSE', {'HSA': 0.899, 'GGO': 0.949, 'PTR': 0.961, 'PPY': 0.513}), (5, 2412, 'UNSU', {'HSA': 0.917, 'GGO': 0.92, 'PTR': 0.92, 'PPY': 0.404}), (5, 594, 'ELSE', {'HSA': 0.953, 'GGO': 0.976, 'PTR': 0.973, 'PPY': 0.0}), (5, 1449, 'NOVE', {'HSA': 0.979, 'GGO': 0.976, 'PTR': 0.977, 'PPY': 0.0}), (4, 273, 'UNSU', {'HSA': 0.817, 'GGO': 0.813, 'PTR': 0.619, 'PPY': 0.0})]
+P1 (gorilla ELSEWHERE reads in same-species clusters, bar >= 0.80): 0.922
+P2 (human ELSEWHERE+NOVEL reads in clusters best on a NON-human assembly >= 0.99, bar >= 0.50): 0.155
