@@ -71,5 +71,27 @@ class Discovery(unittest.TestCase):
         self.assertEqual(F.discovery_class(0.999, 0.0, 0.0), "PRESENT")
 
 
+class DiscoveryOtherAnimals(unittest.TestCase):
+    """Amendment 33: R is the animal's own reference; E is the best score over every other assembly"""
+
+    def test_classes(self):
+        self.assertEqual(F.elsewhere_class(1.0, []), "PRESENT")
+        self.assertEqual(F.elsewhere_class(0.995, [0.2]), "ALLELE-LIKE")
+        self.assertEqual(F.elsewhere_class(0.4, [0.99, 0.5]), "ELSEWHERE")        # absent from its own reference, an assembly holds it
+        self.assertEqual(F.elsewhere_class(None, [None, 0.93]), "ELSEWHERE")      # E is the maximum, a missing score is 0
+        self.assertEqual(F.elsewhere_class(0.85, [0.89, 0.5]), "NOVEL")           # nothing holds 90%
+        self.assertEqual(F.elsewhere_class(None, []), "NOVEL")
+        self.assertEqual(F.elsewhere_class(None, [None, None]), "NOVEL")
+        self.assertEqual(F.elsewhere_class(0.95, [0.5]), "DIVERGED")              # its own reference holds a distant hit, no other assembly does
+
+    def test_boundaries(self):
+        self.assertEqual(F.elsewhere_class(1 - 0.00958, [0.0]), "ALLELE-LIKE")
+        self.assertEqual(F.elsewhere_class(1 - 0.00958 - 1e-6, [0.9]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(1 - 0.00958 - 1e-6, [0.8999]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(0.5, [0.9]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.5, [0.8999]), "NOVEL")
+        self.assertEqual(F.elsewhere_class(0.999, [0.0]), "PRESENT")
+
+
 if __name__ == "__main__":
     unittest.main()

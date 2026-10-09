@@ -57,6 +57,20 @@ def discovery_class(ref_best, mat_best, pat_best, delta=DELTA, bar=BAR, novel_be
     return "NOVEL" if max(ref_best or 0.0, best_t) < novel_below else "DIVERGED"
 
 
+def elsewhere_class(ref_best, others, delta=DELTA, bar=BAR, novel_below=NOVEL_BELOW):
+    """Amendment 33, an animal with no haplotype assemblies of its own. PRESENT / ALLELE-LIKE as above on its own reference R; ELSEWHERE: more than the allele cutoff from R and
+    some other assembly holds >= `novel_below` of it (E = the best score over the others, a missing score is 0); NOVEL: R and E both under `novel_below`; DIVERGED: R holds a
+    distant hit (>= `novel_below`, under the cutoff) and no other assembly does."""
+    if ref_best is not None and ref_best >= bar:
+        return "PRESENT"
+    if ref_best is not None and ref_best >= 1 - delta - 1e-12:
+        return "ALLELE-LIKE"
+    e = max([o or 0.0 for o in others], default=0.0)
+    if e >= novel_below:
+        return "ELSEWHERE"
+    return "NOVEL" if (ref_best or 0.0) < novel_below else "DIVERGED"
+
+
 def gate_aware_total(ident, aligned, qlen, lead_unaligned, prefix, gate_open, max_g=MAX_G):
     """identity x (aligned bases / consensus length); when the gate is open and the leading unaligned end is 1 to 3 bases, all G, it leaves the denominator"""
     if gate_open and 0 < lead_unaligned <= max_g and len(prefix) == lead_unaligned and set(prefix) == {"G"}:
