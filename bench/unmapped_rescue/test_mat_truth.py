@@ -52,6 +52,30 @@ class Loci(unittest.TestCase):
                          [("c1", 100, 1600, ["a", "b"]), ("c1", 2700, 2800, ["c"]), ("c2", 100, 200, ["d"])])
 
 
+class Testable(unittest.TestCase):
+    def test_identical_chromosomes_are_never_tested(self):
+        t = T.testable_contigs("mat")
+        self.assertNotIn("CM054587.2", t)        # maternal chr5 = the primary's chr5
+        self.assertIn("CM054594.2", t)           # maternal chr12, partner of the paternal primary chr12
+        self.assertEqual(len([c for c in t if c.startswith("CM")]), 15)
+
+
+def rec(de):
+    return ["r", "1000", "0", "1000", "+", "c", "5000", "0", "1000", "990", "1000", "60", "tp:A:P", f"de:f:{de}"]
+
+
+class Status(unittest.TestCase):
+    def test_lower_divergence_decides(self):
+        self.assertEqual(T.read_status("r", {"r": rec(0.001)}, {"r": True}, {"r": rec(0.004)}, {"r": False}), "mat")
+        self.assertEqual(T.read_status("r", {"r": rec(0.004)}, {"r": True}, {"r": rec(0.001)}, {"r": False}), "shared")
+        self.assertEqual(T.read_status("r", {}, {}, {"r": rec(0.002)}, {"r": True}), "pat")
+
+    def test_tie_is_not_specific_and_unclean_is_unplaced(self):
+        self.assertEqual(T.read_status("r", {"r": rec(0.002)}, {"r": True}, {"r": rec(0.002)}, {"r": False}), "shared")
+        self.assertEqual(T.read_status("r", {"r": rec(0.02)}, {"r": True}, {"r": rec(0.03)}, {}), "unplaced")
+        self.assertEqual(T.read_status("r", {}, {}, {}, {}), "unplaced")
+
+
 class Verdict(unittest.TestCase):
     def test_majority_of_placed_reads(self):
         self.assertEqual(T.verdict(["mat", "mat", "shared"]), "TRUE")
