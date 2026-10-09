@@ -17,7 +17,8 @@ import discover as D  # noqa: E402
 import run_polish as RP  # noqa: E402
 import seeds as SD  # noqa: E402
 
-OUT = f"{D.W}/species"
+VARIANT = os.environ.get("SPECIES_VARIANT", "")      # "" = the global-mode consensus of Amendment 34, "l" = the adopted local-mode consensus (Amendment 40)
+OUT = f"{D.W}/species" + (f"_{VARIANT}" if VARIANT else "")
 ANIMALS = ("ggo_testis", "a119b", "ptr", "ppy")
 OWN = {"ggo_testis": "GGO", "a119b": "HSA", "ptr": "PTR", "ppy": "PPY"}
 ASSEMBLY = {"HSA": D.CHM13_IDX, "GGO": D.RP.GENOME_IDX, "Tm": D.C.HAP_IDX.format("mat"), "PTR": D.PTR_FA, "PPY": D.PPY_FA}
@@ -58,8 +59,9 @@ def pool():
     os.makedirs(OUT, exist_ok=True)
     seqs, names = {}, []
     for a in ANIMALS:
-        cons = {n.split("|")[0]: s for n, s in RP.read_cons(f"{D.W}/discover_{a}/cons.fa").items()}
-        for r in json.load(open(f"{D.W}/discover_{a}/classes.json")):
+        vp = D.variant_paths(f"{D.W}/discover_{a}", VARIANT)
+        cons = {n.split("|")[0]: s for n, s in RP.read_cons(vp["cons"]).items()}
+        for r in json.load(open(vp["rescored"] if VARIANT else vp["classes"])):
             if r["cls"] in CLASSES:
                 seqs[f"{a}__{r['k']}"] = cons[r["k"]]
                 names.append(f"{a}__{r['k']}")
@@ -81,7 +83,8 @@ def report():
     sc = {a: paf_scores(open(f"{OUT}/pool.{a}.paf")) for a in ASSEMBLY}
     rows = []
     for a in ANIMALS:
-        for r in json.load(open(f"{D.W}/discover_{a}/classes.json")):
+        vp = D.variant_paths(f"{D.W}/discover_{a}", VARIANT)
+        for r in json.load(open(vp["rescored"] if VARIANT else vp["classes"])):
             if r["cls"] not in CLASSES:
                 continue
             q = f"{a}__{r['k']}"
