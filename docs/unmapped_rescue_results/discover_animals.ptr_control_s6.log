@@ -1,0 +1,13 @@
+ptr_control_s6: 959 reads, 91 components, 88 clusters after the star step, 521 reads clustered
+ptr_control_s6: gate OPEN; 88 clusters, 521 reads; PRESENT or ALLELE-LIKE share of clustered reads 0.8772
+  ELSEWHERE    clusters    2  reads     9
+  NOVEL        clusters    1  reads     3
+  DIVERGED     clusters    3  reads    24
+  UNSUPPORTED  clusters    6  reads    28
+  ALLELE-LIKE  clusters   33  reads   195
+  PRESENT      clusters   43  reads   262
+  largest clusters (reads, length, class, scores by assembly, median read divergence): [(35, 2932, 'ALLELE-LIKE', {'R': 0.998, 'HSA': 0.9807, 'GGO': 0.9614}, 0.0), (23, 2555, 'ALLELE-LIKE', {'R': 0.9984, 'HSA': 0.9859, 'GGO': 0.9729}, 0.0006), (20, 2977, 'PRESENT', {'R': 0.9993, 'HSA': 0.994, 'GGO': 0.9919}, 0.0004), (19, 2851, 'PRESENT', {'R': 1.0, 'HSA': 0.9982, 'GGO': 0.9947}, 0.0004), (16, 1394, 'PRESENT', {'R': 1.0, 'HSA': 0.9964, 'GGO': 0.9907}, 0.0007)]
+  ELSEWHERE clusters: 2; reads [5, 4]; lengths [3544, 1611]
+  NOVEL clusters: 1; reads [3]; lengths [3662]
+  DIVERGED clusters: 3; reads [13, 7, 4]; lengths [2274, 2765, 1003]
+  UNSUPPORTED clusters: 6; reads [7, 6, 5, 4, 3, 3]; lengths [1089, 1860, 2143, 2526, 4014, 1513]

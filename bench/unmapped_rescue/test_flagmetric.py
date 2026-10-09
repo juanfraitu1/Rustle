@@ -86,11 +86,47 @@ class DiscoveryOtherAnimals(unittest.TestCase):
 
     def test_boundaries(self):
         self.assertEqual(F.elsewhere_class(1 - 0.00958, [0.0]), "ALLELE-LIKE")
-        self.assertEqual(F.elsewhere_class(1 - 0.00958 - 1e-6, [0.9]), "ELSEWHERE")
-        self.assertEqual(F.elsewhere_class(1 - 0.00958 - 1e-6, [0.8999]), "DIVERGED")
         self.assertEqual(F.elsewhere_class(0.5, [0.9]), "ELSEWHERE")
         self.assertEqual(F.elsewhere_class(0.5, [0.8999]), "NOVEL")
         self.assertEqual(F.elsewhere_class(0.999, [0.0]), "PRESENT")
+
+    def test_amendment_35_other_assembly_must_beat_the_reference(self):
+        self.assertEqual(F.elsewhere_class(0.988, [0.965]), "DIVERGED")           # the own reference explains it better
+        self.assertEqual(F.elsewhere_class(0.974, [0.974]), "DIVERGED")           # a tie is not "elsewhere"
+        self.assertEqual(F.elsewhere_class(0.95, [0.9]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(1 - 0.00958 - 1e-6, [0.9]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(0.95, [0.97]), "ELSEWHERE")            # another assembly holds it better
+        self.assertEqual(F.elsewhere_class(1 - 0.00958 - 1e-6, [0.999]), "ELSEWHERE")     # the other assembly holds it completely
+        self.assertEqual(F.elsewhere_class(0.9, [0.95]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.91, [0.8999]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(None, [0.9]), "ELSEWHERE")
+
+    def test_amendment_35b_tolerance(self):
+        self.assertEqual(F.elsewhere_class(0.982, [0.983]), "DIVERGED")           # the gorilla-control near tie
+        self.assertEqual(F.elsewhere_class(0.95, [0.9595]), "DIVERGED")           # under the allele tolerance above R
+        self.assertEqual(F.elsewhere_class(0.95, [0.9596]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.9, [0.9095]), "DIVERGED")            # 0.9 + 0.00958 = 0.90958
+        self.assertEqual(F.elsewhere_class(0.9, [0.9097]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.99, [0.9989]), "DIVERGED")           # under 0.999 and within the tolerance of R
+        self.assertEqual(F.elsewhere_class(0.99, [0.999]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(None, [0.89]), "NOVEL")
+
+    def test_amendment_35c_cross_species_assemblies_need_the_reference_to_lack_it(self):
+        # the chimp seed-6 controls: the own reference holds 0.97, a human / gorilla homolog scores higher
+        self.assertEqual(F.elsewhere_class(0.971, [], cross=[0.968, 0.981]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(0.970, [], cross=[0.994, 0.994]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(0.062, [], cross=[0.989]), "ELSEWHERE")       # the own reference lacks it
+        self.assertEqual(F.elsewhere_class(None, [], cross=[0.9]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.8999, [], cross=[0.95]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.9, [], cross=[0.999]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(None, [], cross=[0.8999]), "NOVEL")
+        self.assertEqual(F.elsewhere_class(0.5, [], cross=[0.5]), "NOVEL")
+
+    def test_amendment_35c_same_species_keeps_the_tolerance_rule(self):
+        self.assertEqual(F.elsewhere_class(0.97, [0.999], cross=[0.5]), "ELSEWHERE")     # copy absent from the primary, divergent paralog on it, whole sequence on the other haplotype
+        self.assertEqual(F.elsewhere_class(0.982, [0.983], cross=[0.99]), "DIVERGED")
+        self.assertEqual(F.elsewhere_class(None, [0.95], cross=[]), "ELSEWHERE")
+        self.assertEqual(F.elsewhere_class(0.97, [0.8], cross=[0.999]), "DIVERGED")       # a cross-species homolog does not count when R holds it
 
 
 if __name__ == "__main__":

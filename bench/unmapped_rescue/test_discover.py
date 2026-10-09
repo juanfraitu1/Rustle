@@ -43,6 +43,34 @@ class Counts(unittest.TestCase):
         self.assertEqual(D.specific_fraction([]), None)
 
 
+class Rescore(unittest.TestCase):
+    """Amendment 35: the saved scores are re-classified with the corrected rule; UNSUPPORTED is kept"""
+
+    def test_rescore(self):
+        rows = [dict(k="a", reads=10, cls="ELSEWHERE", scores=dict(R=0.988, GGO=0.965)),
+                dict(k="b", reads=30, cls="ELSEWHERE", scores=dict(R=None, GGO=0.99)),
+                dict(k="c", reads=5, cls="UNSUPPORTED", scores=dict(R=0.5, GGO=0.99)),
+                dict(k="d", reads=4, cls="NOVEL", scores=dict(R=0.3, GGO=0.4))]
+        new = D.rescore_rows(rows)
+        self.assertEqual([r["cls"] for r in new], ["DIVERGED", "ELSEWHERE", "UNSUPPORTED", "NOVEL"])
+        self.assertEqual(rows[0]["cls"], "ELSEWHERE")                              # the input is not modified
+        self.assertEqual([r["k"] for r in D.changed(rows, new)], ["a"])
+
+    def test_rescore_cross_species_scores_count_only_when_the_reference_lacks_the_sequence(self):
+        rows = [dict(k="a", reads=5, cls="ELSEWHERE", scores=dict(R=0.97, HSA=0.994, GGO=0.994)),
+                dict(k="b", reads=5, cls="ELSEWHERE", scores=dict(R=None, HSA=0.5, GGO=0.99))]
+        self.assertEqual([r["cls"] for r in D.rescore_rows(rows, cross=("HSA", "GGO"))], ["DIVERGED", "ELSEWHERE"])
+        self.assertEqual([r["cls"] for r in D.rescore_rows(rows)], ["ELSEWHERE", "ELSEWHERE"])      # as same-species assemblies the 35b rule keeps the first
+
+    def test_every_animal_has_a_cross_entry_naming_real_assemblies(self):
+        for name, a in D.ANIMALS.items():
+            self.assertTrue(set(D.CROSS[name]) <= set(a["others"]), name)
+
+    def test_rescore_legacy_rows_with_haplotype_assemblies_are_not_touched(self):
+        rows = [dict(k="a", reads=3, cls="CONFIRMED", scores=dict(R=0.5, Tm=1.0, Tp=0.2))]
+        self.assertEqual(D.rescore_rows(rows, animal=None)[0]["cls"], "CONFIRMED")
+
+
 class Config(unittest.TestCase):
     def test_every_animal_has_a_reference_and_a_bam(self):
         for name, a in D.ANIMALS.items():

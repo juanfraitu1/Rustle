@@ -1,0 +1,13 @@
+ppy_control_s7: 959 reads, 79 components, 62 clusters after the star step, 355 reads clustered
+ppy_control_s7: gate OPEN; 62 clusters, 355 reads; PRESENT or ALLELE-LIKE share of clustered reads 0.8535
+  ELSEWHERE    clusters    0  reads     0
+  NOVEL        clusters    2  reads    11
+  DIVERGED     clusters    3  reads    11
+  UNSUPPORTED  clusters    3  reads    30
+  ALLELE-LIKE  clusters   22  reads   106
+  PRESENT      clusters   32  reads   197
+  largest clusters (reads, length, class, scores by assembly, median read divergence): [(25, 2375, 'PRESENT', {'R': 1.0, 'HSA': 0.9773, 'GGO': 0.9798}, 0.0008), (23, 2573, 'UNSUPPORTED', {'R': 0.8713, 'HSA': 0.8346, 'GGO': 0.8285}, 0.0438), (20, 2969, 'PRESENT', {'R': 0.9997, 'HSA': 0.9946, 'GGO': 0.9936}, 0.0006), (16, 1187, 'PRESENT', {'R': 1.0, 'HSA': 0.9722, 'GGO': 0.9688}, 0.0), (14, 1587, 'PRESENT', {'R': 1.0, 'HSA': 0.978, 'GGO': 0.9774}, 0.0)]
+  ELSEWHERE clusters: 0; reads []; lengths []
+  NOVEL clusters: 2; reads [6, 5]; lengths [2265, 2036]
+  DIVERGED clusters: 3; reads [5, 3, 3]; lengths [1635, 2444, 3856]
+  UNSUPPORTED clusters: 3; reads [23, 4, 3]; lengths [2573, 1632, 3615]

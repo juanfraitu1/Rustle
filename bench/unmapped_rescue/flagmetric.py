@@ -57,18 +57,22 @@ def discovery_class(ref_best, mat_best, pat_best, delta=DELTA, bar=BAR, novel_be
     return "NOVEL" if max(ref_best or 0.0, best_t) < novel_below else "DIVERGED"
 
 
-def elsewhere_class(ref_best, others, delta=DELTA, bar=BAR, novel_below=NOVEL_BELOW):
-    """Amendment 33, an animal with no haplotype assemblies of its own. PRESENT / ALLELE-LIKE as above on its own reference R; ELSEWHERE: more than the allele cutoff from R and
-    some other assembly holds >= `novel_below` of it (E = the best score over the others, a missing score is 0); NOVEL: R and E both under `novel_below`; DIVERGED: R holds a
-    distant hit (>= `novel_below`, under the cutoff) and no other assembly does."""
+def elsewhere_class(ref_best, others, delta=DELTA, bar=BAR, novel_below=NOVEL_BELOW, cross=()):
+    """Amendments 33, 35, 35b, 35c, an animal with no haplotype assemblies of its own. PRESENT / ALLELE-LIKE as above on its own reference R. `others` = scores on assemblies of
+    the SAME species, `cross` = scores on assemblies of ANOTHER species (a missing score is 0). ELSEWHERE: the same-species E holds >= `novel_below` of it and either all of it
+    (>= bar) or more than R by over `delta` (the allele tolerance); or R does not hold it at all (R < `novel_below`) and some assembly does. A cross-species assembly counts only
+    in the second way: a homolog can outscore the own reference through coverage. NOVEL: R < `novel_below` and no assembly holds `novel_below`. DIVERGED: otherwise (R holds a
+    hit >= `novel_below`, under the allele cutoff, that nothing beats)."""
     if ref_best is not None and ref_best >= bar:
         return "PRESENT"
     if ref_best is not None and ref_best >= 1 - delta - 1e-12:
         return "ALLELE-LIKE"
+    r = ref_best or 0.0
     e = max([o or 0.0 for o in others], default=0.0)
-    if e >= novel_below:
-        return "ELSEWHERE"
-    return "NOVEL" if (ref_best or 0.0) < novel_below else "DIVERGED"
+    ec = max([o or 0.0 for o in cross], default=0.0)
+    if r < novel_below:
+        return "ELSEWHERE" if max(e, ec) >= novel_below else "NOVEL"
+    return "ELSEWHERE" if e >= novel_below and (e >= bar or e > r + delta) else "DIVERGED"
 
 
 def gate_aware_total(ident, aligned, qlen, lead_unaligned, prefix, gate_open, max_g=MAX_G):

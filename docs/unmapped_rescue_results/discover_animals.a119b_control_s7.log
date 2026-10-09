@@ -1,0 +1,13 @@
+a119b_control_s7: 959 reads, 47 components, 51 clusters after the star step, 287 reads clustered
+a119b_control_s7: gate OPEN; 51 clusters, 287 reads; PRESENT or ALLELE-LIKE share of clustered reads 0.9233
+  ELSEWHERE    clusters    0  reads     0
+  NOVEL        clusters    1  reads     3
+  DIVERGED     clusters    3  reads    12
+  UNSUPPORTED  clusters    2  reads     7
+  ALLELE-LIKE  clusters   23  reads   110
+  PRESENT      clusters   22  reads   155
+  largest clusters (reads, length, class, scores by assembly, median read divergence): [(25, 2102, 'PRESENT', {'R': 1.0, 'GGO': 0.9886}, 0.001), (14, 4143, 'PRESENT', {'R': 0.9995, 'GGO': 0.994}, 0.0008), (14, 3300, 'PRESENT', {'R': 0.9997, 'GGO': 0.9882}, 0.0016), (10, 3209, 'PRESENT', {'R': 0.9997, 'GGO': 0.9941}, 0.001), (9, 2215, 'PRESENT', {'R': 0.9995, 'GGO': 0.9914}, 0.0019)]
+  ELSEWHERE clusters: 0; reads []; lengths []
+  NOVEL clusters: 1; reads [3]; lengths [3360]
+  DIVERGED clusters: 3; reads [5, 4, 3]; lengths [3027, 2104, 2337]
+  UNSUPPORTED clusters: 2; reads [4, 3]; lengths [5175, 2157]

@@ -69,6 +69,10 @@ ANIMALS = {
 }
 
 
+# assemblies of ANOTHER species per animal (Amendment 35c); the rest of `others` are the same species
+CROSS = {"ggo_testis": (), "a119b": ("GGO",), "ptr": ("HSA", "GGO"), "ppy": ("HSA", "GGO")}
+
+
 def dense_reads(recs, bin_size=5000, min_reads=5):
     """names of the reads that share a (contig, position // bin_size) bin with at least min_reads reads; recs = (name, contig, pos)"""
     n = collections.Counter((c, p // bin_size) for _, c, p in recs)
@@ -92,6 +96,22 @@ def specific_fraction(rows):
     """share of the clustered reads that lie in PRESENT or ALLELE-LIKE clusters (the control bar); None with no clusters"""
     tot = sum(r["reads"] for r in rows)
     return sum(r["reads"] for r in rows if r["cls"] in ("PRESENT", "ALLELE-LIKE")) / tot if tot else None
+
+
+def rescore_rows(rows, animal="other", cross=()):
+    """Amendment 35: re-classify saved rows from their scores with the corrected ELSEWHERE rule (UNSUPPORTED kept; animal=None = the KB3781 setting, untouched); returns copies"""
+    out = []
+    for r in rows:
+        r = dict(r)
+        if animal is not None and r["cls"] != "UNSUPPORTED":
+            r["cls"] = FM.elsewhere_class(r["scores"]["R"], [v for w, v in r["scores"].items() if w != "R" and w not in cross],
+                                          cross=[v for w, v in r["scores"].items() if w in cross])
+        out.append(r)
+    return out
+
+
+def changed(old, new):
+    return [n for o, n in zip(old, new) if o["cls"] != n["cls"]]
 
 
 def prepare(animal, n_windows=12, width=5_000_000, limit=200_000, control_size=959, seed=5):
@@ -121,7 +141,7 @@ def prepare(animal, n_windows=12, width=5_000_000, limit=200_000, control_size=9
     dense = set(dense_reads([(x[0], x[1], x[2]) for x in keep]))
     pick = set(sample_names(dense, control_size, seed))
     seqs = {x[0]: x[3] for x in keep if x[0] in pick}
-    SD.write_fa(f"{d}/control.fa", seqs, sorted(seqs))
+    SD.write_fa(f"{d}/control.fa" if seed == 5 else f"{d}/control_s{seed}.fa", seqs, sorted(seqs))
     print(f"{animal}: {n[0]} primaries read in {len(regs)} windows, {len(keep)} clean (de <= {DELTA}), {len(dense)} in dense bins, control {len(seqs)} reads; "
           f"gate {'OPEN' if ok else 'closed'} (p {p:.3g}; pure clips {sig['pure']})")
 
@@ -213,7 +233,8 @@ def classify(name, confirmable=(), animal=None):
         if animal is None:
             cls = "UNSUPPORTED" if unsupported else FM.discovery_class(sc["R"], sc["Tm"], sc["Tp"])
         else:
-            cls = "UNSUPPORTED" if unsupported else FM.elsewhere_class(sc["R"], [v for w, v in sc.items() if w != "R"])
+            cls = "UNSUPPORTED" if unsupported else FM.elsewhere_class(sc["R"], [v for w, v in sc.items() if w != "R" and w not in CROSS[animal]],
+                                                                        cross=[v for w, v in sc.items() if w in CROSS[animal]])
         hits = {w: (r[5], int(r[7]), int(r[8])) for w, rr in recs.items() for r in [rr.get(k)] if r}
         rows.append(dict(k=k, reads=len(rs), length=len(cons[k]), scores=sc, R=sc["R"], Tm=sc.get("Tm"), Tp=sc.get("Tp"), median_read_divergence=med, cls=cls, hits=hits,
                          mat_hit=hits.get("Tm")))
@@ -239,7 +260,19 @@ def classify(name, confirmable=(), animal=None):
 
 if __name__ == "__main__":
     if sys.argv[1] == "prepare":
-        prepare(sys.argv[2])
+        prepare(sys.argv[2], seed=int(sys.argv[3]) if len(sys.argv) > 3 else 5)
+        sys.exit(0)
+    if sys.argv[1] == "rescore":   # discover.py rescore <run-name> <animal>: writes classes.a35c.json beside the registered classes.json
+        d = f"{W}/discover_{sys.argv[2]}"
+        old = json.load(open(f"{d}/classes.json"))
+        new = rescore_rows(old, cross=CROSS[sys.argv[3]])
+        json.dump(new, open(f"{d}/classes.a35c.json", "w"), indent=1)
+        by = class_counts(new)
+        print(f"{sys.argv[2]}: " + "  ".join(f"{c} {by[c][0]}/{by[c][1]}" for c in ("ELSEWHERE", "NOVEL", "DIVERGED", "UNSUPPORTED", "ALLELE-LIKE", "PRESENT")) +
+              f"  share {specific_fraction(new) if specific_fraction(new) is None else round(specific_fraction(new), 4)}")
+        for n in changed(old, new):
+            o = next(x for x in old if x["k"] == n["k"])
+            print(f"   changed {n['k']}: {o['cls']} -> {n['cls']}  reads {n['reads']} length {n['length']} scores {({w: None if v is None else round(v, 3) for w, v in n['scores'].items()})}")
         sys.exit(0)
     name, reads_fa = sys.argv[1], sys.argv[2]
     animal = sys.argv[3] if len(sys.argv) > 3 else None

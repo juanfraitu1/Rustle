@@ -1,0 +1,13 @@
+ggo_testis_control_s6: 959 reads, 76 components, 78 clusters after the star step, 637 reads clustered
+ggo_testis_control_s6: gate OPEN; 78 clusters, 637 reads; PRESENT or ALLELE-LIKE share of clustered reads 0.9796
+  ELSEWHERE    clusters    0  reads     0
+  NOVEL        clusters    0  reads     0
+  DIVERGED     clusters    2  reads    13
+  UNSUPPORTED  clusters    0  reads     0
+  ALLELE-LIKE  clusters   28  reads   210
+  PRESENT      clusters   48  reads   414
+  largest clusters (reads, length, class, scores by assembly, median read divergence): [(53, 2850, 'ALLELE-LIKE', {'R': 0.9986, 'Tm': 0.9993, 'Tp': 0.9986}, 0.0), (46, 3668, 'PRESENT', {'R': 0.9995, 'Tm': 0.9995, 'Tp': 0.9995}, 0.0005), (39, 3481, 'PRESENT', {'R': 0.9997, 'Tm': 0.9997, 'Tp': 0.9997}, 0.0003), (24, 2841, 'PRESENT', {'R': 0.9996, 'Tm': 0.9996, 'Tp': 0.9996}, 0.0007), (23, 2545, 'ALLELE-LIKE', {'R': 0.9988, 'Tm': 0.9988, 'Tp': 0.9988}, 0.0012)]
+  ELSEWHERE clusters: 0; reads []; lengths []
+  NOVEL clusters: 0; reads []; lengths []
+  DIVERGED clusters: 2; reads [8, 5]; lengths [3645, 4485]
+  UNSUPPORTED clusters: 0; reads []; lengths []
