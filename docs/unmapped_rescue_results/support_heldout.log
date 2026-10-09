@@ -1,0 +1,10 @@
+HELD-OUT [read share >= 0.02 (frozen)] labels 44c (refined): S1 artifacts removed 675/838 = 80.5%; S2 real kept 153/180 = 85.0%
+HELD-OUT [read share >= 0.02 (frozen)] labels 43b: S1 artifacts removed 675/838 = 80.5%; S2 real kept 194/231 = 84.0%
+   assembly-TRUE kept 142/146 = 97.3%
+   S3 recall 0.456 -> 0.447 (relative fall 1.9%); kept flags 428, WRONG among them 286 = 66.8% (was 89.7%)
+   STON1-GTF2A1L recovered: [(475, True)]
+HELD-OUT [read share AND species screen] labels 44c (refined): S1 artifacts removed 796/838 = 95.0%; S2 real kept 134/180 = 74.4%
+HELD-OUT [read share AND species screen] labels 43b: S1 artifacts removed 796/838 = 95.0%; S2 real kept 173/231 = 74.9%
+   assembly-TRUE kept 127/146 = 87.0%
+   S3 recall 0.456 -> 0.412 (relative fall 9.6%); kept flags 237, WRONG among them 110 = 46.4% (was 89.7%)
+   STON1-GTF2A1L recovered: [(475, True)]
