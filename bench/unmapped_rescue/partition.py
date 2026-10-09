@@ -189,11 +189,12 @@ def partition(reads, align_fn, consensus_fn, cons=None, depth=0, max_depth=MAX_D
     return out
 
 
-def abpoa_consensus(seqs, k=100):
-    """the frozen consensus: abPOA (heaviest bundle) of the k longest reads; needs pyabpoa (miniforge python)"""
+def abpoa_consensus(seqs, k=100, mode="g"):
+    """the frozen consensus: abPOA (heaviest bundle) of the k longest reads; needs pyabpoa (miniforge python). mode: abPOA alignment mode, g global (the frozen default),
+    l local, e extension (Amendment 37)"""
     import pyabpoa
     pick = sorted(seqs, key=lambda s: -len(s))[:k]
-    res = pyabpoa.msa_aligner(aln_mode="g", is_aa=False, cons_algrm="HB").msa(pick, out_cons=True, out_msa=False)
+    res = pyabpoa.msa_aligner(aln_mode=mode, is_aa=False, cons_algrm="HB").msa(pick, out_cons=True, out_msa=False)
     return res.cons_seq[0] if res.cons_seq else pick[0]
 
 
