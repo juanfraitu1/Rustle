@@ -146,6 +146,27 @@ def prepare(animal, n_windows=12, width=5_000_000, limit=200_000, control_size=9
           f"gate {'OPEN' if ok else 'closed'} (p {p:.3g}; pure clips {sig['pure']})")
 
 
+CONS_MODE = "l"   # Amendment 37: abPOA local mode for the consensus of a cluster (the frozen global mode garbles clusters of fragments of unequal extent)
+
+
+def variant_paths(d, variant=""):
+    """files of a consensus variant (Amendment 37: variant = the abPOA mode, "" = the registered global-mode consensus)"""
+    v = f".{variant}" if variant else ""
+    return dict(cons=f"{d}/cons{v}.fa", paf=f"{d}/cons{v}." + "{}.paf", classes=f"{d}/classes{v}.json", rescored=f"{d}/classes{v}.a35c.json")
+
+
+def reconsensus(name, mode):
+    """cons.<mode>.fa: the consensus of every cluster of a finished run rebuilt with the given abPOA mode (same reads, same clusters)"""
+    d = f"{W}/discover_{name}"
+    seqs = SD.read_fa(open(f"{d}/reads_path.txt").read().strip())
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{d}/clusters.tsv"), delimiter="\t"):
+        cl[r["cluster"]].append(r["read"])
+    cons = {f"cl{c}|n={len(rs)}": PT.abpoa_consensus([seqs[r] for r in rs], mode=mode) for c, rs in cl.items()}
+    SD.write_fa(variant_paths(d, mode)["cons"], cons, list(cons))
+    return len(cons)
+
+
 def cluster(name, reads_fa):
     d = f"{W}/discover_{name}"
     os.makedirs(f"{d}/rounds", exist_ok=True)
@@ -164,7 +185,7 @@ def cluster(name, reads_fa):
         for c, rs in new.items():
             for r in rs:
                 o.write(f"{r}\t{c}\t{len(rs)}\n")
-    cons = {f"cl{c}|n={len(rs)}": PT.abpoa_consensus([seqs[r] for r in rs]) for c, rs in new.items()}
+    cons = {f"cl{c}|n={len(rs)}": PT.abpoa_consensus([seqs[r] for r in rs], mode=CONS_MODE) for c, rs in new.items()}
     SD.write_fa(f"{d}/cons.fa", cons, list(cons))
     print(f"{name}: {len(seqs)} reads, {len(cl)} components, {len(new)} clusters after the star step, {sum(len(v) for v in new.values())} reads clustered")
     return d, seqs, new
@@ -195,7 +216,7 @@ def idcov_with_rescue(cons, f, fasta, to_fasta_name, gate, tmp):
     return FM.gate_aware_total(ident, aligned, qlen, lead, cons[:lead], gate)
 
 
-def classify(name, confirmable=(), animal=None):
+def classify(name, confirmable=(), animal=None, variant=""):
     """animal=None: the KB3781 setting of Amendment 28 (R = primary, Tm and Tp = the haplotype assemblies; CONFIRMED / NOVEL / ...). animal=<key of ANIMALS>: Amendment 33
     (R = the animal's own reference, E = the best score over the other assemblies; ELSEWHERE / NOVEL / ...)."""
     import pysam
@@ -209,15 +230,16 @@ def classify(name, confirmable=(), animal=None):
     else:
         gate = json.load(open(f"{AD}/{animal}/gate.json"))["gate"]
         assemblies = {"R": ANIMALS[animal]["R"], **ANIMALS[animal]["others"]}
-    cons = {n.split("|")[0]: s for n, s in RP.read_cons(f"{d}/cons.fa").items()}
+    vp = variant_paths(d, variant)
+    cons = {n.split("|")[0]: s for n, s in RP.read_cons(vp["cons"]).items()}
     recs = {}
     for which, (idx, _fa, _nm) in assemblies.items():
-        paf = f"{d}/cons.{which}.paf"
+        paf = vp["paf"].format(which)
         if not os.path.exists(paf + ".done"):
             if time.time() - t0 > TIME_BUDGET:
                 print(f"{which}: paused after {time.time() - t0:.0f} s; run again")
                 sys.exit(75)
-            subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {idx} {d}/cons.fa > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
+            subprocess.run(f"minimap2 -c -x splice:hq -uf -N 5 -t 4 {idx} {vp['cons']} > {paf}", shell=True, check=True, stderr=subprocess.DEVNULL)
             open(paf + ".done", "w").write("ok")
         recs[which] = best_records(paf)
     fas = {w: pysam.FastaFile(a[1]) for w, a in assemblies.items()}
@@ -238,9 +260,9 @@ def classify(name, confirmable=(), animal=None):
         hits = {w: (r[5], int(r[7]), int(r[8])) for w, rr in recs.items() for r in [rr.get(k)] if r}
         rows.append(dict(k=k, reads=len(rs), length=len(cons[k]), scores=sc, R=sc["R"], Tm=sc.get("Tm"), Tp=sc.get("Tp"), median_read_divergence=med, cls=cls, hits=hits,
                          mat_hit=hits.get("Tm")))
-    json.dump(rows, open(f"{d}/classes.json", "w"), indent=1)
+    json.dump(rows, open(vp["classes"], "w"), indent=1)
     by = class_counts(rows)
-    print(f"{name}: gate {'OPEN' if gate else 'closed'}; {len(rows)} clusters, {sum(r['reads'] for r in rows)} reads; PRESENT or ALLELE-LIKE share of clustered reads "
+    print(f"{name}{'/' + variant if variant else ''}: gate {'OPEN' if gate else 'closed'}; {len(rows)} clusters, {sum(r['reads'] for r in rows)} reads; PRESENT or ALLELE-LIKE share of clustered reads "
           f"{specific_fraction(rows) if specific_fraction(rows) is None else round(specific_fraction(rows), 4)}")
     order = ("CONFIRMED", "NOVEL", "DIVERGED", "UNSUPPORTED", "ALLELE-LIKE", "PRESENT") if animal is None else ("ELSEWHERE", "NOVEL", "DIVERGED", "UNSUPPORTED", "ALLELE-LIKE", "PRESENT")
     for c in order:
@@ -262,11 +284,18 @@ if __name__ == "__main__":
     if sys.argv[1] == "prepare":
         prepare(sys.argv[2], seed=int(sys.argv[3]) if len(sys.argv) > 3 else 5)
         sys.exit(0)
-    if sys.argv[1] == "rescore":   # discover.py rescore <run-name> <animal>: writes classes.a35c.json beside the registered classes.json
+    if sys.argv[1] == "reconsensus":   # discover.py reconsensus <run> <mode>
+        print(f"{sys.argv[2]}: {reconsensus(sys.argv[2], sys.argv[3])} consensus sequences, abPOA mode {sys.argv[3]}")
+        sys.exit(0)
+    if sys.argv[1] == "classify":      # discover.py classify <run> <animal> <variant>  (after the PAFs of the variant exist)
+        classify(sys.argv[2], (), sys.argv[3], sys.argv[4])
+        sys.exit(0)
+    if sys.argv[1] == "rescore":   # discover.py rescore <run-name> <animal> [variant]: writes classes[.variant].a35c.json beside the registered classes.json
         d = f"{W}/discover_{sys.argv[2]}"
-        old = json.load(open(f"{d}/classes.json"))
+        vp = variant_paths(d, sys.argv[4] if len(sys.argv) > 4 else "")
+        old = json.load(open(vp["classes"]))
         new = rescore_rows(old, cross=CROSS[sys.argv[3]])
-        json.dump(new, open(f"{d}/classes.a35c.json", "w"), indent=1)
+        json.dump(new, open(vp["rescored"], "w"), indent=1)
         by = class_counts(new)
         print(f"{sys.argv[2]}: " + "  ".join(f"{c} {by[c][0]}/{by[c][1]}" for c in ("ELSEWHERE", "NOVEL", "DIVERGED", "UNSUPPORTED", "ALLELE-LIKE", "PRESENT")) +
               f"  share {specific_fraction(new) if specific_fraction(new) is None else round(specific_fraction(new), 4)}")

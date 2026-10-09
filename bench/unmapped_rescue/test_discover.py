@@ -71,6 +71,18 @@ class Rescore(unittest.TestCase):
         self.assertEqual(D.rescore_rows(rows, animal=None)[0]["cls"], "CONFIRMED")
 
 
+class Variant(unittest.TestCase):
+    """Amendment 37: a consensus variant (abPOA mode) has its own files beside the registered ones"""
+
+    def test_adopted_mode_is_local(self):
+        self.assertEqual(D.CONS_MODE, "l")
+
+    def test_paths(self):
+        self.assertEqual(D.variant_paths("/w/d", ""), dict(cons="/w/d/cons.fa", paf="/w/d/cons.{}.paf", classes="/w/d/classes.json", rescored="/w/d/classes.a35c.json"))
+        v = D.variant_paths("/w/d", "l")
+        self.assertEqual((v["cons"], v["paf"], v["classes"], v["rescored"]), ("/w/d/cons.l.fa", "/w/d/cons.l.{}.paf", "/w/d/classes.l.json", "/w/d/classes.l.a35c.json"))
+
+
 class Config(unittest.TestCase):
     def test_every_animal_has_a_reference_and_a_bam(self):
         for name, a in D.ANIMALS.items():

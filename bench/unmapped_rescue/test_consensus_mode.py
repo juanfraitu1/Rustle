@@ -49,17 +49,16 @@ class Modes(unittest.TestCase):
         for m in ("g", "l", "e"):
             self.assertTrue(PT.abpoa_consensus(reads, mode=m))
 
-    def test_fragments_of_unequal_extent(self):
-        ids = {m: [] for m in ("g", "l", "e")}
-        for seed in range(1, 9):
+    def test_fragments_of_unequal_extent_amendment_37b(self):
+        """S1': failure = identity to the truth < 0.99 over 200 fresh seeds; global fails often (>= 3%), local almost never (<= 1%)"""
+        fails = {m: 0 for m in ("g", "l", "e")}
+        for seed in range(101, 301):
             truth, reads = fragments(seed)
-            for m in ids:
-                ids[m].append(identity(PT.abpoa_consensus(reads, mode=m), truth))
-        med = {m: sorted(v)[len(v) // 2] for m, v in ids.items()}
-        print("median identity to the truth by mode:", {m: round(v, 4) for m, v in med.items()}, "worst:", {m: round(min(v), 4) for m, v in ids.items()})
-        self.assertLess(med["g"], 0.99)                           # S1: global mode is poor on fragments
-        self.assertGreaterEqual(max(med["l"], med["e"]), 0.995)   # and a local / extension mode is not
-
+            for m in fails:
+                fails[m] += identity(PT.abpoa_consensus(reads, mode=m), truth) < 0.99
+        print("failure rate by mode:", {m: v / 200 for m, v in fails.items()})
+        self.assertGreaterEqual(fails["g"] / 200, 0.03)
+        self.assertLessEqual(min(fails["l"], fails["e"]) / 200, 0.01)
 
 if __name__ == "__main__":
     unittest.main()
