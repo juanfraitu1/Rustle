@@ -851,9 +851,39 @@ fn write_hierarchy(
         let s: Vec<String> = v.collect();
         if s.is_empty() { "-".to_string() } else { s.join(",") }
     };
+    // Amendment 3: SD complex = superfamilies joined directly by a SEDEF pair between their members
+    let mut cx_of: BTreeMap<GeneKey, String> = BTreeMap::new();
+    let mut sf_links: BTreeMap<(String, String), (usize, Option<f64>)> = BTreeMap::new();
+    if let Some(sd) = &sd {
+        let sf_names: Vec<String> = sf_of.values().cloned().collect::<BTreeSet<_>>().into_iter().collect();
+        let sf_ix: BTreeMap<&String, usize> = sf_names.iter().enumerate().map(|(i, n)| (n, i)).collect();
+        let ms: Vec<&GeneKey> = rows.keys().collect();
+        let mut cx_edges: Vec<(usize, usize)> = vec![];
+        for i in 0..ms.len() {
+            for j in (i + 1)..ms.len() {
+                let (a, b) = (&sf_of[ms[i]], &sf_of[ms[j]]);
+                if a == b {
+                    continue;
+                }
+                if let Some(id) = sd.link(&blocks_of[ms[i]], &blocks_of[ms[j]]) {
+                    cx_edges.push((sf_ix[a], sf_ix[b]));
+                    let key = if a < b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
+                    let e = sf_links.entry(key).or_insert((0, None));
+                    e.0 += 1;
+                    if !id.is_nan() {
+                        e.1 = Some(e.1.map_or(id, |x: f64| x.max(id)));
+                    }
+                }
+            }
+        }
+        let comp = H::components(sf_names.len(), &cx_edges);
+        for (m, sf) in &sf_of {
+            cx_of.insert(m.clone(), format!("CX{}", comp[sf_ix[sf]]));
+        }
+    }
     // members.tsv
     let mut mf = std::fs::File::create(format!("{out}.hierarchy.members.tsv"))?;
-    writeln!(mf, "superfamily\tfamily\tmember\tstrand\tn_records\tn_exons\tduplicon_string\tsignature\texpansions\tshared_fragment\tfusion_of\tfusion_kind\tsd_blocks\tsd_components\tsd_max_identity")?;
+    writeln!(mf, "sd_complex\tsuperfamily\tfamily\tmember\tstrand\tn_records\tn_exons\tduplicon_string\tsignature\texpansions\tshared_fragment\tfusion_of\tfusion_kind\tsd_blocks\tsd_components\tsd_max_identity")?;
     let mut fusions: Vec<(GeneKey, BTreeSet<String>)> = vec![];
     let mut n_true_fusion = 0usize;
     for (m, r) in &rows {
@@ -868,7 +898,8 @@ fn write_hierarchy(
         let (comps, mx) = sd_of.get(m).cloned().unwrap_or((BTreeSet::new(), None));
         writeln!(
             mf,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            cx_of.get(m).cloned().unwrap_or_else(|| "NA".into()),
             sf_of[m],
             r.fam,
             key(m),
@@ -906,6 +937,21 @@ fn write_hierarchy(
         for f in fams {
             writeln!(ef, "family\t{f}\tsuperfamily\t{sf}\tin\t-")?;
         }
+    }
+    let mut cx_members: BTreeMap<&String, (usize, BTreeSet<&String>)> = BTreeMap::new();
+    for (m, cx) in &cx_of {
+        let e = cx_members.entry(cx).or_default();
+        e.0 += 1;
+        e.1.insert(&sf_of[m]);
+    }
+    for (cx, (n, sfs)) in &cx_members {
+        writeln!(nf, "sd_complex\t{cx}\t{n}\tsuperfamilies={}", sfs.len())?;
+        for sf in sfs {
+            writeln!(ef, "superfamily\t{sf}\tsd_complex\t{cx}\tin\t-")?;
+        }
+    }
+    for ((a, b), (n, id)) in &sf_links {
+        writeln!(ef, "superfamily\t{a}\tsuperfamily\t{b}\tsd_linked\tmember_pairs={n};best_identity={}", id.map(|x| format!("{x:.5}")).unwrap_or_else(|| "-".into()))?;
     }
     let mut n_fam_all_joined = 0usize;
     for (fam, ms) in &by_fam {
@@ -1001,6 +1047,7 @@ fn write_hierarchy(
         let fam_of_s: BTreeMap<String, String> = rows.iter().map(|(m, r)| (key(m), r.fam.clone())).collect();
         let sf_of_s: BTreeMap<String, String> = rows.keys().map(|m| (key(m), sf_of[m].clone())).collect();
         let no_exp: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let cx_of_s: BTreeMap<String, String> = cx_of.iter().map(|(m, c)| (key(m), c.clone())).collect();
         let mut by_label: BTreeMap<String, (usize, usize, BTreeSet<String>)> = BTreeMap::new();
         for (rec, label) in &ext {
             let e = by_label.entry(label.clone()).or_default();
@@ -1012,14 +1059,16 @@ fn write_hierarchy(
             }
         }
         let mut xf = std::fs::File::create(format!("{out}.hierarchy.external.tsv"))?;
-        writeln!(xf, "external\tn_records\tn_records_on_members\tn_members\tbest_family\tcontainment\tn_families\tbest_expansion\tbest_jaccard\tbest_superfamily\tsf_containment\tn_superfamilies")?;
+        writeln!(xf, "external\tn_records\tn_records_on_members\tn_members\tbest_family\tcontainment\tn_families\tbest_expansion\tbest_jaccard\tbest_superfamily\tsf_containment\tn_superfamilies\tbest_sd_complex\tcx_containment\tn_sd_complexes\tplacement\tplaced_under")?;
         for (label, (n_rec, n_on, mem)) in &by_label {
             let pl = H::place(mem, &fam_of_s, &exp_members);
             let ps = H::place(mem, &sf_of_s, &no_exp);
+            let pc = H::place(mem, &cx_of_s, &no_exp);
+            let (ptype, pnode) = H::placement(mem, &exp_members, &fam_of_s, &sf_of_s, &cx_of_s);
             let f4 = |v: Option<f64>| v.map(|x| format!("{x:.4}")).unwrap_or_else(|| "NA".into());
             writeln!(
                 xf,
-                "{label}\t{n_rec}\t{n_on}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                "{label}\t{n_rec}\t{n_on}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{ptype}\t{pnode}",
                 pl.n_members,
                 pl.best_family.clone().unwrap_or_else(|| "NA".into()),
                 f4(pl.containment),
@@ -1028,11 +1077,22 @@ fn write_hierarchy(
                 f4(pl.best_jaccard),
                 ps.best_family.clone().unwrap_or_else(|| "NA".into()),
                 f4(ps.containment),
-                ps.n_families
+                ps.n_families,
+                pc.best_family.clone().unwrap_or_else(|| "NA".into()),
+                f4(pc.containment),
+                pc.n_families
             )?;
             if let Some(sf) = &ps.best_family {
                 writeln!(ef, "external\t{label}\tsuperfamily\t{sf}\tcontained_in\t{}", f4(ps.containment))?;
             }
+            let plevel = match ptype {
+                "EXPANSION" => "expansion",
+                "WITHIN-FAMILY" => "family",
+                "WITHIN-SUPERFAMILY" => "superfamily",
+                "WITHIN-SD-COMPLEX" => "sd_complex",
+                _ => "none",
+            };
+            writeln!(ef, "external\t{label}\t{plevel}\t{pnode}\tplaced_under\t{ptype}")?;
             if let Some(f) = &pl.best_family {
                 writeln!(nf, "external\t{label}\t{}\tcontainment={}", pl.n_members, f4(pl.containment))?;
                 writeln!(ef, "external\t{label}\tfamily\t{f}\tcontained_in\t{}", f4(pl.containment))?;
@@ -1043,7 +1103,7 @@ fn write_hierarchy(
         }
     }
     eprintln!(
-        "[mcl_families] --emit-hierarchy: {} members, {} superfamilies, {} families, {} expansions, {} fusion loci ({} foreign-only), {} duplicons owned; SD blocks {} ({} with >1 family), families with every member pair SD-joined {} -> {out}.hierarchy.*",
+        "[mcl_families] --emit-hierarchy: {} members, {} superfamilies, {} families, {} expansions, {} fusion loci ({} foreign-only), {} duplicons owned; SD blocks {} ({} with >1 family), families with every member pair SD-joined {}; SD complexes {} (largest {} members) -> {out}.hierarchy.*",
         rows.len(),
         sf_members.len(),
         by_fam.len(),
@@ -1053,7 +1113,9 @@ fn write_hierarchy(
         owners.len(),
         n_blocks,
         n_blocks_multi,
-        n_fam_all_joined
+        n_fam_all_joined,
+        cx_members.len(),
+        cx_members.values().map(|v| v.0).max().unwrap_or(0)
     );
     Ok(())
 }

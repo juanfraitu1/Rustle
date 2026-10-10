@@ -75854,6 +75854,42 @@ pub mod family_hierarchy {
         }
     }
 
+    /// Amendment 3 (H5): the lowest level of the hierarchy that holds every member of an external family, and that node:
+    /// EXPANSION (equal to one expansion), WITHIN-FAMILY, WITHIN-SUPERFAMILY, WITHIN-SD-COMPLEX, OUTSIDE (spans SD complexes),
+    /// NOT-IN-OUR-FAMILIES (no member on a clustered locus).
+    pub fn placement(
+        members: &BTreeSet<String>,
+        expansions: &BTreeMap<String, BTreeSet<String>>,
+        family_of: &BTreeMap<String, String>,
+        sf_of: &BTreeMap<String, String>,
+        cx_of: &BTreeMap<String, String>,
+    ) -> (&'static str, String) {
+        if members.is_empty() {
+            return ("NOT-IN-OUR-FAMILIES", "-".into());
+        }
+        if let Some((x, _)) = expansions.iter().find(|(_, xm)| *xm == members) {
+            return ("EXPANSION", x.clone());
+        }
+        let one = |map: &BTreeMap<String, String>| -> Option<String> {
+            let v: BTreeSet<&String> = members.iter().filter_map(|m| map.get(m)).collect();
+            if v.len() == 1 && members.iter().all(|m| map.contains_key(m)) {
+                v.into_iter().next().cloned()
+            } else {
+                None
+            }
+        };
+        if let Some(f) = one(family_of) {
+            return ("WITHIN-FAMILY", f);
+        }
+        if let Some(f) = one(sf_of) {
+            return ("WITHIN-SUPERFAMILY", f);
+        }
+        if let Some(f) = one(cx_of) {
+            return ("WITHIN-SD-COMPLEX", f);
+        }
+        ("OUTSIDE", "-".into())
+    }
+
     /// GFF strand per record (gene / pseudogene lines), keyed by `(chrom, start, end)` as `exonic_blocks` keys them.
     pub fn gff_strands(text: &str) -> BTreeMap<(String, u64, u64), char> {
         let mut out = BTreeMap::new();
@@ -76044,6 +76080,23 @@ pub mod family_hierarchy {
         fn components_are_union_find_with_the_smallest_index_as_id() {
             assert_eq!(components(6, &[(1, 2), (4, 2), (3, 5)]), vec![0, 1, 1, 3, 1, 3]);
             assert_eq!(components(2, &[]), vec![0, 1]);
+        }
+
+        #[test]
+        fn placement_is_the_lowest_level_holding_every_member() {
+            let m = |v: &[(&str, &str)]| -> BTreeMap<String, String> { v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect() };
+            let fam = m(&[("a", "F1"), ("b", "F1"), ("c", "F2"), ("d", "F3")]);
+            let sf = m(&[("a", "S1"), ("b", "S1"), ("c", "S1"), ("d", "S2")]);
+            let cx = m(&[("a", "C1"), ("b", "C1"), ("c", "C1"), ("d", "C1")]);
+            let mut ex: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            ex.insert("F1.x1".into(), set(&["a", "b"]));
+            assert_eq!(placement(&set(&["a", "b"]), &ex, &fam, &sf, &cx), ("EXPANSION", "F1.x1".to_string()));
+            assert_eq!(placement(&set(&["a"]), &ex, &fam, &sf, &cx), ("WITHIN-FAMILY", "F1".to_string()));
+            assert_eq!(placement(&set(&["a", "c"]), &ex, &fam, &sf, &cx), ("WITHIN-SUPERFAMILY", "S1".to_string()));
+            assert_eq!(placement(&set(&["a", "d"]), &ex, &fam, &sf, &cx), ("WITHIN-SD-COMPLEX", "C1".to_string()));
+            let cx2 = m(&[("a", "C1"), ("b", "C1"), ("c", "C1"), ("d", "C2")]);
+            assert_eq!(placement(&set(&["a", "d"]), &ex, &fam, &sf, &cx2), ("OUTSIDE", "-".to_string()));
+            assert_eq!(placement(&set(&[]), &ex, &fam, &sf, &cx), ("NOT-IN-OUR-FAMILIES", "-".to_string()));
         }
 
         #[test]
