@@ -6,6 +6,7 @@ Arm A: reads assigned to the primary's haplotype (S) or the other haplotype (B) 
 groups (Fisher, BH, q < 0.05 and |dPSI| >= 0.3). The assemblies classify each arm-R anchor ALLELIC / NON-ALLELIC / UNRESOLVED.
 Pure functions (tested in test_asj_o2.py) first; the per-chromosome driver (`run_chrom.py`) and the scorer (`score.py`) use them."""
 import bisect
+import functools
 import math
 import re
 
@@ -76,6 +77,7 @@ def read_obs(cig, rstart, seq, sites):
     return obs, introns, (rstart, r), xs
 
 
+@functools.lru_cache(maxsize=None)
 def _dp_tail(k, m, eps):
     """O2's poisson_binomial_upper_tail recursion with equal probabilities"""
     if k == 0:
@@ -89,6 +91,7 @@ def _dp_tail(k, m, eps):
     return sum(dp[k:])
 
 
+@functools.lru_cache(maxsize=None)
 def upper_tail(k, m, eps, exact_upto=60):
     """P(X >= k), X ~ Binomial(m, eps): O2's recursion up to `exact_upto` columns (so boundary cases such as k = m = 1 give O2's exact float);
     beyond, the closed-form sum in log space (the recursion is quadratic in m)"""
