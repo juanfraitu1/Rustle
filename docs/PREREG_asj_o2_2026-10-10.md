@@ -81,3 +81,22 @@ Code: `bench/asj_o2/` (test-first). Compute: per chromosome, foreground, `tools/
   median MAPQ-0 share 0 in every class (the non-allelic anchors are not low-MAPQ reads). Examples: ATXN3 two donors 7 bp apart switch with the allele
   (dPSI +0.89 / -0.97); AGTRAP two acceptors 21 bp apart (+0.68 / -0.68).
 **No amendment.** The held-out half and the chrX control are run with the same code.
+
+## HELD-OUT result, verdict and T3 (2026-10-10; no amendment; dev chromosomes run with the code before three speed-ups, each shown byte-identical on chr21)
+
+**HELD-OUT (11 even chromosomes, 6,841 genes):**
+- **T1 PASSES: 1,850 discordant of 1,285,832 = 0.00144** (bar 0.005).
+- **T2 PASSES: median concordance 1.000 over 2,455 ALLELIC anchors and 0.577 over 18 NON-ALLELIC anchors** (bars >= 0.95 / <= 0.80); UNRESOLVED 1.000 over 88.
+**Verdict: the claim holds.** O2's certificate assigns reads to haplotypes within its stated bound on both halves (discordance 0.0010 dev / 0.0014
+held-out, against about 0.002 implied), and the haplotype assemblies separate allele-tracking anchors from non-allelic ones.
+
+**T3, all 23 autosomes (13,648 genes):** arm A assigns 2,680,826 + 2,652,380 reads, abstains on 66.1%; **636 allele-specific junctions in 286 genes**
+(median |dPSI| 0.567). Arm R 879 calls / 352 genes: ALLELIC 442, NON-ALLELIC 97, UNRESOLVED 340; **NON-ALLELIC = 18.0% of resolved calls**; 353 of the 442
+ALLELIC arm-R calls are also arm-A calls. Anchors: ALLELIC 7,887, NON-ALLELIC 252, UNRESOLVED 1,723; **transitions 0.91 of NON-ALLELIC vs 0.75 of
+ALLELIC anchors**, median MAPQ-0 share 0 in both: in KB3781 the read-anchored method's non-allelic anchors look like RNA editing more than paralogous
+reads (June's confound on OR6737 was named paralogous, LOC*; not compared directly).
+**Control (chrX >= 5 Mb from the ends, 424 genes, male):** 0.059 arm-R anchors per gene (autosomes 0.723), 92% transitions; **1 arm-R call in 424 genes
+(0.0024 per gene; autosomes 0.064)**, UNRESOLVED (no other haplotype). The read-anchored method's floor on a hemizygous chromosome is about 4% of its
+autosomal call rate.
+**Not claimed:** a splicing mechanism; anything about OR6737; that UNRESOLVED arm-R calls (39%) are allelic (their anchors track the haplotype, median 1.000
+over 156, but the referee did not classify them).
