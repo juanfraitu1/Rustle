@@ -65,3 +65,21 @@ family under both; dev and held-out side by side; expansion sensitivity / precis
 Gorilla has no duplicon track, so Phase 2 has no truth. Inputs (the gorilla locus set and its self-alignment, built like `loci.paf`) are fixed in an amendment
 before the run. Named expectation registered now: **LRPAP1** (11 gorilla loci: 8 full copies + 3 5′ fragments, `project_lrpap1_family`) — the 8 full copies share
 one maximal signature and the 3 fragments' signatures are subsets of it (one expansion, 3 shared or contained fragments). The NPIP family is reported as is.
+
+## DEV result (2026-10-10; code 7a51101e + scorer fix below; held-out NOT computed)
+
+**Units.** 164,616 PAF records, 12,373 kept; fixpoint after 3 rounds; 6,039 breakpoints, 4,525 atoms (26.8 Mb), **998 units** (396 with 2 copies, 221 with 3, one with 158).
+4 s, 80 MB. Members' exonic bases carrying a unit **81.7%** vs a DupMasker duplicon 91.3%. **H0 holds** (`clusters.tsv`, `loci.tsv`, `pairs.tsv` byte-identical).
+**DEV (200 families, 49 structured):**
+- **P1 FAILS on dev: mean family score 0.630** (bar 0.80); 106 of 200 families identical; member-weighted 0.503. Exact expansion sensitivity 115/249, precision 115/228.
+- **P2 holds on dev:** on the 49 structured families PAF units beat the one-block null in 27, lose in 3, tie 19 (sign test p 4e-6); mean 0.479 vs 0.278.
+- **P3 holds (all families): 223 Soto families are exactly one expansion with PAF units** (DupMasker 215; bar 194); WITHIN-FAMILY 90, WITHIN-SUPERFAMILY 33,
+  WITHIN-SD-COMPLEX 52, OUTSIDE 2 (unchanged above the family).
+- **P4 holds:** PKD1P6-NPIPP1 member (MCL28) `fusion_of` MCL9; PDXDC2P-NPIPB14P (MCL286) `fusion_of` MCL171, MCL9.
+- NPIP (MCL9, dev): DupMasker 3 expansions (4, 6, 10 members), PAF units 4 (3, 4, 6, 9); score 0.474.
+**Where dev disagrees (94 families):** 18 where PAF units give no unit on the family's exons and DupMasker gives one expansion of all members (member alignments
+below 0.90 or 1 kb: older duplications), 18 the reverse (DupMasker has no duplicon where >= 0.90 / >= 1 kb exonic alignments exist), 28 where PAF units merge
+more, 23 where they split more, 7 same block count with different members (e.g. MCL0, 65 members: DupMasker 62 + 3, PAF units 63 + 2 unique).
+**Scorer fix (not a method change, disclosed).** P4 first looked members up by the readthrough gene record CHM13_G0020726 and picked the containing PDXDC1
+locus; it now checks the exact members H3 reported (`chr16:15126207-15159416`, the PKD1P6 locus LOFF_G0001012 whose model runs into the NPIP core, and
+`chr16:75785720-75875798`). P1-P3 unchanged by the fix.

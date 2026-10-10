@@ -66,3 +66,4 @@ def test_covered_bp_counts_overlap_once():
     bed = S.merge([(0, 100), (50, 150), (300, 400)])
     assert bed == [[0, 150], [300, 400]]
     assert S.covered_bp([[100, 350]], bed) == 50 + 50
+

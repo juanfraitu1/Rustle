@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score the expansion level built on PAF units against the one built on DupMasker (docs/PREREG_paf_duplicon_units_2026-10-10.md).
 
-    score_units.py <truth_dir> <ours_dir> <dev|heldout> <names.tsv> <loci.gff3> <dupmasker.bed> <units.bed>
+    score_units.py <truth_dir> <ours_dir> <dev|heldout> <loci.gff3> <dupmasker.bed> <units.bed>
 
 Both dirs hold `ours.hierarchy.{members,external}.tsv`. Per family (>= 2 members) the cover = its expansions plus its `unique` class (matched only with
 `unique`); family score = maximum-weight bipartite matching on Jaccard / max(#blocks). Only the requested half of the family-hash split is scored
@@ -12,7 +12,9 @@ import json
 import math
 import sys
 
-NAMED_FUSIONS = {"CHM13_G0020726": "PKD1P6-NPIPP1", "CHM13_G0022124": "PDXDC2P-NPIPB14P"}
+# the members H3 of docs/PREREG_family_hierarchy_flag_2026-10-09.md reported (the "PKD1P6-NPIPP1" member is the PKD1P6 locus LOFF_G0001012, whose
+# model runs into the NPIP core; the readthrough record CHM13_G0020726 itself is not a member)
+NAMED_FUSIONS = {"chr16:15126207-15159416": "PKD1P6-NPIPP1", "chr16:75785720-75875798": "PDXDC2P-NPIPB14P"}
 NPIP_FAMILY = "MCL9"
 
 
@@ -111,7 +113,7 @@ def _region(r):
     return c, int(s) - 1, int(e)
 
 
-def main(truth, ours, which, names, gff, dupbed, unitbed):
+def main(truth, ours, which, gff, dupbed, unitbed):
     hd, rd = _members(f"{truth}/ours.hierarchy.members.tsv")
     hp, rp = _members(f"{ours}/ours.hierarchy.members.tsv")
     key = lambda h, r: (r[h["family"]], r[h["member"]], r[h["expansions"]])  # noqa: E731
@@ -146,12 +148,10 @@ def main(truth, ours, which, names, gff, dupbed, unitbed):
         res[f"P3_soto_expansion_{tag}"] = sum(int(r[h["n_members"]]) >= 2 and r[h["placement"]] == "EXPANSION" for r in rows)
         res[f"P3_soto_placement_{tag}"] = dict(collections.Counter(r[h["placement"]] for r in rows if int(r[h["n_members"]]) >= 2))
     # P4: named fusions (all families)
-    reg = dict(ln.rstrip("\n").split("\t")[:2] for ln in open(names))
-    for gid, nm in NAMED_FUSIONS.items():
-        c, s, e = _region(reg[gid])
+    for m, nm in NAMED_FUSIONS.items():
         for tag, h, rows in (("dupmasker", hd, rd), ("ours", hp, rp)):
-            best = max(rows, key=lambda r: (_region(r[h["member"]])[0] == c) * max(0, min(e, _region(r[h["member"]])[2]) - max(s, _region(r[h["member"]])[1])))
-            res[f"P4_{nm}_{tag}"] = f"{best[h['family']]} {best[h['member']]} fusion_of={best[h['fusion_of']]} {best[h['fusion_kind']]}"
+            r = next(r for r in rows if r[h["member"]] == m)
+            res[f"P4_{nm}_{tag}"] = f"{r[h['family']]} {m} fusion_of={r[h['fusion_of']]} {r[h['fusion_kind']]}"
     # descriptive: members' exonic bases carrying a unit / a DupMasker duplicon (all members)
     ex = collections.defaultdict(list)
     for ln in open(gff):
@@ -178,4 +178,4 @@ def main(truth, ours, which, names, gff, dupbed, unitbed):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:8])
+    main(*sys.argv[1:7])
