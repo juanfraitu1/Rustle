@@ -83,3 +83,16 @@ more, 23 where they split more, 7 same block count with different members (e.g. 
 **Scorer fix (not a method change, disclosed).** P4 first looked members up by the readthrough gene record CHM13_G0020726 and picked the containing PDXDC1
 locus; it now checks the exact members H3 reported (`chr16:15126207-15159416`, the PKD1P6 locus LOFF_G0001012 whose model runs into the NPIP core, and
 `chr16:75785720-75875798`). P1-P3 unchanged by the fix.
+
+## HELD-OUT result and verdict (2026-10-10; no amendment, user's choice; same units, same scorer as DEV)
+
+**HELD-OUT (180 families, 35 structured):**
+- **P1 FAILS: mean family score 0.638** (bar 0.80); 103 of 180 identical; member-weighted 0.637. Exact sensitivity 105/181, precision 105/180.
+- **P2 FAILS: 12 wins, 8 losses, 15 ties against the one-block null (sign test p 0.25)**; means 0.438 vs 0.310. The DEV win (27 / 3) did not replicate.
+- P3 and P4 (all families) as on DEV: 223 Soto families exactly one expansion (DupMasker 215); both named fusions `fusion_of` MCL9.
+- Disagreements (77): 22 DupMasker has no duplicon where PAF units give one expansion, 19 the reverse, 15 merge more, 15 split more, 6 other.
+**Verdict: NOT ADOPTED.** PAF units do not reproduce DupMasker's expansion level (0.63-0.64 on both halves) and do not beat the one-block null on held-out.
+DupMasker stays the duplicon source of `--emit-hierarchy`. PAF units remain a bench tool (`bench/paf_duplicons/`), not wired into the flag. What they do
+reproduce: Soto's placement (223 vs 215 exact expansions) and the two named fusions, so those two statements do not depend on DupMasker.
+**Phase 2 (gorilla).** Registered as descriptive after this verdict; with PAF units not adopted, any gorilla expansion level built on them carries the
+measured agreement of 0.63-0.64 with DupMasker on human and no evidence of beating the one-block null. Not run.
