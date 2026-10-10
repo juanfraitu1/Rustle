@@ -371,9 +371,83 @@ def step_eval():
     json.dump(dict(verdicts=verdicts, recovered=sorted(recovered)), open(f"{OUT}/eval{TAG}.json", "w"))
 
 
+def step_loci_hap(hap):
+    """loci.<hap>.json: the net's <hap>-specific reads grouped by position on that haplotype"""
+    reads = []
+    for ln in list(open(f"{OUT}/truth.net.{hap}.tsv"))[1:]:
+        f = ln.rstrip("\n").split("\t")
+        if f[5] == "1":
+            reads.append((f[1], int(f[2]), int(f[3]), f[0]))
+    loci = group_loci(reads)
+    json.dump(loci, open(f"{OUT}/loci.{hap}.json", "w"))
+    n3 = [l for l in loci if len(l["names"]) >= 3]
+    print(f"{hap} truth loci: {len(loci)} with >= 1 {hap}-specific read ({len(reads)} reads); {len(n3)} with >= 3 ({sum(len(l['names']) for l in n3)} reads)")
+
+
+def step_eval2(run_dir, label):
+    """Amendment 46: verdicts from the whole net's maternal and paternal placement; recall over the maternal and the paternal truth loci"""
+    import collections
+    import csv
+    import glob
+    cl = collections.defaultdict(list)
+    for r in csv.DictReader(open(f"{run_dir}/clusters.tsv"), delimiter="\t"):
+        cl[r["cluster"]].append(r["read"])
+    rows = json.load(open(f"{run_dir}/classes.json"))
+    best_mat = load_best(sorted(glob.glob(f"{OUT}/net_mat/chunk*.paf")))
+    best_pat = load_best(sorted(glob.glob(f"{OUT}/net_pat/chunk*.paf")))
+    spec_mat = load_spec(f"{OUT}/truth.net.mat.tsv")
+    spec_pat = load_spec(f"{OUT}/truth.net.pat.tsv")
+    flags = flagged(rows)
+    loci = {"mat": json.load(open(f"{OUT}/loci.json")), "pat": json.load(open(f"{OUT}/loci.pat.json"))}
+    locus_of = {h: {n: i for i, l in enumerate(L) for n in l["names"]} for h, L in loci.items()}
+    rec = {"mat": set(), "pat": set()}
+    n_true = 0
+    for r in flags:
+        reads = cl[r["key"]]
+        v = verdict([read_status(x, best_mat, spec_mat, best_pat, spec_pat) for x in reads])
+        if v != "TRUE":
+            continue
+        n_true += 1
+        for h in ("mat", "pat"):
+            hits = [locus_of[h][x] for x in reads if x in locus_of[h]]
+            if hits:
+                rec[h].add(collections.Counter(hits).most_common(1)[0][0])
+    in_cluster = {x: k for k, rs in cl.items() for x in rs}
+    cls_of = {r["key"]: r["cls"] for r in rows}
+    out = dict(label=label, flags=len(flags), true=n_true, wrong=len(flags) - n_true)
+    print(f"[{label}] flags {len(flags)}; TRUE {n_true}; WRONG {len(flags) - n_true} ({(len(flags) - n_true) / max(1, len(flags)):.1%})")
+    for h in ("mat", "pat"):
+        for floor in (1, 3):
+            sel = [i for i, l in enumerate(loci[h]) if len(l["names"]) >= floor]
+            got = [i for i in sel if i in rec[h]]
+            why = collections.Counter()
+            for i in sel:
+                if i in rec[h]:
+                    continue
+                ks = [in_cluster.get(x) for x in loci[h][i]["names"]]
+                if sum(k is None for k in ks) > len(ks) / 2:
+                    why["not clustered"] += 1
+                    continue
+                top = collections.Counter(cls_of[k] for k in ks if k is not None).most_common(1)[0][0]
+                why["held by the primary" if top in GOOD else "unsupported" if top == "UNSUPPORTED" else "flagged, WRONG / other locus"] += 1
+            out[f"{h}_recall_{floor}"] = len(got) / max(1, len(sel))
+            print(f"[{label}] {h} truth loci >= {floor} reads: recall {len(got)}/{len(sel)} = {len(got) / max(1, len(sel)):.3f}; misses {dict(why)}")
+    ston = [i for i, l in enumerate(loci["mat"]) if l["contig"] == "CM054594.2" and l["start"] < 96_100_000 and l["end"] > 95_900_000]
+    print(f"[{label}] STON1-GTF2A1L recovered:", [i in rec["mat"] for i in ston])
+    json.dump(out, open(f"{OUT}/eval2_{label}.json", "w"))
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
-    if cmd == "mask":
+    if cmd == "lociHap":
+        step_loci_hap(sys.argv[2])
+    elif cmd == "eval2":
+        step_eval2(sys.argv[2], sys.argv[3])
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd in ("lociHap", "eval2"):
+        pass
+    elif cmd == "mask":
         step_mask(sys.argv[2] if len(sys.argv) > 2 else "mat")
     elif cmd == "versions":
         step_versions(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "mat")

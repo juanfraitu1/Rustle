@@ -1041,3 +1041,17 @@ Held-out flags 1,413 (artifact 838, real 231, undecided 344). **S1 met: 84.4% of
 **Change.** Amendment 45 unchanged except the support test: the median divergence of the cluster's CORRECTED reads (the reads the consensus was built from) to the consensus, instead of the original reads. Motivation (seen on the maternal truth, both halves): with raw-read support 12,077 of 14,495 clusters were UNSUPPORTED and 30 maternal truth loci were lost at that step.
 **Fresh test set.** The maternal truth has been used for recall on both halves; the held-out half three times. **Paternal truth, never used for recall:** the net mapped to the paternal assembly; reads clean there (de <= 0.00958) on paternal contigs that are not identical to a primary chromosome (the partners of the 9 maternal-primary chromosomes 5, 6, 10, 11, 17, 20, 22, 23, X, and the unplaced paternal contigs); assembly version scored on the primary; pat-specific if < 0.99042; loci grouped as before. Recall over paternal truth loci with >= 3 pat-specific reads. Read statuses for the verdicts now come from the maternal and paternal placement of the whole net (one placement for every read), for both variants alike.
 **Bars.** (P1) recall over paternal truth loci (>= 3 reads) with corrected-read support >= 0.50; (P2) it is >= the recall of the raw-read-support run (Amendment 45 as run) on the same loci; (P3) the WRONG share of all flags is <= that of the raw-read-support run under the same statuses. **Decision:** read correction with corrected-read support is adopted for genome-scale runs iff P1-P3 hold. Reported: maternal-truth recall of both variants (not a test), STON1-GTF2A1L.
+
+### Amendment 46 result (2026-10-09; `run_corr_cs.py`, `mat_truth.py eval2`; `docs/unmapped_rescue_results/{eval2_A45_raw_support,eval2_A46_corrected_support,loci.pat}.json`): NOT adopted (P3)
+
+**Paternal truth (fresh).** Net on the paternal assembly: 520,847 mapped, 36,729 clean, 36,692 on testable contigs, **14,783 pat-specific reads; 437 loci, 99 with >= 3 reads**.
+**Classes with corrected-read support.** PRESENT 4,954, ALLELE-LIKE 6,981, DIVERGED 2,357, NOVEL 202, UNSUPPORTED 1: most clusters the raw reads had rejected now match the primary within the allele cutoff. Flagged 2,559.
+| | raw-read support (A45) | corrected-read support (A46) |
+|---|---|---|
+| flags; WRONG (whole-net statuses) | 1,597; 1,242 = 77.8% | 2,559; 2,126 = **83.1%** |
+| **paternal truth recall, >= 3 reads (fresh)** | 49 / 99 = 0.495 | **56 / 99 = 0.566** |
+| paternal, >= 1 read | 59 / 437 | 72 / 437 |
+| maternal recall, >= 3 reads (not a test) | 127 / 229 = 0.555 | 148 / 229 = 0.646 |
+| STON1-GTF2A1L | recovered | recovered |
+Paternal misses (>= 3, corrected support): not clustered 23, held by the primary 16, flagged WRONG / other locus 4 (no unsupported).
+**P1 met (0.566 >= 0.50). P2 met (0.566 >= 0.495). P3 NOT met (WRONG 83.1% > 77.8%). Decision: not adopted.** Correction with corrected-read support reaches the recall bar on a truth set never used before, and pays for it in precision: every relaxation that lets real noisy reads through lets leaked transcripts through too.
