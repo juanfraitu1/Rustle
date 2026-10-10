@@ -37,6 +37,8 @@ def minor(k, n, alpha=0.01):
 
 
 def sample_every(names, cap):
+    if cap <= 0:
+        return []
     if len(names) <= cap:
         return list(names)
     step = len(names) / cap

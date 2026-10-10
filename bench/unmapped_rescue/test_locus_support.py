@@ -37,6 +37,7 @@ class Stats(unittest.TestCase):
     def test_sample_every(self):
         self.assertEqual(L.sample_every(list(range(10)), 5), [0, 2, 4, 6, 8])
         self.assertEqual(L.sample_every(list(range(3)), 5), [0, 1, 2])
+        self.assertEqual(L.sample_every(list(range(3)), 0), [])
 
 
 if __name__ == "__main__":

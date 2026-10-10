@@ -1,0 +1,422 @@
+[
+ {
+  "k": "cl2753",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl2893",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1897",
+  "group": "leak",
+  "best": "chimp",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1032",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1242",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2227",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl2420",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl480",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2127",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl508",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl1307",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 8,
+  "other_reads": 292
+ },
+ {
+  "k": "cl778",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 5,
+  "other_reads": 295
+ },
+ {
+  "k": "cl1399",
+  "group": "leak",
+  "best": "chimp",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2133",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1929",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl765",
+  "group": "leak",
+  "best": "chimp",
+  "flag_reads": 14,
+  "other_reads": 286
+ },
+ {
+  "k": "cl1769",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 7,
+  "other_reads": 293
+ },
+ {
+  "k": "cl207",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl1708",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 13,
+  "other_reads": 287
+ },
+ {
+  "k": "cl1836",
+  "group": "leak",
+  "best": "chimp",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl1090",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 5,
+  "other_reads": 295
+ },
+ {
+  "k": "cl401",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 6,
+  "other_reads": 294
+ },
+ {
+  "k": "cl1192",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1935",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2396",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl241",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl1998",
+  "group": "leak",
+  "best": "chimp",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl910",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1724",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 13,
+  "other_reads": 287
+ },
+ {
+  "k": "cl2431",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 7,
+  "other_reads": 293
+ },
+ {
+  "k": "cl1906",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 10,
+  "other_reads": 290
+ },
+ {
+  "k": "cl798",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2001",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 4,
+  "other_reads": 296
+ },
+ {
+  "k": "cl2746",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2087",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1664",
+  "group": "leak",
+  "best": "chimp",
+  "flag_reads": 9,
+  "other_reads": 291
+ },
+ {
+  "k": "cl945",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 6
+ },
+ {
+  "k": "cl2216",
+  "group": "leak",
+  "best": "orangutan",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl2714",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 5,
+  "other_reads": 2
+ },
+ {
+  "k": "cl1841",
+  "group": "leak",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl87",
+  "group": "true",
+  "best": "orangutan",
+  "flag_reads": 19,
+  "other_reads": 281
+ },
+ {
+  "k": "cl1941",
+  "group": "true",
+  "best": "human",
+  "flag_reads": 41,
+  "other_reads": 259
+ },
+ {
+  "k": "cl1116",
+  "group": "true",
+  "best": "chimp",
+  "flag_reads": 3,
+  "other_reads": 297
+ },
+ {
+  "k": "cl1653",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 13,
+  "other_reads": 287
+ },
+ {
+  "k": "cl1758",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 3,
+  "other_reads": 186
+ },
+ {
+  "k": "cl1761",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 26,
+  "other_reads": 29
+ },
+ {
+  "k": "cl2066",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 8,
+  "other_reads": 292
+ },
+ {
+  "k": "cl1892",
+  "group": "true",
+  "best": "chimp",
+  "flag_reads": 5,
+  "other_reads": 83
+ },
+ {
+  "k": "cl472",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 348,
+  "other_reads": 0
+ },
+ {
+  "k": "cl86",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 110,
+  "other_reads": 190
+ },
+ {
+  "k": "cl1542",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 12,
+  "other_reads": 36
+ },
+ {
+  "k": "cl1201",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 8,
+  "other_reads": 292
+ },
+ {
+  "k": "cl2427",
+  "group": "true",
+  "best": "siamang",
+  "flag_reads": 3,
+  "other_reads": 10
+ },
+ {
+  "k": "cl2122",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 3,
+  "other_reads": 153
+ },
+ {
+  "k": "cl1949",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 3,
+  "other_reads": 18
+ },
+ {
+  "k": "cl2891",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 4,
+  "other_reads": 57
+ },
+ {
+  "k": "cl1097",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 3,
+  "other_reads": 107
+ },
+ {
+  "k": "cl43",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 5,
+  "other_reads": 47
+ },
+ {
+  "k": "cl442",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 7,
+  "other_reads": 293
+ },
+ {
+  "k": "cl600",
+  "group": "true",
+  "best": "own",
+  "flag_reads": 3,
+  "other_reads": 297
+ }
+]
