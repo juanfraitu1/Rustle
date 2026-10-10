@@ -164,3 +164,14 @@ def test_allelic_alignment_is_the_best_primary_covering_ninety_percent():
 def test_upper_tail_closed_form_matches_the_recursion_beyond_sixty_columns():
     for m, k in ((61, 2), (80, 3), (200, 1), (300, 150)):
         assert abs(A.upper_tail(k, m, A.EPS) - A._dp_tail(k, m, A.EPS)) <= 1e-12 * max(1e-300, A._dp_tail(k, m, A.EPS)) + 1e-300
+
+
+def test_anchor_counts_from_coverage_and_mismatches_match_per_read_bases():
+    reads = _gene_reads()
+    xs_all = [A.read_obs(c, s, q, [])[3] for c, s, q, _ in reads]
+    blocks = [A.aligned_blocks(c, s) for c, s, _, _ in reads]
+    cand = A.x_candidates(xs_all)
+    pri = {100: "A", 200: "C"}
+    got = A.anchor_counts(blocks, xs_all, cand, lambda p: pri.get(p, "N"))
+    assert got == {100: (6, "G", 6), 200: (6, "T", 6)}
+    assert A.aligned_blocks([(4, 2), (7, 3), (8, 1), (2, 2), (7, 3), (3, 100), (7, 4)], 10) == [(10, 14), (16, 19), (119, 123)]

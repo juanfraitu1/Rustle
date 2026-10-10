@@ -232,6 +232,37 @@ def gene_table(lines):
     return [g + (best.get(g[3], 0),) for g in genes]
 
 
+def aligned_blocks(cig, rstart):
+    """reference intervals carrying aligned bases (M, =, X), merged when contiguous"""
+    out, r = [], rstart
+    for op, n in cig:
+        if op in (0, 7, 8):
+            if out and out[-1][1] == r:
+                out[-1] = (out[-1][0], r + n)
+            else:
+                out.append((r, r + n))
+            r += n
+        elif op in (2, 3):
+            r += n
+    return out
+
+
+def anchor_counts(blocks, xs_all, cand, pri_base):
+    """{pos: (reads with the primary base, alt base, reads with alt)} for the candidates; with `--eqx` alignments a read shows the primary base
+    exactly where it has an aligned base and no X, so ref = aligned coverage - all X at the position"""
+    starts = sorted(b[0] for bl in blocks for b in bl)
+    ends = sorted(b[1] for bl in blocks for b in bl)
+    xall = {}
+    for xs in xs_all:
+        for pos, _ in set(xs):
+            xall[pos] = xall.get(pos, 0) + 1
+    out = {}
+    for pos, (alt, n) in cand.items():
+        cov = bisect.bisect_right(starts, pos) - bisect.bisect_right(ends, pos)
+        out[pos] = (cov - xall.get(pos, 0), alt, n)
+    return out
+
+
 def process_gene(reads, het, snvs, runs, indels, pri_base):
     """reads = [(cigartuples, reference start, sequence, MAPQ)] of one gene -> both arms, T1 counts and the arm-R anchor with its referee class"""
     hs = sorted(het)
@@ -256,22 +287,21 @@ def process_gene(reads, het, snvs, runs, indels, pri_base):
     cand = x_candidates(xs_all)
     if not cand:
         return out
-    cs = sorted(cand)
-    bases = [read_obs(cig, st, seq, cs)[0] for cig, st, seq, _ in reads]
-    cnt = {}
-    for b in bases:
-        for pos, base in b.items():
-            d = cnt.setdefault(pos, {})
-            d[base] = d.get(base, 0) + 1
-    full = {}
-    for pos in cs:
-        ref, alt = pri_base(pos), cand[pos][0]
-        d = cnt.get(pos, {})
-        full[pos] = (d.get(ref, 0), alt, d.get(alt, 0))
+    if any(op == 0 for cig, _, _, _ in reads for op, _ in cig):           # plain M: no eqx shortcut, count bases per read
+        cs = sorted(cand)
+        cnt = {}
+        for cig, st, seq, _ in reads:
+            for pos, base in read_obs(cig, st, seq, cs)[0].items():
+                d = cnt.setdefault(pos, {})
+                d[base] = d.get(base, 0) + 1
+        full = {pos: (cnt.get(pos, {}).get(pri_base(pos), 0), cand[pos][0], cnt.get(pos, {}).get(cand[pos][0], 0)) for pos in cs}
+    else:
+        full = anchor_counts([aligned_blocks(cig, st) for cig, st, _, _ in reads], xs_all, cand, pri_base)
     a = pick_anchor(full)
     if a is None:
         return out
     ref, alt = pri_base(a), full[a][1]
+    bases = [read_obs(cig, st, seq, [a])[0] for cig, st, seq, _ in reads]
     grp = [0 if b.get(a) == ref else 1 if b.get(a) == alt else None for b in bases]
     out["testsR"] = junction_tests([(g, r[1], r[2]) for g, r in zip(grp, recs)])
     others = [p for p in hs if p != a]
