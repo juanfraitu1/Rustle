@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import asj_o2 as A  # noqa: E402
 
-OUT = "/mnt/linuxdisk/tmp/asj_o2"
+OUT = os.environ.get("ASJ_OUT", "/mnt/linuxdisk/tmp/asj_o2")
 BAM = "/mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam"
 GFF = "/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff"
 PRIMARY_FA = "/mnt/linuxdisk/tmp/rustle_figures/liftoff/gorilla/genome.fa"

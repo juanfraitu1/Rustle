@@ -100,20 +100,28 @@ def certify(cols):
 
 
 def junction_tests(reads, min_reads=MIN_JUNCTION_READS):
-    """reads = [(group 0 | 1 | None, introns, (start, end))] -> per tested intron dict(intron, u0, s0, u1, s1, p, dpsi)"""
+    """reads = [(group 0 | 1 | None, introns, (start, end))] -> per tested intron dict(intron, u0, s0, u1, s1, p, dpsi); a read using an intron
+    spans it, so `used` counts the group's reads carrying it"""
+    import collections
+    import numpy as np
     from scipy.stats import fisher_exact
-    carried = {}
-    for _, ints, _ in reads:
-        for j in set(ints):
-            carried[j] = carried.get(j, 0) + 1
+    carried, used = collections.Counter(), {0: collections.Counter(), 1: collections.Counter()}
+    for g, ints, _ in reads:
+        carried.update(set(ints))
+        if g in used:
+            used[g].update(set(ints))
+    keep = sorted(j for j, n in carried.items() if n >= min_reads)
+    if not keep:
+        return []
+    grp = np.array([-1 if g is None else g for g, _, _ in reads])
+    st = np.array([s for _, _, (s, _) in reads])
+    en = np.array([e for _, _, (_, e) in reads])
+    m0, m1 = grp == 0, grp == 1
     out = []
-    for j in sorted(x for x, n in carried.items() if n >= min_reads):
-        c = {0: [0, 0], 1: [0, 0]}
-        for g, ints, (s, e) in reads:
-            if g in c and s <= j[0] and e >= j[1]:
-                c[g][1] += 1
-                c[g][0] += j in ints
-        (u0, s0), (u1, s1) = c[0], c[1]
+    for j in keep:
+        sp = (st <= j[0]) & (en >= j[1])
+        s0, s1 = int(np.count_nonzero(sp & m0)), int(np.count_nonzero(sp & m1))
+        u0, u1 = used[0][j], used[1][j]
         if not s0 or not s1 or (u0 == s0 and u1 == s1):
             continue
         p = fisher_exact([[u0, s0 - u0], [u1, s1 - u1]])[1]
