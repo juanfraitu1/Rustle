@@ -159,3 +159,8 @@ def test_allelic_alignment_is_the_best_primary_covering_ninety_percent():
              rec("g3", 100, 0, 50, 50, "P")]
     best = A.allelic_alignments(lines)
     assert sorted(best) == ["g1", "g3"] and best["g3"][2] == "5" and best["g1"][9] == "90"
+
+
+def test_upper_tail_closed_form_matches_the_recursion_beyond_sixty_columns():
+    for m, k in ((61, 2), (80, 3), (200, 1), (300, 150)):
+        assert abs(A.upper_tail(k, m, A.EPS) - A._dp_tail(k, m, A.EPS)) <= 1e-12 * max(1e-300, A._dp_tail(k, m, A.EPS)) + 1e-300

@@ -6,6 +6,7 @@ Arm A: reads assigned to the primary's haplotype (S) or the other haplotype (B) 
 groups (Fisher, BH, q < 0.05 and |dPSI| >= 0.3). The assemblies classify each arm-R anchor ALLELIC / NON-ALLELIC / UNRESOLVED.
 Pure functions (tested in test_asj_o2.py) first; the per-chromosome driver (`run_chrom.py`) and the scorer (`score.py`) use them."""
 import bisect
+import math
 import re
 
 ERROR_RATE = 0.003            # O2 `error_rate` default (no base qualities)
@@ -75,8 +76,8 @@ def read_obs(cig, rstart, seq, sites):
     return obs, introns, (rstart, r), xs
 
 
-def upper_tail(k, m, eps):
-    """P(X >= k), X ~ Binomial(m, eps): O2's poisson_binomial_upper_tail with equal probabilities, same recursion"""
+def _dp_tail(k, m, eps):
+    """O2's poisson_binomial_upper_tail recursion with equal probabilities"""
     if k == 0:
         return 1.0
     if k > m:
@@ -86,6 +87,23 @@ def upper_tail(k, m, eps):
         for s in range(m, -1, -1):
             dp[s] = dp[s] * (1.0 - eps) + (dp[s - 1] * eps if s > 0 else 0.0)
     return sum(dp[k:])
+
+
+def upper_tail(k, m, eps, exact_upto=60):
+    """P(X >= k), X ~ Binomial(m, eps): O2's recursion up to `exact_upto` columns (so boundary cases such as k = m = 1 give O2's exact float);
+    beyond, the closed-form sum in log space (the recursion is quadratic in m)"""
+    if m <= exact_upto or k == 0 or k > m:
+        return _dp_tail(k, m, eps)
+    le, l1 = math.log(eps), math.log1p(-eps)
+    lt = math.lgamma(m + 1) - math.lgamma(k + 1) - math.lgamma(m - k + 1) + k * le + (m - k) * l1
+    t, s, x = math.exp(lt), 0.0, k
+    while x <= m and t > 0.0:
+        s += t
+        if t < s * 1e-17:
+            break
+        t *= (m - x) / (x + 1) * eps / (1.0 - eps)
+        x += 1
+    return s
 
 
 def certify(cols):
