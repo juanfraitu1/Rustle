@@ -258,10 +258,16 @@ def process_gene(reads, het, snvs, runs, indels, pri_base):
         return out
     cs = sorted(cand)
     bases = [read_obs(cig, st, seq, cs)[0] for cig, st, seq, _ in reads]
+    cnt = {}
+    for b in bases:
+        for pos, base in b.items():
+            d = cnt.setdefault(pos, {})
+            d[base] = d.get(base, 0) + 1
     full = {}
     for pos in cs:
         ref, alt = pri_base(pos), cand[pos][0]
-        full[pos] = (sum(b.get(pos) == ref for b in bases), alt, sum(b.get(pos) == alt for b in bases))
+        d = cnt.get(pos, {})
+        full[pos] = (d.get(ref, 0), alt, d.get(alt, 0))
     a = pick_anchor(full)
     if a is None:
         return out
