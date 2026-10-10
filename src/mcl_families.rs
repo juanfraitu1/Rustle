@@ -238,6 +238,26 @@ struct Args {
     /// Driver: `RUSTLE_FAMILY_RELATIONS=1`.
     #[arg(long, default_value_t = false)]
     emit_relations: bool,
+    /// Default OFF (every product byte-identical without it). The FAMILY HIERARCHY of the partition just written
+    /// (`rustle::family_hierarchy`, `docs/PREREG_family_hierarchy_flag_2026-10-09.md`): SD components (`--hierarchy-sd`)
+    /// above the families, EXPANSIONS inside them (copies of one duplicated block = the family's maximal duplicon
+    /// signatures; a member's signature = the dominant duplicons of its exons that its family owns), DUPLICONS below,
+    /// FUSION LOCI across them (members with exons dominated by duplicons another family owns: `fusion_of`), and external
+    /// families (`--hierarchy-external`, e.g. Soto 2025) placed by containment. Writes `<out>.hierarchy.members.tsv`,
+    /// `.nodes.tsv`, `.edges.tsv` (+ `.external.tsv`). It never changes a family. Needs `--gff` and `--hierarchy-duplicons`.
+    #[arg(long, default_value_t = false)]
+    emit_hierarchy: bool,
+    /// DupMasker colors BED (`chrom start end duplicon_id ...`, 0-based) for `--emit-hierarchy`.
+    #[arg(long)]
+    hierarchy_duplicons: Option<String>,
+    /// SEDEF pairs BED (`chrom1 s1 e1 chrom2 s2 e2 ...`, identity in column 21) for `--emit-hierarchy`'s SD layer. Unlike
+    /// `--sedef` it does not switch on `--core-refine`.
+    #[arg(long)]
+    hierarchy_sd: Option<String>,
+    /// External families for `--emit-hierarchy`: `chrom start end label` (GFF coordinates of annotation records, one row
+    /// per record x label), placed among our families and expansions in `<out>.hierarchy.external.tsv`.
+    #[arg(long)]
+    hierarchy_external: Option<String>,
     /// With `--from-gtf` only: which transcript of a locus is its representative — the locus's exons in
     /// `loci.gff3` and, with `--emit-units`, the copy's exons in `copies.tsv` (`--min-cov-shorter`'s denominator).
     /// `most-reads` (the default since §6ef) is the shipped rule; `most-junctions` prefers the transcript with the most
@@ -709,6 +729,335 @@ fn load_rmsk(path: &str) -> Result<BTreeMap<String, Vec<(u64, u64)>>> {
     Ok(m)
 }
 
+/// `--emit-hierarchy`: the hierarchy tables of `rustle::family_hierarchy` for the clusters just written. Annotation only.
+#[allow(clippy::too_many_arguments)]
+fn write_hierarchy(
+    out: &str,
+    clusters: &[Cluster],
+    blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+    rep_of: Option<&BTreeMap<GeneKey, GeneKey>>,
+    gff: &str,
+    dup_path: &str,
+    sd_path: Option<&str>,
+    ext_path: Option<&str>,
+    graph_genes: &[GeneKey],
+    graph_edges: &[(usize, usize)],
+) -> Result<()> {
+    use rustle::family_hierarchy as H;
+    let key = |k: &GeneKey| format!("{}:{}-{}", k.0, k.1, k.2);
+    let idx = H::DupIndex::from_text(&std::fs::read_to_string(dup_path).with_context(|| format!("reading {dup_path}"))?);
+    let strands = H::gff_strands(&std::fs::read_to_string(gff).with_context(|| format!("reading {gff}"))?);
+    // members, their family and the records folded into them
+    let mut fam_of: BTreeMap<GeneKey, String> = BTreeMap::new();
+    let mut recs: BTreeMap<GeneKey, Vec<GeneKey>> = BTreeMap::new();
+    for (i, c) in clusters.iter().enumerate() {
+        for m in &c.members {
+            fam_of.insert(m.clone(), format!("MCL{i}"));
+            recs.entry(m.clone()).or_default().push(m.clone());
+        }
+    }
+    if let Some(r) = rep_of {
+        for (k, rep) in r {
+            if k != rep {
+                if let Some(v) = recs.get_mut(rep) {
+                    v.push(k.clone());
+                }
+            }
+        }
+    }
+    let exons_of = |m: &GeneKey| -> Vec<(u64, u64)> {
+        let mut v: Vec<(u64, u64)> = recs[m].iter().flat_map(|r| blocks.get(r).cloned().unwrap_or_default()).collect();
+        v.sort();
+        let mut merged: Vec<(u64, u64)> = vec![];
+        for (s, e) in v {
+            match merged.last_mut() {
+                Some(l) if s <= l.1 => l.1 = l.1.max(e),
+                _ => merged.push((s, e)),
+            }
+        }
+        if merged.is_empty() {
+            merged.push((m.1, m.2)); // no exon record: the span (as `--exonless-span` does)
+        }
+        merged
+    };
+    struct Row {
+        fam: String,
+        exons: Vec<(u64, u64)>,
+        dom: Vec<Option<String>>,
+        minus: bool,
+    }
+    let mut rows: BTreeMap<GeneKey, Row> = BTreeMap::new();
+    let mut fam_bases: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    for (m, fam) in &fam_of {
+        let exons = exons_of(m);
+        let dom = H::exon_dominants(&idx, &m.0, &exons);
+        for (id, bp) in H::member_bases(&idx, &m.0, &exons) {
+            *fam_bases.entry(fam.clone()).or_default().entry(id).or_default() += bp;
+        }
+        let minus = recs[m].iter().any(|r| strands.get(&(r.0.clone(), r.1, r.2)) == Some(&'-'))
+            && !recs[m].iter().any(|r| strands.get(&(r.0.clone(), r.1, r.2)) == Some(&'+'));
+        rows.insert(m.clone(), Row { fam: fam.clone(), exons, dom, minus });
+    }
+    let owners = H::owners(&fam_bases);
+    // Amendment 1: superfamily = connected component of the pre-MCL homology graph
+    let comp = H::components(graph_genes.len(), graph_edges);
+    let node_of: BTreeMap<&GeneKey, usize> = graph_genes.iter().enumerate().map(|(i, k)| (k, i)).collect();
+    let sf_of: BTreeMap<GeneKey, String> = rows
+        .keys()
+        .map(|m| (m.clone(), node_of.get(m).map(|&i| format!("SF{}", comp[i])).unwrap_or_else(|| "SF_NA".into())))
+        .collect();
+    // expansions per family
+    let mut sig_of: BTreeMap<GeneKey, BTreeSet<String>> = BTreeMap::new();
+    let mut by_fam: BTreeMap<String, Vec<GeneKey>> = BTreeMap::new();
+    for (m, r) in &rows {
+        sig_of.insert(m.clone(), H::signature(&r.fam, &r.dom, &owners));
+        by_fam.entry(r.fam.clone()).or_default().push(m.clone());
+    }
+    let mut exp_of: BTreeMap<GeneKey, Vec<String>> = BTreeMap::new();
+    let mut exp_members: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut exp_sig: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (fam, ms) in &by_fam {
+        let sigs: Vec<BTreeSet<String>> = ms.iter().map(|m| sig_of[m].clone()).collect();
+        let maxi = H::maximal(&sigs);
+        for (j, sg) in maxi.iter().enumerate() {
+            exp_sig.insert(format!("{fam}.x{}", j + 1), sg.clone());
+        }
+        for m in ms {
+            let ids: Vec<String> = H::containing(&sig_of[m], &maxi).into_iter().map(|j| format!("{fam}.x{}", j + 1)).collect();
+            let ids = if ids.is_empty() { vec![format!("{fam}.unique")] } else { ids };
+            for x in &ids {
+                exp_members.entry(x.clone()).or_default().insert(key(m));
+            }
+            exp_of.insert(m.clone(), ids);
+        }
+    }
+    // SD layer
+    let sd = match sd_path {
+        Some(p) => Some(H::SdIndex::build(&H::parse_sd(&std::fs::read_to_string(p).with_context(|| format!("reading {p}"))?))),
+        None => None,
+    };
+    let mut sd_of: BTreeMap<GeneKey, (BTreeSet<usize>, Option<f64>)> = BTreeMap::new();
+    let mut blocks_of: BTreeMap<GeneKey, BTreeSet<usize>> = BTreeMap::new();
+    if let Some(sd) = &sd {
+        for (m, r) in &rows {
+            let hits = sd.hits(&m.0, &r.exons);
+            blocks_of.insert(m.clone(), hits.clone());
+            let comps: BTreeSet<usize> = hits.iter().map(|&l| sd.comp[l]).collect();
+            let mx = hits.iter().filter_map(|&l| sd.maxid[l]).fold(None, |a: Option<f64>, x| Some(a.map_or(x, |y| y.max(x))));
+            sd_of.insert(m.clone(), (comps, mx));
+        }
+    }
+    let join = |v: &mut dyn Iterator<Item = String>| -> String {
+        let s: Vec<String> = v.collect();
+        if s.is_empty() { "-".to_string() } else { s.join(",") }
+    };
+    // members.tsv
+    let mut mf = std::fs::File::create(format!("{out}.hierarchy.members.tsv"))?;
+    writeln!(mf, "superfamily\tfamily\tmember\tstrand\tn_records\tn_exons\tduplicon_string\tsignature\texpansions\tshared_fragment\tfusion_of\tfusion_kind\tsd_blocks\tsd_components\tsd_max_identity")?;
+    let mut fusions: Vec<(GeneKey, BTreeSet<String>)> = vec![];
+    let mut n_true_fusion = 0usize;
+    for (m, r) in &rows {
+        let fus = H::fusion_of(&r.fam, &r.dom, &owners);
+        let kind = H::fusion_kind(&r.fam, &r.dom, &owners);
+        if !fus.is_empty() {
+            fusions.push((m.clone(), fus.clone()));
+        }
+        if kind == Some("fusion") {
+            n_true_fusion += 1;
+        }
+        let (comps, mx) = sd_of.get(m).cloned().unwrap_or((BTreeSet::new(), None));
+        writeln!(
+            mf,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            sf_of[m],
+            r.fam,
+            key(m),
+            if r.minus { '-' } else { '+' },
+            recs[m].len(),
+            r.exons.len(),
+            join(&mut H::duplicon_string(&r.dom, r.minus).into_iter()),
+            join(&mut sig_of[m].iter().cloned()),
+            exp_of[m].join(","),
+            if exp_of[m].len() > 1 { "yes" } else { "no" },
+            join(&mut fus.iter().cloned()),
+            kind.unwrap_or("-"),
+            if sd.is_some() {
+                join(&mut blocks_of.get(m).into_iter().flatten().map(|b| format!("SDb{b}")))
+            } else {
+                "NA".into()
+            },
+            if sd.is_some() { join(&mut comps.iter().map(|c| format!("SDc{c}"))) } else { "NA".into() },
+            mx.map(|x| format!("{x:.5}")).unwrap_or_else(|| if sd.is_some() { "-".into() } else { "NA".into() }),
+        )?;
+    }
+    // nodes.tsv + edges.tsv
+    let mut nf = std::fs::File::create(format!("{out}.hierarchy.nodes.tsv"))?;
+    let mut ef = std::fs::File::create(format!("{out}.hierarchy.edges.tsv"))?;
+    writeln!(nf, "level\tid\tn_members\tdetail")?;
+    writeln!(ef, "child_level\tchild\tparent_level\tparent\trelation\tvalue")?;
+    let mut sf_members: BTreeMap<&String, (usize, BTreeSet<&String>)> = BTreeMap::new();
+    for (m, r) in &rows {
+        let e = sf_members.entry(&sf_of[m]).or_default();
+        e.0 += 1;
+        e.1.insert(&r.fam);
+    }
+    for (sf, (n, fams)) in &sf_members {
+        writeln!(nf, "superfamily\t{sf}\t{n}\tfamilies={}", fams.len())?;
+        for f in fams {
+            writeln!(ef, "family\t{f}\tsuperfamily\t{sf}\tin\t-")?;
+        }
+    }
+    let mut n_fam_all_joined = 0usize;
+    for (fam, ms) in &by_fam {
+        let n_x = exp_sig.keys().filter(|x| x.starts_with(&format!("{fam}.x"))).count();
+        let n_own = owners.values().filter(|o| *o == fam).count();
+        let sdtxt = match &sd {
+            Some(sd) => {
+                let (mut joined, mut tot, mut best) = (0usize, 0usize, None::<f64>);
+                for i in 0..ms.len() {
+                    for j in (i + 1)..ms.len() {
+                        tot += 1;
+                        let (a, b) = (&blocks_of[&ms[i]], &blocks_of[&ms[j]]);
+                        if let Some(id) = sd.link(a, b) {
+                            joined += 1;
+                            if !id.is_nan() {
+                                best = Some(best.map_or(id, |x: f64| x.max(id)));
+                            }
+                        }
+                    }
+                }
+                if tot > 0 && joined == tot {
+                    n_fam_all_joined += 1;
+                }
+                format!(
+                    ";sd_pairs_joined={joined}/{tot};sd_best_identity={}",
+                    best.map(|x| format!("{x:.5}")).unwrap_or_else(|| "-".into())
+                )
+            }
+            None => String::new(),
+        };
+        writeln!(nf, "family\t{fam}\t{}\texpansions={n_x};owned_duplicons={n_own}{sdtxt}", ms.len())?;
+    }
+    for (x, mem) in &exp_members {
+        let fam = x.rsplit_once('.').map(|(f, _)| f).unwrap_or(x);
+        let sigtxt = exp_sig.get(x).map(|s| s.iter().cloned().collect::<Vec<_>>().join(",")).unwrap_or_else(|| "-".into());
+        writeln!(nf, "expansion\t{x}\t{}\tsignature={sigtxt}", mem.len())?;
+        writeln!(ef, "expansion\t{x}\tfamily\t{fam}\tin\t-")?;
+        if let Some(sg) = exp_sig.get(x) {
+            for d in sg {
+                writeln!(ef, "duplicon\t{d}\texpansion\t{x}\tcomposes\t-")?;
+            }
+        }
+    }
+    let mut dup_total: BTreeMap<&String, u64> = BTreeMap::new();
+    for b in fam_bases.values() {
+        for (id, &bp) in b {
+            *dup_total.entry(id).or_default() += bp;
+        }
+    }
+    for (d, f) in &owners {
+        writeln!(nf, "duplicon\t{d}\tNA\towner={f};member_exonic_bp={}", dup_total.get(d).copied().unwrap_or(0))?;
+    }
+    for (m, r) in &rows {
+        for x in &exp_of[m] {
+            writeln!(ef, "member\t{}\texpansion\t{x}\tin\t-", key(m))?;
+        }
+        writeln!(ef, "member\t{}\tfamily\t{}\tin\t-", key(m), r.fam)?;
+    }
+    for (m, fus) in &fusions {
+        for f in fus {
+            writeln!(ef, "member\t{}\tfamily\t{f}\tfusion_of\t-", key(m))?;
+        }
+    }
+    let mut n_blocks_multi = 0usize;
+    let mut n_blocks = 0usize;
+    if let Some(sd) = &sd {
+        let mut fam_block: BTreeMap<(String, usize), usize> = BTreeMap::new();
+        let mut block_members: BTreeMap<usize, (usize, BTreeSet<String>)> = BTreeMap::new();
+        for (m, bs) in &blocks_of {
+            for &b in bs {
+                *fam_block.entry((rows[m].fam.clone(), b)).or_default() += 1;
+                let e = block_members.entry(b).or_default();
+                e.0 += 1;
+                e.1.insert(rows[m].fam.clone());
+                writeln!(ef, "member\t{}\tsd_block\tSDb{b}\tin\t-", key(m))?;
+            }
+        }
+        n_blocks = block_members.len();
+        for (b, (n, fams)) in &block_members {
+            if fams.len() > 1 {
+                n_blocks_multi += 1;
+            }
+            let mx = sd.maxid[*b].map(|x| format!("{x:.5}")).unwrap_or_else(|| "-".into());
+            writeln!(nf, "sd_block\tSDb{b}\t{n}\tlength={};families={};max_identity={mx}", sd.block_len(*b), fams.len())?;
+        }
+        for ((f, b), n) in &fam_block {
+            writeln!(ef, "family\t{f}\tsd_block\tSDb{b}\tembedded_in\t{n}")?;
+        }
+    }
+    // external families
+    if let Some(p) = ext_path {
+        let ext = H::parse_external(&std::fs::read_to_string(p).with_context(|| format!("reading {p}"))?);
+        let fam_of_s: BTreeMap<String, String> = rows.iter().map(|(m, r)| (key(m), r.fam.clone())).collect();
+        let sf_of_s: BTreeMap<String, String> = rows.keys().map(|m| (key(m), sf_of[m].clone())).collect();
+        let no_exp: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut by_label: BTreeMap<String, (usize, usize, BTreeSet<String>)> = BTreeMap::new();
+        for (rec, label) in &ext {
+            let e = by_label.entry(label.clone()).or_default();
+            e.0 += 1;
+            let rep = rep_of.and_then(|r| r.get(rec)).cloned().unwrap_or_else(|| rec.clone());
+            if rows.contains_key(&rep) {
+                e.1 += 1;
+                e.2.insert(key(&rep));
+            }
+        }
+        let mut xf = std::fs::File::create(format!("{out}.hierarchy.external.tsv"))?;
+        writeln!(xf, "external\tn_records\tn_records_on_members\tn_members\tbest_family\tcontainment\tn_families\tbest_expansion\tbest_jaccard\tbest_superfamily\tsf_containment\tn_superfamilies")?;
+        for (label, (n_rec, n_on, mem)) in &by_label {
+            let pl = H::place(mem, &fam_of_s, &exp_members);
+            let ps = H::place(mem, &sf_of_s, &no_exp);
+            let f4 = |v: Option<f64>| v.map(|x| format!("{x:.4}")).unwrap_or_else(|| "NA".into());
+            writeln!(
+                xf,
+                "{label}\t{n_rec}\t{n_on}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                pl.n_members,
+                pl.best_family.clone().unwrap_or_else(|| "NA".into()),
+                f4(pl.containment),
+                pl.n_families,
+                pl.best_expansion.clone().unwrap_or_else(|| "NA".into()),
+                f4(pl.best_jaccard),
+                ps.best_family.clone().unwrap_or_else(|| "NA".into()),
+                f4(ps.containment),
+                ps.n_families
+            )?;
+            if let Some(sf) = &ps.best_family {
+                writeln!(ef, "external\t{label}\tsuperfamily\t{sf}\tcontained_in\t{}", f4(ps.containment))?;
+            }
+            if let Some(f) = &pl.best_family {
+                writeln!(nf, "external\t{label}\t{}\tcontainment={}", pl.n_members, f4(pl.containment))?;
+                writeln!(ef, "external\t{label}\tfamily\t{f}\tcontained_in\t{}", f4(pl.containment))?;
+            }
+            if let Some(x) = &pl.best_expansion {
+                writeln!(ef, "external\t{label}\texpansion\t{x}\tbest_expansion\t{}", f4(pl.best_jaccard))?;
+            }
+        }
+    }
+    eprintln!(
+        "[mcl_families] --emit-hierarchy: {} members, {} superfamilies, {} families, {} expansions, {} fusion loci ({} foreign-only), {} duplicons owned; SD blocks {} ({} with >1 family), families with every member pair SD-joined {} -> {out}.hierarchy.*",
+        rows.len(),
+        sf_members.len(),
+        by_fam.len(),
+        exp_sig.len(),
+        n_true_fusion,
+        fusions.len() - n_true_fusion,
+        owners.len(),
+        n_blocks,
+        n_blocks_multi,
+        n_fam_all_joined
+    );
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     anyhow::ensure!(
@@ -718,6 +1067,10 @@ fn main() -> Result<()> {
     anyhow::ensure!(
         !args.emit_relations || args.from_gtf.is_some(),
         "--emit-relations needs --from-gtf (the relations are read from the unit transcripts of the assembled GTF)"
+    );
+    anyhow::ensure!(
+        !args.emit_hierarchy || args.hierarchy_duplicons.is_some(),
+        "--emit-hierarchy needs --hierarchy-duplicons (the DupMasker colors BED)"
     );
     anyhow::ensure!(
         args.representative == Representative::MostReads || args.from_gtf.is_some(),
@@ -978,6 +1331,22 @@ fn main() -> Result<()> {
                 m.2
             )?;
         }
+    }
+
+    if args.emit_hierarchy {
+        let gff = args.gff.clone().context("--emit-hierarchy needs --gff (or --from-gtf): the members' exons")?;
+        write_hierarchy(
+            &args.out,
+            &clusters,
+            &blocks,
+            loci.as_ref().map(|m| &m.rep_of),
+            &gff,
+            args.hierarchy_duplicons.as_deref().unwrap_or_default(),
+            args.hierarchy_sd.as_deref(),
+            args.hierarchy_external.as_deref(),
+            &g.genes,
+            &g.edges.keys().cloned().collect::<Vec<_>>(),
+        )?;
     }
 
     // ⭐ PREREG (identity-weighted density, 09-10): `--dump-pairs` — every WITHIN-cluster edge's identity,

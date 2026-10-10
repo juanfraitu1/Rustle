@@ -75411,3 +75411,648 @@ pub mod candidates {
         }
     }
 }
+
+// ---- 2026-10-09: the family hierarchy (docs/PREREG_family_hierarchy_flag_2026-10-09.md) ----
+pub mod family_hierarchy {
+    //! **STATUS:** OPT-IN — `mcl_families --emit-hierarchy` (src/mcl_families.rs, `#[arg(long, default_value_t = false)] emit_hierarchy`)  (docs/MODULE_STATUS.md)
+    //!
+    //! Opt-in hierarchy of an O1 family partition (`mcl_families --emit-hierarchy`): SD components (SEDEF) above the
+    //! families, expansions (copies of one duplicated block = maximal duplicon signatures) inside them, duplicons
+    //! below, fusion loci across them, and external families (e.g. Soto 2025) placed by containment. It ANNOTATES the
+    //! partition and never changes a family (register rows 676, 677, 817, 818, 997: letting SD or duplicon structure
+    //! decide membership failed every time). Every rule is threshold-free except the >= 1 bp overlap; every tie is
+    //! broken by the smallest id, so the output is deterministic.
+    use std::collections::{BTreeMap, BTreeSet};
+
+    /// A DupMasker segment, 0-based half-open.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Seg {
+        pub start: u64,
+        pub end: u64,
+        pub id: String,
+    }
+
+    /// Duplicon segments per chromosome, sorted by start, with the longest segment per chromosome so that an
+    /// overlap query can start from a binary search.
+    #[derive(Default, Debug)]
+    pub struct DupIndex {
+        segs: BTreeMap<String, Vec<Seg>>,
+        maxlen: BTreeMap<String, u64>,
+    }
+
+    impl DupIndex {
+        /// DupMasker colors BED: `chrom start end id ...` (0-based half-open); `#` and `track` lines skipped.
+        pub fn from_text(text: &str) -> Self {
+            let mut segs: BTreeMap<String, Vec<Seg>> = BTreeMap::new();
+            for line in text.lines() {
+                if line.starts_with('#') || line.starts_with("track") || line.trim().is_empty() {
+                    continue;
+                }
+                let f: Vec<&str> = line.split('\t').collect();
+                if f.len() < 4 {
+                    continue;
+                }
+                let (Ok(s), Ok(e)) = (f[1].parse::<u64>(), f[2].parse::<u64>()) else { continue };
+                if e > s {
+                    segs.entry(f[0].to_string()).or_default().push(Seg { start: s, end: e, id: f[3].to_string() });
+                }
+            }
+            let mut maxlen = BTreeMap::new();
+            for (c, v) in segs.iter_mut() {
+                v.sort_by(|a, b| (a.start, a.end, &a.id).cmp(&(b.start, b.end, &b.id)));
+                maxlen.insert(c.clone(), v.iter().map(|x| x.end - x.start).max().unwrap_or(0));
+            }
+            DupIndex { segs, maxlen }
+        }
+
+        /// Bases of `[a, b)` (0-based half-open) covered by each duplicon id; the segments of one id are merged
+        /// first, so a base counts once per id.
+        pub fn id_bases(&self, chrom: &str, a: u64, b: u64) -> BTreeMap<String, u64> {
+            let mut per: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
+            if let (Some(v), Some(&ml)) = (self.segs.get(chrom), self.maxlen.get(chrom)) {
+                let lo = a.saturating_sub(ml);
+                let i0 = v.partition_point(|x| x.start < lo);
+                for x in &v[i0..] {
+                    if x.start >= b {
+                        break;
+                    }
+                    let (s, e) = (x.start.max(a), x.end.min(b));
+                    if e > s {
+                        per.entry(x.id.clone()).or_default().push((s, e));
+                    }
+                }
+            }
+            per.into_iter().map(|(id, iv)| (id, merged_len(iv))).collect()
+        }
+    }
+
+    fn merged_len(mut iv: Vec<(u64, u64)>) -> u64 {
+        iv.sort();
+        let mut tot = 0;
+        let mut cur: Option<(u64, u64)> = None;
+        for (s, e) in iv {
+            match cur {
+                Some((cs, ce)) if s <= ce => cur = Some((cs, ce.max(e))),
+                Some((cs, ce)) => {
+                    tot += ce - cs;
+                    cur = Some((s, e));
+                }
+                None => cur = Some((s, e)),
+            }
+        }
+        if let Some((cs, ce)) = cur {
+            tot += ce - cs;
+        }
+        tot
+    }
+
+    /// The id covering the most bases (ties: the smallest id); None when nothing covers.
+    pub fn dominant(bases: &BTreeMap<String, u64>) -> Option<String> {
+        let mut best: Option<(&String, u64)> = None;
+        for (id, &bp) in bases {
+            if bp > 0 && best.map_or(true, |(_, b)| bp > b) {
+                best = Some((id, bp));
+            }
+        }
+        best.map(|(id, _)| id.clone())
+    }
+
+    /// Exons are GFF 1-based inclusive `(start, end)`; per exon its dominant duplicon, in genomic order.
+    pub fn exon_dominants(idx: &DupIndex, chrom: &str, exons: &[(u64, u64)]) -> Vec<Option<String>> {
+        exons.iter().map(|&(s, e)| dominant(&idx.id_bases(chrom, s.saturating_sub(1), e))).collect()
+    }
+
+    /// Exonic bases per duplicon id over all exons of a member.
+    pub fn member_bases(idx: &DupIndex, chrom: &str, exons: &[(u64, u64)]) -> BTreeMap<String, u64> {
+        let mut out: BTreeMap<String, u64> = BTreeMap::new();
+        for &(s, e) in exons {
+            for (id, bp) in idx.id_bases(chrom, s.saturating_sub(1), e) {
+                *out.entry(id).or_default() += bp;
+            }
+        }
+        out
+    }
+
+    /// The duplicon string: dominant ids in transcript order (reversed on the minus strand), consecutive repeats
+    /// collapsed, exons without a duplicon skipped.
+    pub fn duplicon_string(dominants: &[Option<String>], minus: bool) -> Vec<String> {
+        let mut v: Vec<String> = dominants.iter().flatten().cloned().collect();
+        if minus {
+            v.reverse();
+        }
+        v.dedup();
+        v
+    }
+
+    /// Owner of each duplicon: the family whose members' exons carry the most of its bases (ties: smallest family id).
+    pub fn owners(fam_bases: &BTreeMap<String, BTreeMap<String, u64>>) -> BTreeMap<String, String> {
+        let mut best: BTreeMap<String, (String, u64)> = BTreeMap::new();
+        for (fam, bases) in fam_bases {
+            for (id, &bp) in bases {
+                if bp == 0 {
+                    continue;
+                }
+                match best.get(id) {
+                    Some((_, b)) if *b >= bp => {}
+                    _ => {
+                        best.insert(id.clone(), (fam.clone(), bp));
+                    }
+                }
+            }
+        }
+        best.into_iter().map(|(id, (f, _))| (id, f)).collect()
+    }
+
+    /// Families other than `fam` owning a dominant duplicon of some exon of the member (empty = not a fusion locus).
+    pub fn fusion_of(fam: &str, dominants: &[Option<String>], owners: &BTreeMap<String, String>) -> BTreeSet<String> {
+        dominants
+            .iter()
+            .flatten()
+            .filter_map(|d| owners.get(d))
+            .filter(|o| o.as_str() != fam)
+            .cloned()
+            .collect()
+    }
+
+    /// The member's signature: the dominant duplicons of its exons that its own family owns.
+    pub fn signature(fam: &str, dominants: &[Option<String>], owners: &BTreeMap<String, String>) -> BTreeSet<String> {
+        dominants.iter().flatten().filter(|d| owners.get(*d).map(|o| o == fam).unwrap_or(false)).cloned().collect()
+    }
+
+    /// Amendment 1: `fusion` when the member's exons are dominated both by duplicons its family owns and by duplicons
+    /// another family owns; `foreign_only` when every duplicon-dominated exon belongs to another family (the family
+    /// boundary runs inside a duplicon); None otherwise.
+    pub fn fusion_kind(fam: &str, dominants: &[Option<String>], owners: &BTreeMap<String, String>) -> Option<&'static str> {
+        if fusion_of(fam, dominants, owners).is_empty() {
+            None
+        } else if signature(fam, dominants, owners).is_empty() {
+            Some("foreign_only")
+        } else {
+            Some("fusion")
+        }
+    }
+
+    /// Connected components of a graph on `n` nodes; each node's id = the smallest node index of its component
+    /// (Amendment 1: the superfamily = a component of the pre-MCL homology graph).
+    pub fn components(n: usize, edges: &[(usize, usize)]) -> Vec<usize> {
+        let mut parent: Vec<usize> = (0..n).collect();
+        for &(a, b) in edges {
+            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+            if ra != rb {
+                let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                parent[hi] = lo;
+            }
+        }
+        (0..n).map(|i| find(&mut parent, i)).collect()
+    }
+
+    /// Maximal non-empty signatures under inclusion, distinct, sorted.
+    pub fn maximal(sigs: &[BTreeSet<String>]) -> Vec<BTreeSet<String>> {
+        let distinct: BTreeSet<BTreeSet<String>> = sigs.iter().filter(|s| !s.is_empty()).cloned().collect();
+        distinct
+            .iter()
+            .filter(|s| !distinct.iter().any(|t| t != *s && s.is_subset(t)))
+            .cloned()
+            .collect()
+    }
+
+    /// Indices of the maximal signatures that contain `sig` (empty signature: none, the family's `unique` class).
+    pub fn containing(sig: &BTreeSet<String>, maximal: &[BTreeSet<String>]) -> Vec<usize> {
+        if sig.is_empty() {
+            return vec![];
+        }
+        maximal.iter().enumerate().filter(|(_, m)| sig.is_subset(m)).map(|(i, _)| i).collect()
+    }
+
+    /// One SEDEF pair (`chrom1 s1 e1 chrom2 s2 e2 ...`, 0-based half-open), identity from column 21 when present.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct SdPair {
+        pub a: (String, u64, u64),
+        pub b: (String, u64, u64),
+        pub identity: Option<f64>,
+    }
+
+    pub fn parse_sd(text: &str) -> Vec<SdPair> {
+        let mut out = vec![];
+        for line in text.lines() {
+            if line.starts_with('#') || line.trim().is_empty() {
+                continue;
+            }
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 6 {
+                continue;
+            }
+            let p = |x: &str| x.parse::<u64>().ok();
+            let (Some(s1), Some(e1), Some(s2), Some(e2)) = (p(f[1]), p(f[2]), p(f[4]), p(f[5])) else { continue };
+            let identity = f.get(20).and_then(|x| x.parse::<f64>().ok());
+            out.push(SdPair { a: (f[0].to_string(), s1, e1), b: (f[3].to_string(), s2, e2), identity });
+        }
+        out
+    }
+
+    /// SD loci (SEDEF segments merged by overlap per chromosome) joined by the pairs into components.
+    #[derive(Default, Debug)]
+    pub struct SdIndex {
+        /// per chromosome: merged loci `(start, end, locus index)`, sorted.
+        loci: BTreeMap<String, Vec<(u64, u64, usize)>>,
+        /// locus -> component id (the smallest locus index of its component)
+        pub comp: Vec<usize>,
+        /// locus -> the highest identity of a pair touching it
+        pub maxid: Vec<Option<f64>>,
+        /// Amendment 2: unordered pairs of distinct loci joined by a SEDEF pair -> the highest identity (NaN if unknown)
+        links: BTreeMap<(usize, usize), f64>,
+        /// locus -> its length (bp)
+        lens: Vec<u64>,
+    }
+
+    fn find(parent: &mut Vec<usize>, x: usize) -> usize {
+        let mut r = x;
+        while parent[r] != r {
+            r = parent[r];
+        }
+        let mut y = x;
+        while parent[y] != r {
+            let n = parent[y];
+            parent[y] = r;
+            y = n;
+        }
+        r
+    }
+
+    impl SdIndex {
+        pub fn build(pairs: &[SdPair]) -> Self {
+            let mut segs: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
+            for p in pairs {
+                for s in [&p.a, &p.b] {
+                    if s.2 > s.1 {
+                        segs.entry(s.0.clone()).or_default().push((s.1, s.2));
+                    }
+                }
+            }
+            let mut loci: BTreeMap<String, Vec<(u64, u64, usize)>> = BTreeMap::new();
+            let mut n = 0usize;
+            for (c, mut v) in segs {
+                v.sort();
+                let mut out: Vec<(u64, u64, usize)> = vec![];
+                for (s, e) in v {
+                    match out.last_mut() {
+                        Some(l) if s < l.1 => l.1 = l.1.max(e),
+                        _ => {
+                            out.push((s, e, n));
+                            n += 1;
+                        }
+                    }
+                }
+                loci.insert(c, out);
+            }
+            let mut lens = vec![0u64; n];
+            for v in loci.values() {
+                for &(s, e, i) in v {
+                    lens[i] = e - s;
+                }
+            }
+            let mut idx = SdIndex { loci, comp: vec![], maxid: vec![None; n], links: BTreeMap::new(), lens };
+            let mut parent: Vec<usize> = (0..n).collect();
+            for p in pairs {
+                let (Some(la), Some(lb)) = (idx.locus_at(&p.a), idx.locus_at(&p.b)) else { continue };
+                for l in [la, lb] {
+                    if let Some(id) = p.identity {
+                        idx.maxid[l] = Some(idx.maxid[l].map_or(id, |m: f64| m.max(id)));
+                    }
+                }
+                if la != lb {
+                    let key = if la < lb { (la, lb) } else { (lb, la) };
+                    let id = p.identity.unwrap_or(f64::NAN);
+                    let e = idx.links.entry(key).or_insert(id);
+                    if id > *e || e.is_nan() {
+                        *e = id;
+                    }
+                }
+                let (ra, rb) = (find(&mut parent, la), find(&mut parent, lb));
+                if ra != rb {
+                    let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                    parent[hi] = lo;
+                }
+            }
+            idx.comp = (0..n).map(|i| find(&mut parent, i)).collect();
+            idx
+        }
+
+        fn locus_at(&self, s: &(String, u64, u64)) -> Option<usize> {
+            let v = self.loci.get(&s.0)?;
+            let i = v.partition_point(|x| x.1 <= s.1);
+            v.get(i).filter(|x| x.0 <= s.1 && s.1 < x.1).map(|x| x.2)
+        }
+
+        /// Amendment 2: the best identity of a SEDEF pair joining one block of `a` to a different block of `b`; None if none.
+        pub fn link(&self, a: &BTreeSet<usize>, b: &BTreeSet<usize>) -> Option<f64> {
+            let mut best: Option<f64> = None;
+            for &x in a {
+                for &y in b {
+                    if x == y {
+                        continue;
+                    }
+                    let key = if x < y { (x, y) } else { (y, x) };
+                    if let Some(&id) = self.links.get(&key) {
+                        best = Some(best.map_or(id, |bv: f64| if id > bv || bv.is_nan() { id } else { bv }));
+                    }
+                }
+            }
+            best
+        }
+
+        /// Length (bp) of an SD block.
+        pub fn block_len(&self, locus: usize) -> u64 {
+            self.lens[locus]
+        }
+
+        /// Loci overlapping the exons (GFF 1-based inclusive) by >= 1 bp.
+        pub fn hits(&self, chrom: &str, exons: &[(u64, u64)]) -> BTreeSet<usize> {
+            let mut out = BTreeSet::new();
+            if let Some(v) = self.loci.get(chrom) {
+                for &(s, e) in exons {
+                    let (a, b) = (s.saturating_sub(1), e);
+                    let i0 = v.partition_point(|x| x.1 <= a);
+                    for x in &v[i0..] {
+                        if x.0 >= b {
+                            break;
+                        }
+                        out.insert(x.2);
+                    }
+                }
+            }
+            out
+        }
+    }
+
+    /// External families: `chrom start end label` (GFF 1-based coordinates of annotation records), one row per record x label.
+    pub fn parse_external(text: &str) -> Vec<((String, u64, u64), String)> {
+        let mut out = vec![];
+        for line in text.lines() {
+            if line.starts_with('#') || line.trim().is_empty() {
+                continue;
+            }
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 4 {
+                continue;
+            }
+            let (Ok(s), Ok(e)) = (f[1].parse::<u64>(), f[2].parse::<u64>()) else { continue };
+            out.push(((f[0].to_string(), s, e), f[3].to_string()));
+        }
+        out
+    }
+
+    /// Placement of one external family among our families and expansions.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Placement {
+        pub n_members: usize,
+        pub best_family: Option<String>,
+        pub containment: Option<f64>,
+        pub n_families: usize,
+        pub best_expansion: Option<String>,
+        pub best_jaccard: Option<f64>,
+    }
+
+    /// `members` = the external family's members (clustered loci); `family_of` member -> family; `expansions` expansion id
+    /// -> its members. Containment = the largest share of the members in one family (ties: smallest family id).
+    pub fn place(
+        members: &BTreeSet<String>,
+        family_of: &BTreeMap<String, String>,
+        expansions: &BTreeMap<String, BTreeSet<String>>,
+    ) -> Placement {
+        let n = members.len();
+        let mut per: BTreeMap<&String, usize> = BTreeMap::new();
+        for m in members {
+            if let Some(f) = family_of.get(m) {
+                *per.entry(f).or_default() += 1;
+            }
+        }
+        let mut best: Option<(&String, usize)> = None;
+        for (f, &c) in &per {
+            if best.map_or(true, |(_, b)| c > b) {
+                best = Some((f, c));
+            }
+        }
+        let mut bx: Option<(&String, f64)> = None;
+        for (x, xm) in expansions {
+            let inter = members.intersection(xm).count();
+            if inter == 0 {
+                continue;
+            }
+            let j = inter as f64 / (members.len() + xm.len() - inter) as f64;
+            if bx.map_or(true, |(_, b)| j > b) {
+                bx = Some((x, j));
+            }
+        }
+        Placement {
+            n_members: n,
+            best_family: best.map(|(f, _)| f.clone()),
+            containment: if n > 0 { best.map(|(_, c)| c as f64 / n as f64) } else { None },
+            n_families: per.len(),
+            best_expansion: bx.map(|(x, _)| x.clone()),
+            best_jaccard: bx.map(|(_, j)| j),
+        }
+    }
+
+    /// GFF strand per record (gene / pseudogene lines), keyed by `(chrom, start, end)` as `exonic_blocks` keys them.
+    pub fn gff_strands(text: &str) -> BTreeMap<(String, u64, u64), char> {
+        let mut out = BTreeMap::new();
+        for line in text.lines() {
+            if line.starts_with('#') {
+                continue;
+            }
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 9 || !matches!(f[2], "gene" | "pseudogene") {
+                continue;
+            }
+            let (Ok(s), Ok(e)) = (f[3].parse::<u64>(), f[4].parse::<u64>()) else { continue };
+            out.insert((f[0].to_string(), s, e), f[6].chars().next().unwrap_or('.'));
+        }
+        out
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn set(v: &[&str]) -> BTreeSet<String> {
+            v.iter().map(|s| s.to_string()).collect()
+        }
+
+        #[test]
+        fn id_bases_merges_one_id_and_clips_to_the_window() {
+            let idx = DupIndex::from_text("chr1\t100\t200\tSD1\nchr1\t150\t260\tSD1\nchr1\t180\t220\tSD2\n#x\nchr2\t0\t10\tSD3\n");
+            let b = idx.id_bases("chr1", 120, 210);
+            assert_eq!(b.get("SD1"), Some(&90)); // 120..210 merged
+            assert_eq!(b.get("SD2"), Some(&30)); // 180..210
+            assert!(idx.id_bases("chr1", 0, 100).is_empty());
+            assert!(idx.id_bases("chrX", 0, 1000).is_empty());
+        }
+
+        #[test]
+        fn id_bases_finds_a_long_segment_starting_far_upstream() {
+            let idx = DupIndex::from_text("chr1\t0\t10000\tSDL\nchr1\t5000\t5100\tSDs\n");
+            assert_eq!(idx.id_bases("chr1", 9000, 9500).get("SDL"), Some(&500));
+        }
+
+        #[test]
+        fn dominant_takes_most_bases_then_smallest_id() {
+            let m: BTreeMap<String, u64> = [("SD9".to_string(), 40), ("SD2".to_string(), 40), ("SD5".to_string(), 10)].into_iter().collect();
+            assert_eq!(dominant(&m).as_deref(), Some("SD2"));
+            assert_eq!(dominant(&BTreeMap::new()), None);
+        }
+
+        #[test]
+        fn exon_dominants_use_gff_coordinates() {
+            let idx = DupIndex::from_text("chr1\t99\t200\tSD1\nchr1\t299\t400\tSD2\n");
+            // GFF 100..200 = 0-based 99..200; exon 3 has no duplicon
+            assert_eq!(
+                exon_dominants(&idx, "chr1", &[(100, 200), (300, 400), (500, 600)]),
+                vec![Some("SD1".to_string()), Some("SD2".to_string()), None]
+            );
+        }
+
+        #[test]
+        fn duplicon_string_orders_by_strand_and_collapses() {
+            let d = vec![Some("A".to_string()), Some("A".to_string()), None, Some("B".to_string())];
+            assert_eq!(duplicon_string(&d, false), vec!["A", "B"]);
+            assert_eq!(duplicon_string(&d, true), vec!["B", "A"]);
+        }
+
+        #[test]
+        fn owners_most_bases_ties_smallest_family() {
+            let mut fb: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+            fb.insert("MCL1".into(), [("SDa".to_string(), 500), ("SDb".to_string(), 100)].into_iter().collect());
+            fb.insert("MCL2".into(), [("SDa".to_string(), 50), ("SDb".to_string(), 100), ("SDc".to_string(), 7)].into_iter().collect());
+            let o = owners(&fb);
+            assert_eq!(o["SDa"], "MCL1");
+            assert_eq!(o["SDb"], "MCL1"); // tie 100 = 100 -> smallest family id
+            assert_eq!(o["SDc"], "MCL2");
+        }
+
+        #[test]
+        fn fusion_and_signature_split_a_members_exons_by_owner() {
+            let o: BTreeMap<String, String> = [("PKD", "F_PKD"), ("NPa", "F_NPIP"), ("NPb", "F_NPIP")]
+                .into_iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect();
+            let d = vec![Some("PKD".to_string()), Some("NPa".to_string()), None, Some("NPb".to_string())];
+            assert_eq!(fusion_of("F_NPIP", &d, &o), set(&["F_PKD"]));
+            assert_eq!(signature("F_NPIP", &d, &o), set(&["NPa", "NPb"]));
+            assert!(fusion_of("F_NPIP", &[Some("NPa".to_string())], &o).is_empty());
+        }
+
+        #[test]
+        fn maximal_signatures_and_containment() {
+            let sigs = vec![set(&["a", "b", "c"]), set(&["a", "b"]), set(&["d"]), set(&[]), set(&["a", "b", "c"]), set(&["b", "e"])];
+            let m = maximal(&sigs);
+            assert_eq!(m, vec![set(&["a", "b", "c"]), set(&["b", "e"]), set(&["d"])]);
+            assert_eq!(containing(&set(&["a", "b"]), &m), vec![0]);
+            assert_eq!(containing(&set(&["b"]), &m), vec![0, 1]); // a shared fragment
+            assert!(containing(&set(&[]), &m).is_empty()); // the unique class
+        }
+
+        #[test]
+        fn sd_components_merge_overlapping_segments_and_follow_pairs() {
+            let text = "chr1\t100\t200\tchr1\t1000\t1100\tS\n\
+                        chr1\t150\t300\tchr2\t500\t600\tS\n\
+                        chr3\t0\t50\tchr3\t80\t120\tS\n";
+            let mut pairs = parse_sd(text);
+            pairs[0].identity = Some(0.95);
+            pairs[1].identity = Some(0.99);
+            let sd = SdIndex::build(&pairs);
+            let h1 = sd.hits("chr1", &[(101, 120)]);
+            let h2 = sd.hits("chr2", &[(550, 560)]);
+            let h3 = sd.hits("chr1", &[(1001, 1050)]);
+            assert_eq!(h1.len(), 1);
+            let c = |h: &BTreeSet<usize>| sd.comp[*h.iter().next().unwrap()];
+            assert_eq!(c(&h1), c(&h2)); // chr1:100-300 is one locus, linked to chr2 and to chr1:1000
+            assert_eq!(c(&h1), c(&h3));
+            let h4 = sd.hits("chr3", &[(1, 10)]);
+            assert_ne!(c(&h1), c(&h4));
+            assert_eq!(sd.maxid[*h1.iter().next().unwrap()], Some(0.99));
+            assert!(sd.hits("chr1", &[(400, 900)]).is_empty());
+        }
+
+        #[test]
+        fn sd_pair_links_between_blocks_carry_their_best_identity() {
+            let text = "chr1\t100\t200\tchr1\t1000\t1100\tS\nchr1\t150\t300\tchr2\t500\t600\tS\nchr1\t1000\t1050\tchr2\t550\t580\tS\n";
+            let mut pairs = parse_sd(text);
+            pairs[0].identity = Some(0.95);
+            pairs[1].identity = Some(0.99);
+            pairs[2].identity = Some(0.97);
+            let sd = SdIndex::build(&pairs);
+            let a = sd.hits("chr1", &[(101, 120)]);
+            let b = sd.hits("chr1", &[(1001, 1050)]);
+            let c = sd.hits("chr2", &[(551, 560)]);
+            assert_eq!(sd.link(&a, &b), Some(0.95));
+            assert_eq!(sd.link(&a, &c), Some(0.99));
+            assert_eq!(sd.link(&b, &c), Some(0.97));
+            assert_eq!(sd.link(&a, &a), None); // the same block is not a pair
+            assert_eq!(sd.link(&a, &BTreeSet::new()), None);
+            assert_eq!(sd.block_len(*a.iter().next().unwrap()), 200); // chr1:100-300 merged
+        }
+
+        #[test]
+        fn parse_sd_reads_identity_from_column_21() {
+            let mut f: Vec<String> = vec!["chr1", "0", "10", "chr1", "20", "30"].into_iter().map(String::from).collect();
+            while f.len() < 20 {
+                f.push("x".into());
+            }
+            f.push("0.97".into());
+            let p = parse_sd(&f.join("\t"));
+            assert_eq!(p[0].identity, Some(0.97));
+            assert_eq!(parse_sd("chr1\t0\t10\tchr1\t20\t30")[0].identity, None);
+        }
+
+        #[test]
+        fn placement_containment_and_best_expansion() {
+            let fam: BTreeMap<String, String> = [("a", "F1"), ("b", "F1"), ("c", "F1"), ("d", "F2")]
+                .into_iter()
+                .map(|(x, y)| (x.to_string(), y.to_string()))
+                .collect();
+            let mut ex: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            ex.insert("F1.x1".into(), set(&["a", "b"]));
+            ex.insert("F1.x2".into(), set(&["c"]));
+            let p = place(&set(&["a", "b"]), &fam, &ex);
+            assert_eq!(p.best_family.as_deref(), Some("F1"));
+            assert_eq!(p.containment, Some(1.0));
+            assert_eq!(p.best_expansion.as_deref(), Some("F1.x1"));
+            assert_eq!(p.best_jaccard, Some(1.0));
+            let q = place(&set(&["a", "b", "d"]), &fam, &ex);
+            assert_eq!(q.n_families, 2);
+            assert!((q.containment.unwrap() - 2.0 / 3.0).abs() < 1e-12);
+            let e = place(&set(&[]), &fam, &ex);
+            assert_eq!(e.containment, None);
+        }
+
+        #[test]
+        fn fusion_kind_needs_both_sides() {
+            let o: BTreeMap<String, String> = [("PKD", "F_PKD"), ("NPa", "F_NPIP")]
+                .into_iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect();
+            let both = vec![Some("PKD".to_string()), Some("NPa".to_string())];
+            assert_eq!(fusion_kind("F_NPIP", &both, &o), Some("fusion"));
+            let only_foreign = vec![Some("PKD".to_string()), None];
+            assert_eq!(fusion_kind("F_NPIP", &only_foreign, &o), Some("foreign_only"));
+            assert_eq!(fusion_kind("F_NPIP", &[Some("NPa".to_string())], &o), None);
+            assert_eq!(fusion_kind("F_NPIP", &[None], &o), None);
+        }
+
+        #[test]
+        fn components_are_union_find_with_the_smallest_index_as_id() {
+            assert_eq!(components(6, &[(1, 2), (4, 2), (3, 5)]), vec![0, 1, 1, 3, 1, 3]);
+            assert_eq!(components(2, &[]), vec![0, 1]);
+        }
+
+        #[test]
+        fn gff_strands_and_external_parse() {
+            let s = gff_strands("##gff\nchr1\t.\tgene\t10\t20\t.\t-\t.\tID=g\nchr1\t.\texon\t10\t20\t.\t-\t.\tParent=g\n");
+            assert_eq!(s.get(&("chr1".to_string(), 10, 20)), Some(&'-'));
+            let e = parse_external("chr1\t10\t20\tID_1\nchr1\t10\t20\tID_2\nbad\n");
+            assert_eq!(e.len(), 2);
+            assert_eq!(e[1].1, "ID_2");
+        }
+    }
+}

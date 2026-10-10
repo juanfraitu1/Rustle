@@ -25,6 +25,7 @@ pub use family::candidates;
 pub use family::copy_assign;
 pub use family::denovo_pipeline;
 pub use family::fam_from_gtf;
+pub use family::family_hierarchy;
 pub use family::family_detect;
 pub use family::missing_copy;
 
