@@ -47,6 +47,52 @@ def jl_load(p):
     return out
 
 
+WORKERS = int(os.environ.get("RUN_NET_WORKERS", "1"))
+_G = {}
+
+
+def _cons_job(k):
+    return k, PT.abpoa_consensus([_G["seqs"][r] for r in _G["clusters"][k]], mode=D.CONS_MODE)
+
+
+def _cls_init():
+    import pysam
+    _G["fa"] = pysam.FastaFile(D.PRIMARY_FA)
+
+
+def _cls_row(k, fa, tmp_r, tmp_s):
+    n, cons, recs = _G["name"][k], _G["cons"][k], _G["recs"]
+    sc = D.idcov_with_rescue(cons, recs[n], fa, D.ident, _G["gate"], tmp_r) if n in recs else None
+    med = CS.median_read_divergence(cons, {r: _G["sup"][r] for r in sorted(_G["clusters"][k])[:100]}, tmp_s)
+    cls = "UNSUPPORTED" if med is None or med > D.DELTA else FM.elsewhere_class(sc, [])
+    hit = recs.get(n)
+    return n, dict(k=n, key=k, reads=len(_G["clusters"][k]), length=len(cons), R=sc, median_read_divergence=med, cls=cls,
+                   R_hit=(hit[5], int(hit[7]), int(hit[8])) if hit else None)
+
+
+def _cls_job(k):
+    pid = os.getpid()
+    return _cls_row(k, _G["fa"], f"{_G['R']}/tmp_R_{pid}", f"{_G['R']}/tmp_support_{pid}")
+
+
+def _parallel(func, keys, out_path, label, total, init=None):
+    """run func over keys in WORKERS forked processes (identical results, completion order), appending [key, value] lines; pauses at the budget"""
+    import multiprocessing as mp
+    done = total - len(keys)
+    with open(out_path, "a") as o:
+        pool = mp.get_context("fork").Pool(WORKERS, initializer=init)
+        try:
+            for res in pool.imap_unordered(func, keys, chunksize=2):
+                o.write(json.dumps(list(res)) + "\n")
+                o.flush()
+                done += 1
+                if left() < 25:
+                    pool.terminate()
+                    pause(f"{label} ({done} of {total})")
+        finally:
+            pool.terminate()
+
+
 def main():
     os.makedirs(f"{R}/rounds", exist_ok=True)
     seqs = SD.read_fa(NET)
@@ -93,11 +139,15 @@ def main():
     finish(R, clusters, seqs)
 
 
-def finish(R, clusters, seqs):
+def finish(R, clusters, seqs, support_seqs=None):
     """stages 3-5 on a clustering {key: [reads]}: local-mode consensus, alignment on the primary, classification (resumable; R = run directory)"""
     # 3. consensus, local mode (resumable)
     cons_p = f"{R}/cons.jsonl"
     cons = jl_load(cons_p)
+    if len(cons) < len(clusters) and WORKERS > 1:
+        _G.update(seqs=seqs, clusters=clusters)
+        _parallel(_cons_job, [k for k in sorted(clusters) if k not in cons], cons_p, "consensus", len(clusters))
+        cons = jl_load(cons_p)
     if len(cons) < len(clusters):
         with open(cons_p, "a") as o:
             for k in sorted(clusters):
@@ -127,6 +177,10 @@ def finish(R, clusters, seqs):
     fa = pysam.FastaFile(D.PRIMARY_FA)
     cls_p = f"{R}/classes.jsonl"
     rows = jl_load(cls_p)
+    if len(rows) < len(keys) and WORKERS > 1:
+        _G.update(name=name, cons=cons, recs=recs, gate=gate, clusters=clusters, R=R, sup=support_seqs if support_seqs is not None else seqs)
+        _parallel(_cls_job, [k for k in keys if name[k] not in rows], cls_p, "classify", len(keys), init=_cls_init)
+        rows = jl_load(cls_p)
     if len(rows) < len(keys):
         with open(cls_p, "a") as o:
             for k in keys:
@@ -136,7 +190,8 @@ def finish(R, clusters, seqs):
                 if left() < 10:
                     pause(f"classify ({len(rows)} of {len(keys)})")
                 sc = D.idcov_with_rescue(cons[k], recs[n], fa, D.ident, gate, f"{R}/tmp_R") if n in recs else None
-                med = CS.median_read_divergence(cons[k], {r: seqs[r] for r in sorted(clusters[k])[:100]}, f"{R}/tmp_support")
+                sup = support_seqs if support_seqs is not None else seqs       # Amendment 45: the support test uses the original reads
+                med = CS.median_read_divergence(cons[k], {r: sup[r] for r in sorted(clusters[k])[:100]}, f"{R}/tmp_support")
                 cls = "UNSUPPORTED" if med is None or med > D.DELTA else FM.elsewhere_class(sc, [])
                 hit = recs.get(n)
                 row = dict(k=n, key=k, reads=len(clusters[k]), length=len(cons[k]), R=sc, median_read_divergence=med, cls=cls,
