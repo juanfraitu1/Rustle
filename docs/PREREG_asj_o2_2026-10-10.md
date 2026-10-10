@@ -67,3 +67,17 @@ edit-confounded." If T1 fails, the bound does not transfer to haplotypes; if T2 
 (splice-site disruption; retracted for the June flagships), or anything about OR6737.
 
 Code: `bench/asj_o2/` (test-first). Compute: per chromosome, foreground, `tools/rlock.sh heavy` for the alignment step.
+
+## DEV result (2026-10-10; code ce1769f0 + two speed-ups shown byte-identical on chr21, scorer 23 tests; held-out NOT computed)
+
+12 odd chromosomes, 6,807 expressed multi-exon genes (6,562 with an allelic alignment; median 27 het sites per gene).
+**Arm A phasing:** 1,270,013 reads to the primary's haplotype, 1,230,894 to the other, 5,211,093 abstained (67.6%: reads covering < 2 het sites or tied).
+- **T1 PASSES on dev: 872 discordant of 883,715 reads assigned by both halves = 0.00099** (bar 0.005; the certificate implies about 0.002).
+- **T2 PASSES on dev:** median concordance **1.000 over 2,585 ALLELIC anchors** (bar >= 0.95) and **0.642 over 29 NON-ALLELIC anchors** (bar <= 0.80);
+  UNRESOLVED 1.000 over 68.
+- T3 (dev): **arm A 289 ASJ / 137 genes** (median |dPSI| 0.552; 69,633 tests). **Arm R 485 ASJ / 172 genes: ALLELIC 187, NON-ALLELIC 78, UNRESOLVED 220**;
+  NON-ALLELIC = **29.4% of the resolved calls** (June, other animal and criteria: 44 / 120). 141 of the 187 ALLELIC arm-R calls are also arm-A calls.
+  Anchors: ALLELIC 3,999, NON-ALLELIC 135, UNRESOLVED 822; transitions 0.75 of ALLELIC anchors vs **0.90 of NON-ALLELIC anchors** (an editing signature);
+  median MAPQ-0 share 0 in every class (the non-allelic anchors are not low-MAPQ reads). Examples: ATXN3 two donors 7 bp apart switch with the allele
+  (dPSI +0.89 / -0.97); AGTRAP two acceptors 21 bp apart (+0.68 / -0.68).
+**No amendment.** The held-out half and the chrX control are run with the same code.
