@@ -44295,8 +44295,9 @@ pub mod denovo_pipeline {
             min_terminal_support: u32,
             snap: Option<(u64, f64)>,
             isoform_k: u32,
-            mode: ChainAdmission,
+            opts: impl Into<AdmitOpts>,
         ) -> Vec<Skeleton> {
+            let opts: AdmitOpts = opts.into();
             // §6zb: push-all-then-finish over the accumulator below — byte-identical to the former single-pass
             // body (the accumulator IS that body, split so a streaming reader can feed it one record at a time
             // without materialising the reads; see `docs/archive/2026-09/PREREG_streaming_assembly_2026-09-23.md`).
@@ -44309,7 +44310,7 @@ pub mod denovo_pipeline {
             for r in reads {
                 acc.push_read(r);
             }
-            let mut skels = acc.finish_with(min_reads, isoform_k, jsup.as_ref(), mode);
+            let mut skels = acc.finish_with(min_reads, isoform_k, jsup.as_ref(), opts);
             // FOOTPRINT PASS (`RUSTLE_FOOTPRINT_NODES`, default off = byte-identical). Runs LAST and only where
             // nothing else claimed the region, so it can add nodes and never change one the other passes made.
             if footprint_nodes_enabled() {
@@ -44488,27 +44489,35 @@ pub mod denovo_pipeline {
                 min_reads: u32,
                 isoform_k: u32,
                 jsup: Option<&std::collections::BTreeMap<(String, (u64, u64)), u32>>,
-                mode: ChainAdmission,
+                opts: impl Into<AdmitOpts>,
             ) -> Vec<Skeleton> {
+                let opts: AdmitOpts = opts.into();
+                let mode = opts.mode;
+                let (k, snap, unspliced) = (self.k, self.snap, self.unspliced);
+                let (groups, allpos) = if opts.snap_w > 0 {
+                    snap_read_junctions(self.groups, self.allpos, opts.snap_w, k)
+                } else {
+                    (self.groups, self.allpos)
+                };
+                // the floor for spliced chains (`--min-chain-reads`); unspliced reads keep `min_reads`
+                let smin = if opts.spliced_min_reads > 0 { opts.spliced_min_reads } else { min_reads };
                 let extra = match mode {
-                    ChainAdmission::Compat => compatible_support(&self.groups, min_reads),
+                    ChainAdmission::Compat => compatible_support(&groups, smin),
                     ChainAdmission::Direct | ChainAdmission::DirectUnion => {
-                        direct_transfrag_abundance(&self.groups, min_reads)
+                        direct_transfrag_abundance_with(&groups, smin, opts.credit)
                     }
                     ChainAdmission::Exact => std::collections::BTreeMap::new(),
                 };
                 let direct = mode == ChainAdmission::Direct;
                 let union = mode == ChainAdmission::DirectUnion;
-                let (k, snap, allpos, unspliced) = (self.k, self.snap, self.allpos, self.unspliced);
-                let mut skels: Vec<Skeleton> = self
-                    .groups
+                let mut skels: Vec<Skeleton> = groups
                     .into_iter()
                     .filter(|((chrom, introns), (n, _, _, _))| {
                         if direct {
                             // only maximal transfrags whose transferred abundance reaches the floor
                             return extra.contains_key(&(chrom.clone(), introns.clone()));
                         }
-                        *n >= min_reads
+                        *n >= smin
                             || (!extra.is_empty() && extra.contains_key(&(chrom.clone(), introns.clone())))
                             || (isoform_k > 0
                                 && !introns.is_empty()
@@ -44540,7 +44549,7 @@ pub mod denovo_pipeline {
                         }
                         // a chain admitted by compatible support carries that bottleneck count; its strand vote stays
                         // over its own reads (`read_rev` / `read_tot`)
-                        let n_reads = if (direct || union || n < min_reads) && !extra.is_empty() {
+                        let n_reads = if (direct || union || n < smin) && !extra.is_empty() {
                             extra.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(n)
                         } else {
                             n
@@ -44580,6 +44589,116 @@ pub mod denovo_pipeline {
             DirectUnion,
         }
 
+        /// How a contained transfrag's reads reach its maximal containers: `Split` (default) in proportion to their own
+        /// reads; `Full` (`--transfer-credit full`) every container gets all of them (admission only, so a read can support
+        /// every isoform it fits, as FLAIR's re-alignment lets it support whichever it lands on).
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum TransferCredit {
+            Split,
+            Full,
+        }
+
+        /// Pass-1 admission options. `From<ChainAdmission>` gives the defaults (split credit, no junction snap, the
+        /// caller's floor), so `finish_with(.., ChainAdmission::X)` keeps working.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub struct AdmitOpts {
+            pub mode: ChainAdmission,
+            pub credit: TransferCredit,
+            /// `--read-junction-snap W`: before grouping, a junction moves onto a junction within `W` bp at both donor
+            /// and acceptor that more reads carry (and at least 2); 0 = off.
+            pub snap_w: u64,
+            /// `--min-chain-reads N`: the floor for SPLICED chains; 0 = the caller's floor (unspliced reads always keep it).
+            pub spliced_min_reads: u32,
+        }
+
+        impl From<ChainAdmission> for AdmitOpts {
+            fn from(mode: ChainAdmission) -> Self {
+                AdmitOpts { mode, credit: TransferCredit::Split, snap_w: 0, spliced_min_reads: 0 }
+            }
+        }
+
+        type Pass1Groups = std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>;
+        type Pass1AllPos = std::collections::BTreeMap<(String, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)>;
+
+        /// READ-LEVEL JUNCTION SNAP (`--read-junction-snap W`, opt-in). Junction support = reads carrying it, summed over
+        /// the groups. A junction moves onto the junction within `w` bp at BOTH donor and acceptor that the most reads carry,
+        /// when that one has strictly more reads than it and at least 2 (followed to a fixed point: support strictly rises,
+        /// so it terminates). Groups are re-keyed by their snapped chains and merged (reads summed, the `k` smallest starts
+        /// and largest ends kept); a chain whose snapped junctions would no longer be strictly ordered keeps its own.
+        pub fn snap_read_junctions(groups: Pass1Groups, allpos: Pass1AllPos, w: u64, k: usize) -> (Pass1Groups, Pass1AllPos) {
+            let mut sup: std::collections::BTreeMap<(String, (u64, u64)), u32> = std::collections::BTreeMap::new();
+            for ((chrom, chain), v) in &groups {
+                for &j in chain {
+                    *sup.entry((chrom.clone(), j)).or_insert(0) += v.0;
+                }
+            }
+            let mut by_chrom: std::collections::BTreeMap<&str, Vec<((u64, u64), u32)>> = std::collections::BTreeMap::new();
+            for ((chrom, j), &n) in &sup {
+                by_chrom.entry(chrom.as_str()).or_default().push((*j, n));
+            }
+            let mut target: std::collections::HashMap<(String, (u64, u64)), (u64, u64)> = std::collections::HashMap::new();
+            for (chrom, js) in &by_chrom {
+                // js sorted by donor; candidates within `w` of the donor
+                for &(j, n) in js.iter() {
+                    let lo = js.partition_point(|x| x.0 .0 + w < j.0);
+                    let mut best: Option<((u64, u64), u32)> = None;
+                    for &(c, cn) in js[lo..].iter().take_while(|x| x.0 .0 <= j.0 + w) {
+                        if c == j || cn <= n || cn < 2 || c.1.abs_diff(j.1) > w {
+                            continue;
+                        }
+                        if best.map_or(true, |(bc, bn)| cn > bn || (cn == bn && c < bc)) {
+                            best = Some((c, cn));
+                        }
+                    }
+                    if let Some((c, _)) = best {
+                        target.insert((chrom.to_string(), j), c);
+                    }
+                }
+            }
+            let resolve = |chrom: &str, j: (u64, u64)| -> (u64, u64) {
+                let mut cur = j;
+                for _ in 0..64 {
+                    match target.get(&(chrom.to_string(), cur)) {
+                        Some(&nx) => cur = nx,
+                        None => break,
+                    }
+                }
+                cur
+            };
+            let mut out: Pass1Groups = std::collections::BTreeMap::new();
+            let mut out_pos: Pass1AllPos = std::collections::BTreeMap::new();
+            for ((chrom, chain), (n, starts, ends, n_rev)) in groups {
+                let snapped: Vec<(u64, u64)> = chain.iter().map(|&j| resolve(&chrom, j)).collect();
+                let ok = snapped.windows(2).all(|p| p[0].1 <= p[1].0 && p[0] != p[1]);
+                let key_old = (chrom.clone(), chain.clone());
+                let key = (chrom, if ok { snapped } else { chain });
+                let e = out.entry(key.clone()).or_insert((0, Vec::new(), Vec::new(), 0));
+                e.0 += n;
+                e.3 += n_rev;
+                e.1.extend(starts);
+                e.1.sort_unstable();
+                e.1.truncate(k);
+                e.2.extend(ends);
+                e.2.sort_unstable_by(|a, b| b.cmp(a));
+                e.2.truncate(k);
+                if let Some((a, b)) = allpos.get(&key_old) {
+                    let p = out_pos.entry(key).or_insert((Vec::new(), Vec::new()));
+                    p.0.extend(a);
+                    p.1.extend(b);
+                }
+            }
+            (out, out_pos)
+        }
+
+        /// [`direct_transfrag_abundance`] with the split rule of [`TransferCredit`].
+        pub fn direct_transfrag_abundance_with(
+            groups: &Pass1Groups,
+            min_reads: u32,
+            credit: TransferCredit,
+        ) -> std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32> {
+            direct_transfrag_abundance_impl(groups, min_reads, credit)
+        }
+
         /// DIRECT TRANSFRAGS (`docs/PREREG_direct_transfrags_2026-10-11.md`), no network flow. Each pass-1 group is a
         /// transfrag. T is contained in C (C != T) when T's chain is a contiguous sub-chain `C[i .. i+m)` and T's reads stay
         /// inside C's exons around it (the containment of [`compatible_support`]). Transfrags contained in no other are
@@ -44589,6 +44708,14 @@ pub mod denovo_pipeline {
         pub fn direct_transfrag_abundance(
             groups: &std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
             min_reads: u32,
+        ) -> std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32> {
+            direct_transfrag_abundance_impl(groups, min_reads, TransferCredit::Split)
+        }
+
+        fn direct_transfrag_abundance_impl(
+            groups: &Pass1Groups,
+            min_reads: u32,
+            credit: TransferCredit,
         ) -> std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32> {
             let keys: Vec<&(String, Vec<(u64, u64)>)> = groups.keys().collect();
             let vals: Vec<&(u32, Vec<u64>, Vec<u64>, u32)> = groups.values().collect();
@@ -44652,7 +44779,10 @@ pub mod denovo_pipeline {
                     continue;
                 }
                 for &c in &tops {
-                    recv[c] += own[ti] * own[c] / w;
+                    recv[c] += match credit {
+                        TransferCredit::Split => own[ti] * own[c] / w,
+                        TransferCredit::Full => own[ti],
+                    };
                 }
             }
             let mut out = std::collections::BTreeMap::new();
@@ -49909,12 +50039,55 @@ pub mod denovo_pipeline {
 
             // ---- compatible-read support (`--compat-support`, docs/PREREG_assembler_compatible_support_2026-10-11.md) ----
 
-            fn finish_mode(reads: &[PrimaryRead], min_reads: u32, mode: ChainAdmission) -> Vec<Skeleton> {
+            fn finish_opts(reads: &[PrimaryRead], min_reads: u32, opts: AdmitOpts) -> Vec<Skeleton> {
                 let mut acc = Pass1Acc::new(1, None);
                 for r in reads {
                     acc.push_read(r);
                 }
-                acc.finish_with(min_reads, 0, None, mode)
+                acc.finish_with(min_reads, 0, None, opts)
+            }
+
+            fn finish_mode(reads: &[PrimaryRead], min_reads: u32, mode: ChainAdmission) -> Vec<Skeleton> {
+                finish_opts(reads, min_reads, AdmitOpts::from(mode))
+            }
+
+            // ---- opt-in levers toward FLAIR's exclusive transcripts (docs/PENDING_2026-10-11.md) ----
+
+            #[test]
+            fn transfer_credit_full_gives_every_container_the_whole_fragment() {
+                let jb = (150, 300);
+                let mut reads = vec![pr("c1", 100, 800, &[J1, J2, J3]); 3];
+                reads.push(pr("c1", 100, 800, &[jb, J2, J3]));
+                reads.extend(vec![pr("c1", 320, 790, &[J2, J3]); 4]);
+                let opts = AdmitOpts { credit: TransferCredit::Full, ..AdmitOpts::from(ChainAdmission::Direct) };
+                assert_eq!(
+                    finish_opts(&reads, 2, opts),
+                    vec![sk_own("c1", 100, 800, 5, 1, &[jb, J2, J3]), sk_own("c1", 100, 800, 7, 3, &[J1, J2, J3])]
+                );
+            }
+
+            #[test]
+            fn read_junction_snap_moves_a_rare_junction_onto_a_better_supported_neighbour() {
+                let mut reads = vec![pr("c1", 100, 500, &[(200, 300)]); 3];
+                reads.push(pr("c1", 102, 505, &[(203, 300)])); // 3 bp off at the donor, one read
+                let snap = AdmitOpts { snap_w: 10, ..AdmitOpts::from(ChainAdmission::Exact) };
+                assert_eq!(finish_opts(&reads, 2, snap), vec![skel("c1", 100, 505, 4, &[(200, 300)])]);
+                assert_eq!(finish_mode(&reads, 2, ChainAdmission::Exact), vec![skel("c1", 100, 500, 3, &[(200, 300)])]);
+                // equal support never snaps; beyond the window never snaps
+                let mut tie = vec![pr("c1", 100, 500, &[(200, 300)]); 2];
+                tie.extend(vec![pr("c1", 100, 500, &[(203, 300)]); 2]);
+                assert_eq!(finish_opts(&tie, 2, snap).len(), 2);
+                let mut far = vec![pr("c1", 100, 500, &[(200, 300)]); 3];
+                far.push(pr("c1", 100, 500, &[(215, 300)]));
+                assert_eq!(finish_opts(&far, 2, snap), vec![skel("c1", 100, 500, 3, &[(200, 300)])]);
+            }
+
+            #[test]
+            fn min_chain_reads_one_admits_a_single_read_chain_but_not_a_single_unspliced_read() {
+                let reads = [pr("c1", 100, 800, &[J1, J2, J3]), pr("c1", 5000, 6000, &[])];
+                let one = AdmitOpts { spliced_min_reads: 1, ..AdmitOpts::from(ChainAdmission::Exact) };
+                assert_eq!(finish_opts(&reads, 2, one), vec![skel("c1", 100, 800, 1, &[J1, J2, J3])]);
+                assert_eq!(finish_mode(&reads, 2, ChainAdmission::Exact), vec![]);
             }
 
             fn finish_compat(reads: &[PrimaryRead], min_reads: u32, compat: bool) -> Vec<Skeleton> {
