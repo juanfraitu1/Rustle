@@ -44517,6 +44517,14 @@ pub mod denovo_pipeline {
                 };
                 let direct = mode == ChainAdmission::Direct;
                 let union = mode == ChainAdmission::DirectUnion;
+                // `--transfer-ends`: boundary lists pooled over the reads sharing a chain's first / last junctions
+                let pooled = if opts.transfer_ends {
+                    pooled_terminal_ends(&groups, k)
+                } else {
+                    std::collections::HashMap::new()
+                };
+                // `--extend-transfrags` needs every group after admission
+                let ext_groups = if opts.extend { Some(groups.clone()) } else { None };
                 let mut skels: Vec<Skeleton> = groups
                     .into_iter()
                     .filter(|((chrom, introns), (n, _, _, _))| {
@@ -44536,6 +44544,13 @@ pub mod denovo_pipeline {
                                 }))
                     })
                     .map(|((chrom, introns), (n, starts, ends, n_rev))| {
+                        let (starts, ends) = match (!pooled.is_empty())
+                            .then(|| pooled.get(&(chrom.clone(), introns.clone())))
+                            .flatten()
+                        {
+                            Some((s, e)) => (s.clone(), e.clone()),
+                            None => (starts, ends),
+                        };
                         // robust boundary = the k-th supported value (or the outermost available if the group is
                         // smaller).
                         let si = k.min(starts.len()).saturating_sub(1);
@@ -44575,6 +44590,10 @@ pub mod denovo_pipeline {
                         }
                     })
                     .collect();
+                if let Some(g) = ext_groups {
+                    let more = extend_admitted_chains(&g, &skels, smin, k);
+                    skels.extend(more);
+                }
                 // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
                 // per chromosome instead of pooling every unspliced read on a chromosome into one giant group.
                 skels.extend(cluster_unspliced(&unspliced, min_reads, k));
@@ -44693,12 +44712,195 @@ pub mod denovo_pipeline {
             pub snap_w: u64,
             /// `--min-chain-reads N`: the floor for SPLICED chains; 0 = the caller's floor (unspliced reads always keep it).
             pub spliced_min_reads: u32,
+            /// `--extend-transfrags`: every admitted chain is also emitted extended to a read start / read end along the
+            /// junction pairs reads link most ([`extend_admitted_chains`]); StringTie's greedy back / forward extension.
+            pub extend: bool,
+            /// `--transfer-ends`: an admitted chain's start / end also count the reads that share its first / last junctions
+            /// and fit inside it ([`pooled_terminal_ends`]).
+            pub transfer_ends: bool,
         }
 
         impl From<ChainAdmission> for AdmitOpts {
             fn from(mode: ChainAdmission) -> Self {
-                AdmitOpts { mode, credit: TransferCredit::Split, snap_w: 0, spliced_min_reads: 0 }
+                AdmitOpts {
+                    mode,
+                    credit: TransferCredit::Split,
+                    snap_w: 0,
+                    spliced_min_reads: 0,
+                    extend: false,
+                    transfer_ends: false,
+                }
             }
+        }
+
+        type ChainKey = (String, Vec<(u64, u64)>);
+
+        /// `--transfer-ends` (opt-in). For every spliced group C: its starts plus the starts of every group T whose chain is
+        /// a PREFIX of C's (`C[..m]`, m < len C) and whose reads end at or before the donor of `C[m]` (they lie in C's first
+        /// exons); its ends plus the ends of every group whose chain is a SUFFIX of C's and whose reads start at or after the
+        /// acceptor of the junction before it. Returned as the `k` smallest starts (ascending) and `k` largest ends
+        /// (descending), the boundary lists pass 1 takes its quantile from.
+        pub fn pooled_terminal_ends(
+            groups: &Pass1Groups,
+            k: usize,
+        ) -> std::collections::HashMap<ChainKey, (Vec<u64>, Vec<u64>)> {
+            let mut by_first: std::collections::HashMap<(&str, (u64, u64)), Vec<&ChainKey>> = std::collections::HashMap::new();
+            let mut by_last: std::collections::HashMap<(&str, (u64, u64)), Vec<&ChainKey>> = std::collections::HashMap::new();
+            for key in groups.keys() {
+                if let (Some(&f), Some(&l)) = (key.1.first(), key.1.last()) {
+                    by_first.entry((key.0.as_str(), f)).or_default().push(key);
+                    by_last.entry((key.0.as_str(), l)).or_default().push(key);
+                }
+            }
+            let mut out: std::collections::HashMap<ChainKey, (Vec<u64>, Vec<u64>)> = std::collections::HashMap::new();
+            for (key, (_, starts, ends, _)) in groups {
+                if key.1.is_empty() {
+                    continue;
+                }
+                out.entry(key.clone()).or_insert_with(|| (starts.clone(), ends.clone()));
+            }
+            for (t, (_, t_starts, t_ends, _)) in groups {
+                let (Some(&f), Some(&l)) = (t.1.first(), t.1.last()) else { continue };
+                let m = t.1.len();
+                let (Some(&t_lo), Some(&t_hi)) = (t_starts.first(), t_ends.first()) else { continue };
+                for c in by_first.get(&(t.0.as_str(), f)).into_iter().flatten() {
+                    if c.1.len() > m && c.1[..m] == t.1[..] && t_hi <= c.1[m].0 {
+                        out.get_mut(*c).expect("every spliced group is in the map").0.extend(t_starts.iter().copied());
+                    }
+                }
+                for c in by_last.get(&(t.0.as_str(), l)).into_iter().flatten() {
+                    let n = c.1.len();
+                    if n > m && c.1[n - m..] == t.1[..] && t_lo >= c.1[n - m - 1].1 {
+                        out.get_mut(*c).expect("every spliced group is in the map").1.extend(t_ends.iter().copied());
+                    }
+                }
+            }
+            for (s, e) in out.values_mut() {
+                s.sort_unstable();
+                s.truncate(k);
+                e.sort_unstable_by(|a, b| b.cmp(a));
+                e.truncate(k);
+            }
+            out
+        }
+
+        /// `--extend-transfrags` (opt-in): StringTie's greedy back-to-source / forward-to-sink extension without flow. Over
+        /// the pass-1 groups, a junction PAIR (a, b) is linked by the reads that carry a then b consecutively. Each admitted
+        /// spliced skeleton is extended upstream one junction at a time: the predecessor of its first junction that the most
+        /// reads link to it (at least `min_reads`; ties to the smaller junction), provided the skeleton's reads start at or
+        /// after that junction's acceptor (only on the first step; later steps are read-linked by construction); likewise
+        /// downstream. A step whose junction no read STARTS (or ENDS) after is undone, so every extension ends at an observed
+        /// read start / end, which becomes its boundary (the `k`-th most extreme). The extended chain is ADDED (the seed
+        /// stays) with `n_reads` = the smallest of the seed's and its steps' support, unless an admitted chain already has
+        /// it; of two seeds reaching one chain, the larger count wins (the first on a tie).
+        pub fn extend_admitted_chains(groups: &Pass1Groups, skels: &[Skeleton], min_reads: u32, k: usize) -> Vec<Skeleton> {
+            type J = (u64, u64);
+            let mut pair: std::collections::HashMap<(&str, J, J), u32> = std::collections::HashMap::new();
+            let mut start_at: std::collections::HashMap<(&str, J), Vec<u64>> = std::collections::HashMap::new();
+            let mut end_at: std::collections::HashMap<(&str, J), Vec<u64>> = std::collections::HashMap::new();
+            for ((chrom, chain), (n, starts, ends, _)) in groups {
+                for w in chain.windows(2) {
+                    *pair.entry((chrom.as_str(), w[0], w[1])).or_insert(0) += n;
+                }
+                if let (Some(&f), Some(&l)) = (chain.first(), chain.last()) {
+                    start_at.entry((chrom.as_str(), f)).or_default().extend(starts.iter().copied());
+                    end_at.entry((chrom.as_str(), l)).or_default().extend(ends.iter().copied());
+                }
+            }
+            let mut pred: std::collections::HashMap<(&str, J), Vec<(J, u32)>> = std::collections::HashMap::new();
+            let mut succ: std::collections::HashMap<(&str, J), Vec<(J, u32)>> = std::collections::HashMap::new();
+            for (&(chrom, a, b), &n) in &pair {
+                pred.entry((chrom, b)).or_default().push((a, n));
+                succ.entry((chrom, a)).or_default().push((b, n));
+            }
+            let pick = |v: Option<&Vec<(J, u32)>>, ok: &dyn Fn(J) -> bool| -> Option<(J, u32)> {
+                v.into_iter()
+                    .flatten()
+                    .filter(|&&(j, n)| n >= min_reads && ok(j))
+                    .min_by(|x, y| y.1.cmp(&x.1).then(x.0.cmp(&y.0)))
+                    .copied()
+            };
+            let kth_low = |v: &Vec<u64>| -> u64 {
+                let mut v = v.clone();
+                v.sort_unstable();
+                v[k.min(v.len()) - 1]
+            };
+            let kth_high = |v: &Vec<u64>| -> u64 {
+                let mut v = v.clone();
+                v.sort_unstable_by(|a, b| b.cmp(a));
+                v[k.min(v.len()) - 1]
+            };
+            let admitted: std::collections::HashSet<(&str, &[J])> =
+                skels.iter().map(|s| (s.chrom.as_str(), s.introns.as_slice())).collect();
+            let mut out: Vec<Skeleton> = Vec::new();
+            let mut at: std::collections::HashMap<ChainKey, usize> = std::collections::HashMap::new();
+            for s in skels {
+                let (Some(&first), Some(&last)) = (s.introns.first(), s.introns.last()) else { continue };
+                let chrom = s.chrom.as_str();
+                // upstream
+                let mut up: Vec<(J, u32)> = Vec::new();
+                let mut cur = first;
+                for step in 0..10_000 {
+                    let seed_start = s.start;
+                    let ok = |j: J| j.1 <= cur.0 && (step > 0 || seed_start >= j.1);
+                    match pick(pred.get(&(chrom, cur)), &ok) {
+                        Some((j, n)) => {
+                            up.push((j, n));
+                            cur = j;
+                        }
+                        None => break,
+                    }
+                }
+                while up.last().is_some_and(|&(j, _)| !start_at.contains_key(&(chrom, j))) {
+                    up.pop();
+                }
+                // downstream
+                let mut down: Vec<(J, u32)> = Vec::new();
+                let mut cur = last;
+                for step in 0..10_000 {
+                    let seed_end = s.end;
+                    let ok = |j: J| j.0 >= cur.1 && (step > 0 || seed_end <= j.0);
+                    match pick(succ.get(&(chrom, cur)), &ok) {
+                        Some((j, n)) => {
+                            down.push((j, n));
+                            cur = j;
+                        }
+                        None => break,
+                    }
+                }
+                while down.last().is_some_and(|&(j, _)| !end_at.contains_key(&(chrom, j))) {
+                    down.pop();
+                }
+                if up.is_empty() && down.is_empty() {
+                    continue;
+                }
+                let mut chain: Vec<J> = up.iter().rev().map(|&(j, _)| j).collect();
+                chain.extend(s.introns.iter().copied());
+                chain.extend(down.iter().map(|&(j, _)| j));
+                if admitted.contains(&(chrom, chain.as_slice())) {
+                    continue;
+                }
+                let start = up.last().map_or(s.start, |&(j, _)| kth_low(&start_at[&(chrom, j)]));
+                let end = down.last().map_or(s.end, |&(j, _)| kth_high(&end_at[&(chrom, j)]));
+                if end <= start || start >= chain[0].0 || end <= chain[chain.len() - 1].1 {
+                    continue;
+                }
+                let n = up.iter().chain(down.iter()).map(|&(_, n)| n).fold(s.n_reads, u32::min);
+                let key = (s.chrom.clone(), chain.clone());
+                let sk = Skeleton { start, end, n_reads: n, introns: chain, ..s.clone() };
+                match at.get(&key) {
+                    Some(&i) => {
+                        if n > out[i].n_reads {
+                            out[i] = sk;
+                        }
+                    }
+                    None => {
+                        at.insert(key, out.len());
+                        out.push(sk);
+                    }
+                }
+            }
+            out
         }
 
         type Pass1Groups = std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>;
@@ -50212,6 +50414,55 @@ pub mod denovo_pipeline {
                 let one = AdmitOpts { spliced_min_reads: 1, ..AdmitOpts::from(ChainAdmission::Exact) };
                 assert_eq!(finish_opts(&reads, 2, one), vec![skel("c1", 100, 800, 1, &[J1, J2, J3])]);
                 assert_eq!(finish_mode(&reads, 2, ChainAdmission::Exact), vec![]);
+            }
+
+            // ---- StringTie levers without flow (docs/PENDING_2026-10-11.md, StringTie milestone) ----
+
+            #[test]
+            fn extend_transfrags_prepends_a_junction_reads_link_to_the_chain_and_stops_at_a_read_start() {
+                let mut reads = vec![pr("c1", 350, 800, &[J2, J3]); 3];
+                reads.extend(vec![pr("c1", 100, 550, &[J1, J2]); 2]);
+                let ext = AdmitOpts { extend: true, ..AdmitOpts::from(ChainAdmission::Exact) };
+                assert_eq!(
+                    finish_opts(&reads, 2, ext),
+                    vec![
+                        sk_own("c1", 100, 550, 2, 2, &[J1, J2]),
+                        sk_own("c1", 350, 800, 3, 3, &[J2, J3]),
+                        sk_own("c1", 100, 800, 2, 2, &[J1, J2, J3]),
+                    ]
+                );
+                assert_eq!(finish_mode(&reads, 2, ChainAdmission::Exact).len(), 2);
+            }
+
+            #[test]
+            fn extend_transfrags_needs_floor_pair_support_and_a_chain_that_stays_out_of_the_new_intron() {
+                // one read links J1 to J2: below the floor of 2
+                let mut thin = vec![pr("c1", 350, 800, &[J2, J3]); 3];
+                thin.push(pr("c1", 100, 550, &[J1, J2]));
+                let ext = AdmitOpts { extend: true, ..AdmitOpts::from(ChainAdmission::Exact) };
+                assert_eq!(finish_opts(&thin, 2, ext), finish_mode(&thin, 2, ChainAdmission::Exact));
+                // [J2, J3]'s reads start at 250, inside J1's intron, so J1 cannot precede it; [J1, J2]'s end at 650, inside
+                // J3's intron, so J3 cannot follow it
+                let mut inside = vec![pr("c1", 250, 800, &[J2, J3]); 3];
+                inside.extend(vec![pr("c1", 100, 650, &[J1, J2]); 2]);
+                let got = finish_opts(&inside, 2, ext);
+                assert!(got.iter().all(|s| s.introns != vec![J1, J2, J3]), "{got:?}");
+            }
+
+            #[test]
+            fn transfer_ends_takes_a_chains_ends_from_reads_that_share_its_first_or_last_junctions() {
+                let mut reads = vec![pr("c1", 150, 600, &[J1, J2]); 2];
+                reads.extend(vec![pr("c1", 50, 350, &[J1]); 3]); // prefix of [J1, J2], ends before J2
+                reads.push(pr("c1", 450, 900, &[J2])); // suffix of [J1, J2], starts after J1
+                let ends = AdmitOpts { transfer_ends: true, ..AdmitOpts::from(ChainAdmission::Exact) };
+                assert_eq!(
+                    finish_opts(&reads, 2, ends),
+                    vec![sk_own("c1", 50, 350, 3, 3, &[J1]), sk_own("c1", 50, 900, 2, 2, &[J1, J2])]
+                );
+                assert_eq!(
+                    finish_mode(&reads, 2, ChainAdmission::Exact),
+                    vec![sk_own("c1", 50, 350, 3, 3, &[J1]), sk_own("c1", 150, 600, 2, 2, &[J1, J2])]
+                );
             }
 
             #[test]

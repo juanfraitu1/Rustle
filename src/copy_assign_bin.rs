@@ -225,6 +225,17 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     terminal_exon_anchor: u64,
 
+    /// StringTie's greedy back / forward extension without flow, opt-in: every admitted chain is ALSO emitted extended,
+    /// one junction at a time, along the junction pair the most reads link (at least the read floor), to an observed read
+    /// start / end (`docs/PENDING_2026-10-11.md`).
+    #[arg(long)]
+    extend_transfrags: bool,
+
+    /// Transcript ends from more reads, opt-in: a chain's start / end also count the reads that share its first / last
+    /// junctions and fit inside it (as a splice graph's first / last exon spans every read through it).
+    #[arg(long)]
+    transfer_ends: bool,
+
     /// READ-LEVEL JUNCTION SNAP, opt-in: before reads are grouped by chain, a junction moves onto the junction within this many bp
     /// (at both donor and acceptor) that more reads carry, if at least 2 do. 0 (default) = off, byte-identical.
     #[arg(long, default_value_t = 0)]
@@ -6539,7 +6550,7 @@ fn main() -> Result<()> {
                 ev.seal();
                 ev
             });
-            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads }));
+            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
@@ -7059,7 +7070,7 @@ fn main() -> Result<()> {
                     1,
                     None,
                     args.read_isoform_k,
-                    rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads },
+                    rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends },
                 ),
             };
             // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —
