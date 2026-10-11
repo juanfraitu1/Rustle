@@ -1,0 +1,690 @@
+# table: fig8_samples
+# generator: figures/fig_loci.py
+# commit: 097d06ad-dirty
+# date: 2026-10-11
+# input human_A119b_support: /mnt/linuxdisk/tmp/rustle_figures/liftoff/support/human_A119b.tsv	size=2595545	mtime=1790492102
+# input human_A119b_denovo_gtf: /mnt/linuxdisk/tmp/rustle_figures/runs/human_A119b/human_A119b.gtf	size=334411215	mtime=1791684104
+# input human_A119b_families_copies: /mnt/linuxdisk/tmp/rustle_figures/runs/human_A119b/human_A119b.fam.copies.tsv	size=1756623	mtime=1791710547
+# input human_testis_support: /mnt/linuxdisk/tmp/rustle_figures/liftoff/support/human_testis.tsv	size=2595545	mtime=1790490762
+# input human_testis_denovo_gtf: /mnt/linuxdisk/tmp/rustle_figures/runs/human_testis/human_testis.gtf	size=26175638	mtime=1791672757
+# input human_testis_families_copies: /mnt/linuxdisk/tmp/rustle_figures/runs/human_testis/human_testis.fam.copies.tsv	size=228299	mtime=1791674161
+# input gorilla_OR6737_support: /mnt/linuxdisk/tmp/rustle_figures/liftoff/support/gorilla_OR6737.tsv	size=2131309	mtime=1790490337
+# input gorilla_OR6737_denovo_gtf: /mnt/linuxdisk/tmp/rustle_figures/runs/gorilla_OR6737/gorilla_OR6737.gtf	size=151193574	mtime=1791672917
+# input gorilla_KB3781_support: /mnt/linuxdisk/tmp/rustle_figures/liftoff/support/gorilla_KB3781.tsv	size=2131309	mtime=1790490586
+# input gorilla_KB3781_denovo_gtf: /mnt/linuxdisk/tmp/rustle_figures/runs/gorilla_KB3781/gorilla_KB3781.gtf	size=143820466	mtime=1791673536
+# input gorilla_KB3781_families_copies: /mnt/linuxdisk/tmp/rustle_figures/runs/gorilla_KB3781/gorilla_KB3781.fam.copies.tsv	size=236013	mtime=1791683662
+# input chimp_PTR_support: /mnt/linuxdisk/tmp/rustle_figures/liftoff/support/chimp_PTR.tsv	size=2151402	mtime=1790401430
+# input chimp_PTR_denovo_gtf: /mnt/linuxdisk/tmp/rustle_figures/runs/chimp_PTR/chimp_PTR.gtf	size=104441193	mtime=1791673084
+# input chimp_PTR_families_copies: /mnt/linuxdisk/tmp/rustle_figures/runs/chimp_PTR/chimp_PTR.fam.copies.tsv	size=325010	mtime=1791679793
+# input orangutan_PPY_support: /mnt/linuxdisk/tmp/rustle_figures/liftoff/support/orangutan_PPY.tsv	size=1909973	mtime=1790490727
+# input orangutan_PPY_denovo_gtf: /mnt/linuxdisk/tmp/rustle_figures/runs/orangutan_PPY/orangutan_PPY.gtf	size=172849459	mtime=1791673250
+# note: Liftoff v1.6.3 (conda env liftoff; its minimap2 2.24), self-lift of each genome's RefSeq gene + pseudogene records: -copies -sc 0.95 -a 0.5 -s 0.5 -overlap 0.1 -p 4 -f pseudogene; default -mm2_options (-a --end-bonus 5 --eqx -N 50 -p 0.5)
+# note: run as one Liftoff call per contig's records (blocks of <= 2500 records) against the WHOLE genome; cross-call overlaps resolved by Liftoff's own rule (prereg §1 M1-M3)
+# note: V-L1 (mini-genome chr20-22, one Liftoff run vs per-contig calls and vs blocks of records; prereg amendment 3): B_contigs: 3740 of 3750 annotated placements identical, 439 of 448 extra copies identical (Jaccard 0.9799) -> FAIL: reported as an approximation of one run; C_blocks: 3730 of 3750 annotated placements identical, 438 of 449 extra copies identical (Jaccard 0.9755) -> FAIL: reported as an approximation of one run
+# note: matching (prereg §3): cov(G|R) = |exons(G) ∩ exons(R)| / |exons(G)| >= 0.5, same contig, strand ignored; in one genome Liftoff's sequence_ID of a coordinate match equals its coverage
+# note: reference loci: Liftoff in_place / moved / extra_copy with exon union >= 200 bp and >= 2 reads of the sample whose primary alignment (-F 2308) has an aligned block on the exon union (the rule of Fig. 6d); sens_* = k of n covered >= 50% by one Rustle locus
+# note: denovo = gene_id groups of the sample's genome-wide assembly (run cache stage assemble; exon union of every transcript); families = the DEFAULT de novo families' copy table (run cache stage families, <id>.fam.copies.tsv: one copy per member locus of a family, its representative's exons; prereg amendment 5); catalog = the LEGACY copy catalog (stage catalog, its exons column; secondary, no claim, not drawn)
+# note: located = Rustle loci covered >= 50% by one placed Liftoff locus (the rest lie outside every Liftoff locus: not an error); pair_cofamily = claim F1 (families; the catalog rows are the legacy comparison)
+# note: scope minus_dev: without the development contigs (human chr16; gorilla chr20 = NC_073244.2); chimpanzee and orangutan have none
+# note: 95% intervals: 2,000 bootstrap resamples of source records (random seed 20260925)
+sample	species	rustle_set	scope	measure	stratum	sc_min	n	k	frac	ci_lo	ci_hi	status
+human_A119b	human	denovo	genome	sens_in_place	all	-	42757	22908	0.535772	0.531071	0.540334	ok
+human_A119b	human	denovo	genome	sens_in_place	protein_coding	-	19158	13814	0.721056	0.714635	0.727427	ok
+human_A119b	human	denovo	genome	sens_in_place	lncRNA	-	14255	6041	0.423781	0.416205	0.432129	ok
+human_A119b	human	denovo	genome	sens_in_place	pseudogene	-	9040	2936	0.324779	0.315265	0.333739	ok
+human_A119b	human	denovo	genome	sens_in_place	other	-	304	117	0.384868	0.328947	0.4375	ok
+human_A119b	human	denovo	genome	sens_moved	all	-	305	202	0.662295	0.606557	0.718033	ok
+human_A119b	human	denovo	genome	sens_moved	protein_coding	-	1	0	0	0	0	ok
+human_A119b	human	denovo	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_A119b	human	denovo	genome	sens_moved	pseudogene	-	4	3	0.75	0.25	1	ok
+human_A119b	human	denovo	genome	sens_moved	other	-	300	199	0.663333	0.61	0.716667	ok
+human_A119b	human	denovo	genome	sens_extra_copy	all	0.95	641	234	0.365055	0.302102	0.435084	ok
+human_A119b	human	denovo	genome	sens_extra_copy	protein_coding	0.95	50	12	0.24	0.0714286	0.465546	ok
+human_A119b	human	denovo	genome	sens_extra_copy	lncRNA	0.95	401	143	0.356608	0.265168	0.451534	ok
+human_A119b	human	denovo	genome	sens_extra_copy	pseudogene	0.95	179	72	0.402235	0.31735	0.475733	ok
+human_A119b	human	denovo	genome	sens_extra_copy	other	0.95	11	7	0.636364	0.125	0.909091	ok
+human_A119b	human	denovo	genome	sens_extra_copy	all	0.98	426	170	0.399061	0.31194	0.491575	ok
+human_A119b	human	denovo	genome	sens_extra_copy	protein_coding	0.98	47	11	0.234043	0.0727273	0.46875	ok
+human_A119b	human	denovo	genome	sens_extra_copy	lncRNA	0.98	263	108	0.410646	0.282587	0.538144	ok
+human_A119b	human	denovo	genome	sens_extra_copy	pseudogene	0.98	105	44	0.419048	0.31999	0.514859	ok
+human_A119b	human	denovo	genome	sens_extra_copy	other	0.98	11	7	0.636364	0.125	0.909091	ok
+human_A119b	human	denovo	genome	sens_extra_copy	all	0.99	310	131	0.422581	0.305622	0.541681	ok
+human_A119b	human	denovo	genome	sens_extra_copy	protein_coding	0.99	38	8	0.210526	0.0727273	0.5	ok
+human_A119b	human	denovo	genome	sens_extra_copy	lncRNA	0.99	186	81	0.435484	0.271242	0.62369	ok
+human_A119b	human	denovo	genome	sens_extra_copy	pseudogene	0.99	76	35	0.460526	0.341456	0.586667	ok
+human_A119b	human	denovo	genome	sens_extra_copy	other	0.99	10	7	0.7	0.282143	0.9375	ok
+human_A119b	human	denovo	genome	sens_extra_copy	all	1.00	66	34	0.515152	0.352941	0.671648	ok
+human_A119b	human	denovo	genome	sens_extra_copy	protein_coding	1.00	10	2	0.2	0	1	ok
+human_A119b	human	denovo	genome	sens_extra_copy	lncRNA	1.00	26	14	0.538462	0.304348	0.740741	ok
+human_A119b	human	denovo	genome	sens_extra_copy	pseudogene	1.00	21	11	0.52381	0.315789	0.722222	ok
+human_A119b	human	denovo	genome	sens_extra_copy	other	1.00	9	7	0.777778	0.333333	1	ok
+human_A119b	human	denovo	genome	located	all	-	94685	23215	0.245181	0.242435	0.247685	ok
+human_A119b	human	denovo	minus_dev	sens_in_place	all	-	41118	21945	0.533708	0.528965	0.538402	ok
+human_A119b	human	denovo	minus_dev	sens_in_place	protein_coding	-	18324	13187	0.719657	0.713216	0.7261	ok
+human_A119b	human	denovo	minus_dev	sens_in_place	lncRNA	-	13757	5828	0.423639	0.415279	0.432073	ok
+human_A119b	human	denovo	minus_dev	sens_in_place	pseudogene	-	8737	2815	0.322193	0.312347	0.332268	ok
+human_A119b	human	denovo	minus_dev	sens_in_place	other	-	300	115	0.383333	0.33	0.436667	ok
+human_A119b	human	denovo	minus_dev	sens_moved	all	-	305	202	0.662295	0.606557	0.718033	ok
+human_A119b	human	denovo	minus_dev	sens_moved	protein_coding	-	1	0	0	0	0	ok
+human_A119b	human	denovo	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_A119b	human	denovo	minus_dev	sens_moved	pseudogene	-	4	3	0.75	0.25	1	ok
+human_A119b	human	denovo	minus_dev	sens_moved	other	-	300	199	0.663333	0.61	0.716667	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	all	0.95	595	201	0.337815	0.271827	0.405943	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	protein_coding	0.95	50	12	0.24	0.0714286	0.465546	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	lncRNA	0.95	366	117	0.319672	0.232666	0.417257	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	pseudogene	0.95	169	66	0.390533	0.304328	0.472054	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	other	0.95	10	6	0.6	0.139286	0.9	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	all	0.98	396	148	0.373737	0.284141	0.46506	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	protein_coding	0.98	47	11	0.234043	0.0727273	0.46875	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	lncRNA	0.98	240	92	0.383333	0.252324	0.527042	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	pseudogene	0.98	99	39	0.393939	0.294102	0.5	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	other	0.98	10	6	0.6	0.139286	0.9	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	all	0.99	290	114	0.393103	0.278519	0.519852	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	protein_coding	0.99	38	8	0.210526	0.0727273	0.5	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	lncRNA	0.99	173	70	0.404624	0.239808	0.583333	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	pseudogene	0.99	70	30	0.428571	0.304348	0.550725	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	other	0.99	9	6	0.666667	0.166667	0.933333	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	all	1.00	60	29	0.483333	0.298696	0.648148	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	protein_coding	1.00	10	2	0.2	0	1	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	lncRNA	1.00	22	11	0.5	0.222222	0.72	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	pseudogene	1.00	20	10	0.5	0.293908	0.7	ok
+human_A119b	human	denovo	minus_dev	sens_extra_copy	other	1.00	8	6	0.75	0.2	1	ok
+human_A119b	human	denovo	minus_dev	located	all	-	91841	22256	0.242332	0.239599	0.245228	ok
+human_A119b	human	families	genome	sens_in_place	all	-	42757	2194	0.0513132	0.0493013	0.0534187	ok
+human_A119b	human	families	genome	sens_in_place	protein_coding	-	19158	786	0.0410272	0.0381551	0.0438994	ok
+human_A119b	human	families	genome	sens_in_place	lncRNA	-	14255	504	0.035356	0.03255	0.0385128	ok
+human_A119b	human	families	genome	sens_in_place	pseudogene	-	9040	871	0.0963496	0.0901521	0.102323	ok
+human_A119b	human	families	genome	sens_in_place	other	-	304	33	0.108553	0.0756579	0.144737	ok
+human_A119b	human	families	genome	sens_moved	all	-	305	202	0.662295	0.606557	0.718033	ok
+human_A119b	human	families	genome	sens_moved	protein_coding	-	1	0	0	0	0	ok
+human_A119b	human	families	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_A119b	human	families	genome	sens_moved	pseudogene	-	4	3	0.75	0.25	1	ok
+human_A119b	human	families	genome	sens_moved	other	-	300	199	0.663333	0.61	0.716667	ok
+human_A119b	human	families	genome	sens_extra_copy	all	0.95	641	171	0.266771	0.215536	0.319637	ok
+human_A119b	human	families	genome	sens_extra_copy	protein_coding	0.95	50	8	0.16	0.0195984	0.34	ok
+human_A119b	human	families	genome	sens_extra_copy	lncRNA	0.95	401	95	0.236908	0.174707	0.301126	ok
+human_A119b	human	families	genome	sens_extra_copy	pseudogene	0.95	179	62	0.346369	0.265935	0.420514	ok
+human_A119b	human	families	genome	sens_extra_copy	other	0.95	11	6	0.545455	0.125	0.857143	ok
+human_A119b	human	families	genome	sens_extra_copy	all	0.98	426	121	0.284038	0.218543	0.355008	ok
+human_A119b	human	families	genome	sens_extra_copy	protein_coding	0.98	47	7	0.148936	0.0199902	0.326701	ok
+human_A119b	human	families	genome	sens_extra_copy	lncRNA	0.98	263	69	0.262357	0.175755	0.352948	ok
+human_A119b	human	families	genome	sens_extra_copy	pseudogene	0.98	105	39	0.371429	0.27027	0.467918	ok
+human_A119b	human	families	genome	sens_extra_copy	other	0.98	11	6	0.545455	0.125	0.857143	ok
+human_A119b	human	families	genome	sens_extra_copy	all	0.99	310	90	0.290323	0.210371	0.378681	ok
+human_A119b	human	families	genome	sens_extra_copy	protein_coding	0.99	38	5	0.131579	0.0222222	0.35	ok
+human_A119b	human	families	genome	sens_extra_copy	lncRNA	0.99	186	48	0.258065	0.154407	0.374214	ok
+human_A119b	human	families	genome	sens_extra_copy	pseudogene	0.99	76	31	0.407895	0.285714	0.533333	ok
+human_A119b	human	families	genome	sens_extra_copy	other	0.99	10	6	0.6	0.139286	0.9	ok
+human_A119b	human	families	genome	sens_extra_copy	all	1.00	66	24	0.363636	0.225352	0.517898	ok
+human_A119b	human	families	genome	sens_extra_copy	protein_coding	1.00	10	2	0.2	0	1	ok
+human_A119b	human	families	genome	sens_extra_copy	lncRNA	1.00	26	6	0.230769	0.0740741	0.416667	ok
+human_A119b	human	families	genome	sens_extra_copy	pseudogene	1.00	21	10	0.47619	0.25	0.7	ok
+human_A119b	human	families	genome	sens_extra_copy	other	1.00	9	6	0.666667	0.166667	0.933333	ok
+human_A119b	human	families	genome	located	all	-	9907	2625	0.264964	0.256485	0.273645	ok
+human_A119b	human	families	genome	pair_cofamily	all	0.95	148	131	0.885135	0.770368	0.965278	ok
+human_A119b	human	families	genome	pair_cofamily	all	0.98	129	115	0.891473	0.773959	0.978272	ok
+human_A119b	human	families	genome	pair_cofamily	all	0.99	112	101	0.901786	0.767219	0.991306	ok
+human_A119b	human	families	genome	pair_cofamily	all	1.00	46	45	0.978261	0.916667	1	ok
+human_A119b	human	families	minus_dev	sens_in_place	all	-	41118	2076	0.0504888	0.048494	0.0526047	ok
+human_A119b	human	families	minus_dev	sens_in_place	protein_coding	-	18324	742	0.0404933	0.0376555	0.0433857	ok
+human_A119b	human	families	minus_dev	sens_in_place	lncRNA	-	13757	466	0.0338737	0.0310387	0.0369267	ok
+human_A119b	human	families	minus_dev	sens_in_place	pseudogene	-	8737	835	0.0955706	0.0897333	0.101754	ok
+human_A119b	human	families	minus_dev	sens_in_place	other	-	300	33	0.11	0.0766667	0.146667	ok
+human_A119b	human	families	minus_dev	sens_moved	all	-	305	202	0.662295	0.606557	0.718033	ok
+human_A119b	human	families	minus_dev	sens_moved	protein_coding	-	1	0	0	0	0	ok
+human_A119b	human	families	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_A119b	human	families	minus_dev	sens_moved	pseudogene	-	4	3	0.75	0.25	1	ok
+human_A119b	human	families	minus_dev	sens_moved	other	-	300	199	0.663333	0.61	0.716667	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	all	0.95	595	144	0.242017	0.192749	0.293848	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	protein_coding	0.95	50	8	0.16	0.0195984	0.34	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	lncRNA	0.95	366	73	0.199454	0.144575	0.262052	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	pseudogene	0.95	169	57	0.337278	0.251533	0.419895	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	other	0.95	10	6	0.6	0.139286	0.9	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	all	0.98	396	103	0.260101	0.195602	0.327918	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	protein_coding	0.98	47	7	0.148936	0.0199902	0.326701	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	lncRNA	0.98	240	56	0.233333	0.1513	0.323077	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	pseudogene	0.98	99	34	0.343434	0.245093	0.445652	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	other	0.98	10	6	0.6	0.139286	0.9	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	all	0.99	290	76	0.262069	0.182052	0.34553	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	protein_coding	0.99	38	5	0.131579	0.0222222	0.35	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	lncRNA	0.99	173	39	0.225434	0.133316	0.338235	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	pseudogene	0.99	70	26	0.371429	0.249914	0.492543	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	other	0.99	9	6	0.666667	0.166667	0.933333	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	all	1.00	60	20	0.333333	0.184189	0.492724	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	protein_coding	1.00	10	2	0.2	0	1	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	lncRNA	1.00	22	3	0.136364	0	0.3	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	pseudogene	1.00	20	9	0.45	0.222222	0.666667	ok
+human_A119b	human	families	minus_dev	sens_extra_copy	other	1.00	8	6	0.75	0.2	1	ok
+human_A119b	human	families	minus_dev	located	all	-	9496	2524	0.265796	0.256213	0.274853	ok
+human_A119b	human	families	minus_dev	pair_cofamily	all	0.95	128	113	0.882812	0.760322	0.973684	ok
+human_A119b	human	families	minus_dev	pair_cofamily	all	0.98	113	101	0.893805	0.75448	0.985614	ok
+human_A119b	human	families	minus_dev	pair_cofamily	all	0.99	100	89	0.89	0.742177	0.990291	ok
+human_A119b	human	families	minus_dev	pair_cofamily	all	1.00	43	42	0.976744	0.911698	1	ok
+human_A119b	human	catalog	-	-	-	-						catalog run: run `python3 figures/make.py runs --sample human_A119b --stage catalog`
+human_testis	human	denovo	genome	sens_in_place	all	-	19347	5709	0.295085	0.288727	0.301857	ok
+human_testis	human	denovo	genome	sens_in_place	protein_coding	-	13121	4202	0.32025	0.312019	0.327948	ok
+human_testis	human	denovo	genome	sens_in_place	lncRNA	-	4928	1186	0.240666	0.228693	0.252638	ok
+human_testis	human	denovo	genome	sens_in_place	pseudogene	-	1174	289	0.246167	0.220613	0.270869	ok
+human_testis	human	denovo	genome	sens_in_place	other	-	124	32	0.258065	0.177419	0.33871	ok
+human_testis	human	denovo	genome	sens_moved	all	-	2	0	0	0	0	ok
+human_testis	human	denovo	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+human_testis	human	denovo	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_testis	human	denovo	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+human_testis	human	denovo	genome	sens_moved	other	-	2	0	0	0	0	ok
+human_testis	human	denovo	genome	sens_extra_copy	all	0.95	105	26	0.247619	0.160377	0.349527	ok
+human_testis	human	denovo	genome	sens_extra_copy	protein_coding	0.95	5	2	0.4	0	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	lncRNA	0.95	73	14	0.191781	0.102564	0.302632	ok
+human_testis	human	denovo	genome	sens_extra_copy	pseudogene	0.95	26	9	0.346154	0.15619	0.571429	ok
+human_testis	human	denovo	genome	sens_extra_copy	other	0.95	1	1	1	1	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	all	0.98	78	19	0.24359	0.138865	0.367089	ok
+human_testis	human	denovo	genome	sens_extra_copy	protein_coding	0.98	5	2	0.4	0	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	lncRNA	0.98	57	12	0.210526	0.1	0.34	ok
+human_testis	human	denovo	genome	sens_extra_copy	pseudogene	0.98	15	4	0.266667	0	0.533462	ok
+human_testis	human	denovo	genome	sens_extra_copy	other	0.98	1	1	1	1	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	all	0.99	58	16	0.275862	0.153846	0.407407	ok
+human_testis	human	denovo	genome	sens_extra_copy	protein_coding	0.99	3	1	0.333333	0	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	lncRNA	0.99	43	11	0.255814	0.125	0.418605	ok
+human_testis	human	denovo	genome	sens_extra_copy	pseudogene	0.99	11	3	0.272727	0	0.6	ok
+human_testis	human	denovo	genome	sens_extra_copy	other	0.99	1	1	1	1	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	all	1.00	8	3	0.375	0.125	0.75	ok
+human_testis	human	denovo	genome	sens_extra_copy	protein_coding	1.00	1	1	1	1	1	ok
+human_testis	human	denovo	genome	sens_extra_copy	lncRNA	1.00	5	1	0.2	0	0.6	ok
+human_testis	human	denovo	genome	sens_extra_copy	pseudogene	1.00	1	0	0	0	0	ok
+human_testis	human	denovo	genome	sens_extra_copy	other	1.00	1	1	1	1	1	ok
+human_testis	human	denovo	genome	located	all	-	13048	10797	0.827483	0.820969	0.83377	ok
+human_testis	human	denovo	minus_dev	sens_in_place	all	-	18508	5436	0.293711	0.287227	0.300357	ok
+human_testis	human	denovo	minus_dev	sens_in_place	protein_coding	-	12524	3995	0.318988	0.311081	0.327212	ok
+human_testis	human	denovo	minus_dev	sens_in_place	lncRNA	-	4748	1133	0.238627	0.226411	0.250632	ok
+human_testis	human	denovo	minus_dev	sens_in_place	pseudogene	-	1114	277	0.248654	0.223519	0.275583	ok
+human_testis	human	denovo	minus_dev	sens_in_place	other	-	122	31	0.254098	0.180328	0.336066	ok
+human_testis	human	denovo	minus_dev	sens_moved	all	-	2	0	0	0	0	ok
+human_testis	human	denovo	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	sens_moved	other	-	2	0	0	0	0	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	all	0.95	96	24	0.25	0.157895	0.361726	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	protein_coding	0.95	5	2	0.4	0	1	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	lncRNA	0.95	67	14	0.208955	0.107692	0.324035	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	pseudogene	0.95	24	8	0.333333	0.130435	0.583333	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	other	0.95	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	all	0.98	69	17	0.246377	0.128571	0.377093	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	protein_coding	0.98	5	2	0.4	0	1	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	lncRNA	0.98	51	12	0.235294	0.12	0.375069	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	pseudogene	0.98	13	3	0.230769	0	0.538462	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	all	0.99	53	14	0.264151	0.142857	0.411765	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	protein_coding	0.99	3	1	0.333333	0	1	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	lncRNA	0.99	41	11	0.268293	0.121951	0.439024	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	pseudogene	0.99	9	2	0.222222	0	0.571429	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	all	1.00	6	2	0.333333	0	0.666667	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	protein_coding	1.00	1	1	1	1	1	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	lncRNA	1.00	4	1	0.25	0	0.75	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	pseudogene	1.00	1	0	0	0	0	ok
+human_testis	human	denovo	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+human_testis	human	denovo	minus_dev	located	all	-	12461	10300	0.826579	0.819838	0.83348	ok
+human_testis	human	families	genome	sens_in_place	all	-	19347	512	0.0264641	0.0242919	0.0285316	ok
+human_testis	human	families	genome	sens_in_place	protein_coding	-	13121	307	0.0233976	0.0208826	0.0259889	ok
+human_testis	human	families	genome	sens_in_place	lncRNA	-	4928	72	0.0146104	0.0115666	0.0180601	ok
+human_testis	human	families	genome	sens_in_place	pseudogene	-	1174	125	0.106474	0.0894378	0.124382	ok
+human_testis	human	families	genome	sens_in_place	other	-	124	8	0.0645161	0.0241935	0.112903	ok
+human_testis	human	families	genome	sens_moved	all	-	2	0	0	0	0	ok
+human_testis	human	families	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+human_testis	human	families	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_testis	human	families	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+human_testis	human	families	genome	sens_moved	other	-	2	0	0	0	0	ok
+human_testis	human	families	genome	sens_extra_copy	all	0.95	105	17	0.161905	0.0884891	0.247619	ok
+human_testis	human	families	genome	sens_extra_copy	protein_coding	0.95	5	1	0.2	0	0.5	ok
+human_testis	human	families	genome	sens_extra_copy	lncRNA	0.95	73	12	0.164384	0.0779221	0.271461	ok
+human_testis	human	families	genome	sens_extra_copy	pseudogene	0.95	26	4	0.153846	0	0.333333	ok
+human_testis	human	families	genome	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+human_testis	human	families	genome	sens_extra_copy	all	0.98	78	15	0.192308	0.0987611	0.306667	ok
+human_testis	human	families	genome	sens_extra_copy	protein_coding	0.98	5	1	0.2	0	0.5	ok
+human_testis	human	families	genome	sens_extra_copy	lncRNA	0.98	57	10	0.175439	0.0740741	0.300047	ok
+human_testis	human	families	genome	sens_extra_copy	pseudogene	0.98	15	4	0.266667	0	0.533462	ok
+human_testis	human	families	genome	sens_extra_copy	other	0.98	1	0	0	0	0	ok
+human_testis	human	families	genome	sens_extra_copy	all	0.99	58	14	0.241379	0.129615	0.37037	ok
+human_testis	human	families	genome	sens_extra_copy	protein_coding	0.99	3	1	0.333333	0	1	ok
+human_testis	human	families	genome	sens_extra_copy	lncRNA	0.99	43	10	0.232558	0.105263	0.390244	ok
+human_testis	human	families	genome	sens_extra_copy	pseudogene	0.99	11	3	0.272727	0	0.6	ok
+human_testis	human	families	genome	sens_extra_copy	other	0.99	1	0	0	0	0	ok
+human_testis	human	families	genome	sens_extra_copy	all	1.00	8	2	0.25	0	0.625	ok
+human_testis	human	families	genome	sens_extra_copy	protein_coding	1.00	1	1	1	1	1	ok
+human_testis	human	families	genome	sens_extra_copy	lncRNA	1.00	5	1	0.2	0	0.6	ok
+human_testis	human	families	genome	sens_extra_copy	pseudogene	1.00	1	0	0	0	0	ok
+human_testis	human	families	genome	sens_extra_copy	other	1.00	1	0	0	0	0	ok
+human_testis	human	families	genome	located	all	-	1115	841	0.75426	0.730022	0.778475	ok
+human_testis	human	families	genome	pair_cofamily	all	0.95	34	34	1	1	1	ok
+human_testis	human	families	genome	pair_cofamily	all	0.98	32	32	1	1	1	ok
+human_testis	human	families	genome	pair_cofamily	all	0.99	31	31	1	1	1	ok
+human_testis	human	families	genome	pair_cofamily	all	1.00	3	3	1	1	1	ok
+human_testis	human	families	minus_dev	sens_in_place	all	-	18508	477	0.0257726	0.0234493	0.028096	ok
+human_testis	human	families	minus_dev	sens_in_place	protein_coding	-	12524	283	0.0225966	0.0200415	0.0252316	ok
+human_testis	human	families	minus_dev	sens_in_place	lncRNA	-	4748	66	0.0139006	0.0107361	0.0172704	ok
+human_testis	human	families	minus_dev	sens_in_place	pseudogene	-	1114	120	0.10772	0.0897666	0.125673	ok
+human_testis	human	families	minus_dev	sens_in_place	other	-	122	8	0.0655738	0.0245902	0.114754	ok
+human_testis	human	families	minus_dev	sens_moved	all	-	2	0	0	0	0	ok
+human_testis	human	families	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	sens_moved	other	-	2	0	0	0	0	ok
+human_testis	human	families	minus_dev	sens_extra_copy	all	0.95	96	16	0.166667	0.0869565	0.260882	ok
+human_testis	human	families	minus_dev	sens_extra_copy	protein_coding	0.95	5	1	0.2	0	0.5	ok
+human_testis	human	families	minus_dev	sens_extra_copy	lncRNA	0.95	67	12	0.179104	0.0833333	0.291667	ok
+human_testis	human	families	minus_dev	sens_extra_copy	pseudogene	0.95	24	3	0.125	0	0.307692	ok
+human_testis	human	families	minus_dev	sens_extra_copy	other	0.95	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	sens_extra_copy	all	0.98	69	14	0.202899	0.0958904	0.319444	ok
+human_testis	human	families	minus_dev	sens_extra_copy	protein_coding	0.98	5	1	0.2	0	0.5	ok
+human_testis	human	families	minus_dev	sens_extra_copy	lncRNA	0.98	51	10	0.196078	0.0877002	0.333333	ok
+human_testis	human	families	minus_dev	sens_extra_copy	pseudogene	0.98	13	3	0.230769	0	0.538462	ok
+human_testis	human	families	minus_dev	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	sens_extra_copy	all	0.99	53	13	0.245283	0.127273	0.384694	ok
+human_testis	human	families	minus_dev	sens_extra_copy	protein_coding	0.99	3	1	0.333333	0	1	ok
+human_testis	human	families	minus_dev	sens_extra_copy	lncRNA	0.99	41	10	0.243902	0.106383	0.410326	ok
+human_testis	human	families	minus_dev	sens_extra_copy	pseudogene	0.99	9	2	0.222222	0	0.571429	ok
+human_testis	human	families	minus_dev	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	sens_extra_copy	all	1.00	6	2	0.333333	0	0.666667	ok
+human_testis	human	families	minus_dev	sens_extra_copy	protein_coding	1.00	1	1	1	1	1	ok
+human_testis	human	families	minus_dev	sens_extra_copy	lncRNA	1.00	4	1	0.25	0	0.75	ok
+human_testis	human	families	minus_dev	sens_extra_copy	pseudogene	1.00	1	0	0	0	0	ok
+human_testis	human	families	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+human_testis	human	families	minus_dev	located	all	-	1041	776	0.745437	0.720461	0.772334	ok
+human_testis	human	families	minus_dev	pair_cofamily	all	0.95	33	33	1	1	1	ok
+human_testis	human	families	minus_dev	pair_cofamily	all	0.98	31	31	1	1	1	ok
+human_testis	human	families	minus_dev	pair_cofamily	all	0.99	30	30	1	1	1	ok
+human_testis	human	families	minus_dev	pair_cofamily	all	1.00	3	3	1	1	1	ok
+human_testis	human	catalog	-	-	-	-						catalog stale: run `python3 figures/make.py runs --sample human_testis --stage catalog`
+gorilla_OR6737	gorilla	denovo	genome	sens_in_place	all	-	23298	14044	0.602799	0.596618	0.609023	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_in_place	protein_coding	-	18217	12911	0.708734	0.702037	0.715321	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_in_place	lncRNA	-	3516	767	0.218146	0.204209	0.232089	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_in_place	pseudogene	-	1430	312	0.218182	0.197203	0.23986	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_in_place	other	-	135	54	0.4	0.318519	0.481481	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_moved	all	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_moved	other	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	all	0.95	179	37	0.206704	0.147537	0.274869	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	protein_coding	0.95	37	13	0.351351	0.190444	0.529412	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	lncRNA	0.95	112	21	0.1875	0.117091	0.272749	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	pseudogene	0.95	29	3	0.103448	0	0.24	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	all	0.98	111	23	0.207207	0.135135	0.285714	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	protein_coding	0.98	18	6	0.333333	0.117647	0.550139	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	lncRNA	0.98	82	17	0.207317	0.121951	0.30684	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	pseudogene	0.98	10	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	other	0.98	1	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	all	0.99	76	16	0.210526	0.118421	0.311753	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	protein_coding	0.99	14	4	0.285714	0.0714286	0.571429	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	lncRNA	0.99	55	12	0.218182	0.116667	0.340136	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	pseudogene	0.99	6	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	other	0.99	1	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	all	1.00	13	4	0.307692	0.0714286	0.583333	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	protein_coding	1.00	2	1	0.5	0	1	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	lncRNA	1.00	9	3	0.333333	0	0.75	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	pseudogene	1.00	2	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	genome	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	genome	located	all	-	19775	14827	0.749785	0.743966	0.755755	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_in_place	all	-	21906	13176	0.601479	0.595134	0.607917	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_in_place	protein_coding	-	17014	12088	0.710474	0.703421	0.717115	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_in_place	lncRNA	-	3397	745	0.219311	0.205468	0.23403	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_in_place	pseudogene	-	1365	291	0.213187	0.192674	0.234451	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_in_place	other	-	130	52	0.4	0.323077	0.484615	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_moved	all	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_moved	other	-	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	all	0.95	178	37	0.207865	0.148342	0.281441	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	0.95	37	13	0.351351	0.190444	0.529412	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	0.95	111	21	0.189189	0.116071	0.267257	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	0.95	29	3	0.103448	0	0.24	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	all	0.98	110	23	0.209091	0.133929	0.292453	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	0.98	18	6	0.333333	0.117647	0.550139	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	0.98	81	17	0.209877	0.126582	0.317073	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	0.98	10	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	other	0.98	1	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	all	0.99	75	16	0.213333	0.124961	0.314286	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	0.99	14	4	0.285714	0.0714286	0.571429	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	0.99	54	12	0.222222	0.115369	0.346939	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	0.99	6	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	other	0.99	1	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	all	1.00	13	4	0.307692	0.0714286	0.583333	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	1.00	2	1	0.5	0	1	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	1.00	9	3	0.333333	0	0.75	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	1.00	2	0	0	0	0	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+gorilla_OR6737	gorilla	denovo	minus_dev	located	all	-	18617	13842	0.743514	0.737228	0.749745	ok
+gorilla_OR6737	gorilla	families	-	-	-	-						families run: run `python3 figures/make.py runs --sample gorilla_OR6737 --stage families`
+gorilla_OR6737	gorilla	catalog	-	-	-	-						catalog run: run `python3 figures/make.py runs --sample gorilla_OR6737 --stage catalog`
+gorilla_KB3781	gorilla	denovo	genome	sens_in_place	all	-	18414	12394	0.673075	0.666395	0.679593	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_in_place	protein_coding	-	15113	11456	0.758023	0.751537	0.764906	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_in_place	lncRNA	-	2317	695	0.299957	0.28183	0.318084	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_in_place	pseudogene	-	889	224	0.251969	0.223847	0.28234	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_in_place	other	-	95	19	0.2	0.126316	0.284211	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_moved	all	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_moved	other	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	all	0.95	137	23	0.167883	0.0975556	0.251855	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	protein_coding	0.95	23	4	0.173913	0	0.375	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	lncRNA	0.95	94	13	0.138298	0.0582384	0.236583	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	pseudogene	0.95	19	6	0.315789	0.0769231	0.47619	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	all	0.98	83	10	0.120482	0.0422535	0.209317	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	protein_coding	0.98	9	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	lncRNA	0.98	70	10	0.142857	0.056338	0.256757	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	pseudogene	0.98	4	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	all	0.99	58	8	0.137931	0.0384615	0.254948	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	protein_coding	0.99	6	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	lncRNA	0.99	50	8	0.16	0.0465116	0.296336	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	pseudogene	0.99	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	all	1.00	7	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	protein_coding	1.00	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	lncRNA	1.00	5	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	pseudogene	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	genome	located	all	-	17672	13142	0.743662	0.736923	0.749943	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_in_place	all	-	17246	11585	0.67175	0.66456	0.678999	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_in_place	protein_coding	-	14076	10692	0.759591	0.752485	0.76634	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_in_place	lncRNA	-	2233	670	0.300045	0.280788	0.319301	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_in_place	pseudogene	-	846	206	0.243499	0.212766	0.27305	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_in_place	other	-	91	17	0.186813	0.10989	0.274725	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_moved	all	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_moved	other	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	all	0.95	134	23	0.171642	0.097557	0.255819	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	0.95	23	4	0.173913	0	0.375	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	0.95	91	13	0.142857	0.0617158	0.242453	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	0.95	19	6	0.315789	0.0769231	0.47619	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	all	0.98	80	10	0.125	0.0449438	0.217391	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	0.98	9	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	0.98	67	10	0.149254	0.0555556	0.258662	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	0.98	4	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	all	0.99	56	8	0.142857	0.04	0.262317	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	0.99	6	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	0.99	48	8	0.166667	0.0465027	0.309563	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	0.99	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	all	1.00	7	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	protein_coding	1.00	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	lncRNA	1.00	5	0	0	0	0	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	pseudogene	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	denovo	minus_dev	located	all	-	16596	12245	0.737828	0.730718	0.744577	ok
+gorilla_KB3781	gorilla	families	genome	sens_in_place	all	-	18414	441	0.0239492	0.0217769	0.0260128	ok
+gorilla_KB3781	gorilla	families	genome	sens_in_place	protein_coding	-	15113	356	0.0235559	0.0211738	0.0260703	ok
+gorilla_KB3781	gorilla	families	genome	sens_in_place	lncRNA	-	2317	27	0.011653	0.00733707	0.0159689	ok
+gorilla_KB3781	gorilla	families	genome	sens_in_place	pseudogene	-	889	56	0.0629921	0.0472441	0.079865	ok
+gorilla_KB3781	gorilla	families	genome	sens_in_place	other	-	95	2	0.0210526	0	0.0526316	ok
+gorilla_KB3781	gorilla	families	genome	sens_moved	all	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_moved	other	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	all	0.95	137	13	0.0948905	0.0409836	0.153858	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	protein_coding	0.95	23	2	0.0869565	0	0.222222	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	lncRNA	0.95	94	8	0.0851064	0.0227209	0.163485	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	pseudogene	0.95	19	3	0.157895	0	0.259259	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	all	0.98	83	7	0.0843373	0.015873	0.166667	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	protein_coding	0.98	9	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	lncRNA	0.98	70	7	0.1	0.0281592	0.2	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	pseudogene	0.98	4	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	all	0.99	58	6	0.103448	0.0172414	0.214313	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	protein_coding	0.99	6	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	lncRNA	0.99	50	6	0.12	0.0192308	0.245283	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	pseudogene	0.99	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	all	1.00	7	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	protein_coding	1.00	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	lncRNA	1.00	5	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	pseudogene	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	genome	located	all	-	918	608	0.662309	0.630719	0.69281	ok
+gorilla_KB3781	gorilla	families	genome	pair_cofamily	all	0.95	12	11	0.916667	0.625	1	ok
+gorilla_KB3781	gorilla	families	genome	pair_cofamily	all	0.98	11	10	0.909091	0.625	1	ok
+gorilla_KB3781	gorilla	families	genome	pair_cofamily	all	0.99	10	10	1	1	1	ok
+gorilla_KB3781	gorilla	families	genome	pair_cofamily	all	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_in_place	all	-	17246	391	0.0226719	0.0204105	0.0248753	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_in_place	protein_coding	-	14076	314	0.0223075	0.019892	0.0247958	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_in_place	lncRNA	-	2233	26	0.0116435	0.00761308	0.0161218	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_in_place	pseudogene	-	846	49	0.0579196	0.0425532	0.0732861	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_in_place	other	-	91	2	0.021978	0	0.0549451	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_moved	all	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_moved	other	-	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	all	0.95	134	13	0.0970149	0.0413722	0.160305	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	protein_coding	0.95	23	2	0.0869565	0	0.222222	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	lncRNA	0.95	91	8	0.0879121	0.0238025	0.170455	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	pseudogene	0.95	19	3	0.157895	0	0.259259	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	all	0.98	80	7	0.0875	0.022982	0.171053	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	protein_coding	0.98	9	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	lncRNA	0.98	67	7	0.104478	0.0181818	0.205894	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	pseudogene	0.98	4	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	all	0.99	56	6	0.107143	0.0166667	0.218227	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	protein_coding	0.99	6	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	lncRNA	0.99	48	6	0.125	0.02	0.256466	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	pseudogene	0.99	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	all	1.00	7	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	protein_coding	1.00	2	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	lncRNA	1.00	5	0	0	0	0	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	pseudogene	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	families	minus_dev	located	all	-	851	552	0.648649	0.618096	0.679201	ok
+gorilla_KB3781	gorilla	families	minus_dev	pair_cofamily	all	0.95	12	11	0.916667	0.625	1	ok
+gorilla_KB3781	gorilla	families	minus_dev	pair_cofamily	all	0.98	11	10	0.909091	0.625	1	ok
+gorilla_KB3781	gorilla	families	minus_dev	pair_cofamily	all	0.99	10	10	1	1	1	ok
+gorilla_KB3781	gorilla	families	minus_dev	pair_cofamily	all	1.00	0	0		nan	nan	ok
+gorilla_KB3781	gorilla	catalog	-	-	-	-						catalog run: run `python3 figures/make.py runs --sample gorilla_KB3781 --stage catalog`
+chimp_PTR	chimpanzee	denovo	genome	sens_in_place	all	-	22822	12468	0.546315	0.540093	0.552494	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_in_place	protein_coding	-	16954	10717	0.632122	0.624867	0.639613	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_in_place	lncRNA	-	4460	1404	0.314798	0.30134	0.328475	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_in_place	pseudogene	-	1309	293	0.223835	0.200917	0.245989	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_in_place	other	-	99	54	0.545455	0.444444	0.646465	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_moved	all	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_moved	other	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	all	0.95	212	41	0.193396	0.100775	0.313391	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	protein_coding	0.95	38	10	0.263158	0.111111	0.444444	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	lncRNA	0.95	117	15	0.128205	0.0545332	0.240535	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	pseudogene	0.95	56	16	0.285714	0.0285614	0.578313	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	all	0.98	136	33	0.242647	0.106908	0.397163	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	protein_coding	0.98	21	6	0.285714	0.105263	0.473684	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	lncRNA	0.98	71	12	0.169014	0.0609664	0.305119	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	pseudogene	0.98	44	15	0.340909	0.0256579	0.736842	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	all	0.99	56	16	0.285714	0.140351	0.440719	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	protein_coding	0.99	10	3	0.3	0	0.6	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	lncRNA	0.99	37	11	0.297297	0.114286	0.475	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	pseudogene	0.99	9	2	0.222222	0	0.857143	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	all	1.00	5	4	0.8	0.4	1	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	protein_coding	1.00	1	1	1	1	1	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	lncRNA	1.00	3	2	0.666667	0	1	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	pseudogene	1.00	1	1	1	1	1	ok
+chimp_PTR	chimpanzee	denovo	genome	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	genome	located	all	-	18945	14073	0.742835	0.736764	0.749327	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_in_place	all	-	22822	12468	0.546315	0.540093	0.552494	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_in_place	protein_coding	-	16954	10717	0.632122	0.624867	0.639613	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_in_place	lncRNA	-	4460	1404	0.314798	0.30134	0.328475	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_in_place	pseudogene	-	1309	293	0.223835	0.200917	0.245989	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_in_place	other	-	99	54	0.545455	0.444444	0.646465	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_moved	all	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_moved	other	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	all	0.95	212	41	0.193396	0.100775	0.313391	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	protein_coding	0.95	38	10	0.263158	0.111111	0.444444	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	lncRNA	0.95	117	15	0.128205	0.0545332	0.240535	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	pseudogene	0.95	56	16	0.285714	0.0285614	0.578313	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	all	0.98	136	33	0.242647	0.106908	0.397163	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	protein_coding	0.98	21	6	0.285714	0.105263	0.473684	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	lncRNA	0.98	71	12	0.169014	0.0609664	0.305119	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	pseudogene	0.98	44	15	0.340909	0.0256579	0.736842	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	all	0.99	56	16	0.285714	0.140351	0.440719	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	protein_coding	0.99	10	3	0.3	0	0.6	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	lncRNA	0.99	37	11	0.297297	0.114286	0.475	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	pseudogene	0.99	9	2	0.222222	0	0.857143	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	all	1.00	5	4	0.8	0.4	1	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	protein_coding	1.00	1	1	1	1	1	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	lncRNA	1.00	3	2	0.666667	0	1	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	pseudogene	1.00	1	1	1	1	1	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	denovo	minus_dev	located	all	-	18945	14073	0.742835	0.736764	0.749327	ok
+chimp_PTR	chimpanzee	families	genome	sens_in_place	all	-	22822	752	0.0329507	0.0307587	0.035273	ok
+chimp_PTR	chimpanzee	families	genome	sens_in_place	protein_coding	-	16954	533	0.031438	0.0287838	0.0339758	ok
+chimp_PTR	chimpanzee	families	genome	sens_in_place	lncRNA	-	4460	85	0.0190583	0.0150224	0.0233184	ok
+chimp_PTR	chimpanzee	families	genome	sens_in_place	pseudogene	-	1309	97	0.0741024	0.0595875	0.0893812	ok
+chimp_PTR	chimpanzee	families	genome	sens_in_place	other	-	99	37	0.373737	0.282828	0.464646	ok
+chimp_PTR	chimpanzee	families	genome	sens_moved	all	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_moved	other	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	all	0.95	212	26	0.122642	0.0657895	0.195892	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	protein_coding	0.95	38	8	0.210526	0.0606061	0.380987	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	lncRNA	0.95	117	13	0.111111	0.0410931	0.218419	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	pseudogene	0.95	56	5	0.0892857	0	0.26087	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	all	0.98	136	20	0.147059	0.0714188	0.247791	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	protein_coding	0.98	21	5	0.238095	0.0869565	0.421053	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	lncRNA	0.98	71	11	0.15493	0.0508421	0.285714	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	pseudogene	0.98	44	4	0.0909091	0	0.333333	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	all	0.99	56	14	0.25	0.107679	0.403509	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	protein_coding	0.99	10	2	0.2	0	0.5	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	lncRNA	0.99	37	10	0.27027	0.0909091	0.447434	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	pseudogene	0.99	9	2	0.222222	0	0.857143	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	all	1.00	5	3	0.6	0.2	1	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	protein_coding	1.00	1	0	0	0	0	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	lncRNA	1.00	3	2	0.666667	0	1	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	pseudogene	1.00	1	1	1	1	1	ok
+chimp_PTR	chimpanzee	families	genome	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	genome	located	all	-	1343	919	0.684289	0.659717	0.709605	ok
+chimp_PTR	chimpanzee	families	genome	pair_cofamily	all	0.95	18	18	1	1	1	ok
+chimp_PTR	chimpanzee	families	genome	pair_cofamily	all	0.98	16	16	1	1	1	ok
+chimp_PTR	chimpanzee	families	genome	pair_cofamily	all	0.99	14	14	1	1	1	ok
+chimp_PTR	chimpanzee	families	genome	pair_cofamily	all	1.00	3	3	1	1	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_in_place	all	-	22822	752	0.0329507	0.0307587	0.035273	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_in_place	protein_coding	-	16954	533	0.031438	0.0287838	0.0339758	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_in_place	lncRNA	-	4460	85	0.0190583	0.0150224	0.0233184	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_in_place	pseudogene	-	1309	97	0.0741024	0.0595875	0.0893812	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_in_place	other	-	99	37	0.373737	0.282828	0.464646	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_moved	all	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_moved	other	-	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	all	0.95	212	26	0.122642	0.0657895	0.195892	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	protein_coding	0.95	38	8	0.210526	0.0606061	0.380987	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	lncRNA	0.95	117	13	0.111111	0.0410931	0.218419	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	pseudogene	0.95	56	5	0.0892857	0	0.26087	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	other	0.95	1	0	0	0	0	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	all	0.98	136	20	0.147059	0.0714188	0.247791	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	protein_coding	0.98	21	5	0.238095	0.0869565	0.421053	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	lncRNA	0.98	71	11	0.15493	0.0508421	0.285714	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	pseudogene	0.98	44	4	0.0909091	0	0.333333	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	other	0.98	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	all	0.99	56	14	0.25	0.107679	0.403509	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	protein_coding	0.99	10	2	0.2	0	0.5	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	lncRNA	0.99	37	10	0.27027	0.0909091	0.447434	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	pseudogene	0.99	9	2	0.222222	0	0.857143	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	other	0.99	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	all	1.00	5	3	0.6	0.2	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	protein_coding	1.00	1	0	0	0	0	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	lncRNA	1.00	3	2	0.666667	0	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	pseudogene	1.00	1	1	1	1	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	sens_extra_copy	other	1.00	0	0		nan	nan	ok
+chimp_PTR	chimpanzee	families	minus_dev	located	all	-	1343	919	0.684289	0.659717	0.709605	ok
+chimp_PTR	chimpanzee	families	minus_dev	pair_cofamily	all	0.95	18	18	1	1	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	pair_cofamily	all	0.98	16	16	1	1	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	pair_cofamily	all	0.99	14	14	1	1	1	ok
+chimp_PTR	chimpanzee	families	minus_dev	pair_cofamily	all	1.00	3	3	1	1	1	ok
+chimp_PTR	chimpanzee	catalog	-	-	-	-						catalog stale: run `python3 figures/make.py runs --sample chimp_PTR --stage catalog`
+orangutan_PPY	orangutan	denovo	genome	sens_in_place	all	-	24523	13744	0.560453	0.554255	0.566652	ok
+orangutan_PPY	orangutan	denovo	genome	sens_in_place	protein_coding	-	19017	12008	0.631435	0.624757	0.638534	ok
+orangutan_PPY	orangutan	denovo	genome	sens_in_place	lncRNA	-	3078	1164	0.378168	0.361598	0.395387	ok
+orangutan_PPY	orangutan	denovo	genome	sens_in_place	pseudogene	-	2254	537	0.238243	0.220941	0.255989	ok
+orangutan_PPY	orangutan	denovo	genome	sens_in_place	other	-	174	35	0.201149	0.143678	0.258621	ok
+orangutan_PPY	orangutan	denovo	genome	sens_moved	all	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	genome	sens_moved	protein_coding	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	genome	sens_moved	lncRNA	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	genome	sens_moved	pseudogene	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	genome	sens_moved	other	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	all	0.95	309	121	0.391586	0.30303	0.477819	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	protein_coding	0.95	85	44	0.517647	0.363636	0.632196	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	lncRNA	0.95	143	56	0.391608	0.267112	0.518519	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	pseudogene	0.95	78	20	0.25641	0.134143	0.428571	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	other	0.95	3	1	0.333333	0	1	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	all	0.98	186	79	0.424731	0.330089	0.521306	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	protein_coding	0.98	42	25	0.595238	0.431818	0.763197	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	lncRNA	0.98	96	39	0.40625	0.275485	0.543217	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	pseudogene	0.98	47	15	0.319149	0.15902	0.533415	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	other	0.98	1	0	0	0	0	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	all	0.99	98	43	0.438776	0.315789	0.564356	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	protein_coding	0.99	20	13	0.65	0.388889	0.85	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	lncRNA	0.99	50	24	0.48	0.30184	0.647059	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	pseudogene	0.99	27	6	0.222222	0.0714286	0.45	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	other	0.99	1	0	0	0	0	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	all	1.00	15	9	0.6	0.3125	0.923077	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	protein_coding	1.00	2	2	1	1	1	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	lncRNA	1.00	7	6	0.857143	0.5	1	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	pseudogene	1.00	5	1	0.2	0	1	ok
+orangutan_PPY	orangutan	denovo	genome	sens_extra_copy	other	1.00	1	0	0	0	0	ok
+orangutan_PPY	orangutan	denovo	genome	located	all	-	36522	17716	0.485077	0.479819	0.490116	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_in_place	all	-	24523	13744	0.560453	0.554255	0.566652	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_in_place	protein_coding	-	19017	12008	0.631435	0.624757	0.638534	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_in_place	lncRNA	-	3078	1164	0.378168	0.361598	0.395387	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_in_place	pseudogene	-	2254	537	0.238243	0.220941	0.255989	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_in_place	other	-	174	35	0.201149	0.143678	0.258621	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_moved	all	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_moved	protein_coding	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_moved	lncRNA	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_moved	pseudogene	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_moved	other	-	0	0		nan	nan	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	all	0.95	309	121	0.391586	0.30303	0.477819	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	protein_coding	0.95	85	44	0.517647	0.363636	0.632196	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	lncRNA	0.95	143	56	0.391608	0.267112	0.518519	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	pseudogene	0.95	78	20	0.25641	0.134143	0.428571	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	other	0.95	3	1	0.333333	0	1	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	all	0.98	186	79	0.424731	0.330089	0.521306	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	protein_coding	0.98	42	25	0.595238	0.431818	0.763197	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	lncRNA	0.98	96	39	0.40625	0.275485	0.543217	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	pseudogene	0.98	47	15	0.319149	0.15902	0.533415	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	other	0.98	1	0	0	0	0	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	all	0.99	98	43	0.438776	0.315789	0.564356	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	protein_coding	0.99	20	13	0.65	0.388889	0.85	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	lncRNA	0.99	50	24	0.48	0.30184	0.647059	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	pseudogene	0.99	27	6	0.222222	0.0714286	0.45	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	other	0.99	1	0	0	0	0	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	all	1.00	15	9	0.6	0.3125	0.923077	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	protein_coding	1.00	2	2	1	1	1	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	lncRNA	1.00	7	6	0.857143	0.5	1	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	pseudogene	1.00	5	1	0.2	0	1	ok
+orangutan_PPY	orangutan	denovo	minus_dev	sens_extra_copy	other	1.00	1	0	0	0	0	ok
+orangutan_PPY	orangutan	denovo	minus_dev	located	all	-	36522	17716	0.485077	0.479819	0.490116	ok
+orangutan_PPY	orangutan	families	-	-	-	-						families run: run `python3 figures/make.py runs --sample orangutan_PPY --stage families`
+orangutan_PPY	orangutan	catalog	-	-	-	-						catalog run: run `python3 figures/make.py runs --sample orangutan_PPY --stage catalog`

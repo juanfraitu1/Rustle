@@ -1,5 +1,7 @@
 # Figure 7 — Family recovery by Rustle's two modes, de novo and guided (a Rustle-internal comparison)
 
+> **Status (2026-10-11).** Genome-wide build PAUSED: the human guided all-vs-all has 180 of 183 shards (shard 180, the chrY ampliconic gene bodies, needs more than 2 h alone); the gorilla, chimp and orangutan guided runs have not started; the de novo families exist genome-wide for human A119b, human testis, chimp and gorilla KB3781. The current tables are still the development tables (2026-09-30). Resume: `make.py data fig7 --set fig7_budget_s=<s>` (`docs/PENDING_2026-10-11.md`).
+>
 > **Status (2026-09-25).** The genome-wide version is pre-registered (`docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`,
 > claims F7.1–F7.4 as amended by Amendment 1, written before any genome-wide family number) and not built yet: it
 > needs the families stage of every sample (with its copy table), the guided run of every species, and, for the

@@ -1,0 +1,19 @@
+# table: fig8_flags
+# generator: figures/fig_loci.py
+# commit: 097d06ad-dirty
+# date: 2026-10-11
+# note: Liftoff v1.6.3 (conda env liftoff; its minimap2 2.24), self-lift of each genome's RefSeq gene + pseudogene records: -copies -sc 0.95 -a 0.5 -s 0.5 -overlap 0.1 -p 4 -f pseudogene; default -mm2_options (-a --end-bonus 5 --eqx -N 50 -p 0.5)
+# note: run as one Liftoff call per contig's records (blocks of <= 2500 records) against the WHOLE genome; cross-call overlaps resolved by Liftoff's own rule (prereg §1 M1-M3)
+# note: V-L1 (mini-genome chr20-22, one Liftoff run vs per-contig calls and vs blocks of records; prereg amendment 3): B_contigs: 3740 of 3750 annotated placements identical, 439 of 448 extra copies identical (Jaccard 0.9799) -> FAIL: reported as an approximation of one run; C_blocks: 3730 of 3750 annotated placements identical, 438 of 449 extra copies identical (Jaccard 0.9755) -> FAIL: reported as an approximation of one run
+# note: matching (prereg §3): cov(G|R) = |exons(G) ∩ exons(R)| / |exons(G)| >= 0.5, same contig, strand ignored; in one genome Liftoff's sequence_ID of a coordinate match equals its coverage
+# note: flag table: run cache stage flag (missing_copy.tsv; one row per annotated gene/pseudogene record with >= 10 reads; `locus` = the record ID = Liftoff's source record)
+# note: <set>_with_copy: k of n loci whose record has >= 1 Liftoff extra copy with sequence_ID >= sc_min (scanned = every row; fired = status fired*; candidate = verdict reference_absent_candidate)
+# note: fired_with_copy_home_is_copy: the consensus's best other hit (other_locus) spans >= 50% of one of that record's extra copies; candidate_with_copy_not_home: candidates whose record has an extra copy that other_locus does not span (listed for review)
+# note: paralogue_*: fired loci with verdict unannotated_paralogue whose other_locus spans >= 50% of an extra copy of the same record / any extra copy / another record's placed locus (prereg amendment 1)
+sample	species	item	sc_min	n	k	frac	status
+human_A119b	human	-	-				flag run: run `python3 figures/make.py runs --sample human_A119b --stage flag`
+human_testis	human	-	-				flag run: run `python3 figures/make.py runs --sample human_testis --stage flag`
+gorilla_OR6737	gorilla	-	-				flag run: run `python3 figures/make.py runs --sample gorilla_OR6737 --stage flag`
+gorilla_KB3781	gorilla	-	-				flag run: run `python3 figures/make.py runs --sample gorilla_KB3781 --stage flag`
+chimp_PTR	chimpanzee	-	-				flag run: run `python3 figures/make.py runs --sample chimp_PTR --stage flag`
+orangutan_PPY	orangutan	-	-				flag run: run `python3 figures/make.py runs --sample orangutan_PPY --stage flag`
