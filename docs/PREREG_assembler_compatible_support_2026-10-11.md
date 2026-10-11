@@ -40,3 +40,29 @@ most ONE amendment, written before any held-out number.
 Reported: transcripts emitted, transcript-level sensitivity / precision, locus level, the share of the StringTie intron gap closed.
 **Verdict.** B1-B3 hold in both held-out samples for BOTH pools => ADOPT as the default (and as the base for the seeded-loci extension);
 for the primary pool only => default for the benchmark arm, opt-in otherwise; else NOT ADOPTED, kept opt-in with the numbers.
+
+## Result (2026-10-11): NOT ADOPTED, kept opt-in
+
+**Dev (NC_073244.2, primary):** OFF byte-identical to the previous binary; ON +17 transcripts (3,862 -> 3,879), intron sensitivity 54.8 -> 54.9,
+intron-chain 28.3 / 40.8 -> 28.3 / 40.7. Why it barely moves (dev diagnosis, before any held-out number): for 864 of the 927 missed
+junctions, no read chain carrying the junction reaches a compatible support of 2 at ALL its junctions — the supporting reads are
+STAGGERED (each covers a different overlapping stretch), so no OBSERVED chain is long enough. StringTie stitches overlapping reads into a
+longer path; this rule, by design, never builds a chain no read carries. No amendment was made.
+**Held-out (gffcompare, sensitivity | precision, points):**
+
+| arm | transcripts | intron | intron chain | transcript | locus |
+|---|---|---|---|---|---|
+| gorilla primary OFF | 68,828 | 59.6 / 82.8 | 26.8 / 35.3 | 24.0 / 35.1 | 30.2 / 70.7 |
+| gorilla primary ON | 70,375 | 59.9 / 82.6 | 27.2 / 35.0 | 24.4 / 34.8 | 30.3 / 71.0 |
+| gorilla good OFF | 70,134 | 60.0 / 82.5 | 27.0 / 35.0 | 24.2 / 34.7 | 30.5 / 69.1 |
+| gorilla good ON | 71,700 | 60.3 / 82.3 | 27.3 / 34.6 | 24.5 / 34.4 | 30.7 / 69.4 |
+| human primary OFF | 238,406 | 60.8 / 64.4 | 21.9 / 18.6 | 20.4 / 16.2 | 34.6 / 22.9 |
+| human primary ON | 250,598 | 61.2 / 63.9 | 22.3 / 18.1 | 20.7 / 15.6 | 34.8 / 22.2 |
+| human good OFF | 252,217 | 61.2 / 62.7 | 22.0 / 17.7 | 20.5 / 15.4 | 34.8 / 22.0 |
+| human good ON | 263,799 | 61.6 / 62.2 | 22.4 / 17.3 | 20.9 / 14.9 | 35.0 / 21.6 |
+
+(gorilla scored without NC_073244.2; human on the figure 1 reference `eval_annotated/ref.gtf`.) **B1 fails in all four** (intron
+sensitivity +0.3 / +0.3 / +0.4 / +0.4, bar +1.0); B2 holds (intron-chain precision -0.3 / -0.4 / -0.5 / -0.4, bar <= 0.5); B3 holds
+(+0.4 / +0.3 / +0.4 / +0.4). The flag stays opt-in (`copy_assign --compat-support`, `RUSTLE_COMPAT_SUPPORT=1`): about +0.4 point of
+intron-chain sensitivity for -0.3 to -0.5 of precision and +2-5% transcripts. Next mechanism to pre-register separately: stitching
+overlapping, consistent reads into longer paths (StringTie's splice graph), after measuring how many missed junctions it could recover.

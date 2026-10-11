@@ -225,6 +225,14 @@ case "${RUSTLE_POLISH_TES:-}" in
   off|tag|pas-end) POLISH="$POLISH --polish-tes $RUSTLE_POLISH_TES" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TES must be off, tag or pas-end (got '$RUSTLE_POLISH_TES')" >&2; exit 2 ;;
 esac
+# RUSTLE_COMPAT_SUPPORT=1 (opt-in; unset or 0 = off, the same command): copy_assign --compat-support, compatible-read support in
+# the assembler's chain admission (a chain short of the read floor is admitted when every junction is carried by enough reads
+# whose chains are contiguous, end-compatible sub-chains of it; docs/PREREG_assembler_compatible_support_2026-10-11.md)
+case "${RUSTLE_COMPAT_SUPPORT:-}" in
+  ""|0) ;;
+  1) POLISH="$POLISH --compat-support" ;;
+  *) echo "[rustle_pipeline] RUSTLE_COMPAT_SUPPORT must be 0 or 1 (got '$RUSTLE_COMPAT_SUPPORT')" >&2; exit 2 ;;
+esac
 # RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads (opt-in; unset = off, the same command): copy_assign --polish-junction-snap,
 # the fuzzy-junction merge that keeps read-proven splice sites (reads: a junction within 10 bp of a better-supported one
 # in its locus moves onto it only when its own reads do not prove it and the other's reads do). Dev-only, in-sample

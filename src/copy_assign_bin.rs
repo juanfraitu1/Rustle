@@ -29,7 +29,7 @@ use rustle::copy_assign::em_copy_assign::em_assign_family;
 use rustle::copy_assign::{AssignParams, AssignStatus, Assignment};
 use rustle::denovo_assemble::longest_orf;
 use rustle::denovo_assemble::{
-    assemble_gate, assemble_gate_census, pass1_skeletons_widened, reads_in_region,
+    assemble_gate, assemble_gate_census, pass1_skeletons_widened_compat, reads_in_region,
     tied_secondary_reads_in_region, BamIndexCache, BamRead, PrimaryRead, GATE_MIN_READS,
 };
 use rustle::denovo_pipeline::{
@@ -184,6 +184,15 @@ struct Args {
     /// `shared_definition::widen_with_read_isoforms`, which ships at k=5. **Default 0 = OFF, byte-identical.**
     #[arg(long, default_value_t = 0)]
     read_isoform_k: u32,
+
+    /// COMPATIBLE-READ SUPPORT for the `--gtf` / `--assemble-only` assembly
+    /// (`docs/PREREG_assembler_compatible_support_2026-10-11.md`). Reads are grouped by EXACT intron chain and a chain is
+    /// admitted at `>= 2` reads, so the truncated reads of one isoform (each its own sub-chain) never pool. With this flag a
+    /// chain short of the floor is also admitted when every one of its junctions is carried by enough reads COMPATIBLE
+    /// with it: reads whose chain is a contiguous sub-chain of it and that stay inside its exons around that sub-chain.
+    /// Only chains some read carries are candidates (no junctions are combined). **Default off = byte-identical.**
+    #[arg(long, default_value_t = false)]
+    compat_support: bool,
 
     /// ⭐ ASSEMBLER-ONLY MODE (§6p6). Skip family detection, homology refinement and copy assignment
     /// entirely, and run ONLY the assembly path: reads -> intron-chain skeletons -> `assemble_gate` ->
@@ -6474,7 +6483,7 @@ fn main() -> Result<()> {
                 ev.seal();
                 ev
             });
-            streamed = Some(acc.finish(cfg.pass1_min_reads, 0, None));
+            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, args.compat_support));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
@@ -6988,12 +6997,13 @@ fn main() -> Result<()> {
             // explicit no-op, so this line is byte-identical to the previous `pass1_skeletons` call.
             let skeletons = match streamed.take() {
                 Some(s) => s,
-                None => pass1_skeletons_widened(
+                None => pass1_skeletons_widened_compat(
                     &resolved_primary,
                     cfg.pass1_min_reads,
                     1,
                     None,
                     args.read_isoform_k,
+                    args.compat_support,
                 ),
             };
             // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —

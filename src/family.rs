@@ -44284,6 +44284,19 @@ pub mod denovo_pipeline {
             snap: Option<(u64, f64)>,
             isoform_k: u32,
         ) -> Vec<Skeleton> {
+            pass1_skeletons_widened_compat(reads, min_reads, min_terminal_support, snap, isoform_k, false)
+        }
+
+        /// [`pass1_skeletons_widened`] with COMPATIBLE-READ SUPPORT ([`Pass1Acc::finish_with`]); `compat == false` is
+        /// exactly `pass1_skeletons_widened`.
+        pub fn pass1_skeletons_widened_compat(
+            reads: &[PrimaryRead],
+            min_reads: u32,
+            min_terminal_support: u32,
+            snap: Option<(u64, f64)>,
+            isoform_k: u32,
+            compat: bool,
+        ) -> Vec<Skeleton> {
             // §6zb: push-all-then-finish over the accumulator below — byte-identical to the former single-pass
             // body (the accumulator IS that body, split so a streaming reader can feed it one record at a time
             // without materialising the reads; see `docs/archive/2026-09/PREREG_streaming_assembly_2026-09-23.md`).
@@ -44296,7 +44309,7 @@ pub mod denovo_pipeline {
             for r in reads {
                 acc.push_read(r);
             }
-            let mut skels = acc.finish(min_reads, isoform_k, jsup.as_ref());
+            let mut skels = acc.finish_with(min_reads, isoform_k, jsup.as_ref(), compat);
             // FOOTPRINT PASS (`RUSTLE_FOOTPRINT_NODES`, default off = byte-identical). Runs LAST and only where
             // nothing else claimed the region, so it can add nodes and never change one the other passes made.
             if footprint_nodes_enabled() {
@@ -44462,12 +44475,33 @@ pub mod denovo_pipeline {
                 isoform_k: u32,
                 jsup: Option<&std::collections::BTreeMap<(String, (u64, u64)), u32>>,
             ) -> Vec<Skeleton> {
+                self.finish_with(min_reads, isoform_k, jsup, false)
+            }
+
+            /// [`Pass1Acc::finish`] plus COMPATIBLE-READ SUPPORT (`copy_assign --compat-support`,
+            /// `docs/PREREG_assembler_compatible_support_2026-10-11.md`). With `compat`, a chain with fewer than
+            /// `min_reads` exact reads is also admitted when every one of its junctions is carried by `>= min_reads`
+            /// reads COMPATIBLE with it ([`compatible_support`]); its skeleton then carries that bottleneck count.
+            /// Admitted groups and every other step are unchanged; `compat == false` is exactly `finish`.
+            pub fn finish_with(
+                self,
+                min_reads: u32,
+                isoform_k: u32,
+                jsup: Option<&std::collections::BTreeMap<(String, (u64, u64)), u32>>,
+                compat: bool,
+            ) -> Vec<Skeleton> {
+                let extra = if compat {
+                    compatible_support(&self.groups, min_reads)
+                } else {
+                    std::collections::BTreeMap::new()
+                };
                 let (k, snap, allpos, unspliced) = (self.k, self.snap, self.allpos, self.unspliced);
                 let mut skels: Vec<Skeleton> = self
                     .groups
                     .into_iter()
                     .filter(|((chrom, introns), (n, _, _, _))| {
                         *n >= min_reads
+                            || (!extra.is_empty() && extra.contains_key(&(chrom.clone(), introns.clone())))
                             || (isoform_k > 0
                                 && !introns.is_empty()
                                 && jsup.is_some_and(|js| {
@@ -44496,11 +44530,18 @@ pub mod denovo_pipeline {
                                 }
                             }
                         }
+                        // a chain admitted by compatible support carries that bottleneck count; its strand vote stays
+                        // over its own reads (`read_rev` / `read_tot`)
+                        let n_reads = if n < min_reads && !extra.is_empty() {
+                            extra.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(n)
+                        } else {
+                            n
+                        };
                         Skeleton {
                             chrom,
                             start,
                             end,
-                            n_reads: n,
+                            n_reads,
                             introns,
                             tied_seeded: false,
                             footprint: false,
@@ -44515,6 +44556,59 @@ pub mod denovo_pipeline {
                 skels.extend(cluster_unspliced(&unspliced, min_reads, k));
                 skels
             }
+        }
+
+        /// COMPATIBLE-READ SUPPORT (`docs/PREREG_assembler_compatible_support_2026-10-11.md`). Over pass-1 groups
+        /// `(chrom, intron chain) -> (exact reads, k smallest starts asc, k largest ends desc, n_reverse)`: for every
+        /// spliced group C with fewer than `min_reads` exact reads, a group D is COMPATIBLE when its chain is a
+        /// contiguous sub-chain `C[i .. i+m)` (D != C) and its reads stay inside C's exons around it: the group's
+        /// smallest start is at or after the acceptor of C's intron `i-1` (when i > 0) and its largest end at or before
+        /// the donor of C's intron `i+m` (when i+m < len C). Junction t's support = C's reads + the reads of every
+        /// compatible D containing t. Returns the groups whose smallest junction support reaches `min_reads`, with that
+        /// support. Only chains some read carries are candidates: support is pooled, chains are never combined.
+        pub fn compatible_support(
+            groups: &std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
+            min_reads: u32,
+        ) -> std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32> {
+            // spliced groups indexed by (chrom, first junction)
+            let mut by_first: std::collections::HashMap<(&str, (u64, u64)), Vec<(&Vec<(u64, u64)>, u32, u64, u64)>> =
+                std::collections::HashMap::new();
+            for ((chrom, introns), (n, starts, ends, _)) in groups {
+                if let (Some(&j0), Some(&s0), Some(&e0)) = (introns.first(), starts.first(), ends.first()) {
+                    by_first.entry((chrom.as_str(), j0)).or_default().push((introns, *n, s0, e0));
+                }
+            }
+            let mut out = std::collections::BTreeMap::new();
+            for ((chrom, c), (n, _, _, _)) in groups {
+                if *n >= min_reads || c.is_empty() {
+                    continue;
+                }
+                let len = c.len();
+                let mut sup = vec![*n; len];
+                for i in 0..len {
+                    let Some(cands) = by_first.get(&(chrom.as_str(), c[i])) else { continue };
+                    for &(d, nd, d_start, d_end) in cands {
+                        let m = d.len();
+                        if d == c || i + m > len || c[i..i + m] != d[..] {
+                            continue;
+                        }
+                        if i > 0 && d_start < c[i - 1].1 {
+                            continue; // a read of D reaches back into C's intron i-1
+                        }
+                        if i + m < len && d_end > c[i + m].0 {
+                            continue; // a read of D runs on into C's intron i+m
+                        }
+                        for t in sup.iter_mut().skip(i).take(m) {
+                            *t += nd;
+                        }
+                    }
+                }
+                let s = sup.iter().copied().min().unwrap_or(0);
+                if s >= min_reads {
+                    out.insert((chrom.clone(), c.clone()), s);
+                }
+            }
+            out
         }
 
         /// `copy_assign --polish-tss`: one deduplicated PRIMARY spliced alignment, reduced to what the TSS proof reads.
@@ -49701,6 +49795,72 @@ pub mod denovo_pipeline {
                 s[98] = acc[0];
                 s[99] = acc[1];
                 GenomeIndex::from_seqs(&[("c1", &s)])
+            }
+
+            // ---- compatible-read support (`--compat-support`, docs/PREREG_assembler_compatible_support_2026-10-11.md) ----
+
+            fn finish_compat(reads: &[PrimaryRead], min_reads: u32, compat: bool) -> Vec<Skeleton> {
+                let mut acc = Pass1Acc::new(1, None);
+                for r in reads {
+                    acc.push_read(r);
+                }
+                acc.finish_with(min_reads, 0, None, compat)
+            }
+
+            /// Chain C = [(200,300), (400,500), (600,700)]; exons [100,200) [300,400) [500,600) [700,800).
+            const J1: (u64, u64) = (200, 300);
+            const J2: (u64, u64) = (400, 500);
+            const J3: (u64, u64) = (600, 700);
+
+            #[test]
+            fn compat_support_admits_a_chain_its_truncated_reads_support() {
+                let reads = [
+                    pr("c1", 100, 800, &[J1, J2, J3]), // the full chain, one read
+                    pr("c1", 320, 790, &[J2, J3]),     // 5'-truncated: starts inside exon 2
+                    pr("c1", 110, 560, &[J1, J2]),     // 3'-truncated: ends inside exon 3
+                ];
+                assert_eq!(finish_compat(&reads, 2, false), vec![]);
+                let mut want = skel("c1", 100, 800, 2, &[J1, J2, J3]); // min over junctions: J1 2, J2 3, J3 2
+                want.read_tot = 1; // the strand vote stays the chain's own reads
+                assert_eq!(finish_compat(&reads, 2, true), vec![want]);
+            }
+
+            #[test]
+            fn compat_support_ignores_a_read_that_runs_into_an_intron_of_the_chain() {
+                let reads = [
+                    pr("c1", 100, 800, &[J1, J2, J3]),
+                    pr("c1", 250, 790, &[J2, J3]), // starts inside C's intron J1: a different 5' structure
+                    pr("c1", 110, 560, &[J1, J2]),
+                ];
+                assert_eq!(finish_compat(&reads, 2, true), vec![]); // J3 keeps support 1
+            }
+
+            #[test]
+            fn compat_support_needs_a_contiguous_sub_chain() {
+                let reads = [
+                    pr("c1", 100, 800, &[J1, J2, J3]),
+                    pr("c1", 110, 560, &[J1, J2]),
+                    pr("c1", 100, 800, &[J1, J3]), // skips exon 3's neighbour: not a sub-chain of C
+                ];
+                assert_eq!(finish_compat(&reads, 2, true), vec![]);
+            }
+
+            #[test]
+            fn compat_support_off_is_finish_and_admitted_chains_keep_their_count() {
+                let reads = [
+                    pr("c1", 100, 800, &[J1, J2, J3]),
+                    pr("c1", 105, 795, &[J1, J2, J3]),
+                    pr("c1", 320, 790, &[J2, J3]),
+                    pr("c9", 100, 500, &[(200, 300)]),
+                    pr("c9", 110, 520, &[(200, 300)]),
+                ];
+                let mut acc = Pass1Acc::new(1, None);
+                for r in &reads {
+                    acc.push_read(r);
+                }
+                assert_eq!(finish_compat(&reads, 2, false), acc.finish(2, 0, None));
+                // C already has 2 exact reads: compatible support never changes an admitted group
+                assert_eq!(finish_compat(&reads, 2, true), finish_compat(&reads, 2, false));
             }
 
             // ---- pass1_skeletons ----
