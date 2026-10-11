@@ -1,0 +1,42 @@
+# Compatible-read support in the assembler's chain admission, 2026-10-11
+
+**Pre-registered before the code exists and before any arm is scored.** User (2026-10-11): the advisor wants the assembler benchmarked
+against StringTie and FLAIR; make the primary-only assembler as close to them as possible with their tricks, extendable later to the
+seeded loci (secondaries, AS-tied primaries resolved by O2).
+
+**Diagnosis that motivates it (dev only, gorilla OR6737).** Figure 1 rebuilt on the current assemblies (identical to 2026-09-25): we lead
+on intron-chain sensitivity / precision (0.269 / 0.356 vs StringTie 0.244 / 0.346) and trail on intron sensitivity (0.593 vs 0.639).
+Genome-wide, 18,961 reference introns are StringTie's and not ours (6,329 the reverse); their primary junction reads have a median of 4.
+On NC_073244.2 (chr20, the dev contig): of 941 such introns only 20 exist before polish; **866 (92%) are carried by >= 2 primary reads
+of which no two share an exact intron chain** — the assembler groups reads by EXACT chain and admits a chain only at `>= 2` reads
+(`PASS1_MIN_READS`), so truncated or end-variant reads of one isoform never pool. StringTie's splice graph pools them.
+
+**Not a re-proposal.** Register 848 / 855 (read-isoform widening: a chain admitted when each of its junctions has >= k reads counted
+over ALL spliced reads of the region) failed (+50% transcripts for +2 NPIP junctions; refuted held-out on human chromosomes): it let a
+chain borrow support from reads of OTHER isoforms. Here a chain borrows only from reads COMPATIBLE with it, and only chains that some
+read actually carries are candidates — no new combination of junctions is ever built.
+
+## The rule (one flag, `copy_assign --compat-support`, default off = byte-identical)
+
+In pass 1 (`Pass1Acc`), after reads are grouped by exact `(chrom, intron chain)`: a group D is COMPATIBLE with a group C when D's chain
+is a contiguous sub-chain of C's, `D = C[i .. i+m)`, D is not C, and D's reads stay inside C's exons around it — every read of D starts
+at or after the acceptor of C's intron `i-1` (when i > 0) and ends at or before the donor of C's intron `i+m` (when i+m < len C), tested
+on the group's outermost start and end. For each junction t of C, its compatible support `s_C(t)` = reads of C + reads of every
+compatible D that contains t. A group with fewer than `min_reads` exact reads is ALSO admitted when `min_t s_C(t) >= min_reads`; its
+skeleton then carries `n_reads = min_t s_C(t)`. Groups already admitted are untouched. Unspliced reads, the gate, polish and every
+other step are unchanged; `min_reads` is the existing floor (2), so the rule has no new parameter.
+
+## Test
+
+**Arms.** OFF (current) and ON, each in the two seeding pools: `primary` (the benchmark arm) and `good` (the default: primaries +
+secondaries with AS >= 0.98 of the molecule's best). Scored with gffcompare against the same reference as figure 1
+(`assembly/<species>/eval_all/ref.gtf`).
+**Dev.** Gorilla OR6737 NC_073244.2 only (used for the diagnosis): correctness and sanity, no tuning (there is nothing to tune); at
+most ONE amendment, written before any held-out number.
+**Held-out (decides).** (H-g) gorilla OR6737 genome-wide minus NC_073244.2; (H-h) human A119b genome-wide. Per sample and pool:
+- **B1** intron sensitivity up by >= 1.0 point;
+- **B2** intron-chain precision down by <= 0.5 point;
+- **B3** intron-chain sensitivity not lower.
+Reported: transcripts emitted, transcript-level sensitivity / precision, locus level, the share of the StringTie intron gap closed.
+**Verdict.** B1-B3 hold in both held-out samples for BOTH pools => ADOPT as the default (and as the base for the seeded-loci extension);
+for the primary pool only => default for the benchmark arm, opt-in otherwise; else NOT ADOPTED, kept opt-in with the numbers.
