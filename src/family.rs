@@ -44492,10 +44492,13 @@ pub mod denovo_pipeline {
             ) -> Vec<Skeleton> {
                 let extra = match mode {
                     ChainAdmission::Compat => compatible_support(&self.groups, min_reads),
-                    ChainAdmission::Direct => direct_transfrag_abundance(&self.groups, min_reads),
+                    ChainAdmission::Direct | ChainAdmission::DirectUnion => {
+                        direct_transfrag_abundance(&self.groups, min_reads)
+                    }
                     ChainAdmission::Exact => std::collections::BTreeMap::new(),
                 };
                 let direct = mode == ChainAdmission::Direct;
+                let union = mode == ChainAdmission::DirectUnion;
                 let (k, snap, allpos, unspliced) = (self.k, self.snap, self.allpos, self.unspliced);
                 let mut skels: Vec<Skeleton> = self
                     .groups
@@ -44537,7 +44540,7 @@ pub mod denovo_pipeline {
                         }
                         // a chain admitted by compatible support carries that bottleneck count; its strand vote stays
                         // over its own reads (`read_rev` / `read_tot`)
-                        let n_reads = if (direct || n < min_reads) && !extra.is_empty() {
+                        let n_reads = if (direct || union || n < min_reads) && !extra.is_empty() {
                             extra.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(n)
                         } else {
                             n
@@ -44567,11 +44570,14 @@ pub mod denovo_pipeline {
         /// `Compat` (`--compat-support`): also a chain whose every junction has `>= min_reads` compatible reads
         /// ([`compatible_support`]). `Direct` (`--direct-transfrags`): only MAXIMAL transfrags, with the reads of the
         /// transfrags they contain transferred to them ([`direct_transfrag_abundance`]).
+        /// `DirectUnion` (`--direct-transfrags-union`): every `Exact` chain plus every `Direct` maximal transfrag
+        /// (`docs/PREREG_direct_transfrags_union_2026-10-11.md`).
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum ChainAdmission {
             Exact,
             Compat,
             Direct,
+            DirectUnion,
         }
 
         /// DIRECT TRANSFRAGS (`docs/PREREG_direct_transfrags_2026-10-11.md`), no network flow. Each pass-1 group is a
@@ -49961,6 +49967,22 @@ pub mod denovo_pipeline {
                 ];
                 assert_eq!(
                     finish_mode(&reads, 2, ChainAdmission::Direct),
+                    vec![sk_own("c1", 100, 800, 2, 1, &[J1, J2, J3])]
+                );
+            }
+
+            #[test]
+            fn direct_union_keeps_a_contained_chain_with_its_own_reads_and_adds_the_container() {
+                let mut reads = vec![pr("c1", 100, 800, &[J1, J2, J3]); 2];
+                reads.extend(vec![pr("c1", 320, 790, &[J2, J3]); 3]);
+                assert_eq!(
+                    finish_mode(&reads, 2, ChainAdmission::DirectUnion),
+                    vec![sk_own("c1", 100, 800, 5, 2, &[J1, J2, J3]), skel("c1", 320, 790, 3, &[J2, J3])]
+                );
+                // a lone full read is admitted through what its one truncated read transfers; that read alone is not
+                let reads = [pr("c1", 100, 800, &[J1, J2, J3]), pr("c1", 320, 790, &[J2, J3])];
+                assert_eq!(
+                    finish_mode(&reads, 2, ChainAdmission::DirectUnion),
                     vec![sk_own("c1", 100, 800, 2, 1, &[J1, J2, J3])]
                 );
             }

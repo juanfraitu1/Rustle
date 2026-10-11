@@ -201,6 +201,12 @@ struct Args {
     #[arg(long, default_value_t = false, conflicts_with = "compat_support")]
     direct_transfrags: bool,
 
+    /// DIRECT TRANSFRAGS + EXACT CHAINS (`docs/PREREG_direct_transfrags_union_2026-10-11.md`): every chain the default admits
+    /// (identical reads at the floor) plus every maximal transfrag `--direct-transfrags` admits; a contained chain with its own
+    /// reads is kept. Exclusive with `--compat-support` and `--direct-transfrags`. **Default off = byte-identical.**
+    #[arg(long, default_value_t = false, conflicts_with_all = ["compat_support", "direct_transfrags"])]
+    direct_transfrags_union: bool,
+
     /// ⭐ ASSEMBLER-ONLY MODE (§6p6). Skip family detection, homology refinement and copy assignment
     /// entirely, and run ONLY the assembly path: reads -> intron-chain skeletons -> `assemble_gate` ->
     /// `collapse_loci_groups` -> GTF. This is the "define loci and cluster isoforms into transcripts"
@@ -6490,7 +6496,7 @@ fn main() -> Result<()> {
                 ev.seal();
                 ev
             });
-            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }));
+            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
@@ -7010,7 +7016,7 @@ fn main() -> Result<()> {
                     1,
                     None,
                     args.read_isoform_k,
-                    if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact },
+                    if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact },
                 ),
             };
             // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —

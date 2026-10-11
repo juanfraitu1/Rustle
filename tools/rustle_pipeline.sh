@@ -233,13 +233,15 @@ case "${RUSTLE_COMPAT_SUPPORT:-}" in
   1) POLISH="$POLISH --compat-support" ;;
   *) echo "[rustle_pipeline] RUSTLE_COMPAT_SUPPORT must be 0 or 1 (got '$RUSTLE_COMPAT_SUPPORT')" >&2; exit 2 ;;
 esac
-# RUSTLE_DIRECT_TRANSFRAGS=1 (opt-in; unset or 0 = off, the same command): copy_assign --direct-transfrags, transcripts from
+# RUSTLE_DIRECT_TRANSFRAGS=1|union (opt-in; unset or 0 = off, the same command): copy_assign --direct-transfrags (or, with union,
+# --direct-transfrags-union: plus every chain the default admits), transcripts from
 # maximal transfrags with the reads of the transfrags they contain transferred to them, no flow
 # (docs/PREREG_direct_transfrags_2026-10-11.md); exclusive with RUSTLE_COMPAT_SUPPORT
 case "${RUSTLE_DIRECT_TRANSFRAGS:-}" in
   ""|0) ;;
   1) POLISH="$POLISH --direct-transfrags" ;;
-  *) echo "[rustle_pipeline] RUSTLE_DIRECT_TRANSFRAGS must be 0 or 1 (got '$RUSTLE_DIRECT_TRANSFRAGS')" >&2; exit 2 ;;
+  union) POLISH="$POLISH --direct-transfrags-union" ;;
+  *) echo "[rustle_pipeline] RUSTLE_DIRECT_TRANSFRAGS must be 0, 1 or union (got '$RUSTLE_DIRECT_TRANSFRAGS')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads (opt-in; unset = off, the same command): copy_assign --polish-junction-snap,
 # the fuzzy-junction merge that keeps read-proven splice sites (reads: a junction within 10 bp of a better-supported one
