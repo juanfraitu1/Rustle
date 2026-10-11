@@ -19,3 +19,16 @@ all 11 in one pass (smallest set cover) and with iteration (number of source com
 **Expectation (registered).** E1: with iteration, ONE seed suffices, whichever copy is chosen (the copies are 95.7-99% identical, far above 0.80).
 E2: in one pass, every full-length seed finds all 11; a fragment seed finds every copy carrying its exons 1-5, i.e. all 11.
 If either fails, the copies a seed misses and why (coverage or identity) are reported; no threshold is changed after looking.
+
+## Result (2026-10-11) and Amendment 1
+
+**E1 and E2 hold.** Each of the 11 copies, used as the only seed, finds all 11 in one pass (and so with iteration); minimum seeds = 1 in both modes;
+the finds graph is one strongly connected component. No passing hit falls outside the 11 (0 extra loci for every seed). The gene-body finder alone
+finds all 11 from every seed; the transcript finder alone finds 8 from seeds c03, c04 and c06 (it misses the three 5′ fragments) and 11 from the
+others. Pairwise gene-body identity between copies 0.959-0.998 (110 ordered pairs), against the finder's 0.80.
+**Amendment 1 (after the result; descriptive, no claim).** A sweep of the finders' identity threshold from 0.80 to 1.00 (step 0.0025) on the same
+alignments: seeds needed in one pass and with iteration, and the source components, to show how far LRPAP1 sits from the regime where subclusters
+need their own seeds.
+**Amendment 1 result.** One seed finds all 11 in one pass up to a finder identity of 0.9775 and with iteration up to 0.98; from 0.9825 the most
+diverged copy (c06, chr22) needs its own seed; at 0.99 four seeds are needed with iteration (five in one pass), at 0.995 seven, at 1.0 eleven. The
+shipped finder threshold is 0.80, so LRPAP1 sits 0.18 identity below the point where its subclusters would need separate seeds.
