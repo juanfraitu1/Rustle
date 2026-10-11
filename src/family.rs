@@ -44368,6 +44368,11 @@ pub mod denovo_pipeline {
             /// `copy_assign --bridge-regroup` read evidence ([`BridgeEvidence`](crate::bridge_regroup::BridgeEvidence)),
             /// fed by the streaming reader from every primary record with an intron; `None` (the default, set by `new`) = off.
             pub bridge: Option<crate::bridge_regroup::BridgeEvidence>,
+            /// `copy_assign --check-splice` / `--terminal-exon-anchor` ([`ReadSupportFilter`]), applied by the streaming reader;
+            /// `None` (the default, set by `new`) = off.
+            pub read_filter: Option<ReadSupportFilter>,
+            /// Spliced reads the read filter dropped.
+            pub n_read_filtered: usize,
         }
 
         impl Pass1Acc {
@@ -44389,6 +44394,8 @@ pub mod denovo_pipeline {
                     readthrough: None,
                     tss: None,
                     bridge: None,
+                    read_filter: None,
+                    n_read_filtered: 0,
                 }
             }
 
@@ -44591,11 +44598,88 @@ pub mod denovo_pipeline {
 
         /// How a contained transfrag's reads reach its maximal containers: `Split` (default) in proportion to their own
         /// reads; `Full` (`--transfer-credit full`) every container gets all of them (admission only, so a read can support
-        /// every isoform it fits, as FLAIR's re-alignment lets it support whichever it lands on).
+        /// every isoform it fits, as FLAIR's re-alignment lets it support whichever it lands on); `Best`
+        /// (`--transfer-credit best`) ONE container gets all of them, as FLAIR's re-alignment gives each read one isoform:
+        /// the container with the fewest exonic bp (the fragment covers the largest share of it), then the most own reads,
+        /// then the first in chain order.
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum TransferCredit {
             Split,
             Full,
+            Best,
+        }
+
+        /// FLAIR-style READ-SUPPORT FILTERS (opt-in; both off = byte-identical), applied by the streaming pass-1 reader to
+        /// each SPLICED read before it joins a chain group; a read that fails supports nothing. Unspliced reads are never
+        /// judged.
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        pub struct ReadSupportFilter {
+            /// `--check-splice` (FLAIR collapse `--check_splice`): at every junction at least 4 of the 6 exonic reference
+            /// bases around it (3 on each side) are aligned, and no insertion longer than 3 bp sits among them.
+            pub check_splice: bool,
+            /// `--terminal-exon-anchor N` (the end condition of FLAIR's `--stringent`, 25 bp there): the read's first and
+            /// last exons each span `>= N` reference bp. 0 = off.
+            pub terminal_anchor: u64,
+        }
+
+        /// [`ReadSupportFilter`] on one alignment's CIGAR. Only junctions with aligned bases on both sides count (a
+        /// leading or trailing `N` is no junction).
+        pub fn read_passes_support_filter(
+            f: ReadSupportFilter,
+            ops: &[noodles_sam::alignment::record::cigar::Op],
+        ) -> bool {
+            use noodles_sam::alignment::record::cigar::op::Kind;
+            if !f.check_splice && f.terminal_anchor == 0 {
+                return true;
+            }
+            // reference coordinates relative to the alignment start
+            let mut pos = 0u64;
+            let mut aligned: Vec<(u64, u64)> = Vec::new();
+            let mut skips: Vec<(u64, u64)> = Vec::new();
+            let mut ins: Vec<(u64, u64)> = Vec::new(); // (reference anchor, length)
+            for op in ops {
+                let l = op.len() as u64;
+                match op.kind() {
+                    Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                        aligned.push((pos, pos + l));
+                        pos += l;
+                    }
+                    Kind::Deletion => pos += l,
+                    Kind::Skip => {
+                        skips.push((pos, pos + l));
+                        pos += l;
+                    }
+                    Kind::Insertion => ins.push((pos, l)),
+                    _ => {}
+                }
+            }
+            let (Some(&(first, _)), Some(&(_, last))) = (aligned.first(), aligned.last()) else { return true };
+            let introns: Vec<(u64, u64)> = skips.into_iter().filter(|&(a, b)| a > first && b < last).collect();
+            if introns.is_empty() {
+                return true;
+            }
+            if f.terminal_anchor > 0 {
+                let head = introns[0].0 - first;
+                let tail = last - introns[introns.len() - 1].1;
+                if head < f.terminal_anchor || tail < f.terminal_anchor {
+                    return false;
+                }
+            }
+            if f.check_splice {
+                let covered = |lo: u64, hi: u64| -> u64 {
+                    aligned.iter().map(|&(s, e)| e.min(hi).saturating_sub(s.max(lo))).sum()
+                };
+                for &(a, b) in &introns {
+                    if covered(a.saturating_sub(3), a) + covered(b, b + 3) < 4 {
+                        return false;
+                    }
+                    let near = |p: u64| (p + 3 >= a && p <= a) || (p >= b && p <= b + 3);
+                    if ins.iter().any(|&(p, l)| l > 3 && near(p)) {
+                        return false;
+                    }
+                }
+            }
+            true
         }
 
         /// Pass-1 admission options. `From<ChainAdmission>` gives the defaults (split credit, no junction snap, the
@@ -44778,10 +44862,24 @@ pub mod denovo_pipeline {
                 if w <= 0.0 {
                     continue;
                 }
+                if credit == TransferCredit::Best {
+                    // the fewest exonic bp, then the most own reads, then chain order (`tops` iterates ascending)
+                    let exonic = |c: usize| -> u64 {
+                        let (Some(&s), Some(&e)) = (vals[c].1.first(), vals[c].2.first()) else { return u64::MAX };
+                        let intronic: u64 = keys[c].1.iter().map(|&(a, b)| b.saturating_sub(a)).sum();
+                        e.saturating_sub(s).saturating_sub(intronic)
+                    };
+                    if let Some(&c) = tops.iter().min_by(|&&x, &&y| {
+                        exonic(x).cmp(&exonic(y)).then(own[y].total_cmp(&own[x]))
+                    }) {
+                        recv[c] += own[ti];
+                    }
+                    continue;
+                }
                 for &c in &tops {
                     recv[c] += match credit {
                         TransferCredit::Split => own[ti] * own[c] / w,
-                        TransferCredit::Full => own[ti],
+                        TransferCredit::Full | TransferCredit::Best => own[ti],
                     };
                 }
             }
@@ -48268,6 +48366,14 @@ pub mod denovo_pipeline {
                 {
                     continue;
                 }
+                // `--check-splice` / `--terminal-exon-anchor` (opt-in; `None` unless on): a spliced read that fails supports
+                // nothing (before the de-duplication key, so a failing record never hides a passing one)
+                if let Some(f) = acc.read_filter {
+                    if !introns.is_empty() && !read_passes_support_filter(f, &ops) {
+                        acc.n_read_filtered += 1;
+                        continue;
+                    }
+                }
                 if dedupe_coords {
                     let mut h = std::collections::hash_map::DefaultHasher::new();
                     (chrom, ref_start, ref_end, &introns).hash(&mut h);
@@ -50067,6 +50173,24 @@ pub mod denovo_pipeline {
             }
 
             #[test]
+            fn transfer_credit_best_gives_a_contained_fragment_wholly_to_its_shortest_container() {
+                // T = [J2] (3 reads) fits in C1 = [J1, J2] (1 read, 200 exonic bp) and C2 = [J2, J3] (5 reads, 250 bp)
+                let mut reads = vec![pr("c1", 150, 550, &[J1, J2])];
+                reads.extend(vec![pr("c1", 350, 800, &[J2, J3]); 5]);
+                reads.extend(vec![pr("c1", 320, 580, &[J2]); 3]);
+                let best = AdmitOpts { credit: TransferCredit::Best, ..AdmitOpts::from(ChainAdmission::Direct) };
+                assert_eq!(
+                    finish_opts(&reads, 2, best),
+                    vec![sk_own("c1", 150, 550, 4, 1, &[J1, J2]), sk_own("c1", 350, 800, 5, 5, &[J2, J3])]
+                );
+                // the proportional split starves C1 (1 + 3 x 1/6 < 2)
+                assert_eq!(
+                    finish_mode(&reads, 2, ChainAdmission::Direct),
+                    vec![sk_own("c1", 350, 800, 8, 5, &[J2, J3])]
+                );
+            }
+
+            #[test]
             fn read_junction_snap_moves_a_rare_junction_onto_a_better_supported_neighbour() {
                 let mut reads = vec![pr("c1", 100, 500, &[(200, 300)]); 3];
                 reads.push(pr("c1", 102, 505, &[(203, 300)])); // 3 bp off at the donor, one read
@@ -50088,6 +50212,38 @@ pub mod denovo_pipeline {
                 let one = AdmitOpts { spliced_min_reads: 1, ..AdmitOpts::from(ChainAdmission::Exact) };
                 assert_eq!(finish_opts(&reads, 2, one), vec![skel("c1", 100, 800, 1, &[J1, J2, J3])]);
                 assert_eq!(finish_mode(&reads, 2, ChainAdmission::Exact), vec![]);
+            }
+
+            #[test]
+            fn check_splice_needs_four_of_six_bases_around_a_junction_and_no_insertion_over_three() {
+                use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+                let (m, n) = (|l| Op::new(Kind::Match, l), |l| Op::new(Kind::Skip, l));
+                let (d, i) = (|l| Op::new(Kind::Deletion, l), |l| Op::new(Kind::Insertion, l));
+                let f = ReadSupportFilter { check_splice: true, terminal_anchor: 0 };
+                assert!(read_passes_support_filter(f, &[m(100), n(500), m(100)]));
+                // 3 bp deleted before the donor: 3 of the 6 bases covered
+                assert!(!read_passes_support_filter(f, &[m(97), d(3), n(500), m(100)]));
+                // 2 bp deleted: 4 of 6 covered
+                assert!(read_passes_support_filter(f, &[m(98), d(2), n(500), m(100)]));
+                // a 4 bp insertion 2 bp past the acceptor fails; 3 bp there, or 4 bp 10 bp away, passes
+                assert!(!read_passes_support_filter(f, &[m(100), n(500), m(2), i(4), m(98)]));
+                assert!(read_passes_support_filter(f, &[m(100), n(500), m(2), i(3), m(98)]));
+                assert!(read_passes_support_filter(f, &[m(100), n(500), m(10), i(4), m(90)]));
+                // off: every read passes
+                assert!(read_passes_support_filter(ReadSupportFilter::default(), &[m(97), d(3), n(500), m(100)]));
+            }
+
+            #[test]
+            fn terminal_exon_anchor_rejects_a_spliced_read_whose_first_or_last_exon_is_short() {
+                use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+                let (m, n, s) = (|l| Op::new(Kind::Match, l), |l| Op::new(Kind::Skip, l), |l| Op::new(Kind::SoftClip, l));
+                let f = ReadSupportFilter { check_splice: false, terminal_anchor: 25 };
+                assert!(read_passes_support_filter(f, &[m(25), n(500), m(100)]));
+                assert!(!read_passes_support_filter(f, &[m(24), n(500), m(100)]));
+                assert!(!read_passes_support_filter(f, &[s(50), m(100), n(500), m(10), s(30)]));
+                // an inner exon is not judged; an unspliced read never is
+                assert!(read_passes_support_filter(f, &[m(30), n(500), m(5), n(500), m(30)]));
+                assert!(read_passes_support_filter(f, &[m(10)]));
             }
 
             fn finish_compat(reads: &[PrimaryRead], min_reads: u32, compat: bool) -> Vec<Skeleton> {
@@ -51598,10 +51754,6 @@ pub mod denovo_pipeline {
 
             /// One contig, coordinate-sorted, indexed with noodles' own indexer (as the piecewise-reader fixture).
             fn fixture_bam(dir: &std::path::Path) -> String {
-                let len = NonZeroUsize::try_from(1_000_000usize).unwrap();
-                let header = noodles_sam::Header::builder()
-                    .add_reference_sequence("c1", Map::<ReferenceSequence>::new(len))
-                    .build();
                 let recs = vec![
                     rec("m1", Flags::default(), 0, 1_001, vec![m(100)]), // listed; primary away from home
                     rec("m2", Flags::default(), 0, 1_001, vec![m(100)]), // unlisted primary
@@ -51617,11 +51769,20 @@ pub mod denovo_pipeline {
                         vec![m(50), Op::new(Kind::Skip, 2_000), m(50)],
                     ), // intron over home
                 ];
-                let path = dir.join("home.bam");
+                write_indexed_bam(dir, "home.bam", &recs)
+            }
+
+            /// `recs` (coordinate-sorted, contig `c1`) as `dir/name` plus its `.bai`.
+            fn write_indexed_bam(dir: &std::path::Path, name: &str, recs: &[RecordBuf]) -> String {
+                let len = NonZeroUsize::try_from(1_000_000usize).unwrap();
+                let header = noodles_sam::Header::builder()
+                    .add_reference_sequence("c1", Map::<ReferenceSequence>::new(len))
+                    .build();
+                let path = dir.join(name);
                 {
                     let mut w = noodles_bam::io::Writer::new(std::fs::File::create(&path).unwrap());
                     w.write_header(&header).unwrap();
-                    for r in &recs {
+                    for r in recs {
                         w.write_alignment_record(&header, r).unwrap();
                     }
                     w.try_finish().unwrap();
@@ -51656,8 +51817,30 @@ pub mod denovo_pipeline {
                 }
                 let index: noodles_bam::bai::Index =
                     indexer.build(header.reference_sequences().len());
-                noodles_bam::bai::write(dir.join("home.bam.bai"), &index).unwrap();
+                noodles_bam::bai::write(dir.join(format!("{name}.bai")), &index).unwrap();
                 path.display().to_string()
+            }
+
+            #[test]
+            fn streaming_reader_drops_spliced_reads_that_fail_the_read_support_filter() {
+                let dir = tempfile::tempdir().unwrap();
+                let n = |l| Op::new(Kind::Skip, l);
+                let recs = vec![
+                    rec("a", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("b", Flags::default(), 0, 1_001, vec![m(97), Op::new(Kind::Deletion, 3), n(500), m(100)]),
+                    rec("c", Flags::default(), 0, 1_001, vec![m(10), n(500), m(100)]),
+                    rec("u", Flags::default(), 0, 1_001, vec![m(10)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "filt.bam", &recs);
+                let run = |f: Option<ReadSupportFilter>| {
+                    let mut acc = Pass1Acc::new(1, None);
+                    acc.read_filter = f;
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, None).unwrap();
+                    (acc.n_pushed, acc.n_read_filtered)
+                };
+                assert_eq!(run(None), (4, 0));
+                assert_eq!(run(Some(ReadSupportFilter { check_splice: true, terminal_anchor: 0 })), (3, 1));
+                assert_eq!(run(Some(ReadSupportFilter { check_splice: true, terminal_anchor: 25 })), (2, 2));
             }
 
             fn spans(v: &[PrimaryRead]) -> Vec<(u64, u64, usize)> {

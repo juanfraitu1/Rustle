@@ -209,9 +209,21 @@ struct Args {
 
     /// How the reads of a transfrag contained in longer ones are credited under `--direct-transfrags` /
     /// `--direct-transfrags-union`: `split` (default) in proportion to the containers' own reads; `full` gives every
-    /// container all of them (admission only), so a fragment can support each isoform it fits (`docs/PENDING_2026-10-11.md`).
-    #[arg(long, default_value = "split", value_parser = ["split", "full"])]
+    /// container all of them (admission only), so a fragment can support each isoform it fits; `best` gives them ALL to ONE
+    /// container (the fewest exonic bp, then the most own reads), as FLAIR's re-alignment gives each read one isoform
+    /// (`docs/PENDING_2026-10-11.md`).
+    #[arg(long, default_value = "split", value_parser = ["split", "full", "best"])]
     transfer_credit: String,
+
+    /// FLAIR `--check_splice`, opt-in: a spliced read supports nothing unless, at every junction, at least 4 of the 6 exonic
+    /// bases around it are aligned and no insertion over 3 bp sits among them. Streaming `--assemble-only` path only.
+    #[arg(long)]
+    check_splice: bool,
+
+    /// The end condition of FLAIR's `--stringent` (25 bp there), opt-in: a spliced read supports nothing unless its first and
+    /// last exons each span at least this many bp. 0 (default) = off. Streaming `--assemble-only` path only.
+    #[arg(long, default_value_t = 0)]
+    terminal_exon_anchor: u64,
 
     /// READ-LEVEL JUNCTION SNAP, opt-in: before reads are grouped by chain, a junction moves onto the junction within this many bp
     /// (at both donor and acceptor) that more reads carry, if at least 2 do. 0 (default) = off, byte-identical.
@@ -6461,6 +6473,9 @@ fn main() -> Result<()> {
             // table the ratio needs the region's buffered records to know a local best, as before.
             && (rustle::denovo_assemble::gtf_secondary_as_ratio() <= 0.0
                 || rustle::denovo_assemble::global_best_as().is_some());
+        if !streaming && (args.check_splice || args.terminal_exon_anchor > 0) {
+            anyhow::bail!("--check-splice / --terminal-exon-anchor need the streaming --assemble-only path (no read-level extras)");
+        }
         let mut streamed: Option<Vec<rustle::denovo_assemble::Skeleton>> = None;
         let mut n_mapped_streamed = 0usize;
         // RUSTLE_READTHROUGH_JUNCTIONS: the region's flags and removals (default = off, nothing flagged)
@@ -6477,6 +6492,12 @@ fn main() -> Result<()> {
             }
             if bridge_evidence_on {
                 acc.bridge = Some(rustle::bridge_regroup::BridgeEvidence::default());
+            }
+            if args.check_splice || args.terminal_exon_anchor > 0 {
+                acc.read_filter = Some(rustle::denovo_assemble::ReadSupportFilter {
+                    check_splice: args.check_splice,
+                    terminal_anchor: args.terminal_exon_anchor,
+                });
             }
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
@@ -6507,12 +6528,18 @@ fn main() -> Result<()> {
                 readthrough.chains_removed = chains;
                 readthrough.alignments_removed = reads;
             }
+            if acc.read_filter.is_some() {
+                eprintln!(
+                    "[read-filter] {contig}:{lo}-{hi}: {} spliced read(s) failed --check-splice / --terminal-exon-anchor",
+                    acc.n_read_filtered
+                );
+            }
             tss_ev = acc.tss.take();
             bridge_ev = acc.bridge.take().map(|mut ev| {
                 ev.seal();
                 ev
             });
-            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: if args.transfer_credit == "full" { rustle::denovo_assemble::TransferCredit::Full } else { rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads }));
+            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
@@ -7032,7 +7059,7 @@ fn main() -> Result<()> {
                     1,
                     None,
                     args.read_isoform_k,
-                    rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: if args.transfer_credit == "full" { rustle::denovo_assemble::TransferCredit::Full } else { rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads },
+                    rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads },
                 ),
             };
             // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —

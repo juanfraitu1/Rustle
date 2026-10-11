@@ -244,15 +244,21 @@ case "${RUSTLE_DIRECT_TRANSFRAGS:-}" in
   *) echo "[rustle_pipeline] RUSTLE_DIRECT_TRANSFRAGS must be 0, 1 or union (got '$RUSTLE_DIRECT_TRANSFRAGS')" >&2; exit 2 ;;
 esac
 # Opt-in levers toward FLAIR's exclusive transcripts (docs/PENDING_2026-10-11.md; unset = off, the same command):
-#   RUSTLE_TRANSFER_CREDIT=full    copy_assign --transfer-credit full (with RUSTLE_DIRECT_TRANSFRAGS)
+#   RUSTLE_TRANSFER_CREDIT=full|best copy_assign --transfer-credit full|best (with RUSTLE_DIRECT_TRANSFRAGS)
 #   RUSTLE_READ_JUNCTION_SNAP=W    copy_assign --read-junction-snap W (bp; read junctions snap to better-supported ones)
 #   RUSTLE_MIN_CHAIN_READS=N       copy_assign --min-chain-reads N (1 = single-read spliced chains)
-case "${RUSTLE_TRANSFER_CREDIT:-}" in ""|split) ;; full) POLISH="$POLISH --transfer-credit full" ;;
-  *) echo "[rustle_pipeline] RUSTLE_TRANSFER_CREDIT must be split or full (got '$RUSTLE_TRANSFER_CREDIT')" >&2; exit 2 ;; esac
+#   RUSTLE_CHECK_SPLICE=1          copy_assign --check-splice (FLAIR --check_splice on each spliced read)
+#   RUSTLE_TERMINAL_EXON_ANCHOR=N  copy_assign --terminal-exon-anchor N (bp; FLAIR --stringent's end rule is 25)
+case "${RUSTLE_TRANSFER_CREDIT:-}" in ""|split) ;; full|best) POLISH="$POLISH --transfer-credit $RUSTLE_TRANSFER_CREDIT" ;;
+  *) echo "[rustle_pipeline] RUSTLE_TRANSFER_CREDIT must be split, full or best (got '$RUSTLE_TRANSFER_CREDIT')" >&2; exit 2 ;; esac
 case "${RUSTLE_READ_JUNCTION_SNAP:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_READ_JUNCTION_SNAP must be a whole number of bp (got '$RUSTLE_READ_JUNCTION_SNAP')" >&2; exit 2 ;;
   *) POLISH="$POLISH --read-junction-snap $RUSTLE_READ_JUNCTION_SNAP" ;; esac
 case "${RUSTLE_MIN_CHAIN_READS:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_MIN_CHAIN_READS must be a whole number (got '$RUSTLE_MIN_CHAIN_READS')" >&2; exit 2 ;;
   *) POLISH="$POLISH --min-chain-reads $RUSTLE_MIN_CHAIN_READS" ;; esac
+case "${RUSTLE_CHECK_SPLICE:-}" in ""|0) ;; 1) POLISH="$POLISH --check-splice" ;;
+  *) echo "[rustle_pipeline] RUSTLE_CHECK_SPLICE must be 0 or 1 (got '$RUSTLE_CHECK_SPLICE')" >&2; exit 2 ;; esac
+case "${RUSTLE_TERMINAL_EXON_ANCHOR:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_TERMINAL_EXON_ANCHOR must be a whole number of bp (got '$RUSTLE_TERMINAL_EXON_ANCHOR')" >&2; exit 2 ;;
+  *) POLISH="$POLISH --terminal-exon-anchor $RUSTLE_TERMINAL_EXON_ANCHOR" ;; esac
 # RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads (opt-in; unset = off, the same command): copy_assign --polish-junction-snap,
 # the fuzzy-junction merge that keeps read-proven splice sites (reads: a junction within 10 bp of a better-supported one
 # in its locus moves onto it only when its own reads do not prove it and the other's reads do). Dev-only, in-sample
