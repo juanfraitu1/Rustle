@@ -194,6 +194,13 @@ struct Args {
     #[arg(long, default_value_t = false)]
     compat_support: bool,
 
+    /// DIRECT TRANSFRAGS, no network flow (`docs/PREREG_direct_transfrags_2026-10-11.md`). Each exact intron-chain group is
+    /// a transfrag; a transfrag contained in a longer one (contiguous sub-chain, reads inside its exons) transfers its reads
+    /// to the maximal transfrags containing it, split by their own reads, and only maximal transfrags whose abundance reaches
+    /// the read floor become transcripts. Exclusive with `--compat-support`. **Default off = byte-identical.**
+    #[arg(long, default_value_t = false, conflicts_with = "compat_support")]
+    direct_transfrags: bool,
+
     /// ⭐ ASSEMBLER-ONLY MODE (§6p6). Skip family detection, homology refinement and copy assignment
     /// entirely, and run ONLY the assembly path: reads -> intron-chain skeletons -> `assemble_gate` ->
     /// `collapse_loci_groups` -> GTF. This is the "define loci and cluster isoforms into transcripts"
@@ -6483,7 +6490,7 @@ fn main() -> Result<()> {
                 ev.seal();
                 ev
             });
-            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, args.compat_support));
+            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
@@ -7003,7 +7010,7 @@ fn main() -> Result<()> {
                     1,
                     None,
                     args.read_isoform_k,
-                    args.compat_support,
+                    if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact },
                 ),
             };
             // (The opt-in fuzzy junction merge, RUSTLE_JUNCTION_FUZZ_BP, sat here; measured net-negative on chr20 —
