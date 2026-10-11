@@ -1,0 +1,26 @@
+<div id="tab-seeds" role="tabpanel" aria-labelledby="tb-seeds" hidden>
+  <p class="lede">Can the DNA mode find every copy from one known copy? We used each of the eleven copies alone as a seed: its transcript and its gene body were aligned to the whole gorilla genome with the guided finder as shipped (identity ≥ 0.80, ≥ 50% of the seed aligned).</p>
+  <div class="tiles" id="seed-tiles"></div>
+
+  <section>
+    <h2>4 · Every copy, used alone as a seed, finds all eleven</h2>
+    <p class="cap">Rows are the seed copy; columns are the copies its alignments land on. Shade is the gene-body identity between the two copies. A corner mark means only the gene-body search found that copy; the transcript search alone missed it (the three 5′ fragments, from three of the seeds). Outlined cells are each seed finding itself.</p>
+    <div class="legend" id="hm-legend"></div>
+    <div class="fig hm" id="hm"></div>
+  </section>
+
+  <section>
+    <h2>5 · Copies found as the number of seeds grows</h2>
+    <p class="cap">Every set of k seeds out of the eleven (2,047 sets), one pass of the finder. Band: fewest to most copies found across the sets of that size; line: median. With the shipped identity bar (first panel) any single seed finds all eleven. Stricter bars split LRPAP1 into subclusters, and then each subcluster needs its own seed.</p>
+    <div class="sm" id="sm"></div>
+  </section>
+
+  <section>
+    <h2>6 · How far LRPAP1 sits from needing a second seed</h2>
+    <p class="cap">The fewest seeds that find all eleven, as the finder's identity bar rises: in one pass, and when every copy found becomes a seed in turn. The shaded band is the identity between copies (95.9–99.8%). The bar has to pass 98% before one seed stops being enough; the shipped bar is 80%.</p>
+    <div class="legend"><span><i class="sw ex"></i>with iteration</span><span><i class="sw dash"></i>one pass</span><span><i class="sw idband"></i>identity between copies</span></div>
+    <div class="fig sw-fig" id="sw"></div>
+  </section>
+
+  <footer>Finder: the DNA (guided) mode's <code>transcript_hits</code> and <code>gene_body_chains</code> from <code>bench/guided_pipeline.py</code>, unchanged (identity ≥ 0.80; ≥ 50% of the seed aligned), on <code>minimap2 -x splice</code> and <code>-x asm20</code> (<code>-N 100 -p 0.1</code>) against the mGorGor1 primary genome. Seeds: each copy's model from section 3; transcript = its exons spliced, gene body = first to last exon. A copy is found when a passing hit overlaps it. Truth: the eleven copies on the first tab (the ten from Yoo plus the chr16 fragment). The expectation that one seed suffices was pre-registered before any alignment (<code>docs/PREREG_lrpap1_seed_reach_2026-10-11.md</code>); the identity sweep was added after the result and is descriptive. Script <code>bench/lrpap1_seeds/seed_reach.py</code>, 11 Oct 2026.</footer>
+</div>

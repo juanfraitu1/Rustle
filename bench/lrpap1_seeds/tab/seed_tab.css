@@ -1,0 +1,20 @@
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--rule);margin:4px 0 18px}
+.tabs button{font:13px var(--mono);padding:7px 14px;border:1px solid transparent;border-bottom:0;border-radius:6px 6px 0 0;background:none;color:var(--ink-soft);cursor:pointer;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{background:var(--surface);border-color:var(--rule);color:var(--ink);font-weight:600}
+.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.hm svg{min-width:640px}.sw-fig svg{min-width:680px}
+.sm{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.sm .fig svg{width:100%}
+.hcell{stroke:none}.hcell.self{stroke:var(--ink);stroke-width:1.5}
+.corner{fill:var(--ink)}
+.sw.self{border:1.5px solid var(--ink);background:color-mix(in oklab,var(--fib) 100%,var(--surface))}
+.sw.corner{background:linear-gradient(225deg,var(--ink) 0 30%,var(--surface-2) 30%)}
+.sw.dash{height:0;border-top:2px dashed var(--ink-soft);background:none;border-radius:0}
+.sw.idband{background:var(--fib-soft)}
+.band{fill:var(--fib-soft)}.medline{fill:none;stroke:var(--fib);stroke-width:2}
+.allline{stroke:var(--ink-soft);stroke-width:1;stroke-dasharray:2 3}
+.idband{fill:var(--fib-soft);opacity:.55}
+.step{fill:none;stroke-width:2}.step.it{stroke:var(--ink)}.step.op{stroke:var(--ink-soft);stroke-dasharray:6 4}
+.ship{stroke:var(--ink-soft);stroke-width:1.2;stroke-dasharray:3 3}
+.ann{stroke:var(--ink-soft);stroke-width:1}
+.brk{stroke:var(--ink-soft);stroke-width:1.2;fill:none}
