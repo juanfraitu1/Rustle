@@ -147,6 +147,10 @@ def main(browser, out):
     h5 = [(h["q"], h["chrom"], h["s"], h["e"], h["nm"] / h["bl"]) for h in tx] + \
          [(h["q"], h["chrom"], h["xs"], h["xe"], h["nm"] / sum(r["bl"] for r in h["recs"])) for h in ch]
     res["sweep"] = sweep(h5, span, ids, [round(0.80 + 0.0025 * i, 4) for i in range(81)])
+    res["curves"] = {}
+    for t in (0.80, 0.98, 0.99, 0.995, 1.0):
+        Ft, _ = finds([h[:4] for h in h5 if h[4] >= t], span)
+        res["curves"][f"{t:.3f}"] = dict(one_pass=curve(Ft, ids, one_pass), iterate=curve(Ft, ids, closure))
     json.dump(res, open(out, "w"), indent=1)
     print(json.dumps({k: res[k] for k in ("min_seeds_one_pass", "min_seeds_iterate", "source_components", "single_seed", "extra_loci")}, indent=1))
 
