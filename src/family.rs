@@ -44508,6 +44508,21 @@ pub mod denovo_pipeline {
                 };
                 // the floor for spliced chains (`--min-chain-reads`); unspliced reads keep `min_reads`
                 let smin = if opts.spliced_min_reads > 0 { opts.spliced_min_reads } else { min_reads };
+                // `--read-isoform-k` on the streaming reader: no read list, so the per-junction support is summed over the
+                // chain groups (each spliced read is in exactly one group, so this is `junction_support` of the same pool)
+                let own_jsup: std::collections::BTreeMap<(String, (u64, u64)), u32>;
+                let jsup = if isoform_k > 0 && jsup.is_none() {
+                    let mut m = std::collections::BTreeMap::new();
+                    for ((chrom, chain), v) in &groups {
+                        for &j in chain {
+                            *m.entry((chrom.clone(), j)).or_insert(0) += v.0;
+                        }
+                    }
+                    own_jsup = m;
+                    Some(&own_jsup)
+                } else {
+                    jsup
+                };
                 let extra = match mode {
                     ChainAdmission::Compat => compatible_support(&groups, smin),
                     ChainAdmission::Direct | ChainAdmission::DirectUnion => {
@@ -50414,6 +50429,27 @@ pub mod denovo_pipeline {
                 let one = AdmitOpts { spliced_min_reads: 1, ..AdmitOpts::from(ChainAdmission::Exact) };
                 assert_eq!(finish_opts(&reads, 2, one), vec![skel("c1", 100, 800, 1, &[J1, J2, J3])]);
                 assert_eq!(finish_mode(&reads, 2, ChainAdmission::Exact), vec![]);
+            }
+
+            #[test]
+            fn read_isoform_k_without_a_junction_table_counts_the_groups_own_reads() {
+                // the single-read chain [J1, J2] has both junctions carried by other reads: k = 2 admits it
+                let mut reads = vec![pr("c1", 100, 550, &[J1]); 2];
+                reads.extend(vec![pr("c1", 320, 600, &[J2]); 2]);
+                reads.push(pr("c1", 100, 600, &[J1, J2]));
+                let table = junction_support(&reads);
+                let from_table = {
+                    let mut acc = Pass1Acc::new(1, None);
+                    reads.iter().for_each(|r| acc.push_read(r));
+                    acc.finish_with(2, 2, Some(&table), ChainAdmission::Exact)
+                };
+                let streamed = {
+                    let mut acc = Pass1Acc::new(1, None);
+                    reads.iter().for_each(|r| acc.push_read(r));
+                    acc.finish_with(2, 2, None, ChainAdmission::Exact)
+                };
+                assert!(from_table.iter().any(|s| s.introns == vec![J1, J2]));
+                assert_eq!(streamed, from_table);
             }
 
             // ---- StringTie levers without flow (docs/PENDING_2026-10-11.md, StringTie milestone) ----

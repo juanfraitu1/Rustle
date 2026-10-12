@@ -6476,7 +6476,6 @@ fn main() -> Result<()> {
         // configuration takes the historical path below unchanged.
         let streaming = args.assemble_only
             && !args.materialize_reads
-            && args.read_isoform_k == 0
             && !rustle::denovo_assemble::footprint_nodes_enabled()
             && !(args.recover_copies || args.tied_seed)
             // GOOD seeding (r1060/r1100) streams too once a genome-wide best-AS table is loaded: the
@@ -6550,7 +6549,7 @@ fn main() -> Result<()> {
                 ev.seal();
                 ev
             });
-            streamed = Some(acc.finish_with(cfg.pass1_min_reads, 0, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends }));
+            streamed = Some(acc.finish_with(cfg.pass1_min_reads, args.read_isoform_k, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             for (wchrom, wlo, whi) in &wins {
