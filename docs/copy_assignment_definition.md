@@ -331,6 +331,12 @@ band is exceeded). They are then **validated by a read pileup**: a column is dro
 `≥ PSV_MIN_JUDGE_COV` coverage yet fewer than two alleles reach `PSV_MIN_ALLELE_READS`
 (`read_supported_columns`, `copy_assign_pipeline.rs:652`). So a PSV is an *assembly* claim confirmed by
 *molecules*, and a column no read can judge is kept, not discarded.
+Since 2026-10-12 each copy is first **oriented** against copy 0 (`is_reverse_homolog`: shared 15-mers forward vs
+reverse-complemented, sign test at the certificate's alpha 1e-3); a reverse-complement homolog (de novo 1-2-exon copies
+whose strand calls disagree) is aligned reverse-complemented, its alleles are stored in copy 0's frame, and its reads
+are read with its FRAME strand (`FamilyProfiles::strand`, dumped as `copy_strand`). Before, such pairs were aligned as
+given: 10/56 KB3781 families got a "PSV" at most bases (723 vs 9.8 columns/kb). The default read-star certificate
+never read these columns, so assignments were unchanged (`docs/PSV_SUN_PILEUP_2026-10-12.md`).
 
 A **bubble** is `decisive` iff the copies carry ≥ 2 distinct non-`None` alleles there
 (`BubbleGraph::from_copies`, `copy_assign.rs:51`). Per column the read spans, every copy gets

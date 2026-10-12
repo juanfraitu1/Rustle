@@ -59,3 +59,38 @@ copy_assign snapshot (md5 8b0026b9) `--dump-psv`, 290 s / 9.5 GB under the heavy
   copies, forced global alignment). Proposed register rows (not added — register shared with another session):
   (1) "O2 PSV columns are homologous positions" — 54.6% of pairs verify; 10/56 families reverse-complement artifacts.
   (2) "A per-copy pileup flags real deviations from the reference PSV allele" — 61/62 vs 0.2% control, PASS.
+
+## Fix applied (2026-10-12, same day) and corrected numbers
+
+**Fix** (`src/family.rs`): `discover_psvs_oriented` orients each copy against copy 0 before the copy-vs-copy alignment
+(`is_reverse_homolog`: 15-mers shared forward vs reverse-complemented; flip iff more reverse AND sign test p < 1e-3,
+the certificate's alpha). A flipped copy is aligned reverse-complemented, its column entry is (its own genomic position,
+its base in copy 0's frame), `FamilyProfiles::strand` / `FamilyDetail::copy_frame_strand` / the dump's `copy_strand`
+carry its FRAME strand so reads and alleles stay comparable. Opt-in intron columns follow the same frame. 4 new tests
+(TDD, each watched failing first: 240 artifact columns for a 300-bp reverse pair; a 20-bp inverted stretch flipped by a
+bare majority). Library suite 1,020 passed / 0 failed; full `cargo test --no-fail-fast` 1,244+ passed, 3 FAILED =
+`tests/pipeline_driver_dispatch.rs` (pre-existing and unrelated: the driver's `all)` now calls `run_all`, which the
+test's stubs do not define).
+
+**Before/after on the same subset** (HEAD 3e0f3fcd built without vs with the fix, identical arguments):
+
+| output | change |
+|---|---|
+| assignments / quant / copy_conversions | **byte-identical** (default certificate = read-star; it never read these columns) |
+| strand-consistent families (46) | PSV columns **byte-identical** (0 changed) |
+| reverse-pair families (10) | median 723 -> **10.0** columns/kb (e.g. MCL116 3,586 -> 5, MCL90 1,864 -> 19, MCL316 1,192 -> 0) |
+| PSV columns total | 47,134 -> 33,015 |
+| reverse-pair positions verified | 26% -> **77%** (9,233 / 12,030) |
+| gate V overall | 54.6% -> 56.2% (the rest = register 683: different exon composition; `--psv-genomic` is its opt-in remedy) |
+
+A first version flipped on a bare majority and changed 2 strand-consistent families (MCL55 1 vs 3 k-mers, MCL59 60 vs
+61); the sign test removed both.
+
+**Corrected M1/M2 (fixed dump; the first-pass numbers above were inflated by artifact columns that verified by chance):**
+
+- M1: homologous decisive columns 1,799; SUN columns **1,409 = 78%** (was 30%); private alleles 2,116, SUN 1,815 = 86%;
+  **G pooled 0.142** (was 0.673; MCL116/316/38/90 were artifacts), per-family median 0.10 (43 families). G >= 0.05 still
+  -> genome-uniqueness annotation recommended. R still undefined.
+- M2: 7,246 pairs, 4,711 covered; **258 flags**, 4,419 control. Flags B_ALT **222/224 = 0.991**; control differs
+  10/4,111 = 0.0024; fold 415; **bar PASS**. Flags concentrate in the repaired families (MCL8 152, MCL47 36): their real
+  PSV columns now exist and many are heterozygous in KB3781. Outputs `/mnt/linuxdisk/tmp/psv_sun/{run_head,run_fix2,eval_fix2}/`.

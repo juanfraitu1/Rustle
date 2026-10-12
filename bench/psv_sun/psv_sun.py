@@ -21,7 +21,9 @@ GENOME = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta"
 HAPS = "/mnt/linuxdisk/home/juanfraitu/gorilla_haps"
 CHRMAP = "/mnt/linuxdisk/tmp/rna_allele/chrmap.tsv"
 OUT = os.environ.get("PSV_SUN_OUT", "/mnt/linuxdisk/tmp/psv_sun")
-RUN = f"{OUT}/run/s"
+SUBSET = f"{OUT}/run"  # the subset inputs written by `prep`
+RUN = os.environ.get("PSV_SUN_RUN", f"{SUBSET}/s")  # a copy_assign --dump-psv prefix on that subset
+RES = os.environ.get("PSV_SUN_RES", OUT)  # where `positions` writes pos.tsv / gate_v.json
 K, FLANK = 30, 2000
 MIN_READS, MIN_ALT, MIN_ALT_FRAC, CONTROL_REF = 10, 3, 0.20, 0.95
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
@@ -244,7 +246,7 @@ def cmd_sanity():
 
 
 def cmd_positions():
-    G, tab, seqs = Fasta(GENOME), copy_table(), copies_fa(f"{OUT}/run/copies.fa")
+    G, tab, seqs = Fasta(GENOME), copy_table(), copies_fa(f"{SUBSET}/copies.fa")
     cols, copies = dump()
     rows, stat, by_rel = [], collections.Counter(), collections.Counter()
     tmp = f"{OUT}/tmp"
@@ -292,7 +294,8 @@ def cmd_positions():
                 if tx_offset(x["exons"], x["strand"], pos) is None:
                     continue
                 b = G.fetch(x["chrom"], pos, pos + 1)
-                if (comp(b) if x["strand"] == "-" else b) == crs[i]["alleles"][j]:
+                # the dump's strand column is the allele frame (the frame strand since the orientation fix)
+                if (comp(b) if crs[i]["strand"] == "-" else b) == crs[i]["alleles"][j]:
                     anchor = i
                     break
             for i in have:
@@ -315,23 +318,23 @@ def cmd_positions():
                         row["status"] = "unmapped"
                     else:
                         b = G.fetch(x["chrom"], g, g + 1)
-                        ok = (comp(b) if x["strand"] == "-" else b) == c["alleles"][j]
+                        ok = (comp(b) if c["strand"] == "-" else b) == c["alleles"][j]
                         row.update(chrom=x["chrom"], gpos=g, strand=x["strand"], status="verified" if ok else "mismatch")
                 stat[row["status"]] += 1
                 by_rel[f"{row['status']}|{row['rel'] or 'none'}"] += 1
                 rows.append(row)
-    write_tsv(f"{OUT}/pos.tsv", rows, ["family_id", "col", "copy", "tid", "allele", "chrom", "gpos", "strand", "status", "rel"])
+    write_tsv(f"{RES}/pos.tsv", rows, ["family_id", "col", "copy", "tid", "allele", "chrom", "gpos", "strand", "status", "rel"])
     tot = sum(stat.values())
     res = {"pairs": tot, **stat, "verified_frac": round(stat["verified"] / max(tot, 1), 4), "by_rel": dict(by_rel)}
     res["V_pass"] = res["verified_frac"] >= 0.95
-    json.dump(res, open(f"{OUT}/gate_v.json", "w"), indent=1)
+    json.dump(res, open(f"{RES}/gate_v.json", "w"), indent=1)
     print(json.dumps(res))
 
 
 def homologous():
     """Amendment 1: decisive columns where every copy carrying a non-gap allele has a verified position."""
     ok = collections.defaultdict(lambda: True)
-    for r in tsv(f"{OUT}/pos.tsv"):
+    for r in tsv(f"{RES}/pos.tsv"):
         key = (r["family_id"], int(r["col"]))
         ok[key] = ok[key] and r["status"] == "verified"
     return {k for k, v in ok.items() if v}
@@ -339,7 +342,7 @@ def homologous():
 
 def verified():
     hom = homologous()
-    return [r for r in tsv(f"{OUT}/pos.tsv") if r["status"] == "verified" and (r["family_id"], int(r["col"])) in hom]
+    return [r for r in tsv(f"{RES}/pos.tsv") if r["status"] == "verified" and (r["family_id"], int(r["col"])) in hom]
 
 
 def private_pairs():
@@ -369,20 +372,20 @@ def cmd_kmers():
         ks = [canon(w[i:i + K]) for i in range(len(w) - K + 1) if set(w[i:i + K]) <= set("ACGT")]
         allk.update(ks)
         rows.append({"family_id": key[0], "col": key[1], "copy": key[2], "chrom": r["chrom"], "gpos": g, "kmers": ",".join(ks) or "-"})
-    write_tsv(f"{OUT}/private.tsv", rows, ["family_id", "col", "copy", "chrom", "gpos", "kmers"])
-    with open(f"{OUT}/kmers.txt", "w") as fh:
+    write_tsv(f"{RES}/private.tsv", rows, ["family_id", "col", "copy", "chrom", "gpos", "kmers"])
+    with open(f"{RES}/kmers.txt", "w") as fh:
         fh.write("\n".join(sorted(allk)) + "\n")
-    print(f"{len(rows)} private verified alleles, {len(allk)} distinct candidate {K}-mers -> {OUT}/kmers.txt")
+    print(f"{len(rows)} private verified alleles, {len(allk)} distinct candidate {K}-mers -> {RES}/kmers.txt")
 
 
 def cmd_m1():
     counts = {}
-    for line in open(f"{OUT}/kmers.counts"):
+    for line in open(f"{RES}/kmers.counts"):
         k, n = line.split()
         counts[k] = int(n)
     _, copies = dump()
     sun, fam_stat = set(), collections.defaultdict(collections.Counter)
-    for r in tsv(f"{OUT}/private.tsv"):
+    for r in tsv(f"{RES}/private.tsv"):
         ks = [] if r["kmers"] == "-" else r["kmers"].split(",")
         f = fam_stat[r["family_id"]]
         if not ks:
@@ -420,11 +423,11 @@ def cmd_m1():
     keys = ["decisive_cols_all", "decisive_cols", "cols_with_private", "cols_with_sun", "private", "sun",
             "private_not_genome_unique", "private_no_kmer", "assigned_rows", "assigned_rows_with_sun"]
     rows = [{"family_id": f, **{k: s[k] for k in keys}} for f, s in sorted(fam_stat.items())]
-    write_tsv(f"{OUT}/m1_families.tsv", rows, ["family_id"] + keys)
+    write_tsv(f"{RES}/m1_families.tsv", rows, ["family_id"] + keys)
     tot = {k: sum(r[k] for r in rows) for k in keys}
     tot["homologous_of_decisive"] = round(tot["decisive_cols"] / max(tot["decisive_cols_all"], 1), 4)
     rel = collections.defaultdict(set)
-    for r in tsv(f"{OUT}/pos.tsv"):
+    for r in tsv(f"{RES}/pos.tsv"):
         rel[r["family_id"]].add(r["rel"])
     for name, sel in (("strand_consistent", lambda f: "-" not in rel[f]), ("has_reverse_pairs", lambda f: "-" in rel[f])):
         a = sum(r["decisive_cols_all"] for r in rows if sel(r["family_id"]))
@@ -437,7 +440,7 @@ def cmd_m1():
     G_fam = sorted(round(r["private_not_genome_unique"] / r["private"], 3) for r in rows if r["private"] >= 5)
     tot["G_per_family_median"] = G_fam[len(G_fam) // 2] if G_fam else None
     tot["families_with_ge5_private"] = len(G_fam)
-    json.dump(tot, open(f"{OUT}/m1.json", "w"), indent=1)
+    json.dump(tot, open(f"{RES}/m1.json", "w"), indent=1)
     print(json.dumps(tot, indent=1))
 
 
@@ -486,13 +489,13 @@ def cmd_pileup(chrom):
                     c[ch.upper()] += 1
                 i += 1
             out.append({"chrom": chrom, "gpos": p, "ref": ref, **{b: c[b] for b in "ACGT"}})
-    write_tsv(f"{OUT}/pileup/{chrom}.tsv", out, ["chrom", "gpos", "ref", "A", "C", "G", "T"])
+    write_tsv(f"{RES}/pileup/{chrom}.tsv", out, ["chrom", "gpos", "ref", "A", "C", "G", "T"])
     print(f"{chrom}: {len(out)} positions piled up ({len(bytid)} copy windows)")
 
 
 def cmd_flags():
     pile = {}
-    for p in glob.glob(f"{OUT}/pileup/*.tsv"):
+    for p in glob.glob(f"{RES}/pileup/*.tsv"):
         for r in tsv(p):
             pile[(r["chrom"], int(r["gpos"]))] = {b: int(r[b]) for b in "ACGT"}
     _, copies = dump()
@@ -522,7 +525,7 @@ def cmd_flags():
         rows.append({"family_id": fam, "col": j, "copy": x, "tid": r["tid"], "chrom": r["chrom"], "gpos": g,
                      "strand": r["strand"], "ref_g": ref_g, "alt_g": alt or "-", "n": n, "n_unique": n_unique,
                      "n_o2": n - n_unique, "n_ref": c[ref_g], "n_alt": n_alt, "cls": cls or "-"})
-    write_tsv(f"{OUT}/m2_pairs.tsv", rows, ["family_id", "col", "copy", "tid", "chrom", "gpos", "strand", "ref_g", "alt_g",
+    write_tsv(f"{RES}/m2_pairs.tsv", rows, ["family_id", "col", "copy", "tid", "chrom", "gpos", "strand", "ref_g", "alt_g",
                                             "n", "n_unique", "n_o2", "n_ref", "n_alt", "cls"])
     cnt = collections.Counter(r["cls"] for r in rows)
     print(json.dumps({"pairs": len(rows), "covered_ge10": sum(r["n"] >= MIN_READS for r in rows), **cnt}))
@@ -534,7 +537,7 @@ def chrmap():
 
 def cmd_truth(chrom):
     cm = chrmap().get(chrom)
-    pairs = [r for r in tsv(f"{OUT}/m2_pairs.tsv") if r["chrom"] == chrom and r["cls"] in ("flag", "control")]
+    pairs = [r for r in tsv(f"{RES}/m2_pairs.tsv") if r["chrom"] == chrom and r["cls"] in ("flag", "control")]
     if not pairs or not cm or not cm["B_name"]:
         print(f"{chrom}: nothing to do (pairs {len(pairs)}, B {cm and cm['B_name']!r})")
         return
@@ -576,15 +579,15 @@ def cmd_truth(chrom):
                 row["truth"] = "UNALIGNED_BASE"
         out.append(row)
     cols = list(pairs[0].keys()) + ["b_base", "truth", "n_hits"]
-    write_tsv(f"{OUT}/truth/{chrom}.tsv", out, cols)
+    write_tsv(f"{RES}/truth/{chrom}.tsv", out, cols)
     for p in (bfa, bfa + ".fai", qfa):
         os.remove(p)
     print(f"{chrom}: {collections.Counter(r['truth'] + '/' + r['cls'] for r in out)}")
 
 
 def cmd_m2():
-    rows = tsv(f"{OUT}/m2_pairs.tsv")
-    truth = [r for p in glob.glob(f"{OUT}/truth/*.tsv") for r in tsv(p)]
+    rows = tsv(f"{RES}/m2_pairs.tsv")
+    truth = [r for p in glob.glob(f"{RES}/truth/*.tsv") for r in tsv(p)]
     cm = chrmap()
     res = {}
     for cls in ("flag", "control"):
@@ -607,7 +610,7 @@ def cmd_m2():
     fl = [r for r in rows if r["cls"] == "flag"]
     res["flag_transitions_frac"] = round(sum((r["ref_g"], r["alt_g"]) in ts for r in fl) / max(len(fl), 1), 4)
     res["flags_with_o2_reads"] = sum(int(r["n_o2"]) > 0 for r in fl)
-    json.dump(res, open(f"{OUT}/m2.json", "w"), indent=1)
+    json.dump(res, open(f"{RES}/m2.json", "w"), indent=1)
     print(json.dumps(res, indent=1))
 
 

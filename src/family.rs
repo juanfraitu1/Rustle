@@ -22018,12 +22018,80 @@ pub mod copy_assign {
             copies: &[&DenovoTranscript],
             exon_maps: &[Vec<u64>],
         ) -> Vec<PsvColumn> {
+            discover_psvs_oriented(copies, exon_maps).0
+        }
+
+        /// Significance level of the orientation call in `is_reverse_homolog` — the certificate's default `alpha`
+        /// (`AssignParams::default().alpha`), so orientation is decided at the same level as an assignment.
+        const ORIENTATION_ALPHA: f64 = 1e-3;
+
+        /// One-sided sign test, exact: `P(X >= k)` for `X ~ Binomial(n, 1/2)`, summed in log space.
+        fn sign_test_upper_tail(k: usize, n: usize) -> f64 {
+            if k == 0 {
+                return 1.0;
+            }
+            if k > n {
+                return 0.0;
+            }
+            // ln P(X = n) = -n ln 2, then P(X = j - 1) = P(X = j) * j / (n - j + 1) down to j = k
+            let mut lp = -(n as f64) * std::f64::consts::LN_2;
+            let mut terms = vec![lp];
+            for j in (k + 1..=n).rev() {
+                lp += (j as f64).ln() - ((n - j + 1) as f64).ln();
+                terms.push(lp);
+            }
+            let m = terms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            (m + terms.iter().map(|t| (t - m).exp()).sum::<f64>().ln()).exp().min(1.0)
+        }
+
+        /// Is `seq` the REVERSE COMPLEMENT of `ref_seq`'s homolog? `ref_seq`'s k-mers (k = 15, case-insensitive) found
+        /// in `seq` forward vs in its reverse complement; reversed iff more are found reverse-complemented AND the excess
+        /// is significant (sign test at `ORIENTATION_ALPHA`): barely homologous copies split a few chance k-mers evenly
+        /// (KB3781 MCL55 1 vs 3, MCL59 60 vs 61) while true reverse homologs give 0 vs 87-5,825. Same-orientation
+        /// homologs share k-mers forward only, so a strand-consistent family is never flipped.
+        pub fn is_reverse_homolog(ref_seq: &[u8], seq: &[u8]) -> bool {
+            const K: usize = 15;
+            if ref_seq.len() < K || seq.len() < K {
+                return false;
+            }
+            let r = ref_seq.to_ascii_uppercase();
+            let f = seq.to_ascii_uppercase();
+            let rc = crate::seq_utils::reverse_complement(&f);
+            let set: std::collections::HashSet<&[u8]> = r.windows(K).collect();
+            let fwd = f.windows(K).filter(|w| set.contains(w)).count();
+            let rev = rc.windows(K).filter(|w| set.contains(w)).count();
+            rev > fwd && sign_test_upper_tail(rev, rev + fwd) < ORIENTATION_ALPHA
+        }
+
+        /// `discover_psvs` plus `flipped[c]`: copy `c` was aligned REVERSE-COMPLEMENTED because its transcript is the
+        /// reverse complement of copy 0's homolog (`is_reverse_homolog`; de novo 1-2-exon copies whose strand calls
+        /// disagree — psv_sun 2026-10-12: aligned as given, 10/56 KB3781 families got a "PSV" at most bases, alleles at
+        /// chance). A flipped copy's column entry is `(its genomic position, its base in COPY 0's frame)` — the
+        /// complement of its own transcript base — so alleles are comparable across copies; read observations must
+        /// then use the copy's FRAME strand (its strand, flipped), see `build_family_profiles`.
+        pub fn discover_psvs_oriented(
+            copies: &[&DenovoTranscript],
+            exon_maps: &[Vec<u64>],
+        ) -> (Vec<PsvColumn>, Vec<bool>) {
             use poasta::aligner::scoring::GapAffine;
             let n = copies.len();
             if n < 2 {
-                return Vec::new();
+                return (Vec::new(), vec![false; n]);
             }
             let ref_seq = &copies[0].seq;
+            let flipped: Vec<bool> = (0..n)
+                .map(|c| c > 0 && is_reverse_homolog(ref_seq, &copies[c].seq))
+                .collect();
+            // each copy's sequence in copy 0's orientation (borrowed unless flipped)
+            let oriented: Vec<std::borrow::Cow<[u8]>> = (0..n)
+                .map(|c| {
+                    if flipped[c] {
+                        std::borrow::Cow::Owned(crate::seq_utils::revcomp_keep_case(&copies[c].seq))
+                    } else {
+                        std::borrow::Cow::Borrowed(copies[c].seq.as_slice())
+                    }
+                })
+                .collect();
             // PSV-column alignment engine. DEFAULT: our own direct banded Gotoh affine-gap DP (`banded_msa_pair`) — an
             // OPTIMAL pairwise aligner that is ~54x faster than poasta's graph/A* machinery on the 2-sequence case,
             // byte-identical on unambiguous alignments and differing only on co-optimal gap placement (<1% of reads, 0
@@ -22053,18 +22121,18 @@ pub mod copy_assign {
                     None
                 } else {
                     let band = fixed_band.unwrap_or_else(|| {
-                        ref_seq.len().abs_diff(copies[other].seq.len()) + PSV_BAND_MARGIN
+                        ref_seq.len().abs_diff(oriented[other].len()) + PSV_BAND_MARGIN
                     });
-                    banded_msa_pair(ref_seq, &copies[other].seq, band)
+                    banded_msa_pair(ref_seq, &oriented[other], band)
                 };
                 let aln = if use_mm2 {
-                    minimap2_msa_pair(ref_seq, &copies[other].seq)
+                    minimap2_msa_pair(ref_seq, &oriented[other])
                 } else if let Some(band) = banded {
                     Ok(band) // banded DP succeeded within the band
                 } else {
                     // forced poasta, or the band could not contain the alignment -> exact poasta (accuracy preserved)
                     poa_msa_with_costs(
-                        &[ref_seq.clone(), copies[other].seq.clone()],
+                        &[ref_seq.clone(), oriented[other].to_vec()],
                         GapAffine::new(1, 1, 32),
                     )
                 };
@@ -22105,19 +22173,22 @@ pub mod copy_assign {
                 amaps[other] = amap;
                 diff_off.extend(diffs);
             }
-            diff_off
+            let cols: Vec<PsvColumn> = diff_off
                 .into_iter()
                 .map(|ro| {
                     let mut rec: PsvColumn = vec![None; n];
                     rec[0] = Some((exon_maps[0][ro], ref_seq[ro]));
                     for other in 1..n {
                         if let Some(&oo) = amaps[other].get(&ro) {
-                            rec[other] = Some((exon_maps[other][oo], copies[other].seq[oo]));
+                            // a flipped copy: its own offset counts from the other end; the base stays in copy 0's frame
+                            let own = if flipped[other] { oriented[other].len() - 1 - oo } else { oo };
+                            rec[other] = Some((exon_maps[other][own], oriented[other][oo]));
                         }
                     }
                     rec
                 })
-                .collect()
+                .collect();
+            (cols, flipped)
         }
 
         /// INTRON-RETENTION lever (opt-in, `RUSTLE_INTRON_PSV=1`): discover PSV columns that fall in INTRONS, where
@@ -22333,7 +22404,8 @@ pub mod copy_assign {
             pub copy_gpos: Vec<Vec<(usize, u64)>>,
             /// `gen2off[c]` = forward-genome coord → spliced offset for copy `c` (cached once, not per read).
             pub gen2off: Vec<BTreeMap<u64, usize>>,
-            /// `strand[c]` for each copy.
+            /// `strand[c]` = copy `c`'s FRAME strand: its strand, flipped when `discover_psvs_oriented` aligned it reverse-
+            /// complemented (its alleles are in copy 0's frame); a read mapped to `c` is complemented iff it is `-`.
             pub strand: Vec<char>,
             pub n_cols: usize,
         }
@@ -22369,18 +22441,37 @@ pub mod copy_assign {
             // ⭐ O2-8c: `RUSTLE_PSV_GENOMIC=1` (set by `copy_assign --psv-genomic`) discovers the columns on the GENOMIC
             // alignment of the copies' spans instead of their spliced sequences (register 683). Unset => unchanged.
             let genomic_mode = genome.is_some() && std::env::var_os("RUSTLE_PSV_GENOMIC").is_some();
-            let mut cols = if let (true, Some(g)) = (genomic_mode, genome) {
-                discover_genomic_psvs(copies, g, false)
+            let (mut cols, flipped) = if let (true, Some(g)) = (genomic_mode, genome) {
+                (discover_genomic_psvs(copies, g, false), vec![false; copies.len()])
             } else {
-                discover_psvs(copies, &exon_maps)
+                discover_psvs_oriented(copies, &exon_maps)
             };
             // INTRON-RETENTION lever (opt-in): append intronic PSV columns so reads that retain an intron can use the
             // intronic sequence. OFF (env unset / no genome) => `cols` is unchanged => byte-identical to the exon-only gate.
             if let (false, Some(g)) = (genomic_mode, genome) {
                 if std::env::var_os("RUSTLE_INTRON_PSV").is_some() {
-                    cols.extend(discover_intron_psvs(copies, g));
+                    let mut extra = discover_intron_psvs(copies, g);
+                    // intronic alleles come in each copy's transcription orientation: a flipped copy's go to copy 0's frame
+                    for col in extra.iter_mut() {
+                        for (c, e) in col.iter_mut().enumerate() {
+                            if let (true, Some((_, b))) = (flipped[c], e.as_mut()) {
+                                *b = crate::seq_utils::revcomp_keep_case(&[*b])[0];
+                            }
+                        }
+                    }
+                    cols.extend(extra);
                 }
             }
+            // FRAME strand: a flipped copy's alleles are in copy 0's frame, so its reads are complemented the other way
+            let frame_strand: Vec<char> = copies
+                .iter()
+                .zip(&flipped)
+                .map(|(c, &f)| match (f, c.strand) {
+                    (true, '-') => '+',
+                    (true, _) => '-',
+                    (false, s) => s,
+                })
+                .collect();
             let n = copies.len();
             let mut profiles = Vec::with_capacity(n);
             let mut copy_gpos: Vec<Vec<(usize, u64)>> = vec![Vec::new(); n];
@@ -22403,7 +22494,7 @@ pub mod copy_assign {
                 profiles,
                 copy_gpos,
                 gen2off: copies.iter().map(|c| gen2off(c)).collect(),
-                strand: copies.iter().map(|c| c.strand).collect(),
+                strand: frame_strand,
                 n_cols: cols.len(),
             }
         }
@@ -22752,6 +22843,10 @@ pub mod copy_assign {
             /// `copy_psv_alleles[c][j]` = copy `c`'s allele at PSV column `j` (None = gapped) — the per-copy reference
             /// the reads are matched against in the genotype matrix.
             pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
+            /// `copy_frame_strand[c]` = copy `c`'s FRAME strand (`FamilyProfiles::strand`): `copy_psv_alleles[c]` is the
+            /// genome base complemented iff it is `-`. Differs from the annotated strand for a copy that
+            /// `discover_psvs_oriented` aligned reverse-complemented. Parallel to `copy_psv_alleles`.
+            pub copy_frame_strand: Vec<char>,
             /// `copy_junctions[c]` = copy `c`'s copy-specific intron-boundary offsets (`CopyProfile.junctions`,
             /// i.e. `copy_boundaries(c)`), parallel to `copy_psv_alleles` (Task H2: threads O3 junction evidence
             /// into the same per-copy frame the EM engine consumes).
@@ -23256,6 +23351,10 @@ pub mod copy_assign {
                 .iter()
                 .map(|&orig| full_detail.copy_junctions[orig].clone())
                 .collect();
+            let surviving_frame_strand: Vec<char> = current_indices
+                .iter()
+                .filter_map(|&orig| full_detail.copy_frame_strand.get(orig).copied())
+                .collect();
             let copy_abundance =
                 soft_quantify_em(&read_obs_for_em, &surviving_alleles, QUANT_ERROR, 100);
             let n_eff = results
@@ -23302,6 +23401,7 @@ pub mod copy_assign {
                 copy_conversions,
                 psv_col_pos: full_detail.psv_col_pos,
                 copy_psv_alleles: surviving_alleles,
+                copy_frame_strand: surviving_frame_strand,
                 copy_junctions: surviving_junctions,
                 copy_indices: current_indices,
             }
@@ -23365,6 +23465,7 @@ pub mod copy_assign {
                     copy_conversions: Vec::new(),
                     psv_col_pos: Vec::new(),
                     copy_psv_alleles: Vec::new(),
+                    copy_frame_strand: Vec::new(),
                     copy_junctions: Vec::new(),
                     copy_indices: Vec::new(),
                 };
@@ -24373,6 +24474,7 @@ pub mod copy_assign {
                 copy_conversions,
                 psv_col_pos: col_canon,
                 copy_psv_alleles: copy_alleles,
+                copy_frame_strand: fp.strand.clone(),
                 copy_junctions: fp.profiles.iter().map(|pr| pr.junctions.clone()).collect(),
                 copy_indices: (0..copies.len()).collect(),
             }
@@ -25234,6 +25336,80 @@ pub mod copy_assign {
                 assert_eq!(cols.len(), 2, "two SNP columns");
                 assert_eq!(cols[0], vec![Some((40, a40)), Some((1040, b40))]);
                 assert_eq!(cols[1], vec![Some((120, a120)), Some((1120, b120))]);
+            }
+
+            /// psv_sun 2026-10-12 (docs/PSV_SUN_PILEUP_2026-10-12.md): de novo 1-2-exon copies carry strand calls that
+            /// disagree, so a copy's transcript can be the REVERSE COMPLEMENT of its homolog's. Aligned as given, every
+            /// base became a "PSV" (10/56 KB3781 families, alleles at chance). The copy must be aligned in the ref's
+            /// orientation and its allele stored in the ref's frame.
+            #[test]
+            fn discover_psvs_aligns_a_reverse_complement_copy_in_the_ref_frame() {
+                let sa = rand_seq(300, 0xE7);
+                let mut hom = sa.clone(); // B's sequence written in A's frame
+                hom[100] = if sa[100] == b'A' { b'C' } else { b'A' };
+                let sb = crate::seq_utils::reverse_complement(&hom); // what B's transcript reads
+                let ca = copy_tx("A", 0, 300, '+', &[], sa.clone());
+                let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
+                let copies = [&ca, &cb];
+                let maps = [exon_map(&ca), exon_map(&cb)];
+                let cols = discover_psvs(&copies, &maps);
+                assert_eq!(cols.len(), 1, "one real difference, not a column per non-homologous base");
+                // A's offset 100 is B's offset 299 - 100 = 199 (genome 1199); B's base there in A's frame is hom[100]
+                assert_eq!(cols[0], vec![Some((100, sa[100])), Some((1199, hom[100]))]);
+            }
+
+            #[test]
+            fn a_copy_sharing_only_a_short_inverted_stretch_is_not_flipped() {
+                // KB3781 MCL55/MCL59: barely homologous copies split their few shared k-mers ~evenly (1 vs 3, 60 vs 61);
+                // a bare majority flipped them. 20 inverted bases give 6 reverse k-mers, 0 forward: not significant.
+                let a = rand_seq(600, 0xA1);
+                let mut b = rand_seq(600, 0xB2);
+                let inv = crate::seq_utils::reverse_complement(&a[200..220]);
+                b[300..320].copy_from_slice(&inv);
+                assert!(!is_reverse_homolog(&a, &b), "6 shared k-mers are chance, not orientation");
+                // the real case: a reverse-complement homolog with a few differences
+                let mut hom = a.clone();
+                hom[100] = if a[100] == b'A' { b'C' } else { b'A' };
+                assert!(is_reverse_homolog(&a, &crate::seq_utils::reverse_complement(&hom)));
+            }
+
+            #[test]
+            fn reverse_complement_copy_reads_are_observed_in_the_ref_frame() {
+                // same family; a read from B (forward genome = B's transcript, '+') covering B's PSV position 1199
+                let sa = rand_seq(300, 0xE7);
+                let mut hom = sa.clone();
+                hom[100] = if sa[100] == b'A' { b'C' } else { b'A' };
+                let sb = crate::seq_utils::reverse_complement(&hom);
+                let ca = copy_tx("A", 0, 300, '+', &[], sa.clone());
+                let cb = copy_tx("B", 1000, 1300, '+', &[], sb.clone());
+                let fp = build_family_profiles(&[&ca, &cb], None);
+                assert_eq!(fp.strand, vec!['+', '-'], "B's frame strand is flipped: its alleles are in A's frame");
+                let read = AlignedRead {
+                    ref_start: 1150,
+                    cigar: vec![('M', 100)],
+                    seq: sb[150..250].to_vec(),
+                    qual: vec![],
+                };
+                let mut obs = vec![None; fp.n_cols];
+                let mut q = vec![None; fp.n_cols];
+                fill_psv_obs(&read, &fp.copy_gpos[1], fp.strand[1] == '-', &mut obs, &mut q);
+                assert_eq!(obs, vec![Some(hom[100])], "the read carries B's allele in the column frame");
+                assert_eq!(fp.profiles[1].alleles, vec![Some(hom[100])]);
+                assert_eq!(fp.profiles[0].alleles, vec![Some(sa[100])]);
+            }
+
+            #[test]
+            fn family_detail_reports_the_frame_strand_of_a_reverse_complement_copy() {
+                // the PSV dump writes `copy_strand` so consumers can turn an allele into a genome base (complement iff
+                // '-'); for a flipped copy that is its FRAME strand, not its annotated strand
+                let sa = rand_seq(300, 0xE7);
+                let mut hom = sa.clone();
+                hom[100] = if sa[100] == b'A' { b'C' } else { b'A' };
+                let ca = copy_tx("A", 0, 300, '+', &[], sa);
+                let cb = copy_tx("B", 1000, 1300, '+', &[], crate::seq_utils::reverse_complement(&hom));
+                let d = assign_family_detailed(&[&ca, &cb], &[], &AssignParams::default(), None, None, None);
+                assert_eq!(d.copy_frame_strand, vec!['+', '-']);
+                assert_eq!(d.copy_psv_alleles[1], vec![Some(hom[100])]);
             }
 
             #[test]
@@ -29310,7 +29486,12 @@ pub mod denovo_pipeline {
                 copy_conversions: detail.copy_conversions.clone(),
                 psv_col_pos: detail.psv_col_pos.clone(),
                 copy_psv_alleles: detail.copy_psv_alleles.clone(),
-                copy_strand: all_copies.iter().map(|c| c.strand).collect(),
+                // the FRAME strand (alleles of a reverse-complement-aligned copy are in copy 0's frame)
+                copy_strand: if detail.copy_frame_strand.len() == all_copies.len() {
+                    detail.copy_frame_strand.clone()
+                } else {
+                    all_copies.iter().map(|c| c.strand).collect()
+                },
                 read_psv_obs: Vec::with_capacity(detail.results.len()),
                 copy_junctions: detail.copy_junctions.clone(),
                 copy_introns: all_copies.iter().map(|c| c.introns.clone()).collect(),
