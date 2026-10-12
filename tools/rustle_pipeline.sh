@@ -673,10 +673,9 @@ stage_assign() {
   fi
   say "assign: per-read copy assignment on $OUT.fam.copies.tsv"
   rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier split run's tables
-  # the molecules table the assemble stage built (good pool) lets copy_assign drop single-placement molecules' records at read time
-  # (byte-identical products; docs/GENOMEWIDE_FAST_2026-10-12.md)
-  local mem=() mol=${AS_TABLE:-$OUT.molecules.tsv}
-  if [ -s "$mol" ] && head -1 "$mol" | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')"; then mem+=(--skip-single-placement "$mol"); fi
+  local mem=()
+  # --tied-prefilter (byte-identical): each region is read light first and only the AS-tied molecules' records are loaded in full
+  [ -n "${RUSTLE_READTHROUGH_JUNCTIONS:-}" ] || mem+=(--tied-prefilter)
   # --max-window-records N (--low-mem: 500,000): a family whose merged copy windows (copy +- 50 kb, what copy_assign reads) hold more
   # than N records copy_assign would keep (rDNA arrays, acrocentric short arms) is not assigned, and its regions are not swept: listed
   # with the count reached in PREFIX.assign.depth_skipped.tsv (`utilities window-depth`). Only reads such a family shares with others

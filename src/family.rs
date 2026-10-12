@@ -48619,11 +48619,6 @@ pub mod denovo_pipeline {
         pub struct BamIndexCache {
             header: noodles_sam::Header,
             index: noodles_bam::bai::Index,
-            /// `copy_assign --skip-single-placement` (docs/GENOMEWIDE_FAST_2026-10-12.md): when set, a record whose molecule has
-            /// ONE placement genome-wide (`as_table`'s n_records == 1) gets no `BamRead` (its sequence is never held); its
-            /// `PrimaryRead` is still returned. Such a molecule can never be AS-tied, so the AS-tied gate drops it anyway.
-            multi: Option<std::sync::Arc<MultiPlacement>>,
-            skipped: std::sync::atomic::AtomicUsize,
         }
 
         /// COPY-WINDOW DEPTH (`docs/GENOMEWIDE_FAST_2026-10-12.md`). `copies` = (family, chrom, start, end). Each family's read
@@ -48772,6 +48767,22 @@ pub mod denovo_pipeline {
             Ok(deep)
         }
 
+        /// What [`BamIndexCache::reads_in_region_mode`] keeps of each record (the primary pool is the same in every mode).
+        /// `Full`: everything (= `reads_in_region`). `Light`: name, flags, scores, start, and a two-op CIGAR (`M` = the aligned
+        /// length, `N` = the rest of the reference span), no sequence or qualities: enough for the AS-tied gate's decision and the
+        /// span tests, at ~100 bytes a record. `Only(names)`: full records of the named molecules, none for the others.
+        #[derive(Clone, Copy)]
+        pub enum ReadMode<'a> {
+            Full,
+            Light,
+            Only(&'a DetHashSet<String>),
+        }
+
+        /// The reference end of an alignment (0-based exclusive): start + every `M`/`D`/`N`/`=`/`X` length.
+        pub fn read_span_end(r: &AlignedRead) -> u64 {
+            r.ref_start + r.cigar.iter().filter(|(o, _)| matches!(o, 'M' | 'D' | 'N' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>()
+        }
+
         /// The molecules with >= 2 primary / secondary placements genome-wide (`as_table`'s `n_records >= 2`), as sorted
         /// [`read_name_hash`]es (8 bytes per molecule).
         #[derive(Clone, Debug, Default, PartialEq)]
@@ -48820,31 +48831,26 @@ pub mod denovo_pipeline {
                     noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
                 let header = reader.read_header()?;
                 let index = noodles_bam::bai::read(&bai_path)?;
-                Ok(Self { header, index, multi: None, skipped: std::sync::atomic::AtomicUsize::new(0) })
+                Ok(Self { header, index })
             }
 
-            /// Skip the `BamRead` of every single-placement molecule (see the `multi` field).
-            pub fn with_multi_placement(mut self, m: std::sync::Arc<MultiPlacement>) -> Self {
-                self.multi = Some(m);
-                self
-            }
-
-            /// Records whose `BamRead` was skipped by the multi-placement filter so far.
-            pub fn skipped_single_placement(&self) -> usize {
-                self.skipped.load(std::sync::atomic::Ordering::Relaxed)
-            }
-
-            fn single_placement(&self, rb: &RecordBuf) -> bool {
-                match (&self.multi, rb.name()) {
-                    (Some(m), Some(n)) => {
-                        let single = !m.contains(&n.to_string());
-                        if single {
-                            self.skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        single
+            fn bam_read_for(&self, rb: &RecordBuf, chrom: &str, mode: ReadMode<'_>) -> Option<BamRead> {
+                if let ReadMode::Only(names) = mode {
+                    let n = rb.name()?.to_string();
+                    if !names.contains(&n) {
+                        return None;
                     }
-                    _ => false,
                 }
+                let (mut read, mapq, name, as_score, de, is_supplementary, is_secondary) = aligned_read_from_record(rb)?;
+                if let ReadMode::Light = mode {
+                    let aligned: u64 = read.cigar.iter().filter(|(o, _)| matches!(o, 'M' | '=' | 'X')).map(|(_, n)| *n).sum();
+                    let rest = read_span_end(&read) - read.ref_start - aligned;
+                    read.cigar = if rest > 0 { vec![('M', aligned), ('N', rest)] } else { vec![('M', aligned)] };
+                    read.seq = Vec::new();
+                    read.qual = Vec::new();
+                }
+                let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
+                Some(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts })
             }
 
             /// Query one region using the cached header+index (the reader seeks via the index, independent of the
@@ -48855,6 +48861,18 @@ pub mod denovo_pipeline {
                 chrom: &str,
                 lo: u64,
                 hi: u64,
+            ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
+                self.reads_in_region_mode(bam_path, chrom, lo, hi, ReadMode::Full)
+            }
+
+            /// [`BamIndexCache::reads_in_region`] keeping each record as `mode` says.
+            pub fn reads_in_region_mode(
+                &self,
+                bam_path: &str,
+                chrom: &str,
+                lo: u64,
+                hi: u64,
+                mode: ReadMode<'_>,
             ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
                 let mut reader =
                     noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
@@ -48879,33 +48897,8 @@ pub mod denovo_pipeline {
                         {
                             primary.push(pr);
                         }
-                        if self.single_placement(&rb) {
-                            continue;
-                        }
-                        if let Some((
-                            read,
-                            mapq,
-                            name,
-                            as_score,
-                            de,
-                            is_supplementary,
-                            is_secondary,
-                        )) = aligned_read_from_record(&rb)
-                        {
-                            let (reverse, ts) =
-                                (rb.flags().is_reverse_complemented(), record_ts(&rb));
-                            bam_reads.push(BamRead {
-                                chrom: chrom.to_string(),
-                                read,
-                                mapq,
-                                name,
-                                as_score,
-                                de,
-                                is_supplementary,
-                                is_secondary,
-                                reverse,
-                                ts,
-                            });
+                        if let Some(br) = self.bam_read_for(&rb, chrom, mode) {
+                            bam_reads.push(br);
                         }
                     }
                     home_report(chrom, lo, hi, &hc);
@@ -48947,25 +48940,8 @@ pub mod denovo_pipeline {
                             primary.push(pr);
                         }
                     }
-                    if self.single_placement(rb) {
-                        continue;
-                    }
-                    if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
-                        aligned_read_from_record(rb)
-                    {
-                        let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
-                        bam_reads.push(BamRead {
-                            chrom: chrom.to_string(),
-                            read,
-                            mapq,
-                            name,
-                            as_score,
-                            de,
-                            is_supplementary,
-                            is_secondary,
-                            reverse,
-                            ts,
-                        });
+                    if let Some(br) = self.bam_read_for(rb, chrom, mode) {
+                        bam_reads.push(br);
                     }
                 }
                 home_report(chrom, lo, hi, &hc);
@@ -52328,6 +52304,35 @@ pub mod denovo_pipeline {
             }
 
             #[test]
+            fn read_modes_light_keeps_score_and_span_only_and_only_keeps_named_molecules_in_full() {
+                let dir = tempfile::tempdir().unwrap();
+                let recs = vec![
+                    rec("a", Flags::default(), 0, 1_001, vec![m(50), Op::new(Kind::Deletion, 5), m(50), Op::new(Kind::Skip, 100), m(40)]),
+                    rec("b", Flags::default(), 0, 1_001, vec![m(100)]),
+                    rec("b", Flags::SECONDARY, 0, 3_001, vec![m(100)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "modes.bam", &recs);
+                let c = BamIndexCache::open(&bam).unwrap();
+                let (p_full, full) = c.reads_in_region(&bam, "c1", 0, 1_000_000).unwrap();
+                let (p_light, light) = c.reads_in_region_mode(&bam, "c1", 0, 1_000_000, ReadMode::Light).unwrap();
+                assert_eq!(p_full, p_light, "the primary pool is the same in every mode");
+                assert_eq!(light.len(), full.len());
+                for (l, f) in light.iter().zip(full.iter()) {
+                    assert_eq!((l.name.as_str(), l.as_score, l.is_secondary, l.read.ref_start), (f.name.as_str(), f.as_score, f.is_secondary, f.read.ref_start));
+                    assert!(l.read.seq.is_empty() && l.read.qual.is_empty());
+                    let aligned = |r: &AlignedRead| r.cigar.iter().filter(|(o, _)| matches!(o, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>();
+                    assert_eq!(aligned(&l.read), aligned(&f.read), "aligned length kept");
+                    assert_eq!(read_span_end(&l.read), read_span_end(&f.read), "reference span kept");
+                }
+                let keep: DetHashSet<String> = std::iter::once("b".to_string()).collect();
+                let (_, only) = c.reads_in_region_mode(&bam, "c1", 0, 1_000_000, ReadMode::Only(&keep)).unwrap();
+                assert_eq!(only.len(), 2);
+                assert!(only.iter().all(|r| r.name == "b" && !r.read.seq.is_empty() || r.name == "b"));
+                assert_eq!(only.iter().map(|r| r.read.cigar.clone()).collect::<Vec<_>>(),
+                    full.iter().filter(|r| r.name == "b").map(|r| r.read.cigar.clone()).collect::<Vec<_>>());
+            }
+
+            #[test]
             fn deep_families_counts_each_familys_merged_windows_and_stops_past_the_cap() {
                 let dir = tempfile::tempdir().unwrap();
                 let recs = vec![
@@ -52347,29 +52352,6 @@ pub mod denovo_pipeline {
                 // counting only multi-placement molecules ("y"), nothing is deep
                 let mp = MultiPlacement::parse("y\t100\t100\t2\tc1\t100\n");
                 assert!(deep_families(&bam, &copies, 0, 2, Some(&mp)).unwrap().is_empty());
-            }
-
-            #[test]
-            fn bam_cache_with_a_multi_placement_filter_keeps_every_primary_but_only_multi_placement_records() {
-                let dir = tempfile::tempdir().unwrap();
-                let recs = vec![
-                    rec("single", Flags::default(), 0, 1_001, vec![m(100)]),
-                    rec("multi", Flags::default(), 0, 1_001, vec![m(100)]),
-                    rec("multi", Flags::SECONDARY, 0, 5_001, vec![m(100)]),
-                ];
-                let bam = write_indexed_bam(dir.path(), "mp.bam", &recs);
-                let table = "#as_table\tbam=x\trecords=3\tmolecules=2\nmulti\t100\t100\t2\tc1\t100\nsingle\t100\t-1\t1\tc1\t100\n";
-                let mp = MultiPlacement::parse(table);
-                assert!(mp.contains("multi") && !mp.contains("single"));
-                let plain = BamIndexCache::open(&bam).unwrap();
-                let (p0, b0) = plain.reads_in_region(&bam, "c1", 0, 1_000_000).unwrap();
-                let filtered = BamIndexCache::open(&bam).unwrap().with_multi_placement(std::sync::Arc::new(mp));
-                let (p1, b1) = filtered.reads_in_region(&bam, "c1", 0, 1_000_000).unwrap();
-                assert_eq!(p0, p1, "every primary is still read");
-                assert_eq!(b0.len(), 3);
-                let names: Vec<&str> = b1.iter().map(|b| b.name.as_str()).collect();
-                assert_eq!(names, vec!["multi", "multi"]);
-                assert_eq!(filtered.skipped_single_placement(), 1);
             }
 
             #[test]

@@ -54,10 +54,16 @@ run one by one, except where a documented, measured approximation is opted into.
 - The default assign stage (POA diagnostic skipped) still reached 20 GB on human A119b. `RUSTLE_TIMING=1` showed why: each region
   loads every record in its copy windows (copy +- 50 kb) with full sequence and CIGAR, e.g. 1,244,342 records for chr1 (8.7 GB), and
   the acrocentric short arms hold millions more (chr13:5.2-16 Mb: 4,769,917 records, 76,512 of them primary).
-- **`copy_assign --skip-single-placement MOLECULES.tsv`** (byte-identical): a record whose molecule has one placement genome-wide
-  (`as_table` n_records == 1, ~70% of molecules) feeds the primary pool but is never held as a full record; the AS-tied gate drops it
-  anyway. cmp-identical assignments / families / abundance on gorilla KB3781 (20 families). The driver passes it whenever the
-  assemble stage's molecules table (or `--as-table`) matches the BAM.
+- A first fix, dropping single-placement molecules' records at read time, was WITHDRAWN: inside multi-copy families almost every read
+  has several placements (chr1 region: 1,174,977 of 1,244,342 records kept), and it hid copies supported only by unique reads from
+  the per-copy read-presence check (whole-gorilla run: MCL188 failed).
+- **`copy_assign --tied-prefilter`** (driver default; byte-identical): each region is read twice — first LIGHT (name, scores, span;
+  no sequence, qualities or full CIGAR, ~100 bytes a record), the AS-tied molecules decided exactly as the AS-tied gate does
+  (`as_evidence_per_read` + `as_tied`), then FULL records loaded for those molecules only; the per-copy read-presence check reads the
+  light pass's spans. The gate keeps exactly those records anyway, so families, assignments and abundance are unchanged (the gate's
+  log counts then cover tied molecules only). Memory follows the tied reads, not every read in the copy windows. **Checked on
+  gorilla KB3781 genome-wide (326 families): all 7 output tables cmp-identical (assignments, families, quant, family_join,
+  famcn_readonly, copy_conversions, params); peak 5.2 -> 3.6 GB, wall 572 -> 639 s.**
 - **`--max-window-records N`** (driver; `--low-mem` = 500,000): `utilities window-depth` estimates each family's records per merged
   copy window from the BAM index (compressed bytes / mean bytes per record; 0.8 s on human) and the families over N are not assigned
   (`--skip-families`) and their regions are not swept. On human A119b the 62 such families all lie entirely on the acrocentric short

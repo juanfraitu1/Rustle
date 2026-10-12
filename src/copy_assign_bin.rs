@@ -1101,14 +1101,15 @@ struct Args {
     #[arg(long, default_value_t = false)]
     skip_poa_diagnostic: bool,
 
-    /// GENOME-WIDE MEMORY (`docs/GENOMEWIDE_FAST_2026-10-12.md`): `as_table`'s molecules table. A record whose molecule has ONE
-    /// primary / secondary placement genome-wide (`n_records == 1`) still feeds the primary pool but is never held as a full
-    /// record (no sequence, no CIGAR): such a molecule can never be AS-tied, and the AS-tied gate drops it anyway. Families,
-    /// assignments and abundance are unchanged; the gate's log counts then cover multi-placement molecules only. Refused with
-    /// the options that read every record (`--no-as-tied-only`, `--recover-copies`, `--tied-seed`, `--gtf`,
-    /// `--flag-missing-copies`, `--admit-aligner-disagreement`, `--assemble-only`).
+
+    /// GENOME-WIDE MEMORY (`docs/GENOMEWIDE_FAST_2026-10-12.md`): read each region twice — first every record LIGHT (name,
+    /// scores, span; no sequence), decide the AS-tied molecules exactly as the AS-tied gate does, then load FULL records for
+    /// those molecules only. The gate keeps exactly those records anyway, so families, assignments and abundance are unchanged;
+    /// peak memory follows the tied reads instead of every read in the copy windows. Refused with the options that read every
+    /// record (`--no-as-tied-only`, `--recover-copies`, `--tied-seed`, `--gtf`, `--flag-missing-copies`,
+    /// `--admit-aligner-disagreement`, `--assemble-only`, `RUSTLE_READTHROUGH_JUNCTIONS`).
     #[arg(long)]
-    skip_single_placement: Option<String>,
+    tied_prefilter: bool,
 
     /// Discover reference-ABSENT (collapsed) copies from reads and re-thread the abstain pool against them
     /// (two-stage freeze; default OFF = byte-identical). Candidates failing the admission gate are written
@@ -6368,22 +6369,16 @@ fn main() -> Result<()> {
     // Parse the BAM index + header ONCE and reuse across every region (the per-region path re-parses the
     // multi-MB `.bai` otherwise). None => no usable index; fall back to the per-region open (which scans).
     let bam_cache = BamIndexCache::open(&args.bam).ok();
-    let bam_cache = match (bam_cache, args.skip_single_placement.as_deref()) {
-        (Some(c), Some(path)) => {
-            anyhow::ensure!(
-                !(args.no_as_tied_only || args.recover_copies || args.tied_seed || args.gtf || args.flag_missing_copies
-                    || args.admit_aligner_disagreement || args.assemble_only),
-                "--skip-single-placement drops unique molecules' records, which --no-as-tied-only / --recover-copies / --tied-seed / \
-                 --gtf / --flag-missing-copies / --admit-aligner-disagreement / --assemble-only read: drop one"
-            );
-            let m = rustle::denovo_assemble::MultiPlacement::from_path(path)?;
-            anyhow::ensure!(!m.is_empty(), "--skip-single-placement {path}: no molecule with >= 2 placements (wrong table?)");
-            eprintln!("[copy_assign] --skip-single-placement: {} multi-placement molecules from {path}", m.len());
-            Some(c.with_multi_placement(std::sync::Arc::new(m)))
-        }
-        (None, Some(_)) => anyhow::bail!("--skip-single-placement needs an indexed BAM (.bai)"),
-        (c, None) => c,
-    };
+    if args.tied_prefilter {
+        anyhow::ensure!(
+            !(args.no_as_tied_only || args.recover_copies || args.tied_seed || args.gtf || args.flag_missing_copies
+                || args.admit_aligner_disagreement || args.assemble_only)
+                && std::env::var_os("RUSTLE_READTHROUGH_JUNCTIONS").is_none(),
+            "--tied-prefilter loads full records for AS-tied molecules only, which --no-as-tied-only / --recover-copies / --tied-seed / \
+             --gtf / --flag-missing-copies / --admit-aligner-disagreement / --assemble-only / RUSTLE_READTHROUGH_JUNCTIONS need: drop one"
+        );
+        anyhow::ensure!(bam_cache.is_some(), "--tied-prefilter needs an indexed BAM (.bai)");
+    }
     // Region-parallel pool (opt-in via --region-threads > 1). Sized to region_threads; the inner per-copy
     // poasta parallelism (discover_psvs) composes on the SAME pool, so total concurrency is bounded to N.
     let region_pool = if args.region_threads > 1 {
@@ -6604,6 +6599,8 @@ fn main() -> Result<()> {
         } else {
             rt_switch.as_ref().map(|s| s.stats())
         };
+        // --tied-prefilter: every record's span from the light pass (the per-copy read-presence check needs ALL records)
+        let mut light_spans: Option<Vec<(String, u64, u64)>> = None;
         let (primary, mut bam_reads) = if streaming {
             (Vec::new(), Vec::new())
         } else {
@@ -6630,6 +6627,13 @@ fn main() -> Result<()> {
             for (wchrom, wlo, whi) in &wins {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
+                    Some(c) if args.tied_prefilter => c.reads_in_region_mode(
+                        &args.bam,
+                        wchrom,
+                        wlo,
+                        whi,
+                        rustle::denovo_assemble::ReadMode::Light,
+                    ),
                     Some(c) => c.reads_in_region(&args.bam, wchrom, wlo, whi),
                     None => reads_in_region(&args.bam, wchrom, wlo, whi, args.threads),
                 }
@@ -6670,7 +6674,40 @@ fn main() -> Result<()> {
             br.retain(|x: &rustle::denovo_assemble::BamRead| {
                 bseen.insert((x.name.clone(), x.chrom.clone(), x.read.ref_start))
             });
-            (pr, br)
+            // --tied-prefilter: `br` holds LIGHT records; decide the AS-tied molecules as the gate below will, then read the
+            // windows again keeping full records of those molecules only (every placement of each, in the same order)
+            if args.tied_prefilter {
+                let ev = as_evidence_per_read(&br, true);
+                let tied: DetHashSet<String> = br
+                    .iter()
+                    .zip(ev.iter())
+                    .filter(|(_, e)| as_tied(e, args.as_tie_ratio))
+                    .map(|(b, _)| b.name.clone())
+                    .collect();
+                light_spans = Some(br.iter().map(|b| (b.chrom.clone(), b.read.ref_start, read_ref_end(&b.read))).collect());
+                drop(br);
+                let c = bam_cache.as_ref().expect("checked at startup");
+                let mut full: Vec<rustle::denovo_assemble::BamRead> = Vec::new();
+                for (wchrom, wlo, whi) in &wins {
+                    let (_, b) = c
+                        .reads_in_region_mode(
+                            &args.bam,
+                            wchrom,
+                            *wlo,
+                            *whi,
+                            rustle::denovo_assemble::ReadMode::Only(&tied),
+                        )
+                        .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
+                    full.extend(b);
+                }
+                let mut fseen = DetHashSet::default();
+                full.retain(|x: &rustle::denovo_assemble::BamRead| {
+                    fseen.insert((x.name.clone(), x.chrom.clone(), x.read.ref_start))
+                });
+                (pr, full)
+            } else {
+                (pr, br)
+            }
         };
         // RUSTLE_READTHROUGH_JUNCTIONS on the buffered path: flag from the region's primaries (gathered above, before
         // the AS-tied gate trims `bam_reads`), then drop the pool reads carrying a flagged junction BEFORE pass 1 and
@@ -6722,14 +6759,20 @@ fn main() -> Result<()> {
                     for c in &cf.copies {
                         // A supplied copy with no read here cannot be assigned anything, and dropping it
                         // silently would understate K and loosen the Bonferroni certificate for the rest.
-                        let n = bam_reads
-                            .iter()
-                            .filter(|br| {
-                                br.chrom == c.chrom
-                                    && br.read.ref_start < c.end
-                                    && read_ref_end(&br.read) > c.start
-                            })
-                            .count();
+                        let n = match &light_spans {
+                            Some(sp) => sp
+                                .iter()
+                                .filter(|(ch, a, b)| *ch == c.chrom && *a < c.end && *b > c.start)
+                                .count(),
+                            None => bam_reads
+                                .iter()
+                                .filter(|br| {
+                                    br.chrom == c.chrom
+                                        && br.read.ref_start < c.end
+                                        && read_ref_end(&br.read) > c.start
+                                })
+                                .count(),
+                        };
                         // §6ft: a catalog copy the catalog itself marks unexpressed (`n_reads 0`, an annotated model
                         // kept as the unit) or a partner may legitimately have no read here — it stays a target
                         // (and, spec 2026-10-02 §7, an O3 candidate: `CatalogCopy::may_have_no_reads`)
