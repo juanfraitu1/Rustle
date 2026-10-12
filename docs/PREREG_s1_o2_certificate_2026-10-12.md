@@ -37,3 +37,33 @@ copies), else abstain. Indel columns are not used. Every (secondary record, prim
 make for the advisor.
 
 **Instrument** (committed before running): `bench/tool_difference/s1_o2.py` sha1 6b6831e392a2349c7fb5f51b6eb9113b08484117, tests `test_s1_o2.py` (7 pass).
+
+## Result (2026-10-12): the secondary-only copies are NOT supported by O2 — their reads belong to the other copy
+
+Outputs `/mnt/linuxdisk/tmp/asm_gap/op/{gorilla,human}.s1o2.{txt,records.tsv,genes.tsv}`. Instrument self-check (gorilla read
+m64076_221110_210557/127338300/ccs): every `=` column's reference base equals the read base on both placements (0 / 1,827 and
+0 / 1,457), so the columns and bases are right.
+
+| | gorilla | human |
+|---|---|---|
+| good secondary records tested (S1 genes) | 14,698 | 18,613 |
+| AS == molecule best ("tied"): to S1 copy / to primary copy / abstain | 3 / 7,531 / 414 | 2 / 3,883 / 5,947 (5,859 with no distinguishing column) |
+| AS < best (strictly worse): to S1 copy / to primary copy / abstain | 16 / 6,259 / 475 | 24 / 7,292 / 1,465 |
+| read matches the PRIMARY copy at every distinguishing column | 9,780 (66.5%) | 7,107 (38.2%) |
+| read matches the S1 copy at every distinguishing column | 13 | 16 |
+| mosaic (>= 2 columns for each copy) | 1,805 (12.3%) | 3,655 (19.6%) |
+| S1 genes: supported / contradicted / undecidable | 1 / 400 / 131 | 1 / 352 / 419 |
+| ... with an OP_good transcript | 1 / 151 / 49 | 1 / 202 / 134 |
+| OP_good transcripts there (reference-exact): supported / contradicted / undecidable | 4 (2) / 193 (38) / 45 (16) | 1 (0) / 267 (44) / 185 (3) |
+
+(The transcript counts here use every S1 gene; register 1268's 171 / 224 used the S1 genes with a multi-exon reference transcript.)
+**Reading.** In both species exactly ONE secondary-only gene has >= 2 reads certified to its own copy. Most S1 genes are
+contradicted (gorilla 400 / 532) or undecidable because the copies are identical over the reads (human 419 / 772, almost all with no
+distinguishing column). The transcripts our good pool builds there — including most of the reference-exact ones — are SHADOWS of the
+paralog the reads came from, rebuilt on a copy with the same exon structure. Register 1268's C1 ("wins on secondary-only loci")
+stands as scored but does not mean those copies are expressed. Corrections to the wording of the earlier preregistrations: (1) "tied"
+(AS == the molecule's best) is not "tied with the primary" — the primary's AS is below the best in 3.8% (gorilla) / 3.9% (human) of
+multi-record molecules; true ties (primary == best == second) are 0.5% / 1.6%; (2) S2 ("coin-toss-starved") used the same "tied" and
+deserves the same certificate check before it is read as O2's regime. Useful side result: O2's certificate separates the shadows
+(contradicted) from the undecidable — the step that should prune good-pool transcripts, as the user's 10-11 rule puts it (a primary or
+secondary is not trusted as the origin until O2 says so).
