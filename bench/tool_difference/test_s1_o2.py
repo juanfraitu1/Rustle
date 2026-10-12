@@ -57,3 +57,16 @@ def test_gene_class():
     assert s1_o2.gene_class(0, 2) == "contradicted"
     assert s1_o2.gene_class(1, 5) == "undecidable"
     assert s1_o2.gene_class(0, 1) == "undecidable"
+
+
+def test_eichler_assigns_the_unique_best_by_ten_and_discards_closer_rivals():
+    # (AS of copy B, primary's AS, molecule best, molecule second)
+    assert s1_o2.eichler_verdict(2000, 1980, 2000, 1980) == "B"
+    assert s1_o2.eichler_verdict(1980, 2000, 2000, 1980) == "A"
+    assert s1_o2.eichler_verdict(1990, 1985, 2000, 1990) == "other"       # margin exactly 10 assigns, to a third placement here
+    assert s1_o2.eichler_verdict(1990, 1985, 2000, 1991) == "discard"     # margin 9
+    assert s1_o2.eichler_verdict(2000, 2000, 2000, 2000) == "discard"     # a true tie
+
+
+def test_eichler_best_elsewhere_is_other():
+    assert s1_o2.eichler_verdict(1950, 1960, 2000, 1960) == "other"

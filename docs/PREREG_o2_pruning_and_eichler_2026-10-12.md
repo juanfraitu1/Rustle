@@ -38,3 +38,5 @@ transcript overlaps it). Transcripts built from the gene's own primary reads sta
   (margins are small among good secondaries), so it contradicts fewer genes and prunes fewer shadows.
 Nothing is adopted: the outcome is descriptive, for the advisor's figure discussion. A test of copy-of-origin needs a truth with known
 source copies (the family simulator, `bench/famsim`), named here as the follow-up.
+
+**Instruments** (committed before running): `s1_o2.py` sha1 a79218c0bc6aa231f40cb7eaca7bca5da1ad1d12 (adds `--stratum` and the Eichler columns; 9 tests), `prune_good.py` sha1 4d17bbe843d8e99c4f406de683e9019abdfe37ca (2 tests).

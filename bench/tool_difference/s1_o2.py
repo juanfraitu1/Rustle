@@ -57,6 +57,18 @@ def certify_pair(cols_a, cols_b, base_a, base_b):
     return (best if p < ALPHA else None), ka, kb, m, p
 
 
+def eichler_verdict(as_b, as_primary, best, second, margin=10):
+    """Eichler's AS-margin rule for one (copy B record, primary) pair: the molecule goes to its best alignment iff no other alignment
+    scores within `margin` (best - second >= margin; second < 0 = no other alignment), else it is discarded."""
+    if second >= 0 and best - second < margin:
+        return 'discard'
+    if as_b == best:
+        return 'B'
+    if as_primary == best:
+        return 'A'
+    return 'other'
+
+
 def gene_class(to_b, to_a):
     if to_b >= 2:
         return 'supported'
@@ -78,11 +90,12 @@ def main():
     ap = argparse.ArgumentParser()
     for a in ('--bam', '--fasta', '--molecules', '--strata', '--ref', '--exclude', '--op-gtf', '--op-tmap', '--out'):
         ap.add_argument(a, required=True)
+    ap.add_argument('--stratum', default='S1', choices=['S1', 'S2'])
     args = ap.parse_args()
     s1 = set()
     for ln in open(args.strata + '.genes.tsv'):
         f = ln.rstrip('\n').split('\t')
-        if f[-1] == 'S1':
+        if f[-1] == args.stratum:
             s1.add((f[0], f[1]))
     ex = collections.defaultdict(list)
     for ln in opener(args.ref):
@@ -102,13 +115,15 @@ def main():
                 m.append([s, e])
         ex[k] = m
     best = {}
+    eich = {}  # name -> (best AS, second AS, primary AS)
     for ln in open(args.molecules):
         if ln.startswith('#'):
             continue
         f = ln.rstrip('\n').split('\t')
         if len(f) >= 4 and int(f[3]) >= 2:
             best[f[0]] = int(f[1])
-    print(f"[s1_o2] {len(s1):,} S1 genes, {len(ex):,} with exons; {len(best):,} multi-record molecules", file=sys.stderr)
+            eich[f[0]] = (int(f[1]), int(f[2]), int(f[5]) if len(f) > 5 and f[5].lstrip('-').isdigit() else -1)
+    print(f"[s1_o2] {len(s1):,} {args.stratum} genes, {len(ex):,} with exons; {len(best):,} multi-record molecules", file=sys.stderr)
     bam = pysam.AlignmentFile(args.bam)
     secs = {}  # (gene, qname, ref, pos, cigar) -> (cigartuples, reverse, AS, tied)
     for gk, exons in ex.items():
@@ -148,29 +163,35 @@ def main():
 
     rows = []
     for (gk, name, ref, pos, _), (cig, rev, a, tied) in secs.items():
+        b_, s_, pa_ = eich[name]
+        ev = eichler_verdict(a, pa_, b_, s_)
         pr = prim.get(name)
         if pr is None:
-            rows.append((gk, name, tied, None, 0, 0, 0, 1.0, 'no_primary')); continue
+            rows.append((gk, name, tied, None, 0, 0, 0, 1.0, 'no_primary', ev)); continue
         ca = aligned_columns(pr[1], pr[3], pr[2]); cb = aligned_columns(pos, cig, rev)
         if not ca or not cb:
-            rows.append((gk, name, tied, None, 0, 0, 0, 1.0, 'no_columns')); continue
+            rows.append((gk, name, tied, None, 0, 0, 0, 1.0, 'no_columns', ev)); continue
         v, ka, kb, m, pv = certify_pair(ca, cb, bases(pr[0], ca, pr[2]), bases(ref, cb, rev))
-        rows.append((gk, name, tied, v, ka, kb, m, pv, 'tested'))
+        rows.append((gk, name, tied, v, ka, kb, m, pv, 'tested', ev))
     with open(args.out + '.records.tsv', 'w') as o:
-        o.write('chrom\tgene_id\tread\ttied\tverdict\tk_A\tk_B\tcolumns\tp\tstatus\n')
-        for gk, name, tied, v, ka, kb, m, pv, st in rows:
-            o.write(f"{gk[0]}\t{gk[1]}\t{name}\t{int(tied)}\t{v or '-'}\t{ka}\t{kb}\t{m}\t{pv:.3g}\t{st}\n")
+        o.write('chrom\tgene_id\tread\ttied\tverdict\tk_A\tk_B\tcolumns\tp\tstatus\teichler\n')
+        for gk, name, tied, v, ka, kb, m, pv, st, ev in rows:
+            o.write(f"{gk[0]}\t{gk[1]}\t{name}\t{int(tied)}\t{v or '-'}\t{ka}\t{kb}\t{m}\t{pv:.3g}\t{st}\t{ev}\n")
     per = collections.defaultdict(lambda: [0, 0, 0])  # gene -> [to B, to A, abstain]
     for gk, _, _, v, *_ in rows:
         per[gk][0 if v == 'B' else (1 if v == 'A' else 2)] += 1
     cls = {gk: gene_class(c[0], c[1]) for gk, c in per.items()}
     for gk in ex:
         cls.setdefault(gk, 'undecidable')
+    eper = collections.defaultdict(lambda: [0, 0, 0])  # gene -> [to B, elsewhere (A or other), discard]
+    for r in rows:
+        eper[r[0]][0 if r[9] == 'B' else (1 if r[9] in ('A', 'other') else 2)] += 1
+    ecls = {gk: gene_class(eper[gk][0], eper[gk][1]) if gk in eper else 'undecidable' for gk in cls}
     with open(args.out + '.genes.tsv', 'w') as o:
-        o.write('chrom\tgene_id\tto_S1_copy\tto_primary_copy\tabstain\tclass\n')
+        o.write('chrom\tgene_id\tto_stratum_copy\tto_primary_copy\tabstain\tclass\teichler_to_stratum_copy\teichler_elsewhere\teichler_discard\teichler_class\n')
         for gk in sorted(cls):
-            c = per.get(gk, [0, 0, 0])
-            o.write(f"{gk[0]}\t{gk[1]}\t{c[0]}\t{c[1]}\t{c[2]}\t{cls[gk]}\n")
+            c = per.get(gk, [0, 0, 0]); e = eper.get(gk, [0, 0, 0])
+            o.write(f"{gk[0]}\t{gk[1]}\t{c[0]}\t{c[1]}\t{c[2]}\t{cls[gk]}\t{e[0]}\t{e[1]}\t{e[2]}\t{ecls[gk]}\n")
     # OP transcripts touching S1 genes, by class
     eq = set()
     for ln in open(args.op_tmap):
@@ -202,8 +223,16 @@ def main():
         c = collections.Counter(r[3] for r in sub)
         print(f"  {lab:15s} {len(sub):6,} records: to S1 copy {c['B']:6,}  to primary copy {c['A']:6,}  abstain {c[None]:6,}"
               f"  (no distinguishing column {sum(r[6] == 0 for r in sub):,})")
+    ec = collections.Counter(r[9] for r in rows)
+    print(f"  Eichler (AS margin 10): to {args.stratum} copy {ec['B']:,}  to primary copy {ec['A']:,}  to a third placement {ec['other']:,}  discard {ec['discard']:,}")
+    both = [(r[3], r[9]) for r in rows if r[3] in ('A', 'B') and r[9] in ('A', 'B')]
+    agree = sum(a == b for a, b in both)
+    print(f"  records both rules call A or B: {len(both):,}, agree {agree:,} ({agree / max(1, len(both)):.3f})")
+    xt = collections.Counter((cls[g], ecls[g]) for g in cls)
+    print("  gene classes O2 (rows) x Eichler (columns): " + '; '.join(
+        f"{a}: " + ', '.join(f"{b} {xt[(a, b)]}" for b in ('supported', 'contradicted', 'undecidable')) for a in ('supported', 'contradicted', 'undecidable')))
     with_tx = {g for gs in tx_genes.values() for g in gs}
-    for lab, keep in (('all S1 genes', set(cls)), ('S1 genes with an OP transcript', with_tx)):
+    for lab, keep in ((f'all {args.stratum} genes', set(cls)), (f'{args.stratum} genes with an OP transcript', with_tx)):
         c = collections.Counter(cls[g] for g in keep)
         print(f"{lab:32s} {len(keep):5,}: supported {c['supported']:5,}  contradicted {c['contradicted']:5,}  undecidable {c['undecidable']:5,}")
     for k in ('supported', 'contradicted', 'undecidable'):
