@@ -35,3 +35,5 @@ copies), else abstain. Indel columns are not used. Every (secondary record, prim
 >= 1 AS point). Tied secondaries: mostly abstain (identical copies). So most S1 genes will be undecidable or contradicted, and only
 "supported" S1 genes may be called expressed copies; that, not register 1268's 34 / 36 matched transcripts, is the claim we would
 make for the advisor.
+
+**Instrument** (committed before running): `bench/tool_difference/s1_o2.py` sha1 6b6831e392a2349c7fb5f51b6eb9113b08484117, tests `test_s1_o2.py` (7 pass).
