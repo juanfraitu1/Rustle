@@ -56,3 +56,6 @@ with secondaries (the gorilla good-pool genome-wide run stalled; the human good-
 reaper). The arms run one contig per process (`tools/rustle_pipeline.sh --contig`, documented equal to the genome-wide run on
 that contig) and `--read-isoform-k` now also runs on the streaming reader (1304476b; structurally identical to the buffered
 path on human chr20). Same arms, same flags.
+(c) The strata script ran past the 500 s run limit on gorilla before printing any stratum count; it now counts each
+chromosome in a separate worker (4 processes) with the identical per-record rule (sha1 below), before any stratum number.
+multicopy_strata.py sha1 f4d7bc36798e6f89fc914b6d52fe7c3b1aa9cd78

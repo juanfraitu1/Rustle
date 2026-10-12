@@ -56,48 +56,55 @@ with open(args.molecules) as fh:
             best[f[0]] = int(f[1])
 print(f"[strata] {len(best):,} multi-record molecules", file=sys.stderr)
 
-cnt = collections.defaultdict(lambda: [0, 0, 0])  # gene -> [primary, good secondary, tied secondary]
 cig = re.compile(r'(\d+)([MIDNSHP=X])')
-n = 0
-p = subprocess.Popen(['samtools', 'view', '-F', '2052', args.bam], stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
-for ln in p.stdout:
-    n += 1
-    f = ln.split('\t', 11)
-    chrom = f[2]
-    if chrom == args.exclude:
-        continue
-    flag = int(f[1]); sec = flag & 256
-    if sec:
-        b = best.get(f[0])
-        i = ln.find('\tAS:i:')
-        if b is None or i < 0:
-            continue
-        a = int(ln[i + 6:ln.find('\t', i + 6) if ln.find('\t', i + 6) > 0 else len(ln)].strip())
-        good, tied = a >= 0.98 * b, a == b
-        if not good:
-            continue
-    pos = int(f[3]) - 1; hit = set()
-    for l, op in cig.findall(f[5]):
-        l = int(l)
-        if op in 'M=X':
-            s, e = pos, pos + l
-            for bn in range(s // BIN, (e - 1) // BIN + 1):
-                for xs, xe, gk in index.get((chrom, bn), ()):
-                    if xs < e and xe > s:
-                        hit.add(gk)
-            pos += l
-        elif op in 'DN':
-            pos += l
-    for gk in hit:
-        c = cnt[gk]
-        if not sec:
-            c[0] += 1
-        else:
-            c[1] += 1
-            c[2] += tied
-    if n % 5_000_000 == 0:
-        print(f"[strata] {n:,} records", file=sys.stderr)
-p.wait()
+
+def count_chrom(chrom):
+    """Per-gene [primary, good secondary, tied secondary] over the records of one chromosome (exact per-record rule)."""
+    cnt = collections.defaultdict(lambda: [0, 0, 0]); n = 0
+    p = subprocess.Popen(['samtools', 'view', '-F', '2052', args.bam, chrom], stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
+    for ln in p.stdout:
+        n += 1
+        f = ln.split('\t', 11)
+        flag = int(f[1]); sec = flag & 256; tied = False
+        if sec:
+            b = best.get(f[0])
+            i = ln.find('\tAS:i:')
+            if b is None or i < 0:
+                continue
+            j = ln.find('\t', i + 6)
+            a = int(ln[i + 6:j if j > 0 else len(ln)].strip())
+            if a < 0.98 * b:
+                continue
+            tied = a == b
+        pos = int(f[3]) - 1; hit = set()
+        for l, op in cig.findall(f[5]):
+            l = int(l)
+            if op in 'M=X':
+                s0, e0 = pos, pos + l
+                for bn in range(s0 // BIN, (e0 - 1) // BIN + 1):
+                    for xs, xe, gk in index.get((chrom, bn), ()):
+                        if xs < e0 and xe > s0:
+                            hit.add(gk)
+                pos += l
+            elif op in 'DN':
+                pos += l
+        for gk in hit:
+            c = cnt[gk]
+            if not sec:
+                c[0] += 1
+            else:
+                c[1] += 1
+                c[2] += tied
+    p.wait()
+    return chrom, n, dict(cnt)
+
+import multiprocessing
+chroms = sorted({gk[0] for gk in gene_ex})
+cnt = {}; n = 0
+with multiprocessing.get_context('fork').Pool(4) as pool:
+    for chrom, k, c in pool.imap_unordered(count_chrom, chroms):
+        n += k; cnt.update(c)
+        print(f"[strata] {chrom}: {k:,} records", file=sys.stderr)
 strat = {}
 with open(args.out + '.genes.tsv', 'w') as o:
     o.write('chrom\tgene_id\tprimary\tgood_secondary\ttied_secondary\tstratum\n')
