@@ -14,3 +14,5 @@ no read-level method can assign it), **undecided** (otherwise). Reported with 95
 population; also split by the primary's AS rank (true tie primary = best = second; primary below the best; primary best with a close
 rival), the mosaic share, and, for moved molecules, whether the winning placement is spliced where the primary is not (the
 retrocopy direction). Descriptive; nothing adopted. Expected (written now): identical and confirmed dominate; moved is a small share.
+
+**Instrument** (committed before running): `bench/tool_difference/o2_population.py` sha1 1a1180dcdf3b5358c2d254fa67a155da8c69dfe1 (2 tests).
