@@ -52,3 +52,24 @@ StringTie and FLAIR (benchmark GTFs) emit any transcript touching the gene's exo
 FLAIR transcript is a copy the tools miss and O2's reads could support. Descriptive; nothing adopted.
 
 **Instruments for amendment 1** (committed before the full run; the batched script reproduces the 20,000 sample exactly with 3 batches): `o2_population.py` sha1 f8d7435e304215df6c0c510c87179c3140a1ebec, `o2_moved_loci.py` sha1 82bf3325f87839dca3452370d16abe704fa1c958 (4 tests).
+
+## Amendment 1 result (2026-10-12): the full population
+
+Outputs `/mnt/linuxdisk/tmp/asm_gap/op/{gorilla,human}.o2full.{txt,molecules.tsv,loci.txt}`. The full populations reproduce the
+sample estimates.
+
+| | gorilla (49,444) | human (532,876) |
+|---|---|---|
+| moved / confirmed / identical / undecided | 519 (1.0%) / 76.4% / 7.9% / 14.7% | 14,945 (2.8%) / 62.5% / 10.6% / 24.2% |
+| moved reads on annotated genes / unannotated | 306 / 213 | 4,697 / 10,248 |
+| genes receiving >= 1 / 2 / 5 / 10 moved reads | 188 / 66 / 22 / 16 | 1,115 / 588 / 262 / 125 |
+| of the genes with >= 2: OP_good / StringTie / FLAIR emit a transcript there | 41 / 38 / 33 of 66 | 521 / 511 / 528 of 588 |
+| genes with >= 2 moved reads and NO StringTie or FLAIR transcript | 25 (390 reads; ours touches 1) | 44 (227 reads; ours touches 10) |
+
+(Gene counts count a read once per overlapping gene: the gorilla top entries are one 47-read placement over a tRNA / LOC cluster of 7
+annotations; the human top entries are LOC / ncRNA / snRNA / miRNA genes.)
+**Reading.** The reads O2 moves mostly land where the tools already emit transcripts (they misplace some reads but still assemble the
+gene from others) or on unannotated sequence (41% gorilla, 69% human). Copies that the tools miss entirely and that >= 2 O2-moved
+reads support are few — 25 / 44 genes, mostly tRNA / ncRNA / LOC annotations — and our current assembly touches 1 / 10 of them.
+"Reads only O2 can place" does not translate into many "copies only we can assemble". Open: the 10,248 human (213 gorilla) moved reads
+on UNANNOTATED sequence — clustered into loci with >= 2 reads they are candidate unannotated copies (O3's detection question).
