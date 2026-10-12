@@ -251,6 +251,8 @@ esac
 #   RUSTLE_TERMINAL_EXON_ANCHOR=N  copy_assign --terminal-exon-anchor N (bp; FLAIR --stringent's end rule is 25)
 #   RUSTLE_EXTEND_TRANSFRAGS=1     copy_assign --extend-transfrags (StringTie-style greedy extension, no flow)
 #   RUSTLE_TRANSFER_ENDS=1         copy_assign --transfer-ends (ends from reads sharing the first / last junctions)
+#   RUSTLE_READ_ISOFORM_K=K        copy_assign --read-isoform-k K (also admit a chain whose every junction >= K reads carry;
+#                                  2 = StringTie's single-read choice, register 1267; buffered reader, slower)
 case "${RUSTLE_TRANSFER_CREDIT:-}" in ""|split) ;; full|best) POLISH="$POLISH --transfer-credit $RUSTLE_TRANSFER_CREDIT" ;;
   *) echo "[rustle_pipeline] RUSTLE_TRANSFER_CREDIT must be split, full or best (got '$RUSTLE_TRANSFER_CREDIT')" >&2; exit 2 ;; esac
 case "${RUSTLE_READ_JUNCTION_SNAP:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_READ_JUNCTION_SNAP must be a whole number of bp (got '$RUSTLE_READ_JUNCTION_SNAP')" >&2; exit 2 ;;
@@ -265,6 +267,8 @@ case "${RUSTLE_EXTEND_TRANSFRAGS:-}" in ""|0) ;; 1) POLISH="$POLISH --extend-tra
   *) echo "[rustle_pipeline] RUSTLE_EXTEND_TRANSFRAGS must be 0 or 1 (got '$RUSTLE_EXTEND_TRANSFRAGS')" >&2; exit 2 ;; esac
 case "${RUSTLE_TRANSFER_ENDS:-}" in ""|0) ;; 1) POLISH="$POLISH --transfer-ends" ;;
   *) echo "[rustle_pipeline] RUSTLE_TRANSFER_ENDS must be 0 or 1 (got '$RUSTLE_TRANSFER_ENDS')" >&2; exit 2 ;; esac
+case "${RUSTLE_READ_ISOFORM_K:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_READ_ISOFORM_K must be a whole number (got '$RUSTLE_READ_ISOFORM_K')" >&2; exit 2 ;;
+  *) POLISH="$POLISH --read-isoform-k $RUSTLE_READ_ISOFORM_K" ;; esac
 # RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads (opt-in; unset = off, the same command): copy_assign --polish-junction-snap,
 # the fuzzy-junction merge that keeps read-proven splice sites (reads: a junction within 10 bp of a better-supported one
 # in its locus moves onto it only when its own reads do not prove it and the other's reads do). Dev-only, in-sample
