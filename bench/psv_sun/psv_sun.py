@@ -125,13 +125,18 @@ def cs_pairs(cs, ts, q0):
             t += int(tok[3:-2])
 
 
-def paf_qmap(rec):
-    """{query forward offset: (target offset)} for one PAF record dict (strand-aware)."""
+def anchor_pairs(rec):
+    """(query forward offset, target offset) over the aligned bases of one PAF record, either strand."""
     if rec["strand"] == "+":
-        return dict(cs_pairs(rec["cs"], rec["ts"], rec["qs"]))
+        return cs_pairs(rec["cs"], rec["ts"], rec["qs"])
     # '-': cs walks the target forward against the reverse-complemented query
     qlen = rec["qlen"]
-    return {qlen - 1 - qr: t for qr, t in cs_pairs(rec["cs"], rec["ts"], qlen - rec["qe"])}
+    return ((qlen - 1 - qr, t) for qr, t in cs_pairs(rec["cs"], rec["ts"], qlen - rec["qe"]))
+
+
+def paf_qmap(rec):
+    """{query forward offset: target offset} for one PAF record dict (strand-aware)."""
+    return dict(anchor_pairs(rec))
 
 
 def run_paf(args):
@@ -241,7 +246,7 @@ def cmd_sanity():
 def cmd_positions():
     G, tab, seqs = Fasta(GENOME), copy_table(), copies_fa(f"{OUT}/run/copies.fa")
     cols, copies = dump()
-    rows, stat = [], collections.Counter()
+    rows, stat, by_rel = [], collections.Counter(), collections.Counter()
     tmp = f"{OUT}/tmp"
     os.makedirs(tmp, exist_ok=True)
     for fam in sorted(copies):
@@ -264,11 +269,13 @@ def cmd_positions():
                 for i, x in enumerate(info):
                     if i != f and x and x["seq"]:
                         fh.write(f">{i}\n{x['seq']}\n")
-            best = {}
-            for r in run_paf(["minimap2", "-cx", "asm20", "--cs", "-t", "1", tq, qq]):
-                if r["strand"] == "+" and r["tp"] == "P" and (r["qname"] not in best or r["AS"] > best[r["qname"]]["AS"]):
-                    best[r["qname"]] = r
-            aln[f] = {int(q): {t: qo for qo, t in cs_pairs(r["cs"], r["ts"], r["qs"])} for q, r in best.items()}
+            # every primary/supplementary piece, either strand: copies differ in exon structure and orientation
+            maps = collections.defaultdict(dict)  # query copy -> {anchor offset: (query forward offset, rel strand)}
+            for r in sorted(run_paf(["minimap2", "-cx", "asm20", "--cs", "-t", "1", tq, qq]), key=lambda r: -r["AS"]):
+                if r["tp"] == "P":
+                    for qo, t in anchor_pairs(r):
+                        maps[int(r["qname"])].setdefault(t, (qo, r["strand"]))
+            aln[f] = maps
             return aln[f]
 
         for j in range(ncol):
@@ -291,18 +298,19 @@ def cmd_positions():
             for i in have:
                 c, x = crs[i], info[i]
                 row = {"family_id": fam, "col": j, "copy": i, "tid": c["copy_tid"], "allele": c["alleles"][j],
-                       "chrom": "", "gpos": -1, "strand": "", "status": ""}
+                       "chrom": "", "gpos": -1, "strand": "", "status": "", "rel": ""}
                 if x is None or not x["seq"]:
                     row["status"] = "no_copy_row"
                 elif anchor is None:
                     row["status"] = "no_anchor"
                 else:
                     if i == anchor:
-                        g = pos
+                        g, row["rel"] = pos, "anchor"
                     else:
                         fo = tx_offset(info[anchor]["exons"], info[anchor]["strand"], pos)
-                        qo = align_to(anchor).get(i, {}).get(fo)
-                        g = None if qo is None else genome_pos(x["exons"], x["strand"], qo)
+                        hit = align_to(anchor).get(i, {}).get(fo)
+                        row["rel"] = hit[1] if hit else ""
+                        g = None if hit is None else genome_pos(x["exons"], x["strand"], hit[0])
                     if g is None:
                         row["status"] = "unmapped"
                     else:
@@ -310,17 +318,28 @@ def cmd_positions():
                         ok = (comp(b) if x["strand"] == "-" else b) == c["alleles"][j]
                         row.update(chrom=x["chrom"], gpos=g, strand=x["strand"], status="verified" if ok else "mismatch")
                 stat[row["status"]] += 1
+                by_rel[f"{row['status']}|{row['rel'] or 'none'}"] += 1
                 rows.append(row)
-    write_tsv(f"{OUT}/pos.tsv", rows, ["family_id", "col", "copy", "tid", "allele", "chrom", "gpos", "strand", "status"])
+    write_tsv(f"{OUT}/pos.tsv", rows, ["family_id", "col", "copy", "tid", "allele", "chrom", "gpos", "strand", "status", "rel"])
     tot = sum(stat.values())
-    res = {"pairs": tot, **stat, "verified_frac": round(stat["verified"] / max(tot, 1), 4)}
+    res = {"pairs": tot, **stat, "verified_frac": round(stat["verified"] / max(tot, 1), 4), "by_rel": dict(by_rel)}
     res["V_pass"] = res["verified_frac"] >= 0.95
     json.dump(res, open(f"{OUT}/gate_v.json", "w"), indent=1)
     print(json.dumps(res))
 
 
+def homologous():
+    """Amendment 1: decisive columns where every copy carrying a non-gap allele has a verified position."""
+    ok = collections.defaultdict(lambda: True)
+    for r in tsv(f"{OUT}/pos.tsv"):
+        key = (r["family_id"], int(r["col"]))
+        ok[key] = ok[key] and r["status"] == "verified"
+    return {k for k, v in ok.items() if v}
+
+
 def verified():
-    return [r for r in tsv(f"{OUT}/pos.tsv") if r["status"] == "verified"]
+    hom = homologous()
+    return [r for r in tsv(f"{OUT}/pos.tsv") if r["status"] == "verified" and (r["family_id"], int(r["col"])) in hom]
 
 
 def private_pairs():
@@ -375,9 +394,13 @@ def cmd_m1():
             sun.add((r["family_id"], int(r["col"]), int(r["copy"])))
         else:
             f["private_not_genome_unique"] += 1
+    hom = homologous()
     for fam, crs in copies.items():
         for j in range(max(len(c["alleles"]) for c in crs)):
             if decisive(crs, j):
+                fam_stat[fam]["decisive_cols_all"] += 1
+                if (fam, j) not in hom:
+                    continue
                 fam_stat[fam]["decisive_cols"] += 1
                 al = collections.Counter(c["alleles"][j] for c in crs if j < len(c["alleles"]) and c["alleles"][j] != ".")
                 if any(v == 1 for v in al.values()):
@@ -394,11 +417,19 @@ def cmd_m1():
         carries = any(b != "." and j < len(ca) and b == ca[j] and (fam, j, x) in sun for j, b in enumerate(r["alleles"]))
         fam_stat[fam]["assigned_rows"] += 1
         fam_stat[fam]["assigned_rows_with_sun"] += int(carries)
-    keys = ["decisive_cols", "cols_with_private", "cols_with_sun", "private", "sun", "private_not_genome_unique",
-            "private_no_kmer", "assigned_rows", "assigned_rows_with_sun"]
+    keys = ["decisive_cols_all", "decisive_cols", "cols_with_private", "cols_with_sun", "private", "sun",
+            "private_not_genome_unique", "private_no_kmer", "assigned_rows", "assigned_rows_with_sun"]
     rows = [{"family_id": f, **{k: s[k] for k in keys}} for f, s in sorted(fam_stat.items())]
     write_tsv(f"{OUT}/m1_families.tsv", rows, ["family_id"] + keys)
     tot = {k: sum(r[k] for r in rows) for k in keys}
+    tot["homologous_of_decisive"] = round(tot["decisive_cols"] / max(tot["decisive_cols_all"], 1), 4)
+    rel = collections.defaultdict(set)
+    for r in tsv(f"{OUT}/pos.tsv"):
+        rel[r["family_id"]].add(r["rel"])
+    for name, sel in (("strand_consistent", lambda f: "-" not in rel[f]), ("has_reverse_pairs", lambda f: "-" in rel[f])):
+        a = sum(r["decisive_cols_all"] for r in rows if sel(r["family_id"]))
+        h = sum(r["decisive_cols"] for r in rows if sel(r["family_id"]))
+        tot[f"homologous_of_decisive_{name}"] = f"{h}/{a} = {round(h / max(a, 1), 4)}"
     tot["G"] = round(tot["private_not_genome_unique"] / max(tot["private"], 1), 4)
     tot["sun_of_private"] = round(tot["sun"] / max(tot["private"], 1), 4)
     tot["cols_with_sun_of_decisive"] = round(tot["cols_with_sun"] / max(tot["decisive_cols"], 1), 4)

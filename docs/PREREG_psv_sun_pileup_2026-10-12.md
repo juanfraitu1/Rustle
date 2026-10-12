@@ -65,3 +65,18 @@ KB3781's own other haplotype as truth. Descriptive study; bars below say what ea
 
 One animal, one tissue, 56 families; SUN = our operationalization (30-mer, primary assembly only); M2 truth tests only
 the other haplotype (the primary IS one haplotype). Code `bench/psv_sun/`; outputs `/mnt/linuxdisk/tmp/psv_sun/`.
+
+## Amendment 1 (2026-10-12, after gate V failed; before any M1/M2 output existed)
+
+- **S1 PASS** (26,721 / 26,821 = 99.6% of the 10-10 rows identical). **Gate V FAIL**: 118,169 / 216,593 (54.6%)
+  (copy, column) pairs verify (`gate_v.json`), after the mapper was fixed to use every alignment piece on either strand.
+- **Diagnosis:** (i) 10 of 56 families contain copies whose spliced transcripts are REVERSE-COMPLEMENT homologs of the
+  anchor's (inconsistent strand calls on 1-2-exon de novo copies). Their dumped alleles match the homologous base 26%
+  and its complement 29% (chance level): O2's column frame pairs NON-HOMOLOGOUS bases there. Median decisive-column
+  density 723 / kb vs 9.8 / kb in the 46 strand-consistent families. (ii) In strand-consistent families 37% of pairs
+  are unmapped: no local alignment covers the anchor's position (non-homologous segments forced into the global frame,
+  or divergence beyond `asm20`). Reported as a separate finding; not fixed here (O2 code is another session's).
+- **Amended population:** a decisive column is **homologous** iff every copy carrying a non-gap allele has a VERIFIED
+  position. M1 and M2 are computed over homologous columns only, and the share of O2's decisive columns that are
+  homologous is reported (overall and by family strand-consistency). Gate V is replaced by this restriction; no other
+  definition or bar changes.

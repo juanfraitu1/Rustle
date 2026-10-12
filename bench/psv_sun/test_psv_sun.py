@@ -57,3 +57,13 @@ def test_fasta_fetch_against_samtools():
         subprocess.run(["samtools", "faidx", f"{d}/g.fa"], check=True)
         F = P.Fasta(f"{d}/g.fa")
         assert F.fetch("c1", 8, 12) == "ACGG" and F.fetch("c2", 0, 4) == "TTTT" and F.fetch("c1", 17, 30) == "C"
+
+
+def test_anchor_pairs_minus_strand_maps_target_to_forward_query():
+    rng = random.Random(5)
+    t = "".join(rng.choice("ACGT") for _ in range(4000))
+    q = P.rc(t[500:3500])
+    r = [x for x in _paf(t, q) if x["tp"] == "P"][0]
+    m = {tt: qq for qq, tt in P.anchor_pairs(r)}
+    for tt in (500, 1200, 3499):
+        assert q[m[tt]] == P.comp(t[tt])  # the query's forward base at the mapped offset is the complement
