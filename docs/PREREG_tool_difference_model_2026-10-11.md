@@ -59,3 +59,25 @@ its 25 bp junction correction removes chains that are right more often than its 
 single-read chains, mostly with a junction no other read has (D4), and its support floor of 3 drops two-read chains that are
 right more often than its additions (D5). An operating point between the two keeps our chains and adds StringTie's
 `single_shared` class (our `--read-isoform-k 2`), not FLAIR's `single_novel` class.
+
+## Result (2026-10-11): the difference model HOLDS (D1-D6 pass in both species)
+
+Scored with `bench/tool_difference/score_claims.py` (pools the two chromosomes; class reference-exact counts are rebuilt from the
+printed 3-decimal rates, so +-1 chain; no claim is within that margin). Outputs `/mnt/linuxdisk/tmp/asm_gap/diff/<chrom>/`.
+
+| held-out | gorilla NC_073242.2 + NC_073245.2 | human chr18 + chr22 |
+|---|---|---|
+| StringTie-only chains (ref-exact) | 1,814 (10.5%) | 5,455 (3.0%) |
+| single_shared share / ref-exact (D1, D2) | 63.6% / 12.7% | 36.1% / 5.0% |
+| stitched share / ref-exact (D2) | 12.7% / 7.0% | 20.7% / 1.4% |
+| ours-only vs StringTie (ref-exact) | 1,941 (18.1%) | 4,955 (8.5%) |
+| near_stronger share / ref-exact (D3) | 32.9% / 29.9% | 16.8% / 16.5% |
+| FLAIR-only chains (ref-exact) | 5,416 (3.0%) | 20,550 (1.6%) |
+| FLAIR-only single_novel / single_shared ref-exact (D4) | 1.4% / 6.0% | 0.6% / 2.1% |
+| FLAIR-only corrected + stitched (D4) | 0 | 0 |
+| ours-only vs FLAIR (ref-exact); two_reads ref-exact (D5) | 1,501 (18.4%); 15.2% | 3,769 (7.6%); 4.7% |
+
+D1 PASS, D2 PASS, D3 PASS, D4 PASS, D5 PASS, D6 PASS in both species. Class shares stay near their development values
+(StringTie-only single_shared 63.6 vs 63.1% gorilla, 36.1 vs 37.6% human; FLAIR-only single_novel 54.7 vs 56.8%, 53.6 vs 54.6%).
+Side check (gorilla chr20, `sec_cov`-style): no StringTie or FLAIR transcript rests on secondary-only coverage (every one has
+>= 50% of its exonic bases under primary alignments), so both tools are primary-only in practice on these BAMs.
