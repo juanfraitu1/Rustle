@@ -740,7 +740,10 @@ stage_flag() {
   "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$THREADS" \
     --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1
   say "flag: align + verdict"
-  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$THREADS" \
+  # a FASTA as --index (the --low-mem profile) is indexed on the fly in INDEX_GB-Gbp parts; a prebuilt .mmi is used as it is
+  local igb=()
+  case "$INDEX" in *.mmi) ;; *) igb=(--index-gb "$INDEX_GB");; esac
+  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$THREADS" "${igb[@]}" \
     "${CONFIRM[@]}" "${FOREIGN[@]}" "${cand[@]}" --out "$OUT.flag" --from-scan "$OUT.flag_scan" > "$OUT.flag.log" 2>&1
   say "flag: $(grep -o 'verdicts: .*' "$OUT.flag.log")"
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
@@ -768,13 +771,15 @@ run_all() {
   if [ "$LEGACY_CATALOG" = 1 ]; then plan+=(catalog:"$OUT.cat.copies.tsv")
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
   plan+=(assign:"$OUT.assign.assignments.tsv")
+  local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
   if [ "$NO_FLAG" = 0 ]; then
-    [ -n "$INDEX" ] || plan+=(index:"$OUT.splice.mmi")
+    # no --index: the default profile builds PREFIX.splice.mmi (index stage); --low-mem aligns against the FASTA itself,
+    # indexed on the fly in INDEX_GB-Gbp parts (no index file on disk)
+    if [ -z "$INDEX" ] && [ "$LOW_MEM" = 1 ]; then INDEX=$FASTA; args+=(--index "$FASTA")
+    elif [ -z "$INDEX" ]; then plan+=(index:"$OUT.splice.mmi"); INDEX=$OUT.splice.mmi; args+=(--index "$OUT.splice.mmi"); fi
     plan+=(flag:"$OUT.flag.missing_copy.tsv")
   fi
-  local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
   env_now=$(all_env)
-  [ -n "$INDEX" ] || args+=(--index "$OUT.splice.mmi")
   for item in "${plan[@]}"; do
     st=${item%%:*}; prod=${item#*:}
     if [ "$RESUME" = 1 ] && [ "$ran" = 0 ] && [ -s "$prod" ] && [ -f "$OUT.all.env" ] && [ "$(cat "$OUT.all.env")" = "$env_now" ] \

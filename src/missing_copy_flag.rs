@@ -11,7 +11,7 @@
 //!        [--gff ANNOTATION.gff] [--confirm NAME=GENOME.mmi ...] [--m-min 0.10] [--delta-min 0.01]
 //!        [--min-reads 10] [--min-sub 3] [--max-reads 2000] [--pi 0.002] [--threads 2] [--contigs c1,c2]
 //!        [--foreign NAME=GENOME.mmi ...] [--scan-only] [--from-scan PREFIX1,PREFIX2,...]
-//!        [--candidates P.cand.candidates.tsv] [--assignments P.assignments.tsv]
+//!        [--candidates P.cand.candidates.tsv] [--assignments P.assignments.tsv] [--index-gb N]
 //!
 //! Outputs `<PREFIX>.missing_copy.tsv` (one row per locus with >= --min-reads reads) and `<PREFIX>.consensus.fa`.
 //! With `--candidates` (the `candidate_copies` stage's table, spec 2026-10-02 §7) the table gains a last column
@@ -56,6 +56,7 @@ struct Args {
     from_scan: Option<Vec<String>>,
     candidates: Option<String>,
     assignments: Option<String>,
+    index_gb: Option<u32>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -123,6 +124,7 @@ fn parse_args() -> Result<Args> {
         from_scan: get("--from-scan").map(|v| v.split(',').map(|s| s.to_string()).collect()),
         candidates: get("--candidates"),
         assignments: get("--assignments"),
+        index_gb: get("--index-gb").map(|v| v.parse()).transpose()?,
     })
 }
 
@@ -401,19 +403,27 @@ fn pile(
 /// minimap2's arguments for one home-search batch. `--split-prefix` is always passed: on a one-part index the output is
 /// unchanged, and it lets a MULTI-PART index (`minimap2 -I`, the low-memory profile of `docs/GENOMEWIDE_FAST_2026-10-12.md`)
 /// be used, one part in memory at a time, with the parts' hits merged (approximately equal to one part, not byte-identical).
-fn minimap2_args(index: &str, fasta: &std::path::Path, threads: usize) -> Vec<String> {
+/// `index_gb` (`--index-gb N`): pass `-I NG`, so a FASTA target is indexed on the fly in N-Gbp parts (no index file on disk, one
+/// part in memory at a time; ignored by minimap2 for a prebuilt `.mmi`).
+fn minimap2_args(index: &str, fasta: &std::path::Path, threads: usize, index_gb: Option<u32>) -> Vec<String> {
     let split = format!("{}.mm2split", fasta.display());
-    ["-x", "splice:hq", "-c", "--eqx", "-N", "20", "-t", &threads.to_string(), "--split-prefix", &split, index]
+    let mut a: Vec<String> = ["-x", "splice:hq", "-c", "--eqx", "-N", "20", "-t", &threads.to_string(), "--split-prefix", &split]
         .iter()
         .map(|x| x.to_string())
-        .chain(std::iter::once(fasta.display().to_string()))
-        .collect()
+        .collect();
+    if let Some(g) = index_gb {
+        a.push("-I".to_string());
+        a.push(format!("{g}G"));
+    }
+    a.push(index.to_string());
+    a.push(fasta.display().to_string());
+    a
 }
 
-fn minimap2_batch(index: &str, fasta: &std::path::Path, threads: usize) -> Result<String> {
+fn minimap2_batch(index: &str, fasta: &std::path::Path, threads: usize, index_gb: Option<u32>) -> Result<String> {
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let out = std::process::Command::new(&mm2)
-        .args(minimap2_args(index, fasta, threads))
+        .args(minimap2_args(index, fasta, threads, index_gb))
         .output()
         .with_context(|| format!("running {mm2}"))?;
     anyhow::ensure!(
@@ -1010,7 +1020,7 @@ fn main() -> Result<()> {
             eprintln!(
                 "[missing_copy_flag] aligning {n_fired} consensus sequences to {gname} ({gidx})"
             );
-            for h in parse_paf_hits(&minimap2_batch(gidx, &cons_fasta, args.threads.max(2))?) {
+            for h in parse_paf_hits(&minimap2_batch(gidx, &cons_fasta, args.threads.max(2), args.index_gb)?) {
                 by.entry(h.query.clone()).or_default().push(h);
             }
         }
@@ -1204,10 +1214,19 @@ mod tests {
     /// locus do not corroborate.
     #[test]
     fn minimap2_always_merges_index_parts() {
-        let a = minimap2_args("g.mmi", std::path::Path::new("/tmp/out/x.consensus.fa"), 4);
+        let a = minimap2_args("g.mmi", std::path::Path::new("/tmp/out/x.consensus.fa"), 4, None);
         let k = a.iter().position(|x| x == "--split-prefix").expect("--split-prefix is passed");
         assert_eq!(a[k + 1], "/tmp/out/x.consensus.fa.mm2split");
         assert_eq!(&a[a.len() - 2..], &["g.mmi".to_string(), "/tmp/out/x.consensus.fa".to_string()]);
+        assert!(!a.iter().any(|x| x == "-I"), "no -I unless --index-gb is given");
+    }
+
+    #[test]
+    fn index_gb_indexes_a_fasta_target_in_parts() {
+        let a = minimap2_args("genome.fa", std::path::Path::new("c.fa"), 2, Some(1));
+        let k = a.iter().position(|x| x == "-I").expect("-I is passed");
+        assert_eq!(a[k + 1], "1G");
+        assert!(a.iter().any(|x| x == "--split-prefix"));
     }
 
     #[test]
