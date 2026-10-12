@@ -48,3 +48,17 @@ run one by one, except where a documented, measured approximation is opted into.
 - `--low-mem`: `--index-gb 1` (flag holds ~1 Gbp of index at a time) and one assign region at a time. The multi-part index is
   near-identical, not byte-identical, to one part (toy genome with paralogs: 2% of PAF lines differ in MAPQ or a chain end).
 - `--no-flag` stops after assign (no index needed).
+
+## assign on human: where the memory went and the fixes (2026-10-12)
+
+- The default assign stage (POA diagnostic skipped) still reached 20 GB on human A119b. `RUSTLE_TIMING=1` showed why: each region
+  loads every record in its copy windows (copy +- 50 kb) with full sequence and CIGAR, e.g. 1,244,342 records for chr1 (8.7 GB), and
+  the acrocentric short arms hold millions more (chr13:5.2-16 Mb: 4,769,917 records, 76,512 of them primary).
+- **`copy_assign --skip-single-placement MOLECULES.tsv`** (byte-identical): a record whose molecule has one placement genome-wide
+  (`as_table` n_records == 1, ~70% of molecules) feeds the primary pool but is never held as a full record; the AS-tied gate drops it
+  anyway. cmp-identical assignments / families / abundance on gorilla KB3781 (20 families). The driver passes it whenever the
+  assemble stage's molecules table (or `--as-table`) matches the BAM.
+- **`--max-window-records N`** (driver; `--low-mem` = 500,000): `utilities window-depth` estimates each family's records per merged
+  copy window from the BAM index (compressed bytes / mean bytes per record; 0.8 s on human) and the families over N are not assigned
+  (`--skip-families`) and their regions are not swept. On human A119b the 62 such families all lie entirely on the acrocentric short
+  arms (chr13/14/15/21/22 < 17 Mb; e.g. MCL1, a 3.5 M-record hull). Only reads those families share with others can change.

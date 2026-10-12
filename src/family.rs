@@ -48619,6 +48619,195 @@ pub mod denovo_pipeline {
         pub struct BamIndexCache {
             header: noodles_sam::Header,
             index: noodles_bam::bai::Index,
+            /// `copy_assign --skip-single-placement` (docs/GENOMEWIDE_FAST_2026-10-12.md): when set, a record whose molecule has
+            /// ONE placement genome-wide (`as_table`'s n_records == 1) gets no `BamRead` (its sequence is never held); its
+            /// `PrimaryRead` is still returned. Such a molecule can never be AS-tied, so the AS-tied gate drops it anyway.
+            multi: Option<std::sync::Arc<MultiPlacement>>,
+            skipped: std::sync::atomic::AtomicUsize,
+        }
+
+        /// COPY-WINDOW DEPTH (`docs/GENOMEWIDE_FAST_2026-10-12.md`). `copies` = (family, chrom, start, end). Each family's read
+        /// windows (copy +- `pad`, `copy_assign`'s COPY_READ_PAD) are merged per chromosome, and the records `copy_assign` would hold
+        /// there are counted: mapped and non-supplementary, and with `multi` only those of multi-placement molecules. A family's
+        /// count stops once it passes `max` (an rDNA array's millions of records are never walked). Returns the families with a
+        /// window over `max` and the count reached (`max + 1` when it stopped early). Records are read lazily (no decoding).
+        pub fn deep_families(
+            bam_path: &str,
+            copies: &[(String, String, u64, u64)],
+            pad: u64,
+            max: u64,
+            multi: Option<&MultiPlacement>,
+        ) -> Result<std::collections::BTreeMap<String, u64>> {
+            let bai_path = format!("{bam_path}.bai");
+            let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+            let header = reader.read_header()?;
+            let index = noodles_bam::bai::read(&bai_path)?;
+            let mut windows: std::collections::BTreeMap<&str, std::collections::BTreeMap<&str, Vec<(u64, u64)>>> =
+                std::collections::BTreeMap::new();
+            for (fam, chrom, start, end) in copies {
+                windows
+                    .entry(fam.as_str())
+                    .or_default()
+                    .entry(chrom.as_str())
+                    .or_default()
+                    .push((start.saturating_sub(pad), end + pad));
+            }
+            let mut deep = std::collections::BTreeMap::new();
+            'family: for (fam, by_chrom) in windows {
+                for (chrom, mut ivs) in by_chrom {
+                    ivs.sort_unstable();
+                    let mut merged: Vec<(u64, u64)> = Vec::new();
+                    for (a, b) in ivs {
+                        match merged.last_mut() {
+                            Some(l) if a <= l.1 => l.1 = l.1.max(b),
+                            _ => merged.push((a, b)),
+                        }
+                    }
+                    for (a, b) in merged {
+                        let region: noodles_core::Region = format!("{chrom}:{}-{}", a + 1, b.max(a + 1)).parse()?;
+                        let mut n = 0u64;
+                        for result in reader.query(&header, &index, &region)? {
+                            let record = result?;
+                            let flags = record.flags();
+                            if flags.is_unmapped() || flags.is_supplementary() {
+                                continue;
+                            }
+                            if let Some(m) = multi {
+                                let keep = record
+                                    .name()
+                                    .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
+                                    .is_some_and(|n| m.contains(n));
+                                if !keep {
+                                    continue;
+                                }
+                            }
+                            n += 1;
+                            if n > max {
+                                break;
+                            }
+                        }
+                        if n > max {
+                            deep.insert(fam.to_string(), n);
+                            continue 'family;
+                        }
+                    }
+                }
+            }
+            Ok(deep)
+        }
+
+        /// [`deep_families`] estimated from the BAM INDEX alone, for genome-wide runs: a window's records ~= the compressed bytes its
+        /// index chunks span / the BAM's mean compressed bytes per record (file size / the index's mapped + unmapped counts). No record
+        /// is read, so it takes seconds; good to a small factor, which is enough to find copy windows with millions of records (rDNA
+        /// arrays) against a cap of hundreds of thousands. Returns the families with an estimate over `max`, with the estimate.
+        pub fn deep_families_estimate(
+            bam_path: &str,
+            copies: &[(String, String, u64, u64)],
+            pad: u64,
+            max: u64,
+        ) -> Result<std::collections::BTreeMap<String, u64>> {
+            use noodles_csi::binning_index::{BinningIndex as _, ReferenceSequence as _};
+            let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+            let header = reader.read_header()?;
+            let bai_path = format!("{bam_path}.bai");
+            let index = noodles_bam::bai::read(&bai_path)?;
+            let total: u64 = index
+                .reference_sequences()
+                .iter()
+                .filter_map(|r| r.metadata())
+                .map(|m| m.mapped_record_count() + m.unmapped_record_count())
+                .sum();
+            anyhow::ensure!(total > 0, "{bai_path} carries no record counts");
+            let bytes_per_record = std::fs::metadata(bam_path)?.len() as f64 / total as f64;
+            let mut windows: std::collections::BTreeMap<&str, std::collections::BTreeMap<&str, Vec<(u64, u64)>>> =
+                std::collections::BTreeMap::new();
+            for (fam, chrom, start, end) in copies {
+                windows.entry(fam.as_str()).or_default().entry(chrom.as_str()).or_default().push((start.saturating_sub(pad), end + pad));
+            }
+            let mut deep = std::collections::BTreeMap::new();
+            for (fam, by_chrom) in windows {
+                let mut worst = 0u64;
+                for (chrom, mut ivs) in by_chrom {
+                    let Some(id) = header.reference_sequences().get_index_of(chrom.as_bytes()) else { continue };
+                    ivs.sort_unstable();
+                    let mut merged: Vec<(u64, u64)> = Vec::new();
+                    for (a, b) in ivs {
+                        match merged.last_mut() {
+                            Some(l) if a <= l.1 => l.1 = l.1.max(b),
+                            _ => merged.push((a, b)),
+                        }
+                    }
+                    for (a, b) in merged {
+                        let lo = noodles_core::Position::try_from(usize::try_from(a + 1)?)?;
+                        let hi = noodles_core::Position::try_from(usize::try_from(b.max(a + 1))?)?;
+                        let mut spans: Vec<(u64, u64)> = index
+                            .query(id, noodles_core::region::Interval::from(lo..=hi))?
+                            .iter()
+                            .map(|c| (c.start().compressed(), c.end().compressed()))
+                            .collect();
+                        spans.sort_unstable();
+                        let mut bytes = 0u64;
+                        let mut cur: Option<(u64, u64)> = None;
+                        for (x, y) in spans {
+                            match cur.as_mut() {
+                                Some(c) if x <= c.1 => c.1 = c.1.max(y),
+                                _ => {
+                                    if let Some(c) = cur {
+                                        bytes += c.1 - c.0;
+                                    }
+                                    cur = Some((x, y));
+                                }
+                            }
+                        }
+                        if let Some(c) = cur {
+                            bytes += c.1 - c.0;
+                        }
+                        worst = worst.max((bytes as f64 / bytes_per_record) as u64);
+                    }
+                }
+                if worst > max {
+                    deep.insert(fam.to_string(), worst);
+                }
+            }
+            Ok(deep)
+        }
+
+        /// The molecules with >= 2 primary / secondary placements genome-wide (`as_table`'s `n_records >= 2`), as sorted
+        /// [`read_name_hash`]es (8 bytes per molecule).
+        #[derive(Clone, Debug, Default, PartialEq)]
+        pub struct MultiPlacement {
+            keys: Vec<u64>,
+        }
+
+        impl MultiPlacement {
+            /// From `as_table`'s TSV text (name, best_as, second_as, n_records, ...); `#` lines are skipped.
+            pub fn parse(text: &str) -> Self {
+                let mut keys: Vec<u64> = text
+                    .lines()
+                    .filter(|l| !l.starts_with('#') && !l.is_empty())
+                    .filter_map(|l| {
+                        let mut f = l.split('\t');
+                        let name = f.next()?;
+                        let n: u64 = f.nth(2)?.parse().ok()?;
+                        (n >= 2).then(|| read_name_hash(name))
+                    })
+                    .collect();
+                keys.sort_unstable();
+                keys.dedup();
+                MultiPlacement { keys }
+            }
+            pub fn from_path(path: &str) -> Result<Self> {
+                Ok(Self::parse(&std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?))
+            }
+            pub fn contains(&self, name: &str) -> bool {
+                self.keys.binary_search(&read_name_hash(name)).is_ok()
+            }
+            pub fn len(&self) -> usize {
+                self.keys.len()
+            }
+            pub fn is_empty(&self) -> bool {
+                self.keys.is_empty()
+            }
         }
 
         impl BamIndexCache {
@@ -48631,7 +48820,31 @@ pub mod denovo_pipeline {
                     noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
                 let header = reader.read_header()?;
                 let index = noodles_bam::bai::read(&bai_path)?;
-                Ok(Self { header, index })
+                Ok(Self { header, index, multi: None, skipped: std::sync::atomic::AtomicUsize::new(0) })
+            }
+
+            /// Skip the `BamRead` of every single-placement molecule (see the `multi` field).
+            pub fn with_multi_placement(mut self, m: std::sync::Arc<MultiPlacement>) -> Self {
+                self.multi = Some(m);
+                self
+            }
+
+            /// Records whose `BamRead` was skipped by the multi-placement filter so far.
+            pub fn skipped_single_placement(&self) -> usize {
+                self.skipped.load(std::sync::atomic::Ordering::Relaxed)
+            }
+
+            fn single_placement(&self, rb: &RecordBuf) -> bool {
+                match (&self.multi, rb.name()) {
+                    (Some(m), Some(n)) => {
+                        let single = !m.contains(&n.to_string());
+                        if single {
+                            self.skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        single
+                    }
+                    _ => false,
+                }
             }
 
             /// Query one region using the cached header+index (the reader seeks via the index, independent of the
@@ -48665,6 +48878,9 @@ pub mod denovo_pipeline {
                             alignment_read_from_record(&rb, chrom, gtf_secondary_enabled())
                         {
                             primary.push(pr);
+                        }
+                        if self.single_placement(&rb) {
+                            continue;
                         }
                         if let Some((
                             read,
@@ -48730,6 +48946,9 @@ pub mod denovo_pipeline {
                         {
                             primary.push(pr);
                         }
+                    }
+                    if self.single_placement(rb) {
+                        continue;
                     }
                     if let Some((read, mapq, name, as_score, de, is_supplementary, is_secondary)) =
                         aligned_read_from_record(rb)
@@ -52106,6 +52325,51 @@ pub mod denovo_pipeline {
                     indexer.build(header.reference_sequences().len());
                 noodles_bam::bai::write(dir.join(format!("{name}.bai")), &index).unwrap();
                 path.display().to_string()
+            }
+
+            #[test]
+            fn deep_families_counts_each_familys_merged_windows_and_stops_past_the_cap() {
+                let dir = tempfile::tempdir().unwrap();
+                let recs = vec![
+                    rec("x", Flags::default(), 0, 1_001, vec![m(100)]),
+                    rec("y", Flags::SECONDARY, 0, 1_001, vec![m(100)]),
+                    rec("z", Flags::default(), 0, 1_011, vec![m(100)]),
+                    rec("w", Flags::default(), 0, 50_001, vec![m(100)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "deep.bam", &recs);
+                let copies = vec![
+                    ("A".to_string(), "c1".to_string(), 1_000u64, 1_100u64),
+                    ("A".to_string(), "c1".to_string(), 1_050, 1_150),
+                    ("B".to_string(), "c1".to_string(), 50_000, 50_100),
+                ];
+                let deep = deep_families(&bam, &copies, 0, 2, None).unwrap();
+                assert_eq!(deep.into_iter().collect::<Vec<_>>(), vec![("A".to_string(), 3)]);
+                // counting only multi-placement molecules ("y"), nothing is deep
+                let mp = MultiPlacement::parse("y\t100\t100\t2\tc1\t100\n");
+                assert!(deep_families(&bam, &copies, 0, 2, Some(&mp)).unwrap().is_empty());
+            }
+
+            #[test]
+            fn bam_cache_with_a_multi_placement_filter_keeps_every_primary_but_only_multi_placement_records() {
+                let dir = tempfile::tempdir().unwrap();
+                let recs = vec![
+                    rec("single", Flags::default(), 0, 1_001, vec![m(100)]),
+                    rec("multi", Flags::default(), 0, 1_001, vec![m(100)]),
+                    rec("multi", Flags::SECONDARY, 0, 5_001, vec![m(100)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "mp.bam", &recs);
+                let table = "#as_table\tbam=x\trecords=3\tmolecules=2\nmulti\t100\t100\t2\tc1\t100\nsingle\t100\t-1\t1\tc1\t100\n";
+                let mp = MultiPlacement::parse(table);
+                assert!(mp.contains("multi") && !mp.contains("single"));
+                let plain = BamIndexCache::open(&bam).unwrap();
+                let (p0, b0) = plain.reads_in_region(&bam, "c1", 0, 1_000_000).unwrap();
+                let filtered = BamIndexCache::open(&bam).unwrap().with_multi_placement(std::sync::Arc::new(mp));
+                let (p1, b1) = filtered.reads_in_region(&bam, "c1", 0, 1_000_000).unwrap();
+                assert_eq!(p0, p1, "every primary is still read");
+                assert_eq!(b0.len(), 3);
+                let names: Vec<&str> = b1.iter().map(|b| b.name.as_str()).collect();
+                assert_eq!(names, vec!["multi", "multi"]);
+                assert_eq!(filtered.skipped_single_placement(), 1);
             }
 
             #[test]

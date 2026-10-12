@@ -140,7 +140,7 @@ ORIG_ARGS=("$@")
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
-INDEX_GB=8; LOW_MEM=0; NO_FLAG=0; RESUME=1
+INDEX_GB=8; LOW_MEM=0; NO_FLAG=0; RESUME=1; MAX_WINDOW_RECORDS=${RUSTLE_MAX_WINDOW_RECORDS:-0}
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
@@ -155,6 +155,7 @@ while [ $# -gt 0 ]; do
     --legacy-catalog) LEGACY_CATALOG=1; shift;; --candidates) CANDIDATES=1; shift;; --no-candidates) CANDIDATES=0; shift;;
     --delta) DELTA=$2; shift 2;; --cand-max-reads) CAND_MAX=$2; shift 2;;
     --index-gb) INDEX_GB=$2; shift 2;; --low-mem) LOW_MEM=1; shift;; --no-flag) NO_FLAG=1; shift;; --no-resume) RESUME=0; shift;;
+    --max-window-records) MAX_WINDOW_RECORDS=$2; shift 2;;
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
@@ -201,7 +202,8 @@ else
 fi
 # --low-mem (docs/GENOMEWIDE_FAST_2026-10-12.md): the splice index in 1-Gbp parts (flag holds one part at a time) and one
 # assign region at a time; every other setting unchanged
-if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; fi
+[[ "$MAX_WINDOW_RECORDS" =~ ^[0-9]+$ ]] || { echo "[rustle_pipeline] --max-window-records must be a whole number (got '$MAX_WINDOW_RECORDS')" >&2; exit 2; }
+if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; [ "$MAX_WINDOW_RECORDS" -gt 0 ] || MAX_WINDOW_RECORDS=500000; fi
 [[ "$INDEX_GB" =~ ^[1-9][0-9]*$ ]] || { echo "[rustle_pipeline] --index-gb must be a positive integer (got '$INDEX_GB')" >&2; exit 2; }
 export TMPDIR=${TMPDIR:-/tmp}
 if [ "$CACHE" = 1 ]; then export RUSTLE_CACHE_DIR="$OUT.cache"; else unset RUSTLE_CACHE_DIR; fi
@@ -671,9 +673,28 @@ stage_assign() {
   fi
   say "assign: per-read copy assignment on $OUT.fam.copies.tsv"
   rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier split run's tables
-  fam_regions all > "$OUT.regions.txt"
+  # the molecules table the assemble stage built (good pool) lets copy_assign drop single-placement molecules' records at read time
+  # (byte-identical products; docs/GENOMEWIDE_FAST_2026-10-12.md)
+  local mem=() mol=${AS_TABLE:-$OUT.molecules.tsv}
+  if [ -s "$mol" ] && head -1 "$mol" | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')"; then mem+=(--skip-single-placement "$mol"); fi
+  # --max-window-records N (--low-mem: 500,000): a family whose merged copy windows (copy +- 50 kb, what copy_assign reads) hold more
+  # than N records copy_assign would keep (rDNA arrays, acrocentric short arms) is not assigned, and its regions are not swept: listed
+  # with the count reached in PREFIX.assign.depth_skipped.tsv (`utilities window-depth`). Only reads such a family shares with others
+  # can change: their placement on its copies is no longer seen.
+  rm -f "$OUT.assign.depth_skipped.tsv" "$OUT.assign.depth_skipped.txt"
+  if [ "$MAX_WINDOW_RECORDS" -gt 0 ]; then
+    "$BIN/utilities" window-depth --bam "$BAM" --copies "$OUT.fam.copies.tsv" --max "$MAX_WINDOW_RECORDS" \
+      --out "$OUT.assign.depth_skipped.tsv" 2>> "$OUT.assign.depth.log"
+    if [ -s "$OUT.assign.depth_skipped.tsv" ]; then
+      cut -f1 "$OUT.assign.depth_skipped.tsv" > "$OUT.assign.depth_skipped.txt"
+      mem+=(--skip-families "$OUT.assign.depth_skipped.txt")
+      say "assign: $(wc -l < "$OUT.assign.depth_skipped.tsv") famil(ies) with a copy window over $MAX_WINDOW_RECORDS records are not assigned ($OUT.assign.depth_skipped.tsv)"
+    fi
+  fi
+  # the regions are rebuilt without the skipped families: a region left with no family would be read whole
+  if [ -s "$OUT.assign.depth_skipped.txt" ]; then fam_regions skip "$OUT.assign.depth_skipped.txt" > "$OUT.regions.txt"; else fam_regions all > "$OUT.regions.txt"; fi
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
-    --copies-fa "$OUT.fam.copies.fa" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
+    --copies-fa "$OUT.fam.copies.fa" "${ASSIGN_FAST[@]}" "${mem[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
     || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
 }
@@ -762,6 +783,7 @@ all_env() {
   merged_env
   printf 'candidates=%s\nlegacy=%s\ngff=%s\nindex=%s\nindex_gb=%s\nregion_threads=%s\npoa=%s\n' "$CANDIDATES" "$LEGACY_CATALOG" \
     "$GFF" "${INDEX:-$OUT.splice.mmi}" "$INDEX_GB" "${RUSTLE_REGION_THREADS:-1}" "${RUSTLE_POA_DIAGNOSTIC:-0}"
+  printf 'max_window_records=%s\n' "$MAX_WINDOW_RECORDS"
 }
 # run_all: every stage as its own driver call under /usr/bin/time (PREFIX.<stage>.time: wall seconds, peak RSS of the stage's
 # process tree, exit). Resume: a stage whose product exists, whose time record says exit 0 and whose settings match PREFIX.all.env

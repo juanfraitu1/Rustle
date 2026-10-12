@@ -1101,6 +1101,15 @@ struct Args {
     #[arg(long, default_value_t = false)]
     skip_poa_diagnostic: bool,
 
+    /// GENOME-WIDE MEMORY (`docs/GENOMEWIDE_FAST_2026-10-12.md`): `as_table`'s molecules table. A record whose molecule has ONE
+    /// primary / secondary placement genome-wide (`n_records == 1`) still feeds the primary pool but is never held as a full
+    /// record (no sequence, no CIGAR): such a molecule can never be AS-tied, and the AS-tied gate drops it anyway. Families,
+    /// assignments and abundance are unchanged; the gate's log counts then cover multi-placement molecules only. Refused with
+    /// the options that read every record (`--no-as-tied-only`, `--recover-copies`, `--tied-seed`, `--gtf`,
+    /// `--flag-missing-copies`, `--admit-aligner-disagreement`, `--assemble-only`).
+    #[arg(long)]
+    skip_single_placement: Option<String>,
+
     /// Discover reference-ABSENT (collapsed) copies from reads and re-thread the abstain pool against them
     /// (two-stage freeze; default OFF = byte-identical). Candidates failing the admission gate are written
     /// to `<out>.dna_needs.tsv`.
@@ -6359,6 +6368,22 @@ fn main() -> Result<()> {
     // Parse the BAM index + header ONCE and reuse across every region (the per-region path re-parses the
     // multi-MB `.bai` otherwise). None => no usable index; fall back to the per-region open (which scans).
     let bam_cache = BamIndexCache::open(&args.bam).ok();
+    let bam_cache = match (bam_cache, args.skip_single_placement.as_deref()) {
+        (Some(c), Some(path)) => {
+            anyhow::ensure!(
+                !(args.no_as_tied_only || args.recover_copies || args.tied_seed || args.gtf || args.flag_missing_copies
+                    || args.admit_aligner_disagreement || args.assemble_only),
+                "--skip-single-placement drops unique molecules' records, which --no-as-tied-only / --recover-copies / --tied-seed / \
+                 --gtf / --flag-missing-copies / --admit-aligner-disagreement / --assemble-only read: drop one"
+            );
+            let m = rustle::denovo_assemble::MultiPlacement::from_path(path)?;
+            anyhow::ensure!(!m.is_empty(), "--skip-single-placement {path}: no molecule with >= 2 placements (wrong table?)");
+            eprintln!("[copy_assign] --skip-single-placement: {} multi-placement molecules from {path}", m.len());
+            Some(c.with_multi_placement(std::sync::Arc::new(m)))
+        }
+        (None, Some(_)) => anyhow::bail!("--skip-single-placement needs an indexed BAM (.bai)"),
+        (c, None) => c,
+    };
     // Region-parallel pool (opt-in via --region-threads > 1). Sized to region_threads; the inner per-copy
     // poasta parallelism (discover_psvs) composes on the SAME pool, so total concurrency is bounded to N.
     let region_pool = if args.region_threads > 1 {

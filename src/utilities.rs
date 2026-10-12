@@ -70,6 +70,29 @@ enum Cmd {
         #[arg(long, default_value_t = 4)]
         threads: usize,
     },
+    /// Families whose copy windows hold more than --max records (docs/GENOMEWIDE_FAST_2026-10-12.md): writes OUT as
+    /// `family<TAB>records` (records = the count reached, max + 1 when it stopped early), one row per deep family, sorted.
+    WindowDepth {
+        #[arg(long)]
+        bam: String,
+        /// The families stage's copy table (columns family_id, chrom, start, end by header name).
+        #[arg(long)]
+        copies: String,
+        #[arg(long)]
+        max: u64,
+        /// as_table's molecules table: count only multi-placement molecules' records (what copy_assign holds with
+        /// --skip-single-placement).
+        #[arg(long)]
+        molecules: Option<String>,
+        /// copy_assign's read window around each copy (COPY_READ_PAD).
+        #[arg(long, default_value_t = 50_000)]
+        pad: u64,
+        /// Count the records one by one (exact, slow on deep genomes) instead of the index estimate (the default).
+        #[arg(long)]
+        exact: bool,
+        #[arg(long)]
+        out: String,
+    },
     /// Augment the genome and copies table with flagged candidates.
     CandidateAugment {
         #[arg(long)]
@@ -111,6 +134,7 @@ fn main() -> Result<()> {
             minimap2,
             threads,
         } => parcn::run(&copies_fa, &mat, &pat, &out, &minimap2, threads),
+        Cmd::WindowDepth { bam, copies, max, molecules, pad, exact, out } => window_depth(&bam, &copies, max, molecules.as_deref(), pad, exact, &out),
         Cmd::CandidateAugment {
             fasta,
             copies,
@@ -1464,4 +1488,40 @@ mod candidate_augment {
             );
         }
     }
+}
+
+fn window_depth(bam: &str, copies: &str, max: u64, molecules: Option<&str>, pad: u64, exact: bool, out: &str) -> Result<()> {
+    let text = std::fs::read_to_string(copies)?;
+    let mut lines = text.lines();
+    let hdr: Vec<&str> = lines.next().unwrap_or_default().split('\t').collect();
+    let col = |name: &str| -> Result<usize> {
+        hdr.iter().position(|h| *h == name).ok_or_else(|| anyhow::anyhow!("{copies}: no column {name}"))
+    };
+    let (cf, cc, cs, ce) = (col("family_id")?, col("chrom")?, col("start")?, col("end")?);
+    let mut rows = Vec::new();
+    for l in lines.filter(|l| !l.is_empty()) {
+        let f: Vec<&str> = l.split('\t').collect();
+        rows.push((f[cf].to_string(), f[cc].to_string(), f[cs].parse::<u64>()?, f[ce].parse::<u64>()?));
+    }
+    let multi = molecules.map(rustle::denovo_assemble::MultiPlacement::from_path).transpose()?;
+    let t0 = std::time::Instant::now();
+    let deep = if exact {
+        rustle::denovo_assemble::deep_families(bam, &rows, pad, max, multi.as_ref())?
+    } else {
+        anyhow::ensure!(multi.is_none(), "--molecules needs --exact (the index estimate counts every record)");
+        rustle::denovo_assemble::deep_families_estimate(bam, &rows, pad, max)?
+    };
+    let mut o = String::new();
+    for (f, n) in &deep {
+        o.push_str(&format!("{f}\t{n}\n"));
+    }
+    std::fs::write(out, o)?;
+    eprintln!(
+        "[window-depth] {} of {} families have a copy window over {max} records{} ({:.0} s) -> {out}",
+        deep.len(),
+        rows.iter().map(|r| r.0.as_str()).collect::<std::collections::BTreeSet<_>>().len(),
+        if multi.is_some() { " (multi-placement molecules only)" } else if exact { "" } else { " (index estimate)" },
+        t0.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
