@@ -39,6 +39,7 @@ def main():
     for a in ('--bam', '--fasta', '--molecules', '--out'):
         ap.add_argument(a, required=True)
     ap.add_argument('--n', type=int, default=20000); ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--batch', type=int, default=100000, help='names per BAM pass (bounds memory)')
     args = ap.parse_args()
     pop, total = [], 0
     for ln in open(args.molecules):
@@ -48,20 +49,35 @@ def main():
         best, second = int(f[1]), int(f[2])
         if int(f[3]) >= 2 and second >= 0.98 * best:
             pop.append((f[0], best, second, int(f[5])))
-    sample = random.Random(args.seed).sample(pop, min(args.n, len(pop)))
-    info = {s[0]: s for s in sample}
+    sample = random.Random(args.seed).sample(pop, min(args.n, len(pop))) if args.n > 0 else pop
+    fa = pysam.FastaFile(args.fasta)
+    out = []
+    names = sorted(s[0] for s in sample)
+    info_all = {s[0]: s for s in sample}
+    for bi in range(0, len(names), args.batch):
+        batch = names[bi:bi + args.batch]
+        out.extend(run_batch(args, batch, info_all, fa))
+        print(f"[o2_population] batch {bi // args.batch + 1}: {min(bi + args.batch, len(names)):,} / {len(names):,} molecules", file=sys.stderr)
+    report(args, out, total, pop, sample)
+
+
+def run_batch(args, batch, info_all, fa):
     nf = args.out + '.names.txt'
     with open(nf, 'w') as o:
-        o.write('\n'.join(sorted(info)) + '\n')
+        o.write('\n'.join(batch) + '\n')
+    info = {n: info_all[n] for n in batch}
     recs = collections.defaultdict(list)
     p = subprocess.Popen(['samtools', 'view', '-F', '2052', '-N', nf, args.bam], stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
     for ln in p.stdout:
         f = ln.split('\t', 11)
         i = ln.find('\tAS:i:')
         a = int(ln[i + 6:].split('\t', 1)[0]) if i >= 0 else None
-        recs[f[0]].append((int(f[1]), f[2], int(f[3]) - 1, parse_cigar(f[5]), a))
+        flag = int(f[1])
+        best = info[f[0]][1]
+        if flag & 256 and (a is None or a < 0.98 * best):
+            continue  # not a rival: dropped before its CIGAR is parsed (memory)
+        recs[f[0]].append((flag, f[2], int(f[3]) - 1, parse_cigar(f[5]), a))
     p.wait()
-    fa = pysam.FastaFile(args.fasta)
 
     def bases(chrom, cols, reverse):
         lo = min(r for r, _ in cols.values()); hi = max(r for r, _ in cols.values()) + 1
@@ -74,10 +90,10 @@ def main():
         prim = [r for r in rs if not r[0] & 256]
         rivals = [r for r in rs if r[0] & 256 and r[4] is not None and r[4] >= 0.98 * best]
         if not prim or not rivals:
-            out.append((name, 'no_rival_record', pas, best, second, 0, 0, 0)); continue
+            out.append((name, 'no_rival_record', pas, best, second, 0, 0, 0, '-', -1, -1)); continue
         pf, pc, pp, pcig, _ = prim[0]
         ca = aligned_columns(pp, pcig, bool(pf & 16)); ba = bases(pc, ca, bool(pf & 16)) if ca else None
-        pairs, mosaic, spliced_win = [], 0, 0
+        pairs, mosaic, spliced_win, win = [], 0, 0, ('-', -1, -1)
         for rf, rc, rp, rcig, ra in rivals:
             cb = aligned_columns(rp, rcig, bool(rf & 16))
             if not ca or not cb:
@@ -86,9 +102,15 @@ def main():
             pairs.append((v, m)); mosaic |= ka >= 2 and kb >= 2
             if v == 'B':
                 spliced_win |= sum(1 for op, _ in rcig if op == 3) > sum(1 for op, _ in pcig if op == 3)
-        out.append((name, molecule_class(pairs), pas, best, second, len(rivals), int(mosaic), int(spliced_win)))
+                if win[0] == '-':
+                    win = (rc, min(r for r, _ in cb.values()), max(r for r, _ in cb.values()) + 1)
+        out.append((name, molecule_class(pairs), pas, best, second, len(rivals), int(mosaic), int(spliced_win), *win))
+    return out
+
+
+def report(args, out, total, pop, sample):
     with open(args.out + '.molecules.tsv', 'w') as o:
-        o.write('read\tclass\tprimary_as\tbest_as\tsecond_as\trivals\tmosaic\tmoved_to_more_spliced\n')
+        o.write('read\tclass\tprimary_as\tbest_as\tsecond_as\trivals\tmosaic\tmoved_to_more_spliced\twin_chrom\twin_start\twin_end\n')
         for r in out:
             o.write('\t'.join(map(str, r)) + '\n')
     scored = [r for r in out if r[1] != 'no_rival_record']; n = len(scored)

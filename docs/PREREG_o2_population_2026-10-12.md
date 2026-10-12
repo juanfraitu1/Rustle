@@ -41,3 +41,14 @@ Outputs `/mnt/linuxdisk/tmp/asm_gap/op/{gorilla,human}.o2pop.{txt,molecules.tsv}
 right one (the retrocopy pattern of register 1270). Mosaic reads are common (19 / 40%): pairs where the read carries each copy's
 allele at >= 2 columns — the O3 regime (variants absent from both reference copies). Expected outcome (written before) held.
 Open: where the moved reads land (how many copies get >= 2 of them, i.e. copies the tools cannot assemble) needs the full population.
+
+## Amendment 1 (2026-10-12, user: "yes lets do that"; before any full-population number)
+
+The same classification over the FULL population (`--n 0`; names processed in batches of 100,000 per BAM pass to bound memory;
+identical per-molecule rule), recording for every moved molecule the winning placement (chromosome, aligned span). Aggregated by
+`bench/tool_difference/o2_moved_loci.py`: each winning placement is mapped to the reference genes whose exons its aligned span
+overlaps (none = unannotated); reported: genes receiving >= 1 / 2 / 5 / 10 moved reads, and for genes with >= 2, whether OP_good,
+StringTie and FLAIR (benchmark GTFs) emit any transcript touching the gene's exons. A gene with >= 2 moved reads and no StringTie /
+FLAIR transcript is a copy the tools miss and O2's reads could support. Descriptive; nothing adopted.
+
+**Instruments for amendment 1** (committed before the full run; the batched script reproduces the 20,000 sample exactly with 3 batches): `o2_population.py` sha1 f8d7435e304215df6c0c510c87179c3140a1ebec, `o2_moved_loci.py` sha1 82bf3325f87839dca3452370d16abe704fa1c958 (4 tests).
