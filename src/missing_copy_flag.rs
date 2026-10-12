@@ -398,21 +398,22 @@ fn pile(
     Ok(out)
 }
 
+/// minimap2's arguments for one home-search batch. `--split-prefix` is always passed: on a one-part index the output is
+/// unchanged, and it lets a MULTI-PART index (`minimap2 -I`, the low-memory profile of `docs/GENOMEWIDE_FAST_2026-10-12.md`)
+/// be used, one part in memory at a time, with the parts' hits merged (approximately equal to one part, not byte-identical).
+fn minimap2_args(index: &str, fasta: &std::path::Path, threads: usize) -> Vec<String> {
+    let split = format!("{}.mm2split", fasta.display());
+    ["-x", "splice:hq", "-c", "--eqx", "-N", "20", "-t", &threads.to_string(), "--split-prefix", &split, index]
+        .iter()
+        .map(|x| x.to_string())
+        .chain(std::iter::once(fasta.display().to_string()))
+        .collect()
+}
+
 fn minimap2_batch(index: &str, fasta: &std::path::Path, threads: usize) -> Result<String> {
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let out = std::process::Command::new(&mm2)
-        .args([
-            "-x",
-            "splice:hq",
-            "-c",
-            "--eqx",
-            "-N",
-            "20",
-            "-t",
-            &threads.to_string(),
-        ])
-        .arg(index)
-        .arg(fasta)
+        .args(minimap2_args(index, fasta, threads))
         .output()
         .with_context(|| format!("running {mm2}"))?;
     anyhow::ensure!(
@@ -1201,6 +1202,14 @@ mod tests {
     /// whose nearest locus (0-based half-open, the consensus's best genome hit) lies on the row's chromosome and overlaps
     /// its span, else `-`; an unflagged candidate, one with no genome hit (`none`) and a span that only touches the
     /// locus do not corroborate.
+    #[test]
+    fn minimap2_always_merges_index_parts() {
+        let a = minimap2_args("g.mmi", std::path::Path::new("/tmp/out/x.consensus.fa"), 4);
+        let k = a.iter().position(|x| x == "--split-prefix").expect("--split-prefix is passed");
+        assert_eq!(a[k + 1], "/tmp/out/x.consensus.fa.mm2split");
+        assert_eq!(&a[a.len() - 2..], &["g.mmi".to_string(), "/tmp/out/x.consensus.fa".to_string()]);
+    }
+
     #[test]
     fn the_o3_candidate_column_names_a_flagged_candidate_whose_nearest_locus_overlaps_the_row() {
         let text = format!(

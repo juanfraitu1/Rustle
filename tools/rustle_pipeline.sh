@@ -136,9 +136,11 @@
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
 set -euo pipefail
 STAGE=${1:-all}; shift || true
+ORIG_ARGS=("$@")
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
+INDEX_GB=8; LOW_MEM=0; NO_FLAG=0; RESUME=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
@@ -152,6 +154,7 @@ while [ $# -gt 0 ]; do
     --piece-records) PIECE_RECORDS=$2; shift 2;; --piece) PIECE=$2; shift 2;;
     --legacy-catalog) LEGACY_CATALOG=1; shift;; --candidates) CANDIDATES=1; shift;; --no-candidates) CANDIDATES=0; shift;;
     --delta) DELTA=$2; shift 2;; --cand-max-reads) CAND_MAX=$2; shift 2;;
+    --index-gb) INDEX_GB=$2; shift 2;; --low-mem) LOW_MEM=1; shift;; --no-flag) NO_FLAG=1; shift;; --no-resume) RESUME=0; shift;;
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
@@ -191,10 +194,25 @@ if [ "$STAGE" = cache-ls ]; then
   done
   exit 0
 fi
-[ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
+if [ "$STAGE" = index ]; then
+  [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "index needs --fasta and --out" >&2; exit 2; }
+else
+  [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
+fi
+# --low-mem (docs/GENOMEWIDE_FAST_2026-10-12.md): the splice index in 1-Gbp parts (flag holds one part at a time) and one
+# assign region at a time; every other setting unchanged
+if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; fi
+[[ "$INDEX_GB" =~ ^[1-9][0-9]*$ ]] || { echo "[rustle_pipeline] --index-gb must be a positive integer (got '$INDEX_GB')" >&2; exit 2; }
 export TMPDIR=${TMPDIR:-/tmp}
 if [ "$CACHE" = 1 ]; then export RUSTLE_CACHE_DIR="$OUT.cache"; else unset RUSTLE_CACHE_DIR; fi
 INSPECT_CAT=(); INSPECT_ASSIGN=()
+# ASSIGN_FAST (docs/GENOMEWIDE_FAST_2026-10-12.md): every copy_assign of the assign stage skips the POA homology DIAGNOSTIC
+# (byte-identical families / assignments / abundance; ~85% of the wall time on dense families; only the diagnostic
+# .fallback.tsv and its log counts are lost) and runs RUSTLE_REGION_THREADS regions at once (byte-identical; default 1, since
+# peak memory grows with it). RUSTLE_POA_DIAGNOSTIC=1 restores the diagnostic pass.
+case "${RUSTLE_REGION_THREADS:-1}" in ''|*[!0-9]*|0) echo "[rustle_pipeline] RUSTLE_REGION_THREADS must be a positive integer (got '${RUSTLE_REGION_THREADS:-}')" >&2; exit 2;; esac
+ASSIGN_FAST=(--region-threads "${RUSTLE_REGION_THREADS:-1}")
+[ "${RUSTLE_POA_DIAGNOSTIC:-0}" = 1 ] || ASSIGN_FAST+=(--skip-poa-diagnostic)
 if [ "$INSPECT" = 1 ]; then
   mkdir -p "$OUT.cache/inspect"
   INSPECT_CAT=("RUSTLE_ER_EDGE_DUMP=$OUT.cache/inspect/catalog" RUSTLE_COLLAPSE_STATS=1)
@@ -599,13 +617,13 @@ stage_assign() {
     say "assign: $n_cand candidate families on $OUT.aug.*, the other $n_rest on $OUT.fam.copies.tsv"
     rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.*.tsv "$OUT".assign_rest.*.tsv
     "$BIN/copy_assign" --bam "$OUT.aug.bam" --fasta "$OUT.aug.fa" --regions "$OUT.aug.regions.txt" --families "$OUT.aug.copies.tsv" \
-      --copies-fa "$OUT.aug.copies.fa" --only-families "$OUT.aug.families.txt" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_cand" > "$OUT.assign_cand.log" 2>&1 \
+      --copies-fa "$OUT.aug.copies.fa" --only-families "$OUT.aug.families.txt" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_cand" > "$OUT.assign_cand.log" 2>&1 \
       || { local rc=$?; say "assign: copy_assign failed on the candidate families (exit $rc), see $OUT.assign_cand.log; the likely cause: a real copy whose reads all realigned to its candidate, so it has no read in $OUT.aug.bam (copy_assign requires one on every real copy)"; exit "$rc"; }
     local runs=("$OUT.assign_cand")
     if [ "$n_rest" -gt 0 ]; then
       fam_regions skip "$OUT.aug.families.txt" > "$OUT.regions.txt"
       "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
-        --copies-fa "$OUT.fam.copies.fa" --skip-families "$OUT.aug.families.txt" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_rest" > "$OUT.assign_rest.log" 2>&1 \
+        --copies-fa "$OUT.fam.copies.fa" --skip-families "$OUT.aug.families.txt" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_rest" > "$OUT.assign_rest.log" 2>&1 \
         || { local rc=$?; say "assign: copy_assign failed on the other families (exit $rc), see $OUT.assign_rest.log"; exit "$rc"; }
       runs+=("$OUT.assign_rest")
     fi
@@ -636,7 +654,7 @@ stage_assign() {
     say "assign: per-read copy assignment on $OUT.cat"
     samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.regions.txt"
     "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
-      --families "$OUT.cat.copies.tsv" --copies-fa "$OUT.cat.copies.fa" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
+      --families "$OUT.cat.copies.tsv" --copies-fa "$OUT.cat.copies.fa" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
     say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
     return 0
   fi
@@ -655,7 +673,7 @@ stage_assign() {
   rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier split run's tables
   fam_regions all > "$OUT.regions.txt"
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
-    --copies-fa "$OUT.fam.copies.fa" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
+    --copies-fa "$OUT.fam.copies.fa" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
     || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
 }
@@ -727,16 +745,64 @@ stage_flag() {
   say "flag: $(grep -o 'verdicts: .*' "$OUT.flag.log")"
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
 }
+# index: the splice index flag aligns its consensus sequences against, PREFIX.splice.mmi. `-I INDEX_GB` Gbp per part: the default
+# 8 gives one part for a mammalian genome (the figures' index, ~13 GB to hold); --index-gb 1 / --low-mem writes ~1-Gbp parts
+# that flag loads one at a time (minimap2 --split-prefix merges their hits: near-identical, not byte-identical).
+stage_index() {
+  if [ -s "$OUT.splice.mmi" ]; then say "index: $OUT.splice.mmi present"; return 0; fi
+  say "index: minimap2 -x splice -I ${INDEX_GB}G -d $OUT.splice.mmi"
+  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$THREADS" -d "$OUT.splice.mmi.tmp" "$FASTA" > "$OUT.index.log" 2>&1
+  mv "$OUT.splice.mmi.tmp" "$OUT.splice.mmi"
+}
+# all_env: what a finished `all` stage was run with; a stage is skipped only when it matches (and its product is there)
+all_env() {
+  merged_env
+  printf 'candidates=%s\nlegacy=%s\ngff=%s\nindex=%s\nindex_gb=%s\nregion_threads=%s\npoa=%s\n' "$CANDIDATES" "$LEGACY_CATALOG" \
+    "$GFF" "${INDEX:-$OUT.splice.mmi}" "$INDEX_GB" "${RUSTLE_REGION_THREADS:-1}" "${RUSTLE_POA_DIAGNOSTIC:-0}"
+}
+# run_all: every stage as its own driver call under /usr/bin/time (PREFIX.<stage>.time: wall seconds, peak RSS of the stage's
+# process tree, exit). Resume: a stage whose product exists, whose time record says exit 0 and whose settings match PREFIX.all.env
+# is skipped — until one stage runs, after which every later stage runs too. A failing stage stops the run (its record stays).
+run_all() {
+  local plan=(assemble:"$OUT.gtf" families:"$OUT.fam.copies.tsv")
+  if [ "$LEGACY_CATALOG" = 1 ]; then plan+=(catalog:"$OUT.cat.copies.tsv")
+  elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
+  plan+=(assign:"$OUT.assign.assignments.tsv")
+  if [ "$NO_FLAG" = 0 ]; then
+    [ -n "$INDEX" ] || plan+=(index:"$OUT.splice.mmi")
+    plan+=(flag:"$OUT.flag.missing_copy.tsv")
+  fi
+  local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
+  env_now=$(all_env)
+  [ -n "$INDEX" ] || args+=(--index "$OUT.splice.mmi")
+  for item in "${plan[@]}"; do
+    st=${item%%:*}; prod=${item#*:}
+    if [ "$RESUME" = 1 ] && [ "$ran" = 0 ] && [ -s "$prod" ] && [ -f "$OUT.all.env" ] && [ "$(cat "$OUT.all.env")" = "$env_now" ] \
+       && grep -qx $'exit\t0' "$OUT.$st.time" 2>/dev/null; then
+      say "all: $st SKIPPED ($prod present, settings unchanged)"; continue
+    fi
+    ran=1
+    rm -f "$OUT.all.env"
+    say "all: $st"
+    local rc=0
+    /usr/bin/time -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" bash "$0" "$st" "${args[@]}" || rc=$?
+    { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
+    [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"; }
+    printf '%s\n' "$env_now" > "$OUT.all.env"
+  done
+  printf '%s\n' "$env_now" > "$OUT.all.env"
+  say "all: done. stage, wall, peak memory:"
+  for item in "${plan[@]}"; do
+    st=${item%%:*}
+    awk -F'\t' -v st="$st" '$1=="wall_s"{w=$2} $1=="peak_rss_kb"{m=$2} END{printf "[rustle_pipeline]   %-11s %8.0f s  %6.1f GB\n", st, w, m/1048576}' "$OUT.$st.time" >&2
+  done
+}
 case "$STAGE" in
   merged) stage_merged;;
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
-  assign) stage_assign;; flag) stage_flag;;
+  assign) stage_assign;; flag) stage_flag;; index) stage_index;;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
-  all) stage_assemble; stage_families
-       if [ "$LEGACY_CATALOG" = 1 ]; then stage_catalog
-       elif [ "$CANDIDATES" = 1 ]; then stage_candidates
-       else say "candidates: skipped (opt-in, --candidates; R14: Amendment 12 failed; R22: Amendment 14 failed)"; fi
-       stage_assign; stage_flag;;
+  all) run_all;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;
 esac
 say "done"
