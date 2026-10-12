@@ -43,7 +43,7 @@ for ln in open(ref):
     f = ln.split('\t')
     if len(f) < 9 or f[2] != 'exon':
         continue
-    gk = (f[0], re.search(r'gene_id "([^"]+)"', f[8]).group(1))
+    gk = (f[0], re.search(r'gene_id "([^"]*)"', f[8]).group(1) or re.search(r'transcript_id "([^"]+)"', f[8]).group(1))
     for s, gs in strat_genes.items():
         if gk in gs:
             a, b = int(f[3]) - 1, int(f[4])

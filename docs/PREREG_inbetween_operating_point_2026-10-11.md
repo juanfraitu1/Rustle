@@ -48,3 +48,11 @@ transcript / locus levels, OP_primary vs StringTie precision, default arms, stra
 23.6; human 26.7 / 17.2 vs 20.1 / 16.8 and 23.9 / 7.6). C1 should pass wherever S1 is powered, since neither tool's transcripts
 rest on secondary-only coverage; C3 is the real test (do transcripts built from secondaries match the annotation?). S2 may be
 small: register 875 found few AS-tied molecules in catalog families.
+
+**Amendment 1 (2026-10-11, before any stratum or arm number).** (a) Instrument crash fix: RefSeq gene-level features carry
+`gene_id ""` (gorilla and human references); both scripts now key such a gene by its `transcript_id` (`gene-LOC...`) instead of
+crashing. No definition changes. (b) Execution: `--read-isoform-k` forces the buffered reader, which held 14+ GB genome-wide
+with secondaries (the gorilla good-pool genome-wide run stalled; the human good-pool run was stopped by Claude Code's memory
+reaper). The arms run one contig per process (`tools/rustle_pipeline.sh --contig`, documented equal to the genome-wide run on
+that contig) and `--read-isoform-k` now also runs on the streaming reader (1304476b; structurally identical to the buffered
+path on human chr20). Same arms, same flags.

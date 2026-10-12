@@ -28,7 +28,8 @@ for ln in opener(args.ref):
     f = ln.rstrip('\n').split('\t')
     if len(f) < 9 or f[2] != 'exon' or f[0] == args.exclude:
         continue
-    g = re.search(r'gene_id "([^"]+)"', f[8]).group(1); t = re.search(r'transcript_id "([^"]+)"', f[8]).group(1)
+    t = re.search(r'transcript_id "([^"]+)"', f[8]).group(1)
+    g = re.search(r'gene_id "([^"]*)"', f[8]).group(1) or t  # RefSeq gene-level features carry gene_id "": key them by their id
     iv = (int(f[3]) - 1, int(f[4]))
     gene_ex[(f[0], g)].append(iv); tx_ex[t].append(iv); tx_gene[t] = (f[0], g)
 index = collections.defaultdict(list)  # (chrom, bin) -> [(start, end, gene_key)]
