@@ -1,49 +1,49 @@
 # table: fig1_samples
 # generator: figures/fig_intron_chain.py build
-# commit: 628894f9-dirty
-# date: 2026-09-25
-# input human_A119b rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.stats	size=1630	mtime=1790377428
-# input human_A119b rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.rustle.gtf.tmap	size=32427672	mtime=1790377427
-# input human_A119b rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.stats	size=1662	mtime=1790377451
-# input human_A119b rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.rustle_primary.gtf.tmap	size=30844846	mtime=1790377450
+# commit: f98417dd-dirty
+# date: 2026-10-11
+# input human_A119b rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.stats	size=1630	mtime=1791739381
+# input human_A119b rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle.rustle.gtf.tmap	size=32454743	mtime=1791739380
+# input human_A119b rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.stats	size=1662	mtime=1791739400
+# input human_A119b rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human/eval_annotated/gc_rustle_primary.rustle_primary.gtf.tmap	size=30870263	mtime=1791739399
 # input human_A119b bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam	size=96265156326	mtime=1784025276
 # input human_A119b annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
 # input human_A119b chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/human.genome-wide.chain_support.tsv	size=10675352	mtime=1790378341
-# input human_testis rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle.stats	size=1659	mtime=1790378390
-# input human_testis rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle.rustle.gtf.tmap	size=3272098	mtime=1790378390
-# input human_testis rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle_primary.stats	size=1691	mtime=1790378395
-# input human_testis rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle_primary.rustle_primary.gtf.tmap	size=3151541	mtime=1790378395
+# input human_testis rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle.stats	size=1659	mtime=1791739434
+# input human_testis rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle.rustle.gtf.tmap	size=3272467	mtime=1791739434
+# input human_testis rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle_primary.stats	size=1691	mtime=1791739439
+# input human_testis rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/human_testis/eval_annotated/gc_rustle_primary.rustle_primary.gtf.tmap	size=3151876	mtime=1791739439
 # input human_testis bam: /mnt/linuxdisk/home/juanfraitu/_from_wsl/human_val/human_testis.t2t.bam	size=2097628514	mtime=1783893477
 # input human_testis annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/A119b.chm13v2.0_RefSeq.gtf.gz	size=16770508	mtime=1790137613
 # input human_testis chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/human_testis.genome-wide.chain_support.tsv	size=1996305	mtime=1790378385
-# input gorilla_OR6737 rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.stats	size=1606	mtime=1790377391
-# input gorilla_OR6737 rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.rustle.gtf.tmap	size=11341310	mtime=1790377390
-# input gorilla_OR6737 rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.stats	size=1638	mtime=1790377401
-# input gorilla_OR6737 rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=11136644	mtime=1790377401
+# input gorilla_OR6737 rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.stats	size=1606	mtime=1791739348
+# input gorilla_OR6737 rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle.rustle.gtf.tmap	size=11343266	mtime=1791739348
+# input gorilla_OR6737 rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.stats	size=1638	mtime=1791739354
+# input gorilla_OR6737 rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=11138600	mtime=1791739354
 # input gorilla_OR6737 bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam	size=11745390963	mtime=1782229602
 # input gorilla_OR6737 annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/GGO.GCF_029281585.2_RefSeq.gtf.gz	size=10241973	mtime=1790137615
 # input gorilla_OR6737 chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/gorilla.genome-wide.chain_support.tsv	size=8116688	mtime=1790333203
-# input gorilla_KB3781 rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle.stats	size=1641	mtime=1790378843
-# input gorilla_KB3781 rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle.rustle.gtf.tmap	size=11142700	mtime=1790378842
-# input gorilla_KB3781 rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle_primary.stats	size=1673	mtime=1790378850
-# input gorilla_KB3781 rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=11025354	mtime=1790378850
+# input gorilla_KB3781 rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle.stats	size=1641	mtime=1791739449
+# input gorilla_KB3781 rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle.rustle.gtf.tmap	size=11146223	mtime=1791739449
+# input gorilla_KB3781 rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle_primary.stats	size=1673	mtime=1791739456
+# input gorilla_KB3781 rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/gorilla_KB3781/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=11028837	mtime=1791739455
 # input gorilla_KB3781 bam: /mnt/linuxdisk/home/juanfraitu/fibroblasts/GCA_029281585.2_flnc_mm.bam	size=23180422728	mtime=1786613812
 # input gorilla_KB3781 annotation: /mnt/c/Users/jfris/Desktop/benchmark_collapse/ref/GGO.GCF_029281585.2_RefSeq.gtf.gz	size=10241973	mtime=1790137615
 # input gorilla_KB3781 chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/gorilla_KB3781.genome-wide.chain_support.tsv	size=7988438	mtime=1790378836
-# input chimp_PTR rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle.stats	size=1616	mtime=1790378940
-# input chimp_PTR rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle.rustle.gtf.tmap	size=8359251	mtime=1790378940
-# input chimp_PTR rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle_primary.stats	size=1648	mtime=1790378947
-# input chimp_PTR rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=8220440	mtime=1790378947
+# input chimp_PTR rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle.stats	size=1616	mtime=1791739495
+# input chimp_PTR rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle.rustle.gtf.tmap	size=8360263	mtime=1791739495
+# input chimp_PTR rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle_primary.stats	size=1648	mtime=1791739505
+# input chimp_PTR rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=8221436	mtime=1791739505
 # input chimp_PTR bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/PTR_mm.bam	size=4718726147	mtime=1784018130
-# input chimp_PTR annotation: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/annotation.gff_to_gtf.gtf	size=279976410	mtime=1790378893
-# input chimp_PTR chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/chimp_PTR.genome-wide.chain_support.tsv	size=6946622	mtime=1790378930
-# input orangutan_PPY rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle.stats	size=1639	mtime=1790379065
-# input orangutan_PPY rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle.rustle.gtf.tmap	size=16782353	mtime=1790379064
-# input orangutan_PPY rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle_primary.stats	size=1671	mtime=1790379072
-# input orangutan_PPY rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=16055800	mtime=1790379071
+# input chimp_PTR annotation: /mnt/linuxdisk/tmp/rustle_figures/assembly/chimp_PTR/annotation.gff_to_gtf.gtf	size=279976410	mtime=1790572187
+# input chimp_PTR chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/chimp_PTR.genome-wide.chain_support.tsv	size=6946622	mtime=1791739489
+# input orangutan_PPY rustle stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle.stats	size=1639	mtime=1791739586
+# input orangutan_PPY rustle tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle.rustle.gtf.tmap	size=16786390	mtime=1791739586
+# input orangutan_PPY rustle_primary stats: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle_primary.stats	size=1671	mtime=1791739593
+# input orangutan_PPY rustle_primary tmap: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/eval_all/gc_rustle_primary.rustle_primary.gtf.tmap	size=16059755	mtime=1791739593
 # input orangutan_PPY bam: /mnt/linuxdisk/home/juanfraitu/winloci_data/PPY_mm.bam	size=13019380627	mtime=1784017872
-# input orangutan_PPY annotation: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/annotation.gff_to_gtf.gtf	size=179669946	mtime=1790378975
-# input orangutan_PPY chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/orangutan_PPY.genome-wide.chain_support.tsv	size=5495880	mtime=1790379055
+# input orangutan_PPY annotation: /mnt/linuxdisk/tmp/rustle_figures/assembly/orangutan_PPY/annotation.gff_to_gtf.gtf	size=179669946	mtime=1790572267
+# input orangutan_PPY chain support: /mnt/linuxdisk/tmp/rustle_figures/fig1/orangutan_PPY.genome-wide.chain_support.tsv	size=5495880	mtime=1791739577
 # note: supplementary: Rustle's two configurations on every registry sample, each against its own annotation; numbers from different samples or species are never pooled
 # note: sn / pr / matching = gffcompare 0.12.10 intron-chain level (fractions; denominators: multi-exon reference / query transcripts); *_ge2 = sensitivity on the distinct multi-exon reference chains carried exactly by >= 2 primary alignments (-F 2308, count mode 'reads'; the fig1_support rule)
 # note: annotations: human samples CHM13 v2.0 RefSeq; gorilla samples GCF_029281585.2 RefSeq; chimpanzee GCF_028858775.2 and orangutan GCF_028885625.2 RefSeq GFF3 converted with gff_to_gtf (the converter of the human and gorilla GTFs; the gorilla GFF3 converted this way is byte-identical to the gorilla GTF, md5 17052eec)
