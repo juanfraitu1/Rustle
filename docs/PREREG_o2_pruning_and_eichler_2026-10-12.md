@@ -40,3 +40,49 @@ Nothing is adopted: the outcome is descriptive, for the advisor's figure discuss
 source copies (the family simulator, `bench/famsim`), named here as the follow-up.
 
 **Instruments** (committed before running): `s1_o2.py` sha1 a79218c0bc6aa231f40cb7eaca7bca5da1ad1d12 (adds `--stratum` and the Eichler columns; 9 tests), `prune_good.py` sha1 4d17bbe843d8e99c4f406de683e9019abdfe37ca (2 tests).
+
+## Result (2026-10-12)
+
+Outputs `/mnt/linuxdisk/tmp/asm_gap/op/{gorilla,human}.v2.{S1,S2}.{txt,records.tsv,genes.tsv}`, `score_{gorilla,human}_pruned.txt`. The
+extended `s1_o2.py` reproduces register 1269's S1 records exactly in both species.
+
+**1. Certificate on S2 (coin-toss-starved genes).**
+
+| | gorilla S2 | human S2 |
+|---|---|---|
+| records tested | 56,905 | 597,412 |
+| AS == best ("tied"): to S2 copy / to primary copy / abstain | 75 / 41,569 / 5,527 | 386 / 82,882 / 240,068 (235,673 with no distinguishing column) |
+| strictly worse: to S2 copy / to primary copy / abstain | 24 / 8,193 / 1,517 | 902 / 66,925 / 206,249 |
+| genes supported / contradicted / undecidable | 9 / 200 / 77 | 89 / 424 / 374 |
+
+**E1 holds** (tied S2 secondaries certified to the primary copy 41,569 vs 75; 82,882 vs 386).
+
+**2. Eichler's AS-margin rule beside O2.** Records both rules call A or B: agreement S1 0.356 / 0.540, S2 0.141 / 0.300 (gorilla / human).
+**E3's "agree mostly" FAILS**: Eichler sends 5,780 / 2,485 (S1) and 35,649 / 75,063 (S2) records to the stratum copy, O2 almost
+none. The cause, checked on 300 sampled disagreeing gorilla reads per stratum (Eichler -> stratum copy, O2 -> primary copy): the
+best-AS alignment has NO intron in 95% (S1) / 92% (S2), fewer introns than the primary in 99% / 100%, more mismatches in 100% / 99%
+(median +23 in S1). These are spliced parent-gene reads that also align unspliced to a processed (intronless) copy; minimap2's AS
+is higher there because no splice penalty is paid, so an AS-margin rule assigns them to the retrocopy, while the PSV bases put them
+back on the parent. E3's other half holds: Eichler contradicts fewer genes (187 vs 600 gorilla; 563 vs 776 human) and prunes fewer
+transcripts (214 vs 416; 804 vs 969).
+
+**3. Pruned good-pool arms** (genome-wide minus the development chromosome; stratum = reference transcripts matched exactly / precision).
+
+| arm | gorilla chain | gorilla S1 | gorilla S2 | human chain | human S1 | human S2 |
+|---|---|---|---|---|---|---|
+| OP_good | 29.4 / 30.0 | 34 / 19.9% | 84 / 24.5% | 23.8 / 15.0 | 36 / 16.5% | 210 / 15.9% |
+| OP_good_o2 | 29.4 / 30.1 | 16 / 34.8% | 72 / 34.6% | 23.7 / 15.0 | 0 / 0.0% (16 tx) | 119 / 15.0% |
+| OP_good_eichler | 29.4 / 30.1 | 20 / 29.4% | 77 / 30.4% | 23.7 / 15.0 | 5 / 10.6% | 119 / 13.9% |
+| StringTie | 24.4 / 34.4 | 0 | 51 / 39.0% | 18.1 / 15.0 | 0 | 77 / 13.3% |
+| FLAIR | 25.5 / 17.3 | 0 | 42 / 36.8% | 22.4 / 6.2 | 0 | 72 / 8.0% |
+
+**E2**: genome-wide metrics move <= 0.3 point (holds). Stratum precision is NOT flat as predicted: in gorilla O2 pruning raises it
+(S1 19.9 -> 34.8%, S2 24.5 -> 34.6%); in human it removes every S1 match (all 36 sat in contradicted genes) and lowers S2 precision
+slightly (15.9 -> 15.0%) while dropping 91 matches. After O2 pruning, the S2 comparison with the tools: gorilla 72 matches vs 51 / 42
+at 34.6% vs 39.0 / 36.8% precision; human 119 vs 77 / 72 at 15.0% vs 13.3 / 8.0%.
+**Reading.** (a) O2's certificate and Eichler's AS-margin rule disagree mostly because of retrocopies: AS rewards unspliced
+alignments to processed copies, the PSV bases do not; on this population O2's call is the biologically right one. (b) Neither rule
+makes the secondary-only stratum a win: after pruning, gorilla keeps 16 S1 matches and human none. (c) In human S2 most records have
+no distinguishing column (identical copies, 380,372 of 597,412): the per-gene "contradicted" rule (>= 2 certified elsewhere, 0 here)
+then rests on a minority of reads, and pruning removes transcripts that match the annotation 20% of the time (221 / 1,107) — the
+pruning rule is too coarse where copies are identical. Copy-of-origin needs a simulation truth (`bench/famsim`) to decide.
