@@ -321,3 +321,32 @@ is therefore judged at the copy level:
 - **Ambiguous:** only when those copies are not one locus in primary coordinates.
 
 The best hit must still satisfy NM <= max(2, 0.003 x aligned bases).
+
+## Results — arm 4 (haplotype truth), 2026-10-13
+
+`bench/o2_truth/haplotype_truth.py` (5 tests, committed before running). Outputs `/mnt/linuxdisk/tmp/o2_arms/arm4_gorilla/`.
+4,825 contested rows considered (135 O2-assigned molecules + a 3,000-molecule sample).
+
+**Truth coverage.**
+- **One-locus truth:** 29 assigned rows and 14 abstained rows.
+- **Ambiguous truth:** 64 assigned and 2,985 abstained. Near-identical copies tie on the haplotypes too.
+- **Outside the catalog:** 2 assigned and 137 abstained (the O3 regime).
+- **No near-perfect hit:** 775. **No primary record in the windows:** 819.
+
+**H1: 28 / 29 right, 1 wrong: UNDERPOWERED** (one short of 30). The aligner's primary is right on 28 / 29 (H2).
+- **The right calls are dominated by MCL26** (all 20 stored examples). Precision rests largely on one family.
+- **The wrong call** is O2's MCL3 copy 12, while the read matches MCL132 copy 1 (another family) at NM 4 on pat. This is
+  the known per-family blind spot: the certificate never sees a copy of another family. The aligner was wrong too.
+- **The 2 assigned rows with truth outside the catalog** are one molecule (`SRR27438212.7269840`), assigned in MCL265
+  and in MCL267 by sole-candidate promotion (0 decisive columns). Its true locus is an uncatalogued mat chr16 locus
+  at NM 0, so both calls are wrong. Counting them: 28 right / 31 verifiable calls.
+
+**H3 (sample):** 19 molecules have a one-locus truth. O2 assigns 5 (all right; recall 0.26); the aligner is right on 15.
+
+**Reading.**
+- Where the animal's own haplotypes give a truth, O2's PSV calls are right: 28 / 29 on one-locus truth.
+- The failures are the two documented blind spots, not PSV evidence gone wrong:
+  - the true copy in another family (per-family certificate);
+  - an uncatalogued origin promoted by the sole-candidate rule.
+- The test is underpowered and concentrated in MCL26. Haplotype truth resolves few tied molecules, because exact ties
+  are mostly between copies that are near-identical on both haplotypes.
