@@ -11,6 +11,14 @@ Writes JSON to stdout:
                    columns at which every such candidate is FIXED. A column no candidate has a position at is in neither
                    numerator (counted in n_cols_no_position); frac_* divide by all columns, frac_*_of_positioned by the
                    columns with >= 1 position. A candidate's chrom is its copy's in <RUN_PREFIX>.family_join.tsv.
+
+COLUMN RULE, exactly: a column counts when EVERY candidate WITH a position there has its (chrom, pos) in the set;
+candidates without a position are ignored (but a column where none has one never counts). This is a per-COLUMN summary,
+not the certificate's mask. The prereg (Amendment 1) and the Rust fixed-only certificate mask per PAIR: a column counts
+for candidates (a, b) iff BOTH have a position there and both (chrom, pos) are in the set. The two agree only for a
+two-candidate column at which both candidates have a position. With >= 3 candidates a column can be in the set for one
+pair and not another (here it is all or nothing); a column where a candidate has no position can count here, but never
+counts for any pair that includes that candidate.
 """
 import collections, json, os, sys
 

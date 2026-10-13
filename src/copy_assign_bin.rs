@@ -1034,29 +1034,50 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_best_by_duel: bool,
     /// L6: write `<out>.star_reads.tsv` — per molecule its read-star proof: the read positions of its columns,
-    /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF.
+    /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF. Since
+    /// 2026-10-12 (spec population-fixed-psvs) a 10th column `positions`: per column, the candidates' 0-based genome
+    /// positions in `candidates` order joined by `/` (`.` = none: the candidate has no base at that column, or the
+    /// proof is off the two-form path), columns joined by `,`; each candidate's chrom is its copy's in
+    /// `<out>.family_join.tsv`.
     #[arg(long, default_value_t = false)]
     dump_star: bool,
     /// spec 2026-10-12-population-fixed-psvs: a `psv_population.tsv` (bench/popfix/table.py). Writes
-    /// `<out>.population_tier.tsv`: per molecule that goes through the read-star certificate (all AS-tied / contested
-    /// molecules on the default path, plus any uncontested molecule the AS-tied gate sends to the certificate) the
-    /// normal call, the call on population-FIXED PSVs only, and the tier. Columns: `status_all`/`copy_all` = this run's call (as in assignments.tsv);
-    /// `status_fixed`/`copy_fixed` = the read-star certificate on population-FIXED PSV columns only
-    /// (`n_dec_fixed` = its decisive columns); `tier` PORTABLE = both assign the same copy, REFERENCE_ONLY = the run
-    /// assigns but the fixed-only certificate does not (or picks another copy), UNASSIGNED = the run does not
-    /// assign. Needs the default read-star path (genomic, two-form, pooled molecules). Default OFF: without it
-    /// no output changes (separately, `--dump-star`'s `star_reads.tsv` now always carries a 10th `positions` column).
+    /// `<out>.population_tier.tsv`, one row per (molecule, family) that goes through the read-star certificate — on the
+    /// default path every AS-tied molecule, contested (primary MAPQ < 60) or not; under `--no-as-tied-only` every
+    /// molecule, including the uncontested ones that then fall back to their placement (see `--psv-fixed-only`) — plus
+    /// any contested row that never reached the certificate (no candidate), written `NA`/`NA`/`0`. Columns:
+    /// `status_all`/`copy_all` = the emitted assignments.tsv row's call; `status_fixed`/`copy_fixed` = the read-star
+    /// certificate on population-FIXED PSV columns only (a column counts for a pair of candidates only where both
+    /// candidates' genome positions are FIXED; `n_dec_fixed` = its decisive columns); `tier` PORTABLE = both assign the
+    /// same copy, REFERENCE_ONLY = the run assigns but the fixed-only certificate does not (or picks another copy),
+    /// UNASSIGNED = the run does not assign. Requires `--families` and the default read-star path (genomic, two-form,
+    /// pooled molecules); refused with `--absent-copies`, `--iterative-prune` (they run the certificate more than once
+    /// per molecule or remap calls after it), `--indel-psv` (an indel column could count as FIXED) and
+    /// `--union-certificate` (it rewrites calls after the closure). Table sanity before any read: a table with no FIXED
+    /// site is an error; FIXED sites none of which lies inside a catalog copy's span (chrom + [start, end)) are a
+    /// warning (chrom naming, reference build, another catalog?), an error under `--psv-fixed-only`; the count is
+    /// printed. Default OFF: without it no output changes except two metadata rows in params.tsv (`psv_population`
+    /// `NONE`, `psv_fixed_only` `false`); separately, `--dump-star`'s `star_reads.tsv` now always carries a 10th
+    /// `positions` column.
     #[arg(long)]
     psv_population: Option<String>,
-    /// With `--psv-population`: decide on population-FIXED PSVs only (assignments.tsv = portable calls). The
-    /// `posterior` column of the other outputs still reflects all columns. Applies to every molecule that goes
-    /// through the read-star certificate (all AS-tied / contested molecules on the default path, plus any
-    /// uncontested molecule the AS-tied gate sends to the certificate); molecules placed by the aligner without
-    /// the certificate (the `--no-as-tied-only` placement path) keep the aligner's call and are not
-    /// population-checked. Refused together with `--vg-realign`, `--vg-realign-correct` and
-    /// `--union-certificate` (they rewrite the best copy / status after the read-star closure). Under this flag
-    /// the `readthrough_into` column and the `readthrough_explained` count can differ from a non-strict run for
-    /// molecules whose best copy moved (the read-through credit is withdrawn, fail-closed).
+    /// With `--psv-population`: the read-star certificate on population-FIXED PSV columns only IS the decision for
+    /// every molecule that goes through the certificate (the molecules `--psv-population` lists); the later gates
+    /// (origin certificate, tie-outside) still apply after it, and a sole candidate is never promoted (it rests on no
+    /// PSV). The full-column certificate plays no part in the call, so this flag can ASSIGN a molecule the
+    /// full-column certificate abstained on (and abstain on, or move, one it assigned): `assigned` in assignments.tsv
+    /// means "decided on FIXED columns". The tier file's PORTABLE means the emitted call and the fixed-only certificate
+    /// agree — in a run without this flag, that both certificates agree; under it the emitted call is already the
+    /// fixed-only one, so PORTABLE marks a fixed-only call that survived the later gates. The `posterior`,
+    /// `sibling_identity` and `n_cols_vs_nearest_sibling` outputs still reflect all columns. Under `--no-as-tied-only`
+    /// the uncontested molecules (primary MAPQ >= 60) go through the certificate too: a fixed-only Assigned call takes
+    /// precedence over their placement, and when the fixed-only certificate does not assign they still fall back to
+    /// their placement (`assigned`, tier REFERENCE_ONLY unless the fixed-only certificate picked that copy);
+    /// `--placement-first` lets the placement override even a fixed-only call. Read `contested` = 1 rows (or the tier)
+    /// for population-decided calls there. Refused together with `--vg-realign`, `--vg-realign-correct` and
+    /// `--union-certificate` (they rewrite the best copy / status after the read-star closure). Under this flag the
+    /// `readthrough_into` column and the `readthrough_explained` count can differ from a non-strict run for molecules
+    /// whose best copy moved (the read-through credit is withdrawn, fail-closed).
     #[arg(long, default_value_t = false)]
     psv_fixed_only: bool,
     /// Escape hatch (§6fm): count every read-star hit for a candidate even when it does not overlap the
@@ -1414,6 +1435,155 @@ fn check_population_flags(
     if population && !molecule_pool {
         return Err("--psv-population needs the pooled read-star path; drop --no-molecule-observations".into());
     }
+    Ok(())
+}
+
+/// Final review R30: what `--psv-population` (strict or not) needs and refuses. It needs `--families`: the tiers are keyed
+/// by the catalog's copies and the table is checked against their spans (`population_table_check`). It refuses the levers
+/// that run the certificate more than once per molecule or rewrite a call after the read-star closure, since
+/// `population_tier.tsv` pairs each emitted row with the FIRST tier its molecule registered. `--absent-copies` and
+/// `--iterative-prune` are already refused with `--families` (`load_supplied_families`); the guard is explicit anyway so
+/// the population contract does not rest on another flag's.
+fn check_population_scope(
+    population: bool,
+    families: bool,
+    absent_copies: bool,
+    iterative_prune: bool,
+    indel_psv: bool,
+    union_certificate: bool,
+) -> Result<(), String> {
+    if !population {
+        return Ok(());
+    }
+    if !families {
+        return Err(
+            "--psv-population requires --families: the tiers are keyed by the catalog's copies and the table is checked against their spans"
+                .into(),
+        );
+    }
+    for (on, flag, why) in [
+        (
+            absent_copies,
+            "--absent-copies",
+            "re-threads abstained molecules through a second certificate pass, so a molecule registers several tiers and population_tier.tsv would pair the first",
+        ),
+        (
+            iterative_prune,
+            "--iterative-prune",
+            "merges copies and remaps their molecules after the certificate, promoting a call to assigned on the full-column posterior (>= 0.9 of its mass), outside the fixed-only rule",
+        ),
+        (
+            indel_psv,
+            "--indel-psv",
+            "adds indel columns whose genome positions would be looked up as substitution sites (an indel column could count as FIXED)",
+        ),
+        (
+            union_certificate,
+            "--union-certificate",
+            "rewrites the status after the read-star closure, so population_tier.tsv would pair the per-family tier with the union's call",
+        ),
+    ] {
+        if on {
+            return Err(format!("--psv-population cannot be combined with {flag}: it {why}"));
+        }
+    }
+    Ok(())
+}
+
+/// R30 table sanity: how many of the table's FIXED sites (0-based `(chrom, pos)`) fall inside some catalog copy's span
+/// (`chrom` + half-open `[start, end)`). Spans are merged per chrom, so a site in two overlapping copies counts once.
+fn count_fixed_in_spans<'a>(
+    fixed: impl IntoIterator<Item = &'a (String, u64)>,
+    spans: &[(String, u64, u64)],
+) -> usize {
+    let mut by_chrom: std::collections::HashMap<&str, Vec<(u64, u64)>> = std::collections::HashMap::new();
+    for (c, s, e) in spans {
+        if s < e {
+            by_chrom.entry(c.as_str()).or_default().push((*s, *e));
+        }
+    }
+    for v in by_chrom.values_mut() {
+        v.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(v.len());
+        for &(s, e) in v.iter() {
+            match merged.last_mut() {
+                Some(last) if s <= last.1 => last.1 = last.1.max(e),
+                _ => merged.push((s, e)),
+            }
+        }
+        *v = merged;
+    }
+    fixed
+        .into_iter()
+        .filter(|(c, p)| {
+            by_chrom.get(c.as_str()).map_or(false, |v| {
+                let i = v.partition_point(|&(s, _)| s <= *p); // intervals starting at or before p
+                i > 0 && *p < v[i - 1].1
+            })
+        })
+        .count()
+}
+
+/// R30 table sanity verdict for `--psv-population PATH`: the stderr lines to print, or the error. `n_fixed` = the table's
+/// FIXED sites, `n_in_span` = those inside a catalog copy's span (`count_fixed_in_spans`). No FIXED site at all is an
+/// error; none on a catalog copy is a warning naming the likely causes, an error under `--psv-fixed-only` (no molecule
+/// could be assigned).
+fn population_table_check(path: &str, n_fixed: usize, n_in_span: usize, strict: bool) -> Result<Vec<String>, String> {
+    if n_fixed == 0 {
+        return Err(format!("--psv-population: no FIXED sites in {path}"));
+    }
+    let mut lines = vec![format!(
+        "[copy_assign] --psv-population {path}: {n_fixed} FIXED sites, {n_in_span} inside a catalog copy's span{}",
+        if strict { " (decide on FIXED PSVs only)" } else { "" }
+    )];
+    if n_in_span == 0 {
+        let what = format!(
+            "0 of {n_fixed} FIXED sites lie inside a catalog copy's span (chrom + [start, end)); check the chrom naming (e.g. chr1 vs 1), the reference build the table was made on, and that it was made for this catalog"
+        );
+        if strict {
+            return Err(format!(
+                "--psv-population {path}: {what}; under --psv-fixed-only no molecule could be assigned"
+            ));
+        }
+        lines.push(format!(
+            "[copy_assign] WARNING: --psv-population {path}: {what}; no molecule can be PORTABLE"
+        ));
+    }
+    Ok(lines)
+}
+
+/// The read-star path switches exactly as `AssignParams` receives them; shared with `population_guards`, which runs
+/// before the parameters are built.
+fn read_star_genomic_on(a: &Args) -> bool {
+    a.read_star_genomic && !a.read_star_unit
+}
+fn read_star_two_form_on(a: &Args) -> bool {
+    !a.read_star_genomic_only
+}
+fn molecule_pool_on(a: &Args) -> bool {
+    a.molecule_observations && !a.no_molecule_observations
+}
+
+/// Every `--psv-population` / `--psv-fixed-only` flag guard, from the arguments alone (R30: before any file or BAM is read).
+fn population_guards(a: &Args) -> Result<()> {
+    check_population_flags(
+        a.psv_population.is_some(),
+        a.psv_fixed_only,
+        read_star_genomic_on(a) && read_star_two_form_on(a),
+        molecule_pool_on(a),
+    )
+    .map_err(|e| anyhow::anyhow!(e))?;
+    check_population_scope(
+        a.psv_population.is_some(),
+        a.families.is_some(),
+        a.absent_copies,
+        a.iterative_prune,
+        a.indel_psv,
+        a.union_certificate,
+    )
+    .map_err(|e| anyhow::anyhow!(e))?;
+    check_fixed_only_escapes(a.psv_fixed_only, a.vg_realign, a.vg_realign_correct, a.union_certificate)
+        .map_err(|e| anyhow::anyhow!(e))?;
     Ok(())
 }
 
@@ -6012,6 +6182,9 @@ fn main() -> Result<()> {
         .num_threads(args.threads.max(1))
         .build_global()
         .ok();
+    // spec 2026-10-12-population-fixed-psvs (final review R30): the population flag guards, from the arguments alone,
+    // before any file or BAM is read
+    population_guards(&args)?;
     // §6p6: --assemble-only IS the assembly product, so it implies --gtf. Setting it here means every
     // existing `if args.gtf` gate fires unchanged rather than each one needing a second condition.
     if args.assemble_only {
@@ -6336,55 +6509,41 @@ fn main() -> Result<()> {
         edit_rate: args.edit_rate,
         iterative_prune: args.iterative_prune,
         junction_conflict_abstain: args.junction_conflict_abstain,
-        molecule_pool: args.molecule_observations && !args.no_molecule_observations,
+        molecule_pool: molecule_pool_on(&args),
         origin_subst_only: args.origin_substitutions_only,
         origin_drop_indels: args.origin_drop_indels && !args.no_origin_drop_indels,
         indel_psv: args.indel_psv,
         indel_psv_min_len: args.indel_psv_min_len,
         read_star_junctions: args.read_star_junctions,
-        read_star_genomic: args.read_star_genomic && !args.read_star_unit,
+        read_star_genomic: read_star_genomic_on(&args),
         read_star_catalog_locus: !args.read_star_pad_locus,
         sole_candidate: !args.no_sole_candidate,
         best_by_psv: !args.best_by_alignment,
         best_by_duel: args.best_by_duel && !args.no_best_by_duel,
         dump_star: args.dump_star,
         read_star_hit_in_unit: !args.no_read_star_hit_in_unit,
-        read_star_two_form: !args.read_star_genomic_only,
+        read_star_two_form: read_star_two_form_on(&args),
         read_star_readthrough: !args.no_readthrough_certificate,
         origin_consistency_check: args.origin_consistency_check,
         ..AssignParams::default()
     };
-    check_population_flags(
-        args.psv_population.is_some(),
-        args.psv_fixed_only,
-        params.read_star_genomic && params.read_star_two_form,
-        params.molecule_pool,
-    )
-    .map_err(|e| anyhow::anyhow!(e))?;
-    check_fixed_only_escapes(args.psv_fixed_only, args.vg_realign, args.vg_realign_correct, args.union_certificate)
-        .map_err(|e| anyhow::anyhow!(e))?;
+    // (the population flag guards ran at the top of `main`, `population_guards`)
     if let Some(path) = args.psv_population.as_deref() {
         let text = std::fs::read_to_string(path).with_context(|| format!("reading --psv-population {path}"))?;
         let pop = rustle::copy_assign::copy_assign_pipeline::parse_psv_population(&text, args.psv_fixed_only)?;
-        // chrom names must match the catalog's (R22: only checkable when `--families` supplied the catalog)
-        if let Some(rf) = &region_families {
-            let catalog_chroms: std::collections::HashSet<&str> = rf
-                .values()
-                .flat_map(|fams| fams.iter().flat_map(|f| f.copies.iter().map(|c| c.chrom.as_str())))
-                .collect();
-            let on_catalog = pop.fixed.iter().filter(|(c, _)| catalog_chroms.contains(c.as_str())).count();
-            if on_catalog == 0 {
-                eprintln!(
-                    "[copy_assign] WARNING: --psv-population: 0 of {} FIXED sites lie on a catalog copy's chromosome (chrom names?); no molecule can be PORTABLE (under --psv-fixed-only none is assigned)",
-                    pop.fixed.len()
-                );
-            }
+        // R30 table sanity: the FIXED sites must fall on the catalog's copies (chrom + [start, end)). `--families` is
+        // required by the guard, so `region_families` holds the catalog (after --only-families / --skip-families).
+        let spans: Vec<(String, u64, u64)> = region_families
+            .iter()
+            .flat_map(|rf| rf.values())
+            .flat_map(|fams| fams.iter().flat_map(|f| f.copies.iter().map(|c| (c.chrom.clone(), c.start, c.end))))
+            .collect();
+        let n_in_span = count_fixed_in_spans(pop.fixed.iter(), &spans);
+        for line in population_table_check(path, pop.fixed.len(), n_in_span, args.psv_fixed_only)
+            .map_err(|e| anyhow::anyhow!(e))?
+        {
+            eprintln!("{line}");
         }
-        eprintln!(
-            "[copy_assign] --psv-population {path}: {} FIXED sites{}",
-            pop.fixed.len(),
-            if args.psv_fixed_only { " (decide on FIXED PSVs only)" } else { "" }
-        );
         rustle::copy_assign::copy_assign_pipeline::register_psv_population(pop);
     }
     eprintln!(
@@ -10699,9 +10858,12 @@ fn main() -> Result<()> {
     }
     // spec 2026-10-12-population-fixed-psvs: `<out>.population_tier.tsv` — per molecule that went through the read-star
     // certificate (one row per (molecule, family)) the emitted call beside the call on population-FIXED PSVs only, and
-    // the portability tier. Molecules the aligner placed without the certificate have no tier and are not listed.
-    // `status_all`/`copy_all` are the emitted assignments.tsv row's; `status_fixed`/`copy_fixed`/`n_dec_fixed` the tier's.
-    // A contested molecule with no tier is written with NA/NA/0 so the file never silently omits one.
+    // the portability tier. Every row with a tier is listed, contested or not: under `--no-as-tied-only` the uncontested
+    // molecules go through the certificate too and get a tier even when the placement fallback made their call (then
+    // REFERENCE_ONLY unless the fixed-only certificate picked that copy). `status_all`/`copy_all` are the emitted
+    // assignments.tsv row's; `status_fixed`/`copy_fixed`/`n_dec_fixed` the tier's. A contested row with no tier (it never
+    // reached the certificate: no candidate) is written NA/NA/0 so the file never silently omits one; an uncontested row
+    // with no tier is skipped.
     if args.psv_population.is_some() {
         let tiers = rustle::copy_assign::copy_assign_pipeline::take_population_tiers();
         let mut th = std::fs::File::create(format!("{}.population_tier.tsv", args.out))?;
@@ -14998,7 +15160,10 @@ mod tests {
 
 #[cfg(test)]
 mod popfix_flag_tests {
-    use super::{check_fixed_only_escapes, check_population_flags, tier_join_summary, tier_line, tier_name};
+    use super::{
+        check_fixed_only_escapes, check_population_flags, check_population_scope, count_fixed_in_spans,
+        population_table_check, tier_join_summary, tier_line, tier_name,
+    };
     use super::AssignStatus as S;
     use rustle::copy_assign::copy_assign_pipeline::PopulationTier;
 
@@ -15035,6 +15200,72 @@ mod popfix_flag_tests {
         assert!(check_fixed_only_escapes(true, false, true, false).unwrap_err().contains("--vg-realign-correct"));
         assert!(check_fixed_only_escapes(true, false, false, true).unwrap_err().contains("--union-certificate"));
         assert!(check_fixed_only_escapes(true, false, false, true).unwrap_err().contains("--psv-fixed-only"));
+    }
+
+    #[test]
+    fn population_needs_families_and_refuses_the_multi_pass_and_rewrite_levers() {
+        // (population, families, absent_copies, iterative_prune, indel_psv, union_certificate)
+        assert!(check_population_scope(false, false, true, true, true, true).is_ok(), "no table, nothing to refuse");
+        assert!(check_population_scope(true, true, false, false, false, false).is_ok());
+        let e = check_population_scope(true, false, false, false, false, false).unwrap_err();
+        assert!(e.contains("--psv-population") && e.contains("--families"), "{e}");
+        // with --families present, each lever is refused and named
+        for (flags, flag) in [
+            ((true, false, false, false), "--absent-copies"),
+            ((false, true, false, false), "--iterative-prune"),
+            ((false, false, true, false), "--indel-psv"),
+            ((false, false, false, true), "--union-certificate"),
+        ] {
+            let (a, i, x, u) = flags;
+            let e = check_population_scope(true, true, a, i, x, u).unwrap_err();
+            assert!(e.contains("--psv-population") && e.contains(flag), "{flag}: {e}");
+        }
+        // --families is named first: it is the precondition of the rest
+        let e = check_population_scope(true, false, true, false, false, false).unwrap_err();
+        assert!(e.contains("--families"), "{e}");
+    }
+
+    #[test]
+    fn count_fixed_in_spans_counts_sites_inside_any_copy_span_half_open_on_its_own_chrom() {
+        let s = |c: &str, a: u64, b: u64| (c.to_string(), a, b);
+        let f = |c: &str, p: u64| (c.to_string(), p);
+        // two overlapping spans on c1 (merged, never double-counted), one on c2, an empty span ignored
+        let spans = vec![s("c1", 100, 200), s("c1", 150, 300), s("c2", 0, 10), s("c3", 50, 50)];
+        let fixed = vec![
+            f("c1", 99),  // before
+            f("c1", 100), // start: inside
+            f("c1", 180), // in both spans: once
+            f("c1", 299), // last base: inside
+            f("c1", 300), // end: exclusive
+            f("c2", 9),   // inside
+            f("c2", 100), // after
+            f("c3", 50),  // empty span
+            f("chr1", 150), // another chrom name
+        ];
+        assert_eq!(count_fixed_in_spans(fixed.iter(), &spans), 4);
+        assert_eq!(count_fixed_in_spans(fixed.iter(), &[]), 0);
+        // disjoint spans: a site between them is outside
+        let spans = vec![s("c1", 0, 10), s("c1", 20, 30)];
+        assert_eq!(count_fixed_in_spans([f("c1", 15), f("c1", 25), f("c1", 5)].iter(), &spans), 2);
+    }
+
+    #[test]
+    fn population_table_check_refuses_an_empty_table_and_off_catalog_sites_under_strict() {
+        // (path, n_fixed, n_in_span, strict)
+        let e = population_table_check("t.tsv", 0, 0, false).unwrap_err();
+        assert!(e.contains("no FIXED sites in t.tsv"), "{e}");
+        assert!(population_table_check("t.tsv", 0, 0, true).unwrap_err().contains("no FIXED sites in t.tsv"));
+        // none on a catalog copy: a warning naming the likely causes (non-strict), an error (strict)
+        let lines = population_table_check("t.tsv", 7, 0, false).unwrap();
+        assert!(lines.iter().any(|l| l.contains("7 FIXED sites, 0 inside a catalog copy's span")), "{lines:?}");
+        let w = lines.iter().find(|l| l.contains("WARNING")).expect("a warning line");
+        assert!(w.contains("chrom naming") && w.contains("reference build") && w.contains("catalog"), "{w}");
+        let e = population_table_check("t.tsv", 7, 0, true).unwrap_err();
+        assert!(e.contains("0 of 7") && e.contains("catalog copy's span") && e.contains("--psv-fixed-only"), "{e}");
+        // the normal case: the count line only
+        let lines = population_table_check("t.tsv", 7, 5, true).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].contains("7 FIXED sites, 5 inside a catalog copy's span"), "{lines:?}");
     }
 
     #[test]
