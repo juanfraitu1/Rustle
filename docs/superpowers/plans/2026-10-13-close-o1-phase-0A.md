@@ -694,8 +694,7 @@ Run `python3 -m pytest -q bench/o1_hier/test_v1_to_v2.py`. Expected: `ModuleNotF
 #!/usr/bin/env python3
 """CHM13 v1.0 -> v2.0 coordinates through the T2T v1.0 -> v1.1 chain (v2.0 = v1.1 + the HG002 chrY).
 
-    v1_to_v2.py lift CHAIN IN OUT [--pairs] [--one-based] [--report R.json]
-    v1_to_v2.py verify V1_FA V2_FA IN LIFTED OUT.json [--pairs] [--one-based] [--n 1000] [--seed 7]
+    v1_to_v2.py lift CHAIN IN OUT [--pairs] [--one-based] [--report R.json] [--verify V1_FA V2_FA [--n 1000] [--seed 7]]
 
 An interval lifts only if both of its ends fall inside aligned blocks of its chromosome's chain. An end inside a chain
 gap (an indel, the rDNA arrays) or on a chromosome without a chain (GRCh38 chrY in the plus38Y files) makes it
@@ -1191,8 +1190,8 @@ Run `python3 -m pytest -q bench/o1_hier/test_hier_match.py`. Expected: `ModuleNo
 #!/usr/bin/env python3
 """Hierarchy-aware O1 scorer (docs/superpowers/specs/2026-10-13-close-o1-design.md, section A).
 
-    hier_match.py MEMBERS_TSV TRUTH_TSV OUT.json --loci-gff LOCI_GFF3 [--fold LOCI_TSV] [--map exon|key]
-                  [--null 1000] [--seed 7]
+    hier_match.py MEMBERS_TSV TRUTH_TSV OUT.json [--loci-gff LOCI_GFF3] [--fold LOCI_TSV] [--map exon|key]
+                  [--null 1000] [--seed 7]        (--loci-gff is required by --map exon, the default)
 
 Nodes: every family, expansion, superfamily and SD complex of `<out>.hierarchy.members.tsv`, each as its set of member
 loci (`chrom:start-end`, GFF 1-based). Duplicons, SD blocks and external families are not nodes.
