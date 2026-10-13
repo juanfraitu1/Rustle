@@ -22126,8 +22126,20 @@ pub mod copy_assign {
                 } else {
                     (diag(&anchors[t]), diag(&anchors[t]))
                 };
-                let lo = (row as i64 + dmin - SG_W).max(1);
-                let hi = (row as i64 + dmax + SG_W).min(m as i64);
+                // paths are monotone: between anchors t and t + 1 the columns lie between theirs (Amendment E2: the
+                // diagonal envelope alone spans every column across a huge one-sided insertion)
+                let k = SG_K as i64;
+                let (cmin, cmax) = if anchors.is_empty() {
+                    (1, m as i64)
+                } else if r < anchors[0].0 as i64 {
+                    (1, anchors[0].1 as i64 + k)
+                } else if t + 1 < anchors.len() {
+                    (anchors[t].1 as i64 + 1, anchors[t + 1].1 as i64 + k)
+                } else {
+                    (anchors[t].1 as i64 + 1, m as i64)
+                };
+                let lo = (row as i64 + dmin - SG_W).max(cmin - SG_W).max(1);
+                let hi = (row as i64 + dmax + SG_W).min(cmax + SG_W).min(m as i64);
                 out.push((lo as usize, hi.max(lo - 1) as usize));
             }
             out
@@ -25852,6 +25864,26 @@ pub mod copy_assign {
                     let (s_band, _) = semiglobal_align_banded(&a, &b, &bands).expect("banded");
                     assert_eq!(s_band, s_full, "seed {seed}");
                 }
+            }
+
+            #[test]
+            fn anchored_band_stays_narrow_across_a_huge_one_sided_insertion() {
+                // human MCL1887: a 265-kb copy vs an 11-kb one; between the anchors flanking the insertion the
+                // diagonal envelope alone spans every column (2.7 G cells, 34 s). Paths are monotone, so the band also
+                // lies between the two anchors' columns: optimum unchanged, cells ~ rows x (gap in b + 2W).
+                let (h1, h2) = (rand_seq(300, 0xB1), rand_seq(300, 0xB2));
+                let a = [h1.clone(), rand_seq(30_000, 0xB3), h2.clone()].concat();
+                let (mut g1, mut g2) = (h1, h2);
+                snp(&mut g1, 100);
+                snp(&mut g2, 200);
+                let b = [g1, g2].concat();
+                let bands = semiglobal_bands(a.len(), b.len(), &semiglobal_anchors(&a, &b));
+                let cells: usize = bands.iter().map(|&(lo, hi)| if hi >= lo { hi - lo + 1 } else { 0 }).sum();
+                assert!(cells < 10_000_000, "{cells} banded cells");
+                let full: Vec<(usize, usize)> = (0..a.len()).map(|_| (1, b.len())).collect();
+                let (s_full, _) = semiglobal_align_banded(&a, &b, &full).expect("full");
+                let (s_band, _) = semiglobal_align_banded(&a, &b, &bands).expect("banded");
+                assert_eq!(s_band, s_full);
             }
 
             #[test]

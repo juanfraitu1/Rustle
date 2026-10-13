@@ -71,3 +71,28 @@ bar is reported.
   (`minimap2 -cx asm20 -X -N 50 -p 0.1`; engine-independent). R is reported and excluded from V and M. Bars unchanged.
 - Dev with A1: global V 3,192 / M 7,543 (0.297), R 5,448, H 27,138, N 15,058; semiglobal V 4,239 / M 29 (**0.993**),
   R 2,259, H 1,501, N 10; harness 10.16 s vs 1.90 s summed, slowest family 2.27 s vs 0.72 s.
+
+## Held-out result 1 (2026-10-12) and Amendment E2 + fresh held-out 3 (written before any chimp family is aligned)
+
+**HELD-OUT 1 (gorilla, 269 families) — P1-P4 PASS:** global V 16,445 / M 22,848 (precision 0.419), R 7,090, H 63,784,
+N 86,288; semiglobal V **18,317** / M **31** (**0.998**), R 2,187, H 2,939, N **119**; harness 34.53 s vs **5.15 s**
+summed, 0 semiglobal families > 2 s (`eng/ho1_eval/engine_eval.json`).
+
+**HELD-OUT 2 (human, 2,101 families) — P4 FAILS for semiglobal:** 10 families > 2 s (MCL1887 34.1 s: a 265-kb copy vs an
+11-kb one; MCL1904 24.5 s). The GLOBAL engine could not be run as comparator: it aborted allocating 135 GB after 158 s
+(whole set) and did not finish 2,099 families (without MCL1887 / MCL1904) within 590 s on 2 threads — semiglobal did all
+2,101 in 115.7 s wall. **P1 on human (semiglobal alone, 7 chunks): V 377,664 / M 1,128 = 0.997 PASS** (R 49,458, H 89,694,
+N 4,505; `eng/ho2_eval/engine_eval_semi_total.json`). P2 / P3 are not computable on human (no comparator output). **Verdict as registered: not all bars pass on both held-out substrates -> the engine stays
+OPT-IN.**
+
+**Amendment E2 (band; motivated by held-out 2, so judged only on held-out 3):** between anchors the diagonal envelope
+spans every column across a huge one-sided insertion (250k rows x 11k columns). Alignment paths are monotone, so each
+row's band is intersected with the columns between the flanking anchors (+- W): before the first anchor columns
+<= its end, after the last >= its start. New unit test: a 30-kb one-sided insertion — banded score equals the full DP
+and < 10 M cells.
+
+**HELD-OUT 3 (fresh; another species, never aligned or scored):** the 393 chimp PTR families with 2-20 copies
+(`rustle_figures/runs/chimp_PTR/chimp_PTR.fam.copies.tsv`). Bars P1-P4 exactly as above (P4: total semiglobal <= global
+and no semiglobal family > 2 s); yardstick with A1. If the global comparator cannot finish a family, that family is
+excluded from P2/P3 and listed, and counts against global in P4. **All of P1-P4 pass on held-out 3 (with held-out 1
+already passed) -> the engine becomes the default; otherwise it stays opt-in.**

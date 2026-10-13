@@ -62,7 +62,13 @@ def main(copies_tsv, copies_fa, outdir, runs):
         for r in P.tsv(prefix + ".psv_pos.tsv"):
             pos[(r["family_id"], int(r["col_index"]))][int(r["copy_index"])] = int(r["genome_pos"])
         engines[name] = (alle, strand, pos)
-    fams = sorted({f for _, (alle, _, _) in engines.items() for (f, _) in alle})
+    # families present in EVERY compared output (an engine may lack some, e.g. one it could not align)
+    fam_sets = [{f for (f, _) in alle} for alle, _, _ in engines.values()]
+    fams = sorted(set.intersection(*fam_sets))
+    if os.environ.get("ONLY"):  # a family subset (one id per line), to run large catalogs in chunks
+        keep = set(open(os.environ["ONLY"]).read().split())
+        fams = [f for f in fams if f in keep]
+    import time
     first_strand = next(iter(engines.values()))[1]
     # per family and copy X: minimap2 pieces, the stretch index, a copy-0-offset -> X-genome map
     stretch_jobs, stretch_of = [], {}
@@ -72,6 +78,7 @@ def main(copies_tsv, copies_fa, outdir, runs):
     tmp = os.path.join(outdir, "tmp")
     os.makedirs(tmp, exist_ok=True)
     for fam in fams:
+        t_fam = time.time()
         rows = fam_rows[fam]
         info = []
         for k, r in enumerate(rows):
@@ -134,6 +141,8 @@ def main(copies_tsv, copies_fa, outdir, runs):
                         stretch_of[key] = len(stretch_jobs)
                         stretch_jobs.append((a_s, b_s))
                     pending[name].append(stretch_of[key])
+        if time.time() - t_fam > 5:
+            print(f"[engine_eval] slow family {fam}: {time.time() - t_fam:.1f} s, {len(rows)} copies", file=sys.stderr)
     # Smith-Waterman vs shuffles for every stretch some engine put a difference pair in
     verdict = {}
     with open(f"{tmp}/sw_pairs.tsv", "w") as fh:
