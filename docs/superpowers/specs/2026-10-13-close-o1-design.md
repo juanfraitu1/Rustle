@@ -75,8 +75,11 @@ their cached `.fam.loci.paf` / `.gff3`. Edges are not recomputed; the families s
 **Human run.**
 - **Catalogs:** dev = human A119b; held-out = human testis. Both are default catalogs, after fix 0.
 - **Hierarchies:** `mcl_families --emit-hierarchy` with the 10-09 inputs: DupMasker colors
-  (`winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`) and the CHM13 SEDEF pairs
-  (`winloci_data/HSA_sedef_pairs.bed`). Both are v1.0 coordinates, lifted as on 10-09; the plan checks the lift.
+  (`winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`) and the CHM13 SEDEF calls the 10-09 run used
+  (`winloci_data/soto_replication/final_v1_clean.bed`; corrected from `HSA_sedef_pairs.bed`, whose column 21 is not an
+  identity).
+  - Both are v1.0 coordinates. The 10-09 run did not lift them: its universe was v1.0.
+  - Here they are lifted by the T2T v1.0 -> v1.1 chain, sequence-verified (plan 1, Task 3).
 - **Truth:** Soto's 400 families (`/mnt/linuxdisk/tmp/hier_flag/soto_external.tsv`).
 - **Bars:**
   - **E1:** the hierarchy-aware score beats the null at p < 0.001 on both catalogs.
@@ -98,7 +101,7 @@ their cached `.fam.loci.paf` / `.gff3`. Edges are not recomputed; the families s
 
 **V1 (faithful SD calls).** Whole-genome runs on CHM13 v2.0 and on mGorGor1 (`GGO.fasta`), compared base-pair-wise
 with the SEDEF calls on disk:
-- CHM13: `winloci_data/HSA_sedef_pairs.bed` (v1.0; lifted with `winloci_data/liftoff_v1_to_v2`, version verified before the comparison);
+- CHM13: `winloci_data/soto_replication/final_v1_clean.bed` (v1.0 SEDEF), lifted by the T2T chain (plan 1, Task 3);
 - `winloci_data/GGO_sedef_final.bed`.
 
 Bar: SD recall and precision >= 0.80 on both genomes. Fail: `sedef-rs` is not adopted.
@@ -140,3 +143,17 @@ Fail: `sedef-rs` gives the SD level only, and the expansion level stays human-on
 - the paused genome-wide figure 7 scoring;
 - cross-species consistency of duplicon IDs (each genome gets its own `sedef-rs` families);
 - a non-overlap (antichain) matching variant: NP-hard on the partial order, so the null controls depth instead.
+
+## Amendments from the plan's fact check (2026-10-13, before any scored run)
+
+Recorded in `docs/superpowers/plans/2026-10-13-close-o1-phase-0A.md` ("Rulings").
+1. **Truth mapping is exon + strand.** A Soto gene joins a locus when one of its exons shares >= 1 bp, on the same
+   strand, with an exon of the locus. Raw span overlap joined antisense and intronic neighbours: on the 10-09 F_O data
+   it cut exact expansions from 215 to 169; exon + strand gives 206.
+2. **Evaluable truth family = >= 2 members on our loci** (the 10-09 convention). E2's rate is exact / evaluable;
+   unconditioned numbers are reported next to it.
+3. **E1b is added**, a within-family null: members permuted inside their own family, so only the expansions move.
+   - The global null of E1 is passed trivially (0.03 exact matches on F_O).
+   - E1b is the test that controls depth. If it fails, the claim stops at the family level.
+4. **The pair rule of fix 0 runs after MCL.** This is equivalent, since flow never crosses components. A pair's fate
+   also depended on unrelated components, because convergence is tested on all columns at once.
