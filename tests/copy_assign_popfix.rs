@@ -289,3 +289,34 @@ fn popfix_guards_need_families_and_refuse_absent_copies() {
     // the population guard itself (the --families roster guard would name --absent-copies but not --psv-population)
     assert!(err.contains("--psv-population") && err.contains("--absent-copies"), "{err}");
 }
+
+/// R31: under `--no-as-tied-only` the placement fallback assigns molecules (sole candidates Tied by R24 among them) that
+/// no FIXED column backs, so `--psv-fixed-only` there is refused unless `--no-placement-assign` turns placement off.
+/// Non-strict `--psv-population` under `--no-as-tied-only` is unchanged.
+#[test]
+fn popfix_fixed_only_refuses_no_as_tied_only_placement() {
+    let d = scratch("placement");
+    let table = write(&d, "t.tsv", &format!("{POP_HEADER}c1\t520\tFAM1\t0\tFIXED\ttest\t0\t0\t0\t0\n"));
+
+    let (o, _) = run(&d, "strict", &["--psv-population", &table, "--psv-fixed-only", "--no-as-tied-only"]);
+    assert!(!o.status.success(), "--psv-fixed-only with --no-as-tied-only (placement on) must be refused");
+    let err = stderr(&o);
+    assert!(err.contains("--no-as-tied-only") && err.contains("--no-placement-assign"), "{err}");
+    let (o, _) = run(
+        &d,
+        "strict_first",
+        &["--psv-population", &table, "--psv-fixed-only", "--no-as-tied-only", "--placement-first"],
+    );
+    assert!(!o.status.success(), "--placement-first is still a placement path");
+    assert!(stderr(&o).contains("--no-as-tied-only"), "{}", stderr(&o));
+
+    // controls: placement off, and the non-strict table, both run
+    let (o, _) = run(
+        &d,
+        "strict_noplace",
+        &["--psv-population", &table, "--psv-fixed-only", "--no-as-tied-only", "--no-placement-assign"],
+    );
+    assert!(o.status.success(), "strict with --no-placement-assign must run:\n{}", stderr(&o));
+    let (o, _) = run(&d, "nonstrict", &["--psv-population", &table, "--no-as-tied-only"]);
+    assert!(o.status.success(), "non-strict --psv-population under --no-as-tied-only is unchanged:\n{}", stderr(&o));
+}

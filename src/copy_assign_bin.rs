@@ -1069,13 +1069,13 @@ struct Args {
     /// means "decided on FIXED columns". The tier file's PORTABLE means the emitted call and the fixed-only certificate
     /// agree — in a run without this flag, that both certificates agree; under it the emitted call is already the
     /// fixed-only one, so PORTABLE marks a fixed-only call that survived the later gates. The `posterior`,
-    /// `sibling_identity` and `n_cols_vs_nearest_sibling` outputs still reflect all columns. Under `--no-as-tied-only`
-    /// the uncontested molecules (primary MAPQ >= 60) go through the certificate too: a fixed-only Assigned call takes
-    /// precedence over their placement, and when the fixed-only certificate does not assign they still fall back to
-    /// their placement (`assigned`, tier REFERENCE_ONLY unless the fixed-only certificate picked that copy);
-    /// `--placement-first` lets the placement override even a fixed-only call. Read `contested` = 1 rows (or the tier)
-    /// for population-decided calls there. Refused together with `--vg-realign`, `--vg-realign-correct` and
-    /// `--union-certificate` (they rewrite the best copy / status after the read-star closure). Under this flag the
+    /// `sibling_identity` and `n_cols_vs_nearest_sibling` outputs still reflect all columns. With `--no-as-tied-only`
+    /// it needs `--no-placement-assign` (R31): there the uncontested molecules (primary MAPQ >= 60) go through the
+    /// certificate too, but the placement fallback would assign the ones the fixed-only certificate does not (a sole
+    /// candidate is Tied under this flag) and `--placement-first` would override it, writing `assigned` rows no FIXED
+    /// column backs; with placement off every call is the fixed-only certificate's. Refused together with
+    /// `--vg-realign`, `--vg-realign-correct` and `--union-certificate` (they rewrite the best copy / status after the
+    /// read-star closure). Under this flag the
     /// `readthrough_into` column and the `readthrough_explained` count can differ from a non-strict run for molecules
     /// whose best copy moved (the read-through credit is withdrawn, fail-closed).
     #[arg(long, default_value_t = false)]
@@ -1584,6 +1584,25 @@ fn population_guards(a: &Args) -> Result<()> {
     .map_err(|e| anyhow::anyhow!(e))?;
     check_fixed_only_escapes(a.psv_fixed_only, a.vg_realign, a.vg_realign_correct, a.union_certificate)
         .map_err(|e| anyhow::anyhow!(e))?;
+    check_fixed_only_placement(a.psv_fixed_only, a.no_as_tied_only, a.no_placement_assign)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    Ok(())
+}
+
+/// R31: under `--no-as-tied-only` the §6fq placement fallback assigns the uncontested molecules the certificate did not
+/// (and `--placement-first` overrides it), so a strict run would write `assigned` rows no FIXED column backs — a sole
+/// candidate, Tied under strict by R24, is then assigned by placement. Refuse `--psv-fixed-only` there unless
+/// `--no-placement-assign` switches the placement path off. Non-strict `--psv-population` is not affected.
+fn check_fixed_only_placement(fixed_only: bool, no_as_tied_only: bool, no_placement_assign: bool) -> Result<(), String> {
+    if fixed_only && no_as_tied_only && !no_placement_assign {
+        return Err(
+            "--psv-fixed-only cannot be combined with --no-as-tied-only while placement is on: the placement fallback \
+             (and --placement-first) assigns uncontested molecules the fixed-only certificate did not (a sole candidate is \
+             Tied under --psv-fixed-only), so assignments.tsv would hold calls no FIXED column backs; add \
+             --no-placement-assign"
+                .into(),
+        );
+    }
     Ok(())
 }
 
@@ -15161,8 +15180,8 @@ mod tests {
 #[cfg(test)]
 mod popfix_flag_tests {
     use super::{
-        check_fixed_only_escapes, check_population_flags, check_population_scope, count_fixed_in_spans,
-        population_table_check, tier_join_summary, tier_line, tier_name,
+        check_fixed_only_escapes, check_fixed_only_placement, check_population_flags, check_population_scope,
+        count_fixed_in_spans, population_table_check, tier_join_summary, tier_line, tier_name,
     };
     use super::AssignStatus as S;
     use rustle::copy_assign::copy_assign_pipeline::PopulationTier;
@@ -15223,6 +15242,20 @@ mod popfix_flag_tests {
         // --families is named first: it is the precondition of the rest
         let e = check_population_scope(true, false, true, false, false, false).unwrap_err();
         assert!(e.contains("--families"), "{e}");
+    }
+
+    #[test]
+    fn fixed_only_refuses_the_placement_fallback_of_no_as_tied_only() {
+        // R31 (fixed_only, no_as_tied_only, no_placement_assign)
+        assert!(check_fixed_only_placement(false, true, false).is_ok(), "non-strict --psv-population is unchanged");
+        assert!(check_fixed_only_placement(true, false, false).is_ok(), "default AS-tied gate: no placement path");
+        assert!(check_fixed_only_placement(true, true, true).is_ok(), "placement switched off: allowed");
+        let e = check_fixed_only_placement(true, true, false).unwrap_err();
+        assert!(
+            e.contains("--psv-fixed-only") && e.contains("--no-as-tied-only") && e.contains("--no-placement-assign"),
+            "{e}"
+        );
+        assert!(e.contains("--placement-first"), "the refusal covers --placement-first too: {e}");
     }
 
     #[test]
