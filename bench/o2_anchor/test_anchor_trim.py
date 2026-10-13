@@ -75,3 +75,10 @@ def test_amended_a1_uses_the_truth_noise_as_the_bar():
     assert S.amended_a1(c, 100)["verdict"] == "FAIL"
     assert S.amended_a1(collections.Counter(t0_n=100, t0_right=90), 100)["verdict"].startswith("STOP")
     assert S.amended_a1(c, 29)["verdict"] == "UNDERPOWERED"
+
+
+def test_pick_families_keeps_multi_copy_families_by_md5_order():
+    fams = {"F1": [1, 2], "F2": [1], "F3": [1, 2, 3], "F4": [1, 2]}
+    assert A.pick_families(fams, 0) == {"F1", "F3", "F4"}
+    two = A.pick_families(fams, 2)
+    assert len(two) == 2 and two <= {"F1", "F3", "F4"}

@@ -102,6 +102,12 @@ human:
 
 The gorilla numbers above are dev. Only the human run tests this amended rule.
 
+**Amendment 1b (feasibility, before the human run).** The human catalog is 2,150 families / 9,907 copies, the BAM is
+96 GB. So the human arm takes the 400 families with the lowest md5(family_id) among families with >= 2 copies, and per
+copy streams at most the first 5,000 primary MAPQ-60 records (by position) before the md5 sampling of 20
+(`anchor_trim.py ... 20 400 5000`). Gorilla defaults (all families, no cap) are unchanged. The index is CHM13's splice
+index; the BAM's minimap2 settings are identical to gorilla's.
+
 ## Results — human A119b (held-out)
 
 (pending)
