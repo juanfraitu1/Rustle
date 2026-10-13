@@ -60981,9 +60981,17 @@ pub mod fam_from_gtf {
             out
         }
 
-        /// PREREG_mcl_two_node_2026-10-13: a connected component of exactly two nodes is ONE cluster. On two nodes MCL's
-        /// column converges toward a tie between "self" and "mate", and the 1e-7 convergence test stopped at a residual
-        /// whose SIGN chose join or split (0.99 split, 0.98 joined). Flow never crosses components, so a pair's fate is
+        /// PREREG_mcl_two_node_2026-10-13: a connected component of exactly two nodes is ONE cluster.
+        ///
+        /// For a lone pair at inflation `I` with self-loops of 1.0 there is a boundary `w*(I)`: the unstable fixed
+        /// point of the pair's ratio map `rho -> ((rho^2 + 1) / (2 rho))^I` at `rho = 1 / w`, which is 0.456885 at
+        /// `I = 2.8`.
+        /// - Above `w*` the column converges toward a tie between "self" and "mate", and the sign of the 1e-7
+        ///   convergence residual chose join or split (0.99 split, 0.98 joined). That is the bug.
+        /// - Below `w*` exact MCL splits the pair deterministically: the mate's mass is pruned away.
+        ///
+        /// The rule joins both, by design: a connected pair is a family, which is the pre-registered rule. So below
+        /// `w*` it is a definition change, not a residue fix. Flow never crosses components, so a pair's fate is
         /// settled here and every other cluster passes through unchanged, in the same order.
         fn join_two_node_components(
             edges: &BTreeMap<(usize, usize), f64>,
@@ -61431,6 +61439,18 @@ pub mod fam_from_gtf {
                 let mut want: Vec<Vec<usize>> = vec![vec![7, 8]];
                 want.extend((0..7).map(|i| vec![i]));
                 assert_eq!(join_two_node_components(&edges, (0..9).map(|i| vec![i]).collect()), want);
+            }
+
+            /// PREREG_mcl_two_node_2026-10-13: the pair rule is weight-blind BY DESIGN (it has no threshold). Below the
+            /// boundary w* = 0.456885 (inflation 2.8, self-loops 1.0) exact MCL splits a lone pair deterministically,
+            /// yet a connected pair is a family, so it joins there too: a definition change, not a residue fix. The
+            /// band is reachable: the shipped admission floors (identity 0.70, cov_longer 0.30) allow an edge as weak
+            /// as 0.21 = 0.70 x 0.30.
+            #[test]
+            fn a_weak_pair_below_the_mcl_split_boundary_joins_by_design() {
+                for w in [0.21, 0.30, 0.45] {
+                    assert_eq!(mcl(&pair_graph(w), 2.8, 100, 1e-9), vec![vec![0, 1]], "w = {w}");
+                }
             }
 
             #[test]
