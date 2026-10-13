@@ -312,3 +312,12 @@ coordinates) maps to its own locus on one haplotype at NM 0, and to its homolog 
 
 **Caveat.** This is single-substrate: no other animal has both a T2T diploid assembly and RNA from the same
 individual here.
+
+**Amendment 4a (before it runs; code review of the scorer).** "No hit at a different locus within NM + 2" would call
+every read ambiguous whose two alleles both match: its mat and pat loci are different loci of the SAME copy. Uniqueness
+is therefore judged at the copy level:
+- **Near hits:** the read's hits within NM + 2 of its best are kept.
+- **Truth:** the copies whose loci overlap any near hit.
+- **Ambiguous:** only when those copies are not one locus in primary coordinates.
+
+The best hit must still satisfy NM <= max(2, 0.003 x aligned bases).
