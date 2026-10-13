@@ -108,6 +108,14 @@ copy streams at most the first 5,000 primary MAPQ-60 records (by position) befor
 (`anchor_trim.py ... 20 400 5000`). Gorilla defaults (all families, no cap) are unchanged. The index is CHM13's splice
 index; the BAM's minimap2 settings are identical to gorilla's.
 
+**Amendment 1c (feasibility, before the human copy_assign run).** The families touched by all human trimmed reads
+come to 779 families / 17.3 M records, too large. `copy_assign` writes rows only for AS-tied molecules (gorilla: rows for
+107 of 4,048 trimmed reads, all of them the tied ones). So the human `--only-families` list is restricted to:
+- the truth families of trimmed reads whose best secondary AS >= 0.98 x primary AS (a superset of the exact ties);
+- plus every family those reads' records touch.
+
+That is 365 reads, 129 families, 81 Mb of windows. The scored rows are the same as with all families.
+
 ## Results — human A119b (held-out)
 
 (pending)
