@@ -76,6 +76,22 @@ compared.)
 
 Outputs `/mnt/linuxdisk/tmp/popfix/runs/`; results and verdicts appended below, nothing above edited after a run.
 
+## Amendment 1 (2026-10-13, before any run)
+
+- **Gate P0-fixed.** `split_half.py` under `POPULATION` re-implements the fixed-only certificate in Python. On the full
+  read it must reproduce `population_tier.tsv`'s `status_fixed` (and `copy_fixed` when `assigned`) for >= 0.99 of tier
+  rows with `status_fixed != NA`. Fail -> (c) and (c') are not read until the mismatch is explained.
+- **The mask is per pair**, exactly the Rust rule above. For candidates a and b, a column counts iff both have a
+  genome position there and both `(chrom, pos)` are in the set: FIXED for (c), any status for (c'). Each candidate's chrom
+  comes from the run's `family_join.tsv`. The PSV-score tie key of a candidate counts columns where its own position is
+  in the set.
+- **Arms (c), (c') and (e) read contested rows only** (`contested` = 1). Uncontested rows are the aligner's MAPQ-60
+  placement and are not certificate calls. Under `--psv-fixed-only` they keep the aligner's call (`--psv-fixed-only`
+  help text).
+- **Strict-mode semantics fixed in code before any run** (rulings R20, R24, R25): a family with no genome positions has
+  no fixed column (-> Tied); under strict no sole-candidate promotion; the read-through credit is withdrawn when the
+  fixed-only best differs from the full-column best.
+
 ## Results
 
 (pending)
