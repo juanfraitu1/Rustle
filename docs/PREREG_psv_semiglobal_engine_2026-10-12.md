@@ -96,3 +96,22 @@ and < 10 M cells.
 and no semiglobal family > 2 s); yardstick with A1. If the global comparator cannot finish a family, that family is
 excluded from P2/P3 and listed, and counts against global in P4. **All of P1-P4 pass on held-out 3 (with held-out 1
 already passed) -> the engine becomes the default; otherwise it stays opt-in.**
+
+## Held-out result 3 (chimp PTR, 393 families) and P5 — 2026-10-12
+
+| bar | global (current) | semiglobal (+E2) | verdict |
+|---|---|---|---|
+| P1 V/(V+M) | 0.422 (V 38,970 / M 53,395) | **0.993** (V 42,955 / M 296) | PASS |
+| P2 V(semi) >= 0.99 V(global) | 38,970 | 42,955 | PASS |
+| P3 N(semi) <= 0.10 N(global) | 120,013 | 766 | PASS |
+| P4 total time | 155.83 s summed (392 families) + **MCL36 aborted** (13.8 GB allocation, 86-kb copy) | **7.71 s** (all 393) | PASS |
+| P4 no family > 2 s | MCL9 105.8 s | **MCL9 3.64 s** (15 copies, 424 kb) | **FAIL (1 family)** |
+
+R 15,753 / 5,391; H 142,063 / 12,081 (global / semi). MCL36 excluded from P2/P3 (comparator could not run it).
+**P5 PASS:** `copy_assign` on DEV with `RUSTLE_PSV_ENGINE=semiglobal`: assignments and quant byte-identical; families'
+PSV stats, PSV columns (33,015 -> 4,298; the RNA-editing pre-pass removes some) and copy_conversions (5 -> 0) change.
+
+**Verdict as registered: P4's per-family 2-s bar fails on held-out 2 (10 families, pre-E2) and held-out 3 (1 family,
+post-E2) -> the engine stays OPT-IN.** P1-P3 pass on every substrate where they are computable; total time is 4.5-20x
+lower than the current engine, which itself aborts on 86-kb (chimp) and longer (human) copies. Adopting it as the
+default despite the per-family bar is a decision for the user, not this prereg.
