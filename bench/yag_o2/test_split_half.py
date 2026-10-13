@@ -172,8 +172,8 @@ def test_population_any_admits_not_assessed_and_polymorphic_sites_end_to_end(tmp
 
 # ---- main(): contested rows only, P0-fixed ---------------------------------------------------------------------------
 
-def _mol(name, status, copy, cols, contested=1, cand=(0, 1), **kw):
-    return dict(read=name, fam="F", status=status, copy=copy, cand=list(cand), cols=cols, contested=contested, **kw)
+def _mol(name, status, copy, cols, contested=1, cand=(0, 1), fam="F", **kw):
+    return dict(read=name, fam=fam, status=status, copy=copy, cand=list(cand), cols=cols, contested=contested, **kw)
 
 
 def _fixed_cols(n=4, off=0):
@@ -283,14 +283,105 @@ def test_population_mode_needs_a_positions_column_and_a_family_join(tmp_path):
         assert "family_join" in str(e)
 
 
-def test_population_any_without_population_warns_and_changes_nothing(tmp_path):
+def test_population_any_without_population_is_an_error(tmp_path):
     stars = [_mol("m", "assigned", 0, _fixed_cols())]
     p, lp = write_run(str(tmp_path), stars, joins=[("F", 0, "chrY"), ("F", 1, "chrY")], lengths={"m": 100})
-    out1, out2 = str(tmp_path / "a.json"), str(tmp_path / "b.json")
-    so1, _ = run_main(p, lp, out1)
-    so2, err = run_main(p, lp, out2, {"POPULATION_ANY": "1"})
-    assert open(out1).read() == open(out2).read() and so1 == so2
-    assert "POPULATION_ANY" in err
+    out = str(tmp_path / "a.json")
+    try:
+        run_main(p, lp, out, {"POPULATION_ANY": "1"})
+        raise AssertionError("expected SystemExit: POPULATION_ANY=1 needs POPULATION")
+    except SystemExit as e:
+        assert "POPULATION_ANY" in str(e) and "POPULATION" in str(e).replace("POPULATION_ANY", "")
+    assert not os.path.exists(out)              # nothing written: a silent FIXED/no-mask run would be the wrong arm
+    # an unrecognised value is an error too (a stray "yes" must not silently select the FIXED set)
+    pop = str(tmp_path / "pop.tsv")
+    _fixed_sites(pop)
+    try:
+        run_main(p, lp, out, {"POPULATION": pop, "POPULATION_ANY": "yes"})
+        raise AssertionError("expected SystemExit for POPULATION_ANY=yes")
+    except SystemExit as e:
+        assert "POPULATION_ANY" in str(e)
+    # 0 / empty mean off: the plain no-POPULATION run
+    run_main(p, lp, out, {"POPULATION_ANY": "0"})
+    assert os.path.exists(out)
+
+
+# ---- the prereg's denominator fields -----------------------------------------------------------------------------------
+
+def _two_half_cols(a_half, b_half):
+    """5' half columns (read pos < 500) and 3' half columns, 4 each if present, all FIXED for the pair."""
+    cols = []
+    for i in range(4):
+        if a_half:
+            cols.append((10 + i, "A", "AC", [100 + i, 200 + i]))
+        if b_half:
+            cols.append((900 + i, "A", "AC", [150 + i, 250 + i]))
+    return cols
+
+
+def _all_fixed_sites(path):
+    rows = [("chrY", 100 + i, "FIXED") for i in range(4)] + [("chrY", 200 + i, "FIXED") for i in range(4)] + \
+           [("chrY", 150 + i, "FIXED") for i in range(4)] + [("chrY", 250 + i, "FIXED") for i in range(4)]
+    write_pop(path, rows)
+
+
+def test_denominator_fields_population_block_and_per_family(tmp_path):
+    pop = str(tmp_path / "pop.tsv")
+    _all_fixed_sites(pop)
+    stars = [
+        _mol("both", "assigned", 0, _two_half_cols(True, True)),      # both halves assign
+        _mol("one", "assigned", 0, _two_half_cols(True, False)),      # only the 5' half assigns
+        _mol("none", "tied", 0, [(10, "A", "AC", [100, 200])]),        # no half assigns (1 column)
+        _mol("nolen", "assigned", 0, _two_half_cols(True, True)),     # contested, read length unknown
+        _mol("unc", "assigned", 0, _two_half_cols(True, True), contested=0),   # not contested: outside the denominator
+        _mol("g1", "assigned", 0, _two_half_cols(True, True), fam="G"),  # a family whose only molecule has no length
+    ]
+    joins = [(f, c, "chrY") for f in ("F", "G") for c in (0, 1)]
+    p, lp = write_run(str(tmp_path), stars, joins=joins, lengths={"both": 1000, "one": 1000, "none": 1000, "unc": 1000})
+    out = str(tmp_path / "o.json")
+    stdout, _ = run_main(p, lp, out, {"POPULATION": pop})
+    res = json.load(open(out))
+    pb = res["population"]
+    assert (pb["n_contested"], pb["n_contested_with_length"]) == (5, 3)          # both, one, none (+ nolen, g1 w/o length)
+    assert (pb["some_half_assigns"], pb["some_half_assigns_frac"]) == (2, round(2 / 3, 4))
+    assert (pb["both_halves_assign"], pb["both_halves_assign_frac"]) == (1, round(1 / 3, 4))
+    f = res["per_family"]["F"]
+    assert (f["n_contested"], f["n_contested_with_length"]) == (4, 3)
+    assert (f["some_half_assigns"], f["some_half_assigns_frac"]) == (2, round(2 / 3, 4))
+    assert (f["both_halves_assign"], f["both_halves_assign_frac"]) == (1, round(1 / 3, 4))
+    g = res["per_family"]["G"]
+    assert (g["n_contested"], g["n_contested_with_length"]) == (1, 0)
+    assert g["some_half_assigns"] == 0 and g["some_half_assigns_frac"] is None and g["both_halves_assign_frac"] is None
+    # numerator and denominator come from the same length check: B_P1's n is the population block's numerator
+    assert res["B_P1_split_half_concordance"]["n"] == pb["both_halves_assign"]
+    # per_family is printed to stdout under POPULATION
+    assert json.loads(stdout)["per_family"] == res["per_family"]
+
+
+def test_denominator_fields_are_none_without_any_length(tmp_path):
+    pop = str(tmp_path / "pop.tsv")
+    _all_fixed_sites(pop)
+    p, lp = write_run(str(tmp_path), [_mol("m", "assigned", 0, _two_half_cols(True, True))],
+                      joins=[("F", 0, "chrY"), ("F", 1, "chrY")], lengths={})
+    out = str(tmp_path / "o.json")
+    run_main(p, lp, out, {"POPULATION": pop})
+    pb = json.load(open(out))["population"]
+    assert (pb["n_contested"], pb["n_contested_with_length"]) == (1, 0)
+    assert pb["some_half_assigns_frac"] is None and pb["both_halves_assign_frac"] is None
+
+
+def test_per_family_is_not_truncated_under_population_but_is_without(tmp_path):
+    pop = str(tmp_path / "pop.tsv")
+    _all_fixed_sites(pop)
+    fams = [f"F{i:02d}" for i in range(20)]
+    stars = [_mol(f"m{i}", "assigned", 0, _two_half_cols(True, True), fam=f) for i, f in enumerate(fams)]
+    joins = [(f, c, "chrY") for f in fams for c in (0, 1)]
+    p, lp = write_run(str(tmp_path), stars, joins=joins, lengths={f"m{i}": 1000 for i in range(20)})
+    out = str(tmp_path / "o.json")
+    run_main(p, lp, out, {"POPULATION": pop})
+    assert sorted(json.load(open(out))["per_family"]) == fams
+    run_main(p, lp, out)                                    # no POPULATION: the original top-15 cut
+    assert len(json.load(open(out))["per_family"]) == 15
 
 
 # ---- no POPULATION: output byte-identical to the pre-change code ------------------------------------------------------

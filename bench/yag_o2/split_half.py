@@ -131,13 +131,28 @@ def tsv(path):
         return [dict(zip(head, line.rstrip("\n").split("\t"))) for line in fh]
 
 
+def denominator_fields(v, both="both_halves_assign"):
+    """The prereg's reported fractions (c, c'): of the contested molecules with a known read length, the share with >= 1
+    assigning half and with both halves assigning. Numerators and the denominator are counted at the same point of main()."""
+    n = v["n_contested_with_length"]
+    return {"n_contested": v["n_contested"], "n_contested_with_length": n,
+            "some_half_assigns": v["some_half_assigns"],
+            "some_half_assigns_frac": round(v["some_half_assigns"] / n, 4) if n else None,
+            "both_halves_assign": v[both],
+            "both_halves_assign_frac": round(v[both] / n, 4) if n else None}
+
+
 def load_population(prefix, header):
     """(sites, any_mode, chroms, tiers) for population mode, None when POPULATION is unset."""
     path = os.environ.get("POPULATION")
-    any_mode = os.environ.get("POPULATION_ANY") == "1"
+    any_raw = os.environ.get("POPULATION_ANY", "")
+    if any_raw not in ("", "0", "1"):
+        raise SystemExit(f"split_half: POPULATION_ANY={any_raw!r} is not understood (use 1, or leave it unset)")
+    any_mode = any_raw == "1"
     if not path:
         if any_mode:
-            print("split_half: POPULATION_ANY=1 is ignored without POPULATION", file=sys.stderr)
+            raise SystemExit("split_half: POPULATION_ANY=1 needs POPULATION=<psv_population.tsv> (the site table); "
+                             "refusing to run an unmasked certificate as if it were arm (c')")
         return None
     if "positions" not in header:
         raise SystemExit("population mode needs a star dump with a `positions` column (copy_assign --dump-star, "
@@ -204,6 +219,8 @@ def main(prefix, lengths, out):
                                         "candidates_with_partners": partners})
             if not contested:
                 continue
+            c["n_contested"] += 1
+            per_fam[fam]["n_contested"] += 1
             c["pop_full|" + st] += 1
             per_fam[fam]["full|" + st] += 1
         o2_st, o2_cp = r["status"], r["assigned_copy"]
@@ -218,6 +235,9 @@ def main(prefix, lengths, out):
             c["no_length"] += 1
             continue
         half = L[r["read_name"]] / 2
+        if pop:  # the denominator of the prereg's fractions: counted at the same point as the numerators below
+            c["n_contested_with_length"] += 1
+            per_fam[fam]["n_contested_with_length"] += 1
         s5, c5 = certify(cand, cols, lambda p: p < half)
         s3, c3 = certify(cand, cols, lambda p: p >= half)
         per_fam[fam]["n"] += 1
@@ -253,6 +273,7 @@ def main(prefix, lengths, out):
                                      "here; the gate is P0_fixed_*. B_P1/B_P2 and the halves are on masked columns, "
                                      "contested rows only.",
                              "full_read_status": {k[len("pop_full|"):]: v for k, v in sorted(c.items()) if k.startswith("pop_full|")}}
+        res["population"].update(denominator_fields(c))
         if p0_enabled:
             missing = [k for k in p0_rows if k not in p0_seen]
             n_rows = len(p0_rows)
@@ -271,9 +292,13 @@ def main(prefix, lengths, out):
             res["P0_fixed_pass"] = None
             res["population"]["P0_fixed"] = ("not applicable: POPULATION_ANY is not the FIXED-only certificate" if any_mode
                                              else "no population_tier.tsv beside the run")
-    res["per_family"] = {f: dict(v) for f, v in sorted(per_fam.items(), key=lambda x: -x[1]["n"])[:15]}
+    ordered = sorted(per_fam.items(), key=lambda x: -x[1]["n"])
+    if pop:  # every family, with the prereg's denominators; printed too
+        res["per_family"] = {f: {**dict(v), **denominator_fields(v, both="both")} for f, v in ordered}
+    else:
+        res["per_family"] = {f: dict(v) for f, v in ordered[:15]}
     json.dump(res, open(out, "w"), indent=1)
-    print(json.dumps({k: v for k, v in res.items() if k != "per_family"}, indent=1))
+    print(json.dumps(res if pop else {k: v for k, v in res.items() if k != "per_family"}, indent=1))
 
 
 if __name__ == "__main__":

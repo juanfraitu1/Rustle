@@ -8,8 +8,10 @@ family_join.tsv, population_tier.tsv). A molecule is ELIGIBLE iff it is conteste
 candidate from family_join.tsv), and its assignments row has origin_rejected == 0 and tie_outside_catalog == 0 (no
 later gate changed the call). Where the tier's status_all or status_fixed is `assigned`, BOTH must be `assigned`
 with the same copy (copy_all == copy_fixed); anything else is a MISMATCH (a bug). Exact ties among non-assigned
-molecules may name a different best copy (ruling R16) and are not compared.
-Prints JSON {n_eligible, n_assigned_any, n_mismatch, n_eligible_no_columns, first_mismatches[<= 10]}; exit 1 on any
+molecules may name a different best copy (ruling R16) and are not compared. The production certificate may use junction
+evidence that the fixed-only one does not, so an only_status_all_assigned row can be legitimate: read the kinds before
+calling a mismatch a bug. With n_assigned_any == 0 the check is vacuous: output "vacuous": true plus a stderr note, exit 0.
+Prints JSON {n_eligible, n_assigned_any, n_mismatch, n_eligible_no_columns, vacuous, first_mismatches[<= 10]}; exit 1 on any
 mismatch. A molecule with no column is counted in n_eligible_no_columns, not n_eligible (it cannot be assigned).
 """
 import json, os, sys
@@ -66,7 +68,10 @@ def main(prefix, pop_tsv):
                              "status_fixed": tier["status_fixed"], "copy_fixed": tier["copy_fixed"],
                              "n_dec_fixed": tier["n_dec_fixed"], "n_cols": len(gpos)})
     print(json.dumps({"n_eligible": n_elig, "n_assigned_any": n_any, "n_mismatch": len(mism),
-                      "n_eligible_no_columns": n_no_cols, "first_mismatches": mism[:10]}, indent=1))
+                      "n_eligible_no_columns": n_no_cols, "vacuous": n_any == 0, "first_mismatches": mism[:10]}, indent=1))
+    if n_any == 0:
+        print("check_e: VACUOUS - n_assigned_any == 0 (no eligible molecule is assigned by either certificate); "
+              "the exact-agreement bar was not exercised", file=sys.stderr)
     return 1 if mism else 0
 
 

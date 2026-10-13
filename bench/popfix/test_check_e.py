@@ -24,21 +24,21 @@ def _tier(name, all_=("assigned", 0), fixed=("assigned", 0), fam="F1"):
     return (name, fam, all_[0], all_[1], fixed[0], fixed[1], 2, "PORTABLE")
 
 
-def _run(tmp_path, stars, tiers, env=None):
+def _run(tmp_path, stars, tiers, env=None, with_err=False):
     pop = str(tmp_path / "pop.tsv")
     _pop(pop)
     p, _ = write_run(str(tmp_path), stars, tiers=tiers, joins=JOINS)
     saved = os.environ.pop("YAG_FAMILIES", None)
     os.environ.update(env or {})
-    buf = io.StringIO()
+    buf, err = io.StringIO(), io.StringIO()
     try:
-        with contextlib.redirect_stdout(buf):
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
             code = E.main(p, pop)
     finally:
         os.environ.pop("YAG_FAMILIES", None)
         if saved is not None:
             os.environ["YAG_FAMILIES"] = saved
-    return code, json.loads(buf.getvalue())
+    return (code, json.loads(buf.getvalue()), err.getvalue()) if with_err else (code, json.loads(buf.getvalue()))
 
 
 def test_agreeing_eligible_molecules_pass(tmp_path):
@@ -107,3 +107,18 @@ def test_later_gates_uncontested_no_tier_zero_columns_and_non_yag_are_excluded(t
     # without the YAG filter the F9 molecule is read too (S is positional, not per family), and its disagreement counts
     code, out = _run(tmp_path, stars, tiers)
     assert code == 1 and [m["read_name"] for m in out["first_mismatches"]] == ["other_fam"]
+
+
+def test_no_assigned_molecule_is_a_vacuous_pass_flagged_in_output_and_on_stderr(tmp_path):
+    stars = [_mol("t1"), _mol("t2")]
+    tiers = [_tier("t1", ("tied", 0), ("tied", 0)), _tier("t2", ("ambiguous", 0), ("ambiguous", 1))]
+    code, out, err = _run(tmp_path, stars, tiers, with_err=True)
+    assert code == 0                                    # exit code unchanged: not a mismatch
+    assert (out["n_eligible"], out["n_assigned_any"], out["n_mismatch"]) == (2, 0, 0)
+    assert out["vacuous"] is True
+    assert "vacuous" in err.lower() and "n_assigned_any" in err
+
+
+def test_an_assigned_molecule_makes_the_check_non_vacuous(tmp_path):
+    code, out, err = _run(tmp_path, [_mol("a")], [_tier("a")], with_err=True)
+    assert code == 0 and out["vacuous"] is False and err == ""
