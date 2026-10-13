@@ -18733,6 +18733,9 @@ pub mod copy_assign {
     pub(crate) struct ReadEvidence {
         /// Per-copy log-likelihood (PSV term + junction term), parallel to `copies`.
         pub logl: Vec<f64>,
+        /// The same totals summed in a canonical (sorted) order: the argmax / margin decisions use these, so copies
+        /// with equal evidence tie exactly (PREREG_o2_exact_tie_2026-10-13). `logl` keeps the emission sums.
+        pub logl_decide: Vec<f64>,
         /// Identifiability bound: the best attainable p-value the read could achieve against its hardest
         /// competitor (given `best = argmax(logl)`). `>= alpha` (family-wide-adjusted) ⇒ genuinely `Tied`.
         pub min_p: f64,
@@ -18760,6 +18763,8 @@ pub mod copy_assign {
     ) -> ReadEvidence {
         let n = copies.len();
         let mut logl = vec![0.0f64; n];
+        // PREREG_o2_exact_tie_2026-10-13: each copy's terms, for the canonical-order (sorted) sum the decisions use
+        let mut terms: Vec<Vec<f64>> = vec![Vec::new(); n];
         let mut junc_logl = vec![0.0f64; n];
         let mut has_decisive_junction = false;
         let mut n_decisive = 0usize;
@@ -18782,7 +18787,9 @@ pub mod copy_assign {
             }
             for (ci, a) in b.copy_allele.iter().enumerate() {
                 if let Some(a) = a {
-                    logl[ci] += if obs == *a { lp_match } else { lp_mis };
+                    let t = if obs == *a { lp_match } else { lp_mis };
+                    logl[ci] += t;
+                    terms[ci].push(t);
                 }
             }
         }
@@ -18805,14 +18812,25 @@ pub mod copy_assign {
                     -p.junction_weight
                 };
                 logl[ci] += t;
+                terms[ci].push(t);
                 junc_logl[ci] += t;
             }
         }
 
+        // Copies with the same multiset of terms get bit-equal totals in a canonical order, so an exact tie is exactly
+        // a tie (column-order sums differed by 7e-15 on a 5:5 read and the tie was `assigned`).
+        let logl_decide: Vec<f64> = terms
+            .iter()
+            .map(|v| {
+                let mut v = v.clone();
+                v.sort_by(|a, b| a.total_cmp(b));
+                v.iter().sum()
+            })
+            .collect();
         // argmax (earliest on ties) -- needed before `min_p` since the competitor loop below is best-relative.
         let mut best = 0usize;
         for i in 1..n {
-            if logl[i] > logl[best] {
+            if logl_decide[i] > logl_decide[best] {
                 best = i;
             }
         }
@@ -18832,6 +18850,7 @@ pub mod copy_assign {
 
         ReadEvidence {
             logl,
+            logl_decide,
             min_p,
             n_decisive,
             junc_logl,
@@ -18869,27 +18888,29 @@ pub mod copy_assign {
         let ev = read_copy_evidence(read, graph, copies, p, editing_cols);
         let ReadEvidence {
             logl,
+            logl_decide,
             min_p,
             n_decisive,
             junc_logl,
             has_decisive_junction,
         } = ev;
 
-        // argmax (earliest on ties) + runner-up
+        // argmax (earliest on ties) + runner-up, on the canonical-order totals (PREREG_o2_exact_tie_2026-10-13): the same
+        // `best` `read_copy_evidence` used for `min_p`, and an exact tie has margin exactly 0
         let mut best = 0usize;
         for i in 1..n {
-            if logl[i] > logl[best] {
+            if logl_decide[i] > logl_decide[best] {
                 best = i;
             }
         }
         let mut second = f64::NEG_INFINITY;
         for i in 0..n {
-            if i != best && logl[i] > second {
-                second = logl[i];
+            if i != best && logl_decide[i] > second {
+                second = logl_decide[i];
             }
         }
         let margin = if n > 1 {
-            logl[best] - second
+            logl_decide[best] - second
         } else {
             f64::INFINITY
         };
@@ -19218,6 +19239,22 @@ pub mod copy_assign {
             assert!(!a.resolvable);
             assert_eq!(a.n_decisive, 0);
             assert_eq!(a.status, AssignStatus::Tied);
+        }
+
+        /// PREREG_o2_exact_tie_2026-10-13: a read matching copy 0 at 5 columns and copy 1 at the other 5 is an exact tie.
+        /// Summed in column order the two logl totals differed by 7e-15 and the tie was `assigned`.
+        #[test]
+        fn an_exact_five_five_tie_is_never_assigned_in_any_column_order() {
+            for ord in [&b"+++++-----"[..], &b"+++--+--+-"[..], &b"-----+++++"[..]] {
+                let a0: Vec<Option<u8>> = ord.iter().map(|&c| Some(if c == b'+' { A } else { C })).collect();
+                let a1: Vec<Option<u8>> = ord.iter().map(|&c| Some(if c == b'+' { C } else { A })).collect();
+                let copies = [cp(0, &a0, &[]), cp(1, &a1, &[])];
+                let obs: Vec<Option<u8>> = ord.iter().map(|_| Some(A)).collect();
+                let a = assign_read(&rf(&obs, &[]), &copies, &AssignParams::default()).unwrap();
+                assert_ne!(a.status, AssignStatus::Assigned, "order {}", String::from_utf8_lossy(ord));
+                assert_eq!(a.log_lr_margin, 0.0, "order {}", String::from_utf8_lossy(ord));
+                assert_eq!(a.best_copy, 0, "an exact tie keeps the earliest copy");
+            }
         }
 
         #[test]
@@ -20265,6 +20302,9 @@ pub mod copy_assign {
                     logl: (0..3)
                         .map(|c| if c == best { 0.0 } else { -12.0 })
                         .collect(),
+                    logl_decide: (0..3)
+                        .map(|c| if c == best { 0.0 } else { -12.0 })
+                        .collect(),
                     min_p: 1e-6,
                     n_decisive: 1,
                     junc_logl: vec![0.0; 3],
@@ -20297,6 +20337,7 @@ pub mod copy_assign {
                 // no distinguishing feature: logl equal across copies, min_p >= alpha -> SoftZone, posterior == pi.
                 let flat = super::super::ReadEvidence {
                     logl: vec![0.0, 0.0],
+                    logl_decide: vec![0.0, 0.0],
                     min_p: 1.0,
                     n_decisive: 0,
                     junc_logl: vec![0.0; 2],
@@ -22013,6 +22054,14 @@ pub mod copy_assign {
             pub n_dec: usize,
         }
 
+        /// PREREG_o2_exact_tie_2026-10-13: the pairwise LLR of candidate a over b from INTEGER counts — `k` / `m` decisive
+        /// PSV columns whose read base matches a / b, `kj` / `mj` decisive junctions present in a / b only. Summing ±lr
+        /// column by column left rounding residue (+++--+--+- gave 1.78e-15), so exact ties passed "LLR > 0"; here an
+        /// exactly balanced read is exactly 0.
+        pub fn pair_llr_from_counts(k: i64, m: i64, kj: i64, mj: i64, lr: f64, lrj: f64) -> f64 {
+            (k - m) as f64 * lr + (kj - mj) as f64 * lrj
+        }
+
         pub fn fixed_only_certificate(
             obs: &[Option<u8>],
             profiles: &[CopyProfile],
@@ -22030,16 +22079,16 @@ pub mod copy_assign {
             };
             let pair = |a: usize, b: usize| -> (usize, f64) {
                 let o = masked(a, b);
-                let (mut dec, mut llr) = (0usize, 0.0f64);
+                let (mut dec, mut k, mut m) = (0usize, 0i64, 0i64);
                 for j in 0..o.len() {
                     if let (Some(x), Some(ba), Some(ca)) = (o[j], profiles[a].alleles[j], profiles[b].alleles[j]) {
                         if ba != ca {
                             dec += 1;
-                            if x == ba { llr += lr } else if x == ca { llr -= lr }
+                            if x == ba { k += 1 } else if x == ca { m += 1 }
                         }
                     }
                 }
-                (dec, llr)
+                (dec, pair_llr_from_counts(k, m, 0, 0, lr, 0.0))
             };
             let score = |a: usize| -> i64 {
                 let o: Vec<Option<u8>> = (0..obs.len()).map(|j| if fixed[a].get(j).copied().unwrap_or(false) { obs[j] } else { None }).collect();
@@ -24641,11 +24690,12 @@ pub mod copy_assign {
                         iv.iter().any(|&(s, e)| (s as i64) <= r + t && r - t < e as i64)
                     };
                     let pair_llr = |a: usize, b: usize| -> f64 {
-                        let mut llr = 0.0f64;
+                        // PREREG_o2_exact_tie_2026-10-13: from integer counts, so twins are exactly 0 both ways
+                        let (mut k, mut m, mut kj, mut mj) = (0i64, 0i64, 0i64, 0i64);
                         for j in 0..feats.psv_obs.len() {
                             if let (Some(o), Some(ba), Some(ca)) = (feats.psv_obs[j], profiles[a].alleles[j], profiles[b].alleles[j]) {
                                 if ba != ca {
-                                    if o == ba { llr += lr } else if o == ca { llr -= lr }
+                                    if o == ba { k += 1 } else if o == ca { m += 1 }
                                 }
                             }
                         }
@@ -24656,10 +24706,10 @@ pub mod copy_assign {
                             let in_a = boundary_present(rj, &profiles[a].junctions, p.boundary_tol);
                             let in_b = boundary_present(rj, &profiles[b].junctions, p.boundary_tol);
                             if in_a != in_b {
-                                llr += if in_a { lrj } else { -lrj };
+                                if in_a { kj += 1 } else { mj += 1 }
                             }
                         }
-                        llr
+                        pair_llr_from_counts(k, m, kj, mj, lr, lrj)
                     };
                     maximin_best(&ks, pair_llr, key).expect("a non-partner candidate")
                 } else {
@@ -24767,12 +24817,13 @@ pub mod copy_assign {
                         .collect();
                     let feats_pair = ReadFeatures { psv_obs: feats.psv_obs.clone(), psv_qual: Vec::new(), junctions: both };
                     let (pk, _, pk_n_cols) = copy_pair_significance(&feats_pair, &profiles[bk], &profiles[k], p, &[]);
-                    let (mut dec, mut llr) = (0usize, 0.0f64);
+                    // PREREG_o2_exact_tie_2026-10-13: the LLR from integer counts (an exact tie is exactly 0, never "> 0")
+                    let (mut dec, mut kp, mut mp, mut kj, mut mj) = (0usize, 0i64, 0i64, 0i64, 0i64);
                     for j in 0..feats.psv_obs.len() {
                         if let (Some(o), Some(ba), Some(ca)) = (feats.psv_obs[j], profiles[bk].alleles[j], profiles[k].alleles[j]) {
                             if ba != ca {
                                 dec += 1;
-                                if o == ba { llr += lr } else if o == ca { llr -= lr }
+                                if o == ba { kp += 1 } else if o == ca { mp += 1 }
                             }
                         }
                     }
@@ -24791,9 +24842,10 @@ pub mod copy_assign {
                         let in_c = boundary_present(rj, &profiles[k].junctions, p.boundary_tol);
                         if in_b != in_c {
                             dec += 1;
-                            llr += if in_b { lrj } else { -lrj };
+                            if in_b { kj += 1 } else { mj += 1 }
                         }
                     }
+                    let llr = pair_llr_from_counts(kp, mp, kj, mj, lr, lrj);
                     if dec == 0 {
                         k0 = true;
                     }
@@ -27471,6 +27523,29 @@ pub mod copy_assign {
                 let c = fixed_only_certificate(&obs, &profiles, &one_fixed, &[false, false], &AssignParams::default());
                 assert_eq!(c.n_dec, 1, "only the fixed column counts");
                 assert_eq!(c.status, AssignStatus::Ambiguous, "one column never assigns (m = 1)");
+            }
+
+            /// PREREG_o2_exact_tie_2026-10-13: the anchor-test molecules (MCL1623): 5:5 in the order +++--+--+- summed to
+            /// LLR 1.78e-15 > 0 and were `assigned`. An exact tie must give margin exactly 0 and never assign.
+            #[test]
+            fn fixed_only_certificate_never_assigns_an_exact_tie() {
+                let ord = b"+++--+--+-";
+                let a0: Vec<u8> = ord.iter().map(|&c| if c == b'+' { b'A' } else { b'C' }).collect();
+                let a1: Vec<u8> = ord.iter().map(|&c| if c == b'+' { b'C' } else { b'A' }).collect();
+                let obs: Vec<Option<u8>> = ord.iter().map(|_| Some(b'A')).collect();
+                let all = vec![vec![true; ord.len()], vec![true; ord.len()]];
+                let c = fixed_only_certificate(&obs, &[prof(&a0), prof(&a1)], &all, &[false, false], &AssignParams::default());
+                assert_eq!(c.margin, 0.0);
+                assert_ne!(c.status, AssignStatus::Assigned);
+            }
+
+            #[test]
+            fn pair_llr_from_counts_is_exact_for_balanced_evidence() {
+                let lr = ((1.0f64 - 0.003) / (0.003 / 3.0)).ln();
+                assert_eq!(pair_llr_from_counts(5, 5, 0, 0, lr, 9.2), 0.0);
+                assert_eq!(pair_llr_from_counts(3, 3, 1, 1, lr, 9.2), 0.0);
+                assert_eq!(pair_llr_from_counts(7, 2, 0, 0, lr, 9.2), 5.0 * lr);
+                assert_eq!(pair_llr_from_counts(2, 7, 1, 0, lr, 9.2), -5.0 * lr + 9.2);
             }
 
             #[test]
