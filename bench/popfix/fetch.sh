@@ -6,6 +6,9 @@ set -euo pipefail
 OUT=${1:?OUTDIR}
 BASE=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/HGSVC3/working/20230412_sigY_assembly_data
 mkdir -p "$OUT"
+# One fetch per OUT at a time; orphaned xargs/curl children inherit fd 9 and keep the lock.
+exec 9>"$OUT/.fetch.lock"
+flock -n 9 || { echo "another fetch.sh is running on $OUT" >&2; exit 1; }
 curl -s --fail "$BASE/MANIFEST_20230412_sigY_assembly_data.tsv" -o "$OUT/MANIFEST.tsv"
 awk -F'\t' '$1 ~ /verkko_1.0_release\/chrY\// && $1 !~ /\.fai$/ {print $1"\t"$3}' "$OUT/MANIFEST.tsv" > "$OUT/want.tsv"
 
@@ -13,7 +16,10 @@ fetch_one() {
   local path="$1" md5="$2" f got
   f=$(basename "$path")
   if [ ! -s "$OUT/$f" ] || [ "$(md5sum < "$OUT/$f" | cut -d' ' -f1)" != "$md5" ]; then
-    curl -s --fail --retry 3 "$BASE/${path#20230412_sigY_assembly_data/}" -o "$OUT/$f.part" && mv "$OUT/$f.part" "$OUT/$f" || { echo "download failed: $f" >&2; return 1; }
+    curl -s --fail --retry 3 "$BASE/${path#20230412_sigY_assembly_data/}" -o "$OUT/$f.part" || { rm -f "$OUT/$f.part"; echo "download failed: $f" >&2; return 1; }
+    got=$(md5sum < "$OUT/$f.part" | cut -d' ' -f1)
+    if [ "$got" != "$md5" ]; then rm -f "$OUT/$f.part"; echo "md5 mismatch (download discarded): $f" >&2; return 1; fi
+    mv "$OUT/$f.part" "$OUT/$f"
   fi
   got=$(md5sum < "$OUT/$f" | cut -d' ' -f1)
   [ "$got" = "$md5" ] || { echo "md5 mismatch: $f" >&2; return 1; }
