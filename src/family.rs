@@ -31079,6 +31079,39 @@ pub mod denovo_pipeline {
         }
     }
 
+    /// ⭐ PREREG_o2_tie_outside_gate_2026-10-13: the §6gz gate ("a molecule with an AS-tied placement outside every
+    /// supplied unit is never `Assigned`") re-applied to one region's families once EVERY region has registered its
+    /// outside ties. The worker's own gate reads a registry the other regions are still filling, so a molecule whose
+    /// outside placement lies in a region swept later kept `Assigned` -- which ones depended on sweep order and thread
+    /// timing. Same demotion as the worker (`tie_row`) and the union pass's `families.tsv` recount, applied only to
+    /// families with a demoted row (the others stay byte-identical). `read_names` indexes the rows' read ids. Returns
+    /// the rows demoted.
+    pub fn apply_tie_outside_gate(
+        fams: &mut [FamilyAssignment],
+        read_names: &[String],
+        is_outside: impl Fn(&str) -> bool,
+        psv_is_combined: bool,
+    ) -> usize {
+        let mut n = 0usize;
+        for fa in fams.iter_mut() {
+            let n_copies = fa.n_copies;
+            let mut moved = false;
+            for (ri, a) in fa.assignments.iter_mut() {
+                if a.status == AssignStatus::Assigned && read_names.get(*ri).is_some_and(|r| is_outside(r)) {
+                    // the worker's gate sizes the uniform posterior by the row's own posterior vector (its copies)
+                    let width = if a.posterior.is_empty() { n_copies } else { a.posterior.len() };
+                    tie_row(a, width);
+                    moved = true;
+                    n += 1;
+                }
+            }
+            if moved {
+                recount_after_union(fa, psv_is_combined);
+            }
+        }
+        n
+    }
+
     /// The union posterior projected onto ONE family's copies (renormalized); when it carries no mass there,
     /// one-hot at `one_hot` if given, else uniform. `pos_of` maps `(family, copy)` to the union index.
     fn project_posterior(
@@ -44684,6 +44717,61 @@ pub mod denovo_pipeline {
                 &|fid, _tid, ci| format!("{fid}:{ci}"),
             );
             (before, after, s, bam)
+        }
+
+        /// PREREG_o2_tie_outside_gate_2026-10-13: the §6gz gate re-applied once every region has registered its outside
+        /// ties -- only `assigned` rows of outside-tied molecules move (exactly as the worker's gate would have moved them),
+        /// the family is recounted, every other row and family stays as it was.
+        #[test]
+        fn tie_outside_gate_after_all_regions_demotes_only_assigned_outside_rows() {
+            use super::super::copy_assign::{AssignStatus as S, Assignment};
+            let asg = |status: S, best: usize| Assignment {
+                best_copy: best,
+                log_lr_margin: 6.9,
+                n_decisive: 3,
+                resolvable: true,
+                status,
+                p_value: 1e-9,
+                min_p_value: 1e-9,
+                discovery_coupled: false,
+                junction_conflict: false,
+                origin_rejected: false,
+                n_candidates: 2,
+                posterior: vec![0.9, 0.1],
+                sibling_identity: 0.99,
+                n_cols_vs_nearest_sibling: 3,
+            };
+            let names: Vec<String> =
+                ["out_assigned", "in_assigned", "out_ambiguous"].iter().map(|s| s.to_string()).collect();
+            let mut fa = FamilyAssignment {
+                n_copies: 2,
+                assignments: vec![(0, asg(S::Assigned, 1)), (1, asg(S::Assigned, 0)), (2, asg(S::Ambiguous, 1))],
+                ..FamilyAssignment::empty()
+            };
+            fa.assigned_j = 2;
+            fa.assigned_psv = 2;
+            fa.resolvable_j = 3;
+            fa.resolvable_psv = 3;
+            let mut untouched = FamilyAssignment {
+                n_copies: 2,
+                assignments: vec![(1, asg(S::Assigned, 0))],
+                ..FamilyAssignment::empty()
+            };
+            untouched.assigned_j = 7; // deliberately inconsistent: a family with no demoted row must not be recounted
+            let mut fams = vec![fa, untouched];
+            let n = apply_tie_outside_gate(&mut fams, &names, |r: &str| r.starts_with("out_"), true);
+            assert_eq!(n, 1);
+            let a0 = &fams[0].assignments[0].1;
+            assert_eq!(a0.status, S::Tied);
+            assert!(!a0.resolvable);
+            assert_eq!(a0.posterior, vec![0.5, 0.5]);
+            assert_eq!(a0.best_copy, 1, "the row's own certificate numbers stay, as in the worker's gate");
+            assert_eq!(fams[0].assignments[1].1.status, S::Assigned);
+            assert_eq!(fams[0].assignments[2].1.status, S::Ambiguous, "only `assigned` rows are gated");
+            assert_eq!((fams[0].assigned_j, fams[0].assigned_psv), (1, 1));
+            assert_eq!((fams[0].resolvable_j, fams[0].resolvable_psv), (3, 3));
+            assert_eq!(fams[1].assignments[0].1.status, S::Assigned);
+            assert_eq!(fams[1].assigned_j, 7);
         }
 
         /// THE CLAUSE: a molecule tied across two families gets ONE verdict -- the true family's row is

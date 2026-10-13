@@ -7905,7 +7905,7 @@ fn main() -> Result<()> {
         })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
-    let works: Vec<RegionWork> = match &region_pool {
+    let mut works: Vec<RegionWork> = match &region_pool {
         Some(pool) => pool.install(|| {
             flat.par_iter()
                 .map(|(c, lo, hi)| compute(c, *lo, *hi))
@@ -7916,6 +7916,28 @@ fn main() -> Result<()> {
             .map(|(c, lo, hi)| compute(c, *lo, *hi))
             .collect::<Result<Vec<_>>>()?,
     };
+    // ⭐ PREREG_o2_tie_outside_gate_2026-10-13: the §6gz gate once more, now that EVERY region has registered its
+    // outside ties. Inside a worker the gate reads a registry the other regions are still filling, so a molecule whose
+    // outside placement lies in a region swept later stayed `Assigned` (which ones depended on region order and
+    // `--region-threads` timing). Applied here, before the cross-family pass and the drain, every emitted status sees
+    // the complete registry. The union certificate scores the outside placements itself and is left alone.
+    if !args.union_certificate {
+        let mut n_late = 0usize;
+        for w in works.iter_mut() {
+            n_late += rustle::denovo_pipeline::apply_tie_outside_gate(
+                &mut w.fams,
+                &w.read_names,
+                rustle::copy_assign::copy_assign_pipeline::is_tie_outside,
+                params.molecule_pool,
+            );
+        }
+        if n_late > 0 {
+            eprintln!(
+                "[copy_assign] tie-outside gate after all regions: {n_late} row(s) demoted to tied (outside placement \
+                 registered by a region swept after the molecule's family)"
+            );
+        }
+    }
     // PASS 1 (read-only): cross-family reconciliation. It must run BEFORE the drain, not as a post-pass
     // over `assign_rows`, because a molecule's status is emitted from `fa.assignments` at FOUR sites
     // inside the drain (`.assignments.tsv`, `.posterior.tsv`, `.psv_reads.tsv`, `.phased_reads.tsv`) plus
