@@ -39,3 +39,28 @@ def test_original_orientation_reverses_minus_strand_records():
 
 def test_aligned_ref_span_from_cigar():
     assert A.ref_end(100, "10S50M200N30M5I20M") == 100 + 50 + 200 + 30 + 20
+
+
+import score as S
+
+
+def test_distinguishable_needs_two_differing_covered_columns_against_every_rival():
+    cols = [(1, "A", "AC"), (2, "G", "GT"), (3, ".", "CA")]
+    assert S.distinguishable([5, 7], cols, {5})
+    assert not S.distinguishable([5, 7], cols[:1] + cols[2:], {5}), "one covered column only"
+    assert not S.distinguishable([5, 7], cols, {9}), "truth not a candidate"
+
+
+def test_a_nested_truth_set_does_not_count_its_members_as_rivals():
+    cols = [(1, "A", "AAC"), (2, "G", "GGT")]
+    assert S.distinguishable([5, 6, 7], cols, {5, 6})
+
+
+def test_overlap_is_same_chrom_and_half_open():
+    assert S.overlaps(("c", 0, 10), ("c", 9, 20))
+    assert not S.overlaps(("c", 0, 10), ("c", 10, 20))
+    assert not S.overlaps(("c", 0, 10), ("d", 0, 10))
+
+
+def test_upper95_rule_of_three_at_zero_wrong():
+    assert S.upper95(0, 100) == round(1 - 0.05 ** (1 / 100), 4)
