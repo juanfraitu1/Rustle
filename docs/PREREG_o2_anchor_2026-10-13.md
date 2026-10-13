@@ -118,4 +118,39 @@ That is 365 reads, 129 families, 81 Mb of windows. The scored rows are the same 
 
 ## Results — human A119b (held-out)
 
-(pending)
+Run `/mnt/linuxdisk/tmp/o2_anchor/human/` (8 family batches, 133-247 s each, <= 4.7 GB). Selection: 4,031 trimmed reads
+from 298 families.
+
+**Amendment 1d.** MCL3 (260 copies, an array family) is excluded. It exhausted 20 GB alone, and it holds no truth
+read. 55 trimmed reads have a record on it, so its possible foreign rows are unobserved.
+
+- **T0 truth noise:** d = 1 - 3,523 / 3,572 = **0.0137**, below 0.05, so the arm continues (Amendment 1).
+- **Population:** 53 contested (exact AS ties); the aligner's primary is right for 23 (0.43).
+- **A2 calibration: PASS.** 0 of the 42 undecidable molecules were assigned.
+- **A1 (amended): UNDERPOWERED.** 4 assigned (bar: 30).
+  - 1 right: MCL871. The read matches the truth copy at 17 columns and the sibling at 4; p 6e-48; the aligner's
+    primary was wrong.
+  - 3 wrong: three MCL1623 molecules, all of the `sibling` kind.
+- Recall over distinguishable reads: 1 / 11.
+
+**The 3 wrong calls are an O2 BUG, not evidence.** Each read matches both candidates at exactly 5 of 10 columns, an
+exact tie. Yet `assigned` with margin 0.000 and p 2.5e-13.
+- The certificate's rule is "Assigned iff every rival p < alpha / #rivals AND LLR > 0". Summing +lr / -lr column by
+  column in the order `+++--+--+-` gives LLR = 1.78e-15 instead of 0. Floating-point residue passes "> 0".
+- The p-value test alone cannot stop it: 5 alleles of either copy are too many errors for the other, both ways.
+- In the shipped runs: gorilla_KB3781 has 7 of 140 contested assigned calls with margin 0.000; chimp_PTR has 2 of 46.
+- `fixed_only_certificate` (popfix) sums the same way.
+
+Fix candidate (needs its own prereg / register row): compute the LLR from integer counts, (k - m) x lr (+ the junction
+term likewise), so an exact tie is exactly 0.
+
+**Gorilla dev, for comparison (not verdicts, T0 gate failed):** 1 assigned, right: MCL22. The read matches truth copy 5
+at all 28 columns, and the rivals at 8-25 with 3-20 mismatches. The aligner's primary was wrong. 0 of the 95
+undecidable molecules were assigned.
+
+**Arm 1 reading.**
+- Every assignment that does not come from the rounding bug is right: 2 of 2, both where the aligner was wrong.
+- Calibration holds: 0 of 137 undecidable molecules assigned across both species.
+- Removing a read's unique anchor rarely leaves an exact tie that PSVs can resolve, so precision stays UNDERPOWERED.
+  Ties: 107 in gorilla, 53 in human; distinguishable: 12 and 11.
+- The test found a real certificate bug.
