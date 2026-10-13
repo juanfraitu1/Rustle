@@ -7929,6 +7929,8 @@ fn main() -> Result<()> {
                 &w.read_names,
                 rustle::copy_assign::copy_assign_pipeline::is_tie_outside,
                 params.molecule_pool,
+                // the read-star soft abundance is what the worker reports there (the VG re-align leg replaces it with its EM)
+                params.molecule_pool && !(args.vg_realign || args.vg_realign_correct),
             );
         }
         if n_late > 0 {

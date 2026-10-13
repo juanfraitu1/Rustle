@@ -25299,10 +25299,19 @@ pub mod copy_assign {
             results: &[ReadResult],
             n_copies: usize,
         ) -> (Vec<f64>, Vec<f64>) {
+            star_soft_abundance_of(results.iter().map(|r| &r.combined), n_copies)
+        }
+
+        /// [`star_soft_abundance`] over the molecules' combined verdicts directly -- the ONE implementation, so a caller
+        /// holding a family's `assignments` (the tie-outside gate after all regions, PREREG_o2_tie_outside_gate_2026-10-13)
+        /// recomputes the abundance bit-for-bit as the worker does.
+        pub fn star_soft_abundance_of<'a>(
+            verdicts: impl Iterator<Item = &'a Assignment>,
+            n_copies: usize,
+        ) -> (Vec<f64>, Vec<f64>) {
             let mut soft = vec![0.0f64; n_copies];
             let mut n_eff = 0usize;
-            for r in results {
-                let a = &r.combined;
+            for a in verdicts {
                 if a.origin_rejected || a.posterior.is_empty() {
                     continue;
                 }
@@ -28175,6 +28184,11 @@ pub mod denovo_pipeline {
         pub rescued_copies: usize,
         /// `(index into bam_reads, PSV+junction assignment)` for each read over the family.
         pub assignments: Vec<(usize, Assignment)>,
+        /// Parallel to `assignments` (empty when a family was built without the pipeline): `Some(agreed)` when the
+        /// row was counted in `uniq` (an `Assigned` unique mapper) and whether it agreed with its mapped copy, so a
+        /// later demotion can take exactly that contribution back out of `uniq` / `uniq_agree`
+        /// (PREREG_o2_tie_outside_gate_2026-10-13).
+        pub uniq_contrib: Vec<Option<bool>>,
         /// SOFT per-copy quantification: copy transcript id, EM abundance (fraction of reads, sums to 1), and the
         /// 95% CI half-width — the probabilistic estimator (uses partial PSV evidence; uniform at the K=0 floor).
         pub copy_tids: Vec<String>,
@@ -28243,6 +28257,7 @@ pub mod denovo_pipeline {
                 collapsed_copies: 0,
                 rescued_copies: 0,
                 assignments: Vec::new(),
+                uniq_contrib: Vec::new(),
                 copy_tids: Vec::new(),
                 copy_spans: Vec::new(),
                 copy_abundance: Vec::new(),
@@ -30702,6 +30717,7 @@ pub mod denovo_pipeline {
                 collapsed_copies,
                 rescued_copies,
                 assignments: Vec::with_capacity(detail.results.len()),
+                uniq_contrib: Vec::with_capacity(detail.results.len()),
                 copy_tids: all_copies.iter().map(|c| c.tid.clone()).collect(),
                 copy_spans: all_copies
                     .iter()
@@ -30744,10 +30760,15 @@ pub mod denovo_pipeline {
                     r.combined.n_decisive >= 1,
                     resolvable_psv,
                 );
-                if assigned_j && region_mapq_mol[r.read_index] > 0 {
+                let uniq_contrib = if assigned_j && region_mapq_mol[r.read_index] > 0 {
+                    let agreed = r.combined.best_copy == r.mapped_copy;
                     fa.uniq += 1;
-                    fa.uniq_agree += (r.combined.best_copy == r.mapped_copy) as usize;
-                }
+                    fa.uniq_agree += agreed as usize;
+                    Some(agreed)
+                } else {
+                    None
+                };
+                fa.uniq_contrib.push(uniq_contrib);
                 fa.read_psv_obs.push(r.psv_obs);
                 fa.read_junctions.push(r.junctions);
                 fa.assignments.push((idx_map[r.read_index], r.combined));
@@ -31091,22 +31112,40 @@ pub mod denovo_pipeline {
         read_names: &[String],
         is_outside: impl Fn(&str) -> bool,
         psv_is_combined: bool,
+        star_soft_abundance: bool,
     ) -> usize {
         let mut n = 0usize;
         for fa in fams.iter_mut() {
             let n_copies = fa.n_copies;
             let mut moved = false;
-            for (ri, a) in fa.assignments.iter_mut() {
+            for (k, (ri, a)) in fa.assignments.iter_mut().enumerate() {
                 if a.status == AssignStatus::Assigned && read_names.get(*ri).is_some_and(|r| is_outside(r)) {
                     // the worker's gate sizes the uniform posterior by the row's own posterior vector (its copies)
                     let width = if a.posterior.is_empty() { n_copies } else { a.posterior.len() };
                     tie_row(a, width);
+                    // a demoted row is no longer an `Assigned` unique mapper: take its `uniq` contribution back out
+                    if let Some(c) = fa.uniq_contrib.get_mut(k) {
+                        if let Some(agreed) = c.take() {
+                            fa.uniq -= 1;
+                            fa.uniq_agree -= agreed as usize;
+                        }
+                    }
                     moved = true;
                     n += 1;
                 }
             }
             if moved {
                 recount_after_union(fa, psv_is_combined);
+                // on the read-star path the abundance IS the normalised posterior sum the worker took after its own
+                // gate: recompute it over the demoted rows with the same function, same order, same width
+                if star_soft_abundance && !fa.copy_abundance.is_empty() {
+                    let width = fa.copy_abundance.len();
+                    (fa.copy_abundance, fa.copy_abundance_ci) =
+                        super::copy_assign::copy_assign_pipeline::star_soft_abundance_of(
+                            fa.assignments.iter().map(|(_, a)| a),
+                            width,
+                        );
+                }
             }
         }
         n
@@ -41380,6 +41419,7 @@ pub mod denovo_pipeline {
                 uniq_agree: 0,
                 collapsed_copies: 0,
                 rescued_copies: 0,
+                uniq_contrib: Vec::new(),
                 assignments: vec![
                     (
                         10,
@@ -41544,6 +41584,7 @@ pub mod denovo_pipeline {
                 uniq_agree: 0,
                 collapsed_copies: 0,
                 rescued_copies: 0,
+                uniq_contrib: Vec::new(),
                 assignments: vec![(
                     20,
                     Assignment {
@@ -41694,6 +41735,7 @@ pub mod denovo_pipeline {
                 collapsed_copies: 0,
                 rescued_copies: 0,
                 assignments: Vec::new(),
+                uniq_contrib: Vec::new(),
                 copy_tids: vec!["host".into()],
                 copy_spans: vec![("c".into(), 0, 10)],
                 copy_abundance: vec![1.0],
@@ -44752,6 +44794,18 @@ pub mod denovo_pipeline {
             fa.assigned_psv = 2;
             fa.resolvable_j = 3;
             fa.resolvable_psv = 3;
+            // rows 0 and 1 counted as unique mappers when the worker saw them `assigned` (row 0 agreed, row 1 did not)
+            fa.uniq = 2;
+            fa.uniq_agree = 1;
+            fa.uniq_contrib = vec![Some(true), Some(false), None];
+            let soft_of = |rows: &[(usize, Assignment)]| {
+                super::super::copy_assign::copy_assign_pipeline::star_soft_abundance_of(rows.iter().map(|(_, a)| a), 2)
+            };
+            (fa.copy_abundance, fa.copy_abundance_ci) = soft_of(&fa.assignments);
+            // what the worker would have computed had its gate fired in time: row 0 tied (uniform posterior)
+            let mut in_time = fa.assignments.clone();
+            in_time[0].1.posterior = vec![0.5, 0.5];
+            let expected_soft = soft_of(&in_time);
             let mut untouched = FamilyAssignment {
                 n_copies: 2,
                 assignments: vec![(1, asg(S::Assigned, 0))],
@@ -44759,7 +44813,7 @@ pub mod denovo_pipeline {
             };
             untouched.assigned_j = 7; // deliberately inconsistent: a family with no demoted row must not be recounted
             let mut fams = vec![fa, untouched];
-            let n = apply_tie_outside_gate(&mut fams, &names, |r: &str| r.starts_with("out_"), true);
+            let n = apply_tie_outside_gate(&mut fams, &names, |r: &str| r.starts_with("out_"), true, true);
             assert_eq!(n, 1);
             let a0 = &fams[0].assignments[0].1;
             assert_eq!(a0.status, S::Tied);
@@ -44772,6 +44826,11 @@ pub mod denovo_pipeline {
             assert_eq!((fams[0].resolvable_j, fams[0].resolvable_psv), (3, 3));
             assert_eq!(fams[1].assignments[0].1.status, S::Assigned);
             assert_eq!(fams[1].assigned_j, 7);
+            // the unique-mapper counters lose exactly the demoted row's contribution, and it is consumed
+            assert_eq!((fams[0].uniq, fams[0].uniq_agree), (1, 0));
+            assert_eq!(fams[0].uniq_contrib, vec![None, Some(false), None]);
+            // the read-star soft abundance is recomputed bit-for-bit as the worker computes it
+            assert_eq!((fams[0].copy_abundance.clone(), fams[0].copy_abundance_ci.clone()), expected_soft);
         }
 
         /// THE CLAUSE: a molecule tied across two families gets ONE verdict -- the true family's row is
