@@ -63,6 +63,29 @@ in MCL23 only. The statement "quant is unaffected" above was **wrong**, for two 
 - **G3 adds:** the fixed binary on the full gorilla run gives byte-identical `assignments` / `families` / `quant` on
   1 and 4 threads.
 
-## Results
+## Results (2026-10-13; fix 014126be + d5d982a3; outputs `/mnt/linuxdisk/tmp/o2_tie/`)
 
-(pending)
+- **G1 PASS.** `apply_tie_outside_gate` was red first. It now demotes only the `assigned` outside rows, recounts the
+  family, takes the `uniq` contribution out and recomputes the abundance bit-identically. lib 1,048 / 0.
+- **G2 PASS** (human anchor batch b4, the fixed binary).
+  - 1 and 4 region threads give byte-identical `assignments`, `families`, `quant`, `star_reads`, `famcn_readonly` and
+    `family_join`.
+  - Both MCL23 rows are `tied` in both runs. On 4 threads the post-pass demoted exactly those 2 rows; on 1 thread the
+    worker's own gate caught them.
+  - Before the fix, the same binary gave `assigned` on 4 threads and `tied` on 1.
+- **G3 PASS** (gorilla_KB3781, full assign).
+  - The fixed binary on 4 threads against the exact-tie binary on 4 threads: 60,214 / 60,214 rows identical, and
+    `quant` / `families` identical. No late demotion was needed in this run.
+  - The fixed binary on 1 thread (the pipeline default): the post-pass demoted **1** row. That is the same
+    deterministic leak as the shipped run (624 -> 623).
+  - 1 and 4 threads: `assignments` / `families` / `quant` / `famcn_readonly` / `family_join` byte-identical.
+    0 assigned rows with `tie_outside_catalog` = 1 on either.
+- **G4 PASS.** 1,287 passed. The only failures are the 3 known `pipeline_driver_dispatch` ones. Warnings unchanged
+  (58).
+
+**Reading.**
+- The §6gz gate is now applied once the outside-tie registry is complete, so no `Assigned` call can carry
+  `tie_outside_catalog` = 1.
+- `--region-threads` is again byte-identical across every assign output checked.
+- The remaining in-worker use of the order-dependent status is GTF routing under `--families --gtf` (not a pipeline
+  combination). It is documented, not fixed.
