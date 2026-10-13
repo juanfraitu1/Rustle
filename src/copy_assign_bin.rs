@@ -1038,21 +1038,25 @@ struct Args {
     #[arg(long, default_value_t = false)]
     dump_star: bool,
     /// spec 2026-10-12-population-fixed-psvs: a `psv_population.tsv` (bench/popfix/table.py). Writes
-    /// `<out>.population_tier.tsv`: per contested molecule the normal call, the call on population-FIXED PSVs only,
-    /// and the tier. Columns: `status_all`/`copy_all` = this run's call (as in assignments.tsv);
+    /// `<out>.population_tier.tsv`: per molecule that goes through the read-star certificate (all AS-tied / contested
+    /// molecules on the default path, plus any uncontested molecule the AS-tied gate sends to the certificate) the
+    /// normal call, the call on population-FIXED PSVs only, and the tier. Columns: `status_all`/`copy_all` = this run's call (as in assignments.tsv);
     /// `status_fixed`/`copy_fixed` = the read-star certificate on population-FIXED PSV columns only
     /// (`n_dec_fixed` = its decisive columns); `tier` PORTABLE = both assign the same copy, REFERENCE_ONLY = the run
     /// assigns but the fixed-only certificate does not (or picks another copy), UNASSIGNED = the run does not
-    /// assign. Needs the default read-star path (genomic, two-form, pooled molecules). Default OFF: no change to
-    /// any output. Also adds a 10th `positions` column to `--dump-star`'s `star_reads.tsv` (always).
+    /// assign. Needs the default read-star path (genomic, two-form, pooled molecules). Default OFF: without it
+    /// no output changes (separately, `--dump-star`'s `star_reads.tsv` now always carries a 10th `positions` column).
     #[arg(long)]
     psv_population: Option<String>,
     /// With `--psv-population`: decide on population-FIXED PSVs only (assignments.tsv = portable calls). The
-    /// `posterior` column of the other outputs still reflects all columns. Governs the certificate-decided
-    /// (contested) molecules only: uncontested rows (`contested` = 0, the aligner's MAPQ-60 placement) keep the
-    /// aligner's call and are not population-checked. Under this flag the `readthrough_into` column and the
-    /// `readthrough_explained` count can differ from a non-strict run for molecules whose best copy moved (the
-    /// read-through credit is withdrawn, fail-closed).
+    /// `posterior` column of the other outputs still reflects all columns. Applies to every molecule that goes
+    /// through the read-star certificate (all AS-tied / contested molecules on the default path, plus any
+    /// uncontested molecule the AS-tied gate sends to the certificate); molecules placed by the aligner without
+    /// the certificate (the `--no-as-tied-only` placement path) keep the aligner's call and are not
+    /// population-checked. Refused together with `--vg-realign`, `--vg-realign-correct` and
+    /// `--union-certificate` (they rewrite the best copy / status after the read-star closure). Under this flag
+    /// the `readthrough_into` column and the `readthrough_explained` count can differ from a non-strict run for
+    /// molecules whose best copy moved (the read-through credit is withdrawn, fail-closed).
     #[arg(long, default_value_t = false)]
     psv_fixed_only: bool,
     /// Escape hatch (§6fm): count every read-star hit for a candidate even when it does not overlap the
@@ -1411,6 +1415,44 @@ fn check_population_flags(
         return Err("--psv-population needs the pooled read-star path; drop --no-molecule-observations".into());
     }
     Ok(())
+}
+
+/// `--psv-fixed-only` makes the read-star certificate's fixed-only verdict THE decision. These three levers rewrite
+/// the best copy / status AFTER the read-star closure, outside that rule, so a strict run under them would report
+/// calls that are not fixed-only calls; refuse the combination and name the flag.
+fn check_fixed_only_escapes(
+    fixed_only: bool,
+    vg_realign: bool,
+    vg_realign_correct: bool,
+    union_certificate: bool,
+) -> Result<(), String> {
+    if !fixed_only {
+        return Ok(());
+    }
+    for (on, flag) in [
+        (vg_realign, "--vg-realign"),
+        (vg_realign_correct, "--vg-realign-correct"),
+        (union_certificate, "--union-certificate"),
+    ] {
+        if on {
+            return Err(format!(
+                "--psv-fixed-only cannot be combined with {flag}: it rewrites the best copy / status after the read-star closure, outside the fixed-only rule"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Tier-join sanity for `population_tier.tsv`: the stderr line and whether to warn. `n_na_rows` = contested rows written
+/// without a tier; the only expected cause is the orphan early return (a molecule with no candidate never reaches the
+/// certificate), so more NA rows than orphans means some registered tier did not join its assignments row.
+fn tier_join_summary(n_registered: usize, n_tier_rows: usize, n_na_rows: usize, n_orphans: usize) -> (String, bool) {
+    (
+        format!(
+            "tiers registered {n_registered}, rows written with a tier {n_tier_rows}, contested rows written as NA {n_na_rows}, orphan contested rows {n_orphans}"
+        ),
+        n_na_rows > n_orphans,
+    )
 }
 
 /// The portability tier of a molecule from the run's call and the fixed-only certificate's.
@@ -6319,6 +6361,8 @@ fn main() -> Result<()> {
         params.molecule_pool,
     )
     .map_err(|e| anyhow::anyhow!(e))?;
+    check_fixed_only_escapes(args.psv_fixed_only, args.vg_realign, args.vg_realign_correct, args.union_certificate)
+        .map_err(|e| anyhow::anyhow!(e))?;
     if let Some(path) = args.psv_population.as_deref() {
         let text = std::fs::read_to_string(path).with_context(|| format!("reading --psv-population {path}"))?;
         let pop = rustle::copy_assign::copy_assign_pipeline::parse_psv_population(&text, args.psv_fixed_only)?;
@@ -10653,8 +10697,9 @@ fn main() -> Result<()> {
         }
         eprintln!("[copy_assign] --dump-star: {n} molecule proofs -> {}.star_reads.tsv (columns = read_pos:read_base:candidate_bases in `candidates` order, `.` = uncovered)", args.out);
     }
-    // spec 2026-10-12-population-fixed-psvs: `<out>.population_tier.tsv` — per CONTESTED molecule (one row per
-    // (molecule, family)) the emitted call beside the call on population-FIXED PSVs only, and the portability tier.
+    // spec 2026-10-12-population-fixed-psvs: `<out>.population_tier.tsv` — per molecule that went through the read-star
+    // certificate (one row per (molecule, family)) the emitted call beside the call on population-FIXED PSVs only, and
+    // the portability tier. Molecules the aligner placed without the certificate have no tier and are not listed.
     // `status_all`/`copy_all` are the emitted assignments.tsv row's; `status_fixed`/`copy_fixed`/`n_dec_fixed` the tier's.
     // A contested molecule with no tier is written with NA/NA/0 so the file never silently omits one.
     if args.psv_population.is_some() {
@@ -10662,7 +10707,8 @@ fn main() -> Result<()> {
         let mut th = std::fs::File::create(format!("{}.population_tier.tsv", args.out))?;
         writeln!(th, "read_name\tfamily_id\tstatus_all\tcopy_all\tstatus_fixed\tcopy_fixed\tn_dec_fixed\ttier")?;
         let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
-        let (mut n_tier, mut n_no_tier) = (0usize, 0usize);
+        let n_registered: usize = tiers.values().map(|v| v.len()).sum();
+        let (mut n_tier, mut n_no_tier, mut n_orphan) = (0usize, 0usize, 0usize);
         for r in &assign_rows {
             let t = tiers.get(&r.read_name).and_then(|v| {
                 v.iter().find(|t| t.cand_tids.first().and_then(|x| tid_family.get(x)) == Some(&r.family_id))
@@ -10677,6 +10723,10 @@ fn main() -> Result<()> {
                 n_tier += 1;
             } else {
                 n_no_tier += 1;
+                // §6fg orphan: no candidate at all, so the molecule never reaches the certificate
+                if r.origin_rejected && r.n_candidates == 0 {
+                    n_orphan += 1;
+                }
             }
             writeln!(th, "{}", tier_line(&r.read_name, &r.family_id, r.status, r.assigned_copy, t))?;
         }
@@ -10684,6 +10734,13 @@ fn main() -> Result<()> {
             "[copy_assign] --psv-population: {n_tier} molecule tiers (+{n_no_tier} contested rows without a tier) -> {}.population_tier.tsv",
             args.out
         );
+        let (summary, warn) = tier_join_summary(n_registered, n_tier, n_no_tier, n_orphan);
+        eprintln!("[copy_assign] --psv-population tier join: {summary}");
+        if warn {
+            eprintln!(
+                "[copy_assign] WARNING: --psv-population: {n_no_tier} contested rows have no tier but only {n_orphan} are orphans; some registered tiers did not join their assignments rows (tier file is incomplete)"
+            );
+        }
     }
     // --dump-psv: the raw per-molecule PSV genotype matrix (the assignment-proof evidence). reads × PSV columns
     // (each read's base + its assignment), the per-copy alleles, and the column→genome map — for the figure.
@@ -14941,7 +14998,7 @@ mod tests {
 
 #[cfg(test)]
 mod popfix_flag_tests {
-    use super::{check_population_flags, tier_line, tier_name};
+    use super::{check_fixed_only_escapes, check_population_flags, tier_join_summary, tier_line, tier_name};
     use super::AssignStatus as S;
     use rustle::copy_assign::copy_assign_pipeline::PopulationTier;
 
@@ -14967,6 +15024,31 @@ mod popfix_flag_tests {
         // a contested molecule with no tier is a fixed-only Tied with no evidence (R25 no-tier rule)
         assert_eq!(tier_name(S::Assigned, 3, S::Tied, 0), "REFERENCE_ONLY");
         assert_eq!(tier_name(S::Ambiguous, 3, S::Tied, 0), "UNASSIGNED");
+    }
+
+    #[test]
+    fn fixed_only_refuses_the_post_closure_escapes_and_names_the_flag() {
+        // (fixed_only, vg_realign, vg_realign_correct, union_certificate)
+        assert!(check_fixed_only_escapes(false, true, true, true).is_ok(), "no --psv-fixed-only, nothing to refuse");
+        assert!(check_fixed_only_escapes(true, false, false, false).is_ok());
+        assert!(check_fixed_only_escapes(true, true, false, false).unwrap_err().contains("--vg-realign:"));
+        assert!(check_fixed_only_escapes(true, false, true, false).unwrap_err().contains("--vg-realign-correct"));
+        assert!(check_fixed_only_escapes(true, false, false, true).unwrap_err().contains("--union-certificate"));
+        assert!(check_fixed_only_escapes(true, false, false, true).unwrap_err().contains("--psv-fixed-only"));
+    }
+
+    #[test]
+    fn tier_join_summary_warns_only_when_na_rows_exceed_orphans() {
+        // (n_registered, n_tier_rows, n_na_rows, n_orphans)
+        let (line, warn) = tier_join_summary(9670, 9670, 2361, 2361);
+        assert!(!warn);
+        assert!(line.contains("9670") && line.contains("2361"), "{line}");
+        let (_, warn) = tier_join_summary(9670, 9670, 2300, 2361);
+        assert!(!warn, "fewer NA rows than orphans is fine (orphans may be uncontested)");
+        let (_, warn) = tier_join_summary(9000, 8000, 2362, 2361);
+        assert!(warn, "one NA row more than there are orphans = some tier did not join");
+        let (_, warn) = tier_join_summary(0, 0, 0, 0);
+        assert!(!warn);
     }
 
     fn tier(status_fixed: S, copy_fixed: usize, n_dec: usize) -> PopulationTier {
