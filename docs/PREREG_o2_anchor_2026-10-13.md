@@ -221,3 +221,55 @@ the animal whose genome IS the reference, so that donor confound is absent.
   resolution (mat/pat), which is not attempted here.
 - **Caveat:** the primary assembly carries one haplotype per copy. Reads from the other haplotype can legitimately
   match different copies at different PSVs.
+
+## Results — arm 2 (junction truth), 2026-10-13
+
+Final binary. `bench/o2_truth/junction_truth.py` (8 tests, committed before scoring). Outputs `/mnt/linuxdisk/tmp/o2_arms/`.
+
+| | gorilla (dev) | human (held-out) |
+|---|---|---|
+| spliced contested molecules scored | 34,161 | 14,437 |
+| informative (>= 1 candidate EXCLUDED, >= 1 not) | 90 | 1,395 |
+| **J1** O2-assigned informative / wrong (O2's copy EXCLUDED) | 4 / 2: UNDERPOWERED | 80 / 51: **FAIL as registered** |
+| determined / **J2** O2-assigned (right) | 3 / 2 (1): UNDERPOWERED | 47 / 1 (1): UNDERPOWERED |
+| aligner primary on an EXCLUDED copy (informative) | 26 / 90 | 458 / 1,395 |
+| aligner right on determined | 1 / 3 | 9 / 47 |
+
+**The examination the prereg required: the truth is invalid.**
+- **The motifs are shifted canonical sites.** The exclusions behind the "wrong" calls are one-base shifts of
+  canonical sites: human GT-TA 21, AT-AG 10, others <= 3; gorilla GT-AA 2.
+- **They sit at the read ends.** 51 of the 57 human exclusions are at the read's first or last intron. That is
+  minimap2 placing terminal junctions imperfectly, not a copy that cannot splice.
+- **The truth fails its own sanity checks.** The aligner, which scores splice signals, sits on an "excluded" copy
+  for 29-33% of informative molecules. On "determined" molecules it is right only 19% of the time.
+- **So J1's FAIL is not evidence against O2.**
+- **Arm 2 is uninformative by construction.** Copies that differ in splice-site canonicity get different alignment
+  scores, so their reads rarely become the exact ties O2 handles: 0.26% of gorilla's spliced contested molecules are
+  informative.
+
+A sound version (internal introns only; no canonical pair within +-3 bp in the copy's genome) would need a fresh
+substrate.
+
+## Results — arm 3 (split-half on the reference animal), 2026-10-13
+
+Gorilla full assign, final binary (`/mnt/linuxdisk/tmp/o2_arms/gorilla/`). Catalog-PSV table: 72,705 sites
+(`psv-discover`, 326 families).
+
+- **Gate P0 PASS:** 18,632 / 18,636 = 0.9998.
+- **S1 FAIL:** all columns, 107 / 477 = 0.224 (6,566 molecules with >= 1 assigning half).
+- **S2 FAIL:** catalog-PSV columns, 37 / 382 = 0.097 (6,061 / 59,423 = 10.2% with >= 1 assigning half).
+
+**Reading as registered: both FAIL**, meaning mosaic molecules or O2 error. Telling them apart needs haplotype
+resolution.
+
+**Descriptive.**
+- **Disagreement is concentrated:** MCL90 117 and MCL274 76 of the 370 disagreeing molecules. The two copies usually
+  sit on the same chromosome within 1 Mb.
+- **O2's full-read certificate abstains on 342 of the 370.**
+- **On O2's own 135 contested calls:**
+  - 51 have one decisive half, which agrees with O2 in 50;
+  - 32 have both halves decisive: 4 agree and 28 disagree.
+- **The 28 that disagree:** 27 are MCL26 with one pattern. Six 5' columns favour copy 1 (O2's call); the 3' half
+  favours copy 0 by 2 columns to 1.
+- **Hypothesis (not tested above):** an allele of copy 1 carrying gene-converted, copy-0-like sites. Checked next
+  against the animal's own haplotype assemblies (mat / pat).
