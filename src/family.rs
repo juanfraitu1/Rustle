@@ -22021,6 +22021,298 @@ pub mod copy_assign {
             discover_psvs_oriented(copies, exon_maps).0
         }
 
+        /// Copy-vs-copy alignment engine of `discover_psvs` (PREREG_psv_semiglobal_engine_2026-10-12).
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum PsvEngine {
+            /// the banded global Gotoh DP (mismatch 1, gap open 32, extend 1), or poasta / minimap2 via their env vars
+            Global,
+            /// `semiglobal_msa_pair`: log-odds scores, two-piece affine gaps, free end gaps, anchored band
+            Semiglobal,
+        }
+
+        // semiglobal engine scores (maximised): BLASTN match / mismatch; gap cost min(O1 + E1 k, O2): short indels
+        // affine, a LONG gap (an exon one copy lacks, any length) a constant like an intron in a spliced alignment,
+        // so homologous blocks are bridged and unrelated stretches are skipped instead of forced into columns.
+        const SG_MATCH: i32 = 2;
+        const SG_MISMATCH: i32 = -3;
+        const SG_O1: i32 = 5;
+        const SG_E1: i32 = 2;
+        const SG_O2: i32 = 30;
+        const SG_E2: i32 = 0;
+        const SG_K: usize = 11; // anchor k-mer
+        const SG_W: i64 = 100; // band half-width around the anchor diagonals
+        const SG_NEG: i32 = i32::MIN / 4;
+
+        /// Anchors of `semiglobal_msa_pair`: `(i, j)` with `a[i..i+K] == b[j..j+K]` for 11-mers unique in BOTH
+        /// sequences (case-insensitive), reduced to the longest chain increasing in both `i` and `j`.
+        pub fn semiglobal_anchors(a: &[u8], b: &[u8]) -> Vec<(usize, usize)> {
+            fn kmers(s: &[u8]) -> DetHashMap<u32, i64> {
+                // k-mer code -> position if unique, -1 if repeated
+                let mut m: DetHashMap<u32, i64> = DetHashMap::default();
+                let (mut code, mut len) = (0u32, 0usize);
+                let mask = (1u32 << (2 * SG_K)) - 1;
+                for (p, &c) in s.iter().enumerate() {
+                    let v = match c.to_ascii_uppercase() {
+                        b'A' => 0,
+                        b'C' => 1,
+                        b'G' => 2,
+                        b'T' => 3,
+                        _ => {
+                            len = 0;
+                            continue;
+                        }
+                    };
+                    code = ((code << 2) | v) & mask;
+                    len += 1;
+                    if len >= SG_K {
+                        let start = (p + 1 - SG_K) as i64;
+                        m.entry(code).and_modify(|e| *e = -1).or_insert(start);
+                    }
+                }
+                m
+            }
+            let (ka, kb) = (kmers(a), kmers(b));
+            let mut hits: Vec<(usize, usize)> = ka
+                .iter()
+                .filter_map(|(k, &i)| match kb.get(k) {
+                    Some(&j) if i >= 0 && j >= 0 => Some((i as usize, j as usize)),
+                    _ => None,
+                })
+                .collect();
+            hits.sort_unstable();
+            // longest chain strictly increasing in j (hits are already strictly increasing in i): patience sorting
+            let mut tails: Vec<usize> = Vec::new(); // index into hits of the smallest tail per chain length
+            let mut back: Vec<usize> = vec![usize::MAX; hits.len()];
+            for (h, &(_, j)) in hits.iter().enumerate() {
+                let pos = tails.partition_point(|&t| hits[t].1 < j);
+                if pos > 0 {
+                    back[h] = tails[pos - 1];
+                }
+                if pos == tails.len() {
+                    tails.push(h);
+                } else {
+                    tails[pos] = h;
+                }
+            }
+            let mut chain = Vec::with_capacity(tails.len());
+            let mut cur = tails.last().copied().unwrap_or(usize::MAX);
+            while cur != usize::MAX {
+                chain.push(hits[cur]);
+                cur = back[cur];
+            }
+            chain.reverse();
+            chain
+        }
+
+        /// Per-row band `(lo, hi)` (inclusive, DP columns 1..=m) for rows 1..=n of `semiglobal_align_banded`: between
+        /// consecutive anchors the band spans both anchors' diagonals +- W, before the first / after the last it follows
+        /// that anchor's diagonal +- W. An empty row is `lo > hi`.
+        pub fn semiglobal_bands(n: usize, m: usize, anchors: &[(usize, usize)]) -> Vec<(usize, usize)> {
+            let diag = |&(i, j): &(usize, usize)| j as i64 - i as i64;
+            let mut out = Vec::with_capacity(n);
+            let mut t = 0usize; // anchors[t] is the last anchor with i <= row
+            for row in 1..=n {
+                let r = (row - 1) as i64; // a offset of this row
+                while t + 1 < anchors.len() && anchors[t + 1].0 as i64 <= r {
+                    t += 1;
+                }
+                let (dmin, dmax) = if anchors.is_empty() {
+                    (-(n as i64), m as i64)
+                } else if r < anchors[0].0 as i64 {
+                    (diag(&anchors[0]), diag(&anchors[0]))
+                } else if t + 1 < anchors.len() {
+                    let (d1, d2) = (diag(&anchors[t]), diag(&anchors[t + 1]));
+                    (d1.min(d2), d1.max(d2))
+                } else {
+                    (diag(&anchors[t]), diag(&anchors[t]))
+                };
+                let lo = (row as i64 + dmin - SG_W).max(1);
+                let hi = (row as i64 + dmax + SG_W).min(m as i64);
+                out.push((lo as usize, hi.max(lo - 1) as usize));
+            }
+            out
+        }
+
+        /// The DP of `semiglobal_msa_pair` restricted to `bands` (one `(lo, hi)` per row of `a`): LOCAL ends (it may
+        /// start and end anywhere — Smith-Waterman — so unshared prefixes / suffixes of BOTH copies stay unaligned),
+        /// two-piece gaps. Returns the optimal score and the 2-row gapped MSA (unaligned ends as gap columns), or `None`
+        /// when nothing scores above 0.
+        pub fn semiglobal_align_banded(
+            a: &[u8],
+            b: &[u8],
+            bands: &[(usize, usize)],
+        ) -> Option<(i32, Vec<Vec<u8>>)> {
+            let (n, m) = (a.len(), b.len());
+            if n == 0 || m == 0 || bands.len() != n {
+                return None;
+            }
+            let up = |c: u8| c.to_ascii_uppercase();
+            let sub = |x: u8, y: u8| {
+                let (x, y) = (up(x), up(y));
+                if x == y && matches!(x, b'A' | b'C' | b'G' | b'T') {
+                    SG_MATCH
+                } else {
+                    SG_MISMATCH
+                }
+            };
+            // traceback bytes per banded cell: bits 0-2 H source (0 diag, 1 E1, 2 E2, 3 F1, 4 F2, 5 start),
+            // bit 3/4 E1/E2 extended, bit 5/6 F1/F2 extended
+            let mut offs = Vec::with_capacity(n + 1);
+            let mut total = 0usize;
+            for &(lo, hi) in bands {
+                offs.push(total);
+                total += if hi >= lo { hi - lo + 1 } else { 0 };
+            }
+            offs.push(total);
+            let mut tb = vec![0u8; total];
+            // previous row (H, F1, F2) over its band; row 0 is the free boundary (H = 0)
+            let (mut ph, mut pf1, mut pf2): (Vec<i32>, Vec<i32>, Vec<i32>) = (Vec::new(), Vec::new(), Vec::new());
+            let (mut plo, mut phi) = (1usize, m);
+            let mut best = (SG_NEG, 0usize, 0usize); // score, i, j of the end cell
+            for i in 1..=n {
+                let (lo, hi) = bands[i - 1];
+                let w = if hi >= lo { hi - lo + 1 } else { 0 };
+                let (mut ch, mut cf1, mut cf2) = (vec![SG_NEG; w], vec![SG_NEG; w], vec![SG_NEG; w]);
+                let prev = |j: usize, v: &Vec<i32>, is_h: bool| -> i32 {
+                    if i == 1 || j == 0 {
+                        return if is_h { 0 } else { SG_NEG };
+                    }
+                    if j >= plo && j <= phi && !v.is_empty() {
+                        v[j - plo]
+                    } else {
+                        SG_NEG
+                    }
+                };
+                let (mut e1, mut e2) = (SG_NEG, SG_NEG); // E at (i, j - 1)
+                let mut h_left = if lo == 1 { 0 } else { SG_NEG }; // H(i, lo - 1): column 0 is the free boundary
+                for (k, j) in (lo..=hi).enumerate() {
+                    let mut bits = 0u8;
+                    let (o1, o2) = (h_left - (SG_O1 + SG_E1), h_left - (SG_O2 + SG_E2));
+                    let (x1, x2) = (e1 - SG_E1, e2 - SG_E2);
+                    e1 = if x1 > o1 {
+                        bits |= 1 << 3;
+                        x1
+                    } else {
+                        o1
+                    };
+                    e2 = if x2 > o2 {
+                        bits |= 1 << 4;
+                        x2
+                    } else {
+                        o2
+                    };
+                    let hu = prev(j, &ph, true);
+                    let (u1, u2) = (hu - (SG_O1 + SG_E1), hu - (SG_O2 + SG_E2));
+                    let (y1, y2) = (prev(j, &pf1, false) - SG_E1, prev(j, &pf2, false) - SG_E2);
+                    let f1 = if y1 > u1 {
+                        bits |= 1 << 5;
+                        y1
+                    } else {
+                        u1
+                    };
+                    let f2 = if y2 > u2 {
+                        bits |= 1 << 6;
+                        y2
+                    } else {
+                        u2
+                    };
+                    let diag = prev(j - 1, &ph, true) + sub(a[i - 1], b[j - 1]);
+                    let (mut h, mut src) = (0, 5u8); // local: a fresh start costs nothing
+                    if diag > h {
+                        h = diag;
+                        src = 0;
+                    }
+                    for (v, s) in [(e1, 1u8), (e2, 2), (f1, 3), (f2, 4)] {
+                        if v > h {
+                            h = v;
+                            src = s;
+                        }
+                    }
+                    ch[k] = h;
+                    cf1[k] = f1;
+                    cf2[k] = f2;
+                    tb[offs[i - 1] + k] = bits | src;
+                    h_left = h;
+                    if h > best.0 {
+                        best = (h, i, j); // local: the alignment may end anywhere
+                    }
+                }
+                ph = ch;
+                pf1 = cf1;
+                pf2 = cf2;
+                plo = lo;
+                phi = hi;
+            }
+            if best.0 <= 0 {
+                return None;
+            }
+            // traceback from the best end cell to the free start boundary
+            let cell = |i: usize, j: usize| -> u8 {
+                let (lo, _) = bands[i - 1];
+                tb[offs[i - 1] + (j - lo)]
+            };
+            let (mut i, mut j, mut state) = (best.1, best.2, 0u8); // 0 H, 1 E1, 2 E2, 3 F1, 4 F2
+            let mut path: Vec<(Option<usize>, Option<usize>)> = Vec::new();
+            while i > 0 && j > 0 {
+                let t = cell(i, j);
+                match state {
+                    0 => match t & 7 {
+                        5 => break, // the local start
+                        0 => {
+                            path.push((Some(i - 1), Some(j - 1)));
+                            i -= 1;
+                            j -= 1;
+                        }
+                        s => state = s,
+                    },
+                    1 | 2 => {
+                        let ext = t & (if state == 1 { 1 << 3 } else { 1 << 4 }) != 0;
+                        path.push((None, Some(j - 1)));
+                        j -= 1;
+                        if !ext {
+                            state = 0;
+                        }
+                    }
+                    _ => {
+                        let ext = t & (if state == 3 { 1 << 5 } else { 1 << 6 }) != 0;
+                        path.push((Some(i - 1), None));
+                        i -= 1;
+                        if !ext {
+                            state = 0;
+                        }
+                    }
+                }
+            }
+            path.reverse();
+            let (mut r0, mut r1) = (Vec::new(), Vec::new());
+            let mut push = |x: Option<u8>, y: Option<u8>| {
+                r0.push(x.unwrap_or(b'-'));
+                r1.push(y.unwrap_or(b'-'));
+            };
+            // unaligned prefixes, the path, unaligned suffixes
+            (0..i).for_each(|p| push(Some(a[p]), None));
+            (0..j).for_each(|q| push(None, Some(b[q])));
+            for (x, y) in path {
+                push(x.map(|p| a[p]), y.map(|q| b[q]));
+            }
+            (best.1..n).for_each(|p| push(Some(a[p]), None));
+            (best.2..m).for_each(|q| push(None, Some(b[q])));
+            Some((best.0, vec![r0, r1]))
+        }
+
+        /// PREREG_psv_semiglobal_engine_2026-10-12 (+ Amendment 1): the copy-vs-copy alignment for PSV columns. Log-odds
+        /// scores (match +2, mismatch -3), gaps min(5 + 2k, 30), LOCAL ends (Smith-Waterman: start / end anywhere), the DP
+        /// restricted to a band around the chain of unique shared 11-mers (`semiglobal_anchors` / `semiglobal_bands`,
+        /// width 2 x 100 plus the local diagonal shift). `None` without a shared 11-mer (no detectable homology).
+        pub fn semiglobal_msa_pair(a: &[u8], b: &[u8]) -> Option<Vec<Vec<u8>>> {
+            let anchors = semiglobal_anchors(a, b);
+            if anchors.is_empty() {
+                return None;
+            }
+            let bands = semiglobal_bands(a.len(), b.len(), &anchors);
+            semiglobal_align_banded(a, b, &bands).map(|(_, msa)| msa)
+        }
+
         /// Significance level of a PSV alignment block in `significant_block_mask` — the certificate's default `alpha`.
         const PSV_BLOCK_ALPHA: f64 = 1e-3;
 
@@ -22151,8 +22443,13 @@ pub mod copy_assign {
             copies: &[&DenovoTranscript],
             exon_maps: &[Vec<u64>],
         ) -> (Vec<PsvColumn>, Vec<bool>) {
-            let blocks = std::env::var_os("RUSTLE_PSV_BLOCKS").is_some();
-            discover_psvs_oriented_with(copies, exon_maps, blocks)
+            // the semiglobal engine always carries the significant-block guard (PREREG_psv_semiglobal_engine)
+            let engine = match std::env::var("RUSTLE_PSV_ENGINE").as_deref() {
+                Ok("semiglobal") => PsvEngine::Semiglobal,
+                _ => PsvEngine::Global,
+            };
+            let blocks = engine == PsvEngine::Semiglobal || std::env::var_os("RUSTLE_PSV_BLOCKS").is_some();
+            discover_psvs_oriented_with(copies, exon_maps, engine, blocks)
         }
 
         /// `discover_psvs_oriented`; `blocks` = keep only columns inside `significant_block_mask` blocks. OPT-IN
@@ -22162,6 +22459,7 @@ pub mod copy_assign {
         pub fn discover_psvs_oriented_with(
             copies: &[&DenovoTranscript],
             exon_maps: &[Vec<u64>],
+            engine: PsvEngine,
             blocks: bool,
         ) -> (Vec<PsvColumn>, Vec<bool>) {
             use poasta::aligner::scoring::GapAffine;
@@ -22208,7 +22506,8 @@ pub mod copy_assign {
                                                  // (atomic nonce) so it is safe under the region-parallel sweep.
             let align_one = |other: usize| -> (BTreeMap<usize, usize>, BTreeSet<usize>) {
                 // strong gap-open anchors the conserved core column-for-column (same config as contiguous_core_coverage).
-                let banded = if use_mm2 || force_poasta {
+                let semiglobal = engine == PsvEngine::Semiglobal;
+                let banded = if semiglobal || use_mm2 || force_poasta {
                     None
                 } else {
                     let band = fixed_band.unwrap_or_else(|| {
@@ -22216,20 +22515,23 @@ pub mod copy_assign {
                     });
                     banded_msa_pair(ref_seq, &oriented[other], band)
                 };
-                let aln = if use_mm2 {
-                    minimap2_msa_pair(ref_seq, &oriented[other])
+                let aln = if semiglobal {
+                    semiglobal_msa_pair(ref_seq, &oriented[other]) // None: no shared 11-mer, nothing aligns
+                } else if use_mm2 {
+                    minimap2_msa_pair(ref_seq, &oriented[other]).ok()
                 } else if let Some(band) = banded {
-                    Ok(band) // banded DP succeeded within the band
+                    Some(band) // banded DP succeeded within the band
                 } else {
                     // forced poasta, or the band could not contain the alignment -> exact poasta (accuracy preserved)
                     poa_msa_with_costs(
                         &[ref_seq.clone(), oriented[other].to_vec()],
                         GapAffine::new(1, 1, 32),
                     )
+                    .ok()
                 };
                 let mut amap = BTreeMap::new();
                 let mut diffs = BTreeSet::new();
-                if let Ok(msa) = aln {
+                if let Some(msa) = aln {
                     if msa.len() == 2 {
                         let (r0, r1) = (&msa[0], &msa[1]);
                         // opt-in: only columns inside significant local blocks align (unshared stretches stay unaligned)
@@ -25462,6 +25764,129 @@ pub mod copy_assign {
                 s[i] = if s[i] == b'A' { b'C' } else { b'A' };
             }
 
+            // ---- PREREG_psv_semiglobal_engine_2026-10-12: log-odds, semi-global, anchored-band engine ----
+
+            /// the aligned (a offset, b offset) pairs of a 2-row MSA
+            fn msa_pairs(msa: &[Vec<u8>]) -> Vec<(usize, usize)> {
+                let (mut i, mut j, mut out) = (0usize, 0usize, Vec::new());
+                for c in 0..msa[0].len() {
+                    let (x, y) = (msa[0][c] != b'-', msa[1][c] != b'-');
+                    if x && y {
+                        out.push((i, j));
+                    }
+                    i += x as usize;
+                    j += y as usize;
+                }
+                out
+            }
+
+            #[test]
+            fn semiglobal_aligns_identical_sequences_column_for_column() {
+                let a = rand_seq(500, 0x81);
+                let msa = semiglobal_msa_pair(&a, &a).expect("aligned");
+                assert_eq!(msa[0], a);
+                assert_eq!(msa[1], a);
+            }
+
+            #[test]
+            fn semiglobal_puts_a_one_sided_exon_in_a_gap() {
+                let (h1, mut x, h2) = (rand_seq(200, 0x82), rand_seq(150, 0x83), rand_seq(200, 0x84));
+                // no co-optimal gap shift: the exon's ends differ from the bases they could slide past
+                if x[149] == h1[199] {
+                    snp(&mut x, 149);
+                }
+                if x[0] == h2[0] {
+                    snp(&mut x, 0);
+                }
+                let a = [h1.clone(), x, h2.clone()].concat();
+                let (mut g1, mut g2) = (h1, h2);
+                snp(&mut g1, 60);
+                snp(&mut g2, 90);
+                let b = [g1, g2].concat();
+                let pairs = msa_pairs(&semiglobal_msa_pair(&a, &b).expect("aligned"));
+                assert!((0..200).all(|i| pairs.contains(&(i, i))), "first exon column for column");
+                assert!((350..550).all(|i| pairs.contains(&(i, i - 150))), "last exon column for column");
+                assert!(pairs.iter().all(|&(i, _)| !(200..350).contains(&i)), "the one-sided exon is a gap");
+            }
+
+            #[test]
+            fn semiglobal_leaves_unrelated_ends_unaligned() {
+                let h = rand_seq(300, 0x85);
+                let u1 = rand_seq(100, 0x86);
+                let mut u2 = rand_seq(80, 0x87);
+                // the overhangs' last 10 bases mismatch pairwise: no chance extension of the free-ended alignment
+                for t in 0..10 {
+                    u2[70 + t] = crate::seq_utils::reverse_complement(&[u1[90 + t]])[0];
+                }
+                let a = [u1, h.clone()].concat();
+                let mut g = h;
+                snp(&mut g, 150);
+                let b = [u2, g].concat();
+                let pairs = msa_pairs(&semiglobal_msa_pair(&a, &b).expect("aligned"));
+                assert!((0..300).all(|t| pairs.contains(&(100 + t, 80 + t))));
+                let stray: Vec<_> = pairs.iter().filter(|&&(i, j)| i < 100 || j < 80).collect();
+                assert!(stray.is_empty(), "unrelated ends are not paired: {stray:?}");
+            }
+
+            #[test]
+            fn semiglobal_without_a_shared_kmer_gives_no_alignment() {
+                assert!(semiglobal_msa_pair(&rand_seq(400, 0x88), &rand_seq(400, 0x89)).is_none());
+            }
+
+            #[test]
+            fn anchored_band_reaches_the_full_dp_optimum() {
+                // homologous pairs with SNPs, small indels and a one-sided exon: the anchored band loses nothing
+                for seed in 0..12u64 {
+                    let core = rand_seq(900, 0x900 + seed);
+                    let mut b = core.clone();
+                    for i in (7..900).step_by(37 + seed as usize) {
+                        snp(&mut b, i);
+                    }
+                    b.drain(300..303 + (seed as usize % 4)); // a short deletion
+                    let ins = rand_seq(120 + 10 * seed as usize, 0xA00 + seed);
+                    let a = [core[..600].to_vec(), ins, core[600..].to_vec()].concat();
+                    let full: Vec<(usize, usize)> = (0..a.len()).map(|_| (1, b.len())).collect();
+                    let (s_full, _) = semiglobal_align_banded(&a, &b, &full).expect("full");
+                    let anchors = semiglobal_anchors(&a, &b);
+                    let bands = semiglobal_bands(a.len(), b.len(), &anchors);
+                    let (s_band, _) = semiglobal_align_banded(&a, &b, &bands).expect("banded");
+                    assert_eq!(s_band, s_full, "seed {seed}");
+                }
+            }
+
+            #[test]
+            fn semiglobal_engine_keeps_real_psvs_and_no_junk() {
+                let run = |a: Vec<u8>, b: Vec<u8>| -> Vec<u64> {
+                    let ca = copy_tx("A", 0, a.len() as u64, '+', &[], a.clone());
+                    let cb = copy_tx("B", 10_000, 10_000 + b.len() as u64, '+', &[], b);
+                    discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], PsvEngine::Semiglobal, true)
+                        .0
+                        .iter()
+                        .map(|c| c[0].unwrap().0)
+                        .collect()
+                };
+                // unrelated middle exons on both sides
+                let (h1, h2) = (rand_seq(200, 0x51), rand_seq(200, 0x52));
+                let (mut g1, mut g2) = (h1.clone(), h2.clone());
+                snp(&mut g1, 50);
+                snp(&mut g2, 120);
+                let a = [h1, rand_seq(150, 0x53), h2].concat();
+                assert_eq!(run(a, [g1, rand_seq(150, 0x54), g2].concat()), vec![50, 470]);
+                // a divergent homolog (~80% identity, differences at random positions) keeps every column. A
+                // PERIODIC pattern (every 5th base) shares no exact 11-mer and gets no alignment: the anchor limit.
+                let d = rand_seq(400, 0x71);
+                let mut e = d.clone();
+                let mut rng = SplitMix64(0x72);
+                let mut n_diff = 0;
+                for i in 0..400 {
+                    if rng.next_u64() % 5 == 0 {
+                        snp(&mut e, i);
+                        n_diff += 1;
+                    }
+                }
+                assert_eq!(run(d, e).len(), n_diff);
+            }
+
             #[test]
             fn an_unrelated_middle_exon_yields_no_psv_columns() {
                 let (h1, h2) = (rand_seq(200, 0x51), rand_seq(200, 0x52));
@@ -25472,7 +25897,7 @@ pub mod copy_assign {
                 let b = [g1, rand_seq(150, 0x54), g2].concat();
                 let ca = copy_tx("A", 0, 550, '+', &[], a);
                 let cb = copy_tx("B", 1000, 1550, '+', &[], b);
-                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], true).0;
+                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], PsvEngine::Global, true).0;
                 let offs: Vec<u64> = cols.iter().map(|c| c[0].unwrap().0).collect();
                 assert_eq!(offs, vec![50, 350 + 120], "the two SNPs, nothing from the unrelated middle exon");
             }
@@ -25486,7 +25911,7 @@ pub mod copy_assign {
                 let b = [rand_seq(100, 0x63), g].concat();
                 let ca = copy_tx("A", 0, 400, '+', &[], a);
                 let cb = copy_tx("B", 1000, 1400, '+', &[], b);
-                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], true).0;
+                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], PsvEngine::Global, true).0;
                 let offs: Vec<u64> = cols.iter().map(|c| c[0].unwrap().0).collect();
                 assert_eq!(offs, vec![300], "the SNP only, nothing from the unrelated 5' overhang");
             }
@@ -25501,7 +25926,7 @@ pub mod copy_assign {
                 }
                 let ca = copy_tx("A", 0, 400, '+', &[], a);
                 let cb = copy_tx("B", 1000, 1400, '+', &[], b);
-                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], true).0;
+                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], PsvEngine::Global, true).0;
                 assert_eq!(cols.len(), 80);
             }
 

@@ -93,6 +93,29 @@ enum Cmd {
         #[arg(long)]
         out: String,
     },
+    /// PSV columns of every family of a copy catalog, WITHOUT reads (docs/PREREG_psv_semiglobal_engine_2026-10-12.md):
+    /// `discover_psvs_oriented` per family -> OUT.psv_cols.tsv / OUT.psv_copies.tsv (the `copy_assign --dump-psv`
+    /// formats), OUT.psv_pos.tsv (each copy's genome position and base per column), OUT.time.tsv (seconds per family).
+    PsvDiscover {
+        /// The catalog copy table (`copy_assign --families` format).
+        #[arg(long)]
+        families: String,
+        #[arg(long)]
+        copies_fa: String,
+        #[arg(long)]
+        out: String,
+        /// `global` (today's banded DP) or `semiglobal` (PREREG_psv_semiglobal_engine).
+        #[arg(long, default_value = "global")]
+        engine: String,
+        /// Keep only columns inside significant local blocks (always on with `--engine semiglobal`).
+        #[arg(long)]
+        blocks: bool,
+        /// Only these families (one id per line).
+        #[arg(long)]
+        only: Option<String>,
+        #[arg(long, default_value_t = 1)]
+        threads: usize,
+    },
     /// Augment the genome and copies table with flagged candidates.
     CandidateAugment {
         #[arg(long)]
@@ -135,6 +158,9 @@ fn main() -> Result<()> {
             threads,
         } => parcn::run(&copies_fa, &mat, &pat, &out, &minimap2, threads),
         Cmd::WindowDepth { bam, copies, max, molecules, pad, exact, out } => window_depth(&bam, &copies, max, molecules.as_deref(), pad, exact, &out),
+        Cmd::PsvDiscover { families, copies_fa, out, engine, blocks, only, threads } => {
+            psv_discover(&families, &copies_fa, &out, &engine, blocks, only.as_deref(), threads)
+        }
         Cmd::CandidateAugment {
             fasta,
             copies,
@@ -1488,6 +1514,119 @@ mod candidate_augment {
             );
         }
     }
+}
+
+/// `utilities psv-discover` (docs/PREREG_psv_semiglobal_engine_2026-10-12.md): copy_assign's PSV column discovery on a
+/// catalog, no reads, families in parallel. Each family's copies are its catalog rows in file order (as `copy_assign
+/// --families` hands them to `build_family_profiles`), each a transcript of its exon blocks and `--copies-fa` sequence.
+fn psv_discover(
+    families: &str,
+    copies_fa: &str,
+    out: &str,
+    engine: &str,
+    blocks: bool,
+    only: Option<&str>,
+    threads: usize,
+) -> Result<()> {
+    use anyhow::{bail, Context};
+    use rayon::prelude::*;
+    use rustle::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv};
+    use rustle::copy_assign::copy_assign_pipeline::{discover_psvs_oriented_with, exon_map, PsvEngine};
+    use rustle::family_detect::DenovoTranscript;
+    use std::io::Write;
+
+    let engine = match engine {
+        "global" => PsvEngine::Global,
+        "semiglobal" => PsvEngine::Semiglobal,
+        e => bail!("--engine {e:?}: expected global or semiglobal"),
+    };
+    let blocks = blocks || engine == PsvEngine::Semiglobal;
+    let rows = parse_copies_tsv(&std::fs::read_to_string(families).with_context(|| format!("reading {families}"))?)?;
+    let seqs = parse_copies_fa(&std::fs::read_to_string(copies_fa).with_context(|| format!("reading {copies_fa}"))?)?;
+    let keep: Option<std::collections::BTreeSet<String>> = only
+        .map(|p| std::fs::read_to_string(p).map(|t| t.split_whitespace().map(String::from).collect()))
+        .transpose()?;
+    let fams: Vec<_> = group_families(rows)?
+        .into_iter()
+        .filter(|f| f.copies.len() >= 2 && keep.as_ref().map_or(true, |k| k.contains(&f.family_id)))
+        .collect();
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads.max(1)).build()?;
+    // per family: (cols lines, copies lines, pos lines, time line)
+    let results: Vec<Result<(String, String, String, String)>> = pool.install(|| {
+        fams.par_iter()
+            .map(|f| -> Result<(String, String, String, String)> {
+                let mut txs: Vec<DenovoTranscript> = Vec::with_capacity(f.copies.len());
+                for c in &f.copies {
+                    let s = seqs
+                        .get(&(c.family_id.clone(), c.copy_idx))
+                        .with_context(|| format!("{} copy {}: no --copies-fa sequence", c.family_id, c.copy_idx))?;
+                    txs.push(DenovoTranscript {
+                        tid: c.tid.clone(),
+                        chrom: c.chrom.clone(),
+                        start: c.start,
+                        end: c.end,
+                        n_reads: c.n_reads,
+                        strand: c.strand,
+                        introns: c.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect(),
+                        seq: s.seq.clone(),
+                        ..Default::default()
+                    });
+                }
+                let refs: Vec<&DenovoTranscript> = txs.iter().collect();
+                let maps: Vec<Vec<u64>> = refs.iter().map(|t| exon_map(t)).collect();
+                if maps.iter().zip(&refs).any(|(m, t)| m.len() != t.seq.len()) {
+                    bail!("{}: a copy's exon blocks and sequence lengths disagree", f.family_id);
+                }
+                let t0 = std::time::Instant::now();
+                let (cols, flipped) = discover_psvs_oriented_with(&refs, &maps, engine, blocks);
+                let secs = t0.elapsed().as_secs_f64();
+                let fid = &f.family_id;
+                let (mut lc, mut lp, mut lk) = (String::new(), String::new(), String::new());
+                for (j, col) in cols.iter().enumerate() {
+                    let g0 = col[0].map_or(-1, |(g, _)| g as i64);
+                    lc.push_str(&format!("{fid}\t{j}\t{g0}\n"));
+                    for (c, e) in col.iter().enumerate() {
+                        if let Some((g, b)) = e {
+                            lp.push_str(&format!("{fid}\t{j}\t{c}\t{g}\t{}\n", *b as char));
+                        }
+                    }
+                }
+                for (c, t) in refs.iter().enumerate() {
+                    let alleles: String =
+                        cols.iter().map(|col| col[c].map_or('.', |(_, b)| b as char)).collect();
+                    let strand = match (flipped[c], t.strand) {
+                        (true, '-') => '+',
+                        (true, _) => '-',
+                        (false, s) => s,
+                    };
+                    lk.push_str(&format!("{fid}\t{c}\t{}\t{alleles}\t{strand}\n", t.tid));
+                }
+                let len: usize = refs.iter().map(|t| t.seq.len()).sum();
+                let lt = format!("{fid}\t{}\t{len}\t{}\t{secs:.4}\n", refs.len(), cols.len());
+                Ok((lc, lk, lp, lt))
+            })
+            .collect()
+    });
+    let open = |suffix: &str, header: &str| -> Result<std::io::BufWriter<std::fs::File>> {
+        let mut w = std::io::BufWriter::new(std::fs::File::create(format!("{out}.{suffix}"))?);
+        writeln!(w, "{header}")?;
+        Ok(w)
+    };
+    let mut wc = open("psv_cols.tsv", "family_id\tcol_index\tgenome_pos")?;
+    let mut wk = open("psv_copies.tsv", "family_id\tcopy_index\tcopy_tid\talleles\tstrand")?;
+    let mut wp = open("psv_pos.tsv", "family_id\tcol_index\tcopy_index\tgenome_pos\tbase")?;
+    let mut wt = open("time.tsv", "family_id\tn_copies\ttotal_bp\tn_cols\tseconds")?;
+    let mut total = 0.0;
+    for r in results {
+        let (lc, lk, lp, lt) = r?;
+        wc.write_all(lc.as_bytes())?;
+        wk.write_all(lk.as_bytes())?;
+        wp.write_all(lp.as_bytes())?;
+        wt.write_all(lt.as_bytes())?;
+        total += lt.trim_end().rsplit('\t').next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+    }
+    eprintln!("[psv-discover] {} families, engine {engine:?}, blocks {blocks}: {total:.2} s summed over families", fams.len());
+    Ok(())
 }
 
 fn window_depth(bam: &str, copies: &str, max: u64, molecules: Option<&str>, pad: u64, exact: bool, out: &str) -> Result<()> {
