@@ -337,6 +337,15 @@ whose strand calls disagree) is aligned reverse-complemented, its alleles are st
 are read with its FRAME strand (`FamilyProfiles::strand`, dumped as `copy_strand`). Before, such pairs were aligned as
 given: 10/56 KB3781 families got a "PSV" at most bases (723 vs 9.8 columns/kb). The default read-star certificate
 never read these columns, so assignments were unchanged (`docs/PSV_SUN_PILEUP_2026-10-12.md`).
+**Engine (2026-10-12, default by user decision):** the copy-vs-copy alignment is `semiglobal_msa_pair` — match +2 /
+mismatch -3, gaps min(5 + 2k, 30) (a missing exon costs a constant, like an intron), local ends, a band around the
+chain of unique shared 11-mers capped by the anchors' columns — and only columns inside significant local blocks
+(`significant_block_mask`, Karlin-Altschul at alpha 1e-3) are PSV columns (`docs/PREREG_psv_semiglobal_engine_2026-10-12.md`:
+held-out precision 0.993-0.998 vs 0.42, junk pairs 119-766 vs 86-120 k, 5-20x faster). `RUSTLE_PSV_ENGINE=global` (or a
+legacy `RUSTLE_PSV_POASTA` / `RUSTLE_PSV_MINIMAP2` / `RUSTLE_PSV_BAND`) restores the previous global DP, now capped at
+2^29 DP cells per pair (above it the pair uses the semiglobal engine: the uncapped DP aborted at 13.8 / 135 GB on
+86 / 265-kb copies). `copy_assign` records `psv_engine` / `psv_blocks` in `params.tsv`. Assignments and quant are
+byte-identical either way (the read-star certificate builds its own columns).
 
 A **bubble** is `decisive` iff the copies carry ≥ 2 distinct non-`None` alleles there
 (`BubbleGraph::from_copies`, `copy_assign.rs:51`). Per column the read spans, every copy gets

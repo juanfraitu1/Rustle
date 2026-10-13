@@ -22455,13 +22455,44 @@ pub mod copy_assign {
             copies: &[&DenovoTranscript],
             exon_maps: &[Vec<u64>],
         ) -> (Vec<PsvColumn>, Vec<bool>) {
-            // the semiglobal engine always carries the significant-block guard (PREREG_psv_semiglobal_engine)
-            let engine = match std::env::var("RUSTLE_PSV_ENGINE").as_deref() {
-                Ok("semiglobal") => PsvEngine::Semiglobal,
-                _ => PsvEngine::Global,
-            };
-            let blocks = engine == PsvEngine::Semiglobal || std::env::var_os("RUSTLE_PSV_BLOCKS").is_some();
+            let (engine, blocks) = psv_engine_from(|k| std::env::var(k).ok());
             discover_psvs_oriented_with(copies, exon_maps, engine, blocks)
+        }
+
+        /// The PSV engine and block guard from the environment (`get` = an env lookup). DEFAULT = `Semiglobal` with its
+        /// significant-block guard (PREREG_psv_semiglobal_engine_2026-10-12; adopted as the default by the user
+        /// 2026-10-12: precision 0.993-0.998 vs 0.42 on held-out gorilla / chimp, junk 119-766 vs 86-120 k, 5-20x
+        /// faster). `RUSTLE_PSV_ENGINE=global`, or any legacy global-engine variable (`RUSTLE_PSV_POASTA`,
+        /// `RUSTLE_PSV_MINIMAP2`, `RUSTLE_PSV_BAND`), selects the previous global engine; `RUSTLE_PSV_BLOCKS` adds the
+        /// guard to it.
+        pub fn psv_engine_from(get: impl Fn(&str) -> Option<String>) -> (PsvEngine, bool) {
+            let legacy = ["RUSTLE_PSV_POASTA", "RUSTLE_PSV_MINIMAP2", "RUSTLE_PSV_BAND"]
+                .iter()
+                .any(|k| get(k).is_some());
+            let engine = match get("RUSTLE_PSV_ENGINE").as_deref() {
+                Some("global") => PsvEngine::Global,
+                Some(_) => PsvEngine::Semiglobal,
+                None if legacy => PsvEngine::Global,
+                None => PsvEngine::Semiglobal,
+            };
+            let blocks = engine == PsvEngine::Semiglobal || get("RUSTLE_PSV_BLOCKS").is_some();
+            (engine, blocks)
+        }
+
+        /// Largest DP traceback (cells = bytes) the GLOBAL engine may allocate for one copy pair; above it the pair is
+        /// aligned by `semiglobal_msa_pair` with its significant-block guard. Chimp MCL36 (86 kb) asked the banded DP
+        /// for 13.8 GB and aborted the process, human MCL1887 (265 kb) for 135 GB. 2^29 = 512 MiB: copies are aligned in
+        /// parallel, so several pairs at the cap still fit a genome-wide run's budget.
+        const GLOBAL_DP_MAX_CELLS: u128 = 1 << 29;
+
+        /// Does `banded_msa_pair`'s traceback ((rows + 1) x (2 band + 1) bytes) fit `GLOBAL_DP_MAX_CELLS`?
+        pub fn banded_dp_fits(len_ref: usize, band: usize) -> bool {
+            (len_ref as u128 + 1) * (2 * band as u128 + 1) <= GLOBAL_DP_MAX_CELLS
+        }
+
+        /// Does an unbanded (poasta fallback) DP of `len_a` x `len_b` fit `GLOBAL_DP_MAX_CELLS`?
+        pub fn full_dp_fits(len_a: usize, len_b: usize) -> bool {
+            (len_a as u128) * (len_b as u128) <= GLOBAL_DP_MAX_CELLS
         }
 
         /// `discover_psvs_oriented`; `blocks` = keep only columns inside `significant_block_mask` blocks. OPT-IN
@@ -22518,15 +22549,27 @@ pub mod copy_assign {
                                                  // (atomic nonce) so it is safe under the region-parallel sweep.
             let align_one = |other: usize| -> (BTreeMap<usize, usize>, BTreeSet<usize>) {
                 // strong gap-open anchors the conserved core column-for-column (same config as contiguous_core_coverage).
-                let semiglobal = engine == PsvEngine::Semiglobal;
+                let band = fixed_band
+                    .unwrap_or_else(|| ref_seq.len().abs_diff(oriented[other].len()) + PSV_BAND_MARGIN);
+                // the global DP is capped by memory: a pair it cannot hold goes to the semiglobal engine (+ guard)
+                let too_big = !banded_dp_fits(ref_seq.len(), band);
+                let mut semiglobal = engine == PsvEngine::Semiglobal || (!use_mm2 && !force_poasta && too_big);
                 let banded = if semiglobal || use_mm2 || force_poasta {
                     None
                 } else {
-                    let band = fixed_band.unwrap_or_else(|| {
-                        ref_seq.len().abs_diff(oriented[other].len()) + PSV_BAND_MARGIN
-                    });
                     banded_msa_pair(ref_seq, &oriented[other], band)
                 };
+                if !semiglobal && !use_mm2 && banded.is_none() && !full_dp_fits(ref_seq.len(), oriented[other].len()) {
+                    semiglobal = true; // the exact poasta fallback would not fit either
+                }
+                if semiglobal && engine == PsvEngine::Global {
+                    eprintln!(
+                        "[discover_psvs] {} x {} bp copy pair exceeds the global DP cap ({} cells): semiglobal engine",
+                        ref_seq.len(),
+                        oriented[other].len(),
+                        GLOBAL_DP_MAX_CELLS
+                    );
+                }
                 let aln = if semiglobal {
                     semiglobal_msa_pair(ref_seq, &oriented[other]) // None: no shared 11-mer, nothing aligns
                 } else if use_mm2 {
@@ -22547,7 +22590,7 @@ pub mod copy_assign {
                     if msa.len() == 2 {
                         let (r0, r1) = (&msa[0], &msa[1]);
                         // opt-in: only columns inside significant local blocks align (unshared stretches stay unaligned)
-                        let in_block = if blocks {
+                        let in_block = if blocks || semiglobal {
                             significant_block_mask(r0, r1, PSV_BLOCK_ALPHA)
                         } else {
                             vec![true; r0.len().min(r1.len())]
@@ -25864,6 +25907,40 @@ pub mod copy_assign {
                     let (s_band, _) = semiglobal_align_banded(&a, &b, &bands).expect("banded");
                     assert_eq!(s_band, s_full, "seed {seed}");
                 }
+            }
+
+            #[test]
+            fn the_default_psv_engine_is_semiglobal_and_legacy_variables_select_global() {
+                fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+                    move |k| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string())
+                }
+                assert_eq!(psv_engine_from(env(&[])), (PsvEngine::Semiglobal, true));
+                assert_eq!(psv_engine_from(env(&[("RUSTLE_PSV_ENGINE", "global")])), (PsvEngine::Global, false));
+                assert_eq!(
+                    psv_engine_from(env(&[("RUSTLE_PSV_ENGINE", "global"), ("RUSTLE_PSV_BLOCKS", "1")])),
+                    (PsvEngine::Global, true)
+                );
+                for legacy in ["RUSTLE_PSV_POASTA", "RUSTLE_PSV_MINIMAP2", "RUSTLE_PSV_BAND"] {
+                    let pairs: &'static [(&'static str, &'static str)] = match legacy {
+                        "RUSTLE_PSV_POASTA" => &[("RUSTLE_PSV_POASTA", "1")],
+                        "RUSTLE_PSV_MINIMAP2" => &[("RUSTLE_PSV_MINIMAP2", "1")],
+                        _ => &[("RUSTLE_PSV_BAND", "500")],
+                    };
+                    assert_eq!(psv_engine_from(env(pairs)), (PsvEngine::Global, false), "{legacy}");
+                }
+            }
+
+            #[test]
+            fn the_global_dp_is_capped_where_it_would_not_fit_in_memory() {
+                // chimp MCL36 (86,437 bp vs a shorter copy) asked the banded DP for 13.8 GB and aborted;
+                // human MCL1887 (264,944 vs 10,776) for 135 GB
+                assert!(!banded_dp_fits(86_437, 86_437 - 10_000 + 1024));
+                assert!(!banded_dp_fits(264_944, 264_944 - 10_776 + 1024));
+                assert!(banded_dp_fits(5_000, 800 + 1024));
+                assert!(banded_dp_fits(23_956, 956 + 1024));
+                // the exact poasta fallback is O(n m)
+                assert!(full_dp_fits(5_000, 4_200));
+                assert!(!full_dp_fits(86_437, 62_947));
             }
 
             #[test]

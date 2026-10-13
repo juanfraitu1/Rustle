@@ -115,3 +115,14 @@ PSV stats, PSV columns (33,015 -> 4,298; the RNA-editing pre-pass removes some) 
 post-E2) -> the engine stays OPT-IN.** P1-P3 pass on every substrate where they are computable; total time is 4.5-20x
 lower than the current engine, which itself aborts on 86-kb (chimp) and longer (human) copies. Adopting it as the
 default despite the per-family bar is a decision for the user, not this prereg.
+
+## Adoption (user decision, 2026-10-12)
+
+The user chose to make the semiglobal engine the DEFAULT despite the per-family 2-s bar (P4) failing, and to cap the
+previous engine's memory. Implemented: `psv_engine_from` (default semiglobal + guard; `RUSTLE_PSV_ENGINE=global` or a
+legacy variable selects the global DP), `GLOBAL_DP_MAX_CELLS = 2^29` with pairs above it routed to the semiglobal
+engine, `params.tsv` rows `psv_engine` / `psv_blocks`, `utilities psv-discover --engine` default semiglobal. Checks:
+library 1,032 pass (2 new tests); full suite 1,257 pass / 3 fail (pre-existing `pipeline_driver_dispatch`, unrelated);
+capped global on chimp: all 393 families in 37 s wall, 429 MB (MCL36 / MCL9 / MCL233 pairs routed); default on human
+with E2: 66.4 s summed / 39.7 s wall (was 212.9 / 115.7), 2 families > 2 s (MCL1887 5.1 s, MCL1904 2.4 s);
+`copy_assign` default on DEV: assignments and quant byte-identical, `psv_engine semiglobal`, columns = the opt-in run.

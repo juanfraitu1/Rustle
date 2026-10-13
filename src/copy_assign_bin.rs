@@ -11309,6 +11309,11 @@ fn main() -> Result<()> {
             }
         }
         row("dump_psv", format!("{}", args.dump_psv))?;
+        // the copy-vs-copy PSV alignment engine (RUSTLE_PSV_ENGINE; semiglobal by default since 2026-10-12)
+        let (psv_engine, psv_blocks) =
+            rustle::copy_assign::copy_assign_pipeline::psv_engine_from(|k| std::env::var(k).ok());
+        row("psv_engine", format!("{psv_engine:?}").to_lowercase())?;
+        row("psv_blocks", format!("{psv_blocks}"))?;
         row("phase", format!("{}", args.phase))?;
         row("posterior", format!("{}", args.posterior))?;
         row("em", format!("{}", args.em))?;

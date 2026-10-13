@@ -104,8 +104,8 @@ enum Cmd {
         copies_fa: String,
         #[arg(long)]
         out: String,
-        /// `global` (today's banded DP) or `semiglobal` (PREREG_psv_semiglobal_engine).
-        #[arg(long, default_value = "global")]
+        /// `semiglobal` (the default engine since 2026-10-12) or `global` (the previous banded DP).
+        #[arg(long, default_value = "semiglobal")]
         engine: String,
         /// Keep only columns inside significant local blocks (always on with `--engine semiglobal`).
         #[arg(long)]
