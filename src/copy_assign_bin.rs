@@ -1037,6 +1037,24 @@ struct Args {
     /// its base there and every candidate's base (the assignment-proof figure's source). Default OFF.
     #[arg(long, default_value_t = false)]
     dump_star: bool,
+    /// spec 2026-10-12-population-fixed-psvs: a `psv_population.tsv` (bench/popfix/table.py). Writes
+    /// `<out>.population_tier.tsv`: per contested molecule the normal call, the call on population-FIXED PSVs only,
+    /// and the tier. Columns: `status_all`/`copy_all` = this run's call (as in assignments.tsv);
+    /// `status_fixed`/`copy_fixed` = the read-star certificate on population-FIXED PSV columns only
+    /// (`n_dec_fixed` = its decisive columns); `tier` PORTABLE = both assign the same copy, REFERENCE_ONLY = the run
+    /// assigns but the fixed-only certificate does not (or picks another copy), UNASSIGNED = the run does not
+    /// assign. Needs the default read-star path (genomic, two-form, pooled molecules). Default OFF: no change to
+    /// any output. Also adds a 10th `positions` column to `--dump-star`'s `star_reads.tsv` (always).
+    #[arg(long)]
+    psv_population: Option<String>,
+    /// With `--psv-population`: decide on population-FIXED PSVs only (assignments.tsv = portable calls). The
+    /// `posterior` column of the other outputs still reflects all columns. Governs the certificate-decided
+    /// (contested) molecules only: uncontested rows (`contested` = 0, the aligner's MAPQ-60 placement) keep the
+    /// aligner's call and are not population-checked. Under this flag the `readthrough_into` column and the
+    /// `readthrough_explained` count can differ from a non-strict run for molecules whose best copy moved (the
+    /// read-through credit is withdrawn, fail-closed).
+    #[arg(long, default_value_t = false)]
+    psv_fixed_only: bool,
     /// Escape hatch (§6fm): count every read-star hit for a candidate even when it does not overlap the
     /// candidate's unit inside the target (the §6fd behaviour).
     #[arg(long, default_value_t = false)]
@@ -1370,6 +1388,74 @@ fn status_str(s: AssignStatus) -> &'static str {
         AssignStatus::Assigned => "assigned",
         AssignStatus::Ambiguous => "ambiguous",
         AssignStatus::Tied => "tied",
+    }
+}
+
+/// spec 2026-10-12-population-fixed-psvs: the flag combinations `--psv-population` / `--psv-fixed-only` can run
+/// under. The fixed-only certificate lives in the pooled (molecule-observation) genomic two-form read-star path —
+/// the only path that computes genome positions per column — so a request under any escape flag that leaves that
+/// path would silently produce no tiers; refuse it and name the flag instead.
+fn check_population_flags(
+    population: bool,
+    fixed_only: bool,
+    two_form_genomic: bool,
+    molecule_pool: bool,
+) -> Result<(), String> {
+    if fixed_only && !population {
+        return Err("--psv-fixed-only needs --psv-population FILE".into());
+    }
+    if population && !two_form_genomic {
+        return Err("--psv-population needs the default read-star path (genomic, two-form); drop --read-star-unit / --read-star-genomic-only".into());
+    }
+    if population && !molecule_pool {
+        return Err("--psv-population needs the pooled read-star path; drop --no-molecule-observations".into());
+    }
+    Ok(())
+}
+
+/// The portability tier of a molecule from the run's call and the fixed-only certificate's.
+fn tier_name(s_all: AssignStatus, c_all: usize, s_fixed: AssignStatus, c_fixed: usize) -> &'static str {
+    match (s_all, s_fixed) {
+        (AssignStatus::Assigned, AssignStatus::Assigned) if c_all == c_fixed => "PORTABLE",
+        (AssignStatus::Assigned, _) => "REFERENCE_ONLY",
+        _ => "UNASSIGNED",
+    }
+}
+
+/// Parse an emitted row's status string (`status_str`) back to the enum; anything but the two non-tied words is
+/// `Tied` (the only other value `status_str` emits).
+fn status_from_str(s: &str) -> AssignStatus {
+    match s {
+        "assigned" => AssignStatus::Assigned,
+        "ambiguous" => AssignStatus::Ambiguous,
+        _ => AssignStatus::Tied,
+    }
+}
+
+/// One `population_tier.tsv` line for an emitted assignments row (R25). `status_all`/`copy_all` are the EMITTED row's
+/// (XFAM reconcile / placement escape can change them after the read-star closure that registered the tier);
+/// `status_fixed`/`copy_fixed`/`n_dec_fixed` are the tier's. A contested molecule with no tier (an early return
+/// that never reached the certificate) is written as a fixed-only Tied with no evidence: `NA`/`NA`/`0`.
+fn tier_line(
+    read_name: &str,
+    family_id: &str,
+    status: &str,
+    assigned_copy: usize,
+    tier: Option<&rustle::copy_assign::copy_assign_pipeline::PopulationTier>,
+) -> String {
+    let s_all = status_from_str(status);
+    match tier {
+        Some(t) => format!(
+            "{read_name}\t{family_id}\t{status}\t{assigned_copy}\t{}\t{}\t{}\t{}",
+            status_str(t.status_fixed),
+            t.copy_fixed,
+            t.n_dec_fixed,
+            tier_name(s_all, assigned_copy, t.status_fixed, t.copy_fixed)
+        ),
+        None => format!(
+            "{read_name}\t{family_id}\t{status}\t{assigned_copy}\tNA\tNA\t0\t{}",
+            tier_name(s_all, assigned_copy, AssignStatus::Tied, 0)
+        ),
     }
 }
 
@@ -6226,6 +6312,37 @@ fn main() -> Result<()> {
         origin_consistency_check: args.origin_consistency_check,
         ..AssignParams::default()
     };
+    check_population_flags(
+        args.psv_population.is_some(),
+        args.psv_fixed_only,
+        params.read_star_genomic && params.read_star_two_form,
+        params.molecule_pool,
+    )
+    .map_err(|e| anyhow::anyhow!(e))?;
+    if let Some(path) = args.psv_population.as_deref() {
+        let text = std::fs::read_to_string(path).with_context(|| format!("reading --psv-population {path}"))?;
+        let pop = rustle::copy_assign::copy_assign_pipeline::parse_psv_population(&text, args.psv_fixed_only)?;
+        // chrom names must match the catalog's (R22: only checkable when `--families` supplied the catalog)
+        if let Some(rf) = &region_families {
+            let catalog_chroms: std::collections::HashSet<&str> = rf
+                .values()
+                .flat_map(|fams| fams.iter().flat_map(|f| f.copies.iter().map(|c| c.chrom.as_str())))
+                .collect();
+            let on_catalog = pop.fixed.iter().filter(|(c, _)| catalog_chroms.contains(c.as_str())).count();
+            if on_catalog == 0 {
+                eprintln!(
+                    "[copy_assign] WARNING: --psv-population: 0 of {} FIXED sites lie on a catalog copy's chromosome (chrom names?); no molecule can be PORTABLE (under --psv-fixed-only none is assigned)",
+                    pop.fixed.len()
+                );
+            }
+        }
+        eprintln!(
+            "[copy_assign] --psv-population {path}: {} FIXED sites{}",
+            pop.fixed.len(),
+            if args.psv_fixed_only { " (decide on FIXED PSVs only)" } else { "" }
+        );
+        rustle::copy_assign::copy_assign_pipeline::register_psv_population(pop);
+    }
     eprintln!(
         "[copy_assign] decisive-margin tau={} error_rate={}",
         args.margin, args.error_rate
@@ -7779,7 +7896,7 @@ fn main() -> Result<()> {
                     format!("CAFAM{gfam}")
                 };
                 gfam += 1;
-                if args.dump_star {
+                if args.dump_star || args.psv_population.is_some() {
                     for tid in &fa.copy_tids {
                         tid_family.insert(tid.clone(), fid.clone());
                     }
@@ -10471,7 +10588,7 @@ fn main() -> Result<()> {
     if args.dump_star {
         let proofs = rustle::copy_assign::copy_assign_pipeline::take_star_proofs();
         let mut sh = std::fs::File::create(format!("{}.star_reads.tsv", args.out))?;
-        writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns")?;
+        writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns\tpositions")?;
         let mut n = 0usize;
         let mut written: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
         for r in &assign_rows {
@@ -10498,9 +10615,25 @@ fn main() -> Result<()> {
                     format!("{pos}:{}:{cands}", ch(pf.obs.get(j).copied().flatten()))
                 })
                 .collect();
+            // spec 2026-10-12-population-fixed-psvs: per column the candidates' 0-based genome positions in `candidates`
+            // order joined by `/` (`.` = none; every candidate `.` when the proof carries no positions, i.e. off the
+            // two-form path), columns joined by `,`
+            let positions: Vec<String> = (0..pf.cols.len())
+                .map(|j| {
+                    (0..pf.cand.len())
+                        .map(|k| {
+                            pf.gpos
+                                .get(k)
+                                .and_then(|v| v.get(j).copied().flatten())
+                                .map_or(".".to_string(), |g| g.to_string())
+                        })
+                        .collect::<Vec<_>>()
+                        .join("/")
+                })
+                .collect();
             writeln!(
                 sh,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 r.read_name,
                 r.family_id,
                 r.status,
@@ -10513,11 +10646,44 @@ fn main() -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(","),
                 pf.cols.len(),
-                cols.join(",")
+                cols.join(","),
+                positions.join(",")
             )?;
             n += 1;
         }
         eprintln!("[copy_assign] --dump-star: {n} molecule proofs -> {}.star_reads.tsv (columns = read_pos:read_base:candidate_bases in `candidates` order, `.` = uncovered)", args.out);
+    }
+    // spec 2026-10-12-population-fixed-psvs: `<out>.population_tier.tsv` — per CONTESTED molecule (one row per
+    // (molecule, family)) the emitted call beside the call on population-FIXED PSVs only, and the portability tier.
+    // `status_all`/`copy_all` are the emitted assignments.tsv row's; `status_fixed`/`copy_fixed`/`n_dec_fixed` the tier's.
+    // A contested molecule with no tier is written with NA/NA/0 so the file never silently omits one.
+    if args.psv_population.is_some() {
+        let tiers = rustle::copy_assign::copy_assign_pipeline::take_population_tiers();
+        let mut th = std::fs::File::create(format!("{}.population_tier.tsv", args.out))?;
+        writeln!(th, "read_name\tfamily_id\tstatus_all\tcopy_all\tstatus_fixed\tcopy_fixed\tn_dec_fixed\ttier")?;
+        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        let (mut n_tier, mut n_no_tier) = (0usize, 0usize);
+        for r in &assign_rows {
+            let t = tiers.get(&r.read_name).and_then(|v| {
+                v.iter().find(|t| t.cand_tids.first().and_then(|x| tid_family.get(x)) == Some(&r.family_id))
+            });
+            if t.is_none() && !r.contested {
+                continue;
+            }
+            if !seen.insert((r.read_name.clone(), r.family_id.clone())) {
+                continue;
+            }
+            if t.is_some() {
+                n_tier += 1;
+            } else {
+                n_no_tier += 1;
+            }
+            writeln!(th, "{}", tier_line(&r.read_name, &r.family_id, r.status, r.assigned_copy, t))?;
+        }
+        eprintln!(
+            "[copy_assign] --psv-population: {n_tier} molecule tiers (+{n_no_tier} contested rows without a tier) -> {}.population_tier.tsv",
+            args.out
+        );
     }
     // --dump-psv: the raw per-molecule PSV genotype matrix (the assignment-proof evidence). reads × PSV columns
     // (each read's base + its assignment), the per-copy alleles, and the column→genome map — for the figure.
@@ -11327,6 +11493,8 @@ fn main() -> Result<()> {
         let (psv_engine, psv_blocks) =
             rustle::copy_assign::copy_assign_pipeline::psv_engine_from(|k| std::env::var(k).ok());
         row("psv_engine", format!("{psv_engine:?}").to_lowercase())?;
+        row("psv_population", args.psv_population.clone().unwrap_or_else(|| "NONE".into()))?;
+        row("psv_fixed_only", format!("{}", args.psv_fixed_only))?;
         row("psv_blocks", format!("{psv_blocks}"))?;
         row("phase", format!("{}", args.phase))?;
         row("posterior", format!("{}", args.posterior))?;
@@ -14768,5 +14936,64 @@ mod tests {
         let mut src = rg_tx("c1", "G", "a", 5, &[(1, 10)], "+");
         src.extend(rg_tx("c1", "G", "G.rg2", 1, &[(50, 60)], "+"));
         assert!(regroup_gtf_lines(&mut src).is_err());
+    }
+}
+
+#[cfg(test)]
+mod popfix_flag_tests {
+    use super::{check_population_flags, tier_line, tier_name};
+    use super::AssignStatus as S;
+    use rustle::copy_assign::copy_assign_pipeline::PopulationTier;
+
+    #[test]
+    fn fixed_only_requires_the_table_and_the_default_read_star_path() {
+        // (population, fixed_only, two_form_genomic, molecule_pool)
+        assert!(check_population_flags(false, false, true, true).is_ok());
+        assert!(check_population_flags(true, true, true, true).is_ok());
+        assert!(check_population_flags(false, true, true, true).unwrap_err().contains("--psv-population"));
+        assert!(check_population_flags(true, false, false, true).unwrap_err().contains("read-star"));
+        // R20: the non-pooled path never computes positions or tiers; the error names the offending flag
+        assert!(check_population_flags(true, false, true, false).unwrap_err().contains("--no-molecule-observations"));
+        // without the population table the other escape flags are none of this guard's business
+        assert!(check_population_flags(false, false, false, false).is_ok());
+    }
+
+    #[test]
+    fn tier_names_follow_the_spec() {
+        assert_eq!(tier_name(S::Assigned, 3, S::Assigned, 3), "PORTABLE");
+        assert_eq!(tier_name(S::Assigned, 3, S::Ambiguous, 3), "REFERENCE_ONLY");
+        assert_eq!(tier_name(S::Assigned, 3, S::Assigned, 4), "REFERENCE_ONLY");
+        assert_eq!(tier_name(S::Tied, 3, S::Assigned, 4), "UNASSIGNED");
+        // a contested molecule with no tier is a fixed-only Tied with no evidence (R25 no-tier rule)
+        assert_eq!(tier_name(S::Assigned, 3, S::Tied, 0), "REFERENCE_ONLY");
+        assert_eq!(tier_name(S::Ambiguous, 3, S::Tied, 0), "UNASSIGNED");
+    }
+
+    fn tier(status_fixed: S, copy_fixed: usize, n_dec: usize) -> PopulationTier {
+        PopulationTier {
+            // the library's own `status_all`/`copy_all` are NOT what the file reports (R25): poison them
+            status_all: S::Tied,
+            copy_all: 99,
+            status_fixed,
+            copy_fixed,
+            n_dec_fixed: n_dec,
+            cand_tids: vec!["t0".into(), "t1".into()],
+        }
+    }
+
+    #[test]
+    fn tier_line_takes_the_all_call_from_the_emitted_row() {
+        // agrees with the emitted row -> PORTABLE
+        let t = tier(S::Assigned, 1, 4);
+        assert_eq!(tier_line("r1", "F1", "assigned", 1, Some(&t)), "r1\tF1\tassigned\t1\tassigned\t1\t4\tPORTABLE");
+        // fixed-only picks another copy -> REFERENCE_ONLY
+        let t = tier(S::Assigned, 0, 2);
+        assert_eq!(tier_line("r1", "F1", "assigned", 1, Some(&t)), "r1\tF1\tassigned\t1\tassigned\t0\t2\tREFERENCE_ONLY");
+        // the run does not assign -> UNASSIGNED whatever the fixed-only certificate says
+        let t = tier(S::Assigned, 1, 2);
+        assert_eq!(tier_line("r1", "F1", "tied", 1, Some(&t)), "r1\tF1\ttied\t1\tassigned\t1\t2\tUNASSIGNED");
+        // no tier (orphan early return): NA / NA / 0 and the no-evidence tier
+        assert_eq!(tier_line("r2", "F1", "assigned", 0, None), "r2\tF1\tassigned\t0\tNA\tNA\t0\tREFERENCE_ONLY");
+        assert_eq!(tier_line("r2", "F1", "ambiguous", 0, None), "r2\tF1\tambiguous\t0\tNA\tNA\t0\tUNASSIGNED");
     }
 }
