@@ -40,4 +40,7 @@ are", item 1).
 
 ## Results
 
-(pending)
+- **F1 PASS.** Red (`cargo test --release --lib -- a_connected_pair a_pair_joins`, before the fix): `a_connected_pair_is_one_family_at_every_weight` failed at `w = 0.99` with `left: [[0], [1]]`; `a_pair_joins_inside_a_mixed_graph_and_the_rest_is_untouched` failed with `left: [[0, 1, 2], [3], [4], [5]]`. Green (after): these two and `the_pair_rule_touches_only_two_node_components` pass, `3 passed`; whole lib `1051 passed; 0 failed; 13 ignored`.
+- **F3 PASS.** denovo_intact/guided_intact (denovo_F/guided_F), before -> after, HEAD binary vs fixed binary: human SNRPB `snp_0.01` 0/0 (0.0000/0.0000) -> 1/1 (1.0000/1.0000); `snp_0.1` 0/0 (0.0000/0.0000) -> 1/1 (1.0000/1.0000); `shuffle` 0/1 (0.0000/1.0000) -> 1/1 (1.0000/1.0000); orangutan SPAG7 `snp_0.01` 0/0 (0.0000/0.0000) -> 1/1 (1.0000/1.0000); `snp_0.1` 0/0 (0.0000/0.0000) -> 1/1 (1.0000/1.0000). The before state equals the 10-02 tables; the only arm already intact before the fix is human `shuffle` guided (1, as on 10-02).
+- **F4 PASS.** `cargo test --release --no-fail-fast`: 1290 passed, 3 failed, 14 ignored; the 3 failures are the known `tests/pipeline_driver_dispatch.rs` tests (`all_runs_assemble_families_assign_flag_and_neither_catalog_nor_candidates`, `all_with_candidates_runs_the_candidates_stage_between_families_and_assign`, `all_with_legacy_catalog_runs_the_catalog_stage_between_families_and_assign`; each `left: 127, right: 0`).
+- **F2:** Task 2

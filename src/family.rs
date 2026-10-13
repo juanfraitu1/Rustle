@@ -60909,7 +60909,7 @@ pub mod fam_from_gtf {
                     break;
                 }
             }
-            attractors(&col, n)
+            join_two_node_components(&g.edges, attractors(&col, n))
         }
 
         fn normalize(col: &mut [BTreeMap<usize, f64>]) {
@@ -60977,6 +60977,43 @@ pub mod fam_from_gtf {
                 groups.entry(r).or_default().push(i);
             }
             let mut out: Vec<Vec<usize>> = groups.into_values().collect();
+            out.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
+            out
+        }
+
+        /// PREREG_mcl_two_node_2026-10-13: a connected component of exactly two nodes is ONE cluster. On two nodes MCL's
+        /// column converges toward a tie between "self" and "mate", and the 1e-7 convergence test stopped at a residual
+        /// whose SIGN chose join or split (0.99 split, 0.98 joined). Flow never crosses components, so a pair's fate is
+        /// settled here and every other cluster passes through unchanged, in the same order.
+        fn join_two_node_components(
+            edges: &BTreeMap<(usize, usize), f64>,
+            clusters: Vec<Vec<usize>>,
+        ) -> Vec<Vec<usize>> {
+            let mut deg: BTreeMap<usize, usize> = BTreeMap::new();
+            for &(a, b) in edges.keys() {
+                if a != b {
+                    *deg.entry(a).or_default() += 1;
+                    *deg.entry(b).or_default() += 1;
+                }
+            }
+            let mut mate: BTreeMap<usize, usize> = BTreeMap::new();
+            for &(a, b) in edges.keys() {
+                if a != b && deg[&a] == 1 && deg[&b] == 1 {
+                    mate.insert(a, b);
+                    mate.insert(b, a);
+                }
+            }
+            if mate.is_empty() {
+                return clusters;
+            }
+            let mut out: Vec<Vec<usize>> = Vec::with_capacity(clusters.len());
+            for c in clusters {
+                match (c.len(), c.first().and_then(|x| mate.get(x))) {
+                    (1, Some(&m)) if m > c[0] => out.push(vec![c[0], m]),
+                    (1, Some(_)) => {}
+                    _ => out.push(c),
+                }
+            }
             out.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
             out
         }
@@ -61339,6 +61376,61 @@ pub mod fam_from_gtf {
                     big.iter().all(|p| p.len() == 3),
                     "each clique keeps its three members: {parts:?}"
                 );
+            }
+
+            fn pair_graph(w: f64) -> HomologyGraph {
+                let mut g = HomologyGraph::default();
+                g.genes.push(("c".to_string(), 1, 100));
+                g.genes.push(("c".to_string(), 201, 300));
+                g.edges.insert((0, 1), w);
+                g
+            }
+
+            /// PREREG_mcl_two_node_2026-10-13 F1: a connected pair is ONE family at every weight. Before the fix the
+            /// sign of a 1e-7 convergence residual decided it: the probe split 0.99, 0.985, 0.90 and 0.75, and 160 of
+            /// the 500 weights 0.500..0.999 split at the shipped inflation 2.8 / prune 1e-9.
+            #[test]
+            fn a_connected_pair_is_one_family_at_every_weight() {
+                for w in [0.999, 0.995, 0.99, 0.985, 0.98, 0.97, 0.95, 0.93, 0.90, 0.85, 0.80, 0.75] {
+                    assert_eq!(mcl(&pair_graph(w), 2.8, 100, 1e-9), vec![vec![0, 1]], "w = {w}");
+                }
+                let split: Vec<f64> = (0..500)
+                    .map(|i| 0.5 + 0.001 * i as f64)
+                    .filter(|&w| mcl(&pair_graph(w), 2.8, 100, 1e-9).len() != 1)
+                    .collect();
+                assert!(split.is_empty(), "{} weights still split, e.g. {:?}", split.len(), &split[..split.len().min(8)]);
+            }
+
+            /// F1: inside a mixed graph the pair joins, while the triangle and the edge-free node stay as MCL leaves
+            /// them, in the shipped order (size desc, then first member). A pair's fate also depended on the REST of the
+            /// graph, because convergence is tested on all columns at once: here 0.90 splits and 0.99 joins.
+            #[test]
+            fn a_pair_joins_inside_a_mixed_graph_and_the_rest_is_untouched() {
+                let mut g = HomologyGraph::default();
+                for i in 0..6u64 {
+                    g.genes.push(("c".to_string(), i * 100 + 1, i * 100 + 50));
+                }
+                for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+                    g.edges.insert((a, b), 0.95);
+                }
+                g.edges.insert((3, 4), 0.90); // splits in this graph before the fix
+                assert_eq!(mcl(&g, 2.8, 100, 1e-9), vec![vec![0, 1, 2], vec![3, 4], vec![5]]);
+            }
+
+            /// F1: the rule reads the GRAPH, not MCL's output: nodes of a path or a triangle that MCL left as singletons
+            /// are not pairs (each has two edges), an edge-free node stays alone, and a joined pair takes its sorted place.
+            #[test]
+            fn the_pair_rule_touches_only_two_node_components() {
+                let mut edges: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+                for (a, b) in [(0, 1), (1, 2), (3, 4), (3, 5), (4, 5)] {
+                    edges.insert((a, b), 0.9);
+                }
+                let singles: Vec<Vec<usize>> = (0..7).map(|i| vec![i]).collect();
+                assert_eq!(join_two_node_components(&edges, singles.clone()), singles);
+                edges.insert((7, 8), 0.9);
+                let mut want: Vec<Vec<usize>> = vec![vec![7, 8]];
+                want.extend((0..7).map(|i| vec![i]));
+                assert_eq!(join_two_node_components(&edges, (0..9).map(|i| vec![i]).collect()), want);
             }
 
             #[test]
