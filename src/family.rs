@@ -22109,10 +22109,11 @@ pub mod copy_assign {
         }
 
         /// spec §3: one contested molecule's portability tier (`--psv-population`), keyed like `StarProof` (a molecule
-        /// certified in two families gets one row per family). `status_all`/`copy_all`: the run's FINAL call for the
-        /// molecule (after the origin certificate and the tie-outside gate; under `--psv-fixed-only` that call was
-        /// made on the fixed-only certificate); `status_fixed`/`copy_fixed`/`n_dec_fixed`: the pairwise certificate on
-        /// population-FIXED columns only, before the later gates.
+        /// certified in two families gets one row per family). `status_all`/`copy_all`: the molecule's call at the END
+        /// of the read-star closure (after the origin certificate and the tie-outside gate; under `--psv-fixed-only`
+        /// made on the fixed-only certificate) — later stages may still change it, so the binary (Task 7) reports the
+        /// emitted assignments.tsv row's status/copy instead; `status_fixed`/`copy_fixed`/`n_dec_fixed`: the pairwise
+        /// certificate on population-FIXED columns only, before the later gates.
         #[derive(Clone, Debug)]
         pub struct PopulationTier {
             pub status_all: AssignStatus,
@@ -22138,6 +22139,61 @@ pub mod copy_assign {
                 .get()
                 .map(|m| std::mem::take(&mut *m.lock().unwrap()))
                 .unwrap_or_default()
+        }
+
+        /// A read-star target offset of copy `ci` → its 0-based forward genome position, by the form the copy's hit
+        /// came from (`form[ci]` from `merge_star_raw`): UNIT form = the spliced offset through `exon_map`
+        /// (`unit_maps[ci]`, handles '-'); GENOMIC form = the forward locus slice, `target_starts[ci] + off`.
+        pub fn star_offset_to_genome(
+            ci: usize,
+            off: u32,
+            form: &[bool],
+            unit_maps: &[Vec<u64>],
+            target_starts: &[u64],
+        ) -> Option<u64> {
+            if form.get(ci).copied().unwrap_or(false) {
+                unit_maps.get(ci)?.get(off as usize).copied()
+            } else {
+                target_starts.get(ci).map(|&s| s + off as u64)
+            }
+        }
+
+        /// `fixed[k][j]`: candidate `k`'s base at column `j` sits on a population-FIXED site (its own chromosome
+        /// `chroms[k]`, position `gpos[k][j]`). R20: no positions (`gpos` empty — the family is off the two-form
+        /// path) means NO fixed column, so the fixed-only certificate ties rather than borrowing the full-column call.
+        pub fn fixed_matrix(gpos: &[Vec<Option<u64>>], chroms: &[&str], n_cols: usize, pop: &PsvPopulation) -> Vec<Vec<bool>> {
+            chroms
+                .iter()
+                .enumerate()
+                .map(|(k, c)| {
+                    let mut key = (c.to_string(), 0u64);
+                    (0..n_cols)
+                        .map(|j| match gpos.get(k).and_then(|v| v.get(j).copied().flatten()) {
+                            Some(g) => {
+                                key.1 = g;
+                                pop.fixed.contains(&key)
+                            }
+                            None => false,
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+
+        /// The §6fi/L3 sole-candidate promotion applies unless the origin certificate rejected the candidate — and,
+        /// R24, never under `--psv-fixed-only`: portability rests on population-FIXED PSVs; a sole candidate rests on none.
+        pub fn sole_candidate_promotes(sole_candidate: bool, origin_rejected: bool, strict_fixed_only: bool) -> bool {
+            sole_candidate && !origin_rejected && !strict_fixed_only
+        }
+
+        /// R25 (fail-closed): the read-through credit (`n_explained_unaligned`) was computed for the full-column best
+        /// `bk_all`; when the `--psv-fixed-only` override moved the best to `bk`, it is withdrawn.
+        pub fn readthrough_credit(n_explained: usize, bk: usize, bk_all: usize) -> usize {
+            if bk != bk_all {
+                0
+            } else {
+                n_explained
+            }
         }
 
         /// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
@@ -24393,6 +24449,8 @@ pub mod copy_assign {
                 let want_gpos = psv_population().is_some() || p.dump_star;
                 let unit_maps: Vec<Vec<u64>> =
                     if want_gpos { copies.iter().map(|c| exon_map(c)).collect() } else { Vec::new() };
+                let target_starts: Vec<u64> =
+                    if want_gpos { copies.iter().map(|c| target_of(c).0).collect() } else { Vec::new() };
                 let (alns, star_gpos): (Vec<ReadStarObs>, Vec<Vec<Vec<Option<u64>>>>) = if genomic_spans.is_some()
                     && p.read_star_two_form
                 {
@@ -24418,11 +24476,7 @@ pub mod copy_assign {
                             );
                             let gp = if want_gpos {
                                 let to_g = |ci: usize, off: u32| -> Option<u64> {
-                                    if form[ci] {
-                                        unit_maps[ci].get(off as usize).copied() // unit form: spliced offset -> genome
-                                    } else {
-                                        Some(target_of(copies[ci]).0 + off as u64) // genomic form: locus start + offset
-                                    }
+                                    star_offset_to_genome(ci, off, &form, &unit_maps, &target_starts)
                                 };
                                 star_column_genome_positions(&o.5, &o.0, &pp, &to_g)
                             } else {
@@ -24445,7 +24499,9 @@ pub mod copy_assign {
                         indel_min_len,
                     );
                     let n = o.len();
-                    (o, vec![Vec::new(); n]) // no positions off the default path (the binary refuses the flags there)
+                    // no positions off the two-form path: under a population every column then counts as not FIXED
+                    // (R20, `fixed_matrix`), so the fixed-only certificate ties
+                    (o, vec![Vec::new(); n])
                 };
                 if timing {
                     eprintln!(
@@ -24763,33 +24819,30 @@ pub mod copy_assign {
                 // spec 2026-10-12-population-fixed-psvs §3: the same pairwise certificate on population-FIXED columns
                 // only (`--psv-population`); its tier row is registered at the end of the closure (R18)
                 let mut fixed_cert: Option<FixedCert> = None;
+                let strict_fixed_only = psv_population().map_or(false, |pop| pop.strict);
                 if let Some(pop) = psv_population() {
-                    if !gpos.is_empty() {
-                        let fixed: Vec<Vec<bool>> = gpos
-                            .iter()
-                            .enumerate()
-                            .map(|(k, v)| {
-                                let chrom = &copies[cand[k]].chrom;
-                                v.iter().map(|g| g.map_or(false, |g| pop.fixed.contains(&(chrom.clone(), g)))).collect()
-                            })
-                            .collect();
-                        let partner: Vec<bool> = (0..cand.len()).map(|k| partner_k.contains(&k)).collect();
-                        let fc = fixed_only_certificate(&feats.psv_obs, &profiles, &fixed, &partner, p);
-                        if pop.strict {
-                            // --psv-fixed-only: the fixed-only certificate IS the decision (later gates still apply).
-                            // R19: only the decision fields come from it; posterior, the nearest sibling /
-                            // sibling_identity and n_cols_vs_nearest_sibling stay the full-column certificate's.
-                            status = fc.status;
-                            bk = fc.best;
-                            p_read = fc.p_read;
-                            min_p = fc.min_p;
-                            margin_min = fc.margin;
-                            n_dec_min = fc.n_dec;
-                            k0 = fc.n_dec == 0; // keeps `resolvable` consistent with the fixed-only status
-                        }
-                        fixed_cert = Some(fc);
+                    // R20: no positions (off the two-form path) = no FIXED column = a fixed-only tie, never a skip
+                    let chroms: Vec<&str> = cand.iter().map(|&ci| copies[ci].chrom.as_str()).collect();
+                    let fixed = fixed_matrix(gpos, &chroms, feats.psv_obs.len(), pop);
+                    let partner: Vec<bool> = (0..cand.len()).map(|k| partner_k.contains(&k)).collect();
+                    let fc = fixed_only_certificate(&feats.psv_obs, &profiles, &fixed, &partner, p);
+                    if pop.strict {
+                        // --psv-fixed-only: the fixed-only certificate IS the decision (later gates still apply).
+                        // R19: only the decision fields come from it; posterior, the nearest sibling /
+                        // sibling_identity and n_cols_vs_nearest_sibling stay the full-column certificate's.
+                        status = fc.status;
+                        bk = fc.best;
+                        p_read = fc.p_read;
+                        min_p = fc.min_p;
+                        margin_min = fc.margin;
+                        n_dec_min = fc.n_dec;
+                        k0 = fc.n_dec == 0; // keeps `resolvable` consistent with the fixed-only status
                     }
+                    fixed_cert = Some(fc);
                 }
+                // R25: the read-through credit was computed for `bk_all`; a strict override that moved the best
+                // withdraws it (fail-closed) before the origin certificate. Unchanged when `bk == bk_all`.
+                let n_explained_unaligned = readthrough_credit(n_explained_unaligned, bk, bk_all);
                 let m = posterior_ll.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 let mut post: Vec<f64> = posterior_ll.iter().map(|&l| (l - m).exp()).collect();
                 let z: f64 = post.iter().sum();
@@ -24913,7 +24966,7 @@ pub mod copy_assign {
                     a.n_decisive = 0;
                     a.p_value = 1.0;
                     a.min_p_value = 1.0;
-                    if p.sole_candidate && !a.origin_rejected {
+                    if sole_candidate_promotes(p.sole_candidate, a.origin_rejected, strict_fixed_only) {
                         // ⭐ L3 (§6fi, user decision 2026-09-06): the only candidate passed the origin certificate
                         // and no competitor has a chain at all (`-p 0` changed nothing for these reads, row 716):
                         // the family's only possible origin for this molecule. A SOLE CANDIDATE, not a tie —
@@ -24924,7 +24977,9 @@ pub mod copy_assign {
                         one[cand[0]] = 1.0;
                         a.posterior = one;
                     } else if p.sole_candidate {
-                        // the certificate rejected the only candidate: its verdict stands (Ambiguous, origin_rejected)
+                        // the certificate rejected the only candidate: its verdict stands (Ambiguous, origin_rejected);
+                        // R24: under --psv-fixed-only the fixed-only Tied stands (portability rests on population-FIXED
+                        // PSVs; a sole candidate rests on none)
                         a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
                     } else {
                         // §6fa rule: no competitor above the reporting floor, no certificate, no claim
@@ -27485,6 +27540,66 @@ pub mod copy_assign {
                 let per_pos = vec![Some(vec![None, Some(5)])];
                 let g = star_column_genome_positions(&[1], &[0], &per_pos, &|_, off| Some(1_000 + off as u64));
                 assert!(pop.fixed.contains(&("chrY".to_string(), g[0][0].unwrap())));
+            }
+
+            fn pop_of(rows: &[(&str, u64)], strict: bool) -> PsvPopulation {
+                let mut t = String::from("chrom\tpos\tfamily_id\tcol_index\tstatus\tmethod\tn_men\tn_cover\tn_mismatch\n");
+                for (c, p) in rows {
+                    t.push_str(&format!("{c}\t{p}\tF\t0\tFIXED\tK\t48\t40\t0\n"));
+                }
+                parse_psv_population(&t, strict).unwrap()
+            }
+
+            #[test]
+            fn fixed_matrix_looks_up_each_candidates_own_chrom_and_position() {
+                let pop = pop_of(&[("chrY", 1_005), ("chrY", 1_006), ("chrX", 2_009)], false);
+                let gpos = vec![vec![Some(1_005), None, Some(1_006)], vec![Some(2_009), Some(1_005), Some(7)]];
+                let m = fixed_matrix(&gpos, &["chrY", "chrX"], 3, &pop);
+                // row 1, column 1: 1,005 is FIXED on chrY only — the same position on the wrong chrom is not
+                assert_eq!(m, vec![vec![true, false, true], vec![true, false, false]]);
+            }
+
+            #[test]
+            fn fixed_matrix_without_positions_has_no_fixed_column_and_the_certificate_ties() {
+                // R20: a population is registered but the family is off the two-form path (no positions): every
+                // column counts as not FIXED, so the fixed-only certificate is Tied (never the full-column call)
+                let pop = pop_of(&[("chrY", 1_005)], true);
+                let m = fixed_matrix(&[], &["chrY", "chrY"], 3, &pop);
+                assert_eq!(m, vec![vec![false; 3]; 2]);
+                let obs = vec![Some(b'A'), Some(b'C'), Some(b'G')];
+                let c = fixed_only_certificate(&obs, &[prof(b"ACG"), prof(b"TGT")], &m, &[false, false], &AssignParams::default());
+                assert_eq!((c.status, c.n_dec), (AssignStatus::Tied, 0));
+            }
+
+            #[test]
+            fn star_offset_to_genome_takes_the_form_of_each_copy() {
+                // copy 0 GENOMIC form (locus starts at 1,000); copy 1 UNIT form of a '-' copy, exons [2,000,2,010).
+                // Each copy also carries the other form's data with a different answer, so a swapped branch fails.
+                let c0 = copy_tx("A", 5_000, 5_010, '+', &[], vec![b'A'; 10]);
+                let c1 = copy_tx("B", 2_000, 2_010, '-', &[], vec![b'A'; 10]);
+                let unit_maps = vec![exon_map(&c0), exon_map(&c1)];
+                let target_starts = vec![1_000u64, 7_000];
+                let form = vec![false, true];
+                assert_eq!(star_offset_to_genome(0, 5, &form, &unit_maps, &target_starts), Some(1_005));
+                assert_eq!(star_offset_to_genome(1, 0, &form, &unit_maps, &target_starts), Some(2_009));
+                assert_eq!(star_offset_to_genome(1, 9, &form, &unit_maps, &target_starts), Some(2_000));
+                assert_eq!(star_offset_to_genome(1, 10, &form, &unit_maps, &target_starts), None, "past the unit");
+            }
+
+            #[test]
+            fn strict_fixed_only_never_promotes_a_sole_candidate() {
+                // R24: portability rests on population-FIXED PSVs; a sole candidate rests on none
+                assert!(sole_candidate_promotes(true, false, false));
+                assert!(!sole_candidate_promotes(true, false, true));
+                assert!(!sole_candidate_promotes(true, true, false));
+                assert!(!sole_candidate_promotes(false, false, false));
+            }
+
+            #[test]
+            fn readthrough_credit_is_withdrawn_when_the_strict_override_moves_the_best() {
+                // R25 (fail-closed): the credit was computed for the full-column best
+                assert_eq!(readthrough_credit(40, 2, 2), 40);
+                assert_eq!(readthrough_credit(40, 1, 2), 0);
             }
         }
     }
