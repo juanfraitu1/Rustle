@@ -154,3 +154,70 @@ undecidable molecules were assigned.
 - Removing a read's unique anchor rarely leaves an exact tie that PSVs can resolve, so precision stays UNDERPOWERED.
   Ties: 107 in gorilla, 53 in human; distinguishable: 12 and 11.
 - The test found a real certificate bug.
+
+## Amendment 2 (2026-10-13, before it runs): arm 2, junction truth from rival copies that cannot splice
+
+Both arms run on the final binary: exact-tie fix 7ac557e7 plus the tie-outside gate fix d5d982a3, default flags plus
+`--dump-star`.
+
+**Idea.** A spliced read cannot come from a copy whose genome cannot produce its splice junction. The evidence sits in
+the INTRON (the copy's splice-site dinucleotides), which the read does not contain. O2 decides on exonic PSV columns
+only (`read_star_junctions` is off by default), so the two kinds of evidence are disjoint.
+
+A parent gene against a processed retrocopy is NOT used as truth. The retrocopy's own transcript has the parent's
+spliced structure, so a spliced read does not exclude it.
+
+**Population.**
+- gorilla_KB3781 (dev): the full assign with the final binary.
+- Human A119b (held-out): the anchor run's 129 families, original molecules only, no `|trim`.
+- Molecules: contested rows (`contested` = 1) with a read-star row, whose primary alignment has >= 1 intron (`N` >= 30 bp).
+
+**Per molecule and candidate (`bench/o2_truth/junction_truth.py`).**
+- The read, in its original orientation, is aligned to the candidate copy's genomic span +- 1 kb
+  (`minimap2 -c -x splice:hq -uf`, secondaries kept); the best hit by AS is used.
+- For each read junction q (read position of an `N` in the genome primary alignment):
+  - the candidate **breaks** q if its alignment has an intron within 5 bp of q whose motif, in transcript orientation,
+    is not GT-AG, GC-AG or AT-AC;
+  - it **makes** q if that intron is canonical;
+  - otherwise q is undetermined for it (no hit, unspliced there, or the intron sits elsewhere).
+- A candidate is **EXCLUDED** iff it breaks >= 1 read junction, and **PRODUCES** iff it makes every read junction.
+- **Informative:** >= 1 candidate EXCLUDED and >= 1 not.
+- **Determined:** the non-excluded candidates form one locus (their spans overlap) and it PRODUCES; truth = that locus.
+
+**Bars** (each on the dev and the held-out set separately):
+- **J1 (falsification).** Among O2-assigned informative molecules, wrong = O2's copy is EXCLUDED. PASS iff
+  wrong / assigned <= 0.01 with >= 30 assigned. UNDERPOWERED if < 30.
+- **J2 (determined truth).** Among determined molecules that O2 assigns, PASS iff wrong / assigned <= 0.01 with >= 30.
+- **Reported:** the aligner primary's rate of sitting on an EXCLUDED copy (informative molecules); recall on
+  determined molecules; per family; every wrong call and up to 20 right ones, with columns and motifs.
+- **Caveat:** about 1% of real introns are non-canonical. A wrong call against an EXCLUDED copy is examined
+  individually, and the motif is reported.
+
+## Amendment 3 (2026-10-13, before it runs): arm 3, split-half on the reference animal itself
+
+**Why.** The YAG split-half (0.544) used reads from a man who is not the reference. KB3781's fibroblast reads come from
+the animal whose genome IS the reference, so that donor confound is absent.
+
+**Run.**
+- The gorilla full assign star dump (as in Amendment 2), contested rows, all families. Read lengths come from the BAM.
+- `bench/yag_o2/split_half.py`, unmasked (all read-star columns).
+- `split_half.py` with `POPULATION_ANY` on a gorilla catalog-PSV site table: every `(chrom, genome_pos)` of
+  `utilities psv-discover` (default engine) on the gorilla_KB3781 catalog.
+
+**Bars.**
+- **Gate P0.** The Python certificate reproduces Rust's status and copy (unmasked, rows no later gate changed) for
+  >= 0.99. Fail: stop.
+- **S1.** Split-half concordance, all columns: >= 0.98 among molecules whose two halves both assign, with >= 30 such
+  molecules (else UNDERPOWERED).
+- **S2.** The same on catalog-PSV columns.
+- **Reported:** the fractions with >= 1 assigning half, per family, and every disagreeing molecule with its columns.
+
+**Reading, fixed now.**
+- **S1 PASS:** O2's evidence is self-consistent where the genome is the animal's own. The YAG failure was specific
+  to the donor or to artefacts.
+- **S1 FAIL and S2 PASS:** non-PSV read-star columns (alignment artefacts) drive the disagreement, as on the YAGs.
+  Restricting O2 to catalog-PSV columns becomes a candidate change.
+- **Both FAIL:** mosaic molecules (diploid alleles or gene conversion), or O2 error. Telling them apart needs haplotype
+  resolution (mat/pat), which is not attempted here.
+- **Caveat:** the primary assembly carries one haplotype per copy. Reads from the other haplotype can legitimately
+  match different copies at different PSVs.
