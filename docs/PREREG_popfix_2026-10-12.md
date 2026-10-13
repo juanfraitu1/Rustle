@@ -170,8 +170,16 @@ Share of the contested molecules' read-star columns at catalog PSV sites (any st
 
 **Correction to Amendment 1 (wording only, no bar affected).** The tier and the strict decision apply to every
 molecule that goes through the read-star certificate. Under the default AS-tied gate that includes a few uncontested
-molecules: 9 in run (c), 1 of them assigned. Only molecules the aligner places without the certificate
-(`--no-as-tied-only`) keep the aligner's call. The arms above read contested rows only, as registered.
+molecules: 9 in run (c), 1 of them assigned. The sentence saying uncontested rows keep the aligner's call under
+`--psv-fixed-only` is wrong. The final review found that even on the `--no-as-tied-only` placement path molecules go
+through the certificate and get tier rows, and a strict Assigned call takes precedence over the placement; the
+`copy_assign` help text states the exact behaviour. The arms above read contested rows only, as registered.
+
+**What (b) does and does not show (final review).** Strict mode assigned 0 molecules in (b), as did the no-flag run,
+so B2 PASS could not have failed. It shows strict mode adds no wrong calls there; it does not exercise a strict
+Assigned call. That path is tested end to end only on a committed fixture (`tests/copy_assign_popfix.rs` on `o2_origin_resolve`):
+the 1 baseline Assigned call is reproduced under an all-FIXED table and none is made with no FIXED site. It is not
+tested on real data.
 
 **Reading (post hoc, not tested here).**
 1. **On the YAGs, population-FIXED PSVs are far too sparse per read to assign anything to a single copy.**
@@ -182,8 +190,13 @@ molecules: 9 in run (c), 1 of them assigned. Only molecules the aligner places w
    - All 57 molecules whose two halves both assigned lose that property once only catalog-PSV sites count, whatever
      their population status.
    - For BPY2, 99.9% of read-star columns are not catalog PSV sites.
-   - Such columns are either the read aligned across non-homologous sequence of two copies, or differences the default
-     engine's significant-block mask drops. They are not population variation at PSV sites.
+   - Such columns have three possible sources:
+     - the read aligned across non-homologous sequence of two copies;
+     - differences the default engine's significant-block mask drops;
+     - PSVs between two non-reference copies in stretches copy 0 lacks, which discovery never reports because it is
+       anchored on copy 0 (final review).
+
+     None of them is population variation at PSV sites.
    - This favours the alignment-artifact explanation over donor-versus-reference mosaicism for the 0.544. It is
      descriptive only, because the registered comparison is UNDERPOWERED.
 3. **On catalog-PSV columns alone, the full-read certificate assigns 125 contested YAG molecules, against 3 on all
