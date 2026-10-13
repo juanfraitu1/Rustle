@@ -273,3 +273,42 @@ resolution.
   favours copy 0 by 2 columns to 1.
 - **Hypothesis (not tested above):** an allele of copy 1 carrying gene-converted, copy-0-like sites. Checked next
   against the animal's own haplotype assemblies (mat / pat).
+
+**Haplotype diagnostic of arm 3's 28 conflicting O2 calls (post hoc, descriptive).** The 28 reads and the MCL26 / MCL59
+copies were aligned to mGorGor1 mat and pat (`splice:hq -uf`).
+- **The primary assembly mixes haplotypes:** MCL26 copy 1 (the 3-exon parent) is mat chr17; copy 0 (single exon, a
+  retrocopy) is pat chr7.
+- **The parent's alleles differ:** its pat allele is 18 edits from its mat allele and 13 from the retrocopy.
+- **All 27 MCL26 reads hit the parent's locus best,** never the retrocopy: pat 19 at NM <= 1, 4 at NM 2-5,
+  4 at NM > 5; mat all NM >= 2.
+- **So O2's 27 calls (copy 1) are right.** The split-half "conflict" is the parent's pat allele carrying
+  retrocopy-like alleles at the 3' sites (allelic gene conversion).
+- **MCL59 (1 read):** unresolved (NM 3 on mat; tied on pat).
+
+## Amendment 4 (2026-10-13, before it runs): arm 4, truth from the animal's own haplotypes
+
+**Idea.** A KB3781 read must match its true locus on mat or pat up to sequencing error. Each catalog copy (primary
+coordinates) maps to its own locus on one haplotype at NM 0, and to its homolog on the other haplotype.
+
+**Population.**
+- **For precision:** every contested O2-assigned molecule of the gorilla final-binary run (135).
+- **For recall and calibration:** a random 3,000 contested molecules (seed 7 on the md5 of the name).
+
+**Per molecule (`bench/o2_truth/haplotype_truth.py`).**
+- **Alignment:** `minimap2 -ax splice:hq -uf --eqx -N 10` to `mGorGor1.mat` and `.pat`.
+- **Best hit:** the minimum NM across both haplotypes, accepted iff NM <= max(2, 0.003 x aligned bases), and no hit
+  at a different locus is within NM + 2.
+- **Copy loci:** each catalog copy's spliced sequence is aligned the same way, and its loci on each haplotype are kept
+  (all hits within NM + 2 of its best there).
+- **Truth:** the catalog copies whose loci overlap the best hit. With one copy (or one overlapping set of nested
+  units), the truth is that copy. With none, the truth is "outside the catalog". With several unrelated copies, the
+  truth is ambiguous and the molecule is not scored.
+
+**Bars.**
+- **H1 (precision):** among O2-assigned molecules with a one-copy truth, wrong <= 0.01, with >= 30.
+- **H2 (reported):** the aligner primary's copy on the same molecules, right or wrong (O2 against the aligner).
+- **H3 (reported):** on the 3,000-sample molecules with a one-copy truth: O2's recall, and O2's assigned-wrong count.
+  Molecules whose truth is "outside the catalog" are counted (the O3 regime).
+
+**Caveat.** This is single-substrate: no other animal has both a T2T diploid assembly and RNA from the same
+individual here.
