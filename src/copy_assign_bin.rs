@@ -6234,6 +6234,8 @@ fn main() -> Result<()> {
     let mut placement_assigned_total = 0usize; // §6fq: uncontested molecules assigned to their placement
     let mut primary_local_rows = 0usize; // register 734: the enforced per-family denominator
     let mut assign_rows: Vec<AssignRow> = Vec::new();
+    // `--dump-star`: copy tid -> family id, to pick each row's own family proof (a molecule can sit in two families)
+    let mut tid_family: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut posterior_lines: Vec<String> = Vec::new();
     // EM-abundance prior for the posterior (else uniform).
     let prior_abundance =
@@ -7777,6 +7779,11 @@ fn main() -> Result<()> {
                     format!("CAFAM{gfam}")
                 };
                 gfam += 1;
+                if args.dump_star {
+                    for tid in &fa.copy_tids {
+                        tid_family.insert(tid.clone(), fid.clone());
+                    }
+                }
                 if args.gtf {
                     for (ci, tid) in fa.copy_tids.iter().enumerate() {
                         copy_gene.insert(tid.clone(), (fid.clone(), ci));
@@ -10466,10 +10473,17 @@ fn main() -> Result<()> {
         let mut sh = std::fs::File::create(format!("{}.star_reads.tsv", args.out))?;
         writeln!(sh, "read_name\tfamily_id\tstatus\tassigned_copy\tcatalog_copy_idx\tn_candidates\tcandidates\tn_cols\tcolumns")?;
         let mut n = 0usize;
+        let mut written: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
         for r in &assign_rows {
-            let Some(pf) = proofs.get(&r.read_name) else {
+            // this row's OWN family proof (PREREG_yag_o2_2026-10-12), once per (molecule, family)
+            let Some(pf) = proofs.get(&r.read_name).and_then(|v| {
+                v.iter().find(|pf| pf.cand_tids.first().and_then(|t| tid_family.get(t)) == Some(&r.family_id))
+            }) else {
                 continue;
             };
+            if !written.insert((r.read_name.clone(), r.family_id.clone())) {
+                continue;
+            }
             let ch = |o: Option<u8>| o.map(|b| b as char).unwrap_or('.');
             let cols: Vec<String> = pf
                 .cols

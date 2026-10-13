@@ -21267,15 +21267,20 @@ pub mod copy_assign {
             pub obs: Vec<Option<u8>>,
             pub cand: Vec<usize>,
             pub alleles: Vec<Vec<Option<u8>>>,
+            /// the candidates' copy tids (`cand` order): which FAMILY this proof belongs to — a molecule placed in two
+            /// families is certified, and registered, once per family (PREREG_yag_o2_2026-10-12)
+            pub cand_tids: Vec<String>,
         }
-        static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, StarProof>>> =
+        static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, Vec<StarProof>>>> =
             std::sync::OnceLock::new();
         pub fn register_star_proof(read_name: &str, proof: StarProof) {
             STAR_PROOFS
                 .get_or_init(Default::default)
                 .lock()
                 .unwrap()
-                .insert(read_name.to_string(), proof);
+                .entry(read_name.to_string())
+                .or_default()
+                .push(proof);
         }
         /// ⭐ §6ft read-through certificate: molecule name → (partner copy index, read positions the partner or the
         /// mis-chain cut explains). Same side-table device as `STAR_PROOFS`; drained by the binary.
@@ -21357,7 +21362,7 @@ pub mod copy_assign {
         }
 
         /// Drain the table (the caller owns the proofs of every molecule assigned so far).
-        pub fn take_star_proofs() -> DetHashMap<String, StarProof> {
+        pub fn take_star_proofs() -> DetHashMap<String, Vec<StarProof>> {
             STAR_PROOFS
                 .get()
                 .map(|m| std::mem::take(&mut *m.lock().unwrap()))
@@ -24718,6 +24723,7 @@ pub mod copy_assign {
                             obs: feats.psv_obs.clone(),
                             cand: cand.clone(),
                             alleles: profiles.iter().map(|pr| pr.alleles.clone()).collect(),
+                            cand_tids: cand.iter().map(|&k| copies[k].tid.clone()).collect(),
                         },
                     );
                 }
@@ -25252,6 +25258,25 @@ pub mod copy_assign {
                 );
                 let (ab0, ci0) = star_soft_abundance(&[], 2);
                 assert_eq!((ab0, ci0), (vec![0.5, 0.5], vec![0.5, 0.5]));
+            }
+
+            #[test]
+            fn star_proofs_of_one_molecule_in_two_families_are_both_kept() {
+                // PREREG_yag_o2_2026-10-12: a molecule placed in two families had ONE proof (the last registered), so
+                // `--dump-star` wrote family B's columns beside family A's verdict. Each proof carries its candidates'
+                // tids and every registration is kept.
+                let mk = |tid: &str| StarProof {
+                    cols: vec![1],
+                    obs: vec![Some(b'A')],
+                    cand: vec![0, 1],
+                    alleles: vec![vec![Some(b'A')], vec![Some(b'C')]],
+                    cand_tids: vec![tid.to_string(), format!("{tid}b")],
+                };
+                register_star_proof("test-molecule-two-families", mk("famA_copy0"));
+                register_star_proof("test-molecule-two-families", mk("famB_copy0"));
+                let all = take_star_proofs();
+                let got: Vec<&str> = all["test-molecule-two-families"].iter().map(|p| p.cand_tids[0].as_str()).collect();
+                assert_eq!(got, vec!["famA_copy0", "famB_copy0"]);
             }
 
             #[test]

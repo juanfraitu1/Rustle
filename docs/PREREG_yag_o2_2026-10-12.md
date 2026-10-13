@@ -42,3 +42,34 @@ on disk.
 
 Gorilla (OR6737 testis) needs a families stage first; added as an amendment with the same bars only if run.
 Code `bench/yag_o2/`; outputs `/mnt/linuxdisk/tmp/yag_o2/`.
+
+## Amendments made while running (2026-10-12)
+
+- **Dump bug (found, fixed, TDD):** `--dump-star` kept ONE proof per read name, so a molecule evaluated in two families
+  got family B's columns next to family A's verdict. First-pass numbers built on it are RETRACTED (53 "distinguishable"
+  simulated reads, a "17 wrong" re-certification). Fix: every registration kept with its candidates' tids; the writer
+  picks each row's own family proof, once per (molecule, family). Assignments byte-identical to the unfixed binary.
+- **Scope (user, mid-run): "we only need this for the YAGs, so DAZ, PRY, etc."** Families = catalog families with a
+  copy overlapping a RefSeq CHM13 chrY gene DAZ / RBMY / TSPY / VCY / XKRY / CDY / HSFY / BPY2 / PRY / PRORY
+  (`bench/yag_o2/prep_yag.py`): A119b catalog 11 families / 86 copies (TSPY 46, RBMY 6, HSFY 6+3+2, VCY 6, DAZ 4+2,
+  PRY 4, CDY 4, BPY2 3); simulation roster 11 families / 88 copies. (A first Y-only run is not reported as a result.)
+
+## Results
+
+**Arm A (simulation, YAG families):** of 1,460 contested molecules whose true copy is a candidate, 1,416 have a rival
+IDENTICAL over every column the read covers and 42 differ at one column; 2 are distinguishable.
+- A-P1 precision: 0 assigned -> UNDERPOWERED. A-P2 recall: 0 / 2 -> FAIL as registered (n = 2). **A-P3 calibration:
+  0 / 1,458 undecidable assigned -> PASS.** Reproduction of O2 by the Python certificate: 2,404 / 2,404.
+
+**Arm B (A119b testis reads, YAG families):** 7,844 molecules; O2 assigns 4. **B-P0 reproduction 3,445 / 3,445 = 1.0
+PASS.** **B-P1 split-half concordance 31 / 57 = 0.544 FAIL** (HSFY 11/23, BPY2 16/22, PRY 2/9, other HSFY 2/3; DAZ and
+TSPY: no half assigns). B-P2 3 / 3 -> UNDERPOWERED.
+
+**Reading (post hoc; not tested here).** The haploid argument assumed the reads come from the reference man's Y. They
+do not: CHM13's Y is HG002's, the testis RNA is A119b's. Real reads carry MORE distinguishing columns than reads
+simulated from the reference copies (386 molecules with an assignable half vs 37), as expected if A119b's YAG copies
+differ from HG002's (gene conversion between palindrome arms differs between men), so a read's halves can point to
+different REFERENCE copies with no error by O2. O2's full-read certificate abstains on all of those. The split-half
+test therefore cannot separate O2 error from donor-vs-reference mosaicism without a matched donor: a T2T Y and testis
+Iso-Seq from the SAME man (YAGs are testis-specific; the T2T Ys come from cell lines). The defensible statement for
+the YAGs is calibration, not accuracy.
