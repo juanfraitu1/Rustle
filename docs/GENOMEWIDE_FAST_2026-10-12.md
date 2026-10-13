@@ -68,3 +68,48 @@ run one by one, except where a documented, measured approximation is opted into.
   copy window from the BAM index (compressed bytes / mean bytes per record; 0.8 s on human) and the families over N are not assigned
   (`--skip-families`) and their regions are not swept. On human A119b the 62 such families all lie entirely on the acrocentric short
   arms (chr13/14/15/21/22 < 17 Mb; e.g. MCL1, a 3.5 M-record hull). Only reads those families share with others can change.
+
+## Status and what is left (2026-10-12, PAUSED while the PSV engine is being fixed in another session)
+
+**Done and committed** (branch `machine2/soto-evidence`): `03184537` timed, resumable `all` (per-stage `PREFIX.<stage>.time`,
+`PREFIX.all.env` resume, final stage / wall / peak-memory table), `index` stage, `--low-mem`; `a36b9251` `flag` against the genome
+FASTA indexed on the fly in 1-Gbp parts (`missing_copy_flag --index-gb`, `--split-prefix` always); `98119eeb` + `a30ca851`
+`utilities window-depth` (index estimate, 0.8 s on human) + driver `--max-window-records`, and `copy_assign --tied-prefilter`
+(driver default). `--skip-single-placement` was withdrawn in `a30ca851`.
+
+**Measured so far**
+
+| what | result |
+|---|---|
+| assign, POA diagnostic skipped vs not (gorilla KB3781, 7 + 20 families) | cmp-identical tables |
+| assign `--tied-prefilter` vs not (gorilla KB3781 genome-wide, 326 families) | 7 tables cmp-identical; peak 5.2 -> 3.6 GB; 572 -> 639 s |
+| human assign, old loading | killed at 16-20 GB (chr1 region 1.24 M records = 8.7 GB; chr13 short arm another ~7 GB) |
+| human assign, `--low-mem` + prefilter | stopped by hand at 1.5 min (1.0 GB; the old loading was at 8.7 GB by then); never finished |
+| `all` on one gorilla contig (NC_073244.2, `--no-flag`) | works; second run skips every stage |
+
+**Left to do, in order, once the PSV engine is settled**
+
+1. Rebuild and test (the full lib suite has NOT been run since `98119eeb`):
+   `CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo build --release` and `cargo test --release --lib`
+   plus `cargo test --release --bin missing_copy_flag` (output to a file). If the PSV engine default changed, re-run the gorilla
+   identity check of `--tied-prefilter` (the prefilter is upstream of the PSV code, so it should still hold):
+   copy_assign on `/mnt/linuxdisk/tmp/gw_fast/gkb/regions.txt` with and without `--tied-prefilter`, then `cmp` every table.
+2. Human assign with the new loading (scratch `/mnt/linuxdisk/tmp/gw_fast/human/`, the copy table symlinked from the run cache):
+   `tools/rustle_pipeline.sh assign --bam .../A119b.t2t.bam --fasta .../chm13v2.0.fa --out /mnt/linuxdisk/tmp/gw_fast/human/human
+   --bin .../rustle_target/release --threads 4 --low-mem` under a watchdog that stops `copy_assign` above 16 GB (sample
+   `ps -C copy_assign -o rss=`; do NOT use `pgrep -f` with a pattern that also matches the watcher's own command line). Record wall
+   and peak; the 62 skipped families are listed in `human.assign.depth_skipped.tsv`.
+3. `flag` on gorilla, both index paths: the `.mmi` (`--index /mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi`, ~16-19 GB
+   expected) and `--low-mem` (FASTA, 1-Gbp parts); compare the two verdict tables (near-identical expected, not byte-identical) and
+   record wall / peak.
+4. The whole pipeline in one command: `tools/rustle_pipeline.sh all --bam ... --fasta ... --out OUT --threads 4 --low-mem` on gorilla
+   OR6737, then human A119b; copy the final table into this document. Disk: ~5 GB free on `/mnt/linuxdisk` (2026-10-12); the human
+   run writes ~5-8 GB (loci FASTA + PAF + GTFs) — free space first.
+5. Human `families` (45 min, 12.6 GB, the largest remaining cost): profile whether the minimap2 all-vs-all of 2 GB of locus spans or
+   `mcl_families`' PAF handling holds the memory; anything that changes the PAF (intron masking, exon-only sequences) changes the
+   validated family definition and needs a pre-registration.
+6. Then: a register row, the memory note, and the stage table at the top of this document.
+
+**Caveats to carry**: `--max-window-records` changes results for the skipped (acrocentric-array) families and for reads they share with
+other families; under `--tied-prefilter` the AS-tied gate's log counts cover tied molecules only (tables unchanged); a multi-part splice
+index is near-identical, not byte-identical, to one part.
