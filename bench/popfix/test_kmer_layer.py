@@ -135,3 +135,64 @@ def test_fewer_than_ceil_half_covering_is_uncovered():
 def test_presence_count_must_match_n_men():
     with pytest.raises(ValueError):
         K.kmer_status(PLAN, iter([COV]), 2)
+
+
+# ---- fix round 2: pin the presence -> carry -> status path and n_carry_all -------------------------
+
+TWO = {("F", 0): ({0: ["a0"], 1: ["b0"]}, {0: ("l0", "r0"), 1: ("l1", "r1")}, {0: "A", 1: "B"})}
+FLANKS = {"l0", "r0", "l1", "r1"}
+BOTH = {"a0", "b0"} | FLANKS
+
+
+def test_two_allele_polymorphic_when_one_covering_man_lacks_allele_b():
+    no_b = {"a0"} | FLANKS                      # covering man whose presence set lacks allele B's k-mers
+    out = K.kmer_status(TWO, iter([BOTH, BOTH, no_b, BOTH]), 4)
+    r = out[("F", 0)]
+    assert r["status"] == "POLYMORPHIC"
+    assert r["n_cover"] == 4
+    assert r["n_carry_all"] == 3                # exactly the covering men that carry both alleles
+
+
+def test_two_allele_fixed_when_every_covering_man_carries_both():
+    out = K.kmer_status(TWO, iter([BOTH, BOTH, BOTH]), 3)
+    r = out[("F", 0)]
+    assert r["status"] == "FIXED"
+    assert r["n_cover"] == 3
+    assert r["n_carry_all"] == r["n_cover"] == 3
+
+
+def test_man_with_only_one_of_two_flank_kmers_is_not_covering():
+    half = {"a0", "b0", "l0", "l1", "r1"}       # site 0's right flank r0 missing
+    out = K.kmer_status(TWO, iter([BOTH, BOTH, BOTH, half]), 4)
+    r = out[("F", 0)]
+    assert r["n_cover"] == 3                    # the half-flank man does not cover the column
+    assert r["n_carry_all"] == 3                # and is excluded from carry counting
+    assert r["status"] == "FIXED"
+
+
+def _mixed_random_genome():
+    import random
+    rnd = random.Random(20261012)               # non-periodic, so the two sites' k-mer windows are distinct
+    g = [rnd.choice("ACGT") for _ in range(240)]
+    g[120] = "G"                                # copy 0, '+': frame base G
+    g[130] = "C"                                # copy 1, '-': forward C, frame base complement = G
+    return {"chrY": "".join(g)}
+
+
+def test_mixed_strand_grouping_uses_psv_base_not_forward_base(tmp_path):
+    # psv-base grouping: one allele G. Each man carries only one copy's exclusive k-mers, yet carries G -> FIXED.
+    # Forward-base grouping would give alleles {G, C}, each man carries one -> POLYMORPHIC.
+    g = _mixed_random_genome()
+    prefix, cat = _psv(tmp_path,
+                       copies=[("F", 0, "t1", "G", "+"), ("F", 1, "t2", "G", "-")],
+                       pos_rows=[("F", 0, 0, 120, "G"), ("F", 0, 1, 130, "G")])
+    plan = K.build_plan(K.columns(prefix, cat, g), g)
+    al, fl, lab = plan[("F", 0)]
+    assert set(lab.values()) == {"G"}
+    flanks = {x for f in fl.values() for x in f}
+    only0 = set(al[0]) - set(al[1])
+    only1 = set(al[1]) - set(al[0])
+    assert only0 and only1
+    out = K.kmer_status(plan, iter([only0 | flanks, only1 | flanks]), 2)
+    assert out[("F", 0)]["status"] == "FIXED"
+    assert out[("F", 0)]["n_carry_all"] == 2
