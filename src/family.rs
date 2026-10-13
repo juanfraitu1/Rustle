@@ -21270,6 +21270,9 @@ pub mod copy_assign {
             /// the candidates' copy tids (`cand` order): which FAMILY this proof belongs to — a molecule placed in two
             /// families is certified, and registered, once per family (PREREG_yag_o2_2026-10-12)
             pub cand_tids: Vec<String>,
+            /// spec 2026-10-12-population-fixed-psvs §3: each candidate's 0-based forward genome position at each
+            /// column (`cand` order, then `cols` order; `None` = no base there); empty off the two-form path
+            pub gpos: Vec<Vec<Option<u64>>>,
         }
         static STAR_PROOFS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, Vec<StarProof>>>> =
             std::sync::OnceLock::new();
@@ -22002,7 +22005,9 @@ pub mod copy_assign {
         pub struct FixedCert {
             pub status: AssignStatus,
             pub best: usize,
+            /// the largest rival pair p-value (production's `p_read`)
             pub p_read: f64,
+            /// the smallest rival pair p-value (production's `min_p`)
             pub min_p: f64,
             pub margin: f64,
             pub n_dec: usize,
@@ -22061,11 +22066,11 @@ pub mod copy_assign {
             let (mut p_read, mut min_p, mut margin, mut n_dec, mut k0) = (0.0f64, 1.0f64, f64::INFINITY, usize::MAX, false);
             for &b in &rivals {
                 let feats = ReadFeatures { psv_obs: masked(best, b), psv_qual: Vec::new(), junctions: Vec::new() };
-                let (pk, mp, _) = copy_pair_significance(&feats, &profiles[best], &profiles[b], p, &[]);
+                let (pk, _, _) = copy_pair_significance(&feats, &profiles[best], &profiles[b], p, &[]);
                 let (dec, llr) = pair(best, b);
                 k0 |= dec == 0;
                 p_read = p_read.max(pk);
-                min_p = min_p.min(mp);
+                min_p = min_p.min(pk); // R17: production's `min_p` — the smallest rival pair p-value, not the bound
                 margin = margin.min(llr);
                 n_dec = n_dec.min(dec);
             }
@@ -22077,6 +22082,62 @@ pub mod copy_assign {
                 AssignStatus::Ambiguous
             };
             FixedCert { status, best, p_read, min_p, margin, n_dec }
+        }
+
+        /// spec §3: candidate `cand[k]`'s genome position at each read-star column (`cols` = read positions):
+        /// `per_pos[copy][read pos]` = the target offset, `to_genome(copy, offset)` maps it (genomic form: locus start +
+        /// offset; unit form: `exon_map`). `None` where the candidate has no base at that read position.
+        pub fn star_column_genome_positions(
+            cols: &[u32],
+            cand: &[usize],
+            per_pos: &[Option<Vec<Option<u32>>>],
+            to_genome: &dyn Fn(usize, u32) -> Option<u64>,
+        ) -> Vec<Vec<Option<u64>>> {
+            cand.iter()
+                .map(|&ci| {
+                    cols.iter()
+                        .map(|&r| {
+                            per_pos
+                                .get(ci)
+                                .and_then(|v| v.as_ref())
+                                .and_then(|v| v.get(r as usize).copied().flatten())
+                                .and_then(|off| to_genome(ci, off))
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+
+        /// spec §3: one contested molecule's portability tier (`--psv-population`), keyed like `StarProof` (a molecule
+        /// certified in two families gets one row per family). `status_all`/`copy_all`: the run's FINAL call for the
+        /// molecule (after the origin certificate and the tie-outside gate; under `--psv-fixed-only` that call was
+        /// made on the fixed-only certificate); `status_fixed`/`copy_fixed`/`n_dec_fixed`: the pairwise certificate on
+        /// population-FIXED columns only, before the later gates.
+        #[derive(Clone, Debug)]
+        pub struct PopulationTier {
+            pub status_all: AssignStatus,
+            pub copy_all: usize,
+            pub status_fixed: AssignStatus,
+            pub copy_fixed: usize,
+            pub n_dec_fixed: usize,
+            pub cand_tids: Vec<String>,
+        }
+        static POPULATION_TIERS: std::sync::OnceLock<std::sync::Mutex<DetHashMap<String, Vec<PopulationTier>>>> =
+            std::sync::OnceLock::new();
+        pub fn register_population_tier(read_name: &str, t: PopulationTier) {
+            POPULATION_TIERS
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap()
+                .entry(read_name.to_string())
+                .or_default()
+                .push(t);
+        }
+        pub fn take_population_tiers() -> DetHashMap<String, Vec<PopulationTier>> {
+            POPULATION_TIERS
+                .get()
+                .map(|m| std::mem::take(&mut *m.lock().unwrap()))
+                .unwrap_or_default()
         }
 
         /// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
@@ -24327,7 +24388,14 @@ pub mod copy_assign {
                     };
                 // PREREG 021446fb: indel PSV columns, opt-in
                 let indel_min_len: Option<u32> = p.indel_psv.then_some(p.indel_psv_min_len);
-                let alns: Vec<ReadStarObs> = if genomic_spans.is_some() && p.read_star_two_form {
+                // spec 2026-10-12-population-fixed-psvs §3: each read-star column's genome position per candidate, only
+                // when a population table is registered or the star proof is dumped (otherwise nothing new runs)
+                let want_gpos = psv_population().is_some() || p.dump_star;
+                let unit_maps: Vec<Vec<u64>> =
+                    if want_gpos { copies.iter().map(|c| exon_map(c)).collect() } else { Vec::new() };
+                let (alns, star_gpos): (Vec<ReadStarObs>, Vec<Vec<Vec<Option<u64>>>>) = if genomic_spans.is_some()
+                    && p.read_star_two_form
+                {
                     // ⭐ §6fp: both forms, the better one per (molecule, candidate)
                     let unit_seqs: Vec<&[u8]> = copies.iter().map(|c| c.seq.as_slice()).collect();
                     let raw_g = read_star_raw(&copy_seqs, &read_seqs, preset, &windows);
@@ -24338,7 +24406,7 @@ pub mod copy_assign {
                         .enumerate()
                         .map(|(ri, (g, u))| {
                             let ((pc, pp, ed, ev), form) = merge_star_raw(g, u);
-                            build_star_obs(
+                            let o = build_star_obs(
                                 read_seqs[ri],
                                 &pc,
                                 &pp,
@@ -24347,11 +24415,24 @@ pub mod copy_assign {
                                 &ev,
                                 Some(&form),
                                 indel_min_len,
-                            )
+                            );
+                            let gp = if want_gpos {
+                                let to_g = |ci: usize, off: u32| -> Option<u64> {
+                                    if form[ci] {
+                                        unit_maps[ci].get(off as usize).copied() // unit form: spliced offset -> genome
+                                    } else {
+                                        Some(target_of(copies[ci]).0 + off as u64) // genomic form: locus start + offset
+                                    }
+                                };
+                                star_column_genome_positions(&o.5, &o.0, &pp, &to_g)
+                            } else {
+                                Vec::new()
+                            };
+                            (o, gp)
                         })
-                        .collect()
+                        .unzip()
                 } else {
-                    read_star_observations(
+                    let o = read_star_observations(
                         &copy_seqs,
                         &read_seqs,
                         if genomic_spans.is_some() {
@@ -24362,7 +24443,9 @@ pub mod copy_assign {
                         preset,
                         &windows,
                         indel_min_len,
-                    )
+                    );
+                    let n = o.len();
+                    (o, vec![Vec::new(); n]) // no positions off the default path (the binary refuses the flags there)
                 };
                 if timing {
                     eprintln!(
@@ -24393,8 +24476,8 @@ pub mod copy_assign {
                 };
                 let done: Vec<(usize, PerRead)> = reps
             .par_iter()
-            .zip(alns.par_iter())
-            .map(|(&ri, (cand, obs, profiles, unit_edits, covered, star_cols))| {
+            .zip(alns.par_iter().zip(star_gpos.par_iter()))
+            .map(|(&ri, ((cand, obs, profiles, unit_edits, covered, star_cols), gpos))| {
                 let read = &reads[ri];
                 let mc = best_overlap_copy_on(read, copies, chrom_of(ri)).expect("rep overlaps a copy");
                 let (cand, obs, profiles) = (cand.clone(), obs.clone(), profiles.clone());
@@ -24491,7 +24574,7 @@ pub mod copy_assign {
                 };
                 let key = |k: usize| if p.best_by_psv { (psv_score(k), matches(k), std::cmp::Reverse(k)) } else { (0i64, matches(k), std::cmp::Reverse(k)) };
                 let ks: Vec<usize> = (0..cand.len()).filter(|k| !partner_k.contains(k)).collect();
-                let bk = if p.best_by_duel {
+                let mut bk = if p.best_by_duel {
                     // ⭐ PREREG 819c1615 `--best-by-duel`: the best is the MAXIMIN of the pairwise LLRs the certificate
                     // itself uses (columns both carry; junctions both cover) — a candidate that beats every rival
                     // is the unique winner; twins (0 both ways) fall through to the old key.
@@ -24669,13 +24752,44 @@ pub mod copy_assign {
                     posterior_ll[k] = -llr;
                 }
                 let single = competitors == 0;
-                let status = if single || k0 {
+                let mut status = if single || k0 {
                     AssignStatus::Tied
                 } else if p_read < thr && margin_min > 0.0 {
                     AssignStatus::Assigned
                 } else {
                     AssignStatus::Ambiguous
                 };
+                let bk_all = bk; // the full-column certificate's best (R19: the nearest sibling stays relative to it)
+                // spec 2026-10-12-population-fixed-psvs §3: the same pairwise certificate on population-FIXED columns
+                // only (`--psv-population`); its tier row is registered at the end of the closure (R18)
+                let mut fixed_cert: Option<FixedCert> = None;
+                if let Some(pop) = psv_population() {
+                    if !gpos.is_empty() {
+                        let fixed: Vec<Vec<bool>> = gpos
+                            .iter()
+                            .enumerate()
+                            .map(|(k, v)| {
+                                let chrom = &copies[cand[k]].chrom;
+                                v.iter().map(|g| g.map_or(false, |g| pop.fixed.contains(&(chrom.clone(), g)))).collect()
+                            })
+                            .collect();
+                        let partner: Vec<bool> = (0..cand.len()).map(|k| partner_k.contains(&k)).collect();
+                        let fc = fixed_only_certificate(&feats.psv_obs, &profiles, &fixed, &partner, p);
+                        if pop.strict {
+                            // --psv-fixed-only: the fixed-only certificate IS the decision (later gates still apply).
+                            // R19: only the decision fields come from it; posterior, the nearest sibling /
+                            // sibling_identity and n_cols_vs_nearest_sibling stay the full-column certificate's.
+                            status = fc.status;
+                            bk = fc.best;
+                            p_read = fc.p_read;
+                            min_p = fc.min_p;
+                            margin_min = fc.margin;
+                            n_dec_min = fc.n_dec;
+                            k0 = fc.n_dec == 0; // keeps `resolvable` consistent with the fixed-only status
+                        }
+                        fixed_cert = Some(fc);
+                    }
+                }
                 let m = posterior_ll.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 let mut post: Vec<f64> = posterior_ll.iter().map(|&l| (l - m).exp()).collect();
                 let z: f64 = post.iter().sum();
@@ -24687,7 +24801,7 @@ pub mod copy_assign {
                     full[ci] = post[k];
                 }
                 let sibling_identity = nearest_sibling_k
-                    .map(|k| copy_pair_identity(&profiles[bk], &profiles[k]))
+                    .map(|k| copy_pair_identity(&profiles[bk_all], &profiles[k]))
                     .unwrap_or(1.0);
                 let mut a = Assignment {
                     best_copy: cand[bk],
@@ -24829,6 +24943,21 @@ pub mod copy_assign {
                     a.resolvable = false;
                     a.posterior = vec![1.0 / copies.len() as f64; copies.len()];
                 }
+                if let Some(fc) = &fixed_cert {
+                    // R18: the molecule's FINAL call (after the origin certificate and the tie-outside gate) beside
+                    // the fixed-only certificate's
+                    register_population_tier(
+                        &names[ri],
+                        PopulationTier {
+                            status_all: a.status,
+                            copy_all: a.best_copy,
+                            status_fixed: fc.status,
+                            copy_fixed: cand[fc.best],
+                            n_dec_fixed: if fc.n_dec == usize::MAX { 0 } else { fc.n_dec },
+                            cand_tids: cand.iter().map(|&k| copies[k].tid.clone()).collect(),
+                        },
+                    );
+                }
                 if p.dump_star {
                     register_star_proof(
                         &names[ri],
@@ -24838,6 +24967,7 @@ pub mod copy_assign {
                             cand: cand.clone(),
                             alleles: profiles.iter().map(|pr| pr.alleles.clone()).collect(),
                             cand_tids: cand.iter().map(|&k| copies[k].tid.clone()).collect(),
+                            gpos: gpos.clone(),
                         },
                     );
                 }
@@ -25385,6 +25515,7 @@ pub mod copy_assign {
                     cand: vec![0, 1],
                     alleles: vec![vec![Some(b'A')], vec![Some(b'C')]],
                     cand_tids: vec![tid.to_string(), format!("{tid}b")],
+                    gpos: vec![],
                 };
                 register_star_proof("test-molecule-two-families", mk("famA_copy0"));
                 register_star_proof("test-molecule-two-families", mk("famB_copy0"));
@@ -27305,6 +27436,55 @@ pub mod copy_assign {
                 assert!(pop.fixed.contains(&("chrY".to_string(), 100)));
                 assert!(!pop.fixed.contains(&("chrY".to_string(), 200)));
                 assert!(parse_psv_population("chrom\tpos\n", false).is_err(), "no status column");
+            }
+
+            #[test]
+            fn fixed_only_min_p_is_the_smallest_rival_pair_p_value() {
+                // R17: `FixedCert.min_p` means what production's `min_p` means — the minimum over rivals of the pair
+                // p-value `copy_pair_significance(..).0`, not of the identifiability bound (`.1`). Rival 1 differs
+                // from copy 0 at 3 columns, the read matching copy 0 at 2 (neither copy at col 2): p ~ 3 eps^2,
+                // bound eps^3. Rival 2 differs at 2 columns, both matching copy 0: p = bound = eps^2.
+                let obs = vec![Some(b'A'), Some(b'C'), Some(b'T'), Some(b'T'), Some(b'A')];
+                let profiles = vec![prof(b"ACGTA"), prof(b"GTCTA"), prof(b"ACGGG")];
+                let fixed = vec![vec![true; 5]; 3];
+                let p = AssignParams::default();
+                let c = fixed_only_certificate(&obs, &profiles, &fixed, &[false, false, false], &p);
+                assert_eq!(c.best, 0);
+                let f = ReadFeatures { psv_obs: obs.clone(), psv_qual: Vec::new(), junctions: Vec::new() };
+                let (pk1, mp1, _) = copy_pair_significance(&f, &profiles[0], &profiles[1], &p, &[]);
+                let (pk2, _, _) = copy_pair_significance(&f, &profiles[0], &profiles[2], &p, &[]);
+                assert!(pk2 < pk1 && mp1 < pk2, "the case separates the two definitions: {pk1} {pk2} {mp1}");
+                assert_eq!(c.min_p, pk2, "min_p = the smaller rival pair p-value");
+                assert_eq!(c.p_read, pk1, "p_read = the larger rival pair p-value");
+            }
+
+            #[test]
+            fn star_column_positions_map_genomic_and_unit_forms_both_strands() {
+                // copy 0: genomic form, locus starts at 1,000 -> target offset 5 is genome 1,005
+                // copy 1: unit form of a '-' copy with exons [2,000,2,010) -> unit offset 0 is genome 2,009 (exon_map)
+                let c1 = copy_tx("B", 2_000, 2_010, '-', &[], vec![b'A'; 10]);
+                let emap1 = exon_map(&c1);
+                let per_pos = vec![Some(vec![None, Some(5)]), Some(vec![None, Some(0)])];
+                let to_g = |ci: usize, off: u32| -> Option<u64> {
+                    if ci == 0 { Some(1_000 + off as u64) } else { emap1.get(off as usize).copied() }
+                };
+                let g = star_column_genome_positions(&[1], &[0, 1], &per_pos, &to_g);
+                assert_eq!(g, vec![vec![Some(1_005)], vec![Some(2_009)]]);
+                // a read position a candidate does not cover has no position (Review Focus)
+                let g0 = star_column_genome_positions(&[0], &[0, 1], &per_pos, &to_g);
+                assert_eq!(g0, vec![vec![None], vec![None]]);
+            }
+
+            #[test]
+            fn a_site_at_a_known_zero_based_psv_position_is_found() {
+                // Review Focus: table pos and read-star positions are both 0-based
+                let pop = parse_psv_population(
+                    "chrom\tpos\tfamily_id\tcol_index\tstatus\tmethod\tn_men\tn_cover\tn_mismatch\nchrY\t1005\tF\t0\tFIXED\tK\t48\t40\t0\n",
+                    false,
+                ).unwrap();
+                let per_pos = vec![Some(vec![None, Some(5)])];
+                let g = star_column_genome_positions(&[1], &[0], &per_pos, &|_, off| Some(1_000 + off as u64));
+                assert!(pop.fixed.contains(&("chrY".to_string(), g[0][0].unwrap())));
             }
         }
     }
