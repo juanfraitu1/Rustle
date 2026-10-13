@@ -21965,6 +21965,120 @@ pub mod copy_assign {
             })
         }
 
+        /// spec 2026-10-12-population-fixed-psvs §3: the population table — FIXED sites only, 0-based (chrom, pos).
+        pub struct PsvPopulation {
+            pub fixed: DetHashSet<(String, u64)>,
+            /// `--psv-fixed-only`: the fixed-only certificate IS the decision
+            pub strict: bool,
+        }
+
+        pub fn parse_psv_population(text: &str, strict: bool) -> anyhow::Result<PsvPopulation> {
+            let mut lines = text.lines();
+            let head: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
+            let col = |n: &str| head.iter().position(|h| *h == n).ok_or_else(|| anyhow::anyhow!("--psv-population: no `{n}` column"));
+            let (ic, ip, is) = (col("chrom")?, col("pos")?, col("status")?);
+            let mut fixed = DetHashSet::default();
+            for l in lines.filter(|l| !l.is_empty()) {
+                let f: Vec<&str> = l.split('\t').collect();
+                if f.get(is) == Some(&"FIXED") {
+                    fixed.insert((f[ic].to_string(), f[ip].parse::<u64>()?));
+                }
+            }
+            Ok(PsvPopulation { fixed, strict })
+        }
+
+        static PSV_POPULATION: std::sync::OnceLock<PsvPopulation> = std::sync::OnceLock::new();
+        pub fn register_psv_population(t: PsvPopulation) {
+            let _ = PSV_POPULATION.set(t);
+        }
+        pub fn psv_population() -> Option<&'static PsvPopulation> {
+            PSV_POPULATION.get()
+        }
+
+        /// The read-star pairwise certificate (§6fc) on the columns where BOTH copies' sites are population-FIXED
+        /// (`fixed[k][j]`): best = maximin pairwise LLR over non-partner candidates (ties: fixed-column PSV score, then
+        /// lower index); Tied if some rival shares no fixed distinguishing column; Assigned iff every rival's
+        /// `copy_pair_significance` p < alpha / #rivals and its LLR > 0; else Ambiguous. Junctions are not used.
+        pub struct FixedCert {
+            pub status: AssignStatus,
+            pub best: usize,
+            pub p_read: f64,
+            pub min_p: f64,
+            pub margin: f64,
+            pub n_dec: usize,
+        }
+
+        pub fn fixed_only_certificate(
+            obs: &[Option<u8>],
+            profiles: &[CopyProfile],
+            fixed: &[Vec<bool>],
+            partner: &[bool],
+            p: &AssignParams,
+        ) -> FixedCert {
+            let n = profiles.len();
+            let ks: Vec<usize> = (0..n).filter(|&k| !partner.get(k).copied().unwrap_or(false)).collect();
+            let lr = ((1.0 - p.error_rate) / (p.error_rate / 3.0)).ln();
+            let masked = |a: usize, b: usize| -> Vec<Option<u8>> {
+                (0..obs.len())
+                    .map(|j| if fixed[a].get(j).copied().unwrap_or(false) && fixed[b].get(j).copied().unwrap_or(false) { obs[j] } else { None })
+                    .collect()
+            };
+            let pair = |a: usize, b: usize| -> (usize, f64) {
+                let o = masked(a, b);
+                let (mut dec, mut llr) = (0usize, 0.0f64);
+                for j in 0..o.len() {
+                    if let (Some(x), Some(ba), Some(ca)) = (o[j], profiles[a].alleles[j], profiles[b].alleles[j]) {
+                        if ba != ca {
+                            dec += 1;
+                            if x == ba { llr += lr } else if x == ca { llr -= lr }
+                        }
+                    }
+                }
+                (dec, llr)
+            };
+            let score = |a: usize| -> i64 {
+                let o: Vec<Option<u8>> = (0..obs.len()).map(|j| if fixed[a].get(j).copied().unwrap_or(false) { obs[j] } else { None }).collect();
+                profiles[a].alleles.iter().zip(o.iter()).filter_map(|(&c, &x)| match (c, x) {
+                    (Some(c), Some(x)) if c == x => Some(1i64),
+                    (Some(_), Some(_)) => Some(-1),
+                    _ => None,
+                }).sum()
+            };
+            let maximin = |a: usize| ks.iter().filter(|&&b| b != a).map(|&b| pair(a, b).1).fold(f64::INFINITY, f64::min);
+            let best = *ks
+                .iter()
+                .max_by(|&&a, &&b| {
+                    maximin(a).partial_cmp(&maximin(b)).unwrap_or(std::cmp::Ordering::Equal)
+                        .then(score(a).cmp(&score(b)))
+                        .then(b.cmp(&a)) // lower index wins ties
+                })
+                .unwrap_or(&0);
+            let rivals: Vec<usize> = ks.iter().copied().filter(|&b| b != best).collect();
+            if rivals.is_empty() {
+                return FixedCert { status: AssignStatus::Tied, best, p_read: 1.0, min_p: 1.0, margin: 0.0, n_dec: 0 };
+            }
+            let thr = p.alpha / rivals.len() as f64;
+            let (mut p_read, mut min_p, mut margin, mut n_dec, mut k0) = (0.0f64, 1.0f64, f64::INFINITY, usize::MAX, false);
+            for &b in &rivals {
+                let feats = ReadFeatures { psv_obs: masked(best, b), psv_qual: Vec::new(), junctions: Vec::new() };
+                let (pk, mp, _) = copy_pair_significance(&feats, &profiles[best], &profiles[b], p, &[]);
+                let (dec, llr) = pair(best, b);
+                k0 |= dec == 0;
+                p_read = p_read.max(pk);
+                min_p = min_p.min(mp);
+                margin = margin.min(llr);
+                n_dec = n_dec.min(dec);
+            }
+            let status = if k0 {
+                AssignStatus::Tied
+            } else if p_read < thr && margin > 0.0 {
+                AssignStatus::Assigned
+            } else {
+                AssignStatus::Ambiguous
+            };
+            FixedCert { status, best, p_read, min_p, margin, n_dec }
+        }
+
         /// Per-read columns from `read_star_alignments`: read positions where ≥ 2 copies carry an aligned base and
         /// not all of them agree. Returns the read's own bases at those positions (the observation, always `Some`)
         /// and one `CopyProfile` per copy (its aligned base per column, `None` where it has no base).
@@ -27153,6 +27267,44 @@ pub mod copy_assign {
                     vec![0],
                     "no chromosomes: the numeric tie goes to the first copy"
                 );
+            }
+
+            fn prof(alleles: &[u8]) -> CopyProfile {
+                CopyProfile { copy_id: 0, alleles: alleles.iter().map(|&b| Some(b)).collect(), junctions: vec![] }
+            }
+
+            #[test]
+            fn fixed_only_certificate_assigns_on_fixed_columns_and_ignores_the_rest() {
+                // 3 columns; the read matches copy 0 at all; column 2 is NOT fixed and is where copy 1 would differ
+                let obs = vec![Some(b'A'), Some(b'C'), Some(b'G')];
+                let profiles = vec![prof(b"ACG"), prof(b"TGT")];
+                let all_fixed = vec![vec![true; 3], vec![true; 3]];
+                let c = fixed_only_certificate(&obs, &profiles, &all_fixed, &[false, false], &AssignParams::default());
+                assert_eq!((c.status, c.best, c.n_dec), (AssignStatus::Assigned, 0, 3));
+                let one_fixed = vec![vec![true, false, false], vec![true, false, false]];
+                let c = fixed_only_certificate(&obs, &profiles, &one_fixed, &[false, false], &AssignParams::default());
+                assert_eq!(c.n_dec, 1, "only the fixed column counts");
+                assert_eq!(c.status, AssignStatus::Ambiguous, "one column never assigns (m = 1)");
+            }
+
+            #[test]
+            fn a_column_without_a_fixed_site_on_both_copies_never_counts() {
+                // Review Focus: a candidate with no genome position (insertion column) is never fixed
+                let obs = vec![Some(b'A'), Some(b'C')];
+                let profiles = vec![prof(b"AC"), prof(b"TG")];
+                let fixed = vec![vec![true, true], vec![false, false]];
+                let c = fixed_only_certificate(&obs, &profiles, &fixed, &[false, false], &AssignParams::default());
+                assert_eq!((c.status, c.n_dec), (AssignStatus::Tied, 0));
+            }
+
+            #[test]
+            fn psv_population_keeps_fixed_rows_only() {
+                let t = "chrom\tpos\tfamily_id\tcol_index\tstatus\tmethod\tn_men\tn_cover\tn_mismatch\n\
+                         chrY\t100\tF\t0\tFIXED\tK\t48\t40\t0\nchrY\t200\tF\t1\tPOLYMORPHIC\tA\t48\t44\t3\n";
+                let pop = parse_psv_population(t, false).unwrap();
+                assert!(pop.fixed.contains(&("chrY".to_string(), 100)));
+                assert!(!pop.fixed.contains(&("chrY".to_string(), 200)));
+                assert!(parse_psv_population("chrom\tpos\n", false).is_err(), "no status column");
             }
         }
     }
