@@ -63,6 +63,45 @@ precision is the question.
 
 Outputs `/mnt/linuxdisk/tmp/o2_anchor/`; the merged BAM is on C: (`/mnt/c/Users/jfris/Desktop/data/o2_anchor/`).
 
-## Results
+## Results — gorilla (dev), 2026-10-13
+
+Run `/mnt/linuxdisk/tmp/o2_anchor/gorilla/` (copy_assign 206 s, 4.8 GB; scorer committed before scoring, b/o2_anchor).
+
+**T0 truth gate: 3,105 / 3,152 = 0.985, FAIL (bar 0.99).** Per the registration, A1 and A2 are not verdicts. The 47
+trimmed reads whose shared part is still placed uniquely, but away from the truth copy, are molecules whose anchor and
+shared part point to different loci:
+- 28 sit on the very sibling they were trimmed against. These are mosaics: e.g. 4 MCL1 reads are anchored at copy 3,
+  but their shared part matches copy 8. Possible causes: allelic gene conversion (the primary assembly holds one
+  haplotype), or chimeric molecules.
+- 16 sit within 100 kb of the truth copy, outside its catalog span: a nearby duplicate segment.
+- 3 sit on no catalog copy.
+
+The anchor truth therefore disagrees with the molecule's own shared sequence about 1.5% of the time. A 1% precision bar
+cannot be judged against it.
+
+**Population (descriptive, not verdicts).**
+- Of 4,048 trimmed reads: 3,152 stay MAPQ 60, 789 are MAPQ < 60 but not exact AS ties (the aligner still has a best
+  placement), and **107 become exact AS ties**, O2's subject.
+- Of those 107:
+  - 95 are not distinguishable (some rival is identical over the read's columns);
+  - 12 are distinguishable;
+  - the aligner's primary is right for 55 (0.51, a coin toss).
+- Printed by the scorer but not read as verdicts (T0 FAIL): 1 molecule assigned (right), 0 of the 95 undecidable
+  assigned.
+
+## Amendment 1 (2026-10-13, after the gorilla dev run, before the human held-out run)
+
+The gorilla run measured the truth's own disagreement: d = 1 - T0 rate (gorilla 0.015). Molecules whose shared part
+points to another locus would be "wrong" for any method that follows the shared sequence, O2 included. For the held-out
+human:
+- **T0 is reported as the truth-noise rate d, not as a gate.** It stops the arm only if d > 0.05.
+- **A1 PASS** iff wrong / assigned <= d + 0.01, with >= 30 assigned (else UNDERPOWERED).
+- **Each wrong call is classified:** `sibling` when O2's copy is the sibling the read was trimmed against (the mosaic
+  signature), else `other`. The `other` count is reported separately.
+- **A2 is unchanged.**
+
+The gorilla numbers above are dev. Only the human run tests this amended rule.
+
+## Results — human A119b (held-out)
 
 (pending)
