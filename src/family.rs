@@ -22021,6 +22021,84 @@ pub mod copy_assign {
             discover_psvs_oriented(copies, exon_maps).0
         }
 
+        /// Significance level of a PSV alignment block in `significant_block_mask` — the certificate's default `alpha`.
+        const PSV_BLOCK_ALPHA: f64 = 1e-3;
+
+        /// PREREG_psv_significant_blocks_2026-10-12: which columns of a pairwise alignment (`r0`/`r1`, `-` = gap) lie
+        /// inside its SIGNIFICANT local blocks. Columns score BLASTN-style (match +2, mismatch or non-ACGT -3, a gap run
+        /// of k columns -(5 + 2k)); the kept blocks maximize sum (S_block - T), T = ln(L / alpha) / lambda (Karlin-
+        /// Altschul: lambda solves 0.25 e^{2 lambda} + 0.75 e^{-3 lambda} = 1, uniform bases, K = 1). A block pays its own
+        /// significance, so a stretch with no counterpart forced between homologous blocks (an exon present in one copy
+        /// only, an unshared UTR) is cut out, while a few PSV mismatches inside a block (a small dip) stay. Exact O(L)
+        /// DP over prefix sums. Register 683: before, global alignment turned such stretches into thousands of "PSVs".
+        pub fn significant_block_mask(r0: &[u8], r1: &[u8], alpha: f64) -> Vec<bool> {
+            let l = r0.len().min(r1.len());
+            if l == 0 {
+                return Vec::new();
+            }
+            let mut prefix = vec![0.0f64; l + 1];
+            let mut gap_in = 0u8; // 0: no gap run, 1: gap run in r0, 2: gap run in r1
+            for c in 0..l {
+                let (a, b) = (r0[c], r1[c]);
+                let s = if a == b'-' || b == b'-' {
+                    let g = if a == b'-' { 1 } else { 2 };
+                    let s = if gap_in == g { -2.0 } else { -7.0 };
+                    gap_in = g;
+                    s
+                } else {
+                    gap_in = 0;
+                    let (a, b) = (a.to_ascii_uppercase(), b.to_ascii_uppercase());
+                    if is_acgt(a) && a == b {
+                        2.0
+                    } else {
+                        -3.0
+                    }
+                };
+                prefix[c + 1] = prefix[c] + s;
+            }
+            // lambda > 0 of 0.25 e^{2x} + 0.75 e^{-3x} = 1 (the other root is 0), by bisection
+            let h = |x: f64| 0.25 * (2.0 * x).exp() + 0.75 * (-3.0 * x).exp() - 1.0;
+            let (mut lo, mut hi) = (0.01f64, 5.0f64);
+            for _ in 0..100 {
+                let mid = 0.5 * (lo + hi);
+                if h(mid) < 0.0 {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let t = (l as f64 / alpha).ln() / lo;
+            // best[i] = best total over columns [0, i); from[i] = start of the block ending at column i - 1, if any
+            let mut best = vec![0.0f64; l + 1];
+            let mut from = vec![usize::MAX; l + 1];
+            let (mut arg, mut top) = (0usize, 0.0f64); // argmax / max over j <= i of best[j] - prefix[j]
+            for i in 1..=l {
+                let cand = prefix[i] - t + top;
+                if cand > best[i - 1] {
+                    best[i] = cand;
+                    from[i] = arg;
+                } else {
+                    best[i] = best[i - 1];
+                }
+                if best[i] - prefix[i] > top {
+                    top = best[i] - prefix[i];
+                    arg = i;
+                }
+            }
+            let mut mask = vec![false; l];
+            let mut i = l;
+            while i > 0 {
+                if from[i] == usize::MAX {
+                    i -= 1;
+                } else {
+                    let j = from[i];
+                    mask[j..i].iter_mut().for_each(|m| *m = true);
+                    i = j;
+                }
+            }
+            mask
+        }
+
         /// Significance level of the orientation call in `is_reverse_homolog` — the certificate's default `alpha`
         /// (`AssignParams::default().alpha`), so orientation is decided at the same level as an assignment.
         const ORIENTATION_ALPHA: f64 = 1e-3;
@@ -22072,6 +22150,19 @@ pub mod copy_assign {
         pub fn discover_psvs_oriented(
             copies: &[&DenovoTranscript],
             exon_maps: &[Vec<u64>],
+        ) -> (Vec<PsvColumn>, Vec<bool>) {
+            let blocks = std::env::var_os("RUSTLE_PSV_BLOCKS").is_some();
+            discover_psvs_oriented_with(copies, exon_maps, blocks)
+        }
+
+        /// `discover_psvs_oriented`; `blocks` = keep only columns inside `significant_block_mask` blocks. OPT-IN
+        /// (`RUSTLE_PSV_BLOCKS=1`): PREREG_psv_significant_blocks_2026-10-12 B2 FAILED (25.7% of pairs in
+        /// minimap2-supported stretches kept; bar 99%) — although 95.6% of the independently position-verified ones are
+        /// kept and most of the rest were the global DP's own misalignments (mismatch 1 < gap open 32).
+        pub fn discover_psvs_oriented_with(
+            copies: &[&DenovoTranscript],
+            exon_maps: &[Vec<u64>],
+            blocks: bool,
         ) -> (Vec<PsvColumn>, Vec<bool>) {
             use poasta::aligner::scoring::GapAffine;
             let n = copies.len();
@@ -22141,11 +22232,17 @@ pub mod copy_assign {
                 if let Ok(msa) = aln {
                     if msa.len() == 2 {
                         let (r0, r1) = (&msa[0], &msa[1]);
+                        // opt-in: only columns inside significant local blocks align (unshared stretches stay unaligned)
+                        let in_block = if blocks {
+                            significant_block_mask(r0, r1, PSV_BLOCK_ALPHA)
+                        } else {
+                            vec![true; r0.len().min(r1.len())]
+                        };
                         let (mut ro, mut oo) = (0usize, 0usize);
                         for c in 0..r0.len().min(r1.len()) {
                             let (ca, cb) = (r0[c], r1[c]);
                             let (a_gap, b_gap) = (ca == b'-', cb == b'-');
-                            if !a_gap && !b_gap {
+                            if !a_gap && !b_gap && in_block[c] {
                                 amap.insert(ro, oo);
                                 if is_acgt(ca) && is_acgt(cb) && ca != cb {
                                     diffs.insert(ro);
@@ -25356,6 +25453,56 @@ pub mod copy_assign {
                 assert_eq!(cols.len(), 1, "one real difference, not a column per non-homologous base");
                 // A's offset 100 is B's offset 299 - 100 = 199 (genome 1199); B's base there in A's frame is hom[100]
                 assert_eq!(cols[0], vec![Some((100, sa[100])), Some((1199, hom[100]))]);
+            }
+
+            /// PREREG_psv_significant_blocks_2026-10-12 (opt-in `RUSTLE_PSV_BLOCKS`): copies of unequal exon content (register 683). A global
+            /// alignment forces an exon present in one copy only against unrelated sequence; only columns inside a
+            /// significant local block of the alignment are PSV columns.
+            fn snp(s: &mut [u8], i: usize) {
+                s[i] = if s[i] == b'A' { b'C' } else { b'A' };
+            }
+
+            #[test]
+            fn an_unrelated_middle_exon_yields_no_psv_columns() {
+                let (h1, h2) = (rand_seq(200, 0x51), rand_seq(200, 0x52));
+                let a = [h1.clone(), rand_seq(150, 0x53), h2.clone()].concat();
+                let (mut g1, mut g2) = (h1, h2);
+                snp(&mut g1, 50);
+                snp(&mut g2, 120);
+                let b = [g1, rand_seq(150, 0x54), g2].concat();
+                let ca = copy_tx("A", 0, 550, '+', &[], a);
+                let cb = copy_tx("B", 1000, 1550, '+', &[], b);
+                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], true).0;
+                let offs: Vec<u64> = cols.iter().map(|c| c[0].unwrap().0).collect();
+                assert_eq!(offs, vec![50, 350 + 120], "the two SNPs, nothing from the unrelated middle exon");
+            }
+
+            #[test]
+            fn an_unrelated_terminal_overhang_yields_no_psv_columns() {
+                let h = rand_seq(300, 0x61);
+                let a = [rand_seq(100, 0x62), h.clone()].concat();
+                let mut g = h;
+                snp(&mut g, 200);
+                let b = [rand_seq(100, 0x63), g].concat();
+                let ca = copy_tx("A", 0, 400, '+', &[], a);
+                let cb = copy_tx("B", 1000, 1400, '+', &[], b);
+                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], true).0;
+                let offs: Vec<u64> = cols.iter().map(|c| c[0].unwrap().0).collect();
+                assert_eq!(offs, vec![300], "the SNP only, nothing from the unrelated 5' overhang");
+            }
+
+            #[test]
+            fn a_divergent_homolog_keeps_all_its_psv_columns() {
+                // 80% identity (every 5th base differs): divergent, but every column is a real PSV
+                let a = rand_seq(400, 0x71);
+                let mut b = a.clone();
+                for i in (2..400).step_by(5) {
+                    snp(&mut b, i);
+                }
+                let ca = copy_tx("A", 0, 400, '+', &[], a);
+                let cb = copy_tx("B", 1000, 1400, '+', &[], b);
+                let cols = discover_psvs_oriented_with(&[&ca, &cb], &[exon_map(&ca), exon_map(&cb)], true).0;
+                assert_eq!(cols.len(), 80);
             }
 
             #[test]

@@ -28,3 +28,30 @@ negative score exceeds T, while a few PSV mismatches inside a block (a small dip
 - **B4** reported, no bar: retention of `both_homologous` and `no_alignment_homologous`.
 - **B5** library tests pass (the 3 known `tests/pipeline_driver_dispatch.rs` failures are pre-existing and unrelated).
 Fail of B2 or B3 -> the fix is not adopted as is.
+
+## Result (2026-10-12) — B2 FAILED: not adopted as default; kept OPT-IN (`RUSTLE_PSV_BLOCKS=1`)
+
+Run: binary with the mask vs a37399a5 behaviour, same 56-family subset and arguments (`/mnt/linuxdisk/tmp/psv_sun/
+{run_fix2,run_blk}/`, scorer `bench/psv_sun/block_eval.py` -> `run_blk/block_eval.json`). PSV columns 33,015 -> 4,377.
+- **B1 PASS**: assignments, quant byte-identical (copy_conversions: 5 -> 0 calls; 4 are MCL58, where each of its 4 copies
+  is "converted" from the others — circular; not tested further).
+- **B2 FAIL**: `aligned` pairs retained **0.257** (bar 0.99).
+- **B3 PASS**: non-homologous pairs removed **0.9987** (both_unrelated 9,807/9,810, terminal_overhang 5,380/5,399,
+  no_alignment_unrelated 2,386/2,386).
+- **B4**: both_homologous retained 0.068, no_alignment_homologous 0.014.
+- Library tests 1,023 pass (3 new: unrelated middle exon / unrelated terminal overhang -> no columns; 80%-identity
+  homolog keeps all 80 columns).
+
+**Why B2 failed (post hoc, not a re-scoring of the bar).** (1) The pair yardstick counts every copy with an allele at a
+decisive column, including copies equal to copy 0, whose column disappears when the only differing copy was junk.
+Restricted to pairs that DIFFER from copy 0: `aligned` retained 0.488. (2) The `aligned` label is about the STRETCH
+(copy 0's offset inside a minimap2 block), not about O2's pairing: by the independent position verifier, 9,703 of
+16,183 such differing pairs were the global DP's own MISALIGNMENTS (O2's column != minimap2's position) — retained
+0.212 — while the 5,697 position-verified ones were retained **0.956**. So the mask mostly removes misalignment and
+junk, but it also loses 4.4% of correct columns and cannot RECOVER the misaligned ones.
+
+**Root cause exposed:** `banded_msa_pair` costs (mismatch 1, gap open 32, extend 1) make a ~30-base misalignment
+cheaper than one gap, so inside homologous regions 60% of O2's apparent copy differences are misaligned columns.
+The next step is the DP's scoring (match reward, log-odds mismatch, a cheap long-gap piece, free end gaps), with the
+mask as a final guard — pre-registered with a position-verified yardstick on families held out from this subset.
+Default behaviour: byte-identical to a37399a5 on all 7 outputs (`run_optin/`).
