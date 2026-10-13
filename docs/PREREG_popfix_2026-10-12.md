@@ -92,6 +92,101 @@ Outputs `/mnt/linuxdisk/tmp/popfix/runs/`; results and verdicts appended below, 
   no fixed column (-> Tied); under strict no sole-candidate promotion; the read-through credit is withdrawn when the
   fixed-only best differs from the full-column best.
 
-## Results
+## Results (2026-10-13; binary ba525453, scorers 91fc1635; outputs `/mnt/linuxdisk/tmp/popfix/runs/`)
 
-(pending)
+**Gate P0-fixed: 9,670 / 9,670 = 1.0, PASS.** The Python fixed-only certificate reproduces Rust's `status_fixed` and
+`copy_fixed` on every tier row.
+
+**(e) Implementation check: VACUOUS.** 9 molecules are eligible (every column FIXED for every candidate, no later gate),
+plus 2,560 with no read-star column. Neither certificate assigns any of them, so the exact-agreement bar was not
+exercised. 0 mismatches.
+
+**(a) Table sanity (descriptive).** Rows are attributed to the strictest column's family.
+
+| Family | Genes | FIXED / POLYMORPHIC / UNCOVERED / NOT_ASSESSED |
+|---|---|---|
+| MCL479 | HSFY | 783 / 0 / 18 / 0 |
+| MCL635 | PRY | 472 / 12 / 0 / 0 |
+| MCL478 | CDY | 144 / 8 / 4 / 0 |
+| MCL54 | TSPY | 230 / 276 / 368 / 0 |
+| MCL480 | RBMY | 12 / 24 / 0 / 0 |
+| MCL2142 | DAZ | 2 / 6 / 0 / 0 |
+| MCL193 | DAZ | 0 / 4 / 0 / 0 |
+| MCL1210 | BPY2 | 0 / 3 / 0 / 0 |
+| MCL377 | HSFY + chr22 | 0 / 0 / 0 / 432 |
+| MCL475 | VCY + chrX | 0 / 0 / 0 / 227 |
+| MCL815 | HSFY | no sites |
+
+The palindrome-array genes (DAZ, BPY2, RBMY) are mostly POLYMORPHIC, as the spec expected.
+
+Share of the contested molecules' read-star columns at catalog PSV sites (any status / FIXED):
+
+| Family | Any status | FIXED |
+|---|---|---|
+| BPY2 | 0.09% | 0% |
+| MCL193 | 2.8% | 0% |
+| PRY | 11.5% | 11.0% |
+| MCL479 | 12.2% | 9.0% |
+| RBMY | 21.6% | 7.3% |
+| MCL377 | 69.7% | 0% |
+| TSPY | 84.7% | 23.0% |
+| CDY | 93.3% | 80.4% |
+| MCL2142 | 99.4% | 32.4% |
+
+**(b) Simulation, `--psv-fixed-only`.**
+- B1 UNDERPOWERED: 0 assigned.
+- **B2 PASS: 0 of 1,458 not-distinguishable molecules assigned.**
+- Identical to the no-flag YAG Arm A: 0 assigned among the 2,815 contested chrY-roster rows either way.
+
+**(c) Real A119b testis, FIXED columns.**
+- **C1 UNDERPOWERED.** 0 molecules have both halves assigning. 2 of 9,661 contested molecules (0.02%) have at least one
+  assigning half.
+- Full-read fixed-only certificate: 2 assigned, 224 ambiguous, 9,435 tied.
+- Tiers: **PORTABLE 0**, REFERENCE_ONLY 4 (3 RBMY, 1 VCY), UNASSIGNED 12,027 (2,361 of them orphans with no family
+  candidate, which have no tier).
+- `assignments.tsv` is byte-identical to the YAG Arm B run.
+
+**(c') Real reads, all catalog-PSV-site columns.**
+- **C'1 UNDERPOWERED.** 0 molecules have both halves assigning. 124 / 9,661 (1.3%) have at least one assigning half:
+  RBMY 110, MCL2142 11, PRY 2, CDY 1.
+- Full-read certificate on these columns: 125 assigned (RBMY 110, MCL2142 11, PRY 3, CDY 1), 292 ambiguous, 9,244 tied.
+- Reference, same run on ALL read-star columns: YAG Arm B reproduced exactly. 57 molecules have both halves assigning,
+  31 of them agree (0.544), and 386 have at least one assigning half.
+
+**(d) No regression: PASS.**
+- Without the flags, `assignments`, `quant`, `families`, `psv_cols` and `psv_copies` are byte-identical to
+  `run_default` (5 / 5).
+- `params.tsv` gains two rows (`psv_population`, `psv_fixed_only`), the same precedent as `psv_engine`.
+- `cargo test --release --no-fail-fast` passes everything except the 3 known `pipeline_driver_dispatch` failures (lib
+  1,044 passed).
+
+**Verdicts.**
+- P0-fixed PASS.
+- (b): B1 UNDERPOWERED, B2 PASS.
+- (c): C1 UNDERPOWERED.
+- (c'): C'1 UNDERPOWERED. So there is **no registered verdict** on donor-versus-artifact.
+- (d) PASS.
+- (e) VACUOUS.
+
+**Correction to Amendment 1 (wording only, no bar affected).** The tier and the strict decision apply to every
+molecule that goes through the read-star certificate. Under the default AS-tied gate that includes a few uncontested
+molecules: 9 in run (c), 1 of them assigned. Only molecules the aligner places without the certificate
+(`--no-as-tied-only`) keep the aligner's call. The arms above read contested rows only, as registered.
+
+**Reading (post hoc, not tested here).**
+1. **On the YAGs, population-FIXED PSVs are far too sparse per read to assign anything to a single copy.**
+   - 0 molecules are PORTABLE.
+   - The fallback "assign at least something across donors" gives nothing at copy level on these genes.
+   - That is the case for sub-project A: assign to copy GROUPS under a flag.
+2. **The YAG split-half failure was carried entirely by columns the catalog's PSV discovery does not report.**
+   - All 57 molecules whose two halves both assigned lose that property once only catalog-PSV sites count, whatever
+     their population status.
+   - For BPY2, 99.9% of read-star columns are not catalog PSV sites.
+   - Such columns are either the read aligned across non-homologous sequence of two copies, or differences the default
+     engine's significant-block mask drops. They are not population variation at PSV sites.
+   - This favours the alignment-artifact explanation over donor-versus-reference mosaicism for the 0.544. It is
+     descriptive only, because the registered comparison is UNDERPOWERED.
+3. **On catalog-PSV columns alone, the full-read certificate assigns 125 contested YAG molecules, against 3 on all
+   columns** (mostly RBMY).
+   - Non-PSV read-star columns appear to make O2 abstain on reads that catalog PSVs alone would assign.
+   - This is a candidate O2 change, to be tested with truth (Arm A simulation) before any claim. It is not adopted here.
