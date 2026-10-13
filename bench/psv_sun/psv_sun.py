@@ -141,16 +141,20 @@ def paf_qmap(rec):
     return dict(anchor_pairs(rec))
 
 
-def run_paf(args):
-    out = subprocess.run(args, capture_output=True, text=True, check=True).stdout
+def parse_paf(text):
+    """PAF text (minimap2 stdout, or a saved copy of it) -> list of record dicts."""
     recs = []
-    for line in out.splitlines():
+    for line in text.splitlines():
         f = line.split("\t")
         tags = {t[:2]: t[5:] for t in f[12:]}
         recs.append({"qname": f[0], "qlen": int(f[1]), "qs": int(f[2]), "qe": int(f[3]), "strand": f[4],
                      "tname": f[5], "tlen": int(f[6]), "ts": int(f[7]), "te": int(f[8]), "tp": tags.get("tp", "P"),
                      "AS": int(tags.get("AS", 0)), "cs": tags.get("cs", "")})
     return recs
+
+
+def run_paf(args):
+    return parse_paf(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
 
 
 def canon(k):

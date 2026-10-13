@@ -4,8 +4,12 @@ reference, each man's ortholog is the single alignment of locus + flanks spannin
 position is read through it. A column gets an alignment verdict only if ALL its sites qualify.
 
     align_layer.py PREFIX CATALOG_COPIES_TSV GENOME_FA ASSEMBLY_DIR KSCAN OUTDIR
+
+Resumable: each man's minimap2 PAF is cached as OUTDIR/paf_<md5 of loci.fa>/<assembly file>.paf (written as .paf.part,
+then renamed, so a .paf is always complete). POPFIX_THREADS (default 2) sets minimap2 -t; POPFIX_MAX_NEW_PAF=k stops
+after k new men with exit status 3 (re-run to continue); align_status.tsv is written only once every man is cached.
 """
-import collections, math, os, subprocess, sys
+import collections, hashlib, math, os, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "psv_sun"))
 import kmer_layer as KL
@@ -56,8 +60,36 @@ def unique_flanks(F, kscan, genome_fa, sites, workdir):
             for (c, p) in sites}
 
 
+def paf_path(cache, fa):
+    return os.path.join(cache, os.path.basename(fa) + ".paf")
+
+
+def cached_records(cache, fa):
+    """The man's parsed PAF records when his cache file is complete, else None. A `.paf.part` is never a cache hit."""
+    path = paf_path(cache, fa)
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        return P.parse_paf(fh.read())
+
+
+def compute_paf(cache, fa, qfa, threads):
+    """Align the loci to the man and keep minimap2's raw stdout as `<man>.paf`. Written to `.paf.part` first and renamed
+    only after minimap2 succeeded and the bytes are on disk, so a crash never leaves a truncated `.paf`."""
+    path = paf_path(cache, fa)
+    with open(path + ".part", "wb") as fh:
+        subprocess.run(["minimap2", "-cx", "asm5", "--cs", "-t", str(threads), fa, qfa],
+                       stdout=fh, stderr=subprocess.PIPE, check=True)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(path + ".part", path)
+
+
 def main(prefix, catalog_tsv, genome_fa, asm_dir, kscan, out):
     os.makedirs(out, exist_ok=True)
+    status_tsv = os.path.join(out, "align_status.tsv")
+    if os.path.exists(status_tsv):
+        os.remove(status_tsv)                       # never leave a verdict from an earlier run looking current
     F = P.Fasta(genome_fa)
     men = KL.find_men(asm_dir)
     cols = KL.columns(prefix, catalog_tsv, lambda c, s, e: F.fetch(c, s, e))
@@ -72,18 +104,35 @@ def main(prefix, catalog_tsv, genome_fa, asm_dir, kscan, out):
     with open(qfa, "w") as fh:
         for c, p in qual:
             fh.write(f">{c}:{p}\n{win[(c, p)][0]}\n")
+    with open(qfa, "rb") as fh:
+        tag = hashlib.md5(fh.read()).hexdigest()[:12]
+    cache = os.path.join(out, f"paf_{tag}")
+    os.makedirs(cache, exist_ok=True)
+    threads = int(os.environ.get("POPFIX_THREADS", "2"))
+    cap = os.environ.get("POPFIX_MAX_NEW_PAF")
+    cap = None if cap is None else int(cap)
+    n_new = 0
+    for fa in men:
+        if os.path.exists(paf_path(cache, fa)):
+            continue
+        if cap is not None and n_new >= cap:        # budget spent and this man is still missing: stop, resume later
+            n_done = sum(os.path.exists(paf_path(cache, f)) for f in men)
+            print(f"incomplete: {n_done}/{len(men)} men cached; re-run", file=sys.stderr)
+            sys.exit(3)
+        compute_paf(cache, fa, qfa, threads)
+        n_new += 1
     base = collections.defaultdict(dict)   # site -> man -> base or None
     for mi, fa in enumerate(men):
         T = P.Fasta(fa)
         recs = collections.defaultdict(list)
-        for r in P.run_paf(["minimap2", "-cx", "asm5", "--cs", "-t", "2", fa, qfa]):
+        for r in cached_records(cache, fa):
             recs[r["qname"]].append(r)
         for c, p in qual:
             locus, off = win[(c, p)]
             base[(c, p)][mi] = ortholog_base(recs.get(f"{c}:{p}", []), len(locus), FLANK, off,
                                              lambda n, s, e: T.fetch(n, s, e))
     half = math.ceil(len(men) / 2)
-    with open(os.path.join(out, "align_status.tsv"), "w") as fh:
+    with open(status_tsv, "w") as fh:
         fh.write("family_id\tcol_index\tstatus\tn_men\tn_ortholog\tn_mismatch\n")
         for (fam, col), v in sorted(ycols.items()):
             if not all(ok[(c, p)] for _, c, p, *_ in v):
