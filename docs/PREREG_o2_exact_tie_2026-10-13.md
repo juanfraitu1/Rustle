@@ -44,6 +44,48 @@ No statistical rule changes: alpha, e/3, lr, lrj and the tie keys are untouched.
 
 Outputs `/mnt/linuxdisk/tmp/o2_tie/`.
 
-## Results
+## Results (2026-10-13; fix 7ac557e7; outputs `/mnt/linuxdisk/tmp/o2_tie/`)
 
-(pending)
+**F1 PASS.** The three tests were red first: legacy `assign_read` assigned the 5:5 tie, and `fixed_only_certificate`
+had margin 1.78e-15. Now green; lib 1,047 / 0.
+
+**F2 (gorilla_KB3781 full assign, before vs after): FAIL as registered, explained.** 60,214 rows; 60,189 identical.
+- **4 status changes,** all assigned -> ambiguous, with old margin `0.000`, 8-10 decisive columns, p 7e-11 to 2.5e-13,
+  two candidates. These are the fix.
+- **The registered expectation of 7 was wrong.** The other 3 zero-margin assigned rows are sole-candidate calls
+  (n_candidates 1, 0 decisive columns), whose margin is 0 by design. The fix correctly leaves them.
+- **3 rows changed only the printed margin,** `-0.000` -> `0.000`. These are exact ties whose old rounding residue
+  was negative. This is the same mechanism, with no status or copy change, but the bar did not foresee it, hence the
+  FAIL.
+- **18 rows changed only the copy:** exact twins now fall through to the tie key, as the prereg allows.
+- `families.tsv` and `quant.tsv` change only through those rows.
+- Nothing outside the exact-tie mechanism.
+
+**F3 PASS (human anchor test, held-out).** The 3 MCL1623 wrong calls are now `ambiguous`.
+- Anchor-trimmed reads: A1 (amended) 1 assigned, 1 right, 0 wrong (UNDERPOWERED). A2 0 / 42.
+- Whole human run (129 families, 44,491 rows): assigned 804 -> 675; contested assigned **691 -> 562 (-19%)**.
+  - 127 tie-noise calls removed;
+  - 185 exact-twin copy changes;
+  - 82 margin-sign rows;
+  - 5 other status changes:
+    - 3 tied -> ambiguous: exact twins; the tie key picks another best copy and both statuses abstain;
+    - 2 assigned -> tied (MCL23, real margins 6.9 / 13.8): **a separate, pre-existing race**, explained below.
+
+**F4 PASS.** `cargo test --release --no-fail-fast`: 1,286 passed. The only failures are the 3 known
+`pipeline_driver_dispatch` ones.
+
+**Second bug found (not fixed here): the tie-outside gate depends on region order.**
+- **The mechanism.** A molecule with an AS-tied placement outside every catalog unit must never be Assigned. The
+  registry of such molecules is filled while each region is swept, but read when a family's own region is
+  certified. If the region holding the outside placement is swept later, the gate misses and the call stays
+  `assigned`. The write-time column `tie_outside_catalog` still says 1.
+- **The proof.** The before binary on 1 region thread gives `tied` for both MCL23 rows; on 4 threads it gave
+  `assigned`. So "`--region-threads` is byte-identical by construction" is false here.
+- **In the shipped runs,** assigned rows with `tie_outside_catalog` = 1: gorilla_KB3781 1 / 624, chimp_PTR 1 / 54, and
+  the human anchor run 1 / 675.
+- **Fix candidate:** apply the demotion after all sweeps, at write time, where the column is computed.
+
+**Reading.** O2's "LLR > 0" rule was decided by rounding noise on exactly balanced molecules. In human testis these
+are common: mosaic molecules matching both copies at several columns each. They made up about a fifth of the
+contested assigned calls in these families. Every human O2 number from before 7ac557e7 overstates assignments by that
+much.
