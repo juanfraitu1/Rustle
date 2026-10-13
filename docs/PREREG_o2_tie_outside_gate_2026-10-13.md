@@ -42,6 +42,27 @@ still see a leaked `Assigned`. The pipeline never uses this combination: its ass
 
 Outputs `/mnt/linuxdisk/tmp/o2_tie/`.
 
+## Amendment 1 (2026-10-13, after G2's first run, before G3)
+
+**G2's first run.** `assignments.tsv` was identical on 1 and 4 threads, but `families.tsv` and `quant.tsv` were not,
+in MCL23 only. The statement "quant is unaffected" above was **wrong**, for two reasons:
+- On the read-star path the abundance is `star_soft_abundance`, the normalised sum of the molecules' posteriors.
+  The worker computes it after its own gate, so an in-time demotion (uniform posterior) moves it.
+- `uniq` / `uniq_agree` are counted in the worker from the then-current status, and the recount does not rebuild them.
+
+**The fix now also:**
+- records each row's unique-mapper contribution, `FamilyAssignment::uniq_contrib`, and subtracts it when a row is
+  demoted late;
+- recomputes the read-star soft abundance for families with a demoted row. This uses the same function
+  (`star_soft_abundance_of`, which `star_soft_abundance` now calls), the same row order and the same width, so it is
+  bit-identical to what the worker computes when its gate fires in time. It is skipped under the VG re-align leg,
+  whose own EM replaces the abundance.
+
+**Bars, extended.**
+- **G2:** every output identical on 1 and 4 threads.
+- **G3 adds:** the fixed binary on the full gorilla run gives byte-identical `assignments` / `families` / `quant` on
+  1 and 4 threads.
+
 ## Results
 
 (pending)
