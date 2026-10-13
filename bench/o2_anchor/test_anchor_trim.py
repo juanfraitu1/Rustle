@@ -64,3 +64,14 @@ def test_overlap_is_same_chrom_and_half_open():
 
 def test_upper95_rule_of_three_at_zero_wrong():
     assert S.upper95(0, 100) == round(1 - 0.05 ** (1 / 100), 4)
+
+
+def test_amended_a1_uses_the_truth_noise_as_the_bar():
+    import collections
+    c = collections.Counter(t0_n=1000, t0_right=985, wrong=2, wrong_own_sibling=2)
+    r = S.amended_a1(c, 100)
+    assert r["d"] == 0.015 and r["bar"] == 0.025 and r["verdict"] == "PASS"
+    c["wrong"] = 3
+    assert S.amended_a1(c, 100)["verdict"] == "FAIL"
+    assert S.amended_a1(collections.Counter(t0_n=100, t0_right=90), 100)["verdict"].startswith("STOP")
+    assert S.amended_a1(c, 29)["verdict"] == "UNDERPOWERED"

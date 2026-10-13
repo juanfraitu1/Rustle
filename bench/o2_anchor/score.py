@@ -59,6 +59,19 @@ def upper95(wrong, n):
     return round(hi, 4)
 
 
+def amended_a1(c, n_as):
+    """Amendment 1: d = the truth's own disagreement (1 - T0 rate); PASS iff wrong / assigned <= d + 0.01, >= 30 assigned."""
+    d = 1 - c["t0_right"] / c["t0_n"] if c["t0_n"] else None
+    if d is None:
+        return {"d": None, "verdict": "NO_T0"}
+    if d > 0.05:
+        return {"d": round(d, 4), "verdict": "STOP (d > 0.05)"}
+    v = "UNDERPOWERED" if n_as < 30 else ("PASS" if c["wrong"] / n_as <= d + 0.01 else "FAIL")
+    return {"d": round(d, 4), "bar": round(d + 0.01, 4), "assigned": n_as, "wrong": c["wrong"],
+            "wrong_own_sibling": c["wrong_own_sibling"], "wrong_own_other": c["wrong_own_other"],
+            "wrong_foreign": c["wrong_foreign"], "verdict": v}
+
+
 def primaries(bam):
     out = {}
     res = subprocess.run(["samtools", "view", "-F", "2308", bam], capture_output=True, text=True, check=True).stdout
@@ -132,7 +145,9 @@ def main(truth_tsv, catalog_tsv, bam, prefix, out):
                 c["wrong"] += 1
                 c["wrong_own"] += 1
                 per_fam[fam]["wrong"] += 1
-                examples["wrong"].append({"read": q, "kind": "own", "family": fam, "copy": r["catalog_copy_idx"],
+                sib = overlaps(span[(fam, r["catalog_copy_idx"])], span[(fam, t["sibling_copy"])])
+                c["wrong_own_sibling" if sib else "wrong_own_other"] += 1
+                examples["wrong"].append({"read": q, "kind": "own_sibling" if sib else "own_other", "family": fam, "copy": r["catalog_copy_idx"],
                                           "truth_copy": t["truth_copy"], "aligner_primary_right": al_right,
                                           "columns": star.get(q, {}).get("columns", "")[:400]})
         # A2: distinguishability on the own-family star row
@@ -155,6 +170,7 @@ def main(truth_tsv, catalog_tsv, bam, prefix, out):
                              "pass": bool(c["t0_n"]) and c["t0_right"] / c["t0_n"] >= 0.99},
            "A1_precision": {"assigned": n_as, "wrong": c["wrong"], "upper95_error": upper95(c["wrong"], n_as),
                             "verdict": "UNDERPOWERED" if n_as < 30 else ("PASS" if c["wrong"] / n_as <= 0.01 else "FAIL")},
+           "A1_amended": amended_a1(c, n_as),
            "A2_calibration": {"n": c["notdist"], "assigned": c["notdist_assigned"],
                               "rate": round(c["notdist_assigned"] / c["notdist"], 4) if c["notdist"] else None,
                               "verdict": None if not c["notdist"] else ("PASS" if c["notdist_assigned"] / c["notdist"] <= 0.05 else "FAIL")},
