@@ -17,7 +17,9 @@ FLANK, STEP = 10_000, 100
 def ortholog_base(recs, qlen, flank, site_offset, fetch_target):
     """The man's base at query offset `site_offset`, through the single alignment spanning both flanks, else None.
     Returned in FORWARD reference orientation: complemented when the alignment is on the '-' strand."""
-    span = [r for r in recs if r["tp"] == "P" and r["qs"] < flank and r["qe"] > qlen - flank]
+    # R8: every record spanning both flanks counts, primary or secondary (a tandem duplicate in the man yields a
+    # secondary spanning alignment); the base is taken only when exactly one such record exists.
+    span = [r for r in recs if r["qs"] < flank and r["qe"] > qlen - flank]
     if len(span) != 1:
         return None
     r = span[0]
@@ -26,6 +28,15 @@ def ortholog_base(recs, qlen, flank, site_offset, fetch_target):
         return None
     b = fetch_target(r["tname"], t, t + 1).upper()
     return b.translate(KL.COMP) if r["strand"] == "-" else b
+
+
+def locus_window(fetch, length, chrom, p):
+    """(locus sequence, site offset) for a site at p with +- FLANK bp on each side, or None when the window would run
+    off the contig (p < FLANK or p + FLANK + 1 > contig length). Such sites do not qualify, so no clamped window is
+    ever used with a shifted site offset."""
+    if p - FLANK < 0 or p + FLANK + 1 > length(chrom):
+        return None
+    return fetch(chrom, p - FLANK, p + FLANK + 1), FLANK
 
 
 def unique_flanks(F, kscan, genome_fa, sites, workdir):
@@ -53,11 +64,14 @@ def main(prefix, catalog_tsv, genome_fa, asm_dir, kscan, out):
     ycols = {k: v for k, v in cols.items() if all(c == "chrY" for _, c, *_ in v)}
     sites = sorted({(c, p) for v in ycols.values() for _, c, p, *_ in v})
     ok = unique_flanks(F, kscan, genome_fa, sites, out)
+    win = {s: locus_window(F.fetch, F.length, *s) for s in sites}
+    for s in sites:
+        ok[s] = ok[s] and win[s] is not None          # edge sites: NO_ALIGN, never a clamped window
     qual = [s for s in sites if ok[s]]
     qfa = os.path.join(out, "loci.fa")
     with open(qfa, "w") as fh:
         for c, p in qual:
-            fh.write(f">{c}:{p}\n{F.fetch(c, p - FLANK, p + FLANK + 1)}\n")
+            fh.write(f">{c}:{p}\n{win[(c, p)][0]}\n")
     base = collections.defaultdict(dict)   # site -> man -> base or None
     for mi, fa in enumerate(men):
         T = P.Fasta(fa)
@@ -65,7 +79,8 @@ def main(prefix, catalog_tsv, genome_fa, asm_dir, kscan, out):
         for r in P.run_paf(["minimap2", "-cx", "asm5", "--cs", "-t", "2", fa, qfa]):
             recs[r["qname"]].append(r)
         for c, p in qual:
-            base[(c, p)][mi] = ortholog_base(recs.get(f"{c}:{p}", []), 2 * FLANK + 1, FLANK, FLANK,
+            locus, off = win[(c, p)]
+            base[(c, p)][mi] = ortholog_base(recs.get(f"{c}:{p}", []), len(locus), FLANK, off,
                                              lambda n, s, e: T.fetch(n, s, e))
     half = math.ceil(len(men) / 2)
     with open(os.path.join(out, "align_status.tsv"), "w") as fh:
