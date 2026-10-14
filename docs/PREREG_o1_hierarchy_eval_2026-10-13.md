@@ -96,8 +96,9 @@ families counts every Soto family that sits one level down as a miss.
    - Soto's families are matched by our families, superfamilies and SD complexes.
    - The headline rate is (`hierarchy.exact` - `exact_by_level.expansion`) / `hierarchy.n_truth`. Quote it with
      `exact_by_level` and `by_level` excluding `expansion`, next to the flat score.
-   - The within-family null is not rejected at p < 0.001 on at least one of its two statistics. So no claim is made
-     that our expansions recover Soto beyond random within-family splits of the same sizes.
+   - On at least one catalog, the within-family null is not rejected at p < 0.001 on at least one of its two
+     statistics. So no claim is made that our expansions recover Soto beyond random within-family splits of the same
+     sizes.
 4. **E1, E1b and E2 pass:** "Soto's families are nodes of our hierarchy". The O1 headline for Soto becomes, per
    catalog, the exact rate and mean Jaccard, next to the flat score and the coverage.
 
@@ -127,7 +128,7 @@ In every case the headline rate is quoted with `hierarchy.n_truth` (evaluable) o
   - the global null averaged 0.045 exact matches;
   - the within-family null averaged 224 of the observed 231.
 
-  The exact-expansion count was:
+  The tie-free exact-expansion count (`exact_any.expansion`) was:
   - 215 with key mapping (the 10-09 Rust placement);
   - 206 with exon + strand mapping;
   - 169 with span-overlap mapping. That mode existed only in the probe; the committed scorer has no span mode.
