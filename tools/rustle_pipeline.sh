@@ -39,6 +39,10 @@
 #             naming the flagged candidate whose nearest locus is the row's)
 #   all       assemble, families, assign, flag; with --candidates the candidates stage before assign, with
 #             --legacy-catalog the catalog there instead
+#   sd        the genome's segmental duplications and duplicons            utilities sd-scan (vendored sedef-rs)
+#             once per genome, cached by the FASTA's md5 and sd-scan's version key in RUSTLE_SD_CACHE_DIR (default
+#             PREFIX.cache)/sd/<key>/genome.sd.*; PREFIX.sd.prefix names that prefix for `mcl_families --emit-hierarchy
+#             --sd-cache`. Needs --fasta and --out only; `all` does not run it.
 # (thesis record: families/catalog = O1, candidates = O3, assign = O2, flag = O3; in order O1 families -> O3 candidates ->
 #  O2 assign -> O3 flag)
 #
@@ -48,6 +52,7 @@
 #        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
+#   tools/rustle_pipeline.sh sd --fasta G --out PREFIX [--threads N] [--bin DIR]   the genome's SDs, cached (stage sd)
 # --piecewise (catalog only; needs the cache): the catalog's representatives (both BAM passes + the span-overlap
 #   collapse and its POA, none of which compares two contigs) are built one CONTIG per piece, each cached in
 #   PREFIX.cache/reps/; when all are cached they are merged into the one-run order and the catalog continues as one
@@ -195,6 +200,35 @@ if [ "$STAGE" = cache-ls ]; then
   done
   exit 0
 fi
+# sd (docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md): the genome's segmental duplications with the
+# vendored sedef-rs (`utilities sd-scan`), once per genome: cached in RUSTLE_SD_CACHE_DIR (default PREFIX.cache) under
+# sd/<md5 of the FASTA>-<md5 of sd-scan's version key, 8 hex>/genome.sd.*, DONE written last. PREFIX.sd.prefix names
+# the cached prefix that `mcl_families --emit-hierarchy --sd-cache` takes. Needs --fasta and --out only (no BAM), so it
+# is a stage function plus a `case "$STAGE"` block that exits before the shared --bam check: figures/samples.py's
+# driver_stage_code leaves every other stage's code hash as it was.
+stage_sd() {
+  [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "[rustle_pipeline] sd needs --fasta and --out" >&2; exit 2; }
+  [ -s "$FASTA" ] || { echo "[rustle_pipeline] sd: $FASTA is missing or empty" >&2; exit 2; }
+  local key md5 dir
+  key=$("$BIN/utilities" sd-scan --version-key) || { echo "[rustle_pipeline] sd: $BIN/utilities has no sd-scan; rebuild it" >&2; exit 2; }
+  md5=$(md5sum < "$FASTA" | cut -c1-32)
+  dir=${RUSTLE_SD_CACHE_DIR:-$OUT.cache}/sd/$md5-$(printf '%s' "$key" | md5sum | cut -c1-8)
+  if [ -f "$dir/DONE" ]; then
+    echo "[rustle_pipeline] $(date +%H:%M:%S) sd: cached ($dir)" >&2
+  else
+    mkdir -p "$dir"
+    echo "[rustle_pipeline] $(date +%H:%M:%S) sd: utilities sd-scan on $FASTA -> $dir" >&2
+    "$BIN/utilities" sd-scan --genome "$FASTA" --out "$dir/genome" --threads "$THREADS" > "$OUT.sd.log" 2>&1 \
+      || { echo "[rustle_pipeline] sd: sd-scan failed (exit $?); see $OUT.sd.log" >&2; exit 1; }
+    printf 'sd\t%s\t%s\t%s\n' "$md5" "$key" "$FASTA" > "$dir/key.tsv"
+    touch "$dir/DONE"
+  fi
+  printf '%s\n' "$dir/genome" > "$OUT.sd.prefix"
+  echo "[rustle_pipeline] $(date +%H:%M:%S) sd: $(awk -F'\t' '!/^#/ && $11=="ok"' "$dir/genome.sd.pairs.tsv" | wc -l) SD pairs (ok), $(awk '!/^#/' "$dir/genome.sd.families.tsv" | wc -l) duplication families; --sd-cache $dir/genome ($OUT.sd.prefix)" >&2
+}
+case "$STAGE" in
+  sd) stage_sd; exit 0;;
+esac
 if [ "$STAGE" = index ]; then
   [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "index needs --fasta and --out" >&2; exit 2; }
 else
