@@ -153,15 +153,21 @@ pre-registered for them (write the `PREREG_` before reading further).
 
 **What the two bold rows are (both diagnosed, neither is the simulation):**
 
-1. **`mcl_families` on a two-member family is numerically fragile.** `snp_0.01`, `snp_0.1` (both species) and the human
-   `shuffle` de novo arm all log `2 nodes, 1 edges, 0 pairs dropped` and then `0 cluster(s) >= 2 members`. The MCL
-   (`annotation_families.rs::mcl`) adds self-loops of 1.0 while the edge weight is identity × coverage < 1; on two nodes the
-   iteration converges toward a tie between self and mate and the convergence test (`|u − v| < 1e-7`) stops at a residual
-   whose sign decides the attractor. The bit-faithful port reproduces it: `lib.mcl({("a","b"): w})` joins at w = 0.999,
-   0.995, 0.98, 0.97, 0.95, 0.93, 0.85, 0.80 and SPLITS at 0.99, 0.985, 0.90, 0.75, 0.61; three nodes always join; inflation
-   2.0 joins both probed weights. 57 % of genome-wide families are size 2 (`FAMILY_DEF.md`) and `--min-size 2` is a user
-   decision (§6ex), so this is worth a pre-registered fix (a connected pair is a cluster; or self-loops = the column's max
-   edge weight, standard MCL; or a tolerant attractor comparison). Nothing was changed here.
+1. **`mcl_families` on a two-member family is numerically fragile.** **Fixed 2026-10-13**
+   (`docs/PREREG_mcl_two_node_2026-10-13.md`): after MCL a pair rule decides every connected two-node component
+   (`mcl_families --pair-rule`, default `weight-blind`: a connected pair is one family), and `snp_0.01`, `snp_0.1` (both
+   species) and human `shuffle` are intact in both modes after the fix (F3). The 10-02 diagnosis: `snp_0.01`, `snp_0.1`
+   (both species) and the human `shuffle` de novo arm all log `2 nodes, 1 edges, 0 pairs dropped` and then
+   `0 cluster(s) >= 2 members`. The MCL (`annotation_families.rs::mcl`) adds self-loops of 1.0 while the edge weight is
+   identity × coverage < 1; on two nodes the iteration converges toward a tie between self and mate and the convergence
+   test (`|u − v| < 1e-7`) stops at a residual whose sign decides the attractor. The bit-faithful port reproduces it:
+   `lib.mcl({("a","b"): w})` joins at w = 0.999, 0.995, 0.98, 0.97, 0.95, 0.93, 0.85, 0.80 and SPLITS at 0.99, 0.985,
+   0.90, 0.75, 0.61; three nodes joined at the probed weights, but not always: a uniform triangle with one weight w < 1
+   splits asymmetrically at 39 of the 500 weights 0.500..0.999 in an independent port, and a uniform K4 at 58 (prereg
+   Amendment 1(b); the pair rule does not cover them); inflation 2.0 joins both probed weights. 57 % of genome-wide
+   families are size 2 (`FAMILY_DEF.md`) and `--min-size 2` is a user decision (§6ex), so this is worth a pre-registered
+   fix (a connected pair is a cluster; or self-loops = the column's max edge weight, standard MCL; or a tolerant
+   attractor comparison). Nothing was changed here on 10-02.
 2. **An inverted exon inside a 2 %-divergent copy can lose the pair at `--min-shared-exon-frac 0.60`** (human SNRPB exon 5
    of 8: dropped in BOTH modes; orangutan SPAG7 exon 4 of 7: kept). The inversion splits the all-vs-all alignment into
    records and the shared-exon conjunct is evaluated on one of them.

@@ -60872,15 +60872,103 @@ pub mod fam_from_gtf {
         ///
         /// Determinism: the graph is a `BTreeMap`, columns are normalised in index order, and ties keep the
         /// lowest index — the same PAF and parameters always yield the same clustering.
+        ///
+        /// Post-step (`docs/PREREG_mcl_two_node_2026-10-13.md`): after the attractors are read, every connected
+        /// two-node component is decided by a pair rule, because at weights >= `w*` MCL's own answer there was float
+        /// residue. `mcl` is the WEIGHT-BLIND rule (every connected pair is one cluster; the 10-13 spec and the
+        /// default). The switch is [`mcl_pair_rule`] with [`PairRule`] (`mcl_families --pair-rule
+        /// weight-blind|exact-mcl`): `ExactMcl` joins a pair only at weight >= [`pair_boundary`]`(inflation)`.
         pub fn mcl(
             g: &HomologyGraph,
             inflation: f64,
             max_iter: usize,
             prune: f64,
         ) -> Vec<Vec<usize>> {
+            mcl_pair_rule(g, inflation, max_iter, prune, PairRule::WeightBlind)
+        }
+
+        /// How a connected two-node component is decided after MCL's attractors are read
+        /// (`docs/PREREG_mcl_two_node_2026-10-13.md`, Amendment 1(a); `mcl_families --pair-rule`).
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+        pub enum PairRule {
+            /// Every connected two-node component is one cluster, whatever its edge weight: the pre-registered rule
+            /// and the default (the 10-13 spec). Below [`pair_boundary`] this is a definition change, not a residue fix.
+            WeightBlind,
+            /// Exact-MCL semantics: a two-node component is one cluster when its edge weight is >= [`pair_boundary`]
+            /// (exact arithmetic converges to the self/mate tie, and a tie keeps the lowest index, so the pair joins);
+            /// below it MCL's result stands (a deterministic split). Edge weights here are <= 1 (identity x coverage,
+            /// coverage capped at 1). On the four shipped default catalogs it reproduces their `clusters.tsv` and
+            /// `loci.tsv` byte for byte (2026-10-13): MCL had joined every pair at weight >= `w*` there.
+            ExactMcl,
+        }
+
+        impl PairRule {
+            /// The CLI value, as `params.tsv` and the log print it.
+            pub fn name(self) -> &'static str {
+                match self {
+                    PairRule::WeightBlind => "weight-blind",
+                    PairRule::ExactMcl => "exact-mcl",
+                }
+            }
+        }
+
+        /// The weight `w*(I)` below which exact MCL splits a lone pair (self-loops 1.0): `1 / rho*`, where
+        /// `rho* > 1` is the unstable fixed point of the pair column's ratio map `rho -> ((rho^2 + 1) / (2 rho))^I`
+        /// (self over mate; the column starts at `rho = 1 / w`). From `rho < rho*` the ratio falls to the tie
+        /// `rho = 1`; from `rho > rho*` it grows without bound (the pair splits). Bisection to 1e-12 on `rho`,
+        /// started at the minimum of `f(rho) / rho` (`rho = sqrt((I + 1) / (I - 1))`, below which there is no
+        /// crossing). `0.0` for `I <= 1` (every pair ties: no boundary) and when `rho*` overflows. 0.456885 at
+        /// `I = 2.8`.
+        pub fn pair_boundary(inflation: f64) -> f64 {
+            if !(inflation > 1.0) {
+                return 0.0;
+            }
+            let g = |rho: f64| ((rho * rho + 1.0) / (2.0 * rho)).powf(inflation) - rho;
+            let mut lo = ((inflation + 1.0) / (inflation - 1.0)).sqrt();
+            let mut hi = 2.0 * lo;
+            while g(hi) <= 0.0 {
+                hi *= 2.0;
+                if !hi.is_finite() {
+                    return 0.0;
+                }
+            }
+            for _ in 0..4096 {
+                let mid = 0.5 * (lo + hi);
+                if hi - lo <= 1e-12 || mid <= lo || mid >= hi {
+                    break;
+                }
+                if g(mid) < 0.0 {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            1.0 / (0.5 * (lo + hi))
+        }
+
+        /// [`mcl`] with the pair rule chosen (`mcl_families --pair-rule`).
+        pub fn mcl_pair_rule(
+            g: &HomologyGraph,
+            inflation: f64,
+            max_iter: usize,
+            prune: f64,
+            rule: PairRule,
+        ) -> Vec<Vec<usize>> {
+            mcl_pair_rule_counted(g, inflation, max_iter, prune, rule).0
+        }
+
+        /// [`mcl_pair_rule`] plus the number of connected two-node components the rule joined: emitted as a pair
+        /// although MCL's attractors had split them (`mcl_families`' `pairs_joined_by_rule`).
+        pub fn mcl_pair_rule_counted(
+            g: &HomologyGraph,
+            inflation: f64,
+            max_iter: usize,
+            prune: f64,
+            rule: PairRule,
+        ) -> (Vec<Vec<usize>>, usize) {
             let n = g.n_nodes();
             if n == 0 {
-                return Vec::new();
+                return (Vec::new(), 0);
             }
             // Column-major sparse matrix with self-loops, as MCL requires.
             let mut col: Vec<BTreeMap<usize, f64>> = vec![BTreeMap::new(); n];
@@ -60909,7 +60997,7 @@ pub mod fam_from_gtf {
                     break;
                 }
             }
-            join_two_node_components(&g.edges, attractors(&col, n))
+            join_two_node_components(&g.edges, attractors(&col, n), rule, inflation)
         }
 
         fn normalize(col: &mut [BTreeMap<usize, f64>]) {
@@ -60981,22 +61069,31 @@ pub mod fam_from_gtf {
             out
         }
 
-        /// PREREG_mcl_two_node_2026-10-13: a connected component of exactly two nodes is ONE cluster.
+        /// PREREG_mcl_two_node_2026-10-13: the pair rule decides every connected component of exactly two nodes.
         ///
-        /// For a lone pair at inflation `I` with self-loops of 1.0 there is a boundary `w*(I)`: the unstable fixed
-        /// point of the pair's ratio map `rho -> ((rho^2 + 1) / (2 rho))^I` at `rho = 1 / w`, which is 0.456885 at
-        /// `I = 2.8`.
+        /// For a lone pair at inflation `I` with self-loops of 1.0 there is a boundary `w*(I)` ([`pair_boundary`]):
+        /// the unstable fixed point of the pair's ratio map `rho -> ((rho^2 + 1) / (2 rho))^I` at `rho = 1 / w`,
+        /// which is 0.456885 at `I = 2.8`.
         /// - Above `w*` the column converges toward a tie between "self" and "mate", and the sign of the 1e-7
         ///   convergence residual chose join or split (0.99 split, 0.98 joined). That is the bug.
         /// - Below `w*` exact MCL splits the pair deterministically: the mate's mass is pruned away.
         ///
-        /// The rule joins both, by design: a connected pair is a family, which is the pre-registered rule. So below
-        /// `w*` it is a definition change, not a residue fix. Flow never crosses components, so a pair's fate is
-        /// settled here and every other cluster passes through unchanged, in the same order.
+        /// `PairRule::WeightBlind` joins both, by design: a connected pair is a family, which is the pre-registered
+        /// rule. So below `w*` it is a definition change, not a residue fix. `PairRule::ExactMcl` joins only the pairs
+        /// at `w >= w*` (what exact arithmetic gives) and leaves MCL's result below it (Amendment 1(a): the choice is
+        /// the user's). Flow never crosses components, so a pair's fate is settled here and every other cluster
+        /// passes through unchanged, in the same order. Returns the clusters and the number of pairs the rule joined
+        /// (two-node components emitted as a pair whose attractors had split them).
         fn join_two_node_components(
             edges: &BTreeMap<(usize, usize), f64>,
             clusters: Vec<Vec<usize>>,
-        ) -> Vec<Vec<usize>> {
+            rule: PairRule,
+            inflation: f64,
+        ) -> (Vec<Vec<usize>>, usize) {
+            let w_min = match rule {
+                PairRule::WeightBlind => None,
+                PairRule::ExactMcl => Some(pair_boundary(inflation)),
+            };
             let mut deg: BTreeMap<usize, usize> = BTreeMap::new();
             for &(a, b) in edges.keys() {
                 if a != b {
@@ -61005,25 +61102,29 @@ pub mod fam_from_gtf {
                 }
             }
             let mut mate: BTreeMap<usize, usize> = BTreeMap::new();
-            for &(a, b) in edges.keys() {
-                if a != b && deg[&a] == 1 && deg[&b] == 1 {
+            for (&(a, b), &w) in edges {
+                if a != b && deg[&a] == 1 && deg[&b] == 1 && w_min.map_or(true, |m| w >= m) {
                     mate.insert(a, b);
                     mate.insert(b, a);
                 }
             }
             if mate.is_empty() {
-                return clusters;
+                return (clusters, 0);
             }
+            let mut joined = 0usize;
             let mut out: Vec<Vec<usize>> = Vec::with_capacity(clusters.len());
             for c in clusters {
                 match (c.len(), c.first().and_then(|x| mate.get(x))) {
-                    (1, Some(&m)) if m > c[0] => out.push(vec![c[0], m]),
+                    (1, Some(&m)) if m > c[0] => {
+                        out.push(vec![c[0], m]);
+                        joined += 1;
+                    }
                     (1, Some(_)) => {}
                     _ => out.push(c),
                 }
             }
             out.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
-            out
+            (out, joined)
         }
 
         /// A cluster as reported: member genes plus the two statistics that decide whether it is a family.
@@ -61395,8 +61496,8 @@ pub mod fam_from_gtf {
             }
 
             /// PREREG_mcl_two_node_2026-10-13 F1: a connected pair is ONE family at every weight. Before the fix the
-            /// sign of a 1e-7 convergence residual decided it: the probe split 0.99, 0.985, 0.90 and 0.75, and 160 of
-            /// the 500 weights 0.500..0.999 split at the shipped inflation 2.8 / prune 1e-9.
+            /// sign of a 1e-7 convergence residual decided it: the probe split 0.99, 0.985, 0.90 and 0.75, and 159 of
+            /// the 500 weights 0.500..0.999 split at the shipped inflation 2.8 / prune 1e-9 (Amendment 1(c)).
             #[test]
             fn a_connected_pair_is_one_family_at_every_weight() {
                 for w in [0.999, 0.995, 0.99, 0.985, 0.98, 0.97, 0.95, 0.93, 0.90, 0.85, 0.80, 0.75] {
@@ -61434,14 +61535,95 @@ pub mod fam_from_gtf {
                     edges.insert((a, b), 0.9);
                 }
                 let singles: Vec<Vec<usize>> = (0..7).map(|i| vec![i]).collect();
-                assert_eq!(join_two_node_components(&edges, singles.clone()), singles);
+                let rule = PairRule::WeightBlind;
+                assert_eq!(join_two_node_components(&edges, singles.clone(), rule, 2.8).0, singles);
                 edges.insert((7, 8), 0.9);
                 let mut want: Vec<Vec<usize>> = vec![vec![7, 8]];
                 want.extend((0..7).map(|i| vec![i]));
-                assert_eq!(join_two_node_components(&edges, (0..9).map(|i| vec![i]).collect()), want);
+                assert_eq!(join_two_node_components(&edges, (0..9).map(|i| vec![i]).collect(), rule, 2.8).0, want);
             }
 
-            /// PREREG_mcl_two_node_2026-10-13: the pair rule is weight-blind BY DESIGN (it has no threshold). Below the
+            /// `--pair-rule` (Amendment 1(a)): the boundary is w*(I) = 1 / rho*, rho* > 1 the unstable fixed point of the
+            /// lone pair's ratio map rho -> ((rho^2 + 1) / (2 rho))^I; at I <= 1 there is no boundary.
+            #[test]
+            fn pair_boundary_is_the_unstable_fixed_point_of_the_pair_map() {
+                let w = pair_boundary(2.8);
+                assert!((w - 0.456885).abs() < 1e-6, "w*(2.8) = {w}");
+                let rho = 1.0 / w;
+                assert!(
+                    (((rho * rho + 1.0) / (2.0 * rho)).powf(2.8) - rho).abs() < 1e-9,
+                    "rho* = {rho} is not fixed"
+                );
+                assert_eq!(pair_boundary(1.0), 0.0);
+                assert_eq!(pair_boundary(0.5), 0.0);
+            }
+
+            /// `--pair-rule exact-mcl` leaves MCL's split of a pair below w* and joins a pair above it (where exact
+            /// arithmetic converges to the self/mate tie and the tie keeps the lowest index); `weight-blind` joins both.
+            #[test]
+            fn exact_mcl_splits_a_pair_below_w_star_and_weight_blind_joins_it() {
+                assert_eq!(
+                    mcl_pair_rule(&pair_graph(0.30), 2.8, 100, 1e-9, PairRule::ExactMcl),
+                    vec![vec![0], vec![1]]
+                );
+                assert_eq!(
+                    mcl_pair_rule(&pair_graph(0.99), 2.8, 100, 1e-9, PairRule::ExactMcl),
+                    vec![vec![0, 1]]
+                );
+                for w in [0.30, 0.99] {
+                    let got = mcl_pair_rule(&pair_graph(w), 2.8, 100, 1e-9, PairRule::WeightBlind);
+                    assert_eq!(got, vec![vec![0, 1]], "w = {w}");
+                    assert_eq!(
+                        mcl(&pair_graph(w), 2.8, 100, 1e-9),
+                        got,
+                        "mcl() is the weight-blind rule, w = {w}"
+                    );
+                }
+            }
+
+            /// `pairs_joined_by_rule`: the two-node components the rule emitted as a pair after MCL's attractors had
+            /// split them. A pair MCL already joined is not counted; under exact-mcl a pair below w* stays split.
+            #[test]
+            fn the_pair_rule_counts_only_the_pairs_it_joined() {
+                let mut edges: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+                edges.insert((0, 1), 0.30); // below w*(2.8)
+                edges.insert((2, 3), 0.99); // above w*, split by MCL's residue
+                edges.insert((4, 5), 0.99); // above w*, joined by MCL
+                let attractors = vec![vec![4, 5], vec![0], vec![1], vec![2], vec![3]];
+                assert_eq!(
+                    join_two_node_components(
+                        &edges,
+                        attractors.clone(),
+                        PairRule::WeightBlind,
+                        2.8
+                    ),
+                    (vec![vec![0, 1], vec![2, 3], vec![4, 5]], 2)
+                );
+                assert_eq!(
+                    join_two_node_components(&edges, attractors, PairRule::ExactMcl, 2.8),
+                    (vec![vec![2, 3], vec![4, 5], vec![0], vec![1]], 1)
+                );
+                // through MCL: a triangle and two pairs below w* (MCL splits both deterministically)
+                let mut g = HomologyGraph::default();
+                for i in 0..7u64 {
+                    g.genes.push(("c".to_string(), i * 100 + 1, i * 100 + 50));
+                }
+                for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+                    g.edges.insert((a, b), 0.95);
+                }
+                g.edges.insert((3, 4), 0.30);
+                g.edges.insert((5, 6), 0.30);
+                assert_eq!(
+                    mcl_pair_rule_counted(&g, 2.8, 100, 1e-9, PairRule::WeightBlind),
+                    (vec![vec![0, 1, 2], vec![3, 4], vec![5, 6]], 2)
+                );
+                assert_eq!(
+                    mcl_pair_rule_counted(&g, 2.8, 100, 1e-9, PairRule::ExactMcl),
+                    (vec![vec![0, 1, 2], vec![3], vec![4], vec![5], vec![6]], 0)
+                );
+            }
+
+            /// PREREG_mcl_two_node_2026-10-13: `mcl`'s pair rule is weight-blind BY DESIGN (it has no threshold). Below the
             /// boundary w* = 0.456885 (inflation 2.8, self-loops 1.0) exact MCL splits a lone pair deterministically,
             /// yet a connected pair is a family, so it joins there too: a definition change, not a residue fix. The
             /// band is reachable: the shipped admission floors (identity 0.70, cov_longer 0.30) allow an edge as weak

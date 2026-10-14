@@ -16,8 +16,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
-    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks, mcl,
-    sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, SdPairs,
+    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks,
+    mcl_pair_rule_counted, sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
 use rustle::fam_from_gtf::{
     clip_extents_to_neighbours, exonic_blocks, gene_strands, gtf_loci, junction_count,
@@ -114,6 +114,17 @@ struct Args {
     /// §6ed was built at 1e-5; pass `--prune 1e-5` to reproduce them byte-for-byte.
     #[arg(long, default_value_t = 1e-9)]
     prune: f64,
+
+    /// How a connected TWO-NODE component is decided after MCL (`docs/PREREG_mcl_two_node_2026-10-13.md`,
+    /// Amendment 1(a)). On a lone pair MCL's own answer above the boundary `w*` (0.456885 at inflation 2.8) was
+    /// float residue. `weight-blind` (default; the 10-13 spec): every connected pair is one family, whatever its
+    /// weight — below `w*` a definition change, since exact MCL splits such a pair. `exact-mcl`: a pair is joined
+    /// only at weight >= `w*` (exact-arithmetic MCL), otherwise MCL's split stands; on the four shipped default
+    /// catalogs it reproduces their `clusters.tsv` and `loci.tsv` byte for byte (2026-10-13; MCL had joined every
+    /// pair at weight >= `w*` there). The choice is the user's. `params.tsv` records the rule and
+    /// `pairs_joined_by_rule` (pairs the rule joined after MCL's attractors had split them; counted before the fold).
+    #[arg(long, value_enum, default_value_t = PairRule::WeightBlind)]
+    pair_rule: PairRule,
 
     /// ⭐ Charge `cov_longer`'s NUMERATOR in exonic bases too. Without it the numerator is aligned
     /// GENOMIC span and the denominator is exon-union length — different units, so intronic repeat
@@ -1307,7 +1318,12 @@ fn main() -> Result<()> {
         );
     }
 
-    let parts = mcl(&g, args.inflation, 100, args.prune);
+    let (parts, pairs_joined_by_rule) =
+        mcl_pair_rule_counted(&g, args.inflation, 100, args.prune, args.pair_rule);
+    eprintln!(
+        "[mcl_families] pair-rule {}: {pairs_joined_by_rule} two-node component(s) joined by the rule",
+        args.pair_rule.name()
+    );
     // ⭐ §6ey: fold overlapping records into loci INSIDE each cluster (sequence decided the cluster, coordinates
     // decide the locus). `parts` becomes representative-only; the fold map is written like the fold-first one.
     let (parts, loci) = if args.fold_within_clusters {
@@ -2663,6 +2679,10 @@ fn main() -> Result<()> {
     if args.representative == Representative::MostJunctions {
         writeln!(ph, "representative\tmost-junctions")?;
     }
+    // `--pair-rule` (PREREG_mcl_two_node_2026-10-13 Amendment 1(a)): always the LAST two lines, so every earlier line
+    // keeps its order.
+    writeln!(ph, "pair_rule\t{}", args.pair_rule.name())?;
+    writeln!(ph, "pairs_joined_by_rule\t{pairs_joined_by_rule}")?;
 
     let members: usize = clusters.iter().map(|c| c.members.len()).sum();
     let largest = clusters.iter().map(|c| c.members.len()).max().unwrap_or(0);
@@ -3195,6 +3215,38 @@ mod tests {
             Representative::MostJunctions
         );
         assert!(parse(&["--representative", "longest-span"]).is_err());
+    }
+
+    /// `--pair-rule` (`docs/PREREG_mcl_two_node_2026-10-13.md` Amendment 1(a)): `weight-blind` is the default (the 10-13
+    /// spec), `exact-mcl` the exact-MCL switch; anything else is refused at parse time. The names are the ones
+    /// `params.tsv` and the log print.
+    #[test]
+    fn pair_rule_defaults_to_weight_blind_and_accepts_exactly_the_two_rules() {
+        let parse = |v: &[&str]| {
+            Args::try_parse_from(
+                ["mcl_families", "--out", "o"]
+                    .into_iter()
+                    .chain(v.iter().copied()),
+            )
+        };
+        assert_eq!(parse(&[]).expect("parse").pair_rule, PairRule::WeightBlind);
+        assert_eq!(
+            parse(&["--pair-rule", "weight-blind"])
+                .expect("parse")
+                .pair_rule,
+            PairRule::WeightBlind
+        );
+        assert_eq!(
+            parse(&["--pair-rule", "exact-mcl"])
+                .expect("parse")
+                .pair_rule,
+            PairRule::ExactMcl
+        );
+        assert!(parse(&["--pair-rule", "exact"]).is_err());
+        assert_eq!(
+            (PairRule::WeightBlind.name(), PairRule::ExactMcl.name()),
+            ("weight-blind", "exact-mcl")
+        );
     }
 
     /// A junction is a gap of >= 50 bp between consecutive exons in coordinate order. GFF 1-based closed: after an exon
