@@ -78730,7 +78730,7 @@ pub mod family_hierarchy {
         maximal.iter().enumerate().filter(|(_, m)| sig.is_subset(m)).map(|(i, _)| i).collect()
     }
 
-    /// One SEDEF pair (`chrom1 s1 e1 chrom2 s2 e2 ...`, 0-based half-open), identity from column 21 when present.
+    /// One SD pair, both sides 0-based half-open, from either input format (told apart per row, see `parse_sd`).
     #[derive(Clone, Debug, PartialEq)]
     pub struct SdPair {
         pub a: (String, u64, u64),
@@ -78738,6 +78738,10 @@ pub mod family_hierarchy {
         pub identity: Option<f64>,
     }
 
+    /// SD pairs from either format:
+    /// - a SEDEF BED (`chrom1 s1 e1 chrom2 s2 e2 ...`): identity from column 21 when present;
+    /// - `utilities sd-scan` pairs (`PREFIX.sd.pairs.tsv`: 11 columns, the last `ok` / `self` / `weak`): only `ok` rows
+    ///   are kept, identity = column 9 (`est_id`, percent) / 100 (docs/PREREG_sedef_rs_layers_2026-10-13.md).
     pub fn parse_sd(text: &str) -> Vec<SdPair> {
         let mut out = vec![];
         for line in text.lines() {
@@ -78750,7 +78754,15 @@ pub mod family_hierarchy {
             }
             let p = |x: &str| x.parse::<u64>().ok();
             let (Some(s1), Some(e1), Some(s2), Some(e2)) = (p(f[1]), p(f[2]), p(f[4]), p(f[5])) else { continue };
-            let identity = f.get(20).and_then(|x| x.parse::<f64>().ok());
+            let sd_scan = f.len() == 11 && matches!(f[10], "ok" | "self" | "weak");
+            if sd_scan && f[10] != "ok" {
+                continue;
+            }
+            let identity = if sd_scan {
+                f[8].parse::<f64>().ok().map(|x| x / 100.0)
+            } else {
+                f.get(20).and_then(|x| x.parse::<f64>().ok())
+            };
             out.push(SdPair { a: (f[0].to_string(), s1, e1), b: (f[3].to_string(), s2, e2), identity });
         }
         out
@@ -79145,6 +79157,19 @@ pub mod family_hierarchy {
             let p = parse_sd(&f.join("\t"));
             assert_eq!(p[0].identity, Some(0.97));
             assert_eq!(parse_sd("chr1\t0\t10\tchr1\t20\t30")[0].identity, None);
+        }
+
+        #[test]
+        fn parse_sd_reads_sd_scan_pairs_ok_rows_with_percent_identity() {
+            let text = "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id\tstage2_id\tstatus\n\
+                        chr1\t100\t2100\tchr2\t500\t2500\t-\t1840\t97.6\t97.1\tok\n\
+                        chr1\t0\t900\tchr1\t0\t900\t+\t50\t100.0\t96.6\tself\n\
+                        chr3\t0\t400\tchr4\t0\t400\t+\t10\t91.0\t90.0\tweak\n";
+            let p = parse_sd(text);
+            assert_eq!(p.len(), 1);
+            assert_eq!(p[0].a, ("chr1".to_string(), 100, 2100));
+            assert_eq!(p[0].b, ("chr2".to_string(), 500, 2500));
+            assert!((p[0].identity.unwrap() - 0.976).abs() < 1e-12);
         }
 
         #[test]

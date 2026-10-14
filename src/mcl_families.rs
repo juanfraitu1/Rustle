@@ -255,7 +255,7 @@ struct Args {
     /// signatures; a member's signature = the dominant duplicons of its exons that its family owns), DUPLICONS below,
     /// FUSION LOCI across them (members with exons dominated by duplicons another family owns: `fusion_of`), and external
     /// families (`--hierarchy-external`, e.g. Soto 2025) placed by containment. Writes `<out>.hierarchy.members.tsv`,
-    /// `.nodes.tsv`, `.edges.tsv` (+ `.external.tsv`). It never changes a family. Needs `--gff` and `--hierarchy-duplicons`.
+    /// `.nodes.tsv`, `.edges.tsv` (+ `.external.tsv`). It never changes a family. Needs `--gff` and `--hierarchy-duplicons` (or `--sd-cache`).
     #[arg(long, default_value_t = false)]
     emit_hierarchy: bool,
     /// DupMasker colors BED (`chrom start end duplicon_id ...`, 0-based) for `--emit-hierarchy`.
@@ -265,6 +265,12 @@ struct Args {
     /// `--sedef` it does not switch on `--core-refine`.
     #[arg(long)]
     hierarchy_sd: Option<String>,
+    /// `utilities sd-scan` output prefix for `--emit-hierarchy` (the driver's `sd` stage writes it to `PREFIX.sd.prefix`):
+    /// duplicons from `<PREFIX>.sd.duplicons.tsv` (sedef-rs duplication families) and the SD layer from
+    /// `<PREFIX>.sd.pairs.tsv` (its `ok` rows). It takes the place of `--hierarchy-duplicons` and `--hierarchy-sd`, which it
+    /// excludes (docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md).
+    #[arg(long, conflicts_with_all = ["hierarchy_duplicons", "hierarchy_sd"])]
+    sd_cache: Option<String>,
     /// External families for `--emit-hierarchy`: `chrom start end label` (GFF coordinates of annotation records, one row
     /// per record x label), placed among our families and expansions in `<out>.hierarchy.external.tsv`.
     #[arg(long)]
@@ -740,6 +746,14 @@ fn load_rmsk(path: &str) -> Result<BTreeMap<String, Vec<(u64, u64)>>> {
     Ok(m)
 }
 
+/// `--emit-hierarchy`'s duplicon track and SD pairs: `--sd-cache PREFIX` names both, else the two flags.
+fn hierarchy_inputs(args: &Args) -> (Option<String>, Option<String>) {
+    match &args.sd_cache {
+        Some(p) => (Some(format!("{p}.sd.duplicons.tsv")), Some(format!("{p}.sd.pairs.tsv"))),
+        None => (args.hierarchy_duplicons.clone(), args.hierarchy_sd.clone()),
+    }
+}
+
 /// `--emit-hierarchy`: the hierarchy tables of `rustle::family_hierarchy` for the clusters just written. Annotation only.
 #[allow(clippy::too_many_arguments)]
 fn write_hierarchy(
@@ -1142,8 +1156,8 @@ fn main() -> Result<()> {
         "--emit-relations needs --from-gtf (the relations are read from the unit transcripts of the assembled GTF)"
     );
     anyhow::ensure!(
-        !args.emit_hierarchy || args.hierarchy_duplicons.is_some(),
-        "--emit-hierarchy needs --hierarchy-duplicons (the DupMasker colors BED)"
+        !args.emit_hierarchy || hierarchy_inputs(&args).0.is_some(),
+        "--emit-hierarchy needs --hierarchy-duplicons (the DupMasker colors BED) or --sd-cache (a `utilities sd-scan` prefix)"
     );
     anyhow::ensure!(
         args.representative == Representative::MostReads || args.from_gtf.is_some(),
@@ -1412,6 +1426,7 @@ fn main() -> Result<()> {
     }
 
     if args.emit_hierarchy {
+        let (dup, sd) = hierarchy_inputs(&args);
         let gff = args.gff.clone().context("--emit-hierarchy needs --gff (or --from-gtf): the members' exons")?;
         write_hierarchy(
             &args.out,
@@ -1419,8 +1434,8 @@ fn main() -> Result<()> {
             &blocks,
             loci.as_ref().map(|m| &m.rep_of),
             &gff,
-            args.hierarchy_duplicons.as_deref().unwrap_or_default(),
-            args.hierarchy_sd.as_deref(),
+            dup.as_deref().unwrap_or_default(),
+            sd.as_deref(),
             args.hierarchy_external.as_deref(),
             &g.genes,
             &g.edges.keys().cloned().collect::<Vec<_>>(),
@@ -3247,6 +3262,23 @@ mod tests {
             (PairRule::WeightBlind.name(), PairRule::ExactMcl.name()),
             ("weight-blind", "exact-mcl")
         );
+    }
+
+    #[test]
+    fn sd_cache_names_both_hierarchy_inputs_and_excludes_the_two_flags() {
+        let parse = |v: &[&str]| {
+            Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied()))
+        };
+        let a = parse(&["--emit-hierarchy", "--sd-cache", "/c/sd/k/genome"]).expect("parse");
+        assert_eq!(
+            hierarchy_inputs(&a),
+            (Some("/c/sd/k/genome.sd.duplicons.tsv".to_string()), Some("/c/sd/k/genome.sd.pairs.tsv".to_string()))
+        );
+        let b = parse(&["--hierarchy-duplicons", "d.bed", "--hierarchy-sd", "s.bed"]).expect("parse");
+        assert_eq!(hierarchy_inputs(&b), (Some("d.bed".to_string()), Some("s.bed".to_string())));
+        assert_eq!(hierarchy_inputs(&parse(&[]).expect("parse")), (None, None));
+        assert!(parse(&["--sd-cache", "p", "--hierarchy-duplicons", "d.bed"]).is_err());
+        assert!(parse(&["--sd-cache", "p", "--hierarchy-sd", "s.bed"]).is_err());
     }
 
     /// A junction is a gap of >= 50 bp between consecutive exons in coordinate order. GFF 1-based closed: after an exon
