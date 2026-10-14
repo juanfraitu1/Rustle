@@ -52,3 +52,11 @@ def test_rows_pairs_and_one_based():
     assert out == ["chr1\t10\t20\tchr16\t595\t695\tS\n"] and c["rows_dropped"] == 1
     out, _, _ = L.lift_rows(lifter(), ["chr16\t600\t700\tSD1\t0\t+\t600\t700\t1,1,1\n"])
     assert out == ["chr16\t595\t695\tSD1\t0\t+\t595\t695\t1,1,1\n"]
+
+
+def test_gap_crossings_are_counted_only_on_kept_rows():
+    lines = ["chr16\t400\t600\tchr16\t502\t510\tS\n",   # side 1 crosses the indel, side 2 is unliftable: dropped
+             "chr16\t400\t600\tchr1\t10\t20\tS\n"]      # side 1 crosses, side 2 lifts: kept
+    out, c, _ = L.lift_rows(lifter(), lines, pairs=True)
+    assert len(out) == 1 and c["rows_dropped"] == 1
+    assert (c["rows_crossing_gap"], c["sides_crossing_gap"]) == (1, 1)

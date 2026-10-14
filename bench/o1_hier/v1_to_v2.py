@@ -6,8 +6,9 @@
 An interval lifts only if both of its ends fall inside aligned blocks of its chromosome's chain. An end inside a chain
 gap (an indel, the rDNA arrays) or on a chromosome without a chain (GRCh38 chrY in the plus38Y files) makes it
 unliftable: the row is dropped and counted, never shifted. An interval whose ends sit in different blocks spans an
-indel; it lifts with the indel and is counted (`crosses_gap`). `--pairs` lifts columns 1-3 and 4-6 (SEDEF pairs; the row
-is dropped if either side fails); `--one-based` reads and writes GFF-style closed starts.
+indel; it lifts with the indel and is counted: `rows_crossing_gap` (kept rows with such a side) and
+`sides_crossing_gap` (those sides). `--pairs` lifts columns 1-3 and 4-6 (SEDEF pairs; the row is dropped if
+either side fails); `--one-based` reads and writes GFF-style closed starts.
 """
 import argparse
 import bisect
@@ -69,7 +70,7 @@ def lift_rows(lifter, lines, pairs=False, one_based=False):
         if line.startswith(("#", "track", "browser")) or not line.strip():
             continue
         f = line.rstrip("\n").split("\t")
-        new, got = list(f), []
+        new, got, cross = list(f), [], []
         for ci, si, ei in [(0, 1, 2)] + ([(3, 4, 5)] if pairs else []):
             r = lifter.lift(f[ci], int(f[si]) - off, int(f[ei]))
             if r is None:
@@ -77,11 +78,13 @@ def lift_rows(lifter, lines, pairs=False, one_based=False):
                 got = None
                 break
             new[si], new[ei] = str(r[0] + off), str(r[1])
-            c["crosses_gap"] += r[2]
+            cross.append(r[2])
             got.append(((f[ci], int(f[si]) - off, int(f[ei])), (f[ci], r[0], r[1])))
         if got is None:
             c["rows_dropped"] += 1
             continue
+        c["rows_crossing_gap"] += any(cross)
+        c["sides_crossing_gap"] += sum(cross)
         if not pairs and len(f) >= 8 and f[6] == f[1] and f[7] == f[2]:  # BED thickStart/thickEnd follow the span
             new[6], new[7] = new[1], new[2]
         out.append("\t".join(new) + "\n")

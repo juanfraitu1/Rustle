@@ -1001,7 +1001,7 @@ RLOCK_TIMEOUT=300 bash tools/rlock.sh light python3 bench/o1_hier/soto_truth.py 
 Expected (measured while writing the plan):
 - **DupMasker:** `rows_lifted` 199154; `rows_dropped` 6661 (`unliftable|chrY` 6306, the GRCh38 Y; the rest on
   chr13/14/15/21/22 rDNA regions); `verify` 1000 / 1000 identical.
-- **SEDEF:** `rows_lifted` 150833, `rows_dropped` 925, `crosses_gap` 305; `verify` 1000 / 1000.
+- **SEDEF:** `rows_lifted` 150833, `rows_dropped` 925, `rows_crossing_gap` 156, `sides_crossing_gap` 247 (corrected in Task 3's fix round: the first expected value, 305, also counted sides of dropped rows); `verify` 1000 / 1000.
 - **Truth v1 and v2:** each `rows` 2458, `labels` 491; v2 `exons_unliftable` 0.
 
 A verify fraction below 1.0 or a count off by more than 1% means STOP and report.
