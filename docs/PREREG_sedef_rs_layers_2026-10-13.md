@@ -89,12 +89,13 @@ re-clustered from the same PAF.
         --hierarchy-duplicons winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed
         --hierarchy-sd winloci_data/soto_replication/final_v1_clean.bed
         --hierarchy-external /mnt/linuxdisk/tmp/hier_flag/soto_external.tsv
+        --out <arm dir>/ours
 
   This is the registered F_O command (10-09), re-run.
-- **sd-scan:** the same command, with `--hierarchy-duplicons <CHM13 v1.0 sd cache prefix>.sd.duplicons.tsv`. The SD
-  layer stays SEDEF, so only the duplicons differ.
+- **sd-scan:** the same command with `--hierarchy-duplicons <CHM13 v1.0 sd cache prefix>.sd.duplicons.tsv` (and its own
+  `--out <arm dir>/ours`). The SD layer stays SEDEF, so only the duplicons differ.
 
-**H0 (guard).** `clusters.tsv`, `loci.tsv` and `pairs.tsv` are byte-identical between the arms.
+**H0 (guard).** `ours.clusters.tsv`, `ours.loci.tsv` and `ours.pairs.tsv` are byte-identical between the arms.
 
 **Scorer.** `bench/paf_duplicons/score_units.py`, unchanged (register 1263):
 - the cover of a family (>= 2 members) = its expansions plus its `unique` class;
@@ -136,11 +137,12 @@ Added after this document's task review and before any sd-scan output was compar
 filter or measure changes.
 
 - **Provenance.** The CHM13 v2.0 and gorilla sd-scan runs were started before this document's first commit (to overlap
-  compute with other work; the plan's rule is that nothing is compared with SEDEF or DupMasker before registration, and
-  the gates themselves, the comparisons, run only after it, as spec section 2 requires). Only their own counts (pairs,
-  families, run time, memory) were looked at; nothing was compared with SEDEF or DupMasker before this section was
-  committed. Both runs used the `utilities` binary built from branch `o1-layers` at ee6eb9c5, whose `src/sedef/` and
-  `src/utilities.rs` equal commit 96b75970's, with the version key registered above.
+  compute with other work). Only their own counts (pairs, families, run time, memory) were looked at; nothing was
+  compared with SEDEF or DupMasker before this section was committed. Both runs used the `utilities` binary built from
+  branch `o1-layers` at ee6eb9c5, whose `src/sedef/` and `src/utilities.rs` equal commit 96b75970's, with the version
+  key registered above. This departs from spec section 2, which places these whole-genome runs inside the V1 gate and
+  pre-registers each gate before it runs. The runs produced sd-scan's own outputs only; nothing was compared with SEDEF
+  or DupMasker before registration (the plan's rule).
 - **Readings apply per layer.** The SD layer follows V1; the Soto layer's SD98 source follows V1b; the expansion layer
   follows V2. V2's "Otherwise" reading concerns the duplicon and expansion layers only; the SD layer's source is whatever
   V1 decided. This narrows the spec's "sedef-rs gives the SD level only" (section 2, V2 fail), which presupposed a
@@ -155,15 +157,20 @@ filter or measure changes.
   `/mnt/linuxdisk/tmp/o1_layers/chm13v1.sd.prefix`, written by the driver's `sd` stage (`tools/rustle_pipeline.sh sd`)
   on the CHM13 v1.0 FASTA above.
 - **V2 binary.** Both arms run with the one `mcl_families` binary built in Task 9 of
-  `docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md`. Its source differs from this commit's only in
-  `src/family.rs` (`parse_sd` accepting sd-scan rows) and `src/mcl_families.rs` (`--sd-cache`), and neither arm
-  uses either. Its commit and the binary's sha256 are recorded with the results.
+  `docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md`. Its source differs from the registration commit's (the
+  last commit that changes this document above `## Results`, named with the results) only by Task 9's hunks that add
+  `--sd-cache` to `src/mcl_families.rs` and sd-scan rows to `parse_sd` in `src/family.rs`. Neither arm passes
+  `--sd-cache` or feeds sd-scan rows to `parse_sd`; SEDEF rows parse as before. Its commit and the binary's sha256 are
+  recorded with the results.
 - **V2 comparator.** If the re-run DupMasker arm differs from the registered 10-09 files, the re-run arm is the
   comparator, and V2b's bar is ⌈0.9 × the re-run DupMasker arm's `expansion_not_family`⌉. If that count is 0, V2b
   cannot be decided and V2 fails.
-- **H0 failure.** If `clusters.tsv`, `loci.tsv` or `pairs.tsv` differ between the arms, V2 is not scored and the failure
-  is reported. No V2 reading then applies: the expansion layer stays on DupMasker for human, and apes keep no expansion
-  layer, and the amendment may not be used to cure an H0 failure.
+- **H0 failure.** If `ours.clusters.tsv`, `ours.loci.tsv` or `ours.pairs.tsv` differ between the arms, V2 is not scored
+  and the failure is reported. No V2 reading then applies: human expansions stay on DupMasker and the apes get no
+  expansion layer, and the amendment may not be used to cure an H0 failure.
+- **Task 9's A119b run is descriptive, not V2.** The plan's Task 9 prints, for human A119b, the hierarchy summary
+  counts of a `--sd-cache` run beside the lifted-DupMasker run (members, families, expansions, duplicons owned, SD
+  blocks and complexes). No family score, exact match or Soto placement is computed there.
 - **The one amendment** may change only how the sd-scan arm's duplicon track is built from sd-scan's own outputs
   (segments, families). The bars, the scorer, the split, the DupMasker arm and V2b stay as registered.
 - **V2a's number** is `P1_mean_family_score` from `score_units.py`'s HELD-OUT JSON, as printed (4 decimals); it
@@ -175,8 +182,9 @@ filter or measure changes.
   - Structured families, the one-block null (B1) and the `unique` class are as defined in
     `docs/PREREG_paf_duplicon_units_2026-10-10.md`; F_O is the registered DNA-level partition of the 2,334 loci of
     `/mnt/linuxdisk/tmp/ourhom/loci.paf` + `loci.gff3`, as defined in
-    `docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md` ("Family layers"). Both arms recompute F_O with the V2
-    binary from the same inputs; H0 and the comparator rule govern any difference from the 10-09 partition.
+    `docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md` ("Family layers"). Both arms re-cluster the same PAF with
+    the V2 binary; the registered 10-09 partition is the reference, and H0 and the comparator rule govern any difference
+    from it.
 - **V2b's command** runs once per arm, with `<arm dir>` = `/mnt/linuxdisk/tmp/o1_layers/v2/dupmasker` and
   `/mnt/linuxdisk/tmp/o1_layers/v2/sdscan`: `MEMBERS` = `<arm dir>/ours.hierarchy.members.tsv`, `LOCI` =
   `<arm dir>/ours.loci.tsv`, `OUT` = `<arm dir>/key.json`, and `soto_external.tsv` =
