@@ -104,3 +104,14 @@ def test_main_fails_a_joined_pair_that_is_not_an_isolated_component(tmp_path):
     assert P.main([str(before), str(after), str(out), str(g)]) == 0
     res = json.loads(out.read_text())
     assert (res["joined_by_weight"], res["verdict"]) == ({"below_w_star": 1, "not_isolated": 0}, "PASS")
+
+
+def test_main_fails_a_joined_pair_with_no_edge_in_the_dump(tmp_path):
+    before, after, g, out = (tmp_path / n for n in ("before.tsv", "after.tsv", "g.tsv", "out.json"))
+    write_clusters(before, [])
+    write_clusters(after, [[A, B]])  # the fix joined A-B ...
+    g.write_text(f"{B}\t{C}\t0.300000\n")  # ... but the dump has no A-B edge (A has none at all)
+    assert P.main([str(before), str(after), str(out), str(g)]) == 1
+    res = json.loads(out.read_text())
+    assert res["joined_by_weight"] == {"no_weight": 1, "not_isolated": 0}
+    assert (res["pairs_split"], res["other_changes"], res["verdict"]) == (0, 0, "FAIL")  # only no_weight fails it

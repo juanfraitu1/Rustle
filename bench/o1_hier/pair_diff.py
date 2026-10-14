@@ -8,8 +8,9 @@ whose members are absent from BEFORE (two singletons joined). Every other differ
 only, or the same set with other size/density/frac_in/corroborated values — is an `other_change`; a 2-member set of
 BEFORE whose members are absent from AFTER is a `pair_split`.
 
-With GRAPH_TSV (`mcl_families --dump-graph`) the verdict also requires every joined pair to be an ISOLATED two-node
-component of the dump (`not_isolated` 0). The exit status is the verdict: 0 on PASS, 1 on FAIL.
+With GRAPH_TSV (`mcl_families --dump-graph`) the verdict also requires every joined pair to be an edge of the dump
+(`no_weight` 0) and an ISOLATED two-node component of it (`not_isolated` 0). The exit status is the verdict: 0 on PASS,
+1 on FAIL.
 """
 import collections
 import json
@@ -119,8 +120,9 @@ def main(argv=None):
         w = edge_weights(a[3])
         res["joined_by_weight"] = joined_bands(before, after, w)
         res["uniform_cliques_below_1"] = symmetric_cliques(w)
-    isolated = res.get("joined_by_weight", {}).get("not_isolated", 0) == 0
-    res["verdict"] = "PASS" if res["pairs_split"] == 0 and res["other_changes"] == 0 and isolated else "FAIL"
+    jw = res.get("joined_by_weight", {})
+    in_dump = jw.get("not_isolated", 0) == 0 and jw.get("no_weight", 0) == 0  # every joined pair: an isolated dump edge
+    res["verdict"] = "PASS" if res["pairs_split"] == 0 and res["other_changes"] == 0 and in_dump else "FAIL"
     with open(a[2], "w") as fh:
         json.dump(res, fh, indent=1)
     print(json.dumps(res))
