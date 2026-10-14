@@ -61,6 +61,9 @@ pub struct Segment {
 
 pub struct Family {
     pub id: usize,
+    /// The family's segment endpoints, counted before duplicates are removed: two segments that share an endpoint count
+    /// it twice. `copies.len()` is the number of distinct copies, and duplicons.tsv has one row per distinct copy. Families
+    /// are ordered by `n_copies`, largest first.
     pub n_copies: usize,
     pub chrs: Vec<String>,
     pub span_bp: u64,
@@ -486,6 +489,23 @@ mod tests {
         // span per chromosome: chrA 2000 + chrB 2000 (5000-7000 covers 5100-7000) + chrC 1900
         assert_eq!(fams[0].span_bp, 5900);
         assert_eq!((fams[1].id, fams[1].n_copies, fams[1].span_bp), (1, 2, 4000));
+    }
+
+    #[test]
+    fn two_segments_sharing_an_endpoint_count_it_twice_but_keep_it_once() {
+        // S1 chrA:1000-3000 ~ chrB:5000-7000; S2 chrB:5000-7000 ~ chrC:100-2100. The chrB interval is an endpoint of
+        // both segments: two nodes (n_copies counts four endpoints), one distinct copy (three copies)
+        let fams = families(&[
+            seg("chrA", 1000, 3000, "chrB", 5000, 7000, '+'),
+            seg("chrB", 5000, 7000, "chrC", 100, 2100, '+'),
+        ]);
+        assert_eq!(fams.len(), 1);
+        assert_eq!((fams[0].n_copies, fams[0].copies.len()), (4, 3));
+        assert_eq!(
+            fams[0].copies,
+            vec![("chrA".to_string(), 1000, 3000), ("chrB".to_string(), 5000, 7000), ("chrC".to_string(), 100, 2100)]
+        );
+        assert_eq!(fams[0].span_bp, 6000);
     }
 
     #[test]

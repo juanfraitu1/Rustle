@@ -30,6 +30,9 @@
 //!   (tests `a_segment_joins_its_two_copies_and_overlap_joins_further_copies`,
 //!   `equal_families_are_ordered_by_their_copies`). families.tsv therefore differs from the sandbox's; chimp chr1:
 //!   1,033 families (sandbox 3,316), largest 3,750 of 17,426 copies.
+//! - `fasta::read_fasta` refuses sequence data before the first '>' (the sandbox glued it onto the first record, and read
+//!   a file that is not FASTA as one garbage record); valid FASTA reads as before (test
+//!   `sequence_before_the_first_header_is_refused`).
 //! - `scan` (new) replaces the sandbox's main.rs: the four stages through files on a local thread pool,
 //!   first-word sequence names, candidates ordered with window b's sequence as the last key, and the duplicon table
 //!   `PREFIX.sd.duplicons.tsv` (tests in `scan` and tests/sd_scan.rs; chimp chr1 equality:

@@ -500,11 +500,9 @@ mod tests {
         assert_eq!((blocks[0].a0, blocks[0].a1), (0, 8000));
     }
 
-    #[test]
-    fn chains_and_blocks_of_different_chromosome_pairs_never_merge() {
-        // vendored change (2026-10-13): one run of three cells at the same window coordinates on (a, b) and on (x, y)
-        // gives two blocks, each with its own names (the sandbox merged them into one block named after whichever
-        // chain its HashMap met first)
+    /// One run of three cells at the same window coordinates on each of two chromosome pairs; the blocks as
+    /// `(chr_a, a0, a1, chr_b, b0, b1)`, sorted, and the stats.
+    fn two_runs(first: (&str, &str), second: (&str, &str)) -> (Vec<(String, u64, u64, String, u64, u64)>, ChainStats) {
         let on = |ca: &str, cb: &str, s_a: u64, s_b: u64| PairRec {
             chr_a: ca.into(),
             s_a,
@@ -516,20 +514,43 @@ mod tests {
         };
         let mut pairs = vec![];
         for i in 0..3u64 {
-            pairs.push(on("a", "b", i * 2000, 20_000 + i * 2000));
-            pairs.push(on("x", "y", i * 2000, 20_000 + i * 2000));
+            pairs.push(on(first.0, first.1, i * 2000, 20_000 + i * 2000));
+            pairs.push(on(second.0, second.1, i * 2000, 20_000 + i * 2000));
         }
         let (blocks, stats) = chain_and_merge(&pairs, &params());
-        assert_eq!(stats.n_chains, 2);
         let mut got: Vec<(String, u64, u64, String, u64, u64)> =
             blocks.iter().map(|b| (b.chr_a.clone(), b.a0, b.a1, b.chr_b.clone(), b.b0, b.b1)).collect();
         got.sort();
-        assert_eq!(
-            got,
-            vec![
-                ("a".to_string(), 0, 6000, "b".to_string(), 20_000, 26_000),
-                ("x".to_string(), 0, 6000, "y".to_string(), 20_000, 26_000)
-            ]
-        );
+        (got, stats)
+    }
+
+    fn block(ca: &str, cb: &str) -> (String, u64, u64, String, u64, u64) {
+        (ca.to_string(), 0, 6000, cb.to_string(), 20_000, 26_000)
+    }
+
+    #[test]
+    fn chains_and_blocks_of_different_chromosome_pairs_never_merge() {
+        // vendored change (2026-10-13): one run of three cells at the same window coordinates on (a, b) and on (x, y)
+        // gives two blocks, each with its own names (the sandbox merged them into one block named after whichever
+        // chain its HashMap met first)
+        let (got, stats) = two_runs(("a", "b"), ("x", "y"));
+        assert_eq!(stats.n_chains, 2);
+        assert_eq!(got, vec![block("a", "b"), block("x", "y")]);
+    }
+
+    #[test]
+    fn runs_on_the_same_first_chromosome_but_different_second_ones_never_merge() {
+        // (a, b) against (a, y): the second names alone keep the chains (pass 2) and the blocks (merge_blocks) apart
+        let (got, stats) = two_runs(("a", "b"), ("a", "y"));
+        assert_eq!(stats.n_chains, 2);
+        assert_eq!(got, vec![block("a", "b"), block("a", "y")]);
+    }
+
+    #[test]
+    fn runs_on_different_first_chromosomes_but_the_same_second_one_never_merge() {
+        // (a, b) against (x, b): the first names alone keep the chains and the blocks apart
+        let (got, stats) = two_runs(("a", "b"), ("x", "b"));
+        assert_eq!(stats.n_chains, 2);
+        assert_eq!(got, vec![block("a", "b"), block("x", "b")]);
     }
 }

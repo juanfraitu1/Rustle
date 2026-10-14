@@ -1,8 +1,9 @@
 #!/bin/bash
 # `utilities sd-scan` vs the sandbox sedef-rs on chimp chr1 (plan docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md,
-# Task 4): candidates, blocks, pairs (= the sandbox's refined) and segments byte-identical after the header-name change
-# ("chr1 mPanTro3-v2.1" -> "chr1"); families.tsv is compared by its size profile, since the vendored families join a
-# segment's two copies (src/sedef/mod.rs).
+# Task 4): on this one-sequence genome, candidates, blocks, pairs (= the sandbox's refined) and segments byte-identical
+# after the header-name change ("chr1 mPanTro3-v2.1" -> "chr1"); on several sequences the vendored chain and dedup fixes
+# change the output, so byte equality is not expected there (src/sedef/mod.rs). families.tsv is compared by its size
+# profile, since the vendored families join a segment's two copies (src/sedef/mod.rs).
 #   equivalence_chr1.sh UTILITIES_BIN [SANDBOX_DATA_DIR] [OUT_DIR]
 set -euo pipefail
 BIN=$1; D=${2:-/mnt/c/Users/jfris/Desktop/sd/sedef-rs/data}; O=${3:-/mnt/linuxdisk/tmp/o1_layers/equiv_chr1}

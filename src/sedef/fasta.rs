@@ -23,6 +23,9 @@ pub fn open_maybe_gz(path: &Path) -> std::io::Result<Box<dyn BufRead>> {
 
 /// Reads all records (or those whose full header contains `chr_filter`,
 /// case-insensitively). Headers are returned without the leading '>'.
+///
+/// Vendored change (2026-10-13): sequence data before the first '>' is an error. The sandbox glued it onto the first
+/// record (and read a file that is not FASTA as one garbage record); blank lines before the first '>' are harmless.
 pub fn read_fasta(
     path: &Path,
     chr_filter: Option<&str>,
@@ -62,7 +65,11 @@ pub fn read_fasta(
                     .to_string(),
             );
         } else {
+            let before = seq.len();
             seq.extend(line.iter().copied().filter(|b| !b.is_ascii_whitespace()));
+            if header.is_none() && seq.len() > before {
+                return Err("sequence data before the first '>'".into());
+            }
         }
     }
     flush(header, &mut seq, &mut seqs);

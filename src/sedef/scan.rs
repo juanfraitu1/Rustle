@@ -3,17 +3,19 @@
 //!
 //! - `PREFIX.sd.candidates.tsv`  stage 1 (seed): candidate window pairs
 //! - `PREFIX.sd.blocks.tsv`      stage 2 (chain): SD blocks
-//! - `PREFIX.sd.pairs.tsv`       stage 3 (refine): bp-exact SD pairs, strand, identity (percent), status ok/self/weak
+//! - `PREFIX.sd.pairs.tsv`       stage 3 (refine): bp-resolution SD pairs, strand, identity (percent), status ok/self/weak
 //! - `PREFIX.sd.anchors.bin`     stage 3: the anchors stage 4 reads
 //! - `PREFIX.sd.segments.tsv`    stage 4 (decompose): elementary segment pairs
-//! - `PREFIX.sd.families.tsv`    stage 4: duplication families
+//! - `PREFIX.sd.families.tsv`    stage 4: duplication families; `n_copies` counts segment endpoints before duplicates are
+//!   removed (two segments sharing an endpoint count it twice), so it can exceed the family's rows in duplicons.tsv
 //! - `PREFIX.sd.duplicons.tsv`   one row per distinct family copy, `chrom start end F<id>`: the `--hierarchy-duplicons`
 //!   format (`family_hierarchy::DupIndex::from_text`)
 //! - `PREFIX.sd.params.tsv`      the version key, the inputs, the counts and the seconds per stage
 //!
-//! With the default parameters (the sandbox CLI's), the candidates, blocks, pairs and segments equal the sandbox's
-//! `seed`, `chain`, `refine --anchors-out` and `decompose --anchors` outputs byte for byte, except that a sequence is
-//! named by the first word of its FASTA header (the sandbox kept the whole header line).
+//! With the default parameters (the sandbox CLI's) on a genome of ONE sequence, the candidates, blocks, pairs and
+//! segments equal the sandbox's `seed`, `chain`, `refine --anchors-out` and `decompose --anchors` outputs byte for byte,
+//! except that a sequence is named by the first word of its FASTA header (the sandbox kept the whole header line). On
+//! several sequences the vendored chain and dedup fixes (src/sedef/mod.rs) change the output.
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::{HashMap, HashSet};
@@ -123,7 +125,8 @@ pub struct ScanSummary {
 }
 
 /// Every FASTA record (plain, gzip or bgzip), named by the first word of its header line, each sequence shrunk to its
-/// length. A record without a name, two records with one name, or a file without records is refused.
+/// length. A record without a name, two records with one name, sequence data before the first '>' (or a file that is
+/// not FASTA), or a file without records is refused.
 pub fn read_genome(path: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     let recs = fasta::read_fasta(path, None).map_err(|e| anyhow!("reading {}: {e}", path.display()))?;
     let mut seen = HashSet::new();
@@ -462,6 +465,9 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
+    // The golden output of SCAN_VERSION 1 on the toy genome; tests/sd_scan.rs reads the same tables back through the
+    // hierarchy's readers. Change these constants only together with a SCAN_VERSION bump: a change here means sd-scan's
+    // output for the same genome and parameters changed, and with it the driver's cache key.
     const PLANTED_PAIRS: &str = "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id\tstage2_id\tstatus\n\
 chrB\t10000\t14999\tchrB\t170000\t174999\t+\t4200\t99.0\t97.8\tok\n\
 chrA\t52000\t53999\tchrB\t124001\t126000\t-\t1840\t99.5\t99.5\tok\n\
@@ -570,6 +576,23 @@ chrB\t170000\t174999\tF0\n";
         std::fs::write(&fa, ">chr1 first\nACGT\n>chr1 second\nACGT\n").unwrap();
         let e = read_genome(&fa).unwrap_err().to_string();
         assert!(e.contains("two FASTA records are named chr1"), "{e}");
+    }
+
+    #[test]
+    fn sequence_before_the_first_header_is_refused() {
+        // vendored change (2026-10-13): the sandbox's reader glued data before the first '>' onto record 1 (and a file
+        // that is not FASTA, e.g. a bgzip file read as text, gave a genome of one garbage record)
+        let d = tmp("headerless");
+        let fa = d.join("g.fa");
+        for text in ["ACGT\n>chr1\nAC\n", "ACGT\n", "\n \nAC\n>chr1\nAC\n"] {
+            std::fs::write(&fa, text).unwrap();
+            let e = read_genome(&fa).unwrap_err().to_string();
+            assert!(e.contains("sequence data before the first '>'"), "{text:?}: {e}");
+        }
+        // blank lines before the first '>' hold no sequence: the genome is unchanged
+        std::fs::write(&fa, "\n\r\n>chr1\nAC\nGT\n>chr2\nA\n").unwrap();
+        let g = read_genome(&fa).unwrap();
+        assert_eq!(g, vec![("chr1".to_string(), b"ACGT".to_vec()), ("chr2".to_string(), b"A".to_vec())]);
     }
 
     #[test]
