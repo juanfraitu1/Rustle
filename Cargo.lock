@@ -775,6 +775,7 @@ dependencies = [
  "noodles-sam",
  "poasta",
  "rayon",
+ "rustc-hash",
  "serde_json",
  "tempfile",
 ]

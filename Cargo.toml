@@ -26,6 +26,7 @@ noodles-core = "0.15"
 
 # Fast deterministic hashing (types.rs: DetHashMap / DetHashSet)
 fxhash = "0.2"
+rustc-hash = "2" # src/sedef (vendored sedef-rs): FxHashMap / FxHashSet, as in the sandbox
 
 # Parallel processing
 rayon = "1.10"

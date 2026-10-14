@@ -16,3 +16,8 @@ this file must list exactly the module set.
 | `family_detect.rs` | **SHIPPED-DEFAULT** | Strand-aware de-novo family detection; includes `family_graph`, `family_split`, `mosaic`, `read_conflict`, `family_rescue`. |
 | `missing_copy.rs` | **OTHER-BINARY** | O3 RNA-only chain used by `missing_copy_flag` binary. |
 | `candidates.rs` | **OTHER-BINARY** | Candidate copies and reference-absent copy admission; used by `candidate_copies` binary. |
+
+**Vendored crate, not a family module:** `src/sedef/` (sedef-rs, segmental duplications; vendored 2026-10-13 from
+the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` stage; an opt-in input of
+`mcl_families --emit-hierarchy --sd-cache`. Its adoption as the SD and duplicon source is decided by
+`docs/PREREG_sedef_rs_layers_2026-10-13.md`.

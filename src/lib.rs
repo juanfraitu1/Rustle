@@ -18,6 +18,9 @@ pub mod types;
 
 pub mod family;
 
+/// Vendored sedef-rs (segmental duplications): `utilities sd-scan`, the driver's `sd` stage.
+pub mod sedef;
+
 // Re-export the family modules themselves so `crate::<module>` paths keep compiling.
 pub use family::arms;
 pub use family::bridge_regroup;
