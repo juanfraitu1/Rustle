@@ -5,7 +5,14 @@
 set -euo pipefail
 BIN=$1; O=${2:-/mnt/linuxdisk/tmp/o1_layers/memprobe}; D=/mnt/c/Users/jfris/Desktop/sd/sedef-rs/data
 mkdir -p "$O"
-[ -s "$O/chimp3.fa" ] || zcat "$D/mPanTro3-v2.1.fa.gz" | awk '/^>/{n++} n>3{exit} {print}' > "$O/chimp3.fa"
+if [ ! -s "$O/chimp3.fa" ]; then
+  # awk stops after the third record, so zcat ends on SIGPIPE: pipefail is off for this one pipeline
+  set +o pipefail
+  zcat "$D/mPanTro3-v2.1.fa.gz" | awk '/^>/{n++} n>3{exit} {print}' > "$O/chimp3.fa.part"
+  set -o pipefail
+  mv "$O/chimp3.fa.part" "$O/chimp3.fa"
+fi
+[ "$(md5sum < "$O/chimp3.fa" | cut -c1-32)" = 7a1f8b2fb4ae4faf71b6aca2d836af10 ] || { echo "memory_probe: $O/chimp3.fa md5 differs from 7a1f8b2fb4ae4faf71b6aca2d836af10" >&2; exit 1; }
 md5sum "$O/chimp3.fa"
 for item in chr1:$D/chr1.fa chimp3:$O/chimp3.fa; do
   tag=${item%%:*}; fa=${item#*:}
