@@ -177,3 +177,6 @@ Amendments 5-7 were added on 2026-10-13 after the human evaluation's run and its
 8. **User decision (2026-10-13): fix 0's default is `mcl_families --pair-rule exact-mcl`.** A lone pair joins only at
    weight >= w*(I), MCL's exact-arithmetic answer. This removes the float-residue decision, and the four shipped
    catalogs' families are unchanged. `weight-blind` (every connected pair one family) is opt-in.
+9. **Phases V and B are superseded** by `docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md` (user,
+   2026-10-13). That spec covers sedef-rs as the SD and duplicon layers, a Soto-style layer computed by us, and O1's
+   claims judged against independent truth. Amendment 7's prerequisites are folded into its section 3.
