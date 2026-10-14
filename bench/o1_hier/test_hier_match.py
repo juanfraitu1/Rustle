@@ -40,7 +40,8 @@ def test_one_to_one_gives_a_contested_node_to_one_truth_family_only():
     truth = {"T1": frozenset({"e", "f"}), "T2": frozenset({"e", "f"})}
     ms = H.Scorer({("family", "F2"): NODES[("family", "F2")]}, MEMBERS).run(truth)
     assert sorted(m.jaccard for m in ms) == [0.0, 1.0]
-    assert H.exact_any(truth, NODES) == {"any": 2, "expansion": 2, "family": 2}
+    assert H.exact_any(truth, NODES) == {"any": 2, "expansion": 2, "expansion_not_family": 0, "expansion_unique": 0,
+                                         "family": 2}
 
 
 def R(chrom, s, e, strand, exons):
@@ -74,6 +75,8 @@ def test_coverage_separates_an_unclustered_locus_from_no_locus_and_counts_empty_
              "B": [R("chr1", 9000, 9100, "+", [(9000, 9100)])]}
     sets, per, cov = H.truth_sets(truth, MEM, fold=FOLD, loci=LOCI)
     assert (cov["records_on_unclustered_locus"], cov["records_without_locus"]) == (1, 1)
+    _, _, cov0 = H.truth_sets({"A": [R("chr1", 120, 130, "+", [(120, 130)])]}, MEM, fold=FOLD, loci=LOCI)
+    assert (cov0["records_on_unclustered_locus"], cov0["records_without_locus"], cov0["labels_no_member"]) == (0, 0, 0)
     assert cov["labels_without_member"] == ["B"] and cov["labels_one_member"] == 1 and cov["labels_no_member"] == 1
     node = {("family", "F"): frozenset(MEM)}
     (m,) = H.Scorer(node, MEM).run({"A": sets["A"]})
@@ -134,7 +137,7 @@ def test_cli_end_to_end(tmp_path):
                    "CX0\tSF0\tMCL0\tchr1:1-10\tMCL0.x1\nCX0\tSF0\tMCL0\tchr1:21-30\tMCL0.x1\n"
                    "CX0\tSF0\tMCL0\tchr1:41-50\tMCL0.x2\nCX0\tSF0\tMCL0\tchr1:61-70\tMCL0.x2\n")
     tr = tmp_path / "t.tsv"
-    tr.write_text("chr1\t2\t5\tA\nchr1\t25\t26\tA\nchr1\t45\t46\tB\nchr1\t65\t69\tB\n")
+    tr.write_text("chr1\t2\t5\tA\nchr1\t25\t26\tA\nchr1\t45\t46\tB\nchr1\t65\t69\tB\nchr1\t100\t110\tC\n")
     gff = tmp_path / "l.gff3"
     gff.write_text("".join(f"chr1\t.\tgene\t{s}\t{s + 9}\t.\t+\t.\tID=gene-{s}\n" for s in (1, 21, 41, 61)))
     out = tmp_path / "o.json"
@@ -144,3 +147,41 @@ def test_cli_end_to_end(tmp_path):
     assert r["hierarchy"]["exact"] == 2 and r["flat"]["exact"] == 0
     assert r["hierarchy"]["exact_by_level"] == {"expansion": 2}
     assert set(r["null"]) == {"global", "within_family"}
+    # C has no member: it is outside the evaluable rows but inside the unconditioned numbers
+    h = r["hierarchy"]
+    assert (h["n_truth"], h["n_truth_all"], round(h["exact_of_all"], 4)) == (2, 3, 0.6667)
+    assert (round(h["macro_gene_recall_all"], 4), h["micro_gene_recall_all"]) == (0.6667, 0.8)
+    assert [p["exact"] for p in r["per_truth"]] == [True, True]
+
+
+def test_exact_any_separates_whole_family_and_unique_matches():
+    nodes = {("family", "F1"): frozenset("ab"), ("expansion", "F1.x1"): frozenset("ab"),
+             ("family", "F2"): frozenset("cde"), ("expansion", "F2.x1"): frozenset("cd"),
+             ("expansion", "F2.unique"): frozenset("e"),
+             ("family", "F3"): frozenset("fg"), ("expansion", "F3.unique"): frozenset("fg")}
+    e = H.exact_any({"A": frozenset("ab"), "B": frozenset("cd"), "C": frozenset("fg")}, nodes)
+    assert (e["expansion"], e["expansion_not_family"], e["expansion_unique"]) == (3, 1, 1)
+
+
+def test_matches_prefer_the_lowest_rank_identical_node_when_it_is_free():
+    """The named tie policy holds on random instances (scipy alone broke it in ~3% of them)."""
+    rng = random.Random(3)
+    for _ in range(3000):
+        members = [f"m{i}" for i in range(6)]
+        nodes = {}
+        for f in range(2):
+            fam = frozenset(rng.sample(members, rng.randint(1, 3)))
+            nodes[("family", f"F{f}")] = fam
+            nodes[("expansion", f"F{f}.x1")] = fam if rng.random() < 0.5 else frozenset(rng.sample(sorted(fam), 1))
+        truth = {f"T{t}": frozenset(rng.sample(members, rng.randint(1, 3))) for t in range(rng.randint(1, 4))}
+        ms = H.Scorer(nodes, members).run(truth)
+        held = {(m.level, m.node_id) for m in ms if m.level}
+        for m in ms:
+            if not m.level:
+                continue
+            twins = sorted((k for k, v in nodes.items() if v == nodes[(m.level, m.node_id)]),
+                           key=lambda k: (H.RANK[k[0]], k[1]))
+            for k in twins:
+                if k == (m.level, m.node_id):
+                    break
+                assert k in held, (sorted(truth.items()), sorted(nodes.items()), m)

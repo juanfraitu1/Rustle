@@ -180,6 +180,11 @@ def truth_sets(truth, members, fold=None, loci=None, how="exon"):
         cov["labels_evaluable" if n >= 2 else ("labels_one_member" if n == 1 else "labels_no_member")] += 1
         if n == 0:
             without.append(label)
+    zero = ["records", "records_on_members", "records_on_several_members", "labels", "labels_evaluable",
+            "labels_one_member", "labels_no_member"]
+    zero += ["records_on_unclustered_locus", "records_without_locus"] if all_idx is not None else ["records_without_member"]
+    for k in zero:  # a count of 0 is reported as 0, never left out
+        cov.setdefault(k, 0)
     shared = collections.Counter(m for s in sets.values() for m in s)
     out = dict(sorted(cov.items()))
     out["members_in_several_truth_families"] = sum(1 for v in shared.values() if v > 1)
@@ -202,6 +207,10 @@ class Scorer:
         self.index = {m: i for i, m in enumerate(sorted(members))}
         self.sizes = np.array([len(nodes[k]) for k in self.keys], float)
         self.N = _incidence([nodes[k] for k in self.keys], self.index)
+        self.sets = nodes
+        self.twins = collections.defaultdict(list)  # member set -> its nodes in (level rank, node id) order
+        for k in self.keys:
+            self.twins[nodes[k]].append(k)
 
     def run(self, truth):
         labels = sorted(truth)
@@ -220,10 +229,30 @@ class Scorer:
                         n = self.sizes[used[j]]
                         out[labels[i]] = Match(labels[i], level, nid, float(J[i, j]), float(I[i, j] / ts[i]),
                                                float(I[i, j] / n), int(I[i, j]), int(ts[i]), int(n))
+        self._prefer_lower_rank(out)
         return [out.get(x) or Match(x, None, None, 0.0, 0.0, 0.0, 0, len(truth[x]), 0) for x in labels]
 
+    def _prefer_lower_rank(self, out):
+        """The named tie policy, enforced: each match (in label order) moves to the lowest-rank node with the IDENTICAL
+        member set that no other truth family holds. scipy's pick among equal-cost columns is not guaranteed to be the
+        lowest index; an identical set gives the same Jaccard, so the optimum is unchanged."""
+        held = {(m.level, m.node_id) for m in out.values()}
+        for label in sorted(out):
+            m = out[label]
+            cur = (m.level, m.node_id)
+            for k in self.twins[self.sets[cur]]:
+                if k == cur:
+                    break
+                if k not in held:
+                    held.discard(cur)
+                    held.add(k)
+                    out[label] = m._replace(level=k[0], node_id=k[1])
+                    break
 
-def summary(matches, nodes=None, per_record=None):
+
+def summary(matches, nodes=None, per_record=None, n_all=None, records_all=None):
+    """Over the evaluable families (`matches`); with `n_all` / `records_all` (every truth family / record, members or
+    not) also the UNCONDITIONED numbers: exact and gene recall over all families, a family without a match counting 0."""
     n = len(matches)
     hit = [m for m in matches if m.level]
     exact = sum(m.jaccard == 1.0 for m in matches)
@@ -242,6 +271,13 @@ def summary(matches, nodes=None, per_record=None):
     }
     if nodes is not None and per_record is not None and n:
         out["macro_gene_recall"] = sum(gene_recall(m, nodes, per_record) for m in matches) / n
+    if n_all:
+        out["n_truth_all"] = n_all
+        out["exact_of_all"] = exact / n_all
+        if nodes is not None and per_record is not None:
+            out["macro_gene_recall_all"] = sum(gene_recall(m, nodes, per_record) for m in matches) / n_all
+            hit = sum(sum(1 for r in per_record[m.label] if r & nodes[(m.level, m.node_id)]) for m in matches if m.level)
+            out["micro_gene_recall_all"] = hit / records_all if records_all else None
     return out
 
 
@@ -255,16 +291,23 @@ def gene_recall(m, nodes, per_record):
 
 
 def exact_any(truth, nodes):
-    """Tie-free: per level, how many truth sets equal SOME node of that level (no one-to-one)."""
+    """Tie-free: per level, how many truth sets equal SOME node of that level (no one-to-one). `expansion_not_family`
+    counts the expansion matches that equal no family node (a split below the family); `expansion_unique` the ones that
+    equal a `<family>.unique` bucket (members without a duplicon signature)."""
     levels_of = collections.defaultdict(set)
-    for (level, _), s in nodes.items():
+    unique_sets = set()
+    for (level, nid), s in nodes.items():
         levels_of[s].add(level)
+        if level == "expansion" and nid.endswith(".unique"):
+            unique_sets.add(s)
     c = collections.Counter()
     for s in truth.values():
         ls = levels_of.get(s, set())
         for level in ls:
             c[level] += 1
         c["any"] += bool(ls)
+        c["expansion_not_family"] += "expansion" in ls and "family" not in ls
+        c["expansion_unique"] += s in unique_sets
     return dict(sorted(c.items()))
 
 
@@ -319,12 +362,14 @@ def main(argv=None):
     sets, per_record, cov = truth_sets(load_truth(a.truth), members, load_fold(a.fold) if a.fold else None,
                                        load_loci_gff(a.loci_gff) if a.loci_gff else None, a.map)
     ev = {k: v for k, v in sets.items() if len(v) >= 2}
+    n_records = sum(len(v) for v in per_record.values())
     hier_scorer = Scorer(nodes, members)
     fam_nodes = {k: v for k, v in nodes.items() if k[0] == "family"}
     hier, flat = hier_scorer.run(ev), Scorer(fam_nodes, members).run(ev)
     res = {"inputs": vars(a), "n_members": len(members),
            "n_nodes": dict(sorted(collections.Counter(k[0] for k in nodes).items())), "coverage": cov,
-           "hierarchy": summary(hier, nodes, per_record), "flat": summary(flat, nodes, per_record),
+           "hierarchy": summary(hier, nodes, per_record, len(sets), n_records),
+           "flat": summary(flat, nodes, per_record, len(sets), n_records),
            "exact_any": exact_any(ev, nodes), "null": {}}
     for kind in ("global", "within_family"):
         if a.null > 0:
@@ -335,7 +380,7 @@ def main(argv=None):
                                  "p_mean_jaccard": p_value(mj, res["hierarchy"]["mean_jaccard"])}
     fm = {m.label: m for m in flat}
     res["per_truth"] = [{"label": m.label, "n_records": len(per_record[m.label]), "n_members": m.t_size,
-                         "level": m.level, "node": m.node_id, "jaccard": round(m.jaccard, 6),
+                         "level": m.level, "node": m.node_id, "exact": m.jaccard == 1.0, "jaccard": round(m.jaccard, 6),
                          "recall": round(m.recall, 6), "precision": round(m.precision, 6),
                          "gene_recall": round(gene_recall(m, nodes, per_record), 6),
                          "flat_node": fm[m.label].node_id, "flat_jaccard": round(fm[m.label].jaccard, 6)}
