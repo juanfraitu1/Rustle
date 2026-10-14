@@ -19,5 +19,5 @@ this file must list exactly the module set.
 
 **Vendored crate, not a family module:** `src/sedef/` (sedef-rs, segmental duplications; vendored 2026-10-13 from
 the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` stage; an opt-in input of
-`mcl_families --emit-hierarchy --sd-cache`. Its adoption as the SD and duplicon source is decided by
-`docs/PREREG_sedef_rs_layers_2026-10-13.md`.
+`mcl_families --emit-hierarchy --sd-cache`. Not adopted as the SD source (V1 FAIL), the SD98 source (V1b FAIL) or the
+duplicon source (V2 FAIL): see `docs/PREREG_sedef_rs_layers_2026-10-13.md`.

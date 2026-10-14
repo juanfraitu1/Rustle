@@ -296,6 +296,8 @@ Observations (no bar):
   of the 23 GiB address-space cap (the cap limits virtual size, which is at least the RSS); all three runs finished with
   exit 0 and no allocation failure.
 
+Clarification (2026-10-14): the sd-scan runs' `utilities` binary was linked at 09:28 and found up to date by the build at ee6eb9c5 (no source newer than the binary); its `src/sedef/` and `src/utilities.rs` equal 96b75970's.
+
 ### V2 DEV (2026-10-14; HELD-OUT not computed)
 
 Run and scored on 2026-10-14. The run relies on registration commit 092570c9 (the last commit that changes this document
@@ -320,9 +322,10 @@ above `## Results`).
   in `/mnt/linuxdisk/tmp/o1_layers/chm13v1.sd.prefix`; 251,185 duplicon rows). Both: `--hierarchy-sd
   winloci_data/soto_replication/final_v1_clean.bed`, `--hierarchy-external /mnt/linuxdisk/tmp/hier_flag/soto_external.tsv`,
   `--out /mnt/linuxdisk/tmp/o1_layers/v2/{dupmasker,sdscan}/ours`. Both runs exit 0.
-- **Scorer:** `bench/paf_duplicons/score_units.py`, unchanged, DEV half only; output
-  `/mnt/linuxdisk/tmp/o1_layers/v2/score_dev.json`. `score_units.py ... heldout` and `hier_match.py` (V2b) were not run on
-  these arms. No bar, filter or measure was changed after the numbers were seen.
+- **Scorer:** `bench/paf_duplicons/score_units.py`, unchanged, DEV half only for P1, P2 and exact matches (P3, P4 and
+  the members' exonic share are all-family checks); output `/mnt/linuxdisk/tmp/o1_layers/v2/score_dev.json`.
+  `score_units.py ... heldout` and `hier_match.py` (V2b) were not run on these arms. No bar, filter or measure was
+  changed after the numbers were seen.
 
 `--emit-hierarchy` lines, as logged (the log's trailing output path left out):
 
@@ -346,8 +349,8 @@ components.)
 | exact expansion sensitivity / precision | 73/249 (0.2932) / 73/214 (0.3411) |
 | P2: wins / losses / ties vs the one-block null, sign test p | 21 / 13 / 15; p = 0.1147 (one-sided, ties dropped; mean on the 49 structured families 0.3514, one-block null 0.2779) |
 | P3: Soto families exactly one expansion, DupMasker / sd-scan (all families) | 215 / 179 |
-| P4: PKD1P6-NPIPP1, PDXDC2P-NPIPB14P (sd-scan arm) | `MCL28 chr16:15126207-15159416 fusion_of=MCL29 fusion`; `MCL286 chr16:75785720-75875798 fusion_of=MCL29 fusion` (DupMasker arm: `fusion_of=MCL9 fusion` for both) |
-| members' exonic bases carrying a duplicon, DupMasker / sd-scan | 0.9131 / 0.8227 (of 2,988,087 bp) |
+| P4: PKD1P6-NPIPP1, PDXDC2P-NPIPB14P (sd-scan arm) (all families) | `MCL28 chr16:15126207-15159416 fusion_of=MCL29 fusion`; `MCL286 chr16:75785720-75875798 fusion_of=MCL29 fusion` (DupMasker arm: `fusion_of=MCL9 fusion` for both) |
+| members' exonic bases carrying a duplicon, DupMasker / sd-scan (all 1,709 members) | 0.9131 / 0.8227 (of 2,988,087 bp) |
 | NPIP (MCL9) cover, DupMasker / sd-scan | MCL9.x1 4, MCL9.x2 6, MCL9.x3 10 members / unique 19 members (family score 0.0) |
 | blocks per family, DupMasker / sd-scan | {1: 151, 2: 31, 3: 13, 4: 3, 9: 1, 11: 1} / {1: 129, 2: 54, 3: 11, 4: 3, 5: 3} (blocks: families; `unique` is a block) |
 
@@ -361,3 +364,66 @@ not read against a bar.
 Worst families (the 12 lowest scores): all twelve score 0.0. The JSON `worst` list sorts by (score, family id), so it is
 cut among tied scores and runs in family-id string order: MCL109, MCL114, MCL115, MCL118, MCL12, MCL125, MCL13, MCL137,
 MCL140, MCL147, MCL149, MCL15.
+
+### V2 HELD-OUT and V2b (2026-10-14)
+
+Run and scored on 2026-10-14 on the arms of the DEV step, unchanged: the md5s of `ours.clusters.tsv`, `ours.loci.tsv` and
+`ours.pairs.tsv` in both arm directories and the binary's sha256 were re-checked and equal the values recorded under V2
+DEV. The run relies on registration commit 092570c9 (the last commit that changes this document above `## Results`);
+`git log` of this document before the run lists the DEV commit ae60db77 first and no amendment commit. No bar, filter or
+measure was changed after the numbers were seen.
+
+Amendment: none registered. A DEV-only probe of a reciprocal-overlap family rule (>= 0.8 of the longer interval) scored a DEV mean family score of 0.3500 (40/200 identical; 1,093 expansions) against 0.4816 for the registered rule, and was not registered.
+
+Commands (`<v2>` = `/mnt/linuxdisk/tmp/o1_layers/v2`; `<prefix>` as under V2 DEV):
+
+    score_units.py <v2>/dupmasker <v2>/sdscan heldout /mnt/linuxdisk/tmp/ourhom/loci.gff3 \
+      winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed <prefix>.sd.duplicons.tsv > <v2>/score_heldout.json
+    hier_match.py <arm dir>/ours.hierarchy.members.tsv /mnt/linuxdisk/tmp/hier_flag/soto_external.tsv <arm dir>/key.json \
+      --fold <arm dir>/ours.loci.tsv --map key --null 0
+
+`hier_match.py` ran once per arm (`<arm dir>` = `<v2>/dupmasker` and `<v2>/sdscan`); the three runs exit 0.
+
+| measure | HELD-OUT (180 families, 35 structured) | DEV (200 families, 49 structured) |
+|---|---|---|
+| mean family score (P1) | **0.5153** | 0.4816 |
+| member-weighted score | 0.4923 | 0.4272 |
+| families identical | 77 / 180 | 69 / 200 |
+| exact expansion sensitivity / precision | 71/181 (0.3923) / 71/164 (0.4329) | 73/249 (0.2932) / 73/214 (0.3411) |
+| P2: wins / losses / ties vs the one-block null, sign test p | 10 / 13 / 12; p = 0.7976 (one-sided, ties dropped; mean on the 35 structured families 0.3174, one-block null 0.3099) | 21 / 13 / 15; p = 0.1147 (mean on the 49 structured families 0.3514, one-block null 0.2779) |
+| P3: Soto families exactly one expansion, DupMasker / sd-scan (all families) | 215 / 179 (all families: the same as DEV's) | 215 / 179 |
+| P4: PKD1P6-NPIPP1, PDXDC2P-NPIPB14P (all families) | `fusion_of=MCL9` in the DupMasker arm, `fusion_of=MCL29` in the sd-scan arm, for both (all families: the same as DEV's) | as in the DEV table above |
+| members' exonic bases carrying a duplicon, DupMasker / sd-scan (all 1,709 members) | 0.9131 / 0.8227 (of 2,988,087 bp; all members: the same as DEV's) | 0.9131 / 0.8227 |
+| NPIP (MCL9) cover | not in this half (MCL9 is in the DEV half) | MCL9.x1 4, MCL9.x2 6, MCL9.x3 10 members / unique 19 members (family score 0.0) |
+| blocks per family, DupMasker / sd-scan | {1: 145, 2: 31, 3: 4} / {1: 130, 2: 42, 3: 7, 5: 1} | {1: 151, 2: 31, 3: 13, 4: 3, 9: 1, 11: 1} / {1: 129, 2: 54, 3: 11, 4: 3, 5: 3} |
+
+Worst held-out families (the 12 lowest scores): all twelve score 0.0 (44 held-out families do). The JSON `worst` list
+sorts by (score, family id), so it is cut among tied scores and runs in family-id string order: MCL106, MCL11, MCL145,
+MCL159, MCL179, MCL186, MCL19, MCL201, MCL213, MCL217, MCL223, MCL226.
+
+V2a: held-out `P1_mean_family_score` 0.5153 against the bar 0.8000.
+
+V2b: Soto families equal to an expansion strictly below a family (`exact_any.expansion_not_family`, key mapping):
+DupMasker 10, sd-scan 12; bar ⌈0.9 × 10⌉ = 9. The DupMasker arm's 10 is the count of the 10-09 run named in V2b's bar.
+`exact_any` as printed: DupMasker {'any': 245, 'expansion': 215, 'expansion_not_family': 10, 'expansion_unique': 38,
+'family': 231, 'sd_complex': 25, 'superfamily': 218}; sd-scan {'any': 247, 'expansion': 179, 'expansion_not_family': 12,
+'expansion_unique': 58, 'family': 231, 'sd_complex': 25, 'superfamily': 218}.
+
+**V2: FAIL (V2a FAIL, V2b PASS).** Reading (fixed in advance): **Otherwise:** sd-scan duplicons are not adopted; human
+expansions stay on DupMasker; apes have no expansion layer. By the clarification "Readings apply per layer", this decides
+the duplicon and expansion layers only: the SD layer keeps SEDEF (V1 FAIL) and the Soto layer's SD98 source is SEDEF
+(V1b FAIL).
+
+Observations (no bar; computed after the verdict from the arms' `ours.hierarchy.members.tsv` and `key.json`, with
+`score_units.py`'s own `covers`, `family_score` and `half` and `hier_match.py`'s own loaders; scripts and outputs are
+`<v2>/describe_disagree.{py,txt}`, `<v2>/describe_v2b.py` and `<v2>/describe_v2b_{dupmasker,sdscan}.txt`):
+- Where the covers differ (HELD-OUT; DEV in brackets). Of 180 (200) families, 77 (69) are identical. The other 103 (131)
+  are: 51 (79) with expansions in both arms that split or merge differently (mean score 0.2764 (0.3265)); 37 (39) with
+  expansions in DupMasker's cover and only the `unique` class in sd-scan's (mean 0.0245 (0.0199)); 15 (13) the reverse
+  (mean 0.0500 (0.0577)). Unit / no-unit flips are therefore 52 of 103 (50.5%) of the held-out disagreements and 52 of 131
+  (39.7%) of DEV's. Families with at least one non-`unique` block: DupMasker 151 (175), sd-scan 129 (149).
+- V2b's composition. Of sd-scan's 12 Soto sets, 9 equal a numbered expansion and 3 equal a `<family>.unique` bucket (the
+  members of MCL51, MCL144 and MCL31 without a duplicon signature); DupMasker's 10 are all numbered expansions. The 9
+  numbered expansions alone also meet the bar of 9. The two arms share 4 of these Soto sets (ID_289, ID_323, ID_433,
+  ID_72); the other 6 (DupMasker) and 8 (sd-scan) differ.
+- Context: register 1263's own PAF units scored 0.638 held-out on this scorer and split; sd-scan duplicons score 0.5153.

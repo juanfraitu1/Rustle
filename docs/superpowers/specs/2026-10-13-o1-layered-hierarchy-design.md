@@ -168,3 +168,10 @@ Each phase gets its own implementation plan, written after the previous phase's 
 - The Rust Soto core and assembly famCN, with oracle tests (S1, CN1).
 - Pre-registrations and results for V1/V1b, V2, S1, CN1, S2 and the section-3 claims; register rows.
 - `docs/THESIS_OBJECTIVES.md`'s O1 line updated to what the bars support.
+
+## Results of phases 1-2 (2026-10-14)
+
+V1 FAIL, V1b FAIL, V2 FAIL: `docs/PREREG_sedef_rs_layers_2026-10-13.md` (register 1278-1280). The
+readings fixed there decide what phases 3-4 build on: the SD layer keeps SEDEF where it exists (V1); the Soto layer
+takes SEDEF SD98 (V1b); human expansions stay on DupMasker and the apes have no expansion layer (V2). The readings
+apply per layer (prereg, "Clarifications registered 2026-10-14"), so V2's fail does not decide the SD layer's source.
