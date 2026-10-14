@@ -298,7 +298,7 @@ Observations (no bar):
 
 Clarification (2026-10-14): the sd-scan runs' `utilities` binary was linked at 09:28 and found up to date by the build at ee6eb9c5 (no source newer than the binary); its `src/sedef/` and `src/utilities.rs` equal 96b75970's.
 
-### V2 DEV (2026-10-14; HELD-OUT not computed)
+### V2 DEV (2026-10-14; HELD-OUT not computed at this step)
 
 Run and scored on 2026-10-14. The run relies on registration commit 092570c9 (the last commit that changes this document
 above `## Results`).
@@ -324,8 +324,8 @@ above `## Results`).
   `--out /mnt/linuxdisk/tmp/o1_layers/v2/{dupmasker,sdscan}/ours`. Both runs exit 0.
 - **Scorer:** `bench/paf_duplicons/score_units.py`, unchanged, DEV half only for P1, P2 and exact matches (P3, P4 and
   the members' exonic share are all-family checks); output `/mnt/linuxdisk/tmp/o1_layers/v2/score_dev.json`.
-  `score_units.py ... heldout` and `hier_match.py` (V2b) were not run on these arms. No bar, filter or measure was
-  changed after the numbers were seen.
+  `score_units.py ... heldout` and `hier_match.py` (V2b) were not run on these arms at this step. No bar, filter or
+  measure was changed after the numbers were seen.
 
 `--emit-hierarchy` lines, as logged (the log's trailing output path left out):
 
@@ -414,9 +414,10 @@ expansions stay on DupMasker; apes have no expansion layer. By the clarification
 the duplicon and expansion layers only: the SD layer keeps SEDEF (V1 FAIL) and the Soto layer's SD98 source is SEDEF
 (V1b FAIL).
 
-Observations (no bar; computed after the verdict from the arms' `ours.hierarchy.members.tsv` and `key.json`, with
-`score_units.py`'s own `covers`, `family_score` and `half` and `hier_match.py`'s own loaders; scripts and outputs are
-`<v2>/describe_disagree.{py,txt}`, `<v2>/describe_v2b.py` and `<v2>/describe_v2b_{dupmasker,sdscan}.txt`):
+Observations (no bar; computed after the verdict from the arms' `ours.hierarchy.members.tsv` (and, for V2b's sets,
+`soto_external.tsv` and the arm's `ours.loci.tsv`), with `score_units.py`'s own `covers`, `family_score` and `half` and
+`hier_match.py`'s own loaders; scripts `bench/sedef/describe_disagree.py` and `bench/sedef/describe_v2b.py` (copies of
+the scripts that wrote the outputs), outputs `<v2>/describe_disagree.txt` and `<v2>/describe_v2b_{dupmasker,sdscan}.txt`):
 - Where the covers differ (HELD-OUT; DEV in brackets). Of 180 (200) families, 77 (69) are identical. The other 103 (131)
   are: 51 (79) with expansions in both arms that split or merge differently (mean score 0.2764 (0.3265)); 37 (39) with
   expansions in DupMasker's cover and only the `unique` class in sd-scan's (mean 0.0245 (0.0199)); 15 (13) the reverse

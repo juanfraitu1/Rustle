@@ -11,8 +11,11 @@ def sedef_row(c1, s1, e1, c2, s2, e2, ident):
     return "\t".join(f) + "\n"
 
 
-def rs_row(c1, s1, e1, c2, s2, e2, est, status):
-    return "\t".join([c1, str(s1), str(e1), c2, str(s2), str(e2), "+", "100", str(est), str(est), status]) + "\n"
+def rs_row(c1, s1, e1, c2, s2, e2, est, status, stage2=None):
+    """A `utilities sd-scan` pairs.tsv row (11 columns: ..., strand, anchors, est_id, stage2_id, status). est_id (column 9)
+    and stage2_id (column 10) get different values, so a reader that takes the wrong one cannot pass."""
+    stage2 = est - 3.3 if stage2 is None else stage2
+    return "\t".join([c1, str(s1), str(e1), c2, str(s2), str(e2), "+", "100", str(est), str(stage2), status]) + "\n"
 
 
 def test_sedef_rows_are_kept_by_identity_and_the_shorter_side():
@@ -27,6 +30,17 @@ def test_sedefrs_rows_keep_ok_only_with_percent_identity():
     p = V.read_pairs(lines, "sedefrs", 0.90, 1000)
     assert [(a, b) for a, b, _ in p] == [(("chr1", 0, 2000), ("chr2", 0, 2000))]
     assert abs(p[0][2] - 0.976) < 1e-12
+
+
+def test_sedefrs_identity_is_est_id_column_9_not_stage2_id():
+    # V1 filters on est_id (the registered k-mer lower bound), not on the refined stage2_id (column 10)
+    kept = rs_row("chr1", 0, 2000, "chr2", 0, 2000, 95.0, "ok", stage2=85.0)      # est_id keeps it, stage2_id would drop it
+    dropped = rs_row("chr3", 0, 2000, "chr4", 0, 2000, 85.0, "ok", stage2=95.0)   # est_id drops it, stage2_id would keep it
+    f = kept.rstrip("\n").split("\t")
+    assert (f[8], f[9]) == ("95.0", "85.0")   # column 9 (index 8) is est_id, column 10 stage2_id
+    p = V.read_pairs(["#h\n", kept, dropped], "sedefrs", 0.90, 1000)
+    assert [(a, b) for a, b, _ in p] == [(("chr1", 0, 2000), ("chr2", 0, 2000))]
+    assert abs(p[0][2] - 0.95) < 1e-12
 
 
 def test_recall_and_precision_count_only_universe_bases():
