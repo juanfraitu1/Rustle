@@ -14,7 +14,9 @@ on the same strand, with an exon of the member's locus or of a locus folded into
 directly or through the fold map (the 10-09 F_O universe, where the members ARE the annotation records).
 A truth family is EVALUABLE with >= 2 members. Matching: one-to-one Hungarian (scipy linear_sum_assignment) on
 -Jaccard; rows in label order, columns in (level rank, node id) order, rank family < expansion < superfamily <
-sd_complex: the named tie policy. `exact_any` asks only whether an equal node exists (tie-free, not one-to-one).
+sd_complex; then canonical placement: the truth families matched to nodes with one identical member set take that set's
+lowest-rank nodes, best Jaccard first. That is the named tie policy. `exact_any` asks only whether an equal node exists
+(tie-free, not one-to-one).
 Nulls keep every node's size and the nesting: `global` relabels all members by one random permutation per round;
 `within_family` permutes members inside their own family, so families, superfamilies and SD complexes are unchanged
 and only the expansions move.
@@ -200,7 +202,7 @@ def _incidence(sets, index):
 
 class Scorer:
     """One-to-one Hungarian between truth sets and nodes on -Jaccard, with the named tie policy (rows in label
-    order, columns in (level rank, node id) order)."""
+    order, columns in (level rank, node id) order, then canonical placement within identical node sets)."""
 
     def __init__(self, nodes, members):
         self.keys = sorted(nodes, key=lambda k: (RANK[k[0]], k[1]))
@@ -233,22 +235,17 @@ class Scorer:
         return [out.get(x) or Match(x, None, None, 0.0, 0.0, 0.0, 0, len(truth[x]), 0) for x in labels]
 
     def _prefer_lower_rank(self, out):
-        """The named tie policy, enforced: each match (in label order) moves to the lowest-rank node with the IDENTICAL
-        member set that no other truth family holds. scipy's pick among equal-cost columns is not guaranteed to be the
-        lowest index; an identical set gives the same Jaccard, so the optimum is unchanged."""
-        held = {(m.level, m.node_id) for m in out.values()}
-        for label in sorted(out):
-            m = out[label]
-            cur = (m.level, m.node_id)
-            for k in self.twins[self.sets[cur]]:
-                if k == cur:
-                    break
-                if k not in held:
-                    held.discard(cur)
-                    held.add(k)
-                    out[label] = m._replace(level=k[0], node_id=k[1])
-                    break
-
+        """The named tie policy (canonical placement): the truth families matched to nodes with one IDENTICAL member set
+        take that set's lowest-rank nodes, best Jaccard first, then label. scipy's pick among equal-cost columns is not
+        guaranteed; identical sets give identical Jaccards, so the optimum, the one-to-one matching of sets and every
+        number but the reported node and level are unchanged."""
+        groups = collections.defaultdict(list)
+        for label, m in out.items():
+            groups[self.sets[(m.level, m.node_id)]].append(label)
+        for s, labels in groups.items():
+            labels.sort(key=lambda x: (-out[x].jaccard, x))
+            for label, k in zip(labels, self.twins[s]):
+                out[label] = out[label]._replace(level=k[0], node_id=k[1])
 
 def summary(matches, nodes=None, per_record=None, n_all=None, records_all=None):
     """Over the evaluable families (`matches`); with `n_all` / `records_all` (every truth family / record, members or

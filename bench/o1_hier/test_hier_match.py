@@ -164,7 +164,8 @@ def test_exact_any_separates_whole_family_and_unique_matches():
 
 
 def test_matches_prefer_the_lowest_rank_identical_node_when_it_is_free():
-    """The named tie policy holds on random instances (scipy alone broke it in ~3% of them)."""
+    """On random instances no match leaves a lower-rank identical node free, and no node takes two matches (scipy
+    alone left a free lower-rank twin in ~3% of them)."""
     rng = random.Random(3)
     for _ in range(3000):
         members = [f"m{i}" for i in range(6)]
@@ -176,6 +177,7 @@ def test_matches_prefer_the_lowest_rank_identical_node_when_it_is_free():
         truth = {f"T{t}": frozenset(rng.sample(members, rng.randint(1, 3))) for t in range(rng.randint(1, 4))}
         ms = H.Scorer(nodes, members).run(truth)
         held = {(m.level, m.node_id) for m in ms if m.level}
+        assert len(held) == sum(1 for m in ms if m.level), "two truth families on one node"
         for m in ms:
             if not m.level:
                 continue
@@ -185,3 +187,11 @@ def test_matches_prefer_the_lowest_rank_identical_node_when_it_is_free():
                 if k == (m.level, m.node_id):
                     break
                 assert k in held, (sorted(truth.items()), sorted(nodes.items()), m)
+
+
+def test_within_identical_nodes_the_best_match_takes_the_lowest_level():
+    nodes = {("family", "F"): frozenset("abc"), ("expansion", "F.x1"): frozenset("abc")}
+    truth = {"T1": frozenset("ab"), "T2": frozenset("abc")}  # both want the set {a,b,c}; T2 equals it
+    ms = {m.label: m for m in H.Scorer(nodes, list("abc")).run(truth)}
+    assert (ms["T2"].level, ms["T2"].node_id, ms["T2"].jaccard) == ("family", "F", 1.0)
+    assert (ms["T1"].level, ms["T1"].node_id) == ("expansion", "F.x1")
