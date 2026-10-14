@@ -71,11 +71,11 @@ families)
   rc=$?
   set -e
   { echo "--- after"; echo "exit	$rc"; stamp | sed 's/^/after_/'; } >> "$log"
-  # the representative row: present (last line) in R_J's params.tsv, absent in R_M's
+  # the representative row: present in R_J's params.tsv, absent in R_M's (matched as a whole line, not as the last
+  # line: since 2026-10-13 the pair-rule rows `pair_rule` / `pairs_joined_by_rule` are appended after it)
   if [ "$rc" = 0 ]; then
-    last=$(tail -1 "$D/$ARM.fam.params.tsv")
     if [ "$ARM" = R_J ]; then
-      [ "$last" = "$(printf 'representative\tmost-junctions')" ] || { echo "[rep_rule] R_J params.tsv lacks the representative row" | tee -a "$log" >&2; exit 3; }
+      grep -qx "$(printf 'representative\tmost-junctions')" "$D/$ARM.fam.params.tsv" || { echo "[rep_rule] R_J params.tsv lacks the representative row" | tee -a "$log" >&2; exit 3; }
     else
       ! grep -q '^representative' "$D/$ARM.fam.params.tsv" || { echo "[rep_rule] R_M params.tsv has a representative row" | tee -a "$log" >&2; exit 3; }
     fi
