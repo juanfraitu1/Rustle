@@ -15,6 +15,8 @@ families counts every Soto family that sits one level down as a miss.
   `mcl_families.before` (md5 9914dee365a041347275f2fafba25e07) is used only by the Secondary.
 - Lifted inputs (md5): `dupmasker_colors.v2.bed` f5e1146faf778a6d4f52e5bf0c172284; `sedef_pairs.v2.bed`
   7bd521edff9bd1e27b8141027da37a01; `soto_truth.v2.tsv` 60b77a995216237bbc33738dd78e212f.
+- Before the run, `md5sum` must reproduce all five values above, and `git diff 8f0515ef -- bench/o1_hier/hier_match.py`
+  must be empty. A mismatch stops the run.
 
 **Hierarchy.** `L = /mnt/linuxdisk/tmp/o1_close/lift`; output `O = /mnt/linuxdisk/tmp/o1_close/hier/<S>`.
 - Command:
@@ -73,9 +75,10 @@ families counts every Soto family that sits one level down as a miss.
 - **What.** The shipped pre-fix catalogs are also scored. For every two-node component they equal exact-MCL semantics
   (F2: no tie-regime pair was split).
   - They use the same hierarchy inputs, truth, scorer and seed, with `mcl_families.before`.
-  - Output: `/mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>`.
+  - Output: `/mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>`, built with `--out /mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>/ours`.
   - Their families must equal the shipped catalog:
-    `cmp /mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>/ours.clusters.tsv $R/<S>.fam.clusters.tsv`.
+    `cmp /mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>/ours.clusters.tsv $R/<S>.fam.clusters.tsv`. A difference stops
+    the Secondary.
 - **How reported.** Next to the primary, with no bar. The pair-rule choice must not be made from these scores.
 
 **Bars.** All are computed from the unrounded values in the PRIMARY run's `$O/hier_match.json`.
@@ -94,8 +97,8 @@ families counts every Soto family that sits one level down as a miss.
 2. **E2 fails:** sample-specific; only the per-catalog numbers are reported.
 3. **E1b fails (E1 and E2 pass):** the claim stops at the family level and above.
    - Soto's families are matched by our families, superfamilies and SD complexes.
-   - The headline rate is (`hierarchy.exact` - `exact_by_level.expansion`) / `hierarchy.n_truth`. Quote it with
-     `exact_by_level` and `by_level` excluding `expansion`, next to the flat score.
+   - The headline rate is (`hierarchy.exact` - `hierarchy.exact_by_level.expansion`) / `hierarchy.n_truth`. Quote it
+     with `hierarchy.exact_by_level` and `hierarchy.by_level` excluding `expansion`, next to the flat score.
    - On at least one catalog, the within-family null is not rejected at p < 0.001 on at least one of its two
      statistics. So no claim is made that our expansions recover Soto beyond random within-family splits of the same
      sizes.
@@ -113,7 +116,7 @@ In every case the headline rate is quoted with `hierarchy.n_truth` (evaluable) o
   - `member_loci_missing_from_gff`.
 - **Summaries:** the hierarchy and flat summaries: exact, rate, mean Jaccard, macro and micro recall and precision,
   gene recall.
-- **Levels:** `exact_any` per level, and where matches land (`by_level`, `exact_by_level`).
+- **Levels:** `exact_any` per level, and where matches land (`hierarchy.by_level`, `hierarchy.exact_by_level`).
 - **Unconditioned numbers** over ALL 491 truth families: `hierarchy.exact_of_all`, `macro_gene_recall_all`,
   `micro_gene_recall_all`. A family without a match counts 0, and every truth gene counts, clustered or not.
 - **`exact_any.expansion_not_family`:** Soto families equal to an expansion that is not a whole family. These are the
