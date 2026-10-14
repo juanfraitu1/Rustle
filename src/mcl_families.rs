@@ -268,7 +268,11 @@ struct Args {
     /// `utilities sd-scan` output prefix for `--emit-hierarchy` (the driver's `sd` stage writes it to `PREFIX.sd.prefix`):
     /// duplicons from `<PREFIX>.sd.duplicons.tsv` (sedef-rs duplication families) and the SD layer from
     /// `<PREFIX>.sd.pairs.tsv` (its `ok` rows). It takes the place of `--hierarchy-duplicons` and `--hierarchy-sd`, which it
-    /// excludes (docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md).
+    /// excludes (docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md). Gates in
+    /// `docs/PREREG_sedef_rs_layers_2026-10-13.md` (register 1278-1280): sd-scan's SD calls failed V1/V1b (recall about 0.40
+    /// against SEDEF) and its duplicons failed V2 (held-out family score 0.5153 against DupMasker), so `--sd-cache` is an
+    /// opt-in, unvalidated alternative to `--hierarchy-sd` / `--hierarchy-duplicons`; its SD layer uses every `ok` pair (no
+    /// identity or length floor).
     #[arg(long, conflicts_with_all = ["hierarchy_duplicons", "hierarchy_sd"])]
     sd_cache: Option<String>,
     /// External families for `--emit-hierarchy`: `chrom start end label` (GFF coordinates of annotation records, one row

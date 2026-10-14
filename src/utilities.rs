@@ -132,10 +132,16 @@ enum Cmd {
         #[arg(long)]
         out: String,
     },
-    /// Segmental duplications of a genome with the vendored sedef-rs (`src/sedef/`; docs/superpowers/specs/
-    /// 2026-10-13-o1-layered-hierarchy-design.md): seed -> chain -> refine -> decompose, written as
+    /// Segmental duplications of a genome with the vendored sedef-rs (`src/sedef/`;
+    /// docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md): seed -> chain -> refine -> decompose, written as
     /// OUT.sd.{candidates,blocks,pairs,segments,families,duplicons,params}.tsv + OUT.sd.anchors.bin, with the sandbox
     /// CLI's default parameters. `--version-key` prints the line the driver's `sd` stage keys its cache on, and exits.
+    ///
+    /// Gates in docs/PREREG_sedef_rs_layers_2026-10-13.md (register 1278-1280): sd-scan's SD calls failed V1/V1b (recall
+    /// about 0.40 against SEDEF) and its duplicons failed V2 (held-out family score 0.5153 against DupMasker), so its
+    /// tables feed `mcl_families --sd-cache` as an opt-in, unvalidated alternative to `--hierarchy-sd` /
+    /// `--hierarchy-duplicons`; the SD layer built from them uses every `ok` pair (no identity or length floor). Measured
+    /// cost with 4 threads: about 18 min and 10 GiB peak per human genome, about 55 min and 19 GiB for gorilla.
     SdScan {
         /// Genome FASTA (plain, gzip or bgzip); sequences are named by the first word of their header.
         #[arg(long, required_unless_present = "version_key")]
@@ -143,8 +149,10 @@ enum Cmd {
         /// Output prefix.
         #[arg(long, required_unless_present = "version_key")]
         out: Option<String>,
+        /// Threads of the scan's own pool; the costs above were measured with 4.
         #[arg(long, short = 't', default_value_t = 4)]
         threads: usize,
+        /// Print the version key the driver's `sd` stage hashes into its cache key, and exit (no genome needed).
         #[arg(long)]
         version_key: bool,
     },

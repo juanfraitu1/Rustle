@@ -175,3 +175,8 @@ V1 FAIL, V1b FAIL, V2 FAIL: `docs/PREREG_sedef_rs_layers_2026-10-13.md` (registe
 readings fixed there decide what phases 3-4 build on: the SD layer keeps SEDEF where it exists (V1); the Soto layer
 takes SEDEF SD98 (V1b); human expansions stay on DupMasker and the apes have no expansion layer (V2). The readings
 apply per layer (prereg, "Clarifications registered 2026-10-14"), so V2's fail does not decide the SD layer's source.
+
+Consequences for section 3. With V2 failing, the apes have no expansion layer, so section 3's Yoo expansion bar (scored at
+the expansion layer on apes) cannot be scored until an expansion source passes. With V1 and V1b failing, a genome without
+SEDEF has no SD layer and no SD98 source. On disk only human (HSA) and gorilla (GGO) SEDEF tables exist, so chimp
+(section 3's dev ape) has neither; the current scope is human and gorilla (user, 2026-10-13).

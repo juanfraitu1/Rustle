@@ -45,6 +45,12 @@
 #             --sd-cache`. Needs --fasta and --out only; `all` does not run it. An entry is a hit only if its DONE lists
 #             every file with its size (an empty DONE, as this stage wrote before 2026-10-14, is a miss); --no-cache scans
 #             again, into the same entry.
+#             Gates in docs/PREREG_sedef_rs_layers_2026-10-13.md (register 1278-1280): sd-scan's SD calls failed V1/V1b
+#             (recall about 0.40 against SEDEF) and its duplicons failed V2 (held-out family score 0.5153 against
+#             DupMasker), so `--sd-cache` is an opt-in, unvalidated alternative to `--hierarchy-sd` /
+#             `--hierarchy-duplicons`; its SD layer uses every `ok` pair (no identity or length floor). Cost with
+#             --threads 4: about 18 min and 10 GiB peak per human genome, about 55 min and 19 GiB for gorilla. The stage
+#             sets no memory cap (bench/sedef/run_genome.sh runs it under `ulimit -v`, 23 GiB).
 # (thesis record: families/catalog = O1, candidates = O3, assign = O2, flag = O3; in order O1 families -> O3 candidates ->
 #  O2 assign -> O3 flag)
 #
