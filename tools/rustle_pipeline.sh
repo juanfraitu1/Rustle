@@ -42,7 +42,9 @@
 #   sd        the genome's segmental duplications and duplicons            utilities sd-scan (vendored sedef-rs)
 #             once per genome, cached by the FASTA's md5 and sd-scan's version key in RUSTLE_SD_CACHE_DIR (default
 #             PREFIX.cache)/sd/<key>/genome.sd.*; PREFIX.sd.prefix names that prefix for `mcl_families --emit-hierarchy
-#             --sd-cache`. Needs --fasta and --out only; `all` does not run it.
+#             --sd-cache`. Needs --fasta and --out only; `all` does not run it. An entry is a hit only if its DONE lists
+#             every file with its size (an empty DONE, as this stage wrote before 2026-10-14, is a miss); --no-cache scans
+#             again, into the same entry.
 # (thesis record: families/catalog = O1, candidates = O3, assign = O2, flag = O3; in order O1 families -> O3 candidates ->
 #  O2 assign -> O3 flag)
 #
@@ -52,7 +54,7 @@
 #        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
-#   tools/rustle_pipeline.sh sd --fasta G --out PREFIX [--threads N] [--bin DIR]   the genome's SDs, cached (stage sd)
+#   tools/rustle_pipeline.sh sd --fasta G --out PREFIX [--threads N] [--bin DIR] [--no-cache]   the genome's SDs, cached (stage sd)
 # --piecewise (catalog only; needs the cache): the catalog's representatives (both BAM passes + the span-overlap
 #   collapse and its POA, none of which compares two contigs) are built one CONTIG per piece, each cached in
 #   PREFIX.cache/reps/; when all are cached they are merged into the one-run order and the catalog continues as one
@@ -202,26 +204,44 @@ if [ "$STAGE" = cache-ls ]; then
 fi
 # sd (docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md): the genome's segmental duplications with the
 # vendored sedef-rs (`utilities sd-scan`), once per genome: cached in RUSTLE_SD_CACHE_DIR (default PREFIX.cache) under
-# sd/<md5 of the FASTA>-<md5 of sd-scan's version key, 8 hex>/genome.sd.*, DONE written last. PREFIX.sd.prefix names
-# the cached prefix that `mcl_families --emit-hierarchy --sd-cache` takes. Needs --fasta and --out only (no BAM), so it
-# is a stage function plus a `case "$STAGE"` block that exits before the shared --bam check: figures/samples.py's
-# driver_stage_code leaves every other stage's code hash as it was.
+# sd/<md5 of the FASTA>-<md5 of sd-scan's version key, 8 hex>/genome.sd.*. PREFIX.sd.prefix names the cached prefix
+# that `mcl_families --emit-hierarchy --sd-cache` takes; it is removed first and written only after a hit or a finished
+# scan, so a failed run leaves none. Needs --fasta and --out only (no BAM), so it is a stage function plus a
+# `case "$STAGE"` block that exits before the shared --bam check: figures/samples.py's driver_stage_code leaves every
+# other stage's code hash as it was.
+# The entry is marked done by DONE, written last: one `name<TAB>bytes` line per file of the entry (every genome.sd.* file
+# and key.tsv), as src/family.rs's cache entries do. A hit needs the cache on (--no-cache always scans, into the same
+# entry), a non-empty DONE and every listed file present with its listed size; anything else is a miss (an empty DONE,
+# as this stage wrote before 2026-10-14, included). A miss removes DONE, scans, writes key.tsv, syncs the files, writes
+# DONE.tmp and renames it to DONE.
 stage_sd() {
   [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "[rustle_pipeline] sd needs --fasta and --out" >&2; exit 2; }
   [ -s "$FASTA" ] || { echo "[rustle_pipeline] sd: $FASTA is missing or empty" >&2; exit 2; }
-  local key md5 dir
+  rm -f "$OUT.sd.prefix"
+  local key md5 dir hit=0 f="" n="" b=""
   key=$("$BIN/utilities" sd-scan --version-key) || { echo "[rustle_pipeline] sd: $BIN/utilities has no sd-scan; rebuild it" >&2; exit 2; }
   md5=$(md5sum < "$FASTA" | cut -c1-32)
   dir=${RUSTLE_SD_CACHE_DIR:-$OUT.cache}/sd/$md5-$(printf '%s' "$key" | md5sum | cut -c1-8)
-  if [ -f "$dir/DONE" ]; then
+  if [ "$CACHE" = 1 ] && [ -s "$dir/DONE" ]; then
+    hit=1
+    while IFS=$'\t' read -r n b || [ -n "$n" ]; do
+      [ -n "$n" ] && [ -f "$dir/$n" ] && [ "$(wc -c < "$dir/$n")" = "$b" ] || { hit=0; break; }
+    done < "$dir/DONE"
+  fi
+  if [ "$hit" = 1 ]; then
     echo "[rustle_pipeline] $(date +%H:%M:%S) sd: cached ($dir)" >&2
   else
     mkdir -p "$dir"
+    rm -f "$dir/DONE" "$dir/DONE.tmp"
     echo "[rustle_pipeline] $(date +%H:%M:%S) sd: utilities sd-scan on $FASTA -> $dir" >&2
     "$BIN/utilities" sd-scan --genome "$FASTA" --out "$dir/genome" --threads "$THREADS" > "$OUT.sd.log" 2>&1 \
       || { echo "[rustle_pipeline] sd: sd-scan failed (exit $?); see $OUT.sd.log" >&2; exit 1; }
     printf 'sd\t%s\t%s\t%s\n' "$md5" "$key" "$FASTA" > "$dir/key.tsv"
-    touch "$dir/DONE"
+    sync "$dir"/genome.sd.* "$dir/key.tsv" || { echo "[rustle_pipeline] sd: could not sync the files of $dir; not marked done" >&2; exit 1; }
+    for f in "$dir"/genome.sd.* "$dir/key.tsv"; do
+      if [ -f "$f" ]; then printf '%s\t%s\n' "${f##*/}" "$(wc -c < "$f")"; fi
+    done > "$dir/DONE.tmp"
+    sync "$dir/DONE.tmp" && mv "$dir/DONE.tmp" "$dir/DONE" || { echo "[rustle_pipeline] sd: could not write $dir/DONE" >&2; exit 1; }
   fi
   printf '%s\n' "$dir/genome" > "$OUT.sd.prefix"
   echo "[rustle_pipeline] $(date +%H:%M:%S) sd: $(awk -F'\t' '!/^#/ && $11=="ok"' "$dir/genome.sd.pairs.tsv" | wc -l) SD pairs (ok), $(awk '!/^#/' "$dir/genome.sd.families.tsv" | wc -l) duplication families; --sd-cache $dir/genome ($OUT.sd.prefix)" >&2
