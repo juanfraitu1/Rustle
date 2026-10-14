@@ -30,6 +30,10 @@
 //!   (tests `a_segment_joins_its_two_copies_and_overlap_joins_further_copies`,
 //!   `equal_families_are_ordered_by_their_copies`). families.tsv therefore differs from the sandbox's; chimp chr1:
 //!   1,033 families (sandbox 3,316), largest 3,750 of 17,426 copies.
+//! - `scan` (new) replaces the sandbox's main.rs: the four stages through files on a local thread pool,
+//!   first-word sequence names, candidates ordered with window b's sequence as the last key, and the duplicon table
+//!   `PREFIX.sd.duplicons.tsv` (tests in `scan` and tests/sd_scan.rs; chimp chr1 equality:
+//!   bench/sedef/equivalence_chr1.sh).
 
 pub mod anchors;
 pub mod chain;
@@ -37,4 +41,5 @@ pub mod decompose;
 pub mod fasta;
 pub mod kmer;
 pub mod refine;
+pub mod scan;
 pub mod seed;
