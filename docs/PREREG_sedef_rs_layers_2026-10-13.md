@@ -295,3 +295,69 @@ Observations (no bar):
   and 18.67 GiB, 1.5 and 2.4 times the projection (CHM13 v1.0 had no projection: 9.44 GiB). The gorilla peak RSS is 81%
   of the 23 GiB address-space cap (the cap limits virtual size, which is at least the RSS); all three runs finished with
   exit 0 and no allocation failure.
+
+### V2 DEV (2026-10-14; HELD-OUT not computed)
+
+Run and scored on 2026-10-14. The run relies on registration commit 092570c9 (the last commit that changes this document
+above `## Results`).
+
+- **Binary (both arms):** `/mnt/linuxdisk/tmp/o1_layers/v2/mcl_families.65f6a1a3`, built from commit 65f6a1a3 (Task 9),
+  sha256 `7829b2f5c842e84f0f4372d72d5fb1623e8c0550cf02ef015c6ba6e3da8d8a8e` (re-computed before the runs; it equals the
+  recorded `mcl_families.65f6a1a3.sha256`).
+- **Binary pin check**, `git diff --stat 092570c9 65f6a1a3 -- src`:
+
+      src/family.rs       | 29 +++++++++++++++++++++++++++--
+      src/mcl_families.rs | 42 +++++++++++++++++++++++++++++++++++++-----
+      2 files changed, 64 insertions(+), 7 deletions(-)
+
+  Only the two files of the V2 binary pin differ. Their hunks are the `--sd-cache` flag with its helper `hierarchy_inputs`
+  (`mcl_families.rs`) and the sd-scan branch of `parse_sd` (`family.rs`), plus doc comments and two unit tests. The branch
+  is taken only for a row of exactly 11 columns ending in `ok`, `self` or `weak`; all 151,758 rows of the SEDEF BED
+  (`final_v1_clean.bed`) have 34 columns. Neither arm passes `--sd-cache`.
+- **Arms:** the registered command (it includes `--dump-pairs`). DupMasker: `--hierarchy-duplicons
+  winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`. sd-scan: `--hierarchy-duplicons
+  /mnt/linuxdisk/home/juanfraitu/sd_cache/sd/67f9a15a0299e3d32df8e527a611db20-2992c257/genome.sd.duplicons.tsv` (the prefix
+  in `/mnt/linuxdisk/tmp/o1_layers/chm13v1.sd.prefix`; 251,185 duplicon rows). Both: `--hierarchy-sd
+  winloci_data/soto_replication/final_v1_clean.bed`, `--hierarchy-external /mnt/linuxdisk/tmp/hier_flag/soto_external.tsv`,
+  `--out /mnt/linuxdisk/tmp/o1_layers/v2/{dupmasker,sdscan}/ours`. Both runs exit 0.
+- **Scorer:** `bench/paf_duplicons/score_units.py`, unchanged, DEV half only; output
+  `/mnt/linuxdisk/tmp/o1_layers/v2/score_dev.json`. `score_units.py ... heldout` and `hier_match.py` (V2b) were not run on
+  these arms. No bar, filter or measure was changed after the numbers were seen.
+
+`--emit-hierarchy` lines, as logged (the log's trailing output path left out):
+
+    dupmasker: 1709 members, 331 superfamilies, 380 families, 430 expansions, 319 fusion loci (156 foreign-only), 1240 duplicons owned; SD blocks 322 (192 with >1 family), families with every member pair SD-joined 200; SD complexes 35 (largest 1532 members)
+    sdscan:    1709 members, 331 superfamilies, 380 families, 378 expansions, 208 fusion loci (536 foreign-only), 1073 duplicons owned; SD blocks 322 (192 with >1 family), families with every member pair SD-joined 200; SD complexes 35 (largest 1532 members)
+
+H0: clusters / loci / pairs identical between the arms: **yes** (`cmp`, byte-identical; md5
+09f0fe53f591c327cdc521b51b54ce37, eaef39645a68e75f2abac28455ffdfa0 and 865519d877a390bd65b5c22647e04761).
+DupMasker arm vs the registered 10-09 run (`/mnt/linuxdisk/tmp/hier_flag/final/`): `ours.clusters.tsv`, `ours.loci.tsv`,
+`ours.pairs.tsv`, `ours.hierarchy.members.tsv`, `ours.hierarchy.nodes.tsv`, `ours.hierarchy.edges.tsv` and
+`ours.hierarchy.external.tsv` are each byte-identical to it (`cmp -s`). The comparator rule is therefore not triggered: the
+re-run arm and the registered files are the same. (Outside those seven files, the re-run's `ours.params.tsv` and log
+gain `pair_rule exact-mcl` / `pairs_joined_by_rule 0`, which the 10-09 binary did not write; the rule joined 0 two-node
+components.)
+
+| measure (DEV, 200 families, 49 structured) | value |
+|---|---|
+| mean family score (P1 on DEV) | 0.4816 |
+| member-weighted score | 0.4272 |
+| families identical | 69 / 200 |
+| exact expansion sensitivity / precision | 73/249 (0.2932) / 73/214 (0.3411) |
+| P2: wins / losses / ties vs the one-block null, sign test p | 21 / 13 / 15; p = 0.1147 (one-sided, ties dropped; mean on the 49 structured families 0.3514, one-block null 0.2779) |
+| P3: Soto families exactly one expansion, DupMasker / sd-scan (all families) | 215 / 179 |
+| P4: PKD1P6-NPIPP1, PDXDC2P-NPIPB14P (sd-scan arm) | `MCL28 chr16:15126207-15159416 fusion_of=MCL29 fusion`; `MCL286 chr16:75785720-75875798 fusion_of=MCL29 fusion` (DupMasker arm: `fusion_of=MCL9 fusion` for both) |
+| members' exonic bases carrying a duplicon, DupMasker / sd-scan | 0.9131 / 0.8227 (of 2,988,087 bp) |
+| NPIP (MCL9) cover, DupMasker / sd-scan | MCL9.x1 4, MCL9.x2 6, MCL9.x3 10 members / unique 19 members (family score 0.0) |
+| blocks per family, DupMasker / sd-scan | {1: 151, 2: 31, 3: 13, 4: 3, 9: 1, 11: 1} / {1: 129, 2: 54, 3: 11, 4: 3, 5: 3} (blocks: families; `unique` is a block) |
+
+P3 placements of the Soto families with >= 2 members, DupMasker / sd-scan: EXPANSION 215 / 179, WITHIN-FAMILY 98 / 134,
+WITHIN-SD-COMPLEX 52 / 52, WITHIN-SUPERFAMILY 33 / 33, OUTSIDE 2 / 2. P3 is descriptive and is not V2b
+(`exact_any.expansion_not_family`), which is computed once per arm at the held-out step.
+
+No verdict at DEV: V2a (HELD-OUT mean family score >= 0.8000) and V2b are decided at the held-out step; DEV is reported,
+not read against a bar.
+
+Worst families (the 12 lowest scores): all twelve score 0.0. The JSON `worst` list sorts by (score, family id), so it is
+cut among tied scores and runs in family-id string order: MCL109, MCL114, MCL115, MCL118, MCL12, MCL125, MCL13, MCL137,
+MCL140, MCL147, MCL149, MCL15.
