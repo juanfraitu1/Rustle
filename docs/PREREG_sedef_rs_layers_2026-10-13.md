@@ -136,13 +136,14 @@ re-clustered from the same PAF.
 Added after this document's task review and before any sd-scan output was compared with SEDEF or DupMasker. No bar,
 filter or measure changes.
 
-- **Provenance.** The CHM13 v2.0 and gorilla sd-scan runs were started before this document's first commit (to overlap
-  compute with other work). Only their own counts (pairs, families, run time, memory) were looked at; nothing was
-  compared with SEDEF or DupMasker before this section was committed. Both runs used the `utilities` binary built from
-  branch `o1-layers` at ee6eb9c5, whose `src/sedef/` and `src/utilities.rs` equal commit 96b75970's, with the version
-  key registered above. This departs from spec section 2, which places these whole-genome runs inside the V1 gate and
-  pre-registers each gate before it runs. The runs produced sd-scan's own outputs only; nothing was compared with SEDEF
-  or DupMasker before registration (the plan's rule).
+- **Provenance.** The CHM13 v2.0 sd-scan run started at 10:36 on 2026-10-14, before this document's first commit
+  (4e829791, 10:53), to overlap compute with other work; the gorilla run started at about 10:55 and the CHM13 v1.0 run
+  (V2's input) at 11:49, both after it. Only the runs' own counts (pairs, families, run time, memory) were looked at.
+  All three used the `utilities` binary built from branch `o1-layers` at ee6eb9c5, whose `src/sedef/` and
+  `src/utilities.rs` equal commit 96b75970's, with the version key registered above. Starting the CHM13 v2.0 run before
+  registration departs from spec section 2, which places the whole-genome runs inside the V1 gate and pre-registers each
+  gate before it runs. The runs produced sd-scan's own outputs only; nothing was compared with SEDEF or DupMasker before
+  the first registration commit (the plan's rule).
 - **Readings apply per layer.** The SD layer follows V1; the Soto layer's SD98 source follows V1b; the expansion layer
   follows V2. V2's "Otherwise" reading concerns the duplicon and expansion layers only; the SD layer's source is whatever
   V1 decided. This narrows the spec's "sedef-rs gives the SD level only" (section 2, V2 fail), which presupposed a
@@ -183,8 +184,8 @@ filter or measure changes.
     `docs/PREREG_paf_duplicon_units_2026-10-10.md`; F_O is the registered DNA-level partition of the 2,334 loci of
     `/mnt/linuxdisk/tmp/ourhom/loci.paf` + `loci.gff3`, as defined in
     `docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md` ("Family layers"). Both arms re-cluster the same PAF with
-    the V2 binary; the registered 10-09 partition is the reference, and H0 and the comparator rule govern any difference
-    from it.
+    the V2 binary; the registered 10-09 partition is a descriptive reference, and H0 and the comparator rule govern any
+    difference from it.
 - **V2b's command** runs once per arm, with `<arm dir>` = `/mnt/linuxdisk/tmp/o1_layers/v2/dupmasker` and
   `/mnt/linuxdisk/tmp/o1_layers/v2/sdscan`: `MEMBERS` = `<arm dir>/ours.hierarchy.members.tsv`, `LOCI` =
   `<arm dir>/ours.loci.tsv`, `OUT` = `<arm dir>/key.json`, and `soto_external.tsv` =
