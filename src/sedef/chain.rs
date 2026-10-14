@@ -291,8 +291,10 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
     for &i in &order {
         active.retain(|&j| chains[j].a1 >= chains[i].a0);
         for &j in &active {
-            if overlap_frac(chains[i].a0, chains[i].a1, chains[j].a0, chains[j].a1)
-                >= p.merge_frac
+            if chains[i].ca == chains[j].ca
+                && chains[i].cb == chains[j].cb
+                && overlap_frac(chains[i].a0, chains[i].a1, chains[j].a0, chains[j].a1)
+                    >= p.merge_frac
                 && overlap_frac(chains[i].b0, chains[i].b1, chains[j].b0, chains[j].b1)
                     >= p.merge_frac
             {
@@ -373,8 +375,10 @@ fn merge_blocks(blocks: Vec<Block>, merge_frac: f64, sketch: usize, k: usize) ->
     for &i in &order {
         active.retain(|&j| blocks[j].a1 > blocks[i].a0);
         for &j in &active {
-            if overlap_frac64(blocks[i].a0, blocks[i].a1, blocks[j].a0, blocks[j].a1)
-                >= merge_frac
+            if blocks[i].chr_a == blocks[j].chr_a
+                && blocks[i].chr_b == blocks[j].chr_b
+                && overlap_frac64(blocks[i].a0, blocks[i].a1, blocks[j].a0, blocks[j].a1)
+                    >= merge_frac
                 && overlap_frac64(blocks[i].b0, blocks[i].b1, blocks[j].b0, blocks[j].b1)
                     >= merge_frac
             {
@@ -494,5 +498,38 @@ mod tests {
         let (blocks, _) = chain_and_merge(&pairs, &params());
         assert_eq!(blocks.len(), 1);
         assert_eq!((blocks[0].a0, blocks[0].a1), (0, 8000));
+    }
+
+    #[test]
+    fn chains_and_blocks_of_different_chromosome_pairs_never_merge() {
+        // vendored change (2026-10-13): one run of three cells at the same window coordinates on (a, b) and on (x, y)
+        // gives two blocks, each with its own names (the sandbox merged them into one block named after whichever
+        // chain its HashMap met first)
+        let on = |ca: &str, cb: &str, s_a: u64, s_b: u64| PairRec {
+            chr_a: ca.into(),
+            s_a,
+            e_a: s_a + 2000,
+            chr_b: cb.into(),
+            s_b,
+            e_b: s_b + 2000,
+            shared: 30,
+        };
+        let mut pairs = vec![];
+        for i in 0..3u64 {
+            pairs.push(on("a", "b", i * 2000, 20_000 + i * 2000));
+            pairs.push(on("x", "y", i * 2000, 20_000 + i * 2000));
+        }
+        let (blocks, stats) = chain_and_merge(&pairs, &params());
+        assert_eq!(stats.n_chains, 2);
+        let mut got: Vec<(String, u64, u64, String, u64, u64)> =
+            blocks.iter().map(|b| (b.chr_a.clone(), b.a0, b.a1, b.chr_b.clone(), b.b0, b.b1)).collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                ("a".to_string(), 0, 6000, "b".to_string(), 20_000, 26_000),
+                ("x".to_string(), 0, 6000, "y".to_string(), 20_000, 26_000)
+            ]
+        );
     }
 }

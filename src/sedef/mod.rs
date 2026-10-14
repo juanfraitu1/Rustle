@@ -15,6 +15,13 @@
 //!
 //! Changes against the sandbox, each with its test:
 //! - every `crate::<module>` path reads `crate::sedef::<module>`.
+//! - `chain::chain_and_merge` (pass 2) and `merge_blocks` join chains / blocks only within one chromosome pair: the
+//!   sandbox merged by window coordinates alone, fusing blocks of different chromosome pairs under the names its
+//!   HashMap met first (test `chains_and_blocks_of_different_chromosome_pairs_never_merge`).
+//! - `seed::build_windows` keeps only each sketch's hashes (the sandbox kept the 2,000-hash buffer, 16 KB per window),
+//!   and `seed::find_candidates` counts pairs in `SeedParams::count_shards` shards, releasing each sketch as its entries
+//!   are written: the same candidates, bounded memory (tests `window_sketches_keep_only_their_hashes`,
+//!   `sharded_counting_gives_the_one_map_candidates`, `counting_releases_every_sketch`).
 
 pub mod anchors;
 pub mod chain;
