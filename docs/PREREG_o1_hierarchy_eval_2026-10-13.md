@@ -151,4 +151,160 @@ In every case the headline rate is quoted with `hierarchy.n_truth` (evaluable) o
 
 ## Results
 
-(pending)
+Run 2026-10-13 (Task 6 of `docs/superpowers/plans/2026-10-13-close-o1-phase-0A.md`) on the committed prereg (HEAD `fed73e76`); nothing above this heading was edited. Scorer `bench/o1_hier/hier_match.py` at 8f0515ef, python 3.14.4, scipy 1.17.1, numpy 2.4.2, called as `--map exon --null 1000 --seed 7` (the default `--map` is `exon`). The bars below are computed from the UNROUNDED values in the two PRIMARY JSONs (`/mnt/linuxdisk/tmp/o1_close/hier/human_{A119b,testis}/hier_match.json`); the computation is saved in `/mnt/linuxdisk/tmp/o1_close/hier/verdicts.txt`.
+
+### Gates (all passed)
+
+- **Pinned files.** `md5sum` reproduced all five values: `mcl_families.after` db55a19f8f165587563212c276bcfbca, `mcl_families.before` 9914dee365a041347275f2fafba25e07, `dupmasker_colors.v2.bed` f5e1146faf778a6d4f52e5bf0c172284, `sedef_pairs.v2.bed` 7bd521edff9bd1e27b8141027da37a01, `soto_truth.v2.tsv` 60b77a995216237bbc33738dd78e212f.
+- **Scorer pin.** `git diff 8f0515ef -- bench/o1_hier/hier_match.py` is empty (the working-tree file equals the pinned commit).
+- **Families = the catalog.** Primary: `cmp $O/ours.clusters.tsv /mnt/linuxdisk/tmp/o1_close/recluster/after/<S>.fam.clusters.tsv` is identical for human_testis and human_A119b. Secondary: `cmp /mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>/ours.clusters.tsv $R/<S>.fam.clusters.tsv` is identical for both.
+- **`coverage.member_loci_missing_from_gff`** is absent from all four JSONs, i.e. 0: every member and folded-locus key was found in the catalog GFF.
+- **Builds** (`--emit-hierarchy` log lines; the log counts the expansions without the `<family>.unique` buckets that `n_nodes.expansion` includes):
+  - primary testis: 1133 members, 344 superfamilies, 351 families, 309 expansions, SD complexes 157; primary A119b: 10043 members, 1525 superfamilies, 2218 families, 1584 expansions, SD complexes 598;
+  - secondary testis: 1115 members, 335 superfamilies, 342 families, 302 expansions, SD complexes 149; secondary A119b: 9907 members, 1457 superfamilies, 2150 families, 1541 expansions, SD complexes 571.
+
+### Verdicts (PRIMARY)
+
+| Bar | Rule | A119b (dev) | testis (held-out) | Verdict |
+|---|---|---|---|---|
+| E1 | `null.global`: `p_exact` < 0.001 and `p_mean_jaccard` < 0.001, on each catalog | p_exact 0.000999000999000999; p_mean_jaccard 0.000999000999000999 | p_exact 0.000999000999000999; p_mean_jaccard 0.000999000999000999 | **PASS** |
+| E1b | `null.within_family`: `p_exact` < 0.001 and `p_mean_jaccard` < 0.001, on each catalog | p_exact 0.08291708291708291 (not < 0.001); p_mean_jaccard 0.000999000999000999 | p_exact 0.48951048951048953 (not < 0.001); p_mean_jaccard 0.21878121878121878 (not < 0.001) | **FAIL** |
+| E2 | \|`hierarchy.exact_rate`(testis) - `hierarchy.exact_rate`(A119b)\| <= 0.10 | exact_rate = 63/247 = 0.2550607287449393 | exact_rate = 41/84 = 0.4880952380952381 | difference 0.2330345093502988 > 0.10: **FAIL** |
+
+- **E1.** 0.000999000999000999 = 1/1001: no null round reached the observed value in any of the four tests. A119b: observed exact 63 against a global-null mean of 0.001 (max 1); observed mean Jaccard 0.5844 against 0.1934 (max 0.2109). testis: exact 41 against 0.026 (max 2); mean Jaccard 0.7836 against 0.2715 (max 0.2967).
+- **E1b.** The within-family null keeps every family and permutes members inside it, so only the expansions move. A119b: observed exact 63 against a null mean of 61.048 (max 64), mean Jaccard 0.5844 against 0.5752 (max 0.5819): the within-family null is not rejected on the exact count (p 0.08291708291708291) but is rejected on the mean Jaccard (p 1/1001), so one of the two statistics passes. testis: exact 41 against 40.569 (max 44), mean Jaccard 0.7836 against 0.7793 (max 0.8007): neither statistic is rejected.
+- **E2.** The two exact rates differ by 0.2330345093502988 (exact fraction 4835/20748), more than twice the 0.10 bar; the unconditioned `exact_of_all` goes the other way (A119b 0.1283, testis 0.0835), because the evaluable set is 247 families in A119b and 84 in testis.
+
+### Reading applied: row 2
+
+E1 passes on both catalogs, so row 1 does not match. **E2 fails, so row 2 matches and applies** (the first row that matches applies):
+
+> 2. **E2 fails:** sample-specific; only the per-catalog numbers are reported.
+
+E1b also fails, but row 3 is the case "E1b fails (E1 and E2 pass)" and is not reached. No hierarchy claim for Soto is made across the two catalogs; the per-catalog numbers below stand as reported. The headline rate is quoted with `hierarchy.n_truth` (evaluable) out of 491 and with `hierarchy.exact_of_all`:
+
+| | evaluable of 491 | hierarchy exact | exact rate | exact_of_all | mean Jaccard | flat exact | flat exact rate | flat exact_of_all | flat mean Jaccard |
+|---|---|---|---|---|---|---|---|---|---|
+| A119b (primary) | 247 | 63 | 0.2551 | 0.1283 (63/491) | 0.5844 | 58 | 0.2348 | 0.1181 | 0.5288 |
+| testis (primary) | 84 | 41 | 0.4881 | 0.0835 (41/491) | 0.7836 | 37 | 0.4405 | 0.0754 | 0.7130 |
+
+Descriptive, not a bar: in both catalogs `hierarchy.exact_by_level.family` equals the flat exact count (58 and 37), so the hierarchy's extra exact matches over the flat score are exactly its `exact_by_level.expansion` matches (5 and 4).
+
+### Reported regardless
+
+**Coverage** (records = Soto gene rows). In this and the following tables the two primary catalogs come first and the two Secondary (shipped) catalogs after them, the latter without verdicts:
+
+| | A119b (primary) | testis (primary) | A119b (shipped, secondary) | testis (shipped, secondary) |
+|---|---|---|---|---|
+| members (`n_members`) | 10043 | 1133 | 9907 | 1115 |
+| nodes: family | 2218 | 351 | 2150 | 342 |
+| nodes: expansion (incl. `<family>.unique`) | 2863 | 409 | 2785 | 398 |
+| nodes: superfamily | 1525 | 344 | 1457 | 335 |
+| nodes: sd_complex | 598 | 157 | 571 | 149 |
+| truth families (`labels`) | 491 | 491 | 491 | 491 |
+| evaluable (>= 2 members) | 247 | 84 | 247 | 84 |
+| one member | 55 | 34 | 54 | 34 |
+| no member | 189 | 373 | 190 | 373 |
+| records | 2458 | 2458 | 2458 | 2458 |
+| records on members | 1212 | 287 | 1211 | 286 |
+| records on unclustered loci | 154 | 99 | 155 | 100 |
+| records without a locus | 1092 | 2072 | 1092 | 2072 |
+| records on several members | 298 | 10 | 298 | 10 |
+| members in several truth families | 180 | 24 | 180 | 24 |
+| `member_loci_missing_from_gff` (key absent = 0) | 0 | 0 | 0 | 0 |
+
+**Summaries** (over the evaluable families; precisions are averages over the matched ones):
+
+| | A119b (primary) | testis (primary) | A119b (shipped, secondary) | testis (shipped, secondary) |
+|---|---|---|---|---|
+| hierarchy.n_truth | 247 | 84 | 247 | 84 |
+| hierarchy.n_matched | 247 | 84 | 247 | 84 |
+| hierarchy.exact | 63 | 41 | 63 | 41 |
+| hierarchy.exact_rate | 0.2551 | 0.4881 | 0.2551 | 0.4881 |
+| hierarchy.mean_jaccard | 0.5844 | 0.7836 | 0.5846 | 0.7852 |
+| hierarchy.macro_recall | 0.7073 | 0.9281 | 0.7075 | 0.9305 |
+| hierarchy.macro_precision | 0.7810 | 0.8350 | 0.7810 | 0.8350 |
+| hierarchy.micro_recall | 0.5999 | 0.9132 | 0.6003 | 0.9170 |
+| hierarchy.micro_precision | 0.1920 | 0.7543 | 0.1920 | 0.7543 |
+| hierarchy.macro_gene_recall | 0.6720 | 0.6044 | 0.6720 | 0.6044 |
+| flat.n_truth | 247 | 84 | 247 | 84 |
+| flat.n_matched | 233 | 77 | 233 | 77 |
+| flat.exact | 58 | 37 | 58 | 37 |
+| flat.exact_rate | 0.2348 | 0.4405 | 0.2348 | 0.4405 |
+| flat.mean_jaccard | 0.5288 | 0.7130 | 0.5289 | 0.7146 |
+| flat.macro_recall | 0.6439 | 0.8389 | 0.6441 | 0.8412 |
+| flat.macro_precision | 0.7506 | 0.8271 | 0.7506 | 0.8271 |
+| flat.micro_recall | 0.5123 | 0.8430 | 0.5127 | 0.8465 |
+| flat.micro_precision | 0.6454 | 0.7698 | 0.6454 | 0.7698 |
+| flat.macro_gene_recall | 0.6236 | 0.5495 | 0.6236 | 0.5495 |
+
+**Levels.** `exact_any` (tie-free: truth sets equal to some node of the level, evaluable families only), `hierarchy.by_level` (where the one-to-one matches land) and `hierarchy.exact_by_level`:
+
+| | A119b (primary) | testis (primary) | A119b (shipped, secondary) | testis (shipped, secondary) |
+|---|---|---|---|---|
+| exact_any.any | 63 | 42 | 63 | 42 |
+| exact_any.family | 59 | 39 | 59 | 39 |
+| exact_any.expansion | 56 | 41 | 56 | 41 |
+| exact_any.superfamily | 57 | 39 | 57 | 39 |
+| exact_any.sd_complex | 9 | 5 | 9 | 5 |
+| exact_any.expansion_not_family | 4 | 3 | 4 | 3 |
+| exact_any.expansion_unique | 14 | 3 | 14 | 3 |
+| hierarchy.by_level.family | 170 | 69 | 170 | 69 |
+| hierarchy.by_level.expansion | 57 | 12 | 57 | 12 |
+| hierarchy.by_level.superfamily | 20 | 3 | 20 | 3 |
+| hierarchy.by_level.sd_complex | 0 | 0 | 0 | 0 |
+| hierarchy.exact_by_level.family | 58 | 37 | 58 | 37 |
+| hierarchy.exact_by_level.expansion | 5 | 4 | 5 | 4 |
+| hierarchy.exact_by_level.superfamily | 0 | 0 | 0 | 0 |
+| hierarchy.exact_by_level.sd_complex | 0 | 0 | 0 | 0 |
+
+`exact_any.expansion_not_family` (Soto families equal to an expansion that is not a whole family; the only matches strictly below the family level) is 4 in A119b and 3 in testis; `exact_any.expansion_unique` (equal to a `<family>.unique` bucket) is reported separately, 14 and 3. No truth family lands on an SD complex in the one-to-one matching (`by_level.sd_complex` 0), although `exact_any.sd_complex` is 9 and 5: each of those truth sets is also equal to a family node (the complex is one whole family; checked on the member sets), and the canonical placement gives it the lowest-rank node.
+
+**Unconditioned numbers over ALL 491 truth families** (a family without a match counts 0; every truth gene counts, clustered or not):
+
+| | A119b (primary) | testis (primary) | A119b (shipped, secondary) | testis (shipped, secondary) |
+|---|---|---|---|---|
+| hierarchy.n_truth_all | 491 | 491 | 491 | 491 |
+| hierarchy.exact_of_all | 0.1283 | 0.0835 | 0.1283 | 0.0835 |
+| hierarchy.macro_gene_recall_all | 0.3380 | 0.1034 | 0.3380 | 0.1034 |
+| hierarchy.micro_gene_recall_all | 0.3470 | 0.0956 | 0.3470 | 0.0956 |
+| flat.n_truth_all | 491 | 491 | 491 | 491 |
+| flat.exact_of_all | 0.1181 | 0.0754 | 0.1181 | 0.0754 |
+| flat.macro_gene_recall_all | 0.3137 | 0.0940 | 0.3137 | 0.0940 |
+| flat.micro_gene_recall_all | 0.3104 | 0.0883 | 0.3104 | 0.0883 |
+
+**Nulls** (1,000 rounds, seed 7; observed values are the hierarchy's; p = (1 + #{null rounds >= observed}) / 1001, quoted unrounded):
+
+| | A119b (primary) | testis (primary) | A119b (shipped, secondary) | testis (shipped, secondary) |
+|---|---|---|---|---|
+| observed hierarchy.exact | 63 | 41 | 63 | 41 |
+| observed hierarchy.mean_jaccard | 0.5844 | 0.7836 | 0.5846 | 0.7852 |
+| null.global.exact_mean | 0.001 | 0.026 | 0.004 | 0.031 |
+| null.global.exact_max | 1 | 2 | 1 | 2 |
+| null.global.mean_jaccard_mean | 0.1934 | 0.2715 | 0.1923 | 0.2703 |
+| null.global.mean_jaccard_max | 0.2109 | 0.2967 | 0.2105 | 0.2965 |
+| null.global.p_exact | 0.000999000999000999 | 0.000999000999000999 | 0.000999000999000999 | 0.000999000999000999 |
+| null.global.p_mean_jaccard | 0.000999000999000999 | 0.000999000999000999 | 0.000999000999000999 | 0.000999000999000999 |
+| null.within_family.exact_mean | 61.048 | 40.569 | 61.071 | 40.522 |
+| null.within_family.exact_max | 64 | 44 | 64 | 44 |
+| null.within_family.mean_jaccard_mean | 0.5752 | 0.7793 | 0.5754 | 0.7808 |
+| null.within_family.mean_jaccard_max | 0.5819 | 0.8007 | 0.5823 | 0.7988 |
+| null.within_family.p_exact | 0.08291708291708291 | 0.48951048951048953 | 0.0939060939060939 | 0.4825174825174825 |
+| null.within_family.p_mean_jaccard | 0.000999000999000999 | 0.21878121878121878 | 0.000999000999000999 | 0.2037962037962038 |
+
+**Advisor table** (`bench/o1_hier/advisor_table.py`, as printed, 4 rows: the two primary catalogs, then the two shipped ones; TSV `docs/hierarchy_results/o1_close_human_2026-10-13.tsv`):
+
+| sample | truth_families | evaluable | one_member | no_member | records_on_members | records_on_unclustered_locus | records_without_locus | records_without_member | flat_n_matched | hier_n_matched | flat_exact | flat_exact_rate | hier_exact | hier_exact_rate | hier_exact_of_all | flat_mean_jaccard | hier_mean_jaccard | flat_macro_recall | hier_macro_recall | flat_macro_precision | hier_macro_precision | hier_gene_recall | hier_gene_recall_all_macro | hier_gene_recall_all_micro | lands_family | lands_expansion | lands_superfamily | lands_sd_complex | exact_any_expansion | exact_expansion_not_family | exact_expansion_unique | p_global | p_within_family |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A119b | 491 | 247 | 55 | 189 | 1212 | 154 | 1092 | NA | 233 | 247 | 58 | 0.235 | 63 | 0.255 | 0.128 | 0.529 | 0.584 | 0.644 | 0.707 | 0.751 | 0.781 | 0.672 | 0.338 | 0.347 | 170 | 57 | 20 | 0 | 56 | 4 | 14 | 0.000999 | 0.082917 |
+| testis | 491 | 84 | 34 | 373 | 287 | 99 | 2072 | NA | 77 | 84 | 37 | 0.44 | 41 | 0.488 | 0.084 | 0.713 | 0.784 | 0.839 | 0.928 | 0.827 | 0.835 | 0.604 | 0.103 | 0.096 | 69 | 12 | 3 | 0 | 41 | 3 | 3 | 0.000999 | 0.489510 |
+| A119b_shipped | 491 | 247 | 54 | 190 | 1211 | 155 | 1092 | NA | 233 | 247 | 58 | 0.235 | 63 | 0.255 | 0.128 | 0.529 | 0.585 | 0.644 | 0.708 | 0.751 | 0.781 | 0.672 | 0.338 | 0.347 | 170 | 57 | 20 | 0 | 56 | 4 | 14 | 0.000999 | 0.093906 |
+| testis_shipped | 491 | 84 | 34 | 373 | 286 | 100 | 2072 | NA | 77 | 84 | 37 | 0.44 | 41 | 0.488 | 0.084 | 0.715 | 0.785 | 0.841 | 0.931 | 0.827 | 0.835 | 0.604 | 0.103 | 0.096 | 69 | 12 | 3 | 0 | 41 | 3 | 3 | 0.000999 | 0.482517 |
+
+**Per-truth tables.** Each JSON carries `per_truth` (one record per evaluable truth family: `label`, `n_records`, `n_members`, `level`, `node`, `exact`, `jaccard`, `recall`, `precision`, `gene_recall`, `flat_node`, `flat_jaccard`) and the `inputs` it was called with:
+- primary A119b `/mnt/linuxdisk/tmp/o1_close/hier/human_A119b/hier_match.json`; primary testis `/mnt/linuxdisk/tmp/o1_close/hier/human_testis/hier_match.json`;
+- shipped A119b `/mnt/linuxdisk/tmp/o1_close/hier_shipped/human_A119b/hier_match.json`; shipped testis `/mnt/linuxdisk/tmp/o1_close/hier_shipped/human_testis/hier_match.json`.
+
+### Secondary (the shipped pre-fix catalogs; same statistics, no bars, no verdicts)
+
+The Secondary columns of the tables above are the shipped catalogs (A119b 9,907 members / 2,150 families; testis 1,115 / 342), built with `mcl_families.before` from the same hierarchy inputs and scored with the same truth, scorer and seed. They differ from the primary in the catalog sizes, in a few coverage counts, and in ONE evaluable truth family per catalog; no exact count, level count or global-null p-value moves. The same families are evaluable (247 and 84); exact (63 and 41, flat 58 and 37), `n_matched`, `by_level`, `exact_by_level`, `exact_any` and both global-null p-values are identical, and no exact flag flips. The family that changes is ID_214 in A119b (7 mapped members in the primary, 6 in the shipped catalog; Jaccard 0.2857 in the primary against 0.3333 shipped) and ID_391 in testis (5 against 4; 0.6667 against 0.8). That moves mean Jaccard by +0.0002 (A119b) and +0.0016 (testis) in the shipped catalogs, and recall slightly (A119b macro recall 0.7073 against 0.7075, testis 0.9281 against 0.9305). The coverage counts that move do so by 1 each: records on members (A119b 1212 against 1211, testis 287 against 286), records on unclustered loci (154 against 155, 99 against 100), and in A119b one label (ID_373) with one member in the primary and none in the shipped catalog (`one_member` 55 against 54, `no_member` 189 against 190). The nulls' own values move a little (within-family `p_exact` 0.0829 in the primary against 0.0939 shipped in A119b, 0.4895 against 0.4825 in testis; within-family `p_mean_jaccard` in testis 0.2188 against 0.2038; in A119b it is 0.000999 in both). The exact-rate difference between the two shipped catalogs is the same 0.2330 as in the primary. As the prereg says, the pair-rule choice must not be made from these scores.
