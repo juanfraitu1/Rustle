@@ -22,6 +22,14 @@
 //!   and `seed::find_candidates` counts pairs in `SeedParams::count_shards` shards, releasing each sketch as its entries
 //!   are written: the same candidates, bounded memory (tests `window_sketches_keep_only_their_hashes`,
 //!   `sharded_counting_gives_the_one_map_candidates`, `counting_releases_every_sketch`).
+//! - `decompose::dedup_segments` breaks ties of its order with (a1, b1, strand), so segments.tsv no longer follows
+//!   HashMap order (test `dedup_orders_tied_representatives_by_their_ends_and_strand`).
+//! - `decompose::families` joins the two endpoints of every segment (the module's documented intent; the sandbox
+//!   joined only overlapping endpoints, so each copy was its own family), sums `span_bp` per chromosome, and keeps
+//!   each family's distinct copies, which also break order ties
+//!   (tests `a_segment_joins_its_two_copies_and_overlap_joins_further_copies`,
+//!   `equal_families_are_ordered_by_their_copies`). families.tsv therefore differs from the sandbox's; chimp chr1:
+//!   1,033 families (sandbox 3,316), largest 3,750 of 17,426 copies.
 
 pub mod anchors;
 pub mod chain;

@@ -64,6 +64,8 @@ pub struct Family {
     pub n_copies: usize,
     pub chrs: Vec<String>,
     pub span_bp: u64,
+    /// Vendored change (2026-10-13): the family's distinct copies `(chrom, start, end)`, sorted.
+    pub copies: Vec<(String, u64, u64)>,
 }
 
 pub fn load_ok_blocks(path: &std::path::Path) -> Result<Vec<InBlock>, Box<dyn Error>> {
@@ -291,15 +293,22 @@ fn dedup_segments(mut segs: Vec<Segment>) -> Vec<Segment> {
         })
         .collect();
     out.sort_by(|x, y| {
-        y.anchors
-            .cmp(&x.anchors)
-            .then_with(|| (&x.chr_a, x.a0, &x.chr_b, x.b0).cmp(&(&y.chr_a, y.a0, &y.chr_b, y.b0)))
+        y.anchors.cmp(&x.anchors).then_with(|| {
+            (&x.chr_a, x.a0, &x.chr_b, x.b0, x.a1, x.b1, x.strand)
+                .cmp(&(&y.chr_a, y.a0, &y.chr_b, y.b0, y.a1, y.b1, y.strand))
+        })
     });
     out
 }
 
-/// Group segment endpoints into duplication families: nodes on the same
-/// chromosome overlapping >= 80% (any strand) are one family.
+/// Group segment endpoints into duplication families: the two endpoints of a segment are one family, and nodes on
+/// the same chromosome overlapping >= 80% (of the shorter; any strand) are one family. Connected components are
+/// duplication families.
+///
+/// Vendored changes (2026-10-13): (1) the sandbox never joined a segment's two endpoints, so its families were
+/// clusters of overlapping endpoints with every copy of a duplication in a family of its own; (2) `span_bp` sums the
+/// covered bases per chromosome (the sandbox merged intervals of different chromosomes); (3) the distinct copies are
+/// kept (`Family::copies`) and break the remaining ties of the order, so ids no longer follow HashMap order.
 fn families(segs: &[Segment]) -> Vec<Family> {
     #[derive(Clone)]
     struct Node {
@@ -311,25 +320,18 @@ fn families(segs: &[Segment]) -> Vec<Family> {
         .iter()
         .flat_map(|s| {
             [
-                Node {
-                    chr: s.chr_a.clone(),
-                    s: s.a0,
-                    e: s.a1,
-                },
-                Node {
-                    chr: s.chr_b.clone(),
-                    s: s.b0,
-                    e: s.b1,
-                },
+                Node { chr: s.chr_a.clone(), s: s.a0, e: s.a1 },
+                Node { chr: s.chr_b.clone(), s: s.b0, e: s.b1 },
             ]
         })
         .collect();
     let n = nodes.len();
     let mut dsu = Dsu::new(n);
+    for i in 0..segs.len() {
+        dsu.union(2 * i, 2 * i + 1);
+    }
     let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&i, &j| {
-        (&nodes[i].chr, nodes[i].s).cmp(&(&nodes[j].chr, nodes[j].s))
-    });
+    order.sort_by(|&i, &j| (&nodes[i].chr, nodes[i].s).cmp(&(&nodes[j].chr, nodes[j].s)));
     let mut active: Vec<usize> = Vec::new();
     for &i in &order {
         active.retain(|&j| nodes[j].e > nodes[i].s);
@@ -342,28 +344,27 @@ fn families(segs: &[Segment]) -> Vec<Family> {
         }
         active.push(i);
     }
-    let mut agg: HashMap<usize, (Vec<String>, Vec<(u64, u64)>)> = HashMap::new();
+    let mut agg: HashMap<usize, Vec<(String, u64, u64)>> = HashMap::new();
     for (i, nd) in nodes.iter().enumerate() {
-        let e = agg.entry(dsu.find(i)).or_default();
-        e.0.push(nd.chr.clone());
-        e.1.push((nd.s, nd.e));
+        agg.entry(dsu.find(i)).or_default().push((nd.chr.clone(), nd.s, nd.e));
     }
     let mut out: Vec<Family> = agg
-        .into_iter()
-        .map(|(root, (chrs, ivs))| {
-            let mut chrs_d = chrs;
-            chrs_d.sort();
-            chrs_d.dedup();
-            let mut uniq = ivs.clone();
-            uniq.sort_unstable();
-            uniq.dedup();
-            let span: u64 = crate::sedef::refine::covered_len(&uniq);
-            Family {
-                id: root,
-                n_copies: ivs.len(),
-                chrs: chrs_d,
-                span_bp: span,
-            }
+        .into_values()
+        .map(|of_root| {
+            let n_copies = of_root.len();
+            let mut copies = of_root;
+            copies.sort();
+            copies.dedup();
+            let mut chrs: Vec<String> = copies.iter().map(|c| c.0.clone()).collect();
+            chrs.dedup();
+            let span_bp = chrs
+                .iter()
+                .map(|c| {
+                    let iv: Vec<(u64, u64)> = copies.iter().filter(|x| &x.0 == c).map(|x| (x.1, x.2)).collect();
+                    crate::sedef::refine::covered_len(&iv)
+                })
+                .sum();
+            Family { id: 0, n_copies, chrs, span_bp, copies }
         })
         .collect();
     out.sort_by(|x, y| {
@@ -371,6 +372,7 @@ fn families(segs: &[Segment]) -> Vec<Family> {
             .cmp(&x.n_copies)
             .then_with(|| y.span_bp.cmp(&x.span_bp))
             .then_with(|| x.chrs.cmp(&y.chrs))
+            .then_with(|| x.copies.cmp(&y.copies))
     });
     for (i, f) in out.iter_mut().enumerate() {
         f.id = i;
@@ -452,4 +454,64 @@ pub fn decompose(
             n_families,
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seg(ca: &str, a0: u64, a1: u64, cb: &str, b0: u64, b1: u64, strand: char) -> Segment {
+        Segment { chr_a: ca.into(), a0, a1, chr_b: cb.into(), b0, b1, strand, anchors: 100, est_id: 99.0 }
+    }
+
+    #[test]
+    fn a_segment_joins_its_two_copies_and_overlap_joins_further_copies() {
+        // S1 chrA:1000-3000 ~ chrB:5000-7000 (inverted); S2 chrB:5100-7000 ~ chrC:100-2000 (its chrB side overlaps
+        // S1's by 1900 / 1900 >= 0.8); S3 chrA:50000-52000 ~ chrA:90000-92000 (a family of its own)
+        let fams = families(&[
+            seg("chrA", 1000, 3000, "chrB", 5000, 7000, '-'),
+            seg("chrB", 5100, 7000, "chrC", 100, 2000, '+'),
+            seg("chrA", 50000, 52000, "chrA", 90000, 92000, '+'),
+        ]);
+        assert_eq!(fams.len(), 2);
+        assert_eq!((fams[0].id, fams[0].n_copies), (0, 4));
+        assert_eq!(fams[0].chrs, vec!["chrA".to_string(), "chrB".to_string(), "chrC".to_string()]);
+        let want: Vec<(String, u64, u64)> = vec![
+            ("chrA".to_string(), 1000, 3000),
+            ("chrB".to_string(), 5000, 7000),
+            ("chrB".to_string(), 5100, 7000),
+            ("chrC".to_string(), 100, 2000),
+        ];
+        assert_eq!(fams[0].copies, want);
+        // span per chromosome: chrA 2000 + chrB 2000 (5000-7000 covers 5100-7000) + chrC 1900
+        assert_eq!(fams[0].span_bp, 5900);
+        assert_eq!((fams[1].id, fams[1].n_copies, fams[1].span_bp), (1, 2, 4000));
+    }
+
+    #[test]
+    fn equal_families_are_ordered_by_their_copies() {
+        // same copy count, span and chromosome: the family whose first copy comes first is F0, whatever the
+        // HashMap's order (each call builds new maps with new random seeds)
+        let segs = [seg("chrA", 9000, 11000, "chrA", 30000, 32000, '+'), seg("chrA", 1000, 3000, "chrA", 20000, 22000, '+')];
+        for _ in 0..20 {
+            let f = families(&segs);
+            assert_eq!(f.len(), 2);
+            assert_eq!(f[0].copies[0], ("chrA".to_string(), 1000, 3000));
+            assert_eq!(f[1].copies[0], ("chrA".to_string(), 9000, 11000));
+            assert_eq!(f.iter().map(|x| x.id).collect::<Vec<_>>(), vec![0, 1]);
+        }
+    }
+
+    #[test]
+    fn dedup_orders_tied_representatives_by_their_ends_and_strand() {
+        // the same anchors and starts on opposite strands stay two segments (dedup joins one strand only); the
+        // sandbox left their order to HashMap order
+        for _ in 0..20 {
+            let out = dedup_segments(vec![
+                seg("chrA", 0, 2000, "chrB", 0, 2000, '-'),
+                seg("chrA", 0, 2000, "chrB", 0, 2000, '+'),
+            ]);
+            assert_eq!(out.iter().map(|s| s.strand).collect::<Vec<_>>(), vec!['+', '-']);
+        }
+    }
 }
