@@ -117,13 +117,13 @@ struct Args {
 
     /// How a connected TWO-NODE component is decided after MCL (`docs/PREREG_mcl_two_node_2026-10-13.md`,
     /// Amendment 1(a)). On a lone pair MCL's own answer above the boundary `w*` (0.456885 at inflation 2.8) was
-    /// float residue. `weight-blind` (default; the 10-13 spec): every connected pair is one family, whatever its
-    /// weight — below `w*` a definition change, since exact MCL splits such a pair. `exact-mcl`: a pair is joined
-    /// only at weight >= `w*` (exact-arithmetic MCL), otherwise MCL's split stands; on the four shipped default
-    /// catalogs it reproduces their `clusters.tsv` and `loci.tsv` byte for byte (2026-10-13; MCL had joined every
-    /// pair at weight >= `w*` there). The choice is the user's. `params.tsv` records the rule and
-    /// `pairs_joined_by_rule` (pairs the rule joined after MCL's attractors had split them; counted before the fold).
-    #[arg(long, value_enum, default_value_t = PairRule::WeightBlind)]
+    /// float residue. `exact-mcl` (default; user decision 2026-10-13): a pair is joined only at weight >= `w*`
+    /// (exact-arithmetic MCL), otherwise MCL's split stands; on the four shipped default catalogs it reproduces
+    /// their `clusters.tsv` and `loci.tsv` byte for byte (MCL had joined every pair at weight >= `w*` there).
+    /// `weight-blind`: every connected pair is one family, whatever its weight — below `w*` a definition change,
+    /// since exact MCL splits such a pair. `params.tsv` records the rule and `pairs_joined_by_rule` (pairs the rule
+    /// joined after MCL's attractors had split them; counted before the fold).
+    #[arg(long, value_enum, default_value_t = PairRule::ExactMcl)]
     pair_rule: PairRule,
 
     /// ⭐ Charge `cov_longer`'s NUMERATOR in exonic bases too. Without it the numerator is aligned
@@ -3217,11 +3217,11 @@ mod tests {
         assert!(parse(&["--representative", "longest-span"]).is_err());
     }
 
-    /// `--pair-rule` (`docs/PREREG_mcl_two_node_2026-10-13.md` Amendment 1(a)): `weight-blind` is the default (the 10-13
-    /// spec), `exact-mcl` the exact-MCL switch; anything else is refused at parse time. The names are the ones
+    /// `--pair-rule` (`docs/PREREG_mcl_two_node_2026-10-13.md` Amendment 1(a); user decision 2026-10-13): `exact-mcl`
+    /// is the default, `weight-blind` the switch; anything else is refused at parse time. The names are the ones
     /// `params.tsv` and the log print.
     #[test]
-    fn pair_rule_defaults_to_weight_blind_and_accepts_exactly_the_two_rules() {
+    fn pair_rule_defaults_to_exact_mcl_and_accepts_exactly_the_two_rules() {
         let parse = |v: &[&str]| {
             Args::try_parse_from(
                 ["mcl_families", "--out", "o"]
@@ -3229,7 +3229,7 @@ mod tests {
                     .chain(v.iter().copied()),
             )
         };
-        assert_eq!(parse(&[]).expect("parse").pair_rule, PairRule::WeightBlind);
+        assert_eq!(parse(&[]).expect("parse").pair_rule, PairRule::ExactMcl);
         assert_eq!(
             parse(&["--pair-rule", "weight-blind"])
                 .expect("parse")

@@ -60875,16 +60875,17 @@ pub mod fam_from_gtf {
         ///
         /// Post-step (`docs/PREREG_mcl_two_node_2026-10-13.md`): after the attractors are read, every connected
         /// two-node component is decided by a pair rule, because at weights >= `w*` MCL's own answer there was float
-        /// residue. `mcl` is the WEIGHT-BLIND rule (every connected pair is one cluster; the 10-13 spec and the
-        /// default). The switch is [`mcl_pair_rule`] with [`PairRule`] (`mcl_families --pair-rule
-        /// weight-blind|exact-mcl`): `ExactMcl` joins a pair only at weight >= [`pair_boundary`]`(inflation)`.
+        /// residue. `mcl` uses the production default, EXACT-MCL (user decision 2026-10-13): a pair joins only at
+        /// weight >= [`pair_boundary`]`(inflation)`, what exact arithmetic gives, so the residue no longer decides it.
+        /// The switch is [`mcl_pair_rule`] with [`PairRule`] (`mcl_families --pair-rule exact-mcl|weight-blind`):
+        /// `WeightBlind` joins every connected pair.
         pub fn mcl(
             g: &HomologyGraph,
             inflation: f64,
             max_iter: usize,
             prune: f64,
         ) -> Vec<Vec<usize>> {
-            mcl_pair_rule(g, inflation, max_iter, prune, PairRule::WeightBlind)
+            mcl_pair_rule(g, inflation, max_iter, prune, PairRule::ExactMcl)
         }
 
         /// How a connected two-node component is decided after MCL's attractors are read
@@ -60892,13 +60893,15 @@ pub mod fam_from_gtf {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
         pub enum PairRule {
             /// Every connected two-node component is one cluster, whatever its edge weight: the pre-registered rule
-            /// and the default (the 10-13 spec). Below [`pair_boundary`] this is a definition change, not a residue fix.
+            /// (the 10-13 spec). Below [`pair_boundary`] this is a definition change, not a residue fix. Opt-in since
+            /// the user's decision of 2026-10-13.
             WeightBlind,
             /// Exact-MCL semantics: a two-node component is one cluster when its edge weight is >= [`pair_boundary`]
             /// (exact arithmetic converges to the self/mate tie, and a tie keeps the lowest index, so the pair joins);
             /// below it MCL's result stands (a deterministic split). Edge weights here are <= 1 (identity x coverage,
             /// coverage capped at 1). On the four shipped default catalogs it reproduces their `clusters.tsv` and
-            /// `loci.tsv` byte for byte (2026-10-13): MCL had joined every pair at weight >= `w*` there.
+            /// `loci.tsv` byte for byte (2026-10-13): MCL had joined every pair at weight >= `w*` there. The default
+            /// (user decision 2026-10-13).
             ExactMcl,
         }
 
@@ -61080,8 +61083,8 @@ pub mod fam_from_gtf {
         ///
         /// `PairRule::WeightBlind` joins both, by design: a connected pair is a family, which is the pre-registered
         /// rule. So below `w*` it is a definition change, not a residue fix. `PairRule::ExactMcl` joins only the pairs
-        /// at `w >= w*` (what exact arithmetic gives) and leaves MCL's result below it (Amendment 1(a): the choice is
-        /// the user's). Flow never crosses components, so a pair's fate is settled here and every other cluster
+        /// at `w >= w*` (what exact arithmetic gives) and leaves MCL's result below it; it is the default (Amendment
+        /// 1(a) left the choice to the user, who chose it on 2026-10-13). Flow never crosses components, so a pair's fate is settled here and every other cluster
         /// passes through unchanged, in the same order. Returns the clusters and the number of pairs the rule joined
         /// (two-node components emitted as a pair whose attractors had split them).
         fn join_two_node_components(
@@ -61575,8 +61578,8 @@ pub mod fam_from_gtf {
                     assert_eq!(got, vec![vec![0, 1]], "w = {w}");
                     assert_eq!(
                         mcl(&pair_graph(w), 2.8, 100, 1e-9),
-                        got,
-                        "mcl() is the weight-blind rule, w = {w}"
+                        mcl_pair_rule(&pair_graph(w), 2.8, 100, 1e-9, PairRule::ExactMcl),
+                        "mcl() is the exact-mcl rule (the default since 2026-10-13), w = {w}"
                     );
                 }
             }
@@ -61623,16 +61626,28 @@ pub mod fam_from_gtf {
                 );
             }
 
-            /// PREREG_mcl_two_node_2026-10-13: `mcl`'s pair rule is weight-blind BY DESIGN (it has no threshold). Below the
-            /// boundary w* = 0.456885 (inflation 2.8, self-loops 1.0) exact MCL splits a lone pair deterministically,
-            /// yet a connected pair is a family, so it joins there too: a definition change, not a residue fix. The
-            /// band is reachable: the shipped admission floors (identity 0.70, cov_longer 0.30) allow an edge as weak
-            /// as 0.21 = 0.70 x 0.30.
+            /// PREREG_mcl_two_node_2026-10-13: the WEIGHT-BLIND pair rule has no threshold. Below the boundary
+            /// w* = 0.456885 (inflation 2.8, self-loops 1.0) exact MCL splits a lone pair deterministically, yet under
+            /// this rule a connected pair is a family, so it joins there too: a definition change, not a residue fix.
+            /// The band is reachable: the shipped admission floors (identity 0.70, cov_longer 0.30) allow an edge as
+            /// weak as 0.21 = 0.70 x 0.30.
             #[test]
-            fn a_weak_pair_below_the_mcl_split_boundary_joins_by_design() {
+            fn a_weak_pair_below_the_mcl_split_boundary_joins_under_the_weight_blind_rule() {
                 for w in [0.21, 0.30, 0.45] {
-                    assert_eq!(mcl(&pair_graph(w), 2.8, 100, 1e-9), vec![vec![0, 1]], "w = {w}");
+                    assert_eq!(
+                        mcl_pair_rule(&pair_graph(w), 2.8, 100, 1e-9, PairRule::WeightBlind),
+                        vec![vec![0, 1]],
+                        "w = {w}"
+                    );
                 }
+            }
+
+            /// User decision 2026-10-13 (PREREG_mcl_two_node_2026-10-13, Results): `mcl` follows the production
+            /// default, EXACT-MCL: a lone pair below w* stays split, as exact MCL leaves it, and a pair above it joins.
+            #[test]
+            fn mcl_follows_the_production_default_exact_mcl() {
+                assert_eq!(mcl(&pair_graph(0.30), 2.8, 100, 1e-9), vec![vec![0], vec![1]]);
+                assert_eq!(mcl(&pair_graph(0.99), 2.8, 100, 1e-9), vec![vec![0, 1]]);
             }
 
             #[test]
