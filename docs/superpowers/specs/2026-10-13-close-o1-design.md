@@ -157,3 +157,20 @@ Recorded in `docs/superpowers/plans/2026-10-13-close-o1-phase-0A.md` ("Rulings")
    - E1b is the test that controls depth. If it fails, the claim stops at the family level.
 4. **The pair rule of fix 0 runs after MCL.** This is equivalent, since flow never crosses components. A pair's fate
    also depended on unrelated components, because convergence is tested on all columns at once.
+
+Amendments 5-7 were added on 2026-10-13 after the human evaluation's run and its final review
+(`docs/PREREG_o1_hierarchy_eval_2026-10-13.md`, Results). They change no verdict.
+
+5. **Canonical placement replaces "scipy order on a stable node sort"** (section A, Matching, tie policy). The truth
+   families matched to nodes with one identical member set take that set's lowest-rank nodes, best Jaccard first, then
+   label (`Scorer._prefer_lower_rank`, `bench/o1_hier/hier_match.py` at 8f0515ef). scipy's choice among equal-cost
+   columns is not guaranteed.
+6. **The diagnosis "Soto's families sit one level DOWN" did not hold.** Of the 215 Soto families that equal one of our
+   expansions on F_O (10-09 run, key mapping), 10 lie below a whole family (`exact_any.expansion_not_family`); the other
+   205 also equal a whole family. On the de novo catalogs, 4 (A119b) and 2 (testis) exact one-to-one matches lie
+   strictly below the family level.
+7. **Phase B prerequisites.** Phase B must:
+   - match over distinct member sets (one column per set), since identical sets repeat across levels;
+   - use the within-family null for E3, since the global null is passed by design;
+   - base V2's bar (Soto families recovered as exact expansions) on `expansion_not_family`;
+   - stratify cross-catalog bars by mapped set size.

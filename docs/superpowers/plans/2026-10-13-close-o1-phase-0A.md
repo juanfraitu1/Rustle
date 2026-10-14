@@ -125,6 +125,7 @@
    `test_coverage_separates_...`, `test_a_shared_exon_on_the_same_strand_joins_...`).
 2. **A family and an expansion with the identical member set.** The pair must be matched once, preferring the family
    (the named tie policy) (Task 4: `test_identical_sets_at_two_levels_...`, `test_one_to_one_...`).
+   As built, the tie policy is canonical placement (8f0515ef; spec amendment 5): see the prereg's Tie policy.
 3. **An interval with an end in a chain gap, or on a chromosome without a chain.**
    - Such an interval is unliftable and counted.
    - An interval spanning an indel lifts with it and is flagged, never shifted silently (Task 3:
@@ -414,6 +415,9 @@ git commit -m "mcl: a connected two-node component is one cluster (PREREG_mcl_tw
 
 ### Task 2: re-cluster the four default catalogs (F2)
 
+> **Note (2026-10-13, after the final review):** the code embedded in this task predates the review fix rounds. The
+> repo code is authoritative.
+
 **Files:**
 - Create: `bench/o1_hier/pair_diff.py`, `bench/o1_hier/test_pair_diff.py`, `bench/o1_hier/recluster.sh`
 - Modify (results only): `docs/PREREG_mcl_two_node_2026-10-13.md`; `docs/NEGATIVE_RESULTS_REGISTER.md` (append a
@@ -610,6 +614,9 @@ git commit -m "MCL two-node fix: four default catalogs re-clustered (F2: only sp
 ---
 
 ### Task 3: the v1.0 -> v2.0 lift and the Soto truth table
+
+> **Note (2026-10-13, after the final review):** the code embedded in this task predates the review fix rounds. The
+> repo code is authoritative.
 
 **Files:**
 - Create: `bench/o1_hier/v1_to_v2.py`, `bench/o1_hier/test_v1_to_v2.py`, `bench/o1_hier/soto_truth.py`,
@@ -1016,6 +1023,9 @@ git commit -m "o1_hier: CHM13 v1.0 -> v2.0 chain lift (sequence-verified) and th
 ---
 
 ### Task 4: the hierarchy-aware scorer (TDD) and its regression on the 10-09 run
+
+> **Note (2026-10-13, after the final review):** the code embedded in this task predates the review fix rounds. The
+> repo code is authoritative.
 
 **Files:**
 - Create: `bench/o1_hier/hier_match.py`, `bench/o1_hier/test_hier_match.py`, `bench/o1_hier/advisor_table.py`,
@@ -1692,6 +1702,7 @@ families counts every Soto family that sits one level down as a miss.
   superfamily and SD-complex node.
 - Tie policy: rows in label order; columns in (level rank family < expansion < superfamily < sd_complex, node id)
   order.
+  As built (8f0515ef), canonical placement follows: see the prereg's Tie policy (spec amendment 5).
 - Nulls, both keeping node sizes and nesting:
   - **global**: one random permutation of all members per round;
   - **within_family**: members permuted inside their own family. Families, superfamilies and SD complexes are
