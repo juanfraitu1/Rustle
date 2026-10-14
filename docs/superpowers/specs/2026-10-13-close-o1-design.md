@@ -174,3 +174,6 @@ Amendments 5-7 were added on 2026-10-13 after the human evaluation's run and its
    - use the within-family null for E3, since the global null is passed by design;
    - base V2's bar (Soto families recovered as exact expansions) on `expansion_not_family`;
    - stratify cross-catalog bars by mapped set size.
+8. **User decision (2026-10-13): fix 0's default is `mcl_families --pair-rule exact-mcl`.** A lone pair joins only at
+   weight >= w*(I), MCL's exact-arithmetic answer. This removes the float-residue decision, and the four shipped
+   catalogs' families are unchanged. `weight-blind` (every connected pair one family) is opt-in.

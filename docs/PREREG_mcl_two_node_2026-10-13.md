@@ -55,3 +55,14 @@ are", item 1).
 - **(a) Weight bands.** The pre-registered rule joins every connected pair. Below w* = 0.456885 (inflation 2.8, self-loops 1.0) exact MCL splits a lone pair deterministically, so those joins are a definition change, not a residue fix. Above w* the column converges to a tie, and float residue decided join or split: that is the bug. F2 reports joined pairs by band: `tie_regime` (w >= w*) and `below_w_star`. The choice between the weight-blind rule and exact-MCL semantics is the user's; the weight-blind rule stays the default until then.
 - **(b) "Three or more nodes join" is too strong.** In an independent port, a uniform triangle with one weight w < 1 splits asymmetrically at 39 of the 500 weights 0.500..0.999, and a uniform K4 at 58. Such components are not changed by this fix. F2 counts them in the four catalogs (`uniform_cliques_below_1`: components that are complete graphs of >= 3 nodes whose edges all carry one weight below 1, equal to 6 dp).
 - **(c) Corrections to the Bug paragraph.** "The column converges toward a tie" holds only above w*. "160 of the 500 weights" is 159 in two independent Python ports (first split at 0.504); the 160 came from a third port, and no Rust sweep measured the pre-fix count.
+
+**Decision (user, 2026-10-13; added after the runs; changes no verdict).**
+- The default is `mcl_families --pair-rule exact-mcl`, MCL's exact-arithmetic answer for a lone pair: it joins at
+  weight >= w*(I) and leaves MCL's deterministic split below it. `weight-blind` is opt-in. `mcl()` follows the default.
+- **Re-verified with the default binary, no flag:**
+  - All four catalogs reproduce their shipped `clusters.tsv` and `loci.tsv` byte for byte.
+  - `params.tsv` ends with `pair_rule exact-mcl` and `pairs_joined_by_rule 0`.
+  - F3's five famsim rungs (`snp_0.01` and `snp_0.1` on both templates, human `shuffle`) are intact: 1 / 1, F 1.0000.
+    Their pair weights (0.90-0.99) lie above w*.
+  - Full suite: 1,296 passed, 3 known `pipeline_driver_dispatch` failures.
+- Outputs: `/mnt/linuxdisk/tmp/o1_close/pair_default/`.
