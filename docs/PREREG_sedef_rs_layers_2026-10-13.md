@@ -128,4 +128,49 @@ The same comparison, with 0.98 in place of 0.90 for both tools.
 - DEV and HELD-OUT side by side.
 - Whether the re-run DupMasker arm equals the registered 10-09 files.
 
+## Clarifications registered 2026-10-14, before any comparison
+
+Added after this document's task review and before any sd-scan output was compared with SEDEF or DupMasker. No bar,
+filter or measure changes.
+
+- **Provenance.** The CHM13 v2.0 and gorilla sd-scan runs were started before this document's first commit (ledger ruling
+  R-d). Only their own counts (pairs, families, run time, memory) were looked at; nothing was compared with SEDEF or
+  DupMasker before this section was committed.
+- **Readings apply per layer.** The SD layer follows V1; the Soto layer's SD98 source follows V1b; the expansion layer
+  follows V2. V2's "Otherwise" reading concerns the duplicon and expansion layers only; the SD layer's source is whatever
+  V1 decided.
+- **Genomes (md5 of the files as read).**
+  - CHM13 v2.0: `/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa`, 42b830df45df08ab63068e9128156e56.
+  - Gorilla: `/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta`, 7a26fb029571b9e9450179769b2dc969.
+  - CHM13 v1.0: `/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication/t2t-chm13-v1.0.fa.gz`,
+    67f9a15a0299e3d32df8e527a611db20 (24 records: chr1-22, X and M).
+  - Relative `winloci_data/...` paths in this document mean `/mnt/linuxdisk/home/juanfraitu/winloci_data/...`.
+- **V2's sd-scan arm** takes `--hierarchy-duplicons <prefix>.sd.duplicons.tsv`, where `<prefix>` is the line in
+  `/mnt/linuxdisk/tmp/o1_layers/chm13v1.sd.prefix`, written by the driver's `sd` stage on the CHM13 v1.0 FASTA above.
+- **V2 binary.** Both arms run with one `mcl_families` binary, built from branch `o1-layers` at the commit recorded with
+  the results.
+- **V2 comparator.** If the re-run DupMasker arm differs from the registered 10-09 files, the re-run arm is the
+  comparator, and V2b's bar is ⌈0.9 × the re-run DupMasker arm's `expansion_not_family`⌉.
+- **H0 failure.** If `clusters.tsv`, `loci.tsv` or `pairs.tsv` differ between the arms, V2 is not scored and the failure
+  is reported.
+- **The one amendment** may change only how the sd-scan arm's duplicon track is built from sd-scan's own outputs
+  (segments, families). The bars, the scorer, the split, the DupMasker arm and V2b stay as registered.
+- **V2a's number** is `P1_mean_family_score` from `score_units.py`'s HELD-OUT JSON, as printed (4 decimals); it passes at
+  >= 0.8000.
+  - Family score = the sum of the matched Jaccards over the maximum-weight bipartite matching of the two covers' blocks,
+    divided by the larger block count (`score_units.py`, `family_score`).
+  - Structured families, the one-block null (B1), the `unique` class and F_O are as defined in
+    `docs/PREREG_paf_duplicon_units_2026-10-10.md`.
+- **V2b's command** binds `MEMBERS` = `<arm dir>/ours.hierarchy.members.tsv`, `LOCI` = `<arm dir>/ours.loci.tsv` and
+  `OUT` = `<arm dir>/key.json`.
+- **More known-before items.**
+  - sd-scan uses soft-masked (lowercase) bases as k-mer bases; whether SEDEF's inputs were masked is not recorded here.
+  - The one-decimal est_id rounding also applies at V1's 0.90 cut: 89.95-89.99 is kept.
+  - CHM13 v2.0 has a chrY (HG002) and the v1.0 SEDEF reference has none. The X or autosome side of an sd-scan X-Y or
+    autosome-Y pair therefore lies inside the universe with no possible SEDEF counterpart, a precision cost.
+  - The DupMasker BED is `chm13.draft_v1.0_plus38Y` (6,306 GRCh38 chrY rows). F_O's loci lie on chr1-22 only, so those
+    rows touch no F_O locus.
+  - SD-end clipping: the sandbox README (caveat 6) says about 1 kb at the edges; the window grid allows up to one 2 kb
+    window.
+
 ## Results
