@@ -162,6 +162,7 @@ Run 2026-10-13 (Task 6 of `docs/superpowers/plans/2026-10-13-close-o1-phase-0A.m
 - **Builds** (`--emit-hierarchy` log lines; the log counts the expansions without the `<family>.unique` buckets that `n_nodes.expansion` includes):
   - primary testis: 1133 members, 344 superfamilies, 351 families, 309 expansions, SD complexes 157; primary A119b: 10043 members, 1525 superfamilies, 2218 families, 1584 expansions, SD complexes 598;
   - secondary testis: 1115 members, 335 superfamilies, 342 families, 302 expansions, SD complexes 149; secondary A119b: 9907 members, 1457 superfamilies, 2150 families, 1541 expansions, SD complexes 571.
+- **Pre-run timing probe (disclosure).** Before scoring, one probe imported the scorer, loaded A119b, and ran 3 null rounds per kind; no scores or null values were printed or recorded (only elapsed times and peak memory).
 
 ### Verdicts (PRIMARY)
 
@@ -188,7 +189,7 @@ E1b also fails, but row 3 is the case "E1b fails (E1 and E2 pass)" and is not re
 | A119b (primary) | 247 | 63 | 0.2551 | 0.1283 (63/491) | 0.5844 | 58 | 0.2348 | 0.1181 | 0.5288 |
 | testis (primary) | 84 | 41 | 0.4881 | 0.0835 (41/491) | 0.7836 | 37 | 0.4405 | 0.0754 | 0.7130 |
 
-Descriptive, not a bar: in both catalogs `hierarchy.exact_by_level.family` equals the flat exact count (58 and 37), so the hierarchy's extra exact matches over the flat score are exactly its `exact_by_level.expansion` matches (5 and 4).
+Post hoc (added after the run; changes no verdict): Descriptive, not a bar: in both catalogs `hierarchy.exact_by_level.family` equals the flat exact count (58 and 37), so the hierarchy's extra exact matches over the flat score are exactly its `exact_by_level.expansion` matches (5 and 4; 1 and 2 of these are twin placements of duplicate Soto families, separated in the post hoc paragraph after the Levels table).
 
 ### Reported regardless
 
@@ -238,7 +239,7 @@ Descriptive, not a bar: in both catalogs `hierarchy.exact_by_level.family` equal
 | flat.micro_precision | 0.6454 | 0.7698 | 0.6454 | 0.7698 |
 | flat.macro_gene_recall | 0.6236 | 0.5495 | 0.6236 | 0.5495 |
 
-Descriptive, not a bar: A119b's `hierarchy.micro_precision` (0.1920 against 0.6454 for flat) is driven by ONE match. Truth family ID_256 (2 members) has no family-level partner in the flat score; in the hierarchy it is matched to superfamily SF166 (2,991 members) at Jaccard 0.0006687 (recall 1.0, precision 0.0006687). Without that match the micro precision is 827/1326 = 0.6237. In the hierarchy every evaluable family gets a partner (`hierarchy.n_matched` 247 of 247 and 84 of 84, against 233 and 77 for flat), so the matched-based precisions and counts are not comparable between the two rows. Testis has no such match (its largest matched node has 13 members; micro precision 0.7543 against 0.7698 flat). `exact_any.any` (63 and 42) against `hierarchy.exact` (63 and 41): in testis, ID_453 and ID_454 are two Soto families with identical member sets that share one expansion node, and the one-to-one matching can give it to only one of them.
+Post hoc (added after the run; changes no verdict): Descriptive, not a bar: A119b's `hierarchy.micro_precision` (0.1920 against 0.6454 for flat) is driven by ONE match. Truth family ID_256 (2 members) has no family-level partner in the flat score; in the hierarchy it is matched to superfamily SF166 (2,991 members) at Jaccard 0.0006687 (recall 1.0, precision 0.0006687). Without that match the micro precision is 827/1326 = 0.6237. In the hierarchy every evaluable family gets a partner (`hierarchy.n_matched` 247 of 247 and 84 of 84, against 233 and 77 for flat), so the matched-based precisions and counts are not comparable between the two rows. Testis has no such match (its largest matched node has 13 members; micro precision 0.7543 against 0.7698 flat). `exact_any.any` (63 and 42) against `hierarchy.exact` (63 and 41): in testis, ID_453 and ID_454 are two Soto families with identical member sets that share one expansion node, and the one-to-one matching can give it to only one of them.
 
 **Levels.** `exact_any` (tie-free: truth sets equal to some node of the level, evaluable families only), `hierarchy.by_level` (where the one-to-one matches land) and `hierarchy.exact_by_level`:
 
@@ -260,7 +261,11 @@ Descriptive, not a bar: A119b's `hierarchy.micro_precision` (0.1920 against 0.64
 | hierarchy.exact_by_level.superfamily | 0 | 0 | 0 | 0 |
 | hierarchy.exact_by_level.sd_complex | 0 | 0 | 0 | 0 |
 
-`exact_any.expansion_not_family` (Soto families equal to an expansion that is not a whole family; the only matches strictly below the family level) is 4 in A119b and 3 in testis; `exact_any.expansion_unique` (equal to a `<family>.unique` bucket) is reported separately, 14 and 3. No truth family lands on an SD complex in the one-to-one matching (`by_level.sd_complex` 0), although `exact_any.sd_complex` is 9 and 5: each of those truth sets is also equal to a family node (the complex is one whole family; checked on the member sets), and the canonical placement gives it the lowest-rank node.
+`exact_any.expansion_not_family` (Soto families equal to an expansion that is not a whole family; the only matches strictly below the family level) is 4 in A119b and 3 in testis; `exact_any.expansion_unique` (equal to a `<family>.unique` bucket) is reported separately, 14 and 3. No truth family lands on an SD complex in the one-to-one matching (`by_level.sd_complex` 0), although `exact_any.sd_complex` is 9 and 5.
+
+Post hoc (added after the run; changes no verdict): each of those truth sets is also equal to a family node (the complex is one whole family; checked on the member sets), and the canonical placement gives it the lowest-rank node.
+
+Post hoc (added after the run; changes no verdict): of the 5 (A119b) and 4 (testis) `exact_by_level.expansion` matches, 1 and 2 are canonical-placement twins of duplicate Soto families (the Soto family's member set equals another Soto family's set, and that other family holds the identical whole-family node): A119b ID_454 on `MCL1025.x1`, whose set equals family `MCL1025`, held by ID_453; testis ID_264 on `MCL202.x1`, whose set equals family `MCL202`, held by ID_262, and ID_481 on `MCL220.x1`, whose set equals family `MCL220`, held by ID_324; so the exact matches strictly below the family level are 4 in A119b (ID_112, ID_200, ID_477, ID_68) and 2 in testis (ID_147, ID_454); testis `exact_any.expansion_not_family` = 3 includes ID_453, which is not an exact match (its member set equals ID_454's, and the only node with that set, `MCL46.x2`, went to ID_454); and with the twin placements removed from the exact counts (same denominators) the exact rates are 62/247 = 0.2510 (A119b) and 39/84 = 0.4643 (testis), so the E2 difference is 0.2133, still > 0.10 (check script and output: `/mnt/linuxdisk/tmp/o1_close/hier/twin_check.py`, `twin_check.txt`).
 
 **Unconditioned numbers over ALL 491 truth families** (a family without a match counts 0; every truth gene counts, clustered or not):
 
@@ -302,6 +307,8 @@ Descriptive, not a bar: A119b's `hierarchy.micro_precision` (0.1920 against 0.64
 | testis | 491 | 84 | 34 | 373 | 287 | 99 | 2072 | NA | 77 | 84 | 37 | 0.44 | 41 | 0.488 | 0.084 | 0.713 | 0.784 | 0.839 | 0.928 | 0.827 | 0.835 | 0.604 | 0.103 | 0.096 | 69 | 12 | 3 | 0 | 41 | 3 | 3 | 0.000999 | 0.489510 |
 | A119b_shipped | 491 | 247 | 54 | 190 | 1211 | 155 | 1092 | NA | 233 | 247 | 58 | 0.235 | 63 | 0.255 | 0.128 | 0.529 | 0.585 | 0.644 | 0.708 | 0.751 | 0.781 | 0.672 | 0.338 | 0.347 | 170 | 57 | 20 | 0 | 56 | 4 | 14 | 0.000999 | 0.093906 |
 | testis_shipped | 491 | 84 | 34 | 373 | 286 | 100 | 2072 | NA | 77 | 84 | 37 | 0.44 | 41 | 0.488 | 0.084 | 0.715 | 0.785 | 0.841 | 0.931 | 0.827 | 0.835 | 0.604 | 0.103 | 0.096 | 69 | 12 | 3 | 0 | 41 | 3 | 3 | 0.000999 | 0.482517 |
+
+records_without_member is a --map key column; it is NA in these exon-mapping runs.
 
 **Per-truth tables.** Each JSON carries `per_truth` (one record per evaluable truth family: `label`, `n_records`, `n_members`, `level`, `node`, `exact`, `jaccard`, `recall`, `precision`, `gene_recall`, `flat_node`, `flat_jaccard`) and the `inputs` it was called with:
 - primary A119b `/mnt/linuxdisk/tmp/o1_close/hier/human_A119b/hier_match.json`; primary testis `/mnt/linuxdisk/tmp/o1_close/hier/human_testis/hier_match.json`;
