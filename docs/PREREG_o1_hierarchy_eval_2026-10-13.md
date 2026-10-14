@@ -11,8 +11,10 @@ families counts every Soto family that sits one level down as a miss.
 - `<S>` is `human_A119b` (dev) or `human_testis` (held-out). `R = /mnt/linuxdisk/tmp/rustle_figures/runs/<S>`.
 - Both are default catalogs, re-clustered from their cached all-vs-all with the MCL two-node fix ("fix 0",
   `docs/PREREG_mcl_two_node_2026-10-13.md`).
-- Binary: `/mnt/linuxdisk/tmp/o1_close/mcl_families.after` (md5 db55a19f...). The pre-fix `mcl_families.before`
-  (md5 9914dee3...) is used only by the Secondary.
+- Binary: `/mnt/linuxdisk/tmp/o1_close/mcl_families.after` (md5 db55a19f8f165587563212c276bcfbca). The pre-fix
+  `mcl_families.before` (md5 9914dee365a041347275f2fafba25e07) is used only by the Secondary.
+- Lifted inputs (md5): `dupmasker_colors.v2.bed` f5e1146faf778a6d4f52e5bf0c172284; `sedef_pairs.v2.bed`
+  7bd521edff9bd1e27b8141027da37a01; `soto_truth.v2.tsv` 60b77a995216237bbc33738dd78e212f.
 
 **Hierarchy.** `L = /mnt/linuxdisk/tmp/o1_close/lift`; output `O = /mnt/linuxdisk/tmp/o1_close/hier/<S>`.
 - Command:
@@ -29,8 +31,9 @@ families counts every Soto family that sits one level down as a miss.
     sequence-checked, and most lie within 1 kb of a chromosome end.
   - 1,000 / 1,000 sampled same-length intervals per file are sequence-identical.
 - No `--hierarchy-external`: the truth never enters the build.
-- Its families must equal the re-clustered catalog: `cmp` with
-  `/mnt/linuxdisk/tmp/o1_close/recluster/after/<S>.fam.clusters.tsv`.
+- Its families must equal the re-clustered catalog:
+  `cmp $O/ours.clusters.tsv /mnt/linuxdisk/tmp/o1_close/recluster/after/<S>.fam.clusters.tsv`. A difference stops the
+  run.
 
 **Truth.** `$L/soto_truth.v2.tsv` (`bench/o1_hier/soto_truth.py`):
 - S1C families proper: 491 families, 2,458 gene rows; `Unassigned_*` excluded.
@@ -42,7 +45,8 @@ families counts every Soto family that sits one level down as a miss.
   locus or of a locus folded into it.
 - Exons come from the catalog's `$R/<S>.fam.loci.gff3`; the fold map is `$O/ours.loci.tsv`.
 - The scorer's fallback for a member locus missing from the GFF (its span, either strand) is counted in
-  `coverage.member_loci_missing_from_gff`, which is reported. A GFF strand `.` matches either strand.
+  `coverage.member_loci_missing_from_gff`, which is reported. The count covers member and folded-locus keys; absent
+  from the JSON means 0. A GFF strand `.` matches either strand.
 - A family is EVALUABLE with >= 2 members. The others are reported as coverage.
 
 **Scorer.** `bench/o1_hier/hier_match.py` as of commit 8f0515ef (scipy 1.17.1, numpy 2.4.2):
@@ -62,14 +66,16 @@ families counts every Soto family that sits one level down as a miss.
 
 **Secondary (registered; same statistics, no bars).**
 - **Why.** `docs/PREREG_mcl_two_node_2026-10-13.md` (F2) showed that the residue bug split no pair in the shipped
-  catalogs: all 6,969 tie-regime pairs were already joined.
+  catalogs: all 6,969 tie-regime pairs in the four default catalogs were already joined (5,127 of them in the two
+  scored here).
   - Fix 0 therefore only adds pairs below w* = 0.456885 (A119b +68 families, testis +9).
   - That is a definition change whose adoption is the user's choice (Amendment 1 there).
 - **What.** The shipped pre-fix catalogs are also scored. For every two-node component they equal exact-MCL semantics
   (F2: no tie-regime pair was split).
   - They use the same hierarchy inputs, truth, scorer and seed, with `mcl_families.before`.
   - Output: `/mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>`.
-  - Their families must equal the shipped `$R/<S>.fam.clusters.tsv`.
+  - Their families must equal the shipped catalog:
+    `cmp /mnt/linuxdisk/tmp/o1_close/hier_shipped/<S>/ours.clusters.tsv $R/<S>.fam.clusters.tsv`.
 - **How reported.** Next to the primary, with no bar. The pair-rule choice must not be made from these scores.
 
 **Bars.** All are computed from the unrounded values in the PRIMARY run's `$O/hier_match.json`.
@@ -87,9 +93,11 @@ families counts every Soto family that sits one level down as a miss.
 1. **E1 fails on either catalog:** no claim.
 2. **E2 fails:** sample-specific; only the per-catalog numbers are reported.
 3. **E1b fails (E1 and E2 pass):** the claim stops at the family level and above.
-   - Soto's families are matched by our families, superfamilies and SD complexes. Quote the hierarchy summary with
+   - Soto's families are matched by our families, superfamilies and SD complexes.
+   - The headline rate is (`hierarchy.exact` - `exact_by_level.expansion`) / `hierarchy.n_truth`. Quote it with
      `exact_by_level` and `by_level` excluding `expansion`, next to the flat score.
-   - Our expansions are not distinguishable from random within-family splits of the same sizes at p < 0.001.
+   - The within-family null is not rejected at p < 0.001 on at least one of its two statistics. So no claim is made
+     that our expansions recover Soto beyond random within-family splits of the same sizes.
 4. **E1, E1b and E2 pass:** "Soto's families are nodes of our hierarchy". The O1 headline for Soto becomes, per
    catalog, the exact rate and mean Jaccard, next to the flat score and the coverage.
 
@@ -114,15 +122,20 @@ In every case the headline rate is quoted with `hierarchy.n_truth` (evaluable) o
 
 **Disclosures.**
 - **What was fixed after the F_O probe.** E1b, the exon + strand mapping and the >= 2-member evaluable rule were fixed
-  after the plan-time scorer probe on the 10-09 F_O universe (v1.0, guided; exon mapping, 200 null rounds). There:
+  after the plan-time scorer probe on the 10-09 F_O universe (v1.0, guided; 200 null rounds). There, with exon
+  mapping:
   - the global null averaged 0.045 exact matches;
-  - the within-family null averaged 224 of the observed 231;
-  - span-overlap mapping cut exact expansions from 215 to 169. That mode existed only in the probe; the committed
-    scorer has no span mode.
+  - the within-family null averaged 224 of the observed 231.
+
+  The exact-expansion count was:
+  - 215 with key mapping (the 10-09 Rust placement);
+  - 206 with exon + strand mapping;
+  - 169 with span-overlap mapping. That mode existed only in the probe; the committed scorer has no span mode.
 - **No prior scoring.** No de novo catalog has been scored by this scorer before this prereg.
 - **Format-only dry run.** While the plan was written (10-13, before this prereg), the testis hierarchy was built once,
   with the pre-fix binary and scratch copies of the lifted inputs, to check file formats (`/mnt/linuxdisk/tmp/o1_close/probe/`):
-  member keys against the loci GFF, and node counts per level. No truth file was opened and nothing was scored.
+  member keys against the loci GFF, and node counts per level. No truth file entered the build, and nothing was
+  scored.
 - **Precision is a lower bound.** A non-Soto member inside a matched node counts against precision, and Soto's truth
   covers only its SD98 gene set.
 - **What the review rounds added.** The unconditioned metrics, the expansion-level split, canonical placement and the
