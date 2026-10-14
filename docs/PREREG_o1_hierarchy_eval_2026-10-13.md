@@ -19,9 +19,9 @@ families counts every Soto family that sits one level down as a miss.
   `mcl_families.after --paf $R/<S>.fam.loci.paf --gff $R/<S>.fam.loci.gff3 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-hierarchy --hierarchy-duplicons $L/dupmasker_colors.v2.bed --hierarchy-sd $L/sedef_pairs.v2.bed --out $O/ours`.
   The nodes are read from `$O/ours.hierarchy.members.tsv`; the fold map is `$O/ours.loci.tsv`.
 - **Inputs.**
-  - DupMasker colors: `winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`.
-  - SEDEF: `winloci_data/soto_replication/final_v1_clean.bed`.
-  - Both are lifted from CHM13 v1.0 by the T2T chain `winloci_data/soto_replication/v1.0_to_v1.1_rdna_merged.chain`
+  - DupMasker colors: `/mnt/linuxdisk/home/juanfraitu/winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed`.
+  - SEDEF: `/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication/final_v1_clean.bed`.
+  - Both are lifted from CHM13 v1.0 by the T2T chain `/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication/v1.0_to_v1.1_rdna_merged.chain`
     (`bench/o1_hier/v1_to_v2.py`).
 - **Lift losses and checks.**
   - DupMasker: 6,661 rows dropped (6,306 GRCh38 chrY, 355 acrocentric rDNA).
@@ -120,6 +120,9 @@ In every case the headline rate is quoted with `hierarchy.n_truth` (evaluable) o
   - span-overlap mapping cut exact expansions from 215 to 169. That mode existed only in the probe; the committed
     scorer has no span mode.
 - **No prior scoring.** No de novo catalog has been scored by this scorer before this prereg.
+- **Format-only dry run.** While the plan was written (10-13, before this prereg), the testis hierarchy was built once,
+  with the pre-fix binary and scratch copies of the lifted inputs, to check file formats (`/mnt/linuxdisk/tmp/o1_close/probe/`):
+  member keys against the loci GFF, and node counts per level. No truth file was opened and nothing was scored.
 - **Precision is a lower bound.** A non-Soto member inside a matched node counts against precision, and Soto's truth
   covers only its SD98 gene set.
 - **What the review rounds added.** The unconditioned metrics, the expansion-level split, canonical placement and the
