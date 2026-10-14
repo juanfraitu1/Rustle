@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -42,7 +43,7 @@ def test_joined_pairs_are_split_by_edge_weight(tmp_path):
     g.write_text("a\tb\t0.300000\nd\te\t0.990000\nx\ty\t0.500000\n")
     before = {frozenset("xyz"): V3}
     after = {frozenset("xyz"): V3, frozenset("ab"): V2, frozenset("de"): V2}
-    assert P.joined_bands(before, after, P.edge_weights(str(g))) == {"below_w_star": 1, "tie_regime": 1}
+    assert P.joined_bands(before, after, P.edge_weights(str(g))) == {"below_w_star": 1, "not_isolated": 0, "tie_regime": 1}
 
 
 def test_uniform_cliques_below_one_are_counted(tmp_path):
@@ -52,3 +53,54 @@ def test_uniform_cliques_below_one_are_counted(tmp_path):
                  "g\th\t0.900000\nh\ti\t0.900000\n"                   # an equal-weight path is not a clique
                  "j\tk\t0.900000\nj\tl\t0.800000\nk\tl\t0.900000\n")  # a clique with unequal weights
     assert P.symmetric_cliques(P.edge_weights(str(g))) == {"components": 1, "members": 3}
+
+
+HDR = "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend\n"
+A, B, C = "chr1:1-10", "chr1:21-30", "chr1:41-50"
+
+
+def write_clusters(path, clusters):
+    """clusters: a list of member lists ('chrN:start-end') -> a clusters.tsv."""
+    rows = []
+    for i, members in enumerate(clusters):
+        for m in members:
+            chrom, rest = m.split(":")
+            start, end = rest.split("-")
+            rows.append(f"MCL{i}\t{len(members)}\t1.0000\t0.0000\tNA\t{chrom}\t{start}\t{end}\n")
+    path.write_text(HDR + "".join(rows))
+
+
+def test_a_joined_pair_with_another_edge_is_not_isolated(tmp_path):
+    g = tmp_path / "g.tsv"
+    g.write_text("a\tb\t0.300000\nb\tc\t0.300000\nx\ty\t0.300000\n")  # b has a second edge; x-y is alone
+    before = {frozenset("zzz"): V3}
+    after = {frozenset("zzz"): V3, frozenset("ab"): V2, frozenset("xy"): V2}
+    # not_isolated is a flag ON TOP of the band counts: both joined pairs stay in their band
+    assert P.joined_bands(before, after, P.edge_weights(str(g))) == {"below_w_star": 2, "not_isolated": 1}
+
+
+def test_main_returns_the_verdict_as_a_status(tmp_path):
+    before, same, gone, out = (tmp_path / n for n in ("before.tsv", "same.tsv", "gone.tsv", "out.json"))
+    write_clusters(before, [[A, B]])
+    write_clusters(same, [[A, B]])
+    write_clusters(gone, [])  # the pair has disappeared: a split
+    assert P.main([str(before), str(same), str(out)]) == 0
+    assert json.loads(out.read_text())["verdict"] == "PASS"
+    assert P.main([str(before), str(gone), str(out)]) == 1
+    res = json.loads(out.read_text())
+    assert (res["verdict"], res["pairs_split"]) == ("FAIL", 1)
+
+
+def test_main_fails_a_joined_pair_that_is_not_an_isolated_component(tmp_path):
+    before, after, g, out = (tmp_path / n for n in ("before.tsv", "after.tsv", "g.tsv", "out.json"))
+    write_clusters(before, [])
+    write_clusters(after, [[A, B]])  # the fix joined A-B ...
+    g.write_text(f"{A}\t{B}\t0.300000\n{B}\t{C}\t0.300000\n")  # ... but B has a second edge in the dump
+    assert P.main([str(before), str(after), str(out), str(g)]) == 1
+    res = json.loads(out.read_text())
+    assert res["joined_by_weight"] == {"below_w_star": 1, "not_isolated": 1}
+    assert (res["pairs_split"], res["other_changes"], res["verdict"]) == (0, 0, "FAIL")  # only isolation fails it
+    g.write_text(f"{A}\t{B}\t0.300000\n")  # the same join as an isolated two-node component
+    assert P.main([str(before), str(after), str(out), str(g)]) == 0
+    res = json.loads(out.read_text())
+    assert (res["joined_by_weight"], res["verdict"]) == ({"below_w_star": 1, "not_isolated": 0}, "PASS")

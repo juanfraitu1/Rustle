@@ -7,6 +7,9 @@ clusters.tsv lists clusters with >= min-size (2) members, one row per member. Al
 whose members are absent from BEFORE (two singletons joined). Every other difference — a member set present on one side
 only, or the same set with other size/density/frac_in/corroborated values — is an `other_change`; a 2-member set of
 BEFORE whose members are absent from AFTER is a `pair_split`.
+
+With GRAPH_TSV (`mcl_families --dump-graph`) the verdict also requires every joined pair to be an ISOLATED two-node
+component of the dump (`not_isolated` 0). The exit status is the verdict: 0 on PASS, 1 on FAIL.
 """
 import collections
 import json
@@ -64,13 +67,18 @@ def edge_weights(graph_tsv):
 
 def joined_bands(before, after, weights, w_star=W_STAR):
     """Joined pairs by edge weight: `tie_regime` (w >= w_star: float residue decided them) and `below_w_star` (exact MCL
-    split them; the pre-registered rule joins them too)."""
+    split them; the pre-registered rule joins them too). `not_isolated` (always present) counts, ON TOP of the bands, the
+    joined pairs with an endpoint that has any other edge in the dump (degree > 1): the fix joins isolated two-node
+    components only."""
     in_before = frozenset().union(*before) if before else frozenset()
-    c = collections.Counter()
+    degree = collections.Counter(x for e in weights for x in e)
+    c = collections.Counter(not_isolated=0)
     for s in after:
         if s not in before and len(s) == 2 and not s & in_before:
             w = weights.get(s)
             c["no_weight" if w is None else ("tie_regime" if w >= w_star else "below_w_star")] += 1
+            if any(degree[x] > 1 for x in s):
+                c["not_isolated"] += 1
     return dict(sorted(c.items()))
 
 
@@ -111,10 +119,12 @@ def main(argv=None):
         w = edge_weights(a[3])
         res["joined_by_weight"] = joined_bands(before, after, w)
         res["uniform_cliques_below_1"] = symmetric_cliques(w)
-    res["verdict"] = "PASS" if res["pairs_split"] == 0 and res["other_changes"] == 0 else "FAIL"
+    isolated = res.get("joined_by_weight", {}).get("not_isolated", 0) == 0
+    res["verdict"] = "PASS" if res["pairs_split"] == 0 and res["other_changes"] == 0 and isolated else "FAIL"
     with open(a[2], "w") as fh:
         json.dump(res, fh, indent=1)
     print(json.dumps(res))
+    return 0 if res["verdict"] == "PASS" else 1
 
 
 if __name__ == "__main__":
