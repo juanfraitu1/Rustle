@@ -80,7 +80,8 @@ The same comparison, with 0.98 in place of 0.90 for both tools.
 
 ## V2 — duplicons, sd-scan vs DupMasker (human, F_O universe, CHM13 v1.0)
 
-**Arms.** Both run with the current binary; families are not recomputed from scratch, only re-clustered from the same PAF.
+**Arms.** Both run with the binary named under **V2 binary** below; families are not recomputed from scratch, only
+re-clustered from the same PAF.
 - **DupMasker:**
 
       mcl_families --paf /mnt/linuxdisk/tmp/ourhom/loci.paf --gff /mnt/linuxdisk/tmp/ourhom/loci.gff3
@@ -107,7 +108,7 @@ The same comparison, with 0.98 in place of 0.90 for both tools.
   arm's count⌉ (10 on the 10-09 run, so >= 9).
   - Measured by `bench/o1_hier/hier_match.py MEMBERS soto_external.tsv OUT --fold LOCI --map key --null 0`,
     `exact_any.expansion_not_family`.
-  - All Soto families; computed once, at the held-out step.
+  - All Soto families; computed once per arm, at the held-out step.
 
 **Procedure.**
 - DEV is scored and written first.
@@ -135,13 +136,15 @@ Added after this document's task review and before any sd-scan output was compar
 filter or measure changes.
 
 - **Provenance.** The CHM13 v2.0 and gorilla sd-scan runs were started before this document's first commit (to overlap
-  compute with other work; the spec forbids only comparing before registration). Only their own counts (pairs, families,
-  run time, memory) were looked at; nothing was compared with SEDEF or DupMasker before this section was committed. Both
-  runs used the `utilities` binary built from branch `o1-layers` at ee6eb9c5, whose `src/sedef/` and `src/utilities.rs`
-  equal commit 96b75970's, with the version key registered above.
+  compute with other work; the plan's rule is that nothing is compared with SEDEF or DupMasker before registration, and
+  the gates themselves, the comparisons, run only after it, as spec section 2 requires). Only their own counts (pairs,
+  families, run time, memory) were looked at; nothing was compared with SEDEF or DupMasker before this section was
+  committed. Both runs used the `utilities` binary built from branch `o1-layers` at ee6eb9c5, whose `src/sedef/` and
+  `src/utilities.rs` equal commit 96b75970's, with the version key registered above.
 - **Readings apply per layer.** The SD layer follows V1; the Soto layer's SD98 source follows V1b; the expansion layer
   follows V2. V2's "Otherwise" reading concerns the duplicon and expansion layers only; the SD layer's source is whatever
-  V1 decided.
+  V1 decided. This narrows the spec's "sedef-rs gives the SD level only" (section 2, V2 fail), which presupposed a
+  passing V1.
 - **Genomes (md5 of the files as read).**
   - CHM13 v2.0: `/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa`, 42b830df45df08ab63068e9128156e56.
   - Gorilla: `/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta`, 7a26fb029571b9e9450179769b2dc969.
@@ -151,31 +154,34 @@ filter or measure changes.
 - **V2's sd-scan arm** takes `--hierarchy-duplicons <prefix>.sd.duplicons.tsv`, where `<prefix>` is the line in
   `/mnt/linuxdisk/tmp/o1_layers/chm13v1.sd.prefix`, written by the driver's `sd` stage (`tools/rustle_pipeline.sh sd`)
   on the CHM13 v1.0 FASTA above.
-- **V2 binary.** Both arms run with one `mcl_families` binary built from branch `o1-layers` after Task 9's commit;
-  its commit is recorded with the results. Between this registration and that commit, `mcl_families` changes only by
-  `--sd-cache` and by `parse_sd` accepting sd-scan rows, and neither arm uses either.
+- **V2 binary.** Both arms run with the one `mcl_families` binary built in Task 9 of
+  `docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md`. Its source differs from this commit's only in
+  `src/family.rs` (`parse_sd` accepting sd-scan rows) and `src/mcl_families.rs` (`--sd-cache`), and neither arm
+  uses either. Its commit and the binary's sha256 are recorded with the results.
 - **V2 comparator.** If the re-run DupMasker arm differs from the registered 10-09 files, the re-run arm is the
   comparator, and V2b's bar is ⌈0.9 × the re-run DupMasker arm's `expansion_not_family`⌉. If that count is 0, V2b
   cannot be decided and V2 fails.
 - **H0 failure.** If `clusters.tsv`, `loci.tsv` or `pairs.tsv` differ between the arms, V2 is not scored and the failure
-  is reported. No V2 reading then applies: the expansion layer stays on DupMasker, and the amendment may not be used to
-  cure an H0 failure.
+  is reported. No V2 reading then applies: the expansion layer stays on DupMasker for human, and apes keep no expansion
+  layer, and the amendment may not be used to cure an H0 failure.
 - **The one amendment** may change only how the sd-scan arm's duplicon track is built from sd-scan's own outputs
   (segments, families). The bars, the scorer, the split, the DupMasker arm and V2b stay as registered.
 - **V2a's number** is `P1_mean_family_score` from `score_units.py`'s HELD-OUT JSON, as printed (4 decimals); it
   passes when that value is at least 0.8000.
   - Family score = the sum of the matched Jaccards over the maximum-weight bipartite matching of the two covers' blocks
     (the DupMasker arm's and the sd-scan arm's), divided by the larger block count; a `unique` block can match only
-    the other cover's `unique` block (`score_units.py`, `family_score`).
+    the other cover's `unique` block, and a non-`unique` block only a non-`unique` block
+    (`score_units.py`, `family_score`).
   - Structured families, the one-block null (B1) and the `unique` class are as defined in
     `docs/PREREG_paf_duplicon_units_2026-10-10.md`; F_O is the registered DNA-level partition of the 2,334 loci of
     `/mnt/linuxdisk/tmp/ourhom/loci.paf` + `loci.gff3`, as defined in
-    `docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md` ("Family layers").
+    `docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md` ("Family layers"). Both arms recompute F_O with the V2
+    binary from the same inputs; H0 and the comparator rule govern any difference from the 10-09 partition.
 - **V2b's command** runs once per arm, with `<arm dir>` = `/mnt/linuxdisk/tmp/o1_layers/v2/dupmasker` and
   `/mnt/linuxdisk/tmp/o1_layers/v2/sdscan`: `MEMBERS` = `<arm dir>/ours.hierarchy.members.tsv`, `LOCI` =
   `<arm dir>/ours.loci.tsv`, `OUT` = `<arm dir>/key.json`, and `soto_external.tsv` =
   `/mnt/linuxdisk/tmp/hier_flag/soto_external.tsv`. The sd-scan arm's count is compared with the bar computed from
-  the DupMasker arm's count.
+  the DupMasker arm's count. Each arm's `mcl_families` command writes `--out <arm dir>/ours`.
 - **More known-before items.**
   - sd-scan uses soft-masked (lowercase) bases as k-mer bases; whether SEDEF's inputs were masked is not recorded here.
   - The one-decimal est_id rounding also applies at V1's 0.90 cut: 89.95-89.99 is kept.
