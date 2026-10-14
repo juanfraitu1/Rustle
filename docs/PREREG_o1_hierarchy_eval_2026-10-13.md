@@ -238,6 +238,8 @@ Descriptive, not a bar: in both catalogs `hierarchy.exact_by_level.family` equal
 | flat.micro_precision | 0.6454 | 0.7698 | 0.6454 | 0.7698 |
 | flat.macro_gene_recall | 0.6236 | 0.5495 | 0.6236 | 0.5495 |
 
+Descriptive, not a bar: A119b's `hierarchy.micro_precision` (0.1920 against 0.6454 for flat) is driven by ONE match. Truth family ID_256 (2 members) has no family-level partner in the flat score; in the hierarchy it is matched to superfamily SF166 (2,991 members) at Jaccard 0.0006687 (recall 1.0, precision 0.0006687). Without that match the micro precision is 827/1326 = 0.6237. In the hierarchy every evaluable family gets a partner (`hierarchy.n_matched` 247 of 247 and 84 of 84, against 233 and 77 for flat), so the matched-based precisions and counts are not comparable between the two rows. Testis has no such match (its largest matched node has 13 members; micro precision 0.7543 against 0.7698 flat). `exact_any.any` (63 and 42) against `hierarchy.exact` (63 and 41): in testis, ID_453 and ID_454 are two Soto families with identical member sets that share one expansion node, and the one-to-one matching can give it to only one of them.
+
 **Levels.** `exact_any` (tie-free: truth sets equal to some node of the level, evaluable families only), `hierarchy.by_level` (where the one-to-one matches land) and `hierarchy.exact_by_level`:
 
 | | A119b (primary) | testis (primary) | A119b (shipped, secondary) | testis (shipped, secondary) |
