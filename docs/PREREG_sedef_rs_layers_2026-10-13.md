@@ -1,0 +1,131 @@
+# sedef-rs as the SD and duplicon layers: V1, V1b, V2 (2026-10-13)
+
+**Pre-registered before any whole-genome sd-scan output is compared with SEDEF or DupMasker.** Spec:
+`docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md`, section 2. Plan:
+`docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md`. Tool: `utilities sd-scan` (vendored sedef-rs, `src/sedef/`,
+commit 96b75970), default parameters only; version key: `sedef-rs 0.1.0 vendored 2026-10-13 scan v1; seed k=16 window=2000 sketch=256 min_kmers=32 max_postings=100 min_shared=40; chain gap=2 min_score=20 merge_frac=0.5 min_cell_id=88 min_block_id=90; refine max_gap=400 diag_bin=50 min_span=500; decompose max_gap=200 diag_bin=50 min_seg=1000; max_pairs=1024; names=first-word`. V1 scorer: `bench/sedef/v1_compare.py`
+(commit 9378b158).
+
+**Not re-proposed.**
+- Register 1263 (our own duplicon units, NOT ADOPTED at 0.638 held-out) is not re-run; V2 reuses its scorer and its
+  split unchanged.
+- SD or duplicon structure deciding family membership (register 676, 677/997, 817, 818) is not tried: sd-scan only
+  annotates.
+
+## Known before running (recorded now)
+
+- Inverted SDs come out as window-sized pieces: on the toy genome, an 8 kb inverted copy gives four 2 kb pairs (`chain`
+  links windows only along forward diagonals).
+  - The base-pair union is unaffected except at a copy's ends.
+  - The duplicons of an inverted SD are split at 2 kb.
+- SD ends are clipped by up to one 2 kb window (sandbox README caveat 6), and refined pairs stop one base short.
+  Short SDs (1-5 kb) are the most exposed (recall).
+- sd-scan identities are k-mer lower bounds; at V1b's 0.98 cut this costs recall.
+- sd-scan writes est_id with one decimal, so at V1b's 0.98 cut a pair with est_id 97.95-97.99 rounds to 98.0 and is kept.
+- sd-scan families are connected components of segment and >= 80%-overlap links. On chimp chr1 the largest holds 21.5% of
+  all copies (3,750 of 17,426). Coarse duplicons in mosaic hubs are a risk for V2.
+- The lifted CHM13 reference lost 925 of 151,758 SEDEF rows (rDNA rows and unliftable ends). Where their bases fall inside
+  the universe, they count against sd-scan's precision.
+- The vendored copy fixes two sandbox bugs that only multi-chromosome genomes show (`src/sedef/mod.rs`): chain merging
+  across chromosome pairs, and family ids that followed HashMap order. Its runs are reproducible table for table
+  (chimp chr1-3, two runs).
+
+## V1 — SD calls, sd-scan vs SEDEF (both genomes)
+
+**Inputs.**
+
+| Genome | sd-scan run | SEDEF reference |
+|---|---|---|
+| CHM13 v2.0 | `chm13v2.0.fa` | `/mnt/linuxdisk/tmp/o1_close/lift/sedef_pairs.v2.bed` (v1.0 `final_v1_clean.bed`, lifted by the T2T chain; md5 7bd521edff9bd1e27b8141027da37a01) |
+| Gorilla | `GGO.fasta` (mGorGor1 v2.0) | `winloci_data/GGO_sedef_final.bed` (md5 991ed34384832354c02df227e27f65b6) |
+
+**Kept pairs.**
+- SEDEF: column 21 (fracMatch) >= 0.90.
+- sd-scan: status `ok` and est_id / 100 >= 0.90.
+- Both: the shorter side >= 1,000 bp.
+
+**Regions.** Both sides of every kept pair, merged per chromosome, then intersected with the universe:
+- CHM13: the v2.0 bases inside the aligned blocks of `v1.0_to_v1.1_rdna_merged.chain`, i.e. bases with a v1.0 ancestor (chr1-22, X and M; not Y or the rDNA arrays);
+- gorilla: every base of GGO.fasta.
+
+**Measures.**
+- recall = SEDEF region bases covered by sd-scan regions / SEDEF region bases;
+- precision = sd-scan region bases covered by SEDEF regions / sd-scan region bases.
+
+**Bar:** recall >= 0.80 AND precision >= 0.80, on CHM13 v2.0 AND on gorilla.
+
+**Reading, fixed now.**
+- **Pass:** sd-scan is the SD layer's source for every genome (the `sd` stage).
+- **Fail:** sd-scan is not adopted. The SD layer keeps external SEDEF where it exists (human, gorilla); genomes without
+  SEDEF get no SD layer.
+
+## V1b — SD98
+
+The same comparison, with 0.98 in place of 0.90 for both tools.
+
+**Bar:** recall >= 0.80 AND precision >= 0.80, on both genomes.
+
+**Reading.**
+- **Pass:** the Soto layer (phase 3) takes its SD98 pairs from sd-scan.
+- **Fail:** the Soto layer takes SEDEF SD98 where SEDEF exists, and alignment-based identity refinement in sedef-rs
+  becomes its own task.
+
+## Descriptive (V1 and V1b, no bar)
+
+- Per chromosome: bases and coverage.
+- Recall of the SEDEF pairs by identity bin and by length bin.
+- Pair counts.
+- Wall time and peak RSS of each sd-scan run (also the CHM13 v1.0 run, V2's input).
+
+## V2 — duplicons, sd-scan vs DupMasker (human, F_O universe, CHM13 v1.0)
+
+**Arms.** Both run with the current binary; families are not recomputed from scratch, only re-clustered from the same PAF.
+- **DupMasker:**
+
+      mcl_families --paf /mnt/linuxdisk/tmp/ourhom/loci.paf --gff /mnt/linuxdisk/tmp/ourhom/loci.gff3
+        --min-exonic-bp 1 --min-shared-exon-frac 0.60 --dump-pairs --emit-hierarchy
+        --hierarchy-duplicons winloci_data/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed
+        --hierarchy-sd winloci_data/soto_replication/final_v1_clean.bed
+        --hierarchy-external /mnt/linuxdisk/tmp/hier_flag/soto_external.tsv
+
+  This is the registered F_O command (10-09), re-run.
+- **sd-scan:** the same command, with `--hierarchy-duplicons <CHM13 v1.0 sd cache prefix>.sd.duplicons.tsv`. The SD
+  layer stays SEDEF, so only the duplicons differ.
+
+**H0 (guard).** `clusters.tsv`, `loci.tsv` and `pairs.tsv` are byte-identical between the arms.
+
+**Scorer.** `bench/paf_duplicons/score_units.py`, unchanged (register 1263):
+- the cover of a family (>= 2 members) = its expansions plus its `unique` class;
+- family score = maximum-weight bipartite matching on Jaccard / max(#blocks);
+- family-hash split: sha256 even = DEV, odd = HELD-OUT.
+- Its `share_exonic_with_paf_unit` output is the sd-scan duplicons here.
+
+**Bars.**
+- **V2a:** mean family score over the HELD-OUT families >= 0.80.
+- **V2b:** Soto families equal to an expansion strictly below a family, with sd-scan duplicons, >= ⌈0.9 × the DupMasker
+  arm's count⌉ (10 on the 10-09 run, so >= 9).
+  - Measured by `bench/o1_hier/hier_match.py MEMBERS soto_external.tsv OUT --fold LOCI --map key --null 0`,
+    `exact_any.expansion_not_family`.
+  - All Soto families; computed once, at the held-out step.
+
+**Procedure.**
+- DEV is scored and written first.
+- At most ONE amendment may follow, registered here before HELD-OUT is computed.
+- HELD-OUT decides, and V2b is computed with it.
+
+**Reading, fixed now.**
+- **V2a and V2b hold:** sd-scan duplicons replace DupMasker as the expansion layer's source, for every genome.
+  DupMasker stays available for comparison runs.
+- **Otherwise:** sd-scan gives the SD level only; human expansions stay on DupMasker; apes have no expansion layer.
+
+**Descriptive (no bar).**
+- P2: sign test against the one-block null on structured families.
+- P3: Soto EXPANSION placements per arm.
+- P4: the two named fusions.
+- Exact expansion sensitivity and precision; blocks per family.
+- The NPIP family (MCL9) cover.
+- Members' exonic bases carrying a duplicon, per arm.
+- DEV and HELD-OUT side by side.
+- Whether the re-run DupMasker arm equals the registered 10-09 files.
+
+## Results
