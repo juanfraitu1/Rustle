@@ -22,6 +22,8 @@
 !/AGENT_HANDOFF.md
 !/REPRODUCE.md
 !/LICENSE
+!/pixi.toml
+!/pixi.lock
 
 # 4. Recursively allow content in these directories
 !/.cargo/**
@@ -91,6 +93,9 @@
 !/tests/fixtures/same_chrom_supplement/*.fa.fai
 !/tests/fixtures/from_genome/*.fa
 !/tests/fixtures/from_genome/*.fa.fai
+# the bridge-units fixture GTFs (plain.gtf, s_f0.5.plain.gtf, *.expected.units.gtf): the lib suite reads them
+!/tests/fixtures/bridge_units/*.gtf
+!/tests/fixtures/o2_origin_resolve/*.fa
 
 *.log
 
