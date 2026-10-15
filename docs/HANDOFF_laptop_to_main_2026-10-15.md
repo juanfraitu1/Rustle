@@ -107,3 +107,19 @@ a missing copy are mostly unique mappers.
   (`.cargo/config.toml`'s `jobs = 48` is for the main machine).
 - Data: `~/rustle_data/` (CHM13 chr20 + RefSeq annotation, the simulation worlds). Real BAMs will come from the NAS.
 - The laptop keeps committing to `laptop/*` branches, never to `main`.
+
+## Done on the main machine (2026-10-15)
+
+- **Steps 1-4.** `main` (`4b69ad74`, 64 commits past `49e62be3`) was merged into the branch (`integrate/o3-psv-multimappers`,
+  merge `90df29df`) with no conflicts.
+  - Committed the fixtures: the six files above, plus `o2_origin_resolve/reads.bam`, `reads.bam.bai` and `genome.fa.fai`.
+    These three are also needed (the `copy_assign_popfix` and `o2_origin_resolve` tests read the BAM), and the BAM's records
+    equal the tracked `reads.sam`.
+  - Fixed the 3 dispatch tests: they now run the driver's real `run_all` with a stub per-stage driver, so the `all` plan and
+    its order are checked again. A broken plan fails them.
+- **Suite on the merged tree:** `--lib` 1,099 passed; `--bins --tests` 1,356 passed, 0 failed, 14 ignored; no doctests.
+- **Real data, without `--psv-clusters`.** `copy_assign` from the merged tree and from `main` gave byte-identical outputs on human
+  testis (40 families; default gate and `--no-as-tied-only`: 5,240 assigned reads) and gorilla KB3781 (40 families default,
+  20 with `--no-as-tied-only`: 27,525 assigned reads).
+- **Register rows 1289-1293** record the posctl, few-read, structure-projection, v1 and v2 preregs.
+- Still open: step 5 (M3 foreign-species check), step 6 (the real-data O3 prereg), step 7.
