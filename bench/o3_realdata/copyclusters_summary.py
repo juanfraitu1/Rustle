@@ -5,6 +5,7 @@ with the highest median identity when it is >= 0.99; below that it is gorilla-li
 unresolved).
 
     copyclusters_summary.py X_DIR      (X_DIR = /mnt/linuxdisk/tmp/o3_realdata; writes X_DIR/copyclusters_summary.json)
+    copyclusters_summary.py X_DIR HAPS_DIR OUT.json NAME:CLASSIFIED.tsv:PREFIX [...]   another build (paths relative to X_DIR)
 """
 import collections
 import csv
@@ -28,18 +29,20 @@ def best(p):
     return b
 
 
-def main(x):
-    sp = {"GGO": [best(f"{x}/haps/mat.gb.paf"), best(f"{x}/haps/pat.gb.paf")], "HSA": [best(f"{x}/haps/nig.HSA.paf")],
-          "PTR": [best(f"{x}/haps/nig.PTR.paf")], "PPY": [best(f"{x}/haps/nig.PPY.paf")]}
+def main(x, haps="haps", out_p=None, sets=(("heldout2", "heldout2/classified.tsv", "heldout2/ab"),
+                                            ("dev", "dev/classified.tsv", "dev/ab"))):
+    h = f"{x}/{haps}"
+    sp = {"GGO": [best(f"{h}/mat.gb.paf"), best(f"{h}/pat.gb.paf")], "HSA": [best(f"{h}/nig.HSA.paf")],
+          "PTR": [best(f"{h}/nig.PTR.paf")], "PPY": [best(f"{h}/nig.PPY.paf")]}
 
     def ident(r, s):
         v = [h[r][0] for h in sp[s] if r in h and h[r][1] >= 0.9]
         return max(v) if v else 0.0
     out = {}
-    for s in ("heldout2", "dev"):
-        rows = list(csv.DictReader(open(f"{x}/{s}/classified.tsv"), delimiter="\t"))
+    for s, classified, prefix in sets:
+        rows = list(csv.DictReader(open(f"{x}/{classified}"), delimiter="\t"))
         mem = collections.defaultdict(list)
-        for r in csv.DictReader(open(f"{x}/{s}/ab.psv_cluster_reads.tsv"), delimiter="\t"):
+        for r in csv.DictReader(open(f"{x}/{prefix}.psv_cluster_reads.tsv"), delimiter="\t"):
             mem[(r["family"], r["host"], r["cluster"])].append(r["read_name"])
         tally = collections.defaultdict(lambda: [0, 0, set()])
         for r in rows:
@@ -59,10 +62,12 @@ def main(x):
         out[s] = {c: dict(clusters=v[0], reads=v[1], families=len(v[2])) for c, v in sorted(tally.items())}
         out[s]["_total"] = dict(clusters=len(rows), reads=sum(int(r["n_reads"]) for r in rows),
                                 families=len({r["family"] for r in rows}))
-    json.dump(out, open(f"{x}/copyclusters_summary.json", "w"), indent=1, sort_keys=True)
+    json.dump(out, open(out_p or f"{x}/copyclusters_summary.json", "w"), indent=1, sort_keys=True)
     print(json.dumps(out, indent=1, sort_keys=True))
     return 0
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2:
+        sys.exit(main(sys.argv[1], sys.argv[2], sys.argv[3], [tuple(a.split(":")) for a in sys.argv[4:]]))
     sys.exit(main(sys.argv[1]))

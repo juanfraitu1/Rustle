@@ -14,7 +14,8 @@ sites    the prototype's own clustering (bench/o3_unexplained/psvclust.py: align
          UNCOVERED (no catalog copy has sequence there: unexplained by construction) and COVERED (some copy covers the position
          and carries the reference allele), and into inside / outside the host copy's own exons.
 
-    copyclusters.py sites PREFIX COPIES.tsv COPIES.fa READS.fa GENOME OUT.tsv
+    copyclusters.py sites PREFIX COPIES.tsv COPIES.fa READS.fa GENOME OUT.tsv [KEPT.tsv]
+         (KEPT.tsv, family_best.py's table: re-cluster only the kept pairs, as a `--psv-family-best` run did)
 haps     the clusters' reads aligned to KB3781's own haplotype assemblies (mat, pat; `reads` writes them, the PAFs come from
          `minimap2 -c -x splice:hq -uf --secondary=no`): per read its best hit (identity = matches / block, coverage of the read)
          and whether it lands on a lifted copy of the cluster's family, of another family, or elsewhere (the _pri chromosome's own
@@ -33,6 +34,10 @@ classify each cluster from the three tables, rules applied in order (reads with 
            own_copy_variant    own-family reads otherwise (allele-like differences carried by most of the cluster)
 
     copyclusters.py classify ORIGINS.tsv SITES.tsv HAPS.tsv OUT.tsv
+gbnames  rename a haplotype PAF's targets to the assembly FASTA's names, matched by their unique length (the prebuilt
+         mGorGor1.{mat,pat}.splice.mmi carry chrN_mat_hsaM names)
+
+    copyclusters.py gbnames IN.paf HAP.fa.fai OUT.paf
 """
 import collections
 import csv
@@ -83,7 +88,10 @@ def cmd_sites(argv):
     import os
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "o3_unexplained"))
     import psvclust as PC
-    prefix, copies_p, copies_fa, reads_fa, genome_p, out_p = argv
+    prefix, copies_p, copies_fa, reads_fa, genome_p, out_p, *kept_p = argv
+    kept = None
+    if kept_p:
+        kept = {(r["family"], r["read"]) for r in csv.DictReader(open(kept_p[0]), delimiter="\t") if r["kept"] == "1"}
     rows_c = list(csv.DictReader(open(copies_p), delimiter="\t"))
     cfa = PC.read_fa(copies_fa)
     seq_of = {(n.split("|")[0], int(n.split("|")[1])): s for n, s in cfa.items()}
@@ -109,7 +117,7 @@ def cmd_sites(argv):
         _, chrom, s0, e0, hex_, _ = rep
         lo, hi = max(0, s0 - PC.PAD), min(genome.get_reference_length(chrom), e0 + PC.PAD)
         ref = genome.fetch(chrom, lo, hi).upper()
-        names = sorted({n for i in idxs for n in by_host.get((fam, i), [])})
+        names = sorted({n for i in idxs for n in by_host.get((fam, i), []) if kept is None or (fam, n) in kept})
         cov = PC.align("host", ref, {n: reads[n] for n in names if n in reads}, tmp)
         ccov = PC.align("host", ref, {f"copy{c[0]}": c[5] for c in cps}, tmp)
         sites, clusters, vec = PC.cluster_host(ref, cov)
@@ -286,7 +294,26 @@ def cmd_classify(argv):
     return 0
 
 
+def cmd_gbnames(argv):
+    in_p, fai_p, out_p = argv
+    by_len = collections.defaultdict(list)
+    for ln in open(fai_p):
+        n, ln_ = ln.split("\t")[:2]
+        by_len[int(ln_)].append(n)
+    with open(in_p) as fi, open(out_p, "w") as fo:
+        for ln in fi:
+            f = ln.split("\t")
+            names = by_len.get(int(f[6]), [])
+            if len(names) != 1:
+                raise SystemExit(f"target {f[5]} (length {f[6]}) matches {len(names)} contigs of {fai_p}")
+            f[5] = names[0]
+            fo.write("\t".join(f))
+    return 0
+
+
 def main(argv):
+    if argv[0] == "gbnames":
+        return cmd_gbnames(argv[1:])
     if argv[0] == "classify":
         return cmd_classify(argv[1:])
     if argv[0] == "sites":

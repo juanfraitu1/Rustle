@@ -22,3 +22,17 @@ def test_classify_rules_in_order():
     assert CC.classify(site(10, 6, 1.0), hap(10, own=9, nomatch=1)) == "catalog_lacks_exons"
     assert CC.classify(site(10, 2, 0.05), hap(10, own=9, nomatch=1)) == "minority_segment"
     assert CC.classify(site(10, 2, 0.9), hap(10, own=9, nomatch=1)) == "own_copy_variant"
+
+
+def test_gbnames_renames_by_unique_length(tmp_path):
+    fai = tmp_path / "h.fa.fai"
+    fai.write_text("CM1.1\t1000\t0\t60\t61\nCM2.1\t2000\t0\t60\t61\n")
+    paf = tmp_path / "in.paf"
+    paf.write_text("r1\t100\t0\t100\t+\tchr2_mat\t2000\t5\t105\t99\t100\t60\ttp:A:P\n")
+    out = tmp_path / "out.paf"
+    assert CC.cmd_gbnames([str(paf), str(fai), str(out)]) == 0
+    assert out.read_text().split("\t")[5] == "CM2.1"
+    fai.write_text("CM1.1\t2000\t0\t60\t61\nCM2.1\t2000\t0\t60\t61\n")
+    import pytest
+    with pytest.raises(SystemExit):
+        CC.cmd_gbnames([str(paf), str(fai), str(out)])

@@ -113,3 +113,114 @@ frozen binary. On heldout2 and dev, only the new rule is run; their old-rule out
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (2026-10-15)
+
+Run with the frozen binary (`7c9d2e8b`) and `bench/o3_realdata/` on this branch. Outputs:
+`/mnt/linuxdisk/tmp/o3_realdata/heldout3/`, plus `*_fb` and `score_fb.json` in `heldout2/` and `dev/`.
+
+**Build.**
+- `prepare.py` picked 40 families out of 326 candidates, after excluding heldout2's 60: 40 masked copies and 153 survivors.
+  Reads: 7,510 masked-copy (D) and 15,692 survivor (S).
+- Masked arm: 22,909 primary, 293 unmapped. Added-back arm: 23,202 primary.
+- Cost: the masked index took 251 s at 22.6 GB; mapping, 8 parts of about 330 s; each `copy_assign` run, 226-293 s at
+  <= 2.7 GB.
+
+**The filter is the rule as specified.**
+- `family_best.py`, an independent Python implementation, keeps exactly the pairs the Rust runs keep:
+  - heldout3: 23,180 / 25,537 (added back) and 15,069 / 18,349 (removed);
+  - heldout2: 26,793 / 31,798 (added back);
+  - dev: 58,352 / 59,105 (added back).
+- No clustered read is outside its kept set.
+- The prototype re-clusters every remaining `copy` cluster at Jaccard 1.0.
+
+| heldout3 (40 fresh families) | old rule | `--psv-family-best` | bar | |
+|---|---|---|---|---|
+| families with a `copy` cluster (added back) | 10 | 6 = 0.15 | S1 <= 0.10 | **FAIL** |
+| the same, paired | 10 | 6 | S1b <= 5 | **FAIL** |
+| `copy` clusters | 35 | 11 | | |
+| families with an `explained` cluster | 36 | 36 | G >= 32.4 | pass |
+| eligible masked copies recovered (24 eligible) | 7 | 5 | S2 >= 6 | **FAIL** |
+| cleared once added back | 5 of 7 | 4 of 5 | | |
+
+**Lost detections.** MCL117 (recall 0.879 -> 0.515) and MCL31 (0.841 -> 0.305). Once their copy is masked, their reads'
+best alignment lies outside the family.
+
+| development | heldout2 (60) old -> new | dev (53) old -> new |
+|---|---|---|
+| families with a `copy` cluster | 17 -> 10 | 16 -> 16 |
+| `copy` clusters | 57 -> 18 | 27 -> 27 |
+| recovered | 4 -> 3 of 12 (MCL126 lost) | 15 -> 8 of 25 (7 lost) |
+
+### Verdict (2026-10-15)
+
+**Reading 3: not claimed.**
+- S1 and S1b fail: 6 of 40 families keep a `copy` cluster.
+- S2 fails: 2 of 7 detections are lost.
+- G passes.
+
+The filter removes every cluster made of another family's reads (0 of the 11 left, against 35 of 57 in heldout2 under the old
+rule). But it costs detections: when a copy is missing, its reads' best alignment often lies in another family.
+
+**Known before running, corrected.** `primary_local` is always 0 for families assigned through `copy_assign`'s
+cross-chromosome pass:
+- dev, multi-chromosome families: 44,367 of 44,367 rows read 0, though the filter keeps them;
+- one-chromosome families: it agrees with the filter on 14,076 of 14,091 rows.
+
+So the tallies above understated what the rule keeps on dev. The column's doc comment says every per-family read rate must be
+taken over it; that is a defect of its own, not fixed here.
+
+### The remaining `copy` clusters (register 1295's tools, as reading 3 requires)
+
+heldout3 under the new rule: 11 clusters in 6 families, 270 reads. None is another family's reads.
+
+| what the cluster is | clusters (reads) |
+|---|---|
+| chimpanzee transcripts, MCL45 (identity to chimp 0.997-0.998) | 2 (51) |
+| MCL45, closest to chimpanzee (0.97) or nothing (0.85); MCL125 (0.92 to every ape) | 4 (89) |
+| gorilla sequence outside both assemblies, MCL79 (0.994) | 1 (4) |
+| the catalog lacks the exons: MCL63, MCL79 | 2 (66) |
+| a minority segment, MCL31 | 1 (54) |
+| an own-copy variant, MCL32 | 1 (6) |
+
+### Post hoc: would a variation graph with every isoform help? (user question; descriptive)
+
+**More reference content, same exact rule** (`genomic_explain.py`). Register 1294's explained rule was asked against
+three references for heldout3's 136 unexplained clusters (added back, old rule):
+
+| reference | clusters explained |
+|---|---|
+| G0, each copy's spliced representative (as the method does) | 0 |
+| G1, each copy's genomic locus +- 2 kb: every isoform, intron and PSV of the family | 1 |
+| G2, G1 plus every locus where the cluster's reads align | 4 |
+
+G1's one explanation is MCL0's own copy 3, an isoform its representative lacks, in an `allele_or_copy` cluster (est_div
+0.0005). G2 adds three clusters explained by another family's copy: MCL51 twice by MCL107, and MCL95 by MCL23. The exact
+rule needs one locus to carry all of a cluster's
+alt sites with no conflict: 20-338 per `copy` cluster, over 100 in 27 of 35. Reads 0.1% away from their own source locus almost always miss somewhere. So the
+representative is not the bottleneck; the rule's exactness is.
+
+**A tolerant rule** (`tolerant.py`). An unexplained cluster counts only when its reads' median best-alignment divergence
+(minimap2 `de` at the primary, i.e. to the nearest locus anywhere in the genome) exceeds delta:
+
+| old-rule clusters, as run -> tolerant | heldout3 (40) | heldout2 (60) | dev (53) |
+|---|---|---|---|
+| families with a `copy` cluster | 10 -> **2** | 17 -> 6 | 16 -> 9 |
+| `copy` clusters | 35 -> 7 | 57 -> 14 | 27 -> 17 |
+| masked copies recovered | 7 -> 5 of 24 | 4 -> 3 of 12 | 15 -> 11 of 25 |
+
+- Held out, the 2 remaining families are MCL45 (chimpanzee transcripts) and MCL79.
+- Dev keeps GWFAM175, the genuine reference-absent copy.
+- The lost recoveries are mostly `allele_or_copy` copies, already within delta of another locus (MCL22, MCL97, 3 of dev's
+  4). MCL10's masked copy is labelled `copy`, but its reads still align at 0.9985 somewhere else in the masked genome:
+  by O3's definition it is not absent.
+- This was measured on substrates already seen, so it is a hypothesis for a new prereg on a fresh substrate. The gorilla
+  pool is exhausted under these rules; human A119b is next.
+
+**For a variation graph**, this says:
+- The graph is the natural structure for the tolerant rule: a cluster is a missing copy when its consensus is more than delta
+  from every path.
+- Its content gain alone is small (G1 explains 1 of 136). The gain comes from the distance rule, which the aligner's best
+  alignment already measures genome-wide.
+- What a graph would add: both haplotypes, so allelic reads are explained; related families in one structure; and a clean
+  path definition for the thesis.
