@@ -112,3 +112,79 @@ sample. It did for all three samples in the input reports and in the tests.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+### Results (2026-10-14)
+
+Run: commit `2cd1446c` (code `97f831b4`). Wall time and peak memory: human A119b 4.56 s, 355 MB; human testis 2.17 s, 273 MB; gorilla KB3781 1.89 s, 233 MB.
+Wiring check passed: F1 reproduced the figure 8 table for every scope and floor of each sample.
+
+**The bar (genome, identity ≥ 0.95)**
+
+| sample | pairs n | shared k | k / n [95% interval] | null mean rate (max k) | p | bar |
+|---|---|---|---|---|---|---|
+| human A119b | 514 | 75 | 0.1459 [0.1025, 0.1955] | 0.0214 (16) | 0.000999 (1/1001) | **PASS** |
+| human testis | 38 | 12 | 0.3158 [0.1702, 0.5000] | 0.0321 (3) | 0.000999 (1/1001) | **PASS** |
+| gorilla KB3781 | 78 | 4 | 0.0513 [0.0112, 0.1098] | 0.0006 (1) | 0.000999 (1/1001) | **PASS** |
+
+**Coverage of the pairs and widening (genome, identity ≥ 0.95)**
+
+| sample | both loci covered | one | none | shared / both covered | decoys at level 0 / 1 / 2 / none |
+|---|---|---|---|---|---|
+| human A119b | 91 | 133 | 290 | 75 / 91 | 507 / 7 / 0 / 0 |
+| human testis | 12 | 2 | 24 | 12 / 12 | 35 / 3 / 0 / 0 |
+| gorilla KB3781 | 4 | 8 | 66 | 4 / 4 | 78 / 0 / 0 / 0 |
+
+**Every floor and scope (reported, no bar)**
+
+| sample | scope | identity | n | k | k / n | null mean rate (max) | p |
+|---|---|---|---|---|---|---|---|
+| human A119b | genome | 0.95 | 514 | 75 | 0.1459 | 0.0214 (16) | 0.000999 (1/1001) |
+| human A119b | genome | 0.98 | 338 | 62 | 0.1834 | 0.0284 (15) | 0.000999 (1/1001) |
+| human A119b | genome | 0.99 | 246 | 51 | 0.2073 | 0.0383 (15) | 0.000999 (1/1001) |
+| human A119b | genome | 1.00 | 53 | 18 | 0.3396 | 0.0855 (8) | 0.000999 (1/1001) |
+| human A119b | minus_dev | 0.95 | 469 | 57 | 0.1215 | 0.0210 (13) | 0.000999 (1/1001) |
+| human A119b | minus_dev | 0.98 | 307 | 48 | 0.1564 | 0.0291 (13) | 0.000999 (1/1001) |
+| human A119b | minus_dev | 0.99 | 227 | 39 | 0.1718 | 0.0390 (14) | 0.000999 (1/1001) |
+| human A119b | minus_dev | 1.00 | 47 | 15 | 0.3191 | 0.0942 (8) | 0.000999 (1/1001) |
+| human testis | genome | 0.95 | 38 | 12 | 0.3158 | 0.0321 (3) | 0.000999 (1/1001) |
+| human testis | genome | 0.98 | 31 | 10 | 0.3226 | 0.0392 (3) | 0.000999 (1/1001) |
+| human testis | genome | 0.99 | 24 | 9 | 0.3750 | 0.0503 (3) | 0.000999 (1/1001) |
+| human testis | genome | 1.00 | 3 | 1 | 0.3333 | 0.3333 (1) | 1.000000 (1001/1001) |
+| human testis | minus_dev | 0.95 | 33 | 11 | 0.3333 | 0.0367 (4) | 0.000999 (1/1001) |
+| human testis | minus_dev | 0.98 | 26 | 9 | 0.3462 | 0.0465 (3) | 0.000999 (1/1001) |
+| human testis | minus_dev | 0.99 | 19 | 8 | 0.4211 | 0.0624 (3) | 0.000999 (1/1001) |
+| human testis | minus_dev | 1.00 | 1 | 1 | 1.0000 | 1.0000 (1) | 1.000000 (1001/1001) |
+| gorilla KB3781 | genome | 0.95 | 78 | 4 | 0.0513 | 0.0006 (1) | 0.000999 (1/1001) |
+| gorilla KB3781 | genome | 0.98 | 49 | 3 | 0.0612 | 0.0000 (0) | 0.000999 (1/1001) |
+| gorilla KB3781 | genome | 0.99 | 35 | 3 | 0.0857 | 0.0000 (0) | 0.000999 (1/1001) |
+| gorilla KB3781 | genome | 1.00 | 5 | 0 | 0.0000 | 0.0000 (0) | 1.000000 (1001/1001) |
+| gorilla KB3781 | minus_dev | 0.95 | 75 | 4 | 0.0533 | 0.0006 (1) | 0.000999 (1/1001) |
+| gorilla KB3781 | minus_dev | 0.98 | 46 | 3 | 0.0652 | 0.0000 (0) | 0.000999 (1/1001) |
+| gorilla KB3781 | minus_dev | 0.99 | 33 | 3 | 0.0909 | 0.0000 (0) | 0.000999 (1/1001) |
+| gorilla KB3781 | minus_dev | 1.00 | 5 | 0 | 0.0000 | 0.0000 (0) | 1.000000 (1001/1001) |
+
+### Verdict (2026-10-14)
+
+**Reading 1.** The bar passes in human A119b, human testis and gorilla KB3781 (held out), each at p = 0.000999
+(1/1001).
+- **Claim:** a gene's Liftoff copies share one of our families far more often than distance- and coverage-matched loci
+  of other genes.
+
+  | sample | copy pairs shared | decoys (null mean) |
+  |---|---|---|
+  | human A119b | 75 of 514 (0.146) | 0.021 |
+  | human testis | 12 of 38 (0.316) | 0.032 |
+  | gorilla KB3781 | 4 of 78 (0.051) | 0.0006 |
+
+  It holds in human, held out in gorilla, without the development contigs, and at the floors 0.98 and 0.99 in
+  every sample. At 1.00, testis (3 pairs) and gorilla (5 pairs) do not pass.
+
+**What this does and does not say.**
+- **Specificity holds where we group.** Where both copies sit in our families, they share one: 75 of 91 (A119b), 12 of
+  12 (testis), 4 of 4 (gorilla). Matched decoys almost never land in the same family.
+- **Recall is low, and the cause is coverage, not grouping.** In most read-supported copy pairs neither copy is covered
+  by any family member: 290 of 514 (A119b), 24 of 38 (testis), 66 of 78 (gorilla). Those copies have reads but no
+  assembled locus in a family covering half their exons. This is O1's known recall limit (node completeness and edge
+  recall), and it is not measured as a bar here.
+- **The gorilla pass rests on 4 shared pairs.** It passes because no random decoy draw reached 4 (null maximum 1). The
+  effect is large but the count is small.
