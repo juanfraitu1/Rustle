@@ -96,3 +96,9 @@ def test_heterozygosity_bins():
 def test_pick_drops_a_family_whose_masked_copy_overlaps_its_own_sibling():
     copies = [cp("G", 0, "c7", 0, 100), cp("G", 1, "c7", 500, 1000), cp("G", 2, "c7", 600, 700)]   # G2 is last, inside G1
     assert L.pick_families(copies, catalog=copies, exclude=[], cap=10, seed=1) == []
+
+
+def test_pick_admits_two_copy_families_when_asked():
+    copies = [cp("B", 0, "c1", 5000, 5100), cp("B", 1, "c1", 6000, 6100), cp("Q", 0, "c9", 0, 100)]
+    picks = L.pick_families(copies, catalog=copies, exclude=[], min_copies=2, cap=10, seed=1)
+    assert [(p["family"], p["masked"]["idx"], len(p["survivors"])) for p in picks] == [("B", 1, 1)]

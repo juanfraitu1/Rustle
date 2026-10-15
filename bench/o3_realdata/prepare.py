@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inputs of the real-data O3 test (prereg docs/PREREG_o3_realdata_2026-10-15.md).
 
-    prepare.py heldout --out DIR [--cap 60] [--seed 1]      fresh erasure from the KB3781 catalog (A13's families excluded)
+    prepare.py heldout --out DIR [--min-copies 3] [--cap 60] [--seed 1]   fresh erasure from the KB3781 catalog (A13 excluded)
     prepare.py control --out DIR [--n 300] [--n-high 100] [--seed 1]    expressed single-copy genes as one-copy families
 
 heldout writes DIR/:
@@ -113,7 +113,7 @@ def cmd_heldout(a):
     os.makedirs(a.out, exist_ok=True)
     copies = read_catalog(a.catalog)
     n_copies = collections.Counter(c["family"] for c in copies)
-    cand = [c for c in copies if n_copies[c["family"]] >= 3]
+    cand = [c for c in copies if n_copies[c["family"]] >= a.min_copies]
     with open(a.exclude) as fh:
         excl = [(r["chrom"], int(r["start"]), int(r["end"])) for r in csv.DictReader(fh, delimiter="\t")]
     bam = pysam.AlignmentFile(a.bam)
@@ -123,7 +123,7 @@ def cmd_heldout(a):
     n_reads = collections.Counter(rb.values())
     for c in cand:
         c["n"] = n_reads[(c["family"], c["idx"])]
-    picks = L.pick_families(cand, catalog=copies, exclude=excl, cap=a.cap, seed=a.seed)
+    picks = L.pick_families(cand, catalog=copies, exclude=excl, min_copies=a.min_copies, cap=a.cap, seed=a.seed)
     fams = {p["family"] for p in picks}
     masked = {(p["family"], p["masked"]["idx"]) for p in picks}
     labels = L.sample_per_copy({r: k for r, k in rb.items() if k[0] in fams}, n=a.per_copy, seed=a.seed)
@@ -166,7 +166,8 @@ def cmd_heldout(a):
     with open(os.path.join(a.out, "regions.txt"), "w") as fh:
         fh.writelines(r + "\n" for r in regs)
     role = collections.Counter("D" if k in masked else "S" for k in labels.values())
-    man = dict(catalog=a.catalog, bam=a.bam, exclude=a.exclude, families_ge3=len({c["family"] for c in cand}),
+    man = dict(catalog=a.catalog, bam=a.bam, exclude=a.exclude, min_copies=a.min_copies,
+               candidate_families=len({c["family"] for c in cand}),
                picked=len(picks), masked_copies=len(masked), survivors=len(surv), reads_D=role["D"], reads_S=role["S"],
                regions=len(regs), cap=a.cap, seed=a.seed, per_copy=a.per_copy)
     json.dump(man, open(os.path.join(a.out, "manifest.json"), "w"), indent=1, sort_keys=True)
@@ -245,6 +246,7 @@ def main(argv=None):
     h.add_argument("--bam", default=BAM)
     h.add_argument("--exclude", default=A13_ALL)
     h.add_argument("--cap", type=int, default=60)
+    h.add_argument("--min-copies", type=int, default=3, help="Amendment 1 of the prereg: 2")
     h.add_argument("--per-copy", type=int, default=500)
     h.add_argument("--seed", type=int, default=1)
     c = sub.add_parser("control")

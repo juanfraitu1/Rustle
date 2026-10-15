@@ -71,3 +71,12 @@ def test_verdict_control_counts_random_stratum_only():
            dict(stratum="high_het", bin=">delta", flag="copy")] + [dict(stratum="random", bin="0", flag="-")] * 47
     v = S.verdict([], [], ctl)
     assert (v["control_genes"], v["false_copy"], v["r3"], v["r3_pass"]) == (49, 1, 1 / 49, False)
+
+
+def test_verdict_by_copy_number(tmp_path):
+    removed = [dict(family="A", n_placed="10", recovered="1", label="copy"), dict(family="B", n_placed="10", recovered="0", label="-"),
+               dict(family="C", n_placed="10", recovered="1", label="copy")]
+    added = [dict(family="A", cleared="1"), dict(family="C", cleared="0")]
+    picked = {"A": 2, "B": 3, "C": 3}
+    v = S.verdict(removed, added, None, copies_of=picked)
+    assert v["by_copies"] == {"2": dict(eligible=1, recovered=1, cleared=1), ">=3": dict(eligible=2, recovered=1, cleared=0)}

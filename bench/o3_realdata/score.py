@@ -4,7 +4,7 @@
     score.py removed   LABELS PREFIX OUT.tsv     per masked copy: recovered, recall, purity, est_div, label, fates of its reads
     score.py addedback LABELS PREFIX OUT.tsv     per masked copy: cleared once the copy is back in the genome
     score.py control   GENES PREFIX OUT.tsv      per single-copy gene: copy / allele_or_copy / - (rd_lib.control_flags)
-    score.py verdict   --removed R.tsv --addedback A.tsv [--control C.tsv] [--min-placed 6]   R1, R2, R3
+    score.py verdict   --removed R.tsv --addedback A.tsv [--control C.tsv] [--min-placed 6] [--picked P.tsv]   R1-R3
 
 PREFIX is copy_assign's --out (PREFIX.assignments.tsv, PREFIX.psv_clusters.tsv, PREFIX.psv_cluster_reads.tsv). A read is placed
 on a family when it has a row of that family in the assignments (the reads O2 places, every status).
@@ -89,7 +89,7 @@ def cmd_control(a):
     print(json.dumps(dict(genes=len(rows), copy=sum(r["flag"] == "copy" for r in rows))))
 
 
-def verdict(removed, addedback, control, min_placed=MIN_PLACED):
+def verdict(removed, addedback, control, min_placed=MIN_PLACED, copies_of=None):
     elig = [r for r in removed if int(r["n_placed"]) >= min_placed]
     rec = [r for r in elig if int(r["recovered"])]
     ab = {r["family"]: r for r in addedback}
@@ -97,6 +97,14 @@ def verdict(removed, addedback, control, min_placed=MIN_PLACED):
     out = dict(eligible=len(elig), recovered=len(rec), r1=len(rec) / len(elig) if elig else None,
                cleared=len(clr), r2=len(clr) / len(rec) if rec else None,
                labels=dict(collections.Counter(r["label"] for r in rec)))
+    if copies_of:
+        strata = collections.defaultdict(lambda: dict(eligible=0, recovered=0, cleared=0))
+        for r in elig:
+            k = "2" if copies_of[r["family"]] == 2 else ">=3"
+            strata[k]["eligible"] += 1
+            strata[k]["recovered"] += int(r["recovered"])
+            strata[k]["cleared"] += int(r in clr)
+        out["by_copies"] = {k: dict(v) for k, v in sorted(strata.items())}
     out["r1_pass"] = out["r1"] is not None and out["r1"] >= R1_BAR
     out["r2_pass"] = out["r2"] is not None and out["r2"] >= R2_BAR
     if control is not None:
@@ -113,7 +121,8 @@ def verdict(removed, addedback, control, min_placed=MIN_PLACED):
 
 def cmd_verdict(a):
     rd = lambda p: list(csv.DictReader(open(p), delimiter="\t"))  # noqa: E731
-    res = verdict(rd(a.removed), rd(a.addedback), rd(a.control) if a.control else None, a.min_placed)
+    copies_of = {r["family"]: 1 + len(r["survivors"].split(",")) for r in rd(a.picked)} if a.picked else None
+    res = verdict(rd(a.removed), rd(a.addedback), rd(a.control) if a.control else None, a.min_placed, copies_of)
     print(json.dumps(res, indent=1, sort_keys=True))
 
 
@@ -134,6 +143,7 @@ def main(argv=None):
     p.add_argument("--addedback", required=True)
     p.add_argument("--control")
     p.add_argument("--min-placed", type=int, default=MIN_PLACED)
+    p.add_argument("--picked", help="picked.tsv: results also by copy number (2 vs >= 3)")
     a = ap.parse_args(argv)
     {"removed": cmd_removed, "addedback": cmd_addedback, "control": cmd_control, "verdict": cmd_verdict}[a.cmd](a)
     return 0

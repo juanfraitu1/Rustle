@@ -105,6 +105,19 @@ Reported, not barred:
 - the control by heterozygosity bin, and the `high_het` stratum;
 - the development substrate's numbers.
 
+## Amendment 1 (2026-10-15, before any run; user decision)
+
+Building the held-out inputs (`prepare.py heldout`, the rule above) picked only 14 families. Of the catalog's 90 families with
+>= 3 copies, 62 fail the rule that every copy has >= 20 reads, 7 overlap A13 and 3 have a masked hull over another copy.
+That leaves R1 coarse: 10 of 14 would pass. Seen at this point: the counts of families each rule removes, and nothing else.
+
+**Change (the user chose it from three options):** the held-out families are those with **>= 2 copies** under the same
+rules (`prepare.py heldout --min-copies 2`). 74 families pass, and a seeded sample of 60 is taken (seed 1). In a 2-copy
+family, the masked copy's reads have one surviving paralog.
+
+R1-R3 and the readings are unchanged. R1 and R2 are also reported separately for 2-copy and >= 3-copy families
+(`score.py verdict --picked`). The 14-family build stays on disk (`/mnt/linuxdisk/tmp/o3_realdata/heldout/`) and is not run.
+
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
