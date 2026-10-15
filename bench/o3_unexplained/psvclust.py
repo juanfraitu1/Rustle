@@ -16,7 +16,11 @@ O2 best copy, `catalog_copy_idx`):
     best compatible cluster or kept as noise; two clusters merge when no site separates them with >= MIN_SUPPORT reads on each side.
  4. Each cluster's consensus allele at every site; its alt sites; a copy explains the cluster when it carries every alt allele the
     cluster's reads cover and no site where the cluster is reference-allele but the copy differs (co-covered by the copy).
-    UNEXPLAINED = >= MIN_ALT alt sites that no copy explains. Divergence estimate = unexplained alt sites / bases the cluster covers.
+    UNEXPLAINED = >= MIN_ALT alt sites that no copy explains AND those sites are LINKED: over every pair of them, among the host's reads
+    covering both and carrying the alt at either, the fraction carrying it at both; the median over pairs (pairs with >= MIN_SUPPORT such
+    reads) must be >= MIN_LINK. A missing sequence is a haplotype (its alts travel together); RNA editing and shared sequencing errors
+    hit sites independently. Unlinked clusters are `unlinked` (with their A->G / T->C fraction reported: the editing signature); a
+    cluster with no evaluable pair is `unresolved`. Divergence estimate = unexplained alt sites / bases the cluster covers.
 """
 import argparse
 import collections
@@ -29,6 +33,7 @@ import sys
 
 MIN_SUPPORT = 3
 MIN_ALT = 2
+MIN_LINK = 0.8
 PAD = 2000
 
 
@@ -92,6 +97,27 @@ def align(target_name, target_seq, queries, tmp):
         if f[0] not in best or m > best[f[0]][0]:
             best[f[0]] = (m, cs_bases(int(f[7]), tags.get("cs:Z:", "")))
     return {k: v[1] for k, v in best.items()}
+
+
+def linkage(sites_u, vec):
+    """median over pairs of unexplained alt sites of P(alt at both | alt at either), among reads covering both; None if no pair has
+    >= MIN_SUPPORT reads with an alt at either"""
+    import statistics
+    vals = []
+    su = sorted(sites_u)
+    for i in range(len(su)):
+        for j in range(i + 1, len(su)):
+            a, b = su[i], su[j]
+            either = both = 0
+            for v in vec.values():
+                if a in v and b in v:
+                    xa, xb = v[a] == "alt", v[b] == "alt"
+                    if xa or xb:
+                        either += 1
+                        both += xa and xb
+            if either >= MIN_SUPPORT:
+                vals.append(both / either)
+    return statistics.median(vals) if vals else None
 
 
 def cluster_host(ref, reads_cov):
@@ -164,7 +190,7 @@ def cluster_host(ref, reads_cov):
                     break
             if changed:
                 break
-    return sites, [(c[0], cons(c)) for c in clusters]
+    return sites, [(c[0], cons(c)) for c in clusters], vec
 
 
 def main():
@@ -200,7 +226,7 @@ def main():
             ref = genome[chrom][lo:hi].upper()
             cov = align("host", ref, {n: reads[n] for n in names if n in reads}, tmp)
             ccov = align("host", ref, {f"copy{c[0]}": c[4] for c in cps}, tmp)
-            sites, clusters = cluster_host(ref, cov)
+            sites, clusters, vec = cluster_host(ref, cov)
             for k, (members, cons) in enumerate(sorted(clusters, key=lambda x: -len(x[0]))):
                 alts = [p for p, al in cons.items() if al == "alt"]
                 explained_by = []
@@ -212,10 +238,19 @@ def main():
                 unexpl = [p for p in alts if not any(ccov[cn].get(p) == sites[p] for cn in ccov)]
                 covered = sum(1 for p in range(len(ref)) if any(p in cov[m] for m in members[:50]))
                 src = collections.Counter(m.split("|")[0] for m in members)
-                status = "explained" if explained_by else ("unexplained" if len(unexpl) >= MIN_ALT else "unresolved")
+                link = linkage(unexpl, vec) if len(unexpl) >= MIN_ALT else None
+                # editing signature: ref A -> G or ref T -> C (either strand), as a fraction of the unexplained alt sites
+                ag = sum((ref[p], sites[p]) in (("A", "G"), ("T", "C")) for p in unexpl) / len(unexpl) if unexpl else 0.0
+                if explained_by:
+                    status = "explained"
+                elif len(unexpl) < MIN_ALT or link is None:
+                    status = "unresolved"
+                else:
+                    status = "unexplained" if link >= MIN_LINK else "unlinked"
                 out_rows.append(dict(family=fam, host=",".join(str(c[0]) for c in sorted(cls)), cluster=k, n_reads=len(members),
                                      n_sites=len(sites), n_alt=len(alts), n_unexplained_alt=len(unexpl), status=status,
                                      explained_by=",".join(explained_by) or "-", est_div=round(len(unexpl) / covered, 5) if covered else 0,
+                                     linkage="NA" if link is None else round(link, 3), editing_frac=round(ag, 3),
                                      sources=",".join(f"{k2}:{v}" for k2, v in src.most_common())))
     for x in (".t.fa", ".q.fa"):
         if os.path.exists(tmp + x):
@@ -227,7 +262,7 @@ def main():
     for r in out_rows:
         if r["status"] != "explained" or r["family"] in ():
             print(f"{r['family']}\t{scen[r['family']]}\thost {r['host']}\tc{r['cluster']}\t{r['status']}\tn {r['n_reads']}\talt {r['n_alt']}"
-                  f"\tunexpl {r['n_unexplained_alt']}\tdiv {r['est_div']}\t{r['sources']}")
+                  f"\tunexpl {r['n_unexplained_alt']}\tlink {r['linkage']}\tAG {r['editing_frac']}\tdiv {r['est_div']}\t{r['sources']}")
 
 
 if __name__ == "__main__":

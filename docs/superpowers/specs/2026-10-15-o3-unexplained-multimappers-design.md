@@ -1,6 +1,6 @@
 # O3 as the advisor defines it: multi-mapping reads that no reference copy explains — design
 
-Date 2026-10-15. Branch `laptop/o3-psv-multimappers`. Status: PSV clustering prototype (`bench/o3_unexplained/psvclust.py`) PASSED its held-out simulation test (`docs/PREREG_o3_unexplained_2026-10-15.md`: D1 310/310, D2 0/120, D3 40/40, D4 0.949 / 1.000). Next: real families on the main machine.
+Date 2026-10-15. Branch `laptop/o3-psv-multimappers`. Status: implemented as `copy_assign --psv-clusters` (`rustle::missing_copy::psv_clusters`, v2 with the linkage test); held-out PASS in Rust on base and hard worlds (`docs/PREREG_o3_psv_clusters_v2_2026-10-15.md`: absent copies 425/426, controls 0/152, separation 41/44, labels 135/135 and 262/262; v1 `docs/PREREG_o3_unexplained_2026-10-15.md`). Next: real families on the main machine.
 
 ## 1. The objective (advisor, relayed 2026-10-15)
 

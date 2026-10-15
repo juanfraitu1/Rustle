@@ -71991,6 +71991,618 @@ pub mod missing_copy {
             }
         }
     }
+
+    pub mod psv_clusters {
+        //! O3 in the advisor's definition (spec docs/superpowers/specs/2026-10-15-o3-unexplained-multimappers-design.md): cluster the reads O2
+        //! places on each copy by read-derived variant sites, and call the clusters no reference copy explains. A port of the frozen reference
+        //! implementation `bench/o3_unexplained/psvclust.py` (v2, md5 17888625c3d31245d03e2221e5086dc0), decision for decision, including
+        //! Python's tie rules (`Counter.most_common`: the first-inserted allele on equal counts; `max((co, k))`: the larger k on equal co).
+        //! Run by `copy_assign --psv-clusters` after `<out>.assignments.tsv` is written (`run`).
+        //!
+        //! **STATUS:** OPT-IN — `copy_assign --psv-clusters` (default off; its products are new files, nothing else changes).
+
+        use anyhow::Context;
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::io::Write;
+
+        pub const MIN_SUPPORT: usize = 3;
+        pub const MIN_ALT: usize = 2;
+        pub const MIN_LINK: f64 = 0.8;
+        pub const PAD: u64 = 2000;
+
+        /// `cs:Z:` (long form) -> target position -> the read's base there (`-` for a deleted base; introns skipped), as `cs_bases`.
+        pub fn cs_bases(ts: usize, cs: &str) -> BTreeMap<usize, u8> {
+            let mut out = BTreeMap::new();
+            let b = cs.as_bytes();
+            let (mut i, mut t) = (0usize, ts);
+            while i < b.len() {
+                let op = b[i];
+                let mut j = i + 1;
+                while j < b.len() && b[j].is_ascii_alphanumeric() {
+                    j += 1;
+                }
+                let body = &b[i + 1..j];
+                match op {
+                    b'=' => {
+                        for (k, &c) in body.iter().enumerate() {
+                            out.insert(t + k, c.to_ascii_uppercase());
+                        }
+                        t += body.len();
+                    }
+                    b'*' => {
+                        if body.len() >= 2 {
+                            out.insert(t, body[1].to_ascii_uppercase());
+                        }
+                        t += 1;
+                    }
+                    b'-' => {
+                        for k in 0..body.len() {
+                            out.insert(t + k, b'-');
+                        }
+                        t += body.len();
+                    }
+                    b'~' => {
+                        // `[a-z]{2}(\d+)[a-z]{2}`
+                        if body.len() >= 5 && body[..2].iter().all(|c| c.is_ascii_lowercase()) {
+                            let digits: String = body[2..].iter().take_while(|c| c.is_ascii_digit()).map(|&c| c as char).collect();
+                            let rest = &body[2 + digits.len()..];
+                            if !digits.is_empty() && rest.len() >= 2 && rest[..2].iter().all(|c| c.is_ascii_lowercase()) {
+                                t += digits.parse::<usize>().unwrap_or(0);
+                            }
+                        }
+                    }
+                    b':' => {
+                        t += std::str::from_utf8(body).ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                    }
+                    _ => {}
+                }
+                i = j.max(i + 1);
+            }
+            out
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum Al {
+            Ref,
+            Alt,
+            Other,
+        }
+
+        /// A count vector in insertion order (Python's Counter): the most common value is the first inserted on equal counts.
+        #[derive(Clone, Debug)]
+        struct Counts<T: Copy + PartialEq>(Vec<(T, usize)>);
+        impl<T: Copy + PartialEq> Default for Counts<T> {
+            fn default() -> Self {
+                Counts(Vec::new())
+            }
+        }
+        impl<T: Copy + PartialEq> Counts<T> {
+            fn add(&mut self, x: T, n: usize) {
+                match self.0.iter_mut().find(|e| e.0 == x) {
+                    Some(e) => e.1 += n,
+                    None => self.0.push((x, n)),
+                }
+            }
+            fn top(&self) -> Option<(T, usize)> {
+                let mut best: Option<(T, usize)> = None;
+                for &(x, n) in &self.0 {
+                    if best.map_or(true, |b| n > b.1) {
+                        best = Some((x, n));
+                    }
+                }
+                best
+            }
+            fn get(&self, x: T) -> usize {
+                self.0.iter().find(|e| e.0 == x).map_or(0, |e| e.1)
+            }
+        }
+
+        /// Per read: site -> allele.
+        pub type Vec_ = BTreeMap<usize, Al>;
+
+        #[derive(Clone, Debug, Default)]
+        struct Cl {
+            members: Vec<usize>,
+            counts: BTreeMap<usize, Counts<Al>>,
+        }
+        impl Cl {
+            fn cons(&self) -> BTreeMap<usize, Al> {
+                self.counts.iter().filter_map(|(&p, c)| c.top().map(|t| (p, t.0))).collect()
+            }
+            fn add(&mut self, r: usize, v: &Vec_) {
+                self.members.push(r);
+                for (&p, &a) in v {
+                    self.counts.entry(p).or_default().add(a, 1);
+                }
+            }
+        }
+
+        fn fit(v: &Vec_, cc: &BTreeMap<usize, Al>) -> (usize, usize) {
+            let (mut co, mut conf) = (0, 0);
+            for (p, &a) in v {
+                if let Some(&c) = cc.get(p) {
+                    if a != Al::Other && c != Al::Other {
+                        co += 1;
+                        conf += (a != c) as usize;
+                    }
+                }
+            }
+            (co, conf)
+        }
+        fn ok(co: usize, conf: usize) -> bool {
+            conf <= co.saturating_sub(9) / 10
+        }
+
+        /// `cluster_host`: reads (index order = the alignment order, i.e. sorted names) with their coverage of the host locus `ref_` ->
+        /// (sites: position -> alt base, per-read vectors, clusters as (members, consensus)), clusters in their final internal order.
+        pub fn cluster_host(
+            ref_: &[u8],
+            names: &[String],
+            cov: &[BTreeMap<usize, u8>],
+        ) -> (BTreeMap<usize, u8>, Vec<Vec_>, Vec<(Vec<usize>, BTreeMap<usize, Al>)>) {
+            // alt bases per position in read order (Counter insertion order)
+            let mut alt: BTreeMap<usize, Counts<u8>> = BTreeMap::new();
+            for c in cov {
+                for (&p, &b) in c {
+                    if matches!(b, b'A' | b'C' | b'G' | b'T') && b != ref_[p] {
+                        alt.entry(p).or_default().add(b, 1);
+                    }
+                }
+            }
+            let sites: BTreeMap<usize, u8> = alt
+                .iter()
+                .filter_map(|(&p, c)| c.top().filter(|t| t.1 >= MIN_SUPPORT).map(|t| (p, t.0)))
+                .collect();
+            let vec: Vec<Vec_> = cov
+                .iter()
+                .map(|c| {
+                    sites
+                        .iter()
+                        .filter_map(|(&p, &s)| {
+                            c.get(&p).map(|&b| (p, if b == s { Al::Alt } else if b == ref_[p] { Al::Ref } else { Al::Other }))
+                        })
+                        .collect()
+                })
+                .collect();
+            let mut order: Vec<usize> = (0..names.len()).collect();
+            order.sort_by(|&a, &b| vec[b].len().cmp(&vec[a].len()).then_with(|| names[a].cmp(&names[b])));
+            let mut clusters: Vec<Cl> = Vec::new();
+            for &r in &order {
+                let v = &vec[r];
+                let mut best: Option<(usize, usize)> = None;
+                for (i, cl) in clusters.iter().enumerate() {
+                    let (co, conf) = fit(v, &cl.cons());
+                    if ok(co, conf) && best.map_or(true, |b| co > b.1) {
+                        best = Some((i, co));
+                    }
+                }
+                match best {
+                    Some((i, _)) => clusters[i].add(r, v),
+                    None => {
+                        let mut c = Cl::default();
+                        c.add(r, v);
+                        clusters.push(c);
+                    }
+                }
+            }
+            let separated = |a: &Cl, b: &Cl| {
+                let (ca, cb) = (a.cons(), b.cons());
+                ca.iter().any(|(p, &x)| {
+                    cb.get(p).map_or(false, |&y| {
+                        x != y && a.counts[p].get(x) >= MIN_SUPPORT && b.counts[p].get(y) >= MIN_SUPPORT
+                    })
+                })
+            };
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let (mut big, small): (Vec<Cl>, Vec<Cl>) = clusters.into_iter().partition(|c| c.members.len() >= MIN_SUPPORT);
+                for c in &small {
+                    for &r in &c.members {
+                        let v = &vec[r];
+                        let mut pick: Option<(usize, usize)> = None; // (co, k): max co, then max k
+                        for (k, b) in big.iter().enumerate() {
+                            let (co, conf) = fit(v, &b.cons());
+                            if ok(co, conf) && pick.map_or(true, |p| (co, k) > p) {
+                                pick = Some((co, k));
+                            }
+                        }
+                        if let Some((_, k)) = pick {
+                            big[k].add(r, v);
+                        }
+                    }
+                }
+                clusters = big;
+                'outer: for i in 0..clusters.len() {
+                    for j in i + 1..clusters.len() {
+                        if !separated(&clusters[i], &clusters[j]) {
+                            let cj = clusters.remove(j);
+                            for (p, c) in cj.counts {
+                                let e = clusters[i].counts.entry(p).or_default();
+                                for (a, n) in c.0 {
+                                    e.add(a, n);
+                                }
+                            }
+                            clusters[i].members.extend(cj.members);
+                            changed = true;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+            let out = clusters.iter().map(|c| (c.members.clone(), c.cons())).collect();
+            (sites, vec, out)
+        }
+
+        /// `linkage`: the median over pairs of `sites_u` of P(alt at both | alt at either) among the reads covering both; `None` when no pair
+        /// has >= MIN_SUPPORT reads with an alt at either.
+        pub fn linkage(sites_u: &[usize], vec: &[Vec_]) -> Option<f64> {
+            let mut su = sites_u.to_vec();
+            su.sort_unstable();
+            let mut vals: Vec<f64> = Vec::new();
+            for i in 0..su.len() {
+                for j in i + 1..su.len() {
+                    let (a, b) = (su[i], su[j]);
+                    let (mut either, mut both) = (0usize, 0usize);
+                    for v in vec {
+                        if let (Some(&xa), Some(&xb)) = (v.get(&a), v.get(&b)) {
+                            let (xa, xb) = (xa == Al::Alt, xb == Al::Alt);
+                            if xa || xb {
+                                either += 1;
+                                both += (xa && xb) as usize;
+                            }
+                        }
+                    }
+                    if either >= MIN_SUPPORT {
+                        vals.push(both as f64 / either as f64);
+                    }
+                }
+            }
+            if vals.is_empty() {
+                return None;
+            }
+            vals.sort_by(|x, y| x.partial_cmp(y).unwrap());
+            let n = vals.len();
+            Some(if n % 2 == 1 { vals[n / 2] } else { (vals[n / 2 - 1] + vals[n / 2]) / 2.0 })
+        }
+
+        /// One output cluster.
+        #[derive(Clone, Debug)]
+        pub struct Row {
+            pub family: String,
+            pub host: String,
+            pub cluster: usize,
+            pub members: Vec<String>,
+            pub n_sites: usize,
+            pub n_alt: usize,
+            pub n_unexplained_alt: usize,
+            pub status: &'static str,
+            pub explained_by: Vec<String>,
+            pub est_div: f64,
+            pub linkage: Option<f64>,
+            pub editing_frac: f64,
+        }
+
+        /// The clusters of one host class: `ref_` its padded locus (uppercase), `names` / `cov` its reads (sorted names, those with an
+        /// alignment), `copies` (name, coverage) every family copy in table order (those with an alignment).
+        pub fn host_rows(
+            family: &str,
+            host: &str,
+            ref_: &[u8],
+            names: &[String],
+            cov: &[BTreeMap<usize, u8>],
+            copies: &[(String, BTreeMap<usize, u8>)],
+        ) -> Vec<Row> {
+            let (sites, vec, clusters) = cluster_host(ref_, names, cov);
+            let mut cl = clusters;
+            cl.sort_by(|a, b| b.0.len().cmp(&a.0.len())); // stable: Python's sorted(key=-len)
+            let mut out = Vec::new();
+            for (k, (members, cons)) in cl.into_iter().enumerate() {
+                let alts: Vec<usize> = cons.iter().filter(|(_, &a)| a == Al::Alt).map(|(&p, _)| p).collect();
+                let mut explained_by = Vec::new();
+                for (cn, cc) in copies {
+                    let carries = alts.iter().all(|p| cc.get(p).map_or(true, |&b| b == sites[p]));
+                    let no_ref_conflict = !cons.iter().any(|(p, &a)| a == Al::Ref && cc.get(p).map_or(false, |&b| b != ref_[*p]));
+                    if carries && no_ref_conflict && alts.iter().all(|p| cc.contains_key(p)) {
+                        explained_by.push(cn.clone());
+                    }
+                }
+                let unexpl: Vec<usize> =
+                    alts.iter().copied().filter(|p| !copies.iter().any(|(_, cc)| cc.get(p) == Some(&sites[p]))).collect();
+                let mut covset: BTreeSet<usize> = BTreeSet::new();
+                for &m in members.iter().take(50) {
+                    covset.extend(cov[m].keys().copied().filter(|&p| p < ref_.len()));
+                }
+                let covered = covset.len();
+                let link = if unexpl.len() >= MIN_ALT { linkage(&unexpl, &vec) } else { None };
+                let ag = if unexpl.is_empty() {
+                    0.0
+                } else {
+                    unexpl.iter().filter(|&&p| matches!((ref_[p], sites[&p]), (b'A', b'G') | (b'T', b'C'))).count() as f64
+                        / unexpl.len() as f64
+                };
+                let status = if !explained_by.is_empty() {
+                    "explained"
+                } else if unexpl.len() < MIN_ALT || link.is_none() {
+                    "unresolved"
+                } else if link.unwrap() >= MIN_LINK {
+                    "unexplained"
+                } else {
+                    "unlinked"
+                };
+                out.push(Row {
+                    family: family.to_string(),
+                    host: host.to_string(),
+                    cluster: k,
+                    members: members.iter().map(|&m| names[m].clone()).collect(),
+                    n_sites: sites.len(),
+                    n_alt: alts.len(),
+                    n_unexplained_alt: unexpl.len(),
+                    status,
+                    explained_by,
+                    est_div: if covered > 0 { unexpl.len() as f64 / covered as f64 } else { 0.0 },
+                    linkage: link,
+                    editing_frac: ag,
+                });
+            }
+            out
+        }
+
+        /// `minimap2 -c --cs=long -x splice:hq -uf -N 0` of `queries` against the one-record `target`; per query its primary/supplementary
+        /// record (`tp:A:P`) with the most matching bases (the first on a tie), as coverage. Query order = `queries` order.
+        pub fn align(
+            mm2: &str,
+            dir: &std::path::Path,
+            target: &[u8],
+            queries: &[(String, Vec<u8>)],
+            threads: usize,
+        ) -> anyhow::Result<BTreeMap<String, BTreeMap<usize, u8>>> {
+            let (t, q) = (dir.join("t.fa"), dir.join("q.fa"));
+            {
+                let mut f = std::io::BufWriter::new(std::fs::File::create(&t)?);
+                f.write_all(b">host\n")?;
+                f.write_all(target)?;
+                f.write_all(b"\n")?;
+                let mut g = std::io::BufWriter::new(std::fs::File::create(&q)?);
+                for (n, s) in queries {
+                    writeln!(g, ">{n}")?;
+                    g.write_all(s)?;
+                    g.write_all(b"\n")?;
+                }
+            }
+            let out = std::process::Command::new(mm2)
+                .args(["-c", "--cs=long", "-x", "splice:hq", "-uf", "-N", "0", "-t", &threads.to_string()])
+                .arg(&t)
+                .arg(&q)
+                .output()
+                .with_context(|| format!("running {mm2}"))?;
+            anyhow::ensure!(out.status.success(), "minimap2 failed: {}", String::from_utf8_lossy(&out.stderr));
+            let mut best: BTreeMap<String, (usize, BTreeMap<usize, u8>)> = BTreeMap::new();
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let f: Vec<&str> = line.split('\t').collect();
+                if f.len() < 12 || !f[12..].iter().any(|x| *x == "tp:A:P") {
+                    continue;
+                }
+                let (Ok(m), Ok(ts)) = (f[9].parse::<usize>(), f[7].parse::<usize>()) else { continue };
+                if best.get(f[0]).map_or(true, |b| m > b.0) {
+                    let cs = f[12..].iter().find_map(|x| x.strip_prefix("cs:Z:")).unwrap_or("");
+                    best.insert(f[0].to_string(), (m, cs_bases(ts, cs)));
+                }
+            }
+            Ok(best.into_iter().map(|(k, v)| (k, v.1)).collect())
+        }
+
+        /// The whole pass (`copy_assign --psv-clusters`): reads `<out>.assignments.tsv` (every row's `catalog_copy_idx` = the read's host),
+        /// the copies table + FASTA, the genome, and the BAM (one sweep for the hosts' reads, their primary records, original orientation);
+        /// writes `<out>.psv_clusters.tsv` and `<out>.psv_cluster_reads.tsv`.
+        #[allow(clippy::too_many_arguments)]
+        pub fn run(
+            out: &str,
+            bam: &str,
+            fasta: &str,
+            copies_tsv: &str,
+            copies_fa: &str,
+            mm2: &str,
+            threads: usize,
+        ) -> anyhow::Result<usize> {
+            use crate::catalog_input::{parse_copies_fa, parse_copies_tsv};
+            let copies = parse_copies_tsv(&std::fs::read_to_string(copies_tsv).with_context(|| format!("reading {copies_tsv}"))?)?;
+            let seqs = parse_copies_fa(&std::fs::read_to_string(copies_fa).with_context(|| format!("reading {copies_fa}"))?)?;
+            // family -> [(copy_idx, chrom, start, end, spliced seq)] in table order (partner rows are no copy of the family)
+            let mut fam: BTreeMap<String, Vec<(usize, String, u64, u64, Vec<u8>)>> = BTreeMap::new();
+            for c in &copies {
+                if c.partner {
+                    continue;
+                }
+                let s = seqs.get(&(c.family_id.clone(), c.copy_idx)).map(|x| x.seq.clone()).unwrap_or_default();
+                fam.entry(c.family_id.clone()).or_default().push((c.copy_idx, c.chrom.clone(), c.start, c.end, s));
+            }
+            // hosts from the run's own assignments: (family, catalog_copy_idx) -> read names
+            let atsv = format!("{out}.assignments.tsv");
+            let text = std::fs::read_to_string(&atsv).with_context(|| format!("reading {atsv}"))?;
+            let mut lines = text.lines();
+            let hdr: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
+            let col = |n: &str| hdr.iter().position(|h| *h == n).with_context(|| format!("{atsv} has no column {n}"));
+            let (c_read, c_fam, c_idx) = (col("read_name")?, col("family_id")?, col("catalog_copy_idx")?);
+            let mut by_host: BTreeMap<(String, usize), BTreeSet<String>> = BTreeMap::new();
+            for l in lines {
+                let f: Vec<&str> = l.split('\t').collect();
+                if let Some(Ok(i)) = f.get(c_idx).map(|x| x.parse::<usize>()) {
+                    by_host.entry((f[c_fam].to_string(), i)).or_default().insert(f[c_read].to_string());
+                }
+            }
+            let need: BTreeSet<&str> = by_host.values().flat_map(|s| s.iter().map(|x| x.as_str())).collect();
+            // one sweep of the BAM: each needed read's primary record, in its original orientation
+            let mut rseq: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+            let mut reader = crate::bam::open_bam(bam, threads).with_context(|| format!("opening {bam}"))?;
+            reader.read_header().with_context(|| format!("reading the header of {bam}"))?;
+            for result in reader.records() {
+                let record = result.with_context(|| format!("reading {bam}"))?;
+                let flags = record.flags();
+                if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+                    continue;
+                }
+                let Some(name) = record.name() else { continue };
+                let Ok(name) = std::str::from_utf8(name.as_ref()) else { continue };
+                if need.contains(name) && !rseq.contains_key(name) {
+                    let s: Vec<u8> = record.sequence().iter().collect();
+                    let s = if flags.is_reverse_complemented() { crate::seq_utils::reverse_complement(&s) } else { s };
+                    rseq.insert(name.to_string(), s);
+                }
+            }
+            let genome = crate::genome::IndexedFasta::open(fasta).with_context(|| format!("opening {fasta} (with its .fai)"))?;
+            let dir = std::path::PathBuf::from(format!("{out}.psvclust.tmp"));
+            std::fs::create_dir_all(&dir)?;
+            let mut rows: Vec<Row> = Vec::new();
+            for (f, cps) in &fam {
+                // host classes: copies with an identical spliced sequence, in the order their first copy appears
+                let mut classes: Vec<(Vec<u8>, Vec<usize>)> = Vec::new();
+                for (k, c) in cps.iter().enumerate() {
+                    match classes.iter_mut().find(|x| x.0 == c.4) {
+                        Some(x) => x.1.push(k),
+                        None => classes.push((c.4.clone(), vec![k])),
+                    }
+                }
+                for (_, members) in &classes {
+                    let rep = members.iter().map(|&k| &cps[k]).min_by_key(|c| c.0).unwrap();
+                    let names: BTreeSet<String> = members
+                        .iter()
+                        .flat_map(|&k| by_host.get(&(f.clone(), cps[k].0)).into_iter().flatten().cloned())
+                        .collect();
+                    if names.len() < MIN_SUPPORT {
+                        continue;
+                    }
+                    let (chrom, s, e) = (&rep.1, rep.2, rep.3);
+                    let lo = s.saturating_sub(PAD);
+                    let mut ref_ = genome.fetch(chrom, lo as i64, (e + PAD) as i64).unwrap_or_default();
+                    ref_.make_ascii_uppercase();
+                    let queries: Vec<(String, Vec<u8>)> =
+                        names.iter().filter_map(|n| rseq.get(n).map(|s| (n.clone(), s.clone()))).collect();
+                    let cov = align(mm2, &dir, &ref_, &queries, threads)?;
+                    let cq: Vec<(String, Vec<u8>)> = cps.iter().map(|c| (format!("copy{}", c.0), c.4.clone())).collect();
+                    let ccov = align(mm2, &dir, &ref_, &cq, threads)?;
+                    // reads in sorted-name order (the alignment order), only those aligned; copies in table order, only those aligned
+                    let rn: Vec<String> = queries.iter().map(|q| q.0.clone()).filter(|n| cov.contains_key(n)).collect();
+                    let rc: Vec<BTreeMap<usize, u8>> = rn.iter().map(|n| cov[n].clone()).collect();
+                    let cc: Vec<(String, BTreeMap<usize, u8>)> =
+                        cq.iter().filter_map(|q| ccov.get(&q.0).map(|v| (q.0.clone(), v.clone()))).collect();
+                    let mut hosts: Vec<usize> = members.iter().map(|&k| cps[k].0).collect();
+                    hosts.sort_unstable();
+                    let host = hosts.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(",");
+                    rows.extend(host_rows(f, &host, &ref_, &rn, &rc, &cc));
+                }
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+            let mut w = std::io::BufWriter::new(std::fs::File::create(format!("{out}.psv_clusters.tsv"))?);
+            writeln!(w, "family\thost\tcluster\tn_reads\tn_sites\tn_alt\tn_unexplained_alt\tstatus\texplained_by\test_div\tlinkage\tediting_frac")?;
+            let mut r = std::io::BufWriter::new(std::fs::File::create(format!("{out}.psv_cluster_reads.tsv"))?);
+            writeln!(r, "read_name\tfamily\thost\tcluster")?;
+            for x in &rows {
+                writeln!(
+                    w,
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{:.4}",
+                    x.family,
+                    x.host,
+                    x.cluster,
+                    x.members.len(),
+                    x.n_sites,
+                    x.n_alt,
+                    x.n_unexplained_alt,
+                    x.status,
+                    if x.explained_by.is_empty() { "-".to_string() } else { x.explained_by.join(",") },
+                    x.est_div,
+                    x.linkage.map_or("NA".to_string(), |v| format!("{v:.4}")),
+                    x.editing_frac
+                )?;
+                for m in &x.members {
+                    writeln!(r, "{m}\t{}\t{}\t{}", x.family, x.host, x.cluster)?;
+                }
+            }
+            Ok(rows.iter().filter(|x| x.status == "unexplained").count())
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+
+            #[test]
+            fn cs_long_gives_the_read_base_at_each_target_position() {
+                let c = cs_bases(10, "=ACG*ct=TT-aa~gt100ag=G+tt=C");
+                assert_eq!(c[&10], b'A');
+                assert_eq!(c[&12], b'G');
+                assert_eq!(c[&13], b'T'); // substitution c -> t
+                assert_eq!(c[&15], b'T');
+                assert_eq!(c[&16], b'-');
+                assert_eq!(c[&17], b'-');
+                assert_eq!(c[&118], b'G'); // after the 100-bp intron
+                assert_eq!(c[&119], b'C'); // the insertion does not advance the target
+                assert_eq!(c.len(), 10);
+            }
+
+            #[test]
+            fn counts_break_ties_by_insertion_like_python_counter() {
+                let mut c = Counts::default();
+                c.add(b'G', 2);
+                c.add(b'T', 2);
+                assert_eq!(c.top(), Some((b'G', 2)));
+                c.add(b'T', 1);
+                assert_eq!(c.top(), Some((b'T', 3)));
+            }
+
+            /// 40 reads of a host + 40 reads of a missing haplotype with alts at 4 positions: two clusters, the second unexplained and linked.
+            fn world() -> (Vec<u8>, Vec<String>, Vec<BTreeMap<usize, u8>>) {
+                let ref_: Vec<u8> = b"ACGT".iter().cycle().take(200).copied().collect();
+                let mut names = Vec::new();
+                let mut cov = Vec::new();
+                for i in 0..80 {
+                    let mut c: BTreeMap<usize, u8> = (0..200).map(|p| (p, ref_[p])).collect();
+                    if i >= 40 {
+                        for p in [20usize, 60, 100, 140] {
+                            c.insert(p, if ref_[p] == b'A' { b'C' } else { b'A' });
+                        }
+                    }
+                    names.push(format!("r{i:02}"));
+                    cov.push(c);
+                }
+                (ref_, names, cov)
+            }
+
+            #[test]
+            fn a_missing_haplotype_is_one_linked_unexplained_cluster() {
+                let (ref_, names, cov) = world();
+                let rows = host_rows("F", "0", &ref_, &names, &cov, &[("copy0".into(), (0..200).map(|p| (p, ref_[p])).collect())]);
+                assert_eq!(rows.len(), 2);
+                let u: Vec<&Row> = rows.iter().filter(|r| r.status == "unexplained").collect();
+                assert_eq!(u.len(), 1);
+                assert_eq!(u[0].members.len(), 40);
+                assert!(u[0].members.iter().all(|m| m.as_str() >= "r40"));
+                assert_eq!(u[0].n_unexplained_alt, 4);
+                assert_eq!(u[0].linkage, Some(1.0));
+                assert!(rows.iter().any(|r| r.status == "explained" && r.explained_by == vec!["copy0".to_string()]));
+            }
+
+            #[test]
+            fn independent_edits_are_unlinked_and_a_copy_carrying_the_alts_explains_them() {
+                let (ref_, names, mut cov) = world();
+                // independent per-read edits at two other sites, each in ~half of the host reads, never together
+                for (i, c) in cov.iter_mut().enumerate().take(40) {
+                    if i % 2 == 0 { c.insert(29, b'G'); } else { c.insert(69, b'G'); } // the reference has C at 29 and 69
+                }
+                let v: Vec<Vec_> = cov
+                    .iter()
+                    .map(|c| [29usize, 69].iter().filter_map(|&p| c.get(&p).map(|&b| (p, if b == b'G' { Al::Alt } else { Al::Ref }))).collect())
+                    .collect();
+                assert_eq!(linkage(&[29, 69], &v), Some(0.0));
+                // a reference copy that carries the haplotype's alts explains its cluster
+                let mut carrier: BTreeMap<usize, u8> = (0..200).map(|p| (p, ref_[p])).collect();
+                for p in [20usize, 60, 100, 140] {
+                    carrier.insert(p, if ref_[p] == b'A' { b'C' } else { b'A' });
+                }
+                let rows = host_rows("F", "0", &ref_, &names, &cov, &[("copy1".into(), carrier)]);
+                assert!(rows.iter().any(|r| r.members.len() == 40 && r.explained_by == vec!["copy1".to_string()]));
+            }
+        }
+    }
 }
 
 pub mod candidates {

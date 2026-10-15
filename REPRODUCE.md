@@ -318,6 +318,22 @@ consensus — the probe for a DNA k-mer/depth check). Positive control:
 > stage; recipes in `bench/LAYER_ORDER_NPIP_TBC1D3.md` and `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §11).
 > `bench/README.md` has the full old-name → new-command table, including the names these scripts had before 2026-09-24.
 
+## O3 (advisor's definition): PSV clusters of the reads O2 places on a family (2026-10-15)
+
+`copy_assign --families F.copies.tsv --copies-fa F.copies.fa --no-as-tied-only --psv-clusters --out P` writes `P.psv_clusters.tsv`
+(per host copy: each read cluster, `explained` by a copy / `unexplained` / `unlinked` / `unresolved`, its estimated divergence, linkage and
+A->G fraction) and `P.psv_cluster_reads.tsv`. Held-out simulation (`docs/PREREG_o3_psv_clusters_v2_2026-10-15.md`):
+
+```bash
+pixi run bash bench/o3_unexplained/heldout_v2.sh OUT_DIR    # base seeds 61-63 + hard seeds 71-75, E0 / E2, the Rust product scored
+```
+
+Expected (`OUT_DIR/summary.txt`): absent copies >= 0.6% recovered **425/426**; control families with an unexplained cluster **0/152**;
+spurious clusters 0; two or three missing sequences on one host separated 41/44; alleles labelled `allele_or_copy` 135/135, copies >= 2%
+labelled `copy` 262/262; Rust = prototype on 16/16 runs.
+
+---
+
 ## O3 structure projection on simulated reference-absent copies (2026-10-14)
 
 `candidate_copies` writes `<out>.structure.tsv` / `<out>.contigs.gtf`: each flagged candidate's exons, projected from its union's genome
