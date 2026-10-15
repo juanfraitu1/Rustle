@@ -180,11 +180,32 @@ Wiring check passed: F1 reproduced the figure 8 table for every scope and floor 
   every sample. At 1.00, testis (3 pairs) and gorilla (5 pairs) do not pass.
 
 **What this does and does not say.**
-- **Specificity holds where we group.** Where both copies sit in our families, they share one: 75 of 91 (A119b), 12 of
-  12 (testis), 4 of 4 (gorilla). Matched decoys almost never land in the same family.
-- **Recall is low, and the cause is coverage, not grouping.** In most read-supported copy pairs neither copy is covered
-  by any family member: 290 of 514 (A119b), 24 of 38 (testis), 66 of 78 (gorilla). Those copies have reads but no
-  assembled locus in a family covering half their exons. This is O1's known recall limit (node completeness and edge
-  recall), and it is not measured as a bar here.
-- **The gorilla pass rests on 4 shared pairs.** It passes because no random decoy draw reached 4 (null maximum 1). The
-  effect is large but the count is small.
+- **The test is effectively conditioned on both copies being covered** (post-hoc note below). Only those pairs can
+  count, on either side: 91 (A119b), 12 (testis) and 4 (gorilla).
+  - Among them, the copies share a family in 75 / 91 (0.824), 12 / 12 and 4 / 4.
+  - The coverage-matched decoys give null rates of 0.121, 0.102 and 0.012.
+  - A119b's 0.824 is below the 0.90 that F1 asks for, and its 16 split pairs are F1's.
+- **What a pass shows.** A gene's covered copies are grouped with it much more often than covered loci of other genes at
+  a similar distance.
+  - It is a specificity check against unrelated loci, not proof against an independent family definition.
+  - The copies are ≥ 0.95-identity sequence matches and our families are similarity clusters, so agreement is expected.
+- **Recall is low, mostly because of coverage.** In most read-supported copy pairs neither copy is covered by any family
+  member: 290 of 514 (A119b), 24 of 38 (testis), 66 of 78 (gorilla).
+  - The other unshared pairs are grouping failures, F1's split pairs among them.
+  - This is O1's known recall limit (node completeness and edge recall), and it is not measured as a bar here.
+- **The gorilla pass rests on 4 pairs from 4 genes.** It passes because no random decoy draw reached 4 (null maximum 1).
+
+**Post hoc (added after the final review): the denominator does not do what Definitions says.**
+- **Uncovered pairs carry no information.** Decoys are matched on the copy's coverage, so a pair with either copy
+  uncovered adds 0 to k and to every null draw.
+  - k, the null and p are therefore exactly those of the same test run on the both-covered pairs.
+  - "There is no conditioning on our catalog" (Definitions) holds for the denominator only.
+  - The headline rates (0.146 against 0.021 in A119b) are diluted by 423, 26 and 74 uninformative pairs.
+- **The bar is weak.** It passes from k ≥ 17 in A119b (null maximum 16), k ≥ 4 in testis and k ≥ 2 in gorilla.
+  - A119b would pass with about 80% of its covered copy pairs split, so the test cannot detect F1's failure mode.
+  - With F1 already known (131 / 148), a pass was nearly certain.
+- **These numbers were already defined elsewhere, and are now seen.** k / n is figure 7's Liftoff-pair sensitivity of
+  the de novo families (`docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1, item 4). It is
+  also the default arm of F6.6 (item 3).
+- **For a reuse.** To put recall into the bar, do not match decoys on coverage, or test the unconditioned rate against
+  an external expectation.

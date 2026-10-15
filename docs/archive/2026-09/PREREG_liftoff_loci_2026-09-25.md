@@ -311,9 +311,28 @@ genome minus the development contigs is shown beside it.
 | gorilla KB3781 | 11 / 12 | 0.917 [0.625, 1.000] | 11 / 12 | PASS |
 | chimp PTR | 18 / 18 | 1.000 [1.000, 1.000] | 18 / 18 | PASS |
 
+Gorilla OR6737 and orangutan PPY are not scored: no families stage has run for them.
+
+Every identity floor, as registered: the bar applies at ≥ 0.95 (the run's floor) and the other floors are reported.
+Each cell is pairs sharing a family / pairs with both loci covered.
+
+| sample | scope | ≥ 0.95 | ≥ 0.98 | ≥ 0.99 | = 1.00 |
+|---|---|---|---|---|---|
+| human A119b | genome | 131 / 148 | 115 / 129 | 101 / 112 | 45 / 46 |
+| human A119b | without development contigs | 113 / 128 | 101 / 113 | 89 / 100 | 42 / 43 |
+| human testis | genome | 34 / 34 | 32 / 32 | 31 / 31 | 3 / 3 |
+| human testis | without development contigs | 33 / 33 | 31 / 31 | 30 / 30 | 3 / 3 |
+| gorilla KB3781 | genome | 11 / 12 | 10 / 11 | 10 / 10 | 0 / 0 |
+| gorilla KB3781 | without development contigs | 11 / 12 | 10 / 11 | 10 / 10 | 0 / 0 |
+| chimp PTR | genome | 18 / 18 | 16 / 16 | 14 / 14 | 3 / 3 |
+| chimp PTR | without development contigs | 18 / 18 | 16 / 16 | 14 / 14 | 3 / 3 |
+
+At ≥ 0.99, A119b's 101 / 112 (0.902) would clear 0.90, but the registered bar is at ≥ 0.95.
+
 **If it fails (as registered): the families split near-identical copies, and the pairs are listed.** Human A119b's
-17 split pairs come from 9 source genes. The table gives each pair's annotated placement and extra copy, with the
-family covering each and the copy's sequence identity:
+17 split pairs come from 8 source genes. The table gives each pair's annotated placement and extra copy, with the
+family covering each and the copy's sequence identity (coordinates `chr:start-end` with 0-based starts, as in the
+Liftoff table):
 
 | source gene | annotated placement (family) | extra copy (family) | identity |
 |---|---|---|---|
