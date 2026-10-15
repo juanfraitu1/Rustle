@@ -15,6 +15,11 @@ import math
 import random
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
+from sklearn.metrics import adjusted_rand_score
+
+FAM90A = "ID_356"  # register 1170: ARI swings +-0.035 on whether this family stays whole
+CN_GAP = 2.0       # Soto's per-pair rule, MAD < 1; for two values the unscaled MAD is |a - b| / 2
 
 
 # ----------------------------------------------------------------------------------------------------------- T1
@@ -160,3 +165,124 @@ def t1(soto_sets, soto_of, block_of, multi, clustered, n_null, n_boot, seed):
         violation_classes={k: classes.get(k, 0) for k in ("coverage", "cover", "conflict")},
         violations=violations,
     )
+
+
+# ----------------------------------------------------------------------------------------------------------- T2
+
+def cn_components(block_of, cn):
+    """The intersection of our blocks with copy number: inside each block, its members that have a value, sorted by
+    value, split wherever two neighbours differ by >= CN_GAP. That is single linkage under Soto's pair rule
+    (|a - b| < CN_GAP joins), whose components on a line are exactly these runs. -> {member: 'block#run'}."""
+    by = collections.defaultdict(list)
+    for m in sorted(cn):
+        by[block_of[m]].append((cn[m], m))
+    comp = {}
+    for b in sorted(by):
+        run, prev = 0, None
+        for v, m in sorted(by[b]):
+            if prev is not None and v - prev >= CN_GAP:
+                run += 1
+            comp[m] = f"{b}#{run}"
+            prev = v
+    return comp
+
+
+def cn_shuffle(block_of, cn, rng):
+    """Copy-number values permuted among the members of each block; members without a value stay without."""
+    by = collections.defaultdict(list)
+    for m in sorted(cn):
+        by[block_of[m]].append(m)
+    out = {}
+    for b in sorted(by):
+        vals = [cn[m] for m in by[b]]
+        rng.shuffle(vals)
+        out.update(zip(by[b], vals))
+    return out
+
+
+def _codes(labels):
+    index = {}
+    return [index.setdefault(x, len(index)) for x in labels]
+
+
+def ari(truth_of, pred_of, members):
+    """Adjusted Rand index over `members`; NaN for fewer than 2 members."""
+    ms = sorted(members)
+    if len(ms) < 2:
+        return float("nan")
+    return float(adjusted_rand_score(_codes(truth_of[m] for m in ms), _codes(pred_of[m] for m in ms)))
+
+
+def _components(comp_of, keep):
+    comps = collections.defaultdict(set)
+    for m in keep:
+        comps[comp_of[m]].add(m)
+    return comps
+
+
+def exact_count(soto_sets, comp_of, members):
+    """Distinct Soto member sets, restricted to `members` and with >= 2 of them, equal to a component restricted to
+    `members`."""
+    keep = set(members)
+    comp_sets = {frozenset(s) for s in _components(comp_of, keep).values()}
+    targets = {frozenset(s & keep) for s in soto_sets.values()}
+    return sum(1 for s in targets if len(s) >= 2 and s in comp_sets)
+
+
+def hungarian_jaccard(soto_sets, comp_of, members):
+    """Mean one-to-one best-match Jaccard (Hungarian) between Soto's families (>= 2 of `members`) and the components
+    on `members`; an unmatched family scores 0. NaN when no family qualifies."""
+    keep = set(members)
+    rows = [s & keep for _, s in sorted(soto_sets.items())]
+    rows = [s for s in rows if len(s) >= 2]
+    if not rows:
+        return float("nan")
+    comps = _components(comp_of, keep)
+    cols = [comps[k] for k in sorted(comps)]
+    col_of = {m: j for j, s in enumerate(cols) for m in s}
+    jac = np.zeros((len(rows), len(cols)))
+    for i, s in enumerate(rows):
+        for j in {col_of[m] for m in s}:
+            inter = len(s & cols[j])
+            jac[i, j] = inter / (len(s) + len(cols[j]) - inter)
+    r, c = linear_sum_assignment(jac, maximize=True)
+    return float(jac[r, c].sum() / len(rows))
+
+
+def meet(soto_of, block_of):
+    """The coarsest common refinement of Soto's single-label partition and ours: {member: 'label|block'}."""
+    return {m: f"{soto_of[m]}|{block_of[m]}" for m in soto_of}
+
+
+def scores(soto_sets, soto_of, comp_of, members):
+    """One partition of `members` (comp_of) against Soto: exact and ARI over the single-label members (ARI also
+    without FAM90A), and the cover-aware Hungarian Jaccard over all of `members`."""
+    single = [m for m in members if m in soto_of]
+    no90 = [m for m in single if soto_of[m] != FAM90A]
+    return dict(members=len(members), single=len(single),
+                exact=exact_count(soto_sets, comp_of, single),
+                ari=ari(soto_of, comp_of, single),
+                ari_no_fam90a=ari(soto_of, comp_of, no90),
+                hungarian_jaccard=hungarian_jaccard(soto_sets, comp_of, members))
+
+
+def t2(soto_sets, soto_of, block_of, cn, n_null, seed):
+    """T2 for one copy-number table: the intersection scored against Soto, and the within-block shuffle null for the
+    exact count and ARI. Members are the keys of `cn`."""
+    members = sorted(cn)
+    single = [m for m in members if m in soto_of]
+    obs = scores(soto_sets, soto_of, cn_components(block_of, cn), members)
+    rng = random.Random(seed)
+    null_exact, null_ari = [], []
+    for _ in range(n_null):
+        comp = cn_components(block_of, cn_shuffle(block_of, cn, rng))
+        null_exact.append(exact_count(soto_sets, comp, single))
+        null_ari.append(ari(soto_of, comp, single))
+    p_exact, p_ari = p_upper(null_exact, obs["exact"]), p_upper(null_ari, obs["ari"])
+    return dict(observed=obs,
+                null=dict(n=n_null, seed=seed,
+                          exact_mean=float(np.mean(null_exact)) if null_exact else float("nan"),
+                          exact_max=max(null_exact) if null_exact else None,
+                          ari_mean=float(np.mean(null_ari)) if null_ari else float("nan"),
+                          ari_max=float(max(null_ari)) if null_ari else None),
+                p_exact=p_exact, p_ari=p_ari, passes=bool(p_exact < 0.001 and p_ari < 0.001))

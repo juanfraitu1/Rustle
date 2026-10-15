@@ -99,3 +99,89 @@ def test_t1_without_any_family():
     r = L.t1({"S": frozenset("a")}, {"a": "S"}, {"a": "B", "b": "C"}, frozenset(), frozenset("ab"), 10, 10, 7)
     assert r["contained"] == 0 and r["families_ge2"] == 0 and r["p"] == 1.0
     assert not r["t1a_pass"] and not r["t1b_pass"]
+
+
+# ------------------------------------------------------------------------------------------------------------ T2
+
+def test_cn_components_runs():
+    block_of = {"a": "B1", "b": "B1", "c": "B1", "d": "B1", "e": "B2", "f": "B2", "g": "B2"}
+    cn = {"a": 2.0, "b": 3.5, "c": 5.0, "d": 9.0, "e": 2.0, "f": 3.0}
+    comp = L.cn_components(block_of, cn)
+    assert comp["a"] == comp["b"] == comp["c"] != comp["d"]
+    assert comp["e"] == comp["f"] and comp["e"] != comp["a"] and "g" not in comp
+
+
+def test_cn_gap_of_exactly_two_cuts():
+    # Soto's rule keeps a pair when MAD = |a - b| / 2 < 1: a difference of exactly 2 cuts, 1.999 joins.
+    comp = L.cn_components({"x": "B", "y": "B", "z": "B"}, {"x": 2.0, "y": 4.0, "z": 5.999})
+    assert comp["x"] != comp["y"] and comp["y"] == comp["z"]
+
+
+def test_cn_shuffle_keeps_each_block_multiset():
+    block_of = {"a": "B1", "b": "B1", "c": "B1", "d": "B2", "e": "B2"}
+    cn = {"a": 1.0, "b": 2.0, "c": 3.0, "d": 7.0, "e": 9.0}
+    s1 = L.cn_shuffle(block_of, cn, random.Random(7))
+    s2 = L.cn_shuffle(block_of, dict(reversed(list(cn.items()))), random.Random(7))
+    assert s1 == s2 and set(s1) == set(cn)
+    assert sorted(s1[m] for m in "abc") == [1.0, 2.0, 3.0] and sorted(s1[m] for m in "de") == [7.0, 9.0]
+
+
+def test_ari_by_hand():
+    t = {"a": "S1", "b": "S1", "c": "S2", "d": "S2"}
+    assert L.ari(t, t, "abcd") == 1.0
+    assert L.ari(t, {m: "one" for m in "abcd"}, "abcd") == 0.0
+    assert math.isnan(L.ari(t, t, "a"))
+
+
+def test_exact_counts_distinct_sets():
+    soto = {"S1": frozenset("abc"), "S2": frozenset("abc"), "S3": frozenset("dx")}
+    comp = {"a": "c1", "b": "c1", "c": "c1", "d": "c2"}
+    assert L.exact_count(soto, comp, "abcd") == 1  # {a, b, c} counted once; S3 keeps one member inside
+
+
+def test_hungarian_jaccard_by_hand():
+    soto = {"S1": frozenset("abc"), "S2": frozenset("de")}
+    comp = {"a": "C1", "b": "C1", "c": "C2", "d": "C2", "e": "C2"}
+    assert abs(L.hungarian_jaccard(soto, comp, "abcde") - 2 / 3) < 1e-12
+    one = {m: "C" for m in "abcd"}
+    assert abs(L.hungarian_jaccard({"S1": frozenset("ab"), "S2": frozenset("cd")}, one, "abcd") - 0.25) < 1e-12
+    assert math.isnan(L.hungarian_jaccard({"S1": frozenset("a")}, {"a": "C"}, "a"))
+
+
+def test_meet():
+    assert L.meet({"a": "S1", "b": "S1", "c": "S2"}, {"a": "B1", "b": "B2", "c": "B1"}) == {
+        "a": "S1|B1", "b": "S1|B2", "c": "S2|B1"}
+
+
+def test_scores_drops_fam90a_only_for_its_ari():
+    soto_of = {"a": "S1", "b": "S1", "c": L.FAM90A, "d": L.FAM90A}
+    soto = {"S1": frozenset("ab"), L.FAM90A: frozenset("cd")}
+    comp = {"a": "x", "b": "x", "c": "y", "d": "z"}
+    s = L.scores(soto, soto_of, comp, "abcd")
+    assert s["exact"] == 1 and s["single"] == 4 and s["ari_no_fam90a"] == 1.0 and s["ari"] < 1.0
+
+
+def test_t2_reproduces_soto_and_null_rate():
+    soto = {"S1": frozenset("ab"), "S2": frozenset("cd")}
+    soto_of = {"a": "S1", "b": "S1", "c": "S2", "d": "S2"}
+    cn = {"a": 2.0, "b": 2.0, "c": 10.0, "d": 10.0}
+    r = L.t2(soto, soto_of, {m: "B" for m in "abcd"}, cn, 3000, 7)
+    assert r["observed"]["exact"] == 2 and r["observed"]["ari"] == 1.0
+    # 2 of the 6 distinct arrangements of {2, 2, 10, 10} rebuild Soto, so p is near 1/3 and the bar fails.
+    assert abs(r["p_exact"] - 1 / 3) < 0.035 and not r["passes"]
+
+
+def test_t2_strong_signal_has_small_p():
+    labels = "abcdefghijkl"
+    soto_of = {m: f"S{i // 2}" for i, m in enumerate(labels)}
+    soto = {f"S{k}": frozenset(labels[2 * k:2 * k + 2]) for k in range(6)}
+    cn = {m: 10.0 * (i // 2) for i, m in enumerate(labels)}
+    r = L.t2(soto, soto_of, {m: "B" for m in labels}, cn, 50, 7)
+    # 720 of 12! / 2^6 = 7,484,400 arrangements rebuild Soto (about 1e-4 per draw).
+    assert r["observed"]["exact"] == 6 and r["p_exact"] < 0.05 and r["p_ari"] < 0.05
+    assert r["passes"] == (r["p_exact"] < 0.001 and r["p_ari"] < 0.001)
+
+
+def test_t2_with_one_member_is_not_a_pass():
+    r = L.t2({"S1": frozenset("a")}, {"a": "S1"}, {"a": "B"}, {"a": 2.0}, 10, 7)
+    assert math.isnan(r["p_ari"]) and not r["passes"]
