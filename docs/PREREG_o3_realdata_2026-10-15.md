@@ -227,11 +227,12 @@ Rules, applied in order:
 
 **Reading.**
 - **Reads from other loci** cause most of these clusters. On the shipped catalog, 35 of 57 are reads of another
-  family's copy, from related families such as MCL43, MCL69, MCL126 and MCL296. These reads align at 99.7-99.95% to their
-  own locus. `--no-as-tied-only` places them on this family, whose catalog lacks their source.
+  family's copy. They sit in 7 families (MCL69 10 clusters, MCL126 9, MCL43 6, MCL288 5, MCL296 3, MCL80 1, MCL286 1).
+  Their reads match that other locus closely (each cluster's median read identity to its best haplotype hit: median
+  0.999, range 0.994-1.0). `--no-as-tied-only` places them on this family, whose catalog lacks their source.
 - **Other apes' transcripts** (chimpanzee, orangutan) remain in the library, as found before (A44).
 - **Collapsed or missing copies are rare.**
-  - Only GWFAM175's reads match a haplotype locus at >= 0.999 that is not a copy of the family: a real copy missing from
+  - Only GWFAM175's reads match a haplotype locus that is not a copy of the family (cluster medians 0.9988-0.9996): a real copy missing from
     the reference, and the case O3 is for.
   - MCL20's and MCL33's large clusters are gorilla sequence 2-3% from any locus in either haplotype. They may be copies in
     assembly gaps, but the assemblies cannot say.
