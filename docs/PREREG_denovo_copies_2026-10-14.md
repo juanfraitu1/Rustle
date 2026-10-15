@@ -143,3 +143,54 @@ miss, class or C2 number was computed or seen.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (2026-10-14)
+
+Run: code `3576bb9f` (Amendment 1). A119b's projection was reused (16 batches). The held-out templates were projected
+after this file was committed, with the same code and settings (3 batches each): testis in 392 s at 16.2 GB, and KB3781
+in 339 s at 19.3 GB (`winloci_data/GGO.splice.mmi`). Scoring took 253 s at 1.3 GB for A119b and under 10 s for each
+held-out sample. Guard S0 held: 0.9956, 0.9999 and 1.0000 of templates align to their own exons.
+
+| | A119b (development) | testis (held out) | KB3781 (held out) |
+|---|---|---|---|
+| templates / alignments / projected copies | 94,685 / 636,800 / 489,897 | 13,048 / 54,244 / 24,807 | 17,672 / 45,933 / 22,740 |
+| templates at the 51-alignment cap | 8,682 | 347 | 189 |
+| Liftoff extra copies (not short) | 1,888 | 1,888 | 1,129 |
+| reachable (source placement assembled) | 420 (0.222) | 62 (0.033) | 52 (0.046) |
+| **C1: recall (own)** | **268 / 420 = 0.638, FAIL** | **49 / 62 = 0.790, FAIL** | **44 / 52 = 0.846, pass** |
+| recall (any) | 365 / 420 = 0.869 | 58 / 62 = 0.935 | 46 / 52 = 0.885 |
+| misses: below threshold / capped / no alignment | 44 / 46 / 62 | 7 / 5 / 1 | 5 / 0 / 3 |
+| recall (own) by the source's Liftoff copies: 1 / 2-5 / ≥ 6 | 71/104, 109/157, 88/159 | 9/10, 21/28, 19/24 | 9/12, 3/8, 32/32 |
+| sites | 11,463 | 1,861 | 1,600 |
+| `liftoff_copy` / `liftoff_gene` / `assembled` / `none` (retro-like) | 375 (1) / 2,643 (47) / 3,504 (62) / 4,941 (266) | 193 (0) / 1,061 (64) / 226 (1) / 381 (43) | 44 (1) / 762 (30) / 212 (1) / 582 (7) |
+| **C2: unexplained sites** | **4,675 = 0.408, FAIL** | **338 = 0.182, FAIL** | **575 = 0.359, FAIL** |
+
+The below-threshold misses had a median best identity and coverage of 0.898 and 0.930 in A119b, 0.498 and 0.515 in
+testis, and 0.778 and 0.786 in KB3781.
+
+### Verdict (2026-10-14)
+
+**Reading 3: not claimed.** C1 fails in development (0.638 < 0.80). It also fails in testis (0.790) and passes only in
+KB3781 (0.846). C2 fails in all three samples. The expected retrocopy advantage did not show: retro-like sites are rare
+(266 of A119b's 4,941 `none` sites).
+
+### Post hoc (descriptive, not pre-registered; `bench/template_copies/copies_posthoc.py`)
+
+- **Recall (any) is not all projection.** It also counts a copy that is itself assembled, found by the self alignment of
+  the template at the copy: 20 of A119b's 365, none in testis, 1 of KB3781's 46. Found by projection proper: 345, 58,
+  45.
+- **The misses follow the template's shape.** Call an own template gene-like when it covers ≥ 80% of the source
+  placement's exon union and that union covers ≥ 80% of it.
+  - Copies whose best own template is gene-like are found 15 of 16 times (A119b), 18 of 18 (testis) and 40 of 40
+    (KB3781).
+  - Otherwise: 253 of 404, 31 of 44 and 4 of 12.
+  - Only 16 of A119b's 420 reachable copies have a gene-like own template. The rule is strict: a Liftoff placement's
+    exons are the union of every isoform of the gene, while a template is one transcript.
+- **The unexplained sites come mostly from unannotated loci.**
+  - Of the `none` sites, only 258 of 4,941 (A119b), 43 of 381 (testis) and 157 of 582 (KB3781) come from a template
+    that sits at a Liftoff gene. The rest come from templates of loci the annotation does not have; Liftoff cannot
+    copy a gene that is not annotated.
+  - In A119b, 2,735 of the 4,941 come from single-exon templates. The contigs holding the most are chrY 492, chr13 459,
+    chr1 393, chr9 361, chr15 320 and chr21 286.
+  - So most of C2's "unexplained" share reflects a difference in input (transcribed loci absent from the annotation).
+    It is not evidence for or against those sites.
