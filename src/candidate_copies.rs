@@ -11,6 +11,8 @@
 //! ones are counted in `families.tsv`, not listed), `contigs.fa` and `nets.fa` (the whole net of each family with a flagged candidate, each
 //! read once: R9); `families.tsv` (one row per family, ruling R8); `reads.tsv` (read -> cluster, spec §4, for the clusters of `clusters.tsv`
 //! only) and `clusters.fa` (the consensus of every cluster in `clusters.tsv`; with `reads.tsv` the input of Amendment 12's A12-2 measure).
+//! Phase 4 (2026-10-14, `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md`): `structure.tsv` and `contigs.gtf`, the exon
+//! structure of every flagged candidate projected from its union's genome alignment (`rustle::candidates::structure`).
 //! Temporary files live in `<out>.tmp/` and are removed on success.
 //!
 //! Environment: `RUSTLE_MINIMAP2` (the minimap2 binary, default `minimap2`), `RUSTLE_CACHE_DIR` (run_cache: the whole result is one `cand`
@@ -31,7 +33,9 @@ use rustle::candidates::detect::{
     ATTRIB_MAX_DE, ATTRIB_MIN_READ_COV, KMER_K, MIN_UNMAPPED_LEN, MM2_ATTRIB, MM2_AVA, MM2_GENOME,
     MM2_MEMBERS, MM2_UNION, POORLY_PLACED_DE, SKETCH_W,
 };
+use rustle::candidates::structure as st;
 use rustle::catalog_input::{group_families, parse_copies_fa, parse_copies_tsv, CatalogFamily};
+use rustle::genome::IndexedFasta;
 use rustle::copy_assign::AssignParams;
 use rustle::run_cache as rc;
 use rustle::seq_utils::reverse_complement;
@@ -50,7 +54,7 @@ const MERGE_EPS: f64 = 0.001;
 /// spec §5.5: two cluster consensus sequences are tested for a merge only when their minimizer sketches share at least this fraction.
 const MERGE_MIN_SKETCH_SHARE: f64 = 0.5;
 /// Every product, stored in and replayed from the run_cache `cand` entry (`candidates.tsv` and `contigs.fa` are the kind's required files).
-const PRODUCTS: [&str; 7] = [
+const PRODUCTS: [&str; 9] = [
     "candidates.tsv",
     "contigs.fa",
     "clusters.tsv",
@@ -58,6 +62,8 @@ const PRODUCTS: [&str; 7] = [
     "families.tsv",
     "reads.tsv",
     "clusters.fa",
+    "structure.tsv",
+    "contigs.gtf",
 ];
 
 /// A usage or input error: exit status 2 (spec §8), with a message naming the argument or the file.
@@ -432,6 +438,10 @@ fn run(raw: &[String]) -> Result<()> {
         counts.push(fc);
     }
 
+    // phase 4 (spec 2026-10-14-o3-structure-projection): the exon structure of every flagged candidate, from its union's genome alignment
+    let structures = project_structures(&cands, &families, &args, &tmp.join("structure"), &mm)?;
+    let t_structure = t0.elapsed().as_secs_f64();
+
     // the nets of the families with a flagged candidate, whole (before the cap: the patch realignment and O2 need every read), each read once
     // (R9: the first family in --copies order keeps a read two nets share)
     let mut written: DetHashSet<&str> = DetHashSet::default();
@@ -451,15 +461,16 @@ fn run(raw: &[String]) -> Result<()> {
     let member_refs: Vec<(&ClusterSeq, &[String])> =
         members_out.iter().map(|(c, m)| (c, m.as_slice())).collect();
     write_cluster_members(&args.out, &member_refs)?;
+    write_structures(&args.out, &cands, &structures)?;
     if let Some(e) = stage.as_ref() {
         store_stage(e, &args.out);
     }
     std::fs::remove_dir_all(&tmp).with_context(|| format!("removing {}", tmp.display()))?;
     let n_flagged: usize = counts.iter().map(|c| c.n_flagged).sum();
     eprintln!(
-        "[candidate_copies] done: {} families, {} clusters, {} candidates, {} flagged in {} families; {} minimap2 calls; {:.1} s (nets {:.1} s, clusters {:.1} s, genome {:.1} s)",
+        "[candidate_copies] done: {} families, {} clusters, {} candidates, {} flagged in {} families; {} minimap2 calls; {:.1} s (nets {:.1} s, clusters {:.1} s, genome {:.1} s, structure {:.1} s)",
         counts.len(), n_consensus, cands.len(), n_flagged, flagged_families.len(), mm.calls.get(), t0.elapsed().as_secs_f64(),
-        t_nets, t_clusters - t_nets, t_genome - t_clusters
+        t_nets, t_clusters - t_nets, t_genome - t_clusters, t_structure - t_genome
     );
     Ok(())
 }
@@ -560,7 +571,7 @@ fn copy_targets(fa: &str, checked: &DetHashSet<(&str, usize)>) -> DetHashMap<Str
 fn stage_key(args: &Args, mm2: &str) -> String {
     let fp = |p: &str| rc::file_fingerprint(p);
     format!(
-        "rustle candidate_copies v1\ncmd\t{}\nexe\t{}\nminimap2\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncopies\t{}\ncopies_fa\t{}\nindex\t{}\n{}",
+        "rustle candidate_copies v2\ncmd\t{}\nexe\t{}\nminimap2\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncopies\t{}\ncopies_fa\t{}\nindex\t{}\n{}",
         args.key_cmd,
         rc::exe_fingerprint(),
         rc::minimap2_version(mm2),
@@ -1555,6 +1566,174 @@ fn union_hit(member: &[u8], union: &[u8], dir: &Path, mm: &Mm2) -> Result<Option
     Ok(best_by_matches(&hits).remove("member"))
 }
 
+/// One flagged candidate's projected structure: its outer state (frame, home copy) and its internal boundaries in union coordinates; `None`
+/// when its union has no genome record.
+type Structure = Option<(st::Outer, Vec<(usize, st::Kind)>)>;
+
+/// Phase 4 (spec `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md` §3, prereg
+/// `docs/PREREG_o3_structure_projection_2026-10-14.md`): every flagged candidate's union against the genome (`MM2_GENOME`, one call), the
+/// outer pass per candidate, every candidate's segments re-aligned in one more call, then `finish`. In `cands` order, one entry per flagged
+/// candidate. The family's copies are its own rows of `--copies` (partner and candidate rows are no copy of it).
+fn project_structures(
+    cands: &[Candidate],
+    families: &[CatalogFamily],
+    args: &Args,
+    dir: &Path,
+    mm: &Mm2,
+) -> Result<Vec<(String, Structure)>> {
+    let flagged: Vec<&Candidate> = cands.iter().filter(|c| c.flagged).collect();
+    if flagged.is_empty() {
+        return Ok(Vec::new());
+    }
+    fresh_dir(dir)?;
+    let genome_records = |fa: &Path, paf: &Path| -> Result<Vec<st::Rec>> {
+        mm.calls.set(mm.calls.get() + 1);
+        minimap2_keyed(
+            MM2_GENOME,
+            Path::new(&args.index),
+            &rc::file_fingerprint(&args.index),
+            fa,
+            paf,
+            mm.cache.as_deref(),
+            mm.threads,
+        )?;
+        Ok(st::parse_records(
+            &std::fs::read_to_string(paf).with_context(|| format!("reading {}", paf.display()))?,
+        ))
+    };
+    let fa = dir.join("unions.fa");
+    write_fasta(&fa, flagged.iter().map(|c| (c.id.clone(), c.union.as_slice())))?;
+    let mut by_cand: BTreeMap<String, Vec<st::Rec>> = BTreeMap::new();
+    for r in genome_records(&fa, &dir.join("unions.paf"))? {
+        by_cand.entry(r.q.clone()).or_default().push(r);
+    }
+    let copies: DetHashMap<&str, Vec<st::FamilyCopy>> = families
+        .iter()
+        .map(|f| {
+            let cs = f
+                .copies
+                .iter()
+                .filter(|c| !c.partner && !c.candidate)
+                .map(|c| st::FamilyCopy { chrom: c.chrom.clone(), start: c.start, end: c.end, exons: c.exons.clone() })
+                .collect();
+            (f.family_id.as_str(), cs)
+        })
+        .collect();
+    let genome = IndexedFasta::open(&args.fasta).with_context(|| format!("opening {} (with its .fai)", args.fasta))?;
+    let fetch = |c: &str, s: u64, e: u64| -> Vec<u8> {
+        let mut v = genome.fetch(c, s as i64, e as i64).unwrap_or_default();
+        v.make_ascii_uppercase();
+        v
+    };
+    let none: Vec<st::FamilyCopy> = Vec::new();
+    let outers: Vec<(String, Option<st::Outer>)> = flagged
+        .iter()
+        .map(|c| {
+            let recs = by_cand.get(&c.id).map(|v| v.as_slice()).unwrap_or(&[]);
+            let fc = copies.get(c.family.as_str()).unwrap_or(&none);
+            (c.id.clone(), st::outer(&c.union, recs, fc, &fetch))
+        })
+        .collect();
+    // the segment pass. A segment is named `<start>_<end>` (its working-frame span), as the reference implementation names it: minimap2
+    // breaks equally good hits by a hash of the read name, so the name is part of the result. Names repeat across candidates, so the
+    // segments go in rounds, each round one minimap2 call holding every name at most once (one round unless two candidates share a span).
+    let mut rounds: Vec<Vec<(String, (usize, usize), Vec<u8>)>> = Vec::new();
+    for (id, o) in &outers {
+        if let Some(o) = o {
+            for (qs, qe) in o.segments() {
+                match rounds.iter_mut().find(|r| !r.iter().any(|x| x.1 == (qs, qe))) {
+                    Some(r) => r.push((id.clone(), (qs, qe), o.work[qs..qe].to_vec())),
+                    None => rounds.push(vec![(id.clone(), (qs, qe), o.work[qs..qe].to_vec())]),
+                }
+            }
+        }
+    }
+    let mut seg_recs: BTreeMap<String, BTreeMap<(usize, usize), Vec<st::Rec>>> = BTreeMap::new();
+    for (k, round) in rounds.iter().enumerate() {
+        let sfa = dir.join(format!("segments{k}.fa"));
+        write_fasta(&sfa, round.iter().map(|(_, (a, b), seq)| (format!("{a}_{b}"), seq.as_slice())))?;
+        let owner: BTreeMap<(usize, usize), &str> = round.iter().map(|(id, span, _)| (*span, id.as_str())).collect();
+        for r in genome_records(&sfa, &dir.join(format!("segments{k}.paf")))? {
+            let (a, b) = r.q.split_once('_').context("a segment record without its `<start>_<end>` name")?;
+            let key = (a.parse::<usize>()?, b.parse::<usize>()?);
+            let id = owner.get(&key).context("a segment record of no segment of this round")?;
+            seg_recs.entry(id.to_string()).or_default().entry(key).or_default().push(r);
+        }
+    }
+    let empty = BTreeMap::new();
+    let out = outers
+        .into_iter()
+        .map(|(id, o)| {
+            let s = o.map(|o| {
+                let b = st::finish(&o, seg_recs.get(&id).unwrap_or(&empty));
+                (o, b)
+            });
+            (id, s)
+        })
+        .collect();
+    std::fs::remove_dir_all(dir).with_context(|| format!("removing {}", dir.display()))?;
+    Ok(out)
+}
+
+/// `<out>.structure.tsv` (one row per flagged candidate: frame, contig and home copy of its projection, its internal boundaries in union
+/// coordinates with the rule that placed each, its exons) and `<out>.contigs.gtf` (each flagged candidate as a transcript on its own contig,
+/// as `contigs.fa` names it, with those exons; 1-based, inclusive).
+fn write_structures(out: &str, cands: &[Candidate], structures: &[(String, Structure)]) -> Result<()> {
+    let by_id: DetHashMap<&str, &Structure> = structures.iter().map(|(id, s)| (id.as_str(), s)).collect();
+    let mut tsv = std::io::BufWriter::new(
+        std::fs::File::create(format!("{out}.structure.tsv")).with_context(|| format!("creating {out}.structure.tsv"))?,
+    );
+    let mut gtf = std::io::BufWriter::new(
+        std::fs::File::create(format!("{out}.contigs.gtf")).with_context(|| format!("creating {out}.contigs.gtf"))?,
+    );
+    writeln!(tsv, "candidate\tfamily\tunion_len\tframe\tcontig\thome\tn_records\tn_boundaries\tboundaries\tkinds\texons")?;
+    for c in cands.iter().filter(|c| c.flagged) {
+        let len = c.union.len();
+        let s = by_id.get(c.id.as_str()).copied().and_then(|s| s.as_ref());
+        let bounds: Vec<usize> = s.map(|(_, b)| b.iter().map(|x| x.0).collect()).unwrap_or_default();
+        let mut edges = vec![0usize];
+        edges.extend(&bounds);
+        edges.push(len);
+        let exons: Vec<(usize, usize)> = edges.windows(2).map(|w| (w[0], w[1])).collect();
+        let join = |v: Vec<String>| if v.is_empty() { "-".to_string() } else { v.join(",") };
+        let (frame, contig, home, n_rec) = match s {
+            Some((o, _)) => (
+                if o.minus { "-" } else { "+" },
+                o.contig.clone(),
+                o.home.map_or("NA".to_string(), |(a, b)| format!("{a}-{b}")),
+                o.n_records,
+            ),
+            None => ("NA", "NA".to_string(), "NA".to_string(), 0),
+        };
+        writeln!(
+            tsv,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            c.id,
+            c.family,
+            len,
+            frame,
+            contig,
+            home,
+            n_rec,
+            bounds.len(),
+            join(bounds.iter().map(|b| b.to_string()).collect()),
+            join(s.map(|(_, b)| b.iter().map(|x| x.1.as_str().to_string()).collect()).unwrap_or_default()),
+            exons.iter().map(|(a, b)| format!("{a}-{b}")).collect::<Vec<_>>().join(",")
+        )?;
+        let attrs = format!(
+            "gene_id \"{}\"; transcript_id \"{}.t1\"; family \"{}\"; nearest_locus \"{}\"; projection_frame \"{}\"; projection_contig \"{}\";",
+            c.id, c.id, c.family, c.nearest, frame, contig
+        );
+        writeln!(gtf, "{}\trustle_cand\ttranscript\t1\t{len}\t.\t+\t.\t{attrs}", c.id)?;
+        for (k, (a, b)) in exons.iter().enumerate() {
+            writeln!(gtf, "{}\trustle_cand\texon\t{}\t{}\t.\t+\t.\t{attrs} exon_number \"{}\";", c.id, a + 1, b, k + 1)?;
+        }
+    }
+    tsv.flush()?;
+    gtf.flush()?;
+    Ok(())
+}
+
 /// Phase 3 of one family with new-copy clusters (spec §5.6.4-5.7, ruling R1): the components of its new-copy consensus sequences (their
 /// all-vs-all, `components`), each a candidate `cand_<family>_<k>` in component order, flagged when its clusters hold >= `--min-support`
 /// reads, represented by the exon union of its clusters (longest first). The candidate's nearest locus and d are those of its cluster
@@ -1665,7 +1844,7 @@ mod tests {
         // R12: `--out` is an output path, not an input, so a re-run under another prefix hits; the thread count never enters a key (R10)
         let key = |extra: &[&str]| stage_key(&parsed(extra), "/nonexistent/minimap2");
         let base = key(&["--out", "runs/a/P.cand"]);
-        assert!(base.starts_with("rustle candidate_copies v1\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
+        assert!(base.starts_with("rustle candidate_copies v2\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
         assert!(
             !base.contains("P.cand"),
             "the output prefix must not be in the key: {base}"

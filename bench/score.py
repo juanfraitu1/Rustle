@@ -2175,6 +2175,53 @@ def cmd_locus_reads(a):
     print(f"  spliced OVER, no aligned base   : {over} = {over / max(1, tot):.1%}")
 
 
+# ================================================================ missing-copy-control (2026-10-14)
+def missing_copy_control(genes, rows):
+    """Score one positive-control run. genes: the planted gene IDs (sim.py missing-copy <OUT>.genes.txt); rows:
+    {locus: row dict} of missing_copy_flag's <PREFIX>.missing_copy.tsv. The unit is the planted gene, scored on the row
+    whose locus is that gene (no row = fewer than --min-reads reads = not fired); overlapping loci fire on the same reads
+    and are counted apart (`other_fired`). Returns (per-gene list, summary dict)."""
+    conf_cols = [k for k in (next(iter(rows.values())).keys() if rows else ())
+                 if k.startswith('conf_') and not k.endswith(('_identity', '_locus'))]
+    per, s = [], collections.Counter()
+    for g in genes:
+        r = rows.get(g)
+        fired = bool(r) and r['status'].startswith('fired')
+        rac = fired and r['verdict'] == 'reference_absent_candidate'
+        conf = rac and any(r[c] == '1' for c in conf_cols)
+        per.append((g, r['n_reads'] if r else '0', r['status'] if r else 'no_row', r['verdict'] if fired else '-',
+                    int(fired), int(rac), int(conf)))
+        s['planted'] += 1; s['fired'] += fired; s['rac'] += rac; s['confirmed'] += conf
+        if fired:
+            s['verdict:' + r['verdict']] += 1
+        elif r:
+            s['status:' + r['status']] += 1
+        else:
+            s['status:no_row'] += 1
+    planted = set(genes)
+    s['other_fired'] = sum(1 for k, r in rows.items() if k not in planted and r['status'].startswith('fired'))
+    return per, s
+
+
+def cmd_missing_copy_control(a):
+    """missing_copy_flag positive / negative control on sim.py missing-copy reads (docs/PREREG_missing_copy_posctl_2026-10-14.md):
+    per planted gene fired / reference_absent_candidate / confirmed, and the funnel. --per-gene writes one row per gene."""
+    genes = [ln.strip() for ln in open(a.sim + '.genes.txt') if ln.strip()]
+    with open(a.run + '.missing_copy.tsv') as fh:
+        rows = {r['locus']: r for r in csv.DictReader(fh, delimiter='\t')}
+    per, s = missing_copy_control(genes, rows)
+    if a.per_gene:
+        with open(a.per_gene, 'w') as fh:
+            fh.write('gene\tn_reads\tstatus\tverdict\tfired\trac\tconfirmed\n')
+            for p in per:
+                fh.write('\t'.join(map(str, p)) + '\n')
+    n = s['planted']
+    print(f"{a.label or a.run}\tplanted {n}\tfired {s['fired']}\trac {s['rac']}\tconfirmed {s['confirmed']}"
+          f"\tother_fired {s['other_fired']}")
+    for k in sorted(k for k in s if ':' in k):
+        print(f"  {k}\t{s[k]}")
+
+
 # ================================================================ CLI
 def _sub(sub, name, func, help_):
     doc = func.__doc__ or help_
@@ -2303,6 +2350,12 @@ def main(argv=None):
 
     p = _sub(sub, 'locus-reads', cmd_locus_reads, 'the correct read count at a locus (was locus_reads.py)')
     p.add_argument('bam'); p.add_argument('chrom'); p.add_argument('start', type=int); p.add_argument('end', type=int)
+
+    p = _sub(sub, 'missing-copy-control', cmd_missing_copy_control, 'missing_copy_flag on sim.py missing-copy reads, per planted gene')
+    p.add_argument('--sim', required=True, help='the sim.py missing-copy OUT prefix (reads OUT.genes.txt)')
+    p.add_argument('--run', required=True, help='the missing_copy_flag --out prefix (reads PREFIX.missing_copy.tsv)')
+    p.add_argument('--label', default='')
+    p.add_argument('--per-gene', metavar='OUT.tsv')
 
     a = ap.parse_args(argv)
     a.func(a)
