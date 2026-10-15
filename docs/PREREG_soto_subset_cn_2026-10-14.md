@@ -159,3 +159,64 @@ are fixed above.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+### Guided (2026-10-14)
+
+Run: commit `6d5be546` (code `25006d97`); wall 19.72 s, peak 164,044 KB. Wiring checks: all passed (gene-id join 1,710 / 0 / 121;
+recipe rungs 0.7307 / 345, 0.9698 / 479, 0.9277 / 411 reproduced; plan 1's coverage reproduced in `inputs.json`).
+
+**T1**
+
+| Quantity | Value |
+|---|---|
+| Soto families with ≥ 2 members (`families_ge2`) | 491 |
+| contained (`contained`); rate over 491 (`rate_all`); over ≥ 2 (`rate_ge2`) | 258; 0.5255; 0.5255 |
+| size null mean / max (`null.mean`, `null.max`) | 0.709 / 4 |
+| p (`p`) → **T1a** | 0.000999 (1/1001) → **PASS** |
+| H(Soto \| ours) / H(ours \| Soto) | 0.2860 / 0.6855 |
+| D [95% interval] (`D`, `D_ci95`) → **T1b** | -0.3995 [-0.6154, -0.1945] → **FAIL** |
+| ≤ 3 members: contained / families (`by_size.le3`) | 176 / 271 |
+| > 3 members: contained / families (`by_size.gt3`) | 82 / 220 |
+| plan 1's rate: contained / evaluable (`plan1`) | 315 / 402 |
+| violations: coverage / cover / conflict (`violation_classes`) | 139 / 47 / 47 |
+
+The conflict families (from `violations.tsv`, `class` = conflict), as `label (size, blocks)`: ID_100 (19, 13), ID_104 (9, 4), ID_112 (8, 7), ID_12 (5, 2), ID_136 (6, 4), ID_14 (10, 6), ID_142 (15, 2), ID_147 (4, 2), ID_155 (6, 4), ID_156 (6, 3), ID_160 (6, 3), ID_175 (13, 2), ID_182 (8, 3), ID_187 (5, 4), ID_188 (5, 3), ID_208 (7, 5), ID_211 (4, 2), ID_212 (11, 8), ID_215 (11, 2), ID_22 (11, 3), ID_226 (6, 3), ID_24 (8, 4), ID_241 (3, 2), ID_244 (9, 4), ID_257 (5, 2), ID_261 (8, 3), ID_263 (4, 3), ID_266 (5, 3), ID_267 (6, 2), ID_269 (3, 2), ID_270 (6, 2), ID_28 (29, 21), ID_280 (11, 7), ID_283 (8, 2), ID_284 (13, 3), ID_306 (4, 2), ID_324 (6, 2), ID_35 (41, 7), ID_39 (7, 3), ID_393 (5, 2), ID_400 (6, 3), ID_443 (5, 2), ID_47 (4, 2), ID_63 (11, 4), ID_65 (15, 5), ID_78 (9, 7), ID_8 (14, 4).
+
+**T2 (common set, 1,534 members)**
+
+| Copy number | exact | ARI | ARI w/o FAM90A | Hungarian J | null exact mean (max) | null ARI mean (max) | p exact | p ARI | bar |
+|---|---|---|---|---|---|---|---|---|---|
+| assembly (T2's bar) | 186 | 0.8274 | 0.8275 | 0.7694 | 163.195 (171) | 0.6836 (0.7303) | 0.000999 (1/1001) | 0.000999 (1/1001) | **PASS** |
+| read depth | 206 | 0.8685 | 0.8686 | 0.7890 | 173.116 (181) | 0.7026 (0.7464) | 0.000999 (1/1001) | 0.000999 (1/1001) | (reported; passes) |
+| S1C (circular upper bound) | 232 | 0.9166 | 0.9167 | 0.8305 | 186.865 (195) | 0.7336 (0.7788) | 0.000999 (1/1001) | 0.000999 (1/1001) | (reported; passes) |
+| our blocks alone (`ours_alone`) | 183 | 0.7890 | 0.7889 | 0.7411 | — | — | — | — | — |
+| ceiling: Soto ∩ ours (`ceiling`) | 258 | 0.9425 | 0.9425 | 0.8727 | — | — | — | — | — |
+
+**T2, each source on its own coverage (`own`)**
+
+| Copy number | members | exact | ARI | ARI w/o FAM90A | Hungarian J |
+|---|---|---|---|---|---|
+| assembly | 1534 | 186 | 0.8274 | 0.8275 | 0.7694 |
+| read depth | 2334 | 203 | 0.7835 | 0.7556 | 0.6706 |
+| S1C | 1793 | 236 | 0.9340 | 0.9187 | 0.8113 |
+
+**Soto's recipe with each source (`recipe.json`)**
+
+| Copy number | full gene set ARI / exact of 491 | common set exact | common set ARI | common set ARI w/o FAM90A | common set Hungarian J |
+|---|---|---|---|---|---|
+| none | 0.7307 / 345 | 266 | 0.7465 | 0.7469 | 0.8312 |
+| S1C | 0.9698 / 479 | 348 | 0.9894 | 0.9894 | 0.9902 |
+| read depth | 0.9277 / 411 | 299 | 0.9248 | 0.9250 | 0.9293 |
+| assembly | 0.7410 / 337 | 258 | 0.8656 | 0.8657 | 0.8694 |
+
+Guided verdicts: T1a PASS, T1b FAIL, T2 PASS; read depth on the common set passes T2's bar.
+
+**Post hoc (descriptive, not pre-registered; added after the guided run).**
+- Why T1b fails: 495 of the 2,185 single-label genes are our singletons (genes F_O places in no family). They split Soto's
+  families and raise H(ours | Soto). On the 1,682 single-label genes that sit in our families, H(Soto | ours) = 0.3715,
+  H(ours | Soto) = 0.1809 and D = +0.1906 (ours the coarser). That cut conditions on our own catalog, so it is not a test,
+  and no interval was computed. Of the 233 families not contained, 139 are coverage violations.
+- T2's null sits below our uncut blocks: the shuffle null's mean (163.2 exact, ARI 0.6836) is lower than
+  our blocks alone (183 exact, ARI 0.7890). The bar therefore compares the copy-number cut with random cuts,
+  not with leaving our families uncut. Against uncut, assembly copy number gains +3 exact and +0.0384 ARI.
+
