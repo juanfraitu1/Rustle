@@ -156,6 +156,9 @@ in-between operating point's lead over StringTie and FLAIR.
 
 ## Results (2026-10-14)
 
-Reading 3: not adopted. On A119b the stage covers 160 more read-supported Liftoff copies
-(234 → 394 of 641). But only 0.0813 of its 26,726 added loci sit at a Liftoff locus, against 0.2318 for comparable base loci, so
-P1 and P2 fail. Full results: `docs/PREREG_template_copies_2026-10-14.md`; register row 1285.
+Reading 3: not adopted, for the build tested (locus strand from the template hit, whole read blocks, no
+de-duplication; a build with these fixed is untested). On A119b the stage covers 160 more read-supported Liftoff
+copies (234 → 394 of 641), 119 of them only by single-exon added loci. Only 0.0813 of its 26,726 added loci (23,415
+distinct exon sets) sit at a Liftoff locus, against 0.2318 for base loci with 2-5 reads (and below every base depth
+group), so P1 and P2 fail. Full results and the final-review findings: `docs/PREREG_template_copies_2026-10-14.md`;
+register row 1285.

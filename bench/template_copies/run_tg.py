@@ -12,6 +12,14 @@ The stages are separate calls, so each stays under the 10-minute limit for one f
              finder's setting, plan ruling R2);
   assemble   every batch must be .done; hits -> candidates -> own reads -> loci; writes DIR/tg.gtf (the added loci),
              DIR/merged.gtf (base + added) and DIR/report.json (counts at every step).
+
+Known defects (final review 2026-10-14; the stage is not adopted, register 1285, so they are recorded, not fixed; fix
+all three before any rerun, docs/PREREG_template_copies_2026-10-14.md "Final-review findings"):
+  1. a locus takes the strand of the template hit, not of its reads (the BAM is mapped with -uf; in A119b 0.475 of a
+     400-locus sample have most reads on the opposite strand);
+  2. read exon blocks are kept whole, not clipped to the projected exons, so a locus can run far past the copy;
+  3. no de-duplication: candidates merge on the same strand only while own_reads collects both strands, so one read set
+     can be emitted as several loci (A119b: 26,726 added loci are 23,415 distinct exon sets).
 """
 import argparse
 import glob

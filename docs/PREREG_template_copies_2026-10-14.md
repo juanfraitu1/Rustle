@@ -143,12 +143,15 @@ A119b_shipped took 6 heavy calls of projection (16 batches, 116-627 s per call) 
 | P1: share of loci at a Liftoff locus | 0.2452 | 0.2091 | **FAIL** (≥ 0.2432) |
 | P2: added loci at a Liftoff locus vs base loci with 2-5 reads | 0.2318 (36,269 loci) | 0.0813 [0.0781, 0.0847] (26,726 loci) | **FAIL** |
 
-Intron-chain sensitivity: base 22.0, merged 22.0. The base's
-22.0 / 17.7 equals register 1268's `default_good` human row.
+Intron-chain sensitivity: base 22.0, merged 22.0. The base's 22.0 / 17.7 is the same pair as register 1268's
+`default_good` human row, but that row excluded chr20 (the development chromosome) and this score is genome-wide, so the
+two are not the same measurement.
 
 **Not run (ruling, recorded in the plan's ledger).** A119b_OP, testis, KB3781 and OR6737_OP were not run, because the
 readings below make the verdict independent of them: any development bar failing means not adopted. Their templates
-are on disk (`/mnt/linuxdisk/tmp/o1_template_copies/<run>/`). Running them costs about 2.5 h with the same code.
+are on disk (`/mnt/linuxdisk/tmp/o1_template_copies/<run>/`). They should not be run with this code: the final review
+found three defects in the build tested (see "Final-review findings" below), and any rerun needs them fixed first (about
+2.5 h of compute after that).
 
 **Post hoc (descriptive, not pre-registered): the share of added loci at a Liftoff locus does not depend on shape or
 depth.**
@@ -170,5 +173,40 @@ depth.**
 - P2: 0.0813 against 0.2318.
 
 Recall does rise, with 160 more read-supported Liftoff copies covered (234 → 394 of
-641). But it comes with 26,726 added loci, of which only 0.0813 sit at a Liftoff locus;
-most are single-exon. No exon-count or read-depth cut separates the real copies from the rest (post hoc above).
+641), but 119 of the 160 are covered only by single-exon added loci (below). It comes with 26,726 added loci (23,415
+distinct exon sets), of which only 0.0813 sit at a Liftoff locus; most are single-exon. Of the five exon-count and
+read-depth cuts tried post hoc (table above), none raises the share above 0.10. Sitting at a Liftoff locus is a proxy:
+it is not the same as being the copy.
+
+The verdict applies to the build tested. The final review (below) found three defects in it; a build with them fixed
+has not been tested.
+
+### Final-review findings (verified, post hoc, 2026-10-14)
+
+The whole-branch review found three defects in the build tested and three overstatements in the text above (now
+corrected). Every count below was recomputed from the A119b_shipped outputs (`tg.gtf`, the base GTF, the BAM) after the
+review. None changes a bar or the verdict, and all point the same way.
+
+Known defects of the build tested (also listed in `bench/template_copies/run_tg.py`):
+1. **Duplicate and non-new loci.** The 26,726 added loci are 23,415 distinct exon sets: 2,988 sets are emitted more than
+   once (3,311 extra emissions, many as a + / − pair). 14,085 added loci overlap another added locus (the 26,726 fall
+   into 17,760 overlap clusters), and 4,522 lie ≥ 50% inside one base locus (2,380 ≥ 95%). Cause: candidates merge only
+   on the same strand, the own-read step collects reads of both strands, and nothing de-duplicates the emitted loci.
+2. **Strand from the template hit, not the reads.** The BAM was mapped with `-uf`, so a read's strand is its
+   transcript's. In a random sample of 400 added loci (seed 7), 190 (0.475) have most of their reads on the opposite
+   strand to the locus; the reviewer's own random sample gave 173 of 392 (0.44).
+3. **Whole read blocks.** A read's exon block is kept whole when it touches the projected exons, so a locus can run far
+   past the copy: the reviewer found the covering locus is, at the median, 4.0× the copy's exonic length.
+
+Overstatements, corrected above:
+- **Recall.** Of the 160 newly covered copies, 119 are covered only by single-exon added loci, and 64 of those 119 are
+  multi-exon copies covered by one unspliced block. Of the 63 template-reachable copies reached, only 31 are covered by
+  a locus built from the copy's own source template, and 17 by a multi-exon locus (reviewer).
+- **The comparison group.** The 2-5-read group is the bar the prereg fixed, not a group matched to the added loci. Base
+  loci grouped by their representative's reads: 2-5 reads 0.2318 (36,269 loci), 6-20 reads 0.167 (31,037), more than 20
+  reads 0.3515 (27,379). The added loci's 0.0813 is below every group. With a symmetric rule (a locus covers ≥ 50% of a
+  Liftoff locus) the reviewer found 0.174 for the added loci against 0.208 for the base loci: the gap is smaller, and
+  the direction holds.
+- **The cuts.** The earlier wording said no exon-count or read-depth cut separates the real copies. Only five cuts were
+  tried, `located` is not the same as a real copy, and exon count is confounded by the build rule (overlapping
+  unspliced blocks merge into one exon).
