@@ -121,3 +121,71 @@ R1-R3 and the readings are unchanged. R1 and R2 are also reported separately for
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (2026-10-15)
+
+Run: code `39e333c1` (Amendment 1), `copy_assign` from `main` `a493a66a`. Outputs are in `/mnt/linuxdisk/tmp/o3_realdata/`
+(`heldout2/`, `dev/`, `control/`).
+
+**Cost.** The masked genome's index took 195 s at 21.2 GB. The 24,920 held-out reads were mapped in 4 parts per arm (about
+220 s per part; one call of all of them hit the 10-minute limit). Each `copy_assign --psv-clusters` run took 166-478 s at
+≤ 2.4 GB.
+
+**Held out (Amendment 1's 60 families: 48 with 2 copies, 12 with >= 3).**
+- Reads: 9,893 masked-copy (D) and 15,027 survivor (S). Masked arm: 24,904 primary and 16 unmapped; added-back arm: 24,920
+  primary.
+
+| | held out | development (A13, 53 families) |
+|---|---|---|
+| eligible masked copies (>= 6 reads placed on the family) | 12 (all >= 3-copy) | 25 |
+| **R1: recovered** | **4 / 12 = 0.333, FAIL** (bar 0.70) | 15 / 25 = 0.600 |
+| **R2: cleared after the copy is added back** | **3 / 4 = 0.750, FAIL** (bar 0.90) | 9 / 15 = 0.600 |
+| labels of the recovered clusters | `copy` 3, `allele_or_copy` 1 | `copy` 10, `allele_or_copy` 5 |
+| unexplained clusters, removed / added-back arm | 58 / 138 | 177 / 210 |
+
+**One-copy families get no placed reads.** `copy_assign` writes no assignment row for a family with one copy, so
+`--psv-clusters` has no reads to cluster there. Two consequences follow, both found while scoring:
+- **The 48 two-copy held-out families are untested.** After masking they have one copy, and none of their masked-copy reads
+  is placed. They are not eligible, so R1 and R2 stand on the 12 families with >= 3 copies.
+- **R3 is not measurable.** The single-copy control (300 random genes and 26 `high_het`, each a one-copy family) placed no
+  read, so its 0 / 300 false `copy` calls are vacuous and are not counted as a pass.
+
+Amendment 1 was chosen on the understanding that a one-copy family is clustered like any other. That understanding came from a
+check of mine that confirmed the run finished, not that it placed reads, so it was wrong.
+
+### Verdict (2026-10-15)
+
+**Reading 3: not claimed.**
+- R1 fails: 4 of 12 eligible masked copies are recovered held out, against a bar of 0.70; development gives 15 of 25.
+- R2 fails as well.
+- R3 cannot be measured.
+
+### Post hoc (descriptive, not pre-registered; `bench/o3_realdata/posthoc.py`)
+
+- **About half the misses are fragmentation.** The masked copy's placed reads often sit in several PURE unexplained clusters
+  (purity >= 0.9), none of which holds 80% of them alone. Taken together, those pure clusters hold >= 80% of the reads in
+  8 of 12 held-out copies (4 by the registered single-cluster rule) and 18 of 25 development copies (15).
+- The remaining misses:
+  - **unlinked:** the reads form a cluster the linkage test sets aside (MCL20, GWFAM4);
+  - **impure:** the reads share an unexplained cluster with survivor reads (MCL34, MCL69, GWFAM123, GWFAM402, GWFAM407,
+    GWFAM415);
+  - **explained or unresolved:** MCL27;
+  - **in no cluster:** GWFAM47;
+  - **just under the bar:** GWFAM331, with combined recall 0.795.
+- **Specificity on real reads is poor.** In the added-back arm every copy is present, yet unexplained clusters with
+  est_div > delta (`copy`) remain in 17 of 60 held-out families and 16 of 53 development families.
+
+  | | held out | development |
+  |---|---|---|
+  | unexplained clusters labelled `copy` / `allele_or_copy` | 57 / 81 | 27 / 183 |
+  | `copy` clusters made mostly of survivor reads | 41 of 57 | 21 of 27 |
+  | `copy` clusters made mostly of the masked copy's reads | 16 | 6 |
+
+  The simulation flagged 0 of 152 intact families. So on real reads, a `copy` cluster in a family whose copies are all in
+  the genome is common.
+- **What a fix would need** (for a new prereg, not done here):
+  - place a one-copy family's reads on its copy when `--psv-clusters` is on, which gives 2-copy losses and the single-copy
+    control a test;
+  - decide whether fragments of one source should count together (they did in 4 held-out families);
+  - find what the `copy` clusters of intact families are before relying on the label: collapsed copies in the assembly,
+    isoforms or exons the catalog copy does not carry, or reads from other loci.
