@@ -30,29 +30,48 @@ fn dispatch_block() -> String {
     lines[start..=start + len].join("\n")
 }
 
+/// A top-level function of the driver: from the line `NAME() {` to the next line that is `}`.
+fn function_block(name: &str) -> String {
+    let text = std::fs::read_to_string(DRIVER).expect("read the driver");
+    let lines: Vec<&str> = text.lines().collect();
+    let head = format!("{name}() {{");
+    let start = lines.iter().position(|l| *l == head).unwrap_or_else(|| panic!("the driver has no {name}()"));
+    let len = lines[start..].iter().position(|l| *l == "}").expect("function has no closing brace at column 0");
+    lines[start..=start + len].join("\n")
+}
+
 /// The stages the dispatch ran for `stage` (in order) and its exit status. `tag` names the log, so tests do not share one.
+/// `all` runs the driver's real `run_all`, which re-invokes the driver once per stage (`bash "$0" STAGE ..`): `$0` is a stub
+/// that logs the stage, so the plan and its order are what is checked. An `--index` is given, so no index stage is planned.
 fn dispatch(tag: &str, stage: &str, legacy_catalog: bool, candidates: bool) -> (Vec<String>, i32) {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch");
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     let log = dir.join(format!("{tag}.log"));
     let _ = std::fs::remove_file(&log);
+    let stub_driver = dir.join(format!("{tag}.driver.sh"));
+    std::fs::write(&stub_driver, "echo \"$1\" >> \"$LOG\"\n").expect("write the stub driver");
     let stubs: Vec<String> = STAGES
         .iter()
         .map(|s| format!("stage_{s}() {{ echo {s} >> \"$LOG\"; }}"))
         .collect();
     let script = format!(
         "set -euo pipefail\n\
-         LOG=$1; STAGE=$2; LEGACY_CATALOG=$3; CANDIDATES=$4\n\
+         export LOG=$1; STAGE=$2; LEGACY_CATALOG=$3; CANDIDATES=$4\n\
+         OUT={out}; RESUME=0; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=()\n\
          say() {{ :; }}\n\
+         all_env() {{ echo env; }}\n\
+         {}\n\
          {}\n\
          {}\n",
         stubs.join("\n"),
-        dispatch_block()
+        function_block("run_all"),
+        dispatch_block(),
+        out = dir.join(tag).display()
     );
     let out = Command::new("bash")
         .arg("-c")
         .arg(&script)
-        .arg("dispatch")
+        .arg(&stub_driver)
         .arg(&log)
         .arg(stage)
         .arg(if legacy_catalog { "1" } else { "0" })
