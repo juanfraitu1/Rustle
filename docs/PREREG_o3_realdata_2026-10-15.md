@@ -189,3 +189,59 @@ check of mine that confirmed the run finished, not that it placed reads, so it w
   - decide whether fragments of one source should count together (they did in 4 held-out families);
   - find what the `copy` clusters of intact families are before relying on the label: collapsed copies in the assembly,
     isoforms or exons the catalog copy does not carry, or reads from other loci.
+
+### Follow-up (post hoc, 2026-10-15): what are the `copy` clusters of intact families?
+
+The added-back arms have every copy in the genome, yet they hold 57 `copy`-labelled unexplained clusters (held out) and 27
+(development). Each was traced (`bench/o3_realdata/copyclusters.py`, `copyclusters_summary.py`; outputs
+`/mnt/linuxdisk/tmp/o3_realdata/{heldout2,dev}/classified.tsv`, `copyclusters_summary.json`) with four kinds of evidence:
+- each read's copy of origin (its baseline primary);
+- the prototype's clustering re-run on each host. It matched every Rust cluster exactly (Jaccard 1.0, 84 / 84), and splits
+  each cluster's unexplained sites into those no catalog copy covers and those covered;
+- the reads aligned to KB3781's own maternal and paternal assemblies, with the family's copies lifted onto both;
+- for clusters matching neither haplotype, the reads aligned to human (CHM13), chimpanzee (mPanTro3) and orangutan
+  (mPonPyg2).
+
+Rules, applied in order:
+1. **other family's copy**: most reads match a haplotype (>= 0.995 identity, >= 0.9 coverage) at another family's copy.
+2. **not in the genome**: most reads match neither haplotype at >= 0.995. These are then given the species with the
+   highest median identity if it is >= 0.99. Below that, they are gorilla-like when gorilla is closest by >= 0.02, else
+   unresolved.
+3. **missing from the reference**: the reads match a haplotype locus that is no copy of the family.
+4. Own-family reads:
+   - **catalog lacks the exons**: >= half the unexplained sites lie where no catalog copy has sequence;
+   - **minority segment**: the sites are covered by a median < 0.2 of the cluster's reads;
+   - **own-copy variant**: otherwise.
+
+| what the cluster is | held out: clusters / reads | development: clusters / reads |
+|---|---|---|
+| reads of another gorilla family's copy | **35 / 2,292** | 0 / 0 |
+| other apes' transcripts (chimpanzee; orangutan) | 4 / 103; 1 / 5 | 2 / 13; 2 / 8 |
+| gorilla-like sequence in neither haplotype assembly | 3 / 1,985 | 0 / 0 |
+| a copy missing from the reference assembly | 0 / 0 | **3 / 469** (GWFAM175) |
+| the catalog copy lacks the exons | 4 / 320 | 2 / 16 |
+| a few reads' divergent segment flips the cluster consensus | 0 / 0 | 5 / 930 |
+| allele-like variant of the copy's own reads | 5 / 129 | 4 / 39 |
+| unresolved (no species >= 0.99) | 5 / 183 | 9 / 38 |
+| total | 57 / 5,017 | 27 / 1,513 |
+
+**Reading.**
+- **Reads from other loci** cause most of these clusters. On the shipped catalog, 35 of 57 are reads of another
+  family's copy, from related families such as MCL43, MCL69, MCL126 and MCL296. These reads align at 99.7-99.95% to their
+  own locus. `--no-as-tied-only` places them on this family, whose catalog lacks their source.
+- **Other apes' transcripts** (chimpanzee, orangutan) remain in the library, as found before (A44).
+- **Collapsed or missing copies are rare.**
+  - Only GWFAM175's reads match a haplotype locus at >= 0.999 that is not a copy of the family: a real copy missing from
+    the reference, and the case O3 is for.
+  - MCL20's and MCL33's large clusters are gorilla sequence 2-3% from any locus in either haplotype. They may be copies in
+    assembly gaps, but the assemblies cannot say.
+- **Catalog and consensus artifacts** make the rest:
+  - exons the catalog copy lacks are unexplained by construction;
+  - a few reads with a locally divergent segment can turn a cluster's consensus to `alt` where only they cover the locus
+    (GWFAM47: 6 of 176 reads, a ~70 bp window; the median read has 0 mismatches).
+
+**What would cut the false `copy` calls** (each a method change, needing its own prereg):
+- keep only reads whose primary or best alignment lies in the family, or cluster related families together;
+- screen out other species (the A44 read-share screen);
+- count only sites that a catalog copy covers;
+- require the unexplained alleles to be carried by most of the cluster's reads.
