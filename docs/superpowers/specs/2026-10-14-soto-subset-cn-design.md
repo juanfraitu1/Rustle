@@ -192,7 +192,12 @@ catalogs. The claim **replicates** when every bar holds on both.
 
 ## Results (2026-10-14)
 
-Reading 4 of section 1's readings table: Soto as a refinement is not claimed. T1b failed on the guided universe and both
-de novo catalogs, while T1a passed, with 258 of 491 Soto families inside one of our families against a null mean of 0.7. T2 passed on the guided universe but is not claimed, and it failed on both de novo catalogs. The wording of readings 1 and 2 was
-qualified before any statistic (prereg ruling R7). Full results: `docs/PREREG_soto_subset_cn_2026-10-14.md` (Results,
-Verdict); register rows 1281 and 1282.
+Reading 4 of section 1's readings table: Soto as a refinement is not claimed.
+- T1b failed on the guided universe and both de novo catalogs. T1a passed: 258 of 491 Soto families lie inside one
+  block of ours (256 in one of our families, 2 on one shared unclustered locus), against a null mean of 0.7.
+- T2 passed on the guided universe but is not claimed, and it failed on both de novo catalogs.
+- The wording of readings 1 and 2 was qualified before any statistic (prereg ruling R7).
+- **Design flaw found in the final review.** T1b's D equals H(Soto) − H(ours), so it compares the two partitions'
+  coarseness and is not a nesting test. Any reuse of T1 must replace T1b with a nesting statistic first.
+
+Full results: `docs/PREREG_soto_subset_cn_2026-10-14.md` (Results, Verdict); register rows 1281 and 1282.

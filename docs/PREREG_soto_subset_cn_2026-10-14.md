@@ -212,8 +212,8 @@ The conflict families (from `violations.tsv`, `class` = conflict), as `label (si
 Guided verdicts: T1a PASS, T1b FAIL, T2 PASS; read depth on the common set passes T2's bar.
 
 **Post hoc (descriptive, not pre-registered; added after the guided run).**
-- Why T1b fails: 495 of the 2,185 single-label genes are our singletons (genes F_O places in no family). They split Soto's
-  families and raise H(ours | Soto). On the 1,682 single-label genes that sit in our families, H(Soto | ours) = 0.3715,
+- Why T1b fails: 503 of the 2,185 single-label genes are in no F_O family (495 alone in a block, 8 sharing an
+  unclustered locus). They split Soto's families and raise H(ours | Soto). On the 1,682 single-label genes that sit in our families, H(Soto | ours) = 0.3715,
   H(ours | Soto) = 0.1809 and D = +0.1906 (ours the coarser). That cut conditions on our own catalog, so it is not a test,
   and no interval was computed. Of the 233 families not contained, 139 are coverage violations.
 - T2's null sits below our uncut blocks: the shuffle null's mean (163.2 exact, ARI 0.6836) is lower than
@@ -292,10 +292,23 @@ claimed.
   it, but only when T1 holds.
 
 **What this says.**
-- Soto's families sit inside ours far beyond chance (T1a, every universe), but not as a refinement.
-- On the guided universe our catalog leaves 495 of Soto's single-label genes in no family. Of the 233 uncontained
-  families, 139 are contained once those singletons are removed, 47 once Soto's multi-family genes are removed too,
-  and 47 are genuine conflicts.
-- On the genes we do group, ours is the coarser partition (post hoc, D = +0.1906).
+- 258 of 491 Soto families (52.5%) lie inside one block of ours (256 in one of our families, 2 on one shared
+  unclustered locus), far more than random partitions with our block sizes give (null mean 0.7). That null is weak by
+  design (Known before), and on the de novo catalogs the share of families with ≥ 2 members is 27.3% (A119b) and
+  51.4% (testis). This is not a refinement.
+- On the guided universe 503 of Soto's 2,185 single-label genes sit in no family of ours (495 alone in a block, 8
+  sharing an unclustered locus); over all 2,334 genes, 526 are our singletons. Of the 233 uncontained families, 139
+  are contained once our singletons are removed, 47 once Soto's multi-family genes are removed too, and 47 are
+  genuine conflicts.
+- Post hoc, and it conditions on our own catalog, so it is not a test: on the 1,682 single-label genes in our
+  families, D = +0.1906.
 - The copy-number cut beats random cuts on the guided universe, but gains only
   +3 exact and +0.0384 ARI over leaving our families uncut, and fails on both de novo catalogs.
+
+**Post hoc (added after the final review): what T1b measures.** Over the single-label members,
+D = H(Soto | ours) − H(ours | Soto) = [H(Soto, ours) − H(ours)] − [H(Soto, ours) − H(Soto)] = H(Soto) − H(ours)
+(guided: 8.5367 − 8.9362 = −0.3995). T1b therefore compares only how coarse the two partitions are; it is not a nesting
+test, and two unrelated partitions with the same block-size profile have the same D. The guided failure is the
+singletons above, and dropping them gives the post-hoc +0.1906. With T1a's weak null, "T1 holds" could pass without
+any nesting. T1 must not be reused (for example on gorilla) until T1b is replaced by a nesting statistic, such as
+H(ours | Soto) against the size null.
