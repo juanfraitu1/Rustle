@@ -26,26 +26,32 @@ def _overlap(a, b):
     return n
 
 
-def pick_families(copies, catalog, exclude, min_copies=3, min_reads=20, max_span=200_000, cap=60, seed=1):
+def pick_families(copies, catalog, exclude, min_copies=3, min_reads=20, max_span=200_000, cap=60, seed=1,
+                  min_expressed=None, exclude_families=()):
     """Families of `copies` (dicts: family, idx, chrom, start, end, exons, n = reads on the copy's exons) with >= min_copies
     copies, every copy >= min_reads reads and span <= max_span, no copy overlapping an `exclude` interval (chrom, s, e); the
     copy last by (chrom, start) is masked, and a family whose masked span overlaps any other `catalog` copy is dropped.
+    `min_expressed` = k relaxes the read rule: >= k copies with >= min_reads reads, the last of THOSE is masked, and the
+    silent copies stay survivors. Families in `exclude_families` are skipped.
     More than `cap` families: a seeded sample. -> [{family, masked, survivors}] sorted by family."""
     by_fam = collections.defaultdict(list)
     for c in copies:
         by_fam[c["family"]].append(c)
     keep = []
     for fam, cs in sorted(by_fam.items()):
-        if len(cs) < min_copies or any(c["n"] < min_reads or c["end"] - c["start"] > max_span for c in cs):
+        if fam in exclude_families or len(cs) < min_copies or any(c["end"] - c["start"] > max_span for c in cs):
+            continue
+        expressed = [c for c in cs if c["n"] >= min_reads]
+        if not expressed or ((len(expressed) < len(cs)) if min_expressed is None else (len(expressed) < min_expressed)):
             continue
         if any(c["chrom"] == x and c["start"] < e and s < c["end"] for c in cs for x, s, e in exclude):
             continue
-        cs = sorted(cs, key=lambda c: (c["chrom"], c["start"], c["idx"]))
-        m = cs[-1]
+        order = lambda c: (c["chrom"], c["start"], c["idx"])  # noqa: E731
+        m = sorted(expressed, key=order)[-1]
         if any(o["chrom"] == m["chrom"] and o["start"] < m["end"] and m["start"] < o["end"]
                and not (o["family"] == fam and o["idx"] == m["idx"]) for o in catalog):
             continue
-        keep.append(dict(family=fam, masked=m, survivors=cs[:-1]))
+        keep.append(dict(family=fam, masked=m, survivors=[c for c in sorted(cs, key=order) if c is not m]))
     if len(keep) > cap:
         keep = sorted(random.Random(seed).sample(keep, cap), key=lambda p: p["family"])
     return keep

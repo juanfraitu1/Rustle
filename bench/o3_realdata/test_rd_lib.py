@@ -102,3 +102,19 @@ def test_pick_admits_two_copy_families_when_asked():
     copies = [cp("B", 0, "c1", 5000, 5100), cp("B", 1, "c1", 6000, 6100), cp("Q", 0, "c9", 0, 100)]
     picks = L.pick_families(copies, catalog=copies, exclude=[], min_copies=2, cap=10, seed=1)
     assert [(p["family"], p["masked"]["idx"], len(p["survivors"])) for p in picks] == [("B", 1, 1)]
+
+
+def test_pick_with_min_expressed_masks_the_last_expressed_copy_and_keeps_silent_survivors():
+    copies = [cp("A", 0, "c1", 100, 200), cp("A", 1, "c1", 1000, 1100), cp("A", 2, "c2", 50, 150, n_reads=3),  # A2 silent
+              cp("B", 0, "c3", 0, 100), cp("B", 1, "c3", 500, 600, n_reads=3), cp("B", 2, "c3", 900, 1000, n_reads=3)]
+    picks = L.pick_families(copies, catalog=copies, exclude=[], min_expressed=2, cap=10, seed=1)
+    # A: two expressed copies, the last expressed one (A1) is masked and the silent A2 stays a survivor; B: one expressed
+    assert [(p["family"], p["masked"]["idx"], sorted(s["idx"] for s in p["survivors"])) for p in picks] == [("A", 1, [0, 2])]
+    # the default (every copy expressed) still drops A
+    assert L.pick_families(copies, catalog=copies, exclude=[], cap=10, seed=1) == []
+
+
+def test_pick_skips_excluded_families():
+    copies = [cp(f, k, f"c{f}", 1000 * k, 1000 * k + 100) for f in ("A", "B") for k in range(3)]
+    picks = L.pick_families(copies, catalog=copies, exclude=[], exclude_families={"A"}, cap=10, seed=1)
+    assert [p["family"] for p in picks] == ["B"]

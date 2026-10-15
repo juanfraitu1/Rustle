@@ -733,6 +733,12 @@ struct Args {
     /// mappers are placed too. Writes `<out>.psv_clusters.tsv` and `<out>.psv_cluster_reads.tsv`. Default off, byte-identical when unset.
     #[arg(long, default_value_t = false)]
     psv_clusters: bool,
+    /// O3, with `--psv-clusters`: a read enters a family's clustering only when the family holds one of its BEST alignments — a
+    /// primary or secondary record with the read's highest AS (ties count wherever the primary went) and an aligned base in a copy of
+    /// the family. A read the genome explains better at another locus is not evidence of a copy missing from this family. Reads
+    /// the hosts' secondary records too. Default off, byte-identical when unset.
+    #[arg(long, default_value_t = false)]
+    psv_family_best: bool,
     /// O3: Bonferroni alpha for the genome-wide missing-copy threshold (`alpha / n_pairs`).
     #[arg(long, default_value_t = 0.001)]
     missing_copy_alpha: f64,
@@ -1592,6 +1598,16 @@ fn population_guards(a: &Args) -> Result<()> {
         .map_err(|e| anyhow::anyhow!(e))?;
     check_fixed_only_placement(a.psv_fixed_only, a.no_as_tied_only, a.no_placement_assign)
         .map_err(|e| anyhow::anyhow!(e))?;
+    check_family_best(a.psv_family_best, a.psv_clusters).map_err(|e| anyhow::anyhow!(e))?;
+    Ok(())
+}
+
+/// `--psv-family-best` filters the reads of the `--psv-clusters` pass and does nothing without it: refuse it alone, at startup
+/// rather than after the run.
+fn check_family_best(psv_family_best: bool, psv_clusters: bool) -> Result<(), String> {
+    if psv_family_best && !psv_clusters {
+        return Err("--psv-family-best filters the reads of the --psv-clusters pass; add --psv-clusters".into());
+    }
     Ok(())
 }
 
@@ -11270,6 +11286,9 @@ fn main() -> Result<()> {
         if args.union_certificate {
             row("union_certificate", "true".to_string())?;
         }
+        if args.psv_family_best {
+            row("psv_family_best", "true".to_string())?;
+        }
         // RUSTLE_READTHROUGH_JUNCTIONS: rows only when set (the unset / `off` params.tsv stays byte-identical)
         if let Some(rule) = rt_rule {
             row("readthrough_junctions", rule.as_str().to_string())?;
@@ -11883,7 +11902,16 @@ fn main() -> Result<()> {
             anyhow::bail!("--psv-clusters requires --families and --copies-fa");
         };
         let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
-        let n = rustle::missing_copy::psv_clusters::run(&args.out, &args.bam, &args.fasta, fam, cfa, &mm2, args.threads)?;
+        let n = rustle::missing_copy::psv_clusters::run(
+            &args.out,
+            &args.bam,
+            &args.fasta,
+            fam,
+            cfa,
+            &mm2,
+            args.threads,
+            args.psv_family_best,
+        )?;
         eprintln!("[copy_assign] wrote {0}.psv_clusters.tsv + {0}.psv_cluster_reads.tsv ({n} unexplained clusters)", args.out);
     }
     Ok(())
@@ -15379,5 +15407,20 @@ mod popfix_flag_tests {
         // no tier (orphan early return): NA / NA / 0 and the no-evidence tier
         assert_eq!(tier_line("r2", "F1", "assigned", 0, None), "r2\tF1\tassigned\t0\tNA\tNA\t0\tREFERENCE_ONLY");
         assert_eq!(tier_line("r2", "F1", "ambiguous", 0, None), "r2\tF1\tambiguous\t0\tNA\tNA\t0\tUNASSIGNED");
+    }
+}
+
+#[cfg(test)]
+mod psv_family_best_tests {
+    use super::check_family_best;
+
+    #[test]
+    fn family_best_needs_the_psv_cluster_pass() {
+        // (psv_family_best, psv_clusters)
+        assert!(check_family_best(false, false).is_ok());
+        assert!(check_family_best(false, true).is_ok());
+        assert!(check_family_best(true, true).is_ok());
+        let e = check_family_best(true, false).unwrap_err();
+        assert!(e.contains("--psv-family-best") && e.contains("--psv-clusters"), "{e}");
     }
 }

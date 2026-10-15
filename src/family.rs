@@ -72000,6 +72000,8 @@ pub mod missing_copy {
         //! Run by `copy_assign --psv-clusters` after `<out>.assignments.tsv` is written (`run`).
         //!
         //! **STATUS:** OPT-IN — `copy_assign --psv-clusters` (default off; its products are new files, nothing else changes).
+        //! `--psv-family-best` (opt-in on top) keeps a read out of a family's clustering unless the family holds one of its best
+        //! alignments (`best_in_family`).
 
         use anyhow::Context;
         use std::collections::{BTreeMap, BTreeSet};
@@ -72392,9 +72394,53 @@ pub mod missing_copy {
             Ok(best.into_iter().map(|(k, v)| (k, v.1)).collect())
         }
 
+        /// `--psv-family-best`: one read's best alignments, as (contig, aligned blocks, 0-based half-open) — its primary and secondary
+        /// records with its highest AS (a supplementary record is another segment of the read, not a placement of it, and is never
+        /// added). Equal AS is a tie whichever record the aligner labelled primary. A read with no AS on any record falls back to its
+        /// primary.
+        #[derive(Clone, Debug, Default)]
+        pub struct BestAlignments {
+            best_as: Option<i32>,
+            at_best: Vec<(String, Vec<(u64, u64)>)>,
+            primary: Option<(String, Vec<(u64, u64)>)>,
+        }
+        impl BestAlignments {
+            pub fn add(&mut self, primary: bool, as_score: Option<i32>, contig: &str, blocks: Vec<(u64, u64)>) {
+                if primary {
+                    self.primary = Some((contig.to_string(), blocks.clone()));
+                }
+                let Some(s) = as_score else { return };
+                match self.best_as {
+                    Some(b) if s < b => {}
+                    Some(b) if s == b => self.at_best.push((contig.to_string(), blocks)),
+                    _ => {
+                        self.best_as = Some(s);
+                        self.at_best = vec![(contig.to_string(), blocks)];
+                    }
+                }
+            }
+            fn loci(&self) -> Vec<&(String, Vec<(u64, u64)>)> {
+                if self.best_as.is_some() {
+                    self.at_best.iter().collect()
+                } else {
+                    self.primary.iter().collect()
+                }
+            }
+        }
+
+        /// O3's "nothing in the genome explains it better", per read: does the family hold one of the read's best alignments — an
+        /// aligned base of a best alignment inside a copy span (contig, start, end; 0-based half-open)?
+        pub fn best_in_family(best: &BestAlignments, spans: &[(String, u64, u64)]) -> bool {
+            best.loci().iter().any(|(c, blocks)| {
+                spans.iter().any(|(sc, s, e)| sc == c && blocks.iter().any(|&(bs, be)| be > *s && bs < *e))
+            })
+        }
+
         /// The whole pass (`copy_assign --psv-clusters`): reads `<out>.assignments.tsv` (every row's `catalog_copy_idx` = the read's host),
         /// the copies table + FASTA, the genome, and the BAM (one sweep for the hosts' reads, their primary records, original orientation);
-        /// writes `<out>.psv_clusters.tsv` and `<out>.psv_cluster_reads.tsv`.
+        /// writes `<out>.psv_clusters.tsv` and `<out>.psv_cluster_reads.tsv`. With `family_best` (`--psv-family-best`, opt-in) the sweep
+        /// also reads the hosts' secondary records, and a read enters its family's clustering only when the family holds one of its
+        /// best alignments (`best_in_family`); off, the pass is unchanged.
         #[allow(clippy::too_many_arguments)]
         pub fn run(
             out: &str,
@@ -72404,6 +72450,7 @@ pub mod missing_copy {
             copies_fa: &str,
             mm2: &str,
             threads: usize,
+            family_best: bool,
         ) -> anyhow::Result<usize> {
             use crate::catalog_input::{parse_copies_fa, parse_copies_tsv};
             let copies = parse_copies_tsv(&std::fs::read_to_string(copies_tsv).with_context(|| format!("reading {copies_tsv}"))?)?;
@@ -72432,29 +72479,57 @@ pub mod missing_copy {
                 }
             }
             let need: BTreeSet<&str> = by_host.values().flat_map(|s| s.iter().map(|x| x.as_str())).collect();
-            // one sweep of the BAM: each needed read's primary record, in its original orientation
+            // one sweep of the BAM: each needed read's primary record, in its original orientation; with `family_best`, also the
+            // contig, aligned blocks and AS of its primary and secondary records
             let mut rseq: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+            let mut best: BTreeMap<String, BestAlignments> = BTreeMap::new();
             let mut reader = crate::bam::open_bam(bam, threads).with_context(|| format!("opening {bam}"))?;
-            reader.read_header().with_context(|| format!("reading the header of {bam}"))?;
+            let header = reader.read_header().with_context(|| format!("reading the header of {bam}"))?;
             for result in reader.records() {
                 let record = result.with_context(|| format!("reading {bam}"))?;
                 let flags = record.flags();
-                if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+                if flags.is_unmapped() || flags.is_supplementary() || (flags.is_secondary() && !family_best) {
                     continue;
                 }
                 let Some(name) = record.name() else { continue };
                 let Ok(name) = std::str::from_utf8(name.as_ref()) else { continue };
-                if need.contains(name) && !rseq.contains_key(name) {
+                if !need.contains(name) {
+                    continue;
+                }
+                if family_best {
+                    let contig = record
+                        .reference_sequence_id()
+                        .transpose()
+                        .with_context(|| format!("reading {bam}"))?
+                        .and_then(|id| header.reference_sequences().get_index(id))
+                        .map(|(n, _)| n.to_string());
+                    let start = record.alignment_start().transpose().with_context(|| format!("reading {bam}"))?;
+                    if let (Some(contig), Some(start)) = (contig, start) {
+                        let ops: Vec<noodles_sam::alignment::record::cigar::Op> =
+                            record.cigar().iter().collect::<std::io::Result<_>>().with_context(|| format!("reading {bam}"))?;
+                        let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops);
+                        let blocks = crate::bam::exons_from_cigar((usize::from(start) as u64).saturating_sub(1), &cigar)?;
+                        best.entry(name.to_string()).or_default().add(
+                            !flags.is_secondary(),
+                            crate::bam::record_as(&record),
+                            &contig,
+                            blocks,
+                        );
+                    }
+                }
+                if !flags.is_secondary() && !rseq.contains_key(name) {
                     let s: Vec<u8> = record.sequence().iter().collect();
                     let s = if flags.is_reverse_complemented() { crate::seq_utils::reverse_complement(&s) } else { s };
                     rseq.insert(name.to_string(), s);
                 }
             }
+            let (mut n_hosted, mut n_kept) = (0usize, 0usize);
             let genome = crate::genome::IndexedFasta::open(fasta).with_context(|| format!("opening {fasta} (with its .fai)"))?;
             let dir = std::path::PathBuf::from(format!("{out}.psvclust.tmp"));
             std::fs::create_dir_all(&dir)?;
             let mut rows: Vec<Row> = Vec::new();
             for (f, cps) in &fam {
+                let spans: Vec<(String, u64, u64)> = cps.iter().map(|c| (c.1.clone(), c.2, c.3)).collect();
                 // host classes: copies with an identical spliced sequence, in the order their first copy appears
                 let mut classes: Vec<(Vec<u8>, Vec<usize>)> = Vec::new();
                 for (k, c) in cps.iter().enumerate() {
@@ -72469,6 +72544,15 @@ pub mod missing_copy {
                         .iter()
                         .flat_map(|&k| by_host.get(&(f.clone(), cps[k].0)).into_iter().flatten().cloned())
                         .collect();
+                    let names: BTreeSet<String> = if family_best {
+                        n_hosted += names.len();
+                        let kept: BTreeSet<String> =
+                            names.into_iter().filter(|n| best.get(n).is_some_and(|b| best_in_family(b, &spans))).collect();
+                        n_kept += kept.len();
+                        kept
+                    } else {
+                        names
+                    };
                     if names.len() < MIN_SUPPORT {
                         continue;
                     }
@@ -72493,6 +72577,9 @@ pub mod missing_copy {
                 }
             }
             let _ = std::fs::remove_dir_all(&dir);
+            if family_best {
+                eprintln!("[copy_assign] --psv-family-best: {n_kept} of {n_hosted} hosted (family, read) pairs have a best alignment in the family");
+            }
             let mut w = std::io::BufWriter::new(std::fs::File::create(format!("{out}.psv_clusters.tsv"))?);
             writeln!(w, "family\thost\tcluster\tn_reads\tn_sites\tn_alt\tn_unexplained_alt\tstatus\texplained_by\test_div\tlinkage\tediting_frac")?;
             let mut r = std::io::BufWriter::new(std::fs::File::create(format!("{out}.psv_cluster_reads.tsv"))?);
@@ -72600,6 +72687,57 @@ pub mod missing_copy {
                 }
                 let rows = host_rows("F", "0", &ref_, &names, &cov, &[("copy1".into(), carrier)]);
                 assert!(rows.iter().any(|r| r.members.len() == 40 && r.explained_by == vec!["copy1".to_string()]));
+            }
+
+            fn spans() -> Vec<(String, u64, u64)> {
+                vec![("chr1".into(), 1_000, 2_000), ("chr2".into(), 5_000, 6_000)]
+            }
+
+            #[test]
+            fn a_primary_on_a_family_copy_is_a_best_alignment_in_the_family() {
+                let mut b = BestAlignments::default();
+                b.add(true, Some(900), "chr2", vec![(5_100, 5_400)]);
+                b.add(false, Some(700), "chr9", vec![(100, 400)]);
+                assert!(best_in_family(&b, &spans()));
+            }
+
+            #[test]
+            fn a_read_whose_best_alignment_is_elsewhere_is_not_in_the_family() {
+                // the family copy holds only a lower-scoring secondary: another locus explains the read better
+                let mut b = BestAlignments::default();
+                b.add(false, Some(700), "chr1", vec![(1_100, 1_400)]);
+                b.add(true, Some(900), "chr9", vec![(100, 400)]);
+                assert!(!best_in_family(&b, &spans()));
+            }
+
+            #[test]
+            fn a_tie_for_the_best_score_counts_wherever_the_primary_went() {
+                // equal AS: the primary label is a coin toss, so a tied secondary on a family copy is a best alignment too
+                let mut b = BestAlignments::default();
+                b.add(true, Some(900), "chr9", vec![(100, 400)]);
+                b.add(false, Some(900), "chr1", vec![(1_900, 2_300)]);
+                assert!(best_in_family(&b, &spans()));
+            }
+
+            #[test]
+            fn an_intron_over_a_copy_is_no_aligned_base_in_it() {
+                // the best alignment skips the whole copy inside an intron, and a same-coordinate block on another contig is no hit
+                let mut b = BestAlignments::default();
+                b.add(true, Some(900), "chr1", vec![(500, 900), (2_100, 2_400)]);
+                b.add(false, Some(900), "chr3", vec![(1_100, 1_400)]);
+                assert!(!best_in_family(&b, &spans()));
+            }
+
+            #[test]
+            fn without_alignment_scores_the_primary_is_the_best_alignment() {
+                let mut b = BestAlignments::default();
+                b.add(false, None, "chr1", vec![(1_100, 1_400)]);
+                b.add(true, None, "chr9", vec![(100, 400)]);
+                assert!(!best_in_family(&b, &spans()));
+                let mut c = BestAlignments::default();
+                c.add(true, None, "chr2", vec![(5_100, 5_400)]);
+                assert!(best_in_family(&c, &spans()));
+                assert!(!best_in_family(&BestAlignments::default(), &spans()));
             }
         }
     }
