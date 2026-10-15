@@ -727,6 +727,12 @@ struct Args {
     /// `<out>.missing_copy_loci.tsv`. Default off, byte-identical when unset.
     #[arg(long, default_value_t = false)]
     flag_missing_copies: bool,
+    /// O3 in the advisor's definition (`docs/superpowers/specs/2026-10-15-o3-unexplained-multimappers-design.md`): after the run, cluster the
+    /// reads O2 placed on each copy (every row of `<out>.assignments.tsv`) by read-derived variant sites and call the clusters no copy explains
+    /// (`rustle::missing_copy::psv_clusters`). Requires `--families` and `--copies-fa`; use with `--no-as-tied-only` so the absorbed unique
+    /// mappers are placed too. Writes `<out>.psv_clusters.tsv` and `<out>.psv_cluster_reads.tsv`. Default off, byte-identical when unset.
+    #[arg(long, default_value_t = false)]
+    psv_clusters: bool,
     /// O3: Bonferroni alpha for the genome-wide missing-copy threshold (`alpha / n_pairs`).
     #[arg(long, default_value_t = 0.001)]
     missing_copy_alpha: f64,
@@ -11872,6 +11878,14 @@ fn main() -> Result<()> {
         "[copy_assign] wrote {0}.families.tsv + {0}.assignments.tsv + {0}.quant.tsv",
         args.out
     );
+    if args.psv_clusters {
+        let (Some(fam), Some(cfa)) = (args.families.as_deref(), args.copies_fa.as_deref()) else {
+            anyhow::bail!("--psv-clusters requires --families and --copies-fa");
+        };
+        let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+        let n = rustle::missing_copy::psv_clusters::run(&args.out, &args.bam, &args.fasta, fam, cfa, &mm2, args.threads)?;
+        eprintln!("[copy_assign] wrote {0}.psv_clusters.tsv + {0}.psv_cluster_reads.tsv ({n} unexplained clusters)", args.out);
+    }
     Ok(())
 }
 

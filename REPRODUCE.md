@@ -294,9 +294,11 @@ contamination / foreign_species / hypermutation / rna_editing / scattered / unan
 reference_absent_candidate, plus
 `expected_dna_depth_ratio` and per-genome confirmation) and `run.consensus.fa` (the hidden copy's spliced
 consensus — the probe for a DNA k-mer/depth check). Positive control:
-`python3 bench/sim.py missing-copy genomic REF.gtf REF.fa chr20 40 0.02 simB SEED` (40/40 at 2% divergence, all
-confirmed — measured with the out-of-repo `/mnt/linuxdisk/tmp/gw22/o3/simB.py`, whose mutations were seeded by Python's
-per-process `hash()`; `sim.py` seeds with `stable_seed()` since wave 7, so re-measure before quoting).
+`bash bench/o3_posctl.sh REF_DIR OUT_DIR` (`sim.py missing-copy genomic ... chr20 40 d` at d = 0.02 and 0.01, seeds
+1-5, CHM13 chr20 + RefSeq from NCBI, scored by `score.py missing-copy-control`; re-measured 2026-10-14 with stable seeds,
+`docs/PREREG_missing_copy_posctl_2026-10-14.md`): **2%: 199/200 fired, 198 `reference_absent_candidate`, 197 confirmed;
+1%: 91/200 fired, 88/90 confirmed; negative control (the extra copy's reads removed): 0/200 fired.** The earlier "40/40"
+(one hash()-seeded run of the out-of-repo `simB.py`) is superseded by these numbers.
 
 ---
 
@@ -315,6 +317,38 @@ per-process `hash()`; `sim.py` seeds with `stable_seed()` since wave 7, so re-me
 > The 12 `bench/layer_order/*.py` files became `lattice_common.py` (library) and `npip_tbc1d3.py` (one subcommand per
 > stage; recipes in `bench/LAYER_ORDER_NPIP_TBC1D3.md` and `bench/NESTED_LATTICE_NPIP_TBC1D3.md` §11).
 > `bench/README.md` has the full old-name → new-command table, including the names these scripts had before 2026-09-24.
+
+## O3 (advisor's definition): PSV clusters of the reads O2 places on a family (2026-10-15)
+
+`copy_assign --families F.copies.tsv --copies-fa F.copies.fa --no-as-tied-only --psv-clusters --out P` writes `P.psv_clusters.tsv`
+(per host copy: each read cluster, `explained` by a copy / `unexplained` / `unlinked` / `unresolved`, its estimated divergence, linkage and
+A->G fraction) and `P.psv_cluster_reads.tsv`. Held-out simulation (`docs/PREREG_o3_psv_clusters_v2_2026-10-15.md`):
+
+```bash
+pixi run bash bench/o3_unexplained/heldout_v2.sh OUT_DIR    # base seeds 61-63 + hard seeds 71-75, E0 / E2, the Rust product scored
+```
+
+Expected (`OUT_DIR/summary.txt`): absent copies >= 0.6% recovered **425/426**; control families with an unexplained cluster **0/152**;
+spurious clusters 0; two or three missing sequences on one host separated 41/44; alleles labelled `allele_or_copy` 135/135, copies >= 2%
+labelled `copy` 262/262; Rust = prototype on 16/16 runs.
+
+---
+
+## O3 structure projection on simulated reference-absent copies (2026-10-14)
+
+`candidate_copies` writes `<out>.structure.tsv` / `<out>.contigs.gtf`: each flagged candidate's exons, projected from its union's genome
+alignment (spec `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md`). Held-out test
+(`docs/PREREG_o3_structure_projection_2026-10-14.md`):
+
+```bash
+pixi run bash bench/o3_structure/heldout.sh OUT_DIR      # seeds 21-25 --strands, reads E0 / E2, Rust product scored, IsoCon beside
+```
+
+Expected (`OUT_DIR/summary.txt`): **S1 210/222 = 0.946 structure-correct (±5 bp)**, per scenario LOSS 30/30, GAIN 30/30, DUP 17/20,
+SHUFFLE 16/20, TRUNC5 20/20, INTRON 19/20; **boundary recall / precision 0.995 / 0.995**; reconstruction exact (id x cov ≥ 0.999) 242/270
+(IsoCon 256/270; the gap is the ≤ 1% copies, linked as alleles by design).
+
+---
 
 ## Copy-assignment accuracy with read-level truth (thesis O2; §6zf, 2026-09-23)
 

@@ -1,0 +1,58 @@
+# External tools for the pipeline and the bench scripts. The Rust crate itself builds with the
+# rustup toolchain (`cargo`), not from here. Environments are detached (outside the repository):
+#   pixi config set --global detached-environments true
+[workspace]
+name = "rustle"
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64"]
+
+[dependencies]
+# the shipped read mapping is minimap2 2.30 (docs/DATA.md; HG002 and sim.py use the same settings)
+minimap2 = "==2.30"
+samtools = "==1.22.1"
+mmseqs2 = "*"           # src/: one Command::new("mmseqs")
+python = "3.12.*"
+pysam = "*"
+numpy = "*"
+scipy = "*"
+matplotlib = "*"
+ncbi-datasets-cli = "*" # genomes and annotations from NCBI
+gffread = "*"
+seqkit = "*"
+pigz = "*"
+htslib = "*"            # bgzip, tabix
+
+[feature.bench.dependencies]
+# baselines and comparators used by bench/ and figures/ (not needed by the pipeline)
+gffcompare = "*"
+liftoff = "*"
+stringtie = "*"
+# bench/unmapped_rescue and bench/o3_maternal: attribution, profiles, consensus, kmerhit.c
+blast = "*"
+hmmer = "==3.4"
+mafft = "*"
+pyabpoa = "*"
+python-edlib = "*"
+c-compiler = "*"
+
+[environments]
+bench = ["bench"]
+isocon = { features = ["isocon"], no-default-feature = true }
+
+[tasks]
+build = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo build --release --bins -j 4 > build.log 2>&1"
+test = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo test --release -j 4 > test.log 2>&1"
+test-fast = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo test --profile dev-opt -j 4 > test.log 2>&1"
+
+[feature.isocon.dependencies]
+# IsoCon (Sahlin et al. 2018), the reconstruction comparator; not on bioconda, so from PyPI. Its own python (old code).
+python = "3.8.*"
+pysam = "*"
+networkx = "<=2.3"
+edlib = "*"
+parasail-python = "*"
+numpy = "<1.20"
+minimap2 = "==2.30"
+
+[feature.isocon.pypi-dependencies]
+IsoCon = "==0.3.3"
