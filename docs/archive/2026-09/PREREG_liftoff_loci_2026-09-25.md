@@ -289,3 +289,112 @@ the two genome-wide legacy catalogs (chimp_PTR, human_testis) were never compare
   C2 rule), are used as a family reference by Figures 6s and 7 (defined in
   `docs/archive/2026-09/PREREG_genome_wide_families_2026-09-25.md`, Amendment 1, items 3–4): there the denominator is every
   read-supported pair, not only the covered ones.
+
+## Results recorded 2026-10-14: claim F1
+
+**Provenance.**
+- F1 was scored when Figure 8's tables were built (`figures/data/fig8_samples.tsv`, 2026-10-11; rows `pair_cofamily`,
+  `rustle_set` = `families`), but its verdict was never written here.
+- On 2026-10-14 it was recomputed from the current code (`bench/liftoff_pairs/run_pairs.py`, commit 97f831b4). The
+  recomputation reproduces the table's n and k for every scope and identity floor in human A119b, human testis and
+  gorilla KB3781.
+- Chimp's row is the table's: chimp is outside the current human + gorilla scope.
+
+**What is scored.** The bar is the registered one: per sample, ≥ 0.90 of the (source, extra copy) pairs whose two loci
+are both covered by family members share a family. Identity is ≥ 0.95 (the Liftoff run's `-sc`), over the genome; the
+genome minus the development contigs is shown beside it.
+
+| sample | pairs sharing a family / both covered | rate [95% interval] | without development contigs | F1 |
+|---|---|---|---|---|
+| human A119b | 131 / 148 | 0.885 [0.770, 0.965] | 113 / 128 | **FAIL** (needs 134) |
+| human testis | 34 / 34 | 1.000 [1.000, 1.000] | 33 / 33 | PASS |
+| gorilla KB3781 | 11 / 12 | 0.917 [0.625, 1.000] | 11 / 12 | PASS |
+| chimp PTR | 18 / 18 | 1.000 [1.000, 1.000] | 18 / 18 | PASS |
+
+Gorilla OR6737 and orangutan PPY are not scored: no families stage has run for them.
+
+Every identity floor, as registered: the bar applies at ≥ 0.95 (the run's floor) and the other floors are reported.
+Each cell is pairs sharing a family / pairs with both loci covered.
+
+| sample | scope | ≥ 0.95 | ≥ 0.98 | ≥ 0.99 | = 1.00 |
+|---|---|---|---|---|---|
+| human A119b | genome | 131 / 148 | 115 / 129 | 101 / 112 | 45 / 46 |
+| human A119b | without development contigs | 113 / 128 | 101 / 113 | 89 / 100 | 42 / 43 |
+| human testis | genome | 34 / 34 | 32 / 32 | 31 / 31 | 3 / 3 |
+| human testis | without development contigs | 33 / 33 | 31 / 31 | 30 / 30 | 3 / 3 |
+| gorilla KB3781 | genome | 11 / 12 | 10 / 11 | 10 / 10 | 0 / 0 |
+| gorilla KB3781 | without development contigs | 11 / 12 | 10 / 11 | 10 / 10 | 0 / 0 |
+| chimp PTR | genome | 18 / 18 | 16 / 16 | 14 / 14 | 3 / 3 |
+| chimp PTR | without development contigs | 18 / 18 | 16 / 16 | 14 / 14 | 3 / 3 |
+
+At ≥ 0.99, A119b's 101 / 112 (0.902) would clear 0.90, but the registered bar is at ≥ 0.95.
+
+**If it fails (as registered): the families split near-identical copies, and the pairs are listed.** Human A119b's
+17 split pairs come from 8 source genes. The table gives each pair's annotated placement and extra copy, with the
+family covering each and the copy's sequence identity (coordinates `chr:start-end` with 0-based starts, as in the
+Liftoff table):
+
+| source gene | annotated placement (family) | extra copy (family) | identity |
+|---|---|---|---|
+| CYKILR | chr19:38817497-38820303 (MCL451) | 7 tandem copies at chr19:38.83-38.98 Mb (MCL42) | 0.995-0.997 |
+| LOC107987323 | chr22:9871355-9876623 (MCL159) | chr13:10546493-10551831 (MCL203); chr4:49448244-49453546 (MCL180) | 0.993 |
+| LOC112268174 | chr16:22359779-22383315 (MCL164) | chr16:14746424-14764802 and chr16:15367472-15385885 (MCL1647) | 0.986-0.988 |
+| LOC102724034 | chr15:80307463-80309001 (MCL348) | chrY:24654608-24656139 and chrY:26274552-26276083 (MCL656) | 0.965 |
+| LOC124906387 | chr4:135036022-135037611 (MCL190) | chr4:135031038-135032607 (MCL451) | 0.970 |
+| RPL23AP88 | chr2:242685065-242685590 (MCL137) | chr7:12095-12620 (MCL482) | 1.000 |
+| LOC124906865 | chr9:78182496-78201575 (MCL2049) | chr9:41774704-41793760 (MCL1191) | 0.991 |
+| FAM27E2 | chr9:43197980-43199750 (MCL86) | chr9:48149151-48150921 (MCL679) | 0.987 |
+
+**Reading.**
+- F1 holds in three of four samples and fails in human A119b, three pairs short of the bar.
+- Seven of the 17 split pairs are one source gene's tandem copies (CYKILR).
+- F1 counts only pairs whose two loci are both covered by family members. The complementary test that counts every
+  read-supported pair against matched decoys is `docs/PREREG_liftoff_pairs_null_2026-10-14.md`.
+
+## Results recorded 2026-10-15: claim G1 (human; gorilla not run)
+
+**Provenance.**
+- The guided search ran for the first time on 2026-10-14/15, with this file's code as it stands on `main` at
+  `310dd2b7` (`figures/_liftoff.py` finder, `bench/guided_pipeline.py`; unchanged since `958972e7`).
+- Human: 16 calls of `figures/_liftoff.py finder --species human --budget-s 540` under the heavy lock. 58,563 units and
+  58,563 envelopes in 69 shards (6 `-x splice` unit shards of 10,000 units, 63 `-x asm20` envelope shards of 25 Mb),
+  minimap2 2.30, `-c -N 100 -p 0.1`, the CHM13 v2.0 splice index. The result is 10,345 candidate loci
+  (`/mnt/linuxdisk/tmp/rustle_figures/liftoff/human/finder/candidates.tsv`).
+- Peak memory: 20.4 GB in the first call (preparation plus one unit shard), 15.8-19.0 GB after that. The first call
+  is over §6's 20 GB; nothing failed.
+- Scored with the registered code (`fig_loci._write_guided`, via `bench/g1/score_g1.py`) into a scratch table
+  (`/mnt/linuxdisk/tmp/o1_g1/fig8_data/fig8_guided.tsv`). Figure 8's shared tables were not rebuilt: `make.py data
+  fig8 --set fig8_guided_finder=1` would also start the chimpanzee and orangutan searches, outside the current
+  human + gorilla scope.
+- **Gorilla was not run to the end** (user decision, 2026-10-15). After the human result the user judged the gorilla
+  search not worth pursuing: a gorilla pass would not change the human verdict. Its preparation and the first 2 of
+  its 60 shards (u000-u001) are cached under `.../liftoff/gorilla/finder/`, so a later run resumes from them.
+
+**G1, as registered**: per species, ≥ 0.90 of Liftoff's extra copies (exon union ≥ 200 bp, not inside another
+record's span, sequence_ID ≥ 0.95) found by a candidate at identity ≥ 0.80. Found means a candidate covers ≥ 50% of the
+copy's exons. Intervals: 2,000 resamples of source records.
+
+| species | found / extra copies | rate [95% interval] | G1 |
+|---|---|---|---|
+| human | 1,126 / 1,270 | 0.887 [0.856, 0.911] | **FAIL** (needs 1,143) |
+| gorilla | not run | | |
+
+Reported, not barred (human):
+- Copies found by a candidate at identity ≥ 0.95: 1,064 / 1,270 = 0.838.
+- By Liftoff `sequence_ID` floor (identity ≥ 0.80): ≥ 0.98 902 / 1,009 = 0.894; ≥ 0.99 789 / 874 = 0.903; = 1.00
+  372 / 406 = 0.916.
+- Extra copies inside another record's span (excluded from the bar; the search blocks them by design): 25 / 618.
+- Candidates at a Liftoff extra copy: 1,189 of 10,345 at identity ≥ 0.80 (0.115), and 1,091 of 3,207 at ≥ 0.95.
+
+**The 144 missed copies, by stratum** (§5, "if it fails"; `bench/g1/misses_g1.py`):
+
+| grouping | missed / scored |
+|---|---|
+| stratum | lncRNA 95 / 809; pseudogene 35 / 358 (biotype pseudogene 33 / 259, transcribed_pseudogene 2 / 90, V_segment_pseudogene 0 / 9); protein-coding 13 / 100; other 1 / 3 |
+| the source's Liftoff copies | 1: 30 / 271; 2-5: 63 / 441; 6-50: 51 / 558 (no source has more than 50) |
+| exon union | < 1 kb: 97 / 720; 1-5 kb: 46 / 519; ≥ 5 kb: 1 / 31 |
+
+- 63 of the 144 overlap a candidate by less than half; the other 81 overlap none.
+- The search keeps hits at identity ≥ 0.80 only (no candidate is below it), so whether a lower floor would reach these
+  copies is not measured here.
+- They come from 91 source records; no record loses more than 6 copies (LOC124906045 6, MTCO3P39 6).
