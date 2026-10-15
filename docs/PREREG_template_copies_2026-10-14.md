@@ -115,3 +115,60 @@ Speed only, at commit `6b260c8c`. The method and every threshold are unchanged.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (2026-10-14)
+
+Run: code `c043d354` (the method at `6b260c8c`, Amendment 1; `c043d354` only fixes the scorer's gzipped reference).
+A119b_shipped took 6 heavy calls of projection (16 batches, 116-627 s per call) and one 21-minute assembly (4 workers,
+1.1 GB).
+
+### A119b_shipped (development)
+
+| step | count |
+|---|---|
+| hits passing identity ≥ 0.80 and aligned ≥ 0.50 | 561,980 |
+| candidates (covered < 50% by every base locus) | 97,097 |
+| merged candidates | 31,515 |
+| on contigs absent from the BAM | 0 |
+| fewer than 2 own reads | 10,697 |
+| no locus with ≥ 2 reads | 748 |
+| candidates with loci | 20,070 |
+| added loci / transcripts | 26,726 / 27,515 |
+
+| measure | base | merged | bar |
+|---|---|---|---|
+| read-supported Liftoff extra copies (identity ≥ 0.95) covered | 234 of 641 | **394 of 641** | reported |
+| template-reachable copies reached | — | 63 of 106 | reported |
+| P1: intron-chain precision against RefSeq (gffcompare) | 17.7 | 17.4 | **FAIL** (≥ 17.5) |
+| P1: share of loci at a Liftoff locus | 0.2452 | 0.2091 | **FAIL** (≥ 0.2432) |
+| P2: added loci at a Liftoff locus vs base loci with 2-5 reads | 0.2318 (36,269 loci) | 0.0813 [0.0781, 0.0847] (26,726 loci) | **FAIL** |
+
+Intron-chain sensitivity: base 22.0, merged 22.0. The base's
+22.0 / 17.7 equals register 1268's `default_good` human row.
+
+**Not run (ruling, recorded in the plan's ledger).** A119b_OP, testis, KB3781 and OR6737_OP were not run, because the
+readings below make the verdict independent of them: any development bar failing means not adopted. Their templates
+are on disk (`/mnt/linuxdisk/tmp/o1_template_copies/<run>/`). Running them costs about 2.5 h with the same code.
+
+**Post hoc (descriptive, not pre-registered): the share of added loci at a Liftoff locus does not depend on shape or
+depth.**
+
+| added loci | count | at a Liftoff locus |
+|---|---|---|
+| all | 26,726 | 0.0813 |
+| single-exon | 23,655 | 0.0800 |
+| multi-exon | 3,071 | 0.0918 |
+| multi-exon, ≥ 5 reads | 2,541 | 0.0799 |
+| single-exon, ≥ 5 reads | 14,405 | 0.0909 |
+| 2 reads | 4,585 | 0.0665 |
+
+### Verdict (2026-10-14)
+
+**Reading 3: not adopted.** Development fails every precision bar on A119b_shipped:
+- P1 chain precision: 17.7 → 17.4;
+- P1 `located` share: 0.2452 → 0.2091;
+- P2: 0.0813 against 0.2318.
+
+Recall does rise, with 160 more read-supported Liftoff copies covered (234 → 394 of
+641). But it comes with 26,726 added loci, of which only 0.0813 sit at a Liftoff locus;
+most are single-exon. No exon-count or read-depth cut separates the real copies from the rest (post hoc above).

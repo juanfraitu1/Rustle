@@ -153,3 +153,9 @@ in-between operating point's lead over StringTie and FLAIR.
 - Changing O1's family rule or the shipped defaults.
 - The Rust port, which follows only from reading 1.
 - The 202 copies whose gene is not assembled at all; the assembler's low-expression sensitivity is a separate study.
+
+## Results (2026-10-14)
+
+Reading 3: not adopted. On A119b the stage covers 160 more read-supported Liftoff copies
+(234 → 394 of 641). But only 0.0813 of its 26,726 added loci sit at a Liftoff locus, against 0.2318 for comparable base loci, so
+P1 and P2 fail. Full results: `docs/PREREG_template_copies_2026-10-14.md`; register row 1285.
