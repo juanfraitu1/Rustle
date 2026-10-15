@@ -14,10 +14,12 @@ tools    register 1268's scorer (bench/tool_difference/score_op.py) on the arms;
          StringTie's and > FLAIR's) and B2 (its chain precision > FLAIR's).
 """
 import argparse
+import gzip
 import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -93,8 +95,21 @@ def parse_stats(path):
     return out
 
 
+def plain(ref, work):
+    """gffcompare 0.12.10 reads plain text only: a .gz reference is decompressed once into the work dir."""
+    if not str(ref).endswith(".gz"):
+        return ref
+    dst = os.path.join(work, "ref.gtf")
+    if not os.path.exists(dst):
+        with gzip.open(ref, "rt") as src, open(dst + ".tmp", "w") as fh:
+            shutil.copyfileobj(src, fh)
+        os.replace(dst + ".tmp", dst)
+    return dst
+
+
 def chains(ref, work, gtfs):
     os.makedirs(work, exist_ok=True)
+    ref = plain(ref, work)
     out = {}
     for name, path in gtfs:
         pre = os.path.join(work, f"gc_{name}")

@@ -57,3 +57,16 @@ def test_lead():
     assert S.lead(arms, "OP_primary_TG") == {"b1": True, "b2": True}     # 23.9 > 18.1 and > 22.4; 15.5 > 6.2
     assert S.lead({"OP_primary_TG": (23.9, 15.5)}, "OP_primary_TG") == {"b1": None, "b2": None}
     assert S.lead(dict(arms, FLAIR=(24.0, 6.2)), "OP_primary_TG")["b1"] is False
+
+
+def test_chains_reads_a_gzipped_reference(tmp_path):
+    import gzip
+    gtf = ('chr1\tt\ttranscript\t101\t400\t.\t+\t.\tgene_id "g"; transcript_id "t";\n'
+           'chr1\tt\texon\t101\t200\t.\t+\t.\tgene_id "g"; transcript_id "t";\n'
+           'chr1\tt\texon\t301\t400\t.\t+\t.\tgene_id "g"; transcript_id "t";\n')
+    ref = tmp_path / "ref.gtf.gz"
+    with gzip.open(ref, "wt") as fh:
+        fh.write(gtf)
+    q = tmp_path / "q.gtf"
+    q.write_text(gtf)
+    assert S.chains(str(ref), str(tmp_path / "work"), [("q", str(q))]) == {"q": {"chain_sn": 100.0, "chain_pr": 100.0}}
