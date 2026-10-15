@@ -220,3 +220,56 @@ Guided verdicts: T1a PASS, T1b FAIL, T2 PASS; read depth on the common set passe
   our blocks alone (183 exact, ARI 0.7890). The bar therefore compares the copy-number cut with random cuts,
   not with leaving our families uncut. Against uncut, assembly copy number gains +3 exact and +0.0384 ARI.
 
+### De novo (2026-10-14)
+
+Run: commit `6d329ed9` (code `25006d97`); A119b wall 15.99 s, peak 319,368 KB; testis wall 6.42 s, peak 183,876 KB.
+Wiring checks: all passed (gene-id join 1,710 / 0 / 121; plan 1's coverage reproduced in `inputs.json`).
+
+**T1**
+
+| Quantity | A119b | testis |
+|---|---|---|
+| Soto families with ≥ 2 members | 293 | 105 |
+| contained; rate over 491; over ≥ 2 | 80; 0.1629; 0.2730 | 54; 0.1100; 0.5143 |
+| size null mean / max | 0.192 / 4 | 0.291 / 3 |
+| p → **T1a** | 0.000999 (1/1001) → **PASS** | 0.000999 (1/1001) → **PASS** |
+| H(Soto \| ours) / H(ours \| Soto) | 0.2237 / 1.2667 | 0.1034 / 0.3555 |
+| D [95% interval] → **T1b** | -1.0430 [-1.2541, -0.8029] → **FAIL** | -0.2520 [-0.3903, -0.1052] → **FAIL** |
+| ≤ 3 members: contained / families | 59 / 126 | 45 / 83 |
+| > 3 members: contained / families | 21 / 167 | 9 / 22 |
+| plan 1's rate: contained / evaluable | 105 / 247 | 69 / 84 |
+| violations: coverage / cover / conflict | 108 / 34 / 71 | 44 / 4 / 3 |
+
+Conflict families: A119b ID_100 (31, 13), ID_113 (19, 4), ID_116 (8, 2), ID_127 (4, 2), ID_132 (6, 2), ID_136 (14, 10), ID_14 (12, 8), ID_142 (23, 9), ID_148 (5, 2), ID_149 (12, 6), ID_151 (11, 8), ID_152 (11, 7), ID_153 (10, 7), ID_155 (8, 4), ID_156 (7, 3), ID_160 (5, 4), ID_163 (14, 13), ID_175 (11, 4), ID_176 (6, 3), ID_178 (7, 5), ID_179 (9, 4), ID_181 (10, 7), ID_182 (14, 9), ID_187 (9, 7), ID_188 (8, 6), ID_203 (4, 2), ID_208 (7, 5), ID_211 (9, 4), ID_212 (14, 11), ID_214 (14, 12), ID_215 (13, 7), ID_218 (13, 10), ID_231 (5, 3), ID_233 (15, 4), ID_24 (6, 2), ID_243 (8, 4), ID_244 (7, 3), ID_245 (15, 7), ID_257 (5, 3), ID_261 (7, 4), ID_262 (12, 3), ID_270 (6, 5), ID_279 (6, 2), ID_280 (35, 18), ID_284 (26, 8), ID_31 (14, 3), ID_35 (45, 13), ID_363 (9, 2), ID_368 (8, 3), ID_369 (4, 2), ID_374 (5, 3), ID_391 (10, 2), ID_393 (6, 3), ID_395 (18, 7), ID_396 (4, 3), ID_397 (9, 5), ID_399 (8, 3), ID_400 (8, 7), ID_403 (2, 2), ID_41 (25, 9), ID_455 (4, 2), ID_468 (21, 3), ID_471 (4, 3), ID_49 (5, 3), ID_56 (6, 4), ID_60 (7, 3), ID_62 (15, 9), ID_65 (13, 6), ID_78 (11, 8), ID_8 (8, 4), ID_99 (27, 14); testis ID_154 (7, 2), ID_395 (5, 2), ID_407 (6, 3).
+
+**T2 (common set: A119b 1,175 loci, testis 288 loci)**
+
+| Copy number | catalog | exact | ARI | ARI w/o FAM90A | Hungarian J | null exact mean (max) | null ARI mean (max) | p exact | p ARI | bar |
+|---|---|---|---|---|---|---|---|---|---|---|
+| assembly (T2's bar) | A119b | 51 | 0.4022 | 0.4022 | 0.5361 | 47.982 (52) | 0.3674 (0.3873) | 0.006993 (7/1001) | 0.000999 (1/1001) | **FAIL** |
+| assembly (T2's bar) | testis | 40 | 0.7574 | 0.7574 | 0.7530 | 39.243 (40) | 0.7312 (0.7708) | 0.243756 (244/1001) | 0.044955 (45/1001) | **FAIL** |
+| read depth | A119b | 55 | 0.4414 | 0.4414 | 0.5425 | 50.035 (53) | 0.3730 (0.3941) | 0.000999 (1/1001) | 0.000999 (1/1001) | (reported; passes) |
+| read depth | testis | 37 | 0.7723 | 0.7723 | 0.7438 | 37.003 (38) | 0.7247 (0.7858) | 1.000000 (1001/1001) | 0.012987 (13/1001) | (reported; does not pass) |
+| S1C | A119b | 57 | 0.4992 | 0.4992 | 0.5600 | 50.460 (56) | 0.4111 (0.4298) | 0.000999 (1/1001) | 0.000999 (1/1001) | (reported; passes) |
+| S1C | testis | 40 | 0.8305 | 0.8305 | 0.7634 | 38.262 (40) | 0.7633 (0.8286) | 0.005994 (6/1001) | 0.000999 (1/1001) | (reported; does not pass) |
+| our blocks alone | A119b | 51 | 0.4621 | 0.4621 | 0.5428 | — | — | — | — | — |
+| our blocks alone | testis | 40 | 0.7861 | 0.7861 | 0.7611 | — | — | — | — | — |
+| ceiling | A119b | 63 | 0.5132 | 0.5132 | 0.6314 | — | — | — | — | — |
+| ceiling | testis | 41 | 0.8409 | 0.8409 | 0.8081 | — | — | — | — | — |
+
+**T2, each source on its own coverage**
+
+| Copy number | catalog | members | exact | ARI | ARI w/o FAM90A | Hungarian J |
+|---|---|---|---|---|---|---|
+| assembly | A119b | 1175 | 51 | 0.4022 | 0.4022 | 0.5361 |
+| assembly | testis | 288 | 40 | 0.7574 | 0.7574 | 0.7530 |
+| read depth | A119b | 1396 | 62 | 0.4255 | 0.4253 | 0.5236 |
+| read depth | testis | 332 | 39 | 0.7549 | 0.7549 | 0.6827 |
+| S1C | A119b | 1196 | 58 | 0.4986 | 0.4984 | 0.5603 |
+| S1C | testis | 292 | 41 | 0.8312 | 0.8312 | 0.7631 |
+
+De novo verdicts: A119b T1a PASS, T1b FAIL, T2 FAIL; testis T1a PASS, T1b FAIL, T2 FAIL.
+
+**Post hoc (descriptive, not pre-registered).** As on the guided universe, most violations are coverage violations
+(A119b 108 of 213, testis 44 of 51). Cutting our blocks by assembly copy number does not beat leaving them uncut:
+A119b 51 exact / ARI 0.4022 against 51 / 0.4621 uncut, and testis 40 / 0.7574 against 40 / 0.7861.
