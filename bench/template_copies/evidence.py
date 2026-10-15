@@ -16,6 +16,7 @@ from templates import merge  # noqa: E402
 
 EXCLUDE = 0x4 | 0x100 | 0x800  # 2308
 M_OPS, D_OP, N_OP = (0, 7, 8), 2, 3
+FETCH_SPAN = 200_000
 
 
 def blocks(reference_start, cigartuples):
@@ -39,12 +40,16 @@ def blocks(reference_start, cigartuples):
 
 
 def own_reads(bam, contig, exons):
-    """The candidate's own reads in `bam` (pysam.AlignmentFile) -> [(read name, exon blocks)], sorted by name."""
+    """The candidate's own reads in `bam` (pysam.AlignmentFile) -> [(read name, exon blocks)], sorted by name.
+    A span over FETCH_SPAN bp is fetched exon by exon (a read with an aligned base on the exons overlaps one of them,
+    so the reads are the same) instead of walking the reads of a long projected intron."""
     out = {}
-    for r in bam.fetch(contig, exons[0][0], exons[-1][1]):
-        if r.flag & EXCLUDE or r.cigartuples is None:
-            continue
-        al, ex = blocks(r.reference_start, r.cigartuples)
-        if LF.iv_inter(al, exons) > 0:
-            out[r.query_name] = ex
+    windows = [(exons[0][0], exons[-1][1])] if exons[-1][1] - exons[0][0] <= FETCH_SPAN else exons
+    for s, e in windows:
+        for r in bam.fetch(contig, s, e):
+            if r.query_name in out or r.flag & EXCLUDE or r.cigartuples is None:
+                continue
+            al, ex = blocks(r.reference_start, r.cigartuples)
+            if LF.iv_inter(al, exons) > 0:
+                out[r.query_name] = ex
     return sorted(out.items())

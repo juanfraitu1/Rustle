@@ -16,6 +16,7 @@ The stages are separate calls, so each stays under the 10-minute limit for one f
 import argparse
 import glob
 import json
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -91,7 +92,25 @@ def gtf_lines(label, i, kept, others, gene_of, locus):
     return out
 
 
-def stage_assemble(base, bam_path, out, label):
+_BAM = None
+
+
+def _init(bam_path):
+    global _BAM
+    _BAM = pysam.AlignmentFile(bam_path)
+
+
+def _evaluate(item):
+    """One candidate's own reads and loci -> (fate, loci); runs in a worker with its own BAM handle."""
+    contig, exons = item
+    reads = E.own_reads(_BAM, contig, exons)
+    if len(reads) < 2:
+        return "few_reads", []
+    loci = B.build(reads, exons)
+    return ("with_loci", loci) if loci else ("no_locus", [])
+
+
+def stage_assemble(base, bam_path, out, label, workers=1):
     fas = batch_files(out)
     missing = [f for f in fas if not os.path.exists(f[:-3] + ".done")]
     if not fas or missing:
@@ -104,29 +123,27 @@ def stage_assemble(base, bam_path, out, label):
     groups = C.merge_candidates(cand)
     rep = dict(hits=len(hs), candidates=len(cand), merged_candidates=len(groups), contig_absent=0, few_reads=0,
                no_locus=0, with_loci=0, loci=0, transcripts=0)
-    lines = []
     with pysam.AlignmentFile(bam_path) as bam:
         contigs = set(bam.references)
-        for kept, others in groups:
-            if kept.contig not in contigs:
-                rep["contig_absent"] += 1
-                continue
-            reads = E.own_reads(bam, kept.contig, kept.exons)
-            if len(reads) < 2:
-                rep["few_reads"] += 1
-                continue
-            loci = B.build(reads, kept.exons)
-            if not loci:
-                rep["no_locus"] += 1
-                continue
-            rep["with_loci"] += 1
-            for locus in loci:
-                lines += gtf_lines(label, rep["loci"], kept, others, gene_of, locus)
-                rep["loci"] += 1
-                rep["transcripts"] += len(locus["transcripts"])
+    todo = [(kept, others) for kept, others in groups if kept.contig in contigs]
+    rep["contig_absent"] = len(groups) - len(todo)
     if groups and rep["contig_absent"] > len(groups) / 2:
         raise SystemExit(f"{rep['contig_absent']} of {len(groups)} candidates lie on contigs absent from {bam_path}: "
                          "the index and the BAM name contigs differently")
+    items = [(kept.contig, kept.exons) for kept, _ in todo]
+    if workers > 1:
+        with multiprocessing.get_context("fork").Pool(workers, initializer=_init, initargs=(bam_path,)) as pool:
+            results = pool.map(_evaluate, items, chunksize=64)
+    else:
+        _init(bam_path)
+        results = [_evaluate(x) for x in items]
+    lines = []
+    for (kept, others), (fate, loci) in zip(todo, results):
+        rep[fate] += 1
+        for locus in loci:
+            lines += gtf_lines(label, rep["loci"], kept, others, gene_of, locus)
+            rep["loci"] += 1
+            rep["transcripts"] += len(locus["transcripts"])
     with open(os.path.join(out, "tg.gtf"), "w") as fh:
         fh.writelines(lines)
     with open(os.path.join(out, "merged.gtf"), "w") as fh, open(base) as src:
@@ -158,13 +175,14 @@ def main(argv=None):
     p.add_argument("--bam", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--label", required=True)
+    p.add_argument("--workers", type=int, default=4, help="processes for the own-read step (results do not depend on it)")
     a = ap.parse_args(argv)
     if a.stage == "templates":
         stage_templates(a.base, a.genome, a.out, a.batch_size)
     elif a.stage == "project":
         stage_project(a.out, a.index, a.batches, a.threads)
     else:
-        stage_assemble(a.base, a.bam, a.out, a.label)
+        stage_assemble(a.base, a.bam, a.out, a.label, a.workers)
     return 0
 
 

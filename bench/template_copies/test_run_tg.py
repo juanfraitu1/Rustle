@@ -94,3 +94,14 @@ def test_assemble_is_deterministic(tmp_path):
         R.main(["assemble", "--base", str(d / "base.gtf"), "--bam", str(d / "r.bam"), "--out", out, "--label", "t"])
         runs.append((open(os.path.join(out, "tg.gtf")).read(), open(os.path.join(out, "report.json")).read()))
     assert runs[0] == runs[1] and runs[0][0]
+
+
+def test_workers_do_not_change_the_output(tmp_path):
+    d = toy_inputs(tmp_path)
+    out = run_until_projected(d)
+    runs = []
+    for w in ("1", "2"):
+        R.main(["assemble", "--base", str(d / "base.gtf"), "--bam", str(d / "r.bam"), "--out", out, "--label", "t",
+                "--workers", w])
+        runs.append((open(os.path.join(out, "tg.gtf")).read(), open(os.path.join(out, "report.json")).read()))
+    assert runs[0] == runs[1] and runs[0][0]
