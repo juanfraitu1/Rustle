@@ -7,8 +7,8 @@
 recall  per reachable copy: found by an own template; found by another template off that template's own locus (the
         projection proper) or only by a template at the copy (the copy is itself assembled); whether the best own
         template is gene-like (it covers >= 80% of the source placement's exons and they cover >= 80% of it).
-sites   the class `none` sites: template single-exon or not, template at a Liftoff gene or novel, the contigs holding
-        the most of them.
+sites   the class `none` sites: template single-exon or not; where the template sits relative to Liftoff genes
+        (template_place); the share made by the ten templates with the most; the contigs holding the most.
 """
 import argparse
 import collections
@@ -48,7 +48,8 @@ def recall_detail(loci, base_rows, templates, sc):
         hits = K._covering(pidx, r)
         p = placement[s]
         like = max(min(K.cov(p["iv"], templates[t].exons), K.cov(templates[t].exons, p["iv"])) for t in ts)
-        rows.append(dict(own=any(h["template"] in ts for h in hits),
+        rows.append(dict(source=s, own=any(h["template"] in ts for h in hits),
+                         own_projection=any(h["template"] in ts and not is_self(h, templates, own_iv) for h in hits),
                          projection=any(not is_self(h, templates, own_iv) for h in hits),
                          assembled=bidx.best_cov(r["contig"], r["iv"])[0] >= K.LF.MATCH_COV,
                          gene_like=like >= GENE_LIKE, any=bool(hits)))
@@ -60,10 +61,32 @@ def recall_detail(loci, base_rows, templates, sc):
     for key in (True, False):
         sub = [x for x in rows if x["gene_like"] is key]
         out[f"gene_like_{str(key).lower()}"] = [sum(x["own"] for x in sub), len(sub)]
+    out["own_by_projection"] = sum(x["own_projection"] for x in rows)
+    out["own_only_inside_own_locus"] = sum(x["own"] and not x["own_projection"] for x in rows)
+    out["gene_like_sources"] = c(x["source"] for x in rows if x["gene_like"]).most_common()
+    per = collections.defaultdict(lambda: [0, 0])
+    for x in rows:
+        per[x["source"]][0] += x["own"]
+        per[x["source"]][1] += 1
+    out["sources"] = sorted(([s, f, n] for s, (f, n) in per.items()), key=lambda r: (-r[2], r[0]))
     out["not_own_but_projection"] = sum(x["projection"] and not x["own"] for x in rows)
     out["not_own_any"] = dict(c((x["projection"], x["assembled"]) for x in rows if x["any"] and not x["own"]).most_common())
     out["not_own_any"] = {f"projection={a},assembled={b}": n for (a, b), n in out["not_own_any"].items()}
     return out
+
+
+def template_place(t, genes):
+    """Where template t sits relative to Liftoff genes (in_place / moved rows): gene_exons (one gene's exons cover
+    >= 50% of it), exon_overlap (some exonic base shared, less than that), intronic (inside a gene's span only),
+    intergenic."""
+    if genes.best_cov(t.contig, t.exons)[0] >= K.LF.MATCH_COV:
+        return "gene_exons"
+    near = [genes.rows[i] for i in genes.near(t.contig, [(t.exons[0][0], t.exons[-1][1])])]
+    if any(K.LF.iv_inter(t.exons, r["iv"]) > 0 for r in near):
+        return "exon_overlap"
+    if any(int(r["start0"]) < t.exons[-1][1] and t.exons[0][0] < int(r["end"]) for r in near):
+        return "intronic"
+    return "intergenic"
 
 
 def none_sites(loci, base_rows, templates, projected):
@@ -77,11 +100,13 @@ def none_sites(loci, base_rows, templates, projected):
         best = min(g, key=lambda h: (-h["seq"], -h["cov"], h["template"], h["strand"]))
         if all(idx.best_cov(best["contig"], best["iv"])[0] < K.LF.MATCH_COV for idx in (extra, genes, bidx)):
             none.append(best)
-    t_at_gene = {tid: genes.best_cov(t.contig, t.exons)[0] >= K.LF.MATCH_COV for tid, t in templates.items()}
+    where = {tid: template_place(t, genes) for tid, t in templates.items()}
     c = collections.Counter
     return dict(n=len(none),
                 template_single_exon=sum(len(templates[h["template"]].exons) == 1 for h in none),
-                template_at_liftoff_gene=sum(t_at_gene[h["template"]] for h in none),
+                template_at_liftoff_gene=sum(where[h["template"]] == "gene_exons" for h in none),
+                template_place=dict(c(where[h["template"]] for h in none).most_common()),
+                top10_templates_sites=sum(n for _, n in c(h["template"] for h in none).most_common(10)),
                 hit_unspliced=sum(len(h["iv"]) == 1 for h in none),
                 contigs=c(h["contig"] for h in none).most_common(6),
                 templates=len({h["template"] for h in none}))

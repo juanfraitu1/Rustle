@@ -186,11 +186,50 @@ KB3781 (0.846). C2 fails in all three samples. The expected retrocopy advantage 
   - Otherwise: 253 of 404, 31 of 44 and 4 of 12.
   - Only 16 of A119b's 420 reachable copies have a gene-like own template. The rule is strict: a Liftoff placement's
     exons are the union of every isoform of the gene, while a template is one transcript.
-- **The unexplained sites come mostly from unannotated loci.**
-  - Of the `none` sites, only 258 of 4,941 (A119b), 43 of 381 (testis) and 157 of 582 (KB3781) come from a template
-    that sits at a Liftoff gene. The rest come from templates of loci the annotation does not have; Liftoff cannot
-    copy a gene that is not annotated.
+- **Where the unexplained sites' templates sit.** Each `none` site's best template, placed against Liftoff's gene
+  placements:
+
+  | template | A119b (4,941 sites) | testis (381) | KB3781 (582) |
+  |---|---|---|---|
+  | ≥ 50% inside one gene's exons | 258 | 43 | 157 |
+  | shares exonic bases with a gene, less than that | 1,089 | 97 | 175 |
+  | inside a gene's span only (intronic) | 996 | 60 | 18 |
+  | intergenic | 2,598 | 181 | 232 |
+
+  - Only the intergenic templates (53%, 48% and 40% of the sites) are clearly loci the annotation lacks, which Liftoff
+    cannot copy. The rest overlap or sit inside annotated genes. C2's unexplained share is a mix of the two; it is not
+    a difference in input alone.
+  - The ten templates with the most `none` sites make 443 (9%), 178 (47%) and 256 (44%) of them.
   - In A119b, 2,735 of the 4,941 come from single-exon templates. The contigs holding the most are chrY 492, chr13 459,
     chr1 393, chr9 361, chr15 320 and chr21 286.
-  - So most of C2's "unexplained" share reflects a difference in input (transcribed loci absent from the annotation).
-    It is not evidence for or against those sites.
+  - 36.6% of A119b's templates are single-exon, against 3.4% (testis) and 3.0% (KB3781), so C2 is not comparable across
+    samples.
+- **The gene-like counts are per sample and concentrated.** KB3781's 40 gene-like copies come from 9 genes, 32 of them
+  from two (LOC134756906 19, LOC134757412 13). The two human samples share one Liftoff table, so the same copies can
+  appear in both (LINC01784 5 in each). The three samples are not pooled.
+
+### Final-review findings (verified, post hoc, 2026-10-14)
+
+A fresh reviewer re-derived every recall number and stress-tested the site merge against all pairs, forcing the
+pruning step, with no failure. The code stands; the text above was corrected. Each count below was recomputed with
+`copies_posthoc.py` unless it says "reviewer".
+- **Recall (own) includes copies found inside the template's own locus** (as registered, so the verdict is unchanged).
+  In A119b, 30 of the 268 are found only by an alignment inside the own template's locus: the reviewer found the
+  template itself spans the copy in 17 of them and a secondary hit inside a fused locus in 13. By projection off that
+  locus, recall (own) is 238 / 420 = 0.567. Testis and KB3781 have none of these.
+- **The held-out pass rests on two genes.** KB3781's 0.846 is per copy, and two genes give 32 of its 52 reachable
+  copies, all found. Without the top gene it is 25 / 33 = 0.758; without both, 12 / 20 = 0.60. Testis misses the bar by
+  one copy (50 / 62 would pass).
+- **Unconditional recall** (found (own) / every Liftoff extra copy): 268 / 1,888 = 0.142, 49 / 1,888 = 0.026 and
+  44 / 1,129 = 0.039.
+- **The coverage threshold never binds** (reviewer). Identity ≤ coverage by construction (matches ≤ aligned bases, and
+  the denominator ≥ template length), and Liftoff applies only `-sc` to extra copies (`liftover_types.py`). No number
+  changes.
+- **The `no_alignment` label is loose** (reviewer). In A119b, 13 of those 62 misses have a passing own alignment that
+  covers 13-49% of the copy, and 4 more have a failing partial one.
+- **Two design differences from Liftoff** (reviewer). Liftoff chains several alignment records into one placement; the
+  analogue scores single PAF records. A genome-only stretch that minimap2 calls an intron costs nothing here but would
+  lower Liftoff's identity.
+- **Templates with at least one site** (a pre-registered reported item, omitted above): 13,771, 1,216 and 928.
+- **Erratum to Amendment 1.** During profiling, `recall()` ran (1 s) but nothing it returned was printed. "No recall
+  ... number was computed or seen" should read "printed or seen".
