@@ -350,3 +350,51 @@ Liftoff table):
 - Seven of the 17 split pairs are one source gene's tandem copies (CYKILR).
 - F1 counts only pairs whose two loci are both covered by family members. The complementary test that counts every
   read-supported pair against matched decoys is `docs/PREREG_liftoff_pairs_null_2026-10-14.md`.
+
+## Results recorded 2026-10-15: claim G1 (human; gorilla not run)
+
+**Provenance.**
+- The guided search ran for the first time on 2026-10-14/15, with this file's code as it stands on `main` at
+  `310dd2b7` (`figures/_liftoff.py` finder, `bench/guided_pipeline.py`; unchanged since `958972e7`).
+- Human: 16 calls of `figures/_liftoff.py finder --species human --budget-s 540` under the heavy lock. 58,563 units and
+  58,563 envelopes in 69 shards (6 `-x splice` unit shards of 10,000 units, 63 `-x asm20` envelope shards of 25 Mb),
+  minimap2 2.30, `-c -N 100 -p 0.1`, the CHM13 v2.0 splice index. The result is 10,345 candidate loci
+  (`/mnt/linuxdisk/tmp/rustle_figures/liftoff/human/finder/candidates.tsv`).
+- Peak memory: 20.4 GB in the first call (preparation plus one unit shard), 15.8-19.0 GB after that. The first call
+  is over §6's 20 GB; nothing failed.
+- Scored with the registered code (`fig_loci._write_guided`, via `bench/g1/score_g1.py`) into a scratch table
+  (`/mnt/linuxdisk/tmp/o1_g1/fig8_data/fig8_guided.tsv`). Figure 8's shared tables were not rebuilt: `make.py data
+  fig8 --set fig8_guided_finder=1` would also start the chimpanzee and orangutan searches, outside the current
+  human + gorilla scope.
+- **Gorilla was not run to the end** (user decision, 2026-10-15). After the human result the user judged the gorilla
+  search not worth pursuing: a gorilla pass would not change the human verdict. Its preparation and the first 2 of
+  its 60 shards (u000-u001) are cached under `.../liftoff/gorilla/finder/`, so a later run resumes from them.
+
+**G1, as registered**: per species, ≥ 0.90 of Liftoff's extra copies (exon union ≥ 200 bp, not inside another
+record's span, sequence_ID ≥ 0.95) found by a candidate at identity ≥ 0.80. Found means a candidate covers ≥ 50% of the
+copy's exons. Intervals: 2,000 resamples of source records.
+
+| species | found / extra copies | rate [95% interval] | G1 |
+|---|---|---|---|
+| human | 1,126 / 1,270 | 0.887 [0.856, 0.911] | **FAIL** (needs 1,143) |
+| gorilla | not run | | |
+
+Reported, not barred (human):
+- Copies found by a candidate at identity ≥ 0.95: 1,064 / 1,270 = 0.838.
+- By Liftoff `sequence_ID` floor (identity ≥ 0.80): ≥ 0.98 902 / 1,009 = 0.894; ≥ 0.99 789 / 874 = 0.903; = 1.00
+  372 / 406 = 0.916.
+- Extra copies inside another record's span (excluded from the bar; the search blocks them by design): 25 / 618.
+- Candidates at a Liftoff extra copy: 1,189 of 10,345 at identity ≥ 0.80 (0.115), and 1,091 of 3,207 at ≥ 0.95.
+
+**The 144 missed copies, by stratum** (§5, "if it fails"; `bench/g1/misses_g1.py`):
+
+| grouping | missed / scored |
+|---|---|
+| stratum | lncRNA 95 / 809; pseudogene 35 / 358 (biotype pseudogene 33 / 259, transcribed_pseudogene 2 / 90, V_segment_pseudogene 0 / 9); protein-coding 13 / 100; other 1 / 3 |
+| the source's Liftoff copies | 1: 30 / 271; 2-5: 63 / 441; 6-50: 51 / 558 (no source has more than 50) |
+| exon union | < 1 kb: 97 / 720; 1-5 kb: 46 / 519; ≥ 5 kb: 1 / 31 |
+
+- 63 of the 144 overlap a candidate by less than half; the other 81 overlap none.
+- The search keeps hits at identity ≥ 0.80 only (no candidate is below it), so whether a lower floor would reach these
+  copies is not measured here.
+- They come from 91 source records; no record loses more than 6 copies (LOC124906045 6, MTCO3P39 6).
