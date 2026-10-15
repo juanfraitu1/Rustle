@@ -100,6 +100,18 @@ As the spec's section 1, with the plan's rulings R1-R3:
 - **R7.** P2 compares against base loci whose representative transcript has 2-5 `reads` (from `templates.tsv`). P2
   passes only when at least one locus was added.
 
+## Amendment 1 (2026-10-14, before any result)
+
+Speed only, at commit `6b260c8c`. The method and every threshold are unchanged.
+- **The first A119b_shipped `assemble` was killed.** It reached its 900 s limit before writing anything: about 50 ms per
+  candidate, and some projected spans reach 3 Mb.
+- **Long spans are fetched exon by exon.** `own_reads` now does this when a candidate spans more than 200 kb, instead of
+  walking every read of a long projected intron. A read with an aligned base on the exons overlaps one of them, so the
+  reads are the same. On the first 600 candidates of A119b_shipped (batches 0-1), the old and new read sets were
+  identical.
+- **The own-read step runs in 4 worker processes** (`run_tg.py assemble --workers`). The output order and content do
+  not depend on the worker count (test `test_workers_do_not_change_the_output`).
+
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
