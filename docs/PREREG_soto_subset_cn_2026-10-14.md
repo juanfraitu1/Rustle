@@ -273,3 +273,29 @@ De novo verdicts: A119b T1a PASS, T1b FAIL, T2 FAIL; testis T1a PASS, T1b FAIL, 
 **Post hoc (descriptive, not pre-registered).** As on the guided universe, most violations are coverage violations
 (A119b 108 of 213, testis 44 of 51). Cutting our blocks by assembly copy number does not beat leaving them uncut:
 A119b 51 exact / ARI 0.4022 against 51 / 0.4621 uncut, and testis 40 / 0.7574 against 40 / 0.7861.
+
+### Verdict (2026-10-14)
+
+Reading 4 of the readings table: T1 fails on the guided universe, so no subset claim is made, and T2 is reported, not
+claimed.
+- **T1a (guided): PASS.** 258 of 491 Soto families are contained, against a size-null mean
+  of 0.709 (max 4); p = 0.000999.
+- **T1b (guided): FAIL.** D = -0.3995 [-0.6154, -0.1945], below 0: H(Soto | ours) = 0.2860 is smaller than
+  H(ours | Soto) = 0.6855, so ours is not the coarser partition on this universe.
+- **T2 (guided, assembly copy number, common set of 1,534 genes): PASS, reported, not claimed.**
+  - Exact 186, against a null mean of 163.2 (max 171); p = 0.000999.
+  - ARI 0.8274, against a null mean of 0.6836 (max 0.7303); p = 0.000999.
+- **Replication: both de novo catalogs pass T1a and fail T1b and T2.**
+  - T1b: A119b D = -1.0430 [-1.2541, -0.8029]; testis D = -0.2520 [-0.3903, -0.1052].
+  - T2, assembly: A119b p exact 0.006993, p ARI 0.000999; testis p exact 0.243756, p ARI 0.044955.
+- **Read depth passes T2's bar on the guided common set** (exact 206, ARI 0.8685). Reading 3 would use
+  it, but only when T1 holds.
+
+**What this says.**
+- Soto's families sit inside ours far beyond chance (T1a, every universe), but not as a refinement.
+- On the guided universe our catalog leaves 495 of Soto's single-label genes in no family. Of the 233 uncontained
+  families, 139 are contained once those singletons are removed, 47 once Soto's multi-family genes are removed too,
+  and 47 are genuine conflicts.
+- On the genes we do group, ours is the coarser partition (post hoc, D = +0.1906).
+- The copy-number cut beats random cuts on the guided universe, but gains only
+  +3 exact and +0.0384 ARI over leaving our families uncut, and fails on both de novo catalogs.

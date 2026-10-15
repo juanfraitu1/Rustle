@@ -189,3 +189,10 @@ catalogs. The claim **replicates** when every bar holds on both.
 - RNA expressed copy number (later).
 - Any change to O1's family definition or defaults.
 - The unit cover, and phases 3-5 of the layered spec. This study can inform phase 3's S2 but does not run it.
+
+## Results (2026-10-14)
+
+Reading 4 of section 1's readings table: Soto as a refinement is not claimed. T1b failed on the guided universe and both
+de novo catalogs, while T1a passed, with 258 of 491 Soto families inside one of our families against a null mean of 0.7. T2 passed on the guided universe but is not claimed, and it failed on both de novo catalogs. The wording of readings 1 and 2 was
+qualified before any statistic (prereg ruling R7). Full results: `docs/PREREG_soto_subset_cn_2026-10-14.md` (Results,
+Verdict); register rows 1281 and 1282.
