@@ -173,6 +173,62 @@ def recall(loci, base_rows, templates, sc):
     return rec
 
 
+def site_groups(off):
+    """Copies whose exon unions overlap by >= 50% of the smaller one, transitively -> [[copy, ...], ...].
+
+    Swept by exon block. The open blocks are kept per component, so a block is compared only with other components'
+    open blocks; the exonic bases a pair shares so far are summed, and the pair joins as soon as the sum reaches the
+    bar (the sum only grows, so this is the rule itself). A component found to share enough with the block is not
+    scanned further. A span sweep is quadratic here: one assembly put ~5,000 loci in a tandem array whose copies all
+    overlap (A119b chr13 13.9-15.5 Mb)."""
+    n = len(off)
+    size = [LF.iv_len(h["iv"]) for h in off]
+    last = [h["iv"][-1][1] for h in off]
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        if len(opened.get(a, ())) < len(opened.get(b, ())):
+            a, b = b, a
+        parent[b] = a
+        if b in opened:
+            opened.setdefault(a, []).extend(opened.pop(b))
+        return a
+
+    blocks = sorted((h["contig"], s, e, i) for i, h in enumerate(off) for s, e in h["iv"])
+    opened, shared, contig = {}, {}, None
+    for tick, (c, s, e, i) in enumerate(blocks):
+        if c != contig:
+            opened, shared, contig = {}, {}, c
+        if tick % 4096 == 0:
+            opened = {r: v for r, v in ((r, [x for x in v if x[0] > s]) for r, v in opened.items()) if v}
+            shared = {k: v for k, v in shared.items() if last[k[0]] > s and last[k[1]] > s}
+        ri = find(i)
+        for r in list(opened):
+            if r == ri or r not in opened:
+                continue
+            for e2, j in opened[r]:
+                if e2 <= s:
+                    continue
+                k = (j, i) if j < i else (i, j)
+                v = shared.get(k, 0) + min(e, e2) - s
+                if v >= 0.5 * min(size[i], size[j]):
+                    shared.pop(k, None)
+                    ri = union(ri, r)
+                    break
+                shared[k] = v
+        opened.setdefault(ri, []).append((e, i))
+    groups = collections.defaultdict(list)
+    for i, h in enumerate(off):
+        groups[find(i)].append(h)
+    return list(groups.values())
+
+
 def sites(loci, base_rows, templates, projected):
     """Projected copies off their own locus, merged into sites and classed (module docstring)."""
     locus_iv = {(b["contig"], b["locus"]): b["iv"] for b in base_rows}
@@ -182,32 +238,12 @@ def sites(loci, base_rows, templates, projected):
         own = locus_iv.get((t.contig, t.gene), t.exons) if t is not None else []
         if not (t is not None and h["contig"] == t.contig and cov(h["iv"], own) >= LF.MATCH_COV):
             off.append(h)
-    off.sort(key=lambda h: (h["contig"], h["iv"][0][0], h["iv"][-1][1], h["template"], h["strand"]))
-    parent = list(range(len(off)))
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    active = []
-    for i, h in enumerate(off):
-        active = [j for j in active if off[j]["contig"] == h["contig"] and off[j]["iv"][-1][1] > h["iv"][0][0]]
-        for j in active:
-            o = off[j]
-            inter = LF.iv_inter(h["iv"], o["iv"])
-            if inter and inter >= 0.5 * min(LF.iv_len(h["iv"]), LF.iv_len(o["iv"])):
-                parent[find(i)] = find(j)
-        active.append(i)
-    groups = collections.defaultdict(list)
-    for i, h in enumerate(off):
-        groups[find(i)].append(h)
+    groups = site_groups(off)
     extra = LF.Index([r for r in loci if r["cls"] == "extra_copy"])
     genes = LF.Index([r for r in loci if r["cls"] in ("in_place", "moved")])
     bidx = LF.Index(base_rows)
     classes = {k: [0, 0] for k in CLASSES}
-    for g in groups.values():
+    for g in groups:
         best = min(g, key=lambda h: (-h["seq"], -h["cov"], h["template"], h["strand"]))
         k = next((name for name, idx in (("liftoff_copy", extra), ("liftoff_gene", genes), ("assembled", bidx))
                   if idx.best_cov(best["contig"], best["iv"])[0] >= LF.MATCH_COV), "none")

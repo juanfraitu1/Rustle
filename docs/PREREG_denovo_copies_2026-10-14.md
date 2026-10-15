@@ -113,6 +113,33 @@ committed.
 - **R4.** The guided analogue (annotation records as templates) is G1, figure 8's separately registered test; it is not
   part of this one.
 
+## Amendment 1 (2026-10-14, speed only, before any result)
+
+The first development run (A119b) was stopped by its 10-minute limit before it wrote anything. Profiling the stages
+showed: inputs 2 s, own templates 1 s, the PAF pass 12 s, recall 1 s; the site merge did not finish. Seen while
+profiling, and nothing else: 489,897 projected copies (self alignments included), 85,729 kept alignments of 24,801 own
+templates, and projected-copy spans of 5,050 bp (median), 106,416 bp (99th percentile) and 1,640,982 bp (maximum). No
+recall, miss, site or class number was computed or seen.
+
+The cause is the merge's sweep over spans: a copy with long introns stays open across its whole span, so the sweep
+compares nearly every pair. Diagnosing it showed where the pairs come from. Batch 2 holds 6,000 templates from one
+tandem array (chr13 13.9-15.5 Mb, assembled as ~5,000 overlapping loci), and 5,035 of them reach minimap2's cap of 51
+alignments, all inside the array. That gives 252,592 off-locus copies in batch 2, and 251,540 of them chain into one
+cluster when any shared exonic base links two copies.
+
+The merge (`copies.site_groups`) now sweeps exon blocks and keeps the open blocks per component. A block is compared
+only with other components' open blocks. The exonic bases a pair shares so far are summed, and the pair joins as soon
+as the sum reaches the bar: the sum only grows, so this is the rule itself. The rule is unchanged (exon unions
+overlapping by >= 50% of the smaller, transitively), and so are the sites:
+- `test_site_merge_uses_exons_not_spans` pins the two cases that differ between spans and exons;
+- `test_site_groups_equal_brute_force_on_random_pileups` compares 60 random pileups against every pair;
+- on real off-locus copies the new merge gave the same partition as the span sweep in batches 0-1 (2,166 copies), 5
+  (5,594) and 8 (20,581);
+- batch 2 alone now takes 225 s at 0.8 GB.
+
+Also seen while checking, and nothing else: the number of sites in those batches (1,048, 816, 3,266 and 564). No recall,
+miss, class or C2 number was computed or seen.
+
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.

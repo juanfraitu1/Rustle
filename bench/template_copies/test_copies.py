@@ -161,3 +161,52 @@ def test_cli_refuses_unprojected_batches_and_low_self_rate(tmp_path):
     sc = K.scan(K.batch_pafs(str(run2)), TEMPLATES, keep=set())
     with pytest.raises(SystemExit):
         K.check_self(sc, TEMPLATES)
+
+
+def test_site_merge_uses_exons_not_spans():
+    h = lambda t, iv: dict(template=t, contig="chrZ", strand="+", iv=iv, cov=1.0, seq=1.0)  # noqa: E731
+    # a long-intron copy, a copy inside its intron (spans overlap, exons do not) and one on its first exon
+    groups = K.site_groups([h("a", [(0, 100), (100000, 100100)]), h("b", [(50000, 50200)]), h("c", [(0, 100)])])
+    assert sorted(sorted(x["template"] for x in g) for g in groups) == [["a", "c"], ["b"]]
+    # overlap below half of the smaller union: separate
+    groups = K.site_groups([h("a", [(0, 1000)]), h("b", [(900, 1300)])])
+    assert len(groups) == 2
+
+
+def _brute_groups(off):
+    """Every pair, by definition: exon unions overlapping by >= 50% of the smaller, transitively."""
+    parent = list(range(len(off)))
+
+    def find(x):
+        while parent[x] != x:
+            x = parent[x]
+        return x
+
+    for i in range(len(off)):
+        for j in range(i + 1, len(off)):
+            a, b = off[i], off[j]
+            if a["contig"] == b["contig"]:
+                n = K.LF.iv_inter(a["iv"], b["iv"])
+                if n and n >= 0.5 * min(K.LF.iv_len(a["iv"]), K.LF.iv_len(b["iv"])):
+                    parent[find(i)] = find(j)
+    g = {}
+    for i in range(len(off)):
+        g.setdefault(find(i), set()).add(i)
+    return sorted(sorted(v) for v in g.values())
+
+
+def test_site_groups_equal_brute_force_on_random_pileups():
+    import random
+    rng = random.Random(11)
+    for trial in range(60):
+        off = []
+        for k in range(rng.randint(2, 70)):
+            s, iv = rng.randint(0, 3000), []
+            for _ in range(rng.randint(1, 4)):
+                e = s + rng.randint(20, 600)
+                iv.append((s, e))
+                s = e + rng.randint(1, 1500)
+            off.append(dict(template=f"t{k}", contig=rng.choice(["c1", "c1", "c2"]), strand="+", iv=iv, id=k,
+                            cov=1.0, seq=1.0))
+        got = sorted(sorted(h["id"] for h in g) for g in K.site_groups(off))
+        assert got == _brute_groups(off), trial
