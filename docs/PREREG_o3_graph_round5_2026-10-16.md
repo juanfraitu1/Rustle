@@ -115,3 +115,75 @@ Scope either way: simulated reads (curated CAT isoforms, HiFi errors) on the rea
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (held out, 2026-10-16)
+
+Run: code and prereg `1c49489a`, the frozen copy_assign binary, seed 61. Outputs in `/mnt/linuxdisk/tmp/o3_graph/real/heldout5/`
+(`r5_*.json`, `o3_score.json`). Summaries from `bench/o3_graph/summary.py` (`o2bars-unionf`, `o3`).
+
+**O2** (correct / assigned; wrong-family calls counted):
+
+| world | current | **fallback graph O2** | locus O2 | non-catalogued placed: current / fallback |
+|---|---|---|---|---|
+| INTACT | 2,357 | 2,546 / 2,546 (x1.080) | 2,456 | - |
+| CROSS (liftover) | 2,793 | 3,005 / 3,006 (x1.076) | 2,922 | - |
+| OUTSIDE | 2,066 | 2,260 / 2,260 (x1.094) | 2,237 | 199 / 449 |
+| REMOVED | 2,066 | 2,260 / 2,260 (x1.094) | 2,237 | 233 / 449 |
+| BRANCH | 2,357 | 2,546 / 2,546 (x1.080) | 2,456 | 104 / 0 |
+
+- On this set the uncatalogued (OUTSIDE) and removed (REMOVED) special copies are all within delta of a catalogued paralog: the
+  removed copies' median `de` is 0.0013-0.0077, so none is detectable.
+- Their reads are explained by that paralog. The fallback, like any distance-based O2, places 449 of them on it (wrong by
+  construction). The current O2 abstains on more of them: 199 and 233.
+
+**O3** (8 families per world):
+
+| | CUR | S23 | S3 | H | **K** | Kn (before the genome check) |
+|---|---|---|---|---|---|---|
+| BRANCH detected | 0 | 8 | 0 | 8 | **8** | 8 |
+| INTACT + OUTSIDE + CROSS false-call families (of 24) | 2 | 0 | 0 | 0 | **0** | 5 |
+| REMOVED + BRANCH false-call families | 2 | 0 | 0 | 0 | **0** | 4 |
+| REMOVED detected (0 detectable) | - | - | - | - | - | - |
+
+**Sister-family hosting (D5).** TRIM64 hosts 143-230 reads from another family (TRIM51) in every world, and TRIM51 hosts 60 in
+REMOVED. K has no false call in any of them; Kn has TRIM64 or TRIM51 false calls in all five worlds, which the guard and the
+genome check remove. H, without the guard, has none either, so on this set the genome check alone sufficed. On development
+set 2 it did not: H had NPIPB false calls, and K none.
+
+| bar | value | |
+|---|---|---|
+| C1 | lowest world ratio 1.076 | pass |
+| C2 | lowest precision 0.9997 (CROSS 3,005 / 3,006) | pass |
+| C3 | REMOVED 449 vs 233 (more); pooled 898 / 536 = 1.68 | **fail** |
+| C4 | 12,617 vs 12,308: x1.025 | **fail** |
+| D1 | 8 / 8 | pass |
+| D2 | 0 of 24 | pass |
+| D3 | 0 detectable removed copies | not measurable |
+| D4 | K 8 = S23 8, false-call families 0 = 0 | pass |
+| D5 | measurable (TRIM64, TRIM51); K no false call | pass |
+
+### Verdict (2026-10-16)
+
+**O3: claimed without the removed-copy clause (reading 2: D1, D2, D4 pass; D3 not measurable).** "Graph O3 that clusters what
+no family's graph, nor the family's own loci, explains detects novel-exon absent copies (8 of 8; the current method 0). It
+makes no false call over intact, uncatalogued-paralog and paralog-annotation families (0 of 24; the current method 2),
+including families that host another family's reads (D5)."
+
+Together with round 4, which claimed the removed-copy clause for H (6 of 6) on families without sister-family hosting:
+- the graph-based O3 holds on two fresh sets;
+- K detects everything H detects on all five development sets, and has no false call on any of them.
+
+Attribution, as in round 4: the novel exons come from the branch calls, and the false-call drop from the genome check plus,
+for sister families, the cross-family guard.
+
+**O2: not claimed (C3, C4 fail).** The fallback graph O2 assigns 7.6-9.4% more reads correctly than the current O2 in every
+world, at precision >= 0.9997, including the paralog-annotated isoforms (C1, C2). But:
+- where an uncatalogued copy is within delta of a catalogued one, it places that copy's reads on the paralog, as any
+  distance-based O2 would, while the current O2 abstains on more of them (C3);
+- it keeps only 2.5% more correct calls than locus O2 here (C4).
+
+Across six fresh family sets graph O2 has traded one failure for another:
+- round 4: abstaining on structures it does not thread;
+- round 5: assigning reads of near-identical uncatalogued copies.
+
+No version has met all of its pre-registered bars.
