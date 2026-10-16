@@ -37,3 +37,8 @@ def test_a_branch_copy_is_scored_on_the_reads_that_carry_its_novel_exon():
              dict(read="d", copy="F.0", novel="0")]
     assert S.source_reads(truth, "F.B") == {"a", "c"}
     assert S.source_reads([dict(read="a", copy="F.2"), dict(read="b", copy="F.2")], "F.2") == {"a", "b"}   # no column: every read
+
+
+def test_a_copy_without_a_novel_exon_is_scored_on_all_its_reads_even_with_the_column():
+    truth = [dict(read="a", copy="F.2", novel="0"), dict(read="b", copy="F.2", novel="0")]
+    assert S.source_reads(truth, "F.2") == {"a", "b"}

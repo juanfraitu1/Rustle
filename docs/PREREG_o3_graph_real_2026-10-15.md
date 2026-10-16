@@ -126,3 +126,87 @@ and allele background are not modelled.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (2026-10-15)
+
+Run: code `549b5d1c`, the frozen copy_assign binary. Held-out worlds: the 8 held-out families, seed 21. Outputs in
+`/mnt/linuxdisk/tmp/o3_graph/real/heldout/` (one directory per scenario, `o3_score.json`, `o2_*.json`).
+
+**Disclosure: a scorer bug fixed after the first scoring.** Every held-out world carries the truth column `novel`, so
+`score.py` took each REMOVED copy's source to be its novel-exon reads, which are none. That turned REMOVED's detections into
+"no source" and its calls into false calls. The prereg scores BRANCH on novel-exon reads and REMOVED on all of the copy's
+reads (register 1294), so the implementation was corrected to that rule (test added). Development's REMOVED world predates
+the column and was unaffected. Only REMOVED's numbers changed.
+
+**O2** (pooled over the four worlds: 12,766 reads of catalogued copies, 1,443 of non-catalogued ones):
+
+| | assigned | correct | wrong | non-catalogued reads assigned |
+|---|---|---|---|---|
+| current O2 | 8,720 | 8,720 | 0 | 426 |
+| **path O2, margin 2** | 9,964 | 9,964 | 0 | 181 |
+| path O2, margin 1 | 10,650 | 10,650 | 0 | 213 |
+| path O2, representatives only, margin 2 | 8,148 | 8,136 | 12 | 234 |
+
+Per family (correct, current -> path O2 margin 2):
+
+| family | reads | current | path O2 |
+|---|---|---|---|
+| GOLGA6L | 840 | 408 | 840 |
+| NPIPA | 1,324 | 1,040 | 1,300 |
+| NPIPB | 2,292 | 1,548 | 1,754 |
+| TBC1D3 | 2,288 | 2,072 | 2,164 |
+| GOLGA8 | 2,288 | 2,120 | 2,152 |
+| SPATA31 | 1,564 | 1,532 | 1,564 |
+| XAGE | 610 | 0 | 190 |
+| CT47A | 1,560 | 0 | 0 (copies identical over their reads) |
+
+**O3** (8 families per scenario):
+
+| | CUR | S12 | S123 | **S4** |
+|---|---|---|---|---|
+| BRANCH detected | 0 | 8 | 8 | **8** |
+| BRANCH false-call families | 3 | 3 | 0 | **0** |
+| INTACT false-call families | 3 | 3 | 0 | **0** |
+| OUTSIDE false-call families | 4 | 4 | 0 | **0** |
+| REMOVED detected (2 detectable) | 0 | 1 | 1 | **1** |
+| REMOVED false-call families | 3 | 3 | 0 | **0** |
+
+- BRANCH holds on all of the absent copy's reads too: S4 8 / 8, CUR 0.
+- 6 of the 8 removed copies are within delta of the masked genome by their reads' median `de`: CT47A 0.0016, NPIPB 0.0014,
+  XAGE 0.0021, NPIPA 0.0026, SPATA31 0.0057, GOLGA6L 0.0093.
+- The 2 detectable ones are TBC1D3 (0.0141; S4 detects it, CUR does not) and GOLGA8 (0.0143; missed by every arm).
+
+| bar | value | |
+|---|---|---|
+| O2a | precision 1.0 | pass |
+| O2b | 9,964 vs 8,720: +14.3% | pass |
+| O2c | 181 vs 426 | pass |
+| O2d | representatives only: 12 wrong; all isoforms: 0 | pass |
+| O3a | BRANCH 8 / 8 | pass |
+| O3b | 2 detectable removed copies (needs >= 3) | **not measurable** |
+| O3c | 0 of 16 | pass |
+| O3d | BRANCH +8; false-call families 0 vs 13 | pass |
+
+### Verdict (2026-10-15)
+
+**O2: reading 1, claimed** (simulated reads of handpicked real families). O2 on every curated isoform path assigns 14.3% more
+reads correctly than the current O2, at precision 1.0. It also places fewer reads of non-catalogued copies (181 vs 426).
+The representatives-only version makes wrong assignments (12 held out, 154 in development), so the all-isoform content is
+what keeps it precise. Margin 1 assigns more still (10,650, no error) but is not the pre-registered primary.
+
+**O3: claimed in part.** O3a, O3c and O3d pass. O2-informed O3 (S4):
+- detects every absent copy carrying a novel exon (8 / 8; the current method 0);
+- makes no false call over intact, uncatalogued-paralog, removed and branch families (0 / 32; the current method 13 / 32).
+
+The REMOVED clause (O3b) cannot be tested on this set: 6 of its 8 removed copies are within delta of a remaining paralog, as
+these young families' copies are. On the two that are not, S4 detects TBC1D3 and the current method neither.
+
+**What the miss shows (post hoc).** GOLGA8's removed copy is a MOSAIC: its 58 reads form a pure cluster with 23 alt sites,
+22 of them carried by some other copy, so no copy explains the cluster and too few sites are unexplained (`unresolved`). Its
+reads are 1.43% from anything in the genome. A rule on the cluster's distance to its nearest single copy, not on
+copy-private alleles, would call it. That is a method change for a new prereg on another family set.
+
+**Scope:**
+- simulated reads (curated CAT isoforms, HiFi errors) on the real CHM13 genome;
+- real data's other species, fragments and allele background are not modelled;
+- the special copies are one per family (seeded).

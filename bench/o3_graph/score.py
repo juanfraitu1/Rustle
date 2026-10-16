@@ -24,7 +24,7 @@ def source_reads(truth_rows, copy):
     """The absent copy's reads a method can tell apart: for a novel-exon copy (truth column `novel`), those carrying the novel
     exon -- its other reads are the present copy's sequence within the SNP rate; otherwise every read."""
     rows = [r for r in truth_rows if r["copy"] == copy]
-    if rows and "novel" in rows[0]:
+    if any(r.get("novel") == "1" for r in rows):          # only a copy that HAS a novel exon is scored on its carriers
         return {r["read"] for r in rows if r["novel"] == "1"}
     return {r["read"] for r in rows}
 
