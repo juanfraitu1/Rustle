@@ -6,6 +6,8 @@
     summary.py o2bars PREFIX WORLD ...    round 4's A1-A4: padded union O2 (o2.unionp.m2.tsv) against the current O2 and locus O2
                                           (o2.locus.m2.tsv), per world; writes PREFIX_<arm>.json (o2graph.py score)
     summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
+    summary.py e2e OUT.json WORLD ...     end to end: every read's fate (read_fate) by the kind of copy it came from, for the
+                                          current method and the integrated O1 -> O2 -> O3
     summary.py flags OUT.json WORLD ...   round 6: the flagged clusters (o2graph.flag_reads' rule) by truth class -- copy /
                                           allele (one haplotype of a catalogued copy) / other -- and the uncatalogued copies covered
 """
@@ -100,6 +102,87 @@ def cmd_flags(out, worlds):
                          n_false_flag_families=len(set().union(*false_fams.values())) if false_fams else 0)
         print(f"{name}: flagged clusters {dict(cls)} | uncatalogued copies flagged {len(flagged_copies)}/{len(nonc)} | "
               f"families with a false flag {res[name]['n_false_flag_families']} {res[name]['false_flag_families']}")
+    json.dump(res, open(out, "w"), indent=1)
+    return 0
+
+
+def read_fate(cls, assigned, own, in_o3):
+    """End to end (O1 -> O2 -> O3): a read's fate under one system, by the kind of copy it came from. An absent-copy call
+    (O3) takes precedence over an assignment (O2). catalogued / uncatalogued: right only on its own copy (an uncatalogued copy
+    only once O1 seeded it); an O3 call on it is an error. absent_detectable: right only inside an O3 call. absent_undetectable
+    (the genome explains it within delta): placing it is `unknowable`, an O3 call is right, abstaining is neutral."""
+    if in_o3:
+        return "error" if cls in ("catalogued", "uncatalogued") else "correct"
+    if assigned is None:
+        return "abstain"
+    if cls in ("catalogued", "uncatalogued"):
+        return "correct" if assigned == own else "error"
+    return "error" if cls == "absent_detectable" else "unknowable"
+
+
+def cmd_e2e(out, worlds):
+    """Per world and read class: the fates of every read under the current method (copy_assign O2 + CUR O3) and the integrated
+    O1 -> O2 -> O3 (o2.integ.m2.tsv on graph/seeded.json + arm I)."""
+    O = _o2("o2graph")
+    res = {}
+    for w in worlds:
+        name = os.path.basename(w.rstrip("/"))
+        truth = {r["read"]: r for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t")}
+        kinds = json.load(open(f"{w}/kinds.json"))
+        iso = json.load(open(f"{w}/isoforms.json"))
+        cat_copy = {(f, c["idx"]): c["copy"] for f, cps in iso.items() for c in cps}
+        det = removed_detectability(w) if name.startswith("REMOVED") else {}
+
+        def cls_of(t):
+            k = kinds.get(t["copy"], "present")
+            if k in ("present", "silent"):
+                return "catalogued"
+            if k == "outside":
+                return "uncatalogued"
+            if name.startswith("BRANCH"):                  # a novel-exon absent copy: detectable by construction
+                return "absent_detectable"
+            return "absent_detectable" if det.get(t["family"], (0, False))[1] else "absent_undetectable"
+        sj = json.load(open(f"{w}/graph/seeded.json"))
+        truth_copies = list(csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"))
+        seeded_copy = dict(cat_copy)
+        for f, v in sj.items():
+            for i, cp in O.map_new_copies([c for c in v["copies"] if c["origin"] == "new"], truth_copies).items():
+                seeded_copy[(f, i)] = cp
+        cur = {}
+        for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
+            if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit():
+                cur.setdefault(r["read_name"], {})[r["family_id"]] = cat_copy.get((r["family_id"], int(r["catalog_copy_idx"])))
+        integ = {}
+        for r in csv.DictReader(open(f"{w}/graph/o2.integ.m2.tsv"), delimiter="\t"):
+            if r["call"] != "-":
+                integ.setdefault(r["read"], {})[r["family"]] = seeded_copy.get((r["family"], int(r["call"])))
+        mem = collections.defaultdict(set)
+        for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
+            mem[(r["family"], r["host"], r["cluster"])].add(r["read_name"])
+        cur_o3 = set()
+        for c in csv.DictReader(open(f"{w}/cur/A.psv_clusters.tsv"), delimiter="\t"):
+            if c["status"] == "unexplained" and float(c["est_div"]) > DELTA:
+                cur_o3 |= mem[(c["family"], c["host"], c["cluster"])]
+        i_o3 = set()
+        for c in csv.DictReader(open(f"{w}/graph/calls.tsv"), delimiter="\t"):
+            if c["arm"] == "I":
+                i_o3 |= set(c["members"].split(","))
+        tab = {}
+        for system, o2, o3 in (("current", cur, cur_o3), ("integrated", integ, i_o3)):
+            cnt = collections.defaultdict(collections.Counter)
+            for q, t in truth.items():
+                calls = o2.get(q, {})
+                assigned = calls.get(t["family"], next(iter(calls.values())) if calls else None)
+                if t["family"] not in calls and calls:
+                    assigned = "wrong-family"
+                cl = cls_of(t)
+                cnt[cl][read_fate(cl, assigned, t["copy"], q in o3)] += 1
+            tab[system] = {k: dict(v) for k, v in cnt.items()}
+        res[name] = tab
+        print(name)
+        for system in ("current", "integrated"):
+            print(f"   {system:10s} " + " | ".join(f"{cl}: " + " ".join(f"{k} {v}" for k, v in sorted(tab[system][cl].items()))
+                                                for cl in sorted(tab[system])))
     json.dump(res, open(out, "w"), indent=1)
     return 0
 
@@ -241,6 +324,8 @@ def cmd_o2bars(prefix, worlds, graph_arm="unionp.m2"):
 def main(argv):
     if argv[0] == "o3":
         return cmd_o3(argv[1], argv[2:])
+    if argv[0] == "e2e":                                 # end to end: every read's fate, current vs integrated
+        return cmd_e2e(argv[1], argv[2:])
     if argv[0] == "integ":                               # round 7: the integrated O1 -> O2 against the current O2
         return cmd_integ(argv[1], argv[2:])
     if argv[0] == "flags":                               # round 6: the flag's clusters by truth class

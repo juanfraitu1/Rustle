@@ -48,3 +48,18 @@ def test_o1_drops_are_scored_against_which_copies_were_silent():
     cat_copy = {("F", 0): "F.0", ("F", 1): "F.1", ("F", 2): "F.2", ("F", 3): "F.3", ("G", 0): "G.0"}
     kinds = {"F.0": "present", "F.1": "silent", "F.2": "present", "F.3": "present", "G.0": "present"}
     assert S.drop_outcome(seeded, cat_copy, kinds) == dict(silent=1, silent_dropped=1, expressed=4, expressed_dropped=1)
+
+
+def test_a_read_s_fate_is_judged_by_what_kind_of_copy_it_came_from():
+    # a catalogued (or O1-seeded uncatalogued) copy's read: right only on its own copy; an absent-copy call on it is an error
+    assert S.read_fate("catalogued", assigned="F.0", own="F.0", in_o3=False) == "correct"
+    assert S.read_fate("catalogued", assigned="F.1", own="F.0", in_o3=False) == "error"
+    assert S.read_fate("catalogued", assigned=None, own="F.0", in_o3=True) == "error"
+    assert S.read_fate("uncatalogued", assigned="F.5", own="F.5", in_o3=False) == "correct"
+    assert S.read_fate("catalogued", assigned=None, own="F.0", in_o3=False) == "abstain"
+    # an absent copy the genome does not explain: right only inside an absent-copy call
+    assert S.read_fate("absent_detectable", assigned=None, own="F.9", in_o3=True) == "correct"
+    assert S.read_fate("absent_detectable", assigned="F.1", own="F.9", in_o3=False) == "error"
+    # an absent copy within delta of the genome cannot be told from the locus that explains it
+    assert S.read_fate("absent_undetectable", assigned="F.1", own="F.9", in_o3=False) == "unknowable"
+    assert S.read_fate("absent_undetectable", assigned=None, own="F.9", in_o3=True) == "correct"

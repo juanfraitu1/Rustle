@@ -218,3 +218,26 @@ every arm, as was round 3's case near the boundary.
   uniquely placed reads. On this set wrong calls went from 193 for padded union to 180, with 348 reads now right.
 - **What it does not fix:** copies near-identical at mapq 0 (unseedable), and alleles.
 - **A bug it exposed:** a seeded locus must belong to one family only. Fixing that is a method change for a new prereg.
+
+**Development O3 with the final seeding (promised in "Known before running").** Arm I made no false call in any of the 12
+development worlds. It detected every detectable removed copy: round 6's set 3 of 3 (CUR 1), round 4's set 6 of 6 (CUR 5).
+
+**End to end, post hoc (`summary.py e2e`, `read_fate`).** Every read's fate under each system, by the kind of copy it came
+from, with an absent-copy call taking precedence over an assignment. On this held-out set:
+
+| world | current: correct / error / abstain | integrated: correct / error / abstain |
+|---|---|---|
+| INTACT | 2,348 / 44 / 615 | 2,476 / 0 / 531 |
+| CROSS | 2,682 / 43 / 943 | 2,955 / 11 / 702 |
+| OUTSIDE (catalogued + uncatalogued reads) | 2,069 / 233 / 705 | 2,533 / 120 / 354 |
+| REMOVED (+ unknowable placements) | 2,190 / 44 / 473 (+68) | 2,405 / 13 / 325 (+193) |
+| SILENT | 1,705 / 46 / 415 | 1,834 / 0 / 332 |
+
+- The current method's errors are mostly its absent-copy calls on present copies' reads, which the O2 bars did not count.
+- Reads of the detectable removed copies end inside an absent-copy call: 181 / 181 for the integrated pipeline, 121 for the
+  current method.
+- On the 12 development worlds the integrated pipeline has more correct fates and no more errors in 9. On round 4's INTACT,
+  CROSS and REMOVED it is within 12 reads, with 0 errors either way.
+
+This is computed after the results were seen, so it is not a claim. It is the basis for a pre-registered end-to-end test on a
+new family set.
