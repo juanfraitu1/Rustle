@@ -87,3 +87,31 @@ def test_reads_of_a_paralog_annotated_structure_are_scored_on_their_own(tmp_path
     assert res["proj_reads"] == 1 and res["cur_correct_proj"] == 1
     assert res["graph_assigned_proj"] == 1 and res.get("graph_correct_proj", 0) == 0     # path O2 names the annotated paralog
     assert res["reads"] == 2 and res["graph_correct"] == 1
+
+
+def test_union_paths_give_every_copy_each_paralog_structure_it_can_carry():
+    copies = [dict(idx=0, isoforms={"a": [[0, 10], [20, 30]], "b": [[0, 10], [25, 30]]}),
+              dict(idx=1, isoforms={"c": [[100, 110], [120, 130]]})]
+
+    def projector(c, queries):            # copy 1 can carry a's structure; b does not project onto it; c projects onto 0
+        out = {}
+        for name in queries:
+            if c["idx"] == 1:
+                out[name] = [(100, 110), (120, 130)] if name.endswith("|a") else None
+            else:
+                out[name] = [(0, 10), (40, 50)]
+        return out
+    u = O.union_structures(copies, projector)
+    assert sorted(u[0]) == ["a", "b", "proj:copy1|c"]          # c's intron (10, 40) is new to copy 0
+    assert sorted(u[1]) == ["c"]                                # a projects onto copy 1 as copy 1's own chain: nothing new
+
+
+def test_locus_o2_decides_on_genomic_locus_distances(tmp_path):
+    import json
+    w = _world(tmp_path, [("r1", "A", "assigned", "0"), ("r2", "B", "assigned", "0")], [])
+    json.dump({"A": {"r1": {"copy0": 2, "copy1": 9}}, "B": {"r2": {"copy0": 3, "copy1": 4}}},
+              open(tmp_path / "graph" / "locus.dist.json", "w"))
+    (tmp_path / "reads.E0.fq").write_text("@r1\n" + "A" * 1000 + "\n+\n" + "I" * 1000 + "\n@r2\n" + "A" * 1000 + "\n+\n" + "I" * 1000 + "\n")
+    O.run_locus(w, margin=2)
+    rows = {(r.split("\t")[0], r.split("\t")[1]): r.split("\t")[2:] for r in (tmp_path / "graph" / "o2.locus.m2.tsv").read_text().splitlines()[1:]}
+    assert rows[("r1", "A")] == ["0", "assigned"] and rows[("r2", "B")] == ["-", "thin"]

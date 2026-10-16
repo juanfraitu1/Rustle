@@ -6,7 +6,9 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
                                                   path of every catalogued copy; `nodes`: allele nodes of a free GraphAligner
                                                   alignment (needs detect.py's graph/<family>/s.gfa + aln.gaf)
     o2graph.py score OUT.json O2_NAME WORLD ...   O2 (graph/O2_NAME) against the truth, the current method beside it
-    (run ... reps MARGIN: the ablation with each copy's representative path only; outputs graph/o2.<method>.m<margin>.tsv)
+    (run ... reps MARGIN: the ablation with each copy's representative path only; run ... union MARGIN: every copy's own
+    isoforms plus every paralog isoform structure projected onto its locus (union_structures); run ... locus MARGIN: the
+    annotation-free baseline on seqsupport's genomic-locus distances; outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -131,7 +133,29 @@ def run_seqsupport(w, pad=1000):
     return 0
 
 
-def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv"):
+def _realworld():
+    spec = importlib.util.spec_from_file_location("o3_graph_realworld", os.path.join(HERE, "realworld.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def union_structures(cps, projector):
+    """{copy idx: {name: exons}}: each catalogued copy's own curated isoforms plus every paralog isoform structure it can
+    carry -- projector(copy, {name: (paralog copy, isoform exons)}) -> {name: exons on this copy or None} -- whose intron
+    chain is new to it (realworld.cross_structures, uncapped). The family graph threads every structure through every copy,
+    so only the sequence separates copies, not which copy the annotation lists a structure on."""
+    R = _realworld()
+    out = {}
+    for c in cps:
+        own = {t: [tuple(x) for x in ex] for t, ex in c["isoforms"].items()}
+        queries = {f"proj:copy{p['idx']}|{t}": (p, ex) for p in cps if p is not c for t, ex in p["isoforms"].items()}
+        proj = projector(c, queries) if queries else {}
+        out[c["idx"]] = dict(own, **R.cross_structures(own, proj, max_proj=None))
+    return out
+
+
+def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
@@ -150,24 +174,39 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv"):
     hosted = collections.defaultdict(set)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         hosted[r["family_id"]].add(r["read_name"])
-    d = f"{w}/graph/o2paths"
+    d = f"{w}/graph/o2paths" + (".reps" if reps_only else ".union" if union else "")
     os.makedirs(d, exist_ok=True)
-    out = []
+    R = _realworld() if union else None
+
+    def projector(c, queries):                       # union: paralog isoforms spliced-aligned onto the copy's locus
+        lo = max(0, c["start"] - R.PROJ_PAD)
+        locus = fa.fetch(c["contig"], lo, c["end"] + R.PROJ_PAD).upper()
+        q = {}
+        for name, (p, ex) in queries.items():
+            seq = "".join(fa.fetch(p["contig"], a, b).upper() for a, b in ex)
+            q[name] = (seq[::-1].translate(comp) if p["strand"] == "-" else seq, len(ex))
+        return R.project_many(q, locus, lo, c["strand"])
+    out, n_struct = [], collections.Counter()
     for fam in sorted(iso):
         names = sorted(n for n in hosted.get(fam, ()) if n in reads)
         if not names:
             continue
+        paths = (union_structures(iso[fam], projector) if union else
+                 {c["idx"]: {t: ex for t, ex in c["isoforms"].items() if not reps_only or t == c["rep"]} for c in iso[fam]})
+        json.dump({str(k): {t: [list(x) for x in ex] for t, ex in v.items()} for k, v in paths.items()},
+                  open(f"{d}/{fam}.paths.json", "w"))                  # the structures each copy's paths follow
+        n_tx = 0
         with open(f"{d}/{fam}.tx.fa", "w") as fh:
             for c in iso[fam]:
-                for t, ex in c["isoforms"].items():
-                    if reps_only and t != c["rep"]:         # the ablation: each copy's representative only
-                        continue
+                for t, ex in paths[c["idx"]].items():
                     seq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in ex)
                     fh.write(f">copy{c['idx']}|{t}\n{seq[::-1].translate(comp) if c['strand'] == '-' else seq}\n")
+                    n_tx += 1
+                    n_struct["projected" if t.startswith("proj:") else "own"] += 1
         with open(f"{d}/{fam}.reads.fa", "w") as fh:
             for n in names:
                 fh.write(f">{n}\n{reads[n]}\n")
-        res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", "200", "-p", "0.3", "--secondary=yes",
+        res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes",
                               f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
         dist = collections.defaultdict(dict)
         for ln in res.splitlines():
@@ -183,8 +222,30 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv"):
         wr.writeheader()
         wr.writerows(out)
     c = collections.Counter(r["reason"] for r in out)
-    print(f"[o2graph] {w} ({'representative' if reps_only else 'isoform'} paths, margin {margin}) -> {out_name}: {len(out)} reads, " + ", ".join(f"{k} {v}" for k, v in sorted(c.items())),
-          flush=True)
+    kind = "representative" if reps_only else "union" if union else "isoform"
+    print(f"[o2graph] {w} ({kind} paths {dict(n_struct)}, margin {margin}) -> {out_name}: {len(out)} reads, "
+          + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
+    return 0
+
+
+def run_locus(w, margin=MARGIN, out_name=None):
+    """Locus O2, the annotation-free baseline: decide() on the distances of every hosted read to each catalogued copy's
+    genomic locus (graph/locus.dist.json from run_seqsupport; any canonical splicing allowed)."""
+    lj = json.load(open(f"{w}/graph/locus.dist.json"))
+    reads = _read_fq(f"{w}/reads.E0.fq")
+    out = []
+    for fam in sorted(lj):
+        for n in sorted(lj[fam]):
+            c, reason = decide(lj[fam][n], len(reads[n]), margin)
+            out.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
+    out_name = out_name or f"o2.locus.m{margin}.tsv"
+    with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
+        wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
+        wr.writeheader()
+        wr.writerows(out)
+    c = collections.Counter(r["reason"] for r in out)
+    print(f"[o2graph] {w} (genomic loci, margin {margin}) -> {out_name}: {len(out)} reads, "
+          + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
     return 0
 
 
@@ -296,7 +357,10 @@ def main(argv):
         margin = int(argv[3]) if len(argv) > 3 else MARGIN
         if method == "nodes":
             return run_world(argv[1])
-        return run_paths(argv[1], margin, reps_only=method == "reps", out_name=f"o2.{method}.m{margin}.tsv")
+        if method == "locus":
+            return run_locus(argv[1], margin)
+        return run_paths(argv[1], margin, reps_only=method == "reps", union=method == "union",
+                         out_name=f"o2.{method}.m{margin}.tsv")
     if argv[0] == "seqsupport":
         return run_seqsupport(argv[1])
     # score OUT.json O2_NAME WORLD ...   (+ the sequence-supported counts where WORLD/graph/locus.dist.json exists)

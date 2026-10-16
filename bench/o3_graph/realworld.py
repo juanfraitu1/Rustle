@@ -17,6 +17,8 @@ Per family one SPECIAL copy (seeded; its main isoform has >= 3 exons when any co
             same exon count, canonical junctions and an intron chain none of the copy's own isoforms has; the copy's own
             genomic sequence over those exons is the transcript (truth isoform `proj:<paralog copy>|<isoform>`, weight
             OTHER; the copy's own-isoform reads are INTACT's). The catalog lists each copy's own isoforms only.
+            `--projection liftover`: the structures are lifted through the two loci's genomic alignment instead (asm20),
+            independent of the spliced projection union O2 itself uses.
 Reads: per expressed copy PER_COPY reads over its isoforms (main 2.0, others 0.5), each the isoform's sense sequence with 0-30
 bp end jitter and HiFi errors (bench/sim.py, 0.1% substitutions, 0.03% indels), from the UNMASKED genome. Names are a
 seeded shuffle `s0000001..` (they carry no truth); reads.truth.E0.tsv holds it, with `novel` = 1 for a read that
@@ -124,6 +126,76 @@ def project_many(queries, locus, lo, strand, cover=PROJ_COVER):
     return res
 
 
+def lift_positions(cigar, qs, ts, positions):
+    """{query position: target position, or None outside the alignment} through a '+' PAF alignment's CIGAR (query from qs,
+    target from ts). A query base inside an insertion lifts to the next target base."""
+    import re
+    want = sorted(set(positions))
+    out, q, t, k = {}, qs, ts, 0
+    for n, op in re.findall(r"(\d+)([MIDNSHP=X])", cigar):
+        n = int(n)
+        if op in "M=X":
+            while k < len(want) and want[k] < q + n:
+                out[want[k]] = t + (want[k] - q) if want[k] >= q else None
+                k += 1
+            q += n
+            t += n
+        elif op == "I":
+            while k < len(want) and want[k] < q + n:
+                out[want[k]] = t if want[k] >= q else None
+                k += 1
+            q += n
+        elif op in "DN":
+            t += n
+    for x in want[k:]:
+        out[x] = None
+    return out
+
+
+def liftover(p_locus, structures, c_locus):
+    """Paralog isoform structures (exons on p_locus, both loci in their transcripts' orientation) lifted onto c_locus through
+    the loci's genomic alignment (minimap2 -x asm20, the longest '+' primary): a projection independent of the spliced
+    transcript alignment `project` uses. -> per structure its exons on c_locus, or None when an exon end falls outside the
+    alignment or the exons do not stay ordered."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        open(f"{d}/t.fa", "w").write(f">c\n{c_locus}\n")
+        open(f"{d}/q.fa", "w").write(f">p\n{p_locus}\n")
+        paf = subprocess.run(["minimap2", "-c", "-x", "asm20", "--secondary=no", f"{d}/t.fa", f"{d}/q.fa"],
+                             capture_output=True, text=True, check=True).stdout
+    best = None
+    for ln in paf.splitlines():
+        f = ln.split("\t")
+        tags = {x[:5]: x[5:] for x in f[12:]}
+        if f[4] == "+" and tags.get("tp:A:") == "P" and (best is None or int(f[3]) - int(f[2]) > best[1] - best[0]):
+            best = (int(f[2]), int(f[3]), int(f[7]), tags["cg:Z:"])
+    out = []
+    for ex in structures:
+        if best is None:
+            out.append(None)
+            continue
+        pos = [x for a, b in ex for x in (a, b - 1)]
+        lift = lift_positions(best[3], best[0], best[2], pos)
+        new = [(lift[a], lift[b - 1] + 1) if lift[a] is not None and lift[b - 1] is not None else None for a, b in ex]
+        ok = all(e is not None and e[0] < e[1] for e in new) and all(x[1] <= y[0] for x, y in zip(new, new[1:]))
+        out.append(new if ok else None)
+    return out
+
+
+def oriented(fetch, lo, hi, strand):
+    """A locus genome[lo:hi] in its transcript's orientation, and a function taking its exons back to genome coordinates."""
+    seq = fetch(lo, hi).upper()
+    if strand == "-":
+        return seq[::-1].translate(COMP), lambda ex: sorted((hi - b, hi - a) for a, b in ex)
+    return seq, lambda ex: sorted((lo + a, lo + b) for a, b in ex)
+
+
+def to_oriented(exons, lo, hi, strand):
+    """Genomic exons -> coordinates on the oriented locus genome[lo:hi]."""
+    return sorted((hi - b, hi - a) for a, b in exons) if strand == "-" else sorted((a - lo, b - lo) for a, b in exons)
+
+
 def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None):
     """{name: exons} of the projected paralog structures a copy expresses: intron chains new to its own isoforms (`own`; a
     chain whose every junction is within JUNCTION_TOL bp of a known chain's is that chain, a projection artifact), one name
@@ -143,7 +215,7 @@ def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None):
         seen.append(chain(ex))
         pick[name] = ex
     names = sorted(pick)
-    if len(names) > max_proj:
+    if max_proj is not None and len(names) > max_proj:
         names = sorted((rng or random.Random(0)).sample(names, max_proj))
     return {n: pick[n] for n in names}
 
@@ -255,7 +327,25 @@ def cmd_build(a):
                     fetch_p = lambda s_, e_, ch=p["chrom"]: true_fa.fetch(ch, s_, e_)  # noqa: E731
                     for t, ex in p["transcripts"].items():
                         queries[f"proj:{f}.{k2}|{t}"] = (splice(fetch_p, [tuple(x) for x in ex], p["strand"], {}), len(ex))
-                proj = project_many(queries, locus, lo, c["strand"]) if queries else {}
+                if a.projection == "liftover":
+                    proj = {}
+                    c_hi = c["end"] + PROJ_PAD
+                    c_seq, back = oriented(lambda s_, e_, ch=c["chrom"]: true_fa.fetch(ch, s_, e_), lo, c_hi, c["strand"])
+                    c_fetch = lambda s_, e_, ch=c["chrom"]: true_fa.fetch(ch, s_, e_)  # noqa: E731
+                    for k2, p in enumerate(fam["copies"]):
+                        if p is c:
+                            continue
+                        p_lo, p_hi = max(0, p["start"] - PROJ_PAD), p["end"] + PROJ_PAD
+                        p_seq, _ = oriented(lambda s_, e_, ch=p["chrom"]: true_fa.fetch(ch, s_, e_), p_lo, p_hi, p["strand"])
+                        ts = sorted(p["transcripts"])
+                        lifted = liftover(p_seq, [to_oriented([tuple(x) for x in p["transcripts"][t]], p_lo, p_hi, p["strand"])
+                                                  for t in ts], c_seq)
+                        for t, ex in zip(ts, lifted):
+                            g = back(ex) if ex else None
+                            ok = (g is not None and len(g) == len(p["transcripts"][t]) and canonical_junctions(c_fetch, g, c["strand"]))
+                            proj[f"proj:{f}.{k2}|{t}"] = g if ok else None
+                else:
+                    proj = project_many(queries, locus, lo, c["strand"]) if queries else {}
                 own = {t: [tuple(x) for x in v] for t, v in c["transcripts"].items()}
                 cross[f"{f}.{k}"] = cross_structures(own, proj, MAX_PROJ, random.Random(f"{a.seed}:{f}.{k}:cross"))
                 n_proj[f] += sum(v is not None for v in proj.values())
@@ -311,7 +401,7 @@ def cmd_build(a):
     json.dump(cfam, open(f"{out}/copy_family.json", "w"), indent=1)
     json.dump(world, open(f"{out}/world.json", "w"), indent=1)
     if a.scenario == "CROSS":
-        json.dump(dict(projectable=n_proj, expressed=cross), open(f"{out}/cross.json", "w"), indent=1)
+        json.dump(dict(projection=a.projection, projectable=n_proj, expressed=cross), open(f"{out}/cross.json", "w"), indent=1)
         print(f"[realworld] CROSS: {sum(len(v) for v in cross.values())} paralog structures expressed over {len(cross)} copies "
               f"({sum(n_proj.values())} paralog isoforms projectable)", flush=True)
     with open(f"{out}/copies.tsv", "w") as fh:
@@ -346,6 +436,9 @@ def main(argv=None):
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--genome")
     p.add_argument("--per-copy", type=int, default=60)
+    p.add_argument("--projection", choices=("spliced", "liftover"), default="spliced",
+                   help="CROSS: paralog isoforms onto a copy by spliced transcript alignment (Amendment 1) or by liftover "
+                        "through the loci's genomic alignment (independent of union O2's projection)")
     p.set_defaults(func=cmd_build)
     a = ap.parse_args(argv)
     return a.func(a)

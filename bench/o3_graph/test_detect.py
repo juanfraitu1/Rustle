@@ -131,5 +131,42 @@ def test_s4_keys_unexplained_reads_by_family():
 def test_each_call_lands_in_its_arms():
     assert D.arms_of("R0", keep=True) == ["R0", "S3", "S23"] and D.arms_of("R0", keep=False) == ["R0"]
     assert D.arms_of("S1", keep=True) == ["S1", "S12", "S123"]
-    assert D.arms_of("S2", keep=True) == ["S12", "S123", "S23", "S4n", "S4"]
+    assert D.arms_of("S2", keep=True)[:5] == ["S12", "S123", "S23", "S4n", "S4"]
     assert D.arms_of("S4p", keep=False) == ["S4n"]
+
+
+def _mosaic_case(n_sites=30):
+    ref = "A" * 1000
+    pos = list(range(10, 10 + 30 * n_sites, 30))
+    sites = {p: "C" for p in pos}
+    cons = {p: "alt" for p in pos}
+    half = set(pos[: n_sites // 2])
+    copy0 = {p: ("C" if p in half else "A") for p in range(1000)}       # carries the first half of the alts
+    copy1 = {p: ("C" if p in sites and p not in half else "A") for p in range(1000)}
+    cov = {"m": {p: ref[p] for p in range(1000)}}
+    return ref, sites, cons, {"copy0": copy0, "copy1": copy1}, cov
+
+
+def test_a_cluster_far_from_every_single_copy_is_a_mosaic_copy():
+    ref, sites, cons, maps, cov = _mosaic_case()
+    # every alt is carried by some copy, so no alt is unexplained: the old rule leaves it `unresolved`
+    assert D.status_of(["m"], cons, sites, ref, maps, cov, {})[0] == "unresolved"
+    st, div = D.status_of(["m"], cons, sites, ref, maps, cov, {}, mosaic=True)
+    assert st == "mosaic" and abs(div - 15 / 1000) < 1e-9          # the nearest copy differs at 15 of 1,000 bases
+
+
+def test_a_mosaic_needs_the_nearest_copy_beyond_delta():
+    ref, sites, cons, maps, cov = _mosaic_case(n_sites=12)          # nearest copy 6 / 1,000 = 0.6% < delta
+    assert D.status_of(["m"], cons, sites, ref, maps, cov, {}, mosaic=True)[0] == "unresolved"
+
+
+def test_a_copy_covering_too_little_of_the_cluster_is_no_candidate():
+    ref, sites, cons, maps, cov = _mosaic_case()
+    maps["copy2"] = {p: "A" for p in range(100)}                     # matches the consensus, but over 10% of it
+    assert D.nearest_copy(cons, sites, ref, maps, set(range(1000)))[0] == "copy0"
+
+
+def test_the_union_o2_arm_and_the_mosaic_arms_land_in_their_arms():
+    assert D.arms_of("S1m", keep=True) == ["S123m"] and D.arms_of("S1m", keep=False) == []
+    assert D.arms_of("Gp", keep=True) == ["Gn", "G"] and D.arms_of("Gp", keep=False) == ["Gn"]
+    assert D.arms_of("S2", keep=True) == ["S12", "S123", "S23", "S4n", "S4", "S123m", "Gn", "G"]

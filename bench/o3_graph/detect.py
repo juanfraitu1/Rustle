@@ -20,6 +20,10 @@ Step 2 (S12 = S1 + branch calls): the family's variation graph (vg msga of its c
 S4 (graph O2 into O3): the S1 clustering run on the reads path-O2 (o2graph.py) cannot explain with any catalogued copy's
   isoform paths (`unexplained`), plus the branch calls (S4n), kept by the genome (S4): reads a catalogued copy explains
   can no longer dilute an absent copy's cluster.
+G (union-O2-informed O3; prereg docs/PREREG_o3_graph_union_2026-10-15.md): the same on the reads UNION O2 cannot explain
+  (every family structure threaded through every copy, o2graph.py run WORLD union 2), each cluster's status with the MOSAIC
+  rule (status_of mosaic=True: no single copy within DELTA), plus the branch calls (Gn), kept by the genome (G). S123m = S123
+  with the mosaic rule, without the O2 restriction.
 Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + kept branch calls, i.e. without step 1):
   a call is kept only when the genome does not explain its
   reads: PSV call -> the median `de` of their primary alignments > DELTA; branch call -> their median unaligned bases on the
@@ -42,7 +46,8 @@ import psvclust as PC  # noqa: E402
 DELTA = 0.00958
 MIN_NOVEL, MIN_NOVEL_PART, MIN_BRANCH, LOCUS_PAD = 50, 30, 5, 1000
 DENSE_W, DENSE_FRAC = 50, 0.3
-ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4")
+MIN_OVERLAP = 0.5
+ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G")
 
 
 class _Contig:
@@ -88,12 +93,17 @@ def restrict(names, family, keep_set):
 
 
 def arms_of(arm, keep):
-    """The arms a call belongs to: R0 (+ S3, S23 when the genome keeps it); S1 (+ S12, S123); S2 branch calls (S12, S4n; + S123,
-    S23, S4); S4p, a PSV call among path-O2-unexplained reads (S4n; + S4)."""
+    """The arms a call belongs to: R0 (+ S3, S23 when the genome keeps it); S1 (+ S12, S123); S2 branch calls (S12, S4n, Gn; +
+    S123, S23, S4, S123m, G); S4p, a PSV call among path-O2-unexplained reads (S4n; + S4); S1m, a PSV or MOSAIC call of S1's
+    clusters (+ S123m); Gp, a PSV or mosaic call among the reads UNION O2 cannot explain (Gn; + G). G = union-O2-informed O3:
+    clustering only reads no copy explains on any family structure, the mosaic rule, branch calls, the genome check."""
     return {"R0": ["R0"] + (["S3", "S23"] if keep else []),
             "S1": ["S1", "S12"] + (["S123"] if keep else []),
-            "S2": ["S12"] + (["S123", "S23"] if keep else []) + ["S4n"] + (["S4"] if keep else []),
-            "S4p": ["S4n"] + (["S4"] if keep else [])}[arm]
+            "S2": ["S12"] + (["S123", "S23"] if keep else []) + ["S4n"] + (["S4"] if keep else []) + (["S123m"] if keep else [])
+                  + ["Gn"] + (["G"] if keep else []),
+            "S4p": ["S4n"] + (["S4"] if keep else []),
+            "S1m": ["S123m"] if keep else [],
+            "Gp": ["Gn"] + (["G"] if keep else [])}[arm]
 
 
 def explains(cons, sites, ref, cc):
@@ -218,11 +228,36 @@ def genome_keeps(kind, median_de, median_novel):
     return median_de > DELTA
 
 
-def status_of(members, cons, sites, ref, maps, cov, vec):
+def nearest_copy(cons, sites, ref, maps, covered, min_overlap=MIN_OVERLAP):
+    """(copy, distance) of the single copy closest to a cluster: the cluster's consensus base (its alt at an `alt` site, else
+    the host's) against the copy's, over the cluster's covered positions the copy has a base at (a consensus alt the copy has
+    no base at counts as a difference). A copy over < min_overlap of the covered positions is no candidate. (None, None)
+    when no copy is."""
+    best = (None, None)
+    for n, cc in sorted(maps.items()):
+        diff = cmp = 0
+        for p in covered:
+            alt = cons.get(p) == "alt"
+            if p in cc:
+                cmp += 1
+                diff += cc[p] != (sites[p] if alt else ref[p])
+            elif alt:
+                cmp += 1
+                diff += 1
+        if cmp >= min_overlap * len(covered) and cmp and (best[1] is None or diff / cmp < best[1]):
+            best = (n, diff / cmp)
+    return best
+
+
+def status_of(members, cons, sites, ref, maps, cov, vec, mosaic=False):
+    """The prototype's status of a cluster against copy maps; est_div = its unexplained alts per covered base. mosaic: a cluster
+    no copy explains, with >= MIN_ALT alts, whose NEAREST single copy is > DELTA away is `mosaic` (est_div = that distance):
+    an absent copy whose alleles each occur in some other copy (GOLGA8, register 1298) is no single copy's."""
     alts = [p for p, a in cons.items() if a == "alt"]
     by = [n for n, cc in maps.items() if explains(cons, sites, ref, cc)]
     unexpl = [p for p in alts if not any(cc.get(p) == sites[p] for cc in maps.values())]
-    covered = sum(1 for p in range(len(ref)) if any(p in cov[m] for m in members[:50]))
+    cov_pos = {p for m in members[:50] for p in cov[m]}
+    covered = len(cov_pos)
     link = PC.linkage(unexpl, vec) if len(unexpl) >= PC.MIN_ALT else None
     if by:
         st = "explained"
@@ -230,6 +265,10 @@ def status_of(members, cons, sites, ref, maps, cov, vec):
         st = "unresolved"
     else:
         st = "unexplained" if link >= PC.MIN_LINK else "unlinked"
+    if mosaic and st in ("unresolved", "unlinked") and len(alts) >= PC.MIN_ALT:
+        _, d = nearest_copy(cons, sites, ref, maps, cov_pos)
+        if d is not None and d > DELTA:
+            return "mosaic", d
     return st, (len(unexpl) / covered if covered else 0.0)
 
 
@@ -398,10 +437,11 @@ def main(argv):
         c = next(x for x in isoj[f] if x["idx"] == i)
         fam[f].append(dict(idx=i, contig=r["chrom"], rs=int(r["start"]), re=int(r["end"]), seq=seq, start=c["start"],
                            end=c["end"], strand=c["strand"], isoforms={k: [tuple(x) for x in v] for k, v in c["isoforms"].items()}))
-    o2_unexpl = None                                   # S4: path-O2's unexplained reads (o2graph.py run WORLD paths 2, first)
-    if os.path.exists(f"{w}/graph/o2.paths.m2.tsv"):
-        o2_unexpl = {(r["read"], r["family"]) for r in csv.DictReader(open(f"{w}/graph/o2.paths.m2.tsv"), delimiter="\t")
-                     if r["reason"] == "unexplained"}
+    def unexplained(name):                             # S4 / G: o2graph.py run WORLD paths|union 2, first
+        p = f"{w}/graph/{name}"
+        return ({(r["read"], r["family"]) for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] == "unexplained"}
+                if os.path.exists(p) else None)
+    o2_unexpl, o2u_unexpl = unexplained("o2.paths.m2.tsv"), unexplained("o2.union.m2.tsv")
     by_host = collections.defaultdict(list)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         if r["catalog_copy_idx"].isdigit():
@@ -437,6 +477,9 @@ def main(argv):
                     st, div = status_of(members, cons, sites, ref, maps, cov, vec)
                     if st == "unexplained" and div > DELTA:
                         calls.append([arm, f, "psv", host, k, sorted(members), div])
+                st, div = status_of(members, cons, sites, ref, m_iso, cov, vec, mosaic=True)
+                if st in ("unexplained", "mosaic") and div > DELTA:
+                    calls.append(["S1m", f, "psv", host, k, sorted(members), div])
             un = restrict([n for n in names if n in cov], f, o2_unexpl)
             if len(un) >= PC.MIN_SUPPORT:
                 cov_u = {n: cov[n] for n in un}
@@ -445,6 +488,14 @@ def main(argv):
                     st, div = status_of(members, cons, sites_u, ref, m_iso, cov_u, vec_u)
                     if st == "unexplained" and div > DELTA:
                         calls.append(["S4p", f, "psv", host, k, sorted(members), div])
+            un = restrict([n for n in names if n in cov], f, o2u_unexpl)
+            if len(un) >= PC.MIN_SUPPORT:
+                cov_u = {n: cov[n] for n in un}
+                sites_u, clusters_u, vec_u = PC.cluster_host(ref, cov_u)
+                for k, (members, cons) in enumerate(sorted(clusters_u, key=lambda x: -len(x[0]))):
+                    st, div = status_of(members, cons, sites_u, ref, m_iso, cov_u, vec_u, mosaic=True)
+                    if st in ("unexplained", "mosaic") and div > DELTA:
+                        calls.append(["Gp", f, "psv", host, k, sorted(members), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
         if names:
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)

@@ -30,6 +30,12 @@ GROUPS = {
             "POTE": r"^POTE", "GSTA": r"^GSTA[0-9]", "TP53TG3": r"^TP53TG3"},
     "heldout": {"NPIPA": r"^NPIPA", "NPIPB": r"^NPIPB", "TBC1D3": r"^TBC1D3", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
                 "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31"},
+    # held out for union O2 / G (docs/PREREG_o3_graph_union_2026-10-15.md), picked before any run: Soto's human-specific
+    # duplications FAM72, ARHGAP11, TCAF2, and copy-number mainstays AMY, SULT1A, FCGR, APOBEC3, PSG; ARHGAP11 and APOBEC3 form
+    # no family at MIN_IDENT (built, no world), so GTF2H2 (the SMA region) and LRRC37A (17q21.31) were added, still before any run
+    "heldout2": {"FAM72": r"^FAM72[A-D]$", "ARHGAP11": r"^ARHGAP11[AB]$", "TCAF2": r"^TCAF2", "AMY": r"^AMY[12]",
+                 "SULT1A": r"^SULT1A[1-4]$", "FCGR": r"^FCGR[23]", "APOBEC3": r"^APOBEC3[A-H]$", "PSG": r"^PSG[0-9]+$",
+                 "GTF2H2": r"^GTF2H2", "LRRC37A": r"^LRRC37A"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

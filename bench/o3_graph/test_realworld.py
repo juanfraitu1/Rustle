@@ -105,3 +105,25 @@ def test_a_minus_strand_copy_takes_the_projection_on_its_own_strand():
     s3 = 500 + 300 + 600 + 250 + 800
     assert ex == [(L - s3 - 300, L - s3), (L - 800, L - 500)]
     assert R.project(e1 + e3, minus, lo=0, strand="+", n_exons=2) is None   # the copy's strand disagrees
+
+
+def test_positions_lift_through_an_alignment_cigar():
+    lift = R.lift_positions("100M5I50M3D100M", qs=0, ts=1000, positions=[0, 99, 102, 105, 154, 155, 254, 300])
+    assert lift == {0: 1000, 99: 1099, 102: 1100, 105: 1100, 154: 1149, 155: 1153, 254: 1252, 300: None}
+
+
+def test_a_paralog_isoform_lifts_over_through_the_locus_alignment():
+    rng = random.Random(11)
+    rnd = lambda n: "".join(rng.choice("ACGT") for _ in range(n))  # noqa: E731
+    e1, e2, e3 = rnd(300), rnd(250), rnd(300)
+    i1, i2 = "GT" + rnd(596) + "AG", "GT" + rnd(796) + "AG"
+    c_locus = rnd(500) + e1 + i1 + e2 + i2 + e3 + rnd(500)
+    p = list(c_locus)
+    for k in rng.sample(range(len(p)), 30):                          # the paralog: ~1% diverged, a 4-bp deletion in intron 1
+        p[k] = "A" if p[k] != "A" else "C"
+    p = "".join(p)
+    cut = 500 + 300 + 200
+    p_locus = p[:cut] + p[cut + 4:]
+    s3 = 500 + 300 + 600 + 250 + 800
+    p_exons = [(500, 800), (s3 - 4, s3 - 4 + 300)]                  # exon 3 sits 4 bp earlier on the paralog
+    assert R.liftover(p_locus, [p_exons], c_locus) == [[(500, 800), (s3, s3 + 300)]]
