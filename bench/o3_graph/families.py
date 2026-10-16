@@ -41,6 +41,14 @@ GROUPS = {
     # LILR, DEFB10, CSAG)
     "heldout3": {"SSX": r"^SSX[0-9]+[AB]?$", "MAGEA": r"^MAGEA[0-9]+[AB]?$", "SPANX": r"^SPANX", "UGT2B": r"^UGT2B[0-9]+$",
                  "OPN1": r"^OPN1[LM]W", "CGB": r"^CGB[0-9]*$", "KIR": r"^KIR[23]D", "CYP4F": r"^CYP4F[0-9]+$"},
+    # held out for round 4 (docs/PREREG_o3_graph_round4_2026-10-15.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set (a removed copy must leave >= 2 catalogued hosts: round 3's CYP4F had none)
+    "heldout4": {"TRIM": r"^TRIM(43|49|51|64)[A-Z]?$", "LILR": r"^LILR[AB][0-9]$", "DEFB10": r"^DEFB10[3-7][AB]$",
+                 "CSAG": r"^CSAG[0-9]$", "MAGEB": r"^MAGEB[0-9]+$", "CTAG": r"^CTAG[12][AB]?$", "SERF1": r"^SERF1[AB]?$",
+                 "CBWD": r"^CBWD[0-9]$", "MAGEC": r"^MAGEC[0-9]$", "CYP2A": r"^CYP2A[0-9]+$", "NBPF": r"^NBPF[0-9]+$",
+                 "GTF2I": r"^GTF2I", "PRAMEF": r"^PRAMEF[0-9]+$", "VCX": r"^VCX[0-9]?[AB]?$", "SPDYE": r"^SPDYE[0-9]+$",
+                 "FAM86": r"^FAM86[A-Z]$", "GPR89": r"^GPR89[ABC]$", "STAG3L": r"^STAG3L[0-9]$", "POM121": r"^POM121[A-Z]?$",
+                 "CCDC144": r"^CCDC144[A-Z]+$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
