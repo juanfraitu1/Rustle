@@ -272,3 +272,24 @@ test K's own parts. The sister-family evidence for the guard is development set 
 - But its own `locus` calls are mostly reads of near-identical uncatalogued copies. Counting those, its precision is 0.834,
   against the current O2's 0.90-0.91 in OUTSIDE and REMOVED.
 - Across five fresh held-out sets no graph O2 version has met all of its pre-registered bars.
+
+## Post hoc: can any operating point of graph O2 dominate the current O2? (2026-10-16; all sets seen, no claim)
+
+Worlds with an uncatalogued copy (OUTSIDE, REMOVED); a placement of a non-catalogued copy's read counts as wrong. Correct /
+wrong:
+
+| set | world | current O2 | fallback graph O2 |
+|---|---|---|---|
+| round 2's | REMOVED / OUTSIDE | 1,034 / 162; 1,034 / 119 | 1,102 / 119 (dominates both) |
+| round 3's | REMOVED / OUTSIDE | 1,624 / 373; 1,621 / 241 | 1,619 / 235 (5 fewer correct, far fewer wrong) |
+| round 4's | REMOVED / OUTSIDE | 1,437 / 121; 1,434 / 60 | 1,440 / 60 (dominates both) |
+| round 5's | REMOVED / OUTSIDE | 2,066 / 233; 2,066 / 199 | 2,260 / 449 (trade-off) |
+
+Could a per-read error test separate a near-identical uncatalogued copy's reads from sequencing error? Reads assigned to their
+own copy sit at a median 1.6-1.7 differences per kb on the copy's locus, with a heavy tail (95th percentile 6-14). The
+uncatalogued copies' reads sit at 4-5 per kb. No cutoff from 0.5 to 9.5 per kb makes graph O2 dominate where it does not
+already.
+
+So graph O2 is at least as good as the current O2 on most sets and worlds, and better in precision. It loses precision exactly
+where an uncatalogued copy is within sequencing-error range of a catalogued one (round 5's set), and nothing tried here tells
+those reads apart.
