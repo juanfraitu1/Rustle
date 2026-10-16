@@ -106,3 +106,51 @@ Reported, not barred: every arm's counts per scenario; recall and purity of the 
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (2026-10-15)
+
+Run: code `23441fda` (as `883e54bc`; the prereg adds no code). Held-out worlds: templates 13-24, seed 21. Outputs in
+`/mnt/linuxdisk/tmp/o3_graph/heldout/` (one directory per scenario, `score.json`). Each world takes about 30 s: build, map,
+the current method, detector.
+
+| held out (12 families each) | CUR | R0 | S1 | S12 | **S123** | S3 |
+|---|---|---|---|---|---|---|
+| ABSENT@0.01 detected | 8 | 8 | 8 | 8 | **8** | 8 |
+| ABSENT@0.02 detected | 12 | 12 | 12 | 12 | **12** | 12 |
+| BRANCH detected | 0 | 0 | 0 | 12 | **12** | 0 |
+| OUTSIDE@0.01 / @0.03, families with a false call | 8 / 12 | 8 / 12 | 8 / 12 | 8 / 12 | **0 / 0** | 0 / 0 |
+| TWIN_ALT, families with a false call | 9 | 9 | 0 | 0 | **0** | 0 |
+| NULL, ALLELE, families with a false call | 0 | 0 | 0 | 0 | **0** | 0 |
+
+- Families with a false call, of the 60 with no absent copy: CUR 29, S123 0.
+- S123's detected calls: median recall 1.0, purity 1.0, minimum purity 1.0.
+- CUR's BRANCH clusters (allele-level SNPs only, est_div < delta) are never `copy` calls.
+
+| bar | value | |
+|---|---|---|
+| H1 | ABSENT@0.02 12 / 12, BRANCH 12 / 12, ABSENT@0.01 8 against CUR's 8 | pass |
+| H2 | 0 of 60 | pass |
+| H3 | BRANCH +12; false-call families -29 | pass |
+| H4a | TWIN_ALT, R0 9 -> S1 0 | pass |
+| H4b | BRANCH, S1 0 -> S12 12 | pass |
+| H4c | OUTSIDE, S12 20 -> S123 0 | pass |
+
+### Verdict (2026-10-15)
+
+**Reading 1: claimed, in simulation.** In ideal scenarios built from curated CAT isoforms, the graph-informed O3 detector
+(S123) does four things:
+- it finds absent copies that differ only in structure: BRANCH 12 / 12, against 0 / 12 for the current method;
+- it stops false calls from uncatalogued paralogs: OUTSIDE 20 -> 0;
+- it stops false calls from copies a representative makes look identical: TWIN_ALT 9 -> 0;
+- it keeps the current detection of sequence-divergent absent copies: 12 / 12 at 2%, 8 / 12 at 1% for every arm.
+
+Each step is needed for its case: step 1 for TWIN_ALT, step 2 for BRANCH, step 3 for OUTSIDE.
+
+**Scope and caveats.**
+- These are famsim reads from curated isoforms in small worlds. Step 3's "genome" is the world's genome, not a whole
+  genome.
+- Real data's other failure modes are not modelled: reads from loci outside the window, other species, fragmented clusters.
+  The 1% absent copies sit at delta (0.958%), so about a third of them are labelled allele-level by every arm.
+- Real data is next. On the two-locus spike the steps' real-data counterparts were visible:
+  - MCL117's representatives hid every exonic PSV, as in TWIN_ALT;
+  - most false `copy` clusters were other loci's reads, as in OUTSIDE.
