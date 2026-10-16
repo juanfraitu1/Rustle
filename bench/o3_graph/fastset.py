@@ -3,7 +3,8 @@
 families are fast and cheap to test).
 
     fastset.py run OUTROOT FAMILIES SET SEED [--worlds INTACT,CROSS,OUTSIDE,REMOVED,BRANCH,SILENT] [--het 0.001]
-                   [--local DIR] [--jobs 2] [--threads 4] [--sim-profile NAME]
+                   [--local DIR] [--jobs 2] [--threads 4] [--sim-profile NAME] [--o2-distance clip|gapcomp]
+                   [--member-genome-check]
 
 1. the set's homology-closed local reference (localref.py build; once per family set, cached in --local or OUTROOT/local):
    the only step that loads the whole-genome index
@@ -152,8 +153,8 @@ def cmd_run(a):
         W = f"{root}/{w}"
         st.run(w, "current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.threads}")
         st.run(w, "O1", f"python3 bench/o3_graph/o1seed.py {W}")
-        st.run(w, "O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2")
-        st.run(w, "O3", f"python3 bench/o3_graph/detect.py {W}")
+        st.run(w, "O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}")
+        st.run(w, "O3", f"python3 bench/o3_graph/detect.py {W}" + (" --member-genome-check" if a.member_genome_check else ""))
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for f in [ex.submit(chain, w) for w in worlds]:
             f.result()
@@ -184,6 +185,8 @@ def main(argv=None):
     p.add_argument("--jobs", type=int, default=2)
     p.add_argument("--threads", type=int, default=2)
     p.add_argument("--sim-profile", default="")
+    p.add_argument("--o2-distance", choices=("clip", "gapcomp"), default="clip")
+    p.add_argument("--member-genome-check", action="store_true")
     p.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)
     return a.func(a)

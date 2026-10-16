@@ -195,3 +195,15 @@ def test_placements_of_an_undetectable_absent_copy_are_counted_apart_from_errors
     # F.9 is within delta of the genome (undetectable): its reads cannot be told from that locus's own
     s = O.score_assign(calls, idx2copy, truth, unknowable={"F.9"})
     assert s == dict(correct=1, wrong=1, outside_own=0, unknowable_placed=1)
+
+
+def test_gap_compressed_distance_counts_indel_events_and_aligns_clipped_ends():
+    core = "ACGTTGCAGGCTAGCTAGGATCCGATCGATTACG"
+    tx = {"copy1|t": "GGGG" + "ACGA" + core + "CCCC", "copy2|t": "GGGG" + "TTTT" + core + "CCCC"}
+    read = "TCGA" + core                                    # 4 clipped bases; vs copy1's flank 1 edit, vs copy2's 3
+    def paf(t, nm, cg):
+        return "\t".join(["r", str(len(read)), "4", str(len(read)), "+", t, str(len(tx[t])), "8", str(8 + len(core)),
+                          str(len(core)), str(len(core)), "60", f"NM:i:{nm}", f"cg:Z:{cg}"])
+    lines = "\n".join([paf("copy1|t", 6, "10M5D24M"), paf("copy2|t", 1, "34M")])
+    d = O._paf_dist_gc(lines, {"r": read}, tx)
+    assert d == {"r": {"copy1": 1 + 1 + 1, "copy2": 1 + 3}}     # copy1: 1 mismatch + 1 deletion event + 1 end edit

@@ -39,6 +39,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD, FLAG_MIN_READS = 2, 0.8, 0.00958, 5, 50, 20
+EXT_CAP, EXT_BAND = 50, 30                               # --distance gapcomp: clipped ends aligned up to EXT_CAP bases
 
 
 def _detect():
@@ -102,6 +103,59 @@ def _paf_dist(paf, ends=False, slack=END_SLACK):
                 clip_start, clip_end = (0 if at_t_end else clip_start), (0 if at_t_start else clip_end)
         dd, c = nm + clip_start + clip_end, f[5].split("|")[0]
         dist[f[0]][c] = min(dd, dist[f[0]].get(c, 10 ** 9))
+    return dist
+
+
+def end_cost(p, t, anchored_at_end):
+    """Edit distance of a whole clipped read end `p` against path bases `t`, anchored where the end meets the aligned core (a
+    prefix at t's end, a suffix at t's start) and free on the far side; read bases beyond the path cost one each. An end longer
+    than EXT_CAP costs its length (as clipping counts it: a different structure, not errors)."""
+    if len(p) > EXT_CAP:
+        return len(p)
+    if anchored_at_end:
+        p, t = p[::-1], t[::-1]
+    prev = list(range(len(t) + 1))
+    for i in range(1, len(p) + 1):
+        cur = [i] + [0] * len(t)
+        a = p[i - 1]
+        for j in range(1, len(t) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a != t[j - 1]))
+        prev = cur
+    return min(prev)
+
+
+def gap_compressed(line, read, target):
+    """A read's distance to a path from one minimap2 -c PAF line, CIGAR-aware (2026-10-16): mismatches plus indel EVENTS (an
+    indel counts once whatever its length, as minimap2's `de` counts it: real reads' errors are mostly homopolymer indels, and a
+    retained intron is one event, not its length), plus each clipped read end aligned against the path bases next to the core
+    (end_cost: a clipped base is not an edit unless it disagrees with the path)."""
+    f = line.rstrip("\n").split("\t")
+    nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
+    qlen, qs, qe, ts, te = int(f[1]), int(f[2]), int(f[3]), int(f[7]), int(f[8])
+    cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
+    num, events, indel_bases = "", 0, 0
+    for ch in cg:
+        if ch.isdigit():
+            num += ch
+        else:
+            if ch in "ID":
+                events += 1
+                indel_bases += int(num)
+            num = ""
+    if f[4] == "-":
+        read, qs, qe = read[::-1].translate(str.maketrans("ACGTN", "TGCAN")), qlen - qe, qlen - qs
+    pre, suf = read[:qs], read[qe:]
+    return (nm - indel_bases + events + end_cost(pre, target[max(0, ts - len(pre) - EXT_BAND):ts], True)
+            + end_cost(suf, target[te:te + len(suf) + EXT_BAND], False))
+
+
+def _paf_dist_gc(paf, reads, tx):
+    """{read: {copy: min gap_compressed distance}} (--distance gapcomp); tx: {path name: sequence as aligned}."""
+    dist = collections.defaultdict(dict)
+    for ln in paf.splitlines():
+        f = ln.split("\t")
+        c = f[5].split("|")[0]
+        dist[f[0]][c] = min(gap_compressed(ln, reads[f[0]], tx[f[5]]), dist[f[0]].get(c, 10 ** 9))
     return dist
 
 
@@ -181,7 +235,8 @@ def union_structures(cps, projector):
     return out
 
 
-def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None):
+def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None,
+              distance="clip"):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
@@ -223,12 +278,14 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
                  {c["idx"]: {t: ex for t, ex in c["isoforms"].items() if not reps_only or t == c["rep"]} for c in iso[fam]})
         json.dump({str(k): {t: [list(x) for x in ex] for t, ex in v.items()} for k, v in paths.items()},
                   open(f"{d}/{fam}.paths.json", "w"))                  # the structures each copy's paths follow
-        n_tx = 0
+        n_tx, tx = 0, {}
         with open(f"{d}/{fam}.tx.fa", "w") as fh:
             for c in iso[fam]:
                 for t, ex in paths[c["idx"]].items():
                     seq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in padded(ex, pad))
-                    fh.write(f">copy{c['idx']}|{t}\n{seq[::-1].translate(comp) if c['strand'] == '-' else seq}\n")
+                    seq = seq[::-1].translate(comp) if c["strand"] == "-" else seq
+                    tx[f"copy{c['idx']}|{t}"] = seq
+                    fh.write(f">copy{c['idx']}|{t}\n{seq}\n")
                     n_tx += 1
                     n_struct["projected" if t.startswith("proj:") else "own"] += 1
         with open(f"{d}/{fam}.reads.fa", "w") as fh:
@@ -236,7 +293,7 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
                 fh.write(f">{n}\n{reads[n]}\n")
         res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes",
                               f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
-        dist = _paf_dist(res, ends=ends)
+        dist = _paf_dist_gc(res, reads, tx) if distance == "gapcomp" else _paf_dist(res, ends=ends)
         for n in names:
             c, reason = decide(dist.get(n, {}), len(reads[n]), margin)
             out.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
@@ -361,13 +418,14 @@ def score_assign(calls, idx2copy, truth, unknowable=()):
     return dict(out)
 
 
-def run_integrated(w, margin=MARGIN):
+def run_integrated(w, margin=MARGIN, distance="clip"):
     """Round 7: padded union O2 on O1's seeded catalog (o1seed.py: graph/seeded.json) over the family reads it found ->
-    graph/o2.integ.m<margin>.tsv."""
+    graph/o2.integ.m<margin>.tsv. distance: "clip" (NM + clipped bases, round 7) or "gapcomp" (gap_compressed)."""
     sj = json.load(open(f"{w}/graph/seeded.json"))
     catalog = {f: v["copies"] for f, v in sj.items() if v["copies"]}
     hosted = {f: set(v["family_reads"]) for f, v in sj.items()}
-    return run_paths(w, margin, union=True, pad=PATH_PAD, out_name=f"o2.integ.m{margin}.tsv", catalog=catalog, hosted=hosted)
+    return run_paths(w, margin, union=True, pad=PATH_PAD, out_name=f"o2.integ.m{margin}.tsv", catalog=catalog, hosted=hosted,
+                     distance=distance)
 
 
 def run_locus(w, margin=MARGIN, out_name=None):
@@ -565,7 +623,7 @@ def main(argv):
         if method == "locus":
             return run_locus(argv[1], margin)
         if method == "integ":                             # round 7: needs o1seed.py WORLD first
-            return run_integrated(argv[1], margin)
+            return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip")
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first

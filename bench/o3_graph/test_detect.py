@@ -233,3 +233,9 @@ def test_k_lands_in_its_arms():
 def test_the_integrated_arm_lands_in_its_arms():
     assert D.arms_of("Ip", keep=True) == ["In", "I"] and D.arms_of("Ip", keep=False) == ["In"]
     assert D.arms_of("S2", keep=True)[-2:] == ["In", "I"]
+
+
+def test_a_member_the_genome_explains_is_dropped_from_an_absent_copy_call():
+    # psv call: keep members whose own placement diverges > DELTA; branch call: or carrying >= MIN_NOVEL unexplained bases
+    assert D.member_filter("psv", ["a", "b", "c"], {"a": 0.02, "b": 0.003, "c": 0.0}, {"a": 0, "b": 0, "c": 0}) == ["a"]
+    assert D.member_filter("branch", ["a", "b"], {"a": 0.001, "b": 0.001}, {"a": D.MIN_NOVEL, "b": 0}) == ["a"]

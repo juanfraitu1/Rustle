@@ -3,6 +3,7 @@
 
     calibrate.py profile BAM OUT.json [--chroms chr20,chr21,chr22] [--max-reads 30000] [--min-mapq 60]
     calibrate.py expression BAM FAMILIES.json OUT.json
+    calibrate.py tags BAM OUT.json [--regions chr20,...|--all] [--min-mapq 60] [--max-reads 20000]
 
 `profile`, from primary MAPQ >= min-mapq reads lying inside single-isoform genes (CAT/Liftoff, CHM13 v2.0; unique placement,
 so every difference is a sequencing error or the donor's own allele, never a paralog's):
@@ -14,6 +15,8 @@ so every difference is a sequencing error or the donor's own allele, never a par
   ends        transcript bases missing at the 5' and 3' end of the read (the transcript's strand), quantiles
   retention   reads with >= RETAIN_MIN bases aligned inside an annotated intron
   length      read length quantiles
+`tags`: per uniquely placed primary read (MAPQ >= min-mapq): minimap2's de and NM, mismatches (X), insertion and deletion
+events, the homopolymer share of indels and soft clips; medians and per-kb rates (real data and simulated worlds alike).
 `expression`: per family of FAMILIES.json, every copy's primary alignments (all, and MAPQ >= 20), and the spread of log counts.
 """
 import argparse
@@ -129,6 +132,17 @@ def retained_introns(blocks, exons):
     return sum(1 for a, b in zip(exons, exons[1:]) if any(bs <= a[1] and be >= b[0] for bs, be in blocks))
 
 
+def tag_summary(rows):
+    """Medians of de and NM per kb, per-kb rates of mismatches and indel events, the homopolymer share of indels, clip fraction."""
+    kb = sum(r["aligned"] for r in rows) / 1000
+    return dict(reads=len(rows), de_median=statistics.median(r["de"] for r in rows),
+                nm_per_kb_median=statistics.median(1000 * r["nm"] / max(1, r["aligned"]) for r in rows),
+                x_per_kb=sum(r["x"] for r in rows) / kb, ins_per_kb=sum(r["ins"] for r in rows) / kb,
+                del_per_kb=sum(r["dele"] for r in rows) / kb,
+                hp_indel_frac=sum(r["hp"] for r in rows) / max(1, sum(r["indels"] for r in rows)),
+                clip_frac=sum(r["clip"] for r in rows) / max(1, sum(r["qlen"] for r in rows)))
+
+
 def _quantiles(v):
     v = sorted(v)
     return {str(q): v[min(len(v) - 1, int(q * len(v)))] for q in QUANTS} if v else {}
@@ -230,6 +244,34 @@ def cmd_profile(a):
     return 0
 
 
+def cmd_tags(a):
+    import pysam
+    F = _load("families")
+    fa = pysam.FastaFile(F.GENOME)
+    rows = []
+    with pysam.AlignmentFile(a.bam) as bam:
+        it = bam.fetch(until_eof=True) if a.all else (r for reg in a.regions.split(",") for r in bam.fetch(region=reg))
+        for r in it:
+            if r.is_unmapped or r.is_secondary or r.is_supplementary or r.mapping_quality < a.min_mapq:
+                continue
+            ch, cache = r.reference_name, {}
+
+            def ref_base(p, ch=ch, cache=cache):
+                if p not in cache:
+                    cache[p] = fa.fetch(ch, max(0, p), p + 1).upper() if p >= 0 else "N"
+                return cache[p]
+            ev = cigar_events(r.cigartuples, r.reference_start, r.query_sequence, ref_base)
+            rows.append(dict(de=r.get_tag("de"), nm=r.get_tag("NM"), aligned=ev["aligned"], x=len(ev["mismatch"]),
+                             ins=len(ev["ins"]), dele=len(ev["del"]), hp=sum(h for _, _, h in ev["ins"] + ev["del"]),
+                             indels=len(ev["ins"]) + len(ev["del"]), clip=ev["clip"], qlen=r.query_length))
+            if len(rows) >= a.max_reads:
+                break
+    s = tag_summary(rows)
+    json.dump(dict(source=a.bam, **s), open(a.out, "w"), indent=1)
+    print(json.dumps(s))
+    return 0
+
+
 def cmd_expression(a):
     import pysam
     fams = json.load(open(a.families))["sets"]
@@ -266,6 +308,14 @@ def main(argv=None):
     p.add_argument("--max-reads", type=int, default=30000)
     p.add_argument("--min-mapq", type=int, default=60)
     p.set_defaults(func=cmd_profile)
+    p = sub.add_parser("tags")
+    p.add_argument("bam")
+    p.add_argument("out")
+    p.add_argument("--regions", default="chr20,chr21,chr22")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--min-mapq", type=int, default=60)
+    p.add_argument("--max-reads", type=int, default=20000)
+    p.set_defaults(func=cmd_tags)
     p = sub.add_parser("expression")
     p.add_argument("bam")
     p.add_argument("families")

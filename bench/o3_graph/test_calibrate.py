@@ -47,3 +47,11 @@ def test_an_intron_is_retained_only_when_one_aligned_block_spans_all_of_it():
     exons = [(100, 200), (300, 400), (500, 600)]
     assert C.retained_introns([(150, 450)], exons) == 1                  # spans 200-300 whole, 400-500 only partly
     assert C.retained_introns([(150, 260), (300, 350)], exons) == 0      # an alternative exon inside the intron
+
+
+def test_tag_summary_reports_per_kb_rates_and_tag_medians():
+    rows = [dict(de=0.002, nm=3, aligned=1000, x=1, ins=1, dele=1, hp=1, indels=2, clip=0, qlen=1000),
+            dict(de=0.004, nm=6, aligned=2000, x=2, ins=2, dele=2, hp=3, indels=4, clip=20, qlen=2020)]
+    s = C.tag_summary(rows)
+    assert s["reads"] == 2 and s["de_median"] == 0.003 and s["x_per_kb"] == 1.0 and s["ins_per_kb"] == 1.0
+    assert s["hp_indel_frac"] == 4 / 6 and abs(s["clip_frac"] - 20 / 3020) < 1e-12

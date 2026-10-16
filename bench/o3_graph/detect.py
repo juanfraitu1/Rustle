@@ -255,6 +255,13 @@ def genome_keeps(kind, median_de, median_novel):
     return median_de > DELTA
 
 
+def member_filter(kind, members, des, novs):
+    """The genome check per READ (2026-10-16, `--member-genome-check`): an absent-copy call keeps only the members the genome
+    does not explain themselves (genome_keeps on the read's own `de` / unexplained bases). A present copy's read swept into a
+    cluster sits within delta of its own locus; it is no evidence of an absent copy."""
+    return [m for m in members if genome_keeps(kind, des.get(m, 1.0), novs.get(m, 0))]
+
+
 def nearest_copy(cons, sites, ref, maps, covered, min_overlap=MIN_OVERLAP):
     """(copy, distance) of the single copy closest to a cluster: the cluster's consensus base (its alt at an `alt` site, else
     the host's) against the copy's, over the cluster's covered positions the copy has a base at (a consensus alt the copy has
@@ -567,14 +574,20 @@ def main(argv):
     want = {m for c in calls for m in c[5]}
     gst = genome_stats(f"{w}/E0.bam", want)
     rows_out = []
+    member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
     for arm, f, kind, host, k, m, div in calls:
         des, nov = member_genome(m, gst, {x: len(reads[x]) for x in m})
         mde = statistics.median(des) if des else 0.0
         mnov = statistics.median(nov) if nov else 0
         keep = genome_keeps(kind, mde, mnov)
         for a in arms_of(arm, keep):
-            rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(m), est_div=round(div, 5),
-                                 genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(m)))
+            mm = m
+            if member_check and a == "I":
+                mm = member_filter(kind, m, dict(zip(m, des)), dict(zip(m, nov)))
+                if len(mm) < PC.MIN_SUPPORT:
+                    continue
+            rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(mm), est_div=round(div, 5),
+                                 genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(mm)))
     with open(f"{out_dir}/calls.tsv", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["arm", "family", "kind", "host", "cluster", "n_reads", "est_div", "genome_median_de",
                                             "genome_median_novel", "members"], delimiter="\t", lineterminator="\n")

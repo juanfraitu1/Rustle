@@ -33,6 +33,7 @@ copy_family.json, world.json, copies.tsv, regions.txt (each family's span per ch
 import argparse
 import collections
 import json
+import math
 import os
 import random
 import subprocess
@@ -46,6 +47,7 @@ sys.path.insert(0, os.path.join(BENCH, "o3_fewread"))
 GENOME = "/mnt/linuxdisk/home/juanfraitu/npip_ladder/idx/target.fa"      # = chm13v2.0.fa (same contigs and sequence)
 SCENARIOS = ("INTACT", "REMOVED", "OUTSIDE", "BRANCH", "CROSS", "SILENT")
 MAIN_WEIGHT, OTHER_WEIGHT, NOVEL_LEN, BRANCH_SNP, REGION_PAD = 2.0, 0.5, 150, 0.002, 20000
+MIN_READ = 200
 MAX_PROJ, PROJ_COVER, PROJ_PAD, JUNCTION_TOL = 2, 0.95, 1000, 10
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
@@ -223,6 +225,99 @@ def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None):
     return {n: pick[n] for n in names}
 
 
+def hp_runs(seq, min_run=3):
+    """[(start, end)] of the runs of one base at least min_run long."""
+    out, i = [], 0
+    while i < len(seq):
+        j = i
+        while j < len(seq) and seq[j] == seq[i]:
+            j += 1
+        if j - i >= min_run:
+            out.append((i, j))
+        i = j
+    return out
+
+
+def _poisson(lam, rng):
+    lim, k, p = math.exp(-lam), 0, 1.0
+    while True:
+        p *= rng.random()
+        if p <= lim:
+            return k
+        k += 1
+
+
+def _length(dist, rng):
+    r, acc = rng.random(), 0.0
+    for k, v in sorted(dist.items(), key=lambda kv: int(kv[0])):
+        acc += v
+        if r < acc:
+            return int(k)
+    return max(int(k) for k in dist)
+
+
+def draw_edits(seq, rng, prof):
+    """One read's sequencing errors at a calibrated profile's per-base rates (calibrate.py profile): substitutions;
+    insertions and deletions, each inside a homopolymer run (>= 3) with the profile's homopolymer fraction, lengths drawn from
+    its length distribution. [(position, 'S' | 'I' | 'D', base | bases | length)]."""
+    n, runs, edits = len(seq), hp_runs(seq), []
+    for _ in range(_poisson(prof["sub_error"] * n, rng)):
+        p = rng.randrange(n)
+        edits.append((p, "S", rng.choice([b for b in "ACGT" if b != seq[p]])))
+    for kind, key in (("I", "ins"), ("D", "del")):
+        for _ in range(_poisson(prof[f"{key}_event"] * n, rng)):
+            k = _length(prof[f"{key}_len"], rng)
+            if runs and rng.random() < prof[f"{key}_hp_frac"]:
+                s0, e0 = rng.choice(runs)
+                if kind == "I":
+                    edits.append((rng.randrange(s0, e0), "I", seq[s0] * k))
+                else:
+                    k = min(k, e0 - s0 - 1)
+                    edits.append((rng.randrange(s0, e0 - k + 1), "D", k))
+            else:
+                p = rng.randrange(n)
+                edits.append((p, "I", "".join(rng.choice("ACGT") for _ in range(k))) if kind == "I" else (p, "D", k))
+    return edits
+
+
+def apply_edits(seq, edits):
+    """The read after its edits, each at its position in the ORIGINAL sequence (applied from the 3' end)."""
+    s = list(seq)
+    for p, kind, x in sorted(edits, key=lambda e: (e[0], "IDS".index(e[1])), reverse=True):
+        if kind == "S":
+            if p < len(s):
+                s[p] = x
+        elif kind == "D":
+            del s[p:p + x]
+        else:
+            s[p:p] = list(x)
+    return "".join(s)
+
+
+def truncate(seq, m5, m3, min_len=MIN_READ):
+    """A transcript that lost fractions m5 of its 5' end and m3 of its 3' end; the whole transcript when < min_len would be left."""
+    n5, n3 = int(m5 * len(seq)), int(m3 * len(seq))
+    return seq[n5:len(seq) - n3] if len(seq) - n5 - n3 >= min_len else seq
+
+
+def retain(exons, keep):
+    """Exons (genome order) with the introns indexed in `keep` retained: each merges its two flanking exons."""
+    out = [list(exons[0])]
+    for i, (s0, e0) in enumerate(exons[1:]):
+        if i in keep:
+            out[-1][1] = e0
+        else:
+            out.append([s0, e0])
+    return [tuple(x) for x in out]
+
+
+def expr_mult(seed, cid, sigma):
+    """A copy's expression multiplier: lognormal with mean 1 and log-sd sigma, deterministic per (seed, copy)."""
+    if sigma <= 0:
+        return 1.0
+    return math.exp(sigma * random.Random(f"{seed}:{cid}:expr").gauss(0, 1) - sigma * sigma / 2)
+
+
 def het_sites(positions, rate, rng, base_at):
     """{genomic position: alt base}: a copy's heterozygous sites (round 6: a diploid donor), `rate` of its exonic positions,
     each alt base different from the reference base (base_at(p))."""
@@ -285,6 +380,7 @@ def cmd_build(a):
     import world as FW                                   # bench/o3_fewread/world.py: COPIES_HEADER
     fj = json.load(open(a.families))
     fams = fj["sets"][a.set]
+    prof = json.load(open(a.sim_profile)) if a.sim_profile else None   # a calibrated read profile (calibrate.py profile)
     out = a.out
     os.makedirs(out, exist_ok=True)
     gpath = a.genome or GENOME
@@ -391,38 +487,66 @@ def cmd_build(a):
             tx = c["transcripts"]
             w = {t: (MAIN_WEIGHT if t == c["main"] else OTHER_WEIGHT) for t in tx}
             tot = sum(w.values())
-            het = {}
-            if a.het > 0:                                       # a diploid donor: haplotype 2 carries the copy's het alleles
-                exonic = {p for v in tx.values() for s_, e_ in v for p in range(s_, e_)}
-                het = het_sites(exonic, a.het, random.Random(f"{a.seed}:{cid}:het"),
-                                lambda p, ch=c["chrom"]: true_fa.fetch(ch, p, p + 1))
+            het, hom = {}, {}
+            het_rate = a.het if a.het > 0 else (2 * prof["het_per_base"] if prof else 0.0)
+            exonic = {p for v in tx.values() for s_, e_ in v for p in range(s_, e_)}
+            base_at = lambda p, ch=c["chrom"]: true_fa.fetch(ch, p, p + 1)  # noqa: E731
+            if het_rate > 0:                                    # a diploid donor: haplotype 2 carries the copy's het alleles
+                het = het_sites(exonic, het_rate, random.Random(f"{a.seed}:{cid}:het"), base_at)
+            if prof:                                            # profile: the donor's homozygous alleles, on both haplotypes
+                hom = het_sites(exonic, prof["hom_per_base"], random.Random(f"{a.seed}:{cid}:hom"), base_at)
             n_het[f] += len(het)
+            mult = expr_mult(a.seed, cid, prof.get("expr_log_sd", 0.0)) if prof else 1.0
+            cache = {}
+
+            def body_of(ex, h, r, own_snps, nov, jj):
+                """profile mode: retained introns, a calibrated (5', 3') truncation; the transcript sequence, then jitter."""
+                ex = [tuple(x) for x in ex]
+                if not nov and len(ex) > 1:
+                    keep = {k for k in range(len(ex) - 1) if r.random() < prof["kept_intron_per_intron"]}
+                    ex = retain(ex, keep) if keep else ex
+                key = (tuple(ex), h)
+                if key not in cache:
+                    al = {**hom, **own_snps, **het} if h == 2 else {**hom, **own_snps}
+                    cache[key] = splice(fetch, ex, c["strand"], al, jj, nov)
+                m5, m3 = r.choice(prof["end_pairs"])
+                return truncate(cache[key], m5, m3)
 
             def hap_of(t, i):                                   # its own RNG: hap-1 reads equal the het-free world's
                 return 2 if het and random.Random(stable_seed(str(a.seed), cid, t, str(i), "hap")).random() < 0.5 else 1
             for t, ex in tx.items():
                 seqs = {h: splice(fetch, [tuple(x) for x in ex], c["strand"], {**snps, **het} if h == 2 else snps, j, novel)
                         for h in ((1, 2) if het else (1,))}
-                n = int(round(a.per_copy * w[t] / tot))
+                n = int(round(a.per_copy * w[t] / tot * mult))
                 for i in range(n):
                     h = hap_of(t, i)
-                    seq = seqs[h]
                     r = random.Random(stable_seed(str(a.seed), cid, t, str(i)))
+                    seq = body_of(ex, h, r, snps, novel, j) if prof else seqs[h]
                     lo, hi = r.randint(0, 30), len(seq) - r.randint(0, 30)
                     if hi - lo < 100:
                         lo, hi = 0, len(seq)
-                    rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
+                    if prof:
+                        b = seq[lo:hi]
+                        b = apply_edits(b, draw_edits(b, r, prof))
+                        rd = (b, "~" * len(b))
+                    else:
+                        rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
                     reads.append((cid, t, f, kinds[cid], rd, int(carries(novel, seq[lo:hi])), h))
             for t, ex in cross.get(cid, {}).items():            # CROSS: the paralog structures this copy also expresses
                 seqs = {h: splice(fetch, ex, c["strand"], het if h == 2 else {}) for h in ((1, 2) if het else (1,))}
-                for i in range(int(round(a.per_copy * OTHER_WEIGHT / tot))):
+                for i in range(int(round(a.per_copy * OTHER_WEIGHT / tot * mult))):
                     h = hap_of(t, i)
-                    seq = seqs[h]
                     r = random.Random(stable_seed(str(a.seed), cid, t, str(i)))
+                    seq = body_of(ex, h, r, {}, "", None) if prof else seqs[h]
                     lo, hi = r.randint(0, 30), len(seq) - r.randint(0, 30)
                     if hi - lo < 100:
                         lo, hi = 0, len(seq)
-                    rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
+                    if prof:
+                        b = seq[lo:hi]
+                        b = apply_edits(b, draw_edits(b, r, prof))
+                        rd = (b, "~" * len(b))
+                    else:
+                        rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
                     reads.append((cid, t, f, kinds[cid], rd, 0, h))
     names = anon_names([(r[0], r[1]) for r in reads], a.seed)
     order = sorted(range(len(reads)), key=lambda i: names[i])
@@ -480,6 +604,8 @@ def main(argv=None):
     p.add_argument("--per-copy", type=int, default=60)
     p.add_argument("--het", type=float, default=0.0,
                    help="a diploid donor: each copy's exonic heterozygous-site rate; reads come 50/50 from its two haplotypes")
+    p.add_argument("--sim-profile", help="a calibrated read profile (calibrate.py profile + expr_log_sd): truncation, "
+                   "homopolymer-biased errors, the donor's het and hom alleles, retained introns, per-copy expression spread")
     p.add_argument("--projection", choices=("spliced", "liftover"), default="spliced",
                    help="CROSS: paralog isoforms onto a copy by spliced transcript alignment (Amendment 1) or by liftover "
                         "through the loci's genomic alignment (independent of union O2's projection)")

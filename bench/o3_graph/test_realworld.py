@@ -187,3 +187,36 @@ def test_a_silent_world_keeps_every_copy_in_the_catalog_but_a_third_express_noth
     assert len(copies) == 6                                                    # all still catalogued
     expressed = {r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:]}
     assert expressed.isdisjoint(silent) and len(expressed) == 4
+
+
+def test_homopolymer_runs_are_found():
+    assert R.hp_runs("ACGTAAAAACCCG") == [(4, 9), (9, 12)]
+
+
+def test_edits_apply_against_the_original_coordinates():
+    assert R.apply_edits("ACGTACGT", [(2, "S", "T"), (5, "D", 1), (0, "I", "GG")]) == "GGACTTAGT"
+
+
+def test_homopolymer_indels_land_inside_runs():
+    rng = random.Random(5)
+    seq = "".join(rng.choice("ACGT") for _ in range(300)) + "AAAAAA" + "".join(rng.choice("CGT") for _ in range(300))
+    runs = R.hp_runs(seq)
+    prof = dict(sub_error=0.0, ins_event=0.0, del_event=0.02, del_hp_frac=1.0, ins_hp_frac=1.0, del_len={"1": 1.0},
+                ins_len={"1": 1.0})
+    edits = R.draw_edits(seq, random.Random(1), prof)
+    assert edits and all(k == "D" and any(s <= p < e for s, e in runs) for p, k, _ in edits)
+
+
+def test_truncation_removes_transcript_fractions_from_each_end_but_keeps_a_minimum():
+    assert len(R.truncate("A" * 1000, 0.1, 0.2, min_len=100)) == 700
+    assert R.truncate("ACGT" * 50, 0.6, 0.3, min_len=100) == "ACGT" * 50
+
+
+def test_a_retained_intron_merges_its_two_exons():
+    assert R.retain([(0, 10), (20, 30), (40, 50)], {1}) == [(0, 10), (20, 50)]
+    assert R.retain([(0, 10), (20, 30)], set()) == [(0, 10), (20, 30)]
+
+
+def test_expression_multipliers_are_deterministic_and_flat_without_spread():
+    assert R.expr_mult(3, "F.1", 0.0) == 1.0
+    assert R.expr_mult(3, "F.1", 0.86) == R.expr_mult(3, "F.1", 0.86) != R.expr_mult(3, "F.2", 0.86)
