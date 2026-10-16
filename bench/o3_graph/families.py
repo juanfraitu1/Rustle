@@ -64,6 +64,11 @@ GROUPS = {
                  "DEFA": r"^DEFA[0-9]+[A-Z]?$", "BCRP": r"^BCRP[0-9]+$", "GGT": r"^GGT[0-9]+[A-Z]*$", "CFHR": r"^CFHR[0-9]$",
                  "PRB": r"^PRB[0-9]$", "ANKRD30": r"^ANKRD30[A-Z]+$", "FRG1": r"^FRG1[A-Z]*$", "GSTT2": r"^GSTT2[A-Z]?$",
                  "CTAGE": r"^CTAGE[0-9]+$", "RIMBP3": r"^RIMBP3[A-Z]?$"},
+    # held out for round 7 (docs/PREREG_o3_graph_round7_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set (CTAGE was a round-6 candidate past its first 8, never built into a world)
+    "heldout7": {"CTAGE": r"^CTAGE[0-9]+$", "AQP7": r"^AQP7(P[0-9]+)?$", "PRSS": r"^PRSS[1-3](P[0-9])?$", "SPRR2": r"^SPRR2[A-G]$",
+                 "FAM74A": r"^FAM74A[0-9]+$", "TUBB8": r"^TUBB8(P[0-9]+)?$", "DDX11L": r"^DDX11L[0-9]+$", "WASH": r"^WASH[0-9]P?$",
+                 "SIGLEC": r"^SIGLEC[0-9]+[A-Z]?$", "IFITM": r"^IFITM[0-9]+$", "FAM138": r"^FAM138[A-Z]$", "FAM157": r"^FAM157[A-Z]$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

@@ -40,3 +40,11 @@ def test_a_flagged_cluster_is_a_copy_an_allele_or_other():
     assert S.classify_cluster({f"x{i}" for i in range(20)}, truth, nonc)[0] == "copy"
     assert S.classify_cluster({f"a{i}" for i in range(20)}, truth, nonc)[0] == "allele"      # one haplotype of a catalogued copy
     assert S.classify_cluster({f"m{i}" for i in range(20)}, truth, nonc)[0] == "other"       # both haplotypes: not an allele split
+
+
+def test_o1_drops_are_scored_against_which_copies_were_silent():
+    seeded = {"F": dict(copies=[dict(idx=0, origin="curated"), dict(idx=2, origin="curated")], dropped=[1, 3]),
+              "G": dict(copies=[dict(idx=0, origin="curated")], dropped=[])}
+    cat_copy = {("F", 0): "F.0", ("F", 1): "F.1", ("F", 2): "F.2", ("F", 3): "F.3", ("G", 0): "G.0"}
+    kinds = {"F.0": "present", "F.1": "silent", "F.2": "present", "F.3": "present", "G.0": "present"}
+    assert S.drop_outcome(seeded, cat_copy, kinds) == dict(silent=1, silent_dropped=1, expressed=4, expressed_dropped=1)

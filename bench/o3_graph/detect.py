@@ -50,7 +50,7 @@ DELTA = 0.00958
 MIN_NOVEL, MIN_NOVEL_PART, MIN_BRANCH, LOCUS_PAD = 50, 30, 5, 1000
 DENSE_W, DENSE_FRAC = 50, 0.3
 MIN_OVERLAP = 0.5
-ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G", "Hn", "H", "Kn", "K")
+ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G", "Hn", "H", "Kn", "K", "In", "I")
 
 
 class _Contig:
@@ -123,12 +123,14 @@ def arms_of(arm, keep):
     return {"R0": ["R0"] + (["S3", "S23"] if keep else []),
             "S1": ["S1", "S12"] + (["S123"] if keep else []),
             "S2": ["S12"] + (["S123", "S23"] if keep else []) + ["S4n"] + (["S4"] if keep else []) + (["S123m"] if keep else [])
-                  + ["Gn"] + (["G"] if keep else []) + ["Hn"] + (["H"] if keep else []) + ["Kn"] + (["K"] if keep else []),
+                  + ["Gn"] + (["G"] if keep else []) + ["Hn"] + (["H"] if keep else []) + ["Kn"] + (["K"] if keep else [])
+                  + ["In"] + (["I"] if keep else []),
             "S4p": ["S4n"] + (["S4"] if keep else []),
             "S1m": ["S123m"] if keep else [],
             "Gp": ["Gn"] + (["G"] if keep else []),
             "Hp": ["Hn"] + (["H"] if keep else []),
-            "Kp": ["Kn"] + (["K"] if keep else [])}[arm]
+            "Kp": ["Kn"] + (["K"] if keep else []),
+            "Ip": ["In"] + (["I"] if keep else [])}[arm]
 
 
 def explains(cons, sites, ref, cc):
@@ -473,6 +475,7 @@ def main(argv):
     o2_unexpl, o2u_unexpl = unexplained("o2.paths.m2.tsv"), unexplained("o2.union.m2.tsv")
     o2e_unexpl = unexplained("o2.unionp.m2.tsv")      # H: union O2 on paths padded with each copy's genome at both ends
     o2k_unexpl = unexplained("o2.unionf.m2.tsv")      # K: what no family's graph explains, nor the family's own loci
+    o2i_unexpl = unexplained("o2.integ.m2.tsv")       # I (round 7): what O2 on O1's RNA-seeded catalog cannot explain
     by_host = collections.defaultdict(list)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         if r["catalog_copy_idx"].isdigit():
@@ -485,6 +488,7 @@ def main(argv):
         cps = fam[f]
         pool = [n for n in family_pool(by_host, f, o2e_unexpl) if n in reads]
         pool_k = [n for n in family_pool(by_host, f, o2k_unexpl) if n in reads]
+        pool_i = [n for n in family_pool(by_host, f, o2i_unexpl) if n in reads]
         classes = collections.defaultdict(list)
         for c in cps:
             classes[c["seq"]].append(c)
@@ -545,6 +549,14 @@ def main(argv):
                         st, div = status_of(members, cons, sites_k, ref, m_iso, cov_k, vec_k, mosaic=True)
                         if st in ("unexplained", "mosaic") and div > DELTA:
                             calls.append(["Kp", f, "psv", host, k, sorted(members), div])
+            if len(pool_i) >= PC.MIN_SUPPORT:                 # I: as H, on what the integrated O1 -> O2 leaves unexplained
+                cov_i = PC.align("host", ref, {n: reads[n] for n in pool_i}, tmp)
+                if len(cov_i) >= PC.MIN_SUPPORT:
+                    sites_i, clusters_i, vec_i = PC.cluster_host(ref, cov_i)
+                    for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):
+                        st, div = status_of(members, cons, sites_i, ref, m_iso, cov_i, vec_i, mosaic=True)
+                        if st in ("unexplained", "mosaic") and div > DELTA:
+                            calls.append(["Ip", f, "psv", host, k, sorted(members), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
         if names:
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)

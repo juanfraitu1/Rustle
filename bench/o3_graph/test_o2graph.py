@@ -169,3 +169,29 @@ def test_a_flagged_read_is_reported_as_a_candidate_not_assigned():
             dict(read="c", family="F", call="0", reason="locus")]
     out = O.apply_flag(rows, {("F", "a"), ("F", "b")})
     assert [(r["call"], r["reason"]) for r in out] == [("-", "flagged"), ("-", "tied"), ("0", "locus")]
+
+
+def test_a_new_seeded_copy_maps_to_the_truth_copy_whose_locus_it_overlaps():
+    truth_copies = [dict(copy="F.0", chrom="c1", start="1000", end="3000"), dict(copy="F.5", chrom="c2", start="5000", end="6500"),
+                    dict(copy="F.6", chrom="c2", start="9000", end="9500")]
+    new = [dict(idx=7, contig="c2", start=5100, end=6300), dict(idx=8, contig="c3", start=0, end=900)]
+    assert O.map_new_copies(new, truth_copies) == {7: "F.5", 8: None}
+
+
+def test_calls_are_scored_against_each_read_s_true_copy_whatever_catalog_named_it():
+    truth = {"r1": dict(copy="F.0", family="F", kind="present"), "r2": dict(copy="F.5", family="F", kind="outside"),
+             "r3": dict(copy="F.9", family="F", kind="absent"), "r4": dict(copy="F.0", family="F", kind="present")}
+    idx2copy = {("F", 0): "F.0", ("F", 7): "F.5", ("F", 8): None}
+    calls = {("r1", "F"): 0, ("r2", "F"): 7, ("r3", "F"): 0, ("r4", "F"): 8}
+    s = O.score_assign(calls, idx2copy, truth)
+    assert s == dict(correct=2, wrong=2, outside_own=1)
+
+
+def test_placements_of_an_undetectable_absent_copy_are_counted_apart_from_errors():
+    truth = {"r1": dict(copy="F.0", family="F", kind="present"), "r2": dict(copy="F.9", family="F", kind="absent"),
+             "r3": dict(copy="F.8", family="F", kind="absent")}
+    idx2copy = {("F", 0): "F.0", ("F", 1): "F.1"}
+    calls = {("r1", "F"): 0, ("r2", "F"): 1, ("r3", "F"): 1}
+    # F.9 is within delta of the genome (undetectable): its reads cannot be told from that locus's own
+    s = O.score_assign(calls, idx2copy, truth, unknowable={"F.9"})
+    assert s == dict(correct=1, wrong=1, outside_own=0, unknowable_placed=1)

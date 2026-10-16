@@ -21,7 +21,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DELTA = 0.00958
 FLAG_MIN_READS = 20
-ARMS = ("CUR", "S23", "S3", "S123m", "G", "H", "Hn", "K", "Kn")
+ARMS = ("CUR", "S23", "S3", "S123m", "G", "H", "Hn", "K", "Kn", "I", "In")
 NONCAT_WORLDS = ("OUTSIDE", "REMOVED", "BRANCH")
 
 
@@ -104,6 +104,70 @@ def cmd_flags(out, worlds):
     return 0
 
 
+def drop_outcome(seeded, cat_copy, kinds):
+    """Round 7: O1's drops against the truth -- silent copies dropped (wanted) and expressed copies dropped (the absorption risk)."""
+    out = collections.Counter(silent=0, silent_dropped=0, expressed=0, expressed_dropped=0)
+    for f, v in seeded.items():
+        dropped = set(v["dropped"])
+        for (ff, i), cp in cat_copy.items():
+            if ff != f:
+                continue
+            k = "silent" if kinds.get(cp) == "silent" else "expressed"
+            out[k] += 1
+            out[f"{k}_dropped"] += i in dropped
+    return dict(out)
+
+
+def _o2(name):
+    spec = importlib.util.spec_from_file_location(f"o3_graph_{name}", os.path.join(HERE, f"{name}.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def cmd_integ(out, worlds):
+    """Round 7, per world: correct / wrong calls of the current O2, padded union O2 on the curated catalog, and the integrated
+    O1 -> O2 (o2.integ.m2.tsv on graph/seeded.json); reads of uncatalogued in-genome copies called to their own seeded copy; O1's
+    drops (silent vs expressed copies) and new copies."""
+    O = _o2("o2graph")
+    res = {}
+    for w in worlds:
+        truth = {r["read"]: r for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t")}
+        iso = json.load(open(f"{w}/isoforms.json"))
+        cat_copy = {(f, c["idx"]): c["copy"] for f, cps in iso.items() for c in cps}
+        cur = {(r["read_name"], r["family_id"]): int(r["catalog_copy_idx"])
+               for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t")
+               if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit()}
+
+        def calls_of(name):
+            return {(r["read"], r["family"]): int(r["call"]) for r in csv.DictReader(open(f"{w}/graph/{name}"), delimiter="\t")
+                    if r["call"] != "-"}
+        sj = json.load(open(f"{w}/graph/seeded.json"))
+        truth_copies = list(csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"))
+        seeded_copy = dict(cat_copy)
+        for f, v in sj.items():
+            for i, cp in O.map_new_copies([c for c in v["copies"] if c["origin"] == "new"], truth_copies).items():
+                seeded_copy[(f, i)] = cp
+        kinds = json.load(open(f"{w}/kinds.json"))
+        unk = set()
+        if os.path.basename(w.rstrip("/")) == "REMOVED":         # absent copies the genome explains within delta
+            fam_abs = {c: k for c, k in kinds.items() if k == "absent"}
+            det = removed_detectability(w)
+            unk = {c for c in fam_abs if not det.get(c.rsplit(".", 1)[0], (0, False))[1]}
+        r = dict(current=O.score_assign(cur, cat_copy, truth, unk),
+                 padded_union=O.score_assign(calls_of("o2.unionp.m2.tsv"), cat_copy, truth, unk),
+                 integrated=O.score_assign(calls_of("o2.integ.m2.tsv"), seeded_copy, truth, unk), unknowable=sorted(unk),
+                 drops=drop_outcome(sj, cat_copy, kinds),
+                 new_copies=[(f, c["idx"], seeded_copy.get((f, c["idx"]))) for f, v in sj.items() for c in v["copies"] if c["origin"] == "new"],
+                 outside_reads=sum(1 for t in truth.values() if t["kind"] == "outside"))
+        name = os.path.basename(w.rstrip("/"))
+        res[name] = r
+        print(f"{name}: current {r['current']} | padded union {r['padded_union']} | integrated {r['integrated']} | drops {r['drops']} "
+              f"| new copies {len(r['new_copies'])} ({sum(1 for x in r['new_copies'] if x[2])} on a truth copy) | outside reads {r['outside_reads']}")
+    json.dump(res, open(out, "w"), indent=1)
+    return 0
+
+
 def removed_detectability(w):
     """{family: (median de, detectable)} for a REMOVED world's absent copies (primary alignments only)."""
     import pysam
@@ -177,6 +241,8 @@ def cmd_o2bars(prefix, worlds, graph_arm="unionp.m2"):
 def main(argv):
     if argv[0] == "o3":
         return cmd_o3(argv[1], argv[2:])
+    if argv[0] == "integ":                               # round 7: the integrated O1 -> O2 against the current O2
+        return cmd_integ(argv[1], argv[2:])
     if argv[0] == "flags":                               # round 6: the flag's clusters by truth class
         return cmd_flags(argv[1], argv[2:])
     if argv[0] == "o2bars-unionf":                       # round 5: the graph O2 with the locus fallback

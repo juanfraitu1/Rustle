@@ -11,6 +11,8 @@ Per family one SPECIAL copy (seeded; its main isoform has >= 3 exons when any co
   OUTSIDE   the special copy stays in the genome but leaves the catalog (an uncatalogued paralog)
   BRANCH    an extra ABSENT copy `<family>.B`: the special copy's isoforms with a novel 150-bp exon in the middle of its main
             isoform's middle intron (spliced into every isoform with an intron across that point) and 0.2% exonic SNPs
+  SILENT    as INTACT, but a seeded third of the copies (at least one) express nothing; every copy stays in the catalog
+            (round 7: what O1's RNA-supported seeding drops, and whether it drops an expressed copy)
   CROSS     as INTACT, and EVERY copy also expresses up to MAX_PROJ isoform structures annotated only on a paralog (review C1
             of register 1298: the catalog is not copy-specific): each paralog isoform's sense sequence spliced-aligned
             (minimap2 splice:hq -uf) to the copy's locus, kept when its primary alignment covers >= PROJ_COVER of it with the
@@ -42,7 +44,7 @@ sys.path.insert(0, BENCH)
 sys.path.insert(0, os.path.join(BENCH, "o3_fewread"))
 
 GENOME = "/mnt/linuxdisk/home/juanfraitu/npip_ladder/idx/target.fa"      # = chm13v2.0.fa (same contigs and sequence)
-SCENARIOS = ("INTACT", "REMOVED", "OUTSIDE", "BRANCH", "CROSS")
+SCENARIOS = ("INTACT", "REMOVED", "OUTSIDE", "BRANCH", "CROSS", "SILENT")
 MAIN_WEIGHT, OTHER_WEIGHT, NOVEL_LEN, BRANCH_SNP, REGION_PAD = 2.0, 0.5, 150, 0.002, 20000
 MAX_PROJ, PROJ_COVER, PROJ_PAD, JUNCTION_TOL = 2, 0.95, 1000, 10
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
@@ -304,6 +306,10 @@ def cmd_build(a):
         rng = random.Random(f"{a.seed}:{f}:snp")
         expressed = []
         idx = 0
+        silent = set()
+        if a.scenario == "SILENT":                          # a seeded third of the copies express nothing (all catalogued)
+            ids = [f"{f}.{k}" for k in range(len(fam["copies"]))]
+            silent = set(random.Random(f"{a.seed}:{f}:silent").sample(ids, max(1, len(ids) // 3)))
         for k, c in enumerate(fam["copies"]):
             cid = f"{f}.{k}"
             special = c is sp
@@ -312,12 +318,15 @@ def cmd_build(a):
                 kind = "absent"
             elif special and a.scenario == "OUTSIDE":
                 kind = "outside"
+            elif cid in silent:
+                kind = "silent"
             kinds[cid], cfam[cid] = kind, f
             in_ref = not (special and a.scenario == "REMOVED")
-            catalogued = kind == "present"
+            catalogued = kind in ("present", "silent")
             rows_c.append([cid, f, c["gene_id"], c["gene_name"], c["chrom"], c["start"], c["end"], c["strand"], kind, int(in_ref),
                            int(catalogued)])
-            expressed.append((cid, c, {}, None, ""))
+            if kind != "silent":
+                expressed.append((cid, c, {}, None, ""))
             if catalogued:
                 ex = [tuple(x) for x in c["transcripts"][c["main"]]]
                 seq = "".join(world_fa.fetch(c["chrom"], s, e).upper() for s, e in ex)

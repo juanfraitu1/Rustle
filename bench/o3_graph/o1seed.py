@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""O1 seeding (round 7, docs/PREREG_o3_graph_round7_2026-10-16.md): a family's copy catalog from RNA support, before O2 and O3.
+
+    o1seed.py WORLD    WORLD/graph/seeded.json
+
+Per family (its curated copies, isoforms.json):
+  family reads  reads with any alignment (primary or secondary) on a curated copy's locus (+- PAD) in WORLD/E0.bam
+  support       a curated copy is KEPT when >= MIN_SUPPORT family reads have their PRIMARY alignment on its locus; else it is
+                DROPPED (nothing in the data says it is expressed: the universe O2 chooses from shrinks)
+  new copies    family reads' primary alignments off every curated locus of every family, grouped by overlap (gaps <= JOIN),
+                groups with >= MIN_SUPPORT reads placed there uniquely (mapq >= MIN_MAPQ_NEW): a locus the family's reads come from that the
+                catalog lacks (a mapq-0 primary is a coin flip, no evidence for that locus; keeping a curated copy counts every
+                primary, so an identical expressed copy is never dropped)
+  structures    a kept copy: its curated isoforms plus the intron chains of near-uniquely placed primary alignments (mapq >=
+                MIN_MAPQ, the user's suggestion: no fragments of ambiguous placement) that this copy overlaps most and that lie
+                within its span (+- SPAN_SLACK), in >= MIN_CHAIN reads (ends: the reads' outermost ends); a new copy: its observed
+                chains only
+Output per family: copies [{idx, contig, start, end, strand, rep, isoforms, origin: curated | new, support}], dropped [curated
+idx], family_reads [read names]. Seeded copies keep curated idx; new ones are numbered after them.
+"""
+import collections
+import json
+import sys
+
+PAD, MIN_SUPPORT, MIN_CHAIN, JOIN, CHAIN_TOL, MIN_MAPQ, MIN_MAPQ_NEW, SPAN_SLACK = 1000, 5, 3, 1000, 10, 50, 1, 100
+
+
+def exons_from_cigartuples(ref_start, cigartuples):
+    """Reference exons of an alignment: a new exon at every N; M/=/X/D extend the exon, I/S/H take no reference."""
+    ex, pos, start = [], ref_start, ref_start
+    for op, n in cigartuples:
+        if op == 3:                                       # N: intron
+            ex.append((start, pos))
+            pos += n
+            start = pos
+        elif op in (0, 2, 7, 8):                          # M, D, =, X
+            pos += n
+    ex.append((start, pos))
+    return [(a, b) for a, b in ex if b > a]
+
+
+def _span(a):
+    return a["blocks"][0][0], a["blocks"][-1][1]
+
+
+def _overlaps(a, locus):
+    s, e = _span(a)
+    return a["chrom"] == locus[0] and s < locus[2] and e > locus[1]
+
+
+def support(prim, loci):
+    """{copy idx: number of primary alignments overlapping its locus (chrom, start, end)}."""
+    return {i: sum(1 for a in prim if _overlaps(a, lo)) for i, lo in loci.items()}
+
+
+def kept(sup, min_support=MIN_SUPPORT):
+    return sorted(i for i, n in sup.items() if n >= min_support)
+
+
+def new_loci(prim, loci, min_support=MIN_SUPPORT, join=JOIN):
+    """Groups of primary alignments off every locus (overlapping or within `join`) with >= min_support reads placed there
+    UNIQUELY (mapq >= MIN_MAPQ_NEW = 1): adding a copy needs positive evidence; a mapq-0 primary is a coin flip. Not mapq >= 50:
+    a real uncatalogued copy near-identical to a paralog has unique placements at intermediate mapq (development: ANKRD20A.4,
+    SPDYE.2, TRIM64.2, DEFA.1, FRG1.2, CSAG.3)."""
+    off = sorted((a for a in prim if not any(_overlaps(a, lo) for lo in loci.values())), key=lambda a: (a["chrom"], _span(a)))
+    groups, cur = [], None
+    for a in off:
+        s, e = _span(a)
+        if cur and a["chrom"] == cur["chrom"] and s <= cur["end"] + join:
+            cur["end"] = max(cur["end"], e)
+            cur["alns"].append(a)
+        else:
+            cur = dict(chrom=a["chrom"], start=s, end=e, alns=[a])
+            groups.append(cur)
+    out = []
+    for g in groups:
+        reads = {a["read"] for a in g["alns"]}
+        unique = {a["read"] for a in g["alns"] if a.get("mapq", 60) >= MIN_MAPQ_NEW}
+        if len(unique) >= min_support:
+            strands = collections.Counter(a["strand"] for a in g["alns"])
+            out.append(dict(chrom=g["chrom"], start=g["start"], end=g["end"], strand=strands.most_common(1)[0][0],
+                            n_reads=len(reads), alns=g["alns"]))
+    return out
+
+
+def observed_chains(prim, min_reads=MIN_CHAIN):
+    """[(exons, n reads)] for each intron chain >= min_reads primary alignments share; ends are the reads' outermost ends."""
+    by = collections.defaultdict(list)
+    for a in prim:
+        b = a["blocks"]
+        chain = tuple((x[1], y[0]) for x, y in zip(b, b[1:]))
+        if chain:
+            by[chain].append(a)
+    out = []
+    for chain, alns in sorted(by.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        if len(alns) < min_reads:
+            continue
+        s, e = min(a["blocks"][0][0] for a in alns), max(a["blocks"][-1][1] for a in alns)
+        bounds = [s] + [x for ab in chain for x in ab] + [e]
+        out.append(([(bounds[2 * k], bounds[2 * k + 1]) for k in range(len(chain) + 1)], len(alns)))
+    return out
+
+
+def _chain(ex):
+    ex = sorted(tuple(x) for x in ex)
+    return tuple((a[1], b[0]) for a, b in zip(ex, ex[1:]))
+
+
+def _known(chain, chains, tol=CHAIN_TOL):
+    return any(len(k) == len(chain) and all(abs(x - y) <= tol for i, j in zip(chain, k) for x, y in zip(i, j)) for k in chains)
+
+
+def owner(a, cps):
+    """The one curated copy an alignment overlaps most (unpadded spans), or None: adjacent copies' padded windows overlap
+    (CSAG copies 91 bp apart), so a read must count for one copy only."""
+    s, e = _span(a)
+    best, ov = None, 0
+    for c in cps:
+        if c["contig"] == a["chrom"]:
+            o = min(e, c["end"]) - max(s, c["start"])
+            if o > ov:
+                best, ov = c["idx"], o
+    return best
+
+
+def seed_family(cps, prim, all_loci, min_support=MIN_SUPPORT, min_chain=MIN_CHAIN):
+    """cps: the family's curated copies (isoforms.json entries); prim: its family reads' primary alignments; all_loci: every
+    family's curated loci (padded), so another family's copy is never seeded here. -> (seeded copies, dropped idx)."""
+    loci = {c["idx"]: (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for c in cps}
+    sup = support(prim, loci)
+    keep = set(kept(sup, min_support))
+    copies = []
+    for c in cps:
+        if c["idx"] not in keep:
+            continue
+        own = [a for a in prim if a.get("mapq", 60) >= MIN_MAPQ and owner(a, cps) == c["idx"]       # near-unique, this copy's,
+               and _span(a)[0] >= c["start"] - SPAN_SLACK and _span(a)[1] <= c["end"] + SPAN_SLACK]  # and inside its span
+        iso = {t: [list(x) for x in ex] for t, ex in c["isoforms"].items()}
+        seen = [_chain(ex) for ex in iso.values()]
+        for k, (ex, n) in enumerate(observed_chains(own, min_chain)):
+            if not _known(_chain(ex), seen):
+                seen.append(_chain(ex))
+                iso[f"obs{k}"] = [list(x) for x in ex]
+        copies.append(dict(idx=c["idx"], contig=c["contig"], start=c["start"], end=c["end"], strand=c["strand"], rep=c["rep"],
+                           isoforms=iso, origin="curated", support=sup[c["idx"]]))
+    nxt = max((c["idx"] for c in cps), default=-1) + 1
+    for g in new_loci(prim, all_loci, min_support):
+        chains = observed_chains([a for a in g["alns"] if a.get("mapq", 60) >= MIN_MAPQ_NEW], min_chain)
+        if not chains:
+            continue
+        iso = {f"obs{k}": [list(x) for x in ex] for k, (ex, n) in enumerate(chains)}
+        copies.append(dict(idx=nxt, contig=g["chrom"], start=min(x[0] for v in iso.values() for x in v),
+                           end=max(x[1] for v in iso.values() for x in v), strand=g["strand"], rep="obs0", isoforms=iso,
+                           origin="new", support=g["n_reads"]))
+        nxt += 1
+    return copies, sorted(set(loci) - keep)
+
+
+def seed_world(w):
+    import pysam
+    iso = json.load(open(f"{w}/isoforms.json"))
+    all_loci = {(f, c["idx"]): (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for f, cps in iso.items() for c in cps}
+    fam_reads = collections.defaultdict(set)
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for (f, _), (ch, s, e) in all_loci.items():
+            for rec in bam.fetch(ch, s, e):
+                if not rec.is_unmapped:
+                    fam_reads[f].add(rec.query_name)
+    want = set().union(*fam_reads.values()) if fam_reads else set()
+    prim = {}
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.query_name in want and not (rec.is_unmapped or rec.is_secondary or rec.is_supplementary):
+                prim[rec.query_name] = dict(read=rec.query_name, chrom=rec.reference_name, strand="-" if rec.is_reverse else "+",
+                                            mapq=rec.mapping_quality,
+                                            blocks=exons_from_cigartuples(rec.reference_start, rec.cigartuples))
+    out = {}
+    for f, cps in sorted(iso.items()):
+        p = [prim[q] for q in sorted(fam_reads[f]) if q in prim]
+        copies, dropped = seed_family(cps, p, all_loci)
+        out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
+    json.dump(out, open(f"{w}/graph/seeded.json", "w"))
+    n_new = sum(1 for v in out.values() for c in v["copies"] if c["origin"] == "new")
+    n_drop = sum(len(v["dropped"]) for v in out.values())
+    print(f"[o1seed] {w}/graph/seeded.json: {sum(len(v['copies']) for v in out.values())} copies ({n_new} new), "
+          f"{n_drop} curated copies dropped", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(seed_world(sys.argv[1]))

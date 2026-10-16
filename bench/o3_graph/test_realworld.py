@@ -164,3 +164,26 @@ def test_a_world_with_heterozygous_alleles_builds_and_records_each_read_s_haplot
     haps = {r.split("\t")[-1] for r in rows[1:]}
     assert haps == {"1", "2"}
     assert sum(json.load(open(tmp_path / "w" / "het.json"))["sites"].values()) == 3 * 14   # 1% of each copy's 1,400 exonic bases
+
+
+def test_a_silent_world_keeps_every_copy_in_the_catalog_but_a_third_express_nothing(tmp_path, monkeypatch):
+    import json
+    import pysam
+    g = "".join(random.Random(9).choice("ACGT") for _ in range(70000))
+    fa = tmp_path / "g.fa"
+    fa.write_text(">c1\n" + g + "\n")
+    pysam.faidx(str(fa))
+    monkeypatch.setattr(R, "GENOME", str(fa))
+    cp = lambda gid, lo: dict(gene_id=gid, gene_name=gid, chrom="c1", start=lo, end=lo + 2000, strand="+", main="t",  # noqa: E731
+                              transcripts={"t": [[lo, lo + 600], [lo + 1200, lo + 2000]]})
+    fams = {"sets": {"x": [dict(family="F", copies=[cp(f"g{k}", 1000 + 10000 * k) for k in range(6)])]}}
+    (tmp_path / "f.json").write_text(json.dumps(fams))
+    R.main(["build", str(tmp_path / "w"), str(tmp_path / "f.json"), "--set", "x", "--scenario", "SILENT", "--seed", "3",
+            "--per-copy", "20"])
+    kinds = json.load(open(tmp_path / "w" / "kinds.json"))
+    silent = sorted(c for c, k in kinds.items() if k == "silent")
+    assert len(silent) == 2                                                    # a third of 6
+    copies = (tmp_path / "w" / "P.fam.copies.tsv").read_text().splitlines()[1:]
+    assert len(copies) == 6                                                    # all still catalogued
+    expressed = {r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:]}
+    assert expressed.isdisjoint(silent) and len(expressed) == 4

@@ -12,7 +12,8 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
     extended by PATH_PAD bases of the copy's genome (padded); run ... locus MARGIN: the
     annotation-free baseline on seqsupport's genomic-locus distances; run ... unionf MARGIN: padded union with the locus
     fallback and the cross-family guard (fallback_call); run ... flag BASE: o2.<BASE> with the reads of flagged PSV clusters
-    reported as unannotated-copy candidates (flag_reads, apply_flag); outputs graph/o2.<method>.m<margin>.tsv)
+    reported as unannotated-copy candidates (flag_reads, apply_flag); run ... integ MARGIN: padded union on O1's seeded catalog
+    (o1seed.py; run_integrated); outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -180,14 +181,14 @@ def union_structures(cps, projector):
     return out
 
 
-def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0):
+def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
     import pysam
     comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
     fa = pysam.FastaFile(f"{w}/genome.ref.fa")
-    iso = json.load(open(f"{w}/isoforms.json"))
+    iso = catalog if catalog is not None else json.load(open(f"{w}/isoforms.json"))
     reads = {}
     name = None
     with open(f"{w}/reads.E0.fq") as fh:
@@ -196,10 +197,12 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
                 name = ln[1:].strip().split()[0]
             elif i % 4 == 1:
                 reads[name] = ln.strip()
-    hosted = collections.defaultdict(set)
-    for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
-        hosted[r["family_id"]].add(r["read_name"])
-    d = f"{w}/graph/o2paths" + (".reps" if reps_only else ".union" if union else "") + (".ends" if ends else "") + (".pad" if pad else "")
+    if hosted is None:
+        hosted = collections.defaultdict(set)
+        for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
+            hosted[r["family_id"]].add(r["read_name"])
+    d = (f"{w}/graph/o2paths" + (".reps" if reps_only else ".union" if union else "") + (".ends" if ends else "")
+         + (".pad" if pad else "") + (".integ" if catalog is not None else ""))
     os.makedirs(d, exist_ok=True)
     R = _realworld() if union else None
 
@@ -319,6 +322,52 @@ def run_flagged(w, base, margin=MARGIN):
     print(f"[o2graph] {w} ({base} + flag, margin {margin}) -> {out_name}: {len(rows)} reads, "
           + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
     return 0
+
+
+def map_new_copies(new_copies, truth_copies):
+    """Scoring only (round 7): {new seeded copy idx: the truth copy whose locus it overlaps most (copies.tsv rows), or None}."""
+    out = {}
+    for c in new_copies:
+        best, ov = None, 0
+        for t in truth_copies:
+            if t["chrom"] != c["contig"]:
+                continue
+            o = min(c["end"], int(t["end"])) - max(c["start"], int(t["start"]))
+            if o > ov:
+                best, ov = t["copy"], o
+        out[c["idx"]] = best
+    return out
+
+
+def score_assign(calls, idx2copy, truth, unknowable=()):
+    """calls {(read, family): copy idx}; idx2copy {(family, idx): truth copy or None}. A call is correct when it names the read's
+    own copy, wrong otherwise (another copy, a seeded locus no copy explains, or a read of no catalogued copy). outside_own: the
+    reads of an uncatalogued in-genome copy (kind `outside`) called to that very copy (only an O1-seeded catalog can).
+    unknowable: absent copies the genome explains within delta (undetectable by O3's definition); a placement of their reads
+    cannot be told from that locus's own reads, so it is counted apart (`unknowable_placed`), not as an error (round 7)."""
+    out = collections.Counter(correct=0, wrong=0, outside_own=0)
+    if unknowable:
+        out["unknowable_placed"] = 0
+    for (q, f), i in calls.items():
+        t = truth.get(q)
+        if t is None:
+            continue
+        own = idx2copy.get((f, i)) == t["copy"] and t["family"] == f
+        if not own and t["copy"] in unknowable:
+            out["unknowable_placed"] += 1
+            continue
+        out["correct" if own else "wrong"] += 1
+        out["outside_own"] += own and t["kind"] == "outside"
+    return dict(out)
+
+
+def run_integrated(w, margin=MARGIN):
+    """Round 7: padded union O2 on O1's seeded catalog (o1seed.py: graph/seeded.json) over the family reads it found ->
+    graph/o2.integ.m<margin>.tsv."""
+    sj = json.load(open(f"{w}/graph/seeded.json"))
+    catalog = {f: v["copies"] for f, v in sj.items() if v["copies"]}
+    hosted = {f: set(v["family_reads"]) for f, v in sj.items()}
+    return run_paths(w, margin, union=True, pad=PATH_PAD, out_name=f"o2.integ.m{margin}.tsv", catalog=catalog, hosted=hosted)
 
 
 def run_locus(w, margin=MARGIN, out_name=None):
@@ -515,6 +564,8 @@ def main(argv):
             return run_world(argv[1])
         if method == "locus":
             return run_locus(argv[1], margin)
+        if method == "integ":                             # round 7: needs o1seed.py WORLD first
+            return run_integrated(argv[1], margin)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first
