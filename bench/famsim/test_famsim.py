@@ -59,6 +59,14 @@ class TestOps(unittest.TestCase):
         m2 = fresh(); apply_ops(m2, [{"op": "snp", "rate": 0.02}], seeded(1, "x"))
         self.assertEqual(m2.ops[0]["n"], round(0.02 * (len(t.seq) - len(t.protected()))))
 
+    def test_snp_confined_to_one_exon(self):
+        m = fresh(); t = fresh()
+        apply_ops(m, [{"op": "snp", "rate": 0.1, "region": "exon", "exon": 3}], seeded(1, "x"))
+        e3 = t.exons[2]
+        changed = [p for p, (a, b) in enumerate(zip(m.seq, t.seq)) if a != b]
+        self.assertEqual(len(changed), round(0.1 * len(e3)))
+        self.assertTrue(all(e3.start <= p < e3.end for p in changed))
+
     def test_snp_is_reproducible(self):
         a = fresh(); b = fresh()
         apply_ops(a, [{"op": "snp", "rate": 0.05}], seeded(7, "c")); apply_ops(b, [{"op": "snp", "rate": 0.05}], seeded(7, "c"))

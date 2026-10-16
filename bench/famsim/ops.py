@@ -38,12 +38,15 @@ def _rec(model, **kw):
 
 # ---------------------------------------------------------------- point changes
 def op_snp(model, spec, rng):
-    """`rate` substitutions per base over the region (`all` | `exons` | `introns`), exactly round(rate * L) of them at
-    distinct positions, splice dinucleotides protected."""
+    """`rate` substitutions per base over the region (`all` | `exons` | `introns` | `exon`, the last with `exon`: one exon
+    by index or label), exactly round(rate * L) of them at distinct positions, splice dinucleotides protected."""
     rate = float(spec["rate"])
     region = spec.get("region", "all")
     prot = model.protected()
-    if region == "exons":
+    if region == "exon":
+        e = model.exons[_exon_index(model, spec)]
+        cand = list(range(e.start, e.end))
+    elif region == "exons":
         cand = [p for e in model.exons for p in range(e.start, e.end)]
     elif region == "introns":
         cand = [p for s, e in model.introns() for p in range(s, e) if p not in prot]
