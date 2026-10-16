@@ -187,3 +187,88 @@ Across six fresh family sets graph O2 has traded one failure for another:
 - round 5: assigning reads of near-identical uncatalogued copies.
 
 No version has met all of its pre-registered bars.
+
+## Review corrections (round-5 review, 2026-10-16; post hoc)
+
+A fresh reviewer re-derived every number above with independent code, and all of them reproduce. Timing is clean: commit
+00:52:34.052, first held-out file 7 ms later. The family selection reproduces exactly (first 8 with >= 3 copies, in GROUPS
+order, from `families5_all.json`). No code bug changes a number. The corrections are about what the held-out set showed.
+
+**D5 passed without exercising the guard (I1).**
+- None of the TRIM51 reads hosted on TRIM64 (148-230 per world) aligns to TRIM64's loci, so no sister-family PSV cluster forms
+  there. Development set 2 had 30-43 per world.
+- Hn's and Kn's sister-family calls are identical. All of them are branch calls, and the genome check drops all of them
+  (median `de` 0.0011-0.0041, no novel bases).
+- So "which the guard and the genome check remove" was wrong: the guard removed nothing.
+- "Measurable (TRIM64, TRIM51)" was wrong too: TRIM51 hosts 60 foreign reads, under the 100 needed; only TRIM64 qualifies.
+- D5 is passed but says nothing about the guard. The sister-family evidence for K is development set 2 only.
+
+**The guard covers PSV clustering only (I2).** K's branch calls are built from all of a family's hosted reads, as S2's are, not
+from K's pool. So another family's reads with >= 50 genome-unaligned bases, or `de` > delta, could still be called; only the
+genome check stands in the way. The prereg's "another family's reads ... stay out" holds for K's PSV clustering only. Not
+changed after the fact: it would be a method change for a new prereg.
+
+**Wording, attribution and history (I3, I4).**
+- The claim sentence should be the pre-registered one (below).
+- On this set K, H and S23 are equal in every cell: 8 / 8 BRANCH, 0 / 24 false-call families, 0 in REMOVED + BRANCH. S3,
+  the current method plus the genome check, is also 0 / 24.
+- All 8 detections are branch calls that S23 also makes, and the removed-copy clause had no data. So none of K's own parts
+  (the fallback pool, the guard, the mosaic rule, pooling) was tested on held-out data.
+- On development data K adds over S23 only in REMOVED (GAGE, GOLGA8, PSG, CGB, KIR, PRAMEF), exactly the clause this set
+  could not measure.
+- This is round 5, and the detector changed after each round. The guard fixes false calls that round 4's mosaic extension
+  introduced; S23 has none on dev-2.
+- "Holds on two fresh sets" mixed H (round 4) and K (round 5).
+
+**Where C3's failure comes from (I5).** Placements of the 481 non-catalogued reads per world:
+
+| world | current O2 | padded union | locus O2 | fallback |
+|---|---|---|---|---|
+| OUTSIDE | 199 | 303 | 437 | 449 |
+| REMOVED | 233 | 303 | 437 | 449 |
+
+- The fallback adds 146 per world: its own `locus` calls on reads padded union left `unexplained` (TRIM51.7 60, HERC2P 59,
+  STAG3L 27). It cannot tell a catalogued copy's unthreaded structure from a near-identical uncatalogued copy.
+- Its own calls on held-out: 48 correct against 292 non-catalogued reads placed. On the development sets: 233 against 259.
+- Counting non-catalogued placements, precision is 0.834 in OUTSIDE and REMOVED, against the current O2's 0.912 and 0.899.
+  The ">= 0.9997" was C2's catalogued-only figure.
+- On this set padded union alone would also fail C3 (REMOVED 303 > 233; pooled 1.13) and C4 (x1.021). It would pass C1
+  (lowest 1.062, CROSS).
+- So C3 fails mostly because of this family set, and the fallback makes it worse.
+
+**The O2 history, by round (I6).** Five fresh held-out sets, each failing on a different bar:
+- **Round 1:** path O2 passed its own bars (O2a-O2d). The review then found the gain annotation-decided, and Amendment 1's
+  CROSS failed (precision 0.42 on paralog-structure reads).
+- **Round 2:** union O2, U4 0.981.
+- **Round 3:** padded union, no gain (x0.995).
+- **Round 4:** padded union, A1 0.969 in CROSS.
+- **Round 5:** the fallback, C3 and C4.
+
+"Traded one failure for another" shows only on development data: the fallback raises CROSS (dev-5: 2,330 vs 2,252) and
+raises non-catalogued placements (dev-4: 479 vs 375).
+
+**Smaller.**
+- The "dev" row pools six worlds (CROSS and CROSSL).
+- Not fixed, recorded:
+  - `summary.py` labels the fallback's output "padded union" and its bars A1-A4;
+  - the guard does not stop a `locus` call when the read's own family's union also fails (none occurred);
+  - there is no table-level test of `run_fallback` (the reviewer re-derived every row);
+  - the selection step is not a committed command (it reproduces exactly from the rule above);
+  - a future prereg should require >= 3 detectable removed copies before running, since detectability is computable
+    without reads.
+
+### Verdict, revised after the review (2026-10-16)
+
+**O3: claimed without the removed-copy clause (reading 2), in the pre-registered words.** "On simulated reads of handpicked real
+families, graph O3 that clusters a family's O2-unexplained reads together, with the mosaic rule, detects novel-exon absent
+copies with at most one false call over intact, uncatalogued-paralog and paralog-annotation families." Observed: 8 of 8 and
+0 of 24.
+
+What this set tested: the branch calls (novel exons) and the genome check (no false call), exactly as S23 and S3 do. It did not
+test K's own parts. The sister-family evidence for the guard is development set 2 only (K 0 false calls, H 4).
+
+**O2: not claimed (C3, C4 fail).**
+- The fallback assigns 7.6-9.4% more reads correctly per world, at precision >= 0.9997 over reads of catalogued copies.
+- But its own `locus` calls are mostly reads of near-identical uncatalogued copies. Counting those, its precision is 0.834,
+  against the current O2's 0.90-0.91 in OUTSIDE and REMOVED.
+- Across five fresh held-out sets no graph O2 version has met all of its pre-registered bars.
