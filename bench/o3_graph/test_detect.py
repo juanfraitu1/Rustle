@@ -169,4 +169,13 @@ def test_a_copy_covering_too_little_of_the_cluster_is_no_candidate():
 def test_the_union_o2_arm_and_the_mosaic_arms_land_in_their_arms():
     assert D.arms_of("S1m", keep=True) == ["S123m"] and D.arms_of("S1m", keep=False) == []
     assert D.arms_of("Gp", keep=True) == ["Gn", "G"] and D.arms_of("Gp", keep=False) == ["Gn"]
-    assert D.arms_of("S2", keep=True) == ["S12", "S123", "S23", "S4n", "S4", "S123m", "Gn", "G"]
+    assert D.arms_of("S2", keep=True)[:8] == ["S12", "S123", "S23", "S4n", "S4", "S123m", "Gn", "G"]
+
+
+def test_h_pools_the_family_s_unexplained_reads_across_its_hosts():
+    by_host = {("F", 0): ["a", "b"], ("F", 1): ["c", "d"], ("G", 0): ["e"]}
+    keep = {("a", "F"), ("c", "F"), ("d", "F"), ("e", "G"), ("b", "G")}
+    assert D.family_pool(by_host, "F", keep) == ["a", "c", "d"]
+    assert D.family_pool(by_host, "F", None) == []
+    assert D.arms_of("Hp", keep=True) == ["Hn", "H"] and D.arms_of("Hp", keep=False) == ["Hn"]
+    assert D.arms_of("S2", keep=True)[-2:] == ["Hn", "H"]

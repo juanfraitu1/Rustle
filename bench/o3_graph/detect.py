@@ -24,6 +24,9 @@ G (union-O2-informed O3; prereg docs/PREREG_o3_graph_union_2026-10-15.md): the s
   (every family structure threaded through every copy, o2graph.py run WORLD union 2), each cluster's status with the MOSAIC
   rule (status_of mosaic=True: no single copy within DELTA), plus the branch calls (Gn), kept by the genome (G). S123m = S123
   with the mosaic rule, without the O2 restriction.
+H (prereg docs/PREREG_o3_graph_union2_2026-10-15.md): as G, but on the reads union O2 with padded path ends (o2graph.py run
+  WORLD unionp 2) cannot explain, POOLED over every host of the family and aligned to each host (family_pool): an absent
+  copy copy_assign spreads over several hosts clusters once (Hn without the genome check).
 Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + kept branch calls, i.e. without step 1):
   a call is kept only when the genome does not explain its
   reads: PSV call -> the median `de` of their primary alignments > DELTA; branch call -> their median unaligned bases on the
@@ -47,7 +50,7 @@ DELTA = 0.00958
 MIN_NOVEL, MIN_NOVEL_PART, MIN_BRANCH, LOCUS_PAD = 50, 30, 5, 1000
 DENSE_W, DENSE_FRAC = 50, 0.3
 MIN_OVERLAP = 0.5
-ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G")
+ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G", "Hn", "H")
 
 
 class _Contig:
@@ -92,6 +95,14 @@ def restrict(names, family, keep_set):
     return [n for n in names if keep_set is not None and (n, family) in keep_set]
 
 
+def family_pool(by_host, family, keep_set):
+    """H: every read hosted anywhere in the family that union O2 (padded path ends) cannot explain there -- pooled across
+    hosts, so an absent copy whose reads copy_assign spreads over several hosts clusters once (PSG, union prereg G3)."""
+    if keep_set is None:
+        return []
+    return sorted({n for (f, _), names in by_host.items() if f == family for n in names if (n, family) in keep_set})
+
+
 def arms_of(arm, keep):
     """The arms a call belongs to: R0 (+ S3, S23 when the genome keeps it); S1 (+ S12, S123); S2 branch calls (S12, S4n, Gn; +
     S123, S23, S4, S123m, G); S4p, a PSV call among path-O2-unexplained reads (S4n; + S4); S1m, a PSV or MOSAIC call of S1's
@@ -100,10 +111,11 @@ def arms_of(arm, keep):
     return {"R0": ["R0"] + (["S3", "S23"] if keep else []),
             "S1": ["S1", "S12"] + (["S123"] if keep else []),
             "S2": ["S12"] + (["S123", "S23"] if keep else []) + ["S4n"] + (["S4"] if keep else []) + (["S123m"] if keep else [])
-                  + ["Gn"] + (["G"] if keep else []),
+                  + ["Gn"] + (["G"] if keep else []) + ["Hn"] + (["H"] if keep else []),
             "S4p": ["S4n"] + (["S4"] if keep else []),
             "S1m": ["S123m"] if keep else [],
-            "Gp": ["Gn"] + (["G"] if keep else [])}[arm]
+            "Gp": ["Gn"] + (["G"] if keep else []),
+            "Hp": ["Hn"] + (["H"] if keep else [])}[arm]
 
 
 def explains(cons, sites, ref, cc):
@@ -442,6 +454,7 @@ def main(argv):
         return ({(r["read"], r["family"]) for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] == "unexplained"}
                 if os.path.exists(p) else None)
     o2_unexpl, o2u_unexpl = unexplained("o2.paths.m2.tsv"), unexplained("o2.union.m2.tsv")
+    o2e_unexpl = unexplained("o2.unionp.m2.tsv")      # H: union O2 on paths padded with each copy's genome at both ends
     by_host = collections.defaultdict(list)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         if r["catalog_copy_idx"].isdigit():
@@ -452,6 +465,7 @@ def main(argv):
     calls = []                                     # (arm, family, kind, host, cluster, members, est_div)
     for f in sorted(fam):
         cps = fam[f]
+        pool = [n for n in family_pool(by_host, f, o2e_unexpl) if n in reads]
         classes = collections.defaultdict(list)
         for c in cps:
             classes[c["seq"]].append(c)
@@ -496,6 +510,14 @@ def main(argv):
                     st, div = status_of(members, cons, sites_u, ref, m_iso, cov_u, vec_u, mosaic=True)
                     if st in ("unexplained", "mosaic") and div > DELTA:
                         calls.append(["Gp", f, "psv", host, k, sorted(members), div])
+            if len(pool) >= PC.MIN_SUPPORT:                   # H: the family's pooled unexplained reads on this host
+                cov_h = PC.align("host", ref, {n: reads[n] for n in pool}, tmp)
+                if len(cov_h) >= PC.MIN_SUPPORT:
+                    sites_h, clusters_h, vec_h = PC.cluster_host(ref, cov_h)
+                    for k, (members, cons) in enumerate(sorted(clusters_h, key=lambda x: -len(x[0]))):
+                        st, div = status_of(members, cons, sites_h, ref, m_iso, cov_h, vec_h, mosaic=True)
+                        if st in ("unexplained", "mosaic") and div > DELTA:
+                            calls.append(["Hp", f, "psv", host, k, sorted(members), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
         if names:
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)

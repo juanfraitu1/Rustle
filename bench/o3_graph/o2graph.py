@@ -7,7 +7,9 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
                                                   alignment (needs detect.py's graph/<family>/s.gfa + aln.gaf)
     o2graph.py score OUT.json O2_NAME WORLD ...   O2 (graph/O2_NAME) against the truth, the current method beside it
     (run ... reps MARGIN: the ablation with each copy's representative path only; run ... union MARGIN: every copy's own
-    isoforms plus every paralog isoform structure projected onto its locus (union_structures); run ... locus MARGIN: the
+    isoforms plus every paralog isoform structure projected onto its locus (union_structures); run ... unione MARGIN: union,
+    read bases past a path's end not counted (_paf_dist ends=True); run ... unionp MARGIN: union, every path's two ends
+    extended by PATH_PAD bases of the copy's genome (padded); run ... locus MARGIN: the
     annotation-free baseline on seqsupport's genomic-locus distances; outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
@@ -33,7 +35,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MARGIN, MIN_COVER, DELTA = 2, 0.8, 0.00958
+MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD = 2, 0.8, 0.00958, 5, 50
 
 
 def _detect():
@@ -79,13 +81,23 @@ def seq_supported(gd, own, margin=MARGIN):
     return not others or min(others) - gd[own] >= margin
 
 
-def _paf_dist(paf):
-    """{read: {target: min(NM + unaligned read bases)}} from minimap2 -c output."""
+def _paf_dist(paf, ends=False, slack=END_SLACK):
+    """{read: {target: min(NM + unaligned read bases)}} from minimap2 -c output (target `copyN|...` -> copyN). ends: a read end
+    left unaligned where the alignment reaches the path's end (within `slack` bases) is not counted -- bases past an annotated
+    transcript end are annotation, not a difference between copies (register 1298 / union prereg U4: AMY1's 16-bp end)."""
     dist = collections.defaultdict(dict)
     for ln in paf.splitlines():
         f = ln.split("\t")
         nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
-        dd, c = nm + int(f[1]) - (int(f[3]) - int(f[2])), f[5].split("|")[0]
+        qlen, qs, qe, tlen, ts, te = int(f[1]), int(f[2]), int(f[3]), int(f[6]), int(f[7]), int(f[8])
+        clip_start, clip_end = qs, qlen - qe                  # the read's own start and end
+        if ends:
+            at_t_start, at_t_end = ts <= slack, te >= tlen - slack
+            if f[4] == "+":
+                clip_start, clip_end = (0 if at_t_start else clip_start), (0 if at_t_end else clip_end)
+            else:                                             # minus: the read's start faces the path's end
+                clip_start, clip_end = (0 if at_t_end else clip_start), (0 if at_t_start else clip_end)
+        dd, c = nm + clip_start + clip_end, f[5].split("|")[0]
         dist[f[0]][c] = min(dd, dist[f[0]].get(c, 10 ** 9))
     return dist
 
@@ -140,6 +152,17 @@ def _realworld():
     return mod
 
 
+def padded(exons, pad):
+    """A path's exons with both transcript ends extended by `pad` genomic bases (clamped at the contig start): a read running
+    past an annotated end is then compared with each copy's own sequence there, not penalised (or excused) for the annotation."""
+    ex = sorted(tuple(x) for x in exons)
+    if not pad:
+        return ex
+    ex[0] = (max(0, ex[0][0] - pad), ex[0][1])
+    ex[-1] = (ex[-1][0], ex[-1][1] + pad)
+    return ex
+
+
 def union_structures(cps, projector):
     """{copy idx: {name: exons}}: each catalogued copy's own curated isoforms plus every paralog isoform structure it can
     carry -- projector(copy, {name: (paralog copy, isoform exons)}) -> {name: exons on this copy or None} -- whose intron
@@ -155,7 +178,7 @@ def union_structures(cps, projector):
     return out
 
 
-def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False):
+def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
@@ -174,7 +197,7 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False)
     hosted = collections.defaultdict(set)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         hosted[r["family_id"]].add(r["read_name"])
-    d = f"{w}/graph/o2paths" + (".reps" if reps_only else ".union" if union else "")
+    d = f"{w}/graph/o2paths" + (".reps" if reps_only else ".union" if union else "") + (".ends" if ends else "") + (".pad" if pad else "")
     os.makedirs(d, exist_ok=True)
     R = _realworld() if union else None
 
@@ -199,7 +222,7 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False)
         with open(f"{d}/{fam}.tx.fa", "w") as fh:
             for c in iso[fam]:
                 for t, ex in paths[c["idx"]].items():
-                    seq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in ex)
+                    seq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in padded(ex, pad))
                     fh.write(f">copy{c['idx']}|{t}\n{seq[::-1].translate(comp) if c['strand'] == '-' else seq}\n")
                     n_tx += 1
                     n_struct["projected" if t.startswith("proj:") else "own"] += 1
@@ -208,12 +231,7 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False)
                 fh.write(f">{n}\n{reads[n]}\n")
         res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes",
                               f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
-        dist = collections.defaultdict(dict)
-        for ln in res.splitlines():
-            f = ln.split("\t")
-            nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
-            dd, c = nm + int(f[1]) - (int(f[3]) - int(f[2])), f[5].split("|")[0]
-            dist[f[0]][c] = min(dd, dist[f[0]].get(c, 10 ** 9))
+        dist = _paf_dist(res, ends=ends)
         for n in names:
             c, reason = decide(dist.get(n, {}), len(reads[n]), margin)
             out.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
@@ -222,7 +240,8 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False)
         wr.writeheader()
         wr.writerows(out)
     c = collections.Counter(r["reason"] for r in out)
-    kind = "representative" if reps_only else "union" if union else "isoform"
+    kind = (("representative" if reps_only else "union" if union else "isoform") + (" (path ends not counted)" if ends else "")
+            + (f" (ends padded {pad} bp)" if pad else ""))
     print(f"[o2graph] {w} ({kind} paths {dict(n_struct)}, margin {margin}) -> {out_name}: {len(out)} reads, "
           + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
     return 0
@@ -349,6 +368,69 @@ def score_world(w, o2_name="o2.tsv", locus=None):
     return {f: dict(v) for f, v in sorted(per.items())}
 
 
+def gain_kind(true_exons, runner_up_structures, tol=10):
+    """A correct call's separation: `psv` when the runner-up copy carries the read's own structure (an intron chain within tol
+    bp at every junction), so only sequence separated them; `structure` when it cannot carry it."""
+    def chain(ex):
+        ex = sorted(tuple(x) for x in ex)
+        return [(a[1], b[0]) for a, b in zip(ex, ex[1:])]
+    c = chain(true_exons)
+    for ex in runner_up_structures:
+        k = chain(ex)
+        if len(k) == len(c) and all(abs(x - y) <= tol for i, j in zip(c, k) for x, y in zip(i, j)):
+            return "psv"
+    return "structure"
+
+
+def run_gains(w, method="union", margin=MARGIN):
+    """Split `method`'s correct calls where the current O2 abstains into gain_kind's `psv` / `structure` (re-aligning the
+    run's saved reads to its saved paths for each copy's distance; the read's structure from isoforms.json or cross.json,
+    projected onto the runner-up copy's locus as union O2 projects -- structures on different copies share no coordinates)."""
+    import subprocess
+    import pysam
+    R = _realworld()
+    fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+    comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+    d = f"{w}/graph/o2paths." + {"union": "union", "unionp": "union.pad", "unione": "union.ends"}[method]
+    iso = json.load(open(f"{w}/isoforms.json"))
+    cross = json.load(open(f"{w}/cross.json"))["expressed"] if os.path.exists(f"{w}/cross.json") else {}
+    idx_of = {r["tid"]: (r["family_id"], r["copy_idx"]) for r in csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t")}
+    truth = {r["read"]: r for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t")}
+    cur = {(r["read_name"], r["family_id"]) for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t")
+           if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit()}
+    calls = {(r["read"], r["family"]): r["call"] for r in csv.DictReader(open(f"{w}/graph/o2.{method}.m{margin}.tsv"), delimiter="\t")}
+    out = collections.Counter()
+    for fam in sorted(iso):
+        if not os.path.exists(f"{d}/{fam}.tx.fa"):
+            continue
+        paths = json.load(open(f"{d}/{fam}.paths.json"))
+        res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", "1000", "-p", "0.3", "--secondary=yes",
+                              f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
+        dist = _paf_dist(res, ends=method == "unione")
+        cp = {str(c["idx"]): c for c in iso[fam]}
+        todo = collections.defaultdict(dict)              # runner-up copy -> {read: (its structure's sequence, exon count)}
+        for q, t in truth.items():
+            if t["copy"] not in idx_of or idx_of[t["copy"]][0] != fam:
+                continue
+            i = idx_of[t["copy"]][1]
+            if calls.get((q, fam)) != i or (q, fam) in cur:
+                continue
+            ex = cross[t["copy"]][t["isoform"]] if t["isoform"].startswith("proj:") else cp[i]["isoforms"][t["isoform"]]
+            ranked = sorted((v, c) for c, v in dist.get(q, {}).items() if c != f"copy{i}")
+            if not ranked:
+                out["single copy aligned"] += 1
+                continue
+            seq = "".join(fa.fetch(cp[i]["contig"], a, b).upper() for a, b in sorted(tuple(x) for x in ex))
+            todo[ranked[0][1][4:]][q] = (seq[::-1].translate(comp) if cp[i]["strand"] == "-" else seq, len(ex))
+        for r, queries in todo.items():
+            c = cp[r]
+            lo = max(0, c["start"] - R.PROJ_PAD)
+            proj = R.project_many(queries, fa.fetch(c["contig"], lo, c["end"] + R.PROJ_PAD).upper(), lo, c["strand"])
+            for q, ex in proj.items():
+                out[gain_kind(ex, list(paths[r].values())) if ex else "structure"] += 1
+    return dict(out)
+
+
 def main(argv):
     if argv[0] == "run":
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes
@@ -359,10 +441,14 @@ def main(argv):
             return run_world(argv[1])
         if method == "locus":
             return run_locus(argv[1], margin)
-        return run_paths(argv[1], margin, reps_only=method == "reps", union=method == "union",
+        return run_paths(argv[1], margin, reps_only=method == "reps", union=method in ("union", "unione", "unionp"),
+                         ends=method == "unione", pad=PATH_PAD if method == "unionp" else 0,
                          out_name=f"o2.{method}.m{margin}.tsv")
     if argv[0] == "seqsupport":
         return run_seqsupport(argv[1])
+    if argv[0] == "gains":                               # gains WORLD METHOD: the psv / structure split of METHOD's gains
+        print(os.path.basename(argv[1]), argv[2], run_gains(argv[1], argv[2]))
+        return 0
     # score OUT.json O2_NAME WORLD ...   (+ the sequence-supported counts where WORLD/graph/locus.dist.json exists)
     out_p, o2_name, worlds = argv[1], argv[2], argv[3:]
     res = {}

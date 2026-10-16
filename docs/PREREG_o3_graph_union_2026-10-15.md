@@ -174,6 +174,23 @@ GTF2H2 0.0062, FAM72 0.0035, AMY 0.0017 and SULT1A 0.0015 are within delta. Ever
 | G3 | 2 of 3 detectable (0.67) | **fail** |
 | G4 | G 10 = S23 10, false-call families 0 = 0 | pass (the O2 restriction and the mosaic rule add nothing on this set) |
 
+**Gain split (pre-registered as reported).** `o2graph.py gains`: union O2's correct calls where the current O2 abstains,
+by whether the runner-up copy can carry the read's structure (its projection onto the runner-up's locus succeeds):
+
+| world | separated by PSVs (runner-up carries the structure) | separated by structure (runner-up cannot) |
+|---|---|---|
+| INTACT | 42 | 68 |
+| CROSS | 60 | 68 |
+| OUTSIDE | 14 | 69 |
+| REMOVED | 14 | 69 |
+| BRANCH | 42 | 68 |
+| total | 172 (35%) | 342 (65%) |
+
+"Cannot carry" uses union O2's projection rules (>= 95% coverage, the same exon count, canonical junctions): the runner-up's
+genome lacks an exon or a canonical splice site for that isoform. Locus O2, which allows any canonical junction on each
+copy's genome, does not separate these reads (x1.010). So two thirds of the gain rests on the projection rules, i.e. on
+the assumption that a copy without the structure's exons or splice sites does not make the isoform.
+
 **What the failures show (post hoc).**
 - U4: all 5 wrong calls are AMY reads (AMY.2 and AMY.5, two near-identical AMY1 copies) of one structure lifted from AMY.1.
   The lifted structure's last exon ends 16 bp after union O2's own spliced projection of the same isoform. The read's 16

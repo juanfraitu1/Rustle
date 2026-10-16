@@ -36,6 +36,11 @@ GROUPS = {
     "heldout2": {"FAM72": r"^FAM72[A-D]$", "ARHGAP11": r"^ARHGAP11[AB]$", "TCAF2": r"^TCAF2", "AMY": r"^AMY[12]",
                  "SULT1A": r"^SULT1A[1-4]$", "FCGR": r"^FCGR[23]", "APOBEC3": r"^APOBEC3[A-H]$", "PSG": r"^PSG[0-9]+$",
                  "GTF2H2": r"^GTF2H2", "LRRC37A": r"^LRRC37A"},
+    # held out for round 3 (docs/PREREG_o3_graph_union2_2026-10-15.md), picked before any run: X-linked cancer-testis families
+    # SSX, MAGEA, SPANX; UGT2B; the opsins OPN1LW/MW; CGB; KIR; CYP4F (spares, in order, should one form no family: TRIM,
+    # LILR, DEFB10, CSAG)
+    "heldout3": {"SSX": r"^SSX[0-9]+[AB]?$", "MAGEA": r"^MAGEA[0-9]+[AB]?$", "SPANX": r"^SPANX", "UGT2B": r"^UGT2B[0-9]+$",
+                 "OPN1": r"^OPN1[LM]W", "CGB": r"^CGB[0-9]*$", "KIR": r"^KIR[23]D", "CYP4F": r"^CYP4F[0-9]+$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

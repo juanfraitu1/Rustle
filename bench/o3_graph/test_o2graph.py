@@ -115,3 +115,30 @@ def test_locus_o2_decides_on_genomic_locus_distances(tmp_path):
     O.run_locus(w, margin=2)
     rows = {(r.split("\t")[0], r.split("\t")[1]): r.split("\t")[2:] for r in (tmp_path / "graph" / "o2.locus.m2.tsv").read_text().splitlines()[1:]}
     assert rows[("r1", "A")] == ["0", "assigned"] and rows[("r2", "B")] == ["-", "thin"]
+
+
+def _paf(q, qlen, qs, qe, strand, t, tlen, ts, te, nm):
+    return "\t".join(map(str, [q, qlen, qs, qe, strand, t, tlen, ts, te, 0, 0, 60, f"NM:i:{nm}", "tp:A:P"]))
+
+
+def test_read_bases_past_a_path_end_are_annotation_not_distance():
+    paf = "\n".join([
+        _paf("r", 1000, 0, 984, "+", "copy0|t", 984, 0, 984, 2),       # 16 bases past copy 0's path end: not counted
+        _paf("r", 1000, 0, 1000, "+", "copy1|t", 1100, 50, 1050, 5),
+        _paf("s", 1000, 0, 900, "+", "copy0|t", 1100, 0, 900, 1),       # stops 200 bp before the path end: a real difference
+        _paf("u", 1000, 16, 1000, "-", "copy0|t", 984, 0, 984, 2)])     # minus strand: the read's start lies past the path end
+    assert O._paf_dist(paf) == {"r": {"copy0": 18, "copy1": 5}, "s": {"copy0": 101}, "u": {"copy0": 18}}
+    assert O._paf_dist(paf, ends=True) == {"r": {"copy0": 2, "copy1": 5}, "s": {"copy0": 101}, "u": {"copy0": 2}}
+
+
+def test_padded_paths_extend_both_transcript_ends_with_the_copy_s_genome():
+    assert O.padded([(100, 200), (300, 400)], 50) == [(50, 200), (300, 450)]
+    assert O.padded([(30, 200)], 50) == [(0, 250)]                       # not before the contig start
+    assert O.padded([(100, 200), (300, 400)], 0) == [(100, 200), (300, 400)]
+
+
+def test_a_gain_is_psv_separated_when_the_runner_up_carries_the_read_s_structure():
+    true = [(0, 100), (200, 300), (400, 500)]
+    assert O.gain_kind(true, [[(0, 100), (205, 300), (400, 500)]]) == "psv"          # same chain within 10 bp
+    assert O.gain_kind(true, [[(0, 100), (400, 500)], [(0, 100), (250, 300), (400, 500)]]) == "structure"
+    assert O.gain_kind(true, []) == "structure"
