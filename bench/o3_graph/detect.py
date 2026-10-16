@@ -95,6 +95,18 @@ def restrict(names, family, keep_set):
     return [n for n in names if keep_set is not None and (n, family) in keep_set]
 
 
+def dedupe(calls):
+    """One call per (arm, family, kind, member set): H aligns the same pooled reads to every host, and a host class that
+    clusters them identically would flag the absent copy once per host (round 3 review I5)."""
+    seen, out = set(), []
+    for c in calls:
+        key = (c[0], c[1], c[2], frozenset(c[5]))
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
 def family_pool(by_host, family, keep_set):
     """H: every read hosted anywhere in the family that union O2 (padded path ends) cannot explain there -- pooled across
     hosts, so an absent copy whose reads copy_assign spreads over several hosts clusters once (PSG, union prereg G3)."""
@@ -277,11 +289,12 @@ def status_of(members, cons, sites, ref, maps, cov, vec, mosaic=False):
         st = "unresolved"
     else:
         st = "unexplained" if link >= PC.MIN_LINK else "unlinked"
-    if mosaic and st in ("unresolved", "unlinked") and len(alts) >= PC.MIN_ALT:
-        _, d = nearest_copy(cons, sites, ref, maps, cov_pos)
-        if d is not None and d > DELTA:
+    div = len(unexpl) / covered if covered else 0.0
+    if mosaic and st != "explained" and not (st == "unexplained" and div > DELTA) and len(alts) >= PC.MIN_ALT:
+        _, d = nearest_copy(cons, sites, ref, maps, cov_pos)     # every cluster no copy explains, not only unresolved ones
+        if d is not None and d > DELTA:                           # (round 3 review C2: KIR, unexplained at est_div 0.0032)
             return "mosaic", d
-    return st, (len(unexpl) / covered if covered else 0.0)
+    return st, div
 
 
 def best_records(recs):
@@ -527,6 +540,7 @@ def main(argv):
             br, _ = branch_calls(f"{out_dir}/{f}", gfa, names, reads)
             for k, m in enumerate(br):
                 calls.append(["S2", f, "branch", "-", k, m, 0.0])
+    calls = dedupe(calls)
     want = {m for c in calls for m in c[5]}
     gst = genome_stats(f"{w}/E0.bam", want)
     rows_out = []

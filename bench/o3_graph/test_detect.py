@@ -197,3 +197,27 @@ def test_a_crashing_vg_msga_is_retried_in_fasta_order(tmp_path, monkeypatch):
     D.family_graph(str(tmp_path / "f"), g, cps)
     msga = [c for c in calls if c.startswith("vg msga")]
     assert len(msga) == 2 and msga[1].endswith(" -a")
+
+
+def test_a_linked_cluster_with_few_private_alts_far_from_every_single_copy_is_a_mosaic():
+    # KIR (round 3): 5 copy-private alts (est_div 0.005 < delta, so no PSV call), the other 35 alts split between two copies;
+    # the nearest single copy is 2.2% away -- the documented mosaic rule applies to every cluster no copy explains
+    ref = "A" * 1000
+    pos = list(range(10, 10 + 25 * 40, 25))
+    sites, cons = {p: "C" for p in pos}, {p: "alt" for p in pos}
+    private, a, b = set(pos[:5]), set(pos[5:23]), set(pos[23:])
+    maps = {"copy0": {p: ("C" if p in a else "A") for p in range(1000)},
+            "copy1": {p: ("C" if p in b else "A") for p in range(1000)}}
+    cov = {m: {p: (sites[p] if p in sites else ref[p]) for p in range(1000)} for m in ("m1", "m2", "m3")}
+    vec = {m: {p: "alt" for p in pos} for m in cov}
+    assert D.status_of(["m1", "m2", "m3"], cons, sites, ref, maps, cov, vec)[0] == "unexplained"     # est_div 0.005: no call
+    st, div = D.status_of(["m1", "m2", "m3"], cons, sites, ref, maps, cov, vec, mosaic=True)
+    assert st == "mosaic" and abs(div - 22 / 1000) < 1e-9
+
+
+def test_the_same_pooled_member_set_is_called_once_per_family():
+    calls = [["Hp", "F", "psv", "0", 0, ["a", "b", "c"], 0.02], ["Hp", "F", "psv", "1", 0, ["a", "b", "c"], 0.03],
+             ["Hp", "F", "psv", "1", 1, ["d", "e", "f"], 0.02], ["Gp", "F", "psv", "1", 0, ["a", "b", "c"], 0.02]]
+    out = D.dedupe(calls)
+    assert [c[:4] for c in out] == [["Hp", "F", "psv", "0"], ["Hp", "F", "psv", "1"], ["Gp", "F", "psv", "1"]]
+    assert sorted(out[1][5]) == ["d", "e", "f"]
