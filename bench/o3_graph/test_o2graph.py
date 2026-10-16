@@ -142,3 +142,13 @@ def test_a_gain_is_psv_separated_when_the_runner_up_carries_the_read_s_structure
     assert O.gain_kind(true, [[(0, 100), (205, 300), (400, 500)]]) == "psv"          # same chain within 10 bp
     assert O.gain_kind(true, [[(0, 100), (400, 500)], [(0, 100), (250, 300), (400, 500)]]) == "structure"
     assert O.gain_kind(true, []) == "structure"
+
+
+def test_a_read_union_cannot_explain_falls_back_to_the_loci_unless_another_family_explains_it():
+    loc = {"copy0": 2, "copy1": 9}
+    assert O.fallback_call("1", "assigned", loc, 1000, other_explained=False) == ("1", "assigned")      # union decides
+    assert O.fallback_call("-", "tied", loc, 1000, other_explained=False) == ("-", "tied")
+    assert O.fallback_call("-", "unexplained", loc, 1000, other_explained=False) == ("0", "locus")     # structure-free
+    assert O.fallback_call("-", "unexplained", loc, 1000, other_explained=True) == ("-", "other_family")
+    assert O.fallback_call("-", "unexplained", {"copy0": 40, "copy1": 45}, 1000, other_explained=False) == ("-", "unexplained")
+    assert O.fallback_call("-", "unexplained", {}, 1000, other_explained=False) == ("-", "unexplained")

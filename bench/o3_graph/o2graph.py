@@ -10,7 +10,8 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
     isoforms plus every paralog isoform structure projected onto its locus (union_structures); run ... unione MARGIN: union,
     read bases past a path's end not counted (_paf_dist ends=True); run ... unionp MARGIN: union, every path's two ends
     extended by PATH_PAD bases of the copy's genome (padded); run ... locus MARGIN: the
-    annotation-free baseline on seqsupport's genomic-locus distances; outputs graph/o2.<method>.m<margin>.tsv)
+    annotation-free baseline on seqsupport's genomic-locus distances; run ... unionf MARGIN: padded union with the locus
+    fallback and the cross-family guard (fallback_call); outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -247,6 +248,44 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
     return 0
 
 
+def fallback_call(union_call, union_reason, locus_d, qlen, other_explained, margin=MARGIN):
+    """Graph O2 with a structure-free fallback (round 5): union O2's decision stands unless union cannot explain the read in this
+    family. Then the read is another family's (`other_family`) when that family's union explains it (within delta), else it is
+    decided on its genomic-locus distances (`locus`: any canonical junction, so a structure no path threads is still placed)."""
+    if union_reason != "unexplained":
+        return union_call, union_reason
+    if other_explained:
+        return "-", "other_family"
+    c, reason = decide(locus_d or {}, qlen, margin)
+    return (c[4:], "locus") if c else ("-", reason)
+
+
+def run_fallback(w, margin=MARGIN, union_name="o2.unionp.m2.tsv", out_name=None):
+    """WORLD/graph/o2.unionf.m<margin>.tsv: padded union O2 with the locus fallback and the cross-family guard (fallback_call),
+    from the world's union table and graph/locus.dist.json."""
+    rows = list(csv.DictReader(open(f"{w}/graph/{union_name}"), delimiter="\t"))
+    explained_in = collections.defaultdict(set)
+    for r in rows:
+        if r["reason"] != "unexplained":
+            explained_in[r["read"]].add(r["family"])
+    lj = json.load(open(f"{w}/graph/locus.dist.json"))
+    qlen = {n: len(s) for n, s in _read_fq(f"{w}/reads.E0.fq").items()}
+    out = []
+    for r in rows:
+        c, reason = fallback_call(r["call"], r["reason"], lj.get(r["family"], {}).get(r["read"]), qlen[r["read"]],
+                                  bool(explained_in[r["read"]] - {r["family"]}), margin)
+        out.append(dict(read=r["read"], family=r["family"], call=c, reason=reason))
+    out_name = out_name or f"o2.unionf.m{margin}.tsv"
+    with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
+        wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
+        wr.writeheader()
+        wr.writerows(out)
+    c = collections.Counter(r["reason"] for r in out)
+    print(f"[o2graph] {w} (padded union + locus fallback + cross-family guard, margin {margin}) -> {out_name}: {len(out)} reads, "
+          + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
+    return 0
+
+
 def run_locus(w, margin=MARGIN, out_name=None):
     """Locus O2, the annotation-free baseline: decide() on the distances of every hosted read to each catalogued copy's
     genomic locus (graph/locus.dist.json from run_seqsupport; any canonical splicing allowed)."""
@@ -441,6 +480,8 @@ def main(argv):
             return run_world(argv[1])
         if method == "locus":
             return run_locus(argv[1], margin)
+        if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first
+            return run_fallback(argv[1], margin, union_name=f"o2.unionp.m{margin}.tsv")
         return run_paths(argv[1], margin, reps_only=method == "reps", union=method in ("union", "unione", "unionp"),
                          ends=method == "unione", pad=PATH_PAD if method == "unionp" else 0,
                          out_name=f"o2.{method}.m{margin}.tsv")

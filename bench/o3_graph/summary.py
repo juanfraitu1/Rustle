@@ -5,6 +5,7 @@
                                           primary `de` on the world's genome > DELTA) and false-call families (score.py's rule)
     summary.py o2bars PREFIX WORLD ...    round 4's A1-A4: padded union O2 (o2.unionp.m2.tsv) against the current O2 and locus O2
                                           (o2.locus.m2.tsv), per world; writes PREFIX_<arm>.json (o2graph.py score)
+    summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
 """
 import collections
 import csv
@@ -17,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DELTA = 0.00958
-ARMS = ("CUR", "S23", "S3", "S123m", "G", "H", "Hn")
+ARMS = ("CUR", "S23", "S3", "S123m", "G", "H", "Hn", "K", "Kn")
 NONCAT_WORLDS = ("OUTSIDE", "REMOVED", "BRANCH")
 
 
@@ -87,9 +88,9 @@ def cmd_o3(out, worlds):
     return 0
 
 
-def cmd_o2bars(prefix, worlds):
+def cmd_o2bars(prefix, worlds, graph_arm="unionp.m2"):
     res = {}
-    for arm in ("unionp.m2", "locus.m2"):
+    for arm in (graph_arm, "locus.m2"):
         p = f"{prefix}_{arm}.json"
         subprocess.run([sys.executable, os.path.join(HERE, "o2graph.py"), "score", p, f"o2.{arm}.tsv"] + worlds, check=True,
                        capture_output=True)
@@ -97,7 +98,7 @@ def cmd_o2bars(prefix, worlds):
     per = {}
     for w in worlds:
         u, lo = collections.Counter(), collections.Counter()
-        for v in res["unionp.m2"][w].values():
+        for v in res[graph_arm][w].values():
             u.update(v)
         for v in res["locus.m2"][w].values():
             lo.update(v)
@@ -113,6 +114,8 @@ def cmd_o2bars(prefix, worlds):
 def main(argv):
     if argv[0] == "o3":
         return cmd_o3(argv[1], argv[2:])
+    if argv[0] == "o2bars-unionf":                       # round 5: the graph O2 with the locus fallback
+        return cmd_o2bars(argv[1], argv[2:], graph_arm="unionf.m2")
     return cmd_o2bars(argv[1], argv[2:])
 
 

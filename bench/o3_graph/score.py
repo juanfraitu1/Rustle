@@ -17,7 +17,7 @@ import json
 import sys
 
 RECALL, PURITY, DELTA = 0.8, 0.9, 0.00958
-ARMS = ("CUR", "R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G", "Hn", "H")
+ARMS = ("CUR", "R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G", "Hn", "H", "Kn", "K")
 
 
 def source_reads(truth_rows, copy):

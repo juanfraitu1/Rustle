@@ -49,6 +49,15 @@ GROUPS = {
                  "GTF2I": r"^GTF2I", "PRAMEF": r"^PRAMEF[0-9]+$", "VCX": r"^VCX[0-9]?[AB]?$", "SPDYE": r"^SPDYE[0-9]+$",
                  "FAM86": r"^FAM86[A-Z]$", "GPR89": r"^GPR89[ABC]$", "STAG3L": r"^STAG3L[0-9]$", "POM121": r"^POM121[A-Z]?$",
                  "CCDC144": r"^CCDC144[A-Z]+$"},
+    # held out for round 5 (docs/PREREG_o3_graph_round5_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set; the TRIM and LILR subfamilies come first so that sister families (another family's reads hosted
+    # on a family: round 4's dev-2 failure) can occur
+    "heldout5": {"TRIM64": r"^TRIM64[A-Z]?$", "TRIM43": r"^TRIM43[A-Z]?$", "TRIM51": r"^TRIM51[A-Z]*$", "LILRA": r"^LILRA[0-9]$",
+                 "LILRB": r"^LILRB[0-9]$", "SPDYE": r"^SPDYE[0-9]+[A-Z]?$", "STAG3L": r"^STAG3L[0-9]$", "MT1": r"^MT1[A-Z]$",
+                 "GSTM": r"^GSTM[1-5]$", "CEACAM": r"^CEACAM[0-9]+$", "FAM230": r"^FAM230[A-Z]$", "HERC2P": r"^HERC2P[0-9]+$",
+                 "CYP2D": r"^CYP2D[0-9]+P?$", "BTN3A": r"^BTN3A[1-3]$", "SPANXN": r"^SPANXN[0-9]$",
+                 "GUSBP": r"^GUSBP[0-9]+$", "ANKRD20A": r"^ANKRD20A[0-9]+P?$", "FRG2": r"^FRG2[A-Z]*$", "GOLGA6": r"^GOLGA6[A-D]$",
+                 "PMS2": r"^PMS2(CL|P[0-9]+)?$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

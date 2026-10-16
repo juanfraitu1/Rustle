@@ -178,7 +178,7 @@ def test_h_pools_the_family_s_unexplained_reads_across_its_hosts():
     assert D.family_pool(by_host, "F", keep) == ["a", "c", "d"]
     assert D.family_pool(by_host, "F", None) == []
     assert D.arms_of("Hp", keep=True) == ["Hn", "H"] and D.arms_of("Hp", keep=False) == ["Hn"]
-    assert D.arms_of("S2", keep=True)[-2:] == ["Hn", "H"]
+    assert D.arms_of("S2", keep=True)[-4:-2] == ["Hn", "H"]
 
 
 def test_a_crashing_vg_msga_is_retried_in_fasta_order(tmp_path, monkeypatch):
@@ -221,3 +221,8 @@ def test_the_same_pooled_member_set_is_called_once_per_family():
     out = D.dedupe(calls)
     assert [c[:4] for c in out] == [["Hp", "F", "psv", "0"], ["Hp", "F", "psv", "1"], ["Gp", "F", "psv", "1"]]
     assert sorted(out[1][5]) == ["d", "e", "f"]
+
+
+def test_k_lands_in_its_arms():
+    assert D.arms_of("Kp", keep=True) == ["Kn", "K"] and D.arms_of("Kp", keep=False) == ["Kn"]
+    assert D.arms_of("S2", keep=True)[-2:] == ["Kn", "K"]
