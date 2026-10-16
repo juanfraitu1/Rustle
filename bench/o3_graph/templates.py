@@ -66,6 +66,13 @@ def internal_cassettes(skips, n):
     return sorted(out)
 
 
+def intron_lengths(exons, strand):
+    """Intron lengths of 1-based inclusive genomic exons, in transcript orientation."""
+    ex = sorted(exons)
+    out = [s2 - e1 - 1 for (_, e1), (s2, _) in zip(ex, ex[1:])]
+    return out if strand == "+" else out[::-1]
+
+
 def gt_ag(fa, chrom, strand, exons):
     from famsim.model import rc
     ex = sorted(exons)
@@ -95,7 +102,7 @@ def pick(annotation, genome, n, seed, max_span=40000, min_exons=4, max_exons=14)
             continue
         cands.append(dict(gene=g, chrom=rec["chrom"], strand=rec["strand"], canonical=cid, n_exons=len(canon),
                           span=canon[-1][1] - canon[0][0] + 1, isoforms=[dict(tid=t, skip=list(s)) for t, s in isos],
-                          cassettes=cas))
+                          cassettes=cas, introns=intron_lengths(canon, rec["strand"])))
     rng = random.Random(seed)
     rng.shuffle(cands)
     return cands[:n], len(cands)

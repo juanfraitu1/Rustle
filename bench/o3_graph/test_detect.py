@@ -64,3 +64,10 @@ def test_a_forced_alignment_of_novel_sequence_is_a_dense_error_window():
     # paralog-level divergence (a mismatch every 30 bases) is not novel sequence
     sparse = "29=1X" * 10
     assert D.novel_intervals([dict(qlen=500, qs=0, qe=500, cigar="100=" + sparse + "100=")], min_len=30) == []
+
+
+def test_genome_novel_bases_include_a_forced_alignment_split_into_small_insertions():
+    # minimap2's alignment of a 150-bp novel exon: several 20-29-bp insertions between tiny matches
+    forced = [(7, 213), (1, 23), (7, 2), (1, 22), (7, 5), (1, 20), (8, 1), (7, 4), (1, 21), (8, 1), (7, 1), (8, 1), (7, 3),
+              (8, 1), (7, 2), (1, 2), (7, 5), (8, 2), (3, 5178), (7, 4), (1, 29), (7, 5), (2, 1), (7, 300)]
+    assert D.cigar_novel(forced, min_len=30) >= 100

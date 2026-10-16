@@ -36,3 +36,8 @@ def test_internal_cassettes_are_skips_flanked_by_kept_exons():
 
 def test_assembled_genes_are_not_curated():
     assert not T.curated_name("MSTRG.3427") and T.curated_name("ZNF217") and T.curated_name("AL118508.1")
+
+
+def test_intron_lengths_follow_the_transcript_orientation():
+    assert T.intron_lengths([(1, 100), (200, 300), (1000, 1100)], "+") == [99, 699]
+    assert T.intron_lengths([(1, 100), (200, 300), (1000, 1100)], "-") == [699, 99]

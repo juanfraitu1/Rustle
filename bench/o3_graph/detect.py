@@ -19,7 +19,7 @@ Step 2 (S12 = S1 + branch calls): the family's variation graph (vg msga of its c
   reads is a branch call.
 Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome): a call is kept only when the genome does not explain its
   reads: PSV call -> the median `de` of their primary alignments > DELTA; branch call -> their median unaligned bases on the
-  genome (insertions + soft clips >= MIN_NOVEL_PART) >= MIN_NOVEL, or the median `de` > DELTA.
+  genome (soft clips and dense error windows >= MIN_NOVEL_PART, as for the graph) >= MIN_NOVEL, or the median `de` > DELTA.
 """
 import collections
 import csv
@@ -145,8 +145,15 @@ def link_segments(names, hits, min_ident=0.97):
 
 
 def cigar_novel(cigartuples, min_len=MIN_NOVEL_PART):
-    """Bases of a read the genome alignment leaves out: insertions and soft clips >= min_len (pysam op codes 1, 4)."""
-    return sum(n for op, n in cigartuples if op in (1, 4) and n >= min_len)
+    """Bases of a read the genome alignment does not explain: soft clips >= min_len and dense error windows >= min_len (the
+    aligner forcing novel sequence onto the genome, often as many small insertions; needs an =/X CIGAR, `--eqx`). pysam op
+    codes: 0 M, 1 I, 2 D, 3 N, 4 S, 7 =, 8 X."""
+    code = {0: "M", 1: "I", 2: "D", 7: "=", 8: "X"}
+    clips = sum(n for op, n in cigartuples if op == 4 and n >= min_len)
+    lead = cigartuples[0][1] if cigartuples and cigartuples[0][0] == 4 else 0
+    cig = "".join(f"{n}{code[op]}" for op, n in cigartuples if op in code)
+    dense = sum(e - s for s, e in dense_intervals(dict(qs=lead, cigar=cig)) if e - s >= min_len)
+    return clips + dense
 
 
 def genome_keeps(kind, median_de, median_novel):

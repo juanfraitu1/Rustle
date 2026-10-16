@@ -11,7 +11,8 @@ Scenarios (copies; A = the template, B = A + 3% SNPs, both present in the genome
   NULL          A, B
   ALLELE        A, B, H = A + 0.4% (absent: an allele the reference lacks)
   ABSENT@d      A, B, E = A + d (absent)
-  BRANCH        A, B, E = A + a novel 150-bp exon after the middle exon + 0.2% SNPs (absent): structure, not sequence, differs
+  BRANCH        A, B, E = A + a novel 150-bp exon in the long intron nearest the middle + 0.2% SNPs (absent): structure, not
+                sequence, differs
   OUTSIDE@d     A, B, D = A + d in the GENOME but not in the catalog (an uncatalogued paralog)
   TWIN_ALT      A, T = A + 15% SNPs in the first cassette exon only, B; the representative skips that exon, so A and T look
                 identical to a representative-based method
@@ -64,13 +65,24 @@ def rep_isoform(isos):
     return name
 
 
+def branch_after(tpl, min_len=300):
+    """The exon (1-based, transcript orientation) after which BRANCH's novel exon goes: the intron nearest the middle of the
+    intron list among those >= min_len bp (famsim needs >= 100 bp around it), else the longest intron."""
+    introns = tpl["introns"]
+    centre = (len(introns) + 1) / 2
+    ok = [i for i, n in enumerate(introns, 1) if n >= min_len]
+    if not ok:
+        return max(range(1, len(introns) + 1), key=lambda i: (introns[i - 1], -i))
+    return min(ok, key=lambda i: (abs(i - centre), i))
+
+
 def specs(templates, seed, genome, annotation, per_copy=60):
     snp = lambda r: [{"op": "snp", "rate": r}]  # noqa: E731
     out = []
     for ti, t in enumerate(templates):
         iso = curated_isoforms(t)
         strand = "-" if ti % 2 else "+"
-        after = t["n_exons"] // 2 + 1
+        after = branch_after(t) if "introns" in t else t["n_exons"] // 2 + 1
         k = t["cassettes"][0]
         for si, sc in enumerate(SCENARIOS):
             kind, _, d = sc.partition("@")
@@ -81,7 +93,7 @@ def specs(templates, seed, genome, annotation, per_copy=60):
             cp = {"NULL": [A, B],
                   "ALLELE": [A, B, ("H", snp(ALLELE_RATE), False, "allele", iso)],
                   "ABSENT": [A, B, ("E", snp(d or 0), False, "absent", iso)],
-                  "BRANCH": [A, B, ("E", [{"op": "exon_insert", "after": "middle", "length": BRANCH_LEN}] + snp(BRANCH_SNP), False,
+                  "BRANCH": [A, B, ("E", [{"op": "exon_insert", "after": after, "length": BRANCH_LEN}] + snp(BRANCH_SNP), False,
                                     "absent", shift_skips(iso, after))],
                   "OUTSIDE": [A, B, ("D", snp(d or 0), True, "outside", iso)],
                   "TWIN_ALT": [A, ("T", [{"op": "snp", "rate": TWIN_EXON_RATE, "region": "exon", "exon": k}], True, "present", iso), B],

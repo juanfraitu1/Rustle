@@ -43,3 +43,9 @@ def test_one_world_never_holds_two_families_of_one_template():
     for sc in W.SCENARIOS:
         genes = [s["template"]["gene"] for s in sp if s["scenario"] == sc]
         assert sorted(genes) == ["G1", "G2"]
+
+
+def test_the_novel_exon_goes_into_a_long_intron_near_the_middle():
+    assert W.branch_after(dict(TPL, introns=[500, 80, 2500, 400, 900])) == 3      # middle intron 3 is long enough
+    assert W.branch_after(dict(TPL, introns=[500, 400, 50, 60, 900])) == 2        # nearest long one to the middle
+    assert W.branch_after(dict(TPL, introns=[90, 120, 50, 60, 110])) == 2         # none >= 300: the longest
