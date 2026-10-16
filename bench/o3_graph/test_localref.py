@@ -77,3 +77,9 @@ def test_reads_mapped_to_the_local_reference_land_where_whole_genome_mapping_put
                     for r in b if not (r.is_secondary or r.is_supplementary)}
     a, b = prim(whole), prim(lifted)
     assert len(a) == 20 and a == b
+
+
+def test_a_mate_on_the_same_contig_is_lifted_with_it():
+    line = "p\t99\tchr2:1000-5000\t11\t60\t4M\t=\t51\t44\tACGT\t*\n"
+    f = L.lift_line(line).rstrip("\n").split("\t")
+    assert f[2:4] == ["chr2", "1011"] and f[6:8] == ["=", "1051"]

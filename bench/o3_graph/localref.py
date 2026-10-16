@@ -68,10 +68,14 @@ def _lift_ref(name, pos):
 def lift_line(line):
     """One SAM record from the local reference -> genome coordinates (RNAME/POS, RNEXT/PNEXT, SA:Z)."""
     f = line.rstrip("\n").split("\t")
+    local_name = f[2]
     if f[2] != "*":
         f[2], p = _lift_ref(f[2], f[3])
         f[3] = str(p)
-    if f[6] not in ("*", "="):
+    if f[6] == "=" and local_name != "*":                  # the mate on the same contig: shift by the same offset
+        _, p = _lift_ref(local_name, f[7])
+        f[7] = str(p)
+    elif f[6] != "*":
         f[6], p = _lift_ref(f[6], f[7])
         f[7] = str(p)
     for i in range(11, len(f)):
