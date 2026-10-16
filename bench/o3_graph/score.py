@@ -4,7 +4,7 @@
     score.py OUT.json WORLD [WORLD ...]
 
 Per family and arm (CUR = `copy_assign --psv-clusters`: its `unexplained` clusters with est_div > DELTA; R0 / S1 / S12 / S123 /
-S3 = detect.py's calls): the arm's calls are member sets.
+S3 / S23 = detect.py's calls): the arm's calls are member sets.
   source       the family's copy absent from the genome (kind `absent`); an allele (`allele`), an uncatalogued paralog
                (`outside`) and a twin are no source: every call in such a family is a false call
   detected     some call holds >= RECALL of the source's PLACED reads (those with a copy_assign row of the family) at purity
@@ -17,7 +17,7 @@ import json
 import sys
 
 RECALL, PURITY, DELTA = 0.8, 0.9, 0.00958
-ARMS = ("CUR", "R0", "S1", "S12", "S123", "S3")
+ARMS = ("CUR", "R0", "S1", "S12", "S123", "S3", "S23")
 
 
 def family_outcome(calls, source, placed_source):

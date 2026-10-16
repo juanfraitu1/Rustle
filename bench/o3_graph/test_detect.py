@@ -81,3 +81,19 @@ def test_genome_novel_bases_include_a_forced_alignment_split_into_small_insertio
     forced = [(7, 213), (1, 23), (7, 2), (1, 22), (7, 5), (1, 20), (8, 1), (7, 4), (1, 21), (8, 1), (7, 1), (8, 1), (7, 3),
               (8, 1), (7, 2), (1, 2), (7, 5), (8, 2), (3, 5178), (7, 4), (1, 29), (7, 5), (2, 1), (7, 300)]
     assert D.cigar_novel(forced, min_len=30) >= 100
+
+
+def test_a_supplementary_alignment_explains_the_soft_clip_it_covers():
+    prim = dict(cigar=[(4, 500), (7, 1000)], reverse=False)            # 500-bp leading clip
+    supp = dict(cigar=[(7, 500), (5, 1000)], reverse=False)            # the clipped 500 bp aligned elsewhere (readthrough)
+    assert D.genome_novel(prim, [], 1500) == 500
+    assert D.genome_novel(prim, [supp], 1500) == 0
+    # a reverse-strand supplementary: its stored interval [1000, 1500) is [0, 500) of the read as sequenced
+    supp_rc = dict(cigar=[(5, 1000), (7, 500)], reverse=True)
+    assert D.genome_novel(prim, [supp_rc], 1500) == 0
+
+
+def test_a_member_without_a_genome_alignment_counts_as_wholly_novel():
+    gst = {"r1": (0.002, 0), "r2": (0.003, 0)}
+    de, nov = D.member_genome(["r1", "r2", "r3"], gst, {"r1": 1000, "r2": 1000, "r3": 900})
+    assert de == [0.002, 0.003, 1.0] and nov == [0, 0, 900]

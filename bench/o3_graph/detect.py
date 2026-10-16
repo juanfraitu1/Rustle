@@ -8,18 +8,20 @@ Per host class (copies with one representative sequence; its reads = O2's hosts,
   the reads and the copies are aligned to the host locus, clustered (cluster_host), and each cluster's status follows the
   prototype's rule against a set of copy sequences:
     R0    each copy's REPRESENTATIVE (the catalog): the current method, reproduced
-    S1    step 1: each copy's EVERY curated isoform (the union of their bases on the host) -- the isoform paths of the family's
-          variation graph (`vg rna`)
+    S1    step 1: each copy's EVERY curated isoform (the union of their bases on the host), aligned to the host window with
+          minimap2 -- the same isoforms the family's vg graph carries as paths
   A PSV call = an `unexplained` cluster with est_div > DELTA (register 1294's `copy` label).
 Step 2 (S12 = S1 + branch calls): the family's variation graph (vg msga of its copies' loci + every curated isoform as a path,
-  `vg rna`); GraphAligner maps the family's hosted reads; a read is a BRANCH read when >= MIN_NOVEL of its bases lie on no
-  graph path (large insertions, dense error windows where the aligner forced novel sequence onto the graph, gaps between
+  `vg rna`; the graph holds the whole loci, introns included); GraphAligner maps the family's hosted reads; a read is a BRANCH
+  read when >= MIN_NOVEL of its bases do not align to the loci graph (large insertions, dense error windows where the aligner forced novel sequence onto the graph, gaps between
   aligned pieces, unaligned ends; an unaligned read counts whole). Branch reads
   sharing a novel segment (all-vs-all identity >= 0.97 over >= half the shorter segment) are linked; a group of >= MIN_BRANCH
   reads is a branch call.
-Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome): a call is kept only when the genome does not explain its
+Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + kept branch calls, i.e. without step 1):
+  a call is kept only when the genome does not explain its
   reads: PSV call -> the median `de` of their primary alignments > DELTA; branch call -> their median unaligned bases on the
-  genome (soft clips and dense error windows >= MIN_NOVEL_PART, as for the graph) >= MIN_NOVEL, or the median `de` > DELTA.
+  genome (clips and dense error windows >= MIN_NOVEL_PART, minus what the read's supplementary alignments cover) >= MIN_NOVEL,
+  or the median `de` > DELTA. A member without a primary alignment counts as wholly unexplained.
 """
 import collections
 import csv
@@ -37,7 +39,7 @@ import psvclust as PC  # noqa: E402
 DELTA = 0.00958
 MIN_NOVEL, MIN_NOVEL_PART, MIN_BRANCH, LOCUS_PAD = 50, 30, 5, 1000
 DENSE_W, DENSE_FRAC = 50, 0.3
-ARMS = ("R0", "S1", "S12", "S123", "S3")
+ARMS = ("R0", "S1", "S12", "S123", "S3", "S23")
 
 
 def explains(cons, sites, ref, cc):
@@ -251,14 +253,82 @@ def branch_calls(d, gfa, names, reads):
     return [sorted(m) for m in groups if len(m) >= MIN_BRANCH], segs
 
 
+def _clips(cigar):
+    lead = trail = 0
+    for op, n in cigar:
+        if op not in (4, 5):
+            break
+        lead += n
+    for op, n in reversed(cigar):
+        if op not in (4, 5):
+            break
+        trail += n
+    return lead, trail
+
+
+def aligned_interval(rec, read_len):
+    """The read interval an alignment record covers, in the read's ORIGINAL orientation. rec: {cigar (pysam tuples), reverse}."""
+    lead, _ = _clips(rec["cigar"])
+    e = lead + sum(n for op, n in rec["cigar"] if op in (0, 1, 7, 8))
+    return (read_len - e, read_len - lead) if rec["reverse"] else (lead, e)
+
+
+def primary_novel_intervals(rec, read_len, min_len=MIN_NOVEL_PART):
+    """Read intervals (original orientation) the primary alignment does not explain: end clips >= min_len and dense error
+    windows >= min_len (`--eqx` CIGAR)."""
+    lead, trail = _clips(rec["cigar"])
+    out = [(0, lead)] if lead >= min_len else []
+    if trail >= min_len:
+        out.append((read_len - trail, read_len))
+    code = {0: "M", 1: "I", 2: "D", 7: "=", 8: "X"}
+    cg = "".join(f"{n}{code[op]}" for op, n in rec["cigar"] if op in code)
+    out += [x for x in dense_intervals(dict(qs=lead, cigar=cg)) if x[1] - x[0] >= min_len]
+    if rec["reverse"]:
+        out = [(read_len - e, read_len - s_) for s_, e in out]
+    return sorted(out)
+
+
+def genome_novel(prim, supps, read_len, min_len=MIN_NOVEL_PART):
+    """Bases the genome does not explain: the primary's unexplained intervals minus what the read's supplementary alignments
+    cover (a readthrough's clipped part aligned elsewhere IS explained), pieces >= min_len."""
+    cover = sorted(aligned_interval(r, read_len) for r in supps)
+    n = 0
+    for s_, e in primary_novel_intervals(prim, read_len, min_len):
+        pieces, cur = [], s_
+        for cs, ce in cover:
+            if ce <= cur or cs >= e:
+                continue
+            if cs > cur:
+                pieces.append((cur, cs))
+            cur = max(cur, ce)
+        if cur < e:
+            pieces.append((cur, e))
+        n += sum(b - a for a, b in pieces if b - a >= min_len)
+    return n
+
+
 def genome_stats(bam_p, want):
+    """{read: (de of its primary, genome_novel)} for the wanted reads that have a primary alignment."""
     import pysam
-    out = {}
+    prim, supp = {}, collections.defaultdict(list)
     with pysam.AlignmentFile(bam_p) as bam:
         for rec in bam.fetch(until_eof=True):
-            if rec.query_name in want and not rec.flag & 0x904 and rec.cigartuples:
-                out[rec.query_name] = (rec.get_tag("de") if rec.has_tag("de") else 0.0, cigar_novel(rec.cigartuples))
-    return out
+            if rec.query_name not in want or rec.is_unmapped or rec.is_secondary or not rec.cigartuples:
+                continue
+            r = dict(cigar=rec.cigartuples, reverse=rec.is_reverse)
+            if rec.is_supplementary:
+                supp[rec.query_name].append(r)
+            else:
+                prim[rec.query_name] = (rec.get_tag("de") if rec.has_tag("de") else 0.0, r, rec.infer_read_length())
+    return {q: (de, genome_novel(r, supp[q], L)) for q, (de, r, L) in prim.items()}
+
+
+def member_genome(members, gst, read_len):
+    """Per member: (de, genome-unexplained bases); a member without a primary alignment is wholly unexplained (de 1.0, its
+    whole length)."""
+    de = [gst[m][0] if m in gst else 1.0 for m in members]
+    nov = [gst[m][1] if m in gst else read_len[m] for m in members]
+    return de, nov
 
 
 def main(argv):
@@ -319,14 +389,13 @@ def main(argv):
     gst = genome_stats(f"{w}/E0.bam", want)
     rows_out = []
     for arm, f, kind, host, k, m, div in calls:
-        des = [gst[x][0] for x in m if x in gst]
-        nov = [gst[x][1] for x in m if x in gst]
+        des, nov = member_genome(m, gst, {x: len(reads[x]) for x in m})
         mde = statistics.median(des) if des else 0.0
         mnov = statistics.median(nov) if nov else 0
         keep = genome_keeps(kind, mde, mnov)
-        arms = {"R0": ["R0"] + (["S3"] if keep else []),
+        arms = {"R0": ["R0"] + (["S3", "S23"] if keep else []),
                 "S1": ["S1", "S12"] + (["S123"] if keep else []),
-                "S2": ["S12"] + (["S123"] if keep else [])}[arm]
+                "S2": ["S12"] + (["S123", "S23"] if keep else [])}[arm]
         for a in arms:
             rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(m), est_div=round(div, 5),
                                  genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(m)))

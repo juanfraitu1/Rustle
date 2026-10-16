@@ -135,24 +135,53 @@ the current method, detector.
 | H4b | BRANCH, S1 0 -> S12 12 | pass |
 | H4c | OUTSIDE, S12 20 -> S123 0 | pass |
 
-### Verdict (2026-10-15)
+### Verdict (2026-10-15; corrected after the whole-branch review)
 
-**Reading 1: claimed, in simulation.** In ideal scenarios built from curated CAT isoforms, the graph-informed O3 detector
-(S123) does four things:
-- it finds absent copies that differ only in structure: BRANCH 12 / 12, against 0 / 12 for the current method;
-- it stops false calls from uncatalogued paralogs: OUTSIDE 20 -> 0;
-- it stops false calls from copies a representative makes look identical: TWIN_ALT 9 -> 0;
-- it keeps the current detection of sequence-divergent absent copies: 12 / 12 at 2%, 8 / 12 at 1% for every arm.
+**Reading 1: claimed, in simulation.** H1-H4 pass as pre-registered. In ideal scenarios built from curated CAT isoforms, the
+graph-informed O3 detector (S123) does three things:
+- it finds absent copies that carry a novel exon whose sequence is absent from the family's loci and the genome: BRANCH
+  12 / 12, against 0 / 12 for the current method;
+- it stops false calls from uncatalogued paralogs (OUTSIDE 20 -> 0) and from copies a representative makes look identical
+  (TWIN_ALT 9 -> 0);
+- it keeps the current method's count of sequence-divergent absent copies: 12 / 12 at 2%, 8 / 12 at 1%.
 
-Each step is needed for its case: step 1 for TWIN_ALT, step 2 for BRANCH, step 3 for OUTSIDE.
+**What each step does here.**
+- Step 2 is needed for BRANCH and step 3 for OUTSIDE.
+- Step 1 removes TWIN_ALT's false calls on its own (R0 9 -> S1 0, H4a), but step 3 removes them too. T is in the genome, so its
+  reads' median `de` is only 0.001-0.002.
+- The detector without step 1 (S23 = S3 plus the kept branch calls, an arm added after the review) has the same outcome as S123
+  in every family of both the held-out and development sets. **So in these worlds step 1 is redundant with step 3.**
+- H4a tests step 1 against R0, not whether S123 needs it. Step 1's own value (PSVs from every isoform, the MCL117 case) is for
+  O2-style assignment and for cases step 3 cannot see; neither was tested here.
 
-**Scope and caveats.**
-- These are famsim reads from curated isoforms in small worlds. Step 3's "genome" is the world's genome, not a whole
-  genome.
-- Real data's other failure modes are not modelled: reads from loci outside the window, other species, fragmented clusters.
-  The 1% absent copies sit at delta (0.958%), and every arm misses the same 4 of 12:
+**Costs and limits.**
+- **Step 3 rejected a correct 1% call on both sets.** Development SALL4 (median `de` 0.0095) was a detection lost.
+  Held-out PPDPF was a pure 47-read call removed (median `de` 0.0059), though it missed the recall bar anyway. The reads' `de`
+  and the cluster's est_div are different estimators held to the same delta; at 1% divergence they straddle it.
+- **The 1% absent copies sit at delta**, and every arm misses the same 4 of 12:
   - three are pure clusters labelled allele-level (est_div 0.0069-0.0080);
   - the fourth (PPDPF) is a `copy` cluster holding 47 of the copy's 61 reads, under the 0.8 recall bar.
-- Real data is next. On the two-locus spike the steps' real-data counterparts were visible:
-  - MCL117's representatives hid every exonic PSV, as in TWIN_ALT;
-  - most false `copy` clusters were other loci's reads, as in OUTSIDE.
+  - In S123 and S3, step 3 also removed that call.
+- **The BRANCH scope is narrow.** The vg graph holds the whole loci, introns included (`vg rna -r` adds paths, it does not
+  remove introns), and GraphAligner aligns to the graph, not to the paths. So a branch read means one with >= 50 bases that do
+  not align to the catalogued loci. Structural changes made from sequence already present were not tested: an exon formed from
+  intron sequence, a lost exon, a duplicated exon, a shifted splice site.
+- **Recall and purity** (median 1.0) are over the absent copy's PLACED reads. In BRANCH_PPDPF, minimap2 left 30 of E's 61
+  reads unmapped. The call holds 31 / 31 placed reads, 0.51 of all of E's reads.
+- **Not all of CUR's BRANCH clusters are allele-level SNPs.** Two reach est_div 0.0073 (LINC01370, 59 E + 16 A reads) and
+  0.0071 (ZBP1), likely misalignment around the novel exon. None is a `copy` call.
+- **Read names encode the source copy** (famsim `copy|isoform|i`), and the clustering breaks coverage ties by name, in the
+  prototype and in Rust alike. The reviewer's re-run with hashed names changed no outcome. Future worlds should anonymise
+  names.
+- **Scope:**
+  - famsim reads from curated isoforms in small worlds; step 3's genome is the world's genome, not a whole genome.
+  - Real data's other failure modes (other species, fragmented clusters) are not modelled.
+  - "-29 false-call families" is a count over scenarios built to provoke those calls, not a rate.
+
+**Changed after the results (no outcome changed on either set):**
+- Step 3 now subtracts what a read's supplementary alignments cover from its clipped bases. A readthrough's clipped part
+  aligned elsewhere is explained by the genome.
+- Step 3 counts a call member without a primary alignment as wholly unexplained.
+- The S23 arm was added.
+- The detector's description is corrected: S1 aligns every isoform with minimap2 (the same isoforms the graph carries as
+  paths), and step 2 asks whether bases align to the loci graph.
