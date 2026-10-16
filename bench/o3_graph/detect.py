@@ -17,6 +17,9 @@ Step 2 (S12 = S1 + branch calls): the family's variation graph (vg msga of its c
   aligned pieces, unaligned ends; an unaligned read counts whole). Branch reads
   sharing a novel segment (all-vs-all identity >= 0.97 over >= half the shorter segment) are linked; a group of >= MIN_BRANCH
   reads is a branch call.
+S4 (graph O2 into O3): the S1 clustering run on the reads path-O2 (o2graph.py) cannot explain with any catalogued copy's
+  isoform paths (`unexplained`), plus the branch calls (S4n), kept by the genome (S4): reads a catalogued copy explains
+  can no longer dilute an absent copy's cluster.
 Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + kept branch calls, i.e. without step 1):
   a call is kept only when the genome does not explain its
   reads: PSV call -> the median `de` of their primary alignments > DELTA; branch call -> their median unaligned bases on the
@@ -39,7 +42,57 @@ import psvclust as PC  # noqa: E402
 DELTA = 0.00958
 MIN_NOVEL, MIN_NOVEL_PART, MIN_BRANCH, LOCUS_PAD = 50, 30, 5, 1000
 DENSE_W, DENSE_FRAC = 50, 0.3
-ARMS = ("R0", "S1", "S12", "S123", "S3", "S23")
+ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4")
+
+
+class _Contig:
+    def __init__(self, fa, name):
+        self.fa, self.name, self.n = fa, name, fa.get_reference_length(name)
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, sl):
+        lo, hi = sl.start or 0, self.n if sl.stop is None else min(self.n, sl.stop)
+        return self.fa.fetch(self.name, lo, hi).upper()
+
+
+class Genome:
+    """The world's genome read lazily by slice (a whole CHM13 does not fit a dict of strings)."""
+
+    def __init__(self, path):
+        import pysam
+        self.fa, self._c = pysam.FastaFile(path), {}
+
+    def __getitem__(self, name):
+        if name not in self._c:
+            self._c[name] = _Contig(self.fa, name)
+        return self._c[name]
+
+
+def orient(seq, exons, strand, lo):
+    """A locus and an isoform's exons (genomic, 0-based half-open) -> (the locus in its transcript's orientation, the exons
+    relative to it): real families put copies on both strands, and vg msga aligns sequences as given."""
+    rel = sorted((s_ - lo, e_ - lo) for s_, e_ in exons)
+    if strand != "-":
+        return seq, rel
+    n = len(seq)
+    comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+    return seq[::-1].translate(comp), sorted((n - e_, n - s_) for s_, e_ in rel)
+
+
+def restrict(names, keep_set):
+    """S4: only the reads no catalogued copy's isoform paths explain (path-O2 `unexplained`); none without the table."""
+    return [n for n in names if keep_set is not None and n in keep_set]
+
+
+def arms_of(arm, keep):
+    """The arms a call belongs to: R0 (+ S3, S23 when the genome keeps it); S1 (+ S12, S123); S2 branch calls (S12, S4n; + S123,
+    S23, S4); S4p, a PSV call among path-O2-unexplained reads (S4n; + S4)."""
+    return {"R0": ["R0"] + (["S3", "S23"] if keep else []),
+            "S1": ["S1", "S12"] + (["S123"] if keep else []),
+            "S2": ["S12"] + (["S123", "S23"] if keep else []) + ["S4n"] + (["S4"] if keep else []),
+            "S4p": ["S4n"] + (["S4"] if keep else [])}[arm]
 
 
 def explains(cons, sites, ref, cc):
@@ -200,19 +253,19 @@ def sh(cmd, binary_out=None):
 
 
 def family_graph(d, genome, copies):
-    """vg graph of the family's loci (genomic orientation; every copy of a world family shares its strand) with every curated
-    isoform as a path -> GFA path."""
+    """vg graph of the family's loci (each in its transcript's orientation) with every curated isoform as a path -> GFA path."""
     os.makedirs(d, exist_ok=True)
     with open(f"{d}/loci.fa", "w") as fa:
         for c in copies:
             lo = max(0, c["start"] - LOCUS_PAD)
             hi = min(len(genome[c["contig"]]), c["end"] + LOCUS_PAD)
-            c["lo"] = lo
-            fa.write(f">copy{c['idx']}\n{genome[c['contig']][lo:hi]}\n")
+            raw = genome[c["contig"]][lo:hi]
+            seq, _ = orient(raw, [], c["strand"], lo)
+            fa.write(f">copy{c['idx']}\n{seq}\n")
             with open(f"{d}/copy{c['idx']}.gtf", "w") as g:
                 for iso, ex in c["isoforms"].items():
-                    for s, e in ex:
-                        g.write(f"copy{c['idx']}\tsim\texon\t{s - lo + 1}\t{e - lo}\t.\t{c['strand']}\t.\t"
+                    for s, e in orient(raw, ex, c["strand"], lo)[1]:
+                        g.write(f"copy{c['idx']}\tsim\texon\t{s + 1}\t{e}\t.\t+\t.\t"
                                 f"transcript_id \"copy{c['idx']}|{iso}\"; gene_id \"copy{c['idx']}\";\n")
     sh(f"vg msga -f {d}/loci.fa -t 2", binary_out=f"{d}/g.vg")
     gtfs = " ".join(f"-n {d}/copy{c['idx']}.gtf" for c in copies)
@@ -333,7 +386,7 @@ def member_genome(members, gst, read_len):
 
 def main(argv):
     w = argv[0]
-    genome = PC.read_fa(f"{w}/genome.ref.fa")
+    genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
     rows = list(csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"))
     reps = list(PC.read_fa(f"{w}/P.fam.copies.fa").values())
@@ -344,6 +397,10 @@ def main(argv):
         c = next(x for x in isoj[f] if x["idx"] == i)
         fam[f].append(dict(idx=i, contig=r["chrom"], rs=int(r["start"]), re=int(r["end"]), seq=seq, start=c["start"],
                            end=c["end"], strand=c["strand"], isoforms={k: [tuple(x) for x in v] for k, v in c["isoforms"].items()}))
+    o2_unexpl = None                                   # S4: path-O2's unexplained reads (o2graph.py run WORLD paths 2, first)
+    if os.path.exists(f"{w}/graph/o2.paths.m2.tsv"):
+        o2_unexpl = {(r["read"]) for r in csv.DictReader(open(f"{w}/graph/o2.paths.m2.tsv"), delimiter="\t")
+                     if r["reason"] == "unexplained"}
     by_host = collections.defaultdict(list)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         if r["catalog_copy_idx"].isdigit():
@@ -379,6 +436,14 @@ def main(argv):
                     st, div = status_of(members, cons, sites, ref, maps, cov, vec)
                     if st == "unexplained" and div > DELTA:
                         calls.append([arm, f, "psv", host, k, sorted(members), div])
+            un = restrict([n for n in names if n in cov], o2_unexpl)
+            if len(un) >= PC.MIN_SUPPORT:
+                cov_u = {n: cov[n] for n in un}
+                sites_u, clusters_u, vec_u = PC.cluster_host(ref, cov_u)
+                for k, (members, cons) in enumerate(sorted(clusters_u, key=lambda x: -len(x[0]))):
+                    st, div = status_of(members, cons, sites_u, ref, m_iso, cov_u, vec_u)
+                    if st == "unexplained" and div > DELTA:
+                        calls.append(["S4p", f, "psv", host, k, sorted(members), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
         if names:
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)
@@ -393,10 +458,7 @@ def main(argv):
         mde = statistics.median(des) if des else 0.0
         mnov = statistics.median(nov) if nov else 0
         keep = genome_keeps(kind, mde, mnov)
-        arms = {"R0": ["R0"] + (["S3", "S23"] if keep else []),
-                "S1": ["S1", "S12"] + (["S123"] if keep else []),
-                "S2": ["S12"] + (["S123", "S23"] if keep else [])}[arm]
-        for a in arms:
+        for a in arms_of(arm, keep):
             rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(m), est_div=round(div, 5),
                                  genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(m)))
     with open(f"{out_dir}/calls.tsv", "w", newline="") as fh:

@@ -97,3 +97,30 @@ def test_a_member_without_a_genome_alignment_counts_as_wholly_novel():
     gst = {"r1": (0.002, 0), "r2": (0.003, 0)}
     de, nov = D.member_genome(["r1", "r2", "r3"], gst, {"r1": 1000, "r2": 1000, "r3": 900})
     assert de == [0.002, 0.003, 1.0] and nov == [0, 0, 900]
+
+
+def test_the_genome_is_read_lazily_by_slice(tmp_path):
+    import pysam
+    fa = tmp_path / "g.fa"
+    fa.write_text(">c1\nacgtACGTAA\n>c2\nGGGG\n")
+    pysam.faidx(str(fa))
+    g = D.Genome(str(fa))
+    assert len(g["c1"]) == 10 and g["c1"][2:6] == "GTAC" and g["c2"][0:100] == "GGGG"
+
+
+def test_minus_strand_loci_are_oriented_to_their_transcript():
+    seq, ex = D.orient("AACCGGTTAC", [(2, 4), (6, 9)], "-", lo=0)
+    assert seq == "GTAACCGGTT" and ex == [(1, 4), (6, 8)]
+    assert D.orient("AACCGGTTAC", [(2, 4)], "+", lo=0) == ("AACCGGTTAC", [(2, 4)])
+
+
+def test_s4_clusters_only_reads_no_catalogued_copy_explains():
+    assert D.restrict(["r1", "r2", "r3", "r4"], {"r2", "r4", "r9"}) == ["r2", "r4"]
+    assert D.restrict(["r1", "r2"], None) == []                      # no path-O2 table: the arm has no reads
+
+
+def test_each_call_lands_in_its_arms():
+    assert D.arms_of("R0", keep=True) == ["R0", "S3", "S23"] and D.arms_of("R0", keep=False) == ["R0"]
+    assert D.arms_of("S1", keep=True) == ["S1", "S12", "S123"]
+    assert D.arms_of("S2", keep=True) == ["S12", "S123", "S23", "S4n", "S4"]
+    assert D.arms_of("S4p", keep=False) == ["S4n"]

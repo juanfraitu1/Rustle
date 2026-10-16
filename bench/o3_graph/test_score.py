@@ -30,3 +30,10 @@ def test_without_an_absent_copy_every_call_is_false_and_low_recall_misses():
     assert S.family_outcome([], source=set(), placed_source=set()) == (None, False)
     det, false = S.family_outcome([set(list(E)[:5])], source=E, placed_source=E)
     assert det is False and false is False     # 5 / 10 of the source: no recovery, but not a false call either
+
+
+def test_a_branch_copy_is_scored_on_the_reads_that_carry_its_novel_exon():
+    truth = [dict(read="a", copy="F.B", novel="1"), dict(read="b", copy="F.B", novel="0"), dict(read="c", copy="F.B", novel="1"),
+             dict(read="d", copy="F.0", novel="0")]
+    assert S.source_reads(truth, "F.B") == {"a", "c"}
+    assert S.source_reads([dict(read="a", copy="F.2"), dict(read="b", copy="F.2")], "F.2") == {"a", "b"}   # no column: every read
