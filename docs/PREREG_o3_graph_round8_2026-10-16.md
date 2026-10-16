@@ -163,3 +163,107 @@ bars (`round8_bars`, tested in `test_summary.py`).
 - An independent review by a fresh subagent: the code path, the numbers, and this document's reading.
 - Register row 1306.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-16; worlds built 13:22-13:31 with the code of e4d0703b)
+
+## Verdict: FAIL. B2 fails in CROSS by one read. Not claimed.
+
+`summary.py bars heldout8/e2e.json` (frozen scorer). An independent review reproduced every cell with its own scorer, written
+from this document's text.
+
+| world | correct: current / integrated | B1 | errors: current / integrated | B2 |
+|---|---|---|---|---|
+| INTACT | 1,085 / 1,293 (x1.19) | yes | 0 / 0 | yes |
+| CROSS | 1,226 / 1,427 (x1.16) | yes | 0 / **1** | **no** |
+| OUTSIDE | 964 / 1,222 (x1.27) | yes | 301 / 60 | yes |
+| REMOVED | 1,144 / 1,345 (x1.18) | yes | 1 / 0 | yes |
+| BRANCH | 1,119 / 1,690 (x1.51) | yes | 95 / 9 | yes |
+| SILENT | 724 / 932 (x1.29) | yes | 0 / 0 | yes |
+
+The six worlds share most of their reads, so their totals are not independent counts:
+- INTACT, OUTSIDE and REMOVED simulate the same reads;
+- CROSS and BRANCH contain all of INTACT's reads;
+- SILENT's reads are a subset of them.
+
+Each world is the unit of comparison.
+
+**The one error** is read s0001190, from TSPY.2 on haplotype 1, which has no alleles. Its isoform is projected from TSPY.7's
+annotation (CROSS). The integrated O2 called it TSPY.1. The review replayed the simulator and found the cause:
+- One of the read's two simulated substitutions (read position 3) hits the only base that separates TSPY.1 from TSPY.2 over
+  its 663-bp structure, and turns it into TSPY.1's base.
+- minimap2 soft-clips the first 4 bases on TSPY.2, and O2's distance (`_paf_dist`) counts clipped bases as edits. That gives
+  1 edit against 5, which is past the margin of 2.
+- With end-to-end alignment, the distance to TSPY.2 would be 2 and the read would abstain.
+
+The current method leaned the same way (copy 1, one decisive site, p 0.001) but abstained as ambiguous. The result stands as
+run; the frozen code is what was tested. A semi-global O2 distance is a candidate change, to be tested on a fresh set.
+
+## Beside the bars (not gating; corrected by the review)
+
+**Where the errors are:**
+- current:
+  - 301 reads of uncatalogued copies. 180 of them are its absent-copy calls on copies that are in the genome; it has no
+    genome check. Without those it still has 121, against 60;
+  - 95 reads of novel-exon absent copies, placed on a present copy;
+  - 1 read of a removed copy;
+  - no error on a catalogued copy's read.
+- integrated:
+  - 60 reads of uncatalogued copies;
+  - 9 BRANCH reads, all TSPY.B reads without the novel exon, which are essentially the parent copy's sequence;
+  - the CROSS read.
+
+**O1:**
+- dropped 7 of 12 silent copies, and none of the expressed copies in any world;
+- seeded 3 of the 8 uncatalogued copies, but only GH.3 and LCE1.2 received their own reads:
+  - RBMY.0's seeded copy was built from 55 of its reads, but its observed structures miss the reads' starts;
+  - its 61 reads end `thin` (52) or `tied` (9);
+- the other five uncatalogued copies (BPY2.1, CDY.0, OR4F.2, TSPY.3, USP17L.8) are near-identical to catalogued copies, and
+  their reads tie;
+- in REMOVED it seeded OR4F17 (chr19), which is none of the family's copies. The masked OR4F.2's reads (undetectable) land
+  there uniquely;
+- **the one-family rule resolved no locus**, so round 8 is no held-out evidence for it. Its evidence remains the development
+  worlds.
+
+**O3 (arm I):**
+- 20 calls, none false;
+- REMOVED: all 181 reads of the three detectable removed copies (GH.3, LCE1.2, USP17L.8) are inside pure calls. Under the
+  single-call rule of rounds 4-7 (one call holding >= 80% of the copy's reads), 2 of 3 are detected: GH.3's 61 reads are split
+  over five calls, and the largest holds 43 (0.70);
+- BRANCH: **7** novel-exon copies were built, not 8. USP17L's special copy has a single-exon main isoform, so it has no
+  middle to insert an exon into. All 7 have a call made mostly of their reads. Under `score.py`'s purity rule (0.9) it is 6
+  of 7: OR4F.B's only call holds 34 novel-exon reads plus 26 of the same copy's reads without the exon (0.57).
+
+## Scorer defect found by the review (bars unchanged)
+
+`cmd_e2e` scored a call on a seeded copy that matches no truth copy as an abstention, not as a placement. In REMOVED, 59 of
+OR4F.2's reads placed on OR4F17 should therefore be `unknowable`, not `abstain`.
+
+The fix (`integrated_calls`, with a test) counts such a call as a placement on a locus that is no copy. Re-scoring all 50
+worlds with it changes only REMOVED worlds, and only abstain to unknowable:
+- set 2: 28 reads;
+- set 6: 48 reads;
+- this set: 59 reads.
+
+No correct or error count changes, so neither bar changes. The verdict above uses the frozen scorer.
+
+## Corrections to the text above
+
+The family table's "(of 8)" for OR4F and "(of 6)" for LCE1 count candidate genes, not linked copies: their linked components
+have 3 copies each.
+
+## Reading
+
+**The test does not support the pre-registered claim**, and no partial claim is made.
+
+It fails on one read: an integrated O2 call among near-identical copies. A single sequencing error at the one site that
+separates TSPY.1 from TSPY.2, plus counting soft-clipped bases as edits, pushed that call past the margin.
+
+Everything else matches the 43 earlier worlds:
+- the integrated pipeline gets more reads right in every world type;
+- it has fewer errors in five of six;
+- its O3 makes no false call.
+
+A per-world strict error bar is decided by single reads wherever the current method makes no error (here INTACT, CROSS and
+SILENT). The current method makes none there because it abstains more.

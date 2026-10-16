@@ -122,6 +122,18 @@ def read_fate(cls, assigned, own, in_o3):
     return "error" if cls == "absent_detectable" else "unknowable"
 
 
+def integrated_calls(rows, seeded_copy):
+    """{read: {family: the truth copy of the seeded copy it was called to}} from o2.integ rows. A call on a seeded copy that
+    matches no truth copy (map_new_copies: None) places the read on a locus that is no copy: a placement, not an abstention
+    (round 8 review I3; the frozen round-8 scorer counted it as abstain)."""
+    out = {}
+    for r in rows:
+        if r["call"] != "-":
+            k = (r["family"], int(r["call"]))
+            out.setdefault(r["read"], {})[r["family"]] = seeded_copy.get(k) or f"{k[0]}#{k[1]}: no truth copy"
+    return out
+
+
 def cmd_e2e(out, worlds):
     """Per world and read class: the fates of every read under the current method (copy_assign O2 + CUR O3) and the integrated
     O1 -> O2 -> O3 (o2.integ.m2.tsv on graph/seeded.json + arm I)."""
@@ -154,10 +166,7 @@ def cmd_e2e(out, worlds):
         for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
             if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit():
                 cur.setdefault(r["read_name"], {})[r["family_id"]] = cat_copy.get((r["family_id"], int(r["catalog_copy_idx"])))
-        integ = {}
-        for r in csv.DictReader(open(f"{w}/graph/o2.integ.m2.tsv"), delimiter="\t"):
-            if r["call"] != "-":
-                integ.setdefault(r["read"], {})[r["family"]] = seeded_copy.get((r["family"], int(r["call"])))
+        integ = integrated_calls(csv.DictReader(open(f"{w}/graph/o2.integ.m2.tsv"), delimiter="\t"), seeded_copy)
         mem = collections.defaultdict(set)
         for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
             mem[(r["family"], r["host"], r["cluster"])].add(r["read_name"])

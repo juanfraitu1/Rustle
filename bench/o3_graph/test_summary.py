@@ -79,3 +79,13 @@ def test_round8_bars_hold_per_world_only_when_integrated_has_no_fewer_correct_an
     assert b["REMOVED"]["B1"] is False and b["REMOVED"]["B2"] is True       # unknowable and abstain count for neither
     assert b["OUTSIDE"]["B1"] is True and b["OUTSIDE"]["B2"] is False
     assert b["verdict"] == "FAIL" and S.round8_bars({"INTACT": tab["INTACT"]})["verdict"] == "PASS"
+
+
+def test_a_call_on_a_seeded_copy_that_is_no_truth_copy_is_a_placement_not_an_abstention():
+    # round 8 review I3: O1 seeded OR4F17 (no truth copy); O2's calls there were scored as abstentions
+    rows = [dict(read="a", family="F", call="5"), dict(read="b", family="F", call="0"), dict(read="c", family="F", call="-")]
+    calls = S.integrated_calls(rows, {("F", 0): "F.0", ("F", 5): None})
+    assert calls["b"] == {"F": "F.0"} and "c" not in calls
+    placed = calls["a"]["F"]
+    assert S.read_fate("catalogued", placed, "F.1", False) == "error"
+    assert S.read_fate("absent_undetectable", placed, "F.9", False) == "unknowable"
