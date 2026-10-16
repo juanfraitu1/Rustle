@@ -96,7 +96,7 @@ There were 109,493 reads from catalogued copies and 4,335 from uncatalogued ones
 - **A sister family's copy hosted at delta** (NPIPA.5's reads on NPIPB, median `de` 0.0097): its reads look like an absent
   copy. This is the only source of the integrated pipeline's false calls.
 - **One bug, known:** an uncatalogued locus can be seeded into two adjacent families (WASH and DDX11L). A seeded locus must
-  belong to one family.
+  belong to one family. *Fixed in 1e3960fe; see the update below.*
 
 ## Why the per-objective bars failed although the whole works
 
@@ -116,3 +116,28 @@ the same unresolvable placement.
    haplotypes (`/mnt/linuxdisk/tmp/rustle_figures_dev/o2_presence/hg002/hg002v1.1.fa`). Copies present in HG002 but absent
    from CHM13 give real O3 targets. It needs the Kinnex reads aligned to CHM13 (the pipeline) and to the HG002 assembly
    (the truth).
+
+## Update after round 8 (2026-10-16)
+
+**Two fixes since the tables above were written:**
+- the one-family seeding rule (1e3960fe). Set 1's NPIPA/NPIPB locus had also been seeded twice, in all five of its worlds;
+- the e2e scorer: a call on a seeded copy that matches no truth copy is now a placement, not an abstention (round 8 review I3).
+
+**The same 43 worlds, re-scored:**
+- integrated: 95,418 correct and 432 errors (was 95,405 and 445):
+  - set 1's OUTSIDE: 3 more correct and 13 fewer errors;
+  - set 1's CROSS: 10 more correct;
+- REMOVED: 76 reads moved from abstain to unknowable (unknowable 1,728, abstain 4,381). No correct or error count changed;
+- the integrated pipeline's error sources: uncatalogued 281 (was 291), absent-copy calls on present copies 58 (was 61),
+  novel-exon 82, catalogued 11;
+- arm I's false calls: 5, all of them the NPIPB cluster. The fix removed one.
+
+**The worlds of one set share most of their reads:**
+- INTACT, OUTSIDE and REMOVED simulate the same reads;
+- CROSS and BRANCH contain all of INTACT's reads;
+- SILENT's reads are a subset.
+
+Pooled totals are therefore not independent counts; each world is the unit of comparison.
+
+**Round 8, the pre-registered end-to-end test on a ninth set: FAIL by one read** (CROSS: 1 error against 0). B1 held in all six
+worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
