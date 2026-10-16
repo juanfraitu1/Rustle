@@ -153,3 +153,51 @@ Abstain and unknowable count for neither (`summary.py bars`).
 - An independent review by a fresh subagent.
 - Register row 1307.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-16; run after amendment 1 with the code of 8235f733)
+
+## Verdict: FAIL under both profiles. Not claimed.
+
+Bars from `summary.py bars e2e_pr.json` (per-read detectability). Copy-level scoring gives the same verdict, cell for cell
+except REMOVED's error counts (A119b 10 vs 2, public 5 vs 0).
+
+| world | A119b profile: correct (current / integrated) | errors | B1, B2 | public profile: correct | errors | B1, B2 |
+|---|---|---|---|---|---|---|
+| INTACT | 1,149 / 1,109 | 2 / 0 | **no**, yes | 994 / 976 | 1 / **5** | **no**, **no** |
+| CROSS | 1,264 / 1,227 | 2 / 1 | **no**, yes | 1,085 / 1,071 | 2 / **5** | **no**, **no** |
+| OUTSIDE | 868 / 1,069 | 177 / 3 | yes, yes | 740 / 944 | 174 / 8 | yes, yes |
+| REMOVED | 1,038 / 1,013 | 11 / 3 | **no**, yes | 917 / 964 | 4 / 0 | yes, yes |
+| BRANCH | 1,181 / 1,301 | 219 / 55 | yes, yes | 994 / 1,108 | 180 / 67 | yes, yes |
+| SILENT | 698 / 686 | 2 / 0 | **no**, yes | 552 / 542 | 1 / **2** | **no**, **no** |
+
+**Where the integrated pipeline wins.** On a fresh set of full families with realistic reads, it is far ahead wherever the
+catalog is incomplete:
+- OUTSIDE: +201 and +204 correct, 3 and 8 errors against 177 and 174;
+- BRANCH: +120 and +114 correct, 55 and 67 errors against 219 and 180;
+- REMOVED (public): +47 correct, 0 errors against 4.
+
+**Where it loses: catalogued copies.** It gets 1-3.5% fewer reads right in INTACT, CROSS and SILENT, and in REMOVED under
+A119b.
+- **Fewer correct reads:** the losses are reads O2 leaves `unexplained`, spread over the families. For INTACT under A119b:
+  AGAP 15, KRTAP4 12, LCE2 11, FCGR1 9, PPIAL4 5. The current method assigns them.
+- **The public profile's extra errors:**
+  - INTACT's 5 are all PGA reads (pepsinogen A3/A4/A5, near-identical copies) called to the wrong copy by O2;
+  - CROSS and SILENT were not broken down.
+- This is the same mechanism development set 8 showed under A119b (INTACT -19).
+
+**Cost.** 168 s at 0.76 GB peak (A119b) and 149 s at 0.74 GB (public) for six worlds of 43 copies each. The local reference
+was built once, in the first run.
+
+## Reading
+
+**The pre-registered claim fails under both profiles.** No partial claim is made.
+
+Three determinations hold on the held-out set as on development data:
+- **Realistic reads change the comparison:** the advantage that idealized reads showed on catalogued copies does not survive.
+- **The integrated pipeline's strength is the incomplete catalog:** copies the catalog lacks (OUTSIDE), copies absent from the
+  reference with a novel exon (BRANCH), and their errors.
+- **The remaining weakness is O2's divergence gate on realistic reads.** These are reads with retained introns, long indels or
+  short spans that no annotated path explains. A genome-placement fallback for them was measured on development data and
+  rejected for its errors.
