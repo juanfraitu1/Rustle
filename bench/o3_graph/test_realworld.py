@@ -127,3 +127,40 @@ def test_a_paralog_isoform_lifts_over_through_the_locus_alignment():
     s3 = 500 + 300 + 600 + 250 + 800
     p_exons = [(500, 800), (s3 - 4, s3 - 4 + 300)]                  # exon 3 sits 4 bp earlier on the paralog
     assert R.liftover(p_locus, [p_exons], c_locus) == [[(500, 800), (s3, s3 + 300)]]
+
+
+def test_heterozygous_sites_are_drawn_from_the_copy_s_exonic_bases_with_a_different_base():
+    rng = random.Random(5)
+    pos = list(range(100, 2100))
+    het = R.het_sites(pos, 0.01, rng, lambda p: GENOME[p % len(GENOME)])
+    assert 10 <= len(het) <= 30 and set(het) <= set(pos)
+    assert all(b != GENOME[p % len(GENOME)] and b in "ACGT" for p, b in het.items())
+    assert R.het_sites(pos, 0.0, rng, lambda p: "A") == {}
+
+
+def test_a_second_haplotype_carries_the_alleles_on_every_isoform():
+    het = {105: "A", 410: "T"}
+    hap2 = R.splice(GENOME, [(100, 200), (400, 500)], "+", het)
+    hap1 = R.splice(GENOME, [(100, 200), (400, 500)], "+", {})
+    assert hap2[5] == "A" and hap2[110] == "T" and hap1[5] == GENOME[105] and hap1[110] == GENOME[410]
+
+
+def test_a_world_with_heterozygous_alleles_builds_and_records_each_read_s_haplotype(tmp_path, monkeypatch):
+    import json
+    import pysam
+    g = "".join(random.Random(9).choice("ACGT") for _ in range(30000))
+    fa = tmp_path / "g.fa"
+    fa.write_text(">c1\n" + g + "\n")
+    pysam.faidx(str(fa))
+    monkeypatch.setattr(R, "GENOME", str(fa))
+    cp = lambda gid, lo: dict(gene_id=gid, gene_name=gid, chrom="c1", start=lo, end=lo + 2000, strand="+", main="t",  # noqa: E731
+                              transcripts={"t": [[lo, lo + 600], [lo + 1200, lo + 2000]]})
+    fams = {"sets": {"x": [dict(family="F", copies=[cp("g0", 1000), cp("g1", 10000), cp("g2", 20000)])]}}
+    (tmp_path / "f.json").write_text(json.dumps(fams))
+    R.main(["build", str(tmp_path / "w"), str(tmp_path / "f.json"), "--set", "x", "--scenario", "INTACT", "--seed", "3",
+            "--het", "0.01", "--per-copy", "20"])
+    rows = (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()
+    assert rows[0].split("\t")[-1] == "hap"
+    haps = {r.split("\t")[-1] for r in rows[1:]}
+    assert haps == {"1", "2"}
+    assert sum(json.load(open(tmp_path / "w" / "het.json"))["sites"].values()) == 3 * 14   # 1% of each copy's 1,400 exonic bases

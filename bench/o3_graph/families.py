@@ -58,6 +58,12 @@ GROUPS = {
                  "CYP2D": r"^CYP2D[0-9]+P?$", "BTN3A": r"^BTN3A[1-3]$", "SPANXN": r"^SPANXN[0-9]$",
                  "GUSBP": r"^GUSBP[0-9]+$", "ANKRD20A": r"^ANKRD20A[0-9]+P?$", "FRG2": r"^FRG2[A-Z]*$", "GOLGA6": r"^GOLGA6[A-D]$",
                  "PMS2": r"^PMS2(CL|P[0-9]+)?$"},
+    # held out for round 6 (docs/PREREG_o3_graph_round6_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set (FRG2, GOLGA6 and PMS2 were round-5 candidates past its first 8, never built into a world)
+    "heldout6": {"FRG2": r"^FRG2[A-Z]*$", "GOLGA6": r"^GOLGA6[A-D]$", "PMS2": r"^PMS2(CL|P[0-9]+)?$", "CCL34": r"^CCL[34](L[0-9])?$",
+                 "DEFA": r"^DEFA[0-9]+[A-Z]?$", "BCRP": r"^BCRP[0-9]+$", "GGT": r"^GGT[0-9]+[A-Z]*$", "CFHR": r"^CFHR[0-9]$",
+                 "PRB": r"^PRB[0-9]$", "ANKRD30": r"^ANKRD30[A-Z]+$", "FRG1": r"^FRG1[A-Z]*$", "GSTT2": r"^GSTT2[A-Z]?$",
+                 "CTAGE": r"^CTAGE[0-9]+$", "RIMBP3": r"^RIMBP3[A-Z]?$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

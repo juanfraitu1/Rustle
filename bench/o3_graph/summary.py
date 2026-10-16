@@ -6,6 +6,8 @@
     summary.py o2bars PREFIX WORLD ...    round 4's A1-A4: padded union O2 (o2.unionp.m2.tsv) against the current O2 and locus O2
                                           (o2.locus.m2.tsv), per world; writes PREFIX_<arm>.json (o2graph.py score)
     summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
+    summary.py flags OUT.json WORLD ...   round 6: the flagged clusters (o2graph.flag_reads' rule) by truth class -- copy /
+                                          allele (one haplotype of a catalogued copy) / other -- and the uncatalogued copies covered
 """
 import collections
 import csv
@@ -18,6 +20,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DELTA = 0.00958
+FLAG_MIN_READS = 20
 ARMS = ("CUR", "S23", "S3", "S123m", "G", "H", "Hn", "K", "Kn")
 NONCAT_WORLDS = ("OUTSIDE", "REMOVED", "BRANCH")
 
@@ -39,6 +42,66 @@ def o2_bars(worlds):
     pooled = sum(g for g, _ in nc.values()) / max(1, sum(c for _, c in nc.values()))
     a4 = sum(v["graph_correct"] for v in worlds.values()) / max(1, sum(v["locus_correct"] for v in worlds.values()))
     return dict(A1=round(a1, 4), A2=round(a2, 4), A3_fewer=fewer, A3_pooled=pooled, A4=a4)
+
+
+def classify_cluster(members, truth, nonc, purity=0.9):
+    """A flagged cluster's truth (round 6): `copy` when >= purity of it is one uncatalogued copy's reads; `allele` when >= purity
+    is one catalogued copy's reads AND >= purity of those come from one haplotype (a heterozygous split); `other` otherwise
+    (another family's reads, an isoform artifact, a mixture). -> (class, majority copy, its share)."""
+    comp = collections.Counter(truth[q]["copy"] for q in members if q in truth)
+    if not comp:
+        return "other", None, 0.0
+    top, k = comp.most_common(1)[0]
+    share = k / sum(comp.values())
+    if share >= purity and top in nonc:
+        return "copy", top, share
+    if share >= purity:
+        haps = collections.Counter(truth[q].get("hap", "1") for q in members if q in truth and truth[q]["copy"] == top)
+        if haps and haps.most_common(1)[0][1] >= purity * k and len(haps) <= 2 and set(haps) != {"1"}:
+            return "allele", top, share
+    return "other", top, share
+
+
+def cmd_flags(out, worlds):
+    """Round 6: per world, the flagged clusters by truth class and the uncatalogued copies they cover (>= 80% of a copy's hosted
+    reads in its `copy` clusters)."""
+    res = {}
+    for w in worlds:
+        truth = {r["read"]: r for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t")}
+        kinds = json.load(open(f"{w}/kinds.json"))
+        nonc = {c for c, k in kinds.items() if k in ("absent", "outside")}
+        mem = collections.defaultdict(set)
+        for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
+            mem[(r["family"], r["host"], r["cluster"])].add(r["read_name"])
+        hosted = collections.defaultdict(set)
+        for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
+            hosted[r["family_id"]].add(r["read_name"])
+        cls = collections.Counter()
+        false_fams = collections.defaultdict(set)
+        covered = collections.defaultdict(set)
+        for c in csv.DictReader(open(f"{w}/cur/A.psv_clusters.tsv"), delimiter="\t"):
+            if c["status"] != "unexplained" or int(c["n_reads"]) < FLAG_MIN_READS:
+                continue
+            m = mem[(c["family"], c["host"], c["cluster"])]
+            k, top, _ = classify_cluster(m, truth, nonc)
+            cls[k] += 1
+            if k == "copy":
+                covered[top] |= m
+            else:
+                false_fams[k].add(c["family"])
+        flagged_copies = []
+        for cp in sorted(nonc):
+            src = {q for q, t in truth.items() if t["copy"] == cp} & hosted[cp.rsplit(".", 1)[0]]
+            if src and len(covered[cp] & src) >= 0.8 * len(src):
+                flagged_copies.append(cp)
+        name = os.path.basename(w.rstrip("/"))
+        res[name] = dict(clusters=dict(cls), uncatalogued=len(nonc), flagged_copies=flagged_copies,
+                         false_flag_families={k: sorted(v) for k, v in false_fams.items()},
+                         n_false_flag_families=len(set().union(*false_fams.values())) if false_fams else 0)
+        print(f"{name}: flagged clusters {dict(cls)} | uncatalogued copies flagged {len(flagged_copies)}/{len(nonc)} | "
+              f"families with a false flag {res[name]['n_false_flag_families']} {res[name]['false_flag_families']}")
+    json.dump(res, open(out, "w"), indent=1)
+    return 0
 
 
 def removed_detectability(w):
@@ -114,6 +177,8 @@ def cmd_o2bars(prefix, worlds, graph_arm="unionp.m2"):
 def main(argv):
     if argv[0] == "o3":
         return cmd_o3(argv[1], argv[2:])
+    if argv[0] == "flags":                               # round 6: the flag's clusters by truth class
+        return cmd_flags(argv[1], argv[2:])
     if argv[0] == "o2bars-unionf":                       # round 5: the graph O2 with the locus fallback
         return cmd_o2bars(argv[1], argv[2:], graph_arm="unionf.m2")
     return cmd_o2bars(argv[1], argv[2:])

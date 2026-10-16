@@ -152,3 +152,20 @@ def test_a_read_union_cannot_explain_falls_back_to_the_loci_unless_another_famil
     assert O.fallback_call("-", "unexplained", loc, 1000, other_explained=True) == ("-", "other_family")
     assert O.fallback_call("-", "unexplained", {"copy0": 40, "copy1": 45}, 1000, other_explained=False) == ("-", "unexplained")
     assert O.fallback_call("-", "unexplained", {}, 1000, other_explained=False) == ("-", "unexplained")
+
+
+def test_reads_of_a_cluster_with_linked_private_alleles_are_flagged_whatever_its_divergence():
+    clusters = [dict(family="F", host="0", cluster="0", n_reads="25", status="unexplained", est_div="0.0012"),
+                dict(family="F", host="0", cluster="1", n_reads="40", status="explained", est_div="0.0"),
+                dict(family="F", host="1", cluster="0", n_reads="12", status="unexplained", est_div="0.02"),
+                dict(family="G", host="0", cluster="0", n_reads="30", status="unresolved", est_div="0.001")]
+    members = {("F", "0", "0"): {"a", "b"}, ("F", "0", "1"): {"c"}, ("F", "1", "0"): {"d"}, ("G", "0", "0"): {"e"}}
+    assert O.flag_reads(clusters, members) == {("F", "a"), ("F", "b")}
+    assert O.flag_reads(clusters, members, min_reads=10) == {("F", "a"), ("F", "b"), ("F", "d")}
+
+
+def test_a_flagged_read_is_reported_as_a_candidate_not_assigned():
+    rows = [dict(read="a", family="F", call="1", reason="assigned"), dict(read="b", family="F", call="-", reason="tied"),
+            dict(read="c", family="F", call="0", reason="locus")]
+    out = O.apply_flag(rows, {("F", "a"), ("F", "b")})
+    assert [(r["call"], r["reason"]) for r in out] == [("-", "flagged"), ("-", "tied"), ("0", "locus")]

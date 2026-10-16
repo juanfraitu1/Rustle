@@ -20,7 +20,8 @@ Per family one SPECIAL copy (seeded; its main isoform has >= 3 exons when any co
             `--projection liftover`: the structures are lifted through the two loci's genomic alignment instead (asm20),
             independent of the spliced projection union O2 itself uses.
 Reads: per expressed copy PER_COPY reads over its isoforms (main 2.0, others 0.5), each the isoform's sense sequence with 0-30
-bp end jitter and HiFi errors (bench/sim.py, 0.1% substitutions, 0.03% indels), from the UNMASKED genome. Names are a
+bp end jitter and HiFi errors (bench/sim.py, 0.1% substitutions, 0.03% indels), from the UNMASKED genome. `--het RATE` (round 6):
+a diploid donor, each copy with heterozygous sites at RATE of its exonic bases; a read comes from haplotype 1 or 2 (truth `hap`). Names are a
 seeded shuffle `s0000001..` (they carry no truth); reads.truth.E0.tsv holds it, with `novel` = 1 for a read that
 carries the novel exon (the error-free sequence before errors contains it whole).
 Products (the layout detect.py / score.py read): genome.ref.fa (+ .fai; a link to the world's genome), reads.E0.fq,
@@ -220,6 +221,20 @@ def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None):
     return {n: pick[n] for n in names}
 
 
+def het_sites(positions, rate, rng, base_at):
+    """{genomic position: alt base}: a copy's heterozygous sites (round 6: a diploid donor), `rate` of its exonic positions,
+    each alt base different from the reference base (base_at(p))."""
+    pos = sorted(set(positions))
+    k = int(round(rate * len(pos)))
+    if not k:
+        return {}
+    out = {}
+    for p in sorted(rng.sample(pos, k)):
+        ref = base_at(p).upper()
+        out[p] = rng.choice([b for b in "ACGT" if b != ref])
+    return out
+
+
 def carries(novel, seq):
     """Does a read's error-free sequence hold the whole novel exon (it is reverse-complemented on a minus-strand copy)?"""
     return bool(novel) and (novel in seq or novel[::-1].translate(COMP) in seq)
@@ -281,6 +296,7 @@ def cmd_build(a):
     world, kinds, cfam, rows_c, isoj, regions = {}, {}, {}, [], collections.defaultdict(list), []
     reads, cat_rows, cat_fa = [], [], []
     cross, n_proj = {}, collections.Counter()             # CROSS: {copy: {proj name: exons}}; projectable paralog isoforms
+    n_het = collections.Counter()                         # --het: heterozygous sites per family
     for fam in fams:
         f = fam["family"]
         world[f] = a.scenario
@@ -366,33 +382,47 @@ def cmd_build(a):
             tx = c["transcripts"]
             w = {t: (MAIN_WEIGHT if t == c["main"] else OTHER_WEIGHT) for t in tx}
             tot = sum(w.values())
+            het = {}
+            if a.het > 0:                                       # a diploid donor: haplotype 2 carries the copy's het alleles
+                exonic = {p for v in tx.values() for s_, e_ in v for p in range(s_, e_)}
+                het = het_sites(exonic, a.het, random.Random(f"{a.seed}:{cid}:het"),
+                                lambda p, ch=c["chrom"]: true_fa.fetch(ch, p, p + 1))
+            n_het[f] += len(het)
+
+            def hap_of(t, i):                                   # its own RNG: hap-1 reads equal the het-free world's
+                return 2 if het and random.Random(stable_seed(str(a.seed), cid, t, str(i), "hap")).random() < 0.5 else 1
             for t, ex in tx.items():
-                seq = splice(fetch, [tuple(x) for x in ex], c["strand"], snps, j, novel)
+                seqs = {h: splice(fetch, [tuple(x) for x in ex], c["strand"], {**snps, **het} if h == 2 else snps, j, novel)
+                        for h in ((1, 2) if het else (1,))}
                 n = int(round(a.per_copy * w[t] / tot))
                 for i in range(n):
+                    h = hap_of(t, i)
+                    seq = seqs[h]
                     r = random.Random(stable_seed(str(a.seed), cid, t, str(i)))
                     lo, hi = r.randint(0, 30), len(seq) - r.randint(0, 30)
                     if hi - lo < 100:
                         lo, hi = 0, len(seq)
                     rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
-                    reads.append((cid, t, f, kinds[cid], rd, int(carries(novel, seq[lo:hi]))))
+                    reads.append((cid, t, f, kinds[cid], rd, int(carries(novel, seq[lo:hi])), h))
             for t, ex in cross.get(cid, {}).items():            # CROSS: the paralog structures this copy also expresses
-                seq = splice(fetch, ex, c["strand"], {})
+                seqs = {h: splice(fetch, ex, c["strand"], het if h == 2 else {}) for h in ((1, 2) if het else (1,))}
                 for i in range(int(round(a.per_copy * OTHER_WEIGHT / tot))):
+                    h = hap_of(t, i)
+                    seq = seqs[h]
                     r = random.Random(stable_seed(str(a.seed), cid, t, str(i)))
                     lo, hi = r.randint(0, 30), len(seq) - r.randint(0, 30)
                     if hi - lo < 100:
                         lo, hi = 0, len(seq)
                     rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
-                    reads.append((cid, t, f, kinds[cid], rd, 0))
+                    reads.append((cid, t, f, kinds[cid], rd, 0, h))
     names = anon_names([(r[0], r[1]) for r in reads], a.seed)
     order = sorted(range(len(reads)), key=lambda i: names[i])
     with open(f"{out}/reads.E0.fq", "w") as fq, open(f"{out}/reads.truth.E0.tsv", "w") as tr:
-        tr.write("read\tcopy\tkind\tfamily\tisoform\tnovel\n")
+        tr.write("read\tcopy\tkind\tfamily\tisoform\tnovel\thap\n")
         for i in order:
-            cid, t, f, kd, rd, nv = reads[i]
+            cid, t, f, kd, rd, nv, h = reads[i]
             write_fastq(fq, names[i], rd)
-            tr.write(f"{names[i]}\t{cid}\t{kd}\t{f}\t{t}\t{nv}\n")
+            tr.write(f"{names[i]}\t{cid}\t{kd}\t{f}\t{t}\t{nv}\t{h}\n")
     with open(f"{out}/P.fam.copies.tsv", "w") as fh:
         fh.write(FW.COPIES_HEADER + "\n" + "".join("\t".join(r) + "\n" for r in cat_rows))
     open(f"{out}/P.fam.copies.fa", "w").write("".join(cat_fa))
@@ -415,7 +445,10 @@ def cmd_build(a):
             merged.append((ch, s, e))
     with open(f"{out}/regions.txt", "w") as fh:
         fh.writelines(f"{ch}:{s + 1}-{e}\n" for ch, s, e in merged)
-    print(f"[realworld] {out}: {len(fams)} families, {len(cat_rows)} catalogued copies, {len(reads)} reads", flush=True)
+    if a.het > 0:
+        json.dump(dict(het=a.het, sites=n_het), open(f"{out}/het.json", "w"), indent=1)
+    print(f"[realworld] {out}: {len(fams)} families, {len(cat_rows)} catalogued copies, {len(reads)} reads"
+          + (f", {sum(n_het.values())} heterozygous sites (--het {a.het})" if a.het > 0 else ""), flush=True)
     return 0
 
 
@@ -436,6 +469,8 @@ def main(argv=None):
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--genome")
     p.add_argument("--per-copy", type=int, default=60)
+    p.add_argument("--het", type=float, default=0.0,
+                   help="a diploid donor: each copy's exonic heterozygous-site rate; reads come 50/50 from its two haplotypes")
     p.add_argument("--projection", choices=("spliced", "liftover"), default="spliced",
                    help="CROSS: paralog isoforms onto a copy by spliced transcript alignment (Amendment 1) or by liftover "
                         "through the loci's genomic alignment (independent of union O2's projection)")

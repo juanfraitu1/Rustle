@@ -11,7 +11,8 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
     read bases past a path's end not counted (_paf_dist ends=True); run ... unionp MARGIN: union, every path's two ends
     extended by PATH_PAD bases of the copy's genome (padded); run ... locus MARGIN: the
     annotation-free baseline on seqsupport's genomic-locus distances; run ... unionf MARGIN: padded union with the locus
-    fallback and the cross-family guard (fallback_call); outputs graph/o2.<method>.m<margin>.tsv)
+    fallback and the cross-family guard (fallback_call); run ... flag BASE: o2.<BASE> with the reads of flagged PSV clusters
+    reported as unannotated-copy candidates (flag_reads, apply_flag); outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -36,7 +37,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD = 2, 0.8, 0.00958, 5, 50
+MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD, FLAG_MIN_READS = 2, 0.8, 0.00958, 5, 50, 20
 
 
 def _detect():
@@ -286,6 +287,40 @@ def run_fallback(w, margin=MARGIN, union_name="o2.unionp.m2.tsv", out_name=None)
     return 0
 
 
+def flag_reads(clusters, members, min_reads=FLAG_MIN_READS):
+    """Round 6: {(family, read)} in a PSV cluster (copy_assign --psv-clusters) whose copy-private alleles are linked
+    (`unexplained`) with >= min_reads reads, WHATEVER its divergence -- below delta that is an unannotated copy or an allele."""
+    out = set()
+    for c in clusters:
+        if c["status"] == "unexplained" and int(c["n_reads"]) >= min_reads:
+            out |= {(c["family"], q) for q in members.get((c["family"], c["host"], c["cluster"]), ())}
+    return out
+
+
+def apply_flag(rows, flagged):
+    """O2 + flag: a read in a flagged cluster is reported as an unannotated-copy candidate (`flagged`), not assigned."""
+    return [dict(r, call="-", reason="flagged") if (r["family"], r["read"]) in flagged and r["call"] != "-" else dict(r)
+            for r in rows]
+
+
+def run_flagged(w, base, margin=MARGIN):
+    """WORLD/graph/o2.flag_<base>.m<margin>.tsv: o2.<base>.m<margin>.tsv with the reads of flagged clusters left as candidates."""
+    members = collections.defaultdict(set)
+    for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
+        members[(r["family"], r["host"], r["cluster"])].add(r["read_name"])
+    flagged = flag_reads(list(csv.DictReader(open(f"{w}/cur/A.psv_clusters.tsv"), delimiter="\t")), members)
+    rows = apply_flag(list(csv.DictReader(open(f"{w}/graph/o2.{base}.m{margin}.tsv"), delimiter="\t")), flagged)
+    out_name = f"o2.flag_{base}.m{margin}.tsv"
+    with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
+        wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
+        wr.writeheader()
+        wr.writerows(rows)
+    c = collections.Counter(r["reason"] for r in rows)
+    print(f"[o2graph] {w} ({base} + flag, margin {margin}) -> {out_name}: {len(rows)} reads, "
+          + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
+    return 0
+
+
 def run_locus(w, margin=MARGIN, out_name=None):
     """Locus O2, the annotation-free baseline: decide() on the distances of every hosted read to each catalogued copy's
     genomic locus (graph/locus.dist.json from run_seqsupport; any canonical splicing allowed)."""
@@ -475,11 +510,13 @@ def main(argv):
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes
         # artifactual allele calls through near-identical copies, GAGE 74 wrong of 289)
         method = argv[2] if len(argv) > 2 else "paths"
-        margin = int(argv[3]) if len(argv) > 3 else MARGIN
+        margin = int(argv[3]) if len(argv) > 3 and argv[3].isdigit() else MARGIN
         if method == "nodes":
             return run_world(argv[1])
         if method == "locus":
             return run_locus(argv[1], margin)
+        if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
+            return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first
             return run_fallback(argv[1], margin, union_name=f"o2.unionp.m{margin}.tsv")
         return run_paths(argv[1], margin, reps_only=method == "reps", union=method in ("union", "unione", "unionp"),
