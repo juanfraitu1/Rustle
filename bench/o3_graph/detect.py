@@ -81,9 +81,10 @@ def orient(seq, exons, strand, lo):
     return seq[::-1].translate(comp), sorted((n - e_, n - s_) for s_, e_ in rel)
 
 
-def restrict(names, keep_set):
-    """S4: only the reads no catalogued copy's isoform paths explain (path-O2 `unexplained`); none without the table."""
-    return [n for n in names if keep_set is not None and n in keep_set]
+def restrict(names, family, keep_set):
+    """S4: only the reads no catalogued copy's isoform paths explain IN THIS FAMILY (path-O2 `unexplained`, keyed by (read,
+    family): a read unexplained only in a sister family it was hosted in is explained here); none without the table."""
+    return [n for n in names if keep_set is not None and (n, family) in keep_set]
 
 
 def arms_of(arm, keep):
@@ -399,7 +400,7 @@ def main(argv):
                            end=c["end"], strand=c["strand"], isoforms={k: [tuple(x) for x in v] for k, v in c["isoforms"].items()}))
     o2_unexpl = None                                   # S4: path-O2's unexplained reads (o2graph.py run WORLD paths 2, first)
     if os.path.exists(f"{w}/graph/o2.paths.m2.tsv"):
-        o2_unexpl = {(r["read"]) for r in csv.DictReader(open(f"{w}/graph/o2.paths.m2.tsv"), delimiter="\t")
+        o2_unexpl = {(r["read"], r["family"]) for r in csv.DictReader(open(f"{w}/graph/o2.paths.m2.tsv"), delimiter="\t")
                      if r["reason"] == "unexplained"}
     by_host = collections.defaultdict(list)
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
@@ -436,7 +437,7 @@ def main(argv):
                     st, div = status_of(members, cons, sites, ref, maps, cov, vec)
                     if st == "unexplained" and div > DELTA:
                         calls.append([arm, f, "psv", host, k, sorted(members), div])
-            un = restrict([n for n in names if n in cov], o2_unexpl)
+            un = restrict([n for n in names if n in cov], f, o2_unexpl)
             if len(un) >= PC.MIN_SUPPORT:
                 cov_u = {n: cov[n] for n in un}
                 sites_u, clusters_u, vec_u = PC.cluster_host(ref, cov_u)

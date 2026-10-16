@@ -11,6 +11,12 @@ Per family one SPECIAL copy (seeded; its main isoform has >= 3 exons when any co
   OUTSIDE   the special copy stays in the genome but leaves the catalog (an uncatalogued paralog)
   BRANCH    an extra ABSENT copy `<family>.B`: the special copy's isoforms with a novel 150-bp exon in the middle of its main
             isoform's middle intron (spliced into every isoform with an intron across that point) and 0.2% exonic SNPs
+  CROSS     as INTACT, and EVERY copy also expresses up to MAX_PROJ isoform structures annotated only on a paralog (review C1
+            of register 1298: the catalog is not copy-specific): each paralog isoform's sense sequence spliced-aligned
+            (minimap2 splice:hq -uf) to the copy's locus, kept when its primary alignment covers >= PROJ_COVER of it with the
+            same exon count, canonical junctions and an intron chain none of the copy's own isoforms has; the copy's own
+            genomic sequence over those exons is the transcript (truth isoform `proj:<paralog copy>|<isoform>`, weight
+            OTHER; the copy's own-isoform reads are INTACT's). The catalog lists each copy's own isoforms only.
 Reads: per expressed copy PER_COPY reads over its isoforms (main 2.0, others 0.5), each the isoform's sense sequence with 0-30
 bp end jitter and HiFi errors (bench/sim.py, 0.1% substitutions, 0.03% indels), from the UNMASKED genome. Names are a
 seeded shuffle `s0000001..` (they carry no truth); reads.truth.E0.tsv holds it, with `novel` = 1 for a read that
@@ -33,8 +39,9 @@ sys.path.insert(0, BENCH)
 sys.path.insert(0, os.path.join(BENCH, "o3_fewread"))
 
 GENOME = "/mnt/linuxdisk/home/juanfraitu/npip_ladder/idx/target.fa"      # = chm13v2.0.fa (same contigs and sequence)
-SCENARIOS = ("INTACT", "REMOVED", "OUTSIDE", "BRANCH")
+SCENARIOS = ("INTACT", "REMOVED", "OUTSIDE", "BRANCH", "CROSS")
 MAIN_WEIGHT, OTHER_WEIGHT, NOVEL_LEN, BRANCH_SNP, REGION_PAD = 2.0, 0.5, 150, 0.002, 20000
+MAX_PROJ, PROJ_COVER, PROJ_PAD, JUNCTION_TOL = 2, 0.95, 1000, 10
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
@@ -55,6 +62,90 @@ def splice(genome, exons, strand, snps, insert_at=None, novel=""):
             parts.append(novel)
     seq = "".join(parts)
     return seq[::-1].translate(COMP) if strand == "-" else seq
+
+
+def exons_from_cigar(tstart, cigar):
+    """Reference blocks of a PAF alignment (`cg:Z:` CIGAR on the target's forward strand): a new exon at every N (intron);
+    deletions stay inside their exon, insertions take no reference."""
+    import re
+    ex, pos, start = [], tstart, tstart
+    for n, op in re.findall(r"(\d+)([MIDNSHP=X])", cigar):
+        n = int(n)
+        if op == "N":
+            ex.append((start, pos))
+            pos += n
+            start = pos
+        elif op in "MD=X":
+            pos += n
+    ex.append((start, pos))
+    return ex
+
+
+def canonical_junctions(genome, exons, strand):
+    """Every intron GT-AG / GC-AG / AT-AC on the transcript strand (`genome`: a string or fetch(a, b), forward strand)."""
+    get = (lambda a, b: genome[a:b]) if isinstance(genome, str) else genome
+    ok = {("GT", "AG"), ("GC", "AG"), ("AT", "AC")} if strand == "+" else {("CT", "AC"), ("CT", "GC"), ("GT", "AT")}
+    ex = sorted(exons)
+    return all((get(a, a + 2).upper(), get(b - 2, b).upper()) in ok for (_, a), (b, _) in zip(ex, ex[1:]))
+
+
+def project(iso_seq, locus, lo, strand, n_exons, cover=PROJ_COVER):
+    """A paralog isoform's sense sequence onto a copy's locus (`locus` = genome[lo:...], forward strand): its exons in genome
+    coordinates when the primary spliced alignment covers >= `cover` of it with `n_exons` exons and canonical junctions on
+    `strand`, else None."""
+    return project_many({"q": (iso_seq, n_exons)}, locus, lo, strand, cover)["q"]
+
+
+def project_many(queries, locus, lo, strand, cover=PROJ_COVER):
+    """project() for {name: (sense sequence, exon count)} in one minimap2 run -> {name: exons or None}."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        open(f"{d}/t.fa", "w").write(f">locus\n{locus}\n")
+        with open(f"{d}/q.fa", "w") as fh:
+            for name, (seq, _) in queries.items():
+                fh.write(f">{name}\n{seq}\n")
+        out = subprocess.run(["minimap2", "-c", "-x", "splice:hq", "-uf", "--secondary=no", f"{d}/t.fa", f"{d}/q.fa"],
+                             capture_output=True, text=True, check=True).stdout
+    res = {name: None for name in queries}
+    done = set()
+    for ln in out.splitlines():
+        f = ln.split("\t")
+        tags = {x[:5]: x[5:] for x in f[12:]}
+        q = f[0]
+        if q in done or tags.get("tp:A:") != "P" or (int(f[3]) - int(f[2])) < cover * int(f[1]):
+            continue
+        done.add(q)                                          # the first full-length primary decides
+        if (f[4] == "+") != (strand == "+"):                 # -uf: the sense read lands on the copy's own strand
+            continue
+        ex = exons_from_cigar(int(f[7]), tags["cg:Z:"])
+        if len(ex) == queries[q][1] and canonical_junctions(locus, ex, strand):
+            res[q] = [(a + lo, b + lo) for a, b in ex]
+    return res
+
+
+def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None):
+    """{name: exons} of the projected paralog structures a copy expresses: intron chains new to its own isoforms (`own`; a
+    chain whose every junction is within JUNCTION_TOL bp of a known chain's is that chain, a projection artifact), one name
+    per new chain (the first in name order), at most max_proj of them (a seeded sample)."""
+    def chain(ex):
+        ex = sorted(ex)
+        return tuple((a[1], b[0]) for a, b in zip(ex, ex[1:]))
+
+    def known(c, seen):
+        return any(len(k) == len(c) and all(abs(x - y) <= JUNCTION_TOL for i, j in zip(c, k) for x, y in zip(i, j))
+                   for k in seen)
+    seen, pick = [chain(v) for v in own.values()], {}
+    for name in sorted(projected):
+        ex = projected[name]
+        if ex is None or not chain(ex) or known(chain(ex), seen):
+            continue
+        seen.append(chain(ex))
+        pick[name] = ex
+    names = sorted(pick)
+    if len(names) > max_proj:
+        names = sorted((rng or random.Random(0)).sample(names, max_proj))
+    return {n: pick[n] for n in names}
 
 
 def carries(novel, seq):
@@ -117,6 +208,7 @@ def cmd_build(a):
     world_fa = pysam.FastaFile(gpath)
     world, kinds, cfam, rows_c, isoj, regions = {}, {}, {}, [], collections.defaultdict(list), []
     reads, cat_rows, cat_fa = [], [], []
+    cross, n_proj = {}, collections.Counter()             # CROSS: {copy: {proj name: exons}}; projectable paralog isoforms
     for fam in fams:
         f = fam["family"]
         world[f] = a.scenario
@@ -152,6 +244,21 @@ def cmd_build(a):
         for c in fam["copies"]:
             hull[c["chrom"]] += [c["start"], c["end"]]
         regions += [(ch, max(0, min(v) - REGION_PAD), max(v) + REGION_PAD) for ch, v in hull.items()]
+        if a.scenario == "CROSS":
+            for k, c in enumerate(fam["copies"]):
+                lo = max(0, c["start"] - PROJ_PAD)
+                locus = true_fa.fetch(c["chrom"], lo, c["end"] + PROJ_PAD).upper()
+                queries = {}
+                for k2, p in enumerate(fam["copies"]):
+                    if p is c:
+                        continue
+                    fetch_p = lambda s_, e_, ch=p["chrom"]: true_fa.fetch(ch, s_, e_)  # noqa: E731
+                    for t, ex in p["transcripts"].items():
+                        queries[f"proj:{f}.{k2}|{t}"] = (splice(fetch_p, [tuple(x) for x in ex], p["strand"], {}), len(ex))
+                proj = project_many(queries, locus, lo, c["strand"]) if queries else {}
+                own = {t: [tuple(x) for x in v] for t, v in c["transcripts"].items()}
+                cross[f"{f}.{k}"] = cross_structures(own, proj, MAX_PROJ, random.Random(f"{a.seed}:{f}.{k}:cross"))
+                n_proj[f] += sum(v is not None for v in proj.values())
         if a.scenario == "BRANCH":
             j = mid_junction(sp["transcripts"][sp["main"]])
             if j:
@@ -179,6 +286,15 @@ def cmd_build(a):
                         lo, hi = 0, len(seq)
                     rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
                     reads.append((cid, t, f, kinds[cid], rd, int(carries(novel, seq[lo:hi]))))
+            for t, ex in cross.get(cid, {}).items():            # CROSS: the paralog structures this copy also expresses
+                seq = splice(fetch, ex, c["strand"], {})
+                for i in range(int(round(a.per_copy * OTHER_WEIGHT / tot))):
+                    r = random.Random(stable_seed(str(a.seed), cid, t, str(i)))
+                    lo, hi = r.randint(0, 30), len(seq) - r.randint(0, 30)
+                    if hi - lo < 100:
+                        lo, hi = 0, len(seq)
+                    rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
+                    reads.append((cid, t, f, kinds[cid], rd, 0))
     names = anon_names([(r[0], r[1]) for r in reads], a.seed)
     order = sorted(range(len(reads)), key=lambda i: names[i])
     with open(f"{out}/reads.E0.fq", "w") as fq, open(f"{out}/reads.truth.E0.tsv", "w") as tr:
@@ -194,6 +310,10 @@ def cmd_build(a):
     json.dump(kinds, open(f"{out}/kinds.json", "w"), indent=1)
     json.dump(cfam, open(f"{out}/copy_family.json", "w"), indent=1)
     json.dump(world, open(f"{out}/world.json", "w"), indent=1)
+    if a.scenario == "CROSS":
+        json.dump(dict(projectable=n_proj, expressed=cross), open(f"{out}/cross.json", "w"), indent=1)
+        print(f"[realworld] CROSS: {sum(len(v) for v in cross.values())} paralog structures expressed over {len(cross)} copies "
+              f"({sum(n_proj.values())} paralog isoforms projectable)", flush=True)
     with open(f"{out}/copies.tsv", "w") as fh:
         fh.write("copy\tfamily\tgene_id\tgene_name\tchrom\tstart\tend\tstrand\tkind\tin_reference\tcatalogued\n")
         fh.writelines("\t".join(str(x) for x in r) + "\n" for r in rows_c)

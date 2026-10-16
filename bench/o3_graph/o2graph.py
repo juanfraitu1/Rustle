@@ -13,8 +13,14 @@ on some copies' genomic paths but not all. It is assigned to the copy whose path
 misses >= MARGIN more; otherwise it abstains (`tied`, `thin`, `no_informative`). A read the graph does not explain (identity
 < 1 - DELTA or cover < MIN_COVER) abstains as `unexplained`: it belongs to no catalogued copy (O3's business).
 Scoring, per read whose source copy is catalogued: assigned (a copy is named) and correct (it is the source); per read of a
-copy NOT in the catalog (absent, uncatalogued, novel-exon): assigned at all (wrong by construction). The current method's call
-is copy_assign's `assigned` row (catalog_copy_idx).
+copy NOT in the catalog (absent, uncatalogued, novel-exon): assigned at all (wrong by construction); any assignment in a family
+other than the read's own (`*_wrong_family`, counted in the family that made it) is wrong. The current method's call is
+copy_assign's `assigned` row (catalog_copy_idx). Reads of a structure annotated only on a paralog (CROSS, truth isoform
+`proj:...`) are also counted on their own (`*_proj`).
+    o2graph.py seqsupport WORLD    WORLD/graph/locus.dist.json: every hosted read spliced-aligned to each catalogued copy's
+                                   GENOMIC locus (+-1 kb); `score` then also counts the correct calls the genome itself
+                                   separates (`*_correct_seq`: the read's own locus beats every other copy's by >= MARGIN),
+                                   i.e. without the calls only the annotated isoform structure decides (review C1)
 """
 import collections
 import csv
@@ -60,6 +66,69 @@ def decide(dist, qlen, margin=MARGIN, max_div=DELTA):
     if gap == 0:
         return None, "tied"
     return (srt[0][0], "assigned") if gap >= margin else (None, "thin")
+
+
+def seq_supported(gd, own, margin=MARGIN):
+    """gd: {copy: edits + unaligned bases of the read on that copy's genomic locus}. Does the genome itself put the read on
+    `own` -- its own locus explains it, every other copy's locus by >= margin worse (or not at all)?"""
+    if own not in gd:
+        return False
+    others = [v for c, v in gd.items() if c != own]
+    return not others or min(others) - gd[own] >= margin
+
+
+def _paf_dist(paf):
+    """{read: {target: min(NM + unaligned read bases)}} from minimap2 -c output."""
+    dist = collections.defaultdict(dict)
+    for ln in paf.splitlines():
+        f = ln.split("\t")
+        nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
+        dd, c = nm + int(f[1]) - (int(f[3]) - int(f[2])), f[5].split("|")[0]
+        dist[f[0]][c] = min(dd, dist[f[0]].get(c, 10 ** 9))
+    return dist
+
+
+def _read_fq(p):
+    reads, name = {}, None
+    with open(p) as fh:
+        for i, ln in enumerate(fh):
+            if i % 4 == 0:
+                name = ln[1:].strip().split()[0]
+            elif i % 4 == 1:
+                reads[name] = ln.strip()
+    return reads
+
+
+def run_seqsupport(w, pad=1000):
+    """WORLD/graph/locus.dist.json: {family: {read: {copyN: distance}}} for every hosted read on each catalogued copy's genomic
+    locus (minimap2 -c -x splice:hq -uf, all secondaries): what the sequence alone says, whatever isoforms are annotated."""
+    import subprocess
+    import pysam
+    fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+    iso = json.load(open(f"{w}/isoforms.json"))
+    reads = _read_fq(f"{w}/reads.E0.fq")
+    hosted = collections.defaultdict(set)
+    for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
+        hosted[r["family_id"]].add(r["read_name"])
+    d = f"{w}/graph/o2loci"
+    os.makedirs(d, exist_ok=True)
+    out = {}
+    for fam in sorted(iso):
+        names = sorted(n for n in hosted.get(fam, ()) if n in reads)
+        if not names:
+            continue
+        with open(f"{d}/{fam}.loci.fa", "w") as fh:
+            for c in iso[fam]:
+                fh.write(f">copy{c['idx']}\n{fa.fetch(c['contig'], max(0, c['start'] - pad), c['end'] + pad).upper()}\n")
+        with open(f"{d}/{fam}.reads.fa", "w") as fh:
+            for n in names:
+                fh.write(f">{n}\n{reads[n]}\n")
+        res = subprocess.run(["minimap2", "-c", "-x", "splice:hq", "-uf", "-N", "50", "-p", "0.3", "--secondary=yes", "-t", "2",
+                              f"{d}/{fam}.loci.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
+        out[fam] = _paf_dist(res)
+    json.dump(out, open(f"{w}/graph/locus.dist.json", "w"))
+    print(f"[o2graph] {w}/graph/locus.dist.json: {sum(len(v) for v in out.values())} reads", flush=True)
+    return 0
 
 
 def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv"):
@@ -164,13 +233,18 @@ def run_world(w):
     return 0
 
 
-def score_world(w, o2_name="o2.tsv"):
-    """Per family: reads whose source copy is catalogued; assigned and correct, by the current method and the graph."""
+def score_world(w, o2_name="o2.tsv", locus=None):
+    """Per family: reads whose source copy is catalogued; assigned and correct, by the current method and the graph; every
+    assignment made in a family that is not the read's own (wrong family). `locus` (run_seqsupport's {family: {read: {copyN:
+    distance}}}, the read's own family used): also the correct calls the genome separates (`*_correct_seq`)."""
     idx_of = {}
     for r in csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"):
         idx_of[r["tid"]] = (r["family_id"], r["copy_idx"])
-    truth, noncat = {}, {}
+    truth, noncat, fam_of, proj = {}, {}, {}, set()
     for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t"):
+        fam_of[r["read"]] = idx_of[r["copy"]][0] if r["copy"] in idx_of else r["family"]
+        if r.get("isoform", "").startswith("proj:"):      # CROSS: a structure annotated only on a paralog of its copy
+            proj.add(r["read"])
         if r["copy"] in idx_of:
             truth[r["read"]] = idx_of[r["copy"]]
         else:                                             # absent / uncatalogued / novel-exon copy: any assignment is wrong
@@ -190,6 +264,15 @@ def score_world(w, o2_name="o2.tsv"):
         t["cur_correct"] += cc == idx
         t["graph_assigned"] += gc is not None
         t["graph_correct"] += gc == idx
+        if q in proj:
+            t["proj_reads"] += 1
+            for name, call in (("cur", cc), ("graph", gc)):
+                t[f"{name}_assigned_proj"] += call is not None
+                t[f"{name}_correct_proj"] += call == idx
+        if locus is not None and seq_supported(locus.get(fam, {}).get(q, {}), f"copy{idx}"):
+            t["seq_supported_reads"] += 1
+            t["cur_correct_seq"] += cc == idx
+            t["graph_correct_seq"] += gc == idx
         if cc is None:
             t["cur_unassigned"] += 1
             t["graph_correct_where_cur_unassigned"] += gc == idx
@@ -198,6 +281,10 @@ def score_world(w, o2_name="o2.tsv"):
         t["noncat_reads"] += 1
         t["cur_assigned_noncat"] += (q, fam) in cur
         t["graph_assigned_noncat"] += (q, fam) in gr
+    for name, calls in (("cur", cur), ("graph", gr)):
+        for (q, fam) in calls:
+            if q in fam_of and fam_of[q] != fam:
+                per[fam][f"{name}_wrong_family"] += 1
     return {f: dict(v) for f, v in sorted(per.items())}
 
 
@@ -210,16 +297,24 @@ def main(argv):
         if method == "nodes":
             return run_world(argv[1])
         return run_paths(argv[1], margin, reps_only=method == "reps", out_name=f"o2.{method}.m{margin}.tsv")
-    # score OUT.json O2_NAME WORLD ...
+    if argv[0] == "seqsupport":
+        return run_seqsupport(argv[1])
+    # score OUT.json O2_NAME WORLD ...   (+ the sequence-supported counts where WORLD/graph/locus.dist.json exists)
     out_p, o2_name, worlds = argv[1], argv[2], argv[3:]
-    res = {w: score_world(w, o2_name) for w in worlds}
+    res = {}
+    for w in worlds:
+        lp = f"{w}/graph/locus.dist.json"
+        res[w] = score_world(w, o2_name, json.load(open(lp)) if os.path.exists(lp) else None)
     tot = collections.Counter()
     for w, fams in res.items():
         for f, v in fams.items():
             tot.update(v)
-            print(f"{os.path.basename(w)} {f}: reads {v['reads']} | current assigned {v['cur_assigned']} correct {v['cur_correct']} | "
-                  f"graph assigned {v['graph_assigned']} correct {v['graph_correct']} | where current abstains: "
-                  f"{v.get('cur_unassigned', 0)} reads, graph correct {v.get('graph_correct_where_cur_unassigned', 0)}")
+            print(f"{os.path.basename(w)} {f}: reads {v.get('reads', 0)} | current assigned {v.get('cur_assigned', 0)} correct "
+                  f"{v.get('cur_correct', 0)} wrong-family {v.get('cur_wrong_family', 0)} | graph assigned "
+                  f"{v.get('graph_assigned', 0)} correct {v.get('graph_correct', 0)} wrong-family {v.get('graph_wrong_family', 0)} | "
+                  f"where current abstains: {v.get('cur_unassigned', 0)} reads, graph correct "
+                  f"{v.get('graph_correct_where_cur_unassigned', 0)} | genome-separated correct: current "
+                  f"{v.get('cur_correct_seq', '-')} graph {v.get('graph_correct_seq', '-')}")
     print("TOTAL", dict(tot))
     json.dump(dict(worlds=res, total=dict(tot)), open(out_p, "w"), indent=1)
     return 0

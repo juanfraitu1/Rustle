@@ -115,8 +115,17 @@ def test_minus_strand_loci_are_oriented_to_their_transcript():
 
 
 def test_s4_clusters_only_reads_no_catalogued_copy_explains():
-    assert D.restrict(["r1", "r2", "r3", "r4"], {"r2", "r4", "r9"}) == ["r2", "r4"]
-    assert D.restrict(["r1", "r2"], None) == []                      # no path-O2 table: the arm has no reads
+    keep = {("r2", "A"), ("r4", "A"), ("r9", "A")}
+    assert D.restrict(["r1", "r2", "r3", "r4"], "A", keep) == ["r2", "r4"]
+    assert D.restrict(["r1", "r2"], "A", None) == []                 # no path-O2 table: the arm has no reads
+
+
+def test_s4_keys_unexplained_reads_by_family():
+    # r2 is unexplained only in sister family B, where it was hosted by mistake; path O2 explains it in its own family A,
+    # so it must not enter A's S4 pool
+    keep = {("r2", "B"), ("r4", "A")}
+    assert D.restrict(["r1", "r2", "r4"], "A", keep) == ["r4"]
+    assert D.restrict(["r1", "r2", "r4"], "B", keep) == ["r2"]
 
 
 def test_each_call_lands_in_its_arms():
