@@ -116,7 +116,8 @@ Added after the runs. Nothing above this heading changes once a statistic has be
 
 ## Results (2026-10-15)
 
-Run with the frozen binary (`7c9d2e8b`) and `bench/o3_realdata/` on this branch. Outputs:
+Run with the frozen binary `/mnt/linuxdisk/tmp/o3_fb_build/copy_assign.fb`, built from the Rust source committed as
+`7c9d2e8b` (sha256 `b0eced3a99d93d4f...`), and `bench/o3_realdata/` on this branch. Outputs:
 `/mnt/linuxdisk/tmp/o3_realdata/heldout3/`, plus `*_fb` and `score_fb.json` in `heldout2/` and `dev/`.
 
 **Build.**
@@ -130,7 +131,8 @@ Run with the frozen binary (`7c9d2e8b`) and `bench/o3_realdata/` on this branch.
 - `family_best.py`, an independent Python implementation, keeps exactly the pairs the Rust runs keep:
   - heldout3: 23,180 / 25,537 (added back) and 15,069 / 18,349 (removed);
   - heldout2: 26,793 / 31,798 (added back);
-  - dev: 58,352 / 59,105 (added back).
+  - dev: 58,352 / 59,105 (added back);
+  - the removed arms of heldout2 (8,649 / 12,135) and dev (46,347 / 49,090), so all six arms match.
 - No clustered read is outside its kept set.
 - The prototype re-clusters every remaining `copy` cluster at Jaccard 1.0.
 
@@ -144,7 +146,18 @@ Run with the frozen binary (`7c9d2e8b`) and `bench/o3_realdata/` on this branch.
 | cleared once added back | 5 of 7 | 4 of 5 | | |
 
 **Lost detections.** MCL117 (recall 0.879 -> 0.515) and MCL31 (0.841 -> 0.305). Once their copy is masked, their reads'
-best alignment lies outside the family.
+best alignment lies at a locus outside the catalog:
+- every dropped masked-copy read of MCL117 (171) and MCL31 (48);
+- 94 of heldout2 MCL126's 97 (the other 3 in MCL43 / MCL296).
+So it is not a related family that holds them.
+
+**Reported items (pre-registered).**
+- The masked copy's placed reads kept by the filter: 2,428 / 3,391 (heldout3), 840 / 1,107 (heldout2), 5,252 / 7,286
+  (dev).
+- `copy` clusters per family, heldout3 added back, old -> new:
+  - gone: MCL37 10 -> 0, MCL51 2 -> 0, MCL53 2 -> 0, MCL95 1 -> 0;
+  - reduced: MCL32 9 -> 1, MCL63 2 -> 1;
+  - unchanged: MCL45 5, MCL79 2, MCL125 1, MCL31 1.
 
 | development | heldout2 (60) old -> new | dev (53) old -> new |
 |---|---|---|
@@ -159,8 +172,12 @@ best alignment lies outside the family.
 - S2 fails: 2 of 7 detections are lost.
 - G passes.
 
-The filter removes every cluster made of another family's reads (0 of the 11 left, against 35 of 57 in heldout2 under the old
-rule). But it costs detections: when a copy is missing, its reads' best alignment often lies in another family.
+On heldout3 the filter removes every cluster made of another family's reads (0 of the 11 left). But it costs detections: when a
+copy is missing, its reads' best alignment often lies at a locus outside the catalog, an uncatalogued paralog.
+
+The filter has a design limit. On heldout2, 3 new-rule clusters (MCL20 and MCL33, 2,894 reads) are still mostly other
+families' reads. MCL20, MCL33 and MCL134 all have copies on the mitochondrion (`NC_011120.1`), so one best alignment there
+counts as being in all three families.
 
 **Known before running, corrected.** `primary_local` is always 0 for families assigned through `copy_assign`'s
 cross-chromosome pass:
@@ -195,13 +212,22 @@ three references for heldout3's 136 unexplained clusters (added back, old rule):
 | G2, G1 plus every locus where the cluster's reads align | 4 |
 
 G1's one explanation is MCL0's own copy 3, an isoform its representative lacks, in an `allele_or_copy` cluster (est_div
-0.0005). G2 adds three clusters explained by another family's copy: MCL51 twice by MCL107, and MCL95 by MCL23. The exact
-rule needs one locus to carry all of a cluster's
-alt sites with no conflict: 20-338 per `copy` cluster, over 100 in 27 of 35. Reads 0.1% away from their own source locus almost always miss somewhere. So the
-representative is not the bottleneck; the rule's exactness is.
+0.0005). G2 adds three clusters explained by another family's copy: MCL51 twice by MCL107, and MCL95 by MCL23.
+
+**What this proxy can and cannot say** (corrected after the branch review).
+- G0, G1 and G2 all test one object: the cluster's consensus, built from its reads realigned to the HOST window. For reads
+  from another locus, that consensus can sit far from where the reads really align. MCL31's cluster 0/1: the reads'
+  median `de` at their own primary is 0.0007, yet the consensus is 0.088 from the host (est_div 0.053).
+- In 28 of the 35 `copy` clusters the reads' median `de` is <= delta. Only 4 of those 28 have any G2 locus within delta of
+  the consensus; the median distance is 0.13.
+- So the proxy cannot separate the exact rule's strictness (one locus must carry all 20-338 alt sites) from the host-window
+  realignment. Either can keep a cluster unexplained.
+- What it does show: adding isoform content to this test explains almost nothing.
+- The tolerant rule below works because it skips the host-window consensus and uses each read's own genome alignment.
 
 **A tolerant rule** (`tolerant.py`). An unexplained cluster counts only when its reads' median best-alignment divergence
-(minimap2 `de` at the primary, i.e. to the nearest locus anywhere in the genome) exceeds delta:
+(minimap2 `de` at the primary, the aligner's best-scoring alignment anywhere in the genome; not necessarily the record with
+the lowest `de`) exceeds delta:
 
 | old-rule clusters, as run -> tolerant | heldout3 (40) | heldout2 (60) | dev (53) |
 |---|---|---|---|
@@ -220,7 +246,19 @@ representative is not the bottleneck; the rule's exactness is.
 **For a variation graph**, this says:
 - The graph is the natural structure for the tolerant rule: a cluster is a missing copy when its consensus is more than delta
   from every path.
-- Its content gain alone is small (G1 explains 1 of 136). The gain comes from the distance rule, which the aligner's best
-  alignment already measures genome-wide.
+- In this proxy its content gain alone is small (G1 explains 1 of 136, with the caveat above). The gain comes from judging
+  reads by their own best alignment, which the aligner already gives genome-wide.
 - What a graph would add: both haplotypes, so allelic reads are explained; related families in one structure; and a clean
   path definition for the thesis.
+
+### Known minor issues (from the branch review; not fixed, no effect on these data)
+
+- With no AS on any record, Rust's `BestAlignments` falls back to the LAST primary record, Python's `family_best.py` to
+  the first.
+- Rust scores a mapped record with an empty CIGAR, which Python skips.
+- minimap2 output triggers neither.
+- `score_fb.py` counts `copy_clusters` over every family in the run, not only the masked families. They are the same
+  families on all three substrates.
+- `genomic_explain.py`'s `g2_families` column names the NEAREST locus's families, which can differ from the locus that
+  explains the cluster: MCL51's cluster 0/0 is explained by an MCL107 copy, while its nearest locus is outside the
+  catalog.

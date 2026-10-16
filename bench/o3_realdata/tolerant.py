@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A tolerant reading of O3's "nothing in the genome explains it" (post hoc, descriptive; docs/PREREG_o3_family_best_2026-10-15.md,
 Results): an `unexplained` cluster counts only when its reads' median best-alignment divergence (minimap2 `de` on their primary
-record, i.e. to the nearest locus the aligner found anywhere in the genome) exceeds delta.
+record: the aligner's best-scoring alignment anywhere in the genome, not necessarily its lowest-`de` record) exceeds delta.
 
     tolerant.py added-back PREFIX BAM [LABELS]   `copy` clusters (est_div > delta) and their families: as run / tolerant
     tolerant.py removed PREFIX BAM LABELS        eligible masked copies recovered: as run / tolerant (the recovering

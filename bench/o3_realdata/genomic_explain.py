@@ -14,7 +14,8 @@ asked against three reference sets:
   G2  G1 plus every genomic locus the cluster's reads align to in BAM (primary or secondary records, merged within 5 kb, +- PAD):
       anything in the genome the aligner offers for these reads
 Genomic loci are aligned to the host locus with `minimap2 -c --cs=long -x asm20` (the union of their primary records).
-OUT.tsv per cluster: the explanation found at each level (`-` = none) and, for G2, the explaining locus's catalog families.
+OUT.tsv per cluster: the explanation found at each level (`-` = none); d_host and, at G1 / G2, the NEAREST locus by
+consensus divergence (g2_families = the nearest locus's catalog families, which need not be the explaining locus).
 """
 import collections
 import csv
