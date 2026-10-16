@@ -15,8 +15,13 @@ Per family (its curated copies, isoforms.json):
                 MIN_MAPQ, the user's suggestion: no fragments of ambiguous placement) that this copy overlaps most and that lie
                 within its span (+- SPAN_SLACK), in >= MIN_CHAIN reads (ends: the reads' outermost ends); a new copy: its observed
                 chains only
+  one family    a new locus seeded in several families (adjacent genes: WASH.7 lies 1 kb from DDX11L.6, and WASH and DDX11L copies
+                are neighbours in every subtelomere, so WASH.7's reads are DDX11L family reads too) stays only in the family whose
+                curated copies its reads align to most (aligned bases, every alignment of every read that seeded it, unpadded copy
+                spans); a tie seeds it in none
 Output per family: copies [{idx, contig, start, end, strand, rep, isoforms, origin: curated | new, support}], dropped [curated
-idx], family_reads [read names]. Seeded copies keep curated idx; new ones are numbered after them.
+idx], family_reads [read names]; a new copy also lists the reads that seeded it. Seeded copies keep curated idx; new ones are
+numbered after them.
 """
 import collections
 import json
@@ -151,9 +156,51 @@ def seed_family(cps, prim, all_loci, min_support=MIN_SUPPORT, min_chain=MIN_CHAI
         iso = {f"obs{k}": [list(x) for x in ex] for k, (ex, n) in enumerate(chains)}
         copies.append(dict(idx=nxt, contig=g["chrom"], start=min(x[0] for v in iso.values() for x in v),
                            end=max(x[1] for v in iso.values() for x in v), strand=g["strand"], rep="obs0", isoforms=iso,
-                           origin="new", support=g["n_reads"]))
+                           origin="new", support=g["n_reads"], reads=sorted({a["read"] for a in g["alns"]})))
         nxt += 1
     return copies, sorted(set(loci) - keep)
+
+
+def affinity(alns, cps):
+    """{read: aligned bases of its alignments on the family's curated copies}: unpadded spans, merged so a base counts once."""
+    spans = collections.defaultdict(list)
+    for c in sorted(cps, key=lambda c: (c["contig"], c["start"])):
+        sp = spans[c["contig"]]
+        if sp and c["start"] <= sp[-1][1]:
+            sp[-1][1] = max(sp[-1][1], c["end"])
+        else:
+            sp.append([c["start"], c["end"]])
+    out = collections.Counter()
+    for a in alns:
+        for cs, ce in spans.get(a["chrom"], ()):
+            out[a["read"]] += sum(max(0, min(e, ce) - max(s, cs)) for s, e in a["blocks"])
+    return {q: n for q, n in out.items() if n > 0}
+
+
+def one_family(seeded, aff):
+    """A new locus seeded in several families (same contig, overlapping spans) stays only in the family whose curated copies
+    the reads that seeded it align to most (aff: {family: affinity()}); a tie, also no alignment to any family's copies, seeds
+    it in none. Curated copies and loci seeded in one family only are left alone."""
+    new = sorted(((c["contig"], c["start"], c["end"], f, c["idx"], tuple(c["reads"])) for f, v in seeded.items()
+                  for c in v["copies"] if c["origin"] == "new"))
+    groups, end = [], None
+    for x in new:
+        if groups and x[0] == groups[-1][-1][0] and x[1] < end:
+            groups[-1].append(x)
+            end = max(end, x[2])
+        else:
+            groups.append([x])
+            end = x[2]
+    drop = set()
+    for g in groups:
+        fams = sorted({x[3] for x in g})
+        if len(fams) < 2:
+            continue
+        reads = set().union(*(x[5] for x in g))
+        score = {f: sum(aff.get(f, {}).get(q, 0) for q in reads) for f in fams}
+        top = [f for f in fams if score[f] == max(score.values())]
+        drop |= {(x[3], x[4]) for x in g if len(top) > 1 or x[3] != top[0]}
+    return {f: dict(v, copies=[c for c in v["copies"] if (f, c["idx"]) not in drop]) for f, v in seeded.items()}
 
 
 def seed_world(w):
@@ -161,11 +208,18 @@ def seed_world(w):
     iso = json.load(open(f"{w}/isoforms.json"))
     all_loci = {(f, c["idx"]): (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for f, cps in iso.items() for c in cps}
     fam_reads = collections.defaultdict(set)
+    seen, aff = collections.defaultdict(set), collections.defaultdict(collections.Counter)
     with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
         for (f, _), (ch, s, e) in all_loci.items():
             for rec in bam.fetch(ch, s, e):
                 if not rec.is_unmapped:
                     fam_reads[f].add(rec.query_name)
+                    key = (rec.query_name, ch, rec.reference_start, rec.flag)
+                    if key not in seen[f]:                            # an alignment in two padded windows counts once
+                        seen[f].add(key)
+                        aln = dict(read=rec.query_name, chrom=ch,
+                                   blocks=exons_from_cigartuples(rec.reference_start, rec.cigartuples))
+                        aff[f].update(affinity([aln], iso[f]))
     want = set().union(*fam_reads.values()) if fam_reads else set()
     prim = {}
     with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
@@ -179,6 +233,7 @@ def seed_world(w):
         p = [prim[q] for q in sorted(fam_reads[f]) if q in prim]
         copies, dropped = seed_family(cps, p, all_loci)
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
+    out = one_family(out, aff)
     json.dump(out, open(f"{w}/graph/seeded.json", "w"))
     n_new = sum(1 for v in out.values() for c in v["copies"] if c["origin"] == "new")
     n_drop = sum(len(v["dropped"]) for v in out.values())

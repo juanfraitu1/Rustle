@@ -101,3 +101,52 @@ def test_a_new_locus_counts_any_unique_placement_but_a_copy_s_structures_need_ne
     mid = [dict(_aln(f"m{i}", "c1", 1000, [(0, 300), (600, 1200)]), mapq=30) for i in range(5)]
     copies, _ = S.seed_family(cps, mid, {("F", 0): ("c1", 0, 4000)})
     assert list(copies[0]["isoforms"]) == ["t"]
+
+
+def test_affinity_counts_aligned_bases_on_the_family_s_copies_not_on_their_padded_windows():
+    cps = [dict(idx=0, contig="c1", start=1000, end=3000), dict(idx=1, contig="c2", start=500, end=900)]
+    alns = [_aln("r", "c1", 1000, [(0, 300), (800, 1200)]),        # 300 + 400 aligned bases on copy 0 (the intron is no base)
+            _aln("r", "c2", 100, [(0, 450)]),                       # 50 bases on copy 1 (500-550)
+            _aln("s", "c1", 3005, [(0, 500)])]                      # inside copy 0's padded window only
+    assert S.affinity(alns, cps) == {"r": 750}
+
+
+def _new(idx, contig, start, end, reads):
+    return dict(idx=idx, contig=contig, start=start, end=end, strand="+", rep="obs0", isoforms={"obs0": [[start, end]]},
+                origin="new", support=len(reads), reads=sorted(reads))
+
+
+def test_a_new_locus_seeded_in_two_families_stays_only_in_the_family_its_reads_align_to_most():
+    # WASH.7 (round 7): an uncatalogued WASH copy 1 kb from a DDX11L copy; its reads also align near DDX11L copies
+    reads = [f"w{i}" for i in range(6)]
+    seeded = {"WASH": dict(copies=[_new(9, "chr3", 100, 900, reads)], dropped=[]),
+              "DDX11L": dict(copies=[_new(10, "chr3", 100, 900, reads)], dropped=[])}
+    aff = {"WASH": {q: 2000 for q in reads}, "DDX11L": {q: 40 for q in reads}}
+    out = S.one_family(seeded, aff)
+    assert [c["idx"] for c in out["WASH"]["copies"]] == [9]
+    assert out["DDX11L"]["copies"] == []
+
+
+def test_a_new_locus_its_reads_tie_between_families_is_seeded_in_none():
+    reads = ["a", "b", "c", "d", "e"]
+    seeded = {"F": dict(copies=[_new(3, "c1", 100, 900, reads)], dropped=[]),
+              "G": dict(copies=[_new(4, "c1", 150, 950, reads)], dropped=[])}
+    out = S.one_family(seeded, {"F": {}, "G": {}})
+    assert out["F"]["copies"] == [] and out["G"]["copies"] == []
+
+
+def test_a_new_locus_seeded_in_one_family_and_curated_copies_are_left_alone():
+    cur = dict(idx=0, contig="c1", start=100, end=900, strand="+", rep="t", isoforms={"t": [[100, 900]]}, origin="curated",
+               support=9)
+    seeded = {"F": dict(copies=[cur, _new(1, "c5", 100, 900, ["a"])], dropped=[]),
+              "G": dict(copies=[dict(cur, idx=0)], dropped=[])}
+    out = S.one_family(seeded, {"F": {}, "G": {}})
+    assert [c["idx"] for c in out["F"]["copies"]] == [0, 1] and [c["idx"] for c in out["G"]["copies"]] == [0]
+
+
+def test_a_new_copy_records_the_reads_that_seeded_it():
+    cps = [dict(idx=0, contig="c1", start=1000, end=3000, strand="+", rep="t", isoforms={"t": [[1000, 1300], [1800, 2200]]})]
+    prim = [_aln(f"n{i}", "c2", 5000, [(0, 300), (900, 1300)]) for i in range(5)]
+    copies, _ = S.seed_family(cps, prim, {("F", 0): ("c1", 0, 4000)})
+    new = [c for c in copies if c["origin"] == "new"]
+    assert len(new) == 1 and new[0]["reads"] == [f"n{i}" for i in range(5)]
