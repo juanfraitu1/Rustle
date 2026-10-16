@@ -131,3 +131,86 @@ fragments and allele background are not modelled.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (held out, 2026-10-15)
+
+Run: code and prereg `f788b838` (the detector as of `b0a3e59f`), the frozen copy_assign binary, seed 51. Outputs in
+`/mnt/linuxdisk/tmp/o3_graph/real/heldout4/` (`o2r4_*.json`, `o3_score.json`).
+
+**O2** (correct / assigned; there were no wrong-family calls):
+
+| world | reads | current | padded union O2 | A1 ratio | locus O2 | path O2 | non-catalogued placed: current / union / locus |
+|---|---|---|---|---|---|---|---|
+| INTACT | 2,047 | 1,855 / 1,855 | 1,850 / 1,850 | 0.997 | 1,736 | 1,850 / 1,850 | - |
+| CROSS (liftover) | 2,547 | 2,325 / 2,325 | 2,252 / 2,252 | **0.969** | 2,207 | 2,100 / 2,115 | - |
+| OUTSIDE | 1,566 | 1,434 / 1,434 | 1,431 / 1,431 | 0.998 | 1,376 | 1,431 / 1,431 | 60 / 60 / 60 |
+| REMOVED | 1,566 | 1,437 / 1,437 | 1,431 / 1,431 | 0.996 | 1,376 | 1,431 / 1,431 | 121 / 60 / 60 |
+| BRANCH | 2,047 | 1,855 / 1,855 | 1,850 / 1,850 | 0.997 | 1,736 | 1,850 / 1,850 | 324 / 28 / 28 |
+| pooled | | 8,906 | 8,814 (x0.990) | | 8,431 | | 505 / 148 / 148 |
+
+CROSS's 500 paralog-structure reads:
+- Padded union O2 gets 402 / 402 right and abstains on the rest: VCX 42, CSAG 34, NBPF 9 and CYP2A 1 `unexplained`, PRAMEF 12
+  `thin`.
+- The current O2 gets 470 / 470.
+- Path O2 gets 250 / 265.
+- The liftover structures that union does not thread cost it 68 reads the current O2 places correctly.
+
+**O3** (8 families per world; H with the post-review detector):
+
+| | CUR | S23 | S123m | **H** |
+|---|---|---|---|---|
+| BRANCH detected | 1 | 7 | 7 | **7** |
+| INTACT + OUTSIDE + CROSS false-call families (of 24) | 5 | 0 | 0 | **0** |
+| REMOVED detected (6 detectable) | 5 | 5 | 6 | **6** |
+| REMOVED + BRANCH false-call families | 0 | 0 | 0 | **0** |
+
+- **Detectable removed copies** (median `de` on the masked genome): NBPF 0.096, CYP2A 0.036, GTF2I 0.022, PRAMEF 0.021,
+  TRIM 0.022 and VCX 0.015. CSAG (0.0039) and DEFB10 (0.0) are within delta.
+- **PRAMEF** is detected only by the arms with the mosaic rule (S123m, H).
+- **The BRANCH miss** (every graph arm) is CYP2A: 44 source reads, one call short of the recovery rule.
+- **G** has no union O2 table in this round (round 4 ran only padded union O2), so its PSV calls are void here and it is not
+  reported.
+- **Hn**, before the genome check, has false calls in CROSS (NBPF, VCX) and OUTSIDE (CYP2A, GTF2I, NBPF, PRAMEF, TRIM, VCX).
+  The genome check removes all of them.
+
+| bar | value | |
+|---|---|---|
+| A1 | lowest world 0.969 (CROSS) | **fail** |
+| A2 | 1.0 in every world | pass |
+| A3 | REMOVED 60 < 121, BRANCH 28 < 324; pooled 148 / 505 = 0.29 | pass |
+| A4 | 8,814 vs 8,431: x1.045 | pass |
+| B1 | 7 / 8 | pass |
+| B2 | 0 of 24 | pass |
+| B3 | 6 of 6 detectable (1.0), including CUR's 5 | pass |
+| B4 | H 13 vs S23 12, false-call families 0 = 0 | pass |
+
+**Development re-runs finished after the commit** (H, post-review detector), as the prereg said they would be reported:
+- dev: BRANCH 8 / 8, REMOVED 4 / 4, no false call;
+- dev-2: BRANCH 8 / 8, REMOVED 2 / 2, but a false call in NPIPB in INTACT, CROSS and OUTSIDE (3 of 24) and in REMOVED. In each,
+  the call is a pure cluster of NPIPA.5's reads placed on the sister family NPIPB. The mosaic rule calls it, since NPIPA.5 is
+  no NPIPB copy. The genome check keeps it because those reads' median `de` is 0.0097, just above delta (0.00958).
+
+So the mosaic rule's false-call guard is the genome check alone, and it fails when another family's reads land on a family
+and sit at delta. Round 4's held-out set had no sister families.
+
+### Verdict (2026-10-15)
+
+**O3: claimed (reading 2; B1-B4 pass).** "On simulated reads of handpicked real families, graph O3 that clusters a family's
+O2-unexplained reads together, with the mosaic rule:
+- detects novel-exon absent copies (7 of 8; the current method 1);
+- detects >= 75% of detectable removed copies (6 of 6; the current method 5);
+- makes no false call over intact, uncatalogued-paralog and paralog-annotation families (0 of 24; the current method 5)."
+
+Scope and caveats:
+- The removed-copy gain over the current method is the mosaic rule (PRAMEF). Here pooling detected nothing per-host
+  clustering with the mosaic rule did not (S123m = H).
+- Development set 2 shows the failure mode above: sister-family reads at delta.
+- This is the first O3 claim of four rounds; rounds 2 and 3 failed their removed-copy bar with the code as then frozen.
+
+**O2: not claimed (A1 fails in CROSS, 0.969 vs 0.98).** Padded union O2 kept >= 99.6% of the current O2's correct calls in the
+four worlds where every expressed structure is threaded, at precision 1.0. It placed 71% fewer reads of non-catalogued copies
+in REMOVED and BRANCH, and kept 4.5% more correct calls than locus O2. But where copies express paralog structures it does
+not thread, it abstains on reads the current O2 places correctly (68 of 500 in CROSS). Across four fresh sets, graph O2
+never gained correct assignments that held up: the gains were annotation-decided or absent.
+
+Scope: simulated reads (curated CAT isoforms, HiFi errors) on the real CHM13 genome.
