@@ -122,3 +122,90 @@ fragments and allele background are not modelled.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (held out, 2026-10-15)
+
+Run: code `c9a02337`, plus `ea2f4197` (below), the frozen copy_assign binary, seed 41. Outputs in
+`/mnt/linuxdisk/tmp/o3_graph/real/heldout3/`.
+
+**One change during the run, disclosed.** `vg msga` (v1.73) aborted (signal 6) on UGT2B's three loci, which the branch calls
+need. The detector now retries a crashing `vg msga` with `-a` (build in FASTA order). That is the only option that built the
+graph, and it is used only after a crash (`ea2f4197`, test). No other family, development or held out, crashed. The
+detector was then re-run on INTACT, and the other four worlds ran with it.
+
+**O2** (correct / assigned; there were no wrong-family calls):
+
+| world | reads | current | **padded union O2** | union O2 (round 2) | path O2 | locus O2 |
+|---|---|---|---|---|---|---|
+| INTACT | 2,167 | 1,921 / 1,921 | 1,920 / 1,920 | 1,941 / 1,941 | 2,044 / 2,044 | 1,827 / 1,827 |
+| CROSS (liftover) | 2,473 | 2,143 / 2,143 | 2,107 / 2,107 | 2,116 / 2,119 | 2,046 / 2,064 | 2,046 / 2,046 |
+| OUTSIDE | 1,685 | 1,621 / 1,621 | 1,619 / 1,619 | 1,619 / 1,619 | 1,619 / 1,619 | 1,517 / 1,517 |
+| REMOVED | 1,685 | 1,624 / 1,624 | 1,619 / 1,619 | 1,619 / 1,619 | 1,619 / 1,619 | 1,517 / 1,517 |
+| BRANCH | 2,167 | 1,921 / 1,921 | 1,920 / 1,920 | 1,941 / 1,941 | 2,044 / 2,044 | 1,827 / 1,827 |
+| **pooled** | 10,177 | 9,230 / 9,230 | **9,185 / 9,185 (x0.995)** | 9,236 / 9,239 | 9,372 / 9,390 | 8,734 / 8,734 |
+
+- CROSS's paralog-structure reads (306): padded union O2 187 / 187, current 222 / 222, path O2 2 / 20, union 175 / 178.
+- Reads of non-catalogued copies assigned, pooled: padded union O2 375, current 891.
+- Counting those as the wrong calls they are, precision is 0.961 for padded union O2 and 0.912 for the current O2 (round 2's
+  set: union O2 0.969, current 0.917).
+- **No headroom.** 9,242 reads are separable by the genome at all (`seqsupport`), and the current O2 gets 9,230 of them right.
+  - In CYP4F, KIR, OPN1 and UGT2B every method gets every read.
+  - In MAGEA and SSX every method leaves about 40% unassigned (copies identical over the reads: MAGEA2 / MAGEA2B, SSX4 /
+    SSX4B).
+  - Padded union O2 loses 45 reads, called `unexplained`: 20 MAGEA and 15 SSX paralog-structure reads in CROSS, whose
+    lifted structure no path matches within delta, plus SPANX and CGB reads.
+- Gain split: 9 PSV-separated, 3 structure-separated.
+
+**O3** (8 families per world):
+
+| | CUR | S23 | S123m | G | **H** |
+|---|---|---|---|---|---|
+| BRANCH detected | 0 | 8 | 8 | 8 | **8** |
+| INTACT + OUTSIDE + CROSS false-call families (of 24) | 2 | 0 | 0 | 0 | **0** |
+| REMOVED detected (4 detectable) | 1 | 1 | 1 | 1 | **2** |
+| REMOVED + BRANCH false-call families | 0 | 0 | 0 | 0 | **0** |
+
+The removed copies' median `de` on the masked genome:
+- detectable: UGT2B 0.074, CYP4F 0.047, KIR 0.024, CGB 0.0101;
+- within delta: OPN1 0.0052, SPANX 0.0055, SSX 0.0016, MAGEA 0.0015.
+
+H detects UGT2B, as every arm does, and CGB, which only H detects: copy_assign spreads CGB's 60 reads over two hosts (48 +
+12), and the pool calls them once.
+
+| bar | value | |
+|---|---|---|
+| V1 | precision 1.0 in every world | pass |
+| V2 | 9,185 vs 9,230: x0.995 | **fail** |
+| V3 | below the current O2 in every world (by 1-36 reads) | **fail** |
+| V4 | 187 / 187 | pass |
+| V5 | 375 vs 891 | pass |
+| H1 | 8 / 8 | pass |
+| H2 | 0 of 24 | pass |
+| H3 | 2 of 4 detectable (0.5); CUR's one (UGT2B) detected | **fail** |
+| H4 | H 10 vs S23 9, false-call families 0 = 0 | pass (H detects more: the O2-informed pooling adds detections) |
+
+**What the misses show (post hoc).**
+- KIR: copy_assign hosts all 60 reads on one copy, and union O2 calls all 60 `unexplained`. Yet the host cluster counts as
+  explained: some catalogued copy carries every consensus allele at the cluster's sites. The `explains` rule checks only the
+  sites where >= 3 reads differ from the host, so it misses the copy's other differences from the cluster (the reads are
+  2.4% from the genome). Requiring the nearest single copy within delta before "explained" would call it.
+- CYP4F (2 copies): no read of the removed copy is hosted on the family, so no arm sees it.
+
+### Verdict (2026-10-15)
+
+**O2: not claimed (V2, V3 fail; V1, V4, V5 pass).** On this set the current O2 already reaches the genome-separable ceiling,
+and padded union O2 assigns 0.5% fewer reads correctly. What holds on both fresh sets (rounds 2 and 3):
+- graph O2 never assigns a read to a wrong copy or a wrong family (precision 1.0 / 0.9993);
+- it stays right when isoforms are annotated on another paralog (187 / 187; path O2 2 / 20);
+- it places 58-63% fewer reads of non-catalogued copies (375 vs 891, 223 vs 608), so its precision counting those is
+  0.96-0.97 against 0.91-0.92.
+
+Its gain in correct assignments is family-dependent: +6 to +10% where the current O2 leaves separable reads unassigned
+(development sets), about 0 where it does not (this set).
+
+**O3: claimed without the removed-copy clause (H1, H2, H4 pass; H3 fails).** Graph O3 replicates on its third fresh family
+set:
+- novel-exon absent copies 8 / 8 (current method 0);
+- no false call over 24 families (current method 2);
+- pooling the O2-unexplained reads across the family adds a removed-copy detection (CGB) that no per-host arm makes;
+- it misses KIR (the `explains` rule, above) and CYP4F (no hosted reads).
