@@ -1,9 +1,19 @@
+import importlib.util
 import os
-import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-import detect as D  # noqa: E402
+
+
+def _load(name):
+    """By file path under a unique name: bench has a `{name}.py` in many directories (score.py in 13), and a plain import would
+    shadow another directory's module in a combined pytest run."""
+    spec = importlib.util.spec_from_file_location(f"o3_graph_{name}", os.path.join(HERE, f"{name}.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+D = _load("detect")
 
 REF = "ACGTACGTAC"
 SITES = {2: "T", 5: "G"}

@@ -1,9 +1,19 @@
+import importlib.util
 import os
-import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-import world as W  # noqa: E402
+
+
+def _load(name):
+    """By file path under a unique name: bench has a `{name}.py` in many directories (score.py in 13), and a plain import would
+    shadow another directory's module in a combined pytest run."""
+    spec = importlib.util.spec_from_file_location(f"o3_graph_{name}", os.path.join(HERE, f"{name}.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+W = _load("world")
 
 TPL = dict(gene="G1", chrom="chr20", strand="+", canonical="tx0", n_exons=6, cassettes=[3],
            isoforms=[dict(tid="t1", skip=[3]), dict(tid="t2", skip=[2, 3]), dict(tid="t3", skip=[6]), dict(tid="t4", skip=[5]),
