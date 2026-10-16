@@ -150,7 +150,9 @@ Each step is needed for its case: step 1 for TWIN_ALT, step 2 for BRANCH, step 3
 - These are famsim reads from curated isoforms in small worlds. Step 3's "genome" is the world's genome, not a whole
   genome.
 - Real data's other failure modes are not modelled: reads from loci outside the window, other species, fragmented clusters.
-  The 1% absent copies sit at delta (0.958%), so about a third of them are labelled allele-level by every arm.
+  The 1% absent copies sit at delta (0.958%), and every arm misses the same 4 of 12:
+  - three are pure clusters labelled allele-level (est_div 0.0069-0.0080);
+  - the fourth (PPDPF) is a `copy` cluster holding 47 of the copy's 61 reads, under the 0.8 recall bar.
 - Real data is next. On the two-locus spike the steps' real-data counterparts were visible:
   - MCL117's representatives hid every exonic PSV, as in TWIN_ALT;
   - most false `copy` clusters were other loci's reads, as in OUTSIDE.
