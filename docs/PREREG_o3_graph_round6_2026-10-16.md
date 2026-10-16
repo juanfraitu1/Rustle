@@ -142,7 +142,11 @@ counts in every world:
 - INTACT 2,104 vs 1,983 correct (no wrong);
 - REMOVED and OUTSIDE 1,790 vs 1,683 correct, and 118 vs 157 wrong.
 
-It did the same, without alleles, on round 2's and round 4's sets and with alleles on round 5's development worlds. It did not
-on round 3's set (no headroom) or round 5's (near-identical uncatalogued copies). That is a candidate O2 claim for its own
+Elsewhere, from the round-6 development tables (corrected after a first draft overstated it):
+- it dominates in every world on the original development set and on round 2's set;
+- on round 1's set it dominates except in OUTSIDE (87 vs 81 wrong);
+- on round 3's and round 4's sets it is within 0.4% of the current O2's correct calls with fewer or equal wrong ones;
+- on round 5's set, with or without alleles, it places more wrong reads (its uncatalogued copies are near-identical to
+  catalogued ones). That is a candidate O2 claim for its own
 pre-registration on a new family set: "padded union O2 dominates the current O2". It was not this round's test, so it is not
 claimed here.
