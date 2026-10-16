@@ -150,3 +150,24 @@ def test_a_new_copy_records_the_reads_that_seeded_it():
     copies, _ = S.seed_family(cps, prim, {("F", 0): ("c1", 0, 4000)})
     new = [c for c in copies if c["origin"] == "new"]
     assert len(new) == 1 and new[0]["reads"] == [f"n{i}" for i in range(5)]
+
+
+def test_seed_world_runs_on_a_fresh_world_with_no_graph_directory(tmp_path):
+    import json
+    import pysam
+    w = tmp_path / "W"
+    w.mkdir()
+    json.dump({"F": [dict(idx=0, contig="c1", start=1000, end=3000, strand="+", rep="t",
+                          isoforms={"t": [[1000, 1300], [1800, 2200]]})]}, open(w / "isoforms.json", "w"))
+    hdr = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "c1", "LN": 10000}]}
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for i in range(6):
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.reference_id, a.reference_start, a.mapping_quality = f"r{i}", 0, 1000, 60
+            a.cigartuples = [(0, 300), (3, 500), (0, 400)]
+            a.query_sequence, a.flag = "A" * 700, 0
+            out.write(a)
+    pysam.index(str(w / "E0.bam"))
+    assert S.seed_world(str(w)) == 0
+    sj = json.load(open(w / "graph" / "seeded.json"))
+    assert [c["idx"] for c in sj["F"]["copies"]] == [0] and len(sj["F"]["family_reads"]) == 6

@@ -25,6 +25,7 @@ numbered after them.
 """
 import collections
 import json
+import os
 import sys
 
 PAD, MIN_SUPPORT, MIN_CHAIN, JOIN, CHAIN_TOL, MIN_MAPQ, MIN_MAPQ_NEW, SPAN_SLACK = 1000, 5, 3, 1000, 10, 50, 1, 100
@@ -234,6 +235,7 @@ def seed_world(w):
         copies, dropped = seed_family(cps, p, all_loci)
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
     out = one_family(out, aff)
+    os.makedirs(f"{w}/graph", exist_ok=True)                      # a fresh world: o1seed runs first (round 8)
     json.dump(out, open(f"{w}/graph/seeded.json", "w"))
     n_new = sum(1 for v in out.values() for c in v["copies"] if c["origin"] == "new")
     n_drop = sum(len(v["dropped"]) for v in out.values())
