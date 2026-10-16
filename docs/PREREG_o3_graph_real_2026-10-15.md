@@ -210,3 +210,49 @@ copy-private alleles, would call it. That is a method change for a new prereg on
 - simulated reads (curated CAT isoforms, HiFi errors) on the real CHM13 genome;
 - real data's other species, fragments and allele background are not modelled;
 - the special copies are one per family (seeded).
+
+## Amendment 1 (2026-10-15): a catalog that is not copy-specific (the CROSS world)
+
+Written after the whole-branch review and before the held-out CROSS world was built. Code: `9b6b98df`.
+
+**Why.** The review found that much of path O2's gain is decided by the annotation rather than the sequence (review C1;
+the corrections are below, under "Review corrections"). Every read here is simulated from one of its copy's own curated
+isoforms, and each copy's catalog entry lists exactly those. Real annotation is not that copy-specific: an isoform
+annotated on one paralog can be expressed by another. Then path O2 meets a read whose exon structure only a paralog's
+catalog entry carries.
+
+**World CROSS** (`realworld.py --scenario CROSS`):
+- as INTACT: every copy is in the genome and the catalog, and its own-isoform reads are INTACT's;
+- in addition, every copy expresses up to 2 isoform structures (seeded) annotated only on a paralog;
+- such a structure is the paralog isoform's sequence spliced-aligned to the copy's own locus (minimap2 splice:hq). It is
+  kept when the primary alignment covers >= 95% of the isoform with the same exon count, canonical junctions and an intron
+  chain none of the copy's own isoforms has (junctions within 10 bp count as the same);
+- the transcript is the copy's own genomic sequence over those exons, at the weight of a non-main isoform;
+- the catalog still lists each copy's own isoforms only. Truth isoform `proj:<paralog>|<isoform>`.
+
+**Known before running (development, seed 11).** 3,539 reads of catalogued copies, 771 of them from 67 paralog-annotated
+structures over 46 copies:
+
+| | assigned | correct | precision | paralog-structure reads: assigned / correct |
+|---|---|---|---|---|
+| current O2 | 2,228 | 2,219 | 0.996 | 400 / 391 |
+| path O2, margin 2 | 2,459 | 2,223 | 0.904 | 303 / 67 |
+| path O2, margin 1 | 2,864 | 2,620 | 0.915 | 361 / 117 |
+| path O2, representatives only | 1,945 | 1,817 | 0.934 | 152 / 67 |
+
+229 of path O2's 236 wrong calls name the paralog that carries the annotation. O3: every arm 0 / 8 false-call families.
+
+**Bars (held out: the 8 held-out families, seed 21, world CROSS; wrong-family assignments count as wrong):**
+
+| id | bar |
+|---|---|
+| X1 | path O2 (margin 2) precision over the reads of paralog-annotated structures >= 0.99 |
+| X2 | path O2 (margin 2) precision over all reads of catalogued copies >= 0.995 (O2a's bar) |
+| X3 | path O2 (margin 2) correct assignments >= the current O2's |
+| X4 | S4 has a false call in <= 1 of the 8 families |
+
+**Readings (fixed now):**
+1. X1-X3 pass: O2's claim extends to a catalog that is not copy-specific.
+2. X1 or X2 fails: O2's claim is scoped to a complete, copy-specific isoform catalog, and path O2 is not safe on real
+   annotation as it is. A fix (every family structure threaded through every copy) needs its own prereg on a new family set.
+3. X4 is read on its own: it pass/fails O3's specificity under such a catalog.
