@@ -127,3 +127,79 @@ fragments and allele background are not modelled.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (held out, 2026-10-15)
+
+Run: code and prereg `4850047a`, the frozen copy_assign binary, seed 31. Outputs in `/mnt/linuxdisk/tmp/o3_graph/real/heldout2/`
+(one directory per world, `o3_score.json`, `o2sum_*.json`).
+
+**O2** (correct / assigned; wrong-family calls counted; there were none):
+
+| world | reads | current | **union O2** | path O2 | locus O2 |
+|---|---|---|---|---|---|
+| INTACT | 2,125 | 1,452 / 1,452 | 1,561 / 1,561 (x1.075) | 1,650 / 1,650 | 1,473 / 1,473 |
+| CROSS (liftover) | 2,635 | 1,706 / 1,706 | 1,816 / 1,821 (x1.064) | 1,662 / 1,900 | 1,736 / 1,736 |
+| OUTSIDE | 1,640 | 1,034 / 1,034 | 1,116 / 1,116 (x1.079) | 1,150 / 1,150 | 1,032 / 1,032 |
+| REMOVED | 1,640 | 1,034 / 1,034 | 1,116 / 1,116 (x1.079) | 1,150 / 1,150 | 1,032 / 1,032 |
+| BRANCH | 2,125 | 1,452 / 1,452 | 1,561 / 1,561 (x1.075) | 1,650 / 1,650 | 1,473 / 1,473 |
+| **pooled** | 10,165 | 6,678 / 6,678 | **7,170 / 7,175 (x1.074, precision 0.9993)** | 7,262 / 7,500 (0.968) | 6,746 / 6,746 |
+
+- CROSS's paralog-structure reads (510): union O2 255 / 260 correct (0.981), current 254 / 254, path O2 12 / 250.
+- Reads of non-catalogued copies assigned, pooled: union O2 223, current 608, path O2 250.
+- Per family (correct, current -> union): FCGR 511 -> 851, SULT1A 772 -> 867, AMY 646 -> 714, GTF2H2 357 -> 366,
+  LRRC37A 810 -> 810, TCAF2 384 -> 384, FAM72 1,077 -> 1,070, PSG 2,121 -> 2,108.
+- Genome-separated reads (6,775): current 6,666, union O2 6,760, path O2 6,508 correct.
+
+**O3** (8 families per world):
+
+| | CUR | S23 | S123m | **G** |
+|---|---|---|---|---|
+| BRANCH detected | 0 | 8 | 8 | **8** |
+| INTACT + OUTSIDE + CROSS false-call families (of 24) | 3 | 0 | 0 | **0** |
+| REMOVED detected (3 detectable) | 2 | 2 | 2 | **2** |
+| REMOVED + BRANCH false-call families | 0 | 0 | 0 | 0 |
+
+The removed copies' median `de` on the masked genome: FCGR 0.053, PSG 0.042 and LRRC37A 0.021 are detectable. TCAF2 0.0070,
+GTF2H2 0.0062, FAM72 0.0035, AMY 0.0017 and SULT1A 0.0015 are within delta. Every arm detects FCGR and LRRC37A and misses PSG.
+
+| bar | value | |
+|---|---|---|
+| U1 | lowest world precision 0.9973 (CROSS) | pass |
+| U2 | 7,170 vs 6,678: x1.074 | pass |
+| U3 | union >= current in all five worlds | pass |
+| U4 | 255 / 260 = 0.981 | **fail** |
+| U5 | 223 vs 608 | pass |
+| G1 | 8 / 8 | pass |
+| G2 | 0 of 24 | pass |
+| G3 | 2 of 3 detectable (0.67) | **fail** |
+| G4 | G 10 = S23 10, false-call families 0 = 0 | pass (the O2 restriction and the mosaic rule add nothing on this set) |
+
+**What the failures show (post hoc).**
+- U4: all 5 wrong calls are AMY reads (AMY.2 and AMY.5, two near-identical AMY1 copies) of one structure lifted from AMY.1.
+  The lifted structure's last exon ends 16 bp after union O2's own spliced projection of the same isoform. The read's 16
+  bases past the path end count as distance against the true copy, more than the copies' few PSVs. Read ends past a path
+  end are annotation, not sequence: a decision over the span both copies align (end clips not counted) would remove it.
+- G3: PSG's removed copy is detected in pieces. copy_assign hosts its 61 reads on four copies (27, 16, 10, 8). Each host's
+  cluster is pure (est_div 0.021-0.034, reads' `de` 0.04 from the genome), but none holds 80% of the copy's reads. Union O2
+  calls all 61 `unexplained`, yet G clusters them per host. Pooling the union-O2-unexplained reads across the whole family
+  would call it once; register 1298's TBC1D3 calls (17 + 42 reads over two hosts) are the same split.
+
+### Verdict (2026-10-15)
+
+**O2: claimed in part (U1, U2, U3, U5 pass; U4 fails).** On a fresh set of handpicked families:
+- union O2 assigns 7.4% more reads correctly than the current O2, at precision 0.9993;
+- it does better than the current O2 in every world, including when isoforms are annotated on another paralog (CROSS,
+  structures lifted independently of its own projection);
+- path O2 drops to 0.875 there;
+- the paralog-structure clause fails narrowly (0.981 vs 0.99) on an end effect between two near-identical AMY1 copies;
+- the gain is not plain genome alignment (locus O2 x1.010).
+
+**O3: claimed without the removed-copy clause (G1, G2, G4 pass; G3 fails).** Graph O3 replicates on a third family set:
+- novel-exon absent copies 8 / 8 (current method 0);
+- no false call over 24 intact, uncatalogued-paralog and paralog-annotation families (current method 3);
+- removed copies 2 of 3 detectable, the same as the current method;
+- the O2 restriction and the mosaic rule add nothing here (G = S23).
+
+**Next:** both failures point at one fix each, to be pre-registered on a new family set:
+- decide over the span both copies align;
+- pool the union-O2-unexplained reads across the family before clustering.
