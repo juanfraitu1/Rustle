@@ -35,6 +35,7 @@ Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + ke
 """
 import collections
 import csv
+import hashlib
 import json
 import os
 import re
@@ -327,6 +328,15 @@ def sh(cmd, binary_out=None):
     return r
 
 
+def graph_key(d, idxs):
+    """A family graph's cache key: the content of its inputs (loci.fa and each copy's isoform GTF)."""
+    h = hashlib.sha1()
+    for name in ["loci.fa"] + [f"copy{i}.gtf" for i in idxs]:
+        h.update(name.encode())
+        h.update(open(f"{d}/{name}", "rb").read())
+    return h.hexdigest()
+
+
 def msga_orders(names):
     """Loci orders to retry `vg msga -a` in when FASTA order fails (round 9 amendment 1): reversed, then each rotation."""
     if len(names) < 2:
@@ -349,6 +359,12 @@ def family_graph(d, genome, copies):
                     for s, e in orient(raw, ex, c["strand"], lo)[1]:
                         g.write(f"copy{c['idx']}\tsim\texon\t{s + 1}\t{e}\t.\t+\t.\t"
                                 f"transcript_id \"copy{c['idx']}|{iso}\"; gene_id \"copy{c['idx']}\";\n")
+    cache = os.environ.get("O3_GRAPH_CACHE")              # (fastset.py) worlds with one catalog share the family graph
+    key = graph_key(d, [c["idx"] for c in copies]) if cache else None
+    if cache and os.path.exists(f"{cache}/{key}.gfa"):
+        with open(f"{cache}/{key}.gfa") as src, open(f"{d}/s.gfa", "w") as dst:
+            dst.write(src.read())
+        return f"{d}/s.gfa"
     try:
         sh(f"vg msga -f {d}/loci.fa -t 2", binary_out=f"{d}/g.vg")
     except SystemExit:                    # vg msga (v1.73) aborts on some loci sets (UGT2B, round 3): build in FASTA order
@@ -369,6 +385,11 @@ def family_graph(d, genome, copies):
     gtfs = " ".join(f"-n {d}/copy{c['idx']}.gtf" for c in copies)
     sh(f"vg rna {gtfs} -r -t 2 {d}/g.vg", binary_out=f"{d}/s.vg")
     sh(f"vg view {d}/s.vg > {d}/s.gfa")
+    if cache:
+        os.makedirs(cache, exist_ok=True)
+        with open(f"{d}/s.gfa") as src, open(f"{cache}/{key}.gfa.{os.getpid()}", "w") as dst:
+            dst.write(src.read())
+        os.replace(f"{cache}/{key}.gfa.{os.getpid()}", f"{cache}/{key}.gfa")    # atomic: concurrent worlds never read half
     return f"{d}/s.gfa"
 
 

@@ -3,7 +3,7 @@
 multi-copy families (NPIP, TBC1D3, GOLGA, Soto's and others), their copies and curated isoforms from CHM13 v2.0's CAT/Liftoff
 annotation (the project's human default).
 
-    families.py build OUT.json [--cap 10] [--seed 1]
+    families.py build OUT.json [--cap 10] [--seed 1] [--min-cover 0.5]
 
 Per handpicked group (a CAT gene-name pattern): the genes matching it, span <= MAX_SPAN, non-overlapping (an overlap keeps the
 gene with more transcripts); their canonical transcripts (most exons, then longest span, then first id) spliced from the genome
@@ -23,7 +23,7 @@ import tempfile
 
 CAT = "/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13"
 GENOME = "/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa"
-MAX_SPAN, MIN_IDENT, ISO_CAP = 60000, 0.90, 4
+MAX_SPAN, MIN_IDENT, ISO_CAP, MIN_COVER = 60000, 0.90, 4, 0.5
 # handpicked before any run: development families, then held-out ones (NPIP, TBC1D3 and GOLGA8 are Soto's mainstays)
 GROUPS = {
     "dev": {"SMN": r"^SMN[12]$", "NCF1": r"^NCF1[BC]?$", "PAGE": r"^PAGE[0-9]", "CT45A": r"^CT45A", "GAGE": r"^GAGE",
@@ -122,8 +122,9 @@ def drop_overlaps(genes):
     return sorted(keep, key=lambda g: (g["chrom"], g["start"]))
 
 
-def largest_component(names, hits, min_ident=MIN_IDENT):
-    """hits: (a, b, identity, block, len a, len b); linked at identity >= min_ident over >= half the shorter."""
+def largest_component(names, hits, min_ident=MIN_IDENT, min_cover=MIN_COVER):
+    """hits: (a, b, identity, block, len a, len b); linked at identity >= min_ident over >= min_cover of the shorter (default
+    half; `--min-cover 0.8`: whole-transcript copies, not genes that share only a segment)."""
     par = {n: n for n in names}
 
     def find(x):
@@ -132,7 +133,75 @@ def largest_component(names, hits, min_ident=MIN_IDENT):
             x = par[x]
         return x
     for a, b, ident, blk, la, lb in hits:
-        if a != b and a in par and b in par and ident >= min_ident and blk >= 0.5 * min(la, lb):
+        if a != b and a in par and b in par and ident >= min_ident and blk >= min_cover * min(la, lb):
+            par[find(a)] = find(b)
+    comp = collections.defaultdict(list)
+    for n in names:
+        comp[find(n)].append(n)
+    return sorted(max(comp.values(), key=lambda c: (len(c), sorted(c)[0] < "~")))
+
+
+def union_cover(blocks, length):
+    """The union of [start, end) blocks over a length."""
+    tot, cs, ce = 0, None, None
+    for s0, e0 in sorted(blocks):
+        if ce is None or s0 > ce:
+            tot += (ce - cs) if ce is not None else 0
+            cs, ce = s0, e0
+        else:
+            ce = max(ce, e0)
+    tot += (ce - cs) if ce is not None else 0
+    return tot / length if length else 0.0
+
+
+def tx_locus_cover(rows, min_ident=MIN_IDENT):
+    """rows (query isoform 'GENE|tx', query length, qs, qe, target locus GENE, identity) -> {(A, B): over A's isoforms, the best
+    union of blocks aligned to B's locus at >= min_ident, over the isoform's length} (spliced to the partner's GENOME, so its
+    intron divergence and its annotation's canonical choice do not enter)."""
+    blocks, qlen = collections.defaultdict(list), {}
+    for q, ql, qs, qe, t, ident in rows:
+        g = q.split("|")[0]
+        if g == t or ident < min_ident:
+            continue
+        blocks[(q, t)].append((qs, qe))
+        qlen[q] = ql
+    out = {}
+    for (q, t), b in blocks.items():
+        k = (q.split("|")[0], t)
+        out[k] = max(out.get(k, 0.0), union_cover(b, qlen[q]))
+    return out
+
+
+def locus_cover(genes, fa, pad=1000):
+    """tx_locus_cover for genes [{gene_id, chrom, start, end, strand, tx}]: every isoform, spliced (minimap2 -cx splice:hq), onto
+    every gene's locus (+- pad)."""
+    with tempfile.TemporaryDirectory() as d:
+        with open(f"{d}/q.fa", "w") as fh:
+            for g in genes:
+                for t, ex in g["tx"].items():
+                    fh.write(f">{g['gene_id']}|{t}\n{spliced(fa, g['chrom'], g['strand'], ex)}\n")
+        with open(f"{d}/t.fa", "w") as fh:
+            for g in genes:
+                fh.write(f">{g['gene_id']}\n{fa.fetch(g['chrom'], max(0, g['start'] - pad), g['end'] + pad).upper()}\n")
+        paf = subprocess.run(["minimap2", "-cx", "splice:hq", "-N", "1000", "-p", "0.01", "--secondary=yes", f"{d}/t.fa", f"{d}/q.fa"],
+                             capture_output=True, text=True, check=True).stdout.splitlines()
+    return tx_locus_cover([(x[0], int(x[1]), int(x[2]), int(x[3]), x[5], int(x[9]) / int(x[10]))
+                           for x in (ln.split("\t") for ln in paf)])
+
+
+def locus_component(names, cov, min_cover=0.8):
+    """`--link locus` (2026-10-16): genes linked when one gene's genomic locus holds >= min_cover of the other's canonical
+    transcript at >= MIN_IDENT (whole copies and fragments link; genes sharing only a segment -- domain sharers -- do not; the
+    partner's locus, not its annotation, so its intron divergence and canonical choice do not enter); the largest component."""
+    par = {n: n for n in names}
+
+    def find(x):
+        while par[x] != x:
+            par[x] = par[par[x]]
+            x = par[x]
+        return x
+    for (a, b), c in cov.items():
+        if a in par and b in par and max(c, cov.get((b, a), 0.0)) >= min_cover:
             par[find(a)] = find(b)
     comp = collections.defaultdict(list)
     for n in names:
@@ -160,7 +229,7 @@ def spliced(fa, chrom, strand, exons):
     return s[::-1].translate(COMP) if strand == "-" else s
 
 
-def build_family(name, pattern, genes_tsv, gff, fa, cap, seed):
+def build_family(name, pattern, genes_tsv, gff, fa, cap, seed, min_cover=MIN_COVER, link="tx"):
     import csv
     rx = re.compile(pattern)
     genes = []
@@ -181,7 +250,14 @@ def build_family(name, pattern, genes_tsv, gff, fa, cap, seed):
                 fh.write(f">{k}\n{v}\n")
         out = subprocess.run(["minimap2", "-cx", "asm20", "-X", f"{d}/c.fa", f"{d}/c.fa"], capture_output=True, text=True).stdout
     hits = [(f[0], f[5], int(f[9]) / int(f[10]), int(f[10]), int(f[1]), int(f[6])) for f in (ln.split("\t") for ln in out.splitlines())]
-    comp = largest_component(list(seqs), hits)
+    if link == "locus":                                   # canonical transcripts only: a short alternative isoform that is
+        cov = locus_cover([dict(g, tx={canonical(g["tx"]): g["tx"][canonical(g["tx"])]}) for g in genes], fa)  # one domain
+        # would link genes sharing only that domain (LILR 2 -> 9 with any isoform)
+        comp = locus_component(list(seqs), cov, min_cover=min_cover)
+        n_comp = len(comp)
+    else:
+        comp = largest_component(list(seqs), hits, min_cover=min_cover)
+        n_comp = len(comp)
     if len(comp) < 2:
         return None
     if len(comp) > cap:
@@ -194,7 +270,7 @@ def build_family(name, pattern, genes_tsv, gff, fa, cap, seed):
         copies.append(dict(gene_id=gid, gene_name=g["gene_name"], chrom=g["chrom"], start=min(s for v in iso.values() for s, _ in v),
                            end=max(e for v in iso.values() for _, e in v), strand=g["strand"], main=main,
                            transcripts={t: [list(x) for x in v] for t, v in iso.items()}))
-    return dict(family=name, pattern=pattern, candidates=len(genes), component=len(largest_component(list(seqs), hits)),
+    return dict(family=name, pattern=pattern, candidates=len(genes), component=n_comp,
                 copies=copies)
 
 
@@ -206,12 +282,14 @@ def cmd_build(a):
     for st, groups in GROUPS.items():
         out[st] = []
         for name, pat in groups.items():
-            fam = build_family(name, pat, f"{CAT}/chm13v2.0_CAT_Liftoff.genes.tsv", gff, fa, a.cap, a.seed)
+            fam = build_family(name, pat, f"{CAT}/chm13v2.0_CAT_Liftoff.genes.tsv", gff, fa, a.cap, a.seed, a.min_cover, a.link)
             if fam:
                 out[st].append(fam)
             print(f"{st} {name}: " + (f"{len(fam['copies'])} copies (component {fam['component']} of {fam['candidates']}), "
                                       f"{sum(len(c['transcripts']) for c in fam['copies'])} isoforms" if fam else "no family"), flush=True)
-    json.dump(dict(genome=GENOME, annotation=f"{CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz", cap=a.cap, seed=a.seed, sets=out),
+    json.dump(dict(genome=GENOME, annotation=f"{CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz", cap=a.cap, seed=a.seed,
+                   **({"min_cover": a.min_cover} if a.min_cover != MIN_COVER else {}),
+                   **({"link": a.link} if a.link != "tx" else {}), sets=out),
               open(a.out, "w"), indent=1)
     return 0
 
@@ -223,6 +301,12 @@ def main(argv=None):
     p.add_argument("out")
     p.add_argument("--cap", type=int, default=10)
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--min-cover", type=float, default=MIN_COVER,
+                   help="a link must align over this fraction of the shorter canonical transcript (default 0.5)")
+    p.add_argument("--link", choices=("tx", "locus"), default="tx",
+                   help="tx: canonical transcripts aligned to each other (default); locus: each gene's canonical transcript "
+                        "spliced onto the other gene's genomic locus, >= --min-cover of it in one direction (copies and fragments "
+                        "link, genes sharing only a segment do not)")
     p.set_defaults(func=cmd_build)
     a = ap.parse_args(argv)
     return a.func(a)

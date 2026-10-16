@@ -245,3 +245,13 @@ def test_vg_msga_retries_reverse_then_rotations_of_the_loci_order():
     # round 9 amendment 1: vg msga (v1.73) asserts on KRTAP4's loci in FASTA order (default and -a); other orders build
     assert D.msga_orders(["a", "b", "c"]) == [["c", "b", "a"], ["b", "c", "a"], ["c", "a", "b"]]
     assert D.msga_orders(["a"]) == []
+
+
+def test_a_family_graph_cache_key_is_the_content_of_its_loci_and_isoform_files(tmp_path):
+    for d in ("a", "b"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "loci.fa").write_text(">copy0\nACGT\n")
+        (tmp_path / d / "copy0.gtf").write_text("copy0\tsim\texon\t1\t4\n")
+    assert D.graph_key(str(tmp_path / "a"), [0]) == D.graph_key(str(tmp_path / "b"), [0])
+    (tmp_path / "b" / "copy0.gtf").write_text("copy0\tsim\texon\t1\t3\n")
+    assert D.graph_key(str(tmp_path / "a"), [0]) != D.graph_key(str(tmp_path / "b"), [0])
