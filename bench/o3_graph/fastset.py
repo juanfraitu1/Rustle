@@ -90,6 +90,22 @@ class Steps:
             raise RuntimeError(f"{world} {step} failed (exit {rc}); see {log}")
 
 
+def _sig(families, set_name):
+    import hashlib
+    return hashlib.sha1(json.dumps(json.load(open(families))["sets"][set_name], sort_keys=True).encode()).hexdigest()
+
+
+def write_local_source(local, families, set_name):
+    """Record which family set a local reference was built from (round 9 review: a reused reference was never checked)."""
+    os.makedirs(local, exist_ok=True)
+    json.dump(dict(families=os.path.abspath(families), set=set_name, sha1=_sig(families, set_name)), open(f"{local}/source.json", "w"))
+
+
+def local_matches(local, families, set_name):
+    p = f"{local}/source.json"
+    return os.path.exists(p) and json.load(open(p))["sha1"] == _sig(families, set_name)
+
+
 def map_union(root, worlds, local, threads):
     """Step 4: the full-genome worlds' distinct reads mapped once to the local reference, split into each world's E0.bam."""
     L = _load("localref")
@@ -130,6 +146,9 @@ def cmd_run(a):
     local = a.local or f"{root}/local"
     if not os.path.exists(f"{local}/local.mmi"):                                   # 1: once per family set
         st.run("set", "localref", f"python3 bench/o3_graph/localref.py build {a.families} {a.set} {local}", lock="heavy")
+        write_local_source(local, a.families, a.set)
+    elif os.path.exists(f"{local}/source.json") and not local_matches(local, a.families, a.set):
+        raise SystemExit(f"{local} was built for another family set; pass a fresh --local")
     het = f"--het {a.het}" if a.het > 0 else ""
     prof = f"--sim-profile {a.sim_profile}" if a.sim_profile else ""
     if "REMOVED" in worlds:                                                        # 2

@@ -32,6 +32,7 @@ copy_family.json, world.json, copies.tsv, regions.txt (each family's span per ch
 """
 import argparse
 import collections
+import importlib.util
 import json
 import math
 import os
@@ -294,6 +295,18 @@ def apply_edits(seq, edits):
     return "".join(s)
 
 
+def draw_truncation(seq, pairs, rng, min_len=MIN_READ, tries=10):
+    """A read's transcript after a calibrated (5', 3') truncation drawn from `pairs`, redrawn (up to `tries`) while it would leave
+    < min_len; the whole transcript only when no draw fits (review of round 9: a single draw fell back to full length for 43-61%
+    of FAM25's reads)."""
+    for _ in range(tries):
+        m5, m3 = rng.choice(pairs)
+        out = truncate(seq, m5, m3, min_len)
+        if len(out) < len(seq) or (m5 == 0 and m3 == 0) or int(m5 * len(seq)) + int(m3 * len(seq)) == 0:
+            return out
+    return seq
+
+
 def truncate(seq, m5, m3, min_len=MIN_READ):
     """A transcript that lost fractions m5 of its 5' end and m3 of its 3' end; the whole transcript when < min_len would be left."""
     n5, n3 = int(m5 * len(seq)), int(m3 * len(seq))
@@ -377,7 +390,9 @@ def cmd_mask(a):
 def cmd_build(a):
     import pysam
     from sim import simulate_reads, stable_seed, write_fastq
-    import world as FW                                   # bench/o3_fewread/world.py: COPIES_HEADER
+    spec = importlib.util.spec_from_file_location("o3_fewread_world", os.path.join(BENCH, "o3_fewread", "world.py"))
+    FW = importlib.util.module_from_spec(spec)            # by path: bench/o3_graph/world.py would shadow `import world`
+    spec.loader.exec_module(FW)                           # (COPIES_HEADER lives in bench/o3_fewread/world.py)
     fj = json.load(open(a.families))
     fams = fj["sets"][a.set]
     prof = json.load(open(a.sim_profile)) if a.sim_profile else None   # a calibrated read profile (calibrate.py profile)
@@ -509,7 +524,9 @@ def cmd_build(a):
                 if key not in cache:
                     al = {**hom, **own_snps, **het} if h == 2 else {**hom, **own_snps}
                     cache[key] = splice(fetch, ex, c["strand"], al, jj, nov)
-                m5, m3 = r.choice(prof["end_pairs"])
+                if prof.get("truncation_redraw"):              # profile v2 (round 9 review I5): redraw a truncation too long
+                    return draw_truncation(cache[key], prof["end_pairs"], r)
+                m5, m3 = r.choice(prof["end_pairs"])            # profile v1: one draw (whole transcript when < MIN_READ)
                 return truncate(cache[key], m5, m3)
 
             def hap_of(t, i):                                   # its own RNG: hap-1 reads equal the het-free world's

@@ -3,6 +3,7 @@
 
     calibrate.py profile BAM OUT.json [--chroms chr20,chr21,chr22] [--max-reads 30000] [--min-mapq 60]
     calibrate.py expression BAM FAMILIES.json OUT.json
+    calibrate.py errors BAM OUT.json [--chroms ...] [--max-reads 30000]   errors and donor alleles over every uniquely placed read
     calibrate.py tags BAM OUT.json [--regions chr20,...|--all] [--min-mapq 60] [--max-reads 20000]
 
 `profile`, from primary MAPQ >= min-mapq reads lying inside single-isoform genes (CAT/Liftoff, CHM13 v2.0; unique placement,
@@ -143,9 +144,87 @@ def tag_summary(rows):
                 clip_frac=sum(r["clip"] for r in rows) / max(1, sum(r["qlen"] for r in rows)))
 
 
+def expression_log_sd(counts):
+    """The between-copy spread of log expression (round 9 review I2): over the copies with reads (an unread copy is silent,
+    not spread), the variance of log(n) less its Poisson counting noise (~1/n per copy, delta method), floored at 0."""
+    n = [c for c in counts if c > 0]
+    if len(n) < 2:
+        return 0.0
+    logs = [math.log(c) for c in n]
+    return math.sqrt(max(0.0, statistics.pvariance(logs) - statistics.mean(1 / c for c in n)))
+
+
 def _quantiles(v):
     v = sorted(v)
     return {str(q): v[min(len(v) - 1, int(q * len(v)))] for q in QUANTS} if v else {}
+
+
+def error_stats(reads):
+    """Errors and the donor's alleles over reads [{ch, qlen, ev: cigar_events}]: a mismatch shared by >= MIN_VAR_READS reads at
+    >= HET_FRAC of its coverage is the donor's (classify_mismatches), the rest are errors; indel rates, homopolymer shares and
+    lengths; soft-clipped bases."""
+    counts = collections.Counter((rd["ch"], p, b) for rd in reads for p, b in rd["ev"]["mismatch"])
+    cand = collections.defaultdict(set)
+    for (ch, p, b), n in counts.items():
+        if n >= 2:
+            cand[ch].add(p)
+    cand = {ch: sorted(v) for ch, v in cand.items()}
+    cov = collections.Counter()
+    for rd in reads:
+        pos = cand.get(rd["ch"], [])
+        for bs, be in rd["ev"]["blocks"]:
+            for p in pos[bisect.bisect_left(pos, bs):bisect.bisect_left(pos, be)]:
+                cov[(rd["ch"], p)] += 1
+    kind = classify_mismatches(counts, cov)
+    agg, ins_len, del_len = collections.Counter(), collections.Counter(), collections.Counter()
+    for rd in reads:
+        ev = rd["ev"]
+        agg["aligned"] += ev["aligned"]
+        agg["clip"] += ev["clip"]
+        agg["query"] += rd["qlen"]
+        for p, b in ev["mismatch"]:
+            agg["mm_" + kind[(rd["ch"], p, b)]] += 1
+        for key, lens in (("ins", ins_len), ("del", del_len)):
+            for _, n, hp in ev[key]:
+                agg[key + "_events"] += 1
+                agg[key + "_hp"] += hp
+                lens[min(n, 4)] += 1
+    A = max(1, agg["aligned"])
+    return dict(reads=len(reads), aligned_bases=agg["aligned"], sub_error=agg["mm_error"] / A, ins_event=agg["ins_events"] / A,
+                del_event=agg["del_events"] / A, ins_hp_frac=agg["ins_hp"] / max(1, agg["ins_events"]),
+                del_hp_frac=agg["del_hp"] / max(1, agg["del_events"]),
+                ins_len={str(k): v / max(1, agg["ins_events"]) for k, v in sorted(ins_len.items())},
+                del_len={str(k): v / max(1, agg["del_events"]) for k, v in sorted(del_len.items())},
+                clip_frac=agg["clip"] / max(1, agg["query"]), het_per_base=agg["mm_het"] / A, hom_per_base=agg["mm_hom"] / A)
+
+
+def cmd_errors(a):
+    """Errors and donor alleles over EVERY primary read with MAPQ >= min-mapq on the chromosomes (not only single-isoform genes;
+    round 9 review I5: the single-isoform subset under-counts mismatches, 0.90 vs 1.42 per kb)."""
+    import pysam
+    F = _load("families")
+    fa = pysam.FastaFile(F.GENOME)
+    reads = []
+    with pysam.AlignmentFile(a.bam) as bam:
+        for ch in a.chroms.split(","):
+            cache = {}
+
+            def ref_base(p, ch=ch, cache=cache):
+                if p not in cache:
+                    cache[p] = fa.fetch(ch, max(0, p), p + 1).upper() if p >= 0 else "N"
+                return cache[p]
+            for r in bam.fetch(ch):
+                if r.is_secondary or r.is_supplementary or r.is_unmapped or r.mapping_quality < a.min_mapq or r.query_sequence is None:
+                    continue
+                reads.append(dict(ch=ch, qlen=r.query_length, ev=cigar_events(r.cigartuples, r.reference_start, r.query_sequence, ref_base)))
+                if len(reads) >= a.max_reads:
+                    break
+            if len(reads) >= a.max_reads:
+                break
+    out = dict(source=a.bam, chroms=a.chroms, **error_stats(reads))
+    json.dump(out, open(a.out, "w"), indent=1)
+    print(json.dumps(out, indent=1))
+    return 0
 
 
 def cmd_profile(a):
@@ -156,7 +235,7 @@ def cmd_profile(a):
     import csv
     genes = [r for r in csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t")
              if r["chrom"] in a.chroms.split(",") and r["n_transcripts"] == "1"]
-    reads, counts = [], collections.Counter()
+    reads = []
     with pysam.AlignmentFile(a.bam) as bam:
         for g in genes:
             if len(reads) >= a.max_reads:
@@ -184,52 +263,18 @@ def cmd_profile(a):
                 ends = transcript_ends(ev["blocks"], exons, g["strand"])
                 if ends is None:
                     continue
-                for p, b in ev["mismatch"]:
-                    counts[(ch, p, b)] += 1
                 reads.append(dict(ch=ch, ev=ev, ends=ends, tx_len=sum(e - s for s, e in exons), qlen=r.query_length,
                                   intron=intron_bases(ev["blocks"], exons), kept=retained_introns(ev["blocks"], exons),
                                   n_introns=len(exons) - 1))
                 if len(reads) >= a.max_reads:
                     break
-    cand = collections.defaultdict(list)
-    for (ch, p, b), n in counts.items():
-        if n >= 2:
-            cand[ch].append(p)
-    for ch in cand:
-        cand[ch] = sorted(set(cand[ch]))
-    cov = collections.Counter()
-    for rd in reads:
-        pos = cand.get(rd["ch"], [])
-        for bs, be in rd["ev"]["blocks"]:
-            for p in pos[bisect.bisect_left(pos, bs):bisect.bisect_left(pos, be)]:
-                cov[(rd["ch"], p)] += 1
-    kind = classify_mismatches(counts, cov)
     agg = collections.Counter()
-    ins_len, del_len = collections.Counter(), collections.Counter()
     for rd in reads:
-        ev = rd["ev"]
-        agg["aligned"] += ev["aligned"]
-        agg["clip"] += ev["clip"]
-        agg["query"] += rd["qlen"]
-        for p, b in ev["mismatch"]:
-            agg["mm_" + kind[(rd["ch"], p, b)]] += 1
-        for key, lens in (("ins", ins_len), ("del", del_len)):
-            for _, n, hp in ev[key]:
-                agg[key + "_events"] += 1
-                agg[key + "_bases"] += n
-                agg[key + "_hp"] += hp
-                lens[min(n, 4)] += 1
         agg["retained"] += rd["intron"] >= RETAIN_MIN
         agg["kept_reads"] += rd["kept"] > 0
         agg["kept_introns"] += rd["kept"]
         agg["introns"] += rd["n_introns"]
-    A = max(1, agg["aligned"])
-    prof = dict(source=a.bam, chroms=a.chroms, reads=len(reads), aligned_bases=agg["aligned"],
-                sub_error=agg["mm_error"] / A, ins_event=agg["ins_events"] / A, del_event=agg["del_events"] / A,
-                ins_hp_frac=agg["ins_hp"] / max(1, agg["ins_events"]), del_hp_frac=agg["del_hp"] / max(1, agg["del_events"]),
-                ins_len={str(k): v / max(1, agg["ins_events"]) for k, v in sorted(ins_len.items())},
-                del_len={str(k): v / max(1, agg["del_events"]) for k, v in sorted(del_len.items())},
-                clip_frac=agg["clip"] / max(1, agg["query"]), het_per_base=agg["mm_het"] / A, hom_per_base=agg["mm_hom"] / A,
+    prof = dict(source=a.bam, chroms=a.chroms, **error_stats(reads),
                 missing5_frac=_quantiles([rd["ends"][0] / rd["tx_len"] for rd in reads]),
                 missing3_frac=_quantiles([rd["ends"][1] / rd["tx_len"] for rd in reads]),
                 full5_frac=sum(1 for rd in reads if rd["ends"][0] <= 50) / max(1, len(reads)),
@@ -289,6 +334,7 @@ def cmd_expression(a):
                     rows.append((c["gene_name"], n, n20))
                 logs = [math.log(n + 1) for _, n, _ in rows]
                 out[f"{st}/{f['family']}"] = dict(copies=rows, log_sd=statistics.pstdev(logs) if len(logs) > 1 else 0.0,
+                                                  log_sd_corrected=expression_log_sd([n for _, n, _ in rows]),
                                                   zero=sum(1 for _, n, _ in rows if n < 5))
     sds = [v["log_sd"] for v in out.values()]
     summ = dict(families=len(out), log_sd_median=statistics.median(sds), copies=sum(len(v["copies"]) for v in out.values()),
@@ -308,6 +354,13 @@ def main(argv=None):
     p.add_argument("--max-reads", type=int, default=30000)
     p.add_argument("--min-mapq", type=int, default=60)
     p.set_defaults(func=cmd_profile)
+    p = sub.add_parser("errors")
+    p.add_argument("bam")
+    p.add_argument("out")
+    p.add_argument("--chroms", default="chr20,chr21,chr22")
+    p.add_argument("--max-reads", type=int, default=30000)
+    p.add_argument("--min-mapq", type=int, default=60)
+    p.set_defaults(func=cmd_errors)
     p = sub.add_parser("tags")
     p.add_argument("bam")
     p.add_argument("out")

@@ -31,3 +31,12 @@ def test_a_union_alignment_is_handed_to_every_world_read_with_that_sequence_unde
     assert [ln.split("\t")[:3] for ln in out["INTACT"]] == [["s1", "0", "chr1"], ["s1", "256", "chr2"]]
     assert [ln.split("\t")[0] for ln in out["OUTSIDE"]] == ["s9", "s9"] and out["OUTSIDE"][0].endswith("NM:i:0\n")
     assert [ln.split("\t")[0] for ln in out["CROSS"]] == ["s7"]
+
+
+def test_a_local_reference_is_reused_only_for_the_family_set_it_was_built_for(tmp_path):
+    fj = tmp_path / "f.json"
+    fj.write_text('{"sets": {"s1": [1], "s2": [2]}}')
+    F.write_local_source(str(tmp_path), str(fj), "s1")
+    assert F.local_matches(str(tmp_path), str(fj), "s1") and not F.local_matches(str(tmp_path), str(fj), "s2")
+    fj.write_text('{"sets": {"s1": [9], "s2": [2]}}')
+    assert not F.local_matches(str(tmp_path), str(fj), "s1")

@@ -220,3 +220,10 @@ def test_a_retained_intron_merges_its_two_exons():
 def test_expression_multipliers_are_deterministic_and_flat_without_spread():
     assert R.expr_mult(3, "F.1", 0.0) == 1.0
     assert R.expr_mult(3, "F.1", 0.86) == R.expr_mult(3, "F.1", 0.86) != R.expr_mult(3, "F.2", 0.86)
+
+
+def test_a_truncation_that_would_leave_too_little_is_redrawn_not_dropped():
+    pairs = [[0.9, 0.0], [0.0, 0.95], [0.1, 0.1]]           # only the last leaves >= min_len of a 400-base transcript
+    out = R.draw_truncation("A" * 400, pairs, random.Random(0), min_len=200)
+    assert len(out) == 400 - 40 - 40
+    assert R.draw_truncation("A" * 400, [[0.9, 0.0]], random.Random(0), min_len=200, tries=3) == "A" * 400

@@ -55,3 +55,20 @@ def test_tag_summary_reports_per_kb_rates_and_tag_medians():
     s = C.tag_summary(rows)
     assert s["reads"] == 2 and s["de_median"] == 0.003 and s["x_per_kb"] == 1.0 and s["ins_per_kb"] == 1.0
     assert s["hp_indel_frac"] == 4 / 6 and abs(s["clip_frac"] - 20 / 3020) < 1e-12
+
+
+def test_the_expression_spread_leaves_out_unread_copies_and_poisson_counting_noise():
+    import math
+    sd = C.expression_log_sd([100, 100, 100, 0])           # equal expression; the unread copy is silent, not spread
+    assert sd == 0.0
+    counts = [50, 200]                                      # observed log-sd 0.693; Poisson noise of log n ~ 1/n
+    raw = math.log(4) / 2
+    assert abs(C.expression_log_sd(counts) - math.sqrt(raw ** 2 - (1 / 50 + 1 / 200) / 2)) < 1e-9
+
+
+def test_error_stats_separate_a_shared_donor_allele_from_a_read_s_own_error():
+    def rd(mm):
+        return dict(ch="c1", qlen=100, ev=dict(aligned=100, mismatch=mm, ins=[], clip=0, blocks=[(0, 100)], **{"del": []}))
+    reads = [rd([(50, "T"), (10, "G")]), rd([(50, "T")]), rd([(50, "T")])]
+    s = C.error_stats(reads)
+    assert s["hom_per_base"] == 3 / 300 and s["sub_error"] == 1 / 300 and s["het_per_base"] == 0
