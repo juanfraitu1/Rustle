@@ -148,3 +148,73 @@ genome. Real data's other species, allelic imbalance and expression variation ar
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (held out, 2026-10-16)
+
+Run: code and prereg `1e513942`, the frozen copy_assign binary, seed 81, `--het 0.001`. Outputs in
+`/mnt/linuxdisk/tmp/o3_graph/real/heldout7/` (`integ.json`, `o3_score.json`, `o3_summary.txt`); summaries from `summary.py integ`
+and `summary.py o3`.
+
+**O2** (correct / wrong; unknowable placements in brackets):
+
+| world | current O2 | padded union O2 | **integrated O2** | ratio of correct calls to the current O2's |
+|---|---|---|---|---|
+| INTACT | 2,360 / 0 | 2,476 / 0 | **2,476 / 0** | x1.049 |
+| CROSS | 2,697 / 0 | 2,860 / 15 | **2,955 / 11** | x1.096 |
+| OUTSIDE | 2,081 / 68 | 2,193 / 193 | **2,533 / 180** | x1.217 |
+| REMOVED | 2,081 / 45 (n/a) | 2,193 / 0 (193) | **2,193 / 0 (193)** | x1.054 |
+| SILENT | 1,723 / 0 | 1,762 / 0 | **1,834 / 0** | x1.064 |
+
+- **OUTSIDE.** O1 seeded 7 new copies, all on a truth copy, and 348 of the 481 uncatalogued reads went to their own copy. The
+  integrated O2's 180 wrong calls are:
+  - 60 + 60: two uncatalogued copies that were not seeded (CTAGE.2, DDX11L.9), whose reads went to a near-identical paralog;
+  - 60: WASH.7's reads called to WASH.7 under the DDX11L family. The WASH and DDX11L families are adjacent subtelomeric genes,
+    and the uncatalogued WASH.7 was seeded in both, since a new locus is off every family's catalog.
+- **CROSS.** 11 paralog-structure reads were called to a wrong copy: DDX11L 8, WASH 3.
+- **SILENT.** O1 dropped 10 of the 14 silent copies and 0 of 220 expressed copies over the five worlds. The 4 kept silent
+  copies had >= 5 primary alignments: mapq-0 coin flips of identical expressed copies. Keeping them is the rule by design (an
+  identical expressed copy must never be dropped).
+- **REMOVED.** The removed copies' median `de`: TUBB8 0.087, SPRR2 0.076, WASH 0.0124 (detectable); AQP7 0.0077, FAM74A
+  0.0093, FAM138 0.0043, CTAGE 0.0023, DDX11L 0.0022 (unknowable).
+
+**O3** (8 families per world):
+
+| | CUR | S23 | H | **I** |
+|---|---|---|---|---|
+| REMOVED detected (3 detectable) | 1 (TUBB8) | 2 | 2 | **2** (SPRR2, TUBB8) |
+| false-call families, INTACT + CROSS + OUTSIDE + SILENT (of 32) | 8 | 0 | 0 | **0** |
+
+WASH (median `de` 0.0124, near delta) is missed by every arm.
+
+| bar | value | |
+|---|---|---|
+| J1 | lowest world ratio 1.049 | pass |
+| J2 | OUTSIDE 180 > 68; CROSS 11 > 0 | **fail** |
+| J3 | 348 / 481 = 72% | pass |
+| J4 | silent copies dropped 10 / 14 = 71%; expressed 0 / 220 | **fail** |
+| J5 | 1,834 vs 1,762 | pass |
+| J6 | 0 of 32 | pass |
+| J7 | 2 of 3 detectable (0.67), CUR's one included | **fail** |
+
+### Verdict (2026-10-16)
+
+**O2: not claimed (J2 and J4 fail).** On this fresh set the integrated O1 -> O2:
+- assigned 5-22% more reads correctly than the current O2 in every world (J1), with no wrong call in INTACT, REMOVED and
+  SILENT;
+- recovered 72% of the uncatalogued copies' reads (J3);
+- shrank the universe without losing correct calls (J5);
+- dropped no expressed copy.
+
+But:
+- **wrong calls:** it made more than the current O2 where uncatalogued copies are near-identical to catalogued ones and
+  were not seeded (CTAGE, DDX11L), and where an uncatalogued copy was seeded into two adjacent families (WASH / DDX11L);
+- **silent copies:** identical silent copies keep coin-flip support, so only 71% were dropped.
+
+**O3: not claimed (J7 fails, 2 of 3).** No false call over 32 families. WASH's removed copy, near delta, was missed by
+every arm, as was round 3's case near the boundary.
+
+**What the integration showed, across development and this held-out set:**
+- **What it fixes:** RNA-supported seeding fixes O2's main failure mode where it can, namely uncatalogued copies with
+  uniquely placed reads. On this set wrong calls went from 193 for padded union to 180, with 348 reads now right.
+- **What it does not fix:** copies near-identical at mapq 0 (unseedable), and alleles.
+- **A bug it exposed:** a seeded locus must belong to one family only. Fixing that is a method change for a new prereg.
