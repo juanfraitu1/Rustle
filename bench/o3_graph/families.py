@@ -79,6 +79,13 @@ GROUPS = {
                  "PNMA6": r"^PNMA6[A-F]$", "PPIAL4": r"^PPIAL4[A-H]$", "FCGR1": r"^FCGR1[A-C]P?$", "NOMO": r"^NOMO[1-3]$",
                  "CROCC": r"^CROCC(P[0-9])?$", "RGPD": r"^RGPD[1-8]$", "FAM86": r"^FAM86[A-Z]$", "GPR89": r"^GPR89[ABC]$",
                  "POM121": r"^POM121[A-Z]?$"},
+    # held out for round 9 (docs/PREREG_o3_graph_round9_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set, UNCAPPED (full families, --cap 1000). PPIAL4 and FCGR1 were round-8 candidates past its first 8,
+    # never built into a world; none of the others was in any earlier list
+    "heldout9": {"PPIAL4": r"^PPIAL4[A-H]$", "FCGR1": r"^FCGR1[A-C]P?$", "PGA": r"^PGA[3-5]$", "H4C": r"^H4C[0-9]+$",
+                 "LCE2": r"^LCE2[A-D]$", "LCE3": r"^LCE3[A-E]$", "KRTAP4": r"^KRTAP4-[0-9]+$", "AGAP": r"^AGAP([4-9]|1[01])P?$",
+                 "ELOA3": r"^ELOA3[B-D]?P?$", "FAM25": r"^FAM25[A-G]$", "CYP3A": r"^CYP3A[0-9]+$", "FAM47": r"^FAM47[A-C]$",
+                 "FAM9": r"^FAM9[A-C]$", "KRTAP9": r"^KRTAP9-[0-9]+$", "DAZ": r"^DAZ[1-4]$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

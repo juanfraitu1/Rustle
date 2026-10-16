@@ -89,3 +89,12 @@ def test_a_call_on_a_seeded_copy_that_is_no_truth_copy_is_a_placement_not_an_abs
     placed = calls["a"]["F"]
     assert S.read_fate("catalogued", placed, "F.1", False) == "error"
     assert S.read_fate("absent_undetectable", placed, "F.9", False) == "unknowable"
+
+
+def test_an_absent_copy_s_read_is_detectable_by_its_own_divergence_when_asked():
+    # copy-level (rounds 7-8): the copy's median de decides every read; per read (round 9): the read's own primary de
+    assert S.absent_class(True, 0.002, per_read=False) == "absent_detectable"
+    assert S.absent_class(True, 0.002, per_read=True) == "absent_undetectable"
+    assert S.absent_class(False, 0.05, per_read=True) == "absent_detectable"
+    assert S.absent_class(False, 0.05, per_read=False) == "absent_undetectable"
+    assert S.absent_class(True, None, per_read=True) == "absent_detectable"      # no primary alignment: the genome explains nothing
