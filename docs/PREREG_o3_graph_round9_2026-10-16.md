@@ -201,3 +201,50 @@ Three determinations hold on the held-out set as on development data:
 - **The remaining weakness is O2's divergence gate on realistic reads.** These are reads with retained introns, long indels or
   short spans that no annotated path explains. A genome-placement fallback for them was measured on development data and
   rejected for its errors.
+
+## Independent review (2026-10-16) and corrections
+
+**The verdict holds.**
+- The reviewer's own scorer, written from this document's text, reproduces `e2e.json` and `e2e_pr.json` exactly for both
+  profiles.
+- The committed code rebuilds all 12 worlds byte for byte. Re-running O1, O2 (`gapcomp`) and O3 (`--member-genome-check`) on
+  copies reproduces their outputs.
+- The families share no gene with any earlier set. The seed came from the pre-check before any run. The final runs started
+  five seconds after the amendment commit.
+
+**Corrections to the results above:**
+
+1. **The public profile's extra errors are an O1 step, not an O2 one.**
+   - All 12 integrated errors under the public profile (INTACT 5, CROSS 5, SILENT 2) are reads of PGA.2 (PGA5).
+   - O1 dropped PGA.2: it had 5 reads but only 4 primaries on its locus, 2 of them uniquely placed, so it fell under the 5-read
+     support rule.
+   - O1 dropped 2-4 expressed copies with 4-5 reads each in every public-profile world (AGAP.0, LCE2.1, PGA.2, PPIAL4.3), and
+     none under A119b.
+   - Those drops account for 10 of INTACT's 18-read deficit, 6 of CROSS's 14, and all 10 of SILENT's.
+   - The verdict still fails through B1 in INTACT and CROSS, and through every A119b failure.
+   - Cause: the public profile's expression spread (1.16) was inflated by zero-read copies and Poisson counting noise (item 3).
+     It produced copies with 4-5 reads, and O1's fixed support rule drops them.
+2. **The pre-registered side reports:**
+   - **Arm I:** no false call in any of the 12 worlds.
+   - **REMOVED:** under A119b arm I called 2 of the 4 detectable copies (LCE2.0, KRTAP4.0, plus PPIAL4.4). It missed AGAP.5 and
+     FAM25.2, whose median `de` is 0.0149 and 0.0164, although O2 left 54 of 57 and 21 of 21 of their reads unexplained.
+     Under the public profile it called all four.
+   - **BRANCH:** 6 of 6 novel-exon copies under A119b, 5 of 6 under the public profile.
+   - **O1:** dropped 8 of 13 silent copies under both profiles; the expressed-copy drops are in item 1.
+   - **"REMOVED losses are reads O2 leaves unexplained" is not the whole story.** The current method caught FAM25.2, which
+     arm I missed; that accounts for 15 of the 55 correct reads lost in A119b's REMOVED.
+3. **The expression spread.** Re-estimated over copies with reads, less Poisson noise
+   (`calibrate.py` `expression_log_sd`): A119b 0.86 (unchanged), public 1.03 (not 1.16).
+4. **Cost.** The per-run peaks (0.74-0.76 GB) leave out the one-time local reference build. That build loads the whole-genome
+   index, 38-75 s at about 14 GB, once per family set. A new family set therefore still peaks near 14 GB, against 19.4 GB
+   before. Round 9's own build ran inside the deleted crashed run.
+5. **"Realistic reads change the comparison" was not tested on this set:** there was no idealized-read run of set 10. A post
+   hoc idealized run is reported in the development doc.
+6. **Smaller points:**
+   - The local reference was validated against whole-genome mapping on idealized reads only. minimap2's repeat filter differs
+     on the local reference (99 vs 969 occurrences), so realistic reads are untested there.
+   - minimap2 breaks MAPQ-0 ties partly on the read NAME, so mapping by sequence moves tie choices; the bars were identical.
+   - Before amendment 1, the crashed runs' current, O1 and O2 outputs existed and were deleted. The order retry cannot be tuned
+     to the bars.
+   - Per-read detectability partly reflects sequencing noise.
+   - A BRANCH read without the novel exon still counts as detectable.
