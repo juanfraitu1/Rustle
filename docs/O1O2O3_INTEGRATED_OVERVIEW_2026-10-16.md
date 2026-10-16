@@ -54,20 +54,37 @@ integrated pipeline.
   3 and 5 without alleles, and round 7's held-out set) give x1.178 correct and 92% fewer errors. The 13 worlds it was
   developed on give x1.122 and 98% fewer.
 
+## Where the errors come from
+
+All 43 worlds, by the same rules as `summary.py e2e` (each error counted once):
+
+| error source | current | integrated |
+|---|---|---|
+| a present copy's read inside an absent-copy call (O3) | 3,412 | 61 |
+| a detectable absent copy's read placed on a present copy | 1,695 | 82 (all novel-exon, BRANCH) |
+| an uncatalogued copy's read placed on another copy | 1,213 | 291 |
+| a catalogued copy's read placed on another copy (O2) | 57 | 11 |
+| **all** | **6,377** | **445** |
+
+There were 109,493 reads from catalogued copies and 4,335 from uncatalogued ones.
+
 ## What each objective contributes
 
-- **O1** fixes the largest error source: copies in the genome that the catalog lacks. Their reads are otherwise placed on a
-  paralog, or called absent copies. With seeding they go to their own copy: 72% of them on round 7's held-out set.
-  - O1 drops silent copies without ever dropping an expressed one: 0 expressed copies dropped in any world.
+- **O3 makes the largest change.** More than half of the current method's errors (3,412 of 6,377) are absent-copy calls
+  on present copies' reads.
+  - Arm I made 117 true and 6 false calls over the 43 worlds.
+  - All 6 false calls are one cluster: NPIPA.5's reads hosted on the sister family NPIPB in round 1's held-out set, just
+    above delta (median `de` 0.0097, known since round 4).
+  - The earlier arms made the same number: H made 5 false calls (the same NPIPB cluster); K made 5 (one WASH cluster in each
+    round-7 world, 5 reads each), which arm I does not make.
+  - Branch calls, the genome check, the mosaic rule and family pooling catch detectable absent copies' reads: those placed
+    on a present copy fall from 1,695 to 82.
+- **O1 fixes the catalog.** Uncatalogued copies' reads placed on another copy fall from 1,213 to 291. With seeding they go to
+  their own copy: 72% of them on round 7's held-out set (348 of 481).
+  - O1 dropped 22 of 26 silent copies and none of the 1,740 expressed ones.
   - Its observed structures supply isoforms annotated on a paralog (CROSS).
-- **O2** (graph, all family structures on every copy) assigns more reads at near-zero error. Most of the current method's
-  errors are its O3 calls on present copies' reads, which the integrated O3 avoids.
-- **O3**:
-  - Branch calls detect novel-exon absent copies.
-  - The genome check removes false calls: none in any of the 43 worlds for arm I's predecessors H and K, and none for I in
-    the 17 worlds where it was scored per family.
-  - The mosaic rule and family pooling recover removed copies whose reads are split over hosts or carry no single copy's
-    alleles.
+- **O2 was already precise on catalogued copies** (57 wrong of 109,493 reads); the graph O2 brings that to 11 and abstains
+  less.
 
 ## What no step fixes
 
@@ -76,6 +93,8 @@ integrated pipeline.
 - **Alleles versus copies below delta** (round 6). The same signature needs the individual's own haplotypes. HG002 has them;
   its Kinnex reads are being aligned on the cluster.
 - **Removed copies near delta** (WASH at 0.0124, round 7), at the boundary of detectability.
+- **A sister family's copy hosted at delta** (NPIPA.5's reads on NPIPB, median `de` 0.0097): its reads look like an absent
+  copy. This is the only source of the integrated pipeline's false calls.
 - **One bug, known:** an uncatalogued locus can be seeded into two adjacent families (WASH and DDX11L). A seeded locus must
   belong to one family.
 
