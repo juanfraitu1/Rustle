@@ -236,8 +236,9 @@ from, with an absent-copy call taking precedence over an assignment. On this hel
 - The current method's errors are mostly its absent-copy calls on present copies' reads, which the O2 bars did not count.
 - Reads of the detectable removed copies end inside an absent-copy call: 181 / 181 for the integrated pipeline, 121 for the
   current method.
-- On the 12 development worlds the integrated pipeline has more correct fates and no more errors in 9. On round 4's INTACT,
-  CROSS and REMOVED it is within 12 reads, with 0 errors either way.
+- On the 12 development worlds the integrated pipeline has more correct fates and no more errors in 9.
+  - Round 4's INTACT and CROSS: 5 and 12 fewer correct reads, with 0 errors either way.
+  - Round 6's REMOVED: 227 more correct reads and 1 more error.
 
 This is computed after the results were seen, so it is not a claim. It is the basis for a pre-registered end-to-end test on a
 new family set.
