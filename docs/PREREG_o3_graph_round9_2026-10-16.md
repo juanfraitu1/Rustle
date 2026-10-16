@@ -131,6 +131,23 @@ Abstain and unknowable count for neither (`summary.py bars`).
 - arm I's calls, true or false;
 - **the run's cost:** `timing.json`, every step's wall time and peak RSS.
 
+## Amendment 1 (2026-10-16 15:28, before any result)
+
+**The first run crashed in O3 under both profiles.**
+- `vg msga` (v1.73, a deprecated subcommand) fails an assertion (`find_mems_deep: lcp_maxima.size() == mems.size()`) on
+  KRTAP4's five loci in FASTA order, both by default and with `-a`.
+- Any two of the loci build, and every other order tried builds.
+
+**The fix (`detect.py`, `msga_orders`, tested):**
+- retry `vg msga -a` with the loci reversed, then each rotation;
+- if every order fails, the family gets no graph and no branch calls; its PSV clustering still runs.
+- The reversed order builds KRTAP4's graph.
+
+**Nothing else changes.**
+- On development worlds, where msga never failed twice, `detect.py`'s output is byte-identical.
+- No outcome of round 9 was computed before this amendment: both runs stopped at O3, and no e2e or bars were written.
+- The two crashed run directories were deleted; the run is repeated from the start with the same commands.
+
 ## After the run
 
 - An independent review by a fresh subagent.

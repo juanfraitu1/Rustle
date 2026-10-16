@@ -239,3 +239,9 @@ def test_a_member_the_genome_explains_is_dropped_from_an_absent_copy_call():
     # psv call: keep members whose own placement diverges > DELTA; branch call: or carrying >= MIN_NOVEL unexplained bases
     assert D.member_filter("psv", ["a", "b", "c"], {"a": 0.02, "b": 0.003, "c": 0.0}, {"a": 0, "b": 0, "c": 0}) == ["a"]
     assert D.member_filter("branch", ["a", "b"], {"a": 0.001, "b": 0.001}, {"a": D.MIN_NOVEL, "b": 0}) == ["a"]
+
+
+def test_vg_msga_retries_reverse_then_rotations_of_the_loci_order():
+    # round 9 amendment 1: vg msga (v1.73) asserts on KRTAP4's loci in FASTA order (default and -a); other orders build
+    assert D.msga_orders(["a", "b", "c"]) == [["c", "b", "a"], ["b", "c", "a"], ["c", "a", "b"]]
+    assert D.msga_orders(["a"]) == []

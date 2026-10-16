@@ -327,6 +327,13 @@ def sh(cmd, binary_out=None):
     return r
 
 
+def msga_orders(names):
+    """Loci orders to retry `vg msga -a` in when FASTA order fails (round 9 amendment 1): reversed, then each rotation."""
+    if len(names) < 2:
+        return []
+    return [names[::-1]] + [names[k:] + names[:k] for k in range(1, len(names))]
+
+
 def family_graph(d, genome, copies):
     """vg graph of the family's loci (each in its transcript's orientation) with every curated isoform as a path -> GFA path."""
     os.makedirs(d, exist_ok=True)
@@ -345,7 +352,20 @@ def family_graph(d, genome, copies):
     try:
         sh(f"vg msga -f {d}/loci.fa -t 2", binary_out=f"{d}/g.vg")
     except SystemExit:                    # vg msga (v1.73) aborts on some loci sets (UGT2B, round 3): build in FASTA order
-        sh(f"vg msga -f {d}/loci.fa -t 2 -a", binary_out=f"{d}/g.vg")
+        try:
+            sh(f"vg msga -f {d}/loci.fa -t 2 -a", binary_out=f"{d}/g.vg")
+        except SystemExit:                # round 9 amendment 1: KRTAP4 asserts in FASTA order too; other orders build
+            seqs = PC.read_fa(f"{d}/loci.fa")
+            for order in msga_orders(list(seqs)):
+                with open(f"{d}/loci.order.fa", "w") as fh:
+                    fh.writelines(f">{n}\n{seqs[n]}\n" for n in order)
+                try:
+                    sh(f"vg msga -f {d}/loci.order.fa -t 2 -a", binary_out=f"{d}/g.vg")
+                    break
+                except SystemExit:
+                    continue
+            else:
+                return None               # no graph: the family gets no branch calls
     gtfs = " ".join(f"-n {d}/copy{c['idx']}.gtf" for c in copies)
     sh(f"vg rna {gtfs} -r -t 2 {d}/g.vg", binary_out=f"{d}/s.vg")
     sh(f"vg view {d}/s.vg > {d}/s.gfa")
@@ -567,6 +587,9 @@ def main(argv):
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
         if names:
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)
+            if gfa is None:
+                print(f"[o3_graph] {w}: no vg graph for {f} (vg msga failed in every order): no branch calls", flush=True)
+                continue
             br, _ = branch_calls(f"{out_dir}/{f}", gfa, names, reads)
             for k, m in enumerate(br):
                 calls.append(["S2", f, "branch", "-", k, m, 0.0])
