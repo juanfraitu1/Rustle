@@ -150,3 +150,65 @@ Elsewhere, from the round-6 development tables (corrected after a first draft ov
   catalogued ones). That is a candidate O2 claim for its own
 pre-registration on a new family set: "padded union O2 dominates the current O2". It was not this round's test, so it is not
 claimed here.
+
+## Review corrections (round-6 review, 2026-10-16; post hoc)
+
+A fresh reviewer re-derived every number above with independent code; all reproduce. Timing is clean (commit 09:32:19.491,
+`heldout6/` 18 ms later; nothing above "## Results" changed). No Critical finding. The corrections are about why the bars
+failed and what the flag did.
+
+**Why H1 fails (I1).** It was not mainly haplotype splitting:
+- Five of the six copies not covered have no linked copy-private alleles at all, so with MIN_ALT = 2 they can never be
+  flagged, with or without alleles:
+  - BCRP6: 6 alts, none unexplained;
+  - CCL3L1: one unexplained alt;
+  - DEFA1B: one private site, and DEFA got no het site;
+  - FRG1.2 and PMS2.8: their haplotype-1 clusters are explained.
+- Only GOLGA6B is a near miss: 47 / 60 = 78%, split over two hosts.
+- GGT2 did split by haplotype (32 + 27) and was still covered.
+
+So H1 also fails for reading 3's reason (copies with no PSV signature).
+
+**The flag contributed almost nothing to O2 here (I2).**
+- Padded union misplaces 118 reads: FRG1.2 60, CCL3L1 57, GOLGA6B 1. Only 1 of them is in a flagged cluster, against 45% on
+  the six earlier sets.
+- Of the 286 reads labelled `flagged` in REMOVED and OUTSIDE, 285 were correct calls of catalogued copies.
+- So H4 passes because of padded union, not the flag.
+
+**Dominance scope (I3).**
+- The side observation holds for INTACT, REMOVED and OUTSIDE only. In CROSS, padded union keeps 0.983 (round 3's set) and
+  0.969 (round 4's: that round's A1 failure) of the current O2's correct calls; round 4's REMOVED is 0.9958.
+- This set has no CROSS world, and its REMOVED and OUTSIDE are identical for O2 (2,644 reads, same hosting).
+- A dominance prereg needs a CROSS world.
+
+**Realism (I4).** The verdict's direction is robust, but "19%", "4 of 8" and "11 of 13" depend on these design choices:
+- Haplotype 1 is the reference exactly, and every alt allele sits on haplotype 2. A real donor's homozygous differences from
+  the reference would make whole copies flaggable, so the true cost is probably higher. Random phase would lower the flag
+  count; the reviewer's estimate is H2 still about 4 of 8 and H3 about 0.87, both failing.
+- Het sites are a deterministic count (round(0.001 x exonic length)). Copies under 1.5 kb of exon get at most one site and can
+  never be flagged, and the CCL3 copies sit just under. A Poisson draw would give about 6 of 8 families with a flaggable copy.
+- Expression is uniform: about 30 reads per haplotype, above the 20-read minimum.
+
+**Smaller.**
+- **M1.** With het 0 every product is byte-identical except the truth file, which gains a `hap` column (all 1).
+- **M2.** `classify_cluster`'s allele rule counts reads that cover no het site, and labels a >= 90% haplotype-1 cluster as
+  an allele. By the truth, all 13 INTACT flags here are allele clusters (two were labelled `other`).
+- **M3.** "13 below delta" in the background counts by PSV est_div; by O3's genome-`de` measure it is 10.
+- **M4.** Pre-run statements:
+  - "fewer wrong in all 18 development worlds": 5 tie;
+  - "within 0.4%": the worst is 0.42%;
+  - "fires on most catalogued copies": 13 of 44 held-out copies, which is most of those with >= 2 het sites.
+- **M5.** `apply_flag` labels only reads O2 had assigned. Members of flagged `copy` clusters that O2 abstained on are not
+  listed as candidates.
+- **M6.** REMOVED and OUTSIDE are identical here, so "4 of 16" is 2 of 8 distinct copies counted twice.
+
+### Verdict, revised after the review (2026-10-16)
+
+**Not claimed (reading 2: H2 and H3 fail; H1 also fails for reading 3's reason).**
+
+The answer to the question that started this round:
+- On the six earlier sets, about 45% of O2's misplaced reads carried an unannotated-copy signature.
+- On this fresh set, O2's misplacements come from copies with no PSV signature at all, while the flag fires on heterozygous
+  alleles: all 13 intact flags are allele clusters.
+- So the flag is not usable without allele information (DNA of the same individual, or phasing), and it is not what explains
+  O2's misplacements.
