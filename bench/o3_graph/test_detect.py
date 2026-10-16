@@ -179,3 +179,21 @@ def test_h_pools_the_family_s_unexplained_reads_across_its_hosts():
     assert D.family_pool(by_host, "F", None) == []
     assert D.arms_of("Hp", keep=True) == ["Hn", "H"] and D.arms_of("Hp", keep=False) == ["Hn"]
     assert D.arms_of("S2", keep=True)[-2:] == ["Hn", "H"]
+
+
+def test_a_crashing_vg_msga_is_retried_in_fasta_order(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_sh(cmd, binary_out=None):
+        calls.append(cmd)
+        if cmd.startswith("vg msga") and " -a" not in cmd:
+            raise SystemExit("failed: vg msga ... Signal 6")
+        if binary_out:
+            open(binary_out, "wb").close()
+    monkeypatch.setattr(D, "sh", fake_sh)
+    g = {"c1": "ACGT" * 500}
+    cps = [dict(idx=0, contig="c1", start=100, end=900, strand="+", isoforms={"t": [(100, 300), (500, 900)]}),
+           dict(idx=1, contig="c1", start=1000, end=1800, strand="-", isoforms={"u": [(1000, 1800)]})]
+    D.family_graph(str(tmp_path / "f"), g, cps)
+    msga = [c for c in calls if c.startswith("vg msga")]
+    assert len(msga) == 2 and msga[1].endswith(" -a")

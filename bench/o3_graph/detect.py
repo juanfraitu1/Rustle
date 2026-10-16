@@ -319,7 +319,10 @@ def family_graph(d, genome, copies):
                     for s, e in orient(raw, ex, c["strand"], lo)[1]:
                         g.write(f"copy{c['idx']}\tsim\texon\t{s + 1}\t{e}\t.\t+\t.\t"
                                 f"transcript_id \"copy{c['idx']}|{iso}\"; gene_id \"copy{c['idx']}\";\n")
-    sh(f"vg msga -f {d}/loci.fa -t 2", binary_out=f"{d}/g.vg")
+    try:
+        sh(f"vg msga -f {d}/loci.fa -t 2", binary_out=f"{d}/g.vg")
+    except SystemExit:                    # vg msga (v1.73) aborts on some loci sets (UGT2B, round 3): build in FASTA order
+        sh(f"vg msga -f {d}/loci.fa -t 2 -a", binary_out=f"{d}/g.vg")
     gtfs = " ".join(f"-n {d}/copy{c['idx']}.gtf" for c in copies)
     sh(f"vg rna {gtfs} -r -t 2 {d}/g.vg", binary_out=f"{d}/s.vg")
     sh(f"vg view {d}/s.vg > {d}/s.gfa")
