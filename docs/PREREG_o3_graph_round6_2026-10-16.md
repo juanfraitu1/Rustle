@@ -101,3 +101,48 @@ expression imbalance, no somatic or editing variation.
 ## Results
 
 Added after the runs. Nothing above this heading changes once a statistic has been seen.
+
+## Results (held out, 2026-10-16)
+
+Run: code and prereg `ef78d6ed`, the frozen copy_assign binary, seed 71, `--het 0.001` (60 heterozygous sites). Outputs in
+`/mnt/linuxdisk/tmp/o3_graph/real/heldout6/` (`flags.json`, `o2_*.json`); summaries from `summary.py flags` and `o2graph.py
+score`.
+
+| | INTACT | REMOVED | OUTSIDE |
+|---|---|---|---|
+| flagged clusters: copy / allele / other | 0 / 11 / 2 | 5 / 7 / 2 | 5 / 7 / 2 |
+| uncatalogued copies flagged | - | 2 of 8 | 2 of 8 |
+| families with a false flag | 4 of 8 (FRG2, GGT, GOLGA6, PMS2) | 4 | 4 |
+| correct / wrong: current O2 | 1,983 / 0 | 1,683 / 157 | 1,683 / 157 |
+| correct / wrong: padded union O2 | 2,104 / 0 | 1,790 / 118 | 1,790 / 118 |
+| correct / wrong: padded union + flag | 1,701 / 0 | 1,505 / 117 | 1,505 / 117 |
+
+"Wrong" counts reads of non-catalogued copies placed, wrong-copy and wrong-family calls.
+
+| bar | value | |
+|---|---|---|
+| H1 | 4 of 16 uncatalogued copies covered (0.25) | **fail** |
+| H2 | 4 of 8 INTACT families falsely flagged | **fail** |
+| H3 | 1,701 / 2,104 = 0.81 of padded union's correct calls kept | **fail** |
+| H4 | 117 < 157 in REMOVED and in OUTSIDE | pass |
+
+### Verdict (2026-10-16)
+
+**Not claimed (reading 2: H2 and H3 fail).** Without allele information (DNA of the same individual, or phasing), the flag
+cannot tell an unannotated copy below delta from a heterozygous allele.
+- At human heterozygosity (0.1%), 11 of the 13 clusters it flags in intact families are one haplotype of a catalogued copy.
+- It costs 19% of O2's correct calls.
+- The unannotated copies' own reads split by haplotype, so it covers only 4 of 16.
+
+So the answer to the question that started this round: O2's misplaced reads do carry an unannotated-copy signature, but at
+the divergence where O2 misplaces them, alleles carry the same one.
+
+**Reported beside the bars (no claim).** On this fresh set, padded union O2 without the flag beats the current O2 on both
+counts in every world:
+- INTACT 2,104 vs 1,983 correct (no wrong);
+- REMOVED and OUTSIDE 1,790 vs 1,683 correct, and 118 vs 157 wrong.
+
+It did the same, without alleles, on round 2's and round 4's sets and with alleles on round 5's development worlds. It did not
+on round 3's set (no headroom) or round 5's (near-identical uncatalogued copies). That is a candidate O2 claim for its own
+pre-registration on a new family set: "padded union O2 dominates the current O2". It was not this round's test, so it is not
+claimed here.
