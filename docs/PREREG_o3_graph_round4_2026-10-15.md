@@ -214,3 +214,82 @@ not thread, it abstains on reads the current O2 places correctly (68 of 500 in C
 never gained correct assignments that held up: the gains were annotation-decided or absent.
 
 Scope: simulated reads (curated CAT isoforms, HiFi errors) on the real CHM13 genome.
+
+## Review corrections (round-4 review, 2026-10-16; post hoc)
+
+A fresh reviewer re-derived every round-4 number from the raw outputs, and all of them reproduce. Timing is clean: prereg
+23:28:40, first held-out file 23:28:53. No Critical finding. The corrections are about attribution and scope.
+
+**Credit (I1).**
+- The false-call drop is the genome check's: S3, the current method plus the genome check with no graph, also has 0 of 24
+  false-call families and detects 5 of 6 removed copies.
+- The novel-exon detections are the branch calls'.
+- The one removed copy H finds beyond the current method, PRAMEF, comes from the mosaic-rule extension in `b0a3e59f`. Its
+  cluster is `unexplained` at est_div 0.0076-0.0089, below delta, and its nearest copy is 0.019-0.023 away.
+- Pooling added nothing here: S123m equals H in every world.
+- The pre-registered sentence says "at most one false call", not "no false call".
+
+**Scope (I2).**
+- On development set 2 the claimed detector fails B2: NPIPB false calls in INTACT, CROSS and OUTSIDE (3 of 24), plus REMOVED.
+  `b0a3e59f` introduced them; H before the fix had none there.
+- Development set 2 is the only one of the five sets with sister-family hosting: 550-790 reads per world are hosted on
+  another family, against 0 in this held-out set and in dev-3 and dev-4. So this held-out 0 / 24 does not test that case.
+- Part of it is a simulation artifact. NPIPA.5's Liftoff models put every junction 2-5 bp off a canonical site, so its reads
+  sit at median `de` 0.0092 even on their own locus. The 10-11-read clusters reach 0.0097, above delta by 0.00012.
+
+**Open code gaps, not fixed (I3).** Either fix is a method change that needs its own prereg; no round-4 outcome depends on
+them.
+- `status_of` returns `explained` before any distance is computed, and `explains` compares a copy only at sites called from the
+  reads. A gene-conversion-type absent copy (a host plus a tract of another copy's alleles) comes out `explained` although
+  every single copy is 1-2% away.
+- `nearest_copy` counts deletions shared by the copy and the reads as differences, because sites are called from A/C/G/T only.
+  KIR.6's own reads come out 0.0135 from their own copy. So the mosaic distance has a noise floor near delta.
+
+**Reproducibility (I4).** B3's detectable set and A1-A4 came from scratch scripts. They are now `bench/o3_graph/summary.py`
+(`o3`, `o2bars`; tests), which reproduces every value above.
+
+**O2 history (I5).** The sentence "graph O2 never gained correct assignments that held up" overstated it. Round 1's
+genome-separable gain was +8.4%, failing its 10% bar. Round 2's was about 1.5%, round 3's none, and round 4's -1%.
+
+**Smaller corrections.**
+- **m1.** The BRANCH miss (CYP2A) is not "one call short". One branch call holds all 44 scored reads plus 8 reads of the same
+  absent copy without the whole novel exon, so purity is 0.846 against 0.9. `detected_all_reads` is true.
+- **m2.** "71% fewer" is the three-world figure (148 / 505). REMOVED and BRANCH alone are 88 / 445, 80% fewer. Locus O2
+  places exactly as few (60 / 60 / 28), so A3 measures the shared delta abstention, not the graph.
+- **m3.** 15 of the 41 lifted CROSS structures are not threaded (158 reads, 73 still right). The 68 lost reads are 67 of
+  those plus 1 from a threaded CYP2A structure.
+- **m4.** Dropping OUTSIDE from A3's "fewer" clause before commit was disclosed and data-free, but the stated reason does not
+  hold. Padded union calls most of the uncatalogued paralog's reads `unexplained` (dev 304 / 483, dev-2 218 / 481, held out
+  363 / 481); both methods place only the minority within delta. The change decided A3 here (OUTSIDE 60 = 60 would have failed
+  the original wording), but not the verdict.
+- **m5.** "Precision >= 0.999 every time" is false for round 1 (CROSS 0.946) and for round 2 per world (CROSS 0.9973). The
+  final detector's record across the earlier sets: dev-4 sits exactly at B3's 0.75 (CGB `de` 0.0101), and dev-2 fails B2.
+- **m7.** The duplicated "## Results" heading is kept as in the earlier docs: the first marks where the prereg ends.
+
+**Every H detection** (recall, purity, genome `de`):
+- REMOVED: CYP2A 61/61, GTF2I, NBPF, PRAMEF, TRIM and VCX 60/60 (VCX also 58/60), purity 1.0; de 0.015-0.096.
+- BRANCH: CSAG 40/40, DEFB10, GTF2I, NBPF, PRAMEF, TRIM and VCX 60/60.
+- No detection sits at the 0.8 recall bar (the lowest is 0.967). Losing PRAMEF would still pass B3 and B4.
+
+### Verdict, revised after the review (2026-10-16)
+
+**O3: claimed (reading 2; B1-B4 pass on the held-out set), in the pre-registered words.** "On simulated reads of handpicked
+real families, graph O3 that clusters a family's O2-unexplained reads together, with the mosaic rule, detects novel-exon
+absent copies and >= 75% of detectable removed copies, with at most one false call over intact, uncatalogued-paralog and
+paralog-annotation families." Observed: 7 of 8, 6 of 6, 0 of 24.
+
+Attribution and scope:
+- the novel exons come from the branch calls;
+- the false-call drop comes from the genome check (the current method plus it, S3, also gets 0 / 24 and 5 / 6);
+- the extra removed copy (PRAMEF) comes from the mosaic-rule extension;
+- pooling added nothing on this set;
+- the claim holds for families without sister-family hosting. On development set 2, where another family's reads land on
+  the family near delta, this detector makes false calls in 4 of 5 worlds.
+
+**O2: not claimed (A1 fails, 0.969 in CROSS).**
+- Padded union O2 is precise: 1.0 in every world here.
+- It places as few reads of non-catalogued copies as locus O2, which shares its delta abstention.
+- It keeps 4.5% more correct calls than locus O2.
+- It abstains on paralog structures it does not thread.
+- Across five family sets its genome-separable gain over the current O2 has been +8.4% at most (round 1, failing its bar),
+  and about 0 since.

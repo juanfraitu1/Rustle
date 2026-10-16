@@ -203,6 +203,8 @@ the assumption that a copy without the structure's exons or splice sites does no
 
 ### Verdict (2026-10-15)
 
+*Superseded by "Verdict, revised after the review" below.*
+
 **O2: claimed in part (U1, U2, U3, U5 pass; U4 fails).** On a fresh set of handpicked families:
 - union O2 assigns 7.4% more reads correctly than the current O2, at precision 0.9993;
 - it does better than the current O2 in every world, including when isoforms are annotated on another paralog (CROSS,
@@ -255,7 +257,7 @@ to five times, so "every world" amounts to about three independent comparisons.
 
 **Boundary (M6).** LRRC37A's removed-copy detection holds exactly 48 of 60 reads, which is the recall bar (0.80).
 
-**Held-out files.** `graph/calls.frozen.tsv` in each `heldout2` world holds the calls these results were scored on.
+**Held-out files.** `graph/calls.frozen.tsv` in each `heldout2` world is a copy of the 22:02-22:08 re-run (round-3 development), not of the 21:51 run; it matches all 440 rows these results were scored on and also carries H rows.
 `graph/calls.tsv` now holds the post-review detector's calls.
 
 ### Verdict, revised after the review (2026-10-15)

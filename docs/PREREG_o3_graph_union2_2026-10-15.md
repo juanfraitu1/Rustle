@@ -193,6 +193,8 @@ H detects UGT2B, as every arm does, and CGB, which only H detects: copy_assign s
 
 ### Verdict (2026-10-15)
 
+*Superseded by "Verdict, revised after the review" below.*
+
 **O2: not claimed (V2, V3 fail; V1, V4, V5 pass).** On this set the current O2 already reaches the genome-separable ceiling,
 and padded union O2 assigns 0.5% fewer reads correctly. What holds on both fresh sets (rounds 2 and 3):
 - graph O2 never assigns a read to a wrong copy or a wrong family (precision 1.0 / 0.9993);
@@ -212,8 +214,8 @@ set:
 
 ## Review corrections (rounds 2-3 review, 2026-10-15; post hoc)
 
-A fresh reviewer re-derived every number above from the raw outputs, and all of them reproduce. The corrections are about
-what the numbers mean.
+A fresh reviewer re-derived every number above from the raw outputs; all reproduce except the dev-2 false-call count (M1
+below). The other corrections are about what the numbers mean.
 
 **Verdict labels (C1).** Reading 2 allows "without the removed-copy clause" only when H3 is not measurable. H3 was measurable
 (4 detectable) and failed. So: **O3 not claimed (H3 fails).** O2 was already not claimed.
@@ -221,7 +223,7 @@ what the numbers mean.
 **The KIR explanation was wrong (C2).** The `explains` rule did not explain KIR's cluster. Its status was `unexplained`: 5 of
 41 alt sites copy-private, linkage 0.98, but est_div 0.0032, below delta, so no PSV call. The documented mosaic rule (this
 prereg: "a cluster no single copy explains whose nearest copy differs from its consensus at > delta") would have called it,
-since the nearest single copy is 0.021-0.032 away. But the code applied it only to `unresolved` / `unlinked` clusters. The
+since the nearest single copy is 0.012-0.032 away, depending on the host. But the code applied it only to `unresolved` / `unlinked` clusters. The
 code now follows the documentation (`b0a3e59f`, test). Re-run with it, post hoc, which cannot change the verdict:
 - here: H detects UGT2B, CGB and KIR, 3 of 4 detectable (0.75, H3's bar), with no false-call family in any world;
 - on round 2's set: 3 of 3 (FCGR, LRRC37A, PSG), no false call;
@@ -230,7 +232,7 @@ code now follows the documentation (`b0a3e59f`, test). Re-run with it, post hoc,
 **H flagged the same pooled reads once per host (I5).** For example, PSG's 61 reads appeared as 6 calls. The family-level
 scorer counted no extra detection or false call, but "clusters once" was wrong. Calls are now one per member set
 (`b0a3e59f`). Pooling also raises false calls before the genome check: Hn has false calls in CROSS (MAGEA, SSX) and OUTSIDE
-(CGB, KIR, MAGEA, UGT2B) that only the genome check removes. H2 rests on the genome check.
+(CGB, MAGEA, UGT2B; KIR too with the post-review detector) that only the genome check removes. H2 rests on the genome check.
 
 **The O2 statements across rounds overclaimed (I1).**
 - Precision: 1.0 on this set and 0.9993 for round 2's union O2. Round 2's 5 wrong AMY calls failed U4. Padded union's 1.0 on
@@ -255,7 +257,7 @@ gets 35 right. Those reads are the Hn false calls in CROSS.
 - **M1.** Dev-2's false-call count for CUR is 16 of 40, not 13 (13 was the 32-family count).
 - **M2.** The 45 lost reads are net: 57 lost, all `unexplained` (MAGEA 22, SSX 15, CGB 10, SPANX 10), minus 12 gained (3
   distinct CGB reads). "Every method gets every read" is false for KIR (locus O2 1,900 of 2,336; path O2 2,285; union 2,326)
-  and UGT2B (path O2 785 of 809; union 806 of 809). MAGEA and SSX's ~40% unassigned holds in INTACT, CROSS and BRANCH.
+  and UGT2B (path O2 785 of 809; union 806 of 809), and CYP4F leaves 122 of 488 reads to every method (366 of 488). MAGEA and SSX's ~40% unassigned holds in INTACT, CROSS and BRANCH.
 - **M3.** CYP4F (2 copies): in OUTSIDE and REMOVED copy_assign writes no row for the family (one catalogued copy left), so it
   was unreachable by design and still in H3's denominator. Round 4 requires >= 3 copies.
 - **M4.** All five worlds share INTACT's catalogued-copy reads; pooled counts repeat reads up to five times.
