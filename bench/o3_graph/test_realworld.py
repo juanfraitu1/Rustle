@@ -227,3 +227,9 @@ def test_a_truncation_that_would_leave_too_little_is_redrawn_not_dropped():
     out = R.draw_truncation("A" * 400, pairs, random.Random(0), min_len=200)
     assert len(out) == 400 - 40 - 40
     assert R.draw_truncation("A" * 400, [[0.9, 0.0]], random.Random(0), min_len=200, tries=3) == "A" * 400
+
+
+def test_adapters_are_attached_at_drawn_clip_lengths():
+    out = R.attach_adapters("CCCCCC", "AAATTT", "GGGTTT", (2, 4))
+    assert out == "TT" + "CCCCCC" + "GGGT"
+    assert R.attach_adapters("CC", "AAA", "GGG", (5, 0)) == "AAA" + "CC"     # a clip longer than the adapter: all of it

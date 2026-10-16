@@ -5,7 +5,9 @@
 
 Per family (its curated copies, isoforms.json):
   family reads  reads with any alignment (primary or secondary) on a curated copy's locus (+- PAD) in WORLD/E0.bam
-  support       a curated copy is KEPT when >= MIN_SUPPORT family reads have their PRIMARY alignment on its locus; else it is
+  support       a curated copy is KEPT when >= MIN_SUPPORT family reads have their PRIMARY alignment on its locus, or when one
+                family read is placed on it uniquely (mapq >= MIN_MAPQ_NEW) and owned by it (round 9 review: realistic
+                expression leaves expressed copies with 4-5 reads, and a coin-flip count alone dropped them); else it is
                 DROPPED (nothing in the data says it is expressed: the universe O2 chooses from shrinks)
   new copies    family reads' primary alignments off every curated locus of every family, grouped by overlap (gaps <= JOIN),
                 groups with >= MIN_SUPPORT reads placed there uniquely (mapq >= MIN_MAPQ_NEW): a locus the family's reads come from that the
@@ -134,7 +136,9 @@ def seed_family(cps, prim, all_loci, min_support=MIN_SUPPORT, min_chain=MIN_CHAI
     family's curated loci (padded), so another family's copy is never seeded here. -> (seeded copies, dropped idx)."""
     loci = {c["idx"]: (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for c in cps}
     sup = support(prim, loci)
-    keep = set(kept(sup, min_support))
+    unique = collections.Counter(owner(a, cps) for a in prim if a.get("mapq", 60) >= MIN_MAPQ_NEW)
+    keep = set(kept(sup, min_support)) | {i for i in loci if unique[i] >= 1}   # (round 9 review) one read placed there
+    # uniquely is evidence the copy is expressed: realistic expression leaves expressed copies under the count
     copies = []
     for c in cps:
         if c["idx"] not in keep:

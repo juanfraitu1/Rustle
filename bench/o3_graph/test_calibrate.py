@@ -72,3 +72,8 @@ def test_error_stats_separate_a_shared_donor_allele_from_a_read_s_own_error():
     reads = [rd([(50, "T"), (10, "G")]), rd([(50, "T")]), rd([(50, "T")])]
     s = C.error_stats(reads)
     assert s["hom_per_base"] == 3 / 300 and s["sub_error"] == 1 / 300 and s["het_per_base"] == 0
+
+
+def test_the_adapter_consensus_is_taken_at_the_most_common_clip_length():
+    clips = ["ACGTA", "ACGTA", "ACCTA", "ACGT", "TTTTTTT"]
+    assert C.adapter_consensus(clips) == "ACGTA"

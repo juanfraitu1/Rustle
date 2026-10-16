@@ -307,6 +307,13 @@ def draw_truncation(seq, pairs, rng, min_len=MIN_READ, tries=10):
     return seq
 
 
+def attach_adapters(body, adapter5, adapter3, lens):
+    """A read with library adapters left on (profile key adapter5: the public testis library): the last l5 bases of the 5'
+    adapter, the read, the first l3 of the 3' adapter ((l5, l3) drawn from the calibrated clip lengths; longer = all of it)."""
+    l5, l3 = min(lens[0], len(adapter5)), min(lens[1], len(adapter3))
+    return adapter5[len(adapter5) - l5:] + body + adapter3[:l3]
+
+
 def truncate(seq, m5, m3, min_len=MIN_READ):
     """A transcript that lost fractions m5 of its 5' end and m3 of its 3' end; the whole transcript when < min_len would be left."""
     n5, n3 = int(m5 * len(seq)), int(m3 * len(seq))
@@ -544,6 +551,8 @@ def cmd_build(a):
                         lo, hi = 0, len(seq)
                     if prof:
                         b = seq[lo:hi]
+                        if prof.get("adapter5"):                  # an untrimmed library: adapters on both ends
+                            b = attach_adapters(b, prof["adapter5"], prof["adapter3"], r.choice(prof["adapter_len_pairs"]))
                         b = apply_edits(b, draw_edits(b, r, prof))
                         rd = (b, "~" * len(b))
                     else:
@@ -560,6 +569,8 @@ def cmd_build(a):
                         lo, hi = 0, len(seq)
                     if prof:
                         b = seq[lo:hi]
+                        if prof.get("adapter5"):                  # an untrimmed library: adapters on both ends
+                            b = attach_adapters(b, prof["adapter5"], prof["adapter3"], r.choice(prof["adapter_len_pairs"]))
                         b = apply_edits(b, draw_edits(b, r, prof))
                         rd = (b, "~" * len(b))
                     else:

@@ -160,6 +160,10 @@ def cmd_run(a):
         x = "--projection liftover" if w == "CROSS" else ""
         st.run(w, "simulate", f"python3 bench/o3_graph/realworld.py build {root}/{w} {a.families} --set {a.set} --scenario {w} "
                f"--seed {a.seed} {het} {prof} {g} {x}")
+    if a.trim_adapters:                                                            # 3b: an untrimmed library's adapters off
+        for w in worlds:
+            os.replace(f"{root}/{w}/reads.E0.fq", f"{root}/{w}/reads.E0.raw.fq")
+            st.run(w, "trim", f"python3 bench/o3_graph/trim.py fastq {root}/{w}/reads.E0.raw.fq {root}/{w}/reads.E0.fq {a.trim_adapters}")
     full = [w for w in worlds if w != "REMOVED"]                                   # 4
     t = time.time()
     n_union, n_reads = map_union(root, full, local, a.threads) if full else (0, 0)
@@ -175,7 +179,7 @@ def cmd_run(a):
         st.run(w, "O1", f"python3 bench/o3_graph/o1seed.py {W}")
         st.run(w, "O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}")
         st.run(w, "O3", f"env O3_GRAPH_CACHE={root}/.graph_cache python3 bench/o3_graph/detect.py {W}"
-               + (" --member-genome-check" if a.member_genome_check else ""))
+               + (" --member-genome-check" if a.member_genome_check else "") + ("" if a.all_arms else " --arms I"))
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for f in [ex.submit(chain, w) for w in worlds]:
             f.result()
@@ -209,6 +213,8 @@ def main(argv=None):
     p.add_argument("--o2-distance", choices=("clip", "gapcomp"), default="clip")
     p.add_argument("--member-genome-check", action="store_true")
     p.add_argument("--heavy-current", action="store_true", help="run copy_assign under the heavy lock (large families)")
+    p.add_argument("--all-arms", action="store_true", help="O3: every legacy arm too (default: the integrated arm I only)")
+    p.add_argument("--trim-adapters", default="", help="ADAPTERS.json: trim the library's adapters off every read before mapping")
     p.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)
     return a.func(a)

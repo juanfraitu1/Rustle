@@ -171,3 +171,17 @@ def test_seed_world_runs_on_a_fresh_world_with_no_graph_directory(tmp_path):
     assert S.seed_world(str(w)) == 0
     sj = json.load(open(w / "graph" / "seeded.json"))
     assert [c["idx"] for c in sj["F"]["copies"]] == [0] and len(sj["F"]["family_reads"]) == 6
+
+
+def test_a_copy_with_one_uniquely_placed_read_of_its_own_is_kept_though_under_the_count():
+    # round 9 review: realistic expression leaves copies with 4-5 reads; PGA.2 had 2 uniquely placed primaries and was dropped
+    cps = [dict(idx=0, contig="c1", start=1000, end=3000, strand="+", rep="t", isoforms={"t": [[1000, 1300], [1800, 2200]]}),
+           dict(idx=1, contig="c1", start=10000, end=12000, strand="+", rep="u", isoforms={"u": [[10000, 10400]]}),
+           dict(idx=2, contig="c1", start=20000, end=22000, strand="+", rep="v", isoforms={"v": [[20000, 20400]]})]
+    prim = ([dict(_aln(f"a{i}", "c1", 1000, [(0, 300), (800, 1200)]), mapq=0) for i in range(2)]
+            + [dict(_aln("a9", "c1", 1000, [(0, 300), (800, 1200)]), mapq=60)]                  # copy 0: 3 reads, 1 unique
+            + [dict(_aln(f"b{i}", "c1", 10000, [(0, 400)]), mapq=0) for i in range(3)]           # copy 1: 3 coin flips
+            + [dict(_aln(f"c{i}", "c1", 20000, [(0, 400)]), mapq=0) for i in range(5)])          # copy 2: 5 coin flips
+    loci = {("F", c["idx"]): ("c1", c["start"] - 1000, c["end"] + 1000) for c in cps}
+    copies, dropped = S.seed_family(cps, prim, loci)
+    assert [c["idx"] for c in copies if c["origin"] == "curated"] == [0, 2] and dropped == [1]

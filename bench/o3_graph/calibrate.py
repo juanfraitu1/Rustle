@@ -154,6 +154,13 @@ def expression_log_sd(counts):
     return math.sqrt(max(0.0, statistics.pvariance(logs) - statistics.mean(1 / c for c in n)))
 
 
+def adapter_consensus(clips):
+    """The majority base per position of the clipped sequences at their most common length."""
+    L = collections.Counter(len(c) for c in clips).most_common(1)[0][0]
+    same = [c for c in clips if len(c) == L]
+    return "".join(collections.Counter(c[i] for c in same).most_common(1)[0][0] for i in range(L))
+
+
 def _quantiles(v):
     v = sorted(v)
     return {str(q): v[min(len(v) - 1, int(q * len(v)))] for q in QUANTS} if v else {}
@@ -317,6 +324,40 @@ def cmd_tags(a):
     return 0
 
 
+def cmd_adapters(a):
+    """Library adapters left on the reads: the soft clips at each end of primary MAPQ >= min-mapq reads (read orientation), their
+    consensus (adapter_consensus over clips >= 40 bases) and every read's (5' clip, 3' clip) pair (sampled)."""
+    import pysam
+    import random
+    comp = str.maketrans("ACGTN", "TGCAN")
+    five, three, pairs = [], [], []
+    with pysam.AlignmentFile(a.bam) as bam:
+        for ch in a.chroms.split(","):
+            for r in bam.fetch(ch):
+                if r.is_secondary or r.is_supplementary or r.is_unmapped or r.mapping_quality < a.min_mapq or r.query_sequence is None:
+                    continue
+                c, q = r.cigartuples, r.query_sequence
+                if r.is_reverse:
+                    q, c = q[::-1].translate(comp), c[::-1]
+                l5 = c[0][1] if c[0][0] == 4 else 0
+                l3 = c[-1][1] if c[-1][0] == 4 else 0
+                pairs.append([l5, l3])
+                if l5 >= 40:
+                    five.append(q[:l5])
+                if l3 >= 40:
+                    three.append(q[len(q) - l3:])
+                if len(pairs) >= a.max_reads:
+                    break
+            if len(pairs) >= a.max_reads:
+                break
+    out = dict(source=a.bam, reads=len(pairs), both_clipped_frac=sum(1 for x, y in pairs if x >= 20 and y >= 20) / max(1, len(pairs)),
+               adapter5=adapter_consensus(five) if five else "", adapter3=adapter_consensus(three) if three else "",
+               adapter_len_pairs=random.Random(1).sample(pairs, min(5000, len(pairs))))
+    json.dump(out, open(a.out, "w"), indent=0)
+    print(json.dumps({k: v for k, v in out.items() if k != "adapter_len_pairs"}, indent=1))
+    return 0
+
+
 def cmd_expression(a):
     import pysam
     fams = json.load(open(a.families))["sets"]
@@ -361,6 +402,13 @@ def main(argv=None):
     p.add_argument("--max-reads", type=int, default=30000)
     p.add_argument("--min-mapq", type=int, default=60)
     p.set_defaults(func=cmd_errors)
+    p = sub.add_parser("adapters")
+    p.add_argument("bam")
+    p.add_argument("out")
+    p.add_argument("--chroms", default="chr21")
+    p.add_argument("--max-reads", type=int, default=20000)
+    p.add_argument("--min-mapq", type=int, default=60)
+    p.set_defaults(func=cmd_adapters)
     p = sub.add_parser("tags")
     p.add_argument("bam")
     p.add_argument("out")

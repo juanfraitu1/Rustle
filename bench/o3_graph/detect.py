@@ -505,6 +505,7 @@ def member_genome(members, gst, read_len):
 
 def main(argv):
     w = argv[0]
+    only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
     rows = list(csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"))
@@ -548,15 +549,16 @@ def main(argv):
             g = genome[rep["contig"]]
             lo, hi = max(0, rep["rs"] - PC.PAD), min(len(g), rep["re"] + PC.PAD)
             ref = g[lo:hi].upper()
-            cov = PC.align("host", ref, {n: reads[n] for n in names if n in reads}, tmp)
-            m_rep = PC.align("host", ref, {f"copy{c['idx']}": c["seq"] for c in cps}, tmp)
+            if not only_i:                                    # R0/S1/S4/G: every host read; arm I needs only its own pool
+                cov = PC.align("host", ref, {n: reads[n] for n in names if n in reads}, tmp)
+                m_rep = PC.align("host", ref, {f"copy{c['idx']}": c["seq"] for c in cps}, tmp)
             iso_seqs = {f"copy{c['idx']}|{k}": "".join(g2[a:b] for a, b in ex) for c in cps
                         for g2 in [genome[c["contig"]]] for k, ex in c["isoforms"].items()}
             m_iso_each = PC.align("host", ref, iso_seqs, tmp)
             m_iso = {f"copy{c['idx']}": union_map([m for k, m in m_iso_each.items() if k.startswith(f"copy{c['idx']}|")])
                      for c in cps}
-            sites, clusters, vec = PC.cluster_host(ref, cov)
             host = ",".join(str(c["idx"]) for c in sorted(cls, key=lambda c: c["idx"]))
+            sites, clusters, vec = PC.cluster_host(ref, cov) if not only_i else (None, [], None)
             for k, (members, cons) in enumerate(sorted(clusters, key=lambda x: -len(x[0]))):
                 for arm, maps in (("R0", m_rep), ("S1", m_iso)):
                     st, div = status_of(members, cons, sites, ref, maps, cov, vec)
@@ -565,7 +567,7 @@ def main(argv):
                 st, div = status_of(members, cons, sites, ref, m_iso, cov, vec, mosaic=True)
                 if st in ("unexplained", "mosaic") and div > DELTA:
                     calls.append(["S1m", f, "psv", host, k, sorted(members), div])
-            un = restrict([n for n in names if n in cov], f, o2_unexpl)
+            un = restrict([n for n in names if n in cov], f, o2_unexpl) if not only_i else []
             if len(un) >= PC.MIN_SUPPORT:
                 cov_u = {n: cov[n] for n in un}
                 sites_u, clusters_u, vec_u = PC.cluster_host(ref, cov_u)
@@ -573,7 +575,7 @@ def main(argv):
                     st, div = status_of(members, cons, sites_u, ref, m_iso, cov_u, vec_u)
                     if st == "unexplained" and div > DELTA:
                         calls.append(["S4p", f, "psv", host, k, sorted(members), div])
-            un = restrict([n for n in names if n in cov], f, o2u_unexpl)
+            un = restrict([n for n in names if n in cov], f, o2u_unexpl) if not only_i else []
             if len(un) >= PC.MIN_SUPPORT:
                 cov_u = {n: cov[n] for n in un}
                 sites_u, clusters_u, vec_u = PC.cluster_host(ref, cov_u)
@@ -581,7 +583,7 @@ def main(argv):
                     st, div = status_of(members, cons, sites_u, ref, m_iso, cov_u, vec_u, mosaic=True)
                     if st in ("unexplained", "mosaic") and div > DELTA:
                         calls.append(["Gp", f, "psv", host, k, sorted(members), div])
-            if len(pool) >= PC.MIN_SUPPORT:                   # H: the family's pooled unexplained reads on this host
+            if len(pool) >= PC.MIN_SUPPORT and not only_i:    # H: the family's pooled unexplained reads on this host
                 cov_h = PC.align("host", ref, {n: reads[n] for n in pool}, tmp)
                 if len(cov_h) >= PC.MIN_SUPPORT:
                     sites_h, clusters_h, vec_h = PC.cluster_host(ref, cov_h)
@@ -589,7 +591,7 @@ def main(argv):
                         st, div = status_of(members, cons, sites_h, ref, m_iso, cov_h, vec_h, mosaic=True)
                         if st in ("unexplained", "mosaic") and div > DELTA:
                             calls.append(["Hp", f, "psv", host, k, sorted(members), div])
-            if len(pool_k) >= PC.MIN_SUPPORT:                 # K: as H, on the pool no family's graph nor the loci explain
+            if len(pool_k) >= PC.MIN_SUPPORT and not only_i:  # K: as H, on the pool no family's graph nor the loci explain
                 cov_k = PC.align("host", ref, {n: reads[n] for n in pool_k}, tmp)
                 if len(cov_k) >= PC.MIN_SUPPORT:
                     sites_k, clusters_k, vec_k = PC.cluster_host(ref, cov_k)
@@ -632,6 +634,8 @@ def main(argv):
                     continue
             rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(mm), est_div=round(div, 5),
                                  genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(mm)))
+    if only_i:
+        rows_out = [r for r in rows_out if r["arm"] in ("In", "I")]
     with open(f"{out_dir}/calls.tsv", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["arm", "family", "kind", "host", "cluster", "n_reads", "est_div", "genome_median_de",
                                             "genome_median_novel", "members"], delimiter="\t", lineterminator="\n")
