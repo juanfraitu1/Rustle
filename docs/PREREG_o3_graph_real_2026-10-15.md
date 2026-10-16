@@ -189,6 +189,8 @@ Per family (correct, current -> path O2 margin 2):
 
 ### Verdict (2026-10-15)
 
+*Superseded by "Verdict, revised after the review" at the end of this document.*
+
 **O2: reading 1, claimed** (simulated reads of handpicked real families). O2 on every curated isoform path assigns 14.3% more
 reads correctly than the current O2, at precision 1.0. It also places fewer reads of non-catalogued copies (181 vs 426).
 The representatives-only version makes wrong assignments (12 held out, 154 in development), so the all-isoform content is
@@ -256,3 +258,123 @@ structures over 46 copies:
 2. X1 or X2 fails: O2's claim is scoped to a complete, copy-specific isoform catalog, and path O2 is not safe on real
    annotation as it is. A fix (every family structure threaded through every copy) needs its own prereg on a new family set.
 3. X4 is read on its own: it pass/fails O3's specificity under such a catalog.
+
+## Review corrections (whole-branch review, 2026-10-15; post hoc)
+
+A fresh reviewer re-ran every number above and all of them reproduce. The prereg timing, the absence of leakage (anonymised
+names; no method reads the truth) and the simulation's construction check out. The corrections below are post hoc; the bars
+and their values above stand as computed.
+
+**C1. About 42% of path O2's gain is decided by the annotation, not the sequence.**
+- `o2graph.py seqsupport` aligns every hosted read to each catalogued copy's GENOMIC locus (spliced, +-1 kb). A read is
+  genome-separated when its own copy's locus explains it at least MARGIN (2) edits better than any other copy's locus.
+- 9,330 of the 12,766 reads of catalogued copies are genome-separated. On them path O2 makes 9,326 correct calls and the
+  current O2 8,602: **+8.4%, below O2b's 10% bar.**
+- Of path O2's 1,244 additional correct calls, 724 are genome-separated. The other 520 are reads another copy's locus
+  explains within 1 edit; only the curated isoforms listed for each copy separate them. Every read is simulated from its
+  copy's own curated isoforms, so those calls are correct by construction.
+- Margin 1's extra calls are all of that kind (genome-separated correct: 9,326 at both margins).
+- A read that aligns to one copy's isoform paths only is assigned without the margin test (`decide`); TBC1D3's gain is of
+  this kind (reviewer).
+- Representatives only (an incomplete catalog): 7,864 genome-separated reads correct, fewer than the current O2's 8,602.
+- Hence Amendment 1 (above) and its results (below).
+
+**I1. S4's O2 step adds nothing on the held-out set.** S4 equals S23 (branch calls + genome check, without the isoform step
+or path O2) in every held-out family and scenario. Every BRANCH detection and the TBC1D3 REMOVED detection are branch calls;
+every removed false call is removed by the genome check. Development's one difference (REMOVED GAGE, S4 only) did not
+replicate. The O3 result belongs to the branch calls and the genome check, not to "O2-informed O3".
+
+**I2. The current method's 13 false-call families are mostly another family's reads.**
+- 12 of the 13 are GOLGA6L, NPIPA and NPIPB in each of the four worlds: reads of a sister family placed on them. Splitting
+  families by gene-name pattern creates those sisters (NPIPA / NPIPB, GOLGA8 / GOLGA6L).
+- Only TBC1D3 in OUTSIDE is the designed failure. There the current method scans the uncatalogued paralog only because the
+  region hull includes the special copy (M2, below).
+- The current method plus the genome check (S3) is also 0 / 32.
+- copy_assign's opt-in `--psv-family-best` (register 1296) targets exactly such reads; it was not run here.
+- So O3c / O3d's false-call comparison shows what the genome check does. It is not an advantage of S4 over a
+  genome-checked current method.
+
+**I3. Fixed:** S4 keyed path O2's unexplained reads by read only. A read unexplained in a sister family it was hosted in
+entered its own family's S4 pool (about 550 reads per world). It is now keyed by (read, family), with a test. Re-run on all
+four held-out worlds, every call is identical.
+
+**I4. O2c (181 vs 426) comes mostly from BRANCH.** Reads of non-catalogued copies assigned, current vs path O2: BRANCH 240 vs 9,
+REMOVED 119 vs 86, OUTSIDE 67 vs 86 (path O2 places more), INTACT 0 vs 0. In BRANCH the 150-bp novel exon puts the reads
+past delta.
+
+**M1 (graded up: a reported number was wrong). Fixed:** wrong-family assignments were not scored. The current O2 makes 56
+(NPIPA 40, NPIPB 16), so its "wrong 0" was wrong: its precision is 0.9936. Path O2 makes none (1.0). Counting reads of
+non-catalogued copies too: path O2 0.982, current 0.948.
+
+**M3 (graded up: the O3b reading rests on it).** GOLGA6L's removed copy has median `de` 0.00935, against delta 0.00958. Had it
+been above delta, O3b would have been measurable (3 detectable) and failed (S4 1 of 3).
+
+**M4 (graded up: the only REMOVED detection).** S4's TBC1D3 detection is one branch call holding 50 of 60 source reads (0.83
+against the 0.8 bar). The current method made two pure calls, of 17 and 42 reads, split across host copies; neither
+reaches the bar.
+
+**M5. Corrected:** CT47A's copies are not identical over their reads. At margin 1 path O2 assigns 480 CT47A reads correctly; at
+margin 2, none.
+
+**M7. Development provenance.**
+- Development INTACT, OUTSIDE and REMOVED were built (18:59-19:17) before `realworld.py`'s final version (19:34).
+- Development INTACT's path-O2 output predates the final `o2graph.py` by 24 s.
+- Rebuilt with the final code, the three worlds' reads, truth, catalog and regions are byte-identical. Path O2 reproduces
+  development INTACT's output exactly.
+
+**Deferred (minor, not fixed):**
+- M2: regions are built from every copy, the special one included, so copy_assign scans the OUTSIDE paralog (see I2).
+- M6: the representatives-only run overwrites path O2's `graph/o2paths/*.tx.fa` intermediates; outputs are unaffected.
+- M8: `families.py`'s tie-breaker does nothing.
+
+### Amendment 1 results (held out, world CROSS, 2026-10-15)
+
+Run: code `9b6b98df`, prereg amendment `99932167`. 4,372 reads of catalogued copies; 940 of them come from 79
+paralog-annotated structures over 57 copies (475 paralog isoforms projected). CT47A, GOLGA6L and XAGE (9 reads) have
+almost none.
+
+| | assigned | correct | wrong | precision | paralog-structure reads: assigned / correct |
+|---|---|---|---|---|---|
+| current O2 | 2,881 | 2,810 | 71 (all wrong-family: NPIPA 58, NPIPB 13) | 0.975 | 538 / 538 |
+| path O2, margin 2 | 2,901 | 2,743 | 158 | 0.946 | 273 / 115 |
+| path O2, margin 1 | 3,167 | 2,916 | 251 | 0.921 | 367 / 116 |
+| path O2, representatives only | 2,250 | 2,232 | 18 | 0.992 | 95 / 83 |
+
+- Genome-separated reads (3,036): correct, current 2,763 and path O2 2,535.
+- Path O2 calls 1,350 reads `unexplained`; S4 forms no call from them once the genome check runs.
+- O3: S4, S123, S23 and S3 have 0 false-call families of 8. CUR, R0, S1, S12 and S4n have 3 (GOLGA6L, NPIPA, NPIPB, the
+  sister-family reads of I2).
+
+| bar | value | |
+|---|---|---|
+| X1 | 115 / 273 = 0.42 | **fail** |
+| X2 | 2,743 / 2,901 = 0.946 | **fail** |
+| X3 | 2,743 vs 2,810 | **fail** |
+| X4 | 0 of 8 | pass |
+
+**Reading 2.** When a copy expresses a structure annotated only on a paralog, path O2 names the annotated paralog. Its
+claim is scoped to a complete, copy-specific isoform catalog, and it is not safe on real annotation as it is.
+
+### Verdict, revised after the review (2026-10-15)
+
+**O2: claimed only for a complete, copy-specific isoform catalog; not for real annotation.**
+- O2a-O2d pass as computed, but only on the simulation's premise that each copy's catalog entry lists exactly the isoforms
+  it expresses.
+- Counting only reads the genome itself separates, path O2's gain is +8.4%, below O2b's 10%.
+- When copies also express paralog-annotated structures (Amendment 1), path O2 is wrong on 58% of the reads it assigns
+  from them. Its overall precision drops to 0.946, and it assigns fewer reads correctly than the current O2 (X1-X3 fail).
+- With representatives only (an incomplete catalog), it gets fewer genome-separated reads right than the current O2.
+- The current O2's precision is 0.9936 with wrong-family calls counted (0.975 in CROSS; all of them sister-family calls).
+- Next, under its own prereg on a new family set: thread every family structure through every copy (each copy's paths =
+  its own isoforms + every paralog isoform projected onto its locus), so that only the sequence separates copies. Its
+  ceiling on this set is the genome-separated gain (+8.4%).
+
+**O3: the branch calls and the genome check, not O2-informed O3.**
+- BRANCH 8 / 8 (current 0) holds, from the branch calls.
+- No false call over 32 families (and 0 / 8 in CROSS), from the genome check. The current method plus the genome check
+  does as well; the current method's own false calls are mostly sister-family reads.
+- REMOVED is not measurable: 6 of 8 removed copies are within delta, one of them by a hair (0.00935 vs 0.00958).
+  TBC1D3's detection is marginal (0.83 vs 0.8).
+- The GOLGA8 mosaic rule remains the next O3 step (new prereg).
+
+Scope unchanged: simulated reads (curated CAT isoforms, HiFi errors) on the real CHM13 genome.
