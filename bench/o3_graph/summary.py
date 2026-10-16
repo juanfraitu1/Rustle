@@ -8,6 +8,8 @@
     summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
     summary.py e2e OUT.json WORLD ...     end to end: every read's fate (read_fate) by the kind of copy it came from, for the
                                           current method and the integrated O1 -> O2 -> O3
+    summary.py bars E2E.json              round 8's pre-registered bars (docs/PREREG_o3_graph_round8_2026-10-16.md) on an e2e
+                                          table: per world, integrated correct >= current (B1) and errors <= current (B2)
     summary.py flags OUT.json WORLD ...   round 6: the flagged clusters (o2graph.flag_reads' rule) by truth class -- copy /
                                           allele (one haplotype of a catalogued copy) / other -- and the uncatalogued copies covered
 """
@@ -187,6 +189,31 @@ def cmd_e2e(out, worlds):
     return 0
 
 
+def round8_bars(tab):
+    """Round 8 (pre-registered): per world of an e2e table, the reads judged correct and wrong under each system, summed over
+    every read class (abstain and unknowable count for neither); B1 integrated correct >= current, B2 integrated errors <=
+    current. verdict PASS only when both hold in every world."""
+    out = {}
+    for w, t in sorted(tab.items()):
+        n = {(s, x): sum(c.get(x, 0) for c in t[s].values()) for s in ("current", "integrated") for x in ("correct", "error")}
+        out[w] = dict(current_correct=n[("current", "correct")], integrated_correct=n[("integrated", "correct")],
+                      current_error=n[("current", "error")], integrated_error=n[("integrated", "error")],
+                      B1=n[("integrated", "correct")] >= n[("current", "correct")],
+                      B2=n[("integrated", "error")] <= n[("current", "error")])
+    out["verdict"] = "PASS" if all(v["B1"] and v["B2"] for v in out.values()) else "FAIL"
+    return out
+
+
+def cmd_bars(path):
+    b = round8_bars(json.load(open(path)))
+    for w, v in sorted(b.items()):
+        if w != "verdict":
+            print(f"{w:8s} correct current {v['current_correct']:6d} integrated {v['integrated_correct']:6d} B1 {v['B1']} | "
+                  f"errors current {v['current_error']:5d} integrated {v['integrated_error']:5d} B2 {v['B2']}")
+    print("verdict", b["verdict"])
+    return 0
+
+
 def drop_outcome(seeded, cat_copy, kinds):
     """Round 7: O1's drops against the truth -- silent copies dropped (wanted) and expressed copies dropped (the absorption risk)."""
     out = collections.Counter(silent=0, silent_dropped=0, expressed=0, expressed_dropped=0)
@@ -324,6 +351,8 @@ def cmd_o2bars(prefix, worlds, graph_arm="unionp.m2"):
 def main(argv):
     if argv[0] == "o3":
         return cmd_o3(argv[1], argv[2:])
+    if argv[0] == "bars":                                # round 8: the pre-registered end-to-end bars
+        return cmd_bars(argv[1])
     if argv[0] == "e2e":                                 # end to end: every read's fate, current vs integrated
         return cmd_e2e(argv[1], argv[2:])
     if argv[0] == "integ":                               # round 7: the integrated O1 -> O2 against the current O2

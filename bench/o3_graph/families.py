@@ -69,6 +69,16 @@ GROUPS = {
     "heldout7": {"CTAGE": r"^CTAGE[0-9]+$", "AQP7": r"^AQP7(P[0-9]+)?$", "PRSS": r"^PRSS[1-3](P[0-9])?$", "SPRR2": r"^SPRR2[A-G]$",
                  "FAM74A": r"^FAM74A[0-9]+$", "TUBB8": r"^TUBB8(P[0-9]+)?$", "DDX11L": r"^DDX11L[0-9]+$", "WASH": r"^WASH[0-9]P?$",
                  "SIGLEC": r"^SIGLEC[0-9]+[A-Z]?$", "IFITM": r"^IFITM[0-9]+$", "FAM138": r"^FAM138[A-Z]$", "FAM157": r"^FAM157[A-Z]$"},
+    # held out for round 8 (docs/PREREG_o3_graph_round8_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set. Human-specific duplications (NOTCH2NL, SRGAP2) first, then copy-number mainstays (GH/CSH, USP17L,
+    # the Y ampliconic TSPY, RBMY, BPY2, CDY), then others; none was in any earlier world (FAM86, GPR89 and POM121 were round-4
+    # candidates past its first 8, never built into a world)
+    "heldout8": {"NOTCH2NL": r"^NOTCH2NL[A-CR]?$", "SRGAP2": r"^SRGAP2[B-D]?$", "GH": r"^(GH[12]|CSH[12]|CSHL1)$",
+                 "USP17L": r"^USP17L[0-9]+$", "TSPY": r"^TSPY[0-9]+$", "RBMY": r"^RBMY1[A-J][0-9]?$", "BPY2": r"^BPY2[BC]?$",
+                 "CDY": r"^CDY[12][AB]?$", "OR4F": r"^OR4F[0-9]+$", "LCE1": r"^LCE1[A-F]$", "KRTAP5": r"^KRTAP5-[0-9]+$",
+                 "PNMA6": r"^PNMA6[A-F]$", "PPIAL4": r"^PPIAL4[A-H]$", "FCGR1": r"^FCGR1[A-C]P?$", "NOMO": r"^NOMO[1-3]$",
+                 "CROCC": r"^CROCC(P[0-9])?$", "RGPD": r"^RGPD[1-8]$", "FAM86": r"^FAM86[A-Z]$", "GPR89": r"^GPR89[ABC]$",
+                 "POM121": r"^POM121[A-Z]?$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 

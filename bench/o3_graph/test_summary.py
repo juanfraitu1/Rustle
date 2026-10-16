@@ -63,3 +63,19 @@ def test_a_read_s_fate_is_judged_by_what_kind_of_copy_it_came_from():
     # an absent copy within delta of the genome cannot be told from the locus that explains it
     assert S.read_fate("absent_undetectable", assigned="F.1", own="F.9", in_o3=False) == "unknowable"
     assert S.read_fate("absent_undetectable", assigned=None, own="F.9", in_o3=True) == "correct"
+
+
+def test_round8_bars_hold_per_world_only_when_integrated_has_no_fewer_correct_and_no_more_errors():
+    tab = {"INTACT": {"current": {"catalogued": {"correct": 90, "error": 5, "abstain": 5}},
+                      "integrated": {"catalogued": {"correct": 90, "error": 5, "abstain": 5}}},
+           "REMOVED": {"current": {"catalogued": {"correct": 80, "error": 2},
+                                   "absent_undetectable": {"unknowable": 9, "abstain": 1}},
+                       "integrated": {"catalogued": {"correct": 79, "error": 0},
+                                      "absent_undetectable": {"unknowable": 3, "abstain": 7}}},
+           "OUTSIDE": {"current": {"uncatalogued": {"correct": 1, "error": 10}},
+                       "integrated": {"uncatalogued": {"correct": 9, "error": 11}}}}
+    b = S.round8_bars(tab)
+    assert b["INTACT"] == dict(current_correct=90, integrated_correct=90, current_error=5, integrated_error=5, B1=True, B2=True)
+    assert b["REMOVED"]["B1"] is False and b["REMOVED"]["B2"] is True       # unknowable and abstain count for neither
+    assert b["OUTSIDE"]["B1"] is True and b["OUTSIDE"]["B2"] is False
+    assert b["verdict"] == "FAIL" and S.round8_bars({"INTACT": tab["INTACT"]})["verdict"] == "PASS"
