@@ -220,3 +220,50 @@ the assumption that a copy without the structure's exons or splice sites does no
 **Next:** both failures point at one fix each, to be pre-registered on a new family set:
 - decide over the span both copies align;
 - pool the union-O2-unexplained reads across the family before clustering.
+
+## Review corrections (rounds 2-3 review, 2026-10-15; post hoc)
+
+A fresh reviewer re-derived every number above from the raw outputs, and all of them reproduce. The corrections are about
+what the numbers mean.
+
+**Verdict labels (C1).** The readings allow no partial claim. Reading 1 needs all of U1-U5. Reading 2 allows "without the
+removed-copy clause" only when G3 is not measurable. U4 failed, and G3 was measurable (3 detectable) and failed. So:
+**O2 not claimed (U4 fails); O3 not claimed (G3 fails).** The bars that passed are results, not claims.
+
+**The O2 gain rests on one family, FCGR (I3).**
+- 340 of the 342 structure-separated gains are FCGR: 68 distinct reads, counted in all five worlds.
+- The runner-up copy, FCGR2C, has an AT-AG last intron. Union's canonical-junction rule rejects that projection, although it
+  aligns 100% at NM 1. The read is 1 edit apart on the two genomic loci but 4 apart on union's paths.
+- The simulator applies the same rule to CROSS's structures, so that separation is correct by construction.
+- Without FCGR, union O2 is x1.025, short of U2's x1.05; padded union is x1.014.
+
+**The gain split's PSV class is mislabelled (I3).** 70 of its 172 reads are AMY reads the genome does not separate. Annotated
+end positions separate them, and they disappear with padding (round 3). The PSV-separated gain is 102 (round 3's dev-3
+split).
+
+**The liftover CROSS is mostly not independent of union's projection (I2).**
+- 51 of its 52 lifted structures carry an intron chain union threads: 33 identical, 18 differing only in end position, by
+  <= 17 bp.
+- The one that differs (PSG, 9 reads) is called `unexplained` on all 9.
+- So this CROSS tested tolerance to end positions, not to an independently projected structure.
+
+**Overlapping worlds (M4).** All five worlds share INTACT's reads of catalogued copies. Pooled counts repeat the same reads up
+to five times, so "every world" amounts to about three independent comparisons.
+
+**Provenance (M5).** The gain split was computed with `o2graph.py gains`, added in `c9a02337` after this run's code
+(`4850047a`). It re-aligns the run's saved read and path files.
+
+**Boundary (M6).** LRRC37A's removed-copy detection holds exactly 48 of 60 reads, which is the recall bar (0.80).
+
+**Held-out files.** `graph/calls.frozen.tsv` in each `heldout2` world holds the calls these results were scored on.
+`graph/calls.tsv` now holds the post-review detector's calls.
+
+### Verdict, revised after the review (2026-10-15)
+
+**O2: not claimed (U4 fails).**
+- Union O2 assigned 7.4% more reads correctly at precision 0.9993 and passed U1, U2, U3 and U5.
+- FCGR's single non-canonical intron carries that gain; without FCGR it is x1.025.
+- Its paralog-annotation robustness was tested only against structures it threads itself.
+
+**O3: not claimed (G3 fails, 2 of 3 detectable).** Branch calls and the genome check gave 8 / 8 novel-exon copies and no false
+call over 24 families; those stand as results.

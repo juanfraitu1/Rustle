@@ -209,3 +209,67 @@ set:
 - no false call over 24 families (current method 2);
 - pooling the O2-unexplained reads across the family adds a removed-copy detection (CGB) that no per-host arm makes;
 - it misses KIR (the `explains` rule, above) and CYP4F (no hosted reads).
+
+## Review corrections (rounds 2-3 review, 2026-10-15; post hoc)
+
+A fresh reviewer re-derived every number above from the raw outputs, and all of them reproduce. The corrections are about
+what the numbers mean.
+
+**Verdict labels (C1).** Reading 2 allows "without the removed-copy clause" only when H3 is not measurable. H3 was measurable
+(4 detectable) and failed. So: **O3 not claimed (H3 fails).** O2 was already not claimed.
+
+**The KIR explanation was wrong (C2).** The `explains` rule did not explain KIR's cluster. Its status was `unexplained`: 5 of
+41 alt sites copy-private, linkage 0.98, but est_div 0.0032, below delta, so no PSV call. The documented mosaic rule (this
+prereg: "a cluster no single copy explains whose nearest copy differs from its consensus at > delta") would have called it,
+since the nearest single copy is 0.021-0.032 away. But the code applied it only to `unresolved` / `unlinked` clusters. The
+code now follows the documentation (`b0a3e59f`, test). Re-run with it, post hoc, which cannot change the verdict:
+- here: H detects UGT2B, CGB and KIR, 3 of 4 detectable (0.75, H3's bar), with no false-call family in any world;
+- on round 2's set: 3 of 3 (FCGR, LRRC37A, PSG), no false call;
+- the frozen calls are in each held-out world's `graph/calls.frozen.tsv`.
+
+**H flagged the same pooled reads once per host (I5).** For example, PSG's 61 reads appeared as 6 calls. The family-level
+scorer counted no extra detection or false call, but "clusters once" was wrong. Calls are now one per member set
+(`b0a3e59f`). Pooling also raises false calls before the genome check: Hn has false calls in CROSS (MAGEA, SSX) and OUTSIDE
+(CGB, KIR, MAGEA, UGT2B) that only the genome check removes. H2 rests on the genome check.
+
+**The O2 statements across rounds overclaimed (I1).**
+- Precision: 1.0 on this set and 0.9993 for round 2's union O2. Round 2's 5 wrong AMY calls failed U4. Padded union's 1.0 on
+  round 2's set is development data.
+- Non-catalogued placements, 375 vs 891 (round 2: 223 vs 608), come mostly from the shared delta abstention. Locus O2, with
+  no annotation and the same `decide()` rule, also places 48-55% fewer (467 vs 891; 273 vs 608).
+- "187 / 187 on paralog-annotated isoforms" is right by abstaining: 119 of the 306 such reads are left unassigned.
+
+**The liftover CROSS shares union's chains here too (I2).** 21 of the 26 lifted structures carry an intron chain union
+threads. The 5 that differ carry 53 reads: union and padded union assign none of them (all `unexplained`), and the current O2
+gets 35 right. Those reads are the Hn false calls in CROSS.
+
+**Headroom wording (I4).**
+- The share of padded union's net gain that the genome alone separates is 25% (dev), 85% (dev-2) and 23% (dev-3), so the
+  sentence "where the current O2 leaves separable reads unassigned" fits only dev-2.
+- Dev's padded gain is +3.4%.
+- On this set, path O2 makes 372 correct calls the genome cannot separate (+142 net, mostly MAGEA), from the per-copy
+  annotation, which union by design does not use.
+- Union's structure-based separation found 3 distinct reads here, and 12 genome-separable reads remain unassigned.
+
+**Smaller corrections.**
+- **M1.** Dev-2's false-call count for CUR is 16 of 40, not 13 (13 was the 32-family count).
+- **M2.** The 45 lost reads are net: 57 lost, all `unexplained` (MAGEA 22, SSX 15, CGB 10, SPANX 10), minus 12 gained (3
+  distinct CGB reads). "Every method gets every read" is false for KIR (locus O2 1,900 of 2,336; path O2 2,285; union 2,326)
+  and UGT2B (path O2 785 of 809; union 806 of 809). MAGEA and SSX's ~40% unassigned holds in INTACT, CROSS and BRANCH.
+- **M3.** CYP4F (2 copies): in OUTSIDE and REMOVED copy_assign writes no row for the family (one catalogued copy left), so it
+  was unreachable by design and still in H3's denominator. Round 4 requires >= 3 copies.
+- **M4.** All five worlds share INTACT's catalogued-copy reads; pooled counts repeat reads up to five times.
+- **M6.** CGB is at the boundary: median `de` 0.0101 against delta 0.00958, and it is detected only when the pool is aligned to
+  host 1 (12 hosted reads), not host 0 (48).
+
+### Verdict, revised after the review (2026-10-15)
+
+**O2: not claimed (V2, V3 fail).**
+- No gain in correct assignments on this set.
+- Precision 1.0.
+- Fewer non-catalogued placements, mostly from the delta abstention it shares with locus O2. It keeps 5% more correct calls
+  than locus O2.
+
+**O3: not claimed (H3 fails, 2 of 4).**
+- Branch calls: 8 / 8; no false call after the genome check.
+- The documented mosaic rule, which the code skipped, would have given 3 of 4. That is post hoc; it is round 4's test.
