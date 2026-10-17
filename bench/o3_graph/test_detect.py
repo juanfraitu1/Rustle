@@ -347,3 +347,33 @@ def test_a_read_no_catalogued_copy_can_be_compared_with_is_not_attributed_to_an_
     maps = {n: {p: b for p, b in cc.items() if p < 150} for n, cc in maps.items()}     # the maps end before the call's sites
     cov = {f"a{i}": {p: ("T" if p in private else "A") for p in range(150, 400)} for i in range(3)}
     assert D.attribute(sorted(cov), cons, sites, ref, maps, cov) == []
+
+
+def test_o1_hosting_places_each_family_read_on_the_seeded_copy_its_primary_overlaps_most(tmp_path):
+    # round 10 review: arm I took its hosts and their reads from copy_assign's run; --o1-hosts takes them from O1 (seeded.json)
+    import json
+    import pysam
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    seq = "".join("ACGT"[(i * 7 + i // 3) % 4] for i in range(20000))
+    (w / "genome.ref.fa").write_text(f">c1\n{seq}\n")
+    pysam.faidx(str(w / "genome.ref.fa"))
+    copies = [dict(idx=0, contig="c1", start=1000, end=3000, strand="+", rep="t", isoforms={"t": [[1000, 1500], [2000, 3000]]},
+                   origin="curated"),
+              dict(idx=4, contig="c1", start=10000, end=11000, strand="-", rep="obs0", isoforms={"obs0": [[10000, 11000]]},
+                   origin="new")]
+    json.dump({"F": dict(copies=copies, dropped=[1], family_reads=["r1", "r2", "r3"])}, open(w / "graph" / "seeded.json", "w"))
+    hdr = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]}
+    with pysam.AlignmentFile(str(w / "u.bam"), "wb", header=hdr) as out:
+        for name, flag, pos, cig in [("r1", 0, 1100, "400M500N800M"), ("r1", 256, 10100, "500M"), ("r2", 16, 10200, "600M"),
+                                     ("r3", 0, 15000, "300M")]:
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.flag, a.reference_id, a.reference_start, a.cigarstring = name, flag, 0, pos, cig
+            a.mapping_quality = 0 if flag & 256 else 60
+            out.write(a)
+    pysam.sort("-o", str(w / "E0.bam"), str(w / "u.bam"))
+    pysam.index(str(w / "E0.bam"))
+    fam, by_host = D.o1_hosts(str(w), D.Genome(str(w / "genome.ref.fa")))
+    assert [(c["idx"], c["rs"], c["re"]) for c in fam["F"]] == [(0, 1000, 3000), (4, 10000, 11000)]
+    assert fam["F"][0]["seq"] == seq[1000:1500] + seq[2000:3000]
+    assert dict(by_host) == {("F", 0): ["r1"], ("F", 4): ["r2"]}                # r3's primary lies on no seeded copy

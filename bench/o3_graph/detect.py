@@ -581,6 +581,44 @@ def _run_family(f):                                   # a fork worker's entry: t
     return _ONE_FAMILY(f)
 
 
+def o1_hosts(w, genome):
+    """--o1-hosts (round 10 review): arm I's hosts and their reads from O1 instead of copy_assign's run. Hosts: each family's
+    seeded copies (graph/seeded.json, curated kept + new), their spans as the host windows' centres, their representative
+    isoform spliced in transcript orientation as the class sequence (identical copies form one host class). A family read is
+    hosted on the seeded copy its primary alignment (E0.bam) overlaps most (o1seed.owner's rule), on none when it lies on no
+    seeded copy. -> (fam, by_host) as main builds them from copy_assign's run."""
+    import pysam
+    comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+    sj = json.load(open(f"{w}/graph/seeded.json"))
+    fam = collections.defaultdict(list)
+    for f, v in sj.items():
+        for c in v["copies"]:
+            g = genome[c["contig"]]
+            seq = "".join(g[a:b] for a, b in sorted(tuple(x) for x in c["isoforms"][c["rep"]])).upper()
+            fam[f].append(dict(idx=c["idx"], contig=c["contig"], rs=c["start"], re=c["end"], start=c["start"], end=c["end"],
+                               strand=c["strand"], seq=seq[::-1].translate(comp) if c["strand"] == "-" else seq,
+                               isoforms={k: [tuple(x) for x in x2] for k, x2 in c["isoforms"].items()}))
+    of = collections.defaultdict(set)
+    for f, v in sj.items():
+        for q in v["family_reads"]:
+            of[q].add(f)
+    by_host = collections.defaultdict(list)
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.query_name not in of or rec.is_unmapped or rec.is_secondary or rec.is_supplementary:
+                continue
+            for f in sorted(of[rec.query_name]):
+                best, ov = None, 0
+                for c in fam[f]:
+                    if c["contig"] == rec.reference_name:
+                        o = min(rec.reference_end, c["end"]) - max(rec.reference_start, c["start"])
+                        if o > ov:
+                            best, ov = c["idx"], o
+                if best is not None:
+                    by_host[(f, best)].append(rec.query_name)
+    return fam, {k: sorted(v) for k, v in by_host.items()}
+
+
 def main(argv):
     w = argv[0]
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
@@ -588,15 +626,18 @@ def main(argv):
     attribution = "--member-attribution" in argv or attribution_delta   # arm I: a call keeps the reads it explains better
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
-    rows = list(csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"))
-    reps = list(PC.read_fa(f"{w}/P.fam.copies.fa").values())
-    isoj = json.load(open(f"{w}/isoforms.json"))
+    o1h = "--o1-hosts" in argv                          # arm I's hosts and their reads from O1, not copy_assign's run
     fam = collections.defaultdict(list)
-    for r, seq in zip(rows, reps):
-        f, i = r["family_id"], int(r["copy_idx"])
-        c = next(x for x in isoj[f] if x["idx"] == i)
-        fam[f].append(dict(idx=i, contig=r["chrom"], rs=int(r["start"]), re=int(r["end"]), seq=seq, start=c["start"],
-                           end=c["end"], strand=c["strand"], isoforms={k: [tuple(x) for x in v] for k, v in c["isoforms"].items()}))
+    if not o1h:
+        rows = list(csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"))
+        reps = list(PC.read_fa(f"{w}/P.fam.copies.fa").values())
+        isoj = json.load(open(f"{w}/isoforms.json"))
+        for r, seq in zip(rows, reps):
+            f, i = r["family_id"], int(r["copy_idx"])
+            c = next(x for x in isoj[f] if x["idx"] == i)
+            fam[f].append(dict(idx=i, contig=r["chrom"], rs=int(r["start"]), re=int(r["end"]), seq=seq, start=c["start"],
+                               end=c["end"], strand=c["strand"],
+                               isoforms={k: [tuple(x) for x in v] for k, v in c["isoforms"].items()}))
     def unexplained(name):                             # S4 / G: o2graph.py run WORLD paths|union 2, first
         p = f"{w}/graph/{name}"
         return ({(r["read"], r["family"]) for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] == "unexplained"}
@@ -606,9 +647,12 @@ def main(argv):
     o2k_unexpl = unexplained("o2.unionf.m2.tsv")      # K: what no family's graph explains, nor the family's own loci
     o2i_unexpl = unexplained("o2.integ.m2.tsv")       # I (round 7): what O2 on O1's RNA-seeded catalog cannot explain
     by_host = collections.defaultdict(list)
-    for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
-        if r["catalog_copy_idx"].isdigit():
-            by_host[(r["family_id"], int(r["catalog_copy_idx"]))].append(r["read_name"])
+    if o1h:
+        fam, by_host = o1_hosts(w, genome)
+    else:
+        for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
+            if r["catalog_copy_idx"].isdigit():
+                by_host[(r["family_id"], int(r["catalog_copy_idx"]))].append(r["read_name"])
     out_dir = f"{w}/graph"
     os.makedirs(out_dir, exist_ok=True)
     tmp = f"{out_dir}/tmp"

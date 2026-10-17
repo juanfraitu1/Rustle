@@ -154,7 +154,8 @@ def chain_steps(a, root, w):
                   + (" --member-genome-check" if a.member_genome_check else "")
                   + (" --member-attribution" if a.member_attribution else "")
                   + (" --member-attribution-delta" if a.member_attribution_delta else "")
-                  + (" --error-floor" if a.error_floor else "") + ("" if a.all_arms else " --arms I"),
+                  + (" --error-floor" if a.error_floor else "") + (" --o1-hosts" if a.o1_hosts else "")
+                  + ("" if a.all_arms else " --arms I"),
                   "light"))
     return steps
 
@@ -244,6 +245,8 @@ def main(argv=None):
                    "and stay apart from a copy's own structure unless their junctions match exactly (o2graph.py --union-exact)")
     p.add_argument("--error-floor", action="store_true", help="O3's genome check subtracts the world's sequencing-error floor "
                    "(median de of MAPQ-60 primaries) before comparing with delta (detect.py --error-floor)")
+    p.add_argument("--o1-hosts", action="store_true", help="O3 arm I takes its hosts and their reads from O1 (seeded.json + "
+                   "primary alignments), not from copy_assign's run: the integrated pipeline no longer needs the current method")
     p.add_argument("--twins", action="store_true", help="O1 marks a new copy within delta of a curated copy as its twin; O2 then "
                    "gives the twin a read only by the margin (o1seed.py --twins, o2graph.decide twins)")
     p.add_argument("--member-attribution-delta", action="store_true", help="O3 arm I: attribution whose margin is also more "

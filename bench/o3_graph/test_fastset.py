@@ -46,7 +46,7 @@ def _opts(**kw):
     import argparse
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
-                o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False)
+                o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -93,3 +93,8 @@ def test_o1_marks_twins_only_when_asked():
 def test_o3_subtracts_the_error_floor_only_when_asked():
     assert "--error-floor" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--error-floor --arms I" in F.chain_steps(_opts(error_floor=True), "/R", "INTACT")[-1][1]
+
+
+def test_o3_takes_its_hosts_from_o1_only_when_asked():
+    assert "--o1-hosts" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--o1-hosts --arms I" in F.chain_steps(_opts(o1_hosts=True), "/R", "INTACT")[-1][1]
