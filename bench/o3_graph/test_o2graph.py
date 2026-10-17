@@ -513,3 +513,25 @@ def test_the_alignment_cache_returns_minimap2_s_own_lines_and_skips_reads_it_hol
     assert sorted(ln.split("\t", 1)[1] for ln in got2.splitlines() if ln.split("\t")[0] in "xy") == sorted(
         ln.split("\t", 1)[1] for ln in got.splitlines() if ln.split("\t")[0] in "ab")
     assert any(ln.startswith("z\t") for ln in got2.splitlines())
+
+
+def test_the_guard_abstains_when_an_unseeded_locus_explains_the_read_as_well():
+    # --o2-genome guard (2026-10-17, the O2 proof's OUTSIDE worlds): O1 did not seed C4's / HSFY's uncatalogued near-identical
+    # twin, so its reads had one candidate in the catalog; the genome still sees the twin as a locus off every seeded copy
+    E = O.ELSEWHERE
+    assert O.tie_guard("0", {0: 3, E: 3})                  # a tie with the unseeded locus
+    assert O.tie_guard("0", {0: 4, 1: 9, E: 2})            # the unseeded locus is better
+    assert not O.tie_guard("0", {0: 3, E: 4})              # the called copy is better
+    assert not O.tie_guard("0", {0: 3, 1: 3})              # a seeded rival is path O2's business, not the guard's
+    assert not O.tie_guard("0", {E: 3})                    # no alignment on the called copy: the veto's case
+
+
+def test_twin_abstain_leaves_a_read_its_twins_cannot_separate():
+    # --twin-abstain (2026-10-17, the O2 proof's OUTSIDE worlds: VCY's uncatalogued twin is real, and the annotation prior
+    # gave its 94 reads to the curated copy): within the margin either way, the read is undecidable
+    tw = {"copy1": "copy0"}
+    assert O.decide({"copy0": 5, "copy1": 4}, 1000, twins=tw) == ("copy0", "assigned")              # the prior (default)
+    assert O.decide({"copy0": 5, "copy1": 4}, 1000, twins=tw, twin_abstain=True) == (None, "tied_twin")
+    assert O.decide({"copy0": 4, "copy1": 4}, 1000, twins=tw, twin_abstain=True) == (None, "tied_twin")
+    assert O.decide({"copy0": 3, "copy1": 5}, 1000, twins=tw, twin_abstain=True) == ("copy0", "assigned")  # by the margin
+    assert O.decide({"copy0": 7, "copy1": 4}, 1000, twins=tw, twin_abstain=True) == ("copy1", "assigned")

@@ -71,16 +71,24 @@ def gate(floor=0.0):
     return DELTA + floor
 
 
-def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None):
+_TWIN_ABSTAIN = False                                      # --twin-abstain (any run mode): see decide
+
+
+def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None, twin_abstain=None):
     """dist: {copy: edits + unaligned bases of the read against the copy's best-fitting isoform path}. -> (copy or None, reason):
     `assigned` when the best copy beats the next by >= margin, else `tied` / `thin`; `unexplained` when even the best copy is
     more than max_div away (a read of no catalogued copy). twins ({new copy: curated copy}, O1 --twins: a new copy within
     delta of a curated one): a twin takes a read from its curated copy only by the margin; otherwise the curated copy competes
-    with the better of the two distances (the annotation is the prior a within-delta twin must overcome)."""
+    with the better of the two distances (the annotation is the prior a within-delta twin must overcome). twin_abstain
+    (--twin-abstain, 2026-10-17: in the O2 proof's OUTSIDE worlds VCY's uncatalogued twin is real, and the prior gave its reads
+    to the curated copy): when neither twin beats the other by the margin, the read is `tied_twin` and abstained."""
+    twin_abstain = _TWIN_ABSTAIN if twin_abstain is None else twin_abstain
     if twins:
         dist = dict(dist)
         for t, c in twins.items():
             if t in dist and c in dist and dist[c] - dist[t] < margin:
+                if twin_abstain and dist[t] - dist[c] < margin:
+                    return None, "tied_twin"
                 dist[c] = min(dist[c], dist.pop(t))
     if not dist:
         return None, "unexplained"
@@ -640,6 +648,16 @@ def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA, pri
     return ("-", "veto_unexplained") if c == ELSEWHERE else (str(c), "veto_locus")
 
 
+def tie_guard(call, gdist):
+    """mode guard (2026-10-17, the O2 proof's end-to-end OUTSIDE worlds: O1 did not seed C4's / HSFY's uncatalogued
+    near-identical twin, and path O2 then placed the twin's reads on the catalogued copy): a path call is abstained when a
+    locus off every seeded copy (ELSEWHERE) explains the read's genome alignments at least as well as the called copy's own
+    locus. The catalog then lacks a copy the read may come from. With no alignment on the called copy it is the veto's case
+    (a missed short exon is no evidence)."""
+    own = gdist.get(int(call))
+    return own is not None and ELSEWHERE in gdist and gdist[ELSEWHERE] <= own
+
+
 def path_dists(dist):
     """run_paths' {read: {"copyN": distance}} -> {read: {"N": distance}}, as graph/o2paths*/<family>.dist.json holds it."""
     return {q: {c[4:]: v for c, v in cs.items()} for q, cs in dist.items()}
@@ -698,7 +716,9 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     mode "resolve" -> o2.integr.m<margin>.tsv: O2's assignments stand; its unexplained reads as in "unexplained", and its
     tied / thin ones decided on min(path, genome) with ELSEWHERE (`genome_assigned` when a seeded copy wins by the margin).
     mode "veto" -> o2.integv.m<margin>.tsv: as "unexplained", and an assigned read's path call is rechecked on its genome
-    alignments (veto_decide). O3 still reads o2.integ.m<margin>.tsv, so no mode changes O3's evidence; an O3 call on a read takes precedence over its
+    alignments (veto_decide).
+    mode "guard" -> o2.integt.m<margin>.tsv: as "veto", and a call the veto keeps is abstained (`guard_unseeded`) when a locus
+    off every seeded copy explains the read as well (tie_guard). O3 still reads o2.integ.m<margin>.tsv, so no mode changes O3's evidence; an O3 call on a read takes precedence over its
     placement (summary.read_fate)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.integ.m{margin}.tsv"), delimiter="\t"))
     by_read = collections.defaultdict(list)
@@ -715,14 +735,15 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     for r in rows:
         unexplained = r["reason"] == "unexplained"
         if (unexplained and not explained_in[r["read"]] - {r["family"]} or mode in ("all", "seeded") and not unexplained
-                or mode == "resolve" and r["reason"] in ("tied", "thin") or mode == "veto" and r["reason"] == "assigned"):
+                or mode == "resolve" and r["reason"] in ("tied", "thin")
+                or mode in ("veto", "guard") and r["reason"] == "assigned"):
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
-    if mode == "veto":                                    # the assigned reads' alignments, every unaligned base counted
+    if mode in ("veto", "guard"):                         # the assigned reads' alignments, every unaligned base counted
         vtodo = {q: fs for q, fs in todo.items() if any(r["reason"] == "assigned" for r in by_read[q])}
         vdist, _ = genome_distances(w, vtodo, spans, veto_distance)
         prim = primary_loci(w, vtodo, spans)
-    if mode not in ("unexplained", "veto"):
+    if mode not in ("unexplained", "veto", "guard"):
         lens = {n: len(x) for n, x in _read_fq(f"{w}/reads.E0.fq").items()}
         pd = {}
         for f in {r["family"] for r in rows}:
@@ -750,15 +771,17 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             c, why = decide(comb, lens[q], margin, max_div=gate(floor), twins=twins.get(f))
             if c is not None and c != ELSEWHERE:
                 call, reason = str(c), "genome_assigned"
-        elif mode == "veto" and reason == "assigned":
+        elif mode in ("veto", "guard") and reason == "assigned":
             v = veto_decide(call, vdist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor),
                             primary=prim.get((q, f)))
             call, reason = v if v else (call, reason)
+            if mode == "guard" and reason == "assigned" and tie_guard(call, vdist.get((q, f), {})):
+                call, reason = "-", "guard_unseeded"
         elif reason == "unexplained":
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
-    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r', veto='v')[mode]}.m{margin}.tsv"
+    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r', veto='v', guard='t')[mode]}.m{margin}.tsv"
     with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
         wr.writeheader()
@@ -954,6 +977,8 @@ def run_gains(w, method="union", margin=MARGIN):
 
 
 def main(argv):
+    global _TWIN_ABSTAIN
+    _TWIN_ABSTAIN = "--twin-abstain" in argv
     if argv[0] == "run":
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes
         # artifactual allele calls through near-identical copies, GAGE 74 wrong of 289)
@@ -967,9 +992,9 @@ def main(argv):
             return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip",
                                   *((UNION_EXACT_MICRO, 0) if "--union-exact" in argv else (0, None)),
                                   floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
-        if method in ("integl", "integc", "integs", "integr", "integv"):   # integ + the genome alignments; needs o2.integ first
+        if method in ("integl", "integc", "integs", "integr", "integv", "integt"):   # + the genome alignments; needs o2.integ
             return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded",
-                                                                 integr="resolve", integv="veto")[method],
+                                                                 integr="resolve", integv="veto", integt="guard")[method],
                                       floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
