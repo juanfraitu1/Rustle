@@ -204,3 +204,63 @@ Bars from `e2e.json` (primary scoring), A119b and the public repeat (`public_r2`
     - O2: 174-208 s. O1: 90 s.
   - **The current method:** 383 and 356 s, peaking at 6.8-7.0 GB per world.
   - **Wall:** 1,098 s and 1,257 s per profile.
+
+## Independent review (2026-10-16/17, from 23:32) and corrections
+
+Fresh subagent; full report `/mnt/linuxdisk/tmp/o3_graph/review12/REVIEW.md`.
+
+**The FAIL stands.**
+- The reviewer's own scorer reproduces every bar, cell for cell, under all 3 rules.
+- 00c241db reproduces O1, O2 and the fallback byte-identically.
+- **The protocol is clean apart from Amendment 1, which could not change anything.** The crashed public run and its repeat
+  are byte-identical in 71 of 72 outputs; the 72nd was never written by the crash.
+- **Amendment 1's timing:** it was committed at 23:09:51, not at its 23:12 heading. A119b's bars and its error reads had been
+  read first, because one tool output delivered both.
+- **v5 uses nothing from the current method** (confirmed).
+
+**Corrections:**
+1. **The failure's mechanism was wrong for 5 of its 7 distinct reads (Critical).** The 12 failing error instances are 7 reads,
+   repeated across worlds that share their reads.
+   - **DUX4 (2 reads):** margin-2 coincidences, as stated. The genome's own primary alignment also puts both reads on the
+     wrong unit (MAPQ 28-29).
+   - **KRTAP2 (1 read):** it does not run past an annotated end.
+     - It is KRTAP2.0's isoform with its intron RETAINED, DNA-identical at KRTAP2.0 and KRTAP2.1 (two NM-0 alignments), so
+       abstaining is the only right answer.
+     - Its 2 vs 85: KRTAP2.0's spliced path clips 83 bases, and a clip over 50 costs its length. KRTAP2.1's long-exon
+       isoform absorbs the read's tandem-repeat difference as one 15-bp insertion, which costs one event.
+   - **CDRT15, A119b (2 reads):** retained introns again, not missing structures.
+     - The union does give CDRT15.0 the read's structure. The paralog's path absorbs the 265-bp retained intron as ONE
+       142-bp insertion (gap-compressed 9), while CDRT15.0's own paths clip it at full cost.
+     - One read went to a sole candidate: an O1-observed chain on CDRT15.1, learned from CROSS reads.
+     - **The error floor contributes:** both reads sit at 0.0100 per base, between delta and delta + floor. Under delta
+       alone they would be `unexplained` and placed correctly by the genome fallback.
+   - **CDRT15, public (2 reads):** structures absent from the union, as stated.
+   - **The current method abstains on the DUX4 and KRTAP2 reads, but places all 4 CDRT15 reads correctly.**
+   - Retained introns cause 3 of A119b's 5 error reads. A119b retains introns at 6.4x the public rate.
+2. **Leave one family out (Important):** public fails only through CDRT15. Without HLA-DRB, BRANCH B2 fails under both
+   profiles.
+3. **DUX4's novel-exon copy is missed, unreported (Important).** O2 places 57 and 62 of its reads that CARRY the novel exon,
+   because a 150-bp novel exon costs one gap-compressed edit.
+4. **The cost mechanism was wrong (Important).**
+   - GraphAligner aligned 4% of the DUX4 reads in public OUTSIDE (61-96% elsewhere). 3.44 Mbp of whole reads became "novel
+     segments".
+   - The branch arm's all-against-all minimap2 then took 553 s and 1.7 GB, producing a 3,974-read call that the genome check
+     removed.
+   - O3's time tracks this novel-segment volume, not the 80 hosts, and peaked at 6.15 GB under the light lock.
+5. **Arm I's KRTAP2.1 "detection" in REMOVED is identical to its OUTSIDE false calls (Important).**
+   - KRTAP2.1's 52-57-bp exons in 15-bp tandem repeats mis-align even when the copy is present (INTACT median `de` 0.0137).
+   - The OUTSIDE call members are all uncatalogued KRTAP2.1 reads: 35 and 24 distinct reads, not 55 and 48.
+6. **The zero O3 errors in INTACT, CROSS and SILENT rest on the genome check alone (Important).** Before it, arm I's calls
+   hold 1,203-1,462 present-copy reads per world, mostly DUX4 branch clusters of reads GraphAligner could not align.
+7. **Minor:**
+   - **O1 seeded a false new DUX4 copy in REMOVED** from the absent copy's reads (harmless to the bars).
+   - **KRTAP1.1, NAIP.0 and OR11H.2 are unseeded outside copies.**
+   - **The two twins keep few of their own reads.**
+   - **The current method peaked at 6.2-6.5 GB under public**, not 6.8-7.0.
+   - **The fates per read class are tabulated only in the review**, for the third round running.
+
+**What this changes:**
+- **Gap compression conflates sequencing indels with structure.** A retained intron or a novel exon becomes one edit when
+  minimap2 bridges it, while the same sequence costs its full length when minimap2 clips it. That asymmetry, not near-identity,
+  decided 5 of the 7 error reads, and it hides novel exons from O3.
+- **The branch arm has no defence against GraphAligner failing on a graph;** its all-against-all then sets O3's cost.
