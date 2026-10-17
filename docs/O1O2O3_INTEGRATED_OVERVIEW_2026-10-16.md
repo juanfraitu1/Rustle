@@ -179,3 +179,20 @@ worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
   - uncatalogued reads placed on a paralog (OUTSIDE 44 and 37, against the current method's 367 and 297);
   - BRANCH reads lacking the novel exon, which count as detectable by construction (118 and 119, against 313 and 297).
 - **Not yet tested:** real reads end to end. Rounds 9-11 are simulations calibrated on two real libraries.
+
+## Update after rounds 12-13 (2026-10-17): v5 and v5' fail
+
+| round | pipeline | families | verdict | what decided it |
+|---|---|---|---|---|
+| 12 (r1310) | v5 = v4 + O1-hosted O3 | 8, 104 copies (80-copy DUX4) | FAIL, both profiles | O2: retained introns absorbed by a paralog's path (gap compression), a read DNA-identical at two copies, 2 margin-2 coincidences in DUX4 |
+| 13 (r1311) | v5' = v5 + branch genome-novel prefilter | 8, 89 copies (43-copy OR7E) | FAIL (A119b); public 6/6 | one false O3 call: short haplotype-2 reads of a present copy carrying its two donor alleles |
+
+- **The integrated pipeline is now independent of the current method:** O3's hosts come from O1.
+- **It is cheap on full families:** 216-223 s for the integrated steps of a six-world set of 89 copies, with O3's longest
+  world 72 s at 0.17 GB.
+- **What remains is two confounds a sequence-only rule cannot always settle:**
+  - an allele of a present copy against a low-divergence missing copy (O3);
+  - a read's structure against a paralog's annotation (O2).
+- **Development since round 13** (`docs/O1O2O3_FAST_REALISTIC_2026-10-16.md` section 14):
+  - O3 `--allele-discount`: donor alleles, learned from the reads O2 assigns, leave the genome check;
+  - O2 `--o2-genome veto`: a path call that the read's own genome alignments contradict by the margin is overruled.
