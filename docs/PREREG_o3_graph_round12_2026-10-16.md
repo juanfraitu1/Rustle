@@ -136,3 +136,23 @@ Abstain and unknowable count for neither.
 - An independent review by a fresh subagent, given read-only copies.
 - Register row 1310.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-16; run with the code of 00c241db, started 22:29)
+
+## Amendment 1 (23:12, recorded after the A119b run's result was read)
+
+**The public run crashed in its OUTSIDE world's O3 step.**
+- The step outlasted rlock's 590 s limit (DUX4, 80 copies) and was killed before `/usr/bin/time` wrote its line.
+- `fastset.py` then failed to parse the empty timing file and stopped (exit 1). No `e2e.json` or `bars.txt` was written for
+  the public profile.
+
+**As pre-registered for a step over the limit, the public run is repeated with the limit raised:**
+- `--step-timeout 1800`, a new driver option; outputs do not depend on it;
+- with the driver's parsing fixed (`parse_time`), so a killed step is reported, not crashed on;
+- into `heldout12/public_r2`, with the crashed run's directory kept.
+
+**This amendment comes after the A119b result was read,** which the pre-registration's amendment rule did not foresee.
+A119b already FAILs (below), so the round's verdict is FAIL whatever the public repeat gives. The repeat completes the
+record and is reported as such.
