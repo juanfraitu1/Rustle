@@ -201,7 +201,7 @@ worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
 
 | round | pipeline | families | verdict | what decided it |
 |---|---|---|---|---|
-| 14 (r1312) | v9 = v5' + `--mosaic-shared` + `--haplotype-check` + `--o2-genome veto` | 8, 74 copies (SD pseudogene families, a protocadherin cluster, olfactory subfamilies, 25 retrocopies) | **PASS, 12/12 worlds** | 0 errors in INTACT, CROSS, SILENT and REMOVED under both profiles; B1 +52 to +298. The donor is diploid under both profiles (`--sim-het-draw`) |
+| 14 (r1312) | v9 = v5' + `--mosaic-shared` + `--haplotype-check` + `--o2-genome veto` | 8, 74 copies (SD pseudogene families, a protocadherin cluster, olfactory subfamilies, 25 retrocopies) | **PASS, 12/12 worlds, but one fragile draw** (review) | 0 errors in INTACT, CROSS, SILENT and REMOVED; but at 4 further seeds A119b fails 2 (the allele confound again), public CROSS rests on the haplotype check, and the veto and mosaic-shared were not exercised |
 
 **v9, end to end** (`fastset.py ... --o2-distance gapcomp --member-genome-check --member-attribution --union-exact
 --o2-genome veto --per-read-detectability --twins --error-floor --o1-hosts --branch-genome-novel --mosaic-shared
@@ -216,6 +216,9 @@ worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
   - otherwise it is a present copy's haplotype.
 
 **What remains:**
+- **The allele confound (round 14 review).** It is the deciding open problem. A present copy's donor-allele reads, called on
+  another locus's window, beat the genome check by 0.0005-0.0025 and the haplotype check by 0.00024 at further seeds of
+  round 14's families under A119b. Two seeds of four fail. One arose on a copy O1 seeded at a retrocopy family's parent gene.
 - **Round 12's A119b failure class:**
   - margin-2 coincidences among 80 near-identical units;
   - a read DNA-identical at two copies.
