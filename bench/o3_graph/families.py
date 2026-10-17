@@ -129,6 +129,14 @@ GROUPS = {
     # into one component under the locus rule (23 of 23), and split in two they placed NPIPB reads on NPIPA copies
     "mainstay": {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
                  "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31"},
+    # the O2 proof (2026-10-17, docs/PREREG_o2_proof_2026-10-17.md), in no earlier list, picked before any build: near-identical
+    # pairs and trios first (autosomal and chrY interleaved), retrocopy and few-copy spares last; the set = the first 8 that
+    # form a family of >= 2 copies. VCY, HSFY and PRY were scored once before, for copy_assign's O2 only (2026-10-12 YAG test,
+    # another simulator), never for the integrated pipeline.
+    "o2proof": {"HBA": r"^HBA[12]$", "HSPA1": r"^HSPA1[AB]$", "TUBA3": r"^TUBA3[CDE]$", "VCY": r"^VCY(1B)?$",
+                "TPSB": r"^(TPSAB1|TPSB2|TPSD1)$", "C4": r"^C4[AB]$", "HSFY": r"^HSFY[12]$", "SERPINB34": r"^SERPINB[34]$",
+                "PRY": r"^PRY2?$", "HBG": r"^HBG[12]$", "DEFB4": r"^DEFB4[AB]$",
+                "UBTFL": r"^UBTFL[0-9]+$", "GTF2IRD2": r"^GTF2IRD2B?$", "ZNF658": r"^ZNF658B?$"},
     # round 14 (2026-10-17), in no earlier list, picked before any run: segmental-duplication pseudogene families first, then
     # few-copy gene families, then olfactory subfamilies; retrocopy families last as spares (smallest first)
     "heldout14": {"SMG1P": r"^SMG1P[0-9]+$", "PKD1P": r"^PKD1P[0-9]+$", "CHEK2P": r"^CHEK2P[0-9]+$", "RRN3P": r"^RRN3P[0-9]+$",
