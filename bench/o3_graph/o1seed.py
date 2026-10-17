@@ -31,6 +31,35 @@ import os
 import sys
 
 PAD, MIN_SUPPORT, MIN_CHAIN, JOIN, CHAIN_TOL, MIN_MAPQ, MIN_MAPQ_NEW, SPAN_SLACK = 1000, 5, 3, 1000, 10, 50, 1, 100
+DELTA, TWIN_COVER = 0.00958, 0.5                                  # --twins: O3's delta; the alignment must cover half the locus
+
+
+def twin_of(new_seq, curated):
+    """--twins (round 10 development): (idx, de) of the curated copy whose genomic span the new copy's span aligns to (minimap2
+    -x asm20, >= TWIN_COVER of it) with the lowest gap-compressed divergence `de`, when that is <= DELTA (a copy the reads cannot
+    tell from it at O3's resolution), else (None, the lowest de or None). curated: {idx: sequence}."""
+    import subprocess
+    import tempfile
+    if not curated:
+        return None, None
+    with tempfile.TemporaryDirectory() as d:
+        with open(f"{d}/t.fa", "w") as fh:
+            fh.writelines(f">{i}\n{x}\n" for i, x in curated.items())
+        open(f"{d}/q.fa", "w").write(f">new\n{new_seq}\n")
+        out = subprocess.run(["minimap2", "-c", "-x", "asm20", "--secondary=yes", "-N", "200", "-p", "0.01", f"{d}/t.fa",
+                              f"{d}/q.fa"], capture_output=True, text=True, check=True).stdout
+    best = {}
+    for ln in out.splitlines():
+        f = ln.split("\t")
+        if int(f[3]) - int(f[2]) < TWIN_COVER * int(f[1]):
+            continue
+        de = float(next(x for x in f[12:] if x.startswith("de:f:"))[5:])
+        i = int(f[5])
+        best[i] = min(de, best.get(i, 1.0))
+    if not best:
+        return None, None
+    i, de = min(best.items(), key=lambda kv: (kv[1], kv[0]))
+    return (i if de <= DELTA else None), de
 
 
 def exons_from_cigartuples(ref_start, cigartuples):
@@ -208,7 +237,7 @@ def one_family(seeded, aff):
     return {f: dict(v, copies=[c for c in v["copies"] if (f, c["idx"]) not in drop]) for f, v in seeded.items()}
 
 
-def seed_world(w):
+def seed_world(w, twins=False):
     import pysam
     iso = json.load(open(f"{w}/isoforms.json"))
     all_loci = {(f, c["idx"]): (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for f, cps in iso.items() for c in cps}
@@ -239,6 +268,13 @@ def seed_world(w):
         copies, dropped = seed_family(cps, p, all_loci)
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
     out = one_family(out, aff)
+    if twins:                                                     # a new copy within delta of a kept curated copy is its twin
+        fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+        for f, v in out.items():
+            cur = {c["idx"]: fa.fetch(c["contig"], c["start"], c["end"]).upper() for c in v["copies"] if c["origin"] == "curated"}
+            for c in v["copies"]:
+                if c["origin"] == "new":
+                    c["twin_of"], c["twin_de"] = twin_of(fa.fetch(c["contig"], c["start"], c["end"]).upper(), cur)
     os.makedirs(f"{w}/graph", exist_ok=True)                      # a fresh world: o1seed runs first (round 8)
     json.dump(out, open(f"{w}/graph/seeded.json", "w"))
     n_new = sum(1 for v in out.values() for c in v["copies"] if c["origin"] == "new")
@@ -249,4 +285,4 @@ def seed_world(w):
 
 
 if __name__ == "__main__":
-    sys.exit(seed_world(sys.argv[1]))
+    sys.exit(seed_world(sys.argv[1], twins="--twins" in sys.argv))

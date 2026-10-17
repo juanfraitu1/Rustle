@@ -390,3 +390,12 @@ def test_the_bit_parallel_end_cost_equals_the_dynamic_programme():
     for p, t in cases:
         for end in (False, True):
             assert O.end_cost(p, t, end) == _end_cost_dp(p, t, end), (p, t, end)
+
+
+def test_a_within_delta_twin_takes_a_read_from_its_curated_copy_only_by_the_margin():
+    tw = {"copy3": "copy0"}                                      # O1's new copy 3 lies within delta of curated copy 0
+    assert O.decide({"copy0": 2, "copy3": 1, "copy1": 9}, qlen=1000, twins=tw) == ("copy0", "assigned")   # thin: the catalog's
+    assert O.decide({"copy0": 4, "copy3": 1, "copy1": 9}, qlen=1000, twins=tw) == ("copy3", "assigned")   # by the margin
+    assert O.decide({"copy0": 1, "copy3": 1, "copy1": 2}, qlen=1000, twins=tw) == (None, "thin")          # 0 vs 1 still thin
+    assert O.decide({"copy3": 1, "copy1": 9}, qlen=1000, twins=tw) == ("copy3", "assigned")               # no curated rival
+    assert O.decide({"copy0": 2, "copy3": 1, "copy1": 9}, qlen=1000) == (None, "thin")                     # without twins

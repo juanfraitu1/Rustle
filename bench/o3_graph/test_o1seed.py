@@ -185,3 +185,19 @@ def test_a_copy_with_one_uniquely_placed_read_of_its_own_is_kept_though_under_th
     loci = {("F", c["idx"]): ("c1", c["start"] - 1000, c["end"] + 1000) for c in cps}
     copies, dropped = S.seed_family(cps, prim, loci)
     assert [c["idx"] for c in copies if c["origin"] == "curated"] == [0, 2] and dropped == [1]
+
+
+def test_a_new_copy_within_delta_of_a_curated_copy_is_its_twin():
+    # round 10 (FAM236.1, 0.22% from FAM236.0): a new locus the reads cannot tell from a curated copy at delta
+    import random
+    rng = random.Random(4)
+    base = "".join(rng.choice("ACGT") for _ in range(3000))
+
+    def mutate(s, n):
+        s = list(s)
+        for p in rng.sample(range(len(s)), n):
+            s[p] = rng.choice([b for b in "ACGT" if b != s[p]])
+        return "".join(s)
+    curated = {0: mutate(base, 150), 1: mutate(base, 3)}               # 5% and 0.1% from the new locus
+    assert S.twin_of(base, curated) == (1, S.twin_of(base, curated)[1]) and S.twin_of(base, curated)[1] <= S.DELTA
+    assert S.twin_of(base, {0: curated[0]})[0] is None                 # 5% away: no twin

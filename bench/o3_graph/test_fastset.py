@@ -46,7 +46,7 @@ def _opts(**kw):
     import argparse
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
-                o2_procs=2, member_attribution_delta=False)
+                o2_procs=2, member_attribution_delta=False, twins=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -83,3 +83,8 @@ def test_o2_takes_the_exact_union_only_when_asked():
 def test_o3_scales_attribution_by_delta_only_when_asked():
     assert "--member-attribution-delta" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--member-attribution-delta --arms I" in F.chain_steps(_opts(member_attribution_delta=True), "/R", "INTACT")[-1][1]
+
+
+def test_o1_marks_twins_only_when_asked():
+    assert F.chain_steps(_opts(), "/R", "INTACT")[1][1] == "python3 bench/o3_graph/o1seed.py /R/INTACT"
+    assert F.chain_steps(_opts(twins=True), "/R", "INTACT")[1][1] == "python3 bench/o3_graph/o1seed.py /R/INTACT --twins"

@@ -145,7 +145,7 @@ def chain_steps(a, root, w):
     W = f"{root}/{w}"
     steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
-             ("O1", f"python3 bench/o3_graph/o1seed.py {W}", "light"),
+             ("O1", f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else ""), "light"),
              ("O2", f"env O2_PROCS={a.o2_procs} python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
                     + (" --union-exact" if a.union_exact else ""), "light")]
     if a.o2_genome != "off":
@@ -241,6 +241,8 @@ def main(argv=None):
     p.add_argument("--member-genome-check", action="store_true")
     p.add_argument("--union-exact", action="store_true", help="O2: paralog structures project despite a dropped terminal micro-exon "
                    "and stay apart from a copy's own structure unless their junctions match exactly (o2graph.py --union-exact)")
+    p.add_argument("--twins", action="store_true", help="O1 marks a new copy within delta of a curated copy as its twin; O2 then "
+                   "gives the twin a read only by the margin (o1seed.py --twins, o2graph.decide twins)")
     p.add_argument("--member-attribution-delta", action="store_true", help="O3 arm I: attribution whose margin is also more "
                    "than delta of each read's aligned length (detect.attribute delta)")
     p.add_argument("--member-attribution", action="store_true", help="O3 arm I: a call keeps only the reads its consensus explains "

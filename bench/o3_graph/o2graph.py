@@ -65,10 +65,17 @@ def assign(nodes, paths, margin=MARGIN):
     return (order[0][0] if order[1][1] - order[0][1] >= margin else None), miss
 
 
-def decide(dist, qlen, margin=MARGIN, max_div=DELTA):
+def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None):
     """dist: {copy: edits + unaligned bases of the read against the copy's best-fitting isoform path}. -> (copy or None, reason):
     `assigned` when the best copy beats the next by >= margin, else `tied` / `thin`; `unexplained` when even the best copy is
-    more than max_div away (a read of no catalogued copy)."""
+    more than max_div away (a read of no catalogued copy). twins ({new copy: curated copy}, O1 --twins: a new copy within
+    delta of a curated one): a twin takes a read from its curated copy only by the margin; otherwise the curated copy competes
+    with the better of the two distances (the annotation is the prior a within-delta twin must overcome)."""
+    if twins:
+        dist = dict(dist)
+        for t, c in twins.items():
+            if t in dist and c in dist and dist[c] - dist[t] < margin:
+                dist[c] = min(dist[c], dist.pop(t))
     if not dist:
         return None, "unexplained"
     srt = sorted(dist.items(), key=lambda kv: (kv[1], kv[0]))
@@ -346,8 +353,9 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
                               f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
         dist = _paf_dist_gc(res, reads, tx) if distance == "gapcomp" else _paf_dist(res, ends=ends)
         json.dump(path_dists(dist), open(f"{d}/{fam}.dist.json", "w"))     # run_locus_fallback mode "all" combines them
+        tw = {f"copy{c['idx']}": f"copy{c['twin_of']}" for c in iso[fam] if c.get("twin_of") is not None}
         for n in names:
-            c, reason = decide(dist.get(n, {}), len(reads[n]), margin)
+            c, reason = decide(dist.get(n, {}), len(reads[n]), margin, twins=tw)
             rows.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
         return rows, cnt
     global _PATHS_FAMILY
@@ -514,11 +522,11 @@ def locus_distance(cigartuples):
     return d
 
 
-def locus_decide(dist, qlen, margin=MARGIN):
+def locus_decide(dist, qlen, margin=MARGIN, twins=None):
     """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
     and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained`); a read
     whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family) stays `unexplained`."""
-    c, reason = decide(dist, qlen, margin)
+    c, reason = decide(dist, qlen, margin, twins=twins)
     if reason == "unexplained" or c == ELSEWHERE:
         return None, "unexplained"
     return (c, "locus") if c is not None else (None, f"locus_{reason}")
@@ -572,6 +580,7 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             explained_in[r["read"]].add(r["family"])
     sj = json.load(open(f"{w}/graph/seeded.json"))
     spans = {f: [(c["contig"], c["start"], c["end"], c["idx"]) for c in v["copies"]] for f, v in sj.items()}
+    twins = {f: {c["idx"]: c["twin_of"] for c in v["copies"] if c.get("twin_of") is not None} for f, v in sj.items()}
     todo = collections.defaultdict(set)                   # read -> the families decided here
     for r in rows:
         unexplained = r["reason"] == "unexplained"
@@ -596,7 +605,7 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             for i, g in dist.get((q, f), {}).items():
                 if mode == "all" or i != ELSEWHERE:
                     comb[i] = min(comb.get(i, 1 << 30), g)
-            c, why = decide(comb, lens[q], margin)
+            c, why = decide(comb, lens[q], margin, twins=twins.get(f))
             c, why = (None, "unexplained") if c == ELSEWHERE else (c, why)
             new = ("-" if c is None else str(c), why)
             call, reason = (call, reason) if new == (call, reason) else (new[0], f"genome_{why}")
@@ -604,11 +613,11 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             comb = {int(c): v for c, v in pd[f].get(q, {}).items()}
             for i, g in dist.get((q, f), {}).items():
                 comb[i] = min(comb.get(i, 1 << 30), g)
-            c, why = decide(comb, lens[q], margin)
+            c, why = decide(comb, lens[q], margin, twins=twins.get(f))
             if c is not None and c != ELSEWHERE:
                 call, reason = str(c), "genome_assigned"
         elif reason == "unexplained":
-            c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin)
+            c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f))
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
     out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r')[mode]}.m{margin}.tsv"
