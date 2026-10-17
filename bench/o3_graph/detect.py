@@ -273,6 +273,40 @@ def cluster_bases(members, cov):
     return {p: min(c.items(), key=lambda kv: (-kv[1], kv[0]))[0] for p, c in cnt.items()}
 
 
+ATTR_MARGIN = 2                                          # --member-attribution: O2's assignment margin (o2graph.MARGIN)
+
+
+def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN):
+    """--member-attribution (round 10 development): the members an absent-copy PSV call keeps -- the reads its consensus
+    explains better than every single catalogued copy by >= margin positions, as O2 assigns a read. Positions: the cluster's
+    variable sites (its consensus there) and the catalog's informative positions (some copy differs from the host) that >= 2
+    members show (their majority base). A copy whose map holds >= half of a read's positions competes for it, compared on the
+    positions both hold. A present copy's read swept into a call ties with or beats its own copy; a cluster of several copies'
+    reads (a false mosaic) keeps none."""
+    info = {p for cc in maps.values() for p, x in cc.items() if x != ref[p]} - set(sites)
+    call = {p: (sites[p] if cons.get(p) == "alt" else ref[p]) for p in sites}
+    cnt = collections.defaultdict(collections.Counter)
+    for m in members:
+        for p in info & cov[m].keys():
+            cnt[p][cov[m][p]] += 1
+    for p, c in cnt.items():
+        if sum(c.values()) >= 2:
+            call[p] = min(c.items(), key=lambda kv: (-kv[1], kv[0]))[0]
+    keep = []
+    for m in members:
+        pos = [p for p in call if p in cov[m]]
+        if not pos:
+            continue
+        for cc in maps.values():
+            both = [p for p in pos if p in cc]
+            if 2 * len(both) >= len(pos) and (sum(cov[m][p] != call[p] for p in both) + margin
+                                              > sum(cov[m][p] != cc[p] for p in both)):
+                break
+        else:
+            keep.append(m)
+    return keep
+
+
 def nearest_copy(cons, sites, ref, maps, covered, bases=None, min_overlap=MIN_OVERLAP):
     """(copy, distance) of the single copy closest to a cluster: the cluster's consensus base (its alt at an `alt` site, the
     host's at another variable site, elsewhere what its reads show, `bases` = cluster_bases, else the host's) against the
@@ -526,6 +560,7 @@ def _run_family(f):                                   # a fork worker's entry: t
 def main(argv):
     w = argv[0]
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
+    attribution = "--member-attribution" in argv           # arm I: a call keeps the reads it explains better than every copy
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
     rows = list(csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"))
@@ -635,7 +670,9 @@ def main(argv):
                     for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):
                         st, div = status_of(members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True)
                         if st in ("unexplained", "mosaic") and div > DELTA:
-                            calls.append(["Ip", f, "psv", host, k, sorted(members), div])
+                            mem = attribute(members, cons, sites_i, ref, isomaps(), cov_i) if attribution else members
+                            if len(mem) >= PC.MIN_SUPPORT:
+                                calls.append(["Ip", f, "psv", host, k, sorted(mem), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
         if names:
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)

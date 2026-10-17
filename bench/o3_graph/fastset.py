@@ -150,7 +150,8 @@ def chain_steps(a, root, w):
     if a.o2_genome != "off":
         steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2", "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
-                  + (" --member-genome-check" if a.member_genome_check else "") + ("" if a.all_arms else " --arms I"), "light"))
+                  + (" --member-genome-check" if a.member_genome_check else "")
+                  + (" --member-attribution" if a.member_attribution else "") + ("" if a.all_arms else " --arms I"), "light"))
     return steps
 
 
@@ -235,6 +236,8 @@ def main(argv=None):
     p.add_argument("--sim-profile", default="")
     p.add_argument("--o2-distance", choices=("clip", "gapcomp"), default="clip")
     p.add_argument("--member-genome-check", action="store_true")
+    p.add_argument("--member-attribution", action="store_true", help="O3 arm I: a call keeps only the reads its consensus explains "
+                   "better than every catalogued copy by O2's margin (detect.attribute)")
     p.add_argument("--heavy-current", action="store_true", help="run copy_assign under the heavy lock (large families)")
     p.add_argument("--all-arms", action="store_true", help="O3: every legacy arm too (default: the integrated arm I only)")
     p.add_argument("--o3-procs", type=int, default=2, help="O3: families in parallel per world (output does not depend on it)")

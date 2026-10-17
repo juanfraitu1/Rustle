@@ -45,7 +45,7 @@ def test_a_local_reference_is_reused_only_for_the_family_set_it_was_built_for(tm
 def _opts(**kw):
     import argparse
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
-                o3_procs=2, o2_genome="off", per_read_detectability=False)
+                o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -65,3 +65,9 @@ def test_the_set_is_scored_on_the_genome_step_s_table_and_per_read_when_asked():
         "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.integl.m2.tsv --per-read-detectability")
     assert F.e2e_command(_opts(o2_genome="combined"), "/R", ["A"]) == (
         "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.integc.m2.tsv")
+
+
+def test_o3_attributes_its_call_members_only_when_asked():
+    assert "--member-attribution" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert F.chain_steps(_opts(member_attribution=True), "/R", "INTACT")[-1][1].endswith(
+        "detect.py /R/INTACT --member-genome-check --member-attribution --arms I")

@@ -273,3 +273,30 @@ def test_off_the_variable_sites_a_cluster_shows_what_its_reads_show_not_the_host
     cov = {"m1": read(0, 600), "m2": read(400, 1000), "m3": read(400, 1000)}
     assert D.nearest_copy(cons, sites, ref, maps, set(range(1000)), D.cluster_bases(["m1", "m2", "m3"], cov)) == ("copy1", 0.001)
     assert D.status_of(["m1", "m2", "m3"], cons, sites, ref, maps, cov, {}, mosaic=True)[0] == "unresolved"
+
+
+def _attribution_case():
+    # host = copy0 (all A); copy1 differs from the host at 10..90 step 10 (G); the absent copy at 200..290 step 10 (T)
+    ref = "A" * 400
+    c1 = set(range(10, 100, 10))
+    maps = {"copy0": {p: "A" for p in range(400)}, "copy1": {p: ("G" if p in c1 else "A") for p in range(400)}}
+    private = set(range(200, 300, 10))
+    sites = {p: "T" for p in private}
+    cons = {p: "alt" for p in private}
+    return ref, maps, sites, cons, c1, private
+
+
+def test_an_absent_copy_call_keeps_the_reads_it_explains_better_than_every_catalogued_copy():
+    ref, maps, sites, cons, c1, private = _attribution_case()
+    cov = {f"a{i}": {p: ("T" if p in private else "A") for p in range(150, 400)} for i in range(3)}   # the absent copy's reads
+    cov["p0"] = {p: "A" for p in range(150, 400)}                    # copy0's read swept in: its own copy fits it better
+    cov["p1"] = {p: ("G" if p in c1 else "A") for p in range(0, 120)}  # copy1's read: no position tells the call from copy1
+    assert D.attribute(sorted(cov), cons, sites, ref, maps, cov) == ["a0", "a1", "a2"]
+
+
+def test_a_cluster_of_several_present_copies_reads_keeps_none_of_them():
+    ref, maps, sites, _, c1, _ = _attribution_case()
+    cov = {f"x{i}": {p: "A" for p in range(0, 150)} for i in range(2)}
+    cov.update({f"y{i}": {p: ("G" if p in c1 else "A") for p in range(0, 150)} for i in range(2)})
+    sites, cons = {p: "G" for p in c1}, {p: "alt" for p in c1}      # the mixture's consensus: copy1's bases
+    assert D.attribute(sorted(cov), cons, sites, ref, maps, cov) == []
