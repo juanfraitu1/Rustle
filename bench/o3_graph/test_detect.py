@@ -300,3 +300,16 @@ def test_a_cluster_of_several_present_copies_reads_keeps_none_of_them():
     cov.update({f"y{i}": {p: ("G" if p in c1 else "A") for p in range(0, 150)} for i in range(2)})
     sites, cons = {p: "G" for p in c1}, {p: "alt" for p in c1}      # the mixture's consensus: copy1's bases
     assert D.attribute(sorted(cov), cons, sites, ref, maps, cov) == []
+
+
+def test_a_present_copy_s_donor_alleles_do_not_make_its_reads_an_absent_copy_s_when_scaled_by_delta():
+    # round 10 (TAF11L.33): reads carrying their own copy's two donor alleles beat it by 2 -- O2's margin, but under delta of
+    # a 400-bp read; an absent copy diverged beyond delta beats every catalogued copy by more
+    ref, maps, sites, cons, c1, private = _attribution_case()
+    two = {200, 210}
+    sites2, cons2 = {p: "T" for p in two}, {p: "alt" for p in two}
+    cov = {f"d{i}": {p: ("T" if p in two else "A") for p in range(0, 400)} for i in range(3)}
+    assert D.attribute(sorted(cov), cons2, sites2, ref, maps, cov) == ["d0", "d1", "d2"]             # margin 2 alone keeps them
+    assert D.attribute(sorted(cov), cons2, sites2, ref, maps, cov, delta=D.DELTA) == []
+    cov = {f"a{i}": {p: ("T" if p in private else "A") for p in range(0, 400)} for i in range(3)}    # 10 private alts in 400 bp
+    assert D.attribute(sorted(cov), cons, sites, ref, maps, cov, delta=D.DELTA) == ["a0", "a1", "a2"]

@@ -276,13 +276,15 @@ def cluster_bases(members, cov):
 ATTR_MARGIN = 2                                          # --member-attribution: O2's assignment margin (o2graph.MARGIN)
 
 
-def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN):
+def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN, delta=None):
     """--member-attribution (round 10 development): the members an absent-copy PSV call keeps -- the reads its consensus
     explains better than every single catalogued copy by >= margin positions, as O2 assigns a read. Positions: the cluster's
     variable sites (its consensus there) and the catalog's informative positions (some copy differs from the host) that >= 2
     members show (their majority base). A copy whose map holds >= half of a read's positions competes for it, compared on the
     positions both hold. A present copy's read swept into a call ties with or beats its own copy; a cluster of several copies'
-    reads (a false mosaic) keeps none."""
+    reads (a false mosaic) keeps none. delta (--member-attribution-delta, round 10): the call must also beat every copy by more
+    than delta of the read's aligned length -- O3's detectability, read by read: two donor alleles of a present copy (round 10,
+    TAF11L.33) beat it by O2's margin but not by delta over a read."""
     info = {p for cc in maps.values() for p, x in cc.items() if x != ref[p]} - set(sites)
     call = {p: (sites[p] if cons.get(p) == "alt" else ref[p]) for p in sites}
     cnt = collections.defaultdict(collections.Counter)
@@ -297,9 +299,10 @@ def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN):
         pos = [p for p in call if p in cov[m]]
         if not pos:
             continue
+        need = max(margin, delta * len(cov[m])) if delta else margin
         for cc in maps.values():
             both = [p for p in pos if p in cc]
-            if 2 * len(both) >= len(pos) and (sum(cov[m][p] != call[p] for p in both) + margin
+            if 2 * len(both) >= len(pos) and (sum(cov[m][p] != call[p] for p in both) + need
                                               > sum(cov[m][p] != cc[p] for p in both)):
                 break
         else:
@@ -560,7 +563,8 @@ def _run_family(f):                                   # a fork worker's entry: t
 def main(argv):
     w = argv[0]
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
-    attribution = "--member-attribution" in argv           # arm I: a call keeps the reads it explains better than every copy
+    attribution_delta = "--member-attribution-delta" in argv   # ... by more than delta of each read's length (round 10)
+    attribution = "--member-attribution" in argv or attribution_delta   # arm I: a call keeps the reads it explains better
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
     rows = list(csv.DictReader(open(f"{w}/P.fam.copies.tsv"), delimiter="\t"))
@@ -670,7 +674,8 @@ def main(argv):
                     for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):
                         st, div = status_of(members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True)
                         if st in ("unexplained", "mosaic") and div > DELTA:
-                            mem = attribute(members, cons, sites_i, ref, isomaps(), cov_i) if attribution else members
+                            mem = (attribute(members, cons, sites_i, ref, isomaps(), cov_i,
+                                             delta=DELTA if attribution_delta else None) if attribution else members)
                             if len(mem) >= PC.MIN_SUPPORT:
                                 calls.append(["Ip", f, "psv", host, k, sorted(mem), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})

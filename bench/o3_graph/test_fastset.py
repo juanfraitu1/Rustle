@@ -46,7 +46,7 @@ def _opts(**kw):
     import argparse
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
-                o2_procs=2)
+                o2_procs=2, member_attribution_delta=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -78,3 +78,8 @@ def test_o2_takes_the_exact_union_only_when_asked():
     assert F.chain_steps(_opts(), "/R", "INTACT")[2][1] == ("env O2_PROCS=2 python3 bench/o3_graph/o2graph.py run /R/INTACT integ 2 "
                                                          "--distance gapcomp")
     assert F.chain_steps(_opts(union_exact=True), "/R", "INTACT")[2][1].endswith("integ 2 --distance gapcomp --union-exact")
+
+
+def test_o3_scales_attribution_by_delta_only_when_asked():
+    assert "--member-attribution-delta" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--member-attribution-delta --arms I" in F.chain_steps(_opts(member_attribution_delta=True), "/R", "INTACT")[-1][1]
