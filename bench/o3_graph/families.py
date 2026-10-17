@@ -125,6 +125,16 @@ GROUPS = {
                   # smallest first
                   "YWHAZP": r"^YWHAZP[0-9]+$", "PTMAP": r"^PTMAP[0-9]+$", "TPT1P": r"^TPT1P[0-9]+$", "FTH1P": r"^FTH1P[0-9]+$",
                   "EEF1A1P": r"^EEF1A1P[0-9]+$", "KRT8P": r"^KRT8P[0-9]+$"},
+    # round 14 (2026-10-17), in no earlier list, picked before any run: segmental-duplication pseudogene families first, then
+    # few-copy gene families, then olfactory subfamilies; retrocopy families last as spares (smallest first)
+    "heldout14": {"SMG1P": r"^SMG1P[0-9]+$", "PKD1P": r"^PKD1P[0-9]+$", "CHEK2P": r"^CHEK2P[0-9]+$", "RRN3P": r"^RRN3P[0-9]+$",
+                  "CDC27P": r"^CDC27P[0-9]+$", "AKR1C": r"^AKR1C[1-4]$", "HLA-DQ": r"^HLA-DQ[AB][12]$",
+                  "PCDHB": r"^PCDHB[0-9]+$", "ANKRD36": r"^ANKRD36[BC]?$", "TPTE": r"^TPTE(2|P[0-9]+)?$",
+                  "NXF": r"^NXF[2-5]B?$", "SERPINA": r"^SERPINA[0-9]+$", "MICAB": r"^MIC[A-E]$",
+                  "OR51": r"^OR51[A-Z][0-9]+P?$", "OR8": r"^OR8[A-Z][0-9]+$", "OR10": r"^OR10[A-Z][0-9]+$",
+                  "OR5": r"^OR5[A-Z][0-9]+$",
+                  "NPM1P": r"^NPM1P[0-9]+$", "HMGB1P": r"^HMGB1P[0-9]+$", "GAPDHP": r"^GAPDHP[0-9]+$",
+                  "RPL21P": r"^RPL21P[0-9]+$", "HNRNPA1P": r"^HNRNPA1P[0-9]+$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
