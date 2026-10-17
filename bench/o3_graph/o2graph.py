@@ -42,6 +42,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD, FLAG_MIN_READS = 2, 0.8, 0.00958, 5, 50, 20
 EXT_CAP, EXT_BAND = 50, 30                               # --distance gapcomp: clipped ends aligned up to EXT_CAP bases
+_INDEL = re.compile(r"(\d+)[ID]")
 NOVEL_INS = 30                     # locus fallback: an insertion or unaligned end this long is sequence no copy holds
 UNION_EXACT_MICRO = 30             # --union-exact: a terminal exon this short may be missing from a projection
 ELSEWHERE = -1                     # locus fallback: the read's best alignment off every seeded copy of the family
@@ -115,18 +116,38 @@ def end_cost(p, t, anchored_at_end):
     """Edit distance of a whole clipped read end `p` against path bases `t`, anchored where the end meets the aligned core (a
     prefix at t's end, a suffix at t's start) and free on the far side; read bases beyond the path cost one each. An end longer
     than EXT_CAP costs its length (as clipping counts it: a different structure, not errors)."""
-    if len(p) > EXT_CAP:
-        return len(p)
+    m = len(p)
+    if m > EXT_CAP:
+        return m
+    if not m:
+        return 0
     if anchored_at_end:
         p, t = p[::-1], t[::-1]
-    prev = list(range(len(t) + 1))
-    for i in range(1, len(p) + 1):
-        cur = [i] + [0] * len(t)
-        a = p[i - 1]
-        for j in range(1, len(t) + 1):
-            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a != t[j - 1]))
-        prev = cur
-    return min(prev)
+    # the DP D[i][j] (i read bases, j path bases; D[0][j] = j, D[i][0] = i), min over j of D[m][j], one path base at a time
+    # with Myers' bit vectors (Hyyro's global variant: a +1 horizontal delta enters at row 0)
+    full, top = (1 << m) - 1, 1 << (m - 1)
+    peq = {}
+    for i, c in enumerate(p):
+        peq[c] = peq.get(c, 0) | (1 << i)
+    pv, mv, score = full, 0, m
+    best = m
+    for c in t:
+        eq = peq.get(c, 0)
+        xv = eq | mv
+        xh = ((((eq & pv) + pv) & full) ^ pv) | eq
+        ph = (mv | ~(xh | pv)) & full
+        mh = pv & xh
+        if ph & top:
+            score += 1
+        elif mh & top:
+            score -= 1
+        if score < best:
+            best = score
+        ph = ((ph << 1) | 1) & full
+        mh = (mh << 1) & full
+        pv = (mh | ~(xv | ph)) & full
+        mv = ph & xv
+    return best
 
 
 def gap_compressed(line, read, target):
@@ -147,16 +168,8 @@ def _gc_core(f):
     """The aligned core's share of gap_compressed: mismatches plus indel events (NM less the indel bases, plus the events)."""
     nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
     cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
-    num, events, indel_bases = "", 0, 0
-    for ch in cg:
-        if ch.isdigit():
-            num += ch
-        else:
-            if ch in "ID":
-                events += 1
-                indel_bases += int(num)
-            num = ""
-    return nm - indel_bases + events
+    indels = _INDEL.findall(cg)
+    return nm - sum(map(int, indels)) + len(indels)
 
 
 def _paf_dist_gc(paf, reads, tx):
@@ -261,6 +274,13 @@ def union_structures(cps, projector, tol=None):
     return out
 
 
+_PATHS_FAMILY = None
+
+
+def _paths_family(fam):
+    return _PATHS_FAMILY(fam)
+
+
 def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None,
               distance="clip", proj_micro=0, proj_tol=None):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
@@ -268,7 +288,12 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
     import subprocess
     import pysam
     comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
-    fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+    handles = {}
+
+    def fa():                                        # one FASTA handle per process: forked workers share no file offset
+        if os.getpid() not in handles:
+            handles[os.getpid()] = pysam.FastaFile(f"{w}/genome.ref.fa")
+        return handles[os.getpid()]
     iso = catalog if catalog is not None else json.load(open(f"{w}/isoforms.json"))
     reads = {}
     name = None
@@ -289,17 +314,17 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
 
     def projector(c, queries):                       # union: paralog isoforms spliced-aligned onto the copy's locus
         lo = max(0, c["start"] - R.PROJ_PAD)
-        locus = fa.fetch(c["contig"], lo, c["end"] + R.PROJ_PAD).upper()
+        locus = fa().fetch(c["contig"], lo, c["end"] + R.PROJ_PAD).upper()
         q = {}
         for name, (p, ex) in queries.items():
-            seq = "".join(fa.fetch(p["contig"], a, b).upper() for a, b in ex)
+            seq = "".join(fa().fetch(p["contig"], a, b).upper() for a, b in ex)
             q[name] = (seq[::-1].translate(comp) if p["strand"] == "-" else seq, projection_spec(ex, proj_micro))
         return R.project_many(q, locus, lo, c["strand"], micro=proj_micro)
-    out, n_struct = [], collections.Counter()
-    for fam in sorted(iso):
+    def one(fam):                                    # families are independent: O2_PROCS of them at a time, in family order
         names = sorted(n for n in hosted.get(fam, ()) if n in reads)
+        rows, cnt = [], collections.Counter()
         if not names:
-            continue
+            return rows, cnt
         paths = (union_structures(iso[fam], projector, proj_tol) if union else
                  {c["idx"]: {t: ex for t, ex in c["isoforms"].items() if not reps_only or t == c["rep"]} for c in iso[fam]})
         json.dump({str(k): {t: [list(x) for x in ex] for t, ex in v.items()} for k, v in paths.items()},
@@ -308,12 +333,12 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
         with open(f"{d}/{fam}.tx.fa", "w") as fh:
             for c in iso[fam]:
                 for t, ex in paths[c["idx"]].items():
-                    seq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in padded(ex, pad))
+                    seq = "".join(fa().fetch(c["contig"], a, b).upper() for a, b in padded(ex, pad))
                     seq = seq[::-1].translate(comp) if c["strand"] == "-" else seq
                     tx[f"copy{c['idx']}|{t}"] = seq
                     fh.write(f">copy{c['idx']}|{t}\n{seq}\n")
                     n_tx += 1
-                    n_struct["projected" if t.startswith("proj:") else "own"] += 1
+                    cnt["projected" if t.startswith("proj:") else "own"] += 1
         with open(f"{d}/{fam}.reads.fa", "w") as fh:
             for n in names:
                 fh.write(f">{n}\n{reads[n]}\n")
@@ -323,7 +348,21 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
         json.dump(path_dists(dist), open(f"{d}/{fam}.dist.json", "w"))     # run_locus_fallback mode "all" combines them
         for n in names:
             c, reason = decide(dist.get(n, {}), len(reads[n]), margin)
-            out.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
+            rows.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
+        return rows, cnt
+    global _PATHS_FAMILY
+    _PATHS_FAMILY = one
+    fams, procs = sorted(iso), int(os.environ.get("O2_PROCS", "1"))
+    if procs > 1 and len(fams) > 1:
+        import multiprocessing
+        with multiprocessing.get_context("fork").Pool(procs) as pool:
+            parts = pool.map(_paths_family, fams, chunksize=1)
+    else:
+        parts = [one(f) for f in fams]
+    out, n_struct = [], collections.Counter()
+    for rows, cnt in parts:
+        out += rows
+        n_struct.update(cnt)
     with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
         wr.writeheader()

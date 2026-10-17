@@ -146,7 +146,7 @@ def chain_steps(a, root, w):
     steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
              ("O1", f"python3 bench/o3_graph/o1seed.py {W}", "light"),
-             ("O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
+             ("O2", f"env O2_PROCS={a.o2_procs} python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
                     + (" --union-exact" if a.union_exact else ""), "light")]
     if a.o2_genome != "off":
         steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2", "light"))
@@ -244,6 +244,7 @@ def main(argv=None):
     p.add_argument("--heavy-current", action="store_true", help="run copy_assign under the heavy lock (large families)")
     p.add_argument("--all-arms", action="store_true", help="O3: every legacy arm too (default: the integrated arm I only)")
     p.add_argument("--o3-procs", type=int, default=2, help="O3: families in parallel per world (output does not depend on it)")
+    p.add_argument("--o2-procs", type=int, default=2, help="O2: families in parallel per world (output does not depend on it)")
     p.add_argument("--trim-adapters", default="", help="ADAPTERS.json: trim the library's adapters off every read before mapping")
     p.add_argument("--o2-genome", choices=("off",) + tuple(GENOME_STEP), default="off", help="O2 with the read's own genome "
                    "alignments: fallback = only the reads the paths leave unexplained (o2graph.py integl); combined = every read on "

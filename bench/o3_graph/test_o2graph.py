@@ -344,3 +344,31 @@ def test_exact_union_paths_keep_a_paralog_structure_a_few_bases_off_the_copy_s_o
 def test_the_projector_offers_each_paralog_isoform_s_exon_lengths_only_for_the_micro_exon_rule():
     assert O.projection_spec([(0, 10), (20, 26)], micro=0) == 2
     assert O.projection_spec([(0, 10), (20, 26)], micro=30) == [10, 6]
+
+
+def _end_cost_dp(p, t, anchored_at_end):
+    if len(p) > O.EXT_CAP:
+        return len(p)
+    if anchored_at_end:
+        p, t = p[::-1], t[::-1]
+    prev = list(range(len(t) + 1))
+    for i in range(1, len(p) + 1):
+        cur = [i] + [0] * len(t)
+        for j in range(1, len(t) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (p[i - 1] != t[j - 1]))
+        prev = cur
+    return min(prev)
+
+
+def test_the_bit_parallel_end_cost_equals_the_dynamic_programme():
+    import random
+    rng = random.Random(3)
+    cases = [("", ""), ("", "ACGT"), ("ACGT", ""), ("A" * 51, "A" * 80), ("ACGTTG", "ACGTTGCA"), ("AAAA", "TTTT")]
+    for _ in range(3000):
+        m, n = rng.randint(0, 52), rng.randint(0, 85)
+        base = "".join(rng.choice("ACGT") for _ in range(max(m, n)))
+        p = "".join(c if rng.random() > 0.15 else rng.choice("ACGTN") for c in base[:m])
+        cases.append((p, base[:n] if rng.random() < 0.7 else "".join(rng.choice("ACGT") for _ in range(n))))
+    for p, t in cases:
+        for end in (False, True):
+            assert O.end_cost(p, t, end) == _end_cost_dp(p, t, end), (p, t, end)
