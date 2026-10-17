@@ -298,8 +298,9 @@ def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN, delta=No
     explains better than every single catalogued copy by >= margin positions, as O2 assigns a read. Positions: the cluster's
     variable sites (its consensus there) and the catalog's informative positions (some copy differs from the host) that >= 2
     members show (their majority base). A copy whose map holds >= half of a read's positions competes for it, compared on the
-    positions both hold. A present copy's read swept into a call ties with or beats its own copy; a cluster of several copies'
-    reads (a false mosaic) keeps none. delta (--member-attribution-delta, round 10): the call must also beat every copy by more
+    positions both hold; a read no copy competes for is not kept (round 10 review: reads aligned to a neighbour's fragment in
+    the host window, which no copy's map covers, were kept by default). A present copy's read swept into a call ties with or
+    beats its own copy; a cluster of several copies' reads (a false mosaic) keeps none. delta (--member-attribution-delta, round 10): the call must also beat every copy by more
     than delta of the read's aligned length -- O3's detectability, read by read: two donor alleles of a present copy (round 10,
     TAF11L.33) beat it by O2's margin but not by delta over a read."""
     info = {p for cc in maps.values() for p, x in cc.items() if x != ref[p]} - set(sites)
@@ -317,13 +318,16 @@ def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN, delta=No
         if not pos:
             continue
         need = max(margin, delta * len(cov[m])) if delta else margin
+        rivals = 0
         for cc in maps.values():
             both = [p for p in pos if p in cc]
-            if 2 * len(both) >= len(pos) and (sum(cov[m][p] != call[p] for p in both) + need
-                                              > sum(cov[m][p] != cc[p] for p in both)):
-                break
+            if 2 * len(both) >= len(pos):
+                rivals += 1
+                if sum(cov[m][p] != call[p] for p in both) + need > sum(cov[m][p] != cc[p] for p in both):
+                    break
         else:
-            keep.append(m)
+            if rivals:                                    # (round 10 review) no copy to compare with: no evidence against them
+                keep.append(m)
     return keep
 
 

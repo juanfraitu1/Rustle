@@ -338,3 +338,12 @@ def test_the_error_floor_is_the_median_de_of_uniquely_placed_primaries(tmp_path)
     pysam.sort("-o", str(tmp_path / "E0.bam"), str(tmp_path / "u.bam"))
     pysam.index(str(tmp_path / "E0.bam"))
     assert abs(D.error_floor(str(tmp_path / "E0.bam")) - 0.0025) < 1e-6     # median of 0.001, 0.002, 0.003, 0.004
+
+
+def test_a_read_no_catalogued_copy_can_be_compared_with_is_not_attributed_to_an_absent_copy():
+    # round 10 review (TAF11L.44's host window holds 225 bp of neighbour TAF11L.43; reads aligned there are covered by no copy's
+    # map): with no competitor, attribution kept them by default
+    ref, maps, sites, cons, c1, private = _attribution_case()
+    maps = {n: {p: b for p, b in cc.items() if p < 150} for n, cc in maps.items()}     # the maps end before the call's sites
+    cov = {f"a{i}": {p: ("T" if p in private else "A") for p in range(150, 400)} for i in range(3)}
+    assert D.attribute(sorted(cov), cons, sites, ref, maps, cov) == []
