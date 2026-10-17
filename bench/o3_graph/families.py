@@ -120,7 +120,11 @@ GROUPS = {
                   "KRTAP13": r"^KRTAP13-[0-9]+$", "KRTAP20": r"^KRTAP20-[0-9]+$", "KRTAP21": r"^KRTAP21-[0-9]+$",
                   "KRTAP6": r"^KRTAP6-[0-9]+$", "HLA-ABC": r"^HLA-[ABC]$", "H1": r"^H1-[0-9]$", "OR2A": r"^OR2A[0-9]+$",
                   "SEPTIN7P": r"^SEPTIN7P[0-9]+$", "CTSLP": r"^CTSLP[0-9]+$", "UBE2Q2P": r"^UBE2Q2P[0-9]+$",
-                  "PGAM1P": r"^PGAM1P[0-9]+$", "OR52": r"^OR52[A-Z][0-9]+$", "OR7E": r"^OR7E[0-9]+P?$"},
+                  "PGAM1P": r"^PGAM1P[0-9]+$", "OR52": r"^OR52[A-Z][0-9]+$", "OR7E": r"^OR7E[0-9]+P?$",
+                  # spares appended before any run (the first build gave only 5 families with >= 3 copies): retrocopy families,
+                  # smallest first
+                  "YWHAZP": r"^YWHAZP[0-9]+$", "PTMAP": r"^PTMAP[0-9]+$", "TPT1P": r"^TPT1P[0-9]+$", "FTH1P": r"^FTH1P[0-9]+$",
+                  "EEF1A1P": r"^EEF1A1P[0-9]+$", "KRT8P": r"^KRT8P[0-9]+$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
