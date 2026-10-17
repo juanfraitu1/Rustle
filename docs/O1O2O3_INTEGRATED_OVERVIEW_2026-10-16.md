@@ -141,3 +141,41 @@ Pooled totals are therefore not independent counts; each world is the unit of co
 
 **Round 8, the pre-registered end-to-end test on a ninth set: FAIL by one read** (CROSS: 1 error against 0). B1 held in all six
 worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
+
+## Update after rounds 9-11 (2026-10-16, evening): the integrated pipeline v4 passes on held-out full families
+
+| round | pipeline | reads | verdict | what decided it |
+|---|---|---|---|---|
+| 9 (r1307) | v2 | calibrated v1 profiles | FAIL | 1-3.5% fewer correct catalogued reads (O2 `unexplained` gate on realistic reads); O1 dropping expressed copies |
+| 10 (r1308) | v3 | calibrated v2 profiles | FAIL | one false O3 call (a host-window artefact in a 45-copy array); a new copy within delta of a catalogued one |
+| 11 (r1309) | v4 | calibrated v2 profiles | **PASS, 12/12 worlds** | also under round 10's scoring, at copy level, and without the histone clusters |
+
+**v4, end to end** (`fastset.py ... --o2-distance gapcomp --member-genome-check --member-attribution --union-exact
+--o2-genome fallback --per-read-detectability --twins --error-floor`):
+1. **O1** (`o1seed.py --twins`):
+   - **Seeding:** the RNA-supported catalog, keeping a curated copy with >= 5 primaries or one owned uniquely placed read.
+   - **Undecidable copies:** a curated copy within delta of a kept one is never dropped.
+   - **Twins:** a new locus within delta of a curated copy is its twin.
+2. **O2** (`o2graph.py run W integ 2 --distance gapcomp --union-exact --error-floor`, then `integl 2 --error-floor`):
+   - **Paths:** every isoform structure is threaded through every seeded copy. Structures still project when the aligner
+     drops a terminal micro-exon, and stay apart unless their junctions match exactly.
+   - **Distance:** gap-compressed (indel events, clipped ends aligned against the path).
+   - **Decision:** at margin 2. A twin wins a read from its curated copy only by the margin.
+   - **Genome fallback:** a read the paths leave unexplained is placed on its own genome alignments (mismatches + indel
+     events). Novel sequence >= 30 bp refuses, and the best alignment off the seeded copies keeps the read unexplained.
+3. **O3** (`detect.py --member-genome-check --member-attribution --error-floor --arms I`):
+   - **Clustering:** O2's unexplained reads, pooled over the family, with PSV clustering and the mosaic rule.
+   - **Branch calls:** novel segments on the family's vg graph.
+   - **Attribution:** a call keeps only the reads its consensus explains better than every catalogued copy that competes
+     for them.
+   - **Genome check:** per read, less the error floor.
+4. **Delta and the error floor.** Delta (0.00958) is an error-free divergence: p99 between KB3781's haplotype assemblies.
+   Every read-level comparison with it subtracts the world's sequencing-error floor first (median `de` of MAPQ-60 primaries).
+
+**What remains (round 11's review and its own report):**
+- **O3's read hosting still comes from copy_assign's run.** `--o1-hosts` removes that dependence, but in development it lost
+  O3 recall in arrays; a tiered version is being measured.
+- **Errors left in round 11:**
+  - uncatalogued reads placed on a paralog (OUTSIDE 44 and 37, against the current method's 367 and 297);
+  - BRANCH reads lacking the novel exon, which count as detectable by construction (118 and 119, against 313 and 297).
+- **Not yet tested:** real reads end to end. Rounds 9-11 are simulations calibrated on two real libraries.
