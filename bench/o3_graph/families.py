@@ -86,6 +86,15 @@ GROUPS = {
                  "LCE2": r"^LCE2[A-D]$", "LCE3": r"^LCE3[A-E]$", "KRTAP4": r"^KRTAP4-[0-9]+$", "AGAP": r"^AGAP([4-9]|1[01])P?$",
                  "ELOA3": r"^ELOA3[B-D]?P?$", "FAM25": r"^FAM25[A-G]$", "CYP3A": r"^CYP3A[0-9]+$", "FAM47": r"^FAM47[A-C]$",
                  "FAM9": r"^FAM9[A-C]$", "KRTAP9": r"^KRTAP9-[0-9]+$", "DAZ": r"^DAZ[1-4]$"},
+    # held out for round 10 (docs/PREREG_o3_graph_round10_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set, UNCAPPED, linked by the locus rule (--link locus --min-cover 0.8). CYP3A, FAM47, FAM9 and DAZ were
+    # round-9 candidates past its first 8, never built into a world (KRTAP9 was, in the rebuilt set 10); none of the others was in
+    # any earlier list
+    "heldout10": {"CYP3A": r"^CYP3A[0-9]+$", "FAM47": r"^FAM47[A-C]$", "FAM9": r"^FAM9[A-C]$", "DAZ": r"^DAZ[1-4]$",
+                  "HNRNPCL": r"^HNRNPCL[0-9]+$", "PRR20": r"^PRR20[A-G]$", "ZNF705": r"^ZNF705[A-G]P?$", "TAF11L": r"^TAF11L[0-9]+$",
+                  "F8A": r"^F8A[1-3]$", "FAM236": r"^FAM236[A-D]$", "CENPVL": r"^CENPVL[0-9]$", "FOXD4L": r"^FOXD4L[0-9]$",
+                  "OR2T": r"^OR2T[0-9]+$", "KRTAP10": r"^KRTAP10-[0-9]+$", "H2BC": r"^H2BC[0-9]+$", "FAM66": r"^FAM66[A-E]$",
+                  "CXADRP": r"^CXADRP[0-9]$", "GOLGA2P": r"^GOLGA2P[0-9]+$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
