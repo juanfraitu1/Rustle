@@ -619,3 +619,50 @@ versions:
 - **Cost:** the check aligns the family's explained reads to each host window with a candidate call. O3's longest world on
   round 13 A119b went from 26 to 58 s.
 - Round 14 pre-registers v9 with the diploid donor (`docs/PREREG_o3_graph_round14_2026-10-17.md`).
+
+## 15. After round 14: v10, the O2 proof, and the cost of full families (2026-10-17)
+
+**v10 = v9 + O3 `--haplotype-check-genome`.** This brings back the genome-coordinate haplotype check beside the window one
+(f867ec7c).
+- **On the 16 spent runs: 15 pass,** as with v9. The failure is again round 12 A119b. Per world, the results are identical to
+  v9 or have fewer OUTSIDE errors (round 12 public: 130 -> 106).
+- **On round 14's 5 seeds and 8 diploid-donor sets: all 18 runs pass.** Under v9, A119b passed only 2 of the 4 extra seeds.
+- **These sets are now spent.** Round 15 is the held-out test.
+
+**NPIP as one family** (families.py group `mainstay`): NPIPA and NPIPB copies link into one component under the locus rule
+(23 of 23), and split in two they placed NPIPB reads on NPIPA copies. On the merged mainstay set (seed 306), both profiles
+pass every bar.
+
+**The O2 proof** (`docs/PREREG_o2_proof_2026-10-17.md`, register 1314) passed in every cell.
+- The integrated O2 made 0 wrong assignments in 22,631, on 8 held-out near-identical families.
+- MAPQ >= 1 is the strong baseline: it is more powerful on weak reads and makes 55 errors.
+- The same runs' end-to-end OUTSIDE worlds failed: O1 did not seed near-identical uncatalogued twins (C4, HSFY), and O2's twin
+  rule gave twin reads to the curated copy (VCY).
+
+**Where a full family's time goes** (mainstay CROSS world, O3_TIMING, one world):
+- **vg graph construction was 121 of O3's 158 s with a cold cache.** The cache is keyed by the graph's inputs, and each world's
+  O1 catalog differs, so most worlds miss.
+- vg msga is not deterministic either: two builds of NPIP's graph differ in copy17's paths.
+- **O2:** 32 s, of which minimap2 of 1,829 NPIP reads against 307 paths is 23 s.
+
+**`--branch-linear` (O3, 44798db2): the branch step without the family graph.**
+- Candidates are spliced-aligned (minimap2 splice:hq) to the family's loci as linear sequences.
+- A read base is novel only where NO locus alignment explains it (`novel_union`). That is how the graph explains NPIP.14's
+  125-253-bp insertions: other copies' alignments hold them.
+- **Mainstay CROSS world:** calls identical to the graph version; O3 158 s -> 34 s.
+- **On all 34 spent runs** (16 rounding runs, round 14's 10 seed runs, 8 diploid-donor sets):
+  - every verdict is v10's;
+  - 14 runs have identical bars;
+  - 19 gain 1-9 correct BRANCH reads (two REMOVED worlds +1), with errors equal or one fewer.
+- **Measured and not adopted:** `--branch-genome-segments`, which clusters the genome alignment's own unexplained pieces. It
+  called 32 present NPIP reads on the mainstay CROSS world, whose pieces another NPIP copy explains.
+
+**Exact caches for a set's worlds (`fastset --aln-cache`):**
+- **O2's path alignments** are cached per read sequence (`O2_ALN_CACHE`, f2e59107). minimap2 aligns each read on its own;
+  equal-score ties are broken by a hash of the read's name, which changes only the tp / s1 / s2 tags, never NM, the CIGAR or
+  the coordinates O2's distances read.
+  - **Mainstay, against the original tables:** INTACT cold, then CROSS warmed by INTACT, then CROSS warm. All three are
+    byte-identical.
+- **O3's catalog-isoform-to-host alignments** (`O3_ALN_CACHE`, 7839138c) are keyed by window, query names and sequences.
+- **Not cached:** O3's read-to-host alignments. They keep only minimap2's primary, so a name-hash tie could change which one
+  is kept.
