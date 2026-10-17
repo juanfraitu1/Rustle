@@ -671,3 +671,21 @@ def test_a_read_base_is_novel_only_when_no_locus_alignment_explains_it():
     c = dict(qlen=1000, qs=60, qe=1000, cigar="300=150I490=", score=800)
     assert D.novel_union([c], 1000) == [(0, 60), (360, 510)]
     assert D.novel_union([], 500) == [(0, 500)]
+
+
+def test_the_isoform_alignment_cache_returns_the_alignment_itself(tmp_path, monkeypatch):
+    # O3_ALN_CACHE (2026-10-17): the catalog's isoforms on a host window are the same queries, under the same names, in every
+    # world of a family set; keyed by the window, the names and the sequences, a second call does not align
+    import random
+    rng = random.Random(5)
+    ref = "".join(rng.choice("ACGT") for _ in range(2000))
+    iso = {"copy0|t1": ref[100:400] + ref[700:1000], "copy1|t2": ref[1200:1700]}
+    direct = D.PC.align("host", ref, iso, str(tmp_path / "x"))
+    monkeypatch.setenv("O3_ALN_CACHE", str(tmp_path / "c"))
+    assert D.cached_align("host", ref, iso, str(tmp_path / "y")) == direct
+    calls = []
+    monkeypatch.setattr(D.PC, "align", lambda *a: calls.append(a) or {})
+    assert D.cached_align("host", ref, iso, str(tmp_path / "z")) == direct
+    assert calls == []
+    assert D.cached_align("host", ref, {"copy0|t1": iso["copy0|t1"]}, str(tmp_path / "w")) == {}   # other queries: aligned
+    assert len(calls) == 1

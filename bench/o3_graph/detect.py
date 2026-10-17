@@ -478,6 +478,27 @@ def msga_orders(names):
     return [names[::-1]] + [names[k:] + names[:k] for k in range(1, len(names))]
 
 
+def cached_align(target_name, ref, queries, tmp):
+    """PC.align through O3_ALN_CACHE when it is set: keyed by the target and every query's name and sequence, so the result is
+    exactly the alignment's (minimap2 is deterministic for the same inputs, names included). For the catalog's isoforms on a
+    host window, the same in every world of a family set."""
+    cache = os.environ.get("O3_ALN_CACHE")
+    if not cache:
+        return PC.align(target_name, ref, queries, tmp)
+    import pickle
+    h = hashlib.sha1(f"{target_name}\0{ref}\0".encode())
+    for n in sorted(queries):
+        h.update(f"{n}\0{queries[n]}\0".encode())
+    path = f"{cache}/{h.hexdigest()}.pkl"
+    if os.path.exists(path):
+        return pickle.load(open(path, "rb"))
+    out = PC.align(target_name, ref, queries, tmp)
+    os.makedirs(cache, exist_ok=True)
+    pickle.dump(out, open(f"{path}.{os.getpid()}", "wb"))
+    os.replace(f"{path}.{os.getpid()}", path)                # atomic: concurrent worlds never read half
+    return out
+
+
 def write_loci(d, genome, copies):
     """d/loci.fa: each copy's locus (+- LOCUS_PAD) in its transcript's orientation, the sequences the family graph is built
     from."""
@@ -1138,7 +1159,7 @@ def main(argv):
                 if not iso_cache:
                     iso_seqs = {f"copy{c['idx']}|{k}": "".join(g2[a:b] for a, b in ex) for c in cps
                                 for g2 in [genome[c["contig"]]] for k, ex in c["isoforms"].items()}
-                    m_iso_each = _timed("isomaps_align", PC.align, "host", ref, iso_seqs, tmp)
+                    m_iso_each = _timed("isomaps_align", cached_align, "host", ref, iso_seqs, tmp)
                     iso_cache.update({f"copy{c['idx']}": union_map([m for k, m in m_iso_each.items()
                                                                      if k.startswith(f"copy{c['idx']}|")]) for c in cps})
                 return iso_cache
