@@ -624,11 +624,11 @@ def binom_sf(k, n, p):
 
 
 def donor_alleles(spans, events, explained, floor, alpha=ALLELE_ALPHA, kinds=None):
-    """--allele-discount (round 13): candidate alleles, as the reads other than a call's own show them. An edit carried by >= 2
-    of them is a candidate when more of those spanning its position carry it than sequencing error explains: P(Binomial(n
-    spanning, floor) >= k carriers) < alpha, the floor bounding the rate of any one edit at one base. kinds: the edit kinds
-    considered ("X": substitutions). spans {read: (contig, start, end)}, events {read: [edit keys]}. Recurrence alone does not
-    tell a haplotype from a collapsed paralog's PSVs: allelic_loci decides."""
+    """--allele-discount (round 13): candidate alleles, as a population of reads shows them (the reads O2's paths assign, less
+    every call's members). An edit carried by >= 2 of them is a candidate when more of those spanning its position carry it
+    than sequencing error explains: P(Binomial(n spanning, floor) >= k carriers) < alpha, the floor bounding the rate of any one
+    edit at one base. kinds: the edit kinds considered ("X": substitutions). spans {read: (contig, start, end)}, events {read:
+    [edit keys]}. Recurrence alone does not tell an allele from a removed copy's PSVs: majority_alleles decides."""
     carriers = collections.Counter(e for q in explained if q in events for e in set(events[q])
                                    if kinds is None or e[2] in kinds)
     starts, ends = collections.defaultdict(list), collections.defaultdict(list)
@@ -649,60 +649,21 @@ def donor_alleles(spans, events, explained, floor, alpha=ALLELE_ALPHA, kinds=Non
     return out
 
 
-def aligned_blocks(contig, start, cigar):
-    """The reference intervals an alignment covers: =, X, M and deletions, merged; introns (N) split them."""
-    out, r = [], start
-    for op, n in cigar:
-        if op in (0, 2, 7, 8):
-            if out and out[-1][2] == r:
-                out[-1] = (contig, out[-1][1], r + n)
-            else:
-                out.append((contig, r, r + n))
-            r += n
-        elif op == 3:
-            r += n
-    return out
+def majority_alleles(cand, events, assigned, members):
+    """The candidate alleles (donor_alleles over the reads O2's paths assign) that are a present copy's: carried by more of the
+    reads O2 assigns than of the reads any O3 call claims. Round 13: MRGPRX.1's two hap-2 alleles, 42 assigned carriers against
+    the false call's 3. Development: a removed copy whose reads O2 partly explains (CXADRP.1, AGAP.5, CTSLP.1) leaves its PSVs
+    on those reads too, and recurrence alone made them alleles (v7-v7c); its own calls' members carry them more."""
+    asg = collections.Counter(e for q in assigned if q in events for e in set(events[q]) if e in cand)
+    mem = collections.Counter(e for q in members if q in events for e in set(events[q]) if e in cand)
+    return {e for e in cand if asg[e] > mem[e]}
 
 
-def haplotype_alleles(cand, events, blocks, population):
-    """The candidate alleles (donor_alleles) that form haplotypes: candidates linked by a read carrying both form one group,
-    observed over the bases its carriers' alignments cover; a group is a haplotype when it stays within allelic divergence
-    there (count <= DELTA x covered bases, delta's own definition). Round 13 development: MRGPRX.1's two hap-2 alleles over the
-    1,444 bp their carriers cover are a haplotype; a removed copy collapsing onto its paralog (CTSLP.1) carries 4 PSVs over the
-    ~350 exonic bp its reads cover -- 1.1%, a copy -- although a count over the paralog's whole locus (7 in 2-3 kb) reads them
-    as alleles. events {read: [edit keys]}, blocks {read: aligned_blocks}."""
-    parent = {e: e for e in cand}
-
-    def find(e):
-        while parent[e] != e:
-            parent[e] = parent[parent[e]]
-            e = parent[e]
-        return e
-    carriers = collections.defaultdict(set)
-    for q in population:
-        mine = [e for e in set(events.get(q, ())) if e in parent]
-        for e in mine:
-            carriers[e].add(q)
-        for e in mine[1:]:
-            parent[find(e)] = find(mine[0])
-    groups = collections.defaultdict(list)
-    for e in carriers:
-        groups[find(e)].append(e)
-    out = set()
-    for g in groups.values():
-        reads = set().union(*(carriers[e] for e in g))
-        iv = sorted((a, b) for q in reads for c, a, b in blocks.get(q, ()) if c == g[0][0])
-        covered, hi = 0, None
-        for a, b in iv:
-            if hi is None or a > hi:
-                covered += b - a
-                hi = b
-            elif b > hi:
-                covered += b - hi
-                hi = b
-        if covered and len(g) <= DELTA * covered:
-            out |= set(g)
-    return out
+def o2_assigned(w):
+    """The reads O2's paths assign (o2.integ.m2.tsv `assigned`): placed on one seeded copy by the margin."""
+    p = f"{w}/graph/o2.integ.m2.tsv"
+    return ({r["read"] for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] == "assigned"}
+            if os.path.exists(p) else set())
 
 
 def allele_corrected(prim, alleles):
@@ -715,7 +676,7 @@ def allele_corrected(prim, alleles):
 
 
 def primary_events(bam_p):
-    """--allele-discount: every primary alignment's read_events (+ MAPQ, aligned_blocks) and span."""
+    """--allele-discount: every primary alignment's read_events (+ MAPQ) and span."""
     import pysam
     prim, spans = {}, {}
     with pysam.AlignmentFile(bam_p) as bam:
@@ -723,8 +684,7 @@ def primary_events(bam_p):
             if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.cigartuples or not rec.query_sequence:
                 continue
             ev, c = read_events(rec.reference_name, rec.reference_start, rec.cigartuples, rec.query_sequence)
-            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality,
-                                        blocks=aligned_blocks(rec.reference_name, rec.reference_start, rec.cigartuples))
+            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality)
             spans[rec.query_name] = (rec.reference_name, rec.reference_start, rec.reference_end)
     return prim, spans
 
@@ -973,9 +933,9 @@ def main(argv):
     floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
     if "--allele-discount" in argv:                          # round 13: the donor's alleles, carried by other reads too
         prim, spans = primary_events(f"{w}/E0.bam")
-        events, pop = {q: v["events"] for q, v in prim.items()}, set(prim) - want
+        events, pop = {q: v["events"] for q, v in prim.items()}, o2_assigned(w) - want
         cand = donor_alleles(spans, events, pop, floor, kinds=("X",))
-        alleles = haplotype_alleles(cand, events, {q: v["blocks"] for q, v in prim.items()}, pop)
+        alleles = majority_alleles(cand, events, pop, want)
         de_a, floor_a = allele_corrected(prim, alleles)
         gst = {q: (de_a.get(q, de), nov) for q, (de, nov) in gst.items()}
         floor = floor_a if "--error-floor" in argv else 0.0

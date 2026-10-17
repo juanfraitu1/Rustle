@@ -452,31 +452,17 @@ def test_donor_alleles_are_subtracted_from_de_and_from_the_floor_alike():
     assert abs(floor - 0.0025) < 1e-9                                      # median over p1, p2, p3 and m: 0, 0, 0.005, 0.0086
 
 
-def test_a_haplotype_is_the_co_carried_alleles_within_delta_of_the_bases_its_carriers_cover():
-    # round 13 development: MRGPRX.1's two hap-2 alleles are carried by reads that together cover its 1,444 bp (2 / 1,444); a
-    # removed copy collapsing onto its paralog (CTSLP.1) leaves 4 PSVs in the ~350 exonic bp its reads cover -- 1.1% > delta,
-    # though only 7 of the paralog's 2-3 kb, so a whole-locus count would read them as alleles
-    het = [("c", 300, "X", "G"), ("c", 375, "X", "T")]
-    psv = [("d", 5100, "X", "A"), ("d", 5180, "X", "C"), ("d", 5260, "X", "G"), ("d", 5330, "X", "T")]
-    lone = ("e", 50, "X", "A")
-    events, blocks = {}, {}
-    for i in range(20):                                                       # hap-2 reads tiling c:0-1444
-        a = (i * 70) % 1100
-        events[f"h{i}"] = [e for e in het if a <= e[1] < a + 350]
-        blocks[f"h{i}"] = [("c", a, a + 350)]
-    for i in range(6):                                                        # collapsed reads: two exons, 350 bp aligned
-        events[f"x{i}"] = list(psv)
-        blocks[f"x{i}"] = [("d", 5000, 5200), ("d", 5250, 5400)]
-    for i in range(3):
-        events[f"l{i}"] = [lone]
-        blocks[f"l{i}"] = [("e", 0, 400)]
-    cand = set(het) | set(psv) | {lone}
-    assert D.haplotype_alleles(cand, events, blocks, set(events)) == set(het) | {lone}
-
-
-def test_aligned_blocks_cover_matches_mismatches_and_deletions_but_not_introns():
-    assert D.aligned_blocks("c", 100, [(4, 5), (7, 10), (1, 2), (8, 1), (2, 3), (3, 500), (7, 20), (5, 9)]) == [
-        ("c", 100, 114), ("c", 614, 634)]
+def test_an_allele_is_carried_more_by_reads_o2_assigns_than_by_the_calls_members():
+    # round 13: MRGPRX.1's two hap-2 alleles are carried by 42 reads O2's paths assign and by the 3 members of the false call;
+    # development: a removed copy's PSVs (CXADRP.1, AGAP.5) are carried mostly by the members of its own calls
+    het, psv = ("c", 50, "X", "G"), ("d", 70, "X", "T")
+    events = {f"a{i}": [het] for i in range(42)}
+    events.update({f"m{i}": [het] for i in range(3)})
+    events.update({f"b{i}": [psv] for i in range(4)})                      # 4 of the removed copy's reads O2 assigned
+    events.update({f"n{i}": [psv] for i in range(30)})                     # its 30 called reads
+    members = {f"m{i}" for i in range(3)} | {f"n{i}" for i in range(30)}
+    assigned = {f"a{i}" for i in range(42)} | {f"b{i}" for i in range(4)}
+    assert D.majority_alleles({het, psv}, events, assigned, members) == {het}
 
 
 def test_donor_alleles_can_be_restricted_to_substitutions():
