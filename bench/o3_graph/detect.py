@@ -3,6 +3,9 @@
 clustering (bench/o3_unexplained/psvclust.py, = `copy_assign --psv-clusters`) plus three steps, as separate arms.
 
     detect.py WORLD             reads WORLD/cur/A.assignments.tsv (the hosts), writes WORLD/graph/calls.tsv (+ graph/<family>/)
+    --fusions TSV               copy_assign's <out>.fusions.tsv: calls.tsv gains `fusion` = fusion_gene / readthrough when at
+                                least half of a call's members' primaries splice that class's bridge junction (`.` otherwise);
+                                a label, nothing is removed (a missing copy of a fusion gene splices its sister copies' junctions)
 
 Per host class (copies with one representative sequence; its reads = O2's hosts, as the current method):
   the reads and the copies are aligned to the host locus, clustered (cluster_host), and each cluster's status follows the
@@ -780,6 +783,57 @@ def primary_events(bam_p):
     return prim, spans
 
 
+FUSION_CLASSES = ("fusion_gene", "readthrough")          # --fusions: the assembler's SUPPORTED bridge classes (Yoo 2025)
+
+
+def read_fusions(path):
+    """--fusions: copy_assign's <out>.fusions.tsv -> {(chrom, intron start, intron end): class} (0-based half-open) over its
+    supported bridge junctions; `junctions` holds them as `chrom:s-e:strand`, 1-based closed."""
+    out = {}
+    for r in csv.DictReader(open(path), delimiter="\t"):
+        if r["class"] in FUSION_CLASSES:
+            for j in r["junctions"].split(","):
+                c, se, _ = j.rsplit(":", 2)
+                s, e = se.split("-")
+                out[(c, int(s) - 1, int(e))] = r["class"]
+    return out
+
+
+def read_junctions(contig, start, cigar):
+    """An alignment's introns (N), 0-based half-open."""
+    out, r = [], start
+    for op, n in cigar:
+        if op == 3:
+            out.append((contig, r, r + n))
+        if op in (0, 2, 3, 7, 8):
+            r += n
+    return out
+
+
+def fusion_carriers(bam_p, want, fusions):
+    """{read: class} for the wanted reads whose PRIMARY alignment splices a supported fusion junction (fusion_gene first)."""
+    import pysam
+    out = {}
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.query_name not in want or rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.cigartuples:
+                continue
+            hit = {fusions[j] for j in read_junctions(rec.reference_name, rec.reference_start, rec.cigartuples) if j in fusions}
+            if hit:
+                out[rec.query_name] = "fusion_gene" if "fusion_gene" in hit else "readthrough"
+    return out
+
+
+def fusion_label(members, carriers):
+    """A call's `fusion` column: when at least half of its members' primaries splice a supported fusion junction, the class
+    most of those carry (fusion_gene on a tie), else `.`. A label, not a filter: a missing copy of a fusion gene (Yoo 2025's
+    gorilla JMJD7-PLA2G4B varies in copy number) has reads that splice its sister copies' junctions."""
+    k = collections.Counter(carriers[m] for m in members if m in carriers)
+    if not members or 2 * sum(k.values()) < len(members):
+        return "."
+    return "fusion_gene" if k["fusion_gene"] >= k["readthrough"] else "readthrough"
+
+
 def member_genome(members, gst, read_len):
     """Per member: (de, genome-unexplained bases); a member without a primary alignment is wholly unexplained (de 1.0, its
     whole length)."""
@@ -1095,9 +1149,16 @@ def main(argv):
     if os.environ.get("O3_TIMING"):
         print("[o3_graph] timing " + ", ".join(f"{k} {v:.1f} s" for k, v in sorted(_TIMES.items(), key=lambda kv: -kv[1])),
               flush=True)
+    fields = ["arm", "family", "kind", "host", "cluster", "n_reads", "est_div", "genome_median_de", "genome_median_novel",
+              "members"]
+    if "--fusions" in argv:                               # copy_assign's <out>.fusions.tsv: each call's fusion label (a column)
+        fusions = read_fusions(argv[argv.index("--fusions") + 1])
+        carriers = fusion_carriers(f"{w}/E0.bam", {x for r in rows_out for x in r["members"].split(",")}, fusions)
+        for r in rows_out:
+            r["fusion"] = fusion_label(r["members"].split(","), carriers)
+        fields.append("fusion")
     with open(f"{out_dir}/calls.tsv", "w", newline="") as fh:
-        wr = csv.DictWriter(fh, fieldnames=["arm", "family", "kind", "host", "cluster", "n_reads", "est_div", "genome_median_de",
-                                            "genome_median_novel", "members"], delimiter="\t", lineterminator="\n")
+        wr = csv.DictWriter(fh, fieldnames=fields, delimiter="\t", lineterminator="\n")
         wr.writeheader()
         wr.writerows(rows_out)
     for x in (".t.fa", ".q.fa"):

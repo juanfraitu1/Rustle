@@ -555,3 +555,47 @@ def test_a_call_s_haplotype_divergence_counts_its_variants_over_every_carrier_s_
 def test_aligned_blocks_cover_matches_mismatches_and_deletions_but_not_introns():
     assert D.aligned_blocks("c", 100, [(4, 5), (7, 10), (1, 2), (8, 1), (2, 3), (3, 500), (7, 20), (5, 9)]) == [
         ("c", 100, 114), ("c", 614, 634)]
+
+
+FUSIONS_TSV = ("transcript_id\tgene_id\tchrom\tstrand\tjunctions\tclass\tprimary_reads\tsecondary_reads\tcontested\tmotifs\torf_aa"
+               "\torf_spans\tfusion_of\n"
+               "B\tG.fus1\tc1\t+\tc1:1251-2200:+\tfusion_gene\t9\t0\tFalse\tGT-AG\t300\tTrue\tG,G.rg2\n"
+               "R\tH.fus1\tc1\t-\tc1:5001-5100:-,c1:5201-5300:-\treadthrough\t5\t0\tFalse\tGT-AG,GT-AG\t77\tFalse\tH,H.rg2\n"
+               "U\tK.fus1\tc1\t+\tc1:7001-7100:+\tunsupported\t1\t8\tTrue\tGT-AG\t381\tTrue\tK,K.rg2\n")
+
+
+def test_the_fusion_table_gives_the_supported_bridge_junctions(tmp_path):
+    # copy_assign's <out>.fusions.tsv (Yoo 2025 classes): fusion_gene and readthrough junctions label O3 calls, unsupported not
+    p = tmp_path / "x.fusions.tsv"
+    p.write_text(FUSIONS_TSV)
+    assert D.read_fusions(str(p)) == {("c1", 1250, 2200): "fusion_gene", ("c1", 5000, 5100): "readthrough",
+                                      ("c1", 5200, 5300): "readthrough"}
+
+
+def test_an_alignment_s_junctions_are_its_introns():
+    # from 300: 100M 950N 50M 10D 40M 20N 10M -> introns [400, 1350) and [1450, 1470)
+    assert D.read_junctions("c1", 300, [(0, 100), (3, 950), (0, 50), (2, 10), (0, 40), (3, 20), (0, 10)]) == [
+        ("c1", 400, 1350), ("c1", 1450, 1470)]
+
+
+def test_a_call_half_of_whose_members_splice_a_fusion_junction_carries_its_class():
+    carriers = {"a": "fusion_gene", "b": "fusion_gene", "c": "readthrough"}
+    assert D.fusion_label(["a", "b", "x", "y"], carriers) == "fusion_gene"     # half of the members
+    assert D.fusion_label(["a", "x", "y"], carriers) == "."                    # a minority
+    assert D.fusion_label(["a", "c"], carriers) == "fusion_gene"               # a tie between classes: the coding fusion
+    assert D.fusion_label(["c", "x"], carriers) == "readthrough"
+
+
+def test_fusion_carriers_are_the_reads_whose_primary_splices_a_supported_junction(tmp_path):
+    import pysam
+    hdr = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 10000}]}
+    with pysam.AlignmentFile(str(tmp_path / "u.bam"), "wb", header=hdr) as out:
+        for name, flag, cig in [("a", 0, "50M950N100M"), ("b", 256, "50M950N100M"), ("c", 0, "50M900N100M"), ("d", 0, "150M")]:
+            x = pysam.AlignedSegment(out.header)
+            x.query_name, x.flag, x.reference_id, x.reference_start, x.mapping_quality = name, flag, 0, 1200, 60
+            x.cigarstring = cig
+            out.write(x)
+    pysam.sort("-o", str(tmp_path / "E0.bam"), str(tmp_path / "u.bam"))
+    pysam.index(str(tmp_path / "E0.bam"))
+    fus = {("c1", 1250, 2200): "fusion_gene"}
+    assert D.fusion_carriers(str(tmp_path / "E0.bam"), {"a", "b", "c", "d"}, fus) == {"a": "fusion_gene"}
