@@ -10085,18 +10085,18 @@ fn main() -> Result<()> {
                 std::fs::write(format!("{}.bridges.tsv", args.out), t)?;
             }
             if let Some(t) = &out.fusions_tsv {
-                // every bridge transcript classed fusion_gene / fusion_transcript (real: Yoo 2025's read support, primary
-                // majority, canonical; a gene codes across its junctions) or readthrough; real ones are kept in <out>.gtf
+                // every bridge transcript classed fusion_gene (Yoo 2025: read support, primary majority, canonical, and coding
+                // across its junctions), readthrough (supported, no fusion protein) or unsupported; all stay in <out>.gtf
                 std::fs::write(format!("{}.fusions.tsv", args.out), t)?;
                 let class = |c: &str| t.lines().skip(1).filter(|l| l.split('\t').nth(5) == Some(c)).count();
                 eprintln!(
-                    "[copy_assign] wrote {}.fusions.tsv: {} bridge transcript(s): {} fusion_gene, {} fusion_transcript (real: \
-                     kept in the GTF), {} readthrough",
+                    "[copy_assign] wrote {}.fusions.tsv: {} bridge transcript(s): {} fusion_gene (real, coding across the \
+                     junction; kept in the GTF), {} readthrough, {} unsupported",
                     args.out,
                     t.lines().count().saturating_sub(1),
                     class("fusion_gene"),
-                    class("fusion_transcript"),
-                    class("readthrough")
+                    class("readthrough"),
+                    class("unsupported")
                 );
             }
             if let Some(u) = &out.units {
