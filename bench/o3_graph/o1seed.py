@@ -17,6 +17,10 @@ Per family (its curated copies, isoforms.json):
                 MIN_MAPQ, the user's suggestion: no fragments of ambiguous placement) that this copy overlaps most and that lie
                 within its span (+- SPAN_SLACK), in >= MIN_CHAIN reads (ends: the reads' outermost ends); a new copy: its observed
                 chains only
+  --twins       (round 10 development) a new copy whose genomic span lies within DELTA of a kept curated copy's (asm20 `de`)
+                is that copy's twin (twin_of; O2 then lets the twin take a read only by the margin), and a curated copy the
+                support rule would drop is kept when it lies within DELTA of a kept one (`undecidable`: the reads cannot say
+                which of the two is expressed; dropping it sent its reads to the twin as errors)
   one family    a new locus seeded in several families (adjacent genes: WASH.7 lies 1 kb from DDX11L.6, and WASH and DDX11L copies
                 are neighbours in every subtelomere, so WASH.7's reads are DDX11L family reads too) stays only in the family whose
                 curated copies its reads align to most (aligned bases, every alignment of every read that seeded it, unpadded copy
@@ -160,13 +164,15 @@ def owner(a, cps):
     return best
 
 
-def seed_family(cps, prim, all_loci, min_support=MIN_SUPPORT, min_chain=MIN_CHAIN):
+def seed_family(cps, prim, all_loci, min_support=MIN_SUPPORT, min_chain=MIN_CHAIN, keep_also=frozenset()):
     """cps: the family's curated copies (isoforms.json entries); prim: its family reads' primary alignments; all_loci: every
-    family's curated loci (padded), so another family's copy is never seeded here. -> (seeded copies, dropped idx)."""
+    family's curated loci (padded), so another family's copy is never seeded here; keep_also: curated idx kept whatever their
+    support (--twins: a copy within delta of a kept one, whose expression the reads cannot decide). -> (seeded copies,
+    dropped idx)."""
     loci = {c["idx"]: (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for c in cps}
     sup = support(prim, loci)
     unique = collections.Counter(owner(a, cps) for a in prim if a.get("mapq", 60) >= MIN_MAPQ_NEW)
-    keep = set(kept(sup, min_support)) | {i for i in loci if unique[i] >= 1}   # (round 9 review) one read placed there
+    keep = set(kept(sup, min_support)) | {i for i in loci if unique[i] >= 1} | set(keep_also)   # (round 9 review) one read
     # uniquely is evidence the copy is expressed: realistic expression leaves expressed copies under the count
     copies = []
     for c in cps:
@@ -266,6 +272,16 @@ def seed_world(w, twins=False):
     for f, cps in sorted(iso.items()):
         p = [prim[q] for q in sorted(fam_reads[f]) if q in prim]
         copies, dropped = seed_family(cps, p, all_loci)
+        if twins and dropped:                                     # a dropped copy within delta of a kept one: undecidable
+            fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+            seq = {c["idx"]: fa.fetch(c["contig"], c["start"], c["end"]).upper() for c in cps}
+            kept_seq = {c["idx"]: seq[c["idx"]] for c in copies if c["origin"] == "curated"}
+            undecidable = {d for d in dropped if twin_of(seq[d], kept_seq)[0] is not None}
+            if undecidable:
+                copies, dropped = seed_family(cps, p, all_loci, keep_also=undecidable)
+                for c in copies:
+                    if c["idx"] in undecidable:
+                        c["undecidable"] = True
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
     out = one_family(out, aff)
     if twins:                                                     # a new copy within delta of a kept curated copy is its twin

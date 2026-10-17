@@ -201,3 +201,14 @@ def test_a_new_copy_within_delta_of_a_curated_copy_is_its_twin():
     curated = {0: mutate(base, 150), 1: mutate(base, 3)}               # 5% and 0.1% from the new locus
     assert S.twin_of(base, curated) == (1, S.twin_of(base, curated)[1]) and S.twin_of(base, curated)[1] <= S.DELTA
     assert S.twin_of(base, {0: curated[0]})[0] is None                 # 5% away: no twin
+
+
+def test_a_curated_copy_whose_expression_the_reads_cannot_decide_is_kept_when_asked():
+    # round 10 (PRR20.1, all reads tied with near-identical PRR20.0/PRR20.2): dropping it sent its reads to a twin as errors
+    cps = [dict(idx=0, contig="c1", start=1000, end=3000, strand="+", rep="t", isoforms={"t": [[1000, 1300], [1800, 2200]]}),
+           dict(idx=1, contig="c1", start=10000, end=12000, strand="+", rep="u", isoforms={"u": [[10000, 10400]]})]
+    prim = [dict(_aln(f"a{i}", "c1", 1000, [(0, 300), (800, 1200)]), mapq=60) for i in range(6)]
+    loci = {("F", c["idx"]): ("c1", c["start"] - 1000, c["end"] + 1000) for c in cps}
+    assert S.seed_family(cps, prim, loci)[1] == [1]
+    copies, dropped = S.seed_family(cps, prim, loci, keep_also={1})
+    assert [c["idx"] for c in copies] == [0, 1] and dropped == []
