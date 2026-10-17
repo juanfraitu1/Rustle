@@ -503,6 +503,13 @@ def member_genome(members, gst, read_len):
     return de, nov
 
 
+_ONE_FAMILY = None
+
+
+def _run_family(f):                                   # a fork worker's entry: the family closure main() set before forking
+    return _ONE_FAMILY(f)
+
+
 def main(argv):
     w = argv[0]
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
@@ -533,7 +540,10 @@ def main(argv):
     os.makedirs(out_dir, exist_ok=True)
     tmp = f"{out_dir}/tmp"
     calls = []                                     # (arm, family, kind, host, cluster, members, est_div)
-    for f in sorted(fam):
+
+    def one_family(f):                             # families are independent: O3_PROCS of them at a time, in family order
+        calls = []
+        tmp = f"{out_dir}/{f}.tmp"
         cps = fam[f]
         pool = [n for n in family_pool(by_host, f, o2e_unexpl) if n in reads]
         pool_k = [n for n in family_pool(by_host, f, o2k_unexpl) if n in reads]
@@ -612,10 +622,22 @@ def main(argv):
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)
             if gfa is None:
                 print(f"[o3_graph] {w}: no vg graph for {f} (vg msga failed in every order): no branch calls", flush=True)
-                continue
+                return calls
             br, _ = branch_calls(f"{out_dir}/{f}", gfa, names, reads)
             for k, m in enumerate(br):
                 calls.append(["S2", f, "branch", "-", k, m, 0.0])
+        return calls
+    global _ONE_FAMILY
+    _ONE_FAMILY = one_family
+    procs = int(os.environ.get("O3_PROCS", "1"))
+    if procs > 1:
+        import multiprocessing
+        with multiprocessing.get_context("fork").Pool(procs) as pool:
+            for part in pool.map(_run_family, sorted(fam)):
+                calls += part
+    else:
+        for f in sorted(fam):
+            calls += one_family(f)
     calls = dedupe(calls)
     want = {m for c in calls for m in c[5]}
     gst = genome_stats(f"{w}/E0.bam", want)
@@ -642,8 +664,9 @@ def main(argv):
         wr.writeheader()
         wr.writerows(rows_out)
     for x in (".t.fa", ".q.fa"):
-        if os.path.exists(tmp + x):
-            os.remove(tmp + x)
+        for t in [tmp] + [f"{out_dir}/{f}.tmp" for f in fam]:
+            if os.path.exists(t + x):
+                os.remove(t + x)
     print(f"[o3_graph] {w}: " + ", ".join(f"{a} {sum(1 for r in rows_out if r['arm'] == a)}" for a in ARMS) + " calls", flush=True)
     return 0
 

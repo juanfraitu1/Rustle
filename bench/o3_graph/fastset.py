@@ -166,19 +166,20 @@ def cmd_run(a):
             st.run(w, "trim", f"python3 bench/o3_graph/trim.py fastq {root}/{w}/reads.E0.raw.fq {root}/{w}/reads.E0.fq {a.trim_adapters}")
     full = [w for w in worlds if w != "REMOVED"]                                   # 4
     t = time.time()
-    n_union, n_reads = map_union(root, full, local, a.threads) if full else (0, 0)
+    n_union, n_reads = map_union(root, full, local, a.set_threads) if full else (0, 0)   # alone: every core it may use
     st.rows.append(dict(world="set", step="map_union", wall=round(time.time() - t, 1), rss_kb=0, rc=0,
                         union_reads=n_union, world_reads=n_reads))
     if "REMOVED" in worlds:
-        st.run("REMOVED", "map", f"python3 bench/o3_graph/localref.py map {root}/REMOVED {root}/local_masked --threads {a.threads}")
+        st.run("REMOVED", "map", f"python3 bench/o3_graph/localref.py map {root}/REMOVED {root}/local_masked --threads {a.set_threads}",
+               lock="heavy")
 
     def chain(w):                                                                  # 5
         W = f"{root}/{w}"
-        st.run(w, "current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.threads}",
+        st.run(w, "current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
                lock="heavy" if a.heavy_current else "light")      # full families: copy_assign peaks ~5 GB, over the light limit
         st.run(w, "O1", f"python3 bench/o3_graph/o1seed.py {W}")
         st.run(w, "O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}")
-        st.run(w, "O3", f"env O3_GRAPH_CACHE={root}/.graph_cache python3 bench/o3_graph/detect.py {W}"
+        st.run(w, "O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
                + (" --member-genome-check" if a.member_genome_check else "") + ("" if a.all_arms else " --arms I"))
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for f in [ex.submit(chain, w) for w in worlds]:
@@ -209,11 +210,14 @@ def main(argv=None):
     p.add_argument("--local")
     p.add_argument("--jobs", type=int, default=2)
     p.add_argument("--threads", type=int, default=2)
+    p.add_argument("--set-threads", type=int, default=4, help="threads for steps that run alone: the shared mapping, REMOVED's "
+                   "mapping, copy_assign under --heavy-current (output does not depend on it)")
     p.add_argument("--sim-profile", default="")
     p.add_argument("--o2-distance", choices=("clip", "gapcomp"), default="clip")
     p.add_argument("--member-genome-check", action="store_true")
     p.add_argument("--heavy-current", action="store_true", help="run copy_assign under the heavy lock (large families)")
     p.add_argument("--all-arms", action="store_true", help="O3: every legacy arm too (default: the integrated arm I only)")
+    p.add_argument("--o3-procs", type=int, default=2, help="O3: families in parallel per world (output does not depend on it)")
     p.add_argument("--trim-adapters", default="", help="ADAPTERS.json: trim the library's adapters off every read before mapping")
     p.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)
