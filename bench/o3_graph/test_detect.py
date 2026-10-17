@@ -494,3 +494,30 @@ def test_the_pool_table_counts_reads_the_genome_veto_sends_off_the_seeded_copies
     p.write_text("read\tfamily\tcall\treason\na\tF\t-\tunexplained\nb\tF\t-\tveto_unexplained\nc\tF\t1\tlocus\nd\tF\t-\tlocus_tied\n")
     assert D.unexplained_rows(str(p)) == {("a", "F"), ("b", "F")}
     assert D.unexplained_rows(str(tmp_path / "missing.tsv")) is None
+
+
+def test_a_call_s_haplotype_divergence_counts_its_variants_over_every_carrier_s_bases():
+    # round 13 (MRGPRX.1) and its het-draw development (FTH1P.6): short haplotype-2 reads of a present copy carry 2-3 donor
+    # alleles, a call's worth over their own ~230 bp, but the copy's other haplotype-2 reads carry them over the whole copy
+    het = [("c", 50, "X", "G"), ("c", 92, "X", "T"), ("c", 181, "X", "A")]
+    events = {f"m{i}": list(het) for i in range(3)}                          # the call: 3 short hap-2 reads
+    blocks = {f"m{i}": [("c", 0, 230)] for i in range(3)}
+    for i in range(20):                                                       # the copy's other hap-2 reads, 553 bp
+        a = (i * 20) % 300
+        events[f"h{i}"] = [e for e in het if a <= e[1] < a + 260]
+        blocks[f"h{i}"] = [("c", a, a + 260)]
+    for i in range(20):                                                       # its hap-1 reads carry none
+        events[f"r{i}"] = []
+        blocks[f"r{i}"] = [("c", 0, 553)]
+    d = D.haplotype_divergence(["m0", "m1", "m2"], events, blocks)
+    assert d <= D.DELTA
+    # a removed copy collapsed onto its paralog: its reads carry its 6 PSVs wherever they cover it
+    psv = [("d", p, "X", "C") for p in (20, 70, 120, 170, 220, 270)]
+    ev2 = {f"x{i}": [e for e in psv if (i % 2) * 150 <= e[1] < (i % 2) * 150 + 200] for i in range(8)}
+    bl2 = {f"x{i}": [("d", (i % 2) * 150, (i % 2) * 150 + 200)] for i in range(8)}
+    assert D.haplotype_divergence(["x0", "x1", "x2"], ev2, bl2) > D.DELTA
+
+
+def test_aligned_blocks_cover_matches_mismatches_and_deletions_but_not_introns():
+    assert D.aligned_blocks("c", 100, [(4, 5), (7, 10), (1, 2), (8, 1), (2, 3), (3, 500), (7, 20), (5, 9)]) == [
+        ("c", 100, 114), ("c", 614, 634)]

@@ -170,6 +170,7 @@ def chain_steps(a, root, w):
                   + (" --error-floor" if a.error_floor else "") + (" --o1-hosts" if a.o1_hosts else "")
                   + (" --mapped-sites" if a.mapped_sites else "") + (" --branch-genome-novel" if a.branch_genome_novel else "")
                   + (" --allele-discount" if a.allele_discount else "") + (" --mosaic-shared" if a.mosaic_shared else "")
+                  + (" --haplotype-check" if a.haplotype_check else "")
                   + (f" --pool-table o2.{GENOME_STEP[a.o2_genome]}.m2.tsv" if a.o3_pool == "final" and a.o2_genome != "off" else "")
                   + ("" if a.all_arms else " --arms I"),
                   "light"))
@@ -268,6 +269,8 @@ def main(argv=None):
     p.add_argument("--step-timeout", type=int, default=590, help="seconds before rlock kills a step (output does not depend on it)")
     p.add_argument("--branch-genome-novel", action="store_true", help="O3's branch arm clusters only reads with >= MIN_NOVEL "
                    "genome-unexplained bases (detect.py --branch-genome-novel)")
+    p.add_argument("--haplotype-check", action="store_true", help="arm I drops a PSV call whose haplotype -- its members' shared "
+                   "substitutions, over every read carrying them -- stays within delta (detect.py --haplotype-check)")
     p.add_argument("--mosaic-shared", action="store_true", help="O3's mosaic distance only over positions >= 2 members cover "
                    "(detect.py --mosaic-shared)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "
