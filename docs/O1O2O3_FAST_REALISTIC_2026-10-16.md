@@ -533,3 +533,89 @@ passed 6 of the 9 runs.
 - **Open after round 13:**
   - round 12's structural O2 errors, which round 13's families did not provoke;
   - the allele-versus-copy confound in O3's genome check (section 14).
+
+## 14. After round 13: v8, then v9 under a diploid donor (2026-10-17)
+
+Round 13's review traced the false call to three things together:
+- a mosaic distance that counts one long read's sequencing indels at positions only it covers;
+- attribution's fixed margin of 2, which two donor alleles meet exactly;
+- the per-read genome check, the last filter.
+
+Development uses 16 spent runs: sets 8-10 and rounds 10-13, both profiles, plus the two untrimmed-library runs. v5' passes 13
+of them. The rule, fixed before any result was read: a lever is adopted only if it removes round 13's false call or reduces
+errors, and turns none of the 13 passing runs into a failure (`fast/r14dev/<lever>/`).
+
+| lever | round 13 A119b | runs passing | turned a passing run into a failure | cost |
+|---|---|---|---|---|
+| O3 `--allele-discount` v7f: donor alleles leave the genome check | fixed | 13 | set 10 A119b (REMOVED 1,032 -> 1,024 vs 1,031) | low-divergence removed copies whose reads O2 partly assigns |
+| O3 `--member-attribution-delta`: attribution margin max(2, delta x length) | fixed | 13 | set 10 A119b (1,027) | REMOVED -1 to -34 in 11 runs |
+| **O3 `--mosaic-shared`: the mosaic distance only over positions >= 2 members cover** | **fixed** | **14** | **none** | **none: identical or better in every run** (set 10 A119b REMOVED +49, round 11 A119b +11) |
+| **O2 `--o2-genome veto`: a path call overruled where the genome places the read confidently** | (no O2 error) | **15** with `--mosaic-shared` | **none** | CROSS -1 and -2 in set 8 |
+
+**The allele discount took four versions,** each lost on a different removed copy:
+- v7 learned alleles from every explained read and lost CTSLP.1. CTSLP.1's own reads, which O2 explains on its paralog, carry
+  its PSVs.
+- v7b counted candidates per seeded locus, and CTSLP.1's PSVs were diluted over its paralog's length.
+- v7c grouped co-carried candidates and lost CXADRP.1 and AGAP.5.
+- v7f learned only from path-assigned reads, taking a variant as an allele when its assigned carriers outnumber the calls'
+  members. It still lost two small calls of within-delta copies that are detectable only through high-error reads.
+
+It stays opt-in, not adopted. A population cannot always tell a present copy's allele from a low-divergence missing copy's
+PSV.
+
+**The genome veto took three versions:**
+- v1 scored alignments with `locus_distance`, which leaves a clip under 30 bp free. A paralog's alignment that clipped a read's
+  differing end then beat the read's own locus, and true KRTAP2.1 calls were moved.
+- v2 charged clipped ends and long insertions in full (`veto_distance`). Now a short terminal exon the aligner missed at the
+  true locus moved a correct DDX11L call (primary MAPQ 1).
+- v3 adds a guard: the read's primary alignment must lie on the genome's winner at MAPQ >= 30.
+  - Audit of v2 over 13 runs: every wrong veto had MAPQ 0-1, and every veto that fixed an error had MAPQ 53-60.
+  - It fixes round 12's four CDRT15 retained-intron errors (round 12 public now passes), cuts OUTSIDE errors in 8 runs, and
+    adds no error anywhere.
+
+**v8 = v5' + `--mosaic-shared` + `--o2-genome veto`: 15 of 16 development runs pass.**
+- The one failure is round 12 A119b, with 2 DUX4 margin-2 coincidences and 1 KRTAP2 read that is DNA-identical at two copies,
+  in INTACT, CROSS and SILENT. The current method abstains on all of them, and no sequence rule separates them.
+
+**The simulator** (`--sim-het-draw`, round 13 review I1): each copy's het and hom site counts are drawn (Binomial over its
+exonic bases) instead of rounded. With rounding, the public donor was effectively haploid: 86 of 89 copies had no het site.
+
+**Under drawn het sites, v8 meets the allele confound again.** v8 was run on round 13's families re-simulated with
+`--sim-het-draw` (`fast/r14dev/hetdraw13/`, both profiles).
+- **Public passes.**
+- **A119b fails INTACT 5 vs 0 and CROSS 6 vs 2.**
+  - Every error is an O3 call on FTH1P.6's haplotype-2 reads.
+  - FTH1P.6 is a 553-bp retrocopy that drew 3 het sites within 131 bp. Its short haplotype-2 reads (203-258 bp, MAPQ 60)
+    carry all three, and at that length 3 alleles plus their sequencing errors clear delta plus the floor.
+  - On FTH1P.4's window, the 5 shortest form a PSV call with 3 linked unexplained alts.
+  - A copy-level view puts the alleles at 3 / 553 = 0.0054, under delta: a haplotype, not a copy.
+- **v8's rules do not reach it.**
+  - The mosaic fix does not apply, since this is a linked-PSV call.
+  - The genome check reads each read's local divergence.
+  - The genome veto is O2.
+
+**O3 `--haplotype-check`.** A PSV call is measured as the haplotype it is, not as its members alone. Development took three
+versions:
+- **v1, genome coordinates.** The substitutions >= 2 members share, then every primary carrying one, over the positions >= 2
+  carriers cover.
+  - It removes MRGPRX.1 and FTH1P.6, and passes 15 of 16 development runs.
+  - It misses an array. On round 10's families re-simulated with drawn het sites, 3 haplotype-2 reads of TAF11L.10 (a 45-copy
+    array) are called on TAF11L.44's window. Their MAPQ-0 primaries lie on three different units, so in genome coordinates they
+    share nothing.
+- **v2, the host window.** The family's explained reads are aligned to the call's window, those carrying the call's alts are
+  added, and the extended cluster's nearest-copy distance is taken over positions >= 2 of them cover.
+  - Selecting carriers by any alt pulled in 861 reads of 12 FTH1P copies, since a mosaic cluster's alts are other copies'
+    bases. The mixture looked as distant as the call, and true REMOVED calls were lost.
+- **v3 = v2 with carriers selected by the call's unexplained alts only** (the alts no copy's map carries).
+  - FTH1P.6: 61 FTH1P.6 carriers, distance 0.0019.
+  - TAF11L.10's call is removed too.
+  - Every true call in those worlds' REMOVED is unchanged.
+
+**v9 = v8 + `--haplotype-check` (v3).**
+- **On the 16 spent runs: 15 pass**, as with v8. The failure is again round 12 A119b. v9's O3 rules leave 13 runs identical to
+  v5' and improve 3: round 13 A119b's false call removed; REMOVED +2, +11 (round 11 A119b) and +45 (set 10 A119b).
+- **On 8 family sets re-simulated with the diploid donor: 8 of 8 pass.** These are rounds 9, 10, 11 and 13's families, both
+  profiles (`fast/r14dev/hetdraw*`, `hetfresh*`, `hetc_v9c`).
+- **Cost:** the check aligns the family's explained reads to each host window with a candidate call. O3's longest world on
+  round 13 A119b went from 26 to 58 s.
+- Round 14 pre-registers v9 with the diploid donor (`docs/PREREG_o3_graph_round14_2026-10-17.md`).
