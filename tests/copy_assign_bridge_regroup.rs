@@ -301,6 +301,7 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
     assert_eq!(rows[0][5], "class", "{fusions}");
     assert_eq!(rows.len(), 2, "one bridge transcript: {fusions}");
     assert_eq!((rows[1][0], rows[1][4], rows[1][5]), (B, "c1:1251-2200:+", "unsupported"), "{fusions}");
+    assert_eq!((rows[0][8], rows[1][8]), ("contested", "False"), "{fusions}");
     assert!(
         !Path::new(&format!("{f1}.bridges.tsv")).exists(),
         "bridges.tsv is F1v2's table"

@@ -221,6 +221,11 @@ impl GenomeIndex {
         self.seqs.iter().map(|(k, v)| (k.as_str(), v.as_slice()))
     }
 
+    /// A contig's whole (uppercased) sequence.
+    pub fn contig_seq(&self, chrom: &str) -> Option<&[u8]> {
+        self.seqs.get(chrom).map(|v| v.as_slice())
+    }
+
     /// Length of a chromosome's sequence, or 0 if not present.
     pub fn chrom_len(&self, chrom: &str) -> u64 {
         self.seqs.get(chrom).map(|s| s.len() as u64).unwrap_or(0)

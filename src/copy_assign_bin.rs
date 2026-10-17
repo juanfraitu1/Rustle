@@ -270,7 +270,9 @@ struct Args {
     /// `list:<path>` (the prereg's NULL arm) flags the junctions listed in a TSV instead (header naming contig|chrom,
     /// donor|intron_start_1b, acceptor|intron_end_1b, strand; 1-based inclusive intron: the scorer's
     /// `readthrough_eval.py null` list or an arm's own `<out>.readthrough_junctions.tsv`), same removal and outputs
-    /// (`rule` = `list`).
+    /// (`rule` = `list`). `RUSTLE_READTHROUGH_PROTECT` (with the statistic arms; unset/`fusion` = on, `off` = the arms
+    /// as registered, byte for byte): a flagged junction that is a fusion gene's (>= 4 primary reads, canonical, the
+    /// longest read carrying it codes across it: Yoo 2025) keeps its reads and goes to `<out>.readthrough_protected.tsv`.
     #[arg(long, default_value_t = false)]
     assemble_only: bool,
 
@@ -6305,6 +6307,10 @@ fn main() -> Result<()> {
     // read is touched, so a mistyped arm fails in the first second instead of running as the base arm.
     let rt_switch = rustle::denovo_assemble::ReadthroughSwitch::from_env()?;
     let rt_rule = rt_switch.as_ref().map(|s| s.rule);
+    // the fusion protection applies to the statistic arms (a `list:` arm removes what it lists)
+    let rt_protect_on = rt_switch
+        .as_ref()
+        .is_some_and(|s| s.protect && s.rule != rustle::denovo_assemble::ReadthroughRule::List);
     if let Some(rule) = rt_rule {
         anyhow::ensure!(
             args.assemble_only,
@@ -10085,18 +10091,21 @@ fn main() -> Result<()> {
                 std::fs::write(format!("{}.bridges.tsv", args.out), t)?;
             }
             if let Some(t) = &out.fusions_tsv {
-                // every bridge transcript classed fusion_gene (Yoo 2025: read support, primary majority, canonical, and coding
-                // across its junctions), readthrough (supported, no fusion protein) or unsupported; all stay in <out>.gtf
+                // every bridge transcript classed fusion_gene (Yoo 2025: read support, canonical, and coding across its
+                // junctions), readthrough (supported, no fusion protein) or unsupported, and flagged contested when its
+                // junctions' reads are mostly secondary (the copy of origin is O2's call); all stay in <out>.gtf
                 std::fs::write(format!("{}.fusions.tsv", args.out), t)?;
-                let class = |c: &str| t.lines().skip(1).filter(|l| l.split('\t').nth(5) == Some(c)).count();
+                let col = |k: usize, v: &str| t.lines().skip(1).filter(|l| l.split('\t').nth(k) == Some(v)).count();
                 eprintln!(
                     "[copy_assign] wrote {}.fusions.tsv: {} bridge transcript(s): {} fusion_gene (real, coding across the \
-                     junction; kept in the GTF), {} readthrough, {} unsupported",
+                     junction; kept in the GTF), {} readthrough, {} unsupported; {} contested (mostly secondary reads: the \
+                     copy of origin is O2's call)",
                     args.out,
                     t.lines().count().saturating_sub(1),
-                    class("fusion_gene"),
-                    class("readthrough"),
-                    class("unsupported")
+                    col(5, "fusion_gene"),
+                    col(5, "readthrough"),
+                    col(5, "unsupported"),
+                    col(8, "True")
                 );
             }
             if let Some(u) = &out.units {
@@ -11167,6 +11176,16 @@ fn main() -> Result<()> {
             rule.as_str(), readthrough_all.n_junctions, readthrough_all.n_r_pass, readthrough_all.rows.len(),
             readthrough_all.chains_removed, readthrough_all.alignments_removed, readthrough_all.tier_summary()
         );
+        if rt_protect_on {
+            let ppath = format!("{}.readthrough_protected.tsv", args.out);
+            readthrough_all.write_protected_tsv(&ppath)?;
+            eprintln!(
+                "[readthrough] RUSTLE_READTHROUGH_PROTECT=fusion: {} junction(s) the rule flagged are fusion genes' (>= 4 \
+                 primary reads, canonical, the longest read carrying each codes across it, Yoo 2025) and KEEP their reads \
+                 -> {ppath} (RUSTLE_READTHROUGH_PROTECT=off removes them, the arms as registered)",
+                readthrough_all.protected.len()
+            );
+        }
     }
 
     // ---- <out>.xfam_conflicts.tsv (report/abstain only) -------------------------------------------
@@ -11319,6 +11338,15 @@ fn main() -> Result<()> {
                 "readthrough_junctions_alignments_removed",
                 format!("{}", readthrough_all.alignments_removed),
             )?;
+            // RUSTLE_READTHROUGH_PROTECT (on unless `off`; rows only when on, so `off` = the registered arms byte for byte):
+            // the flagged junctions kept as fusion genes
+            if rt_protect_on {
+                row("readthrough_protect", "fusion".to_string())?;
+                row(
+                    "readthrough_junctions_protected",
+                    format!("{}", readthrough_all.protected.len()),
+                )?;
+            }
             // arms r2 / r3 only: the flagged junctions by tier (A + B = flagged) and tier A's exempted junctions; r3
             // adds tier B's guarded junctions (V1 <= N_span, not flagged)
             if rule.is_tiered() {

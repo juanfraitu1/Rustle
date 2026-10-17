@@ -16572,7 +16572,7 @@ pub mod bridge_regroup {
                 let (c, t) = (&calls[&i], &txs[i]);
                 let (fusion_of, junctions) = rel.get(&i).cloned().unwrap_or_default();
                 out.push_str(&format!(
-                    "\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    "\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     t.tid,
                     new[i].as_deref().or(t.gene.as_deref()).unwrap_or("."),
                     t.chrom,
@@ -16581,6 +16581,7 @@ pub mod bridge_regroup {
                     c.class,
                     c.primary,
                     c.secondary,
+                    py_bool(c.contested),
                     c.motifs.join(","),
                     c.orf_aa,
                     py_bool(c.orf_spans),
@@ -16608,23 +16609,25 @@ pub mod bridge_regroup {
     /// carry a valid open reading frame (TransDecoder). A real fusion must not be read as a spurious readthrough, nor
     /// dropped because no annotation names it. Every bridge transcript is classed here from read and sequence evidence
     /// alone (annotation never decides). SUPPORTED when its bridge junctions are carried by >= [`FUSION_MIN_READS`]
-    /// primary alignments, by no more secondary than primary ones (a secondary-majority junction is borrowed evidence,
-    /// §6n9: PKD1P4-NPIPA8 10 / 1,150), each with a canonical splice motif. A supported bridge is a FUSION_GENE when its
-    /// longest complete ORF (>= [`FUSION_MIN_ORF_AA`], TransDecoder's default minimum) runs across every one of them,
-    /// else a READTHROUGH; the rest are UNSUPPORTED. The class goes to `<out>.fusions.tsv`; the GTF lines are unchanged.
+    /// primary alignments, each with a canonical splice motif. A supported bridge is a FUSION_GENE when its longest
+    /// complete ORF (>= [`FUSION_MIN_ORF_AA`], TransDecoder's default minimum) runs across every one of them, else a
+    /// READTHROUGH; the rest are UNSUPPORTED. A junction carried by more secondary than primary alignments is CONTESTED
+    /// (a column, never the class): a multi-copy fusion's reads align to every sister copy (Yoo's 8 gorilla JMJD7-PLA2G4B
+    /// copies: 14 primary / 28 secondary at copy 1, 24 / 429 at 19.02 Mb), and a borrowed echo looks the same (§6n9:
+    /// PKD1P4-NPIPA8 10 / 1,150); which copy a read came from is O2's question, not the fusion's. The class goes to
+    /// `<out>.fusions.tsv`; the GTF lines are unchanged.
     /// (The dominant real fused transcripts PKD1P6-NPIPP1 and PDXDC2P-NPIPB14P are no bridges: F1v2 keeps them as loci.)
     pub const FUSION_MIN_READS: u32 = 4;
     pub const FUSION_MIN_ORF_AA: usize = 100;
-    const FUSIONS_HEADER: &str =
-        "transcript_id\tgene_id\tchrom\tstrand\tjunctions\tclass\tprimary_reads\tsecondary_reads\tmotifs\torf_aa\torf_spans\tfusion_of";
+    const FUSIONS_HEADER: &str = "transcript_id\tgene_id\tchrom\tstrand\tjunctions\tclass\tprimary_reads\tsecondary_reads\tcontested\tmotifs\torf_aa\torf_spans\tfusion_of";
 
-    /// The class from the evidence (see [`FUSION_MIN_READS`]'s section). SUPPORTED = read-supported, primary-majority,
-    /// canonical. A supported bridge is a `fusion_gene` when it also codes across its junctions (Yoo 2025's point: human
+    /// The class from the evidence (see [`FUSION_MIN_READS`]'s section). SUPPORTED = read-supported and canonical. A
+    /// supported bridge is a `fusion_gene` when it also codes across its junctions (Yoo 2025's point: human
     /// RefSeq annotates JMJD7-PLA2G4B as a readthrough, gorilla carries it as an expanded coding fusion gene), else a
     /// `readthrough` (a real molecule with no fusion protein: on human A119b chr16 the long ORFs of such bridges end inside
-    /// one side); an unsupported one (few reads, borrowed, non-canonical) is `unsupported`.
-    pub fn fusion_class(primary: u32, secondary: u32, canonical: bool, orf_aa: usize, spans: bool) -> &'static str {
-        if primary >= FUSION_MIN_READS && primary >= secondary && canonical {
+    /// one side); an unsupported one (few reads, non-canonical) is `unsupported`.
+    pub fn fusion_class(primary: u32, canonical: bool, orf_aa: usize, spans: bool) -> &'static str {
+        if primary >= FUSION_MIN_READS && canonical {
             if orf_aa >= FUSION_MIN_ORF_AA && spans {
                 "fusion_gene"
             } else {
@@ -16633,6 +16636,11 @@ pub mod bridge_regroup {
         } else {
             "unsupported"
         }
+    }
+
+    /// More secondary than primary alignments carry the junction: the copy of origin is contested (O2), the class stands.
+    pub fn fusion_contested(primary: u32, secondary: u32) -> bool {
+        secondary > primary
     }
 
     fn revcomp(s: &[u8]) -> Vec<u8> {
@@ -16723,6 +16731,19 @@ pub mod bridge_regroup {
         None
     }
 
+    /// The longest complete ORF of the transcript over `exons` (1-based closed, genomic order) on `strand` of the contig
+    /// `seq`, in amino acids, and whether it runs across every junction of `js` (1-based closed introns).
+    pub fn orf_across(seq: &[u8], exons: &[(i64, i64)], strand: &str, js: &[(i64, i64)]) -> (usize, bool) {
+        let tseq = spliced_seq(seq, exons, strand);
+        match longest_orf(&tseq) {
+            Some((a, b)) => (
+                (b - a) / 3 - 1,
+                js.iter().all(|&(s, e)| junction_tx_pos(exons, strand, s, e).is_some_and(|p| a < p && p < b)),
+            ),
+            None => (0, false),
+        }
+    }
+
     /// One bridge transcript's class and its evidence.
     #[derive(Clone, Debug, PartialEq)]
     pub struct FusionCall {
@@ -16731,6 +16752,8 @@ pub mod bridge_regroup {
         pub primary: u32,
         /// the most secondary alignments over its bridge junctions
         pub secondary: u32,
+        /// [`fusion_contested`]`(primary, secondary)`
+        pub contested: bool,
         pub motifs: Vec<String>,
         pub orf_aa: usize,
         pub orf_spans: bool,
@@ -16748,20 +16771,12 @@ pub mod bridge_regroup {
         let secondary = js.iter().map(|&(s, e)| support(s, e).1).max().unwrap_or(0);
         let motifs: Vec<String> = js.iter().map(|&(s, e)| splice_motif(seq, s, e, &tx.strand)).collect();
         let canonical = !motifs.is_empty() && motifs.iter().all(|m| is_canonical_motif(m));
-        let tseq = spliced_seq(seq, &tx.exons, &tx.strand);
-        let (orf_aa, orf_spans) = match longest_orf(&tseq) {
-            Some((a, b)) => (
-                (b - a) / 3 - 1,
-                js.iter().all(|&(s, e)| {
-                    junction_tx_pos(&tx.exons, &tx.strand, s, e).is_some_and(|p| a < p && p < b)
-                }),
-            ),
-            None => (0, false),
-        };
+        let (orf_aa, orf_spans) = orf_across(seq, &tx.exons, &tx.strand, js);
         FusionCall {
-            class: fusion_class(primary, secondary, canonical, orf_aa, orf_spans),
+            class: fusion_class(primary, canonical, orf_aa, orf_spans),
             primary,
             secondary,
+            contested: fusion_contested(primary, secondary),
             motifs,
             orf_aa,
             orf_spans,
@@ -18559,15 +18574,24 @@ pub mod bridge_regroup {
 
         #[test]
         fn a_fusion_gene_is_well_supported_and_codes_across_its_junction() {
-            assert_eq!(fusion_class(4, 0, true, 100, true), "fusion_gene");
-            assert_eq!(fusion_class(110, 110, true, 300, true), "fusion_gene"); // a tie is no secondary majority
+            assert_eq!(fusion_class(4, true, 100, true), "fusion_gene");
             // supported but no fusion protein: the upstream gene's CDS ends before the junction (chr16 A119b: 491-765 aa
             // ORFs inside one side), or no ORF of TransDecoder's 100 aa
-            assert_eq!(fusion_class(110, 0, true, 300, false), "readthrough");
-            assert_eq!(fusion_class(110, 0, true, 99, true), "readthrough");
-            assert_eq!(fusion_class(3, 0, true, 300, true), "unsupported"); // Yoo 2025: expressed = more than 3 reads
-            assert_eq!(fusion_class(110, 111, true, 300, true), "unsupported"); // borrowed: secondary-majority support
-            assert_eq!(fusion_class(110, 0, false, 300, true), "unsupported"); // a non-canonical junction
+            assert_eq!(fusion_class(110, true, 300, false), "readthrough");
+            assert_eq!(fusion_class(110, true, 99, true), "readthrough");
+            assert_eq!(fusion_class(3, true, 300, true), "unsupported"); // Yoo 2025: expressed = more than 3 reads
+            assert_eq!(fusion_class(110, false, 300, true), "unsupported"); // a non-canonical junction
+        }
+
+        #[test]
+        fn a_secondary_majority_marks_the_copy_contested_and_never_decides_the_class() {
+            // Yoo 2025's gorilla JMJD7-PLA2G4B, copy 1 (KB3781 chr1 15.67 Mb, fibroblast FLNC): 14 primary and 28 secondary
+            // alignments carry its JMJD7 -> PLA2G4B junction, because every read also aligns to the 7 sister copies; the
+            // copy codes the 1,012 aa fusion protein across it. Which copy a read came from is O2's call.
+            assert!(fusion_contested(14, 28));
+            assert!(fusion_contested(10, 1150)); // PKD1P4-NPIPA8 (§6n9): its reads' primaries sit on PKD1P6-NPIPP1
+            assert!(!fusion_contested(110, 110)); // a tie is no secondary majority
+            assert!(!fusion_contested(110, 3));
         }
 
         #[test]
@@ -18580,8 +18604,11 @@ pub mod bridge_regroup {
             assert_eq!(call.class, "fusion_gene");
             assert_eq!((call.primary, call.secondary, call.orf_aa, call.orf_spans), (110, 3, 115, true));
             assert_eq!(call.motifs, vec!["GT-AG".to_string()]);
-            // the same transcript as a secondary-dominated echo, and with its stop codon before the junction
-            assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (10, 1150), &g).class, "unsupported");
+            assert!(!call.contested);
+            // the same transcript with its junction's reads mostly secondary (a multi-copy fusion's sister copies, or a
+            // borrowed echo): the class stays, the copy is contested; and with its stop codon before the junction
+            let echo = classify_bridge(&b, &[(351, 1300)], &|_, _| (10, 1150), &g);
+            assert_eq!((echo.class, echo.contested), ("fusion_gene", true));
             let g2 = contig(3000, &[(100, "ATG"), (130, "TAA"), (350, "GT"), (1298, "AG")]);
             assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g2).class, "readthrough");
         }
@@ -49257,6 +49284,9 @@ pub mod denovo_pipeline {
             pub rule: ReadthroughRule,
             /// `Some` iff `rule` is [`ReadthroughRule::List`]
             pub list: Option<std::sync::Arc<ReadthroughList>>,
+            /// `RUSTLE_READTHROUGH_PROTECT` (default on): a junction the statistic rules flag is KEPT when it is a fusion
+            /// gene's (see [`ReadthroughStats::with_protect`]); `off` = the registered arms
+            pub protect: bool,
         }
 
         impl ReadthroughSwitch {
@@ -49276,24 +49306,43 @@ pub mod denovo_pipeline {
                     return Ok(Some(ReadthroughSwitch {
                         rule: ReadthroughRule::List,
                         list: Some(std::sync::Arc::new(list)),
+                        protect: true,
                     }));
                 }
                 Ok(ReadthroughRule::parse(Some(v))?
-                    .map(|rule| ReadthroughSwitch { rule, list: None }))
+                    .map(|rule| ReadthroughSwitch { rule, list: None, protect: true }))
             }
 
-            /// The switch named by `RUSTLE_READTHROUGH_JUNCTIONS` (see [`ReadthroughSwitch::parse`]).
+            /// The switch named by `RUSTLE_READTHROUGH_JUNCTIONS` (see [`ReadthroughSwitch::parse`]), with
+            /// `RUSTLE_READTHROUGH_PROTECT` ([`ReadthroughSwitch::parse_protect`]).
             pub fn from_env() -> Result<Option<ReadthroughSwitch>> {
-                match std::env::var("RUSTLE_READTHROUGH_JUNCTIONS") {
-                    Ok(v) => Self::parse(Some(&v)),
-                    Err(std::env::VarError::NotPresent) => Ok(None),
+                let sw = match std::env::var("RUSTLE_READTHROUGH_JUNCTIONS") {
+                    Ok(v) => Self::parse(Some(&v))?,
+                    Err(std::env::VarError::NotPresent) => None,
                     Err(e) => anyhow::bail!("RUSTLE_READTHROUGH_JUNCTIONS: {e}"),
+                };
+                let protect = match std::env::var("RUSTLE_READTHROUGH_PROTECT") {
+                    Ok(v) => Self::parse_protect(Some(&v))?,
+                    Err(std::env::VarError::NotPresent) => true,
+                    Err(e) => anyhow::bail!("RUSTLE_READTHROUGH_PROTECT: {e}"),
+                };
+                Ok(sw.map(|s| ReadthroughSwitch { protect, ..s }))
+            }
+
+            /// `RUSTLE_READTHROUGH_PROTECT`: unset, empty or `fusion` (any case) = on, `off` = off (the arms as registered
+            /// on 2026-09-25/26); anything else is an ERROR.
+            pub fn parse_protect(value: Option<&str>) -> Result<bool> {
+                match value.map(|v| v.trim().to_ascii_lowercase()) {
+                    None => Ok(true),
+                    Some(v) if v.is_empty() || v == "fusion" => Ok(true),
+                    Some(v) if v == "off" => Ok(false),
+                    Some(v) => anyhow::bail!("RUSTLE_READTHROUGH_PROTECT must be `fusion` or `off`, got {v:?}"),
                 }
             }
 
             /// A fresh per-region statistics accumulator for this arm.
             pub fn stats(&self) -> ReadthroughStats {
-                let mut s = ReadthroughStats::new(self.rule);
+                let mut s = ReadthroughStats::new(self.rule).with_protect(self.protect);
                 s.list = self.list.clone();
                 s
             }
@@ -49561,6 +49610,9 @@ pub mod denovo_pipeline {
             rows: [Vec<(u64, u64, u64)>; 2],
             s: DetHashMap<(u64, u64, bool), u32>,
             l: DetHashMap<(u64, u64, bool), u32>,
+            /// per junction, the exon blocks of the longest read carrying it (genomic span; the first on a tie): the molecule
+            /// the protection reads its ORF from
+            rep: DetHashMap<(u64, u64, bool), (u64, std::sync::Arc<Vec<(u64, u64)>>)>,
         }
 
         /// The statistics accumulator. Fed one record at a time by the streaming reader (a field of [`Pass1Acc`]) or from
@@ -49574,17 +49626,30 @@ pub mod denovo_pipeline {
             done: Vec<(String, u64, u64)>,
             /// [`ReadthroughRule::List`]'s junctions (`None` for `r` / `rq1`; a `List` rule without a list flags nothing)
             list: Option<std::sync::Arc<ReadthroughList>>,
+            /// see [`ReadthroughStats::with_protect`]
+            protect: bool,
         }
 
         impl ReadthroughStats {
-            /// `r` / `rq1`; the list arm is built by [`ReadthroughSwitch::stats`].
+            /// `r` / `rq1`; the list arm is built by [`ReadthroughSwitch::stats`]. Protection on.
             pub fn new(rule: ReadthroughRule) -> Self {
                 ReadthroughStats {
                     rule,
                     contigs: Default::default(),
                     done: Vec::new(),
                     list: None,
+                    protect: true,
                 }
+            }
+
+            /// Fusion protection (`RUSTLE_READTHROUGH_PROTECT`, on unless `off`): a junction a STATISTIC rule flags keeps its
+            /// reads when it is a fusion gene's by [`crate::bridge_regroup::fusion_class`] (Yoo 2025): >= 4 primary reads,
+            /// canonical, and the longest read carrying it codes across it (longest complete ORF >= 100 aa over it, from
+            /// the genome along that read's exon blocks). r3 would otherwise drop 3 of the 4 coding fusion bridges of human
+            /// A119b chr16 (MSTRG.2130-DCTN5, PALB2-NDUFAB1, FBXO31-C16orf95). A `list:` arm removes what it lists.
+            pub fn with_protect(mut self, on: bool) -> Self {
+                self.protect = on;
+                self
             }
 
             /// One PRIMARY alignment (the caller filters secondary / supplementary / unmapped) with its exon blocks from
@@ -49612,8 +49677,18 @@ pub mod denovo_pipeline {
                     (ref_start, ref_end - 1, exons[0].1 - 1)
                 };
                 c.rows[usize::from(minus)].push(row);
+                let span = ref_end - ref_start;
+                let chain = std::sync::Arc::new(exons.to_vec());
                 for w in exons.windows(2) {
-                    *c.s.entry((w[0].1, w[1].0, minus)).or_insert(0) += 1;
+                    let k = (w[0].1, w[1].0, minus);
+                    *c.s.entry(k).or_insert(0) += 1;
+                    match c.rep.get_mut(&k) {
+                        Some(r) if r.0 >= span => {}
+                        Some(r) => *r = (span, chain.clone()),
+                        None => {
+                            c.rep.insert(k, (span, chain.clone()));
+                        }
+                    }
                 }
                 // `L`: the read's last splice in transcript orientation (its acceptor exon is the read's terminal exon)
                 let n = exons.len();
@@ -49668,6 +49743,7 @@ pub mod denovo_pipeline {
                     mut contigs,
                     done,
                     list,
+                    protect,
                 } = self;
                 let mut out = ReadthroughFlags {
                     rule: Some(rule),
@@ -49785,6 +49861,15 @@ pub mod denovo_pipeline {
                                 ReadthroughRule::List => is_listed,
                                 _ => j.flagged(rule),
                             };
+                            let fusion_aa = if hit && protect && rule != ReadthroughRule::List {
+                                rt_fusion_orf(genome, &j, c.rep.get(&(j.donor, j.acceptor, minus)))
+                            } else {
+                                None
+                            };
+                            if let Some(aa) = fusion_aa {
+                                out.protected.push((j.clone(), aa));
+                            }
+                            let hit = hit && fusion_aa.is_none();
                             if rule.is_tiered() {
                                 match j.tier_label() {
                                     "A" => out.n_tier_a += 1,
@@ -49811,6 +49896,27 @@ pub mod denovo_pipeline {
                 out.all.sort();
                 out
             }
+        }
+
+        /// The fusion protection's test on a flagged junction `j` with its representative read `rep` (see
+        /// [`ReadthroughStats::with_protect`]): `Some(orf_aa)` iff `j` is a fusion gene's junction.
+        fn rt_fusion_orf(
+            genome: &GenomeIndex,
+            j: &ReadthroughJunction,
+            rep: Option<&(u64, std::sync::Arc<Vec<(u64, u64)>>)>,
+        ) -> Option<usize> {
+            let (_, chain) = rep?;
+            let seq = genome.contig_seq(&j.chrom)?;
+            // 0-based half-open blocks and pool intron -> the classifier's 1-based closed coordinates
+            let exons: Vec<(i64, i64)> = chain.iter().map(|&(a, b)| (a as i64 + 1, b as i64)).collect();
+            let strand = if j.minus { "-" } else { "+" };
+            let (aa, spans) = crate::bridge_regroup::orf_across(
+                seq,
+                &exons,
+                strand,
+                &[(j.donor as i64 + 1, j.acceptor as i64)],
+            );
+            (crate::bridge_regroup::fusion_class(j.s, j.canonical, aa, spans) == "fusion_gene").then_some(aa)
         }
 
         /// The start clusters of ONE strand's rows `(p5, p3, pf)`, sorted (5′ order): a gap larger than [`RT_START_GAP`]
@@ -49942,6 +50048,8 @@ pub mod denovo_pipeline {
             pub chains_removed: usize,
             /// pool alignments removed (after the pool's own rules: seeded secondaries included, coordinate duplicates once)
             pub alignments_removed: u64,
+            /// the junctions a statistic rule flagged that the fusion protection kept, with their ORF (amino acids)
+            pub protected: Vec<(ReadthroughJunction, usize)>,
         }
 
         impl ReadthroughFlags {
@@ -49991,6 +50099,7 @@ pub mod denovo_pipeline {
                 self.n_tier_b_guarded += other.n_tier_b_guarded;
                 self.chains_removed += other.chains_removed;
                 self.alignments_removed += other.alignments_removed;
+                self.protected.extend(other.protected);
             }
 
             /// The tier counts of `r2` / `r3` for the log (empty in every other arm, so their lines are unchanged; `r3` adds
@@ -50006,6 +50115,42 @@ pub mod denovo_pipeline {
                 ),
                 _ => String::new(),
             }
+            }
+
+            /// The fusion protection's count for the log (empty when it kept nothing).
+            pub fn protect_summary(&self) -> String {
+                if self.protected.is_empty() {
+                    String::new()
+                } else {
+                    format!(" | kept as fusion genes {} (flagged, not removed)", self.protected.len())
+                }
+            }
+
+            /// `<out>.readthrough_protected.tsv`: the junctions a statistic rule flagged that the fusion protection kept
+            /// (coordinates as [`Self::write_tsv`]'s), with the ORF in amino acids of the longest read carrying each.
+            pub fn write_protected_tsv(&self, path: &str) -> Result<()> {
+                use std::io::Write as _;
+                let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+                writeln!(w, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\torf_aa")?;
+                let mut rows: Vec<&(ReadthroughJunction, usize)> = self.protected.iter().collect();
+                rows.sort_by(|a, b| a.0.cmp(&b.0));
+                for (j, aa) in rows {
+                    writeln!(
+                        w,
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        j.chrom,
+                        j.donor + 1,
+                        j.acceptor,
+                        j.strand(),
+                        j.s,
+                        j.u,
+                        j.v1,
+                        j.rule_label(),
+                        aa
+                    )?;
+                }
+                w.flush()?;
+                Ok(())
             }
 
             /// The tiered TSV columns of `r2` / `r3` (header suffix): `L` and `tier`, and `N` (= `N_span`) for `r3`.
@@ -50036,9 +50181,9 @@ pub mod denovo_pipeline {
                 if let Some(rule) = self.rule {
                     eprintln!(
                     "[readthrough] {chrom}:{lo}-{hi}: rule {} | junctions with S>=2 {} | canonical R-pass {} | flagged {} | \
-                     pool chains removed {} | pool alignments removed {}{}",
+                     pool chains removed {} | pool alignments removed {}{}{}",
                     rule.as_str(), self.n_junctions, self.n_r_pass, self.rows.len(), self.chains_removed, self.alignments_removed,
-                    self.tier_summary()
+                    self.tier_summary(), self.protect_summary()
                 );
                 }
             }
@@ -54448,6 +54593,54 @@ pub mod denovo_pipeline {
                     .iter()
                     .map(|j| (j.donor, j.acceptor, j.s, j.u, j.v1))
                     .collect()
+            }
+
+            /// J's reads code across it: an ATG in A's first exon (1010) and a TAA at `stop` (7099: in frame in B's last
+            /// exon, a 163 aa ORF over J; 1019: three codons, before J)
+            fn coding_genome(stop: usize) -> GenomeIndex {
+                let mut g = genome_seq();
+                g[1010..1013].copy_from_slice(b"ATG");
+                g[stop..stop + 3].copy_from_slice(b"TAA");
+                GenomeIndex::from_seqs(&[("c1", &g)])
+            }
+
+            /// 80 A reads (U = 80 = 20 S at S = 4), `n_j` J reads, 5 B reads
+            fn fusion_locus(n_j: u64) -> Vec<(Vec<(u64, u64)>, bool)> {
+                let mut v: Vec<(Vec<(u64, u64)>, bool)> =
+                    (0..80).map(|i| (a_read(i), false)).collect();
+                v.extend((0..n_j).map(|i| (j_read(i), false)));
+                v.extend((0..5).map(|i| (b_read(i), false)));
+                v
+            }
+
+            #[test]
+            fn a_flagged_junction_whose_reads_code_across_it_is_a_fusion_and_keeps_its_reads() {
+                let g = coding_genome(7099);
+                let on = stats(ReadthroughRule::R, &fusion_locus(4)).flag(&g, false);
+                assert!(on.rows.is_empty() && on.flagged.is_empty(), "{:?}", on.rows);
+                assert_eq!(
+                    on.protected.iter().map(|(j, aa)| (j.donor, j.acceptor, j.s, *aa)).collect::<Vec<_>>(),
+                    vec![(J.0, J.1, 4, 163)]
+                );
+                // RUSTLE_READTHROUGH_PROTECT=off: the registered arm removes it
+                let off = stats(ReadthroughRule::R, &fusion_locus(4)).with_protect(false).flag(&g, false);
+                assert_eq!(off.rows.iter().map(|j| (j.donor, j.acceptor)).collect::<Vec<_>>(), vec![J]);
+                assert!(off.protected.is_empty());
+                // three reads are no fusion (Yoo 2025: more than 3), nor a stop codon before the junction
+                let few = stats(ReadthroughRule::R, &fusion_locus(3)).flag(&g, false);
+                assert_eq!((few.rows.len(), few.protected.len()), (1, 0));
+                let early = stats(ReadthroughRule::R, &fusion_locus(4)).flag(&coding_genome(1019), false);
+                assert_eq!((early.rows.len(), early.protected.len()), (1, 0));
+            }
+
+            #[test]
+            fn protect_parse_default_fusion_off_and_fatal_typos() {
+                assert!(ReadthroughSwitch::parse_protect(None).unwrap());
+                assert!(ReadthroughSwitch::parse_protect(Some("")).unwrap());
+                assert!(ReadthroughSwitch::parse_protect(Some("fusion")).unwrap());
+                assert!(!ReadthroughSwitch::parse_protect(Some("off")).unwrap());
+                assert!(!ReadthroughSwitch::parse_protect(Some("OFF")).unwrap());
+                assert!(ReadthroughSwitch::parse_protect(Some("maybe")).is_err());
             }
 
             #[test]
