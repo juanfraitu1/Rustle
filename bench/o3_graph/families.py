@@ -106,6 +106,13 @@ GROUPS = {
                   "NAIP": r"^NAIP(P[0-9]+)?$", "HLA-DRB": r"^HLA-DRB[0-9]$", "TCEAL": r"^TCEAL[0-9]$", "ARMCX": r"^ARMCX[0-9]$",
                   "OR4C": r"^OR4C[0-9]+$", "OR4K": r"^OR4K[0-9]+$", "OR11H": r"^OR11H[0-9]+$", "SEC14L": r"^SEC14L[0-9]$",
                   "DUX4": r"^DUX4(L[0-9]+)?$"},
+    # held out for round 12 (docs/PREREG_o3_graph_round12_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set, UNCAPPED, linked by the locus rule. KRTAP2, KRTAP1, ETD, CDRT15, NAIP, HLA-DRB, OR11H and DUX4
+    # were round-11 candidates past its first 8, never built into a world; none of the others was in any earlier list
+    "heldout12": {"KRTAP2": r"^KRTAP2-[0-9]+$", "KRTAP1": r"^KRTAP1-[0-9]+$", "ETD": r"^ETD[ABC]$",
+                  "CDRT15": r"^CDRT15(L[0-9]+|P[0-9]+)?$", "NAIP": r"^NAIP(P[0-9]+)?$", "HLA-DRB": r"^HLA-DRB[0-9]$",
+                  "OR11H": r"^OR11H[0-9]+$", "DUX4": r"^DUX4(L[0-9]+)?$", "POLR2J": r"^POLR2J[23]?$",
+                  "KRTAP19": r"^KRTAP19-[0-9]+$", "KRTAP3": r"^KRTAP3-[0-9]+$", "MRGPRX": r"^MRGPRX[1-4]$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
