@@ -111,3 +111,11 @@ def test_the_error_floor_reaches_o2_o3_and_the_scorer():
 def test_o3_clusters_on_mapped_sites_only_when_asked():
     assert "--mapped-sites" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--mapped-sites --arms I" in F.chain_steps(_opts(mapped_sites=True), "/R", "INTACT")[-1][1]
+
+
+def test_a_killed_step_s_empty_timing_file_reads_as_unknown():
+    # round 12: rlock's timeout killed /usr/bin/time before it wrote; the empty file crashed the driver
+    assert F.parse_time("12.30 4567\n") == (12.3, 4567)
+    assert F.parse_time("Command terminated by signal 9\n590.01 2048\n") == (590.01, 2048)
+    wall, rss = F.parse_time("")
+    assert wall != wall and rss == 0                                   # nan: the step left no time

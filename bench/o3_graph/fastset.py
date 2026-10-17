@@ -74,20 +74,31 @@ def read_fq(path):
     return out
 
 
+def parse_time(text):
+    """/usr/bin/time -f '%e %M' output -> (wall s, peak RSS KB); (nan, 0) when the step left none (round 12: rlock's timeout
+    killed it before /usr/bin/time wrote)."""
+    f = text.split()
+    try:
+        return float(f[-2]), int(f[-1])
+    except (IndexError, ValueError):
+        return float("nan"), 0
+
+
 class Steps:
     """Runs and times commands under tools/rlock.sh; collects {world, step, wall s, peak RSS KB, rc}."""
 
-    def __init__(self, root):
-        self.root, self.rows = root, []
+    def __init__(self, root, timeout=590):
+        self.root, self.rows, self.timeout = root, [], timeout
 
-    def run(self, world, step, cmd, lock="light", timeout=590):
+    def run(self, world, step, cmd, lock="light", timeout=None):
+        timeout = timeout or self.timeout
         tf = f"{self.root}/.time.{world}.{step}"
         log = f"{self.root}/{world}.log"
         t0 = time.time()
         rc = subprocess.run(f"RLOCK_TIMEOUT={timeout} bash tools/rlock.sh {lock} /usr/bin/time -o {tf} -f '%e %M' {cmd} "
                             f">> {log} 2>&1", shell=True, cwd=REPO, executable="/bin/bash").returncode
-        wall, rss = (open(tf).read().split()[-2:] if os.path.exists(tf) else ("nan", "0"))
-        self.rows.append(dict(world=world, step=step, wall=float(wall), rss_kb=int(rss), rc=rc, elapsed=round(time.time() - t0, 1)))
+        wall, rss = parse_time(open(tf).read() if os.path.exists(tf) else "")
+        self.rows.append(dict(world=world, step=step, wall=wall, rss_kb=rss, rc=rc, elapsed=round(time.time() - t0, 1)))
         if rc:
             raise RuntimeError(f"{world} {step} failed (exit {rc}); see {log}")
 
@@ -175,7 +186,7 @@ def cmd_run(a):
     root = os.path.abspath(a.outroot)
     os.makedirs(root, exist_ok=True)
     worlds = a.worlds.split(",")
-    st = Steps(root)
+    st = Steps(root, a.step_timeout)
     t0 = time.time()
     local = a.local or f"{root}/local"
     if not os.path.exists(f"{local}/local.mmi"):                                   # 1: once per family set
@@ -249,6 +260,7 @@ def main(argv=None):
     p.add_argument("--error-floor", action="store_true", help="every read-level comparison with delta subtracts the world's "
                    "sequencing-error floor (median de of MAPQ-60 primaries): O2's unexplained gate, O3's genome check, and the "
                    "scorer's per-read detectability (delta is an error-free haplotype divergence)")
+    p.add_argument("--step-timeout", type=int, default=590, help="seconds before rlock kills a step (output does not depend on it)")
     p.add_argument("--mapped-sites", action="store_true", help="O3 arm I clusters only on host positions some catalogued "
                    "copy's map covers (detect.py --mapped-sites)")
     p.add_argument("--o1-hosts", action="store_true", help="O3 arm I takes its hosts and their reads from O1 (seeded.json + "
