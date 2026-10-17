@@ -77,7 +77,7 @@ def test_o3_attributes_its_call_members_only_when_asked():
 
 
 def test_o2_takes_the_exact_union_only_when_asked():
-    assert F.chain_steps(_opts(), "/R", "INTACT")[2][1] == ("env O2_PROCS=2 python3 bench/o3_graph/o2graph.py run /R/INTACT integ 2 "
+    assert F.chain_steps(_opts(), "/R", "INTACT")[2][1] == ("env O2_PROCS=2 O2_THREADS=2 python3 bench/o3_graph/o2graph.py run /R/INTACT integ 2 "
                                                          "--distance gapcomp")
     assert F.chain_steps(_opts(union_exact=True), "/R", "INTACT")[2][1].endswith("integ 2 --distance gapcomp --union-exact")
 
