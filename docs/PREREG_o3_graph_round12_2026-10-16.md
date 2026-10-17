@@ -156,3 +156,51 @@ Abstain and unknowable count for neither.
 **This amendment comes after the A119b result was read,** which the pre-registration's amendment rule did not foresee.
 A119b already FAILs (below), so the round's verdict is FAIL whatever the public repeat gives. The repeat completes the
 record and is reported as such.
+
+## Verdict: FAIL under both profiles. Not claimed.
+
+Bars from `e2e.json` (primary scoring), A119b and the public repeat (`public_r2`, Amendment 1):
+
+| world | A119b: correct (current / integrated) | errors | public: correct | errors |
+|---|---|---|---|---|
+| INTACT | 2,189 / 2,380 | 0 / **3** | 2,171 / 2,399 | 0 / 0 |
+| CROSS | 2,250 / 2,494 | 0 / **5** | 2,237 / 2,508 | 0 / **2** |
+| OUTSIDE | 1,683 / 2,289 | 435 / 113 | 1,622 / 2,335 | 500 / 134 |
+| REMOVED | 1,799 / 2,149 | 16 / 5 | 1,765 / 2,175 | 32 / 9 |
+| BRANCH | 2,189 / 2,597 | 208 / 136 | 2,171 / 2,578 | 217 / 161 |
+| SILENT | 1,415 / 1,695 | 0 / **2** | 1,339 / 1,695 | 0 / 0 |
+
+- **B1 holds in all 12 worlds,** by +191 to +713.
+- **B2 fails in four worlds,** where the current method makes no error: A119b INTACT, CROSS and SILENT, and public CROSS.
+- **Round 10's rule and copy level give the same verdict, failing the same cells.**
+- **No single family carries the failure.** Rescored with each family left out in turn, A119b fails every time; without
+  DUX4 its errors are INTACT 1, CROSS 3, SILENT 1 against 0.
+
+**The errors are O2 assignments at margin 2 to a near-identical wrong copy, never O3:**
+- **DUX4 (80 copies):** a read's sequencing edits coincide with another unit's differences.
+  - A DUX4.9 read is 2 edits from DUX4.19 and 4 from its own copy.
+  - A DUX4.2 read matches DUX4.22 exactly and its own copy at 2.
+  - With 80 near-identical competitors, chance coincidences beat a fixed margin of 2.
+- **KRTAP2 (INTACT):** a KRTAP2.0 read aligns perfectly to the genome but extends past KRTAP2.0's annotated end, and only
+  KRTAP2.1's longer isoform covers it. Its path distances are 2 against 85: structure decides, not sequence.
+- **CDRT15 (CROSS):** CDRT15.0 and CDRT15.2 reads express structures annotated only on CDRT15.1 and CDRT15.3. The union paths
+  do not give them those structures, as in round 10's WASH case.
+- **The current method abstains on all of them.**
+
+**Reported beside the bars:**
+- **Arm I:**
+  - **REMOVED:** all 4 detectable removed copies called under both profiles (DUX4.1, HLA-DRB.1, KRTAP1.1, KRTAP2.1), and none
+    of the 4 within delta.
+  - **BRANCH:** novel-exon copies of CDRT15, ETD, HLA-DRB, KRTAP2 and NAIP called under both profiles.
+  - **OUTSIDE:** 3 (A119b) and 2 (public) PSV calls in KRTAP2 on present or uncatalogued reads (55 and 48 reads), where B2 still
+    holds.
+- **O1:**
+  - **SILENT:** 6 of 33 silent copies dropped; 2-4 kept as undecidable (DUX4, ETD, NAIP, OR11H);
+  - **OUTSIDE:** 5 new copies (DUX4, CDRT15, ETD, HLA-DRB, KRTAP2), two of them twins.
+- **Cost: v5 is independent of the current method but not cheaper on an 80-copy array.**
+  - **The integrated steps, summed over six worlds:** 1,095 s (A119b) and 1,624 s (public).
+    - O3: 791 and 1,355 s, with one world's O3 alone over 590 s; it hosts reads on all 80 seeded units, and each host aligns
+      the family pool.
+    - O2: 174-208 s. O1: 90 s.
+  - **The current method:** 383 and 356 s, peaking at 6.8-7.0 GB per world.
+  - **Wall:** 1,098 s and 1,257 s per profile.
