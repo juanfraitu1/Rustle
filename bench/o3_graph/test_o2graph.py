@@ -297,3 +297,32 @@ def test_the_locus_fallback_places_only_reads_integrated_o2_left_unexplained(tmp
     assert out == {("r1", "F"): ("0", "assigned"), ("r2", "F"): ("1", "locus"), ("r3", "F"): ("-", "locus_thin"),
                    ("r4", "F"): ("-", "unexplained"), ("r5", "F"): ("-", "other_family"), ("r5", "G"): ("0", "assigned"),
                    ("r6", "F"): ("-", "unexplained")}
+
+
+def test_the_combined_o2_lets_a_copy_explain_a_read_by_its_genome_alignment_where_no_path_carries_the_structure(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    d = w / "graph" / "o2paths.union.pad.integ"
+    d.mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r7", "r8", "r9", "r2"])}, open(w / "graph" / "seeded.json", "w"))
+    rows = [("r7", "F", "0", "assigned"), ("r8", "F", "0", "assigned"), ("r9", "F", "0", "assigned"), ("r2", "F", "-", "unexplained")]
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\n" + "".join("\t".join(r) + "\n" for r in rows))
+    json.dump({"r7": {"0": 4, "1": 30}, "r8": {"0": 1, "1": 6}, "r9": {"0": 2, "1": 9}, "r2": {"0": 40}}, open(d / "F.dist.json", "w"))
+    (w / "reads.E0.fq").write_text("".join(f"@{n}\n{'A' * 1000}\n+\n{'I' * 1000}\n" for n in ("r7", "r8", "r9", "r2")))
+    _bam(str(w / "E0.bam"), [
+        ("r7", 0, "chrB", 2000, "1000="), ("r7", 256, "chrA", 2000, "500=4X496="),     # copy 1 by its genome: no path of it fits
+        ("r8", 0, "chrA", 2000, "500=1X499="), ("r8", 256, "chrB", 2000, "500=5X495="),  # paths and genome agree
+        ("r9", 0, "chrA", 30000, "1000="), ("r9", 256, "chrA", 2000, "500=3X497="),      # the genome's best is off the copies
+        ("r2", 0, "chrB", 2000, "500=1X499="), ("r2", 256, "chrA", 2000, "500=4X496=")])
+    assert O.run_locus_fallback(str(w), mode="all") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integc.m2.tsv"), delimiter="\t")}
+    assert out == {"r7": ("1", "genome_assigned"), "r8": ("0", "assigned"), "r9": ("-", "genome_unexplained"),
+                   "r2": ("1", "genome_assigned")}
+
+
+def test_o2_paths_dump_each_read_s_distance_to_every_copy_for_the_combined_decision():
+    assert O.path_dists({"r1": {"copy0": 3, "copy12": 7}}) == {"r1": {"0": 3, "12": 7}}
