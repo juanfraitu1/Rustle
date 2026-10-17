@@ -158,3 +158,80 @@ Nine runs: development sets 8, 9 and 10 under both profiles, plus round 10's two
 - An independent review by a fresh subagent, given read-only copies.
 - Register row 1309.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-16; run with the code of fe73bc8c, started 20:57)
+
+## Verdict: PASS under both profiles. Claimed.
+
+Bars from `fastset.py`'s `e2e.json` (primary scoring: per-read detectability less the error floor, on `o2.integl.m2.tsv`):
+
+| world | A119b: correct (current / integrated) | errors | public: correct | errors |
+|---|---|---|---|---|
+| INTACT | 1,728 / 1,917 | 186 / 0 | 1,779 / 1,984 | 159 / 0 |
+| CROSS | 1,793 / 1,984 | 189 / 0 | 1,834 / 2,042 | 161 / 0 |
+| OUTSIDE | 1,415 / 1,813 | 367 / 44 | 1,503 / 1,893 | 297 / 37 |
+| REMOVED | 1,545 / 1,844 | 198 / 0 | 1,626 / 1,928 | 162 / 1 |
+| BRANCH | 1,758 / 2,040 | 313 / 118 | 1,791 / 2,107 | 297 / 119 |
+| SILENT | 700 / 857 | 154 / 0 | 603 / 753 | 138 / 0 |
+
+B1 and B2 hold in all 12 worlds. **Round 10's scoring and copy-level scoring give the same verdict, PASS in all 12 worlds**
+(`bars_r10rule.txt`, `bars_copylevel.txt`), so the claim does not rest on the scoring change.
+
+**What the margins are made of (post hoc, and it qualifies the margins, not the verdict):**
+- **Most of the current method's errors in INTACT, CROSS and SILENT are its own O3 calls** in the interleaved chr6 histone
+  clusters.
+  - H2AC and H2BC genes alternate there. copy_assign's PSV clusters mix the two families' reads (for example, an H2AC host
+    cluster of 22 H2BC.2 and 2 H2AC.0 reads).
+  - In A119b INTACT, 8 such calls hold 229 present-copy reads.
+  - The integrated pipeline makes no call there.
+- **Rescored without H2AC and H2BC** (both systems, both profiles), the verdict is still PASS in all 12 worlds, with smaller
+  margins (`/mnt/linuxdisk/tmp/o3_graph/fast/r11_nohist/`):
+
+| world | A119b correct (cur / int) | errors | public correct | errors |
+|---|---|---|---|---|
+| INTACT | 1,600 / 1,608 | 0 / 0 | 1,672 / 1,724 | 4 / 0 |
+| CROSS | 1,665 / 1,675 | 3 / 0 | 1,727 / 1,782 | 6 / 0 |
+| OUTSIDE | 1,304 / 1,551 | 182 / 44 | 1,395 / 1,669 | 158 / 37 |
+| REMOVED | 1,396 / 1,542 | 47 / 0 | 1,493 / 1,671 | 44 / 1 |
+| BRANCH | 1,614 / 1,717 | 120 / 109 | 1,673 / 1,834 | 135 / 114 |
+| SILENT | 645 / 652 | 0 / 0 | 564 / 582 | 4 / 0 |
+
+**Fates per read class** (`e2e.json`; abst = abstain, corr = correct, erro = error, unkn = unknowable):
+
+| world | system | catalogued (A119b) | uncatalogued | absent, detectable | absent, undetectable |
+|---|---|---|---|---|---|
+| INTACT | current | abst 132, corr 1,728, erro 186 | | | |
+| INTACT | integrated | abst 129, corr 1,917 | | | |
+| OUTSIDE | current | abst 37, corr 1,415, erro 159 | abst 227, erro 208 | | |
+| OUTSIDE | integrated | abst 49, corr 1,562 | abst 140, corr 251, erro 44 | | |
+| REMOVED | current | abst 37, corr 1,399, erro 175 | | abst 147, corr 144, erro 23 | abst 15, corr 2, unkn 104 |
+| REMOVED | integrated | abst 44, corr 1,567 | | abst 37, corr 277 | abst 7, unkn 114 |
+| BRANCH | current | abst 132, corr 1,728, erro 186 | | abst 103, corr 30, erro 127 | |
+| BRANCH | integrated | abst 129, corr 1,917 | | abst 19, corr 123, erro 118 | |
+
+The public profile has the same shape (`public/e2e.json`). The integrated pipeline's remaining errors are:
+- uncatalogued reads placed on a paralog (OUTSIDE 44 / 37);
+- BRANCH reads lacking the novel exon, which count as detectable by construction (118 / 119);
+- one REMOVED read (public).
+
+**Reported beside the bars:**
+- **Arm I:**
+  - **no call in any world of either profile contains a present-copy read;**
+  - **REMOVED:** calls for all 6 detectable removed copies (CXADRP, FAM66, FOXD4L, H2AC, H2BC, KRTAP10), plus a branch call
+    for H3C's removed copy, which lies within delta; all members are the removed copies' reads;
+  - **BRANCH:** calls for the novel-exon copies of CXADRP, FAM66 and H2BC under both profiles; 7 of 8 are novel-exon calls
+    (a KRTAP10 PSV call under A119b also hits its copy).
+- **O1:**
+  - **SILENT:** drops 7 of 12 silent copies under both profiles, and keeps 1 or 2 FOXD4L copies as undecidable (within delta
+    of a kept copy);
+  - **no expressed copy dropped;**
+  - **OUTSIDE:** 4 new copies (CXADRP, FAM66, KRTAP10, OR2T), none a twin.
+- **Cost:**
+  - **A119b:** 211.6 s for six worlds, including the one-time local reference build (14.4 GB);
+  - **public:** 144.7 s, peak 1.58 GB;
+  - **the integrated pipeline's own steps:** 89-90 s per set (O1 4 s, O2 6-9 s, the genome fallback 1 s, O3 77-79 s);
+  - **the current method:** 55-64 s.
+- **The untrimmed-library run** (public v3 adapters, trimmed): PASS in all 6 worlds (INTACT 1,804 / 1,983, errors 133 / 0;
+  REMOVED 1,629 / 1,927, errors 164 / 1), 155 s.
