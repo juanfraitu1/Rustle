@@ -240,3 +240,52 @@ and REMOVED. Copy-level scoring (`e2e_copylevel.json`) gives the same verdict; t
 - **The remaining errors are O3 calls in a 45-copy near-identical array** (A119b), and one O1 new copy within delta of a
   catalogued copy that makes that copy's reads ambiguous (public OUTSIDE).
 - Neither mechanism occurred on the development sets.
+
+## Independent review (2026-10-16, 19:53-20:21) and corrections
+
+Fresh subagent; full report `/mnt/linuxdisk/tmp/o3_graph/review10/REVIEW.md`.
+- **The verdict holds.** Its own scorer, written from this document, reproduces `e2e.json`, `bars.txt`,
+  `bars_copylevel.txt` and the untrimmed run's bars exactly.
+- **58bca61d reproduces byte-identically:** O1, O2 and the fallback in three worlds, and arm I in three.
+- **The protocol is clean:**
+  - the commit precedes every world;
+  - none of the 344 earlier worlds holds a read of these families;
+  - the selection and the seed follow their rules;
+  - the commands are the pre-registered ones, and all 130 steps exited 0.
+
+**Corrections to the results above:**
+1. **Failure 1's mechanism was wrong (Critical).** The facts stand: one arm-I call, 8 TAF11L.33 reads, host 44. The cause is
+   different.
+   - **The host window holds a neighbour's fragment.** TAF11L.44's +-2 kb window contains the last 225 bp of TAF11L.43,
+     1,775 bp away. It is the only pair of catalogued copies in the set closer than the pad; no development host had one,
+     not even the full 59-copy USP17L.
+   - **The reads aligned to it are compared with nothing.** 13 haplotype-2 TAF11L.33 reads align to that fragment, which
+     no catalogued copy's map covers. Their differences there count as unexplained alts; 8 of the 9 are TAF11L.33's own
+     reference bases.
+   - **Attribution kept them by default.** It keeps a read when no copy covers half of its positions.
+   - The genome check passed the call by 0.0007 (median `de` 0.0103 over the 13 attribution-kept reads; the per-read check
+     then kept 8).
+   - The consensus did not carry other copies' private alleles. 038890fd (`--member-attribution-delta`), built on that
+     wrong mechanism, does not remove the call.
+   - **The fix is 88c445d9:** attribution keeps no read that no catalogued copy competes for.
+2. **The same 8 reads are A119b REMOVED's 8 errors (Important).** There they sit inside the true TAF11L.41 call on host 43.
+   REMOVED is a tie (8 vs 8), not "fewer errors".
+3. **Failure 2's twin is FAM236.2, not FAM236.0 (Important).** It is 1 mismatch over 451 bp, `de` 0.0022.
+   - The 166 lost reads are FAM236.2's.
+   - Seeding FAM236.1 won 0 of its own reads (public) and 1 (A119b). The 40 uncatalogued correct reads are HNRNPCL.1's (24)
+     and PRR20.2's (16).
+   - The same mechanism costs 152 reads in A119b OUTSIDE, which passes B1 by only +2.
+4. **Not disclosed (Important):** arm I takes its read hosts and hosts from copy_assign's run (`cur/A.assignments.tsv`). So
+   the integrated pipeline still needs the current method's run (131-144 s per set, about 2 GB).
+5. **Smaller points:**
+   - **The untrimmed TAF11L call:** 17 present-copy reads and 8 correct TAF11L.41 reads.
+   - **The PRR20.1 drop** also errs in OUTSIDE and BRANCH, through a MAPQ-0 tie-break.
+   - **OUTSIDE's gross catalogued loss** is 161 and 169 reads, so "the catalogued-read loss is gone" holds for INTACT,
+     CROSS and SILENT only.
+   - **Remaining errors also include** OUTSIDE's CENPVL.1 reads (61 and 57) and BRANCH reads lacking the novel exon (57 and
+     48).
+   - **O1 kept 18 of 23 silent copies.**
+   - **"Development set 10's 2 lost reads" is a net figure:** 19 lost and 17 gained. 4 of the 19 are `thin` at MAPQ 10-30.
+   - **The OUTSIDE B1 count depends on the scoring rule:** counting O3 flags of uncatalogued in-genome copies as correct
+     would fail A119b OUTSIDE B1.
+   - **The local reference** is still unvalidated for v2 reads (round 9's caveat).
