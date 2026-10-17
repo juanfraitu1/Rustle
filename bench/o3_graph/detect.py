@@ -589,6 +589,19 @@ def _run_family(f):                                   # a fork worker's entry: t
     return _ONE_FAMILY(f)
 
 
+def mapped_cov(cov, maps):
+    """--mapped-sites (round 11 review I5): each read's covered positions restricted to those some catalogued copy's map holds
+    on the host; reads left with none are dropped. Positions of the host window no copy covers (a neighbour copy's fragment,
+    an uncatalogued gene) are no evidence about the catalog's copies; there they made false `unexplained` alts."""
+    allowed = set().union(*(set(cc) for cc in maps.values())) if maps else set()
+    out = {}
+    for n, c in cov.items():
+        kept = {p: x for p, x in c.items() if p in allowed}
+        if kept:
+            out[n] = kept
+    return out
+
+
 def o1_hosts(w, genome):
     """--o1-hosts (round 10 review): arm I's hosts and their reads from O1 instead of copy_assign's run. Hosts: each family's
     seeded copies (graph/seeded.json, curated kept + new), their spans as the host windows' centres, their representative
@@ -641,6 +654,7 @@ def main(argv):
     w = argv[0]
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
     attribution_delta = "--member-attribution-delta" in argv   # ... by more than delta of each read's length (round 10)
+    mapped_sites = "--mapped-sites" in argv                # arm I clusters only where some catalogued copy's map is (round 11)
     attribution = "--member-attribution" in argv or attribution_delta   # arm I: a call keeps the reads it explains better
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
@@ -752,6 +766,8 @@ def main(argv):
                             calls.append(["Kp", f, "psv", host, k, sorted(members), div])
             if len(pool_i) >= PC.MIN_SUPPORT:                 # I: as H, on what the integrated O1 -> O2 leaves unexplained
                 cov_i = PC.align("host", ref, {n: reads[n] for n in pool_i}, tmp)
+                if mapped_sites:
+                    cov_i = mapped_cov(cov_i, isomaps())
                 if len(cov_i) >= PC.MIN_SUPPORT:
                     sites_i, clusters_i, vec_i = PC.cluster_host(ref, cov_i)
                     for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):

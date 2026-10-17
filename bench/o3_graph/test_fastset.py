@@ -46,7 +46,8 @@ def _opts(**kw):
     import argparse
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
-                o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False)
+                o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False,
+                mapped_sites=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -105,3 +106,8 @@ def test_the_error_floor_reaches_o2_o3_and_the_scorer():
     assert steps["O2"].endswith("--error-floor") and steps["O2_genome"].endswith("integl 2 --error-floor")
     assert "--error-floor" in steps["O3"]
     assert F.e2e_command(_opts(error_floor=True), "/R", ["A"]).endswith("/R/A --error-floor")
+
+
+def test_o3_clusters_on_mapped_sites_only_when_asked():
+    assert "--mapped-sites" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--mapped-sites --arms I" in F.chain_steps(_opts(mapped_sites=True), "/R", "INTACT")[-1][1]

@@ -156,6 +156,7 @@ def chain_steps(a, root, w):
                   + (" --member-attribution" if a.member_attribution else "")
                   + (" --member-attribution-delta" if a.member_attribution_delta else "")
                   + (" --error-floor" if a.error_floor else "") + (" --o1-hosts" if a.o1_hosts else "")
+                  + (" --mapped-sites" if a.mapped_sites else "")
                   + ("" if a.all_arms else " --arms I"),
                   "light"))
     return steps
@@ -248,6 +249,8 @@ def main(argv=None):
     p.add_argument("--error-floor", action="store_true", help="every read-level comparison with delta subtracts the world's "
                    "sequencing-error floor (median de of MAPQ-60 primaries): O2's unexplained gate, O3's genome check, and the "
                    "scorer's per-read detectability (delta is an error-free haplotype divergence)")
+    p.add_argument("--mapped-sites", action="store_true", help="O3 arm I clusters only on host positions some catalogued "
+                   "copy's map covers (detect.py --mapped-sites)")
     p.add_argument("--o1-hosts", action="store_true", help="O3 arm I takes its hosts and their reads from O1 (seeded.json + "
                    "primary alignments), not from copy_assign's run: the integrated pipeline no longer needs the current method")
     p.add_argument("--twins", action="store_true", help="O1 marks a new copy within delta of a curated copy as its twin; O2 then "

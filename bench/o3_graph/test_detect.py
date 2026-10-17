@@ -397,3 +397,12 @@ def test_the_genome_reader_opens_one_handle_per_process(tmp_path):
         os._exit(0 if g.handle() is not parent and g["c1"][4:8] == "ACGT" else 1)
     _, status = os.waitpid(pid, 0)
     assert os.WEXITSTATUS(status) == 0
+
+
+def test_mapped_sites_keep_only_the_positions_some_catalogued_copy_covers():
+    # round 11 review I5: positions of the host window no catalogued copy's map covers (a neighbour's fragment, an uncatalogued
+    # gene) gave false `unexplained` alts; --mapped-sites clusters only where the catalog's copies are
+    maps = {"copy0": {p: "A" for p in range(100, 200)}, "copy1": {p: "A" for p in range(150, 260)}}
+    cov = {"r1": {p: "C" for p in range(50, 180)}, "r2": {p: "C" for p in range(0, 90)}, "r3": {p: "C" for p in range(240, 300)}}
+    out = D.mapped_cov(cov, maps)
+    assert sorted(out) == ["r1", "r3"] and min(out["r1"]) == 100 and max(out["r1"]) == 179 and sorted(out["r3"]) == list(range(240, 260))
