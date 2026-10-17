@@ -129,3 +129,89 @@ These are round 12's, unchanged:
 - An independent review by a fresh subagent, given read-only copies.
 - Register row 1311.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-17)
+
+Both runs completed as pre-registered, with no amendment. Outputs are in `fast/heldout13/{A119b,public}/` (frozen read-only after
+scoring), wall 417.8 s (A119b, which also built the local reference) and 325.8 s (public).
+
+## Verdict: FAIL (A119b). Not claimed.
+
+Bars from `e2e.json` (primary scoring):
+
+| world | A119b: correct (current / integrated) | errors | public: correct | errors |
+|---|---|---|---|---|
+| INTACT | 4,709 / 4,737 | 0 / **3** | 4,622 / 4,671 | 0 / 0 |
+| CROSS | 4,783 / 4,860 | 2 / **3** | 4,690 / 4,781 | 3 / 0 |
+| OUTSIDE | 3,990 / 4,383 | 683 / 16 | 3,817 / 4,230 | 786 / 8 |
+| REMOVED | 4,657 / 4,682 | 10 / 0 | 4,467 / 4,618 | 95 / 1 |
+| BRANCH | 4,718 / 4,888 | 95 / 63 | 4,622 / 4,785 | 102 / 72 |
+| SILENT | 3,237 / 3,257 | 0 / **3** | 3,214 / 3,246 | 0 / 0 |
+
+- **public passes all 6 worlds.**
+- **A119b:**
+  - **B1 holds in all 6 worlds,** by +20 to +393.
+  - **B2 fails in three:** INTACT 3 vs 0, CROSS 3 vs 2, SILENT 3 vs 0.
+- **Round 10's rule and copy level give the same verdict** (A119b FAIL, public PASS).
+
+**The failure is one false O3 call, repeated in four worlds (found after the run, post hoc).** Every A119b error is arm I's PSV
+call in MRGPRX on three reads of the present copy MRGPRX.1 (MRGPRX4). O2 makes no wrong-copy assignment in any of the 12 worlds.
+- **The same three reads in every world.** The simulator draws an unchanged copy's reads from the same seed, so INTACT, CROSS,
+  OUTSIDE and SILENT carry the same three reads under different names. No call is made in REMOVED, where MRGPRX.0 (whose window
+  hosts the call) is the removed copy. BRANCH has the three reads too and makes no call; why was not traced.
+- **They carry MRGPRX.1's heterozygous alleles.**
+  - With a profile, `--het 0` means the profile's calibrated heterozygosity (`realworld.py`: `het_rate = 2 * het_per_base`),
+    not a haploid donor.
+  - MRGPRX.1's haplotype 2 carries two alleles 75 bp apart: C>G at chr11:18,269,598 and C>T at 18,269,673. 45 haplotype-2
+    reads carry both, and 43 haplotype-1 reads carry neither.
+- **Short reads turn two alleles into a delta-sized divergence.**
+  - The three are among the shortest haplotype-2 reads covering both sites: 190, 231 and 506 bp.
+  - Their primary alignments (MAPQ 60, on MRGPRX.1) have `de` 0.0158, 0.0129 and 0.0157. NM is 3, 3 and 11; the 506-bp read
+    has 8 sequencing edits besides the two alleles. That puts them in the world's top 0.2% (the median MAPQ-60 `de` is 0.0029,
+    p99 0.0114).
+  - **O2 leaves them unexplained,** above delta plus floor, and the genome fallback then places them correctly on MRGPRX.1. Arm I
+    clusters O2's unexplained reads.
+  - **The call:** arm I pools the family's unexplained reads across hosts; the three form a cluster on MRGPRX.0's window
+    (`est_div` 0.024).
+  - **Both checks pass:**
+    - attribution keeps all three reads (its internals were not traced);
+    - genome check: median `de` 0.0157 less the floor 0.0029 = 0.0128 > delta, and each read alone also passes the per-read check
+      (the smallest is 0.0129 - 0.0029 = 0.0100).
+  - The two alleles alone add 2/190 and 2/231 to `de` (0.0105 and 0.0087).
+- **Delta is calibrated on whole copies.** It is the p99 exonic divergence between two haplotype assemblies over whole copies
+  (register 1199). Two heterozygous sites within 200 bp of a short read exceed it, so the per-read genome check cannot separate an
+  allele from a copy on short reads. This is the allele-versus-copy confound of the phased toy (2026-10-12), met for the first time
+  in a held-out round.
+- **Leave one family out:** A119b passes only without MRGPRX. Public passes with any family left out.
+  - **Without OR7E (the 43-copy array), A119b's B1 margins turn negative:** INTACT -5, REMOVED -11, SILENT -11.
+  - Its correct-read margin over the current method in those worlds is carried by one family.
+
+**Reported beside the bars:**
+- **Arm I:**
+  - **REMOVED:** all 7 detectable removed copies called under both profiles (MRGPRX.0, YWHAZP.3, OR7E.15, SEPTIN7P.0, FTH1P.8,
+    UBE2Q2P.3, CTSLP.1); PTMAP.8, within delta, not called.
+  - **BRANCH:** all 6 novel-exon copies called under both profiles. PTMAP and FTH1P are single-exon retrocopies, with no BRANCH copy.
+  - **Calls on present reads:** none under public. Under A119b, only the MRGPRX call above, in INTACT, CROSS, OUTSIDE and SILENT.
+- **O1:**
+  - **SILENT:** 24 of 27 silent copies dropped under both profiles; public keeps UBE2Q2P.1 as undecidable.
+  - **OUTSIDE:** new copies in CTSLP, MRGPRX, OR7E, SEPTIN7P, UBE2Q2P and YWHAZP, with no twin.
+  - **REMOVED:** new copies in FTH1P, SEPTIN7P (2), UBE2Q2P and YWHAZP.
+- **Fates per read class** (correct / error / abstain / unknowable, current -> integrated):
+
+| world | A119b catalogued | A119b other class | public catalogued | public other class |
+|---|---|---|---|---|
+| INTACT | 4709/0/499/0 -> 4737/3/468/0 | | 4622/0/479/0 -> 4671/0/430/0 | |
+| CROSS | 4783/2/565/0 -> 4860/3/487/0 | | 4690/3/534/0 -> 4781/0/446/0 | |
+| OUTSIDE | 3990/5/483/0 -> 4017/3/458/0 | uncatalogued 0/678/52/0 -> 366/13/351/0 | 3817/77/413/0 -> 3880/0/427/0 | uncatalogued 0/709/85/0 -> 350/8/436/0 |
+| REMOVED | 3990/5/483/0 -> 4022/0/456/0 | absent detectable 636/5/43/0 -> 652/0/32/0; undetectable 31/0/2/13 -> 8/0/4/34 | 3817/77/413/0 -> 3886/0/421/0 | absent detectable 649/18/98/0 -> 727/1/37/0; undetectable 1/0/9/19 -> 5/0/4/20 |
+| BRANCH | 4702/7/499/0 -> 4739/0/469/0 | absent detectable 16/88/119/0 -> 149/63/11/0 | 4622/0/479/0 -> 4671/0/430/0 | absent detectable 0/102/90/0 -> 114/72/6/0 |
+| SILENT | 3237/0/311/0 -> 3257/3/288/0 | | 3214/0/304/0 -> 3246/0/272/0 | |
+
+- **Cost: the branch prefilter holds on a 43-copy array.**
+  - **The integrated steps, summed over six worlds:** 223 s (A119b) and 216 s (public), against round 12's 1,095 and 1,624 s.
+    - O3: 164 and 160 s, longest world 72 s and 67 s (REMOVED), peak 0.17 GB.
+    - O2 28-31 s (+ genome fallback 3-4 s); O1 22-27 s.
+  - **The current method:** 188 and 183 s, peaking at 3.2 GB per world.
+  - **Shared steps (simulate, map, mask):** 114 and 90 s. The local reference build (55 s, 14.4 GB) is paid once per set.
