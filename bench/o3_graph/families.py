@@ -113,6 +113,14 @@ GROUPS = {
                   "CDRT15": r"^CDRT15(L[0-9]+|P[0-9]+)?$", "NAIP": r"^NAIP(P[0-9]+)?$", "HLA-DRB": r"^HLA-DRB[0-9]$",
                   "OR11H": r"^OR11H[0-9]+$", "DUX4": r"^DUX4(L[0-9]+)?$", "POLR2J": r"^POLR2J[23]?$",
                   "KRTAP19": r"^KRTAP19-[0-9]+$", "KRTAP3": r"^KRTAP3-[0-9]+$", "MRGPRX": r"^MRGPRX[1-4]$"},
+    # held out for round 13 (docs/PREREG_o3_graph_round13_2026-10-17.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set, UNCAPPED, linked by the locus rule. MRGPRX was a round-12 candidate past its first 8 with >= 3
+    # copies, never built into a world; none of the others was in any earlier list
+    "heldout13": {"MRGPRX": r"^MRGPRX[1-4]$", "S100A7": r"^S100A7([AL]2?)?$", "KRTAP12": r"^KRTAP12-[0-9]+$",
+                  "KRTAP13": r"^KRTAP13-[0-9]+$", "KRTAP20": r"^KRTAP20-[0-9]+$", "KRTAP21": r"^KRTAP21-[0-9]+$",
+                  "KRTAP6": r"^KRTAP6-[0-9]+$", "HLA-ABC": r"^HLA-[ABC]$", "H1": r"^H1-[0-9]$", "OR2A": r"^OR2A[0-9]+$",
+                  "SEPTIN7P": r"^SEPTIN7P[0-9]+$", "CTSLP": r"^CTSLP[0-9]+$", "UBE2Q2P": r"^UBE2Q2P[0-9]+$",
+                  "PGAM1P": r"^PGAM1P[0-9]+$", "OR52": r"^OR52[A-Z][0-9]+$", "OR7E": r"^OR7E[0-9]+P?$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
