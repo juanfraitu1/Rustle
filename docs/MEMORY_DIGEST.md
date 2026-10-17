@@ -613,3 +613,54 @@ MEMORY.md was at 24,319 B (load limit ~24.4 KB); these two index lines were shor
 
 ⭐⭐⭐10-04 [[project_locus_read_pool]] STRICT FOUND (Amendment E, capped starts + first 3 introns): NPIP own-node 23/21/24 → FOUND 10/6/2; the loss is the most-read REP. [[project_locus_representatives_study]]: R_J most-junctions held-out — found genes UP everywhere, chr6 family clause FAILS (readthrough rep, pre-f1v2 GTFs) ⇒ OPT-IN; dev NPIP splits into SUBFAMILIES.
 ⭐09-29 [[project_o2_power]] — O2 abstention is a PSV-count step, not depth; m=1 never assigns (p = alpha exactly); NPIP copies 6/7 reads match neither ref copy; 10-03 PSV ceiling (`docs/archive/2026-10/PSV_CEILING_2026-10-03.md`, Desktop checkout): 639 identical + 670 beyond-reach gorilla copies; 'matches no catalog copy' = O3's regime.
+
+
+## Compacted 2026-10-17
+
+Moved verbatim from MEMORY.md (the index exceeded the load limit); their topic files are unchanged.
+
+⭐⭐10-07 [[project_lrpap1_copy_browser_artifact]] — LRPAP1 artifact = IGV-style browser (v6) w/ RefSeq+CAT+ours tracks; ⭐GORILLA CAT = GenomeArk bigBeds (CM accessions, map by name not size); rep chain = CAT 7/9 f, 9/10 t vs RefSeq 6/9, 8/10; build `/mnt/linuxdisk/tmp/lrpap1/browser/`; TSS arm = `denovo_te_found`.
+⭐⭐⭐10-07 [[project_docs_archive_layout_2026-10-07]] — docs/ CONSOLIDATED: 237 closed docs → `docs/archive/2026-09|10/` (names unchanged), 45 stay; `tools/docs_index.py` → `docs/INDEX.md`; paths rewritten everywhere; COMMITTED+PUSHED 958972e7; cite archive paths.
+⭐⭐⭐10-09 [[project_unmapped_rescue_2026-10-08]] — real-read O3 test vs mat truth: recall 15.3% (≥3 reads), 82.5% wrong flags (read-level ~2% deviation); O3 NOT claimable; A28-41.
+⭐⭐⭐10-09 [[project_unmapped_rescue_2026-10-09_spec]] — real-read WRONG flags = other apes' transcripts (DNA-absent); species screen held-out 84% removed / 80.5% real kept; not adopted.
+⭐⭐⭐10-09 [[project_hierarchy_flag_2026-10-09]] — `--emit-hierarchy` (fe5be654): Soto 215 'expansion' = 205 whole families + 10 below (10-13); 346/400 in superfamily; PAF duplicon units NOT ADOPTED (r1263).
+⭐⭐⭐10-08 [[project_o3_maternal_reference_2026-10-08]] — DONE: missing-copy reads ABSORBED 92-97%/tied 2-8%, never unmapped; IsoCon recovers GWFAM175_B0 from mat (R3 FAIL 25%), in-house 0; p12 NOT mat-absent; artifact R1QoJa9G; review pending.
+⭐⭐⭐10-08 [[project_expression_ladder_pilot_2026-10-08]] — ideal-arm pilot (sim reads for all Soto genes): harness built, prereg+Amendment 1 draft, NOT run; the 71% baseline was a name-join artifact (by id 53.2%).
+⭐⭐10-07 [[project_cn_integration_2026-10-07]] — Soto CN cut x our graph: edges cap ARI .83; HGNC referee: Soto-only links 23% disjoint vs ours-only 1.5%; brief artifact 9ap35vWersjm3tkxcjUwwZ.
+⭐⭐⭐10-07 [[project_yoo_cross_ape_expansion_test]] — Yoo 2025 tables LOCAL: LRPAP1 11/11 coordinate-identical (Y1); chr1 JMJD7-PLA2G4B 8/9 KB3781, 6/9 OR6737, MAPKBP1/SPTBN5 read-limited; PSMA5 3; Y4 needs Phase E.
+⭐⭐⭐10-06 [[project_eval_npip_tbc1d3_yag_2026-10-06]] — NPIP/TBC1D3/YAG audit + follow-ups: `all` FIXED (8fbaba79), NPIP default re-score PASS dev (r1250), O2 default-roster sims [[project_o2_default_roster_sim_2026-10-06]]; reports Desktop `rustle_eval_2026-10-06/`.
+⭐⭐⭐10-07 [[project_seed_pool_real_reads_2026-10-07]] — `--seed-pool primary|good|all` + Rule 1, REAL reads (verified x2): exact reps 12→8→2; NP/CP*/M6 not monotone; gorilla NPIP all-pool = 93% other copies' reads + lenient on-copy test; ⚠human A/A+R1 arms NOT regenerated after 14:02 rm; r1261-62
+⭐10-07 [[feedback_verifiers_get_copies_not_products]] — a verifier's rm -rf through a symlink farm emptied 28 arm dirs; hand verifiers frozen read-only copies and scratch of their own.
+⭐⭐⭐10-07 [[project_prereg_dupfamboundary_expansionfamily]] — T1/T2 prereg: R0 PASS, R2 RELEASED (S-rate .789, 005e19f4), E code under review, R1 cells + T2 not run; see note for status.
+⭐⭐10-07 [[project_hierarchy_sd_duplicon_expansion_family]] — SD→duplicon→expansion→family (partial order); ⭐TERMINOLOGY SETTLED: Soto/Yoo sets ARE multi-copy gene families (young SD-embedded SUBSET); concede the noun, keep the layers; `docs/TERMINOLOGY_*_2026-10-07.md` + vault Topics/Terminology.
+⭐⭐⭐10-07 [[project_entangled_baseline_2026-10-06]] — overlap VERIFIED: real gorilla D>S,F (not isoseq); only Q (primary-first rep) is a robust level-C candidate, P/PC not; F1 inert; structural units refuted (r1257-1260).
+⭐⭐⭐10-06 [[project_fewcopy_ideal_cases_2026-10-06]] — few-copy ideal cases: 11/377 pass input criteria, 4/11 exact; anchors GSTA1/2 + PAGE2/2B/5; all-292 F .45; r1255; held-out prereg = DRAFT.
+⭐⭐⭐10-06 [[project_ideal_expression_default_2026-10-06]] — DONE: ideal-expressed copies through the CURRENT default: TBC1D3 YES (12/13), NPIP NO (12/14, one short; 16/25 all), r1254; loss = representative; 09-21 sim bug r1253.
+⭐⭐10-06 [[project_locus_anatomy_page]] — explainer artifact reworked: semi-guided tab dropped, step 2 = good secondaries, O3 steps 9-15 added; steps 3-8 + guided 2-7 still STALE (audit inside).
+⭐⭐⭐**HANDOFF `docs/HANDOFF_2026-10-04.md`** — everything done 10-03/04 and what is left, with paths; read it first.
+⭐⭐10-04 [[project_lrpap1_family]] — LRPAP1 = 11 gorilla loci (8 full + 3 5′ fragments, ALL RefSeq-annotated; paper says 10): O1 de novo 6+3 / 8+3; O2 0 contested; O3 mat 7 / pat 8 (rows 1245-1246).
+⭐⭐⭐10-04 [[project_locus_read_pool]] STRICT FOUND (Amendment E): NPIP loss = the most-read REP; [[project_locus_representatives_study]] R_J OPT-IN (chr6 clause fails).
+⭐⭐⭐10-04 [[project_week_2026-10-04_prove_o1_o2]] — **THIS WEEK = PROVE O1 AND O2 WORK RIGHT**; O3 Amendment 15 run, row-1220 run, HG002, chapter drafts PARKED in `docs/PENDING_2026-10-04.md`.
+⭐⭐⭐10-04 [[project_rna_haplotype_count_parked]] — O3 chain truth-free, `o3_candidates` OPT-IN (b29afa55); A13 PASS, ⛔A14 control FAILS (35/53 false flags); Amendment 15/15b NOT run; rows 1194-1231.
+⭐⭐⭐10-02 [[project_famsim]] — `bench/famsim`: family simulator that PROVES its condition + scores O1/O2/O3; 22-rung ladder ran on human SNRPB + orangutan SPAG7; gorilla needs a GFF-matching FASTA.
+⭐⭐09-30 [[project_unit_cover]] — partition of (duplicon x CN class) units + genes as paths expresses Soto cover: held-out Jaccard .660, NPIP exact; 65% not exact.
+⭐09-30 [[project_fusions_are_duplicon_blocks]] — NPIP fusions = paths across a duplicon boundary in a co-duplicated block; prereg: dev EXPLAINED, held-out UNDERPOWERED (no verdict).
+⭐⭐09-30 [[project_cn_cut_follows_duplicons]] — prereg: Soto CN cut FOLLOWS duplicon boundaries (held-out p 1e-4); duplicons = units; family_gfa spec amended.
+⭐⭐10-01 [[project_locus_read_pool]] NPIP read pools: coin toss real (59% tied), ALL adds 87 off-copy nodes the all-vs-all keeps; page F3gJty4e. §6z7: GOOD secondaries (0.98 of genome-wide best AS) better held-out; needs the full-BAM table `RUSTLE_GTF_SECONDARY_AS_TABLE`.
+⭐⭐⭐10-01 CAT re-run ([[project_cat_default_annotation]]): SQANTI3 ranking holds 27/30; ⛔copy recovery P3 FAILS on CAT NPIP (isoseq 10 vs ours 8 E2).
+⭐⭐⭐09-30 Soto meeting page J12TB7eb; branch merged into main 10-01 ([[project_soto_refinement_evidence]]).
+⭐⭐09-30 [[project_container_v2]] — fused-locus container PAUSED (Rust units opt-in, UNCOMMITTED, review fixes half-applied; headroom +2/146 copies).
+⭐⭐⭐09-29 [[project_copy_recovery_tools]] (e163d955, rows 1189-1193) — per-copy NPIP/TBC1D3 vs StringTie/FLAIR/isoseq: ours >= all on E2 copies, StringTie +1 over all human NPIP; gorilla NPIP 0/25 for all, F4 fired; not independently recomputed.
+⛔09-29 [[project_o1_cover_growth]] — Soto-style cover for fusions REFUTED held-out (no real fusion spans two families; = random null); side: F1v2 partition beats default.
+⛔09-29 [[project_o2_presence_gate]] — DNA k-mer presence gate REFUTED on HG002 (removes the true copy, prec .21 < random); use synteny + the individual's own copies.
+⭐09-29 [[project_o2_power]] — O2 abstention = PSV-count step, not depth; m=1 never assigns; 10-03 PSV ceiling 639 identical + 670 beyond-reach gorilla copies.
+⭐09-29 [[project_ggo_npip_loss]] — gorilla NPIP w/ reads, no locus: no open lever; 2x2 sim: exonic deletions/SVs + truncation, not SNVs (O3); TBC1D3 held-out: does NOT transfer.
+⭐09-28 [[project_f1_bridge_locus_fix]] r1145-1147 — F1 bridge loci EFFECTIVE gorilla; F1v2 (09-29) EFFECTIVE human −17%/−8%, family-level F up; Rust port c6cc4142; **DEFAULT ON 09-29**.
+⭐⭐⭐09-28 [[project_soto_refinement_evidence]] — Soto ARI .7096 literal (235 exact); 5 named gaps; Soto = coarser COVER; 09-29 their code ⇒ ARI .97 w/ S1C CN; our 268-sample CN .93/411.
+⭐09-27 [[project_read_proven_ends]] — opt-in --polish-tss (CAP signal = untemplated 5′ G; human only, gorilla none) + --polish-tes; r1131-1135.
+⭐09-27 [[project_complete_transcripts_subchain]] — /goal fewer gffcompare partials (user target `c`, not `m`): arm A (end-compatible sub-chain drop) WITHDRAWN on dev; held-out + SIRV NOT spent.
+⭐09-27 [[project_locus_representatives_study]] r1121-r1127 — advisor rep criticism: rep fine for families/O2; loss = genes in fused loci; all 4 arms dev-only, PARKED.
+⭐09-26 [[project_spikein_standards]] — only human_testis is spiked (SIRV E0 + ERCC); no sequins.
+⭐09-26 [[project_readthrough_ends_filter]] r1117-r1120 — readthrough filter v3 `r3` EFFECTIVE 6/6 held-out but ASSEMBLY-level only (reps/families = R); opt-in; no v4 on these 6.
+⭐⭐09-25 [[project_o3_wgs_trio_cn]] — WGS trio (Jim+Trib+Dolly) k-mer CN: 17/516 families differ between gorillas; RNA O3 flags mostly absent from DNA; RNA-as-screen recall 0/17 (`docs/archive/2026-09/O3_WGS_TRIO_CN_2026-09-25.md`).
+⭐⭐⭐09-25 [[project_publication_figures]] — `figures/` = 7 publication figures (`make.py data figN|plot all|check`), all tables rebuilt 09-25; register 1109-1115 (O2 stable seed holds; de novo vs guided off chr16; r1115 spectrum).
