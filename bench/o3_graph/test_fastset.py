@@ -148,3 +148,8 @@ def test_o3_takes_the_shared_position_mosaic_distance_and_the_final_o2_pool_only
 def test_o3_checks_a_call_s_haplotype_only_when_asked():
     assert "--haplotype-check" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--haplotype-check" in F.chain_steps(_opts(haplotype_check=True), "/R", "INTACT")[-1][1]
+
+
+def test_o2_and_o3_minimap2_runs_get_the_world_s_threads():
+    steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(threads=3), "/R", "INTACT"))
+    assert "O2_THREADS=3" in steps["O2"] and "O3_THREADS=3" in steps["O3"]

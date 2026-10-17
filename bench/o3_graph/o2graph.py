@@ -342,8 +342,11 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
         rows, cnt = [], collections.Counter()
         if not names:
             return rows, cnt
+        import time
+        t0 = time.time()
         paths = (union_structures(iso[fam], projector, proj_tol) if union else
                  {c["idx"]: {t: ex for t, ex in c["isoforms"].items() if not reps_only or t == c["rep"]} for c in iso[fam]})
+        t1 = time.time()
         json.dump({str(k): {t: [list(x) for x in ex] for t, ex in v.items()} for k, v in paths.items()},
                   open(f"{d}/{fam}.paths.json", "w"))                  # the structures each copy's paths follow
         n_tx, tx = 0, {}
@@ -359,10 +362,16 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
         with open(f"{d}/{fam}.reads.fa", "w") as fh:
             for n in names:
                 fh.write(f">{n}\n{reads[n]}\n")
+        t2 = time.time()
         res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes",
+                              "-t", os.environ.get("O2_THREADS", "1"),          # output does not depend on the thread count
                               f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
+        t3 = time.time()
         dist = (_paf_dist_gc(res, reads, tx, struct=distance == "gapstruct") if distance in ("gapcomp", "gapstruct")
                 else _paf_dist(res, ends=ends))
+        if os.environ.get("O2_TIMING"):
+            print(f"[o2graph] timing {fam}: {len(names)} reads, {n_tx} paths, {res.count(chr(10))} alignments; union paths "
+                  f"{t1 - t0:.1f} s, write {t2 - t1:.1f} s, minimap2 {t3 - t2:.1f} s, distances {time.time() - t3:.1f} s", flush=True)
         json.dump(path_dists(dist), open(f"{d}/{fam}.dist.json", "w"))     # run_locus_fallback mode "all" combines them
         tw = {f"copy{c['idx']}": f"copy{c['twin_of']}" for c in iso[fam] if c.get("twin_of") is not None}
         for n in names:

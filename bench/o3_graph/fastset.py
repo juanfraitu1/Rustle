@@ -158,12 +158,12 @@ def chain_steps(a, root, w):
     steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
              ("O1", f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else ""), "light"),
-             ("O2", f"env O2_PROCS={a.o2_procs} python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
+             ("O2", f"env O2_PROCS={a.o2_procs} O2_THREADS={a.threads} python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
                     + (" --union-exact" if a.union_exact else "") + (" --error-floor" if a.error_floor else ""), "light")]
     if a.o2_genome != "off":
         steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2"
                       + (" --error-floor" if a.error_floor else ""), "light"))
-    steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
+    steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads} python3 bench/o3_graph/detect.py {W}"
                   + (" --member-genome-check" if a.member_genome_check else "")
                   + (" --member-attribution" if a.member_attribution else "")
                   + (" --member-attribution-delta" if a.member_attribution_delta else "")

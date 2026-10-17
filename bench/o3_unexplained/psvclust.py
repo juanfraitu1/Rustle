@@ -85,7 +85,8 @@ def align(target_name, target_seq, queries, tmp):
     with open(f"{tmp}.q.fa", "w") as f:
         for n, s in queries.items():
             f.write(f">{n}\n{s}\n")
-    out = subprocess.run(f"minimap2 -c --cs=long -x splice:hq -uf -N 0 {tmp}.t.fa {tmp}.q.fa 2>/dev/null", shell=True, check=True,
+    threads = os.environ.get("O3_THREADS", "1")              # output does not depend on the thread count
+    out = subprocess.run(f"minimap2 -c --cs=long -x splice:hq -uf -N 0 -t {threads} {tmp}.t.fa {tmp}.q.fa 2>/dev/null", shell=True, check=True,
                          capture_output=True, text=True, executable="/bin/bash").stdout
     best = {}
     for ln in out.splitlines():
