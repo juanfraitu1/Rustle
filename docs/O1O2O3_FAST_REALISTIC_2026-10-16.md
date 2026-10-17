@@ -323,3 +323,65 @@ No critical finding: the round-9 FAIL reproduces exactly. The corrections:
 - O1's fixed 5-read rule for keeping a copy loses low-expressed copies under realistic expression. A rule on uniquely placed
   reads would keep them; it is the next O1 candidate.
 - O2's divergence gate on realistic reads remains the catalogued-copy weakness.
+
+## 10. Closing the remaining gaps (after the goal check, 2026-10-16)
+
+**O1 keeps a copy with one uniquely placed read of its own** (`o1seed.py`). The 5-read primary count stays, so an identical
+copy whose reads all tie is still kept. Over 138 worlds:
+
+| profile | expressed copies dropped: 5-read rule / new rule | silent copies kept: 5-read rule / new rule |
+|---|---|---|
+| public | 68 / 14 | 35 / 35 |
+| A119b | 11 / 11 | 82 / 84 |
+| idealized | 2 / 2 | 22 / 22 |
+
+The 14 expressed copies still dropped have only MAPQ-0 (tied) reads, so no read can single them out. End-to-end effect, on the same reads (rebuilt set 10, public v2 profile, integrated v2):
+- **Expressed copies dropped:** 1-2 per world -> 0 in every world. The 8 silent copies are still dropped.
+- **Integrated errors:** 3 -> 0 in each of INTACT, CROSS and SILENT, so B2 (errors <= current) now holds in all six worlds.
+- **Correct reads:** +2 to +4 per world.
+- **B1 still fails** on catalogued copies (INTACT -39, CROSS -39, SILENT -23): O2's divergence gate, not O1.
+
+**Full families: faster and cheaper.** All of the following are exact: outputs are identical with and without them.
+- **Family graphs shared** between worlds with one catalog (`O3_GRAPH_CACHE`).
+- **O3 arm I only** (`detect.py --arms I`): the legacy arms' alignment and clustering are skipped; arm I's calls are
+  identical.
+- **A world's families in parallel** (`O3_PROCS`): identical with 1 or 2 processes, and to the previous code.
+- **O2 scoring pruned** (gap-compressed distance): byte-identical.
+- **4 threads for steps that run alone:** the shared mapping, REMOVED's mapping, and copy_assign under the heavy lock.
+  copy_assign's output is identical at 2 and 4 threads.
+
+| uncapped set | before (no cache) | cache + arm I only | + parallel families, 4-thread lone steps |
+|---|---|---|---|
+| 2 (69 copies) | 1,461 s, O3 1,215 s | 1,316 s, O3 770 s, peak 1.5 GB | **967 s**, O3 529 s, shared mapping 105 s (was 204 s), peak 2.2 GB, PASS |
+| 9 (116 copies) | 1,145 s, O3 494 s | 1,027 s, O3 214 s, peak 5.0 GB (copy_assign alone) | |
+
+Times exclude the one-time local reference build. All runs PASS their bars post hoc (A119b v1 profile).
+- **Set 2: 1.5x faster than the first full-family run, O3 2.3x faster.**
+- **What remains:**
+  - copy_assign, the comparator rather than the integrated pipeline: about 60 s per world;
+  - O2's path alignment: minimap2 of every hosted read against every path, about 80 s per world;
+  - arm I's pooled per-host clustering: about 90 s per world.
+- **Peak memory** stays under 2.2 GB per set once the local reference exists; set 9's largest copy_assign reaches 5 GB, alone
+  under the heavy lock.
+
+**Untrimmed-library adapters are now simulated and trimmed:**
+- `calibrate.py adapters` measures them: the public library's 5' end is Tn5 mosaic end + G run + SMART primer (48 bp), its 3'
+  end polyA + `GCATCG` + mosaic end (40 bp), on 98.8% of reads.
+- Profile v3 (`public_testis_v3.json`) attaches them at the calibrated clip lengths, with sequencing errors.
+- `trim.py` / `fastset.py --trim-adapters` removes them before mapping.
+
+**The check (rebuilt set 10, public v3, integrated v2, per-read scoring):**
+
+| reads | integrated, INTACT: correct / errors | current, INTACT: correct / errors | integrated O2 calls `unexplained` |
+|---|---|---|---|
+| adapters left on | 0 / 1,874 | 1,145 / 0 | 2,094 of 2,094 reads |
+| adapters trimmed (`--trim-adapters`) | 1,334 / 0 | 1,368 / 2 | as without adapters |
+| no adapters (v2, same O1 rule) | 1,327 / 0 | 1,366 / 2 | |
+
+- **Left on, the integrated pipeline collapses.**
+  - O2 calls every read unexplained.
+  - O3 makes 8 false absent-copy calls in INTACT, a world with no absent copy, and sweeps the present copies' reads into them.
+  - The current method aligns to the genome and clips the adapters, so it is barely affected.
+- **Trimming restores it to the adapter-free level.** Every read is trimmed, removing 85.5 bases on average, and no adapter
+  core is left at either end.
+- **Rule:** an untrimmed library needs `--trim-adapters` (or lima/refine) before the integrated pipeline.
