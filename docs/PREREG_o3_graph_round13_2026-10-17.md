@@ -216,3 +216,65 @@ call in MRGPRX on three reads of the present copy MRGPRX.1 (MRGPRX4). O2 makes n
     - O2 28-31 s (+ genome fallback 3-4 s); O1 22-27 s.
   - **The current method:** 188 and 183 s, peaking at 3.2 GB per world.
   - **Shared steps (simulate, map, mask):** 114 and 90 s. The local reference build (55 s, 14.4 GB) is paid once per set.
+
+## Independent review (2026-10-17, from 01:04 PDT) and corrections
+
+Review: `/mnt/linuxdisk/tmp/o3_graph/review13/REVIEW.md` (fresh subagent, read-only copies, its own scorer).
+
+**The FAIL verdict stands.**
+- Its scorer reproduces `e2e.json`, round 10's rule and copy level, both profiles: 0 differences over 305 cells.
+- A119b fails in every scoring variant, in INTACT 3 vs 0, CROSS 3 vs 2 and SILENT 3 vs 0.
+- The protocol is clean:
+  - the pre-registration was committed while `heldout13` did not exist;
+  - one run per profile, frozen code, no earlier exposure.
+- Arm I re-runs byte-identical in all 6 A119b worlds.
+
+**What the results said wrongly, also after the two corrections (a5d481a8, f4db7d5c):**
+1. **"Two alleles exceed delta even after the floor" is wrong.**
+   - The alleles alone are under every gate: 2/190 - 0.0029 = 0.0076 and 2/231 - 0.0029 = 0.0058.
+   - Each read also needs 1, 1 or 6 sequencing indels.
+   - Reverting the alleles on a scratch world makes two of the reads `assigned`.
+2. **The call is a mosaic call, and its divergence is mostly one read's errors.**
+   - The 3-read cluster has 1 unexplained alt (the PSV rule needs 2). The other allele recreates MRGPRX.0's base at a PSV,
+     so the mosaic rule fires.
+   - Its `est_div` (12/508 on MRGPRX.0's window, 18/506 on MRGPRX.2/.3's) counts the 2 alleles plus 10-16 positions covered
+     only by the 506-bp read, where its sequencing indels count as the cluster's bases (`cluster_bases`, round 10's LCE1 rule).
+   - Removing that read's indels removes the call.
+3. **Attribution was traced.** The two alleles give exactly its fixed margin of 2 against MRGPRX.1. MRGPRX.2/.3's maps cover
+   too few of the reads' positions to compete.
+4. **The window and the pool are misdescribed.**
+   - The call forms on MRGPRX.0's window and on MRGPRX.2/.3's. In OUTSIDE and SILENT it is reported on MRGPRX.2/.3's.
+   - On MRGPRX.1's own window, the 3 reads sit in a 10-read mixed cluster.
+   - It depends on the family's pool:
+     - dropping any one of three unrelated MRGPRX.0 reads removes it;
+     - BRANCH minus its 6 MRGPRX.B reads recreates it;
+     - REMOVED with INTACT's pool composition recreates it on MRGPRX.2/.3's window.
+   - The REMOVED explanation in the results is refuted.
+5. **"No O2 error in any world" and "every A119b error is arm I's" hold only for catalogued reads and the failing cells.** Integrated
+   O2 places OUTSIDE's uncatalogued within-delta PTMAP.8 reads on PTMAP.7 (13 / 8). In BRANCH it places novel-exon-free reads
+   of the branch copies on their parents (63 / 72). Both are DNA-identical placements.
+6. **Round 10's comparison is incomplete.** Round 10's TAF11L.33 call was also a present copy's haplotype-2 reads called on
+   another copy's window; its fix was attribution's no-rival rule (88c445d9). That shape is the recurring mechanism.
+
+**Also found:**
+- **Public's PASS cannot test the allele confound.** `het_sites` draws `round(2 x het_per_base x exonic bp)` sites per copy.
+  Public's rate rounds to 0 for 86 of 89 copies, and none has two. A119b gives 7 copies with two or more.
+- **Arm I pools O2's paths-stage table.**
+  - Its path aligner (`minimap2 -x map-hifi`, minimum score 200) cannot align reads under ~200 bp.
+  - 385 of the 436 path-unexplained reads in A119b INTACT have no path alignment.
+  - The genome fallback leaves 42 unexplained. Arm I's pool is therefore about 10x what O2 finally leaves.
+- **Per-family losses under the B1 margins:**
+  - A119b INTACT: FTH1P -7, MRGPRX -3, PTMAP -3;
+  - A119b REMOVED: CTSLP -16. CTSLP.1's undetectable reads are placed by the integrated pipeline (`unknowable`), while the
+    current method's call holds them.
+- **Zero OUTSIDE errors on FTH1P.8 rest on the genome check.** Arm I's unchecked calls hold 312 (A119b) and 396 (public)
+  uncatalogued reads.
+
+**Fix directions** (to be developed on all spent runs, round 13 included, and pre-registered on a fresh set):
+- the mosaic distance should not take one read's bases as the cluster's;
+- attribution's margin should grow with read length (the existing `--member-attribution-delta`);
+- pool composition: pool only what the genome fallback leaves unexplained, or require a call to hold on its members' own host
+  window;
+- an allele-aware check is right in principle but not as the only lever: it can veto true calls (v7 lost CTSLP.1), and it
+  depends on O2's placements;
+- fix the simulator's het-site rounding, pre-registered, so that the public donor is not effectively haploid.
