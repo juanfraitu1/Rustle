@@ -196,3 +196,29 @@ worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
 - **Development since round 13** (`docs/O1O2O3_FAST_REALISTIC_2026-10-16.md` section 14):
   - O3 `--allele-discount`: donor alleles, learned from the reads O2 assigns, leave the genome check;
   - O2 `--o2-genome veto`: a path call that the read's own genome alignments contradict by the margin is overruled.
+
+## Update after round 14 (2026-10-17): v9 passes, with a diploid donor
+
+| round | pipeline | families | verdict | what decided it |
+|---|---|---|---|---|
+| 14 (r1312) | v9 = v5' + `--mosaic-shared` + `--haplotype-check` + `--o2-genome veto` | 8, 74 copies (SD pseudogene families, a protocadherin cluster, olfactory subfamilies, 25 retrocopies) | **PASS, 12/12 worlds** | 0 errors in INTACT, CROSS, SILENT and REMOVED under both profiles; B1 +52 to +298. The donor is diploid under both profiles (`--sim-het-draw`) |
+
+**v9, end to end** (`fastset.py ... --o2-distance gapcomp --member-genome-check --member-attribution --union-exact
+--o2-genome veto --per-read-detectability --twins --error-floor --o1-hosts --branch-genome-novel --mosaic-shared
+--haplotype-check`). v4's description above still holds, plus:
+- **O1** seeds the RNA-supported catalog; nothing from the current method.
+- **O2: the genome veto.** After the paths and the genome fallback, a read the paths assign is overruled when its own genome
+  alignments place it on another seeded copy by the margin, with its primary there at MAPQ >= 30. Retained introns are
+  contiguous on the read's own locus.
+- **O3**, hosted by O1:
+  - the mosaic distance counts only positions >= 2 members cover;
+  - a PSV call extended by the family reads O2 explains that carry its unexplained alts must stay > delta from every copy;
+  - otherwise it is a present copy's haplotype.
+
+**What remains:**
+- **Round 12's A119b failure class:**
+  - margin-2 coincidences among 80 near-identical units;
+  - a read DNA-identical at two copies.
+  The current method abstains on both, and no sequence rule separates them.
+- **The secondary scorings:** under round 10's rule and at copy level, round 14 A119b fails REMOVED B2 (1 and 3 vs 0).
+- **Not yet tested:** real reads end to end. Every round is a simulation calibrated on two real libraries.
