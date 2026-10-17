@@ -172,6 +172,7 @@ def chain_steps(a, root, w):
                   + (" --allele-discount" if a.allele_discount else "") + (" --mosaic-shared" if a.mosaic_shared else "")
                   + (" --haplotype-check" if a.haplotype_check else "")
                   + (" --haplotype-check-genome" if a.haplotype_check_genome else "")
+                  + (" --branch-genome-segments" if a.branch_genome_segments else "")
                   + (f" --pool-table o2.{GENOME_STEP[a.o2_genome]}.m2.tsv" if a.o3_pool == "final" and a.o2_genome != "off" else "")
                   + ("" if a.all_arms else " --arms I"),
                   "light"))
@@ -274,6 +275,9 @@ def main(argv=None):
                    "substitutions, over every read carrying them -- stays within delta (detect.py --haplotype-check)")
     p.add_argument("--haplotype-check-genome", action="store_true", help="arm I also drops a PSV call whose members' haplotype, "
                    "in genome coordinates (their own primaries), stays within delta (detect.py --haplotype-check-genome)")
+    p.add_argument("--branch-genome-segments", action="store_true",
+                   help="O3's branch step on the pieces each candidate's genome alignment leaves unexplained, no family graph "
+                   "(detect.py --branch-genome-segments)")
     p.add_argument("--mosaic-shared", action="store_true", help="O3's mosaic distance only over positions >= 2 members cover "
                    "(detect.py --mosaic-shared)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "

@@ -3,6 +3,9 @@
 clustering (bench/o3_unexplained/psvclust.py, = `copy_assign --psv-clusters`) plus three steps, as separate arms.
 
     detect.py WORLD             reads WORLD/cur/A.assignments.tsv (the hosts), writes WORLD/graph/calls.tsv (+ graph/<family>/)
+    --branch-genome-segments    step 2 without the family graph: the branch segments are the pieces each candidate's own genome
+                                alignment leaves unexplained (implies --branch-genome-novel's candidates); no vg msga / vg rna /
+                                GraphAligner (77% of O3's time on a full family's first world)
     --fusions TSV               copy_assign's <out>.fusions.tsv: calls.tsv gains `fusion` = fusion_gene / readthrough when at
                                 least half of a call's members' primaries splice that class's bridge junction (`.` otherwise);
                                 a label, nothing is removed (a missing copy of a fusion gene splices its sister copies' junctions)
@@ -538,8 +541,27 @@ def branch_calls(d, gfa, names, reads):
         iv = novel_intervals(best_records(recs[q])) if q in recs else [(0, len(reads[q]))]   # unaligned: all novel
         if sum(e - s for s, e in iv) >= MIN_NOVEL:
             segs[q] = [reads[q][s:e] for s, e in iv]
+    return cluster_segments(d, segs), segs
+
+
+def branch_calls_genome(d, names, pieces, reads):
+    """--branch-genome-segments: branch_calls without the family graph. Each candidate's novel segments are the pieces of the
+    read its OWN genome alignment leaves unexplained (genome_novel_pieces: end clips, dense error windows, less what
+    supplementary alignments cover; a read with no primary is novel whole), clustered as branch_calls clusters the graph's.
+    No vg msga, vg rna or GraphAligner: the genome alignment both O1 and O2 already read."""
+    os.makedirs(d, exist_ok=True)
+    segs = {}
+    for q in names:
+        iv = pieces.get(q, [(0, len(reads[q]))])
+        if sum(e - s for s, e in iv) >= MIN_NOVEL:
+            segs[q] = [reads[q][s:e] for s, e in iv]
+    return cluster_segments(d, segs), segs
+
+
+def cluster_segments(d, segs):
+    """Single-linkage clusters (>= MIN_BRANCH reads) of reads sharing a novel segment ({read: [segment sequences]})."""
     if len(segs) < MIN_BRANCH:
-        return [], segs
+        return []
     with open(f"{d}/segs.fa", "w") as fh:
         for q, ss in segs.items():
             for k, x in enumerate(ss):
@@ -550,7 +572,7 @@ def branch_calls(d, gfa, names, reads):
         f = ln.split("\t")
         hits.append((f[0], f[5], int(f[9]) / int(f[10]), int(f[10]), int(f[1]), int(f[6])))
     groups = link_segments(sorted(segs), hits)
-    return [sorted(m) for m in groups if len(m) >= MIN_BRANCH], segs
+    return [sorted(m) for m in groups if len(m) >= MIN_BRANCH]
 
 
 def _clips(cigar):
@@ -588,11 +610,12 @@ def primary_novel_intervals(rec, read_len, min_len=MIN_NOVEL_PART):
     return sorted(out)
 
 
-def genome_novel(prim, supps, read_len, min_len=MIN_NOVEL_PART):
-    """Bases the genome does not explain: the primary's unexplained intervals minus what the read's supplementary alignments
-    cover (a readthrough's clipped part aligned elsewhere IS explained), pieces >= min_len."""
+def genome_novel_pieces(prim, supps, read_len, min_len=MIN_NOVEL_PART):
+    """The read intervals (original orientation) the genome does not explain: the primary's unexplained intervals minus what
+    the read's supplementary alignments cover (a readthrough's clipped part aligned elsewhere IS explained), pieces >=
+    min_len."""
     cover = sorted(aligned_interval(r, read_len) for r in supps)
-    n = 0
+    out = []
     for s_, e in primary_novel_intervals(prim, read_len, min_len):
         pieces, cur = [], s_
         for cs, ce in cover:
@@ -603,8 +626,29 @@ def genome_novel(prim, supps, read_len, min_len=MIN_NOVEL_PART):
             cur = max(cur, ce)
         if cur < e:
             pieces.append((cur, e))
-        n += sum(b - a for a, b in pieces if b - a >= min_len)
-    return n
+        out += [(a, b) for a, b in pieces if b - a >= min_len]
+    return out
+
+
+def genome_novel(prim, supps, read_len, min_len=MIN_NOVEL_PART):
+    """Bases the genome does not explain (genome_novel_pieces, summed)."""
+    return sum(b - a for a, b in genome_novel_pieces(prim, supps, read_len, min_len))
+
+
+def genome_pieces(bam_p, want):
+    """--branch-genome-segments: {read: its genome_novel_pieces} for the wanted reads with a primary alignment."""
+    import pysam
+    prim, supp = {}, collections.defaultdict(list)
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.query_name not in want or rec.is_unmapped or rec.is_secondary or not rec.cigartuples:
+                continue
+            r = dict(cigar=rec.cigartuples, reverse=rec.is_reverse)
+            if rec.is_supplementary:
+                supp[rec.query_name].append(r)
+            else:
+                prim[rec.query_name] = (r, rec.infer_read_length())
+    return {q: genome_novel_pieces(r, supp[q], L) for q, (r, L) in prim.items()}
 
 
 def genome_stats(bam_p, want):
@@ -944,7 +988,8 @@ def main(argv):
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
     attribution_delta = "--member-attribution-delta" in argv   # ... by more than delta of each read's length (round 10)
     mapped_sites = "--mapped-sites" in argv                # arm I clusters only where some catalogued copy's map is (round 11)
-    branch_novel = "--branch-genome-novel" in argv         # branch candidates need genome-unexplained bases (round 12)
+    branch_segments = "--branch-genome-segments" in argv   # branch segments from the genome alignment, no family graph
+    branch_novel = "--branch-genome-novel" in argv or branch_segments   # candidates need genome-unexplained bases (round 12)
     attribution = "--member-attribution" in argv or attribution_delta   # arm I: a call keeps the reads it explains better
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
@@ -1100,16 +1145,21 @@ def main(argv):
         if branch_novel:
             names = branch_candidates(names, gst_branch, reads)
         if names and (not branch_novel or len(names) >= MIN_BRANCH):
-            gfa = _timed("vg_graph", family_graph, f"{out_dir}/{f}", genome, cps)
-            if gfa is None:
-                print(f"[o3_graph] {w}: no vg graph for {f} (vg msga failed in every order): no branch calls", flush=True)
-                return calls
-            br, _ = _timed("branch_calls", branch_calls, f"{out_dir}/{f}", gfa, names, reads)
+            if branch_segments:
+                br, _ = _timed("branch_calls", branch_calls_genome, f"{out_dir}/{f}", names, pieces_branch, reads)
+            else:
+                gfa = _timed("vg_graph", family_graph, f"{out_dir}/{f}", genome, cps)
+                if gfa is None:
+                    print(f"[o3_graph] {w}: no vg graph for {f} (vg msga failed in every order): no branch calls", flush=True)
+                    return calls
+                br, _ = _timed("branch_calls", branch_calls, f"{out_dir}/{f}", gfa, names, reads)
             for k, m in enumerate(br):
                 calls.append(["S2", f, "branch", "-", k, m, 0.0])
         return calls
     gst_branch = (_timed("genome_stats_branch", genome_stats, f"{w}/E0.bam", {n for v in by_host.values() for n in v})
                   if branch_novel else {})
+    pieces_branch = (_timed("genome_pieces", genome_pieces, f"{w}/E0.bam", {n for v in by_host.values() for n in v})
+                     if branch_segments else {})
     global _ONE_FAMILY
     _ONE_FAMILY = one_family
     procs = int(os.environ.get("O3_PROCS", "1"))

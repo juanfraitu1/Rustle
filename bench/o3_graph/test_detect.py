@@ -606,3 +606,33 @@ def test_a_junction_of_a_fusion_gene_stays_one_whatever_the_row_order(tmp_path):
     p = tmp_path / "x.fusions.tsv"
     p.write_text(FUSIONS_TSV + "R2\tH.fus2\tc1\t+\tc1:1251-2200:+\treadthrough\t5\t0\tFalse\tGT-AG\t77\tFalse\tH,H.rg2\n")
     assert D.read_fusions(str(p))[("c1", 1250, 2200)] == "fusion_gene"
+
+
+def test_the_genome_novel_pieces_are_the_unexplained_intervals_themselves():
+    # --branch-genome-segments: the pieces genome_novel counts, as read intervals (original orientation)
+    prim = dict(cigar=[(4, 500), (7, 1000)], reverse=False)
+    assert D.genome_novel_pieces(prim, [], 1500) == [(0, 500)]
+    assert D.genome_novel_pieces(prim, [dict(cigar=[(7, 500), (5, 1000)], reverse=False)], 1500) == []
+    assert D.genome_novel_pieces(prim, [dict(cigar=[(7, 300), (5, 1200)], reverse=False)], 1500) == [(300, 500)]
+    # reverse-strand primary: its leading clip is the read's last 500 bases
+    assert D.genome_novel_pieces(dict(cigar=[(4, 500), (7, 1000)], reverse=True), [], 1500) == [(1000, 1500)]
+    assert D.genome_novel(prim, [], 1500) == 500
+
+
+def test_reads_sharing_a_genome_novel_segment_form_a_branch_call(tmp_path):
+    # five reads carry one 150-bp novel exon between their own flanks; a sixth carries another
+    import random
+    rng = random.Random(7)
+    seq = lambda n: "".join(rng.choice("ACGT") for _ in range(n))  # noqa: E731
+    exon, other = seq(150), seq(150)
+    reads, pieces = {}, {}
+    for i in range(5):
+        a, b = seq(300 + 10 * i), seq(250)
+        reads[f"r{i}"] = a + exon + b
+        pieces[f"r{i}"] = [(len(a), len(a) + 150)]
+    reads["x"], pieces["x"] = seq(300) + other + seq(250), [(300, 450)]
+    calls, segs = D.branch_calls_genome(str(tmp_path / "F"), sorted(reads), pieces, reads)
+    assert calls == [["r0", "r1", "r2", "r3", "r4"]]
+    assert set(segs) == set(reads)
+    # fewer than MIN_BRANCH reads with a novel segment: no call, nothing aligned
+    assert D.branch_calls_genome(str(tmp_path / "G"), ["r0", "x"], pieces, reads)[0] == []
