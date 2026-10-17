@@ -221,3 +221,47 @@ Bars from `e2e.json` (primary scoring):
     - O3: 98 and 100 s, longest world 44 s, peak 0.28 GB.
     - O2 18-21 s (+ the genome veto 18-23 s); O1 11-19 s.
   - **The current method:** 133 and 129 s, peaking at 2.5 GB per world.
+
+## Independent review (2026-10-17, from 09:30 PDT) and qualifications
+
+Review: `/mnt/linuxdisk/tmp/o3_graph/review14/REVIEW.md` (fresh subagent, read-only copies, its own scorer, end-to-end
+reproductions).
+
+**The PASS stands as a pre-registered result, but it is one fragile draw.**
+- **What holds:**
+  - the reviewer's scorer reproduces all three scorings, both profiles, cell for cell (0 differences in 268 cells);
+  - the protocol is clean: frozen code, one launch with the pre-registered flags, no re-runs, no trace of these families in
+    any earlier truth file;
+  - both runs reproduce byte-identically end to end, also with the current method's outputs hidden.
+- **Post-hoc seed probe** (frozen code, same families, seeds 202-205; it cannot change the verdict): public passes 4 of 4.
+  **A119b passes 2 of 4:**
+  - seed 202 fails REMOVED 6 vs 0: present NPM1P.14 reads with drawn homozygous alleles, called on the window of a new copy
+    that O1 seeds at the NPM1 parent gene; the genome check passes them by +0.0005;
+  - seed 205 fails INTACT and CROSS 4 vs 0: CDC27P.8's haplotype-2 reads called on a paralog's window; the haplotype check
+    misses by 0.00024 (0.00982 vs delta).
+  Both are round 13's mechanism, a present copy's donor-allele reads called on another locus's window. **The allele confound is
+  not solved.**
+- **What decided this round's cells:**
+  - public CROSS rests on `--haplotype-check` alone: without it B2 fails 4 vs 0, so round 13's v5' would have failed. The
+    removed call is 4 hap-1 reads of CHEK2P.5, a 246-bp copy, carrying a homozygous allele that `--sim-het-draw` drew; the
+    genome check let it through by +0.0011;
+  - the veto overruled 0 reads in 12 worlds (`o2.integv` = `o2.integl`), and `--mosaic-shared` changed no bar: round 14 is no
+    evidence for either;
+  - A119b REMOVED B2 (0 vs 0) is decided by one placed PCDHB.0 read 0.00008 under the detectability threshold. At floor 0.0031
+    instead of 0.0032 the cell fails. Round 10's rule and copy level fail it (1 and 3 vs 0);
+  - most of the B1 margin in INTACT, CROSS, SILENT and REMOVED is one copy's reads (CHEK2P.5, which copy_assign mostly calls
+    ambiguous). Without CHEK2P the margins are +0 to +14.
+- **Corrections to the results:**
+  - BRANCH's integrated errors are not DNA-identical: 105 of 125 (A119b) and 127 of 143 (public) carry the branch copy's SNPs.
+    OUTSIDE's are DNA-identical.
+  - The pre-registered report of the veto's overrulings and the haplotype check's removals is missing. It is given above: 0
+    overrulings; removals = the public CROSS call above, plus PCDHB.B PSV calls whose reads are also in PCDHB's branch call.
+- **Undisclosed in the pre-registration:** the family set and the seed were fixed (01:33-01:40) 7.5 h before the method was
+  frozen, during v8/v9 development. The reviewer found no use of them in any development run.
+
+**The claim is literally true for this draw under the primary scoring and must be cited with these qualifiers:**
+- one simulated draw; at 4 further seeds, A119b fails 2;
+- the two secondary scorings fail A119b REMOVED;
+- public CROSS depends on the haplotype check;
+- the veto and the shared-position mosaic distance were not exercised;
+- it is no evidence that the allele confound is solved.
