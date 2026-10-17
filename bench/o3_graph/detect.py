@@ -250,17 +250,34 @@ def cigar_novel(cigartuples, min_len=MIN_NOVEL_PART):
     return clips + dense
 
 
-def genome_keeps(kind, median_de, median_novel):
+def genome_keeps(kind, median_de, median_novel, floor=0.0):
+    """The genome check: a call stands when its members' median genome `de` exceeds DELTA (a branch call also on its novel
+    bases). floor (--error-floor, round 10): the world's sequencing-error floor (error_floor) is subtracted first -- an observed
+    `de` is the copy's divergence plus the read's errors, and DELTA is a divergence between copies."""
     if kind == "branch":
-        return median_novel >= MIN_NOVEL or median_de > DELTA
-    return median_de > DELTA
+        return median_novel >= MIN_NOVEL or median_de - floor > DELTA
+    return median_de - floor > DELTA
 
 
-def member_filter(kind, members, des, novs):
+def error_floor(bam):
+    """--error-floor: the median `de` of the world's uniquely placed (MAPQ 60) primary alignments -- its reads' sequencing
+    error, as present copies' reads show it (round 10: A119b 0.0027-0.0031, public 0.0015-0.0018)."""
+    import pysam
+    import statistics
+    des = []
+    with pysam.AlignmentFile(bam) as f:
+        for rec in f.fetch(until_eof=True):
+            if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or rec.mapping_quality < 60 or not rec.has_tag("de"):
+                continue
+            des.append(rec.get_tag("de"))
+    return statistics.median(des) if des else 0.0
+
+
+def member_filter(kind, members, des, novs, floor=0.0):
     """The genome check per READ (2026-10-16, `--member-genome-check`): an absent-copy call keeps only the members the genome
     does not explain themselves (genome_keeps on the read's own `de` / unexplained bases). A present copy's read swept into a
     cluster sits within delta of its own locus; it is no evidence of an absent copy."""
-    return [m for m in members if genome_keeps(kind, des.get(m, 1.0), novs.get(m, 0))]
+    return [m for m in members if genome_keeps(kind, des.get(m, 1.0), novs.get(m, 0), floor)]
 
 
 def cluster_bases(members, cov):
@@ -704,15 +721,16 @@ def main(argv):
     gst = genome_stats(f"{w}/E0.bam", want)
     rows_out = []
     member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
+    floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
     for arm, f, kind, host, k, m, div in calls:
         des, nov = member_genome(m, gst, {x: len(reads[x]) for x in m})
         mde = statistics.median(des) if des else 0.0
         mnov = statistics.median(nov) if nov else 0
-        keep = genome_keeps(kind, mde, mnov)
+        keep = genome_keeps(kind, mde, mnov, floor)
         for a in arms_of(arm, keep):
             mm = m
             if member_check and a == "I":
-                mm = member_filter(kind, m, dict(zip(m, des)), dict(zip(m, nov)))
+                mm = member_filter(kind, m, dict(zip(m, des)), dict(zip(m, nov)), floor)
                 if len(mm) < PC.MIN_SUPPORT:
                     continue
             rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(mm), est_div=round(div, 5),

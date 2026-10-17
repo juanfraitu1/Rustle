@@ -313,3 +313,28 @@ def test_a_present_copy_s_donor_alleles_do_not_make_its_reads_an_absent_copy_s_w
     assert D.attribute(sorted(cov), cons2, sites2, ref, maps, cov, delta=D.DELTA) == []
     cov = {f"a{i}": {p: ("T" if p in private else "A") for p in range(0, 400)} for i in range(3)}    # 10 private alts in 400 bp
     assert D.attribute(sorted(cov), cons, sites, ref, maps, cov, delta=D.DELTA) == ["a0", "a1", "a2"]
+
+
+def test_the_genome_check_subtracts_the_world_s_error_floor_when_given():
+    # round 10 (TAF11L.33 hap-2 reads, median de 0.0103): observed divergence = the copy's + sequencing error; uniquely placed
+    # reads show the error floor (A119b median de 0.0027-0.0031)
+    assert D.genome_keeps("psv", 0.0103, 0)
+    assert not D.genome_keeps("psv", 0.0103, 0, floor=0.0029)
+    assert D.genome_keeps("psv", 0.0211, 0, floor=0.0029)
+    assert D.member_filter("psv", ["a", "b"], {"a": 0.0103, "b": 0.03}, {}, floor=0.0029) == ["b"]
+
+
+def test_the_error_floor_is_the_median_de_of_uniquely_placed_primaries(tmp_path):
+    import pysam
+    hdr = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 10000}]}
+    with pysam.AlignmentFile(str(tmp_path / "u.bam"), "wb", header=hdr) as out:
+        for i, (flag, mapq, de) in enumerate([(0, 60, 0.001), (0, 60, 0.003), (0, 60, 0.002), (0, 0, 0.05), (256, 60, 0.09),
+                                              (0, 60, 0.004)]):
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.flag, a.reference_id, a.reference_start, a.mapping_quality = f"r{i}", flag, 0, 100 * i, mapq
+            a.cigarstring = "100M"
+            a.set_tag("de", de, "f")
+            out.write(a)
+    pysam.sort("-o", str(tmp_path / "E0.bam"), str(tmp_path / "u.bam"))
+    pysam.index(str(tmp_path / "E0.bam"))
+    assert abs(D.error_floor(str(tmp_path / "E0.bam")) - 0.0025) < 1e-6     # median of 0.001, 0.002, 0.003, 0.004
