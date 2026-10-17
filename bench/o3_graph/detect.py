@@ -33,6 +33,7 @@ Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + ke
   genome (clips and dense error windows >= MIN_NOVEL_PART, minus what the read's supplementary alignments cover) >= MIN_NOVEL,
   or the median `de` > DELTA. A member without a primary alignment counts as wholly unexplained.
 """
+import bisect
 import collections
 import csv
 import hashlib
@@ -574,6 +575,111 @@ def genome_stats(bam_p, want):
     return {q: (de, genome_novel(r, supp[q], L)) for q, (de, r, L) in prim.items()}
 
 
+ALLELE_ALPHA = 0.01                                      # --allele-discount: delta's p99 convention, as a binomial tail
+
+
+def read_events(contig, start, cigar, query):
+    """A primary alignment's gap-compressed edits, keyed by reference position: mismatches (contig, pos, "X", the read's base),
+    insertions (contig, pos, "I", the inserted bases; pos = the reference base they precede) and deletions (contig, pos, "D",
+    length); and the denominator of minimap2's `de` (matches + mismatches + gap opens), so that len(events) / c = `de`. Needs
+    =/X CIGARs (minimap2 --eqx, as every world's E0.bam); clips and introns are no edits."""
+    ev, c, r, qi = [], 0, start, 0
+    for op, n in cigar:
+        if op in (0, 7):                                   # M (read as matches) and =
+            c += n
+            r += n
+            qi += n
+        elif op == 8:
+            ev += [(contig, r + k, "X", query[qi + k]) for k in range(n)]
+            c += n
+            r += n
+            qi += n
+        elif op == 1:
+            ev.append((contig, r, "I", query[qi:qi + n]))
+            c += 1
+            qi += n
+        elif op == 2:
+            ev.append((contig, r, "D", n))
+            c += 1
+            r += n
+        elif op == 3:
+            r += n
+        elif op == 4:
+            qi += n
+    return ev, c
+
+
+def binom_sf(k, n, p):
+    """P(Binomial(n, p) >= k)."""
+    if k <= 0:
+        return 1.0
+    if p <= 0 or k > n:
+        return 0.0
+    q = 1.0 - p
+    term = s = q ** n
+    for i in range(1, k):
+        term *= (n - i + 1) / i * p / q
+        s += term
+    return max(0.0, 1.0 - s)
+
+
+def donor_alleles(spans, events, explained, floor, alpha=ALLELE_ALPHA):
+    """--allele-discount (round 13): the donor's alleles, as the reads O2 explains show them. An edit carried by >= 2 explained
+    reads is an allele when more of the explained reads spanning its position carry it than sequencing error explains:
+    P(Binomial(n spanning, floor) >= k carriers) < alpha, the floor bounding the rate of any one edit at one base. A missing
+    copy's PSVs are carried by its own reads, which O2 leaves unexplained; a present copy's alleles (and systematic errors) are
+    carried by the reads it explains too. spans {read: (contig, start, end)}, events {read: [edit keys]}."""
+    carriers = collections.Counter(e for q in explained if q in events for e in set(events[q]))
+    starts, ends = collections.defaultdict(list), collections.defaultdict(list)
+    for q in explained:
+        if q in spans:
+            ctg, a, b = spans[q]
+            starts[ctg].append(a)
+            ends[ctg].append(b)
+    for v in list(starts.values()) + list(ends.values()):
+        v.sort()
+    out = set()
+    for e, k in carriers.items():
+        if k < 2:
+            continue
+        n = bisect.bisect_right(starts[e[0]], e[1]) - bisect.bisect_right(ends[e[0]], e[1])
+        if binom_sf(k, max(n, k), floor) < alpha:
+            out.add(e)
+    return out
+
+
+def allele_corrected(prim, alleles):
+    """`de` less the donor's alleles, for every primary alignment ({read: dict(events, c, mapq)}), and the floor recomputed the
+    same way (the median over MAPQ-60 primaries, as error_floor): an observed `de` is the copy's divergence + the read's errors +
+    the donor's alleles, and discounting alleles in members alone would subtract the floor's share of them twice."""
+    de = {q: (len(v["events"]) - sum(e in alleles for e in v["events"])) / v["c"] if v["c"] else 0.0 for q, v in prim.items()}
+    u = [de[q] for q, v in prim.items() if v["mapq"] >= 60]
+    return de, (statistics.median(u) if u else 0.0)
+
+
+def primary_events(bam_p):
+    """--allele-discount: every primary alignment's read_events (+ MAPQ) and span."""
+    import pysam
+    prim, spans = {}, {}
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.cigartuples or not rec.query_sequence:
+                continue
+            ev, c = read_events(rec.reference_name, rec.reference_start, rec.cigartuples, rec.query_sequence)
+            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality)
+            spans[rec.query_name] = (rec.reference_name, rec.reference_start, rec.reference_end)
+    return prim, spans
+
+
+def o2_explained(w):
+    """The reads O2's last table explains (any reason but `unexplained`): the genome fallback's (o2.integl) when it ran."""
+    for name in ("o2.integl.m2.tsv", "o2.integ.m2.tsv"):
+        p = f"{w}/graph/{name}"
+        if os.path.exists(p):
+            return {r["read"] for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] != "unexplained"}
+    return set()
+
+
 def member_genome(members, gst, read_len):
     """Per member: (de, genome-unexplained bases); a member without a primary alignment is wholly unexplained (de 1.0, its
     whole length)."""
@@ -816,6 +922,12 @@ def main(argv):
     rows_out = []
     member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
     floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
+    if "--allele-discount" in argv:                          # round 13: the donor's alleles, which explained reads carry too
+        prim, spans = primary_events(f"{w}/E0.bam")
+        alleles = donor_alleles(spans, {q: v["events"] for q, v in prim.items()}, o2_explained(w) - want, floor)
+        de_a, floor_a = allele_corrected(prim, alleles)
+        gst = {q: (de_a.get(q, de), nov) for q, (de, nov) in gst.items()}
+        floor = floor_a if "--error-floor" in argv else 0.0
     for arm, f, kind, host, k, m, div in calls:
         des, nov = member_genome(m, gst, {x: len(reads[x]) for x in m})
         mde = statistics.median(des) if des else 0.0

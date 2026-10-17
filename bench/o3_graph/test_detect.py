@@ -414,3 +414,39 @@ def test_branch_candidates_need_sequence_the_genome_does_not_explain():
     reads = {"a": "A" * 500, "b": "A" * 500, "c": "A" * 400}
     gst = {"a": (0.002, 0), "b": (0.003, D.MIN_NOVEL + 5)}                # c has no primary alignment: wholly novel
     assert D.branch_candidates(["a", "b", "c"], gst, reads) == ["b", "c"]
+
+
+def test_a_primary_alignment_s_events_are_its_gap_compressed_edits_keyed_by_reference_position():
+    # round 13 (s0004934, MRGPRX.1): 74=1X74=1X12=1D69= from 18,269,524 -> two alleles and one sequencing deletion; de = 3/232
+    q = "A" * 74 + "G" + "A" * 74 + "T" + "A" * 12 + "A" * 69
+    cig = [(7, 74), (8, 1), (7, 74), (8, 1), (7, 12), (2, 1), (7, 69)]
+    ev, c = D.read_events("chr11", 18269524, cig, q)
+    assert ev == [("chr11", 18269598, "X", "G"), ("chr11", 18269673, "X", "T"), ("chr11", 18269686, "D", 1)]
+    assert c == 232 and abs(len(ev) / c - 0.0129) < 1e-4
+    ev, c = D.read_events("c", 100, [(4, 5), (7, 10), (1, 2), (7, 5), (3, 1000), (7, 5), (5, 7)], "NNNNN" + "A" * 10 + "GG" + "A" * 10)
+    assert ev == [("c", 110, "I", "GG")] and c == 21                        # clips and introns are no edits
+
+
+def test_a_donor_allele_is_an_event_the_explained_reads_carry_beyond_sequencing_error():
+    # round 13: MRGPRX.1's haplotype-2 alleles are carried by 42 of the reads O2 places on it -- a donor allele, no PSV
+    het, err, own = ("c", 50, "X", "G"), ("c", 60, "D", 1), ("c", 70, "X", "T")
+    spans = {f"e{i}": ("c", 0, 200) for i in range(44)}
+    events = {f"e{i}": ([het] if i < 21 else []) + ([err] if i == 3 else []) for i in range(44)}
+    spans.update({"u0": ("c", 0, 200), "u1": ("c", 0, 200)})
+    events.update({"u0": [own], "u1": [own]})                               # carried only by reads O2 leaves unexplained
+    alleles = D.donor_alleles(spans, events, {f"e{i}" for i in range(44)}, floor=0.003)
+    assert alleles == {het}
+    spans = {f"e{i}": ("c", 0, 200) for i in range(1000)}                    # 2 of 1,000: what sequencing error gives
+    events = {f"e{i}": ([own] if i < 2 else []) for i in range(1000)}
+    assert D.donor_alleles(spans, events, set(spans), floor=0.003) == set()
+
+
+def test_donor_alleles_are_subtracted_from_de_and_from_the_floor_alike():
+    # the floor is the median de of uniquely placed primaries; discounting alleles in members only would subtract them twice
+    het = ("c", 50, "X", "G")
+    prim = {"m": dict(events=[het, ("c", 52, "X", "C"), ("c", 90, "D", 1)], c=232, mapq=60),
+            "p1": dict(events=[het], c=200, mapq=60), "p2": dict(events=[], c=200, mapq=60),
+            "p3": dict(events=[het, ("c", 10, "I", "A")], c=200, mapq=60)}
+    de, floor = D.allele_corrected(prim, {het})
+    assert abs(de["m"] - 2 / 232) < 1e-9 and de["p1"] == 0.0 and abs(de["p3"] - 1 / 200) < 1e-9
+    assert abs(floor - 0.0025) < 1e-9                                      # median over p1, p2, p3 and m: 0, 0, 0.005, 0.0086

@@ -47,7 +47,7 @@ def _opts(**kw):
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
                 o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False,
-                mapped_sites=False, branch_genome_novel=False)
+                mapped_sites=False, branch_genome_novel=False, allele_discount=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -124,3 +124,8 @@ def test_a_killed_step_s_empty_timing_file_reads_as_unknown():
 def test_the_branch_arm_filters_by_genome_novelty_only_when_asked():
     assert "--branch-genome-novel" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--branch-genome-novel --arms I" in F.chain_steps(_opts(branch_genome_novel=True), "/R", "INTACT")[-1][1]
+
+
+def test_o3_discounts_the_donor_s_alleles_only_when_asked():
+    assert "--allele-discount" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--allele-discount --arms I" in F.chain_steps(_opts(allele_discount=True), "/R", "INTACT")[-1][1]
