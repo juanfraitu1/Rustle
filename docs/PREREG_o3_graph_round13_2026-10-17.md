@@ -167,12 +167,12 @@ call in MRGPRX on three reads of the present copy MRGPRX.1 (MRGPRX4). O2 makes n
   - MRGPRX.1's haplotype 2 carries two alleles 75 bp apart: C>G at chr11:18,269,598 and C>T at 18,269,673. 45 haplotype-2
     reads carry both, and 43 haplotype-1 reads carry neither.
 - **Short reads turn two alleles into a delta-sized divergence.**
-  - The three are among the shortest haplotype-2 reads covering both sites: 190, 231 and 506 bp.
-  - Their primary alignments (MAPQ 60, on MRGPRX.1) have `de` 0.0158, 0.0129 and 0.0157. NM is 3, 3 and 11; the 506-bp read
-    has 8 sequencing edits besides the two alleles. That puts them in the world's top 0.2% (the median MAPQ-60 `de` is 0.0029,
-    p99 0.0114).
-  - **O2 leaves them unexplained,** above delta plus floor, and the genome fallback then places them correctly on MRGPRX.1. Arm I
-    clusters O2's unexplained reads.
+  - Of the 45 haplotype-2 reads covering both sites, O2 places 42 on MRGPRX.1. It leaves 3 unexplained: the two shortest (190
+    and 231 bp) and a 506-bp read with 6 sequencing indels besides the two alleles.
+  - Their primary alignments (MAPQ 60, on MRGPRX.1) have `de` 0.0158, 0.0129 and 0.0157. NM is 3, 3 and 11. That puts them in
+    the world's top 0.2% (the median MAPQ-60 `de` is 0.0029, p99 0.0114).
+  - **Both O2 stages leave them unexplained,** above delta plus floor: the paths and the genome fallback. Arm I clusters O2's
+    unexplained reads, and without the call the three reads would be abstentions.
   - **The call:** arm I pools the family's unexplained reads across hosts; the three form a cluster on MRGPRX.0's window
     (`est_div` 0.024).
   - **Both checks pass:**
