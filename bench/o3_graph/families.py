@@ -125,6 +125,10 @@ GROUPS = {
                   # smallest first
                   "YWHAZP": r"^YWHAZP[0-9]+$", "PTMAP": r"^PTMAP[0-9]+$", "TPT1P": r"^TPT1P[0-9]+$", "FTH1P": r"^FTH1P[0-9]+$",
                   "EEF1A1P": r"^EEF1A1P[0-9]+$", "KRT8P": r"^KRT8P[0-9]+$"},
+    # development (2026-10-17, after round 14): the "heldout" mainstays with NPIP as ONE family -- NPIPA and NPIPB copies link
+    # into one component under the locus rule (23 of 23), and split in two they placed NPIPB reads on NPIPA copies
+    "mainstay": {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
+                 "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31"},
     # round 14 (2026-10-17), in no earlier list, picked before any run: segmental-duplication pseudogene families first, then
     # few-copy gene families, then olfactory subfamilies; retrocopy families last as spares (smallest first)
     "heldout14": {"SMG1P": r"^SMG1P[0-9]+$", "PKD1P": r"^PKD1P[0-9]+$", "CHEK2P": r"^CHEK2P[0-9]+$", "RRN3P": r"^RRN3P[0-9]+$",
