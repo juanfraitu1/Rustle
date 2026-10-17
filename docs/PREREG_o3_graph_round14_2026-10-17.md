@@ -161,3 +161,63 @@ lever must remove round 13's false call or reduce errors, and must not turn a pa
 - An independent review by a fresh subagent, given read-only copies.
 - Register row 1312.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-17)
+
+Both runs completed as pre-registered, with no amendment. Outputs are in `fast/heldout14/{A119b,public}/`, frozen read-only
+after scoring. Wall time was 305 s for A119b, which also built the local reference, and 232 s for public.
+
+## Verdict: PASS under both profiles (12 of 12 worlds). Claimed.
+
+Bars from `e2e.json` (primary scoring):
+
+| world | A119b: correct (current / integrated) | errors | public: correct | errors |
+|---|---|---|---|---|
+| INTACT | 3,389 / 3,447 | 0 / 0 | 3,334 / 3,391 | 0 / 0 |
+| CROSS | 3,449 / 3,513 | 0 / 0 | 3,387 / 3,451 | 0 / 0 |
+| OUTSIDE | 3,308 / 3,588 | 232 / 39 | 3,288 / 3,574 | 220 / 32 |
+| REMOVED | 3,502 / 3,584 | 0 / 0 | 3,472 / 3,558 | 4 / 0 |
+| BRANCH | 3,393 / 3,691 | 248 / 125 | 3,339 / 3,610 | 270 / 143 |
+| SILENT | 2,551 / 2,609 | 0 / 0 | 2,584 / 2,636 | 0 / 0 |
+
+- **B1 holds in all 12 worlds,** by +52 to +298.
+- **B2 holds in all 12.** In INTACT, CROSS, SILENT and REMOVED the integrated pipeline makes no error under either profile.
+- **The donor is diploid under both profiles.** 51 of A119b's 74 expressed copies and 19 of public's have haplotype-2 reads
+  (round 13 under rounding: public 3 of 89).
+
+**Reported beside the bars:**
+- **Secondary scorings:**
+  - public passes under round 10's rule and at copy level;
+  - **A119b fails both in REMOVED B2:** 1 vs 0 errors (round 10's rule) and 3 vs 0 (copy level). Every other cell holds.
+- **Leave one family out: both profiles pass in all 16 rows.**
+  - CHEK2P carries most of A119b's margins. Without it: REMOVED +0 (B1 holds with equality), INTACT +3, CROSS +6, SILENT +2.
+  - Without it, public is at INTACT +6 and SILENT +2.
+- **Where the integrated errors are:**
+  - OUTSIDE: 39 and 32 reads of uncatalogued copies placed on a catalogued paralog;
+  - BRANCH: 123-142 reads of branch copies that do not carry the novel exon, placed on the parent copy, plus 1-2 placed by
+    the genome step.
+- **Arm I:**
+  - **REMOVED:** every detectable removed copy called under both profiles (CHEK2P.4, PCDHB.0, OR8.2, OR10.0, NPM1P.12). No
+    call holds a present read in any world.
+  - **BRANCH:** all 7 novel-exon copies called (SMG1P, PKD1P, CHEK2P, PCDHB, OR8, OR10, NPM1P). CDC27P has no branch copy.
+- **O1:**
+  - **SILENT:** 18 of 22 silent copies dropped; CHEK2P.2, PCDHB.1 and PKD1P.0 kept as undecidable.
+  - **OUTSIDE:** new copies in 6 families (A119b) and 7 (public), one of them a twin (SMG1P).
+- **Fates per read class** (correct / error / abstain / unknowable, current -> integrated):
+
+| world | A119b catalogued | A119b other class | public catalogued | public other class |
+|---|---|---|---|---|
+| INTACT | 3389/0/514/0 -> 3447/0/456/0 | | 3334/0/505/0 -> 3391/0/448/0 | |
+| CROSS | 3449/0/551/0 -> 3513/0/487/0 | | 3387/0/536/0 -> 3451/0/472/0 | |
+| OUTSIDE | 3308/0/282/0 -> 3350/0/240/0 | uncatalogued 0/232/81/0 -> 238/39/36/0 | 3288/1/264/0 -> 3334/0/219/0 | uncatalogued 0/219/67/0 -> 240/32/14/0 |
+| REMOVED | 3314/0/276/0 -> 3367/0/223/0 | absent detectable 180/0/48/0 -> 217/0/11/0; undetectable 8/0/33/44 -> 0/0/16/69 | 3294/0/259/0 -> 3342/0/211/0 | absent detectable 178/4/38/0 -> 216/0/4/0; undetectable 0/0/24/42 -> 0/0/0/66 |
+| BRANCH | 3389/0/514/0 -> 3447/0/456/0 | absent detectable 4/248/139/0 -> 244/125/22/0 | 3334/0/505/0 -> 3391/0/448/0 | absent detectable 5/270/103/0 -> 219/143/16/0 |
+| SILENT | 2551/0/464/0 -> 2609/0/406/0 | | 2584/0/467/0 -> 2636/0/415/0 | |
+
+- **Cost:**
+  - **The integrated steps, summed over six worlds:** 159 s (A119b) and 149 s (public).
+    - O3: 98 and 100 s, longest world 44 s, peak 0.28 GB.
+    - O2 18-21 s (+ the genome veto 18-23 s); O1 11-19 s.
+  - **The current method:** 133 and 129 s, peaking at 2.5 GB per world.
