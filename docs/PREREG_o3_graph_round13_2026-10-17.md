@@ -182,8 +182,9 @@ call in MRGPRX on three reads of the present copy MRGPRX.1 (MRGPRX4). O2 makes n
   - The two alleles alone add 2/190 and 2/231 to `de` (0.0105 and 0.0087).
 - **Delta is calibrated on whole copies.** It is the p99 exonic divergence between two haplotype assemblies over whole copies
   (register 1199). Two heterozygous sites within 200 bp of a short read exceed it, so the per-read genome check cannot separate an
-  allele from a copy on short reads. This is the allele-versus-copy confound of the phased toy (2026-10-12), met for the first time
-  in a held-out round.
+  allele from a copy on short reads. This is the allele-versus-copy confound of the phased toy (2026-10-12). Round 10 met it too:
+  TAF11L.33's haplotype-2 reads carried two donor alleles (median `de` 0.0103), and the error floor removed them (v4). Here the
+  reads are short enough that two alleles exceed delta even after the floor.
 - **Leave one family out:** A119b passes only without MRGPRX. Public passes with any family left out.
   - **Without OR7E (the 43-copy array), A119b's B1 margins turn negative:** INTACT -5, REMOVED -11, SILENT -11.
   - Its correct-read margin over the current method in those worlds is carried by one family.
