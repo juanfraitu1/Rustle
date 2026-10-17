@@ -496,28 +496,26 @@ def test_the_pool_table_counts_reads_the_genome_veto_sends_off_the_seeded_copies
     assert D.unexplained_rows(str(tmp_path / "missing.tsv")) is None
 
 
-def test_a_call_s_haplotype_divergence_counts_its_variants_over_every_carrier_s_bases():
-    # round 13 (MRGPRX.1) and its het-draw development (FTH1P.6): short haplotype-2 reads of a present copy carry 2-3 donor
-    # alleles, a call's worth over their own ~230 bp, but the copy's other haplotype-2 reads carry them over the whole copy
-    het = [("c", 50, "X", "G"), ("c", 92, "X", "T"), ("c", 181, "X", "A")]
-    events = {f"m{i}": list(het) for i in range(3)}                          # the call: 3 short hap-2 reads
-    blocks = {f"m{i}": [("c", 0, 230)] for i in range(3)}
-    for i in range(20):                                                       # the copy's other hap-2 reads, 553 bp
-        a = (i * 20) % 300
-        events[f"h{i}"] = [e for e in het if a <= e[1] < a + 260]
-        blocks[f"h{i}"] = [("c", a, a + 260)]
-    for i in range(20):                                                       # its hap-1 reads carry none
-        events[f"r{i}"] = []
-        blocks[f"r{i}"] = [("c", 0, 553)]
-    d = D.haplotype_divergence(["m0", "m1", "m2"], events, blocks)
-    assert d <= D.DELTA
-    # a removed copy collapsed onto its paralog: its reads carry its 6 PSVs wherever they cover it
-    psv = [("d", p, "X", "C") for p in (20, 70, 120, 170, 220, 270)]
-    ev2 = {f"x{i}": [e for e in psv if (i % 2) * 150 <= e[1] < (i % 2) * 150 + 200] for i in range(8)}
-    bl2 = {f"x{i}": [("d", (i % 2) * 150, (i % 2) * 150 + 200)] for i in range(8)}
-    assert D.haplotype_divergence(["x0", "x1", "x2"], ev2, bl2) > D.DELTA
-
-
-def test_aligned_blocks_cover_matches_mismatches_and_deletions_but_not_introns():
-    assert D.aligned_blocks("c", 100, [(4, 5), (7, 10), (1, 2), (8, 1), (2, 3), (3, 500), (7, 20), (5, 9)]) == [
-        ("c", 100, 114), ("c", 614, 634)]
+def test_a_call_extended_by_the_explained_reads_carrying_its_alts_is_measured_against_its_nearest_copy():
+    # het-draw development (TAF11L.10, a 45-copy array): the call's members have MAPQ-0 primaries on three different units, so
+    # genome coordinates share nothing; on the host window, the copy's other haplotype-2 reads (which O2 explains) carry the
+    # same alleles over the whole copy, and the extended cluster sits within delta of that copy's map
+    ref = "A" * 600
+    copy1 = {p: ("G" if p == 100 else "A") for p in range(600)}               # the haplotype's own copy (a PSV at 100)
+    maps = {"copy0": {p: "A" for p in range(600)}, "copy1": copy1}
+    het = {350: "C", 420: "T"}
+    cons, sites = {350: "alt", 420: "alt"}, dict(het)
+    cov = {f"m{i}": {p: het.get(p, "A") for p in range(300, 480)} for i in range(3)}
+    expl = {f"e{i}": {p: het.get(p, "G" if p == 100 else "A") for p in range(600)} for i in range(10)}
+    expl.update({f"h{i}": {p: ("G" if p == 100 else "A") for p in range(600)} for i in range(10)})   # hap 1: no alt
+    car = D.alt_carriers(cons, sites, expl)
+    assert sorted(car) == [f"e{i}" for i in range(10)]
+    members = sorted(cov)
+    assert D.extended_distance(members, [], cov, maps) > D.DELTA                                    # the call alone
+    assert D.extended_distance(members, car, {**cov, **expl}, maps) <= D.DELTA                      # with its carriers
+    # a missing copy: its PSVs on its own reads, no explained carrier -- unchanged, beyond delta
+    psv = {p: "C" for p in range(20, 300, 40)}
+    cx = {f"x{i}": {p: psv.get(p, "A") for p in range(300)} for i in range(3)}
+    cons2, sites2 = {p: "alt" for p in psv}, dict(psv)
+    assert D.alt_carriers(cons2, sites2, expl) == []
+    assert D.extended_distance(sorted(cx), [], cx, maps) > D.DELTA

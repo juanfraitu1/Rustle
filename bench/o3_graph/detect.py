@@ -116,6 +116,34 @@ def dedupe(calls):
     return out
 
 
+def alt_carriers(cons, sites, cov):
+    """--haplotype-check: the reads (of cov, aligned to the host window) carrying at least one of a cluster's alts."""
+    alts = [(p, sites[p]) for p, a in cons.items() if a == "alt"]
+    return sorted(q for q, c in cov.items() if any(c.get(p) == b for p, b in alts))
+
+
+def extended_distance(members, carriers, cov, maps, min_overlap=MIN_OVERLAP):
+    """--haplotype-check (round 13 review; het-draw development): the distance from a call extended by the explained reads
+    carrying its alts to its nearest single copy, over the window positions >= 2 of them cover, with their majority base.
+    A present copy's haplotype-2 reads that O2 explains carry the call's alleles over the whole copy: extended, the call
+    sits within delta of that copy's map (MRGPRX.1: 2 alleles in 1,444 bp; TAF11L.10 in a 45-copy array, whose members'
+    MAPQ-0 primaries lie on three different units). A missing copy's PSVs are carried by its own reads. None when no copy
+    covers min_overlap of the positions."""
+    group = list(members) + [q for q in carriers if q not in set(members)]
+    cnt = collections.defaultdict(collections.Counter)
+    for q in group:
+        for p, x in cov.get(q, {}).items():
+            cnt[p][x] += 1
+    pos = {p: min(c.items(), key=lambda kv: (-kv[1], kv[0]))[0] for p, c in cnt.items() if sum(c.values()) >= 2}
+    best = None
+    for cc in maps.values():
+        cmp = [p for p in pos if p in cc]
+        if cmp and len(cmp) >= min_overlap * len(pos):
+            d = sum(cc[p] != pos[p] for p in cmp) / len(cmp)
+            best = d if best is None or d < best else best
+    return best
+
+
 def unexplained_rows(path):
     """{(read, family)} an O2 table leaves unexplained -- `unexplained`, and `veto_unexplained` (the genome veto: the read's own
     alignments put it off the seeded copies) -- or None when the table is absent."""
@@ -681,51 +709,6 @@ def o2_assigned(w):
             if os.path.exists(p) else set())
 
 
-def aligned_blocks(contig, start, cigar):
-    """The reference intervals an alignment covers: =, X, M and deletions, merged; introns (N) split them."""
-    out, r = [], start
-    for op, n in cigar:
-        if op in (0, 2, 7, 8):
-            if out and out[-1][2] == r:
-                out[-1] = (contig, out[-1][1], r + n)
-            else:
-                out.append((contig, r, r + n))
-            r += n
-        elif op == 3:
-            r += n
-    return out
-
-
-def haplotype_divergence(members, events, blocks):
-    """--haplotype-check (round 13 review: a present copy's haplotype-2 reads called on another copy's window, twice held out):
-    the divergence of the haplotype a call's members carry, from the reference, over every read that carries it. Its variants:
-    the substitutions >= 2 members share; its carriers: the members and every read carrying one of them; then every
-    substitution >= 2 carriers share, over the positions >= 2 carriers cover (one read's errors are no evidence). A present
-    copy's haplotype is carried by its other haplotype-2 reads too, over the whole copy (MRGPRX.1: 2 alleles in 1,444 bp;
-    FTH1P.6 under drawn het sites: 3 in 553 bp); a missing copy's reads carry its PSVs wherever they cover it."""
-    snv = lambda q: {e for e in events.get(q, ()) if e[2] == "X"}  # noqa: E731
-    seed = collections.Counter(e for m in members for e in snv(m))
-    v0 = {e for e, k in seed.items() if k >= 2}
-    carriers = set(members) | {q for q in events if snv(q) & v0}
-    shared = collections.Counter(e for q in carriers for e in snv(q))
-    depth = collections.defaultdict(list)
-    for q in carriers:
-        for c, a, b in blocks.get(q, ()):
-            depth[c] += [(a, 1), (b, -1)]
-    span, cov2 = 0, collections.defaultdict(list)
-    for c, ev in depth.items():
-        run, last = 0, None
-        for x, dv in sorted(ev):
-            if last is not None and run >= 2 and x > last:
-                span += x - last
-                cov2[c].append((last, x))
-            run += dv
-            last = x
-    inside = lambda e: any(a <= e[1] < b for a, b in cov2.get(e[0], ()))  # noqa: E731
-    k = sum(1 for e, n in shared.items() if n >= 2 and inside(e))
-    return k / span if span else 1.0
-
-
 def allele_corrected(prim, alleles):
     """`de` less the donor's alleles, for every primary alignment ({read: dict(events, c, mapq)}), and the floor recomputed the
     same way (the median over MAPQ-60 primaries, as error_floor): an observed `de` is the copy's divergence + the read's errors +
@@ -736,7 +719,7 @@ def allele_corrected(prim, alleles):
 
 
 def primary_events(bam_p):
-    """--allele-discount, --haplotype-check: every primary alignment's read_events (+ MAPQ, aligned_blocks) and span."""
+    """--allele-discount: every primary alignment's read_events (+ MAPQ) and span."""
     import pysam
     prim, spans = {}, {}
     with pysam.AlignmentFile(bam_p) as bam:
@@ -744,8 +727,7 @@ def primary_events(bam_p):
             if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.cigartuples or not rec.query_sequence:
                 continue
             ev, c = read_events(rec.reference_name, rec.reference_start, rec.cigartuples, rec.query_sequence)
-            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality,
-                                        blocks=aligned_blocks(rec.reference_name, rec.reference_start, rec.cigartuples))
+            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality)
             spans[rec.query_name] = (rec.reference_name, rec.reference_start, rec.reference_end)
     return prim, spans
 
@@ -863,6 +845,7 @@ def main(argv):
     pool_table = argv[argv.index("--pool-table") + 1] if "--pool-table" in argv else "o2.integ.m2.tsv"
     o2i_unexpl = unexplained(pool_table)               # I (round 7): what O2 on O1's RNA-seeded catalog cannot explain;
     mosaic_shared = "--mosaic-shared" in argv          # --pool-table (round 13 review I3): the genome step's table instead
+    hap_check = "--haplotype-check" in argv            # arm I: a call its explained carriers put within delta of a copy
     by_host = collections.defaultdict(list)
     if o1h:
         fam, by_host = o1_hosts(w, genome)
@@ -949,6 +932,7 @@ def main(argv):
                         st, div = status_of(members, cons, sites_k, ref, m_iso, cov_k, vec_k, mosaic=True)
                         if st in ("unexplained", "mosaic") and div > DELTA:
                             calls.append(["Kp", f, "psv", host, k, sorted(members), div])
+            expl_cov = None
             if len(pool_i) >= PC.MIN_SUPPORT:                 # I: as H, on what the integrated O1 -> O2 leaves unexplained
                 cov_i = PC.align("host", ref, {n: reads[n] for n in pool_i}, tmp)
                 if mapped_sites:
@@ -961,6 +945,15 @@ def main(argv):
                         if st in ("unexplained", "mosaic") and div > DELTA:
                             mem = (attribute(members, cons, sites_i, ref, isomaps(), cov_i,
                                              delta=DELTA if attribution_delta else None) if attribution else members)
+                            if len(mem) >= PC.MIN_SUPPORT and hap_check:
+                                if expl_cov is None:                  # once per host: the family's explained reads
+                                    expl = [n for n in sorted({n for (ff, _), v in by_host.items() if ff == f for n in v})
+                                            if n in reads and (n, f) not in (o2i_unexpl or set())]
+                                    expl_cov = PC.align("host", ref, {n: reads[n] for n in expl}, tmp) if expl else {}
+                                car = alt_carriers(cons, sites_i, expl_cov)
+                                d = extended_distance(mem, car, {**cov_i, **expl_cov}, isomaps())
+                                if d is not None and d <= DELTA:
+                                    continue                          # a present (or within-delta) copy's haplotype
                             if len(mem) >= PC.MIN_SUPPORT:
                                 calls.append(["Ip", f, "psv", host, k, sorted(mem), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
@@ -993,10 +986,6 @@ def main(argv):
     rows_out = []
     member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
     floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
-    hap_check = "--haplotype-check" in argv                   # arm I: a call whose haplotype stays within delta is dropped
-    if hap_check:
-        hp, _ = primary_events(f"{w}/E0.bam")
-        hap_ev, hap_bl = {q: v["events"] for q, v in hp.items()}, {q: v["blocks"] for q, v in hp.items()}
     if "--allele-discount" in argv:                          # round 13: the donor's alleles, carried by other reads too
         prim, spans = primary_events(f"{w}/E0.bam")
         events, pop = {q: v["events"] for q, v in prim.items()}, o2_assigned(w) - want
@@ -1016,8 +1005,6 @@ def main(argv):
                 mm = member_filter(kind, m, dict(zip(m, des)), dict(zip(m, nov)), floor)
                 if len(mm) < PC.MIN_SUPPORT:
                     continue
-            if hap_check and a == "I" and kind == "psv" and haplotype_divergence(mm, hap_ev, hap_bl) <= DELTA:
-                continue                                      # the haplotype of a present (or within-delta) copy
             rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(mm), est_div=round(div, 5),
                                  genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(mm)))
     if only_i:
