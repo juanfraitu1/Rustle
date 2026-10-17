@@ -459,3 +459,58 @@ that O2's union never gave to the true copy:
   - **O3's graph:** building is cached (section 10). The remaining O3 time is GraphAligner on the hosted reads (about a
     third) and the per-host pool alignments.
 - **Round 10 pre-registers v3** on an eleventh set: `docs/PREREG_o3_graph_round10_2026-10-16.md`.
+
+## 12. After round 10: v4 (2026-10-16, evening)
+
+Round 10 (`docs/PREREG_o3_graph_round10_2026-10-16.md`, register 1308) failed. Its independent review corrected the first
+failure's mechanism. Development since then uses round 10's worlds, now spent, plus sets 8-10, all with the v2 profiles; that
+is nine set x profile runs including round 10's untrimmed-library run.
+
+**1. Attribution no longer keeps a read that no catalogued copy competes for** (88c445d9). Round 10's false TAF11L call came
+from the host window:
+- TAF11L.44's +-2 kb window holds 225 bp of TAF11L.43, and TAF11L.33 reads aligned to that fragment;
+- no copy's map covers it, so attribution kept them by default.
+
+038890fd (`--member-attribution-delta`) was built on the wrong mechanism and is not used.
+
+**2. Copies within delta of each other are undecidable** (`--twins`; c3113f61, 7b8092d1):
+- O1 marks a new copy within delta of a kept curated copy as its twin (genomic spans, asm20 `de`). O2 then lets the twin
+  take a read only by the margin.
+- O1 keeps a curated copy that its support rule would drop when it lies within delta of a kept one. Round 10's PRR20.1 had
+  all its reads tied, a MAPQ-0 tie-break dropped it, and its reads went to the twin as errors.
+
+**3. Delta is error-free, reads are not** (`--error-floor`; f2789fdd, 2afdbc3d).
+- Delta (0.00958) is the p99 exonic divergence between KB3781's haplotype assemblies (register 1199).
+- Every read-level comparison with it compared an error-inclusive `de`. The world's sequencing-error floor is now subtracted
+  first, as the median `de` of its MAPQ-60 primaries (round 10: A119b 0.0027-0.0031, public 0.0015-0.0018). It applies to:
+  - O2's `unexplained` gate (paths and genome fallback): explained up to (delta + floor) x read length;
+  - O3's genome check, call-level and per member;
+  - the scorer's per-read detectability: a REMOVED read is detectable when its `de` minus the floor exceeds delta, for both
+    systems.
+- It removes both remaining failure mechanisms:
+  - set 10's short reads whose sequencing edits exceeded delta's share of their length;
+  - array clusters whose members' `de` (0.0103-0.0118) is sequencing noise above a near-identical copy.
+
+**4. O1-hosted O3 (`--o1-hosts`, f45e0fe5) is measured and not adopted.** It removes the integrated pipeline's last use of
+copy_assign's run, but loses REMOVED and BRANCH recall in set 9's arrays (REMOVED -5 and -20, BRANCH -55 and -53). It
+passed 6 of the 9 runs.
+
+**v4 = v3 + 1 + 2 + 3, against the current method.** Correct / errors, floor-corrected per-read scoring:
+
+| world | r10 A119b | r10 public | set 8 A119b | set 8 public | set 9 A119b | set 9 public | set 10 A119b | set 10 public |
+|---|---|---|---|---|---|---|---|---|
+| INTACT | 737/0 vs 645/0 | 654/0 vs 576/0 | 2,221/0 vs 2,167/0 | 2,254/0 vs 2,153/1 | 944/0 vs 907/0 | 876/0 vs 828/0 | 1,146/0 vs 1,138/2 | 1,059/0 vs 1,051/2 |
+| CROSS | 779/0 vs 689/0 | 694/0 vs 616/0 | 2,742/1 vs 2,551/8 | 2,792/1 vs 2,558/9 | 1,037/0 vs 1,001/0 | 966/0 vs 917/0 | 1,265/1 vs 1,248/3 | 1,161/0 vs 1,146/3 |
+| OUTSIDE | 982/83 vs 828/142 | 919/72 vs 802/115 | 2,264/82 vs 1,979/150 | 2,276/77 vs 2,000/120 | 777/43 vs 674/152 | 690/34 vs 605/123 | 1,105/8 vs 863/169 | 1,030/5 vs 789/167 |
+| REMOVED | 969/0 vs 879/2 | 919/0 vs 843/3 | 2,126/0 vs 2,059/7 | 2,159/0 vs 2,072/4 | 802/0 vs 782/0 | 710/0 vs 698/0 | 1,032/1 vs 1,031/4 | 1,018/0 vs 963/4 |
+| BRANCH | 1,043/59 vs 682/154 | 946/49 vs 576/139 | 2,536/110 vs 2,203/137 | 2,513/168 vs 2,176/191 | 1,205/36 vs 907/60 | 1,083/31 vs 828/46 | 1,329/74 vs 1,138/225 | 1,194/84 vs 1,051/200 |
+| SILENT | 476/0 vs 464/0 | 439/0 vs 424/0 | 1,929/0 vs 1,860/0 | 2,023/0 vs 1,909/1 | 676/0 vs 644/0 | 629/0 vs 587/0 | 700/0 vs 689/2 | 609/0 vs 602/2 |
+
+- **Floor-corrected scoring: PASS in all 9 runs,** including the untrimmed-library one (not tabulated).
+- **Round 10's scoring: PASS in 5.** The 4 failures are all REMOVED B2: the wider gate places reads whose `de` lies
+  between delta and delta + floor, which that rule counts as errors.
+  - set 8 public 9 vs 7;
+  - set 9 A119b 1 vs 0;
+  - set 10 A119b 33 vs 10;
+  - set 10 public 13 vs 4.
+- Runs: `/mnt/linuxdisk/tmp/o3_graph/fast/r11dev6/` (`bars_floor.txt`, `bars_r10rule.txt`), from r11dev3's O1 output.
