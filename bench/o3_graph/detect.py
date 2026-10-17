@@ -742,6 +742,18 @@ def member_genome(members, gst, read_len):
     return de, nov
 
 
+_TIMES = collections.defaultdict(float)                   # O3_TIMING=1: seconds per phase (with O3_PROCS=1)
+
+
+def _timed(name, fn, *args, **kw):
+    import time
+    t0 = time.time()
+    try:
+        return fn(*args, **kw)
+    finally:
+        _TIMES[name] += time.time() - t0
+
+
 _ONE_FAMILY = None
 
 
@@ -850,7 +862,7 @@ def main(argv):
     hap_check = "--haplotype-check" in argv            # arm I: a call its explained carriers put within delta of a copy
     by_host = collections.defaultdict(list)
     if o1h:
-        fam, by_host = o1_hosts(w, genome)
+        fam, by_host = _timed("o1_hosts", o1_hosts, w, genome)
     else:
         for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
             if r["catalog_copy_idx"].isdigit():
@@ -859,6 +871,21 @@ def main(argv):
     os.makedirs(out_dir, exist_ok=True)
     tmp = f"{out_dir}/tmp"
     calls = []                                     # (arm, family, kind, host, cluster, members, est_div)
+
+    pre_gst = pre_floor = None                     # --haplotype-check runs only on calls the genome check would keep
+    if hap_check and "--allele-discount" not in argv:  # (the two are filters: the order leaves arm I unchanged)
+        pre_gst = genome_stats(f"{w}/E0.bam", {n for n, _ in (o2i_unexpl or set())})
+        pre_floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
+
+    def genome_survives(m):
+        if pre_gst is None:
+            return True
+        des, nov = member_genome(m, pre_gst, {x: len(reads[x]) for x in m})
+        if not genome_keeps("psv", statistics.median(des), statistics.median(nov), pre_floor):
+            return False
+        if "--member-genome-check" in argv:
+            m = member_filter("psv", m, dict(zip(m, des)), dict(zip(m, nov)), pre_floor)
+        return len(m) >= PC.MIN_SUPPORT
 
     def one_family(f):                             # families are independent: O3_PROCS of them at a time, in family order
         calls = []
@@ -887,7 +914,7 @@ def main(argv):
                 if not iso_cache:
                     iso_seqs = {f"copy{c['idx']}|{k}": "".join(g2[a:b] for a, b in ex) for c in cps
                                 for g2 in [genome[c["contig"]]] for k, ex in c["isoforms"].items()}
-                    m_iso_each = PC.align("host", ref, iso_seqs, tmp)
+                    m_iso_each = _timed("isomaps_align", PC.align, "host", ref, iso_seqs, tmp)
                     iso_cache.update({f"copy{c['idx']}": union_map([m for k, m in m_iso_each.items()
                                                                      if k.startswith(f"copy{c['idx']}|")]) for c in cps})
                 return iso_cache
@@ -936,22 +963,23 @@ def main(argv):
                             calls.append(["Kp", f, "psv", host, k, sorted(members), div])
             expl_cov = None
             if len(pool_i) >= PC.MIN_SUPPORT:                 # I: as H, on what the integrated O1 -> O2 leaves unexplained
-                cov_i = PC.align("host", ref, {n: reads[n] for n in pool_i}, tmp)
+                cov_i = _timed("pool_align", PC.align, "host", ref, {n: reads[n] for n in pool_i}, tmp)
                 if mapped_sites:
                     cov_i = mapped_cov(cov_i, isomaps())
                 if len(cov_i) >= PC.MIN_SUPPORT:
-                    sites_i, clusters_i, vec_i = PC.cluster_host(ref, cov_i)
+                    sites_i, clusters_i, vec_i = _timed("cluster_host", PC.cluster_host, ref, cov_i)
                     for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):
-                        st, div = status_of(members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True,
-                                            shared=mosaic_shared)
+                        st, div = _timed("status", status_of, members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True,
+                                         shared=mosaic_shared)
                         if st in ("unexplained", "mosaic") and div > DELTA:
-                            mem = (attribute(members, cons, sites_i, ref, isomaps(), cov_i,
-                                             delta=DELTA if attribution_delta else None) if attribution else members)
-                            if len(mem) >= PC.MIN_SUPPORT and hap_check:
+                            mem = (_timed("attribute", attribute, members, cons, sites_i, ref, isomaps(), cov_i,
+                                          delta=DELTA if attribution_delta else None) if attribution else members)
+                            if len(mem) >= PC.MIN_SUPPORT and hap_check and genome_survives(mem):
                                 if expl_cov is None:                  # once per host: the family's explained reads
                                     expl = [n for n in sorted({n for (ff, _), v in by_host.items() if ff == f for n in v})
                                             if n in reads and (n, f) not in (o2i_unexpl or set())]
-                                    expl_cov = PC.align("host", ref, {n: reads[n] for n in expl}, tmp) if expl else {}
+                                    expl_cov = (_timed("hapcheck_align", PC.align, "host", ref, {n: reads[n] for n in expl}, tmp)
+                                                if expl else {})
                                 car = alt_carriers(cons, sites_i, expl_cov, isomaps())
                                 d = extended_distance(mem, car, {**cov_i, **expl_cov}, isomaps())
                                 if d is not None and d <= DELTA:
@@ -962,15 +990,16 @@ def main(argv):
         if branch_novel:
             names = branch_candidates(names, gst_branch, reads)
         if names and (not branch_novel or len(names) >= MIN_BRANCH):
-            gfa = family_graph(f"{out_dir}/{f}", genome, cps)
+            gfa = _timed("vg_graph", family_graph, f"{out_dir}/{f}", genome, cps)
             if gfa is None:
                 print(f"[o3_graph] {w}: no vg graph for {f} (vg msga failed in every order): no branch calls", flush=True)
                 return calls
-            br, _ = branch_calls(f"{out_dir}/{f}", gfa, names, reads)
+            br, _ = _timed("branch_calls", branch_calls, f"{out_dir}/{f}", gfa, names, reads)
             for k, m in enumerate(br):
                 calls.append(["S2", f, "branch", "-", k, m, 0.0])
         return calls
-    gst_branch = (genome_stats(f"{w}/E0.bam", {n for v in by_host.values() for n in v}) if branch_novel else {})
+    gst_branch = (_timed("genome_stats_branch", genome_stats, f"{w}/E0.bam", {n for v in by_host.values() for n in v})
+                  if branch_novel else {})
     global _ONE_FAMILY
     _ONE_FAMILY = one_family
     procs = int(os.environ.get("O3_PROCS", "1"))
@@ -984,7 +1013,7 @@ def main(argv):
             calls += one_family(f)
     calls = dedupe(calls)
     want = {m for c in calls for m in c[5]}
-    gst = genome_stats(f"{w}/E0.bam", want)
+    gst = _timed("genome_stats", genome_stats, f"{w}/E0.bam", want)
     rows_out = []
     member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
     floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
@@ -1011,6 +1040,9 @@ def main(argv):
                                  genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(mm)))
     if only_i:
         rows_out = [r for r in rows_out if r["arm"] in ("In", "I")]
+    if os.environ.get("O3_TIMING"):
+        print("[o3_graph] timing " + ", ".join(f"{k} {v:.1f} s" for k, v in sorted(_TIMES.items(), key=lambda kv: -kv[1])),
+              flush=True)
     with open(f"{out_dir}/calls.tsv", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["arm", "family", "kind", "host", "cluster", "n_reads", "est_div", "genome_median_de",
                                             "genome_median_novel", "members"], delimiter="\t", lineterminator="\n")
