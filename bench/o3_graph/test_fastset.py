@@ -50,7 +50,7 @@ def _opts(**kw):
                 mapped_sites=False, branch_genome_novel=False, allele_discount=False,
                 mosaic_shared=False, o3_pool="paths", haplotype_check=False,
                 haplotype_check_genome=False, branch_genome_segments=False,
-                branch_linear=False, aln_cache=False)
+                branch_linear=False, aln_cache=False, twin_abstain=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -167,3 +167,6 @@ def test_o3_checks_the_members_haplotype_on_their_own_loci_only_when_asked():
     assert "O2_ALN_CACHE=/R/.o2_aln_cache" in st["O2"] and "O3_ALN_CACHE=/R/.o3_aln_cache" in st["O3"]
     st0 = dict((k, c) for k, c, _ in F.chain_steps(_opts(), "/R", "INTACT"))
     assert "ALN_CACHE" not in st0["O2"] + st0["O3"]
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(twin_abstain=True, o2_genome="guard"), "/R", "INTACT"))
+    assert st["O2"].endswith("--twin-abstain") and "integt 2" in st["O2_genome"] and "--twin-abstain" in st["O2_genome"]
+    assert "--twin-abstain" not in st0["O2"]

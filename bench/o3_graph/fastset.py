@@ -161,10 +161,12 @@ def chain_steps(a, root, w):
              ("O2", f"env O2_PROCS={a.o2_procs} O2_THREADS={a.threads}"
                     + (f" O2_ALN_CACHE={root}/.o2_aln_cache" if a.aln_cache else "")
                     + f" python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
-                    + (" --union-exact" if a.union_exact else "") + (" --error-floor" if a.error_floor else ""), "light")]
+                    + (" --union-exact" if a.union_exact else "") + (" --error-floor" if a.error_floor else "")
+                    + (" --twin-abstain" if a.twin_abstain else ""), "light")]
     if a.o2_genome != "off":
         steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2"
-                      + (" --error-floor" if a.error_floor else ""), "light"))
+                      + (" --error-floor" if a.error_floor else "") + (" --twin-abstain" if a.twin_abstain else ""),
+                      "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
                   + f" python3 bench/o3_graph/detect.py {W}"
@@ -280,6 +282,8 @@ def main(argv=None):
                    "substitutions, over every read carrying them -- stays within delta (detect.py --haplotype-check)")
     p.add_argument("--haplotype-check-genome", action="store_true", help="arm I also drops a PSV call whose members' haplotype, "
                    "in genome coordinates (their own primaries), stays within delta (detect.py --haplotype-check-genome)")
+    p.add_argument("--twin-abstain", action="store_true",
+                   help="O2: a read neither of two twins beats by the margin is abstained (o2graph.py --twin-abstain)")
     p.add_argument("--aln-cache", action="store_true",
                    help="exact alignment caches shared by the set's worlds: O2's path alignments per read sequence "
                    "(O2_ALN_CACHE) and O3's isoform-to-host alignments (O3_ALN_CACHE); outputs identical")
