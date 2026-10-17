@@ -171,3 +171,72 @@ Every development run below was simulated fresh with the v2 profiles and the new
 - An independent review by a fresh subagent, given read-only copies.
 - Register row 1308.
 - Results appended below a line, without editing anything above it.
+
+---
+
+# Results (2026-10-16; run with the code of 58bca61d, started 19:30)
+
+## Verdict: FAIL under both profiles. Not claimed.
+
+Bars from `fastset.py`'s `e2e.json` (per-read detectability, on `o2.integl.m2.tsv`):
+
+| world | A119b: correct (current / integrated) | errors | B1, B2 | public: correct | errors | B1, B2 |
+|---|---|---|---|---|---|---|
+| INTACT | 645 / 736 | 0 / **8** | yes, **no** | 576 / 654 | 0 / 0 | yes, yes |
+| CROSS | 689 / 778 | 0 / **8** | yes, **no** | 616 / 694 | 0 / 0 | yes, yes |
+| OUTSIDE | 828 / 830 | 142 / 61 | yes, yes | 802 / **751** | 115 / 57 | **no**, yes |
+| REMOVED | 879 / 959 | 8 / 8 | yes, yes | 843 / 919 | 6 / 0 | yes, yes |
+| BRANCH | 682 / 1,043 | 154 / 65 | yes, yes | 576 / 946 | 139 / 48 | yes, yes |
+| SILENT | 464 / 475 | 0 / **8** | yes, **no** | 424 / 439 | 0 / 0 | yes, yes |
+
+B1 holds in 11 of 12 worlds, by +2 to +370 correct reads. The integrated pipeline makes fewer errors in OUTSIDE, BRANCH
+and REMOVED. Copy-level scoring (`e2e_copylevel.json`) gives the same verdict; there it also fails REMOVED's B2 (A119b 9 vs
+0, public 2 vs 1).
+
+**The two failures, each one mechanism, found post hoc:**
+1. **A119b, B2 in INTACT, CROSS and SILENT: one false O3 call, in TAF11L, the 45-copy array.**
+   - Arm I calls 8 reads of TAF11L.33, a present copy, an absent copy, on host 44 (est_div 0.012-0.016, members' median
+     genome `de` 0.0103).
+   - The same call recurs in BRANCH, where it costs nothing.
+   - **Cause:** the family's unexplained pool (281 reads from about 40 copies) clusters on one host into a few large mixed
+     clusters. Their consensus carries several copies' private alleles, so it is `unexplained` beyond delta.
+   - Member attribution then keeps the TAF11L.33 reads whose own alleles match that consensus at >= 2 positions where
+     TAF11L.33's catalogued sequence differs.
+   - Development's arrays (set 9's USP17L and TSPY) did not produce such a call.
+2. **public, B1 in OUTSIDE (-51): O1's new copy within delta of a catalogued one.**
+   - O1 seeds the uncatalogued FAM236.1 correctly, and the integrated pipeline gets 40 reads of uncatalogued copies right.
+   - FAM236.1 differs from FAM236.0 by about 0.2% (the pre-check's 0.0022), so 166 catalogued FAM236 reads become `thin` or
+     `tied` between the two.
+   - The current method, which does not know FAM236.1, assigns those reads, and makes 114 errors on uncatalogued reads.
+
+**Reported beside the bars:**
+- **Arm I:**
+  - REMOVED: all 3 detectable removed copies called under both profiles (HNRNPCL.1, TAF11L.41, ZNF705.0);
+  - BRANCH: 5 of 5 novel-exon copies under both profiles;
+  - false calls: the TAF11L.33 call above (A119b: INTACT, CROSS, BRANCH, SILENT); none under the public profile.
+- **O1:** 5 silent copies dropped per SILENT world and no expressed copy; 3-4 new copies in OUTSIDE.
+- **Cost:**
+  - A119b 327 s for six worlds, including the one-time local reference build (44 s, 14.4 GB);
+  - public 273 s, peak 1.9 GB (copy_assign);
+  - per set: O3 170-185 s, current 131-144 s, O1 53-61 s, O2 33-40 s, the genome fallback 2-3 s.
+- **The untrimmed-library run:** below.
+
+**The untrimmed-library run** (secondary; the public profile with its Tn5/SMART adapters, `public_testis_v3.json`, trimmed by
+`--trim-adapters`, same seed and options): FAIL. Correct reads match the adapter-free public run (INTACT 656 vs 654, BRANCH
+947 vs 946), so trimming restores the reads; two known mechanisms add errors:
+- **INTACT, CROSS, SILENT, 2 errors each:** O1 dropped PRR20.1, an expressed copy all of whose reads tie, and O2 placed two of
+  its reads on PRR20.0.
+- **REMOVED, 17 errors:** a second mixed-cluster call in TAF11L (host 43, 25 members from present copies), round 10's
+  failure 1.
+- **OUTSIDE B1:** 753 vs 799, failure 2.
+- Its O3 step ran while `detect.py` gained the opt-in `--member-attribution-delta`. The run did not pass it, so arm I behaved as
+  at 58bca61d.
+
+## Reading
+
+**The pre-registered claim fails under both profiles. No partial claim is made.** Set beside round 9, on held-out families:
+- **The catalogued-read loss under realistic reads is gone.** B1 holds in INTACT, CROSS and SILENT under both profiles, by +11 to
+  +91 reads; round 9 lost 1-3.5% there.
+- **The remaining errors are O3 calls in a 45-copy near-identical array** (A119b), and one O1 new copy within delta of a
+  catalogued copy that makes that copy's reads ambiguous (public OUTSIDE).
+- Neither mechanism occurred on the development sets.
