@@ -237,3 +237,65 @@ The public profile has the same shape (`public/e2e.json`). The integrated pipeli
   - **the current method:** 55-64 s.
 - **The untrimmed-library run** (public v3 adapters, trimmed): PASS in all 6 worlds (INTACT 1,804 / 1,983, errors 133 / 0;
   REMOVED 1,629 / 1,927, errors 164 / 1), 155 s.
+
+## Independent review (2026-10-16, 21:08-22:10) and corrections
+
+Fresh subagent; full report `/mnt/linuxdisk/tmp/o3_graph/review11/REVIEW.md`.
+
+**The PASS holds.**
+- The reviewer's own scorer reproduces `e2e.json`, `e2e_r10rule.json`, `e2e_copylevel.json`, the untrimmed run and the
+  histone-free rescoring, cell for cell.
+- **The variants also pass:** round 10's rule, copy level, O3 judged only in the read's own family, and without H2AC/H2BC.
+- **The protocol is clean:**
+  - the commit precedes every world;
+  - none of 3,447 earlier truth files holds a read of these families;
+  - the commands are the pre-registered ones;
+  - no code changed until after the runs.
+- **No leak.** O1, O2 and O3 read no truth file, and the error floor comes from the BAM.
+- **Byte-identical reproduction from fe73bc8c:** O1, O2 and the fallback in 18 of 18 worlds; the current method in 7 of 7.
+
+**Corrections and qualifications:**
+1. **O3 with `--o3-procs 2` is not deterministic (Important).**
+   - `detect.py` opens one FASTA handle before forking the family workers, which then share its file offset. A direct test
+     returned about 100 wrong slices in 3,000 fetches.
+   - A119b REMOVED's published arm-I output was not reproduced in 20 reruns. Integrated REMOVED correct varies 1,844-1,846
+     (A119b) and 1,926-1,928 (public); errors never change, and no variant holds a present-copy read.
+   - The verdict is unaffected, but the pre-registration's "byte-identical" is false for O3. The development claim of
+     4efa6d33 missed the race. **Fixed before round 12** (one handle per process, as O2 already had).
+2. **Arm I's REMOVED calls were misreported (Important).**
+   - **The "branch call for H3C's removed copy" holds H2BC.2's reads.** H3C.1, identical to H3C.2, is never called, which is
+     right.
+   - **An H2AC-family branch call also holds H2BC.2's reads.** Those reads are also in H2BC-family calls, so the read-level
+     bars do not move. At family level these are false calls.
+3. **The histone account (Important).**
+   - **All, not most,** of the current method's INTACT, CROSS and SILENT errors are its O3 calls: 96-100% in the histone
+     clusters, the rest KRTAP10.
+   - **The 8 calls hold 186 distinct reads, not 229 slots.**
+   - **The mechanism** is round 10's host-window artefact, in the current method. Other-family reads enter a host's pool
+     through MAPQ-0 secondaries over the window, and align there to UNCATALOGUED histone genes that no catalogued copy's map
+     covers. The families hold 4 of 16 H2AC, 6 of 17 H2BC and 3 of 13 H3C genes.
+   - **H3C is hit too.** Without H2AC, H2BC and H3C, the primary scoring and round 10's rule still pass. Copy level fails
+     public REMOVED B2 (3 vs 7) and the untrimmed run's (3 vs 8): CXADRP.1 reads placed by the wider delta + floor gate. So the
+     commit message and the overview's "holds without the histone clusters" are overstated; "without H2AC and H2BC" is
+     accurate.
+4. **The margins are the current method's O3 artefact, not an O2 gain (Important).**
+   - With O3 removed from both systems (context only, not pre-registered), A119b is INTACT +3, CROSS +5, SILENT +3, REMOVED -5
+     (errors 40 vs 0), and public +50, +52, +16, +32.
+   - Under A119b the integrated O1 -> O2 is at parity with copy_assign's O2. The margins above that come from O3.
+5. **The integrated pipeline's zero errors there rest on one filter (Important).** Before the genome check, arm I forms 12
+   calls on present reads per INTACT world (the same histone cross-family clusters, and KRTAP10). Attribution removes none.
+   The call-level genome check removes them all: median `de` at most 0.0073 against 0.0126 / 0.0113, a margin of about 0.005.
+6. **OR2T's BRANCH miss is a pipeline failure (Important).** `vg msga` failed in every order for OR2T in every world that
+   catalogues its three copies, so the branch arm was off for it.
+7. **Minor points:**
+   - **BRANCH errors:** in A119b, 117 of 118 lack the novel exon and 1 carries it.
+   - **O1 seeds 4 of the 8 uncatalogued copies.** A single-exon uncatalogued copy can never be seeded (`observed_chains`
+     skips unspliced reads): FOXD4L.0 and H2AC.0. H3C.1's reads, identical to H3C.2's, are all of the integrated OUTSIDE errors.
+   - **Cost:** v4's arm I takes its read hosts from copy_assign's run, so the integrated pipeline costs about 145-154 s per
+     set including that run, against 55-64 s for the current method.
+   - **The fates table** covered only part of the worlds (full tables in the review).
+   - **The scorer counts an O3 call in any family;** the verdict holds when O3 is judged only in the read's own family.
+   - **Under the primary scoring, the REMOVED bar is close to tautological for the integrated pipeline:** its gate, its
+     per-member check and the scorer share one threshold. The informative views are round 10's rule and copy level, and both
+     pass.
+   - **The local reference** is still unvalidated for v2 reads.
