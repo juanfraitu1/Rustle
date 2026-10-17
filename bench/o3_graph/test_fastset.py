@@ -129,3 +129,9 @@ def test_the_branch_arm_filters_by_genome_novelty_only_when_asked():
 def test_o3_discounts_the_donor_s_alleles_only_when_asked():
     assert "--allele-discount" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--allele-discount --arms I" in F.chain_steps(_opts(allele_discount=True), "/R", "INTACT")[-1][1]
+
+
+def test_the_veto_genome_step_writes_and_scores_its_own_table():
+    steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(o2_genome="veto", error_floor=True), "/R", "INTACT"))
+    assert steps["O2_genome"].endswith("integv 2 --error-floor")
+    assert "--o2 o2.integv.m2.tsv" in F.e2e_command(_opts(o2_genome="veto"), "/R", ["A"])

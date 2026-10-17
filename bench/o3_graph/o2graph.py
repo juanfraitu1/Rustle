@@ -543,6 +543,20 @@ def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
     return (c, "locus") if c is not None else (None, f"locus_{reason}")
 
 
+def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
+    """mode veto (round 12 review C1): a path call stands unless the read's own genome alignments put it elsewhere by the
+    margin -- another seeded copy, or a locus off them (ELSEWHERE), at least `margin` closer than the called copy's locus (no
+    alignment there: infinitely far) and within max_div. The genome then decides (locus_decide). A retained intron a paralog's
+    path absorbs as one gap-compressed insertion is contiguous on the own locus; DNA-identical copies tie on the genome, and
+    their paths' structure keeps deciding them. -> (call, "veto_<reason>") or None."""
+    own = gdist.get(int(call), 1 << 30)
+    rivals = [g for i, g in gdist.items() if i != int(call) and g + margin <= own]
+    if not rivals or min(rivals) > max_div * qlen:
+        return None
+    c, why = locus_decide(gdist, qlen, margin, twins=twins, max_div=max_div)
+    return ("-" if c is None else str(c)), f"veto_{why}"
+
+
 def path_dists(dist):
     """run_paths' {read: {"copyN": distance}} -> {read: {"N": distance}}, as graph/o2paths*/<family>.dist.json holds it."""
     return {q: {c[4:]: v for c, v in cs.items()} for q, cs in dist.items()}
@@ -582,7 +596,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     (no ELSEWHERE: an array's uncatalogued identical units would tie every read), the unexplained ones as in "unexplained".
     mode "resolve" -> o2.integr.m<margin>.tsv: O2's assignments stand; its unexplained reads as in "unexplained", and its
     tied / thin ones decided on min(path, genome) with ELSEWHERE (`genome_assigned` when a seeded copy wins by the margin).
-    O3 still reads o2.integ.m<margin>.tsv, so neither mode changes O3's evidence; an O3 call on a read takes precedence over its
+    mode "veto" -> o2.integv.m<margin>.tsv: as "unexplained", and an assigned read's path call is rechecked on its genome
+    alignments (veto_decide). O3 still reads o2.integ.m<margin>.tsv, so no mode changes O3's evidence; an O3 call on a read takes precedence over its
     placement (summary.read_fate)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.integ.m{margin}.tsv"), delimiter="\t"))
     explained_in = collections.defaultdict(set)
@@ -596,10 +611,10 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     for r in rows:
         unexplained = r["reason"] == "unexplained"
         if (unexplained and not explained_in[r["read"]] - {r["family"]} or mode in ("all", "seeded") and not unexplained
-                or mode == "resolve" and r["reason"] in ("tied", "thin")):
+                or mode == "resolve" and r["reason"] in ("tied", "thin") or mode == "veto" and r["reason"] == "assigned"):
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
-    if mode != "unexplained":
+    if mode not in ("unexplained", "veto"):
         lens = {n: len(x) for n, x in _read_fq(f"{w}/reads.E0.fq").items()}
         pd = {}
         for f in {r["family"] for r in rows}:
@@ -627,11 +642,14 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             c, why = decide(comb, lens[q], margin, max_div=gate(floor), twins=twins.get(f))
             if c is not None and c != ELSEWHERE:
                 call, reason = str(c), "genome_assigned"
+        elif mode == "veto" and reason == "assigned":
+            v = veto_decide(call, dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
+            call, reason = v if v else (call, reason)
         elif reason == "unexplained":
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
-    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r')[mode]}.m{margin}.tsv"
+    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r', veto='v')[mode]}.m{margin}.tsv"
     with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
         wr.writeheader()
@@ -840,9 +858,9 @@ def main(argv):
             return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip",
                                   *((UNION_EXACT_MICRO, 0) if "--union-exact" in argv else (0, None)),
                                   floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
-        if method in ("integl", "integc", "integs", "integr"):   # integ + the read's genome alignments; needs o2.integ first
+        if method in ("integl", "integc", "integs", "integr", "integv"):   # integ + the genome alignments; needs o2.integ first
             return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded",
-                                                                 integr="resolve")[method],
+                                                                 integr="resolve", integv="veto")[method],
                                       floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)

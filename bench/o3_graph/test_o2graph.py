@@ -415,3 +415,36 @@ def test_structural_gap_compression_counts_a_long_indel_at_its_length():
     assert O._gc_core(f, struct=True) == 3 + 142 + 1             # the 142-bp insertion at its length, the 1-bp one compressed
     g = ["r", "500", "0", "500", "+", "t", "500", "0", "514", "485", "500", "60", "NM:i:16", "cg:Z:306M15I141M"]
     assert O._gc_core(g) == O._gc_core(g, struct=True) == 1 + 1  # a 15-bp repeat-unit indel stays one event
+
+
+def test_the_genome_vetoes_a_path_call_its_own_alignments_contradict_by_the_margin():
+    # round 12 review C1: CDRT15.0 reads with a retained intron -- a paralog's path absorbs the intron as one gap-compressed
+    # insertion while the own paths clip it; the genome puts them on CDRT15.0 (MAPQ 53-60, NM 0-4)
+    assert O.veto_decide("1", {0: 0, 1: 5}, qlen=400) == ("0", "veto_locus")
+    assert O.veto_decide("1", {0: 0}, qlen=400) == ("0", "veto_locus")              # no alignment at the called copy at all
+    assert O.veto_decide("1", {0: 0, 1: 0}, qlen=400) is None                     # DNA-identical: the paths' structure decides
+    assert O.veto_decide("1", {0: 0, 1: 1}, qlen=400) is None                     # under the margin
+    assert O.veto_decide("1", {0: 20}, qlen=400) is None                          # the genome explains it nowhere better
+    assert O.veto_decide("1", {O.ELSEWHERE: 0, 1: 6}, qlen=400) == ("-", "veto_unexplained")   # an unseeded locus holds it
+    assert O.veto_decide("1", {0: 0, 2: 0, 1: 6}, qlen=400) == ("-", "veto_locus_tied")
+
+
+def test_the_veto_mode_rechecks_assigned_reads_and_places_unexplained_ones_as_the_fallback(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1", "r2", "r3"])},
+              open(w / "graph" / "seeded.json", "w"))
+    rows = [("r1", "F", "1", "assigned"), ("r2", "F", "0", "assigned"), ("r3", "F", "-", "unexplained")]
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\n" + "".join("\t".join(r) + "\n" for r in rows))
+    _bam(str(w / "E0.bam"), [
+        ("r1", 0, "chrA", 2000, "1000="), ("r1", 256, "chrB", 2000, "500=5X495="),       # path says 1, genome says 0 by 5
+        ("r2", 0, "chrA", 2000, "1000="), ("r2", 256, "chrB", 2000, "1000="),             # genome tie: the path call stands
+        ("r3", 0, "chrB", 2000, "500=1X499="), ("r3", 256, "chrA", 2000, "500=4X496=")])  # the fallback, as integl
+    assert O.run_locus_fallback(str(w), mode="veto") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "veto_locus"), "r2": ("0", "assigned"), "r3": ("1", "locus")}

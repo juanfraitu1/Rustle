@@ -31,7 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 WORLDS = ("INTACT", "CROSS", "OUTSIDE", "REMOVED", "BRANCH", "SILENT")
 CUR_BIN = "/mnt/linuxdisk/tmp/o3_fb_build/copy_assign.fb"
-GENOME_STEP = {"fallback": "integl", "combined": "integc", "seeded": "integs", "resolve": "integr"}   # --o2-genome
+GENOME_STEP = {"fallback": "integl", "combined": "integc", "seeded": "integs", "resolve": "integr",   # --o2-genome
+               "veto": "integv"}
 
 
 def _load(name):
