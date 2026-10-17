@@ -599,3 +599,10 @@ def test_fusion_carriers_are_the_reads_whose_primary_splices_a_supported_junctio
     pysam.index(str(tmp_path / "E0.bam"))
     fus = {("c1", 1250, 2200): "fusion_gene"}
     assert D.fusion_carriers(str(tmp_path / "E0.bam"), {"a", "b", "c", "d"}, fus) == {"a": "fusion_gene"}
+
+
+def test_a_junction_of_a_fusion_gene_stays_one_whatever_the_row_order(tmp_path):
+    # review M2: a later readthrough row sharing the junction does not demote it
+    p = tmp_path / "x.fusions.tsv"
+    p.write_text(FUSIONS_TSV + "R2\tH.fus2\tc1\t+\tc1:1251-2200:+\treadthrough\t5\t0\tFalse\tGT-AG\t77\tFalse\tH,H.rg2\n")
+    assert D.read_fusions(str(p))[("c1", 1250, 2200)] == "fusion_gene"

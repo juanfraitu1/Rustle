@@ -795,7 +795,8 @@ def read_fusions(path):
             for j in r["junctions"].split(","):
                 c, se, _ = j.rsplit(":", 2)
                 s, e = se.split("-")
-                out[(c, int(s) - 1, int(e))] = r["class"]
+                if out.get((c, int(s) - 1, int(e))) != "fusion_gene":       # a fusion gene's junction stays one
+                    out[(c, int(s) - 1, int(e))] = r["class"]
     return out
 
 
@@ -811,16 +812,24 @@ def read_junctions(contig, start, cigar):
 
 
 def fusion_carriers(bam_p, want, fusions):
-    """{read: class} for the wanted reads whose PRIMARY alignment splices a supported fusion junction (fusion_gene first)."""
+    """{read: class} for the wanted reads whose PRIMARY alignment splices a supported fusion junction (fusion_gene first);
+    only the alignments over each junction's donor are read (review M6)."""
     import pysam
     out = {}
     with pysam.AlignmentFile(bam_p) as bam:
-        for rec in bam.fetch(until_eof=True):
-            if rec.query_name not in want or rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.cigartuples:
+        refs = set(bam.references)
+        for c, s, _ in sorted({(c, s, e) for c, s, e in fusions}):
+            if c not in refs:
                 continue
-            hit = {fusions[j] for j in read_junctions(rec.reference_name, rec.reference_start, rec.cigartuples) if j in fusions}
-            if hit:
-                out[rec.query_name] = "fusion_gene" if "fusion_gene" in hit else "readthrough"
+            for rec in bam.fetch(c, max(0, s - 1), s):
+                if (rec.query_name not in want or rec.is_unmapped or rec.is_secondary or rec.is_supplementary
+                        or not rec.cigartuples):
+                    continue
+                hit = {fusions[j] for j in read_junctions(rec.reference_name, rec.reference_start, rec.cigartuples)
+                       if j in fusions}
+                if hit:
+                    out[rec.query_name] = ("fusion_gene" if "fusion_gene" in hit or out.get(rec.query_name) == "fusion_gene"
+                                           else "readthrough")
     return out
 
 
@@ -960,6 +969,7 @@ def main(argv):
     o2i_unexpl = unexplained(pool_table)               # I (round 7): what O2 on O1's RNA-seeded catalog cannot explain;
     mosaic_shared = "--mosaic-shared" in argv          # --pool-table (round 13 review I3): the genome step's table instead
     hap_check = "--haplotype-check" in argv            # arm I: a call its explained carriers put within delta of a copy
+    fusions = read_fusions(argv[argv.index("--fusions") + 1]) if "--fusions" in argv else None   # read first (review M6)
     by_host = collections.defaultdict(list)
     if o1h:
         fam, by_host = _timed("o1_hosts", o1_hosts, w, genome)
@@ -1151,8 +1161,7 @@ def main(argv):
               flush=True)
     fields = ["arm", "family", "kind", "host", "cluster", "n_reads", "est_div", "genome_median_de", "genome_median_novel",
               "members"]
-    if "--fusions" in argv:                               # copy_assign's <out>.fusions.tsv: each call's fusion label (a column)
-        fusions = read_fusions(argv[argv.index("--fusions") + 1])
+    if fusions is not None:                               # copy_assign's <out>.fusions.tsv: each call's fusion label (a column)
         carriers = fusion_carriers(f"{w}/E0.bam", {x for r in rows_out for x in r["members"].split(",")}, fusions)
         for r in rows_out:
             r["fusion"] = fusion_label(r["members"].split(","), carriers)
