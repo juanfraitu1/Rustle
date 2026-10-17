@@ -148,7 +148,7 @@ worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
 |---|---|---|---|---|
 | 9 (r1307) | v2 | calibrated v1 profiles | FAIL | 1-3.5% fewer correct catalogued reads (O2 `unexplained` gate on realistic reads); O1 dropping expressed copies |
 | 10 (r1308) | v3 | calibrated v2 profiles | FAIL | one false O3 call (a host-window artefact in a 45-copy array); a new copy within delta of a catalogued one |
-| 11 (r1309) | v4 | calibrated v2 profiles | **PASS, 12/12 worlds** | also under round 10's scoring, at copy level, and without the histone clusters |
+| 11 (r1309) | v4 | calibrated v2 profiles | **PASS, 12/12 worlds** | also under round 10's scoring, at copy level, and without H2AC/H2BC. The review found the INTACT/CROSS/SILENT margins are the current method's O3 artefact; with O3 removed from both, O2 is at parity under A119b (+3 to +5) |
 
 **v4, end to end** (`fastset.py ... --o2-distance gapcomp --member-genome-check --member-attribution --union-exact
 --o2-genome fallback --per-read-detectability --twins --error-floor`):

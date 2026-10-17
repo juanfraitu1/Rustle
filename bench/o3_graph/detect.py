@@ -55,27 +55,34 @@ ARMS = ("R0", "S1", "S12", "S123", "S3", "S23", "S4n", "S4", "S123m", "Gn", "G",
 
 
 class _Contig:
-    def __init__(self, fa, name):
-        self.fa, self.name, self.n = fa, name, fa.get_reference_length(name)
+    def __init__(self, genome, name):
+        self.g, self.name, self.n = genome, name, genome.handle().get_reference_length(name)
 
     def __len__(self):
         return self.n
 
     def __getitem__(self, sl):
         lo, hi = sl.start or 0, self.n if sl.stop is None else min(self.n, sl.stop)
-        return self.fa.fetch(self.name, lo, hi).upper()
+        return self.g.handle().fetch(self.name, lo, hi).upper()
 
 
 class Genome:
-    """The world's genome read lazily by slice (a whole CHM13 does not fit a dict of strings)."""
+    """The world's genome read lazily by slice (a whole CHM13 does not fit a dict of strings), through one pysam handle per
+    process: forked O3 workers (O3_PROCS) sharing a handle shared its file offset and read wrong slices (round 11 review I1)."""
 
     def __init__(self, path):
-        import pysam
-        self.fa, self._c = pysam.FastaFile(path), {}
+        self.path, self._h, self._c = path, {}, {}
+
+    def handle(self):
+        pid = os.getpid()
+        if pid not in self._h:
+            import pysam
+            self._h[pid] = pysam.FastaFile(self.path)
+        return self._h[pid]
 
     def __getitem__(self, name):
         if name not in self._c:
-            self._c[name] = _Contig(self.fa, name)
+            self._c[name] = _Contig(self, name)
         return self._c[name]
 
 

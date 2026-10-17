@@ -381,3 +381,19 @@ def test_o1_hosting_places_each_family_read_on_the_seeded_copy_its_primary_overl
     # primary on a copy first (r1, r2); else a secondary on one (r5); else a copy's padded window, O1's family-read rule (r4);
     # r3 lies near no seeded copy (round 11 development: hosting only primaries lost the array reads O3 needs)
     assert dict(by_host) == {("F", 0): ["r1", "r5"], ("F", 4): ["r2", "r4"]}
+
+
+def test_the_genome_reader_opens_one_handle_per_process(tmp_path):
+    # round 11 review I1: forked O3 workers (O3_PROCS) shared one pysam handle and its file offset, and read wrong slices
+    import os
+    import pysam
+    (tmp_path / "g.fa").write_text(">c1\n" + "ACGT" * 5000 + "\n")
+    pysam.faidx(str(tmp_path / "g.fa"))
+    g = D.Genome(str(tmp_path / "g.fa"))
+    parent = g.handle()
+    assert g["c1"][0:8] == "ACGTACGT" and g.handle() is parent
+    pid = os.fork()
+    if pid == 0:
+        os._exit(0 if g.handle() is not parent and g["c1"][4:8] == "ACGT" else 1)
+    _, status = os.waitpid(pid, 0)
+    assert os.WEXITSTATUS(status) == 0
