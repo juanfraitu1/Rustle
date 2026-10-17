@@ -1609,9 +1609,18 @@ def null_draw(flagged: dict, cand: dict, target: int, rng: random.Random, reads_
     return out
 
 
-def null_contig(bam, fa, c: str, rset_c: set, target: int | None, rng_key: str) -> tuple[list, tuple]:
-    """One contig of `null`: (NULL rows, summary row). rset_c = the arm's flagged {(start1, end1, strand)} on `c`;
-    target None = distinct primaries (-F 2308) carrying a flagged junction; RNG = random.Random(rng_key)."""
+def null_candidates(S: dict, flagged: set, protected: set, is_canonical) -> dict:
+    """The NULL arm's candidate junctions {junction: S}: canonical, S >= 2, neither flagged by the arm nor kept by its fusion
+    protection (`<out>.readthrough_protected.tsv`, review I3: the unprotected list: arm would otherwise remove fusion reads
+    the arm kept)."""
+    return {j: n for j, n in S.items() if n >= 2 and j not in flagged and j not in protected and is_canonical(*j)}
+
+
+def null_contig(bam, fa, c: str, rset_c: set, target: int | None, rng_key: str,
+                xset_c: frozenset = frozenset()) -> tuple[list, tuple]:
+    """One contig of `null`: (NULL rows, summary row). rset_c = the arm's flagged {(start1, end1, strand)} on `c`, xset_c
+    its protected ones (never drawn); target None = distinct primaries (-F 2308) carrying a flagged junction; RNG =
+    random.Random(rng_key)."""
     reads_of = collections.defaultdict(lambda: array.array("I"))
     r_reads, ordinal = 0, 0
     for rd in (bam.fetch(c) if c in bam.references else ()):
@@ -1630,7 +1639,7 @@ def null_contig(bam, fa, c: str, rset_c: set, target: int | None, rng_key: str) 
     flagged = {j: S.get(j, 0) for j in rset_c}
     missing = sum(1 for v in flagged.values() if v < 2)
     flagged = {j: v for j, v in flagged.items() if v >= 1}
-    cand = {j: n for j, n in S.items() if n >= 2 and j not in rset_c and canonical(fa, c, *j)}
+    cand = null_candidates(S, rset_c, xset_c, lambda s, e, st: canonical(fa, c, s, e, st))
     target = r_reads if target is None else target
     draw = null_draw(flagged, cand, target, random.Random(rng_key), reads_of)
     achieved = len(set().union(*(reads_of[j] for j, _, _ in draw))) if draw else 0
@@ -1651,6 +1660,11 @@ def cmd_null(a) -> int:
     for c, s, e, st, _ in fl:
         if c in sub.cset:
             rset[c].add((s, e, st))
+    xset = collections.defaultdict(set)                  # --exclude: the arm's fusion-protected junctions (never drawn)
+    for path in a.exclude or ():
+        for c, s, e, st, _ in read_junction_table(path, sub.contigs[0] if len(sub.contigs) == 1 else None):
+            if c in sub.cset:
+                xset[c].add((s, e, st))
     targets = {}
     if a.target:
         for ln in open(a.target):
@@ -1662,7 +1676,7 @@ def cmd_null(a) -> int:
     rows, summ = [], []
     for c in sub.contigs:
         budget.check(f"null {c}")
-        r_, s_ = null_contig(bam, fa, c, rset[c], targets.get(c), f"{a.seed}:{sub.sid}:{c}")
+        r_, s_ = null_contig(bam, fa, c, rset[c], targets.get(c), f"{a.seed}:{sub.sid}:{c}", frozenset(xset[c]))
         rows.extend(r_)
         summ.append(s_)
     with open(a.out, "w") as fo:
@@ -2656,6 +2670,8 @@ def main(argv=None) -> int:
     substrate_args(p)
     p.add_argument("--flags", required=True, help="arm R's flagged junctions (Rust dump or rt_all table)")
     p.add_argument("--target", help="contig<TAB>alignments: override the per-contig target")
+    p.add_argument("--exclude", action="append", help="junctions never drawn (repeatable): the arm's fusion-protected "
+                   "<out>.readthrough_protected.tsv (RUSTLE_READTHROUGH_PROTECT, on by default)")
     p.add_argument("--seed", type=int, default=SEED)
     p.add_argument("--out", required=True)
     p = sp.add_parser("synth", help="a synthetic TEST arm (transcripts carrying listed junctions dropped)")

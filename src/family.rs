@@ -16378,31 +16378,7 @@ pub mod bridge_regroup {
         }
         let plan = (mode == Mode::F1Units).then(|| f1_cut_plan(&txs, &junctions, &kept));
         // the fusion class of every bridge transcript, over its own bridge junctions
-        let mut calls: HashMap<usize, FusionCall> = HashMap::new();
-        let mut genomes: HashMap<String, Arc<GenomeIndex>> = HashMap::new();
-        let mut order: Vec<usize> = bridges.iter().copied().collect();
-        order.sort_unstable();
-        for t in order {
-            let tx = &txs[t];
-            let js: Vec<(i64, i64)> = tx
-                .introns()
-                .filter(|&(s, e)| bj.contains(&(tx.chrom.as_str(), s, e, tx.strand.as_str())))
-                .collect();
-            if js.is_empty() {
-                continue;
-            }
-            if !genomes.contains_key(&tx.chrom) {
-                genomes.insert(tx.chrom.clone(), genome_of(&tx.chrom)?);
-            }
-            let g = &genomes[&tx.chrom];
-            let seq: &[u8] = g.chroms().find(|(n, _)| *n == tx.chrom).map_or(&[], |(_, q)| q);
-            let sup = support.get(&tx.chrom);
-            let at = |s: i64, e: i64| -> (u32, u32) {
-                let k = (s as u64, e as u64);
-                sup.map_or((0, 0), |(p, q)| (p.get(&k).copied().unwrap_or(0), q.get(&k).copied().unwrap_or(0)))
-            };
-            calls.insert(t, classify_bridge(tx, &js, &at, seq));
-        }
+        let calls = classify_bridges(&txs, &bridges, &bj, &support, genome_of)?;
         let counts = DetectorCounts {
             structural_junctions: junctions.len(),
             up_proof: junctions.iter().filter(|j| j.up_proof).count(),
@@ -16731,17 +16707,108 @@ pub mod bridge_regroup {
         None
     }
 
+    fn is_stop(c: &[u8]) -> bool {
+        matches!(c, b"TAA" | b"TAG" | b"TGA")
+    }
+
+    /// Codons in the longest stop-free stretch of `s` over its three frames (a stretch ends at an in-frame stop or at the
+    /// sequence's end; no ATG needed).
+    fn longest_open_run(s: &[u8]) -> usize {
+        let mut best = 0;
+        for f in 0..3 {
+            let (mut run, mut i) = (0usize, f);
+            while i + 3 <= s.len() {
+                if is_stop(&s[i..i + 3]) {
+                    run = 0;
+                } else {
+                    run += 1;
+                    best = best.max(run);
+                }
+                i += 3;
+            }
+        }
+        best
+    }
+
+    /// Is the ORF `[a, b)` of the transcript `t` a FUSION protein across the junction after its first `p` bases (review
+    /// I1)? Each partner gives at least one whole codon (the ATG before the junction; a sense codon and the stop after it),
+    /// and on each side the ORF reads that side's dominant open frame: before the junction, the open run of its frame that
+    /// reaches the junction is a longest stop-free run of `t[..p]`; after it, its run to its stop is a longest stop-free run
+    /// of `t[p..]`. No length threshold: a readthrough that leaves its partner's frame (a truncated protein plus a few
+    /// junk residues) or enters it from outside its own (a partner with a junk N-terminus) makes no fusion protein.
+    fn fusion_frame(t: &[u8], (a, b): (usize, usize), p: usize) -> bool {
+        if a + 3 > p || p + 6 > b || b > t.len() {
+            return false;
+        }
+        // before: the run of a's frame from the last in-frame stop before a (or the frame's first codon) up to p
+        let mut r0 = a % 3;
+        let mut i = r0;
+        while i + 3 <= a {
+            if is_stop(&t[i..i + 3]) {
+                r0 = i + 3;
+            }
+            i += 3;
+        }
+        let before = (p - r0) / 3;
+        // after: the ORF's first codon at or past p, then its codons up to the stop
+        let fb = (3 - (p - a) % 3) % 3;
+        let after = (b - 3 - (p + fb)) / 3;
+        before >= longest_open_run(&t[..p]) && after >= longest_open_run(&t[p..])
+    }
+
     /// The longest complete ORF of the transcript over `exons` (1-based closed, genomic order) on `strand` of the contig
-    /// `seq`, in amino acids, and whether it runs across every junction of `js` (1-based closed introns).
+    /// `seq`, in amino acids, and whether it is a fusion protein across every junction of `js` (1-based closed introns;
+    /// [`fusion_frame`]).
     pub fn orf_across(seq: &[u8], exons: &[(i64, i64)], strand: &str, js: &[(i64, i64)]) -> (usize, bool) {
         let tseq = spliced_seq(seq, exons, strand);
         match longest_orf(&tseq) {
             Some((a, b)) => (
                 (b - a) / 3 - 1,
-                js.iter().all(|&(s, e)| junction_tx_pos(exons, strand, s, e).is_some_and(|p| a < p && p < b)),
+                js.iter().all(|&(s, e)| {
+                    junction_tx_pos(exons, strand, s, e).is_some_and(|p| fusion_frame(&tseq, (a, b), p))
+                }),
             ),
             None => (0, false),
         }
+    }
+
+    /// The fusion class of every bridge transcript over its own bridge junctions, contig by contig: one contig's sequence in
+    /// memory at a time (review I2: a genome-wide run has bridges on every chromosome).
+    #[allow(clippy::type_complexity)]
+    fn classify_bridges(
+        txs: &[Tx],
+        bridges: &HashSet<usize>,
+        bj: &HashSet<(&str, i64, i64, &str)>,
+        support: &HashMap<String, (HashMap<(u64, u64), u32>, HashMap<(u64, u64), u32>)>,
+        genome_of: &dyn Fn(&str) -> Result<Arc<GenomeIndex>>,
+    ) -> Result<HashMap<usize, FusionCall>> {
+        let mut calls: HashMap<usize, FusionCall> = HashMap::new();
+        let mut order: Vec<usize> = bridges.iter().copied().collect();
+        order.sort_unstable_by(|&x, &y| (txs[x].chrom.as_str(), x).cmp(&(txs[y].chrom.as_str(), y)));
+        let mut cur: Option<(String, Arc<GenomeIndex>)> = None;
+        for t in order {
+            let tx = &txs[t];
+            let js: Vec<(i64, i64)> = tx
+                .introns()
+                .filter(|&(s, e)| bj.contains(&(tx.chrom.as_str(), s, e, tx.strand.as_str())))
+                .collect();
+            if js.is_empty() {
+                continue;
+            }
+            if cur.as_ref().map_or(true, |(c, _)| *c != tx.chrom) {
+                drop(cur.take()); // the previous contig's sequence goes before the next one is read
+                cur = Some((tx.chrom.clone(), genome_of(&tx.chrom)?));
+            }
+            let g = &cur.as_ref().expect("set above").1;
+            let seq: &[u8] = g.contig_seq(&tx.chrom).unwrap_or(&[]);
+            let sup = support.get(&tx.chrom);
+            let at = |s: i64, e: i64| -> (u32, u32) {
+                let k = (s as u64, e as u64);
+                sup.map_or((0, 0), |(p, q)| (p.get(&k).copied().unwrap_or(0), q.get(&k).copied().unwrap_or(0)))
+            };
+            calls.insert(t, classify_bridge(tx, &js, &at, seq));
+        }
+        Ok(calls)
     }
 
     /// One bridge transcript's class and its evidence.
@@ -16752,7 +16819,7 @@ pub mod bridge_regroup {
         pub primary: u32,
         /// the most secondary alignments over its bridge junctions
         pub secondary: u32,
-        /// [`fusion_contested`]`(primary, secondary)`
+        /// some bridge junction is [`fusion_contested`]
         pub contested: bool,
         pub motifs: Vec<String>,
         pub orf_aa: usize,
@@ -16776,7 +16843,11 @@ pub mod bridge_regroup {
             class: fusion_class(primary, canonical, orf_aa, orf_spans),
             primary,
             secondary,
-            contested: fusion_contested(primary, secondary),
+            // per junction (review M1): the fewest primary and the most secondary may come from different junctions
+            contested: js.iter().any(|&(s, e)| {
+                let (p, q) = support(s, e);
+                fusion_contested(p, q)
+            }),
             motifs,
             orf_aa,
             orf_spans,
@@ -18534,6 +18605,30 @@ pub mod bridge_regroup {
             s
         }
 
+        /// Open in frame 0 only (AAC CTA GCT; frame +1 meets TAG, frame +2 TAA): the fixtures' coding sequence.
+        const U: &str = "AACCTAGCT";
+
+        /// `parts` laid end to end from base 1 (an exon when `true`): the contig and its exons (1-based closed).
+        fn layout(parts: &[(&str, bool)]) -> (Vec<u8>, Vec<(i64, i64)>) {
+            let (mut g, mut ex, mut at) = (Vec::new(), Vec::new(), 1i64);
+            for &(p, is_exon) in parts {
+                if is_exon {
+                    ex.push((at, at + p.len() as i64 - 1));
+                }
+                g.extend_from_slice(p.as_bytes());
+                at += p.len() as i64;
+            }
+            (g, ex)
+        }
+
+        fn rc(s: &str) -> String {
+            String::from_utf8(revcomp(s.as_bytes())).unwrap()
+        }
+
+        fn intron() -> String {
+            format!("GT{}AG", "C".repeat(96))
+        }
+
         fn tx_of(strand: &str, exons: &[(i64, i64)]) -> Tx {
             Tx {
                 tid: "B".into(),
@@ -18573,6 +18668,48 @@ pub mod bridge_regroup {
         }
 
         #[test]
+        fn a_fusion_orf_reads_each_partner_in_its_own_open_frame() {
+            // ATG + 30 open codons | J | 30 open codons in the same frame + TAA: a fusion protein
+            let t = format!("CCATG{}{}TAAGG", U.repeat(10), U.repeat(10));
+            let o = longest_orf(t.as_bytes()).unwrap();
+            assert_eq!(o, (2, 188));
+            assert!(fusion_frame(t.as_bytes(), o, 95));
+            // a junction inside the ATG, or inside the stop codon: one partner gives no residue
+            assert!(!fusion_frame(t.as_bytes(), o, 3));
+            assert!(!fusion_frame(t.as_bytes(), o, 186));
+        }
+
+        #[test]
+        fn a_readthrough_that_leaves_or_never_enters_a_partner_s_frame_is_no_fusion_protein() {
+            // review I1: A's ORF runs on 3 codons past J, out of B's open frame (B = G + 30 open codons), and stops
+            let t = format!("CCATG{}G{}TAAGG", U.repeat(10), U.repeat(10));
+            let o = longest_orf(t.as_bytes()).unwrap();
+            assert_eq!(o, (2, 107)); // ATG .. GAA CCT AGC TAA: J (95) lies inside it
+            assert!(!fusion_frame(t.as_bytes(), o, 95));
+            // B read in its frame, but from an ATG outside A's open frame: B with a junk N-terminus
+            let t = format!("{}CATG{}TAAGG", U.repeat(10), U.repeat(10));
+            let o = longest_orf(t.as_bytes()).unwrap();
+            assert_eq!(o, (91, 187));
+            assert!(!fusion_frame(t.as_bytes(), o, 94));
+        }
+
+        #[test]
+        fn orf_across_reads_the_spliced_transcript_on_either_strand() {
+            let (e1, e2, i) = (format!("CCATG{}", U.repeat(20)), format!("{}TAAGG", U.repeat(20)), intron());
+            let pad = "C".repeat(10);
+            let (g, ex) = layout(&[(&pad, false), (&e1, true), (&i, false), (&e2, true), (&pad, false)]);
+            assert_eq!(orf_across(&g, &ex, "+", &[(ex[0].1 + 1, ex[1].0 - 1)]), (121, true));
+            // the same transcript on the minus strand: the contig holds its reverse complement
+            let (r1, r2, ri) = (rc(&e1), rc(&e2), rc(&i));
+            let (g, ex) = layout(&[(&pad, false), (&r2, true), (&ri, false), (&r1, true), (&pad, false)]);
+            assert_eq!(orf_across(&g, &ex, "-", &[(ex[0].1 + 1, ex[1].0 - 1)]), (121, true));
+            // review I1's readthrough: one extra base at B's start
+            let e2x = format!("G{}TAAGG", U.repeat(20));
+            let (g, ex) = layout(&[(&e1, true), (&i, false), (&e2x, true)]);
+            assert_eq!(orf_across(&g, &ex, "+", &[(ex[0].1 + 1, ex[1].0 - 1)]), (64, false));
+        }
+
+        #[test]
         fn a_fusion_gene_is_well_supported_and_codes_across_its_junction() {
             assert_eq!(fusion_class(4, true, 100, true), "fusion_gene");
             // supported but no fusion protein: the upstream gene's CDS ends before the junction (chr16 A119b: 491-765 aa
@@ -18596,21 +18733,69 @@ pub mod bridge_regroup {
 
         #[test]
         fn a_coding_bridge_across_a_canonical_well_supported_junction_is_a_fusion() {
-            // B = 101-200, 301-350, 1301-1400, 1501-1600 (+): ATG at its first base, TAA at transcript 345-347
-            // (genomic 1596-1598), the bridge junction J = [351, 1300] (GT .. AG) at transcript position 150
-            let g = contig(3000, &[(100, "ATG"), (1595, "TAA"), (350, "GT"), (1298, "AG")]);
-            let b = tx_of("+", &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]);
-            let call = classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g);
+            // B = ATG + 60 open codons | J (GT .. AG) | 60 open codons in the same frame + TAA: 121 aa across J
+            let (e1, e2, i) = (format!("CCATG{}", U.repeat(20)), format!("{}TAAGG", U.repeat(20)), intron());
+            let pad = "C".repeat(100);
+            let (g, ex) = layout(&[(&pad, false), (&e1, true), (&i, false), (&e2, true), (&pad, false)]);
+            let (b, j) = (tx_of("+", &ex), (ex[0].1 + 1, ex[1].0 - 1));
+            let call = classify_bridge(&b, &[j], &|_, _| (110, 3), &g);
             assert_eq!(call.class, "fusion_gene");
-            assert_eq!((call.primary, call.secondary, call.orf_aa, call.orf_spans), (110, 3, 115, true));
+            assert_eq!((call.primary, call.secondary, call.orf_aa, call.orf_spans), (110, 3, 121, true));
             assert_eq!(call.motifs, vec!["GT-AG".to_string()]);
             assert!(!call.contested);
             // the same transcript with its junction's reads mostly secondary (a multi-copy fusion's sister copies, or a
-            // borrowed echo): the class stays, the copy is contested; and with its stop codon before the junction
-            let echo = classify_bridge(&b, &[(351, 1300)], &|_, _| (10, 1150), &g);
+            // borrowed echo): the class stays, the copy is contested
+            let echo = classify_bridge(&b, &[j], &|_, _| (10, 1150), &g);
             assert_eq!((echo.class, echo.contested), ("fusion_gene", true));
-            let g2 = contig(3000, &[(100, "ATG"), (130, "TAA"), (350, "GT"), (1298, "AG")]);
-            assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g2).class, "readthrough");
+            // with a stop codon 6 codons after the ATG: no fusion protein
+            let e1s = format!("CCATG{}TAA{}", U.repeat(2), U.repeat(18));
+            let (g2, ex2) = layout(&[(&e1s, true), (&i, false), (&e2, true)]);
+            let call2 = classify_bridge(&tx_of("+", &ex2), &[(ex2[0].1 + 1, ex2[1].0 - 1)], &|_, _| (110, 3), &g2);
+            assert_eq!(call2.class, "readthrough");
+            // review I1: A's CDS runs 3 codons into B out of B's frame -- a readthrough, though its 124 aa ORF holds J
+            let (e1l, e2x) = (format!("CCATG{}", U.repeat(40)), format!("G{}TAAGG", U.repeat(20)));
+            let (g3, ex3) = layout(&[(&e1l, true), (&i, false), (&e2x, true)]);
+            let rt = classify_bridge(&tx_of("+", &ex3), &[(ex3[0].1 + 1, ex3[1].0 - 1)], &|_, _| (110, 3), &g3);
+            assert_eq!((rt.class, rt.orf_aa, rt.orf_spans), ("readthrough", 124, false));
+        }
+
+        #[test]
+        fn a_bridge_is_contested_when_one_of_its_junctions_has_a_secondary_majority() {
+            // review M1: the fewest primary (10) and the most secondary (60) alignments came from different junctions
+            let (e1, e2, e3, i) = (format!("CCATG{}", U.repeat(10)), U.repeat(10), format!("{}TAAGG", U.repeat(10)), intron());
+            let (g, ex) = layout(&[(&e1, true), (&i, false), (&e2, true), (&i, false), (&e3, true)]);
+            let (j1, j2) = ((ex[0].1 + 1, ex[1].0 - 1), (ex[1].1 + 1, ex[2].0 - 1));
+            let b = tx_of("+", &ex);
+            let mixed = move |s: i64, _: i64| if s == j1.0 { (100, 60) } else { (10, 5) };
+            assert!(!classify_bridge(&b, &[j1, j2], &mixed, &g).contested);
+            let borrowed = move |s: i64, _: i64| if s == j1.0 { (100, 60) } else { (10, 11) };
+            assert!(classify_bridge(&b, &[j1, j2], &borrowed, &g).contested);
+        }
+
+        #[test]
+        fn the_bridges_are_classed_one_contig_at_a_time() {
+            // review I2: a genome-wide run never holds every bridge contig's sequence at once
+            use std::cell::RefCell;
+            let live: RefCell<Vec<(String, std::sync::Weak<GenomeIndex>)>> = RefCell::new(Vec::new());
+            let genome_of = |c: &str| -> Result<Arc<GenomeIndex>> {
+                for (n, w) in live.borrow().iter() {
+                    assert!(w.upgrade().is_none(), "{n} still in memory when {c} loads");
+                }
+                let g = Arc::new(GenomeIndex::from_seqs(&[(c, &vec![b'C'; 2000][..])]));
+                live.borrow_mut().push((c.to_string(), Arc::downgrade(&g)));
+                Ok(g)
+            };
+            let on = |c: &str| {
+                let mut t = tx_of("+", &[(101, 200), (1301, 1400)]);
+                t.chrom = c.into();
+                t
+            };
+            let txs = vec![on("c1"), on("c2"), on("c1")]; // the contigs interleaved by index
+            let bridges: HashSet<usize> = [0, 1, 2].into_iter().collect();
+            let bj: HashSet<(&str, i64, i64, &str)> = [("c1", 201, 1300, "+"), ("c2", 201, 1300, "+")].into_iter().collect();
+            let calls = classify_bridges(&txs, &bridges, &bj, &HashMap::new(), &genome_of).unwrap();
+            assert_eq!(calls.len(), 3);
+            assert_eq!(live.borrow().len(), 2, "each contig read once");
         }
 
         #[test]
@@ -49314,29 +49499,34 @@ pub mod denovo_pipeline {
             }
 
             /// The switch named by `RUSTLE_READTHROUGH_JUNCTIONS` (see [`ReadthroughSwitch::parse`]), with
-            /// `RUSTLE_READTHROUGH_PROTECT` ([`ReadthroughSwitch::parse_protect`]).
+            /// `RUSTLE_READTHROUGH_PROTECT` ([`ReadthroughSwitch::from_values`]).
             pub fn from_env() -> Result<Option<ReadthroughSwitch>> {
-                let sw = match std::env::var("RUSTLE_READTHROUGH_JUNCTIONS") {
-                    Ok(v) => Self::parse(Some(&v))?,
-                    Err(std::env::VarError::NotPresent) => None,
-                    Err(e) => anyhow::bail!("RUSTLE_READTHROUGH_JUNCTIONS: {e}"),
+                let get = |k: &str| match std::env::var(k) {
+                    Ok(v) => Ok(Some(v)),
+                    Err(std::env::VarError::NotPresent) => Ok(None),
+                    Err(e) => Err(anyhow::anyhow!("{k}: {e}")),
                 };
-                let protect = match std::env::var("RUSTLE_READTHROUGH_PROTECT") {
-                    Ok(v) => Self::parse_protect(Some(&v))?,
-                    Err(std::env::VarError::NotPresent) => true,
-                    Err(e) => anyhow::bail!("RUSTLE_READTHROUGH_PROTECT: {e}"),
-                };
-                Ok(sw.map(|s| ReadthroughSwitch { protect, ..s }))
+                let (j, p) = (get("RUSTLE_READTHROUGH_JUNCTIONS")?, get("RUSTLE_READTHROUGH_PROTECT")?);
+                Self::from_values(j.as_deref(), p.as_deref())
             }
 
-            /// `RUSTLE_READTHROUGH_PROTECT`: unset, empty or `fusion` (any case) = on, `off` = off (the arms as registered
-            /// on 2026-09-25/26); anything else is an ERROR.
+            /// The switch from the two variables' values. `RUSTLE_READTHROUGH_PROTECT` is read only when the filter is on
+            /// (review M3: a stray value never fails a run without it).
+            pub fn from_values(junctions: Option<&str>, protect: Option<&str>) -> Result<Option<ReadthroughSwitch>> {
+                match Self::parse(junctions)? {
+                    Some(sw) => Ok(Some(ReadthroughSwitch { protect: Self::parse_protect(protect)?, ..sw })),
+                    None => Ok(None),
+                }
+            }
+
+            /// `RUSTLE_READTHROUGH_PROTECT`: unset, empty, `fusion` or `on` (any case) = on, `off` = off (the arms as
+            /// registered on 2026-09-25/26); anything else is an ERROR.
             pub fn parse_protect(value: Option<&str>) -> Result<bool> {
                 match value.map(|v| v.trim().to_ascii_lowercase()) {
                     None => Ok(true),
-                    Some(v) if v.is_empty() || v == "fusion" => Ok(true),
+                    Some(v) if v.is_empty() || v == "fusion" || v == "on" => Ok(true),
                     Some(v) if v == "off" => Ok(false),
-                    Some(v) => anyhow::bail!("RUSTLE_READTHROUGH_PROTECT must be `fusion` or `off`, got {v:?}"),
+                    Some(v) => anyhow::bail!("RUSTLE_READTHROUGH_PROTECT must be `fusion`, `on` or `off`, got {v:?}"),
                 }
             }
 
@@ -49610,10 +49800,14 @@ pub mod denovo_pipeline {
             rows: [Vec<(u64, u64, u64)>; 2],
             s: DetHashMap<(u64, u64, bool), u32>,
             l: DetHashMap<(u64, u64, bool), u32>,
-            /// per junction, the exon blocks of the longest read carrying it (genomic span; the first on a tie): the molecule
-            /// the protection reads its ORF from
-            rep: DetHashMap<(u64, u64, bool), (u64, std::sync::Arc<Vec<(u64, u64)>>)>,
+            /// per junction, its reads' intron chains: chain -> (reads, the longest exonic length, that read's exon blocks).
+            /// The protection reads its ORF from the junction's modal molecule ([`rt_modal_molecule`]); filled only when the
+            /// protection can act (on, statistic rule).
+            chains: DetHashMap<(u64, u64, bool), DetHashMap<RtChain, (u32, u64, RtChain)>>,
         }
+
+        /// An intron chain or a read's exon blocks (0-based half-open), shared by every junction of the read.
+        type RtChain = std::sync::Arc<Vec<(u64, u64)>>;
 
         /// The statistics accumulator. Fed one record at a time by the streaming reader (a field of [`Pass1Acc`]) or from
         /// materialised [`BamRead`]s by the buffered path ([`ReadthroughStats::push_bam_read`]); both reduce to
@@ -49644,9 +49838,11 @@ pub mod denovo_pipeline {
 
             /// Fusion protection (`RUSTLE_READTHROUGH_PROTECT`, on unless `off`): a junction a STATISTIC rule flags keeps its
             /// reads when it is a fusion gene's by [`crate::bridge_regroup::fusion_class`] (Yoo 2025): >= 4 primary reads,
-            /// canonical, and the longest read carrying it codes across it (longest complete ORF >= 100 aa over it, from
-            /// the genome along that read's exon blocks). r3 would otherwise drop 3 of the 4 coding fusion bridges of human
-            /// A119b chr16 (MSTRG.2130-DCTN5, PALB2-NDUFAB1, FBXO31-C16orf95). A `list:` arm removes what it lists.
+            /// canonical, and its modal molecule (the intron chain most of its reads share, as its longest read's exon
+            /// blocks; [`rt_modal_molecule`]) codes a fusion protein across it (longest complete ORF >= 100 aa, reading each
+            /// partner in that partner's dominant open frame; `bridge_regroup::fusion_frame`). r3 would otherwise drop 3 of
+            /// the 4 coding fusion bridges of human A119b chr16 (MSTRG.2130-DCTN5, PALB2-NDUFAB1, FBXO31-C16orf95). A `list:`
+            /// arm removes what it lists; a read that also carries another, unprotected flagged junction still leaves.
             pub fn with_protect(mut self, on: bool) -> Self {
                 self.protect = on;
                 self
@@ -49677,16 +49873,20 @@ pub mod denovo_pipeline {
                     (ref_start, ref_end - 1, exons[0].1 - 1)
                 };
                 c.rows[usize::from(minus)].push(row);
-                let span = ref_end - ref_start;
-                let chain = std::sync::Arc::new(exons.to_vec());
                 for w in exons.windows(2) {
-                    let k = (w[0].1, w[1].0, minus);
-                    *c.s.entry(k).or_insert(0) += 1;
-                    match c.rep.get_mut(&k) {
-                        Some(r) if r.0 >= span => {}
-                        Some(r) => *r = (span, chain.clone()),
-                        None => {
-                            c.rep.insert(k, (span, chain.clone()));
+                    *c.s.entry((w[0].1, w[1].0, minus)).or_insert(0) += 1;
+                }
+                if self.protect && self.rule != ReadthroughRule::List {
+                    let introns: RtChain = std::sync::Arc::new(exons.windows(2).map(|w| (w[0].1, w[1].0)).collect());
+                    let blocks: RtChain = std::sync::Arc::new(exons.to_vec());
+                    let exonic: u64 = exons.iter().map(|&(a, b)| b - a).sum();
+                    for w in exons.windows(2) {
+                        let m = c.chains.entry((w[0].1, w[1].0, minus)).or_default();
+                        let e = m.entry(introns.clone()).or_insert((0, 0, blocks.clone()));
+                        e.0 += 1;
+                        if exonic > e.1 {
+                            e.1 = exonic;
+                            e.2 = blocks.clone();
                         }
                     }
                 }
@@ -49747,6 +49947,7 @@ pub mod denovo_pipeline {
                 } = self;
                 let mut out = ReadthroughFlags {
                     rule: Some(rule),
+                    protect: protect && rule != ReadthroughRule::List,
                     ..Default::default()
                 };
                 let listed_all = match (rule, &list) {
@@ -49862,7 +50063,7 @@ pub mod denovo_pipeline {
                                 _ => j.flagged(rule),
                             };
                             let fusion_aa = if hit && protect && rule != ReadthroughRule::List {
-                                rt_fusion_orf(genome, &j, c.rep.get(&(j.donor, j.acceptor, minus)))
+                                rt_fusion_orf(genome, &j, c.chains.get(&(j.donor, j.acceptor, minus)))
                             } else {
                                 None
                             };
@@ -49870,7 +50071,8 @@ pub mod denovo_pipeline {
                                 out.protected.push((j.clone(), aa));
                             }
                             let hit = hit && fusion_aa.is_none();
-                            if rule.is_tiered() {
+                            // the tiers count what is REMOVED (A + B = flagged; review I3): a protected junction is kept
+                            if rule.is_tiered() && fusion_aa.is_none() {
                                 match j.tier_label() {
                                     "A" => out.n_tier_a += 1,
                                     "B" => out.n_tier_b += 1,
@@ -49898,14 +50100,23 @@ pub mod denovo_pipeline {
             }
         }
 
-        /// The fusion protection's test on a flagged junction `j` with its representative read `rep` (see
-        /// [`ReadthroughStats::with_protect`]): `Some(orf_aa)` iff `j` is a fusion gene's junction.
+        /// A junction's modal molecule (review I5): the intron chain most of its reads share (ties: the longer exonic
+        /// read, then the smaller chain), as its longest read's exon blocks. One aberrant read no longer decides.
+        fn rt_modal_molecule(chains: &DetHashMap<RtChain, (u32, u64, RtChain)>) -> Option<&RtChain> {
+            chains
+                .iter()
+                .max_by(|(ka, a), (kb, b)| (a.0, a.1).cmp(&(b.0, b.1)).then_with(|| kb.cmp(ka)))
+                .map(|(_, v)| &v.2)
+        }
+
+        /// The fusion protection's test on a flagged junction `j` over its reads' chains (see
+        /// [`ReadthroughStats::with_protect`]): `Some(orf_aa)` iff `j` is a fusion gene's junction on its modal molecule.
         fn rt_fusion_orf(
             genome: &GenomeIndex,
             j: &ReadthroughJunction,
-            rep: Option<&(u64, std::sync::Arc<Vec<(u64, u64)>>)>,
+            chains: Option<&DetHashMap<RtChain, (u32, u64, RtChain)>>,
         ) -> Option<usize> {
-            let (_, chain) = rep?;
+            let chain = rt_modal_molecule(chains?)?;
             let seq = genome.contig_seq(&j.chrom)?;
             // 0-based half-open blocks and pool intron -> the classifier's 1-based closed coordinates
             let exons: Vec<(i64, i64)> = chain.iter().map(|&(a, b)| (a as i64 + 1, b as i64)).collect();
@@ -50050,6 +50261,8 @@ pub mod denovo_pipeline {
             pub alignments_removed: u64,
             /// the junctions a statistic rule flagged that the fusion protection kept, with their ORF (amino acids)
             pub protected: Vec<(ReadthroughJunction, usize)>,
+            /// the protection was on (a statistic rule; the ALL dump then marks the kept junctions)
+            pub protect: bool,
         }
 
         impl ReadthroughFlags {
@@ -50100,6 +50313,7 @@ pub mod denovo_pipeline {
                 self.chains_removed += other.chains_removed;
                 self.alignments_removed += other.alignments_removed;
                 self.protected.extend(other.protected);
+                self.protect |= other.protect;
             }
 
             /// The tier counts of `r2` / `r3` for the log (empty in every other arm, so their lines are unchanged; `r3` adds
@@ -50131,13 +50345,13 @@ pub mod denovo_pipeline {
             pub fn write_protected_tsv(&self, path: &str) -> Result<()> {
                 use std::io::Write as _;
                 let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
-                writeln!(w, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\torf_aa")?;
+                writeln!(w, "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\torf_aa{}", self.tier_columns())?;
                 let mut rows: Vec<&(ReadthroughJunction, usize)> = self.protected.iter().collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
                 for (j, aa) in rows {
                     writeln!(
                         w,
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}",
                         j.chrom,
                         j.donor + 1,
                         j.acceptor,
@@ -50146,7 +50360,8 @@ pub mod denovo_pipeline {
                         j.u,
                         j.v1,
                         j.rule_label(),
-                        aa
+                        aa,
+                        self.tier_values(j)
                     )?;
                 }
                 w.flush()?;
@@ -50230,14 +50445,24 @@ pub mod denovo_pipeline {
             /// and NOT flagged, `-`): its flagged junctions are exactly the `A` and `B` rows. Arm `r3` appends `L`, `tier`
             /// (the same labels plus `B_guarded` = tier B protected by `V1 <= N_span`, NOT flagged) and `N` (`N_span`, counted
             /// for every row passing tier B, `NA` elsewhere): its flagged junctions are exactly the `A` and `B` rows, and the
-            /// `B` plus `B_guarded` rows are every tier-B candidate (`r2`'s `B` rows).
+            /// `B` plus `B_guarded` rows are every tier-B candidate (`r2`'s `B` rows). With the fusion protection on, a last
+            /// column `protected` says which of those A and B rows the protection KEPT (`True`): the removed junctions are the
+            /// A and B rows marked `False` (off: no column, the registered dump).
             pub fn write_all_tsv(&self, path: &str) -> Result<()> {
                 use std::io::Write as _;
                 let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+                // with the protection on, a last column marks the flagged junctions it KEPT (review I3: their tier stays A/B);
+                // off, the dump is the registered one byte for byte
+                let kept: std::collections::BTreeSet<(&str, u64, u64, bool)> = self
+                    .protected
+                    .iter()
+                    .map(|(j, _)| (j.chrom.as_str(), j.donor, j.acceptor, j.minus))
+                    .collect();
                 writeln!(
                     w,
-                    "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule{}",
-                    self.tier_columns()
+                    "contig\tstart\tend\tstrand\tS\tT\tU\tV1\tcanonical\trule{}{}",
+                    self.tier_columns(),
+                    if self.protect { "\tprotected" } else { "" }
                 )?;
                 for j in &self.all {
                     write!(
@@ -50254,7 +50479,12 @@ pub mod denovo_pipeline {
                         j.canonical,
                         j.rule_label()
                     )?;
-                    writeln!(w, "{}", self.tier_values(j))?;
+                    write!(w, "{}", self.tier_values(j))?;
+                    if self.protect {
+                        let k = (j.chrom.as_str(), j.donor, j.acceptor, j.minus);
+                        write!(w, "\t{}", if kept.contains(&k) { "True" } else { "False" })?;
+                    }
+                    writeln!(w)?;
                 }
                 w.flush()?;
                 Ok(())
@@ -54595,10 +54825,21 @@ pub mod denovo_pipeline {
                     .collect()
             }
 
-            /// J's reads code across it: an ATG in A's first exon (1010) and a TAA at `stop` (7099: in frame in B's last
-            /// exon, a 163 aa ORF over J; 1019: three codons, before J)
+            /// J's reads code across it: J's molecule (j_read(0)'s exons) carries an ATG at 1010 and, in that frame, a
+            /// coding sequence open in its frame only (AAC CTA GCT repeated: the other frames meet TAG / TAA) and a TAA at
+            /// `stop` (7099: in B's last exon, a 163 aa ORF over J; 1019: three codons, before J)
             fn coding_genome(stop: usize) -> GenomeIndex {
+                const U: &[u8] = b"AACCTAGCT";
                 let mut g = genome_seq();
+                let mut t = 0usize; // transcript position along j_read(0)
+                for (a, b) in j_read(0) {
+                    for x in a as usize..b as usize {
+                        if t >= 13 {
+                            g[x] = U[(t - 13) % 9];
+                        }
+                        t += 1;
+                    }
+                }
                 g[1010..1013].copy_from_slice(b"ATG");
                 g[stop..stop + 3].copy_from_slice(b"TAA");
                 GenomeIndex::from_seqs(&[("c1", &g)])
@@ -54638,9 +54879,65 @@ pub mod denovo_pipeline {
                 assert!(ReadthroughSwitch::parse_protect(None).unwrap());
                 assert!(ReadthroughSwitch::parse_protect(Some("")).unwrap());
                 assert!(ReadthroughSwitch::parse_protect(Some("fusion")).unwrap());
+                assert!(ReadthroughSwitch::parse_protect(Some("on")).unwrap());
                 assert!(!ReadthroughSwitch::parse_protect(Some("off")).unwrap());
                 assert!(!ReadthroughSwitch::parse_protect(Some("OFF")).unwrap());
                 assert!(ReadthroughSwitch::parse_protect(Some("maybe")).is_err());
+            }
+
+            #[test]
+            fn the_protection_is_read_only_when_the_filter_is_on() {
+                // review M3: a stray RUSTLE_READTHROUGH_PROTECT never fails a run without the filter
+                assert!(ReadthroughSwitch::from_values(None, Some("bogus")).unwrap().is_none());
+                assert!(ReadthroughSwitch::from_values(Some("off"), Some("bogus")).unwrap().is_none());
+                assert!(ReadthroughSwitch::from_values(Some("r3"), Some("bogus")).is_err());
+                assert!(ReadthroughSwitch::from_values(Some("r3"), Some("on")).unwrap().unwrap().protect);
+                assert!(!ReadthroughSwitch::from_values(Some("r3"), Some("off")).unwrap().unwrap().protect);
+                assert!(ReadthroughSwitch::from_values(Some("r3"), None).unwrap().unwrap().protect);
+            }
+
+            #[test]
+            fn the_molecule_most_of_a_junction_s_reads_share_decides_its_protection() {
+                // review I5: one read with an extra 5-base exon before J (a frameshift: its ORF stops before J; the longest
+                // span and exonic length) does not decide for the four whose molecule codes across J; and three such reads
+                // outvote two coding ones
+                let g = coding_genome(7099);
+                let odd = vec![(1000u64, 1100u64), (1500, 1505), (2000, 2100), (6000, 6200), (7000, 7300)];
+                let locus = |n_j: u64, n_odd: usize| {
+                    let mut v: Vec<(Vec<(u64, u64)>, bool)> = (0..100).map(|i| (a_read(i), false)).collect();
+                    v.extend((0..n_j).map(|i| (j_read(i), false)));
+                    v.extend((0..n_odd).map(|_| (odd.clone(), false)));
+                    v.extend((0..5).map(|i| (b_read(i), false)));
+                    v
+                };
+                let f = stats(ReadthroughRule::R, &locus(4, 1)).flag(&g, false);
+                assert_eq!(
+                    f.protected.iter().map(|(j, aa)| (j.donor, j.acceptor, j.s, *aa)).collect::<Vec<_>>(),
+                    vec![(J.0, J.1, 5, 163)]
+                );
+                let f = stats(ReadthroughRule::R, &locus(2, 3)).flag(&g, false);
+                assert_eq!((f.rows.len(), f.protected.len()), (1, 0));
+            }
+
+            #[test]
+            fn a_protected_junction_counts_as_kept_not_removed() {
+                // review I3: under r3 the fusion locus's J is tier A; protected, it leaves the tier counts (A + B = removed)
+                // and the ALL dump marks it
+                let g = coding_genome(7099);
+                let on = stats(ReadthroughRule::R3, &fusion_locus(4)).flag(&g, true);
+                assert_eq!((on.rows.len(), on.n_tier_a, on.n_tier_b, on.protected.len()), (0, 0, 0, 1));
+                let off = stats(ReadthroughRule::R3, &fusion_locus(4)).with_protect(false).flag(&g, true);
+                assert_eq!((off.rows.len(), off.n_tier_a, off.protected.len()), (1, 1, 0));
+                let dir = tempfile::tempdir().unwrap();
+                let (p_on, p_off) = (dir.path().join("on.all.tsv"), dir.path().join("off.all.tsv"));
+                on.write_all_tsv(p_on.to_str().unwrap()).unwrap();
+                off.write_all_tsv(p_off.to_str().unwrap()).unwrap();
+                let t = std::fs::read_to_string(&p_on).unwrap();
+                assert!(t.lines().next().unwrap().ends_with("\tprotected"), "{t}");
+                let jrow = t.lines().find(|l| l.starts_with(&format!("c1\t{}\t{}\t", J.0 + 1, J.1))).unwrap();
+                assert!(jrow.ends_with("\tTrue"), "{jrow}");
+                assert!(t.lines().skip(1).filter(|l| l.ends_with("\tFalse")).count() >= 1);
+                assert!(!std::fs::read_to_string(&p_off).unwrap().contains("protected"));
             }
 
             #[test]
@@ -55780,6 +56077,8 @@ pub mod denovo_pipeline {
                 assert_eq!((j.minus, j.l, j.canonical), (false, 0, false));
             }
 
+            /// The registered dumps (protection off; protection on appends one `protected` column to the ALL dump, see
+            /// `a_protected_junction_counts_as_kept_not_removed`).
             #[test]
             fn r2_tsvs_add_l_and_tier_and_the_other_arms_keep_their_columns() {
                 let dir = tempfile::tempdir().unwrap();
@@ -55794,7 +56093,7 @@ pub mod denovo_pipeline {
                     std::fs::read_to_string(&p).unwrap()
                 };
                 // tier B: flagged, `rule` = `-`
-                let fb = stats(ReadthroughRule::R2, &locus2(3, 0, 3, 12)).flag(&g, true);
+                let fb = stats(ReadthroughRule::R2, &locus2(3, 0, 3, 12)).with_protect(false).flag(&g, true);
                 let t = tsv(&fb, "b.tsv", false);
                 assert_eq!(
                     t.lines().next().unwrap(),
@@ -55806,7 +56105,7 @@ pub mod denovo_pipeline {
                 );
                 assert_eq!(t.lines().count(), 2);
                 // the exempted junction: absent from the flagged TSV, `A_exempt` in the ALL dump
-                let fe = stats(ReadthroughRule::R2, &locus2(60, 3, 0, 0)).flag(&g, true);
+                let fe = stats(ReadthroughRule::R2, &locus2(60, 3, 0, 0)).with_protect(false).flag(&g, true);
                 assert_eq!(tsv(&fe, "e.tsv", false).lines().count(), 1, "header only");
                 let all = tsv(&fe, "e.all.tsv", true);
                 assert_eq!(
@@ -55819,13 +56118,13 @@ pub mod denovo_pipeline {
                     "{all}"
                 );
                 // tier A: its `rule` column says r
-                let fa = stats(ReadthroughRule::R2, &locus2(60, 1, 2, 0)).flag(&g, false);
+                let fa = stats(ReadthroughRule::R2, &locus2(60, 1, 2, 0)).with_protect(false).flag(&g, false);
                 assert_eq!(
                     tsv(&fa, "a.tsv", false).lines().nth(1).unwrap(),
                     "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA"
                 );
                 // r: the columns of the current tree, the same row
-                let fr = stats(ReadthroughRule::R, &locus2(60, 1, 2, 0)).flag(&g, true);
+                let fr = stats(ReadthroughRule::R, &locus2(60, 1, 2, 0)).with_protect(false).flag(&g, true);
                 let t = tsv(&fr, "r.tsv", false);
                 assert_eq!(
                 t,
@@ -56217,13 +56516,13 @@ pub mod denovo_pipeline {
                     std::fs::read_to_string(&p).unwrap()
                 };
                 // tier B flagged: N after tier
-                let fb = stats(ReadthroughRule::R3, &locus3(8)).flag(&g, true);
+                let fb = stats(ReadthroughRule::R3, &locus3(8)).with_protect(false).flag(&g, true);
                 assert_eq!(
                 text(&fb, "b.tsv", false),
                 "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\tN\nc1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB\t11\n"
             );
                 // the guarded junction: absent from the flagged TSV, `B_guarded` with its N in the ALL dump
-                let fg = stats(ReadthroughRule::R3, &locus3(9)).flag(&g, true);
+                let fg = stats(ReadthroughRule::R3, &locus3(9)).with_protect(false).flag(&g, true);
                 assert_eq!(
                     text(&fg, "g.tsv", false),
                     "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\tN\n"
@@ -56248,18 +56547,18 @@ pub mod denovo_pipeline {
                 );
                 assert!(all.lines().count() > 2);
                 // tier A rows: N counted only when tier B holds too
-                let fa = stats(ReadthroughRule::R3, &locus2(60, 1, 2, 0)).flag(&g, false);
+                let fa = stats(ReadthroughRule::R3, &locus2(60, 1, 2, 0)).with_protect(false).flag(&g, false);
                 assert_eq!(
                     text(&fa, "a.tsv", false).lines().nth(1).unwrap(),
                     "c1\t2101\t6000\t+\t3\t60\t0\tr\t1\tA\tNA"
                 );
-                let fab = stats(ReadthroughRule::R3, &locus2(60, 0, 3, 12)).flag(&g, false);
+                let fab = stats(ReadthroughRule::R3, &locus2(60, 0, 3, 12)).with_protect(false).flag(&g, false);
                 assert_eq!(
                     text(&fab, "ab.tsv", false).lines().nth(1).unwrap(),
                     "c1\t2101\t6000\t+\t3\t60\t12\trq1\t0\tA\t3"
                 );
                 // r2 on the same reads: its own columns and its `B` label, no N
-                let f2 = stats(ReadthroughRule::R2, &locus3(9)).flag(&g, true);
+                let f2 = stats(ReadthroughRule::R2, &locus3(9)).with_protect(false).flag(&g, true);
                 assert_eq!(
                 text(&f2, "r2.tsv", false),
                 "contig\tdonor\tacceptor\tstrand\tS\tU\tV1\trule\tL\ttier\nc1\t2101\t6000\t+\t3\t3\t12\t-\t0\tB\n"

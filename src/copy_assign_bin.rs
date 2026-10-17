@@ -271,8 +271,9 @@ struct Args {
     /// donor|intron_start_1b, acceptor|intron_end_1b, strand; 1-based inclusive intron: the scorer's
     /// `readthrough_eval.py null` list or an arm's own `<out>.readthrough_junctions.tsv`), same removal and outputs
     /// (`rule` = `list`). `RUSTLE_READTHROUGH_PROTECT` (with the statistic arms; unset/`fusion` = on, `off` = the arms
-    /// as registered, byte for byte): a flagged junction that is a fusion gene's (>= 4 primary reads, canonical, the
-    /// longest read carrying it codes across it: Yoo 2025) keeps its reads and goes to `<out>.readthrough_protected.tsv`.
+    /// as registered, byte for byte; read only when the filter is on): a flagged junction that passes the fusion_gene
+    /// test (>= 4 primary reads, canonical, its modal molecule's longest ORF a protein across it in each side's own frame:
+    /// Yoo 2025) keeps its reads and goes to `<out>.readthrough_protected.tsv`; the ALL dump gains a `protected` column.
     #[arg(long, default_value_t = false)]
     assemble_only: bool,
 
@@ -430,8 +431,12 @@ struct Args {
     /// replaces `--gtf-regroup`, and the two are exclusive); bridges become `<gene_id>.fus<k>` with `fusion_of` /
     /// `fusion_junction` attributes. Runs LAST, on the final lines; no line added, removed or moved, chains unchanged.
     /// Writes `<out>.families.gtf` (the GTF without the bridges: the families input), `<out>.bridge_junctions.tsv`
-    /// (every structural junction with its evidence), `<out>.bridges.tsv` (f1v2: each bridge's reads and decision)
-    /// and `params.tsv` rows. Needs `--assemble-only` and one region per contig.
+    /// (every structural junction with its evidence), `<out>.bridges.tsv` (f1v2: each bridge's reads and decision),
+    /// `<out>.fusions.tsv` (each bridge transcript's fusion class, Yoo 2025: `fusion_gene` = >= 4 primary reads,
+    /// canonical, and its longest complete ORF a fusion protein across its bridge junctions; `readthrough` = supported,
+    /// no fusion protein; `unsupported`; plus `contested` = a junction with more secondary than primary alignments,
+    /// O2's question; `docs/FUSION_CATEGORY_2026-10-17.md`) and `params.tsv` rows. Needs `--assemble-only` and one region
+    /// per contig.
     /// **Default `f1v2` under `--assemble-only`** (2026-09-29, the user's decision on the F1v2 held-out Outcome and
     /// its family-level side result, `docs/archive/2026-09/PREREG_o1_cover_growth_2026-09-29.md` Outcome); `--bridge-regroup off`
     /// restores the 2026-09-25 products byte for byte (no families GTF, no side tables, no `params.tsv` rows).
@@ -11180,9 +11185,10 @@ fn main() -> Result<()> {
             let ppath = format!("{}.readthrough_protected.tsv", args.out);
             readthrough_all.write_protected_tsv(&ppath)?;
             eprintln!(
-                "[readthrough] RUSTLE_READTHROUGH_PROTECT=fusion: {} junction(s) the rule flagged are fusion genes' (>= 4 \
-                 primary reads, canonical, the longest read carrying each codes across it, Yoo 2025) and KEEP their reads \
-                 -> {ppath} (RUSTLE_READTHROUGH_PROTECT=off removes them, the arms as registered)",
+                "[readthrough] RUSTLE_READTHROUGH_PROTECT=fusion: {} junction(s) the rule flagged pass the fusion_gene test \
+                 (>= 4 primary reads, canonical, the modal molecule's longest ORF a protein across it in each side's own \
+                 frame, Yoo 2025; junctions inside one coding gene pass too) and KEEP their reads -> {ppath} \
+                 (RUSTLE_READTHROUGH_PROTECT=off removes them, the arms as registered)",
                 readthrough_all.protected.len()
             );
         }
