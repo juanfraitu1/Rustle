@@ -16607,25 +16607,27 @@ pub mod bridge_regroup {
     /// JMJD7-PLA2G4B, orangutan HERC2-GOLGA, FOXO3B) when Iso-Seq supports them ("expressed": more than 3 reads) and they
     /// carry a valid open reading frame (TransDecoder). A real fusion must not be read as a spurious readthrough, nor
     /// dropped because no annotation names it. Every bridge transcript is classed here from read and sequence evidence
-    /// alone (annotation never decides): FUSION when its bridge junctions are carried by >= [`FUSION_MIN_READS`] primary
+    /// alone (annotation never decides). REAL when its bridge junctions are carried by >= [`FUSION_MIN_READS`] primary
     /// alignments, by no more secondary than primary ones (a secondary-majority junction is borrowed evidence, §6n9:
-    /// PKD1P4-NPIPA8 10 / 1,150, while PKD1P6-NPIPP1 has 110 primary reads), each with a canonical splice motif, and
-    /// when its longest complete ORF (>= [`FUSION_MIN_ORF_AA`], TransDecoder's default minimum) runs across every one of
-    /// them; otherwise READTHROUGH. The class goes to `<out>.fusions.tsv`; the GTF lines are unchanged.
+    /// PKD1P4-NPIPA8 10 / 1,150, while PKD1P6-NPIPP1 has 110 primary reads), each with a canonical splice motif; a real
+    /// one is a FUSION_GENE when its longest complete ORF (>= [`FUSION_MIN_ORF_AA`], TransDecoder's default minimum) runs
+    /// across every one of them, else a FUSION_TRANSCRIPT (noncoding, kept all the same); otherwise READTHROUGH. The
+    /// class goes to `<out>.fusions.tsv`; the GTF lines are unchanged.
     pub const FUSION_MIN_READS: u32 = 4;
     pub const FUSION_MIN_ORF_AA: usize = 100;
     const FUSIONS_HEADER: &str =
         "transcript_id\tgene_id\tchrom\tstrand\tjunctions\tclass\tprimary_reads\tsecondary_reads\tmotifs\torf_aa\torf_spans\tfusion_of";
 
-    /// The class from the evidence (see [`FUSION_MIN_READS`]'s section).
+    /// The class from the evidence (see [`FUSION_MIN_READS`]'s section): REAL = read-supported, primary-majority,
+    /// canonical; a real one is a `fusion_gene` when it also codes across its junctions (Yoo 2025's coding fusion genes),
+    /// else a `fusion_transcript` (PKD1P6-NPIPP1 and PDXDC2P-NPIPB14P are CAT lncRNAs); the rest are `readthrough`.
     pub fn fusion_class(primary: u32, secondary: u32, canonical: bool, orf_aa: usize, spans: bool) -> &'static str {
-        if primary >= FUSION_MIN_READS
-            && primary >= secondary
-            && canonical
-            && orf_aa >= FUSION_MIN_ORF_AA
-            && spans
-        {
-            "fusion"
+        if primary >= FUSION_MIN_READS && primary >= secondary && canonical {
+            if orf_aa >= FUSION_MIN_ORF_AA && spans {
+                "fusion_gene"
+            } else {
+                "fusion_transcript"
+            }
         } else {
             "readthrough"
         }
@@ -18554,14 +18556,15 @@ pub mod bridge_regroup {
         }
 
         #[test]
-        fn a_fusion_needs_yoo_s_support_primary_reads_a_canonical_junction_and_an_orf_across_it() {
-            assert_eq!(fusion_class(4, 0, true, 100, true), "fusion");
+        fn a_real_fusion_needs_yoo_s_support_primary_reads_and_a_canonical_junction_and_codes_with_an_orf_across_it() {
+            assert_eq!(fusion_class(4, 0, true, 100, true), "fusion_gene");
             assert_eq!(fusion_class(3, 0, true, 100, true), "readthrough"); // Yoo 2025: expressed = more than 3 reads
             assert_eq!(fusion_class(110, 111, true, 300, true), "readthrough"); // borrowed: secondary-majority support
-            assert_eq!(fusion_class(110, 110, true, 300, true), "fusion"); // a tie is no secondary majority
+            assert_eq!(fusion_class(110, 110, true, 300, true), "fusion_gene"); // a tie is no secondary majority
             assert_eq!(fusion_class(110, 0, false, 300, true), "readthrough"); // a non-canonical junction
-            assert_eq!(fusion_class(110, 0, true, 99, true), "readthrough"); // under TransDecoder's 100 aa
-            assert_eq!(fusion_class(110, 0, true, 300, false), "readthrough"); // the ORF ends before the junction
+            // real but noncoding (PKD1P6-NPIPP1 is a CAT lncRNA): a fusion transcript, never a readthrough
+            assert_eq!(fusion_class(110, 0, true, 99, true), "fusion_transcript"); // under TransDecoder's 100 aa
+            assert_eq!(fusion_class(110, 0, true, 300, false), "fusion_transcript"); // the ORF ends before the junction
         }
 
         #[test]
@@ -18571,13 +18574,13 @@ pub mod bridge_regroup {
             let g = contig(3000, &[(100, "ATG"), (1595, "TAA"), (350, "GT"), (1298, "AG")]);
             let b = tx_of("+", &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]);
             let call = classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g);
-            assert_eq!(call.class, "fusion");
+            assert_eq!(call.class, "fusion_gene");
             assert_eq!((call.primary, call.secondary, call.orf_aa, call.orf_spans), (110, 3, 115, true));
             assert_eq!(call.motifs, vec!["GT-AG".to_string()]);
             // the same transcript as a secondary-dominated echo, and with its stop codon before the junction
             assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (10, 1150), &g).class, "readthrough");
             let g2 = contig(3000, &[(100, "ATG"), (130, "TAA"), (350, "GT"), (1298, "AG")]);
-            assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g2).class, "readthrough");
+            assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g2).class, "fusion_transcript");
         }
 
         #[test]
