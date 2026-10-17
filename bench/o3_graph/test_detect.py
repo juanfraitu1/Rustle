@@ -450,3 +450,21 @@ def test_donor_alleles_are_subtracted_from_de_and_from_the_floor_alike():
     de, floor = D.allele_corrected(prim, {het})
     assert abs(de["m"] - 2 / 232) < 1e-9 and de["p1"] == 0.0 and abs(de["p3"] - 1 / 200) < 1e-9
     assert abs(floor - 0.0025) < 1e-9                                      # median over p1, p2, p3 and m: 0, 0, 0.005, 0.0086
+
+
+def test_alleles_count_only_at_loci_whose_alleles_stay_within_allelic_divergence():
+    # round 13 development: CTSLP.1 (removed, 1.02% from its paralog) collapses onto the paralog, and its explained reads carry
+    # its PSVs there -- as many "alleles" as delta allows over the whole locus marks a missing copy, not a haplotype
+    copies = [("c", [(0, 600), (900, 1300)]), ("d", [(0, 1000)])]                # exonic 1,000 bp each
+    het = {("c", 100, "X", "G"), ("c", 1000, "X", "T")}                         # 2 / 1,000 <= delta: a haplotype
+    psv = {("d", p, "X", "A") for p in range(0, 1000, 80)}                      # 13 / 1,000 > delta: a collapsed paralog
+    off = {("c", 700, "X", "C"), ("e", 5, "X", "A")}                            # an intron, an unseeded contig
+    assert D.allelic_loci(het | psv | off, copies) == het
+
+
+def test_donor_alleles_can_be_restricted_to_substitutions():
+    snv, dl = ("c", 50, "X", "G"), ("c", 60, "D", 1)
+    spans = {f"e{i}": ("c", 0, 200) for i in range(40)}
+    events = {f"e{i}": ([snv] if i < 20 else []) + ([dl] if i < 10 else []) for i in range(40)}
+    assert D.donor_alleles(spans, events, set(spans), floor=0.003) == {snv, dl}
+    assert D.donor_alleles(spans, events, set(spans), floor=0.003, kinds=("X",)) == {snv}

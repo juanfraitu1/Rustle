@@ -623,13 +623,14 @@ def binom_sf(k, n, p):
     return max(0.0, 1.0 - s)
 
 
-def donor_alleles(spans, events, explained, floor, alpha=ALLELE_ALPHA):
-    """--allele-discount (round 13): the donor's alleles, as the reads O2 explains show them. An edit carried by >= 2 explained
-    reads is an allele when more of the explained reads spanning its position carry it than sequencing error explains:
-    P(Binomial(n spanning, floor) >= k carriers) < alpha, the floor bounding the rate of any one edit at one base. A missing
-    copy's PSVs are carried by its own reads, which O2 leaves unexplained; a present copy's alleles (and systematic errors) are
-    carried by the reads it explains too. spans {read: (contig, start, end)}, events {read: [edit keys]}."""
-    carriers = collections.Counter(e for q in explained if q in events for e in set(events[q]))
+def donor_alleles(spans, events, explained, floor, alpha=ALLELE_ALPHA, kinds=None):
+    """--allele-discount (round 13): candidate alleles, as the reads other than a call's own show them. An edit carried by >= 2
+    of them is a candidate when more of those spanning its position carry it than sequencing error explains: P(Binomial(n
+    spanning, floor) >= k carriers) < alpha, the floor bounding the rate of any one edit at one base. kinds: the edit kinds
+    considered ("X": substitutions). spans {read: (contig, start, end)}, events {read: [edit keys]}. Recurrence alone does not
+    tell a haplotype from a collapsed paralog's PSVs: allelic_loci decides."""
+    carriers = collections.Counter(e for q in explained if q in events for e in set(events[q])
+                                   if kinds is None or e[2] in kinds)
     starts, ends = collections.defaultdict(list), collections.defaultdict(list)
     for q in explained:
         if q in spans:
@@ -646,6 +647,30 @@ def donor_alleles(spans, events, explained, floor, alpha=ALLELE_ALPHA):
         if binom_sf(k, max(n, k), floor) < alpha:
             out.add(e)
     return out
+
+
+def allelic_loci(alleles, copies):
+    """The candidate alleles that are a haplotype: those in the exons of seeded copies whose candidates, all together, stay
+    within allelic divergence (count / exonic length <= DELTA, delta's own whole-copy definition). A removed copy collapsing
+    onto a paralog (round 13 development: CTSLP.1, 1.02% from it) leaves its PSVs there as more candidates than delta allows;
+    a present copy's two donor alleles (MRGPRX.1) do not. copies [(contig, [(start, end) exons])]; a candidate in no copy's
+    exons is no allele."""
+    merged = []
+    for ctg, ex in copies:
+        iv = []
+        for a, b in sorted(ex):
+            if iv and a <= iv[-1][1]:
+                iv[-1][1] = max(iv[-1][1], b)
+            else:
+                iv.append([a, b])
+        merged.append((ctg, iv, sum(b - a for a, b in iv)))
+    inside = [[e for e in alleles if e[0] == ctg and any(a <= e[1] < b for a, b in iv)] for ctg, iv, _ in merged]
+    ok = [n > 0 and len(es) <= DELTA * n for (_, _, n), es in zip(merged, inside)]
+    homes = collections.defaultdict(list)
+    for k, es in enumerate(inside):
+        for e in es:
+            homes[e].append(ok[k])
+    return {e for e, v in homes.items() if all(v)}
 
 
 def allele_corrected(prim, alleles):
@@ -669,15 +694,6 @@ def primary_events(bam_p):
             prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality)
             spans[rec.query_name] = (rec.reference_name, rec.reference_start, rec.reference_end)
     return prim, spans
-
-
-def o2_explained(w):
-    """The reads O2's last table explains (any reason but `unexplained`): the genome fallback's (o2.integl) when it ran."""
-    for name in ("o2.integl.m2.tsv", "o2.integ.m2.tsv"):
-        p = f"{w}/graph/{name}"
-        if os.path.exists(p):
-            return {r["read"] for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] != "unexplained"}
-    return set()
 
 
 def member_genome(members, gst, read_len):
@@ -922,9 +938,12 @@ def main(argv):
     rows_out = []
     member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
     floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
-    if "--allele-discount" in argv:                          # round 13: the donor's alleles, which explained reads carry too
+    if "--allele-discount" in argv:                          # round 13: the donor's alleles, carried by other reads too
         prim, spans = primary_events(f"{w}/E0.bam")
-        alleles = donor_alleles(spans, {q: v["events"] for q, v in prim.items()}, o2_explained(w) - want, floor)
+        sj = json.load(open(f"{w}/graph/seeded.json"))
+        copies = [(c["contig"], [tuple(x) for v in c["isoforms"].values() for x in v]) for f in sj for c in sj[f]["copies"]]
+        cand = donor_alleles(spans, {q: v["events"] for q, v in prim.items()}, set(prim) - want, floor, kinds=("X",))
+        alleles = allelic_loci(cand, copies)
         de_a, floor_a = allele_corrected(prim, alleles)
         gst = {q: (de_a.get(q, de), nov) for q, (de, nov) in gst.items()}
         floor = floor_a if "--error-floor" in argv else 0.0
