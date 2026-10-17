@@ -448,3 +448,27 @@ def test_the_veto_mode_rechecks_assigned_reads_and_places_unexplained_ones_as_th
     assert O.run_locus_fallback(str(w), mode="veto") == 0
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
     assert out == {"r1": ("0", "veto_locus"), "r2": ("0", "assigned"), "r3": ("1", "locus")}
+
+
+def test_the_veto_charges_clipped_and_long_inserted_bases_in_full():
+    # round 12 development: KRTAP2.1 reads align to KRTAP2.0 as 27S46=105N5=1X82=1X53= -- 2 by locus_distance, a sub-NOVEL_INS clip
+    # being free -- against 5 on their own locus, which aligns those bases; the veto then moved them to KRTAP2.0
+    assert O.veto_distance([(4, 27), (7, 46), (3, 105), (7, 5), (8, 1), (7, 82), (8, 1), (7, 53)]) == 29
+    assert O.veto_distance([(7, 300), (1, O.NOVEL_INS + 10), (7, 300)]) == O.NOVEL_INS + 10
+    assert O.veto_distance([(7, 300), (1, 3), (8, 2), (2, 5), (7, 100), (5, 40)]) == 4      # hard clips are not the read's
+
+
+def test_the_veto_keeps_a_path_call_whose_rival_alignment_only_clips_the_difference(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t1\tassigned\n")
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "27S473="), ("r1", 256, "chrB", 2000, "24=3I1X3=1X3=1X465=")])
+    assert O.run_locus_fallback(str(w), mode="veto") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("1", "assigned")}

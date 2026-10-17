@@ -533,6 +533,23 @@ def locus_distance(cigartuples):
     return d
 
 
+def veto_distance(cigartuples):
+    """The genome veto's distance of one alignment: mismatches, indel events, and every base the locus does not hold counted in
+    full -- soft-clipped ends and insertions >= NOVEL_INS. locus_distance leaves a clip under NOVEL_INS free, so a paralog's
+    alignment that clips a read's differing end beat the read's own locus (round 12 development: KRTAP2.1, 27S... at 2 vs 5)."""
+    d = 0
+    for op, n in cigartuples:
+        if op == 8:
+            d += n
+        elif op == 1:
+            d += n if n >= NOVEL_INS else 1
+        elif op == 2:
+            d += 1
+        elif op == 4:
+            d += n
+    return d
+
+
 def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
     """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
     and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained`); a read
@@ -562,9 +579,11 @@ def path_dists(dist):
     return {q: {c[4:]: v for c, v in cs.items()} for q, cs in dist.items()}
 
 
-def genome_distances(w, todo, spans):
+def genome_distances(w, todo, spans, dist_fn=None):
     """{(read, family): {seeded copy idx or ELSEWHERE: best locus_distance}} over every primary and secondary alignment in
-    WORLD/E0.bam of the reads in todo ({read: families}), and {read: its length from the alignments}."""
+    WORLD/E0.bam of the reads in todo ({read: families}), and {read: its length from the alignments}. dist_fn: another
+    per-alignment distance (veto_distance)."""
+    dist_fn = dist_fn or locus_distance
     import pysam
     dist, qlen = collections.defaultdict(dict), {}
     with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
@@ -573,7 +592,7 @@ def genome_distances(w, todo, spans):
             if q not in todo or rec.is_unmapped or rec.is_supplementary:
                 continue
             qlen[q] = max(qlen.get(q, 0), rec.infer_read_length() or 0)
-            d = locus_distance(rec.cigartuples)
+            d = dist_fn(rec.cigartuples)
             if d is None:
                 continue
             for f in todo[q]:
@@ -600,6 +619,9 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     alignments (veto_decide). O3 still reads o2.integ.m<margin>.tsv, so no mode changes O3's evidence; an O3 call on a read takes precedence over its
     placement (summary.read_fate)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.integ.m{margin}.tsv"), delimiter="\t"))
+    by_read = collections.defaultdict(list)
+    for r in rows:
+        by_read[r["read"]].append(r)
     explained_in = collections.defaultdict(set)
     for r in rows:
         if r["reason"] != "unexplained":
@@ -614,6 +636,10 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
                 or mode == "resolve" and r["reason"] in ("tied", "thin") or mode == "veto" and r["reason"] == "assigned"):
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
+    if mode == "veto":                                    # the assigned reads' alignments, every unaligned base counted
+        vdist, _ = genome_distances(w, {q: fs for q, fs in todo.items()
+                                        if any(r["read"] == q and r["reason"] == "assigned" for r in by_read[q])}, spans,
+                                    veto_distance)
     if mode not in ("unexplained", "veto"):
         lens = {n: len(x) for n, x in _read_fq(f"{w}/reads.E0.fq").items()}
         pd = {}
@@ -643,7 +669,7 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             if c is not None and c != ELSEWHERE:
                 call, reason = str(c), "genome_assigned"
         elif mode == "veto" and reason == "assigned":
-            v = veto_decide(call, dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
+            v = veto_decide(call, vdist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
             call, reason = v if v else (call, reason)
         elif reason == "unexplained":
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
