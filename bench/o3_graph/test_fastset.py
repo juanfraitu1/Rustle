@@ -47,7 +47,8 @@ def _opts(**kw):
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
                 o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False,
-                mapped_sites=False, branch_genome_novel=False, allele_discount=False)
+                mapped_sites=False, branch_genome_novel=False, allele_discount=False,
+                mosaic_shared=False, o3_pool="paths")
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -135,3 +136,10 @@ def test_the_veto_genome_step_writes_and_scores_its_own_table():
     steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(o2_genome="veto", error_floor=True), "/R", "INTACT"))
     assert steps["O2_genome"].endswith("integv 2 --error-floor")
     assert "--o2 o2.integv.m2.tsv" in F.e2e_command(_opts(o2_genome="veto"), "/R", ["A"])
+
+
+def test_o3_takes_the_shared_position_mosaic_distance_and_the_final_o2_pool_only_when_asked():
+    o3 = F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--mosaic-shared" not in o3 and "--pool-table" not in o3
+    o3 = F.chain_steps(_opts(mosaic_shared=True, o3_pool="final", o2_genome="veto"), "/R", "INTACT")[-1][1]
+    assert "--mosaic-shared" in o3 and "--pool-table o2.integv.m2.tsv" in o3
