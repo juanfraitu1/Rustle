@@ -40,3 +40,25 @@ def test_a_local_reference_is_reused_only_for_the_family_set_it_was_built_for(tm
     assert F.local_matches(str(tmp_path), str(fj), "s1") and not F.local_matches(str(tmp_path), str(fj), "s2")
     fj.write_text('{"sets": {"s1": [9], "s2": [2]}}')
     assert not F.local_matches(str(tmp_path), str(fj), "s1")
+
+
+def _opts(**kw):
+    import argparse
+    base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
+                o3_procs=2, locus_fallback=False, per_read_detectability=False)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def test_a_world_runs_current_then_o1_o2_and_o3_and_the_locus_fallback_only_when_asked():
+    steps = [s for s, _, _ in F.chain_steps(_opts(), "/R", "INTACT")]
+    assert steps == ["current", "O1", "O2", "O3"]
+    steps = F.chain_steps(_opts(locus_fallback=True), "/R", "INTACT")
+    assert [s for s, _, _ in steps] == ["current", "O1", "O2", "O2_fallback", "O3"]
+    assert steps[3][1] == "python3 bench/o3_graph/o2graph.py run /R/INTACT integl 2" and steps[3][2] == "light"
+
+
+def test_the_set_is_scored_on_the_fallback_table_and_per_read_when_asked():
+    assert F.e2e_command(_opts(), "/R", ["A", "B"]) == "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A /R/B"
+    assert F.e2e_command(_opts(locus_fallback=True, per_read_detectability=True), "/R", ["A"]) == (
+        "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.integl.m2.tsv --per-read-detectability")

@@ -6,7 +6,7 @@
     summary.py o2bars PREFIX WORLD ...    round 4's A1-A4: padded union O2 (o2.unionp.m2.tsv) against the current O2 and locus O2
                                           (o2.locus.m2.tsv), per world; writes PREFIX_<arm>.json (o2graph.py score)
     summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
-    summary.py e2e OUT.json WORLD ... [--per-read-detectability]   end to end: every read's fate (read_fate) by the kind of copy it came from, for the
+    summary.py e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME]   end to end: every read's fate (read_fate) by the kind of copy it came from, for the
                                           current method and the integrated O1 -> O2 -> O3
     summary.py bars E2E.json              round 8's pre-registered bars (docs/PREREG_o3_graph_round8_2026-10-16.md) on an e2e
                                           table: per world, integrated correct >= current (B1) and errors <= current (B2)
@@ -144,9 +144,9 @@ def integrated_calls(rows, seeded_copy):
     return out
 
 
-def cmd_e2e(out, worlds, per_read=False):
+def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv"):
     """Per world and read class: the fates of every read under the current method (copy_assign O2 + CUR O3) and the integrated
-    O1 -> O2 -> O3 (o2.integ.m2.tsv on graph/seeded.json + arm I)."""
+    O1 -> O2 -> O3 (o2_name, by default o2.integ.m2.tsv, on graph/seeded.json + arm I)."""
     O = _o2("o2graph")
     res = {}
     for w in worlds:
@@ -177,7 +177,7 @@ def cmd_e2e(out, worlds, per_read=False):
         for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
             if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit():
                 cur.setdefault(r["read_name"], {})[r["family_id"]] = cat_copy.get((r["family_id"], int(r["catalog_copy_idx"])))
-        integ = integrated_calls(csv.DictReader(open(f"{w}/graph/o2.integ.m2.tsv"), delimiter="\t"), seeded_copy)
+        integ = integrated_calls(csv.DictReader(open(f"{w}/graph/{o2_name}"), delimiter="\t"), seeded_copy)
         mem = collections.defaultdict(set)
         for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
             mem[(r["family"], r["host"], r["cluster"])].add(r["read_name"])
@@ -207,6 +207,20 @@ def cmd_e2e(out, worlds, per_read=False):
                                                 for cl in sorted(tab[system])))
     json.dump(res, open(out, "w"), indent=1)
     return 0
+
+
+def e2e_args(argv):
+    """e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME] -> (out, worlds, per_read, o2_name); O2_NAME: the
+    integrated system's O2 table in WORLD/graph (o2.integ.m2.tsv; o2.integl.m2.tsv: with the locus fallback)."""
+    rest, o2_name, i = [], "o2.integ.m2.tsv", 2
+    while i < len(argv):
+        if argv[i] == "--o2":
+            o2_name, i = argv[i + 1], i + 2
+            continue
+        if not argv[i].startswith("--"):
+            rest.append(argv[i])
+        i += 1
+    return argv[1], rest, "--per-read-detectability" in argv, o2_name
 
 
 def round8_bars(tab):
@@ -385,7 +399,7 @@ def main(argv):
     if argv[0] == "bars":                                # round 8: the pre-registered end-to-end bars
         return cmd_bars(argv[1])
     if argv[0] == "e2e":                                 # end to end: every read's fate, current vs integrated
-        return cmd_e2e(argv[1], [x for x in argv[2:] if not x.startswith("--")], "--per-read-detectability" in argv)
+        return cmd_e2e(*e2e_args(argv))
     if argv[0] == "integ":                               # round 7: the integrated O1 -> O2 against the current O2
         return cmd_integ(argv[1], argv[2:])
     if argv[0] == "flags":                               # round 6: the flag's clusters by truth class

@@ -13,7 +13,8 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
     annotation-free baseline on seqsupport's genomic-locus distances; run ... unionf MARGIN: padded union with the locus
     fallback and the cross-family guard (fallback_call); run ... flag BASE: o2.<BASE> with the reads of flagged PSV clusters
     reported as unannotated-copy candidates (flag_reads, apply_flag); run ... integ MARGIN: padded union on O1's seeded catalog
-    (o1seed.py; run_integrated); outputs graph/o2.<method>.m<margin>.tsv)
+    (o1seed.py; run_integrated); run ... integl MARGIN: integ with the CIGAR-aware locus fallback for the reads it leaves
+    unexplained (run_locus_fallback); outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -40,6 +41,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD, FLAG_MIN_READS = 2, 0.8, 0.00958, 5, 50, 20
 EXT_CAP, EXT_BAND = 50, 30                               # --distance gapcomp: clipped ends aligned up to EXT_CAP bases
+NOVEL_INS = 30                     # locus fallback: an insertion or unaligned end this long is sequence no copy holds
+ELSEWHERE = -1                     # locus fallback: the read's best alignment off every seeded copy of the family
 
 
 def _detect():
@@ -442,6 +445,88 @@ def run_integrated(w, margin=MARGIN, distance="clip"):
                      distance=distance)
 
 
+def locus_distance(cigartuples):
+    """Gap-compressed edits of one genome alignment (an --eqx CIGAR): mismatches + insertion and deletion EVENTS (as minimap2's
+    `de`); None when an insertion or a soft-clipped end of >= NOVEL_INS bases leaves read sequence the locus does not hold
+    (a novel exon, an unannotated copy's own sequence: O3's evidence, never an O2 placement)."""
+    d = 0
+    for op, n in cigartuples:
+        if op == 8:
+            d += n
+        elif op in (1, 2):
+            if op == 1 and n >= NOVEL_INS:
+                return None
+            d += 1
+        elif op == 4 and n >= NOVEL_INS:
+            return None
+    return d
+
+
+def locus_decide(dist, qlen, margin=MARGIN):
+    """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
+    and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained`); a read
+    whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family) stays `unexplained`."""
+    c, reason = decide(dist, qlen, margin)
+    if reason == "unexplained" or c == ELSEWHERE:
+        return None, "unexplained"
+    return (c, "locus") if c is not None else (None, f"locus_{reason}")
+
+
+def run_locus_fallback(w, margin=MARGIN, out_name=None):
+    """WORLD/graph/o2.integl.m<margin>.tsv: integrated O2 (o2.integ.m<margin>.tsv) with a CIGAR-aware locus fallback for the reads
+    it leaves `unexplained` in a family and explains in no other (else `other_family`): every primary and secondary genome
+    alignment of the read (E0.bam) scored by locus_distance, the best per seeded copy of the family (graph/seeded.json spans) and
+    the best off them (ELSEWHERE), placed by locus_decide. O3 still reads o2.integ.m<margin>.tsv, so the fallback changes no O3
+    evidence; an O3 call on a read takes precedence over its placement (summary.read_fate)."""
+    import pysam
+    rows = list(csv.DictReader(open(f"{w}/graph/o2.integ.m{margin}.tsv"), delimiter="\t"))
+    explained_in = collections.defaultdict(set)
+    for r in rows:
+        if r["reason"] != "unexplained":
+            explained_in[r["read"]].add(r["family"])
+    sj = json.load(open(f"{w}/graph/seeded.json"))
+    spans = {f: [(c["contig"], c["start"], c["end"], c["idx"]) for c in v["copies"]] for f, v in sj.items()}
+    todo = collections.defaultdict(set)                   # read -> the families it is unexplained in, explained in no other
+    for r in rows:
+        if r["reason"] == "unexplained" and not explained_in[r["read"]] - {r["family"]}:
+            todo[r["read"]].add(r["family"])
+    dist, qlen = collections.defaultdict(dict), {}
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q not in todo or rec.is_unmapped or rec.is_supplementary:
+                continue
+            qlen[q] = max(qlen.get(q, 0), rec.infer_read_length() or 0)
+            d = locus_distance(rec.cigartuples)
+            if d is None:
+                continue
+            for f in todo[q]:
+                on = [i for ch, s, e, i in spans.get(f, ()) if ch == rec.reference_name and rec.reference_start < e
+                      and rec.reference_end > s]
+                for i in on or [ELSEWHERE]:
+                    if d < dist[(q, f)].get(i, 1 << 30):
+                        dist[(q, f)][i] = d
+    out = []
+    for r in rows:
+        call, reason = r["call"], r["reason"]
+        if reason == "unexplained":
+            if r["family"] not in todo.get(r["read"], ()):
+                call, reason = "-", "other_family"
+            else:
+                c, reason = locus_decide(dist.get((r["read"], r["family"]), {}), qlen.get(r["read"], 0), margin)
+                call = "-" if c is None else str(c)
+        out.append(dict(read=r["read"], family=r["family"], call=call, reason=reason))
+    out_name = out_name or f"o2.integl.m{margin}.tsv"
+    with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
+        wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
+        wr.writeheader()
+        wr.writerows(out)
+    c = collections.Counter(r["reason"] for r in out)
+    print(f"[o2graph] {w} (integrated + CIGAR-aware locus fallback, margin {margin}) -> {out_name}: {len(out)} rows, "
+          + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
+    return 0
+
+
 def run_locus(w, margin=MARGIN, out_name=None):
     """Locus O2, the annotation-free baseline: decide() on the distances of every hosted read to each catalogued copy's
     genomic locus (graph/locus.dist.json from run_seqsupport; any canonical splicing allowed)."""
@@ -638,6 +723,8 @@ def main(argv):
             return run_locus(argv[1], margin)
         if method == "integ":                             # round 7: needs o1seed.py WORLD first
             return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip")
+        if method == "integl":                            # integ + the CIGAR-aware locus fallback; needs o2.integ.m<margin>.tsv
+            return run_locus_fallback(argv[1], margin)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first

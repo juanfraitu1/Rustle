@@ -98,3 +98,9 @@ def test_an_absent_copy_s_read_is_detectable_by_its_own_divergence_when_asked():
     assert S.absent_class(False, 0.05, per_read=True) == "absent_detectable"
     assert S.absent_class(False, 0.05, per_read=False) == "absent_undetectable"
     assert S.absent_class(True, None, per_read=True) == "absent_detectable"      # no primary alignment: the genome explains nothing
+
+
+def test_e2e_scores_the_integrated_o2_table_it_is_given():
+    assert S.e2e_args(["e2e", "o.json", "W1", "W2"]) == ("o.json", ["W1", "W2"], False, "o2.integ.m2.tsv")
+    assert S.e2e_args(["e2e", "o.json", "W1", "--o2", "o2.integl.m2.tsv", "W2", "--per-read-detectability"]) == (
+        "o.json", ["W1", "W2"], True, "o2.integl.m2.tsv")

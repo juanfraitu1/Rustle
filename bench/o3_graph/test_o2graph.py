@@ -231,3 +231,69 @@ def test_the_pruned_gap_compressed_distance_equals_scoring_every_line():
         naive.setdefault(f[0], {})
         naive[f[0]][c] = min(O.gap_compressed(ln, reads[f[0]], tx[f[5]]), naive[f[0]].get(c, 10 ** 9))
     assert O._paf_dist_gc(paf, reads, tx) == naive
+
+
+def test_the_locus_fallback_distance_counts_indel_events_and_refuses_novel_sequence():
+    # pysam op codes: 7 '=', 8 X, 1 I, 2 D, 3 N, 4 S
+    assert O.locus_distance([(7, 300), (8, 1), (3, 2000), (7, 200), (2, 4), (7, 100), (1, 1), (7, 50)]) == 3
+    assert O.locus_distance([(7, 300), (1, O.NOVEL_INS), (7, 300)]) is None        # a novel exon: O3's, not O2's
+    assert O.locus_distance([(4, O.NOVEL_INS), (7, 600)]) is None                  # an unaligned end of that length too
+    assert O.locus_distance([(4, 5), (7, 600)]) == 0                                # a short clip is not sequence
+
+
+def test_the_locus_fallback_assigns_only_a_clear_winner_and_calls_a_genome_tie_tied():
+    assert O.locus_decide({3: 1, 5: 4}, qlen=1000) == (3, "locus")
+    assert O.locus_decide({3: 1, 5: 2}, qlen=1000) == (None, "locus_thin")
+    assert O.locus_decide({3: 1, 5: 1}, qlen=1000) == (None, "locus_tied")
+    assert O.locus_decide({3: 20}, qlen=1000) == (None, "unexplained")              # beyond delta: still a candidate for O3
+    assert O.locus_decide({}, qlen=1000) == (None, "unexplained")
+
+
+def test_the_locus_fallback_leaves_a_read_the_genome_places_off_the_seeded_copies_unexplained():
+    # ELSEWHERE: the read's best alignment outside every seeded copy of the family (an unseeded or dropped copy, another family)
+    assert O.locus_decide({3: 4, O.ELSEWHERE: 0}, qlen=1000) == (None, "unexplained")
+    assert O.locus_decide({3: 1, O.ELSEWHERE: 2}, qlen=1000) == (None, "locus_thin")
+    assert O.locus_decide({3: 0, O.ELSEWHERE: 5}, qlen=1000) == (3, "locus")
+
+
+def _bam(path, reads):
+    """reads: [(name, flag, contig, pos0, cigar)] on chrA/chrB, sorted and indexed."""
+    import pysam
+    hdr = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "chrA", "LN": 100000}, {"SN": "chrB", "LN": 100000}]}
+    with pysam.AlignmentFile(path + ".u.bam", "wb", header=hdr) as out:
+        for name, flag, contig, pos, cigar in reads:
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.flag, a.reference_name, a.reference_start, a.cigarstring = name, flag, contig, pos, cigar
+            a.mapping_quality = 0 if flag & 256 else 60
+            out.write(a)
+    pysam.sort("-o", path, path + ".u.bam")
+    pysam.index(path)
+
+
+def test_the_locus_fallback_places_only_reads_integrated_o2_left_unexplained(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1", "r2", "r3", "r4", "r5"]),
+               "G": dict(copies=[dict(idx=0, contig="chrA", start=50000, end=52000, origin="curated")], dropped=[],
+                         family_reads=["r5"])}, open(w / "graph" / "seeded.json", "w"))
+    rows = [("r1", "F", "0", "assigned"), ("r2", "F", "-", "unexplained"), ("r3", "F", "-", "unexplained"),
+            ("r4", "F", "-", "unexplained"), ("r5", "F", "-", "unexplained"), ("r5", "G", "0", "assigned"),
+            ("r6", "F", "-", "unexplained")]
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\n" + "".join("\t".join(r) + "\n" for r in rows))
+    _bam(str(w / "E0.bam"), [
+        ("r2", 0, "chrB", 2000, "500=1X499="), ("r2", 256, "chrA", 2000, "500=4X496="),    # copy 1 by 3: placed
+        ("r3", 0, "chrA", 2000, "500=1X499="), ("r3", 256, "chrB", 2000, "500=2X498="),    # margin 1: thin
+        ("r4", 0, "chrA", 30000, "1000="), ("r4", 256, "chrA", 2000, "500=3X497="),        # best off the seeded copies
+        ("r5", 0, "chrA", 2000, "1000="),                                                  # O2 explains it in family G
+        ("r6", 0, "chrA", 2000, "400=60I540=")])                                           # a novel insertion
+    assert O.run_locus_fallback(str(w)) == 0
+    out = {(r["read"], r["family"]): (r["call"], r["reason"])
+           for r in csv.DictReader(open(w / "graph" / "o2.integl.m2.tsv"), delimiter="\t")}
+    assert out == {("r1", "F"): ("0", "assigned"), ("r2", "F"): ("1", "locus"), ("r3", "F"): ("-", "locus_thin"),
+                   ("r4", "F"): ("-", "unexplained"), ("r5", "F"): ("-", "other_family"), ("r5", "G"): ("0", "assigned"),
+                   ("r6", "F"): ("-", "unexplained")}

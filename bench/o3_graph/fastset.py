@@ -4,7 +4,7 @@ families are fast and cheap to test).
 
     fastset.py run OUTROOT FAMILIES SET SEED [--worlds INTACT,CROSS,OUTSIDE,REMOVED,BRANCH,SILENT] [--het 0.001]
                    [--local DIR] [--jobs 2] [--threads 4] [--sim-profile NAME] [--o2-distance clip|gapcomp]
-                   [--member-genome-check]
+                   [--member-genome-check] [--locus-fallback] [--per-read-detectability] [--trim-adapters ADAPTERS.json]
 
 1. the set's homology-closed local reference (localref.py build; once per family set, cached in --local or OUTROOT/local):
    the only step that loads the whole-genome index
@@ -13,8 +13,8 @@ families are fast and cheap to test).
 4. every distinct read sequence of the full-genome worlds mapped ONCE to the local reference, its alignments handed to each
    world's read with that sequence (minimap2 maps a read on its sequence alone); REMOVED's reads mapped to the masked one
 5. per world, `--jobs` at a time under the light lock (each < 2 GB): the current method (run.py cur), then the integrated
-   O1 -> O2 -> O3 (o1seed.py, o2graph.py run W integ 2, detect.py)
-6. summary.py e2e + bars; OUTROOT/timing.json holds every step's wall time and peak RSS
+   O1 -> O2 -> O3 (o1seed.py, o2graph.py run W integ 2 [+ integl 2 with --locus-fallback], detect.py)
+6. summary.py e2e + bars (on o2.integl.m2.tsv with --locus-fallback; --per-read-detectability passed through); OUTROOT/timing.json holds every step's wall time and peak RSS
 """
 import argparse
 import collections
@@ -137,6 +137,29 @@ def map_union(root, worlds, local, threads):
     return len(union), sum(len(v) for v in owners.values())
 
 
+def chain_steps(a, root, w):
+    """One world's steps after mapping, [(step, command, lock)]: the current method, then the integrated O1 -> O2 (+ the CIGAR-aware
+    locus fallback, --locus-fallback: o2graph.py run W integl 2, which O3 does not read) -> O3."""
+    W = f"{root}/{w}"
+    steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
+              "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
+             ("O1", f"python3 bench/o3_graph/o1seed.py {W}", "light"),
+             ("O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}", "light")]
+    if a.locus_fallback:
+        steps.append(("O2_fallback", f"python3 bench/o3_graph/o2graph.py run {W} integl 2", "light"))
+    steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
+                  + (" --member-genome-check" if a.member_genome_check else "") + ("" if a.all_arms else " --arms I"), "light"))
+    return steps
+
+
+def e2e_command(a, root, worlds):
+    """The set's end-to-end scoring: summary.py e2e on the integrated O2 table the run made (o2.integl.m2.tsv with
+    --locus-fallback), per-read detectability with --per-read-detectability."""
+    return (f"python3 bench/o3_graph/summary.py e2e {root}/e2e.json " + " ".join(f"{root}/{w}" for w in worlds)
+            + (" --o2 o2.integl.m2.tsv" if a.locus_fallback else "")
+            + (" --per-read-detectability" if a.per_read_detectability else ""))
+
+
 def cmd_run(a):
     root = os.path.abspath(a.outroot)
     os.makedirs(root, exist_ok=True)
@@ -174,17 +197,12 @@ def cmd_run(a):
                lock="heavy")
 
     def chain(w):                                                                  # 5
-        W = f"{root}/{w}"
-        st.run(w, "current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
-               lock="heavy" if a.heavy_current else "light")      # full families: copy_assign peaks ~5 GB, over the light limit
-        st.run(w, "O1", f"python3 bench/o3_graph/o1seed.py {W}")
-        st.run(w, "O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}")
-        st.run(w, "O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
-               + (" --member-genome-check" if a.member_genome_check else "") + ("" if a.all_arms else " --arms I"))
+        for step, cmd, lock in chain_steps(a, root, w):
+            st.run(w, step, cmd, lock=lock)
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for f in [ex.submit(chain, w) for w in worlds]:
             f.result()
-    st.run("set", "e2e", f"python3 bench/o3_graph/summary.py e2e {root}/e2e.json " + " ".join(f"{root}/{w}" for w in worlds))
+    st.run("set", "e2e", e2e_command(a, root, worlds))
     subprocess.run(f"python3 bench/o3_graph/summary.py bars {root}/e2e.json > {root}/bars.txt", shell=True, cwd=REPO, check=True)
     total = round(time.time() - t0, 1)
     json.dump(dict(total_wall=total, steps=st.rows), open(f"{root}/timing.json", "w"), indent=1)
@@ -219,6 +237,9 @@ def main(argv=None):
     p.add_argument("--all-arms", action="store_true", help="O3: every legacy arm too (default: the integrated arm I only)")
     p.add_argument("--o3-procs", type=int, default=2, help="O3: families in parallel per world (output does not depend on it)")
     p.add_argument("--trim-adapters", default="", help="ADAPTERS.json: trim the library's adapters off every read before mapping")
+    p.add_argument("--locus-fallback", action="store_true", help="O2: place the reads integrated O2 leaves unexplained on their "
+                   "genome alignments (o2graph.py integl); the set is scored on that table")
+    p.add_argument("--per-read-detectability", action="store_true", help="e2e: a REMOVED copy's read is detectable by its own `de`")
     p.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)
     return a.func(a)
