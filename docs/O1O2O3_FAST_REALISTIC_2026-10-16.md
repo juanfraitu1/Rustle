@@ -521,7 +521,7 @@ passed 6 of the 9 runs.
 |---|---|---|---|---|
 | 11 (r1309) | v4 | 8, 37 copies | **PASS, 12/12** | the INTACT/CROSS/SILENT margins are the current method's own O3 artefact (review) |
 | 12 (r1310) | v5 = v4 + O1-hosted O3 (`--o1-hosts`, tiered) | 8, 104 copies (80-copy DUX4) | FAIL, both profiles | O2: 2 margin-2 coincidences in DUX4, 5 structural errors (retained introns absorbed by a paralog's path as one gap-compressed edit; a read DNA-identical at two copies). O3 cost: 791-1,355 s per set |
-| 13 (r1311) | v5' = v5 + `--branch-genome-novel` | 8, 89 copies (43-copy OR7E, 3 retrocopy families) | FAIL (A119b); public 6/6 | one false O3 call: three short haplotype-2 reads of MRGPRX.1 carrying two donor alleles, in four worlds. No O2 error in any world |
+| 13 (r1311) | v5' = v5 + `--branch-genome-novel` | 8, 89 copies (43-copy OR7E, 3 retrocopy families) | FAIL (A119b); public 6/6 | one false O3 call on three haplotype-2 reads of MRGPRX.1 in four worlds: a mosaic call whose divergence is mostly one read's sequencing indels, kept by attribution's margin of 2 that two donor alleles meet (review). No O2 error on catalogued reads |
 
 - **v5 makes the integrated pipeline independent of the current method.** O3's hosts come from O1's seeded copies, tiered:
   primary alignment on a seeded copy, then a secondary, then a +-1 kb window.

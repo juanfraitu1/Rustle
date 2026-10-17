@@ -185,7 +185,7 @@ worlds. See `docs/PREREG_o3_graph_round8_2026-10-16.md`.
 | round | pipeline | families | verdict | what decided it |
 |---|---|---|---|---|
 | 12 (r1310) | v5 = v4 + O1-hosted O3 | 8, 104 copies (80-copy DUX4) | FAIL, both profiles | O2: retained introns absorbed by a paralog's path (gap compression), a read DNA-identical at two copies, 2 margin-2 coincidences in DUX4 |
-| 13 (r1311) | v5' = v5 + branch genome-novel prefilter | 8, 89 copies (43-copy OR7E) | FAIL (A119b); public 6/6 | one false O3 call: short haplotype-2 reads of a present copy carrying its two donor alleles |
+| 13 (r1311) | v5' = v5 + branch genome-novel prefilter | 8, 89 copies (43-copy OR7E) | FAIL (A119b); public 6/6, but the public donor is effectively haploid | one false O3 mosaic call on a present copy's haplotype-2 reads, on a paralog's window: one read's sequencing indels make its divergence, two donor alleles meet attribution's margin of 2 (review) |
 
 - **The integrated pipeline is now independent of the current method:** O3's hosts come from O1.
 - **It is cheap on full families:** 216-223 s for the integrated steps of a six-world set of 89 copies, with O3's longest
