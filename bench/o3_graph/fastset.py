@@ -146,7 +146,8 @@ def chain_steps(a, root, w):
     steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
              ("O1", f"python3 bench/o3_graph/o1seed.py {W}", "light"),
-             ("O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}", "light")]
+             ("O2", f"python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
+                    + (" --union-exact" if a.union_exact else ""), "light")]
     if a.o2_genome != "off":
         steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2", "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
@@ -236,6 +237,8 @@ def main(argv=None):
     p.add_argument("--sim-profile", default="")
     p.add_argument("--o2-distance", choices=("clip", "gapcomp"), default="clip")
     p.add_argument("--member-genome-check", action="store_true")
+    p.add_argument("--union-exact", action="store_true", help="O2: paralog structures project despite a dropped terminal micro-exon "
+                   "and stay apart from a copy's own structure unless their junctions match exactly (o2graph.py --union-exact)")
     p.add_argument("--member-attribution", action="store_true", help="O3 arm I: a call keeps only the reads its consensus explains "
                    "better than every catalogued copy by O2's margin (detect.attribute)")
     p.add_argument("--heavy-current", action="store_true", help="run copy_assign under the heavy lock (large families)")

@@ -233,3 +233,22 @@ def test_adapters_are_attached_at_drawn_clip_lengths():
     out = R.attach_adapters("CCCCCC", "AAATTT", "GGGTTT", (2, 4))
     assert out == "TT" + "CCCCCC" + "GGGT"
     assert R.attach_adapters("CC", "AAA", "GGG", (5, 0)) == "AAA" + "CC"     # a clip longer than the adapter: all of it
+
+
+def test_a_projection_may_lack_a_terminal_exon_too_short_for_the_aligner_when_asked():
+    # round 10 development (WASH): a 6-bp last exon cannot be spliced-aligned, so the projection had one exon too few
+    rng = random.Random(11)
+    rnd = lambda n: "".join(rng.choice("ACGT") for _ in range(n))  # noqa: E731
+    e1, e2, e3 = rnd(300), rnd(250), "TCCAGA"
+    locus = rnd(500) + e1 + "GT" + rnd(596) + "AG" + e2 + "GT" + rnd(796) + "AG" + e3 + rnd(500)
+    assert R.project(e1 + e2 + e3, locus, lo=0, strand="+", n_exons=3) is None
+    ex = R.project(e1 + e2 + e3, locus, lo=0, strand="+", n_exons=[300, 250, 6], micro=30)
+    assert ex is not None and len(ex) == 2 and ex[0] == (500, 800) and ex[1][0] == 1400
+    assert R.project(e1 + e2 + e3, locus, lo=0, strand="+", n_exons=[300, 250, 6], micro=5) is None
+
+
+def test_structures_a_few_bases_apart_at_a_junction_stay_apart_when_asked():
+    own = {"t1": [(0, 100), (200, 300)]}
+    proj = {"q|f": [(0, 103), (198, 300)]}                            # 2-3 bp from the own chain
+    assert R.cross_structures(own, proj, max_proj=None) == {}
+    assert R.cross_structures(own, proj, max_proj=None, tol=0) == {"q|f": [(0, 103), (198, 300)]}

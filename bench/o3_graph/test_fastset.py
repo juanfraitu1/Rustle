@@ -45,7 +45,7 @@ def test_a_local_reference_is_reused_only_for_the_family_set_it_was_built_for(tm
 def _opts(**kw):
     import argparse
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
-                o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False)
+                o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -71,3 +71,8 @@ def test_o3_attributes_its_call_members_only_when_asked():
     assert "--member-attribution" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert F.chain_steps(_opts(member_attribution=True), "/R", "INTACT")[-1][1].endswith(
         "detect.py /R/INTACT --member-genome-check --member-attribution --arms I")
+
+
+def test_o2_takes_the_exact_union_only_when_asked():
+    assert F.chain_steps(_opts(), "/R", "INTACT")[2][1].endswith("integ 2 --distance gapcomp")
+    assert F.chain_steps(_opts(union_exact=True), "/R", "INTACT")[2][1].endswith("integ 2 --distance gapcomp --union-exact")

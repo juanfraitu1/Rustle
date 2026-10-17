@@ -330,3 +330,17 @@ def test_the_combined_o2_lets_a_copy_explain_a_read_by_its_genome_alignment_wher
 
 def test_o2_paths_dump_each_read_s_distance_to_every_copy_for_the_combined_decision():
     assert O.path_dists({"r1": {"copy0": 3, "copy12": 7}}) == {"r1": {"0": 3, "12": 7}}
+
+
+def test_exact_union_paths_keep_a_paralog_structure_a_few_bases_off_the_copy_s_own():
+    copies = [dict(idx=0, isoforms={"a": [[0, 10], [20, 30]]}), dict(idx=1, isoforms={"c": [[100, 110], [120, 130]]})]
+
+    def projector(c, queries):            # a lands on copy 1 three bases off c's junctions
+        return {n: ([(100, 113), (123, 130)] if c["idx"] == 1 else None) for n in queries}
+    assert sorted(O.union_structures(copies, projector)[1]) == ["c"]
+    assert sorted(O.union_structures(copies, projector, tol=0)[1]) == ["c", "proj:copy0|a"]
+
+
+def test_the_projector_offers_each_paralog_isoform_s_exon_lengths_only_for_the_micro_exon_rule():
+    assert O.projection_spec([(0, 10), (20, 26)], micro=0) == 2
+    assert O.projection_spec([(0, 10), (20, 26)], micro=30) == [10, 6]

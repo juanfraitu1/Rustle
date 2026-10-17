@@ -43,6 +43,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MARGIN, MIN_COVER, DELTA, END_SLACK, PATH_PAD, FLAG_MIN_READS = 2, 0.8, 0.00958, 5, 50, 20
 EXT_CAP, EXT_BAND = 50, 30                               # --distance gapcomp: clipped ends aligned up to EXT_CAP bases
 NOVEL_INS = 30                     # locus fallback: an insertion or unaligned end this long is sequence no copy holds
+UNION_EXACT_MICRO = 30             # --union-exact: a terminal exon this short may be missing from a projection
 ELSEWHERE = -1                     # locus fallback: the read's best alignment off every seeded copy of the family
 
 
@@ -238,7 +239,13 @@ def padded(exons, pad):
     return ex
 
 
-def union_structures(cps, projector):
+def projection_spec(exons, micro=0):
+    """What a projection query carries about its source isoform: its exon count, or its exon lengths for realworld's micro-exon
+    rule (micro > 0: the projection may lack a terminal exon shorter than micro bases)."""
+    return [b - a for a, b in exons] if micro else len(exons)
+
+
+def union_structures(cps, projector, tol=None):
     """{copy idx: {name: exons}}: each catalogued copy's own curated isoforms plus every paralog isoform structure it can
     carry -- projector(copy, {name: (paralog copy, isoform exons)}) -> {name: exons on this copy or None} -- whose intron
     chain is new to it (realworld.cross_structures, uncapped). The family graph threads every structure through every copy,
@@ -249,12 +256,13 @@ def union_structures(cps, projector):
         own = {t: [tuple(x) for x in ex] for t, ex in c["isoforms"].items()}
         queries = {f"proj:copy{p['idx']}|{t}": (p, ex) for p in cps if p is not c for t, ex in p["isoforms"].items()}
         proj = projector(c, queries) if queries else {}
-        out[c["idx"]] = dict(own, **R.cross_structures(own, proj, max_proj=None))
+        out[c["idx"]] = dict(own, **R.cross_structures(own, proj, max_proj=None,
+                                                       **({} if tol is None else {"tol": tol})))
     return out
 
 
 def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None,
-              distance="clip"):
+              distance="clip", proj_micro=0, proj_tol=None):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
@@ -285,14 +293,14 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
         q = {}
         for name, (p, ex) in queries.items():
             seq = "".join(fa.fetch(p["contig"], a, b).upper() for a, b in ex)
-            q[name] = (seq[::-1].translate(comp) if p["strand"] == "-" else seq, len(ex))
-        return R.project_many(q, locus, lo, c["strand"])
+            q[name] = (seq[::-1].translate(comp) if p["strand"] == "-" else seq, projection_spec(ex, proj_micro))
+        return R.project_many(q, locus, lo, c["strand"], micro=proj_micro)
     out, n_struct = [], collections.Counter()
     for fam in sorted(iso):
         names = sorted(n for n in hosted.get(fam, ()) if n in reads)
         if not names:
             continue
-        paths = (union_structures(iso[fam], projector) if union else
+        paths = (union_structures(iso[fam], projector, proj_tol) if union else
                  {c["idx"]: {t: ex for t, ex in c["isoforms"].items() if not reps_only or t == c["rep"]} for c in iso[fam]})
         json.dump({str(k): {t: [list(x) for x in ex] for t, ex in v.items()} for k, v in paths.items()},
                   open(f"{d}/{fam}.paths.json", "w"))                  # the structures each copy's paths follow
@@ -437,14 +445,17 @@ def score_assign(calls, idx2copy, truth, unknowable=()):
     return dict(out)
 
 
-def run_integrated(w, margin=MARGIN, distance="clip"):
+def run_integrated(w, margin=MARGIN, distance="clip", proj_micro=0, proj_tol=None):
     """Round 7: padded union O2 on O1's seeded catalog (o1seed.py: graph/seeded.json) over the family reads it found ->
-    graph/o2.integ.m<margin>.tsv. distance: "clip" (NM + clipped bases, round 7) or "gapcomp" (gap_compressed)."""
+    graph/o2.integ.m<margin>.tsv. distance: "clip" (NM + clipped bases, round 7) or "gapcomp" (gap_compressed). proj_micro,
+    proj_tol (--union-exact: 30, 0; round 10 development): a paralog isoform projects onto a copy though the aligner drops a
+    terminal exon shorter than proj_micro bases, and a projected structure stays apart from the copy's own unless its
+    junctions are within proj_tol bp (default realworld.JUNCTION_TOL)."""
     sj = json.load(open(f"{w}/graph/seeded.json"))
     catalog = {f: v["copies"] for f, v in sj.items() if v["copies"]}
     hosted = {f: set(v["family_reads"]) for f, v in sj.items()}
     return run_paths(w, margin, union=True, pad=PATH_PAD, out_name=f"o2.integ.m{margin}.tsv", catalog=catalog, hosted=hosted,
-                     distance=distance)
+                     distance=distance, proj_micro=proj_micro, proj_tol=proj_tol)
 
 
 def locus_distance(cigartuples):
@@ -757,7 +768,8 @@ def main(argv):
         if method == "locus":
             return run_locus(argv[1], margin)
         if method == "integ":                             # round 7: needs o1seed.py WORLD first
-            return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip")
+            return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip",
+                                  *((UNION_EXACT_MICRO, 0) if "--union-exact" in argv else (0, None)))
         if method in ("integl", "integc", "integs"):      # integ + the read's genome alignments; needs o2.integ.m<margin>.tsv
             return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded")[method])
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag

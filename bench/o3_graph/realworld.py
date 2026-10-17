@@ -97,15 +97,25 @@ def canonical_junctions(genome, exons, strand):
     return all((get(a, a + 2).upper(), get(b - 2, b).upper()) in ok for (_, a), (b, _) in zip(ex, ex[1:]))
 
 
-def project(iso_seq, locus, lo, strand, n_exons, cover=PROJ_COVER):
+def project(iso_seq, locus, lo, strand, n_exons, cover=PROJ_COVER, micro=0):
     """A paralog isoform's sense sequence onto a copy's locus (`locus` = genome[lo:...], forward strand): its exons in genome
     coordinates when the primary spliced alignment covers >= `cover` of it with `n_exons` exons and canonical junctions on
-    `strand`, else None."""
-    return project_many({"q": (iso_seq, n_exons)}, locus, lo, strand, cover)["q"]
+    `strand`, else None. n_exons may be the source's exon lengths instead; with micro > 0 the projection may then lack one
+    terminal exon shorter than micro bases (one the spliced aligner cannot place; projection_counts)."""
+    return project_many({"q": (iso_seq, n_exons)}, locus, lo, strand, cover, micro)["q"]
 
 
-def project_many(queries, locus, lo, strand, cover=PROJ_COVER):
-    """project() for {name: (sense sequence, exon count)} in one minimap2 run -> {name: exons or None}."""
+def projection_counts(spec, micro=0):
+    """The exon counts a projection may have: the source's (spec: its exon count or its exon lengths), and one fewer when micro
+    > 0 and a terminal source exon is shorter than micro bases (round 10 development: WASH's 6-bp last exon)."""
+    if isinstance(spec, int):
+        return {spec}
+    n = len(spec)
+    return {n} | ({n - 1} if micro and n > 1 and min(spec[0], spec[-1]) < micro else set())
+
+
+def project_many(queries, locus, lo, strand, cover=PROJ_COVER, micro=0):
+    """project() for {name: (sense sequence, exon count or exon lengths)} in one minimap2 run -> {name: exons or None}."""
     import subprocess
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -127,7 +137,7 @@ def project_many(queries, locus, lo, strand, cover=PROJ_COVER):
         if (f[4] == "+") != (strand == "+"):                 # -uf: the sense read lands on the copy's own strand
             continue
         ex = exons_from_cigar(int(f[7]), tags["cg:Z:"])
-        if len(ex) == queries[q][1] and canonical_junctions(locus, ex, strand):
+        if len(ex) in projection_counts(queries[q][1], micro) and canonical_junctions(locus, ex, strand):
             res[q] = [(a + lo, b + lo) for a, b in ex]
     return res
 
@@ -202,16 +212,16 @@ def to_oriented(exons, lo, hi, strand):
     return sorted((hi - b, hi - a) for a, b in exons) if strand == "-" else sorted((a - lo, b - lo) for a, b in exons)
 
 
-def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None):
+def cross_structures(own, projected, max_proj=MAX_PROJ, rng=None, tol=JUNCTION_TOL):
     """{name: exons} of the projected paralog structures a copy expresses: intron chains new to its own isoforms (`own`; a
-    chain whose every junction is within JUNCTION_TOL bp of a known chain's is that chain, a projection artifact), one name
-    per new chain (the first in name order), at most max_proj of them (a seeded sample)."""
+    chain whose every junction is within `tol` bp of a known chain's is that chain, a projection artifact), one name per new
+    chain (the first in name order), at most max_proj of them (a seeded sample)."""
     def chain(ex):
         ex = sorted(ex)
         return tuple((a[1], b[0]) for a, b in zip(ex, ex[1:]))
 
     def known(c, seen):
-        return any(len(k) == len(c) and all(abs(x - y) <= JUNCTION_TOL for i, j in zip(c, k) for x, y in zip(i, j))
+        return any(len(k) == len(c) and all(abs(x - y) <= tol for i, j in zip(c, k) for x, y in zip(i, j))
                    for k in seen)
     seen, pick = [chain(v) for v in own.values()], {}
     for name in sorted(projected):
