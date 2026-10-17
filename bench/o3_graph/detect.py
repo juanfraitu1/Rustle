@@ -589,6 +589,14 @@ def _run_family(f):                                   # a fork worker's entry: t
     return _ONE_FAMILY(f)
 
 
+def branch_candidates(names, gst, reads):
+    """--branch-genome-novel (round 12 review I3): the reads the branch arm may cluster are those whose own genome alignment
+    leaves >= MIN_NOVEL bases unexplained (genome_stats; a read without a primary alignment is wholly unexplained) -- a read the
+    genome explains carries no novel exon. Without it, GraphAligner failing on a graph (4% of DUX4's reads aligned) turned
+    whole reads into novel segments for an all-against-all alignment."""
+    return [n for n in names if (gst[n][1] if n in gst else len(reads[n])) >= MIN_NOVEL]
+
+
 def mapped_cov(cov, maps):
     """--mapped-sites (round 11 review I5): each read's covered positions restricted to those some catalogued copy's map holds
     on the host; reads left with none are dropped. Positions of the host window no copy covers (a neighbour copy's fragment,
@@ -655,6 +663,7 @@ def main(argv):
     only_i = "--arms" in argv and argv[argv.index("--arms") + 1] == "I"   # fastset.py: the integrated pipeline's arm only
     attribution_delta = "--member-attribution-delta" in argv   # ... by more than delta of each read's length (round 10)
     mapped_sites = "--mapped-sites" in argv                # arm I clusters only where some catalogued copy's map is (round 11)
+    branch_novel = "--branch-genome-novel" in argv         # branch candidates need genome-unexplained bases (round 12)
     attribution = "--member-attribution" in argv or attribution_delta   # arm I: a call keeps the reads it explains better
     genome = Genome(f"{w}/genome.ref.fa")
     reads = PC.read_fq(f"{w}/reads.E0.fq")
@@ -778,7 +787,9 @@ def main(argv):
                             if len(mem) >= PC.MIN_SUPPORT:
                                 calls.append(["Ip", f, "psv", host, k, sorted(mem), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})
-        if names:
+        if branch_novel:
+            names = branch_candidates(names, gst_branch, reads)
+        if names and (not branch_novel or len(names) >= MIN_BRANCH):
             gfa = family_graph(f"{out_dir}/{f}", genome, cps)
             if gfa is None:
                 print(f"[o3_graph] {w}: no vg graph for {f} (vg msga failed in every order): no branch calls", flush=True)
@@ -787,6 +798,7 @@ def main(argv):
             for k, m in enumerate(br):
                 calls.append(["S2", f, "branch", "-", k, m, 0.0])
         return calls
+    gst_branch = (genome_stats(f"{w}/E0.bam", {n for v in by_host.values() for n in v}) if branch_novel else {})
     global _ONE_FAMILY
     _ONE_FAMILY = one_family
     procs = int(os.environ.get("O3_PROCS", "1"))

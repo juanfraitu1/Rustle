@@ -167,7 +167,7 @@ def chain_steps(a, root, w):
                   + (" --member-attribution" if a.member_attribution else "")
                   + (" --member-attribution-delta" if a.member_attribution_delta else "")
                   + (" --error-floor" if a.error_floor else "") + (" --o1-hosts" if a.o1_hosts else "")
-                  + (" --mapped-sites" if a.mapped_sites else "")
+                  + (" --mapped-sites" if a.mapped_sites else "") + (" --branch-genome-novel" if a.branch_genome_novel else "")
                   + ("" if a.all_arms else " --arms I"),
                   "light"))
     return steps
@@ -253,7 +253,7 @@ def main(argv=None):
     p.add_argument("--set-threads", type=int, default=4, help="threads for steps that run alone: the shared mapping, REMOVED's "
                    "mapping, copy_assign under --heavy-current (output does not depend on it)")
     p.add_argument("--sim-profile", default="")
-    p.add_argument("--o2-distance", choices=("clip", "gapcomp"), default="clip")
+    p.add_argument("--o2-distance", choices=("clip", "gapcomp", "gapstruct"), default="clip")
     p.add_argument("--member-genome-check", action="store_true")
     p.add_argument("--union-exact", action="store_true", help="O2: paralog structures project despite a dropped terminal micro-exon "
                    "and stay apart from a copy's own structure unless their junctions match exactly (o2graph.py --union-exact)")
@@ -261,6 +261,8 @@ def main(argv=None):
                    "sequencing-error floor (median de of MAPQ-60 primaries): O2's unexplained gate, O3's genome check, and the "
                    "scorer's per-read detectability (delta is an error-free haplotype divergence)")
     p.add_argument("--step-timeout", type=int, default=590, help="seconds before rlock kills a step (output does not depend on it)")
+    p.add_argument("--branch-genome-novel", action="store_true", help="O3's branch arm clusters only reads with >= MIN_NOVEL "
+                   "genome-unexplained bases (detect.py --branch-genome-novel)")
     p.add_argument("--mapped-sites", action="store_true", help="O3 arm I clusters only on host positions some catalogued "
                    "copy's map covers (detect.py --mapped-sites)")
     p.add_argument("--o1-hosts", action="store_true", help="O3 arm I takes its hosts and their reads from O1 (seeded.json + "

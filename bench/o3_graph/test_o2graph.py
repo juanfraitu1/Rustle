@@ -405,3 +405,13 @@ def test_the_unexplained_gate_widens_by_the_world_s_error_floor_when_given():
     assert O.decide({"copy0": 2, "copy1": 9}, qlen=184) == (None, "unexplained")                        # 2 > 0.00958 x 184
     assert O.decide({"copy0": 2, "copy1": 9}, qlen=184, max_div=O.DELTA + 0.0029) == ("copy0", "assigned")
     assert O.gate(0.0029) == O.DELTA + 0.0029 and O.gate(0.0) == O.DELTA
+
+
+def test_structural_gap_compression_counts_a_long_indel_at_its_length():
+    # round 12 review C1: a paralog's path absorbed a retained intron as ONE 142-bp insertion (one edit) while the read's own
+    # copy's path clipped it at full length; gapstruct compresses only indels < NOVEL_INS bases (sequencing-type)
+    f = ["r", "900", "0", "900", "+", "t", "900", "0", "758", "750", "900", "60", "NM:i:146", "cg:Z:274M142I365M1I116M"]
+    assert O._gc_core(f) == 5                                    # 3 mismatches + 2 indel events
+    assert O._gc_core(f, struct=True) == 3 + 142 + 1             # the 142-bp insertion at its length, the 1-bp one compressed
+    g = ["r", "500", "0", "500", "+", "t", "500", "0", "514", "485", "500", "60", "NM:i:16", "cg:Z:306M15I141M"]
+    assert O._gc_core(g) == O._gc_core(g, struct=True) == 1 + 1  # a 15-bp repeat-unit indel stays one event

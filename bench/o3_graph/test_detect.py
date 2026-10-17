@@ -406,3 +406,11 @@ def test_mapped_sites_keep_only_the_positions_some_catalogued_copy_covers():
     cov = {"r1": {p: "C" for p in range(50, 180)}, "r2": {p: "C" for p in range(0, 90)}, "r3": {p: "C" for p in range(240, 300)}}
     out = D.mapped_cov(cov, maps)
     assert sorted(out) == ["r1", "r3"] and min(out["r1"]) == 100 and max(out["r1"]) == 179 and sorted(out["r3"]) == list(range(240, 260))
+
+
+def test_branch_candidates_need_sequence_the_genome_does_not_explain():
+    # round 12 review I3: GraphAligner aligned 4% of DUX4's reads, so 4,821 whole reads became "novel" and the all-against-all
+    # took 553 s; a read whose genome alignment explains it (genome-novel < MIN_NOVEL) cannot carry a novel exon
+    reads = {"a": "A" * 500, "b": "A" * 500, "c": "A" * 400}
+    gst = {"a": (0.002, 0), "b": (0.003, D.MIN_NOVEL + 5)}                # c has no primary alignment: wholly novel
+    assert D.branch_candidates(["a", "b", "c"], gst, reads) == ["b", "c"]

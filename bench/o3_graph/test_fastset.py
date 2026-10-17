@@ -47,7 +47,7 @@ def _opts(**kw):
     base = dict(set_threads=4, threads=2, heavy_current=False, o2_distance="gapcomp", member_genome_check=True, all_arms=False,
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
                 o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False,
-                mapped_sites=False)
+                mapped_sites=False, branch_genome_novel=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -119,3 +119,8 @@ def test_a_killed_step_s_empty_timing_file_reads_as_unknown():
     assert F.parse_time("Command terminated by signal 9\n590.01 2048\n") == (590.01, 2048)
     wall, rss = F.parse_time("")
     assert wall != wall and rss == 0                                   # nan: the step left no time
+
+
+def test_the_branch_arm_filters_by_genome_novelty_only_when_asked():
+    assert "--branch-genome-novel" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--branch-genome-novel --arms I" in F.chain_steps(_opts(branch_genome_novel=True), "/R", "INTACT")[-1][1]

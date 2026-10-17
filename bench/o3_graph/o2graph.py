@@ -163,7 +163,7 @@ def end_cost(p, t, anchored_at_end):
     return best
 
 
-def gap_compressed(line, read, target):
+def gap_compressed(line, read, target, struct=False):
     """A read's distance to a path from one minimap2 -c PAF line, CIGAR-aware (2026-10-16): mismatches plus indel EVENTS (an
     indel counts once whatever its length, as minimap2's `de` counts it: real reads' errors are mostly homopolymer indels, and a
     retained intron is one event, not its length), plus each clipped read end aligned against the path bases next to the core
@@ -173,33 +173,37 @@ def gap_compressed(line, read, target):
     if f[4] == "-":
         read, qs, qe = read[::-1].translate(str.maketrans("ACGTN", "TGCAN")), qlen - qe, qlen - qs
     pre, suf = read[:qs], read[qe:]
-    return (_gc_core(f) + end_cost(pre, target[max(0, ts - len(pre) - EXT_BAND):ts], True)
+    return (_gc_core(f, struct) + end_cost(pre, target[max(0, ts - len(pre) - EXT_BAND):ts], True)
             + end_cost(suf, target[te:te + len(suf) + EXT_BAND], False))
 
 
-def _gc_core(f):
-    """The aligned core's share of gap_compressed: mismatches plus indel events (NM less the indel bases, plus the events)."""
+def _gc_core(f, struct=False):
+    """The aligned core's share of gap_compressed: mismatches plus indel events (NM less the indel bases, plus the events).
+    struct (--distance gapstruct, round 12 review C1): only indels shorter than NOVEL_INS are compressed; a longer one (a
+    retained intron, a novel exon) counts its length, as the same sequence costs when the aligner clips it instead."""
     nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
     cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
-    indels = _INDEL.findall(cg)
-    return nm - sum(map(int, indels)) + len(indels)
+    indels = [int(n) for n in _INDEL.findall(cg)]
+    if struct:
+        indels = [n for n in indels if n < NOVEL_INS]
+    return nm - sum(indels) + len(indels)
 
 
-def _paf_dist_gc(paf, reads, tx):
+def _paf_dist_gc(paf, reads, tx, struct=False):
     """{read: {copy: min gap_compressed distance}} (--distance gapcomp); tx: {path name: sequence as aligned}. Exactly the
     minimum over every line, scored lazily: a copy's lines in ascending core distance, stopping once the core alone reaches
     the best full distance (the clipped ends only add)."""
     by = collections.defaultdict(list)
     for ln in paf.splitlines():
         f = ln.split("\t")
-        by[(f[0], f[5].split("|")[0])].append((_gc_core(f), ln, f[5]))
+        by[(f[0], f[5].split("|")[0])].append((_gc_core(f, struct), ln, f[5]))
     dist = collections.defaultdict(dict)
     for (q, c), cand in by.items():
         best = 10 ** 9
         for core, ln, t in sorted(cand, key=lambda x: x[0]):
             if core >= best:
                 break
-            best = min(best, gap_compressed(ln, reads[q], tx[t]))
+            best = min(best, gap_compressed(ln, reads[q], tx[t], struct))
         dist[q][c] = best
     return dist
 
@@ -357,7 +361,8 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
                 fh.write(f">{n}\n{reads[n]}\n")
         res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes",
                               f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
-        dist = _paf_dist_gc(res, reads, tx) if distance == "gapcomp" else _paf_dist(res, ends=ends)
+        dist = (_paf_dist_gc(res, reads, tx, struct=distance == "gapstruct") if distance in ("gapcomp", "gapstruct")
+                else _paf_dist(res, ends=ends))
         json.dump(path_dists(dist), open(f"{d}/{fam}.dist.json", "w"))     # run_locus_fallback mode "all" combines them
         tw = {f"copy{c['idx']}": f"copy{c['twin_of']}" for c in iso[fam] if c.get("twin_of") is not None}
         for n in names:
