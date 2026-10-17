@@ -130,8 +130,17 @@ def gap_compressed(line, read, target):
     retained intron is one event, not its length), plus each clipped read end aligned against the path bases next to the core
     (end_cost: a clipped base is not an edit unless it disagrees with the path)."""
     f = line.rstrip("\n").split("\t")
-    nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
     qlen, qs, qe, ts, te = int(f[1]), int(f[2]), int(f[3]), int(f[7]), int(f[8])
+    if f[4] == "-":
+        read, qs, qe = read[::-1].translate(str.maketrans("ACGTN", "TGCAN")), qlen - qe, qlen - qs
+    pre, suf = read[:qs], read[qe:]
+    return (_gc_core(f) + end_cost(pre, target[max(0, ts - len(pre) - EXT_BAND):ts], True)
+            + end_cost(suf, target[te:te + len(suf) + EXT_BAND], False))
+
+
+def _gc_core(f):
+    """The aligned core's share of gap_compressed: mismatches plus indel events (NM less the indel bases, plus the events)."""
+    nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
     cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
     num, events, indel_bases = "", 0, 0
     for ch in cg:
@@ -142,20 +151,25 @@ def gap_compressed(line, read, target):
                 events += 1
                 indel_bases += int(num)
             num = ""
-    if f[4] == "-":
-        read, qs, qe = read[::-1].translate(str.maketrans("ACGTN", "TGCAN")), qlen - qe, qlen - qs
-    pre, suf = read[:qs], read[qe:]
-    return (nm - indel_bases + events + end_cost(pre, target[max(0, ts - len(pre) - EXT_BAND):ts], True)
-            + end_cost(suf, target[te:te + len(suf) + EXT_BAND], False))
+    return nm - indel_bases + events
 
 
 def _paf_dist_gc(paf, reads, tx):
-    """{read: {copy: min gap_compressed distance}} (--distance gapcomp); tx: {path name: sequence as aligned}."""
-    dist = collections.defaultdict(dict)
+    """{read: {copy: min gap_compressed distance}} (--distance gapcomp); tx: {path name: sequence as aligned}. Exactly the
+    minimum over every line, scored lazily: a copy's lines in ascending core distance, stopping once the core alone reaches
+    the best full distance (the clipped ends only add)."""
+    by = collections.defaultdict(list)
     for ln in paf.splitlines():
         f = ln.split("\t")
-        c = f[5].split("|")[0]
-        dist[f[0]][c] = min(gap_compressed(ln, reads[f[0]], tx[f[5]]), dist[f[0]].get(c, 10 ** 9))
+        by[(f[0], f[5].split("|")[0])].append((_gc_core(f), ln, f[5]))
+    dist = collections.defaultdict(dict)
+    for (q, c), cand in by.items():
+        best = 10 ** 9
+        for core, ln, t in sorted(cand, key=lambda x: x[0]):
+            if core >= best:
+                break
+            best = min(best, gap_compressed(ln, reads[q], tx[t]))
+        dist[q][c] = best
     return dist
 
 

@@ -207,3 +207,27 @@ def test_gap_compressed_distance_counts_indel_events_and_aligns_clipped_ends():
     lines = "\n".join([paf("copy1|t", 6, "10M5D24M"), paf("copy2|t", 1, "34M")])
     d = O._paf_dist_gc(lines, {"r": read}, tx)
     assert d == {"r": {"copy1": 1 + 1 + 1, "copy2": 1 + 3}}     # copy1: 1 mismatch + 1 deletion event + 1 end edit
+
+
+def test_the_pruned_gap_compressed_distance_equals_scoring_every_line():
+    import random
+    rng = random.Random(4)
+    core = "".join(rng.choice("ACGT") for _ in range(300))
+    tx = {f"copy{i}|t{j}": "".join(rng.choice("ACGT") for _ in range(40)) + core + "".join(rng.choice("ACGT") for _ in range(40))
+          for i in range(3) for j in range(3)}
+    reads = {f"r{k}": "".join(rng.choice("ACGT") for _ in range(rng.randint(0, 30))) + core for k in range(4)}
+    lines = []
+    for q, rd in reads.items():
+        for t in tx:
+            qs, nm = len(rd) - len(core), rng.randint(0, 8)
+            lines.append("\t".join([q, str(len(rd)), str(qs), str(len(rd)), "+", t, str(len(tx[t])), "40", "340", "300", "300",
+                                    "60", f"NM:i:{nm}", f"cg:Z:{150}M{rng.randint(0, 3)}D{150}M"]))
+    rng.shuffle(lines)
+    paf = "\n".join(lines)
+    naive = {}
+    for ln in lines:
+        f = ln.split("\t")
+        c = f[5].split("|")[0]
+        naive.setdefault(f[0], {})
+        naive[f[0]][c] = min(O.gap_compressed(ln, reads[f[0]], tx[f[5]]), naive[f[0]].get(c, 10 ** 9))
+    assert O._paf_dist_gc(paf, reads, tx) == naive
