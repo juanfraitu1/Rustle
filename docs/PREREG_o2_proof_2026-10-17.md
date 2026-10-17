@@ -124,3 +124,56 @@ seeds, the integrated O2 is precise, calibrated and powerful in the senses above
   and these genes are expressed in testis only.
 - **Anything about off-family ties.** In the simulation an unlisted paralog never expresses; in real data it can.
 - **Anything about the families' scope.** That is O1's question.
+
+## Results (2026-10-17, run once as pre-registered; `/mnt/linuxdisk/tmp/o3_graph/fast/o2proof/`)
+
+The six cells ran in 11 min in total, with no failure. The oracle was unchanged from b3b5df59.
+
+**Verdict: PASS.** B1, B2 and B3 hold in both pooled profiles and in all six cells, every one of them powered. The
+validity condition holds too: `mm2` errs on 53% of the undecidable reads in both profiles.
+
+| cell | assigned | wrong (B1) | undecidable: wrong (B2) | decidable: correct (B3) |
+|---|---|---|---|---|
+| A119b 401 | 3,938 | 0 | 0 / 1,236 | 3,640 / 3,649 (0.998) |
+| A119b 402 | 2,317 | 0 | 0 / 645 | 2,052 / 2,083 (0.985) |
+| A119b 403 | 5,237 | 0 | 0 / 910 | 5,151 / 5,170 (0.996) |
+| public 401 | 3,851 | 0 | 0 / 1,432 | 3,531 / 3,540 (0.997) |
+| public 402 | 2,027 | 0 | 0 / 849 | 1,724 / 1,762 (0.978) |
+| public 403 | 5,261 | 0 | 0 / 1,018 | 5,198 / 5,233 (0.993) |
+
+**Pooled per profile, every assigner (catalogued reads of the 6 worlds x 3 seeds):**
+
+| assigner | profile | assigned | wrong | undecidable: wrong / correct | decidable correct | weak: correct / wrong |
+|---|---|---|---|---|---|---|
+| integrated O2 | A119b | 11,492 | 0 | 0 / 381 of 2,791 | 0.9946 of 10,902 | 268 / 0 of 2,032 |
+| integrated O2 | public | 11,139 | 0 | 0 / 375 of 3,299 | 0.9922 of 10,535 | 311 / 0 of 2,013 |
+| copy_assign O2 | A119b | 8,428 | 0 | 0 / 0 | 0.7729 | 2 / 0 |
+| copy_assign O2 | public | 8,054 | 0 | 0 / 0 | 0.7642 | 3 / 0 |
+| mm2 at MAPQ >= 1 | A119b | 12,955 | 21 | 21 / 0 | 1.0000 | 2,032 / 0 |
+| mm2 at MAPQ >= 1 | public | 12,582 | 34 | 34 / 0 | 1.0000 | 2,013 / 0 |
+| mm2, always | A119b | 15,729 | 1,483 | 1,479 / 1,312 | 1.0000 | 2,032 / 0 |
+| mm2, always | public | 15,847 | 1,761 | 1,761 / 1,538 | 1.0000 | 2,013 / 0 |
+
+**Reading:**
+- **The integrated O2 made no wrong assignment in 22,631.** On the reads whose sequence cannot tell their copy apart,
+  always-assigning errs on 53%.
+- **It also placed 756 reads the edit-distance oracle calls undecidable, all correctly.** Its gap-compressed distance
+  counts an indel run once and aligns clipped ends. That separates copies where NM plus clipping ties: homopolymer errors
+  inflate NM equally on both copies.
+- **copy_assign is as precise but much less powerful,** with 76-77% of decidable reads against 99.2-99.5%.
+- **A plain MAPQ >= 1 filter is the strong baseline here.** Every decidable read has MAPQ >= 1, so it recovers all of
+  them, and all weak ones. It pays for that with 55 wrong assignments, all on undecidable reads.
+  - The integrated O2 trades recall on weak reads (13-15% against 100%) and 0.5-0.8% of decidable reads for zero errors.
+  - The claim is precision and calibration at near-MAPQ power, not more power than MAPQ.
+- **The `off_family` class is nearly empty here** (4 reads): these families' paralogs are all in the family.
+
+**Not part of this test, but seen in the same runs (the round-8 end-to-end bars, O1 -> O2 -> O3):**
+- **OUTSIDE fails B2 in all six cells:** integrated 138-171 errors, against 4-77 for the current method.
+- **The cause is O1 missing the uncatalogued twin.**
+  - O1 seeds the uncatalogued copy as a new locus in 6 of the 8 families, but not in C4 or HSFY, whose twins are
+    near-identical.
+  - Those copies' reads then have a single candidate in the catalog, and O2 places them on the catalogued twin. The
+    current method abstains on them.
+- **A119b REMOVED also fails B2 in two cells** (3-4 errors against 0-1).
+- **These are O1's family-scope misses, which this test excludes by construction.** They are the open item: a read whose
+  genome alignment ties with a locus O1 did not seed should be abstained on.

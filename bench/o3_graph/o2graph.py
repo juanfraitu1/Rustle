@@ -208,6 +208,52 @@ def _paf_dist_gc(paf, reads, tx, struct=False):
     return dist
 
 
+_last_aligned = 0                                          # reads the last cached_minimap2 call aligned (tests)
+
+
+def cached_minimap2(cache_dir, args, target, reads, work):
+    """minimap2 `args` of `reads` {name: sequence} against the FASTA `target`, through a cache shared by the worlds of a family
+    set (O2_ALN_CACHE): keyed by the target's bytes and the arguments, one entry per read SEQUENCE (the worlds share their reads
+    under other names). Only the sequences the cache lacks are aligned, named by their hash; each line is returned under every
+    name holding that sequence. Exact for O2's distances: minimap2 aligns each read on its own (the set of lines is the same),
+    and the distances read NM, the CIGAR and the coordinates; minimap2 breaks equal-score ties by a hash of the read's name,
+    so a tied line's tp / s1 / s2 tags may differ."""
+    import fcntl
+    import hashlib
+    import pickle
+    import subprocess
+    global _last_aligned
+    os.makedirs(cache_dir, exist_ok=True)
+    os.makedirs(work, exist_ok=True)
+    h = hashlib.sha1(open(target, "rb").read())
+    h.update("\0".join(args).encode())
+    path = f"{cache_dir}/{h.hexdigest()}.pkl"
+    sha = {n: hashlib.sha1(q.encode()).hexdigest() for n, q in reads.items()}
+    entries = pickle.load(open(path, "rb")) if os.path.exists(path) else {}
+    need = {k: reads[n] for n, k in sha.items() if k not in entries}
+    _last_aligned = len(need)
+    if need:
+        fa = f"{work}/aln_cache.{os.getpid()}.fa"
+        with open(fa, "w") as fh:
+            fh.writelines(f">{k}\n{q}\n" for k, q in sorted(need.items()))
+        out = subprocess.run(args + ["-t", os.environ.get("O2_THREADS", "1"), target, fa], capture_output=True, text=True,
+                             check=True).stdout
+        os.remove(fa)
+        new = {k: [] for k in need}
+        for ln in out.splitlines():
+            k, rest = ln.split("\t", 1)
+            new[k].append(rest)
+        with open(f"{path}.lock", "w") as lk:            # concurrent worlds merge their entries, never overwrite each other's
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            cur = pickle.load(open(path, "rb")) if os.path.exists(path) else {}
+            cur.update(new)
+            tmp = f"{path}.{os.getpid()}"
+            pickle.dump(cur, open(tmp, "wb"))
+            os.replace(tmp, path)
+        entries = {**entries, **new}
+    return "".join(f"{n}\t{rest}\n" for n in reads for rest in entries[sha[n]])
+
+
 def _read_fq(p):
     reads, name = {}, None
     with open(p) as fh:
@@ -363,9 +409,13 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
             for n in names:
                 fh.write(f">{n}\n{reads[n]}\n")
         t2 = time.time()
-        res = subprocess.run(["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes",
-                              "-t", os.environ.get("O2_THREADS", "1"),          # output does not depend on the thread count
-                              f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True, check=True).stdout
+        mm2 = ["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * n_tx)), "-p", "0.3", "--secondary=yes"]
+        if os.environ.get("O2_ALN_CACHE"):            # the family set's worlds share their reads: align each sequence once
+            res = cached_minimap2(os.environ["O2_ALN_CACHE"], mm2, f"{d}/{fam}.tx.fa", {n: reads[n] for n in names}, d)
+        else:
+            res = subprocess.run(mm2 + ["-t", os.environ.get("O2_THREADS", "1"),  # output does not depend on the thread count
+                                        f"{d}/{fam}.tx.fa", f"{d}/{fam}.reads.fa"], capture_output=True, text=True,
+                                 check=True).stdout
         t3 = time.time()
         dist = (_paf_dist_gc(res, reads, tx, struct=distance == "gapstruct") if distance in ("gapcomp", "gapstruct")
                 else _paf_dist(res, ends=ends))

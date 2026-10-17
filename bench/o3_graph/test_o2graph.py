@@ -481,3 +481,35 @@ def test_the_veto_keeps_a_path_call_whose_rival_alignment_only_clips_the_differe
     assert O.run_locus_fallback(str(w), mode="veto") == 0
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
     assert out == {"r1": ("1", "assigned")}
+
+
+def test_the_alignment_cache_returns_minimap2_s_own_lines_and_skips_reads_it_holds(tmp_path):
+    # O2_ALN_CACHE (2026-10-17): keyed by the path set and minimap2's arguments, per read SEQUENCE (worlds of one family set
+    # share their reads under other names); exact, because minimap2 aligns each read on its own
+    import random
+    import subprocess
+    rng = random.Random(3)
+    path = "".join(rng.choice("ACGT") for _ in range(3000))
+    (tmp_path / "tx.fa").write_text(f">copy0|t1\n{path}\n>copy1|t2\n{path[:1500]}{'A' * 40}{path[1540:]}\n")
+    reads = {"a": path[100:900], "b": path[1200:2100], "c": "".join(rng.choice("ACGT") for _ in range(600))}
+    args = ["minimap2", "-c", "-x", "map-hifi", "-N", "200", "-p", "0.3", "--secondary=yes"]
+    (tmp_path / "r.fa").write_text("".join(f">{n}\n{s}\n" for n, s in reads.items()))
+    direct = subprocess.run(args + [str(tmp_path / "tx.fa"), str(tmp_path / "r.fa")], capture_output=True, text=True,
+                            check=True).stdout
+    cache = tmp_path / "cache"
+    got = O.cached_minimap2(str(cache), args, str(tmp_path / "tx.fa"), reads, str(tmp_path / "w1"))
+    # minimap2 breaks equal-score ties by a hash of the read's NAME, so a tied line's tp / s2 tags can differ; O2's distances
+    # read NM, the CIGAR and the coordinates only, and those are the same
+    tx = {"copy0|t1": path, "copy1|t2": f"{path[:1500]}{'A' * 40}{path[1540:]}"}
+    strip = lambda paf: sorted("\t".join(x for x in ln.split("\t") if not x.startswith(("tp:", "s1:", "s2:")))  # noqa: E731
+                               for ln in paf.splitlines())
+    assert strip(got) == strip(direct)
+    assert O._paf_dist(got) == O._paf_dist(direct)
+    assert O._paf_dist_gc(got, reads, tx) == O._paf_dist_gc(direct, reads, tx)
+    # another world: the same sequences under other names, one new read; only the new one is aligned
+    reads2 = {"x": reads["a"], "y": reads["b"], "z": path[2000:2800]}
+    got2 = O.cached_minimap2(str(cache), args, str(tmp_path / "tx.fa"), reads2, str(tmp_path / "w2"))
+    assert O._last_aligned == 1
+    assert sorted(ln.split("\t", 1)[1] for ln in got2.splitlines() if ln.split("\t")[0] in "xy") == sorted(
+        ln.split("\t", 1)[1] for ln in got.splitlines() if ln.split("\t")[0] in "ab")
+    assert any(ln.startswith("z\t") for ln in got2.splitlines())
