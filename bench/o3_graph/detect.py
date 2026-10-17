@@ -3,9 +3,12 @@
 clustering (bench/o3_unexplained/psvclust.py, = `copy_assign --psv-clusters`) plus three steps, as separate arms.
 
     detect.py WORLD             reads WORLD/cur/A.assignments.tsv (the hosts), writes WORLD/graph/calls.tsv (+ graph/<family>/)
-    --branch-genome-segments    step 2 without the family graph: the branch segments are the pieces each candidate's own genome
-                                alignment leaves unexplained (implies --branch-genome-novel's candidates); no vg msga / vg rna /
+    --branch-linear             step 2 without the family graph: candidates spliced-aligned to the family's loci as linear
+                                sequences (minimap2), the graph's novel-interval rule on those alignments; no vg msga / vg rna /
                                 GraphAligner (77% of O3's time on a full family's first world)
+    --branch-genome-segments    (superseded by --branch-linear) the branch segments are the pieces each candidate's own genome
+                                alignment leaves unexplained: on the mainstay CROSS world it called 32 present NPIP reads whose
+                                pieces another NPIP copy explains
     --fusions TSV               copy_assign's <out>.fusions.tsv: calls.tsv gains `fusion` = fusion_gene / readthrough when at
                                 least half of a call's members' primaries splice that class's bridge junction (`.` otherwise);
                                 a label, nothing is removed (a missing copy of a fusion gene splices its sister copies' junctions)
@@ -473,6 +476,71 @@ def msga_orders(names):
     if len(names) < 2:
         return []
     return [names[::-1]] + [names[k:] + names[:k] for k in range(1, len(names))]
+
+
+def write_loci(d, genome, copies):
+    """d/loci.fa: each copy's locus (+- LOCUS_PAD) in its transcript's orientation, the sequences the family graph is built
+    from."""
+    os.makedirs(d, exist_ok=True)
+    with open(f"{d}/loci.fa", "w") as fa:
+        for c in copies:
+            lo = max(0, c["start"] - LOCUS_PAD)
+            hi = min(len(genome[c["contig"]]), c["end"] + LOCUS_PAD)
+            seq, _ = orient(genome[c["contig"]][lo:hi], [], c["strand"], lo)
+            fa.write(f">copy{c['idx']}\n{seq}\n")
+    return f"{d}/loci.fa"
+
+
+def novel_union(recs, qlen, min_len=MIN_NOVEL_PART):
+    """--branch-linear: read intervals NO alignment explains. A record explains its aligned bases and its short insertions
+    (sequencing errors), not an insertion >= min_len nor a dense error window (dense_intervals); the read is novel where no
+    record explains it, pieces >= min_len. The union stands for the graph's path switches between copies (a copy's insertion
+    another copy's alignment holds as aligned bases is no novel sequence)."""
+    expl = []
+    for r in recs:
+        q, iv = r["qs"], []
+        for k, op in re.findall(r"(\d+)([=XIDM])", r["cigar"]):
+            k = int(k)
+            if op in "=XM" or (op == "I" and k < min_len):
+                iv.append((q, q + k))
+            if op != "D":
+                q += k
+        for ds, de in (x for x in dense_intervals(r) if x[1] - x[0] >= min_len):
+            iv = [p for a, b in iv for p in ((a, min(b, ds)), (max(a, de), b)) if p[1] > p[0]]
+        expl += iv
+    out, cur = [], 0
+    for a, b in sorted(expl):
+        if a - cur >= min_len:
+            out.append((cur, a))
+        cur = max(cur, b)
+    if qlen - cur >= min_len:
+        out.append((cur, qlen))
+    return out
+
+
+def branch_calls_linear(d, genome, copies, names, reads):
+    """--branch-linear: branch_calls with the family's loci as LINEAR sequences instead of their vg graph. Each candidate is
+    spliced-aligned (minimap2 -x splice:hq -uf, all secondaries) to every copy's locus in transcript orientation, and its
+    novel intervals are those NO alignment explains (novel_union): a piece explained by another copy's locus is an explained
+    piece, as a path switch in the graph is; a novel exon (sequence no locus holds) stays novel. No vg msga, vg rna or
+    GraphAligner."""
+    loci = write_loci(d, genome, copies)
+    with open(f"{d}/reads.fa", "w") as fh:
+        for n in names:
+            fh.write(f">{n}\n{reads[n]}\n")
+    out = sh(f"minimap2 -c --eqx -x splice:hq -uf -N 50 -t {os.environ.get('O3_THREADS', '1')} {loci} {d}/reads.fa").stdout
+    recs = collections.defaultdict(list)
+    for ln in out.splitlines():
+        f = ln.split("\t")
+        tags = {x[:5]: x[5:] for x in f[12:]}
+        recs[f[0]].append(dict(qlen=int(f[1]), qs=int(f[2]), qe=int(f[3]), score=float(tags.get("AS:i:", 0)),
+                               cigar=tags.get("cg:Z:", "")))
+    segs = {}
+    for q in names:
+        iv = novel_union(recs.get(q, []), len(reads[q]))
+        if sum(e - s for s, e in iv) >= MIN_NOVEL:
+            segs[q] = [reads[q][s:e] for s, e in iv]
+    return cluster_segments(d, segs), segs
 
 
 def family_graph(d, genome, copies):
@@ -989,6 +1057,7 @@ def main(argv):
     attribution_delta = "--member-attribution-delta" in argv   # ... by more than delta of each read's length (round 10)
     mapped_sites = "--mapped-sites" in argv                # arm I clusters only where some catalogued copy's map is (round 11)
     branch_segments = "--branch-genome-segments" in argv   # branch segments from the genome alignment, no family graph
+    branch_linear = "--branch-linear" in argv              # the family's loci as linear sequences, no family graph
     branch_novel = "--branch-genome-novel" in argv or branch_segments   # candidates need genome-unexplained bases (round 12)
     attribution = "--member-attribution" in argv or attribution_delta   # arm I: a call keeps the reads it explains better
     genome = Genome(f"{w}/genome.ref.fa")
@@ -1147,6 +1216,8 @@ def main(argv):
         if names and (not branch_novel or len(names) >= MIN_BRANCH):
             if branch_segments:
                 br, _ = _timed("branch_calls", branch_calls_genome, f"{out_dir}/{f}", names, pieces_branch, reads)
+            elif branch_linear:
+                br, _ = _timed("branch_calls", branch_calls_linear, f"{out_dir}/{f}", genome, cps, names, reads)
             else:
                 gfa = _timed("vg_graph", family_graph, f"{out_dir}/{f}", genome, cps)
                 if gfa is None:

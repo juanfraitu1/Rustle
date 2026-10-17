@@ -49,7 +49,8 @@ def _opts(**kw):
                 o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False,
                 mapped_sites=False, branch_genome_novel=False, allele_discount=False,
                 mosaic_shared=False, o3_pool="paths", haplotype_check=False,
-                haplotype_check_genome=False, branch_genome_segments=False)
+                haplotype_check_genome=False, branch_genome_segments=False,
+                branch_linear=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -161,3 +162,4 @@ def test_o3_checks_the_members_haplotype_on_their_own_loci_only_when_asked():
     assert "--haplotype-check-genome" in F.chain_steps(_opts(haplotype_check_genome=True), "/R", "INTACT")[-1][1]
     assert "--branch-genome-segments" in F.chain_steps(_opts(branch_genome_segments=True), "/R", "INTACT")[-1][1]
     assert "--branch-genome-segments" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--branch-linear" in F.chain_steps(_opts(branch_linear=True), "/R", "INTACT")[-1][1]

@@ -173,6 +173,7 @@ def chain_steps(a, root, w):
                   + (" --haplotype-check" if a.haplotype_check else "")
                   + (" --haplotype-check-genome" if a.haplotype_check_genome else "")
                   + (" --branch-genome-segments" if a.branch_genome_segments else "")
+                  + (" --branch-linear" if a.branch_linear else "")
                   + (f" --pool-table o2.{GENOME_STEP[a.o2_genome]}.m2.tsv" if a.o3_pool == "final" and a.o2_genome != "off" else "")
                   + ("" if a.all_arms else " --arms I"),
                   "light"))
@@ -275,6 +276,9 @@ def main(argv=None):
                    "substitutions, over every read carrying them -- stays within delta (detect.py --haplotype-check)")
     p.add_argument("--haplotype-check-genome", action="store_true", help="arm I also drops a PSV call whose members' haplotype, "
                    "in genome coordinates (their own primaries), stays within delta (detect.py --haplotype-check-genome)")
+    p.add_argument("--branch-linear", action="store_true",
+                   help="O3's branch step on the family's loci as linear sequences (minimap2), no family graph "
+                   "(detect.py --branch-linear)")
     p.add_argument("--branch-genome-segments", action="store_true",
                    help="O3's branch step on the pieces each candidate's genome alignment leaves unexplained, no family graph "
                    "(detect.py --branch-genome-segments)")

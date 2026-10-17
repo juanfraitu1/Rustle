@@ -636,3 +636,38 @@ def test_reads_sharing_a_genome_novel_segment_form_a_branch_call(tmp_path):
     assert set(segs) == set(reads)
     # fewer than MIN_BRANCH reads with a novel segment: no call, nothing aligned
     assert D.branch_calls_genome(str(tmp_path / "G"), ["r0", "x"], pieces, reads)[0] == []
+
+
+def test_linear_branch_calls_find_a_novel_exon_and_not_a_mosaic_of_two_copies(tmp_path):
+    # --branch-linear: candidates spliced-aligned to the family's loci; the graph's novel-interval rule on those alignments
+    import random
+    rng = random.Random(11)
+    seq = lambda n: "".join(rng.choice("ACGT") for _ in range(n))  # noqa: E731
+    ex1, ex2, ex3, ex4 = seq(300), seq(300), seq(300), seq(300)
+    intr = lambda: "GT" + seq(600) + "AG"  # noqa: E731
+    locus0 = seq(1000) + ex1 + intr() + ex2 + seq(1000)
+    locus1 = seq(1000) + ex3 + intr() + ex4 + seq(1000)
+    genome = {"c1": locus0 + seq(3000) + locus1}
+    a0, a1 = 1000, len(locus0) + 3000 + 1000
+    cps = [dict(idx=0, contig="c1", start=a0, end=a0 + len(locus0) - 2000, strand="+",
+                isoforms={"t": [[a0, a0 + 300], [a0 + 904, a0 + 1204]]}),
+           dict(idx=1, contig="c1", start=a1, end=a1 + len(locus1) - 2000, strand="+",
+                isoforms={"t": [[a1, a1 + 300], [a1 + 904, a1 + 1204]]})]
+    novel = seq(150)
+    reads = {f"n{i}": ex1[i:] + novel + ex2[: 250 + i] for i in range(5)}      # a novel exon between copy 0's exons
+    reads.update({f"m{i}": ex1[i:] + ex4[: 250 + i] for i in range(5)})        # copy 0's exon then copy 1's: no novel base
+    calls, segs = D.branch_calls_linear(str(tmp_path / "F"), genome, cps, sorted(reads), reads)
+    assert calls == [["n0", "n1", "n2", "n3", "n4"]]
+    assert not any(q.startswith("m") for q in segs)
+
+
+def test_a_read_base_is_novel_only_when_no_locus_alignment_explains_it():
+    # the graph switches paths between copies: copy A's 127-bp insertion is mostly aligned bases in copy B's alignment
+    a = dict(qlen=1000, qs=0, qe=1000, cigar="400=127I473=", score=900)
+    b = dict(qlen=1000, qs=380, qe=600, cigar="70=24I126=", score=150)
+    assert D.novel_union([a], 1000) == [(400, 527)]
+    assert D.novel_union([a, b], 1000) == []                      # 24 bp left: below MIN_NOVEL_PART
+    # unaligned ends and a novel exon no alignment holds stay novel
+    c = dict(qlen=1000, qs=60, qe=1000, cigar="300=150I490=", score=800)
+    assert D.novel_union([c], 1000) == [(0, 60), (360, 510)]
+    assert D.novel_union([], 500) == [(0, 500)]
