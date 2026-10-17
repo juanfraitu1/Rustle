@@ -98,3 +98,10 @@ def test_o3_subtracts_the_error_floor_only_when_asked():
 def test_o3_takes_its_hosts_from_o1_only_when_asked():
     assert "--o1-hosts" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--o1-hosts --arms I" in F.chain_steps(_opts(o1_hosts=True), "/R", "INTACT")[-1][1]
+
+
+def test_the_error_floor_reaches_o2_o3_and_the_scorer():
+    steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(error_floor=True, o2_genome="fallback"), "/R", "INTACT"))
+    assert steps["O2"].endswith("--error-floor") and steps["O2_genome"].endswith("integl 2 --error-floor")
+    assert "--error-floor" in steps["O3"]
+    assert F.e2e_command(_opts(error_floor=True), "/R", ["A"]).endswith("/R/A --error-floor")

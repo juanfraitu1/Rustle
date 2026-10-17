@@ -101,6 +101,20 @@ def test_an_absent_copy_s_read_is_detectable_by_its_own_divergence_when_asked():
 
 
 def test_e2e_scores_the_integrated_o2_table_it_is_given():
-    assert S.e2e_args(["e2e", "o.json", "W1", "W2"]) == ("o.json", ["W1", "W2"], False, "o2.integ.m2.tsv")
+    assert S.e2e_args(["e2e", "o.json", "W1", "W2"]) == ("o.json", ["W1", "W2"], False, "o2.integ.m2.tsv", False)
     assert S.e2e_args(["e2e", "o.json", "W1", "--o2", "o2.integl.m2.tsv", "W2", "--per-read-detectability"]) == (
-        "o.json", ["W1", "W2"], True, "o2.integl.m2.tsv")
+        "o.json", ["W1", "W2"], True, "o2.integl.m2.tsv", False)
+
+
+def test_per_read_detectability_subtracts_the_world_s_error_floor_when_given():
+    # delta (0.00958) is the p99 exonic divergence between KB3781's haplotype ASSEMBLIES: an error-free divergence; a read's
+    # `de` adds its sequencing errors (round 11)
+    assert S.absent_class(True, 0.0118, per_read=True) == "absent_detectable"
+    assert S.absent_class(True, 0.0118, per_read=True, floor=0.0029) == "absent_undetectable"
+    assert S.absent_class(True, 0.0211, per_read=True, floor=0.0029) == "absent_detectable"
+    assert S.absent_class(True, None, per_read=True, floor=0.0029) == "absent_detectable"     # no primary: unexplained
+
+
+def test_e2e_takes_the_error_floor_option():
+    assert S.e2e_args(["e2e", "o.json", "W1", "--error-floor"]) == ("o.json", ["W1"], False, "o2.integ.m2.tsv", True)
+    assert S.e2e_args(["e2e", "o.json", "W1"])[4] is False

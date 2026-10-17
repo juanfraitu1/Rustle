@@ -6,7 +6,7 @@
     summary.py o2bars PREFIX WORLD ...    round 4's A1-A4: padded union O2 (o2.unionp.m2.tsv) against the current O2 and locus O2
                                           (o2.locus.m2.tsv), per world; writes PREFIX_<arm>.json (o2graph.py score)
     summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
-    summary.py e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME]   end to end: every read's fate (read_fate) by the kind of copy it came from, for the
+    summary.py e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME] [--error-floor]   end to end: every read's fate (read_fate) by the kind of copy it came from, for the
                                           current method and the integrated O1 -> O2 -> O3
     summary.py bars E2E.json              round 8's pre-registered bars (docs/PREREG_o3_graph_round8_2026-10-16.md) on an e2e
                                           table: per world, integrated correct >= current (B1) and errors <= current (B2)
@@ -108,13 +108,15 @@ def cmd_flags(out, worlds):
     return 0
 
 
-def absent_class(copy_detectable, read_de, per_read=False):
+def absent_class(copy_detectable, read_de, per_read=False, floor=0.0):
     """A REMOVED copy's read: detectable or not. Copy level (rounds 7-8): its copy's reads' median `de` on the masked genome
     > DELTA. Per read (round 9, `--per-read-detectability`): the read's OWN primary `de` > DELTA (a read without a primary
     alignment is unexplained by the genome, hence detectable) -- a read of a detectable copy that is near-identical to a
-    present copy over its own span cannot be told from that copy's reads."""
+    present copy over its own span cannot be told from that copy's reads. floor (round 11, `--error-floor`): the world's
+    sequencing-error floor (detect.error_floor) is subtracted from the read's `de` first -- DELTA is the p99 exonic divergence
+    between KB3781's haplotype assemblies (register 1199), an error-free divergence."""
     if per_read:
-        return "absent_detectable" if read_de is None or read_de > DELTA else "absent_undetectable"
+        return "absent_detectable" if read_de is None or read_de - floor > DELTA else "absent_undetectable"
     return "absent_detectable" if copy_detectable else "absent_undetectable"
 
 
@@ -144,7 +146,7 @@ def integrated_calls(rows, seeded_copy):
     return out
 
 
-def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv"):
+def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=False):
     """Per world and read class: the fates of every read under the current method (copy_assign O2 + CUR O3) and the integrated
     O1 -> O2 -> O3 (o2_name, by default o2.integ.m2.tsv, on graph/seeded.json + arm I)."""
     O = _o2("o2graph")
@@ -157,6 +159,7 @@ def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv"):
         cat_copy = {(f, c["idx"]): c["copy"] for f, cps in iso.items() for c in cps}
         det = removed_detectability(w) if name.startswith("REMOVED") else {}
         rde = primary_de(w) if per_read and name.startswith("REMOVED") else {}
+        floor = _o2("detect").error_floor(f"{w}/E0.bam") if error_floor and name.startswith("REMOVED") else 0.0
 
         def cls_of(t):
             k = kinds.get(t["copy"], "present")
@@ -166,7 +169,7 @@ def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv"):
                 return "uncatalogued"
             if name.startswith("BRANCH"):                  # a novel-exon absent copy: detectable by construction
                 return "absent_detectable"
-            return absent_class(det.get(t["family"], (0, False))[1], rde.get(t["read"]), per_read)
+            return absent_class(det.get(t["family"], (0, False))[1], rde.get(t["read"]), per_read, floor)
         sj = json.load(open(f"{w}/graph/seeded.json"))
         truth_copies = list(csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"))
         seeded_copy = dict(cat_copy)
@@ -210,8 +213,9 @@ def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv"):
 
 
 def e2e_args(argv):
-    """e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME] -> (out, worlds, per_read, o2_name); O2_NAME: the
-    integrated system's O2 table in WORLD/graph (o2.integ.m2.tsv; o2.integl.m2.tsv: with the locus fallback)."""
+    """e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME] [--error-floor] -> (out, worlds, per_read, o2_name,
+    error_floor); O2_NAME: the integrated system's O2 table in WORLD/graph (o2.integ.m2.tsv; o2.integl.m2.tsv: with the locus
+    fallback); --error-floor: per-read detectability less each REMOVED world's error floor (absent_class)."""
     rest, o2_name, i = [], "o2.integ.m2.tsv", 2
     while i < len(argv):
         if argv[i] == "--o2":
@@ -220,7 +224,7 @@ def e2e_args(argv):
         if not argv[i].startswith("--"):
             rest.append(argv[i])
         i += 1
-    return argv[1], rest, "--per-read-detectability" in argv, o2_name
+    return argv[1], rest, "--per-read-detectability" in argv, o2_name, "--error-floor" in argv
 
 
 def round8_bars(tab):

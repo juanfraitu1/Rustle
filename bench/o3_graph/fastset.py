@@ -147,9 +147,10 @@ def chain_steps(a, root, w):
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
              ("O1", f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else ""), "light"),
              ("O2", f"env O2_PROCS={a.o2_procs} python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
-                    + (" --union-exact" if a.union_exact else ""), "light")]
+                    + (" --union-exact" if a.union_exact else "") + (" --error-floor" if a.error_floor else ""), "light")]
     if a.o2_genome != "off":
-        steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2", "light"))
+        steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2"
+                      + (" --error-floor" if a.error_floor else ""), "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} python3 bench/o3_graph/detect.py {W}"
                   + (" --member-genome-check" if a.member_genome_check else "")
                   + (" --member-attribution" if a.member_attribution else "")
@@ -165,7 +166,8 @@ def e2e_command(a, root, worlds):
     with --o2-genome), per-read detectability with --per-read-detectability."""
     return (f"python3 bench/o3_graph/summary.py e2e {root}/e2e.json " + " ".join(f"{root}/{w}" for w in worlds)
             + (f" --o2 o2.{GENOME_STEP[a.o2_genome]}.m2.tsv" if a.o2_genome != "off" else "")
-            + (" --per-read-detectability" if a.per_read_detectability else ""))
+            + (" --per-read-detectability" if a.per_read_detectability else "")
+            + (" --error-floor" if a.error_floor else ""))
 
 
 def cmd_run(a):
@@ -243,8 +245,9 @@ def main(argv=None):
     p.add_argument("--member-genome-check", action="store_true")
     p.add_argument("--union-exact", action="store_true", help="O2: paralog structures project despite a dropped terminal micro-exon "
                    "and stay apart from a copy's own structure unless their junctions match exactly (o2graph.py --union-exact)")
-    p.add_argument("--error-floor", action="store_true", help="O3's genome check subtracts the world's sequencing-error floor "
-                   "(median de of MAPQ-60 primaries) before comparing with delta (detect.py --error-floor)")
+    p.add_argument("--error-floor", action="store_true", help="every read-level comparison with delta subtracts the world's "
+                   "sequencing-error floor (median de of MAPQ-60 primaries): O2's unexplained gate, O3's genome check, and the "
+                   "scorer's per-read detectability (delta is an error-free haplotype divergence)")
     p.add_argument("--o1-hosts", action="store_true", help="O3 arm I takes its hosts and their reads from O1 (seeded.json + "
                    "primary alignments), not from copy_assign's run: the integrated pipeline no longer needs the current method")
     p.add_argument("--twins", action="store_true", help="O1 marks a new copy within delta of a curated copy as its twin; O2 then "

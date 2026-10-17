@@ -399,3 +399,9 @@ def test_a_within_delta_twin_takes_a_read_from_its_curated_copy_only_by_the_marg
     assert O.decide({"copy0": 1, "copy3": 1, "copy1": 2}, qlen=1000, twins=tw) == (None, "thin")          # 0 vs 1 still thin
     assert O.decide({"copy3": 1, "copy1": 9}, qlen=1000, twins=tw) == ("copy3", "assigned")               # no curated rival
     assert O.decide({"copy0": 2, "copy3": 1, "copy1": 9}, qlen=1000) == (None, "thin")                     # without twins
+
+
+def test_the_unexplained_gate_widens_by_the_world_s_error_floor_when_given():
+    assert O.decide({"copy0": 2, "copy1": 9}, qlen=184) == (None, "unexplained")                        # 2 > 0.00958 x 184
+    assert O.decide({"copy0": 2, "copy1": 9}, qlen=184, max_div=O.DELTA + 0.0029) == ("copy0", "assigned")
+    assert O.gate(0.0029) == O.DELTA + 0.0029 and O.gate(0.0) == O.DELTA

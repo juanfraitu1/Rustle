@@ -65,6 +65,12 @@ def assign(nodes, paths, margin=MARGIN):
     return (order[0][0] if order[1][1] - order[0][1] >= margin else None), miss
 
 
+def gate(floor=0.0):
+    """The unexplained gate's divergence (round 11, `--error-floor`): DELTA plus the world's sequencing-error floor -- DELTA is
+    an error-free divergence (p99 between KB3781's haplotype assemblies), a read's distance adds its errors."""
+    return DELTA + floor
+
+
 def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None):
     """dist: {copy: edits + unaligned bases of the read against the copy's best-fitting isoform path}. -> (copy or None, reason):
     `assigned` when the best copy beats the next by >= margin, else `tied` / `thin`; `unexplained` when even the best copy is
@@ -289,7 +295,7 @@ def _paths_family(fam):
 
 
 def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None,
-              distance="clip", proj_micro=0, proj_tol=None):
+              distance="clip", proj_micro=0, proj_tol=None, max_div=DELTA):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
@@ -355,7 +361,7 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
         json.dump(path_dists(dist), open(f"{d}/{fam}.dist.json", "w"))     # run_locus_fallback mode "all" combines them
         tw = {f"copy{c['idx']}": f"copy{c['twin_of']}" for c in iso[fam] if c.get("twin_of") is not None}
         for n in names:
-            c, reason = decide(dist.get(n, {}), len(reads[n]), margin, twins=tw)
+            c, reason = decide(dist.get(n, {}), len(reads[n]), margin, max_div=max_div, twins=tw)
             rows.append(dict(read=n, family=fam, call=c[4:] if c else "-", reason=reason))
         return rows, cnt
     global _PATHS_FAMILY
@@ -492,7 +498,7 @@ def score_assign(calls, idx2copy, truth, unknowable=()):
     return dict(out)
 
 
-def run_integrated(w, margin=MARGIN, distance="clip", proj_micro=0, proj_tol=None):
+def run_integrated(w, margin=MARGIN, distance="clip", proj_micro=0, proj_tol=None, floor=0.0):
     """Round 7: padded union O2 on O1's seeded catalog (o1seed.py: graph/seeded.json) over the family reads it found ->
     graph/o2.integ.m<margin>.tsv. distance: "clip" (NM + clipped bases, round 7) or "gapcomp" (gap_compressed). proj_micro,
     proj_tol (--union-exact: 30, 0; round 10 development): a paralog isoform projects onto a copy though the aligner drops a
@@ -502,7 +508,7 @@ def run_integrated(w, margin=MARGIN, distance="clip", proj_micro=0, proj_tol=Non
     catalog = {f: v["copies"] for f, v in sj.items() if v["copies"]}
     hosted = {f: set(v["family_reads"]) for f, v in sj.items()}
     return run_paths(w, margin, union=True, pad=PATH_PAD, out_name=f"o2.integ.m{margin}.tsv", catalog=catalog, hosted=hosted,
-                     distance=distance, proj_micro=proj_micro, proj_tol=proj_tol)
+                     distance=distance, proj_micro=proj_micro, proj_tol=proj_tol, max_div=gate(floor))
 
 
 def locus_distance(cigartuples):
@@ -522,11 +528,11 @@ def locus_distance(cigartuples):
     return d
 
 
-def locus_decide(dist, qlen, margin=MARGIN, twins=None):
+def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
     """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
     and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained`); a read
     whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family) stays `unexplained`."""
-    c, reason = decide(dist, qlen, margin, twins=twins)
+    c, reason = decide(dist, qlen, margin, max_div=max_div, twins=twins)
     if reason == "unexplained" or c == ELSEWHERE:
         return None, "unexplained"
     return (c, "locus") if c is not None else (None, f"locus_{reason}")
@@ -560,7 +566,7 @@ def genome_distances(w, todo, spans):
     return dist, qlen
 
 
-def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
+def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floor=0.0):
     """Integrated O2 (o2.integ.m<margin>.tsv) with the read's own genome alignments (genome_distances: every primary and secondary
     alignment in E0.bam scored by locus_distance, the best per seeded copy of the family and the best off them, ELSEWHERE).
     mode "unexplained" -> WORLD/graph/o2.integl.m<margin>.tsv: only the reads O2 leaves `unexplained` in a family and explains in
@@ -605,7 +611,7 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             for i, g in dist.get((q, f), {}).items():
                 if mode == "all" or i != ELSEWHERE:
                     comb[i] = min(comb.get(i, 1 << 30), g)
-            c, why = decide(comb, lens[q], margin, twins=twins.get(f))
+            c, why = decide(comb, lens[q], margin, max_div=gate(floor), twins=twins.get(f))
             c, why = (None, "unexplained") if c == ELSEWHERE else (c, why)
             new = ("-" if c is None else str(c), why)
             call, reason = (call, reason) if new == (call, reason) else (new[0], f"genome_{why}")
@@ -613,11 +619,11 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             comb = {int(c): v for c, v in pd[f].get(q, {}).items()}
             for i, g in dist.get((q, f), {}).items():
                 comb[i] = min(comb.get(i, 1 << 30), g)
-            c, why = decide(comb, lens[q], margin, twins=twins.get(f))
+            c, why = decide(comb, lens[q], margin, max_div=gate(floor), twins=twins.get(f))
             if c is not None and c != ELSEWHERE:
                 call, reason = str(c), "genome_assigned"
         elif reason == "unexplained":
-            c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f))
+            c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
     out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r')[mode]}.m{margin}.tsv"
@@ -827,10 +833,12 @@ def main(argv):
             return run_locus(argv[1], margin)
         if method == "integ":                             # round 7: needs o1seed.py WORLD first
             return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip",
-                                  *((UNION_EXACT_MICRO, 0) if "--union-exact" in argv else (0, None)))
+                                  *((UNION_EXACT_MICRO, 0) if "--union-exact" in argv else (0, None)),
+                                  floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
         if method in ("integl", "integc", "integs", "integr"):   # integ + the read's genome alignments; needs o2.integ first
             return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded",
-                                                                 integr="resolve")[method])
+                                                                 integr="resolve")[method],
+                                      floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first
