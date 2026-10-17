@@ -221,8 +221,10 @@ The public profile has the same shape (`public/e2e.json`). The integrated pipeli
   - **no call in any world of either profile contains a present-copy read;**
   - **REMOVED:** calls for all 6 detectable removed copies (CXADRP, FAM66, FOXD4L, H2AC, H2BC, KRTAP10), plus a branch call
     for H3C's removed copy, which lies within delta; all members are the removed copies' reads;
-  - **BRANCH:** calls for the novel-exon copies of CXADRP, FAM66 and H2BC under both profiles; 7 of 8 are novel-exon calls
-    (a KRTAP10 PSV call under A119b also hits its copy).
+  - **BRANCH:** 5 novel-exon copies (CXADRP, FAM66, H2BC, KRTAP10, OR2T).
+    - A119b calls 4 of them: CXADRP, FAM66 and H2BC by branch calls, KRTAP10 by two 3-read PSV calls.
+    - public calls 3: CXADRP, FAM66, H2BC.
+    - OR2T's (21 and 15 reads) is missed under both.
 - **O1:**
   - **SILENT:** drops 7 of 12 silent copies under both profiles, and keeps 1 or 2 FOXD4L copies as undecidable (within delta
     of a kept copy);
