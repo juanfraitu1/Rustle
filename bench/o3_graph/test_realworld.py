@@ -252,3 +252,16 @@ def test_structures_a_few_bases_apart_at_a_junction_stay_apart_when_asked():
     proj = {"q|f": [(0, 103), (198, 300)]}                            # 2-3 bp from the own chain
     assert R.cross_structures(own, proj, max_proj=None) == {}
     assert R.cross_structures(own, proj, max_proj=None, tol=0) == {"q|f": [(0, 103), (198, 300)]}
+
+
+def test_a_copy_s_heterozygous_sites_can_be_drawn_rather_than_rounded():
+    # round 13 review I1: round(2 x het_per_base x exonic bp) gave 86 of 89 public copies no het site and none two -- an
+    # effectively haploid donor; drawn per base, the same rate gives the copies their expected spread
+    import random
+    pos, rate = range(1500), 0.0002
+    rounded = [len(R.het_sites(pos, rate, random.Random(s), lambda p: "A")) for s in range(300)]
+    drawn = [len(R.het_sites(pos, rate, random.Random(s), lambda p: "A", draw=True)) for s in range(300)]
+    assert set(rounded) == {0}
+    assert 0.15 < sum(drawn) / len(drawn) < 0.45 and max(drawn) >= 2
+    assert R.het_sites(pos, rate, random.Random(7), lambda p: "A", draw=True) == R.het_sites(pos, rate, random.Random(7),
+                                                                                              lambda p: "A", draw=True)

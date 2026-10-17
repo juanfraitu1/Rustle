@@ -197,7 +197,7 @@ def cmd_run(a):
     elif os.path.exists(f"{local}/source.json") and not local_matches(local, a.families, a.set):
         raise SystemExit(f"{local} was built for another family set; pass a fresh --local")
     het = f"--het {a.het}" if a.het > 0 else ""
-    prof = f"--sim-profile {a.sim_profile}" if a.sim_profile else ""
+    prof = (f"--sim-profile {a.sim_profile}" if a.sim_profile else "") + (" --het-draw" if a.sim_het_draw else "")
     if "REMOVED" in worlds:                                                        # 2
         st.run("set", "mask_genome", f"python3 bench/o3_graph/realworld.py mask {root}/masked {a.families} --set {a.set} "
                f"--seed {a.seed}")
@@ -249,6 +249,8 @@ def main(argv=None):
     p.add_argument("seed", type=int)
     p.add_argument("--worlds", default=",".join(WORLDS))
     p.add_argument("--het", type=float, default=0.001)
+    p.add_argument("--sim-het-draw", action="store_true", help="the simulator draws each copy's het/hom site counts instead of "
+                   "rounding (realworld.py --het-draw)")
     p.add_argument("--local")
     p.add_argument("--jobs", type=int, default=2)
     p.add_argument("--threads", type=int, default=2)

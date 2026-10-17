@@ -471,3 +471,26 @@ def test_donor_alleles_can_be_restricted_to_substitutions():
     events = {f"e{i}": ([snv] if i < 20 else []) + ([dl] if i < 10 else []) for i in range(40)}
     assert D.donor_alleles(spans, events, set(spans), floor=0.003) == {snv, dl}
     assert D.donor_alleles(spans, events, set(spans), floor=0.003, kinds=("X",)) == {snv}
+
+
+def test_the_mosaic_distance_can_count_only_positions_two_members_share():
+    # round 13 review C1: a 3-read cluster's nearest-copy distance was 12/508 -- 2 donor alleles plus 10 positions covered only
+    # by one read, whose sequencing indels counted as the cluster's bases (cluster_bases); over shared positions it is small
+    ref = "A" * 600
+    sites, cons = {400: "C", 500: "C"}, {400: "alt", 500: "alt"}
+    copy0 = {p: ("C" if p == 400 else "A") for p in range(600)}
+    copy1 = {p: ("C" if p == 500 else "A") for p in range(600)}
+    err = set(range(5, 300, 30))
+    cov = {"m1": {p: ("C" if p in (400, 500) else "G" if p in err else "A") for p in range(600)}}
+    cov.update({m: {p: ("C" if p in (400, 500) else "A") for p in range(300, 600)} for m in ("m2", "m3")})
+    maps = {"copy0": copy0, "copy1": copy1}
+    st, d = D.status_of(["m1", "m2", "m3"], cons, sites, ref, maps, cov, {}, mosaic=True)
+    assert st == "mosaic" and abs(d - 11 / 600) < 1e-9
+    assert D.status_of(["m1", "m2", "m3"], cons, sites, ref, maps, cov, {}, mosaic=True, shared=True)[0] == "unresolved"
+
+
+def test_the_pool_table_counts_reads_the_genome_veto_sends_off_the_seeded_copies(tmp_path):
+    p = tmp_path / "o2.integv.m2.tsv"
+    p.write_text("read\tfamily\tcall\treason\na\tF\t-\tunexplained\nb\tF\t-\tveto_unexplained\nc\tF\t1\tlocus\nd\tF\t-\tlocus_tied\n")
+    assert D.unexplained_rows(str(p)) == {("a", "F"), ("b", "F")}
+    assert D.unexplained_rows(str(tmp_path / "missing.tsv")) is None

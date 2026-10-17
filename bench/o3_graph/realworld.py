@@ -348,11 +348,12 @@ def expr_mult(seed, cid, sigma):
     return math.exp(sigma * random.Random(f"{seed}:{cid}:expr").gauss(0, 1) - sigma * sigma / 2)
 
 
-def het_sites(positions, rate, rng, base_at):
+def het_sites(positions, rate, rng, base_at, draw=False):
     """{genomic position: alt base}: a copy's heterozygous sites (round 6: a diploid donor), `rate` of its exonic positions,
-    each alt base different from the reference base (base_at(p))."""
+    each alt base different from the reference base (base_at(p)). draw (--het-draw, round 13 review I1): the count is
+    Binomial(positions, rate) instead of rounded -- rounding gave a low-rate donor (public, 0.00021) no site on 86 of 89 copies."""
     pos = sorted(set(positions))
-    k = int(round(rate * len(pos)))
+    k = rng.binomialvariate(len(pos), rate) if draw and pos and rate > 0 else int(round(rate * len(pos)))
     if not k:
         return {}
     out = {}
@@ -524,9 +525,9 @@ def cmd_build(a):
             exonic = {p for v in tx.values() for s_, e_ in v for p in range(s_, e_)}
             base_at = lambda p, ch=c["chrom"]: true_fa.fetch(ch, p, p + 1)  # noqa: E731
             if het_rate > 0:                                    # a diploid donor: haplotype 2 carries the copy's het alleles
-                het = het_sites(exonic, het_rate, random.Random(f"{a.seed}:{cid}:het"), base_at)
+                het = het_sites(exonic, het_rate, random.Random(f"{a.seed}:{cid}:het"), base_at, draw=a.het_draw)
             if prof:                                            # profile: the donor's homozygous alleles, on both haplotypes
-                hom = het_sites(exonic, prof["hom_per_base"], random.Random(f"{a.seed}:{cid}:hom"), base_at)
+                hom = het_sites(exonic, prof["hom_per_base"], random.Random(f"{a.seed}:{cid}:hom"), base_at, draw=a.het_draw)
             n_het[f] += len(het)
             mult = expr_mult(a.seed, cid, prof.get("expr_log_sd", 0.0)) if prof else 1.0
             cache = {}
@@ -642,6 +643,8 @@ def main(argv=None):
     p.add_argument("--per-copy", type=int, default=60)
     p.add_argument("--het", type=float, default=0.0,
                    help="a diploid donor: each copy's exonic heterozygous-site rate; reads come 50/50 from its two haplotypes")
+    p.add_argument("--het-draw", action="store_true", help="draw each copy's het and hom site counts (Binomial over its exonic "
+                   "bases) instead of rounding rate x length (round 13 review I1: the public donor was effectively haploid)")
     p.add_argument("--sim-profile", help="a calibrated read profile (calibrate.py profile + expr_log_sd): truncation, "
                    "homopolymer-biased errors, the donor's het and hom alleles, retained introns, per-copy expression spread")
     p.add_argument("--projection", choices=("spliced", "liftover"), default="spliced",

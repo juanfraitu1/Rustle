@@ -116,6 +116,15 @@ def dedupe(calls):
     return out
 
 
+def unexplained_rows(path):
+    """{(read, family)} an O2 table leaves unexplained -- `unexplained`, and `veto_unexplained` (the genome veto: the read's own
+    alignments put it off the seeded copies) -- or None when the table is absent."""
+    if not os.path.exists(path):
+        return None
+    return {(r["read"], r["family"]) for r in csv.DictReader(open(path), delimiter="\t")
+            if r["reason"] in ("unexplained", "veto_unexplained")}
+
+
 def family_pool(by_host, family, keep_set):
     """H: every read hosted anywhere in the family that union O2 (padded path ends) cannot explain there -- pooled across
     hosts, so an absent copy whose reads copy_assign spreads over several hosts clusters once (PSG, union prereg G3)."""
@@ -364,10 +373,12 @@ def nearest_copy(cons, sites, ref, maps, covered, bases=None, min_overlap=MIN_OV
     return best
 
 
-def status_of(members, cons, sites, ref, maps, cov, vec, mosaic=False):
+def status_of(members, cons, sites, ref, maps, cov, vec, mosaic=False, shared=False):
     """The prototype's status of a cluster against copy maps; est_div = its unexplained alts per covered base. mosaic: a cluster
     no copy explains, with >= MIN_ALT alts, whose NEAREST single copy is > DELTA away is `mosaic` (est_div = that distance):
-    an absent copy whose alleles each occur in some other copy (GOLGA8, register 1298) is no single copy's."""
+    an absent copy whose alleles each occur in some other copy (GOLGA8, register 1298) is no single copy's. shared
+    (--mosaic-shared, round 13 review C1): the nearest-copy distance only over positions >= 2 members cover -- one read's
+    sequencing errors where it alone covers are no evidence of the cluster's copy."""
     alts = [p for p, a in cons.items() if a == "alt"]
     by = [n for n, cc in maps.items() if explains(cons, sites, ref, cc)]
     unexpl = [p for p in alts if not any(cc.get(p) == sites[p] for cc in maps.values())]
@@ -382,7 +393,11 @@ def status_of(members, cons, sites, ref, maps, cov, vec, mosaic=False):
         st = "unexplained" if link >= PC.MIN_LINK else "unlinked"
     div = len(unexpl) / covered if covered else 0.0
     if mosaic and st != "explained" and not (st == "unexplained" and div > DELTA) and len(alts) >= PC.MIN_ALT:
-        _, d = nearest_copy(cons, sites, ref, maps, cov_pos, cluster_bases(members, cov))   # every cluster no copy explains
+        pos = cov_pos
+        if shared:
+            depth = collections.Counter(p for m in members[:50] for p in cov[m])
+            pos = {p for p in cov_pos if depth[p] >= 2}
+        _, d = nearest_copy(cons, sites, ref, maps, pos, cluster_bases(members, cov))   # every cluster no copy explains
         if d is not None and d > DELTA:                           # (round 3 review C2: KIR, unexplained at est_div 0.0032)
             return "mosaic", d
     return st, div
@@ -795,13 +810,13 @@ def main(argv):
                                end=c["end"], strand=c["strand"],
                                isoforms={k: [tuple(x) for x in v] for k, v in c["isoforms"].items()}))
     def unexplained(name):                             # S4 / G: o2graph.py run WORLD paths|union 2, first
-        p = f"{w}/graph/{name}"
-        return ({(r["read"], r["family"]) for r in csv.DictReader(open(p), delimiter="\t") if r["reason"] == "unexplained"}
-                if os.path.exists(p) else None)
+        return unexplained_rows(f"{w}/graph/{name}")
     o2_unexpl, o2u_unexpl = unexplained("o2.paths.m2.tsv"), unexplained("o2.union.m2.tsv")
     o2e_unexpl = unexplained("o2.unionp.m2.tsv")      # H: union O2 on paths padded with each copy's genome at both ends
     o2k_unexpl = unexplained("o2.unionf.m2.tsv")      # K: what no family's graph explains, nor the family's own loci
-    o2i_unexpl = unexplained("o2.integ.m2.tsv")       # I (round 7): what O2 on O1's RNA-seeded catalog cannot explain
+    pool_table = argv[argv.index("--pool-table") + 1] if "--pool-table" in argv else "o2.integ.m2.tsv"
+    o2i_unexpl = unexplained(pool_table)               # I (round 7): what O2 on O1's RNA-seeded catalog cannot explain;
+    mosaic_shared = "--mosaic-shared" in argv          # --pool-table (round 13 review I3): the genome step's table instead
     by_host = collections.defaultdict(list)
     if o1h:
         fam, by_host = o1_hosts(w, genome)
@@ -895,7 +910,8 @@ def main(argv):
                 if len(cov_i) >= PC.MIN_SUPPORT:
                     sites_i, clusters_i, vec_i = PC.cluster_host(ref, cov_i)
                     for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):
-                        st, div = status_of(members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True)
+                        st, div = status_of(members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True,
+                                            shared=mosaic_shared)
                         if st in ("unexplained", "mosaic") and div > DELTA:
                             mem = (attribute(members, cons, sites_i, ref, isomaps(), cov_i,
                                              delta=DELTA if attribution_delta else None) if attribution else members)
