@@ -560,18 +560,25 @@ def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
     return (c, "locus") if c is not None else (None, f"locus_{reason}")
 
 
-def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
+VETO_MAPQ = 30                                           # the genome veto's confident placement (Phred 30: 1 in 1,000)
+
+
+def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA, primary=None):
     """mode veto (round 12 review C1): a path call stands unless the read's own genome alignments put it elsewhere by the
     margin -- another seeded copy, or a locus off them (ELSEWHERE), at least `margin` closer than the called copy's locus (no
-    alignment there: infinitely far) and within max_div. The genome then decides (locus_decide). A retained intron a paralog's
-    path absorbs as one gap-compressed insertion is contiguous on the own locus; DNA-identical copies tie on the genome, and
-    their paths' structure keeps deciding them. -> (call, "veto_<reason>") or None."""
+    alignment there: infinitely far) and within max_div -- AND the genome places the read there confidently: its primary
+    alignment (primary = (seeded copy idx or ELSEWHERE, MAPQ)) lies on the genome's winner at MAPQ >= VETO_MAPQ. A retained
+    intron a paralog's path absorbs as one gap-compressed insertion is contiguous on the own locus (CDRT15: MAPQ 53-60); a short
+    terminal exon the aligner misses at the true locus is not evidence (DDX11L, development: MAPQ 1). A genome tie keeps the
+    path call. -> (call, "veto_locus" | "veto_unexplained") or None."""
     own = gdist.get(int(call), 1 << 30)
     rivals = [g for i, g in gdist.items() if i != int(call) and g + margin <= own]
     if not rivals or min(rivals) > max_div * qlen:
         return None
-    c, why = locus_decide(gdist, qlen, margin, twins=twins, max_div=max_div)
-    return ("-" if c is None else str(c)), f"veto_{why}"
+    c, why = decide(gdist, qlen, margin, max_div=max_div, twins=twins)
+    if c is None or not primary or primary[0] != c or primary[1] < VETO_MAPQ:
+        return None
+    return ("-", "veto_unexplained") if c == ELSEWHERE else (str(c), "veto_locus")
 
 
 def path_dists(dist):
@@ -602,6 +609,22 @@ def genome_distances(w, todo, spans, dist_fn=None):
                     if d < dist[(q, f)].get(i, 1 << 30):
                         dist[(q, f)][i] = d
     return dist, qlen
+
+
+def primary_loci(w, todo, spans):
+    """{(read, family): (the seeded copy idx its primary alignment overlaps most, or ELSEWHERE; MAPQ)} for the reads in todo."""
+    import pysam
+    out = {}
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q not in todo or rec.is_unmapped or rec.is_secondary or rec.is_supplementary:
+                continue
+            for f in todo[q]:
+                ov = [(min(rec.reference_end, e) - max(rec.reference_start, s), -i) for ch, s, e, i in spans.get(f, ())
+                      if ch == rec.reference_name and rec.reference_start < e and rec.reference_end > s]
+                out[(q, f)] = (-max(ov)[1] if ov else ELSEWHERE, rec.mapping_quality)
+    return out
 
 
 def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floor=0.0):
@@ -637,9 +660,9 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
     if mode == "veto":                                    # the assigned reads' alignments, every unaligned base counted
-        vdist, _ = genome_distances(w, {q: fs for q, fs in todo.items()
-                                        if any(r["read"] == q and r["reason"] == "assigned" for r in by_read[q])}, spans,
-                                    veto_distance)
+        vtodo = {q: fs for q, fs in todo.items() if any(r["reason"] == "assigned" for r in by_read[q])}
+        vdist, _ = genome_distances(w, vtodo, spans, veto_distance)
+        prim = primary_loci(w, vtodo, spans)
     if mode not in ("unexplained", "veto"):
         lens = {n: len(x) for n, x in _read_fq(f"{w}/reads.E0.fq").items()}
         pd = {}
@@ -669,7 +692,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             if c is not None and c != ELSEWHERE:
                 call, reason = str(c), "genome_assigned"
         elif mode == "veto" and reason == "assigned":
-            v = veto_decide(call, vdist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
+            v = veto_decide(call, vdist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor),
+                            primary=prim.get((q, f)))
             call, reason = v if v else (call, reason)
         elif reason == "unexplained":
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))

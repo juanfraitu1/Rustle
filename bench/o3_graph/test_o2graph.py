@@ -420,13 +420,22 @@ def test_structural_gap_compression_counts_a_long_indel_at_its_length():
 def test_the_genome_vetoes_a_path_call_its_own_alignments_contradict_by_the_margin():
     # round 12 review C1: CDRT15.0 reads with a retained intron -- a paralog's path absorbs the intron as one gap-compressed
     # insertion while the own paths clip it; the genome puts them on CDRT15.0 (MAPQ 53-60, NM 0-4)
-    assert O.veto_decide("1", {0: 0, 1: 5}, qlen=400) == ("0", "veto_locus")
-    assert O.veto_decide("1", {0: 0}, qlen=400) == ("0", "veto_locus")              # no alignment at the called copy at all
-    assert O.veto_decide("1", {0: 0, 1: 0}, qlen=400) is None                     # DNA-identical: the paths' structure decides
-    assert O.veto_decide("1", {0: 0, 1: 1}, qlen=400) is None                     # under the margin
-    assert O.veto_decide("1", {0: 20}, qlen=400) is None                          # the genome explains it nowhere better
-    assert O.veto_decide("1", {O.ELSEWHERE: 0, 1: 6}, qlen=400) == ("-", "veto_unexplained")   # an unseeded locus holds it
-    assert O.veto_decide("1", {0: 0, 2: 0, 1: 6}, qlen=400) == ("-", "veto_locus_tied")
+    assert O.veto_decide("1", {0: 0, 1: 5}, qlen=400, primary=(0, 60)) == ("0", "veto_locus")
+    assert O.veto_decide("1", {0: 0}, qlen=400, primary=(0, 53)) == ("0", "veto_locus")   # no alignment at the called copy
+    assert O.veto_decide("1", {0: 0, 1: 0}, qlen=400, primary=(0, 60)) is None   # DNA-identical: the paths' structure decides
+    assert O.veto_decide("1", {0: 0, 1: 1}, qlen=400, primary=(0, 60)) is None   # under the margin
+    assert O.veto_decide("1", {0: 20}, qlen=400, primary=(0, 60)) is None        # the genome explains it nowhere better
+    assert O.veto_decide("1", {O.ELSEWHERE: 0, 1: 6}, qlen=400, primary=(O.ELSEWHERE, 60)) == ("-", "veto_unexplained")
+    assert O.veto_decide("1", {0: 0, 2: 0, 1: 6}, qlen=400, primary=(0, 60)) is None     # a genome tie keeps the path call
+
+
+def test_the_genome_vetoes_only_where_it_places_the_read_confidently():
+    # development (set 8 public, DDX11L): the true copy's alignment soft-clips a 15-bp 5' exon the aligner missed, a paralog
+    # aligns it (primary, MAPQ 1) -- the veto moved a correct call; every veto that fixed an error had MAPQ 53-60
+    assert O.veto_decide("6", {5: 3, 6: 16}, qlen=330, primary=(5, 1)) is None
+    assert O.veto_decide("6", {5: 3, 6: 16}, qlen=330, primary=(5, O.VETO_MAPQ)) == ("5", "veto_locus")
+    assert O.veto_decide("6", {5: 3, 6: 16}, qlen=330, primary=(6, 60)) is None   # the primary is not on the genome's winner
+    assert O.veto_decide("1", {O.ELSEWHERE: 0, 1: 6}, qlen=400, primary=(O.ELSEWHERE, 20)) is None
 
 
 def test_the_veto_mode_rechecks_assigned_reads_and_places_unexplained_ones_as_the_fallback(tmp_path):
