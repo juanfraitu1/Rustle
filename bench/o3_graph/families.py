@@ -95,6 +95,17 @@ GROUPS = {
                   "F8A": r"^F8A[1-3]$", "FAM236": r"^FAM236[A-D]$", "CENPVL": r"^CENPVL[0-9]$", "FOXD4L": r"^FOXD4L[0-9]$",
                   "OR2T": r"^OR2T[0-9]+$", "KRTAP10": r"^KRTAP10-[0-9]+$", "H2BC": r"^H2BC[0-9]+$", "FAM66": r"^FAM66[A-E]$",
                   "CXADRP": r"^CXADRP[0-9]$", "GOLGA2P": r"^GOLGA2P[0-9]+$"},
+    # held out for round 11 (docs/PREREG_o3_graph_round11_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # >= 3 copies are the set, UNCAPPED, linked by the locus rule (--link locus --min-cover 0.8). FOXD4L, OR2T, KRTAP10, H2BC,
+    # FAM66, CXADRP and GOLGA2P were round-10 candidates past its first 8, never built into a world; none of the others was in
+    # any earlier list
+    "heldout11": {"FOXD4L": r"^FOXD4L[0-9]$", "OR2T": r"^OR2T[0-9]+$", "KRTAP10": r"^KRTAP10-[0-9]+$", "H2BC": r"^H2BC[0-9]+$",
+                  "FAM66": r"^FAM66[A-E]$", "CXADRP": r"^CXADRP[0-9]$", "GOLGA2P": r"^GOLGA2P[0-9]+$", "H3C": r"^H3C[0-9]+$",
+                  "H2AC": r"^H2AC[0-9]+$", "KRTAP2": r"^KRTAP2-[0-9]+$", "KRTAP1": r"^KRTAP1-[0-9]+$", "PRR23": r"^PRR23[A-D]$",
+                  "ETD": r"^ETD[ABC]$", "SULT1C": r"^SULT1C[0-9]$", "UGT2A": r"^UGT2A[1-3]$", "CDRT15": r"^CDRT15(L[0-9]+|P[0-9]+)?$",
+                  "NAIP": r"^NAIP(P[0-9]+)?$", "HLA-DRB": r"^HLA-DRB[0-9]$", "TCEAL": r"^TCEAL[0-9]$", "ARMCX": r"^ARMCX[0-9]$",
+                  "OR4C": r"^OR4C[0-9]+$", "OR4K": r"^OR4K[0-9]+$", "OR11H": r"^OR11H[0-9]+$", "SEC14L": r"^SEC14L[0-9]$",
+                  "DUX4": r"^DUX4(L[0-9]+)?$"},
 }
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
