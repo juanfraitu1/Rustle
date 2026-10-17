@@ -171,6 +171,7 @@ def chain_steps(a, root, w):
                   + (" --mapped-sites" if a.mapped_sites else "") + (" --branch-genome-novel" if a.branch_genome_novel else "")
                   + (" --allele-discount" if a.allele_discount else "") + (" --mosaic-shared" if a.mosaic_shared else "")
                   + (" --haplotype-check" if a.haplotype_check else "")
+                  + (" --haplotype-check-genome" if a.haplotype_check_genome else "")
                   + (f" --pool-table o2.{GENOME_STEP[a.o2_genome]}.m2.tsv" if a.o3_pool == "final" and a.o2_genome != "off" else "")
                   + ("" if a.all_arms else " --arms I"),
                   "light"))
@@ -271,6 +272,8 @@ def main(argv=None):
                    "genome-unexplained bases (detect.py --branch-genome-novel)")
     p.add_argument("--haplotype-check", action="store_true", help="arm I drops a PSV call whose haplotype -- its members' shared "
                    "substitutions, over every read carrying them -- stays within delta (detect.py --haplotype-check)")
+    p.add_argument("--haplotype-check-genome", action="store_true", help="arm I also drops a PSV call whose members' haplotype, "
+                   "in genome coordinates (their own primaries), stays within delta (detect.py --haplotype-check-genome)")
     p.add_argument("--mosaic-shared", action="store_true", help="O3's mosaic distance only over positions >= 2 members cover "
                    "(detect.py --mosaic-shared)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "

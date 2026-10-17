@@ -48,7 +48,8 @@ def _opts(**kw):
                 o3_procs=2, o2_genome="off", per_read_detectability=False, member_attribution=False, union_exact=False,
                 o2_procs=2, member_attribution_delta=False, twins=False, error_floor=False, o1_hosts=False,
                 mapped_sites=False, branch_genome_novel=False, allele_discount=False,
-                mosaic_shared=False, o3_pool="paths", haplotype_check=False)
+                mosaic_shared=False, o3_pool="paths", haplotype_check=False,
+                haplotype_check_genome=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -153,3 +154,8 @@ def test_o3_checks_a_call_s_haplotype_only_when_asked():
 def test_o2_and_o3_minimap2_runs_get_the_world_s_threads():
     steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(threads=3), "/R", "INTACT"))
     assert "O2_THREADS=3" in steps["O2"] and "O3_THREADS=3" in steps["O3"]
+
+
+def test_o3_checks_the_members_haplotype_on_their_own_loci_only_when_asked():
+    assert "--haplotype-check-genome" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
+    assert "--haplotype-check-genome" in F.chain_steps(_opts(haplotype_check_genome=True), "/R", "INTACT")[-1][1]

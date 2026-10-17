@@ -711,6 +711,51 @@ def o2_assigned(w):
             if os.path.exists(p) else set())
 
 
+def aligned_blocks(contig, start, cigar):
+    """The reference intervals an alignment covers: =, X, M and deletions, merged; introns (N) split them."""
+    out, r = [], start
+    for op, n in cigar:
+        if op in (0, 2, 7, 8):
+            if out and out[-1][2] == r:
+                out[-1] = (contig, out[-1][1], r + n)
+            else:
+                out.append((contig, r, r + n))
+            r += n
+        elif op == 3:
+            r += n
+    return out
+
+
+def genome_haplotype_divergence(members, events, blocks):
+    """--haplotype-check-genome (round 13 review; round 14 review C1: a present copy's haplotype-2 reads called on another copy's window, twice held out):
+    the divergence of the haplotype a call's members carry, from the reference, over every read that carries it. Its variants:
+    the substitutions >= 2 members share; its carriers: the members and every read carrying one of them; then every
+    substitution >= 2 carriers share, over the positions >= 2 carriers cover (one read's errors are no evidence). A present
+    copy's haplotype is carried by its other haplotype-2 reads too, over the whole copy (MRGPRX.1: 2 alleles in 1,444 bp;
+    FTH1P.6 under drawn het sites: 3 in 553 bp); a missing copy's reads carry its PSVs wherever they cover it."""
+    snv = lambda q: {e for e in events.get(q, ()) if e[2] == "X"}  # noqa: E731
+    seed = collections.Counter(e for m in members for e in snv(m))
+    v0 = {e for e, k in seed.items() if k >= 2}
+    carriers = set(members) | {q for q in events if snv(q) & v0}
+    shared = collections.Counter(e for q in carriers for e in snv(q))
+    depth = collections.defaultdict(list)
+    for q in carriers:
+        for c, a, b in blocks.get(q, ()):
+            depth[c] += [(a, 1), (b, -1)]
+    span, cov2 = 0, collections.defaultdict(list)
+    for c, ev in depth.items():
+        run, last = 0, None
+        for x, dv in sorted(ev):
+            if last is not None and run >= 2 and x > last:
+                span += x - last
+                cov2[c].append((last, x))
+            run += dv
+            last = x
+    inside = lambda e: any(a <= e[1] < b for a, b in cov2.get(e[0], ()))  # noqa: E731
+    k = sum(1 for e, n in shared.items() if n >= 2 and inside(e))
+    return k / span if span else 1.0
+
+
 def allele_corrected(prim, alleles):
     """`de` less the donor's alleles, for every primary alignment ({read: dict(events, c, mapq)}), and the floor recomputed the
     same way (the median over MAPQ-60 primaries, as error_floor): an observed `de` is the copy's divergence + the read's errors +
@@ -729,7 +774,8 @@ def primary_events(bam_p):
             if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.cigartuples or not rec.query_sequence:
                 continue
             ev, c = read_events(rec.reference_name, rec.reference_start, rec.cigartuples, rec.query_sequence)
-            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality)
+            prim[rec.query_name] = dict(events=ev, c=c, mapq=rec.mapping_quality,
+                                        blocks=aligned_blocks(rec.reference_name, rec.reference_start, rec.cigartuples))
             spans[rec.query_name] = (rec.reference_name, rec.reference_start, rec.reference_end)
     return prim, spans
 
@@ -1017,6 +1063,10 @@ def main(argv):
     rows_out = []
     member_check = "--member-genome-check" in argv            # arm I only: the genome check per read (member_filter)
     floor = error_floor(f"{w}/E0.bam") if "--error-floor" in argv else 0.0
+    hap_genome = "--haplotype-check-genome" in argv          # arm I: the members' haplotype in genome coordinates
+    if hap_genome:
+        hp, _ = primary_events(f"{w}/E0.bam")
+        hap_ev, hap_bl = {q: v["events"] for q, v in hp.items()}, {q: v["blocks"] for q, v in hp.items()}
     if "--allele-discount" in argv:                          # round 13: the donor's alleles, carried by other reads too
         prim, spans = primary_events(f"{w}/E0.bam")
         events, pop = {q: v["events"] for q, v in prim.items()}, o2_assigned(w) - want
@@ -1036,6 +1086,8 @@ def main(argv):
                 mm = member_filter(kind, m, dict(zip(m, des)), dict(zip(m, nov)), floor)
                 if len(mm) < PC.MIN_SUPPORT:
                     continue
+            if hap_genome and a == "I" and kind == "psv" and genome_haplotype_divergence(mm, hap_ev, hap_bl) <= DELTA:
+                continue                                      # the members' haplotype, on their own loci, is a present copy's
             rows_out.append(dict(arm=a, family=f, kind=kind, host=host, cluster=k, n_reads=len(mm), est_div=round(div, 5),
                                  genome_median_de=round(mde, 5), genome_median_novel=mnov, members=",".join(mm)))
     if only_i:
