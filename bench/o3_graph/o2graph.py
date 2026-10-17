@@ -561,6 +561,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
     whose paths lack the read's structure is judged on its sequence; a call that differs from O2's is labelled genome_<reason>.
     mode "seeded" -> o2.integs.m<margin>.tsv: the reads O2 explains decided on min(path, genome) over the seeded copies alone
     (no ELSEWHERE: an array's uncatalogued identical units would tie every read), the unexplained ones as in "unexplained".
+    mode "resolve" -> o2.integr.m<margin>.tsv: O2's assignments stand; its unexplained reads as in "unexplained", and its
+    tied / thin ones decided on min(path, genome) with ELSEWHERE (`genome_assigned` when a seeded copy wins by the margin).
     O3 still reads o2.integ.m<margin>.tsv, so neither mode changes O3's evidence; an O3 call on a read takes precedence over its
     placement (summary.read_fate)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.integ.m{margin}.tsv"), delimiter="\t"))
@@ -573,7 +575,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
     todo = collections.defaultdict(set)                   # read -> the families decided here
     for r in rows:
         unexplained = r["reason"] == "unexplained"
-        if unexplained and not explained_in[r["read"]] - {r["family"]} or mode != "unexplained" and not unexplained:
+        if (unexplained and not explained_in[r["read"]] - {r["family"]} or mode in ("all", "seeded") and not unexplained
+                or mode == "resolve" and r["reason"] in ("tied", "thin")):
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
     if mode != "unexplained":
@@ -597,11 +600,18 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             c, why = (None, "unexplained") if c == ELSEWHERE else (c, why)
             new = ("-" if c is None else str(c), why)
             call, reason = (call, reason) if new == (call, reason) else (new[0], f"genome_{why}")
+        elif mode == "resolve" and reason != "unexplained":
+            comb = {int(c): v for c, v in pd[f].get(q, {}).items()}
+            for i, g in dist.get((q, f), {}).items():
+                comb[i] = min(comb.get(i, 1 << 30), g)
+            c, why = decide(comb, lens[q], margin)
+            if c is not None and c != ELSEWHERE:
+                call, reason = str(c), "genome_assigned"
         elif reason == "unexplained":
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin)
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
-    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l')[mode]}.m{margin}.tsv"
+    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r')[mode]}.m{margin}.tsv"
     with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
         wr.writeheader()
@@ -809,8 +819,9 @@ def main(argv):
         if method == "integ":                             # round 7: needs o1seed.py WORLD first
             return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip",
                                   *((UNION_EXACT_MICRO, 0) if "--union-exact" in argv else (0, None)))
-        if method in ("integl", "integc", "integs"):      # integ + the read's genome alignments; needs o2.integ.m<margin>.tsv
-            return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded")[method])
+        if method in ("integl", "integc", "integs", "integr"):   # integ + the read's genome alignments; needs o2.integ first
+            return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded",
+                                                                 integr="resolve")[method])
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first

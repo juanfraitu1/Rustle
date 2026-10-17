@@ -326,6 +326,24 @@ def test_the_combined_o2_lets_a_copy_explain_a_read_by_its_genome_alignment_wher
     assert O.run_locus_fallback(str(w), mode="seeded") == 0
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integs.m2.tsv"), delimiter="\t")}
     assert out == {"r7": ("1", "genome_assigned"), "r8": ("0", "assigned"), "r9": ("0", "assigned"), "r2": ("1", "locus")}
+    # mode "resolve": O2's own calls stand; only its unexplained (fallback) and tied / thin reads (genome) are decided here
+    with open(w / "graph" / "o2.integ.m2.tsv", "a") as fh:
+        fh.write("r10\tF\t-\ttied\nr11\tF\t-\tthin\n")
+    d2 = json.load(open(d / "F.dist.json"))
+    d2.update({"r10": {"0": 3, "1": 3}, "r11": {"0": 2, "1": 3}})
+    json.dump(d2, open(d / "F.dist.json", "w"))
+    (w / "reads.E0.fq").write_text("".join(f"@{n}\n{'A' * 1000}\n+\n{'I' * 1000}\n" for n in ("r7", "r8", "r9", "r2", "r10", "r11")))
+    _bam(str(w / "E0.bam"), [
+        ("r7", 0, "chrB", 2000, "1000="), ("r7", 256, "chrA", 2000, "500=4X496="),
+        ("r8", 0, "chrA", 2000, "500=1X499="), ("r8", 256, "chrB", 2000, "500=5X495="),
+        ("r9", 0, "chrA", 30000, "1000="), ("r9", 256, "chrA", 2000, "500=3X497="),
+        ("r2", 0, "chrB", 2000, "500=1X499="), ("r2", 256, "chrA", 2000, "500=4X496="),
+        ("r10", 0, "chrA", 2000, "1000="), ("r10", 256, "chrB", 2000, "500=3X497="),   # the genome breaks the paths' tie
+        ("r11", 0, "chrA", 2000, "500=2X498="), ("r11", 256, "chrB", 2000, "500=3X497=")])  # still thin
+    assert O.run_locus_fallback(str(w), mode="resolve") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integr.m2.tsv"), delimiter="\t")}
+    assert out == {"r7": ("0", "assigned"), "r8": ("0", "assigned"), "r9": ("0", "assigned"), "r2": ("1", "locus"),
+                   "r10": ("0", "genome_assigned"), "r11": ("-", "thin")}
 
 
 def test_o2_paths_dump_each_read_s_distance_to_every_copy_for_the_combined_decision():

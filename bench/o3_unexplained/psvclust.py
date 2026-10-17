@@ -101,22 +101,27 @@ def align(target_name, target_seq, queries, tmp):
 
 def linkage(sites_u, vec):
     """median over pairs of unexplained alt sites of P(alt at both | alt at either), among reads covering both; None if no pair has
-    >= MIN_SUPPORT reads with an alt at either"""
+    >= MIN_SUPPORT reads with an alt at either (per site, the reads covering it and those with its alt as bit sets)"""
     import statistics
-    vals = []
     su = sorted(sites_u)
+    want = set(su)
+    cov, alt = dict.fromkeys(su, 0), dict.fromkeys(su, 0)
+    for k, v in enumerate(vec.values()):
+        bit = 1 << k
+        for p, a in v.items():
+            if p in want:
+                cov[p] |= bit
+                if a == "alt":
+                    alt[p] |= bit
+    vals = []
     for i in range(len(su)):
+        ca, xa = cov[su[i]], alt[su[i]]
         for j in range(i + 1, len(su)):
-            a, b = su[i], su[j]
-            either = both = 0
-            for v in vec.values():
-                if a in v and b in v:
-                    xa, xb = v[a] == "alt", v[b] == "alt"
-                    if xa or xb:
-                        either += 1
-                        both += xa and xb
+            b = su[j]
+            both_cov = ca & cov[b]
+            either = ((xa | alt[b]) & both_cov).bit_count()
             if either >= MIN_SUPPORT:
-                vals.append(both / either)
+                vals.append((xa & alt[b] & both_cov).bit_count() / either)
     return statistics.median(vals) if vals else None
 
 
@@ -131,13 +136,19 @@ def cluster_host(ref, reads_cov):
     vec = {r: {p: ("alt" if cov[p] == sites[p] else "ref" if cov[p] == ref[p] else "other") for p in sites if p in cov}
            for r, cov in reads_cov.items()}
     order = sorted(vec, key=lambda r: (-len(vec[r]), r))
-    clusters = []        # [members, {site: Counter(allele)}]
+    clusters = []        # [members, {site: Counter(allele)}, {site: its consensus allele}, kept current by add()]
 
     def cons(cl):
         return {p: c.most_common(1)[0][0] for p, c in cl[1].items()}
 
+    def add(cl, v):
+        for p, a in v.items():
+            c = cl[1][p]
+            c[a] += 1
+            cl[2][p] = c.most_common(1)[0][0]
+
     def fit(v, cl):
-        cc = cons(cl)
+        cc = cl[2]
         co = [p for p in v if p in cc and v[p] != "other" and cc[p] != "other"]
         conf = sum(v[p] != cc[p] for p in co)
         return len(co), conf
@@ -150,17 +161,16 @@ def cluster_host(ref, reads_cov):
             if conf <= max(0, (co - 9) // 10) and (best is None or co > best[1]):
                 best = (i, co)
         if best is None:
-            clusters.append([[r], collections.defaultdict(collections.Counter)])
+            clusters.append([[r], collections.defaultdict(collections.Counter), {}])
             i = len(clusters) - 1
         else:
             i = best[0]
             clusters[i][0].append(r)
-        for p, a in v.items():
-            clusters[i][1][p][a] += 1
+        add(clusters[i], v)
 
     def separated(a, b):
         """a site where each cluster's consensus allele differs, supported by >= MIN_SUPPORT reads on each side"""
-        ca, cb = cons(a), cons(b)
+        ca, cb = a[2], b[2]
         return any(ca[p] != cb[p] and a[1][p][ca[p]] >= MIN_SUPPORT and b[1][p][cb[p]] >= MIN_SUPPORT for p in ca if p in cb)
 
     changed = True
@@ -176,14 +186,14 @@ def cluster_host(ref, reads_cov):
                 if fits:
                     k = max(fits)[1]
                     big[k][0].append(r)
-                    for p, a in v.items():
-                        big[k][1][p][a] += 1
+                    add(big[k], v)
         clusters = big
         for i in range(len(clusters)):
             for j in range(i + 1, len(clusters)):
                 if not separated(clusters[i], clusters[j]):
                     for p, c in clusters[j][1].items():
                         clusters[i][1][p].update(c)
+                        clusters[i][2][p] = clusters[i][1][p].most_common(1)[0][0]
                     clusters[i][0] += clusters[j][0]
                     del clusters[j]
                     changed = True
