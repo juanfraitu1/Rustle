@@ -10084,6 +10084,19 @@ fn main() -> Result<()> {
             if let Some(t) = &out.bridges_tsv {
                 std::fs::write(format!("{}.bridges.tsv", args.out), t)?;
             }
+            if let Some(t) = &out.fusions_tsv {
+                // every bridge transcript classed fusion (real: Yoo 2025's support and ORF, primary-majority, canonical)
+                // or readthrough; fusions are kept in <out>.gtf and listed here, never dropped
+                std::fs::write(format!("{}.fusions.tsv", args.out), t)?;
+                let n_fusion = t.lines().skip(1).filter(|l| l.split('\t').nth(5) == Some("fusion")).count();
+                eprintln!(
+                    "[copy_assign] wrote {}.fusions.tsv: {} bridge transcript(s), {} classed fusion (kept in the GTF), the \
+                     rest readthrough",
+                    args.out,
+                    t.lines().count().saturating_sub(1),
+                    n_fusion
+                );
+            }
             if let Some(u) = &out.units {
                 std::fs::write(format!("{}.bridge_units.tsv", args.out), &u.table_tsv)?;
                 eprintln!(

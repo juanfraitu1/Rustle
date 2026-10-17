@@ -14556,6 +14556,10 @@ pub mod bridge_regroup {
         ends: [Vec<(u64, u64)>; 2],
         /// per strand: every record's (5' end, 3' end, first donor), [`rt_v1`]'s rows
         rows: [Vec<(u64, u64, u64)>; 2],
+        /// every spliced primary's introns (1-based closed), counted per record: the fusion class's support
+        jp: HashMap<(u64, u64), u32>,
+        /// every spliced SECONDARY's introns: borrowed support ([`classify_bridge`])
+        js: HashMap<(u64, u64), u32>,
     }
 
     /// F1's read evidence per contig (see the module header for the population). Fed one record at a time by the
@@ -14604,6 +14608,9 @@ pub mod bridge_regroup {
                 contigs.insert(chrom.to_string(), ContigEvidence::default());
             }
             let c = contigs.get_mut(chrom).expect("inserted above");
+            for &iv in introns.iter() {
+                *c.jp.entry(iv).or_insert(0) += 1;
+            }
             let k = usize::from(minus);
             let (e5, e3) = if minus {
                 (ref_end, ref_start + 1)
@@ -14622,6 +14629,42 @@ pub mod bridge_regroup {
             {
                 c.ends[k].push((e3, e5));
             }
+        }
+
+        /// One SECONDARY alignment: only its introns are counted (the fusion class's borrowed support), with the same
+        /// CIGAR walk as [`BridgeEvidence::push`].
+        pub fn push_secondary(&mut self, chrom: &str, ref_start: u64, ops: &[Op]) {
+            let mut pos = ref_start;
+            let mut ivs: Vec<(u64, u64)> = Vec::new();
+            for op in ops {
+                let len = op.len() as u64;
+                match op.kind() {
+                    Kind::Skip => {
+                        ivs.push((pos + 1, pos + len));
+                        pos += len;
+                    }
+                    Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => pos += len,
+                    _ => {}
+                }
+            }
+            if ivs.is_empty() {
+                return;
+            }
+            let c = self.contigs.entry(chrom.to_string()).or_default();
+            for iv in ivs {
+                *c.js.entry(iv).or_insert(0) += 1;
+            }
+        }
+
+        /// Each contig's junction counts, (primary, secondary), taken out before the rule consumes the contigs.
+        #[allow(clippy::type_complexity)]
+        pub fn take_junction_support(
+            &mut self,
+        ) -> HashMap<String, (HashMap<(u64, u64), u32>, HashMap<(u64, u64), u32>)> {
+            self.contigs
+                .iter_mut()
+                .map(|(k, c)| (k.clone(), (std::mem::take(&mut c.jp), std::mem::take(&mut c.js))))
+                .collect()
         }
 
         /// Drop the deduplication keys and the spare capacity once a region has been read, so that a genome-wide run,
@@ -14721,7 +14764,7 @@ pub mod bridge_regroup {
         for result in reader.query(&header, &index, &region)? {
             let record = result?;
             let flags = record.flags();
-            if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+            if flags.is_unmapped() || flags.is_supplementary() {
                 continue;
             }
             let Some(start) = record.alignment_start() else {
@@ -14731,6 +14774,10 @@ pub mod bridge_regroup {
             ops.clear();
             for op in record.cigar().iter() {
                 ops.push(op?);
+            }
+            if flags.is_secondary() {
+                ev.push_secondary(chrom, ref_start, &ops); // the fusion class's borrowed support only
+                continue;
             }
             ev.push(
                 chrom,
@@ -16206,6 +16253,8 @@ pub mod bridge_regroup {
         pub bridges_tsv: Option<String>,
         /// `f1units`: the families input with the units, and the units table
         pub units: Option<UnitsOutcome>,
+        /// every bridge transcript's fusion class and evidence ([`fusion_class`]); None when F1's evidence was not read
+        pub fusions_tsv: Option<String>,
     }
 
     impl Outcome {
@@ -16247,6 +16296,7 @@ pub mod bridge_regroup {
         end_clusters: &dyn Fn(&[i64], &[u8], bool) -> Vec<EndCluster>,
     ) -> Result<Outcome> {
         let txs = parse(lines, "--bridge-regroup")?;
+        let support = evidence.take_junction_support(); // before the rule consumes the contigs
         let junctions = decide(&txs, evidence, genome_of, end_clusters)?;
         let mut junctions_tsv = String::from(JUNCTIONS_HEADER);
         for j in &junctions {
@@ -16327,6 +16377,32 @@ pub mod bridge_regroup {
             bj.insert((j.chrom.as_str(), j.s, j.e, j.strand.as_str()));
         }
         let plan = (mode == Mode::F1Units).then(|| f1_cut_plan(&txs, &junctions, &kept));
+        // the fusion class of every bridge transcript, over its own bridge junctions
+        let mut calls: HashMap<usize, FusionCall> = HashMap::new();
+        let mut genomes: HashMap<String, Arc<GenomeIndex>> = HashMap::new();
+        let mut order: Vec<usize> = bridges.iter().copied().collect();
+        order.sort_unstable();
+        for t in order {
+            let tx = &txs[t];
+            let js: Vec<(i64, i64)> = tx
+                .introns()
+                .filter(|&(s, e)| bj.contains(&(tx.chrom.as_str(), s, e, tx.strand.as_str())))
+                .collect();
+            if js.is_empty() {
+                continue;
+            }
+            if !genomes.contains_key(&tx.chrom) {
+                genomes.insert(tx.chrom.clone(), genome_of(&tx.chrom)?);
+            }
+            let g = &genomes[&tx.chrom];
+            let seq: &[u8] = g.chroms().find(|(n, _)| *n == tx.chrom).map_or(&[], |(_, q)| q);
+            let sup = support.get(&tx.chrom);
+            let at = |s: i64, e: i64| -> (u32, u32) {
+                let k = (s as u64, e as u64);
+                sup.map_or((0, 0), |(p, q)| (p.get(&k).copied().unwrap_or(0), q.get(&k).copied().unwrap_or(0)))
+            };
+            calls.insert(t, classify_bridge(tx, &js, &at, seq));
+        }
         let counts = DetectorCounts {
             structural_junctions: junctions.len(),
             up_proof: junctions.iter().filter(|j| j.up_proof).count(),
@@ -16343,6 +16419,7 @@ pub mod bridge_regroup {
             &counts,
             (junctions_tsv, true),
             bridges_tsv,
+            Some(&calls),
         )
     }
 
@@ -16372,6 +16449,7 @@ pub mod bridge_regroup {
             &counts,
             (String::new(), false),
             None,
+            None,
         )?;
         out.stats.unit_list_unmatched = unmatched;
         Ok(out)
@@ -16390,6 +16468,7 @@ pub mod bridge_regroup {
         counts: &DetectorCounts,
         tables: (String, bool),
         bridges_tsv: Option<String>,
+        calls: Option<&HashMap<usize, FusionCall>>,
     ) -> Result<Outcome> {
         let units = match plan {
             Some(p) => Some(build_units(lines, txs, p)?),
@@ -16485,6 +16564,32 @@ pub mod bridge_regroup {
             stats.unit_gene_ids_touched = c.gene_ids_touched;
             outcome
         });
+        let fusions_tsv = calls.map(|calls| {
+            let mut out = String::from(FUSIONS_HEADER);
+            let mut ids: Vec<usize> = calls.keys().copied().collect();
+            ids.sort_unstable();
+            for i in ids {
+                let (c, t) = (&calls[&i], &txs[i]);
+                let (fusion_of, junctions) = rel.get(&i).cloned().unwrap_or_default();
+                out.push_str(&format!(
+                    "\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    t.tid,
+                    new[i].as_deref().or(t.gene.as_deref()).unwrap_or("."),
+                    t.chrom,
+                    t.strand,
+                    junctions,
+                    c.class,
+                    c.primary,
+                    c.secondary,
+                    c.motifs.join(","),
+                    c.orf_aa,
+                    py_bool(c.orf_spans),
+                    fusion_of,
+                ));
+            }
+            out.push('\n');
+            out
+        });
         Ok(Outcome {
             stats,
             bridges: bridges.iter().map(|&t| txs[t].tid.clone()).collect(),
@@ -16492,7 +16597,171 @@ pub mod bridge_regroup {
             evidence_used: tables.1,
             bridges_tsv,
             units,
+            fusions_tsv,
         })
+    }
+
+    // ============================================================================================ fusion class
+
+    /// Yoo et al. 2025 (complete ape genomes, Nature) counts the fusion genes of SD expansions as gene copies (gorilla
+    /// JMJD7-PLA2G4B, orangutan HERC2-GOLGA, FOXO3B) when Iso-Seq supports them ("expressed": more than 3 reads) and they
+    /// carry a valid open reading frame (TransDecoder). A real fusion must not be read as a spurious readthrough, nor
+    /// dropped because no annotation names it. Every bridge transcript is classed here from read and sequence evidence
+    /// alone (annotation never decides): FUSION when its bridge junctions are carried by >= [`FUSION_MIN_READS`] primary
+    /// alignments, by no more secondary than primary ones (a secondary-majority junction is borrowed evidence, §6n9:
+    /// PKD1P4-NPIPA8 10 / 1,150, while PKD1P6-NPIPP1 has 110 primary reads), each with a canonical splice motif, and
+    /// when its longest complete ORF (>= [`FUSION_MIN_ORF_AA`], TransDecoder's default minimum) runs across every one of
+    /// them; otherwise READTHROUGH. The class goes to `<out>.fusions.tsv`; the GTF lines are unchanged.
+    pub const FUSION_MIN_READS: u32 = 4;
+    pub const FUSION_MIN_ORF_AA: usize = 100;
+    const FUSIONS_HEADER: &str =
+        "transcript_id\tgene_id\tchrom\tstrand\tjunctions\tclass\tprimary_reads\tsecondary_reads\tmotifs\torf_aa\torf_spans\tfusion_of";
+
+    /// The class from the evidence (see [`FUSION_MIN_READS`]'s section).
+    pub fn fusion_class(primary: u32, secondary: u32, canonical: bool, orf_aa: usize, spans: bool) -> &'static str {
+        if primary >= FUSION_MIN_READS
+            && primary >= secondary
+            && canonical
+            && orf_aa >= FUSION_MIN_ORF_AA
+            && spans
+        {
+            "fusion"
+        } else {
+            "readthrough"
+        }
+    }
+
+    fn revcomp(s: &[u8]) -> Vec<u8> {
+        s.iter()
+            .rev()
+            .map(|&b| match b {
+                b'A' => b'T',
+                b'C' => b'G',
+                b'G' => b'C',
+                b'T' => b'A',
+                x => x,
+            })
+            .collect()
+    }
+
+    /// The intron `(s, e)`'s (1-based closed) end dinucleotides in transcript orientation, as `GT-AG`; `seq` = the contig.
+    fn splice_motif(seq: &[u8], s: i64, e: i64, strand: &str) -> String {
+        if s < 1 || e < s + 3 || e as usize > seq.len() {
+            return "?".to_string();
+        }
+        let (s, e) = (s as usize, e as usize);
+        let (left, right) = (&seq[s - 1..s + 1], &seq[e - 2..e]);
+        let (d, a) = if strand == "-" {
+            (revcomp(right), revcomp(left))
+        } else {
+            (left.to_vec(), right.to_vec())
+        };
+        format!("{}-{}", String::from_utf8_lossy(&d), String::from_utf8_lossy(&a))
+    }
+
+    /// GT-AG (U2 major), GC-AG (minor), AT-AC (U12), as [`GenomeIndex::is_canonical_junction`] accepts them.
+    fn is_canonical_motif(m: &str) -> bool {
+        matches!(m, "GT-AG" | "GC-AG" | "AT-AC")
+    }
+
+    /// A transcript's sequence over its exons (1-based closed, genomic order), in transcript orientation.
+    fn spliced_seq(seq: &[u8], exons: &[(i64, i64)], strand: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        for &(a, b) in exons {
+            let (a, b) = (a.max(1) as usize, (b as usize).min(seq.len()));
+            if a <= b {
+                out.extend_from_slice(&seq[a - 1..b]);
+            }
+        }
+        if strand == "-" {
+            revcomp(&out)
+        } else {
+            out
+        }
+    }
+
+    /// `[start, end)` of the longest complete ORF: an ATG to the first in-frame stop (included), every frame; ties: the
+    /// first. None without one.
+    fn longest_orf(s: &[u8]) -> Option<(usize, usize)> {
+        let mut best: Option<(usize, usize)> = None;
+        for f in 0..3 {
+            let mut open: Option<usize> = None;
+            let mut i = f;
+            while i + 3 <= s.len() {
+                let c = &s[i..i + 3];
+                if open.is_none() && c == b"ATG" {
+                    open = Some(i);
+                }
+                if matches!(c, b"TAA" | b"TAG" | b"TGA") {
+                    if let Some(st) = open.take() {
+                        let (len, cand) = (i + 3 - st, (st, i + 3));
+                        if best.map_or(true, |(a, b)| len > b - a || (len == b - a && st < a)) {
+                            best = Some(cand);
+                        }
+                    }
+                }
+                i += 3;
+            }
+        }
+        best
+    }
+
+    /// The transcript bases before the exon-exon junction at intron `(s, e)`, counted in transcript orientation.
+    fn junction_tx_pos(exons: &[(i64, i64)], strand: &str, s: i64, e: i64) -> Option<usize> {
+        let total: i64 = exons.iter().map(|&(a, b)| b - a + 1).sum();
+        let mut acc = 0i64;
+        for w in exons.windows(2) {
+            acc += w[0].1 - w[0].0 + 1;
+            if w[0].1 + 1 == s && w[1].0 - 1 == e {
+                return Some((if strand == "-" { total - acc } else { acc }) as usize);
+            }
+        }
+        None
+    }
+
+    /// One bridge transcript's class and its evidence.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct FusionCall {
+        pub class: &'static str,
+        /// the fewest primary alignments over its bridge junctions
+        pub primary: u32,
+        /// the most secondary alignments over its bridge junctions
+        pub secondary: u32,
+        pub motifs: Vec<String>,
+        pub orf_aa: usize,
+        pub orf_spans: bool,
+    }
+
+    /// Class the bridge transcript `tx` over its bridge junctions `js` (1-based closed); `support(s, e)` = the junction's
+    /// (primary, secondary) alignments, `seq` = its contig.
+    fn classify_bridge(
+        tx: &Tx,
+        js: &[(i64, i64)],
+        support: &dyn Fn(i64, i64) -> (u32, u32),
+        seq: &[u8],
+    ) -> FusionCall {
+        let primary = js.iter().map(|&(s, e)| support(s, e).0).min().unwrap_or(0);
+        let secondary = js.iter().map(|&(s, e)| support(s, e).1).max().unwrap_or(0);
+        let motifs: Vec<String> = js.iter().map(|&(s, e)| splice_motif(seq, s, e, &tx.strand)).collect();
+        let canonical = !motifs.is_empty() && motifs.iter().all(|m| is_canonical_motif(m));
+        let tseq = spliced_seq(seq, &tx.exons, &tx.strand);
+        let (orf_aa, orf_spans) = match longest_orf(&tseq) {
+            Some((a, b)) => (
+                (b - a) / 3 - 1,
+                js.iter().all(|&(s, e)| {
+                    junction_tx_pos(&tx.exons, &tx.strand, s, e).is_some_and(|p| a < p && p < b)
+                }),
+            ),
+            None => (0, false),
+        };
+        FusionCall {
+            class: fusion_class(primary, secondary, canonical, orf_aa, orf_spans),
+            primary,
+            secondary,
+            motifs,
+            orf_aa,
+            orf_spans,
+        }
     }
 
     #[cfg(test)]
@@ -18230,6 +18499,98 @@ pub mod bridge_regroup {
                     "{text:?}: {e}"
                 );
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod fusion_tests {
+        use super::*;
+
+        /// A contig of `len` 'C's (CCC = Pro: no stop codon) with `edits` written at 0-based positions.
+        fn contig(len: usize, edits: &[(usize, &str)]) -> Vec<u8> {
+            let mut s = vec![b'C'; len];
+            for &(p, x) in edits {
+                s[p..p + x.len()].copy_from_slice(x.as_bytes());
+            }
+            s
+        }
+
+        fn tx_of(strand: &str, exons: &[(i64, i64)]) -> Tx {
+            Tx {
+                tid: "B".into(),
+                gene: Some("G".into()),
+                chrom: "c1".into(),
+                strand: strand.into(),
+                reads: 0,
+                span: exons.last().unwrap().1 - exons[0].0 + 1,
+                exons: exons.to_vec(),
+            }
+        }
+
+        #[test]
+        fn the_splice_motif_is_read_in_transcript_orientation() {
+            // intron [11, 30] (1-based closed): its first two bases are 11-12, its last two 29-30
+            let g = contig(50, &[(10, "GT"), (28, "AG")]);
+            assert_eq!(splice_motif(&g, 11, 30, "+"), "GT-AG");
+            let g = contig(50, &[(10, "CT"), (28, "AC")]); // GT-AG on the minus strand
+            assert_eq!(splice_motif(&g, 11, 30, "-"), "GT-AG");
+            assert!(is_canonical_motif("GT-AG") && is_canonical_motif("GC-AG") && is_canonical_motif("AT-AC"));
+            assert!(!is_canonical_motif("CC-CC"));
+        }
+
+        #[test]
+        fn the_longest_orf_runs_from_an_atg_to_the_first_in_frame_stop() {
+            // ATG CCC CCC TAA at 2 (12 nt) and ATG + 4 CCC + TGA at 16 (18 nt); no stop = no complete ORF
+            assert_eq!(longest_orf(b"CCATGCCCCCCTAACCATGCCCCCCCCCCCCTGACC"), Some((16, 34)));
+            assert_eq!(longest_orf(b"ATGCCCCCC"), None);
+        }
+
+        #[test]
+        fn a_junction_s_position_is_counted_in_transcript_orientation() {
+            let ex = [(101, 200), (301, 350), (1301, 1400)];
+            assert_eq!(junction_tx_pos(&ex, "+", 351, 1300), Some(150));
+            assert_eq!(junction_tx_pos(&ex, "-", 351, 1300), Some(100));
+            assert_eq!(junction_tx_pos(&ex, "+", 352, 1300), None);
+        }
+
+        #[test]
+        fn a_fusion_needs_yoo_s_support_primary_reads_a_canonical_junction_and_an_orf_across_it() {
+            assert_eq!(fusion_class(4, 0, true, 100, true), "fusion");
+            assert_eq!(fusion_class(3, 0, true, 100, true), "readthrough"); // Yoo 2025: expressed = more than 3 reads
+            assert_eq!(fusion_class(110, 111, true, 300, true), "readthrough"); // borrowed: secondary-majority support
+            assert_eq!(fusion_class(110, 110, true, 300, true), "fusion"); // a tie is no secondary majority
+            assert_eq!(fusion_class(110, 0, false, 300, true), "readthrough"); // a non-canonical junction
+            assert_eq!(fusion_class(110, 0, true, 99, true), "readthrough"); // under TransDecoder's 100 aa
+            assert_eq!(fusion_class(110, 0, true, 300, false), "readthrough"); // the ORF ends before the junction
+        }
+
+        #[test]
+        fn a_coding_bridge_across_a_canonical_well_supported_junction_is_a_fusion() {
+            // B = 101-200, 301-350, 1301-1400, 1501-1600 (+): ATG at its first base, TAA at transcript 345-347
+            // (genomic 1596-1598), the bridge junction J = [351, 1300] (GT .. AG) at transcript position 150
+            let g = contig(3000, &[(100, "ATG"), (1595, "TAA"), (350, "GT"), (1298, "AG")]);
+            let b = tx_of("+", &[(101, 200), (301, 350), (1301, 1400), (1501, 1600)]);
+            let call = classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g);
+            assert_eq!(call.class, "fusion");
+            assert_eq!((call.primary, call.secondary, call.orf_aa, call.orf_spans), (110, 3, 115, true));
+            assert_eq!(call.motifs, vec!["GT-AG".to_string()]);
+            // the same transcript as a secondary-dominated echo, and with its stop codon before the junction
+            assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (10, 1150), &g).class, "readthrough");
+            let g2 = contig(3000, &[(100, "ATG"), (130, "TAA"), (350, "GT"), (1298, "AG")]);
+            assert_eq!(classify_bridge(&b, &[(351, 1300)], &|_, _| (110, 3), &g2).class, "readthrough");
+        }
+
+        #[test]
+        fn the_evidence_counts_each_junction_s_primary_and_secondary_alignments() {
+            let mut ev = BridgeEvidence::default();
+            let ops = [Op::new(Kind::Match, 50), Op::new(Kind::Skip, 950), Op::new(Kind::Match, 100)];
+            // 0-based start 300: intron [351, 1300]
+            ev.push("c1", false, 300, &ops, || true);
+            ev.push("c1", false, 300, &ops, || true);
+            ev.push_secondary("c1", 300, &ops);
+            let sup = ev.take_junction_support();
+            let (p, s) = &sup["c1"];
+            assert_eq!((p.get(&(351, 1300)).copied(), s.get(&(351, 1300)).copied()), (Some(2), Some(1)));
         }
     }
 }
@@ -50051,6 +50412,8 @@ pub mod denovo_pipeline {
                             &ops,
                             || crate::bridge_regroup::ts_is_plus(&record),
                         );
+                    } else {
+                        ev.push_secondary(chrom, ref_start, &ops); // the fusion class's borrowed support only
                     }
                 }
                 let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());

@@ -254,7 +254,7 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
         pairs(&[(X, G), (B, G), (Y, G)]),
         "the fused locus"
     );
-    for ext in ["families.gtf", "bridge_junctions.tsv", "bridges.tsv"] {
+    for ext in ["families.gtf", "bridge_junctions.tsv", "bridges.tsv", "fusions.tsv"] {
         assert!(
             !Path::new(&format!("{off}.{ext}")).exists(),
             "off writes no {ext}"
@@ -295,6 +295,12 @@ fn a_proven_bridge_is_split_off_and_kept_as_a_relation() {
     let junctions = "gene\tchrom\ts\te\tstrand\tn_TJ\treads_TJ\tup\tdown\tinside\tU\tclusters\tup_proof\tV1\tdown_proof\tbridge\tTJ\n\
                      DN_c1_1000_2\tc1\t1251\t2200\t+\t1\t3\t1\t1\t0\t5\t1300:5:P\tTrue\t5\tTrue\tTrue\tDN_c1_1000_4\n";
     assert_eq!(read(&format!("{f1}.bridge_junctions.tsv")), junctions);
+    // every bridge transcript gets a fusion class (Yoo 2025's support and ORF): the fixture's bridge is a readthrough
+    let fusions = read(&format!("{f1}.fusions.tsv"));
+    let rows: Vec<Vec<&str>> = fusions.lines().map(|l| l.split('\t').collect()).collect();
+    assert_eq!(rows[0][5], "class", "{fusions}");
+    assert_eq!(rows.len(), 2, "one bridge transcript: {fusions}");
+    assert_eq!((rows[1][0], rows[1][4], rows[1][5]), (B, "c1:1251-2200:+", "readthrough"), "{fusions}");
     assert!(
         !Path::new(&format!("{f1}.bridges.tsv")).exists(),
         "bridges.tsv is F1v2's table"
