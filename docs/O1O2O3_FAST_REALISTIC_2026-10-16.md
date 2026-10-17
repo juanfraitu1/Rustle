@@ -385,3 +385,77 @@ Times exclude the one-time local reference build. All runs PASS their bars post 
 - **Trimming restores it to the adapter-free level.** Every read is trimmed, removing 85.5 bases on average, and no adapter
   core is left at either end.
 - **Rule:** an untrimmed library needs `--trim-adapters` (or lima/refine) before the integrated pipeline.
+
+## 11. Integrated v3: the catalogued-read loss and the false calls (after the second goal check, 2026-10-16)
+
+Development sets 8, 9 and 10 (all spent), simulated fresh with the v2 profiles and the new O1 rule. Every run is scored per
+read (`--per-read-detectability`); "dev runs" are the 6 set x profile runs.
+- Runs: `/mnt/linuxdisk/tmp/o3_graph/fast/fbdev/` and `fbdev_exact/` (`--union-exact`).
+- Error lists: scratch scripts `errs.py`, `vs.py`, `why.py`, `crosserr.py` (session scratchpad), summarised here.
+
+**O2: the genome fallback (`integl`).** It applies to the reads O2's paths leave `unexplained`.
+- **Scoring:** every primary and secondary genome alignment, as mismatches + indel events.
+- **What refuses:** an insertion or clip >= 30 bp (that is O3's evidence), and the read's best alignment lying off the
+  family's seeded copies.
+- **Placement:** within delta, at margin 2.
+- **It removes the round-9 loss.** Correct reads, fallback minus no fallback: +29 to +90 per world (set 8 A119b INTACT
+  2,132 -> 2,196), with no new error outside BRANCH. In BRANCH it adds +5 to +16 errors, reads of near-identical absent
+  copies; current's BRANCH errors are 46-225.
+- **Three other modes were measured on the same runs and rejected:**
+  - `combined`: the genome on every read, with the guard. Errors drop (OUTSIDE 76 -> 0), but correct reads collapse
+    where arrays have identical uncatalogued units (set 9 INTACT 935 -> 534).
+  - `seeded`: the genome on explained reads, without the guard. It removes CROSS's structure-only errors, but INTACT loses
+    13-47 reads.
+  - `resolve`: the genome on O2's tied and thin reads. It adds 0-1 read per world.
+
+**O3: three false-call mechanisms, found read by read.**
+1. **The mosaic rule's nearest copy took the host's base wherever a single read covered a position** (a position covered by
+   one read is no variable site). The cluster then disagreed with its own copy:
+   - in set 9 LCE1, a cluster of LCE1.1's reads (one carrying a donor allele) was 0.025 from LCE1.1, so it became a false
+     mosaic;
+   - with the reads' own bases (`cluster_bases`, f080a30f), the distance is 0.0008.
+2. **Mixed clusters:** reads of several present copies clustered together, a false mosaic (set 8 FAM138, once the
+   consensus is honest).
+3. **Present reads swept into a true call:** 2 USP17L reads in set 9 REMOVED.
+- **Member attribution (`--member-attribution`, 12f8f2af) fixes all three.** An absent-copy PSV call keeps only the reads its
+  consensus explains better than every single catalogued copy, by O2's margin of 2.
+  - O3 errors fall to 0 in INTACT, CROSS and SILENT;
+  - REMOVED's correct reads change by -2 to +13 per run.
+
+**O2: the CROSS errors are failed projections.** All 17 CROSS errors of set 8 (both profiles) are reads of two structures
+that O2's union never gave to the true copy:
+- **WASH T0075974's last exon is 6 bp.** The spliced aligner cannot place it, so the projection had 4 exons, not 5, and was
+  rejected.
+- **DDX11L T0075982 projected,** but was merged with a structure within 10 bp of the copy's own.
+- **`--union-exact` (36a430f8) fixes both.** A projection may lack a terminal exon < 30 bp, and structures merge only when
+  their junctions match exactly. CROSS errors: 14 -> 1 and 10 -> 1.
+- The simulator's projection (liftover) and its defaults are unchanged, so the test stays independent of O2's projection.
+
+**v3 (fallback + attribution + `--union-exact`) against the current method, correct / errors:**
+
+| world | set 8 A119b | set 8 public | set 9 A119b | set 9 public | set 10 A119b | set 10 public |
+|---|---|---|---|---|---|---|
+| INTACT | 2,191/0 vs 2,167/0 | 2,250/0 vs 2,153/1 | 935/0 vs 907/0 | 873/0 vs 828/0 | **1,136/0 vs 1,138/2** | 1,057/0 vs 1,051/2 |
+| CROSS | 2,708/1 vs 2,551/8 | 2,788/1 vs 2,558/9 | 1,024/0 vs 1,001/0 | 963/0 vs 917/0 | 1,256/0 vs 1,248/3 | 1,159/0 vs 1,146/3 |
+| SILENT | 1,917/0 vs 1,860/0 | 2,085/0 vs 1,909/1 | 678/0 vs 644/0 | 628/0 vs 587/0 | 702/0 vs 689/2 | 613/0 vs 602/2 |
+| REMOVED | 2,137/1 vs 2,059/12 | 2,158/0 vs 2,072/7 | 798/0 vs 782/0 | 713/0 vs 698/0 | 1,049/2 vs 1,031/10 | 1,021/2 vs 963/4 |
+| OUTSIDE | 2,232/76 vs 1,979/150 | 2,273/62 vs 2,000/120 | 760/23 vs 674/152 | 681/19 vs 605/123 | 1,095/3 vs 863/169 | 1,028/3 vs 789/167 |
+| BRANCH | 2,505/104 vs 2,203/137 | 2,509/166 vs 2,176/191 | 1,196/36 vs 907/60 | 1,080/30 vs 828/46 | 1,320/66 vs 1,138/225 | 1,192/81 vs 1,051/200 |
+| verdict | PASS | PASS | PASS | PASS | FAIL (B1 INTACT, -2) | PASS |
+
+- **The remaining shortfall is structural.** Set 10 A119b INTACT loses 15 short reads (184-484 bp) whose 2-5 sequencing edits
+  exceed delta's share of their length.
+  - A looser gate would place reads that per-read scoring counts as detectable in REMOVED.
+  - The current method makes 0 errors in REMOVED in set 9.
+- **Faster and cheaper, every change exact (outputs byte-identical):**
+  - **O2 on a full set 2 world: 83 -> 49 s.**
+    - The clipped-end edit distance uses Myers/Hyyro bit vectors; it equals the DP on 3,000+ random cases.
+    - CIGAR events are parsed by regex.
+    - Families run in parallel (`O2_PROCS`, `--o2-procs 2`).
+  - **O3 arm I on full set 2 worlds: 55-59 -> 32 s.**
+    - Isoform maps are built lazily.
+    - PSV clustering keeps its consensus current instead of recomputing it per comparison, and computes linkage on read bit
+      sets; it equals the reference implementation on 60 random hosts each.
+  - **O3's graph:** building is cached (section 10). The remaining O3 time is GraphAligner on the hosted reads (about a
+    third) and the per-host pool alignments.
+- **Round 10 pre-registers v3** on an eleventh set: `docs/PREREG_o3_graph_round10_2026-10-16.md`.
