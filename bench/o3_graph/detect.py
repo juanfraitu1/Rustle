@@ -116,9 +116,11 @@ def dedupe(calls):
     return out
 
 
-def alt_carriers(cons, sites, cov):
-    """--haplotype-check: the reads (of cov, aligned to the host window) carrying at least one of a cluster's alts."""
-    alts = [(p, sites[p]) for p, a in cons.items() if a == "alt"]
+def alt_carriers(cons, sites, cov, maps):
+    """--haplotype-check: the reads (of cov, aligned to the host window) carrying at least one of a cluster's UNEXPLAINED alts
+    -- the alts no copy's map carries. A mosaic cluster's other alts are other copies' bases, and selecting by them pulls in
+    those copies' reads (het-draw development: 861 reads of 12 FTH1P copies)."""
+    alts = [(p, sites[p]) for p, a in cons.items() if a == "alt" and not any(cc.get(p) == sites[p] for cc in maps.values())]
     return sorted(q for q, c in cov.items() if any(c.get(p) == b for p, b in alts))
 
 
@@ -950,7 +952,7 @@ def main(argv):
                                     expl = [n for n in sorted({n for (ff, _), v in by_host.items() if ff == f for n in v})
                                             if n in reads and (n, f) not in (o2i_unexpl or set())]
                                     expl_cov = PC.align("host", ref, {n: reads[n] for n in expl}, tmp) if expl else {}
-                                car = alt_carriers(cons, sites_i, expl_cov)
+                                car = alt_carriers(cons, sites_i, expl_cov, isomaps())
                                 d = extended_distance(mem, car, {**cov_i, **expl_cov}, isomaps())
                                 if d is not None and d <= DELTA:
                                     continue                          # a present (or within-delta) copy's haplotype

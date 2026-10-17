@@ -508,7 +508,7 @@ def test_a_call_extended_by_the_explained_reads_carrying_its_alts_is_measured_ag
     cov = {f"m{i}": {p: het.get(p, "A") for p in range(300, 480)} for i in range(3)}
     expl = {f"e{i}": {p: het.get(p, "G" if p == 100 else "A") for p in range(600)} for i in range(10)}
     expl.update({f"h{i}": {p: ("G" if p == 100 else "A") for p in range(600)} for i in range(10)})   # hap 1: no alt
-    car = D.alt_carriers(cons, sites, expl)
+    car = D.alt_carriers(cons, sites, expl, maps)
     assert sorted(car) == [f"e{i}" for i in range(10)]
     members = sorted(cov)
     assert D.extended_distance(members, [], cov, maps) > D.DELTA                                    # the call alone
@@ -517,5 +517,14 @@ def test_a_call_extended_by_the_explained_reads_carrying_its_alts_is_measured_ag
     psv = {p: "C" for p in range(20, 300, 40)}
     cx = {f"x{i}": {p: psv.get(p, "A") for p in range(300)} for i in range(3)}
     cons2, sites2 = {p: "alt" for p in psv}, dict(psv)
-    assert D.alt_carriers(cons2, sites2, expl) == []
+    assert D.alt_carriers(cons2, sites2, expl, maps) == []
     assert D.extended_distance(sorted(cx), [], cx, maps) > D.DELTA
+
+
+def test_carriers_are_selected_by_the_alts_no_copy_carries():
+    # het-draw development (FTH1P.6 on FTH1P.4's window): a mosaic cluster's alts include bases other copies carry; selecting
+    # carriers by those pulled in 861 reads of 12 copies, a mixture as far from every copy as the call itself
+    cons, sites = {10: "alt", 20: "alt"}, {10: "C", 20: "G"}
+    maps = {"copy0": {10: "C", 20: "A"}, "copy1": {10: "A", 20: "A"}}               # 10 is copy0's base: explained
+    cov = {"a": {10: "C", 20: "A"}, "b": {10: "A", 20: "G"}, "c": {10: "C", 20: "G"}}
+    assert D.alt_carriers(cons, sites, cov, maps) == ["b", "c"]
