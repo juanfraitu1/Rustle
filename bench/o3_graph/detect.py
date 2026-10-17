@@ -291,6 +291,7 @@ def cluster_bases(members, cov):
 
 
 ATTR_MARGIN = 2                                          # --member-attribution: O2's assignment margin (o2graph.MARGIN)
+HOST_PAD = 1000                                          # --o1-hosts: o1seed.PAD, a family read's window around a copy
 
 
 def attribute(members, cons, sites, ref, maps, cov, margin=ATTR_MARGIN, delta=None):
@@ -586,7 +587,10 @@ def o1_hosts(w, genome):
     seeded copies (graph/seeded.json, curated kept + new), their spans as the host windows' centres, their representative
     isoform spliced in transcript orientation as the class sequence (identical copies form one host class). A family read is
     hosted on the seeded copy its primary alignment (E0.bam) overlaps most (o1seed.owner's rule), on none when it lies on no
-    seeded copy. -> (fam, by_host) as main builds them from copy_assign's run."""
+    seeded copy -- else on the one a secondary alignment overlaps most, else on the one whose window (+- HOST_PAD, O1's
+    family-read rule) its alignments overlap most (round 11 development: hosting primaries only lost array reads whose
+    primary lies on an uncatalogued unit, which copy_assign hosts). -> (fam, by_host) as main builds them from copy_assign's
+    run."""
     import pysam
     comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
     sj = json.load(open(f"{w}/graph/seeded.json"))
@@ -602,20 +606,27 @@ def o1_hosts(w, genome):
     for f, v in sj.items():
         for q in v["family_reads"]:
             of[q].add(f)
-    by_host = collections.defaultdict(list)
+    best = {}                                         # (read, family) -> ((tier, overlap), -copy idx)
     with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
         for rec in bam.fetch(until_eof=True):
-            if rec.query_name not in of or rec.is_unmapped or rec.is_secondary or rec.is_supplementary:
+            if rec.query_name not in of or rec.is_unmapped or rec.is_supplementary:
                 continue
-            for f in sorted(of[rec.query_name]):
-                best, ov = None, 0
+            for f in of[rec.query_name]:
                 for c in fam[f]:
-                    if c["contig"] == rec.reference_name:
-                        o = min(rec.reference_end, c["end"]) - max(rec.reference_start, c["start"])
-                        if o > ov:
-                            best, ov = c["idx"], o
-                if best is not None:
-                    by_host[(f, best)].append(rec.query_name)
+                    if c["contig"] != rec.reference_name:
+                        continue
+                    o = min(rec.reference_end, c["end"]) - max(rec.reference_start, c["start"])
+                    po = min(rec.reference_end, c["end"] + HOST_PAD) - max(rec.reference_start, c["start"] - HOST_PAD)
+                    if po <= 0:
+                        continue
+                    tier = (2 if not rec.is_secondary else 1) if o > 0 else 0     # primary on it, secondary on it, window
+                    cand = ((tier, o if o > 0 else po), -c["idx"])               # ties: the smaller idx
+                    k = (rec.query_name, f)
+                    if k not in best or cand > best[k]:
+                        best[k] = cand
+    by_host = collections.defaultdict(list)
+    for (q, f), (_, neg) in best.items():
+        by_host[(f, -neg)].append(q)
     return fam, {k: sorted(v) for k, v in by_host.items()}
 
 

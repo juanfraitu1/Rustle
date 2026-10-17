@@ -362,11 +362,13 @@ def test_o1_hosting_places_each_family_read_on_the_seeded_copy_its_primary_overl
                    origin="curated"),
               dict(idx=4, contig="c1", start=10000, end=11000, strand="-", rep="obs0", isoforms={"obs0": [[10000, 11000]]},
                    origin="new")]
-    json.dump({"F": dict(copies=copies, dropped=[1], family_reads=["r1", "r2", "r3"])}, open(w / "graph" / "seeded.json", "w"))
+    json.dump({"F": dict(copies=copies, dropped=[1], family_reads=["r1", "r2", "r3", "r4", "r5"])},
+              open(w / "graph" / "seeded.json", "w"))
     hdr = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]}
     with pysam.AlignmentFile(str(w / "u.bam"), "wb", header=hdr) as out:
         for name, flag, pos, cig in [("r1", 0, 1100, "400M500N800M"), ("r1", 256, 10100, "500M"), ("r2", 16, 10200, "600M"),
-                                     ("r3", 0, 15000, "300M")]:
+                                     ("r3", 0, 15000, "300M"), ("r4", 0, 11500, "300M"), ("r5", 0, 15500, "300M"),
+                                     ("r5", 256, 1200, "300M")]:
             a = pysam.AlignedSegment(out.header)
             a.query_name, a.flag, a.reference_id, a.reference_start, a.cigarstring = name, flag, 0, pos, cig
             a.mapping_quality = 0 if flag & 256 else 60
@@ -376,4 +378,6 @@ def test_o1_hosting_places_each_family_read_on_the_seeded_copy_its_primary_overl
     fam, by_host = D.o1_hosts(str(w), D.Genome(str(w / "genome.ref.fa")))
     assert [(c["idx"], c["rs"], c["re"]) for c in fam["F"]] == [(0, 1000, 3000), (4, 10000, 11000)]
     assert fam["F"][0]["seq"] == seq[1000:1500] + seq[2000:3000]
-    assert dict(by_host) == {("F", 0): ["r1"], ("F", 4): ["r2"]}                # r3's primary lies on no seeded copy
+    # primary on a copy first (r1, r2); else a secondary on one (r5); else a copy's padded window, O1's family-read rule (r4);
+    # r3 lies near no seeded copy (round 11 development: hosting only primaries lost the array reads O3 needs)
+    assert dict(by_host) == {("F", 0): ["r1", "r5"], ("F", 4): ["r2", "r4"]}
