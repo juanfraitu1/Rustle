@@ -31,7 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 WORLDS = ("INTACT", "CROSS", "OUTSIDE", "REMOVED", "BRANCH", "SILENT")
 CUR_BIN = "/mnt/linuxdisk/tmp/o3_fb_build/copy_assign.fb"
-GENOME_STEP = {"fallback": "integl", "combined": "integc"}             # --o2-genome: o2graph.py's method
+GENOME_STEP = {"fallback": "integl", "combined": "integc", "seeded": "integs"}   # --o2-genome: o2graph.py's method
 
 
 def _load(name):
@@ -241,7 +241,8 @@ def main(argv=None):
     p.add_argument("--trim-adapters", default="", help="ADAPTERS.json: trim the library's adapters off every read before mapping")
     p.add_argument("--o2-genome", choices=("off",) + tuple(GENOME_STEP), default="off", help="O2 with the read's own genome "
                    "alignments: fallback = only the reads the paths leave unexplained (o2graph.py integl); combined = every read on "
-                   "min(path, genome) per copy (integc); the set is scored on that table")
+                   "min(path, genome) per copy (integc); seeded = combined over the seeded copies, fallback for the unexplained (integs); the set "
+                   "is scored on that table")
     p.add_argument("--per-read-detectability", action="store_true", help="e2e: a REMOVED copy's read is detectable by its own `de`")
     p.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)

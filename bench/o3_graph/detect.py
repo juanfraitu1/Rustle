@@ -263,19 +263,32 @@ def member_filter(kind, members, des, novs):
     return [m for m in members if genome_keeps(kind, des.get(m, 1.0), novs.get(m, 0))]
 
 
-def nearest_copy(cons, sites, ref, maps, covered, min_overlap=MIN_OVERLAP):
-    """(copy, distance) of the single copy closest to a cluster: the cluster's consensus base (its alt at an `alt` site, else
-    the host's) against the copy's, over the cluster's covered positions the copy has a base at (a consensus alt the copy has
-    no base at counts as a difference). A copy over < min_overlap of the covered positions is no candidate. (None, None)
-    when no copy is."""
+def cluster_bases(members, cov):
+    """{position: the base most of a cluster's reads show there (ties: the smallest)} over its first 50 members, as
+    status_of's covered positions."""
+    cnt = collections.defaultdict(collections.Counter)
+    for m in members[:50]:
+        for p, x in cov[m].items():
+            cnt[p][x] += 1
+    return {p: min(c.items(), key=lambda kv: (-kv[1], kv[0]))[0] for p, c in cnt.items()}
+
+
+def nearest_copy(cons, sites, ref, maps, covered, bases=None, min_overlap=MIN_OVERLAP):
+    """(copy, distance) of the single copy closest to a cluster: the cluster's consensus base (its alt at an `alt` site, the
+    host's at another variable site, elsewhere what its reads show, `bases` = cluster_bases, else the host's) against the
+    copy's, over the cluster's covered positions the copy has a base at (a consensus alt the copy has no base at counts as a
+    difference). Off the variable sites a position may be covered by one read only (round 10 development, LCE1): what that
+    read shows there is the cluster's evidence, not the host's base. A copy over < min_overlap of the covered positions is no
+    candidate. (None, None) when no copy is."""
     best = (None, None)
     for n, cc in sorted(maps.items()):
         diff = cmp = 0
         for p in covered:
             alt = cons.get(p) == "alt"
+            base = sites[p] if alt else ref[p] if p in cons or bases is None else bases.get(p, ref[p])
             if p in cc:
                 cmp += 1
-                diff += cc[p] != (sites[p] if alt else ref[p])
+                diff += cc[p] != base
             elif alt:
                 cmp += 1
                 diff += 1
@@ -302,7 +315,7 @@ def status_of(members, cons, sites, ref, maps, cov, vec, mosaic=False):
         st = "unexplained" if link >= PC.MIN_LINK else "unlinked"
     div = len(unexpl) / covered if covered else 0.0
     if mosaic and st != "explained" and not (st == "unexplained" and div > DELTA) and len(alts) >= PC.MIN_ALT:
-        _, d = nearest_copy(cons, sites, ref, maps, cov_pos)     # every cluster no copy explains, not only unresolved ones
+        _, d = nearest_copy(cons, sites, ref, maps, cov_pos, cluster_bases(members, cov))   # every cluster no copy explains
         if d is not None and d > DELTA:                           # (round 3 review C2: KIR, unexplained at est_div 0.0032)
             return "mosaic", d
     return st, div
@@ -562,11 +575,17 @@ def main(argv):
             if not only_i:                                    # R0/S1/S4/G: every host read; arm I needs only its own pool
                 cov = PC.align("host", ref, {n: reads[n] for n in names if n in reads}, tmp)
                 m_rep = PC.align("host", ref, {f"copy{c['idx']}": c["seq"] for c in cps}, tmp)
-            iso_seqs = {f"copy{c['idx']}|{k}": "".join(g2[a:b] for a, b in ex) for c in cps
-                        for g2 in [genome[c["contig"]]] for k, ex in c["isoforms"].items()}
-            m_iso_each = PC.align("host", ref, iso_seqs, tmp)
-            m_iso = {f"copy{c['idx']}": union_map([m for k, m in m_iso_each.items() if k.startswith(f"copy{c['idx']}|")])
-                     for c in cps}
+            iso_cache = {}
+
+            def isomaps():                                    # every isoform on this host; lazily (arm I alone may not need it)
+                if not iso_cache:
+                    iso_seqs = {f"copy{c['idx']}|{k}": "".join(g2[a:b] for a, b in ex) for c in cps
+                                for g2 in [genome[c["contig"]]] for k, ex in c["isoforms"].items()}
+                    m_iso_each = PC.align("host", ref, iso_seqs, tmp)
+                    iso_cache.update({f"copy{c['idx']}": union_map([m for k, m in m_iso_each.items()
+                                                                     if k.startswith(f"copy{c['idx']}|")]) for c in cps})
+                return iso_cache
+            m_iso = None if only_i else isomaps()
             host = ",".join(str(c["idx"]) for c in sorted(cls, key=lambda c: c["idx"]))
             sites, clusters, vec = PC.cluster_host(ref, cov) if not only_i else (None, [], None)
             for k, (members, cons) in enumerate(sorted(clusters, key=lambda x: -len(x[0]))):
@@ -614,7 +633,7 @@ def main(argv):
                 if len(cov_i) >= PC.MIN_SUPPORT:
                     sites_i, clusters_i, vec_i = PC.cluster_host(ref, cov_i)
                     for k, (members, cons) in enumerate(sorted(clusters_i, key=lambda x: -len(x[0]))):
-                        st, div = status_of(members, cons, sites_i, ref, m_iso, cov_i, vec_i, mosaic=True)
+                        st, div = status_of(members, cons, sites_i, ref, isomaps(), cov_i, vec_i, mosaic=True)
                         if st in ("unexplained", "mosaic") and div > DELTA:
                             calls.append(["Ip", f, "psv", host, k, sorted(members), div])
         names = sorted({n for c in cps for n in by_host.get((f, c["idx"]), []) if n in reads})

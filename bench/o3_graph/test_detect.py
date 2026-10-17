@@ -255,3 +255,21 @@ def test_a_family_graph_cache_key_is_the_content_of_its_loci_and_isoform_files(t
     assert D.graph_key(str(tmp_path / "a"), [0]) == D.graph_key(str(tmp_path / "b"), [0])
     (tmp_path / "b" / "copy0.gtf").write_text("copy0\tsim\texon\t1\t3\n")
     assert D.graph_key(str(tmp_path / "a"), [0]) != D.graph_key(str(tmp_path / "b"), [0])
+
+
+def test_off_the_variable_sites_a_cluster_shows_what_its_reads_show_not_the_host_s_base():
+    # round 10 development (set 9, LCE1): one copy's reads clustered on a paralog host; a position covered by a single read is
+    # no variable site, and there the read shows its own copy's base -- agreement with that copy, not a difference
+    ref = "A" * 1000
+    single, shared, allele = set(range(100, 300, 10)), set(range(420, 520, 10)), 700
+    maps = {"copy0": {p: "A" for p in range(1000)},
+            "copy1": {p: ("G" if p in single | shared else "A") for p in range(1000)}}
+    sites = {p: "G" for p in shared}
+    sites[allele] = "T"                                               # a donor allele no copy carries
+    cons = {p: "alt" for p in sites}
+
+    def read(lo, hi):
+        return {p: ("T" if p == allele else maps["copy1"][p]) for p in range(lo, hi)}
+    cov = {"m1": read(0, 600), "m2": read(400, 1000), "m3": read(400, 1000)}
+    assert D.nearest_copy(cons, sites, ref, maps, set(range(1000)), D.cluster_bases(["m1", "m2", "m3"], cov)) == ("copy1", 0.001)
+    assert D.status_of(["m1", "m2", "m3"], cons, sites, ref, maps, cov, {}, mosaic=True)[0] == "unresolved"

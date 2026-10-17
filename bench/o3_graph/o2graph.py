@@ -15,7 +15,7 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
     reported as unannotated-copy candidates (flag_reads, apply_flag); run ... integ MARGIN: padded union on O1's seeded catalog
     (o1seed.py; run_integrated); run ... integl MARGIN: integ with the CIGAR-aware locus fallback for the reads it leaves
     unexplained (run_locus_fallback); run ... integc MARGIN: every read on min(path, genome) distances
-    (run_locus_fallback mode "all"); outputs graph/o2.<method>.m<margin>.tsv)
+    (run_locus_fallback mode "all"); run ... integs MARGIN: mode "seeded"; outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -509,6 +509,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
     no other (else `other_family`), placed by locus_decide. mode "all" -> o2.integc.m<margin>.tsv: every hosted read decided on
     each copy's min(path distance, genome distance) and ELSEWHERE (graph/o2paths.union.pad.integ/<family>.dist.json), so a copy
     whose paths lack the read's structure is judged on its sequence; a call that differs from O2's is labelled genome_<reason>.
+    mode "seeded" -> o2.integs.m<margin>.tsv: the reads O2 explains decided on min(path, genome) over the seeded copies alone
+    (no ELSEWHERE: an array's uncatalogued identical units would tie every read), the unexplained ones as in "unexplained".
     O3 still reads o2.integ.m<margin>.tsv, so neither mode changes O3's evidence; an O3 call on a read takes precedence over its
     placement (summary.read_fate)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.integ.m{margin}.tsv"), delimiter="\t"))
@@ -521,10 +523,10 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
     todo = collections.defaultdict(set)                   # read -> the families decided here
     for r in rows:
         unexplained = r["reason"] == "unexplained"
-        if unexplained and not explained_in[r["read"]] - {r["family"]} or mode == "all" and not unexplained:
+        if unexplained and not explained_in[r["read"]] - {r["family"]} or mode != "unexplained" and not unexplained:
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
-    if mode == "all":
+    if mode != "unexplained":
         lens = {n: len(x) for n, x in _read_fq(f"{w}/reads.E0.fq").items()}
         pd = {}
         for f in {r["family"] for r in rows}:
@@ -536,10 +538,11 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
         if f not in todo.get(q, ()):
             if reason == "unexplained":
                 call, reason = "-", "other_family"
-        elif mode == "all":
+        elif mode == "all" or mode == "seeded" and reason != "unexplained":
             comb = {int(c): v for c, v in pd[f].get(q, {}).items()}
             for i, g in dist.get((q, f), {}).items():
-                comb[i] = min(comb.get(i, 1 << 30), g)
+                if mode == "all" or i != ELSEWHERE:
+                    comb[i] = min(comb.get(i, 1 << 30), g)
             c, why = decide(comb, lens[q], margin)
             c, why = (None, "unexplained") if c == ELSEWHERE else (c, why)
             new = ("-" if c is None else str(c), why)
@@ -548,7 +551,7 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained"):
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin)
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
-    out_name = out_name or f"o2.integ{'c' if mode == 'all' else 'l'}.m{margin}.tsv"
+    out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l')[mode]}.m{margin}.tsv"
     with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
         wr.writeheader()
@@ -755,8 +758,8 @@ def main(argv):
             return run_locus(argv[1], margin)
         if method == "integ":                             # round 7: needs o1seed.py WORLD first
             return run_integrated(argv[1], margin, argv[argv.index("--distance") + 1] if "--distance" in argv else "clip")
-        if method in ("integl", "integc"):                # integ + the read's genome alignments; needs o2.integ.m<margin>.tsv
-            return run_locus_fallback(argv[1], margin, mode="all" if method == "integc" else "unexplained")
+        if method in ("integl", "integc", "integs"):      # integ + the read's genome alignments; needs o2.integ.m<margin>.tsv
+            return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded")[method])
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first

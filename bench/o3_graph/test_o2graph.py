@@ -322,6 +322,10 @@ def test_the_combined_o2_lets_a_copy_explain_a_read_by_its_genome_alignment_wher
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integc.m2.tsv"), delimiter="\t")}
     assert out == {"r7": ("1", "genome_assigned"), "r8": ("0", "assigned"), "r9": ("-", "genome_unexplained"),
                    "r2": ("1", "genome_assigned")}
+    # mode "seeded": the guard against the best alignment off the copies only for the reads the paths leave unexplained
+    assert O.run_locus_fallback(str(w), mode="seeded") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integs.m2.tsv"), delimiter="\t")}
+    assert out == {"r7": ("1", "genome_assigned"), "r8": ("0", "assigned"), "r9": ("0", "assigned"), "r2": ("1", "locus")}
 
 
 def test_o2_paths_dump_each_read_s_distance_to_every_copy_for_the_combined_decision():
