@@ -514,3 +514,22 @@ passed 6 of the 9 runs.
   - set 10 A119b 33 vs 10;
   - set 10 public 13 vs 4.
 - Runs: `/mnt/linuxdisk/tmp/o3_graph/fast/r11dev6/` (`bars_floor.txt`, `bars_r10rule.txt`), from r11dev3's O1 output.
+
+## 13. Rounds 11-13: v4 passes; v5 and v5' fail (2026-10-16/17)
+
+| round | pipeline | families | verdict | what decided it |
+|---|---|---|---|---|
+| 11 (r1309) | v4 | 8, 37 copies | **PASS, 12/12** | the INTACT/CROSS/SILENT margins are the current method's own O3 artefact (review) |
+| 12 (r1310) | v5 = v4 + O1-hosted O3 (`--o1-hosts`, tiered) | 8, 104 copies (80-copy DUX4) | FAIL, both profiles | O2: 2 margin-2 coincidences in DUX4, 5 structural errors (retained introns absorbed by a paralog's path as one gap-compressed edit; a read DNA-identical at two copies). O3 cost: 791-1,355 s per set |
+| 13 (r1311) | v5' = v5 + `--branch-genome-novel` | 8, 89 copies (43-copy OR7E, 3 retrocopy families) | FAIL (A119b); public 6/6 | one false O3 call: three short haplotype-2 reads of MRGPRX.1 carrying two donor alleles, in four worlds. No O2 error in any world |
+
+- **v5 makes the integrated pipeline independent of the current method.** O3's hosts come from O1's seeded copies, tiered:
+  primary alignment on a seeded copy, then a secondary, then a +-1 kb window.
+- **v5' makes it cheap on large arrays.** O3's branch arm clusters only reads whose own genome alignment leaves >= 50 bases
+  unexplained. On round 12's worlds this cut O3's longest world from 699 s to <= 78 s. In round 13 the integrated steps took
+  223 and 216 s per set of six worlds; the current method took 188 and 183 s.
+- **v6 (`--distance gapstruct`) is not adopted.** Gap compression applied only below 30 bp still fails round 12, and it costs
+  errors and correct reads in sets 8 and 10.
+- **Open after round 13:**
+  - round 12's structural O2 errors, which round 13's families did not provoke;
+  - the allele-versus-copy confound in O3's genome check (section 14).
