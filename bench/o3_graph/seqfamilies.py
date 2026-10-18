@@ -14,9 +14,11 @@ canonicals differ (OR4F21's 2-exon model against OR4F16's 1-exon one; ATAD3A's e
 not of the genomes (amended before any draw). A processed retrocopy (one exon against a spliced locus) or a partial copy fails.
 Families: connected components of the links that pass both; a component touching a gene of an earlier set is spent.
 
-    seqfamilies.py build OUT.json SPENT.json ...   -> OUT.json (set seq17; every family), OUT.json.links.tsv (every sequence
-                                                       link and its structure verdict)
-    seqfamilies.py draw OUT_SET.json OUT.json      -> the round's set (draw: seeded order up to a copy budget)
+    seqfamilies.py build OUT.json SPENT.json ...   -> OUT.json (set seq17: every unspent family), OUT.json.links.tsv (every
+                                                       sequence link and its structure verdict)
+    seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
+                                                   -> the round's set (draw: seeded order up to a copy budget; round 17: seed 17,
+                                                       set r17; round 18: seed 18, set r18)
 """
 import collections
 import csv
@@ -221,11 +223,11 @@ def cmd_build(out_p, spent_paths, threads=4):
     return 0
 
 
-def cmd_draw(out_p, all_p):
+def cmd_draw(out_p, all_p, seed=SEED, set_name="r17"):
     d = json.load(open(all_p))
-    got = draw(d["sets"]["seq17"])
-    json.dump(dict({k: v for k, v in d.items() if k != "sets"}, draw=dict(seed=SEED, budget=BUDGET, max_total=MAX_TOTAL),
-                   sets={"r17": got}), open(out_p, "w"), indent=1)
+    got = draw(d["sets"]["seq17"], seed=seed)
+    json.dump(dict({k: v for k, v in d.items() if k != "sets"}, draw=dict(seed=seed, budget=BUDGET, max_total=MAX_TOTAL),
+                   sets={set_name: got}), open(out_p, "w"), indent=1)
     print(f"[seqfamilies] drew {len(got)} families, {sum(len(f['copies']) for f in got)} copies: "
           + ", ".join(f"{f['family']} ({len(f['copies'])})" for f in got), flush=True)
     return 0
@@ -235,7 +237,8 @@ def main(argv):
     if argv[0] == "build":
         return cmd_build(argv[1], argv[2:])
     if argv[0] == "draw":
-        return cmd_draw(argv[1], argv[2])
+        return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
+                        set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")
     raise SystemExit(__doc__)
 
 
