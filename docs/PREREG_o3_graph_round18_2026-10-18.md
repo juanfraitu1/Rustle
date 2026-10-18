@@ -142,3 +142,54 @@ held-out name-free families, under both profiles and three seeds.
 - anything about arrays of FAM90A's or DUX4's size beyond the spent runs.
 
 The catalogue still starts from the annotation's copies; the genome search adds the copies it lacks.
+
+## Results (2026-10-18 10:57-11:43; nothing changed after the first run, no crash)
+
+**Verdict: FAIL, 4 of 6 cells. C1 PASSES** in both profiles.
+
+| cell | failing worlds (integrated vs current: correct / errors) |
+|---|---|
+| A119b 803 | CROSS 4,052 / 0 vs 4,093 / 33; INTACT 3,726 / 0 vs 3,771 / 34 |
+| public 803 | CROSS 3,703 / 0 vs 3,799 / 42; INTACT 3,391 / 0 vs 3,498 / 29; SILENT 2,140 / 0 vs 2,226 / 21 |
+
+- **B2 holds in all 36 worlds.** Over the 36 worlds v14 makes 130,722 correct calls against the current method's 86,384, and
+  3,782 errors against 10,431.
+- **Round 17's failure is gone on fresh families:** OUTSIDE errors are 0-11 against the current method's 69-198, and REMOVED
+  errors 1-17 against 26-85.
+- **Every failing bar is B1, all in seed 803.** In those worlds v14 makes no errors and the current method makes 21-42.
+
+**The mechanism, post hoc: one family, S17OR4F21 (OR4F21 on chr1, OR4F16 on chr5).**
+- **O1's genome search adds five copies to it:** OR4F2P (chr11), OR4F7P (chr6), OR4F8P (chr19), OR4F28P (chr15) and
+  FO082796.2 (chr3), 98.8-99.4% identical to OR4F16's transcript. All are unprocessed pseudogenes in CAT, and they are 5 of the 13
+  genome copies O1 finds in each INTACT world.
+- **The simulator expresses only the catalogue's protein-coding copies,** so these five never have a read.
+- **Most reads the current method gets right and v14 does not are this family's:** 102 of 111 in A119b 803 INTACT, 159 of 172 in
+  public 803 INTACT.
+  - Tied with a pseudogene copy: 64 and 101.
+  - Inside the fixed 2-edit margin of one (`thin`, mostly one substitution): 32 and 57.
+- **The current method runs with `--no-as-tied-only`** (O3 needs it). That turns off the shipped tie-outside-catalogue rule
+  (2026-09-09), so copy_assign compares only the catalogued copies.
+  - Read s0000757's primary alignment is on OR4F2P, at the same AS as on OR4F21 (424).
+  - copy_assign assigns it to OR4F21 at p 1e-18, against OR4F16 alone.
+- **Seed 803 drew OR4F21 at 253-286 reads a world,** against 28-29 in seeds 801-802, where the same mechanism costs a few reads
+  (B1 margins of +4 to +20 in INTACT).
+- **In the real A119b testis library** (CHM13 v2.0 primary alignments), OR4F21 has 33 reads and OR4F16 26.
+  - The five pseudogenes have 41: OR4F7P 18 (17 at MAPQ >= 1), OR4F8P 7, FO082796.2 7, OR4F28P 6, OR4F2P 3.
+  - The simulation's silent pseudogenes are not what real testis shows.
+
+**Two post-hoc recounts on these runs** (spent; not a verdict):
+- **B1 on decidable reads only** (a catalogued read is undecidable when one of its alignments elsewhere in E0.bam scores at least
+  its best at its true copy): 4 of the 5 failing bars pass. Public 803 INTACT stays short, 3,383 against 3,392, by the
+  one-substitution reads.
+- **Thin reads decided by the calibrated significance gate alone,** in place of the fixed 2-edit margin (offline replay, veto and
+  structure check not replayed):
+  - +100 to +566 correct a world, with no added error in INTACT or SILENT and 2-7 in CROSS.
+  - OUTSIDE is not scored by the replay, which does not map new copies to their truth copies.
+  - Its genome-step form, `--significance-margin`, was rejected in register 1319: one error per world where the current method
+    makes none.
+
+**C1, the cost on the mainstay set:** v14 used 1,014 CPU seconds (A119b) and 820 (public), against the current method's 1,044 and
+945 (-3% and -13%).
+- O1's genome search costs 141-147 CPU seconds of these.
+- Reported: wall 565 s and 473 s against 310 s and 283 s, at the flags' threads; peak RSS 2.42 and 2.35 GB.
+- Round 18's cells used 1,336 CPU seconds in all against 1,254. The set's one-time local-reference build peaks at 14.4 GB.

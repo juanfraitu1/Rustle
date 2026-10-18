@@ -803,3 +803,19 @@ cells), against v11's table, with the production code (`o2graph.py run W integ|i
 - **What failed:** OUTSIDE's B2 in every cell. When a pair's twin is uncatalogued and O1 does not seed it, O2 places the twin's
   reads on the one remaining copy (the O2 proof's open failure). The current method abstains on them.
 - **Cost:** the integrated stages used 20-29% less CPU on the NPIP-sized set, and 43% less on round 17's cells.
+
+**After round 17 (register 1321): v14 = v13 + O1 `--ref-copies`.** O1 searches the genome for copies the catalogue lacks (the
+family rule on the world's homology-closed local reference); round 17's spent cells went 0 -> 5 passing.
+
+**Round 18 (register 1322): FAIL on correctness (4 of 6 cells), PASS on cost.**
+- **What held:** B2 in all 36 worlds, OUTSIDE included (0-11 errors against 69-198). v14 made 130,722 correct calls against
+  86,384, and 3,782 errors against 10,431.
+- **What failed:** B1 in five worlds of seed 803, all from one family (OR4F21, OR4F16).
+  - The genome search adds five OR4F unprocessed pseudogenes, 98.8-99.4% identical, which the simulator never expresses.
+  - v14 abstains the reads tied with one, or one substitution from one. The current method, which compares catalogued copies
+    only (`--no-as-tied-only`), places them on OR4F21, and in this simulation it is always right.
+- **The same tie in another form failed `--twin-guard` (register 1321):** a read tied with an expressed uncatalogued twin and a
+  read tied with a silent paralog are the same exact AS tie.
+  - The current method wins the second kind because the simulation never expresses paralogs outside the catalogue.
+  - Real A119b testis expresses these five pseudogenes: 41 primary reads, against 59 on the two coding copies.
+- **Cost:** -3% and -13% CPU on the NPIP-sized set. O1's genome search now costs 141-147 CPU seconds there.
