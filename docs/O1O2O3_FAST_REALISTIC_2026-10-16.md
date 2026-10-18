@@ -796,3 +796,10 @@ cells), against v11's table, with the production code (`o2graph.py run W integ|i
 - **Round 17's families are name-free** (`seqfamilies.py`, user, 2026-10-17). They are every protein-coding gene, LOC genes
   included, linked by sequence identity (the locus rule) and by structure (the alignment carries one gene's junctions onto
   the other's introns).
+
+**Round 17 (register 1320): FAIL on correctness (0 of 6 cells), PASS on cost.**
+- **The setup:** name-free families (40, mostly pairs).
+- **What held:** B1 in all 36 worlds; v13 made 124,264 correct calls against 82,008.
+- **What failed:** OUTSIDE's B2 in every cell. When a pair's twin is uncatalogued and O1 does not seed it, O2 places the twin's
+  reads on the one remaining copy (the O2 proof's open failure). The current method abstains on them.
+- **Cost:** the integrated stages used 20-29% less CPU on the NPIP-sized set, and 43% less on round 17's cells.

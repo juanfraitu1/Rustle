@@ -149,3 +149,35 @@ families chosen by sequence and structure rather than by name, under both profil
 
 The pipeline under test still starts from the annotation's copies and isoforms (guided O1); round 17 removes the gene names from
 the choice of test families, not the annotation from the method.
+
+## Results (2026-10-17 23:34 - 2026-10-18 00:14; nothing changed after the first run, no crash)
+
+**Verdict: FAIL, 0 of 6 cells. C1 PASSES** in both profiles.
+
+| cell | failing worlds (integrated vs current: correct / errors) |
+|---|---|
+| A119b 701 | OUTSIDE 3,727 / 668 vs 893 / 191 |
+| public 701 | OUTSIDE 3,671 / 781 vs 931 / 173 |
+| A119b 702 | OUTSIDE 3,690 / 367 vs 725 / 163 |
+| public 702 | OUTSIDE 3,487 / 376 vs 769 / 120; REMOVED 2,988 / 2 vs 803 / 1 |
+| A119b 703 | OUTSIDE 3,792 / 540 vs 531 / 109 |
+| public 703 | OUTSIDE 3,641 / 549 vs 530 / 112 |
+
+- **B1 holds in all 36 worlds.** Round 16's shortfall is gone: v13 makes 124,264 correct calls against the current method's
+  82,008.
+- **Every failing bar but one is OUTSIDE's B2.** Over the 36 worlds v13 makes fewer errors, 6,986 against 8,489, but in OUTSIDE
+  it makes 3-5 times the current method's.
+- **The mechanism, post hoc (A119b 701 OUTSIDE):** 639 of the 668 errors are plain path calls on a family whose uncatalogued
+  twin O1 did not seed as a new copy, so the catalogue keeps only the other copy:
+  - LGALS7: 223 errors; CXorf49: 197; SPACA5: 27; SLC25A6: 18. The current method makes none in these families.
+  - The twin's reads go to the only catalogued copy as a sole candidate. The current method's genomic candidates tie the read
+    with the twin's locus, and it abstains.
+- **This is the O2 proof's open failure (register 1314-1315),** made dominant by a set of pairs: take one copy of a pair out of
+  the catalogue, and its near-identical twin has no rival in O2.
+- **The guard measured for it in register 1315** (abstain when a locus off every seeded copy explains the read as well) cut these
+  errors to 0-2. It was rejected because it also abstained the reads of an expressed copy tied with a silent catalogued copy
+  that O1 had dropped.
+
+**C1, the cost on the mainstay set:** v13 used 830 CPU seconds (A119b) and 675 (public) against the current method's 1,042 and
+952 (-20% and -29%). Wall time, reported: 469 s and 378 s against 313 s and 281 s, at the flags' threads. Round 17's cells
+used 591 CPU seconds in all against 1,033.
