@@ -867,3 +867,150 @@ def test_the_veto_mode_abstains_a_structure_only_path_call_with_structure_check(
         O._STRUCTURE_CHECK = False
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
     assert out == {"r1": ("-", "structure_only"), "r2": ("1", "assigned")}
+
+
+def test_the_poisson_quantile_is_the_smallest_count_whose_cdf_reaches_p():
+    import math
+    for lam in (0.0, 0.8, 3.2, 9.6, 40.0):
+        q = O.poisson_quantile(lam, 1 - O.ALPHA)
+        cdf = lambda n: sum(math.exp(-lam) * lam ** i / math.factorial(i) for i in range(n + 1))
+        assert cdf(q) >= 1 - O.ALPHA and (q == 0 or cdf(q - 1) < 1 - O.ALPHA)
+
+
+def test_a_short_read_s_few_sequencing_edits_are_within_reach_of_its_own_copy():
+    # --length-gate (2026-10-17, round 16's B1 shortfall): the fixed gate (delta + floor) x length allowed a 281-bp read 3.6
+    # edits; SLC35G.1's read carried 4 and was left unexplained, where the current method placed it. Within reach: allelic
+    # divergence up to delta (p99 between haplotypes) plus sequencing errors up to Poisson(floor x length)'s 1 - alpha quantile
+    floor = 0.0032
+    assert 4 > O.gate(floor) * 281                                                  # today: unexplained
+    assert O.within_reach(4, 281, floor) and O.within_reach(7, 281, floor)
+    assert not O.within_reach(12, 281, floor)
+    assert O.within_reach(40, 3000, floor) and not O.within_reach(60, 3000, floor)   # long reads: close to delta + floor
+
+
+def test_the_genome_step_rescues_path_calls_the_fixed_gate_and_margin_left_out():
+    floor = 0.0032
+    # an unexplained sole-candidate read within reach (round 16 A119b 601 SLC35G.1, 281 bp, 4 edits)
+    assert O.rescue("unexplained", {"1": 4}, {"1": 22.4}, 281, floor, length_gate=True) == (1, "length_gate")
+    assert O.rescue("unexplained", {"1": 4}, {"1": 22.4}, 281, floor) is None                    # without the flag
+    assert O.rescue("unexplained", {"1": 12}, {"1": 90.0}, 281, floor, length_gate=True) is None   # beyond reach
+    # a margin-1 read whose one difference is a substitution, against 2 rivals (round 16 A119b 602 SPAG.1): 7.7 >= ln(2/1e-3)
+    pd, wd = {"1": 3, "0": 4, "2": 5}, {"1": 14.8, "0": 22.5, "2": 30.2}
+    assert O.rescue("thin", pd, wd, 789, floor, significance_margin=True) == (1, "significant")
+    assert O.rescue("thin", pd, wd, 789, floor) is None
+    # ... but not against 4 rivals (CLEC.2: 7.6 < ln(4/1e-3) = 8.3), nor a difference of one homopolymer indel
+    assert O.rescue("thin", {"2": 9, "3": 10, "4": 12, "5": 13, "6": 13}, {"2": 52.0, "3": 59.6, "4": 74.9, "5": 80.0,
+                                                                          "6": 80.0}, 3452, floor, significance_margin=True) is None
+    assert O.rescue("tied", {"1": 3, "0": 3}, {"1": 18.9, "0": 22.8}, 700, floor, significance_margin=True) is None
+    # an unexplained read the length gate leaves thin goes on to the significance margin
+    assert O.rescue("unexplained", {"3": 4, "2": 5}, {"3": 22.8, "2": 30.5}, 312, floor, length_gate=True,
+                    significance_margin=True) == (3, "significant")
+
+
+def test_the_veto_mode_places_rescued_path_calls_through_the_same_checks(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    d = w / "graph" / "o2paths.union.pad.integ"
+    d.mkdir(parents=True)
+    copies = [dict(idx=i, contig="chrA", start=1000 + 10000 * i, end=5000 + 10000 * i, origin="curated") for i in range(3)]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1", "r2", "r3"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t-\tunexplained\nr2\tF\t-\tthin\nr3\tF\t-\tthin\n")
+    json.dump({"r1": {"1": 4}, "r2": {"1": 3, "0": 4, "2": 5}, "r3": {"1": 3, "0": 4, "2": 5}}, open(d / "F.dist.json", "w"))
+    json.dump({"r1": {"1": 22.4}, "r2": {"1": 14.8, "0": 22.5, "2": 30.2}, "r3": {"1": 14.8, "0": 22.5, "2": 30.2}},
+              open(d / "F.wdist.json", "w"))
+    (w / "reads.E0.fq").write_text("".join(f"@{n}\n{'A' * k}\n+\n{'I' * k}\n" for n, k in (("r1", 281), ("r2", 789), ("r3", 789))))
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 12000, "281="),                          # the genome agrees with copy 1
+                             ("r2", 0, "chrA", 12000, "789="),
+                             ("r3", 0, "chrA", 2000, "789="), ("r3", 256, "chrA", 12000, "400=9X380=")])  # copy 0, confidently
+    O._LENGTH_GATE = O._SIGNIFICANCE_MARGIN = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto", floor=0.0032) == 0
+    finally:
+        O._LENGTH_GATE = O._SIGNIFICANCE_MARGIN = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("1", "length_gate"), "r2": ("1", "significant"), "r3": ("0", "veto_locus")}
+
+
+def test_reads_too_short_for_map_hifi_s_score_floor_are_aligned_to_the_paths_again(tmp_path):
+    # --short-path-align (2026-10-17, round 16): map-hifi's minimum DP score (-s 200) is beyond any read under ~200 bp, so
+    # round 16's 150-200-bp reads had no path alignment at all (OR4A.5, GGTLC.1); with -s 40 they align to their own copy's
+    # isoform. The genome step realigns only the reads the path step left without any alignment.
+    import csv
+    import json
+    import random
+    rng = random.Random(7)
+    exon = "".join(rng.choice("ACGT") for _ in range(400))
+    other = exon[:200] + "".join(rng.choice("ACGT") for _ in range(200))       # copy 1 differs over the second half
+    w = tmp_path / "W"
+    d = w / "graph" / "o2paths.union.pad.integ"
+    d.mkdir(parents=True)
+    (d / "F.tx.fa").write_text(f">copy0|t0\n{exon}\n>copy1|t1\n{other}\n")
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t-\tunexplained\n")
+    json.dump({}, open(d / "F.dist.json", "w"))                                   # no path alignment
+    read = exon[220:400]                                                          # 180 bp from copy 0's own half
+    (w / "reads.E0.fq").write_text(f"@r1\n{read}\n+\n{'I' * len(read)}\n")
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "180=")])
+    assert O.run_locus_fallback(str(w), mode="veto") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "locus")}                                          # today: the genome fallback
+    O._SHORT_PATH_ALIGN = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._SHORT_PATH_ALIGN = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "short_path")}
+
+
+def _struct_world(tmp_path):
+    import json
+    import random
+    rng = random.Random(11)
+    e1, e2, e3 = ("".join(rng.choice("ACGT") for _ in range(n)) for n in (150, 76, 150))
+    e2b = e2[:20] + ("A" if e2[20] != "A" else "C") + e2[21:40] + ("G" if e2[40] != "G" else "T") + e2[41:60] + (
+        "C" if e2[60] != "C" else "A") + e2[61:]                                  # copy 1's exon 2: three PSVs
+    w = tmp_path / "W"
+    d = w / "graph" / "o2paths.union.pad.integ"
+    d.mkdir(parents=True)
+    (d / "F.tx.fa").write_text(f">copy0|full\n{e1 + e2 + e3}\n>copy0|skip\n{e1 + e3}\n>copy1|full\n{e1 + e2b + e3}\n"
+                               f">copy1|skip\n{e1 + e3}\n")
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1"])}, open(w / "graph" / "seeded.json", "w"))
+    read = e1[:70] + "T" + e1[70:] + e2 + e3                                      # copy 0's full isoform, one inserted base
+    (w / "reads.E0.fq").write_text(f"@r1\n{read}\n+\n{'I' * len(read)}\n")
+    return w, d, read
+
+
+def test_structure_aware_distances_compare_copies_on_the_isoform_that_fits_the_read(tmp_path):
+    # --struct-rescue (2026-10-17, round 16's thin calls): gap compression counts a whole missing exon as one insertion, so a
+    # read's best path can be an isoform that lacks one of its exons -- and the paralogous bases in that exon go uncompared.
+    # SPAG.1's reads: 3 vs 4 on copy 1's exon-skipping isoform (a 76-bp insertion), 4 vs 9 on their own isoform.
+    w, d, read = _struct_world(tmp_path)
+    gc = O.struct_distances(str(d), "F", {"r1": read}, struct=False)
+    gs = O.struct_distances(str(d), "F", {"r1": read})
+    assert gc["r1"]["1"] - gc["r1"]["0"] == 1                                    # thin: copy 1's skip isoform, one event
+    assert gs["r1"] == {"0": 1, "1": 4}                                           # each copy on the read's own isoform
+
+
+def test_the_veto_mode_rescues_a_thin_path_call_on_structure_aware_distances(tmp_path):
+    import csv
+    import json
+    w, d, read = _struct_world(tmp_path)
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t-\tthin\n")
+    json.dump({"r1": {"0": 1, "1": 2}}, open(d / "F.dist.json", "w"))
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, f"{len(read)}=")])
+    O._STRUCT_RESCUE = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._STRUCT_RESCUE = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "struct_aware")}

@@ -78,14 +78,15 @@ def gate(floor=0.0):
 _TWIN_ABSTAIN = False                                      # --twin-abstain (any run mode): see decide
 
 
-def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None, twin_abstain=None):
+def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None, twin_abstain=None, gate=None):
     """dist: {copy: edits + unaligned bases of the read against the copy's best-fitting isoform path}. -> (copy or None, reason):
     `assigned` when the best copy beats the next by >= margin, else `tied` / `thin`; `unexplained` when even the best copy is
     more than max_div away (a read of no catalogued copy). twins ({new copy: curated copy}, O1 --twins: a new copy within
     delta of a curated one): a twin takes a read from its curated copy only by the margin; otherwise the curated copy competes
     with the better of the two distances (the annotation is the prior a within-delta twin must overcome). twin_abstain
     (--twin-abstain, 2026-10-17: in the O2 proof's OUTSIDE worlds VCY's uncatalogued twin is real, and the prior gave its reads
-    to the curated copy): when neither twin beats the other by the margin, the read is `tied_twin` and abstained."""
+    to the curated copy): when neither twin beats the other by the margin, the read is `tied_twin` and abstained. gate
+    (--length-gate): gate(edits, qlen) -> within reach, in place of edits <= max_div x qlen (within_reach)."""
     twin_abstain = _TWIN_ABSTAIN if twin_abstain is None else twin_abstain
     if twins:
         dist = dict(dist)
@@ -97,7 +98,7 @@ def decide(dist, qlen, margin=MARGIN, max_div=DELTA, twins=None, twin_abstain=No
     if not dist:
         return None, "unexplained"
     srt = sorted(dist.items(), key=lambda kv: (kv[1], kv[0]))
-    if srt[0][1] > max_div * qlen:
+    if (srt[0][1] > max_div * qlen) if gate is None else not gate(srt[0][1], qlen):
         return None, "unexplained"
     if len(srt) == 1:
         return srt[0][0], "assigned"
@@ -337,6 +338,119 @@ def weights_from_counts(c):
     return {"X": max(0.0, math.log(3 * (c["aligned"] + 2) / (c["X"] + 1))),
             "hp": max(0.0, math.log((c["hp_runs"] + 2) / (c["hp"] + 1))),
             "indel": max(0.0, math.log((c["aligned"] + 2) / (c["indel"] + 1)))}
+
+
+def poisson_quantile(lam, p):
+    """The smallest n with P(Poisson(lam) <= n) >= p."""
+    import math
+    n, term = 0, math.exp(-lam)
+    cdf = term
+    while cdf < p:
+        n += 1
+        term *= lam / n
+        cdf += term
+    return n
+
+
+def within_reach(edits, qlen, floor, alpha=ALPHA):
+    """--length-gate (2026-10-17, round 16's B1 shortfall): can a read of qlen bases carry `edits` from its own copy? Allelic
+    divergence up to delta (the p99 between haplotypes) plus sequencing errors up to the 1 - alpha quantile of
+    Poisson(floor x qlen). The fixed gate, (delta + floor) x qlen, puts the errors at their mean: a 281-bp read was allowed 3.6
+    edits, and round 16's short reads with 4-9 edits (SLC35G.1, OR13C.0, TAS2R.0) were left unexplained where the current
+    method placed them. For long reads the two gates converge."""
+    return edits <= DELTA * qlen + poisson_quantile(floor * qlen, 1 - alpha)
+
+
+def rescue(reason, pdist, wdist, qlen, floor, twins=None, margin=MARGIN, length_gate=False, significance_margin=False,
+           realigned=False, sdist=None):
+    """The genome step's second look at a read path O2 did not assign (2026-10-17, round 16): -> (copy idx, "length_gate" |
+    "significant") or None. length_gate (--length-gate): an `unexplained` read is decided again on its path distances with
+    within_reach for the gate. significance_margin (--significance-margin): a `thin` or `tied` read goes to the copy of least
+    weighted distance (gap_weighted) when that copy beats every rival by ln(R / alpha) -- one substitution (7.6-7.8) does so
+    against one or two rivals, one homopolymer indel (3.9-4.6) never; round 16's SPAG.1 reads were 3 vs 4 edits, 14.8 vs
+    22.5 weighted, with 2 rivals. realigned (--short-path-align): an `unexplained` read the path step left without any
+    alignment, now aligned (short_path_distances), is decided on its path distances as path O2 would have ("short_path").
+    sdist (--struct-rescue): a `thin` or `tied` read's structure-aware path distances (struct_distances); a copy that wins on
+    them by the margin takes it ("struct_aware"). The call then goes through the genome step's checks like any path call."""
+    pd = {int(k): v for k, v in pdist.items()}
+    if not pd:
+        return None
+    reach = (lambda k, n: within_reach(k, n, floor)) if length_gate else None
+    if reason == "unexplained":
+        if not (length_gate or realigned):
+            return None
+        c, why = decide(pd, qlen, margin, max_div=gate(floor), twins=twins, gate=reach)
+        if c is not None:
+            return c, "short_path" if realigned else "length_gate"
+        if why not in ("tied", "thin"):
+            return None
+        reason = why
+    if sdist and reason in ("tied", "thin"):
+        c, why = decide({int(k): v for k, v in sdist.items()}, qlen, margin, max_div=gate(floor), twins=twins, gate=reach)
+        if c is not None:
+            return c, "struct_aware"
+    if significance_margin and reason in ("tied", "thin") and wdist:
+        wd = {str(k): v for k, v in wdist.items()}
+        c = min(wd, key=lambda k: (wd[k], int(k)))
+        if (int(c) in pd and (reach(pd[int(c)], qlen) if reach else pd[int(c)] <= gate(floor) * qlen)
+                and significant(c, {str(k): v for k, v in pd.items()}, wd, twins, margin)):
+            return int(c), "significant"
+    return None
+
+
+SHORT_SCORE = 40                   # --short-path-align: minimap2's minimum DP score (its map-ont default; map-hifi's is 200)
+
+
+def short_path_distances(d, fam, reads, wts=None):
+    """--short-path-align (2026-10-17, round 16): {read: {copy idx as str: path distance}} and the weighted ones (wts given)
+    of `reads` ({name: sequence}) against the family's paths (d/fam.tx.fa), aligned as the path step aligns them but with
+    the minimum DP score at SHORT_SCORE: map-hifi's -s 200 is beyond a read under ~200 bp, which then has no path alignment at
+    all (round 16: OR4A.5's and GGTLC.1's 150-200-bp reads; GGTLC.1's tie on the genome while its own isoform's junction
+    separates them on the paths)."""
+    import subprocess
+    tx = _fasta(f"{d}/{fam}.tx.fa")
+    fa = f"{d}/{fam}.short.{os.getpid()}.fa"
+    with open(fa, "w") as fh:
+        fh.writelines(f">{n}\n{q}\n" for n, q in sorted(reads.items()))
+    args = ["minimap2", "-c", "-x", "map-hifi", "-s", str(SHORT_SCORE), "-N", str(max(200, 2 * len(tx))), "-p", "0.3",
+            "--secondary=yes", "-t", "1", f"{d}/{fam}.tx.fa", fa]
+    paf = subprocess.run(args, capture_output=True, text=True, check=True).stdout
+    os.remove(fa)
+    dist = path_dists(_paf_dist_gc(paf, reads, tx))
+    return dist, (path_dists(_paf_dist_w(paf, reads, tx, wts)) if wts else {})
+
+
+def _fasta(p):
+    out, name = {}, None
+    for ln in open(p):
+        if ln.startswith(">"):
+            name = ln[1:].strip()
+            out[name] = []
+        else:
+            out[name].append(ln.strip())
+    return {k: "".join(v) for k, v in out.items()}
+
+
+def struct_distances(d, fam, reads, struct=True):
+    """--struct-rescue (2026-10-17, round 16's thin calls): {read: {copy idx as str: path distance}} of `reads` ({name:
+    sequence}) against the family's paths (d/fam.tx.fa), aligned exactly as the path step aligns them (through O2_ALN_CACHE
+    when it is set), scored by gap_compressed with struct (an indel >= NOVEL_INS counts its length). Gap compression counts a
+    whole missing exon as one insertion, so a read's best path could be an isoform lacking one of its exons, and the
+    paralogous bases in that exon went uncompared: SPAG.1's reads were 3 vs 4 on copy 1's exon-skipping isoform (a 76-bp
+    insertion), 4 vs 9 on their own isoform."""
+    import subprocess
+    tx = _fasta(f"{d}/{fam}.tx.fa")
+    mm2 = ["minimap2", "-c", "-x", "map-hifi", "-N", str(max(200, 2 * len(tx))), "-p", "0.3", "--secondary=yes"]
+    if os.environ.get("O2_ALN_CACHE"):
+        res = cached_minimap2(os.environ["O2_ALN_CACHE"], mm2, f"{d}/{fam}.tx.fa", reads, d)
+    else:
+        fa = f"{d}/{fam}.struct.{os.getpid()}.fa"
+        with open(fa, "w") as fh:
+            fh.writelines(f">{n}\n{q}\n" for n, q in sorted(reads.items()))
+        res = subprocess.run(mm2 + ["-t", os.environ.get("O2_THREADS", "1"), f"{d}/{fam}.tx.fa", fa], capture_output=True,
+                             text=True, check=True).stdout
+        os.remove(fa)
+    return path_dists(_paf_dist_gc(res, reads, tx, struct=struct))
 
 
 def significant(call, pdist, wdist, twins=None, margin=MARGIN, alpha=ALPHA):
@@ -776,7 +890,7 @@ def pairwise_cost(h, rival):
     return e + max(0, min(rt, s) - rs) + max(0, rt - max(rs, t))
 
 
-def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=None, hits=None):
+def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=None, hits=None, gate=None):
     """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
     and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained` |
     `locus_clipped`); a read whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family)
@@ -790,7 +904,7 @@ def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=Non
     hits (--locus-pairwise, 2026-10-17): genome_hits of the read. The call stands only when every rival's pairwise_cost against
     it exceeds the call's against that rival by the margin: a read base counts against a copy only where the rival explains
     it, so bases every copy clips are nobody's evidence, and FAM90A.45's 11 clipped bases still are."""
-    c, reason = decide(dist, qlen, margin, max_div=max_div, twins=twins)
+    c, reason = decide(dist, qlen, margin, max_div=max_div, twins=twins, gate=gate)
     if reason == "unexplained" or c == ELSEWHERE:
         return None, "unexplained"
     folded = {t for t, k in (twins or {}).items() if k == c and t in dist and dist[c] - dist[t] < margin}
@@ -812,6 +926,10 @@ _VETO_ABSTAIN = False                                      # --veto-abstain (mod
 _LOCUS_CLIPPED = False                                     # --locus-clipped (modes veto, guard; not adopted): locus_decide
 _LOCUS_PAIRWISE = False                                    # --locus-pairwise (modes veto, guard): locus_decide's hits
 _STRUCTURE_CHECK = False                                   # --structure-check (modes veto, guard): structure_only
+_LENGTH_GATE = False                                       # --length-gate (modes veto, guard): rescue, locus_decide
+_SIGNIFICANCE_MARGIN = False                               # --significance-margin (modes veto, guard): rescue
+_SHORT_PATH_ALIGN = False                                  # --short-path-align (modes veto, guard): short_path_distances
+_STRUCT_RESCUE = False                                     # --struct-rescue (modes veto, guard): struct_distances
 _SIGNIFICANCE = False                                      # --o2-significance (integ: wdist.json; veto, guard: the gate)
 
 
@@ -989,11 +1107,14 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
         unexplained = r["reason"] == "unexplained"
         if (unexplained and not explained_in[r["read"]] - {r["family"]} or mode in ("all", "seeded") and not unexplained
                 or mode == "resolve" and r["reason"] in ("tied", "thin")
-                or mode in ("veto", "guard") and r["reason"] == "assigned"):
+                or mode in ("veto", "guard") and r["reason"] == "assigned"
+                or mode in ("veto", "guard") and (_SIGNIFICANCE_MARGIN or _STRUCT_RESCUE) and r["reason"] in ("tied", "thin")):
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
+    resc = (_LENGTH_GATE or _SIGNIFICANCE_MARGIN or _SHORT_PATH_ALIGN or _STRUCT_RESCUE) and mode in ("veto", "guard")
     if mode in ("veto", "guard"):                         # the assigned reads' alignments, every unaligned base counted
-        vtodo = todo if _LOCUS_CLIPPED else {q: fs for q, fs in todo.items() if any(r["reason"] == "assigned" for r in by_read[q])}
+        vtodo = todo if _LOCUS_CLIPPED or resc else {q: fs for q, fs in todo.items()
+                                                     if any(r["reason"] == "assigned" for r in by_read[q])}
         vdist, _ = genome_distances(w, vtodo, spans, veto_distance)
         prim = primary_loci(w, vtodo, spans)
         hits = genome_hits(w, todo, spans) if _LOCUS_PAIRWISE else {}
@@ -1001,7 +1122,7 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             cvd, _ = genome_distances(w, vtodo, spans, veto_distance, contained=PATH_PAD)
             cld, _ = genome_distances(w, vtodo, spans, contained=PATH_PAD)
     sig = _SIGNIFICANCE and mode in ("veto", "guard")
-    if (sig or _STRUCTURE_CHECK) and mode in ("veto", "guard"):   # the path distances, plain and weighted
+    if (sig or _STRUCTURE_CHECK or resc) and mode in ("veto", "guard"):   # the path distances, plain and weighted
         pg = {}
         for f in {r["family"] for r in rows}:
             p0 = f"{w}/graph/o2paths.union.pad.integ/{f}"
@@ -1012,9 +1133,42 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
         for f in {r["family"] for r in rows}:
             p = f"{w}/graph/o2paths.union.pad.integ/{f}.dist.json"
             pd[f] = json.load(open(p)) if os.path.exists(p) else {}
+    realigned = collections.defaultdict(set)
+    if resc:
+        rseq = _read_fq(f"{w}/reads.E0.fq")
+        rlen = {n: len(x) for n, x in rseq.items()}
+    if resc and _SHORT_PATH_ALIGN:                        # the reads the path step left without any alignment
+        wp = f"{w}/graph/edit_weights.json"
+        wts = json.load(open(wp))["weights"] if os.path.exists(wp) and _SIGNIFICANCE else None
+        for f in sorted({r["family"] for r in rows}):
+            d0 = f"{w}/graph/o2paths.union.pad.integ"
+            need = {r["read"] for r in rows if r["family"] == f and r["reason"] == "unexplained" and f in todo.get(r["read"], ())
+                    and not pg[f][0].get(r["read"]) and r["read"] in rseq}
+            if need and os.path.exists(f"{d0}/{f}.tx.fa"):
+                sd, sw = short_path_distances(d0, f, {q: rseq[q] for q in need}, wts)
+                for q in sd:
+                    pg[f][0][q] = sd[q]
+                    if q in sw:
+                        pg[f][1][q] = sw[q]
+                    realigned[f].add(q)
+    sdist = {}
+    if resc and _STRUCT_RESCUE:                           # the thin and tied reads, on structure-aware path distances
+        d0 = f"{w}/graph/o2paths.union.pad.integ"
+        for f in sorted({r["family"] for r in rows}):
+            need = {r["read"] for r in rows if r["family"] == f and r["reason"] in ("thin", "tied") and f in todo.get(r["read"], ())
+                    and r["read"] in rseq}
+            if need and os.path.exists(f"{d0}/{f}.tx.fa"):
+                sdist[f] = struct_distances(d0, f, {q: rseq[q] for q in need})
     out = []
     for r in rows:
         call, reason, q, f = r["call"], r["reason"], r["read"], r["family"]
+        rescued = None
+        if resc and f in todo.get(q, ()) and reason in ("unexplained", "thin", "tied"):
+            rc = rescue(reason, pg[f][0].get(q, {}), pg[f][1].get(q, {}), qlen.get(q) or rlen.get(q, 0), floor, twins.get(f),
+                        margin, length_gate=_LENGTH_GATE, significance_margin=_SIGNIFICANCE_MARGIN, realigned=q in realigned[f],
+                        sdist=sdist.get(f, {}).get(q))
+            if rc:
+                call, reason, rescued = str(rc[0]), "assigned", rc[1]
         if f not in todo.get(q, ()):
             if reason == "unexplained":
                 call, reason = "-", "other_family"
@@ -1050,8 +1204,11 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             vd = vdist.get((q, f), {}) if _LOCUS_CLIPPED and mode in ("veto", "guard") else None
             hs = hits.get((q, f), {}) if _LOCUS_PAIRWISE and mode in ("veto", "guard") else None
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor),
-                                     vdist=vd, hits=hs)
+                                     vdist=vd, hits=hs,
+                                     gate=(lambda k, n: within_reach(k, n, floor)) if _LENGTH_GATE and resc else None)
             call = "-" if c is None else str(c)
+        if rescued and reason == "assigned":
+            reason = rescued
         out.append(dict(read=q, family=f, call=call, reason=reason))
     out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r', veto='v', guard='t')[mode]}.m{margin}.tsv"
     with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
@@ -1249,12 +1406,17 @@ def run_gains(w, method="union", margin=MARGIN):
 
 
 def main(argv):
-    global _TWIN_ABSTAIN, _VETO_ABSTAIN, _LOCUS_CLIPPED, _LOCUS_PAIRWISE, _STRUCTURE_CHECK, _SIGNIFICANCE
+    global _TWIN_ABSTAIN, _VETO_ABSTAIN, _LOCUS_CLIPPED, _LOCUS_PAIRWISE, _STRUCTURE_CHECK, _SIGNIFICANCE, _LENGTH_GATE
+    global _SIGNIFICANCE_MARGIN, _SHORT_PATH_ALIGN, _STRUCT_RESCUE
     _TWIN_ABSTAIN = "--twin-abstain" in argv
     _VETO_ABSTAIN = "--veto-abstain" in argv
     _LOCUS_CLIPPED = "--locus-clipped" in argv
     _LOCUS_PAIRWISE = "--locus-pairwise" in argv
     _STRUCTURE_CHECK = "--structure-check" in argv
+    _LENGTH_GATE = "--length-gate" in argv
+    _SIGNIFICANCE_MARGIN = "--significance-margin" in argv
+    _SHORT_PATH_ALIGN = "--short-path-align" in argv
+    _STRUCT_RESCUE = "--struct-rescue" in argv
     _SIGNIFICANCE = "--o2-significance" in argv
     if argv[0] == "run":
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes
