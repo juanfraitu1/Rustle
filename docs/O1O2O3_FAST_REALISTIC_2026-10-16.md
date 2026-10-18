@@ -666,3 +666,105 @@ pass every bar.
 - **O3's catalog-isoform-to-host alignments** (`O3_ALN_CACHE`, 7839138c) are keyed by window, query names and sequences.
 - **Not cached:** O3's read-to-host alignments. They keep only minimap2's primary, so a name-hash tie could change which one
   is kept.
+
+## 16. After round 15: the O2 margin (2026-10-17, evening)
+
+**Round 15's errors, read by read.** Every one is a FAM90A read, and the current method makes none of them.
+1. **Path-set asymmetry (most of them).**
+   - FAM90A.45's read-derived paths (an exon skip) fit reads of its siblings, and the siblings' own paths lack that
+     structure.
+   - Each such read lay 16 edits from copy 45's paths and 64-378 from every sibling's. On the genome, the siblings hold it at
+     5 and copy 45 at 16.
+   - Union projection adds a paralog's isoform to a copy only for an intron chain new to that copy, so read-derived
+     structures and longer first exons can stay on one copy.
+   - The fixed margin of 2 edits rewarded a copy for having the read's path, not for its sequence.
+2. **A locus-fallback call on clipped bases** (FAM90A.51's read): copy 45's genome alignment clipped the 11 bases that tell
+   the copies apart. locus_distance leaves a clip under 30 bases free, so copy 45 won by 2.
+3. **A call no rival's paths could answer** (FAM90A.12's 201-bp read): only copy 11's paths aligned it, and eight loci hold
+   it exactly.
+
+**Round 12 A119b's standing failure** (the one development run v10 and v11 never passed) adds two more mechanisms:
+4. **Indel margins against many rivals** (DUX4, 80 copies).
+   - Two path calls won by 2 edits that were two 1-bp homopolymer indels, against 63 rivals.
+   - copy_assign ties these reads: its PSVs leave indels out by default (`indel_psv: false`).
+5. **A retained intron** (KRTAP2.0).
+   - The simulator keeps an intron in 5.8% of reads (the A119b profile, from real reads).
+   - Copy 1's long annotated first exon absorbs the intron as one gap-compressed insertion (2), and copy 0's paths clip it
+     (85). Both loci hold the read exactly.
+
+**The error model behind mechanism 4** (the v2 profiles, from real FLNC reads):
+- substitutions 4.1e-4 per base;
+- indel events 2.1e-3 per base, 63% of them inside homopolymer runs of 3 or more;
+- donor alleles 1.0e-3 per base.
+
+A homopolymer indel is about 20 times likelier than any one substitution, yet the gap-compressed distance counted both as one
+edit.
+
+**Four rules, each in O2's genome step** (`o2.integv`; O3's input, `o2.integ`, is unchanged). Each was measured on all 46
+spent development runs (276 worlds: rounds 10-15, sets 8-10, round 14's seeds, the diploid-donor sets and the O2 proof's
+cells), against v11's table, with the production code (`o2graph.py run W integ|integv`; the integ step with
+`--o2-significance` reproduced every original table exactly). Adoption rule: no world that passed may fail.
+
+| rule | mechanism | correct | errors | verdicts |
+|---|---|---|---|---|
+| `--veto-abstain` | 1 | 0 | -95 (27 worlds) | round 15 A119b 503 FAIL -> PASS |
+| `--locus-pairwise` (with veto-abstain) | 2 | -5 | -6 | round 15 A119b 502 FAIL -> PASS |
+| `--o2-significance` | 4 | -421 | -14 | none alone |
+| `--structure-check` (with veto-abstain) | 3, 5 | -868 | -24 | fixes round 15 public 503 CROSS |
+| **all four (v12)** | 1-5 | **-1,294 (-0.21%)** | **-139 (-2.1%)** | **36 -> 40 of 46 runs pass; no world newly fails** |
+
+- **`--veto-abstain` (1bd6693a): an interval rule.**
+  - A copy's genome cost lies between its locus_distance (a clip under 30 bp free) and its veto_distance (every clipped base
+    paid).
+  - A path call is abstained (`genome_contradicts`) when a rival's worst case beats the call's best case by the margin, and
+    no confident single winner takes the read. The veto's MAPQ >= 30 rule still moves reads with one confident winner.
+  - **The first form counted the clip-paid cost alone.** It abstained correct calls whose own alignment missed a short exon:
+    DDX11L.6's 15-bp terminal exon, and DAZ.2's read end.
+- **`--locus-clipped` (not adopted):** the same interval rule on locus-fallback calls.
+  - It abstained correct calls wherever every copy's alignment clips the read's ends (HNRNPCL, TAF11L, FAM236).
+  - It failed r14 A119b s205's B1.
+- **`--locus-pairwise` (10208f8c).**
+  - Against each rival, a copy pays its alignment's edits plus the read bases the rival aligns and it leaves out. Bases every
+    copy clips are nobody's evidence.
+  - The one read it loses (ANP.1's) is the ambiguity no alignment settles: the true copy's alignment clipped 14 bases that
+    the rivals align with 6-9 edits.
+- **`--o2-significance` (1bd6693a).**
+  - O2's path distances, with each edit priced at -ln of its type's rate in the world's uniquely placed reads: a mismatch to
+    one given base, a homopolymer indel per homopolymer run, another indel per base. The CIGAR's context is read against the
+    path and genome sequences.
+  - Round 12 A119b: 7.8 for a mismatch, 3.9 for a homopolymer indel, 7.3 for another indel.
+  - A path call stands only when it beats every rival by ln(R / alpha), with R the rivals and alpha = 1e-3, as copy_assign's
+    certificate divides alpha by its rivals.
+  - **Calibration, round 12 A119b INTACT:** the gate took 39 calls, all DUX4 on two homopolymer indels (7.7 against a
+    threshold of 11.0); 2 were wrong. That is 5% wrong, against the model's R e^-7.7 = 3%.
+  - It adds 1-3 CPU seconds per family world (NPIP 1.4 s, GOLGA8 1.2 s).
+- **`--structure-check` (10208f8c).**
+  - A rival whose own locus (an alignment inside its padded span) explains the read better than its paths do, by the margin,
+    lacks the read's structure among its paths.
+  - The call is then compared with that rival on the genome, and abstained (`structure_only`) unless its best explanation
+    wins there by the margin.
+  - DAZ.2's rivals align 40-58 kb past their loci, so they are no evidence.
+  - It also abstains correct calls that rest on annotation structure the genome supports by one edit or not at all. The
+    simulator rewards those calls, since its reads come only from annotated isoforms. The rule keeps the pipeline's own
+    margin of 2 rather than a tuned exception.
+
+**The PSV question, as far as O2 goes.**
+- A SUN-type difference (a substitution) now weighs 7.6-7.8 nats and a homopolymer indel 3.9-4.6. The CIGAR's edit types
+  and the read's own error profile set the margin, where the fixed 2 edits treated every edit alike.
+- `de` still flags absent-copy reads (section 5). Path alignments' mismatches come from NM less the indel bases (their
+  CIGARs carry M); the genome's from =/X.
+
+**v12 = v11 + all four.** Over the 276 worlds:
+- v12 makes 602,563 correct calls and 6,478 errors, against v11's 603,857 and 6,617.
+- The current method makes 556,431 and 24,141.
+- **Four failing runs pass:** round 15 A119b 502 and 503, round 15 public 503, and round 12 A119b. Round 12 A119b is the one
+  development run that v10 and v11 never passed.
+- **The six still failing are the O2 proof's cells,** on their OUTSIDE twins (register 1315).
+- **The thinnest B1 margins left are 3-6 reads** (integrated correct less current correct):
+  - the O2 proof's public 402 INTACT and CROSS: 13 -> 3 and 15 -> 5;
+  - het9 INTACT and SILENT: 6-8 -> 4-6;
+  - set 10 public SILENT: 7 -> 5.
+  B1 is where v12's cost could fail a held-out world.
+- The structure check and the significance gate cost about 30-36 correct reads per error they remove. That is the price of
+  holding errors at zero where the current method abstains.
+- **Round 16 tests v12 on families it has not seen** (`docs/PREREG_o3_graph_round16_2026-10-17.md`).
