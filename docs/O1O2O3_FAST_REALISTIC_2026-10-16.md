@@ -768,3 +768,13 @@ cells), against v11's table, with the production code (`o2graph.py run W integ|i
 - The structure check and the significance gate cost about 30-36 correct reads per error they remove. That is the price of
   holding errors at zero where the current method abstains.
 - **Round 16 tests v12 on families it has not seen** (`docs/PREREG_o3_graph_round16_2026-10-17.md`).
+
+**Round 16 (register 1318): FAIL on correctness, 4 of 6 cells; PASS on cost.**
+- **B2 held in all 36 worlds.** The O2 margin removed every error where the current method makes none. Over the 36 worlds:
+  1,833 errors against 8,796, and 147,583 correct calls against 137,426.
+- **The three failing bars are B1, by 4-7 reads,** in A119b INTACT and SILENT of small families (3-7 copies).
+- **The integrated pipeline's fixed thresholds are the cause, not v12's rules** (v11's genome step fails the cell as well):
+  - `unexplained` short reads, whose edits exceed (delta + floor) x length;
+  - `thin` margin-1 calls among few rivals, which copy_assign's certificate assigns.
+- **The cost bar passed in CPU** (-23% and -30% on the mainstay set). On round 16's families the integrated stages are also
+  faster on wall time (68-100 s against 118-138 s per cell).

@@ -138,3 +138,40 @@ method.
 - anything on real reads;
 - that near-identical uncatalogued twins are handled (the O2 proof's end-to-end failure, register 1314-1315);
 - anything about arrays of FAM90A's or DUX4's size beyond the spent runs.
+
+## Results (2026-10-17, 20:33-21:16; nothing changed after the first run, no crash)
+
+**Verdict: FAIL.** 4 of the 6 cells pass; the bar was all six. **C1 PASSES** in both profiles.
+
+| cell | verdict | failing worlds (integrated vs current correct) | integrated / current CPU |
+|---|---|---|---|
+| A119b 601 | FAIL | INTACT 4,232 vs 4,238; SILENT 3,224 vs 3,231 | 148 / 240 s |
+| public 601 | PASS | | 119 / 211 s |
+| A119b 602 | FAIL | SILENT 2,638 vs 2,642 | 168 / 287 s |
+| public 602 | PASS | | 132 / 270 s |
+| A119b 603 | PASS | | 167 / 273 s |
+| public 603 | PASS | | 135 / 245 s |
+
+**B2 holds in all 36 worlds.** The integrated pipeline makes no error where the current method makes none, and far fewer
+elsewhere: OUTSIDE 44-182 against 811-1,214, REMOVED 0-3 against 39-132, BRANCH 157-304 against 285-653. Over the 36 worlds it
+makes 1,833 errors against 8,796, and 147,583 correct calls against 137,426 (+7.4%).
+
+**Every failing bar is B1, by 4-7 correct reads, in INTACT or SILENT under A119b.** Post-hoc diagnosis (read-only, on the
+round's tables):
+- **The two methods nearly tie there.** In A119b 601 INTACT, 28 reads are correct under the current method only and 22 under
+  the integrated pipeline only.
+- **Most of the 28 are reads integrated O2 leaves `unexplained`:** more edits than the fixed divergence gate,
+  (delta + floor) x length, allows. The rest are `thin` (margin 1) or locus ties. Round 10's set 10 failure was the same gate.
+- **v12's new rules cost 5 of the 13 missing reads (`structure_only`), but not the verdict.** Rebuilt with v11's genome
+  step, the cell still fails: INTACT 4,235, SILENT 3,226.
+- **The integrated lead is thin in these worlds because the families are small** (3-7 copies). The current method's
+  certificate assigns single-PSV reads among few rivals, and short noisy reads.
+
+**C1, the cost on the mainstay set** (nothing else running): v12's integrated stages used 810 CPU seconds (A119b) and 660
+(public), against the current method's 1,046 and 949.
+- **That passes C1:** 23% and 30% less CPU.
+- **Wall time, reported:** 449 s and 379 s against 312 s and 282 s, at the flags' threads (the current method 8, each
+  integrated step 2).
+- **O2 is two-thirds of integrated CPU:** 533 s and 491 s.
+- On round 16's cells the integrated stages are cheaper and faster: 119-168 CPU seconds against 211-287, and 68-100 s wall
+  against 118-138.
