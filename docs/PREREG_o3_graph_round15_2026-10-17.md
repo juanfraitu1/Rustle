@@ -168,3 +168,6 @@ method's 320 s and 333 s.
 - **The thread counts were not equal:** the current method's minimap2 ran 8 threads under `--heavy-current`, and each integrated
   step had 2. Both runs' bars are identical to v9's (PASS).
 - **On round 15's families,** where FAM90A's 57 copies make O2 large, the integrated stages took 1.7-2.4x the current method.
+- **Reported, no bar: v10 on the mainstay set** (rerun under Amendment 1, verdict PASS in both profiles). Integrated stages
+  1,057 s (A119b) and 1,026 s (public), current 306 s and 313 s; O3 alone 816 s and 746 s, which `--branch-linear` cut to
+  149 s and 98 s in v11.

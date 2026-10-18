@@ -124,6 +124,16 @@ def test_a_killed_step_s_empty_timing_file_reads_as_unknown():
     assert wall != wall and rss == 0                                   # nan: the step left no time
 
 
+def test_a_step_s_timing_carries_its_cpu_seconds():
+    # round 15's cost bar compared wall times at unequal threads (the current method's minimap2 at 8, each integrated step
+    # at 2): every step now records its CPU seconds (user + system, its children's included) beside the wall time
+    assert F.parse_time("12.30 4567 20.50 1.25\n") == (12.3, 4567)
+    assert F.parse_cpu("12.30 4567 20.50 1.25\n") == 21.75
+    assert F.parse_cpu("Command terminated by signal 9\n590.01 2048 900.00 3.00\n") == 903.0
+    old, empty = F.parse_cpu("12.30 4567\n"), F.parse_cpu("")
+    assert old != old and empty != empty                               # nan: no CPU time recorded
+
+
 def test_the_branch_arm_filters_by_genome_novelty_only_when_asked():
     assert "--branch-genome-novel" not in F.chain_steps(_opts(), "/R", "INTACT")[-1][1]
     assert "--branch-genome-novel --arms I" in F.chain_steps(_opts(branch_genome_novel=True), "/R", "INTACT")[-1][1]

@@ -75,14 +75,29 @@ def read_fq(path):
     return out
 
 
+def _time_fields(text):
+    """The last line of /usr/bin/time -o output, split ('%e %M %U %S' since 2026-10-17; '%e %M' before)."""
+    lines = [ln.split() for ln in text.splitlines() if ln.split()]
+    return lines[-1] if lines else []
+
+
 def parse_time(text):
-    """/usr/bin/time -f '%e %M' output -> (wall s, peak RSS KB); (nan, 0) when the step left none (round 12: rlock's timeout
-    killed it before /usr/bin/time wrote)."""
-    f = text.split()
+    """/usr/bin/time -f '%e %M %U %S' (or '%e %M') output -> (wall s, peak RSS KB); (nan, 0) when the step left none (round
+    12: rlock's timeout killed it before /usr/bin/time wrote)."""
+    f = _time_fields(text)
     try:
-        return float(f[-2]), int(f[-1])
+        return float(f[0]), int(f[1])
     except (IndexError, ValueError):
         return float("nan"), 0
+
+
+def parse_cpu(text):
+    """The step's CPU seconds, user + system (its waited-for children's included), from '%e %M %U %S'; nan when absent."""
+    f = _time_fields(text)
+    try:
+        return round(float(f[2]) + float(f[3]), 2)
+    except (IndexError, ValueError):
+        return float("nan")
 
 
 class Steps:
@@ -96,10 +111,12 @@ class Steps:
         tf = f"{self.root}/.time.{world}.{step}"
         log = f"{self.root}/{world}.log"
         t0 = time.time()
-        rc = subprocess.run(f"RLOCK_TIMEOUT={timeout} bash tools/rlock.sh {lock} /usr/bin/time -o {tf} -f '%e %M' {cmd} "
+        rc = subprocess.run(f"RLOCK_TIMEOUT={timeout} bash tools/rlock.sh {lock} /usr/bin/time -o {tf} -f '%e %M %U %S' {cmd} "
                             f">> {log} 2>&1", shell=True, cwd=REPO, executable="/bin/bash").returncode
-        wall, rss = parse_time(open(tf).read() if os.path.exists(tf) else "")
-        self.rows.append(dict(world=world, step=step, wall=wall, rss_kb=rss, rc=rc, elapsed=round(time.time() - t0, 1)))
+        text = open(tf).read() if os.path.exists(tf) else ""
+        wall, rss = parse_time(text)
+        self.rows.append(dict(world=world, step=step, wall=wall, rss_kb=rss, rc=rc, elapsed=round(time.time() - t0, 1),
+                              cpu=parse_cpu(text)))
         if rc:
             raise RuntimeError(f"{world} {step} failed (exit {rc}); see {log}")
 
