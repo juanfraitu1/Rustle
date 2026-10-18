@@ -45,8 +45,9 @@ def _families():
 def structure_match(junctions, qlen, strand, ts, cigar, tol=JUNCTION_TOL, q0=0):
     """Is gene A's model carried by gene B's genome? junctions: A's exon junctions in its transcript coordinates, qlen its
     spliced length; the alignment of that transcript to B's locus (target start ts, CIGAR [(n, op)], strand). Every intron (N)
-    of the alignment sits within tol of one of A's junctions, and as many introns as junctions. q0: the alignment's first query
-    base in the alignment's orientation (a - strand alignment runs A backwards)."""
+    of the alignment sits within tol of one of A's junctions, and as many introns as junctions inside the aligned part of A (a
+    junction at the edge of an unaligned end is a terminal exon too short to align: LGALS7's 6-bp last exon). q0: the
+    alignment's first query base in the alignment's orientation (a - strand alignment runs A backwards)."""
     js = sorted(qlen - j for j in junctions) if strand == "-" else sorted(junctions)
     q, t, got = q0, ts, []
     for n, op in cigar:
@@ -60,6 +61,7 @@ def structure_match(junctions, qlen, strand, ts, cigar, tol=JUNCTION_TOL, q0=0):
         elif op == "N":
             got.append(q)
             t += n
+    js = [j for j in js if q0 + tol < j < q - tol]          # a junction at an unaligned end: a terminal exon too short to align
     return len(got) == len(js) and all(abs(qj - j) <= tol for qj, j in zip(got, js))
 
 

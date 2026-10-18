@@ -76,9 +76,16 @@ def lift_hit(contig, ts, cigar):
     return chrom, exons[0][0], exons[-1][1], exons
 
 
+def confirmed_new(cps, hits):
+    """--ref-copies: the idx of a family's read-seeded new copies (O1's own) that a genome hit of the family rule overlaps."""
+    return {c["idx"] for c in cps if c["origin"] == "new" and c.get("via") != "ref"
+            and any(ch == c["contig"] and s < c["end"] and c["start"] < e for ch, s, e in hits)}
+
+
 def ref_copies(w, out, iso, local_dir, threads=2):
-    """--ref-copies: {family: [new copy dicts]} -- the off-catalogue loci of the local reference that hold a kept curated copy's
-    representative transcript by the family rule (see the module doc)."""
+    """--ref-copies: ({family: [new copy dicts]}, {family: {idx of its read-seeded new copies the genome confirms}}) -- the
+    off-catalogue loci of the local reference that hold a kept curated copy's representative transcript by the family rule (see
+    the module doc). A hit on a family's own read-seeded new copy confirms that copy instead (it then loses --twins' prior)."""
     import re
     import subprocess
     import tempfile
@@ -87,7 +94,7 @@ def ref_copies(w, out, iso, local_dir, threads=2):
     fa = pysam.FastaFile(f"{w}/genome.ref.fa")
     comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
     taken = [(c["contig"], c["start"], c["end"]) for cps in iso.values() for c in cps]
-    taken += [(c["contig"], c["start"], c["end"]) for v in out.values() for c in v["copies"] if c["origin"] == "new"]
+    seeded_new = [(f, c["contig"], c["start"], c["end"]) for f, v in out.items() for c in v["copies"] if c["origin"] == "new"]
     queries = {}
     for f, v in out.items():
         for c in v["copies"]:
@@ -97,13 +104,13 @@ def ref_copies(w, out, iso, local_dir, threads=2):
             sq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in ex)
             queries[f"{f}|{c['idx']}"] = (sq[::-1].translate(comp) if c["strand"] == "-" else sq, ex, c)
     if not queries:
-        return {}
+        return {}, {}
     with tempfile.TemporaryDirectory() as d:
         with open(f"{d}/q.fa", "w") as fh:
             fh.writelines(f">{k}\n{v[0]}\n" for k, v in sorted(queries.items()))
         paf = subprocess.run(["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes", "-t", str(threads),
                               f"{local_dir}/local.mmi", f"{d}/q.fa"], capture_output=True, text=True, check=True).stdout
-    hits = []
+    hits, confirm = [], collections.defaultdict(list)
     for ln in paf.splitlines():
         x = ln.split("\t")
         qlen, qs, qe, block = int(x[1]), int(x[2]), int(x[3]), int(x[10])
@@ -119,7 +126,13 @@ def ref_copies(w, out, iso, local_dir, threads=2):
         chrom, s0, e0, exons = lift_hit(x[5], int(x[7]), ops)
         if any(ch == chrom and s0 < e and s < e0 for ch, s, e in taken):
             continue
-        hits.append((int(x[9]) / block, x[0].split("|")[0], c, chrom, s0, e0, exons, "+" if x[4] == "+" else "-"))
+        fam = x[0].split("|")[0]
+        on_new = [nf for nf, ch, s, e in seeded_new if ch == chrom and s0 < e and s < e0]
+        if on_new:                                        # a read-seeded new copy: the family's own is confirmed
+            if fam in on_new:
+                confirm[fam].append((chrom, s0, e0))
+            continue
+        hits.append((int(x[9]) / block, fam, c, chrom, s0, e0, exons, "+" if x[4] == "+" else "-"))
     got, placed = collections.defaultdict(list), []
     for ident, f, c, chrom, s0, e0, exons, strand in sorted(hits, key=lambda h: (-h[0], h[1], h[3], h[4])):
         if any(ch == chrom and s0 < e and s < e0 for ch, s, e in placed):
@@ -128,7 +141,7 @@ def ref_copies(w, out, iso, local_dir, threads=2):
         got[f].append(dict(contig=chrom, start=s0, end=e0, strand=strand, rep=f"ref:{c['rep']}",
                            isoforms={f"ref:{c['rep']}": [list(e) for e in exons]}, origin="new", via="ref", ref_of=c["idx"],
                            ref_ident=round(ident, 4), support=0, reads=[]))
-    return got
+    return got, {f: confirmed_new(out[f]["copies"], h) for f, h in confirm.items()}
 
 
 def twin_of(new_seq, curated):
@@ -378,7 +391,12 @@ def seed_world(w, twins=False, ref_local=None):
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
     out = one_family(out, aff)
     if ref_local:                                                 # --ref-copies: the catalogue's genome copies it lacks
-        for f, extra in ref_copies(w, out, iso, ref_local).items():
+        extra_by, confirmed = ref_copies(w, out, iso, ref_local)
+        for f, idxs in confirmed.items():
+            for c in out[f]["copies"]:
+                if c["idx"] in idxs:
+                    c["via"] = "ref"
+        for f, extra in extra_by.items():
             nxt = max(c["idx"] for c in out[f]["copies"]) + 1 if out[f]["copies"] else 0
             for i, c in enumerate(extra):
                 out[f]["copies"].append(dict(c, idx=nxt + i))

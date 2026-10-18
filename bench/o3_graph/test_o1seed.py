@@ -265,3 +265,13 @@ def test_o1_seeds_a_genome_copy_of_a_catalogued_copy_that_the_catalogue_lacks(tm
     assert (new["contig"], new["start"], new["end"], new["strand"], new["via"], new["ref_of"]) == ("c1", 5200, 6400, "+", "ref", 0)
     assert list(new["isoforms"].values()) == [[[5200, 5500], [6000, 6400]]]
     assert new.get("twin_of") is None                                # no annotation prior: a genome copy, not an O1 artifact
+
+
+def test_a_read_seeded_twin_the_genome_search_confirms_loses_the_annotation_prior():
+    # an O1 new copy at a locus that holds a catalogued copy by the family rule is a genome copy, not an artifact of the reads:
+    # --twins would hand its tied reads to the catalogued copy (round 17: SHOX, DEFB4B, NBPF6 kept their OUTSIDE errors)
+    cps = [dict(idx=0, origin="curated", contig="c1", start=1000, end=2200),
+           dict(idx=1, origin="new", contig="c1", start=5150, end=6450)]
+    hits = [("c1", 5200, 6400)]
+    assert S.confirmed_new(cps, hits) == {1}
+    assert S.confirmed_new(cps, [("c1", 9000, 9500)]) == set()

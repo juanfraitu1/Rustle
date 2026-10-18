@@ -36,3 +36,12 @@ def test_the_draw_takes_families_in_seeded_order_up_to_the_copy_budget():
     assert sum(len(f["copies"]) for f in got) >= 10 and sum(len(f["copies"]) for f in got) <= 20
     assert all(len(f["copies"]) < 40 for f in got)                  # the 40-copy family would exceed max_total
     assert got == S.draw(fams, seed=17, budget=10, max_total=20)    # deterministic
+
+
+def test_a_junction_bordering_an_unaligned_end_of_the_transcript_needs_no_intron():
+    # LGALS7 (round 17): its main transcript ends in a 6-bp exon minimap2 cannot align -- the twin's alignment covers 460 of
+    # 466 bp with 2 introns against 3 junctions. A junction at the edge of an unaligned end is no structural difference.
+    cg = [(169, "M"), (689, "N"), (202, "M"), (984, "N"), (89, "M")]
+    assert S.structure_match([169, 371, 460], 466, "+", 1000, cg)              # junction 460: the aligned part ends there
+    assert S.structure_match([6, 175, 377], 466, "+", 1000, cg, q0=6)           # an unaligned 5' piece of 6 bp
+    assert not S.structure_match([169, 300, 371, 460], 466, "+", 1000, cg)     # a junction inside the aligned part: missing
