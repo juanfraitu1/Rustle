@@ -50,7 +50,7 @@ def _opts(**kw):
                 mapped_sites=False, branch_genome_novel=False, allele_discount=False,
                 mosaic_shared=False, o3_pool="paths", haplotype_check=False,
                 haplotype_check_genome=False, branch_genome_segments=False,
-                branch_linear=False, aln_cache=False, twin_abstain=False)
+                branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -170,3 +170,12 @@ def test_o3_checks_the_members_haplotype_on_their_own_loci_only_when_asked():
     st = dict((k, c) for k, c, _ in F.chain_steps(_opts(twin_abstain=True, o2_genome="guard"), "/R", "INTACT"))
     assert st["O2"].endswith("--twin-abstain") and "integt 2" in st["O2_genome"] and "--twin-abstain" in st["O2_genome"]
     assert "--twin-abstain" not in st0["O2"]
+
+
+def test_o2_s_genome_step_abstains_contradicted_and_insignificant_path_calls_only_when_asked():
+    st0 = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT"))
+    assert "--veto-abstain" not in st0["O2_genome"] and "--o2-significance" not in st0["O2"] + st0["O2_genome"]
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto", veto_abstain=True), "/R", "INTACT"))
+    assert "integv 2" in st["O2_genome"] and "--veto-abstain" in st["O2_genome"] and "--veto-abstain" not in st["O2"]
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto", o2_significance=True), "/R", "INTACT"))
+    assert "--o2-significance" in st["O2"] and "--o2-significance" in st["O2_genome"]    # integ weighs, the genome step gates

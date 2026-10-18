@@ -46,6 +46,10 @@ _INDEL = re.compile(r"(\d+)[ID]")
 NOVEL_INS = 30                     # locus fallback: an insertion or unaligned end this long is sequence no copy holds
 UNION_EXACT_MICRO = 30             # --union-exact: a terminal exon this short may be missing from a projection
 ELSEWHERE = -1                     # locus fallback: the read's best alignment off every seeded copy of the family
+ALPHA = 1e-3                       # --o2-significance: a path call's misassignment bound (copy_assign's certificate alpha)
+HP_RUN = 3                         # a homopolymer run, as the v2 profiles' error model places homopolymer indels (calibrate.py)
+EDIT_RATE_READS = 3000             # --o2-significance: uniquely placed reads the world's edit rates are counted on
+_CIGAR_OPS = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
 def _detect():
@@ -216,6 +220,150 @@ def _paf_dist_gc(paf, reads, tx, struct=False):
     return dist
 
 
+def hp_indel(target, pos, n, ins=None):
+    """Is an indel inside a homopolymer run of the target -- the deletion of target[pos:pos + n], or the insertion of `ins`
+    before target[pos]: all its bases one base, whose run in the target at the indel is at least HP_RUN long?"""
+    seq = target[pos:pos + n] if ins is None else ins
+    if not seq or seq.count(seq[0]) != len(seq):
+        return False
+    b, lo, hi = seq[0], pos, pos + (n if ins is None else 0)
+    while lo > 0 and target[lo - 1] == b:
+        lo -= 1
+    while hi < len(target) and target[hi] == b:
+        hi += 1
+    return hi - lo >= HP_RUN
+
+
+def gap_weighted(line, read, target, wts):
+    """gap_compressed with each edit priced by its type (--o2-significance, 2026-10-17): -ln of the world's own rate of it
+    (edit_weights) -- a mismatch, or an edit of a clipped end, wts["X"]; an indel event inside a homopolymer run (hp_indel)
+    wts["hp"]; any other indel event wts["indel"]. A difference of two copies' distances is then the read's log-likelihood
+    ratio between them (each edit an independent error of its type)."""
+    f = line.rstrip("\n").split("\t")
+    qlen, qs, qe, ts, te = int(f[1]), int(f[2]), int(f[3]), int(f[7]), int(f[8])
+    if f[4] == "-":
+        read, qs, qe = read[::-1].translate(str.maketrans("ACGTN", "TGCAN")), qlen - qe, qlen - qs
+    nm = int(next(x for x in f[12:] if x.startswith("NM:i:"))[5:])
+    cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
+    ti, qi, indel_bases, hp, ind = ts, qs, 0, 0, 0
+    for n, op in _CIGAR_OPS.findall(cg):
+        n = int(n)
+        if op in "M=X":
+            ti, qi = ti + n, qi + n
+        elif op in "ID":
+            if hp_indel(target, ti, n, read[qi:qi + n] if op == "I" else None):
+                hp += 1
+            else:
+                ind += 1
+            indel_bases += n
+            ti, qi = (ti, qi + n) if op == "I" else (ti + n, qi)
+    pre, suf = read[:qs], read[qe:]
+    ends = (end_cost(pre, target[max(0, ts - len(pre) - EXT_BAND):ts], True)
+            + end_cost(suf, target[te:te + len(suf) + EXT_BAND], False))
+    return (nm - indel_bases + ends) * wts["X"] + hp * wts["hp"] + ind * wts["indel"]
+
+
+def _paf_dist_w(paf, reads, tx, wts):
+    """{read: {copy: min gap_weighted distance}}, exactly the minimum over every line: a copy's lines in ascending gap-compressed
+    core, stopping once the cheapest edit's weight times the core reaches the best weighted distance."""
+    wmin = min(wts.values())
+    by = collections.defaultdict(list)
+    for ln in paf.splitlines():
+        f = ln.split("\t")
+        by[(f[0], f[5].split("|")[0])].append((_gc_core(f), ln, f[5]))
+    dist = collections.defaultdict(dict)
+    for (q, c), cand in by.items():
+        best = float("inf")
+        for core, ln, t in sorted(cand, key=lambda x: x[0]):
+            if wmin * core >= best:
+                break
+            best = min(best, gap_weighted(ln, reads[q], tx[t], wts))
+        dist[q][c] = best
+    return dist
+
+
+def edit_counts(w, n_reads=EDIT_RATE_READS):
+    """The edits of WORLD/E0.bam's first n_reads uniquely placed reads (primary, MAPQ 60) against WORLD/genome.ref.fa:
+    aligned bases, mismatches (X, or NM less the indel bases without --eqx), indel events under NOVEL_INS inside a homopolymer
+    run (hp) and elsewhere (indel), and the homopolymer runs on the reference the alignments cover (hp_runs: each a chance
+    of a homopolymer indel). Sequencing errors and the donor's alleles both: what a read of its own copy differs by."""
+    import pysam
+    fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+    c = collections.Counter(aligned=0, X=0, hp=0, indel=0, hp_runs=0)
+    seen, pad = 0, HP_RUN + 10
+    runs = re.compile("|".join(f"{b}{{{HP_RUN},}}" for b in "ACGT"))
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            if (rec.is_unmapped or rec.is_secondary or rec.is_supplementary or rec.mapping_quality < 60
+                    or not rec.query_sequence):
+                continue
+            seen += 1
+            if seen > n_reads:
+                break
+            lo = max(0, rec.reference_start - pad)
+            ref = fa.fetch(rec.reference_name, lo, rec.reference_end + pad).upper()
+            q = rec.query_sequence.upper()
+            ti, qi, indel_bases, eqx, segs = rec.reference_start - lo, 0, 0, False, []
+            for op, n in rec.cigartuples:
+                if op in (0, 7, 8, 2):
+                    if segs and segs[-1][1] == ti:
+                        segs[-1][1] = ti + n
+                    else:
+                        segs.append([ti, ti + n])
+                if op in (0, 7, 8):
+                    c["aligned"] += n
+                    eqx |= op in (7, 8)
+                    c["X"] += n if op == 8 else 0
+                    ti, qi = ti + n, qi + n
+                elif op in (1, 2):
+                    if n < NOVEL_INS:
+                        c["hp" if hp_indel(ref, ti, n, q[qi:qi + n] if op == 1 else None) else "indel"] += 1
+                    indel_bases += n
+                    ti, qi = (ti, qi + n) if op == 1 else (ti + n, qi)
+                elif op == 3:
+                    ti += n
+                elif op == 4:
+                    qi += n
+            if not eqx and rec.has_tag("NM"):
+                c["X"] += rec.get_tag("NM") - indel_bases
+            c["hp_runs"] += sum(1 for a, b in segs for _ in runs.finditer(ref, a, b))
+    return c
+
+
+def weights_from_counts(c):
+    """{edit type: -ln of its rate} from edit_counts, each rate by the rule of succession: a mismatch to one given base (a third
+    of the mismatch rate per aligned base), a homopolymer indel per homopolymer run, another indel per aligned base."""
+    import math
+    return {"X": max(0.0, math.log(3 * (c["aligned"] + 2) / (c["X"] + 1))),
+            "hp": max(0.0, math.log((c["hp_runs"] + 2) / (c["hp"] + 1))),
+            "indel": max(0.0, math.log((c["aligned"] + 2) / (c["indel"] + 1)))}
+
+
+def significant(call, pdist, wdist, twins=None, margin=MARGIN, alpha=ALPHA):
+    """--o2-significance (2026-10-17, the O2 margin): a path call stands when its weighted distance (gap_weighted) beats every
+    rival's by ln(R / alpha), R the rivals with a path alignment -- the read's likelihood ratio against each rival at least
+    R / alpha, so a misassignment has probability at most alpha (Bonferroni over the rivals, as copy_assign's certificate
+    divides alpha by them). The fixed margin counted two homopolymer indels as two substitutions: r12 A119b's DUX4 errors,
+    2 edits of 1-bp indels against 63 rivals. pdist / wdist: {copy idx as str: path / weighted distance}; a twin folded into
+    the call (decide's rule) is no rival; no weighted distance for the call: no gate."""
+    import math
+    c = str(call)
+    if c not in wdist:
+        return True
+    folded = {str(t) for t, k in (twins or {}).items()
+              if str(k) == c and str(t) in pdist and c in pdist and pdist[c] - pdist[str(t)] < margin}
+    rivals = [v for k, v in wdist.items() if k != c and k not in folded]
+    return not rivals or min(rivals) - wdist[c] >= math.log(len(rivals) / alpha)
+
+
+def edit_weights(w):
+    """edit_weights of WORLD (edit_counts -> weights_from_counts), recorded in WORLD/graph/edit_weights.json."""
+    c = edit_counts(w)
+    wts = weights_from_counts(c)
+    json.dump(dict(counts=dict(c), weights=wts), open(f"{w}/graph/edit_weights.json", "w"), indent=1)
+    return wts
+
+
 _last_aligned = 0                                          # reads the last cached_minimap2 call aligned (tests)
 
 
@@ -353,7 +501,7 @@ def _paths_family(fam):
 
 
 def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False, ends=False, pad=0, catalog=None, hosted=None,
-              distance="clip", proj_micro=0, proj_tol=None, max_div=DELTA):
+              distance="clip", proj_micro=0, proj_tol=None, max_div=DELTA, weights=None):
     """O2 on the family graph's ISOFORM PATHS: each hosted read aligned (minimap2 -x map-hifi, all secondaries) to every
     curated isoform of every catalogued copy as its own sequence -- the paths `vg rna` threads, without free graph alignment."""
     import subprocess
@@ -431,6 +579,8 @@ def run_paths(w, margin=MARGIN, reps_only=False, out_name="o2.tsv", union=False,
             print(f"[o2graph] timing {fam}: {len(names)} reads, {n_tx} paths, {res.count(chr(10))} alignments; union paths "
                   f"{t1 - t0:.1f} s, write {t2 - t1:.1f} s, minimap2 {t3 - t2:.1f} s, distances {time.time() - t3:.1f} s", flush=True)
         json.dump(path_dists(dist), open(f"{d}/{fam}.dist.json", "w"))     # run_locus_fallback mode "all" combines them
+        if weights is not None:                        # --o2-significance: the veto step's gate reads them
+            json.dump(path_dists(_paf_dist_w(res, reads, tx, weights)), open(f"{d}/{fam}.wdist.json", "w"))
         tw = {f"copy{c['idx']}": f"copy{c['twin_of']}" for c in iso[fam] if c.get("twin_of") is not None}
         for n in names:
             c, reason = decide(dist.get(n, {}), len(reads[n]), margin, max_div=max_div, twins=tw)
@@ -580,7 +730,8 @@ def run_integrated(w, margin=MARGIN, distance="clip", proj_micro=0, proj_tol=Non
     catalog = {f: v["copies"] for f, v in sj.items() if v["copies"]}
     hosted = {f: set(v["family_reads"]) for f, v in sj.items()}
     return run_paths(w, margin, union=True, pad=PATH_PAD, out_name=f"o2.integ.m{margin}.tsv", catalog=catalog, hosted=hosted,
-                     distance=distance, proj_micro=proj_micro, proj_tol=proj_tol, max_div=gate(floor))
+                     distance=distance, proj_micro=proj_micro, proj_tol=proj_tol, max_div=gate(floor),
+                     weights=edit_weights(w) if _SIGNIFICANCE else None)
 
 
 def locus_distance(cigartuples):
@@ -617,34 +768,63 @@ def veto_distance(cigartuples):
     return d
 
 
-def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA):
+def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=None):
     """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
-    and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained`); a read
-    whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family) stays `unexplained`."""
+    and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained` |
+    `locus_clipped`); a read whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family)
+    stays `unexplained`.
+    vdist (--locus-clipped, 2026-10-17, NOT ADOPTED): the same alignments' veto_distance. A copy's genome cost lies between its
+    locus_distance (a clip under NOVEL_INS free) and its veto_distance (every clipped base paid); a call made on the genome
+    alone stands only when its worst case beats every rival's best case by the margin, else `locus_clipped` (round 15 A119b
+    502 CROSS: FAM90A.45's alignment clipped the 11 bases of FAM90A.51's read that told the copies apart, 3 edits on the rest
+    against 5 for nine siblings). A twin folded into the call (decide's rule) is no rival. Development: it abstained correct
+    calls where every copy's alignment clips the read's ends (HNRNPCL, TAF11L, FAM236) and failed r14 A119b s205's B1."""
     c, reason = decide(dist, qlen, margin, max_div=max_div, twins=twins)
     if reason == "unexplained" or c == ELSEWHERE:
         return None, "unexplained"
+    if c is not None and vdist is not None and c in vdist:
+        folded = {t for t, k in (twins or {}).items() if k == c and t in dist and dist[c] - dist[t] < margin}
+        rivals = [g for i, g in dist.items() if i != c and i not in folded]
+        if rivals and vdist[c] + margin > min(rivals):
+            return None, "locus_clipped"
     return (c, "locus") if c is not None else (None, f"locus_{reason}")
 
 
 VETO_MAPQ = 30                                           # the genome veto's confident placement (Phred 30: 1 in 1,000)
 
 
-def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA, primary=None):
+_VETO_ABSTAIN = False                                      # --veto-abstain (modes veto, guard): veto_decide
+_LOCUS_CLIPPED = False                                     # --locus-clipped (modes veto, guard; not adopted): locus_decide
+_SIGNIFICANCE = False                                      # --o2-significance (integ: wdist.json; veto, guard: the gate)
+
+
+def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA, primary=None, contradict_abstain=None,
+                ldist=None):
     """mode veto (round 12 review C1): a path call stands unless the read's own genome alignments put it elsewhere by the
     margin -- another seeded copy, or a locus off them (ELSEWHERE), at least `margin` closer than the called copy's locus (no
     alignment there: infinitely far) and within max_div -- AND the genome places the read there confidently: its primary
     alignment (primary = (seeded copy idx or ELSEWHERE, MAPQ)) lies on the genome's winner at MAPQ >= VETO_MAPQ. A retained
     intron a paralog's path absorbs as one gap-compressed insertion is contiguous on the own locus (CDRT15: MAPQ 53-60); a short
     terminal exon the aligner misses at the true locus is not evidence (DDX11L, development: MAPQ 1). A genome tie keeps the
-    path call. -> (call, "veto_locus" | "veto_unexplained") or None."""
+    path call. -> (call, "veto_locus" | "veto_unexplained") or None.
+    contradict_abstain (--veto-abstain, 2026-10-17, round 15's FAM90A errors): when the genome contradicts the called copy but
+    no confident single winner takes the read (the better copies tie among themselves, or the primary is not confident), the
+    path call is abstained (`genome_contradicts`): the paths decided where the sequence contradicts them (FAM90A.45: 16 edits on
+    the genome against 5 for four tied siblings, the siblings' paths lacking the read's exon skip, 64-378 away). A copy's
+    genome cost lies between its locus_distance (ldist: a clip under NOVEL_INS free) and its veto_distance (gdist: every
+    clipped base paid); the genome contradicts the call when a rival's worst case beats the call's best case by the margin. A
+    clip alone is no contradiction: DDX11L.6's alignment clips a 15-bp terminal exon the aligner missed (1 edit on its
+    aligned bases, 16 with the clip), DAZ.2's a read end. With no alignment on the called copy it is no evidence (minimap2's
+    secondary cap); ldist None stands for gdist."""
+    contradict_abstain = _VETO_ABSTAIN if contradict_abstain is None else contradict_abstain
     own = gdist.get(int(call), 1 << 30)
     rivals = [g for i, g in gdist.items() if i != int(call) and g + margin <= own]
     if not rivals or min(rivals) > max_div * qlen:
         return None
     c, why = decide(gdist, qlen, margin, max_div=max_div, twins=twins)
     if c is None or not primary or primary[0] != c or primary[1] < VETO_MAPQ:
-        return None
+        lo = (gdist if ldist is None else ldist).get(int(call)) if int(call) in gdist else None
+        return ("-", "genome_contradicts") if contradict_abstain and lo is not None and min(rivals) + margin <= lo else None
     return ("-", "veto_unexplained") if c == ELSEWHERE else (str(c), "veto_locus")
 
 
@@ -716,7 +896,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     mode "resolve" -> o2.integr.m<margin>.tsv: O2's assignments stand; its unexplained reads as in "unexplained", and its
     tied / thin ones decided on min(path, genome) with ELSEWHERE (`genome_assigned` when a seeded copy wins by the margin).
     mode "veto" -> o2.integv.m<margin>.tsv: as "unexplained", and an assigned read's path call is rechecked on its genome
-    alignments (veto_decide).
+    alignments (veto_decide); with --veto-abstain a contradicted path call is abstained (--locus-clipped: a clipped locus
+    call too; not adopted), with --o2-significance an insignificant one (significant).
     mode "guard" -> o2.integt.m<margin>.tsv: as "veto", and a call the veto keeps is abstained (`guard_unseeded`) when a locus
     off every seeded copy explains the read as well (tie_guard). O3 still reads o2.integ.m<margin>.tsv, so no mode changes O3's evidence; an O3 call on a read takes precedence over its
     placement (summary.read_fate)."""
@@ -740,9 +921,15 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             todo[r["read"]].add(r["family"])
     dist, qlen = genome_distances(w, todo, spans)
     if mode in ("veto", "guard"):                         # the assigned reads' alignments, every unaligned base counted
-        vtodo = {q: fs for q, fs in todo.items() if any(r["reason"] == "assigned" for r in by_read[q])}
+        vtodo = todo if _LOCUS_CLIPPED else {q: fs for q, fs in todo.items() if any(r["reason"] == "assigned" for r in by_read[q])}
         vdist, _ = genome_distances(w, vtodo, spans, veto_distance)
         prim = primary_loci(w, vtodo, spans)
+    sig = _SIGNIFICANCE and mode in ("veto", "guard")
+    if sig:                                               # --o2-significance: the path distances, plain and weighted
+        pg = {}
+        for f in {r["family"] for r in rows}:
+            p0 = f"{w}/graph/o2paths.union.pad.integ/{f}"
+            pg[f] = tuple(json.load(open(f"{p0}.{k}.json")) if os.path.exists(f"{p0}.{k}.json") else {} for k in ("dist", "wdist"))
     if mode not in ("unexplained", "veto", "guard"):
         lens = {n: len(x) for n, x in _read_fq(f"{w}/reads.E0.fq").items()}
         pd = {}
@@ -773,12 +960,17 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
                 call, reason = str(c), "genome_assigned"
         elif mode in ("veto", "guard") and reason == "assigned":
             v = veto_decide(call, vdist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor),
-                            primary=prim.get((q, f)))
+                            primary=prim.get((q, f)), ldist=dist.get((q, f), {}))
             call, reason = v if v else (call, reason)
+            if sig and reason == "assigned" and not significant(call, pg[f][0].get(q, {}), pg[f][1].get(q, {}), twins.get(f),
+                                                                margin):
+                call, reason = "-", "insignificant"
             if mode == "guard" and reason == "assigned" and tie_guard(call, vdist.get((q, f), {})):
                 call, reason = "-", "guard_unseeded"
         elif reason == "unexplained":
-            c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor))
+            vd = vdist.get((q, f), {}) if _LOCUS_CLIPPED and mode in ("veto", "guard") else None
+            c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor),
+                                     vdist=vd)
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
     out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r', veto='v', guard='t')[mode]}.m{margin}.tsv"
@@ -977,8 +1169,11 @@ def run_gains(w, method="union", margin=MARGIN):
 
 
 def main(argv):
-    global _TWIN_ABSTAIN
+    global _TWIN_ABSTAIN, _VETO_ABSTAIN, _LOCUS_CLIPPED, _SIGNIFICANCE
     _TWIN_ABSTAIN = "--twin-abstain" in argv
+    _VETO_ABSTAIN = "--veto-abstain" in argv
+    _LOCUS_CLIPPED = "--locus-clipped" in argv
+    _SIGNIFICANCE = "--o2-significance" in argv
     if argv[0] == "run":
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes
         # artifactual allele calls through near-identical copies, GAGE 74 wrong of 289)

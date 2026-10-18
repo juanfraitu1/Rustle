@@ -535,3 +535,226 @@ def test_twin_abstain_leaves_a_read_its_twins_cannot_separate():
     assert O.decide({"copy0": 4, "copy1": 4}, 1000, twins=tw, twin_abstain=True) == (None, "tied_twin")
     assert O.decide({"copy0": 3, "copy1": 5}, 1000, twins=tw, twin_abstain=True) == ("copy0", "assigned")  # by the margin
     assert O.decide({"copy0": 7, "copy1": 4}, 1000, twins=tw, twin_abstain=True) == ("copy1", "assigned")
+
+
+def test_a_path_call_the_genome_contradicts_is_abstained_when_no_confident_winner_takes_it():
+    # --veto-abstain (2026-10-17, round 15's FAM90A errors): the called copy 45 aligns 16 edits away on the genome, four
+    # siblings 5 away and tied among themselves -- the veto finds no single confident winner and kept the wrong path call
+    g = {45: 16, 20: 5, 29: 5, 41: 5, 42: 5}
+    assert O.veto_decide("45", g, 1445, primary=(20, 0), ldist=g) is None                          # today: kept
+    assert O.veto_decide("45", g, 1445, primary=(20, 0), ldist=g, contradict_abstain=True) == ("-", "genome_contradicts")
+    # a confident unique winner is still a veto, a genome tie or a thin gap still keeps the path call
+    g2 = {45: 16, 20: 5, 29: 9}
+    assert O.veto_decide("45", g2, 1445, primary=(20, 60), ldist=g2, contradict_abstain=True) == ("20", "veto_locus")
+    assert O.veto_decide("45", {45: 5, 20: 5}, 1445, primary=(20, 0), ldist={45: 5, 20: 5}, contradict_abstain=True) is None
+    assert O.veto_decide("45", {45: 6, 20: 5}, 1445, primary=(20, 0), ldist={45: 6, 20: 5}, contradict_abstain=True) is None
+    # no genome alignment on the called copy (minimap2's secondary cap in a 57-copy family): no evidence either way
+    assert O.veto_decide("45", {20: 5, 29: 5}, 1445, primary=(20, 0), ldist={20: 5, 29: 5}, contradict_abstain=True) is None
+
+
+def test_the_contradiction_must_hold_on_the_called_copy_s_aligned_bases():
+    # A copy's genome cost lies between its locus_distance (clips under NOVEL_INS free) and its veto_distance (clips paid in
+    # full). The call is contradicted only when a rival's worst case beats the call's best case by the margin.
+    # Set 8 public DDX11L.6 (correct): its alignment soft-clips a 15-bp terminal exon the aligner missed -- 16 with the clip,
+    # 1 on its aligned bases -- and a paralog aligns the whole read at 3 (development: the first rule abstained it)
+    v, l = {5: 3, 6: 16, 0: 5}, {5: 3, 6: 1, 0: 5}
+    assert O.veto_decide("6", v, 330, primary=(5, 1), ldist=l, contradict_abstain=True) is None
+    # r10 public DAZ.2 (correct): a 4-bp end clip on its own copy, the rivals at 1 either way
+    assert O.veto_decide("2", {-1: 1, 0: 1, 1: 1, 2: 5}, 805, primary=(-1, 0), ldist={-1: 1, 0: 1, 1: 1, 2: 1},
+                         contradict_abstain=True) is None
+    # set 8 public OUTSIDE AQP7.3 (an uncatalogued copy's read, path-called to copy 2): the rival beats it by the margin
+    # with and without clips
+    v = {-1: 1, 0: 31, 1: 3, 2: 2, 3: 0}
+    assert O.veto_decide("2", v, 336, primary=(3, 5), ldist={-1: 1, 0: 14, 1: 3, 2: 2, 3: 0},
+                         contradict_abstain=True) == ("-", "genome_contradicts")
+    # the call's only alignment leaves >= NOVEL_INS bases unaligned (no locus_distance): no evidence on its aligned bases
+    assert O.veto_decide("45", {45: 40, 20: 5}, 1445, primary=(20, 0), ldist={20: 5}, contradict_abstain=True) is None
+
+
+def test_a_locus_call_stands_only_when_its_clipped_bases_cannot_hand_the_margin_to_a_rival():
+    # --locus-clipped (not adopted), the locus fallback: a call made on the genome alone must win by the margin in its worst
+    # case (its clipped bases paid) against every rival's best case. Round 15 A119b 502 CROSS s0000493 (FAM90A.51's read): copy 45's
+    # alignment clips the read's last 11 bases -- 3 edits on the rest, 14 counting them -- and nine siblings align all of it
+    # at 5; locus_distance alone gave copy 45 the margin
+    ld = {45: 3, 46: 5, 47: 5, 51: 5, 54: 5}
+    vd = {45: 14, 46: 5, 47: 5, 51: 5, 54: 5}
+    assert O.locus_decide(ld, 361) == (45, "locus")                                                # today
+    assert O.locus_decide(ld, 361, vdist=vd) == (None, "locus_clipped")
+    assert O.locus_decide({3: 1, 5: 4}, 1000, vdist={3: 1, 5: 4}) == (3, "locus")                  # no clip: as today
+    assert O.locus_decide({3: 1, 5: 6}, 1000, vdist={3: 3, 5: 6}) == (3, "locus")                  # the margin survives it
+    assert O.locus_decide({3: 1, O.ELSEWHERE: 4}, 1000, vdist={3: 3, O.ELSEWHERE: 4}) == (None, "locus_clipped")
+    # a twin folded into the call (O1 --twins) is no rival, as in decide()
+    assert O.locus_decide({3: 1, 7: 1, 5: 6}, 1000, twins={7: 3}, vdist={3: 2, 7: 1, 5: 6}) == (3, "locus")
+
+
+def test_the_veto_mode_abstains_a_clipped_locus_call_with_locus_clipped(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t-\tunexplained\n")
+    # copy 0 clips the read's last 11 bases (3 edits on the rest); copy 1 aligns all of it with 5
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "100=1X100=1X100=1X86=11S"), ("r1", 256, "chrB", 2000, "100=5X295=")])
+    assert O.run_locus_fallback(str(w), mode="veto") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "locus")}                                                          # today
+    O._VETO_ABSTAIN = True                                                                       # the path rule alone: as today
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._VETO_ABSTAIN = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "locus")}
+    O._LOCUS_CLIPPED = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._LOCUS_CLIPPED = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("-", "locus_clipped")}
+
+
+# --o2-significance (2026-10-17, the O2 margin): r12 A119b's DUX4 errors were path calls by 2 gap-compressed edits that were
+# two 1-bp indels, against 63 rivals; the v2 profiles' homopolymer indels are ~20x likelier than any one substitution
+_CORE = "ACGTAAAACGTCAGTCGATCGGCTAGCTAGCATCGATCGACTAGC"   # AAAA at 4-7 (a homopolymer run), GG at 20-21 (a run of 2)
+_WTS = {"X": 8.0, "hp": 4.0, "indel": 7.0}
+
+
+def _wpaf(read, t, nm, cg, qs=0, ts=0):
+    tl = len(_CORE)
+    return "\t".join(["r", str(len(read)), str(qs), str(len(read)), "+", t, str(tl), str(ts), str(tl), "40", str(tl), "60",
+                      f"NM:i:{nm}", f"cg:Z:{cg}"])
+
+
+def test_the_weighted_distance_prices_each_edit_by_its_type():
+    tx = {"copy0|t": _CORE}
+    n = len(_CORE)
+    hp_del = _CORE[:4] + _CORE[5:]                         # one A of AAAA: a homopolymer deletion
+    assert O.gap_weighted(_wpaf(hp_del, "copy0|t", 1, f"4M1D{n - 5}M"), hp_del, _CORE, _WTS) == 4.0
+    hp_del_r = _CORE[:7] + _CORE[8:]                       # the same deletion placed at the run's other end
+    assert O.gap_weighted(_wpaf(hp_del_r, "copy0|t", 1, f"7M1D{n - 8}M"), hp_del_r, _CORE, _WTS) == 4.0
+    del2 = _CORE[:20] + _CORE[21:]                         # one G of GG: a run of 2 is no homopolymer
+    assert O.gap_weighted(_wpaf(del2, "copy0|t", 1, f"20M1D{n - 21}M"), del2, _CORE, _WTS) == 7.0
+    hp_ins = _CORE[:4] + "A" + _CORE[4:]                   # AAAA -> AAAAA
+    assert O.gap_weighted(_wpaf(hp_ins, "copy0|t", 1, f"4M1I{n - 4}M"), hp_ins, _CORE, _WTS) == 4.0
+    ins = _CORE[:12] + "G" + _CORE[12:]                    # a G between C and A
+    assert O.gap_weighted(_wpaf(ins, "copy0|t", 1, f"12M1I{n - 12}M"), ins, _CORE, _WTS) == 7.0
+    sub = _CORE[:30] + "T" + _CORE[31:]                    # C -> T
+    assert O.gap_weighted(_wpaf(sub, "copy0|t", 1, f"{n}M"), sub, _CORE, _WTS) == 8.0
+    two = _CORE[:4] + _CORE[5:30] + "T" + _CORE[31:]       # a homopolymer deletion and a substitution
+    assert O.gap_weighted(_wpaf(two, "copy0|t", 2, f"4M1D{n - 5}M"), two, _CORE, _WTS) == 12.0
+
+
+def test_the_weighted_distance_prices_clipped_end_edits_as_substitutions():
+    tx_seq = "GGGG" + "ACGA" + _CORE
+    read = "TCGA" + _CORE                                  # 4 clipped bases, 1 of them differs from the path's flank
+    ln = "\t".join(["r", str(len(read)), "4", str(len(read)), "+", "copy0|t", str(len(tx_seq)), "8", str(len(tx_seq)),
+                    str(len(_CORE)), str(len(_CORE)), "60", "NM:i:0", f"cg:Z:{len(_CORE)}M"])
+    assert O.gap_weighted(ln, read, tx_seq, _WTS) == 8.0
+    assert O.gap_compressed(ln, read, tx_seq) == 1
+
+
+def test_the_pruned_weighted_distance_equals_scoring_every_line():
+    import random
+    rng = random.Random(5)
+    core = "".join(rng.choice("ACGT") for _ in range(300))
+    tx = {f"copy{i}|t{j}": "".join(rng.choice("ACGT") for _ in range(40)) + core + "".join(rng.choice("ACGT") for _ in range(40))
+          for i in range(3) for j in range(3)}
+    reads = {f"r{k}": "".join(rng.choice("ACGT") for _ in range(rng.randint(0, 30))) + core for k in range(4)}
+    lines = []
+    for q, rd in reads.items():
+        for t in tx:
+            qs, nd = len(rd) - len(core), rng.randint(0, 3)
+            nm = nd + rng.randint(0, 6)
+            lines.append("\t".join([q, str(len(rd)), str(qs), str(len(rd)), "+", t, str(len(tx[t])), "40", str(340 + nd), "300",
+                                    "300", "60", f"NM:i:{nm}", f"cg:Z:150M{nd}D150M" if nd else "cg:Z:300M"]))
+    rng.shuffle(lines)
+    naive = {}
+    for ln in lines:
+        f = ln.split("\t")
+        c = f[5].split("|")[0]
+        naive.setdefault(f[0], {})
+        naive[f[0]][c] = min(O.gap_weighted(ln, reads[f[0]], tx[f[5]], _WTS), naive[f[0]].get(c, float("inf")))
+    assert O._paf_dist_w("\n".join(lines), reads, tx, _WTS) == naive
+
+
+def test_edit_weights_are_minus_log_rates_of_each_edit_type_on_uniquely_placed_reads(tmp_path):
+    import math
+    import pysam
+    w = tmp_path / "W"
+    w.mkdir()
+    ref = "ACGT" * 50 + "AAAAA" + "CGTA" * 50 + "TTT" + "GCAT" * 50     # runs >= 3: AAAAA, TTT (the CGTA/ACGT AA, TT joins aside)
+    (w / "genome.ref.fa").write_text(f">chrA\n{ref}\n")
+    pysam.faidx(str(w / "genome.ref.fa"))
+    hdr = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "chrA", "LN": len(ref)}]}
+    recs = [  # (name, flag, mapq, pos, cigar, sequence)
+        ("a", 0, 60, 0, "100=", ref[:100]),
+        ("b", 0, 60, 150, "51=1D150=", ref[150:201] + ref[202:352]),     # deletion of ref[201] -- inside AAAAA (200-204)
+        ("c", 0, 60, 0, "50=1X49=", ref[:50] + ("A" if ref[50] != "A" else "C") + ref[51:100]),
+        ("d", 0, 60, 0, "30=1I70=", ref[:30] + "G" + ref[30:100]),      # a G before ref[30] = G: a run of 1, no homopolymer
+        ("e", 0, 10, 0, "50=1X49=", ref[:50] + ("A" if ref[50] != "A" else "C") + ref[51:100]),  # MAPQ 10: not counted
+        ("f", 256, 60, 0, "50=1X49=", ""),                                  # a secondary: not counted
+    ]
+    with pysam.AlignmentFile(str(w / "u.bam"), "wb", header=hdr) as out:
+        for name, flag, mq, pos, cg, seq in recs:
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.flag, a.reference_name, a.reference_start, a.cigarstring = name, flag, "chrA", pos, cg
+            a.mapping_quality = mq
+            if seq:
+                a.query_sequence = seq
+            out.write(a)
+    pysam.sort("-o", str(w / "E0.bam"), str(w / "u.bam"))
+    pysam.index(str(w / "E0.bam"))
+    c = O.edit_counts(str(w))
+    assert c["aligned"] == 100 + 201 + 100 + 100 and c["X"] == 1
+    assert c["hp"] == 1 and c["indel"] == 1                # b's deletion inside AAAAA; d's insertion of G at a C|G boundary
+    assert c["hp_runs"] == 1                                # AAAAA, inside b's aligned blocks only (TTT is past every read)
+    wts = O.weights_from_counts(c)
+    assert math.isclose(wts["X"], math.log(3 * (c["aligned"] + 2) / (c["X"] + 1)))
+    assert math.isclose(wts["hp"], math.log((c["hp_runs"] + 2) / (c["hp"] + 1)))
+    assert math.isclose(wts["indel"], math.log((c["aligned"] + 2) / (c["indel"] + 1)))
+
+
+def test_a_path_call_must_clear_alpha_over_its_rivals_number_in_weighted_edits():
+    import math
+    # r12 A119b DUX4.9's read on copy 19: two homopolymer indels closer than 63 siblings -- 8 < ln(63 / 1e-3) = 11.05
+    wd = {"19": 12.0, **{str(i): 20.0 for i in range(64) if i != 19}}
+    pd = {"19": 2, **{str(i): 4 for i in range(64) if i != 19}}
+    assert not O.significant("19", pd, wd)
+    assert O.significant("19", pd, {**wd, **{str(i): 28.0 for i in range(64) if i != 19}})   # two substitutions: 16
+    assert O.significant("19", {"19": 2, "3": 4, "4": 4}, {"19": 12.0, "3": 20.0, "4": 20.0})  # 8 >= ln(2 / 1e-3) = 7.6
+    assert math.isclose(math.log(63 / O.ALPHA), 11.05, abs_tol=0.01)
+    assert O.significant("19", {"19": 2}, {"19": 12.0})                       # a sole candidate
+    assert O.significant("19", pd, {})                                        # no weighted distances: no gate
+    # a twin folded into the call (decide's rule: within the margin of it) is no rival
+    assert O.significant("3", {"3": 1, "7": 1, "5": 6}, {"3": 8.0, "7": 8.0, "5": 48.0}, twins={7: 3})
+    assert not O.significant("3", {"3": 1, "7": 1, "5": 6}, {"3": 8.0, "7": 8.0, "5": 48.0})
+
+
+def test_the_veto_mode_abstains_an_insignificant_path_call_with_o2_significance(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    d = w / "graph" / "o2paths.union.pad.integ"
+    d.mkdir(parents=True)
+    copies = [dict(idx=i, contig="chrA", start=1000 + 10000 * i, end=5000 + 10000 * i, origin="curated") for i in range(3)]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1", "r2"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t0\tassigned\nr2\tF\t0\tassigned\n")
+    json.dump({"r1": {"0": 0, "1": 2, "2": 2}, "r2": {"0": 0, "1": 2, "2": 2}}, open(d / "F.dist.json", "w"))
+    json.dump({"r1": {"0": 0.0, "1": 6.0, "2": 6.0}, "r2": {"0": 0.0, "1": 16.0, "2": 16.0}}, open(d / "F.wdist.json", "w"))
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "1000="), ("r2", 0, "chrA", 2000, "1000=")])
+    assert O.run_locus_fallback(str(w), mode="veto") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "assigned"), "r2": ("0", "assigned")}                             # today
+    O._SIGNIFICANCE = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._SIGNIFICANCE = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("-", "insignificant"), "r2": ("0", "assigned")}      # 6 < ln(2 / 1e-3) = 7.6 <= 16
