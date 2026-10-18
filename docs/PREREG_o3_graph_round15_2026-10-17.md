@@ -131,3 +131,40 @@ recorded on 10-15 and 10-16, none referenced by an active directory.
 
 **Under the rule above:** the crashed runs are rerun once, unchanged. Cell public 501's partial directory is removed first:
 its mask step died writing.
+
+## Results (2026-10-17; cells 2-6 rerun once under Amendment 1)
+
+**Verdict: FAIL.** 3 of the 6 cells pass; the bar was all six. **C1 FAILS too.**
+
+| cell | verdict | failing worlds (integrated errors vs current) | integrated / current wall |
+|---|---|---|---|
+| A119b 501 | PASS | | 855 / 417 s |
+| public 501 | PASS | | 662 / 374 s |
+| A119b 502 | FAIL | CROSS 3 vs 0, INTACT 2 vs 0 | 944 / 468 s |
+| public 502 | PASS | | 771 / 411 s |
+| A119b 503 | FAIL | CROSS 5 vs 0, INTACT 5 vs 0, SILENT 5 vs 0 | 1,117 / 462 s |
+| public 503 | FAIL | CROSS 2 vs 0, INTACT 1 vs 0, SILENT 1 vs 0 | 934 / 411 s |
+
+**B1 holds in all 36 worlds**: integrated correct exceeds current everywhere.
+
+**Every failing bar is a few errors where the current method makes none, and every one of those errors is in FAM90A** (57
+near-identical copies). By the O2 proof's oracle:
+- **Most are undecidable reads.** The read's alignment cost ties at the true copy and a sibling, yet path O2 assigned it by the
+  margin, to a copy with a richer path set:
+  - A119b 503: five reads of copies 20, 21, 29 and 41, all assigned to FAM90A.45;
+  - public 503: copy 29 -> 39, copy 12 -> 11.
+- **One read is decidable** but was called against the oracle (A119b 502: FAM90A.45 -> FAM90A.2).
+- **This is a calibration gap in large near-identical families.** Path structure asymmetries that union projection does not
+  remove decide the margin, and the margin is fixed (2 edits) whatever the number of rivals. copy_assign's PSV certificate
+  divides alpha by the number of rivals, and it abstains on these reads.
+- **Elsewhere the integrated pipeline stays far ahead:** OUTSIDE 4-66 errors against 101-263; BRANCH 13-60 against 44-195.
+
+**C1, the cost on the mainstay set:** v11's integrated stages took 416 s (A119b) and 418 s (public), against the current
+method's 320 s and 333 s.
+- **That fails C1** by 96 s and 85 s.
+- **It is 2.4-2.9x faster than v9's integrated stages** (1,200 s and 987 s): O3 825 -> 149 s and 763 -> 98 s, without the vg
+  graph.
+- **O2 is now the larger cost** (228 / 279 s). The cache helps only worlds whose path set an earlier world made.
+- **The thread counts were not equal:** the current method's minimap2 ran 8 threads under `--heavy-current`, and each integrated
+  step had 2. Both runs' bars are identical to v9's (PASS).
+- **On round 15's families,** where FAM90A's 57 copies make O2 large, the integrated stages took 1.7-2.4x the current method.
