@@ -338,3 +338,14 @@ def test_an_expressed_paralog_has_its_measured_share_of_a_coding_copy_s_reads(tm
     assert set(kinds.values()) == {"present"}
     n = collections.Counter(r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:])
     assert [n[f"F.{k}"] for k in range(6)] == [20, 20, 20, 10, 10, 10]
+
+
+def test_a_branch_world_with_paralogs_builds_and_its_branch_copy_is_expressed_as_a_coding_copy(tmp_path, monkeypatch):
+    import collections
+    import json
+    prof = json.load(open(os.path.join(HERE, "profiles", "A119b_testis_v2.json")))
+    prof.update(paralog_silent_frac=0.0, paralog_expr_ratio=0.5, expr_log_sd=0.0)
+    kinds, reads = _paralog_world(tmp_path, monkeypatch, "BRANCH", prof)
+    assert "F.B" in kinds and "F.B" in reads                         # the extra absent copy, from a coding copy
+    n = collections.Counter(r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:])
+    assert n["F.B"] >= n["F.3"]                                       # not scaled down as a paralog

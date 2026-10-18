@@ -553,7 +553,7 @@ def cmd_build(a):
             if prof:                                            # profile: the donor's homozygous alleles, on both haplotypes
                 hom = het_sites(exonic, prof["hom_per_base"], random.Random(f"{a.seed}:{cid}:hom"), base_at, draw=a.het_draw)
             n_het[f] += len(het)
-            mult = (expr_mult(a.seed, cid, prof.get("expr_log_sd", 0.0)) if prof else 1.0) * pmult[cid]
+            mult = (expr_mult(a.seed, cid, prof.get("expr_log_sd", 0.0)) if prof else 1.0) * pmult.get(cid, 1.0)   # BRANCH's extra copy .B: of a coding copy
             cache = {}
 
             def body_of(ex, h, r, own_snps, nov, jj):
