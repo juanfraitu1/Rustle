@@ -7,9 +7,11 @@ Genes: every CAT protein-coding gene, whatever its name, span <= families.MAX_SP
 (the gene with more transcripts kept); each gene's canonical transcript (families.canonical).
 Sequence link (families.py's locus rule, genome-wide): gene A's canonical, spliced-aligned (minimap2 -cx splice:hq) to gene B's
 locus (+- 1 kb), covers >= MIN_COVER of A at identity >= families.MIN_IDENT, in either direction.
-Structure link: the same alignment carries A's exon junctions onto B's canonical introns -- each intron of the alignment sits at
-one of A's junctions and is one of B's introns, ends within realworld.JUNCTION_TOL, none left over (structure_match), in either
-direction: the copies share the gene model. A processed retrocopy (one exon against many) or a partial copy fails it.
+Structure link: one gene's exon chain is carried by the other's GENOME -- in the spliced alignment of A's canonical to B's locus,
+every intron sits within realworld.JUNCTION_TOL of one of A's junctions and none of A's junctions is left without one
+(structure_match), in either direction. B's annotation is not used: comparing two annotated models failed identical genes whose
+canonicals differ (OR4F21's 2-exon model against OR4F16's 1-exon one; ATAD3A's extra 80-bp exon), a choice of the annotation,
+not of the genomes (amended before any draw). A processed retrocopy (one exon against a spliced locus) or a partial copy fails.
 Families: connected components of the links that pass both; a component touching a gene of an earlier set is spent.
 
     seqfamilies.py build OUT.json SPENT.json ...   -> OUT.json (set seq17; every family), OUT.json.links.tsv (every sequence
@@ -40,12 +42,11 @@ def _families():
     return mod
 
 
-def structure_match(junctions, qlen, strand, ts, cigar, target_introns, tol=JUNCTION_TOL, q0=0):
-    """Does an alignment of gene A's spliced canonical (junctions: A's exon junctions in its transcript coordinates; qlen its
-    length) to gene B's locus (target start ts, CIGAR [(n, op)], strand) carry A's model onto B's canonical introns
-    (target_introns, [(start, end)] in the target's coordinates)? Every intron (N) of the alignment sits within tol of one of
-    A's junctions, and its ends within tol of one of B's introns, with as many introns as A has junctions and B has introns.
-    q0: the alignment's first query base in the alignment's orientation (a - strand alignment runs A backwards)."""
+def structure_match(junctions, qlen, strand, ts, cigar, tol=JUNCTION_TOL, q0=0):
+    """Is gene A's model carried by gene B's genome? junctions: A's exon junctions in its transcript coordinates, qlen its
+    spliced length; the alignment of that transcript to B's locus (target start ts, CIGAR [(n, op)], strand). Every intron (N)
+    of the alignment sits within tol of one of A's junctions, and as many introns as junctions. q0: the alignment's first query
+    base in the alignment's orientation (a - strand alignment runs A backwards)."""
     js = sorted(qlen - j for j in junctions) if strand == "-" else sorted(junctions)
     q, t, got = q0, ts, []
     for n, op in cigar:
@@ -57,12 +58,9 @@ def structure_match(junctions, qlen, strand, ts, cigar, target_introns, tol=JUNC
         elif op == "D":
             t += n
         elif op == "N":
-            got.append((q, t, t + n))
+            got.append(q)
             t += n
-    if len(got) != len(js) or len(got) != len(target_introns):
-        return False
-    return all(abs(qj - j) <= tol and abs(s - a) <= tol and abs(e - b) <= tol
-               for (qj, s, e), j, (a, b) in zip(got, js, sorted(target_introns)))
+    return len(got) == len(js) and all(abs(qj - j) <= tol for qj, j in zip(got, js))
 
 
 def components(links, spent=frozenset()):
@@ -176,14 +174,12 @@ def cmd_build(out_p, spent_paths, threads=4):
             return False
         f = best[(a, b)][1]
         cg = next((x[5:] for x in f[12:] if x.startswith("cg:Z:")), "")
-        lo = max(0, by[b]["start"] - PAD)
-        b_introns = [(s - lo, e - lo) for s, e in F.chain(canon[b])]
         qlen, qs, qe = int(f[1]), int(f[2]), int(f[3])
         q0 = qlen - qe if f[4] == "-" else qs
         # A's junctions in A's transcript coordinates (5' -> 3'): on the minus strand the transcript starts at the last exon
         js = junctions_of(canon[a])
         js = sorted(qlen - j for j in js) if by[a]["strand"] == "-" else js
-        return structure_match(js, qlen, f[4], int(f[7]), [(int(n), op) for n, op in _CIGAR.findall(cg)], b_introns, q0=q0)
+        return structure_match(js, qlen, f[4], int(f[7]), [(int(n), op) for n, op in _CIGAR.findall(cg)], q0=q0)
     pairs = {tuple(sorted(k)) for k in cover}
     links, rows = [], []
     for a, b in sorted(pairs):

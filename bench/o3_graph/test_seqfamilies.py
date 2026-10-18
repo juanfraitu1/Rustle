@@ -7,21 +7,21 @@ S = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(S)
 
 
-def test_two_genes_share_a_model_when_the_alignment_s_introns_are_both_genes_introns():
-    # gene A: exons of 100, 50 and 80 bp (junctions at 100 and 150 of its transcript), aligned to B's locus from 1,000 with
-    # introns of 300 and 400 bp -- B's own introns
+def test_a_gene_s_model_is_carried_by_another_gene_s_genome_when_the_alignment_s_introns_are_its_junctions():
+    # gene A: exons of 100, 50 and 80 bp (junctions at 100 and 150 of its transcript), spliced-aligned to B's locus from 1,000
     cg = [(100, "M"), (300, "N"), (50, "M"), (400, "N"), (80, "M")]
-    b_introns = [(1100, 1400), (1450, 1850)]
-    assert S.structure_match([100, 150], 230, "+", 1000, cg, b_introns)
-    assert S.structure_match([100, 150], 230, "+", 1000, cg, [(1105, 1400), (1450, 1845)])        # within 10 bp
-    assert not S.structure_match([100, 150], 230, "+", 1000, cg, [(1130, 1400), (1450, 1850)])    # a moved junction
-    assert not S.structure_match([100, 150], 230, "+", 1000, cg, [(1100, 1400)])                  # B lacks an intron
+    assert S.structure_match([100, 150], 230, "+", 1000, cg)
+    assert S.structure_match([95, 155], 230, "+", 1000, cg)                                     # within 10 bp
+    assert not S.structure_match([100, 120], 230, "+", 1000, cg)                                # an intron at no junction
+    assert not S.structure_match([100, 150, 200], 230, "+", 1000, cg)                           # a junction B's genome lacks
     # a processed retrocopy (one exon) spliced onto its parent's locus: introns the copy does not have
-    assert not S.structure_match([], 230, "+", 1000, cg, b_introns)
+    assert not S.structure_match([], 230, "+", 1000, cg)
+    # B's genome holds A's two exons contiguously (OR4F21 onto OR4F16: 398M1D596M): A's intron is not there
+    assert not S.structure_match([398], 994, "+", 1000, [(398, "M"), (1, "D"), (596, "M")])
     # minus strand: the query runs backwards along the target, its junctions counted from its other end
-    assert S.structure_match([80, 130], 230, "-", 1000, cg, b_introns)
+    assert S.structure_match([80, 130], 230, "-", 1000, cg)
     # two single-exon genes
-    assert S.structure_match([], 230, "+", 1000, [(230, "M")], [])
+    assert S.structure_match([], 230, "+", 1000, [(230, "M")])
 
 
 def test_families_are_the_components_of_links_with_both_sequence_and_structure_and_avoid_spent_genes():
