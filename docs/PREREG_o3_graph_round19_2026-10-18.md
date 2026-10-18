@@ -145,3 +145,38 @@ name-free families with their non-coding members expressed at the measured level
 - anything about arrays of FAM90A's or DUX4's size beyond the spent runs;
 - that the family definition is settled: the Compara study (in design, 2026-10-18) may change it;
 - anything about paralogs no annotation holds: loci found only by O1's genome search still express nothing.
+
+## Results (2026-10-18 16:13-16:52; nothing changed after the first run, no crash)
+
+**Launch note:** the first launch (16:12) failed before any run started. The batch's log directories (`fast/r19cost/`,
+`fast/heldout19/`) did not exist, so every run's output redirect failed and nothing was simulated. The directories were
+created and the same batch relaunched unchanged.
+
+**Verdict: PASS -- 6 of 6 cells, all 72 bar checks. C1 PASSES** in both profiles.
+
+| cell | INTACT | CROSS | OUTSIDE | REMOVED | BRANCH | SILENT |
+|---|---|---|---|---|---|---|
+| A119b 901 | 2,785 / 0 vs 2,682 / 0 | 2,828 / 0 vs 2,725 / 0 | 2,340 / 1 vs 722 / 780 | 2,375 / 0 vs 1,355 / 24 | 3,664 / 516 vs 2,743 / 1,035 | 1,461 / 0 vs 1,402 / 0 |
+| public 901 | 2,359 / 0 vs 2,213 / 21 | 2,382 / 0 vs 2,237 / 21 | 1,856 / 0 vs 433 / 853 | 1,827 / 0 vs 1,116 / 7 | 3,145 / 631 vs 2,149 / 1,212 | 1,063 / 0 vs 974 / 21 |
+| A119b 902 | 2,725 / 0 vs 2,652 / 0 | 2,778 / 0 vs 2,705 / 0 | 2,342 / 0 vs 726 / 534 | 2,391 / 0 vs 1,144 / 25 | 3,295 / 256 vs 2,742 / 491 | 1,336 / 0 vs 1,285 / 0 |
+| public 902 | 2,275 / 0 vs 2,086 / 0 | 2,294 / 0 vs 2,105 / 0 | 1,636 / 1 vs 461 / 587 | 1,856 / 1 vs 890 / 11 | 2,746 / 267 vs 2,174 / 424 | 874 / 0 vs 836 / 0 |
+| A119b 903 | 3,149 / 0 vs 3,025 / 0 | 3,213 / 0 vs 3,089 / 0 | 2,846 / 0 vs 724 / 336 | 2,758 / 1 vs 1,043 / 8 | 3,918 / 324 vs 3,025 / 694 | 1,159 / 0 vs 1,121 / 0 |
+| public 903 | 2,703 / 0 vs 2,530 / 0 | 2,739 / 0 vs 2,566 / 0 | 1,927 / 6 vs 434 / 295 | 2,261 / 1 vs 715 / 11 | 3,417 / 350 vs 2,553 / 638 | 717 / 0 vs 688 / 0 |
+
+(integrated correct / errors vs current correct / errors)
+
+- **Over the 36 worlds:** v14 makes 85,440 correct calls against the current method's 62,070, and 2,355 errors against 8,028.
+- **B1's thinnest margin is +29 reads** (public 903 SILENT), then +38 (A119b 903 SILENT, public 902 SILENT).
+- **B2's thinnest margins are ties at zero:** in eight complete-catalogue worlds both methods make no error.
+- **Genome copies O1 found per world:** 4-5 in INTACT, CROSS, REMOVED, BRANCH and SILENT, and 31-34 in OUTSIDE (seed 901).
+
+**C1, the cost on the mainstay set:** v14 used 995 CPU seconds (A119b) and 825 (public), against the current method's 1,032 and
+943 (-4% and -13%).
+- Reported: round 19's cells used 849 CPU seconds in all against 750. On these small families O1's genome search (about 20
+  CPU seconds a world) costs more than it saves.
+- The set's one-time local-reference build peaks at 14.4 GB.
+
+**What it claims, as registered:** v14 does at least as well as the current method in every world type, on 35 held-out name-free
+families with their non-coding members expressed at the measured level, under both profiles and three seeds, and uses no more
+CPU on NPIP-sized families. It claims nothing on real reads, on arrays of FAM90A's or DUX4's size, or on paralogs no annotation
+holds.

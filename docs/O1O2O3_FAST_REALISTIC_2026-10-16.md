@@ -857,5 +857,16 @@ and 16 and rounds 16-18:
 
 **What it bought, measured on held-out families:** B2 (errors no more than the current method's) held in every world of rounds
 16, 17 (except OUTSIDE, fixed by `--ref-copies`) and 18. Over round 18's 36 worlds: 3,782 errors against 10,431. The open bar
-is B1 in worlds with silent paralogs (register 1322), which round 19 tests under the measured paralog expression.
+was B1 in worlds with silent paralogs (register 1322). Round 19 passed it under the measured paralog expression (register
+1324).
+
+**Round 19 (register 1324): PASS on correctness (6 of 6 cells, all 72 bar checks) and on cost.**
+- **The setup:** v14 unchanged; 35 fresh name-free families whose non-coding members are copies like any other (90 copies, 36
+  non-coding), expressed at the level each testis library shows (profiles v4).
+- **Correctness:** 85,440 correct calls against 62,070 and 2,355 errors against 8,028. The thinnest B1 margin is +29 reads; B2's
+  thinnest are ties at zero errors in complete catalogues.
+- **Cost:** -4% and -13% CPU on the NPIP-sized set. On round 19's small families the integrated stages use more CPU (849 against
+  750 s), because O1's genome search costs about 20 CPU seconds a world.
+- **What it rests on:** round 18's failure was the simulation's, not the pipeline's. Expressing the paralogs real testis expresses
+  turned the current method's free calls into errors and v14's abstentions into right answers (register 1323).
 
