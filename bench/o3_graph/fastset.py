@@ -182,10 +182,12 @@ def chain_steps(a, root, w):
                     + (" --twin-abstain" if a.twin_abstain else "") + (" --o2-significance" if a.o2_significance else ""),
                     "light")]
     if a.o2_genome != "off":
-        steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2"
+        steps.append(("O2_genome", (f"env O2_ALN_CACHE={root}/.o2_aln_cache " if a.aln_cache and (a.struct_rescue or a.short_path_align)
+                                    else "") + f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2"
                       + (" --error-floor" if a.error_floor else "") + (" --twin-abstain" if a.twin_abstain else "")
                       + (" --veto-abstain" if a.veto_abstain else "") + (" --o2-significance" if a.o2_significance else "")
-                      + (" --locus-pairwise" if a.locus_pairwise else "") + (" --structure-check" if a.structure_check else ""),
+                      + (" --locus-pairwise" if a.locus_pairwise else "") + (" --structure-check" if a.structure_check else "")
+                      + (" --struct-rescue" if a.struct_rescue else "") + (" --short-path-align" if a.short_path_align else ""),
                       "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
@@ -316,6 +318,10 @@ def main(argv=None):
     p.add_argument("--structure-check", action="store_true", help="O2's genome step: a path call is abstained when a rival "
                    "whose own locus explains the read better than its paths do is not beaten on the genome by the margin "
                    "(o2graph.py --structure-check)")
+    p.add_argument("--struct-rescue", action="store_true", help="O2's genome step: a thin or tied path call decided again on "
+                   "structure-aware path distances, a long indel at its length (o2graph.py --struct-rescue)")
+    p.add_argument("--short-path-align", action="store_true", help="O2's genome step: reads the path step left without any "
+                   "alignment (under ~200 bp: map-hifi's -s 200) aligned to the paths with -s 40 (o2graph.py --short-path-align)")
     p.add_argument("--aln-cache", action="store_true",
                    help="exact alignment caches shared by the set's worlds: O2's path alignments per read sequence "
                    "(O2_ALN_CACHE) and O3's isoform-to-host alignments (O3_ALN_CACHE); outputs identical")

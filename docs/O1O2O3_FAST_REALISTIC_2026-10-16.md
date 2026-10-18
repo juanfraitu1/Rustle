@@ -778,3 +778,21 @@ cells), against v11's table, with the production code (`o2graph.py run W integ|i
   - `thin` margin-1 calls among few rivals, which copy_assign's certificate assigns.
 - **The cost bar passed in CPU** (-23% and -30% on the mainstay set). On round 16's families the integrated stages are also
   faster on wall time (68-100 s against 118-138 s per cell).
+
+**After round 16 (register 1319): v13 = v12 + `--struct-rescue --short-path-align`.**
+- **What round 16's missing reads were:** reads the current method placed and v12 did not.
+  - Short reads over the fixed divergence gate.
+  - Thin margin-1 calls. Gap compression let the read's best path be an isoform lacking one of its exons, so the paralogous
+    bases inside that exon went uncompared.
+  - 150-200-bp reads with no path alignment at all: map-hifi's minimum DP score of 200 is out of their reach.
+- **The adopted fixes, on 52 spent runs:**
+  - Thin and tied reads are decided again on structure-aware distances (gapstruct: a long indel counts its length).
+  - Reads with no path alignment are realigned with -s 40.
+  - The result: 44 -> 46 runs pass, round 16's three failing worlds pass, no world newly fails; +4,289 correct, +95 errors in
+    OUTSIDE and BRANCH.
+- **Not adopted:**
+  - A length-calibrated gate: it places reads of absent copies.
+  - A significance-based margin: about one error per 1,000 rescued reads, where the current method makes none.
+- **Round 17's families are name-free** (`seqfamilies.py`, user, 2026-10-17). They are every protein-coding gene, LOC genes
+  included, linked by sequence identity (the locus rule) and by structure (the alignment carries one gene's junctions onto
+  the other's introns).

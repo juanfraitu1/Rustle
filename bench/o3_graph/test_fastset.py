@@ -51,7 +51,7 @@ def _opts(**kw):
                 mosaic_shared=False, o3_pool="paths", haplotype_check=False,
                 haplotype_check_genome=False, branch_genome_segments=False,
                 branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
-                locus_pairwise=False, structure_check=False)
+                locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -199,3 +199,12 @@ def test_o2_s_genome_step_takes_the_pairwise_locus_rule_and_the_structure_check_
                                                    "INTACT"))
     assert "--locus-pairwise" in st["O2_genome"] and "--structure-check" in st["O2_genome"]
     assert "--locus-pairwise" not in st["O2"] and "--structure-check" not in st["O2"]
+
+
+def test_o2_s_genome_step_takes_the_structure_aware_rescue_and_short_read_realignment_only_when_asked():
+    st0 = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT"))
+    assert "--struct-rescue" not in st0["O2_genome"] and "--short-path-align" not in st0["O2_genome"]
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto", struct_rescue=True, short_path_align=True,
+                                                         aln_cache=True), "/R", "INTACT"))
+    assert "--struct-rescue" in st["O2_genome"] and "--short-path-align" in st["O2_genome"]
+    assert "O2_ALN_CACHE=/R/.o2_aln_cache" in st["O2_genome"]          # the rescue reads the path alignments exactly
