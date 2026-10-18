@@ -50,7 +50,8 @@ def _opts(**kw):
                 mapped_sites=False, branch_genome_novel=False, allele_discount=False,
                 mosaic_shared=False, o3_pool="paths", haplotype_check=False,
                 haplotype_check_genome=False, branch_genome_segments=False,
-                branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False)
+                branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
+                locus_pairwise=False, structure_check=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -189,3 +190,12 @@ def test_o2_s_genome_step_abstains_contradicted_and_insignificant_path_calls_onl
     assert "integv 2" in st["O2_genome"] and "--veto-abstain" in st["O2_genome"] and "--veto-abstain" not in st["O2"]
     st = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto", o2_significance=True), "/R", "INTACT"))
     assert "--o2-significance" in st["O2"] and "--o2-significance" in st["O2_genome"]    # integ weighs, the genome step gates
+
+
+def test_o2_s_genome_step_takes_the_pairwise_locus_rule_and_the_structure_check_only_when_asked():
+    st0 = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT"))
+    assert "--locus-pairwise" not in st0["O2_genome"] and "--structure-check" not in st0["O2_genome"]
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto", locus_pairwise=True, structure_check=True), "/R",
+                                                   "INTACT"))
+    assert "--locus-pairwise" in st["O2_genome"] and "--structure-check" in st["O2_genome"]
+    assert "--locus-pairwise" not in st["O2"] and "--structure-check" not in st["O2"]

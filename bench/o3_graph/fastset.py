@@ -184,7 +184,8 @@ def chain_steps(a, root, w):
     if a.o2_genome != "off":
         steps.append(("O2_genome", f"python3 bench/o3_graph/o2graph.py run {W} {GENOME_STEP[a.o2_genome]} 2"
                       + (" --error-floor" if a.error_floor else "") + (" --twin-abstain" if a.twin_abstain else "")
-                      + (" --veto-abstain" if a.veto_abstain else "") + (" --o2-significance" if a.o2_significance else ""),
+                      + (" --veto-abstain" if a.veto_abstain else "") + (" --o2-significance" if a.o2_significance else "")
+                      + (" --locus-pairwise" if a.locus_pairwise else "") + (" --structure-check" if a.structure_check else ""),
                       "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
@@ -309,6 +310,12 @@ def main(argv=None):
     p.add_argument("--o2-significance", action="store_true", help="O2: edits priced by their type's rate in the world "
                    "(integ: wdist.json), and the genome step abstains a path call that does not beat every rival by "
                    "ln(rivals / alpha) (o2graph.py --o2-significance)")
+    p.add_argument("--locus-pairwise", action="store_true", help="O2's genome step: a locus-fallback call must beat every "
+                   "rival by the margin counting, against each, the read bases the rival aligns and the call clips "
+                   "(o2graph.py --locus-pairwise)")
+    p.add_argument("--structure-check", action="store_true", help="O2's genome step: a path call is abstained when a rival "
+                   "whose own locus explains the read better than its paths do is not beaten on the genome by the margin "
+                   "(o2graph.py --structure-check)")
     p.add_argument("--aln-cache", action="store_true",
                    help="exact alignment caches shared by the set's worlds: O2's path alignments per read sequence "
                    "(O2_ALN_CACHE) and O3's isoform-to-host alignments (O3_ALN_CACHE); outputs identical")
