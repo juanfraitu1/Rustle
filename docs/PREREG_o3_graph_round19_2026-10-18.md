@@ -167,7 +167,7 @@ created and the same batch relaunched unchanged.
 
 - **Over the 36 worlds:** v14 makes 85,440 correct calls against the current method's 62,070, and 2,355 errors against 8,028.
 - **B1's thinnest margin is +29 reads** (public 903 SILENT), then +38 (A119b 903 SILENT, public 902 SILENT).
-- **B2's thinnest margins are ties at zero:** in eight complete-catalogue worlds both methods make no error.
+- **B2's thinnest margins are ties at zero:** in 15 complete-catalogue worlds (INTACT, CROSS, SILENT) both methods make no error.
 - **Genome copies O1 found per world:** 4-5 in INTACT, CROSS, REMOVED, BRANCH and SILENT, and 31-34 in OUTSIDE (seed 901).
 
 **C1, the cost on the mainstay set:** v14 used 995 CPU seconds (A119b) and 825 (public), against the current method's 1,032 and

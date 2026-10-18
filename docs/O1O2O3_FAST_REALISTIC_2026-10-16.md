@@ -867,6 +867,7 @@ was B1 in worlds with silent paralogs (register 1322). Round 19 passed it under 
   thinnest are ties at zero errors in complete catalogues.
 - **Cost:** -4% and -13% CPU on the NPIP-sized set. On round 19's small families the integrated stages use more CPU (849 against
   750 s), because O1's genome search costs about 20 CPU seconds a world.
-- **What it rests on:** round 18's failure was the simulation's, not the pipeline's. Expressing the paralogs real testis expresses
-  turned the current method's free calls into errors and v14's abstentions into right answers (register 1323).
+- **What it rests on:** round 18's failure came from the simulation's silent paralogs. With them catalogued and expressed as real
+  testis expresses them, the current method's errors rose (seed 803 INTACT: 34 -> 121 and 29 -> 134) while v14 stayed at 0
+  (register 1323; not diagnosed read by read).
 
