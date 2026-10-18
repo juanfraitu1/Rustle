@@ -5,6 +5,7 @@
     calibrate.py expression BAM FAMILIES.json OUT.json
     calibrate.py errors BAM OUT.json [--chroms ...] [--max-reads 30000]   errors and donor alleles over every uniquely placed read
     calibrate.py tags BAM OUT.json [--regions chr20,...|--all] [--min-mapq 60] [--max-reads 20000]
+    calibrate.py paralogs BAM FAMILIES.json OUT.json [--min-mapq 1] [--min-coding 10]
 
 `profile`, from primary MAPQ >= min-mapq reads lying inside single-isoform genes (CAT/Liftoff, CHM13 v2.0; unique placement,
 so every difference is a sequencing error or the donor's own allele, never a paralog's):
@@ -19,6 +20,9 @@ so every difference is a sequencing error or the donor's own allele, never a par
 `tags`: per uniquely placed primary read (MAPQ >= min-mapq): minimap2's de and NM, mismatches (X), insertion and deletion
 events, the homopolymer share of indels and soft clips; medians and per-kb rates (real data and simulated worlds alike).
 `expression`: per family of FAMILIES.json, every copy's primary alignments (all, and MAPQ >= 20), and the spread of log counts.
+`paralogs` (round 19): in families of seqfamilies.py build --paralogs, how the library expresses a copy of another biotype than
+protein-coding (a pseudogene, a lncRNA) against its family's coding copies: uniquely placed reads (MAPQ >= 1) per copy, the
+fraction of such copies silent and the median ratio of the expressed (paralog_expression).
 """
 import argparse
 import bisect
@@ -385,6 +389,73 @@ def cmd_expression(a):
     return 0
 
 
+MIN_CODING_READS = 10                                   # paralogs: a family's coding copies must have this many reads to compare
+
+
+def overlaps_exons(blocks, exons):
+    """Does an aligned block of a read overlap one of a copy's exons (half-open)? A spliced read whose intron spans the copy's
+    exons does not."""
+    return any(s < e2 and s2 < e for s, e in blocks for s2, e2 in exons)
+
+
+def paralog_expression(rows, min_coding=MIN_CODING_READS):
+    """The simulator's paralog expression (round 19; user 2026-10-18: paralogs of any biotype are copies like any other, expressed
+    as the real library expresses them). rows: (family, biotype, uniquely placed reads) per copy. Against its family's coding
+    copies (their mean read count; a family whose coding copies average under min_coding reads is left out), each copy of
+    another biotype is silent (no read) or expressed at its ratio: the fraction silent and the median ratio of the expressed,
+    pooled and by biotype."""
+    by = collections.defaultdict(list)
+    for f, bt, n in rows:
+        by[f].append((bt, n))
+    ratios, fams = [], set()
+    for f, v in by.items():
+        cod = [n for bt, n in v if bt == "protein_coding"]
+        if not cod or statistics.mean(cod) < min_coding:
+            continue
+        c = statistics.mean(cod)
+        for bt, n in v:
+            if bt != "protein_coding":
+                ratios.append((bt, n / c))
+                fams.add(f)
+
+    def summ(xs):
+        nz = [r for r in xs if r > 0]
+        return dict(members=len(xs), silent=len(xs) - len(nz), ratio_median=statistics.median(nz) if nz else 0.0)
+    tot = summ([r for _, r in ratios])
+    return dict(members=tot["members"], families=len(fams),
+                silent_frac=tot["silent"] / tot["members"] if tot["members"] else 0.0, ratio_median=tot["ratio_median"],
+                by_class={bt: summ([r for b, r in ratios if b == bt]) for bt in sorted({b for b, _ in ratios})})
+
+
+def cmd_paralogs(a):
+    """Per copy of every family with a paralog of another biotype: the primary reads at MAPQ >= min_mapq (uniquely placed) with
+    an aligned block on one of its exons; then paralog_expression."""
+    import pysam
+    d = json.load(open(a.families))
+    rows = []
+    with pysam.AlignmentFile(a.bam) as bam:
+        for fs in d["sets"].values():
+            for f in fs:
+                if all(c.get("biotype", "protein_coding") == "protein_coding" for c in f["copies"]):
+                    continue
+                for c in f["copies"]:
+                    ex = sorted({tuple(x) for v in c["transcripts"].values() for x in v})
+                    names = set()
+                    for s, e in ex:
+                        for r in bam.fetch(c["chrom"], s, e):
+                            if (r.is_secondary or r.is_supplementary or r.is_unmapped or r.mapping_quality < a.min_mapq
+                                    or r.query_name in names):
+                                continue
+                            if overlaps_exons(r.get_blocks(), ex):
+                                names.add(r.query_name)
+                    rows.append((f["family"], c.get("biotype", "protein_coding"), len(names)))
+    summ = paralog_expression(rows, a.min_coding)
+    json.dump(dict(summary=summ, bam=a.bam, families=a.families, min_mapq=a.min_mapq, min_coding=a.min_coding, rows=rows),
+              open(a.out, "w"), indent=1)
+    print(json.dumps(summ, indent=1))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -422,6 +493,13 @@ def main(argv=None):
     p.add_argument("families")
     p.add_argument("out")
     p.set_defaults(func=cmd_expression)
+    p = sub.add_parser("paralogs")
+    p.add_argument("bam")
+    p.add_argument("families")
+    p.add_argument("out")
+    p.add_argument("--min-mapq", type=int, default=1)
+    p.add_argument("--min-coding", type=int, default=MIN_CODING_READS)
+    p.set_defaults(func=cmd_paralogs)
     a = ap.parse_args(argv)
     return a.func(a)
 

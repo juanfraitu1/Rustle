@@ -45,3 +45,50 @@ def test_a_junction_bordering_an_unaligned_end_of_the_transcript_needs_no_intron
     assert S.structure_match([169, 371, 460], 466, "+", 1000, cg)              # junction 460: the aligned part ends there
     assert S.structure_match([6, 175, 377], 466, "+", 1000, cg, q0=6)           # an unaligned 5' piece of 6 bp
     assert not S.structure_match([169, 300, 371, 460], 466, "+", 1000, cg)     # a junction inside the aligned part: missing
+
+
+def _g(gid, chrom, start, end, n=1, biotype="protein_coding", name=None):
+    return dict(gene_id=gid, gene_name=name or gid, chrom=chrom, start=start, end=end, strand="+", n=n, biotype=biotype)
+
+
+def test_paralogs_overlapping_a_coding_gene_are_dropped_and_among_overlapping_paralogs_a_pseudogene_wins():
+    coding = [_g("OR4F16", "chr5", 1000, 2000)]
+    nc = [_g("OR4F1P", "chr5", 1019, 1958, biotype="unprocessed_pseudogene"),         # annotated inside OR4F16: dropped
+          _g("lnc1", "chr6", 100, 5000, n=4, biotype="lncRNA"),                       # holds OR4F7P: the pseudogene is the copy
+          _g("OR4F7P", "chr6", 3000, 3900, n=1, biotype="unprocessed_pseudogene"),
+          _g("OR4F2P", "chr11", 100, 1000, biotype="unprocessed_pseudogene"),
+          _g("lnc2", "chr12", 100, 900, n=1, biotype="lncRNA"),                       # two overlapping lncRNAs: more transcripts
+          _g("lnc3", "chr12", 500, 1500, n=3, biotype="lncRNA")]
+    assert {g["gene_id"] for g in S.add_paralog_genes(coding, nc)} == {"OR4F7P", "OR4F2P", "lnc3"}
+
+
+def test_a_paralog_links_to_a_coding_gene_only_when_its_locus_carries_the_coding_gene_s_model():
+    coding = {"A", "B"}
+    cover = {("A", "B"): 0.9, ("B", "A"): 0.3, ("A", "P"): 0.95, ("P", "A"): 1.0, ("Q", "A"): 1.0, ("A", "Q"): 0.2,
+             ("P", "Q"): 1.0, ("Q", "P"): 1.0}
+    struct = {("A", "B"): False, ("B", "A"): True, ("A", "P"): True, ("P", "A"): False, ("Q", "A"): True, ("P", "Q"): True,
+              ("Q", "P"): True}
+    assert S.pair_link("A", "B", cover, struct, coding) is True        # coding pair: either direction, as before
+    assert S.pair_link("A", "P", cover, struct, coding) is True        # P's locus carries A's model
+    assert S.pair_link("P", "A", cover, struct, coding) is True        # the same pair, given the other way round
+    assert S.pair_link("A", "Q", cover, struct, coding) is None        # Q's own model sits in A's locus: not a copy of A
+    assert S.pair_link("P", "Q", cover, struct, coding) is None        # two paralogs: no link of their own
+    struct[("A", "P")] = False
+    assert S.pair_link("A", "P", cover, struct, coding) is False       # a sequence link without A's exon chain
+
+
+def test_a_paralog_family_is_named_after_its_first_coding_gene():
+    gs = [_g("P1", "chr1", 10, 20, biotype="unprocessed_pseudogene", name="OR4F2P"), _g("C1", "chr1", 50, 60, name="OR4F21"),
+          _g("C2", "chr5", 5, 9, name="OR4F16")]
+    used = {}
+    assert S.family_name(gs, used, "S19") == "S19OR4F21"
+    assert S.family_name(gs, used, "S19") == "S19OR4F21x2"
+
+
+def test_the_draw_reads_a_pool_of_any_set_name(tmp_path):
+    import json
+    pool = dict(genome="g", sets={"seq19": [dict(family=f"F{i}", copies=[{}] * 2) for i in range(60)]})
+    json.dump(pool, open(tmp_path / "all.json", "w"))
+    S.cmd_draw(str(tmp_path / "set.json"), str(tmp_path / "all.json"), seed=19, set_name="r19")
+    got = json.load(open(tmp_path / "set.json"))
+    assert list(got["sets"]) == ["r19"] and sum(len(f["copies"]) for f in got["sets"]["r19"]) == 90

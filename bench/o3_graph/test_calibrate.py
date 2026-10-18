@@ -77,3 +77,24 @@ def test_error_stats_separate_a_shared_donor_allele_from_a_read_s_own_error():
 def test_the_adapter_consensus_is_taken_at_the_most_common_clip_length():
     clips = ["ACGTA", "ACGTA", "ACCTA", "ACGT", "TTTTTTT"]
     assert C.adapter_consensus(clips) == "ACGTA"
+
+
+def test_a_read_counts_for_a_copy_only_when_an_aligned_block_overlaps_one_of_its_exons():
+    exons = [(100, 200), (500, 600)]
+    assert C.overlaps_exons([(150, 180)], exons)
+    assert C.overlaps_exons([(10, 50), (590, 700)], exons)
+    assert not C.overlaps_exons([(10, 100), (600, 900)], exons)          # half-open: touching is no overlap
+    assert not C.overlaps_exons([(10, 90), (210, 490)], exons)           # a spliced read whose intron spans the exons
+
+
+def test_paralog_expression_is_the_silent_fraction_and_the_median_ratio_to_the_family_s_coding_copies():
+    rows = [("F1", "protein_coding", 40), ("F1", "protein_coding", 60), ("F1", "unprocessed_pseudogene", 0),
+            ("F1", "unprocessed_pseudogene", 25), ("F1", "lncRNA", 10),
+            ("F2", "protein_coding", 20), ("F2", "processed_pseudogene", 5),
+            ("F3", "protein_coding", 3), ("F3", "unprocessed_pseudogene", 9)]       # coding copies too thin to compare: out
+    got = C.paralog_expression(rows, min_coding=10)
+    assert got["members"] == 4 and got["families"] == 2
+    assert got["silent_frac"] == 0.25                                              # F1's first pseudogene
+    assert got["ratio_median"] == 0.25                                             # 25/50, 10/50, 5/20 -> median 0.25
+    assert got["by_class"]["unprocessed_pseudogene"] == dict(members=2, silent=1, ratio_median=0.5)
+    assert got["by_class"]["lncRNA"] == dict(members=1, silent=0, ratio_median=0.2)

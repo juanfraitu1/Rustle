@@ -348,6 +348,18 @@ def expr_mult(seed, cid, sigma):
     return math.exp(sigma * random.Random(f"{seed}:{cid}:expr").gauss(0, 1) - sigma * sigma / 2)
 
 
+def paralog_mult(seed, cid, biotype, prof):
+    """Round 19 (user 2026-10-18: non-coding members of a family are copies like any other, expressed as the real library expresses
+    them): a member of another biotype than protein-coding is silent at the profile's measured fraction (paralog_silent_frac)
+    and otherwise expressed at its measured ratio to the family's coding copies (paralog_expr_ratio; calibrate.py paralogs),
+    deterministic per (seed, copy). Coding copies, and a profile without the measurement: 1."""
+    if biotype == "protein_coding" or "paralog_expr_ratio" not in (prof or {}):
+        return 1.0
+    if random.Random(f"{seed}:{cid}:paralog").random() < prof.get("paralog_silent_frac", 0.0):
+        return 0.0
+    return prof["paralog_expr_ratio"]
+
+
 def het_sites(positions, rate, rng, base_at, draw=False):
     """{genomic position: alt base}: a copy's heterozygous sites (round 6: a diploid donor), `rate` of its exonic positions,
     each alt base different from the reference base (base_at(p)). draw (--het-draw, round 13 review I1): the count is
@@ -375,10 +387,18 @@ def anon_names(rows, seed):
     return [f"s{k:07d}" for k in order]
 
 
+def coding_copies(fam):
+    """A family's protein-coding copies (all of them when its members carry no biotype, as before round 19; else any member if
+    none is coding)."""
+    cod = [c for c in fam["copies"] if c.get("biotype", "protein_coding") == "protein_coding"]
+    return cod or fam["copies"]
+
+
 def special_copy(fam, seed):
-    """The family's scenario copy: seeded among copies whose main isoform has >= 3 exons (else >= 2, else any)."""
+    """The family's scenario copy: seeded among its coding copies (round 19: a non-coding member is no scenario copy, so REMOVED,
+    OUTSIDE and BRANCH test what they did before) whose main isoform has >= 3 exons (else >= 2, else any)."""
     for need in (3, 2, 1):
-        ok = [c for c in fam["copies"] if len(c["transcripts"][c["main"]]) >= need]
+        ok = [c for c in coding_copies(fam) if len(c["transcripts"][c["main"]]) >= need]
         if ok:
             return random.Random(f"{seed}:{fam['family']}").choice(ok)
 
@@ -437,8 +457,12 @@ def cmd_build(a):
         idx = 0
         silent = set()
         if a.scenario == "SILENT":                          # a seeded third of the copies express nothing (all catalogued)
-            ids = [f"{f}.{k}" for k in range(len(fam["copies"]))]
+            cod = {id(c) for c in coding_copies(fam)}          # round 19: of the coding copies (non-coding: the measured draw)
+            ids = [f"{f}.{k}" for k, c in enumerate(fam["copies"]) if id(c) in cod]
             silent = set(random.Random(f"{a.seed}:{f}:silent").sample(ids, max(1, len(ids) // 3)))
+        pmult = {f"{f}.{k}": paralog_mult(a.seed, f"{f}.{k}", c.get("biotype", "protein_coding"), prof)
+                 for k, c in enumerate(fam["copies"])}
+        silent |= {cid for cid, m in pmult.items() if m == 0.0}
         for k, c in enumerate(fam["copies"]):
             cid = f"{f}.{k}"
             special = c is sp
@@ -529,7 +553,7 @@ def cmd_build(a):
             if prof:                                            # profile: the donor's homozygous alleles, on both haplotypes
                 hom = het_sites(exonic, prof["hom_per_base"], random.Random(f"{a.seed}:{cid}:hom"), base_at, draw=a.het_draw)
             n_het[f] += len(het)
-            mult = expr_mult(a.seed, cid, prof.get("expr_log_sd", 0.0)) if prof else 1.0
+            mult = (expr_mult(a.seed, cid, prof.get("expr_log_sd", 0.0)) if prof else 1.0) * pmult[cid]
             cache = {}
 
             def body_of(ex, h, r, own_snps, nov, jj):

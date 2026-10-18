@@ -13,9 +13,14 @@ every intron sits within realworld.JUNCTION_TOL of one of A's junctions and none
 canonicals differ (OR4F21's 2-exon model against OR4F16's 1-exon one; ATAD3A's extra 80-bp exon), a choice of the annotation,
 not of the genomes (amended before any draw). A processed retrocopy (one exon against a spliced locus) or a partial copy fails.
 Families: connected components of the links that pass both; a component touching a gene of an earlier set is spent.
+--paralogs (round 19; user 2026-10-18, after round 18's OR4F pseudogenes): genes of every other biotype join as copies like any
+other (add_paralog_genes: none overlapping a coding gene; a pseudogene before an overlapping lncRNA). A paralog links to a coding
+gene when its locus carries the coding gene's canonical by the same rule (sequence and structure, in that direction only:
+pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
-    seqfamilies.py build OUT.json SPENT.json ...   -> OUT.json (set seq17: every unspent family), OUT.json.links.tsv (every
-                                                       sequence link and its structure verdict)
+    seqfamilies.py build OUT.json SPENT.json ... [--paralogs]
+                                                   -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
+                                                       (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
                                                    -> the round's set (draw: seeded order up to a copy budget; round 17: seed 17,
                                                        set r17; round 18: seed 18, set r18)
@@ -109,6 +114,48 @@ def junctions_of(exons):
     return [sum(lens[:i]) for i in range(1, len(lens))]
 
 
+def add_paralog_genes(coding, noncoding):
+    """--paralogs (round 19, user 2026-10-18: paralogs of any biotype are copies like any other): the non-coding genes a family may
+    take. None overlapping a kept coding gene (another annotation of that gene, as OR4F1P inside OR4F16); among overlapping ones
+    a pseudogene first (the paralogous copy itself; a lncRNA over it is another transcript of the locus), then the one with more
+    transcripts (families.drop_overlaps)."""
+    free = [g for g in noncoding
+            if not any(k["chrom"] == g["chrom"] and k["start"] < g["end"] and g["start"] < k["end"] for k in coding)]
+    keep = []
+    for g in sorted(free, key=lambda g: ("pseudogene" not in g["biotype"], -g["n"], g["chrom"], g["start"])):
+        if not any(k["chrom"] == g["chrom"] and k["start"] < g["end"] and g["start"] < k["end"] for k in keep):
+            keep.append(g)
+    return sorted(keep, key=lambda g: (g["chrom"], g["start"]))
+
+
+def pair_link(a, b, cover, struct, coding):
+    """A gene pair's link: None (no sequence link), else whether it also carries structure. cover / struct: {(query gene, locus
+    gene): value}. Two coding genes, as before: either direction (cover >= MIN_COVER; one gene's exon chain carried by the
+    other's genome). A coding gene and a paralog (--paralogs): only the paralog's locus carrying the coding gene's canonical
+    counts -- a paralog's own model inside a coding locus (a small RNA in an intron) is no copy of it. Two paralogs: no link of
+    their own; they join a family through its coding genes."""
+    ca, cb = a in coding, b in coding
+    if ca and cb:
+        if max(cover.get((a, b), 0.0), cover.get((b, a), 0.0)) < MIN_COVER:
+            return None
+        return bool(struct.get((a, b)) or struct.get((b, a)))
+    if not (ca or cb):
+        return None
+    g, p = (a, b) if ca else (b, a)
+    if cover.get((g, p), 0.0) < MIN_COVER:
+        return None
+    return bool(struct.get((g, p)))
+
+
+def family_name(gs, used, prefix="S17"):
+    """A family's name: prefix + its first coding gene's name (gs in genome order), alphanumerics only, and xN for the Nth family
+    of that name (used counts them)."""
+    first = next((g for g in gs if g.get("biotype", "protein_coding") == "protein_coding"), gs[0])
+    base = re.sub(r"[^A-Za-z0-9]", "", first["gene_name"]) or "G"
+    used[base] = used.get(base, 0) + 1
+    return f"{prefix}{base}" + (f"x{used[base]}" if used[base] > 1 else "")
+
+
 def spent_genes(paths):
     out = set()
     for p in paths:
@@ -118,59 +165,86 @@ def spent_genes(paths):
     return out
 
 
-def cmd_build(out_p, spent_paths, threads=4):
-    import pysam
-    F = _families()
-    gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
-    fa = pysam.FastaFile(F.GENOME)
-    genes = []
-    for r in csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t"):
-        if r["gene_biotype"] == "protein_coding" and int(r["end"]) - int(r["start0"]) <= F.MAX_SPAN:
-            genes.append(dict(gene_id=r["gene_id"], gene_name=r["gene_name"], chrom=r["chrom"], start=int(r["start0"]),
-                              end=int(r["end"]), strand=r["strand"], n=int(r["n_transcripts"])))
-    genes = F.drop_overlaps(genes)
-    for g in genes:
-        g["tx"] = F.gene_transcripts(gff, g)
-    genes = [g for g in genes if g["tx"]]
-    by = {g["gene_id"]: g for g in genes}
-    canon = {g["gene_id"]: g["tx"][F.canonical(g["tx"])] for g in genes}
-    print(f"[seqfamilies] {len(genes)} protein-coding genes", flush=True)
-    with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
-        with open(f"{d}/c.fa", "w") as fh:
-            for gid, ex in canon.items():
-                g = by[gid]
-                fh.write(f">{gid}\n{F.spliced(fa, g['chrom'], g['strand'], ex)}\n")
-        # candidates: an all-vs-all of the canonicals at the family identity over half the shorter
-        paf = subprocess.run(["minimap2", "-cx", "asm20", "-X", "-t", str(threads), f"{d}/c.fa", f"{d}/c.fa"],
-                             capture_output=True, text=True, check=True).stdout
-        cand = set()
-        for ln in paf.splitlines():
-            f = ln.split("\t")
-            if f[0] != f[5] and int(f[9]) >= F.MIN_IDENT * int(f[10]) and int(f[10]) >= 0.5 * min(int(f[1]), int(f[6])):
-                cand |= {f[0], f[5]}
-        print(f"[seqfamilies] {len(cand)} genes with a candidate partner", flush=True)
-        # the locus rule on every candidate gene: its canonical onto every candidate locus
-        with open(f"{d}/q.fa", "w") as fh:
-            for gid in sorted(cand):
-                g = by[gid]
-                fh.write(f">{gid}\n{F.spliced(fa, g['chrom'], g['strand'], canon[gid])}\n")
-        with open(f"{d}/t.fa", "w") as fh:
-            for gid in sorted(cand):
-                g = by[gid]
-                fh.write(f">{gid}\n{fa.fetch(g['chrom'], max(0, g['start'] - PAD), g['end'] + PAD).upper()}\n")
-        paf = subprocess.run(["minimap2", "-cx", "splice:hq", "-N", "1000", "-p", "0.01", "--secondary=yes", "-t", str(threads),
-                              f"{d}/t.fa", f"{d}/q.fa"], capture_output=True, text=True, check=True).stdout
+def _paf_hits(paf, min_ident):
+    """{(query, target): [(qs, qe)]} and {(query, target): (cover, PAF fields)} of a PAF at identity >= min_ident."""
     blocks, best = collections.defaultdict(list), {}
     for ln in paf.splitlines():
         f = ln.split("\t")
         a, b = f[0], f[5]
-        if a == b or int(f[9]) < F.MIN_IDENT * int(f[10]):
+        if a == b or int(f[9]) < min_ident * int(f[10]):
             continue
         qlen, qs, qe = int(f[1]), int(f[2]), int(f[3])
         blocks[(a, b)].append((qs, qe))
         cov = (qe - qs) / qlen
         if cov > best.get((a, b), (0.0, None))[0]:
             best[(a, b)] = (cov, f)
+    return blocks, best
+
+
+def cmd_build(out_p, spent_paths, threads=4, paralogs=False):
+    import pysam
+    F = _families()
+    gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
+    fa = pysam.FastaFile(F.GENOME)
+    genes, others = [], []
+    for r in csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t"):
+        if int(r["end"]) - int(r["start0"]) > F.MAX_SPAN:
+            continue
+        g = dict(gene_id=r["gene_id"], gene_name=r["gene_name"], chrom=r["chrom"], start=int(r["start0"]), end=int(r["end"]),
+                 strand=r["strand"], n=int(r["n_transcripts"]), biotype=r["gene_biotype"])
+        (genes if r["gene_biotype"] == "protein_coding" else others).append(g)
+    genes = F.drop_overlaps(genes)
+    coding = {g["gene_id"] for g in genes}
+    others = add_paralog_genes(genes, others) if paralogs else []
+    for g in genes + others:
+        g["tx"] = F.gene_transcripts(gff, g)
+    genes, others = [g for g in genes if g["tx"]], [g for g in others if g["tx"]]
+    by = {g["gene_id"]: g for g in genes + others}
+    canon = {g["gene_id"]: g["tx"][F.canonical(g["tx"])] for g in genes + others}
+    print(f"[seqfamilies] {len(genes)} protein-coding genes" + (f", {len(others)} paralog candidates of other biotypes"
+                                                               if paralogs else ""), flush=True)
+
+    def write_fa(path, ids, locus=False):
+        with open(path, "w") as fh:
+            for gid in sorted(ids):
+                g = by[gid]
+                sq = (fa.fetch(g["chrom"], max(0, g["start"] - PAD), g["end"] + PAD).upper() if locus
+                      else F.spliced(fa, g["chrom"], g["strand"], canon[gid]))
+                fh.write(f">{gid}\n{sq}\n")
+
+    def candidates(paf):
+        out = set()
+        for ln in paf.splitlines():
+            f = ln.split("\t")
+            if f[0] != f[5] and int(f[9]) >= F.MIN_IDENT * int(f[10]) and int(f[10]) >= 0.5 * min(int(f[1]), int(f[6])):
+                out.add((f[0], f[5]))
+        return out
+    splice = ["minimap2", "-cx", "splice:hq", "-N", "1000", "-p", "0.01", "--secondary=yes", "-t", str(threads)]
+    with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
+        write_fa(f"{d}/c.fa", [g["gene_id"] for g in genes])
+        # candidates: an all-vs-all of the canonicals at the family identity over half the shorter
+        paf = subprocess.run(["minimap2", "-cx", "asm20", "-X", "-t", str(threads), f"{d}/c.fa", f"{d}/c.fa"],
+                             capture_output=True, text=True, check=True).stdout
+        cand = {x for pr in candidates(paf) for x in pr}
+        print(f"[seqfamilies] {len(cand)} genes with a candidate partner", flush=True)
+        # the locus rule on every candidate gene: its canonical onto every candidate locus
+        write_fa(f"{d}/q.fa", cand)
+        write_fa(f"{d}/t.fa", cand, locus=True)
+        paf = subprocess.run(splice + [f"{d}/t.fa", f"{d}/q.fa"], capture_output=True, text=True, check=True).stdout
+        blocks, best = _paf_hits(paf, F.MIN_IDENT)
+        if paralogs:                                         # coding canonicals onto the loci of the paralog candidates
+            write_fa(f"{d}/o.fa", [g["gene_id"] for g in others])
+            pc = candidates(subprocess.run(["minimap2", "-cx", "asm20", "-t", str(threads), f"{d}/o.fa", f"{d}/c.fa"],
+                                           capture_output=True, text=True, check=True).stdout)
+            pq, pt = {a for a, _ in pc}, {b for _, b in pc}
+            print(f"[seqfamilies] {len(pt)} paralogs of other biotypes with a candidate coding gene ({len(pq)})", flush=True)
+            if pq:
+                write_fa(f"{d}/pq.fa", pq)
+                write_fa(f"{d}/pt.fa", pt, locus=True)
+                b2, best2 = _paf_hits(subprocess.run(splice + [f"{d}/pt.fa", f"{d}/pq.fa"], capture_output=True, text=True,
+                                                     check=True).stdout, F.MIN_IDENT)
+                blocks.update(b2)
+                best.update(best2)
     cover = {k: F.union_cover(v, int(best[k][1][1])) for k, v in blocks.items()}
 
     def struct(a, b):
@@ -185,47 +259,53 @@ def cmd_build(out_p, spent_paths, threads=4):
         js = sorted(qlen - j for j in js) if by[a]["strand"] == "-" else js
         return structure_match(js, qlen, f[4], int(f[7]), [(int(n), op) for n, op in _CIGAR.findall(cg)], q0=q0)
     pairs = {tuple(sorted(k)) for k in cover}
+    st = {k: struct(*k) for k in cover}
     links, rows = [], []
     for a, b in sorted(pairs):
-        cab, cba = cover.get((a, b), 0.0), cover.get((b, a), 0.0)
-        if max(cab, cba) < MIN_COVER:
+        ok = pair_link(a, b, cover, st, coding)
+        if ok is None:
             continue
-        sab, sba = struct(a, b), struct(b, a)
-        links.append((a, b, sab or sba))
-        rows.append([a, b, by[a]["gene_name"], by[b]["gene_name"], f"{cab:.3f}", f"{cba:.3f}", int(sab), int(sba), int(sab or sba)])
+        links.append((a, b, ok))
+        rows.append([a, b, by[a]["gene_name"], by[b]["gene_name"], f"{cover.get((a, b), 0.0):.3f}", f"{cover.get((b, a), 0.0):.3f}",
+                     int(st.get((a, b), False)), int(st.get((b, a), False)), int(ok)]
+                    + ([by[a]["biotype"], by[b]["biotype"]] if paralogs else []))
     spent = spent_genes(spent_paths)
     comps = components(links, spent=spent)
     n_seq = len(components([(a, b, True) for a, b, _ in links]))
     fams, used = [], collections.Counter()
     for comp in comps:
         gs = sorted((by[x] for x in comp), key=lambda g: (g["chrom"], g["start"]))
-        base = re.sub(r"[^A-Za-z0-9]", "", gs[0]["gene_name"]) or "G"
-        used[base] += 1
-        name = f"S17{base}" + (f"x{used[base]}" if used[base] > 1 else "")
+        name = family_name(gs, used, "S19" if paralogs else "S17")
         copies = []
         for g in gs:
             main, iso = F.pick_isoforms(g["tx"])
             copies.append(dict(gene_id=g["gene_id"], gene_name=g["gene_name"], chrom=g["chrom"],
                                start=min(s for v in iso.values() for s, _ in v), end=max(e for v in iso.values() for _, e in v),
-                               strand=g["strand"], main=main, transcripts={t: [list(x) for x in v] for t, v in iso.items()}))
+                               strand=g["strand"], main=main, transcripts={t: [list(x) for x in v] for t, v in iso.items()},
+                               **({"biotype": g["biotype"]} if paralogs else {})))
         fams.append(dict(family=name, candidates=len(comp), component=len(comp), copies=copies))
     with open(f"{out_p}.links.tsv", "w") as fh:
-        fh.write("a\tb\ta_name\tb_name\tcover_ab\tcover_ba\tstruct_ab\tstruct_ba\tstruct_link\n")
+        fh.write("a\tb\ta_name\tb_name\tcover_ab\tcover_ba\tstruct_ab\tstruct_ba\tstruct_link"
+                 + ("\ta_biotype\tb_biotype" if paralogs else "") + "\n")
         fh.writelines("\t".join(map(str, r)) + "\n" for r in rows)
-    json.dump(dict(genome=F.GENOME, annotation=f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz", rule="seqfamilies",
-                   min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL, sets={"seq17": fams}),
+    json.dump(dict(genome=F.GENOME, annotation=f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz",
+                   rule="seqfamilies --paralogs" if paralogs else "seqfamilies",
+                   min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL, sets={"seq19" if paralogs else "seq17": fams}),
               open(out_p, "w"), indent=1)
     unnamed = sum(any(re.match(r"^(LOC|ENSG|MSTRG|LINC|AC[0-9]|AL[0-9]|AP[0-9])", c["gene_name"]) or "-" in c["gene_name"]
                       for c in f["copies"]) for f in fams)
+    n_par = sum(1 for f in fams for c in f["copies"] if c.get("biotype", "protein_coding") != "protein_coding")
     print(f"[seqfamilies] sequence links {len(links)}, of them also structure {sum(ok for _, _, ok in links)}; "
           f"components by sequence {n_seq}, by sequence and structure {len(components(links))}, of them unspent {len(fams)} "
-          f"({sum(len(f['copies']) for f in fams)} copies; {unnamed} with an unnamed copy) -> {out_p}", flush=True)
+          f"({sum(len(f['copies']) for f in fams)} copies, {n_par} of them paralogs of other biotypes; {unnamed} with an unnamed "
+          f"copy) -> {out_p}", flush=True)
     return 0
 
 
 def cmd_draw(out_p, all_p, seed=SEED, set_name="r17"):
     d = json.load(open(all_p))
-    got = draw(d["sets"]["seq17"], seed=seed)
+    (pool,) = d["sets"].values()                          # a pool holds one set (seq17, or seq19 under --paralogs)
+    got = draw(pool, seed=seed)
     json.dump(dict({k: v for k, v in d.items() if k != "sets"}, draw=dict(seed=seed, budget=BUDGET, max_total=MAX_TOTAL),
                    sets={set_name: got}), open(out_p, "w"), indent=1)
     print(f"[seqfamilies] drew {len(got)} families, {sum(len(f['copies']) for f in got)} copies: "
@@ -235,7 +315,7 @@ def cmd_draw(out_p, all_p, seed=SEED, set_name="r17"):
 
 def main(argv):
     if argv[0] == "build":
-        return cmd_build(argv[1], argv[2:])
+        return cmd_build(argv[1], [x for x in argv[2:] if x != "--paralogs"], paralogs="--paralogs" in argv)
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")

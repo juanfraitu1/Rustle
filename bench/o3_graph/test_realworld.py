@@ -265,3 +265,76 @@ def test_a_copy_s_heterozygous_sites_can_be_drawn_rather_than_rounded():
     assert 0.15 < sum(drawn) / len(drawn) < 0.45 and max(drawn) >= 2
     assert R.het_sites(pos, rate, random.Random(7), lambda p: "A", draw=True) == R.het_sites(pos, rate, random.Random(7),
                                                                                               lambda p: "A", draw=True)
+
+
+def test_a_paralog_is_silent_at_the_measured_fraction_or_expressed_at_the_measured_ratio():
+    prof = dict(paralog_silent_frac=0.25, paralog_expr_ratio=0.3)
+    assert R.paralog_mult(3, "F.1", "protein_coding", prof) == 1.0                 # coding copies: unchanged
+    assert R.paralog_mult(3, "F.1", "unprocessed_pseudogene", {}) == 1.0           # a profile without the measurement
+    assert R.paralog_mult(3, "F.1", "unprocessed_pseudogene", dict(prof, paralog_silent_frac=0.0)) == 0.3
+    assert R.paralog_mult(3, "F.1", "lncRNA", dict(prof, paralog_silent_frac=1.0)) == 0.0
+    draws = [R.paralog_mult(3, f"F.{k}", "unprocessed_pseudogene", prof) for k in range(4000)]
+    assert draws == [R.paralog_mult(3, f"F.{k}", "unprocessed_pseudogene", prof) for k in range(4000)]   # deterministic
+    assert set(draws) == {0.0, 0.3} and abs(draws.count(0.0) / 4000 - 0.25) < 0.03
+
+
+def _paralog_world(tmp_path, monkeypatch, scenario, prof=None):
+    import json
+    import pysam
+    g = "".join(random.Random(9).choice("ACGT") for _ in range(70000))
+    fa = tmp_path / "g.fa"
+    fa.write_text(">c1\n" + g + "\n")
+    pysam.faidx(str(fa))
+    monkeypatch.setattr(R, "GENOME", str(fa))
+
+    def cp(gid, lo, bt, n_ex):
+        ex = [[lo + 400 * k, lo + 400 * k + 200] for k in range(n_ex)]
+        return dict(gene_id=gid, gene_name=gid, chrom="c1", start=lo, end=ex[-1][1], strand="+", main="t", transcripts={"t": ex},
+                    biotype=bt)
+    copies = [cp(f"c{k}", 1000 + 10000 * k, "protein_coding", 2) for k in range(3)]
+    copies += [cp(f"p{k}", 31000 + 10000 * k, "unprocessed_pseudogene", 4) for k in range(3)]   # more exons than the coding
+    (tmp_path / "f.json").write_text(json.dumps({"sets": {"x": [dict(family="F", copies=copies)]}}))
+    extra = []
+    if prof is not None:
+        (tmp_path / "p.json").write_text(json.dumps(prof))
+        extra = ["--sim-profile", str(tmp_path / "p.json")]
+    R.main(["build", str(tmp_path / "w"), str(tmp_path / "f.json"), "--set", "x", "--scenario", scenario, "--seed", "3",
+            "--per-copy", "20"] + extra)
+    kinds = json.load(open(tmp_path / "w" / "kinds.json"))
+    reads = {r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:]}
+    return kinds, reads
+
+
+def test_a_scenario_s_copy_is_drawn_among_the_coding_copies():
+    cp = lambda gid, bt, n_ex: dict(gene_id=gid, biotype=bt, main="t", transcripts={"t": [[0, 1]] * n_ex})  # noqa: E731
+    fam = dict(family="F", copies=[cp("c0", "protein_coding", 2), cp("c1", "protein_coding", 2),
+                                   cp("p0", "unprocessed_pseudogene", 4), cp("p1", "lncRNA", 3)])
+    assert {R.special_copy(fam, s)["gene_id"] for s in range(40)} == {"c0", "c1"}
+
+
+def test_a_silent_world_silences_coding_copies_and_leaves_its_paralogs_to_the_measured_draw(tmp_path, monkeypatch):
+    kinds, reads = _paralog_world(tmp_path, monkeypatch, "SILENT")
+    assert [c for c, k in kinds.items() if k == "silent"] in (["F.0"], ["F.1"], ["F.2"])   # a third of the 3 coding copies
+    assert {"F.3", "F.4", "F.5"} <= reads                                                # no profile: paralogs as coding
+
+
+def test_a_paralog_drawn_silent_is_catalogued_and_has_no_read(tmp_path, monkeypatch):
+    import json
+    prof = json.load(open(os.path.join(HERE, "profiles", "A119b_testis_v2.json")))
+    prof.update(paralog_silent_frac=1.0, paralog_expr_ratio=0.5)
+    kinds, reads = _paralog_world(tmp_path, monkeypatch, "INTACT", prof)
+    assert kinds == {"F.0": "present", "F.1": "present", "F.2": "present", "F.3": "silent", "F.4": "silent", "F.5": "silent"}
+    assert reads == {"F.0", "F.1", "F.2"}
+    copies = (tmp_path / "w" / "P.fam.copies.tsv").read_text().splitlines()[1:]
+    assert len(copies) == 6
+
+
+def test_an_expressed_paralog_has_its_measured_share_of_a_coding_copy_s_reads(tmp_path, monkeypatch):
+    import collections
+    import json
+    prof = json.load(open(os.path.join(HERE, "profiles", "A119b_testis_v2.json")))
+    prof.update(paralog_silent_frac=0.0, paralog_expr_ratio=0.5, expr_log_sd=0.0)
+    kinds, _ = _paralog_world(tmp_path, monkeypatch, "INTACT", prof)
+    assert set(kinds.values()) == {"present"}
+    n = collections.Counter(r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:])
+    assert [n[f"F.{k}"] for k in range(6)] == [20, 20, 20, 10, 10, 10]
