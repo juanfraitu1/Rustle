@@ -769,7 +769,7 @@ cells), against v11's table, with the production code (`o2graph.py run W integ|i
   holding errors at zero where the current method abstains.
 - **Round 16 tests v12 on families it has not seen** (`docs/PREREG_o3_graph_round16_2026-10-17.md`).
 
-**Round 16 (register 1318): FAIL on correctness, 4 of 6 cells; PASS on cost.**
+**Round 16 (register 1318): FAIL on correctness (4 of 6 cells pass; A119b 601 and 602 fail); PASS on cost.**
 - **B2 held in all 36 worlds.** The O2 margin removed every error where the current method makes none. Over the 36 worlds:
   1,833 errors against 8,796, and 147,583 correct calls against 137,426.
 - **The three failing bars are B1, by 4-7 reads,** in A119b INTACT and SILENT of small families (3-7 copies).
@@ -819,3 +819,43 @@ family rule on the world's homology-closed local reference); round 17's spent ce
   - The current method wins the second kind because the simulation never expresses paralogs outside the catalogue.
   - Real A119b testis expresses these five pseudogenes: 41 primary reads, against 59 on the two coding copies.
 - **Cost:** -3% and -13% CPU on the NPIP-sized set. O1's genome search now costs 141-147 CPU seconds there.
+
+## 17. The goal's PSV question, answered by objective (2026-10-18)
+
+The goal asks whether PSVs can include SUNs, and how the CIGAR, NM and de tags should count. The answers, from sections 4, 5
+and 16 and rounds 16-18:
+
+**O1, which copies exist.**
+- **The CIGAR's introns are O1's structure evidence.** The genome search (`--ref-copies`, register 1321) takes a locus as a copy
+  only when a catalogued transcript aligns to it at identity >= 0.90 over >= 0.8 with its exon chain carried: every N of the
+  spliced alignment at one of the transcript's junctions.
+- **A SUN is private only relative to the copies considered** (section 4). Completing the catalogue from the genome makes
+  "private" mean private among the loci the family rule reaches. Round 18 showed the cost (register 1322): five OR4F
+  pseudogenes made OR4F21's catalogue-private differences shared, and its reads tied.
+
+**O2, which copy a read came from.**
+- **SUNs are most of the evidence:** about 70% of the decisive PSV columns are SUN-type, the called copy's own SUN or a rival's
+  SUN the read rules out (section 4). With a complete catalogue no call was wrong, with or without an own-SUN column.
+- **The CIGAR's edit types set the margin** (`--o2-significance`, section 16). Each edit is priced at -ln of its rate in the
+  world's uniquely placed reads:
+  - a substitution 7.6-7.8 nats;
+  - a homopolymer indel 3.9-4.6;
+  - any other indel 7.3.
+  - A call must beat every rival by ln(R / alpha). One SUN decides against one or two rivals; one homopolymer indel never.
+- **Indels count as events, not bases** (section 5). NM counts a retained intron or a 4-bp homopolymer indel as many edits. A
+  gap-compressed distance (mismatches + indel events, like de) recovered the calls NM lost.
+  - A long indel (>= 30 bp) counts its length again (`--struct-rescue`), because it can hide the paralogous bases inside a
+    skipped exon (SPAG.1, register 1319).
+- **Soft clips bound the genome cost from both sides** (`--veto-abstain`): a clip under 30 bp is free at the lower bound and
+  paid in full at the upper.
+
+**O3, reads of copies the catalogue lacks.**
+- **de flags them.** A read whose de, less the world's error floor, exceeds delta is detectable as an absent copy's read (the
+  scorer's per-read detectability, section 5).
+- **The read's own de cleans the calls:** present-copy reads inside a true absent-copy cluster sit within delta of their own
+  locus (51 of 55; `--member-genome-check`).
+
+**What it bought, measured on held-out families:** B2 (errors no more than the current method's) held in every world of rounds
+16, 17 (except OUTSIDE, fixed by `--ref-copies`) and 18. Over round 18's 36 worlds: 3,782 errors against 10,431. The open bar
+is B1 in worlds with silent paralogs (register 1322), which round 19 tests under the measured paralog expression.
+
