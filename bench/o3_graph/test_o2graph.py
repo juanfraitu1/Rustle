@@ -1014,3 +1014,33 @@ def test_the_veto_mode_rescues_a_thin_path_call_on_structure_aware_distances(tmp
         O._STRUCT_RESCUE = False
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
     assert out == {"r1": ("0", "struct_aware")}
+
+
+def test_the_twin_guard_abstains_a_call_an_uncatalogued_locus_explains_as_well_but_not_a_dropped_silent_copy(tmp_path):
+    # --twin-guard (2026-10-18, round 17: every cell failed OUTSIDE -- a pair's uncatalogued twin, unseeded by O1, had its
+    # reads placed on the one remaining copy; LGALS7 223, CXorf49 197 errors). The guard of register 1315 abstains when a locus
+    # off every seeded copy explains the read as well; it was rejected because a catalogued silent copy O1 dropped is such a
+    # locus too (round 10: array units). A dropped catalogued copy's locus is no longer "off the catalogue".
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    json.dump({"F": dict(copies=[dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated")], dropped=[1],
+                         family_reads=["r1", "r2"])}, open(w / "graph" / "seeded.json", "w"))
+    json.dump({"F": [dict(copy="F.0", idx=0, contig="chrA", start=1000, end=5000), dict(copy="F.1", idx=1, contig="chrB",
+                                                                                       start=1000, end=5000)]},
+              open(w / "isoforms.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t0\tassigned\nr2\tF\t0\tassigned\n")
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "1000="), ("r1", 256, "chrB", 30000, "1000="),   # an uncatalogued twin
+                             ("r2", 0, "chrA", 2000, "1000="), ("r2", 256, "chrB", 2000, "1000=")])   # the dropped silent copy
+    assert O.run_locus_fallback(str(w), mode="veto") == 0
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("0", "assigned"), "r2": ("0", "assigned")}                              # today
+    O._TWIN_GUARD = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._TWIN_GUARD = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("-", "uncatalogued_tie"), "r2": ("0", "assigned")}

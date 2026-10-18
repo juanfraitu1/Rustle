@@ -46,6 +46,7 @@ _INDEL = re.compile(r"(\d+)[ID]")
 NOVEL_INS = 30                     # locus fallback: an insertion or unaligned end this long is sequence no copy holds
 UNION_EXACT_MICRO = 30             # --union-exact: a terminal exon this short may be missing from a projection
 ELSEWHERE = -1                     # locus fallback: the read's best alignment off every seeded copy of the family
+DROPPED = -2                       # --twin-guard: an alignment on a catalogued copy O1 dropped (silent), not off the catalogue
 ALPHA = 1e-3                       # --o2-significance: a path call's misassignment bound (copy_assign's certificate alpha)
 HP_RUN = 3                         # a homopolymer run, as the v2 profiles' error model places homopolymer indels (calibrate.py)
 EDIT_RATE_READS = 3000             # --o2-significance: uniquely placed reads the world's edit rates are counted on
@@ -930,6 +931,7 @@ _LENGTH_GATE = False                                       # --length-gate (mode
 _SIGNIFICANCE_MARGIN = False                               # --significance-margin (modes veto, guard): rescue
 _SHORT_PATH_ALIGN = False                                  # --short-path-align (modes veto, guard): short_path_distances
 _STRUCT_RESCUE = False                                     # --struct-rescue (modes veto, guard): struct_distances
+_TWIN_GUARD = False                                        # --twin-guard (modes veto, guard): tie_guard off the catalogue
 _SIGNIFICANCE = False                                      # --o2-significance (integ: wdist.json; veto, guard: the gate)
 
 
@@ -986,7 +988,9 @@ def tie_guard(call, gdist):
     near-identical twin, and path O2 then placed the twin's reads on the catalogued copy): a path call is abstained when a
     locus off every seeded copy (ELSEWHERE) explains the read's genome alignments at least as well as the called copy's own
     locus. The catalog then lacks a copy the read may come from. With no alignment on the called copy it is the veto's case
-    (a missed short exon is no evidence)."""
+    (a missed short exon is no evidence). --twin-guard (2026-10-18, round 17: every cell failed OUTSIDE on a pair's unseeded
+    twin) applies it in mode veto with a catalogued copy O1 dropped as silent no longer off the catalogue (DROPPED): mode
+    guard was rejected (register 1315) because it abstained reads of an expressed copy tied with such a silent copy."""
     own = gdist.get(int(call))
     return own is not None and ELSEWHERE in gdist and gdist[ELSEWHERE] <= own
 
@@ -1118,6 +1122,11 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
         vdist, _ = genome_distances(w, vtodo, spans, veto_distance)
         prim = primary_loci(w, vtodo, spans)
         hits = genome_hits(w, todo, spans) if _LOCUS_PAIRWISE else {}
+        if _TWIN_GUARD:                                   # off the catalogue: neither a seeded copy nor one O1 dropped
+            cat = json.load(open(f"{w}/isoforms.json")) if os.path.exists(f"{w}/isoforms.json") else {}
+            tspans = {f: spans.get(f, []) + [(c["contig"], c["start"], c["end"], DROPPED) for c in cat.get(f, [])
+                                             if c["idx"] in set(v.get("dropped", []))] for f, v in sj.items()}
+            tdist, _ = genome_distances(w, vtodo, tspans, veto_distance)
         if _STRUCTURE_CHECK:                              # each copy's own locus: alignments inside its padded span
             cvd, _ = genome_distances(w, vtodo, spans, veto_distance, contained=PATH_PAD)
             cld, _ = genome_distances(w, vtodo, spans, contained=PATH_PAD)
@@ -1198,6 +1207,8 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             if _STRUCTURE_CHECK and reason == "assigned" and structure_only(call, pg[f][0].get(q, {}), cvd.get((q, f), {}),
                                                                             cld.get((q, f), {}), twins.get(f), margin):
                 call, reason = "-", "structure_only"
+            if _TWIN_GUARD and reason == "assigned" and tie_guard(call, tdist.get((q, f), {})):
+                call, reason = "-", "uncatalogued_tie"
             if mode == "guard" and reason == "assigned" and tie_guard(call, vdist.get((q, f), {})):
                 call, reason = "-", "guard_unseeded"
         elif reason == "unexplained":
@@ -1407,7 +1418,7 @@ def run_gains(w, method="union", margin=MARGIN):
 
 def main(argv):
     global _TWIN_ABSTAIN, _VETO_ABSTAIN, _LOCUS_CLIPPED, _LOCUS_PAIRWISE, _STRUCTURE_CHECK, _SIGNIFICANCE, _LENGTH_GATE
-    global _SIGNIFICANCE_MARGIN, _SHORT_PATH_ALIGN, _STRUCT_RESCUE
+    global _SIGNIFICANCE_MARGIN, _SHORT_PATH_ALIGN, _STRUCT_RESCUE, _TWIN_GUARD
     _TWIN_ABSTAIN = "--twin-abstain" in argv
     _VETO_ABSTAIN = "--veto-abstain" in argv
     _LOCUS_CLIPPED = "--locus-clipped" in argv
@@ -1417,6 +1428,7 @@ def main(argv):
     _SIGNIFICANCE_MARGIN = "--significance-margin" in argv
     _SHORT_PATH_ALIGN = "--short-path-align" in argv
     _STRUCT_RESCUE = "--struct-rescue" in argv
+    _TWIN_GUARD = "--twin-guard" in argv
     _SIGNIFICANCE = "--o2-significance" in argv
     if argv[0] == "run":
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes

@@ -187,8 +187,8 @@ def chain_steps(a, root, w):
                       + (" --error-floor" if a.error_floor else "") + (" --twin-abstain" if a.twin_abstain else "")
                       + (" --veto-abstain" if a.veto_abstain else "") + (" --o2-significance" if a.o2_significance else "")
                       + (" --locus-pairwise" if a.locus_pairwise else "") + (" --structure-check" if a.structure_check else "")
-                      + (" --struct-rescue" if a.struct_rescue else "") + (" --short-path-align" if a.short_path_align else ""),
-                      "light"))
+                      + (" --struct-rescue" if a.struct_rescue else "") + (" --short-path-align" if a.short_path_align else "")
+                      + (" --twin-guard" if a.twin_guard else ""), "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
                   + f" python3 bench/o3_graph/detect.py {W}"
@@ -322,6 +322,9 @@ def main(argv=None):
                    "structure-aware path distances, a long indel at its length (o2graph.py --struct-rescue)")
     p.add_argument("--short-path-align", action="store_true", help="O2's genome step: reads the path step left without any "
                    "alignment (under ~200 bp: map-hifi's -s 200) aligned to the paths with -s 40 (o2graph.py --short-path-align)")
+    p.add_argument("--twin-guard", action="store_true", help="O2's genome step: a call is abstained when a locus off the "
+                   "catalogue (neither a seeded copy nor one O1 dropped as silent) explains the read as well "
+                   "(o2graph.py --twin-guard)")
     p.add_argument("--aln-cache", action="store_true",
                    help="exact alignment caches shared by the set's worlds: O2's path alignments per read sequence "
                    "(O2_ALN_CACHE) and O3's isoform-to-host alignments (O3_ALN_CACHE); outputs identical")
