@@ -768,7 +768,15 @@ def veto_distance(cigartuples):
     return d
 
 
-def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=None):
+def pairwise_cost(h, rival):
+    """A copy's genome cost against one rival (--locus-pairwise): its alignment's edits plus the read bases the rival's alignment
+    explains and its own leaves out. h, rival: (edits, read start, read end) as genome_hits gives them."""
+    e, s, t = h
+    _, rs, rt = rival
+    return e + max(0, min(rt, s) - rs) + max(0, rt - max(rs, t))
+
+
+def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=None, hits=None):
     """The locus fallback's call from {seeded copy idx or ELSEWHERE: best locus_distance}: decide() over the family's seeded copies
     and the read's best alignment off them. -> (copy idx or None, `locus` | `locus_tied` | `locus_thin` | `unexplained` |
     `locus_clipped`); a read whose best genome alignment lies off the seeded copies (an unseeded or dropped copy, another family)
@@ -778,14 +786,21 @@ def locus_decide(dist, qlen, margin=MARGIN, twins=None, max_div=DELTA, vdist=Non
     alone stands only when its worst case beats every rival's best case by the margin, else `locus_clipped` (round 15 A119b
     502 CROSS: FAM90A.45's alignment clipped the 11 bases of FAM90A.51's read that told the copies apart, 3 edits on the rest
     against 5 for nine siblings). A twin folded into the call (decide's rule) is no rival. Development: it abstained correct
-    calls where every copy's alignment clips the read's ends (HNRNPCL, TAF11L, FAM236) and failed r14 A119b s205's B1."""
+    calls where every copy's alignment clips the read's ends (HNRNPCL, TAF11L, FAM236) and failed r14 A119b s205's B1.
+    hits (--locus-pairwise, 2026-10-17): genome_hits of the read. The call stands only when every rival's pairwise_cost against
+    it exceeds the call's against that rival by the margin: a read base counts against a copy only where the rival explains
+    it, so bases every copy clips are nobody's evidence, and FAM90A.45's 11 clipped bases still are."""
     c, reason = decide(dist, qlen, margin, max_div=max_div, twins=twins)
     if reason == "unexplained" or c == ELSEWHERE:
         return None, "unexplained"
+    folded = {t for t, k in (twins or {}).items() if k == c and t in dist and dist[c] - dist[t] < margin}
     if c is not None and vdist is not None and c in vdist:
-        folded = {t for t, k in (twins or {}).items() if k == c and t in dist and dist[c] - dist[t] < margin}
         rivals = [g for i, g in dist.items() if i != c and i not in folded]
         if rivals and vdist[c] + margin > min(rivals):
+            return None, "locus_clipped"
+    if c is not None and hits is not None and c in hits:
+        if any(pairwise_cost(h, hits[c]) - pairwise_cost(hits[c], h) < margin for i, h in hits.items()
+               if i != c and i not in folded):
             return None, "locus_clipped"
     return (c, "locus") if c is not None else (None, f"locus_{reason}")
 
@@ -795,6 +810,8 @@ VETO_MAPQ = 30                                           # the genome veto's con
 
 _VETO_ABSTAIN = False                                      # --veto-abstain (modes veto, guard): veto_decide
 _LOCUS_CLIPPED = False                                     # --locus-clipped (modes veto, guard; not adopted): locus_decide
+_LOCUS_PAIRWISE = False                                    # --locus-pairwise (modes veto, guard): locus_decide's hits
+_STRUCTURE_CHECK = False                                   # --structure-check (modes veto, guard): structure_only
 _SIGNIFICANCE = False                                      # --o2-significance (integ: wdist.json; veto, guard: the gate)
 
 
@@ -828,6 +845,24 @@ def veto_decide(call, gdist, qlen, margin=MARGIN, twins=None, max_div=DELTA, pri
     return ("-", "veto_unexplained") if c == ELSEWHERE else (str(c), "veto_locus")
 
 
+def structure_only(call, pdist, cvdist, cldist, twins=None, margin=MARGIN):
+    """--structure-check (2026-10-17): is a path call's margin over some rival only the paths' structure? A rival whose paths
+    explain the read worse, by the margin, than its own locus does (an alignment inside its padded locus: cvdist its
+    veto_distance, cldist its locus_distance) lacks the read's structure among its paths -- union projection adds a paralog's
+    isoform only for an intron chain new to the copy, so a longer first exon that absorbs a retained intron, or a read-derived
+    structure, can stay on one copy -- and the call is compared with that rival on the genome: it stands only when its best full
+    explanation (its paths or its own locus) beats the rival's best case by the margin. r12 A119b KRTAP2.0's read retains an
+    intron: copy 1's long first exon absorbs it (2), copy 0's paths clip it (85), both loci hold it exactly (0). r15 public
+    503 FAM90A.12's 201-bp read: only copy 11's paths align it, eight loci hold it exactly. pdist: {copy: path distance};
+    a twin folded into the call is no rival."""
+    c, inf = int(call), float("inf")
+    pd = {int(k): v for k, v in pdist.items()}
+    own = min(pd.get(c, inf), cvdist.get(c, inf))
+    folded = {t for t, k in (twins or {}).items() if k == c and t in pd and c in pd and pd[c] - pd[t] < margin}
+    return any(pd.get(r, inf) - g >= margin and own + margin > cldist[r] for r, g in cvdist.items()
+               if r not in (c, ELSEWHERE) and r not in folded and r in cldist)
+
+
 def tie_guard(call, gdist):
     """mode guard (2026-10-17, the O2 proof's end-to-end OUTSIDE worlds: O1 did not seed C4's / HSFY's uncatalogued
     near-identical twin, and path O2 then placed the twin's reads on the catalogued copy): a path call is abstained when a
@@ -843,10 +878,11 @@ def path_dists(dist):
     return {q: {c[4:]: v for c, v in cs.items()} for q, cs in dist.items()}
 
 
-def genome_distances(w, todo, spans, dist_fn=None):
+def genome_distances(w, todo, spans, dist_fn=None, contained=None):
     """{(read, family): {seeded copy idx or ELSEWHERE: best locus_distance}} over every primary and secondary alignment in
     WORLD/E0.bam of the reads in todo ({read: families}), and {read: its length from the alignments}. dist_fn: another
-    per-alignment distance (veto_distance)."""
+    per-alignment distance (veto_distance). contained (bases): an alignment counts for a copy only inside its locus padded by
+    that much -- one that overlaps copies but lies inside none counts for none (--structure-check)."""
     dist_fn = dist_fn or locus_distance
     import pysam
     dist, qlen = collections.defaultdict(dict), {}
@@ -862,10 +898,46 @@ def genome_distances(w, todo, spans, dist_fn=None):
             for f in todo[q]:
                 on = [i for ch, s, e, i in spans.get(f, ()) if ch == rec.reference_name and rec.reference_start < e
                       and rec.reference_end > s]
-                for i in on or [ELSEWHERE]:
+                if contained is not None:
+                    on = [i for ch, s, e, i in spans.get(f, ()) if ch == rec.reference_name
+                          and s - contained <= rec.reference_start and rec.reference_end <= e + contained] or (
+                        [] if on else [ELSEWHERE])
+                for i in on or ([] if contained is not None else [ELSEWHERE]):
                     if d < dist[(q, f)].get(i, 1 << 30):
                         dist[(q, f)][i] = d
     return dist, qlen
+
+
+def genome_hits(w, todo, spans):
+    """{(read, family): {seeded copy idx or ELSEWHERE: (edits, read start, read end)}}: of the primary and secondary alignments
+    in WORLD/E0.bam of the reads in todo, each copy's of least veto_distance (then the widest) -- its edits (veto_distance less
+    its soft-clipped bases) and the read interval it aligns, in the read's own orientation (--locus-pairwise)."""
+    import pysam
+    best = collections.defaultdict(dict)
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q not in todo or rec.is_unmapped or rec.is_supplementary:
+                continue
+            cig = rec.cigartuples
+            vd, lead = veto_distance(cig), 0
+            for op, n in cig:
+                if op not in (4, 5):
+                    break
+                lead += n
+            qs = lead
+            qe = qs + sum(n for op, n in cig if op in (0, 1, 7, 8))
+            if rec.is_reverse:
+                ln = rec.infer_read_length() or 0
+                qs, qe = ln - qe, ln - qs
+            key, hit = (vd, qs - qe), (vd - sum(n for op, n in cig if op == 4), qs, qe)
+            for f in todo[q]:
+                on = [i for ch, s, e, i in spans.get(f, ()) if ch == rec.reference_name and rec.reference_start < e
+                      and rec.reference_end > s]
+                for i in on or [ELSEWHERE]:
+                    if i not in best[(q, f)] or key < best[(q, f)][i][0]:
+                        best[(q, f)][i] = (key, hit)
+    return {k: {i: h for i, (_, h) in v.items()} for k, v in best.items()}
 
 
 def primary_loci(w, todo, spans):
@@ -924,8 +996,12 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
         vtodo = todo if _LOCUS_CLIPPED else {q: fs for q, fs in todo.items() if any(r["reason"] == "assigned" for r in by_read[q])}
         vdist, _ = genome_distances(w, vtodo, spans, veto_distance)
         prim = primary_loci(w, vtodo, spans)
+        hits = genome_hits(w, todo, spans) if _LOCUS_PAIRWISE else {}
+        if _STRUCTURE_CHECK:                              # each copy's own locus: alignments inside its padded span
+            cvd, _ = genome_distances(w, vtodo, spans, veto_distance, contained=PATH_PAD)
+            cld, _ = genome_distances(w, vtodo, spans, contained=PATH_PAD)
     sig = _SIGNIFICANCE and mode in ("veto", "guard")
-    if sig:                                               # --o2-significance: the path distances, plain and weighted
+    if (sig or _STRUCTURE_CHECK) and mode in ("veto", "guard"):   # the path distances, plain and weighted
         pg = {}
         for f in {r["family"] for r in rows}:
             p0 = f"{w}/graph/o2paths.union.pad.integ/{f}"
@@ -965,12 +1041,16 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
             if sig and reason == "assigned" and not significant(call, pg[f][0].get(q, {}), pg[f][1].get(q, {}), twins.get(f),
                                                                 margin):
                 call, reason = "-", "insignificant"
+            if _STRUCTURE_CHECK and reason == "assigned" and structure_only(call, pg[f][0].get(q, {}), cvd.get((q, f), {}),
+                                                                            cld.get((q, f), {}), twins.get(f), margin):
+                call, reason = "-", "structure_only"
             if mode == "guard" and reason == "assigned" and tie_guard(call, vdist.get((q, f), {})):
                 call, reason = "-", "guard_unseeded"
         elif reason == "unexplained":
             vd = vdist.get((q, f), {}) if _LOCUS_CLIPPED and mode in ("veto", "guard") else None
+            hs = hits.get((q, f), {}) if _LOCUS_PAIRWISE and mode in ("veto", "guard") else None
             c, reason = locus_decide(dist.get((q, f), {}), qlen.get(q, 0), margin, twins=twins.get(f), max_div=gate(floor),
-                                     vdist=vd)
+                                     vdist=vd, hits=hs)
             call = "-" if c is None else str(c)
         out.append(dict(read=q, family=f, call=call, reason=reason))
     out_name = out_name or f"o2.integ{dict(all='c', seeded='s', unexplained='l', resolve='r', veto='v', guard='t')[mode]}.m{margin}.tsv"
@@ -1169,10 +1249,12 @@ def run_gains(w, method="union", margin=MARGIN):
 
 
 def main(argv):
-    global _TWIN_ABSTAIN, _VETO_ABSTAIN, _LOCUS_CLIPPED, _SIGNIFICANCE
+    global _TWIN_ABSTAIN, _VETO_ABSTAIN, _LOCUS_CLIPPED, _LOCUS_PAIRWISE, _STRUCTURE_CHECK, _SIGNIFICANCE
     _TWIN_ABSTAIN = "--twin-abstain" in argv
     _VETO_ABSTAIN = "--veto-abstain" in argv
     _LOCUS_CLIPPED = "--locus-clipped" in argv
+    _LOCUS_PAIRWISE = "--locus-pairwise" in argv
+    _STRUCTURE_CHECK = "--structure-check" in argv
     _SIGNIFICANCE = "--o2-significance" in argv
     if argv[0] == "run":
         # run WORLD [paths|nodes] [MARGIN]: `nodes` = free GraphAligner alignment, kept for the record (development: it makes

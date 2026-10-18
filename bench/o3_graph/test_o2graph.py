@@ -758,3 +758,112 @@ def test_the_veto_mode_abstains_an_insignificant_path_call_with_o2_significance(
         O._SIGNIFICANCE = False
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
     assert out == {"r1": ("-", "insignificant"), "r2": ("0", "assigned")}      # 6 < ln(2 / 1e-3) = 7.6 <= 16
+
+
+def test_a_locus_call_pays_only_for_read_bases_a_rival_aligns_and_its_own_alignment_clips():
+    # --locus-pairwise (2026-10-17): against each rival a copy pays its alignment's edits plus the read bases the rival's
+    # alignment explains and its own leaves out -- bases every copy clips (a short exon past a junction, a read end) are
+    # nobody's evidence. hits: {copy: (edits, read start, read end of its alignment)}
+    # round 15 A119b 502 CROSS s0000493 (FAM90A.51's read): copy 45 aligns read[0:350] with 3 edits, its siblings all 361
+    # bases with 5 -- copy 45 pays 3 + 11 = 14 against 5
+    ld = {45: 3, 46: 5, 51: 5}
+    assert O.locus_decide(ld, 361) == (45, "locus")
+    assert O.locus_decide(ld, 361, hits={45: (3, 0, 350), 46: (5, 0, 361), 51: (5, 0, 361)}) == (None, "locus_clipped")
+    # r10 public HNRNPCL.0 (correct): copy 0 aligns read[0:179] exactly, copies 1 and 2 read[15:194] with 2 and 3 edits
+    hits = {0: (0, 0, 179), 1: (2, 15, 194), 2: (3, 15, 194)}
+    assert O.locus_decide({0: 0, 1: 2, 2: 3}, 194, hits=hits) == (0, "locus")
+    # r10 public OUTSIDE FAM236.2 (correct): copy 1 aligns read[2:149] exactly, its folded twin 3 read[9:156], copies 0
+    # and 2 read[9:153] and read[5:149] with 9 edits
+    hits = {1: (0, 2, 149), 3: (0, 9, 156), 0: (9, 9, 153), 2: (9, 5, 149)}
+    assert O.locus_decide({1: 0, 3: 0, 0: 9, 2: 9}, 158, twins={3: 1}, hits=hits) == (1, "locus")
+
+
+def test_genome_hits_keep_each_copy_s_best_alignment_with_its_read_interval(tmp_path):
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    spans = {"F": [("chrA", 1000, 5000, 0), ("chrB", 1000, 5000, 1)]}
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "100=1X100=1X100=1X86=11S"), ("r1", 256, "chrB", 2000, "100=5X295="),
+                             ("r1", 256, "chrB", 3000, "50S350="),                 # a worse alignment of copy 1: 50 bases out
+                             ("r2", 16, "chrA", 2000, "10S390=")])                 # reverse strand: the clip is the read's end
+    hits = O.genome_hits(str(w), {"r1": {"F"}, "r2": {"F"}}, spans)
+    assert hits[("r1", "F")] == {0: (3, 0, 389), 1: (5, 0, 400)}
+    assert hits[("r2", "F")] == {0: (0, 0, 390)}
+
+
+def test_the_veto_mode_abstains_a_locus_call_its_rival_explains_better_pairwise_with_locus_pairwise(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t-\tunexplained\n")
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "100=1X100=1X100=1X86=11S"), ("r1", 256, "chrB", 2000, "100=5X295=")])
+    O._LOCUS_PAIRWISE = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._LOCUS_PAIRWISE = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("-", "locus_clipped")}
+
+
+def test_a_path_margin_over_a_rival_whose_own_locus_explains_the_read_better_than_its_paths_is_structure_only():
+    # --structure-check (2026-10-17): r12 A119b KRTAP2.0's read retains an intron near its start; copy 1's annotated long
+    # first exon absorbs it (path 2), copy 0's paths clip it (85), and the genome holds the read identically at both (0)
+    pd = {1: 2, 0: 85, 3: 85, 2: 86}
+    g = {0: 0, 1: 0, 2: 2, 3: 2}
+    assert O.structure_only("1", pd, g, g)
+    # rivals whose paths fit the read as their loci do: the paths decide (a sequence-made margin)
+    assert not O.structure_only("0", {0: 0, 1: 2}, {0: 0, 1: 2}, {0: 0, 1: 2})
+    # a rival whose paths miss the read's structure but whose locus is 3 edits worse: the genome separates them
+    assert not O.structure_only("0", {0: 0, 1: 85}, {0: 0, 1: 3}, {0: 0, 1: 3})
+    # r15 public 503 CROSS FAM90A.12's 201-bp read: only copy 11's paths align it, eight loci hold it exactly
+    gg = {i: 0 for i in range(5, 13)}
+    assert O.structure_only("11", {11: 0}, gg, gg)
+    # r10 public DAZ.2 (correct): its rivals' alignments run 40-58 kb past their loci (none contained): no evidence
+    assert not O.structure_only("2", {2: 1}, {2: 5}, {2: 1})
+    # a twin folded into the call is no rival
+    assert not O.structure_only("3", {3: 0, 7: 9}, {3: 0, 7: 0}, {3: 0, 7: 0}, twins={7: 3})
+    assert O.structure_only("3", {3: 0, 7: 9}, {3: 0, 7: 0}, {3: 0, 7: 0})
+
+
+def test_genome_distances_can_keep_only_alignments_inside_each_copy_s_padded_locus(tmp_path):
+    w = tmp_path / "W"
+    w.mkdir()
+    spans = {"F": [("chrA", 1000, 5000, 0), ("chrB", 1000, 5000, 1)]}
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "1000="), ("r1", 256, "chrB", 4500, "400=3X597="),   # chrB: runs past
+                             ("r1", 256, "chrB", 1000 - O.PATH_PAD, "500=1X499=")])                          # inside the pad
+    d, _ = O.genome_distances(str(w), {"r1": {"F"}}, spans)
+    assert d[("r1", "F")] == {0: 0, 1: 1}
+    d, _ = O.genome_distances(str(w), {"r1": {"F"}}, spans, contained=O.PATH_PAD)
+    assert d[("r1", "F")] == {0: 0, 1: 1}
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "1000="), ("r1", 256, "chrB", 4500, "400=3X597=")])
+    d, _ = O.genome_distances(str(w), {"r1": {"F"}}, spans, contained=O.PATH_PAD)
+    assert d[("r1", "F")] == {0: 0}
+
+
+def test_the_veto_mode_abstains_a_structure_only_path_call_with_structure_check(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    d = w / "graph" / "o2paths.union.pad.integ"
+    d.mkdir(parents=True)
+    copies = [dict(idx=0, contig="chrA", start=1000, end=5000, origin="curated"),
+              dict(idx=1, contig="chrB", start=1000, end=5000, origin="curated")]
+    json.dump({"F": dict(copies=copies, dropped=[], family_reads=["r1", "r2"])}, open(w / "graph" / "seeded.json", "w"))
+    with open(w / "graph" / "o2.integ.m2.tsv", "w") as fh:
+        fh.write("read\tfamily\tcall\treason\nr1\tF\t1\tassigned\nr2\tF\t1\tassigned\n")
+    json.dump({"r1": {"1": 2, "0": 85}, "r2": {"1": 2, "0": 4}}, open(d / "F.dist.json", "w"))
+    _bam(str(w / "E0.bam"), [("r1", 0, "chrA", 2000, "1000="), ("r1", 256, "chrB", 2000, "1000="),         # loci identical
+                             ("r2", 0, "chrB", 2000, "1000="), ("r2", 256, "chrA", 2000, "500=4X496=")])    # paths = loci
+    O._STRUCTURE_CHECK = True
+    try:
+        assert O.run_locus_fallback(str(w), mode="veto") == 0
+    finally:
+        O._STRUCTURE_CHECK = False
+    out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
+    assert out == {"r1": ("-", "structure_only"), "r2": ("1", "assigned")}
