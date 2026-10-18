@@ -807,7 +807,7 @@ cells), against v11's table, with the production code (`o2graph.py run W integ|i
 **After round 17 (register 1321): v14 = v13 + O1 `--ref-copies`.** O1 searches the genome for copies the catalogue lacks (the
 family rule on the world's homology-closed local reference); round 17's spent cells went 0 -> 5 passing.
 
-**Round 18 (register 1322): FAIL on correctness (4 of 6 cells), PASS on cost.**
+**Round 18 (register 1322): FAIL on correctness (4 of 6 cells pass; both seed-803 cells fail), PASS on cost.**
 - **What held:** B2 in all 36 worlds, OUTSIDE included (0-11 errors against 69-198). v14 made 130,722 correct calls against
   86,384, and 3,782 errors against 10,431.
 - **What failed:** B1 in five worlds of seed 803, all from one family (OR4F21, OR4F16).

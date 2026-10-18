@@ -145,7 +145,7 @@ The catalogue still starts from the annotation's copies; the genome search adds 
 
 ## Results (2026-10-18 10:57-11:43; nothing changed after the first run, no crash)
 
-**Verdict: FAIL, 4 of 6 cells. C1 PASSES** in both profiles.
+**Verdict: FAIL -- 4 of 6 cells pass; A119b 803 and public 803 fail. C1 PASSES** in both profiles.
 
 | cell | failing worlds (integrated vs current: correct / errors) |
 |---|---|
