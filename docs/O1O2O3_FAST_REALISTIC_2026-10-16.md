@@ -871,3 +871,23 @@ was B1 in worlds with silent paralogs (register 1322). Round 19 passed it under 
   testis expresses them, the current method's errors rose (seed 803 INTACT: 34 -> 121 and 29 -> 134) while v14 stayed at 0
   (register 1323; not diagnosed read by read).
 
+
+## 18. The variation graph is the model; linear alignment is the implementation (2026-10-18)
+
+**The model (user, 2026-10-18).** A family is a variation graph of its copies' loci, each curated isoform a path through it.
+- O2 assigns a read to the copy whose paths explain it, by the PSVs where the copies' paths differ.
+- O3 calls a read of an absent copy where no path explains it: a novel sequence, or a switch between copies' paths.
+
+**The implementation evaluates the same paths without building the graph,** for the goal's cost bar:
+- **O2:** every isoform path of every copy (the paths `vg rna` put in the graph, plus paralog structures projected onto each
+  locus) is a linear sequence; minimap2 aligns the reads to all of them, and the call is made on those path distances.
+- **O3 (`--branch-linear`, 44798db2):** candidate reads are spliced-aligned to the family's loci as linear sequences. A base is
+  novel only where no locus alignment explains it, which is the linear form of a path switch.
+
+**The measured equivalence:**
+- On the mainstay CROSS world the linear branch step's calls are identical to the graph's, and O3 falls from 158 s to 34 s.
+- On 34 spent runs every verdict is the graph version's, and 19 runs gain 1-9 correct BRANCH reads.
+- vg (`vg msga`, `vg rna`, GraphAligner) was 77% of O3's time on a full family's first world.
+
+The graph code remains (`detect.py` without `--branch-linear`; `o2graph.py run WORLD nodes`), so the model can be run as stated
+when a result must be shown on the graph itself.
