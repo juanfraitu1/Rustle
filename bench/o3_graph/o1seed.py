@@ -25,6 +25,13 @@ Per family (its curated copies, isoforms.json):
                 are neighbours in every subtelomere, so WASH.7's reads are DDX11L family reads too) stays only in the family whose
                 curated copies its reads align to most (aligned bases, every alignment of every read that seeded it, unpadded copy
                 spans); a tie seeds it in none
+  --ref-copies  (2026-10-18; user: make the uncatalogued twin O3's job) with --local DIR, the world's homology-closed local
+                reference (localref.py): each kept curated copy's representative transcript is spliced-aligned to it, and an
+                off-catalogue locus that holds it by the family rule (seqfamilies: identity >= 0.90 over >= 0.8 of it, its exon
+                chain carried by the locus) is seeded as a new copy (via "ref", ref_of the curated idx, its exons from the
+                alignment) -- the reference-present, unannotated copy O3 reports. An identical expressed twin gives O1 no uniquely
+                placed read, and O2 then gave its reads to the remaining copy (round 17: every cell failed OUTSIDE). No --twins
+                prior: a genome copy is no artifact of the reads. A locus several families' copies hold goes to the best hit.
 Output per family: copies [{idx, contig, start, end, strand, rep, isoforms, origin: curated | new, support}], dropped [curated
 idx], family_reads [read names]; a new copy also lists the reads that seeded it. Seeded copies keep curated idx; new ones are
 numbered after them.
@@ -36,6 +43,92 @@ import sys
 
 PAD, MIN_SUPPORT, MIN_CHAIN, JOIN, CHAIN_TOL, MIN_MAPQ, MIN_MAPQ_NEW, SPAN_SLACK = 1000, 5, 3, 1000, 10, 50, 1, 100
 DELTA, TWIN_COVER = 0.00958, 0.5                                  # --twins: O3's delta; the alignment must cover half the locus
+REF_IDENT, REF_COVER = 0.90, 0.8                                  # --ref-copies: the family rule (seqfamilies)
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _seqfamilies():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("o3_graph_seqfamilies", os.path.join(HERE, "seqfamilies.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def lift_hit(contig, ts, cigar):
+    """A hit on a local-reference contig `chrom:start-end` (0-based; a plain chromosome name is its own coordinates), its
+    target start ts and CIGAR [(n, op)] -> (chrom, start, end, exons): the aligned blocks between introns, in genome
+    coordinates."""
+    chrom, off = (contig.rsplit(":", 1)[0], int(contig.rsplit(":", 1)[1].split("-")[0])) if ":" in contig else (contig, 0)
+    t, exons, cur = ts, [], None
+    for n, op in cigar:
+        n = int(n)
+        if op in "M=XD":
+            cur = [t, t + n] if cur is None else [cur[0], t + n]
+            t += n
+        elif op == "N":
+            if cur:
+                exons.append((cur[0] + off, cur[1] + off))
+            cur = None
+            t += n
+    if cur:
+        exons.append((cur[0] + off, cur[1] + off))
+    return chrom, exons[0][0], exons[-1][1], exons
+
+
+def ref_copies(w, out, iso, local_dir, threads=2):
+    """--ref-copies: {family: [new copy dicts]} -- the off-catalogue loci of the local reference that hold a kept curated copy's
+    representative transcript by the family rule (see the module doc)."""
+    import re
+    import subprocess
+    import tempfile
+    import pysam
+    SF = _seqfamilies()
+    fa = pysam.FastaFile(f"{w}/genome.ref.fa")
+    comp = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+    taken = [(c["contig"], c["start"], c["end"]) for cps in iso.values() for c in cps]
+    taken += [(c["contig"], c["start"], c["end"]) for v in out.values() for c in v["copies"] if c["origin"] == "new"]
+    queries = {}
+    for f, v in out.items():
+        for c in v["copies"]:
+            if c["origin"] != "curated" or c.get("rep") not in c.get("isoforms", {}):
+                continue
+            ex = sorted(tuple(x) for x in c["isoforms"][c["rep"]])
+            sq = "".join(fa.fetch(c["contig"], a, b).upper() for a, b in ex)
+            queries[f"{f}|{c['idx']}"] = (sq[::-1].translate(comp) if c["strand"] == "-" else sq, ex, c)
+    if not queries:
+        return {}
+    with tempfile.TemporaryDirectory() as d:
+        with open(f"{d}/q.fa", "w") as fh:
+            fh.writelines(f">{k}\n{v[0]}\n" for k, v in sorted(queries.items()))
+        paf = subprocess.run(["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes", "-t", str(threads),
+                              f"{local_dir}/local.mmi", f"{d}/q.fa"], capture_output=True, text=True, check=True).stdout
+    hits = []
+    for ln in paf.splitlines():
+        x = ln.split("\t")
+        qlen, qs, qe, block = int(x[1]), int(x[2]), int(x[3]), int(x[10])
+        if int(x[9]) < REF_IDENT * block or qe - qs < REF_COVER * qlen:
+            continue
+        cg = next((y[5:] for y in x[12:] if y.startswith("cg:Z:")), "")
+        ops = [(int(n), op) for n, op in re.findall(r"(\d+)([MIDNSHP=X])", cg)]
+        seq, ex, c = queries[x[0]]
+        js = SF.junctions_of(ex)
+        js = sorted(qlen - j for j in js) if c["strand"] == "-" else js
+        if not SF.structure_match(js, qlen, x[4], int(x[7]), ops, q0=qlen - qe if x[4] == "-" else qs):
+            continue
+        chrom, s0, e0, exons = lift_hit(x[5], int(x[7]), ops)
+        if any(ch == chrom and s0 < e and s < e0 for ch, s, e in taken):
+            continue
+        hits.append((int(x[9]) / block, x[0].split("|")[0], c, chrom, s0, e0, exons, "+" if x[4] == "+" else "-"))
+    got, placed = collections.defaultdict(list), []
+    for ident, f, c, chrom, s0, e0, exons, strand in sorted(hits, key=lambda h: (-h[0], h[1], h[3], h[4])):
+        if any(ch == chrom and s0 < e and s < e0 for ch, s, e in placed):
+            continue
+        placed.append((chrom, s0, e0))
+        got[f].append(dict(contig=chrom, start=s0, end=e0, strand=strand, rep=f"ref:{c['rep']}",
+                           isoforms={f"ref:{c['rep']}": [list(e) for e in exons]}, origin="new", via="ref", ref_of=c["idx"],
+                           ref_ident=round(ident, 4), support=0, reads=[]))
+    return got
 
 
 def twin_of(new_seq, curated):
@@ -243,7 +336,7 @@ def one_family(seeded, aff):
     return {f: dict(v, copies=[c for c in v["copies"] if (f, c["idx"]) not in drop]) for f, v in seeded.items()}
 
 
-def seed_world(w, twins=False):
+def seed_world(w, twins=False, ref_local=None):
     import pysam
     iso = json.load(open(f"{w}/isoforms.json"))
     all_loci = {(f, c["idx"]): (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for f, cps in iso.items() for c in cps}
@@ -284,21 +377,29 @@ def seed_world(w, twins=False):
                         c["undecidable"] = True
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
     out = one_family(out, aff)
+    if ref_local:                                                 # --ref-copies: the catalogue's genome copies it lacks
+        for f, extra in ref_copies(w, out, iso, ref_local).items():
+            nxt = max(c["idx"] for c in out[f]["copies"]) + 1 if out[f]["copies"] else 0
+            for i, c in enumerate(extra):
+                out[f]["copies"].append(dict(c, idx=nxt + i))
     if twins:                                                     # a new copy within delta of a kept curated copy is its twin
         fa = pysam.FastaFile(f"{w}/genome.ref.fa")
         for f, v in out.items():
             cur = {c["idx"]: fa.fetch(c["contig"], c["start"], c["end"]).upper() for c in v["copies"] if c["origin"] == "curated"}
             for c in v["copies"]:
-                if c["origin"] == "new":
+                if c["origin"] == "new" and c.get("via") != "ref":
                     c["twin_of"], c["twin_de"] = twin_of(fa.fetch(c["contig"], c["start"], c["end"]).upper(), cur)
     os.makedirs(f"{w}/graph", exist_ok=True)                      # a fresh world: o1seed runs first (round 8)
     json.dump(out, open(f"{w}/graph/seeded.json", "w"))
     n_new = sum(1 for v in out.values() for c in v["copies"] if c["origin"] == "new")
+    n_ref = sum(1 for v in out.values() for c in v["copies"] if c.get("via") == "ref")
     n_drop = sum(len(v["dropped"]) for v in out.values())
-    print(f"[o1seed] {w}/graph/seeded.json: {sum(len(v['copies']) for v in out.values())} copies ({n_new} new), "
+    print(f"[o1seed] {w}/graph/seeded.json: {sum(len(v['copies']) for v in out.values())} copies ({n_new} new, {n_ref} from the "
+          f"genome), "
           f"{n_drop} curated copies dropped", flush=True)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(seed_world(sys.argv[1], twins="--twins" in sys.argv))
+    sys.exit(seed_world(sys.argv[1], twins="--twins" in sys.argv,
+                        ref_local=sys.argv[sys.argv.index("--local") + 1] if "--ref-copies" in sys.argv else None))

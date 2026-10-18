@@ -51,7 +51,8 @@ def _opts(**kw):
                 mosaic_shared=False, o3_pool="paths", haplotype_check=False,
                 haplotype_check_genome=False, branch_genome_segments=False,
                 branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
-                locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False, twin_guard=False)
+                locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False, twin_guard=False,
+                ref_copies=False, local=None)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -214,3 +215,14 @@ def test_o2_s_genome_step_takes_the_twin_guard_only_when_asked():
     st0 = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT"))
     st = dict((k, c) for k, c, _ in F.chain_steps(_opts(o2_genome="veto", twin_guard=True), "/R", "INTACT"))
     assert "--twin-guard" not in st0["O2_genome"] and "--twin-guard" in st["O2_genome"] and "integv 2" in st["O2_genome"]
+
+
+def test_o1_searches_each_world_s_own_local_reference_for_copies_the_catalogue_lacks_only_when_asked():
+    st0 = dict((k, c) for k, c, _ in F.chain_steps(_opts(), "/R", "INTACT"))
+    assert "--ref-copies" not in st0["O1"]
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True, local="/L"), "/R", "INTACT"))
+    assert st["O1"].endswith("--ref-copies --local /L")
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True, local="/L"), "/R", "REMOVED"))
+    assert st["O1"].endswith("--ref-copies --local /R/local_masked")       # the removed copy is masked there
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True), "/R", "OUTSIDE"))
+    assert st["O1"].endswith("--ref-copies --local /R/local")

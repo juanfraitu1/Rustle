@@ -174,7 +174,9 @@ def chain_steps(a, root, w):
     W = f"{root}/{w}"
     steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
-             ("O1", f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else ""), "light"),
+             ("O1", f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else "")
+                    + ((" --ref-copies --local " + (f"{root}/local_masked" if w.startswith("REMOVED") else (a.local or f"{root}/local")))
+                       if a.ref_copies else ""), "light"),
              ("O2", f"env O2_PROCS={a.o2_procs} O2_THREADS={a.threads}"
                     + (f" O2_ALN_CACHE={root}/.o2_aln_cache" if a.aln_cache else "")
                     + f" python3 bench/o3_graph/o2graph.py run {W} integ 2 --distance {a.o2_distance}"
@@ -325,6 +327,8 @@ def main(argv=None):
     p.add_argument("--twin-guard", action="store_true", help="O2's genome step: a call is abstained when a locus off the "
                    "catalogue (neither a seeded copy nor one O1 dropped as silent) explains the read as well "
                    "(o2graph.py --twin-guard)")
+    p.add_argument("--ref-copies", action="store_true", help="O1: the catalogued copies' transcripts searched in the world's local "
+                   "reference; an off-catalogue locus holding one by the family rule is seeded as a new copy (o1seed.py --ref-copies)")
     p.add_argument("--aln-cache", action="store_true",
                    help="exact alignment caches shared by the set's worlds: O2's path alignments per read sequence "
                    "(O2_ALN_CACHE) and O3's isoform-to-host alignments (O3_ALN_CACHE); outputs identical")

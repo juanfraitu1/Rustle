@@ -212,3 +212,56 @@ def test_a_curated_copy_whose_expression_the_reads_cannot_decide_is_kept_when_as
     assert S.seed_family(cps, prim, loci)[1] == [1]
     copies, dropped = S.seed_family(cps, prim, loci, keep_also={1})
     assert [c["idx"] for c in copies] == [0, 1] and dropped == []
+
+
+def test_a_hit_on_a_local_reference_contig_lifts_to_genome_exons():
+    # local contigs are named chrom:start-end (0-based); the alignment's blocks between introns are the copy's exons
+    assert S.lift_hit("c1:5000-9000", 100, [(300, "M"), (2, "D"), (98, "M"), (500, "N"), (400, "M")]) == (
+        "c1", 5100, 6400, [(5100, 5500), (6000, 6400)])
+    assert S.lift_hit("c2", 7, [(50, "M"), (3, "I"), (50, "M")]) == ("c2", 7, 107, [(7, 107)])
+
+
+def test_o1_seeds_a_genome_copy_of_a_catalogued_copy_that_the_catalogue_lacks(tmp_path):
+    # --ref-copies (2026-10-18, user: "make it O3's job"; round 17: a pair's uncatalogued twin, identical, gets no uniquely
+    # placed read, so O1 never seeded it and O2 gave its reads to the one remaining copy): the catalogued copies' transcripts
+    # are searched in the homology-closed local reference; an off-catalogue locus that holds one by the family rule (>= 0.90
+    # identity over >= 0.8, its exon chain carried) is seeded as a new copy -- the reference-present unannotated copy of O3
+    import json
+    import random
+    import subprocess
+    import pysam
+    rng = random.Random(5)
+    seq = lambda n: "".join(rng.choice("ACGT") for _ in range(n))
+    e1, e2 = seq(300), seq(400)
+    intron = "GT" + seq(496) + "AG"
+    gene = e1 + intron + e2                                          # 1,200 bp: exons 0-300 and 800-1200
+    genome = seq(1000) + gene + seq(3000) + gene + seq(1000)         # copy A at 1000-2200, its uncatalogued twin at 5200-6400
+    w = tmp_path / "W"
+    w.mkdir()
+    (w / "genome.ref.fa").write_text(f">c1\n{genome}\n")
+    pysam.faidx(str(w / "genome.ref.fa"))
+    loc = tmp_path / "local"
+    loc.mkdir()
+    (loc / "local.fa").write_text(f">c1:0-{len(genome)}\n{genome}\n")
+    subprocess.run(["minimap2", "-x", "splice:hq", "-d", str(loc / "local.mmi"), str(loc / "local.fa")], capture_output=True,
+                   check=True)
+    json.dump({"F": [dict(idx=0, contig="c1", start=1000, end=2200, strand="+", rep="t",
+                          isoforms={"t": [[1000, 1300], [1800, 2200]]})]}, open(w / "isoforms.json", "w"))
+    hdr = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "c1", "LN": len(genome)}]}
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for i in range(6):                                           # the catalogued copy's reads (it is kept)
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.reference_id, a.reference_start, a.mapping_quality = f"r{i}", 0, 1000, 60
+            a.cigartuples = [(0, 300), (3, 500), (0, 400)]
+            a.query_sequence, a.flag = e1 + e2, 0
+            out.write(a)
+    pysam.index(str(w / "E0.bam"))
+    assert S.seed_world(str(w), twins=True) == 0
+    assert [c["idx"] for c in json.load(open(w / "graph" / "seeded.json"))["F"]["copies"]] == [0]   # today: no twin
+    assert S.seed_world(str(w), twins=True, ref_local=str(loc)) == 0
+    cps = json.load(open(w / "graph" / "seeded.json"))["F"]["copies"]
+    assert [(c["idx"], c["origin"]) for c in cps] == [(0, "curated"), (1, "new")]
+    new = cps[1]
+    assert (new["contig"], new["start"], new["end"], new["strand"], new["via"], new["ref_of"]) == ("c1", 5200, 6400, "+", "ref", 0)
+    assert list(new["isoforms"].values()) == [[[5200, 5500], [6000, 6400]]]
+    assert new.get("twin_of") is None                                # no annotation prior: a genome copy, not an O1 artifact
