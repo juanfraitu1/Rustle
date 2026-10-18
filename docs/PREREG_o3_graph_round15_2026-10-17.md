@@ -117,3 +117,17 @@ current method on the same machine and settings.
 **Neither would claim:**
 - anything on real reads;
 - that near-identical uncatalogued twins are handled (see above).
+
+## Amendment 1 (2026-10-17 17:25, before any rerun)
+
+**What happened:** /mnt/linuxdisk filled up during the batch (0 bytes free). Cell A119b 501 finished; every later run, cells
+2-6 and the v10 cost runs, exited with code 120 within a second, at its first write. C1's two v11 runs had already finished.
+
+**The space freed:** 37 per-run masked genome copies (`masked/masked.fa`, 3.1 GB each, 108 GB in all) of runs completed and
+recorded on 10-15 and 10-16, none referenced by an active directory.
+- Each copy is the CHM13 reference with a few intervals hard-masked. It can be regenerated exactly by `realworld.py mask` from
+  the run's families, set and seed.
+- The list of deleted copies is `docs/deleted_masked_2026-10-17.txt`.
+
+**Under the rule above:** the crashed runs are rerun once, unchanged. Cell public 501's partial directory is removed first:
+its mask step died writing.
