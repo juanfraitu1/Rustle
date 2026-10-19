@@ -16,6 +16,10 @@ best-scoring ones, lifted to CHM13 through the chain, name the copy --
     hg002truth.py tied BAM FAMILIES.json SET OUT.tsv           -> the reads tied in BAM (CHM13 coordinates): read, AS, copies,
                                                                   and minimap2's primary (its coin toss among them) + MAPQ
     hg002truth.py truth TIED.tsv MAT.bam PAT.bam CHAIN FAMILIES.json SET OUT.tsv -> each tied read's class and truth copy
+    hg002truth.py score TRUTH.tsv TIED.tsv WORLD OUT.json [--o2 NAME]  -> per method (minimap2's primary, the primary at MAPQ
+                                                                  >= 1, current, integrated: summary.world_calls with the O2
+                                                                  table NAME, o2.integv.m2.tsv by default) and truth class,
+                                                                  the fates (tied_fate) of the world's tied reads
 """
 import collections
 import csv
@@ -28,6 +32,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("o3_graph_realreads_h", os.path.join(HERE, "realreads.py"))
 R = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(R)
+
+
+METHODS = ("mm2", "mm2_q1", "current", "integrated")
+
+
+def _summary():
+    spec = importlib.util.spec_from_file_location("o3_graph_summary_h", os.path.join(HERE, "summary.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _copy_of(chrom, blocks, idx):
@@ -69,6 +83,21 @@ def own_truth(own, lift, idx):
     if len(found) > 1:
         return "own_tie", None
     return "unique", next(iter(real))
+
+
+def tied_fate(cls, truth, assigned, in_o3, tied):
+    """A tied read's fate under one method (an absent-copy call takes precedence over a placement, as summary.read_fate):
+    unique / unique_elsewhere: right only on the donor's copy, and an O3 call is an error (its copy is in CHM13); own_tie:
+    placing it on one of the copies it ties on is a guess, anywhere else or an O3 call an error, abstaining right;
+    no_counterpart (a donor copy CHM13 lacks): any placement is an error, an O3 call right; elsewhere (another CHM13 locus):
+    a placement on the family is an error, an O3 call is reported apart."""
+    if in_o3:
+        return {"no_counterpart": "correct", "elsewhere": "o3"}.get(cls, "error")
+    if assigned is None:
+        return "abstain"
+    if cls in ("unique", "unique_elsewhere"):
+        return "correct" if assigned == truth else "error"
+    return "guess" if cls == "own_tie" and assigned in tied else "error"
 
 
 def _alns(bam_path, primaries=None):
@@ -130,7 +159,50 @@ def cmd_truth(tied_p, mat_p, pat_p, chain_p, fam_p, set_name, out_p):
     return 0
 
 
+def _fam_call(calls, family):
+    """A system's placement of a read of `family`: None, its copy, `no-truth-copy` or `wrong-family` (as o2proof)."""
+    if not calls:
+        return None
+    if family in calls:
+        return calls[family] or "no-truth-copy"
+    return "wrong-family"
+
+
+def _world_reads(fq):
+    with open(fq) as fh:
+        return {h[1:].split()[0] for i, h in enumerate(fh) if i % 4 == 0}
+
+
+def cmd_score(truth_p, tied_p, world, out_p, o2_name="o2.integv.m2.tsv"):
+    wc = _summary().world_calls(world, o2_name)
+    tied = {r["read"]: r for r in csv.DictReader(open(tied_p), delimiter="\t")}
+    reads = _world_reads(f"{world}/reads.E0.fq")
+    card = {m: collections.defaultdict(collections.Counter) for m in METHODS}
+    skipped = collections.Counter()
+    for r in csv.DictReader(open(truth_p), delimiter="\t"):
+        q, f, cls = r["read"], r["family"], r["class"]
+        if cls == "unmapped" or q not in reads:
+            skipped["unmapped" if cls == "unmapped" else "not_in_world"] += 1
+            continue
+        t, ts = tied[q], set(r["tied_copies"].split(","))
+        prim = t["primary"] or "wrong-locus"
+        calls = dict(mm2=(prim, False), mm2_q1=(prim if int(t["mapq"]) >= 1 else None, False),
+                     current=(_fam_call(wc["current"].get(q), f), q in wc["current_o3"]),
+                     integrated=(_fam_call(wc["integrated"].get(q), f), q in wc["integrated_o3"]))
+        for m, (a, o3) in calls.items():
+            card[m][cls][tied_fate(cls, r["truth"] or None, a, o3, ts)] += 1
+    res = dict(card={m: {c: dict(v) for c, v in card[m].items()} for m in METHODS}, skipped=dict(skipped))
+    json.dump(res, open(out_p, "w"), indent=1)
+    for m in METHODS:
+        print(f"  {m:10s} " + " | ".join(f"{c}: " + " ".join(f"{k} {v}" for k, v in sorted(res['card'][m][c].items()))
+                                        for c in sorted(res["card"][m])), flush=True)
+    print(f"  skipped {dict(skipped)}", flush=True)
+    return 0
+
+
 def main(argv):
+    if argv[:1] == ["score"] and (len(argv) == 5 or len(argv) == 7 and argv[5] == "--o2"):
+        return cmd_score(*argv[1:5], o2_name=argv[6] if len(argv) == 7 else "o2.integv.m2.tsv")
     if len(argv) == 5 and argv[0] == "tied":
         return cmd_tied(*argv[1:])
     if len(argv) == 8 and argv[0] == "truth":
