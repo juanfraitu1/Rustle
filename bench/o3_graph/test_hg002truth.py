@@ -230,3 +230,17 @@ def test_the_premise_bar_is_minimap2_s_agreement_with_the_donor_on_reads_it_reso
     b = H.premise_bar(rows)
     assert b["value"] == 0.995 and b["n"] == 1000 and b["powered"] and b["holds"]
     assert H.premise_bar(rows[:990] + [{"class": "unique_elsewhere"}] * 20)["holds"] is False
+
+
+def test_a_family_is_pseudoautosomal_when_every_copy_lies_in_a_par():
+    cp = lambda ch, s, e: dict(chrom=ch, start=s, end=e)  # noqa: E731
+    assert H.pseudoautosomal(dict(family="S", copies=[cp("chrX", 1229797, 1235760), cp("chrY", 1249920, 1256001)]))
+    assert H.pseudoautosomal(dict(family="V", copies=[cp("chrX", 154109336, 154171772), cp("chrY", 62306324, 62368760)]))
+    assert not H.pseudoautosomal(dict(family="R", copies=[cp("chrY", 2518432, 2609182), cp("chrY", 21631329, 21656255)]))
+    assert not H.pseudoautosomal(dict(family="N", copies=[cp("chrX", 5392902, 5781161), cp("chrY", 15429200, 15752213)]))
+    fams = [dict(family="S", copies=[cp("chrX", 1229797, 1235760), cp("chrY", 1249920, 1256001)]),
+            dict(family="E", copies=[cp("chr16", 28000000, 28010000), cp("chr16", 28700000, 28710000)])]
+    rows = [dict(read="a", family="S", **{"class": "own_tie"}, truth=""), dict(read="b", family="E", **{"class": "unique"}, truth="E.0")]
+    assert [f["family"] for f in H.select_families(fams, rows, 1, par="exclude")] == ["E"]
+    assert [f["family"] for f in H.select_families(fams, rows, 1, par="only")] == ["S"]
+    assert [f["family"] for f in H.select_families(fams, rows, 1)] == ["S", "E"]

@@ -24,9 +24,11 @@ The donor margin of a unique read (reported, no class) is how far the best place
     hg002truth.py untied BAM FAMILIES.json SET OUT.tsv         -> the reads minimap2 resolves, in the same format (copies = the
                                                                   one copy its best-AS alignments lie on)
     hg002truth.py truth TIED.tsv MAT.bam PAT.bam CHAIN FAMILIES.json SET OUT.tsv -> each tied read's class and truth copy
-    hg002truth.py world TRUTH.tsv FAMILIES.json SET MIN OUT_DIR -> OUT_DIR/families.json (set `hg002`: the families with >= MIN
-                                                                  scored tied reads) and OUT_DIR/world_truth.tsv (the reads with
-                                                                  a donor copy, realreads' truth format)
+    hg002truth.py world TRUTH.tsv FAMILIES.json SET MIN OUT_DIR [--par keep|exclude|only]
+                                                               -> OUT_DIR/families.json (set `hg002`: the families with >= MIN
+                                                                  scored tied reads; pseudoautosomal ones kept, excluded or
+                                                                  alone) and OUT_DIR/world_truth.tsv (the reads with a donor
+                                                                  copy, realreads' truth format)
     hg002truth.py bars O2PROOF.json SCORE.json OUT.json       -> the pre-registered bars T1-T5 and each system's O2 verdict
     hg002truth.py score TRUTH.tsv TIED.tsv WORLD OUT.json [--o2 NAME]  -> per method (minimap2's primary, the primary at MAPQ
                                                                   >= 1, current, integrated: summary.world_calls with the O2
@@ -246,10 +248,21 @@ def cmd_truth(tied_p, mat_p, pat_p, chain_p, fam_p, set_name, out_p):
     return 0
 
 
-def select_families(fams, truth_rows, min_scored):
-    """The families (in pool order) with >= min_scored tied reads of a scored class."""
+PAR = {"chrX": ((0, 2394410), (153925834, 154259566)), "chrY": ((0, 2458320), (62122809, 62460029))}   # CHM13 v2.0 (T2T-Y)
+
+
+def pseudoautosomal(fam):
+    """Every copy inside a pseudoautosomal region: in a male donor the chrX and chrY copies are the maternal and paternal
+    alleles of one recombining locus, so telling them apart is phasing, not paralog assignment."""
+    return all(any(s <= c["start"] and c["end"] <= e for s, e in PAR.get(c["chrom"], ())) for c in fam["copies"])
+
+
+def select_families(fams, truth_rows, min_scored, par="keep"):
+    """The families (in pool order) with >= min_scored tied reads of a scored class; par: keep, exclude or only the
+    pseudoautosomal ones."""
     n = collections.Counter(r["family"] for r in truth_rows if r["class"] in SCORED)
-    return [f for f in fams if n[f["family"]] >= min_scored]
+    return [f for f in fams if n[f["family"]] >= min_scored
+            and (par == "keep" or pseudoautosomal(f) == (par == "only"))]
 
 
 def world_truth(truth_rows):
@@ -257,10 +270,10 @@ def world_truth(truth_rows):
     return [(r["read"], r["truth"], r["family"]) for r in truth_rows if r["class"] in ("unique", "unique_elsewhere")]
 
 
-def cmd_world(truth_p, fam_p, set_name, min_scored, out_dir):
+def cmd_world(truth_p, fam_p, set_name, min_scored, out_dir, par="keep"):
     d = json.load(open(fam_p))
     rows = list(csv.DictReader(open(truth_p), delimiter="\t"))
-    keep = select_families(d["sets"][set_name], rows, min_scored)
+    keep = select_families(d["sets"][set_name], rows, min_scored, par)
     names = {f["family"] for f in keep}
     os.makedirs(out_dir, exist_ok=True)
     json.dump(dict({k: v for k, v in d.items() if k != "sets"}, sets={"hg002": keep}), open(f"{out_dir}/families.json", "w"))
@@ -391,8 +404,8 @@ def main(argv):
         return cmd_bars(*argv[1:])
     if argv[:1] == ["score"] and (len(argv) == 5 or len(argv) == 7 and argv[5] == "--o2"):
         return cmd_score(*argv[1:5], o2_name=argv[6] if len(argv) == 7 else "o2.integv.m2.tsv")
-    if len(argv) == 6 and argv[0] == "world":
-        return cmd_world(argv[1], argv[2], argv[3], int(argv[4]), argv[5])
+    if argv[:1] == ["world"] and (len(argv) == 6 or len(argv) == 8 and argv[6] == "--par"):
+        return cmd_world(argv[1], argv[2], argv[3], int(argv[4]), argv[5], argv[7] if len(argv) == 8 else "keep")
     if len(argv) == 5 and argv[0] == "tied":
         return cmd_tied(*argv[1:])
     if len(argv) == 5 and argv[0] == "untied":
