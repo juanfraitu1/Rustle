@@ -61,3 +61,36 @@ python3 bench/o3_graph/samplecopy.py combine $H/truth.tsv $O /mnt/linuxdisk/tmp/
 - **UNDERPOWERED:** otherwise.
 
 **Rules:** the code is frozen at the commit that adds this file. A bug is recorded as an amendment before any rerun.
+
+## Results (2026-10-19, run once; `/mnt/linuxdisk/tmp/o3_graph/samplecopy_par/`)
+
+**Verdict: PASS.** S1, S2 and S3 hold, and S1 is powered.
+
+| pooled, 6 families (622 tied reads with a donor copy) | right | wrong | abstain | own_tie placed |
+|---|---|---|---|---|
+| sample copies | **508** | **0** | 114 | 0 / 6,681 |
+| v14 | 1 | 0 | 621 | 0 |
+| v14 + sample copies | 509 | 0 | 113 | 0 |
+
+- **S1:** 0 of 508 placements are wrong.
+- **S2:** 0 of the 6,681 donor-tied reads are placed.
+- **S3:** v14 + sample copies makes 509 right placements against v14's 1, with no wrong one.
+
+**One family carries it.**
+- **DHRSX:** 852 reads, 41 informative columns and 2 clusters, both labelled. 508 of its 544 tied reads with a donor copy
+  are placed right; v14 places 1.
+- **The other five abstain throughout:**
+  - AKAP17A, CD99 and SLC25A6 have a single cluster (SLC25A6 has 4 informative columns over 7,535 reads, CD99 has 35);
+  - CD99P1's clusters are unlabelled;
+  - PLCXD1's 4 labelled clusters place nothing (none of its tied reads passed the two-site and posterior rules).
+
+**What it claims.** On a held-out stratum of real reads, the O3 -> O2 step resolves AS-tied reads without error when the
+sample's own variants separate the copies. Here the copies are HG002's chrX and chrY alleles of DHRSX. Where nothing
+separates them, it abstains.
+
+**Limits.**
+- The pass rests on one family.
+- Separating chrX from chrY in the PAR is read-backed phasing of one recombining locus, not paralog assignment. It tests the
+  method's machinery: clustering by the sample's own alleles and labelling by confidently placed reads.
+- Together with register 1333 (82 / 4 on paralog families), the step's real-data precision is 590 right / 4 wrong over the
+  two held-out tests.
