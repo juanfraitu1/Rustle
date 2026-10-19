@@ -8,10 +8,13 @@ tie); copies by exon overlap (realreads.copy_exons). Its truth comes from its al
 best-scoring ones, lifted to CHM13 through the chain, name the copy --
   unique          every best placement (either haplotype: the copy's two alleles) lifts onto one CHM13 copy -> the truth
   own_tie         they lift onto two or more copies: the donor's copies tie too -> undecidable from the read
-  no_counterpart  none lifts onto a CHM13 copy: a copy of the donor's that CHM13 lacks -> O3's case, never a copy to assign
+  elsewhere       they lift onto CHM13, but onto no copy of the family: the read comes from another CHM13 locus (whose CHM13
+                  allele, unlike the donor's, loses to the tied copies) -> never a copy to assign
+  no_counterpart  none lifts onto CHM13 at all: a copy of the donor's that CHM13 lacks -> O3's case, never a copy to assign
   unmapped        no alignment to the donor's genome
 
-    hg002truth.py tied BAM FAMILIES.json SET OUT.tsv           -> the reads tied in BAM (CHM13 coordinates): read, AS, copies
+    hg002truth.py tied BAM FAMILIES.json SET OUT.tsv           -> the reads tied in BAM (CHM13 coordinates): read, AS, copies,
+                                                                  and minimap2's primary (its coin toss among them) + MAPQ
     hg002truth.py truth TIED.tsv MAT.bam PAT.bam CHAIN FAMILIES.json SET OUT.tsv -> each tied read's class and truth copy
 """
 import collections
@@ -40,6 +43,9 @@ def tied_copies(alns, idx):
     return best, {c for ch, bl, sc in alns if sc == best for c in [_copy_of(ch, bl, idx)] if c}
 
 
+OFF = "off"                                                   # a best placement lifting onto CHM13 outside every copy
+
+
 def own_truth(own, lift, idx):
     """(class, truth copy) of a read from its alignments to the donor's haplotypes [(contig, blocks, AS)]; lift(contig, s,
     e) -> [(chrom, s, e)] on CHM13."""
@@ -56,17 +62,18 @@ def own_truth(own, lift, idx):
             c = _copy_of(ch, [(s2, e2)], idx)
             if c:
                 cps[c] += e2 - s2
-        found.add(max(sorted(cps), key=lambda c: cps[c]) if cps else None)
-    real = found - {None}
+        found.add(max(sorted(cps), key=lambda c: cps[c]) if cps else (OFF if pieces else None))
+    real = found - {None, OFF}
     if not real:
-        return "no_counterpart", None
+        return ("elsewhere" if OFF in found else "no_counterpart"), None
     if len(found) > 1:
         return "own_tie", None
     return "unique", next(iter(real))
 
 
-def _alns(bam_path):
-    """{read: [(contig, blocks, AS)]} of every primary and secondary alignment."""
+def _alns(bam_path, primaries=None):
+    """{read: [(contig, blocks, AS)]} of every primary and secondary alignment; primaries, a dict, gets {read: (contig,
+    blocks, MAPQ)} of each primary."""
     import pysam
     out = collections.defaultdict(list)
     with pysam.AlignmentFile(bam_path) as bam:
@@ -74,6 +81,8 @@ def _alns(bam_path):
             if r.is_unmapped or r.is_supplementary:
                 continue
             out[r.query_name].append((r.reference_name, r.get_blocks(), r.get_tag("AS")))
+            if primaries is not None and not r.is_secondary:
+                primaries[r.query_name] = (r.reference_name, r.get_blocks(), r.mapping_quality)
     return out
 
 
@@ -81,15 +90,16 @@ def cmd_tied(bam_p, fam_p, set_name, out_p):
     (fams,) = [json.load(open(fam_p))["sets"][set_name]]
     idx = R.copy_exons(fams)
     fam_of = {f"{f['family']}.{k}": f["family"] for f in fams for k in range(len(f["copies"]))}
-    n = collections.Counter()
+    n, prim = collections.Counter(), {}
     with open(out_p, "w") as fh:
-        fh.write("read\tas\tfamily\tcopies\n")
-        for q, al in _alns(bam_p).items():
+        fh.write("read\tas\tfamily\tcopies\tprimary\tmapq\n")
+        for q, al in _alns(bam_p, prim).items():
             best, cps = tied_copies(al, idx)
             n["reads"] += 1
             fs = {fam_of[c] for c in cps}
             if len(cps) >= 2 and len(fs) == 1:
-                fh.write(f"{q}\t{best}\t{next(iter(fs))}\t{','.join(sorted(cps))}\n")
+                ch, bl, mq = prim[q]
+                fh.write(f"{q}\t{best}\t{next(iter(fs))}\t{','.join(sorted(cps))}\t{_copy_of(ch, bl, idx) or ''}\t{mq}\n")
                 n["tied"] += 1
             elif len(cps) >= 2:
                 n["tied_across_families"] += 1
