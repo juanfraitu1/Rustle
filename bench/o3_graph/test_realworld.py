@@ -349,3 +349,12 @@ def test_a_branch_world_with_paralogs_builds_and_its_branch_copy_is_expressed_as
     assert "F.B" in kinds and "F.B" in reads                         # the extra absent copy, from a coding copy
     n = collections.Counter(r.split("\t")[1] for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()[1:])
     assert n["F.B"] >= n["F.3"]                                       # not scaled down as a paralog
+
+
+def test_a_world_s_regions_end_at_their_contig_s_end(tmp_path, monkeypatch):
+    # round 20's draw holds chrM genes (16,569 bp) with their nuclear copies: a copy's span +- REGION_PAD runs past the contig
+    _paralog_world(tmp_path, monkeypatch, "INTACT")
+    for ln in (tmp_path / "w" / "regions.txt").read_text().split():
+        ch, rng = ln.split(":")
+        s, e = map(int, rng.split("-"))
+        assert 1 <= s <= e <= 70000, ln                              # the fixture's contig is 70 kb

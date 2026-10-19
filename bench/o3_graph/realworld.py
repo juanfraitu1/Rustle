@@ -493,7 +493,8 @@ def cmd_build(a):
         hull = collections.defaultdict(list)                 # copy_assign wants a family's span on a chromosome in ONE region
         for c in fam["copies"]:
             hull[c["chrom"]] += [c["start"], c["end"]]
-        regions += [(ch, max(0, min(v) - REGION_PAD), max(v) + REGION_PAD) for ch, v in hull.items()]
+        regions += [(ch, max(0, min(v) - REGION_PAD), min(max(v) + REGION_PAD, world_fa.get_reference_length(ch)))
+                    for ch, v in hull.items()]                    # no further than the contig's end (chrM: 16,569 bp)
         if a.scenario == "CROSS":
             for k, c in enumerate(fam["copies"]):
                 lo = max(0, c["start"] - PROJ_PAD)
