@@ -53,11 +53,11 @@ def test_clusters_closer_than_two_columns_merge_and_tiny_ones_dissolve():
     assert len(C.fit_clusters(reads, cols, kmax=3, seed=0, min_size=3)["haplotypes"]) == 1
 
 
-def test_a_cluster_takes_the_copy_its_untied_reads_resolve_to_by_a_clear_majority():
-    member = [0, 0, 0, 0, 1, 1, 1, 2]
-    resolved = ["F.0", "F.0", "F.0", None, "F.1", "F.2", None, "F.2"]                 # None: a tied read (no resolution)
-    assert C.label_clusters(member, resolved, n_clusters=3, min_reads=2, min_share=0.8) == {0: "F.0", 1: None, 2: None}
-    assert C.label_clusters(member, resolved, n_clusters=3, min_reads=1, min_share=0.5) == {0: "F.0", 1: "F.1", 2: "F.2"}
+def test_a_cluster_takes_the_copy_its_untied_reads_resolve_to_only_by_a_confident_majority():
+    member = [0] * 10 + [1] * 3 + [2] * 10 + [3] * 10
+    resolved = ["F.0"] * 10 + ["F.1"] * 3 + ["F.2"] * 8 + ["F.0"] * 2 + ["F.3"] * 9 + [None]     # None: a tied read
+    got = C.label_clusters(member, resolved, n_clusters=4)
+    assert got == {0: "F.0", 1: None, 2: None, 3: "F.3"}     # 10/10 yes; 3/3 too few; 8/10 not sure of a majority; 9/9 yes
 
 
 def test_a_tied_read_takes_its_cluster_s_copy_only_when_sure_and_the_copy_is_one_it_ties_on():
@@ -88,3 +88,27 @@ def test_a_read_s_evidence_ignores_the_cluster_sizes_so_a_read_with_no_informati
     ev = C.evidence_posteriors([{1: "A"}, {2: "C"}, {}], haps, 0.01)
     assert ev[0][0] > 0.99                                   # it carries the site that separates them
     assert ev[1] == [0.5, 0.5] and ev[2] == [0.5, 0.5]       # a shared or missing site: no evidence, whatever the weights
+
+
+def test_the_background_error_is_the_reads_mismatch_rate_to_the_anchor_off_the_informative_columns():
+    ref = {0: "A", 1: "C", 2: "G", 3: "T", 4: "A"}
+    reads = [{0: "A", 1: "C", 2: "T", 3: "T"}, {0: "A", 1: "G", 2: "T", 3: "T", 4: "A"}]   # column 2: informative
+    assert C.background_error(reads, ref, informative=[2]) == 1 / 7                        # one mismatch in 7 others
+
+
+def test_a_fixed_error_rate_is_kept_through_the_fit():
+    rng = random.Random(3)
+    cols = list(range(6))
+    h1 = {c: "A" for c in cols}
+    reads = _reads(h1, 20, cols, 0.0, rng) + _reads({**h1, 1: "C", 4: "G"}, 20, cols, 0.0, rng)
+    fit = C.fit_clusters(reads, cols, kmax=3, seed=0, error=0.002)
+    assert fit["error"] == 0.002 and len(fit["haplotypes"]) == 2
+
+
+def test_a_tied_read_needs_two_of_its_own_sites_against_every_differently_labelled_cluster():
+    haps = [{1: "A", 2: "C", 3: "G"}, {1: "T", 2: "G", 3: "G"}, {1: "A", 2: "C", 3: "T"}]
+    labels = {0: "F.0", 1: "F.1", 2: "F.0"}                       # clusters 0 and 2: two haplotypes of one copy
+    assert C.decisive_sites({1: "A", 2: "C", 3: "G"}, 0, haps, labels) == 2   # against cluster 1; cluster 2 shares the label
+    assert C.decisive_sites({1: "A", 3: "G"}, 0, haps, labels) == 1
+    assert C.assign_tied([0.999, 0.001, 0.0], labels, {"F.0", "F.1"}, sites=1) is None     # one site: abstain
+    assert C.assign_tied([0.999, 0.001, 0.0], labels, {"F.0", "F.1"}, sites=2) == "F.0"

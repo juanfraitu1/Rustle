@@ -50,11 +50,12 @@ def _loglik(read, hap, le, lm):
     return sum(le if hap.get(c) == b else lm for c, b in read.items())
 
 
-def _em(reads, haps, iters=50):
-    """EM of a haplotype mixture from initial haplotypes [{col: base}] -> (haps, posteriors, weights, error, loglik)."""
+def _em(reads, haps, iters=50, fixed_e=None):
+    """EM of a haplotype mixture from initial haplotypes [{col: base}] -> (haps, posteriors, weights, error, loglik); fixed_e:
+    the error rate held at the reads' background (background_error) rather than fitted."""
     k = len(haps)
     w = [1.0 / k] * k
-    e = 0.01
+    e = fixed_e if fixed_e is not None else 0.01
     post = []
     ll = -math.inf
     for _ in range(iters):
@@ -79,7 +80,8 @@ def _em(reads, haps, iters=50):
             for j in range(k):
                 mism += p[j] * sum(1 for c, b in r.items() if haps[j].get(c) != b)
             obs += len(r)
-        e = min(max(mism / obs if obs else 0.01, 1e-4), 0.25)
+        if fixed_e is None:
+            e = min(max(mism / obs if obs else 0.01, 1e-4), 0.25)
         if abs(ll_new - ll) < 1e-6:
             ll = ll_new
             break
@@ -119,14 +121,14 @@ def _support(post, reads, j):
     return s
 
 
-def fit_clusters(reads, cols, kmax, seed=0, min_size=3, min_diff=2, iters=50):
+def fit_clusters(reads, cols, kmax, seed=0, min_size=3, min_diff=2, iters=50, error=None):
     """The sample's copy-haplotypes over `cols`: EM from kmax farthest-point seeds, then clusters closer than min_diff
     columns (compared where both have >= 1 read of support) merged and clusters under min_size reads dissolved, EM rerun
     until nothing changes. -> {haplotypes, posteriors, weights, error, loglik}."""
     reads = [{c: b for c, b in r.items() if c in set(cols)} for r in reads]
     haps = _seeds(reads, kmax, seed)
     while True:
-        haps, post, w, e, ll = _em(reads, haps, iters)
+        haps, post, w, e, ll = _em(reads, haps, iters, error)
         k = len(haps)
         size = [sum(p[j] for p in post) for j in range(k)]
         small = [j for j in range(k) if size[j] < min_size]
@@ -149,29 +151,47 @@ def fit_clusters(reads, cols, kmax, seed=0, min_size=3, min_diff=2, iters=50):
         return dict(haplotypes=haps, posteriors=post, weights=w, error=e, loglik=ll)
 
 
-def label_clusters(member, resolved, n_clusters, min_reads=2, min_share=0.8):
-    """{cluster: the copy its members' minimap2 resolutions (untied reads; None for tied ones) name by a clear majority, or
-    None}; member: each read's cluster (or None)."""
+def _wilson_lower(k, n, z=1.96):
+    if n == 0:
+        return 0.0
+    p, d = k / n, 1 + z * z / n
+    return ((p + z * z / (2 * n)) - z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / d
+
+
+def label_clusters(member, resolved, n_clusters):
+    """{cluster: the copy its members' minimap2 resolutions (untied reads; None for tied ones) name by a CONFIDENT majority --
+    the 95% Wilson lower bound of its share above one half -- or None}; member: each read's cluster (or None). (Development,
+    TBC1D3: a label from 2 untied reads of 2 was wrong for every tied read it placed.)"""
     cnt = [collections.Counter() for _ in range(n_clusters)]
     for m, r in zip(member, resolved):
         if m is not None and r is not None:
             cnt[m][r] += 1
     out = {}
     for j, v in enumerate(cnt):
-        tot = sum(v.values())
-        if tot >= min_reads:
-            top = max(sorted(v), key=v.__getitem__)
-            out[j] = top if v[top] / tot >= min_share else None
-        else:
-            out[j] = None
+        top = max(sorted(v), key=v.__getitem__) if v else None
+        out[j] = top if top is not None and _wilson_lower(v[top], sum(v.values())) > 0.5 else None
     return out
 
 
-def assign_tied(post, labels, tied, min_post=0.99):
-    """A tied read's call: its most likely cluster's label when the posterior is >= min_post and the label is one of the
-    copies the read ties on; else None (abstain)."""
+MIN_SITES = 2                                                       # O2's certificate: one site can be one error
+
+
+def decisive_sites(read, j, haps, labels):
+    """How many of the read's own sites back cluster j against its closest differently-labelled rival (an unlabelled cluster
+    counts as different): columns where the read carries j's allele and the rival's differs. 0 with no such rival."""
+    rivals = [k for k in range(len(haps)) if k != j and labels.get(k) != labels.get(j)]
+    if not rivals:
+        return 0
+    return min(sum(1 for c, b in read.items() if haps[j].get(c) == b and haps[k].get(c) != b) for k in rivals)
+
+
+def assign_tied(post, labels, tied, min_post=0.99, sites=None):
+    """A tied read's call: its most likely cluster's label when the posterior is >= min_post, the label is one of the copies
+    the read ties on and (when given) the read's decisive sites number >= MIN_SITES; else None (abstain)."""
     j = max(range(len(post)), key=post.__getitem__)
     lab = labels.get(j)
+    if sites is not None and sites < MIN_SITES:
+        return None
     return lab if post[j] >= min_post and lab is not None and lab in tied else None
 
 
@@ -185,6 +205,20 @@ def read_pileup(rec):
 def choose_anchor(resolved_counts, copies):
     """The anchor copy: the one most untied reads resolve to (the best-supported frame); the first copy when none do."""
     return max(copies, key=lambda c: (resolved_counts.get(c, 0), -copies.index(c)))
+
+
+def background_error(reads, ref, informative):
+    """The reads' mismatch rate to the anchor's bases ({position: base}) off the informative columns: the sequencing error
+    the mixture's likelihood should assume (fitting it instead lets an under-split model call its own mixing error)."""
+    inf = set(informative)
+    mism = obs = 0
+    for r in reads:
+        for c, b in r.items():
+            if c in inf or c not in ref:
+                continue
+            obs += 1
+            mism += b != ref[c]
+    return mism / obs if obs else 0.0
 
 
 def evidence_posteriors(reads, haps, e):
@@ -223,8 +257,10 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
     anchor = choose_anchor(collections.Counter(resolved[q] for q in seqs if q in resolved), copies)
     a = fam["copies"][copies.index(anchor)]
     with tempfile.TemporaryDirectory(dir=out_dir) as d:
+        s0 = max(0, a["start"] - PAD)
         with pysam.FastaFile(genome_p) as fa:
-            open(f"{d}/anchor.fa", "w").write(f">anchor\n{fa.fetch(a['chrom'], max(0, a['start'] - PAD), a['end'] + PAD)}\n")
+            locus = fa.fetch(a["chrom"], s0, a["end"] + PAD)
+        open(f"{d}/anchor.fa", "w").write(f">anchor\n{locus}\n")
         open(f"{d}/reads.fa", "w").write("".join(f">{q}\n{x}\n" for q, x in seqs.items()))
         subprocess.run(f"minimap2 -a -x splice:hq -uf --eqx --secondary=no -t {threads} {d}/anchor.fa {d}/reads.fa > {d}/aln.sam "
                        f"2> {d}/mm2.log", shell=True, check=True)
@@ -235,8 +271,11 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
                     pile[rec.query_name] = read_pileup(rec)
     names = sorted(pile)
     reads = [pile[q] for q in names]
-    cols = informative_columns(reads)
-    fit = fit_clusters(reads, cols, kmax=min(2 * len(copies), KMAX_CAP))
+    kmax = min(2 * len(copies), KMAX_CAP)
+    cols = informative_columns(reads, min_reads=3, min_frac=0.5 / kmax)    # half of one copy-haplotype's expected share
+    ref = dict(enumerate(locus.upper()))                                   # the anchor FASTA is the locus: positions from 0
+    err = max(background_error(reads, ref, cols), 1e-4)
+    fit = fit_clusters(reads, cols, kmax=kmax, error=err)
     sub = [{c: b for c, b in r.items() if c in set(cols)} for r in reads]
     ev = evidence_posteriors(sub, fit["haplotypes"], fit["error"])
     member = [max(range(len(p)), key=p.__getitem__) if max(p) >= MIN_POST else None for p in ev]
@@ -246,7 +285,8 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
         for q, p in zip(names, ev):
             if q in tied:
                 j = max(range(len(p)), key=p.__getitem__)
-                fh.write(f"{q}\t{assign_tied(p, labels, tied[q], MIN_POST) or '-'}\t{p[j]:.4f}\t{j}\t{labels.get(j) or '-'}\n")
+                ns = decisive_sites(sub[names.index(q)], j, fit["haplotypes"], labels)
+                fh.write(f"{q}\t{assign_tied(p, labels, tied[q], MIN_POST, ns) or '-'}\t{p[j]:.4f}\t{j}\t{labels.get(j) or '-'}\n")
     lab_counts = [collections.Counter(resolved[q] for q, m in zip(names, member) if m == j and q in resolved)
                   for j in range(len(fit["haplotypes"]))]
     json.dump(dict(family=family, anchor=anchor, reads=len(names), tied=sum(q in tied for q in names), columns=len(cols),
