@@ -12,6 +12,9 @@ best-scoring ones, lifted to CHM13 through the chain, name the copy --
                   allele, unlike the donor's, loses to the tied copies) -> never a copy to assign
   no_counterpart  none lifts onto CHM13 at all: a copy of the donor's that CHM13 lacks -> O3's case, never a copy to assign
   unmapped        no alignment to the donor's genome
+  poor_match      the donor's best placement is no near-perfect match (NM > max(2, 0.3% of its aligned bases), arm 4's
+                  floor, bench/o2_truth/haplotype_truth.py): the read's sequence is not in the donor's assembly as such
+The donor margin of a unique read (reported, no class) is how far the best placement off its truth copy falls behind.
 
     hg002truth.py tied BAM FAMILIES.json SET OUT.tsv           -> the reads tied in BAM (CHM13 coordinates): read, AS, copies,
                                                                   and minimap2's primary (its coin toss among them) + MAPQ
@@ -49,15 +52,39 @@ def _copy_of(chrom, blocks, idx):
 
 
 def tied_copies(alns, idx):
-    """(best AS, the copies its best-scoring alignments lie on) of one read's alignments [(chrom, blocks, AS)]; tied when two
-    or more."""
+    """(best AS, the copies its best-scoring alignments lie on) of one read's alignments [(chrom, blocks, AS, ...)]; tied
+    when two or more."""
     if not alns:
         return None, set()
     best = max(a[2] for a in alns)
-    return best, {c for ch, bl, sc in alns if sc == best for c in [_copy_of(ch, bl, idx)] if c}
+    return best, {c for ch, bl, sc, *_ in alns if sc == best for c in [_copy_of(ch, bl, idx)] if c}
+
+
+def near_perfect(nm, aligned):
+    """Arm 4's floor for a donor placement to count as the read's own locus: NM <= max(2, 0.003 x aligned bases)."""
+    return nm <= max(2, 0.003 * aligned)
 
 
 OFF = "off"                                                   # a best placement lifting onto CHM13 outside every copy
+
+
+def _placed_copy(contig, bl, lift, idx):
+    """The CHM13 copy a donor placement lifts onto (the one its lifted blocks overlap most), OFF when it lifts onto no copy,
+    None when it does not lift."""
+    pieces = [(ch, s2, e2) for s, e in bl for ch, s2, e2 in lift(contig, s, e)]
+    cps = collections.Counter()
+    for ch, s2, e2 in pieces:
+        c = _copy_of(ch, [(s2, e2)], idx)
+        if c:
+            cps[c] += e2 - s2
+    return max(sorted(cps), key=lambda c: cps[c]) if cps else (OFF if pieces else None)
+
+
+def donor_margin(own, lift, idx, truth):
+    """The best AS minus the best AS of a placement that does not lift onto the truth copy (another copy, CHM13 outside
+    the copies, or nowhere); None when every placement lifts onto it."""
+    rivals = [sc for contig, bl, sc, *_ in own if _placed_copy(contig, bl, lift, idx) != truth]
+    return max(a[2] for a in own) - max(rivals) if rivals else None
 
 
 def own_truth(own, lift, idx):
@@ -66,17 +93,7 @@ def own_truth(own, lift, idx):
     if not own:
         return "unmapped", None
     best = max(a[2] for a in own)
-    found = set()
-    for contig, bl, sc in own:
-        if sc != best:
-            continue
-        pieces = [(ch, s2, e2) for s, e in bl for ch, s2, e2 in lift(contig, s, e)]
-        cps = collections.Counter()
-        for ch, s2, e2 in pieces:
-            c = _copy_of(ch, [(s2, e2)], idx)
-            if c:
-                cps[c] += e2 - s2
-        found.add(max(sorted(cps), key=lambda c: cps[c]) if cps else (OFF if pieces else None))
+    found = {_placed_copy(contig, bl, lift, idx) for contig, bl, sc, *_ in own if sc == best}
     real = found - {None, OFF}
     if not real:
         return ("elsewhere" if OFF in found else "no_counterpart"), None
@@ -101,15 +118,17 @@ def tied_fate(cls, truth, assigned, in_o3, tied):
 
 
 def _alns(bam_path, primaries=None):
-    """{read: [(contig, blocks, AS)]} of every primary and secondary alignment; primaries, a dict, gets {read: (contig,
-    blocks, MAPQ)} of each primary."""
+    """{read: [(contig, blocks, AS, NM, aligned bases)]} of every primary and secondary alignment; primaries, a dict, gets
+    {read: (contig, blocks, MAPQ)} of each primary."""
     import pysam
     out = collections.defaultdict(list)
     with pysam.AlignmentFile(bam_path) as bam:
         for r in bam.fetch(until_eof=True):
             if r.is_unmapped or r.is_supplementary:
                 continue
-            out[r.query_name].append((r.reference_name, r.get_blocks(), r.get_tag("AS")))
+            aligned = sum(n for op, n in r.cigartuples if op in (0, 7, 8))
+            out[r.query_name].append((r.reference_name, r.get_blocks(), r.get_tag("AS"),
+                                     r.get_tag("NM") if r.has_tag("NM") else 10 ** 6, aligned))   # no NM: never near-perfect
             if primaries is not None and not r.is_secondary:
                 primaries[r.query_name] = (r.reference_name, r.get_blocks(), r.mapping_quality)
     return out
@@ -137,9 +156,10 @@ def cmd_tied(bam_p, fam_p, set_name, out_p):
 
 
 def cmd_truth(tied_p, mat_p, pat_p, chain_p, fam_p, set_name, out_p):
-    sys.path.insert(0, "/mnt/linuxdisk/tmp/rustle_figures_dev/o2_presence/src")
-    from chainlift import Chain
-    ch = Chain(chain_p)
+    spec = importlib.util.spec_from_file_location("o3_graph_chainlift_h", os.path.join(HERE, "chainlift.py"))
+    cl = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cl)
+    ch = cl.Chain(chain_p)
     fams = json.load(open(fam_p))["sets"][set_name]
     idx = R.copy_exons(fams)
     lift = lambda contig, s, e: [(q, a, b) for q, a, b, _ in ch.lift(contig, s, e)]  # noqa: E731
@@ -148,13 +168,24 @@ def cmd_truth(tied_p, mat_p, pat_p, chain_p, fam_p, set_name, out_p):
         own[q] += v
     n = collections.Counter()
     with open(out_p, "w") as fh:
-        fh.write("read\tfamily\ttied_copies\tclass\ttruth\n")
+        fh.write("read\tfamily\ttied_copies\tclass\ttruth\tdonor_nm\tdonor_margin\n")
         for r in csv.DictReader(open(tied_p), delimiter="\t"):
-            cls, cp = own_truth(own.get(r["read"], []), lift, idx)
-            if cls == "unique" and cp not in r["copies"].split(","):
-                cls = "unique_elsewhere"                    # the donor places it on a copy CHM13 did not tie it with
+            al = own.get(r["read"], [])
+            cls, cp = own_truth(al, lift, idx)
+            nm, margin = "", ""
+            if al:
+                top = max(a[2] for a in al)
+                b = min((a for a in al if a[2] == top), key=lambda a: a[3])
+                nm = b[3]
+                if not near_perfect(b[3], b[4]):
+                    cls, cp = "poor_match", None
+            if cls == "unique":
+                m = donor_margin(al, lift, idx, cp)
+                margin = "" if m is None else m
+                if cp not in r["copies"].split(","):
+                    cls = "unique_elsewhere"                # the donor places it on a copy CHM13 did not tie it with
             n[cls] += 1
-            fh.write(f"{r['read']}\t{r['family']}\t{r['copies']}\t{cls}\t{cp or ''}\n")
+            fh.write(f"{r['read']}\t{r['family']}\t{r['copies']}\t{cls}\t{cp or ''}\t{nm}\t{margin}\n")
     print(f"[hg002truth] {dict(n)} -> {out_p}", flush=True)
     return 0
 
@@ -181,8 +212,8 @@ def cmd_score(truth_p, tied_p, world, out_p, o2_name="o2.integv.m2.tsv"):
     skipped = collections.Counter()
     for r in csv.DictReader(open(truth_p), delimiter="\t"):
         q, f, cls = r["read"], r["family"], r["class"]
-        if cls == "unmapped" or q not in reads:
-            skipped["unmapped" if cls == "unmapped" else "not_in_world"] += 1
+        if cls in ("unmapped", "poor_match") or q not in reads:
+            skipped[cls if cls in ("unmapped", "poor_match") else "not_in_world"] += 1
             continue
         t, ts = tied[q], set(r["tied_copies"].split(","))
         prim = t["primary"] or "wrong-locus"
