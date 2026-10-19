@@ -183,11 +183,14 @@ The six cells ran in 62 min (7-9 min each) and the two cost runs in 22 min, with
   - an NCOR1P4 read of copy .1 (chr14);
   - minimap2 aligns it to copy .2 (chr21) with AS 278 at NM 0, and to its own copy with AS 262, also at NM 0 (the primary,
     MAPQ 34);
-  - the chr21 alignment covers more of the read, so at a margin of 16 the read is minimap2's, and it goes to the wrong
+  - correction (same day): the chr21 alignment covers LESS of the read. It leaves 38 bases soft-clipped and has 1 intron,
+    while the own copy aligns all 340 bases across 3 introns. minimap2's AS charges each intron and nothing for a clip, so
+    it favours the copy that explains less of the read. At a margin of 16 the read is minimap2's, and it goes to the wrong
     copy;
   - v14's paths placed it right.
-- **This is the known weakness of AS margins** (register 1270): an unspliced alignment to a processed copy outscores the
-  true copy's alignment. NCOR1P4's three copies are transcribed processed pseudogenes.
+- **This is the known weakness of AS margins** (register 1270): an alignment with fewer introns, its unexplained ends
+  clipped for free, outscores the true copy's full spliced alignment. NCOR1P4's three copies are transcribed processed
+  pseudogenes.
 
 **C1 PASS** in both profiles. Integrated CPU, against the current method's:
 - A119b: 938 s against 1,044. The O2 scope step took 5 s.
