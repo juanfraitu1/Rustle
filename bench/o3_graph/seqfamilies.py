@@ -20,7 +20,7 @@ gene when its locus carries the coding gene's canonical by the same rule (sequen
 pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
     seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried] [--retain-chains]
-                                                 [--transcribed-seeds] [--max-span N (0: none)]
+                                                 [--transcribed-seeds] [--max-span N (0: none)] [--candidate-isoforms]
                                                    -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
                                                        (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
@@ -169,6 +169,19 @@ def seed_genes(coding, others):
     return {g["gene_id"] for g in coding} | {g["gene_id"] for g in others if transcribed_pseudogene(g["biotype"])}
 
 
+def candidate_genes(paf, min_ident=0.90):
+    """--candidate-isoforms (2026-10-18, NPIPA1): gene pairs any of whose isoforms (PAF names GENE|TRANSCRIPT) align at >=
+    min_ident over >= half the shorter -- the prefilter the canonicals alone apply missed a gene whose canonical is an
+    atypical isoform (NPIPA1's 27-exon, 5.4-kb one: 0.87-0.90 against the other NPIP canonicals)."""
+    out = set()
+    for ln in paf.splitlines():
+        f = ln.split("\t")
+        a, b = f[0].split("|")[0], f[5].split("|")[0]
+        if a != b and int(f[9]) >= min_ident * int(f[10]) and int(f[10]) >= 0.5 * min(int(f[1]), int(f[6])):
+            out.add(tuple(sorted((a, b))))
+    return out
+
+
 def family_name(gs, used, prefix="S17"):
     """A family's name: prefix + its first coding gene's name (gs in genome order), alphanumerics only, and xN for the Nth family
     of that name (used counts them)."""
@@ -211,7 +224,8 @@ def _paf_hits(paf, min_ident):
     return blocks, best
 
 
-def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False, seeds=False, max_span=None):
+def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False, seeds=False, max_span=None,
+              isoforms=False):
     import pysam
     F = _families()
     gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
@@ -253,10 +267,19 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", reta
     splice = splice_cmd(threads, retain)
     with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
         write_fa(f"{d}/c.fa", [g["gene_id"] for g in genes])
-        # candidates: an all-vs-all of the canonicals at the family identity over half the shorter
-        paf = subprocess.run(["minimap2", "-cx", "asm20", "-X", "-t", str(threads), f"{d}/c.fa", f"{d}/c.fa"],
-                             capture_output=True, text=True, check=True).stdout
-        cand = {x for pr in candidates(paf) for x in pr}
+        if isoforms:                                         # candidates: an all-vs-all of every gene's picked isoforms
+            with open(f"{d}/ci.fa", "w") as fh:
+                for g in genes:
+                    _, iso = F.pick_isoforms(g["tx"])
+                    fh.writelines(f">{g['gene_id']}|{t}\n{F.spliced(fa, g['chrom'], g['strand'], ex)}\n" for t, ex in sorted(iso.items()))
+            paf = subprocess.run(["minimap2", "-cx", "asm20", "-X", "-t", str(threads), f"{d}/ci.fa", f"{d}/ci.fa"],
+                                 capture_output=True, text=True, check=True).stdout
+            cand = {x for pr in candidate_genes(paf, F.MIN_IDENT) for x in pr}
+        else:
+            # candidates: an all-vs-all of the canonicals at the family identity over half the shorter
+            paf = subprocess.run(["minimap2", "-cx", "asm20", "-X", "-t", str(threads), f"{d}/c.fa", f"{d}/c.fa"],
+                                 capture_output=True, text=True, check=True).stdout
+            cand = {x for pr in candidates(paf) for x in pr}
         print(f"[seqfamilies] {len(cand)} genes with a candidate partner", flush=True)
         # the locus rule on every candidate gene: its canonical onto every candidate locus
         write_fa(f"{d}/q.fa", cand)
@@ -338,10 +361,12 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", reta
         fh.writelines("\t".join(map(str, r)) + "\n" for r in rows)
     json.dump(dict(genome=F.GENOME, annotation=f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz",
                    rule=("seqfamilies --paralogs" if paralogs else "seqfamilies") + (" --intron-chain carried" if chain == "carried" else "")
-                   + (" --retain-chains" if retain else "") + (" --transcribed-seeds" if seeds else ""),
+                   + (" --retain-chains" if retain else "") + (" --transcribed-seeds" if seeds else "")
+                   + (f" --max-span {max_span}" if max_span is not None else "") + (" --candidate-isoforms" if isoforms else ""),
                    min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL,
                    **({"intron_chain": chain} if chain != "exact" else {}), **({"retain_chains": True} if retain else {}),
                    **({"transcribed_seeds": True} if seeds else {}), **({"max_span": max_span} if max_span is not None else {}),
+                   **({"candidate_isoforms": True} if isoforms else {}),
                    sets={"seq19" if paralogs else "seq17": fams}),
               open(out_p, "w"), indent=1)
     unnamed = sum(any(re.match(r"^(LOC|ENSG|MSTRG|LINC|AC[0-9]|AL[0-9]|AP[0-9])", c["gene_name"]) or "-" in c["gene_name"]
@@ -379,6 +404,8 @@ def build_args(argv):
             pass                                         # build_seeds
         elif x == "--max-span":
             next(it, None)                               # build_span
+        elif x == "--candidate-isoforms":
+            pass                                         # build_isoforms
         elif x == "--intron-chain":
             chain = next(it, "")
         else:
@@ -393,6 +420,11 @@ def build_span(argv):
     return int(argv[argv.index("--max-span") + 1]) if "--max-span" in argv else None
 
 
+def build_isoforms(argv):
+    """--candidate-isoforms in a build's arguments (the prefilter on every gene's picked isoforms; candidate_genes)."""
+    return "--candidate-isoforms" in argv
+
+
 def build_seeds(argv):
     """--transcribed-seeds in a build's arguments (with --paralogs: transcribed pseudogenes seed families; seed_genes)."""
     return "--transcribed-seeds" in argv
@@ -402,7 +434,7 @@ def main(argv):
     if argv[0] == "build":
         out, spent, paralogs, chain, retain = build_args(argv[1:])
         return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain, seeds=build_seeds(argv[1:]),
-                         max_span=build_span(argv[1:]))
+                         max_span=build_span(argv[1:]), isoforms=build_isoforms(argv[1:]))
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")
