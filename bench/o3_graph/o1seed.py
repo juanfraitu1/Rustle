@@ -57,6 +57,17 @@ def _seqfamilies():
     return mod
 
 
+def _o2graph():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("o3_graph_o2graph_for_o1", os.path.join(HERE, "o2graph.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_ref_aligned = 0                                     # transcripts the last genome search aligned (the rest came from the cache)
+
+
 def lift_hit(contig, ts, cigar):
     """A hit on a local-reference contig `chrom:start-end` (0-based; a plain chromosome name is its own coordinates), its
     target start ts and CIGAR [(n, op)] -> (chrom, start, end, exons): the aligned blocks between introns, in genome
@@ -84,12 +95,16 @@ def confirmed_new(cps, hits):
             and any(ch == c["contig"] and s < c["end"] and c["start"] < e for ch, s, e in hits)}
 
 
+def ref_args(retain=False):
+    """The genome search's minimap2 options. retain (--ref-carried): -P, every chain kept (crowded arrays: among ~45
+    near-identical TSPY loci the default chain selection dropped 62 of 63 transcripts' alignments to the most divergent copy,
+    register 1325)."""
+    return ["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes"] + (["-P"] if retain else [])
+
+
 def ref_cmd(local_dir, query_fa, threads, retain=False):
-    """The genome search's spliced alignment of the catalogued transcripts to the local reference. retain (--ref-carried):
-    minimap2 -P, every chain kept (crowded arrays: among ~45 near-identical TSPY loci the default chain selection dropped 62 of
-    63 transcripts' alignments to the most divergent copy, register 1325)."""
-    return (["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes", "-t", str(threads)]
-            + (["-P"] if retain else []) + [f"{local_dir}/local.mmi", query_fa])
+    """The genome search's spliced alignment of the catalogued transcripts to the local reference (ref_args)."""
+    return ref_args(retain) + ["-t", str(threads), f"{local_dir}/local.mmi", query_fa]
 
 
 def ref_copies(w, out, iso, local_dir, threads=2, carried=False):
@@ -117,11 +132,19 @@ def ref_copies(w, out, iso, local_dir, threads=2, carried=False):
             queries[f"{f}|{c['idx']}"] = (sq[::-1].translate(comp) if c["strand"] == "-" else sq, ex, c)
     if not queries:
         return {}, {}
+    global _ref_aligned
     with tempfile.TemporaryDirectory() as d:
-        with open(f"{d}/q.fa", "w") as fh:
-            fh.writelines(f">{k}\n{v[0]}\n" for k, v in sorted(queries.items()))
-        paf = subprocess.run(ref_cmd(local_dir, f"{d}/q.fa", threads, retain=carried), capture_output=True, text=True,
-                             check=True).stdout
+        if os.environ.get("O1_ALN_CACHE"):              # one alignment per transcript sequence across the set's worlds
+            G = _o2graph()
+            paf = G.cached_minimap2(os.environ["O1_ALN_CACHE"], ref_args(carried), f"{local_dir}/local.mmi",
+                                    {k: v[0] for k, v in sorted(queries.items())}, d)
+            _ref_aligned = G._last_aligned
+        else:
+            with open(f"{d}/q.fa", "w") as fh:
+                fh.writelines(f">{k}\n{v[0]}\n" for k, v in sorted(queries.items()))
+            paf = subprocess.run(ref_cmd(local_dir, f"{d}/q.fa", threads, retain=carried), capture_output=True, text=True,
+                                 check=True).stdout
+            _ref_aligned = len(queries)
     hits, confirm = [], collections.defaultdict(list)
     for ln in paf.splitlines():
         x = ln.split("\t")

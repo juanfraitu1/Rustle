@@ -174,7 +174,8 @@ def chain_steps(a, root, w):
     W = f"{root}/{w}"
     steps = [("current", f"python3 bench/o3_graph/run.py cur {W} {CUR_BIN} --threads {a.set_threads if a.heavy_current else a.threads}",
               "heavy" if a.heavy_current else "light"),      # full families: copy_assign peaks ~5 GB, over the light limit
-             ("O1", f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else "")
+             ("O1", (f"env O1_ALN_CACHE={root}/.o1_aln_cache " if a.aln_cache and a.ref_copies else "")
+                    + f"python3 bench/o3_graph/o1seed.py {W}" + (" --twins" if a.twins else "")
                     + ((" --ref-copies --local " + (f"{root}/local_masked" if w.startswith("REMOVED") else (a.local or f"{root}/local"))
                         + (" --ref-carried" if a.ref_carried else "")) if a.ref_copies else ""), "light"),
              ("O2", f"env O2_PROCS={a.o2_procs} O2_THREADS={a.threads}"
@@ -333,7 +334,8 @@ def main(argv=None):
                    "reference; an off-catalogue locus holding one by the family rule is seeded as a new copy (o1seed.py --ref-copies)")
     p.add_argument("--aln-cache", action="store_true",
                    help="exact alignment caches shared by the set's worlds: O2's path alignments per read sequence "
-                   "(O2_ALN_CACHE) and O3's isoform-to-host alignments (O3_ALN_CACHE); outputs identical")
+                   "(O2_ALN_CACHE), O3's isoform-to-host alignments (O3_ALN_CACHE) and, with --ref-copies, O1's genome search "
+                   "(O1_ALN_CACHE); outputs identical")
     p.add_argument("--branch-linear", action="store_true",
                    help="O3's branch step on the family's loci as linear sequences (minimap2), no family graph "
                    "(detect.py --branch-linear)")

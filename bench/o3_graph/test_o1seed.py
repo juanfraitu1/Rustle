@@ -321,4 +321,23 @@ def test_the_genome_search_takes_a_copy_that_carries_the_intron_chain_and_more_o
 
 def test_the_genome_search_keeps_every_chain_only_under_the_carried_rule():
     assert "-P" not in S.ref_cmd("/L", "q.fa", 2)
-    assert S.ref_cmd("/L", "q.fa", 2, retain=True)[-3:] == ["-P", "/L/local.mmi", "q.fa"]
+    assert S.ref_cmd("/L", "q.fa", 2) == ["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes", "-t", "2",
+                                          "/L/local.mmi", "q.fa"]               # v14's command, unchanged
+    assert S.ref_cmd("/L", "q.fa", 2, retain=True) == S.ref_args(True) + ["-t", "2", "/L/local.mmi", "q.fa"]
+    assert "-P" in S.ref_args(True)
+
+
+def test_the_genome_search_aligns_each_transcript_once_per_set_through_the_cache(tmp_path, monkeypatch):
+    # O1_ALN_CACHE (2026-10-18: -P doubled the search's CPU on the mainstay set): the worlds of a set search the same local
+    # reference with the same transcripts, so each sequence is aligned once; the seeded copies are the uncached run's
+    import json
+    test_o1_seeds_a_genome_copy_of_a_catalogued_copy_that_the_catalogue_lacks(tmp_path)          # builds W and local, uncached
+    w, loc = tmp_path / "W", tmp_path / "local"
+    monkeypatch.delenv("O1_ALN_CACHE", raising=False)
+    assert S.seed_world(str(w), twins=True, ref_local=str(loc), ref_carried=True) == 0                 # uncached, same flags
+    want = json.load(open(w / "graph" / "seeded.json"))
+    monkeypatch.setenv("O1_ALN_CACHE", str(tmp_path / "cache"))
+    assert S.seed_world(str(w), twins=True, ref_local=str(loc), ref_carried=True) == 0
+    assert S._ref_aligned == 1 and json.load(open(w / "graph" / "seeded.json")) == want
+    assert S.seed_world(str(w), twins=True, ref_local=str(loc), ref_carried=True) == 0
+    assert S._ref_aligned == 0 and json.load(open(w / "graph" / "seeded.json")) == want

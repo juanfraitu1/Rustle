@@ -228,3 +228,5 @@ def test_o1_searches_each_world_s_own_local_reference_for_copies_the_catalogue_l
     assert st["O1"].endswith("--ref-copies --local /R/local")
     st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True, ref_carried=True, local="/L"), "/R", "INTACT"))
     assert st["O1"].endswith("--ref-copies --local /L --ref-carried")
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True, aln_cache=True, local="/L"), "/R", "INTACT"))
+    assert st["O1"].startswith("env O1_ALN_CACHE=/R/.o1_aln_cache python3 bench/o3_graph/o1seed.py /R/INTACT")
