@@ -296,3 +296,13 @@ unchanged from 7e865cba.
   - The rest are reads whose own copy carries donor alleles that make another CHM13 copy fit better. The user's split
     gives them to minimap2 and gets them wrong.
   - Only a check of the sample's own variation, the O3 extension "PSVs nothing in the genome explains", can notice them.
+
+## Results: the pseudoautosomal stratum (2026-10-19, `fast/hg002/run_par.sh`; reported, no bar)
+
+- **The world:** 12 families, 24 copies, 22,302 reads and 624 truth reads (all `unique`). The run took 6 min.
+- **Neither system attempts phasing.** The integrated system places 1 truth read (right) and the current one none. Both
+  place 0 of the 7,151 `own_tie` reads.
+- **O3** calls 3 (integrated) and 7 (current) of the 7,775 present-copy reads.
+- **The coin toss is wrong on 287 of 624.**
+- **CHM13 cannot separate them.** The oracle finds 620 of the 624 truth reads `undecidable` on CHM13: their X and Y alleles
+  differ by donor variants that neither CHM13 copy carries.
