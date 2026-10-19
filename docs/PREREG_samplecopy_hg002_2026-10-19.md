@@ -89,3 +89,43 @@ row. A read with no call counts as an abstention, for the sample copies and in v
 
 **What does not change.** No call. S1 (wrong / placed) is unaffected. S2's and S3's denominators now cover all the
 family's tied reads. The pre-registered score is the `--tied` one.
+
+## Results (2026-10-19, run once; `/mnt/linuxdisk/tmp/o3_graph/samplecopy_heldout/`, scored with Amendment 1's `--tied`)
+
+**Verdict: FAIL.** S1 and S3 are powered and fail; S2 holds.
+- **S1:** the sample copies are wrong on 4 of 86 placements (0.047) against the 0.02 bar.
+- **S2:** they place 7 of the 7,228 `own_tie` reads (0.001).
+- **S3:** v14 + sample copies makes 126 right placements against v14's 48, but 11 wrong against 7.
+
+| pooled, 19 families (399 tied reads with a donor copy) | right | wrong | abstain | own_tie placed |
+|---|---|---|---|---|
+| sample copies | 82 | 4 | 313 | 7 |
+| v14 | 48 | 7 | 344 | 52 |
+| v14 + sample copies | 126 | 11 | 262 | 59 |
+
+**Clear cases** (sample copies against v14, on the same tied reads):
+
+| family | sample copies right / wrong | v14 right / wrong |
+|---|---|---|
+| HSPA6 | **34 / 0** | 0 / 0 |
+| GTF2IRD2 | **31 / 0** | 0 / 0 |
+| MSTRG3150 | 7 / 0 | 0 / 0 |
+| GTF2H2C | 4 / 0 | 3 / 0 |
+| SMG1 | 2 / 0 | 0 / 0 |
+| AC1275021 | 2 / 0 | 0 / 2 |
+
+The development family PDPR adds 14 / 0 against v14's 0 / 0.
+
+**Other families:**
+- **The 4 errors:** GOLGA8A 3 and AC0064533 1.
+- **Abstained on every tied read:** IKBKG (no informative column; v14 is right on 42 by structure), SMN2, SPDYE1, SERF1B,
+  SULT1A1, NBPF1, DUSP22, SLC35E2B, ANKRD36C, DMRTC1 and EIF3C.
+
+**The errors, read post hoc.** Each sits in a cluster labelled by a majority that is not pure:
+- **GOLGA8A:** 829 of 907 untied reads (91%) and 152 of 162 (94%).
+- **AC0064533:** 35 of 37.
+- **Their donor margins:** 5-15, i.e. one to three sites.
+
+A tied read assigned by its cluster inherits that cluster's impurity. The majority test (Wilson lower bound above 1/2) admits
+clusters that are 6-9% another copy. A purity test is the post hoc candidate. It would need its own pre-registration on
+fresh families.
