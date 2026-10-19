@@ -92,3 +92,39 @@ def test_the_draw_reads_a_pool_of_any_set_name(tmp_path):
     S.cmd_draw(str(tmp_path / "set.json"), str(tmp_path / "all.json"), seed=19, set_name="r19")
     got = json.load(open(tmp_path / "set.json"))
     assert list(got["sets"]) == ["r19"] and sum(len(f["copies"]) for f in got["sets"]["r19"]) == 90
+
+
+def _cigar_with_introns(at, qlen, intron=300):
+    """A CIGAR aligning a qlen-bp transcript contiguously except for an intron after each query position in `at`."""
+    out, q = [], 0
+    for p in sorted(at):
+        out += [(p - q, "M"), (intron, "N")]
+        q = p
+    return out + [(qlen - q, "M")]
+
+
+def test_an_intron_chain_is_carried_when_each_junction_has_its_intron_even_if_the_other_genome_has_more():
+    # GOLGA6L6 onto GOLGA6L22's locus (2026-10-18): all 8 junctions of GOLGA6L6 have their intron, and GOLGA6L22's genome has
+    # two more inside GOLGA6L6's 1,431-bp exon (its own 765 + 327 + 297 split)
+    js = [271, 400, 451, 545, 652, 711, 853, 2284]
+    cg = _cigar_with_introns([271, 400, 451, 545, 652, 711, 853, 1639, 2095, 2284], 4031)
+    assert S.structure_match(js, 4031, "+", 1000, cg, chain="carried")
+    assert not S.structure_match(js, 4031, "+", 1000, cg)                     # the exact rule (default) asks for no more
+    # a junction without its intron is still missing
+    assert not S.structure_match(js + [3000], 4031, "+", 1000, cg, chain="carried")
+
+
+def test_a_carried_intron_chain_still_keeps_retrocopies_out():
+    cg = [(100, "M"), (300, "N"), (50, "M"), (400, "N"), (80, "M")]
+    # a single-exon model (a retrocopy) spliced onto its parent's locus: introns it does not have
+    assert not S.structure_match([], 230, "+", 1000, cg, chain="carried")
+    # the parent's model onto the retrocopy's genome: its junctions find no intron
+    assert not S.structure_match([100, 150], 230, "+", 1000, [(230, "M")], chain="carried")
+    # two single-exon genes
+    assert S.structure_match([], 230, "+", 1000, [(230, "M")], chain="carried")
+
+
+def test_the_build_takes_its_intron_chain_rule_from_the_command_line():
+    assert S.build_args(["out.json", "a.json", "b.json"]) == ("out.json", ["a.json", "b.json"], False, "exact")
+    assert S.build_args(["out.json", "a.json", "--paralogs", "--intron-chain", "carried"]) == ("out.json", ["a.json"], True,
+                                                                                                "carried")

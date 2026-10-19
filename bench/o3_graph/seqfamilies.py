@@ -7,9 +7,10 @@ Genes: every CAT protein-coding gene, whatever its name, span <= families.MAX_SP
 (the gene with more transcripts kept); each gene's canonical transcript (families.canonical).
 Sequence link (families.py's locus rule, genome-wide): gene A's canonical, spliced-aligned (minimap2 -cx splice:hq) to gene B's
 locus (+- 1 kb), covers >= MIN_COVER of A at identity >= families.MIN_IDENT, in either direction.
-Structure link: one gene's exon chain is carried by the other's GENOME -- in the spliced alignment of A's canonical to B's locus,
+Structure link: one gene's intron chain is carried by the other's GENOME -- in the spliced alignment of A's canonical to B's locus,
 every intron sits within realworld.JUNCTION_TOL of one of A's junctions and none of A's junctions is left without one
-(structure_match), in either direction. B's annotation is not used: comparing two annotated models failed identical genes whose
+(structure_match, chain "exact"), in either direction. --intron-chain carried (2026-10-18): each of A's junctions has its
+intron in B's genome, which may hold more (GOLGA6L; structure_match, chain "carried"). B's annotation is not used: comparing two annotated models failed identical genes whose
 canonicals differ (OR4F21's 2-exon model against OR4F16's 1-exon one; ATAD3A's extra 80-bp exon), a choice of the annotation,
 not of the genomes (amended before any draw). A processed retrocopy (one exon against a spliced locus) or a partial copy fails.
 Families: connected components of the links that pass both; a component touching a gene of an earlier set is spent.
@@ -18,7 +19,7 @@ other (add_paralog_genes: none overlapping a coding gene; a pseudogene before an
 gene when its locus carries the coding gene's canonical by the same rule (sequence and structure, in that direction only:
 pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
-    seqfamilies.py build OUT.json SPENT.json ... [--paralogs]
+    seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried]
                                                    -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
                                                        (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
@@ -49,12 +50,19 @@ def _families():
     return mod
 
 
-def structure_match(junctions, qlen, strand, ts, cigar, tol=JUNCTION_TOL, q0=0):
-    """Is gene A's model carried by gene B's genome? junctions: A's exon junctions in its transcript coordinates, qlen its
-    spliced length; the alignment of that transcript to B's locus (target start ts, CIGAR [(n, op)], strand). Every intron (N)
-    of the alignment sits within tol of one of A's junctions, and as many introns as junctions inside the aligned part of A (a
-    junction at the edge of an unaligned end is a terminal exon too short to align: LGALS7's 6-bp last exon). q0: the
-    alignment's first query base in the alignment's orientation (a - strand alignment runs A backwards)."""
+def structure_match(junctions, qlen, strand, ts, cigar, tol=JUNCTION_TOL, q0=0, chain="exact"):
+    """Is gene A's intron chain carried by gene B's genome? junctions: A's exon junctions in its transcript coordinates, qlen its
+    spliced length; the alignment of that transcript to B's locus (target start ts, CIGAR [(n, op)], strand). Only junctions
+    inside the aligned part of A count (one at the edge of an unaligned end is a terminal exon too short to align: LGALS7's
+    6-bp last exon). q0: the alignment's first query base in the alignment's orientation (a - strand alignment runs A
+    backwards).
+    chain "exact" (rounds 17-19, and O1's genome search): every intron (N) of the alignment sits within tol of one of A's
+    junctions, and there are as many introns as junctions -- B's genome holds A's intron chain and no other intron.
+    chain "carried" (2026-10-18, the user: "intron chains"): each of A's junctions has an intron of the alignment within tol,
+    and B's genome may hold more -- GOLGA6L's copies carry each other's every junction, but some split a long exon with one or
+    two short introns of their own, and indels of 18-252 bp there come out of the spliced alignment as introns. A model with
+    no junction in the aligned part is carried only by an alignment with no intron, so a retrocopy and its multi-exon parent
+    still never carry each other."""
     js = sorted(qlen - j for j in junctions) if strand == "-" else sorted(junctions)
     q, t, got = q0, ts, []
     for n, op in cigar:
@@ -69,6 +77,8 @@ def structure_match(junctions, qlen, strand, ts, cigar, tol=JUNCTION_TOL, q0=0):
             got.append(q)
             t += n
     js = [j for j in js if q0 + tol < j < q - tol]          # a junction at an unaligned end: a terminal exon too short to align
+    if chain == "carried":
+        return all(any(abs(g - j) <= tol for g in got) for j in js) if js else not got
     return len(got) == len(js) and all(abs(qj - j) <= tol for qj, j in zip(got, js))
 
 
@@ -181,7 +191,7 @@ def _paf_hits(paf, min_ident):
     return blocks, best
 
 
-def cmd_build(out_p, spent_paths, threads=4, paralogs=False):
+def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact"):
     import pysam
     F = _families()
     gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
@@ -257,7 +267,7 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False):
         # A's junctions in A's transcript coordinates (5' -> 3'): on the minus strand the transcript starts at the last exon
         js = junctions_of(canon[a])
         js = sorted(qlen - j for j in js) if by[a]["strand"] == "-" else js
-        return structure_match(js, qlen, f[4], int(f[7]), [(int(n), op) for n, op in _CIGAR.findall(cg)], q0=q0)
+        return structure_match(js, qlen, f[4], int(f[7]), [(int(n), op) for n, op in _CIGAR.findall(cg)], q0=q0, chain=chain)
     pairs = {tuple(sorted(k)) for k in cover}
     st = {k: struct(*k) for k in cover}
     links, rows = [], []
@@ -289,8 +299,9 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False):
                  + ("\ta_biotype\tb_biotype" if paralogs else "") + "\n")
         fh.writelines("\t".join(map(str, r)) + "\n" for r in rows)
     json.dump(dict(genome=F.GENOME, annotation=f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz",
-                   rule="seqfamilies --paralogs" if paralogs else "seqfamilies",
-                   min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL, sets={"seq19" if paralogs else "seq17": fams}),
+                   rule=("seqfamilies --paralogs" if paralogs else "seqfamilies") + (" --intron-chain carried" if chain == "carried" else ""),
+                   min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL,
+                   **({"intron_chain": chain} if chain != "exact" else {}), sets={"seq19" if paralogs else "seq17": fams}),
               open(out_p, "w"), indent=1)
     unnamed = sum(any(re.match(r"^(LOC|ENSG|MSTRG|LINC|AC[0-9]|AL[0-9]|AP[0-9])", c["gene_name"]) or "-" in c["gene_name"]
                       for c in f["copies"]) for f in fams)
@@ -313,9 +324,27 @@ def cmd_draw(out_p, all_p, seed=SEED, set_name="r17"):
     return 0
 
 
+def build_args(argv):
+    """`build OUT SPENT... [--paralogs] [--intron-chain exact|carried]` (arguments after `build`) -> (OUT, SPENT paths,
+    paralogs, intron-chain rule)."""
+    rest, paralogs, chain = [], False, "exact"
+    it = iter(argv)
+    for x in it:
+        if x == "--paralogs":
+            paralogs = True
+        elif x == "--intron-chain":
+            chain = next(it, "")
+        else:
+            rest.append(x)
+    if chain not in ("exact", "carried") or not rest:
+        raise SystemExit(__doc__)
+    return rest[0], rest[1:], paralogs, chain
+
+
 def main(argv):
     if argv[0] == "build":
-        return cmd_build(argv[1], [x for x in argv[2:] if x != "--paralogs"], paralogs="--paralogs" in argv)
+        out, spent, paralogs, chain = build_args(argv[1:])
+        return cmd_build(out, spent, paralogs=paralogs, chain=chain)
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")
