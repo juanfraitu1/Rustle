@@ -1,5 +1,7 @@
 # O1 -> O2 -> O3 integrated: the overall picture (2026-10-16)
 
+> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
+
 User (2026-10-16): "lets look at the overall picture first, probably it is better to look at O1, O2 and O3 integrated since
 that is the end goal".
 

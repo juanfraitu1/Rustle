@@ -10,7 +10,7 @@ kept next to the code and is pre-registered.
 | stage | what | where |
 |---|---|---|
 | **family definition** | multi-copy gene families from the reads and the genome — de novo (reads only) and guided (annotation), with the goal of closing the gap between them | `docs/seeded_family_definition.md`, `mcl_families`, `gw_family_catalog` |
-| **copy assignment** | each ambiguous read to one copy, or abstention: PSVs, junctions and divergence, never a 1/k split | `docs/copy_assignment_definition.md`, `copy_assign --families` |
+| **copy assignment** | each AS-tied multimapping read (a rival alignment within 10 AS of its best) to one of its very similar copies, or abstention: PSVs, junctions and divergence, never a 1/k split. A read minimap2 placed clearly is not O2's | `docs/copy_assignment_definition.md`, `copy_assign --families` |
 | **missing copies** | expressed copies the reference does not contain (diverged or with rearranged exons): detect, characterise, screen, and hand copy number to DNA | `docs/O3_STATUS.md`, `docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`, `missing_copy_flag` |
 
 In the thesis record these are objectives O1, O2 and O3; the ledger, register and pre-registrations use those

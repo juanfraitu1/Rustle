@@ -1,5 +1,7 @@
 # Copy assignment (O2): definition, decision rule, abstention, certificate
 
+**O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
+
 ## State as of 2026-10-07 (read this before the rest)
 
 The body below was last committed 2026-09-01 (5d55287d) and describes the binary as of 2026-08-10/15. The defaults changed on 2026-09-09 (user decisions, memory `project_o2_as_tied_gate`), the source tree was reorganised, and the evaluation moved to simulated read-level truth. Human (A119b, CHM13) and gorilla (KB3781/OR6737, mGorGor1) numbers are kept apart throughout; never pool them.

@@ -48,6 +48,12 @@ tests). Plain `dev` (opt 0) is 10-30x too slow for the alignment-heavy runs; use
 One heavy process at a time, in the foreground; big outputs and `TMPDIR` under `/mnt/linuxdisk`; never `pkill -f`
 (kill by PID). Pre-register a decision rule (`docs/PREREG_*.md`) before looking at any result it decides.
 
-## 6. Style
+## 6. Project rules that are easy to get wrong
+- **O2 applies only to AS-tied multimapping reads** (a rival alignment within 10 AS of the best: Eichler's rule; user
+  2026-10-19). A read with a clear best placement is minimap2's; applying O2 to it is tautological. O2 exists to go beyond
+  minimap2's coin toss: assign ambiguous reads to very similar copies (PSVs, junctions, divergence) or abstain. O3 flags
+  reads whose PSVs nothing in the genome explains (`docs/THESIS_OBJECTIVES.md`).
+
+## 7. Style
 - Treat StringTie and other tools as trusted baselines in user-facing text, never as competitors.
 - The user prefers one cohesive arc, one example, one metric over parallel concepts; terse answers.

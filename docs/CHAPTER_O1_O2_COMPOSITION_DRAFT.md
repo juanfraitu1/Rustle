@@ -47,6 +47,9 @@ boundaries certified for 3. The genome-wide catalog at prune 1e-9 recovers the t
 family (§6ec).
 
 ## 4. O2: assignment among exactly O1's units
+
+> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
+
 `copy_assign` consumes the unit table as its copy set — no detection, no re-derivation of the roster
 (§6da–§6er). Since §6fa–§6fd the read is the star: each molecule's sequence is aligned splice-aware to every
 candidate's locus (the catalog's read-supported extent of the unit, §6fh: primaries with a block in the chain, cut at giant unsupported introns, clipped at the family's neighbouring units — O1 writes it, O2 aligns to it), its columns are its own positions

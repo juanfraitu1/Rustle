@@ -11,7 +11,7 @@ Grepping a filename still finds it; only the directory changed.
 |---|---|
 | [`HANDOFF_2026-10-04.md`](HANDOFF_2026-10-04.md) | **Start here.** Everything done 10-03/04 and what is left, with paths |
 | [`PENDING_2026-10-04.md`](PENDING_2026-10-04.md) · [`PENDING_2026-09-23.md`](PENDING_2026-09-23.md) | Parked work: O3 Amendment 15 run, row-1220 run, HG002, chapter drafts; item 3 of 09-23 (O3 DNA step) still open |
-| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | The three objectives (O1 define, O2 assign-or-abstain, O3 detect+flag), scope, what is WON / DEAD / OPEN |
+| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | The three objectives (O1 define, O2 assign-or-abstain on AS-tied multimappers only, O3 detect+flag), scope, what is WON / DEAD / OPEN |
 | [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | **Every dead end, one row each. Consult before proposing anything.** Rows cite the study file |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | O1: the shipped family definition (§0★, 2026-09-25) and its full development record; 248 KB, use its INDEX |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | O2: assignment and abstention; read its "State as of 2026-10-07" preamble first |
