@@ -112,3 +112,15 @@ def test_a_tied_read_needs_two_of_its_own_sites_against_every_differently_labell
     assert C.decisive_sites({1: "A", 3: "G"}, 0, haps, labels) == 1
     assert C.assign_tied([0.999, 0.001, 0.0], labels, {"F.0", "F.1"}, sites=1) is None     # one site: abstain
     assert C.assign_tied([0.999, 0.001, 0.0], labels, {"F.0", "F.1"}, sites=2) == "F.0"
+
+
+def test_the_combined_o2_keeps_v14_s_placement_and_fills_its_abstentions_with_the_sample_copies():
+    assert C.combine("F.1", "F.0") == "F.1"
+    assert C.combine(None, "F.0") == "F.0"
+    assert C.combine(None, None) is None
+
+
+def test_fates_count_each_system_against_the_donor_truth():
+    truth = {"a": ("unique", "F.0"), "b": ("unique", "F.1"), "c": ("own_tie", ""), "d": ("poor_match", "")}
+    calls = {"a": "F.0", "b": "F.0", "c": "F.1", "d": "F.0"}
+    assert C.fates(calls, truth) == {"right": 1, "wrong": 1, "own_tie placed": 1}

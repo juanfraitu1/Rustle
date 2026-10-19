@@ -8,6 +8,8 @@ against the donor's genome, register 1330). A tied read takes its cluster's copy
 
     samplecopy.py run FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR
                                          -> OUT_DIR/<family>.calls.tsv (read, call, posterior, cluster, label) + .clusters.json
+    samplecopy.py combine TRUTH.tsv OUT_DIR WORLD FAMILY ... OUT.json
+                                         -> per family and pooled: the sample copies, v14 (WORLD's o2.integv) and v14 + them
 
 Steps (all reads of the family, tied or not):
 1. every read aligned to one copy's locus (the anchor: the copy with most untied reads), minimap2 splice:hq;
@@ -324,7 +326,54 @@ def cmd_score(truth_p, out_dir, families):
     return 0
 
 
+def combine(v14_call, sc_call):
+    """v14's O2 placement stands; where it abstains, the sample-copy call."""
+    return v14_call if v14_call is not None else sc_call
+
+
+def fates(calls, truth):
+    """{fate: n} of placed and abstained tied reads by donor class: right / wrong / abstain for reads with a donor copy,
+    own_tie placed / abstain for the donor-tied ones; other classes are not counted. calls: {read: copy or None}; truth:
+    {read: (class, copy)}."""
+    n = collections.Counter()
+    for q, (cls, cp) in truth.items():
+        c = calls.get(q)
+        if cls in ("unique", "unique_elsewhere"):
+            n["right" if c is not None and c == cp else "wrong" if c is not None else "abstain"] += 1
+        elif cls == "own_tie":
+            n["own_tie placed" if c is not None else "own_tie abstain"] += 1
+    return {k: v for k, v in n.items() if v}
+
+
+def cmd_combine(truth_p, out_dir, world, families, out_p):
+    """Per family and pooled: the sample copies alone, v14 alone (WORLD/graph/o2.integv.m2.tsv) and v14 + sample copies."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("o3_graph_summary_sc", os.path.join(os.path.dirname(os.path.abspath(__file__)), "summary.py"))
+    S = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(S)
+    v14 = S.world_calls(world, "o2.integv.m2.tsv")["integrated"]
+    truth_all = {r["read"]: r for r in csv.DictReader(open(truth_p), delimiter="\t")}
+    res, pooled = {}, collections.defaultdict(collections.Counter)
+    for f in families:
+        rows = list(csv.DictReader(open(f"{out_dir}/{f}.calls.tsv"), delimiter="\t"))
+        truth = {r["read"]: (truth_all[r["read"]]["class"], truth_all[r["read"]]["truth"]) for r in rows if r["read"] in truth_all}
+        sc = {r["read"]: (None if r["call"] == "-" else r["call"]) for r in rows}
+        v = {q: v14.get(q, {}).get(f) for q in sc}
+        both = {q: combine(v[q], sc[q]) for q in sc}
+        res[f] = {name: fates(c, truth) for name, c in (("samplecopy", sc), ("v14", v), ("v14+samplecopy", both))}
+        for name, d in res[f].items():
+            pooled[name].update(d)
+        print(f"{f}: " + " | ".join(f"{k} {dict(sorted(d.items()))}" for k, d in res[f].items()), flush=True)
+    res["pooled"] = {k: dict(v) for k, v in pooled.items()}
+    print("POOLED: " + " | ".join(f"{k} {dict(sorted(d.items()))}" for k, d in res["pooled"].items()), flush=True)
+    json.dump(res, open(out_p, "w"), indent=1)
+    return 0
+
+
 def main(argv):
+    if len(argv) >= 6 and argv[0] == "combine":
+        return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1])
     if len(argv) == 9 and argv[0] == "run":
         return cmd_run(*argv[1:])
     if len(argv) >= 4 and argv[0] == "score":
