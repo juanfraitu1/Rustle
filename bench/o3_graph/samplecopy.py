@@ -345,7 +345,14 @@ def fates(calls, truth):
     return {k: v for k, v in n.items() if v}
 
 
-def cmd_combine(truth_p, out_dir, world, families, out_p):
+def family_truth(tied_rows, truth_all, family):
+    """{read: (class, truth copy)} of every tied read of the family that has a truth row -- including the ones that never
+    aligned to the anchor and so have no call (an abstention; Amendment 1 of PREREG_samplecopy_hg002_2026-10-19)."""
+    return {r["read"]: (truth_all[r["read"]]["class"], truth_all[r["read"]]["truth"]) for r in tied_rows
+            if r["family"] == family and r["read"] in truth_all}
+
+
+def cmd_combine(truth_p, out_dir, world, families, out_p, tied_p=None):
     """Per family and pooled: the sample copies alone, v14 alone (WORLD/graph/o2.integv.m2.tsv) and v14 + sample copies."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import importlib.util
@@ -354,13 +361,15 @@ def cmd_combine(truth_p, out_dir, world, families, out_p):
     spec.loader.exec_module(S)
     v14 = S.world_calls(world, "o2.integv.m2.tsv")["integrated"]
     truth_all = {r["read"]: r for r in csv.DictReader(open(truth_p), delimiter="\t")}
+    tied_rows = list(csv.DictReader(open(tied_p), delimiter="\t")) if tied_p else []
     res, pooled = {}, collections.defaultdict(collections.Counter)
     for f in families:
         rows = list(csv.DictReader(open(f"{out_dir}/{f}.calls.tsv"), delimiter="\t"))
-        truth = {r["read"]: (truth_all[r["read"]]["class"], truth_all[r["read"]]["truth"]) for r in rows if r["read"] in truth_all}
+        truth = (family_truth(tied_rows, truth_all, f) if tied_p else
+                 {r["read"]: (truth_all[r["read"]]["class"], truth_all[r["read"]]["truth"]) for r in rows if r["read"] in truth_all})
         sc = {r["read"]: (None if r["call"] == "-" else r["call"]) for r in rows}
-        v = {q: v14.get(q, {}).get(f) for q in sc}
-        both = {q: combine(v[q], sc[q]) for q in sc}
+        v = {q: v14.get(q, {}).get(f) for q in truth}
+        both = {q: combine(v[q], sc.get(q)) for q in truth}
         res[f] = {name: fates(c, truth) for name, c in (("samplecopy", sc), ("v14", v), ("v14+samplecopy", both))}
         for name, d in res[f].items():
             pooled[name].update(d)
@@ -372,6 +381,10 @@ def cmd_combine(truth_p, out_dir, world, families, out_p):
 
 
 def main(argv):
+    if argv[:1] == ["combine"] and "--tied" in argv:
+        i = argv.index("--tied")
+        tied_p, argv = argv[i + 1], argv[:i] + argv[i + 2:]
+        return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1], tied_p)
     if len(argv) >= 6 and argv[0] == "combine":
         return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1])
     if len(argv) == 9 and argv[0] == "run":

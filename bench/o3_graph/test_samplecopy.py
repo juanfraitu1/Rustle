@@ -124,3 +124,10 @@ def test_fates_count_each_system_against_the_donor_truth():
     truth = {"a": ("unique", "F.0"), "b": ("unique", "F.1"), "c": ("own_tie", ""), "d": ("poor_match", "")}
     calls = {"a": "F.0", "b": "F.0", "c": "F.1", "d": "F.0"}
     assert C.fates(calls, truth) == {"right": 1, "wrong": 1, "own_tie placed": 1}
+
+
+def test_every_tied_read_of_the_family_is_scored_an_unaligned_one_as_an_abstention():
+    tied_rows = [{"read": "a", "family": "F"}, {"read": "b", "family": "F"}, {"read": "z", "family": "G"}]
+    truth_all = {"a": {"class": "unique", "truth": "F.0"}, "b": {"class": "own_tie", "truth": ""}, "z": {"class": "unique", "truth": "G.0"}}
+    assert C.family_truth(tied_rows, truth_all, "F") == {"a": ("unique", "F.0"), "b": ("own_tie", "")}
+    assert C.fates({}, C.family_truth(tied_rows, truth_all, "F")) == {"abstain": 1, "own_tie abstain": 1}

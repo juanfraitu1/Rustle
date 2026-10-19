@@ -78,3 +78,14 @@ without errors.
 
 **It would not claim:** testis-only families (the YAGs, absent from this library), power where the sample's reads carry no
 separating variation (TBC1D3B), or other donors.
+
+## Amendment 1 (2026-10-19, 13:05, during the run and before any score was computed)
+
+**The bug.** The scorer counted only the tied reads present in `<family>.calls.tsv`. A tied read that never aligned to the
+anchor copy has no row there and so dropped out of every count. MSTRG3150, for example, has 94 tied reads and 30 rows.
+
+**The fix.** `samplecopy.py combine ... --tied hg002proof/tied.tsv` scores every tied read of the family that has a truth
+row. A read with no call counts as an abstention, for the sample copies and in v14 + sample copies alike.
+
+**What does not change.** No call. S1 (wrong / placed) is unaffected. S2's and S3's denominators now cover all the
+family's tied reads. The pre-registered score is the `--tied` one.
