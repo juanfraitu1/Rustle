@@ -22,6 +22,7 @@ The donor margin of a unique read (reported, no class) is how far the best place
     hg002truth.py world TRUTH.tsv FAMILIES.json SET MIN OUT_DIR -> OUT_DIR/families.json (set `hg002`: the families with >= MIN
                                                                   scored tied reads) and OUT_DIR/world_truth.tsv (the reads with
                                                                   a donor copy, realreads' truth format)
+    hg002truth.py bars O2PROOF.json SCORE.json OUT.json       -> the pre-registered bars T1-T5 and each system's O2 verdict
     hg002truth.py score TRUTH.tsv TIED.tsv WORLD OUT.json [--o2 NAME]  -> per method (minimap2's primary, the primary at MAPQ
                                                                   >= 1, current, integrated: summary.world_calls with the O2
                                                                   table NAME, o2.integv.m2.tsv by default) and truth class,
@@ -31,6 +32,7 @@ import collections
 import csv
 import importlib.util
 import json
+import math
 import os
 import sys
 
@@ -238,7 +240,8 @@ def cmd_score(truth_p, tied_p, world, out_p, o2_name="o2.integv.m2.tsv"):
     wc = _summary().world_calls(world, o2_name)
     tied = {r["read"]: r for r in csv.DictReader(open(tied_p), delimiter="\t")}
     reads = _world_reads(f"{world}/reads.E0.fq")
-    card = {m: collections.defaultdict(collections.Counter) for m in METHODS}
+    e2e, o2 = ({m: collections.defaultdict(collections.Counter) for m in METHODS} for _ in range(2))
+    o3 = {m: collections.Counter() for m in METHODS}
     skipped = collections.Counter()
     for r in csv.DictReader(open(truth_p), delimiter="\t"):
         q, f, cls = r["read"], r["family"], r["class"]
@@ -250,18 +253,91 @@ def cmd_score(truth_p, tied_p, world, out_p, o2_name="o2.integv.m2.tsv"):
         calls = dict(mm2=(prim, False), mm2_q1=(prim if int(t["mapq"]) >= 1 else None, False),
                      current=(_fam_call(wc["current"].get(q), f), q in wc["current_o3"]),
                      integrated=(_fam_call(wc["integrated"].get(q), f), q in wc["integrated_o3"]))
-        for m, (a, o3) in calls.items():
-            card[m][cls][tied_fate(cls, r["truth"] or None, a, o3, ts)] += 1
-    res = dict(card={m: {c: dict(v) for c, v in card[m].items()} for m in METHODS}, skipped=dict(skipped))
+        for m, (a, in_o3) in calls.items():
+            e2e[m][cls][tied_fate(cls, r["truth"] or None, a, in_o3, ts)] += 1
+            o2[m][cls][tied_fate(cls, r["truth"] or None, a, False, ts)] += 1
+            if in_o3:
+                o3[m][cls] += 1
+    res = dict(e2e={m: {c: dict(v) for c, v in e2e[m].items()} for m in METHODS},
+               o2={m: {c: dict(v) for c, v in o2[m].items()} for m in METHODS},
+               o3={m: dict(o3[m]) for m in METHODS}, skipped=dict(skipped))
     json.dump(res, open(out_p, "w"), indent=1)
     for m in METHODS:
-        print(f"  {m:10s} " + " | ".join(f"{c}: " + " ".join(f"{k} {v}" for k, v in sorted(res['card'][m][c].items()))
-                                        for c in sorted(res["card"][m])), flush=True)
+        print(f"  {m:10s} " + " | ".join(f"{c}: " + " ".join(f"{k} {v}" for k, v in sorted(res['e2e'][m][c].items()))
+                                        for c in sorted(res["e2e"][m])), flush=True)
     print(f"  skipped {dict(skipped)}", flush=True)
     return 0
 
 
+def wilson(k, n, z=1.96):
+    """The Wilson score interval of k successes in n."""
+    if n == 0:
+        return 0.0, 1.0
+    p, d = k / n, 1 + z * z / n
+    c, h = (p + z * z / (2 * n)) / d, z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return (0.0 if k == 0 else max(0.0, c - h)), (1.0 if k == n else min(1.0, c + h))
+
+
+FLOOR, T1_MAX, T3_MAX, T4_MIN, T5_MAX, VALID_MIN = 100, 0.02, 0.05, 0.90, 0.05, 0.25   # PREREG_o2_hg002_tied_2026-10-18
+
+
+def _bar(value, n, ok):
+    return dict(value=value, n=n, powered=n >= FLOOR, holds=ok(value) if n else None)
+
+
+def bars(o2p, score, systems=("integrated", "current")):
+    """The pre-registered bars from o2proof's pooled card (the world's truth reads) and hg002truth's score: per system T1
+    (wrong / placed), T2 (its Wilson upper bound below the coin toss's lower one), T3 (placed own_tie reads), T4 (correct
+    decidable reads), T5 (O3 calls on reads whose copy is present) and the O2 verdict; `valid`: mm2 wrong on >= 25%."""
+    def tot(card, field):
+        return sum(v["all"][field] for v in card.values())
+    mm2 = o2p["pooled"]["card"]["mm2"]
+    mm2_n = tot(mm2, "correct") + tot(mm2, "wrong") + tot(mm2, "abstain")
+    valid = bool(mm2_n) and tot(mm2, "wrong") / mm2_n >= VALID_MIN
+    out = dict(valid=valid, mm2_wrong=tot(mm2, "wrong"), mm2_n=mm2_n)
+    for m in systems:
+        card = o2p["pooled"]["card"][m]
+        wrong, placed = tot(card, "wrong"), tot(card, "correct") + tot(card, "wrong")
+        b = dict(T1=_bar(wrong / placed if placed else None, placed, lambda v: v <= T1_MAX))
+        up, lo = wilson(wrong, placed)[1], wilson(out["mm2_wrong"], mm2_n)[0]
+        b["T2"] = dict(value=(up, lo), n=placed, powered=placed >= FLOOR and valid,
+                       holds=(up < lo) if placed and valid else None)
+        tie = score["o2"][m].get("own_tie", {})
+        n_tie = sum(tie.values())
+        b["T3"] = _bar((n_tie - tie.get("abstain", 0)) / n_tie if n_tie else None, n_tie, lambda v: v <= T3_MAX)
+        dec = card.get("decidable", {}).get("all", dict(correct=0, wrong=0, abstain=0))
+        n_dec = sum(dec.values())
+        b["T4"] = _bar(dec["correct"] / n_dec if n_dec else None, n_dec, lambda v: v >= T4_MIN)
+        present = ("unique", "unique_elsewhere", "own_tie")
+        n_p = sum(sum(score["e2e"][m].get(c, {}).values()) for c in present)
+        calls = sum(score["o3"][m].get(c, 0) for c in present)
+        b["T5"] = _bar(calls / n_p if n_p else None, n_p, lambda v: v <= T5_MAX)
+        o2_bars = [b[t] for t in ("T1", "T2", "T3", "T4")]
+        if any(x["powered"] and x["holds"] is False for x in o2_bars):
+            b["verdict"] = "FAIL"
+        elif all(b[t]["powered"] and b[t]["holds"] for t in ("T1", "T2")):
+            b["verdict"] = "PASS"
+        else:
+            b["verdict"] = "UNDERPOWERED"
+        out[m] = b
+    return out
+
+
+def cmd_bars(o2p_p, score_p, out_p):
+    res = bars(json.load(open(o2p_p)), json.load(open(score_p)))
+    json.dump(res, open(out_p, "w"), indent=1)
+    print(f"valid (mm2 wrong >= {VALID_MIN}): {res['valid']} ({res['mm2_wrong']} / {res['mm2_n']})")
+    for m in ("integrated", "current"):
+        print(f"{m}: O2 {res[m]['verdict']}; " + "; ".join(
+            f"{t} {res[m][t]['value']} n {res[m][t]['n']} {'powered' if res[m][t]['powered'] else 'UNDERPOWERED'} "
+            f"{'holds' if res[m][t]['holds'] else 'FAILS' if res[m][t]['holds'] is False else '-'}"
+            for t in ("T1", "T2", "T3", "T4", "T5")), flush=True)
+    return 0
+
+
 def main(argv):
+    if len(argv) == 4 and argv[0] == "bars":
+        return cmd_bars(*argv[1:])
     if argv[:1] == ["score"] and (len(argv) == 5 or len(argv) == 7 and argv[5] == "--o2"):
         return cmd_score(*argv[1:5], o2_name=argv[6] if len(argv) == 7 else "o2.integv.m2.tsv")
     if len(argv) == 6 and argv[0] == "world":

@@ -94,10 +94,12 @@ def test_the_score_tallies_each_method_s_fates_by_truth_class_over_the_world_s_t
     out = tmp_path / "score.json"
     assert H.main(["score", str(tmp_path / "truth.tsv"), str(tmp_path / "tied.tsv"), str(w), str(out)]) == 0
     got = json.load(open(out))
-    assert got["card"] == {"mm2": {"unique": {"error": 1}, "own_tie": {"guess": 1}, "no_counterpart": {"error": 1}},
-                           "mm2_q1": {"unique": {"abstain": 1}, "own_tie": {"guess": 1}, "no_counterpart": {"abstain": 1}},
-                           "current": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}},
-                           "integrated": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}}}
+    assert got["e2e"] == {"mm2": {"unique": {"error": 1}, "own_tie": {"guess": 1}, "no_counterpart": {"error": 1}},
+                          "mm2_q1": {"unique": {"abstain": 1}, "own_tie": {"guess": 1}, "no_counterpart": {"abstain": 1}},
+                          "current": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}},
+                          "integrated": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}}}
+    assert got["o2"]["integrated"] == {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"abstain": 1}}
+    assert got["o3"]["current"] == {"no_counterpart": 1} and got["o3"]["mm2"] == {}
     assert got["skipped"] == {"unmapped": 1, "not_in_world": 1}
 
 
@@ -164,3 +166,39 @@ def test_the_world_holds_the_families_with_scored_tied_reads_and_its_truth_the_r
     assert [f["family"] for f in H.select_families(fams, rows, 2)] == ["F", "K"]
     assert H.select_families(fams, rows, 3) == []
     assert H.world_truth(rows) == [("r1", "F.0", "F"), ("r4", "K.2", "K")]
+
+
+def _cards(placed_wrong, placed_right, own_tie_placed, decidable_right, mm2_wrong, o3_present=0, n_dec=200, n_tie=200):
+    """An o2proof pooled card and an hg002truth score for one system ('integrated') and the coin toss."""
+    def cls(correct, wrong, abstain):
+        return {"all": dict(correct=correct, wrong=wrong, abstain=abstain)}
+    o2p = {"pooled": {"card": {
+        "integrated": {"decidable": cls(decidable_right, 0, n_dec - decidable_right),
+                       "undecidable": cls(placed_right - decidable_right, placed_wrong, 300)},
+        "mm2": {"decidable": cls(n_dec, 0, 0), "undecidable": cls(300 - mm2_wrong, mm2_wrong, 0)}}}}
+    score = {"o2": {"integrated": {"own_tie": {"guess": own_tie_placed, "abstain": n_tie - own_tie_placed}}},
+             "o3": {"integrated": {"unique": o3_present}},
+             "e2e": {"integrated": {"unique": {"correct": 1000}, "own_tie": {"abstain": 200}}}}
+    return o2p, score
+
+
+def test_the_bars_pass_a_precise_calibrated_powerful_system_and_fail_or_withhold_otherwise():
+    o2p, sc = _cards(placed_wrong=2, placed_right=300, own_tie_placed=4, decidable_right=190, mm2_wrong=150)
+    b = H.bars(o2p, sc, systems=("integrated",))["integrated"]
+    assert b["T1"]["holds"] and b["T2"]["holds"] and b["T3"]["holds"] and b["T4"]["holds"] and b["verdict"] == "PASS"
+    o2p, sc = _cards(placed_wrong=20, placed_right=300, own_tie_placed=4, decidable_right=190, mm2_wrong=150)
+    assert H.bars(o2p, sc, systems=("integrated",))["integrated"]["verdict"] == "FAIL"           # 20/320 wrong: T1
+    o2p, sc = _cards(placed_wrong=0, placed_right=300, own_tie_placed=40, decidable_right=190, mm2_wrong=150)
+    assert H.bars(o2p, sc, systems=("integrated",))["integrated"]["verdict"] == "FAIL"           # 40/200 guesses: T3
+    o2p, sc = _cards(placed_wrong=0, placed_right=60, own_tie_placed=0, decidable_right=50, mm2_wrong=150, n_dec=50)
+    b = H.bars(o2p, sc, systems=("integrated",))["integrated"]
+    assert b["T1"]["powered"] is False and b["verdict"] == "UNDERPOWERED"                         # 60 placed < 100
+    o2p, sc = _cards(placed_wrong=0, placed_right=300, own_tie_placed=0, decidable_right=190, mm2_wrong=10)
+    b = H.bars(o2p, sc, systems=("integrated",))
+    assert b["valid"] is False and b["integrated"]["T2"]["holds"] is None and b["integrated"]["verdict"] == "UNDERPOWERED"
+
+
+def test_the_o3_safety_bar_counts_absent_copy_calls_on_reads_whose_copy_is_present():
+    o2p, sc = _cards(placed_wrong=0, placed_right=300, own_tie_placed=0, decidable_right=190, mm2_wrong=150, o3_present=80)
+    assert H.bars(o2p, sc, systems=("integrated",))["integrated"]["T5"]["holds"] is False         # 80 of 1,200 present
+    assert H.wilson(0, 100)[0] == 0.0 and 0.03 < H.wilson(0, 100)[1] < 0.04
