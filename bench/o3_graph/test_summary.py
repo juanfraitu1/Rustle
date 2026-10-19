@@ -1,3 +1,4 @@
+import json
 import importlib.util
 import os
 
@@ -118,3 +119,25 @@ def test_per_read_detectability_subtracts_the_world_s_error_floor_when_given():
 def test_e2e_takes_the_error_floor_option():
     assert S.e2e_args(["e2e", "o.json", "W1", "--error-floor"]) == ("o.json", ["W1"], False, "o2.integ.m2.tsv", True)
     assert S.e2e_args(["e2e", "o.json", "W1"])[4] is False
+
+
+def test_a_world_s_calls_are_each_system_s_placements_and_the_reads_inside_its_absent_copy_calls(tmp_path):
+    w = tmp_path / "W"
+    for d in ("cur", "graph"):
+        (w / d).mkdir(parents=True)
+    tsv = lambda p, rows: open(w / p, "w").write("\n".join("\t".join(r) for r in rows) + "\n")  # noqa: E731
+    json.dump({"F": [{"idx": 0, "copy": "F.0"}, {"idx": 1, "copy": "F.1"}]}, open(w / "isoforms.json", "w"))
+    json.dump({"F": {"copies": [{"origin": "catalog", "idx": 0}, {"origin": "new", "idx": 2, "contig": "c1", "start": 900,
+                                                                  "end": 1500}]}}, open(w / "graph/seeded.json", "w"))
+    tsv("copies.tsv", [("copy", "family", "chrom", "start", "end"), ("F.9", "F", "c1", "1000", "1400")])
+    tsv("cur/A.assignments.tsv", [("read_name", "family_id", "status", "catalog_copy_idx"), ("r1", "F", "assigned", "1"),
+                                  ("r2", "F", "ambiguous", "0")])
+    tsv("cur/A.psv_cluster_reads.tsv", [("read_name", "family", "host", "cluster"), ("r3", "F", "0", "0"), ("r7", "F", "0", "1")])
+    tsv("cur/A.psv_clusters.tsv", [("family", "host", "cluster", "status", "est_div"), ("F", "0", "0", "unexplained", "0.05"),
+                                   ("F", "0", "1", "unexplained", "0.001")])        # within DELTA: an allele, no call
+    tsv("graph/o2.integv.m2.tsv", [("read", "family", "call", "reason"), ("r1", "F", "0", "ok"), ("r2", "F", "-", "tied"),
+                                   ("r6", "F", "2", "ok")])
+    tsv("graph/calls.tsv", [("arm", "members"), ("I", "r4,r5"), ("II", "r8")])
+    got = S.world_calls(str(w), "o2.integv.m2.tsv")
+    assert got == dict(current={"r1": {"F": "F.1"}}, integrated={"r1": {"F": "F.0"}, "r6": {"F": "F.9"}},
+                       current_o3={"r3"}, integrated_o3={"r4", "r5"})

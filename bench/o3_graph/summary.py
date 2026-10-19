@@ -146,17 +146,47 @@ def integrated_calls(rows, seeded_copy):
     return out
 
 
+def world_calls(w, o2_name="o2.integ.m2.tsv"):
+    """One world's calls under both systems: {current, integrated: {read: {family: truth copy}}, current_o3, integrated_o3: the
+    reads inside an absent-copy call}. current: copy_assign's assigned reads and its unexplained PSV clusters beyond DELTA;
+    integrated: the O2 table o2_name on graph/seeded.json (a new seeded copy maps to the truth copy it overlaps most) and O3's
+    arm-I calls."""
+    O = _o2("o2graph")
+    iso = json.load(open(f"{w}/isoforms.json"))
+    cat_copy = {(f, c["idx"]): c["copy"] for f, cps in iso.items() for c in cps}
+    sj = json.load(open(f"{w}/graph/seeded.json"))
+    truth_copies = list(csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"))
+    seeded_copy = dict(cat_copy)
+    for f, v in sj.items():
+        for i, cp in O.map_new_copies([c for c in v["copies"] if c["origin"] == "new"], truth_copies).items():
+            seeded_copy[(f, i)] = cp
+    cur = {}
+    for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
+        if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit():
+            cur.setdefault(r["read_name"], {})[r["family_id"]] = cat_copy.get((r["family_id"], int(r["catalog_copy_idx"])))
+    integ = integrated_calls(csv.DictReader(open(f"{w}/graph/{o2_name}"), delimiter="\t"), seeded_copy)
+    mem = collections.defaultdict(set)
+    for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
+        mem[(r["family"], r["host"], r["cluster"])].add(r["read_name"])
+    cur_o3 = set()
+    for c in csv.DictReader(open(f"{w}/cur/A.psv_clusters.tsv"), delimiter="\t"):
+        if c["status"] == "unexplained" and float(c["est_div"]) > DELTA:
+            cur_o3 |= mem[(c["family"], c["host"], c["cluster"])]
+    i_o3 = set()
+    for c in csv.DictReader(open(f"{w}/graph/calls.tsv"), delimiter="\t"):
+        if c["arm"] == "I":
+            i_o3 |= set(c["members"].split(","))
+    return dict(current=cur, integrated=integ, current_o3=cur_o3, integrated_o3=i_o3)
+
+
 def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=False):
     """Per world and read class: the fates of every read under the current method (copy_assign O2 + CUR O3) and the integrated
     O1 -> O2 -> O3 (o2_name, by default o2.integ.m2.tsv, on graph/seeded.json + arm I)."""
-    O = _o2("o2graph")
     res = {}
     for w in worlds:
         name = os.path.basename(w.rstrip("/"))
         truth = {r["read"]: r for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t")}
         kinds = json.load(open(f"{w}/kinds.json"))
-        iso = json.load(open(f"{w}/isoforms.json"))
-        cat_copy = {(f, c["idx"]): c["copy"] for f, cps in iso.items() for c in cps}
         det = removed_detectability(w) if name.startswith("REMOVED") else {}
         rde = primary_de(w) if per_read and name.startswith("REMOVED") else {}
         floor = _o2("detect").error_floor(f"{w}/E0.bam") if error_floor and name.startswith("REMOVED") else 0.0
@@ -170,30 +200,10 @@ def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=
             if name.startswith("BRANCH"):                  # a novel-exon absent copy: detectable by construction
                 return "absent_detectable"
             return absent_class(det.get(t["family"], (0, False))[1], rde.get(t["read"]), per_read, floor)
-        sj = json.load(open(f"{w}/graph/seeded.json"))
-        truth_copies = list(csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"))
-        seeded_copy = dict(cat_copy)
-        for f, v in sj.items():
-            for i, cp in O.map_new_copies([c for c in v["copies"] if c["origin"] == "new"], truth_copies).items():
-                seeded_copy[(f, i)] = cp
-        cur = {}
-        for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
-            if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit():
-                cur.setdefault(r["read_name"], {})[r["family_id"]] = cat_copy.get((r["family_id"], int(r["catalog_copy_idx"])))
-        integ = integrated_calls(csv.DictReader(open(f"{w}/graph/{o2_name}"), delimiter="\t"), seeded_copy)
-        mem = collections.defaultdict(set)
-        for r in csv.DictReader(open(f"{w}/cur/A.psv_cluster_reads.tsv"), delimiter="\t"):
-            mem[(r["family"], r["host"], r["cluster"])].add(r["read_name"])
-        cur_o3 = set()
-        for c in csv.DictReader(open(f"{w}/cur/A.psv_clusters.tsv"), delimiter="\t"):
-            if c["status"] == "unexplained" and float(c["est_div"]) > DELTA:
-                cur_o3 |= mem[(c["family"], c["host"], c["cluster"])]
-        i_o3 = set()
-        for c in csv.DictReader(open(f"{w}/graph/calls.tsv"), delimiter="\t"):
-            if c["arm"] == "I":
-                i_o3 |= set(c["members"].split(","))
+        wc = world_calls(w, o2_name)
         tab = {}
-        for system, o2, o3 in (("current", cur, cur_o3), ("integrated", integ, i_o3)):
+        for system in ("current", "integrated"):
+            o2, o3 = wc[system], wc[f"{system}_o3"]
             cnt = collections.defaultdict(collections.Counter)
             for q, t in truth.items():
                 calls = o2.get(q, {})
