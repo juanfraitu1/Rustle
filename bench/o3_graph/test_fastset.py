@@ -52,7 +52,7 @@ def _opts(**kw):
                 haplotype_check_genome=False, branch_genome_segments=False,
                 branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
                 locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False, twin_guard=False,
-                ref_copies=False, local=None, ref_carried=False, o2_scope="off")
+                ref_copies=False, local=None, ref_carried=False, o2_scope="off", as_slack=0)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -253,3 +253,8 @@ def test_o2_acts_only_on_as_tied_reads_after_the_genome_step_when_asked_and_the_
     assert F.e2e_command(_opts(o2_genome="veto", o2_scope="tied"), "/R", ["A"]) == (
         "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.intega.m2.tsv")
     assert "O2_scope" not in [s for s, _, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT")]
+
+
+def test_the_scope_step_takes_an_as_slack_only_when_asked():
+    steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(o2_genome="veto", o2_scope="tied", as_slack=4), "/R", "INTACT"))
+    assert steps["O2_scope"] == "python3 bench/o3_graph/o2graph.py run /R/INTACT intega 2 --base integv --as-slack 4"

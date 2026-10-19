@@ -217,7 +217,8 @@ def chain_steps(a, root, w):
     if getattr(a, "o2_scope", "off") == "tied":      # O2 only on the AS-tied reads (o2graph.py run W intega; as_scope)
         steps.append(("O2_scope", f"python3 bench/o3_graph/o2graph.py run {W} intega 2 --base "
                       + (GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else "integ")
-                      + (" --error-floor" if a.error_floor else ""), "light"))
+                      + (" --error-floor" if a.error_floor else "")
+                      + (f" --as-slack {a.as_slack}" if getattr(a, "as_slack", 0) else ""), "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
                   + f" python3 bench/o3_graph/detect.py {W}"
@@ -372,6 +373,9 @@ def main(argv=None):
                    help="tied (user 2026-10-19: 'use only for tied AS reads'): O2's calls stand only on AS-tied reads, among the "
                         "tied copies; a read whose best AS lies on one copy is minimap2's, unless that alignment does not explain "
                         "it (then O3's); a best AS off the family's copies abstains (o2graph.py run W intega)")
+    p.add_argument("--as-slack", type=int, default=0,
+                   help="with --o2-scope tied: alignments within this many AS points of the best tie (0: equal AS only; 4: "
+                        "less than one substitution under splice:hq, +1 match / -4 mismatch)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "
                    "unexplained (default) or what the --o2-genome step leaves (detect.py --pool-table)")
     p.add_argument("--allele-discount", action="store_true", help="O3's genome check discounts the donor's alleles, the edits "

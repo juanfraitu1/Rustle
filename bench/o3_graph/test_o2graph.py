@@ -1079,3 +1079,23 @@ def test_the_best_as_loci_of_a_read_are_its_best_scoring_alignments_seeded_copie
     got, qlen = O.best_as_loci(str(w), {"r1": {"F"}, "r2": {"F"}, "r3": {"F"}}, spans)
     assert got[("r1", "F")] == {0: 1, 1: 0} and got[("r2", "F")] == {0: 0} and got[("r3", "F")] == {1: 0, O.ELSEWHERE: 0}
     assert qlen["r1"] == 150
+
+
+def test_an_as_slack_counts_alignments_within_it_of_the_best_as_tied(tmp_path):
+    import pysam
+    w = tmp_path / "W"
+    w.mkdir()
+    hdr = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]})
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for name, pos, flag, score in [("r1", 1100, 0, 300), ("r1", 5100, 256, 296),     # 4 points: less than one substitution
+                                       ("r2", 1100, 0, 300), ("r2", 5100, 256, 295)]:    # 5: one substitution's worth
+            a = pysam.AlignedSegment(hdr)
+            a.query_name, a.reference_id, a.reference_start, a.flag, a.mapping_quality = name, 0, pos, flag, 0
+            a.cigarstring, a.query_sequence = "150=", "A" * 150
+            a.set_tag("AS", score)
+            out.write(a)
+    spans = {"F": [("c1", 1000, 2000, 0), ("c1", 5000, 6000, 1)]}
+    todo = {"r1": {"F"}, "r2": {"F"}}
+    assert O.best_as_loci(str(w), todo, spans)[0] == {("r1", "F"): {0: 0}, ("r2", "F"): {0: 0}}     # equal AS only
+    got = O.best_as_loci(str(w), todo, spans, slack=4)[0]
+    assert got[("r1", "F")] == {0: 0, 1: 0} and got[("r2", "F")] == {0: 0}
