@@ -147,3 +147,28 @@ profiles and three seeds.
 - anything on real reads;
 - anything about arrays of FAM90A's or DUX4's size beyond the spent runs;
 - anything about paralogs no annotation holds.
+
+## Results (2026-10-18 18:29-19:18; nothing changed after the first run, no crash)
+
+**Verdict: FAIL -- 5 of 6 cells pass; A119b 1001 fails. C1 PASSES** in both profiles.
+
+| cell | failing worlds (integrated vs current: correct / errors) |
+|---|---|
+| A119b 1001 | INTACT 3,287 / 3 vs 3,285 / 0; CROSS 3,407 / 3 vs 3,401 / 1 |
+
+- **Over the 36 worlds:** v15 makes 111,360 correct calls against the current method's 78,757, and 2,857 errors against 8,644.
+- **Every failing bar is B2, from one family and one mechanism:** in each world, three reads of ZNF479 (copy 0) are moved to
+  ZNF734P (copy 2, an unprocessed pseudogene) by the genome veto (`veto_locus`).
+  - Read s0003469's primary alignment lies on ZNF734P at MAPQ 36 and AS 700.
+  - Its secondary on its own copy scores AS 724.
+  - minimap2 chose the primary by its DP score (768 against 748). Its two introns, 84 and 252 bp, skip one and three
+    zinc-finger repeat units of 84 bp. The alignment at the read's own locus has 9 clustered mismatches in the repeats.
+  - The veto trusts a primary at MAPQ >= 30. It does not ask whether a secondary on another copy scores as well, which the
+    user's rule of 2026-10-11 forbids: a primary with an AS-tied secondary is not trusted as the origin.
+- **The weakness predates v15:** under round 19's exact rule, ZNF479's family is exactly {ZNF479, ZNF734P}. Round 20 is the
+  first draw to hold it.
+
+**C1, the cost on the mainstay set:** v15 used 1,028 CPU seconds (A119b) and 854 (public), against the current method's 1,046
+and 945.
+- O1's genome search, cached per set, costs 170 s of these.
+- Reported: round 20's cells used 1,311 CPU seconds in all against 1,078.
