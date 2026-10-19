@@ -298,10 +298,10 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
     tied = {r["read"]: set(r["copies"].split(",")) for r in csv.DictReader(open(tied_p), delimiter="\t")
             if r["family"] == family}
     resolved = {r["read"]: r["copies"] for r in csv.DictReader(open(untied_p), delimiter="\t") if r["family"] == family}
+    anchor = choose_anchor(collections.Counter(resolved[q] for q in seqs if q in resolved), copies)   # all untied reads
     if margins_p:                                      # only reads resolved by >= TEACH_MARGIN teach the labels
         mg = {r["read"]: float(r["margin"]) for r in csv.DictReader(open(margins_p), delimiter="\t")}
         resolved = {q: c for q, c in resolved.items() if mg.get(q, 0) >= TEACH_MARGIN}
-    anchor = choose_anchor(collections.Counter(resolved[q] for q in seqs if q in resolved), copies)
     a = fam["copies"][copies.index(anchor)]
     with tempfile.TemporaryDirectory(dir=out_dir) as d:
         s0 = max(0, a["start"] - PAD)
