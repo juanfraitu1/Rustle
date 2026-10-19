@@ -171,3 +171,60 @@ multigene families, half of them with non-coding members.
 - **Accuracy where a donor's copy carries its paralog's alleles at two or more sites.** minimap2 places those reads on the
   paralog. Development shows such reads exist, and real data does too (register 1330).
 - **Real-read accuracy beyond the HG002 development numbers above.**
+
+## Results (2026-10-19, run once as pre-registered; `/mnt/linuxdisk/tmp/o3_graph/fast/heldout21/`)
+
+The six cells ran in 62 min (7-9 min each) and the two cost runs in 22 min, with no crash. The code was unchanged from
+097390a1.
+
+**Verdict: FAIL.** 5 of 6 cells pass, and 69 of the 72 bar checks hold.
+- **public_s1103 fails B2 in CROSS, INTACT and SILENT,** by one error each against the current method's 0.
+- **The three errors are one read sequence:**
+  - an NCOR1P4 read of copy .1 (chr14);
+  - minimap2 aligns it to copy .2 (chr21) with AS 278 at NM 0, and to its own copy with AS 262, also at NM 0 (the primary,
+    MAPQ 34);
+  - the chr21 alignment covers more of the read, so at a margin of 16 the read is minimap2's, and it goes to the wrong
+    copy;
+  - v14's paths placed it right.
+- **This is the known weakness of AS margins** (register 1270): an unspliced alignment to a processed copy outscores the
+  true copy's alignment. NCOR1P4's three copies are transcribed processed pseudogenes.
+
+**C1 PASS** in both profiles. Integrated CPU, against the current method's:
+- A119b: 938 s against 1,044. The O2 scope step took 5 s.
+- public: 746 s against 952. The O2 scope step took 4 s.
+
+**Reported, no bar:**
+- **All 36 worlds, judged reads** (off-family ties left out):
+
+  | system | correct | errors |
+  |---|---|---|
+  | v16 | 97,036 | 4,137 |
+  | v14, same worlds and scoring | 97,132 | 4,162 |
+  | current | 64,640 | 8,362 |
+
+  v14 passes all six cells under this scoring.
+- **Off-family ties** (scored apart):
+
+  | system | correct | errors |
+  |---|---|---|
+  | v16 | 1,398 | 2 |
+  | v14 | 1,746 | 37 |
+  | current | 4,084 | 86 |
+
+  These are the ties v14 and the current method guess on.
+- **Who placed what** (INTACT, CROSS, OUTSIDE and SILENT; catalogued copies' reads; off-family ties left out):
+  - minimap2 (`as_resolved`): 49,914 placements, 4 wrong (0.008%).
+  - O2, on the reads within 10 AS of a rival: 7,000 reads. It placed 349, all right, and abstained on 6,651. v14 decided the
+    same 7,000 identically.
+  - 216 reads were `as_unexplained` (left to O3), 5 `as_elsewhere` and 32 not hosted.
+- **The cost runs' own correctness bars** (the mainstay set, development):
+  - A119b passes.
+  - public fails one bar: INTACT B2, 25 errors against 24.
+
+**What it means:**
+- **The split holds where O2 acts.** On the AS-tied reads, O2 is never wrong, as v14 was not.
+- **The split's errors are minimap2's.** It is wrong on 4 of its 49,914 resolved placements. Those reads' best AS lies on
+  the wrong copy by 10 or more, here an unspliced alignment to a processed pseudogene copy.
+- **Off-family ties make the difference** between v16 and v14: 35 fewer errors there, with v16 abstaining on 348 fewer
+  correct placements.
+- **Not adopted as registered.** The B2 bar is strict, as the user chose, and one read failed it in three worlds.
