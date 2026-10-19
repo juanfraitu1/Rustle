@@ -4,7 +4,10 @@ assign reads to copies based on PSVs for tied AS reads"). HG002: PacBio Kinnex r
 (hg002v1.1, maternal and paternal haplotypes), with chains to CHM13 v2.0.
 
 A read is TIED in CHM13 when its best alignment score is shared by alignments on two or more copies (copy_assign's exact AS
-tie); copies by exon overlap (realreads.copy_exons). Its truth comes from its alignments to the donor's own haplotypes: the
+tie); copies by exon overlap (realreads.copy_exons). The user's split (2026-10-18: "O2 can only work for tied AS reads,
+everything else is already resolved by minimap, then O3 is just an extension in which if we notice the PSVs nothing in the
+genome explains them"): a read whose best-AS alignments all lie on one copy is RESOLVED by minimap2 (the premise, tested on
+the untied reads with the same truth); a tied read is O2's, which may only choose among the copies it ties on (scoped). Its truth comes from its alignments to the donor's own haplotypes: the
 best-scoring ones, lifted to CHM13 through the chain, name the copy --
   unique          every best placement (either haplotype: the copy's two alleles) lifts onto one CHM13 copy -> the truth
   own_tie         they lift onto two or more copies: the donor's copies tie too -> undecidable from the read
@@ -18,6 +21,8 @@ The donor margin of a unique read (reported, no class) is how far the best place
 
     hg002truth.py tied BAM FAMILIES.json SET OUT.tsv           -> the reads tied in BAM (CHM13 coordinates): read, AS, copies,
                                                                   and minimap2's primary (its coin toss among them) + MAPQ
+    hg002truth.py untied BAM FAMILIES.json SET OUT.tsv         -> the reads minimap2 resolves, in the same format (copies = the
+                                                                  one copy its best-AS alignments lie on)
     hg002truth.py truth TIED.tsv MAT.bam PAT.bam CHAIN FAMILIES.json SET OUT.tsv -> each tied read's class and truth copy
     hg002truth.py world TRUTH.tsv FAMILIES.json SET MIN OUT_DIR -> OUT_DIR/families.json (set `hg002`: the families with >= MIN
                                                                   scored tied reads) and OUT_DIR/world_truth.tsv (the reads with
@@ -42,7 +47,10 @@ R = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(R)
 
 
-METHODS = ("mm2", "mm2_q1", "current", "integrated")
+METHODS = ("mm2", "mm2_q1", "current", "integrated", "current_tied", "integrated_tied")
+SYSTEMS = ("integrated", "current", "integrated_tied", "current_tied")
+FLOOR, T1_MAX, T3_MAX, T4_MIN, T5_MAX, VALID_MIN = 100, 0.02, 0.05, 0.90, 0.05, 0.25   # PREREG_o2_hg002_tied_2026-10-18
+PREMISE_MIN = 0.99
 SCORED = ("unique", "unique_elsewhere", "own_tie", "no_counterpart", "elsewhere")
 
 
@@ -64,6 +72,30 @@ def tied_copies(alns, idx):
         return None, set()
     best = max(a[2] for a in alns)
     return best, {c for ch, bl, sc, *_ in alns if sc == best for c in [_copy_of(ch, bl, idx)] if c}
+
+
+def resolved_copy(alns, idx):
+    """minimap2's resolution of a read: the copy its best-AS alignments all lie on; None when they tie across copies or
+    with a locus off the copies (or lie off them)."""
+    if not alns:
+        return None
+    best = max(a[2] for a in alns)
+    cps = {_copy_of(ch, bl, idx) for ch, bl, sc, *_ in alns if sc == best}
+    return next(iter(cps)) if len(cps) == 1 and None not in cps else None
+
+
+def scoped(call, tied):
+    """The user's O2 scope: a tied read's call stands only on one of the copies it ties on; otherwise it is an abstention."""
+    return call if call in tied else None
+
+
+def premise_bar(rows):
+    """The premise that minimap2 resolves the untied reads: its copy is the donor's (`unique`) rather than another
+    (`unique_elsewhere`) in >= PREMISE_MIN of the untied reads with a donor copy."""
+    n = collections.Counter(r["class"] for r in rows)
+    k = n["unique"] + n["unique_elsewhere"]
+    return dict(value=n["unique"] / k if k else None, n=k, powered=k >= FLOOR,
+                holds=(n["unique"] / k >= PREMISE_MIN) if k else None, classes=dict(n))
 
 
 def near_perfect(nm, aligned):
@@ -138,6 +170,24 @@ def _alns(bam_path, primaries=None):
             if primaries is not None and not r.is_secondary:
                 primaries[r.query_name] = (r.reference_name, r.get_blocks(), r.mapping_quality)
     return out
+
+
+def cmd_untied(bam_p, fam_p, set_name, out_p):
+    (fams,) = [json.load(open(fam_p))["sets"][set_name]]
+    idx = R.copy_exons(fams)
+    fam_of = {f"{f['family']}.{k}": f["family"] for f in fams for k in range(len(f["copies"]))}
+    n, prim = collections.Counter(), {}
+    with open(out_p, "w") as fh:
+        fh.write("read\tas\tfamily\tcopies\tprimary\tmapq\n")
+        for q, al in _alns(bam_p, prim).items():
+            n["reads"] += 1
+            cp = resolved_copy(al, idx)
+            if cp:
+                ch, bl, mq = prim[q]
+                fh.write(f"{q}\t{max(a[2] for a in al)}\t{fam_of[cp]}\t{cp}\t{_copy_of(ch, bl, idx) or ''}\t{mq}\n")
+                n["resolved"] += 1
+    print(f"[hg002truth] {dict(n)} -> {out_p}", flush=True)
+    return 0
 
 
 def cmd_tied(bam_p, fam_p, set_name, out_p):
@@ -253,6 +303,8 @@ def cmd_score(truth_p, tied_p, world, out_p, o2_name="o2.integv.m2.tsv"):
         calls = dict(mm2=(prim, False), mm2_q1=(prim if int(t["mapq"]) >= 1 else None, False),
                      current=(_fam_call(wc["current"].get(q), f), q in wc["current_o3"]),
                      integrated=(_fam_call(wc["integrated"].get(q), f), q in wc["integrated_o3"]))
+        for m in ("current", "integrated"):
+            calls[f"{m}_tied"] = (scoped(calls[m][0], ts), calls[m][1])
         for m, (a, in_o3) in calls.items():
             e2e[m][cls][tied_fate(cls, r["truth"] or None, a, in_o3, ts)] += 1
             o2[m][cls][tied_fate(cls, r["truth"] or None, a, False, ts)] += 1
@@ -278,14 +330,13 @@ def wilson(k, n, z=1.96):
     return (0.0 if k == 0 else max(0.0, c - h)), (1.0 if k == n else min(1.0, c + h))
 
 
-FLOOR, T1_MAX, T3_MAX, T4_MIN, T5_MAX, VALID_MIN = 100, 0.02, 0.05, 0.90, 0.05, 0.25   # PREREG_o2_hg002_tied_2026-10-18
 
 
 def _bar(value, n, ok):
     return dict(value=value, n=n, powered=n >= FLOOR, holds=ok(value) if n else None)
 
 
-def bars(o2p, score, systems=("integrated", "current")):
+def bars(o2p, score, systems=SYSTEMS):
     """The pre-registered bars from o2proof's pooled card (the world's truth reads) and hg002truth's score: per system T1
     (wrong / placed), T2 (its Wilson upper bound below the coin toss's lower one), T3 (placed own_tie reads), T4 (correct
     decidable reads), T5 (O3 calls on reads whose copy is present) and the O2 verdict; `valid`: mm2 wrong on >= 25%."""
@@ -327,7 +378,7 @@ def cmd_bars(o2p_p, score_p, out_p):
     res = bars(json.load(open(o2p_p)), json.load(open(score_p)))
     json.dump(res, open(out_p, "w"), indent=1)
     print(f"valid (mm2 wrong >= {VALID_MIN}): {res['valid']} ({res['mm2_wrong']} / {res['mm2_n']})")
-    for m in ("integrated", "current"):
+    for m in SYSTEMS:
         print(f"{m}: O2 {res[m]['verdict']}; " + "; ".join(
             f"{t} {res[m][t]['value']} n {res[m][t]['n']} {'powered' if res[m][t]['powered'] else 'UNDERPOWERED'} "
             f"{'holds' if res[m][t]['holds'] else 'FAILS' if res[m][t]['holds'] is False else '-'}"
@@ -344,6 +395,8 @@ def main(argv):
         return cmd_world(argv[1], argv[2], argv[3], int(argv[4]), argv[5])
     if len(argv) == 5 and argv[0] == "tied":
         return cmd_tied(*argv[1:])
+    if len(argv) == 5 and argv[0] == "untied":
+        return cmd_untied(*argv[1:])
     if len(argv) == 8 and argv[0] == "truth":
         return cmd_truth(*argv[1:])
     raise SystemExit(__doc__)

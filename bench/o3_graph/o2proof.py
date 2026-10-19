@@ -2,7 +2,11 @@
 """The O2 scorecard by DECIDABILITY (user, 2026-10-17: "can we use these to prove that O2 works?"): every catalogued read
 is classed by what its own sequence can tell, then each assigner's outcome is tallied by that class and by MAPQ.
 
-    o2proof.py score OUT.json WORLD ... [--o2 NAME]     per world and pooled; NAME defaults to o2.integv.m2.tsv
+    o2proof.py score OUT.json WORLD ... [--o2 NAME] [--tied TIED.tsv]
+        per world and pooled; NAME defaults to o2.integv.m2.tsv. With --tied (hg002truth.py tied: read, copies), also the
+        user's scoped systems `current_tied` / `integrated_tied` (2026-10-18: "O2 can only work for tied AS reads,
+        everything else is already resolved by minimap"): a tied read's call stands only on a copy it ties on, else it is
+        an abstention; an untied read takes minimap2's primary.
 
 The oracle:
 - A read's alignments in WORLD/E0.bam (primary and secondary; supplementary ones are pieces) are placed on the copy whose
@@ -195,6 +199,15 @@ def world_rows(w, o2_name="o2.integv.m2.tsv"):
     return rows
 
 
+def scope_rows(rows, tied):
+    """Adds the scoped systems' calls to rows in place; tied = {read: the copies its best AS ties on}."""
+    for r in rows:
+        c = r["calls"]
+        for m in ("current", "integrated"):
+            c[f"{m}_tied"] = (c[m] if c[m] in tied[r["read"]] else None) if r["read"] in tied else c["mm2"]
+    return rows
+
+
 def summary_lines(card):
     """Per method and class: n, correct / wrong / abstain over all reads and over MAPQ-0 reads."""
     out = []
@@ -208,29 +221,39 @@ def summary_lines(card):
     return out
 
 
-def cmd_score(out, worlds, o2_name):
+def cmd_score(out, worlds, o2_name, tied_p=None):
     res, pooled = {}, []
+    tied = ({r["read"]: set(r["copies"].split(",")) for r in csv.DictReader(open(tied_p), delimiter="\t")}
+            if tied_p else None)
+    methods = METHODS + (("current_tied", "integrated_tied") if tied is not None else ())
     for w in worlds:
         rows = world_rows(w, o2_name)
+        if tied is not None:
+            scope_rows(rows, tied)
         pooled += rows
         name = os.path.basename(w.rstrip("/"))
-        res[name] = dict(card=scorecard(rows, METHODS),
+        res[name] = dict(card=scorecard(rows, methods),
                          classes=dict(collections.Counter(r["cls"] for r in rows)),
                          by_family={f: dict(collections.Counter(r["cls"] for r in rows if r["family"] == f))
                                     for f in sorted({r["family"] for r in rows})})
         print(f"{name}: " + ", ".join(f"{k} {v}" for k, v in sorted(res[name]["classes"].items())), flush=True)
-    res["pooled"] = dict(card=scorecard(pooled, METHODS), classes=dict(collections.Counter(r["cls"] for r in pooled)))
+    res["pooled"] = dict(card=scorecard(pooled, methods), classes=dict(collections.Counter(r["cls"] for r in pooled)))
     print("pooled:")
     print("\n".join(summary_lines(res["pooled"]["card"])))
     json.dump(res, open(out, "w"), indent=1)
     return 0
 
 
+def score_args(argv):
+    """(OUT, worlds, O2 table name, tied table or None) of `score`'s arguments."""
+    opt = {k: argv[argv.index(k) + 1] for k in ("--o2", "--tied") if k in argv}
+    worlds = [x for i, x in enumerate(argv[1:], 1) if x not in opt and argv[i - 1] not in ("--o2", "--tied")]
+    return argv[0], worlds, opt.get("--o2", "o2.integv.m2.tsv"), opt.get("--tied")
+
+
 def main(argv):
     if len(argv) >= 3 and argv[0] == "score":
-        o2 = argv[argv.index("--o2") + 1] if "--o2" in argv else "o2.integv.m2.tsv"
-        worlds = [x for i, x in enumerate(argv[2:], 2) if x != "--o2" and argv[i - 1] != "--o2"]
-        return cmd_score(argv[1], worlds, o2)
+        return cmd_score(*score_args(argv[1:]))
     print(__doc__, file=sys.stderr)
     return 2
 

@@ -50,6 +50,9 @@ def test_the_tied_table_names_each_tied_read_s_copies_and_minimap2_s_coin_toss_p
     assert H.main(["tied", str(tmp_path / "x.bam"), str(tmp_path / "f.json"), "S", str(tmp_path / "t.tsv")]) == 0
     rows = list(csv.DictReader(open(tmp_path / "t.tsv"), delimiter="\t"))
     assert [(r["read"], r["copies"], r["primary"], r["mapq"]) for r in rows] == [("r1", "F.0,F.1", "F.1", "0")]
+    assert H.main(["untied", str(tmp_path / "x.bam"), str(tmp_path / "f.json"), "S", str(tmp_path / "u.tsv")]) == 0
+    rows = list(csv.DictReader(open(tmp_path / "u.tsv"), delimiter="\t"))
+    assert [(r["read"], r["copies"], r["primary"], r["mapq"]) for r in rows] == [("r2", "F.0", "F.0", "7")]
 
 
 def test_a_tied_read_s_fate_is_judged_by_what_the_donor_s_own_genome_says():
@@ -75,14 +78,14 @@ def test_the_score_tallies_each_method_s_fates_by_truth_class_over_the_world_s_t
     for d in ("cur", "graph"):
         (w / d).mkdir(parents=True)
     tsv = lambda p, rows: open(p, "w").write("\n".join("\t".join(r) for r in rows) + "\n")  # noqa: E731
-    json.dump({"F": [{"idx": 0, "copy": "F.0"}, {"idx": 1, "copy": "F.1"}]}, open(w / "isoforms.json", "w"))
-    json.dump({"F": {"copies": [{"origin": "catalog", "idx": 0}, {"origin": "catalog", "idx": 1}]}}, open(w / "graph/seeded.json", "w"))
+    json.dump({"F": [{"idx": 0, "copy": "F.0"}, {"idx": 1, "copy": "F.1"}, {"idx": 2, "copy": "F.2"}]}, open(w / "isoforms.json", "w"))
+    json.dump({"F": {"copies": [{"origin": "catalog", "idx": i} for i in range(3)]}}, open(w / "graph/seeded.json", "w"))
     tsv(w / "copies.tsv", [("copy", "family", "chrom", "start", "end")])
     tsv(w / "cur/A.assignments.tsv", [("read_name", "family_id", "status", "catalog_copy_idx"), ("r1", "F", "assigned", "0"),
                                       ("r2", "F", "ambiguous", "1")])
     tsv(w / "cur/A.psv_cluster_reads.tsv", [("read_name", "family", "host", "cluster"), ("r3", "F", "0", "0")])
     tsv(w / "cur/A.psv_clusters.tsv", [("family", "host", "cluster", "status", "est_div"), ("F", "0", "0", "unexplained", "0.05")])
-    tsv(w / "graph/o2.integv.m2.tsv", [("read", "family", "call", "reason"), ("r1", "F", "0", "ok"), ("r2", "F", "-", "tied")])
+    tsv(w / "graph/o2.integv.m2.tsv", [("read", "family", "call", "reason"), ("r1", "F", "0", "ok"), ("r2", "F", "2", "ok")])
     tsv(w / "graph/calls.tsv", [("arm", "members"), ("I", "r3")])
     open(w / "reads.E0.fq", "w").write("".join(f"@{q}\nACGT\n+\nIIII\n" for q in ("r1", "r2", "r3", "r4")))
     tsv(tmp_path / "tied.tsv", [("read", "as", "family", "copies", "primary", "mapq"), ("r1", "900", "F", "F.0,F.1", "F.1", "0"),
@@ -97,8 +100,11 @@ def test_the_score_tallies_each_method_s_fates_by_truth_class_over_the_world_s_t
     assert got["e2e"] == {"mm2": {"unique": {"error": 1}, "own_tie": {"guess": 1}, "no_counterpart": {"error": 1}},
                           "mm2_q1": {"unique": {"abstain": 1}, "own_tie": {"guess": 1}, "no_counterpart": {"abstain": 1}},
                           "current": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}},
-                          "integrated": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}}}
-    assert got["o2"]["integrated"] == {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"abstain": 1}}
+                          "integrated": {"unique": {"correct": 1}, "own_tie": {"error": 1}, "no_counterpart": {"correct": 1}},
+                          "current_tied": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}},
+                          "integrated_tied": {"unique": {"correct": 1}, "own_tie": {"abstain": 1}, "no_counterpart": {"correct": 1}}}
+    assert got["o2"]["integrated"] == {"unique": {"correct": 1}, "own_tie": {"error": 1}, "no_counterpart": {"abstain": 1}}
+    assert got["o2"]["integrated_tied"]["own_tie"] == {"abstain": 1}     # F.2 is no copy r2 ties on: scoped out
     assert got["o3"]["current"] == {"no_counterpart": 1} and got["o3"]["mm2"] == {}
     assert got["skipped"] == {"unmapped": 1, "not_in_world": 1}
 
@@ -202,3 +208,25 @@ def test_the_o3_safety_bar_counts_absent_copy_calls_on_reads_whose_copy_is_prese
     o2p, sc = _cards(placed_wrong=0, placed_right=300, own_tie_placed=0, decidable_right=190, mm2_wrong=150, o3_present=80)
     assert H.bars(o2p, sc, systems=("integrated",))["integrated"]["T5"]["holds"] is False         # 80 of 1,200 present
     assert H.wilson(0, 100)[0] == 0.0 and 0.03 < H.wilson(0, 100)[1] < 0.04
+
+
+def test_minimap2_resolves_a_read_only_when_its_best_as_alignments_all_lie_on_one_copy():
+    one = [("c1", [(150, 300)], 900), ("c1", [(5150, 5300)], 880)]
+    assert H.resolved_copy(one, IDX) == "F.0"
+    assert H.resolved_copy(one + [("c1", [(160, 300)], 900)], IDX) == "F.0"              # two best alignments, one copy
+    assert H.resolved_copy(one + [("c1", [(5150, 5300)], 900)], IDX) is None             # an AS tie between copies: O2's
+    assert H.resolved_copy(one + [("c9", [(150, 300)], 900)], IDX) is None               # an AS tie with a locus off the copies
+    assert H.resolved_copy([("c9", [(150, 300)], 900)], IDX) is None and H.resolved_copy([], IDX) is None
+
+
+def test_the_scoped_o2_keeps_a_call_only_on_one_of_the_copies_the_read_ties_on():
+    assert H.scoped("F.1", {"F.0", "F.1"}) == "F.1"
+    assert H.scoped("F.2", {"F.0", "F.1"}) is None and H.scoped("wrong-family", {"F.0", "F.1"}) is None
+    assert H.scoped(None, {"F.0", "F.1"}) is None
+
+
+def test_the_premise_bar_is_minimap2_s_agreement_with_the_donor_on_reads_it_resolves():
+    rows = [{"class": "unique"}] * 995 + [{"class": "unique_elsewhere"}] * 5 + [{"class": "own_tie"}] * 50
+    b = H.premise_bar(rows)
+    assert b["value"] == 0.995 and b["n"] == 1000 and b["powered"] and b["holds"]
+    assert H.premise_bar(rows[:990] + [{"class": "unique_elsewhere"}] * 20)["holds"] is False

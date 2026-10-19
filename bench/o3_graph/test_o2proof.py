@@ -71,3 +71,13 @@ def test_the_scorecard_tallies_outcomes_by_method_class_and_mapq():
     assert card["o"]["undecidable"]["mapq0"] == {"correct": 0, "wrong": 0, "abstain": 1}
     assert card["o"]["decidable"]["all"] == {"correct": 2, "wrong": 0, "abstain": 0}
     assert card["o"]["decidable"]["mapq0"] == {"correct": 1, "wrong": 0, "abstain": 0}
+
+
+def test_the_scoped_systems_leave_untied_reads_to_minimap2_and_keep_a_tied_read_s_call_only_on_a_tied_copy():
+    rows = [dict(read="t1", calls=dict(mm2="F.1", current="F.0", integrated="F.2")),     # tied on F.0 and F.1
+            dict(read="u1", calls=dict(mm2="F.2", current=None, integrated="F.0"))]     # untied: minimap2 resolves it
+    P.scope_rows(rows, {"t1": {"F.0", "F.1"}})
+    assert rows[0]["calls"]["current_tied"] == "F.0" and rows[0]["calls"]["integrated_tied"] is None
+    assert rows[1]["calls"]["current_tied"] == "F.2" and rows[1]["calls"]["integrated_tied"] == "F.2"
+    assert P.score_args(["out.json", "W1", "--o2", "x.tsv", "W2", "--tied", "t.tsv"]) == ("out.json", ["W1", "W2"], "x.tsv", "t.tsv")
+    assert P.score_args(["out.json", "W1"]) == ("out.json", ["W1"], "o2.integv.m2.tsv", None)
