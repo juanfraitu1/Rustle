@@ -168,6 +168,27 @@ def map_union(root, worlds, local, threads):
     return len(union), sum(len(v) for v in owners.values())
 
 
+def mask_cmd(a, root):
+    """The set's masked genome (REMOVED): each family's scenario copy -- the named one with --special-copies."""
+    return (f"python3 bench/o3_graph/realworld.py mask {root}/masked {a.families} --set {a.set} --seed {a.seed}"
+            + (f" --special-copies {a.special_copies}" if getattr(a, "special_copies", None) else ""))
+
+
+def simulate_cmd(a, root, w):
+    """A world's build: simulated reads, or with --real-reads DIR a real library's (realreads.py pool: DIR/reads.fq and
+    DIR/truth.tsv) and the copies --special-copies names (2026-10-18, the real-read masking test)."""
+    real = getattr(a, "real_reads", None)
+    het = f" --het {a.het}" if a.het > 0 and not real else ""
+    prof = ((f" --sim-profile {a.sim_profile}" if a.sim_profile else "") + (" --het-draw" if a.sim_het_draw else "")
+            if not real else "")
+    g = f" --genome {root}/masked/masked.fa" if w == "REMOVED" else ""
+    x = " --projection liftover" if w == "CROSS" else ""
+    rr = (f" --real-reads {real}/reads.fq --real-truth {real}/truth.tsv" if real else "") + (
+        f" --special-copies {a.special_copies}" if getattr(a, "special_copies", None) else "")
+    return (f"python3 bench/o3_graph/realworld.py build {root}/{w} {a.families} --set {a.set} --scenario {w} --seed {a.seed}"
+            + het + prof + g + x + rr)
+
+
 def chain_steps(a, root, w):
     """One world's steps after mapping, [(step, command, lock)]: the current method, then the integrated O1 -> O2 (+ the read's own
     genome alignments, --o2-genome fallback|combined: o2graph.py run W integl|integc 2, which O3 does not read) -> O3."""
@@ -232,17 +253,11 @@ def cmd_run(a):
         write_local_source(local, a.families, a.set)
     elif os.path.exists(f"{local}/source.json") and not local_matches(local, a.families, a.set):
         raise SystemExit(f"{local} was built for another family set; pass a fresh --local")
-    het = f"--het {a.het}" if a.het > 0 else ""
-    prof = (f"--sim-profile {a.sim_profile}" if a.sim_profile else "") + (" --het-draw" if a.sim_het_draw else "")
     if "REMOVED" in worlds:                                                        # 2
-        st.run("set", "mask_genome", f"python3 bench/o3_graph/realworld.py mask {root}/masked {a.families} --set {a.set} "
-               f"--seed {a.seed}")
+        st.run("set", "mask_genome", mask_cmd(a, root))
         st.run("set", "mask_local", f"python3 bench/o3_graph/localref.py mask {local} {root}/masked/mask.bed {root}/local_masked")
     for w in worlds:                                                               # 3
-        g = f"--genome {root}/masked/masked.fa" if w == "REMOVED" else ""
-        x = "--projection liftover" if w == "CROSS" else ""
-        st.run(w, "simulate", f"python3 bench/o3_graph/realworld.py build {root}/{w} {a.families} --set {a.set} --scenario {w} "
-               f"--seed {a.seed} {het} {prof} {g} {x}")
+        st.run(w, "simulate", simulate_cmd(a, root, w))
     if a.trim_adapters:                                                            # 3b: an untrimmed library's adapters off
         for w in worlds:
             os.replace(f"{root}/{w}/reads.E0.fq", f"{root}/{w}/reads.E0.raw.fq")
@@ -328,6 +343,9 @@ def main(argv=None):
     p.add_argument("--twin-guard", action="store_true", help="O2's genome step: a call is abstained when a locus off the "
                    "catalogue (neither a seeded copy nor one O1 dropped as silent) explains the read as well "
                    "(o2graph.py --twin-guard)")
+    p.add_argument("--real-reads", help="DIR of a real library's reads of the set (realreads.py pool): worlds of real reads, "
+                   "nothing simulated (use with --worlds INTACT,REMOVED,OUTSIDE)")
+    p.add_argument("--special-copies", help="{family: gene_id} of each family's scenario copy (realreads.py choose)")
     p.add_argument("--ref-carried", action="store_true", help="with --ref-copies: the family rule's carried intron chain (extra "
                    "introns at the locus allowed) and every minimap2 chain kept (-P) (o1seed.py --ref-carried; register 1325)")
     p.add_argument("--ref-copies", action="store_true", help="O1: the catalogued copies' transcripts searched in the world's local "

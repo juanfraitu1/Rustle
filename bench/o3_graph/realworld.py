@@ -32,6 +32,7 @@ copy_family.json, world.json, copies.tsv, regions.txt (each family's span per ch
 """
 import argparse
 import collections
+import csv
 import importlib.util
 import json
 import math
@@ -412,13 +413,24 @@ def mid_junction(exons):
     return (ex[k][1] + ex[k + 1][0]) // 2
 
 
+def scenario_copy(fam, seed, named=None):
+    """The family's scenario copy: the named one (named: {family: gene_id}, realreads.py choose; a family not named has none)
+    or special_copy's seeded choice."""
+    if named is None:
+        return special_copy(fam, seed)
+    gid = named.get(fam["family"])
+    return next((c for c in fam["copies"] if c["gene_id"] == gid), None)
+
+
 def cmd_mask(a):
     fj = json.load(open(a.families))
+    named = json.load(open(a.special_copies)) if a.special_copies else None
     os.makedirs(a.out_dir, exist_ok=True)
     with open(f"{a.out_dir}/mask.bed", "w") as fh:
         for fam in fj["sets"][a.set]:
-            c = special_copy(fam, a.seed)
-            fh.write(f"{c['chrom']}\t{c['start']}\t{c['end']}\t{fam['family']}:{c['gene_name']}\n")
+            c = scenario_copy(fam, a.seed, named)
+            if c is not None:
+                fh.write(f"{c['chrom']}\t{c['start']}\t{c['end']}\t{fam['family']}:{c['gene_name']}\n")
     subprocess.run(f"bedtools maskfasta -fi {GENOME} -bed {a.out_dir}/mask.bed -fo {a.out_dir}/masked.fa && "
                    f"samtools faidx {a.out_dir}/masked.fa", shell=True, check=True)
     print(f"[realworld] {a.out_dir}/masked.fa", flush=True)
@@ -433,6 +445,7 @@ def cmd_build(a):
     spec.loader.exec_module(FW)                           # (COPIES_HEADER lives in bench/o3_fewread/world.py)
     fj = json.load(open(a.families))
     fams = fj["sets"][a.set]
+    named = json.load(open(a.special_copies)) if a.special_copies else None
     prof = json.load(open(a.sim_profile)) if a.sim_profile else None   # a calibrated read profile (calibrate.py profile)
     out = a.out
     os.makedirs(out, exist_ok=True)
@@ -451,7 +464,7 @@ def cmd_build(a):
     for fam in fams:
         f = fam["family"]
         world[f] = a.scenario
-        sp = special_copy(fam, a.seed)
+        sp = scenario_copy(fam, a.seed, named)
         rng = random.Random(f"{a.seed}:{f}:snp")
         expressed = []
         idx = 0
@@ -540,7 +553,7 @@ def cmd_build(a):
                 rows_c.append([cid, f, sp["gene_id"] + "+novel", sp["gene_name"], sp["chrom"], sp["start"], sp["end"], sp["strand"],
                                "absent", 0, 0])
                 expressed.append((cid, sp, snps, j, novel))
-        for cid, c, snps, j, novel in expressed:
+        for cid, c, snps, j, novel in ([] if a.real_reads else expressed):     # real reads: nothing simulated
             fetch = lambda s, e, ch=c["chrom"]: true_fa.fetch(ch, s, e)  # noqa: E731
             tx = c["transcripts"]
             w = {t: (MAIN_WEIGHT if t == c["main"] else OTHER_WEIGHT) for t in tx}
@@ -612,14 +625,22 @@ def cmd_build(a):
                     else:
                         rd = simulate_reads(seq[lo:hi], 1, err=0.001, indel=0.0003, seed=r.getrandbits(30))[0]
                     reads.append((cid, t, f, kinds[cid], rd, 0, h))
-    names = anon_names([(r[0], r[1]) for r in reads], a.seed)
-    order = sorted(range(len(reads)), key=lambda i: names[i])
-    with open(f"{out}/reads.E0.fq", "w") as fq, open(f"{out}/reads.truth.E0.tsv", "w") as tr:
-        tr.write("read\tcopy\tkind\tfamily\tisoform\tnovel\thap\n")
-        for i in order:
-            cid, t, f, kd, rd, nv, h = reads[i]
-            write_fastq(fq, names[i], rd)
-            tr.write(f"{names[i]}\t{cid}\t{kd}\t{f}\t{t}\t{nv}\t{h}\n")
+    if a.real_reads:                                     # a real library: its reads as given, the truth of their placement
+        import shutil
+        shutil.copyfile(a.real_reads, f"{out}/reads.E0.fq")
+        with open(f"{out}/reads.truth.E0.tsv", "w") as tr:
+            tr.write("read\tcopy\tkind\tfamily\tisoform\tnovel\thap\n")
+            for r in csv.DictReader(open(a.real_truth), delimiter="\t"):
+                tr.write(f"{r['read']}\t{r['copy']}\t{kinds[r['copy']]}\t{r['family']}\treal\t0\t1\n")
+    else:
+        names = anon_names([(r[0], r[1]) for r in reads], a.seed)
+        order = sorted(range(len(reads)), key=lambda i: names[i])
+        with open(f"{out}/reads.E0.fq", "w") as fq, open(f"{out}/reads.truth.E0.tsv", "w") as tr:
+            tr.write("read\tcopy\tkind\tfamily\tisoform\tnovel\thap\n")
+            for i in order:
+                cid, t, f, kd, rd, nv, h = reads[i]
+                write_fastq(fq, names[i], rd)
+                tr.write(f"{names[i]}\t{cid}\t{kd}\t{f}\t{t}\t{nv}\t{h}\n")
     with open(f"{out}/P.fam.copies.tsv", "w") as fh:
         fh.write(FW.COPIES_HEADER + "\n" + "".join("\t".join(r) + "\n" for r in cat_rows))
     open(f"{out}/P.fam.copies.fa", "w").write("".join(cat_fa))
@@ -657,6 +678,7 @@ def main(argv=None):
     p.add_argument("families")
     p.add_argument("--set", required=True)
     p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--special-copies", help="{family: gene_id} of the copy to mask (realreads.py choose)")
     p.set_defaults(func=cmd_mask)
     p = sub.add_parser("build")
     p.add_argument("out")
@@ -665,6 +687,9 @@ def main(argv=None):
     p.add_argument("--scenario", required=True, choices=SCENARIOS)
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--genome")
+    p.add_argument("--real-reads", help="a real library's reads of the set (realreads.py pool): written as given, nothing simulated")
+    p.add_argument("--real-truth", help="their truth (realreads.py pool: read, copy, family)")
+    p.add_argument("--special-copies", help="{family: gene_id} of each family's scenario copy (realreads.py choose)")
     p.add_argument("--per-copy", type=int, default=60)
     p.add_argument("--het", type=float, default=0.0,
                    help="a diploid donor: each copy's exonic heterozygous-site rate; reads come 50/50 from its two haplotypes")

@@ -358,3 +358,30 @@ def test_a_world_s_regions_end_at_their_contig_s_end(tmp_path, monkeypatch):
         ch, rng = ln.split(":")
         s, e = map(int, rng.split("-"))
         assert 1 <= s <= e <= 70000, ln                              # the fixture's contig is 70 kb
+
+
+def test_a_world_can_take_real_reads_and_a_named_copy_to_remove(tmp_path, monkeypatch):
+    # the real-read masking test (2026-10-18): the reads and their truth come from a real library; the copy to remove is
+    # named (realreads.py choose), not drawn; nothing is simulated
+    import json
+    import pysam
+    g = "".join(random.Random(9).choice("ACGT") for _ in range(70000))
+    fa = tmp_path / "g.fa"
+    fa.write_text(">c1\n" + g + "\n")
+    pysam.faidx(str(fa))
+    monkeypatch.setattr(R, "GENOME", str(fa))
+    cp = lambda gid, lo: dict(gene_id=gid, gene_name=gid, chrom="c1", start=lo, end=lo + 2000, strand="+", main="t",  # noqa: E731
+                              transcripts={"t": [[lo, lo + 600], [lo + 1200, lo + 2000]]}, biotype="protein_coding")
+    (tmp_path / "f.json").write_text(json.dumps({"sets": {"x": [dict(family="F", copies=[cp(f"g{k}", 1000 + 10000 * k) for k in range(3)])]}}))
+    (tmp_path / "r.fq").write_text("".join(f"@m/{i}/ccs\n{g[1000 + i:1500 + i]}\n+\n{'~' * 500}\n" for i in range(4)))
+    (tmp_path / "t.tsv").write_text("read\tcopy\tfamily\nm/0/ccs\tF.1\tF\nm/1/ccs\tF.1\tF\nm/2/ccs\tF.0\tF\n")
+    (tmp_path / "s.json").write_text(json.dumps({"F": "g1"}))
+    R.main(["build", str(tmp_path / "w"), str(tmp_path / "f.json"), "--set", "x", "--scenario", "REMOVED", "--seed", "3",
+            "--real-reads", str(tmp_path / "r.fq"), "--real-truth", str(tmp_path / "t.tsv"), "--special-copies", str(tmp_path / "s.json")])
+    kinds = json.load(open(tmp_path / "w" / "kinds.json"))
+    assert kinds == {"F.0": "present", "F.1": "absent", "F.2": "present"}
+    rows = [r.split("\t") for r in (tmp_path / "w" / "reads.truth.E0.tsv").read_text().splitlines()]
+    assert rows[0] == ["read", "copy", "kind", "family", "isoform", "novel", "hap"]
+    assert sorted(r[:3] for r in rows[1:]) == [["m/0/ccs", "F.1", "absent"], ["m/1/ccs", "F.1", "absent"], ["m/2/ccs", "F.0", "present"]]
+    assert (tmp_path / "w" / "reads.E0.fq").read_text() == (tmp_path / "r.fq").read_text()          # every read, as given
+    assert len((tmp_path / "w" / "P.fam.copies.tsv").read_text().splitlines()) == 1 + 2             # the removed copy: not catalogued

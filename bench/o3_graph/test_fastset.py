@@ -230,3 +230,16 @@ def test_o1_searches_each_world_s_own_local_reference_for_copies_the_catalogue_l
     assert st["O1"].endswith("--ref-copies --local /L --ref-carried")
     st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True, aln_cache=True, local="/L"), "/R", "INTACT"))
     assert st["O1"].startswith("env O1_ALN_CACHE=/R/.o1_aln_cache python3 bench/o3_graph/o1seed.py /R/INTACT")
+
+
+def test_a_set_of_real_reads_is_built_from_the_library_s_reads_and_the_named_copies():
+    o = _opts(real_reads="/RR", special_copies="/RR/masked_1.json", families="/F.json", set="proof", seed=1, het=0,
+              sim_profile=None, sim_het_draw=False)
+    cmd = F.simulate_cmd(o, "/R", "REMOVED")
+    assert cmd.startswith("python3 bench/o3_graph/realworld.py build /R/REMOVED /F.json --set proof --scenario REMOVED --seed 1")
+    assert "--genome /R/masked/masked.fa" in cmd
+    assert cmd.endswith("--real-reads /RR/reads.fq --real-truth /RR/truth.tsv --special-copies /RR/masked_1.json")
+    assert F.mask_cmd(o, "/R").endswith("--seed 1 --special-copies /RR/masked_1.json")
+    sim = _opts(real_reads=None, special_copies=None, families="/F.json", set="s", seed=2, het=0, sim_profile="/p.json",
+                sim_het_draw=True)
+    assert "--real-reads" not in F.simulate_cmd(sim, "/R", "INTACT") and "--sim-profile /p.json --het-draw" in F.simulate_cmd(sim, "/R", "INTACT")
