@@ -53,3 +53,8 @@ def test_the_member_check_reports_each_known_family_at_both_levels_and_every_mis
     assert d["members"] == 4 and d["level1_families"] == 1 and d["level1_largest"] == 3
     assert d["level1_missing"] == ["DAZ4"] and d["level1_other_genes"] == 1
     assert d["level2_subfamilies"] == 1 and d["level2_largest"] == 2 and d["level2_missing"] == ["DAZ1", "DAZ4"]
+
+
+def test_a_build_can_reuse_the_protein_links_of_an_earlier_one():
+    assert P.build_args(["out.json", "pool.json"]) == ("out.json", "pool.json", 4, None)
+    assert P.build_args(["out.json", "pool.json", "--threads", "2", "--protein-links", "l.tsv"]) == ("out.json", "pool.json", 2, "l.tsv")

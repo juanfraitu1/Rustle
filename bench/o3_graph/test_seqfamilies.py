@@ -129,6 +129,21 @@ def test_the_build_takes_its_intron_chain_rule_and_chain_retention_from_the_comm
     assert S.build_args(["out.json", "a.json", "--paralogs", "--intron-chain", "carried"]) == ("out.json", ["a.json"], True,
                                                                                                 "carried", False)
     assert S.build_args(["out.json", "--retain-chains", "a.json"]) == ("out.json", ["a.json"], False, "exact", True)
+    assert S.build_args(["out.json", "--transcribed-seeds"]) == ("out.json", [], False, "exact", False)
+    assert S.build_seeds(["out.json", "--transcribed-seeds"]) and not S.build_seeds(["out.json"])
+
+
+def test_transcribed_pseudogenes_seed_a_family_like_coding_genes_and_others_do_not():
+    # XKRY (2026-10-18): both copies are transcribed pseudogenes in CAT and in RefSeq, so no coding gene seeds their family
+    others = [_g("XKRY", "chrY", 100, 900, biotype="transcribed_unprocessed_pseudogene"),
+              _g("XKRY2", "chrY", 5000, 5800, biotype="transcribed_unprocessed_pseudogene"),
+              _g("P1", "chr1", 100, 900, biotype="unprocessed_pseudogene"),
+              _g("L1", "chr2", 100, 900, biotype="lncRNA")]
+    assert S.seed_genes([_g("C1", "chr3", 1, 2)], others) == {"C1", "XKRY", "XKRY2"}
+    cover = {("XKRY", "XKRY2"): 1.0, ("XKRY2", "XKRY"): 1.0}
+    struct = {("XKRY", "XKRY2"): True, ("XKRY2", "XKRY"): True}
+    assert S.pair_link("XKRY", "XKRY2", cover, struct, {"XKRY", "XKRY2"}) is True       # seeds: they link
+    assert S.pair_link("XKRY", "XKRY2", cover, struct, set()) is None                   # without the option: no link
 
 
 def test_the_locus_alignment_keeps_every_chain_only_when_asked():

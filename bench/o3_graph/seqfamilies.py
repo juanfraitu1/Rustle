@@ -20,6 +20,7 @@ gene when its locus carries the coding gene's canonical by the same rule (sequen
 pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
     seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried] [--retain-chains]
+                                                 [--transcribed-seeds]
                                                    -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
                                                        (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
@@ -157,6 +158,17 @@ def pair_link(a, b, cover, struct, coding):
     return bool(struct.get((g, p)))
 
 
+def transcribed_pseudogene(biotype):
+    return biotype.startswith("transcribed_") and "pseudogene" in biotype
+
+
+def seed_genes(coding, others):
+    """--transcribed-seeds (2026-10-18, user: XKRY, two transcribed pseudogenes in CAT and RefSeq alike, had no coding seed): the
+    genes that may seed a family -- every coding gene and every transcribed pseudogene. Seeds link to each other in either
+    direction (pair_link's coding pairs); an untranscribed pseudogene or a lncRNA still joins only through a seed."""
+    return {g["gene_id"] for g in coding} | {g["gene_id"] for g in others if transcribed_pseudogene(g["biotype"])}
+
+
 def family_name(gs, used, prefix="S17"):
     """A family's name: prefix + its first coding gene's name (gs in genome order), alphanumerics only, and xN for the Nth family
     of that name (used counts them)."""
@@ -199,7 +211,7 @@ def _paf_hits(paf, min_ident):
     return blocks, best
 
 
-def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False):
+def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False, seeds=False):
     import pysam
     F = _families()
     gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
@@ -263,6 +275,23 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", reta
                                                      check=True).stdout, F.MIN_IDENT)
                 blocks.update(b2)
                 best.update(best2)
+        tp = sorted(g["gene_id"] for g in others if transcribed_pseudogene(g["biotype"])) if paralogs and seeds else []
+        if tp:                                               # transcribed pseudogenes seed too: their canonicals onto seed loci
+            write_fa(f"{d}/tp.fa", tp)
+            write_fa(f"{d}/seeds.fa", [g["gene_id"] for g in genes] + tp)
+            tc = candidates(subprocess.run(["minimap2", "-cx", "asm20", "-t", str(threads), f"{d}/seeds.fa", f"{d}/tp.fa"],
+                                           capture_output=True, text=True, check=True).stdout)
+            tq, tt = {a for a, _ in tc}, {b for _, b in tc}
+            print(f"[seqfamilies] {len(tq)} transcribed pseudogenes with a candidate seed partner ({len(tt)})", flush=True)
+            if tq:
+                write_fa(f"{d}/tq.fa", tq)
+                write_fa(f"{d}/tt.fa", tt, locus=True)
+                b3, best3 = _paf_hits(subprocess.run(splice + [f"{d}/tt.fa", f"{d}/tq.fa"], capture_output=True, text=True,
+                                                     check=True).stdout, F.MIN_IDENT)
+                blocks.update(b3)
+                best.update(best3)
+    if paralogs and seeds:
+        coding = seed_genes(genes, others)
     cover = {k: F.union_cover(v, int(best[k][1][1])) for k, v in blocks.items()}
 
     def struct(a, b):
@@ -308,9 +337,10 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", reta
         fh.writelines("\t".join(map(str, r)) + "\n" for r in rows)
     json.dump(dict(genome=F.GENOME, annotation=f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz",
                    rule=("seqfamilies --paralogs" if paralogs else "seqfamilies") + (" --intron-chain carried" if chain == "carried" else "")
-                   + (" --retain-chains" if retain else ""),
+                   + (" --retain-chains" if retain else "") + (" --transcribed-seeds" if seeds else ""),
                    min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL,
                    **({"intron_chain": chain} if chain != "exact" else {}), **({"retain_chains": True} if retain else {}),
+                   **({"transcribed_seeds": True} if seeds else {}),
                    sets={"seq19" if paralogs else "seq17": fams}),
               open(out_p, "w"), indent=1)
     unnamed = sum(any(re.match(r"^(LOC|ENSG|MSTRG|LINC|AC[0-9]|AL[0-9]|AP[0-9])", c["gene_name"]) or "-" in c["gene_name"]
@@ -344,6 +374,8 @@ def build_args(argv):
             paralogs = True
         elif x == "--retain-chains":
             retain = True
+        elif x == "--transcribed-seeds":
+            pass                                         # build_seeds
         elif x == "--intron-chain":
             chain = next(it, "")
         else:
@@ -353,10 +385,15 @@ def build_args(argv):
     return rest[0], rest[1:], paralogs, chain, retain
 
 
+def build_seeds(argv):
+    """--transcribed-seeds in a build's arguments (with --paralogs: transcribed pseudogenes seed families; seed_genes)."""
+    return "--transcribed-seeds" in argv
+
+
 def main(argv):
     if argv[0] == "build":
         out, spent, paralogs, chain, retain = build_args(argv[1:])
-        return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain)
+        return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain, seeds=build_seeds(argv[1:]))
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")

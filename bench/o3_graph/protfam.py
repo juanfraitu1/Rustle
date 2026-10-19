@@ -14,7 +14,7 @@ families; reads among its copies are ambiguous, and O2 and O3 act there): seqfam
 chain kept, non-coding members). Level 1's components include level 2's links, so every multigene family nests inside one
 gene family.
 
-    protfam.py build OUT.json LEVEL2_POOL.json [--threads N]
+    protfam.py build OUT.json LEVEL2_POOL.json [--threads N] [--protein-links EARLIER.json.links.tsv]
         -> OUT.json (gene families: genes, the multigene families nested in each), OUT.json.proteins.fa, OUT.json.links.tsv
     protfam.py check OUT.json
         -> the mainstay and IsoCon's nine Y-ampliconic families at both levels (member_report), OUT.json.check.json
@@ -142,11 +142,14 @@ def cds_records(gff=CAT_FULL):
     return out
 
 
-def cmd_build(out_p, level2_pool, threads=4):
+def cmd_build(out_p, level2_pool, threads=4, links_path=None):
     import pysam
     spec = importlib.util.spec_from_file_location("o3_graph_families", os.path.join(HERE, "families.py"))
     F = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(F)
+    if links_path:                                        # the protein level of an earlier build (blastp: ~35 min)
+        links = {(r["a"], r["b"]) for r in csv.DictReader(open(links_path), delimiter="\t")}
+        return _families_out(out_p, level2_pool, links)
     recs = cds_records()
     best = longest_cds([(g, t, b) for g, t, _, _, b, _ in recs])
     keep = {t for t in best.values()}
@@ -181,6 +184,10 @@ def cmd_build(out_p, level2_pool, threads=4):
     with open(f"{out_p}.links.tsv", "w") as fh:
         fh.write("a\tb\n")
         fh.writelines(f"{a}\t{b}\n" for a, b in sorted(links))
+    return _families_out(out_p, level2_pool, links)
+
+
+def _families_out(out_p, level2_pool, links):
     l2 = json.load(open(level2_pool))
     (pool,) = l2["sets"].values()
     level2 = {f["family"]: [c["gene_id"] for c in f["copies"]] for f in pool}
@@ -215,11 +222,21 @@ def cmd_check(out_p):
     return 0
 
 
+def build_args(argv):
+    """`build OUT.json LEVEL2_POOL.json [--threads N] [--protein-links LINKS.tsv]` (after `build`) -> (OUT, LEVEL2_POOL,
+    threads, protein links to reuse or None)."""
+    out, pool = argv[0], argv[1]
+    threads = int(argv[argv.index("--threads") + 1]) if "--threads" in argv else 4
+    links = argv[argv.index("--protein-links") + 1] if "--protein-links" in argv else None
+    return out, pool, threads, links
+
+
 def main(argv):
     if argv and argv[0] == "check" and len(argv) == 2:
         return cmd_check(argv[1])
     if argv and argv[0] == "build" and len(argv) >= 3:
-        return cmd_build(argv[1], argv[2], threads=int(argv[argv.index("--threads") + 1]) if "--threads" in argv else 4)
+        out, pool, threads, links = build_args(argv[1:])
+        return cmd_build(out, pool, threads=threads, links_path=links)
     raise SystemExit(__doc__)
 
 
