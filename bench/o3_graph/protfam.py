@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Two-level gene families (2026-10-18; user: "the definition of multigene families should be the ones the Makova group uses in
-both IsoCon and Yoo's papers").
+"""Gene families and the multigene families inside them (2026-10-18; user: "the definition of multigene families should be the
+ones the Makova group uses in both IsoCon and Yoo's papers" -- then: "those are not multigene families, they are gene families").
 
-Level 1, the multigene family -- Yoo et al. 2025 (Nature, Supplementary VIII, the Canzar lab's section): blastp of the protein
+Level 1, the GENE FAMILY -- Yoo et al. 2025 (Nature, Supplementary VIII, the Canzar lab's section): blastp of the protein
 sequences of all protein-coding genes (longest isoform per gene), homology at >= 50% identity with the alignment covering >= 35%
 of BOTH proteins (the user's reading of "35% protein"), families the connected components (transitive closure). Here CAT's
 protein-coding genes, each its longest CDS translated; every coding gene is a node (no span cap, no one-gene-per-locus drop).
 Yoo's second step -- paralogous loci missing from the annotation or pseudogenized, found by read bundles -- is taken by the
 near-identical level (annotated pseudogenes join their coding copies there) and, at run time, by O1's genome search.
-Level 2, the near-identical subfamily: seqfamilies.py's rule (sequence >= 0.90 over >= 0.8 and the carried intron chain, every
-chain kept, non-coding members). Level 1's components include level 2's links, so every subfamily nests inside one family.
+(Yoo's supplement calls these "multicopy gene families"; at 50% protein identity they are homology gene families.)
+Level 2, the MULTIGENE FAMILY in IsoCon's sense (Sahlin et al. 2018: the highly similar duplicate copies -- the nine Y-ampliconic
+families; reads among its copies are ambiguous, and O2 and O3 act there): seqfamilies.py's rule (sequence >= 0.90 over >= 0.8 and the carried intron chain, every
+chain kept, non-coding members). Level 1's components include level 2's links, so every multigene family nests inside one
+gene family.
 
     protfam.py build OUT.json LEVEL2_POOL.json [--threads N]
-        -> OUT.json (families: genes, nested subfamilies), OUT.json.proteins.fa, OUT.json.links.tsv (protein links)
+        -> OUT.json (gene families: genes, the multigene families nested in each), OUT.json.proteins.fa, OUT.json.links.tsv
     protfam.py check OUT.json
         -> the mainstay and IsoCon's nine Y-ampliconic families at both levels (member_report), OUT.json.check.json
 """
@@ -204,10 +207,10 @@ def cmd_check(out_p):
     l2 = {f["family"]: [c["gene_id"] for c in f["copies"]] for f in pool}
     rep = member_report(KNOWN, genes, d["families"], l2)
     for fam, r in rep.items():
-        print(f"{fam:8s} members {r['members']:3d} | level 1: {r['level1_largest']:3d} in its largest of {r['level1_families']} "
-              f"families (+{r['level1_other_genes']} other genes), missing {len(r['level1_missing'])} "
-              f"{r['level1_missing'][:6]} | level 2: {r['level2_largest']:3d} in its largest of {r['level2_subfamilies']} "
-              f"subfamilies, missing {len(r['level2_missing'])}", flush=True)
+        print(f"{fam:8s} members {r['members']:3d} | multigene family: {r['level2_largest']:3d} in its largest of "
+              f"{r['level2_subfamilies']}, missing {len(r['level2_missing'])} {r['level2_missing'][:6]} | gene family: "
+              f"{r['level1_largest']:3d} in its largest of {r['level1_families']} (+{r['level1_other_genes']} other genes), "
+              f"missing {len(r['level1_missing'])}", flush=True)
     json.dump(rep, open(f"{out_p}.check.json", "w"), indent=1)
     return 0
 
