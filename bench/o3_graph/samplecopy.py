@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """The sample's own copies for O2's ambiguous reads (2026-10-19; user: "lets ... focus on building on those families that are more
-likely to work"; design approved the same day). O2 applies only to AS-tied multimapping reads, and on real data most of them
+likely to work"; design approved the same day). Framing (user, same day): an O3 STEP FEEDING O2 -- O2 itself is CHM13-PSV
+tie-breaking on AS-tied reads; this step clusters the reads by the variants CHM13 does not explain, hands a cluster back to
+the CHM13 copy its confidently placed reads name, and leaves the rest as candidate copies CHM13 lacks. Only CHM13 and the
+sample's reads are inputs; a donor's phased assembly is used only as a truth for testing. O2 applies only to AS-tied multimapping reads, and on real data most of them
 carry the donor's own alleles, which CHM13's copies lack equally (registers 1182, 1329): CHM13's PSVs cannot place them. So the
 family's reads are clustered by the alleles they share (read-backed phasing over N copies: SDA / Chaisson 2017, IsoCon), each
 cluster is one of the sample's copy-haplotypes, and a cluster takes the copy minimap2 resolves its untied reads to (98% right
