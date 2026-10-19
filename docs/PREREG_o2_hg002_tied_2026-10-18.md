@@ -199,3 +199,69 @@ cannot resolve, and places the reads its sequence decides.
 - **Power where CHM13 has no evidence.** Register 1182: a tied read often carries the donor's own alleles, which CHM13's
   copies lack equally. A CHM13-based assigner can only abstain on it.
 - **Gorilla, or other donors.**
+
+## Results: the non-pseudoautosomal world (2026-10-19, run once as pre-registered; `/mnt/linuxdisk/tmp/o3_graph/fast/hg002/`)
+
+The run took 48 min (map_union 747 s, current 726 s, O2 650 s, O3 543 s), peak RSS 14.4 GB, with no failure. The code was
+unchanged from 7e865cba.
+
+**Verdict: UNDERPOWERED for all four systems.**
+- **No system placed 100 of the 584 truth reads,** so T1 and T2 are below their floor. Their point estimates are in the
+  table below.
+- **Validity holds:** `mm2` is wrong on 341 of 582 (58.6%).
+- **T3 holds for every system** (powered).
+- **T4 is underpowered:** only 8 of the truth reads are `decidable`.
+- **T5 holds for the integrated system and FAILS for the current one.**
+
+| system | placed | wrong (T1) | T2: upper / coin toss's lower | own_tie placed (T3) | O3 calls on present-copy reads (T5) |
+|---|---|---|---|---|---|
+| integrated | 57 | 7 (0.123) | 0.232 / 0.544 | 96 / 9,607 (0.010) | 40 / 10,189 (0.004) |
+| integrated_tied | 57 | 7 (0.123) | 0.232 / 0.544 | 96 / 9,607 (0.010) | 40 / 10,189 (0.004) |
+| current | 41 | 5 (0.122) | 0.255 / 0.544 | 40 / 9,607 (0.004) | **6,999 / 10,189 (0.687)** |
+| current_tied | 39 | 3 (0.077) | 0.203 / 0.544 | 37 / 9,607 (0.004) | **6,999 / 10,189 (0.687)** |
+| `mm2`, always | 582 | 341 (0.586) | | | |
+| `mm2` at MAPQ >= 1 | 22 | 12 (0.545) | | | |
+
+**Reported breakdowns (no bar):**
+- **Most AS ties are ties in the donor too, and both O2s abstain on them.** 9,607 of the world's scored tied reads are
+  `own_tie`; the systems place 0.4-1.0% of them.
+- **CHM13 holds almost no evidence for the rest.** The oracle finds 560 of the 584 truth reads `undecidable`, 14
+  `off_family`, 8 `decidable` and 2 `true_unaligned`. These reads carry the donor's own alleles, which both CHM13 copies
+  lack (register 1182).
+- **MAPQ means nothing on a tie.** A tied read's primary at MAPQ >= 1 is wrong 12 times in 22, as the user said.
+- **Placements by donor margin** (AS points between the truth copy and the best placement off it):
+
+  | donor margin | reads | integrated: right / wrong | current: right / wrong | `mm2`: right / wrong |
+  |---|---|---|---|---|
+  | no placement off the truth copy | 44 | 42 / 0 | 0 / 0 | 22 / 22 |
+  | <= 5 (about one site) | 169 | 1 / 5 | 3 / 0 | 83 / 86 |
+  | 6-10 | 192 | 2 / 0 | 4 / 1 | 66 / 126 |
+  | > 10 | 179 | 5 / 2 | 29 / 4 | 70 / 107 |
+
+- **Each system's right placements come mostly from one family.**
+  - The integrated system's 50 are 42 IKBKG (the donor has no second placement for them), 3 NBPF1, 3 GTF2H2C, 1 RPL6
+    and 1 ZC3H11A.
+  - Where the donor has a rival copy, the integrated system is 8 right and 7 wrong, no better than the coin toss.
+  - The current system's 36 are 26 NBPF1, then 2 each of SPDYE1, GTF2H2C and GOLGA8A, and 1 each of EIF3C, RPL6,
+    ZC3H11A and AC1275021.
+  - Its PSV tie-break is right 36 times in 41, and 36 in 39 when scoped.
+- **The integrated system's 7 wrong placements:**
+  - Five are reads the donor separates by 4-5 AS points, about one site: EIF3C four times, SULT1A1 once.
+  - Two are AC1275021 reads whose CHM13 truth copy aligns 228-492 bases worse than its rival. The donor's copy has a
+    structure CHM13's lacks.
+- **O3 on donor copies CHM13 lacks.** The world holds 30 `no_counterpart` reads: NPIPB2 12, GTF2H2C 9, SPDYE1 5, USP17L11
+  3 and BMS1P1 1.
+  - The integrated O3 flags 10 of them, all NPIPB2: a missing NPIPB copy. It places 7 and abstains on 13.
+  - The current O3 flags none of them and places 16. Instead it flags 6,907 EIF3C reads, which tie in the donor too:
+    allelic variation called a missing copy (register 1181).
+- **The round-8 end-to-end bars on the truth reads** (fastset's own): integrated 50 correct and 12 errors; current 33 and
+  37.
+
+**What it means:**
+- **On real AS-tied reads, CHM13's PSVs rarely carry the answer, and a CHM13-based O2 can mostly only abstain.** Both do:
+  the calibration bar T3 holds on real data.
+- **Where they place, they beat the coin toss (88% against 42%) but are far from the 98% bar,** on too few reads to
+  decide. The current system's PSV tie-break is the better of the two on reads with a real rival (36/41).
+- **The answer lies in the donor's own copies.** The reads that decide them are the tied reads' own alleles, so the lever
+  is to learn the sample's copies from its uniquely placed reads and assign against those. That is a design question; it
+  was not tested here.
