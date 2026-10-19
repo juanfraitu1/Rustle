@@ -100,3 +100,36 @@ and that set holds the true one.
 - real samples, whose copies differ from CHM13's (O3: on HG002 a one-edit margin picked the wrong copy 46.5% of the time);
 - copies the reference or catalogue lacks;
 - that identical copies can be split. No rule can split them; the set says so.
+
+## Results (2026-10-19, run as frozen; `fast/heldout23/run.log`, `sets.json`, `sets.txt`, each cell's `bars.txt`)
+
+**PASS: F1 to F4 hold.**
+- **F1:** 0 wrong of 2,574 placements (limit 0.5%, floor 200).
+- **F2:** sets hold the true copy for 8,360 of 8,360 reads.
+- **F3:** 2,574 placed, against v17's 959.
+- **F4:** fastset's verdict is PASS in all 6 cells.
+
+| cell | tied reads | rule: right / wrong | v17: right / wrong | sets holding the true copy | mean copies: tied -> set | minimap2 primary wrong |
+|---|---|---|---|---|---|---|
+| A119b s1301 | 1,398 | 421 / 0 | 153 / 0 | 1,398 | 2.01 -> 1.70 | 519 (37.1%) |
+| A119b s1302 | 1,583 | 592 / 0 | 308 / 0 | 1,583 | 2.04 -> 1.63 | 598 (37.8%) |
+| A119b s1303 | 1,477 | 404 / 0 | 95 / 0 | 1,477 | 2.01 -> 1.73 | 621 (42.0%) |
+| public s1301 | 1,149 | 285 / 0 | 71 / 0 | 1,149 | 2.01 -> 1.75 | 402 (35.0%) |
+| public s1302 | 1,429 | 526 / 0 | 235 / 0 | 1,429 | 2.00 -> 1.63 | 445 (31.1%) |
+| public s1303 | 1,324 | 346 / 0 | 97 / 0 | 1,324 | 2.00 -> 1.74 | 480 (36.3%) |
+| **pooled** | **8,360** | **2,574 / 0** | **959 / 0** | **8,360** | **2.01 -> 1.69** | **3,065 (36.7%)** |
+
+**Reading:**
+- On reads minimap2 leaves within 10 AS, its primary is wrong 36.7% of the time.
+- The rule places 31% of them (2.7 times v17), all on their true copy.
+- The other 69% keep a set of equally explained copies, and the set always holds the true copy. Most tied sets are pairs
+  (mean 2.01), so a set of two means the two copies are identical over the read; no read placement can split them.
+
+**Reasons on every tied row (all families, all reads):**
+- placed: fewest_edits 1,847, O2's own assigned 962 and short_path 20 -- all 2,829 on the true copy, in the read's own
+  family;
+- kept as a set: fewest_edit_set 6,042;
+- every tied copy kept: structure_only 58, unexplained 15.
+
+**End to end:** the only integrated error is one read in two public_s1303 worlds (s0000683, FAM153B). minimap2 resolved it
+by 10 AS or more onto the wrong copy (`as_resolved`), outside O2's domain, and v17 makes the same call.

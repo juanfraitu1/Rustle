@@ -286,6 +286,20 @@ These have cost more than any single wrong idea. **Four headlines died in one we
 
 **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
 
+**One genome first (user, 2026-10-19):** "until we make O2 work we stay with only 1 genome, in this case CHM13". O2 is
+judged on reads simulated from CHM13's own copies, with no donor alleles (`profiles/*_v4_ref.json`). A sample whose copies
+differ from CHM13's (HG002's truth, A119b) is O3's question. O2's job there is twofold: the most likely real placement
+among minimap2's tied multimappers, and, when copies are identical over the read, the smaller set of equally explained
+copies ("five multimappers, only two informative").
+
+**The fewest-edit rule** (`--fewest-edits`, d63df788). Where O2 lacks its two-edit margin, the tied copy with the fewest
+edits takes the read, every unaligned base counted; otherwise the read keeps that set. **Round 23 PASS** (register 1338,
+`docs/PREREG_o2_single_genome_2026-10-19.md`):
+- 37 fresh families x 2 profiles x 3 seeds, 18 CHM13-only worlds;
+- of 8,360 reads tied within 10 AS, 2,574 placed right and 0 wrong, against v17's 959 / 0, where minimap2's primary is
+  wrong on 36.7%;
+- the other 69% keep a set (2.01 tied copies -> 1.69), and the set holds the true copy for every read.
+
 ### ✅ WON
 | result | number |
 |---|---|
