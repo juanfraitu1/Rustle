@@ -32,6 +32,8 @@ Per family (its curated copies, isoforms.json):
                 alignment) -- the reference-present, unannotated copy O3 reports. An identical expressed twin gives O1 no uniquely
                 placed read, and O2 then gave its reads to the remaining copy (round 17: every cell failed OUTSIDE). No --twins
                 prior: a genome copy is no artifact of the reads. A locus several families' copies hold goes to the best hit.
+  --ref-carried (2026-10-18, register 1325) the genome search under the family rule's carried intron chain (the locus holds an
+                intron at each junction and may hold more: GOLGA6L) with every minimap2 chain kept (-P: crowded arrays, TSPY2)
 Output per family: copies [{idx, contig, start, end, strand, rep, isoforms, origin: curated | new, support}], dropped [curated
 idx], family_reads [read names]; a new copy also lists the reads that seeded it. Seeded copies keep curated idx; new ones are
 numbered after them.
@@ -82,10 +84,20 @@ def confirmed_new(cps, hits):
             and any(ch == c["contig"] and s < c["end"] and c["start"] < e for ch, s, e in hits)}
 
 
-def ref_copies(w, out, iso, local_dir, threads=2):
+def ref_cmd(local_dir, query_fa, threads, retain=False):
+    """The genome search's spliced alignment of the catalogued transcripts to the local reference. retain (--ref-carried):
+    minimap2 -P, every chain kept (crowded arrays: among ~45 near-identical TSPY loci the default chain selection dropped 62 of
+    63 transcripts' alignments to the most divergent copy, register 1325)."""
+    return (["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes", "-t", str(threads)]
+            + (["-P"] if retain else []) + [f"{local_dir}/local.mmi", query_fa])
+
+
+def ref_copies(w, out, iso, local_dir, threads=2, carried=False):
     """--ref-copies: ({family: [new copy dicts]}, {family: {idx of its read-seeded new copies the genome confirms}}) -- the
     off-catalogue loci of the local reference that hold a kept curated copy's representative transcript by the family rule (see
-    the module doc). A hit on a family's own read-seeded new copy confirms that copy instead (it then loses --twins' prior)."""
+    the module doc). A hit on a family's own read-seeded new copy confirms that copy instead (it then loses --twins' prior).
+    carried (--ref-carried, 2026-10-18; register 1325): the family rule's carried intron chain (seqfamilies.structure_match
+    chain "carried": each junction has its intron at the locus, which may hold more) and every minimap2 chain kept (-P)."""
     import re
     import subprocess
     import tempfile
@@ -108,8 +120,8 @@ def ref_copies(w, out, iso, local_dir, threads=2):
     with tempfile.TemporaryDirectory() as d:
         with open(f"{d}/q.fa", "w") as fh:
             fh.writelines(f">{k}\n{v[0]}\n" for k, v in sorted(queries.items()))
-        paf = subprocess.run(["minimap2", "-cx", "splice:hq", "-N", "50", "-p", "0.01", "--secondary=yes", "-t", str(threads),
-                              f"{local_dir}/local.mmi", f"{d}/q.fa"], capture_output=True, text=True, check=True).stdout
+        paf = subprocess.run(ref_cmd(local_dir, f"{d}/q.fa", threads, retain=carried), capture_output=True, text=True,
+                             check=True).stdout
     hits, confirm = [], collections.defaultdict(list)
     for ln in paf.splitlines():
         x = ln.split("\t")
@@ -121,7 +133,8 @@ def ref_copies(w, out, iso, local_dir, threads=2):
         seq, ex, c = queries[x[0]]
         js = SF.junctions_of(ex)
         js = sorted(qlen - j for j in js) if c["strand"] == "-" else js
-        if not SF.structure_match(js, qlen, x[4], int(x[7]), ops, q0=qlen - qe if x[4] == "-" else qs):
+        if not SF.structure_match(js, qlen, x[4], int(x[7]), ops, q0=qlen - qe if x[4] == "-" else qs,
+                                  chain="carried" if carried else "exact"):
             continue
         chrom, s0, e0, exons = lift_hit(x[5], int(x[7]), ops)
         if any(ch == chrom and s0 < e and s < e0 for ch, s, e in taken):
@@ -349,7 +362,7 @@ def one_family(seeded, aff):
     return {f: dict(v, copies=[c for c in v["copies"] if (f, c["idx"]) not in drop]) for f, v in seeded.items()}
 
 
-def seed_world(w, twins=False, ref_local=None):
+def seed_world(w, twins=False, ref_local=None, ref_carried=False):
     import pysam
     iso = json.load(open(f"{w}/isoforms.json"))
     all_loci = {(f, c["idx"]): (c["contig"], max(0, c["start"] - PAD), c["end"] + PAD) for f, cps in iso.items() for c in cps}
@@ -391,7 +404,7 @@ def seed_world(w, twins=False, ref_local=None):
         out[f] = dict(copies=copies, dropped=dropped, family_reads=sorted(fam_reads[f]))
     out = one_family(out, aff)
     if ref_local:                                                 # --ref-copies: the catalogue's genome copies it lacks
-        extra_by, confirmed = ref_copies(w, out, iso, ref_local)
+        extra_by, confirmed = ref_copies(w, out, iso, ref_local, carried=ref_carried)
         for f, idxs in confirmed.items():
             for c in out[f]["copies"]:
                 if c["idx"] in idxs:
@@ -420,4 +433,5 @@ def seed_world(w, twins=False, ref_local=None):
 
 if __name__ == "__main__":
     sys.exit(seed_world(sys.argv[1], twins="--twins" in sys.argv,
-                        ref_local=sys.argv[sys.argv.index("--local") + 1] if "--ref-copies" in sys.argv else None))
+                        ref_local=sys.argv[sys.argv.index("--local") + 1] if "--ref-copies" in sys.argv else None,
+                        ref_carried="--ref-carried" in sys.argv))

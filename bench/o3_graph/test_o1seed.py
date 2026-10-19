@@ -275,3 +275,50 @@ def test_a_read_seeded_twin_the_genome_search_confirms_loses_the_annotation_prio
     hits = [("c1", 5200, 6400)]
     assert S.confirmed_new(cps, hits) == {1}
     assert S.confirmed_new(cps, [("c1", 9000, 9500)]) == set()
+
+
+def test_the_genome_search_takes_a_copy_that_carries_the_intron_chain_and_more_only_under_the_carried_rule(tmp_path):
+    # --ref-carried (2026-10-18, user, after GOLGA6L and TSPY2): the genome search applies the family rule's carried intron
+    # chain (each junction of the catalogued transcript has its intron at the locus; the locus may hold more) and keeps every
+    # minimap2 chain (-P). The twin here carries the transcript's one junction and also an insertion inside the second exon
+    # that the spliced alignment places as an intron: the exact rule refuses it, the carried rule takes it.
+    import json
+    import random
+    import subprocess
+    import pysam
+    rng = random.Random(7)
+    seq = lambda n: "".join(rng.choice("ACGT") for _ in range(n))
+    e1, e2a, e2b = seq(300), seq(200), seq(200)
+    intron, insert = "GT" + seq(496) + "AG", "GT" + seq(146) + "AG"
+    gene, twin = e1 + intron + e2a + e2b, e1 + intron + e2a + insert + e2b
+    genome = seq(1000) + gene + seq(3000) + twin + seq(1000)        # copy A at 1000-2200, the twin at 5200-6550
+    w = tmp_path / "W"
+    w.mkdir()
+    (w / "genome.ref.fa").write_text(f">c1\n{genome}\n")
+    pysam.faidx(str(w / "genome.ref.fa"))
+    loc = tmp_path / "local"
+    loc.mkdir()
+    (loc / "local.fa").write_text(f">c1:0-{len(genome)}\n{genome}\n")
+    subprocess.run(["minimap2", "-x", "splice:hq", "-d", str(loc / "local.mmi"), str(loc / "local.fa")], capture_output=True,
+                   check=True)
+    json.dump({"F": [dict(idx=0, contig="c1", start=1000, end=2200, strand="+", rep="t",
+                          isoforms={"t": [[1000, 1300], [1800, 2200]]})]}, open(w / "isoforms.json", "w"))
+    hdr = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "c1", "LN": len(genome)}]}
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for i in range(6):
+            a = pysam.AlignedSegment(out.header)
+            a.query_name, a.reference_id, a.reference_start, a.mapping_quality = f"r{i}", 0, 1000, 60
+            a.cigartuples = [(0, 300), (3, 500), (0, 400)]
+            a.query_sequence, a.flag = e1 + e2a + e2b, 0
+            out.write(a)
+    pysam.index(str(w / "E0.bam"))
+    assert S.seed_world(str(w), ref_local=str(loc)) == 0
+    assert [c["idx"] for c in json.load(open(w / "graph" / "seeded.json"))["F"]["copies"]] == [0]   # exact: refused
+    assert S.seed_world(str(w), ref_local=str(loc), ref_carried=True) == 0
+    cps = json.load(open(w / "graph" / "seeded.json"))["F"]["copies"]
+    assert [(c["origin"], c.get("via"), c["contig"], c["start"]) for c in cps] == [("curated", None, "c1", 1000), ("new", "ref", "c1", 5200)]
+
+
+def test_the_genome_search_keeps_every_chain_only_under_the_carried_rule():
+    assert "-P" not in S.ref_cmd("/L", "q.fa", 2)
+    assert S.ref_cmd("/L", "q.fa", 2, retain=True)[-3:] == ["-P", "/L/local.mmi", "q.fa"]

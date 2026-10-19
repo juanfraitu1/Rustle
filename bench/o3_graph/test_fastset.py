@@ -52,7 +52,7 @@ def _opts(**kw):
                 haplotype_check_genome=False, branch_genome_segments=False,
                 branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
                 locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False, twin_guard=False,
-                ref_copies=False, local=None)
+                ref_copies=False, local=None, ref_carried=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -226,3 +226,5 @@ def test_o1_searches_each_world_s_own_local_reference_for_copies_the_catalogue_l
     assert st["O1"].endswith("--ref-copies --local /R/local_masked")       # the removed copy is masked there
     st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True), "/R", "OUTSIDE"))
     assert st["O1"].endswith("--ref-copies --local /R/local")
+    st = dict((k, c) for k, c, _ in F.chain_steps(_opts(ref_copies=True, ref_carried=True, local="/L"), "/R", "INTACT"))
+    assert st["O1"].endswith("--ref-copies --local /L --ref-carried")
