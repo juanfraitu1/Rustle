@@ -139,3 +139,13 @@ def test_an_untied_read_s_margin_is_its_best_as_over_its_best_alignment_off_its_
     assert C.margin_of(alns, "F.0", idx) == 7                                       # F.1 at 893
     assert C.margin_of(alns[:1] + alns[2:], "F.0", idx) == 20                       # off every copy at 880
     assert C.margin_of(alns[:1], "F.0", idx) is None                                # nothing else: unbounded
+
+
+def test_reads_split_into_two_seeded_halves_and_two_models_calls_are_compared():
+    names = [f"r{i}" for i in range(200)]
+    a, b = C.split_names(names, seed=1)
+    assert set(a) | set(b) == set(names) and not set(a) & set(b) and 70 < len(a) < 130
+    assert C.split_names(names, seed=1) == (a, b) and C.split_names(names, seed=2) != (a, b)
+    ca = {"t1": "F.0", "t2": "F.1", "t3": None, "t4": "F.0"}
+    cb = {"t1": "F.0", "t2": "F.0", "t3": "F.1", "t4": None}
+    assert C.concordance(ca, cb) == (2, 1)          # t1 and t2 called by both, they agree on t1

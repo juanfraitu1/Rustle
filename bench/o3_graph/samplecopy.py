@@ -11,6 +11,8 @@ against the donor's genome, register 1330). A tied read takes its cluster's copy
 
     samplecopy.py run FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR
                                          -> OUT_DIR/<family>.calls.tsv (read, call, posterior, cluster, label) + .clusters.json
+    samplecopy.py splithalf FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR
+                                         -> two models from disjoint halves of the reads, every tied read called by both
     samplecopy.py margins CHM13.bam UNTIED.tsv FAMILIES.json SET OUT.tsv
                                          -> each untied read's AS margin over its best alignment off its copy
     (run ... --margins MARGINS.tsv: only untied reads resolved by >= TEACH_MARGIN teach the clusters' labels)
@@ -285,7 +287,8 @@ def cmd_margins(bam_p, untied_p, fam_p, set_name, out_p):
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
-def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None):
+def _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None):
+    """A family's reads realigned to its anchor copy: {copies, tied, resolved, anchor, names, reads (pileups), locus}."""
     import pysam
     fam = {f["family"]: f for f in json.load(open(fam_p))["sets"][set_name]}[family]
     copies = [f"{family}.{k}" for k in range(len(fam["copies"]))]
@@ -320,8 +323,13 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
                 if not (rec.is_unmapped or rec.is_secondary or rec.is_supplementary):
                     pile[rec.query_name] = read_pileup(rec)
     names = sorted(pile)
-    reads = [pile[q] for q in names]
-    kmax = min(2 * len(copies), KMAX_CAP)
+    return dict(copies=copies, tied=tied, resolved=resolved, anchor=anchor, names=names, reads=[pile[q] for q in names],
+                locus=locus)
+
+
+def _model(reads, resolved, n_copies, locus):
+    """The clusters and labels learned from reads (pileups) with their minimap2 resolutions (None for tied reads)."""
+    kmax = min(2 * n_copies, KMAX_CAP)
     cols = informative_columns(reads, min_reads=3, min_frac=0.5 / kmax)    # half of one copy-haplotype's expected share
     ref = dict(enumerate(locus.upper()))                                   # the anchor FASTA is the locus: positions from 0
     err = max(background_error(reads, ref, cols), 1e-4)
@@ -329,24 +337,68 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
     sub = [{c: b for c, b in r.items() if c in set(cols)} for r in reads]
     ev = evidence_posteriors(sub, fit["haplotypes"], fit["error"])
     member = [max(range(len(p)), key=p.__getitem__) if max(p) >= MIN_POST else None for p in ev]
-    labels = label_clusters(member, [resolved.get(q) for q in names], len(fit["haplotypes"]))
+    labels = label_clusters(member, resolved, len(fit["haplotypes"]))
+    return dict(cols=cols, fit=fit, sub=sub, ev=ev, member=member, labels=labels)
+
+
+def _call(model, read, tied_copies):
+    """(call or None, posterior, cluster, label) of one tied read (a pileup) under a model."""
+    fit, labels = model["fit"], model["labels"]
+    sub = {c: b for c, b in read.items() if c in set(model["cols"])}
+    p = evidence_posteriors([sub], fit["haplotypes"], fit["error"])[0]
+    j = max(range(len(p)), key=p.__getitem__)
+    ns = decisive_sites(sub, j, fit["haplotypes"], labels)
+    return assign_tied(p, labels, tied_copies, MIN_POST, ns), p[j], j, labels.get(j)
+
+
+def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None):
+    d = _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads, margins_p)
+    names, reads, tied, resolved = d["names"], d["reads"], d["tied"], d["resolved"]
+    m = _model(reads, [resolved.get(q) for q in names], len(d["copies"]), d["locus"])
+    fit, labels, member = m["fit"], m["labels"], m["member"]
     with open(f"{out_dir}/{family}.calls.tsv", "w") as fh:
         fh.write("read\tcall\tposterior\tcluster\tlabel\n")
-        for q, p in zip(names, ev):
+        for q, r in zip(names, reads):
             if q in tied:
-                j = max(range(len(p)), key=p.__getitem__)
-                ns = decisive_sites(sub[names.index(q)], j, fit["haplotypes"], labels)
-                fh.write(f"{q}\t{assign_tied(p, labels, tied[q], MIN_POST, ns) or '-'}\t{p[j]:.4f}\t{j}\t{labels.get(j) or '-'}\n")
-    lab_counts = [collections.Counter(resolved[q] for q, m in zip(names, member) if m == j and q in resolved)
+                c, p, j, lab = _call(m, r, tied[q])
+                fh.write(f"{q}\t{c or '-'}\t{p:.4f}\t{j}\t{lab or '-'}\n")
+    lab_counts = [collections.Counter(resolved[q] for q, mm in zip(names, member) if mm == j and q in resolved)
                   for j in range(len(fit["haplotypes"]))]
-    json.dump(dict(family=family, anchor=anchor, reads=len(names), tied=sum(q in tied for q in names), columns=len(cols),
-                   error=fit["error"], clusters=[dict(size=sum(m == j for m in member), label=labels[j], untied=dict(lab_counts[j]),
-                                                      haplotype="".join(fit["haplotypes"][j].get(c, "-") for c in cols))
+    json.dump(dict(family=family, anchor=d["anchor"], reads=len(names), tied=sum(q in tied for q in names), columns=len(m["cols"]),
+                   error=fit["error"], clusters=[dict(size=sum(mm == j for mm in member), label=labels[j], untied=dict(lab_counts[j]),
+                                                      haplotype="".join(fit["haplotypes"][j].get(c, "-") for c in m["cols"]))
                                                  for j in range(len(fit["haplotypes"]))]),
               open(f"{out_dir}/{family}.clusters.json", "w"), indent=1)
     n = collections.Counter("placed" if r.split("\t")[1] != "-" else "abstain" for r in open(f"{out_dir}/{family}.calls.tsv").readlines()[1:])
-    print(f"[samplecopy] {family}: {len(names)} reads, {len(cols)} informative columns, {len(fit['haplotypes'])} clusters "
+    print(f"[samplecopy] {family}: {len(names)} reads, {len(m['cols'])} informative columns, {len(fit['haplotypes'])} clusters "
           f"({sum(1 for v in labels.values() if v)} labelled), error {fit['error']:.4f}; tied reads {dict(n)}", flush=True)
+    return 0
+
+
+def cmd_splithalf(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, seed=1):
+    """Two models learned from disjoint halves of the family's reads (split_names); every tied read called by both ->
+    OUT_DIR/<family>.split.tsv (read, half, call_a, call_b) and the concordance: no donor truth needed."""
+    d = _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir)
+    names, reads, tied, resolved = d["names"], d["reads"], d["tied"], d["resolved"]
+    pos = {q: i for i, q in enumerate(names)}
+    halves = split_names(names, seed)
+    models = []
+    for h in halves:
+        rs = [reads[pos[q]] for q in h]
+        models.append(_model(rs, [resolved.get(q) for q in h], len(d["copies"]), d["locus"]))
+    ca, cb = {}, {}
+    with open(f"{out_dir}/{family}.split.tsv", "w") as fh:
+        fh.write("read\thalf\tcall_a\tcall_b\n")
+        inb = set(halves[1])
+        for q in names:
+            if q in tied:
+                ca[q] = _call(models[0], reads[pos[q]], tied[q])[0]
+                cb[q] = _call(models[1], reads[pos[q]], tied[q])[0]
+                fh.write(f"{q}\t{'b' if q in inb else 'a'}\t{ca[q] or '-'}\t{cb[q] or '-'}\n")
+    both, agree = concordance(ca, cb)
+    print(f"[samplecopy] {family} split-half: {len(ca)} tied reads; model A calls {sum(v is not None for v in ca.values())}, "
+          f"B {sum(v is not None for v in cb.values())}; both {both}, agree {agree}"
+          + (f" ({agree / both:.3f})" if both else ""), flush=True)
     return 0
 
 
@@ -372,6 +424,22 @@ def cmd_score(truth_p, out_dir, families):
         print(f"{f}: {dict(sorted(n.items()))}", flush=True)
     print(f"TOTAL: {dict(sorted(tot.items()))}", flush=True)
     return 0
+
+
+def split_names(names, seed=0):
+    """Two disjoint halves of the reads by a seeded hash of their names (stable across runs and machines)."""
+    import hashlib
+    a, b = [], []
+    for q in names:
+        h = hashlib.sha1(f"{seed}:{q}".encode()).digest()[0]
+        (a if h % 2 == 0 else b).append(q)
+    return a, b
+
+
+def concordance(calls_a, calls_b):
+    """(reads both models call, of them the ones both call the same copy)."""
+    both = [q for q in calls_a if calls_a[q] is not None and calls_b.get(q) is not None]
+    return len(both), sum(1 for q in both if calls_a[q] == calls_b[q])
 
 
 def combine(v14_call, sc_call):
@@ -437,6 +505,8 @@ def main(argv):
         return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1])
     if argv[:1] == ["run"] and (len(argv) == 9 or len(argv) == 11 and argv[9] == "--margins"):
         return cmd_run(*argv[1:9], margins_p=argv[10] if len(argv) == 11 else None)
+    if len(argv) == 9 and argv[0] == "splithalf":
+        return cmd_splithalf(*argv[1:])
     if len(argv) == 6 and argv[0] == "margins":
         return cmd_margins(*argv[1:])
     if len(argv) >= 4 and argv[0] == "score":
