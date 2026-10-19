@@ -19,8 +19,13 @@ other (add_paralog_genes: none overlapping a coding gene; a pseudogene before an
 gene when its locus carries the coding gene's canonical by the same rule (sequence and structure, in that direction only:
 pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
-    seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried] [--retain-chains]
-                                                 [--transcribed-seeds] [--max-span N (0: none)] [--candidate-isoforms]
+    seqfamilies.py build OUT.json SPENT.json ... [--rule multigene|r17] [--paralogs] [--intron-chain exact|carried]
+                                                 [--retain-chains] [--transcribed-seeds] [--max-span N (0: none)]
+                                                 [--candidate-isoforms]
+                                                   default rule: multigene (adopted 2026-10-18, register 1328); rounds 17-18
+                                                   used --rule r17, round 19 --rule r17 --paralogs, round 20 --rule r17
+                                                   --paralogs --intron-chain carried --retain-chains (before this commit their
+                                                   commands had no --rule: r17 was the default)
                                                    -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
                                                        (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
@@ -390,51 +395,49 @@ def cmd_draw(out_p, all_p, seed=SEED, set_name="r17"):
     return 0
 
 
-def build_args(argv):
-    """`build OUT SPENT... [--paralogs] [--intron-chain exact|carried] [--retain-chains]` (arguments after `build`) -> (OUT,
-    SPENT paths, paralogs, intron-chain rule, retain chains)."""
-    rest, paralogs, chain, retain = [], False, "exact", False
+RULES = {
+    # the multigene family definition the user adopted (2026-10-18, register 1328): non-coding members, the carried intron chain,
+    # every chain kept, transcribed pseudogenes as seeds, no span cap, the prefilter on every isoform
+    "multigene": dict(paralogs=True, chain="carried", retain=True, seeds=True, max_span=0, isoforms=True),
+    # rounds 17-18 (coding genes, the exact intron chain, minimap2's default chains, a 60-kb span, canonical candidates); rounds
+    # 19 and 20 are r17 + --paralogs, and + --intron-chain carried --retain-chains
+    "r17": dict(paralogs=False, chain="exact", retain=False, seeds=False, max_span=None, isoforms=False),
+}
+
+
+def build_options(argv):
+    """`build OUT SPENT... [--rule multigene|r17] [--paralogs] [--intron-chain exact|carried] [--retain-chains]
+    [--transcribed-seeds] [--max-span N] [--candidate-isoforms]` (arguments after `build`) -> (OUT, SPENT paths, options):
+    the rule's options (default: multigene), each flag on top of them."""
+    rest, flags, rule = [], {}, "multigene"
     it = iter(argv)
     for x in it:
-        if x == "--paralogs":
-            paralogs = True
+        if x == "--rule":
+            rule = next(it, "")
+        elif x == "--paralogs":
+            flags["paralogs"] = True
         elif x == "--retain-chains":
-            retain = True
+            flags["retain"] = True
         elif x == "--transcribed-seeds":
-            pass                                         # build_seeds
-        elif x == "--max-span":
-            next(it, None)                               # build_span
+            flags["seeds"] = True
         elif x == "--candidate-isoforms":
-            pass                                         # build_isoforms
+            flags["isoforms"] = True
+        elif x == "--max-span":
+            flags["max_span"] = int(next(it, "0"))
         elif x == "--intron-chain":
-            chain = next(it, "")
+            flags["chain"] = next(it, "")
         else:
             rest.append(x)
-    if chain not in ("exact", "carried") or not rest:
+    if rule not in RULES or flags.get("chain", "exact") not in ("exact", "carried") or not rest:
         raise SystemExit(__doc__)
-    return rest[0], rest[1:], paralogs, chain, retain
-
-
-def build_span(argv):
-    """--max-span N in a build's arguments (0: no cap; absent: families.MAX_SPAN, the simulation's cost cap)."""
-    return int(argv[argv.index("--max-span") + 1]) if "--max-span" in argv else None
-
-
-def build_isoforms(argv):
-    """--candidate-isoforms in a build's arguments (the prefilter on every gene's picked isoforms; candidate_genes)."""
-    return "--candidate-isoforms" in argv
-
-
-def build_seeds(argv):
-    """--transcribed-seeds in a build's arguments (with --paralogs: transcribed pseudogenes seed families; seed_genes)."""
-    return "--transcribed-seeds" in argv
+    return rest[0], rest[1:], dict(RULES[rule], **flags)
 
 
 def main(argv):
     if argv[0] == "build":
-        out, spent, paralogs, chain, retain = build_args(argv[1:])
-        return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain, seeds=build_seeds(argv[1:]),
-                         max_span=build_span(argv[1:]), isoforms=build_isoforms(argv[1:]))
+        out, spent, o = build_options(argv[1:])
+        return cmd_build(out, spent, paralogs=o["paralogs"], chain=o["chain"], retain=o["retain"], seeds=o["seeds"],
+                         max_span=o["max_span"], isoforms=o["isoforms"])
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")

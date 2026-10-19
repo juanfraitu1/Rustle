@@ -2,6 +2,9 @@
 """Gene families and the multigene families inside them (2026-10-18; user: "the definition of multigene families should be the
 ones the Makova group uses in both IsoCon and Yoo's papers" -- then: "those are not multigene families, they are gene families").
 
+Use (user, 2026-10-18): the multigene family (seqfamilies.py's default rule) is THE family; expand to the gene family only
+when looking for very divergent members.
+
 Level 1, the GENE FAMILY -- Yoo et al. 2025 (Nature, Supplementary VIII, the Canzar lab's section): blastp of the protein
 sequences of all protein-coding genes (longest isoform per gene), homology at >= 50% identity with the alignment covering >= 35%
 of BOTH proteins (the user's reading of "35% protein"), families the connected components (transitive closure). Here CAT's

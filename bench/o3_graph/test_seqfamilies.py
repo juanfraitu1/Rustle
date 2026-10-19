@@ -125,12 +125,11 @@ def test_a_carried_intron_chain_still_keeps_retrocopies_out():
 
 
 def test_the_build_takes_its_intron_chain_rule_and_chain_retention_from_the_command_line():
-    assert S.build_args(["out.json", "a.json", "b.json"]) == ("out.json", ["a.json", "b.json"], False, "exact", False)
-    assert S.build_args(["out.json", "a.json", "--paralogs", "--intron-chain", "carried"]) == ("out.json", ["a.json"], True,
-                                                                                                "carried", False)
-    assert S.build_args(["out.json", "--retain-chains", "a.json"]) == ("out.json", ["a.json"], False, "exact", True)
-    assert S.build_args(["out.json", "--transcribed-seeds"]) == ("out.json", [], False, "exact", False)
-    assert S.build_seeds(["out.json", "--transcribed-seeds"]) and not S.build_seeds(["out.json"])
+    out, spent, o = S.build_options(["out.json", "a.json", "b.json", "--rule", "r17"])
+    assert (out, spent, o["chain"], o["retain"]) == ("out.json", ["a.json", "b.json"], "exact", False)
+    assert S.build_options(["out.json", "--rule", "r17", "--intron-chain", "carried"])[2]["chain"] == "carried"
+    assert S.build_options(["out.json", "--rule", "r17", "--retain-chains"])[2]["retain"]
+    assert S.build_options(["out.json", "--rule", "r17", "--transcribed-seeds"])[2]["seeds"]
 
 
 def test_transcribed_pseudogenes_seed_a_family_like_coding_genes_and_others_do_not():
@@ -155,9 +154,9 @@ def test_the_locus_alignment_keeps_every_chain_only_when_asked():
 
 
 def test_the_build_takes_a_span_cap_or_none():
-    assert S.build_span(["out.json"]) is None                        # families.MAX_SPAN, as before
-    assert S.build_span(["out.json", "--max-span", "0"]) == 0        # no cap: the definition holds long genes (DAZ1, 61 kb)
-    assert S.build_args(["out.json", "--max-span", "0", "a.json"]) == ("out.json", ["a.json"], False, "exact", False)
+    assert S.build_options(["out.json", "--rule", "r17"])[2]["max_span"] is None              # families.MAX_SPAN
+    assert S.build_options(["out.json", "--rule", "r17", "--max-span", "0", "a.json"])[:2] == ("out.json", ["a.json"])
+    assert S.build_options(["out.json", "--rule", "r17", "--max-span", "0"])[2]["max_span"] == 0   # no cap (DAZ1, 61 kb)
 
 
 def test_genes_are_candidates_when_any_of_their_isoforms_align():
@@ -167,5 +166,22 @@ def test_genes_are_candidates_when_any_of_their_isoforms_align():
     paf += "\t".join(["NPIPA1|t3", "1084", "0", "1084", "+", "NPIPA1|t1", "5410", "0", "1084", "1084", "1084", "60"]) + "\n"
     paf += "\t".join(["NPIPA5|t1", "1084", "0", "500", "+", "NPIPA2|t1", "757", "0", "500", "400", "500", "60"]) + "\n"
     assert S.candidate_genes(paf) == {("NPIPA1", "NPIPA2")}                 # same-gene pairs out; 0.80 identity out
-    assert S.build_args(["o.json", "--candidate-isoforms"]) == ("o.json", [], False, "exact", False)
-    assert S.build_isoforms(["o.json", "--candidate-isoforms"]) and not S.build_isoforms(["o.json"])
+    assert S.build_options(["o.json", "--rule", "r17", "--candidate-isoforms"])[2]["isoforms"]
+    assert not S.build_options(["o.json", "--rule", "r17"])[2]["isoforms"]
+
+
+MULTIGENE = dict(paralogs=True, chain="carried", retain=True, seeds=True, max_span=0, isoforms=True)
+R17 = dict(paralogs=False, chain="exact", retain=False, seeds=False, max_span=None, isoforms=False)
+
+
+def test_the_build_s_default_rule_is_the_adopted_multigene_definition():
+    # user, 2026-10-18: "lets adopt these options for multigene definition" (register 1328)
+    assert S.build_options(["out.json", "a.json"]) == ("out.json", ["a.json"], MULTIGENE)
+
+
+def test_rule_r17_reproduces_the_earlier_pools_with_their_flags():
+    assert S.build_options(["out.json", "--rule", "r17", "a.json"]) == ("out.json", ["a.json"], R17)
+    r19 = dict(R17, paralogs=True)                                                  # round 19: build --paralogs
+    assert S.build_options(["o.json", "--rule", "r17", "--paralogs"]) == ("o.json", [], r19)
+    r20 = dict(r19, chain="carried", retain=True)                                   # round 20
+    assert S.build_options(["o.json", "--rule", "r17", "--paralogs", "--intron-chain", "carried", "--retain-chains"]) == ("o.json", [], r20)
