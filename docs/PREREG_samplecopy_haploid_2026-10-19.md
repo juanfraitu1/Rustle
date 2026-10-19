@@ -78,3 +78,29 @@ step from placing reads that the step without it places.
   diploid families are untouched;
 - anything about the YAGs, which have no truth;
 - anything about female samples.
+
+## Results (2026-10-19, run as frozen; `samplecopy_haploid/run.log`, `score_plain.txt`, `score_male.txt`)
+
+**UNDERPOWERED.**
+- **HS holds:** 0 own_tie or elsewhere reads are placed with the rule, against a limit of 126.
+- **HB is not reached:** the step without the rule also places **none**, below the floor of 50, so the rule had nothing
+  to remove.
+
+| family | reads in the model | informative columns | clusters (labelled) | tied reads placed, without / with the rule |
+|---|---|---|---|---|
+| F8A2 | 1,568 | 1 | 1 (0) | 0 / 0 of 1,555 |
+| FAM156B | 675 | 0 | 1 (1) | 0 / 0 of 634 |
+| MAGED4B | 52 | 0 | 1 (0) | 0 / 0 of 50 |
+| H2AB2 | 1,416 | 0 | 1 (0) | 0 / 0 of 5 |
+
+The donor's copies carry no variation that separates them in these reads (0-1 informative columns). Each family is one
+cluster, and the step abstains whatever the rule. That is the right outcome for reads the donor itself ties (own_tie
+1,283 scored), and for reads from a copy off the family (elsewhere 596). It also means these families cannot show what
+the rule adds.
+
+The rule therefore rests on two things:
+- **construction:** it only turns placements into abstentions, and diploid families are untouched (byte-identical,
+  PDPR and CDY2B);
+- **the inconsistency it detects on the A119b YAGs:** all 208 placements blocked.
+
+No real dataset in hand has truth for a haploid family where the step places reads.
