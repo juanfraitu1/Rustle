@@ -101,6 +101,33 @@ and that set holds the true one.
 - copies the reference or catalogue lacks;
 - that identical copies can be split. No rule can split them; the set says so.
 
+## Amendment 1 (2026-10-19, after the run and before rescoring: a fresh code review of d63df788)
+
+The review found no defect in the rule. It found two defects in the scorer's population and one reported number, plus two
+minor gaps.
+
+- **minimap2's primary was credited to the first copy whose span it overlaps** (`summary.primary_copies`). Two families
+  have overlapping copies:
+  - CYB5B's single-exon AC026464.2 lies inside CYB5B's last exon;
+  - RPL38's antisense MGC16275 overlaps RPL38's end.
+
+  **Fix:** the copy on the alignment's strand whose exons its blocks overlap most (`summary.attribute`).
+- **A read minimap2 placed once counted as tied** when its one alignment spans both overlapping copies. That is
+  `o2graph.best_as_loci` crediting an alignment to every span it overlaps, as v17 always has. Such a read is no
+  multimapper.
+
+  **Fix:** reads with a single tied alignment (`summary.single_tied_alignment`) are set apart, like the off-family ties.
+  The rule's table is unchanged, so this changes the scored population only.
+- **Not changed** (minor, and recorded):
+  - `insignificant` (`--o2-significance`) is a margin-type abstention that FILL leaves out. It occurred 0 times in rounds
+    22-23. It is kept out on purpose: that gate prices each edit type by its error rate, and a raw one-edit count would
+    override it.
+  - A set's `dropped` entry stands for every copy of the family O1 dropped. It is exposed on 52 of 11,609 tied rows and
+    changes no `set holds truth`.
+
+The bars and the run are as frozen. The same tables are rescored with the fixed scorer (`sets_amd1.json`). The original
+scoring stays below for the record.
+
 ## Results (2026-10-19, run as frozen; `fast/heldout23/run.log`, `sets.json`, `sets.txt`, each cell's `bars.txt`)
 
 **PASS: F1 to F4 hold.**

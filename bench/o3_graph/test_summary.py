@@ -208,3 +208,19 @@ def test_set_fates_count_placements_against_the_truth_and_whether_each_tied_read
                    "v17 placed wrong": 1, "v17 abstain": 3, "set holds truth": 3, "candidates": 9, "set size": 5,
                    "minimap2 right": 1, "minimap2 wrong": 3}
     assert S.set_fates(rows, truth, seeded, {"F": {"F.3"}}, primary, skip={"b"})["ambiguous"] == 3   # off-family ties apart
+
+
+def test_an_alignment_lies_on_the_copy_of_its_strand_whose_exons_it_overlaps_most():
+    cands = [("F.0", "+", [(100, 200), (300, 1000)], (100, 1000)),     # CYB5B: F.1 is one exon inside F.0's last exon
+             ("F.1", "+", [(600, 1000)], (600, 1000)),
+             ("F.2", "-", [(900, 1500)], (900, 1500))]                  # RPL38: an antisense neighbour over F.0's end
+    assert S.attribute([(150, 200), (300, 700)], "+", cands) == "F.0"           # spliced: F.0's exons hold more of it
+    assert S.attribute([(650, 990)], "+", cands) == "F.0"                       # inside both equally: the first
+    assert S.attribute([(950, 1400)], "-", cands) == "F.2"                      # the antisense copy by its strand
+    assert S.attribute([(5000, 5100)], "+", cands) is None
+
+
+def test_a_read_with_one_tied_alignment_is_no_multimapper():
+    assert S.tied_records([(300, 0), (280, 0)], slack=9) == 1                   # the rival 20 AS down: one placement
+    assert S.tied_records([(300, 0), (280, 0)], slack=9, seq_tie=True) == 2     # ... unless it has no more edits
+    assert S.tied_records([(300, 1), (295, 0)], slack=9) == 2

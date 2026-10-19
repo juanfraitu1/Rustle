@@ -242,26 +242,74 @@ def set_fates(rows, truth, seeded_copy, dropped, primary, skip=frozenset()):
     return n
 
 
-def primary_copies(w):
-    """{read: the copy (copies.tsv, in the reference) its primary alignment in WORLD/E0.bam overlaps, or None}."""
-    import pysam
-    loci = collections.defaultdict(list)
+def attribute(blocks, strand, cands):
+    """The copy an alignment lies on: among cands [(copy, strand, exons, (span start, end))] whose span its aligned blocks
+    touch, those on its strand (a sense read's), the one whose exons the blocks overlap most, then whose span, then the first;
+    None off every copy. Amendment 1 of PREREG_o2_single_genome_2026-10-19 (review of d63df788): a nested copy (CYB5B's
+    single-exon AC026464.2) or an antisense neighbour (RPL38's MGC16275) shares the span, so the first span hit was no
+    attribution."""
+    def ov(a, b):
+        return sum(max(0, min(e, t) - max(s, u)) for s, e in a for u, t in b)
+    hits = [h for h in cands if any(s < h[3][1] and e > h[3][0] for s, e in blocks)]
+    if not hits:
+        return None
+    same = [h for h in hits if h[1] == strand] or hits
+    return max(enumerate(same), key=lambda kv: (ov(blocks, kv[1][2]), ov(blocks, [kv[1][3]]), -kv[0]))[1][0]
+
+
+def tied_records(alns, slack, seq_tie=False):
+    """How many of a read's alignments [(AS, veto_distance)] are tied: within `slack` of the best AS, or (seq_tie) with no
+    more edits than the best-AS one (o2graph.best_as_loci's filter)."""
+    best = max(a for a, _ in alns)
+    ref = min(d for a, d in alns if a == best)
+    return sum(1 for a, d in alns if a >= best - slack or seq_tie and d <= ref)
+
+
+def _copy_cands(w):
+    """{chrom: [(copy, strand, exons, span)]} of the world's copies in the reference; a catalogued copy's exons are its
+    isoforms' (isoforms.json), another's its span."""
+    exons = collections.defaultdict(set)
+    for cps in json.load(open(f"{w}/isoforms.json")).values():
+        for c in cps:
+            for ex in c["isoforms"].values():
+                exons[c["copy"]] |= {tuple(x) for x in ex}
+    out = collections.defaultdict(list)
     for c in csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"):
         if c["in_reference"] == "1":
-            loci[c["chrom"]].append((int(c["start"]), int(c["end"]), c["copy"]))
+            sp = (int(c["start"]), int(c["end"]))
+            out[c["chrom"]].append((c["copy"], c["strand"], sorted(exons.get(c["copy"], ())) or [sp], sp))
+    return out
+
+
+def primary_copies(w):
+    """{read: the copy its primary alignment in WORLD/E0.bam lies on (attribute), or None}."""
+    import pysam
+    cands = _copy_cands(w)
     out = {}
     with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
         for rec in bam.fetch(until_eof=True):
             if rec.is_unmapped or rec.is_secondary or rec.is_supplementary:
                 continue
-            hit = [cp for s, e, cp in loci.get(rec.reference_name, ()) if rec.reference_start < e and rec.reference_end > s]
-            out[rec.query_name] = hit[0] if hit else None
+            out[rec.query_name] = attribute(rec.get_blocks(), "-" if rec.is_reverse else "+", cands.get(rec.reference_name, ()))
     return out
+
+
+def single_tied_alignment(w, slack, seq_tie=False):
+    """The reads with ONE tied alignment (tied_records) in WORLD/E0.bam: minimap2 placed them once, so they are no
+    multimappers even when that alignment spans two overlapping copies (Amendment 1: CYB5B, RPL38)."""
+    import pysam
+    vd = _o2("o2graph").veto_distance
+    al = collections.defaultdict(list)
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            if not (rec.is_unmapped or rec.is_supplementary) and rec.has_tag("AS"):
+                al[rec.query_name].append((rec.get_tag("AS"), vd(rec.cigartuples)))
+    return {q for q, v in al.items() if tied_records(v, slack, seq_tie) == 1}
 
 
 def cmd_sets(out, worlds, o2_name="o2.intege.m2.tsv", off_slack=None, seq_tie=False):
     """Per world (CELL/WORLD) and pooled: set_fates of the single-genome O2 table on every catalogued read, the off-family
-    ties (off_family_ties) apart."""
+    ties (off_family_ties) and the reads with one tied alignment (single_tied_alignment, Amendment 1) apart."""
     res, pooled = {}, dict.fromkeys(SET_KEYS, 0)
     for w in worlds:
         name = f"{os.path.basename(os.path.dirname(w.rstrip('/')))}/{os.path.basename(w.rstrip('/'))}"
@@ -271,7 +319,8 @@ def cmd_sets(out, worlds, o2_name="o2.intege.m2.tsv", off_slack=None, seq_tie=Fa
         cat_copy, seeded = seeded_copies(w)
         sj = json.load(open(f"{w}/graph/seeded.json"))
         dropped = {f: {cat_copy[(f, i)] for i in v.get("dropped", []) if (f, i) in cat_copy} for f, v in sj.items()}
-        skip = off_family_ties(w, off_slack, seq_tie) if off_slack is not None else set()
+        skip = (off_family_ties(w, off_slack, seq_tie) | single_tied_alignment(w, off_slack, seq_tie)
+                if off_slack is not None else set())
         n = set_fates(csv.DictReader(open(f"{w}/graph/{o2_name}"), delimiter="\t"), truth, seeded, dropped,
                       primary_copies(w), skip)
         res[name] = n
