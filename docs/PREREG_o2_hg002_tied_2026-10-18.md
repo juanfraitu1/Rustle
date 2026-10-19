@@ -265,3 +265,34 @@ unchanged from 7e865cba.
 - **The answer lies in the donor's own copies.** The reads that decide them are the tied reads' own alleles, so the lever
   is to learn the sample's copies from its uniquely placed reads and assign against those. That is a design question; it
   was not tested here.
+
+## Results: the premise (2026-10-19, `hg002proof/truth_rest.sh`, as registered)
+
+- **Reads:** 599,678 of the 633,939 candidates are resolved by minimap2, meaning their best-AS CHM13 alignments all lie on
+  one copy.
+- **Truth classes:** `unique` 215,514, `unique_elsewhere` 6,342, `own_tie` 3,112, `elsewhere` 1,353, `no_counterpart`
+  259,889, `poor_match` 113,468.
+
+**P1: FAILS.** minimap2's copy is the donor's on 215,514 of 221,856 untied reads with a donor copy (0.971, against the
+0.99 bar; powered).
+
+**Reported breakdowns (no bar):**
+
+| families | `unique` | `unique_elsewhere` | P1 |
+|---|---|---|---|
+| not pseudoautosomal, no chrM copy | 207,998 | 4,481 | 0.979 |
+| pseudoautosomal | 7,515 | 1,861 | 0.802 |
+| with a chrM copy | 1 | 0 | |
+
+- **`no_counterpart` here is a truth artifact.** The Q100 chain has no chrM chain. So the donor's chrM placements of
+  258,334 mitochondrial-transcript reads (families MTND6, MTRNR2L8 and MTCO2, whose other copies are nuclear) do not lift.
+  Outside them, 1,555 reads are `no_counterpart`. The tied reads were barely affected (31 `no_counterpart`).
+- **Where minimap2 misses.** Its misses concentrate in copy-number-variable segmental duplications.
+  - The largest are P2RY8 1,149 (pseudoautosomal), GPAT2 1,045, SMN2 606, AKAP17A 473 (pseudoautosomal), THOC3 416,
+    FCGR2A 400, WASHC1 344, CCDC144A 210, TBC1D3B 199 and PLCXD1 178 (pseudoautosomal).
+  - Donor margins of the misses: quartiles 5, 10 and 192. Half are 1-2 sites, the rest structural.
+- **What it means.** "Everything else is already resolved by minimap2" holds for about 98% of the untied reads in
+  ordinary families, not 99%.
+  - The rest are reads whose own copy carries donor alleles that make another CHM13 copy fit better. The user's split
+    gives them to minimap2 and gets them wrong.
+  - Only a check of the sample's own variation, the O3 extension "PSVs nothing in the genome explains", can notice them.
