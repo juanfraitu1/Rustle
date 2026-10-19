@@ -127,5 +127,20 @@ The development family PDPR adds 14 / 0 against v14's 0 / 0.
 - **Their donor margins:** 5-15, i.e. one to three sites.
 
 A tied read assigned by its cluster inherits that cluster's impurity. The majority test (Wilson lower bound above 1/2) admits
-clusters that are 6-9% another copy. A purity test is the post hoc candidate. It would need its own pre-registration on
-fresh families.
+clusters that are 6-9% another copy.
+
+**Correction (same day).** Purity does not separate the errors from the clear cases. The clear cases' clusters are no purer
+by their untied reads:
+
+| family | untied-read purity of its labelled clusters |
+|---|---|
+| HSPA6 | 0.61 and 1.00 |
+| GTF2IRD2 | 0.94 and 0.74 |
+| PDPR | 0.87 |
+| GOLGA8A | 0.91 and 0.94 |
+
+So a purity bar would remove the clear cases with the errors.
+
+**What does separate them.** Every untied read teaches the labels, including near-ties that minimap2 places at random
+(46-49% wrong at an AS margin under 10, register 1330). The candidate fix is to teach labels only with untied reads resolved
+by 10 AS or more, Eichler's rule. It needs its own held-out test.

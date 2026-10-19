@@ -131,3 +131,11 @@ def test_every_tied_read_of_the_family_is_scored_an_unaligned_one_as_an_abstenti
     truth_all = {"a": {"class": "unique", "truth": "F.0"}, "b": {"class": "own_tie", "truth": ""}, "z": {"class": "unique", "truth": "G.0"}}
     assert C.family_truth(tied_rows, truth_all, "F") == {"a": ("unique", "F.0"), "b": ("own_tie", "")}
     assert C.fates({}, C.family_truth(tied_rows, truth_all, "F")) == {"abstain": 1, "own_tie abstain": 1}
+
+
+def test_an_untied_read_s_margin_is_its_best_as_over_its_best_alignment_off_its_resolved_copy():
+    idx = {"c1": [(100, 300, "F.0"), (5100, 5300, "F.1")]}
+    alns = [("c1", [(150, 300)], 900), ("c1", [(5150, 5300)], 893), ("c9", [(10, 160)], 880)]
+    assert C.margin_of(alns, "F.0", idx) == 7                                       # F.1 at 893
+    assert C.margin_of(alns[:1] + alns[2:], "F.0", idx) == 20                       # off every copy at 880
+    assert C.margin_of(alns[:1], "F.0", idx) is None                                # nothing else: unbounded

@@ -8,6 +8,9 @@ against the donor's genome, register 1330). A tied read takes its cluster's copy
 
     samplecopy.py run FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR
                                          -> OUT_DIR/<family>.calls.tsv (read, call, posterior, cluster, label) + .clusters.json
+    samplecopy.py margins CHM13.bam UNTIED.tsv FAMILIES.json SET OUT.tsv
+                                         -> each untied read's AS margin over its best alignment off its copy
+    (run ... --margins MARGINS.tsv: only untied reads resolved by >= TEACH_MARGIN teach the clusters' labels)
     samplecopy.py combine TRUTH.tsv OUT_DIR WORLD FAMILY ... OUT.json
                                          -> per family and pooled: the sample copies, v14 (WORLD's o2.integv) and v14 + them
 
@@ -237,10 +240,49 @@ def evidence_posteriors(reads, haps, e):
 
 
 PAD, KMAX_CAP, MIN_POST = 1000, 24, 0.99
+TEACH_MARGIN = 10                    # only untied reads resolved by >= 10 AS teach labels (Eichler's rule, user 2026-10-19)
+
+
+def _realreads():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("o3_graph_realreads_sc", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                                         "realreads.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def margin_of(alns, resolved, idx):
+    """An untied read's AS margin: its best AS minus the best AS of any alignment not on its resolved copy (another copy, or
+    off every copy); None when it has no other alignment. alns: [(chrom, blocks, AS)]."""
+    R = _realreads()
+    best = max(a[2] for a in alns)
+    others = [sc for ch, bl, sc in alns if R.truth_copy(ch, bl, 0, idx, min_mapq=0) != resolved]
+    return best - max(others) if others else None
+
+
+def cmd_margins(bam_p, untied_p, fam_p, set_name, out_p):
+    """OUT.tsv: read, margin (inf without a rival) of every untied read, from all its alignments in the CHM13 BAM."""
+    import pysam
+    R = _realreads()
+    idx = R.copy_exons(json.load(open(fam_p))["sets"][set_name])
+    resolved = {r["read"]: r["copies"] for r in csv.DictReader(open(untied_p), delimiter="\t")}
+    alns = collections.defaultdict(list)
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.query_name in resolved and not (rec.is_unmapped or rec.is_supplementary):
+                alns[rec.query_name].append((rec.reference_name, rec.get_blocks(), rec.get_tag("AS")))
+    with open(out_p, "w") as fh:
+        fh.write("read\tmargin\n")
+        for q, al in alns.items():
+            m = margin_of(al, resolved[q], idx)
+            fh.write(f"{q}\t{'inf' if m is None else m}\n")
+    print(f"[samplecopy] margins of {len(alns)} untied reads -> {out_p}", flush=True)
+    return 0
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
-def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2):
+def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None):
     import pysam
     fam = {f["family"]: f for f in json.load(open(fam_p))["sets"][set_name]}[family]
     copies = [f"{family}.{k}" for k in range(len(fam["copies"]))]
@@ -256,6 +298,9 @@ def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir,
     tied = {r["read"]: set(r["copies"].split(",")) for r in csv.DictReader(open(tied_p), delimiter="\t")
             if r["family"] == family}
     resolved = {r["read"]: r["copies"] for r in csv.DictReader(open(untied_p), delimiter="\t") if r["family"] == family}
+    if margins_p:                                      # only reads resolved by >= TEACH_MARGIN teach the labels
+        mg = {r["read"]: float(r["margin"]) for r in csv.DictReader(open(margins_p), delimiter="\t")}
+        resolved = {q: c for q, c in resolved.items() if mg.get(q, 0) >= TEACH_MARGIN}
     anchor = choose_anchor(collections.Counter(resolved[q] for q in seqs if q in resolved), copies)
     a = fam["copies"][copies.index(anchor)]
     with tempfile.TemporaryDirectory(dir=out_dir) as d:
@@ -387,8 +432,10 @@ def main(argv):
         return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1], tied_p)
     if len(argv) >= 6 and argv[0] == "combine":
         return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1])
-    if len(argv) == 9 and argv[0] == "run":
-        return cmd_run(*argv[1:])
+    if argv[:1] == ["run"] and (len(argv) == 9 or len(argv) == 11 and argv[9] == "--margins"):
+        return cmd_run(*argv[1:9], margins_p=argv[10] if len(argv) == 11 else None)
+    if len(argv) == 6 and argv[0] == "margins":
+        return cmd_margins(*argv[1:])
     if len(argv) >= 4 and argv[0] == "score":
         return cmd_score(argv[1], argv[2], argv[3:])
     raise SystemExit(__doc__)
