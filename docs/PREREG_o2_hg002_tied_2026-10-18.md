@@ -34,7 +34,8 @@
 3. **Tied.** A read is tied when its best AS is shared by alignments on two or more copies of one family. A copy is matched
    by exon overlap.
    - Reads tied across two families are counted, not scored.
-   - These reads' primary alignment is minimap2's coin toss among the tied copies.
+   - These reads' primary alignment is minimap2's coin toss among the tied copies. (Final review: 1,034 of the 23,424
+     primaries are not on a tied copy; 947 lie off every copy and 87 on another copy.)
    - **Result:** 23,424 reads tied within one family, plus 543 across two.
      - **Size of the tie:** 23,266 tie on 2 copies, 141 on 3, 15 on 4, 1 on 5 and 1 on 7.
      - **Primary MAPQ:** 0 for 23,131; 1-29 for 82; 30 or more for 211.
@@ -75,7 +76,8 @@
 
 - **No read was unmapped.**
 - **`poor_match`:** NM quartiles 6, 9 and 13 (the floor is kept as arm 4 set it).
-- **Donor margin of the `unique` reads:** quartiles 10, 15 and 20 AS points, about 2-4 mismatches. 44 reads have no
+- **Donor margin of the `unique` reads:** quartiles 10, 15 and 20 AS points over both strata. The non-pseudoautosomal
+  ones alone are 5, 10 and 25 (final review); the 624 pseudoautosomal ones are all 15-20. 44 reads have no
   placement off their copy at all.
 - **So most AS ties are ties in the donor too.** 71% of the non-pseudoautosomal tied reads are `own_tie`, as register 1180
   found for PAR and EIF3C reads.
@@ -208,7 +210,7 @@ unchanged from 7e865cba.
 **Verdict: UNDERPOWERED for all four systems.**
 - **No system placed 100 of the 584 truth reads,** so T1 and T2 are below their floor. Their point estimates are in the
   table below.
-- **Validity holds:** `mm2` is wrong on 341 of 582 (58.6%).
+- **Validity holds:** `mm2` is wrong on 341 of 582 placed (58.6%), or 341 of all 584 (58.4%, as the code computes it).
 - **T3 holds for every system** (powered).
 - **T4 is underpowered:** only 8 of the truth reads are `decidable`.
 - **T5 holds for the integrated system and FAILS for the current one.**
@@ -228,7 +230,9 @@ unchanged from 7e865cba.
 - **CHM13 holds almost no evidence for the rest.** The oracle finds 560 of the 584 truth reads `undecidable`, 14
   `off_family`, 8 `decidable` and 2 `true_unaligned`. These reads carry the donor's own alleles, which both CHM13 copies
   lack (register 1182).
-- **MAPQ means nothing on a tie.** A tied read's primary at MAPQ >= 1 is wrong 12 times in 22, as the user said.
+- **MAPQ means nothing on a tie.** A tied read's primary at MAPQ >= 1 is wrong 12 times in 22, as the user said. That is
+  the local remap's primary (`E0.bam`, the o2proof baseline). On `chm13.bam`, the alignment that defines the tie, it is 9
+  in 17 (final review).
 - **Placements by donor margin** (AS points between the truth copy and the best placement off it):
 
   | donor margin | reads | integrated: right / wrong | current: right / wrong | `mm2`: right / wrong |
@@ -252,7 +256,7 @@ unchanged from 7e865cba.
 - **O3 on donor copies CHM13 lacks.** The world holds 30 `no_counterpart` reads: NPIPB2 12, GTF2H2C 9, SPDYE1 5, USP17L11
   3 and BMS1P1 1.
   - The integrated O3 flags 10 of them, all NPIPB2: a missing NPIPB copy. It places 7 and abstains on 13.
-  - The current O3 flags none of them and places 16. Instead it flags 6,907 EIF3C reads, which tie in the donor too:
+  - The current O3 flags none of them and places 16. Instead it flags 6,907 EIF3C reads, all but 22 of which tie in the donor too:
     allelic variation called a missing copy (register 1181).
 - **The round-8 end-to-end bars on the truth reads** (fastset's own): integrated 50 correct and 12 errors; current 33 and
   37.
@@ -260,7 +264,7 @@ unchanged from 7e865cba.
 **What it means:**
 - **On real AS-tied reads, CHM13's PSVs rarely carry the answer, and a CHM13-based O2 can mostly only abstain.** Both do:
   the calibration bar T3 holds on real data.
-- **Where they place, they beat the coin toss (88% against 42%) but are far from the 98% bar,** on too few reads to
+- **Where they place, they beat the coin toss (88% against 41%) but are far from the 98% bar,** on too few reads to
   decide. The current system's PSV tie-break is the better of the two on reads with a real rival (36/41).
 - **The answer lies in the donor's own copies.** The reads that decide them are the tied reads' own alleles, so the lever
   is to learn the sample's copies from its uniquely placed reads and assign against those. That is a design question; it
@@ -290,7 +294,9 @@ unchanged from 7e865cba.
 - **Where minimap2 misses.** Its misses concentrate in copy-number-variable segmental duplications.
   - The largest are P2RY8 1,149 (pseudoautosomal), GPAT2 1,045, SMN2 606, AKAP17A 473 (pseudoautosomal), THOC3 416,
     FCGR2A 400, WASHC1 344, CCDC144A 210, TBC1D3B 199 and PLCXD1 178 (pseudoautosomal).
-  - Donor margins of the misses: quartiles 5, 10 and 192. Half are 1-2 sites, the rest structural.
+  - Donor margins of the misses: quartiles 5, 10 and 191 pooled, driven by the 1,861 pseudoautosomal misses, all at
+    margin 5. The non-pseudoautosomal misses alone are **10, 20 and 466** (final review), so most of the CNV
+    segmental-duplication misses are not one-site differences.
 - **What it means.** "Everything else is already resolved by minimap2" holds for about 98% of the untied reads in
   ordinary families, not 99%.
   - The rest are reads whose own copy carries donor alleles that make another CHM13 copy fit better. The user's split
@@ -306,3 +312,28 @@ unchanged from 7e865cba.
 - **The coin toss is wrong on 287 of 624.**
 - **CHM13 cannot separate them.** The oracle finds 620 of the 624 truth reads `undecidable` on CHM13: their X and Y alleles
   differ by donor variants that neither CHM13 copy carries.
+
+## Corrections after the final review (2026-10-19)
+
+A fresh reviewer re-derived all 23,424 truth classes from the BAMs and the chain, with 0 mismatches. It also rebuilt the
+o2proof card and recomputed the score, bars and premise. No verdict changes. The text above is corrected where it pooled
+strata or named the wrong baseline. The other findings are below; the code is unchanged, as the rules require.
+- **P1's "minimap2's copy" is the copy holding all its best-AS alignments** (`hg002truth.resolved_copy`), as run.
+  - On 10,137 untied reads (1.7%) the primary lies elsewhere: 6,731 off every copy and 3,406 on another copy.
+  - Scored on the primary, P1 is 0.967 overall and 0.974 outside the pseudoautosomal families. It FAILS either way.
+- **`own_tie` also holds 48 reads (39 RASA4B)** whose best placements land on a single copy plus a placement that lifts
+  nowhere or off the copies (`len(found) > 1`). The prereg defined `own_tie` as two or more copies.
+  - The integrated system abstains on all 48. The current system's O3 calls 40 of them.
+  - Without them, its T5 is 6,959 / 10,141 = 0.686. It still FAILS.
+- **A truth copy can belong to another family**, since the exon index spans all 439 families.
+  - Tied reads: 0 cases.
+  - Premise: 294 of the 6,342 misses, for example WASHC1 -> DDX11L9 (132 reads). P1 counting only within-family misses is
+    0.973.
+- **The two scorers use different coin tosses.**
+  - o2proof's `mm2` is the primary of the pipeline's local remap. `hg002truth score`'s is the primary in `chm13.bam`.
+  - On the 582 truth reads they are wrong 341 and 350 times.
+- **The chain lift is one-to-one here.** The Q100 chain has no overlapping target blocks, so `chainlift`'s search start
+  cannot miss a lift. The strand math held on 365 random lifts on both strands.
+- **Register 1329's "73% own_tie" pools both strata.** The non-pseudoautosomal stratum is 71%.
+- **Not judged:** whether the chain pairs true orthologs inside inverted or CNV segmental duplications. One maternal EIF3C
+  placement lifts onto both CHM13 copies, and TBC1D3B.8 holds 78 of the 118 `unique_elsewhere` truths.
