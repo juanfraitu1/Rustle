@@ -244,3 +244,13 @@ def test_a_family_is_pseudoautosomal_when_every_copy_lies_in_a_par():
     assert [f["family"] for f in H.select_families(fams, rows, 1, par="exclude")] == ["E"]
     assert [f["family"] for f in H.select_families(fams, rows, 1, par="only")] == ["S"]
     assert [f["family"] for f in H.select_families(fams, rows, 1)] == ["S", "E"]
+
+
+def test_the_premise_command_writes_the_bar_from_the_untied_truth_table(tmp_path):
+    import json
+    open(tmp_path / "t.tsv", "w").write("read\tfamily\ttied_copies\tclass\ttruth\tdonor_nm\tdonor_margin\n"
+                                        + "".join(f"r{i}\tF\tF.0\tunique\tF.0\t0\t\n" for i in range(150))
+                                        + "q\tF\tF.0\tunique_elsewhere\tF.1\t0\t\n")
+    assert H.main(["premise", str(tmp_path / "t.tsv"), str(tmp_path / "p.json")]) == 0
+    got = json.load(open(tmp_path / "p.json"))
+    assert got["n"] == 151 and got["holds"] and got["powered"] and got["classes"] == {"unique": 150, "unique_elsewhere": 1}

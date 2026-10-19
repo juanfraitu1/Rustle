@@ -30,6 +30,7 @@ The donor margin of a unique read (reported, no class) is how far the best place
                                                                   alone) and OUT_DIR/world_truth.tsv (the reads with a donor
                                                                   copy, realreads' truth format)
     hg002truth.py bars O2PROOF.json SCORE.json OUT.json       -> the pre-registered bars T1-T5 and each system's O2 verdict
+    hg002truth.py premise TRUTH_UNTIED.tsv OUT.json           -> the premise bar P1 on the untied reads' truth table
     hg002truth.py score TRUTH.tsv TIED.tsv WORLD OUT.json [--o2 NAME]  -> per method (minimap2's primary, the primary at MAPQ
                                                                   >= 1, current, integrated: summary.world_calls with the O2
                                                                   table NAME, o2.integv.m2.tsv by default) and truth class,
@@ -399,7 +400,17 @@ def cmd_bars(o2p_p, score_p, out_p):
     return 0
 
 
+def cmd_premise(truth_p, out_p):
+    res = premise_bar(list(csv.DictReader(open(truth_p), delimiter="\t")))
+    json.dump(res, open(out_p, "w"), indent=1)
+    print(f"premise P1 (minimap2's copy = the donor's >= {PREMISE_MIN}): {res['value']} of {res['n']} "
+          f"{'powered' if res['powered'] else 'UNDERPOWERED'} {'holds' if res['holds'] else 'FAILS'}; {res['classes']}", flush=True)
+    return 0
+
+
 def main(argv):
+    if len(argv) == 3 and argv[0] == "premise":
+        return cmd_premise(*argv[1:])
     if len(argv) == 4 and argv[0] == "bars":
         return cmd_bars(*argv[1:])
     if argv[:1] == ["score"] and (len(argv) == 5 or len(argv) == 7 and argv[5] == "--o2"):
