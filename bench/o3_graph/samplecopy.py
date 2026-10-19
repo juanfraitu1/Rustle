@@ -9,10 +9,12 @@ family's reads are clustered by the alleles they share (read-backed phasing over
 cluster is one of the sample's copy-haplotypes, and a cluster takes the copy minimap2 resolves its untied reads to (98% right
 against the donor's genome, register 1330). A tied read takes its cluster's copy, or abstains.
 
-    samplecopy.py run FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR
-                                         -> OUT_DIR/<family>.calls.tsv (read, call, posterior, cluster, label) + .clusters.json
-    samplecopy.py splithalf FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR
+    samplecopy.py run FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR [--male]
+                                         -> OUT_DIR/<family>.calls.tsv (read, call, posterior, cluster, label, rule)
+                                            + .clusters.json
+    samplecopy.py splithalf FAMILIES.json SET FAMILY CHM13.bam TIED.tsv UNTIED.tsv GENOME.fa OUT_DIR [--male]
                                          -> two models from disjoint halves of the reads, every tied read called by both
+    (--male: the sample is male, so its chrX and chrY copies outside the pseudoautosomal regions are haploid: step 6)
     samplecopy.py margins CHM13.bam UNTIED.tsv FAMILIES.json SET OUT.tsv
                                          -> each untied read's AS margin over its best alignment off its copy
     (run ... --margins MARGINS.tsv: only untied reads resolved by >= TEACH_MARGIN teach the clusters' labels)
@@ -26,7 +28,9 @@ Steps (all reads of the family, tied or not):
    merging clusters that differ at fewer than two columns (one difference can be one error) and dissolving clusters under
    min_size reads;
 4. labels: a cluster's copy is the one its untied members resolve to by a clear majority;
-5. a tied read takes its cluster's label when its posterior is >= 0.99 and the label is a copy it ties on.
+5. a tied read takes its cluster's label when its posterior is >= 0.99 and the label is a copy it ties on;
+6. (--male) the haploid rule: a read tied only on haploid copies is placed only when each of those copies labels exactly
+   one cluster (one_copy_one_group); O3's flags name the haploid copies that label several clusters or none.
 """
 import collections
 import csv
@@ -205,6 +209,34 @@ def assign_tied(post, labels, tied, min_post=0.99, sites=None):
     return lab if post[j] >= min_post and lab is not None and lab in tied else None
 
 
+def one_copy_one_group(tied, labels, haploid):
+    """The haploid rule (2026-10-19; user: "yes lets implement the rule"). A sample carries a haploid copy once, so the
+    copy gives one group of reads. A read tied only on haploid copies is placeable only when each of them labels exactly
+    one cluster: two clusters on one copy (RBMY1F in A119b testis, register 1336) mean one of them is not that copy, and a
+    copy that labels none (CDY1) may sit unseen inside another copy's cluster. Reads tied on a diploid copy are not judged."""
+    if not tied or not set(tied) <= set(haploid):
+        return True
+    n = collections.Counter(v for v in labels.values() if v is not None)
+    return all(n[c] == 1 for c in tied)
+
+
+def haploid_flags(labels, haploid):
+    """O3's flags on the haploid copies: {shared: the copies two or more clusters are labelled with, missing: the copies
+    no cluster is}."""
+    n = collections.Counter(v for v in labels.values() if v is not None)
+    return {"shared": sorted(c for c in haploid if n[c] >= 2), "missing": sorted(c for c in haploid if n[c] == 0)}
+
+
+def haploid_copies(family, copies, male):
+    """The family's copies a male sample carries once: on chrX or chrY outside the pseudoautosomal regions (CHM13 v2.0,
+    hg002truth.PAR); none for a female sample."""
+    if not male:
+        return set()
+    par = _sibling("hg002truth").PAR
+    return {f"{family}.{k}" for k, c in enumerate(copies) if c["chrom"] in ("chrX", "chrY")
+            and not any(s <= c["start"] and c["end"] <= e for s, e in par.get(c["chrom"], ()))}
+
+
 def read_pileup(rec):
     """{reference position: read base} over a pysam alignment's aligned (=, X, M) positions; insertions, deletions and clips
     are left out (substitutions only: HiFi's errors are mostly homopolymer indels)."""
@@ -257,6 +289,15 @@ def _realreads():
     return mod
 
 
+def _sibling(name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(f"o3_graph_{name}_sc", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                                    f"{name}.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def margin_of(alns, resolved, idx):
     """An untied read's AS margin: its best AS minus the best AS of any alignment not on its resolved copy (another copy, or
     off every copy); None when it has no other alignment. alns: [(chrom, blocks, AS)]."""
@@ -287,8 +328,9 @@ def cmd_margins(bam_p, untied_p, fam_p, set_name, out_p):
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
-def _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None):
-    """A family's reads realigned to its anchor copy: {copies, tied, resolved, anchor, names, reads (pileups), locus}."""
+def _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None, male=False):
+    """A family's reads realigned to its anchor copy: {copies, tied, resolved, anchor, names, reads (pileups), locus,
+    haploid (the copies a male sample carries once)}."""
     import pysam
     fam = {f["family"]: f for f in json.load(open(fam_p))["sets"][set_name]}[family]
     copies = [f"{family}.{k}" for k in range(len(fam["copies"]))]
@@ -324,7 +366,7 @@ def _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir
                     pile[rec.query_name] = read_pileup(rec)
     names = sorted(pile)
     return dict(copies=copies, tied=tied, resolved=resolved, anchor=anchor, names=names, reads=[pile[q] for q in names],
-                locus=locus)
+                locus=locus, haploid=haploid_copies(family, fam["copies"], male))
 
 
 def _model(reads, resolved, n_copies, locus):
@@ -341,44 +383,48 @@ def _model(reads, resolved, n_copies, locus):
     return dict(cols=cols, fit=fit, sub=sub, ev=ev, member=member, labels=labels)
 
 
-def _call(model, read, tied_copies):
-    """(call or None, posterior, cluster, label) of one tied read (a pileup) under a model."""
+def _call(model, read, tied_copies, haploid=frozenset()):
+    """(call or None, posterior, cluster, label, blocked) of one tied read (a pileup) under a model; blocked: the haploid
+    rule (one_copy_one_group) turned a placement into an abstention."""
     fit, labels = model["fit"], model["labels"]
     sub = {c: b for c, b in read.items() if c in set(model["cols"])}
     p = evidence_posteriors([sub], fit["haplotypes"], fit["error"])[0]
     j = max(range(len(p)), key=p.__getitem__)
     ns = decisive_sites(sub, j, fit["haplotypes"], labels)
-    return assign_tied(p, labels, tied_copies, MIN_POST, ns), p[j], j, labels.get(j)
+    call = assign_tied(p, labels, tied_copies, MIN_POST, ns)
+    blocked = call is not None and not one_copy_one_group(tied_copies, labels, haploid)
+    return (None if blocked else call), p[j], j, labels.get(j), blocked
 
 
-def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None):
-    d = _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads, margins_p)
-    names, reads, tied, resolved = d["names"], d["reads"], d["tied"], d["resolved"]
+def cmd_run(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads=2, margins_p=None, male=False):
+    d = _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, threads, margins_p, male)
+    names, reads, tied, resolved, hap = d["names"], d["reads"], d["tied"], d["resolved"], d["haploid"]
     m = _model(reads, [resolved.get(q) for q in names], len(d["copies"]), d["locus"])
     fit, labels, member = m["fit"], m["labels"], m["member"]
     with open(f"{out_dir}/{family}.calls.tsv", "w") as fh:
-        fh.write("read\tcall\tposterior\tcluster\tlabel\n")
+        fh.write("read\tcall\tposterior\tcluster\tlabel\trule\n")
         for q, r in zip(names, reads):
             if q in tied:
-                c, p, j, lab = _call(m, r, tied[q])
-                fh.write(f"{q}\t{c or '-'}\t{p:.4f}\t{j}\t{lab or '-'}\n")
+                c, p, j, lab, blk = _call(m, r, tied[q], hap)
+                fh.write(f"{q}\t{c or '-'}\t{p:.4f}\t{j}\t{lab or '-'}\t{'haploid' if blk else '-'}\n")
     lab_counts = [collections.Counter(resolved[q] for q, mm in zip(names, member) if mm == j and q in resolved)
                   for j in range(len(fit["haplotypes"]))]
     json.dump(dict(family=family, anchor=d["anchor"], reads=len(names), tied=sum(q in tied for q in names), columns=len(m["cols"]),
-                   error=fit["error"], clusters=[dict(size=sum(mm == j for mm in member), label=labels[j], untied=dict(lab_counts[j]),
+                   error=fit["error"], haploid=sorted(hap), haploid_flags=haploid_flags(labels, hap), clusters=[dict(size=sum(mm == j for mm in member), label=labels[j], untied=dict(lab_counts[j]),
                                                       haplotype="".join(fit["haplotypes"][j].get(c, "-") for c in m["cols"]))
                                                  for j in range(len(fit["haplotypes"]))]),
               open(f"{out_dir}/{family}.clusters.json", "w"), indent=1)
-    n = collections.Counter("placed" if r.split("\t")[1] != "-" else "abstain" for r in open(f"{out_dir}/{family}.calls.tsv").readlines()[1:])
+    n = collections.Counter("placed" if r["call"] != "-" else "blocked (haploid rule)" if r["rule"] == "haploid" else "abstain"
+                            for r in csv.DictReader(open(f"{out_dir}/{family}.calls.tsv"), delimiter="\t"))
     print(f"[samplecopy] {family}: {len(names)} reads, {len(m['cols'])} informative columns, {len(fit['haplotypes'])} clusters "
           f"({sum(1 for v in labels.values() if v)} labelled), error {fit['error']:.4f}; tied reads {dict(n)}", flush=True)
     return 0
 
 
-def cmd_splithalf(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, seed=1):
+def cmd_splithalf(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, seed=1, male=False):
     """Two models learned from disjoint halves of the family's reads (split_names); every tied read called by both ->
     OUT_DIR/<family>.split.tsv (read, half, call_a, call_b) and the concordance: no donor truth needed."""
-    d = _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir)
+    d = _prepare(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, out_dir, male=male)
     names, reads, tied, resolved = d["names"], d["reads"], d["tied"], d["resolved"]
     pos = {q: i for i, q in enumerate(names)}
     halves = split_names(names, seed)
@@ -392,8 +438,8 @@ def cmd_splithalf(fam_p, set_name, family, bam_p, tied_p, untied_p, genome_p, ou
         inb = set(halves[1])
         for q in names:
             if q in tied:
-                ca[q] = _call(models[0], reads[pos[q]], tied[q])[0]
-                cb[q] = _call(models[1], reads[pos[q]], tied[q])[0]
+                ca[q] = _call(models[0], reads[pos[q]], tied[q], d["haploid"])[0]
+                cb[q] = _call(models[1], reads[pos[q]], tied[q], d["haploid"])[0]
                 fh.write(f"{q}\t{'b' if q in inb else 'a'}\t{ca[q] or '-'}\t{cb[q] or '-'}\n")
     both, agree = concordance(ca, cb)
     print(f"[samplecopy] {family} split-half: {len(ca)} tied reads; model A calls {sum(v is not None for v in ca.values())}, "
@@ -496,7 +542,13 @@ def cmd_combine(truth_p, out_dir, world, families, out_p, tied_p=None):
     return 0
 
 
+def _flag(argv, name):
+    """(whether the flag is given, argv without it)."""
+    return name in argv, [a for a in argv if a != name]
+
+
 def main(argv):
+    male, argv = _flag(argv, "--male")
     if argv[:1] == ["combine"] and "--tied" in argv:
         i = argv.index("--tied")
         tied_p, argv = argv[i + 1], argv[:i] + argv[i + 2:]
@@ -504,9 +556,9 @@ def main(argv):
     if len(argv) >= 6 and argv[0] == "combine":
         return cmd_combine(argv[1], argv[2], argv[3], argv[4:-1], argv[-1])
     if argv[:1] == ["run"] and (len(argv) == 9 or len(argv) == 11 and argv[9] == "--margins"):
-        return cmd_run(*argv[1:9], margins_p=argv[10] if len(argv) == 11 else None)
+        return cmd_run(*argv[1:9], margins_p=argv[10] if len(argv) == 11 else None, male=male)
     if len(argv) == 9 and argv[0] == "splithalf":
-        return cmd_splithalf(*argv[1:])
+        return cmd_splithalf(*argv[1:], male=male)
     if len(argv) == 6 and argv[0] == "margins":
         return cmd_margins(*argv[1:])
     if len(argv) >= 4 and argv[0] == "score":

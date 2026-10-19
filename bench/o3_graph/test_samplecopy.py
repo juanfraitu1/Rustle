@@ -149,3 +149,37 @@ def test_reads_split_into_two_seeded_halves_and_two_models_calls_are_compared():
     ca = {"t1": "F.0", "t2": "F.1", "t3": None, "t4": "F.0"}
     cb = {"t1": "F.0", "t2": "F.0", "t3": "F.1", "t4": None}
     assert C.concordance(ca, cb) == (2, 1)          # t1 and t2 called by both, they agree on t1
+
+
+def test_copies_on_x_and_y_outside_the_pseudoautosomal_regions_are_haploid_in_a_male():
+    copies = [{"chrom": "chrY", "start": 22386633, "end": 22424578}, {"chrom": "chrX", "start": 52176212, "end": 52200000},
+              {"chrom": "chrX", "start": 1000, "end": 5000}, {"chrom": "chr15", "start": 100, "end": 200}]
+    assert C.haploid_copies("F", copies, male=True) == {"F.0", "F.1"}       # chrX's copy at 1 kb lies in PAR1
+    assert C.haploid_copies("F", copies, male=False) == set()
+
+
+def test_on_haploid_copies_a_tied_read_needs_each_copy_it_ties_on_to_have_exactly_one_group():
+    hap = {"F.0", "F.1"}
+    assert C.one_copy_one_group({"F.0", "F.1"}, {0: "F.0", 1: "F.1"}, hap)
+    assert not C.one_copy_one_group({"F.0", "F.1"}, {0: "F.0", 1: "F.0", 2: "F.1"}, hap)   # two groups, one copy (RBMY1F)
+    assert not C.one_copy_one_group({"F.0", "F.1"}, {0: "F.0", 1: None}, hap)              # F.1 has no group (CDY1)
+    assert C.one_copy_one_group({"F.0", "F.1"}, {0: "F.0", 1: "F.0"}, set())               # diploid: two haplotypes
+    assert C.one_copy_one_group({"F.0", "F.2"}, {0: "F.0"}, hap)                           # F.2 diploid: not applied
+    assert C.haploid_flags({0: "F.0", 1: "F.0", 2: None}, hap) == {"shared": ["F.0"], "missing": ["F.1"]}
+
+
+def test_a_haploid_tied_read_abstains_when_its_copies_and_the_groups_do_not_match_one_to_one():
+    haps = [{1: "A", 2: "C", 3: "G"}, {1: "T", 2: "G", 3: "G"}, {1: "A", 2: "C", 3: "T"}]
+    model = {"cols": [1, 2, 3], "fit": {"haplotypes": haps, "error": 0.001}, "labels": {0: "F.0", 1: "F.1", 2: "F.0"}}
+    read = {1: "A", 2: "C", 3: "G"}
+    assert C._call(model, read, {"F.0", "F.1"})[0] == "F.0"                              # without the rule: the label
+    call, _, _, _, blocked = C._call(model, read, {"F.0", "F.1"}, haploid={"F.0", "F.1"})
+    assert call is None and blocked                                                      # F.0 carried by two groups
+    one = {"cols": [1, 2], "fit": {"haplotypes": haps[:2], "error": 0.001}, "labels": {0: "F.0", 1: None}}
+    assert C._call(one, {1: "A", 2: "C"}, {"F.0", "F.1"})[0] == "F.0"
+    assert C._call(one, {1: "A", 2: "C"}, {"F.0", "F.1"}, haploid={"F.0", "F.1"})[0] is None   # F.1 has no group
+
+
+def test_flags_are_taken_off_the_command_line():
+    assert C._flag(["run", "a", "--male", "b"], "--male") == (True, ["run", "a", "b"])
+    assert C._flag(["run", "a"], "--male") == (False, ["run", "a"])
