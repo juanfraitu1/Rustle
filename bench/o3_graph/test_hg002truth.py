@@ -151,3 +151,16 @@ def test_the_truth_table_classes_each_tied_read_by_the_donor_s_haplotypes_lifted
             for r in csv.DictReader(open(tmp_path / "truth.tsv"), delimiter="\t")]
     assert rows == [("r1", "unique", "F.0", "0", "10"), ("r2", "own_tie", "", "0", ""), ("r3", "no_counterpart", "", "0", ""),
                     ("r4", "poor_match", "", "9", ""), ("r5", "unique_elsewhere", "F.1", "0", ""), ("r6", "unmapped", "", "", "")]
+
+
+def test_the_world_holds_the_families_with_scored_tied_reads_and_its_truth_the_reads_with_a_donor_copy():
+    fams = [dict(family="F", copies=[]), dict(family="G", copies=[]), dict(family="K", copies=[])]
+    rows = [dict(read="r1", family="F", **{"class": "unique"}, truth="F.0"),
+            dict(read="r2", family="F", **{"class": "own_tie"}, truth=""),
+            dict(read="r3", family="G", **{"class": "poor_match"}, truth=""),        # unscored: G has no scored read
+            dict(read="r4", family="K", **{"class": "unique_elsewhere"}, truth="K.2"),
+            dict(read="r5", family="K", **{"class": "no_counterpart"}, truth="")]
+    assert [f["family"] for f in H.select_families(fams, rows, 1)] == ["F", "K"]
+    assert [f["family"] for f in H.select_families(fams, rows, 2)] == ["F", "K"]
+    assert H.select_families(fams, rows, 3) == []
+    assert H.world_truth(rows) == [("r1", "F.0", "F"), ("r4", "K.2", "K")]

@@ -19,6 +19,9 @@ The donor margin of a unique read (reported, no class) is how far the best place
     hg002truth.py tied BAM FAMILIES.json SET OUT.tsv           -> the reads tied in BAM (CHM13 coordinates): read, AS, copies,
                                                                   and minimap2's primary (its coin toss among them) + MAPQ
     hg002truth.py truth TIED.tsv MAT.bam PAT.bam CHAIN FAMILIES.json SET OUT.tsv -> each tied read's class and truth copy
+    hg002truth.py world TRUTH.tsv FAMILIES.json SET MIN OUT_DIR -> OUT_DIR/families.json (set `hg002`: the families with >= MIN
+                                                                  scored tied reads) and OUT_DIR/world_truth.tsv (the reads with
+                                                                  a donor copy, realreads' truth format)
     hg002truth.py score TRUTH.tsv TIED.tsv WORLD OUT.json [--o2 NAME]  -> per method (minimap2's primary, the primary at MAPQ
                                                                   >= 1, current, integrated: summary.world_calls with the O2
                                                                   table NAME, o2.integv.m2.tsv by default) and truth class,
@@ -38,6 +41,7 @@ _spec.loader.exec_module(R)
 
 
 METHODS = ("mm2", "mm2_q1", "current", "integrated")
+SCORED = ("unique", "unique_elsewhere", "own_tie", "no_counterpart", "elsewhere")
 
 
 def _summary():
@@ -190,6 +194,32 @@ def cmd_truth(tied_p, mat_p, pat_p, chain_p, fam_p, set_name, out_p):
     return 0
 
 
+def select_families(fams, truth_rows, min_scored):
+    """The families (in pool order) with >= min_scored tied reads of a scored class."""
+    n = collections.Counter(r["family"] for r in truth_rows if r["class"] in SCORED)
+    return [f for f in fams if n[f["family"]] >= min_scored]
+
+
+def world_truth(truth_rows):
+    """[(read, copy, family)] of the tied reads the donor places on one copy (unique, unique_elsewhere)."""
+    return [(r["read"], r["truth"], r["family"]) for r in truth_rows if r["class"] in ("unique", "unique_elsewhere")]
+
+
+def cmd_world(truth_p, fam_p, set_name, min_scored, out_dir):
+    d = json.load(open(fam_p))
+    rows = list(csv.DictReader(open(truth_p), delimiter="\t"))
+    keep = select_families(d["sets"][set_name], rows, min_scored)
+    names = {f["family"] for f in keep}
+    os.makedirs(out_dir, exist_ok=True)
+    json.dump(dict({k: v for k, v in d.items() if k != "sets"}, sets={"hg002": keep}), open(f"{out_dir}/families.json", "w"))
+    wt = [t for t in world_truth(rows) if t[2] in names]
+    with open(f"{out_dir}/world_truth.tsv", "w") as fh:
+        fh.write("read\tcopy\tfamily\n" + "".join("\t".join(t) + "\n" for t in wt))
+    print(f"[hg002truth] {len(keep)} of {len(d['sets'][set_name])} families, {sum(len(f['copies']) for f in keep)} copies; "
+          f"{len(wt)} reads with a donor copy -> {out_dir}", flush=True)
+    return 0
+
+
 def _fam_call(calls, family):
     """A system's placement of a read of `family`: None, its copy, `no-truth-copy` or `wrong-family` (as o2proof)."""
     if not calls:
@@ -234,6 +264,8 @@ def cmd_score(truth_p, tied_p, world, out_p, o2_name="o2.integv.m2.tsv"):
 def main(argv):
     if argv[:1] == ["score"] and (len(argv) == 5 or len(argv) == 7 and argv[5] == "--o2"):
         return cmd_score(*argv[1:5], o2_name=argv[6] if len(argv) == 7 else "o2.integv.m2.tsv")
+    if len(argv) == 6 and argv[0] == "world":
+        return cmd_world(argv[1], argv[2], argv[3], int(argv[4]), argv[5])
     if len(argv) == 5 and argv[0] == "tied":
         return cmd_tied(*argv[1:])
     if len(argv) == 8 and argv[0] == "truth":
