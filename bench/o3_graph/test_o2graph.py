@@ -1109,3 +1109,28 @@ def test_a_catalogued_copy_o1_dropped_as_silent_ties_like_a_copy_not_like_a_locu
     sj = {"F": {"copies": [{"contig": "c1", "start": 100, "end": 900, "idx": 0}], "dropped": [1]}}
     cat = {"F": [{"idx": 0, "contig": "c1", "start": 100, "end": 900}, {"idx": 1, "contig": "c1", "start": 5000, "end": 5800}]}
     assert O.scope_spans(sj, cat) == {"F": [("c1", 100, 900, 0), ("c1", 5000, 5800, D)]}
+
+
+def test_a_rival_that_explains_the_read_with_no_more_edits_counting_its_clipped_bases_ties_whatever_the_as(tmp_path):
+    import pysam
+    w = tmp_path / "W"
+    w.mkdir()
+    hdr = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]})
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for name, pos, flag, score, cig in [
+                ("r1", 1100, 0, 262, "150="), ("r1", 5100, 256, 278, "20S110=20S"),   # NCOR1P4: the higher AS clips 40 bases
+                ("r2", 1100, 0, 300, "150="), ("r2", 5100, 256, 280, "74=1X75="),    # the rival has one more edit: resolved
+                ("r3", 1100, 0, 300, "150="), ("r3", 5100, 256, 270, "150="),        # as good by sequence, AS 30 lower
+                ("r4", 1100, 0, 300, "150="), ("r4", 15000, 256, 250, "150=")]:      # ... off the family's copies
+            a = pysam.AlignedSegment(hdr)
+            a.query_name, a.reference_id, a.reference_start, a.flag, a.mapping_quality = name, 0, pos, flag, 0
+            a.cigarstring, a.query_sequence = cig, "A" * 150
+            a.set_tag("AS", score)
+            out.write(a)
+    spans = {"F": [("c1", 1000, 2000, 0), ("c1", 5000, 6000, 1)]}
+    todo = {q: {"F"} for q in ("r1", "r2", "r3", "r4")}
+    plain = O.best_as_loci(str(w), todo, spans, slack=9)[0]
+    assert plain[("r1", "F")] == {1: 0} and plain[("r3", "F")] == {0: 0} and plain[("r4", "F")] == {0: 0}
+    seq = O.best_as_loci(str(w), todo, spans, slack=9, seq_tie=True)[0]
+    assert seq[("r1", "F")] == {0: 0, 1: 0} and seq[("r2", "F")] == {0: 0} and seq[("r3", "F")] == {0: 0, 1: 0}
+    assert seq[("r4", "F")] == {0: 0, O.ELSEWHERE: 0}

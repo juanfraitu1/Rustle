@@ -52,7 +52,7 @@ def _opts(**kw):
                 haplotype_check_genome=False, branch_genome_segments=False,
                 branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
                 locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False, twin_guard=False,
-                ref_copies=False, local=None, ref_carried=False, o2_scope="off", as_slack=0)
+                ref_copies=False, local=None, ref_carried=False, o2_scope="off", as_slack=0, seq_tie=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -263,3 +263,11 @@ def test_the_scope_step_takes_an_as_slack_only_when_asked():
 def test_a_scoped_set_is_scored_with_its_off_family_ties_apart():
     assert F.e2e_command(_opts(o2_genome="veto", o2_scope="tied", as_slack=9, error_floor=True), "/R", ["A"]) == (
         "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.intega.m2.tsv --error-floor --off-family-ties 9")
+
+
+def test_sequence_ties_reach_the_scope_step_and_the_off_family_scoring_only_when_asked():
+    o = _opts(o2_genome="veto", o2_scope="tied", as_slack=9, seq_tie=True)
+    steps = dict((n, c) for n, c, _ in F.chain_steps(o, "/R", "INTACT"))
+    assert steps["O2_scope"].endswith("intega 2 --base integv --as-slack 9 --seq-tie")
+    assert F.e2e_command(o, "/R", ["A"]).endswith("--off-family-ties 9 --seq-tie")
+    assert not F.e2e_command(_opts(o2_genome="veto", o2_scope="tied", as_slack=9), "/R", ["A"]).endswith("--seq-tie")

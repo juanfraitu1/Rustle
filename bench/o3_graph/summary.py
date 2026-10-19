@@ -179,11 +179,13 @@ def world_calls(w, o2_name="o2.integ.m2.tsv"):
     return dict(current=cur, integrated=integ, current_o3=cur_o3, integrated_o3=i_o3)
 
 
-def off_family_ties(w, slack):
+def off_family_ties(w, slack, seq_tie=False):
     """The reads whose alignments in WORLD/E0.bam within `slack` of their best AS include one on no copy of the world
     (copies.tsv, in the reference): a locus the simulation never expresses, so neither placing nor abstaining on the read can
-    be judged against its truth (user 2026-10-19: such ties are scored apart; slack 9 = Eichler's within-10 rule)."""
+    be judged against its truth (user 2026-10-19: such ties are scored apart; slack 9 = Eichler's within-10 rule). seq_tie: an
+    alignment there with no more edits, counting its unaligned bases, than the best-AS one ties too (o2graph.best_as_loci)."""
     import pysam
+    vd = _o2("o2graph").veto_distance
     loci = collections.defaultdict(list)
     for c in csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"):
         if c["in_reference"] == "1":
@@ -194,16 +196,17 @@ def off_family_ties(w, slack):
             if rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
                 continue
             on = any(rec.reference_start < e and rec.reference_end > s for s, e in loci.get(rec.reference_name, ()))
-            al[rec.query_name].append((rec.get_tag("AS"), on))
+            al[rec.query_name].append((rec.get_tag("AS"), on, vd(rec.cigartuples)))
     out = set()
     for q, v in al.items():
-        best = max(a for a, _ in v)
-        if any(not on for a, on in v if a >= best - slack):
+        best = max(a for a, _, _ in v)
+        ref = min(d for a, _, d in v if a == best)
+        if any(not on for a, on, d in v if a >= best - slack or seq_tie and d <= ref):
             out.add(q)
     return out
 
 
-def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=False, off_slack=None):
+def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=False, off_slack=None, seq_tie=False):
     """Per world and read class: the fates of every read under the current method (copy_assign O2 + CUR O3) and the integrated
     O1 -> O2 -> O3 (o2_name, by default o2.integ.m2.tsv, on graph/seeded.json + arm I)."""
     res = {}
@@ -225,7 +228,7 @@ def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=
                 return "absent_detectable"
             return absent_class(det.get(t["family"], (0, False))[1], rde.get(t["read"]), per_read, floor)
         wc = world_calls(w, o2_name)
-        oft = off_family_ties(w, off_slack) if off_slack is not None else set()
+        oft = off_family_ties(w, off_slack, seq_tie) if off_slack is not None else set()
         tab = {}
         for system in ("current", "integrated"):
             o2, o3 = wc[system], wc[f"{system}_o3"]
@@ -249,9 +252,10 @@ def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=
 
 def e2e_args(argv):
     """e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME] [--error-floor] [--off-family-ties SLACK] -> (out,
-    worlds, per_read, o2_name, error_floor, slack); O2_NAME: the integrated system's O2 table in WORLD/graph (o2.integ.m2.tsv;
+    worlds, per_read, o2_name, error_floor, slack, seq_tie); O2_NAME: the integrated system's O2 table in WORLD/graph (o2.integ.m2.tsv;
     o2.integl.m2.tsv: with the locus fallback); --error-floor: per-read detectability less each REMOVED world's error floor
-    (absent_class); --off-family-ties: the reads off_family_ties finds are the class `off_family_tie`, which the bars leave out."""
+    (absent_class); --off-family-ties: the reads off_family_ties finds are the class `off_family_tie`, which the bars leave out
+    (--seq-tie: with the O2 scope's sequence ties)."""
     rest, o2_name, slack, i = [], "o2.integ.m2.tsv", None, 2
     while i < len(argv):
         if argv[i] == "--o2":
@@ -263,7 +267,7 @@ def e2e_args(argv):
         if not argv[i].startswith("--"):
             rest.append(argv[i])
         i += 1
-    return argv[1], rest, "--per-read-detectability" in argv, o2_name, "--error-floor" in argv, slack
+    return argv[1], rest, "--per-read-detectability" in argv, o2_name, "--error-floor" in argv, slack, "--seq-tie" in argv
 
 
 UNJUDGED = ("off_family_tie",)                  # read classes the bars leave out (summary.off_family_ties)

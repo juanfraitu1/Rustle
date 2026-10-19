@@ -218,7 +218,8 @@ def chain_steps(a, root, w):
         steps.append(("O2_scope", f"python3 bench/o3_graph/o2graph.py run {W} intega 2 --base "
                       + (GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else "integ")
                       + (" --error-floor" if a.error_floor else "")
-                      + (f" --as-slack {a.as_slack}" if getattr(a, "as_slack", 0) else ""), "light"))
+                      + (f" --as-slack {a.as_slack}" if getattr(a, "as_slack", 0) else "")
+                      + (" --seq-tie" if getattr(a, "seq_tie", False) else ""), "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
                   + f" python3 bench/o3_graph/detect.py {W}"
@@ -246,7 +247,8 @@ def e2e_command(a, root, worlds):
             + (f" --o2 o2.{o2}.m2.tsv" if o2 else "")
             + (" --per-read-detectability" if a.per_read_detectability else "")
             + (" --error-floor" if a.error_floor else "")
-            + (f" --off-family-ties {a.as_slack}" if getattr(a, "o2_scope", "off") == "tied" else ""))
+            + (f" --off-family-ties {a.as_slack}" if getattr(a, "o2_scope", "off") == "tied" else "")
+            + (" --seq-tie" if getattr(a, "o2_scope", "off") == "tied" and getattr(a, "seq_tie", False) else ""))
 
 
 def cmd_run(a):
@@ -377,6 +379,9 @@ def main(argv=None):
     p.add_argument("--as-slack", type=int, default=0,
                    help="with --o2-scope tied: alignments within this many AS points of the best tie (0: equal AS only; 4: "
                         "less than one substitution under splice:hq, +1 match / -4 mismatch)")
+    p.add_argument("--seq-tie", action="store_true",
+                   help="with --o2-scope tied: an alignment on another locus that explains the read with no more edits, counting "
+                        "its unaligned bases, than the best-AS one ties too (user 2026-10-19, after round 21's NCOR1P4 read)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "
                    "unexplained (default) or what the --o2-genome step leaves (detect.py --pool-table)")
     p.add_argument("--allele-discount", action="store_true", help="O3's genome check discounts the donor's alleles, the edits "

@@ -1263,11 +1263,15 @@ def as_scope(loci, call, reason, qlen, floor=0.0):
     return (call, reason) if int(call) in loci else ("-", "as_tie_outside")
 
 
-def best_as_loci(w, todo, spans, slack=0):
+def best_as_loci(w, todo, spans, slack=0, seq_tie=False):
     """{(read, family): {seeded copy idx or ELSEWHERE: least locus_distance}} over the alignments in WORLD/E0.bam (primary and
     secondary) at the read's best AS -- within `slack` of it (--as-slack; 0: equal AS only) -- for the reads in todo ({read:
     families}); and {read: length}. Under splice:hq one substitution moves AS by 5 (+1 match, -4 mismatch), so a slack of 4
-    ties alignments no single sequence difference separates."""
+    ties alignments no single sequence difference separates. seq_tie (--seq-tie, user 2026-10-19 after round 21): an
+    alignment that explains the read with no more edits than the best-AS one, counting every base it leaves unaligned
+    (veto_distance), ties too, whatever its AS -- AS charges each intron and nothing for a soft clip, so it can favour the
+    copy that explains less of the read (round 21's NCOR1P4 read: 278 with 38 bases clipped against its own copy's 262 with
+    all 340 aligned, both NM 0)."""
     import pysam
     alns, qlen = collections.defaultdict(list), {}
     with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
@@ -1277,14 +1281,15 @@ def best_as_loci(w, todo, spans, slack=0):
                 continue
             qlen[q] = max(qlen.get(q, 0), rec.infer_read_length() or 0)
             alns[q].append((rec.get_tag("AS"), rec.reference_name, rec.reference_start, rec.reference_end,
-                            locus_distance(rec.cigartuples)))
+                            locus_distance(rec.cigartuples), veto_distance(rec.cigartuples)))
     out = {}
     for q, al in alns.items():
         best = max(a[0] for a in al)
+        ref = min(a[5] for a in al if a[0] == best)
         for f in todo[q]:
             loci = {}
-            for sc, ch, s0, e0, d in al:
-                if sc < best - slack:
+            for sc, ch, s0, e0, d, vd in al:
+                if sc < best - slack and not (seq_tie and vd <= ref):
                     continue
                 for i in [i for c2, s, e, i in spans.get(f, ()) if c2 == ch and s0 < e and e0 > s] or [ELSEWHERE]:
                     old = loci.get(i, "unset")
@@ -1304,7 +1309,7 @@ def scope_spans(sj, cat):
     return out
 
 
-def run_scope(w, margin=MARGIN, base="integv", floor=0.0, slack=0):
+def run_scope(w, margin=MARGIN, base="integv", floor=0.0, slack=0, seq_tie=False):
     """WORLD/graph/o2.<base>.m<margin>.tsv scoped by as_scope -> o2.intega.m<margin>.tsv: O2 only on the AS-tied reads
     (best_as_loci's slack)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.{base}.m{margin}.tsv"), delimiter="\t"))
@@ -1314,7 +1319,7 @@ def run_scope(w, margin=MARGIN, base="integv", floor=0.0, slack=0):
     todo = collections.defaultdict(set)
     for r in rows:
         todo[r["read"]].add(r["family"])
-    loci, qlen = best_as_loci(w, todo, spans, slack)
+    loci, qlen = best_as_loci(w, todo, spans, slack, seq_tie)
     out = []
     for r in rows:
         q, f = r["read"], r["family"]
@@ -1326,7 +1331,7 @@ def run_scope(w, margin=MARGIN, base="integv", floor=0.0, slack=0):
         wr.writeheader()
         wr.writerows(out)
     c = collections.Counter(r["reason"] for r in out)
-    print(f"[o2graph] {w} (O2 on AS-tied reads only, base {base}, AS slack {slack}, margin {margin}) -> {out_name}: {len(out)} rows, "
+    print(f"[o2graph] {w} (O2 on AS-tied reads only, base {base}, AS slack {slack}{', sequence ties' if seq_tie else ''}, margin {margin}) -> {out_name}: {len(out)} rows, "
           + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
     return 0
 
@@ -1549,7 +1554,8 @@ def main(argv):
         if method == "intega":                            # O2 only on AS-tied reads: o2.<--base, integv>.m<margin>.tsv scoped
             return run_scope(argv[1], margin, argv[argv.index("--base") + 1] if "--base" in argv else "integv",
                              floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0,
-                             slack=int(argv[argv.index("--as-slack") + 1]) if "--as-slack" in argv else 0)
+                             slack=int(argv[argv.index("--as-slack") + 1]) if "--as-slack" in argv else 0,
+                             seq_tie="--seq-tie" in argv)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first
