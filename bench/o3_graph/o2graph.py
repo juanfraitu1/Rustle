@@ -15,7 +15,8 @@ variation graph, where every curated isoform's exons carry their PSVs (a represe
     reported as unannotated-copy candidates (flag_reads, apply_flag); run ... integ MARGIN: padded union on O1's seeded catalog
     (o1seed.py; run_integrated); run ... integl MARGIN: integ with the CIGAR-aware locus fallback for the reads it leaves
     unexplained (run_locus_fallback); run ... integc MARGIN: every read on min(path, genome) distances
-    (run_locus_fallback mode "all"); run ... integs MARGIN: mode "seeded"; outputs graph/o2.<method>.m<margin>.tsv)
+    (run_locus_fallback mode "all"); run ... integs MARGIN: mode "seeded"; run ... intega MARGIN [--base integv]: O2 only on
+    the AS-tied reads (run_scope, as_scope); outputs graph/o2.<method>.m<margin>.tsv)
 
 A read's informative nodes are the graph nodes it traverses (its best GraphAligner alignments, detect.best_records) that lie
 on some copies' genomic paths but not all. It is assigned to the copy whose path misses the fewest of them when the next copy
@@ -1232,6 +1233,81 @@ def run_locus_fallback(w, margin=MARGIN, out_name=None, mode="unexplained", floo
     return 0
 
 
+def as_scope(loci, call, reason, qlen, floor=0.0):
+    """The user's split (2026-10-19: "go ahead and use only for tied AS reads"; 2026-10-18: "O2 can only work for tied AS
+    reads, everything else is already resolved by minimap, then O3 is just an extension in which if we notice the PSVs nothing
+    in the genome explains them"). loci: {seeded copy idx or ELSEWHERE: the least locus_distance of the read's alignments
+    there at its best AS (None: the locus lacks the read's sequence)}; call / reason: the base O2 table's. -> (call, reason):
+    - no alignment: `as_unaligned`;
+    - a best-AS alignment off the family's seeded copies (alone, or tied with a copy: a locus O1 did not seed): `as_elsewhere`;
+    - one best copy: minimap2 resolved the read -- that copy (`as_resolved`) when its alignment explains the read within
+      gate(floor), else `as_unexplained` (nothing in the genome explains it: O3's);
+    - an AS tie between copies: O2's call when it is one of them, else `as_tie_outside`; O2's abstention stands."""
+    if not loci:
+        return "-", "as_unaligned"
+    if ELSEWHERE in loci:
+        return "-", "as_elsewhere"
+    if len(loci) == 1:
+        (i, d), = loci.items()
+        return ("-", "as_unexplained") if d is None or d > gate(floor) * qlen else (str(i), "as_resolved")
+    if call == "-":
+        return "-", reason
+    return (call, reason) if int(call) in loci else ("-", "as_tie_outside")
+
+
+def best_as_loci(w, todo, spans):
+    """{(read, family): {seeded copy idx or ELSEWHERE: least locus_distance}} over the alignments in WORLD/E0.bam (primary and
+    secondary) at the read's best AS, for the reads in todo ({read: families}); and {read: length}."""
+    import pysam
+    alns, qlen = collections.defaultdict(list), {}
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q not in todo or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
+                continue
+            qlen[q] = max(qlen.get(q, 0), rec.infer_read_length() or 0)
+            alns[q].append((rec.get_tag("AS"), rec.reference_name, rec.reference_start, rec.reference_end,
+                            locus_distance(rec.cigartuples)))
+    out = {}
+    for q, al in alns.items():
+        best = max(a[0] for a in al)
+        for f in todo[q]:
+            loci = {}
+            for sc, ch, s0, e0, d in al:
+                if sc != best:
+                    continue
+                for i in [i for c2, s, e, i in spans.get(f, ()) if c2 == ch and s0 < e and e0 > s] or [ELSEWHERE]:
+                    old = loci.get(i, "unset")
+                    loci[i] = d if old == "unset" or old is None else (old if d is None else min(old, d))
+            out[(q, f)] = loci
+    return out, qlen
+
+
+def run_scope(w, margin=MARGIN, base="integv", floor=0.0):
+    """WORLD/graph/o2.<base>.m<margin>.tsv scoped by as_scope -> o2.intega.m<margin>.tsv: O2 only on the AS-tied reads."""
+    rows = list(csv.DictReader(open(f"{w}/graph/o2.{base}.m{margin}.tsv"), delimiter="\t"))
+    sj = json.load(open(f"{w}/graph/seeded.json"))
+    spans = {f: [(c["contig"], c["start"], c["end"], c["idx"]) for c in v["copies"]] for f, v in sj.items()}
+    todo = collections.defaultdict(set)
+    for r in rows:
+        todo[r["read"]].add(r["family"])
+    loci, qlen = best_as_loci(w, todo, spans)
+    out = []
+    for r in rows:
+        q, f = r["read"], r["family"]
+        call, reason = as_scope(loci.get((q, f), {}), r["call"], r["reason"], qlen.get(q, 0), floor)
+        out.append(dict(read=q, family=f, call=call, reason=reason))
+    out_name = f"o2.intega.m{margin}.tsv"
+    with open(f"{w}/graph/{out_name}", "w", newline="") as fh:
+        wr = csv.DictWriter(fh, fieldnames=["read", "family", "call", "reason"], delimiter="\t", lineterminator="\n")
+        wr.writeheader()
+        wr.writerows(out)
+    c = collections.Counter(r["reason"] for r in out)
+    print(f"[o2graph] {w} (O2 on AS-tied reads only, base {base}, margin {margin}) -> {out_name}: {len(out)} rows, "
+          + ", ".join(f"{k} {v}" for k, v in sorted(c.items())), flush=True)
+    return 0
+
+
 def run_locus(w, margin=MARGIN, out_name=None):
     """Locus O2, the annotation-free baseline: decide() on the distances of every hosted read to each catalogued copy's
     genomic locus (graph/locus.dist.json from run_seqsupport; any canonical splicing allowed)."""
@@ -1447,6 +1523,9 @@ def main(argv):
             return run_locus_fallback(argv[1], margin, mode=dict(integl="unexplained", integc="all", integs="seeded",
                                                                  integr="resolve", integv="veto", integt="guard")[method],
                                       floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
+        if method == "intega":                            # O2 only on AS-tied reads: o2.<--base, integv>.m<margin>.tsv scoped
+            return run_scope(argv[1], margin, argv[argv.index("--base") + 1] if "--base" in argv else "integv",
+                             floor=_detect().error_floor(f"{argv[1]}/E0.bam") if "--error-floor" in argv else 0.0)
         if method == "flag":                              # run WORLD flag BASE [MARGIN]: o2.<BASE> + the round-6 flag
             return run_flagged(argv[1], argv[3], int(argv[4]) if len(argv) > 4 else MARGIN)
         if method == "unionf":                            # needs o2.unionp.m<margin>.tsv and graph/locus.dist.json first

@@ -1044,3 +1044,38 @@ def test_the_twin_guard_abstains_a_call_an_uncatalogued_locus_explains_as_well_b
         O._TWIN_GUARD = False
     out = {r["read"]: (r["call"], r["reason"]) for r in csv.DictReader(open(w / "graph" / "o2.integv.m2.tsv"), delimiter="\t")}
     assert out == {"r1": ("-", "uncatalogued_tie"), "r2": ("0", "assigned")}
+
+
+def test_o2_acts_only_on_as_tied_reads_minimap2_resolves_the_rest_and_the_unexplained_are_o3_s():
+    S, E = O.as_scope, O.ELSEWHERE
+    assert S({}, "1", "assigned", 1000) == ("-", "as_unaligned")
+    assert S({E: 0}, "-", "unexplained", 1000) == ("-", "as_elsewhere")                # best placement off the family's copies
+    assert S({0: 0, E: 0}, "0", "assigned", 1000) == ("-", "as_elsewhere")             # tied with an unseeded locus
+    assert S({1: 3}, "0", "assigned", 1000) == ("1", "as_resolved")                     # one best copy: minimap2's, whatever O2 said
+    assert S({1: 20}, "1", "assigned", 1000) == ("-", "as_unexplained")                 # beyond the gate: nothing explains it
+    assert S({1: None}, "1", "assigned", 1000) == ("-", "as_unexplained")               # the locus lacks the read's sequence
+    assert S({1: 12}, "-", "thin", 1000, floor=0.005) == ("1", "as_resolved")           # the gate adds the error floor
+    assert S({0: 2, 1: 2}, "1", "assigned", 1000) == ("1", "assigned")                  # an AS tie: O2's call among the tied copies
+    assert S({0: 2, 1: 2}, "2", "veto_locus", 1000) == ("-", "as_tie_outside")          # ... never off them
+    assert S({0: 2, 1: 2}, "-", "tied", 1000) == ("-", "tied")                          # ... or O2's abstention
+
+
+def test_the_best_as_loci_of_a_read_are_its_best_scoring_alignments_seeded_copies_or_elsewhere(tmp_path):
+    import pysam
+    w = tmp_path / "W"
+    w.mkdir()
+    hdr = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]})
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for name, pos, flag, score, cig in [("r1", 1100, 0, 300, "148=1X1="), ("r1", 5100, 256, 300, "150="),   # tie 0 / 1
+                                            ("r1", 9100, 256, 250, "150="),
+                                            ("r2", 1100, 0, 300, "150="), ("r2", 5100, 256, 290, "150="),        # resolved on 0
+                                            ("r3", 15000, 0, 300, "150="), ("r3", 5100, 256, 300, "150=")]:      # tie with off
+            a = pysam.AlignedSegment(hdr)
+            a.query_name, a.reference_id, a.reference_start, a.flag, a.mapping_quality = name, 0, pos, flag, 0
+            a.cigarstring, a.query_sequence = cig, "A" * 150
+            a.set_tag("AS", score)
+            out.write(a)
+    spans = {"F": [("c1", 1000, 2000, 0), ("c1", 5000, 6000, 1), ("c1", 9000, 10000, 2)]}
+    got, qlen = O.best_as_loci(str(w), {"r1": {"F"}, "r2": {"F"}, "r3": {"F"}}, spans)
+    assert got[("r1", "F")] == {0: 1, 1: 0} and got[("r2", "F")] == {0: 0} and got[("r3", "F")] == {1: 0, O.ELSEWHERE: 0}
+    assert qlen["r1"] == 150

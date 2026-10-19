@@ -52,7 +52,7 @@ def _opts(**kw):
                 haplotype_check_genome=False, branch_genome_segments=False,
                 branch_linear=False, aln_cache=False, twin_abstain=False, veto_abstain=False, o2_significance=False,
                 locus_pairwise=False, structure_check=False, struct_rescue=False, short_path_align=False, twin_guard=False,
-                ref_copies=False, local=None, ref_carried=False)
+                ref_copies=False, local=None, ref_carried=False, o2_scope="off")
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -243,3 +243,13 @@ def test_a_set_of_real_reads_is_built_from_the_library_s_reads_and_the_named_cop
     sim = _opts(real_reads=None, special_copies=None, families="/F.json", set="s", seed=2, het=0, sim_profile="/p.json",
                 sim_het_draw=True)
     assert "--real-reads" not in F.simulate_cmd(sim, "/R", "INTACT") and "--sim-profile /p.json --het-draw" in F.simulate_cmd(sim, "/R", "INTACT")
+
+
+def test_o2_acts_only_on_as_tied_reads_after_the_genome_step_when_asked_and_the_set_is_scored_on_that_table():
+    steps = F.chain_steps(_opts(o2_genome="veto", o2_scope="tied", error_floor=True), "/R", "INTACT")
+    assert [s for s, _, _ in steps] == ["current", "O1", "O2", "O2_genome", "O2_scope", "O3"]
+    assert steps[4][1] == "python3 bench/o3_graph/o2graph.py run /R/INTACT intega 2 --base integv --error-floor"
+    assert F.chain_steps(_opts(o2_scope="tied"), "/R", "INTACT")[3][1].endswith("intega 2 --base integ")
+    assert F.e2e_command(_opts(o2_genome="veto", o2_scope="tied"), "/R", ["A"]) == (
+        "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.intega.m2.tsv")
+    assert "O2_scope" not in [s for s, _, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT")]

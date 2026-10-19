@@ -14,7 +14,8 @@ families are fast and cheap to test).
 4. every distinct read sequence of the full-genome worlds mapped ONCE to the local reference, its alignments handed to each
    world's read with that sequence (minimap2 maps a read on its sequence alone); REMOVED's reads mapped to the masked one
 5. per world, `--jobs` at a time under the light lock (each < 2 GB): the current method (run.py cur), then the integrated
-   O1 -> O2 -> O3 (o1seed.py, o2graph.py run W integ 2 [+ integl|integc 2 with --o2-genome fallback|combined], detect.py)
+   O1 -> O2 -> O3 (o1seed.py, o2graph.py run W integ 2 [+ integl|integc 2 with --o2-genome fallback|combined], detect.py);
+   with --o2-scope tied, O2's calls stand only on the AS-tied reads (o2graph.py run W intega 2: the rest are minimap2's)
 6. summary.py e2e + bars (on that O2 table with --o2-genome; --per-read-detectability passed through); OUTROOT/timing.json holds every step's wall time and peak RSS
 """
 import argparse
@@ -213,6 +214,10 @@ def chain_steps(a, root, w):
                       + (" --locus-pairwise" if a.locus_pairwise else "") + (" --structure-check" if a.structure_check else "")
                       + (" --struct-rescue" if a.struct_rescue else "") + (" --short-path-align" if a.short_path_align else "")
                       + (" --twin-guard" if a.twin_guard else ""), "light"))
+    if getattr(a, "o2_scope", "off") == "tied":      # O2 only on the AS-tied reads (o2graph.py run W intega; as_scope)
+        steps.append(("O2_scope", f"python3 bench/o3_graph/o2graph.py run {W} intega 2 --base "
+                      + (GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else "integ")
+                      + (" --error-floor" if a.error_floor else ""), "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
                   + f" python3 bench/o3_graph/detect.py {W}"
@@ -235,8 +240,9 @@ def chain_steps(a, root, w):
 def e2e_command(a, root, worlds):
     """The set's end-to-end scoring: summary.py e2e on the integrated O2 table the run made (o2.integl.m2.tsv or o2.integc.m2.tsv
     with --o2-genome), per-read detectability with --per-read-detectability."""
+    o2 = ("intega" if getattr(a, "o2_scope", "off") == "tied" else GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else None)
     return (f"python3 bench/o3_graph/summary.py e2e {root}/e2e.json " + " ".join(f"{root}/{w}" for w in worlds)
-            + (f" --o2 o2.{GENOME_STEP[a.o2_genome]}.m2.tsv" if a.o2_genome != "off" else "")
+            + (f" --o2 o2.{o2}.m2.tsv" if o2 else "")
             + (" --per-read-detectability" if a.per_read_detectability else "")
             + (" --error-floor" if a.error_floor else ""))
 
@@ -362,6 +368,10 @@ def main(argv=None):
                    "(detect.py --branch-genome-segments)")
     p.add_argument("--mosaic-shared", action="store_true", help="O3's mosaic distance only over positions >= 2 members cover "
                    "(detect.py --mosaic-shared)")
+    p.add_argument("--o2-scope", choices=("off", "tied"), default="off",
+                   help="tied (user 2026-10-19: 'use only for tied AS reads'): O2's calls stand only on AS-tied reads, among the "
+                        "tied copies; a read whose best AS lies on one copy is minimap2's, unless that alignment does not explain "
+                        "it (then O3's); a best AS off the family's copies abstains (o2graph.py run W intega)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "
                    "unexplained (default) or what the --o2-genome step leaves (detect.py --pool-table)")
     p.add_argument("--allele-discount", action="store_true", help="O3's genome check discounts the donor's alleles, the edits "
