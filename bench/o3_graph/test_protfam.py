@@ -58,3 +58,11 @@ def test_the_member_check_reports_each_known_family_at_both_levels_and_every_mis
 def test_a_build_can_reuse_the_protein_links_of_an_earlier_one():
     assert P.build_args(["out.json", "pool.json"]) == ("out.json", "pool.json", 4, None)
     assert P.build_args(["out.json", "pool.json", "--threads", "2", "--protein-links", "l.tsv"]) == ("out.json", "pool.json", 2, "l.tsv")
+
+
+def test_a_member_on_the_locus_of_a_placed_member_is_a_duplicate_annotation_not_a_miss():
+    genes = {"a": "RBMY1A1", "b": "RBMY1B", "c": "RBMY1D"}
+    spans = {"a": ("chrY", 100, 900), "b": ("chrY", 120, 905), "c": ("chrY", 5000, 5900)}   # b: a second name of a's locus
+    l2 = {"S": ["a"]}
+    rep = P.member_report({"RBMY": r"^RBMY1"}, genes, [dict(genes=["a"], subfamilies=["S"])], l2, spans=spans)
+    assert rep["RBMY"]["level2_missing"] == ["RBMY1D"] and rep["RBMY"]["level2_duplicates"] == ["RBMY1B"]

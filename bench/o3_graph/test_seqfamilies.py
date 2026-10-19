@@ -152,3 +152,9 @@ def test_the_locus_alignment_keeps_every_chain_only_when_asked():
     assert "-P" not in S.splice_cmd(4)
     assert S.splice_cmd(4, retain=True)[-1] == "-P"
     assert S.splice_cmd(4)[:3] == ["minimap2", "-cx", "splice:hq"]
+
+
+def test_the_build_takes_a_span_cap_or_none():
+    assert S.build_span(["out.json"]) is None                        # families.MAX_SPAN, as before
+    assert S.build_span(["out.json", "--max-span", "0"]) == 0        # no cap: the definition holds long genes (DAZ1, 61 kb)
+    assert S.build_args(["out.json", "--max-span", "0", "a.json"]) == ("out.json", ["a.json"], False, "exact", False)

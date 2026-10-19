@@ -107,11 +107,20 @@ KNOWN = {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3([A-L]|P[0-9]+)?$", "GOLGA8": 
          "RBMY": r"^RBMY1[A-J][0-9]?$", "TSPY": r"^TSPY[0-9]+$", "VCY": r"^VCY(1B)?$", "XKRY": r"^XKRY2?$"}   # IsoCon's nine
 
 
-def member_report(known, genes, l1, l2):
+def member_report(known, genes, l1, l2, spans=None):
     """For each known family ({name: regex on gene names}; names only identify the truth here): its members ({gene id: name}
     matching), how the two levels place them -- level 1: the families holding members, the most members in one, the members
-    in none, the other genes beside the most members; level 2 ({subfamily: gene ids}): the same for the subfamilies."""
+    in none, the other genes beside the most members; level 2 ({subfamily: gene ids}): the same for the subfamilies. spans
+    ({gene id: (contig, start, end)}): a member in none whose span overlaps a placed member's is a second annotation of that
+    locus (CAT names RBMY1A1's locus RBMY1B too), reported as a duplicate, not a miss."""
     import re
+
+    def split(missing, placed):
+        if not spans:
+            return sorted(genes[g] for g in missing), []
+        dup = {g for g in missing if any(spans[g][0] == spans[p][0] and spans[g][1] < spans[p][2] and spans[p][1] < spans[g][2]
+                                         for p in placed)}
+        return sorted(genes[g] for g in missing - dup), sorted(genes[g] for g in dup)
     out = {}
     for fam, pat in known.items():
         mem = {g for g, n in genes.items() if re.search(pat, n)}
@@ -120,11 +129,12 @@ def member_report(known, genes, l1, l2):
         in1 = set().union(*(set(f["genes"]) for _, f in hold)) if hold else set()
         subs = [(len(mem & set(v)), k) for k, v in l2.items() if mem & set(v)]
         in2 = set().union(*(set(l2[k]) for _, k in subs)) if subs else set()
-        out[fam] = dict(members=len(mem), level1_families=len(hold), level1_largest=best[0],
-                        level1_missing=sorted(genes[g] for g in mem - in1),
-                        level1_other_genes=len(set(best[1]["genes"]) - mem),
+        m1, d1 = split(mem - in1, mem & in1)
+        m2, d2 = split(mem - in2, mem & in2)
+        out[fam] = dict(members=len(mem), level1_families=len(hold), level1_largest=best[0], level1_missing=m1,
+                        level1_duplicates=d1, level1_other_genes=len(set(best[1]["genes"]) - mem),
                         level2_subfamilies=len(subs), level2_largest=max((n for n, _ in subs), default=0),
-                        level2_missing=sorted(genes[g] for g in mem - in2))
+                        level2_missing=m2, level2_duplicates=d2)
     return out
 
 
@@ -209,13 +219,16 @@ def cmd_check(out_p):
     F = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(F)
     d = json.load(open(out_p))
-    genes = {r["gene_id"]: r["gene_name"] for r in csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t")}
+    rows = list(csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t"))
+    genes = {r["gene_id"]: r["gene_name"] for r in rows}
+    spans = {r["gene_id"]: (r["chrom"], int(r["start0"]), int(r["end"])) for r in rows}
     (pool,) = json.load(open(d["level2_pool"]))["sets"].values()
     l2 = {f["family"]: [c["gene_id"] for c in f["copies"]] for f in pool}
-    rep = member_report(KNOWN, genes, d["families"], l2)
+    rep = member_report(KNOWN, genes, d["families"], l2, spans=spans)
     for fam, r in rep.items():
         print(f"{fam:8s} members {r['members']:3d} | multigene family: {r['level2_largest']:3d} in its largest of "
-              f"{r['level2_subfamilies']}, missing {len(r['level2_missing'])} {r['level2_missing'][:6]} | gene family: "
+              f"{r['level2_subfamilies']}, missing {len(r['level2_missing'])} {r['level2_missing'][:6]}, duplicate annotations "
+              f"{r['level2_duplicates']} | gene family: "
               f"{r['level1_largest']:3d} in its largest of {r['level1_families']} (+{r['level1_other_genes']} other genes), "
               f"missing {len(r['level1_missing'])}", flush=True)
     json.dump(rep, open(f"{out_p}.check.json", "w"), indent=1)

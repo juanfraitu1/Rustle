@@ -20,7 +20,7 @@ gene when its locus carries the coding gene's canonical by the same rule (sequen
 pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
     seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried] [--retain-chains]
-                                                 [--transcribed-seeds]
+                                                 [--transcribed-seeds] [--max-span N (0: none)]
                                                    -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
                                                        (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
@@ -211,14 +211,15 @@ def _paf_hits(paf, min_ident):
     return blocks, best
 
 
-def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False, seeds=False):
+def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False, seeds=False, max_span=None):
     import pysam
     F = _families()
     gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
     fa = pysam.FastaFile(F.GENOME)
     genes, others = [], []
     for r in csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t"):
-        if int(r["end"]) - int(r["start0"]) > F.MAX_SPAN:
+        cap = F.MAX_SPAN if max_span is None else max_span
+        if cap and int(r["end"]) - int(r["start0"]) > cap:
             continue
         g = dict(gene_id=r["gene_id"], gene_name=r["gene_name"], chrom=r["chrom"], start=int(r["start0"]), end=int(r["end"]),
                  strand=r["strand"], n=int(r["n_transcripts"]), biotype=r["gene_biotype"])
@@ -340,7 +341,7 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", reta
                    + (" --retain-chains" if retain else "") + (" --transcribed-seeds" if seeds else ""),
                    min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL,
                    **({"intron_chain": chain} if chain != "exact" else {}), **({"retain_chains": True} if retain else {}),
-                   **({"transcribed_seeds": True} if seeds else {}),
+                   **({"transcribed_seeds": True} if seeds else {}), **({"max_span": max_span} if max_span is not None else {}),
                    sets={"seq19" if paralogs else "seq17": fams}),
               open(out_p, "w"), indent=1)
     unnamed = sum(any(re.match(r"^(LOC|ENSG|MSTRG|LINC|AC[0-9]|AL[0-9]|AP[0-9])", c["gene_name"]) or "-" in c["gene_name"]
@@ -376,6 +377,8 @@ def build_args(argv):
             retain = True
         elif x == "--transcribed-seeds":
             pass                                         # build_seeds
+        elif x == "--max-span":
+            next(it, None)                               # build_span
         elif x == "--intron-chain":
             chain = next(it, "")
         else:
@@ -383,6 +386,11 @@ def build_args(argv):
     if chain not in ("exact", "carried") or not rest:
         raise SystemExit(__doc__)
     return rest[0], rest[1:], paralogs, chain, retain
+
+
+def build_span(argv):
+    """--max-span N in a build's arguments (0: no cap; absent: families.MAX_SPAN, the simulation's cost cap)."""
+    return int(argv[argv.index("--max-span") + 1]) if "--max-span" in argv else None
 
 
 def build_seeds(argv):
@@ -393,7 +401,8 @@ def build_seeds(argv):
 def main(argv):
     if argv[0] == "build":
         out, spent, paralogs, chain, retain = build_args(argv[1:])
-        return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain, seeds=build_seeds(argv[1:]))
+        return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain, seeds=build_seeds(argv[1:]),
+                         max_span=build_span(argv[1:]))
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")
