@@ -245,7 +245,8 @@ def e2e_command(a, root, worlds):
     return (f"python3 bench/o3_graph/summary.py e2e {root}/e2e.json " + " ".join(f"{root}/{w}" for w in worlds)
             + (f" --o2 o2.{o2}.m2.tsv" if o2 else "")
             + (" --per-read-detectability" if a.per_read_detectability else "")
-            + (" --error-floor" if a.error_floor else ""))
+            + (" --error-floor" if a.error_floor else "")
+            + (f" --off-family-ties {a.as_slack}" if getattr(a, "o2_scope", "off") == "tied" else ""))
 
 
 def cmd_run(a):

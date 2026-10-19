@@ -102,9 +102,9 @@ def test_an_absent_copy_s_read_is_detectable_by_its_own_divergence_when_asked():
 
 
 def test_e2e_scores_the_integrated_o2_table_it_is_given():
-    assert S.e2e_args(["e2e", "o.json", "W1", "W2"]) == ("o.json", ["W1", "W2"], False, "o2.integ.m2.tsv", False)
+    assert S.e2e_args(["e2e", "o.json", "W1", "W2"]) == ("o.json", ["W1", "W2"], False, "o2.integ.m2.tsv", False, None)
     assert S.e2e_args(["e2e", "o.json", "W1", "--o2", "o2.integl.m2.tsv", "W2", "--per-read-detectability"]) == (
-        "o.json", ["W1", "W2"], True, "o2.integl.m2.tsv", False)
+        "o.json", ["W1", "W2"], True, "o2.integl.m2.tsv", False, None)
 
 
 def test_per_read_detectability_subtracts_the_world_s_error_floor_when_given():
@@ -117,7 +117,7 @@ def test_per_read_detectability_subtracts_the_world_s_error_floor_when_given():
 
 
 def test_e2e_takes_the_error_floor_option():
-    assert S.e2e_args(["e2e", "o.json", "W1", "--error-floor"]) == ("o.json", ["W1"], False, "o2.integ.m2.tsv", True)
+    assert S.e2e_args(["e2e", "o.json", "W1", "--error-floor"]) == ("o.json", ["W1"], False, "o2.integ.m2.tsv", True, None)
     assert S.e2e_args(["e2e", "o.json", "W1"])[4] is False
 
 
@@ -141,3 +141,35 @@ def test_a_world_s_calls_are_each_system_s_placements_and_the_reads_inside_its_a
     got = S.world_calls(str(w), "o2.integv.m2.tsv")
     assert got == dict(current={"r1": {"F": "F.1"}}, integrated={"r1": {"F": "F.0"}, "r6": {"F": "F.9"}},
                        current_o3={"r3"}, integrated_o3={"r4", "r5"})
+
+
+def test_a_read_tied_within_the_slack_with_a_locus_on_no_copy_of_the_world_is_scored_apart(tmp_path):
+    import pysam
+    w = tmp_path / "W"
+    w.mkdir()
+    open(w / "copies.tsv", "w").write("copy\tfamily\tgene_id\tgene_name\tchrom\tstart\tend\tstrand\tkind\tin_reference\tcatalogued\n"
+                                      "F.0\tF\tg0\tg0\tc1\t1000\t2000\t+\tpresent\t1\t1\n"
+                                      "G.0\tG\tg1\tg1\tc1\t5000\t6000\t+\tpresent\t1\t1\n"
+                                      "F.1\tF\tg2\tg2\tc1\t9000\t9900\t+\tabsent\t0\t1\n")
+    hdr = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]})
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for name, pos, flag, score in [("r1", 1100, 0, 300), ("r1", 15000, 256, 295),     # within 9 of a never-expressed locus
+                                       ("r2", 1100, 0, 300), ("r2", 15000, 256, 290),     # 10 below: resolved
+                                       ("r3", 1100, 0, 300), ("r3", 5100, 256, 300),      # tied with another family's copy
+                                       ("r4", 9100, 0, 300)]:                             # the masked copy's locus: no copy there
+            a = pysam.AlignedSegment(hdr)
+            a.query_name, a.reference_id, a.reference_start, a.flag, a.mapping_quality = name, 0, pos, flag, 0
+            a.cigarstring, a.query_sequence = "150=", "A" * 150
+            a.set_tag("AS", score)
+            out.write(a)
+    assert S.off_family_ties(str(w), 9) == {"r1", "r4"}
+    assert S.off_family_ties(str(w), 0) == {"r4"}
+
+
+def test_the_bars_leave_the_off_family_ties_out_and_e2e_takes_their_slack():
+    tab = {"W": {"current": {"catalogued": {"correct": 10, "error": 0}, "off_family_tie": {"correct": 5}},
+                 "integrated": {"catalogued": {"correct": 10, "error": 0}, "off_family_tie": {"abstain": 5}}}}
+    b = S.round8_bars(tab)["W"]
+    assert b["current_correct"] == 10 and b["B1"] and b["B2"]
+    assert S.e2e_args(["e2e", "o.json", "W1", "--o2", "x.tsv", "--off-family-ties", "9"]) == ("o.json", ["W1"], False, "x.tsv", False, 9)
+    assert S.e2e_args(["e2e", "o.json", "W1"])[-1] is None

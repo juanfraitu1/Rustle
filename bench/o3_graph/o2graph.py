@@ -1242,11 +1242,15 @@ def as_scope(loci, call, reason, qlen, floor=0.0):
     - a best-AS alignment off the family's seeded copies (alone, or tied with a copy: a locus O1 did not seed): `as_elsewhere`;
     - one best copy: minimap2 resolved the read -- that copy (`as_resolved`) when its alignment explains the read within
       gate(floor), else `as_unexplained` (nothing in the genome explains it: O3's);
-    - an AS tie between copies: O2's call when it is one of them, else `as_tie_outside`; O2's abstention stands."""
+    - an AS tie between copies: O2's call when it is one of them, else `as_tie_outside`; O2's abstention stands.
+    A catalogued copy O1 dropped as silent (DROPPED, scope_spans) is a copy, not a locus off the catalogue: a read tied with it
+    is O2's (register 1315: abstaining there lost an expressed copy's reads), and one placed best there alone is `as_dropped`."""
     if not loci:
         return "-", "as_unaligned"
     if ELSEWHERE in loci:
         return "-", "as_elsewhere"
+    if set(loci) == {DROPPED}:
+        return "-", "as_dropped"
     if len(loci) == 1:
         (i, d), = loci.items()
         return ("-", "as_unexplained") if d is None or d > gate(floor) * qlen else (str(i), "as_resolved")
@@ -1285,12 +1289,24 @@ def best_as_loci(w, todo, spans, slack=0):
     return out, qlen
 
 
+def scope_spans(sj, cat):
+    """{family: [(contig, start, end, seeded copy idx or DROPPED)]}: graph/seeded.json's copies, and the catalogued copies
+    (isoforms.json) O1 dropped as silent."""
+    out = {}
+    for f, v in sj.items():
+        drop = set(v.get("dropped", []))
+        out[f] = ([(c["contig"], c["start"], c["end"], c["idx"]) for c in v["copies"]]
+                  + [(c["contig"], c["start"], c["end"], DROPPED) for c in cat.get(f, []) if c["idx"] in drop])
+    return out
+
+
 def run_scope(w, margin=MARGIN, base="integv", floor=0.0, slack=0):
     """WORLD/graph/o2.<base>.m<margin>.tsv scoped by as_scope -> o2.intega.m<margin>.tsv: O2 only on the AS-tied reads
     (best_as_loci's slack)."""
     rows = list(csv.DictReader(open(f"{w}/graph/o2.{base}.m{margin}.tsv"), delimiter="\t"))
     sj = json.load(open(f"{w}/graph/seeded.json"))
-    spans = {f: [(c["contig"], c["start"], c["end"], c["idx"]) for c in v["copies"]] for f, v in sj.items()}
+    cat = json.load(open(f"{w}/isoforms.json")) if os.path.exists(f"{w}/isoforms.json") else {}
+    spans = scope_spans(sj, cat)
     todo = collections.defaultdict(set)
     for r in rows:
         todo[r["read"]].add(r["family"])

@@ -1099,3 +1099,13 @@ def test_an_as_slack_counts_alignments_within_it_of_the_best_as_tied(tmp_path):
     assert O.best_as_loci(str(w), todo, spans)[0] == {("r1", "F"): {0: 0}, ("r2", "F"): {0: 0}}     # equal AS only
     got = O.best_as_loci(str(w), todo, spans, slack=4)[0]
     assert got[("r1", "F")] == {0: 0, 1: 0} and got[("r2", "F")] == {0: 0}
+
+
+def test_a_catalogued_copy_o1_dropped_as_silent_ties_like_a_copy_not_like_a_locus_off_the_catalogue():
+    S, D = O.as_scope, O.DROPPED
+    assert S({0: 1, D: 0}, "0", "assigned", 1000) == ("0", "assigned")        # register 1315: a tie with a silent copy
+    assert S({0: 1, D: 0}, "-", "tied", 1000) == ("-", "tied")
+    assert S({D: 0}, "-", "unexplained", 1000) == ("-", "as_dropped")         # its best placement is the silent copy alone
+    sj = {"F": {"copies": [{"contig": "c1", "start": 100, "end": 900, "idx": 0}], "dropped": [1]}}
+    cat = {"F": [{"idx": 0, "contig": "c1", "start": 100, "end": 900}, {"idx": 1, "contig": "c1", "start": 5000, "end": 5800}]}
+    assert O.scope_spans(sj, cat) == {"F": [("c1", 100, 900, 0), ("c1", 5000, 5800, D)]}

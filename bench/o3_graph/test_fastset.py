@@ -251,10 +251,15 @@ def test_o2_acts_only_on_as_tied_reads_after_the_genome_step_when_asked_and_the_
     assert steps[4][1] == "python3 bench/o3_graph/o2graph.py run /R/INTACT intega 2 --base integv --error-floor"
     assert F.chain_steps(_opts(o2_scope="tied"), "/R", "INTACT")[3][1].endswith("intega 2 --base integ")
     assert F.e2e_command(_opts(o2_genome="veto", o2_scope="tied"), "/R", ["A"]) == (
-        "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.intega.m2.tsv")
+        "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.intega.m2.tsv --off-family-ties 0")
     assert "O2_scope" not in [s for s, _, _ in F.chain_steps(_opts(o2_genome="veto"), "/R", "INTACT")]
 
 
 def test_the_scope_step_takes_an_as_slack_only_when_asked():
     steps = dict((n, c) for n, c, _ in F.chain_steps(_opts(o2_genome="veto", o2_scope="tied", as_slack=4), "/R", "INTACT"))
     assert steps["O2_scope"] == "python3 bench/o3_graph/o2graph.py run /R/INTACT intega 2 --base integv --as-slack 4"
+
+
+def test_a_scoped_set_is_scored_with_its_off_family_ties_apart():
+    assert F.e2e_command(_opts(o2_genome="veto", o2_scope="tied", as_slack=9, error_floor=True), "/R", ["A"]) == (
+        "python3 bench/o3_graph/summary.py e2e /R/e2e.json /R/A --o2 o2.intega.m2.tsv --error-floor --off-family-ties 9")
