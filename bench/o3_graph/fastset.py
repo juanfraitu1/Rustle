@@ -219,7 +219,8 @@ def chain_steps(a, root, w):
                       + (GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else "integ")
                       + (" --error-floor" if a.error_floor else "")
                       + (f" --as-slack {a.as_slack}" if getattr(a, "as_slack", 0) else "")
-                      + (" --seq-tie" if getattr(a, "seq_tie", False) else ""), "light"))
+                      + (" --seq-tie" if getattr(a, "seq_tie", False) else "")
+                      + (" --fewest-edits" if getattr(a, "fewest_edits", False) else ""), "light"))
     steps.append(("O3", f"env O3_GRAPH_CACHE={root}/.graph_cache O3_PROCS={a.o3_procs} O3_THREADS={a.threads}"
                   + (f" O3_ALN_CACHE={root}/.o3_aln_cache" if a.aln_cache else "")
                   + f" python3 bench/o3_graph/detect.py {W}"
@@ -242,7 +243,8 @@ def chain_steps(a, root, w):
 def e2e_command(a, root, worlds):
     """The set's end-to-end scoring: summary.py e2e on the integrated O2 table the run made (o2.integl.m2.tsv or o2.integc.m2.tsv
     with --o2-genome), per-read detectability with --per-read-detectability."""
-    o2 = ("intega" if getattr(a, "o2_scope", "off") == "tied" else GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else None)
+    o2 = (("intege" if getattr(a, "fewest_edits", False) else "intega") if getattr(a, "o2_scope", "off") == "tied"
+          else GENOME_STEP[a.o2_genome] if a.o2_genome != "off" else None)
     return (f"python3 bench/o3_graph/summary.py e2e {root}/e2e.json " + " ".join(f"{root}/{w}" for w in worlds)
             + (f" --o2 o2.{o2}.m2.tsv" if o2 else "")
             + (" --per-read-detectability" if a.per_read_detectability else "")
@@ -382,6 +384,9 @@ def main(argv=None):
     p.add_argument("--seq-tie", action="store_true",
                    help="with --o2-scope tied: an alignment on another locus that explains the read with no more edits, counting "
                         "its unaligned bases, than the best-AS one ties too (user 2026-10-19, after round 21's NCOR1P4 read)")
+    p.add_argument("--fewest-edits", action="store_true",
+                   help="with --o2-scope tied: the single-genome rule (user 2026-10-19) -- where O2 lacks its margin, a tied read's "
+                        "copy with the fewest edits takes it, else the read keeps its fewest-edit set (o2.intege, scored by e2e)")
     p.add_argument("--o3-pool", choices=("paths", "final"), default="paths", help="arm I's pool: what O2's paths leave "
                    "unexplained (default) or what the --o2-genome step leaves (detect.py --pool-table)")
     p.add_argument("--allele-discount", action="store_true", help="O3's genome check discounts the donor's alleles, the edits "

@@ -1134,3 +1134,60 @@ def test_a_rival_that_explains_the_read_with_no_more_edits_counting_its_clipped_
     seq = O.best_as_loci(str(w), todo, spans, slack=9, seq_tie=True)[0]
     assert seq[("r1", "F")] == {0: 0, 1: 0} and seq[("r2", "F")] == {0: 0} and seq[("r3", "F")] == {0: 0, 1: 0}
     assert seq[("r4", "F")] == {0: 0, O.ELSEWHERE: 0}
+
+
+def test_where_o2_lacks_its_margin_the_copy_with_the_fewest_edits_takes_the_read_or_the_read_keeps_the_fewest_edit_set():
+    F, D = O.fewest_edit_call, O.DROPPED
+    assert F("1", "assigned", {0: 3, 1: 5}) == ("1", "assigned", [1])                  # O2's own call stands (structure included)
+    assert F("-", "thin", {0: 3, 1: 4}) == ("0", "fewest_edits", [0])                  # one edit is enough in one genome
+    assert F("-", "locus_thin", {0: 6, 1: 2}) == ("1", "fewest_edits", [1])
+    assert F("-", "tied", {0: 3, 1: 3, 2: 5}) == ("-", "fewest_edit_set", [0, 1])      # identical over the read: the set
+    assert F("-", "structure_only", {0: 3, 1: 5}) == ("-", "structure_only", [0, 1])   # a structural conflict keeps every copy
+    assert F("-", "as_tie_outside", {0: 1, 1: 3}) == ("-", "as_tie_outside", [0, 1])
+    assert F("-", "thin", {0: 5, D: 3}) == ("-", "fewest_edit_set", [D])               # a silent copy: no seeded copy to place on
+
+
+def _scope_bam(w, recs):
+    import pysam
+    hdr = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6"}, "SQ": [{"SN": "c1", "LN": 20000}]})
+    with pysam.AlignmentFile(str(w / "E0.bam"), "wb", header=hdr) as out:
+        for name, pos, flag, score, cig in recs:
+            a = pysam.AlignedSegment(hdr)
+            a.query_name, a.reference_id, a.reference_start, a.flag, a.mapping_quality = name, 0, pos, flag, 0
+            a.cigarstring, a.query_sequence = cig, "A" * 150
+            a.set_tag("AS", score)
+            out.write(a)
+
+
+def test_the_tied_alignments_edits_count_every_base_they_leave_unaligned(tmp_path):
+    w = tmp_path / "W"
+    w.mkdir()
+    _scope_bam(w, [("r1", 1100, 0, 262, "150="), ("r1", 5100, 256, 278, "20S110=20S"),
+                   ("r2", 1100, 0, 300, "74=1X75="), ("r2", 5100, 256, 300, "150=")])
+    spans = {"F": [("c1", 1000, 2000, 0), ("c1", 5000, 6000, 1)]}
+    todo = {"r1": {"F"}, "r2": {"F"}}
+    loci, qlen, ed = O.best_as_loci(str(w), todo, spans, slack=9, seq_tie=True, edits=True)
+    assert ed == {("r1", "F"): {0: 0, 1: 40}, ("r2", "F"): {0: 1, 1: 0}}
+    assert O.best_as_loci(str(w), todo, spans, slack=9, seq_tie=True)[0] == loci          # without edits: as before
+
+
+def test_the_fewest_edit_scope_writes_its_own_table_beside_the_unchanged_v17_one(tmp_path):
+    import csv
+    import json
+    w = tmp_path / "W"
+    (w / "graph").mkdir(parents=True)
+    _scope_bam(w, [("r1", 1100, 0, 300, "150="), ("r1", 5100, 256, 295, "74=1X75="),       # one edit apart
+                   ("r2", 1100, 0, 300, "150="), ("r2", 5100, 256, 300, "150="),           # identical over the read
+                   ("r3", 1100, 0, 300, "150="), ("r3", 5100, 256, 280, "150=")])          # resolved by AS
+    (w / "graph" / "o2.integv.m2.tsv").write_text("read\tfamily\tcall\treason\nr1\tF\t-\tthin\nr2\tF\t-\ttied\nr3\tF\t0\tassigned\n")
+    json.dump({"F": {"copies": [{"contig": "c1", "start": 1000, "end": 2000, "idx": 0},
+                                {"contig": "c1", "start": 5000, "end": 6000, "idx": 1}], "dropped": []}},
+              open(w / "graph" / "seeded.json", "w"))
+    assert O.run_scope(str(w), slack=9) == 0
+    v17 = (w / "graph" / "o2.intega.m2.tsv").read_text()
+    assert O.run_scope(str(w), slack=9, fewest=True) == 0
+    assert (w / "graph" / "o2.intega.m2.tsv").read_text() == v17
+    got = {r["read"]: (r["call"], r["reason"], r["base_call"], r["candidates"], r["set"])
+           for r in csv.DictReader(open(w / "graph" / "o2.intege.m2.tsv"), delimiter="\t")}
+    assert got == {"r1": ("0", "fewest_edits", "-", "0,1", "0"), "r2": ("-", "fewest_edit_set", "-", "0,1", "0,1"),
+                   "r3": ("0", "as_resolved", "0", "-", "-")}

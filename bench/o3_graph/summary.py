@@ -146,11 +146,9 @@ def integrated_calls(rows, seeded_copy):
     return out
 
 
-def world_calls(w, o2_name="o2.integ.m2.tsv"):
-    """One world's calls under both systems: {current, integrated: {read: {family: truth copy}}, current_o3, integrated_o3: the
-    reads inside an absent-copy call}. current: copy_assign's assigned reads and its unexplained PSV clusters beyond DELTA;
-    integrated: the O2 table o2_name on graph/seeded.json (a new seeded copy maps to the truth copy it overlaps most) and O3's
-    arm-I calls."""
+def seeded_copies(w):
+    """(cat_copy, seeded_copy) of a world: {(family, catalogue idx): truth copy} (isoforms.json), and the same for every seeded
+    copy (graph/seeded.json), a new one mapped to the truth copy it overlaps most (o2graph.map_new_copies)."""
     O = _o2("o2graph")
     iso = json.load(open(f"{w}/isoforms.json"))
     cat_copy = {(f, c["idx"]): c["copy"] for f, cps in iso.items() for c in cps}
@@ -160,6 +158,15 @@ def world_calls(w, o2_name="o2.integ.m2.tsv"):
     for f, v in sj.items():
         for i, cp in O.map_new_copies([c for c in v["copies"] if c["origin"] == "new"], truth_copies).items():
             seeded_copy[(f, i)] = cp
+    return cat_copy, seeded_copy
+
+
+def world_calls(w, o2_name="o2.integ.m2.tsv"):
+    """One world's calls under both systems: {current, integrated: {read: {family: truth copy}}, current_o3, integrated_o3: the
+    reads inside an absent-copy call}. current: copy_assign's assigned reads and its unexplained PSV clusters beyond DELTA;
+    integrated: the O2 table o2_name on graph/seeded.json (a new seeded copy maps to the truth copy it overlaps most) and O3's
+    arm-I calls."""
+    cat_copy, seeded_copy = seeded_copies(w)
     cur = {}
     for r in csv.DictReader(open(f"{w}/cur/A.assignments.tsv"), delimiter="\t"):
         if r["status"] == "assigned" and r["catalog_copy_idx"].isdigit():
@@ -204,6 +211,77 @@ def off_family_ties(w, slack, seq_tie=False):
         if any(not on for a, on, d in v if a >= best - slack or seq_tie and d <= ref):
             out.add(q)
     return out
+
+
+SET_KEYS = ("ambiguous", "placed right", "placed wrong", "abstain", "v17 placed right", "v17 placed wrong", "v17 abstain",
+            "set holds truth", "candidates", "set size", "minimap2 right", "minimap2 wrong")
+
+
+def set_fates(rows, truth, seeded_copy, dropped, primary, skip=frozenset()):
+    """The single-genome O2 (o2graph --fewest-edits) on the reads tied in their own family (rows with candidates):
+    placements right / wrong / abstained and v17's (base_call) beside them; whether the fewest-edit set holds the read's
+    copy; the summed sizes of the tied copies and of the set; minimap2's primary right / wrong. truth: {read: copy};
+    seeded_copy: {(family, seeded idx): truth copy}; dropped: {family: the truth copies O1 dropped as silent}; primary:
+    {read: the copy its primary alignment lies on}; skip: reads left out (the off-family ties)."""
+    n = dict.fromkeys(SET_KEYS, 0)
+    for r in rows:
+        q, f = r["read"], r["family"]
+        t = truth.get(q)
+        if t is None or q in skip or r["candidates"] == "-" or f != t.rsplit(".", 1)[0]:
+            continue
+        held = set()
+        for x in r["set"].split(","):
+            held |= set(dropped.get(f, ())) if x == "dropped" else {seeded_copy.get((f, int(x)))}
+        n["ambiguous"] += 1
+        for key, c in (("", r["call"]), ("v17 ", r["base_call"])):
+            n[key + ("abstain" if c == "-" else "placed right" if seeded_copy.get((f, int(c))) == t else "placed wrong")] += 1
+        n["set holds truth"] += t in held
+        n["candidates"] += len(r["candidates"].split(","))
+        n["set size"] += len(r["set"].split(","))
+        n["minimap2 right" if primary.get(q) == t else "minimap2 wrong"] += 1
+    return n
+
+
+def primary_copies(w):
+    """{read: the copy (copies.tsv, in the reference) its primary alignment in WORLD/E0.bam overlaps, or None}."""
+    import pysam
+    loci = collections.defaultdict(list)
+    for c in csv.DictReader(open(f"{w}/copies.tsv"), delimiter="\t"):
+        if c["in_reference"] == "1":
+            loci[c["chrom"]].append((int(c["start"]), int(c["end"]), c["copy"]))
+    out = {}
+    with pysam.AlignmentFile(f"{w}/E0.bam") as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.is_unmapped or rec.is_secondary or rec.is_supplementary:
+                continue
+            hit = [cp for s, e, cp in loci.get(rec.reference_name, ()) if rec.reference_start < e and rec.reference_end > s]
+            out[rec.query_name] = hit[0] if hit else None
+    return out
+
+
+def cmd_sets(out, worlds, o2_name="o2.intege.m2.tsv", off_slack=None, seq_tie=False):
+    """Per world (CELL/WORLD) and pooled: set_fates of the single-genome O2 table on every catalogued read, the off-family
+    ties (off_family_ties) apart."""
+    res, pooled = {}, dict.fromkeys(SET_KEYS, 0)
+    for w in worlds:
+        name = f"{os.path.basename(os.path.dirname(w.rstrip('/')))}/{os.path.basename(w.rstrip('/'))}"
+        kinds = json.load(open(f"{w}/kinds.json"))
+        truth = {r["read"]: r["copy"] for r in csv.DictReader(open(f"{w}/reads.truth.E0.tsv"), delimiter="\t")
+                 if kinds.get(r["copy"], "present") in ("present", "silent")}
+        cat_copy, seeded = seeded_copies(w)
+        sj = json.load(open(f"{w}/graph/seeded.json"))
+        dropped = {f: {cat_copy[(f, i)] for i in v.get("dropped", []) if (f, i) in cat_copy} for f, v in sj.items()}
+        skip = off_family_ties(w, off_slack, seq_tie) if off_slack is not None else set()
+        n = set_fates(csv.DictReader(open(f"{w}/graph/{o2_name}"), delimiter="\t"), truth, seeded, dropped,
+                      primary_copies(w), skip)
+        res[name] = n
+        for k in SET_KEYS:
+            pooled[k] += n[k]
+        print(f"{name}: " + ", ".join(f"{k} {v}" for k, v in n.items()), flush=True)
+    res["pooled"] = pooled
+    print("POOLED: " + ", ".join(f"{k} {v}" for k, v in pooled.items()), flush=True)
+    json.dump(res, open(out, "w"), indent=1)
+    return 0
 
 
 def cmd_e2e(out, worlds, per_read=False, o2_name="o2.integ.m2.tsv", error_floor=False, off_slack=None, seq_tie=False):
@@ -449,6 +527,9 @@ def main(argv):
         return cmd_o3(argv[1], argv[2:])
     if argv[0] == "bars":                                # round 8: the pre-registered end-to-end bars
         return cmd_bars(argv[1])
+    if argv[0] == "sets":                                # the single-genome O2 (o2.intege): placements and fewest-edit sets
+        out, worlds, _, o2_name, _, slack, seq_tie = e2e_args(argv)
+        return cmd_sets(out, worlds, o2_name if "--o2" in argv else "o2.intege.m2.tsv", slack, seq_tie)
     if argv[0] == "e2e":                                 # end to end: every read's fate, current vs integrated
         return cmd_e2e(*e2e_args(argv))
     if argv[0] == "integ":                               # round 7: the integrated O1 -> O2 against the current O2

@@ -271,3 +271,13 @@ def test_sequence_ties_reach_the_scope_step_and_the_off_family_scoring_only_when
     assert steps["O2_scope"].endswith("intega 2 --base integv --as-slack 9 --seq-tie")
     assert F.e2e_command(o, "/R", ["A"]).endswith("--off-family-ties 9 --seq-tie")
     assert not F.e2e_command(_opts(o2_genome="veto", o2_scope="tied", as_slack=9), "/R", ["A"]).endswith("--seq-tie")
+
+
+def test_the_fewest_edit_rule_reaches_the_scope_step_and_the_set_is_scored_on_its_table_only_when_asked():
+    o = _opts(o2_genome="veto", o2_scope="tied", as_slack=9, seq_tie=True, fewest_edits=True)
+    steps = dict((n, c) for n, c, _ in F.chain_steps(o, "/R", "INTACT"))
+    assert steps["O2_scope"].endswith("intega 2 --base integv --as-slack 9 --seq-tie --fewest-edits")
+    assert " --o2 o2.intege.m2.tsv " in F.e2e_command(o, "/R", ["A"])
+    plain = _opts(o2_genome="veto", o2_scope="tied", as_slack=9, seq_tie=True)
+    assert "--fewest-edits" not in dict((n, c) for n, c, _ in F.chain_steps(plain, "/R", "INTACT"))["O2_scope"]
+    assert " --o2 o2.intega.m2.tsv " in F.e2e_command(plain, "/R", ["A"])

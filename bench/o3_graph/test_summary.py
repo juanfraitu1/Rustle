@@ -192,3 +192,19 @@ def test_off_family_ties_take_the_scope_s_sequence_ties_when_asked(tmp_path):
     assert S.off_family_ties(str(w), 9) == set() and S.off_family_ties(str(w), 9, seq_tie=True) == {"r1"}
     assert S.e2e_args(["e2e", "o.json", "W1", "--off-family-ties", "9", "--seq-tie"])[-2:] == (9, True)
     assert S.e2e_args(["e2e", "o.json", "W1", "--off-family-ties", "9"])[-2:] == (9, False)
+
+
+def test_set_fates_count_placements_against_the_truth_and_whether_each_tied_read_s_set_holds_its_copy():
+    rows = [dict(read="a", family="F", call="0", reason="fewest_edits", base_call="-", candidates="0,1", set="0"),
+            dict(read="b", family="F", call="-", reason="fewest_edit_set", base_call="-", candidates="0,1,2", set="0,1"),
+            dict(read="c", family="F", call="-", reason="fewest_edit_set", base_call="-", candidates="0,dropped", set="dropped"),
+            dict(read="d", family="F", call="1", reason="as_resolved", base_call="1", candidates="-", set="-"),
+            dict(read="e", family="F", call="1", reason="assigned", base_call="1", candidates="0,1", set="1")]
+    truth = {"a": "F.0", "b": "F.1", "c": "F.3", "d": "F.1", "e": "F.0"}
+    seeded = {("F", 0): "F.0", ("F", 1): "F.1", ("F", 2): "F.2"}
+    primary = {"a": "F.1", "b": "F.1", "c": "F.0", "e": "F.1"}
+    got = S.set_fates(rows, truth, seeded, {"F": {"F.3"}}, primary)
+    assert got == {"ambiguous": 4, "placed right": 1, "placed wrong": 1, "abstain": 2, "v17 placed right": 0,
+                   "v17 placed wrong": 1, "v17 abstain": 3, "set holds truth": 3, "candidates": 9, "set size": 5,
+                   "minimap2 right": 1, "minimap2 wrong": 3}
+    assert S.set_fates(rows, truth, seeded, {"F": {"F.3"}}, primary, skip={"b"})["ambiguous"] == 3   # off-family ties apart
