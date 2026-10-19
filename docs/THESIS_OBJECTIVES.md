@@ -296,9 +296,9 @@ copies ("five multimappers, only two informative").
 edits takes the read, every unaligned base counted; otherwise the read keeps that set. **Round 23 PASS** (register 1338,
 `docs/PREREG_o2_single_genome_2026-10-19.md`):
 - 37 fresh families x 2 profiles x 3 seeds, 18 CHM13-only worlds;
-- of 8,360 reads tied within 10 AS, 2,574 placed right and 0 wrong, against v17's 959 / 0, where minimap2's primary is
-  wrong on 36.7%;
-- the other 69% keep a set (2.01 tied copies -> 1.69), and the set holds the true copy for every read.
+- of 7,450 multimapped reads tied within 10 AS, 2,045 placed right and 0 wrong, against v17's 430 / 0, where minimap2's
+  primary is wrong on 36.6% (Amendment 1's scorer);
+- the other 73% keep a set (2.02 tied copies -> 1.73), and the set holds the true copy for every read.
 
 ### ✅ WON
 | result | number |

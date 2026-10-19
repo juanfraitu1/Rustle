@@ -128,7 +128,28 @@ minor gaps.
 The bars and the run are as frozen. The same tables are rescored with the fixed scorer (`sets_amd1.json`). The original
 scoring stays below for the record.
 
-## Results (2026-10-19, run as frozen; `fast/heldout23/run.log`, `sets.json`, `sets.txt`, each cell's `bars.txt`)
+## Results under Amendment 1 (the verdict; `fast/heldout23/sets_amd1.json`, `sets_amd1.txt`)
+
+**PASS: F1 to F4 hold.**
+- **F1:** 0 wrong of 2,045 placements.
+- **F2:** sets hold the true copy for 7,450 of 7,450 multimapped reads.
+- **F3:** 2,045 placed, against v17's 430 (4.8 times).
+- **F4:** fastset's verdict is PASS in all 6 cells; this is unaffected by the scorer.
+
+| cell | multimapped tied reads | rule: right / wrong | v17: right / wrong | sets holding the true copy | mean copies: tied -> set | minimap2 primary wrong |
+|---|---|---|---|---|---|---|
+| A119b s1301 | 1,290 | 321 / 0 | 53 / 0 | 1,290 | 2.01 -> 1.75 | 483 (37.4%) |
+| A119b s1302 | 1,231 | 398 / 0 | 114 / 0 | 1,231 | 2.05 -> 1.68 | 424 (34.4%) |
+| A119b s1303 | 1,329 | 345 / 0 | 36 / 0 | 1,329 | 2.01 -> 1.74 | 525 (39.5%) |
+| public s1301 | 1,091 | 237 / 0 | 23 / 0 | 1,091 | 2.01 -> 1.78 | 402 (36.8%) |
+| public s1302 | 1,229 | 432 / 0 | 141 / 0 | 1,229 | 2.00 -> 1.65 | 415 (33.8%) |
+| public s1303 | 1,280 | 312 / 0 | 63 / 0 | 1,280 | 2.00 -> 1.76 | 474 (37.0%) |
+| **pooled** | **7,450** | **2,045 / 0** | **430 / 0** | **7,450** | **2.02 -> 1.73** | **2,723 (36.6%)** |
+
+The 910 reads set apart were placed once. 529 of v17's 959 original placements were among them, so on true multimappers
+v17 places 430.
+
+## Results as first scored (superseded by Amendment 1; kept for the record; `sets.json`, `sets.txt`)
 
 **PASS: F1 to F4 hold.**
 - **F1:** 0 wrong of 2,574 placements (limit 0.5%, floor 200).
