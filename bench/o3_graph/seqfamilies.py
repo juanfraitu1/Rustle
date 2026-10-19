@@ -19,7 +19,7 @@ other (add_paralog_genes: none overlapping a coding gene; a pseudogene before an
 gene when its locus carries the coding gene's canonical by the same rule (sequence and structure, in that direction only:
 pair_link); two paralogs do not link on their own. Families are named after their first coding gene (S19...; set seq19).
 
-    seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried]
+    seqfamilies.py build OUT.json SPENT.json ... [--paralogs] [--intron-chain exact|carried] [--retain-chains]
                                                    -> OUT.json (set seq17, or seq19: every unspent family), OUT.json.links.tsv
                                                        (every sequence link and its structure verdict)
     seqfamilies.py draw OUT_SET.json OUT.json [--seed S --set NAME]
@@ -175,6 +175,14 @@ def spent_genes(paths):
     return out
 
 
+def splice_cmd(threads, retain=False):
+    """The locus rule's spliced alignment (canonicals onto candidate loci). retain (--retain-chains, 2026-10-18): minimap2 -P,
+    every chain kept -- among ~45 near-identical TSPY loci its default chain selection dropped the alignment of 62 of 63 TSPY
+    transcripts to the most divergent copy's locus (TSPY2); -P kept 46."""
+    return (["minimap2", "-cx", "splice:hq", "-N", "1000", "-p", "0.01", "--secondary=yes", "-t", str(threads)]
+            + (["-P"] if retain else []))
+
+
 def _paf_hits(paf, min_ident):
     """{(query, target): [(qs, qe)]} and {(query, target): (cover, PAF fields)} of a PAF at identity >= min_ident."""
     blocks, best = collections.defaultdict(list), {}
@@ -191,7 +199,7 @@ def _paf_hits(paf, min_ident):
     return blocks, best
 
 
-def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact"):
+def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact", retain=False):
     import pysam
     F = _families()
     gff = pysam.TabixFile(f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz")
@@ -229,7 +237,7 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact"):
             if f[0] != f[5] and int(f[9]) >= F.MIN_IDENT * int(f[10]) and int(f[10]) >= 0.5 * min(int(f[1]), int(f[6])):
                 out.add((f[0], f[5]))
         return out
-    splice = ["minimap2", "-cx", "splice:hq", "-N", "1000", "-p", "0.01", "--secondary=yes", "-t", str(threads)]
+    splice = splice_cmd(threads, retain)
     with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
         write_fa(f"{d}/c.fa", [g["gene_id"] for g in genes])
         # candidates: an all-vs-all of the canonicals at the family identity over half the shorter
@@ -299,9 +307,11 @@ def cmd_build(out_p, spent_paths, threads=4, paralogs=False, chain="exact"):
                  + ("\ta_biotype\tb_biotype" if paralogs else "") + "\n")
         fh.writelines("\t".join(map(str, r)) + "\n" for r in rows)
     json.dump(dict(genome=F.GENOME, annotation=f"{F.CAT}/chm13v2.0_CAT_Liftoff.slim.gff3.gz",
-                   rule=("seqfamilies --paralogs" if paralogs else "seqfamilies") + (" --intron-chain carried" if chain == "carried" else ""),
+                   rule=("seqfamilies --paralogs" if paralogs else "seqfamilies") + (" --intron-chain carried" if chain == "carried" else "")
+                   + (" --retain-chains" if retain else ""),
                    min_ident=F.MIN_IDENT, min_cover=MIN_COVER, junction_tol=JUNCTION_TOL,
-                   **({"intron_chain": chain} if chain != "exact" else {}), sets={"seq19" if paralogs else "seq17": fams}),
+                   **({"intron_chain": chain} if chain != "exact" else {}), **({"retain_chains": True} if retain else {}),
+                   sets={"seq19" if paralogs else "seq17": fams}),
               open(out_p, "w"), indent=1)
     unnamed = sum(any(re.match(r"^(LOC|ENSG|MSTRG|LINC|AC[0-9]|AL[0-9]|AP[0-9])", c["gene_name"]) or "-" in c["gene_name"]
                       for c in f["copies"]) for f in fams)
@@ -325,26 +335,28 @@ def cmd_draw(out_p, all_p, seed=SEED, set_name="r17"):
 
 
 def build_args(argv):
-    """`build OUT SPENT... [--paralogs] [--intron-chain exact|carried]` (arguments after `build`) -> (OUT, SPENT paths,
-    paralogs, intron-chain rule)."""
-    rest, paralogs, chain = [], False, "exact"
+    """`build OUT SPENT... [--paralogs] [--intron-chain exact|carried] [--retain-chains]` (arguments after `build`) -> (OUT,
+    SPENT paths, paralogs, intron-chain rule, retain chains)."""
+    rest, paralogs, chain, retain = [], False, "exact", False
     it = iter(argv)
     for x in it:
         if x == "--paralogs":
             paralogs = True
+        elif x == "--retain-chains":
+            retain = True
         elif x == "--intron-chain":
             chain = next(it, "")
         else:
             rest.append(x)
     if chain not in ("exact", "carried") or not rest:
         raise SystemExit(__doc__)
-    return rest[0], rest[1:], paralogs, chain
+    return rest[0], rest[1:], paralogs, chain, retain
 
 
 def main(argv):
     if argv[0] == "build":
-        out, spent, paralogs, chain = build_args(argv[1:])
-        return cmd_build(out, spent, paralogs=paralogs, chain=chain)
+        out, spent, paralogs, chain, retain = build_args(argv[1:])
+        return cmd_build(out, spent, paralogs=paralogs, chain=chain, retain=retain)
     if argv[0] == "draw":
         return cmd_draw(argv[1], argv[2], seed=int(argv[argv.index("--seed") + 1]) if "--seed" in argv else SEED,
                         set_name=argv[argv.index("--set") + 1] if "--set" in argv else "r17")

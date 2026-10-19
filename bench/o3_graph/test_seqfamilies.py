@@ -124,7 +124,16 @@ def test_a_carried_intron_chain_still_keeps_retrocopies_out():
     assert S.structure_match([], 230, "+", 1000, [(230, "M")], chain="carried")
 
 
-def test_the_build_takes_its_intron_chain_rule_from_the_command_line():
-    assert S.build_args(["out.json", "a.json", "b.json"]) == ("out.json", ["a.json", "b.json"], False, "exact")
+def test_the_build_takes_its_intron_chain_rule_and_chain_retention_from_the_command_line():
+    assert S.build_args(["out.json", "a.json", "b.json"]) == ("out.json", ["a.json", "b.json"], False, "exact", False)
     assert S.build_args(["out.json", "a.json", "--paralogs", "--intron-chain", "carried"]) == ("out.json", ["a.json"], True,
-                                                                                                "carried")
+                                                                                                "carried", False)
+    assert S.build_args(["out.json", "--retain-chains", "a.json"]) == ("out.json", ["a.json"], False, "exact", True)
+
+
+def test_the_locus_alignment_keeps_every_chain_only_when_asked():
+    # TSPY2 (2026-10-18): among ~45 near-identical TSPY loci, minimap2's default chain selection dropped the alignment of
+    # 62 of 63 TSPY transcripts to the most divergent copy's locus; -P (retain all chains) kept 46
+    assert "-P" not in S.splice_cmd(4)
+    assert S.splice_cmd(4, retain=True)[-1] == "-P"
+    assert S.splice_cmd(4)[:3] == ["minimap2", "-cx", "splice:hq"]
