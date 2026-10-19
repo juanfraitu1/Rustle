@@ -42,3 +42,14 @@ def test_families_are_components_of_protein_and_near_identical_links_with_subfam
     near = [("B", "B2"), ("C", "Cp")]                                 # B2: a near-identical copy; Cp: a pseudogene of C
     fams = P.families(prot, near, level2={"S1": ["B", "B2"], "S2": ["C", "Cp"]})
     assert fams == [dict(genes=["A", "B", "B2"], subfamilies=["S1"]), dict(genes=["C", "Cp"], subfamilies=["S2"])]
+
+
+def test_the_member_check_reports_each_known_family_at_both_levels_and_every_miss():
+    genes = {"g1": "DAZ1", "g2": "DAZ2", "g3": "DAZ3", "g4": "DAZ4", "x1": "OTHER1"}
+    l1 = [dict(genes=["g1", "g2", "g3", "x1"], subfamilies=["S1"])]
+    l2 = {"S1": ["g2", "g3"]}
+    rep = P.member_report({"DAZ": r"^DAZ[1-4]$"}, genes, l1, l2)
+    d = rep["DAZ"]
+    assert d["members"] == 4 and d["level1_families"] == 1 and d["level1_largest"] == 3
+    assert d["level1_missing"] == ["DAZ4"] and d["level1_other_genes"] == 1
+    assert d["level2_subfamilies"] == 1 and d["level2_largest"] == 2 and d["level2_missing"] == ["DAZ1", "DAZ4"]

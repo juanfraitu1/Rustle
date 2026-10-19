@@ -13,6 +13,8 @@ chain kept, non-coding members). Level 1's components include level 2's links, s
 
     protfam.py build OUT.json LEVEL2_POOL.json [--threads N]
         -> OUT.json (families: genes, nested subfamilies), OUT.json.proteins.fa, OUT.json.links.tsv (protein links)
+    protfam.py check OUT.json
+        -> the mainstay and IsoCon's nine Y-ampliconic families at both levels (member_report), OUT.json.check.json
 """
 import collections
 import csv
@@ -96,6 +98,33 @@ def families(prot_links, near_links, level2=None):
     return out
 
 
+KNOWN = {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3([A-L]|P[0-9]+)?$", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
+         "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31",                           # the mainstay set
+         "BPY2": r"^BPY2[BC]?$", "CDY": r"^CDY[12][AB]?$", "DAZ": r"^DAZ[1-4]$", "HSFY": r"^HSFY[12]$", "PRY": r"^PRY2?$",
+         "RBMY": r"^RBMY1[A-J][0-9]?$", "TSPY": r"^TSPY[0-9]+$", "VCY": r"^VCY(1B)?$", "XKRY": r"^XKRY2?$"}   # IsoCon's nine
+
+
+def member_report(known, genes, l1, l2):
+    """For each known family ({name: regex on gene names}; names only identify the truth here): its members ({gene id: name}
+    matching), how the two levels place them -- level 1: the families holding members, the most members in one, the members
+    in none, the other genes beside the most members; level 2 ({subfamily: gene ids}): the same for the subfamilies."""
+    import re
+    out = {}
+    for fam, pat in known.items():
+        mem = {g for g, n in genes.items() if re.search(pat, n)}
+        hold = [(len(mem & set(f["genes"])), f) for f in l1 if mem & set(f["genes"])]
+        best = max(hold, key=lambda x: x[0]) if hold else (0, dict(genes=[]))
+        in1 = set().union(*(set(f["genes"]) for _, f in hold)) if hold else set()
+        subs = [(len(mem & set(v)), k) for k, v in l2.items() if mem & set(v)]
+        in2 = set().union(*(set(l2[k]) for _, k in subs)) if subs else set()
+        out[fam] = dict(members=len(mem), level1_families=len(hold), level1_largest=best[0],
+                        level1_missing=sorted(genes[g] for g in mem - in1),
+                        level1_other_genes=len(set(best[1]["genes"]) - mem),
+                        level2_subfamilies=len(subs), level2_largest=max((n for n, _ in subs), default=0),
+                        level2_missing=sorted(genes[g] for g in mem - in2))
+    return out
+
+
 def cds_records(gff=CAT_FULL):
     """Protein-coding CDS blocks of CAT's full GFF: [(gene id, transcript id, chrom, strand, (start0, end), phase)]."""
     out = []
@@ -164,7 +193,28 @@ def cmd_build(out_p, level2_pool, threads=4):
     return 0
 
 
+def cmd_check(out_p):
+    """The known families (KNOWN) at both levels, against CAT's genes of every biotype."""
+    spec = importlib.util.spec_from_file_location("o3_graph_families", os.path.join(HERE, "families.py"))
+    F = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(F)
+    d = json.load(open(out_p))
+    genes = {r["gene_id"]: r["gene_name"] for r in csv.DictReader(open(f"{F.CAT}/chm13v2.0_CAT_Liftoff.genes.tsv"), delimiter="\t")}
+    (pool,) = json.load(open(d["level2_pool"]))["sets"].values()
+    l2 = {f["family"]: [c["gene_id"] for c in f["copies"]] for f in pool}
+    rep = member_report(KNOWN, genes, d["families"], l2)
+    for fam, r in rep.items():
+        print(f"{fam:8s} members {r['members']:3d} | level 1: {r['level1_largest']:3d} in its largest of {r['level1_families']} "
+              f"families (+{r['level1_other_genes']} other genes), missing {len(r['level1_missing'])} "
+              f"{r['level1_missing'][:6]} | level 2: {r['level2_largest']:3d} in its largest of {r['level2_subfamilies']} "
+              f"subfamilies, missing {len(r['level2_missing'])}", flush=True)
+    json.dump(rep, open(f"{out_p}.check.json", "w"), indent=1)
+    return 0
+
+
 def main(argv):
+    if argv and argv[0] == "check" and len(argv) == 2:
+        return cmd_check(argv[1])
     if argv and argv[0] == "build" and len(argv) >= 3:
         return cmd_build(argv[1], argv[2], threads=int(argv[argv.index("--threads") + 1]) if "--threads" in argv else 4)
     raise SystemExit(__doc__)
