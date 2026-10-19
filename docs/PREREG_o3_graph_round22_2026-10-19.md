@@ -139,3 +139,15 @@ on 26 held-out multigene families, most of them with processed pseudogene copies
 - **Accuracy where a donor's copy carries its paralog's alleles.** Its reads fit the paralog better by sequence; register
   1330 and round 19's development.
 - **Real-read accuracy beyond the HG002 development numbers above.**
+
+## Amendment 1 (2026-10-19, 11:25, before any crashed run was rerun)
+
+**The crash.** `/mnt/linuxdisk` filled at 11:17, while cell public_s1201 was writing its masked genome.
+- The other four cells and both cost runs then failed at their first write. Their output files are empty.
+- **Cell A119b_s1201 had already completed: PASS, all six worlds.**
+
+**The fix.** The user approved deleting the masked genomes of the finished rounds (regenerable from each cell's seed) and
+the day's HG002 temporary files: 32 files, 86 GB. The six read-only round directories, rounds 9-14, were left alone.
+
+**The rerun.** The crashed runs are rerun once, unchanged, as the rules require: public_s1201 (its partial `masked/` and
+`set.log` cleared), A119b_s1202, public_s1202, A119b_s1203, public_s1203, and both cost runs.
