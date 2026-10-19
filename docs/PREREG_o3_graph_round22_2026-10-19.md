@@ -151,3 +151,23 @@ the day's HG002 temporary files: 32 files, 86 GB. The six read-only round direct
 
 **The rerun.** The crashed runs are rerun once, unchanged, as the rules require: public_s1201 (its partial `masked/` and
 `set.log` cleared), A119b_s1202, public_s1202, A119b_s1203, public_s1203, and both cost runs.
+
+## Results (2026-10-19; `/mnt/linuxdisk/tmp/o3_graph/fast/heldout22/`)
+
+**Correctness: PASS.** All six cells pass and all 72 bar checks hold: A119b_s1201 in the first run, the other five in the
+Amendment-1 rerun, with no crash.
+
+| system | judged correct | judged errors | off-family ties: correct / errors |
+|---|---|---|---|
+| integrated v17 | 78,421 | 3,255 | 3,355 / 94 |
+| current | 53,763 | 12,600 | 1,652 / 380 |
+
+**C1: incomplete.**
+- A119b passes: 953 integrated CPU s against the current method's 1,086.
+- The public cost run was stopped by the user at 12:35 (2026-10-19), before it finished, to refocus on the families where
+  O2 can be shown to work. The round's cost bar is therefore UNDECIDED.
+- Rounds 19-21 passed C1, and the scope step adds about 5 s.
+
+**What it means.** With ambiguity defined by Eichler's within-10 rule plus sequence ties, O2 confined to the ambiguous reads
+does at least as well as the current method in every world type, on 26 held-out families that are mostly processed
+pseudogenes. Adoption as the default needs the cost bar's public profile.
