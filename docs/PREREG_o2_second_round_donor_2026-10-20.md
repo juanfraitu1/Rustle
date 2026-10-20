@@ -96,3 +96,49 @@ minimap2's primaries, the shipped assembly, StringTie or FLAIR, and in more than
 **Rules:**
 - Run script: `/mnt/linuxdisk/tmp/o3_graph/donorsim/HG00733/run.sh`.
 - A bug is fixed and recorded as an amendment before any rerun.
+
+## Results (`donorsim/HG00733/run.log`, `sim/second/score_reads.json`)
+
+**FAIL. The gate holds, so the test was feasible (ORACLE 0.970). B1 and B2 fail; B3 and B4 hold.**
+
+| HG00733, 11,596 scored reads (281 families) | right | wrong | echo | uncredited |
+|---|---|---|---|---|
+| **LOOP-O2** | 0.477 | 0.079 | **0.428** | 0.016 |
+| P (primaries only) | 0.619 | 0.350 | 0 | 0.031 |
+| GOOD (pass 1) | 0.077 | 0.023 | 0.889 | 0.012 |
+| ST (StringTie) | 0.619 | 0.346 | 0 | 0.036 |
+| FL (FLAIR) | 0.630 | 0.349 | 0 | 0.021 |
+| ORACLE | 0.970 | 0.002 | 0 | 0.028 |
+
+**Bars:**
+- **B1 fails:** 0.477 < P's 0.619.
+- **B2 fails:** wrong + echo is 0.507, against P's 0.350.
+- **B4 holds:** LOOP-O2 credits more reads right than P in 20 families with at least 10 reads, but fewer in 71.
+
+**Why it fails: the pre-registered home rule.** The corrector decided 6,440 of the 11,970 domain reads. The other 5,530
+(4,937 `tie`, 593 `undominated`) have no home, so they keep pass 1's echo at every tied copy, and an echo is not "right".
+Primaries only gives each of those reads minimap2's single pick, which is right about 62% of the time.
+
+**On the reads it moved, the corrector is right.** Of the 455 reads O2 took off minimap2's copy:
+
+| arm | right | wrong |
+|---|---|---|
+| LOOP-O2 | 406 | 47 |
+| P, ST, FL | about 41 | 381-413 |
+
+**Descriptive: the corrector itself on this held-out donor** (`o2correct.py score`, printed by the pre-registered run script;
+not a bar):
+
+| HG00733 | reads | corrector right | minimap2 right | fixes / breaks |
+|---|---|---|---|---|
+| all | 11,596 | 0.6695 | 0.6377 | 408 / 40 |
+| exact ties | 4,975 | 0.488 | 0.449 | 225 / 29 |
+| near ties | 6,621 | 0.806 | 0.780 | 183 / 11 |
+
+52 families have more fixes than breaks; 7 have more breaks than fixes.
+
+**Not claimed:** that loci rebuilt after O2 credit tied reads to their true copy more often than StringTie, FLAIR or
+minimap2's primaries. Under this file's rule they do not, because echoed ties are not right.
+
+**Post hoc, not a result:** with minimap2's primary as the home of the ties O2 leaves, LOOP-O2 would be P plus O2's moves:
+about 0.619 + (406 - 41) / 11,596 = 0.650 right. That variant needs its own pre-registration on another donor.
