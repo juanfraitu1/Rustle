@@ -102,7 +102,7 @@ StringTie or FLAIR.
 ## Results (`o2second/run.log`, `o2second/hg002/score.json`)
 
 **FAIL: S1 and S2 fail. S3 holds (15 families, 29,965 truth reads).** The corrector's output at this commit is identical to the
-development file (`cmp`). Pass 2 kept 591,438 records at home and dropped 56,395 (O2 moved 2,220 reads off minimap2's copy).
+development file (`cmp`). Pass 2 kept 597,640 records at home and dropped 57,294 (O2 moved 2,220 reads off minimap2's copy). Erratum (audit): this line first quoted ORACLE's totals, 591,438 / 56,395.
 
 | arm | pooled TVD (truth-read weighted) | unweighted mean TVD | LOOP-O2 better / worse, families |
 |---|---|---|---|
@@ -134,3 +134,50 @@ assignment.** LOOP-O2 is within 0.004 of the ORACLE pooled, and equal to it in 5
 
 **Not claimed:** that the second round's loci share a family's reads among its copies better than StringTie or FLAIR. It
 does better than the shipped pass 1 and than minimap2's primaries alone, pooled.
+
+
+## Audit (metric-auditor, 2026-10-20): holds with caveats; the explanation above is corrected
+
+Every per-family TVD, both means and the better/worse counts recompute exactly. The tie counts are stable under 16 hash seeds,
+and the power rule regenerates the same 15 families. **The FAIL stands, and no variant flips S2: against GOOD it is 7 / 7 or
+7 / 8.** The paragraph "the gap is in the assembled loci, not in O2's assignment" does not hold as written:
+
+1. **The weights, not the loci, decide S1.** The share of a family's reads each arm credits to its transcripts is:
+   - Rustle's `reads` attribute: 0.22-0.23 (GOOD 0.32);
+   - StringTie's `cov`: 0.67;
+   - FLAIR: 0.96.
+
+   The Rustle shortfall is uneven across copies (NCF1.1: 417 credited against 3,620 truth reads; StringTie 3,146). With one
+   common weight, each arm's own read placement counted at the copies where it built a transcript, the pooled TVD is:
+
+   | arm | TVD |
+   |---|---|
+   | LOOP-O2 | 0.055 |
+   | ORACLE | 0.052 |
+   | ST | 0.066 |
+   | P | 0.068 |
+   | FL | 0.068 (its own read map: 0.097) |
+   | GOOD | 0.126 |
+
+   S1 would pass; S2 still fails. This is post hoc, not a result. **The S1 gap is how our assembler credits reads to its
+   transcripts, not which loci it builds.**
+2. **ORACLE is not perfect placement, and it fails both bars itself**, so the test had no feasibility gate. Its homes cover
+   only reads with a donor-truth class: 8-78% of each family's reads stay at minimap2's copy or echo. 114 reads have no
+   record at their true copy.
+3. **Most of the weight is reads O2 never touches.** 99.0% of truth rows come from `truth_untied`. Only 3,978 truth reads
+   (13.3%) are in the corrector's domain: 573 fixed, 7 broken. THOC3 gives 65% of the P → LOOP-O2 gain. Three of S2's
+   "better than P" families had no truth read moved.
+4. **LOOP-O2 vs ORACLE.** The pooled gap is 0.0047 (not 0.004), and the two are equal in 4 families (not 5). At read level,
+   LOOP-O2 is 0.031 against ORACLE's 0.000. Assembly hides the difference: no FCGR2A.2 transcript is built even with true
+   homes.
+5. **"Donor CNV, O3's case" is not supported.** FCGR2A and TBC1D3B have 0 `no_counterpart` reads. Their truth is chain-lifted
+   `unique_elsewhere` (395 / 414 and 289 / 297 reads) and may itself be mislabelled.
+6. **The echo removal is single-homing, not O2.** Primaries only does the same: DUSP22 0.017, ZC3H11A 0.000, NOMO1 0.142.
+7. **Confirmed:** our assembler builds no transcript over FCGR2A.1 or .2. The overlap is at most 189 exonic bp, against 460
+   primaries there and StringTie `cov` 394.9. Attribution variants (same strand only, exon overlap required, own family only)
+   move the pooled scores by at most 0.007.
+
+**What a valid test needs:**
+- a read → transcript map from our assembler, scored like FLAIR's;
+- ORACLE passing the bars as a pre-registered gate;
+- a metric over the reads the corrector can move, the domain, rather than the 87% minimap2 already placed.
