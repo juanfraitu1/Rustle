@@ -45,3 +45,29 @@ Version 2 placed 1,104, 0 wrong, over rounds 23-25. In one genome minimap2's MAP
 so the simulation claim is no harm, not a precision gain.
 
 **Rules:** code frozen at e1acb42d. A bug is recorded as an amendment before any rerun.
+
+## Results (`o2frag_public/run_real.log`, `fair.json`)
+
+**UNDERPOWERED: F1 fails, with 30 source reads placed against 100 needed.**
+- F2 holds: 0 wrong.
+- F3 holds: precision 1.000, against the MAPQ >= 1 baseline's 0.894 (160 placed, 17 wrong) on the same fragments.
+- F4 fails: 1 family (ROPN1, 6 of 6).
+
+| public testis library | value |
+|---|---|
+| sources drawn / kept (clear by 30 AS) | 6,674 from 215 families / 6,070 |
+| fragments with a truth | 18,210 |
+| O2's decisions on almost-tied fragments | validated 49, sets 153, unexplained 178 |
+
+The library is about 45 times shallower than A119b. Few PSV positions reach 3 validating reads, so O2 places little.
+
+**Where minimap2's trusted calls fail, O2 abstains or is right:**
+
+| family | minimap2 at MAPQ >= 1: right / wrong | O2: right / wrong |
+|---|---|---|
+| TPSB2 | 13 / 7 | abstained |
+| DHRS4 | 5 / 4 | 2 / 0 |
+| HSPA1A | 19 / 2 | 2 / 0 |
+| THOC3 | 9 / 1 | 2 / 0 |
+
+The direction matches development (A119b: 99.6% against 86.7%), but this donor cannot carry the claim.
