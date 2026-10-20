@@ -38,7 +38,7 @@ def test_the_chosen_copy_s_best_alignment_becomes_the_read_s_one_primary_with_it
 def test_assembled_transcripts_are_weighted_by_stringtie_cov_or_flair_s_mapped_reads(tmp_path):
     gtf = tmp_path / "st.gtf"
     gtf.write_text(
-        'chr5\tStringTie\ttranscript\t101\t600\t.\t+\t.\tgene_id "g"; transcript_id "t1"; cov "30.0";\n'
+        'chr5\tStringTie\ttranscript\t101\t600\t.\t+\t.\tgene_id "g"; transcript_id "t1"; longcov "3.0"; cov "30.0";\n'
         'chr5\tStringTie\texon\t151\t200\t.\t+\t.\tgene_id "g"; transcript_id "t1";\n'
         'chr5\tStringTie\texon\t301\t354\t.\t+\t.\tgene_id "g"; transcript_id "t1";\n'
         'chr5\tStringTie\texon\t501\t550\t.\t+\t.\tgene_id "g"; transcript_id "t1";\n'

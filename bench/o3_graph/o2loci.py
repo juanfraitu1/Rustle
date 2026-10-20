@@ -81,7 +81,7 @@ def read_gtf(path):
         if x[2] == "exon":
             t["blocks"].append((int(x[3]) - 1, int(x[4])))
         elif x[2] == "transcript":
-            cov = re.search(r'cov "([^"]+)"', x[8])
+            cov = re.search(r'(?:^|;)\s*cov "([^"]+)"', x[8])            # by name: StringTie also writes longcov
             t["cov"] = float(cov.group(1)) if cov else 0.0
     for t in tx.values():
         t["blocks"].sort()

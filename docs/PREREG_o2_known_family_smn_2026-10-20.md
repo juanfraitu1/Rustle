@@ -151,3 +151,46 @@ SMN2 / SMN1 are:
 
 To beat them as loci, the copy assignment must survive assembly: an assembler that counts the reads it is given per copy.
 Feeding O2's primaries to StringTie or FLAIR is not enough.
+
+
+## Amendment 2 (2026-10-20, after the audit): StringTie was scored on `longcov`, not `cov`
+
+**The bug.** The audit found that the scorer's `cov "..."` pattern matched inside StringTie's `longcov "..."`, which StringTie
+writes first. Every StringTie number above is therefore `longcov`. So are the statements "`cov` 1-19" and "0.424 even on
+truth", and the claim that `longcov` gives the same. All of these are wrong.
+
+**The fix.** Attributes are now read by name, and `test_o2loci.py` has a `longcov` line. Only `score` is rerun
+(`o2loci_smn/score_amended2.log`).
+
+| HG002 exon-7 inclusion, StringTie (`cov`) | minimap2 | O2 | truth |
+|---|---|---|---|
+| SMN2 | 0.654 | **0.628** | 0.618 |
+| SMN1 | 0.894 | **1.000** | 0.989 |
+
+**L2, corrected:**
+- **StringTie on O2's BAM is closer to its truth arm on both copies** (SMN2 0.010 vs 0.036; SMN1 0.011 vs 0.095). StringTie
+  keeps the copy it is given.
+- **FLAIR is farther on both** (0.065 vs 0.063; 0.054 vs 0.037), so **L2 still FAILS, on FLAIR alone**. FLAIR re-maps reads
+  to its own isoforms: it puts 3,285 of 3,443 reads on the same copy in the O2 and minimap2 arms, and returns 367 of O2's 682
+  moves to SMN1. By design it cannot register an input assignment.
+- **The verdict stays FAIL.**
+
+**Also disclosed by the audit:**
+- **L1 is development data** (O2 1,289 / 1,299 right on SMN's tied reads with donor truth). In A119b the corrector overruled
+  no read, so this test has no held-out evidence for SMN.
+- **The first scoring (wrong exon 6) failed L1 on SMN1** (0.110 vs 0.096). Amendment 1 came 54 s after that run.
+- **The truth arm falls back to minimap2's primary for 751 of 3,651 reads** (633 poor_match, 114 own_tie, 4 without a row).
+  This biases it toward minimap2. On the 2,900 donor-truth reads alone, L1 holds tighter: O2 0.599 / 0.994, truth
+  0.598 / 0.996, minimap2 0.622 / 0.876.
+- **At c.840**, the truth puts all 756 T reads on SMN2 and all 1,544 C reads on SMN1.
+- **The post-hoc line above mixed units.** Like for like, StringTie (`cov`) errs on SMN2 / SMN1 by:
+  - 0.037 / 0.091 on minimap2's BAM;
+  - 0.011 / 0.015 on O2's BAM;
+  - 0.001 / 0.004 on the truth BAM.
+
+  FLAIR errs 0.083 / 0.051 even on the truth BAM.
+- **Minor:**
+  - The per-copy counts above are reads spanning exons 6-8. All SMN2 reads number 1,582 / 1,518 / 902 (O2 / truth /
+    minimap2).
+  - A119b's SMN domain is 275 reads (22 more are SERF1B's).
+  - SMN2 skips exon 7 in 38% of its truth reads, not "most".
