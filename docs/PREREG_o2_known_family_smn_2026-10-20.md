@@ -83,3 +83,71 @@ minimap2's.
 - The tool is `bench/o3_graph/o2loci.py`, written and tested before any arm is scored.
 - Run script: `/mnt/linuxdisk/tmp/o3_graph/o2loci_smn/run.sh`.
 - A bug found during the run is fixed and recorded as an amendment before any rerun.
+
+## Amendment 1 (2026-10-20, after the first scoring, before any bar was read)
+
+Two bugs, both found in the first scoring (`o2loci_smn/run_before_amendment1.log`). That scoring classified only 53 of 3,651
+HG002 reads and gave no FLAIR numbers at all.
+
+1. **Exon 6 was the wrong exon.** The table above gives the 109-bp exon (SMN2 70,815,947-70,816,056; SMN1
+   71,403,494-71,403,603). That is **exon 6B**, the Alu-derived alternative exon in intron 6. SMN exon 6 is the 111-bp exon:
+   - SMN2: 70,816,585-70,816,696;
+   - SMN1: 71,402,854-71,402,965.
+
+   Exons 7 and 8 are unchanged.
+2. **FLAIR's read map** keys each isoform as `isoform_gene`. The scorer now strips the gene suffix to match the GTF's
+   `transcript_id`; test `test_o2loci.py`.
+
+The arms' BAMs and both assemblers' outputs do not depend on either fix and are not rerun. Only `score` is rerun. The bars
+are unchanged.
+
+## Results (`o2loci_smn/score_amended.log`, `hg002/score.json`, `a119b/score.json`)
+
+**Overall: FAIL.**
+- **L1 PASSES:** O2 gives each copy its own isoforms at the read level.
+- **L2 FAILS:** StringTie and FLAIR do not keep the assignment they are given.
+- **L3 is UNDERPOWERED:** A119b barely expresses SMN2.
+
+| HG002 exon-7 inclusion (FL / (FL + Δ7)) | minimap2 | O2 | truth |
+|---|---|---|---|
+| **reads, SMN2** | 0.653 (485 / 258) | **0.625** (890 / 533) | 0.617 (836 / 519) |
+| **reads, SMN1** | 0.887 (2,279 / 291) | **0.992** (1,874 / 16) | 0.985 (1,928 / 30) |
+| StringTie, SMN2 (`cov`) | 0.746 | 0.705 | 0.707 |
+| StringTie, SMN1 (`cov`) | 0.929 | 1.000 | 0.424 |
+| FLAIR, SMN2 (mapped reads) | 0.763 | 0.765 | 0.700 |
+| FLAIR, SMN1 (mapped reads) | 0.897 | 0.880 | 0.934 |
+
+- **L1.** minimap2 hands about 700 of SMN2's reads to SMN1, many of them Δ7. SMN1 then seems to skip exon 7 in 11% of its
+  reads, against 1.5% in truth. O2 errs by 0.008 (SMN2) and 0.007 (SMN1), against minimap2's 0.036 and 0.098.
+
+  Per-copy read counts:
+
+  | copy | O2 | truth | minimap2 |
+  |---|---|---|---|
+  | SMN2 | 1,423 | 1,355 | 743 |
+  | SMN1 | 1,890 | 1,958 | 2,570 |
+- **L2.** Each assembler is compared with its own output on the truth arm:
+  - StringTie on SMN2: O2 is closer (0.002 vs 0.039).
+  - StringTie on SMN1: O2 is farther (0.576 vs 0.505).
+  - FLAIR on SMN2: O2 is farther (0.065 vs 0.063).
+  - FLAIR on SMN1: O2 is farther (0.054 vs 0.037).
+
+  Neither assembler carries a read's copy through:
+  - **FLAIR** realigns every read to its own isoforms, which reintroduces the coin toss between SMN1's and SMN2's
+    near-identical isoforms. Its per-copy totals barely move between arms.
+  - **StringTie** gives SMN1, with about 2,000 reads, transcripts of `cov` 1-19. On the truth BAM it even reports 42%
+    inclusion. `longcov` gives the same.
+- **L3.** Of A119b's 297 domain reads, 15 span exons 6 to 8 (bar: 20). SMN2 has one spanning read in the whole library, and
+  the corrector overruled no read.
+
+**Not pre-registered, descriptive.** Against the truth arm's read-level inclusion (0.617 / 0.985), the absolute errors on
+SMN2 / SMN1 are:
+
+| arm | SMN2 | SMN1 |
+|---|---|---|
+| O2's reads | 0.008 | 0.007 |
+| StringTie on minimap2's BAM | 0.129 | 0.056 |
+| FLAIR on minimap2's BAM | 0.146 | 0.088 |
+
+To beat them as loci, the copy assignment must survive assembly: an assembler that counts the reads it is given per copy.
+Feeding O2's primaries to StringTie or FLAIR is not enough.

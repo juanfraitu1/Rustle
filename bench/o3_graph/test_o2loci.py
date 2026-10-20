@@ -47,7 +47,7 @@ def test_assembled_transcripts_are_weighted_by_stringtie_cov_or_flair_s_mapped_r
         'chr5\tStringTie\texon\t501\t550\t.\t+\t.\tgene_id "g"; transcript_id "t2";\n')
     tx = L.read_gtf(str(gtf))
     assert tx["t1"]["blocks"] == [(150, 200), (300, 354), (500, 550)] and tx["t1"]["cov"] == 30.0
-    (tmp_path / "map.txt").write_text("t1\tra,rb\nt2\trc\n")
+    (tmp_path / "map.txt").write_text("t1_chr5:100\tra,rb\nt2_chr5:100\trc\n")                 # FLAIR: isoform_gene
     assert L.read_map(str(tmp_path / "map.txt")) == {"t1": 2, "t2": 1}
     copies = {"F.1": dict(chrom="chr5", span=(0, 1000), **SPEC)}
     assert L.tx_inclusion(tx, {t: v["cov"] for t, v in tx.items()}, copies) == {"F.1": {"FL": 30.0, "D7": 10.0}}

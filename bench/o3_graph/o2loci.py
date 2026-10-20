@@ -89,12 +89,13 @@ def read_gtf(path):
 
 
 def read_map(path):
-    """{isoform: reads} of FLAIR's isoform.read.map.txt."""
+    """{isoform: reads} of FLAIR's isoform.read.map.txt, whose first column is isoform_gene (the GTF's transcript_id, then
+    "_" and its gene_id)."""
     out = {}
     for ln in open(path):
         x = ln.rstrip("\n").split("\t")
         if len(x) >= 2:
-            out[x[0]] = len([r for r in x[1].split(",") if r])
+            out[x[0].rsplit("_", 1)[0]] = len([r for r in x[1].split(",") if r])
     return out
 
 
