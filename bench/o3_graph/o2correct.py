@@ -20,8 +20,11 @@ event is explained when >= SHARED = 2 of them carry it and >= HET = 10% of their
 >= HOM = 80% of them carry that the read lacks. The lowest score takes the read, but overrules minimap2's primary only when
 it is lower even granting the primary every event its reads do not cover (dominance: no copy wins for want of coverage);
 a shared lowest keeps minimap2's pick. In one genome a copy's reads explain only their shared errors, so the rule is
-minimap2's ordering by events. HG002 development (HET 0.2/0.1/0.05 x dominance; donor truth, PAR out): near ties 87.4%
-right vs minimap2's 66.4% (1,162 fixed, 9 broken), exact ties 52.6% vs 39.6%; 16 families gain, 3 lose.
+minimap2's ordering by events. HG002 development (HET 0.2/0.1/0.05 x dominance; donor truth, PAR out): near ties 87.3%
+right vs minimap2's 66.4% (1,161 fixed, 15 broken), exact ties 52.6% vs 39.6% (97 / 22); 15 families gain, 4 lose.
+Held out (PREREG_o2_corrector_2026-10-20, register 1343): FAIL overall -- fresh A119b fragments 81.7% vs 71.5% (130 / 3,
+40 families gain, 1 loses) and no harm in one genome, but a copy the reference lacks (BRANCH, REMOVED) teaches its nearest
+copy foreign alleles and the rule then moves that copy's neighbours' reads (heldout22: 5 near-tie breaks, ANKRD30BL).
 
     o2correct.py run BAM COPIES.tsv OUT.tsv           read, family, corrector, minimap2, reason, candidates
     o2correct.py donor BAM COPIES.tsv GENOME.fa OUT.tsv [--teach LIBRARY.bam] [--cache DIR --budget SECONDS]
@@ -529,14 +532,17 @@ def score_worlds(dirs, excl=frozenset()):
 
 def cmd_score_worlds(out_p, dirs, excl_p=None):
     excl = set(json.load(open(excl_p))) if excl_p else set()
-    dirs = [d for d in dirs if os.path.exists(os.path.join(d, "o2correct.tsv"))]
+    skipped = [d for d in dirs if not os.path.exists(os.path.join(d, "o2correct.tsv"))]
+    dirs = [d for d in dirs if d not in skipped]
+    if skipped:
+        print(f"[o2correct] {len(skipped)} worlds without o2correct.tsv, not scored: {', '.join(skipped)}", flush=True)
     res = score_worlds(dirs, excl)
     for b, t in sorted(res.items()):
         k = max(1, t["reads"])
         print(f"[o2correct] {len(dirs)} worlds, {b}: reads {t['reads']}; corrector right {t['corrector right'] / k:.4f}, "
               f"minimap2 right {t['minimap2 right'] / k:.4f}; fixes {t['fixes']}, breaks {t['breaks']}, both wrong "
               f"{t['both wrong']}", flush=True)
-    json.dump(dict(worlds=dirs, bands={b: dict(t) for b, t in res.items()}), open(out_p, "w"), indent=1)
+    json.dump(dict(worlds=dirs, skipped=skipped, bands={b: dict(t) for b, t in res.items()}), open(out_p, "w"), indent=1)
     return 0
 
 

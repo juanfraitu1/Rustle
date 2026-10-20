@@ -121,3 +121,67 @@ the corrector, never for it.
   `--budget`).
 - A bug found during the run is fixed and recorded as an amendment before any rerun.
 - No constant changes after this file.
+
+## Results (`/mnt/linuxdisk/tmp/o3_graph/o2correct_heldout/run1.log`, `run2.log`; frozen copy `frozen/`)
+
+**Overall: FAIL. S2 fails. H1 and S1 pass. H2 is UNDERPOWERED.**
+
+| set | reads scored | corrector | minimap2 | fixes / breaks | bars |
+|---|---|---|---|---|---|
+| **H1** A119b seed 2, qualifying non-PAR | 1,241 fragments | **0.8171** | 0.7147 | **130 / 3** | P ✓ (133 overruled from 118 sources), G ✓ (+10.2 points), S ✓, F ✓ (40 families better, 1 worse; the limit was 8) |
+| H1 exact ties | 440 | 0.6091 | 0.4523 | 69 / 0 | — |
+| H1 near ties | 801 | 0.9313 | 0.8589 | 61 / 3 | — |
+| H1, every non-PAR family | 1,727 | 0.7823 | 0.6775 | 186 / 5 | 55 families better, 2 worse |
+| **H2** public testis, qualifying | 276 | 0.7826 | 0.7464 | 11 / 1 | **P fails** (12 overruled, from 12 sources): UNDERPOWERED |
+| **S1** one genome (36 worlds), near ties | 2,309 | 0.9991 | 0.9991 | 0 / 0 | ✓ |
+| S1 exact ties | 2,824 | 0.4770 | 0.4763 | 2 / 0 | ✓ |
+| **S2** donor alleles, without BRANCH (30 worlds), near ties | 3,447 | 0.9985 | **1.0000** | **0 / 5** | **✗** (accuracy below minimap2's; 5 breaks > 14 / 5 + 2) |
+| S2 exact ties | 3,079 | 0.4303 | 0.4258 | 14 / 0 | ✓ |
+| S2 BRANCH (reported apart) | 786 exact, 812 near | — | — | 4 / 1 exact, 0 / 2 near | — |
+
+**The S2 failure is the BRANCH mechanism, which development showed.** All 5 breaks are in one REMOVED world,
+`A119b_s1201`, family ANKRD30BL.
+- The world masks copy .3 out of the reference while the donor still expresses it: 111 reads.
+- Those reads sit confidently on copy .4 and make up most of its sample.
+- True .4 reads then look foreign on .4, and the corrector moves them to .0 (scores .0:4 vs .4:5).
+- 10 more overrules move .3 reads themselves; they are not scored.
+
+BRANCH breaks the same way in 3 of its 6 worlds. Copies the reference lacks are O3's case; O2's corrector is not safe on a
+family until O3 has flagged them.
+
+**Erratum in the development section.** "Worlds without BRANCH" in heldout21 was 24 worlds, not 30. All 6 REMOVED runs
+crashed: their `genome.ref.fa` points to a deleted masked genome. `score-worlds` dropped them without saying so; it now lists
+skipped worlds. In heldout22 all 36 worlds ran.
+
+## Audit (metric-auditor, 2026-10-20): holds with caveats
+
+Every number recomputes exactly from the frozen files with an independent script, and the overall FAIL stands. The audit also
+confirmed:
+- **Hold-out:** 0 of 15,573 seed-1 sources are reused. The prereg was committed at 12:50:27, before the first held-out output
+  at 12:50:36.
+- **Leave-one-out:** 1,329 of the 1,349 domain sources were confident reads, and each was left out of its own fragments'
+  judgement.
+
+Caveats:
+1. **H1's truth and the corrector's teachers come from the same library's confident calls.** When the donor has a copy the
+   reference lacks, both are wrong the same way, and that is scored as a fix. So this file's "never for it" is false in that
+   case. H1 "right" means "agrees with minimap2's full-read call". The top fix families (NBPF6, TBC1D3B, FAM205A) vary in
+   copy number between people. Only donor-assembly truth settles this; HG002, the one donor with it, was development.
+2. **H1 replicates development rather than testing a new donor.** It shares seed 1's library, its 161,037 teacher reads and
+   its families; only the source reads are disjoint. H2, the other donor, is underpowered.
+3. **Fixes are spread out.** 130 fixes come from 115 sources. The top family has 10.8% of them, the top 10 have 59.2%, and
+   17 families have at least 3.
+4. **Filters do not decide a bar.** 14 non-PAR overrules have no scored truth. S still holds if all 14 were breaks
+   (130 vs 17). G is still +10.0 points if the 33 rows whose truth is not among the tied copies count against it.
+5. Excluding REMOVED from S2 after the fact (near 0/0, exact 11/0) would be choosing which worlds to score. It is not a
+   result.
+
+**What this shows.** Reading PSVs against the sample's own copies, learned from its confidently placed reads, corrects
+minimap2 among tied copies:
+- HG002 development, donor truth: near ties 66% → 87%;
+- fresh A119b fragments: 72% → 82%, in 40 families;
+- one genome: nothing to correct and nothing broken.
+
+It is **not adopted**. The pre-registered donor simulation shows the corrector moves reads wrongly whenever the reference lacks
+one of the donor's copies (BRANCH, REMOVED), a case O3 must flag first. A next version needs that guard and fresh held-out
+data, ideally a second donor with an assembly.

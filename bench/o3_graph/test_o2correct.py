@@ -134,3 +134,16 @@ def test_simulated_worlds_pool_without_merging_their_read_names(tmp_path):
     out = C.score_worlds([str(tmp_path / "w1"), str(tmp_path / "w2")])
     assert dict(out["exact tie"]) == {"reads": 1, "corrector right": 1, "minimap2 right": 0, "fixes": 1}
     assert out["near tie"]["reads"] == 2 and out["near tie"]["minimap2 right"] == 1 and out["near tie"]["breaks"] == 1
+
+
+def test_a_world_without_corrector_output_is_reported_not_silently_dropped(tmp_path):
+    import json
+    d = tmp_path / "w1"
+    d.mkdir()
+    (d / "o2correct.tsv").write_text("read\tfamily\tcorrector\tminimap2\treason\tcandidates\tmargin\tscores\n"
+                                     "s1\tF\tF.1\tF.0\tsample\tF.0,F.1\t3\t\n")
+    (d / "reads.truth.E0.tsv").write_text("read\tcopy\tkind\ns1\tF.1\tpresent\n")
+    (tmp_path / "w2").mkdir()                                                                  # crashed: no output
+    C.cmd_score_worlds(str(tmp_path / "out.json"), [str(d), str(tmp_path / "w2")])
+    out = json.loads((tmp_path / "out.json").read_text())
+    assert out["skipped"] == [str(tmp_path / "w2")] and out["bands"]["near tie"]["fixes"] == 1
