@@ -13,6 +13,12 @@ assigned read given to its copy -> re-assembly with RUSTLE_READ_HOME_TABLE (src/
     loop_home.py oracle  --sim-dir DIR --out HOME.tsv [--summary S.tsv]
         the ORACLE arm (simulation only): every simulated molecule `family|copy_idx|i` of DIR/sim.bam gets its true
         source copy (DIR/cat.copies.tsv) as home; same presence check and exclusion as `union`.
+    loop_home.py o2      --o2 O2.tsv --copies COPIES.tsv --bam B --out HOME.tsv [--truth T.tsv ...] [--every-read] [--summary S.tsv]
+        2026-10-20 (user: "it needs to make loci where the corrected multimappers now have a say ... a post-assembly second
+        round"): the reads O2's corrector (bench/o3_graph/o2correct.py donor) DECIDED (reason `sample`, whether or not it
+        agrees with minimap2), each homed at its copy's span; with --truth (HG002's donor-assembly classes), the ORACLE:
+        every corrector-domain read whose donor truth is unique / unique_elsewhere, homed at its true copy. Same presence
+        check and exclusion as `union`.
     loop_home.py g0      --log PREFIX.assemble.log [--home HOME.tsv]
         the G0 counts (prereg §2) from the filter's own log: kept at home, R_add, R_drop; bounded iff R_drop + R_add < 20.
     loop_home.py sim-truth-gtf --sim-dir DIR --out TRUTH.gtf
@@ -27,6 +33,7 @@ Coordinates: copies.tsv / units.tsv `start`, `end`, `exons` are 0-based half-ope
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import collections
 import csv
 import os
@@ -127,6 +134,98 @@ def cmd_union(a):
     counts['H_no_record_at_home'] = len(homes) - len(ok & set(homes))
     counts['home_table_molecules'] = len(rows)
     counts['bam_checked'] = 'no' if a.no_bam_check else 'yes'
+    write_summary(a.summary, counts)
+
+
+def o2_homes(rows, spans, truth=None):
+    """{read: (chrom, start, end, source, copy)} from o2correct rows: the reads the corrector decided (reason `sample`) at
+    its copy's span; with truth ({read: (class, copy)}), every row whose truth class is unique / unique_elsewhere at the
+    true copy's span (the ORACLE). spans: {copy: (chrom, start, end)}."""
+    out = {}
+    for r in rows:
+        if truth is None:
+            if r["reason"] != "sample":
+                continue
+            c, src = r["corrector"], "o2"
+        else:
+            t = truth.get(r["read"])
+            if not t or t[0] not in ("unique", "unique_elsewhere"):
+                continue
+            c, src = t[1], "oracle"
+        if c in spans:
+            out[r["read"]] = (*spans[c], src, c)
+    return out
+
+
+def pass2_homes(prim, rows, spans, truth=None):
+    """{read: (chrom, start, end, source, copy)} for the second round: every read of the family once -- O2's copy when the
+    corrector decided it, minimap2's primary copy when it was not tied within 10 AS (Eichler: minimap2's call stands) --
+    and no home for a tie O2 could not break (it echoes at its tied copies, as in pass 1). With truth, the ORACLE: the
+    donor's copy wherever the truth class is unique / unique_elsewhere, minimap2's primary for an untied read without one,
+    and no home for a tie without one (O2's calls are never used). prim: {read: primary copy}."""
+    o2 = {r["read"]: r for r in rows}
+    out = {}
+    for q, pc in prim.items():
+        if truth is not None:                                   # the ORACLE never uses O2's calls
+            t = truth.get(q)
+            if t and t[0] in ("unique", "unique_elsewhere") and t[1] in spans:
+                out[q] = (*spans[t[1]], "oracle", t[1])
+            elif q not in o2 and pc in spans:
+                out[q] = (*spans[pc], "minimap2", pc)
+        elif q in o2:
+            if o2[q]["reason"] == "sample" and o2[q]["corrector"] in spans:
+                out[q] = (*spans[o2[q]["corrector"]], "o2", o2[q]["corrector"])
+        elif pc in spans:
+            out[q] = (*spans[pc], "minimap2", pc)
+    return out
+
+
+def primaries_on_copies(bam_path, copies_path):
+    """{read: copy} of every primary alignment that lies on a copy of the table (summary.attribute)."""
+    import pysam
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o3_graph")
+    mods = {}
+    for n in ("o2psv", "summary"):
+        sp = importlib.util.spec_from_file_location(f"{n}_lh", os.path.join(here, f"{n}.py"))
+        mods[n] = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(mods[n])
+    P, S = mods["o2psv"], mods["summary"]
+    cps = P.load_copies(copies_path)
+    out = {}
+    with pysam.AlignmentFile(bam_path) as bam:
+        for ch, v in cps.items():
+            for c, _, _, (s, e) in v:
+                for rec in bam.fetch(ch, s, e):
+                    if rec.is_secondary or rec.is_supplementary or rec.is_unmapped or rec.query_name in out:
+                        continue
+                    cp = S.attribute(rec.get_blocks(), P._strand(rec), cps.get(rec.reference_name, ()))
+                    if cp is not None:
+                        out[rec.query_name] = cp
+    return out
+
+
+def cmd_o2(a):
+    spec = importlib.util.spec_from_file_location("o2psv_lh", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                          "o3_graph", "o2psv.py"))
+    P = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(P)
+    spans = {r["copy"]: (r["chrom"], int(r["start"]), int(r["end"])) for r in csv.DictReader(open(a.copies), delimiter="\t")}
+    rows = list(csv.DictReader(open(a.o2), delimiter="\t"))
+    truth = P._truth(a.truth, True) if a.truth else None
+    if a.every_read:
+        homes = pass2_homes(primaries_on_copies(a.bam, a.copies), rows, spans, truth)
+    else:
+        homes = o2_homes(rows, spans, truth)
+    ok = present_at_home(a.bam, {n: [h[:3]] for n, h in homes.items()})
+    out = [(n, *h) for n, h in homes.items() if n in ok]
+    write_home(a.out, out)
+    counts = collections.OrderedDict()
+    counts['corrector_rows'] = len(rows)
+    counts['by_source'] = dict(collections.Counter(h[3] for h in homes.values()))
+    counts['homed'] = len(homes)
+    counts['moved_from_minimap2'] = sum(1 for r in rows if r['read'] in homes and homes[r['read']][4] != r['minimap2'])
+    counts['H_no_record_at_home'] = len(homes) - len(ok & set(homes))
+    counts['home_table_molecules'] = len(out)
     write_summary(a.summary, counts)
 
 
@@ -295,6 +394,15 @@ def main(argv=None):
     o.add_argument('--no-bam-check', action='store_true')
     o.add_argument('--out', required=True)
     o.add_argument('--summary')
+    w = sub.add_parser('o2')
+    w.add_argument('--o2', required=True, help='o2correct.py donor output')
+    w.add_argument('--copies', required=True, help='the copy table the corrector ran on')
+    w.add_argument('--bam', required=True)
+    w.add_argument('--truth', nargs='+', help='HG002 donor-truth TSVs: the ORACLE table')
+    w.add_argument('--every-read', action='store_true', help='the second round: every read with a primary on a copy gets '
+                   'one home (O2 decided: its copy; not tied within 10 AS: minimap2s); ties O2 left keep the base rule')
+    w.add_argument('--out', required=True)
+    w.add_argument('--summary')
     g = sub.add_parser('g0')
     g.add_argument('--log', required=True)
     g.add_argument('--home')
@@ -310,7 +418,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == 'union' and not a.no_bam_check and not a.bam:
         ap.error('union needs --bam (or --no-bam-check)')
-    {'union': cmd_union, 'oracle': cmd_oracle, 'g0': cmd_g0, 'sim-truth-gtf': cmd_sim_truth_gtf,
+    {'union': cmd_union, 'oracle': cmd_oracle, 'o2': cmd_o2, 'g0': cmd_g0, 'sim-truth-gtf': cmd_sim_truth_gtf,
      'score-sim': cmd_score_sim}[a.cmd](a)
 
 
