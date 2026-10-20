@@ -29,3 +29,16 @@ def test_a_family_works_with_enough_correct_placements_true_sets_and_no_worse_pr
     assert not F.works({**n, "wrong": 2})                                           # 2 of 21 wrong
     assert not F.works({**n, "set holds truth": 37})                                # sets miss the truth too often
     assert not F.works({**n, "minimap2 right": 40, "minimap2 wrong": 0})            # minimap2 is better
+
+
+def test_fragments_are_judged_by_their_source_read_for_o2_and_for_minimap2_at_mapq_1():
+    rows = [dict(read="s1|f0|0|500", family="A", call="A.0", candidates="A.0,A.1", primary="A.0"),
+            dict(read="s1|f1|600|500", family="A", call="-", candidates="A.0,A.1", primary="A.1"),
+            dict(read="s2|f0|0|500", family="A", call="A.1", candidates="A.0,A.1", primary="A.1"),
+            dict(read="s3|f0|0|500", family="B", call="B.0", candidates="B.0,B.1", primary="B.0"),
+            dict(read="s4|f0|0|500", family="A", call="A.0", candidates="A.1,A.2", primary="A.1")]   # truth not a candidate
+    truth = {"s1|f0|0|500": "A.0", "s1|f1|600|500": "A.0", "s2|f0|0|500": "A.0", "s3|f0|0|500": "B.0", "s4|f0|0|500": "A.0"}
+    mapq = {"s1|f0|0|500": 3, "s1|f1|600|500": 1, "s2|f0|0|500": 0, "s3|f0|0|500": 5, "s4|f0|0|500": 9}
+    got = F.fair_counts(rows, truth, mapq, families={"A"})
+    assert got["A"] == {"o2 right": 1, "o2 wrong": 1, "mm2 right": 0, "mm2 wrong": 1}   # s1: O2 right; s2: O2 wrong (MAPQ 0)
+    assert "B" not in got                                                               # not a qualifying family

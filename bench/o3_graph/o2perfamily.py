@@ -3,6 +3,7 @@
 
     o2perfamily.py qualify AVA.paf FAMILIES.json SET OUT.json      the families whose members all align at [0.90, 1.00)
     o2perfamily.py table QUALIFY.json OUT.tsv                      every qualifying family's result in each data set
+    o2perfamily.py fair O2.tsv TRUTH.tsv FRAG.bam QUALIFY.json OUT.json   the held-out verdict against minimap2 at MAPQ >= 1
 
 A family works in a data set with >= MIN_PLACED placements, <= MAX_WRONG of them wrong, its sets holding the true copy for
 >= MIN_SETS of its almost-tied reads, and O2's precision >= minimap2's primary's on those reads."""
@@ -105,9 +106,68 @@ def cmd_table(qual_p, out_p):
     return 0
 
 
+FAIR_MIN_PLACED, FAIR_MAX_WRONG, FAIR_GAIN, FAIR_FAMILY_MIN = 100, 0.02, 0.05, 5
+
+
+def fair_counts(rows, truth, mapq, families):
+    """{family: {o2 right, o2 wrong, mm2 right, mm2 wrong}} counted by SOURCE read (a fragment's name is read|f<i>|...): a
+    source is right for a method when every fragment of it the method places is on its truth copy, wrong when one is not.
+    O2 places what it calls; minimap2's baseline places a fragment's primary only at MAPQ >= 1 (audit of register 1340: the
+    fair, equally selective baseline). Fragments outside `families`, or whose truth is none of their tied copies, are left
+    out."""
+    per = collections.defaultdict(lambda: collections.defaultdict(list))
+    for r in rows:
+        t = truth.get(r["read"])
+        if t is None or r["family"] not in families or t not in r["candidates"].split(","):
+            continue
+        src = (r["family"], r["read"].split("|")[0])
+        if r["call"] != "-":
+            per[src]["o2"].append(r["call"] == t)
+        if mapq.get(r["read"], 0) >= 1:
+            per[src]["mm2"].append(r["primary"] == t)
+    out = collections.defaultdict(lambda: dict.fromkeys(("o2 right", "o2 wrong", "mm2 right", "mm2 wrong"), 0))
+    for (f, _), d in per.items():
+        for m in ("o2", "mm2"):
+            if d.get(m):
+                out[f][f"{m} {'right' if all(d[m]) else 'wrong'}"] += 1
+        out[f]                                                      # a family with fragments but no placement still shows
+    return dict(out)
+
+
+def cmd_fair(o2_p, truth_p, bam_p, qual_p, out_p):
+    """PREREG_o2_fair_heldout_2026-10-19's verdict on one fragment set."""
+    import pysam
+    rows = list(csv.DictReader(open(o2_p), delimiter="\t"))
+    truth = {r["read"]: r["copy"] for r in csv.DictReader(open(truth_p), delimiter="\t")}
+    names = {r["read"] for r in rows}
+    mapq = {}
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            if rec.query_name in names and not rec.is_secondary and not rec.is_supplementary:
+                mapq[rec.query_name] = rec.mapping_quality
+    fam = fair_counts(rows, truth, mapq, set(json.load(open(qual_p))))
+    tot = collections.Counter()
+    for v in fam.values():
+        tot.update(v)
+    o2 = tot["o2 right"] + tot["o2 wrong"]
+    mm = tot["mm2 right"] + tot["mm2 wrong"]
+    p_o2, p_mm = tot["o2 right"] / max(1, o2), tot["mm2 right"] / max(1, mm)
+    good = sorted(f for f, v in fam.items() if v["o2 right"] >= FAIR_FAMILY_MIN and v["o2 wrong"] == 0)
+    bars = dict(F1=o2 >= FAIR_MIN_PLACED, F2=tot["o2 wrong"] <= FAIR_MAX_WRONG * o2, F3=p_o2 - p_mm >= FAIR_GAIN, F4=len(good) > 10)
+    verdict = "UNDERPOWERED" if not bars["F1"] else ("PASS" if all(bars.values()) else "FAIL")
+    json.dump(dict(families=fam, pooled=dict(tot), o2_precision=p_o2, mm2_precision=p_mm, families_working=good, bars=bars,
+                   verdict=verdict), open(out_p, "w"), indent=1)
+    print(f"[o2perfamily] fair: O2 placed {o2} source reads ({tot['o2 wrong']} wrong, precision {p_o2:.4f}); minimap2 MAPQ>=1 "
+          f"placed {mm} ({tot['mm2 wrong']} wrong, precision {p_mm:.4f}); families with >= {FAIR_FAMILY_MIN} placed and none wrong: "
+          f"{len(good)}; bars {bars}; verdict {verdict}", flush=True)
+    return 0
+
+
 def main(argv):
     if argv[:1] == ["qualify"] and len(argv) == 5:
         return cmd_qualify(*argv[1:])
+    if argv[:1] == ["fair"] and len(argv) == 6:
+        return cmd_fair(*argv[1:])
     if argv[:1] == ["table"] and len(argv) == 3:
         return cmd_table(*argv[1:])
     raise SystemExit(__doc__)
