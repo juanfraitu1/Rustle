@@ -44,3 +44,54 @@ when its own bases contradict the call nowhere. Otherwise it keeps the set of co
 **More than 10 qualifying families work in simulation, and more than 10 work on real reads** (in either real data set).
 
 **Reported:** every qualifying family with its result in each data set, including the ones that fail.
+
+## Results (`famident/perfamily.tsv`, scorer bbf73d5e)
+
+**By the rule: 20 qualifying families work in simulation, and 26 on real reads** (HG002 7, A119b fragments 21; CCT6P3 and
+NOMO1 work in both). Only three qualifying families have any wrong real placement:
+- SERF1B, 7 on HG002;
+- AC0064533, 4 on HG002;
+- TCAF2, 2 on A119b.
+
+All three fail the rule.
+
+## Audit (metric-auditor, same day): the verdict does not hold
+
+The auditor recomputed every count independently, and they match. Three findings void the claim.
+
+1. **Not held out.** Most scored tables existed before this pre-registration's commit:
+   - HG002 version 2;
+   - round 24 version 2, byte-identical;
+   - the A119b k = 3 run, which already gives 21 families.
+
+   Round 25 is the only fresh data: 7 qualifying families have reads there, and 3 work (CR3822851, DUXAP9, RABL2A).
+2. **The rule does not single out O2.** It compared O2's precision on the reads O2 places with minimap2's on all reads. The
+   baseline "minimap2's primary when MAPQ >= 1" passes the same rule in more families (simulation 30, real 33). In 46 of
+   the 48 working cells every O2 call equals minimap2's primary.
+3. **A floor of 5 placements cannot show <= 5% wrong.** With 0 wrong of 5, the 95% upper bound is 45%.
+
+Smaller points:
+- CD99, IL3RA and ASMTL are pseudoautosomal (phasing, not paralogs).
+- A119b's 3 fragments per source read are not independent.
+- The among-candidates rule (7bf68347) was added after the A119b runs.
+
+**Pooled against the fair baseline (reads within 10 AS; minimap2's primary taken only at MAPQ >= 1):**
+
+| data | reads (MAPQ-0) | O2 placed (wrong) | O2 on MAPQ-0 reads | O2 differs from minimap2 (right) | MAPQ >= 1 baseline placed (wrong) |
+|---|---|---|---|---|---|
+| simulation, rounds 23-25 | 12,585 (8,269) | 1,104 (0%) | 0 | 0 | 4,316 (0.14%) |
+| HG002, donor truth | 27,199 (17,247) | 1,381 (1.09%) | 2 | 9 (8) | 8,958 (27.1%) |
+| A119b fragments | 2,394 (1,108) | 319 (0.63%) | 4 | 5 (5) | 1,286 (13.8%) |
+
+**Reading:**
+- **O2 does not resolve exact ties (MAPQ 0).** Nothing in those reads separates the copies (0 / 2 / 4 placed), so they stay
+  sets.
+- **On near-ties O2 rarely overrules minimap2.** Its value is precision: on real reads, minimap2's MAPQ >= 1 near-tie calls
+  are 14-27% wrong, and the subset O2 validates is about 1% wrong.
+- **In one genome minimap2 is already right** (0.14% wrong), so O2 adds only certification and sets there.
+
+The bars that would test this claim:
+- held out on a donor never used here (the public testis library, ERR13885926);
+- a minimum number of placements;
+- O2's precision above the MAPQ >= 1 baseline's on the same reads;
+- source reads counted, pseudoautosomal families apart.
