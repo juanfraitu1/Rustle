@@ -166,6 +166,22 @@ def verdict(credited, truth):
     return "echo" if truth in c else "wrong"
 
 
+def families_better(a, b, min_reads=10):
+    """([families where arm a's right rate exceeds b's], [where it is below]) over the families with >= min_reads scored
+    reads; a, b: {family: {verdict: count}} on the same reads."""
+    up, down = [], []
+    for f in sorted(a):
+        k = sum(a[f].values())
+        if k < min_reads:
+            continue
+        ra, rb = a[f].get("right", 0) / k, b.get(f, {}).get("right", 0) / k
+        if ra > rb:
+            up.append(f)
+        elif ra < rb:
+            down.append(f)
+    return up, down
+
+
 def cmd_score_reads(bam_p, copies_p, fam_p, domain_p, out_p, truth_ps, arms):
     import pysam
     P, L, S = _sibling("o2psv"), _sibling("o2loci"), _sibling("summary")
@@ -219,9 +235,13 @@ def cmd_score_reads(bam_p, copies_p, fam_p, domain_p, out_p, truth_ps, arms):
     bars = dict(G=gate, B1=all(rate["LOOP-O2"]["right"] > rate[a]["right"] for a in others),
                 B2=("P" in rate and rate["LOOP-O2"]["wrong"] + rate["LOOP-O2"]["echo"] <= rate["P"]["wrong"] + rate["P"]["echo"]),
                 B3=k >= 100)
+    up, down = families_better(res["LOOP-O2"]["families"], res["P"]["families"]) if "P" in res else ([], [])
+    bars["B4"] = len(up) > 10
     verdict_ = ("UNDERPOWERED" if not bars["B3"] else "INFEASIBLE" if not bars["G"] else
-                "PASS" if bars["B1"] and bars["B2"] else "FAIL")
-    json.dump(dict(reads=k, rates=rate, arms=res, bars=bars, verdict=verdict_), open(out_p, "w"), indent=1)
+                "PASS" if bars["B1"] and bars["B2"] and bars["B4"] else "FAIL")
+    json.dump(dict(reads=k, rates=rate, arms=res, bars=bars, verdict=verdict_, families_loop_over_p=up,
+                   families_loop_under_p=down), open(out_p, "w"), indent=1)
+    print(f"[o2second] families (>= 10 scored reads) where LOOP-O2 credits more reads right than P: {len(up)}; fewer: {len(down)}")
     print(f"[o2second] {k} corrector-domain reads with a donor truth in {len(fams)} families; verdict {verdict_}; bars {bars}")
     for a in arms:
         r = rate[a]

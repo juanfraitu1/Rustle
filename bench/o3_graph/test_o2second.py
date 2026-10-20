@@ -50,3 +50,9 @@ def test_a_tied_read_is_right_only_when_credited_to_its_true_copy_alone():
     assert S2.verdict({"F.1"}, "F.1") == "right" and S2.verdict({"F.0"}, "F.1") == "wrong"
     assert S2.verdict({"F.0", "F.1"}, "F.1") == "echo" and S2.verdict(set(), "F.1") == "uncredited"
     assert S2.verdict({S2.NOWHERE}, "F.1") == "uncredited" and S2.verdict({S2.NOWHERE, "F.1"}, "F.1") == "right"
+
+
+def test_families_where_one_arm_credits_a_larger_share_of_reads_right_than_another():
+    a = {"F": {"right": 8, "wrong": 2}, "G": {"right": 3, "echo": 7}, "H": {"right": 2}}
+    b = {"F": {"right": 5, "wrong": 5}, "G": {"right": 4, "wrong": 6}, "H": {"right": 1, "wrong": 1}}
+    assert S2.families_better(a, b, min_reads=10) == (["F"], ["G"])          # H has 2 reads
