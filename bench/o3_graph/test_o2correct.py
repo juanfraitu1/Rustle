@@ -63,11 +63,11 @@ def test_the_sample_aware_corrector_takes_the_copy_whose_own_reads_explain_the_r
         d.add("F.0", {("I", 5, "T")}, [(0, 20)])                                              # the donor's F.0 has the T
         d.add("F.1", set(), [(0, 20)])
     per = {"F.0": ({("I", 5, "T")}, [(0, 20)]), "F.1": ({("S", 9, "C")}, [(0, 20)])}         # minimap2 took F.1 (AS: 5 < 8)
-    assert C.donor_pick(per, "F.1", d) == ("F.0", "sample")
+    assert C.donor_pick(per, "F.1", d, lack=True) == ("F.0", "sample")
     per = {"F.0": ({("I", 5, "T"), ("S", 2, "A")}, [(0, 20)]), "F.1": ({("S", 9, "C")}, [(0, 20)])}
-    assert C.donor_pick(per, "F.1", d) == ("F.1", "tie")                                       # one unexplained each
+    assert C.donor_pick(per, "F.1", d, lack=True) == ("F.1", "tie")                            # one unexplained each
     per = {"F.0": (set(), [(0, 20)]), "F.1": ({("S", 9, "C")}, [(0, 20)])}                    # the read lacks F.0's T
-    assert C.donor_pick(per, "F.1", d) == ("F.1", "tie")
+    assert C.donor_pick(per, "F.1", d, lack=True) == ("F.1", "tie")                            # version 1
 
 
 def test_a_fragment_s_own_source_read_is_left_out_of_the_sample_that_judges_it():
@@ -147,3 +147,31 @@ def test_a_world_without_corrector_output_is_reported_not_silently_dropped(tmp_p
     C.cmd_score_worlds(str(tmp_path / "out.json"), [str(d), str(tmp_path / "w2")])
     out = json.loads((tmp_path / "out.json").read_text())
     assert out["skipped"] == [str(tmp_path / "w2")] and out["bands"]["near tie"]["fixes"] == 1
+
+
+def test_the_bases_a_copy_s_reads_cover_k_deep_within_what_the_near_tied_reads_align():
+    d = C.Donor()
+    for bl in ([(0, 100)], [(0, 100)], [(50, 200)], [(60, 80)]):
+        d.add("F.0", set(), bl)
+    assert C.covered_bases(d, "F.0", [(0, 300)]) == 50                      # depth >= 3 on [50, 100) only
+    assert C.covered_bases(d, "F.0", [(70, 90)]) == 20 and C.covered_bases(d, "F.1", [(0, 10)]) == 0
+
+
+def test_a_copy_whose_reads_carry_improbably_many_events_is_distrusted_against_the_sample_s_weighted_median():
+    # 1 carried event per kb is the sample's usual; 20 over 2 kb is not (Poisson tail far below 1e-3)
+    cov = {"F.0": 2000, "F.1": 2000, "G.0": 2000, "G.1": 2000}
+    hom = {"F.0": 2, "F.1": 20, "G.0": 2, "G.1": 1}
+    assert C.distrusted(cov, hom) == {"F.1"}
+    assert C.distrusted({"F.0": 0}, {"F.0": 0}) == set()
+    assert abs(C.poisson_tail(3, 1.0) - 0.0803) < 1e-3 and C.poisson_tail(0, 5.0) == 1.0
+
+
+def test_version_2_never_penalizes_a_read_for_lacking_a_copy_s_carried_events_and_abstains_on_a_distrusted_copy():
+    d = C.Donor()
+    for _ in range(4):
+        d.add("F.0", {("S", 7, "A")}, [(0, 20)])                            # F.0's reads carry 7A (a missing copy's?)
+        d.add("F.1", set(), [(0, 20)])
+    per = {"F.0": (set(), [(0, 20)]), "F.1": ({("S", 9, "C")}, [(0, 20)])}   # the read lacks 7A, differs from F.1 at 9C
+    assert C.donor_pick(per, "F.1", d, lack=True) == ("F.1", "tie")         # version 1: 1 lacking vs 1 refuted
+    assert C.donor_pick(per, "F.1", d, lack=False) == ("F.0", "sample")     # version 2: F.0 explains the read
+    assert C.donor_pick(per, "F.1", d, lack=False, distrust={"F.0"}) == ("F.1", "distrusted")

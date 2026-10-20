@@ -27,10 +27,14 @@ Held out (PREREG_o2_corrector_2026-10-20, register 1343): FAIL overall -- fresh 
 copy foreign alleles and the rule then moves that copy's neighbours' reads (heldout22: 5 near-tie breaks, ANKRD30BL).
 
     o2correct.py run BAM COPIES.tsv OUT.tsv           read, family, corrector, minimap2, reason, candidates
-    o2correct.py donor BAM COPIES.tsv GENOME.fa OUT.tsv [--teach LIBRARY.bam] [--cache DIR --budget SECONDS]
+    o2correct.py donor BAM COPIES.tsv GENOME.fa OUT.tsv [--teach LIBRARY.bam] [--cache DIR --budget SECONDS] [--v1] [--guard]
                                    the sample-aware corrector (also the AS margin and per-copy scores); --teach: the library
                                    a fragment set was cut from, each fragment's source read left out of its own judgement;
-                                   --cache/--budget: stop after SECONDS, keeping each family done, and resume (exit 3)
+                                   --cache/--budget: stop after SECONDS, keeping each family done, and resume (exit 3);
+                                   --v1: register 1343's rule (lacking carried events counts);
+                                   --guard (opt-in, development): abstain on reads tied to a copy whose reads carry
+                                   improbably many events (distrusted());
+                                   OUT.tsv.copies.tsv: per copy, bases covered, carried events, distrusted
     o2correct.py score OUT.tsv TRUTH.tsv ... [--donor] [--among-candidates] [--families Q.json] [--exclude PAR.json]
     o2correct.py score-worlds OUT.json WORLD_DIR ... [--exclude PAR.json]     simulated worlds pooled, truth among the tied
 """
@@ -39,6 +43,7 @@ import collections
 import csv
 import importlib.util
 import json
+import math
 import os
 import pickle
 import sys
@@ -46,6 +51,7 @@ import time
 
 SLACK = 9
 K, SHARED, HET, HOM = 3, 2, 0.1, 0.8
+ALPHA = 1e-3                                                    # O2's certificate alpha
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -259,11 +265,14 @@ def donor_score(copy, events, blocks, donor, own=None):
     return sum(donor_parts(copy, events, blocks, donor, own))
 
 
-def donor_pick(per, prim, donor, own=None):
-    """(copy, reason) from {copy: (events, blocks)}: the copy with the lowest score (donor_parts summed), kept against
-    minimap2's primary only when it wins even if every event of the primary's its reads do not cover were the donor's
-    ("sample"); a shared lowest ("tie") or an alternative that does not dominate ("undominated") keeps minimap2's pick."""
+def donor_pick(per, prim, donor, own=None, lack=False, distrust=frozenset()):
+    """(copy, reason) from {copy: (events, blocks)}: the copy with the lowest score (donor_parts summed; version 1, lack=True,
+    also counts the carried events the read lacks), kept against minimap2's primary only when it wins even if every event of
+    the primary's its reads do not cover were the donor's ("sample"). A shared lowest ("tie"), an alternative that does not
+    dominate ("undominated") or a read tied to a copy whose reads are distrusted ("distrusted") keeps minimap2's pick."""
     pt = {c: donor_parts(c, ev, bl, donor, own) for c, (ev, bl) in per.items()}
+    if not lack:
+        pt = {c: (r, 0, u) for c, (r, _, u) in pt.items()}
     sc = {c: sum(v) for c, v in pt.items()}
     m = min(sc.values())
     top = [c for c, v in sc.items() if v == m]
@@ -271,7 +280,59 @@ def donor_pick(per, prim, donor, own=None):
         return prim, "tie"
     if top[0] != prim and not m < pt[prim][0] + pt[prim][1]:
         return prim, "undominated"
+    if top[0] != prim and distrust & set(per):
+        return prim, "distrusted"
     return top[0], "sample"
+
+
+def merged(intervals):
+    """Sorted, non-overlapping [(start, end)]."""
+    out = []
+    for x, y in sorted(intervals):
+        if out and x <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], y))
+        else:
+            out.append((x, y))
+    return out
+
+
+def covered_bases(donor, copy, intervals):
+    """Bases of `intervals` (merged) the copy's confident reads cover at depth >= K."""
+    donor.depth(copy, 0)                                         # sorts the blocks
+    pts = sorted(set(donor.st.get(copy, [])) | set(donor.en.get(copy, [])))
+    total = 0
+    for s, e in intervals:
+        cuts = [s] + pts[bisect.bisect_right(pts, s):bisect.bisect_left(pts, e)] + [e]
+        total += sum(b - a for a, b in zip(cuts, cuts[1:]) if donor.depth(copy, a) >= K)
+    return total
+
+
+def poisson_tail(k, lam):
+    """P(X >= k), X ~ Poisson(lam)."""
+    if k <= 0:
+        return 1.0
+    term, below = math.exp(-lam), 0.0
+    for i in range(k):
+        below += term
+        term *= lam / (i + 1)
+    return max(0.0, 1.0 - below)
+
+
+def distrusted(cov, hom, alpha=ALPHA):
+    """The copies whose confident reads carry improbably many events (hom: count; cov: bases covered): a Poisson tail below
+    alpha at the sample's own rate, the coverage-weighted median of (carried + 1/2) / covered over its copies. A copy the
+    reference lacks lands its reads on its nearest copy, whose sample then carries the missing copy's alleles (register
+    1343); a donor's own copy differs from CHM13's at the sample's usual rate."""
+    items = sorted(((hom[c] + 0.5) / cov[c], cov[c]) for c in cov if cov[c] > 0)
+    if not items:
+        return set()
+    half, acc, rate = sum(w for _, w in items) / 2, 0, items[-1][0]
+    for dens, w in items:
+        acc += w
+        if acc >= half:
+            rate = dens
+            break
+    return {c for c in cov if cov[c] > 0 and poisson_tail(hom[c], rate * cov[c]) < alpha}
 
 
 def cmd_run(bam_p, copies_p, out_p):
@@ -452,24 +513,37 @@ def collect(bam_p, copies_p, genome_p, teach_p=None, cache=None, budget=None):
     return domain, donor, events, own
 
 
-def cmd_donor(bam_p, copies_p, genome_p, out_p, teach_p=None, cache=None, budget=None):
+def cmd_donor(bam_p, copies_p, genome_p, out_p, teach_p=None, cache=None, budget=None, v1=False, guard=False):
     P = _sibling("o2psv")
     got = collect(bam_p, copies_p, genome_p, teach_p, cache, budget)
     if got is None:
         return 3
     domain, donor, events, own = got
+    need = collections.defaultdict(list)
+    for per in events.values():
+        for c, (_, bl) in per.items():
+            need[c].extend(bl)
+    need = {c: merged(iv) for c, iv in need.items()}
+    cov = {c: covered_bases(donor, c, iv) for c, iv in need.items()}
+    hom = {c: sum(1 for e in donor.hom(c) if any(s <= e[1] < t for s, t in iv)) for c, iv in need.items()}
+    distrust = distrusted(cov, hom) if guard else set()
     n = collections.Counter()
     with open(out_p, "w") as fh:
         fh.write("read\tfamily\tcorrector\tminimap2\treason\tcandidates\tmargin\tscores\n")
         for q, per in sorted(events.items()):
             cset, prim, margin = domain[q]
             o = own.get(P.own_name(q))
-            c, why = donor_pick(per, prim, donor, o)
+            c, why = donor_pick(per, prim, donor, o, lack=v1, distrust=distrust)
             n[why] += 1
             n["overrules"] += c != prim
             sc = ",".join(f"{x}:{donor_score(x, *per[x], donor, o)}" for x in sorted(per))
             fh.write(f"{q}\t{prim.rsplit('.', 1)[0]}\t{c}\t{prim}\t{why}\t{','.join(sorted(per))}\t{margin}\t{sc}\n")
-    print(f"[o2correct] donor -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
+    with open(out_p + ".copies.tsv", "w") as fh:
+        fh.write("copy\tcovered\tcarried\tdistrusted\n")
+        for c in sorted(cov):
+            fh.write(f"{c}\t{cov[c]}\t{hom[c]}\t{int(c in distrust)}\n")
+    print(f"[o2correct] donor ({'version 1' if v1 else 'version 2'}{' + guard' if guard else ''}) -> {out_p}: {len(distrust)} of {len(cov)} copies "
+          f"distrusted; " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
     return 0
 
 
@@ -558,6 +632,8 @@ def main(argv):
         excl_p, argv = argv[i + 1], argv[:i] + argv[i + 2:]
     if argv[:1] == ["run"] and len(argv) == 4:
         return cmd_run(*argv[1:])
+    v1, argv = "--v1" in argv, [a for a in argv if a != "--v1"]
+    guard, argv = "--guard" in argv, [a for a in argv if a != "--guard"]
     opt = {}
     for k in ("--teach", "--cache", "--budget"):
         if k in argv:
@@ -565,7 +641,7 @@ def main(argv):
             opt[k], argv = argv[i + 1], argv[:i] + argv[i + 2:]
     if argv[:1] == ["donor"] and len(argv) == 5:
         return cmd_donor(*argv[1:], teach_p=opt.get("--teach"), cache=opt.get("--cache"),
-                         budget=float(opt["--budget"]) if "--budget" in opt else None)
+                         budget=float(opt["--budget"]) if "--budget" in opt else None, v1=v1, guard=guard)
     if argv[:1] == ["score-worlds"] and len(argv) >= 3:
         return cmd_score_worlds(argv[1], argv[2:], excl_p)
     if argv[:1] == ["score"] and len(argv) >= 3:
