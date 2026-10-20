@@ -122,3 +122,15 @@ def test_the_copies_an_alignment_can_lie_on_are_found_by_span_in_their_table_ord
     assert C.overlapping(idx, "chr1", 255, 520) == [cands[0], cands[1], cands[2]]                 # table order kept
     assert C.overlapping(idx, "chr1", 300, 500) == []
     assert C.overlapping(idx, "chr1", 899, 2000) == [cands[0]] and C.overlapping(idx, "chr2", 0, 10) == []
+
+
+def test_simulated_worlds_pool_without_merging_their_read_names(tmp_path):
+    for w, rows in (("w1", [("s1", "F.1", "F.0", "0"), ("s2", "F.0", "F.0", "3")]), ("w2", [("s1", "F.0", "F.1", "5")])):
+        d = tmp_path / w
+        d.mkdir()
+        (d / "o2correct.tsv").write_text("read\tfamily\tcorrector\tminimap2\treason\tcandidates\tmargin\tscores\n" + "".join(
+            f"{q}\tF\t{c}\t{m}\tsample\tF.0,F.1\t{g}\t\n" for q, c, m, g in rows))
+        (d / "reads.truth.E0.tsv").write_text("read\tcopy\tkind\n" + "".join(f"{q}\tF.1\tpresent\n" for q, *_ in rows))
+    out = C.score_worlds([str(tmp_path / "w1"), str(tmp_path / "w2")])
+    assert dict(out["exact tie"]) == {"reads": 1, "corrector right": 1, "minimap2 right": 0, "fixes": 1}
+    assert out["near tie"]["reads"] == 2 and out["near tie"]["minimap2 right"] == 1 and out["near tie"]["breaks"] == 1

@@ -29,6 +29,7 @@ right vs minimap2's 66.4% (1,162 fixed, 9 broken), exact ties 52.6% vs 39.6%; 16
                                    a fragment set was cut from, each fragment's source read left out of its own judgement;
                                    --cache/--budget: stop after SECONDS, keeping each family done, and resume (exit 3)
     o2correct.py score OUT.tsv TRUTH.tsv ... [--donor] [--among-candidates] [--families Q.json] [--exclude PAR.json]
+    o2correct.py score-worlds OUT.json WORLD_DIR ... [--exclude PAR.json]     simulated worlds pooled, truth among the tied
 """
 import bisect
 import collections
@@ -476,7 +477,7 @@ def cmd_score(out_p, truth_ps, donor=False, among=False, fam_p=None, excl_p=None
     truth = P._truth(truth_ps, donor)
     fams = set(json.load(open(fam_p))) if fam_p else None
     excl = set(json.load(open(excl_p))) if excl_p else set()
-    per_fam, band = collections.defaultdict(list), collections.defaultdict(list)
+    per_fam, band, srcs = collections.defaultdict(list), collections.defaultdict(list), set()
     for r in csv.DictReader(open(out_p), delimiter="\t"):
         t = truth.get(r["read"])
         if t is None:
@@ -489,6 +490,8 @@ def cmd_score(out_p, truth_ps, donor=False, among=False, fam_p=None, excl_p=None
         if (fams is not None and r["family"] not in fams) or r["family"] in excl:
             continue
         per_fam[r["family"]].append((r["corrector"], r["minimap2"], tc))
+        if r["corrector"] != r["minimap2"]:
+            srcs.add(r["read"].split("|")[0])
         if r.get("margin") not in (None, ""):
             band["exact tie" if r["margin"] == "0" else "near tie"].append((r["corrector"], r["minimap2"], tc))
     tot = tally([x for v in per_fam.values() for x in v])
@@ -501,12 +504,39 @@ def cmd_score(out_p, truth_ps, donor=False, among=False, fam_p=None, excl_p=None
         return (f"{name}: reads {t['reads']}; corrector right {t['corrector right']} ({t['corrector right'] / k:.4f}), "
                 f"minimap2 right {t['minimap2 right']} ({t['minimap2 right'] / k:.4f}); fixes {t['fixes']}, breaks {t['breaks']}, "
                 f"both wrong {t['both wrong']}")
-    print(f"[o2correct] {out_p}: " + line("all", tot) + f"; families fixed more than broken {len(better)}, broken more "
-          f"than fixed {len(worse)}", flush=True)
+    print(f"[o2correct] {out_p}: " + line("all", tot) + f"; overruled reads from {len(srcs)} source reads; families fixed "
+          f"more than broken {len(better)}, broken more than fixed {len(worse)}", flush=True)
     for b, rows in sorted(band.items()):
         print("    " + line(b, tally(rows)), flush=True)
-    json.dump(dict(pooled=dict(tot), bands={b: dict(tally(v)) for b, v in band.items()}, families=fam, families_better=better,
-                   families_worse=worse), open(out_p + ".score.json", "w"), indent=1)
+    json.dump(dict(pooled=dict(tot), bands={b: dict(tally(v)) for b, v in band.items()}, overruled_sources=len(srcs),
+                   families=fam, families_better=better, families_worse=worse), open(out_p + ".score.json", "w"), indent=1)
+    return 0
+
+
+def score_worlds(dirs, excl=frozenset()):
+    """{"exact tie" / "near tie": tally} pooled over simulated worlds (directories with o2correct.tsv and reads.truth.E0.tsv),
+    a read scored when its truth is one of its tied copies; a world's read names stay its own."""
+    band = collections.defaultdict(list)
+    for w in dirs:
+        truth = {r["read"]: r["copy"] for r in csv.DictReader(open(os.path.join(w, "reads.truth.E0.tsv")), delimiter="\t")}
+        for r in csv.DictReader(open(os.path.join(w, "o2correct.tsv")), delimiter="\t"):
+            t = truth.get(r["read"])
+            if t is None or t not in r["candidates"].split(",") or r["family"] in excl:
+                continue
+            band["exact tie" if r["margin"] == "0" else "near tie"].append((r["corrector"], r["minimap2"], t))
+    return {b: tally(v) for b, v in band.items()}
+
+
+def cmd_score_worlds(out_p, dirs, excl_p=None):
+    excl = set(json.load(open(excl_p))) if excl_p else set()
+    dirs = [d for d in dirs if os.path.exists(os.path.join(d, "o2correct.tsv"))]
+    res = score_worlds(dirs, excl)
+    for b, t in sorted(res.items()):
+        k = max(1, t["reads"])
+        print(f"[o2correct] {len(dirs)} worlds, {b}: reads {t['reads']}; corrector right {t['corrector right'] / k:.4f}, "
+              f"minimap2 right {t['minimap2 right'] / k:.4f}; fixes {t['fixes']}, breaks {t['breaks']}, both wrong "
+              f"{t['both wrong']}", flush=True)
+    json.dump(dict(worlds=dirs, bands={b: dict(t) for b, t in res.items()}), open(out_p, "w"), indent=1)
     return 0
 
 
@@ -530,6 +560,8 @@ def main(argv):
     if argv[:1] == ["donor"] and len(argv) == 5:
         return cmd_donor(*argv[1:], teach_p=opt.get("--teach"), cache=opt.get("--cache"),
                          budget=float(opt["--budget"]) if "--budget" in opt else None)
+    if argv[:1] == ["score-worlds"] and len(argv) >= 3:
+        return cmd_score_worlds(argv[1], argv[2:], excl_p)
     if argv[:1] == ["score"] and len(argv) >= 3:
         return cmd_score(argv[1], argv[2:], donor, among, fam_p, excl_p)
     raise SystemExit(__doc__)
