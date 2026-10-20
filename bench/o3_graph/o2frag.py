@@ -5,7 +5,7 @@ errors and the donor's own alleles -- but spans fewer PSVs, so realigned it is o
 read's copy, kept only when the full read, realigned with the windows, still lands on that copy clear by MARGIN AS of any
 other locus (on HG002, reads clear by >= 30 agree with the donor's assembly 98.4-99.8%).
 
-    o2frag.py sources BAM COPIES.tsv OUT_DIR [--per-family 60] [--seed 1] [--min-len 1000]
+    o2frag.py sources BAM COPIES.tsv OUT_DIR [--per-family 60] [--seed 1] [--min-len 1000] [--exclude USED.tsv]
                                          -> OUT_DIR/sources.fa (original orientation), sources.tsv (read, copy, family)
     o2frag.py fragments OUT_DIR [--per-read 3] [--min 300] [--max 1200] [--seed 1]  -> OUT_DIR/fragments.fa (read|f<i>|start|len)
     o2frag.py truth OUT_DIR ALN.bam COPIES.tsv [--margin 30]  -> OUT_DIR/truth.tsv (read, copy): every fragment of a kept source
@@ -74,13 +74,13 @@ def keep_lowest(heap, n, rank, item):
         heapq.heapreplace(heap, (_neg(rank), item))
 
 
-def cmd_sources(bam_p, copies_p, out_dir, per_family=60, seed=1, min_len=1000):
+def cmd_sources(bam_p, copies_p, out_dir, per_family=60, seed=1, min_len=1000, exclude_p=None):
     import pysam
     P, S = _sibling("o2psv"), _sibling("summary")
     cps = P.load_copies(copies_p)
     fam_of = {c: c.rsplit(".", 1)[0] for v in cps.values() for c, *_ in v}
     got = collections.defaultdict(list)                  # family -> keep_lowest heap of (read, copy, sequence)
-    seen = set()
+    seen = {ln.split("\t")[0] for ln in open(exclude_p)} if exclude_p else set()     # reads already used: never drawn
     with pysam.AlignmentFile(bam_p) as bam:
         for chrom, v in cps.items():
             for c, strand, ex, (s, e) in v:
@@ -166,7 +166,7 @@ def _opt(argv, name, default, cast=int):
 def main(argv):
     if argv[:1] == ["sources"] and len(argv) >= 4:
         return cmd_sources(argv[1], argv[2], argv[3], _opt(argv, "--per-family", 60), _opt(argv, "--seed", 1),
-                           _opt(argv, "--min-len", 1000))
+                           _opt(argv, "--min-len", 1000), _opt(argv, "--exclude", None, str))
     if argv[:1] == ["fragments"] and len(argv) >= 2:
         return cmd_fragments(argv[1], _opt(argv, "--per-read", 3), _opt(argv, "--min", 300), _opt(argv, "--max", 1200),
                              _opt(argv, "--seed", 1))

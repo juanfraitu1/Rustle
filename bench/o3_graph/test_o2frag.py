@@ -37,3 +37,25 @@ def test_the_sample_keeps_the_reads_of_lowest_seeded_rank_whatever_the_order_the
         for r in order:
             F.keep_lowest(h, 5, ranks[r], r)
         assert sorted(x for _, x in h) == sorted(want)
+
+
+def test_a_fresh_source_draw_skips_every_read_already_used(tmp_path):
+    import pysam
+    bam = tmp_path / "r.bam"
+    hdr = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "c1", "LN": 20000}]})
+    with pysam.AlignmentFile(str(bam), "wb", header=hdr) as out:
+        for i in range(6):
+            a = pysam.AlignedSegment(hdr)
+            a.query_name, a.reference_id, a.reference_start, a.flag, a.mapping_quality = f"r{i}", 0, 1100, 0, 60
+            a.cigarstring, a.query_sequence = "1200=", "A" * 1200
+            a.set_tag("AS", 1200)
+            out.write(a)
+    pysam.index(str(bam))
+    cps = tmp_path / "copies.tsv"
+    cps.write_text("copy\tfamily\tchrom\tstart\tend\tstrand\texons\nF.0\tF\tc1\t1000\t3000\t+\t1000-3000\n")
+    used = tmp_path / "used.tsv"
+    used.write_text("read\tcopy\tfamily\nr1\tF.0\tF\nr4\tF.0\tF\n")
+    out_dir = tmp_path / "o"
+    assert F.cmd_sources(str(bam), str(cps), str(out_dir), per_family=10, seed=1, min_len=1000, exclude_p=str(used)) == 0
+    got = [ln.split("\t")[0] for ln in open(out_dir / "sources.tsv")][1:]
+    assert sorted(got) == ["r0", "r2", "r3", "r5"]
