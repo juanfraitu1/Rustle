@@ -122,3 +122,26 @@ def test_the_regimen_places_by_two_psvs_or_by_one_the_sample_validates_and_never
 def test_exclusions_shape_the_set_only_when_the_read_does_not_contradict_every_copy_they_leave():
     one = {"F.0": (0, 2000), "F.1": (1, 2000)}
     assert P.regimen_decide(one, {"F.0"}, {"F.1"}) == ("-", "psv_set", ["F.0", "F.1"])   # MAGEA9B: an error made a mosaic
+
+
+def test_with_validated_only_every_placement_and_every_narrowing_needs_the_sample_s_validation():
+    R = P.regimen_decide
+    two = {"F.0": (0, 2000), "F.1": (2, 2000)}
+    assert R(two, set(), set(), validated_only=True) == ("-", "psv_set", ["F.0", "F.1"])     # two PSVs alone: a set
+    assert R(two, {"F.1"}, set(), validated_only=True) == ("F.0", "psv_validated", ["F.0"])
+    three = {"F.0": (0, 900), "F.1": (1, 900), "F.2": (3, 900)}
+    assert R(three, set(), set(), validated_only=True) == ("-", "psv_set", ["F.0", "F.1", "F.2"])   # no unvalidated cut
+    assert R(three, {"F.2"}, set(), validated_only=True) == ("-", "psv_set", ["F.0", "F.1"])
+
+
+def test_a_fragment_whose_truth_is_none_of_its_tied_copies_can_be_scored_apart():
+    rows = [dict(read="a", call="F.1", candidates="F.1,F.2", set="F.1", primary="F.1"),     # truth F.0: not a candidate
+            dict(read="b", call="F.0", candidates="F.0,F.1", set="F.0", primary="F.1")]
+    truth = {"a": "F.0", "b": "F.0"}
+    assert P.score(rows, truth)["wrong"] == 1
+    n = P.score(rows, truth, among_candidates=True)
+    assert (n["reads"], n["right"], n["wrong"], n["outside candidates"]) == (1, 1, 0, 1)
+
+
+def test_a_fragment_s_own_source_read_is_the_read_left_out_of_its_validation():
+    assert P.own_name("m64/1/ccs|f2|130|700") == "m64/1/ccs" and P.own_name("m64/1/ccs") == "m64/1/ccs"

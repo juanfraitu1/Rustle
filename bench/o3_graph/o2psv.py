@@ -19,8 +19,10 @@ not explain is O3's (psv_unexplained).
     o2psv.py svp READS.bam TEACH.bam COPIES.tsv GENOME.fa OUT.tsv [--k 3] [--exclude TSV] [--names TSV]
                  [--fit RATE | --fit-quantile Q]   the explained floor: a rate, or the sample's own Q-quantile (error_floor)
                  [--teach-margin M]                the AS margin a read placed on a copy needs to validate it (10)
+                 [--validated-only]                version 2: only sample-validated PSVs place or narrow
                                                       the same reads decided by sample-validated PSVs (the regimen)
-    o2psv.py score OUT.tsv TRUTH.tsv ... [--donor]    truth: read + copy (worlds, fragments), or hg002truth's classes
+    o2psv.py score OUT.tsv TRUTH.tsv ... [--donor] [--among-candidates]
+                                                      truth: read + copy (worlds, fragments), or hg002truth's classes
 
 Sample-validated PSVs (svp): one PSV is enough in one genome (round 23) but not on a real donor, whose copy may carry another
 copy's allele (HG002: one-PSV placements 85-94% right). So a PSV counts against copy Y only where the sample's own confident
@@ -146,6 +148,12 @@ def psv_columns(length, prim_rev, alns, fetch):
     return {k: d for k, d in cols.items() if len(d) == len(alns) and len({v[2] for v in d.values()}) > 1}
 
 
+def own_name(q):
+    """The read a decision leaves out of its own validation: a fragment's source read (o2frag names: read|f<i>|start|len),
+    else the read itself."""
+    return q.split("|")[0]
+
+
 def excluded(cols, read, teach, k, own=None):
     """The tied copies the read's own PSVs exclude in this sample: at a column where the read carries another tied copy's base,
     copy Y is excluded when the sample's reads placed on Y (teach: {(copy, chrom, position): {read: genome-strand base}}),
@@ -192,17 +200,19 @@ def contradicted(cols, read):
     return out
 
 
-def regimen_decide(cands, excl, contra, fit=FIT):
+def regimen_decide(cands, excl, contra, fit=FIT, validated_only=False):
     """O2's regimen (2026-10-19 /goal) on a read tied within 10 AS: (call or "-", reason, set). A read its best copy does not
     explain within fit is O3's. It is placed on the copy with at least MIN_PSV fewer substitutions than every other
     (psv_two: two PSVs, no sample evidence needed), or on the one copy the sample-validated PSVs leave (excl: excluded())
     when the read's own bases contradict it nowhere (psv_validated). Disagreeing rules abstain (psv_conflict). Otherwise the
-    read keeps the copies neither rule removes (psv_set)."""
+    read keeps the copies neither rule removes (psv_set). validated_only (version 2, after register 1339: on A119b two-PSV
+    calls inside conversion-like tracts were wrong 4 times in 30): two PSVs place or narrow nothing without the sample's
+    validation, so only the sample-validated rule places and only its exclusions narrow the set."""
     best = min(cands, key=lambda c: (cands[c][0], c))
     if cands[best][0] > fit * cands[best][1]:
         return "-", "psv_unexplained", sorted(cands)
-    keep = sorted(c for c in cands if cands[c][0] - cands[best][0] < MIN_PSV)
-    two = best if len(keep) == 1 else None
+    keep = sorted(cands) if validated_only else sorted(c for c in cands if cands[c][0] - cands[best][0] < MIN_PSV)
+    two = best if len(keep) == 1 and not validated_only else None
     left = sorted(c for c in cands if c not in excl)
     val = left[0] if len(left) == 1 and left[0] not in contra else None
     if two and val and two != val:
@@ -351,7 +361,8 @@ def teacher_bases(bam_p, cps, att, need, skip=frozenset(), min_margin=SLACK + 1)
     """{(copy, chrom, position): {read: genome-strand base}} of each copy's placed reads -- primary on the copy, every
     alignment on another copy of its family at least min_margin AS lower (SLACK + 1: Eichler's well placed; 1: any read
     minimap2 resolved) -- at the positions in need ({copy: {(chrom, position)}}); skip: reads that may not teach (a
-    fragment's own source read)."""
+    fragment's own source read). Two passes: the primaries over the needed positions (their bases and AS), then each family's
+    copy spans for those reads' alignments only, so a large library is not attributed record by record."""
     import pysam
     span = {c: (ch, s, e) for ch, v in cps.items() for c, _, _, (s, e) in v}
     fam = collections.defaultdict(list)
@@ -360,44 +371,49 @@ def teacher_bases(bam_p, cps, att, need, skip=frozenset(), min_margin=SLACK + 1)
     out = collections.defaultdict(dict)
     with pysam.AlignmentFile(bam_p) as bam:
         for f in sorted({c.rsplit(".", 1)[0] for c in need}):
-            best = collections.defaultdict(dict)                 # read -> {copy: best AS}; primary copy apart
-            prim = {}
+            cand, bases = {}, collections.defaultdict(dict)      # read -> (copy, primary AS); read -> {(copy, chrom, pos): base}
             for c in fam[f]:
-                ch, s, e = span[c]
-                for rec in bam.fetch(ch, s, e):
-                    if rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS") or rec.query_name in skip:
-                        continue
-                    cp = att(rec.get_blocks(), _strand(rec), cps.get(rec.reference_name, ()))
-                    if cp is None or cp.rsplit(".", 1)[0] != f:
-                        continue
-                    q = rec.query_name
-                    best[q][cp] = max(best[q].get(cp, -10 ** 9), rec.get_tag("AS"))
-                    if not rec.is_secondary:
-                        prim[q] = (cp, rec.get_tag("AS"))
-            teach = collections.defaultdict(set)
-            for q, (cp, a) in prim.items():
-                if all(v <= a - min_margin for c2, v in best[q].items() if c2 != cp):
-                    teach[cp].add(q)
-            for c in fam[f]:
-                if c not in need or not teach.get(c):
+                if c not in need:
                     continue
                 by = collections.defaultdict(set)
                 for ch, p in need[c]:
                     by[ch].add(p)
                 for ch, want in by.items():
-                    ps = sorted(want)
-                    for rec in bam.fetch(ch, ps[0], ps[-1] + 1):
-                        if rec.is_secondary or rec.is_supplementary or rec.query_name not in teach[c] or rec.query_sequence is None:
-                            continue
-                        sq = rec.query_sequence
-                        for qp, rp in rec.get_aligned_pairs(matches_only=True):
-                            if rp in want:
-                                out[(c, ch, rp)][rec.query_name] = sq[qp].upper()
+                    for p in sorted(want):
+                        for rec in bam.fetch(ch, p, p + 1):
+                            q = rec.query_name
+                            if (rec.is_secondary or rec.is_supplementary or rec.is_unmapped or q in skip
+                                    or rec.query_sequence is None or not rec.has_tag("AS")):
+                                continue
+                            if q not in cand:
+                                cp = att(rec.get_blocks(), _strand(rec), cps.get(rec.reference_name, ()))
+                                cand[q] = (cp, rec.get_tag("AS"))
+                            if cand[q][0] != c:
+                                continue
+                            for qp, rp in rec.get_aligned_pairs(matches_only=True):
+                                if rp == p:
+                                    bases[q][(c, ch, p)] = rec.query_sequence[qp].upper()
+                                    break
+            cand = {q: v for q, v in cand.items() if bases.get(q)}
+            rival = collections.defaultdict(lambda: -10 ** 9)    # read -> best AS on another copy of the family
+            for c in fam[f]:
+                ch, s, e = span[c]
+                for rec in bam.fetch(ch, s, e):
+                    q = rec.query_name
+                    if q not in cand or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
+                        continue
+                    cp = att(rec.get_blocks(), _strand(rec), cps.get(rec.reference_name, ()))
+                    if cp is not None and cp != cand[q][0] and cp.rsplit(".", 1)[0] == f:
+                        rival[q] = max(rival[q], rec.get_tag("AS"))
+            for q, (cp, a) in cand.items():
+                if rival[q] <= a - min_margin:
+                    for key, b in bases[q].items():
+                        out[key][q] = b
     return out
 
 
 def cmd_svp(reads_p, teach_p, copies_p, genome_p, out_p, k=3, exclude_p=None, names_p=None, fit=None, fit_q=None,
-            min_margin=SLACK + 1):
+            min_margin=SLACK + 1, validated_only=False):
     """O2 with sample-validated PSVs: o2psv.py svp READS.bam TEACH.bam COPIES.tsv GENOME.fa OUT.tsv [--k K]
     [--exclude TSV (first column: reads that may not teach)] [--names TSV (first column: the reads to decide)]."""
     import pysam
@@ -423,29 +439,35 @@ def cmd_svp(reads_p, teach_p, copies_p, genome_p, out_p, k=3, exclude_p=None, na
         for q in sorted(dom):
             per = dom[q]
             cands = {c: (a[1], a[2]) for c, a in per.items()}
-            call, reason, held = regimen_decide(cands, excluded(cols[q], prim[q][0], tb, k, own=q),
-                                                contradicted(cols[q], prim[q][0]), fit)
+            call, reason, held = regimen_decide(cands, excluded(cols[q], prim[q][0], tb, k, own=own_name(q)),
+                                                contradicted(cols[q], prim[q][0]), fit, validated_only)
             n[reason] += 1
             p = prim[q][2]
             fh.write(f"{q}\t{p.rsplit('.', 1)[0]}\t{call}\t{reason}\t{','.join(sorted(per))}\t{','.join(held)}\t{p}\n")
-    print(f"[o2psv] svp {reads_p} (teachers {teach_p}, margin >= {min_margin}, k {k}, fit {fit:.5f}) -> {out_p}: " + ", ".join(f"{a} {b}" for a, b in sorted(n.items())),
+    print(f"[o2psv] svp {reads_p} (teachers {teach_p}, margin >= {min_margin}, k {k}, fit {fit:.5f}"
+          + (", validated only" if validated_only else "") + f") -> {out_p}: " + ", ".join(f"{a} {b}" for a, b in sorted(n.items())),
           flush=True)
     return 0
 
 
 SCORE_KEYS = ("reads", "right", "wrong", "unsupported", "abstain", "set holds truth", "judged sets", "candidates", "set size",
-              "minimap2 right", "minimap2 wrong", "minimap2 unsupported")
+              "minimap2 right", "minimap2 wrong", "minimap2 unsupported", "outside candidates")
 
 
-def score(rows, truth, donor=False):
+def score(rows, truth, donor=False, among_candidates=False):
     """Counts of O2's calls and sets, and of minimap2's primary, against truth {read: copy} or, donor, {read: (class,
-    copy)}; reads without a truth row are left out."""
+    copy)}; reads without a truth row are left out. among_candidates (the fragment test, version 2): a read whose truth is
+    none of its tied copies is counted apart (`outside candidates`) -- its window matches another locus better than its
+    full read's copy (a chimera or a segment shared with another family), so the full read's copy is no truth for it."""
     n = dict.fromkeys(SCORE_KEYS, 0)
     for r in rows:
         t = truth.get(r["read"])
         if t is None:
             continue
         cls, tc = t if donor else (None, t)
+        if among_candidates and tc not in r["candidates"].split(","):
+            n["outside candidates"] += 1
+            continue
         held = r["set"].split(",")
         f, h = fate(r["call"], held, tc, cls)
         if f == "unscored":
@@ -473,8 +495,8 @@ def _truth(paths, donor):
     return out
 
 
-def cmd_score(out_p, truth_ps, donor=False):
-    n = score(csv.DictReader(open(out_p), delimiter="\t"), _truth(truth_ps, donor), donor)
+def cmd_score(out_p, truth_ps, donor=False, among=False):
+    n = score(csv.DictReader(open(out_p), delimiter="\t"), _truth(truth_ps, donor), donor, among)
     placed = n["right"] + n["wrong"]
     mm = n["minimap2 right"] + n["minimap2 wrong"]
     print(", ".join(f"{k} {v}" for k, v in n.items()))
@@ -486,6 +508,7 @@ def cmd_score(out_p, truth_ps, donor=False):
 
 def main(argv):
     donor, argv = "--donor" in argv, [a for a in argv if a != "--donor"]
+    among, argv = "--among-candidates" in argv, [a for a in argv if a != "--among-candidates"]
     if argv[:1] == ["copies-world"] and len(argv) == 3:
         return copies_world(argv[1], argv[2])
     if argv[:1] == ["copies-pool"] and len(argv) == 4:
@@ -496,9 +519,10 @@ def main(argv):
         opt = lambda k, d=None: argv[argv.index(k) + 1] if k in argv else d  # noqa: E731
         return cmd_svp(argv[1], argv[2], argv[3], argv[4], argv[5], int(opt("--k", 3)), opt("--exclude"), opt("--names"),
                        float(opt("--fit")) if opt("--fit") else None,
-                       float(opt("--fit-quantile")) if opt("--fit-quantile") else None, int(opt("--teach-margin", SLACK + 1)))
+                       float(opt("--fit-quantile")) if opt("--fit-quantile") else None, int(opt("--teach-margin", SLACK + 1)),
+                       "--validated-only" in argv)
     if argv[:1] == ["score"] and len(argv) >= 3:
-        return cmd_score(argv[1], argv[2:], donor)
+        return cmd_score(argv[1], argv[2:], donor, among)
     raise SystemExit(__doc__)
 
 
