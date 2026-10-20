@@ -31,3 +31,9 @@ def test_two_copies_whose_orthologs_overlap_on_a_haplotype_are_both_dropped():
     orth = {("F.0", "mat"): dict(tname="c1", start=100, end=200), ("F.1", "mat"): dict(tname="c1", start=150, end=250),
             ("F.2", "mat"): dict(tname="c1", start=300, end=400), ("F.0", "pat"): dict(tname="c9", start=100, end=200)}
     assert sorted(DS.drop_ambiguous(orth)) == [("F.0", "pat"), ("F.2", "mat")]
+
+
+def test_an_exon_whose_lifted_length_balloons_through_a_large_target_gap_does_not_lift():
+    # 50M 40000D 50M: an exon spanning the deletion would lift as 40,020 bp; the isoform is not projectable
+    assert DS.lift_exons(_row("+", cg="50M40000D50M", te=41100), [(40, 60)]) is None
+    assert DS.lift_exons(_row("+", cg="50M3D50M", te=1103), [(40, 60)]) == [(1040, 1063)]    # a small indel is fine

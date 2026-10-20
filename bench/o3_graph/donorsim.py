@@ -26,6 +26,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FLANK, MIN_MAPQ = 20000, 20
+MAX_EXON_GROWTH = 50                                            # bp an exon may gain or lose through the alignment (audit of r1346)
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
@@ -41,7 +42,8 @@ RW = _sibling("realworld")
 
 def lift_exons(row, exons):
     """Exons (query coordinates, half-open) lifted onto the target through a PAF row's alignment, sorted; None when an exon
-    end falls outside it or the exons do not stay ordered. A '-' row aligns the query's reverse complement."""
+    end falls outside it, an exon's length changes by more than MAX_EXON_GROWTH, or the exons do not stay ordered. A '-' row
+    aligns the query's reverse complement."""
     pos = [x for a, b in exons for x in (a, b - 1)]
     if row["strand"] == "+":
         m = RW.lift_positions(row["cg"], row["qs"], row["ts"], pos)
@@ -52,6 +54,8 @@ def lift_exons(row, exons):
         new = [(m[rc[b - 1]], m[rc[a]] + 1) if m[rc[a]] is not None and m[rc[b - 1]] is not None else None for a, b in exons]
     if any(e is None or e[0] >= e[1] for e in new):
         return None
+    if any(abs((e[1] - e[0]) - (b - a)) > MAX_EXON_GROWTH for e, (a, b) in zip(new, exons)):
+        return None                                             # an exon end lifted across a large gap (PRAMEF11.5: 1 kb -> 43 kb)
     new.sort()
     return new if all(x[1] <= y[0] for x, y in zip(new, new[1:])) else None
 
