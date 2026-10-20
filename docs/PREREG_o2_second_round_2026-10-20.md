@@ -98,3 +98,39 @@ StringTie or FLAIR.
 **Rules:**
 - Run script: `/mnt/linuxdisk/tmp/o3_graph/o2second/run.sh`.
 - A bug is recorded as an amendment before any rerun.
+
+## Results (`o2second/run.log`, `o2second/hg002/score.json`)
+
+**FAIL: S1 and S2 fail. S3 holds (15 families, 29,965 truth reads).** The corrector's output at this commit is identical to the
+development file (`cmp`). Pass 2 kept 591,438 records at home and dropped 56,395 (O2 moved 2,220 reads off minimap2's copy).
+
+| arm | pooled TVD (truth-read weighted) | unweighted mean TVD | LOOP-O2 better / worse, families |
+|---|---|---|---|
+| **LOOP-O2** (pass 2, O2 homes) | 0.112 | 0.266 | — |
+| P (primaries only) | 0.127 | 0.283 | 7 / 4 |
+| GOOD (pass 1, shipped) | 0.168 | 0.273 | 7 / 7 |
+| ST (StringTie) | **0.091** | 0.223 | 6 / 8 |
+| FL (FLAIR) | 0.097 | 0.251 | 7 / 7 |
+| ORACLE (pass 2, true homes) | 0.108 | 0.215 | 4 / 7 |
+
+**S1.** LOOP-O2 beats P and GOOD but not ST or FL.
+
+**S2.** LOOP-O2 beats P (7 / 4) but ties GOOD (7 / 7).
+
+**Even perfect placement (ORACLE, 0.108) does not reach StringTie (0.091), so the gap is in the assembled loci, not in O2's
+assignment.** LOOP-O2 is within 0.004 of the ORACLE pooled, and equal to it in 5 families. Read from the per-family shares:
+
+- **Our assembler drops a locus StringTie keeps.** FCGR2A.1 (chr1:160,843,885-160,862,793) has a StringTie transcript of `cov`
+  395 and no transcript in any Rustle arm. Every arm scores about 0.97 there anyway, because the truth puts the family's reads
+  on FCGR2A.2.
+- **The donor's copies are not CHM13's.** In FCGR2A and TBC1D3B the truth copy is not where any aligner puts the reads. ORACLE
+  scores 0.97 and 0.51; every other arm, 0.89-0.98. These are copy-number-variable families: O3's case.
+- **The echo is real, and the second round removes it.** DUSP22: truth 95 / 5; pass 1 echoes at 50 / 50 (TVD 0.448); pass 2
+  0.018. ZC3H11A: pass 1 0.169, pass 2 0.000. NOMO1: 0.223 → 0.142. PDPR: 0.405 → 0.238.
+- **Where pass 1 happens to match the truth ratio** (THOC3 0.004, SERF1B 0.027, AC1275021 0.037), the second round moves it
+  away: THOC3 0.026, SERF1B 0.349, AC1275021 0.167.
+- **The Rustle arms' read weights are a fraction of the truth reads.** THOC3 has 1,256 reads in transcripts against 5,962
+  truth reads, so its shares rest on fewer reads than StringTie's `cov`.
+
+**Not claimed:** that the second round's loci share a family's reads among its copies better than StringTie or FLAIR. It
+does better than the shipped pass 1 and than minimap2's primaries alone, pooled.
