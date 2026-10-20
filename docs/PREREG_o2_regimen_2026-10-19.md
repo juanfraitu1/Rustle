@@ -86,3 +86,55 @@ The sample-validated PSV is the bridge: it is used only where the sample's own c
 - Truth beyond B's proxy. HG002's donor truth was development.
 
 **Rules:** code frozen at 26262631. A bug is recorded as an amendment before any rerun.
+
+## Results, test A (simulation, one genome; `fast/heldout24/run_sim.log`)
+
+**Test A passes.**
+- **A1:** 0 wrong of 349 placements (floor 200).
+- **A2:** sets hold the true copy for 2,454 of 2,454 reads.
+- **A3:** precision 1.000, against minimap2's primary's 0.789 on the same reads.
+
+| cell | almost-tied reads | placed: right / wrong | sets holding the true copy | mean copies: tied -> set | minimap2 primary right |
+|---|---|---|---|---|---|
+| A119b s1401 | 569 | 102 / 0 | 569 / 569 | 4.80 -> 4.60 | 0.775 |
+| A119b s1402 | 613 | 69 / 0 | 613 / 613 | 4.35 -> 4.18 | 0.856 |
+| A119b s1403 | 438 | 68 / 0 | 438 / 438 | 5.52 -> 5.30 | 0.799 |
+| public s1401 | 415 | 48 / 0 | 415 / 415 | 3.00 -> 2.88 | 0.677 |
+| public s1402 | 217 | 25 / 0 | 217 / 217 | 3.10 -> 2.94 | 0.820 |
+| public s1403 | 202 | 37 / 0 | 202 / 202 | 3.63 -> 3.45 | 0.802 |
+| **pooled (18 worlds)** | **2,454** | **349 / 0** | **2,454 / 2,454** | **4.26 -> 4.09** | **0.789** |
+
+**Reasons:** psv_validated 335, psv_two 14, psv_set 1,571, psv_unexplained 534.
+- SILENT worlds place almost nothing, because a silent copy has no reads to validate a PSV against.
+- AC0061583's 43 copies dominate the mean copies.
+- The fixed 0.1% fit sets 534 reads apart as unexplained: the cost of the real-read calibration.
+
+## Results, test B (real reads, A119b testis fragments; `o2frag_a119b/run_real.log`)
+
+**Test B fails on B1, so the verdict is FAIL. Test A passes.**
+- **B1 fails:** 7 wrong of 312 placements, 2.24% against the 2% bar (powered: floor 100).
+- **B2 holds:** precision 0.978, against minimap2's primary's 0.656 on the same fragments.
+- **B3 holds:** sets hold the true copy for 2,389 of 2,459 (97.2%).
+
+| A119b fragments | value |
+|---|---|
+| sources: kept / drawn (clear by 30 AS after realignment) | 15,376 / 15,573, 397 families |
+| fragments with a truth / almost-tied ones | 46,128 / 2,459 |
+| placed by validated PSVs: right / wrong | 279 / 3 |
+| placed by two PSVs: right / wrong | 26 / 4 |
+| sets / unexplained (fit 0.1%) | 1,021 / 1,126 |
+| mean copies, tied -> set | 2.34 -> 2.18 |
+
+**The seven wrong placements:**
+- In all seven, minimap2's primary for the fragment agrees with O2's call. The fragment's own PSVs point away from its full
+  read's copy.
+- Five are within one family:
+  - TRIM64C, FAM153B and DHX40, by two PSVs;
+  - TCAF2 (two fragments of one read), by validated PSVs.
+
+  Two or more PSVs inside a short window disagree with the full read's placement: a local conversion tract in the donor's
+  copy, or a heterozygous PSV that the 3 validating reads missed (all of them from the other haplotype has probability 1/8).
+- Two fall in another family than their source read's (AC1423814 vs AC1378001, NOS2P2 vs MSTRG2518): the window is a
+  segment the source shares with another family.
+
+Unvalidated two-PSV placements were wrong 4 times in 30, validated ones 3 in 282.
