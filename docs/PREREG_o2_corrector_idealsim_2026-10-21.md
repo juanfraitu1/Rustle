@@ -137,4 +137,47 @@ The corrector changes ~1% of the tied calls and recovers a net 1 and 6 of minima
   - In these pairs his copy at a copy's position is closer in sequence to the neighbouring reference copy. Position and
     sequence disagree on provenance, and no read-level evidence follows position there.
 
-Audit pending.
+Audit: below (FAIL holds with caveats; the TBC1D3 reading above is withdrawn).
+
+## Audit (metric-auditor, 2026-10-21): FAIL holds with caveats; the TBC1D3 diagnosis above is withdrawn
+
+Every number reproduces: scored, minimap2 wrong, fixes, breaks, families and bars, plus the diagnosis counts (116 / 11 / 9
+and 153 / 8 / 8). Checked and found sound:
+- **Order:** design 09:04, code 09:07, first output 09:07; the design text is unchanged.
+- **Simulation:** 114 instances × 100 reads; the ideal profile changes only the expression keys.
+- **Blindness:** no truth leaks through read names (a seeded permutation); the corrector reads only the BAM, the copies table
+  and GGO.
+- **Read sources:** 13 spot-checked reads match their own instance best.
+- **Robustness:** no reasonable reading turns FAIL into PASS. Adding the contested reads gives 11 / 8 and 10 / 5. The
+  31 / 36 reads whose truth lies outside the tied copies are minimap2 errors either way.
+
+Corrections:
+- **The power is positional only.** On just 3 / 471 and 9 / 503 of minimap2's errors does the true copy have strictly fewer
+  edits (NM + clipped bases) than minimap2's pick. Under a fewest-edit key the test would be UNDERPOWERED. Of the
+  corrector's scored overrules (19 / 16), one per replicate moves a read to the copy with fewer edits. **FAIL means the
+  reads do not carry the positional provenance minimap2 misses; no read-based rule can recover it.**
+- **TBC1D3: "closer to the neighbouring copy" is withdrawn.** His maternal copies are mosaics of the pair's paralog
+  differences, equidistant from the two reference copies over the copy models.
+  - Edits to its own copy vs the neighbour: maternal .1 4 / 4, .0 5 / 5, .7 2 / 2, .6 21 / 21.
+  - His maternal .0 and .1 differ at one base (exon 14); reads that miss the 5′ exons look like .0.
+  - These two copies give 86 / 471 and 97 / 503 of minimap2's errors.
+  - The .0 / .1 inversion is supported: a 144.6-kb reversed piece between collinear pieces of 526 and 411 kb. Its ends are
+    not pinned to the copies.
+  - The .6 / .7 whole-region reversal keeps the positional correspondence and explains nothing.
+- **"No read-level evidence follows position" overreaches.** On the alternate-haplotype near-tie errors, NM is higher on the
+  true copy for 96 / 129 reads, equal for 39 / 36, lower for 1 / 4.
+- **F fails in 3781 on LRPAP1.** All 3 SM22 breaks are reads of his maternal SM22.1 moved to SM22.8. That copy is closer to
+  SM22.8 (25-mer containment 0.865 vs 0.792), and 72 / 74 of its reads sit confidently on SM22.8, where they enter the
+  corrector's sample (register 1343's mechanism).
+- **Small corrections:**
+  - The corrector overrules 37 / 1,544 and 18 / 1,595 tied calls (2.4% / 1.1%), not "~1%".
+  - In 3782 the fourth instance is TBC1D3.5 → .3 (13 reads), not NPIP.1 (12).
+- **Outside O2's domain:** 526 / 518 untied reads from his other haplotype sit confidently on the wrong copy by the
+  positional key. Lifted NPIP exons change by up to −5.7 kb, because `--repaired` has no growth guard.
+- **Not checked:** whether the near-identity of his maternal TBC1D3.0 / .1 is an assembly collapse. Checking it needs his
+  HiFi reads at the exon-14 base, a heavy run.
+
+**What stands:** FAIL. With every known NPIP, LRPAP1 and TBC1D3 copy expressed from both of his haplotypes, minimap2 is
+wrong by position on ~500 tied reads per replicate. On all but 3-9 of them, though, the read is at least as close to
+minimap2's pick as to its own copy, and the frozen corrector recovers a net 1 and 6. In his own genome, tied reads carry
+almost no sequence evidence for the copy minimap2 misses: ideal expression adds power, not information.
