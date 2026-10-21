@@ -147,3 +147,36 @@ overrules minimap2 on 4.
 reads his own genome can place. The rest are reads identical on two copies in his genome too (50: no method can place
 them) or in duplications his assemblies cannot trace (53). There is almost nothing left for O2 to recover here. YAGs are
 not expressed in fibroblasts and cannot be tested in this sample. Audit pending.
+
+## Audit (metric-auditor, 2026-10-21): UNDERPOWERED holds with caveats; the reading above is withdrawn
+
+Every number reproduces (0 status mismatches over 185 reads). UNDERPOWERED survives every orthology-respecting repair of
+the lift once a key artefact is removed (minimap2 errors 4-9 against the bar of 10). Corrections:
+
+- **Self-scored majority:** 74 of the 81 scored reads are refcons, keyed by the reference's own best alignment (73 / 74).
+  The only informative reads are the **7 from his other parent's copy: minimap2 right on 6.**
+- **Key artefact:** one of minimap2's two "errors" (SRR27178663.1441099) and the "outside the tie" read are truths built on
+  stitched alignments (272-418 kb gaps; `truth_ms` never applied `stitched()`). **Genuine scored errors: 1**
+  (SRR27438212.7310158, NPIP.17 vs NPIP.18).
+- **The 53 off-copy reads are outcome-linked:** all have minimap2's copy >= 5 ms below their best placement (median 262).
+  - **29 NPIP reads come from one maternal-only locus, mat chr18 (CM054600.2) 6.72-6.82 Mb**: 0-3 substitutions there,
+    18-167 at their best paternal placement. A copy the reference lacks (O3's case).
+  - 24 are traceable but the lift refused their copies: 11 NPIP copies tripped the 50-bp exon guard (MAPQ 31-60,
+    99.77-99.97% identity), 11 SM22 dropped as ambiguous, 6 SM22 refused as interchromosomal. Repaired lifts give 105-113
+    scored reads and 4-9 genuine minimap2 errors.
+- **The corrector could not act on 66 of 185 reads** (minimap2's copy has no confident reads, so dominance never passes),
+  including the one genuine error. NPIP.3's sample carries 1.35% events, consistent with a missing copy's reads teaching
+  their nearest copy foreign alleles (unverified).
+- **The 4 overrules (LRPAP1):** two are exact reference ties where the maternal locus is 99.83% / 99.94% identical to the
+  two candidates (undecidable); in the other two his genome scores the corrector's copy 4-5 ms below minimap2's. The
+  descriptive "two likely breaks" and "one of two equally best" were wrong.
+- "50 identical" is 29 exact ties, 5 within 1-4 ms, 16 tied with an unlifted locus. "YAGs 0 reads" is 0 primary
+  alignments (107 secondary, from 51 reads at 2.7-16.7% divergence). The census counts were not saved and reproduce
+  only approximately (NPIP 175-180 tied; LRPAP1 22-61).
+- Wording not to use: "minimap2 is right on 79 of 81"; "almost nothing left to recover"; "53 his assemblies cannot trace";
+  "no method can place the 50"; "H holds" as safety; "minimap2 wrong on 2" without the artefact.
+
+**What stands:** too few minimap2 errors among NPIP / LRPAP1 tied reads that his genome places on a reference copy to test
+the corrector (1 genuine; 4-9 under repaired lifts). **What the data does show:** the largest group of minimap2's
+mis-placements here is 29 NPIP reads from a maternal NPIP copy absent from the reference — O3, not a choice among
+reference copies.
