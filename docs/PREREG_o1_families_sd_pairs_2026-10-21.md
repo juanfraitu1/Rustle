@@ -54,3 +54,43 @@ the families are not artefacts of our grouping.
 - Light jobs only.
 - Code: `bench/o1_sd/sd_pairs.py`, with tests.
 - The metric-auditor checks the result before it is reported. Never pool human and gorilla. Push only when asked.
+
+## Results (tool ba7ab571; run once; `/mnt/linuxdisk/tmp/o1_sd/sd_pairs.json`): **bar FAILS in both pipeline catalogs**
+
+| catalog | copies >= 0.90 identity | SD-paired in their family | shuffled-label null | overlap no SD at all | families with every >= 0.90 copy paired |
+|---|---|---|---|---|---|
+| human_A119b (CHM13 SD90) | 7,774 | **5,605 (72.1%)** | 1,092 (14.0%) | 1,932 (24.9%) | 1,186 / 1,755 |
+| gorilla_KB3781 (GGO SEDEF >= 0.90) | 773 | **637 (82.4%)** | 31 (4.0%) | 93 (12.0%) | 214 / 277 |
+| gorilla fibro_cat, all copies (no identity column) | 3,981 | 3,557 (89.3%) | 763 (19.2%) | – | 543 / 666 (every copy) |
+
+- **By identity bin, human:**
+  - >= 0.98: 74.5% (null 16.7%);
+  - 0.95-0.98: 80.0%;
+  - 0.90-0.95: 51.2%;
+  - < 0.90: 17.1%.
+- **By identity bin, gorilla:** >= 0.98 82.2%; 0.95-0.98 88.1%; 0.90-0.95 76.6%; < 0.90 50.0%.
+- **Satellite-filtered human SDs:** 52.5% of >= 0.90 copies are paired, so 27% of the human pairings rest on satellite SDs.
+- **Correction to the design:** every copy in the two pipeline catalogs is a de novo copy (built from reads), so the registered
+  failure class "de novo copy" says nothing.
+- **What the unpaired copies are** (descriptive):
+  - human: 2,169 unpaired; 1,932 overlap no SD; 1,191 multi-exon and 741 single-exon; 989 lie in an annotated gene, 943 do not;
+  - gorilla: 136 unpaired, 93 with no SD.
+  
+  Their nature (retrocopies, short shared segments, repeat-driven groupings) is not tested here.
+- **Mainstays** (descriptive; matched by overlap with annotated genes, after fixing a chromosome-naming mismatch in the first pass):
+
+  | catalog | copies SD-paired in their family |
+  |---|---|
+  | human_A119b | NPIP 46 / 46 (12 families); GOLGA8 24 / 24; GOLGA6 24 / 25; TBC1D3 22 / 24; SMN1 2 / 2; SMN2 4 / 4; DAZ 6 / 6; TSPY 7 / 7; HSFY 8 / 9; RBMY 5 / 6; CDY 4 / 5; BPY2 3 / 3 (all: 155 / 161, 96%) |
+  | gorilla fibro_cat (curated families) | NPIP 25 / 25; LRPAP1 (SM22) 22 / 22; TBC1D3 11 / 14 |
+  | gorilla_KB3781 | only 2 mainstay copies matched (NPIP 1, LRPAP1 1), both paired |
+
+**Reading.**
+- The bar ("O1's families are real duplications": >= 90% of high-identity copies SD-paired) fails: 72.1% human, 82.4% gorilla.
+- The pairing is specific: shuffled families pair 4-14%.
+- The advisor's mainstays are 96% (human) and 58 / 61 (gorilla curated) SD-paired: those families are duplications by an
+  independent DNA method.
+- But a quarter of the human high-identity copies (an eighth in gorilla) lie in no annotated SD. Those groupings are not
+  confirmed as duplications by this test, and are the place to look for artefacts.
+
+Audit pending.
