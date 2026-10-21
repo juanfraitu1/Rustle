@@ -99,6 +99,49 @@ def test_the_truth_is_the_one_copy_within_one_substitution_of_the_best_placement
     assert PC.truth_of([]) == ("unmapped", None, None)
 
 
+def test_index_names_map_to_assembly_contigs_by_unique_length():
+    fai = {"CM1": 100, "CM2": 200, "JA1": 50, "JA2": 50}
+    sq = {"chr1_mat": 100, "chr2_mat": 200, "u1": 50, "CM9": 7}
+    assert PC.names_by_length(sq, fai) == {"chr1_mat": "CM1", "chr2_mat": "CM2"}
+    assert PC.names_by_length({"CM1": 100}, fai) == {"CM1": "CM1"}           # already the assembly's name
+
+
+def test_an_alt_ortholog_becomes_a_copy_row_on_its_contig_with_its_strand_turned():
+    o = dict(copy="SM1.0", contig="CM5", start=900, end=1300, strand="-", exons=[(900, 1000), (1200, 1300)])
+    rows = PC.alt_rows([o], {"SM1.0": "+"})
+    assert rows == {"CM5": [("SM1.0", "-", [(900, 1000), (1200, 1300)], (900, 1300))]}
+    assert PC.alt_rows([dict(o, strand="+")], {"SM1.0": "-"})["CM5"][0][1] == "-"
+
+
+def _s(read, fam, truth, mm, corr, origin="altonly", margin=3, **arms):
+    return dict(read=read, family=fam, truth=truth, minimap2=mm, corrector=corr, origin=origin, margin=margin, **arms)
+
+
+def test_an_arm_is_tallied_against_minimap2_on_the_same_reads():
+    rows = [_s("r1", "F", "c", "d", "c"), _s("r2", "F", "c", "c", "d"), _s("r3", "F", "c", "c", "c"),
+            _s("r4", "F", "c", "d", "e")]
+    n = PC.tally(rows, "corrector")
+    assert (n["reads"], n["right"], n["fixes"], n["breaks"], n["both wrong"]) == (4, 2, 1, 1, 1)
+    assert PC.tally(rows, "minimap2")["right"] == 2
+
+
+def test_families_count_where_one_arm_is_right_more_often_than_another():
+    rows = [_s("a", "F1", "c", "d", "c", personal="c"), _s("b", "F2", "c", "d", "c", personal="d"),
+            _s("c", "F3", "c", "c", "c", personal="c")]
+    assert PC.families_vs(rows, "personal", "corrector") == (0, 1)
+    assert PC.families_fix_break(rows, "corrector") == (2, 0)
+
+
+def test_a_verdict_needs_every_bar():
+    good = dict(gain=1.5, fixes=50, breaks=5, better=12, worse=2, refcons_drop=0.0)
+    assert PC.verdict(good, min_gain=1.0) == "PASS"
+    assert PC.verdict(dict(good, worse=3), min_gain=1.0) == "PASS"           # 12 / 5 rounded up is 3
+    assert PC.verdict(dict(good, worse=4), min_gain=1.0) == "FAIL"
+    assert PC.verdict(dict(good, breaks=11), min_gain=1.0) == "FAIL"
+    assert PC.verdict(dict(good, refcons_drop=0.3), min_gain=1.0) == "FAIL"
+    assert PC.verdict(dict(good, better=10, worse=0), min_gain=1.0) == "FAIL"
+
+
 def test_a_realignment_decides_only_a_unique_best_over_every_tied_copy():
     assert PC.decide({"c": 120, "d": 110}, {"c", "d"}) == ("c", "decided")
     assert PC.decide({"c": 120, "d": 120}, {"c", "d"}) == (None, "tie")

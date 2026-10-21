@@ -192,4 +192,75 @@ commit.
 
 ## Amendments
 
-(none yet)
+### Amendment 1 (2026-10-20): allele-blind O2, and an edit-based truth. Written before any arm was scored against it
+
+**Why.**
+
+1. **The user stopped the phased arm:** "I think O2 should not care about alleles, phasing, paternal and maternal
+   haplotypes. It should only be about finding the true place of multimappers based on PSVs, BAM tags and other info".
+   - Dropped: the personal copies (arms 3 and 5) and the oracle (arm 4, his assembled copies as targets), with gate G0.
+   - His two assemblies stay as the **answer key only**. No arm sees them.
+2. **AS was the wrong yardstick for the truth.** AS charges every intron, so a copy with fewer introns (a retrocopy) can
+   outscore the spliced gene the read matches perfectly. This was seen on the development half only:
+   - Of its 3,484 domain reads, 2,592 have minimap2's primary below the highest-AS tied copy. In 2,539 of them the primary
+     has fewer edits (NM); in 2,540 it has more introns.
+   - Example: SRR27178662.117798 matches SM438.1 (minimap2's primary, AS 1,196) with NM 0, and SM438.0 (AS 1,204, fewer
+     introns) with NM 24.
+   - The AS truth (5-AS margin) therefore called minimap2 wrong on 740 development refcons reads like these.
+   - minimap2's primary has the fewest NM of the tied copies on 3,405 of the 3,484.
+
+**What had been seen before this amendment:**
+- **Development:**
+  - minimap2's primary against the AS truth, by origin and margin;
+  - the AS / NM / intron comparison above;
+  - the corrector's output (`arm2.tsv`), scored against no truth.
+- **Held-out:** only the AS truth's status counts: determined altonly 404, determined refcons 215, off-copy 7,
+  undetermined 270. No arm's calls were compared with any truth.
+- **Personal copies:** built (`personal.*.fa`), never realigned or scored. `o2personal._depths` was sped up (bisect),
+  without changing its output.
+
+**The truth** (replaces the section above). The alignments, and their mapping to reference copies, are unchanged
+(`truth.mat.bam`, `truth.pat.bam`, `orthologs.tsv`).
+- **An alignment's edits:** its NM plus its clipped read bases (soft and hard), i.e. the read bases it gets wrong or does
+  not explain. Introns are free.
+- **The truth** (`o2personal.truth_of`, now on edits): the one copy whose alignments hold the fewest edits, strictly fewer
+  than every alignment on another copy or off every copy. Edits are whole numbers, so that is at least one edit fewer.
+- **Statuses:**
+  - **determined, refcons:** a reference-haplotype alignment holds the fewest edits;
+  - **determined, altonly:** only an ALT one does;
+  - **undetermined:** two copies, or a copy and an off-copy locus, share the fewest edits;
+  - **off-copy:** the fewest edits lie off every reference copy.
+- **S** is unchanged: held-out, determined, the truth among the read's tied copies.
+
+**The arms** (replace the section above). Each gives one copy per read; a shared best keeps minimap2's pick.
+1. **minimap2:** its primary.
+2. **O2, fewest edits (the main arm):**
+   - each tied copy is represented by its highest-AS alignment (the corrector's choice);
+   - its edits are its substituted, inserted and deleted bases (`o2correct.alignment_events`, indels shifted left), counted
+     over the read bases every tied alignment aligns (`o2correct.common_window`);
+   - the unique fewest takes the read.
+
+   Errors and alleles every tied copy shares cancel, so the difference is the PSVs.
+3. **Fewest substitutions:** `o2correct.py run` (X ops, or NM less its indel bases, over the whole alignment).
+4. **Highest AS (negative control):** the unique highest AS among the tied copies.
+5. **Corrector:** `o2correct.py donor`, bfa15f12. A comparison only, with no bar.
+
+**Strata** (one added): **structure**, i.e. whether the tied copies' alignments (each copy's highest-AS one) differ in
+intron count ("intron-differ") or not ("same structure").
+
+**Bars** (replace the section above). On the held-out half, O2 (arm 2) against minimap2:
+- **P:** |S| >= 300, from >= 11 families, with minimap2 wrong on >= 50.
+- **G:** accuracy >= minimap2's + 2.0 points.
+- **S:** fixes >= 5 × breaks.
+- **F:** >= 11 families where it fixes more than it breaks, and no more than a fifth as many (rounded up) where it breaks
+  more than it fixes.
+- **H:** on refcons reads, accuracy >= minimap2's − 0.2 points.
+
+**Verdict:** PASS = all five hold; FAIL = P holds and another bar fails; UNDERPOWERED = P fails. This one verdict replaces
+V1 and V2. Arms 3-5 are reported with the same numbers, without verdicts.
+
+**Development and freeze** are unchanged: changes go into Amendment 2, at the freeze commit. Fixed from here on:
+- the edit rule of the truth;
+- the domain;
+- the arms' definitions;
+- the bars.

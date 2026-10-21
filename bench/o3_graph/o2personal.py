@@ -12,6 +12,14 @@ sequences in the animal's own two assemblies; the TRUTH is the read's best place
     o2personal.py ava TX.fa COPIES.tsv OUT_DIR [--budget S]     each family all-vs-all (minimap2 -X -c -x asm20) -> FAMILY.paf
     o2personal.py qualify AVA.paf COPIES.tsv OUT_PREFIX         families whose every member pair aligns at [0.90, 1.00):
                                                                OUT.json {family: copies, identities, half}, OUT.copies.tsv, OUT.bed
+    o2personal.py reads ARM2.tsv SUB.bam OUT.fa                 the domain reads (o2correct.py donor's rows) as sequenced
+    o2personal.py queries COPIES.tsv GENOME.fa CHRMAP.tsv OUT    each copy's span +- 20 kb, by ALT haplotype -> OUT.{mat,pat}.fa
+    o2personal.py orthologs COPIES.tsv CHRMAP.tsv OUT.tsv --haps mat=PAF:FAI pat=PAF:FAI       the copies' ALT orthologs
+    o2personal.py truth ARM2.tsv COPIES.tsv ORTH.tsv CHRMAP.tsv QUAL.json OUT.tsv --bams mat=BAM:FAI pat=BAM:FAI
+    o2personal.py personal CACHE_DIR COPIES.tsv GENOME.fa OUT    personal copies -> OUT.phased.fa, OUT.unphased.fa, OUT.haps.tsv
+    o2personal.py oracle COPIES.tsv ORTH.tsv GENOME.fa OUT.fa --haps mat=FASTA pat=FASTA      the copies' true sequences
+    o2personal.py decide ARM2.tsv REALIGNED.bam OUT.tsv          per read: the tied copy with the unique best AS, or none
+    o2personal.py score ARM2.tsv TRUTH.tsv QUAL.json HALF OUT.json --arms personal=TSV oracle=TSV unphased=TSV
 """
 import collections
 import csv
@@ -68,7 +76,11 @@ def _covers(blocks, p):
 
 
 def _depths(reads, positions):
-    return {p: sum(1 for _, bl in reads if _covers(bl, p)) for p in positions}
+    """{position: reads whose blocks cover it} (blocks of one read do not overlap: alignment_events' segments)."""
+    import bisect
+    st = sorted(s for _, bl in reads for s, _ in bl)
+    en = sorted(e for _, bl in reads for _, e in bl)
+    return {p: bisect.bisect_right(st, p) - bisect.bisect_right(en, p) for p in positions}
 
 
 def variant_events(reads):
@@ -317,6 +329,391 @@ def cmd_qualify(paf_p, copies_p, out):
     return 0
 
 
+def names_by_length(sq, fai):
+    """{name in an index or BAM header: the assembly's contig} -- the same name, else the one contig of that length."""
+    by = collections.defaultdict(list)
+    for n, ln in fai.items():
+        by[ln].append(n)
+    return {n: n if n in fai else by[ln][0] for n, ln in sq.items() if n in fai or len(by.get(ln, ())) == 1}
+
+
+def chrmap_rows(p):
+    return list(csv.DictReader(open(p), delimiter="\t"))
+
+
+def reference_contigs(chrmap_p):
+    """{haplotype contig the reference is identical to: (reference chromosome, its haplotype)}."""
+    return {r["same_name"]: (r["pri"], r["same_hap"]) for r in chrmap_rows(chrmap_p) if r["seq_check"] == "identical"}
+
+
+def alt_of(chrmap_p):
+    """{reference chromosome: (ALT haplotype, the homologous ALT contig)}; chrX and chrY have none."""
+    return {r["pri"]: (r["B_hap"], r["B_name"]) for r in chrmap_rows(chrmap_p) if r["B_name"]}
+
+
+def alt_rows(orth, strand_of):
+    """The ALT orthologs [{copy, contig, start, end, strand, exons}] as copy rows {contig: [(copy, strand, exons, span)]}
+    for summary.attribute: the copy's strand, turned when its ortholog lies reversed."""
+    out = collections.defaultdict(list)
+    for o in orth:
+        s = strand_of[o["copy"]]
+        if o["strand"] == "-":
+            s = "+" if s == "-" else "-"
+        out[o["contig"]].append((o["copy"], s, [tuple(e) for e in o["exons"]], (o["start"], o["end"])))
+    return dict(out)
+
+
+def read_orthologs(p):
+    return [dict(r, start=int(r["start"]), end=int(r["end"]), mapq=int(r["mapq"]), exons=json.loads(r["exons"]))
+            for r in csv.DictReader(open(p), delimiter="\t")]
+
+
+def tally(rows, arm):
+    """Counts of an arm's calls against the truth and against minimap2's on the same reads."""
+    n = collections.Counter()
+    for r in rows:
+        c, m, t = r[arm], r["minimap2"], r["truth"]
+        n["reads"] += 1
+        n["right"] += c == t
+        if c != m:
+            n["fixes" if c == t else "breaks" if m == t else "both wrong"] += 1
+    return n
+
+
+def families_vs(rows, a, b):
+    """(families where arm a is right more often than arm b, families where less often)."""
+    d = collections.Counter()
+    for r in rows:
+        d[r["family"]] += (r[a] == r["truth"]) - (r[b] == r["truth"])
+    return sum(1 for v in d.values() if v > 0), sum(1 for v in d.values() if v < 0)
+
+
+def families_fix_break(rows, arm):
+    """(families where the arm fixes more of minimap2's calls than it breaks, families where it breaks more)."""
+    d = collections.Counter()
+    for r in rows:
+        if r[arm] != r["minimap2"]:
+            d[r["family"]] += (r[arm] == r["truth"]) - (r["minimap2"] == r["truth"])
+    return sum(1 for v in d.values() if v > 0), sum(1 for v in d.values() if v < 0)
+
+
+def verdict(b, min_gain):
+    """PASS when every bar holds: gain >= min_gain points; fixes >= 5 x breaks; >= 11 families better and no more than a
+    fifth as many (rounded up) worse; on refcons reads no more than 0.2 points below minimap2."""
+    ok = (b["gain"] >= min_gain and b["fixes"] >= 5 * b["breaks"] and b["better"] >= 11
+          and b["worse"] <= math.ceil(b["better"] / 5) and b["refcons_drop"] <= 0.2)
+    return "PASS" if ok else "FAIL"
+
+
+def read_domain(arm2_p):
+    """{read: (family, tied copies, minimap2's copy, corrector's copy, AS margin)} from o2correct.py donor's output."""
+    out = {}
+    for r in csv.DictReader(open(arm2_p), delimiter="\t"):
+        out[r["read"]] = (r["family"], set(r["candidates"].split(",")), r["minimap2"], r["corrector"], int(r["margin"]))
+    return out
+
+
+def cmd_reads(arm2_p, bam_p, out_p):
+    """The domain reads' sequences, as sequenced (the primary record, reverse-complemented back when reverse)."""
+    import pysam
+    dom = read_domain(arm2_p)
+    seen = set()
+    with pysam.AlignmentFile(bam_p) as bam, open(out_p, "w") as fh:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q in dom and q not in seen and not (rec.is_secondary or rec.is_supplementary or rec.is_unmapped):
+                s = rec.query_sequence
+                fh.write(f">{q}\n{rc(s) if rec.is_reverse else s}\n")
+                seen.add(q)
+    print(f"[o2personal] {len(seen)} of {len(dom)} domain reads -> {out_p}", flush=True)
+    return 0 if len(seen) == len(dom) else 1
+
+
+def _fai(p):
+    return {x[0]: int(x[1]) for x in (ln.split("\t") for ln in open(p))}
+
+
+def _region(r, length):
+    return max(0, r["start"] - FLANK_P), min(length, r["end"] + FLANK_P)
+
+
+def cmd_queries(copies_p, genome_p, chrmap_p, out):
+    """Each copy's reference span +- donorsim.FLANK, to be aligned to its ALT haplotype's whole assembly ->
+    OUT.mat.fa / OUT.pat.fa (named copy|chrom|lo, donorsim's names)."""
+    import pysam
+    DS = _sibling("donorsim")
+    alt = alt_of(chrmap_p)
+    fa = pysam.FastaFile(genome_p)
+    fh = {h: open(f"{out}.{h}.fa", "w") for h in ("mat", "pat")}
+    n = collections.Counter()
+    for r in read_copies(copies_p):
+        if r["chrom"] not in alt:
+            n["no ALT"] += 1
+            continue
+        h = alt[r["chrom"]][0]
+        lo, hi = max(0, r["start"] - DS.FLANK), min(fa.get_reference_length(r["chrom"]), r["end"] + DS.FLANK)
+        fh[h].write(f">{r['copy']}|{r['chrom']}|{lo}\n{fa.fetch(r['chrom'], lo, hi).upper()}\n")
+        n[h] += 1
+    for f in fh.values():
+        f.close()
+    print(f"[o2personal] queries -> {out}.{{mat,pat}}.fa: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
+    return 0
+
+
+def cmd_orthologs(copies_p, chrmap_p, out_p, haps):
+    """Per copy, its ALT ortholog (donorsim.pick_ortholog on the copy's own exons, then donorsim.drop_ambiguous), kept only
+    on the homologous ALT contig or an unplaced one. haps: {hap: (PAF, the hap's FASTA index)}."""
+    DS = _sibling("donorsim")
+    alt = alt_of(chrmap_p)
+    placed = {r["same_name"] for r in chrmap_rows(chrmap_p)} | {r["B_name"] for r in chrmap_rows(chrmap_p) if r["B_name"]}
+    orth, n = {}, collections.Counter()
+    rows = read_copies(copies_p)
+    for h, (paf_p, fai_p) in haps.items():
+        paf = DS.read_paf(paf_p)
+        lens = {}
+        for ln in open(paf_p):
+            x = ln.split("\t")
+            lens[x[5]] = int(x[6])
+        names = names_by_length(lens, _fai(fai_p))
+        for r in rows:
+            if r["chrom"] not in alt or alt[r["chrom"]][0] != h:
+                continue
+            lo = max(0, r["start"] - DS.FLANK)
+            o = DS.pick_ortholog(paf.get(f"{r['copy']}|{r['chrom']}|{lo}", []), {"main": [(a - lo, b - lo) for a, b in r["exons"]]})
+            if o is None:
+                n[f"{h}: none"] += 1
+                continue
+            cm = names.get(o["tname"])
+            if cm is None or (cm != alt[r["chrom"]][1] and cm in placed):
+                n[f"{h}: on another chromosome (refused)"] += 1
+                continue
+            o["tname"] = cm
+            orth[(r["copy"], h)] = o
+            n[f"{h}: ortholog"] += 1
+    kept = DS.drop_ambiguous(orth)
+    n["ambiguous (dropped)"] = len(orth) - len(kept)
+    with open(out_p, "w") as fh:
+        fh.write("copy\thap\tcontig\tstart\tend\tstrand\tmapq\texons\n")
+        for (c, h), o in sorted(kept.items()):
+            fh.write(f"{c}\t{h}\t{o['tname']}\t{o['start']}\t{o['end']}\t{o['strand']}\t{o['mapq']}\t"
+                     f"{json.dumps(o['isoforms']['main'], separators=(',', ':'))}\n")
+    print(f"[o2personal] orthologs -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items()))
+          + f"; {len(kept)} of {len(rows)} copies", flush=True)
+    return 0
+
+
+def cmd_truth(arm2_p, copies_p, orth_p, chrmap_p, qual_p, out_p, bams):
+    """Each domain read's truth (truth_of) from its alignments to the animal's two assemblies. bams: {hap: (BAM, FAI)}."""
+    import pysam
+    P, S = _sibling("o2psv"), _sibling("summary")
+    dom = read_domain(arm2_p)
+    qual = json.load(open(qual_p))
+    refc = reference_contigs(chrmap_p)
+    rows = read_copies(copies_p)
+    idx_ref = C.span_index(P.load_copies(copies_p))
+    idx_alt = C.span_index(alt_rows(read_orthologs(orth_p), {r["copy"]: r["strand"] for r in rows}))
+    alns = collections.defaultdict(list)
+    for h, (bam_p, fai_p) in bams.items():
+        with pysam.AlignmentFile(bam_p) as bam:
+            names = names_by_length({s["SN"]: s["LN"] for s in bam.header.to_dict()["SQ"]}, _fai(fai_p))
+            for rec in bam.fetch(until_eof=True):
+                q = rec.query_name
+                if q not in dom or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
+                    continue
+                cm = names.get(rec.reference_name)
+                if cm in refc:
+                    role, cands = "ref", C.overlapping(idx_ref, refc[cm][0], rec.reference_start, rec.reference_end)
+                else:
+                    role = "alt"
+                    cands = C.overlapping(idx_alt, cm, rec.reference_start, rec.reference_end) if cm else []
+                c = S.attribute(rec.get_blocks(), P._strand(rec), cands) if cands else None
+                alns[q].append((rec.get_tag("AS"), c, role))
+    n = collections.Counter()
+    with open(out_p, "w") as fh:
+        fh.write("read\tfamily\thalf\tstatus\ttruth\torigin\tin_tie\tbest_as\talignments\n")
+        for q, (f, tie, mm, _, _) in sorted(dom.items()):
+            st, t, o = truth_of(alns.get(q, []))
+            inn = int(t in tie) if t else ""
+            best = max((a for a, _, _ in alns[q]), default="")
+            fh.write(f"{q}\t{f}\t{qual[f]['half']}\t{st}\t{t or ''}\t{o or ''}\t{inn}\t{best}\t{len(alns.get(q, []))}\n")
+            n[(qual[f]["half"], st if st != "determined" else f"determined {o}{'' if inn else ', outside the tie'}")] += 1
+    print(f"[o2personal] truth -> {out_p}: " + "; ".join(f"{h} {s} {v}" for (h, s), v in sorted(n.items())), flush=True)
+    return 0
+
+
+def cmd_personal(cache_dir, copies_p, genome_p, out):
+    """Each copy's personal haplotypes (haplotypes()) and unphased consensus from the corrector's confident reads (its
+    --cache pickles) -> OUT.phased.fa (copy|P0, copy|P1), OUT.unphased.fa (copy|U0), OUT.haps.tsv. A copy without
+    confident reads keeps the reference."""
+    import glob
+    import pickle
+    import pysam
+    fa = pysam.FastaFile(genome_p)
+    reads = collections.defaultdict(list)
+    for p in sorted(glob.glob(os.path.join(cache_dir, "*.pkl"))):
+        for cp, ev, bl, _ in pickle.load(open(p, "rb")):
+            reads[cp].append((ev, bl))
+    n = collections.Counter()
+    with open(f"{out}.phased.fa", "w") as ph, open(f"{out}.unphased.fa", "w") as up, open(f"{out}.haps.tsv", "w") as ht:
+        ht.write("copy\treads\tcarried\theterozygous\thaplotypes\tevents\n")
+        for r in read_copies(copies_p):
+            c, rd = r["copy"], reads.get(r["copy"], [])
+            lo, hi = _region(r, fa.get_reference_length(r["chrom"]))
+            ref = fa.fetch(r["chrom"], lo, hi).upper()
+            hom, het = variant_events(rd) if rd else (set(), set())
+            haps = haplotypes(rd) if rd else [set()]
+            cnt = collections.Counter(e for ev, _ in rd for e in ev)
+            uni = compatible({e: cnt[e] for e in consensus(rd)}) if rd else set()
+            for i, hv in enumerate(haps):
+                ph.write(f">{c}|P{i}\n{apply_events(ref, lo, hv)}\n")
+            up.write(f">{c}|U0\n{apply_events(ref, lo, uni)}\n")
+            ht.write(f"{c}\t{len(rd)}\t{len(hom)}\t{len(het)}\t{len(haps)}\t"
+                     + "|".join(",".join(f"{e[0]}{e[1]}{e[2]}" for e in sorted(hv, key=lambda e: (e[1], repr(e)))) for hv in haps)
+                     + "\n")
+            n[f"{len(haps)} haplotype{'s' if len(haps) > 1 else ''}"] += 1
+            n["with reads"] += bool(rd)
+    print(f"[o2personal] personal copies -> {out}.phased.fa, .unphased.fa: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())),
+          flush=True)
+    return 0
+
+
+def cmd_oracle(copies_p, orth_p, genome_p, out_p, hap_fa):
+    """The copies' true sequences: copy|R the reference span +- FLANK_P, copy|A its ALT ortholog +- FLANK_P. hap_fa:
+    {hap: FASTA}."""
+    import pysam
+    fa = pysam.FastaFile(genome_p)
+    hf = {h: pysam.FastaFile(p) for h, p in hap_fa.items()}
+    orth = {o["copy"]: o for o in read_orthologs(orth_p)}
+    n = collections.Counter()
+    with open(out_p, "w") as fh:
+        for r in read_copies(copies_p):
+            lo, hi = _region(r, fa.get_reference_length(r["chrom"]))
+            fh.write(f">{r['copy']}|R\n{fa.fetch(r['chrom'], lo, hi).upper()}\n")
+            o = orth.get(r["copy"])
+            if o:
+                g = hf[o["hap"]]
+                a, b = _region(o, g.get_reference_length(o["contig"]))
+                fh.write(f">{r['copy']}|A\n{g.fetch(o['contig'], a, b).upper()}\n")
+            n["with ALT" if o else "reference only"] += 1
+    print(f"[o2personal] oracle copies -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
+    return 0
+
+
+def cmd_decide(arm2_p, bam_p, out_p):
+    """Each domain read's call from its realignment to per-copy targets named copy|tag (decide())."""
+    import pysam
+    dom = read_domain(arm2_p)
+    best = collections.defaultdict(dict)
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q not in dom or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
+                continue
+            c, a = rec.reference_name.split("|")[0], rec.get_tag("AS")
+            best[q][c] = max(best[q].get(c, -10 ** 9), a)
+    n = collections.Counter()
+    with open(out_p, "w") as fh:
+        fh.write("read\tcall\treason\tscores\n")
+        for q, (f, tie, mm, _, _) in sorted(dom.items()):
+            c, why = decide(best.get(q, {}), tie)
+            n[why] += 1
+            n["overrules"] += c is not None and c != mm
+            sc = ",".join(f"{x}:{best[q][x]}" for x in sorted(best.get(q, {})) if x in tie)
+            fh.write(f"{q}\t{c or ''}\t{why}\t{sc}\n")
+    print(f"[o2personal] decisions -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
+    return 0
+
+
+def _bin(x):
+    return "0.90-0.95" if x < 0.95 else "0.95-0.98" if x < 0.98 else "0.98-0.99" if x < 0.99 else "0.99-1.00"
+
+
+def cmd_score(arm2_p, truth_p, qual_p, which, out_p, arms):
+    """The pre-registered tallies and bars (PREREG_o2_personal_copies_2026-10-20) on one half. arms: {name: decide() TSV};
+    an abstention keeps minimap2's call."""
+    dom = read_domain(arm2_p)
+    qual = json.load(open(qual_p))
+    truth = {r["read"]: r for r in csv.DictReader(open(truth_p), delimiter="\t")}
+    calls = {a: {r["read"]: r for r in csv.DictReader(open(p), delimiter="\t")} for a, p in arms.items()}
+    status = collections.Counter()
+    rows = []
+    for q, (f, tie, mm, corr, margin) in sorted(dom.items()):
+        if qual[f]["half"] != which:
+            continue
+        t = truth[q]
+        status[t["status"] if t["status"] != "determined" else
+               f"determined {t['origin']}" + ("" if t["in_tie"] == "1" else ", truth outside the tie")] += 1
+        if t["status"] != "determined" or t["in_tie"] != "1":
+            continue
+        r = dict(read=q, family=f, truth=t["truth"], minimap2=mm, corrector=corr, origin=t["origin"], margin=margin,
+                 bin=_bin(qual[f]["min_identity"]))
+        for a in arms:
+            r[a] = calls[a][q]["call"] or mm
+            r[a + " decided"] = bool(calls[a][q]["call"])
+        rows.append(r)
+    names = ["minimap2", "corrector"] + list(arms)
+
+    def block(sub):
+        out = {"reads": len(sub)}
+        for a in names:
+            n = tally(sub, a)
+            out[a] = dict(right=n["right"], accuracy=round(n["right"] / len(sub), 4) if sub else None, fixes=n["fixes"],
+                          breaks=n["breaks"], both_wrong=n["both wrong"])
+            if a in arms:
+                d = [r for r in sub if r[a + " decided"]]
+                out[a].update(decided=len(d), decided_right=sum(r[a] == r["truth"] for r in d))
+        return out
+
+    strata = {"all": rows}
+    for o in ("refcons", "altonly"):
+        strata[o] = [r for r in rows if r["origin"] == o]
+        strata[o + " exact"] = [r for r in rows if r["origin"] == o and r["margin"] == 0]
+        strata[o + " near"] = [r for r in rows if r["origin"] == o and r["margin"] > 0]
+    for b in ("0.90-0.95", "0.95-0.98", "0.98-0.99", "0.99-1.00"):
+        strata["identity " + b] = [r for r in rows if r["bin"] == b]
+    res = dict(half=which, status=dict(status), strata={k: block(v) for k, v in strata.items()})
+    fams = sorted({r["family"] for r in rows})
+    res["families"] = {f: block([r for r in rows if r["family"] == f]) for f in fams}
+    acc = {a: (sum(r[a] == r["truth"] for r in rows) / len(rows) if rows else 0.0) for a in names}
+    rc_rows = strata["refcons"]
+    rc = {a: (sum(r[a] == r["truth"] for r in rc_rows) / len(rc_rows) if rc_rows else 0.0) for a in names}
+    mm_wrong = sum(r["minimap2"] != r["truth"] for r in rows)
+    power = len(rows) >= 300 and len(fams) >= 11 and mm_wrong >= 50
+    bars = dict(P=dict(reads=len(rows), families=len(fams), minimap2_wrong=mm_wrong, holds=power))
+    if "oracle" in arms:
+        bars["G0"] = dict(oracle_accuracy=round(acc["oracle"], 4), holds=acc["oracle"] >= 0.99)
+    if "personal" in arms:
+        n = tally(rows, "personal")
+        better, worse = families_vs(rows, "personal", "corrector")
+        b = dict(gain=round(100 * (acc["personal"] - acc["corrector"]), 2), fixes=n["fixes"], breaks=n["breaks"],
+                 better=better, worse=worse, refcons_drop=round(100 * (rc["minimap2"] - rc["personal"]), 2))
+        bars["V1"] = dict(b, verdict=verdict(b, 1.0))
+    n = tally(rows, "corrector")
+    better, worse = families_fix_break(rows, "corrector")
+    b = dict(gain=round(100 * (acc["corrector"] - acc["minimap2"]), 2), fixes=n["fixes"], breaks=n["breaks"],
+             better=better, worse=worse, refcons_drop=round(100 * (rc["minimap2"] - rc["corrector"]), 2))
+    bars["V2"] = dict(b, verdict=verdict(b, 2.0))
+    for v in ("V1", "V2"):
+        if v in bars:
+            bars[v]["verdict"] = ("INVALID" if "G0" in bars and not bars["G0"]["holds"] else
+                                  "UNDERPOWERED" if not power else bars[v]["verdict"])
+    res["bars"] = bars
+    json.dump(res, open(out_p, "w"), indent=1)
+    print(f"[o2personal] {which}: status " + ", ".join(f"{k} {v}" for k, v in sorted(status.items())), flush=True)
+    for k in ("all", "refcons", "altonly", "altonly exact", "altonly near"):
+        s = res["strata"][k]
+        print(f"  {k:14s} {s['reads']:5d} reads: " + "; ".join(
+            f"{a} {s[a]['accuracy']}" + (f" ({s[a]['fixes']}/{s[a]['breaks']})" if a != "minimap2" else "")
+            for a in names if s["reads"]), flush=True)
+    print("  bars: " + json.dumps(bars), flush=True)
+    return 0
+
+
+def _pairs(a, flag):
+    """{key: (left, right)} from KEY=LEFT:RIGHT arguments after flag."""
+    return {x.split("=", 1)[0]: tuple(x.split("=", 1)[1].split(":")) for x in a[a.index(flag) + 1:] if "=" in x}
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -328,6 +725,22 @@ def main(argv):
         return cmd_ava(*a[:3], budget=float(a[a.index("--budget") + 1]) if "--budget" in a else None)
     if cmd == "qualify":
         return cmd_qualify(*a[:3])
+    if cmd == "reads":
+        return cmd_reads(*a[:3])
+    if cmd == "queries":
+        return cmd_queries(*a[:4])
+    if cmd == "orthologs":
+        return cmd_orthologs(*a[:3], _pairs(a, "--haps"))
+    if cmd == "truth":
+        return cmd_truth(*a[:6], _pairs(a, "--bams"))
+    if cmd == "personal":
+        return cmd_personal(*a[:4])
+    if cmd == "oracle":
+        return cmd_oracle(*a[:4], {k: v[0] for k, v in _pairs(a, "--haps").items()})
+    if cmd == "decide":
+        return cmd_decide(*a[:3])
+    if cmd == "score":
+        return cmd_score(*a[:5], {k: v[0] for k, v in _pairs(a, "--arms").items()})
     print(__doc__)
     return 2
 
