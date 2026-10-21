@@ -122,3 +122,24 @@ Each control rerun reproduces its shipped catalog byte for byte (clusters, copie
   families run of another sample, pre-registered with v2 as is.
 
 Audit pending.
+
+## Amendment 2 (2026-10-21, before any run on it): confirmation on a fresh catalog, gorilla_OR6737
+
+**User:** "ok lets ensure this works, what other dataset can we use?"
+
+- **Fresh catalog: gorilla_OR6737.** A different gorilla individual and tissue (testis Iso-Seq on the same GGO reference). Its
+  assembled GTF (`runs/gorilla_OR6737/gorilla_OR6737.families.gtf`, 73,965 transcripts) has never been through the families
+  stage. Neither v1 nor v2 has seen it.
+- **No fresh human catalog exists locally.** human_A119b and human_testis were used to design v2. A new human library (HG002
+  Kinnex, the SCRI cerebellum) would first need a whole-genome alignment.
+- **Rule: v2 exactly as committed** (code e90d63f2, `--reject-self-hits` with the loci strands); no change after this amendment.
+- **Runs:** the families stage command, a control without the flag and a fix with it, the same binary, GTF and FASTA (GGO).
+  The all-vs-all is computed once through `tools/mm2_shard.sh`, in resumable calls of at most 540 s, and cached; the fix
+  replays it.
+- **Bars:** unchanged.
+  - **B1:** >= 90% of the control's self-only copies fixed.
+  - **B2:** >= 98% of the control's SD-paired copies (SEDEF >= 0.90) still SD-paired.
+  - **PASS** = both.
+- **Reported:** the same descriptive figures as for the other catalogs.
+- **Reading, fixed now:** a PASS here is the first held-out confirmation of v2, and supports proposing it as the families-stage
+  default (the user's decision). A FAIL means v2 is fitted to the development catalogs.
