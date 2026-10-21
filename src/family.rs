@@ -60156,6 +60156,36 @@ pub mod fam_from_gtf {
             p: &GraphParams,
             loci: Option<&LocusMap>,
         ) -> HomologyGraph {
+            graph_from_paf_loci_stranded(paf, exonic_len, exon_blocks, p, loci, None)
+        }
+
+        /// Whether two absolute 0-based half-open exon-block lists share at least one base.
+        pub fn shares_exon_bases(a: &[(u64, u64)], b: &[(u64, u64)]) -> bool {
+            a.iter().any(|&(s1, e1)| b.iter().any(|&(s2, e2)| s1 < e2 && s2 < e1))
+        }
+
+        /// [`graph_from_paf_loci`] with the records' strands (`gene_strands` of the GFF). Under `reject_self_hits`
+        /// (Amendment 1 of PREREG_o1_self_hits_2026-10-21), a self-hit between two loci on the SAME strand that share
+        /// exon bases is kept: they are two models of one transcription unit, and the fold merges them. Without
+        /// strands every self-hit is dropped (v1).
+        pub fn graph_from_paf_loci_stranded(
+            paf: &str,
+            exonic_len: &BTreeMap<GeneKey, u64>,
+            exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+            p: &GraphParams,
+            loci: Option<&LocusMap>,
+            strands: Option<&BTreeMap<GeneKey, char>>,
+        ) -> HomologyGraph {
+            let same_unit = |qk: &GeneKey, tk: &GeneKey| -> bool {
+                let Some(st) = strands else {
+                    return false;
+                };
+                matches!((st.get(qk), st.get(tk)), (Some(a), Some(b)) if a == b)
+                    && match (exon_blocks.get(qk), exon_blocks.get(tk)) {
+                        (Some(x), Some(y)) => shares_exon_bases(x, y),
+                        _ => false,
+                    }
+            };
             let mut g = HomologyGraph::default();
             let mut idx: BTreeMap<GeneKey, usize> = BTreeMap::new();
             let mut missing: BTreeSet<GeneKey> = BTreeSet::new();
@@ -60224,7 +60254,7 @@ pub mod fam_from_gtf {
                 let (Ok(nmatch), Ok(blocklen)) = (f[9].parse::<u64>(), f[10].parse::<u64>()) else {
                     continue;
                 };
-                if p.reject_self_hits && is_self_hit(&qk, qs, qe, f[4], &tk, ts, te) {
+                if p.reject_self_hits && is_self_hit(&qk, qs, qe, f[4], &tk, ts, te) && !same_unit(&qk, &tk) {
                     g.rejected_self_hits += 1;
                     continue;
                 }
@@ -62357,6 +62387,38 @@ pub mod fam_from_gtf {
                 let g2 = graph_from_paf(tandem, &exonic, &bl, &p);
                 assert_eq!(g2.n_edges(), 1, "a tandem shift between overlapping loci is homology");
                 assert_eq!(g2.rejected_self_hits, 0);
+            }
+
+            /// Amendment 1 (v2): with the loci strands known, a self-hit between two same-strand loci that share exon
+            /// bases (two models of ONE transcription unit, merged later by the fold) is kept; a self-hit to an
+            /// opposite-strand locus, or to a same-strand locus sharing no exon bases (nested in an intron), is dropped.
+            #[test]
+            fn reject_self_hits_keeps_one_transcription_unit_and_drops_antisense_or_intronic_neighbours() {
+                let a: GeneKey = ("NC_1".to_string(), 1001, 9000);
+                let b: GeneKey = ("NC_1".to_string(), 3001, 12000);
+                let self_hit =
+                    "NC_1:1001-9000\t8000\t2000\t8000\t+\tNC_1:3001-12000\t9000\t0\t6000\t6000\t6000\n";
+                let exonic: BTreeMap<GeneKey, u64> =
+                    [(a.clone(), 8000u64), (b.clone(), 9000u64)].into_iter().collect();
+                let shared: BTreeMap<GeneKey, Vec<(u64, u64)>> =
+                    [(a.clone(), vec![(4000, 5000)]), (b.clone(), vec![(4500, 5500)])].into_iter().collect();
+                let disjoint: BTreeMap<GeneKey, Vec<(u64, u64)>> =
+                    [(a.clone(), vec![(4000, 4400)]), (b.clone(), vec![(4500, 5500)])].into_iter().collect();
+                let same: BTreeMap<GeneKey, char> = [(a.clone(), '+'), (b.clone(), '+')].into_iter().collect();
+                let opposite: BTreeMap<GeneKey, char> = [(a.clone(), '+'), (b.clone(), '-')].into_iter().collect();
+                let p = GraphParams {
+                    reject_self_hits: true,
+                    ..GraphParams::default()
+                };
+                let run = |blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>, s: &BTreeMap<GeneKey, char>| {
+                    graph_from_paf_loci_stranded(self_hit, &exonic, blocks, &p, None, Some(s))
+                };
+                assert_eq!(run(&shared, &same).n_edges(), 1, "one transcription unit: kept for the fold");
+                assert_eq!(run(&shared, &same).rejected_self_hits, 0);
+                assert_eq!(run(&shared, &opposite).n_edges(), 0, "antisense neighbour: dropped");
+                assert_eq!(run(&disjoint, &same).n_edges(), 0, "same strand, no shared exon bases: dropped");
+                assert!(shares_exon_bases(&[(4000, 5000)], &[(4999, 6000)]));
+                assert!(!shares_exon_bases(&[(4000, 5000)], &[(5000, 6000)]));
             }
 
             /// Both new clauses are OFF by default, so every prior measurement stays byte-identical.

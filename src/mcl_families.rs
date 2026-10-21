@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
-    build_clusters, fold_parts_into_loci, graph_from_paf_loci, loci_from_exon_blocks,
+    build_clusters, fold_parts_into_loci, graph_from_paf_loci_stranded, loci_from_exon_blocks,
     mcl_pair_rule_counted, sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
 use rustle::fam_from_gtf::{
@@ -1270,7 +1270,12 @@ fn main() -> Result<()> {
     } else {
         None
     };
-    let g = graph_from_paf_loci(&paf, &exonic, &blocks, &p, loci.as_ref());
+    // Amendment 1 of PREREG_o1_self_hits: the self-hit rule needs the loci strands to keep one transcription unit's models together
+    let self_hit_strands = match (&args.gff, args.reject_self_hits) {
+        (Some(g), true) => Some(gene_strands(g)?),
+        _ => None,
+    };
+    let g = graph_from_paf_loci_stranded(&paf, &exonic, &blocks, &p, loci.as_ref(), self_hit_strands.as_ref());
     if let Some(path) = &args.dump_graph {
         let mut f = std::fs::File::create(path)?;
         for (&(i, j), &w) in &g.edges {
