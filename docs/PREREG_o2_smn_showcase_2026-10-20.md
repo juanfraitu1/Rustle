@@ -73,3 +73,31 @@ pattern where StringTie, FLAIR and a primaries-only assembly mix them. It would 
 ## Amendments
 
 (none yet)
+
+## Results (code eca1c331; `o2smn/score.log`, `bars.json`; run once): **FAIL (R2 on SMN2, R4 on SMN2)**
+
+3,651 reads with a primary on SMN1/SMN2; 3,623 tied within 30 points; the set decides 2,861 and abstains on 762. O2 moves
+8 reads against minimap2; the truth moves 616.
+
+| exon-7 inclusion | mm2 | O2 | O2-coin | truth |
+|---|---|---|---|---|
+| reads SMN2 | 0.653 | 0.635 | 0.646 | **0.617** |
+| reads SMN1 | 0.887 | 0.988 | 0.890 | **0.985** |
+| Rustle SMN2 | 0.602 | 0.590 | 0.602 | 0.585 |
+| Rustle SMN1 | 0.801 | 0.969 | 0.801 | 0.941 |
+| StringTie SMN2 | 0.654 | 0.634 | 0.649 | 0.618 |
+| StringTie SMN1 | 0.894 | 1.000 | 0.896 | 0.989 |
+| FLAIR SMN2 | 0.763 | 0.710 | 0.763 | 0.700 |
+| FLAIR SMN1 | 0.897 | 0.929 | 0.897 | 0.934 |
+
+- **R1 holds** on both copies (O2 0.018 / 0.003 from the truth reads; minimap2 0.036 / 0.098).
+- **R2 holds on SMN1** (Rustle on O2 0.016 from truth; StringTie, FLAIR and Rustle on primaries 0.091 / 0.088 / 0.184)
+  and **against StringTie and FLAIR on SMN2** (0.027 vs 0.037 / 0.146), but **fails against Rustle on primaries on SMN2**
+  (0.015): minimap2's SMN2 reads are mostly right, the coin toss damages SMN1.
+- **R3 holds** (0.005 / 0.028): Rustle keeps the homes it is given; FLAIR does not (O2-coin = mm2 for it).
+- **R4 fails on SMN2:** abstaining leaves 723 of its 1,355 spanning reads (53%); SMN1 keeps 96%.
+- O2-coin (abstained reads at the primary) is minimap2's picture again: the abstained reads are where minimap2 errs.
+
+**Reading.** The PSV columns give SMN1 its own isoforms (exon 7 kept in 98.8% of reads, as in truth, against 88.7% under
+minimap2), and an assembler that keeps the homes reproduces that; StringTie and FLAIR on primaries do not. The price is
+abstention: nearly half of SMN2's reads are identical to SMN1 over their span and are left out. Audit pending.
