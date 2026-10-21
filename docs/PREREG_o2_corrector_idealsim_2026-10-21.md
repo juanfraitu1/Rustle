@@ -103,3 +103,38 @@ it breaks. That is a ceiling for NPIP, LRPAP1 and TBC1D3 in KB3781.
   - `o2personal.py orthologs` writes the contested counterparts beside its output;
   - `donorsim.py build --per-instance` gives each haplotype instance its own read count;
   - `bench/o3_graph/o2idealsim.py` builds the copies, the simulation's instances, the truth strata and the bars.
+
+## Results (code 9acb0233; run once per replicate; `/mnt/linuxdisk/tmp/o3_graph/idealsim/`): **FAIL**
+
+- **Counterparts:** 53 of 61 copies (TBC1D3 13 of 14). The 47 NPIP / LRPAP1 copies reproduce Amendment 4's
+  `orthologs.tsv` exactly. 14 LRPAP1 counterparts are contested: 7 simulated but unscored, 7 without an alternate instance.
+- **Instances:** 61 reference, 46 alternate scored, 7 alternate contested; 100 reads each = 11,400 reads per replicate, all
+  aligned (11,400 primaries, 0 unmapped).
+- **Corrector:** 1,544 / 1,595 reads tied within 10 AS; its sample has 7,958 / 7,742 confident reads on 57 / 56 copies.
+
+| replicate | scored | minimap2 wrong | fixes | breaks | families better / worse | P | R | S | H | F | verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 3781 | 1,319 | 471 | 8 | 7 | 1 / 1 | ✓ | ✗ | ✗ | ✓ | ✗ | FAIL |
+| 3782 | 1,365 | 503 | 10 | 4 | 3 / 0 | ✓ | ✗ | ✗ | ✓ | ✓ | FAIL |
+
+The corrector changes ~1% of the tied calls and recovers a net 1 and 6 of minimap2's 471 and 503 errors (0.2%, 1.2%).
+
+**Where minimap2's errors are (descriptive; 3781 / 3782):**
+- **Reference instances, one genome:** 147 / 142 errors, all but one exact AS ties (identical copies over the read; the
+  coin toss the set answers). Near ties: minimap2 right on 386 / 386 and 392 / 393.
+- **His other haplotype, exact ties:** 188 / 192.
+- **His other haplotype, near ties:** 136 / 169. Here the corrector's own evidence points to minimap2's pick: the true copy
+  has more unexplained events than minimap2's copy on 116 / 153 reads, equal on 11 / 8, fewer on 9 / 8.
+  - They concentrate in four instances (120 of 136, 129 of 169), each sending its reads to one neighbour:
+    - TBC1D3.1 → .0: 65 / 73;
+    - TBC1D3.7 → .6: 20 / 28;
+    - TBC1D3.0 → .1: 16 / 16;
+    - NPIP.1 → .2 (and .13): 19 / 12.
+  - TBC1D3.0 and .1 are an inverted pair 105 kb apart. The reference segment spanning both (31.88-32.03 Mb) aligns reversed
+    on his maternal chr4 (32.28-32.42 Mb), between collinear flanks: an inversion between his haplotypes with its ends in
+    the two copies.
+  - TBC1D3.6 and .7 lie inside a region whose whole ± 500 kb aligns reversed on his maternal chr4.
+  - In these pairs his copy at a copy's position is closer in sequence to the neighbouring reference copy. Position and
+    sequence disagree on provenance, and no read-level evidence follows position there.
+
+Audit pending.
