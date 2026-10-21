@@ -156,3 +156,25 @@ and not in the net.
 **Consequence.** H1-H3 and the registered PASS stay as they are.
 - If H3′ fails, "no other read pulled in" is withdrawn.
 - If it holds, that statement extends to the candidates' sequence relatives.
+
+## Results under Amendment 1 (driver 05fdaed4; run once): **H3′ holds**
+
+- **Alignment:** all 8,339 relatives' reads aligned in both arms, 2 chunks each, about 2 min per chunk.
+
+| set | reads | arm R0: on a candidate | arm C: primary on a candidate (moved) | reachable (any candidate record) | near-tied (within 10 AS) |
+|---|---|---|---|---|---|
+| RRN3 family | 5,863 | – | **1** | 86 | 1 |
+| C's relatives | 2,476 | – | **0** | 1 | 0 |
+| all | 8,339 | – | **1** (bar <= 83) | 87 | 1 |
+
+- **The test could fail this time:** 87 reads reach a candidate (against 16 in H3's net), and 1 of them moves.
+- **The moved read** (SRR27438212.2412175, RRN3-family set):
+  - in R0 its primary is a poor fit: NC_073242.2:29,462,744, AS 370, its secondaries at 32.19 Mb reaching 497;
+  - in C it fits B's candidate at AS 725 (MAPQ 19; the runner-up is B's other contig, at 712).
+  - So it fits B far better than anything in the reference: possibly a B read the span-based net missed. This is not verified
+    against his assemblies.
+
+**Reading.** Adding the two candidates pulls in no read of their sequence relatives outside the NPIP net (at most 1 of 8,339, and
+that one fits B better than any reference locus). The no-false-move statement now extends to the candidates' relatives.
+
+Audit pending.
