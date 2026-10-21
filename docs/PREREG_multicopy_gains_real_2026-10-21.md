@@ -124,4 +124,49 @@ not artefacts of our family definition. What is NOT supported is that the extra 
 copies. Most are rebuilt from another copy's reads (human) or cannot be told apart (gorilla); 12-15% are supported, among them
 several of the advisor's mainstays in human (TBC1D3 × 4, NPIPB5, SMN2, GOLGA8F, RBMY1 × 2).
 
-Audit pending.
+Audit: below (Q1 holds with caveats; Q2 human holds with caveats; Q2 gorilla does NOT hold as stated; the reading above is withdrawn).
+
+## Audit (metric-auditor, 2026-10-21): Q1 holds with caveats; Q2 human holds with caveats; Q2 gorilla does not hold as stated
+
+Every number reproduces to the digit. The populations rebuild identically. The certificate is unchanged since register 1269.
+Corrections:
+
+- **The gorilla SD bar rested on a filter that removes nothing.**
+  - Every row of our scan has stage-2 identity >= 90 by construction (blocks are kept at >= 90), so "90.4%" means "overlaps any
+    scanned pair".
+  - With the scan's own identity definition (est_id) it is 82.9%: **FAIL**.
+  - Register 1278 kept SEDEF as gorilla's SD source. On SEDEF SD90, as a **post-hoc** check, 1,397 / 1,423 = **98.2%**.
+- **Q2 is close to true by construction.** A read ties at >= 0.98 × best only where two loci share near-identical sequence, and
+  Q2 had no null.
+  - Base rate, genes with no tied reads: 15.3% in an SD (human), 23.6% (gorilla, SEDEF).
+  - With the satellite-filtered CHM13 track (`SD90.nosat`), human falls to **77.3%**: chrY 18.4%, acrocentric chromosomes 68.8%,
+    other autosomes 97.6%.
+  - Of the 1,936 human high-tie genes, 69 lie in the X/Y PARs (allelic, not paralogous) and 371 are RefSeq pseudogenes.
+  - "Not artefacts of our family definition" overreaches: no O1 family enters Q2. Its population is read ties.
+- **"Supported" mainstays are certified 97-100% to the other copy.** Reads certified to this copy vs the other:
+  - TBC1D3D 5 / 931, TBC1D3H 2 / 743, TBC1D3I 11 / 869, TBC1D3K 4 / 674;
+  - NPIPB5 11 / 354, GOLGA8F 2 / 498, SMN2 5 / 593;
+  - RBMY1A1 4 / 138, RBMY1D 3 / 211.
+  
+  Only 1 of the 34 supported human genes has as many reads certified to its own copy as to the other. The mainstay lists also
+  matched on gene symbol only: counted by RefSeq description, human mainstay-family gains are 11 supported / 43 contradicted / 3
+  undecidable.
+- **"Contradicted = shadow" mostly restates minimap2's ranking.** Of the calls to the other copy, 94% (human) / 85% (gorilla) come
+  from secondaries scoring strictly below the read's best, which minimap2 already placed elsewhere (outside O2's tied-only scope).
+  - On TIED records alone, the gained transcripts split supported / contradicted / undecidable as human 9 / 59 / 216 (76%
+    undecidable) and gorilla 2 / 25 / 135 (83% undecidable).
+  - The instrument never tests reads whose primary lies at the gene itself.
+- **Minor:**
+  - The location split was computed by gene name, not coordinates (by coordinates: human PAR 69 / chrX 102 / chrY 320).
+  - The acrocentric class was not computed.
+  - Human is scored on RefSeq, not CAT.
+
+**What stands:**
+- **Q2:** the places where reads multi-map are strongly enriched for segmental duplications, 4-6× the base rate. Human: 97.6% on
+  ordinary autosomes in the published track, and less for chrY / acrocentric satellite-adjacent regions. Gorilla: 98.2% in SEDEF
+  (post hoc). That is expected when reads tie only where sequence is duplicated. It does not validate any O1 family.
+- **Q1:**
+  - The extra transcripts secondaries build in these loci are not shown to be the copies' own expression.
+  - Where a read is truly tied, its copy is mostly undecidable (76-83% of gains).
+  - Where it is not tied, minimap2 already put it elsewhere.
+  - No mainstay gene is shown to be an expressed copy by this test.
