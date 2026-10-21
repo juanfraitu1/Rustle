@@ -119,3 +119,31 @@ answer key by the intron-free score, refcons / altonly).
 - **H:** on refcons reads, breaks <= fixes + 2.
 
 PASS = P, R, S, H; FAIL = P holds and another fails.
+
+## Results (code 67383d28; run once; `o3_graph/mainstay/`): **UNDERPOWERED**
+
+KB3781's fibroblast reads touching NPIP's 25 and LRPAP1's 22 copies: 5,821 reads, 77,090 alignments. The corrector's
+domain (tied within 10 AS): **185 reads** (NPIP 164, LRPAP1 21); it learns from 3,037 confident reads on 33 copies and
+overrules minimap2 on 4.
+
+**What his genome says about the 185** (each copy's counterpart on his other haplotype lifted for 20 of the 47 copies):
+
+| family | tied | determined, his copy = the reference | determined, other parent's copy | identical on two copies in his genome | no traceable copy |
+|---|---|---|---|---|---|
+| NPIP | 164 | 75 (1 outside the tie) | 6 | 48 | 35 |
+| LRPAP1 | 21 | 0 | 1 | 2 | 18 |
+
+**Scored (truth among the tied copies): 81 reads; minimap2 right 79, corrector right 79; fixes 0, breaks 0.**
+- P fails (minimap2 wrong on 2, bar 10): **UNDERPOWERED.** R and S cannot be met with 0 fixes; H holds (refcons 74: 0
+  breaks).
+- minimap2's 2 errors are NPIP reads (one his reference copy NPIP.14 placed on NPIP.16; one his other parent's NPIP.18
+  placed on NPIP.17); the corrector kept minimap2's pick on both.
+- The corrector's 4 overrules are all LRPAP1 reads whose best place in his genome has no traceable reference copy, so
+  the key cannot score them. Descriptive look (not a registered result): two are reads whose best match is his maternal
+  copy of SM22.1, minimap2's pick, by one substitution (the overrule would be a break); two leave a copy his genome
+  scores 5 and 30 points worse for one of two equally best copies.
+
+**Reading.** In the matched sample, for the thesis's mainstay families, minimap2 is already right on 79 of the 81 tied
+reads his own genome can place. The rest are reads identical on two copies in his genome too (50: no method can place
+them) or in duplications his assemblies cannot trace (53). There is almost nothing left for O2 to recover here. YAGs are
+not expressed in fibroblasts and cannot be tested in this sample. Audit pending.
