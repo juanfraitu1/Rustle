@@ -92,4 +92,42 @@ alignment, at a cost of at most 1% of other reads.
 on the reference, though 6 of its 11 land on C's candidate. Most of the tied reads that O2 would have faced at this locus stop
 being ties.
 
-Audit pending.
+Audit: below (PASS holds with caveats; the reading above is corrected).
+
+## Audit (metric-auditor, 2026-10-21): PASS holds with caveats
+
+Every number reproduces:
+- **Units:** C 39, B 23, A 11, B into A 21.
+- **Bars:** H1 33 / 39 (main strand 33 / 37); H2 21 / 23 (21 / 21); H3 0 / 2,861.
+- **Reported figures:** the per-unit fates, register 1360's split (21 + 3 / 3 + 2), the MAPQ counts and the ties (34 → 10).
+- **Order holds:** the design came before `units.tsv`, the index, R0, C and the results.
+- **Strand:** the strand-free labels were applied as defined, and the main-strand reading passes as well. The 37 / 21 / 21 / 11
+  quoted in the design do not follow from its own definition.
+
+**Caveats:**
+- **H1 is robust.** On reads IsoCon did not use, 26 / 32 (81%). Under any tie policy it is 0.83-0.89.
+- **H2 is mostly self-fulfilling.**
+  - 19 of B's 21 homes were IsoCon members, the very reads the candidate was built from. On non-members H2 is 2 / 4, exactly at the
+    bar.
+  - The "B into A" reads start where B's do. Counted as B's reads, B's candidate holds 23 / 44, and 4 / 25 non-members.
+- **B is not an NPIP copy.** No B read has an aligned block on an NPIP copy. B's reads entered the net only because introns of
+  >= 100 kb span NPIP.10 (the net collects reads by span overlap).
+- **H3 could not fail.** Only 16 of the 2,861 non-target reads have any record on a candidate, below the bar of 28; the closest
+  scores 735 AS below its primary.
+  - Reads of B's relatives were never realigned: RRN3 has 1,019 reads in the library (31 in the net), the RRN3-like LOC101142371 65,
+    a locus at 29.42 Mb 4,764.
+  - "No other read pulled in" therefore holds for NPIP-net reads only.
+- **Unit A is C's inverted duplicate.** 10 of 11 A reads fit C equally well, 8 of them with exactly the same `ms`. The 6 "A reads
+  on C's candidate" are exact ties, so their origin is undecidable; the same holds for register 1360's 5 A reads.
+- **The arms differ beyond the contigs.** 26 of the 2,845 non-target reads with no candidate record changed primary between R0 and
+  C. Comparisons between the two arms carry that noise; the bars do not.
+- **Reported definitions:**
+  - The ties (34 → 10) count any locus, 100-kb bins included. The design's wording (ties among NPIP copies) gives 33 → 8.
+  - B's MAPQ 1-29 comes from competition between its own two contigs: the other contig is the runner-up for all 23 reads, and in
+    R0 the same reads had MAPQ >= 30.
+- **Not held out.** 10-01's Amendment 5 already moved this locus's reads onto IsoCon transcripts. This is a replication at one
+  locus, with no oracle arm.
+
+**What stands:** PASS as registered, with the weight on H1. Adding the reference-free candidate for register 1360's copy gives 33
+of its 39 reads a home (26 of 32 among reads the candidate was not built from), and moves no other NPIP read. Whether reads of B's
+relatives in the RRN3 family would be pulled in is untested.
