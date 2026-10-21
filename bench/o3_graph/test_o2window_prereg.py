@@ -87,3 +87,11 @@ def test_pick_bars_score_a_single_pick_column_against_minimap2():
     truth = {"r1": ("determined", "a"), "r2": ("determined", "a"), "r3": ("determined", "c")}
     b = OW.pick_bars(calls, truth, "subs_pick")
     assert (b["scored"], b["fixes"], b["breaks"], b["better"], b["worse"], b["minimap2_right"], b["right"]) == (3, 1, 1, 1, 1, 2, 2)
+
+
+def test_a_key_alignment_stitched_across_copies_or_bridging_100_kb_is_no_placement():
+    exons = {"A": [(0, 500)], "B": [(300000, 300500)]}
+    assert OW.no_placement([(100, 400), (300100, 300400)], [(0, 300), (3, 299700), (0, 300)], exons) is True   # stitched
+    assert OW.no_placement([(100, 140), (272500, 272540)], [(0, 40), (3, 272360), (0, 40)], {"A": [(0, 500)]}) is True  # 272-kb gap
+    assert OW.no_placement([(100, 400)], [(0, 300)], exons) is False
+    assert OW.no_placement([(100, 200), (5100, 5200)], [(0, 100), (3, 4900), (0, 100)], exons) is False

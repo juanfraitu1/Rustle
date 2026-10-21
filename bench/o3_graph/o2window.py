@@ -55,6 +55,15 @@ def stitched(blocks, exons):
     return sum(1 for ex in exons.values() if _ov(blocks, ex) >= STITCH_BP) >= 2
 
 
+GAP_MAX = 100000                                                # an alignment bridging this much is no placement (r1360 audit)
+
+
+def no_placement(blocks, cigar, exons):
+    """Amendment 3 of PREREG_o2_corrector_families: an answer-key alignment is no placement when it is stitched across two
+    copies' exons (stitched()) or bridges a gap of >= GAP_MAX (r1360's 272-kb NPIP.14-to-NPIP.15 truth)."""
+    return stitched(blocks, exons) or any(op == 3 and n >= GAP_MAX for op, n in cigar)
+
+
 def window_copies(alns, w):
     """({copies}, minimap2's primary copy) of a read tied in window w: its alignments [{ms, copy, prim}] whose ms is within
     w of its best (difference < w, as Eichler's 10 AS is SLACK 9) lie on >= 2 copies of one family, none off every copy,
@@ -477,7 +486,7 @@ def cmd_score(calls_p, truth_p, out_p):
     return 0
 
 
-def cmd_truth_ms(domain_p, copies_p, orth_p, chrmap_p, out_p, bams):
+def cmd_truth_ms(domain_p, copies_p, orth_p, chrmap_p, out_p, bams, repaired=False):
     """truth_ms() for every read of a domain TSV (o2correct donor's columns) from its alignments to the animal's two
     assemblies, attributed as o2personal.cmd_truth attributes them (repeated here so the frozen o2personal stays as run)."""
     import pysam
@@ -487,7 +496,7 @@ def cmd_truth_ms(domain_p, copies_p, orth_p, chrmap_p, out_p, bams):
     rows = PC.read_copies(copies_p)
     idx_ref = C.span_index(P.load_copies(copies_p))
     idx_alt = C.span_index(PC.alt_rows(PC.read_orthologs(orth_p), {r["copy"]: r["strand"] for r in rows}))
-    alns = collections.defaultdict(list)
+    alns, dropped = collections.defaultdict(list), 0
     for h, (bam_p, fai_p) in bams.items():
         with pysam.AlignmentFile(bam_p) as bam:
             names = PC.names_by_length({x["SN"]: x["LN"] for x in bam.header.to_dict()["SQ"]}, PC._fai(fai_p))
@@ -501,7 +510,11 @@ def cmd_truth_ms(domain_p, copies_p, orth_p, chrmap_p, out_p, bams):
                 else:
                     role = "alt"
                     cands = C.overlapping(idx_alt, cm, rec.reference_start, rec.reference_end) if cm else []
-                c = S.attribute(rec.get_blocks(), P._strand(rec), cands) if cands else None
+                bl = rec.get_blocks()
+                if repaired and no_placement(bl, rec.cigartuples, {x[0]: x[2] for x in cands}):
+                    dropped += 1
+                    continue
+                c = S.attribute(bl, P._strand(rec), cands) if cands else None
                 alns[q].append((rec.get_tag("ms"), c, role))
     n = collections.Counter()
     with open(out_p, "w") as fh:
@@ -512,7 +525,8 @@ def cmd_truth_ms(domain_p, copies_p, orth_p, chrmap_p, out_p, bams):
             ru = max((m for m, c, _ in alns[q] if c != t), default="") if st == "determined" else ""
             fh.write(f"{q}\t{f}\t{st}\t{t or ''}\t{o or ''}\t{best}\t{ru}\n")
             n[st if st != "determined" else f"determined {o}"] += 1
-    print(f"[o2window] ms truth -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
+    print(f"[o2window] ms truth -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items()))
+          + (f"; {dropped} stitched / >= {GAP_MAX}-bp-gap alignments dropped" if repaired else ""), flush=True)
     return 0
 
 
@@ -603,7 +617,7 @@ def main(argv):
     if cmd == "score":
         return cmd_score(*a[:3])
     if cmd == "truth-ms":
-        return cmd_truth_ms(*a[:5], PC._pairs(a, "--bams"))
+        return cmd_truth_ms(*a[:5], PC._pairs(a, "--bams"), repaired="--repaired" in a)
     if cmd in ("truth-sim", "truth-hg002"):
         return cmd_truth_table(cmd[6:], a[0], a[1:])
     if cmd == "pick-bars":                                      # PREREG_o2_subs: OUT.json --calls C... --truth T... [--col subs_pick]

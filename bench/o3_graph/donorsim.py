@@ -40,7 +40,7 @@ def _sibling(name):
 RW = _sibling("realworld")
 
 
-def lift_exons(row, exons):
+def lift_exons(row, exons, max_growth=MAX_EXON_GROWTH):
     """Exons (query coordinates, half-open) lifted onto the target through a PAF row's alignment, sorted; None when an exon
     end falls outside it, an exon's length changes by more than MAX_EXON_GROWTH, or the exons do not stay ordered. A '-' row
     aligns the query's reverse complement."""
@@ -54,13 +54,13 @@ def lift_exons(row, exons):
         new = [(m[rc[b - 1]], m[rc[a]] + 1) if m[rc[a]] is not None and m[rc[b - 1]] is not None else None for a, b in exons]
     if any(e is None or e[0] >= e[1] for e in new):
         return None
-    if any(abs((e[1] - e[0]) - (b - a)) > MAX_EXON_GROWTH for e, (a, b) in zip(new, exons)):
+    if max_growth is not None and any(abs((e[1] - e[0]) - (b - a)) > max_growth for e, (a, b) in zip(new, exons)):
         return None                                             # an exon end lifted across a large gap (PRAMEF11.5: 1 kb -> 43 kb)
     new.sort()
     return new if all(x[1] <= y[0] for x, y in zip(new, new[1:])) else None
 
 
-def pick_ortholog(rows, isoforms):
+def pick_ortholog(rows, isoforms, max_growth=MAX_EXON_GROWTH):
     """The ortholog among a query's PAF rows: the longest primary (tp P) with MAPQ >= MIN_MAPQ, when every isoform
     ({t: exons in query coordinates}) lifts through it -> {tname, strand, start, end, isoforms}, else None."""
     prim = [r for r in rows if r["tp"] == "P"]
@@ -69,12 +69,13 @@ def pick_ortholog(rows, isoforms):
     best = max(prim, key=lambda r: r["te"] - r["ts"])
     if best["mapq"] < MIN_MAPQ:
         return None
-    lifted = {t: lift_exons(best, ex) for t, ex in isoforms.items()}
+    lifted = {t: lift_exons(best, ex, max_growth) for t, ex in isoforms.items()}
     if any(v is None for v in lifted.values()):
         return None
     lo = min(e[0][0] for e in lifted.values())
     hi = max(e[-1][1] for e in lifted.values())
-    return dict(tname=best["tname"], strand=best["strand"], start=lo, end=hi, isoforms=lifted, mapq=best["mapq"])
+    return dict(tname=best["tname"], strand=best["strand"], start=lo, end=hi, isoforms=lifted, mapq=best["mapq"],
+                de=best.get("de"))
 
 
 def drop_ambiguous(orth):
@@ -125,7 +126,8 @@ def read_paf(p):
         if "cg:Z:" not in tags:
             continue
         rows[x[0]].append(dict(qlen=int(x[1]), qs=int(x[2]), qe=int(x[3]), strand=x[4], tname=x[5], ts=int(x[7]),
-                               te=int(x[8]), mapq=int(x[11]), tp=tags.get("tp:A:", "P"), cg=tags["cg:Z:"]))
+                               te=int(x[8]), mapq=int(x[11]), tp=tags.get("tp:A:", "P"), cg=tags["cg:Z:"],
+                               de=float(tags["de:f:"]) if "de:f:" in tags else None))
     return rows
 
 

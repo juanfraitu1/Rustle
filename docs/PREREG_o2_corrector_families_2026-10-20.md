@@ -180,3 +180,24 @@ the lift once a key artefact is removed (minimap2 errors 4-9 against the bar of 
 the corrector (1 genuine; 4-9 under repaired lifts). **What the data does show:** the largest group of minimap2's
 mis-placements here is 29 NPIP reads from a maternal NPIP copy absent from the reference — O3, not a choice among
 reference copies.
+
+### Amendment 3 (2026-10-21, before rescoring): the repaired answer key
+
+**User:** "lets try 1" (fix the answer key and rescore the frozen corrector output; no new alignments).
+
+**Already seen, stated plainly:** the r1360 audit's exploratory bracket. Under several lift repairs the scored set was
+105-113 reads with 4-9 genuine minimap2 errors (UNDERPOWERED in each). This rescore applies one convention, chosen by
+principle and fixed here; it is a confirmation, not a blind test. **Expected: UNDERPOWERED.**
+
+**The repaired key** (`--repaired` on `o2personal.py orthologs` and `o2window.py truth-ms`; without it both reproduce
+r1360's files byte for byte):
+1. **Key alignments:** an alignment of a read to his assemblies is no placement when it is stitched across two copies'
+   exons (`stitched()`, >= 50 bp on each) or bridges a gap of >= 100 kb (`no_placement`, the audit's recipe).
+2. **Counterparts (identity convention):** a copy's counterpart on his other haplotype is the primary alignment (MAPQ
+   >= 20) of its ± 20 kb query **on any contig that is not the reference's own** — the homologous chromosome or another;
+   its exons are lifted without the 50-bp growth guard.
+3. **Overlaps:** when two copies' counterparts overlap, the copy whose query aligned with the lower divergence (`de`)
+   keeps it; the other gets none (instead of both dropped).
+
+Unchanged: the frozen corrector output (`arm.tsv`), the scorer, the bars (P: minimap2 wrong on >= 10 of >= 50 scored; R,
+S, H) and the verdict rules.

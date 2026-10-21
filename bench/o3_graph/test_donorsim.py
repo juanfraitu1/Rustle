@@ -37,3 +37,9 @@ def test_an_exon_whose_lifted_length_balloons_through_a_large_target_gap_does_no
     # 50M 40000D 50M: an exon spanning the deletion would lift as 40,020 bp; the isoform is not projectable
     assert DS.lift_exons(_row("+", cg="50M40000D50M", te=41100), [(40, 60)]) is None
     assert DS.lift_exons(_row("+", cg="50M3D50M", te=1103), [(40, 60)]) == [(1040, 1063)]    # a small indel is fine
+
+
+def test_the_exon_growth_guard_can_be_lifted_for_a_confident_primary():
+    row = _row("+", cg="10M200D90M")                                         # an exon end lifts across a 200-bp gap
+    assert DS.lift_exons(row, [(5, 20)]) is None
+    assert DS.lift_exons(row, [(5, 20)], max_growth=None) == [(1005, 1220)]

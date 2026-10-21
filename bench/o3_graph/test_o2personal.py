@@ -215,3 +215,10 @@ def test_the_fewest_edit_copy_is_contradicted_where_its_mismatch_is_a_rival_s_ma
 def test_the_primary_oriented_common_window_is_where_every_tied_alignment_aligns():
     assert PC.window_primary({"a": ((0, 100), False), "b": ((10, 90), True)}, 100) == (10, 90)
     assert PC.window_primary({"a": ((5, 100), False), "b": ((0, 80), True)}, 100) == (20, 100)
+
+
+def test_overlapping_counterparts_go_to_the_copy_with_the_lower_divergence():
+    o = lambda s, e, de: dict(tname="m12", start=s, end=e, de=de)
+    orth = {("A", "mat"): o(100, 200, 0.0086), ("B", "mat"): o(150, 260, 0.0017), ("C", "mat"): o(500, 600, 0.01)}
+    kept = PC.resolve_by_de(orth)
+    assert set(kept) == {("B", "mat"), ("C", "mat")}

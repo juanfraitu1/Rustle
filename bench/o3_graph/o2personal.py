@@ -423,6 +423,18 @@ def alt_rows(orth, strand_of):
     return dict(out)
 
 
+def resolve_by_de(orth):
+    """{(copy, hap): ortholog} where two copies' counterparts overlap on one contig: the copy whose query aligned with the
+    lower divergence (de) keeps it, the other gets none (Amendment 3 of PREREG_o2_corrector_families; donorsim.drop_ambiguous
+    drops both)."""
+    kept = {}
+    for k, o in sorted(orth.items(), key=lambda kv: (kv[1].get("de") if kv[1].get("de") is not None else 1.0, kv[0])):
+        if not any(k[1] == j[1] and o["tname"] == p["tname"] and o["start"] < p["end"] and p["start"] < o["end"]
+                   for j, p in kept.items()):
+            kept[k] = o
+    return kept
+
+
 def read_orthologs(p):
     return [dict(r, start=int(r["start"]), end=int(r["end"]), mapq=int(r["mapq"]), exons=json.loads(r["exons"]))
             for r in csv.DictReader(open(p), delimiter="\t")]
@@ -520,12 +532,13 @@ def cmd_queries(copies_p, genome_p, chrmap_p, out):
     return 0
 
 
-def cmd_orthologs(copies_p, chrmap_p, out_p, haps):
+def cmd_orthologs(copies_p, chrmap_p, out_p, haps, repaired=False):
     """Per copy, its ALT ortholog (donorsim.pick_ortholog on the copy's own exons, then donorsim.drop_ambiguous), kept only
     on the homologous ALT contig or an unplaced one. haps: {hap: (PAF, the hap's FASTA index)}."""
     DS = _sibling("donorsim")
     alt = alt_of(chrmap_p)
     placed = {r["same_name"] for r in chrmap_rows(chrmap_p)} | {r["B_name"] for r in chrmap_rows(chrmap_p) if r["B_name"]}
+    refset = set(reference_contigs(chrmap_p))                   # repaired: any contig but the reference's own
     orth, n = {}, collections.Counter()
     rows = read_copies(copies_p)
     for h, (paf_p, fai_p) in haps.items():
@@ -539,18 +552,20 @@ def cmd_orthologs(copies_p, chrmap_p, out_p, haps):
             if r["chrom"] not in alt or alt[r["chrom"]][0] != h:
                 continue
             lo = max(0, r["start"] - DS.FLANK)
-            o = DS.pick_ortholog(paf.get(f"{r['copy']}|{r['chrom']}|{lo}", []), {"main": [(a - lo, b - lo) for a, b in r["exons"]]})
+            o = DS.pick_ortholog(paf.get(f"{r['copy']}|{r['chrom']}|{lo}", []), {"main": [(a - lo, b - lo) for a, b in r["exons"]]},
+                                 None if repaired else DS.MAX_EXON_GROWTH)
             if o is None:
                 n[f"{h}: none"] += 1
                 continue
             cm = names.get(o["tname"])
-            if cm is None or (cm != alt[r["chrom"]][1] and cm in placed):
+            refused = cm is None or (cm in refset if repaired else (cm != alt[r["chrom"]][1] and cm in placed))
+            if refused:
                 n[f"{h}: on another chromosome (refused)"] += 1
                 continue
             o["tname"] = cm
             orth[(r["copy"], h)] = o
             n[f"{h}: ortholog"] += 1
-    kept = DS.drop_ambiguous(orth)
+    kept = resolve_by_de(orth) if repaired else DS.drop_ambiguous(orth)
     n["ambiguous (dropped)"] = len(orth) - len(kept)
     with open(out_p, "w") as fh:
         fh.write("copy\thap\tcontig\tstart\tend\tstrand\tmapq\texons\n")
@@ -860,7 +875,7 @@ def main(argv):
     if cmd == "queries":
         return cmd_queries(*a[:4])
     if cmd == "orthologs":
-        return cmd_orthologs(*a[:3], _pairs(a, "--haps"))
+        return cmd_orthologs(*a[:3], _pairs(a, "--haps"), repaired="--repaired" in a)
     if cmd == "truth":
         return cmd_truth(*a[:6], _pairs(a, "--bams"))
     if cmd == "personal":
