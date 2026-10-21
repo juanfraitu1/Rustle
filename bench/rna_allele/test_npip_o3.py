@@ -49,3 +49,30 @@ def test_the_bars_need_one_counted_target_candidate_holding_and_pure_and_no_coun
     impure = [_c("NPIP:a", 3, "a_haplotype_only", True, "r1 r2 r3 r4 r5 r6 r7 x y z".split())]
     assert N.bars(impure, rt)["E3"] is True and N.bars(impure, rt)["E4"] is False                  # holds 7 of 12; 7 of its 10 reads
     assert N.bars([], rt)["verdict"] == "FAIL"
+
+
+def test_a_target_read_s_unit_is_every_unit_its_alignment_covers_by_50_bases():
+    assert N.unit_of([(6767000, 6768000)]) == "C"
+    assert N.unit_of([(6745000, 6745500), (6730000, 6730400)]) == "AB"
+    assert N.unit_of([(6744280, 6744320)]) == ""                                  # 20 + 20 bases across the A / B border
+    assert N.unit_of([(6756050, 6756150), (6766000, 6766040)]) == "B"             # 50 in B, 40 in C
+
+
+def test_the_realignment_bars_count_homes_per_unit_and_false_moves_of_other_reads():
+    units = {"c1": "C", "c2": "C", "c3": "C", "b1": "B", "b2": "B", "x": "AB"}
+    calls = {"c1": "C", "c2": "C", "c3": "ref", "b1": "B", "b2": "ref", "x": "B"}
+    other = {f"n{i}": "ref" for i in range(200)}
+    other["n0"], other["n1"] = "C", "B"
+    b = N.realign_bars(units, calls, other)
+    assert (b["C_home"], b["C_reads"], b["B_home"], b["B_reads"], b["false_moves"]) == (2, 3, 1, 2, 2)
+    assert (b["H1"], b["H2"], b["H3"], b["verdict"]) == (True, True, True, "PASS")
+    other["n2"] = "C"
+    assert N.realign_bars(units, calls, other)["H3"] is False                       # 3 / 200 > 1%
+    calls["c2"] = "unmapped"
+    assert N.realign_bars(units, calls, other)["H1"] is False
+
+
+def test_a_read_is_tied_when_a_second_locus_is_within_nine_as_of_its_best():
+    assert N.tied({"NPIP:1": 1000, "NPIP:2": 991, "C": 950}) is True
+    assert N.tied({"C": 1000, "NPIP:2": 990}) is False
+    assert N.tied({"C": 1000}) is False

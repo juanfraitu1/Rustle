@@ -8,6 +8,10 @@ assemblies. Steps, in order (the IsoCon run and the minimap2 alignments are the 
     npip_o3.py frozen STEP --w W         control_test.STEP (outputs, contigs, lift, classify) on W
     npip_o3.py truth --w W               W/net.{mat,pat}.bam (his assemblies) -> W/target_reads.txt (R_T)
     npip_o3.py score --w W               candidates, their IsoCon reads and R_T -> bars E1-E5 -> W/score.json
+
+docs/PREREG_o3_npip_candidates_realign_2026-10-21.md (the counted candidates join the reference; the net is realigned):
+    npip_o3.py realign-prep --w W        W/realign/C.fa (GGO + the candidates' contigs), W/realign/units.tsv (target reads' units)
+    npip_o3.py score-realign --w W       W/realign/{R0,C}.bam -> bars H1-H3 and the tied-read counts -> W/realign/score.json
 """
 import argparse
 import collections
@@ -25,6 +29,10 @@ TRUTH = "/mnt/linuxdisk/tmp/rna_allele"
 R1360 = "/mnt/linuxdisk/tmp/o3_graph/mainstay/positional/truth_ms.tsv"   # the 29 NPIP off-copy reads of register 1360
 TARGET = ("CM054600.2", 6720000, 6820000)
 MARGIN, MAX_INTRON = 5, 100000
+GGO = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta"
+CAND = {"iso_NPIP_14": "B", "iso_NPIP_15": "B", "iso_NPIP_16": "C", "iso_NPIP_17": "C"}   # register 1363's counted candidates
+UNITS = dict(A=(6720000, 6744300), B=(6744300, 6756100), C=(6766000, 6822000))           # his maternal chr18 (the audit's)
+SLACK = 9                                                                                  # tied: within 10 AS (Eichler)
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
@@ -172,13 +180,120 @@ def score(a):
           flush=True)
 
 
+def unit_of(blocks):
+    """The units (A, B, C of the maternal-only locus) a read's aligned blocks cover by >= 50 bases."""
+    def cov(iv):
+        return sum(min(e, iv[1]) - max(s, iv[0]) for s, e in blocks if s < iv[1] and iv[0] < e)
+    return "".join(u for u in ("A", "B", "C") if cov(UNITS[u]) >= 50)
+
+
+def realign_bars(units, calls, other):
+    """H1-H3: units {target read: unit}, calls {read: "B" / "C" (a candidate) / "ref" / "unmapped"} in arm C, other {non-target
+    read: call}."""
+    c = [q for q, u in units.items() if u == "C"]
+    b = [q for q, u in units.items() if u == "B"]
+    hc, hb = sum(calls.get(q) == "C" for q in c), sum(calls.get(q) == "B" for q in b)
+    fm = sum(v in ("B", "C") for v in other.values())
+    out = dict(C_reads=len(c), C_home=hc, B_reads=len(b), B_home=hb, other=len(other), false_moves=fm,
+               H1=bool(c) and hc >= 0.5 * len(c), H2=bool(b) and hb >= 0.5 * len(b), H3=fm <= 0.01 * len(other))
+    out["verdict"] = "PASS" if out["H1"] and out["H2"] and out["H3"] else "FAIL"
+    return out
+
+
+def tied(best_as):
+    """Whether a read's second-best locus ({locus: best AS}) lies within SLACK AS of its best."""
+    v = sorted(best_as.values(), reverse=True)
+    return len(v) >= 2 and v[0] - v[1] <= SLACK
+
+
+def realign_prep(a):
+    import pysam
+    d = f"{a.w}/realign"
+    os.makedirs(d, exist_ok=True)
+    seq, cur = {}, None
+    for ln in open(f"{a.w}/contigs_L.fa"):
+        if ln[0] == ">":
+            cur = ln[1:].strip(); seq[cur] = []
+        else:
+            seq[cur].append(ln.strip())
+    with open(f"{d}/candidates.fa", "w") as o:
+        for c in sorted(CAND):
+            o.write(f">{c}\n{''.join(seq[c])}\n")
+    subprocess.run(f"cat {GGO} {d}/candidates.fa > {d}/C.fa", shell=True, check=True)
+    rt = {ln.strip() for ln in open(f"{a.w}/target_reads.txt") if ln.strip()}
+    best = {}
+    with pysam.AlignmentFile(f"{a.w}/net.mat.bam", check_sq=False) as bam:
+        for r in bam.fetch(until_eof=True):
+            if (r.query_name not in rt or r.is_unmapped or r.is_supplementary or r.reference_name != "chr18_mat_hsa16"
+                    or not (r.reference_start < TARGET[2] and TARGET[1] < r.reference_end)):
+                continue
+            if r.query_name not in best or r.get_tag("ms") > best[r.query_name][0]:
+                best[r.query_name] = (r.get_tag("ms"), r.get_blocks())
+    with open(f"{d}/units.tsv", "w") as o:
+        o.write("read\tunit\n")
+        for q in sorted(rt):
+            o.write(f"{q}\t{unit_of(best[q][1]) if q in best else ''}\n")
+    n = collections.Counter(unit_of(v[1]) for v in best.values())
+    print(f"[npip_o3] realign-prep: {d}/C.fa = GGO + {len(CAND)} contigs; target reads {len(rt)} by unit {dict(n)}", flush=True)
+
+
+def _arm(bam_p, copies):
+    """{read: call of its primary} and {read: {locus: best AS}} of one arm."""
+    import pysam
+    calls, loci = {}, collections.defaultdict(dict)
+    with pysam.AlignmentFile(bam_p) as bam:
+        for r in bam.fetch(until_eof=True):
+            q = r.query_name
+            if r.is_unmapped:
+                calls.setdefault(q, "unmapped")
+                continue
+            if r.is_supplementary:
+                continue
+            ch = r.reference_name
+            if ch in CAND:
+                locus = CAND[ch]
+            else:
+                locus = next((g for c, s, e, g in copies if c == ch and s < r.reference_end and r.reference_start < e),
+                             f"{ch}:{r.reference_start // 100000}")
+            if not r.is_secondary:
+                calls[q] = CAND.get(ch, "ref")
+            if r.has_tag("AS"):
+                loci[q][locus] = max(loci[q].get(locus, -10 ** 9), r.get_tag("AS"))
+    return calls, loci
+
+
+def score_realign(a):
+    d = f"{a.w}/realign"
+    units = {r["read"]: r["unit"] for r in csv.DictReader(open(f"{d}/units.tsv"), delimiter="\t")}
+    copies = _copies()
+    arms = {k: _arm(f"{d}/{k}.bam", copies) for k in ("R0", "C")}
+    calls_c = arms["C"][0]
+    other = {q: c for q, c in calls_c.items() if q not in units}
+    b = realign_bars(units, {q: calls_c.get(q) for q in units}, other)
+    r29 = {r["read"] for r in csv.DictReader(open(R1360), delimiter="\t") if r["family"] == "NPIP" and r["status"] == "off-copy"}
+    by_unit = collections.defaultdict(collections.Counter)
+    for q, u in units.items():
+        by_unit[u or "none"][calls_c.get(q, "missing")] += 1
+    b["calls_by_unit"] = {u: dict(v) for u, v in sorted(by_unit.items())}
+    b["r1360_29_calls"] = dict(collections.Counter(calls_c.get(q, "missing") for q in r29))
+    b["target_tied"] = {k: sum(tied(arms[k][1].get(q, {})) for q in units) for k in arms}
+    b["other_calls_R0"] = dict(collections.Counter(c for q, c in arms["R0"][0].items() if q not in units))
+    b["false_movers"] = sorted(q for q, c in other.items() if c in ("B", "C"))
+    json.dump(b, open(f"{d}/score.json", "w"), indent=1)
+    print("[npip_o3] " + ", ".join(f"{k} {b[k]}" for k in ("C_home", "C_reads", "B_home", "B_reads", "false_moves", "other", "H1",
+                                                           "H2", "H3", "verdict")), flush=True)
+    print(f"    by unit {b['calls_by_unit']}; register 1360's 29: {b['r1360_29_calls']}; target reads tied (within 10 AS) "
+          f"R0 {b['target_tied']['R0']} -> C {b['target_tied']['C']}", flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("net", "frozen", "truth", "score"))
+    ap.add_argument("cmd", choices=("net", "frozen", "truth", "score", "realign-prep", "score-realign"))
     ap.add_argument("step", nargs="?")
     ap.add_argument("--w", required=True)
     a = ap.parse_args(argv)
-    {"net": net, "frozen": frozen, "truth": truth, "score": score}[a.cmd](a)
+    {"net": net, "frozen": frozen, "truth": truth, "score": score, "realign-prep": realign_prep,
+     "score-realign": score_realign}[a.cmd](a)
 
 
 if __name__ == "__main__":
