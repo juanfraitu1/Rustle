@@ -43,3 +43,9 @@ def test_the_exon_growth_guard_can_be_lifted_for_a_confident_primary():
     row = _row("+", cg="10M200D90M")                                         # an exon end lifts across a 200-bp gap
     assert DS.lift_exons(row, [(5, 20)]) is None
     assert DS.lift_exons(row, [(5, 20)], max_growth=None) == [(1005, 1220)]
+
+
+def test_an_isoform_s_reads_split_over_the_copy_s_haplotypes_unless_each_instance_gets_its_own():
+    assert DS.isoform_reads(100, 1.0, 2.0, 2.0, 2) == 50
+    assert DS.isoform_reads(100, 1.0, 2.0, 2.0, 2, per_instance=True) == 100
+    assert DS.isoform_reads(150, 1.0, 0.5, 2.5, 3) == 10

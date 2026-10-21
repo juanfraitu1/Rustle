@@ -435,6 +435,17 @@ def resolve_by_de(orth):
     return kept
 
 
+def contested(orth):
+    """{(copy, hap): [rival copies]} for every counterpart that overlaps another copy's on the same contig before
+    resolve_by_de picks one (PREREG_o2_corrector_idealsim: such loci are simulated but never scored)."""
+    out = collections.defaultdict(set)
+    for k, o in orth.items():
+        for j, p in orth.items():
+            if j != k and k[1] == j[1] and o["tname"] == p["tname"] and o["start"] < p["end"] and p["start"] < o["end"]:
+                out[k].add(j[0])
+    return {k: sorted(v) for k, v in out.items()}
+
+
 def read_orthologs(p):
     return [dict(r, start=int(r["start"]), end=int(r["end"]), mapq=int(r["mapq"]), exons=json.loads(r["exons"]))
             for r in csv.DictReader(open(p), delimiter="\t")]
@@ -579,6 +590,14 @@ def cmd_orthologs(copies_p, chrmap_p, out_p, haps, repaired=False, flank=None):
             n[f"{h}: ortholog"] += 1
     kept = resolve_by_de(orth) if repaired else DS.drop_ambiguous(orth)
     n["ambiguous (dropped)"] = len(orth) - len(kept)
+    if repaired:
+        con = contested(orth)
+        with open(out_p + ".contested.tsv", "w") as fh:
+            fh.write("copy\thap\tcontig\tstart\tend\tkept\trivals\n")
+            for (c, h), rivals in sorted(con.items()):
+                o = orth[(c, h)]
+                fh.write(f"{c}\t{h}\t{o['tname']}\t{o['start']}\t{o['end']}\t{int((c, h) in kept)}\t{','.join(rivals)}\n")
+        n["contested"] = len(con)
     with open(out_p, "w") as fh:
         fh.write("copy\thap\tcontig\tstart\tend\tstrand\tmapq\texons\n")
         for (c, h), o in sorted(kept.items()):

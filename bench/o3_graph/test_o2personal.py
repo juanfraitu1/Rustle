@@ -228,3 +228,10 @@ def test_queries_and_orthologs_name_a_copy_s_window_by_the_same_flank():
     assert PC.query_lo(1200000, 500000) == 700000
     assert PC.query_lo(300000, 500000) == 0                                   # clipped at the contig start
     assert PC.query_name("SM22.1", "NC_1", 24785633, 500000) == "SM22.1|NC_1|24285633"
+
+
+def test_counterparts_that_overlapped_before_resolution_are_contested_winner_and_loser_alike():
+    o = lambda s, e, de, t="m12": dict(tname=t, start=s, end=e, de=de)
+    orth = {("A", "mat"): o(100, 200, 0.0086), ("B", "mat"): o(150, 260, 0.0017), ("C", "mat"): o(500, 600, 0.01),
+            ("D", "pat"): o(100, 200, 0.001), ("E", "mat"): o(100, 200, 0.002, "m14")}
+    assert PC.contested(orth) == {("A", "mat"): ["B"], ("B", "mat"): ["A"]}

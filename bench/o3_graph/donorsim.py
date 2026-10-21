@@ -10,6 +10,7 @@ every copy are real, and every read's truth is exact: the CHM13 copy whose donor
         MAPQ >= MIN_MAPQ through which every exon end of every isoform lifts (the ortholog, its isoforms lifted); two copies
         whose orthologs overlap on a haplotype are both dropped (ambiguous)
     donorsim.py build FAMILIES.json SET FAMS.json ORTHOLOGS.tsv PROFILE.json OUT_DIR HAP=FASTA ... [--per-copy N] [--seed S]
+                      [--per-instance]
         OUT_DIR/reads.fq and truth.tsv (hg002truth's columns, class `unique`, truth = the CHM13 copy; + hap, isoform): per
         expressed copy PER_COPY x its expression multiplier reads (realworld's: lognormal, non-coding members at the profile's
         measured ratio), split evenly over its haplotypes' orthologs and over isoforms by weight (main 2.0, others 0.5); each
@@ -94,6 +95,12 @@ def drop_ambiguous(orth):
     return {k: v for k, v in orth.items() if k not in bad}
 
 
+def isoform_reads(per_copy, mult, w_t, tot, n_haps, per_instance=False):
+    """Reads of one isoform on one haplotype instance: the copy's PER_COPY x multiplier split by isoform weight and, unless
+    per_instance (PREREG_o2_corrector_idealsim: every haplotype instance expressed alike), evenly over its haplotypes."""
+    return int(round(per_copy * mult * w_t / tot / (1 if per_instance else n_haps)))
+
+
 def _family_copies(fam_p, set_name, sel_p):
     sel = set(json.load(open(sel_p)))
     out = []
@@ -160,7 +167,7 @@ def cmd_orthologs(fam_p, set_name, sel_p, queries_p, out_p, haps):
     return 0
 
 
-def cmd_build(fam_p, set_name, sel_p, orth_p, prof_p, out_dir, haps, per_copy=100, seed=2026):
+def cmd_build(fam_p, set_name, sel_p, orth_p, prof_p, out_dir, haps, per_copy=100, seed=2026, per_instance=False):
     import pysam
     sys.path.insert(0, os.path.dirname(HERE))
     from sim import stable_seed, write_fastq
@@ -188,7 +195,7 @@ def cmd_build(fam_p, set_name, sel_p, orth_p, prof_p, out_dir, haps, per_copy=10
             fetch = (lambda fa_, ch: (lambda a_, b_: fa_.fetch(ch, a_, b_)))(fas[h], contig)
             cache = {}
             for t, ex in iso.items():
-                k = int(round(per_copy * mult * w[t] / tot / len(hs)))
+                k = isoform_reads(per_copy, mult, w[t], tot, len(hs), per_instance)
                 for i in range(k):
                     r = random.Random(stable_seed(str(seed), cid, h, t, str(i)))
                     e2 = [tuple(x) for x in ex]
@@ -221,6 +228,7 @@ def cmd_build(fam_p, set_name, sel_p, orth_p, prof_p, out_dir, haps, per_copy=10
 
 
 def main(argv):
+    per_instance, argv = "--per-instance" in argv, [a for a in argv if a != "--per-instance"]
     haps = dict(a.split("=", 1) for a in argv if "=" in a and not a.startswith("--"))
     rest = [a for a in argv if not ("=" in a and not a.startswith("--"))]
     opt = {}
@@ -233,7 +241,8 @@ def main(argv):
     if rest[:1] == ["orthologs"] and len(rest) == 6:
         return cmd_orthologs(*rest[1:], haps)
     if rest[:1] == ["build"] and len(rest) == 7:
-        return cmd_build(*rest[1:], haps, per_copy=opt.get("--per-copy", 100), seed=opt.get("--seed", 2026))
+        return cmd_build(*rest[1:], haps, per_copy=opt.get("--per-copy", 100), seed=opt.get("--seed", 2026),
+                         per_instance=per_instance)
     raise SystemExit(__doc__)
 
 
