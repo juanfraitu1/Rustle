@@ -75,3 +75,33 @@ The chain is that of Amendments 7-9 of `docs/archive/2026-10/PREREG_rna_allele_h
 - Gorilla only. Push only when asked.
 - Code: a new driver, `bench/rna_allele/npip_o3_test.py`, calls the frozen pieces (the flag and link of `control_test.contigs`,
   `merge_test.pairs` / `components`, `truth_lift`), with tests for its own new parts (the net, R_T and the bars).
+
+## Results (driver a7a81ece, `bench/rna_allele/npip_o3.py`; run once; `/mnt/linuxdisk/tmp/o3_npip/`): **FAIL** (E3, E4, E5)
+
+- **Chain:**
+  - net 2,955 reads (10-01: 2,951);
+  - IsoCon: 109 outputs, 1,600 reads used (54%);
+  - 21 flagged not in the reference; 16 linked back as alleles; 5 new-copy contigs;
+  - **3 candidate copies**, 2 counted (>= 2 contigs).
+  - The 25 copies all lift (T2d 16, T2i 6, T? 3).
+- **Target reads R_T:** 94 net reads fit his maternal chr18 6.72-6.82 Mb best by >= 5 ms. All 29 of register 1360's are among them.
+
+| candidate | contigs | best fit in his genome | class | reads (in R_T) | best reference locus |
+|---|---|---|---|---|---|
+| iso_NPIP_16 + 17 | 2 | mat chr18 6,766,688-6,803,775, 0.9991 | haplotype-only, **in T** | 8 (7) | NPIP.1 |
+| iso_NPIP_14 + 15 | 2 | mat chr18 6,744,425-6,756,028, 0.9986 | unmatched (< 0.999), **in T** | 19 (19) | NPIP.10 |
+| iso_NPIP_19 | 1 (not counted) | mat chr18 100.86 Mb, 0.8718 | unmatched | 5 (1) | elsewhere |
+
+- **E1 holds, E2 holds:** exactly one counted haplotype-only candidate lies in T.
+- **E3 fails:** it holds 7 of the 94 target reads (bar 47).
+- **E4 fails:** 7 of its 8 reads are target reads (0.875; bar 0.90).
+- **E5 fails:** the other counted candidate is "unmatched", so it counts as false by the frozen class. But it lies in T as well, 0.0004
+  below the 0.999 consensus bar.
+- **Where the 94 target reads went:** IsoCon left **66 unassigned (27 of register 1360's 29)**; 26 are in the two target candidates
+  (pure: 26 of their 27 reads); 1 is in an output linked back as an NPIP.5 allele; 1 is in the uncounted candidate.
+
+**Reading.** The chain raises no flag outside the maternal-only locus, apart from one single-contig candidate under the floor. It
+does find that locus, but splits it in two and recovers only 28% of its reads. The loss is upstream of the flag-link-merge steps:
+IsoCon does not converge on most of the locus's reads, as on 10-01 ("real reads too truncated and sparse").
+
+Audit pending.
