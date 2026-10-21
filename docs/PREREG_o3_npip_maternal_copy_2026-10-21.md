@@ -104,4 +104,47 @@ The chain is that of Amendments 7-9 of `docs/archive/2026-10/PREREG_rna_allele_h
 does find that locus, but splits it in two and recovers only 28% of its reads. The loss is upstream of the flag-link-merge steps:
 IsoCon does not converge on most of the locus's reads, as on 10-01 ("real reads too truncated and sparse").
 
-Audit pending.
+Audit: below (FAIL holds with caveats; the reading above is corrected).
+
+## Audit (metric-auditor, 2026-10-21): FAIL holds with caveats; the reading above is corrected
+
+Every number reproduces:
+- **Chain:** net 2,955; 109 outputs; 1,600 reads assigned; 21 flagged / 16 linked / 5 new-copy contigs; 3 candidates.
+- **Bars:** E1-E5 = holds, holds, fails, fails, fails.
+- **R_T:** 94 reads. The same set comes out at ms margins of 0, 1 and 10; without the intron filter it is 93. Every target read fits T
+  best by >= 103 ms.
+- **Fates:** 66 / 19 / 7 / 1 / 1. Register 1360's reads: 27 of 29 unassigned.
+- **Code path:** only the two declared deviations. The code is byte-identical to the results commit, and the chain is unchanged since
+  10-01 apart from docstrings.
+
+**Corrections:**
+- **T holds three transcription units, not one copy split in two.**
+  - C (6.767-6.804 Mb) is register 1360's copy. It holds 24 of the 29 reads; the other 5 are in A (6.72-6.74 Mb), none in B.
+  - B (6.744-6.756 Mb) is a separate unit on the same strand, with its own start site: 21 reads begin at 6,756,009-6,756,064. Its 5′
+    exons match RRN3's first three exons (GGO chr18 29.59 Mb). No read joins B and C, and their contigs share no sequence.
+  - **Each unit that got a candidate got exactly one:** C → iso_NPIP_16 + 17 (haplotype-only), B → iso_NPIP_14 + 15. A got none.
+- **E5's "false" flag is consensus noise on a real unit.** iso_14 and iso_15 each differ from his assembly by ±1 A in poly(A) runs of
+  16-17 nt, and the reads covering those runs disagree too (26 / 36 and 22 / 36 carry indels).
+- **E1 and E2 hold by one base.**
+  - iso_16 scores 1055 / 1056 = 0.99905; iso_17 alone would be unmatched at 0.99898.
+  - Had iso_15 matched one base better, E2 would fail instead of E5.
+  - The bars could not credit a second true unit in T: a design flaw, since the target window was assumed to hold one copy.
+- **E3's bar was out of reach even for a perfect candidate.** No single unit has 47 reads (C 37; B 21, plus 21 that run on into A).
+  Per unit:
+  - C: 7 / 37 held, 30 unassigned;
+  - B: 19 / 21 held;
+  - B running into A: 0 / 21;
+  - A: 0 / 11.
+- **E4 is genuine, but on n = 8.** SRR27438212.5855649 has no record in T and fits pat chr18 22,085,194 at NM 0.
+- **Table and text:**
+  - "NPIP.10" for iso_14 + 15 came from a 172-kb GGO hit with a 168,474-bp intron; none of its exons touches NPIP.10.
+  - "No flag outside T" should read "no new-copy candidate outside T": 16 flagged outputs were linked back.
+- **History:** IsoCon converges where a unit's 5′ ends agree (B: 19 / 21) and fails where they spread (C spans 44 kb: 7 / 37). That
+  matches 10-01 for C only.
+
+**What stands:** FAIL as registered.
+- The chain raised no new-copy candidate outside the maternal-only locus.
+- It named the locus's two transcribed units with one candidate each, one of them misclassed by a poly(A) homopolymer error.
+- It recovered only 7 of the 37 reads of register 1360's copy.
+
+Detection works here; read recovery depends on IsoCon converging, which fails on transcripts whose 5′ ends spread.
