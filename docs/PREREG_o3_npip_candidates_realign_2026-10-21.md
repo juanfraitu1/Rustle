@@ -177,4 +177,24 @@ and not in the net.
 **Reading.** Adding the two candidates pulls in no read of their sequence relatives outside the NPIP net (at most 1 of 8,339, and
 that one fits B better than any reference locus). The no-false-move statement now extends to the candidates' relatives.
 
-Audit pending.
+Audit: below (H3′ holds with caveats; the reading above is corrected).
+
+## Audit of Amendment 1 (metric-auditor, 2026-10-21): H3′ holds with caveats
+
+Every count reproduces (moved 1 / 1 / 0, reachable 87 / 86 / 1, near-tied 1 / 1 / 0 for all / RRN3 / C's), with 8,339 primaries per
+arm, one per read. The read set rebuilds exactly and was fixed before the alignments.
+
+**Corrections:**
+- **The mover is a target read, not a false move.** 97.7% of its bases are exact 25-mers of his maternal chr18, B
+  (6,745,103-6,756,064) running into A: a "B into A" read that the span-based net missed. False moves: 0.
+- **Most of the set are passengers.** Only 951 of the 8,339 reads have an aligned base on a candidate's GGO block (947 in the RRN3 set,
+  4 in C's). The 29.42-Mb window's 4,742 are exon reads of another gene (LOC101140878), and 2,472 of C's 2,476 only span a block with
+  an intron. C's relatives' blocks are 4 distinct loci, not 10 (the set is unaffected).
+- **"Could fail" holds only in arithmetic.** Every non-mover sits >= 435 AS below its best. The one near-tied read is the mover
+  itself.
+- **Missed target reads:** 5 more reads in the set match the maternal locus at >= 93% and stayed on the reference. They are likely
+  target reads the net missed, not verified against his assemblies.
+
+**What stands:** adding the two candidates moves none of the 951 reads aligned at B's RRN3-family relatives' blocks (the one mover
+is a target read). The no-false-move statement extends to B's RRN3 relatives. C's NPIP-like relatives outside the net are untested
+(4 reads).
