@@ -131,3 +131,28 @@ Every number reproduces:
 **What stands:** PASS as registered, with the weight on H1. Adding the reference-free candidate for register 1360's copy gives 33
 of its 39 reads a home (26 of 32 among reads the candidate was not built from), and moves no other NPIP read. Whether reads of B's
 relatives in the RRN3 family would be pulled in is untested.
+
+## Amendment 1 (2026-10-21, before any of its alignments): the candidates' relatives (user: "Yes please proceed")
+
+**Why.** The audit found H3 inert: only 16 of the 2,861 net reads could reach a candidate at all. Reads of the candidates' own
+sequence relatives were never realigned, because they lie outside the NPIP net.
+
+**Read sets** (fixed by `realign/rel.names` and `rel.sets.tsv` before any alignment): library reads with any record at these loci
+and not in the net.
+- **RRN3 family** (B's relatives, the audit's three loci on NC_073242.2): 5,863 reads in all.
+  - RRN3, 29,559,520-29,593,927;
+  - LOC101142371, 31,545,000-31,600,000;
+  - the 29.42-Mb locus, 29,415,000-29,425,000.
+- **C's relatives:** the aligned blocks of C's contigs' GGO hits (`outputs.pri.paf`) outside the 25 NPIP copies, 10 blocks:
+  2,476 reads.
+- **Union:** 8,339 reads, each from its primary record in sequencing orientation.
+
+**Arms.** R0 (GGO) and C (GGO + the 4 contigs), with the registered command, 2 chunks per arm.
+
+**Bar H3′:** in arm C, at most 1% of the 8,339 reads (83) have their primary on a candidate.
+- **Reported, not a bar:** per set; the reads reachable (any record on a candidate); the near-tied (a candidate alignment within 10
+  AS of the read's best).
+
+**Consequence.** H1-H3 and the registered PASS stay as they are.
+- If H3′ fails, "no other read pulled in" is withdrawn.
+- If it holds, that statement extends to the candidates' sequence relatives.
