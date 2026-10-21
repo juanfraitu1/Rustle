@@ -36,11 +36,11 @@ Clone the repository and work on **`o3-fast`**: `git clone git@github.com:juanfr
 | 1364, 1365 | candidates added to the reference: reads return (33 / 39), 0 false moves | `PREREG_o3_npip_candidates_realign_2026-10-21.md` |
 | 1366 | premise check on existing StringTie / FLAIR runs (descriptive) | `MULTIMAPPER_PREMISE_2026-10-21.md` |
 | 1367 | multi-copy gains are not shown to be real copies; the multi-mapping loci are SDs | `PREREG_multicopy_gains_real_2026-10-21.md` |
-| (pending) | O1 family copies vs independent SD annotations: bar FAILS (72.1% human, 82.4% gorilla); the mainstays are paired; **audit pending at handoff** | `PREREG_o1_families_sd_pairs_2026-10-21.md` |
+| 1368 | O1 family copies vs external SD calls: bar FAILS (72.1% / 82.4%); gene-like copies 93.8% / 92.0% paired; shortfall = transposon / satellite families and self-overlap families (an O1 defect) | `PREREG_o1_families_sd_pairs_2026-10-21.md` |
 
 ## Open items
 
-1. **The O1 SD-pairs audit**, if it is not recorded yet: write its Audit section and a register row.
+1. **Fix O1's self-overlap families** (register 1368): pre-register a rule excluding self-only edges (a locus grouped with its own overlapping or antisense copy), tested on human_testis. Also add a CAT-annotation families arm on CHM13 as the reference point.
 2. **Classify the O1 copies that no SD pairs:** a quarter of the human high-identity copies, an eighth in gorilla. Check
    whether they are retrocopies (a single-exon copy with a multi-exon partner), groupings on short shared segments, tandem arrays,
    or repeat-driven. Pre-register first.
