@@ -63,3 +63,38 @@ user's decision); nothing is flipped by this pre-registration.
 - Build with `CARGO_TARGET_DIR` on `/mnt/linuxdisk`, `--release`, with the log captured to a file.
 - Heavy runs in the foreground, one at a time, each under 10 minutes; a run that cannot fit gets an amendment.
 - The metric-auditor checks the result. Never pool human and gorilla. Push only when asked.
+
+## Results, v1 (code 72fdfbb6; evaluation e0e43642; `/mnt/linuxdisk/tmp/o1_selfhits/`): **FAIL** (gorilla B2)
+
+Each control rerun reproduces its shipped catalog byte for byte (clusters, copies; the PAF replayed from cache).
+
+| catalog | self-hit records dropped | B1 self-only copies fixed | B2 SD-paired copies kept | copies / families | >= 0.90 copies SD-paired |
+|---|---|---|---|---|---|
+| human_A119b | 253,893 | 549 / 561 (97.9%) ✓ | 5,857 / 5,974 (98.0%) ✓ | 9,907 / 2,150 → 9,495 / 1,913 | 72.1% → 76.8% |
+| **human_testis (held out)** | 2,159 | 46 / 46 (100%) ✓ | 834 / 850 (98.1%) ✓ | 1,115 / 342 → 1,061 / 316 | 81.1% → 84.8% |
+| gorilla_KB3781 | 6,645 | 69 / 70 (98.6%) ✓ | **687 / 705 (97.4%) ✗** | 918 / 326 → 834 / 283 | 82.4% → 90.4% |
+
+- **Reported:**
+  - largest family 260 → 262 (A119b) and unchanged elsewhere;
+  - mainstay copies in families: 155 → 156 (A119b), 56 → 56 (testis), 2 → 2 (gorilla).
+
+**Why B2 fails (post-hoc diagnosis).**
+- The lost SD-paired copies are real pairs: in gorilla, all 18 come from 2-copy families at 0.977-1.000 identity, with a direct
+  non-self record (e.g. MCL71: an inverted pair 49 kb apart, its − strand record at identity 1.000, 11.6 kb).
+- Most of them carry a self-hit partner on the **same strand that shares exon bases**: a second model of the same transcription
+  unit nested in it (human_testis 14 / 16, gorilla 13 / 18, A119b 35 pure and 59 mixed of 117).
+- In the control, that self-hit kept the two models co-clustered, and `fold_within_clusters` merged them into one copy. Without
+  it, host and nested model compete as separate nodes (gorilla's MCL71 becomes a 4-node bipartite graph), and MCL splits the
+  pair apart.
+- The self-only artefacts are the other kind: their self-hit partner is on the **opposite strand**, or on the same strand with
+  **no shared exon bases** (a gene nested in another's intron). A pure "same strand, shared exons" partner is rare among them.
+- `--pair-rule weight-blind` (post hoc) joins 19 two-node components but leaves B2 at 97.4%: the two-node rule is not the cause.
+
+## Amendment 1 (2026-10-21, after v1's results; post hoc): v2 rule
+
+- **v2** drops a diagonal self-hit only when the two loci are on **opposite strands**, or share **no exon bases**.
+- A self-hit between same-strand loci that share exon bases is kept: they are two models of one transcription unit, and the fold
+  step merges them into one copy.
+- `mcl_families` passes the loci strands (`gene_strands` of `--gff`) to the graph builder. Without strands the rule is v1's.
+- **Same bars (B1, B2) on the same three catalogs.** They are no longer held out: v2 was designed after seeing v1's results on all
+  three, so a v2 PASS is a development result and needs a fresh catalog before any default flip.
