@@ -97,3 +97,75 @@ Both surfaced on the first S1 scoring and touch no rule, constant or bar:
 
 The first S1 bars output (3,779-read truth) was discarded unread beyond the traceback; S2's bars had not run. The
 `prepare` step and its outputs are untouched. Both substrates were then scored once with the fixed code.
+
+## Results (code b4594ea2; `personal/window/{s1,s2}/bars.json`; each substrate scored once)
+
+### S1, one genome (36 simulated worlds, 29 families): **PASS**
+
+| | scored | minimap2 right | set holds the truth | set of one copy | singletons right | minimap2 right on those reads |
+|---|---|---|---|---|---|---|
+| all, window 30 | 9,549 | 8,165 (85.5%) | 9,549 (100%) | 6,846 (71.7%) | 6,846 (100%) | 6,832 |
+| first tied within 10 | 4,347 | 2,979 (68.5%) | 4,347 (100%) | 1,679 (38.6%) | 1,679 | 1,677 |
+| first tied within 20 | 3,255 | 3,239 (99.5%) | 3,255 (100%) | 3,242 (99.6%) | 3,242 | 3,230 |
+| first tied within 30 | 1,947 | 1,947 (100%) | 1,947 (100%) | 1,925 (98.9%) | 1,925 | 1,925 |
+
+- P holds (9,549 reads, 29 families); H 100%; R 71.7%; Q 100% and 6,846 >= 6,832.
+- The single pick: 12 fixes, 0 breaks.
+- No read had its truth outside the window; no primary was stitched.
+- In the band first tied within 10, the set is one copy for only 38.6% of reads: those are the near-identical copies, where
+  the read often matches both copies over its whole length. The set keeps both rather than guessing, and minimap2 is wrong
+  on 1,368 of those 4,347 reads.
+
+### S2, HG002 Kinnex on CHM13 (61 families): **FAIL (H, Q)**
+
+| | scored | minimap2 right | set holds the truth | set of one copy | singletons right | minimap2 right on those reads |
+|---|---|---|---|---|---|---|
+| all, window 30 | 17,881 | 15,798 (88.4%) | 17,353 (97.05%) | 11,355 (63.5%) | 10,852 (95.6%) | 10,836 |
+| first tied within 10 | 5,272 | 3,341 (63.4%) | 4,771 (90.5%) | 1,379 (26.2%) | 900 (65.3%) | 896 |
+| first tied within 20 | 2,865 | 2,770 (96.7%) | 2,843 (99.2%) | 1,971 (68.8%) | 1,952 (99.0%) | 1,952 |
+| first tied within 30 | 9,744 | 9,687 (99.4%) | 9,739 (99.95%) | 8,005 (82.2%) | 8,000 (99.94%) | 7,988 |
+
+- P holds (17,881 reads, 61 families); **H fails** at 97.05%; R holds at 63.5%; **Q fails** at 95.6% (the set's singletons
+  are still right at least as often as minimap2 on the same reads, 10,852 >= 10,836).
+- The single pick: 18 fixes, 59 breaks.
+- Domain reads left unscored: undetermined 1,851 (HG002's own copies tie), poor_match 6,023, off-copy 376, missing 36;
+  truth outside the window 93.
+- **Both failures sit in the band first tied within 10.** There the set drops the truth on 501 reads (9.5%) and its
+  singletons are right on 65%: a read carrying HG002's own allele of its copy, where that allele equals the other copy's
+  base, contradicts its true copy at that column and sides with the rival. That is the donor-vs-reference confound (O3's
+  case) the pre-registration named in advance.
+- Bands 10-20 and 20-30 pass every bar on HG002 too.
+
+## Audit (metric-auditor, 2026-10-20): S1 holds with caveats, S2 holds; the reading does not
+
+- **Every number reproduces to the digit** (independent scorer, `/mnt/linuxdisk/tmp/audit_2026-10-20_o2window/`); the
+  frozen code is byte-identical to b4594ea2; Amendment 1 changes only the pooling keys and the parser.
+- **The bars do not test the set.** A PSV-free null — minimap2's primary when no rival is within 10 points, every window
+  copy otherwise — passes both substrates (recomputed by me as well): S1 held 99.83%, singletons 54.5%, right 99.69%;
+  S2 held 99.15%, singletons 70.5%, right 98.79%. The set beats that null on S1 (100% / 71.7% / 100%) and is **worse than
+  it on S2 on every bar**. So S1's PASS certifies the 30-point window, not the Pareto set; a null arm was missing.
+- **R is carried by the window.** In the Eichler band (first tied within 10) the set is one copy for 38.6% (S1) and 26.2%
+  (S2) of reads; the 10-30 bands supply R, and there minimap2 is already right 99.5-100%.
+- **The set's gain over minimap2 on S1 is 14 reads** (2 in the <10 band, 12 in 10-20; ZNF658 and GPR89A), 0 the reverse;
+  on the other 1,370 reads minimap2 gets wrong the set keeps more than one copy.
+- **S2's H failure is mostly one family, FCGR2A:** 383 of 528 dropped truths and 379 of 479 wrong singletons, all one
+  pattern (truth .2, minimap2 and set .1; 381 are `unique_elsewhere` with donor_nm 0-1 and donor margin 274-321). Whether
+  HG002's locus carries .1 alleles (the O3 confound) or the chain lift lands on the wrong paralog of the FCGR2A/2C/2B
+  region is not established. Without FCGR2A, S2's "all" would pass; its <10 band would still fail (held 97.5%, singletons
+  right 90.0%). SMN2 accounts for 9 drops.
+- **"Holds the truth" is conditioned on the window:** 93 S2 reads whose truth lies outside the 30-point copies are
+  excluded; 87 of them are singletons (the primary), all wrong. Counting them, S2 H = 96.55%.
+- **Unscored singletons:** the set is one copy on 774 of the 1,851 reads HG002's own genome calls undecidable and on 4,288
+  of the 6,023 poor-match reads. Q is on determinable reads only.
+- S2's 10-20 band passes by 6 reads (22 failures against 28 allowed); minimap2 alone passes the 20-30 band.
+- Stitched primaries: S1 0, S2 59 (11 among the dropped truths). S1 reads are not error-free (16% NM 0, mean de 0.0023),
+  so H = 100% is favoured, not forced.
+- S1 and S2 are fresh for this rule (constants from gorilla); but r1329 had shown that 73% of HG002's ties are donor ties
+  before the bars were chosen.
+- **Wording not to use:** "never drops the truth"; "the set does not guess"; "O2 reduces the pool" as a claim distinct
+  from "abstain when a rival is within 10 points"; "the 10-30 bands pass on HG002 too" without the null; "the failures
+  are the donor's own alleles" without naming FCGR2A and its unverified lift.
+
+**What a next test needs:** a pre-registered null arm (the rule above), scored on the Eichler band alone, where the set
+must beat the null on held truth and singletons; and the FCGR2A lift settled by aligning CHM13's FCGR2A.1 / .2 to HG002's
+haplotypes.
