@@ -52,3 +52,28 @@ job at a time; audit on a frozen copy before reporting; human and gorilla never 
 ## Amendments
 
 (none yet)
+
+## Results (code a45c91bc; each substrate scored once; frozen copy `personal/window/audit_frozen_subs_a45c91bc/`)
+
+| substrate | scored / families | minimap2 right | substitution rule right | fixes / breaks | families better / worse | verdict |
+|---|---|---|---|---|---|---|
+| **S1** one genome, round 27 (18 worlds) | 23,145 / 27 | 21,125 | 21,125 | 0 / 0 | 0 / 0 | **FAIL** (G, F) |
+| **S2** A119b fragments, seed 2 | 3,646 / 107 | 3,259 | 3,251 | 4 / 12 | 2 / 11 | **FAIL** (G, S, F) |
+| S3 gorilla held-out (replication) | 2,711 / 29 | 2,464 | 2,439 | 1 / 26 | 1 / 6 | (no verdict; bars fail) |
+
+**S1, read by read.** Of 23,145 scored reads the substitution count decides 18,713, and on **every one** it picks minimap2's
+own copy (right on 18,710; both wrong on 3). The other 4,432 are substitution ties — 3,086 with equal counts on every copy —
+and there minimap2 is right on 2,415 and wrong on 2,017: a coin toss. Every minimap2 error in S1 is a read whose bases
+carry no substitution that tells its copies apart. Bands: first tied within 10, 11,501 scored, minimap2 right 9,483;
+10-20, 7,394 / 7,392; 20-30, 4,250 / 4,250.
+
+**S2.** Fixes 4, breaks 12, in 107 families (2 better, 11 worse). The truth is each fragment's source read's own call
+(register 1343's known bias: a systematic full-read error counts against the rule).
+
+**S3.** 1 fix, 26 breaks: 23 on reads carrying his other parent's alleles (SM233 10, SM502 8, SM556 5), 3 on reads whose
+copy equals the reference. SM392's stitched reads abstain (one plain candidate, nothing to compare).
+
+**Reading (pending the audit).** The HG002 SMN tag result (seen data) does not generalize. In one genome the substitution
+count adds no correction — minimap2's primary already is the fewest-substitution copy whenever one exists — but it does
+say exactly which primaries are coin tosses. In real donors the count is misled by the donor's own alleles, as every
+allele-blind statistic is.
