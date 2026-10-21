@@ -19,6 +19,7 @@ An alignment that lays bases on two copies' exons (stitched(): SM392's chimeras)
     o2window.py truth-sim OUT.tsv WORLD...               (read, status, truth) from simulated worlds' reads.truth.E0.tsv
     o2window.py truth-hg002 OUT.tsv TRUTH.tsv...         the same from hg002truth tables (class -> status)
     o2window.py bars OUT.json --calls CALLS... --truth TRUTH... [--window 30]     PREREG_o2_window_set's bars (bars())
+    o2window.py band OUT.json --calls CALLS... --truth TRUTH...       PREREG_o2_set_null_band: set vs keep-all vs primary, by band
     o2window.py score CALLS.tsv TRUTH.tsv OUT.json      per window and band: the truth's statuses; minimap2 and O2's pick
                                                         against the truth; O2's set: holds the truth, size, singletons
 """
@@ -196,6 +197,47 @@ def bars(calls, truth):
               and n["singletons_right"] >= n["minimap2_right_on_singletons"])
     n["verdict"] = "UNDERPOWERED" if not n["P"] else "PASS" if n["H"] and n["R"] and n["Q"] else "FAIL"
     return n
+
+
+BAND_N, BAND_Q = 0.25, 0.98
+
+
+def _arm_counts(calls, truth, pick):
+    n = dict(scored=0, truth_held=0, singletons=0, singletons_right=0, minimap2_right=0)
+    fams = set()
+    for c in calls:
+        st, t = truth.get(c["read"], ("missing", ""))
+        if st != "determined" or t not in c["copies"].split(","):
+            continue
+        s = pick(c)
+        n["scored"] += 1
+        fams.add(c["family"])
+        n["truth_held"] += t in s
+        n["minimap2_right"] += c["minimap2"] == t
+        if len(s) == 1:
+            n["singletons"] += 1
+            n["singletons_right"] += s == {t}
+    n["families"] = len(fams)
+    return n
+
+
+def band_bars(calls, truth):
+    """PREREG_o2_set_null_band: on one band's calls, the set against two nulls (keep-all: every window copy; primary:
+    minimap2's copy), and the bars P (MIN_READS / MIN_FAMILIES), H (set holds the truth >= BAR_H), N (set is one copy on
+    >= BAND_N of scored reads), Q (singletons right >= BAND_Q and more than minimap2's primary on those reads)."""
+    arms = {"set": _arm_counts(calls, truth, lambda c: set(c["o2_set"].split(","))),
+            "keep_all": _arm_counts(calls, truth, lambda c: set(c["copies"].split(","))),
+            "primary": _arm_counts(calls, truth, lambda c: {c["minimap2"]})}
+    mm_on_sing = _arm_counts([c for c in calls if len(c["o2_set"].split(",")) == 1], truth, lambda c: {c["minimap2"]})
+    st = arms["set"]
+    k = st["scored"]
+    P = k >= MIN_READS and st["families"] >= MIN_FAMILIES
+    H = k > 0 and st["truth_held"] >= BAR_H * k
+    N = k > 0 and st["singletons"] >= BAND_N * k
+    Q = st["singletons"] > 0 and st["singletons_right"] >= BAND_Q * st["singletons"] and st["singletons_right"] > mm_on_sing["singletons_right"]
+    arms["minimap2_right_on_set_singletons"] = mm_on_sing["singletons_right"]
+    arms["bars"] = dict(P=P, H=H, N=N, Q=Q, verdict="UNDERPOWERED" if not P else "PASS" if H and N and Q else "FAIL")
+    return arms
 
 
 # ---------------------------------------------------------------------------------------------------------------- commands
@@ -433,6 +475,34 @@ def cmd_bars(out_p, calls_ps, truth_ps, window):
     return 0
 
 
+def cmd_band(out_p, calls_ps, truth_ps):
+    """band_bars on the near-tie band (reads first tied within 10 points), plus the arms on the 10-20 and 20-30 bands and
+    the whole 30-point window, pooled over several calls tables (reads keyed by world)."""
+    truth = {}
+    for p in truth_ps:
+        for r in csv.DictReader(open(p), delimiter="\t"):
+            truth[r["read"]] = (r["status"], r["truth"])
+    rows, first = [], {}
+    pooled = len(calls_ps) > 1
+    for p in calls_ps:
+        for r in csv.DictReader(open(p), delimiter="\t"):
+            r["read"] = keyed(r["read"], calls_tag(p), pooled)
+            first.setdefault(r["read"], int(r["window"]))
+            if r["window"] == "30":
+                rows.append(r)
+    res = {}
+    for name, lo, hi in (("band <= 10 (under test)", 0, 10), ("band 10-20", 10, 20), ("band 20-30", 20, 30), ("window 30, all", 0, 30)):
+        sub = [r for r in rows if lo < first[r["read"]] <= hi]
+        res[name] = band_bars(sub, truth)
+        b = res[name]
+        print(f"[o2window] {name}: " + "; ".join(f"{a} scored {b[a]['scored']} held {b[a]['truth_held']} singletons {b[a]['singletons']} "
+              f"right {b[a]['singletons_right']}" for a in ("set", "keep_all", "primary"))
+              + f"; families {b['set']['families']}; minimap2 right on the set's singletons {b['minimap2_right_on_set_singletons']}; "
+              f"bars {b['bars']}", flush=True)
+    json.dump(res, open(out_p, "w"), indent=1)
+    return 0
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -447,6 +517,9 @@ def main(argv):
         return cmd_truth_ms(*a[:5], PC._pairs(a, "--bams"))
     if cmd in ("truth-sim", "truth-hg002"):
         return cmd_truth_table(cmd[6:], a[0], a[1:])
+    if cmd == "band":
+        i, j = a.index("--calls"), a.index("--truth")
+        return cmd_band(a[0], a[i + 1:j], a[j + 1:])
     if cmd == "bars":
         win = int(a[a.index("--window") + 1]) if "--window" in a else 30
         if "--window" in a:

@@ -54,3 +54,14 @@ def test_pooled_worlds_key_reads_by_world_so_repeated_simulated_names_do_not_col
     assert OW.calls_tag("/y/s1/A119b_s1401_CROSS.calls.tsv") == "A119b_s1401_CROSS"
     assert OW.keyed("s1", "A119b_s1401_CROSS", pooled=True) == "A119b_s1401_CROSS/s1"
     assert OW.keyed("s1", "A119b_s1401_CROSS", pooled=False) == "s1"
+
+
+def test_the_band_scorer_scores_the_set_and_both_nulls_on_the_same_reads():
+    calls = [_call("r1", "F", ["a", "b"], "a", "a", ["a"]), _call("r2", "F", ["a", "b"], "b", "a", ["a", "b"]),
+             _call("r3", "G", ["c", "d"], "c", "c", ["d"]), _call("r4", "G", ["c", "d"], "d", "d", ["c"])]
+    truth = {q: ("determined", t) for q, t in (("r1", "a"), ("r2", "a"), ("r3", "c"), ("r4", "d"))}
+    b = OW.band_bars(calls, truth)
+    assert b["set"]["scored"] == 4 and b["set"]["truth_held"] == 2 and b["set"]["singletons"] == 3 and b["set"]["singletons_right"] == 1
+    assert b["keep_all"]["truth_held"] == 4 and b["keep_all"]["singletons"] == 0
+    assert b["primary"]["singletons"] == 4 and b["primary"]["singletons_right"] == 3
+    assert b["bars"] == dict(P=False, H=False, N=True, Q=False, verdict="UNDERPOWERED")
