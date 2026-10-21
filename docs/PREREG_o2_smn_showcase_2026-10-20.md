@@ -101,3 +101,32 @@ pattern where StringTie, FLAIR and a primaries-only assembly mix them. It would 
 **Reading.** The PSV columns give SMN1 its own isoforms (exon 7 kept in 98.8% of reads, as in truth, against 88.7% under
 minimap2), and an assembler that keeps the homes reproduces that; StringTie and FLAIR on primaries do not. The price is
 abstention: nearly half of SMN2's reads are identical to SMN1 over their span and are left out. Audit pending.
+
+## Audit (metric-auditor, 2026-10-20): holds with caveats
+
+- Every number reproduces. The FAIL stands.
+- **The SMN1 gain is removal, not assignment:** of the 616 reads the truth moves, O2 fixes 8 and abstains on 599; the
+  other 2,241 decisions confirm a primary minimap2 already had right.
+- **349 of the abstained FL reads carry SMN2's c.840 T on an SMN1 primary** while matching CHM13's SMN1 at other columns:
+  HG002's SMN2 differs from CHM13's (the donor-vs-reference case), and the every-column rule abstains. "Identical over
+  their span" was wrong for them.
+- **R2 on SMN2 is infeasible:** Rustle on the truth arm is itself 0.033 from the truth reads; Rustle credits `reads` to
+  16% of the family's reads, and R3 on SMN1 turns on one read (8 vs 7). The FLAIR "O2" column re-admitted the abstained
+  reads from reads.fq and is not FLAIR on the O2 arm. R4's inputs pre-dated the prereg (r1348's 627 ambiguous).
+- Wording not to use: "the PSV columns give most reads their copy"; "O2 recovers SMN1's isoforms"; "FLAIR on O2".
+
+## Tags (descriptive, `o2tags.py`; `o2smn/tags.log`, `o2smn/tags/*.log`)
+
+Per tied read, which statistic of its best alignment on each copy picks the donor's copy:
+
+| statistic | SMN: decides / right / wrong (2,885 tied) | on the 627 abstained |
+|---|---|---|
+| AS, ms | 2,863 / 2,257 / 606 | 606 / 17 / 589 |
+| NM | 2,509 / 2,252 / 257 | 262 / 14 / 248 |
+| de | 2,511 / 2,256 / 255 | 263 / 16 / 247 |
+| **substitutions only (NM − CIGAR indel bases = MD mismatches)** | **2,604 / 2,603 / 1** | **354 / 354 / 0** |
+| indel bases | 2,683 / 1,476 / 1,207 | 603 / 11 / 592 |
+
+Substitutions alone also on THOC3 5,482 / 5; DUSP22 1,927 / 1; GTF2H2C 1,408 / 3; NOMO1 348 / 0; GOLGA8A 257 / 10
+(minimap2 256 / 282). Where the donor's copies differ from CHM13 every statistic fails: TBC1D3B 0 / 75 (AS 0 / 147), PDPR
+179 / 98, GTF2IRD2 157 / 37.
