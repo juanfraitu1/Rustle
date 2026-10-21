@@ -263,4 +263,40 @@ experiment; the key is not changed again.**
   worse one (176 and 100 ms points below their best) on SM22.14 as the truth. SM22.14 is outside their tied copies, so they are
   unscored; a read whose best alignments are all stitched should be undetermined.
 
-Audit pending.
+Audit: below (holds with caveats).
+
+## Audit of Amendment 4 (metric-auditor, 2026-10-21): UNDERPOWERED holds with caveats; the direction is not established
+
+Every number reproduces: rebuilt counterparts equal `orthologs.tsv` (40 / 47), the rebuilt key equals `truth_ms.tsv` on
+all 185 reads, the headline matches to the digit. UNDERPOWERED survives every ± 500-kb reading (minimap2 wrong on 1-3
+against the bar of 10). Corrections:
+
+- **The direction rests on divergence at one locus, not on position.**
+  - Maternal chr12 25.82-25.89 Mb ("X") decides 9 of the 11 scored LRPAP1 reads: the 2 fixes, and 7 where both arms pick
+    SM22.18.
+  - ± 500 kb does not reach unique sequence there. The chr12 windows cover X too (SM22.14's: 682 kb at divergence
+    0.0057; SM22.1's inverted upstream flank: 0.0078), so the lower-divergence rule picks the owner.
+  - SM22.18's 0.0020 is closer than this region's own allelic windows (0.0054-0.0077 on chr12 and chr14).
+  - X to the same-chromosome block: 98 scored, 1 minimap2 error, 0 fixes / 0 breaks. Overlap dropped: 97, 1, 0 / 0.
+  - **Never 0 / 2 at ± 500 kb.** SM22.1's two flanks anchor at mat chr12 27.39-27.93 Mb (MAPQ 60), and the reads fit
+    there 82-85 ms points worse. .5312667 matches X exactly (NM 0).
+- **The 2 fixes are 2 reads from one locus, each by one substitution:** an anecdote, not a direction.
+- **The key artefact reaches 2 scored reads.** The note above names only 2 unscored ones. These are SRR27178663.1441099
+  (truth NPIP.16, 43 ms below its dropped best: the r1360 artefact read, now counted "right") and SRR27438212.1546517
+  (NPIP.5, 27 below). Both count as right for both arms. `best_ms` is computed after the drop (`o2window.py` truth-ms),
+  which hides them. With such reads undetermined: 105 scored, minimap2 102, corrector 104; verdict unchanged. None of the
+  3 minimap2 errors rests on a leftover.
+- **Self-scoring and exclusion:**
+  - 83 of the 107 scored reads are refcons (both 83 / 83). Only the 24 altonly reads inform (minimap2 21, corrector 23).
+  - 76 of the 185 tied reads are unscored. All 32 off-copy reads have minimap2's copy >= 5 ms below their best placement;
+    the 29 maternal-only NPIP reads are 104-987 below.
+- **Forking paths:** the key was amended twice after the data were seen. Amendment 4 was written knowing that X sets the
+  direction. It was committed before its outputs; the only code change is the flank; the corrector output, BAMs, copies
+  and chrmap are byte-identical.
+- **Wording:** "ms 1541 on both" holds for .2337814 only (.5312667: 1578 on both). Drop "R, S and H would hold": P failed,
+  and those bars would rest on 2 reads.
+
+**What stands (final for this experiment):** UNDERPOWERED. Among the NPIP / LRPAP1 reads tied on the GGO reference that
+his own genome places on a reference copy, minimap2 is wrong on 1-3: too few to test the corrector. The corrector broke
+nothing. Its 2 fixes rest on one locus whose owner is set by divergence, not position. Settling that locus needs HiFi
+reads spanning the maternal chr12 25.4-26.4 Mb junctions (not run). **The key is not changed again.**
