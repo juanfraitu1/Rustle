@@ -93,4 +93,43 @@ the families are not artefacts of our grouping.
 - But a quarter of the human high-identity copies (an eighth in gorilla) lie in no annotated SD. Those groupings are not
   confirmed as duplications by this test, and are the place to look for artefacts.
 
-Audit pending.
+Audit: below (the FAIL holds with caveats; the reading above is corrected).
+
+## Audit (metric-auditor, 2026-10-21): the FAIL holds with caveats; the reading above is corrected
+
+Every registered number reproduces to the digit with an independent bedtools join. Over all copies the pairing is 60.3% (human) /
+76.8% (gorilla). Corrections:
+
+- **Repeats sit on both sides of the bar** (post-hoc classes). Of the 7,774 human >= 0.90 copies:
+  - 1,056 are rDNA-array or chrY-satellite families, all paired;
+  - 2,122 are transposon-dominated, 61% paired (young L1s, MCL3: 256 of 260 unpaired);
+  - 862 are satellite-dominated, 25% paired;
+  - the **gene-like rest: 3,036 / 3,237 = 93.8% paired**. Gorilla's gene-like copies: 543 / 590 = 92.0%.
+  
+  The 72.1% mostly measures repeat content, and being paired does not clear a family.
+- **An O1 defect.** For 497 human and 70 gorilla copies, the >= 0.90 identity comes only from a sequence aligned to itself:
+  overlapping loci, 144 + 32 of them sense / antisense pairs, e.g. MCL1092. They are 23% (human) and 51% (gorilla) of the
+  unpaired copies, and SD90 pairs 4 of them.
+- **fibro_cat is not an O1 catalog.** It was built from RefSeq records (every copy has 0 reads). The gorilla mainstay figure
+  (58 / 61) is annotation-derived; O1's own gorilla catalog holds 2 mainstay copies.
+- **The SD tracks are not independent evidence.**
+  - SEDEF is independent of our code, but registers 650 and 996 found its pairs to be a lossy subset of our own all-vs-all
+    alignments. Read "an external SD caller pairs them".
+  - The human track is a SEDEF run on CHM13 v2.0 that the user supplied (`final_human.bed` filtered to fracMatch >= 0.90 and >= 1
+    kb). It is not a "published" track; that word is also withdrawn from `PREREG_multicopy_gains_real`.
+- **The satellite filter was misread.** The filtered file drops 2,061 of 2,147 chrY rows (TSPY 7 / 7 → 0 / 7). The copies that
+  lose their pairing are mostly the rDNA / chrY array families, not "satellite SDs" in general.
+- **Mainstays.** The registered run matched none (a chromosome-naming mismatch); the inline numbers used RefSeq.
+  - Recomputed on RefSeq: 156 / 162 (NPIP 49 / 49 in 15 families).
+  - On CAT: **206 / 214 (96.3%)**.
+  - The name match also caught CDYL (autosomal) as CDY.
+- **One human sample.** human_testis, from the same families stage, gives 788 / 972 = 81.1%.
+
+**What stands:**
+- The bar fails as registered.
+- O1's gene-like families are paired by an external SD caller at about the bar (93.8% human, 92.0% gorilla; post hoc).
+- The mainstays are paired at 96% (CAT).
+- The shortfall comes from transposon and satellite families, and from **self-overlap families**: a locus grouped with its own
+  overlapping or antisense copy. That defect is worth fixing in O1.
+- **What would settle it:** a CAT-annotation families arm on CHM13 (a bar the annotation can meet), and a pre-registered rule
+  excluding self-only edges, tested on human_testis.

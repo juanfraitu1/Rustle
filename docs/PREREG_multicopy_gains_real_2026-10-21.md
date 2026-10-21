@@ -170,3 +170,7 @@ Corrections:
   - Where a read is truly tied, its copy is mostly undecidable (76-83% of gains).
   - Where it is not tied, minimap2 already put it elsewhere.
   - No mainstay gene is shown to be an expressed copy by this test.
+
+**Correction (2026-10-21, from the audit of `PREREG_o1_families_sd_pairs`):** `CHM13_SDs.SD90.bed` is not a published track. It is a
+SEDEF run on CHM13 v2.0 supplied by the user (fracMatch >= 0.90, >= 1 kb). Every "published" above should read "external SEDEF run".
+SEDEF is independent of our code but not independent evidence (registers 650, 996).
