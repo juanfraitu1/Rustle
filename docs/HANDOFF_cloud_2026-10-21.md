@@ -40,7 +40,13 @@ Clone the repository and work on **`o3-fast`**: `git clone git@github.com:juanfr
 
 ## Open items
 
-1. **Fix O1's self-overlap families** (register 1368): pre-register a rule excluding self-only edges (a locus grouped with its own overlapping or antisense copy), tested on human_testis. Also add a CAT-annotation families arm on CHM13 as the reference point.
+1. **O1 self-overlap families** (register 1368): fixed as the opt-in `mcl_families --reject-self-hits`
+   (`docs/PREREG_o1_self_hits_2026-10-21.md`).
+   - The pre-registered v1 FAILED: gorilla B2 97.4%.
+   - v2 (Amendment 1) keeps same-strand exon-sharing self-hits and PASSES all three catalogs. It is a development result,
+     and its audit was pending at push time.
+   - **Next:** confirm v2 on a fresh catalog (another sample's families run, pre-registered) before proposing it as the
+     default. Also add a CAT-annotation families arm on CHM13 as the reference point.
 2. **Classify the O1 copies that no SD pairs:** a quarter of the human high-identity copies, an eighth in gorilla. Check
    whether they are retrocopies (a single-exon copy with a multi-exon partner), groupings on short shared segments, tandem arrays,
    or repeat-driven. Pre-register first.
