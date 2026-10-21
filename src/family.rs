@@ -59868,6 +59868,13 @@ pub mod fam_from_gtf {
             /// **108/4,276** intra-cluster edges join fully NESTED intervals at identity exactly 1.000, and
             /// 54/139 clusters contain at least one. Default OFF ⟹ byte-identical.
             pub reject_overlapping: bool,
+            /// ⭐ Drop a PAF record that maps genomic bases ONTO THEMSELVES (PREREG_o1_self_hits_2026-10-21): query and
+            /// target on one contig, `+` strand, aligned genomic intervals equal within [`SELF_HIT_SLOP`] bp. Two
+            /// overlapping loci carry the same bases (the records are genomic spans), so the all-vs-all aligns that
+            /// shared DNA on the main diagonal at identity ~1.0 — never homology between two copies. Unlike
+            /// `reject_overlapping` (every record between overlapping SPANS; refuted as a guard, register 1010) a tandem
+            /// shift between overlapping loci (different bases) is kept. Default OFF ⟹ byte-identical.
+            pub reject_self_hits: bool,
             /// ⭐ §6ey: some single alignment record must map ≥ `min_exonic_bp` exon bases of one record onto exon
             /// bases of the other (EXON-TO-EXON homology), not only touch the longer one's exons. Records are aligned as genomic SPANS, so a pseudogene lying inside another family's gene
             /// carries that host's bases and aligns to the host's paralogs on the host's exons alone (Soto: PMS2P7,
@@ -59930,6 +59937,7 @@ pub mod fam_from_gtf {
                     min_bp: 300,
                     exonic_overlap: false,
                     reject_overlapping: false,
+                    reject_self_hits: false,
                     exonic_both_sides: false,
                     min_exonic_bp: 0,
                     min_shared_exon_frac: 0.0,
@@ -59965,6 +59973,8 @@ pub mod fam_from_gtf {
             pub exonic_overlap_missing: usize,
             /// Pairs dropped by `reject_overlapping`. Reported, never silent.
             pub rejected_overlapping: usize,
+            /// PAF records dropped by `reject_self_hits` (genomic bases aligned onto themselves). Reported, never silent.
+            pub rejected_self_hits: usize,
             /// Pairs dropped by `min_exonic_bp` — the edge rested on no exonic evidence. Reported, never silent.
             pub rejected_no_exonic: usize,
             /// Pairs dropped by `min_shared_exon_frac` — some exonic evidence existed, but on the best record it
@@ -60099,6 +60109,21 @@ pub mod fam_from_gtf {
             }
         }
 
+        /// Slack, in bp, for [`is_self_hit`]: a record whose aligned genomic intervals coincide this closely is DNA
+        /// aligned onto itself (no indel shifts an identical sequence off the diagonal; a tandem period is >> 5 bp).
+        pub const SELF_HIT_SLOP: u64 = 5;
+
+        /// Whether a PAF record between two genomic-span records (`CONTIG:START-END`, 1-based) maps genomic bases onto
+        /// themselves: one contig, `+` strand, and query / target aligned genomic intervals equal within [`SELF_HIT_SLOP`].
+        pub fn is_self_hit(qk: &GeneKey, qs: u64, qe: u64, strand: &str, tk: &GeneKey, ts: u64, te: u64) -> bool {
+            if qk.0 != tk.0 || strand != "+" {
+                return false;
+            }
+            let (q0, q1) = (qk.1.saturating_sub(1) + qs, qk.1.saturating_sub(1) + qe);
+            let (t0, t1) = (tk.1.saturating_sub(1) + ts, tk.1.saturating_sub(1) + te);
+            q0.abs_diff(t0) <= SELF_HIT_SLOP && q1.abs_diff(t1) <= SELF_HIT_SLOP
+        }
+
         /// Parse one gene key out of a FASTA/PAF name of the form `CONTIG:START-END`.
         pub fn parse_gene_key(name: &str) -> Option<GeneKey> {
             let (c, r) = name.rsplit_once(':')?;
@@ -60199,6 +60224,10 @@ pub mod fam_from_gtf {
                 let (Ok(nmatch), Ok(blocklen)) = (f[9].parse::<u64>(), f[10].parse::<u64>()) else {
                     continue;
                 };
+                if p.reject_self_hits && is_self_hit(&qk, qs, qe, f[4], &tk, ts, te) {
+                    g.rejected_self_hits += 1;
+                    continue;
+                }
                 if blocklen < p.min_bp {
                     continue;
                 }
@@ -62295,6 +62324,39 @@ pub mod fam_from_gtf {
                     "a gene nested inside another is not its paralog"
                 );
                 assert_eq!(g.rejected_overlapping, 1);
+            }
+
+            /// PREREG_o1_self_hits_2026-10-21: two overlapping loci carry the same genomic bases, so the all-vs-all aligns
+            /// them onto themselves (the main diagonal). That record is dropped; a tandem shift between the same two
+            /// overlapping loci (different bases) is homology and is kept. Off by default.
+            #[test]
+            fn reject_self_hits_drops_the_diagonal_and_keeps_a_tandem_shift() {
+                let a: GeneKey = ("NC_1".to_string(), 1001, 9000);
+                let b: GeneKey = ("NC_1".to_string(), 3001, 12000);
+                // genomic [3000, 9000) of a onto the same genomic [3000, 9000) of b
+                let self_hit =
+                    "NC_1:1001-9000\t8000\t2000\t8000\t+\tNC_1:3001-12000\t9000\t0\t6000\t6000\t6000\n";
+                // genomic [1000, 4000) of a onto genomic [6000, 9000) of b: a real tandem copy
+                let tandem =
+                    "NC_1:1001-9000\t8000\t0\t3000\t+\tNC_1:3001-12000\t9000\t3000\t6000\t2950\t3000\n";
+                let exonic: BTreeMap<GeneKey, u64> =
+                    [(a.clone(), 8000u64), (b.clone(), 9000u64)].into_iter().collect();
+                let bl = BTreeMap::new();
+                assert!(!GraphParams::default().reject_self_hits);
+                assert_eq!(
+                    graph_from_paf(self_hit, &exonic, &bl, &GraphParams::default()).n_edges(),
+                    1
+                );
+                let p = GraphParams {
+                    reject_self_hits: true,
+                    ..GraphParams::default()
+                };
+                let g = graph_from_paf(self_hit, &exonic, &bl, &p);
+                assert_eq!(g.n_edges(), 0, "DNA aligned onto itself is not a paralog");
+                assert_eq!(g.rejected_self_hits, 1);
+                let g2 = graph_from_paf(tandem, &exonic, &bl, &p);
+                assert_eq!(g2.n_edges(), 1, "a tandem shift between overlapping loci is homology");
+                assert_eq!(g2.rejected_self_hits, 0);
             }
 
             /// Both new clauses are OFF by default, so every prior measurement stays byte-identical.

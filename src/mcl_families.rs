@@ -137,6 +137,13 @@ struct Args {
     #[arg(long, default_value_t = false)]
     reject_overlapping: bool,
 
+    /// ⭐ Drop PAF records that map genomic bases onto themselves (PREREG_o1_self_hits_2026-10-21): two overlapping loci
+    /// share DNA (the records are genomic spans), so the all-vs-all aligns it on the main diagonal at identity ~1.0 and
+    /// joins a gene with its antisense or nested neighbour as a "family". Only the diagonal record is dropped; a tandem
+    /// shift between overlapping loci is kept (the span-level guard was refuted, register 1010). Default OFF.
+    #[arg(long, default_value_t = false)]
+    reject_self_hits: bool,
+
     /// ⭐ Minimum ABSOLUTE exonic bases an edge must rest on (additive; `cov_longer` is unchanged).
     /// 0 = off. ⚠ Prefer this over --exonic-overlap: replacing the coverage measure shatters real
     /// families, because a segmental duplication copies introns too.
@@ -1218,6 +1225,7 @@ fn main() -> Result<()> {
         min_bp: args.min_bp,
         exonic_overlap: args.exonic_overlap,
         reject_overlapping: args.reject_overlapping,
+        reject_self_hits: args.reject_self_hits,
         min_exonic_bp: args.min_exonic_bp,
         exonic_both_sides: args.exonic_both_sides,
         min_shared_exon_frac: args.min_shared_exon_frac,
@@ -1325,6 +1333,12 @@ fn main() -> Result<()> {
         eprintln!(
             "[mcl_families] reject-overlapping: {} pair(s) dropped as overlapping annotation intervals",
             g.rejected_overlapping
+        );
+    }
+    if p.reject_self_hits {
+        eprintln!(
+            "[mcl_families] reject-self-hits: {} PAF record(s) dropped as genomic bases aligned onto themselves",
+            g.rejected_self_hits
         );
     }
     if !exonic.is_empty() && g.missing_exonic * 2 > g.n_nodes() {
@@ -2515,6 +2529,8 @@ fn main() -> Result<()> {
             "rejected_overlapping".to_string(),
             g.rejected_overlapping.to_string(),
         ),
+        ("reject_self_hits".to_string(), args.reject_self_hits.to_string()),
+        ("rejected_self_hits".to_string(), g.rejected_self_hits.to_string()),
         ("min_exonic_bp".to_string(), args.min_exonic_bp.to_string()),
         (
             "rejected_no_exonic".to_string(),
