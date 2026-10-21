@@ -67,4 +67,42 @@ copies differ from the reference (register 1348's S2), copies absent from the re
 
 ## Amendments
 
-(none yet)
+### Amendment 1 (2026-10-20): substrate G, gorilla KB3781's held-out families — written before any gorilla band was scored
+
+User: "I thought that for this particular experiment we would use gorilla and not use the paternal and maternal
+haplotypes till O3, can we check if it holds there too?"
+- **Reads and reference:** his fibroblast library on GCF_029281585.2 (`personal/sub.bam`), the 143 held-out families of
+  `PREREG_o2_personal_copies` (`qual.json`, half `heldout`). No arm uses his haplotypes.
+- **Answer key only:** the intron-free key (`o2window.py truth-ms`: the copy with the best `ms` in his two assemblies, by
+  at least 5 points, through `orthologs.tsv`), from alignments of the band's reads to `mGorGor1.{mat,pat}.splice.mmi`.
+- **Same band, arms and bars** (P, H, N, Q). Verdict reported separately from round 26; gorilla and human never pooled.
+- **Caveats fixed in advance:**
+  - These families are not wholly fresh: their 10-AS core (896 reads) was scored once for the single pick in register
+    1347, and that run's SM392 chimeras motivated the stitched rule. No set or window result was ever seen on them.
+  - A read whose copy equals the reference cannot be decided by the key when the reference itself has the near-tie
+    (both copies score alike on his identical haplotype); such reads will be undetermined and unscored. The scored band
+    will therefore be weighted to reads carrying the other parent's copy, as register 1348's S2 was. Reported by origin.
+
+## Results (code 7a7be665; round 26 built and scored once; `personal/window/r26/band.json`)
+
+**The near-tie band (first tied within 10 points): PASS** — 8,955 scored reads from 22 families.
+
+| arm | holds the truth | one copy | singletons right | minimap2's primary right on those reads |
+|---|---|---|---|---|
+| **the set** | 8,953 (99.98%) | 5,045 (56.3%) | 5,043 (99.96%) | 5,041 |
+| null, keep-all | 8,955 (100%) | 0 | – | – |
+| null, primary | 6,972 (77.9%) | 8,955 | 6,972 (77.9%) | – |
+
+P, H, N and Q hold. **Q holds by two reads** (5,043 against 5,041): the set almost never corrects minimap2.
+
+**What the set does, read by read:**
+- On the 5,045 reads it narrows to one copy, minimap2's primary was already right on 5,041 (99.9%).
+- On the 3,910 reads it keeps two or more copies, minimap2's primary is right on 1,931 (49.4%): a coin toss. Those are
+  reads identical to their copies over the aligned bases (pool 2 → set 2: 1,341 reads; 3 → 3: 401; 4 → 4: 455).
+- So in one genome the set **separates minimap2's safe picks from its coin tosses** rather than fixing the coin tosses:
+  it says which tied reads are decidable from their bases (and decides them, 99.96% right) and which are not.
+- Single pick: carries no bar; dropped truths 2 (both S19PRAMEF7).
+
+**Other bands (no bars):** 10-20: set holds 6,098 / 6,098, one copy on 6,077, all right; minimap2's primary right on all
+6,098. 20-30: 5,024 / 5,024, singletons 5,014 all right; primary right on all 5,024. Whole window: 20,077 scored, held
+20,075, singletons 16,136 (right 16,134), primary right 18,094.

@@ -169,3 +169,19 @@ The first S1 bars output (3,779-read truth) was discarded unread beyond the trac
 **What a next test needs:** a pre-registered null arm (the rule above), scored on the Eichler band alone, where the set
 must beat the null on held truth and singletons; and the FCGR2A lift settled by aligning CHM13's FCGR2A.1 / .2 to HG002's
 haplotypes.
+
+### Amendment 2 (2026-10-20, post hoc, after the audit): the FCGR2A truth was a lift artifact — an erratum, not a verdict change
+
+User: "ok, lets try both, in order" (second item: settle FCGR2A's lift).
+- CHM13's FCGR2A.1 (chr1:160,843,885-160,862,793) and FCGR2A.2 (160,925,676-160,944,582), each ± 20 kb, were aligned to
+  HG002's haplotypes (`minimap2 -x asm20 -c`, `s2/fcgr2a/orth.paf`). **Both land on the same 59-kb locus** of each
+  haplotype (chr1_MATERNAL 156,468,027-156,527,020; chr1_PATERNAL 164,682,294-164,741,283): HG002 carries one copy where
+  CHM13 carries two. That locus matches copy .1 far better (357 / 362 mismatches over 59 kb) than copy .2 (959 / 964).
+- The 379 disputed reads (truth .2, set .1, class `unique_elsewhere`) all lie inside that locus (maternal 156,487,403-
+  156,505,290), 337 of them with 0-1 mismatches. Their truth of ".2" came from the chain lift of a collapsed copy; by
+  sequence they are HG002's .1-like copy, and the set's call was the better one.
+- **Recount with every FCGR2A ".2" truth corrected to ".1" (401 reads), post hoc:** whole window H 99.18%, R 63.5%, Q
+  98.91% (11,231 singletons right against the primary's 11,215) — the pre-registered bars would hold. **The near-tie band
+  still fails:** held 97.67%, singletons right 92.68% (bars 99% / 98%). The remaining drops there are TBC1D3B, OR2T4 and
+  SMN2 reads: the donor-vs-reference confound stands, smaller than reported.
+- The registered S2 verdict (FAIL) is not changed by this amendment; it is recorded as an erratum of the answer key.
