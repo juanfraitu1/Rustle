@@ -79,7 +79,8 @@ alignment, at a cost of at most 1% of other reads.
   - A: 6 on C's candidate, 5 on the reference;
   - B into A: 2 on B's candidate, 19 on the reference.
 - **The 4 opposite-strand reads** all stay on the reference.
-- **Register 1360's 29 reads:** 24 on C's candidate (its C reads); the 5 A reads stay on the reference.
+- **Register 1360's 29 reads** (24 in unit C, 5 in A): 24 on C's candidate (21 C reads + 3 A reads), 5 on the reference (3 C
+  reads + 2 A reads).
 - **MAPQ of target reads on a candidate:**
   - C: 26 at >= 30, 10 at 1-29, 3 at 0;
   - B: 23 at 1-29 (its two contigs are near-identical);
