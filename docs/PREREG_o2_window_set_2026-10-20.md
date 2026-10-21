@@ -87,4 +87,13 @@ the reference (off-copy: O3); exact ties (undetermined); anything about Eichler'
 
 ## Amendments
 
-(none yet)
+### Amendment 1 (2026-10-20): two pooling bugs, fixed before any bar was read
+
+Both surfaced on the first S1 scoring and touch no rule, constant or bar:
+1. **Simulated read names repeat across worlds** (`s0000001` in every world), so the pooled truth table held 3,779 reads
+   instead of 60,345 and pooled calls collided. Truth and calls tables of pooled worlds now key each read by its world
+   (`keyed`, `world_tag`, `calls_tag`); a single calls table (S2) is unkeyed.
+2. **The `bars` parser** read `--window 30` as two truth files when it followed `--truth`; it is now parsed first.
+
+The first S1 bars output (3,779-read truth) was discarded unread beyond the traceback; S2's bars had not run. The
+`prepare` step and its outputs are untouched. Both substrates were then scored once with the fixed code.

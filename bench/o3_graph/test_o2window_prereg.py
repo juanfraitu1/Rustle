@@ -47,3 +47,10 @@ def test_the_bars_count_truth_held_singletons_and_singleton_precision():
     assert b["minimap2_right"] == 2 and b["minimap2_right_on_singletons"] == 2
     assert b["H"] is False and b["R"] is True and b["Q"] is False and b["P"] is False
     assert b["verdict"] == "UNDERPOWERED"
+
+
+def test_pooled_worlds_key_reads_by_world_so_repeated_simulated_names_do_not_collide():
+    assert OW.world_tag("/x/heldout24/A119b_s1401/CROSS") == "A119b_s1401_CROSS"
+    assert OW.calls_tag("/y/s1/A119b_s1401_CROSS.calls.tsv") == "A119b_s1401_CROSS"
+    assert OW.keyed("s1", "A119b_s1401_CROSS", pooled=True) == "A119b_s1401_CROSS/s1"
+    assert OW.keyed("s1", "A119b_s1401_CROSS", pooled=False) == "s1"

@@ -122,6 +122,21 @@ def match_columns_ref(cigar, flip, length, seq, start, fetch):
     return eq, x
 
 
+def world_tag(w):
+    """'<sample>_<world>' of a world directory .../<sample>/<world>."""
+    w = w.rstrip("/")
+    return f"{os.path.basename(os.path.dirname(w))}_{os.path.basename(w)}"
+
+
+def calls_tag(p):
+    return os.path.basename(p)[:-len(".calls.tsv")] if p.endswith(".calls.tsv") else os.path.basename(p)
+
+
+def keyed(read, tag, pooled):
+    """Simulated read names repeat across worlds (s0000001 in every one): pooled tables key a read by its world."""
+    return f"{tag}/{read}" if pooled else read
+
+
 def truth_sim(rows, in_reference):
     """{read: (status, copy)} from a simulated world's reads.truth: determined when the copy is in the reference."""
     return {r["read"]: ("determined", r["copy"]) if r["copy"] in in_reference else ("off-copy", "") for r in rows}
@@ -377,7 +392,8 @@ def cmd_truth_table(kind, out_p, paths):
     for p in paths:
         if kind == "sim":
             inref = {r["copy"] for r in csv.DictReader(open(f"{p}/copies.tsv"), delimiter="\t") if r["in_reference"] == "1"}
-            out.update(truth_sim(list(csv.DictReader(open(f"{p}/reads.truth.E0.tsv"), delimiter="\t")), inref))
+            t = truth_sim(list(csv.DictReader(open(f"{p}/reads.truth.E0.tsv"), delimiter="\t")), inref)
+            out.update({keyed(q, world_tag(p), True): v for q, v in t.items()})
         else:
             out.update(truth_hg002(list(csv.DictReader(open(p), delimiter="\t"))))
     with open(out_p, "w") as fh:
@@ -396,8 +412,10 @@ def cmd_bars(out_p, calls_ps, truth_ps, window):
         for r in csv.DictReader(open(p), delimiter="\t"):
             truth[r["read"]] = (r["status"], r["truth"])
     calls, first = [], {}
+    pooled = len(calls_ps) > 1                                  # several worlds: reads keyed by world (keyed())
     for p in calls_ps:
         for r in csv.DictReader(open(p), delimiter="\t"):
+            r["read"] = keyed(r["read"], calls_tag(p), pooled)
             first.setdefault(r["read"], int(r["window"]))
             if int(r["window"]) == window:
                 calls.append(r)
@@ -430,8 +448,12 @@ def main(argv):
     if cmd in ("truth-sim", "truth-hg002"):
         return cmd_truth_table(cmd[6:], a[0], a[1:])
     if cmd == "bars":
+        win = int(a[a.index("--window") + 1]) if "--window" in a else 30
+        if "--window" in a:
+            k = a.index("--window")
+            a = a[:k] + a[k + 2:]
         i, j = a.index("--calls"), a.index("--truth")
-        return cmd_bars(a[0], a[i + 1:j], a[j + 1:], int(a[a.index("--window") + 1]) if "--window" in a else 30)
+        return cmd_bars(a[0], a[i + 1:j], a[j + 1:], win)
     print(__doc__)
     return 2
 
