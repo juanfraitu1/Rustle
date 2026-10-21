@@ -12,6 +12,8 @@ assemblies. Steps, in order (the IsoCon run and the minimap2 alignments are the 
 docs/PREREG_o3_npip_candidates_realign_2026-10-21.md (the counted candidates join the reference; the net is realigned):
     npip_o3.py realign-prep --w W        W/realign/C.fa (GGO + the candidates' contigs), W/realign/units.tsv (target reads' units)
     npip_o3.py score-realign --w W       W/realign/{R0,C}.bam -> bars H1-H3 and the tied-read counts -> W/realign/score.json
+    npip_o3.py rel-prep --w W            Amendment 1: W/realign/rel.{a,b}.fa (the relatives' reads, from rel.names)
+    npip_o3.py rel-score --w W           W/realign/{R0,C}.rel.bam -> bar H3' per set -> W/realign/rel_score.json
 """
 import argparse
 import collections
@@ -286,14 +288,77 @@ def score_realign(a):
           f"R0 {b['target_tied']['R0']} -> C {b['target_tied']['C']}", flush=True)
 
 
+def rel_tally(rows):
+    """rows {read: (primary call, best AS, best AS on a candidate or None)} -> reads, moved (primary on a candidate), reachable
+    (any candidate record), near-tied (a candidate alignment within SLACK AS of the read's best)."""
+    n = collections.Counter(reads=len(rows))
+    for call, best, cand in rows.values():
+        n["moved"] += call in ("B", "C")
+        n["reachable"] += cand is not None
+        n["near_tied"] += cand is not None and best is not None and cand >= best - SLACK
+    return dict(reads=n["reads"], moved=n["moved"], reachable=n["reachable"], near_tied=n["near_tied"])
+
+
+def _rel_rows(bam_p):
+    import pysam
+    rows = {}
+    with pysam.AlignmentFile(bam_p) as bam:
+        for r in bam.fetch(until_eof=True):
+            q = r.query_name
+            call, best, cand = rows.get(q, ("unmapped", None, None))
+            if r.is_unmapped or r.is_supplementary:
+                rows.setdefault(q, (call, best, cand))
+                continue
+            a = r.get_tag("AS") if r.has_tag("AS") else None
+            if not r.is_secondary:
+                call = CAND.get(r.reference_name, "ref")
+            if a is not None:
+                best = a if best is None else max(best, a)
+                if r.reference_name in CAND:
+                    cand = a if cand is None else max(cand, a)
+            rows[q] = (call, best, cand)
+    return rows
+
+
+def rel_prep(a):
+    d = f"{a.w}/realign"
+    subprocess.run(f"samtools view -@ 4 -F 2308 -N {d}/rel.names {BAM} -o {d}/rel.prim.sam", shell=True, check=True)
+    recs = [ln.split("\t") for ln in open(f"{d}/rel.prim.sam")]
+    half = (len(recs) + 1) // 2
+    for k, part in (("a", recs[:half]), ("b", recs[half:])):
+        with open(f"{d}/rel.{k}.fa", "w") as o:
+            for f in part:
+                o.write(f">{f[0]}\n{sequencing_orientation(f[9], int(f[1]) & 16 != 0)}\n")
+    print(f"[npip_o3] rel-prep: {len(recs)} primaries -> {d}/rel.a.fa ({half}), rel.b.fa ({len(recs) - half})", flush=True)
+
+
+def rel_score(a):
+    d = f"{a.w}/realign"
+    sets = {r["read"]: r["set"] for r in csv.DictReader(open(f"{d}/rel.sets.tsv"), delimiter="\t")}
+    out = {}
+    for arm in ("R0", "C"):
+        rows = _rel_rows(f"{d}/{arm}.rel.bam")
+        out[arm] = dict(all=rel_tally(rows))
+        for name in ("rrn3", "c_rel"):
+            out[arm][name] = rel_tally({q: v for q, v in rows.items() if name in sets.get(q, "")})
+        if arm == "C":
+            out["moved_reads"] = sorted(q for q, v in rows.items() if v[0] in ("B", "C"))
+    tot = out["C"]["all"]["reads"]
+    out["H3_prime"] = out["C"]["all"]["moved"] <= 0.01 * tot
+    json.dump(out, open(f"{d}/rel_score.json", "w"), indent=1)
+    for arm in ("R0", "C"):
+        print(f"[npip_o3] {arm}: " + "; ".join(f"{k} {v}" for k, v in out[arm].items()), flush=True)
+    print(f"[npip_o3] H3' (moved <= 1% of {tot}): {out['H3_prime']}", flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("net", "frozen", "truth", "score", "realign-prep", "score-realign"))
+    ap.add_argument("cmd", choices=("net", "frozen", "truth", "score", "realign-prep", "score-realign", "rel-prep", "rel-score"))
     ap.add_argument("step", nargs="?")
     ap.add_argument("--w", required=True)
     a = ap.parse_args(argv)
     {"net": net, "frozen": frozen, "truth": truth, "score": score, "realign-prep": realign_prep,
-     "score-realign": score_realign}[a.cmd](a)
+     "score-realign": score_realign, "rel-prep": rel_prep, "rel-score": rel_score}[a.cmd](a)
 
 
 if __name__ == "__main__":

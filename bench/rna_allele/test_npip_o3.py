@@ -76,3 +76,9 @@ def test_a_read_is_tied_when_a_second_locus_is_within_nine_as_of_its_best():
     assert N.tied({"NPIP:1": 1000, "NPIP:2": 991, "C": 950}) is True
     assert N.tied({"C": 1000, "NPIP:2": 990}) is False
     assert N.tied({"C": 1000}) is False
+
+
+def test_relatives_are_counted_as_moved_reachable_and_near_tied():
+    rows = {"r1": ("ref", 1000, None), "r2": ("ref", 1000, 995), "r3": ("C", 1000, 1000), "r4": ("ref", 1000, 900),
+            "r5": ("unmapped", None, None)}
+    assert N.rel_tally(rows) == dict(reads=5, moved=1, reachable=3, near_tied=2)
