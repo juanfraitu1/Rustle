@@ -216,3 +216,20 @@ S, H) and the verdict rules.
   - The remaining error, NPIP.17 for NPIP.18, is one the corrector cannot act on (no confident reads on either copy).
 
 Audit pending.
+
+### Amendment 4 (2026-10-21, before the run it names): counterparts by position — final key for this experiment
+
+**Why.** The audit of the Amendment 3 rescore found the identity convention chosen after the evidence was seen, and it
+sets the direction: identity 2 fixes / 0 breaks (UNDERPOWERED); positional variants 0 / 2, one of them with 11 minimap2
+errors (FAIL). The two LRPAP1 reads hinge on whether a maternal chr12 locus (25.85-25.91 Mb) is SM22.1's counterpart (same
+chromosome) or SM22.18's (closer sequence, chr16). The project's own precedent judges counterparts by position (registers
+1181, 1207).
+
+**The one change:** each copy's counterpart is found with **± 500 kb** of reference context (`o2personal.py queries /
+orthologs --flank 500000`), past the duplication, so unique sequence fixes its position; a counterpart on another
+chromosome then means a real rearrangement, not a closer paralog. Everything else in Amendment 3 stays (longest primary
+with MAPQ >= 20 on a non-reference contig, no growth guard, overlaps to the lower divergence, stitched / >= 100-kb key
+alignments dropped), as do the frozen corrector output, the scorer and the bars.
+
+**Seen before this amendment:** the audit's variants listed above. **The verdict this run gives is final for this
+experiment; the key is not changed again.**

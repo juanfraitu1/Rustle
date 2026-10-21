@@ -509,7 +509,16 @@ def _region(r, length):
     return max(0, r["start"] - FLANK_P), min(length, r["end"] + FLANK_P)
 
 
-def cmd_queries(copies_p, genome_p, chrmap_p, out):
+def query_lo(start, flank):
+    return max(0, start - flank)
+
+
+def query_name(copy, chrom, start, flank):
+    """A copy's query window name, copy|chrom|lo (donorsim's), shared by queries and orthologs."""
+    return f"{copy}|{chrom}|{query_lo(start, flank)}"
+
+
+def cmd_queries(copies_p, genome_p, chrmap_p, out, flank=None):
     """Each copy's reference span +- donorsim.FLANK, to be aligned to its ALT haplotype's whole assembly ->
     OUT.mat.fa / OUT.pat.fa (named copy|chrom|lo, donorsim's names)."""
     import pysam
@@ -523,8 +532,9 @@ def cmd_queries(copies_p, genome_p, chrmap_p, out):
             n["no ALT"] += 1
             continue
         h = alt[r["chrom"]][0]
-        lo, hi = max(0, r["start"] - DS.FLANK), min(fa.get_reference_length(r["chrom"]), r["end"] + DS.FLANK)
-        fh[h].write(f">{r['copy']}|{r['chrom']}|{lo}\n{fa.fetch(r['chrom'], lo, hi).upper()}\n")
+        f = DS.FLANK if flank is None else flank
+        lo, hi = query_lo(r["start"], f), min(fa.get_reference_length(r["chrom"]), r["end"] + f)
+        fh[h].write(f">{query_name(r['copy'], r['chrom'], r['start'], f)}\n{fa.fetch(r['chrom'], lo, hi).upper()}\n")
         n[h] += 1
     for f in fh.values():
         f.close()
@@ -532,7 +542,7 @@ def cmd_queries(copies_p, genome_p, chrmap_p, out):
     return 0
 
 
-def cmd_orthologs(copies_p, chrmap_p, out_p, haps, repaired=False):
+def cmd_orthologs(copies_p, chrmap_p, out_p, haps, repaired=False, flank=None):
     """Per copy, its ALT ortholog (donorsim.pick_ortholog on the copy's own exons, then donorsim.drop_ambiguous), kept only
     on the homologous ALT contig or an unplaced one. haps: {hap: (PAF, the hap's FASTA index)}."""
     DS = _sibling("donorsim")
@@ -551,8 +561,10 @@ def cmd_orthologs(copies_p, chrmap_p, out_p, haps, repaired=False):
         for r in rows:
             if r["chrom"] not in alt or alt[r["chrom"]][0] != h:
                 continue
-            lo = max(0, r["start"] - DS.FLANK)
-            o = DS.pick_ortholog(paf.get(f"{r['copy']}|{r['chrom']}|{lo}", []), {"main": [(a - lo, b - lo) for a, b in r["exons"]]},
+            f = DS.FLANK if flank is None else flank
+            lo = query_lo(r["start"], f)
+            o = DS.pick_ortholog(paf.get(query_name(r["copy"], r["chrom"], r["start"], f), []),
+                                 {"main": [(a - lo, b - lo) for a, b in r["exons"]]},
                                  None if repaired else DS.MAX_EXON_GROWTH)
             if o is None:
                 n[f"{h}: none"] += 1
@@ -872,10 +884,11 @@ def main(argv):
         return cmd_qualify(*a[:3])
     if cmd == "reads":
         return cmd_reads(*a[:3])
+    fl = int(a[a.index("--flank") + 1]) if "--flank" in a else None
     if cmd == "queries":
-        return cmd_queries(*a[:4])
+        return cmd_queries(*a[:4], flank=fl)
     if cmd == "orthologs":
-        return cmd_orthologs(*a[:3], _pairs(a, "--haps"), repaired="--repaired" in a)
+        return cmd_orthologs(*a[:3], _pairs(a, "--haps"), repaired="--repaired" in a, flank=fl)
     if cmd == "truth":
         return cmd_truth(*a[:6], _pairs(a, "--bams"))
     if cmd == "personal":

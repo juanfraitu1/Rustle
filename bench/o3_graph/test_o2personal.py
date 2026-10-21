@@ -222,3 +222,9 @@ def test_overlapping_counterparts_go_to_the_copy_with_the_lower_divergence():
     orth = {("A", "mat"): o(100, 200, 0.0086), ("B", "mat"): o(150, 260, 0.0017), ("C", "mat"): o(500, 600, 0.01)}
     kept = PC.resolve_by_de(orth)
     assert set(kept) == {("B", "mat"), ("C", "mat")}
+
+
+def test_queries_and_orthologs_name_a_copy_s_window_by_the_same_flank():
+    assert PC.query_lo(1200000, 500000) == 700000
+    assert PC.query_lo(300000, 500000) == 0                                   # clipped at the contig start
+    assert PC.query_name("SM22.1", "NC_1", 24785633, 500000) == "SM22.1|NC_1|24285633"
