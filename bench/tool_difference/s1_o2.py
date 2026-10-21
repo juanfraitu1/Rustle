@@ -85,12 +85,23 @@ def parse_cigar(s):
     return [(OPCODE[op], int(n)) for n, op in re.findall(r'(\d+)([MIDNSHP=X])', s)]
 
 
+def read_primaries(lines):
+    """{read: (chrom, 0-based start, reverse, cigar)} from SAM lines of primary records, the first record per read kept."""
+    prim = {}
+    for ln in lines:
+        f = ln.split('\t', 6)
+        prim.setdefault(f[0], (f[2], int(f[3]) - 1, bool(int(f[1]) & 16), parse_cigar(f[5])))
+    return prim
+
+
 def main():
     import pysam
     ap = argparse.ArgumentParser()
     for a in ('--bam', '--fasta', '--molecules', '--strata', '--ref', '--exclude', '--op-gtf', '--op-tmap', '--out'):
         ap.add_argument(a, required=True)
     ap.add_argument('--stratum', default='S1', choices=['S1', 'S2'])
+    ap.add_argument('--names-only', action='store_true', help='write OUT.names.txt and stop (the primaries scan is split elsewhere)')
+    ap.add_argument('--primaries', default=None, help='SAM lines of the molecules\' primary records, instead of scanning the BAM')
     args = ap.parse_args()
     s1 = set()
     for ln in open(args.strata + '.genes.tsv'):
@@ -146,12 +157,16 @@ def main():
     nf = args.out + '.names.txt'
     with open(nf, 'w') as o:
         o.write('\n'.join(names) + '\n')
-    prim = {}
-    p = subprocess.Popen(['samtools', 'view', '-F', '2308', '-N', nf, args.bam], stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
-    for ln in p.stdout:
-        f = ln.split('\t', 6)
-        prim.setdefault(f[0], (f[2], int(f[3]) - 1, bool(int(f[1]) & 16), parse_cigar(f[5])))
-    p.wait()
+    if args.names_only:
+        print(f"[s1_o2] names only -> {nf}", file=sys.stderr)
+        return
+    if args.primaries:
+        with open(args.primaries) as fh:
+            prim = read_primaries(fh)
+    else:
+        p = subprocess.Popen(['samtools', 'view', '-F', '2308', '-N', nf, args.bam], stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
+        prim = read_primaries(p.stdout)
+        p.wait()
     fa = pysam.FastaFile(args.fasta)
 
     def bases(chrom, cols, reverse):

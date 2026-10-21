@@ -70,3 +70,9 @@ def test_eichler_assigns_the_unique_best_by_ten_and_discards_closer_rivals():
 
 def test_eichler_best_elsewhere_is_other():
     assert s1_o2.eichler_verdict(1950, 1960, 2000, 1960) == "other"
+
+
+def test_primaries_are_kept_once_per_read_with_strand_and_cigar():
+    lines = ["r1\t0\tchr1\t101\t60\t10M\t*\t0\t0\tACGT\t*\n", "r1\t16\tchr2\t5\t60\t5M\t*\t0\t0\tA\t*\n",
+             "r2\t16\tchr3\t11\t0\t3=2X\t*\t0\t0\tACGTA\t*\n"]
+    assert s1_o2.read_primaries(lines) == {"r1": ("chr1", 100, False, [(0, 10)]), "r2": ("chr3", 10, True, [(7, 3), (8, 2)])}

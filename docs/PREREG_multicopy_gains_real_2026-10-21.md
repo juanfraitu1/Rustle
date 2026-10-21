@@ -65,3 +65,14 @@ species. The same fraction is reported for G.
 - Heavy steps in the foreground, one at a time, each under 10 minutes. The human BAM is 96 GB; if its primary-record scan cannot
   finish in time, an amendment says how it is split.
 - The metric-auditor checks the result before it is reported. Never pool human and gorilla. Push only when asked.
+
+## Amendment 1 (2026-10-21, before the human run)
+
+- **Instrument version:** the instrument in the tree is register 1270's version (3d4553af, sha1 a79218c0). Next to register
+  1269's (da774afe, sha1 6b6831e3) it only adds the Eichler AS-margin report and the `--stratum` label; the certificate is
+  byte-identical.
+- **Human primaries scan, split:** the 96 GB human BAM cannot be scanned for primaries within one 10-minute call. The scan is
+  split by chromosome group into 5 foreground calls, using two new options on `s1_o2.py` (the default path is unchanged):
+  - `--names-only` writes the molecule names and stops;
+  - `--primaries FILE` reads the primary records from a file instead of scanning.
+- **Check:** on gorilla, the split path reproduces the default run's `records.tsv`, `genes.tsv` and summary byte for byte.
