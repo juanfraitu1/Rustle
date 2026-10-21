@@ -313,3 +313,117 @@ minimap2).
 
 **Freeze.** The held-out half is scored once with the code at the commit that adds this amendment. Before scoring, every
 output is rebuilt with that code and compared with the development run: `truth_edits.tsv`, `arms.tsv` and `run.tsv`.
+
+## Results: the held-out half, scored once at 00edc953 (`personal/score_heldout.json`)
+
+**Domain:** 896 held-out reads tied within 10 AS. 887 are determined, all with the truth among the tied copies (refcons 479,
+altonly 408); 3 are undetermined, 6 off-copy.
+
+**S:** 887 reads from 35 families; minimap2 is wrong on 91, so P holds.
+
+| arm | accuracy | fixes / breaks against minimap2 | families fixed > broken / broken > fixed |
+|---|---|---|---|
+| minimap2 | 0.8974 | – | – |
+| **O2, fewest edits (primary)** | **0.8985** | **2 / 1** | **2 / 1** |
+| O2, consistent (secondary) | 0.8985 | 1 / 0 | 1 / 0 |
+| fewest substitutions | 0.8884 | 0 / 8 | 0 / 1 |
+| highest AS (control) | 0.6077 | 68 / 325 | 1 / 22 |
+| corrector (descriptive, no bar) | 0.9899 | 82 / 0 | 2 / 0 |
+
+**O2's bars:**
+- P holds;
+- **G fails:** +0.11 points, against +2.0;
+- **S fails:** 2 fixes against 5 × 1 break;
+- **F fails:** 2 families, against 11;
+- H holds: −0.21 points.
+
+**Verdict: FAIL by the pre-registered bars.** O2 changed 3 of minimap2's 887 calls: SM556 and SM456 fixed, SM463 broken.
+All three are noisy reads, with 1.8-4.6% edits against a median of 0.29%. Substantively that is **no measurable effect**.
+O2, consistent: FAIL (G, F).
+
+**Two caveats on the bars** (audit):
+- **No arm could have passed F.** minimap2's 91 errors lie in 5 families (SM392 82, SM502 6, SM556, SM456, SM277 1 each), so
+  even an oracle would be better in 5 families against the 11 F needs. On the development half an oracle would gain +1.67
+  points, short of G. Amendment 1 dropped the oracle arm and its gate, which would have shown this before the freeze. It is a
+  design flaw of the bars, as in register 950.
+- **P holds only through SM392.** Without it, S is 805 reads with 9 minimap2 errors: UNDERPOWERED.
+
+**Where minimap2 errs:**
+- **SM392 (82 errors):** two copies 4 kb apart on chr5 (0.989 identity), on a chromosome where the reference is his mother's.
+  - Every scored read comes from his paternal SM392.1, whose ortholog is sound: order and spacing are kept (4,179 vs
+    4,172 bp), and 0.913 of the reference SM392.1's 31-mers are in it. It differs from the reference's SM392.1 by a median 21
+    edits per read.
+  - On the reference, every one of the 82 primaries is a **two-copy chimera**: about 2.0 kb on SM392.0, a 12,220-bp "intron",
+    then 475 bp on SM392.1. `summary.attribute` credits it to SM392.0.
+  - minimap2's own AS favours SM392.1 on 67 of the 82, and the highest-AS control fixes those 67.
+  - O2 does not fix them. Its edit count treats the 12-kb gap as a free intron, and the chimera stands for SM392.0.
+  - So these reads are not beyond an allele-blind rule: AS, which charges for the gap, places most of them.
+- **SM502 (6 errors):** fixed by the corrector only.
+- **The other 3 errors:** one read in each of 3 families.
+- **By origin:** 89 of the 91 errors are altonly reads (minimap2 0.7819 on them), 2 are refcons (0.9958).
+
+**Structure of the ties.** 841 of the 887 scored reads tie copies whose alignments differ in intron count. Ranking by AS is
+wrong on 39.2% of the scored reads (development: 72.7%), yet right on SM392's chimeras. Exact ties (AS margin 0): 29 reads,
+right for every arm.
+
+**The refcons stratum is close to self-scoring** (audit). On all 479 held-out refcons reads (and 1,805/1,805 in
+development), the truth equals the copy with the fewest edits among the library's own reference alignments, which is what O2
+minimises. minimap2's 0.9958 there, and H, hold largely by construction. The two assemblies add information on about 96 of
+the 887 scored reads: SM392's 82 and 14 ties.
+
+**How many reads his genome cannot place.** 3 of the 896 domain reads tie exactly under the strict-minimum rule (development:
+10 of 3,484):
+- only one (SM491) is a tie between two catalogued copies;
+- the SM357 read ties with SM357.0's own maternal ortholog, which the ortholog lift missed (the maternal assembly carries
+  0.95 of SM357.0's 31-mers at CM054600.2 ~5.07-5.11 Mb); 5 of the 6 off-copy reads are the same gap;
+- the SM339 read ties with an uncatalogued paternal locus.
+
+Another 24 scored reads are decided by a single edit and 12 by two. In register 1338, one-edit margins were 46.5% wrong on
+HG002. Requiring a margin of at least 2 or at least 5 leaves the verdict unchanged (O2 2 / 1; corrector 82 / 0 and 76 / 0).
+
+**The corrector is descriptive only.** It has no bar after Amendment 1, and it learns the sample's alleles, which is outside
+the user's allele-blind definition of O2. 76 of its 82 fixes are SM392. Its 0 breaks depend on clipped bases counting as
+edits: with an NM-only truth it is 78 / 3.
+
+**The reads.** The domain reads come from four runs of the same animal: SRR27178662 (147), SRR27178663 (306), SRR27438212
+(3,804) and SRR27438213 (123), all SAMN04003007 = KB3781. The substrate section names only the first.
+
+**Reading.** By the pre-registered bars, O2's fewest-edits rule FAILS on held-out reads, with no measurable effect: 3 calls
+changed in 887. Three things follow:
+- For reads whose copy matches the reference, minimap2's pick is already the fewest-edit copy almost always, so an
+  allele-blind rule has little to change there.
+- minimap2's held-out errors are mostly one family, where its primary is a chimera spanning two copies. AS (which charges for
+  the spurious intron) places most of them; the edit count, which makes every intron free, does not.
+- The bars could not be passed by any arm (F), and the power bar holds only through that family.
+
+## Audit (metric-auditor, 2026-10-20): holds with caveats
+
+- **Every number reproduces to the digit**, from an independent rebuild of the truth (4,380 / 4,380 statuses, truths and
+  origins agree) and an independent scorer. FAIL is the pre-registered verdict.
+- **The hold-out order is clean:** prereg 725aafb2 → Amendment 1 99595983 → development score 19:00 → freeze 00edc953 at
+  19:01:11 → held-out score 19:01:57. The frozen code matches 00edc953, and the frozen TSVs are byte-identical to the
+  development-run files.
+- **The secondary arm came from development only.** One point the auditor could not settle: whether any run printed held-out
+  statuses under the edit truth before the freeze. The session shows the edit truth was first run with the
+  development-only printout, so they were first seen at the held-out scoring (counts only in any case).
+- **Corrections taken into the Results above:**
+  - F was out of reach for any arm, and P holds only through SM392;
+  - SM392's minimap2 errors are two-copy chimeric primaries that AS places, so not "beyond any allele-blind rule" and not
+    O3's case;
+  - "No allele-blind arm fixes any altonly read" was false: highest AS is +67 / −93 on altonly reads;
+  - refcons is close to self-scoring;
+  - "3 truly ambiguous" became 3 exact ties under the strict-minimum rule, of which 1 is a two-copy tie, plus 24 one-edit
+    decisions;
+  - the corrector's 0 breaks depend on counting clips;
+  - four sequencing runs, not one.
+- **Wording not to use:**
+  - "O2 is refuted on real reads";
+  - "P holds, so the test was powered";
+  - "minimap2's errors are beyond any allele-blind rule";
+  - "only the corrector fixed them";
+  - "exact truth" without qualification;
+  - any pass wording for the corrector.
+- **Unclear, low risk:** the splice indexes were built before `gorilla_haps` was downloaded. Contigs map by unique length (24
+  / 24 paternal, 223 / 225 maternal, no alignments on the 2 ambiguous ones), but sequence identity is not proven.
+- The auditor's scripts are in `/mnt/linuxdisk/tmp/audit_2026-10-20_o2personal/`; the frozen copy is
+  `personal/audit_frozen_00edc953/`.
