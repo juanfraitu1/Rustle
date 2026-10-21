@@ -98,3 +98,27 @@ Each control rerun reproduces its shipped catalog byte for byte (clusters, copie
 - `mcl_families` passes the loci strands (`gene_strands` of `--gff`) to the graph builder. Without strands the rule is v1's.
 - **Same bars (B1, B2) on the same three catalogs.** They are no longer held out: v2 was designed after seeing v1's results on all
   three, so a v2 PASS is a development result and needs a fresh catalog before any default flip.
+
+## Results, v2 (Amendment 1; code e90d63f2; same evaluation): **PASS on all three catalogs (development, not held out)**
+
+| catalog | self-hit records dropped | B1 self-only copies fixed | B2 SD-paired copies kept | copies / families | >= 0.90 copies SD-paired | mainstay copies |
+|---|---|---|---|---|---|---|
+| human_A119b | 170,084 | 548 / 561 (97.7%) ✓ | 5,931 / 5,974 (99.3%) ✓ | 9,907 / 2,150 → 9,355 / 1,872 | 72.1% → 77.4% | 155 → 152 |
+| human_testis | 812 | 46 / 46 (100%) ✓ | 849 / 850 (99.9%) ✓ | 1,115 / 342 → 1,069 / 319 | 81.1% → 84.9% | 56 → 56 |
+| gorilla_KB3781 | 3,357 | 69 / 70 (98.6%) ✓ | 704 / 705 (99.9%) ✓ | 918 / 326 → 843 / 290 | 82.4% → 91.5% | 2 → 2 |
+
+- **Largest family:** 260 → 261 (A119b); unchanged elsewhere.
+- **Collateral in A119b:** 43 SD-paired copies lose their family. 6 of them overlap mainstays.
+  - Five are 2-exon models at NPIPB3 / B4 / B5 (MCL164, MCL112, MCL50) and one is at GOLGA8Q.
+  - All are SD-paired at 0.996-0.999 non-self identity, and most have no self-hit of their own.
+  - MCL re-routed once self-hit edges elsewhere in their component were gone: the non-monotone effect the o1_ledger recorded for
+    edge-dropping rules.
+
+**Reading.**
+- v1, the pre-registered rule, FAILS: gorilla B2 is 97.4%.
+- v2, designed after v1's results, removes 97.7-100% of the self-overlap artefacts and keeps 99.3-99.9% of the SD-paired copies
+  in all three catalogs.
+- Because v2 was designed on these catalogs, its PASS is a development result. A default flip needs a fresh catalog, e.g. a
+  families run of another sample, pre-registered with v2 as is.
+
+Audit pending.
