@@ -19,7 +19,9 @@ sequences in the animal's own two assemblies; the TRUTH is the read's best place
     o2personal.py personal CACHE_DIR COPIES.tsv GENOME.fa OUT    personal copies -> OUT.phased.fa, OUT.unphased.fa, OUT.haps.tsv
     o2personal.py oracle COPIES.tsv ORTH.tsv GENOME.fa OUT.fa --haps mat=FASTA pat=FASTA      the copies' true sequences
     o2personal.py decide ARM2.tsv REALIGNED.bam OUT.tsv          per read: the tied copy with the unique best AS, or none
-    o2personal.py score ARM2.tsv TRUTH.tsv QUAL.json HALF OUT.json --arms personal=TSV oracle=TSV unphased=TSV
+    o2personal.py arms ARM2.tsv SUB.bam COPIES.tsv GENOME.fa OUT.tsv    O2 (fewest edits), highest AS, the tie's structure
+    o2personal.py score ARM2.tsv ARMS.tsv RUN.tsv TRUTH.tsv QUAL.json HALF OUT.json     Amendment 1's tallies and verdict
+    (personal, oracle, decide: the arms Amendment 1 dropped.)
 """
 import collections
 import csv
@@ -33,7 +35,6 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 FLANK_P = 5000                                                  # bp of reference kept either side of a copy's span
-MARGIN_T = 5                                                    # one substitution under splice:hq (A 1 + B 4)
 
 
 def _sibling(name):
@@ -196,15 +197,20 @@ def apply_events(ref, lo, events):
     return "".join(out)
 
 
-def truth_of(alns, margin=MARGIN_T):
-    """A read's origin in the animal's own diploid genome from its alignments [(AS, reference copy or None, 'ref'|'alt')]:
-    the one copy every alignment within `margin` of the best lies on -> ('determined', copy, 'refcons' when the reference's
-    own copy is among them, else 'altonly'); two copies (or a copy and an off-copy locus) -> 'undetermined'; the best off
-    every copy -> 'off-copy'."""
+def edits_of(cigar, nm):
+    """An alignment's edits: NM (substituted, inserted and deleted bases; introns are free) plus the read bases it clips."""
+    return nm + sum(n for op, n in cigar if op in (4, 5))
+
+
+def truth_of(alns):
+    """A read's origin in the animal's own diploid genome from its alignments [(edits, reference copy or None, 'ref'|'alt')]
+    (Amendment 1): the one copy whose alignments hold the fewest edits, strictly fewer than any other copy's or any off-copy
+    locus's -> ('determined', copy, 'refcons' when a reference-haplotype alignment is among them, else 'altonly'); two copies
+    (or a copy and an off-copy locus) at the fewest -> 'undetermined'; the fewest off every copy -> 'off-copy'."""
     if not alns:
         return "unmapped", None, None
-    best = max(a for a, _, _ in alns)
-    w = [(a, c, r) for a, c, r in alns if a > best - margin]
+    best = min(e for e, _, _ in alns)
+    w = [(e, c, r) for e, c, r in alns if e == best]
     cs = {c for _, c, _ in w}
     if len(cs) > 1:
         return "undetermined", None, None
@@ -212,6 +218,60 @@ def truth_of(alns, margin=MARGIN_T):
     if c is None:
         return "off-copy", None, None
     return "determined", c, "refcons" if any(r == "ref" for _, _, r in w) else "altonly"
+
+
+def window_edits(events):
+    """Bases substituted, inserted and deleted among alignment_events' events."""
+    return sum(1 if e[0] == "S" else len(e[2]) if e[0] == "I" else e[2] for e in events)
+
+
+def fewest(scores, prim):
+    """The copy with the unique lowest score, else minimap2's pick."""
+    m = min(scores.values())
+    top = [c for c, v in scores.items() if v == m]
+    return top[0] if len(top) == 1 else prim
+
+
+def highest(scores, prim):
+    """The copy with the unique highest score, else minimap2's pick."""
+    m = max(scores.values())
+    top = [c for c, v in scores.items() if v == m]
+    return top[0] if len(top) == 1 else prim
+
+
+def match_columns(cigar, flip, length):
+    """(read positions an =, read positions an X) of an --eqx alignment, in the primary's orientation (flip: the alignment
+    runs the other way)."""
+    eq, x, q = set(), set(), 0
+    for op, n in cigar:
+        if op == 7:
+            eq.update(range(q, q + n))
+        elif op == 8:
+            x.update(range(q, q + n))
+        if op in (0, 1, 4, 5, 7, 8):
+            q += n
+    if flip:
+        eq, x = {length - 1 - i for i in eq}, {length - 1 - i for i in x}
+    return eq, x
+
+
+def contradicted(w, cols, window):
+    """Whether the read's bases contradict copy w anywhere in the window: a read base w mismatches (X) that a rival's
+    alignment matches (=), i.e. a PSV column where the read carries the rival's base. cols: {copy: (=, X) positions}."""
+    lo, hi = window
+    return any(lo <= i < hi and any(i in eq for c, (eq, _) in cols.items() if c != w) for i in cols[w][1])
+
+
+def window_primary(spans, length):
+    """The read bases, in the primary's orientation, every tied alignment aligns: spans {copy: ((first, last + 1) in its own
+    orientation, whether it runs opposite the primary)}."""
+    p = [(length - e, length - s) if rev else (s, e) for (s, e), rev in spans.values()]
+    return max(s for s, _ in p), min(e for _, e in p)
+
+
+def structure(introns):
+    """'intron-differ' when the tied copies' alignments {copy: introns} differ in intron count, else 'same'."""
+    return "intron-differ" if len(set(introns.values())) > 1 else "same"
 
 
 def decide(best_as, tie):
@@ -503,7 +563,8 @@ def cmd_orthologs(copies_p, chrmap_p, out_p, haps):
 
 
 def cmd_truth(arm2_p, copies_p, orth_p, chrmap_p, qual_p, out_p, bams):
-    """Each domain read's truth (truth_of) from its alignments to the animal's two assemblies. bams: {hap: (BAM, FAI)}."""
+    """Each domain read's truth (truth_of, on edits: Amendment 1) from its alignments to the animal's two assemblies. bams:
+    {hap: (BAM, FAI)}. Prints the development half's statuses only."""
     import pysam
     P, S = _sibling("o2psv"), _sibling("summary")
     dom = read_domain(arm2_p)
@@ -518,7 +579,7 @@ def cmd_truth(arm2_p, copies_p, orth_p, chrmap_p, qual_p, out_p, bams):
             names = names_by_length({s["SN"]: s["LN"] for s in bam.header.to_dict()["SQ"]}, _fai(fai_p))
             for rec in bam.fetch(until_eof=True):
                 q = rec.query_name
-                if q not in dom or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
+                if q not in dom or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("NM"):
                     continue
                 cm = names.get(rec.reference_name)
                 if cm in refc:
@@ -527,17 +588,18 @@ def cmd_truth(arm2_p, copies_p, orth_p, chrmap_p, qual_p, out_p, bams):
                     role = "alt"
                     cands = C.overlapping(idx_alt, cm, rec.reference_start, rec.reference_end) if cm else []
                 c = S.attribute(rec.get_blocks(), P._strand(rec), cands) if cands else None
-                alns[q].append((rec.get_tag("AS"), c, role))
+                alns[q].append((edits_of(rec.cigartuples, rec.get_tag("NM")), c, role))
     n = collections.Counter()
     with open(out_p, "w") as fh:
-        fh.write("read\tfamily\thalf\tstatus\ttruth\torigin\tin_tie\tbest_as\talignments\n")
+        fh.write("read\tfamily\thalf\tstatus\ttruth\torigin\tin_tie\tbest_edits\trunner_up\talignments\n")
         for q, (f, tie, mm, _, _) in sorted(dom.items()):
             st, t, o = truth_of(alns.get(q, []))
             inn = int(t in tie) if t else ""
-            best = max((a for a, _, _ in alns[q]), default="")
-            fh.write(f"{q}\t{f}\t{qual[f]['half']}\t{st}\t{t or ''}\t{o or ''}\t{inn}\t{best}\t{len(alns.get(q, []))}\n")
+            best = min((e for e, _, _ in alns[q]), default="")
+            ru = min((e for e, c, _ in alns[q] if c != t), default="") if st == "determined" else ""
+            fh.write(f"{q}\t{f}\t{qual[f]['half']}\t{st}\t{t or ''}\t{o or ''}\t{inn}\t{best}\t{ru}\t{len(alns.get(q, []))}\n")
             n[(qual[f]["half"], st if st != "determined" else f"determined {o}{'' if inn else ', outside the tie'}")] += 1
-    print(f"[o2personal] truth -> {out_p}: " + "; ".join(f"{h} {s} {v}" for (h, s), v in sorted(n.items())), flush=True)
+    print(f"[o2personal] truth -> {out_p}: " + "; ".join(f"{h} {s} {v}" for (h, s), v in sorted(n.items()) if h == "dev"), flush=True)
     return 0
 
 
@@ -628,15 +690,75 @@ def _bin(x):
     return "0.90-0.95" if x < 0.95 else "0.95-0.98" if x < 0.98 else "0.98-0.99" if x < 0.99 else "0.99-1.00"
 
 
-def cmd_score(arm2_p, truth_p, qual_p, which, out_p, arms):
-    """The pre-registered tallies and bars (PREREG_o2_personal_copies_2026-10-20) on one half. arms: {name: decide() TSV};
-    an abstention keeps minimap2's call."""
+def cmd_arms(arm2_p, bam_p, copies_p, genome_p, out_p):
+    """Per domain read, the allele-blind arms from the library's own alignments (Amendment 1). Each tied copy is its
+    highest-AS alignment (the corrector's choice, o2correct.collect's pass 2). O2: the unique fewest edits (window_edits)
+    over the read bases every tied alignment aligns (o2correct.common_window); max_as: the unique highest AS; structure:
+    whether those alignments differ in intron count; consistent (Amendment 2): O2's pick only where the read's bases
+    contradict it nowhere in the common window (contradicted()), else minimap2's. A read missing a tied alignment keeps
+    minimap2's pick."""
+    import pysam
+    P, S = _sibling("o2psv"), _sibling("summary")
     dom = read_domain(arm2_p)
-    qual = json.load(open(qual_p))
-    truth = {r["read"]: r for r in csv.DictReader(open(truth_p), delimiter="\t")}
-    calls = {a: {r["read"]: r for r in csv.DictReader(open(p), delimiter="\t")} for a, p in arms.items()}
-    status = collections.Counter()
-    rows = []
+    idx = C.span_index(P.load_copies(copies_p))
+    fa = pysam.FastaFile(genome_p)
+    recs, seqs = collections.defaultdict(dict), {}
+    with pysam.AlignmentFile(bam_p) as bam:
+        for rec in bam.fetch(until_eof=True):
+            q = rec.query_name
+            if q not in dom or rec.is_unmapped or rec.is_supplementary or not rec.has_tag("AS"):
+                continue
+            cands = C.overlapping(idx, rec.reference_name, rec.reference_start, rec.reference_end)
+            c = S.attribute(rec.get_blocks(), P._strand(rec), cands) if cands else None
+            a = rec.get_tag("AS")
+            if c in dom[q][1] and (c not in recs[q] or a > recs[q][c][0]):
+                recs[q][c] = (a, rec.reference_start, tuple(rec.cigartuples), rec.is_reverse, rec.reference_name)
+            if not rec.is_secondary:
+                seqs[q] = (rec.query_sequence, rec.is_reverse)
+
+    def fetcher(chrom):
+        return lambda lo, hi: fa.fetch(chrom, lo, hi)
+
+    n = collections.Counter()
+    with open(out_p, "w") as fh:
+        fh.write("read\tfewest_edits\tconsistent\tmax_as\tstructure\tedits\tas\tintrons\n")
+        for q, (f, tie, mm, _, _) in sorted(dom.items()):
+            if q not in seqs or set(recs[q]) != tie:
+                n["incomplete"] += 1
+                fh.write(f"{q}\t{mm}\t{mm}\t{mm}\tincomplete\t\t\t\n")
+                continue
+            seq, prev = seqs[q]
+            win = C.common_window({c: (C.read_span(cig), rev != prev) for c, (_, _, cig, rev, _) in recs[q].items()}, len(seq))
+            ed, sc, intr, cols = {}, {}, {}, {}
+            for c, (a, st, cig, rev, ch) in recs[q].items():
+                ev, _ = C.alignment_events(st, cig, seq if rev == prev else rc(seq), fetcher(ch), win[c])
+                ed[c], sc[c], intr[c] = window_edits(ev), a, sum(1 for op, _ in cig if op == 3)
+                cols[c] = match_columns(cig, rev != prev, len(seq))
+            fe, ma, st_ = fewest(ed, mm), highest(sc, mm), structure(intr)
+            wp = window_primary({c: (C.read_span(cig), rev != prev) for c, (_, _, cig, rev, _) in recs[q].items()}, len(seq))
+            co = fe if fe == mm or not contradicted(fe, cols, wp) else mm
+            n["consistent overrules"] += co != mm
+            n["O2 overrules"] += fe != mm
+            n["highest AS overrules"] += ma != mm
+            n[st_] += 1
+
+            def col(d):
+                return ",".join(f"{c}:{d[c]}" for c in sorted(d))
+            fh.write(f"{q}\t{fe}\t{co}\t{ma}\t{st_}\t{col(ed)}\t{col(sc)}\t{col(intr)}\n")
+    print(f"[o2personal] arms -> {out_p}: " + ", ".join(f"{k} {v}" for k, v in sorted(n.items())), flush=True)
+    return 0
+
+
+def _bin(x):
+    return "0.90-0.95" if x < 0.95 else "0.95-0.98" if x < 0.98 else "0.98-0.99" if x < 0.99 else "0.99-1.00"
+
+
+ARMS = ("minimap2", "o2", "o2_consistent", "fewest_subs", "max_as", "corrector")
+
+
+def score_rows(dom, truth, qual, arms, run, which):
+    """(status counts of the half's domain reads, the scored reads S: determined, the truth among the tied copies)."""
+    status, rows = collections.Counter(), []
     for q, (f, tie, mm, corr, margin) in sorted(dom.items()):
         if qual[f]["half"] != which:
             continue
@@ -645,67 +767,75 @@ def cmd_score(arm2_p, truth_p, qual_p, which, out_p, arms):
                f"determined {t['origin']}" + ("" if t["in_tie"] == "1" else ", truth outside the tie")] += 1
         if t["status"] != "determined" or t["in_tie"] != "1":
             continue
-        r = dict(read=q, family=f, truth=t["truth"], minimap2=mm, corrector=corr, origin=t["origin"], margin=margin,
-                 bin=_bin(qual[f]["min_identity"]))
-        for a in arms:
-            r[a] = calls[a][q]["call"] or mm
-            r[a + " decided"] = bool(calls[a][q]["call"])
-        rows.append(r)
-    names = ["minimap2", "corrector"] + list(arms)
+        a = arms[q]
+        rows.append(dict(read=q, family=f, truth=t["truth"], minimap2=mm, corrector=corr, o2=a["fewest_edits"],
+                         o2_consistent=a.get("consistent") or a["fewest_edits"],
+                         max_as=a["max_as"], fewest_subs=run[q]["corrector"] if q in run else mm, origin=t["origin"],
+                         margin=margin, structure=a["structure"], bin=_bin(qual[f]["min_identity"])))
+    return status, rows
+
+
+def bars_for(rows, arm, min_gain=2.0):
+    """The pre-registered bars (Amendment 1) of one arm against minimap2 on the scored reads."""
+    acc = {a: sum(r[a] == r["truth"] for r in rows) / len(rows) if rows else 0.0 for a in (arm, "minimap2")}
+    rc_rows = [r for r in rows if r["origin"] == "refcons"]
+    rc = {a: sum(r[a] == r["truth"] for r in rc_rows) / len(rc_rows) if rc_rows else 0.0 for a in (arm, "minimap2")}
+    n = tally(rows, arm)
+    better, worse = families_fix_break(rows, arm)
+    b = dict(gain=round(100 * (acc[arm] - acc["minimap2"]), 2), fixes=n["fixes"], breaks=n["breaks"], better=better,
+             worse=worse, refcons_drop=round(100 * (rc["minimap2"] - rc[arm]), 2), refcons_reads=len(rc_rows))
+    return dict(b, verdict=verdict(b, min_gain))
+
+
+def cmd_score(arm2_p, arms_p, run_p, truth_p, qual_p, which, out_p):
+    """The amended scoring (Amendment 1) on one half: every arm against the edit truth on S, by stratum and family; the
+    verdict for O2 (fewest edits) against minimap2, the other arms' numbers without verdicts."""
+    dom = read_domain(arm2_p)
+    qual = json.load(open(qual_p))
+    truth = {r["read"]: r for r in csv.DictReader(open(truth_p), delimiter="\t")}
+    arms = {r["read"]: r for r in csv.DictReader(open(arms_p), delimiter="\t")}
+    run = {r["read"]: r for r in csv.DictReader(open(run_p), delimiter="\t")}
+    status, rows = score_rows(dom, truth, qual, arms, run, which)
 
     def block(sub):
         out = {"reads": len(sub)}
-        for a in names:
+        for a in ARMS:
             n = tally(sub, a)
             out[a] = dict(right=n["right"], accuracy=round(n["right"] / len(sub), 4) if sub else None, fixes=n["fixes"],
                           breaks=n["breaks"], both_wrong=n["both wrong"])
-            if a in arms:
-                d = [r for r in sub if r[a + " decided"]]
-                out[a].update(decided=len(d), decided_right=sum(r[a] == r["truth"] for r in d))
         return out
 
     strata = {"all": rows}
-    for o in ("refcons", "altonly"):
-        strata[o] = [r for r in rows if r["origin"] == o]
-        strata[o + " exact"] = [r for r in rows if r["origin"] == o and r["margin"] == 0]
-        strata[o + " near"] = [r for r in rows if r["origin"] == o and r["margin"] > 0]
-    for b in ("0.90-0.95", "0.95-0.98", "0.98-0.99", "0.99-1.00"):
-        strata["identity " + b] = [r for r in rows if r["bin"] == b]
-    res = dict(half=which, status=dict(status), strata={k: block(v) for k, v in strata.items()})
+    for k, f in (("refcons", lambda r: r["origin"] == "refcons"), ("altonly", lambda r: r["origin"] == "altonly"),
+                 ("exact", lambda r: r["margin"] == 0), ("near", lambda r: r["margin"] > 0),
+                 ("intron-differ", lambda r: r["structure"] == "intron-differ"),
+                 ("same structure", lambda r: r["structure"] == "same"),
+                 ("incomplete", lambda r: r["structure"] == "incomplete")):
+        strata[k] = [r for r in rows if f(r)]
+    for b_ in ("0.90-0.95", "0.95-0.98", "0.98-0.99", "0.99-1.00"):
+        strata["identity " + b_] = [r for r in rows if r["bin"] == b_]
     fams = sorted({r["family"] for r in rows})
-    res["families"] = {f: block([r for r in rows if r["family"] == f]) for f in fams}
-    acc = {a: (sum(r[a] == r["truth"] for r in rows) / len(rows) if rows else 0.0) for a in names}
-    rc_rows = strata["refcons"]
-    rc = {a: (sum(r[a] == r["truth"] for r in rc_rows) / len(rc_rows) if rc_rows else 0.0) for a in names}
     mm_wrong = sum(r["minimap2"] != r["truth"] for r in rows)
     power = len(rows) >= 300 and len(fams) >= 11 and mm_wrong >= 50
     bars = dict(P=dict(reads=len(rows), families=len(fams), minimap2_wrong=mm_wrong, holds=power))
-    if "oracle" in arms:
-        bars["G0"] = dict(oracle_accuracy=round(acc["oracle"], 4), holds=acc["oracle"] >= 0.99)
-    if "personal" in arms:
-        n = tally(rows, "personal")
-        better, worse = families_vs(rows, "personal", "corrector")
-        b = dict(gain=round(100 * (acc["personal"] - acc["corrector"]), 2), fixes=n["fixes"], breaks=n["breaks"],
-                 better=better, worse=worse, refcons_drop=round(100 * (rc["minimap2"] - rc["personal"]), 2))
-        bars["V1"] = dict(b, verdict=verdict(b, 1.0))
-    n = tally(rows, "corrector")
-    better, worse = families_fix_break(rows, "corrector")
-    b = dict(gain=round(100 * (acc["corrector"] - acc["minimap2"]), 2), fixes=n["fixes"], breaks=n["breaks"],
-             better=better, worse=worse, refcons_drop=round(100 * (rc["minimap2"] - rc["corrector"]), 2))
-    bars["V2"] = dict(b, verdict=verdict(b, 2.0))
-    for v in ("V1", "V2"):
-        if v in bars:
-            bars[v]["verdict"] = ("INVALID" if "G0" in bars and not bars["G0"]["holds"] else
-                                  "UNDERPOWERED" if not power else bars[v]["verdict"])
-    res["bars"] = bars
+    for a in ARMS[1:]:
+        bars[a] = bars_for(rows, a)
+        if not power:
+            bars[a]["verdict"] = "UNDERPOWERED"
+    res = dict(half=which, status=dict(status), strata={k: block(v) for k, v in strata.items()},
+               families={f: block([r for r in rows if r["family"] == f]) for f in fams}, bars=bars,
+               verdict=bars["o2"]["verdict"])
     json.dump(res, open(out_p, "w"), indent=1)
-    print(f"[o2personal] {which}: status " + ", ".join(f"{k} {v}" for k, v in sorted(status.items())), flush=True)
-    for k in ("all", "refcons", "altonly", "altonly exact", "altonly near"):
-        s = res["strata"][k]
-        print(f"  {k:14s} {s['reads']:5d} reads: " + "; ".join(
-            f"{a} {s[a]['accuracy']}" + (f" ({s[a]['fixes']}/{s[a]['breaks']})" if a != "minimap2" else "")
-            for a in names if s["reads"]), flush=True)
-    print("  bars: " + json.dumps(bars), flush=True)
+    print(f"[o2personal] {which}: domain status " + ", ".join(f"{k} {v}" for k, v in sorted(status.items())), flush=True)
+    for k in ("all", "refcons", "altonly", "exact", "near", "intron-differ", "same structure"):
+        s_ = res["strata"][k]
+        print(f"  {k:15s} {s_['reads']:5d} reads | " + " | ".join(
+            f"{a} {s_[a]['accuracy']}" + (f" +{s_[a]['fixes']}/-{s_[a]['breaks']}" if a != "minimap2" else "")
+            for a in ARMS) if s_["reads"] else f"  {k:15s}     0 reads", flush=True)
+    print(f"  P {bars['P']}", flush=True)
+    for a in ARMS[1:]:
+        print(f"  {a}: {bars[a]}", flush=True)
+    print(f"  VERDICT (O2 = fewest edits vs minimap2): {res['verdict']}", flush=True)
     return 0
 
 
@@ -739,8 +869,10 @@ def main(argv):
         return cmd_oracle(*a[:4], {k: v[0] for k, v in _pairs(a, "--haps").items()})
     if cmd == "decide":
         return cmd_decide(*a[:3])
+    if cmd == "arms":
+        return cmd_arms(*a[:5])
     if cmd == "score":
-        return cmd_score(*a[:5], {k: v[0] for k, v in _pairs(a, "--arms").items()})
+        return cmd_score(*a[:7])
     print(__doc__)
     return 2
 

@@ -264,3 +264,52 @@ V1 and V2. Arms 3-5 are reported with the same numbers, without verdicts.
 - the domain;
 - the arms' definitions;
 - the bars.
+
+### Amendment 2 (2026-10-20): the development half, one secondary arm, and the freeze. Written before the held-out half was scored
+
+**The development half, scored under Amendment 1** (`personal/score_dev.json`, 140 families):
+- Domain statuses: determined refcons 1,805; determined altonly 1,661; truth outside the tie 7; off-copy 1; undetermined 10.
+- Scored reads S: 3,466 from 31 families.
+- The truth is robust: the runner-up copy has >= 5 more edits for 3,270 of them, 2-4 for 106, exactly 1 for 90.
+
+| arm | accuracy | fixes / breaks against minimap2 |
+|---|---|---|
+| minimap2 | 0.9833 (58 wrong) | – |
+| O2, fewest edits | 0.9645 | 4 / 69 |
+| fewest substitutions | 0.9786 | 0 / 16 |
+| highest AS (control) | 0.2726 | 4 / 2,467 |
+| corrector | 0.9815 | 0 / 6 |
+
+**What it showed:**
+- **AS is the wrong yardstick between copies.** 3,220 of the 3,466 scored reads are ties between copies whose alignments
+  differ in intron count. minimap2 is right on 99.97% of them; the highest-AS control is right on 24.7%.
+- **minimap2's 58 errors are almost all beyond any allele-blind rule.** For 48 of them the true copy has more edits than
+  minimap2's pick against the reference, and for 6 it has as many. Those reads carry his own alleles. Only 4 have the true
+  copy with fewer edits; O2 fixes those 4.
+- **O2's 69 breaks are one family's reads, not a bug.** 65 are SM251 (chr1, 3 copies at [0.93, 0.98]):
+  - The reads match his maternal SM251.0 with 1-2 edits, inside SM251.0's ALT ortholog (MAPQ 60).
+  - That maternal copy differs from the reference's own SM251.0 by about 41 edits per 2.5-kb read, so against the reference
+    the reads are closer to SM251.1 (34 edits against 43).
+  - It is a copy the reference effectively lacks (O3's case), which no allele-blind rule can place. minimap2's pick of
+    SM251.0 is right.
+
+**Changes:**
+1. **Fewest substitutions ran on a smaller BAM.** `o2correct.py run` on `sub.bam` exceeded the 10-minute limit (it
+   attributes all 4.06M records). It was run unchanged on `domain.bam`, every alignment of the 4,380 domain reads cut from
+   `sub.bam`. All 4,380 reads got the same tie sets and primaries as `arm2.tsv`.
+2. **Truth output.** The printout shows the development half only. A descriptive `runner_up` column was added (the fewest
+   edits on any other copy or locus).
+3. **A secondary arm, designed after the development result: O2, consistent.**
+   - It takes O2's pick only where the read's bases contradict it nowhere in the common window. A contradiction is a read
+     base that O2's copy mismatches (an X in its `--eqx` alignment) and that a rival tied copy's alignment matches (an =).
+   - Otherwise it keeps minimap2's pick.
+   - This is the O2 regimen's own principle, "its own bases contradict the call nowhere" (register 1342). In SM251 the
+     maternal copy is a mosaic of SM251.0 and SM251.1 bases, so it vetoes those moves.
+   - It gets the same five bars and its own verdict, secondary to O2's.
+   - Development: 2 overrules, 0 fixes / 1 break, accuracy 0.9830. It vetoes O2's 4 fixes too.
+
+Unchanged: O2's main arm, the truth's edit rule, the domain, the bars, and the primary verdict (O2, fewest edits, against
+minimap2).
+
+**Freeze.** The held-out half is scored once with the code at the commit that adds this amendment. Before scoring, every
+output is rebuilt with that code and compared with the development run: `truth_edits.tsv`, `arms.tsv` and `run.tsv`.
