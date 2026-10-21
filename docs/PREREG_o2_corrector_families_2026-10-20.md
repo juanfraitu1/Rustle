@@ -67,4 +67,29 @@ coin toss: no fixes, no breaks), copies the reference lacks (O3), the assembly s
 
 ## Amendments
 
-(none yet)
+### Amendment 1 (2026-10-20, before any data): gorilla KB3781 only — replaces the substrates, bars D / A / N
+
+**User:** "wait no, I think this is one of the over-reaching problems my advisor complains, can we stick with gorilla
+fibroblasts and its T2T genome?"
+
+- **Withdrawn, unrun:** D (HG03516), A (A119b seed 3), N (round 27). The interrupted command had started HG03516's
+  maternal download; the 84 MB partial file was deleted unread. Nothing else was built.
+- **The substrate (G2):** KB3781's fibroblast Iso-Seq on the GGO primary (`GCA_029281585.2_flnc_mm.bam`), in **the 383
+  GWFAM families never scored** (`rna_allele/fibro_cat.copies.tsv` less the 283 of `personal/qual.json`, used by registers
+  1347-1350). Every alignment of every read touching their copies is cut from the library, as `personal/sub.bam` was.
+  DAZ-like reads (identical on two copies in his own genome too) are undetermined and not scored.
+- **The rule:** the frozen corrector, as above, with that family table.
+- **The answer key (evaluation only; the corrector never sees it):** each domain read aligned to his maternal and paternal
+  assemblies; its copy is the one whose alignment has the best intron-free score (`ms`), at least one substitution (5
+  points) ahead of any other copy or locus (`o2window.py truth-ms`), through each copy's ALT ortholog (`o2personal.py
+  queries` / `orthologs`, unchanged). **refcons** = his reference-haplotype copy is among the best (his copy equals the
+  reference); **altonly** = only the other haplotype's.
+- **Scoring:** the frozen `o2correct.py score --among-candidates` on the determined reads (truth as `read, copy`); then the
+  same on the refcons reads alone.
+- **Bars (G2):** P (>= 300 scored reads from >= 11 families, minimap2 wrong on >= 50), R (fixes − breaks >= 2% of
+  minimap2's wrong calls and >= 20), S (fixes >= 5 × breaks), F (>= 11 families fixing more than breaking, <= a fifth as
+  many rounded up the reverse), **H (no harm where his copy equals the reference: on refcons reads, breaks <= fixes + 2)**.
+  PASS = all five; FAIL = P holds and another fails; UNDERPOWERED = P fails.
+- **Known caveats, stated now:** on refcons reads the key is the reference's own ordering (near self-scoring; H is a harm
+  check, not a gain); in the 283 families tested before, the corrector's gorilla gains were concentrated (r1347: 82 fixes,
+  76 in SM392).
