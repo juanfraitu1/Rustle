@@ -76,3 +76,52 @@ species. The same fraction is reported for G.
   - `--names-only` writes the molecule names and stops;
   - `--primaries FILE` reads the primary records from a file instead of scanning.
 - **Check:** on gorilla, the split path reproduces the default run's `records.tsv`, `genes.tsv` and summary byte for byte.
+
+## Results (run once; `/mnt/linuxdisk/tmp/multicopy_gains/`)
+
+### Q1: the gains are mostly NOT that copy's own expression
+
+| | gorilla | human |
+|---|---|---|
+| gained transcripts | 162 | 284 |
+| in **supported** genes (>= 2 reads certified to the copy) | 20 (12%) | 44 (15%) |
+| in **contradicted** genes (reads belong to the other copy: shadows) | 73 (45%) | **200 (70%)** |
+| in **undecidable** genes (identical over the reads) | 69 (43%) | 40 (14%) |
+| genes: supported / contradicted / undecidable | 7 / 63 / 63 | 34 / 134 / 37 |
+| good secondary records, tied: to this copy / other / abstain | 4 / 544 / 1,076 | 45 / 2,073 / 13,707 |
+| good secondary records, strictly worse: to this copy / other / abstain | 46 / 2,975 / 3,107 | 400 / 33,871 / 8,964 |
+
+**Reading (fixed rules):**
+- Neither species reaches "real copies" (half of the gains in supported genes).
+- **Human: shadows**, with 70% of the gains in contradicted genes.
+- **Gorilla:** no class holds a majority (45% contradicted, 43% undecidable). The gains there are shadows or unresolvable, not real
+  copies.
+
+**Mainstays among the gained genes:**
+- **Human, supported:** TBC1D3D, TBC1D3H, TBC1D3I, TBC1D3K, NPIPB5, GOLGA8F, SMN2, RBMY1A1, RBMY1D.
+- **Human, contradicted:** NPIPB15, GOLGA6A, TSPY2 / 3 / 8 / 9 / 10, CDY1B.
+- **Human, undecidable:** TBC1D3B, GOLGA6B.
+- **Gorilla:** three TBC1D3G-like genes, all contradicted.
+
+### Q2: the loci where reads multi-map are real duplications in the DNA
+
+| genes in a segmental duplication (>= 90% identity) | gorilla (our GGO SD scan, stage-2 identity) | human (published CHM13 SD90) |
+|---|---|---|
+| **high-tie genes, span overlap (registered bar >= 90%)** | **1,286 / 1,423 (90.4%): holds** | **1,919 / 1,936 (99.1%): holds** |
+| gained genes, span overlap | 104 / 133 (78.2%) | 202 / 205 (98.5%) |
+| high-tie genes, >= 50% of the span inside an SD (descriptive) | 81.5% | 97.4% |
+| high-tie genes with the scan's coarse identity estimate >= 90 (descriptive) | 82.9% | – |
+
+- **Location of the high-tie genes:**
+  - human: autosomes 1,444, chrY 337, chrX 118, PAR 37;
+  - gorilla: autosomes 1,218, chrX 122, chrY 71, PAR 12.
+- **Gorilla gained genes outside any SD** include a run of ~15 adjacent LOC129528xxx genes (undecidable, probably a tandem array
+  the scan's 1-kb segment floor misses) and two PAR genes.
+
+**Reading.** In human the loci where long reads multi-map are, almost without exception, segmental duplications in an independent
+published annotation. In gorilla, by our DNA-only scan, 90% are (weaker on stricter cuts). The families are real duplicated DNA,
+not artefacts of our family definition. What is NOT supported is that the extra transcripts secondaries build there are expressed
+copies. Most are rebuilt from another copy's reads (human) or cannot be told apart (gorilla); 12-15% are supported, among them
+several of the advisor's mainstays in human (TBC1D3 × 4, NPIPB5, SMN2, GOLGA8F, RBMY1 × 2).
+
+Audit pending.
