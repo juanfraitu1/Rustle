@@ -51,3 +51,20 @@ def test_assembled_transcripts_are_weighted_by_stringtie_cov_or_flair_s_mapped_r
     assert L.read_map(str(tmp_path / "map.txt")) == {"t1": 2, "t2": 1}
     copies = {"F.1": dict(chrom="chr5", span=(0, 1000), **SPEC)}
     assert L.tx_inclusion(tx, {t: v["cov"] for t, v in tx.items()}, copies) == {"F.1": {"FL": 30.0, "D7": 10.0}}
+
+
+def test_read_gtf_keeps_rustle_s_reads_attribute(tmp_path):
+    gtf = tmp_path / "r.gtf"
+    gtf.write_text('chr5\trustle\ttranscript\t101\t300\t.\t+\t.\tgene_id "g"; transcript_id "t1"; reads "18"; cov "7.7";\n'
+                   'chr5\trustle\texon\t101\t150\t.\t+\t.\tgene_id "g"; transcript_id "t1"; exon_number "1";\n')
+    tx = L.read_gtf(str(gtf))
+    assert tx["t1"]["reads"] == 18.0 and tx["t1"]["cov"] == 7.7 and tx["t1"]["blocks"] == [(100, 150)]
+
+
+def test_an_abstained_read_is_left_out_of_the_o2_arm_and_kept_at_its_primary_in_o2coin():
+    calls = {"r1": "F.1", "r2": "", "r3": None}
+    assert L.arm_copy("o2", calls, "r1", "F.0") == "F.1"
+    assert L.arm_copy("o2", calls, "r2", "F.0") is None                   # abstained: no record
+    assert L.arm_copy("o2", calls, "r3", "F.0") == "F.0"                  # not tied: minimap2's primary
+    assert L.arm_copy("o2coin", calls, "r2", "F.0") == "F.0"
+    assert L.arm_copy("mm2", calls, "r1", "F.0") == "F.0"

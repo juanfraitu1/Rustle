@@ -65,3 +65,9 @@ def test_the_band_scorer_scores_the_set_and_both_nulls_on_the_same_reads():
     assert b["keep_all"]["truth_held"] == 4 and b["keep_all"]["singletons"] == 0
     assert b["primary"]["singletons"] == 4 and b["primary"]["singletons_right"] == 3
     assert b["bars"] == dict(P=False, H=False, N=True, Q=False, verdict="UNDERPOWERED")
+
+
+def test_window_calls_become_o2loci_calls_with_an_empty_copy_for_an_abstained_read():
+    calls = [_call("r1", "F", ["F.0", "F.1"], "F.0", "F.1", ["F.1"]), _call("r2", "F", ["F.0", "F.1"], "F.0", "F.0", ["F.0", "F.1"]),
+             _call("r3", "G", ["G.0", "G.1"], "G.0", "G.0", ["G.0"])]
+    assert OW.loci_calls(calls, "F") == {"r1": "F.1", "r2": ""}

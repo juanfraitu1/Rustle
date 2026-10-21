@@ -123,6 +123,28 @@ def match_columns_ref(cigar, flip, length, seq, start, fetch):
     return eq, x
 
 
+def loci_calls(rows, family):
+    """{read: copy, or "" when the set keeps > 1 copy} of a family's window-30 calls, for o2loci.py arms (an absent read
+    was not tied and keeps minimap2's primary there)."""
+    out = {}
+    for r in rows:
+        if r["family"] == family and r["window"] == "30":
+            s = r["o2_set"].split(",")
+            out[r["read"]] = s[0] if len(s) == 1 else ""
+    return out
+
+
+def cmd_loci_calls(calls_p, family, out_p):
+    calls = loci_calls(list(csv.DictReader(open(calls_p), delimiter="\t")), family)
+    with open(out_p, "w") as fh:
+        fh.write("read\tfamily\tcorrector\tminimap2\treason\tcandidates\n")
+        for q, c in sorted(calls.items()):
+            fh.write(f"{q}\t{family}\t{c}\t\t{'set' if c else 'abstain'}\t\n")
+    n = sum(1 for c in calls.values() if c)
+    print(f"[o2window] {family}: {len(calls)} tied reads, {n} decided, {len(calls) - n} abstained -> {out_p}", flush=True)
+    return 0
+
+
 def world_tag(w):
     """'<sample>_<world>' of a world directory .../<sample>/<world>."""
     w = w.rstrip("/")
@@ -517,6 +539,8 @@ def main(argv):
         return cmd_truth_ms(*a[:5], PC._pairs(a, "--bams"))
     if cmd in ("truth-sim", "truth-hg002"):
         return cmd_truth_table(cmd[6:], a[0], a[1:])
+    if cmd == "loci-calls":
+        return cmd_loci_calls(*a[:3])
     if cmd == "band":
         i, j = a.index("--calls"), a.index("--truth")
         return cmd_band(a[0], a[i + 1:j], a[j + 1:])
