@@ -106,3 +106,28 @@ P, H, N and Q hold. **Q holds by two reads** (5,043 against 5,041): the set almo
 **Other bands (no bars):** 10-20: set holds 6,098 / 6,098, one copy on 6,077, all right; minimap2's primary right on all
 6,098. 20-30: 5,024 / 5,024, singletons 5,014 all right; primary right on all 5,024. Whole window: 20,077 scored, held
 20,075, singletons 16,136 (right 16,134), primary right 18,094.
+
+## Results, substrate G (gorilla KB3781, 143 held-out families; code 92f54122; `personal/window/g/band.json`)
+
+Answer key: the intron-free key from his two assemblies (statuses over the 2,755 window-30 reads: refcons 1,514, altonly
+1,212, undetermined 26, off-copy 3). O2 never saw the assemblies.
+
+**The near-tie band (first tied within 10 points): UNDERPOWERED** — 175 scored reads from 12 families (P needs 300 / 11).
+Descriptive: set holds 173, one copy for 84 (right 82), minimap2's primary right on those 77 (5 fixes, all SM392, 0 breaks);
+on the 91 reads kept ambiguous minimap2 is right on 80.
+
+**Other bands (no bars; the whole window passes P, H, N, Q descriptively):**
+
+| band | scored | set holds | one copy (right) | minimap2 right on those | set fixes / breaks | kept > 1: minimap2 right |
+|---|---|---|---|---|---|---|
+| 10-20 | 1,336 | 1,335 | 802 (801) | 598 | 203 / 0 | 527 of 534 |
+| 20-30 | 1,200 | 1,199 | 787 (786) | 770 | 16 / 0 | 412 of 413 |
+| window 30, all | 2,711 | 2,707 | 1,673 (1,669) | 1,445 | 224 / 0 | 1,019 of 1,038 |
+
+- **Every one of the 224 fixes is SM392**, the family whose minimap2 primaries are two-copy chimeras (register 1347's
+  audit): the stitched primary is credited to SM392.0; O2 takes no stitched alignment as a placement and the PSV columns of
+  the plain alignments decide SM392.1, right 224 / 224 by his paternal assembly.
+- Outside SM392 the set decides only reads minimap2 already had right (1,445 of 1,449), and keeps ambiguous reads on which
+  minimap2 is right 98% (unlike the one-genome simulations, where those were a coin toss): on gorilla the key cannot break
+  a near-tie the reference itself has, so the band's refcons reads are mostly undetermined and unscored.
+- Human and gorilla numbers are not pooled. Audit pending.
