@@ -131,3 +131,20 @@ on the 91 reads kept ambiguous minimap2 is right on 80.
   minimap2 is right 98% (unlike the one-genome simulations, where those were a coin toss): on gorilla the key cannot break
   a near-tie the reference itself has, so the band's refcons reads are mostly undetermined and unscored.
 - Human and gorilla numbers are not pooled. Audit pending.
+
+### Audit of substrate G (metric-auditor, 2026-10-20): holds with caveats — the mechanism stated above is wrong
+
+- Every number reproduces. UNDERPOWERED is the right verdict; the band also fails H (98.86%) and Q (97.6%), so with power it
+  would have been FAIL.
+- **No PSV column decided any of the 224 SM392 reads.** Each has exactly one non-stitched alignment in the window
+  (`candidates` = SM392.1 alone), so the set is a singleton by elimination of the chimeric primary; `pareto_set` never ran.
+  SM392.0 entered the window only through the chimera that was then excluded. This is an alignment-defect repair (the plain
+  SM392.1 secondary already has the higher AS on 217 / 225), not a copy decision, and the stitched rule was designed on
+  this family in this half: a named diagnostic, not a held-out finding.
+- **Without SM392: fixes 0 / breaks 0** (1,445 = 1,445), the same picture as register 1348's null.
+- **The narrowing is self-scored.** Singletons are 1,442 / 1,503 refcons reads (keyed by the reference's own alignment)
+  and 7 / 983 altonly reads outside SM392; on those altonly reads minimap2 is right 98.0%.
+- The SM392 truth itself is sound (paternal SM392.1 exon 3, margin >= 19; both copies present on the paternal haplotype in
+  order).
+- Wording not to use: "the PSV columns decide SM392.1"; "O2 fixes 224 reads"; "held-out replication" for SM392; "the set
+  separates safe picks from coin tosses" on gorilla.
