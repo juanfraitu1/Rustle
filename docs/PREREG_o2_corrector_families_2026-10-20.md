@@ -201,3 +201,18 @@ r1360's files byte for byte):
 
 Unchanged: the frozen corrector output (`arm.tsv`), the scorer, the bars (P: minimap2 wrong on >= 10 of >= 50 scored; R,
 S, H) and the verdict rules.
+
+## Results under Amendment 3 (rescore, run once; `o3_graph/mainstay/repaired/`): **UNDERPOWERED**
+
+- **Repaired counterparts:** 36 of 47 copies (11 lose an overlap to a copy with lower divergence). **Repaired key:** 51
+  stitched or >= 100-kb-gap alignments dropped; statuses of the 185 tied reads: refcons 84, altonly 25, undetermined 42,
+  off-copy 34 (NPIP 94 determined / 40 / 30; LRPAP1 15 / 2 / 4).
+- **Scored 107:** minimap2 right 104, corrector right 106; **fixes 2, breaks 0**; families better 1 (LRPAP1) / worse 0.
+  P fails (minimap2 wrong on 3, bar 10): **UNDERPOWERED**. R, S and H would hold.
+- **Where his copy equals the reference (82 reads):** both 82 / 82 — scored against the reference's own ordering.
+- **Reads from his other parent's copy (25, the informative ones):** minimap2 right 22, corrector 24; 2 fixes, 0 breaks.
+  - The 2 fixes are LRPAP1 reads, SM22.1 -> SM22.18: exact AS ties on the reference, decided in his genome by one
+    substitution. They are fixes under the identity convention fixed in Amendment 3; under synteny they would be breaks.
+  - The remaining error, NPIP.17 for NPIP.18, is one the corrector cannot act on (no confident reads on either copy).
+
+Audit pending.
