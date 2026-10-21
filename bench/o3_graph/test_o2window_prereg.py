@@ -71,3 +71,19 @@ def test_window_calls_become_o2loci_calls_with_an_empty_copy_for_an_abstained_re
     calls = [_call("r1", "F", ["F.0", "F.1"], "F.0", "F.1", ["F.1"]), _call("r2", "F", ["F.0", "F.1"], "F.0", "F.0", ["F.0", "F.1"]),
              _call("r3", "G", ["G.0", "G.1"], "G.0", "G.0", ["G.0"])]
     assert OW.loci_calls(calls, "F") == {"r1": "F.1", "r2": ""}
+
+
+def test_substitutions_over_the_common_window_assign_on_a_unique_minimum_only():
+    ev = {"a": {("S", 10, "A"), ("I", 20, "GG"), ("D", 30, 3)}, "b": {("S", 11, "C"), ("S", 12, "T")}}
+    assert OW.subs_of(ev) == {"a": 1, "b": 2}
+    assert OW.PC.fewest({"a": 1, "b": 2}, None) == "a" and OW.PC.fewest({"a": 1, "b": 1}, None) is None
+
+
+def test_pick_bars_score_a_single_pick_column_against_minimap2():
+    calls = [_call("r1", "F", ["a", "b"], "b", "a", ["a"]), _call("r2", "F", ["a", "b"], "a", "a", ["a"]),
+             _call("r3", "G", ["c", "d"], "c", "d", ["d"])]
+    for c, p in zip(calls, ("a", "a", "d")):
+        c["subs_pick"] = p
+    truth = {"r1": ("determined", "a"), "r2": ("determined", "a"), "r3": ("determined", "c")}
+    b = OW.pick_bars(calls, truth, "subs_pick")
+    assert (b["scored"], b["fixes"], b["breaks"], b["better"], b["worse"], b["minimap2_right"], b["right"]) == (3, 1, 1, 1, 1, 2, 2)

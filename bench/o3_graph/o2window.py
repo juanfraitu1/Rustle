@@ -123,6 +123,68 @@ def match_columns_ref(cigar, flip, length, seq, start, fetch):
     return eq, x
 
 
+def subs_of(events):
+    """{copy: substitutions} among alignment_events' events over the common window (PREREG_o2_subs: PSVs are
+    substitutions; indels are mostly HiFi homopolymer errors or the donor's own)."""
+    return {c: sum(1 for e in ev if e[0] == "S") for c, ev in events.items()}
+
+
+def pick_bars(calls, truth, col):
+    """A single-pick column (a copy, or "" = minimap2's primary) against minimap2 on the scored reads: right, fixes,
+    breaks, families fixing more than breaking and the reverse, decided."""
+    n = dict(scored=0, right=0, minimap2_right=0, fixes=0, breaks=0, decided=0)
+    fam = collections.Counter()
+    for c in calls:
+        st, t = truth.get(c["read"], ("missing", ""))
+        if st != "determined" or t not in c["copies"].split(","):
+            continue
+        p = c[col] or c["minimap2"]
+        n["scored"] += 1
+        n["decided"] += bool(c[col])
+        n["right"] += p == t
+        n["minimap2_right"] += c["minimap2"] == t
+        if p != c["minimap2"]:
+            n["fixes"] += p == t
+            n["breaks"] += c["minimap2"] == t
+            fam[c["family"]] += (p == t) - (c["minimap2"] == t)
+    n["better"] = sum(1 for v in fam.values() if v > 0)
+    n["worse"] = sum(1 for v in fam.values() if v < 0)
+    return n
+
+
+def cmd_pick_bars(out_p, calls_ps, truth_ps, col):
+    """pick_bars on the whole 30-point window and per band, pooled over calls tables (reads keyed by world), with the
+    PREREG_o2_subs bars P / G / S / F and verdict."""
+    truth = {}
+    for p in truth_ps:
+        for r in csv.DictReader(open(p), delimiter="\t"):
+            truth[r["read"]] = (r["status"], r["truth"])
+    rows, first = [], {}
+    pooled = len(calls_ps) > 1
+    for p in calls_ps:
+        for r in csv.DictReader(open(p), delimiter="\t"):
+            r["read"] = keyed(r["read"], calls_tag(p), pooled)
+            first.setdefault(r["read"], int(r["window"]))
+            if r["window"] == "30":
+                rows.append(r)
+    res = {}
+    for name, lo, hi in (("window 30, all", 0, 30), ("band <= 10", 0, 10), ("band 10-20", 10, 20), ("band 20-30", 20, 30)):
+        b = pick_bars([r for r in rows if lo < first[r["read"]] <= hi], truth, col)
+        k = b["scored"]
+        fams = {r["family"] for r in rows if lo < first[r["read"]] <= hi}
+        b["families"] = len(fams)
+        if name.startswith("window"):
+            b["P"] = k >= MIN_READS and len(fams) >= MIN_FAMILIES and k - b["minimap2_right"] >= 50
+            b["G"] = k > 0 and 100 * (b["right"] - b["minimap2_right"]) / k >= 2.0
+            b["S"] = b["fixes"] >= 5 * b["breaks"]
+            b["F"] = b["better"] >= 11 and b["worse"] <= -(-b["better"] // 5)
+            b["verdict"] = "UNDERPOWERED" if not b["P"] else "PASS" if b["G"] and b["S"] and b["F"] else "FAIL"
+        res[name] = b
+        print(f"[o2window] {name}: " + ", ".join(f"{x} {y}" for x, y in b.items()), flush=True)
+    json.dump(res, open(out_p, "w"), indent=1)
+    return 0
+
+
 def loci_calls(rows, family):
     """{read: copy, or "" when the set keeps > 1 copy} of a family's window-30 calls, for o2loci.py arms (an absent read
     was not tied and keeps minimap2's primary there)."""
@@ -315,7 +377,7 @@ def cmd_prepare(bam_p, copies_p, qual_p, genome_p, which, out, windows):
 
     n = collections.Counter()
     with open(f"{out}.calls.tsv", "w") as fh, open(f"{out}.names", "w") as nh:
-        fh.write("read\tfamily\twindow\tcopies\tminimap2\tprimary_stitched\to2\to2_set\tcandidates\n")
+        fh.write("read\tfamily\twindow\tcopies\tminimap2\tprimary_stitched\to2\to2_set\tcandidates\tsubs_pick\tsubs\n")
         for q in sorted(dom):
             nh.write(q + "\n")
             al = recs[q]
@@ -336,27 +398,32 @@ def cmd_prepare(bam_p, copies_p, qual_p, genome_p, which, out, windows):
                 if len(rep) >= 2:
                     spans = {c: (C.read_span(a["cig"]), a["rev"] != prev) for c, a in rep.items()}
                     win = C.common_window(spans, len(seq))
-                    ed = {}
+                    evs = {}
                     for c, a in rep.items():
                         k = (a["start"], a["cig"], a["ch"], win[c])
                         if k not in cache:
-                            cache[k] = PC.window_edits(C.alignment_events(a["start"], a["cig"], seq if a["rev"] == prev
-                                                                          else PC.rc(seq), fetcher(a["ch"]), win[c])[0])
-                        ed[c] = cache[k]
+                            cache[k] = C.alignment_events(a["start"], a["cig"], seq if a["rev"] == prev else PC.rc(seq),
+                                                          fetcher(a["ch"]), win[c])[0]
+                        evs[c] = cache[k]
+                    ed = {c: PC.window_edits(ev) for c, ev in evs.items()}
                     pick = PC.fewest(ed, mm)
+                    sb = subs_of(evs)
+                    sp = PC.fewest(sb, None)                    # substitutions only: a copy, or None on a tie
                     cols = {c: match_columns_ref(a["cig"], a["rev"] != prev, len(seq), seq if a["rev"] == prev else PC.rc(seq),
                                                  a["start"], fetcher(a["ch"])) for c, a in rep.items()}
                     st_ = pareto_set(cols, PC.window_primary(spans, len(seq)))
                 elif len(rep) == 1:
                     pick = next(iter(rep))
-                    st_ = set(rep)
+                    st_, sp, sb = set(rep), None, {}
                 else:
-                    pick, st_ = mm, {mm}
+                    pick, st_, sp, sb = mm, {mm}, None, {}
                 n[(w, "reads")] += 1
                 n[(w, "O2 moves")] += pick != mm
                 n[(w, "set of 1")] += len(st_) == 1
+                n[(w, "subs decides")] += sp is not None
                 fh.write(f"{q}\t{mm.rsplit('.', 1)[0]}\t{w}\t{','.join(sorted(cs))}\t{mm}\t{int(prim['st'])}\t{pick}\t"
-                         f"{','.join(sorted(st_))}\t{','.join(sorted(rep))}\n")
+                         f"{','.join(sorted(st_))}\t{','.join(sorted(rep))}\t{sp or ''}\t"
+                         + ",".join(f"{c}:{sb[c]}" for c in sorted(sb)) + "\n")
     with open(f"{out}.domain.tsv", "w") as fh:                  # for o2personal.py truth (o2correct donor's columns)
         fh.write("read\tfamily\tcorrector\tminimap2\treason\tcandidates\tmargin\tscores\n")
         for q in sorted(dom):
@@ -539,6 +606,13 @@ def main(argv):
         return cmd_truth_ms(*a[:5], PC._pairs(a, "--bams"))
     if cmd in ("truth-sim", "truth-hg002"):
         return cmd_truth_table(cmd[6:], a[0], a[1:])
+    if cmd == "pick-bars":                                      # PREREG_o2_subs: OUT.json --calls C... --truth T... [--col subs_pick]
+        col = a[a.index("--col") + 1] if "--col" in a else "subs_pick"
+        if "--col" in a:
+            k = a.index("--col")
+            a = a[:k] + a[k + 2:]
+        i, j = a.index("--calls"), a.index("--truth")
+        return cmd_pick_bars(a[0], a[i + 1:j], a[j + 1:], col)
     if cmd == "loci-calls":
         return cmd_loci_calls(*a[:3])
     if cmd == "band":
