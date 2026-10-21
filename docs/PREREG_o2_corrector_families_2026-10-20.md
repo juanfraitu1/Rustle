@@ -93,3 +93,29 @@ fibroblasts and its T2T genome?"
 - **Known caveats, stated now:** on refcons reads the key is the reference's own ordering (near self-scoring; H is a harm
   check, not a gain); in the 283 families tested before, the corrector's gorilla gains were concentrated (r1347: 82 fixes,
   76 in SM392).
+
+### Amendment 2 (2026-10-20, before any corrector run on these families): the thesis's mainstay families only
+
+**User:** "I don't need the GWFAM, my advisor is very picky and he does not believe any of the method works, we need to stick
+to the YAGs or mainstays that we have tried earlier, unless those families don't have nearly AS tied multi-mapping reads";
+on the census below and the proposed test: "Yes".
+
+**Census (substrate only; no rule run):** KB3781's whole fibroblast library, reads with a primary on a copy / reads whose
+alignments on two or more of the family's copies lie within 10 AS:
+- YAGs on his Y (RBMY 13, TSPY 6, HSFY 5, BPY2 2, DAZ 2, CDY 1 copies): **0 reads** (testis-only genes): untestable here.
+- TBC1D3 (14 copies) 5 / 3; SMN (RefSeq, 3) 1,478 / 0; GOLGA6 (2) 0 / 0; FAM90A (1) 4 / 0.
+- **NPIP** (the curated 25-copy set, `fibro_cat` family `NPIP`): 1,040 / **182** (44 exact).
+- **LRPAP1** (its 22-copy family, `fibro_cat` `SM22`; the 10-04 case-study copies): 2,555 / **38**.
+- SM21 (204 tied) is left out: genes riding in the NPIP duplication (PLA2G10, PARN, SRRM2-like), not a mainstay.
+
+**Replaces Amendment 1's family set and bars.** Families: NPIP and LRPAP1 (47 copies; neither among the 283 scored in
+registers 1347-1350). Everything else in Amendment 1 holds (his library, the frozen corrector, his two assemblies as the
+answer key by the intron-free score, refcons / altonly).
+
+**Bars (pooled over the two families; each family reported):**
+- **P:** >= 50 scored reads and minimap2 wrong on >= 10; else UNDERPOWERED.
+- **R:** fixes > breaks, and fixes − breaks >= 2% of minimap2's wrong calls.
+- **S:** fixes >= 5 × breaks.
+- **H:** on refcons reads, breaks <= fixes + 2.
+
+PASS = P, R, S, H; FAIL = P holds and another fails.
