@@ -233,3 +233,34 @@ alignments dropped), as do the frozen corrector output, the scorer and the bars.
 
 **Seen before this amendment:** the audit's variants listed above. **The verdict this run gives is final for this
 experiment; the key is not changed again.**
+
+## Results under Amendment 4 (run once; `o3_graph/mainstay/positional/`): **UNDERPOWERED** — final for this experiment
+
+- **Counterparts by position (± 500 kb):** 40 of 47 copies; 7 LRPAP1 copies lose an overlap to a copy with lower
+  divergence (SM22.2, .5, .7, .12-.15). **Key:** 56 stitched or >= 100-kb-gap alignments dropped; statuses of the 185 tied
+  reads: refcons 85, altonly 24, undetermined 44, off-copy 32 (NPIP 96 determined / 39 / 29; LRPAP1 13 / 5 / 3).
+- **Scored 107** (NPIP 96, LRPAP1 11): minimap2 right 104, corrector right 106; **fixes 2, breaks 0**; families better 1
+  (LRPAP1) / worse 0. P fails (minimap2 wrong on 3, bar 10): **UNDERPOWERED**. R, S and H would hold.
+- **Where his copy equals the reference (83 reads):** both 83 / 83 (scored against the reference's own ordering).
+- **Reads from his other parent's copy (24, the informative ones):** minimap2 right 21, corrector 23; 2 fixes, 0 breaks.
+- **The 2 fixes** (LRPAP1 SRR27438212.2337814 and .5312667): exact AS ties on the reference between SM22.1 and SM22.18
+  (ms 1541 on both); minimap2 SM22.1, the corrector SM22.18 (one event fewer that the sample's reads do not explain).
+  - In his genome each read fits best at maternal chr12 25.87 Mb, by one substitution (5 ms points, the key's minimum
+    margin); single-copy alignments, not stitched.
+  - With ± 500 kb of context, SM22.1's maternal counterpart is at chr12 27.43 Mb (MAPQ 60), where the reads fit 82-85 ms
+    points worse: **minimap2's pick is wrong under position.**
+  - The maternal 25.87-Mb locus is claimed by two reference blocks: the chr16 block of SM22.18-.20 (946 kb aligned,
+    divergence 0.0020) and the chr12 block of SM22.12-.15 (670 kb, 0.0057). The overlap rule (Amendment 3, kept) gives it
+    to the lower divergence, SM22.18. Had it gone to SM22.14, the truth would lie outside the reads' tied copies:
+    unscored, no fix and no break. **No position reading makes these breaks.**
+  - The reference's (paternal) chr16 block sits on his maternal chr12: a rearrangement between his parents' haplotypes or
+    a mis-join in one assembly. The key cannot tell which.
+- **The remaining error** (NPIP SRR27438212.7310158): truth NPIP.18 by 68 ms points (his maternal copy); minimap2 and the
+  corrector both NPIP.17. With no confident reads on either copy, the corrector counts the read's own differences
+  (22 vs 23), which lean the wrong way by one.
+- **Key artefact, no effect on the verdict:** 2 LRPAP1 reads (SRR27438212.2142599, .3445690) span two adjacent copies
+  (SM22.1 -> SM22.11, SM22.20 -> SM22.18, and the maternal pair). The key drops those alignments as stitched and takes a
+  worse one (176 and 100 ms points below their best) on SM22.14 as the truth. SM22.14 is outside their tied copies, so they are
+  unscored; a read whose best alignments are all stitched should be undetermined.
+
+Audit pending.
