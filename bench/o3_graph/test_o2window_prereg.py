@@ -1,0 +1,49 @@
+"""PREREG_o2_window_set_2026-10-20: the generalized prepare / truth converters / scorer of o2window.py."""
+import importlib.util
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+spec = importlib.util.spec_from_file_location("o3_graph_o2window_p", os.path.join(HERE, "o2window.py"))
+OW = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(OW)
+
+
+def test_match_columns_compare_bases_under_an_m_op_and_trust_eqx_ops():
+    ref = "AAAACCCCGGGG"
+    fetch = lambda a, b: ref[a:b]
+    cig = [(4, 1), (0, 4), (3, 4), (7, 2), (8, 1)]                                  # 1S 4M 4N 2= 1X
+    eq, x = OW.match_columns_ref(cig, False, 8, "TAATACCG", 0, fetch)              # read AATA vs ref AAAA: X at read 3
+    assert eq == {1, 2, 4, 5, 6} and x == {3, 7}
+    eq, x = OW.match_columns_ref(cig, True, 8, "TAATACCG", 0, fetch)
+    assert eq == {6, 5, 3, 2, 1} and x == {4, 0}
+
+
+def test_a_simulated_truth_row_becomes_determined_only_when_its_copy_is_in_the_reference():
+    rows = [dict(read="r1", copy="F.0", kind="present"), dict(read="r2", copy="F.9", kind="present")]
+    out = OW.truth_sim(rows, {"F.0"})
+    assert out == {"r1": ("determined", "F.0"), "r2": ("off-copy", "")}
+
+
+def test_an_hg002_truth_row_maps_its_class_to_a_status():
+    rows = [dict(read="a", **{"class": "unique"}, truth="F.0"), dict(read="b", **{"class": "own_tie"}, truth=""),
+            dict(read="c", **{"class": "no_counterpart"}, truth=""), dict(read="d", **{"class": "poor_match"}, truth=""),
+            dict(read="e", **{"class": "elsewhere"}, truth=""), dict(read="f", **{"class": "unique_elsewhere"}, truth="F.1")]
+    out = OW.truth_hg002(rows)
+    assert out["a"] == ("determined", "F.0") and out["b"] == ("undetermined", "") and out["c"] == ("off-copy", "")
+    assert out["d"] == ("poor_match", "") and out["e"] == ("off-copy", "") and out["f"] == ("determined", "F.1")
+
+
+def _call(read, fam, copies, mm, o2, st, w=30, stitched="0"):
+    return dict(read=read, family=fam, window=str(w), copies=",".join(copies), minimap2=mm, o2=o2, o2_set=",".join(st),
+                primary_stitched=stitched)
+
+
+def test_the_bars_count_truth_held_singletons_and_singleton_precision():
+    calls = [_call("r1", "F", ["a", "b"], "a", "a", ["a"]), _call("r2", "F", ["a", "b"], "b", "a", ["a", "b"]),
+             _call("r3", "G", ["c", "d"], "c", "c", ["d"]), _call("r4", "G", ["c", "d"], "d", "d", ["d"])]
+    truth = {"r1": ("determined", "a"), "r2": ("determined", "a"), "r3": ("determined", "c"), "r4": ("undetermined", "")}
+    b = OW.bars(calls, truth)
+    assert (b["scored"], b["families"], b["truth_held"], b["singletons"], b["singletons_right"]) == (3, 2, 2, 2, 1)
+    assert b["minimap2_right"] == 2 and b["minimap2_right_on_singletons"] == 2
+    assert b["H"] is False and b["R"] is True and b["Q"] is False and b["P"] is False
+    assert b["verdict"] == "UNDERPOWERED"

@@ -16,6 +16,9 @@ An alignment that lays bases on two copies' exons (stitched(): SM392's chimeras)
         columns, for o2personal.py truth), OUT.names (the reads to align to the animal's assemblies)
     o2window.py truth-ms DOMAIN.tsv COPIES.tsv ORTH.tsv CHRMAP.tsv OUT.tsv --bams mat=BAM:FAI pat=BAM:FAI
         the answer key by the intron-free score instead of edits (a clipped read end is cheap, a mismatch 5x dearer)
+    o2window.py truth-sim OUT.tsv WORLD...               (read, status, truth) from simulated worlds' reads.truth.E0.tsv
+    o2window.py truth-hg002 OUT.tsv TRUTH.tsv...         the same from hg002truth tables (class -> status)
+    o2window.py bars OUT.json --calls CALLS... --truth TRUTH... [--window 30]     PREREG_o2_window_set's bars (bars())
     o2window.py score CALLS.tsv TRUTH.tsv OUT.json      per window and band: the truth's statuses; minimap2 and O2's pick
                                                         against the truth; O2's set: holds the truth, size, singletons
 """
@@ -96,13 +99,98 @@ def truth_ms(alns, margin=MARGIN_MS):
     return "determined", c, "refcons" if any(r == "ref" for _, _, r in w) else "altonly"
 
 
+def match_columns_ref(cigar, flip, length, seq, start, fetch):
+    """(read positions matching the reference, read positions mismatching it) in the primary's orientation, from an
+    alignment with or without --eqx: an M op compares the read (seq, the alignment's orientation) with the reference at
+    `start` (fetch(lo, hi)); = and X ops are trusted."""
+    eq, x, q, r = set(), set(), 0, start
+    for op, n in cigar:
+        if op == 0:
+            a, b = seq[q:q + n].upper(), fetch(r, r + n).upper()
+            for j in range(n):
+                (eq if a[j] == b[j] and a[j] != "N" else x).add(q + j)
+        elif op == 7:
+            eq.update(range(q, q + n))
+        elif op == 8:
+            x.update(range(q, q + n))
+        if op in (0, 1, 4, 5, 7, 8):
+            q += n
+        if op in (0, 2, 3, 7, 8):
+            r += n
+    if flip:
+        eq, x = {length - 1 - i for i in eq}, {length - 1 - i for i in x}
+    return eq, x
+
+
+def truth_sim(rows, in_reference):
+    """{read: (status, copy)} from a simulated world's reads.truth: determined when the copy is in the reference."""
+    return {r["read"]: ("determined", r["copy"]) if r["copy"] in in_reference else ("off-copy", "") for r in rows}
+
+
+HG002_STATUS = {"unique": "determined", "unique_elsewhere": "determined", "own_tie": "undetermined",
+                "no_counterpart": "off-copy", "elsewhere": "off-copy", "poor_match": "poor_match"}
+
+
+def truth_hg002(rows):
+    """{read: (status, copy)} from hg002truth's truth tables (class -> status; unique_elsewhere's truth is a CHM13 copy
+    outside minimap2's tie, so it is determined too)."""
+    return {r["read"]: (HG002_STATUS[r["class"]], r["truth"] if HG002_STATUS[r["class"]] == "determined" else "")
+            for r in rows}
+
+
+MIN_READS, MIN_FAMILIES = 300, 11
+BAR_H, BAR_R, BAR_Q = 0.99, 0.50, 0.98
+
+
+def bars(calls, truth):
+    """The pre-registered bars (PREREG_o2_window_set_2026-10-20) of the set rule on one window's calls: P power (>= MIN_READS
+    scored from >= MIN_FAMILIES families), H the set holds the truth on >= BAR_H of scored reads, R it is one copy for >=
+    BAR_R of them, Q those singletons are right on >= BAR_Q and at least as often as minimap2's primary on the same reads.
+    A read is scored when determined with the truth among the window's copies."""
+    n = dict(reads=len(calls), scored=0, truth_held=0, singletons=0, singletons_right=0, minimap2_right=0,
+             minimap2_right_on_singletons=0, o2_fixes=0, o2_breaks=0, primary_stitched=0, truth_outside=0)
+    fams, status = set(), {}
+    for c in calls:
+        st, t = truth.get(c["read"], ("missing", ""))
+        if st != "determined":
+            status[st] = status.get(st, 0) + 1
+            continue
+        if t not in c["copies"].split(","):
+            n["truth_outside"] += 1
+            continue
+        n["scored"] += 1
+        fams.add(c["family"])
+        sset = set(c["o2_set"].split(","))
+        mm_ok = c["minimap2"] == t
+        n["truth_held"] += t in sset
+        n["minimap2_right"] += mm_ok
+        n["primary_stitched"] += c["primary_stitched"] == "1"
+        n["o2_fixes"] += c["o2"] == t and not mm_ok
+        n["o2_breaks"] += mm_ok and c["o2"] != t
+        if len(sset) == 1:
+            n["singletons"] += 1
+            n["singletons_right"] += sset == {t}
+            n["minimap2_right_on_singletons"] += mm_ok
+    k = n["scored"]
+    n["families"] = len(fams)
+    n["status"] = status
+    n["P"] = k >= MIN_READS and len(fams) >= MIN_FAMILIES
+    n["H"] = k > 0 and n["truth_held"] >= BAR_H * k
+    n["R"] = k > 0 and n["singletons"] >= BAR_R * k
+    n["Q"] = (n["singletons"] > 0 and n["singletons_right"] >= BAR_Q * n["singletons"]
+              and n["singletons_right"] >= n["minimap2_right_on_singletons"])
+    n["verdict"] = "UNDERPOWERED" if not n["P"] else "PASS" if n["H"] and n["R"] and n["Q"] else "FAIL"
+    return n
+
+
 # ---------------------------------------------------------------------------------------------------------------- commands
 
 def cmd_prepare(bam_p, copies_p, qual_p, genome_p, which, out, windows):
+    """qual_p / which: a qual.json and its half ('dev' / 'heldout'), or '-' '-' for every family of the copies table."""
     import pysam
     P, S = PC._sibling("o2psv"), PC._sibling("summary")
-    qual = json.load(open(qual_p))
     rows = PC.read_copies(copies_p)
+    qual = json.load(open(qual_p)) if qual_p != "-" else {r["family"]: dict(half=which) for r in rows}
     exons = {r["copy"]: r["exons"] for r in rows}
     idx = C.span_index(P.load_copies(copies_p))
     fa = pysam.FastaFile(genome_p)
@@ -177,7 +265,8 @@ def cmd_prepare(bam_p, copies_p, qual_p, genome_p, which, out, windows):
                                                                           else PC.rc(seq), fetcher(a["ch"]), win[c])[0])
                         ed[c] = cache[k]
                     pick = PC.fewest(ed, mm)
-                    cols = {c: PC.match_columns(a["cig"], a["rev"] != prev, len(seq)) for c, a in rep.items()}
+                    cols = {c: match_columns_ref(a["cig"], a["rev"] != prev, len(seq), seq if a["rev"] == prev else PC.rc(seq),
+                                                 a["start"], fetcher(a["ch"])) for c, a in rep.items()}
                     st_ = pareto_set(cols, PC.window_primary(spans, len(seq)))
                 elif len(rep) == 1:
                     pick = next(iter(rep))
@@ -281,6 +370,51 @@ def cmd_truth_ms(domain_p, copies_p, orth_p, chrmap_p, out_p, bams):
     return 0
 
 
+def cmd_truth_table(kind, out_p, paths):
+    """A truth table (read, status, truth) for the scorer: kind 'sim' from WORLD dirs (reads.truth.E0.tsv, copies.tsv),
+    'hg002' from hg002truth tables."""
+    out = {}
+    for p in paths:
+        if kind == "sim":
+            inref = {r["copy"] for r in csv.DictReader(open(f"{p}/copies.tsv"), delimiter="\t") if r["in_reference"] == "1"}
+            out.update(truth_sim(list(csv.DictReader(open(f"{p}/reads.truth.E0.tsv"), delimiter="\t")), inref))
+        else:
+            out.update(truth_hg002(list(csv.DictReader(open(p), delimiter="\t"))))
+    with open(out_p, "w") as fh:
+        fh.write("read\tstatus\ttruth\n")
+        for q, (st, t) in sorted(out.items()):
+            fh.write(f"{q}\t{st}\t{t}\n")
+    print(f"[o2window] truth table ({kind}) -> {out_p}: {len(out)} reads", flush=True)
+    return 0
+
+
+def cmd_bars(out_p, calls_ps, truth_ps, window):
+    """The pre-registered bars on one window, pooled over the calls tables (one per world or sample), plus the bands
+    'first tied within 10 / 20 / 30' as descriptive strata."""
+    truth = {}
+    for p in truth_ps:
+        for r in csv.DictReader(open(p), delimiter="\t"):
+            truth[r["read"]] = (r["status"], r["truth"])
+    calls, first = [], {}
+    for p in calls_ps:
+        for r in csv.DictReader(open(p), delimiter="\t"):
+            first.setdefault(r["read"], int(r["window"]))
+            if int(r["window"]) == window:
+                calls.append(r)
+    res = {"all": bars(calls, truth)}
+    for lo, hi in ((0, 10), (10, 20), (20, 30), (30, 50)):
+        band = [c for c in calls if lo < first[c["read"]] <= hi or (lo == 0 and first[c["read"]] <= hi)]
+        if band:
+            res[f"first tied within {hi}"] = bars(band, truth)
+    json.dump(res, open(out_p, "w"), indent=1)
+    for k, b in res.items():
+        print(f"[o2window] W{window} {k}: scored {b['scored']} / {b['families']} families, minimap2 right {b['minimap2_right']}, "
+              f"held {b['truth_held']}, singletons {b['singletons']} (right {b['singletons_right']}, minimap2 right there "
+              f"{b['minimap2_right_on_singletons']}), O2 pick +{b['o2_fixes']}/-{b['o2_breaks']}, status {b['status']}, "
+              f"outside {b['truth_outside']} | P {b['P']} H {b['H']} R {b['R']} Q {b['Q']} -> {b['verdict']}", flush=True)
+    return 0
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -293,6 +427,11 @@ def main(argv):
         return cmd_score(*a[:3])
     if cmd == "truth-ms":
         return cmd_truth_ms(*a[:5], PC._pairs(a, "--bams"))
+    if cmd in ("truth-sim", "truth-hg002"):
+        return cmd_truth_table(cmd[6:], a[0], a[1:])
+    if cmd == "bars":
+        i, j = a.index("--calls"), a.index("--truth")
+        return cmd_bars(a[0], a[i + 1:j], a[j + 1:], int(a[a.index("--window") + 1]) if "--window" in a else 30)
     print(__doc__)
     return 2
 
