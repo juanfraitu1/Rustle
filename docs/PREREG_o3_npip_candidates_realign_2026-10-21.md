@@ -59,3 +59,36 @@ alignment, at a cost of at most 1% of other reads.
 - The metric-auditor checks the verdict before it is reported.
 - Gorilla only. Push only when asked.
 - Driver: new `realign` and `score-realign` steps in `bench/rna_allele/npip_o3.py`, with tests.
+
+## Results (driver 5d04d56e; run once; `/mnt/linuxdisk/tmp/o3_npip/realign/`): **PASS**
+
+- **Index:** GGO + the 4 contigs, built in 3 min 26 s. Both arms aligned all 2,955 reads (R0 2 min 24 s, C 2 min 18 s).
+- **Units as registered** (no strand): C 39, B 23, A 11, B into A 21. The audit's 37 / 21 were the main-strand reads; 2 C and 2 B
+  reads lie on the opposite strand.
+
+| bar | arm C | bar value | holds |
+|---|---|---|---|
+| H1: unit C's reads on C's candidate | **33 / 39** (85%; main strand 33 / 37) | >= 20 | yes |
+| H2: unit B's reads on B's candidate | **21 / 23** (91%; main strand 21 / 21) | >= 12 | yes |
+| H3: other reads moved onto a candidate | **0 / 2,861** | <= 28 | yes |
+
+**Reported:**
+- **Where each unit's reads go in arm C:**
+  - C: 33 on C's candidate, 6 on the reference;
+  - B: 21 on B's candidate, 2 on the reference;
+  - A: 6 on C's candidate, 5 on the reference;
+  - B into A: 2 on B's candidate, 19 on the reference.
+- **The 4 opposite-strand reads** all stay on the reference.
+- **Register 1360's 29 reads:** 24 on C's candidate (its C reads); the 5 A reads stay on the reference.
+- **MAPQ of target reads on a candidate:**
+  - C: 26 at >= 30, 10 at 1-29, 3 at 0;
+  - B: 23 at 1-29 (its two contigs are near-identical);
+  - homed reads split between C's contigs (iso_NPIP_16 18, iso_NPIP_17 15).
+- **The O2 domain:** target reads AS-tied within 10 among loci fall from **34 (R0) to 10 (C)**.
+
+**Reading.** Once the chain names the missing copies and they join the reference, ordinary alignment gives their reads a home:
+89-100% of the main-strand reads of the two named units, with no other read pulled in. Reads of unit A, which got no candidate, stay
+on the reference, though 6 of its 11 land on C's candidate. Most of the tied reads that O2 would have faced at this locus stop
+being ties.
+
+Audit pending.
