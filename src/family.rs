@@ -56658,8 +56658,12 @@ pub mod fam_from_gtf {
             .ok()?;
         let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
         // gate3 is the first build with --gate-frac (the exact rule; gate1/gate2 used a touch-only test)
-        let level = v.rsplit_once("-gate").and_then(|(_, n)| n.parse::<u32>().ok());
-        (o.status.success() && level.is_some_and(|n| n >= 3)).then_some(v)
+        (o.status.success() && gate_level(&v).is_some_and(|n| n >= 3)).then_some(v)
+    }
+
+    /// The gate build's level from its version (`2.30-r1287-gate4` -> 4): 3 has `--gate-frac`, 4 adds `--dp-memo`.
+    pub fn gate_level(version: &str) -> Option<u32> {
+        version.rsplit_once("-gate").and_then(|(_, n)| n.parse::<u32>().ok())
     }
 
     fn on_path(name: &str) -> bool {
@@ -56786,6 +56790,12 @@ pub mod fam_from_gtf {
                         "--gate-frac".to_string(),
                         frac.to_string(),
                     ]);
+                    // gate4: reuse the alignment of a chain whose window bases and seeds were seen before (byte-identical
+                    // output; overlapping loci present the same window many times)
+                    if gate_level(&v).is_some_and(|n| n >= 4) {
+                        mm_args.push("--dp-memo".to_string());
+                        key_cmd.push_str(" --dp-memo");
+                    }
                     eprintln!(
                         "[mcl_families] exon gate: margin {margin} bp, shared-exon fraction {frac} ({mm2} {v}); pairs that cannot \
                          become edges are not aligned"
@@ -56943,6 +56953,7 @@ pub mod fam_from_gtf {
             assert_eq!(probe(&gated).as_deref(), Some("2.30-r1287-gate3"));
             assert_eq!(minimap2_gate_version(stock.to_str().unwrap()), None);
             assert_eq!(minimap2_gate_version(old_gate.to_str().unwrap()), None, "gate2 has no --gate-frac (touch-only rule)");
+            assert_eq!((gate_level("2.30-r1287-gate3"), gate_level("2.30-r1287-gate4"), gate_level("2.30-r1287")), (Some(3), Some(4), None));
             assert_eq!(minimap2_gate_version(dir.join("absent").to_str().unwrap()), None);
             let _ = std::fs::remove_dir_all(&dir);
         }

@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index d2d30e1..fc5bae1 100644
+index d2d30e1..b6832c3 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -3,7 +3,7 @@ CPPFLAGS=	-DHAVE_KALLOC
@@ -7,10 +7,297 @@ index d2d30e1..fc5bae1 100644
  OBJS=		kthread.o kalloc.o misc.o bseq.o sketch.o sdust.o options.o index.o \
  			lchain.o align.o hit.o seed.o jump.o map.o format.o pe.o esterr.o splitidx.o \
 -			ksw2_ll_sse.o
-+			ksw2_ll_sse.o gate.o
++			ksw2_ll_sse.o gate.o dpmemo.o
  PROG=		minimap2
  PROG_EXTRA=	sdust minimap2-lite
  LIBS=		-lm -lz -lpthread
+diff --git a/align.c b/align.c
+index 963cd29..4f9b245 100644
+--- a/align.c
++++ b/align.c
+@@ -1,3 +1,4 @@
++#include <stddef.h>
+ #include <assert.h>
+ #include <string.h>
+ #include <stdlib.h>
+@@ -5,6 +6,7 @@
+ #include "minimap.h"
+ #include "mmpriv.h"
+ #include "ksw2.h"
++#include "dpmemo.h"
+ 
+ #define MM_MAX_QLEN_FLANK 100
+ 
+@@ -651,6 +653,9 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+ 	int32_t rs, re, qs, qe;
+ 	int32_t rs1, qs1, re1, qe1;
+ 	int8_t mat[25];
++	uint32_t *dpm_key = 0, dpm_kl = 0; // Rustle patch (DP memo)
++	int32_t dpm_split_rel = -1, dpm_split_inv = 0, dpm_verify = 0;
++	mm_dpm_out_t dpm_vo;
+ 
+ 	if (is_sr) assert(!(mi->flag & MM_I_HPC)); // HPC won't work with SR because with HPC we can't easily tell if there is a gap
+ 
+@@ -767,6 +772,52 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+ 	}
+ 
+ 	assert(re0 > rs0);
++	// Rustle patch (DP memo): the key is the window's bases (128-bit hashes) and the seeds relative to the window; the
++	// stored result (final coordinates relative to the window, the extra record, mlen/blen, the split) is a deterministic
++	// function of that key and the options
++	if (mm_dpm_active() && !(opt->flag & MM_F_QSTRAND) && !is_splice && !is_sr) {
++		uint64_t hq[2], ht[2];
++		uint8_t *tw = (uint8_t*)kmalloc(km, re0 - rs0);
++		int32_t k = 0;
++		mm_dpm_out_t o;
++		mm_idx_getseq(mi, rid, rs0, re0, tw);
++		mm_dpm_hash(&qseq0[rev][qs0], qe0 - qs0, hq);
++		mm_dpm_hash(tw, re0 - rs0, ht);
++		kfree(km, tw);
++		dpm_kl = 16 + cnt1 * 3;
++		dpm_key = (uint32_t*)kmalloc(km, dpm_kl * 4);
++		dpm_key[k++] = rev, dpm_key[k++] = r->split_inv, dpm_key[k++] = (qs > 0 && rs > 0);
++		dpm_key[k++] = qs - qs0, dpm_key[k++] = rs - rs0, dpm_key[k++] = qe0 - qs0, dpm_key[k++] = re0 - rs0, dpm_key[k++] = cnt1;
++		dpm_key[k++] = (uint32_t)hq[0], dpm_key[k++] = (uint32_t)(hq[0]>>32), dpm_key[k++] = (uint32_t)hq[1], dpm_key[k++] = (uint32_t)(hq[1]>>32);
++		dpm_key[k++] = (uint32_t)ht[0], dpm_key[k++] = (uint32_t)(ht[0]>>32), dpm_key[k++] = (uint32_t)ht[1], dpm_key[k++] = (uint32_t)(ht[1]>>32);
++		for (i = 0; i < cnt1; ++i) {
++			const mm128_t *b = &a[as1 + i];
++			dpm_key[k++] = (uint32_t)((int32_t)b->x - rs0);
++			dpm_key[k++] = (uint32_t)((int32_t)b->y - qs0);
++			dpm_key[k++] = (uint32_t)(b->y >> 32);
++		}
++		if (mm_dpm_get(dpm_key, dpm_kl, &o)) {
++			if (mm_dpm_verify()) {
++				dpm_verify = 1, dpm_vo = o; // compute anyway and compare below
++			} else {
++				int32_t fqs = qs0 + o.qs1, fqe = qs0 + o.qe1;
++				kfree(km, dpm_key);
++				if (o.split_rel >= 0) {
++					mm_split_reg(r, r2, as1 + o.split_rel - r->as, qlen, a, !!(opt->flag&MM_F_QSTRAND));
++					if (o.split_inv) r2->split_inv = 1;
++				}
++				r->rs = rs0 + o.rs1, r->re = rs0 + o.re1;
++				if (!rev) r->qs = fqs, r->qe = fqe;
++				else r->qs = qlen - fqe, r->qe = qlen - fqs;
++				if (o.p) {
++					free(r->p);
++					r->p = o.p;
++					r->mlen = o.mlen, r->blen = o.blen, r->is_spliced = o.is_spliced;
++				}
++				return;
++			}
++		}
++	}
+ 	tseq = (uint8_t*)kmalloc(km, re0 - rs0);
+ 	junc = (uint8_t*)kmalloc(km, re0 - rs0);
+ 
+@@ -864,6 +915,7 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+ 				if (cnt1 - (j + 1) >= opt->min_cnt) {
+ 					mm_split_reg(r, r2, as1 + j + 1 - r->as, qlen, a, !!(opt->flag&MM_F_QSTRAND));
+ 					if (zdrop_code == 2) r2->split_inv = 1;
++					dpm_split_rel = j + 1, dpm_split_inv = (zdrop_code == 2); // Rustle patch (DP memo)
+ 				}
+ 				break;
+ 			} else r->p->dp_score += ez->score;
+@@ -908,6 +960,22 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+ 			r->p->trans_strand ^= 3; // flip to the read strand
+ 	}
+ 
++	if (dpm_key) { // Rustle patch (DP memo): the FINAL coordinates (mm_update_extra trims leading indels), on the chain's strand
++		mm_dpm_out_t o;
++		int32_t fqs = rev? qlen - r->qe : r->qs, fqe = rev? qlen - r->qs : r->qe;
++		o.rs1 = r->rs - rs0, o.re1 = r->re - rs0, o.qs1 = fqs - qs0, o.qe1 = fqe - qs0;
++		o.mlen = r->mlen, o.blen = r->blen, o.is_spliced = r->is_spliced;
++		o.split_rel = dpm_split_rel, o.split_inv = dpm_split_inv;
++		o.p = r->p;
++		if (dpm_verify) {
++			int bad = memcmp(&o, &dpm_vo, offsetof(mm_dpm_out_t, p)) != 0 || !!o.p != !!dpm_vo.p
++				|| (o.p && (o.p->n_cigar != dpm_vo.p->n_cigar || o.p->dp_score != dpm_vo.p->dp_score || o.p->dp_max != dpm_vo.p->dp_max
++				            || o.p->n_ambi != dpm_vo.p->n_ambi || memcmp(o.p->cigar, dpm_vo.p->cigar, o.p->n_cigar * 4) != 0));
++			mm_dpm_verified(bad);
++			free(dpm_vo.p);
++		} else mm_dpm_put(dpm_key, dpm_kl, &o);
++		kfree(km, dpm_key);
++	}
+ 	if (tseq2) kfree(km, tseq2);
+ 	kfree(km, tseq);
+ 	kfree(km, junc);
+diff --git a/dpmemo.c b/dpmemo.c
+new file mode 100644
+index 0000000..3b16fa4
+--- /dev/null
++++ b/dpmemo.c
+@@ -0,0 +1,136 @@
++/* Rustle patch (DP memo), see dpmemo.h. A chained hash table under one mutex; the whole table is dropped when it exceeds
++ * its byte cap (overlapping loci are adjacent in the input, so reuse is local). Keys are compared in full. */
++#include <stdlib.h>
++#include <string.h>
++#include <stdio.h>
++#include <pthread.h>
++#include "dpmemo.h"
++
++typedef struct ent_s {
++	uint64_t h;
++	uint32_t key_len;
++	uint32_t *key;
++	mm_dpm_out_t out;
++	struct ent_s *next;
++} ent_t;
++
++#define NB (1u<<20)
++static ent_t **g_b = 0;
++static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
++static uint64_t g_cap = 0, g_bytes = 0, g_hits = 0, g_miss = 0, g_flush = 0, g_vbad = 0;
++static int g_verify = 0;
++
++int mm_dpm_active(void) { return g_b != 0; }
++
++void mm_dpm_init(uint64_t cap_bytes)
++{
++	g_b = (ent_t**)calloc(NB, sizeof(ent_t*));
++	g_cap = cap_bytes;
++	g_verify = getenv("MM_DPM_VERIFY") != 0;
++}
++
++static inline uint64_t mix(uint64_t a, uint64_t w, uint64_t m, int r)
++{
++	a = (a ^ w) * m;
++	return a << r | a >> (64 - r);
++}
++
++void mm_dpm_hash(const uint8_t *s, int64_t n, uint64_t h[2])
++{
++	uint64_t a = 0x243f6a8885a308d3ULL ^ (uint64_t)n, b = 0x13198a2e03707344ULL, w;
++	int64_t i = 0;
++	for (; i + 8 <= n; i += 8) {
++		memcpy(&w, s + i, 8);
++		a = mix(a, w, 0x9e3779b97f4a7c15ULL, 31);
++		b = mix(b, w << 23 | w >> 41, 0xc2b2ae3d27d4eb4fULL, 27);
++	}
++	w = 0;
++	if (i < n) memcpy(&w, s + i, n - i);
++	a = mix(a, w ^ 0xa5, 0x9e3779b97f4a7c15ULL, 31);
++	b = mix(b, w ^ 0x5a, 0xc2b2ae3d27d4eb4fULL, 27);
++	h[0] = a ^ (b >> 29), h[1] = b ^ (a >> 31);
++}
++
++static uint64_t key_hash(const uint32_t *k, uint32_t n)
++{
++	uint64_t h[2];
++	mm_dpm_hash((const uint8_t*)k, (int64_t)n * 4, h);
++	return h[0];
++}
++
++static mm_extra_t *copy_p(const mm_extra_t *p)
++{
++	mm_extra_t *q;
++	if (p == 0) return 0;
++	q = (mm_extra_t*)malloc(p->capacity * 4);
++	memcpy(q, p, (sizeof(mm_extra_t) / 4 + p->n_cigar) * 4);
++	q->capacity = p->capacity;
++	return q;
++}
++
++static void flush_all(void)
++{
++	uint32_t i;
++	for (i = 0; i < NB; ++i) {
++		ent_t *e = g_b[i], *n;
++		for (; e; e = n) {
++			n = e->next;
++			free(e->key);
++			free(e->out.p);
++			free(e);
++		}
++		g_b[i] = 0;
++	}
++	g_bytes = 0, ++g_flush;
++}
++
++int mm_dpm_get(const uint32_t *key, uint32_t key_len, mm_dpm_out_t *out)
++{
++	uint64_t h = key_hash(key, key_len);
++	ent_t *e;
++	int hit = 0;
++	pthread_mutex_lock(&g_lock);
++	for (e = g_b[h & (NB - 1)]; e; e = e->next)
++		if (e->h == h && e->key_len == key_len && memcmp(e->key, key, key_len * 4) == 0) {
++			*out = e->out;
++			out->p = copy_p(e->out.p);
++			hit = 1;
++			break;
++		}
++	if (hit) ++g_hits; else ++g_miss;
++	pthread_mutex_unlock(&g_lock);
++	return hit;
++}
++
++void mm_dpm_put(const uint32_t *key, uint32_t key_len, const mm_dpm_out_t *out)
++{
++	uint64_t h = key_hash(key, key_len), sz;
++	ent_t *e = (ent_t*)malloc(sizeof(ent_t));
++	e->h = h, e->key_len = key_len;
++	e->key = (uint32_t*)malloc(key_len * 4);
++	memcpy(e->key, key, key_len * 4);
++	e->out = *out;
++	e->out.p = copy_p(out->p);
++	sz = sizeof(ent_t) + key_len * 4 + (out->p? out->p->capacity * 4 : 0);
++	pthread_mutex_lock(&g_lock);
++	if (g_bytes + sz > g_cap) flush_all();
++	e->next = g_b[h & (NB - 1)];
++	g_b[h & (NB - 1)] = e;
++	g_bytes += sz;
++	pthread_mutex_unlock(&g_lock);
++}
++
++int mm_dpm_verify(void) { return g_verify; }
++
++void mm_dpm_verified(int bad)
++{
++	if (bad) __sync_fetch_and_add(&g_vbad, 1);
++}
++
++void mm_dpm_report(void)
++{
++	if (g_b && mm_verbose >= 3)
++		fprintf(stderr, "[M::dp-memo] %lu chain alignment(s) reused, %lu computed, %lu flush(es)%s%lu\n",
++				(unsigned long)g_hits, (unsigned long)g_miss, (unsigned long)g_flush, g_verify? "; verify mismatches " : "",
++				g_verify? (unsigned long)g_vbad : 0UL);
++}
+diff --git a/dpmemo.h b/dpmemo.h
+new file mode 100644
+index 0000000..362469a
+--- /dev/null
++++ b/dpmemo.h
+@@ -0,0 +1,28 @@
++/* Rustle patch (DP memo): reuse the base-level alignment of a chain whose window bases and seeds (relative to the window)
++ * equal those of a chain aligned before. Overlapping loci aligned all-vs-all present the same genomic window to the
++ * aligner many times; its result is a deterministic function of the window's bases, the seeds and the options. */
++#ifndef MM_DPMEMO_H
++#define MM_DPMEMO_H
++#include <stdint.h>
++#include "minimap.h"
++#ifdef __cplusplus
++extern "C" {
++#endif
++typedef struct {
++	int32_t rs1, re1, qs1, qe1;   /* relative to the window starts (query on the chain's strand) */
++	int32_t mlen, blen, is_spliced;
++	int32_t split_rel, split_inv; /* split_rel < 0: no split */
++	mm_extra_t *p;                /* deep copy, or NULL */
++} mm_dpm_out_t;
++int mm_dpm_active(void);
++void mm_dpm_init(uint64_t cap_bytes);
++void mm_dpm_hash(const uint8_t *s, int64_t n, uint64_t h[2]);
++int mm_dpm_get(const uint32_t *key, uint32_t key_len, mm_dpm_out_t *out); /* 1 on a hit; out->p is a fresh copy */
++void mm_dpm_put(const uint32_t *key, uint32_t key_len, const mm_dpm_out_t *out);
++void mm_dpm_report(void);
++int mm_dpm_verify(void);              /* MM_DPM_VERIFY set: recompute every hit and compare */
++void mm_dpm_verified(int bad);
++#ifdef __cplusplus
++}
++#endif
++#endif
 diff --git a/gate.c b/gate.c
 new file mode 100644
 index 0000000..2e7042d
@@ -215,28 +502,30 @@ index 0000000..72182e6
 +#endif
 +#endif
 diff --git a/main.c b/main.c
-index 3db0ade..9d0eb16 100644
+index 3db0ade..82fa062 100644
 --- a/main.c
 +++ b/main.c
-@@ -5,6 +5,7 @@
+@@ -5,6 +5,8 @@
  #include "bseq.h"
  #include "minimap.h"
  #include "mmpriv.h"
 +#include "gate.h"
++#include "dpmemo.h"
  #include "ketopt.h"
  
  #ifdef __linux__
-@@ -96,6 +97,9 @@ static ko_longopt_t long_options[] = {
+@@ -96,6 +98,10 @@ static ko_longopt_t long_options[] = {
  	{ "mask-level",     ko_required_argument, 'M' },
  	{ "min-dp-score",   ko_required_argument, 's' },
  	{ "sam",            ko_no_argument,       'a' },
 +	{ "gate",           ko_required_argument, 520 }, // Rustle patch
 +	{ "gate-margin",    ko_required_argument, 521 }, // Rustle patch
 +	{ "gate-frac",      ko_required_argument, 522 }, // Rustle patch
++	{ "dp-memo",        ko_no_argument,       523 }, // Rustle patch
  	{ 0, 0, 0 }
  };
  
-@@ -262,6 +266,13 @@ int main(int argc, char *argv[])
+@@ -262,6 +268,14 @@ int main(int argc, char *argv[])
  		else if (c == 361) opt.flag |= MM_F_OUT_JUNC | MM_F_CIGAR; // --write-junc
  		else if (c == 362) fn_bed_pass1 = o.arg; // --jump-pass1
  		else if (c == 501) mm_dbg_flag |= MM_DBG_SEED_FREQ; // --dbg-seed-occ
@@ -247,10 +536,11 @@ index 3db0ade..9d0eb16 100644
 +			}
 +		} else if (c == 521) mm_gate_margin = atoi(o.arg); // --gate-margin (Rustle patch)
 +		else if (c == 522) mm_gate_frac = atof(o.arg); // --gate-frac (Rustle patch)
++		else if (c == 523) mm_dpm_init(getenv("MM_DPM_CAP_GB")? (uint64_t)(atof(getenv("MM_DPM_CAP_GB")) * 1e9) : 1000000000ULL); // --dp-memo (Rustle patch)
  		else if (c == 363) spsc_scale = atof(o.arg); // --spsc-scale
  		else if (c == 358 || c == 364) opt.junc_pen = atoi(o.arg); // --junc-pen or --spsc0
  		else if (c == 330) {
-@@ -432,6 +443,8 @@ int main(int argc, char *argv[])
+@@ -432,6 +446,8 @@ int main(int argc, char *argv[])
  		mm_idx_reader_close(idx_rdr);
  		return 1;
  	}
@@ -259,11 +549,12 @@ index 3db0ade..9d0eb16 100644
  	if (opt.best_n == 0 && (opt.flag&MM_F_CIGAR) && mm_verbose >= 2)
  		fprintf(stderr, "[WARNING]\033[1;31m `-N 0' reduces alignment accuracy. Please use --secondary=no to suppress secondary alignments.\033[0m\n");
  	while ((mi = mm_idx_reader_read(idx_rdr, n_threads)) != 0) {
-@@ -515,6 +528,7 @@ int main(int argc, char *argv[])
+@@ -515,6 +531,8 @@ int main(int argc, char *argv[])
  		exit(EXIT_FAILURE);
  	}
  
 +	mm_gate_report(); // Rustle patch
++	mm_dpm_report(); // Rustle patch
  	if (mm_verbose >= 3) {
  		fprintf(stderr, "[M::%s] Version: %s\n", __func__, MM_VERSION);
  		fprintf(stderr, "[M::%s] CMD:", __func__);
@@ -310,7 +601,7 @@ index 54f78a4..6340255 100644
  		}
  		mm_seg_free(b->km, n_segs, seg);
 diff --git a/minimap.h b/minimap.h
-index 41fe462..1972557 100644
+index 41fe462..dbdf3e5 100644
 --- a/minimap.h
 +++ b/minimap.h
 @@ -5,7 +5,7 @@
@@ -318,7 +609,7 @@ index 41fe462..1972557 100644
  #include <sys/types.h>
  
 -#define MM_VERSION "2.30-r1287"
-+#define MM_VERSION "2.30-r1287-gate3"
++#define MM_VERSION "2.30-r1287-gate4"
  
  #define MM_F_NO_DIAG       (0x001LL) // no exact diagonal hit
  #define MM_F_NO_DUAL       (0x002LL) // skip pairs where query name is lexicographically larger than target name

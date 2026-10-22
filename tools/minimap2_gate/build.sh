@@ -6,8 +6,9 @@
 #
 # The patch adds `--gate FILE` (`name<TAB>start<TAB>end` per exon, 0-based half-open, in the sequence's own coordinates) and
 # `--gate-margin INT`: the chains between a query and a target are aligned at base level only when one of them touches a
-# listed interval on both sides (+-margin). Without --gate the binary writes the stock output byte for byte; its version is
-# 2.30-r1287-gate3. mcl_families finds it as `minimap2-gate` on PATH (or RUSTLE_MINIMAP2), and tools/mm2_shard.sh runs it
+# listed interval on both sides (+-margin), and `--dp-memo`: a chain whose window bases and seeds equal an earlier chain's
+# reuses that alignment (overlapping loci present the same window many times). Without these options the binary writes
+# the stock output byte for byte; its version is 2.30-r1287-gate4. mcl_families finds it as `minimap2-gate` on PATH (or RUSTLE_MINIMAP2), and tools/mm2_shard.sh runs it
 # for any command line carrying --gate.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
