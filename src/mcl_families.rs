@@ -140,9 +140,16 @@ struct Args {
     /// ⭐ Drop PAF records that map genomic bases onto themselves (PREREG_o1_self_hits_2026-10-21): two overlapping loci
     /// share DNA (the records are genomic spans), so the all-vs-all aligns it on the main diagonal at identity ~1.0 and
     /// joins a gene with its antisense or nested neighbour as a "family". Only the diagonal record is dropped; a tandem
-    /// shift between overlapping loci is kept (the span-level guard was refuted, register 1010). Default OFF.
-    #[arg(long, default_value_t = false)]
+    /// shift between overlapping loci is kept (the span-level guard was refuted, register 1010), and so is a self-hit
+    /// between same-strand loci sharing exon bases (one transcription unit, merged by the fold; Amendment 1).
+    /// **Default ON (user decision 2026-10-21, register 1369**: held-out gorilla_OR6737 passes every Amendment 3 guard;
+    /// human_A119b fails guard G1 in development; annotation-built catalogs untested); `--no-reject-self-hits` restores
+    /// the graph of every catalog built before the flip.
+    #[arg(long, default_value_t = true)]
     reject_self_hits: bool,
+    /// Escape hatch: keep the diagonal self-hit records (the behaviour before 2026-10-21, the control arm of the prereg).
+    #[arg(long, default_value_t = false)]
+    no_reject_self_hits: bool,
 
     /// ⭐ Minimum ABSOLUTE exonic bases an edge must rest on (additive; `cov_longer` is unchanged).
     /// 0 = off. ⚠ Prefer this over --exonic-overlap: replacing the coverage measure shatters real
@@ -1208,6 +1215,9 @@ fn main() -> Result<()> {
     }
     if args.no_exonic_both_sides {
         args.exonic_both_sides = false;
+    }
+    if args.no_reject_self_hits {
+        args.reject_self_hits = false;
     }
     if args.no_units_follow_reads {
         args.units_follow_reads = false;
@@ -2766,6 +2776,23 @@ mod tests {
         assert_eq!(
             GraphParams::default().min_cov_shorter,
             0.0,
+            "the library default stays off: only the CLI flips"
+        );
+    }
+
+    /// `--reject-self-hits` ships ON (user decision 2026-10-21, after PREREG_o1_self_hits Amendment 3: held-out
+    /// gorilla_OR6737 PASS); `--no-reject-self-hits` restores the graph of every catalog built before the flip, and the
+    /// old flag still parses. The library default stays off.
+    #[test]
+    fn reject_self_hits_defaults_on_and_the_escape_hatch_parses() {
+        let parse = |v: &[&str]| {
+            Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied()))
+        };
+        assert!(parse(&[]).expect("parse").reject_self_hits);
+        assert!(parse(&["--reject-self-hits"]).expect("older command lines still parse").reject_self_hits);
+        assert!(parse(&["--no-reject-self-hits"]).is_ok());
+        assert!(
+            !GraphParams::default().reject_self_hits,
             "the library default stays off: only the CLI flips"
         );
     }

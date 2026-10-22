@@ -316,3 +316,36 @@ Every OR6737 number reproduces to the digit without the scorer. The PASS survive
 - control and fix runs on a guided CAT arm, both under Amendment 3;
 - for MCL70-type splits, a same-unit test that follows the fold's transitive components rather than pairwise exon sharing.
   That would be a v3, with its own pre-registration.
+
+## Decision (user, 2026-10-21): `--reject-self-hits` is the default
+
+**User:** "lets make reject self hits the default". The user decided this knowing the scope of the evidence above:
+- confirmed on one held-out gorilla catalog;
+- human_A119b fails G1 in development;
+- annotation-built catalogs are untested.
+
+**What changed:**
+- `mcl_families` now ships `--reject-self-hits` ON, with v2's rule (strands from the loci GFF).
+- `--no-reject-self-hits` restores the graph of every catalog built before the flip. The control arms above are now run with
+  that flag.
+- `--reject-self-hits` still parses and is a no-op.
+- The library default (`GraphParams::default()`) stays OFF, as with `min_shared_exon_frac`. `params.tsv` records the
+  effective value.
+
+**Checked after the flip:**
+- **gorilla_KB3781 and gorilla_OR6737, new default vs the fix arm:** clusters, copies and merged copies are byte-identical,
+  with the same records dropped (3,357; 2,963).
+- **The same catalogs, `--no-reject-self-hits` vs the controls:** byte-identical.
+- **Tests:** 19 / 19 `mcl_families`, 1,106 library, 3 driver.
+
+**Run without `--gff`:** when `--paf` is given without `--gff`, no strands or exon blocks are known. The rule then falls back to
+v1, which drops every diagonal self-hit. Every families-stage run in this project uses `--from-gtf`, which writes and passes its
+loci GFF.
+
+**What changes downstream:**
+- Every families catalog built from now on drops self-overlap families. On the catalogs scored here:
+  - human_A119b: 9,907 → 9,355 copies;
+  - human_testis: 1,115 → 1,069;
+  - gorilla_KB3781: 918 → 843;
+  - gorilla_OR6737: 1,607 → 1,521.
+- The shipped catalogs in `rustle_figures/runs` are unchanged until they are rebuilt.

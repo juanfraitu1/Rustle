@@ -59873,7 +59873,8 @@ pub mod fam_from_gtf {
             /// overlapping loci carry the same bases (the records are genomic spans), so the all-vs-all aligns that
             /// shared DNA on the main diagonal at identity ~1.0 — never homology between two copies. Unlike
             /// `reject_overlapping` (every record between overlapping SPANS; refuted as a guard, register 1010) a tandem
-            /// shift between overlapping loci (different bases) is kept. Default OFF ⟹ byte-identical.
+            /// shift between overlapping loci (different bases) is kept. **`mcl_families` ships this ON (user decision
+            /// 2026-10-21, register 1369); the STRUCT default stays OFF**, the same split as `min_shared_exon_frac`.
             pub reject_self_hits: bool,
             /// ⭐ §6ey: some single alignment record must map ≥ `min_exonic_bp` exon bases of one record onto exon
             /// bases of the other (EXON-TO-EXON homology), not only touch the longer one's exons. Records are aligned as genomic SPANS, so a pseudogene lying inside another family's gene
