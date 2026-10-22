@@ -56472,6 +56472,7 @@ pub mod fam_from_gtf {
 
     pub fn gtf_loci<R: std::io::BufRead>(mut reader: R, rule: Representative) -> Result<Vec<GtfLocus>> {
         use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
+        use rayon::prelude::*;
         use std::collections::BTreeMap;
         // `pat` = `key "` (the first occurrence of the whole pattern, as before; no allocation per call)
         fn attr<'a>(s: &'a str, pat: &str) -> Option<&'a str> {
@@ -56479,6 +56480,42 @@ pub mod fam_from_gtf {
             let j = s[i..].find('"')? + i;
             Some(&s[i..j])
         }
+        // One GTF line, parsed (in parallel) into borrowed fields; the maps are then filled in file order, so
+        // first-appearance gene order, "last line wins" per transcript and per-transcript exon order are as before.
+        enum Line<'a> {
+            Tx { t: &'a str, g: &'a str, strand: &'a str, reads: u64 },
+            Exon { t: &'a str, chrom: &'a str, s: u64, e: u64 },
+        }
+        fn parse(line: &str) -> Result<Option<Line<'_>>> {
+            // `lines()` stripped "\n" and a "\r" before it
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            if line.starts_with('#') {
+                return Ok(None);
+            }
+            let r: Vec<&str> = line.split('\t').collect();
+            if r.len() < 9 {
+                return Ok(None);
+            }
+            let Some(t) = attr(r[8], "transcript_id \"") else {
+                return Ok(None);
+            };
+            Ok(if r[2] == "transcript" {
+                Some(Line::Tx {
+                    t,
+                    g: attr(r[8], "gene_id \"").unwrap_or(t),
+                    strand: r[6],
+                    reads: attr(r[8], "reads \"").and_then(|v| v.parse().ok()).unwrap_or(0),
+                })
+            } else if r[2] == "exon" {
+                Some(Line::Exon { t, chrom: r[0], s: r[3].parse()?, e: r[4].parse()? })
+            } else {
+                None
+            })
+        }
+        let mut text = String::new();
+        reader.read_to_string(&mut text)?;
+        let lines: Vec<&str> = text.split('\n').collect();
+        let parsed: Vec<Result<Option<Line>>> = lines.par_iter().map(|l| parse(l)).collect();
         let mut exons: HashMap<String, Vec<(String, u64, u64)>> = HashMap::default();
         let mut gene_of: HashMap<String, String> = HashMap::default();
         let mut strand: HashMap<String, String> = HashMap::default();
@@ -56487,43 +56524,20 @@ pub mod fam_from_gtf {
         // genes already in `gene_order` (was a scan of every `gene_of` value per transcript line: O(T^2) on a
         // whole-genome GTF); same first-appearance order for any GTF whose transcript_ids do not switch gene
         let mut seen_genes: HashSet<String> = HashSet::default();
-        let mut buf = String::new();
-        loop {
-            buf.clear();
-            if reader.read_line(&mut buf)? == 0 {
-                break;
-            }
-            // `lines()` stripped "\n" and a "\r" before it
-            let line = buf.strip_suffix('\n').map_or(buf.as_str(), |l| l.strip_suffix('\r').unwrap_or(l));
-            if line.starts_with('#') {
-                continue;
-            }
-            let r: Vec<&str> = line.split('\t').collect();
-            if r.len() < 9 {
-                continue;
-            }
-            let Some(t) = attr(r[8], "transcript_id \"") else {
-                continue;
-            };
-            if r[2] == "transcript" {
-                let g = attr(r[8], "gene_id \"").unwrap_or(t).to_string();
-                if seen_genes.insert(g.clone()) {
-                    gene_order.push(g.clone());
+        for rec in parsed {
+            match rec? {
+                None => {}
+                Some(Line::Tx { t, g, strand: st, reads: n }) => {
+                    if seen_genes.insert(g.to_string()) {
+                        gene_order.push(g.to_string());
+                    }
+                    gene_of.insert(t.to_string(), g.to_string());
+                    strand.insert(t.to_string(), st.to_string());
+                    reads.insert(t.to_string(), n);
                 }
-                gene_of.insert(t.to_string(), g);
-                strand.insert(t.to_string(), r[6].to_string());
-                reads.insert(
-                    t.to_string(),
-                    attr(r[8], "reads \"")
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0),
-                );
-            } else if r[2] == "exon" {
-                exons.entry(t.to_string()).or_default().push((
-                    r[0].to_string(),
-                    r[3].parse()?,
-                    r[4].parse()?,
-                ));
+                Some(Line::Exon { t, chrom, s, e }) => {
+                    exons.entry(t.to_string()).or_default().push((chrom.to_string(), s, e));
+                }
             }
         }
         let mut txs_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -60416,226 +60430,315 @@ pub mod fam_from_gtf {
             // whose exons are jointly covered. Accumulate the pair's intervals, threshold ONCE at the end.
             // (Measured: per-record thresholding shattered the NPIP cluster 43 -> 17/15/3/3/1.)
             type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64);
-            let mut acc: BTreeMap<(GeneKey, GeneKey), PairAcc> = BTreeMap::new();
+            // the deferred pairs, sorted by key: the order the resolution below walks (and numbers the nodes in)
+            let mut pairs: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
 
-            for line in paf.lines() {
+            // One PAF record, classified without touching the graph (shared by the sequential and the parallel path).
+            enum Rec {
+                Skip,
+                SameLocus,
+                Overlapping,
+                SelfHit,
+                Deferred { k: (GeneKey, GeneKey), a: (u64, u64), b: (u64, u64), nm: u64, bl: u64, ee: u64, miss: [Option<GeneKey>; 2] },
+                Direct { qk: GeneKey, tk: GeneKey, w: Option<(f64, f64)>, miss: [Option<GeneKey>; 2] },
+            }
+            let deferred = p.exonic_overlap || p.min_exonic_bp > 0;
+            let classify = |line: &str| -> Rec {
                 let f: Vec<&str> = line.split('\t').collect();
                 if f.len() < 11 {
-                    continue;
+                    return Rec::Skip;
                 }
                 let (q, t) = (f[0], f[5]);
                 if q == t {
-                    continue;
+                    return Rec::Skip;
                 }
                 let (Some(qk), Some(tk)) = (parse_gene_key(q), parse_gene_key(t)) else {
-                    continue;
+                    return Rec::Skip;
                 };
                 if let Some(l) = loci {
                     if l.representative(&qk) == l.representative(&tk) {
-                        g.same_locus_records += 1;
-                        continue;
+                        return Rec::SameLocus;
                     }
                     if !l.attribute_edges
                         && (!l.is_representative(&qk) || !l.is_representative(&tk))
                     {
-                        g.same_locus_records += 1; // representative-only: a folded model's record carries no evidence
-                        continue;
+                        return Rec::SameLocus; // representative-only: a folded model's record carries no evidence
                     }
                 }
                 // Two DISTINCT gene records whose 1-based inclusive intervals intersect are not paralogs; the
                 // `q == t` guard above only catches byte-identical headers.
                 if p.reject_overlapping && qk.0 == tk.0 && qk.1 <= tk.2 && tk.1 <= qk.2 {
-                    g.rejected_overlapping += 1;
-                    continue;
+                    return Rec::Overlapping;
                 }
                 let (Ok(ql), Ok(qs), Ok(qe)) = (
                     f[1].parse::<u64>(),
                     f[2].parse::<u64>(),
                     f[3].parse::<u64>(),
                 ) else {
-                    continue;
+                    return Rec::Skip;
                 };
                 let (Ok(tl), Ok(ts), Ok(te)) = (
                     f[6].parse::<u64>(),
                     f[7].parse::<u64>(),
                     f[8].parse::<u64>(),
                 ) else {
-                    continue;
+                    return Rec::Skip;
                 };
                 let (Ok(nmatch), Ok(blocklen)) = (f[9].parse::<u64>(), f[10].parse::<u64>()) else {
-                    continue;
+                    return Rec::Skip;
                 };
                 if p.reject_self_hits && is_self_hit(&qk, qs, qe, f[4], &tk, ts, te) && !same_unit(&qk, &tk) {
-                    g.rejected_self_hits += 1;
-                    continue;
+                    return Rec::SelfHit;
                 }
                 if blocklen < p.min_bp {
-                    continue;
+                    return Rec::Skip;
                 }
                 let identity = nmatch as f64 / blocklen.max(1) as f64;
                 if identity < p.min_identity {
-                    continue;
+                    return Rec::Skip;
                 }
                 let aln = (qe.saturating_sub(qs)).max(te.saturating_sub(ts));
+                let mut miss: [Option<GeneKey>; 2] = [None, None];
                 let dq = match exonic_len.get(&qk) {
                     Some(&v) => v,
                     None => {
-                        missing.insert(qk.clone());
+                        miss[0] = Some(qk.clone());
                         ql
                     }
                 };
                 let dt = match exonic_len.get(&tk) {
                     Some(&v) => v,
                     None => {
-                        missing.insert(tk.clone());
+                        miss[1] = Some(tk.clone());
                         tl
                     }
                 };
-                if p.exonic_overlap || p.min_exonic_bp > 0 {
+                if deferred {
                     // Defer: bank this record's intervals on each side and decide once the pair is complete.
-                    let (k, qf) = if qk <= tk {
-                        ((qk.clone(), tk.clone()), true)
-                    } else {
-                        ((tk.clone(), qk.clone()), false)
-                    };
-                    let e = acc
-                        .entry(k)
-                        .or_insert_with(|| (Vec::new(), Vec::new(), 0, 0, 0));
-                    if qf {
-                        e.0.push((qs, qe));
-                        e.1.push((ts, te));
-                    } else {
-                        e.0.push((ts, te));
-                        e.1.push((qs, qe));
-                    }
-                    e.2 += nmatch;
-                    e.3 += blocklen;
-                    if p.exonic_both_sides || p.min_shared_exon_frac > 0.0 {
-                        // exon-to-exon: THIS record's interval must touch exon bases on both sides; keep the best record
+                    // exon-to-exon: THIS record's interval must touch exon bases on both sides; the pair keeps its best record
+                    let ee = if p.exonic_both_sides || p.min_shared_exon_frac > 0.0 {
                         let qx = exon_blocks
                             .get(&qk)
                             .map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
                         let tx = exon_blocks
                             .get(&tk)
                             .map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
-                        e.4 = e.4.max(qx.min(tx));
-                    }
-                    continue;
+                        qx.min(tx)
+                    } else {
+                        0
+                    };
+                    return if qk <= tk {
+                        Rec::Deferred { k: (qk, tk), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, miss }
+                    } else {
+                        Rec::Deferred { k: (tk, qk), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, miss }
+                    };
                 }
                 let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
-                if cov_longer < p.min_cov_longer {
-                    continue;
+                let w = (cov_longer >= p.min_cov_longer).then(|| (identity * cov_longer, identity));
+                Rec::Direct { qk, tk, w, miss }
+            };
+
+            if deferred {
+                // Every record is banked per pair, and a pair's resolution below sorts its intervals and sums integers,
+                // so chunks of the PAF are classified in parallel and merged; the graph is the sequential one.
+                use rayon::prelude::*;
+                type Chunk = (std::collections::HashMap<(GeneKey, GeneKey), PairAcc>, [usize; 3], Vec<GeneKey>);
+                let lines: Vec<&str> = paf.lines().collect();
+                let chunks: Vec<Chunk> = lines
+                    .par_chunks(1 << 15)
+                    .map(|ls| {
+                        let mut local: Chunk = Default::default();
+                        for line in ls {
+                            match classify(line) {
+                                Rec::Skip | Rec::Direct { .. } => {}
+                                Rec::SameLocus => local.1[0] += 1,
+                                Rec::Overlapping => local.1[1] += 1,
+                                Rec::SelfHit => local.1[2] += 1,
+                                Rec::Deferred { k, a, b, nm, bl, ee, miss } => {
+                                    local.2.extend(miss.into_iter().flatten());
+                                    let e = local.0.entry(k).or_insert_with(|| (Vec::new(), Vec::new(), 0, 0, 0));
+                                    e.0.push(a);
+                                    e.1.push(b);
+                                    e.2 += nm;
+                                    e.3 += bl;
+                                    e.4 = e.4.max(ee);
+                                }
+                            }
+                        }
+                        local
+                    })
+                    .collect();
+                // merge: every chunk's pairs, sorted by key (the BTreeMap's order), equal keys coalesced in chunk order
+                let mut all: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
+                for (m, c, miss) in chunks {
+                    g.same_locus_records += c[0];
+                    g.rejected_overlapping += c[1];
+                    g.rejected_self_hits += c[2];
+                    missing.extend(miss);
+                    all.extend(m);
                 }
-                let w = identity * cov_longer;
-                let (qn, tn) = match loci {
-                    Some(l) => (l.representative(&qk).clone(), l.representative(&tk).clone()),
-                    None => (qk, tk),
-                };
-                let (a, b) = (node_of(qn, &mut g.genes), node_of(tn, &mut g.genes));
-                let key = if a < b { (a, b) } else { (b, a) };
-                let e = g.edges.entry(key).or_insert(0.0);
-                if w > *e {
-                    *e = w;
+                all.par_sort_by(|x, y| x.0.cmp(&y.0)); // stable: equal keys keep chunk order
+                for (k, v) in all {
+                    match pairs.last_mut() {
+                        Some((lk, e)) if *lk == k => {
+                            e.0.extend(v.0);
+                            e.1.extend(v.1);
+                            e.2 += v.2;
+                            e.3 += v.3;
+                            e.4 = e.4.max(v.4);
+                        }
+                        _ => pairs.push((k, v)),
+                    }
                 }
-                let id_e = g.idents.entry(key).or_insert(0.0);
-                if identity > *id_e {
-                    *id_e = identity;
+            } else {
+                for line in paf.lines() {
+                    match classify(line) {
+                        Rec::Skip | Rec::Deferred { .. } => {}
+                        Rec::SameLocus => g.same_locus_records += 1,
+                        Rec::Overlapping => g.rejected_overlapping += 1,
+                        Rec::SelfHit => g.rejected_self_hits += 1,
+                        Rec::Direct { qk, tk, w, miss } => {
+                            missing.extend(miss.into_iter().flatten());
+                            let Some((w, identity)) = w else { continue };
+                            let (qn, tn) = match loci {
+                                Some(l) => (l.representative(&qk).clone(), l.representative(&tk).clone()),
+                                None => (qk, tk),
+                            };
+                            let (a, b) = (node_of(qn, &mut g.genes), node_of(tn, &mut g.genes));
+                            let key = if a < b { (a, b) } else { (b, a) };
+                            let e = g.edges.entry(key).or_insert(0.0);
+                            if w > *e {
+                                *e = w;
+                            }
+                            let id_e = g.idents.entry(key).or_insert(0.0);
+                            if identity > *id_e {
+                                *id_e = identity;
+                            }
+                        }
+                    }
                 }
             }
-            // Resolve the deferred pairs: merge each side's intervals, charge the LONGER gene's own exonic bases
-            // against its own exonic denominator, and threshold once.
-            for ((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon)) in acc {
-                let da = exonic_len.get(&ak).copied().unwrap_or(0);
-                let db = exonic_len.get(&bk).copied().unwrap_or(0);
-                let a_is_longer = da >= db;
-                let (gk, iv, den) = if a_is_longer {
-                    (&ak, aiv.clone(), da)
-                } else {
-                    (&bk, biv.clone(), db)
-                };
-                // §6x4: the SHORTER side of the same pair, kept for the containment escape below.
-                let (sk, siv, sden) = if a_is_longer {
-                    (&bk, biv, db)
-                } else {
-                    (&ak, aiv, da)
-                };
-                let Some(blocks) = exon_blocks.get(gk) else {
-                    g.exonic_overlap_missing += 1;
-                    continue;
-                };
-                g.exonic_overlap_joined += 1;
-                let merged = merge_intervals(iv);
-                let covered = merged
-                    .iter()
-                    .map(|&(s0, e0)| exonic_bases_in(blocks, gk.1, s0, e0))
-                    .sum::<u64>();
-                if covered < p.min_exonic_bp {
-                    g.rejected_no_exonic += 1;
-                    continue;
+            // Resolve the deferred pairs (verdicts in parallel: each is a pure function of its pair; counters and node
+            // numbering are applied in key order, as before). Charge the LONGER gene's own exonic bases against its own
+            // exonic denominator, and threshold once.
+            enum Verdict {
+                Missing,
+                NoExonic,
+                LowShared,
+                Below { contained: bool },
+                Edge { w: f64, identity: f64, contained: bool },
+            }
+            let verdicts: Vec<Verdict> = {
+                use rayon::prelude::*;
+                pairs
+                    .par_iter()
+                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon))| {
+                        let (nmatch, blocklen, exon_exon) = (*nmatch, *blocklen, *exon_exon);
+                        let da = exonic_len.get(ak).copied().unwrap_or(0);
+                        let db = exonic_len.get(bk).copied().unwrap_or(0);
+                        let a_is_longer = da >= db;
+                        let (gk, iv, den) = if a_is_longer { (ak, aiv.clone(), da) } else { (bk, biv.clone(), db) };
+                        // §6x4: the SHORTER side of the same pair, kept for the containment escape below.
+                        let (sk, siv, sden) = if a_is_longer { (bk, biv.clone(), db) } else { (ak, aiv.clone(), da) };
+                        let Some(blocks) = exon_blocks.get(gk) else {
+                            return Verdict::Missing;
+                        };
+                        let merged = merge_intervals(iv);
+                        let covered = merged
+                            .iter()
+                            .map(|&(s0, e0)| exonic_bases_in(blocks, gk.1, s0, e0))
+                            .sum::<u64>();
+                        if covered < p.min_exonic_bp {
+                            return Verdict::NoExonic;
+                        }
+                        if p.exonic_both_sides && exon_exon < p.min_exonic_bp {
+                            // no single record maps exon bases of one gene onto exon bases of the other: the homology is
+                            // between spans (a nested pseudogene carrying its host's bases, co-duplicated neighbours), not
+                            // between the genes
+                            return Verdict::NoExonic;
+                        }
+                        if p.min_shared_exon_frac > 0.0 {
+                            // the same exon-to-exon evidence as above, but as a FRACTION of the smaller gene's exonic
+                            // length: one shared base passes the structural gate above yet can be a sliver of either
+                            // gene's model (§6ks — co-duplicated neighbours pass at exactly this point).
+                            let smaller = da.min(db).max(1);
+                            if (exon_exon as f64 / smaller as f64) < p.min_shared_exon_frac {
+                                return Verdict::LowShared;
+                            }
+                        }
+                        // `exonic_overlap` REPLACES the numerator; otherwise keep the span numerator (unioned over the
+                        // pair's records, so a split alignment is not penalised for being split).
+                        let numer = if p.exonic_overlap {
+                            covered
+                        } else {
+                            merged.iter().map(|&(s0, e0)| e0 - s0).sum::<u64>()
+                        };
+                        let cov_longer = (numer as f64 / den.max(1) as f64).min(1.0);
+                        // ⭐ §6x4 CONTAINMENT ESCAPE. `min_cov_shorter == 0.0` skips this block entirely, so `cov_eff`
+                        // is `cov_longer` and both the gate and the edge weight are byte-identical to every prior catalog.
+                        let mut cov_eff = cov_longer;
+                        let mut contained = false;
+                        // ⛔ r1010: a positional-overlap guard was tried here and REFUTED — see the register.
+                        if p.min_cov_shorter > 0.0 && cov_longer < p.min_cov_longer {
+                            let merged_s = merge_intervals(siv);
+                            let numer_s = if p.exonic_overlap {
+                                exon_blocks.get(sk).map_or(0, |b| {
+                                    merged_s
+                                        .iter()
+                                        .map(|&(s0, e0)| exonic_bases_in(b, sk.1, s0, e0))
+                                        .sum()
+                                })
+                            } else {
+                                merged_s.iter().map(|&(s0, e0)| e0 - s0).sum::<u64>()
+                            };
+                            let cov_shorter = (numer_s as f64 / sden.max(1) as f64).min(1.0);
+                            if cov_shorter >= p.min_cov_shorter {
+                                contained = true;
+                                cov_eff = cov_shorter;
+                            }
+                        }
+                        if cov_eff < p.min_cov_longer && cov_eff < p.min_cov_shorter {
+                            return Verdict::Below { contained };
+                        }
+                        if p.min_cov_shorter <= 0.0 && cov_eff < p.min_cov_longer {
+                            return Verdict::Below { contained };
+                        }
+                        let identity = nmatch as f64 / blocklen.max(1) as f64;
+                        Verdict::Edge { w: identity * cov_eff, identity, contained }
+                    })
+                    .collect()
+            };
+            for (((ak, bk), _), v) in pairs.into_iter().zip(verdicts) {
+                match v {
+                    Verdict::Missing => {
+                        g.exonic_overlap_missing += 1;
+                        continue;
+                    }
+                    _ => g.exonic_overlap_joined += 1,
                 }
-                if p.exonic_both_sides && exon_exon < p.min_exonic_bp {
-                    // no single record maps exon bases of one gene onto exon bases of the other: the homology is
-                    // between spans (a nested pseudogene carrying its host's bases, co-duplicated neighbours), not
-                    // between the genes
-                    g.rejected_no_exonic += 1;
-                    continue;
-                }
-                if p.min_shared_exon_frac > 0.0 {
-                    // the same exon-to-exon evidence as above, but as a FRACTION of the smaller gene's exonic length:
-                    // one shared base passes the structural gate above yet can be a sliver of either gene's model
-                    // (§6ks — co-duplicated neighbours pass at exactly this point).
-                    let smaller = da.min(db).max(1);
-                    if (exon_exon as f64 / smaller as f64) < p.min_shared_exon_frac {
+                let (w, identity) = match v {
+                    Verdict::Missing => unreachable!(),
+                    Verdict::NoExonic => {
+                        g.rejected_no_exonic += 1;
+                        continue;
+                    }
+                    Verdict::LowShared => {
                         g.rejected_low_shared_exon += 1;
                         continue;
                     }
-                }
-                // `exonic_overlap` REPLACES the numerator; otherwise keep the span numerator (unioned over the
-                // pair's records, so a split alignment is not penalised for being split).
-                let numer = if p.exonic_overlap {
-                    covered
-                } else {
-                    merged.iter().map(|&(s0, e0)| e0 - s0).sum::<u64>()
-                };
-                let cov_longer = (numer as f64 / den.max(1) as f64).min(1.0);
-                // ⭐ §6x4 CONTAINMENT ESCAPE. `min_cov_shorter == 0.0` skips this block entirely, so `cov_eff`
-                // is `cov_longer` and both the gate and the edge weight are byte-identical to every prior catalog.
-                let mut cov_eff = cov_longer;
-                // ⛔ r1010: a positional-overlap guard was tried here and REFUTED — see the register. Two de novo
-                // loci that overlap on the genome are frequently genuine tandem copies, so refusing the escape for
-                // them cost more than it saved (chr16 de novo F .230 -> .199, BELOW baseline .214) while doing
-                // nothing for the SD-region node set it was designed to protect (.175 either way).
-                if p.min_cov_shorter > 0.0 && cov_longer < p.min_cov_longer {
-                    let merged_s = merge_intervals(siv);
-                    let numer_s = if p.exonic_overlap {
-                        exon_blocks.get(sk).map_or(0, |b| {
-                            merged_s
-                                .iter()
-                                .map(|&(s0, e0)| exonic_bases_in(b, sk.1, s0, e0))
-                                .sum()
-                        })
-                    } else {
-                        merged_s.iter().map(|&(s0, e0)| e0 - s0).sum::<u64>()
-                    };
-                    let cov_shorter = (numer_s as f64 / sden.max(1) as f64).min(1.0);
-                    if cov_shorter >= p.min_cov_shorter {
-                        g.admitted_by_containment += 1;
-                        // ⭐⭐ §6x8: the weight MUST be `cov_shorter`. Charging the pair's mutual coverage instead
-                        // (r1019) makes the whole flag a NO-OP — every arm returns to its baseline F to three
-                        // decimals — because the escaped edge is then too weak for MCL to route through.
-                        // **The gain comes from the WEIGHT, not from the admission**: putting the node in the
-                        // graph changes nothing; ranking its edge highly is what changes the partition.
-                        cov_eff = cov_shorter;
+                    Verdict::Below { contained } => {
+                        if contained {
+                            g.admitted_by_containment += 1;
+                        }
+                        continue;
                     }
-                }
-                if cov_eff < p.min_cov_longer && cov_eff < p.min_cov_shorter {
-                    continue;
-                }
-                if p.min_cov_shorter <= 0.0 && cov_eff < p.min_cov_longer {
-                    continue;
-                }
-                let identity = nmatch as f64 / blocklen.max(1) as f64;
-                let w = identity * cov_eff;
+                    Verdict::Edge { w, identity, contained } => {
+                        if contained {
+                            g.admitted_by_containment += 1;
+                        }
+                        (w, identity)
+                    }
+                };
                 let (an, bn) = match loci {
                     Some(l) => (l.representative(&ak).clone(), l.representative(&bk).clone()),
                     None => (ak, bk),
@@ -61243,25 +61346,30 @@ pub mod fam_from_gtf {
             if n == 0 {
                 return (Vec::new(), 0);
             }
-            // Column-major sparse matrix with self-loops, as MCL requires.
-            let mut col: Vec<BTreeMap<usize, f64>> = vec![BTreeMap::new(); n];
+            // Column-major sparse matrix with self-loops, as MCL requires: each column a row-sorted vector (the order a
+            // BTreeMap iterates), so every sum below adds its terms in the same order as before and the arithmetic is
+            // bit-identical; columns are independent and computed in parallel.
+            let mut cols: Vec<BTreeMap<usize, f64>> = vec![BTreeMap::new(); n];
             for (&(a, b), &w) in &g.edges {
-                col[a].insert(b, w);
-                col[b].insert(a, w);
+                cols[a].insert(b, w);
+                cols[b].insert(a, w);
             }
-            for (i, c) in col.iter_mut().enumerate() {
+            for (i, c) in cols.iter_mut().enumerate() {
                 c.insert(i, 1.0);
             }
+            let mut col: Vec<Vec<(usize, f64)>> = cols.into_iter().map(|c| c.into_iter().collect()).collect();
             normalize(&mut col);
 
             for _ in 0..max_iter {
-                let next = expand(&col);
-                let mut next = next;
-                for c in next.iter_mut() {
-                    for v in c.values_mut() {
-                        *v = v.powf(inflation);
-                    }
-                    c.retain(|_, v| *v >= prune);
+                let mut next = expand(&col, n);
+                {
+                    use rayon::prelude::*;
+                    next.par_iter_mut().for_each(|c| {
+                        for e in c.iter_mut() {
+                            e.1 = e.1.powf(inflation);
+                        }
+                        c.retain(|e| e.1 >= prune);
+                    });
                 }
                 normalize(&mut next);
                 let done = converged(&col, &next);
@@ -61273,34 +61381,51 @@ pub mod fam_from_gtf {
             join_two_node_components(&g.edges, attractors(&col, n), rule, inflation)
         }
 
-        fn normalize(col: &mut [BTreeMap<usize, f64>]) {
-            for c in col.iter_mut() {
-                let s: f64 = c.values().sum();
+        fn normalize(col: &mut [Vec<(usize, f64)>]) {
+            use rayon::prelude::*;
+            col.par_iter_mut().for_each(|c| {
+                let s: f64 = c.iter().map(|e| e.1).sum();
                 if s > 0.0 {
-                    for v in c.values_mut() {
-                        *v /= s;
+                    for e in c.iter_mut() {
+                        e.1 /= s;
                     }
                 }
-            }
+            });
         }
 
-        /// One MCL expansion step: `M <- M * M`, column-major.
-        fn expand(col: &[BTreeMap<usize, f64>]) -> Vec<BTreeMap<usize, f64>> {
-            col.iter()
-                .map(|c| {
-                    let mut out: BTreeMap<usize, f64> = BTreeMap::new();
-                    for (&k, &wk) in c {
-                        for (&i, &wi) in &col[k] {
-                            *out.entry(i).or_insert(0.0) += wi * wk;
+        /// One MCL expansion step: `M <- M * M`, column-major. Each output entry adds its terms in increasing `k`, as the
+        /// BTreeMap version did (a dense accumulator per thread, reset through the touched rows).
+        fn expand(col: &[Vec<(usize, f64)>], n: usize) -> Vec<Vec<(usize, f64)>> {
+            use rayon::prelude::*;
+            col.par_iter()
+                .map_init(
+                    || (vec![0.0f64; n], vec![false; n], Vec::<usize>::new()),
+                    |(acc, seen, touched), c| {
+                        for &(k, wk) in c {
+                            for &(i, wi) in &col[k] {
+                                if !seen[i] {
+                                    seen[i] = true;
+                                    touched.push(i);
+                                    acc[i] = 0.0;
+                                }
+                                acc[i] += wi * wk;
+                            }
                         }
-                    }
-                    out
-                })
+                        touched.sort_unstable();
+                        let out: Vec<(usize, f64)> = touched.iter().map(|&i| (i, acc[i])).collect();
+                        for &i in touched.iter() {
+                            seen[i] = false;
+                        }
+                        touched.clear();
+                        out
+                    },
+                )
                 .collect()
         }
 
-        fn converged(a: &[BTreeMap<usize, f64>], b: &[BTreeMap<usize, f64>]) -> bool {
-            a.iter().zip(b.iter()).all(|(x, y)| {
+        fn converged(a: &[Vec<(usize, f64)>], b: &[Vec<(usize, f64)>]) -> bool {
+            use rayon::prelude::*;
+            a.par_iter().zip(b.par_iter()).all(|(x, y)| {
                 x.len() == y.len()
                     && x.iter()
                         .zip(y.iter())
@@ -61310,7 +61435,7 @@ pub mod fam_from_gtf {
 
         /// Read clusters off the converged matrix: every column's heaviest row is its attractor, and columns
         /// sharing an attractor (transitively) are one cluster. Ties keep the lowest index.
-        fn attractors(col: &[BTreeMap<usize, f64>], n: usize) -> Vec<Vec<usize>> {
+        fn attractors(col: &[Vec<(usize, f64)>], n: usize) -> Vec<Vec<usize>> {
             let mut parent: Vec<usize> = (0..n).collect();
             fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
                 while p[x] != x {
@@ -61320,10 +61445,10 @@ pub mod fam_from_gtf {
                 x
             }
             for (j, c) in col.iter().enumerate() {
-                let Some((&r, _)) = c.iter().max_by(|a, b| {
-                    a.1.partial_cmp(b.1)
+                let Some(&(r, _)) = c.iter().max_by(|a, b| {
+                    a.1.partial_cmp(&b.1)
                         .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(b.0.cmp(a.0))
+                        .then(b.0.cmp(&a.0))
                 }) else {
                     continue;
                 };
@@ -61474,32 +61599,66 @@ pub mod fam_from_gtf {
             min_size: usize,
             corroborated: Option<&dyn Fn(&GeneKey) -> bool>,
         ) -> Vec<Cluster> {
-            parts
-                .iter()
-                .filter(|p| p.len() >= min_size)
-                .map(|p| {
-                    let n = p.len();
-                    let possible = n * (n - 1) / 2;
-                    let mut have = 0usize;
+            let kept: Vec<&Vec<usize>> = parts.iter().filter(|p| p.len() >= min_size).collect();
+            // One pass over the edges (was one pass per cluster): per kept part, its member pairs joined by an edge
+            // (`have`), the edges with both ends inside (`e_in`) and those with one end inside (`e_out`). Parts are
+            // disjoint (MCL partitions the nodes); if one were not, the per-part scan below decides, as before.
+            let mut part_of = vec![usize::MAX; g.genes.len()];
+            let mut disjoint = true;
+            for (ci, p) in kept.iter().enumerate() {
+                for &x in p.iter() {
+                    if part_of[x] != usize::MAX {
+                        disjoint = false;
+                    }
+                    part_of[x] = ci;
+                }
+            }
+            let (mut have, mut e_in, mut e_out) =
+                (vec![0usize; kept.len()], vec![0usize; kept.len()], vec![0usize; kept.len()]);
+            if disjoint {
+                for &(x, y) in g.edges.keys() {
+                    let (cx, cy) = (part_of[x], part_of[y]);
+                    if cx != usize::MAX && cx == cy {
+                        e_in[cx] += 1;
+                        if x != y {
+                            have[cx] += 1;
+                        }
+                    } else {
+                        if cx != usize::MAX {
+                            e_out[cx] += 1;
+                        }
+                        if cy != usize::MAX {
+                            e_out[cy] += 1;
+                        }
+                    }
+                }
+            } else {
+                for (ci, p) in kept.iter().enumerate() {
                     for (a, x) in p.iter().enumerate() {
                         for y in p.iter().skip(a + 1) {
                             let k = if x < y { (*x, *y) } else { (*y, *x) };
                             if g.edges.contains_key(&k) {
-                                have += 1;
+                                have[ci] += 1;
                             }
                         }
                     }
-                    // Cohesion: count every edge incident on a member, then split inside/outside. `density`
-                    // cannot see e_out, which is exactly how a hairball slice passes as a family.
                     let inside: BTreeSet<usize> = p.iter().copied().collect();
-                    let (mut e_in, mut e_out) = (0usize, 0usize);
                     for &(x, y) in g.edges.keys() {
                         match (inside.contains(&x), inside.contains(&y)) {
-                            (true, true) => e_in += 1,
-                            (true, false) | (false, true) => e_out += 1,
+                            (true, true) => e_in[ci] += 1,
+                            (true, false) | (false, true) => e_out[ci] += 1,
                             _ => {}
                         }
                     }
+                }
+            }
+            kept.iter()
+                .enumerate()
+                .map(|(ci, p)| {
+                    let n = p.len();
+                    let possible = n * (n - 1) / 2;
+                    // Cohesion: count every edge incident on a member, then split inside/outside. `density`
+                    // cannot see e_out, which is exactly how a hairball slice passes as a family.
                     let members: Vec<GeneKey> = p.iter().map(|&i| g.genes[i].clone()).collect();
                     let corr = corroborated
                         .map(|f| members.iter().filter(|m| f(m)).count() as f64 / n.max(1) as f64);
@@ -61508,12 +61667,12 @@ pub mod fam_from_gtf {
                         density: if possible == 0 {
                             0.0
                         } else {
-                            have as f64 / possible as f64
+                            have[ci] as f64 / possible as f64
                         },
-                        frac_in: if e_in + e_out == 0 {
+                        frac_in: if e_in[ci] + e_out[ci] == 0 {
                             0.0
                         } else {
-                            e_in as f64 / (e_in + e_out) as f64
+                            e_in[ci] as f64 / (e_in[ci] + e_out[ci]) as f64
                         },
                         corroborated: corr,
                     }
