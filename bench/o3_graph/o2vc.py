@@ -9,8 +9,9 @@ run never reads truth. Per family, in sorted order -- a family with no AS-tied r
 family with a copy on chrM:
 1. its copies' teachers (o2vc_data.scan) go to OUTDIR/teach/<family>.bam, base qualities of 0 written as 1 (longcallR
    2.0.0 panics on a Q0 at a variant site);
-2. longcallR runs once per copy with >= 1 teacher (caller_region: its span and PAD bases each side) against the copy's
-   chromosome alone, OUTDIR/ref/<chrom>.fa, into OUTDIR/vcf/<copy>.vcf. A VCF already there is reused, never re-called:
+2. longcallR runs once per copy with >= 1 teacher (caller_region: its span and PAD bases each side, START >= 1 and END
+   capped at the contig's length + 1, past which the caller panics) against the copy's chromosome alone,
+   OUTDIR/ref/<chrom>.fa, into OUTDIR/vcf/<copy>.vcf. A VCF already there is reused, never re-called:
    the caller is not deterministic, so the saved VCFs are the record. A copy whose call fails is unknown everywhere
    (run.json failed_copies) and the run goes on;
 3. every record's REF is checked against the genome, upper-cased: a mismatch stops the run;
@@ -34,9 +35,12 @@ flags.tsv in the genome's strand):
   and tied copy: the alignment's tags, its substitutions (o2psv.substitutions) and indel bases, and the columns voting for
   and against the copy under N3 (ref_*) and VC (call_*).
 - <family>.columns.tsv: read p base qual kind copies -- per tied read, the columns that separate two copies under VC or
-  hold a foreign allele: kind separating_call (VC separates a pair of copies the reference does not), separating_ref
-  (every pair VC separates, the reference does too), foreign or editing; copies: copy|chrom|pos|ref|genotype|depth per
-  tied copy, ";"-joined (genotype "." when unknown, alleles "/"-joined; depth "." when not measured).
+  N3 or hold a foreign allele. kind is the first that holds: separating_call (VC separates a pair of copies the
+  reference does not), separating_ref (every pair VC separates, the reference does too), erased_ref (the reference
+  separates a pair and VC none: the sample's calls share an allele there, a reference PSV this sample does not carry;
+  N3 knows only what VC knows), foreign or editing (o2vc_rule.foreign(); a foreign allele feeds flags() whatever the
+  kind). copies: copy|chrom|pos|ref|genotype|depth per tied copy, ";"-joined (genotype "." when unknown, alleles
+  "/"-joined; depth "." when not measured).
 - <family>.flags.tsv: flag n_reads reads alleles (copy|chrom|pos|base, ";"-joined).
 - <family>.teachers.tsv: copy teachers records pass lowqual homref multiallelic rnaedit dense teacher_flag_reads -- the
   FILTERs of the copy's VCF, and its teachers in a flag of the teachers' own-copy foreign alleles.
@@ -234,15 +238,14 @@ def hold_reads(f, reads, tied, cps):
                 gn[c] = frozenset({ref}) if gv[c] is not None else None
             vc_cols.append(dict(base=col["base"], qual=col["qual"], g=gv))
             n3_cols.append(dict(base=col["base"], qual=col["qual"], g=gn))
-            kind = R.foreign(vc_cols[-1])
-            if not kind:
-                sv = separated(gv)
-                kind = "" if not sv else "separating_ref" if sv <= separated(gn) else "separating_call"
-            if not kind:
-                continue
-            if kind == "foreign":
+            fk, sv, sn = R.foreign(vc_cols[-1]), separated(gv), separated(gn)
+            if fk == "foreign":                                 # flags() takes every foreign allele, whatever the kind
                 foreign.append((col["p"], frozenset(
                     (c, *col["at"][c], col["base"].translate(R.COMP) if t.copies[c].flip else col["base"]) for c in cs)))
+            # the first that holds; N3 knows only what VC knows, so an erased pair's calls share an allele
+            kind = "separating_call" if sv - sn else "separating_ref" if sv else "erased_ref" if sn else fk
+            if not kind:
+                continue
             rows.append([q, col["p"], col["base"], col["qual"], kind, ";".join(
                 f"{c}|{col['at'][c][0]}|{col['at'][c][1]}|{col['ref'][c]}|{_alleles(gv[c])}|{'.' if dep[c] is None else dep[c]}"
                 for c in cs)])

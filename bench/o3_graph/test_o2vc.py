@@ -329,3 +329,28 @@ def test_a_copy_nothing_beats_is_not_placed_unless_it_beats_every_other(tmp_path
     O.cmd_run(w.bam, w.copies, w.genome, str(tmp_path / "out"))
     k = _rows(tmp_path / "out" / "calls.tsv")[0]                    # K (A at 300 and 350): F.0 beats F.1, F.1 beats F.2,
     assert (k["read"], k["vc"], k["vc_set"], k["vc_cols"], k["n3_set"]) == ("K", "", "F.0", "0", "F.0,F.1,F.2")  # F.0 ~ F.2
+
+
+def test_a_reference_psv_the_sample_does_not_carry_is_erased_so_n3_and_vc_decide_apart(tmp_path, monkeypatch):
+    refs = family_refs(psv=(500,))                                  # chrA:500 and chrB:500 differ in the reference
+    A, B = refs["chrA"], refs["chrB"]
+    a, b = A[500], B[500]
+    c = next(x for x in "ACGT" if x not in (a, b) and not (x == "G" and a == "A"))     # foreign there, not editing
+    recs = [rec(f"t{i}", "chrA", 100, 600, seq=A[100:700]) for i in range(8)]
+    recs += [rec(f"u{i}", "chrB", 100, 600, seq=with_bases(B, {500: a})[100:700]) for i in range(8)]   # copy B carries A's base
+    recs += [rec("P", "chrA", 100, 600, seq=A[100:700]), rec("P", "chrB", 100, 594, secondary=True, NM=1)]
+    for q in ("Q1", "Q2"):                                          # a base neither copy holds at 500, a foreign C at 350
+        recs += [rec(q, "chrA", 100, 588, seq=with_bases(A, {350: "C", 500: c})[100:700], NM=2),
+                 rec(q, "chrB", 100, 588, secondary=True, NM=2)]
+    w = TD.write_bam(tmp_path / "erased", {"chrA": A, "chrB": B}, recs,
+                     [("F.0", "chrA", 100, 700, "+"), ("F.1", "chrB", 100, 700, "+")])
+    call = f"chrB\t501\t.\t{b}\t{a}\t.\tPASS\t.\tGT:GQ:DP:AF\t1/1:30:8:1.00\n"
+    monkeypatch.setattr(O.D, "run_longcallr", fake_vcf_caller([], {"chrB": call}))
+    O.cmd_run(w.bam, w.copies, w.genome, str(tmp_path / "out"))
+    calls = {r["read"]: r for r in _rows(tmp_path / "out" / "calls.tsv")}
+    cols = {(r["read"], r["p"]): r for r in _rows(tmp_path / "out" / "F.columns.tsv")}
+    assert (calls["P"]["n3"], calls["P"]["vc"], calls["P"]["vc_set"]) == ("F.0", "", "F.0,F.1")     # the reference's PSV
+    assert [(p, r["kind"], r["copies"]) for (q, p), r in sorted(cols.items()) if q == "P"] == [     # places P, the sample's
+        ("400", "erased_ref", f"F.0|chrA|500|{a}|{a}|8;F.1|chrB|500|{b}|{a}|8")]                    # calls do not
+    assert (cols["Q1", "400"]["kind"], cols["Q1", "250"]["kind"]) == ("erased_ref", "foreign")       # erased_ref first,
+    assert calls["Q1"]["flag"] == calls["Q2"]["flag"] == "F#0"      # and its foreign allele still counts toward the flag
