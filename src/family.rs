@@ -56129,7 +56129,12 @@ pub mod fam_from_gtf {
                 loaded = if contigs.is_empty() {
                     GenomeIndex::empty()
                 } else {
-                    GenomeIndex::from_fasta_contigs(fasta, &contigs)?
+                    // the members' locus spans hold every exon the copy table reads
+                    let regions: Vec<(String, u64, u64)> = clusters
+                        .iter()
+                        .flat_map(|c| c.members.iter().map(|m| (m.0.clone(), m.1.saturating_sub(1), m.2)))
+                        .collect();
+                    GenomeIndex::from_fasta_regions(fasta, &regions)?
                 };
                 &loaded
             }
@@ -56465,24 +56470,31 @@ pub mod fam_from_gtf {
             .count()
     }
 
-    pub fn gtf_loci<R: std::io::BufRead>(reader: R, rule: Representative) -> Result<Vec<GtfLocus>> {
-        use std::collections::{BTreeMap, HashMap, HashSet};
-        fn attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
-            let pat = format!("{key} \"");
-            let i = s.find(&pat)? + pat.len();
+    pub fn gtf_loci<R: std::io::BufRead>(mut reader: R, rule: Representative) -> Result<Vec<GtfLocus>> {
+        use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
+        use std::collections::BTreeMap;
+        // `pat` = `key "` (the first occurrence of the whole pattern, as before; no allocation per call)
+        fn attr<'a>(s: &'a str, pat: &str) -> Option<&'a str> {
+            let i = s.find(pat)? + pat.len();
             let j = s[i..].find('"')? + i;
             Some(&s[i..j])
         }
-        let mut exons: HashMap<String, Vec<(String, u64, u64)>> = HashMap::new();
-        let mut gene_of: HashMap<String, String> = HashMap::new();
-        let mut strand: HashMap<String, String> = HashMap::new();
-        let mut reads: HashMap<String, u64> = HashMap::new();
+        let mut exons: HashMap<String, Vec<(String, u64, u64)>> = HashMap::default();
+        let mut gene_of: HashMap<String, String> = HashMap::default();
+        let mut strand: HashMap<String, String> = HashMap::default();
+        let mut reads: HashMap<String, u64> = HashMap::default();
         let mut gene_order: Vec<String> = Vec::new();
         // genes already in `gene_order` (was a scan of every `gene_of` value per transcript line: O(T^2) on a
         // whole-genome GTF); same first-appearance order for any GTF whose transcript_ids do not switch gene
-        let mut seen_genes: HashSet<String> = HashSet::new();
-        for line in reader.lines() {
-            let line = line?;
+        let mut seen_genes: HashSet<String> = HashSet::default();
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            if reader.read_line(&mut buf)? == 0 {
+                break;
+            }
+            // `lines()` stripped "\n" and a "\r" before it
+            let line = buf.strip_suffix('\n').map_or(buf.as_str(), |l| l.strip_suffix('\r').unwrap_or(l));
             if line.starts_with('#') {
                 continue;
             }
@@ -56490,11 +56502,11 @@ pub mod fam_from_gtf {
             if r.len() < 9 {
                 continue;
             }
-            let Some(t) = attr(r[8], "transcript_id") else {
+            let Some(t) = attr(r[8], "transcript_id \"") else {
                 continue;
             };
             if r[2] == "transcript" {
-                let g = attr(r[8], "gene_id").unwrap_or(t).to_string();
+                let g = attr(r[8], "gene_id \"").unwrap_or(t).to_string();
                 if seen_genes.insert(g.clone()) {
                     gene_order.push(g.clone());
                 }
@@ -56502,7 +56514,7 @@ pub mod fam_from_gtf {
                 strand.insert(t.to_string(), r[6].to_string());
                 reads.insert(
                     t.to_string(),
-                    attr(r[8], "reads")
+                    attr(r[8], "reads \"")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0),
                 );
@@ -56720,8 +56732,10 @@ pub mod fam_from_gtf {
         drop(g3);
         use crate::run_cache as rc;
         let root = rc::cache_root();
-        let contigs: DetHashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
-        let genome = GenomeIndex::from_fasta_contigs(fasta, &contigs)?;
+        // only the loci spans (0-based half-open), a third of the genome or less, read once for the loci FASTA and (on
+        // gated runs) the copy table
+        let regions: Vec<(String, u64, u64)> = spans.iter().map(|(c, s, e)| (c.clone(), s - 1, *e)).collect();
+        let genome = GenomeIndex::from_fasta_regions(fasta, &regions)?;
         let fa_hash = write_loci_fa(&genome, &spans, &fa_path, fasta, root.is_some())?;
         eprintln!(
             "[mcl_families] --from-gtf: {} loci -> all-vs-all",

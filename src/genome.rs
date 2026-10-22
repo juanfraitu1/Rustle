@@ -7,6 +7,10 @@ use std::os::unix::fs::FileExt;
 #[derive(Debug, Clone, Default)]
 pub struct GenomeIndex {
     seqs: HashMap<String, Vec<u8>>,
+    /// [`GenomeIndex::from_fasta_regions`]: per contig its length and its loaded windows `(start, bases)`, sorted and
+    /// disjoint. A window-only contig answers [`GenomeIndex::fetch_sequence`] inside one window and is not listed by
+    /// [`GenomeIndex::chroms`].
+    windows: HashMap<String, (usize, Vec<(usize, Vec<u8>)>)>,
 }
 
 impl GenomeIndex {
@@ -38,15 +42,16 @@ impl GenomeIndex {
                 );
             }
         }
-        Ok(Self { seqs })
+        Ok(Self {
+            seqs,
+            windows: Default::default(),
+        })
     }
 
     /// A genome with no contigs loaded — for callers that provably fetch nothing (the catalog's cache-hit path
     /// when no re-admission option is on). `from_fasta_contigs` with an EMPTY set loads the whole genome instead.
     pub fn empty() -> Self {
-        Self {
-            seqs: Default::default(),
-        }
+        Self::default()
     }
 
     /// Load ONLY the named contigs, seeking to each via the FASTA `.fai` index so
@@ -130,7 +135,10 @@ impl GenomeIndex {
             }
             seqs.insert(name, seq);
         }
-        Ok(Self { seqs })
+        Ok(Self {
+            seqs,
+            windows: Default::default(),
+        })
     }
 
     /// Read one contig as a SINGLE bulk read plus per-line `extend_from_slice`, using the `.fai` line
@@ -147,12 +155,136 @@ impl GenomeIndex {
     /// the assembled sequence must be exactly `length` bases. This function must never return a sequence
     /// that differs from what the slow path would have produced — a wrong base here is silent, since
     /// `fetch_sequence` has no way to notice.
+    /// Only the given regions (contig, 0-based start, end; merged per contig, clipped at the contig end), read in parallel
+    /// through the `.fai`: the families stage needs its loci spans, a third of a genome or less, never whole contigs.
+    /// [`GenomeIndex::fetch_sequence`] answers inside a region exactly as the whole-contig index does and None outside;
+    /// contigs the `.fai` does not list are not loaded. Without a usable `.fai` (or line geometry) it is the regions'
+    /// contigs' whole index ([`GenomeIndex::from_fasta_contigs`]).
+    pub fn from_fasta_regions(path: &str, regions: &[(String, u64, u64)]) -> Result<Self> {
+        let contigs: DetHashSet<String> = regions.iter().map(|r| r.0.clone()).collect();
+        let Ok(fai) = std::fs::read_to_string(format!("{}.fai", path)) else {
+            return Self::from_fasta_contigs(path, &contigs);
+        };
+        let mut geom: HashMap<String, (usize, u64, usize, usize)> = Default::default();
+        for line in fai.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 5 || !contigs.contains(f[0]) {
+                continue;
+            }
+            match (f[1].parse(), f[2].parse(), f[3].parse(), f[4].parse()) {
+                (Ok(l), Ok(o), Ok(lb), Ok(lw)) => {
+                    geom.insert(f[0].to_string(), (l, o, lb, lw));
+                }
+                _ => return Self::from_fasta_contigs(path, &contigs),
+            }
+        }
+        // merge each contig's regions (overlapping or abutting) after clipping at its end
+        let mut by: HashMap<String, Vec<(usize, usize)>> = Default::default();
+        for (c, s, e) in regions {
+            if let Some(&(len, ..)) = geom.get(c) {
+                let (s, e) = ((*s as usize).min(len), (*e as usize).min(len));
+                if s < e {
+                    by.entry(c.clone()).or_default().push((s, e));
+                }
+            }
+        }
+        let mut jobs: Vec<(String, usize, usize)> = Vec::new();
+        for (c, mut v) in by {
+            v.sort_unstable();
+            let mut cur: Option<(usize, usize)> = None;
+            for (s, e) in v {
+                cur = match cur {
+                    Some((cs, ce)) if s <= ce => Some((cs, ce.max(e))),
+                    Some(w) => {
+                        jobs.push((c.clone(), w.0, w.1));
+                        Some((s, e))
+                    }
+                    None => Some((s, e)),
+                };
+            }
+            if let Some(w) = cur {
+                jobs.push((c.clone(), w.0, w.1));
+            }
+        }
+        let file = File::open(path).with_context(|| format!("failed to open FASTA: {}", path))?;
+        let loaded: Vec<Option<Vec<u8>>> = {
+            use rayon::prelude::*;
+            let shared = &file;
+            jobs.par_iter()
+                .map(|(c, ws, we)| {
+                    let (len, off, lb, lw) = geom[c];
+                    Self::read_window(shared, len, off, lb, lw, *ws, *we)
+                })
+                .collect::<Result<_>>()?
+        };
+        if loaded.iter().any(|w| w.is_none()) {
+            return Self::from_fasta_contigs(path, &contigs); // irregular line geometry: the careful whole-contig reader
+        }
+        let mut windows: HashMap<String, (usize, Vec<(usize, Vec<u8>)>)> = Default::default();
+        for ((c, ws, _), w) in jobs.into_iter().zip(loaded) {
+            let len = geom[&c].0;
+            windows
+                .entry(c)
+                .or_insert_with(|| (len, Vec::new()))
+                .1
+                .push((ws, w.expect("checked above")));
+        }
+        for (_, wins) in windows.values_mut() {
+            wins.sort_unstable_by_key(|w| w.0);
+        }
+        Ok(Self {
+            seqs: Default::default(),
+            windows,
+        })
+    }
+
+    /// Bases `[ws, we)` of a contig with uniform `.fai` geometry: its whole lines are read and checked exactly as
+    /// [`GenomeIndex::read_contig_bulk`] checks a whole contig, then trimmed; None when the geometry does not hold.
+    fn read_window(
+        file: &File,
+        length: usize,
+        offset: u64,
+        linebases: usize,
+        linewidth: usize,
+        ws: usize,
+        we: usize,
+    ) -> Result<Option<Vec<u8>>> {
+        if linebases == 0 || ws >= we || we > length {
+            return Ok(None);
+        }
+        let (l0, l1) = (ws / linebases, (we - 1) / linebases + 1);
+        Ok(Self::read_lines(file, length, offset, linebases, linewidth, l0, l1)?.map(|mut v| {
+            v.truncate(we - l0 * linebases);
+            v.drain(..ws - l0 * linebases);
+            v
+        }))
+    }
+
     fn read_contig_bulk(
         file: &File,
         length: usize,
         offset: u64,
         linebases: usize,
         linewidth: usize,
+    ) -> Result<Option<Vec<u8>>> {
+        if linebases == 0 {
+            return Ok(None);
+        }
+        let n_lines = length / linebases + usize::from(length % linebases > 0);
+        let seq = Self::read_lines(file, length, offset, linebases, linewidth, 0, n_lines)?;
+        Ok(seq.filter(|s| s.len() == length))
+    }
+
+    /// The bases of lines `[l0, l1)` of a contig with uniform geometry, uppercased; None when a line holds a terminator
+    /// byte, a terminator is not whitespace, or the file is short (the last line of the contig may lack its terminator).
+    fn read_lines(
+        file: &File,
+        length: usize,
+        offset: u64,
+        linebases: usize,
+        linewidth: usize,
+        l0: usize,
+        l1: usize,
     ) -> Result<Option<Vec<u8>>> {
         // Uniform-geometry guard. `linewidth - linebases` is the terminator width ("\n" or "\r\n").
         if linebases == 0 || linewidth < linebases || linewidth - linebases > 2 {
@@ -162,14 +294,17 @@ impl GenomeIndex {
         let n_full = length / linebases;
         let rem = length % linebases;
         let n_lines = n_full + usize::from(rem > 0);
+        if l1 > n_lines || l0 > l1 {
+            return Ok(None);
+        }
         // Stream whole lines in blocks (positioned reads: the handle is shared across threads); the final line's
         // terminator may be absent (EOF), so a block may come back short.
         const LINES_PER_BLOCK: usize = 1 << 16;
-        let mut buf = vec![0u8; LINES_PER_BLOCK.min(n_lines.max(1)) * linewidth];
-        let mut seq: Vec<u8> = Vec::with_capacity(length);
-        let (mut li, mut at) = (0usize, offset);
-        while li < n_lines {
-            let k = (n_lines - li).min(LINES_PER_BLOCK);
+        let mut buf = vec![0u8; LINES_PER_BLOCK.min((l1 - l0).max(1)) * linewidth];
+        let mut seq: Vec<u8> = Vec::with_capacity((l1 - l0) * linebases);
+        let (mut li, mut at) = (l0, offset + (l0 * linewidth) as u64);
+        while li < l1 {
+            let k = (l1 - li).min(LINES_PER_BLOCK);
             let want = k * linewidth;
             let mut got = 0usize;
             while got < want {
@@ -212,22 +347,30 @@ impl GenomeIndex {
             li += k;
             at += want as u64;
         }
-        if seq.len() != length {
-            return Ok(None);
-        }
         seq.make_ascii_uppercase();
         Ok(Some(seq))
     }
 
     /// Fetch a subsequence from the genome (0-based half-open coordinates).
     pub fn fetch_sequence(&self, chrom: &str, start: u64, end: u64) -> Option<Vec<u8>> {
-        let seq = self.seqs.get(chrom)?;
+        if let Some(seq) = self.seqs.get(chrom) {
+            let s = start as usize;
+            let e = (end as usize).min(seq.len());
+            if s >= e {
+                return None;
+            }
+            return Some(seq[s..e].to_vec());
+        }
+        // a window-only contig: clip at the contig end as above, then the request must lie inside one window
+        let (len, wins) = self.windows.get(chrom)?;
         let s = start as usize;
-        let e = (end as usize).min(seq.len());
+        let e = (end as usize).min(*len);
         if s >= e {
             return None;
         }
-        Some(seq[s..e].to_vec())
+        let i = wins.partition_point(|(ws, _)| *ws <= s);
+        let (ws, w) = wins.get(i.checked_sub(1)?)?;
+        (e <= ws + w.len()).then(|| w[s - ws..e - ws].to_vec())
     }
 
     /// Iterate over (chrom_name, sequence_bytes) for every contig in the genome.
@@ -460,7 +603,10 @@ impl GenomeIndex {
                 seq.iter().map(|c| c.to_ascii_uppercase()).collect(),
             );
         }
-        Self { seqs }
+        Self {
+            seqs,
+            windows: Default::default(),
+        }
     }
 }
 
@@ -534,6 +680,63 @@ mod tests {
             assert_eq!(sub.fetch_sequence(name, 0, len as u64), whole.fetch_sequence(name, 0, len as u64), "{name}");
             assert_eq!(sub.fetch_sequence(name, 0, len as u64).unwrap().len(), len, "{name}");
         }
+    }
+
+    /// A region index ([`GenomeIndex::from_fasta_regions`]) answers every fetch inside its (merged) regions exactly as the
+    /// whole-contig index does, clips at the contig end the same way, and answers None outside its regions.
+    #[test]
+    fn from_fasta_regions_fetches_like_the_whole_contig_index_inside_its_regions() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa");
+        let mut text = String::new();
+        let mut fai = String::new();
+        let mut x: u64 = 11;
+        let specs: [(&str, usize, usize, &str); 4] =
+            [("a", 500_007, 7, "\n"), ("b", 1_003, 60, "\r\n"), ("c", 61, 61, "\n"), ("d", 2_500, 50, "\n")];
+        for (i, (name, len, width, term)) in specs.iter().enumerate() {
+            text.push_str(&format!(">{name}\n"));
+            let offset = text.len();
+            let seq: String = (0..*len)
+                .map(|_| {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    b"ACGTacgtN"[(x >> 33) as usize % 9] as char
+                })
+                .collect();
+            for (k, chunk) in seq.as_bytes().chunks(*width).enumerate() {
+                text.push_str(std::str::from_utf8(chunk).unwrap());
+                if !((k + 1) * width >= *len && i + 1 == specs.len()) {
+                    text.push_str(term);
+                }
+            }
+            fai.push_str(&format!("{name}\t{len}\t{offset}\t{width}\t{}\n", width + term.len()));
+        }
+        std::fs::write(&fa, &text).unwrap();
+        std::fs::write(format!("{}.fai", fa.display()), &fai).unwrap();
+        let regions: Vec<(String, u64, u64)> = vec![
+            ("a".into(), 0, 13), ("a".into(), 10, 700), ("a".into(), 250_000, 260_003), ("a".into(), 499_990, 500_007),
+            ("b".into(), 59, 61), ("b".into(), 900, 2_000), ("c".into(), 0, 61), ("d".into(), 1_234, 1_235),
+            ("zz".into(), 0, 10),
+        ];
+        let reg = GenomeIndex::from_fasta_regions(fa.to_str().unwrap(), &regions).unwrap();
+        let all: DetHashSet<String> = specs.iter().map(|s| s.0.to_string()).collect();
+        let whole = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &all).unwrap();
+        // every sub-interval of every merged region, including the clipped one at b's end
+        let merged: [(&str, u64, u64); 6] =
+            [("a", 0, 700), ("a", 250_000, 260_003), ("a", 499_990, 500_007), ("b", 59, 61), ("b", 900, 1_003), ("c", 0, 61)];
+        for (c, s0, e0) in merged {
+            for s in [s0, s0 + 1, (s0 + e0) / 2, e0 - 1] {
+                for e in [s + 1, (s + e0).div_ceil(2), e0] {
+                    if s < e {
+                        assert_eq!(reg.fetch_sequence(c, s, e), whole.fetch_sequence(c, s, e), "{c}:{s}-{e}");
+                    }
+                }
+            }
+        }
+        assert_eq!(reg.fetch_sequence("b", 950, 5_000), whole.fetch_sequence("b", 950, 5_000), "clipped at the contig end");
+        assert_eq!(reg.fetch_sequence("d", 1_234, 1_235), whole.fetch_sequence("d", 1_234, 1_235));
+        assert_eq!(reg.fetch_sequence("a", 690, 710), None, "crosses the region end");
+        assert_eq!(reg.fetch_sequence("a", 1_000, 1_010), None, "outside every region");
+        assert_eq!(reg.fetch_sequence("zz", 0, 5), None, "a contig the .fai does not list");
     }
 
     #[test]
