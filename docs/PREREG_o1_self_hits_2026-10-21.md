@@ -238,3 +238,81 @@ Written while the OR6737 all-vs-all is still running. Its PAF and both catalogs 
 **Verdict on OR6737:**
 - PASS = B1, B2, G1, G2 and G3 all hold. A PASS supports proposing v2 as the families-stage default (the user's decision).
 - Any FAIL keeps it opt-in.
+
+## Results, Amendment 3 (scorer 7cda7ffd; frozen copy `audit_frozen_or6737_7cda7ffd`): **OR6737 (held out) PASS**; human_A119b (development) fails G1
+
+- **The default is unchanged.** The v2 binary without the flag reproduces the KB3781 and testis controls byte for byte (clusters,
+  copies, merged copies, PAF).
+- **OR6737 control:** 1,607 copies in 498 families. The fix replays the same PAF from cache and drops 2,963 self-hit records.
+
+| catalog | B1 self-only fixed (left / repaired) | B2 by locus (gene_id join) | G1 same-strand cross-family pairs (opposite strand) | G2 distant-paired copies kept | G3 self-only left | verdict |
+|---|---|---|---|---|---|---|
+| **gorilla_OR6737 (held out)** | 71 / 72 (71 / 0) ✓ | 1,272 / 1,272 (1,270) ✓ | 25 → 24 (36 → 36) ✓ | 1,364 / 1,365 ✓ | 0 ✓ | **PASS** |
+| human_A119b (development) | 548 / 561 (545 / 3) ✓ | 5,959 / 5,974 (5,931) ✓ | **1,036 → 1,140 > 1,088 ✗** (332 → 405) | 7,560 / 7,598 ✓ | 10 ✓ | FAIL (G1) |
+| human_testis (development) | 46 / 46 (45 / 1) ✓ | 849 / 850 (849) ✓ | 8 → 8 (4 → 4) ✓ | 961 / 962 ✓ | 0 ✓ | PASS |
+| gorilla_KB3781 (development) | 69 / 70 (69 / 0) ✓ | 705 / 705 (704) ✓ | 9 → 8 (12 → 13) ✓ | 746 / 749 ✓ | 0 ✓ | PASS |
+
+**Reported for OR6737:**
+- copies 1,607 → 1,521; families 498 → 456; largest family 86 → 86;
+- co-member pairs +2 / −6; 1 fix family merges control families;
+- 43 two-copy families dissolved, 8 of them with members that are not self-only;
+- >= 0.90 copies SD-paired: 1,159 / 1,383 → 1,160 / 1,293;
+- mainstay copies 34 → 34, with the same gene_ids.
+
+### Audit (metric-auditor, 2026-10-21, on `audit_frozen_or6737_7cda7ffd`): holds with caveats
+
+Every OR6737 number reproduces to the digit without the scorer. The PASS survives every stricter count:
+- B2 with a same-strand-only join: 1,270 / 1,272;
+- G2 requiring every pair: 1,358 / 1,365 (by pair, 6,595 / 6,599);
+- G1 counting folded models: 25 → 26 (limit 30).
+
+**The timeline is clean.**
+- Amendment 2 was committed at 16:34:29 and Amendment 3 at 17:39:47. At that point 49 of the 100 all-vs-all shards were done
+  and no family output existed.
+- The family outputs date from 18:25.
+- The scorer is identical to 7cda7ffd.
+- The binary was built at 16:19:44, and `src/` is unchanged since e90d63f2.
+
+**Caveats:**
+- **B1 and G3 hold by construction.**
+  - All 72 self-only copies form 36 two-copy families. Each pairs opposite-strand models that overlap in span, share no exon
+    bases, and are joined only by a diagonal record (4.7-87.7 kb). v2 drops every such record.
+  - The deletion is consistent with the catalog's own edge rules: the pairs' other records are internal repeats at 0.83-0.894.
+  - The fix removes more than the self-only definition counts. Same-family opposite-strand pairs with overlapping spans go
+    47 → 0. That includes the 8 "not self-only" dissolved families (the same artefact, hidden from the definition by
+    off-diagonal internal-repeat records) and MCL233.
+  - All 90 lost copies are accounted for: 71 self-only, 16 from those 8 families, 1 from MCL233, and 2 antisense
+    representative switches.
+- **One real collateral loss, which G1 as written does not see.**
+  - MCL70's locus (NC_073240.2:21.11-21.23 Mb) is split between MCL175 and MCL368.
+  - Cause: v2's same-unit test is pairwise, but the fold is transitive. 17 of the 334 dropped same-strand records join loci
+    that are one unit through a third model.
+  - This is G2's one lost copy. Its inverted 27 kb pairing survives through the locus's other model.
+- **OR6737 is a held-out sample, not a held-out genome.**
+  - It is on the same GGO reference as KB3781, where v1 failed and v2 was shaped.
+  - 550 / 1,607 of its copies share exon bases with KB3781 copies.
+  - 14 / 72 of its self-only copies and 8 / 43 of its dissolved families sit at loci also seen in KB3781.
+  - Its 10-10 GTF had never been through the families stage. Earlier assemblies of the same library had been (`rt_arms`
+    09-27, `rg3_run` 09-28), but none was used for v1 or v2.
+- **A119b's G1 failure is mostly relabelling, but not only that.** My first label, "all switches", was not a test. Checked by
+  locus:
+  - 289 of the 313 new pairs lie at loci already split across control families. 291 of the 313 are on chr13, 13.9-15.5 Mb.
+  - 17 are new splits of loci the control held in one family.
+  - 7 involve a locus with no same-strand control copy.
+  - Counted by unit, families beyond the first go 711 → 742 (+4.4%). That would pass a 5% locus bar, but only post hoc.
+
+**Reading** (the auditor's wording):
+- v2 (e90d63f2) passes every Amendment 3 bar and guard on one held-out gorilla catalog, OR6737, which is on the same GGO
+  reference as KB3781. The result was reproduced independently.
+- B1 and G3 hold by construction. The collateral is one locus split across two families.
+- There is no held-out human catalog. human_A119b fails G1 as pre-registered (1,036 → 1,140 > 1,088). The guided (annotation)
+  arm is untested.
+- As pre-registered, this supports proposing v2 as the default of the de novo families stage **for gorilla**. For human, and
+  for catalogs built from an annotation, it is not shown.
+- Nothing is flipped; the user decides.
+
+**What would settle the rest:**
+- a held-out human catalog, e.g. HG002 Kinnex after a whole-genome alignment;
+- control and fix runs on a guided CAT arm, both under Amendment 3;
+- for MCL70-type splits, a same-unit test that follows the fold's transitive components rather than pairwise exon sharing.
+  That would be a v3, with its own pre-registration.

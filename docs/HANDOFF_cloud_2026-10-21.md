@@ -5,7 +5,7 @@
 Clone the repository and work on **`o3-fast`**: `git clone git@github.com:juanfraitu1/Rustle.git && git checkout o3-fast`.
 - It contains `main` (`github/main` is an ancestor) plus 283 commits: the O2 / O3 work of 10-16 to 10-21.
 - It is not merged into `main`.
-- Registers 1347-1367 and their pre-registrations are on it; the latest summary is
+- Registers 1347-1369 and their pre-registrations are on it; the latest summary is
   [`MULTIMAPPER_PREMISE_2026-10-21.md`](MULTIMAPPER_PREMISE_2026-10-21.md).
 
 ## Environment
@@ -37,16 +37,23 @@ Clone the repository and work on **`o3-fast`**: `git clone git@github.com:juanfr
 | 1366 | premise check on existing StringTie / FLAIR runs (descriptive) | `MULTIMAPPER_PREMISE_2026-10-21.md` |
 | 1367 | multi-copy gains are not shown to be real copies; the multi-mapping loci are SDs | `PREREG_multicopy_gains_real_2026-10-21.md` |
 | 1368 | O1 family copies vs external SD calls: bar FAILS (72.1% / 82.4%); gene-like copies 93.8% / 92.0% paired; shortfall = transposon / satellite families and self-overlap families (an O1 defect) | `PREREG_o1_families_sd_pairs_2026-10-21.md` |
+| 1369 | the self-overlap fix `--reject-self-hits`: v1 FAIL; v2 PASSES held-out gorilla_OR6737 (audit: holds with caveats); human_A119b fails guard G1 (development); opt-in | `PREREG_o1_self_hits_2026-10-21.md` |
 
 ## Open items
 
-1. **O1 self-overlap families** (register 1368): fixed as the opt-in `mcl_families --reject-self-hits`
+1. **O1 self-overlap families** (registers 1368, 1369): fixed as the opt-in `mcl_families --reject-self-hits`
    (`docs/PREREG_o1_self_hits_2026-10-21.md`).
-   - The pre-registered v1 FAILED: gorilla B2 97.4%.
-   - v2 (Amendment 1) keeps same-strand exon-sharing self-hits and PASSES all three catalogs. It is a development result,
-     and its audit was pending at push time.
-   - **Next:** confirm v2 on a fresh catalog (another sample's families run, pre-registered) before proposing it as the
-     default. Also add a CAT-annotation families arm on CHM13 as the reference point.
+   - The pre-registered v1 FAILED (gorilla B2, by 4 copies under a gene_id join).
+   - v2 passed the three development catalogs.
+   - Amendment 3 fixed the evaluation in advance: B2 by locus, plus guards G1-G3.
+   - **Held-out gorilla_OR6737 PASSES every bar and guard** (audit: holds with caveats).
+   - Under Amendment 3, human_A119b (development) **fails G1**: same-strand copy pairs split across families go
+     1,036 → 1,140 > 1,088, mostly at loci already split on chr13.
+   - **Supported:** proposing v2 as the default for gorilla de novo catalogs (the user's decision; nothing flipped).
+   - **Not shown** for human or for annotation-built catalogs.
+   - **Next:**
+     - a held-out human catalog (HG002 Kinnex after a whole-genome alignment) and a guided CAT arm, both under Amendment 3;
+     - a transitive same-unit test (v3, its own pre-registration) for the one collateral split (MCL70).
 2. **Classify the O1 copies that no SD pairs:** a quarter of the human high-identity copies, an eighth in gorilla. Check
    whether they are retrocopies (a single-exon copy with a multi-exon partner), groupings on short shared segments, tandem arrays,
    or repeat-driven. Pre-register first.
