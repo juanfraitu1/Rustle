@@ -3,8 +3,8 @@
 reads of a copy and reads its VCF into the Calls that o2vc_rule.genotype() turns into a copy's alleles at a position. The BAM
 side finds the AS-tied reads (O2's domain; minimap2's primary may lie outside the tied set) and each copy's teachers (scan),
 puts a tied read's bases in its own frame, as sequenced, beside each tied copy's reference base there (columns), writes the
-teachers' primaries for the caller (write_teacher_bam) and counts teacher depth with the caller's read filters as the design
-names them (teacher_depth). Nothing here decides a placement (o2vc_rule.py does) and nothing reads truth.
+teachers' primaries for the caller (write_teacher_bam) and reproduces the depth the caller writes as DP at any position
+(teacher_depth). Nothing here decides a placement (o2vc_rule.py does) and nothing reads truth.
 
 What longcallR 2.0.0 does, observed on SMN2 (HG002, chr5:70808816-70837687, primary records, `-p hifi-masseq --min-mapq 0
 --no-bam-output`), and what the code below rests on:
@@ -39,10 +39,12 @@ LONGCALLR = "/home/juanfra/miniforge3/envs/longcallr/bin/longcallR"
 PRESET = "hifi-masseq"                                          # transcript-strand HiFi reads: no strand-bias filter
 MIN_MAPQ = 0                                                    # the teachers are chosen by AS margin, not by MAPQ
 SLACK = 9                                                       # tied: within 10 AS of the read's best (Eichler)
-MIN_READ_LENGTH = 500                                           # the caller's --min-read-length
-DIVERGENCE = 0.05                                               # --divergence as its --help states it (see teacher_depth)
-DISTANCE_TO_READ_END = 20                                       # --distance-to-read-end as its --help states it
-MISSING_QUAL = 255                                              # htslib's byte for a missing QUAL (SAM "*"); it passes MIN_BASEQ
+# longcallR 2.0.0's hifi-masseq values (main.rs:387-415), which teacher_depth reproduces; its --help gives other defaults
+MIN_READ_LENGTH = 500                                           # main.rs:411, on the SEQ length (hard clips not counted)
+DIVERGENCE = 0.5                                                # main.rs:404: a read whose float de is >= this is not piled up
+DISTANCE_TO_READ_END = 40                                       # main.rs:396: on HiFi, only poly-run bases this near an end drop
+POLYA_TAIL_LENGTH = 5                                           # main.rs:407: the one-base window that marks a poly-run
+MISSING_QUAL = 255                                              # htslib's byte for a missing QUAL (SAM "*"): a base that votes
 READ_OPS, ALIGN_OPS = (0, 1, 4, 5, 7, 8), (0, 7, 8)             # CIGAR ops holding read bases (both clip kinds) / aligning one
 
 
@@ -54,7 +56,7 @@ def _sibling(name):
 
 
 _RULE = _sibling("o2vc_rule")
-Call, COMP, MIN_BASEQ = _RULE.Call, _RULE.COMP, _RULE.MIN_BASEQ
+Call, COMP = _RULE.Call, _RULE.COMP
 
 
 def longcallr_version(binary=LONGCALLR):
@@ -324,58 +326,91 @@ def write_teacher_bam(bam_p, spans, teachers, out_bam):
     return n
 
 
-def _divergence(rec):
-    """The record's de, rounded to 6 decimals (a BAM keeps it as a float32: 0.05 reads 0.0500000007), or NM / aligned bases
-    when it has none (NM 0 when that is absent too)."""
+def _caller_reads(rec):
+    """Whether longcallR 2.0.0 piles the record up (util.rs:669-686): mapped, neither secondary nor supplementary, MAPQ >=
+    MIN_MAPQ, SEQ length (hard clips not counted) >= MIN_READ_LENGTH, and its de, when that tag is a float, < DIVERGENCE (a
+    read without one stays: there is no NM fallback). Duplicates and QC failures stay too."""
+    if (rec.is_unmapped or rec.is_secondary or rec.is_supplementary or rec.mapping_quality < MIN_MAPQ
+            or rec.query_length < MIN_READ_LENGTH):
+        return False
     if rec.has_tag("de"):
-        return round(rec.get_tag("de"), 6)
-    aligned = sum(n for op, n in rec.cigartuples if op in ALIGN_OPS)
-    return (rec.get_tag("NM") if rec.has_tag("NM") else 0) / max(aligned, 1)
+        de, kind = rec.get_tag("de", with_value_type=True)
+        return not (kind == "f" and de >= DIVERGENCE)
+    return True
 
 
-def teacher_depth(teacher_bam, chrom, positions):
-    """{position: the teacher reads counted there} on chrom, for every position given (0 where none is). A read counts when it
-    is a primary with SEQ, its full length (the read bases its CIGAR holds, both clip kinds) is >= MIN_READ_LENGTH, its
-    divergence (_divergence) is <= DIVERGENCE, and it aligns a base at the position (op 0, 7 or 8) of quality >= MIN_BASEQ (a
-    missing QUAL passes as MISSING_QUAL) that is >= DISTANCE_TO_READ_END read bases from either end of the read: read base q
-    of a read of length L counts when q >= 20 and L - 1 - q >= 20, clipped bases included.
+def _softclips(cigar):
+    """(leading, trailing) soft-clipped bases as rust-htslib 0.46 counts them (calc_softclips, bam/record.rs:1972-1979): the
+    first op when it is S, or the second when the first is H."""
+    def one(ops):
+        if ops and ops[0][0] == 4:
+            return ops[0][1]
+        return ops[1][1] if len(ops) > 1 and ops[0][0] == 5 and ops[1][0] == 4 else 0
+    return one(cigar), one(cigar[::-1])
 
-    These are the filters the design names, longcallR's --help defaults. The HiFi presets of its 2.0.0 source differ (main.rs
-    sets divergence 0.5 and distance-to-read-end 40; util.rs fill_data_into_freq_vec skips de >= 0.5 with no NM fallback,
-    trims read ends only for ONT, and on HiFi drops only bases in a 5-base poly-A/T/C/G run within 40 bp of an aligned end;
-    the depth it calls with, DP, is A+C+G+T at any base quality). So this count is at most the caller's, but for such
-    poly-run bases, N bases (the caller counts neither) and a hard-clipped primary (its length floor is on SEQ; minimap2
-    writes none). On Task 3's fixture world with an ALT on every teacher, longcallR wrote DP 9 at chrA:110, 125 and 400
-    where this counts 0, 8 and 7."""
+
+def _runs(seq, i):
+    """The bases, of A, C, G and T, that wholly fill one of the read's POLYA_TAIL_LENGTH-base windows starting at i - 5 ..
+    i + 1 (windows reaching past the read left out), in window order (util.rs:775-805)."""
+    n, out = POLYA_TAIL_LENGTH, []
+    for t in range(i - n, i + 2):
+        if t >= 0 and t + n <= len(seq):
+            w = seq[t:t + n]
+            if w[0] in "ACGT" and w.count(w[0]) == n and w[0] not in out:
+                out.append(w[0])
+    return out
+
+
+def teacher_depth(teacher_bam, chrom, positions, fetch=None):
+    """{position: the depth longcallR 2.0.0 gives it} on chrom, for every position given (0 where no read counts): the DP it
+    writes on a record there under PRESET and MIN_MAPQ, A+C+G+T of its pileup (candidate.rs:90 and 352, util.rs:159-161,
+    fill_data_into_freq_vec at util.rs:638-962). A read counts when the caller piles it up (_caller_reads) and aligns a base
+    at the position (op 0, 7 or 8: a deletion or an intron over it does not count, util.rs:922-958) that is A, C, G or T,
+    whatever its quality (util.rs:839-909), unless that base lies within DISTANCE_TO_READ_END read bases of either aligned
+    end (soft clips left out: util.rs:699-700, 759, 772-773) next to a run, a window that _runs finds of a base other than
+    the reference's there (util.rs:775-808). HiFi trims no read end (util.rs:762 trims ONT only).
+
+    fetch(chrom, lo, hi) gives the genome, upper-cased here as the caller reads it (thread.rs:60, util.rs:215-233); only a
+    base next to a run needs it, and without fetch that raises ValueError. A position is taken to lie inside the region the
+    caller was given, other than its first base (the caller fetches reads from START as if 0-based, util.rs:654, 659)."""
     import pysam
     want = sorted(set(positions))
     out = dict.fromkeys(want, 0)
     if not want:
         return out
+    ref = {}
+
+    def ref_base(p):
+        if p not in ref:
+            if fetch is None:
+                raise ValueError(f"{chrom}:{p + 1}: a base next to a poly-run window needs the genome (pass fetch)")
+            ref[p] = fetch(chrom, p, p + 1).upper()
+        return ref[p]
+
     with pysam.AlignmentFile(teacher_bam) as bam:
         for rec in bam.fetch(chrom, want[0], want[-1] + 1):
-            if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.query_length:    # 0: no SEQ
+            if not _caller_reads(rec):                          # first: a placed unmapped read has no reference_end
                 continue
-            length = _read_bases(rec.cigartuples)
             i, j = bisect.bisect_left(want, rec.reference_start), bisect.bisect_left(want, rec.reference_end)
-            if i == j or length < MIN_READ_LENGTH or _divergence(rec) > DIVERGENCE:
+            if i == j:
                 continue
-            qual = rec.query_qualities
-            q, s, r = 0, 0, rec.reference_start                # read base (both clip kinds), SEQ index, reference position
-            for op, n in rec.cigartuples:
+            seq, cig = rec.query_sequence, rec.cigartuples
+            lead, trail = _softclips(cig)
+            end = len(seq) - trail                              # one past the last aligned read base (util.rs:759)
+            s, r = 0, rec.reference_start                       # SEQ index, reference position
+            for op, n in cig:
                 if op in ALIGN_OPS:
                     k = bisect.bisect_left(want, r, i, j)
                     while k < j and want[k] < r + n:
-                        x = want[k] - r
-                        if (DISTANCE_TO_READ_END <= q + x <= length - 1 - DISTANCE_TO_READ_END
-                                and (MISSING_QUAL if qual is None else qual[s + x]) >= MIN_BASEQ):
-                            out[want[k]] += 1
+                        p = want[k]
+                        x = s + p - r
+                        near = abs(x - lead) < DISTANCE_TO_READ_END or abs(x - end) < DISTANCE_TO_READ_END
+                        if seq[x] in "ACGTacgt" and not (near and any(b != ref_base(p) for b in _runs(seq, x))):
+                            out[p] += 1
                         k += 1
-                    q, s, r = q + n, s + n, r + n
+                    s, r = s + n, r + n
                 elif op in (1, 4):
-                    q, s = q + n, s + n
-                elif op == 5:
-                    q += n
+                    s += n
                 elif op in (2, 3):
                     r += n
     return out

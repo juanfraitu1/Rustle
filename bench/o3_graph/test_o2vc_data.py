@@ -114,9 +114,10 @@ def write_bam(path, refs, recs, copies_tsv):
     """A small world on disk in the directory path (made if missing): refs ({chrom: seq}) as genome.fa with its .fai,
     copies_tsv (rows (copy, chrom, start, end, strand); the family is the copy's name before its last dot) as a pool-format
     copies.tsv whose exons are the span, and recs as reads.bam, sorted and indexed. recs items: dict(name, chrom, start,
-    cigar (a string), seq, qual, secondary, reverse, AS) with optional NM (0), de (0.0; None leaves the tag out), ms (AS) and
-    mapq (60, or 0 on a secondary). seq is in the genome's strand, as a BAM holds it; seq None leaves SEQ unset (a secondary,
-    as minimap2 writes one) and qual None leaves QUAL unset. Returns SimpleNamespace(bam, copies, genome) of paths."""
+    cigar (a string), seq, qual, secondary, reverse, AS) with optional NM (0), de (0.0; None leaves the tag out), ms (AS),
+    mapq (60, or 0 on a secondary) and flags (more FLAG bits, e.g. 0x800). seq is in the genome's strand, as a BAM holds it;
+    seq None leaves SEQ unset (a secondary, as minimap2 writes one) and qual None leaves QUAL unset. Returns
+    SimpleNamespace(bam, copies, genome) of paths."""
     import pysam
     os.makedirs(path, exist_ok=True)
     genome, copies, bam = (os.path.join(str(path), x) for x in ("genome.fa", "copies.tsv", "reads.bam"))
@@ -133,7 +134,7 @@ def write_bam(path, refs, recs, copies_tsv):
         for r in recs:
             a = pysam.AlignedSegment(hdr)
             a.query_name, a.reference_id, a.reference_start = r["name"], tid[r["chrom"]], r["start"]
-            a.flag = (0x100 if r["secondary"] else 0) | (0x10 if r["reverse"] else 0)
+            a.flag = (0x100 if r["secondary"] else 0) | (0x10 if r["reverse"] else 0) | r.get("flags", 0)
             a.mapping_quality = r.get("mapq", 0 if r["secondary"] else 60)
             a.cigarstring = r["cigar"]
             if r["seq"] is not None:
@@ -162,15 +163,35 @@ def _rec(name, chrom, start, AS, cigar="600M", seq=None, qual=None, secondary=Fa
                 AS=AS, **kw)
 
 
-def make_world(tmp_path):
+def _no_runs(seed, chroms=("chrA", "chrB"), n=2000):
+    """Random bases with no two equal neighbours, so no read of them holds a poly-run window, one sequence per chrom."""
+    rng, out = random.Random(seed), {}
+    for ch in chroms:
+        s = []
+        for _ in range(n):
+            s.append(rng.choice([b for b in "ACGT" if not s or b != s[-1]]))
+        out[ch] = "".join(s)
+    return out
+
+
+def _with_alts(seq, positions):
+    """seq with an ALT at each position: the first base that is neither its own nor a neighbour's (it makes no run)."""
+    s = list(seq)
+    for p in positions:
+        s[p] = next(b for b in "ACGT" if b not in (seq[p - 1], seq[p], seq[p + 1]))
+    return "".join(s)
+
+
+def make_world(tmp_path, alts=()):
     """The brief's world: chrA and chrB (2,000 random bases, seed 1); F.0 = chrA:100-700, F.1 = chrB:100-700, F.2 =
-    chrB:1000-1600, G.0 = chrA:1000-1600, all +. Reads of 600 bp, 600M; the primaries carry F.0's reference bases.
-    T1-T6: teachers of F.0 (T6 has base quality 5 at chrA:400); Y: F.0 600 / F.1 590, a teacher (margin 10); W: F.0 600 /
-    G.0 598, a teacher (off-family alignments do not count); X: F.0 600 / F.1 595, tied; Z: F.0 500 / F.1 595 / F.2 590
-    (reverse), tied with its primary outside the tied set; S: a 400-bp teacher (under the caller's read-length floor); H: a
-    teacher with de 0.08 (over the divergence limit). Returns (BAM, copies TSV)."""
+    chrB:1000-1600, G.0 = chrA:1000-1600, all +. Reads of 600 bp, 600M; the primaries carry F.0's reference bases, with an
+    ALT at each of `alts` (chrA positions) when given. T1-T6: teachers of F.0 (T6 has base quality 5 at chrA:400); Y: F.0
+    600 / F.1 590, a teacher (margin 10); W: F.0 600 / G.0 598, a teacher (off-family alignments do not count); X: F.0 600 /
+    F.1 595, tied; Z: F.0 500 / F.1 595 / F.2 590 (reverse), tied with its primary outside the tied set; S: a 400-bp teacher
+    (under the caller's read-length floor); H: a teacher with de 0.08. Returns (BAM, copies TSV); the genome is genome.fa
+    beside the BAM."""
     refs = _random_refs(1)
-    f0 = refs["chrA"][100:700]
+    f0 = _with_alts(refs["chrA"], alts)[100:700]
     copies = [("F.0", "chrA", 100, 700, "+"), ("F.1", "chrB", 100, 700, "+"), ("F.2", "chrB", 1000, 1600, "+"),
               ("G.0", "chrA", 1000, 1600, "+")]
 
@@ -237,7 +258,9 @@ def test_the_teacher_bam_holds_only_the_teachers_primaries_and_depth_counts_read
     s = D.scan(bam, copies)
     out = str(tmp_path / "teach.bam")
     assert D.write_teacher_bam(bam, {"F.0": ("chrA", 100, 700)}, s.teachers, out) == 10
-    assert D.teacher_depth(out, "chrA", [110, 400]) == {110: 0, 400: 7}   # T1-T5, Y, W; not S (short), H (de), T6 (qual 5)
+    # the caller's DP (longcallR 2.0.0, hifi-masseq): T1-T6, Y, W and H; S is out (400 bp < 500), while H (de 0.08 < 0.5),
+    # T6 (base quality 5: any quality counts) and position 110 (read base 10: HiFi trims no read end) are in
+    assert D.teacher_depth(out, "chrA", [110, 400]) == {110: 9, 400: 9}
 
 
 # ---- beyond the brief's tests: behaviour the brief states but does not pin ----
@@ -286,16 +309,73 @@ def test_read_frame_positions_refuse_a_cigar_that_does_not_hold_the_whole_read()
         D.read_frame_positions(100, [(0, 5)], 6, True)               # a hard clip left out would shift every flipped column
 
 
-def test_teacher_depth_uses_nm_without_de_counts_a_missing_quality_and_keeps_twenty_read_bases_from_each_end(tmp_path):
-    refs = _random_refs(3, chroms=("chrA",))
-    f0 = refs["chrA"][100:700]
-    recs = [_rec("a", "chrA", 100, 600, seq=f0, qual=[30] * 600, NM=31, de=None),     # 31/600 > 0.05: out
-            _rec("b", "chrA", 100, 600, seq=f0, qual=[30] * 600, NM=30, de=None),     # 30/600 = 0.05: in
-            _rec("c", "chrA", 100, 600, seq=f0, qual=[30] * 600, de=0.05),            # a float32 0.05 is 0.05: in
-            _rec("d", "chrA", 100, 600, seq=f0),                                      # no QUAL (htslib's 0xff): in
-            _rec("e", "chrA", 130, 570, cigar="30S570M", seq="A" * 30 + f0[30:], qual=[30] * 600),
-            _rec("f", "chrA", 100, 600, seq=f0, qual=[30] * 600, secondary=True)]     # not a primary: out
-    w = write_bam(tmp_path / "w", refs, recs, [("F.0", "chrA", 100, 700, "+")])
-    # 119 / 120: read base 19 / 20 of the 600M reads; 130: read base 30 of every read (e's first aligned base, after its
-    # 30 soft-clipped ones); 679 / 680: 20 / 19 read bases before the reads' last base
-    assert D.teacher_depth(w.bam, "chrA", [680, 119, 120, 130, 679]) == {119: 0, 120: 3, 130: 4, 679: 4, 680: 0}
+def make_depth_world(tmp_path):
+    """Reads longcallR 2.0.0's hifi-masseq pileup treats differently, every one carrying an ALT at chrA:105, 400 and 695 and
+    chrB:1000, so the caller writes a record, and its DP, there. chrA and chrB have no two equal neighbouring bases but for
+    TTTTT planted at chrB:1001-1005. chrA, reads of 600M at 100 unless said: g1-g8 plain; de050 (de 0.5); de049 (de 0.49);
+    nm (no de, NM 400); q2 (base quality 2: a Q0 at an ALT makes longcallR 2.0.0 panic, phase.rs:307); short (499M); len500
+    (500M at 150); hard (100H450M: 450 bases of SEQ); del (a deletion at 400); nbase (N at 400); sec (a secondary with SEQ);
+    supp (supplementary); dup (duplicate); mapq0 (MAPQ 0).
+    chrB: f1-f7 (600M at 700: 1000 is read base 300; f1-f4 also carry an ALT at 1003, inside the run, so that the site gets
+    a record), n1-n3 (600M at 990: read base 10), e1-e3 (600M at 410: read base 590), s1-s2 (50S600M at 990: read base 60,
+    aligned base 10), h1 (10H50S600M at 990) and t1 (600M50S at 410: aligned base 590 of 600, 50 bases before the read's
+    end). Returns write_bam's namespace."""
+    refs = _no_runs(4)
+    b = list(refs["chrB"])
+    b[1001:1006] = "TTTTT"
+    for k in (1000, 1006):                                          # the run is exactly five long
+        if b[k] == "T":
+            b[k] = next(x for x in "ACG" if x not in (b[k - 1], b[k + 1]))
+    refs["chrB"] = "".join(b)
+    A, B = _with_alts(refs["chrA"], (105, 400, 695)), _with_alts(refs["chrB"], (1000,))
+    B2 = _with_alts(B, (1003,))
+
+    def ra(name, start=100, cigar="600M", seq=None, qual=None, **kw):
+        seq = A[start:start + 600] if seq is None else seq
+        return _rec(name, "chrA", start, 600, cigar=cigar, seq=seq, qual=[30] * len(seq) if qual is None else qual, **kw)
+
+    def rb(name, start, cigar="600M", seq=None):
+        seq = B[start:start + 600] if seq is None else seq
+        return _rec(name, "chrB", start, 600, cigar=cigar, seq=seq, qual=[30] * len(seq))
+
+    recs = [ra(f"g{i}") for i in range(1, 9)]
+    recs += [ra("de050", de=0.5), ra("de049", de=0.49), ra("nm", de=None, NM=400), ra("q2", qual=[2] * 600),
+             ra("short", cigar="499M", seq=A[100:599]), ra("len500", start=150, cigar="500M", seq=A[150:650]),
+             ra("hard", cigar="100H450M", seq=A[100:550]), ra("del", cigar="300M1D299M", seq=A[100:400] + A[401:700]),
+             ra("nbase", seq=A[100:400] + "N" + A[401:700]), ra("sec", secondary=True), ra("supp", flags=0x800),
+             ra("dup", flags=0x400), ra("mapq0", mapq=0)]
+    recs += [rb(f"f{i}", 700, seq=B2[700:1300] if i <= 4 else None) for i in range(1, 8)]
+    recs += [rb(f"n{i}", 990) for i in range(1, 4)]
+    recs += [rb(f"e{i}", 410) for i in range(1, 4)]
+    recs += [rb(f"s{i}", 990, cigar="50S600M", seq=refs["chrA"][1500:1550] + B[990:1590]) for i in range(1, 3)]
+    recs += [rb("h1", 990, cigar="10H50S600M", seq=refs["chrA"][1500:1550] + B[990:1590]),
+             rb("t1", 410, cigar="600M50S", seq=B[410:1010] + refs["chrA"][1500:1550])]
+    return write_bam(tmp_path / "depth", refs, recs, [("F.0", "chrA", 100, 700, "+"), ("F.1", "chrB", 700, 1300, "+")])
+
+
+def test_teacher_depth_counts_what_longcallr_hifi_masseq_counts(tmp_path):
+    import pysam
+    w = make_depth_world(tmp_path)
+    fetch = pysam.FastaFile(w.genome).fetch
+    # chrA (DP written by longcallR 2.0.0 on this world): g1-g8, de049, nm, q2, del (not at 400), nbase (not at 400), dup and
+    # mapq0 count, len500 at 400 only; de050, short, hard, sec and supp never; read bases 5 (105) and 595 (695) count
+    assert D.teacher_depth(w.bam, "chrA", [105, 400, 695], fetch) == {105: 15, 400: 14, 695: 15}
+    assert D.teacher_depth(w.bam, "chrA", [105, 400, 695]) == {105: 15, 400: 14, 695: 15}      # no run near: no genome needed
+    # chrB:1000 is followed by TTTTT: it counts only where it lies >= 40 bases from both aligned ends (f1-f7), not 10 from
+    # the start (n1-n3; s1-s2 and h1 after 50 soft-clipped bases) or from the end (e1-e3; t1 before 50 soft-clipped bases).
+    # chrB:1003, inside the run, counts in all 17 reads: the run's base is the reference's there
+    assert D.teacher_depth(w.bam, "chrB", [1000, 1003], fetch) == {1000: 7, 1003: 17}
+    with pytest.raises(ValueError, match="chrB:1001"):
+        D.teacher_depth(w.bam, "chrB", [1000])
+
+
+@pytest.mark.skipif(not os.path.exists(D.LONGCALLR), reason="longcallR 2.0.0 is not installed")
+def test_teacher_depth_is_the_dp_the_real_caller_writes_on_the_fixture(tmp_path):
+    import pysam
+    alts = [110, 125, 400, 690]                                     # read bases 10, 25, 300 and 590 of every 600-bp teacher
+    bam, copies = make_world(tmp_path, alts=alts)
+    teach, genome = str(tmp_path / "teach.bam"), os.path.join(os.path.dirname(bam), "genome.fa")
+    D.write_teacher_bam(bam, {"F.0": ("chrA", 100, 700)}, D.scan(bam, copies).teachers, teach)
+    calls = D.parse_vcf(D.run_longcallr(teach, genome, str(tmp_path / "vcf" / "F.0"), threads=1, region="chrA:1-2000"))
+    assert all(("chrA", p) in calls for p in alts)
+    assert D.teacher_depth(teach, "chrA", alts, pysam.FastaFile(genome).fetch) == {p: calls["chrA", p].dp for p in alts}
