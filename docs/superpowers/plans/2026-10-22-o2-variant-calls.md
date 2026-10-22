@@ -21,7 +21,7 @@
 - **Tied domain:** a read whose alignments within 10 AS of its best (`SLACK = 9`) lie on ≥ 2 copies of one family and on no locus off it. minimap2's primary MAY lie outside that set (reported as `outside`).
 - **Teacher:** a read whose primary is on the copy, with every alignment on another copy of its family ≥ 10 AS lower. A tied read never teaches.
 - **Caller:** longcallR 2.0.0 at `/home/juanfra/miniforge3/envs/longcallr/bin/longcallR`, flags `-p hifi-masseq --min-mapq 0 --no-bam-output`, every other option default.
-- **Known / unknown:** a copy is known at a position when teacher depth is ≥ 6 (`MIN_DEPTH`, the HiFi presets' min-depth). Depth is counted with the caller's read filters: read length ≥ 500, divergence ≤ 0.05, base quality ≥ 10, ≥ 20 bp from either read end. `RnaEdit` and `Dense` records → unknown.
+- **Known / unknown:** a copy is known at a position when teacher depth is ≥ 6 (`MIN_DEPTH`, the HiFi presets' min-depth). Depth is longcallR 2.0.0's own DP for the hifi-masseq preset (Task 3 ruling, 2026-10-22: primary teachers, read length ≥ 500, divergence < 0.5, any base quality, no HiFi read-end trim, the caller's poly-run rule; `teacher_depth(..., fetch)`). `RnaEdit` and `Dense` records → unknown.
 - **Genotype:** the record's GT alleles, whatever its FILTER. No record → {reference base}.
 - **Votes:** a read base votes only at base quality ≥ 10 (`MIN_BASEQ`).
 - **Read frame:** every comparison is made in the read's own frame, as sequenced (FLNC = transcript sense). A copy aligned opposite to the read has its alleles complemented.
@@ -411,8 +411,7 @@ Expected: the 6 new tests FAIL; Task 2's 2 still pass.
   - `families` restricts both outputs.
 - **`read_frame_positions`:** walks the CIGAR. Ops 0/7/8 map, 1/4/5 advance the read only, 2/3 the reference only. When `flip`, `p = length - 1 - q`.
 - **`teacher_depth`:**
-  - Counts a read only if it is primary, its full length is ≥ 500, its `de` is ≤ 0.05 (NM / aligned bases when `de` is absent), and it has an aligned base at the position with quality ≥ 10.
-  - The position must also be ≥ 20 read bases from either end of the read.
+  - Amended 2026-10-22 (pre-review correction, controller ruling): reproduces longcallR 2.0.0's hifi-masseq DP from its source (primary, length ≥ 500, float `de` < 0.5, any base quality, no HiFi end trim, poly-run rule needing `fetch`), pinned against the real binary. The filters first written here (de ≤ 0.05, quality ≥ 10, 20-bp trim) were a mistranslation of the usage page.
 
 - [ ] **Step 4: Run the tests and see them pass**
 
