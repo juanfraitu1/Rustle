@@ -56462,7 +56462,7 @@ pub mod fam_from_gtf {
 
     /// Junctions of one transcript, for `--representative most-junctions`: the gaps of at least [`MIN_JUNCTION_GAP`] bp between
     /// consecutive exons in coordinate order.
-    pub fn junction_count(exons: &[(String, u64, u64)]) -> usize {
+    pub fn junction_count<C>(exons: &[(C, u64, u64)]) -> usize {
         let mut iv: Vec<(u64, u64)> = exons.iter().map(|x| (x.1, x.2)).collect();
         iv.sort_unstable();
         iv.windows(2)
@@ -56492,9 +56492,14 @@ pub mod fam_from_gtf {
             if line.starts_with('#') {
                 return Ok(None);
             }
-            let r: Vec<&str> = line.split('\t').collect();
-            if r.len() < 9 {
-                return Ok(None);
+            // the first nine tab-separated fields (a line with fewer is skipped), without collecting the line
+            let mut it = line.split('\t');
+            let mut r = [""; 9];
+            for f in r.iter_mut() {
+                match it.next() {
+                    Some(v) => *f = v,
+                    None => return Ok(None),
+                }
             }
             let Some(t) = attr(r[8], "transcript_id \"") else {
                 return Ok(None);
@@ -56516,89 +56521,96 @@ pub mod fam_from_gtf {
         reader.read_to_string(&mut text)?;
         let lines: Vec<&str> = text.split('\n').collect();
         let parsed: Vec<Result<Option<Line>>> = lines.par_iter().map(|l| parse(l)).collect();
-        let mut exons: HashMap<String, Vec<(String, u64, u64)>> = HashMap::default();
-        let mut gene_of: HashMap<String, String> = HashMap::default();
-        let mut strand: HashMap<String, String> = HashMap::default();
-        let mut reads: HashMap<String, u64> = HashMap::default();
-        let mut gene_order: Vec<String> = Vec::new();
+        // keyed by slices of `text` (same hasher and insertion order as owned keys, so the same iteration order)
+        let mut exons: HashMap<&str, Vec<(&str, u64, u64)>> = HashMap::default();
+        let mut gene_of: HashMap<&str, &str> = HashMap::default();
+        let mut strand: HashMap<&str, &str> = HashMap::default();
+        let mut reads: HashMap<&str, u64> = HashMap::default();
+        let mut gene_order: Vec<&str> = Vec::new();
         // genes already in `gene_order` (was a scan of every `gene_of` value per transcript line: O(T^2) on a
         // whole-genome GTF); same first-appearance order for any GTF whose transcript_ids do not switch gene
-        let mut seen_genes: HashSet<String> = HashSet::default();
+        let mut seen_genes: HashSet<&str> = HashSet::default();
         for rec in parsed {
             match rec? {
                 None => {}
                 Some(Line::Tx { t, g, strand: st, reads: n }) => {
-                    if seen_genes.insert(g.to_string()) {
-                        gene_order.push(g.to_string());
+                    if seen_genes.insert(g) {
+                        gene_order.push(g);
                     }
-                    gene_of.insert(t.to_string(), g.to_string());
-                    strand.insert(t.to_string(), st.to_string());
-                    reads.insert(t.to_string(), n);
+                    gene_of.insert(t, g);
+                    strand.insert(t, st);
+                    reads.insert(t, n);
                 }
                 Some(Line::Exon { t, chrom, s, e }) => {
-                    exons.entry(t.to_string()).or_default().push((chrom.to_string(), s, e));
+                    exons.entry(t).or_default().push((chrom, s, e));
                 }
             }
         }
-        let mut txs_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (t, g) in &gene_of {
-            txs_of.entry(g.clone()).or_default().push(t.clone());
+        let mut txs_of: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (&t, &g) in &gene_of {
+            txs_of.entry(g).or_default().push(t);
         }
-        let mut out = Vec::new();
-        for g in &gene_order {
-            let Some(ts) = txs_of.get(g) else { continue };
-            let all: Vec<&(String, u64, u64)> = ts
-                .iter()
-                .flat_map(|t| exons.get(t).into_iter().flatten())
-                .collect();
-            if all.is_empty() {
-                continue;
-            }
-            let chrom = all[0].0.clone();
-            let (s, e) = (
-                all.iter().map(|x| x.1).min().unwrap(),
-                all.iter().map(|x| x.2).max().unwrap(),
-            );
-            let span_of = |t: &String| {
-                exons
-                    .get(t)
-                    .map(|v| {
-                        v.iter().map(|x| x.2).max().unwrap() - v.iter().map(|x| x.1).min().unwrap()
-                    })
-                    .unwrap_or(0)
-            };
-            let mut sorted_ts = ts.clone();
-            sorted_ts.sort();
-            // `max_by_key` keeps the LAST maximum: over the sorted ids, a full tie goes to the last `transcript_id` under both
-            // rules (`most-junctions` only puts the junction count in front of the `most-reads` key)
-            let rep = match rule {
-                Representative::MostReads => sorted_ts
+        // one locus per gene, in first-appearance order (each a pure function of the maps above)
+        let out: Vec<GtfLocus> = gene_order
+            .par_iter()
+            .filter_map(|&g| {
+                let ts = txs_of.get(g)?;
+                let all: Vec<&(&str, u64, u64)> = ts
                     .iter()
-                    .max_by_key(|t| (reads.get(*t).copied().unwrap_or(0), span_of(t))),
-                Representative::MostJunctions => sorted_ts.iter().max_by_key(|t| {
-                    (
-                        exons.get(*t).map_or(0, |v| junction_count(v)),
-                        reads.get(*t).copied().unwrap_or(0),
-                        span_of(t),
-                    )
-                }),
-            }
-            .unwrap()
-            .clone();
-            let st = strand.get(&rep).cloned().unwrap_or_else(|| ".".into());
-            let mut ex = exons.get(&rep).cloned().unwrap_or_default();
-            ex.sort_by_key(|x| x.1);
-            out.push(GtfLocus {
-                gene_id: g.clone(),
-                chrom,
-                start: s,
-                end: e,
-                rep_reads: reads.get(&rep).copied().unwrap_or(0),
-                rep,
-                strand: st,
-                rep_exons: ex,
-            });
-        }
+                    .flat_map(|t| exons.get(t).into_iter().flatten())
+                    .collect();
+                if all.is_empty() {
+                    return None;
+                }
+                let chrom = all[0].0.to_string();
+                let (s, e) = (
+                    all.iter().map(|x| x.1).min().unwrap(),
+                    all.iter().map(|x| x.2).max().unwrap(),
+                );
+                let span_of = |t: &str| {
+                    exons
+                        .get(t)
+                        .map(|v| {
+                            v.iter().map(|x| x.2).max().unwrap() - v.iter().map(|x| x.1).min().unwrap()
+                        })
+                        .unwrap_or(0)
+                };
+                let mut sorted_ts = ts.clone();
+                sorted_ts.sort();
+                // `max_by_key` keeps the LAST maximum: over the sorted ids, a full tie goes to the last `transcript_id` under both
+                // rules (`most-junctions` only puts the junction count in front of the `most-reads` key)
+                let rep: &str = match rule {
+                    Representative::MostReads => sorted_ts
+                        .iter()
+                        .max_by_key(|t| (reads.get(**t).copied().unwrap_or(0), span_of(**t))),
+                    Representative::MostJunctions => sorted_ts.iter().max_by_key(|t| {
+                        (
+                            exons.get(**t).map_or(0, |v| junction_count(v)),
+                            reads.get(**t).copied().unwrap_or(0),
+                            span_of(**t),
+                        )
+                    }),
+                }
+                .copied()
+                .unwrap();
+                let st = strand.get(rep).map_or_else(|| ".".to_string(), |v| v.to_string());
+                let mut ex: Vec<(String, u64, u64)> = exons
+                    .get(rep)
+                    .map(|v| v.iter().map(|&(c, a, b)| (c.to_string(), a, b)).collect())
+                    .unwrap_or_default();
+                ex.sort_by_key(|x| x.1);
+                Some(GtfLocus {
+                    gene_id: g.to_string(),
+                    chrom,
+                    start: s,
+                    end: e,
+                    rep_reads: reads.get(rep).copied().unwrap_or(0),
+                    rep: rep.to_string(),
+                    strand: st,
+                    rep_exons: ex,
+                })
+            })
+            .collect();
         Ok(out)
     }
 
@@ -56624,21 +56636,36 @@ pub mod fam_from_gtf {
         fasta: &str,
         hash: bool,
     ) -> Result<Option<crate::run_cache::ContentHash>> {
-        use crate::run_cache::HashingWriter;
-        let mut fa = HashingWriter::new(
-            std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(fa_path)?),
-            hash,
-        );
-        for (c, s, e) in spans {
-            let seq = genome
-                .fetch_sequence(c, s - 1, *e)
-                .with_context(|| format!("{c}:{s}-{e} not in {fasta}"))?;
-            writeln!(fa, ">{c}:{s}-{e}")?;
-            fa.write_all(&seq)?;
-            writeln!(fa)?;
-        }
-        fa.flush()?;
-        Ok(fa.hash)
+        use crate::run_cache::ContentHash;
+        let mut fa = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(fa_path)?);
+        let seqs: Vec<&[u8]> = spans
+            .iter()
+            .map(|(c, s, e)| genome.fetch_slice(c, s - 1, *e).with_context(|| format!("{c}:{s}-{e} not in {fasta}")))
+            .collect::<Result<_>>()?;
+        // the file and its hash (the same byte stream, hashed on another thread instead of as it is written)
+        let write = || -> Result<()> {
+            for ((c, s, e), seq) in spans.iter().zip(&seqs) {
+                writeln!(fa, ">{c}:{s}-{e}")?;
+                fa.write_all(seq)?;
+                writeln!(fa)?;
+            }
+            fa.flush()?;
+            Ok(())
+        };
+        let digest = || {
+            hash.then(|| {
+                let mut h = ContentHash::default();
+                for ((c, s, e), seq) in spans.iter().zip(&seqs) {
+                    h.update(format!(">{c}:{s}-{e}\n").as_bytes());
+                    h.update(seq);
+                    h.update(b"\n");
+                }
+                h
+            })
+        };
+        let (written, h) = rayon::join(write, digest);
+        written?;
+        Ok(h)
     }
 
     /// The exon gate's input (`minimap2-gate --gate`, `tools/minimap2_gate`): every representative exon of every locus as
@@ -56716,6 +56743,26 @@ pub mod fam_from_gtf {
     /// `exon_gate` = `(margin, shared-exon fraction)` of the exon gate (`mcl_families --exon-gate-margin`,
     /// `--min-shared-exon-frac`), `None` = align every pair. The gate engages only when the minimap2 build has it
     /// ([`minimap2_gate_version`]); the last element is that build's version.
+    /// `RUSTLE_TIMING=1`: the families stage's phase wall times on stderr (`[timing]   <phase>: <s>s`), as elsewhere.
+    pub struct PhaseClock {
+        on: bool,
+        t: std::time::Instant,
+    }
+
+    impl PhaseClock {
+        pub fn new() -> Self {
+            Self { on: std::env::var_os("RUSTLE_TIMING").is_some(), t: std::time::Instant::now() }
+        }
+
+        /// Report the time since the last lap (or since `new`) as `phase`, and restart.
+        pub fn lap(&mut self, phase: &str) {
+            if self.on {
+                eprintln!("[timing]   {phase}: {:.2}s", self.t.elapsed().as_secs_f64());
+            }
+            self.t = std::time::Instant::now();
+        }
+    }
+
     pub fn loci_from_gtf_reader<R: std::io::BufRead>(
         reader: R,
         fasta: &str,
@@ -56725,7 +56772,9 @@ pub mod fam_from_gtf {
         exon_gate: Option<(u64, f64)>,
     ) -> Result<GtfLociRun> {
         use std::collections::HashSet;
+        let mut clock = PhaseClock::new();
         let loci = gtf_loci(reader, rule)?;
+        clock.lap("GTF -> loci");
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
         let mut paf = format!("{out}.loci.paf");
@@ -56748,13 +56797,16 @@ pub mod fam_from_gtf {
         }
         g3.flush()?;
         drop(g3);
+        clock.lap("loci GFF3");
         use crate::run_cache as rc;
         let root = rc::cache_root();
         // only the loci spans (0-based half-open), a third of the genome or less, read once for the loci FASTA and (on
         // gated runs) the copy table
         let regions: Vec<(String, u64, u64)> = spans.iter().map(|(c, s, e)| (c.clone(), s - 1, *e)).collect();
         let genome = GenomeIndex::from_fasta_regions(fasta, &regions)?;
+        clock.lap("genome (loci spans)");
         let fa_hash = write_loci_fa(&genome, &spans, &fa_path, fasta, root.is_some())?;
+        clock.lap("loci FASTA");
         eprintln!(
             "[mcl_families] --from-gtf: {} loci -> all-vs-all",
             spans.len()
@@ -56859,6 +56911,7 @@ pub mod fam_from_gtf {
                     e.dir.display(),
                     if linked { "hard link" } else { "copy" }
                 );
+                clock.lap("PAF cache replay");
                 return Ok(GtfLociRun {
                     gff3,
                     fa: fa_path,
@@ -56885,6 +56938,7 @@ pub mod fam_from_gtf {
             .status()
             .with_context(|| format!("running {mm2}"))?;
         anyhow::ensure!(status.success(), "minimap2 all-vs-all failed");
+        clock.lap("minimap2 all-vs-all");
         if let Some(e) = paf_entry.as_ref() {
             let stored = e.staging().and_then(|st| {
                 e.stage_link(&st, "out.paf", paf_path)?;
@@ -60401,16 +60455,6 @@ pub mod fam_from_gtf {
             loci: Option<&LocusMap>,
             strands: Option<&BTreeMap<GeneKey, char>>,
         ) -> HomologyGraph {
-            let same_unit = |qk: &GeneKey, tk: &GeneKey| -> bool {
-                let Some(st) = strands else {
-                    return false;
-                };
-                matches!((st.get(qk), st.get(tk)), (Some(a), Some(b)) if a == b)
-                    && match (exon_blocks.get(qk), exon_blocks.get(tk)) {
-                        (Some(x), Some(y)) => shares_exon_bases(x, y),
-                        _ => false,
-                    }
-            };
             let mut g = HomologyGraph::default();
             let mut idx: BTreeMap<GeneKey, usize> = BTreeMap::new();
             let mut missing: BTreeSet<GeneKey> = BTreeSet::new();
@@ -60433,35 +60477,102 @@ pub mod fam_from_gtf {
             // the deferred pairs, sorted by key: the order the resolution below walks (and numbers the nodes in)
             let mut pairs: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
 
+            // The record names are interned first: each distinct name is parsed and looked up once. Ids follow the
+            // GeneKey order (two names of one key share an id), so pairs sort and nodes number exactly as when keyed by
+            // GeneKey.
+            use crate::types::{DetHashMap, DetHashSet};
+            use rayon::prelude::*;
+            fn cols11(line: &str) -> Option<[&str; 11]> {
+                let mut f = [""; 11];
+                let mut cols = line.split('\t');
+                for x in f.iter_mut() {
+                    *x = cols.next()?;
+                }
+                Some(f)
+            }
+            let lines: Vec<&str> = paf.lines().collect();
+            let names: DetHashSet<&str> = lines
+                .par_chunks(1 << 15)
+                .map(|ls| {
+                    let mut set = DetHashSet::default();
+                    for f in ls.iter().filter_map(|l| cols11(l)) {
+                        set.insert(f[0]);
+                        set.insert(f[5]);
+                    }
+                    set
+                })
+                .reduce(DetHashSet::default, |mut a, b| {
+                    a.extend(b);
+                    a
+                });
+            let named: Vec<(&str, GeneKey)> = names.into_iter().filter_map(|n| parse_gene_key(n).map(|k| (n, k))).collect();
+            let mut keys: Vec<GeneKey> = named.iter().map(|(_, k)| k.clone()).collect();
+            keys.sort();
+            keys.dedup();
+            let name_id: DetHashMap<&str, u32> =
+                named.iter().map(|(n, k)| (*n, keys.binary_search(k).expect("interned") as u32)).collect();
+            // what a record needs of each locus: its representative (interned among the representatives), whether it is
+            // one, its exon-union length, exon blocks and strand
+            struct Info<'a> {
+                rep: u32,
+                is_rep: bool,
+                exonic: Option<u64>,
+                blocks: Option<&'a Vec<(u64, u64)>>,
+                strand: Option<char>,
+            }
+            let mut reps: Vec<&GeneKey> = match loci {
+                Some(l) => keys.iter().map(|k| l.representative(k)).collect(),
+                None => Vec::new(),
+            };
+            reps.sort();
+            reps.dedup();
+            let info: Vec<Info> = keys
+                .par_iter()
+                .map(|k| Info {
+                    rep: loci.map_or(0, |l| reps.binary_search(&l.representative(k)).expect("interned") as u32),
+                    is_rep: loci.map_or(true, |l| l.is_representative(k)),
+                    exonic: exonic_len.get(k).copied(),
+                    blocks: exon_blocks.get(k),
+                    strand: strands.and_then(|st| st.get(k).copied()),
+                })
+                .collect();
+            let same_unit = |a: &Info, b: &Info| -> bool {
+                strands.is_some()
+                    && matches!((a.strand, b.strand), (Some(x), Some(y)) if x == y)
+                    && match (a.blocks, b.blocks) {
+                        (Some(x), Some(y)) => shares_exon_bases(x, y),
+                        _ => false,
+                    }
+            };
+
             // One PAF record, classified without touching the graph (shared by the sequential and the parallel path).
             enum Rec {
                 Skip,
                 SameLocus,
                 Overlapping,
                 SelfHit,
-                Deferred { k: (GeneKey, GeneKey), a: (u64, u64), b: (u64, u64), nm: u64, bl: u64, ee: u64, miss: [Option<GeneKey>; 2] },
-                Direct { qk: GeneKey, tk: GeneKey, w: Option<(f64, f64)>, miss: [Option<GeneKey>; 2] },
+                Deferred { k: (u32, u32), a: (u64, u64), b: (u64, u64), nm: u64, bl: u64, ee: u64, miss: [Option<u32>; 2] },
+                Direct { qi: u32, ti: u32, w: Option<(f64, f64)>, miss: [Option<u32>; 2] },
             }
             let deferred = p.exonic_overlap || p.min_exonic_bp > 0;
             let classify = |line: &str| -> Rec {
-                let f: Vec<&str> = line.split('\t').collect();
-                if f.len() < 11 {
+                let Some(f) = cols11(line) else {
                     return Rec::Skip;
-                }
+                };
                 let (q, t) = (f[0], f[5]);
                 if q == t {
                     return Rec::Skip;
                 }
-                let (Some(qk), Some(tk)) = (parse_gene_key(q), parse_gene_key(t)) else {
+                let (Some(&qi), Some(&ti)) = (name_id.get(q), name_id.get(t)) else {
                     return Rec::Skip;
                 };
+                let (qk, tk) = (&keys[qi as usize], &keys[ti as usize]);
+                let (qn, tn) = (&info[qi as usize], &info[ti as usize]);
                 if let Some(l) = loci {
-                    if l.representative(&qk) == l.representative(&tk) {
+                    if qn.rep == tn.rep {
                         return Rec::SameLocus;
                     }
-                    if !l.attribute_edges
-                        && (!l.is_representative(&qk) || !l.is_representative(&tk))
-                    {
+                    if !l.attribute_edges && (!qn.is_rep || !tn.is_rep) {
                         return Rec::SameLocus; // representative-only: a folded model's record carries no evidence
                     }
                 }
@@ -60487,7 +60598,7 @@ pub mod fam_from_gtf {
                 let (Ok(nmatch), Ok(blocklen)) = (f[9].parse::<u64>(), f[10].parse::<u64>()) else {
                     return Rec::Skip;
                 };
-                if p.reject_self_hits && is_self_hit(&qk, qs, qe, f[4], &tk, ts, te) && !same_unit(&qk, &tk) {
+                if p.reject_self_hits && is_self_hit(qk, qs, qe, f[4], tk, ts, te) && !same_unit(qn, tn) {
                     return Rec::SelfHit;
                 }
                 if blocklen < p.min_bp {
@@ -60498,52 +60609,35 @@ pub mod fam_from_gtf {
                     return Rec::Skip;
                 }
                 let aln = (qe.saturating_sub(qs)).max(te.saturating_sub(ts));
-                let mut miss: [Option<GeneKey>; 2] = [None, None];
-                let dq = match exonic_len.get(&qk) {
-                    Some(&v) => v,
-                    None => {
-                        miss[0] = Some(qk.clone());
-                        ql
-                    }
-                };
-                let dt = match exonic_len.get(&tk) {
-                    Some(&v) => v,
-                    None => {
-                        miss[1] = Some(tk.clone());
-                        tl
-                    }
-                };
+                let miss = [qn.exonic.is_none().then_some(qi), tn.exonic.is_none().then_some(ti)];
+                let dq = qn.exonic.unwrap_or(ql);
+                let dt = tn.exonic.unwrap_or(tl);
                 if deferred {
                     // Defer: bank this record's intervals on each side and decide once the pair is complete.
                     // exon-to-exon: THIS record's interval must touch exon bases on both sides; the pair keeps its best record
                     let ee = if p.exonic_both_sides || p.min_shared_exon_frac > 0.0 {
-                        let qx = exon_blocks
-                            .get(&qk)
-                            .map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
-                        let tx = exon_blocks
-                            .get(&tk)
-                            .map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
+                        let qx = qn.blocks.map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
+                        let tx = tn.blocks.map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
                         qx.min(tx)
                     } else {
                         0
                     };
-                    return if qk <= tk {
-                        Rec::Deferred { k: (qk, tk), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, miss }
+                    return if qi <= ti {
+                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, miss }
                     } else {
-                        Rec::Deferred { k: (tk, qk), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, miss }
+                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, miss }
                     };
                 }
                 let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
                 let w = (cov_longer >= p.min_cov_longer).then(|| (identity * cov_longer, identity));
-                Rec::Direct { qk, tk, w, miss }
+                Rec::Direct { qi, ti, w, miss }
             };
 
             if deferred {
                 // Every record is banked per pair, and a pair's resolution below sorts its intervals and sums integers,
                 // so chunks of the PAF are classified in parallel and merged; the graph is the sequential one.
-                use rayon::prelude::*;
-                type Chunk = (std::collections::HashMap<(GeneKey, GeneKey), PairAcc>, [usize; 3], Vec<GeneKey>);
-                let lines: Vec<&str> = paf.lines().collect();
+                // a chunk's keys are unique, so its map's iteration order never reaches the merge below
+                type Chunk = (DetHashMap<(u32, u32), PairAcc>, [usize; 3], Vec<u32>);
                 let chunks: Vec<Chunk> = lines
                     .par_chunks(1 << 15)
                     .map(|ls| {
@@ -60569,25 +60663,29 @@ pub mod fam_from_gtf {
                     })
                     .collect();
                 // merge: every chunk's pairs, sorted by key (the BTreeMap's order), equal keys coalesced in chunk order
-                let mut all: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
+                let mut all: Vec<((u32, u32), PairAcc)> = Vec::new();
                 for (m, c, miss) in chunks {
                     g.same_locus_records += c[0];
                     g.rejected_overlapping += c[1];
                     g.rejected_self_hits += c[2];
-                    missing.extend(miss);
+                    missing.extend(miss.into_iter().map(|i| keys[i as usize].clone()));
                     all.extend(m);
                 }
                 all.par_sort_by(|x, y| x.0.cmp(&y.0)); // stable: equal keys keep chunk order
+                let mut last: Option<(u32, u32)> = None;
                 for (k, v) in all {
                     match pairs.last_mut() {
-                        Some((lk, e)) if *lk == k => {
+                        Some((_, e)) if last == Some(k) => {
                             e.0.extend(v.0);
                             e.1.extend(v.1);
                             e.2 += v.2;
                             e.3 += v.3;
                             e.4 = e.4.max(v.4);
                         }
-                        _ => pairs.push((k, v)),
+                        _ => {
+                            pairs.push(((keys[k.0 as usize].clone(), keys[k.1 as usize].clone()), v));
+                            last = Some(k);
+                        }
                     }
                 }
             } else {
@@ -60597,12 +60695,13 @@ pub mod fam_from_gtf {
                         Rec::SameLocus => g.same_locus_records += 1,
                         Rec::Overlapping => g.rejected_overlapping += 1,
                         Rec::SelfHit => g.rejected_self_hits += 1,
-                        Rec::Direct { qk, tk, w, miss } => {
-                            missing.extend(miss.into_iter().flatten());
+                        Rec::Direct { qi, ti, w, miss } => {
+                            missing.extend(miss.into_iter().flatten().map(|i| keys[i as usize].clone()));
                             let Some((w, identity)) = w else { continue };
+                            let (qk, tk) = (&keys[qi as usize], &keys[ti as usize]);
                             let (qn, tn) = match loci {
-                                Some(l) => (l.representative(&qk).clone(), l.representative(&tk).clone()),
-                                None => (qk, tk),
+                                Some(l) => (l.representative(qk).clone(), l.representative(tk).clone()),
+                                None => (qk.clone(), tk.clone()),
                             };
                             let (a, b) = (node_of(qn, &mut g.genes), node_of(tn, &mut g.genes));
                             let key = if a < b { (a, b) } else { (b, a) };
@@ -62757,6 +62856,29 @@ pub mod fam_from_gtf {
                 let g2 = graph_from_paf(tandem, &exonic, &bl, &p);
                 assert_eq!(g2.n_edges(), 1, "a tandem shift between overlapping loci is homology");
                 assert_eq!(g2.rejected_self_hits, 0);
+            }
+
+            /// The graph interns record names by their GeneKey: two spellings of one locus (`NC_1:01001-3000` parses to
+            /// the key of `NC_1:1001-3000`) are one gene whose records bank into one pair, as when keyed by GeneKey.
+            #[test]
+            fn record_names_are_interned_by_locus_key_not_by_spelling() {
+                let a: GeneKey = ("NC_1".to_string(), 1001, 3000);
+                let c: GeneKey = ("NC_2".to_string(), 1001, 3000);
+                // two records, each covering half of both loci: only together do they reach min_cov_longer 0.6
+                let r1 = "NC_1:1001-3000\t2000\t0\t1000\t+\tNC_2:1001-3000\t2000\t0\t1000\t990\t1000\n";
+                let r2 = |q: &str| format!("{q}\t2000\t1000\t2000\t+\tNC_2:1001-3000\t2000\t1000\t2000\t990\t1000\n");
+                let exonic: BTreeMap<GeneKey, u64> = [(a.clone(), 2000u64), (c.clone(), 2000u64)].into_iter().collect();
+                let blocks: BTreeMap<GeneKey, Vec<(u64, u64)>> =
+                    [(a.clone(), vec![(1000, 3000)]), (c.clone(), vec![(1000, 3000)])].into_iter().collect();
+                let p = GraphParams { exonic_overlap: true, min_exonic_bp: 1, min_cov_longer: 0.6, ..GraphParams::default() };
+                let canonical = graph_from_paf(&format!("{r1}{}", r2("NC_1:1001-3000")), &exonic, &blocks, &p);
+                let spelled = graph_from_paf(&format!("{r1}{}", r2("NC_1:01001-3000")), &exonic, &blocks, &p);
+                assert_eq!(canonical.n_edges(), 1, "the two halves together cover both loci");
+                assert_eq!(canonical.genes, vec![a, c]);
+                assert_eq!(
+                    (&spelled.genes, &spelled.edges, &spelled.idents),
+                    (&canonical.genes, &canonical.edges, &canonical.idents)
+                );
             }
 
             /// Amendment 1 (v2): with the loci strands known, a self-hit between two same-strand loci that share exon

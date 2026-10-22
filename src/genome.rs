@@ -353,13 +353,18 @@ impl GenomeIndex {
 
     /// Fetch a subsequence from the genome (0-based half-open coordinates).
     pub fn fetch_sequence(&self, chrom: &str, start: u64, end: u64) -> Option<Vec<u8>> {
+        self.fetch_slice(chrom, start, end).map(|s| s.to_vec())
+    }
+
+    /// [`fetch_sequence`](Self::fetch_sequence) without the copy: the same bytes, clipping and `None` cases.
+    pub fn fetch_slice(&self, chrom: &str, start: u64, end: u64) -> Option<&[u8]> {
         if let Some(seq) = self.seqs.get(chrom) {
             let s = start as usize;
             let e = (end as usize).min(seq.len());
             if s >= e {
                 return None;
             }
-            return Some(seq[s..e].to_vec());
+            return Some(&seq[s..e]);
         }
         // a window-only contig: clip at the contig end as above, then the request must lie inside one window
         let (len, wins) = self.windows.get(chrom)?;
@@ -370,7 +375,7 @@ impl GenomeIndex {
         }
         let i = wins.partition_point(|(ws, _)| *ws <= s);
         let (ws, w) = wins.get(i.checked_sub(1)?)?;
-        (e <= ws + w.len()).then(|| w[s - ws..e - ws].to_vec())
+        (e <= ws + w.len()).then(|| &w[s - ws..e - ws])
     }
 
     /// Iterate over (chrom_name, sequence_bytes) for every contig in the genome.

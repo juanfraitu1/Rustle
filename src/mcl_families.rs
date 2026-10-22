@@ -1287,6 +1287,7 @@ fn main() -> Result<()> {
         gtf_genome = (gated && args.emit_units).then_some(run.genome);
         eprintln!("[mcl_families] --from-gtf: loci in {}", run.fa);
     }
+    let mut clock = rustle::fam_from_gtf::PhaseClock::new();
     anyhow::ensure!(
         !args.paf.is_empty(),
         "--paf is required unless --from-gtf is given"
@@ -1352,9 +1353,11 @@ fn main() -> Result<()> {
         "[mcl_families] exon-union lengths for {} genes",
         exonic.len()
     );
+    clock.lap("exon blocks");
 
     let paf =
         std::fs::read_to_string(&args.paf).with_context(|| format!("reading {}", args.paf))?;
+    clock.lap("read PAF");
     let loci = if args.merge_overlapping_loci && !args.fold_within_clusters {
         let mut m = loci_from_exon_blocks(&blocks);
         m.attribute_edges = args.locus_attribute_edges;
@@ -1381,7 +1384,9 @@ fn main() -> Result<()> {
         (Some(g), true) => Some(gene_strands(g)?),
         _ => None,
     };
+    clock.lap("loci map + strands");
     let g = graph_from_paf_loci_stranded(&paf, &exonic, &blocks, &p, loci.as_ref(), self_hit_strands.as_ref());
+    clock.lap("graph");
     if let Some(path) = &args.dump_graph {
         let mut f = std::fs::File::create(path)?;
         for (&(i, j), &w) in &g.edges {
@@ -1463,6 +1468,7 @@ fn main() -> Result<()> {
 
     let (parts, pairs_joined_by_rule) =
         mcl_pair_rule_counted(&g, args.inflation, 100, args.prune, args.pair_rule);
+    clock.lap("MCL");
     eprintln!(
         "[mcl_families] pair-rule {}: {pairs_joined_by_rule} two-node component(s) joined by the rule",
         args.pair_rule.name()
@@ -1529,6 +1535,7 @@ fn main() -> Result<()> {
     });
     let clusters: Vec<Cluster> =
         build_clusters(&g, &parts, args.min_size, pred.as_ref().map(|b| b.as_ref()));
+    clock.lap("clusters");
 
     let mut ch = std::fs::File::create(format!("{}.clusters.tsv", args.out))?;
     writeln!(
@@ -1847,6 +1854,7 @@ fn main() -> Result<()> {
             Some(path) => Some(load_rmsk(path)?),
             None => None,
         };
+        clock.lap("cluster outputs");
         let s = write_locus_rep_copies(
             &args.out,
             fasta,
@@ -1860,6 +1868,7 @@ fn main() -> Result<()> {
             args.coding_core,
             gtf_genome.as_ref(),
         )?;
+        clock.lap("copy table");
         unit_stats.2 = s.skipped_dropped;
         unit_stats.3 = s.merged;
         units_dropped_emitted = s.dropped_emitted;
@@ -2861,6 +2870,7 @@ fn main() -> Result<()> {
         "[mcl_families] wrote {}.clusters.tsv + {}.params.tsv",
         args.out, args.out
     );
+    clock.lap("rest (summaries, params)");
     Ok(())
 }
 

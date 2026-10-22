@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index d2d30e1..b6832c3 100644
+index d2d30e1..9f27b93 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -3,7 +3,7 @@ CPPFLAGS=	-DHAVE_KALLOC
@@ -11,8 +11,39 @@ index d2d30e1..b6832c3 100644
  PROG=		minimap2
  PROG_EXTRA=	sdust minimap2-lite
  LIBS=		-lm -lz -lpthread
+@@ -14,7 +14,7 @@ endif
+ 
+ ifeq ($(arm_neon),) # if arm_neon is not defined
+ ifeq ($(sse2only),) # if sse2only is not defined
+-	OBJS+=ksw2_extz2_sse41.o ksw2_extd2_sse41.o ksw2_exts2_sse41.o ksw2_extz2_sse2.o ksw2_extd2_sse2.o ksw2_exts2_sse2.o ksw2_dispatch.o
++	OBJS+=ksw2_extz2_sse41.o ksw2_extd2_sse41.o ksw2_exts2_sse41.o ksw2_extz2_sse2.o ksw2_extd2_sse2.o ksw2_exts2_sse2.o ksw2_dispatch.o ksw2_extd2_avx2.o
+ else                # if sse2only is defined
+ 	OBJS+=ksw2_extz2_sse.o ksw2_extd2_sse.o ksw2_exts2_sse.o
+ endif
+@@ -79,6 +79,12 @@ ksw2_extd2_sse41.o:ksw2_extd2_sse.c ksw2.h kalloc.h
+ ksw2_extd2_sse2.o:ksw2_extd2_sse.c ksw2.h kalloc.h
+ 		$(CC) -c $(CFLAGS) -msse2 -mno-sse4.1 $(CPPFLAGS) -DKSW_CPU_DISPATCH -DKSW_SSE2_ONLY $(INCLUDES) $< -o $@
+ 
++ksw2_extd2_avx2.o:ksw2_extd2_avx2.c ksw2.h kalloc.h
++		$(CC) -c $(CFLAGS) -mavx2 $(CPPFLAGS) $(INCLUDES) $< -o $@
++
++ksw2_avx2_test:ksw2_avx2_test.c ksw2_extd2_sse41.o ksw2_extd2_avx2.o kalloc.o
++		$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $^ -o $@
++
+ ksw2_exts2_sse41.o:ksw2_exts2_sse.c ksw2.h kalloc.h
+ 		$(CC) -c $(CFLAGS) -msse4.1 $(CPPFLAGS) -DKSW_CPU_DISPATCH $(INCLUDES) $< -o $@
+ 
+@@ -102,7 +108,7 @@ ksw2_exts2_neon.o:ksw2_exts2_sse.c ksw2.h kalloc.h
+ # other non-file targets
+ 
+ clean:
+-		rm -fr gmon.out *.o a.out $(PROG) $(PROG_EXTRA) *~ *.a *.dSYM build dist mappy*.so mappy.c python/mappy.c mappy.egg*
++		rm -fr gmon.out *.o a.out $(PROG) $(PROG_EXTRA) ksw2_avx2_test *~ *.a *.dSYM build dist mappy*.so mappy.c python/mappy.c mappy.egg*
+ 
+ depend:
+ 		(LC_ALL=C; export LC_ALL; makedepend -Y -- $(CFLAGS) $(CPPFLAGS) -- *.c)
 diff --git a/align.c b/align.c
-index 963cd29..4f9b245 100644
+index 963cd29..72c9bcb 100644
 --- a/align.c
 +++ b/align.c
 @@ -1,3 +1,4 @@
@@ -28,7 +59,40 @@ index 963cd29..4f9b245 100644
  
  #define MM_MAX_QLEN_FLANK 100
  
-@@ -651,6 +653,9 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+@@ -355,6 +357,32 @@ static void mm_align_pair(void *km, const mm_mapopt_t *opt, int qlen, const uint
+ 		ksw_exts2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->noncan, zdrop, end_bonus, opt->junc_bonus, opt->junc_pen, ksw_flag, junc, ez);
+ 	} else if (opt->q == opt->q2 && opt->e == opt->e2) { // affine gap
+ 		ksw_extz2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, w, zdrop, end_bonus, ksw_flag, ez);
++	} else if (mm_dpm_active() && (int64_t)(qlen + tlen) * (2 * (int64_t)w + 1 < qlen? 2 * (int64_t)w + 1 : qlen) >= 20000) { // Rustle patch (DP memo, call level)
++		uint32_t key[11 + 7 + 8], k = 0, i;
++		uint64_t hq[2], ht[2];
++		key[k++] = qlen, key[k++] = tlen, key[k++] = (uint8_t)opt->q, key[k++] = (uint8_t)opt->e, key[k++] = (uint8_t)opt->q2, key[k++] = (uint8_t)opt->e2;
++		key[k++] = w, key[k++] = end_bonus, key[k++] = zdrop, key[k++] = ksw_flag, key[k++] = 5;
++		for (i = 0; i < 25; i += 4) key[k++] = (uint32_t)(uint8_t)mat[i] | (uint32_t)(uint8_t)(i+1 < 25? mat[i+1] : 0)<<8 | (uint32_t)(uint8_t)(i+2 < 25? mat[i+2] : 0)<<16 | (uint32_t)(uint8_t)(i+3 < 25? mat[i+3] : 0)<<24;
++		mm_dpm_hash(qseq, qlen, hq);
++		mm_dpm_hash(tseq, tlen, ht);
++		key[k++] = (uint32_t)hq[0], key[k++] = (uint32_t)(hq[0]>>32), key[k++] = (uint32_t)hq[1], key[k++] = (uint32_t)(hq[1]>>32);
++		key[k++] = (uint32_t)ht[0], key[k++] = (uint32_t)(ht[0]>>32), key[k++] = (uint32_t)ht[1], key[k++] = (uint32_t)(ht[1]>>32);
++		if (mm_kswm_get(key, k, km, ez)) {
++			if (mm_dpm_verify()) { // recompute and compare
++				ksw_extz_t ez2;
++				int bad;
++				memset(&ez2, 0, sizeof(ez2));
++				ksw_extd2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->e2, w, zdrop, end_bonus, ksw_flag, &ez2);
++				bad = ez2.max != ez->max || ez2.zdropped != ez->zdropped || ez2.max_q != ez->max_q || ez2.max_t != ez->max_t
++					|| ez2.mqe != ez->mqe || ez2.mqe_t != ez->mqe_t || ez2.mte != ez->mte || ez2.mte_q != ez->mte_q || ez2.score != ez->score
++					|| ez2.reach_end != ez->reach_end || ez2.n_cigar != ez->n_cigar || (ez2.n_cigar > 0 && memcmp(ez2.cigar, ez->cigar, ez2.n_cigar * 4) != 0);
++				mm_kswm_verified(bad);
++				kfree(km, ez2.cigar);
++			}
++		} else {
++			ksw_extd2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->e2, w, zdrop, end_bonus, ksw_flag, ez);
++			mm_kswm_put(key, k, ez);
++		}
+ 	} else { // dual affine gap
+ 		ksw_extd2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->e2, w, zdrop, end_bonus, ksw_flag, ez);
+ 	}
+@@ -651,6 +679,9 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
  	int32_t rs, re, qs, qe;
  	int32_t rs1, qs1, re1, qe1;
  	int8_t mat[25];
@@ -38,7 +102,7 @@ index 963cd29..4f9b245 100644
  
  	if (is_sr) assert(!(mi->flag & MM_I_HPC)); // HPC won't work with SR because with HPC we can't easily tell if there is a gap
  
-@@ -767,6 +772,52 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+@@ -767,6 +798,52 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
  	}
  
  	assert(re0 > rs0);
@@ -91,7 +155,7 @@ index 963cd29..4f9b245 100644
  	tseq = (uint8_t*)kmalloc(km, re0 - rs0);
  	junc = (uint8_t*)kmalloc(km, re0 - rs0);
  
-@@ -864,6 +915,7 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+@@ -864,6 +941,7 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
  				if (cnt1 - (j + 1) >= opt->min_cnt) {
  					mm_split_reg(r, r2, as1 + j + 1 - r->as, qlen, a, !!(opt->flag&MM_F_QSTRAND));
  					if (zdrop_code == 2) r2->split_inv = 1;
@@ -99,7 +163,7 @@ index 963cd29..4f9b245 100644
  				}
  				break;
  			} else r->p->dp_score += ez->score;
-@@ -908,6 +960,22 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
+@@ -908,6 +986,22 @@ static void mm_align1(void *km, const mm_mapopt_t *opt, const mm_idx_t *mi, int
  			r->p->trans_strand ^= 3; // flip to the read strand
  	}
  
@@ -124,10 +188,10 @@ index 963cd29..4f9b245 100644
  	kfree(km, junc);
 diff --git a/dpmemo.c b/dpmemo.c
 new file mode 100644
-index 0000000..3b16fa4
+index 0000000..b665d15
 --- /dev/null
 +++ b/dpmemo.c
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,223 @@
 +/* Rustle patch (DP memo), see dpmemo.h. A chained hash table under one mutex; the whole table is dropped when it exceeds
 + * its byte cap (overlapping loci are adjacent in the input, so reuse is local). Keys are compared in full. */
 +#include <stdlib.h>
@@ -135,6 +199,7 @@ index 0000000..3b16fa4
 +#include <stdio.h>
 +#include <pthread.h>
 +#include "dpmemo.h"
++#include "kalloc.h"
 +
 +typedef struct ent_s {
 +	uint64_t h;
@@ -257,19 +322,105 @@ index 0000000..3b16fa4
 +	if (bad) __sync_fetch_and_add(&g_vbad, 1);
 +}
 +
++/* call level (see dpmemo.h): same table design, its own lock and byte count */
++typedef struct kent_s {
++	uint64_t h;
++	uint32_t key_len;
++	uint32_t *key;
++	ksw_extz_t ez; /* ez.cigar: a malloc'ed copy of n_cigar operations */
++	struct kent_s *next;
++} kent_t;
++
++static kent_t **g_kb = 0;
++static pthread_mutex_t g_klock = PTHREAD_MUTEX_INITIALIZER;
++static uint64_t g_kbytes = 0, g_khits = 0, g_kmiss = 0, g_kflush = 0, g_kvbad = 0;
++
++static void kflush_all(void)
++{
++	uint32_t i;
++	for (i = 0; i < NB; ++i) {
++		kent_t *e = g_kb[i], *n;
++		for (; e; e = n) {
++			n = e->next;
++			free(e->key);
++			free(e->ez.cigar);
++			free(e);
++		}
++		g_kb[i] = 0;
++	}
++	g_kbytes = 0, ++g_kflush;
++}
++
++int mm_kswm_get(const uint32_t *key, uint32_t key_len, void *km, ksw_extz_t *ez)
++{
++	uint64_t h = key_hash(key, key_len);
++	kent_t *e;
++	int hit = 0;
++	pthread_mutex_lock(&g_klock);
++	if (g_kb == 0) g_kb = (kent_t**)calloc(NB, sizeof(kent_t*));
++	for (e = g_kb[h & (NB - 1)]; e; e = e->next)
++		if (e->h == h && e->key_len == key_len && memcmp(e->key, key, key_len * 4) == 0) {
++			uint32_t *cigar = ez->cigar;
++			int m_cigar = ez->m_cigar;
++			*ez = e->ez;
++			ez->cigar = cigar, ez->m_cigar = m_cigar;
++			if (ez->n_cigar > ez->m_cigar) {
++				ez->m_cigar = ez->n_cigar;
++				ez->cigar = (uint32_t*)krealloc(km, ez->cigar, ez->m_cigar * 4);
++			}
++			if (ez->n_cigar > 0) memcpy(ez->cigar, e->ez.cigar, ez->n_cigar * 4);
++			hit = 1;
++			break;
++		}
++	if (hit) ++g_khits; else ++g_kmiss;
++	pthread_mutex_unlock(&g_klock);
++	return hit;
++}
++
++void mm_kswm_put(const uint32_t *key, uint32_t key_len, const ksw_extz_t *ez)
++{
++	uint64_t h = key_hash(key, key_len), sz;
++	kent_t *e = (kent_t*)malloc(sizeof(kent_t));
++	e->h = h, e->key_len = key_len;
++	e->key = (uint32_t*)malloc(key_len * 4);
++	memcpy(e->key, key, key_len * 4);
++	e->ez = *ez;
++	e->ez.m_cigar = ez->n_cigar;
++	e->ez.cigar = ez->n_cigar > 0? (uint32_t*)malloc(ez->n_cigar * 4) : 0;
++	if (ez->n_cigar > 0) memcpy(e->ez.cigar, ez->cigar, ez->n_cigar * 4);
++	sz = sizeof(kent_t) + key_len * 4 + ez->n_cigar * 4;
++	pthread_mutex_lock(&g_klock);
++	if (g_kb == 0) g_kb = (kent_t**)calloc(NB, sizeof(kent_t*));
++	if (g_kbytes + sz > g_cap) kflush_all();
++	e->next = g_kb[h & (NB - 1)];
++	g_kb[h & (NB - 1)] = e;
++	g_kbytes += sz;
++	pthread_mutex_unlock(&g_klock);
++}
++
++void mm_kswm_verified(int bad)
++{
++	if (bad) __sync_fetch_and_add(&g_kvbad, 1);
++}
++
 +void mm_dpm_report(void)
 +{
-+	if (g_b && mm_verbose >= 3)
-+		fprintf(stderr, "[M::dp-memo] %lu chain alignment(s) reused, %lu computed, %lu flush(es)%s%lu\n",
-+				(unsigned long)g_hits, (unsigned long)g_miss, (unsigned long)g_flush, g_verify? "; verify mismatches " : "",
-+				g_verify? (unsigned long)g_vbad : 0UL);
++	if (g_b == 0 || mm_verbose < 3) return;
++	fprintf(stderr, "[M::dp-memo] %lu chain alignment(s) reused, %lu computed, %lu flush(es)", (unsigned long)g_hits,
++			(unsigned long)g_miss, (unsigned long)g_flush);
++	if (g_verify) fprintf(stderr, "; verify mismatches %lu", (unsigned long)g_vbad);
++	fputc('\n', stderr);
++	fprintf(stderr, "[M::dp-memo] %lu DP call(s) reused, %lu computed, %lu flush(es)", (unsigned long)g_khits,
++			(unsigned long)g_kmiss, (unsigned long)g_kflush);
++	if (g_verify) fprintf(stderr, "; verify mismatches %lu", (unsigned long)g_kvbad);
++	fputc('\n', stderr);
 +}
 diff --git a/dpmemo.h b/dpmemo.h
 new file mode 100644
-index 0000000..362469a
+index 0000000..1cae685
 --- /dev/null
 +++ b/dpmemo.h
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,34 @@
 +/* Rustle patch (DP memo): reuse the base-level alignment of a chain whose window bases and seeds (relative to the window)
 + * equal those of a chain aligned before. Overlapping loci aligned all-vs-all present the same genomic window to the
 + * aligner many times; its result is a deterministic function of the window's bases, the seeds and the options. */
@@ -294,6 +445,12 @@ index 0000000..362469a
 +void mm_dpm_report(void);
 +int mm_dpm_verify(void);              /* MM_DPM_VERIFY set: recompute every hit and compare */
 +void mm_dpm_verified(int bad);
++/* call level: one dual-affine DP call (ksw_extd2) is a deterministic function of its arguments; key = the scalar
++ * arguments, the scoring matrix and two 128-bit hashes of the sequences */
++#include "ksw2.h"
++int mm_kswm_get(const uint32_t *key, uint32_t key_len, void *km, ksw_extz_t *ez); /* 1 on a hit; the CIGAR is copied into ez->cigar (km) */
++void mm_kswm_put(const uint32_t *key, uint32_t key_len, const ksw_extz_t *ez);
++void mm_kswm_verified(int bad);
 +#ifdef __cplusplus
 +}
 +#endif
@@ -501,6 +658,608 @@ index 0000000..72182e6
 +}
 +#endif
 +#endif
+diff --git a/ksw2_avx2_test.c b/ksw2_avx2_test.c
+new file mode 100644
+index 0000000..37b680e
+--- /dev/null
++++ b/ksw2_avx2_test.c
+@@ -0,0 +1,90 @@
++/* Differential test: ksw_extd2_avx2() must return exactly what ksw_extd2_sse41() returns.
++ * Random related sequence pairs (substitutions, indels, N, tandem copies), minimap2's scoring presets, bands from
++ * 0 to unbanded, every flag combination minimap2 uses. Usage: ksw2_avx2_test [n_cases] [seed] */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdint.h>
++#include "ksw2.h"
++#include "kalloc.h"
++
++void ksw_extd2_sse41(void *km, int qlen, const uint8_t *query, int tlen, const uint8_t *target, int8_t m, const int8_t *mat,
++					 int8_t q, int8_t e, int8_t q2, int8_t e2, int w, int zdrop, int end_bonus, int flag, ksw_extz_t *ez);
++void ksw_extd2_avx2(void *km, int qlen, const uint8_t *query, int tlen, const uint8_t *target, int8_t m, const int8_t *mat,
++					int8_t q, int8_t e, int8_t q2, int8_t e2, int w, int zdrop, int end_bonus, int flag, ksw_extz_t *ez);
++
++static uint64_t rng_s;
++static uint32_t rnd(void) { rng_s ^= rng_s << 13; rng_s ^= rng_s >> 7; rng_s ^= rng_s << 17; return (uint32_t)rng_s; }
++
++static int mutate(const uint8_t *a, int la, uint8_t *b, int max_lb, int rate_permille)
++{
++	int i, lb = 0;
++	for (i = 0; i < la && lb < max_lb; ++i) {
++		uint32_t x = rnd() % 1000;
++		if (x < (uint32_t)rate_permille / 3) { // substitution
++			b[lb++] = (a[i] + 1 + rnd() % 3) & 3;
++		} else if (x < (uint32_t)rate_permille * 2 / 3) { // deletion of 1..30 bases
++			i += rnd() % 30;
++		} else if (x < (uint32_t)rate_permille) { // insertion of 1..30 bases
++			int k, l = 1 + rnd() % 30;
++			for (k = 0; k < l && lb < max_lb; ++k) b[lb++] = rnd() & 3;
++			if (lb < max_lb) b[lb++] = a[i];
++		} else b[lb++] = a[i];
++	}
++	return lb;
++}
++
++int main(int argc, char *argv[])
++{
++	long n = argc > 1? atol(argv[1]) : 20000, k, n_diff = 0;
++	static const int8_t presets[][5] = { // a, b, q, e, q2, e2 packed as {b, q, e, q2, e2} with a = 1 or 2
++		{4, 6, 2, 26, 1}, {4, 4, 2, 24, 1}, {8, 12, 2, 32, 1}, {19, 39, 3, 81, 1}, {2, 4, 2, 24, 1}, {4, 24, 1, 6, 2}
++	};
++	static const int bands[] = { 0, 1, 7, 16, 33, 100, 500, 751, 1501, -1 };
++	static const int flags[] = { 0, KSW_EZ_SCORE_ONLY, KSW_EZ_RIGHT, KSW_EZ_EXTZ_ONLY, KSW_EZ_EXTZ_ONLY|KSW_EZ_RIGHT|KSW_EZ_REV_CIGAR,
++		KSW_EZ_EXTZ_ONLY|KSW_EZ_REV_CIGAR, KSW_EZ_APPROX_MAX, KSW_EZ_APPROX_MAX|KSW_EZ_APPROX_DROP, KSW_EZ_GENERIC_SC,
++		KSW_EZ_GENERIC_SC|KSW_EZ_EXTZ_ONLY|KSW_EZ_RIGHT, KSW_EZ_SCORE_ONLY|KSW_EZ_EXTZ_ONLY, KSW_EZ_APPROX_MAX|KSW_EZ_RIGHT };
++	uint8_t *a = (uint8_t*)malloc(20000), *b = (uint8_t*)malloc(40000);
++	rng_s = argc > 2? strtoull(argv[2], 0, 10) : 11;
++	if (rng_s == 0) rng_s = 11;
++	for (k = 0; k < n; ++k) {
++		ksw_extz_t e1, e2;
++		int8_t mat[25];
++		int i, j, la, lb, pr = rnd() % 6, w = bands[rnd() % 10], zdrop = (int[]){-1, 50, 100, 200, 400, 1000}[rnd() % 6];
++		int end_bonus = (int[]){-1, 0, 5, 10, 50}[rnd() % 5], flag = flags[rnd() % 12], rate = (int[]){0, 5, 20, 60, 150, 400}[rnd() % 6];
++		int8_t sa = pr == 3 || pr == 4? 2 : 1, sb = presets[pr][0];
++		// a: random, or tandem copies of a short unit; length 1..6000, mostly short
++		la = 1 + (rnd() % 8 == 0? rnd() % 6000 : rnd() % 600);
++		if (rnd() % 3 == 0) {
++			int unit = 1 + rnd() % 60;
++			for (i = 0; i < unit; ++i) a[i] = rnd() & 3;
++			for (i = unit; i < la; ++i) a[i] = rnd() % 50 == 0? rnd() & 3 : a[i - unit];
++		} else for (i = 0; i < la; ++i) a[i] = rnd() & 3;
++		lb = rnd() % 10 == 0? 1 + rnd() % 1000 : mutate(a, la, b, 40000, rate);
++		if (rnd() % 10 == 0) for (i = 0; i < lb; ++i) b[i] = rnd() & 3; // unrelated
++		if (lb == 0) b[lb++] = rnd() & 3;
++		if (rnd() % 4 == 0) for (i = 0; i < 1 + (la + lb) / 50; ++i) { // some N
++			int p = rnd() % (la + lb);
++			if (p < la) a[p] = 4; else b[p - la] = 4;
++		}
++		for (i = 0; i < 5; ++i)
++			for (j = 0; j < 5; ++j)
++				mat[i * 5 + j] = i == 4 || j == 4? (flag & KSW_EZ_GENERIC_SC? -1 : 0) : i == j? sa : -sb;
++		if (flag & KSW_EZ_GENERIC_SC) mat[1 * 5 + 2] = mat[2 * 5 + 1] = -1; // a transition-like milder mismatch
++		memset(&e1, 0, sizeof(e1)); memset(&e2, 0, sizeof(e2));
++		ksw_extd2_sse41(0, la, a, lb, b, 5, mat, presets[pr][1], presets[pr][2], presets[pr][3], presets[pr][4], w, zdrop, end_bonus, flag, &e1);
++		ksw_extd2_avx2(0, la, a, lb, b, 5, mat, presets[pr][1], presets[pr][2], presets[pr][3], presets[pr][4], w, zdrop, end_bonus, flag, &e2);
++		if (e1.max != e2.max || e1.zdropped != e2.zdropped || e1.max_q != e2.max_q || e1.max_t != e2.max_t || e1.mqe != e2.mqe
++			|| e1.mqe_t != e2.mqe_t || e1.mte != e2.mte || e1.mte_q != e2.mte_q || e1.score != e2.score || e1.reach_end != e2.reach_end
++			|| e1.n_cigar != e2.n_cigar || (e1.n_cigar && memcmp(e1.cigar, e2.cigar, e1.n_cigar * 4) != 0)) {
++			if (n_diff++ < 10)
++				fprintf(stderr, "DIFF case %ld: qlen=%d tlen=%d preset=%d w=%d zdrop=%d end_bonus=%d flag=%d | max %d/%d max_q %d/%d max_t %d/%d score %d/%d mqe %d/%d mte %d/%d n_cigar %d/%d zdropped %d/%d\n",
++						k, la, lb, pr, w, zdrop, end_bonus, flag, e1.max, e2.max, e1.max_q, e2.max_q, e1.max_t, e2.max_t,
++						e1.score, e2.score, e1.mqe, e2.mqe, e1.mte, e2.mte, e1.n_cigar, e2.n_cigar, e1.zdropped, e2.zdropped);
++		}
++		free(e1.cigar); free(e2.cigar);
++	}
++	printf("%ld cases, %ld differ\n", n, n_diff);
++	free(a); free(b);
++	return n_diff != 0;
++}
+diff --git a/ksw2_dispatch.c b/ksw2_dispatch.c
+index 5f5c905..5c27a6d 100644
+--- a/ksw2_dispatch.c
++++ b/ksw2_dispatch.c
+@@ -1,5 +1,6 @@
+ #ifdef KSW_CPU_DISPATCH
+ #include <stdlib.h>
++#include <stdint.h>
+ #include "ksw2.h"
+ 
+ #define SIMD_SSE     0x1
+@@ -49,6 +50,16 @@ static int x86_simd(void)
+ 		if (cpuid[1]>>5 &1) flag |= SIMD_AVX2;
+ 		if (cpuid[1]>>16&1) flag |= SIMD_AVX512F;
+ 	}
++	if (flag & SIMD_AVX2) { // the OS must save the YMM registers; MM_KSW_NO_AVX2 forces the SSE kernels
++		int os_ymm = 0;
++		__cpuidex(cpuid, 1, 0);
++		if ((cpuid[2]>>27&1) && (cpuid[2]>>28&1)) { // OSXSAVE and AVX
++			uint32_t xcr0_lo, xcr0_hi;
++			__asm__ volatile ("xgetbv" : "=a" (xcr0_lo), "=d" (xcr0_hi) : "c" (0));
++			os_ymm = (xcr0_lo & 6) == 6;
++		}
++		if (!os_ymm || getenv("MM_KSW_NO_AVX2")) flag &= ~SIMD_AVX2;
++	}
+ 	return flag;
+ }
+ 
+@@ -71,8 +82,12 @@ void ksw_extd2_sse(void *km, int qlen, const uint8_t *query, int tlen, const uin
+ 				   int8_t q, int8_t e, int8_t q2, int8_t e2, int w, int zdrop, int end_bonus, int flag, ksw_extz_t *ez);
+ 	extern void ksw_extd2_sse41(void *km, int qlen, const uint8_t *query, int tlen, const uint8_t *target, int8_t m, const int8_t *mat,
+ 				   int8_t q, int8_t e, int8_t q2, int8_t e2, int w, int zdrop, int end_bonus, int flag, ksw_extz_t *ez);
++	extern void ksw_extd2_avx2(void *km, int qlen, const uint8_t *query, int tlen, const uint8_t *target, int8_t m, const int8_t *mat,
++				   int8_t q, int8_t e, int8_t q2, int8_t e2, int w, int zdrop, int end_bonus, int flag, ksw_extz_t *ez);
+ 	if (ksw_simd < 0) ksw_simd = x86_simd();
+-	if (ksw_simd & SIMD_SSE4_1)
++	if (ksw_simd & SIMD_AVX2)
++		ksw_extd2_avx2(km, qlen, query, tlen, target, m, mat, q, e, q2, e2, w, zdrop, end_bonus, flag, ez);
++	else if (ksw_simd & SIMD_SSE4_1)
+ 		ksw_extd2_sse41(km, qlen, query, tlen, target, m, mat, q, e, q2, e2, w, zdrop, end_bonus, flag, ez);
+ 	else if (ksw_simd & SIMD_SSE2)
+ 		ksw_extd2_sse2(km, qlen, query, tlen, target, m, mat, q, e, q2, e2, w, zdrop, end_bonus, flag, ez);
+diff --git a/ksw2_extd2_avx2.c b/ksw2_extd2_avx2.c
+new file mode 100644
+index 0000000..4140004
+--- /dev/null
++++ b/ksw2_extd2_avx2.c
+@@ -0,0 +1,458 @@
++#include <string.h>
++#include <stdio.h>
++#include <assert.h>
++#include "ksw2.h"
++
++/* AVX2 build of ksw_extd2_sse41() (ksw2_extd2_sse.c) with identical results.
++ *
++ * The DP still runs over the SSE kernel's 16-cell blocks: the same band, the same cells in the same order, the same
++ * per-lane operations. Two adjacent blocks share one 256-bit register; the one-byte shift that carries a value from
++ * block t-1 into block t crosses the 128-bit lane boundary through permute2x128 + alignr. A single block left over
++ * at the end of a row runs the SSE4.1 code unchanged. The exact-max scan runs 8 lanes and folds them back into the
++ * SSE kernel's 4 residue classes (larger value first, then the smaller position, which is the one the 4-lane scan
++ * meets first), so max_t and every Z-drop decision tie-break as before. */
++
++#ifdef __AVX2__
++#include <immintrin.h>
++
++/* [byte 31 of prev, X bytes 0..30]: X shifted up by one byte with prev's top byte carried in */
++#define ksw_shift1_256(prev, X) _mm256_alignr_epi8((X), _mm256_permute2x128_si256((prev), (X), 0x21), 15)
++
++void ksw_extd2_avx2(void *km, int qlen, const uint8_t *query, int tlen, const uint8_t *target, int8_t m, const int8_t *mat,
++					int8_t q, int8_t e, int8_t q2, int8_t e2, int w, int zdrop, int end_bonus, int flag, ksw_extz_t *ez)
++{
++#define __dp_code_block1 \
++	z = _mm_load_si128(&s[t]); \
++	xt1 = _mm_load_si128(&x[t]);                     /* xt1 <- x[r-1][t..t+15] */ \
++	tmp = _mm_srli_si128(xt1, 15);                   /* tmp <- x[r-1][t+15] */ \
++	xt1 = _mm_or_si128(_mm_slli_si128(xt1, 1), x1_); /* xt1 <- x[r-1][t-1..t+14] */ \
++	x1_ = tmp; \
++	vt1 = _mm_load_si128(&v[t]);                     /* vt1 <- v[r-1][t..t+15] */ \
++	tmp = _mm_srli_si128(vt1, 15);                   /* tmp <- v[r-1][t+15] */ \
++	vt1 = _mm_or_si128(_mm_slli_si128(vt1, 1), v1_); /* vt1 <- v[r-1][t-1..t+14] */ \
++	v1_ = tmp; \
++	a = _mm_add_epi8(xt1, vt1);                      /* a <- x[r-1][t-1..t+14] + v[r-1][t-1..t+14] */ \
++	ut = _mm_load_si128(&u[t]);                      /* ut <- u[t..t+15] */ \
++	b = _mm_add_epi8(_mm_load_si128(&y[t]), ut);     /* b <- y[r-1][t..t+15] + u[r-1][t..t+15] */ \
++	x2t1= _mm_load_si128(&x2[t]); \
++	tmp = _mm_srli_si128(x2t1, 15); \
++	x2t1= _mm_or_si128(_mm_slli_si128(x2t1, 1), x21_); \
++	x21_= tmp; \
++	a2= _mm_add_epi8(x2t1, vt1); \
++	b2= _mm_add_epi8(_mm_load_si128(&y2[t]), ut);
++
++#define __dp_code_block2 \
++	_mm_store_si128(&u[t], _mm_sub_epi8(z, vt1));    /* u[r][t..t+15] <- z - v[r-1][t-1..t+14] */ \
++	_mm_store_si128(&v[t], _mm_sub_epi8(z, ut));     /* v[r][t..t+15] <- z - u[r-1][t..t+15] */ \
++	tmp = _mm_sub_epi8(z, q_); \
++	a = _mm_sub_epi8(a, tmp); \
++	b = _mm_sub_epi8(b, tmp); \
++	tmp = _mm_sub_epi8(z, q2_); \
++	a2= _mm_sub_epi8(a2, tmp); \
++	b2= _mm_sub_epi8(b2, tmp);
++
++/* the same two blocks over the 16-cell blocks t and t+1 */
++#define __dp_code_block1_256 \
++	z = _mm256_loadu_si256((__m256i*)&s[t]); \
++	xt = _mm256_loadu_si256((__m256i*)&x[t]); \
++	xt1 = ksw_shift1_256(px, xt), px = xt;           /* xt1 <- x[r-1][t-1..t+30] */ \
++	vt = _mm256_loadu_si256((__m256i*)&v[t]); \
++	vt1 = ksw_shift1_256(pv, vt), pv = vt;           /* vt1 <- v[r-1][t-1..t+30] */ \
++	a = _mm256_add_epi8(xt1, vt1); \
++	ut = _mm256_loadu_si256((__m256i*)&u[t]); \
++	b = _mm256_add_epi8(_mm256_loadu_si256((__m256i*)&y[t]), ut); \
++	x2t = _mm256_loadu_si256((__m256i*)&x2[t]); \
++	x2t1 = ksw_shift1_256(px2, x2t), px2 = x2t; \
++	a2 = _mm256_add_epi8(x2t1, vt1); \
++	b2 = _mm256_add_epi8(_mm256_loadu_si256((__m256i*)&y2[t]), ut);
++
++#define __dp_code_block2_256 \
++	_mm256_storeu_si256((__m256i*)&u[t], _mm256_sub_epi8(z, vt1)); \
++	_mm256_storeu_si256((__m256i*)&v[t], _mm256_sub_epi8(z, ut)); \
++	tmp = _mm256_sub_epi8(z, Q_); \
++	a = _mm256_sub_epi8(a, tmp); \
++	b = _mm256_sub_epi8(b, tmp); \
++	tmp = _mm256_sub_epi8(z, Q2_); \
++	a2 = _mm256_sub_epi8(a2, tmp); \
++	b2 = _mm256_sub_epi8(b2, tmp);
++
++	int r, t, qe = q + e, n_col_, *off = 0, *off_end = 0, tlen_, qlen_, last_st, last_en, wl, wr, max_sc, min_sc, long_thres, long_diff;
++	int with_cigar = !(flag&KSW_EZ_SCORE_ONLY), approx_max = !!(flag&KSW_EZ_APPROX_MAX);
++	int32_t *H = 0, H0 = 0, last_H0_t = 0;
++	uint8_t *qr, *sf, *mem, *mem2 = 0;
++	__m128i q_, q2_, qe_, qe2_, zero_, sc_mch_, sc_mis_, m1_, sc_N_;
++	__m256i Q_, Q2_, QE_, QE2_, ZERO_, SC_MCH_, SC_MIS_, M1_, SC_N_;
++	__m128i *u, *v, *x, *y, *x2, *y2, *s, *p = 0;
++
++	ksw_reset_extz(ez);
++	if (m <= 1 || qlen <= 0 || tlen <= 0) return;
++
++	if (q2 + e2 < q + e) t = q, q = q2, q2 = t, t = e, e = e2, e2 = t; // make sure q+e no larger than q2+e2
++
++	zero_   = _mm_set1_epi8(0);
++	q_      = _mm_set1_epi8(q);
++	q2_     = _mm_set1_epi8(q2);
++	qe_     = _mm_set1_epi8(q + e);
++	qe2_    = _mm_set1_epi8(q2 + e2);
++	sc_mch_ = _mm_set1_epi8(mat[0]);
++	sc_mis_ = _mm_set1_epi8(mat[1]);
++	sc_N_   = mat[m*m-1] == 0? _mm_set1_epi8(-e2) : _mm_set1_epi8(mat[m*m-1]);
++	m1_     = _mm_set1_epi8(m - 1); // wildcard
++	ZERO_   = _mm256_broadcastsi128_si256(zero_);
++	Q_      = _mm256_broadcastsi128_si256(q_);
++	Q2_     = _mm256_broadcastsi128_si256(q2_);
++	QE_     = _mm256_broadcastsi128_si256(qe_);
++	QE2_    = _mm256_broadcastsi128_si256(qe2_);
++	SC_MCH_ = _mm256_broadcastsi128_si256(sc_mch_);
++	SC_MIS_ = _mm256_broadcastsi128_si256(sc_mis_);
++	SC_N_   = _mm256_broadcastsi128_si256(sc_N_);
++	M1_     = _mm256_broadcastsi128_si256(m1_);
++
++	if (w < 0) w = tlen > qlen? tlen : qlen;
++	wl = wr = w;
++	tlen_ = (tlen + 15) / 16;
++	n_col_ = qlen < tlen? qlen : tlen;
++	n_col_ = ((n_col_ < w + 1? n_col_ : w + 1) + 15) / 16 + 1;
++	qlen_ = (qlen + 15) / 16;
++	for (t = 1, max_sc = mat[0], min_sc = mat[1]; t < m * m; ++t) {
++		max_sc = max_sc > mat[t]? max_sc : mat[t];
++		min_sc = min_sc < mat[t]? min_sc : mat[t];
++	}
++	if (-min_sc > 2 * (q + e)) return; // otherwise, we won't see any mismatches
++
++	long_thres = e != e2? (q2 - q) / (e - e2) - 1 : 0;
++	if (q2 + e2 + long_thres * e2 > q + e + long_thres * e)
++		++long_thres;
++	long_diff = long_thres * (e - e2) - (q2 - q) - e2;
++
++	// the SSE kernel's layout, byte for byte relative to u; one more block so that u can start 32-byte aligned
++	mem = (uint8_t*)kcalloc(km, tlen_ * 8 + qlen_ + 2, 16);
++	u = (__m128i*)(((size_t)mem + 31) >> 5 << 5); // 32-byte aligned
++	v = u + tlen_, x = v + tlen_, y = x + tlen_, x2 = y + tlen_, y2 = x2 + tlen_;
++	s = y2 + tlen_, sf = (uint8_t*)(s + tlen_), qr = sf + tlen_ * 16;
++	memset(u,  -q  - e,  tlen_ * 16);
++	memset(v,  -q  - e,  tlen_ * 16);
++	memset(x,  -q  - e,  tlen_ * 16);
++	memset(y,  -q  - e,  tlen_ * 16);
++	memset(x2, -q2 - e2, tlen_ * 16);
++	memset(y2, -q2 - e2, tlen_ * 16);
++	if (!approx_max) {
++		H = (int32_t*)kmalloc(km, tlen_ * 16 * 4);
++		for (t = 0; t < tlen_ * 16; ++t) H[t] = KSW_NEG_INF;
++	}
++	if (with_cigar) {
++		mem2 = (uint8_t*)kmalloc(km, ((size_t)(qlen + tlen - 1) * n_col_ + 1) * 16);
++		p = (__m128i*)(((size_t)mem2 + 15) >> 4 << 4);
++		off = (int*)kmalloc(km, (qlen + tlen - 1) * sizeof(int) * 2);
++		off_end = off + qlen + tlen - 1;
++	}
++
++	for (t = 0; t < qlen; ++t) qr[t] = query[qlen - 1 - t];
++	memcpy(sf, target, tlen);
++
++	for (r = 0, last_st = last_en = -1; r < qlen + tlen - 1; ++r) {
++		int st = 0, en = tlen - 1, st0, en0, st_, en_;
++		int8_t x1, x21, v1;
++		uint8_t *qrr = qr + (qlen - 1 - r);
++		int8_t *u8 = (int8_t*)u, *v8 = (int8_t*)v, *x8 = (int8_t*)x, *x28 = (int8_t*)x2;
++		__m128i x1_, x21_, v1_;
++		// find the boundaries
++		if (st < r - qlen + 1) st = r - qlen + 1;
++		if (en > r) en = r;
++		if (st < (r-wr+1)>>1) st = (r-wr+1)>>1; // take the ceil
++		if (en > (r+wl)>>1) en = (r+wl)>>1; // take the floor
++		if (st > en) {
++			ez->zdropped = 1;
++			break;
++		}
++		st0 = st, en0 = en;
++		st = st / 16 * 16, en = (en + 16) / 16 * 16 - 1;
++		// set boundary conditions
++		if (st > 0) {
++			if (st - 1 >= last_st && st - 1 <= last_en) {
++				x1 = x8[st - 1], x21 = x28[st - 1], v1 = v8[st - 1]; // (r-1,s-1) calculated in the last round
++			} else {
++				x1 = -q - e, x21 = -q2 - e2;
++				v1 = -q - e;
++			}
++		} else {
++			x1 = -q - e, x21 = -q2 - e2;
++			v1 = r == 0? -q - e : r < long_thres? -e : r == long_thres? long_diff : -e2;
++		}
++		if (en >= r) {
++			((int8_t*)y)[r] = -q - e, ((int8_t*)y2)[r] = -q2 - e2;
++			u8[r] = r == 0? -q - e : r < long_thres? -e : r == long_thres? long_diff : -e2;
++		}
++		// loop fission: set scores first
++		if (!(flag & KSW_EZ_GENERIC_SC)) {
++			for (t = st0; t + 16 <= en0; t += 32) { // the SSE kernel's chunks t and t+16
++				__m256i sq, st, tmp, mask;
++				sq = _mm256_loadu_si256((__m256i*)&sf[t]);
++				st = _mm256_loadu_si256((__m256i*)&qrr[t]);
++				mask = _mm256_or_si256(_mm256_cmpeq_epi8(sq, M1_), _mm256_cmpeq_epi8(st, M1_));
++				tmp = _mm256_cmpeq_epi8(sq, st);
++				tmp = _mm256_blendv_epi8(SC_MIS_, SC_MCH_, tmp);
++				tmp = _mm256_blendv_epi8(tmp,     SC_N_,   mask);
++				_mm256_storeu_si256((__m256i*)((int8_t*)s + t), tmp);
++			}
++			for (; t <= en0; t += 16) {
++				__m128i sq, st, tmp, mask;
++				sq = _mm_loadu_si128((__m128i*)&sf[t]);
++				st = _mm_loadu_si128((__m128i*)&qrr[t]);
++				mask = _mm_or_si128(_mm_cmpeq_epi8(sq, m1_), _mm_cmpeq_epi8(st, m1_));
++				tmp = _mm_cmpeq_epi8(sq, st);
++				tmp = _mm_blendv_epi8(sc_mis_, sc_mch_, tmp);
++				tmp = _mm_blendv_epi8(tmp,     sc_N_,   mask);
++				_mm_storeu_si128((__m128i*)((int8_t*)s + t), tmp);
++			}
++		} else {
++			for (t = st0; t <= en0; ++t)
++				((uint8_t*)s)[t] = mat[sf[t] * m + qrr[t]];
++		}
++		// core loop
++		x1_  = _mm_cvtsi32_si128((uint8_t)x1);
++		x21_ = _mm_cvtsi32_si128((uint8_t)x21);
++		v1_  = _mm_cvtsi32_si128((uint8_t)v1);
++		st_ = st / 16, en_ = en / 16;
++		assert(en_ - st_ + 1 <= n_col_);
++		t = st_;
++		if (t < en_) { // pairs of blocks; the carried byte sits in byte 31 of px/pv/px2
++			__m256i px, pv, px2;
++			px  = _mm256_inserti128_si256(_mm256_setzero_si256(), _mm_slli_si128(x1_,  15), 1);
++			pv  = _mm256_inserti128_si256(_mm256_setzero_si256(), _mm_slli_si128(v1_,  15), 1);
++			px2 = _mm256_inserti128_si256(_mm256_setzero_si256(), _mm_slli_si128(x21_, 15), 1);
++			if (!with_cigar) { // score only
++				for (; t < en_; t += 2) {
++					__m256i z, a, b, a2, b2, xt, xt1, x2t, x2t1, vt, vt1, ut, tmp;
++					__dp_code_block1_256;
++					z = _mm256_max_epi8(z, a);
++					z = _mm256_max_epi8(z, b);
++					z = _mm256_max_epi8(z, a2);
++					z = _mm256_max_epi8(z, b2);
++					z = _mm256_min_epi8(z, SC_MCH_);
++					__dp_code_block2_256;
++					_mm256_storeu_si256((__m256i*)&x[t],  _mm256_sub_epi8(_mm256_max_epi8(a,  ZERO_), QE_));
++					_mm256_storeu_si256((__m256i*)&y[t],  _mm256_sub_epi8(_mm256_max_epi8(b,  ZERO_), QE_));
++					_mm256_storeu_si256((__m256i*)&x2[t], _mm256_sub_epi8(_mm256_max_epi8(a2, ZERO_), QE2_));
++					_mm256_storeu_si256((__m256i*)&y2[t], _mm256_sub_epi8(_mm256_max_epi8(b2, ZERO_), QE2_));
++				}
++			} else if (!(flag&KSW_EZ_RIGHT)) { // gap left-alignment
++				__m128i *pr = p + (size_t)r * n_col_ - st_;
++				for (; t < en_; t += 2) {
++					__m256i d, z, a, b, a2, b2, xt, xt1, x2t, x2t1, vt, vt1, ut, tmp;
++					__dp_code_block1_256;
++					d = _mm256_and_si256(_mm256_cmpgt_epi8(a, z), _mm256_set1_epi8(1));       // d = a  > z? 1 : 0
++					z = _mm256_max_epi8(z, a);
++					d = _mm256_blendv_epi8(d, _mm256_set1_epi8(2), _mm256_cmpgt_epi8(b,  z)); // d = b  > z? 2 : d
++					z = _mm256_max_epi8(z, b);
++					d = _mm256_blendv_epi8(d, _mm256_set1_epi8(3), _mm256_cmpgt_epi8(a2, z)); // d = a2 > z? 3 : d
++					z = _mm256_max_epi8(z, a2);
++					d = _mm256_blendv_epi8(d, _mm256_set1_epi8(4), _mm256_cmpgt_epi8(b2, z)); // d = b2 > z? 4 : d
++					z = _mm256_max_epi8(z, b2);
++					z = _mm256_min_epi8(z, SC_MCH_);
++					__dp_code_block2_256;
++					tmp = _mm256_cmpgt_epi8(a, ZERO_);
++					_mm256_storeu_si256((__m256i*)&x[t],  _mm256_sub_epi8(_mm256_and_si256(tmp, a),  QE_));
++					d = _mm256_or_si256(d, _mm256_and_si256(tmp, _mm256_set1_epi8(0x08)));
++					tmp = _mm256_cmpgt_epi8(b, ZERO_);
++					_mm256_storeu_si256((__m256i*)&y[t],  _mm256_sub_epi8(_mm256_and_si256(tmp, b),  QE_));
++					d = _mm256_or_si256(d, _mm256_and_si256(tmp, _mm256_set1_epi8(0x10)));
++					tmp = _mm256_cmpgt_epi8(a2, ZERO_);
++					_mm256_storeu_si256((__m256i*)&x2[t], _mm256_sub_epi8(_mm256_and_si256(tmp, a2), QE2_));
++					d = _mm256_or_si256(d, _mm256_and_si256(tmp, _mm256_set1_epi8(0x20)));
++					tmp = _mm256_cmpgt_epi8(b2, ZERO_);
++					_mm256_storeu_si256((__m256i*)&y2[t], _mm256_sub_epi8(_mm256_and_si256(tmp, b2), QE2_));
++					d = _mm256_or_si256(d, _mm256_and_si256(tmp, _mm256_set1_epi8(0x40)));
++					_mm256_storeu_si256((__m256i*)&pr[t], d);
++				}
++			} else { // gap right-alignment
++				__m128i *pr = p + (size_t)r * n_col_ - st_;
++				for (; t < en_; t += 2) {
++					__m256i d, z, a, b, a2, b2, xt, xt1, x2t, x2t1, vt, vt1, ut, tmp;
++					__dp_code_block1_256;
++					d = _mm256_andnot_si256(_mm256_cmpgt_epi8(z, a), _mm256_set1_epi8(1));    // d = z > a?  0 : 1
++					z = _mm256_max_epi8(z, a);
++					d = _mm256_blendv_epi8(_mm256_set1_epi8(2), d, _mm256_cmpgt_epi8(z, b));  // d = z > b?  d : 2
++					z = _mm256_max_epi8(z, b);
++					d = _mm256_blendv_epi8(_mm256_set1_epi8(3), d, _mm256_cmpgt_epi8(z, a2)); // d = z > a2? d : 3
++					z = _mm256_max_epi8(z, a2);
++					d = _mm256_blendv_epi8(_mm256_set1_epi8(4), d, _mm256_cmpgt_epi8(z, b2)); // d = z > b2? d : 4
++					z = _mm256_max_epi8(z, b2);
++					z = _mm256_min_epi8(z, SC_MCH_);
++					__dp_code_block2_256;
++					tmp = _mm256_cmpgt_epi8(ZERO_, a);
++					_mm256_storeu_si256((__m256i*)&x[t],  _mm256_sub_epi8(_mm256_andnot_si256(tmp, a),  QE_));
++					d = _mm256_or_si256(d, _mm256_andnot_si256(tmp, _mm256_set1_epi8(0x08)));
++					tmp = _mm256_cmpgt_epi8(ZERO_, b);
++					_mm256_storeu_si256((__m256i*)&y[t],  _mm256_sub_epi8(_mm256_andnot_si256(tmp, b),  QE_));
++					d = _mm256_or_si256(d, _mm256_andnot_si256(tmp, _mm256_set1_epi8(0x10)));
++					tmp = _mm256_cmpgt_epi8(ZERO_, a2);
++					_mm256_storeu_si256((__m256i*)&x2[t], _mm256_sub_epi8(_mm256_andnot_si256(tmp, a2), QE2_));
++					d = _mm256_or_si256(d, _mm256_andnot_si256(tmp, _mm256_set1_epi8(0x20)));
++					tmp = _mm256_cmpgt_epi8(ZERO_, b2);
++					_mm256_storeu_si256((__m256i*)&y2[t], _mm256_sub_epi8(_mm256_andnot_si256(tmp, b2), QE2_));
++					d = _mm256_or_si256(d, _mm256_andnot_si256(tmp, _mm256_set1_epi8(0x40)));
++					_mm256_storeu_si256((__m256i*)&pr[t], d);
++				}
++			}
++			// hand the carried bytes to the SSE code for a last single block
++			x1_  = _mm_srli_si128(_mm256_extracti128_si256(px,  1), 15);
++			v1_  = _mm_srli_si128(_mm256_extracti128_si256(pv,  1), 15);
++			x21_ = _mm_srli_si128(_mm256_extracti128_si256(px2, 1), 15);
++		}
++		if (t == en_) { // a single block left: the SSE4.1 code
++			if (!with_cigar) { // score only
++				__m128i z, a, b, a2, b2, xt1, x2t1, vt1, ut, tmp;
++				__dp_code_block1;
++				z = _mm_max_epi8(z, a);
++				z = _mm_max_epi8(z, b);
++				z = _mm_max_epi8(z, a2);
++				z = _mm_max_epi8(z, b2);
++				z = _mm_min_epi8(z, sc_mch_);
++				__dp_code_block2; // save u[] and v[]; update a, b, a2 and b2
++				_mm_store_si128(&x[t],  _mm_sub_epi8(_mm_max_epi8(a,  zero_), qe_));
++				_mm_store_si128(&y[t],  _mm_sub_epi8(_mm_max_epi8(b,  zero_), qe_));
++				_mm_store_si128(&x2[t], _mm_sub_epi8(_mm_max_epi8(a2, zero_), qe2_));
++				_mm_store_si128(&y2[t], _mm_sub_epi8(_mm_max_epi8(b2, zero_), qe2_));
++			} else if (!(flag&KSW_EZ_RIGHT)) { // gap left-alignment
++				__m128i *pr = p + (size_t)r * n_col_ - st_;
++				__m128i d, z, a, b, a2, b2, xt1, x2t1, vt1, ut, tmp;
++				__dp_code_block1;
++				d = _mm_and_si128(_mm_cmpgt_epi8(a, z), _mm_set1_epi8(1));       // d = a  > z? 1 : 0
++				z = _mm_max_epi8(z, a);
++				d = _mm_blendv_epi8(d, _mm_set1_epi8(2), _mm_cmpgt_epi8(b,  z)); // d = b  > z? 2 : d
++				z = _mm_max_epi8(z, b);
++				d = _mm_blendv_epi8(d, _mm_set1_epi8(3), _mm_cmpgt_epi8(a2, z)); // d = a2 > z? 3 : d
++				z = _mm_max_epi8(z, a2);
++				d = _mm_blendv_epi8(d, _mm_set1_epi8(4), _mm_cmpgt_epi8(b2, z)); // d = a2 > z? 3 : d
++				z = _mm_max_epi8(z, b2);
++				z = _mm_min_epi8(z, sc_mch_);
++				__dp_code_block2;
++				tmp = _mm_cmpgt_epi8(a, zero_);
++				_mm_store_si128(&x[t],  _mm_sub_epi8(_mm_and_si128(tmp, a),  qe_));
++				d = _mm_or_si128(d, _mm_and_si128(tmp, _mm_set1_epi8(0x08))); // d = a > 0? 1<<3 : 0
++				tmp = _mm_cmpgt_epi8(b, zero_);
++				_mm_store_si128(&y[t],  _mm_sub_epi8(_mm_and_si128(tmp, b),  qe_));
++				d = _mm_or_si128(d, _mm_and_si128(tmp, _mm_set1_epi8(0x10))); // d = b > 0? 1<<4 : 0
++				tmp = _mm_cmpgt_epi8(a2, zero_);
++				_mm_store_si128(&x2[t], _mm_sub_epi8(_mm_and_si128(tmp, a2), qe2_));
++				d = _mm_or_si128(d, _mm_and_si128(tmp, _mm_set1_epi8(0x20))); // d = a > 0? 1<<5 : 0
++				tmp = _mm_cmpgt_epi8(b2, zero_);
++				_mm_store_si128(&y2[t], _mm_sub_epi8(_mm_and_si128(tmp, b2), qe2_));
++				d = _mm_or_si128(d, _mm_and_si128(tmp, _mm_set1_epi8(0x40))); // d = b > 0? 1<<6 : 0
++				_mm_store_si128(&pr[t], d);
++			} else { // gap right-alignment
++				__m128i *pr = p + (size_t)r * n_col_ - st_;
++				__m128i d, z, a, b, a2, b2, xt1, x2t1, vt1, ut, tmp;
++				__dp_code_block1;
++				d = _mm_andnot_si128(_mm_cmpgt_epi8(z, a), _mm_set1_epi8(1));    // d = z > a?  0 : 1
++				z = _mm_max_epi8(z, a);
++				d = _mm_blendv_epi8(_mm_set1_epi8(2), d, _mm_cmpgt_epi8(z, b));  // d = z > b?  d : 2
++				z = _mm_max_epi8(z, b);
++				d = _mm_blendv_epi8(_mm_set1_epi8(3), d, _mm_cmpgt_epi8(z, a2)); // d = z > a2? d : 3
++				z = _mm_max_epi8(z, a2);
++				d = _mm_blendv_epi8(_mm_set1_epi8(4), d, _mm_cmpgt_epi8(z, b2)); // d = z > b2? d : 4
++				z = _mm_max_epi8(z, b2);
++				z = _mm_min_epi8(z, sc_mch_);
++				__dp_code_block2;
++				tmp = _mm_cmpgt_epi8(zero_, a);
++				_mm_store_si128(&x[t],  _mm_sub_epi8(_mm_andnot_si128(tmp, a),  qe_));
++				d = _mm_or_si128(d, _mm_andnot_si128(tmp, _mm_set1_epi8(0x08))); // d = a > 0? 1<<3 : 0
++				tmp = _mm_cmpgt_epi8(zero_, b);
++				_mm_store_si128(&y[t],  _mm_sub_epi8(_mm_andnot_si128(tmp, b),  qe_));
++				d = _mm_or_si128(d, _mm_andnot_si128(tmp, _mm_set1_epi8(0x10))); // d = b > 0? 1<<4 : 0
++				tmp = _mm_cmpgt_epi8(zero_, a2);
++				_mm_store_si128(&x2[t], _mm_sub_epi8(_mm_andnot_si128(tmp, a2), qe2_));
++				d = _mm_or_si128(d, _mm_andnot_si128(tmp, _mm_set1_epi8(0x20))); // d = a > 0? 1<<5 : 0
++				tmp = _mm_cmpgt_epi8(zero_, b2);
++				_mm_store_si128(&y2[t], _mm_sub_epi8(_mm_andnot_si128(tmp, b2), qe2_));
++				d = _mm_or_si128(d, _mm_andnot_si128(tmp, _mm_set1_epi8(0x40))); // d = b > 0? 1<<6 : 0
++				_mm_store_si128(&pr[t], d);
++			}
++		}
++		if (with_cigar) off[r] = st, off_end[r] = en;
++		if (!approx_max) { // find the exact max with a 32-bit score array
++			int32_t max_H, max_t;
++			// compute H[], max_H and max_t
++			if (r > 0) {
++				int32_t HH[4], tt[4], h8[8], p8[8], en1 = st0 + (en0 - st0) / 4 * 4, en8 = st0 + (en0 - st0) / 8 * 8, i;
++				__m256i max_H_, max_p_, pos_, eight_;
++				max_H = H[en0] = en0 > 0? H[en0-1] + u8[en0] : H[en0] + v8[en0]; // special casing the last element
++				max_t = en0;
++				// lane j scans the positions st0+j (mod 8); the SSE kernel's lane i is our lanes i and i+4
++				max_H_ = _mm256_set1_epi32(max_H);
++				max_p_ = _mm256_set1_epi32(max_t);
++				pos_   = _mm256_add_epi32(_mm256_set1_epi32(st0), _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
++				eight_ = _mm256_set1_epi32(8);
++				for (t = st0; t < en8; t += 8) { // H[t]+=v8[t]; if(H[t]>max_H) max_H=H[t],max_t=t; per lane
++					__m256i H1, gt;
++					H1 = _mm256_loadu_si256((__m256i*)&H[t]);
++					H1 = _mm256_add_epi32(H1, _mm256_cvtepi8_epi32(_mm_loadl_epi64((__m128i*)&v8[t])));
++					_mm256_storeu_si256((__m256i*)&H[t], H1);
++					gt = _mm256_cmpgt_epi32(H1, max_H_);
++					max_H_ = _mm256_max_epi32(max_H_, H1); // = gt? H1 : max_H_
++					max_p_ = _mm256_blendv_epi8(max_p_, pos_, gt);
++					pos_ = _mm256_add_epi32(pos_, eight_);
++				}
++				_mm256_storeu_si256((__m256i*)h8, max_H_);
++				_mm256_storeu_si256((__m256i*)p8, max_p_);
++				for (i = 0; i < 4; ++i) { // fold back to 4 lanes: the larger score, then the earlier position
++					if (h8[i+4] > h8[i] || (h8[i+4] == h8[i] && p8[i+4] < p8[i])) HH[i] = h8[i+4], tt[i] = p8[i+4];
++					else HH[i] = h8[i], tt[i] = p8[i];
++				}
++				for (; t < en1; t += 4) // at most one block of 4 left
++					for (i = 0; i < 4; ++i) {
++						H[t+i] += (int32_t)v8[t+i];
++						if (H[t+i] > HH[i]) HH[i] = H[t+i], tt[i] = t + i;
++					}
++				for (i = 0; i < 4; ++i)
++					if (max_H < HH[i]) max_H = HH[i], max_t = tt[i];
++				for (; t < en0; ++t) { // for the rest of values that haven't been computed with SSE
++					H[t] += (int32_t)v8[t];
++					if (H[t] > max_H)
++						max_H = H[t], max_t = t;
++				}
++			} else H[0] = v8[0] - qe, max_H = H[0], max_t = 0; // special casing r==0
++			// update ez
++			if (en0 == tlen - 1 && H[en0] > ez->mte)
++				ez->mte = H[en0], ez->mte_q = r - en0;
++			if (r - st0 == qlen - 1 && H[st0] > ez->mqe)
++				ez->mqe = H[st0], ez->mqe_t = st0;
++			if (ksw_apply_zdrop(ez, 1, max_H, r, max_t, zdrop, e2)) break;
++			if (r == qlen + tlen - 2 && en0 == tlen - 1)
++				ez->score = H[tlen - 1];
++		} else { // find approximate max; Z-drop might be inaccurate, too.
++			if (r > 0) {
++				if (last_H0_t >= st0 && last_H0_t <= en0 && last_H0_t + 1 >= st0 && last_H0_t + 1 <= en0) {
++					int32_t d0 = v8[last_H0_t];
++					int32_t d1 = u8[last_H0_t + 1];
++					if (d0 > d1) H0 += d0;
++					else H0 += d1, ++last_H0_t;
++				} else if (last_H0_t >= st0 && last_H0_t <= en0) {
++					H0 += v8[last_H0_t];
++				} else {
++					++last_H0_t, H0 += u8[last_H0_t];
++				}
++			} else H0 = v8[0] - qe, last_H0_t = 0;
++			if ((flag & KSW_EZ_APPROX_DROP) && ksw_apply_zdrop(ez, 1, H0, r, last_H0_t, zdrop, e2)) break;
++			if (r == qlen + tlen - 2 && en0 == tlen - 1)
++				ez->score = H0;
++		}
++		last_st = st, last_en = en;
++	}
++	kfree(km, mem);
++	if (!approx_max) kfree(km, H);
++	if (with_cigar) { // backtrack
++		int rev_cigar = !!(flag & KSW_EZ_REV_CIGAR);
++		if (!ez->zdropped && !(flag&KSW_EZ_EXTZ_ONLY)) {
++			ksw_backtrack(km, 1, rev_cigar, 0, (uint8_t*)p, off, off_end, n_col_*16, tlen-1, qlen-1, &ez->m_cigar, &ez->n_cigar, &ez->cigar);
++		} else if (!ez->zdropped && (flag&KSW_EZ_EXTZ_ONLY) && ez->mqe + end_bonus > (int)ez->max) {
++			ez->reach_end = 1;
++			ksw_backtrack(km, 1, rev_cigar, 0, (uint8_t*)p, off, off_end, n_col_*16, ez->mqe_t, qlen-1, &ez->m_cigar, &ez->n_cigar, &ez->cigar);
++		} else if (ez->max_t >= 0 && ez->max_q >= 0) {
++			ksw_backtrack(km, 1, rev_cigar, 0, (uint8_t*)p, off, off_end, n_col_*16, ez->max_t, ez->max_q, &ez->m_cigar, &ez->n_cigar, &ez->cigar);
++		}
++		kfree(km, mem2); kfree(km, off);
++	}
++}
++#endif // __AVX2__
 diff --git a/main.c b/main.c
 index 3db0ade..82fa062 100644
 --- a/main.c
@@ -601,7 +1360,7 @@ index 54f78a4..6340255 100644
  		}
  		mm_seg_free(b->km, n_segs, seg);
 diff --git a/minimap.h b/minimap.h
-index 41fe462..dbdf3e5 100644
+index 41fe462..c308611 100644
 --- a/minimap.h
 +++ b/minimap.h
 @@ -5,7 +5,7 @@
@@ -609,7 +1368,7 @@ index 41fe462..dbdf3e5 100644
  #include <sys/types.h>
  
 -#define MM_VERSION "2.30-r1287"
-+#define MM_VERSION "2.30-r1287-gate4"
++#define MM_VERSION "2.30-r1287-gate5"
  
  #define MM_F_NO_DIAG       (0x001LL) // no exact diagonal hit
  #define MM_F_NO_DUAL       (0x002LL) // skip pairs where query name is lexicographically larger than target name
