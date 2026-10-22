@@ -43,6 +43,8 @@ isocon = { features = ["isocon"], no-default-feature = true }
 build = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo build --release --bins -j 4 > build.log 2>&1"
 test = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo test --release -j 4 > test.log 2>&1"
 test-fast = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo test --profile dev-opt -j 4 > test.log 2>&1"
+# the exon-gated minimap2 the families stage uses (docs/O1_FAST_2026-10-21.md); installs $CONDA_PREFIX/bin/minimap2-gate
+build-minimap2-gate = "bash tools/minimap2_gate/build.sh $CONDA_PREFIX/bin"
 
 [feature.isocon.dependencies]
 # IsoCon (Sahlin et al. 2018), the reconstruction comparator; not on bioconda, so from PyPI. Its own python (old code).

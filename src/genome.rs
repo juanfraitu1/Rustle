@@ -90,11 +90,20 @@ impl GenomeIndex {
         }
         let mut file =
             File::open(path).with_context(|| format!("failed to open FASTA: {}", path))?;
+        // Contigs are independent: read them in parallel through positioned reads on one shared handle.
+        let bulk: Vec<Option<Vec<u8>>> = {
+            use rayon::prelude::*;
+            let shared = &file;
+            entries
+                .par_iter()
+                .map(|(_, length, offset, linebases, linewidth)| {
+                    Self::read_contig_bulk(shared, *length, *offset, *linebases, *linewidth)
+                })
+                .collect::<Result<_>>()?
+        };
         let mut seqs: HashMap<String, Vec<u8>> = Default::default();
-        for (name, length, offset, linebases, linewidth) in entries {
-            if let Some(seq) =
-                Self::read_contig_bulk(&mut file, length, offset, linebases, linewidth)?
-            {
+        for ((name, length, offset, _, _), bulk) in entries.into_iter().zip(bulk) {
+            if let Some(seq) = bulk {
                 seqs.insert(name, seq);
                 continue;
             }
@@ -139,13 +148,12 @@ impl GenomeIndex {
     /// that differs from what the slow path would have produced — a wrong base here is silent, since
     /// `fetch_sequence` has no way to notice.
     fn read_contig_bulk(
-        file: &mut File,
+        file: &File,
         length: usize,
         offset: u64,
         linebases: usize,
         linewidth: usize,
     ) -> Result<Option<Vec<u8>>> {
-        use std::io::Read;
         // Uniform-geometry guard. `linewidth - linebases` is the terminator width ("\n" or "\r\n").
         if linebases == 0 || linewidth < linebases || linewidth - linebases > 2 {
             return Ok(None);
@@ -154,48 +162,55 @@ impl GenomeIndex {
         let n_full = length / linebases;
         let rem = length % linebases;
         let n_lines = n_full + usize::from(rem > 0);
-        // The final line's terminator may be absent (EOF), so ask for it but tolerate a short read.
-        let want = length + n_lines * term;
-        file.seek(SeekFrom::Start(offset))?;
-        let mut buf = vec![0u8; want];
-        let mut got = 0usize;
-        while got < want {
-            let n = file.read(&mut buf[got..])?;
-            if n == 0 {
-                break;
-            }
-            got += n;
-        }
-        buf.truncate(got);
-
+        // Stream whole lines in blocks (positioned reads: the handle is shared across threads); the final line's
+        // terminator may be absent (EOF), so a block may come back short.
+        const LINES_PER_BLOCK: usize = 1 << 16;
+        let mut buf = vec![0u8; LINES_PER_BLOCK.min(n_lines.max(1)) * linewidth];
         let mut seq: Vec<u8> = Vec::with_capacity(length);
-        let mut pos = 0usize;
-        for li in 0..n_lines {
-            let this = if li + 1 == n_lines && rem > 0 {
-                rem
-            } else {
-                linebases
-            };
-            if pos + this > buf.len() {
-                return Ok(None); // short file vs .fai — let the slow path decide
-            }
-            let chunk = &buf[pos..pos + this];
-            // The bases themselves must not contain a terminator; if they do the geometry is wrong.
-            if chunk.iter().any(|c| c.is_ascii_whitespace()) {
-                return Ok(None);
-            }
-            seq.extend_from_slice(chunk);
-            pos += this;
-            // Verify the bytes we are about to SKIP really are line terminators.
-            for k in 0..term {
-                match buf.get(pos + k) {
-                    Some(c) if c.is_ascii_whitespace() => {}
-                    // Missing terminator is only acceptable at EOF on the last line.
-                    None if li + 1 == n_lines => {}
-                    _ => return Ok(None),
+        let (mut li, mut at) = (0usize, offset);
+        while li < n_lines {
+            let k = (n_lines - li).min(LINES_PER_BLOCK);
+            let want = k * linewidth;
+            let mut got = 0usize;
+            while got < want {
+                let n = file.read_at(&mut buf[got..want], at + got as u64)?;
+                if n == 0 {
+                    break;
                 }
+                got += n;
             }
-            pos += term;
+            let block = &buf[..got];
+            let mut pos = 0usize;
+            for j in 0..k {
+                let line = li + j;
+                let this = if line + 1 == n_lines && rem > 0 {
+                    rem
+                } else {
+                    linebases
+                };
+                if pos + this > block.len() {
+                    return Ok(None); // short file vs .fai — let the slow path decide
+                }
+                let chunk = &block[pos..pos + this];
+                // The bases themselves must not contain a terminator; if they do the geometry is wrong.
+                if chunk.iter().any(|c| c.is_ascii_whitespace()) {
+                    return Ok(None);
+                }
+                seq.extend_from_slice(chunk);
+                pos += this;
+                // Verify the bytes we are about to SKIP really are line terminators.
+                for t in 0..term {
+                    match block.get(pos + t) {
+                        Some(c) if c.is_ascii_whitespace() => {}
+                        // Missing terminator is only acceptable at EOF on the last line.
+                        None if line + 1 == n_lines => {}
+                        _ => return Ok(None),
+                    }
+                }
+                pos += term;
+            }
+            li += k;
+            at += want as u64;
         }
         if seq.len() != length {
             return Ok(None);
@@ -479,6 +494,46 @@ mod tests {
             g.fetch_sequence("c2", 0, 10).is_none(),
             "c2 must NOT be loaded (not in wanted set)"
         );
+    }
+
+    /// Every contig the `.fai` lists loads to exactly the whole-file parse (uppercased, terminators stripped), across
+    /// line widths, CRLF, a final line without terminator and contigs longer than one read block.
+    #[test]
+    fn from_fasta_contigs_equals_the_whole_file_parse_for_every_contig() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa");
+        let mut text = String::new();
+        let mut fai = String::new();
+        let mut x: u64 = 7;
+        let specs: [(&str, usize, usize, &str); 6] =
+            [("a", 1, 60, "\n"), ("b", 59, 60, "\n"), ("c", 500_007, 7, "\n"), ("d", 1_000_003, 61, "\n"), ("e", 33, 10, "\r\n"), ("f", 25, 10, "\n")];
+        for (i, (name, len, width, term)) in specs.iter().enumerate() {
+            text.push_str(&format!(">{name} desc\n"));
+            let offset = text.len();
+            let seq: String = (0..*len)
+                .map(|_| {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    b"ACGTacgtN"[(x >> 33) as usize % 9] as char
+                })
+                .collect();
+            for (k, chunk) in seq.as_bytes().chunks(*width).enumerate() {
+                text.push_str(std::str::from_utf8(chunk).unwrap());
+                let last = (k + 1) * width >= *len;
+                if !(last && i + 1 == specs.len()) {
+                    text.push_str(term); // the very last line of the file has no terminator
+                }
+            }
+            fai.push_str(&format!("{name}\t{len}\t{offset}\t{width}\t{}\n", width + term.len()));
+        }
+        std::fs::write(&fa, &text).unwrap();
+        std::fs::write(format!("{}.fai", fa.display()), &fai).unwrap();
+        let wanted: DetHashSet<String> = specs.iter().map(|s| s.0.to_string()).collect();
+        let sub = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &wanted).unwrap();
+        let whole = GenomeIndex::from_fasta(fa.to_str().unwrap()).unwrap();
+        for (name, len, _, _) in specs {
+            assert_eq!(sub.fetch_sequence(name, 0, len as u64), whole.fetch_sequence(name, 0, len as u64), "{name}");
+            assert_eq!(sub.fetch_sequence(name, 0, len as u64).unwrap().len(), len, "{name}");
+        }
     }
 
     #[test]

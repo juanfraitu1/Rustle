@@ -56081,6 +56081,7 @@ pub mod fam_from_gtf {
         include_dropped: bool,
         merge_overlapping: bool,
         coding_core: bool,
+        shared_genome: Option<&GenomeIndex>,
     ) -> Result<RepCopyStats> {
         struct RepCopy {
             member: GeneKey,
@@ -56119,11 +56120,19 @@ pub mod fam_from_gtf {
             .iter()
             .flat_map(|c| c.members.iter().map(|m| m.0.clone()))
             .collect();
-        // ⚠ `from_fasta_contigs` with an EMPTY set loads the whole genome: no family, no genome
-        let genome = if contigs.is_empty() {
-            GenomeIndex::empty()
-        } else {
-            GenomeIndex::from_fasta_contigs(fasta, &contigs)?
+        // ⚠ `from_fasta_contigs` with an EMPTY set loads the whole genome: no family, no genome. `--from-gtf` passes the
+        // contigs it loaded for the loci FASTA (a superset of the members'), so the genome is read once per run.
+        let loaded;
+        let genome: &GenomeIndex = match shared_genome {
+            Some(g) => g,
+            None => {
+                loaded = if contigs.is_empty() {
+                    GenomeIndex::empty()
+                } else {
+                    GenomeIndex::from_fasta_contigs(fasta, &contigs)?
+                };
+                &loaded
+            }
         };
         let node_idx: BTreeMap<&GeneKey, usize> =
             g.genes.iter().enumerate().map(|(k, gk)| (gk, k)).collect();
@@ -56606,6 +56615,45 @@ pub mod fam_from_gtf {
         Ok(fa.hash)
     }
 
+    /// The exon gate's input (`minimap2-gate --gate`, `tools/minimap2_gate`): every representative exon of every locus as
+    /// `chrom:start-end<TAB>start<TAB>end`, 0-based half-open in the locus span's own coordinates (the loci FASTA record,
+    /// the coordinates of the PAF).
+    pub fn gate_rows(loci: &[GtfLocus]) -> String {
+        let mut s = String::new();
+        for l in loci {
+            for (_, a, b) in &l.rep_exons {
+                s.push_str(&format!(
+                    "{}:{}-{}\t{}\t{}\n",
+                    l.chrom,
+                    l.start,
+                    l.end,
+                    a.saturating_sub(l.start),
+                    (b + 1).saturating_sub(l.start)
+                ));
+            }
+        }
+        s
+    }
+
+    /// `Some(version)` when `minimap2` is a build with the exon gate (`--gate FILE` is accepted before `--version`); the
+    /// stock binary rejects the unknown option. Through `tools/mm2_shard.sh` the probe reaches the gated binary the wrapper
+    /// would run with `--gate`.
+    pub fn minimap2_gate_version(minimap2: &str) -> Option<String> {
+        let o = std::process::Command::new(minimap2)
+            .args(["--gate", "/dev/null", "--version"])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        // gate3 is the first build with --gate-frac (the exact rule; gate1/gate2 used a touch-only test)
+        let level = v.rsplit_once("-gate").and_then(|(_, n)| n.parse::<u32>().ok());
+        (o.status.success() && level.is_some_and(|n| n >= 3)).then_some(v)
+    }
+
+    fn on_path(name: &str) -> bool {
+        std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
+    }
+
     /// The families PAF cache key (`paf/<fnv(key)>/key.tsv`): the minimap2 command line and build, and the content
     /// hash + byte length of the loci FASTA it aligns. v2 (2026-09-28): the hash is the word-wise 128-bit
     /// `ContentHash` taken while the FASTA is written; v1 was a byte-wise FNV-1a 64 of the FASTA read back from disk.
@@ -56624,19 +56672,34 @@ pub mod fam_from_gtf {
     /// `--from-gtf`: the de novo locus set of an assembled GTF, as the family stage consumes it (see the flag doc).
     /// Returns `(loci.gff3, loci.fa, loci.paf)` paths and the loci themselves (for the copy table).
     /// `reader` lets the merged `copy_assign` mode parse an in-memory GTF (identical parser, no disk round-trip).
+    /// [`loci_from_gtf_reader`]'s products: the loci GFF3 / FASTA / PAF paths, the loci, the exon gate's minimap2 version
+    /// (when the gate ran) and the genome contigs of every locus, which the copy table reuses instead of loading them again.
+    pub struct GtfLociRun {
+        pub gff3: String,
+        pub fa: String,
+        pub paf: String,
+        pub loci: Vec<GtfLocus>,
+        pub gate: Option<String>,
+        pub genome: GenomeIndex,
+    }
+
+    /// `exon_gate` = `(margin, shared-exon fraction)` of the exon gate (`mcl_families --exon-gate-margin`,
+    /// `--min-shared-exon-frac`), `None` = align every pair. The gate engages only when the minimap2 build has it
+    /// ([`minimap2_gate_version`]); the last element is that build's version.
     pub fn loci_from_gtf_reader<R: std::io::BufRead>(
         reader: R,
         fasta: &str,
         out: &str,
         threads: usize,
         rule: Representative,
-    ) -> Result<(String, String, String, Vec<GtfLocus>)> {
+        exon_gate: Option<(u64, f64)>,
+    ) -> Result<GtfLociRun> {
         use std::collections::HashSet;
         let loci = gtf_loci(reader, rule)?;
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
-        let paf = format!("{out}.loci.paf");
-        let mut g3 = std::fs::File::create(&gff3)?;
+        let mut paf = format!("{out}.loci.paf");
+        let mut g3 = std::io::BufWriter::new(std::fs::File::create(&gff3)?);
         writeln!(g3, "##gff-version 3")?;
         let mut spans: Vec<(String, u64, u64)> = Vec::new();
         for l in &loci {
@@ -56653,6 +56716,8 @@ pub mod fam_from_gtf {
             }
             spans.push((chrom.clone(), s, e));
         }
+        g3.flush()?;
+        drop(g3);
         use crate::run_cache as rc;
         let root = rc::cache_root();
         let contigs: DetHashSet<String> = spans.iter().map(|x| x.0.clone()).collect();
@@ -56662,8 +56727,10 @@ pub mod fam_from_gtf {
             "[mcl_families] --from-gtf: {} loci -> all-vs-all",
             spans.len()
         );
-        let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
-        let mm_args: Vec<String> = [
+        let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| {
+            if exon_gate.is_some() && on_path("minimap2-gate") { "minimap2-gate" } else { "minimap2" }.to_string()
+        });
+        let mut mm_args: Vec<String> = [
             "-x",
             "asm20",
             "-c",
@@ -56679,14 +56746,68 @@ pub mod fam_from_gtf {
         .map(|s| s.to_string())
         .chain(std::iter::once(threads.to_string()))
         .collect();
+        // ⭐ The exon gate (2026-10-21): minimap2 aligns (base level) only the pairs one of whose chains, padded by the
+        // margin (>= minimap2's max_gap, so no record outgrows it), holds enough exon bases of both loci to pass the
+        // shared-exon fraction; every chain of such a pair is aligned, so each record the graph can use is the stock
+        // record. The key names the gate file by its content, never its path.
+        let mut key_cmd = format!("{mm2} {}", mm_args.join(" "));
+        let mut gate_version: Option<String> = None;
+        if let Some((margin, frac)) = exon_gate {
+            match minimap2_gate_version(&mm2) {
+                Some(v) => {
+                    let gate_path = format!("{out}.loci.gate.tsv");
+                    let mut w = crate::run_cache::HashingWriter::new(
+                        std::io::BufWriter::new(std::fs::File::create(&gate_path)?),
+                        true,
+                    );
+                    w.write_all(gate_rows(&loci).as_bytes())?;
+                    w.flush()?;
+                    let h = w.hash.clone().expect("hashing enabled");
+                    key_cmd.push_str(&format!(" --gate content128:{}:{} --gate-margin {margin} --gate-frac {frac}", h.hex(), h.len()));
+                    mm_args.extend([
+                        "--gate".to_string(),
+                        gate_path,
+                        "--gate-margin".to_string(),
+                        margin.to_string(),
+                        "--gate-frac".to_string(),
+                        frac.to_string(),
+                    ]);
+                    eprintln!(
+                        "[mcl_families] exon gate: margin {margin} bp, shared-exon fraction {frac} ({mm2} {v}); pairs that cannot \
+                         become edges are not aligned"
+                    );
+                    gate_version = Some(v);
+                }
+                None => eprintln!(
+                    "[mcl_families] exon gate: {mm2} has no --gate (build tools/minimap2_gate/build.sh); aligning every pair"
+                ),
+            }
+        }
+        // A gated PAF holds only the pairs this run can use, so it never takes the full PAF's name (a reader of
+        // `<out>.loci.paf` fails loudly instead of reading fewer records); the other name's file, from an earlier run
+        // into the same prefix, is removed so the prefix holds one run's products.
+        let gate_tsv = format!("{out}.loci.gate.tsv");
+        let stale: Vec<String> = if gate_version.is_some() {
+            paf = format!("{out}.loci.gated.paf");
+            vec![format!("{out}.loci.paf")]
+        } else {
+            vec![format!("{out}.loci.gated.paf"), gate_tsv]
+        };
+        for f in &stale {
+            match std::fs::remove_file(f) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err).with_context(|| format!("removing {f}")),
+            }
+        }
         // PAF cache (`RUSTLE_CACHE_DIR`, see `crate::run_cache`): keyed by EVERY byte of the loci FASTA
         // (hashed while it was written above, never re-read), the command line and the minimap2 build; a hit hard-links
         // the cached PAF to `<out>.loci.paf` instead of re-aligning (and instead of copying it). The entry is pinned, so a
         // write through the link is a miss on the next run, never a stale replay.
         let paf_entry = root.zip(fa_hash).map(|(root, h)| {
             let key = families_paf_key(
-                &format!("{mm2} {}", mm_args.join(" ")),
-                &rc::minimap2_version(&mm2),
+                &key_cmd,
+                &gate_version.clone().unwrap_or_else(|| rc::minimap2_version(&mm2)),
                 &h,
             );
             rc::Entry::new(&root, "paf", key).pinned()
@@ -56700,7 +56821,14 @@ pub mod fam_from_gtf {
                     e.dir.display(),
                     if linked { "hard link" } else { "copy" }
                 );
-                return Ok((gff3, fa_path, paf, loci));
+                return Ok(GtfLociRun {
+                    gff3,
+                    fa: fa_path,
+                    paf,
+                    loci,
+                    gate: gate_version,
+                    genome,
+                });
             }
         }
         // never truncate in place: `<out>.loci.paf` may be a hard link to a cache entry from an earlier run
@@ -56728,7 +56856,14 @@ pub mod fam_from_gtf {
                 eprintln!("[cache] could not store the PAF ({err:#}); continuing");
             }
         }
-        Ok((gff3, fa_path, paf, loci))
+        Ok(GtfLociRun {
+            gff3,
+            fa: fa_path,
+            paf,
+            loci,
+            gate: gate_version,
+            genome,
+        })
     }
 
     /// File-reading convenience wrapper of [`loci_from_gtf_reader`].
@@ -56738,15 +56873,65 @@ pub mod fam_from_gtf {
         out: &str,
         threads: usize,
         rule: Representative,
-    ) -> Result<(String, String, String, Vec<GtfLocus>)> {
+        exon_gate: Option<(u64, f64)>,
+    ) -> Result<GtfLociRun> {
         let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
-        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule)
+        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate)
     }
 
     #[cfg(test)]
     mod paf_cache_key_tests {
         use super::*;
         use crate::run_cache as rc;
+
+        /// The exon gate's input: each representative exon of each locus, 0-based half-open in the locus span's own
+        /// coordinates (the loci FASTA record `chrom:start-end`, the coordinates of the PAF).
+        #[test]
+        fn gate_rows_are_the_representative_exons_in_locus_coordinates() {
+            let l = GtfLocus {
+                gene_id: "g".into(),
+                chrom: "chr1".into(),
+                start: 1001,
+                end: 2000,
+                rep: "t".into(),
+                rep_reads: 1,
+                strand: "+".into(),
+                rep_exons: vec![("t".into(), 1001, 1100), ("t".into(), 1501, 1600)],
+            };
+            assert_eq!(gate_rows(&[l]), "chr1:1001-2000\t0\t100\nchr1:1001-2000\t500\t600\n");
+        }
+
+        /// A minimap2 build has the gate when `--gate FILE --version` succeeds with a `-gate` version; the stock
+        /// binary rejects the unknown option.
+        #[test]
+        fn minimap2_gate_version_probes_the_option() {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = std::env::temp_dir().join(format!("rustle_gate_probe_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let gated = dir.join("gated.sh");
+            std::fs::write(&gated, "#!/bin/sh\n[ \"$1\" = --gate ] && [ \"$3\" = --version ] && echo 2.30-r1287-gate3 && exit 0\nexit 1\n").unwrap();
+            let old_gate = dir.join("gate2.sh");
+            std::fs::write(&old_gate, "#!/bin/sh\n[ \"$1\" = --gate ] && [ \"$3\" = --version ] && echo 2.30-r1287-gate2 && exit 0\nexit 1\n").unwrap();
+            let stock = dir.join("stock.sh");
+            std::fs::write(&stock, "#!/bin/sh\n[ \"$1\" = --version ] && echo 2.30-r1287 && exit 0\nexit 1\n").unwrap();
+            for f in [&gated, &stock, &old_gate] {
+                std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            // a freshly written script can be briefly busy (ETXTBSY) while another test thread forks: retry the probe
+            let probe = |p: &std::path::Path| {
+                (0..20)
+                    .find_map(|_| minimap2_gate_version(p.to_str().unwrap()).or_else(|| {
+                        std::thread::sleep(std::time::Duration::from_millis(25));
+                        None
+                    }))
+            };
+            assert_eq!(probe(&gated).as_deref(), Some("2.30-r1287-gate3"));
+            assert_eq!(minimap2_gate_version(stock.to_str().unwrap()), None);
+            assert_eq!(minimap2_gate_version(old_gate.to_str().unwrap()), None, "gate2 has no --gate-frac (touch-only rule)");
+            assert_eq!(minimap2_gate_version(dir.join("absent").to_str().unwrap()), None);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
 
         /// The families PAF key covers every byte of the loci FASTA (hashed as it is written, equal to a re-read of the
         /// file): the same loci FASTA written again (a new mtime, a later run) keeps the key, one changed base inside a

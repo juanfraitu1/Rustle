@@ -14,6 +14,9 @@ Clone the repository and work on **`o3-fast`**: `git clone git@github.com:juanfr
   - `pixi install -e bench` adds gffcompare, stringtie and liftoff.
   - `pixi install -e isocon` adds IsoCon 0.3.3, with its own Python 3.8.
 - **FLAIR 3.0.0** is not in pixi. It is not needed to continue: its outputs already exist (below).
+- **minimap2-gate:** `pixi run build-minimap2-gate` (or `tools/minimap2_gate/build.sh`; git, make, a C compiler, zlib headers).
+  The families stage uses it to align only the locus pairs that can become edges: about 8x faster, byte-identical products
+  (`docs/O1_FAST_2026-10-21.md`). Without it the stage runs the full all-vs-all, with a note.
 - **Rust:** `pixi run build` (`CARGO_TARGET_DIR` defaults to `$HOME/rustle_target`; always `--release`; capture the log to a file).
 - **Python tests:**
   - `python3 -m pytest -q bench/o3_graph` (481 pass at 3290e8a7);

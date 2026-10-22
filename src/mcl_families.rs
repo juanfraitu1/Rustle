@@ -151,6 +151,21 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_reject_self_hits: bool,
 
+    /// ⭐ The exon gate (2026-10-21; ON by default where it cannot change a product). `--from-gtf` runs `minimap2-gate`
+    /// (`tools/minimap2_gate/build.sh`: minimap2 2.30 plus a small patch), which aligns at base level only the locus
+    /// pairs one of whose chains, padded by this margin, holds enough exon bases of both loci to reach
+    /// `--min-shared-exon-frac` (at least one base when the fraction is 0). Base-level alignment never extends a chain by
+    /// more than minimap2's max_gap (10,000 under -x asm20), so this margin must be at least that for no edge-capable
+    /// record to be lost. Every chain of a kept pair is aligned, so every record an edge can use is the stock record (PAF
+    /// columns 1-11; MAPQ may move). It is OFF under `--min-exonic-bp 0`, under one-sided exonic evidence, and with
+    /// `--core-from-paf`, `--sedef` or `--emit-container` (they read every record); skipped, with a note, when the binary
+    /// has no `--gate`. `<out>.loci.paf` then holds only the kept pairs. About 5x less alignment work (gorilla).
+    #[arg(long, default_value_t = 10000)]
+    exon_gate_margin: u64,
+    /// Escape hatch: align every pair (the full all-vs-all PAF, as before 2026-10-21).
+    #[arg(long, default_value_t = false)]
+    no_exon_gate: bool,
+
     /// ⭐ Minimum ABSOLUTE exonic bases an edge must rest on (additive; `cov_longer` is unchanged).
     /// 0 = off. ⚠ Prefer this over --exonic-overlap: replacing the coverage measure shatters real
     /// families, because a segmental duplication copies introns too.
@@ -1163,6 +1178,70 @@ fn write_hierarchy(
     Ok(())
 }
 
+/// The exon gate's `(margin, shared-exon fraction)` when it may engage ([`Args::exon_gate_margin`]): every edge must need
+/// an exon-to-exon record (an exonic floor with both-sided evidence, or a shared-exon fraction, which also needs one), and
+/// nothing may read the PAF's other records.
+fn exon_gate_margin(a: &Args) -> Option<(u64, f64)> {
+    if a.no_exon_gate {
+        return None;
+    }
+    edge_rule_frac(a).map(|f| (a.exon_gate_margin, f))
+}
+
+/// The shared-exon fraction every edge of this run must reach through one exon-to-exon record, when it must (an exonic
+/// floor with both-sided evidence, or a fraction > 0) and nothing reads the PAF's other records; `None` otherwise.
+fn edge_rule_frac(a: &Args) -> Option<f64> {
+    let exon_to_exon = a.min_exonic_bp >= 1
+        && ((a.exonic_both_sides && !a.no_exonic_both_sides) || a.min_shared_exon_frac > 0.0);
+    let reads_every_record = a.core_from_paf || a.sedef.is_some() || a.emit_container;
+    (exon_to_exon && !reads_every_record).then_some(a.min_shared_exon_frac.max(0.0))
+}
+
+fn validate_exon_gate_margin(a: &Args) -> Result<()> {
+    anyhow::ensure!(
+        a.no_exon_gate || (ASM_MAX_GAP..=i32::MAX as u64).contains(&a.exon_gate_margin),
+        "--exon-gate-margin {} must be between {ASM_MAX_GAP} (minimap2's max_gap under -x asm20: a smaller margin can drop \
+         records an edge needs) and {}",
+        a.exon_gate_margin,
+        i32::MAX
+    );
+    Ok(())
+}
+
+/// `--paf` given a gated PAF (`<prefix>.loci.gated.paf`, written by a `--from-gtf` run under the exon gate): it holds only
+/// the pairs that run could use, so this run must need no other record: its own gate must engage, at a shared-exon
+/// fraction at least the recorded one (read from `<prefix>.params.tsv`). A full PAF (any other name) passes.
+fn check_gated_paf(a: &Args) -> Result<()> {
+    let Some(prefix) = a.paf.strip_suffix(".loci.gated.paf") else {
+        anyhow::ensure!(
+            !a.paf.ends_with(".gated.paf"),
+            "--paf {}: a gated PAF must be named <prefix>.loci.gated.paf next to its <prefix>.params.tsv",
+            a.paf
+        );
+        return Ok(());
+    };
+    let params = format!("{prefix}.params.tsv");
+    let text = std::fs::read_to_string(&params)
+        .with_context(|| format!("--paf {} is gated, but its {params} is missing (the gate cannot be checked)", a.paf))?;
+    let recorded = text
+        .lines()
+        .find_map(|l| l.strip_prefix("exon_gate_frac\t"))
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .with_context(|| format!("{params} has no exon_gate_frac row"))?;
+    match edge_rule_frac(a) {
+        Some(f) if f >= recorded => Ok(()),
+        _ => anyhow::bail!(
+            "--paf {} holds only the pairs a run at --min-shared-exon-frac {recorded} could use; this run needs records it \
+             lacks (a lower fraction, no exonic floor, --core-from-paf, --sedef or --emit-container): rerun the families \
+             with --no-exon-gate for the full PAF",
+            a.paf
+        ),
+    }
+}
+
+/// minimap2's max_gap under -x asm*: base-level alignment never extends a chain further, so the gate's margin must reach it.
+const ASM_MAX_GAP: u64 = 10_000;
+
 fn main() -> Result<()> {
     let mut args = Args::parse();
     anyhow::ensure!(
@@ -1183,17 +1262,30 @@ fn main() -> Result<()> {
     );
     // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
     let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
+    let mut exon_gate_used: Option<(u64, String)> = None;
+    let mut gtf_genome: Option<rustle::genome::GenomeIndex> = None;
     if let Some(gtf) = args.from_gtf.clone() {
         let fasta = args
             .fasta
             .clone()
             .context("--from-gtf needs --fasta (the genome the GTF was assembled on)")?;
-        let (gff3, fa, paf, loci) =
-            loci_from_gtf(&gtf, &fasta, &args.out, args.threads, args.representative)?;
-        args.gff = Some(gff3);
-        args.paf = paf;
-        gtf_loci_list = Some(loci);
-        eprintln!("[mcl_families] --from-gtf: loci in {fa}");
+        let run = loci_from_gtf(
+            &gtf,
+            &fasta,
+            &args.out,
+            args.threads,
+            args.representative,
+            exon_gate_margin(&args),
+        )?;
+        let gated = run.gate.is_some();
+        exon_gate_used = run.gate.map(|v| (args.exon_gate_margin, v));
+        args.gff = Some(run.gff3);
+        args.paf = run.paf;
+        gtf_loci_list = Some(run.loci);
+        // the copy table reuses the loci's genome when the gate ran (its PAF is small); otherwise the genome is freed
+        // here and read again later, so it never sits beside a full-size PAF
+        gtf_genome = (gated && args.emit_units).then_some(run.genome);
+        eprintln!("[mcl_families] --from-gtf: loci in {}", run.fa);
     }
     anyhow::ensure!(
         !args.paf.is_empty(),
@@ -1218,6 +1310,10 @@ fn main() -> Result<()> {
     }
     if args.no_reject_self_hits {
         args.reject_self_hits = false;
+    }
+    validate_exon_gate_margin(&args)?;
+    if args.from_gtf.is_none() && !args.paf.is_empty() {
+        check_gated_paf(&args)?;
     }
     if args.no_units_follow_reads {
         args.units_follow_reads = false;
@@ -1762,6 +1858,7 @@ fn main() -> Result<()> {
             args.units_include_dropped,
             args.merge_overlapping_units && !args.no_merge_overlapping_units,
             args.coding_core,
+            gtf_genome.as_ref(),
         )?;
         unit_stats.2 = s.skipped_dropped;
         unit_stats.3 = s.merged;
@@ -2729,6 +2826,15 @@ fn main() -> Result<()> {
     if args.representative == Representative::MostJunctions {
         writeln!(ph, "representative\tmost-junctions")?;
     }
+    // the exon gate, only when it ran (an ungated run's params.tsv is unchanged). Its rejection counters above count the
+    // ALIGNED pairs only: a gated run never aligns the pairs the gate dropped.
+    if let Some((margin, v)) = &exon_gate_used {
+        writeln!(ph, "exon_gate\ttrue")?;
+        writeln!(ph, "exon_gate_margin\t{margin}")?;
+        writeln!(ph, "exon_gate_frac\t{}", args.min_shared_exon_frac.max(0.0))?;
+        writeln!(ph, "exon_gate_minimap2\t{v}")?;
+        writeln!(ph, "exon_gate_counts\taligned pairs only")?;
+    }
     // `--pair-rule` (PREREG_mcl_two_node_2026-10-13 Amendment 1(a)): always the LAST two lines, so every earlier line
     // keeps its order.
     writeln!(ph, "pair_rule\t{}", args.pair_rule.name())?;
@@ -2795,6 +2901,75 @@ mod tests {
             !GraphParams::default().reject_self_hits,
             "the library default stays off: only the CLI flips"
         );
+    }
+
+    /// The exon gate engages by default (margin 10,000 = minimap2's asm max_gap; the run's shared-exon fraction) and only
+    /// where it cannot change a product: every edge needs exon-to-exon evidence on one record, and nothing else reads the PAF.
+    #[test]
+    fn exon_gate_engages_only_when_every_edge_needs_exon_to_exon_evidence() {
+        let gate = |v: &[&str]| {
+            let a = Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied()))
+                .expect("parse");
+            exon_gate_margin(&a)
+        };
+        let floor = ["--min-exonic-bp", "1"];
+        let with = |v: &[&'static str]| floor.iter().chain(v).copied().collect::<Vec<_>>();
+        assert_eq!(gate(&with(&[])), Some((10000, 0.30)), "the binary's shared-exon fraction");
+        assert_eq!(gate(&with(&["--min-shared-exon-frac", "0.60"])), Some((10000, 0.60)), "the families stage's flags");
+        assert_eq!(gate(&with(&["--exon-gate-margin", "500"])), Some((500, 0.30)));
+        assert_eq!(gate(&with(&["--no-exon-gate"])), None);
+        assert_eq!(gate(&["--min-exonic-bp", "0"]), None, "no exonic floor: any record can make an edge");
+        assert_eq!(
+            gate(&with(&["--no-exonic-both-sides", "--min-shared-exon-frac", "0"])),
+            None,
+            "one-sided exonic evidence"
+        );
+        assert_eq!(
+            gate(&with(&["--min-shared-exon-frac", "0"])),
+            Some((10000, 0.0)),
+            "both-sided exonic evidence alone: one exon base on both sides"
+        );
+        assert_eq!(
+            gate(&with(&["--no-exonic-both-sides"])),
+            Some((10000, 0.30)),
+            "the shared-exon fraction still needs an exon-to-exon record"
+        );
+        assert_eq!(gate(&with(&["--core-from-paf"])), None, "core refinement reads every record");
+        assert_eq!(gate(&with(&["--emit-container"])), None, "the container reads every record");
+    }
+
+    /// A gated PAF (`<prefix>.loci.gated.paf`) is read only by a run needing no record it lacks: exon-to-exon edges at a
+    /// shared-exon fraction >= the one recorded in `<prefix>.params.tsv`; a full PAF always passes.
+    #[test]
+    fn a_gated_paf_is_refused_unless_the_run_is_at_least_as_strict() {
+        let dir = tempfile::tempdir().unwrap();
+        let pre = dir.path().join("x.fam").to_string_lossy().to_string();
+        let gated = format!("{pre}.loci.gated.paf");
+        std::fs::write(&gated, "").unwrap();
+        let args = |paf: &str, v: &[&str]| {
+            Args::try_parse_from(["mcl_families", "--out", "o", "--paf", paf].into_iter().chain(v.iter().copied())).unwrap()
+        };
+        let strict = ["--min-exonic-bp", "1", "--min-shared-exon-frac", "0.60"];
+        assert!(check_gated_paf(&args(&gated, &strict)).is_err(), "no params.tsv: the gate cannot be checked");
+        std::fs::write(format!("{pre}.params.tsv"), "paf\tx\nexon_gate\ttrue\nexon_gate_frac\t0.6\n").unwrap();
+        assert!(check_gated_paf(&args(&gated, &strict)).is_ok());
+        assert!(check_gated_paf(&args(&gated, &["--min-exonic-bp", "1", "--min-shared-exon-frac", "0.8"])).is_ok());
+        assert!(check_gated_paf(&args(&gated, &[&strict[..], &["--no-exon-gate"]].concat())).is_ok(), "same rule, gate off");
+        assert!(check_gated_paf(&args(&gated, &["--min-exonic-bp", "1"])).is_err(), "the binary's 0.30 needs more pairs");
+        assert!(check_gated_paf(&args(&gated, &["--min-shared-exon-frac", "0.60"])).is_err(), "no exonic floor");
+        assert!(check_gated_paf(&args(&gated, &[&strict[..], &["--core-from-paf"]].concat())).is_err());
+        assert!(check_gated_paf(&args(&format!("{pre}.loci.paf"), &[])).is_ok(), "a full PAF");
+        assert!(check_gated_paf(&args("elsewhere.gated.paf", &strict)).is_err(), "a gated PAF away from its params");
+    }
+
+    /// The margin must reach minimap2's max_gap (10,000 under -x asm20) and fit minimap2's int; --no-exon-gate skips the check.
+    #[test]
+    fn the_exon_gate_margin_must_reach_max_gap() {
+        let a = |v: &[&str]| Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied())).unwrap();
+        assert!(validate_exon_gate_margin(&a(&[])).is_ok());
+        assert!(validate_exon_gate_margin(&a(&["--exon-gate-margin", "9999"])).is_err());
+        assert!(validate_exon_gate_margin(&a(&["--exon-gate-margin", "3000000000"])).is_err());
+        assert!(validate_exon_gate_margin(&a(&["--exon-gate-margin", "9999", "--no-exon-gate"])).is_ok());
     }
 
     fn br(start: u64, cigar: &[(char, u64)]) -> BamRead {
@@ -3075,6 +3250,7 @@ mod tests {
             true,
             true,
             false,
+            None,
         )
         .unwrap();
         assert_eq!(

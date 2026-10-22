@@ -490,6 +490,20 @@ def write_tsv(path, header, rows):
             fh.write('\t'.join(str(r[h]) for h in header) + '\n')
 
 
+def gated_paf(paf):
+    """True when the families stage that wrote PAF ran the exon gate (`exon_gate true` in its params.tsv): the PAF then
+    holds only the pairs with an exon-to-exon chain, not every record (mcl_families --no-exon-gate writes them all). A
+    gated run names its PAF <prefix>.loci.gated.paf and writes no <prefix>.loci.paf."""
+    if paf.endswith('.gated.paf'):
+        return True
+    if not paf.endswith('.loci.paf'):
+        return False
+    if not os.path.exists(paf) and os.path.exists(paf[:-len('.loci.paf')] + '.loci.gated.paf'):
+        return True
+    params = paf[:-len('.loci.paf')] + '.params.tsv'
+    return os.path.exists(params) and any(ln.rstrip('\n') == 'exon_gate\ttrue' for ln in open(params))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -513,6 +527,9 @@ def main(argv=None):
             loci_tsv = None
     if not (clusters and loci_gff3 and paf):
         ap.error('give --fam, or all of --clusters --loci-gff3 --paf')
+    if gated_paf(paf):
+        ap.error(f'{paf} was written under the exon gate (only exon-to-exon pairs); the container reads every record: '
+                 'rerun the families stage with mcl_families --no-exon-gate')
     rows, rel_rows, cnt = run(a.gtf, clusters, loci_gff3, loci_tsv, paf)
     write_tsv(a.out + '.blocks.tsv', BLOCK_HEADER, rows)
     write_tsv(a.out + '.relations.tsv', REL_HEADER, rel_rows)

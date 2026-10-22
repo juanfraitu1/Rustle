@@ -267,5 +267,26 @@ class Guards(unittest.TestCase):
         self.assertEqual(cnt['paf_unclustered'], 4)  # R5, R6, R7, R9
 
 
+
+class ExonGate(unittest.TestCase):
+    """A PAF written under the exon gate (params.tsv `exon_gate true`) holds only the gated pairs; the container reads
+    every record, so it refuses such a PAF instead of silently seeing fewer records."""
+
+    def test_gated_paf_is_read_from_the_families_params(self):
+        with tempfile.TemporaryDirectory() as d:
+            fam = os.path.join(d, 'x.fam')
+            open(fam + '.params.tsv', 'w').write('paf\tx\nexon_gate\ttrue\nexon_gate_margin\t2000\n')
+            self.assertTrue(fc.gated_paf(fam + '.loci.paf'))
+            open(fam + '.params.tsv', 'w').write('paf\tx\nexon_gate\tfalse\n')
+            self.assertFalse(fc.gated_paf(fam + '.loci.paf'))
+            os.remove(fam + '.params.tsv')
+            self.assertFalse(fc.gated_paf(fam + '.loci.paf'), 'no params: an older families run, every record')
+            self.assertFalse(fc.gated_paf(os.path.join(d, 'other.paf')))
+            open(fam + '.loci.gated.paf', 'w').close()
+            self.assertTrue(fc.gated_paf(fam + '.loci.gated.paf'))
+            self.assertTrue(fc.gated_paf(fam + '.loci.paf'), 'no full PAF beside a gated one')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+

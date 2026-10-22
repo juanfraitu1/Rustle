@@ -398,6 +398,20 @@ def shuffled(pid, prot):
     return "".join(p)
 
 
+def gated_paf(paf):
+    """True when the families stage that wrote PAF ran the exon gate (`exon_gate true` in its params.tsv): the PAF then
+    holds only the pairs with an exon-to-exon chain, not every record (mcl_families --no-exon-gate writes them all). A
+    gated run names its PAF <prefix>.loci.gated.paf and writes no <prefix>.loci.paf."""
+    if paf.endswith(".gated.paf"):
+        return True
+    if not paf.endswith(".loci.paf"):
+        return False
+    if not os.path.exists(paf) and os.path.exists(paf[:-len(".loci.paf")] + ".loci.gated.paf"):
+        return True
+    params = paf[:-len(".loci.paf")] + ".params.tsv"
+    return os.path.exists(params) and any(ln.rstrip("\n") == "exon_gate\ttrue" for ln in open(params))
+
+
 def nt_records(paf, pairs_wanted):
     """{(u, family)} for which PREFIX.fam.loci.paf holds any record between locus u and a member of the family.
     pairs_wanted: {span string: [(role, locus idx)]} built by the caller."""
@@ -436,6 +450,9 @@ def main(argv=None):
     for p in (clusters, gff3):
         if not os.path.exists(p):
             sys.exit(f"protein_attach: {p} missing (run the driver's families stage first)")
+    if not a.no_paf and gated_paf(paf):
+        sys.exit(f"protein_attach: {paf} was written under the exon gate (only exon-to-exon pairs); the nucleotide-record "
+                 "label needs every record: rerun the families stage with mcl_families --no-exon-gate, or pass --no-paf")
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
 
     # ---- loci and families

@@ -28,7 +28,8 @@
 #         env={**os.environ, "MM2_SHARD_BUDGET_S": "540"})` until returncode 0; 75 means "call again".
 #
 # ENVIRONMENT
-#   MM2_SHARD_MINIMAP2   the real minimap2 (default: `minimap2` on PATH; must not resolve to this script)
+#   MM2_SHARD_MINIMAP2   the real minimap2 (default: `minimap2` on PATH, or `minimap2-gate` for a command line with
+#                        --gate, the exon gate of tools/minimap2_gate; must not resolve to this script)
 #   MM2_SHARD_DIR        cache root (default /mnt/linuxdisk/tmp/mm2_shard_cache)
 #   MM2_SHARD_READS      records per shard            } first one set wins; default MM2_SHARD_BP=10000000.
 #   MM2_SHARD_BP         bases per shard (a shard     } Changing the shard size starts a new layout (old
@@ -75,6 +76,15 @@ resolve_mm2() {
 
 passthrough() { resolve_mm2; exec "$MM2" "$@"; }
 
+# The exon gate (tools/minimap2_gate, mcl_families --from-gtf): a command line carrying --gate runs `minimap2-gate`
+# (unless MM2_SHARD_MINIMAP2 names the binary), and the layout key names the gate file by its md5, not its path.
+pick_mm2() {
+  local f
+  [ -n "${MM2_SHARD_MINIMAP2:-}" ] && return 0
+  for f in "$@"; do case "$f" in --gate|--gate=*) MM2=minimap2-gate; return 0;; esac; done
+  return 0
+}
+
 # ---------------------------------------------------------------- deadline
 DEADLINE=""
 if [ -n "${MM2_SHARD_BUDGET_S:-}" ]; then DEADLINE=$(( T0 + MM2_SHARD_BUDGET_S )); fi
@@ -92,24 +102,31 @@ is_plain_fasta() {  # regular, non-empty, not gz, not an .mmi, first byte '>'
   [ "$c" = ">" ]
 }
 
-# split "$@" (minimap2 argv) into FLAGS (all but the last two), TARGET, QUERY, THREADS, KEYFLAGS (FLAGS minus -t)
+# split "$@" (minimap2 argv) into FLAGS (all but the last two), TARGET, QUERY, THREADS, RUNFLAGS (FLAGS minus -t) and
+# KEYFLAGS (RUNFLAGS with the --gate file named by its md5)
 parse_argv() {
   local n=$#
   [ "$n" -ge 2 ] || return 1
   local a=("$@")
   TARGET=${a[$((n-2))]}; QUERY=${a[$((n-1))]}
   FLAGS=("${a[@]:0:$((n-2))}")
-  THREADS=3; KEYFLAGS=(); IBASES=8000000000
+  THREADS=3; KEYFLAGS=(); RUNFLAGS=(); IBASES=8000000000
   local i=0 m=${#FLAGS[@]} f
   while [ $i -lt $m ]; do
     f=${FLAGS[$i]}
     case "$f" in
       -t) THREADS=${FLAGS[$((i+1))]:-3}; i=$((i+2)); continue;;
       -t[0-9]*) THREADS=${f#-t}; i=$((i+1)); continue;;
+      --gate=*) RUNFLAGS+=("$f"); KEYFLAGS+=("--gate=md5:$(md5sum "${f#--gate=}" | cut -c1-32)"); i=$((i+1)); continue;;
+      --gate)
+        if [ $((i+1)) -lt $m ]; then
+          RUNFLAGS+=(--gate "${FLAGS[$((i+1))]}"); KEYFLAGS+=(--gate "md5:$(md5sum "${FLAGS[$((i+1))]}" | cut -c1-32)")
+        else RUNFLAGS+=(--gate); KEYFLAGS+=(--gate); fi
+        i=$((i+2)); continue;;
       -I) IBASES=$(num_bases "${FLAGS[$((i+1))]:-8G}");;
       -I[0-9]*) IBASES=$(num_bases "${f#-I}");;
     esac
-    KEYFLAGS+=("$f"); i=$((i+1))
+    KEYFLAGS+=("$f"); RUNFLAGS+=("$f"); i=$((i+1))
   done
   return 0
 }
@@ -220,7 +237,7 @@ engine() {
     if [ "$rem" -le 0 ]; then log "budget exhausted before the index build"; return $EX_BUDGET; fi
     log "index: building $KEYDIR/idx.mmi (-t $THREADS, <= ${rem}s)"
     local t1; t1=$(date +%s)
-    run_bounded "$rem" "$KEYDIR/idx.log" /dev/null "$MM2" "${KEYFLAGS[@]}" -t "$THREADS" -d "$KEYDIR/idx.mmi.tmp.$$" "$TARGET"
+    run_bounded "$rem" "$KEYDIR/idx.log" /dev/null "$MM2" "${RUNFLAGS[@]}" -t "$THREADS" -d "$KEYDIR/idx.mmi.tmp.$$" "$TARGET"
     local rc=$?
     if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then
       rm -f "$KEYDIR/idx.mmi.tmp.$$"; log "index build hit the deadline"
@@ -250,7 +267,7 @@ engine() {
       return $EX_BUDGET
     fi
     local t1; t1=$(date +%s)
-    run_bounded "$rem" "$base.log" "$paf.tmp" "$MM2" "${KEYFLAGS[@]}" -t "$THREADS" "$KEYDIR/idx.mmi" "$base.fa"
+    run_bounded "$rem" "$base.log" "$paf.tmp" "$MM2" "${RUNFLAGS[@]}" -t "$THREADS" "$KEYDIR/idx.mmi" "$base.fa"
     local rc=$?
     local dt=$(( $(date +%s) - t1 ))
     if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then
@@ -341,6 +358,7 @@ kill_parent_maybe() {
 # Everything runs inside main(), called from the LAST line: bash has parsed the whole file before any work
 # starts, so editing this script while a long run uses it cannot change that run.
 main() {
+pick_mm2 "$@"
 case "${1:-}" in
   help|--mm2-shard-help)
     sed -n '2,/^set -uo/p' "$SELF" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0;;
