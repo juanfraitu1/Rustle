@@ -84,3 +84,7 @@ def test_flags_do_not_depend_on_the_order_reads_arrive():
     keys = list(by_read)
     random.Random(7).shuffle(keys)
     assert R.flags({k: by_read[k] for k in keys}) == R.flags(by_read)
+
+
+def test_a_record_whose_gt_calls_no_allele_leaves_the_copy_unknown():
+    assert R.genotype(R.Call("A", ("G",), (), "PASS", 9), 9, "A") is None
