@@ -1,7 +1,9 @@
 # O2 from the sample's own variant calls (pileup + variant calling) — design (2026-10-22)
 
-**Status:** shape agreed in conversation on 2026-10-22. This written spec awaits the user's review before the implementation
-plan is written.
+**Status:** approved by the user on 2026-10-22. Plan: `docs/superpowers/plans/2026-10-22-o2-variant-calls.md`.
+Amended the same day while planning:
+- K1 is computed on HG002 only;
+- PAR families are kept out of the pooled bars.
 
 ## Why
 
@@ -217,7 +219,10 @@ For a tied read, a **column** is a read base aligned in every one of its tied al
 - **Two failure modes are invisible to that score**, so calibration bars (K1, K2) cover them, as in the 10-18 prereg's T3 and
   T5:
   - **K1 (donor-tied reads):** reads whose truth copies tie in the donor too (`own_tie`), so any placement is a guess.
-    VC places ≤ 2% of them.
+    VC places ≤ 2% of them. HG002 only: the simulated truths (D, E) name every read's source copy, so a guess there already
+    counts as a wrong placement.
+- **PAR families** (`famident/par_families.json`: X/Y alleles, not families) stay out of every pooled bar and are reported
+  apart, as the user split them on 10-18.
   - **K2 (false flags):** flagged tied reads whose truth copy is present in the reference, ≤ 2% of the tied reads with a
     present copy. A flag counts as a move: it takes the read's placement away.
 
@@ -240,12 +245,11 @@ For a tied read, a **column** is a read base aligned in every one of its tied al
   - C2g (reported), as C2.
 - **D:**
   - wrong placements ≤ 2% of placements;
-  - reads N1 places right that VC moves or flags ≤ 2% of them;
-  - K1.
+  - reads N1 places right that VC moves or flags ≤ 2% of them.
 - **E:**
   - E1: wrong placements ≤ 2% of placements;
   - E2: fixes > breaks;
-  - K1 and K2.
+  - K2.
 
 ## Order of work
 
