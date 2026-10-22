@@ -10,8 +10,10 @@
 # reuses that alignment, and a DP call whose arguments and sequences equal an earlier call's reuses that result
 # (overlapping loci present the same windows many times). On CPUs with AVX2 the dual-affine DP runs an AVX2 build of
 # minimap2's SSE4.1 kernel with identical results (MM_KSW_NO_AVX2=1 forces the SSE kernel); the build checks the two
-# kernels against each other on 20,000 random cases. Without the Rustle options the binary writes the stock output byte
-# for byte; its version is 2.30-r1287-gate5. mcl_families finds it as `minimap2-gate` on PATH (or RUSTLE_MINIMAP2), and
+# kernels against each other on 20,000 random cases. With --gate, each batch's longest queries are mapped first and a
+# query whose chains span >= 10 Mb has its chains aligned on all threads (results identical, written in input order).
+# Without the Rustle options the binary writes the stock output byte
+# for byte; its version is 2.30-r1287-gate6. mcl_families finds it as `minimap2-gate` on PATH (or RUSTLE_MINIMAP2), and
 # tools/mm2_shard.sh runs it for any command line carrying --gate.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
