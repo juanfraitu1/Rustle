@@ -10,7 +10,7 @@ against the one reference, and the calls give each copy a genotype at every posi
 genotypes, base by base:
 
 - genotype(): a copy's alleles at a position -- the record's GT alleles whatever its FILTER, the reference base when there is
-  no record, UNKNOWN (None) under MIN_DEPTH teacher reads or at an RnaEdit / Dense record.
+  no record, UNKNOWN (None) under MIN_DEPTH teacher reads, at an RnaEdit / Dense record or at a GT calling no allele.
 - assign(): a column SEPARATES c and d when both are known and share no allele; the read's base (quality >= MIN_BASEQ) VOTES
   for the one whose genotype holds it; c BEATS d with a vote for c and none for d. The read is placed on the copy that beats
   every other copy, else it abstains with the copies no copy beats. An unknown copy is in no separating column, so it is never
@@ -39,10 +39,11 @@ Call = collections.namedtuple("Call", "ref alts gt filter dp")
 
 def genotype(call, depth, ref_base):
     """A copy's alleles at a position as a frozenset in the genome's strand, or None when the copy is unknown there: fewer than
-    MIN_DEPTH teacher reads (depth: counted with the caller's own read filters, not the record's DP), an RnaEdit or Dense
-    record (a Dense window is what a collapsed extra copy leaves on its nearest reference copy), or a record whose GT calls no
-    allele (gt == (), from "./."). Otherwise the record's GT alleles whatever its FILTER (a LowQual het is an unphased het: it
-    can only make two copies overlap, never separate them falsely), or the reference base when the caller left no record."""
+    MIN_DEPTH teacher reads (depth: the record's DP where the caller wrote one, else the teacher depth counted as the caller
+    counts it, o2vc_data.teacher_depth), an RnaEdit or Dense record (a Dense window is what a collapsed extra copy leaves on
+    its nearest reference copy), or a record whose GT calls no allele (gt == (), from "./."). Otherwise the record's GT
+    alleles whatever its FILTER (a LowQual het is an unphased het: it can only make two copies overlap, never separate them
+    falsely), or the reference base when the caller left no record."""
     if depth < MIN_DEPTH or (call is not None and (call.filter in UNKNOWN_FILTERS or not call.gt)):
         return None
     if call is None:

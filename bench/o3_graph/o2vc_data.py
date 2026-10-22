@@ -44,6 +44,7 @@ MIN_READ_LENGTH = 500                                           # main.rs:411, o
 DIVERGENCE = 0.5                                                # main.rs:404: a read whose float de is >= this is not piled up
 DISTANCE_TO_READ_END = 40                                       # main.rs:396: on HiFi, only poly-run bases this near an end drop
 POLYA_TAIL_LENGTH = 5                                           # main.rs:407: the one-base window that marks a poly-run
+MAX_DEPTH = 50000                                               # main.rs:408 --max-depth: candidate.rs:91 writes no record above it
 MISSING_QUAL = 255                                              # htslib's byte for a missing QUAL (SAM "*"): a base that votes
 READ_OPS, ALIGN_OPS = (0, 1, 4, 5, 7, 8), (0, 7, 8)             # CIGAR ops holding read bases (both clip kinds) / aligning one
 
@@ -88,7 +89,7 @@ def parse_vcf(path):
     key). FORMAT keys are read by name. gt is the tuple of the GT's allele indices (0 = REF), () when it calls none ("./.",
     ".|.", "."): a GT missing only one allele counts as calling none too, for half a genotype would make a copy look homozygous.
     The record is kept either way, and o2vc_rule.genotype() leaves such a copy unknown. dp is the record's own DP (0 when absent):
-    the caller's count, not the teacher depth the rule's MIN_DEPTH uses."""
+    the depth o2vc_rule.genotype() is given where the caller wrote a record (teacher_depth reproduces it elsewhere)."""
     out = {}
     with (gzip.open if path.endswith(".gz") else open)(path, "rt") as fh:
         for line in fh:
@@ -300,13 +301,17 @@ def scan(bam_p, copies_p, families=None):
     return Scan(tied, teachers)
 
 
-def write_teacher_bam(bam_p, spans, teachers, out_bam):
+def write_teacher_bam(bam_p, spans, teachers, out_bam, counts=None):
     """Write the primary records of each copy's teachers ({copy: names}) found over its span ({copy: (chrom, start, end)}) to
     out_bam, sorted and indexed (the caller's input), and return how many there are. A teacher's primary lies on its copy, so
-    it overlaps the span; a read is written once. The directory of out_bam is made when missing."""
+    it overlaps the span; a read is written once. The directory of out_bam is made when missing. A base quality of 0 is
+    written as 1: longcallR 2.0.0 panics on a Q0 at a variant site (phase.rs:307), and both lie below its min-baseq 10, so
+    its allele calls are unchanged (its DP counts any quality); counts, a Counter, gets the "reads" and "bases" raised."""
+    import array
     import pysam
     os.makedirs(os.path.dirname(out_bam) or ".", exist_ok=True)
     tmp, n, seen = out_bam + ".unsorted.bam", 0, set()
+    counts = collections.Counter() if counts is None else counts
     with pysam.AlignmentFile(bam_p) as bam, pysam.AlignmentFile(tmp, "wb", template=bam) as out:
         for c in sorted(spans):
             names = teachers.get(c)
@@ -318,6 +323,11 @@ def write_teacher_bam(bam_p, spans, teachers, out_bam):
                 if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or q not in names or q in seen:
                     continue
                 seen.add(q)
+                qual = rec.query_qualities
+                if qual is not None and 0 in qual:
+                    counts["reads"] += 1
+                    counts["bases"] += qual.count(0)
+                    rec.query_qualities = array.array("B", (max(1, x) for x in qual))
                 out.write(rec)
                 n += 1
     pysam.sort("-o", out_bam, tmp)
@@ -361,7 +371,7 @@ def _runs(seq, i):
     return out
 
 
-def teacher_depth(teacher_bam, chrom, positions, fetch=None):
+def teacher_depth(teacher_bam, chrom, positions, fetch):
     """{position: the depth longcallR 2.0.0 gives it} on chrom, for every position given (0 where no read counts): the DP it
     writes on a record there under PRESET and MIN_MAPQ, A+C+G+T of its pileup (candidate.rs:90 and 352, util.rs:159-161,
     fill_data_into_freq_vec at util.rs:638-962). A read counts when the caller piles it up (_caller_reads) and aligns a base
@@ -370,10 +380,13 @@ def teacher_depth(teacher_bam, chrom, positions, fetch=None):
     end (soft clips left out: util.rs:699-700, 759, 772-773) next to a run, a window that _runs finds of a base other than
     the reference's there (util.rs:775-808). HiFi trims no read end (util.rs:762 trims ONT only).
 
-    fetch(chrom, lo, hi) gives the genome, upper-cased here as the caller reads it (thread.rs:60, util.rs:215-233); only a
-    base next to a run needs it, and without fetch that raises ValueError. A position is taken to lie inside the region the
-    caller was given, other than its first base (the caller fetches reads from START as if 0-based, util.rs:654, 659)."""
+    fetch(chrom, lo, hi) gives the genome, upper-cased here as the caller reads it (thread.rs:60, util.rs:215-233). Only a
+    base next to a run needs it, but it is required, and checked before any read is seen (TypeError): a missing genome
+    fails at once, never deep in a long run. A position is taken to lie inside the region the caller was given, other than
+    its first base (the caller fetches reads from START as if 0-based, util.rs:654, 659)."""
     import pysam
+    if not callable(fetch):
+        raise TypeError(f"teacher_depth needs fetch(chrom, lo, hi), the genome, not {fetch!r}")
     want = sorted(set(positions))
     out = dict.fromkeys(want, 0)
     if not want:
@@ -382,8 +395,6 @@ def teacher_depth(teacher_bam, chrom, positions, fetch=None):
 
     def ref_base(p):
         if p not in ref:
-            if fetch is None:
-                raise ValueError(f"{chrom}:{p + 1}: a base next to a poly-run window needs the genome (pass fetch)")
             ref[p] = fetch(chrom, p, p + 1).upper()
         return ref[p]
 

@@ -254,13 +254,15 @@ def test_scan_finds_the_tied_reads_and_the_teachers(tmp_path):
 
 
 def test_the_teacher_bam_holds_only_the_teachers_primaries_and_depth_counts_reads_as_the_caller_does(tmp_path):
+    import pysam
     bam, copies = make_world(tmp_path)
     s = D.scan(bam, copies)
     out = str(tmp_path / "teach.bam")
     assert D.write_teacher_bam(bam, {"F.0": ("chrA", 100, 700)}, s.teachers, out) == 10
     # the caller's DP (longcallR 2.0.0, hifi-masseq): T1-T6, Y, W and H; S is out (400 bp < 500), while H (de 0.08 < 0.5),
     # T6 (base quality 5: any quality counts) and position 110 (read base 10: HiFi trims no read end) are in
-    assert D.teacher_depth(out, "chrA", [110, 400]) == {110: 9, 400: 9}
+    fetch = pysam.FastaFile(os.path.join(os.path.dirname(bam), "genome.fa")).fetch      # required (Task 4 ruling 3)
+    assert D.teacher_depth(out, "chrA", [110, 400], fetch) == {110: 9, 400: 9}
 
 
 # ---- beyond the brief's tests: behaviour the brief states but does not pin ----
@@ -360,13 +362,10 @@ def test_teacher_depth_counts_what_longcallr_hifi_masseq_counts(tmp_path):
     # chrA (DP written by longcallR 2.0.0 on this world): g1-g8, de049, nm, q2, del (not at 400), nbase (not at 400), dup and
     # mapq0 count, len500 at 400 only; de050, short, hard, sec and supp never; read bases 5 (105) and 595 (695) count
     assert D.teacher_depth(w.bam, "chrA", [105, 400, 695], fetch) == {105: 15, 400: 14, 695: 15}
-    assert D.teacher_depth(w.bam, "chrA", [105, 400, 695]) == {105: 15, 400: 14, 695: 15}      # no run near: no genome needed
     # chrB:1000 is followed by TTTTT: it counts only where it lies >= 40 bases from both aligned ends (f1-f7), not 10 from
     # the start (n1-n3; s1-s2 and h1 after 50 soft-clipped bases) or from the end (e1-e3; t1 before 50 soft-clipped bases).
     # chrB:1003, inside the run, counts in all 17 reads: the run's base is the reference's there
     assert D.teacher_depth(w.bam, "chrB", [1000, 1003], fetch) == {1000: 7, 1003: 17}
-    with pytest.raises(ValueError, match="chrB:1001"):
-        D.teacher_depth(w.bam, "chrB", [1000])
 
 
 @pytest.mark.skipif(not os.path.exists(D.LONGCALLR), reason="longcallR 2.0.0 is not installed")
