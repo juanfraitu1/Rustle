@@ -35,6 +35,7 @@ MIN_Q = 10         # base quality below which a base counts as missing
 AS_TIE = 10        # O2's tie rule (Eichler): alignments within 10 AS of the read's best
 ALPHA = 0.01       # IsoCon-style test, Bonferroni over the tested columns
 MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
+COVERAGE = False   # milestone 2 retry: foreign coverage as a putative signal (--coverage)
 CORRECT = False    # milestone 2b: IsoCon-style read correction before clustering (--correct)
 MIN_SUPPORT = 6    # reads a haplotype needs to take a slot or be certified: the shipped stage's own flag floor
                    # (candidate_copies --min-support 6, ruling R1), so the port is judged on the stage's terms
@@ -354,6 +355,19 @@ def foreign_splicing(reads_i, usage, site):
     ji = collections.Counter(j for r in reads_i if r in usage for j in usage[r][2])
     J = [j for j, k in ji.items() if k >= MIN_READS and 2 * k >= spans(j)]
     return sum(1 for j in J if site(j) not in CANONICAL) >= MIN_READS
+
+
+def foreign_coverage(reads_i, reads_co, blocks):
+    """Coverage as evidence of a putative copy (2026-10-23, milestone 2 retry): >= half of haplotype i's reads each hold an aligned
+    block that overlaps no aligned block of the slot copy's other holders' reads (>= MIN_READS of them): i's reads cover sequence
+    the copy's own allele is never seen to cover. blocks: {read: [(start, end)]} on the slot copy."""
+    co = sorted(b for r in reads_co if r in blocks for b in blocks[r])
+    if sum(1 for r in reads_co if r in blocks) < MIN_READS or not co:
+        return False
+    def free(b):
+        return not any(x < b[1] and b[0] < y for x, y in co)
+    hit = sum(1 for r in reads_i if r in blocks and any(free(b) for b in blocks[r]))
+    return 2 * hit >= sum(1 for r in reads_i if r in blocks) > 0
 
 
 def putative_copies(demand, match, reads_of, n_piles, foreign=None):
@@ -798,7 +812,10 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     n_piles = collections.Counter(r for p in piles.values() for r in p)
     usage = {c: junction_usage(piles[c]) for c in per_copy}
     site = lambda X: (lambda j: (genome.fetch(chrom[X], j[0], j[0] + 2).upper(), genome.fetch(chrom[X], j[1] - 2, j[1]).upper()))
-    foreign = (lambda i, X, co: X in usage and foreign_splicing(merged[i]["reads"], usage[X], site(X))) if structure else None
+    blk = {c: {n: rec.get_blocks() for n, rec in piles[c].items()} for c in per_copy}
+    foreign = (lambda i, X, co: X in usage and (foreign_splicing(merged[i]["reads"], usage[X], site(X)) or
+               (COVERAGE and foreign_coverage(merged[i]["reads"], set().union(*(merged[j]["reads"] for j in co)), blk[X]))))\
+        if structure else None
     looks = []
     for i, X, mi, mc in putative_copies(demand, match, {i: merged[i]["reads"] for i in demand}, n_piles, foreign):
         if len(merged[i]["reads"]) < MIN_SUPPORT:
@@ -941,6 +958,7 @@ def main(argv):
     r.add_argument("--clusterer", choices=["cc", "lp"], default="cc", help="read clustering: correlation clustering of agreeing "
                    "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
                    "zero-disagreement graph (Strainy's; v6 as pre-registered)")
+    r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
@@ -952,8 +970,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT
-    CORRECT = a.correct
+    global CORRECT, COVERAGE
+    CORRECT, COVERAGE = a.correct, a.coverage
     cmd_run(a)
 
 
