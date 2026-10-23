@@ -298,3 +298,25 @@ For a tied read, a **column** is a read base aligned in every one of its tied al
 - The case-file layout beyond the fields listed.
 - Which reads become the worked examples.
 - Locating the gorilla NPIP inputs from the r1363 prereg.
+
+## Context: related work and known gaps (2026-10-22; notes, not requirements)
+
+Recorded after the user compared this design with another agent's PSV-model suggestion.
+
+**Prior art:**
+- **Paraphase.** Chen et al., AJHG 110(2), 2023, doi:10.1016/j.ajhg.2023.01.001. It phases full-length paralog haplotypes from HiFi DNA reads and gives copy number and phased variants (SMN1/SMN2; later extended genome-wide to 316 genes). This is the DNA analogue of this design's O3 → O2 step. `bench/o3_graph/samplecopy.py` is already Paraphase-like.
+- **Parascopy.** Prodanov & Bansal, Nat Commun 13, 2022, doi:10.1038/s41467-022-30930-3. It estimates paralog-specific copy number from short-read WGS jointly with each PSV's allele frequency across many samples, which amounts to PSV reliability.
+
+**What this design already covers:**
+- PSV observations taken from the read's own tied alignments, with no multiple alignment of the copies.
+- A sample SNP or gene conversion at a reference PSV. These enter the copy's called genotype, and the column stops separating: `erased_ref`.
+- Homopolymer indel noise. Only SNVs decide.
+- Reads that no copy explains. They are flagged as a possible missing copy, not forced onto a copy.
+
+**Known gaps:**
+1. **Real indel PSVs are not used.** longcallR calls SNVs only. HG002's SMN and THOC3 copies differ from CHM13 by a 1-bp insertion. This is the first extension if the showcase falls short, and it needs its own prereg.
+2. **A copy collapsed onto a reference copy is only reported, not fixed.** The signals are `Dense` records and weak hets. A Paraphase-style haplotype count per family is the natural fix.
+3. **PSV reliability is learned in one pass, from confident reads only.** Tied reads never feed back. Iterative EM was tried before and did not help (r579). Rescue/EM arms were harmful on real reads (r1351–1359).
+4. **Weak hets can erase a reference PSV and create placements.** On SMN2, one LowQual 0/1 call at AF 0.14 erased the counter-vote for 688 reads. Task 6 compares three genotype policies on the development families and freezes one before the prereg.
+
+**Deliberately not used:** a facility-location solver on top. It was assessed for O2 and rejected (47–59% precise). Each read is decided on its own evidence.
