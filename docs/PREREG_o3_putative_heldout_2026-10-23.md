@@ -54,3 +54,17 @@ The rest is as in P5:
 - The certified tier on the same panel: certified flags, their classes on the control, and each deleted copy's outcome. No
   realignment scoring.
 - Runtime.
+
+## Result (run once, 2026-10-23; port 29d63d5b; work dir `/mnt/linuxdisk/tmp/rna_allele/p6`)
+- **Reads and nets.** 49,778 reads (23,011 D). The stage's nets were replicated on both arms (80 / 80 families).
+- **Certified flags** (reported): 40 on the deletion arm, 4 on the control arm.
+
+| rule | result | bar | verdict |
+|---|---|---|---|
+| HP1 precision (deletion arm) | 2 / 2 putative copies are D-majority (GWFAM155 266 reads, GWFAM416 485) | >= 0.50 | PASS |
+| HP2 control families with a false putative flag | 1 (GWFAM405, c_unmatched) | <= 12 | PASS |
+| HP3 recall over free-slot deleted copies | 2 / 13 = 0.15 | >= 0.25 | **FAIL** |
+
+**Verdict: the putative tier DOES NOT PASS** (not sensitive enough). What it flags is right (2 / 2) and it rarely flags wrongly
+(1 / 80 families on the control). But in two-copy families only the splicing signal can fire, and 11 of 13 deleted copies that
+sit in a survivor's free slot splice canonically there. Milestone 2 stays open.
