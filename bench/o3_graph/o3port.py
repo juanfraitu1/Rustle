@@ -290,13 +290,46 @@ def absorb(hs, keep):
     return out
 
 
-def look_harder(demand, match, reads_of, n_piles):
+def junction_usage(pile):
+    """{read: (alignment start, alignment end, frozenset of introns)} from each read's record on a pile (CIGAR N runs)."""
+    out = {}
+    for n, rec in pile.items():
+        pos, js = rec.reference_start, []
+        for op, k in rec.cigartuples:
+            if op == 3:
+                js.append((pos, pos + k))
+            if op in (0, 2, 3, 7, 8):
+                pos += k
+        out[n] = (rec.reference_start, rec.reference_end, frozenset(js))
+    return out
+
+
+CANONICAL = {("GT", "AG"), ("GC", "AG"), ("AT", "AC"), ("CT", "AC"), ("CT", "GC"), ("GT", "AT")}   # both strands
+
+
+def foreign_splicing(reads_i, usage, site):
+    """Structure as look-harder evidence (2026-10-23): >= MIN_READS of haplotype i's own junctions on the slot copy are non-canonical
+    on that copy's DNA (donor / acceptor dinucleotides not GT-AG, GC-AG or AT-AC on either strand): two independent observations,
+    the project's rule (a first version asked >= half of them; P5's GWFAM101 had 7 of 17, so this threshold was set after looking
+    at a held-out miss and P5 is no evidence for it). i's own junctions = those used
+    by >= MIN_READS of its reads and by >= half of its reads that span them (its majority structure, not a minor isoform). Every
+    isoform of a copy splices at that copy's own sites, so this cannot be raised by alternative splicing, only by reads the copy
+    cannot have produced; it flags, it never certifies. site(j) -> (donor, acceptor) dinucleotides of junction j on the copy."""
+    spans = lambda j: sum(1 for r in reads_i if r in usage and usage[r][0] < j[0] and usage[r][1] > j[1])
+    ji = collections.Counter(j for r in reads_i if r in usage for j in usage[r][2])
+    J = [j for j, k in ji.items() if k >= MIN_READS and 2 * k >= spans(j)]
+    return sum(1 for j in J if site(j) not in CANONICAL) >= MIN_READS
+
+
+def look_harder(demand, match, reads_of, n_piles, foreign=None):
     """The haplotypes RNA cannot prove extra (they hold an allele slot, Theorem A) but whose reads behave like another copy's:
     >= half of them tie (within AS_TIE of their best) to another copy as well as to the slot's, while < half of the reads of
     every other haplotype holding a slot of the same copy do. It compares the sample with itself (tie patterns), never with the
     reference sequence, so a reference from another individual does not move it. A slot copy with no other holder gives no
-    contrast: no flag. reads_of: {haplotype: reads}; n_piles: {read: piles holding it}. Returns [(haplotype, copy, its multi
-    fraction, the other holders' multi fractions)]."""
+    contrast: no flag. reads_of: {haplotype: reads}; n_piles: {read: piles holding it}. With `foreign` (a function (haplotype,
+    copy, other holders) -> bool, foreign_splicing), a holder whose reads the copy cannot have spliced is flagged too, the signal a
+    one-survivor family still offers. Returns [(haplotype, copy, its multi fraction, the other
+    holders' multi fractions)]."""
     multi = {i: sum(1 for r in reads_of[i] if n_piles.get(r, 0) >= 2) / max(1, len(reads_of[i])) for i in demand}
     out = []
     for i in demand:
@@ -304,7 +337,7 @@ def look_harder(demand, match, reads_of, n_piles):
         co = [j for j in demand if j != i and match.get(j) == X]
         if X is None or not co:
             continue
-        if 2 * multi[i] >= 1 and all(2 * multi[j] < 1 for j in co):
+        if (2 * multi[i] >= 1 and all(2 * multi[j] < 1 for j in co)) or (foreign is not None and foreign(i, X, co)):
             out.append((i, X, multi[i], [multi[j] for j in co]))
     return out
 
@@ -615,7 +648,7 @@ def divergence(h, ref):
 
 
 def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False,
-               floor_first=True, clusterer="cc"):
+               floor_first=True, clusterer="cc", structure=True):
     """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
     the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
@@ -728,8 +761,11 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     match = b_matching({i: options[i] for i in demand}, capacity, order)
     certified = []
     n_piles = collections.Counter(r for p in piles.values() for r in p)
+    usage = {c: junction_usage(piles[c]) for c in per_copy}
+    site = lambda X: (lambda j: (genome.fetch(chrom[X], j[0], j[0] + 2).upper(), genome.fetch(chrom[X], j[1] - 2, j[1]).upper()))
+    foreign = (lambda i, X, co: X in usage and foreign_splicing(merged[i]["reads"], usage[X], site(X))) if structure else None
     looks = []
-    for i, X, mi, mc in look_harder(demand, match, {i: merged[i]["reads"] for i in demand}, n_piles):
+    for i, X, mi, mc in look_harder(demand, match, {i: merged[i]["reads"] for i in demand}, n_piles, foreign):
         if len(merged[i]["reads"]) < MIN_SUPPORT:
             continue
         _, steps = observations({r: piles[X][r] for r in sorted(merged[i]["reads"]) if r in piles[X]}, prim, span[X])
@@ -824,7 +860,8 @@ def cmd_run(a):
             reads = net[fam]
             dump = {} if dump_fh else None
             certified, per_copy, n_h, why, piled, looks = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order,
-                                                                     tmpdir, dump, a.absorb, not a.v5_clique, a.clusterer)
+                                                                     tmpdir, dump, a.absorb, not a.v5_clique, a.clusterer,
+                                                                     not a.no_structure)
             for k, (X, rs, seq, mi, mc) in enumerate(looks):
                 lh.write(f"{fam}\tlook_{fam}_{k}\t{X}\t{len(rs)}\t{mi:.3f}\t{','.join(f'{x:.3f}' for x in mc)}\t{len(seq)}\n")
                 lf.write(f">look_{fam}_{k}\n{seq}\n")
@@ -869,6 +906,7 @@ def main(argv):
     r.add_argument("--clusterer", choices=["cc", "lp"], default="cc", help="read clustering: correlation clustering of agreeing "
                    "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
                    "zero-disagreement graph (Strainy's; v6 as pre-registered)")
+    r.add_argument("--no-structure", action="store_true", help="look harder on tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
     r.add_argument("--absorb", action="store_true", help="v5.1 (rejected on development data): join clusters outside the "

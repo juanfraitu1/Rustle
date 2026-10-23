@@ -170,3 +170,25 @@ def test_correlation_clustering_keeps_a_one_column_difference_together():
     pat = {f"a{i}": {1: "A", 2: "C"} for i in range(5)}
     pat.update({f"b{i}": {1: "A", 2: "T"} for i in range(5)})
     assert len(P.correlation_clustering(pat)) == 1
+
+
+def test_foreign_splicing_counts_non_canonical_majority_junctions():
+    usage = {f"e{i}": (100, 900, frozenset({(200, 300), (400, 600)})) for i in range(4)}
+    good = lambda j: ("GT", "AG")
+    bad_one = lambda j: ("GT", "AG") if j == (200, 300) else ("AA", "TT")
+    assert not P.foreign_splicing({"e0", "e1", "e2", "e3"}, usage, good)
+    assert not P.foreign_splicing({"e0", "e1", "e2", "e3"}, usage, bad_one)   # one non-canonical junction: one observation
+    bad_two = lambda j: ("AA", "TT")
+    assert P.foreign_splicing({"e0", "e1", "e2", "e3"}, usage, bad_two)       # two: flagged
+    minor = dict(usage)
+    minor.update({f"m{i}": (100, 900, frozenset({(200, 300)})) for i in range(8)})   # (400, 600) now a minor isoform
+    assert not P.foreign_splicing(set(minor), minor, bad_two)                # (400, 600) is a minor isoform: not counted
+
+
+def test_look_harder_structure_flags_a_one_survivor_family():
+    reads_of = {0: {"a1", "a2"}, 1: {"e1", "e2"}}
+    n_piles = {r: 1 for r in ("a1", "a2", "e1", "e2")}                    # one pile: no ties anywhere
+    match = {0: "X", 1: "X"}
+    assert P.look_harder([0, 1], match, reads_of, n_piles) == []
+    got = P.look_harder([0, 1], match, reads_of, n_piles, foreign=lambda i, X, co: i == 1)
+    assert [(i, c) for i, c, _, _ in got] == [(1, "X")]

@@ -113,3 +113,21 @@ port can replace the stage on equal terms.
     P2 0 vs 1 false flag). Correlation clustering is better when the sample is another individual than the reference (the
     one-copy sweep: the erased copy's two alleles are no longer split, so it is detected down to 5 reads per allele instead of
     10). Both pass development. The choice is left to a held-out where both arms are registered.
+- **Default = correlation clustering** (6e7ed568), chosen after the P5 held-out (both arms passed, correlation clustering better);
+  `--clusterer lp` = v6 as registered.
+- **Splice structure in look harder** (2026-10-23; user: "are we at any point using the intron/exon structure"). Until now the
+  port used SNV columns only; introns were skipped.
+  - **Diagnosis of P5's misses** (looked at after the verdict):
+    - The 6 "no pile" deleted copies cannot be helped by structure: their reads never touch the survivor (most are unmapped,
+      the rest align near the old locus).
+    - The 2 free-slot copies and the 1 unclustered copy do splice differently from the survivor's own reads.
+  - **First rule, rejected on development:** junctions the slot copy's other holders span but never use.
+    - P1: +1 true, +2 false flags. P2: +1 false.
+    - Structural contrast is symmetric: the survivor's allele looks as "foreign" as the deleted copy's.
+  - **Rule kept:** a slot holder with >= MIN_READS of its majority junctions non-canonical on the slot copy's DNA (not GT-AG /
+    GC-AG / AT-AC on either strand). Every isoform of a copy splices at its own sites, so alternative splicing cannot raise it.
+    - P1 adds 2 true flags (GWFAM490 92 reads, GWFAM407 38) and 0 false.
+    - P2 adds 0.
+    - P5, post hoc (the threshold of 2 instead of >= half was set after GWFAM101's 7 of 17): catches GWFAM101's deleted copy
+      (249 reads); 0 on the control.
+  - It flags, it never certifies. `--no-structure` turns it off.
