@@ -169,3 +169,45 @@ Each gets its own amendment before it runs.
    - GTF2IRD2's worked reads from its `summary.md`.
 2. Audit with the `metric-auditor` agent on a frozen copy of the outputs.
 3. Add register row 1374 and update memory.
+
+## Results (code 07441e7c; run once, 19:54–20:10 PDT; audit 20:31)
+
+Outputs are frozen in `/mnt/linuxdisk/tmp/o3_graph/o2vc/audit_frozen_eccbc4e0/`. The audit (metric-auditor) recomputed every
+headline from `calls.tsv` and the truth tables, without the scorer; its scripts are in `/mnt/linuxdisk/tmp/audit_2026-10-22_o2vc/`.
+
+| panel | verdict (scorer) | audit | numbers |
+|---|---|---|---|
+| A GTF2IRD2 (showcase) | PASS | HOLDS WITH CAVEATS | VC 44 placed / 0 wrong / 24 fixes / 0 breaks of 61 scored; N1 37 wrong; N3 9 placed, all wrong, 1 break; N4 7 wrong, 30 fixes. All 44 placements are on copy .1, so the 95% upper bound on the error rate is 6.6%. The decidable N1-wrong count is 37, so A2 is evaluable without the upper bound. |
+| A PDPR (backup) | PASS | HOLDS WITH CAVEATS | VC 36 / 0 / 21 fixes. All placements are on PDPR.0; VC abstained on all 82 reads whose truth is PDPR.3. |
+| A NBPF1 (backup) | FAIL | HOLDS | VC 14 placed, 9 wrong (6 elsewhere + 3 no_counterpart). The 3 are probably right, since a chain gap lines them up with NBPF1.3. That still leaves 6/14 wrong. |
+| K1 / K2 (HG002 pooled, PAR out) | PASS | HOLDS | K1 49/9,642; K2 12/15,725 |
+| C-human | PASS | **DOES NOT HOLD** | The 16 S19NPIPB2#0 reads are the donor's NPIPB2.2 with a 57-bp insertion, in a gap of the HG002→CHM13 chain. The insertion pushes .2 out of the 10-AS tie. Relabelled, C1 has 0 counted flags and **FAILS** (it is evaluable: 107 no_counterpart reads remain). |
+| B DAZ | descriptive | HOLDS | 622 tied reads; VC and N3 place 0; N2 places 15; 5 reads flagged in 2 flags (no truth). |
+| E HG00733 (held out) | **FAIL** (E1) | HOLDS | VC 176 wrong / 2,801 placed (6.3%); E2 279 fixes > 30 breaks; K2 43/12,015. PRAMEF7 + PRAMEF10 = 133 of the 176 wrong and 23 of the 30 breaks (pre-registered F3). |
+
+**Robustness.**
+- Five fresh longcallR re-calls of S19GTF2IRD2 and S19SMN2 gave byte-identical VCFs and 0 placement changes.
+- The weak SMN2 record (chr5:70823918) was kept every time.
+- Depth agreement: 2,571 of 2,571 records.
+
+**Pooled HG002** (reported only; no bar):
+- VC 271 wrong / 4,579 placed, 1,137 fixes, 24 breaks; N1 2,458 / 6,333 wrong; N4 1,237 wrong.
+- Without the development families: 270 / 3,249 = 8.3%.
+- With the 801 poor_match reads scored against the donor's best placement: 339 / 5,366 = 6.3%.
+- Of the 18 families with ≥ 10 placements, 10 are at ≤ 2% wrong. The worst are:
+  - GTF2H2C 145/166 (all elsewhere/no_counterpart labels, which depend on the chain and are unverified);
+  - SPDYE1 59/77;
+  - ANKRD36C 21/64 (14 breaks);
+  - AC0064533 11/21;
+  - SLC35E2B 9/47.
+
+**Reading.**
+- **Showcase.** It passes, but on the development donor, with a family chosen from earlier HG002 results.
+- **Held-out donor.** It fails E1, mainly on PRAMEF, the pre-registered donor-lacks-a-copy case.
+- **Missing-copy flag.** The pass is a liftover artifact. The rule did correctly refuse to place those reads on the wrong copies.
+- **Against the other methods.** The method is far more precise than minimap2, the corrector and N2 on the same reads (HG002 5.9% vs
+  38.8% / 19.5% / 36.3% wrong; HG00733 6.3% vs 38.2% / 35.2% / 24.9%). It does not reach the 2% bar on the held-out donor or across
+  families.
+- **Where the errors are.** They concentrate in copy-number-variable families: PRAMEF, GTF2H2C, SPDYE1, NBPF1 and ANKRD36C. That
+  is the case for an O3 step before O2.
+- **Blind predictions.** They were too pessimistic for A and too optimistic for C and E.
