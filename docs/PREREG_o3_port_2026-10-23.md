@@ -131,3 +131,9 @@ port can replace the stage on equal terms.
     - P5, post hoc (the threshold of 2 instead of >= half was set after GWFAM101's 7 of 17): catches GWFAM101's deleted copy
       (249 reads); 0 on the control.
   - It flags, it never certifies. `--no-structure` turns it off.
+- **O2 v2** (after P7 failed): a tied read is assigned only when its haplotype was weighed for every copy the read ties to (the
+  haplotype's options cover all the read's piles) and the edge is forced. In GWFAM328 (spent), a haplotype seen only on copy :10
+  was trivially forced there, yet its tied reads also fit :11.
+  - Development: 0 wrong everywhere.
+  - Indistinguishable ties all abstain (GWFAM415, 407, 28, 401, 328).
+  - The erased-copy simulations keep their fixes (163 / 163, 156 / 163, 43 / 48 placed on the certified new copy, 0 wrong).

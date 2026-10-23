@@ -205,7 +205,8 @@ def pick(a):
     dev = {r["family_id"] for r in tsv(f"{RA}/a12/A12.copies.tsv")}
     bonly = {r["family"] for r in tsv(f"{RA}/refabsent/bonly.tsv")}
     # the simplest family first: fewest copies, then fresh before development, then name
-    order = sorted((f for f, v in byfam.items() if len(v) >= 3 and f not in bonly), key=lambda f: (len(byfam[f]), f in dev, f))
+    skip = set(os.environ.get("O3SIM_EXCLUDE", "").split(","))
+    order = sorted((f for f, v in byfam.items() if len(v) >= 3 and f not in bonly and f not in skip), key=lambda f: (len(byfam[f]), f in dev, f))
     cm = {r["pri"]: r for r in tsv(f"{RA}/chrmap.tsv")}
     pri, bam = pysam.FastaFile(PRI), pysam.AlignmentFile(FIBRO)
     for fam in order:

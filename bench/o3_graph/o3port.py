@@ -859,6 +859,8 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
             dump["merged"].append(row)
     piled = set().union(*(set(piles[c]) for c in per_copy)) if per_copy else set()
     # O2: each AS-tied read (in >= 2 piles) goes to its haplotype's forced copy, or to the certified copy it belongs to; else abstain
+    # (v2, 2026-10-23: only when the haplotype was weighed for every copy the read ties to; a haplotype seen on one pile is
+    # trivially forced there, though its tied reads fit the other copy too)
     n_in = collections.Counter(r for p in piles.values() for r in p)
     home_of = {}
     for i in demand:
@@ -871,7 +873,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
             continue
         if r in cert_reads:
             o2.append((r, f"new:{cert_reads[r]}", k))
-        elif r in home_of and home_of[r] in forced:
+        elif r in home_of and home_of[r] in forced and {c for c, p in piles.items() if r in p} <= set(options[home_of[r]]):
             o2.append((r, forced[home_of[r]], k))
         else:
             o2.append((r, "ABSTAIN", k))
