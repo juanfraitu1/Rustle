@@ -1312,3 +1312,10 @@ def test_copies_from_sets_reads_the_family_file_s_own_forms_and_the_cli_writes_a
     assert sorted(c for v in O.P.load_copies(str(out)).values() for c, *_ in v) == ["S19X.0", "S19X.1"]
     with pytest.raises(ValueError, match="S19Z"):
         O.copies_from_sets(str(p), "seq19", "S19Z")
+
+
+def test_the_weak_het_default_is_the_policy_the_frozen_dev_rule_chose():
+    # Task 6 rule (task-6-rulings.md B8), dev run 2026-10-22 on HG002 S19SMN2 + S19MSTRG3150: P3 (ref) excluded by K1 98/128;
+    # P1 (keep) and P2 (unknown) tie on every term (VC wrong/placed 1/1330, fixes 647, identical VC on all 1,849 tied reads),
+    # so the default stays P1, the spec's genotype rule (the record's GT alleles whatever its FILTER).
+    assert O.WEAK_HET_DEFAULT == "keep" and O.cmd_run.__defaults__[-1] == "keep"

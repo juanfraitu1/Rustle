@@ -103,7 +103,10 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAD = 1000                                                      # the caller's region: a copy's span and PAD bases each side
 CHRM = "chrM"
-WEAK_HET_DEFAULT = "keep"                                       # the weak-het policy run takes without --weak-het (Task 6)
+# The weak-het policy run takes without --weak-het, FROZEN by the Task 6 dev rule (HG002 S19SMN2 + S19MSTRG3150, 2026-10-22,
+# docs/O2VC_DEV_2026-10-22.md): P3 ref excluded (K1 98/128 > 2%); P1 keep and P2 unknown tie on VC wrong/placed (1/1330) and
+# fixes (647), with identical VC placements on all 1,849 tied reads, so the default stays P1 keep, the spec's genotype rule.
+WEAK_HET_DEFAULT = "keep"
 FILTERS = (("PASS", "pass"), ("LowQual", "lowqual"), ("HomRef", "homref"), ("Multiallelic", "multiallelic"),
            ("RnaEdit", "rnaedit"), ("Dense", "dense"))
 
