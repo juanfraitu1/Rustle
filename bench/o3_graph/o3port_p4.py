@@ -30,7 +30,8 @@ def tsv(path):
     return list(csv.DictReader(open(path), delimiter="\t"))
 
 
-def panel(a):
+def eligible_families():
+    """P4's eligibility (docs/PREREG_o3_two_tier_p4_2026-10-23.md): (eligible panel entries sorted by family, G3 drops)."""
     rows = tsv(SRC)
     byfam = collections.defaultdict(list)
     for r in rows:
@@ -53,6 +54,11 @@ def panel(a):
             continue
         eligible.append(dict(fam=fam, mask=[mc, ms, me, m["gene"]],
                              keep=[[x["chrom"], int(x["clean_start"]), int(x["clean_end"]), x["gene"]] for x in cps[:-1]]))
+    return eligible, g3
+
+
+def panel(a):
+    eligible, g3 = eligible_families()
     draw = sorted(random.Random(1).sample(eligible, min(N_DRAW, len(eligible))), key=lambda p: p["fam"])
     json.dump(draw, open(f"{a.w}/panel.json", "w"), indent=0)
     print(f"eligible {len(eligible)} (dropped by G3: {len(g3)}); drawn {len(draw)}; copies {sum(1 + len(p['keep']) for p in draw)}; "
@@ -214,16 +220,140 @@ def verdict5(a):
     json.dump(out, open(f"{W}/verdict.json", "w"), indent=1)
 
 
+def p6panel(a):
+    """P6 (docs/PREREG_o3_putative_heldout_2026-10-23.md): P4's draw minus P5's 20, plus 40 drawn with random.Random(1) from the
+    eligible families P4 did not draw (sorted by family) -> W/panel.json"""
+    eligible, _ = eligible_families()
+    p4 = json.load(open(f"{RA}/p4/panel.json"))
+    assert [p["fam"] for p in p4] == [p["fam"] for p in sorted(random.Random(1).sample(eligible, N_DRAW), key=lambda p: p["fam"])], \
+        "P4's draw does not reproduce"
+    p5 = {p["fam"] for p in json.load(open(f"{RA}/p5/panel.json"))}
+    rest = [p for p in p4 if p["fam"] not in p5]
+    pool = [p for p in eligible if p["fam"] not in {q["fam"] for q in p4}]
+    new = random.Random(1).sample(pool, 40)
+    draw = sorted(rest + new, key=lambda p: p["fam"])
+    assert len(rest) == 40 and len({p["fam"] for p in draw}) == 80
+    json.dump(draw, open(f"{a.w}/panel.json", "w"), indent=0)
+    print(f"P4's draw minus P5: {len(rest)}; pool never drawn: {len(pool)}; drawn from it: {len(new)}; panel {len(draw)}")
+
+
+def putprod(a):
+    """The port's putative copies as stage-style products (cand.*: one flagged candidate cand_<family>_<k> per putative copy,
+    its consensus as the contig) in W/<arm>put, so the control classification steps run on them unchanged. Members come from
+    the dump (the merged haplotype flagged putative on that copy with that read count)."""
+    X, out = f"{a.w}/{a.arm}", f"{a.w}/{a.arm}put"
+    os.makedirs(f"{out}/logs", exist_ok=True)
+    rows = tsv(f"{X}/cand.putative.tsv")
+    seqs = {}
+    name = None
+    for ln in open(f"{X}/cand.putative.fa"):
+        if ln.startswith(">"):
+            name = ln[1:].strip()
+            seqs[name] = ""
+        else:
+            seqs[name] += ln.strip()
+    dump = {json.loads(ln)["family"]: json.loads(ln) for ln in open(f"{X}/cand.dump.jsonl")}
+    k = collections.Counter()
+    with open(f"{out}/cand.candidates.tsv", "w") as ct, open(f"{out}/cand.contigs.fa", "w") as cf, \
+            open(f"{out}/cand.clusters.tsv", "w") as cl, open(f"{out}/cand.reads.tsv", "w") as rd, \
+            open(f"{out}/cand.families.tsv", "w") as ft:
+        ct.write("family\tcandidate\tn_clusters\tn_reads\tflagged\tunion_len\tnearest_locus\td\tn_net\tn_used\n")
+        cl.write("family\tcluster\tcandidate\tn_reads\tconsensus_len\tfate\tlinked_to\td\n")
+        rd.write("read\tfamily\tcluster\n")
+        ft.write("family\tn_net\tn_used\n")
+        for r in rows:
+            f = r["family"]
+            ms = [m for m in dump[f]["merged"] if m.get("putative") and m["slot"] == r["copy"] and len(m["reads"]) == int(r["n_reads"])]
+            assert len(ms) == 1, (f, r["candidate"], len(ms))
+            c = f"cand_{f}_{k[f]}"
+            k[f] += 1
+            sq = seqs[r["candidate"]]
+            ct.write(f"{f}\t{c}\t1\t{r['n_reads']}\t1\t{len(sq)}\t{r['copy']}\tNA\tNA\tNA\n")
+            cf.write(f">{c}\n{sq}\n")
+            cl.write(f"{f}\t{f}:p{k[f]}\t{c}\t{r['n_reads']}\t{len(sq)}\tputative\t-\tNA\n")
+            for n in ms[0]["reads"]:
+                rd.write(f"{n}\t{f}\t{f}:p{k[f]}\n")
+        for f in sorted(k):
+            ft.write(f"{f}\tNA\tNA\n")
+    print(f"{a.arm}: {len(rows)} putative copies in {len(k)} families -> {out}")
+
+
+def verdict6(a):
+    W = a.w
+    P = {p["fam"]: p for p in json.load(open(f"{W}/panel.json"))}
+    lab = {r["read"]: r for r in tsv(f"{W}/labels.tsv")}
+    cls = lambda arm: {r["candidate"].split(":", 1)[1].replace("iso_", "cand_"): r["class"]
+                       for r in tsv(f"{W}/{arm}put/candidates.tsv")} if os.path.exists(f"{W}/{arm}put/candidates.tsv") else {}
+    out = {}
+    # deletion arm: precision (HP1) and recall over the free-slot deleted copies (HP3)
+    dcls = cls("pd")
+    flags, free = [], []
+    k = collections.Counter()
+    for ln in open(f"{W}/pd/cand.dump.jsonl"):
+        d = json.loads(ln)
+        f = d["family"]
+        best = None
+        for m in d["merged"]:
+            nd = sum(1 for r in m["reads"] if lab.get(r, {}).get("role") == "D")
+            if m.get("putative"):
+                c = f"cand_{f}_{k[f]}"
+                k[f] += 1
+                flags.append((f, c, len(m["reads"]), 2 * nd > len(m["reads"])))
+            if 2 * nd > len(m["reads"]) and len(m["reads"]) >= 6 and (best is None or nd > best[0]):
+                best = (nd, m)
+        if best and not best[1]["certified"] and best[1]["slot"]:
+            free.append((f, len(best[1]["reads"]), bool(best[1].get("putative"))))
+    # the putative.tsv order = the dump's merged order per family? match by the rows instead (putprod's names)
+    rows = tsv(f"{W}/pd/cand.putative.tsv")
+    true = 0
+    detail = []
+    kk = collections.Counter()
+    dump = {json.loads(ln)["family"]: json.loads(ln) for ln in open(f"{W}/pd/cand.dump.jsonl")}
+    for r in rows:
+        f = r["family"]
+        m = [m for m in dump[f]["merged"] if m.get("putative") and m["slot"] == r["copy"] and len(m["reads"]) == int(r["n_reads"])][0]
+        c = f"cand_{f}_{kk[f]}"
+        kk[f] += 1
+        nd = sum(1 for x in m["reads"] if lab.get(x, {}).get("role") == "D")
+        dmaj = 2 * nd > len(m["reads"])
+        cl_ = dcls.get(c, "unclassified")
+        t = dmaj or cl_ == "a_haplotype_only"
+        true += t
+        detail.append(dict(family=f, candidate=c, reads=len(m["reads"]), D_majority=dmaj, cls=cl_, true=bool(t)))
+    hp1 = (true / len(rows)) if rows else None
+    hp3 = (sum(1 for x in free if x[2]) / len(free)) if free else None
+    # control arm: families with a false putative flag (HP2)
+    ccls = cls("pc")
+    crow = tsv(f"{W}/pc/cand.putative.tsv")
+    false_fams = sorted({c.rsplit("_", 1)[0][5:] for c, v in ccls.items() if v in ("b_allele", "c_unmatched", "pri")})
+    out = dict(deletion_flags=detail, HP1=hp1, HP1_pass=hp1 is not None and hp1 >= 0.5,
+               free_slot=free, HP3=hp3, HP3_pass=hp3 is not None and hp3 >= 0.25,
+               control_flags=len(crow), control_classes=dict(collections.Counter(ccls.values())), control_false_families=false_fams,
+               HP2_pass=len(false_fams) <= 12)
+    out["verdict"] = out["HP1_pass"] and out["HP2_pass"] and out["HP3_pass"]
+    json.dump(out, open(f"{W}/verdict6.json", "w"), indent=1)
+    print(f"HP1 precision: {true}/{len(rows)} = {hp1}  (>= 0.50: {'PASS' if out['HP1_pass'] else 'FAIL'})")
+    for x in detail:
+        print("   ", x)
+    print(f"HP3 recall: free-slot deleted copies {len(free)}, flagged {sum(1 for x in free if x[2])} = {hp3}  "
+          f"(>= 0.25: {'PASS' if out['HP3_pass'] else 'FAIL'}); {free}")
+    print(f"HP2 control: putative flags {len(crow)}, classes {out['control_classes']}, families with a false flag "
+          f"{len(false_fams)} {false_fams} (<= 12: {'PASS' if out['HP2_pass'] else 'FAIL'})")
+    print(f"VERDICT (putative tier): {'PASSES' if out['verdict'] else 'DOES NOT PASS'}")
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["panel", "split", "batches", "verdict", "subpanel", "verdict5"])
+    ap.add_argument("cmd", choices=["panel", "split", "batches", "verdict", "subpanel", "verdict5", "p6panel", "putprod", "verdict6"])
+    ap.add_argument("--arm", default="pd")
     ap.add_argument("--w", required=True)
     ap.add_argument("--source", default=f"{RA}/p4", help="subpanel: the draw to sample from")
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--deletion", default="pd,pdcc")
     ap.add_argument("--control", default="pc,pccc")
     a = ap.parse_args(argv)
-    {"panel": panel, "split": split, "batches": batches, "verdict": verdict, "subpanel": subpanel, "verdict5": verdict5}[a.cmd](a)
+    {"panel": panel, "split": split, "batches": batches, "verdict": verdict, "subpanel": subpanel, "verdict5": verdict5,
+     "p6panel": p6panel, "putprod": putprod, "verdict6": verdict6}[a.cmd](a)
 
 
 if __name__ == "__main__":
