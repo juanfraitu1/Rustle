@@ -19,3 +19,8 @@ survivors and has >= half of its reads tied on >= 2 survivors).
 - **O2-1:** wrong <= 2% of placed tied reads.
 - **O2-2:** fixes > breaks against minimap2.
 - **Verdict.** Pass iff both hold. Run once.
+
+## Result (2026-10-23): cannot be run
+No fresh gorilla family meets the pick rule once GWFAM248, P1-P7's families and the 53 development families are excluded. In the
+remaining >= 3-copy families, no erased copy is both >= 97% identical over >= 80% to two survivors and hidden as tied multimappers.
+So the fibroblast data hold no fresh held-out for O2 v2. Nothing was simulated or scored.
