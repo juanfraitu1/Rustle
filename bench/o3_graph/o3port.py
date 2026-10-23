@@ -35,6 +35,7 @@ MIN_Q = 10         # base quality below which a base counts as missing
 AS_TIE = 10        # O2's tie rule (Eichler): alignments within 10 AS of the read's best
 ALPHA = 0.01       # IsoCon-style test, Bonferroni over the tested columns
 MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
+CORRECT = False    # milestone 2b: IsoCon-style read correction before clustering (--correct)
 MIN_SUPPORT = 6    # reads a haplotype needs to take a slot or be certified: the shipped stage's own flag floor
                    # (candidate_copies --min-support 6, ruling R1), so the port is judged on the stage's terms
 
@@ -212,6 +213,37 @@ def correlation_clustering(pat):
 CLUSTERER = {"lp": label_propagation, "cc": correlation_clustering}
 
 
+def correct_patterns(pat):
+    """IsoCon-style correction (milestone 2b, 2026-10-23): a read's allele at a column is replaced when >= MIN_READS of its
+    neighbours (reads that share >= 1 other column with it and agree at every other shared column) carry one other allele and
+    none carries its own. One pass on the observed patterns (computed per distinct pattern, weighted by its reads); corrected
+    patterns feed the clustering only."""
+    groups = collections.defaultdict(list)
+    for r, p in pat.items():
+        groups[tuple(sorted(p.items()))].append(r)
+    keys = list(groups)
+    dicts = [dict(k) for k in keys]
+    w = [len(groups[k]) for k in keys]
+    fixed = {}
+    for i, p in enumerate(dicts):
+        q = dict(p)
+        for c, b in p.items():
+            votes = collections.Counter()
+            for j, o in enumerate(dicts):
+                if c not in o:
+                    continue
+                other = (p.keys() & o.keys()) - {c}
+                if other and all(p[x] == o[x] for x in other):
+                    votes[o[c]] += w[j] - (1 if j == i else 0)
+            votes = +votes
+            if votes and votes[b] == 0 and len(votes) == 1:
+                alt, n = votes.most_common(1)[0]
+                if n >= MIN_READS:
+                    q[c] = alt
+        fixed[i] = q
+    return {r: fixed[i] for i, k in enumerate(keys) for r in groups[k]}
+
+
 def cluster_pile(reads, obs, method="cc"):
     """Strainy's clustering with refinement: label propagation on the pile's informative columns, then each cluster again on
     the columns informative inside it, until nothing splits. Returns (clusters of >= MIN_READS reads, every column used, the
@@ -219,7 +251,10 @@ def cluster_pile(reads, obs, method="cc"):
     the test only inside one cluster (smaller Bonferroni family, lower error mass) can come from a recurrent error or chimera."""
     cols = informative({c: [x for x in xs if x[0] in reads] for c, xs in obs.items()})
     used = dict(cols)
-    todo = [c for c in CLUSTERER[method](patterns(reads, obs, cols)) if len(c) >= MIN_READS]
+    pat = patterns(reads, obs, cols)
+    if CORRECT:
+        pat = correct_patterns(pat)
+    todo = [c for c in CLUSTERER[method](pat) if len(c) >= MIN_READS]
     done = []
     while todo:
         c = todo.pop()
@@ -906,6 +941,7 @@ def main(argv):
     r.add_argument("--clusterer", choices=["cc", "lp"], default="cc", help="read clustering: correlation clustering of agreeing "
                    "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
                    "zero-disagreement graph (Strainy's; v6 as pre-registered)")
+    r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
@@ -916,6 +952,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
+    global CORRECT
+    CORRECT = a.correct
     cmd_run(a)
 
 
