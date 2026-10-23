@@ -106,6 +106,7 @@ def test_private_alleles_mosaic_versus_third_pattern():
     options = {0: ["c"], 1: ["c"], 2: ["c"], 3: ["c"]}
     assert P.private_alleles(2, merged, match, options) == 0
     assert P.private_alleles(3, merged, match, options) == 2
+    assert P.private_detail(3, merged, match, options) == ("c", [(1, "G"), (4, "G")])
 
 
 def test_explanation_dada2_rule():

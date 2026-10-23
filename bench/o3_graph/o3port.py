@@ -23,6 +23,7 @@ flagged = 1), PREFIX.contigs.fa, PREFIX.clusters.tsv, PREFIX.reads.tsv, PREFIX.f
 import argparse
 import collections
 import csv
+import json
 import math
 import sys
 
@@ -465,16 +466,24 @@ def pile_consensus(obs):
 CMP = {"A": "T", "C": "G", "G": "C", "T": "A"}
 
 
+def private_detail(i, merged, match, options):
+    """(pile, [(column, allele)]): the alleles of unmatched haplotype i that no slot-holding haplotype of its option copies
+    carries, on the pile where i has the most of them (the first such pile on a tie)."""
+    best = (None, [])
+    for cid, hp in merged[i]["hap"].items():
+        holders = [merged[j]["hap"][cid] for j in match if match[j] is not None and j != i
+                   and cid in merged[j]["hap"] and cid in options[i]]
+        priv = [(col, b) for col, b in hp.items() if all(h.get(col) != b for h in holders)]
+        if best[0] is None or len(priv) > len(best[1]):
+            best = (cid, priv)
+    return best
+
+
 def private_alleles(i, merged, match, options):
     """Alleles of unmatched haplotype i that no slot-holding haplotype of its option copies carries, counted per pile where
     i has a pattern (the largest count). A haplotype whose every allele some slot holder carries is a mosaic of them (a
     chimeric molecule), not sequence the reference copies cannot hold: an extra copy needs >= MIN_READS private alleles."""
-    best = 0
-    for cid, hp in merged[i]["hap"].items():
-        holders = [merged[j]["hap"][cid] for j in match if match[j] is not None and j != i
-                   and cid in merged[j]["hap"] and cid in options[i]]
-        best = max(best, sum(1 for col, b in hp.items() if all(h.get(col) != b for h in holders)))
-    return best
+    return len(private_detail(i, merged, match, options)[1])
 
 
 def divergence(h, ref):
@@ -483,11 +492,15 @@ def divergence(h, ref):
     return sum(h[c] != ref[c] for c in cols) / len(cols) if cols else 0.0
 
 
-def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir="."):
+def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None):
+    """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
+    the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
     span = {cid: (s, e) for cid, _, s, e in copies}
     chrom = {cid: ch for cid, ch, _, _ in copies}
     haps, per_copy, allhaps, cons, refs = [], {}, [], {}, {}
+    if dump is not None:
+        dump.update(family=fam, copies={c: {"pile": sorted(p)} for c, p in piles.items()}, clusters=[], merged=[])
     for cid, pile in piles.items():
         if len(pile) < 2 * MIN_READS:
             continue
@@ -502,6 +515,10 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
             allhaps.append((cid, len(c), hs[i]))
         for i in keep:
             haps.append((cid, clusters[i], steps, divergence(hs[i], ref), hs[i]))
+        if dump is not None:
+            dump["copies"][cid]["columns"] = len(top)
+            dump["clusters"] += [{"copy": cid, "reads": sorted(c), "hap": {str(k): v for k, v in hs[i].items()},
+                                  "ref": {str(k): ref[k] for k in hs[i]}, "kept": i in keep} for i, c in enumerate(clusters)]
     # one haplotype found in several piles (tied reads) is one haplotype: merge by read overlap (>= half of the smaller)
     merged = []
     for cid, reads_h, steps, dv, hp in sorted(haps, key=lambda x: (-len(x[1]), x[0])):
@@ -518,11 +535,12 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         options[i] = sorted(c for c, p in piles.items() if len(m["reads"] & p.keys()) * 2 >= len(m["reads"]))
     # DADA2's rule before the slots: a duplicate of a more abundant haplotype shares its slot, a chimera (left part one parent,
     # right part another) needs none; a haplotype equal to copy Z's reference sequence is Z's allele (Z becomes an option)
-    maps_of, why = {}, collections.Counter()
+    maps_of, why, fate = {}, collections.Counter(), {}
     demand = []
     for i, m in enumerate(merged):
         if len(m["reads"]) < MIN_SUPPORT:
             why["below the floor"] += 1
+            fate[i] = ("below the floor", None)
             continue
         home = max(m["hap"], key=lambda c: (len(m["reads"] & piles[c].keys()), c))
         hp = m["hap"][home]
@@ -556,14 +574,17 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         if ex is None:
             demand.append(i)
             why["unexplained"] += 1
+            fate[i] = ("unexplained", None)
         elif ex[0] == "single" and ex[1].startswith("ref:"):
             z = ex[1][4:]
             if z not in options[i] and z in piles:
                 options[i] = sorted(options[i] + [z])
             demand.append(i)
             why["equals a reference copy"] += 1
+            fate[i] = ("equals a reference copy", z)
         else:
             why["duplicate" if ex[0] == "single" else "chimera"] += 1
+            fate[i] = ("duplicate" if ex[0] == "single" else "chimera", ex[1])
     capacity = {c: 2 for c in piles}
     if slot_order == "support":
         order = sorted(demand, key=lambda i: (-len(merged[i]["reads"]), merged[i]["div"], i))
@@ -575,8 +596,18 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         m = merged[i]
         if match[i] is None and private_alleles(i, merged, match, options) >= MIN_READS:
             home = max(m["piles"], key=lambda c: (len(m["reads"] & piles[c].keys()), c))
-            _, steps = observations({r: piles[home][r] for r in m["reads"] if r in piles[home]}, prim, span[home])
+            # sorted: the consensus breaks a tie by read order, which must not follow the process's string-hash order
+            _, steps = observations({r: piles[home][r] for r in sorted(m["reads"]) if r in piles[home]}, prim, span[home])
             certified.append((home, m["reads"], consensus(steps)))
+    if dump is not None:
+        for i, m in enumerate(merged):
+            row = {"reads": sorted(m["reads"]), "piles": sorted(m["piles"]), "div": m["div"], "options": options[i],
+                   "fate": fate[i][0], "by": fate[i][1], "slot": match.get(i) if i in demand else None,
+                   "certified": any(rs is m["reads"] for _, rs, _ in certified)}
+            if i in demand and match[i] is None:
+                cid, priv = private_detail(i, merged, match, options)
+                row["private"] = [(cid, col, b, genome.fetch(chrom[cid], col, col + 1).upper()) for col, b in priv]
+            dump["merged"].append(row)
     return certified, per_copy, len(merged), why
 
 
@@ -622,6 +653,7 @@ def cmd_run(a):
     import os
     import tempfile
     tmpdir = tempfile.mkdtemp(dir=os.path.dirname(os.path.abspath(a.out)))
+    dump_fh = open(a.dump, "w") if a.dump else None
     with open(f"{a.out}.candidates.tsv", "w") as ct, open(f"{a.out}.contigs.fa", "w") as cf, \
             open(f"{a.out}.clusters.tsv", "w") as cl, open(f"{a.out}.reads.tsv", "w") as rd, \
             open(f"{a.out}.families.tsv", "w") as ft:
@@ -631,7 +663,11 @@ def cmd_run(a):
         ft.write("family\tn_net\tn_used\tpiles\tpile_reads\tclusters\tconflicting\thaplotypes\tcertified\n")
         for fam in sorted(net):
             reads = net[fam]
-            certified, per_copy, n_h, why = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order, tmpdir)
+            dump = {} if dump_fh else None
+            certified, per_copy, n_h, why = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order, tmpdir, dump)
+            if dump_fh:
+                dump["isocon"] = [{"candidate": c, "reads": sorted(rs)} for c, rs, _ in iso.get(fam, [])]
+                dump_fh.write(json.dumps(dump) + "\n")
             certified = certified + [(f"isocon:{c}", rs, seq) for c, rs, seq in iso.get(fam, [])]
             ft.write(f"{fam}\t{n_net[fam]}\t{len(reads)}\t{len(per_copy)}\t{sum(v[0] for v in per_copy.values())}\t"
                      f"{sum(v[1] for v in per_copy.values())}\t{sum(v[2] for v in per_copy.values())}\t{n_h}\t{len(certified)}\n")
@@ -658,6 +694,8 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--slot-order", choices=["divergence", "support"], default="divergence")
     r.add_argument("--isocon", default="", help="the stage's product prefix (candidate_copies) for the IsoCon side")
+    r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
+                   "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
     cmd_run(a)
 

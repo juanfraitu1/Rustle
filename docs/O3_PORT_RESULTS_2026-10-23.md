@@ -64,3 +64,55 @@
    - Deleted copies whose reads tie to a survivor with a free slot.
    - The 31 of 53 deleted copies whose reads never touch a survivor. Those depend on the IsoCon side, and that side is only as
      sensitive as the stage's reference-free clusters.
+
+## Reported, not decided (the pre-registration's list; computed after the verdict, verdict unchanged)
+Source: `o3port.py run --dump` (internal states as JSON lines; the products do not change: P2 and the P3 flagged families
+reproduce byte for byte). Work dir `/mnt/linuxdisk/tmp/rna_allele/p16`.
+- **Runtime** (one Python process): P1 193 s / 1.74 GB peak, P2 222 s / 1.80 GB (53 families each); HG002 SPDYE1 14 s on the
+  stage's 1,000-read net, 47 s / 1.07 GB on its whole 3,200-read net.
+- **Editing.** No certified flag depends on an A>G / T>C column: without them every certified haplotype still has >= 2 private
+  alleles (P1 14 of 14, P3 5 of 5 Strainy-side flags). Editing-type alleles are 9-40% of the private alleles, as expected for transitions.
+- **Per-copy haplotype count in the control (P2) against mat / pat** (`control/copies_lift.tsv`; slot holders the port assigns
+  per copy, all 201 copies have a pile):
+
+  | truth | 0 holders | 1 | 2 |
+  |---|---|---|---|
+  | T2d (alleles differ), 174 copies | 27 | 47 | 100 |
+  | T2i (alleles identical), 24 | 13 | 10 | 1 |
+  | T1-candidate (one haplotype only), 1 | 0 | 1 | 0 |
+  | T? , 2 | 0 | 1 | 1 |
+
+  The port separates the two alleles of 100 of 174 heterozygous copies (median 35 exonic differences between them; merged ones
+  median 19) and over-splits 1 of 24 homozygous copies.
+- **HG002 SPDYE1 (development case, human).** The hidden copy's 99 reads (pilot §4) are all in the stage's net, but only 37 are in
+  its 1,000-read sample. **The port does not certify the hidden copy:**
+  - on the stage's net, 13 of the 37 sit in a 29-read cluster outside the conflicting set and 5 in a 22-read haplotype the DADA2
+    rule calls a chimera;
+  - on the whole net (report-only), 39 of the 99 form a 94-read haplotype the rule calls a join of another haplotype and
+    SPDYE1.18's reference: the copy is a mosaic of the donor's own alleles (pilot §4: "separable only by linkage across
+    columns"), which is exactly what a chimera looks like. A different 99-read haplotype on SPDYE1.20 is certified (0
+    insertion reads; unverified).
+- **Reproducibility fix.** The consensus broke 50/50 ties by Python's per-process string-hash order (2 of 29 P1 contigs differed
+  by 1-2 bases between runs; read sets and certificates unaffected). Reads are now taken in sorted order; checked across hash
+  seeds.
+
+## Where the port loses deleted-copy reads (P1 development data, post hoc)
+The furthest stage each of the 6,414 used D reads reaches, and how many of them sit in the shipped stage K's flagged candidates:
+
+| stage | D reads | in K's flags |
+|---|---|---|
+| no pile (best alignment > 10 AS off every copy, or no record on a copy) | 2,265 | 2,154 |
+| in a pile, no cluster (cover no informative column) | 1,222 | 433 |
+| cluster outside the conflicting set | 399 | 361 |
+| merged away / below 6 reads / duplicate / chimera | 154 | 115 |
+| took a free allele slot (Theorem A) | 1,343 | 1,190 |
+| certified | 1,031 | 988 |
+
+- **No pile.** 976 of the 2,265 have no record on a copy (via B); the IsoCon side holds 752 of them. The other 1,289 align
+  better elsewhere. The IsoCon side's v4 rule (members >= half via B) does not reach them; a rule on the actual piles (members
+  >= half in no pile) would hold 2,109 D reads on P1 (v4: 804) with the same 5 S reads, and adds no flag on P2.
+- **Free slots.** 10 deleted copies' haplotypes took a slot on a survivor, 9 of them on survivors whose own alleles differ
+  (T2d) but were not separated. Divergence does not rescue them: the deleted-copy haplotype differs from the survivor's at
+  a median of 27 informative columns (3-232), but true allele pairs reach 36 (P2) and 99 (P1 survivors), and some copies'
+  mat / pat alleles differ at 150-240 exonic sites. RNA cannot tell an allele from an extra copy here (Theorem A).
+- **No cluster.** In GWFAM401 all 275 D reads cover only columns no survivor read covers: no variation to phase against.
