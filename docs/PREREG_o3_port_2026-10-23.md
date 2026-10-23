@@ -68,3 +68,8 @@ port can replace the stage on equal terms.
 - **P2 (v4): 0 flags in 0 / 53 families: PASSES** (K: 10 / 53).
 - **Verdict so far: "detects but not sensitive", not adopted** (pre-registered reading of a P1 failure). P3 is run once on the
   frozen code to record held-out specificity (H1 / H3); it cannot change the verdict.
+- **P3 (frozen 1b4535cc, run once, harness ACC=a15h A=p15h):** 6 flags in 4 / 30 families.
+  - **H1 3 / 30, PASSES** (<= 4). Classes: 1 a_haplotype_only (GWFAM390, 8 reads, maternal-only locus, identity 1.0000),
+    3 b_allele, 2 c_unmatched.
+  - **H3 178 / 27,757 = 0.64%, HOLDS** (<= 5%). 362 reads go to their own candidate.
+- **FINAL: P1 fails, P2 and P3 pass. Not adopted ("detects but not sensitive").** Register row added.
