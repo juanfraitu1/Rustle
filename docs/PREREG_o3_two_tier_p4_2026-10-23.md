@@ -52,3 +52,8 @@
   - the stage arm's own D right among the attainable reads, and its false moves on P4d.
 - **Per deleted copy:** caught by tier 1, by tier 2 only, or by neither.
 - **Also:** a per-family table, and the runtime.
+
+## Not run (2026-10-23, the same day)
+The user stopped the build before any P4 data was scored: "I think this might be overly complicating, can we somehow only focus on
+one erased copy? We could even simulate it so it's clean". Only the panel draw, the masked genome and the scored reads were made
+(`/mnt/linuxdisk/tmp/rna_allele/p4`). Nothing was aligned or scored. The work moved to `docs/O3_ONE_COPY_SIM_2026-10-23.md`.
