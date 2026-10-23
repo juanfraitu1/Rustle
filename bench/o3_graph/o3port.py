@@ -458,6 +458,23 @@ def b_matching(options, capacity, order=None):
     return match
 
 
+def forced_edges(options, capacity, match, order):
+    """O2 (milestone 3, 2026-10-23): {haplotype: copy} for the matched edges present in every maximum b-matching. An edge (i, X) is
+    forced when the maximum matching without it is smaller: no reshuffling of the slots can place i elsewhere and keep every
+    other haplotype placed."""
+    size = sum(1 for v in match.values() if v is not None)
+    out = {}
+    for i, X in match.items():
+        if X is None:
+            continue
+        opt = dict(options)
+        opt[i] = [c for c in options[i] if c != X]
+        alt = b_matching(opt, capacity, order)
+        if sum(1 for v in alt.values() if v is not None) < size:
+            out[i] = X
+    return out
+
+
 def consensus(alignments):
     """alignments: {read: [(ref_pos, base or '-', inserted string)]} on one copy. The majority at every position >= MIN_READS
     of them cover (a base, or '-' for a deletion), followed by the majority insertion when most of the covering reads carry
@@ -808,6 +825,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     else:
         order = sorted(demand, key=lambda i: (merged[i]["div"], -len(merged[i]["reads"]), i))
     match = b_matching({i: options[i] for i in demand}, capacity, order)
+    forced = forced_edges({i: options[i] for i in demand}, capacity, match, order)
     certified = []
     n_piles = collections.Counter(r for p in piles.values() for r in p)
     usage = {c: junction_usage(piles[c]) for c in per_copy}
@@ -840,7 +858,24 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
                 row["private"] = [(cid, col, b, genome.fetch(chrom[cid], col, col + 1).upper()) for col, b in priv]
             dump["merged"].append(row)
     piled = set().union(*(set(piles[c]) for c in per_copy)) if per_copy else set()
-    return certified, per_copy, len(merged), why, piled, looks
+    # O2: each AS-tied read (in >= 2 piles) goes to its haplotype's forced copy, or to the certified copy it belongs to; else abstain
+    n_in = collections.Counter(r for p in piles.values() for r in p)
+    home_of = {}
+    for i in demand:
+        for r in merged[i]["reads"]:
+            home_of.setdefault(r, i)
+    cert_reads = {r: k for k, (_, rs, _) in enumerate(certified) for r in rs}
+    o2 = []
+    for r, k in n_in.items():
+        if k < 2:
+            continue
+        if r in cert_reads:
+            o2.append((r, f"new:{cert_reads[r]}", k))
+        elif r in home_of and home_of[r] in forced:
+            o2.append((r, forced[home_of[r]], k))
+        else:
+            o2.append((r, "ABSTAIN", k))
+    return certified, per_copy, len(merged), why, piled, looks, o2
 
 
 def isocon_side(prefix, net_path):
@@ -908,12 +943,16 @@ def cmd_run(a):
         lo = open(f"{a.out}.loci.tsv", "w")
         lh.write("family\tcandidate\tcopy\tn_reads\tmulti\tother_holders_multi\tconsensus_len\n")
         lo.write("family\tlocus\tn_reads\tnear_best\tweaker_only\n")
+        o2f = open(f"{a.out}.o2.tsv", "w")
+        o2f.write("family\tread\tassigned\tn_piles\n")
         for fam in sorted(net):
             reads = net[fam]
             dump = {} if dump_fh else None
-            certified, per_copy, n_h, why, piled, looks = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order,
+            certified, per_copy, n_h, why, piled, looks, o2 = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order,
                                                                      tmpdir, dump, a.absorb, not a.v5_clique, a.clusterer,
                                                                      not a.no_structure)
+            for r, c, k in sorted(o2):
+                o2f.write(f"{fam}\t{r}\t{c}\t{k}\n")
             for k, (X, rs, seq, mi, mc) in enumerate(looks):
                 lh.write(f"{fam}\tputative_{fam}_{k}\t{X}\t{len(rs)}\t{mi:.3f}\t{','.join(f'{x:.3f}' for x in mc)}\t{len(seq)}\n")
                 lf.write(f">putative_{fam}_{k}\n{seq}\n")
@@ -939,7 +978,7 @@ def cmd_run(a):
                     rd.write(f"{r}\t{fam}\t{fam}:h{k}\n")
             print(f"[o3port] {fam}: reads {len(reads)}, piles {len(per_copy)}, haplotypes {n_h} {dict(why)}, "
                   f"certified {len(certified)}, putative {len(looks)}", file=sys.stderr, flush=True)
-        for fh in (lh, lf, lo):
+        for fh in (lh, lf, lo, o2f):
             fh.close()
 
 

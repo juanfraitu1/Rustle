@@ -192,3 +192,15 @@ def test_putative_structure_flags_a_one_survivor_family():
     assert P.putative_copies([0, 1], match, reads_of, n_piles) == []
     got = P.putative_copies([0, 1], match, reads_of, n_piles, foreign=lambda i, X, co: i == 1)
     assert [(i, c) for i, c, _, _ in got] == [(1, "X")]
+
+
+def test_forced_edges():
+    # 0 can only go to X; 1 can go to X or Y; X has 1 slot -> 0 forced to X, 1 forced to Y
+    opt = {0: ["X"], 1: ["X", "Y"]}
+    cap = {"X": 1, "Y": 1}
+    m = P.b_matching(opt, cap, [0, 1])
+    assert P.forced_edges(opt, cap, m, [0, 1]) == {0: "X", 1: "Y"}
+    # two free slots each: 1 is not forced
+    cap = {"X": 2, "Y": 2}
+    m = P.b_matching(opt, cap, [0, 1])
+    assert P.forced_edges(opt, cap, m, [0, 1]) == {0: "X"}
