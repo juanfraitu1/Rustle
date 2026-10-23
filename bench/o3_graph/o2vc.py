@@ -53,24 +53,34 @@ read both hold), --mode none (DAZ: no truth exists) takes none and says nothing 
 OUTDIR/score[.PANEL[.FOCUS]].json and, for every family scored (a --exclude family too, apart), <family>.case.tsv and
 <family>.summary.md.
 - Arms, all on the same reads. N1 = calls.tsv's minimap2: always a placement, so a primary on no copy or outside the tied copies
-  is a wrong placement on a decidable read; N2 = N1 at mapq >= 1, else it abstains; N3 = n3; N4 = the corrector's pick (--n4; N1
-  for a read it does not hold); VC = vc. Only a non-empty vc / n3 is a placement: an empty set (a beat cycle) and a flagged read
-  abstain.
-- Decidable (donor): class unique or unique_elsewhere, and the truth copy one of the tied copies. Per arm over ALL decidable
-  reads: placed, right, wrong, abstained; fixes (placed right, N1 wrong), breaks (placed wrong, N1 right), both_wrong (placed
-  wrong, N1 wrong, on the same copy or not; so placed = both right + fixes + breaks + both_wrong, and N1's own three are against
-  itself). Precision is wrong / placed, always with both counts. Reads of another class are counted, never scored; the VC
-  placements among them are listed (vc.not_decidable) so that the arm table cannot hide them.
+  is a wrong placement unless it is the truth copy; N2 = N1 at mapq >= 1, else it abstains; N3 = n3; N4 = the corrector's pick
+  (--n4; N1 for a read it does not hold, and how many tied reads it holds is reported: n4_held); VC = vc. Only a non-empty vc /
+  n3 is a placement: an empty set (a beat cycle) and a flagged read abstain.
+- Scored reads (donor; the amended spec, 2026-10-22): the tied reads of class unique, unique_elsewhere, elsewhere or
+  no_counterpart. A placement is right only when the placed copy is the read's truth copy, which only unique and
+  unique_elsewhere reads have; every other placement on a scored read is wrong -- a truth copy outside the tied copies, an
+  elsewhere read, a no_counterpart read. Per arm over ALL scored reads, the same for every arm: placed, right, wrong,
+  abstained; fixes (placed right, N1 wrong), breaks (placed wrong, N1 right: minimap2's primary can be the truth copy outside
+  the tied set, and VC moves it), both_wrong (placed wrong, N1 wrong, on the same copy or not; so placed = both right + fixes +
+  breaks + both_wrong, and N1's own three are against itself). Precision is wrong / placed, always with both counts. The
+  decidable subset (the truth copy is one of the tied copies, the earlier registers' reads) is reported beside it (decidable).
+  Not scored: own_tie (K1 only), poor_match, unmapped and reads with no truth row, counted only; the VC placements among them
+  are listed (vc.not_scored) so that the arm table cannot hide them.
 - Calibration (donor): K1 = own_tie reads VC places, over the own_tie reads; K2 = flagged reads over the reads whose class has a
-  copy in the reference (unique, unique_elsewhere, own_tie); C1 = flags holding >= 2 no_counterpart reads; D2 = decidable reads
-  N1 places right that VC moves or flags. The same numbers are kept per family and pooled over the families not in --exclude.
+  copy in the reference (unique, unique_elsewhere, own_tie); C1 = flags holding >= 2 no_counterpart reads; D2 = scored reads N1
+  places right that VC moves or flags. The same numbers are kept per family and pooled over the families not in --exclude.
 - Bars: A (--focus family: A1 VC wrong/placed <= 2%, A2 fixes >= 10, A3 VC fixes > N3 fixes; pooled: K1 <= 2%, K2 <= 2%),
-  C (C1 >= 1), E (pooled: E1 wrong/placed <= 2%, E2 fixes > breaks, K2 <= 2%). Ratios are compared exactly; a bar with nothing
-  to measure (denominator 0) is null and does not pass. The verdict of a panel is PASS when every bar of it passes.
+  C (C1 >= 1), E (pooled: E1 wrong/placed <= 2%, E2 fixes > breaks, K2 <= 2%), all over the scored reads. Ratios are compared
+  exactly. A bar with nothing to measure is not evaluable (pass null, with a reason): a zero denominator, no no_counterpart
+  tied read for C1, no scored read on the focus family for A2 and A3, no VC placement of a scored read for E2. The verdict of a
+  panel is FAIL when a bar failed, else UNDERPOWERED when a bar was not evaluable, else PASS. --focus belongs to --panel A and
+  must be a family of the run.
 - Not built (deferred with panels D and C-gorilla): --mode world and units, --panel D and Cg, score-worlds.
-- The summary: the arm table; the VC placements resting on one column (vc_cols == 1), whose read has an erased_ref column, and
-  that depend on erased columns (VC places, N3 abstains or places elsewhere, and the read has one); each fix with its evidence()
-  and whether AS (max), NM (min) or subs (min) alone picks the truth (a tie is no pick, as o2tags.pick); three worked reads.
+- The summary and the case file record the score options (mode, truth files, --n4, --panel, --focus, --exclude). The summary:
+  the arm table; the VC placements resting on one column (vc_cols == 1), whose read has an erased_ref column, and that depend
+  on erased columns (VC places, N3 abstains or places elsewhere, and the read has one) -- a column counts only when its base
+  can vote (quality >= MIN_BASEQ), as it does for a fix's evidence(); each fix with its evidence() and whether AS (max), NM
+  (min) or subs (min) alone picks the truth (a tie is no pick, as o2tags.pick); three worked reads.
 """
 import bisect
 import collections
@@ -485,8 +495,9 @@ def cmd_run(bam_p, copies_p, genome_p, out_dir, families=None, exclude_chrM=Fals
 ARMS = ("N1", "N2", "N3", "N4", "VC")
 ARM_NAME = dict(N1="minimap2", N2="minimap2 at MAPQ >= 1", N3="reference only", N4="corrector", VC="variant calls")
 MODES, PANELS = ("donor", "none"), ("A", "C", "E")              # world / units modes and the D, Cg panels are deferred
-DECIDABLE = ("unique", "unique_elsewhere")                      # classes whose truth names one copy of the reference
-PRESENT = DECIDABLE + ("own_tie",)                              # classes whose copy the reference holds (K2)
+HAS_COPY = ("unique", "unique_elsewhere")                       # classes whose truth names one copy of the reference
+SCORED = HAS_COPY + ("elsewhere", "no_counterpart")             # a definite truth: a copy, or none (every placement is wrong)
+PRESENT = HAS_COPY + ("own_tie",)                               # classes whose copy the reference holds (K2)
 NO_TRUTH = "no_truth_row"                                       # a tied read the truth tables do not hold
 OFF = "(off every copy)"                                        # N1's placement when minimap2's primary lies on no copy
 LIMIT = fractions.Fraction(2, 100)                              # the 2% of A1, E1, K1 and K2, compared exactly
@@ -534,22 +545,24 @@ def tag_picks(rows, truth):
 
 
 def outcome(r):
-    """VC's fate on a read, against minimap2's and the truth: flagged, abstain, placed (no placement truth to judge it against),
-    or for a decidable read fix, break, both right, both wrong."""
+    """VC's fate on a read, against minimap2's and the truth: flagged, abstain, placed (a read that is not scored: no truth to
+    judge it against), or for a scored read fix, break, both right, both wrong. A read with no truth copy (elsewhere,
+    no_counterpart) has `truth` None, so no placement is right and N1 is wrong: a placed one is both wrong."""
     vc, n1, t = r["place"]["VC"], r["place"]["N1"], r["truth"]
     if r["flag"]:
         return "flagged"
     if not vc:
         return "abstain"
-    if not r["decidable"]:
+    if not r["scored"]:
         return "placed"
     return ("both right" if n1 == t else "fix") if vc == t else ("break" if n1 == t else "both wrong")
 
 
 def load_reads(out_dir, truth, n4):
     """calls.tsv as records, sorted by (family, read). place: each arm's copy, "" when it abstains (a flagged read is not
-    placed, so a row holding both is inconsistent); cls / truth / decidable from the truth {read: (class, copy)}, None in
-    none mode."""
+    placed, so a row holding both is inconsistent); cls / truth from the truth {read: (class, copy)}, None in none mode.
+    scored: the class has a definite truth (unique, unique_elsewhere, elsewhere, no_counterpart); decidable: it is a class with
+    a truth copy and that copy is one of the tied copies (the subset earlier registers scored)."""
     recs, seen = [], set()
     for r in _tsv(os.path.join(out_dir, "calls.tsv"))[1]:
         q, cands, mm = r["read"], r["candidates"].split(","), r["minimap2"]
@@ -566,9 +579,11 @@ def load_reads(out_dir, truth, n4):
             place["N4"] = n4.get(q, n1)
         place["VC"] = r["vc"]
         cls, tc = (None, None) if truth is None else truth.get(q, (NO_TRUTH, None))
+        if cls in HAS_COPY and tc is None:
+            raise ValueError(f"{q}: class {cls}, but the truth table names no truth copy")
         recs.append(dict(read=q, family=r["family"], cands=cands, mm=mm, mapq=int(r["mapq"]), outside=r["outside"] == "1",
-                         place=place, flag=r["flag"], vc_cols=int(r["vc_cols"]), cls=cls, truth=tc,
-                         decidable=cls in DECIDABLE and tc in cands))
+                         place=place, flag=r["flag"], vc_cols=int(r["vc_cols"]), cls=cls, truth=tc, scored=cls in SCORED,
+                         decidable=cls in HAS_COPY and tc in cands, n4_held=n4 is not None and q in n4))
     recs.sort(key=lambda r: (r["family"], r["read"]))
     for r in recs:
         r["outcome"] = outcome(r)
@@ -589,7 +604,8 @@ def by_family(recs):
 
 def load_files(out_dir, fams):
     """Each record of `fams` ({family: records}) gets its reads.tsv rows (tags: {copy: row}) and the kinds of its columns.tsv
-    rows. Returns {family: Files}; a read in those files that calls.tsv lacks is an error."""
+    rows whose base can vote (quality >= R.MIN_BASEQ: the rest decide nothing, so they set neither the evidence of a fix nor
+    the erased counts). Returns {family: Files}; a read in those files that calls.tsv lacks is an error."""
     files = {}
     for f in fams:
         (rh, rrows), (ch, crows) = (_tsv(os.path.join(out_dir, f"{f}.{x}.tsv")) for x in ("reads", "columns"))
@@ -607,14 +623,16 @@ def load_files(out_dir, fams):
         files[f] = Files(rh, rrows, reads, ch, cols)
         for r in fams[f]:
             r["tags"] = {x["copy"]: x for x in reads[r["read"]]}
-            r["kinds"] = frozenset(x["kind"] for x in cols[r["read"]])
+            r["kinds"] = frozenset(x["kind"] for x in cols[r["read"]] if int(x["qual"]) >= R.MIN_BASEQ)
     return files
 
 
 def arm_counts(recs, arms):
-    """{arm: placed, right, wrong, abstained, fixes, breaks, both_wrong} over `recs` (the decidable reads). fixes: placed right
-    where N1 is wrong; breaks: placed wrong where N1 is right; both_wrong: placed wrong where N1 is wrong too (the same copy
-    or not)."""
+    """{arm: placed, right, wrong, abstained, fixes, breaks, both_wrong} over `recs` (scored reads, the same for every arm).
+    A placement is right only when it is the read's truth copy -- which a read with a truth copy outside the tied copies, an
+    elsewhere or a no_counterpart read never gets from a tied copy. fixes: placed right where N1 is wrong; breaks: placed wrong
+    where N1 is right (minimap2's primary may be the truth copy outside the tied set); both_wrong: placed wrong where N1 is
+    wrong too (the same copy or not)."""
     out = {}
     for a in arms:
         c = dict(placed=0, right=0, wrong=0, abstained=0, fixes=0, breaks=0, both_wrong=0)
@@ -658,36 +676,45 @@ def flag_table(recs, donor):
 def vc_groups(recs, donor):
     """VC's placements, and those resting on a single column (vc_cols == 1), whose read has an erased_ref column, and that depend
     on erased columns: VC places the read, N3 abstains or places it elsewhere, and the read has one. Each with, for a donor
-    truth, how many are decidable and right / wrong. not_decidable: the placements on reads with no placement truth, which the
-    arm table cannot see, by class (truth_not_tied: unique or unique_elsewhere, the truth copy not a tied copy)."""
+    truth, how many are on scored reads and right / wrong there (a placement is right only when it is the truth copy).
+    not_scored: the placements on reads that are not scored (own_tie, poor_match, unmapped, no truth row), which the arm table
+    cannot see, by class."""
     placed = [r for r in recs if r["place"]["VC"]]
 
     def group(pick):
         rows = [r for r in placed if pick(r)]
         g = dict(placements=len(rows))
         if donor:
-            dec = [r for r in rows if r["decidable"]]
-            right = sum(1 for r in dec if r["place"]["VC"] == r["truth"])
-            g.update(decidable=len(dec), right=right, wrong=len(dec) - right)
+            sc = [r for r in rows if r["scored"]]
+            right = sum(1 for r in sc if r["place"]["VC"] == r["truth"])
+            g.update(scored=len(sc), right=right, wrong=len(sc) - right)
         return g
 
     def erased(r):
         return "erased_ref" in r["kinds"]
     out = dict(placements=len(placed), single_column=group(lambda r: r["vc_cols"] == 1), erased_ref=group(erased),
                erased_dependent=group(lambda r: erased(r) and r["place"]["N3"] != r["place"]["VC"]))
-    if donor:                                                   # placements the arm table cannot see, by what the truth says
-        nd = collections.Counter("truth_not_tied" if r["cls"] in DECIDABLE else r["cls"] for r in placed if not r["decidable"])
-        out["not_decidable"] = dict(placements=sum(nd.values()), classes=dict(sorted(nd.items())))
+    if donor:
+        ns = collections.Counter(r["cls"] for r in placed if not r["scored"])
+        out["not_scored"] = dict(placements=sum(ns.values()), classes=dict(sorted(ns.items())))
     return out
 
 
 def fix_rows(recs):
-    """[(record, evidence, tag picks)] of the fixes (decidable reads VC places right where minimap2 is wrong), by read name."""
+    """[(record, evidence, tag picks)] of the fixes (scored reads VC places right where minimap2 is wrong), by read name."""
     return [(r, evidence(r["kinds"]), tag_picks(r["tags"], r["truth"])) for r in recs if r["outcome"] == "fix"]
 
 
+def precision(arms):
+    """{arm: wrong, placed, rate}: wrong / placed always with both counts (rate None when nothing is placed)."""
+    return {a: dict(wrong=c["wrong"], placed=c["placed"], rate=c["wrong"] / c["placed"] if c["placed"] else None)
+            for a, c in arms.items()}
+
+
 def block(recs, arms, donor):
-    """The score of one set of tied reads (a family, or the pooled families)."""
+    """The score of one set of tied reads (a family, or the pooled families). Donor: the arms are over the SCORED reads, for
+    every arm the same (class unique, unique_elsewhere, elsewhere or no_counterpart: a placement is right only when it is the
+    truth copy, wrong otherwise); `decidable` repeats them over the subset whose truth copy is one of the tied copies."""
     flags = flag_table(recs, donor)
     out = dict(tied=len(recs))
     if not donor:
@@ -695,63 +722,84 @@ def block(recs, arms, donor):
         placed = {a: sum(1 for r in recs if r["place"][a]) for a in arms}
         out["arms"] = {a: dict(placed=placed[a], abstained=len(recs) - placed[a], flagged=n_flag) for a in arms}
         out.update(outside=dict(tied=sum(1 for r in recs if r["outside"])), vc=vc_groups(recs, False), flags=flags)
-        return out
-    dec = [r for r in recs if r["decidable"]]
-    outs = [r for r in dec if r["outside"]]
-    out.update(decidable=len(dec), truth_outside_candidates=sum(1 for r in recs if r["cls"] in DECIDABLE and not r["decidable"]))
-    out["arms"] = arm_counts(dec, arms)
-    out["precision"] = {a: dict(wrong=c["wrong"], placed=c["placed"], rate=c["wrong"] / c["placed"] if c["placed"] else None)
-                        for a, c in out["arms"].items()}
-    out["outside"] = dict(tied=sum(1 for r in recs if r["outside"]), decidable=len(outs), arms=arm_counts(outs, arms))
-    cls = {}
-    for r in recs:
-        c = cls.setdefault(r["cls"], dict(reads=0, placed=0, flagged=0))
-        c["reads"] += 1
-        c["placed"] += bool(r["place"]["VC"])
-        c["flagged"] += bool(r["flag"])
-    out["classes"] = dict(sorted(cls.items()))
-    tie, here = cls.get("own_tie", {}), [cls[c] for c in PRESENT if c in cls]
-    out["K1"] = dict(reads=tie.get("reads", 0), placed=tie.get("placed", 0))
-    out["K2"] = dict(reads=sum(c["reads"] for c in here), flagged=sum(c["flagged"] for c in here))
-    right = [r for r in dec if r["place"]["N1"] == r["truth"]]
-    out["D2"] = dict(reads=len(right), moved=sum(1 for r in right if r["place"]["VC"] and r["place"]["VC"] != r["truth"]),
-                     flagged=sum(1 for r in right if r["flag"]))
-    out["C1"] = dict(flags=len(flags), counted=sum(1 for f in flags if f["classes"].get("no_counterpart", 0) >= 2))
-    out["vc"] = vc_groups(recs, True)
-    fixes = fix_rows(dec)
-    ev = collections.Counter(e for _, e, _ in fixes)
-    out["fixes"] = dict(reads=len(fixes), evidence={e: ev[e] for e in EVIDENCE},
-                        tags_alone=dict({k: sum(p[k] for _, _, p in fixes) for k in TAGS},
-                                        none=sum(1 for _, _, p in fixes if not any(p.values()))))
-    out["flags"] = flags
+    else:
+        scored = [r for r in recs if r["scored"]]
+        dec = [r for r in scored if r["decidable"]]
+        outs = [r for r in scored if r["outside"]]
+        out.update(scored=len(scored),
+                   truth_outside_candidates=sum(1 for r in scored if r["cls"] in HAS_COPY and not r["decidable"]))
+        out["arms"] = arm_counts(scored, arms)
+        out["precision"] = precision(out["arms"])
+        dec_arms = arm_counts(dec, arms)
+        out["decidable"] = dict(reads=len(dec), arms=dec_arms, precision=precision(dec_arms))
+        out["outside"] = dict(tied=sum(1 for r in recs if r["outside"]), scored=len(outs), arms=arm_counts(outs, arms))
+        cls = {}
+        for r in recs:
+            c = cls.setdefault(r["cls"], dict(reads=0, placed=0, flagged=0))
+            c["reads"] += 1
+            c["placed"] += bool(r["place"]["VC"])
+            c["flagged"] += bool(r["flag"])
+        out["classes"] = dict(sorted(cls.items()))
+        tie, here = cls.get("own_tie", {}), [cls[c] for c in PRESENT if c in cls]
+        out["K1"] = dict(reads=tie.get("reads", 0), placed=tie.get("placed", 0))
+        out["K2"] = dict(reads=sum(c["reads"] for c in here), flagged=sum(c["flagged"] for c in here))
+        right = [r for r in scored if r["place"]["N1"] == r["truth"]]
+        out["D2"] = dict(reads=len(right), moved=sum(1 for r in right if r["place"]["VC"] and r["place"]["VC"] != r["truth"]),
+                         flagged=sum(1 for r in right if r["flag"]))
+        out["C1"] = dict(flags=len(flags), counted=sum(1 for f in flags if f["classes"].get("no_counterpart", 0) >= 2))
+        out["vc"] = vc_groups(recs, True)
+        fixes = fix_rows(scored)
+        ev = collections.Counter(e for _, e, _ in fixes)
+        out["fixes"] = dict(reads=len(fixes), evidence={e: ev[e] for e in EVIDENCE},
+                            tags_alone=dict({k: sum(p[k] for _, _, p in fixes) for k in TAGS},
+                                            none=sum(1 for _, _, p in fixes if not any(p.values()))))
+        out["flags"] = flags
+    if "N4" in arms:                                            # how many tied reads the corrector holds; N1 stands in for the rest
+        out["n4_held"] = sum(1 for r in recs if r["n4_held"])
     return out
 
 
-def ratio_bar(num, den):
-    """A bar of the form num / den <= 2%: null (not passed) when there is nothing to measure."""
-    return {"value": num / den if den else None, "num": num, "den": den, "limit": float(LIMIT), "op": "<=",
-            "pass": fractions.Fraction(num, den) <= LIMIT if den else None}
+def ratio_bar(num, den, why):
+    """A bar of the form num / den <= 2%. With nothing to measure (den 0) it is not evaluable: pass None, and `why` says why."""
+    b = {"value": num / den if den else None, "num": num, "den": den, "limit": float(LIMIT), "op": "<=",
+         "pass": fractions.Fraction(num, den) <= LIMIT if den else None}
+    return b if den else dict(b, reason=why)
 
 
-def count_bar(value, op, limit):
-    return {"value": value, "limit": limit, "op": op, "pass": value >= limit if op == ">=" else value > limit}
+def count_bar(value, op, limit, why=None):
+    """A bar of the form value >= limit (or value > limit). `why`, when given, says there is nothing to measure: the bar is not
+    evaluable and passes None."""
+    b = {"value": value, "limit": limit, "op": op, "pass": None if why else value >= limit if op == ">=" else value > limit}
+    return dict(b, reason=why) if why else b
 
 
 def panel_bars(panel, pooled, focus):
-    """The bars of a panel from the pooled score and the focus family's (A1-A3 are the focus family's alone)."""
+    """The bars of a panel from the pooled score and the focus family's (A1-A3 are the focus family's alone), all over the
+    scored reads. A bar with nothing to measure is not evaluable: a zero denominator, no no_counterpart tied read for C1, no
+    scored read on the focus family for A2 and A3, no VC placement of a scored read for E2."""
     if panel == "A":
-        a = focus["arms"]
-        return {"A1": ratio_bar(a["VC"]["wrong"], a["VC"]["placed"]), "A2": count_bar(a["VC"]["fixes"], ">=", MIN_FIXES),
-                "A3": count_bar(a["VC"]["fixes"], ">", a["N3"]["fixes"]),
-                "K1": ratio_bar(pooled["K1"]["placed"], pooled["K1"]["reads"]),
-                "K2": ratio_bar(pooled["K2"]["flagged"], pooled["K2"]["reads"])}
+        a, n3 = focus["arms"]["VC"], focus["arms"]["N3"]
+        bare = None if focus["scored"] else "the focus family has no scored read"
+        return {"A1": ratio_bar(a["wrong"], a["placed"], "VC placed no scored read of the focus family"),
+                "A2": count_bar(a["fixes"], ">=", MIN_FIXES, bare), "A3": count_bar(a["fixes"], ">", n3["fixes"], bare),
+                "K1": ratio_bar(pooled["K1"]["placed"], pooled["K1"]["reads"], "no own_tie read"),
+                "K2": ratio_bar(pooled["K2"]["flagged"], pooled["K2"]["reads"], "no read with a present copy")}
     if panel == "C":
-        return {"C1": count_bar(pooled["C1"]["counted"], ">=", 1)}
+        bare = None if pooled["classes"].get("no_counterpart", {}).get("reads") else "no no_counterpart tied read in the pool"
+        return {"C1": count_bar(pooled["C1"]["counted"], ">=", 1, bare)}
     if panel == "E":
         a = pooled["arms"]["VC"]
-        return {"E1": ratio_bar(a["wrong"], a["placed"]), "E2": count_bar(a["fixes"], ">", a["breaks"]),
-                "K2": ratio_bar(pooled["K2"]["flagged"], pooled["K2"]["reads"])}
+        none_placed = "VC placed no scored read"
+        return {"E1": ratio_bar(a["wrong"], a["placed"], none_placed),
+                "E2": count_bar(a["fixes"], ">", a["breaks"], None if a["placed"] else none_placed),
+                "K2": ratio_bar(pooled["K2"]["flagged"], pooled["K2"]["reads"], "no read with a present copy")}
     return {}
+
+
+def verdict_of(bars):
+    """FAIL when any bar failed on evidence; else UNDERPOWERED when any bar had nothing to measure; else PASS."""
+    passes = [b["pass"] for b in bars.values()]
+    return "FAIL" if any(p is False for p in passes) else "UNDERPOWERED" if any(p is None for p in passes) else "PASS"
 
 
 def _ratio(num, den):
@@ -759,9 +807,9 @@ def _ratio(num, den):
 
 
 def _group(g, of):
-    """"k of n" for a vc_groups() group, with its decidable placements' right / wrong when there is a truth."""
-    return f"{g['placements']} of {of}" + (f" (decidable {g['decidable']}: {g['right']} right, {g['wrong']} wrong)"
-                                           if "decidable" in g else "")
+    """"k of n" for a vc_groups() group, with the right / wrong of its placements on scored reads when there is a truth."""
+    return f"{g['placements']} of {of}" + (f" (scored {g['scored']}: {g['right']} right, {g['wrong']} wrong)"
+                                           if "scored" in g else "")
 
 
 def arm_table(arms, donor):
@@ -799,38 +847,50 @@ def worked(label, r, files, donor):
     return lines + (["columns.tsv rows:", ""] + _fenced(files.ch, cols) if cols else ["columns.tsv rows: none.", ""])
 
 
-LEGEND = ("Every arm is counted on the same decidable reads. Fixes: placed right where N1 is wrong. Breaks: placed wrong where "
-          "N1 is right. Both wrong: placed wrong where N1 is wrong too, on the same copy or not (N1's own cells are against "
-          "itself). N1 always places: a primary on no copy is a wrong placement. Wrong / placed is each arm's precision on its "
-          "own placements, so it is not comparable between arms that place different reads; compare arms by fixes and breaks.")
+LEGEND = ("Every arm is counted on the same scored reads. A placement is right only when it is the read's truth copy; every other "
+          "placement on a scored read is wrong -- a truth copy outside the tied copies, an elsewhere read, a no_counterpart read. "
+          "Fixes: placed right where N1 is wrong. Breaks: placed wrong where N1 is right (N1's primary can be the truth copy "
+          "outside the tied copies). Both wrong: placed wrong where N1 is wrong too, on the same copy or not (N1's own cells are "
+          "against itself). N1 always places: a primary on no copy is a wrong placement. Wrong / placed is each arm's precision on "
+          "its own placements, so it is not comparable between arms that place different reads; compare arms by fixes and breaks.")
 
 
-def head_lines(b, donor):
-    """The opening of a summary: what was scored, the arm table, and the primaries outside the tied copies in a row of their own."""
+def head_lines(b, donor, opts):
+    """The opening of a summary: what was scored and with which options, the arm table, the primaries outside the tied copies in
+    a row of their own, and for a donor truth the decidable subset (earlier registers' definition)."""
     o = b["outside"]
+    n4 = []
+    if "n4_held" in b:
+        n4 = [f"N4: the corrector holds {b['n4_held']} of {b['tied']} tied reads of this family; the others are N1's.", ""]
     if not donor:
-        return [f"No truth was read. {b['tied']} tied reads; {o['tied']} have a minimap2 primary outside the tied copies.", "",
-                "## Arms on the tied reads", ""] + arm_table(b["arms"], False) + [
+        return [f"No truth was read. {b['tied']} tied reads; {o['tied']} have a minimap2 primary outside the tied copies.",
+                f"Score options: {opts}", "", "## Arms on the tied reads", ""] + arm_table(b["arms"], False) + [
                 "", "Flagged is a property of the read (a possible missing copy), the same for every arm; VC does not place "
-                "a flagged read.", ""]
-    classes = ", ".join(f"{k} {v['reads']}" for k, v in b["classes"].items())
-    L = [f"Scored against the donor's truth. {b['tied']} tied reads ({classes}); {b['decidable']} decidable (class unique or "
-         "unique_elsewhere, the truth copy one of the tied copies); "
-         f"{b['truth_outside_candidates']} more of those two classes have their truth copy outside the tied copies and are not "
-         "scored.", "", "## Arms on the decidable reads", ""] + arm_table(b["arms"], True) + ["", LEGEND, ""]
+                "a flagged read.", ""] + n4
+    cls = b["classes"]
+    every = ", ".join(f"{k} {v['reads']}" for k, v in cls.items())
+    scored = ", ".join(f"{k} {v['reads']}" for k, v in cls.items() if k in SCORED) or "none"
+    rest = ", ".join(f"{k} {v['reads']}" + (" (K1 only)" if k == "own_tie" else "") for k, v in cls.items() if k not in SCORED)
+    L = [f"Scored against the donor's truth. {b['tied']} tied reads ({every}).",
+         f"Scored: {b['scored']} ({scored}). Not scored: {rest or 'none'}.",
+         f"Scored reads whose truth copy is outside the tied copies: {b['truth_outside_candidates']} (VC cannot be right on them).",
+         f"Score options: {opts}", "", "## Arms on the scored reads", ""] + arm_table(b["arms"], True) + ["", LEGEND, ""] + n4
     L.append(f"Reads whose minimap2 primary lies outside the tied copies: {o['tied']} of {b['tied']} tied reads, "
-             f"{o['decidable']} decidable.")
-    return L + ([""] + arm_table(o["arms"], True) if o["decidable"] else []) + [""]
+             f"{o['scored']} scored.")
+    L += ([""] + arm_table(o["arms"], True) if o["scored"] else [])
+    d = b["decidable"]
+    return L + ["", f"Decidable subset (the truth copy is one of the tied copies; the definition of earlier registers): "
+                f"{d['reads']} reads.", ""] + arm_table(d["arms"], True) + [""]
 
 
 def vc_lines(b, donor):
     v = b["vc"]
     L = ["## VC placements", "", f"VC placed {v['placements']} of {b['tied']} tied reads."]
     if donor:
-        nd = v["not_decidable"]
-        by_class = ", ".join(f"{k} {n}" for k, n in nd["classes"].items()) or "none"
-        L.append("VC placements on reads with no placement truth, which the arm table cannot see: "
-                 f"{nd['placements']} ({by_class}).")
+        ns = v["not_scored"]
+        by_class = ", ".join(f"{k} {n}" for k, n in ns["classes"].items()) or "none"
+        L.append("VC placements on reads that are not scored, which the arm table cannot see: "
+                 f"{ns['placements']} ({by_class}).")
     return L + [f"- resting on a single column (`vc_cols == 1`): {_group(v['single_column'], v['placements'])}",
                 f"- whose read has an `erased_ref` column: {_group(v['erased_ref'], v['placements'])}",
                 "- depending on erased columns (VC places, N3 abstains or places elsewhere, and the read has an `erased_ref` "
@@ -858,16 +918,16 @@ def calibration_lines(b):
     L = ["## Calibration of this family", "",
          f"- K1: VC places {k1['placed']} of {k1['reads']} own_tie reads.",
          f"- K2: {k2['flagged']} of {k2['reads']} reads with a present copy are flagged.",
-         f"- D2: of {d2['reads']} decidable reads N1 places right, VC moves {d2['moved']} and flags {d2['flagged']}.",
+         f"- D2: of {d2['reads']} scored reads N1 places right, VC moves {d2['moved']} and flags {d2['flagged']}.",
          f"- C1: {c1['counted']} of {c1['flags']} flags hold >= 2 no_counterpart reads."]
     for x in b["flags"]:
         L.append(f"- flag {x['id']}: reads {x['reads']} (" + ", ".join(f"{k} {n}" for k, n in x["classes"].items()) + ")")
     return L + [""]
 
 
-def summary_text(f, recs, b, files, donor):
-    """<family>.summary.md for family f from its records and its block."""
-    L = [f"# {f}: O2 from the sample's variant calls", ""] + head_lines(b, donor) + vc_lines(b, donor)
+def summary_text(f, recs, b, files, donor, opts):
+    """<family>.summary.md for family f from its records and its block; opts: the score options, as options_text() writes them."""
+    L = [f"# {f}: O2 from the sample's variant calls", ""] + head_lines(b, donor, opts) + vc_lines(b, donor)
     if donor:
         L += fix_lines(b, recs) + calibration_lines(b)
 
@@ -880,18 +940,25 @@ def summary_text(f, recs, b, files, donor):
     return "\n".join(L)
 
 
-def write_family(out_dir, f, recs, b, files, donor):
-    """<family>.case.tsv (reads.tsv's rows, in its order, plus the decision, the truth and the outcome) and <family>.summary.md."""
+def options_text(mode, truth_ps, n4_p, panel, focus, exclude_p):
+    """The score options on one line (a path as it was given, "-" for an option not set), for the summary and the case file."""
+    return (f"mode={mode} truth={','.join(truth_ps) or '-'} n4={n4_p or '-'} panel={panel or '-'} focus={focus or '-'} "
+            f"exclude={exclude_p or '-'}")
+
+
+def write_family(out_dir, f, recs, b, files, donor, opts):
+    """<family>.case.tsv (reads.tsv's rows, in its order, plus the decision, the truth, the outcome and the score options -- a
+    column, so that the file stays a plain table) and <family>.summary.md."""
     by = {r["read"]: r for r in recs}
     rows = []
     for x in files.rrows:
         r = by[x["read"]]
         rows.append([x[k] for k in files.rh] + [r["place"]["VC"], r["place"]["N3"], r["flag"], (r["cls"] or "") if donor else "",
-                                                r["truth"] or "", r["outcome"]])
-    head = files.rh + ["vc", "n3", "flag", "truth_class", "truth", "vc_outcome"]
+                                                r["truth"] or "", r["outcome"], opts])
+    head = files.rh + ["vc", "n3", "flag", "truth_class", "truth", "vc_outcome", "score_options"]
     _write(os.path.join(out_dir, f"{f}.case.tsv"), " ".join(head), rows)
     with open(os.path.join(out_dir, f"{f}.summary.md"), "w") as fh:
-        fh.write(summary_text(f, recs, b, files, donor) + "\n")
+        fh.write(summary_text(f, recs, b, files, donor, opts) + "\n")
 
 
 def say(msg):
@@ -904,7 +971,7 @@ def report(s):
     what = s["mode"] + (f", panel {s['panel']}" if s["panel"] else "") + (f", focus {s['focus']}" if s["focus"] else "")
     excluded = f", excluded {len(s['excluded'])} ({', '.join(s['excluded'])})" if s["excluded"] else ""
     say(f"[o2vc] score {s['out_dir']} ({what}): families scored {len(s['families'])}{excluded}; {s['tied']} tied reads"
-        + (f", {s['decidable']} decidable" if donor else ""))
+        + (f", {s['scored']} scored" if donor else ""))
     for a, c in s["arms"].items():
         if not donor:
             say(f"    {a}: placed {c['placed']}, abstained {c['abstained']}, flagged {c['flagged']}")
@@ -912,20 +979,27 @@ def report(s):
         line = (f"    {a}: placed {c['placed']}, right {c['right']}, wrong {c['wrong']}, abstained {c['abstained']}; "
                 f"wrong/placed {_ratio(c['wrong'], c['placed'])}")
         say(line + ("" if a == "N1" else f"; fixes {c['fixes']}, breaks {c['breaks']}, both wrong {c['both_wrong']}"))
+    if "n4_held" in s:
+        say(f"    N4: the corrector holds {s['n4_held']} of {s['tied']} tied reads; the others are N1's")
+    if donor:
+        d = s["decidable"]
+        dv, dn = d["arms"]["VC"], d["arms"]["N1"]
+        say(f"    decidable subset ({d['reads']} reads): VC placed {dv['placed']}, right {dv['right']}, wrong {dv['wrong']}; "
+            f"N1 right {dn['right']}, wrong {dn['wrong']}")
     v = s["vc"]
     say(f"    VC placements {v['placements']}: single column {v['single_column']['placements']}, with an erased_ref column "
         f"{v['erased_ref']['placements']}, depending on erased columns {v['erased_dependent']['placements']}"
-        + (f"; on reads with no placement truth {v['not_decidable']['placements']}" if donor else ""))
+        + (f"; on reads that are not scored {v['not_scored']['placements']}" if donor else ""))
     if donor:
         o, vo = s["outside"], s["outside"]["arms"]["VC"]
-        say(f"    primary outside the tied copies: {o['tied']} tied reads, {o['decidable']} decidable; N1 right "
+        say(f"    primary outside the tied copies: {o['tied']} tied reads, {o['scored']} scored; N1 right "
             f"{o['arms']['N1']['right']}, VC places {vo['placed']} and is right on {vo['right']}")
         say(f"    K1: VC places {s['K1']['placed']} of {s['K1']['reads']} own_tie reads")
         say(f"    K2: {s['K2']['flagged']} of {s['K2']['reads']} reads with a present copy are flagged")
-        say(f"    D2: {s['D2']['reads']} decidable reads N1 places right; VC moves {s['D2']['moved']}, flags {s['D2']['flagged']}")
+        say(f"    D2: {s['D2']['reads']} scored reads N1 places right; VC moves {s['D2']['moved']}, flags {s['D2']['flagged']}")
         say(f"    C1: {s['C1']['counted']} of {s['C1']['flags']} flags hold >= 2 no_counterpart reads")
     for name, b in s["bars"].items():
-        verdict = {True: "PASS", False: "FAIL", None: "n/a (nothing to measure)"}[b["pass"]]
+        verdict = "PASS" if b["pass"] else "FAIL" if b["pass"] is False else f"not evaluable ({b['reason']})"
         measured = _ratio(b["num"], b["den"]) if "num" in b else str(b["value"])
         say(f"    bar {name}: {BAR_NAME[name]} {measured} {b['op']} {b['limit']}: {verdict}")
     if s["panel"]:
@@ -945,6 +1019,8 @@ def cmd_score(out_dir, truth_ps, mode, n4_p=None, panel=None, focus=None, exclud
         raise ValueError(f"--panel {panel} needs --mode donor: its bars are judged against truth")
     if panel == "A" and not focus:
         raise ValueError("--panel A needs --focus FAMILY")
+    if focus is not None and panel != "A":
+        raise ValueError(f"--focus {focus} belongs to --panel A (this is panel {panel})")
     donor = mode == "donor"
     excl = set()
     if exclude_p:
@@ -960,22 +1036,24 @@ def cmd_score(out_dir, truth_ps, mode, n4_p=None, panel=None, focus=None, exclud
     n4 = {r["read"]: r["corrector"] for r in _tsv(n4_p)[1]} if n4_p else None
     recs = load_reads(out_dir, truth, n4)
     fams = by_family(recs)
+    if panel == "A" and focus not in fams:
+        raise ValueError(f"--focus {focus}: no tied read of that family in {out_dir}")
     files = load_files(out_dir, fams)
     arms = [a for a in ARMS if a != "N4" or n4 is not None]
+    opts = options_text(mode, truth_ps, n4_p, panel, focus, exclude_p)
     pooled_recs = [r for r in recs if r["family"] not in excl]
     blocks = {f: block(v, arms, donor) for f, v in fams.items()}
     s = dict(mode=mode, panel=panel, focus=focus, out_dir=out_dir, truth_files=list(truth_ps), n4_file=n4_p,
-             exclude_file=exclude_p)
+             exclude_file=exclude_p, options=opts)
     s.update(block(pooled_recs, arms, donor))
     s["families"] = {f: b for f, b in blocks.items() if f not in excl}
     s["excluded"] = {f: b for f, b in blocks.items() if f in excl}
-    if panel == "A" and focus not in fams:
-        print(f"[o2vc] focus family {focus} has no tied read in {out_dir}: its bars are scored on nothing", file=sys.stderr,
-              flush=True)
-    s["bars"] = panel_bars(panel, s, blocks.get(focus) or block([], arms, donor)) if panel else {}
-    s["verdict"] = None if not panel else "PASS" if all(b["pass"] is True for b in s["bars"].values()) else "FAIL"
+    if n4 is not None and not any(r["n4_held"] for r in recs):
+        print(f"[o2vc] --n4 {n4_p} holds none of the tied reads: N4 is N1's on every read", file=sys.stderr, flush=True)
+    s["bars"] = panel_bars(panel, s, blocks[focus] if panel == "A" else None) if panel else {}
+    s["verdict"] = verdict_of(s["bars"]) if panel else None
     for f in fams:
-        write_family(out_dir, f, fams[f], blocks[f], files[f], donor)
+        write_family(out_dir, f, fams[f], blocks[f], files[f], donor, opts)
     name = ".".join(["score"] + [x for x in (panel, focus) if x]) + ".json"
     with open(os.path.join(out_dir, name), "w") as fh:
         json.dump(s, fh, indent=1)

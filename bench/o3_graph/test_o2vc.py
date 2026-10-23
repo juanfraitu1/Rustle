@@ -366,7 +366,7 @@ CALLS_HEAD = "read family candidates minimap2 mapq margin outside vc vc_set vc_c
 READS_HEAD = "read copy primary AS NM de ms subs indels ref_for ref_against call_for call_against"
 COLUMNS_HEAD = "read p base qual kind copies"
 TRUTH_HEAD = "read family tied_copies class truth donor_nm donor_margin"
-CASE_ADDED = ["vc", "n3", "flag", "truth_class", "truth", "vc_outcome"]
+CASE_ADDED = ["vc", "n3", "flag", "truth_class", "truth", "vc_outcome", "score_options"]
 
 
 def _put(path, head, rows):
@@ -379,13 +379,18 @@ def _put(path, head, rows):
 def tied_read(read, mm, truth, vc="", n3="", flag="", mapq=0, cols=0, kinds=(), fam="F", cands=None, tags=None, vc_set=None,
               n3_set=None):
     """One tied read of a toy run directory. mm: minimap2's primary copy ("" off every copy); vc, n3: the placed copy, "" when
-    abstaining; flag: the flag ids, comma-joined; cols: the columns voting for VC; kinds: the kinds of its columns.tsv rows;
-    tags: {copy: (AS, NM, subs)}; vc_set, n3_set: the copies no copy beats (the placed copy when None); truth: (class, truth
-    copy or None), None for a read without a truth row."""
+    abstaining; flag: the flag ids, comma-joined; cols: the columns voting for VC; kinds: the kinds of its columns.tsv rows (a
+    kind, or (kind, base quality) -- 30 otherwise); tags: {copy: (AS, NM, subs)}; vc_set, n3_set: the copies no copy beats (the
+    placed copy when None); truth: (class, truth copy or None), None for a read without a truth row."""
     cands = cands or [f"{fam}.0", f"{fam}.1"]
     return dict(read=read, mm=mm, truth=truth, vc=vc, n3=n3, flag=flag, mapq=mapq, cols=cols, kinds=list(kinds), fam=fam,
                 cands=cands, tags=tags or {c: (1000, 2, 1) for c in cands}, vc_set=vc if vc_set is None else vc_set,
                 n3_set=n3 if n3_set is None else n3_set)
+
+
+def _qual_kind(k):
+    """(base quality, kind) of a `kinds` entry of tied_read: a kind alone has quality 30, (kind, quality) its own."""
+    return (30, k) if isinstance(k, str) else (k[1], k[0])
 
 
 def write_run(out, reads):
@@ -400,8 +405,8 @@ def write_run(out, reads):
             [t["read"], c, int(c == t["mm"]), t["tags"][c][0], "" if t["tags"][c][1] is None else t["tags"][c][1], 0.01, 900,
              "" if t["tags"][c][2] is None else t["tags"][c][2], 0, 0, 0, 0, 0] for t in mine for c in t["cands"]])
         _put(f"{out}/{f}.columns.tsv", COLUMNS_HEAD, [
-            [t["read"], 100 + i, "A", 30, kind, f"{t['cands'][0]}|chrA|{300 + i}|A|A|10;{t['cands'][1]}|chrB|{300 + i}|A|G|8"]
-            for t in mine for i, kind in enumerate(t["kinds"])])
+            [t["read"], 100 + i, "A", *_qual_kind(k), f"{t['cands'][0]}|chrA|{300 + i}|A|A|10;{t['cands'][1]}|chrB|{300 + i}|A|G|8"]
+            for t in mine for i, k in enumerate(t["kinds"])])
 
 
 def write_truth(path, reads):
@@ -447,10 +452,13 @@ def _score(d, name="score.A.F.json", **kw):
 
 
 def test_score_counts_each_arm_on_decidable_reads_and_the_calibration_bars(tmp_path):
+    # The brief's test, its toy expectations recomputed by hand for the 2026-10-22 amendment (task-5 fix round 1): the arms are
+    # over the SCORED reads -- r1, r2, r3, r7 (unique) and r5, r6 (no_counterpart: every placement wrong) -- not the four
+    # decidable ones. VC places r1 (right) and r2 (wrong) and abstains on r3 and, flagged, on r5, r6, r7: abstained 2 -> 4.
     d = make_score_toy(tmp_path)
     assert O.cmd_score(d.out, [d.truth], "donor", panel="A", focus="F", exclude_p=d.par) == 0
     s = json.load(open(os.path.join(d.out, "score.A.F.json")))
-    assert s["arms"]["VC"] == dict(placed=2, right=1, wrong=1, abstained=2, fixes=1, breaks=1, both_wrong=0)
+    assert s["arms"]["VC"] == dict(placed=2, right=1, wrong=1, abstained=4, fixes=1, breaks=1, both_wrong=0)
     assert s["arms"]["N2"]["placed"] == 1 and s["arms"]["N2"]["right"] == 1
     assert s["K1"] == dict(reads=1, placed=1) and s["K2"] == dict(reads=5, flagged=1)
     assert [f["classes"] for f in s["flags"] if f["id"] == "F#0"] == [{"no_counterpart": 2}]
@@ -472,12 +480,14 @@ def test_score_mode_none_reports_placed_abstained_and_flagged_per_arm_with_no_tr
     assert s["arms"] == dict(N1=dict(placed=8, abstained=0, flagged=3), N2=dict(placed=1, abstained=7, flagged=3),
                              N3=dict(placed=1, abstained=7, flagged=3), VC=dict(placed=4, abstained=4, flagged=3))
     assert s["vc"]["placements"] == 4 and s["vc"]["single_column"] == dict(placements=3)         # r1, r4, g1 rest on one column
-    assert not any(k in s for k in ("K1", "K2", "D2", "classes", "decidable", "precision", "fixes"))
+    assert not any(k in s for k in ("K1", "K2", "D2", "classes", "decidable", "scored", "precision", "fixes"))
     case = {r["read"]: r for r in _rows(os.path.join(d.out, "F.case.tsv"))}
     assert [case[q]["vc_outcome"] for q in ("r1", "r2", "r3", "r4", "r5", "r7")] == [
         "placed", "placed", "abstain", "placed", "flagged", "flagged"]
     assert {(r["truth_class"], r["truth"]) for r in case.values()} == {("", "")}               # no truth was read
+    assert {r["score_options"] for r in case.values()} == {"mode=none truth=- n4=- panel=- focus=- exclude=-"}
     text = open(os.path.join(d.out, "F.summary.md")).read()
+    assert "Score options: mode=none truth=- n4=- panel=- focus=- exclude=-" in text
     head = text.split("## Worked reads")[0].lower()
     assert "right" not in head and "wrong" not in head                        # nothing to be right or wrong about
     assert "### First VC placement: r1" in text and "### First abstention: r3" in text and "### First flagged read: r5" in text
@@ -486,13 +496,19 @@ def test_score_mode_none_reports_placed_abstained_and_flagged_per_arm_with_no_tr
 def test_score_json_reports_every_arm_its_precision_with_counts_and_the_class_flag_and_fix_tables(tmp_path):
     d = make_score_toy(tmp_path)
     s = _score(d)
-    assert (s["mode"], s["panel"], s["focus"], s["tied"], s["decidable"]) == ("donor", "A", "F", 7, 4)
+    assert (s["mode"], s["panel"], s["focus"], s["tied"], s["scored"]) == ("donor", "A", "F", 7, 6)   # r4 is own_tie: K1 only
     assert list(s["arms"]) == ["N1", "N2", "N3", "VC"]                                      # no --n4: no N4
-    assert s["arms"]["N1"] == dict(placed=4, right=3, wrong=1, abstained=0, fixes=0, breaks=0, both_wrong=1)
-    assert s["arms"]["N2"] == dict(placed=1, right=1, wrong=0, abstained=3, fixes=0, breaks=0, both_wrong=0)
-    assert s["arms"]["N3"] == dict(placed=1, right=0, wrong=1, abstained=3, fixes=0, breaks=1, both_wrong=0)
-    assert s["precision"]["VC"] == dict(wrong=1, placed=2, rate=0.5) and s["precision"]["N1"] == dict(wrong=1, placed=4, rate=0.25)
-    assert s["outside"]["tied"] == 0 and s["outside"]["decidable"] == 0
+    # the arms are over the six scored reads r1, r2, r3, r7 (unique) and r5, r6 (no_counterpart: every placement wrong)
+    assert s["arms"]["N1"] == dict(placed=6, right=3, wrong=3, abstained=0, fixes=0, breaks=0, both_wrong=3)
+    assert s["arms"]["N2"] == dict(placed=1, right=1, wrong=0, abstained=5, fixes=0, breaks=0, both_wrong=0)
+    assert s["arms"]["N3"] == dict(placed=1, right=0, wrong=1, abstained=5, fixes=0, breaks=1, both_wrong=0)
+    assert s["precision"]["VC"] == dict(wrong=1, placed=2, rate=0.5) and s["precision"]["N1"] == dict(wrong=3, placed=6, rate=0.5)
+    # the decidable subset (truth copy among the tied copies: r1, r2, r3, r7), reported for comparison with earlier registers
+    assert s["decidable"]["reads"] == 4
+    assert s["decidable"]["arms"]["N1"] == dict(placed=4, right=3, wrong=1, abstained=0, fixes=0, breaks=0, both_wrong=1)
+    assert s["decidable"]["arms"]["VC"] == dict(placed=2, right=1, wrong=1, abstained=2, fixes=1, breaks=1, both_wrong=0)
+    assert s["decidable"]["precision"]["VC"] == dict(wrong=1, placed=2, rate=0.5)
+    assert s["outside"]["tied"] == 0 and s["outside"]["scored"] == 0 and s["truth_outside_candidates"] == 0
     assert s["D2"] == dict(reads=3, moved=1, flagged=1)                                    # N1 right on r2, r3, r7
     assert s["classes"] == {"no_counterpart": dict(reads=2, placed=0, flagged=2), "own_tie": dict(reads=1, placed=1, flagged=0),
                             "unique": dict(reads=4, placed=2, flagged=1)}
@@ -501,9 +517,9 @@ def test_score_json_reports_every_arm_its_precision_with_counts_and_the_class_fl
         ("F#0", "F", 2, {"no_counterpart": 2}), ("F#1", "F", 1, {"unique": 1})]
     assert s["fixes"] == dict(reads=1, evidence={"sample call": 1, "reference PSV corrected by the sample": 0, "reference PSV": 0},
                               tags_alone=dict(AS=0, NM=0, subs=1, none=0))
-    assert s["vc"]["placements"] == 3 and s["vc"]["single_column"] == dict(placements=2, decidable=1, right=1, wrong=0)
-    assert s["vc"]["erased_ref"] == dict(placements=0, decidable=0, right=0, wrong=0)
-    assert s["vc"]["not_decidable"] == dict(placements=1, classes={"own_tie": 1})              # r4: placed, no placement truth
+    assert s["vc"]["placements"] == 3 and s["vc"]["single_column"] == dict(placements=2, scored=1, right=1, wrong=0)
+    assert s["vc"]["erased_ref"] == dict(placements=0, scored=0, right=0, wrong=0)
+    assert s["vc"]["not_scored"] == dict(placements=1, classes={"own_tie": 1})                 # r4: placed, K1 only
     assert list(s["families"]) == ["F"] and s["families"]["F"]["arms"] == s["arms"]
     assert s["excluded"]["G"]["arms"]["VC"] == dict(placed=1, right=1, wrong=0, abstained=0, fixes=1, breaks=0, both_wrong=0)
     assert s["bars"]["A1"] == {"value": 0.5, "num": 1, "den": 2, "limit": 0.02, "op": "<=", "pass": False}
@@ -517,13 +533,15 @@ def test_score_prints_each_arm_with_its_counts_and_each_bar_with_its_verdict(tmp
     d = make_score_toy(tmp_path)
     _score(d)
     out = capsys.readouterr().out
-    assert "N1: placed 4, right 3, wrong 1, abstained 0; wrong/placed 1/4 = 0.2500" in out
-    assert "VC: placed 2, right 1, wrong 1, abstained 2; wrong/placed 1/2 = 0.5000; fixes 1, breaks 1, both wrong 0" in out
+    assert "7 tied reads, 6 scored" in out
+    assert "N1: placed 6, right 3, wrong 3, abstained 0; wrong/placed 3/6 = 0.5000" in out
+    assert "VC: placed 2, right 1, wrong 1, abstained 4; wrong/placed 1/2 = 0.5000; fixes 1, breaks 1, both wrong 0" in out
+    assert "decidable subset (4 reads): VC placed 2, right 1, wrong 1; N1 right 3, wrong 1" in out
     assert "K1: VC places 1 of 1 own_tie reads" in out and "K2: 1 of 5 reads with a present copy are flagged" in out
-    assert "D2: 3 decidable reads N1 places right; VC moves 1, flags 1" in out
+    assert "D2: 3 scored reads N1 places right; VC moves 1, flags 1" in out
     assert "C1: 1 of 2 flags hold >= 2 no_counterpart" in out
     assert "bar A1: wrong/placed 1/2 = 0.5000 <= 0.02: FAIL" in out and "bar A3: " in out and "verdict FAIL" in out
-    assert "primary outside the tied copies: 0 tied reads, 0 decidable" in out
+    assert "primary outside the tied copies: 0 tied reads, 0 scored" in out
 
 
 def test_the_case_file_is_reads_tsv_plus_the_decision_the_truth_and_the_outcome(tmp_path):
@@ -555,38 +573,68 @@ def test_both_right_and_both_wrong_are_told_apart_and_a_primary_off_every_copy_i
     s = _score(d, "score.json", panel=None, focus=None, exclude_p=None)
     assert s["arms"]["N1"] == dict(placed=5, right=1, wrong=4, abstained=0, fixes=0, breaks=0, both_wrong=4)   # always placed
     assert s["arms"]["VC"] == dict(placed=4, right=2, wrong=2, abstained=1, fixes=1, breaks=0, both_wrong=2)
-    assert s["outside"]["tied"] == 2 and s["outside"]["decidable"] == 2                      # b4, b5: "primary outside" row
+    assert s["outside"]["tied"] == 2 and s["outside"]["scored"] == 2                         # b4, b5: "primary outside" row
     assert s["outside"]["arms"]["N1"]["right"] == 0 and s["outside"]["arms"]["N1"]["wrong"] == 2
     assert s["outside"]["arms"]["VC"] == dict(placed=1, right=1, wrong=0, abstained=1, fixes=1, breaks=0, both_wrong=0)
     assert s["D2"] == dict(reads=1, moved=0, flagged=0)
     case = {r["read"]: r["vc_outcome"] for r in _rows(os.path.join(d.out, "F.case.tsv"))}
     assert case == dict(b1="both right", b2="both wrong", b3="both wrong", b4="fix", b5="abstain")
     text = open(os.path.join(d.out, "F.summary.md")).read()
-    assert "Reads whose minimap2 primary lies outside the tied copies: 2 of 5 tied reads, 2 decidable." in text
-    assert text.count("| VC variant calls |") == 2                                      # the arm table, then the outside row's
+    assert "Reads whose minimap2 primary lies outside the tied copies: 2 of 5 tied reads, 2 scored." in text
+    assert text.count("| VC variant calls |") == 3                       # the arm table, the outside row's, the decidable subset's
 
 
-def test_reads_without_a_placement_truth_are_counted_apart_and_never_scored(tmp_path):
+def test_every_tied_read_with_a_definite_truth_is_scored_and_the_others_are_counted_apart(tmp_path):
     d = toy_dir(tmp_path, [
-        tied_read("a1", "F.0", ("unique", "F.1"), vc="F.1", cols=1),                         # decidable: a fix
-        tied_read("a2", "F.0", ("unique", "F.2"), vc="F.1", cols=1),                         # the donor's copy is not a tied copy
-        tied_read("a3", "F.0", None, vc="F.0", cols=1),                                      # no truth row
-        tied_read("a4", "F.0", ("poor_match", None), vc="F.0", cols=1),
-        tied_read("a5", "F.0", ("elsewhere", None)),
-        tied_read("a6", "F.0", ("unique_elsewhere", "F.1"), vc="F.1", cols=1),               # decidable: its copy is tied
+        tied_read("a1", "F.0", ("unique", "F.1"), vc="F.1", cols=1),                         # scored, a tied copy is the truth
+        tied_read("a2", "F.0", ("unique", "F.2"), vc="F.1", cols=1),                         # scored, truth copy not tied
+        tied_read("a3", "F.0", None, vc="F.0", cols=1),                                      # no truth row: counted only
+        tied_read("a4", "F.0", ("poor_match", None), vc="F.0", cols=1),                      # counted only
+        tied_read("a5", "F.0", ("elsewhere", None)),                                         # scored: every placement is wrong
+        tied_read("a6", "F.0", ("unique_elsewhere", "F.1"), vc="F.1", cols=1),               # scored, a fix
+        tied_read("a7", "F.0", ("no_counterpart", None), vc="F.1", cols=1),                  # scored: VC placed it, wrong
+        tied_read("a8", "F.0", ("own_tie", None), vc="F.0", cols=1),                         # K1 only
+        tied_read("a9", "F.0", ("unmapped", None)),                                          # counted only
     ])
     s = _score(d, "score.json", panel=None, focus=None, exclude_p=None)
-    assert (s["tied"], s["decidable"], s["truth_outside_candidates"]) == (6, 2, 1)
-    assert s["arms"]["VC"] == dict(placed=2, right=2, wrong=0, abstained=0, fixes=2, breaks=0, both_wrong=0)
-    assert s["arms"]["N1"] == dict(placed=2, right=0, wrong=2, abstained=0, fixes=0, breaks=0, both_wrong=2)
-    assert s["classes"] == {"elsewhere": dict(reads=1, placed=0, flagged=0), "no_truth_row": dict(reads=1, placed=1, flagged=0),
+    assert (s["tied"], s["scored"], s["decidable"]["reads"], s["truth_outside_candidates"]) == (9, 5, 2, 1)
+    # scored: a1, a2, a5, a6, a7. N1 is right on none of them (a2's truth copy is F.2; a5, a7 have no truth copy)
+    assert s["arms"]["N1"] == dict(placed=5, right=0, wrong=5, abstained=0, fixes=0, breaks=0, both_wrong=5)
+    assert s["arms"]["VC"] == dict(placed=4, right=2, wrong=2, abstained=1, fixes=2, breaks=0, both_wrong=2)
+    assert s["decidable"]["arms"]["VC"] == dict(placed=2, right=2, wrong=0, abstained=0, fixes=2, breaks=0, both_wrong=0)
+    assert s["classes"] == {"elsewhere": dict(reads=1, placed=0, flagged=0), "no_counterpart": dict(reads=1, placed=1, flagged=0),
+                            "no_truth_row": dict(reads=1, placed=1, flagged=0), "own_tie": dict(reads=1, placed=1, flagged=0),
                             "poor_match": dict(reads=1, placed=1, flagged=0), "unique": dict(reads=2, placed=2, flagged=0),
-                            "unique_elsewhere": dict(reads=1, placed=1, flagged=0)}
-    assert s["K2"] == dict(reads=3, flagged=0) and s["K1"] == dict(reads=0, placed=0)        # a2 still has a present copy
-    assert s["vc"]["not_decidable"] == dict(placements=3, classes={"no_truth_row": 1, "poor_match": 1, "truth_not_tied": 1})
+                            "unique_elsewhere": dict(reads=1, placed=1, flagged=0), "unmapped": dict(reads=1, placed=0, flagged=0)}
+    assert s["K1"] == dict(reads=1, placed=1) and s["K2"] == dict(reads=4, flagged=0)       # a8; a1, a2, a6, a8: copy present
+    assert s["vc"]["not_scored"] == dict(placements=3, classes={"no_truth_row": 1, "own_tie": 1, "poor_match": 1})
     case = {r["read"]: r["vc_outcome"] for r in _rows(os.path.join(d.out, "F.case.tsv"))}
-    assert case == dict(a1="fix", a2="placed", a3="placed", a4="placed", a5="abstain", a6="fix")
+    assert case == dict(a1="fix", a2="both wrong", a3="placed", a4="placed", a5="abstain", a6="fix", a7="both wrong", a8="placed",
+                        a9="abstain")
     assert {r["read"]: r["truth_class"] for r in _rows(os.path.join(d.out, "F.case.tsv"))}["a3"] == "no_truth_row"
+
+
+def test_a_certainly_wrong_vc_placement_reaches_the_bars_the_reviewers_probe(tmp_path):
+    # Panel E on 79 VC placements, 30 of them wrong by construction: 20 reads whose minimap2 primary F.2 lies outside the tied
+    # copies and IS the donor's copy (VC moves them: a break), and 10 no_counterpart reads VC places. Counting only the
+    # decidable reads (truth among the tied copies) gave E1 0/49 and E2 2 > 0: PASS.
+    d = toy_dir(tmp_path, (
+        [tied_read(f"a{i:03d}", "F.0", ("unique", "F.1"), vc="F.1", cols=1) for i in range(2)]                    # fixes
+        + [tied_read(f"b{i:03d}", "F.0", ("unique", "F.0"), vc="F.0", cols=1) for i in range(47)]                 # both right
+        + [tied_read(f"c{i:03d}", "F.2", ("unique_elsewhere", "F.2"), vc="F.0", cols=1) for i in range(20)]       # breaks
+        + [tied_read(f"d{i:03d}", "F.0", ("no_counterpart", None), vc="F.1", cols=1) for i in range(10)]))        # wrong
+    s = _score(d, "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["arms"]["VC"] == dict(placed=79, right=49, wrong=30, abstained=0, fixes=2, breaks=20, both_wrong=10)
+    assert s["arms"]["N1"] == dict(placed=79, right=67, wrong=12, abstained=0, fixes=0, breaks=0, both_wrong=12)
+    assert (s["tied"], s["scored"], s["decidable"]["reads"], s["truth_outside_candidates"]) == (79, 79, 49, 20)
+    assert s["decidable"]["arms"]["VC"] == dict(placed=49, right=49, wrong=0, abstained=0, fixes=2, breaks=0, both_wrong=0)
+    assert s["outside"]["tied"] == 20 and s["outside"]["scored"] == 20                        # the primaries on F.2
+    assert s["outside"]["arms"]["N1"]["right"] == 20 and s["outside"]["arms"]["VC"] == dict(
+        placed=20, right=0, wrong=20, abstained=0, fixes=0, breaks=20, both_wrong=0)
+    assert s["D2"] == dict(reads=67, moved=20, flagged=0)                                    # N1 right: b and the primaries on F.2
+    assert s["bars"]["E1"]["num"] == 30 and s["bars"]["E1"]["den"] == 79 and s["bars"]["E1"]["pass"] is False
+    assert (s["bars"]["E2"]["value"], s["bars"]["E2"]["limit"], s["bars"]["E2"]["pass"]) == (2, 20, False)
+    assert s["bars"]["K2"]["pass"] is True and s["verdict"] == "FAIL"                         # not PASS
 
 
 def test_an_excluded_family_is_scored_apart_and_never_enters_the_pooled_numbers(tmp_path):
@@ -601,7 +649,7 @@ def test_an_excluded_family_is_scored_apart_and_never_enters_the_pooled_numbers(
     assert list(s["families"]) == ["F"] and list(s["excluded"]) == ["P"] and s["tied"] == 1
     assert s["K1"] == dict(reads=0, placed=0) and s["K2"] == dict(reads=1, flagged=0)
     assert s["C1"] == dict(flags=0, counted=0) and s["flags"] == [] and s["arms"]["VC"]["placed"] == 1
-    assert s["bars"]["C1"]["pass"] is False                                                  # P's flag is not F's
+    assert s["bars"]["C1"]["pass"] is None and s["verdict"] == "UNDERPOWERED"                # the pool holds no no_counterpart read
     p = s["excluded"]["P"]
     assert p["tied"] == 3 + 1 and p["K1"] == dict(reads=1, placed=1) and p["C1"] == dict(flags=2, counted=1)
     assert os.path.exists(os.path.join(d.out, "P.case.tsv")) and os.path.exists(os.path.join(d.out, "P.summary.md"))
@@ -621,9 +669,62 @@ def test_n4_is_the_correctors_pick_and_minimap2s_for_a_read_it_does_not_hold(tmp
          [["r1", "F", "F.1", "F.0", "sample", "F.0,F.1", 5, ""], ["r2", "F", "F.1", "F.0", "sample", "F.0,F.1", 4, ""]])
     s = _score(d, "score.json", panel=None, focus=None, n4_p=n4)
     assert list(s["arms"]) == ["N1", "N2", "N3", "N4", "VC"]
-    # r1: F.1 right (N1 wrong) = fix; r2: F.1 wrong (N1 right) = break; r3, r7 absent: N1's, right
-    assert s["arms"]["N4"] == dict(placed=4, right=3, wrong=1, abstained=0, fixes=1, breaks=1, both_wrong=0)
+    # r1: F.1 right (N1 wrong) = fix; r2: F.1 wrong (N1 right) = break; r3, r7 absent: N1's, right; r5, r6 (no_counterpart)
+    # absent: N1's, wrong
+    assert s["arms"]["N4"] == dict(placed=6, right=3, wrong=3, abstained=0, fixes=1, breaks=1, both_wrong=2)
     assert "N4 corrector" in open(os.path.join(d.out, "F.summary.md")).read()
+
+
+def n4_file(tmp_path, reads):
+    """An o2correct-style --n4 file holding `reads` (each picking F.1)."""
+    path = str(tmp_path / "o2correct.tsv")
+    _put(path, "read family corrector minimap2 reason candidates margin scores",
+         [[q, "F", "F.1", "F.0", "sample", "F.0,F.1", 5, ""] for q in reads])
+    return path
+
+
+def test_how_many_tied_reads_the_n4_file_holds_is_reported_so_a_silent_fallback_to_n1_is_visible(tmp_path, capsys):
+    d = make_score_toy(tmp_path)
+    s = _score(d, "score.json", panel=None, focus=None, n4_p=n4_file(tmp_path, ["r1", "r2", "zz"]))    # zz: not a tied read
+    assert s["n4_held"] == 2 and s["families"]["F"]["n4_held"] == 2 and s["excluded"]["G"]["n4_held"] == 0
+    assert "N4: the corrector holds 2 of 7 tied reads; the others are N1's" in capsys.readouterr().out
+    assert "N4: the corrector holds 2 of 7 tied reads of this family; the others are N1's." in open(
+        os.path.join(d.out, "F.summary.md")).read()
+    assert "n4_held" not in _score(d, "score.json", panel=None, focus=None)                             # no --n4: nothing to report
+
+
+def test_an_n4_file_that_holds_none_of_the_tied_reads_is_warned_about(tmp_path, capsys):
+    d = make_score_toy(tmp_path)
+    s = _score(d, "score.json", panel=None, focus=None, n4_p=n4_file(tmp_path, ["zz"]))
+    assert s["n4_held"] == 0 and s["arms"]["N4"] == s["arms"]["N1"]                                     # N4 is N1 everywhere
+    assert "holds none of the tied reads" in capsys.readouterr().err
+
+
+def test_only_columns_that_can_vote_set_the_evidence_and_the_erased_counts(tmp_path):
+    d = toy_dir(tmp_path, [                                       # a base votes from quality R.MIN_BASEQ = 10
+        tied_read("m1", "H.0", ("unique", "H.1"), vc="H.1", cols=1, fam="H", kinds=[("separating_call", 9), "separating_ref"]),
+        tied_read("m2", "H.0", ("unique", "H.1"), vc="H.1", cols=1, fam="H", kinds=[("separating_call", 10), "separating_ref"]),
+        tied_read("m3", "H.0", ("unique", "H.0"), vc="H.0", cols=1, fam="H", kinds=[("erased_ref", 9), "separating_ref"]),
+        tied_read("m4", "H.0", ("unique", "H.0"), vc="H.0", cols=1, fam="H", kinds=[("erased_ref", 10), "separating_ref"])])
+    s = _score(d, "score.json", panel=None, focus=None, exclude_p=None)
+    assert s["fixes"]["evidence"] == {"sample call": 1, "reference PSV corrected by the sample": 0, "reference PSV": 1}   # m2; m1
+    assert s["vc"]["erased_ref"] == dict(placements=1, scored=1, right=1, wrong=0)                    # m4 only: m3's column is Q9
+    assert s["vc"]["erased_dependent"] == dict(placements=1, scored=1, right=1, wrong=0)              # N3 abstains on m4
+    text = open(os.path.join(d.out, "H.summary.md")).read()
+    assert "| m1 | H.1 | H.0 | reference PSV | " in text and "| m2 | H.1 | H.0 | sample call | " in text
+    assert "m1\t100\tA\t9\tseparating_call" in text                                    # the worked read lists every row
+
+
+def test_the_score_options_are_recorded_in_the_summary_and_in_every_case_row(tmp_path):
+    d = make_score_toy(tmp_path)
+    n4 = n4_file(tmp_path, ["r1"])
+    assert O.cmd_score(d.out, [d.truth, d.truth], "donor", n4_p=n4, panel="A", focus="F", exclude_p=d.par) == 0
+    want = f"mode=donor truth={d.truth},{d.truth} n4={n4} panel=A focus=F exclude={d.par}"
+    for fam in ("F", "G"):                                                                            # G is excluded: scored apart
+        assert {r["score_options"] for r in _rows(os.path.join(d.out, f"{fam}.case.tsv"))} == {want}
+        assert f"Score options: {want}" in open(os.path.join(d.out, f"{fam}.summary.md")).read()
+    s = json.load(open(os.path.join(d.out, "score.A.F.json")))
+    assert (s["truth_files"], s["n4_file"], s["exclude_file"]) == ([d.truth, d.truth], n4, d.par)
 
 
 def test_each_fix_names_its_evidence_and_the_tags_that_alone_would_have_picked_it_and_erased_columns_are_counted(tmp_path):
@@ -645,33 +746,37 @@ def test_each_fix_names_its_evidence_and_the_tags_that_alone_would_have_picked_i
     assert s["arms"]["VC"] == dict(placed=6, right=5, wrong=1, abstained=0, fixes=3, breaks=1, both_wrong=0)
     assert s["arms"]["N3"] == dict(placed=3, right=2, wrong=1, abstained=3, fixes=1, breaks=1, both_wrong=0)
     assert s["vc"] == dict(placements=6,
-                           single_column=dict(placements=4, decidable=4, right=3, wrong=1),          # h1 h3 h4 h5
-                           erased_ref=dict(placements=5, decidable=5, right=4, wrong=1),             # all but h3
-                           erased_dependent=dict(placements=4, decidable=4, right=3, wrong=1),       # h6: N3 agrees with VC
-                           not_decidable=dict(placements=0, classes={}))
+                           single_column=dict(placements=4, scored=4, right=3, wrong=1),             # h1 h3 h4 h5
+                           erased_ref=dict(placements=5, scored=5, right=4, wrong=1),                # all but h3
+                           erased_dependent=dict(placements=4, scored=4, right=3, wrong=1),          # h6: N3 agrees with VC
+                           not_scored=dict(placements=0, classes={}))
     text = open(os.path.join(d.out, "H.summary.md")).read()
     assert "| h1 | H.1 | H.0 | sample call | no | yes | no |" in text
     assert "| h2 | H.1 | H.0 | reference PSV corrected by the sample | no | no | no |" in text
     assert "| h3 | H.1 | H.0 | reference PSV | no | no | yes |" in text
     assert "resting on a single column (`vc_cols == 1`): 4 of 6" in text
     assert "whose read has an `erased_ref` column: 5 of 6" in text
-    assert "depending on erased columns" in text and ": 4 of 6 (decidable 4: 3 right, 1 wrong)" in text
+    assert "depending on erased columns" in text and ": 4 of 6 (scored 4: 3 right, 1 wrong)" in text
 
 
 def test_the_summary_holds_the_arm_table_the_fixes_the_calibration_and_the_legend(tmp_path):
     d = make_score_toy(tmp_path)
     _score(d)
     text = open(os.path.join(d.out, "F.summary.md")).read()
-    assert "Scored against the donor's truth. 7 tied reads (no_counterpart 2, own_tie 1, unique 4); 4 decidable" in text
-    assert "| N1 minimap2 | 4 | 3 | 1 | 0 | 1/4 = 0.2500 | - | - | - |" in text
-    assert "| N2 minimap2 at MAPQ >= 1 | 1 | 1 | 0 | 3 | 0/1 = 0.0000 | 0 | 0 | 0 |" in text
-    assert "| N3 reference only | 1 | 0 | 1 | 3 | 1/1 = 1.0000 | 0 | 1 | 0 |" in text
+    assert "Scored against the donor's truth. 7 tied reads (no_counterpart 2, own_tie 1, unique 4)." in text
+    assert "Scored: 6 (no_counterpart 2, unique 4). Not scored: own_tie 1 (K1 only)." in text
+    assert "| N1 minimap2 | 6 | 3 | 3 | 0 | 3/6 = 0.5000 | - | - | - |" in text
+    assert "| N2 minimap2 at MAPQ >= 1 | 1 | 1 | 0 | 5 | 0/1 = 0.0000 | 0 | 0 | 0 |" in text
+    assert "| N3 reference only | 1 | 0 | 1 | 5 | 1/1 = 1.0000 | 0 | 1 | 0 |" in text
+    assert "| VC variant calls | 2 | 1 | 1 | 4 | 1/2 = 0.5000 | 1 | 1 | 0 |" in text
+    assert "Decidable subset (the truth copy is one of the tied copies; the definition of earlier registers): 4 reads" in text
+    assert "| N1 minimap2 | 4 | 3 | 1 | 0 | 1/4 = 0.2500 | - | - | - |" in text                  # the subset's own table
     assert "| VC variant calls | 2 | 1 | 1 | 2 | 1/2 = 0.5000 | 1 | 1 | 0 |" in text
     assert "compare arms by fixes and breaks" in text                                      # precision is not comparable across arms
-    assert "which the arm table cannot see: 1 (own_tie 1)." in text                        # r4: placed, no placement truth
+    assert "which the arm table cannot see: 1 (own_tie 1)." in text                        # r4: placed, K1 only
     assert "| r1 | F.1 | F.0 | sample call | no | no | yes |" in text
     assert "- K1: VC places 1 of 1 own_tie reads." in text and "- K2: 1 of 5 reads with a present copy are flagged." in text
-    assert "- D2: of 3 decidable reads N1 places right, VC moves 1 and flags 1." in text
+    assert "- D2: of 3 scored reads N1 places right, VC moves 1 and flags 1." in text
     assert "- flag F#0: reads 2 (no_counterpart 2)" in text and "- flag F#1: reads 1 (unique 1)" in text
     assert [p.split("\n")[0] for p in text.split("### ")[1:]] == ["First fix: r1", "First abstention: r3", "First flagged read: r5"]
 
@@ -714,7 +819,7 @@ def test_d2_counts_only_the_reads_minimap2_places_right_that_vc_moves_or_flags(t
         tied_read("x7", "F.1", ("unique", "F.1"), vc="F.0", cols=1)])                   # N1 right, moved
     s = _score(d, "score.json", panel=None, focus=None, exclude_p=None)
     assert s["D2"] == dict(reads=5, moved=2, flagged=1)
-    assert "- D2: of 5 decidable reads N1 places right, VC moves 2 and flags 1." in open(os.path.join(d.out, "F.summary.md")).read()
+    assert "- D2: of 5 scored reads N1 places right, VC moves 2 and flags 1." in open(os.path.join(d.out, "F.summary.md")).read()
 
 
 def test_a_placement_is_a_non_empty_vc_or_n3_never_inferred_from_the_set(tmp_path):
@@ -726,6 +831,13 @@ def test_a_placement_is_a_non_empty_vc_or_n3_never_inferred_from_the_set(tmp_pat
     s = _score(d, "score.json", panel=None, focus=None, exclude_p=None)
     assert s["arms"]["VC"]["placed"] == 1 and s["arms"]["VC"]["abstained"] == 2
     assert s["arms"]["N3"]["placed"] == 1 and s["arms"]["N3"]["abstained"] == 2
+
+
+def verdict_of(passes):
+    """A panel's verdict from its bars' `pass` values: FAIL when any bar failed (evaluably), else UNDERPOWERED when any bar had
+    nothing to measure (None), else PASS."""
+    v = list(passes.values())
+    return "FAIL" if any(p is False for p in v) else "UNDERPOWERED" if any(p is None for p in v) else "PASS"
 
 
 def make_bulk(tmp_path, spec):
@@ -759,7 +871,7 @@ def panel_a_toy(tmp_path, fix=10, ok=38, brk=0, tie=50, tie_placed=1, flagged=2,
 def test_panel_a_bars_hold_at_their_boundaries(tmp_path, kw, expect):
     s = _score(panel_a_toy(tmp_path, **kw), exclude_p=None)
     assert {b: v["pass"] for b, v in s["bars"].items()} == expect
-    assert s["verdict"] == ("PASS" if all(expect.values()) else "FAIL")
+    assert s["verdict"] == verdict_of(expect)                                       # K1 null (no own_tie read): UNDERPOWERED
 
 
 def panel_e_toy(tmp_path, fix=2, ok=47, brk=1, flagged=0):
@@ -779,7 +891,7 @@ def panel_e_toy(tmp_path, fix=2, ok=47, brk=1, flagged=0):
 def test_panel_e_bars_hold_at_their_boundaries(tmp_path, kw, expect):
     s = _score(panel_e_toy(tmp_path, **kw), "score.E.json", panel="E", focus=None, exclude_p=None)
     assert {b: v["pass"] for b, v in s["bars"].items()} == expect and "K1" in s     # K1 is reported, not a bar of E
-    assert s["verdict"] == ("PASS" if all(expect.values()) else "FAIL")
+    assert s["verdict"] == verdict_of(expect)
 
 
 def test_panel_c_needs_a_flag_with_two_no_counterpart_reads_and_an_excluded_family_s_flag_does_not_count(tmp_path):
@@ -788,9 +900,16 @@ def test_panel_c_needs_a_flag_with_two_no_counterpart_reads_and_an_excluded_fami
     assert s["bars"] == {"C1": {"value": 1, "limit": 1, "op": ">=", "pass": True}} and s["verdict"] == "PASS"
     par_f = str(tmp_path / "par_f.json")
     json.dump(["F"], open(par_f, "w"))
-    s = _score(d, "score.C.json", panel="C", focus=None, exclude_p=par_f)
-    assert s["bars"]["C1"]["value"] == 0 and s["bars"]["C1"]["pass"] is False and s["verdict"] == "FAIL"
+    s = _score(d, "score.C.json", panel="C", focus=None, exclude_p=par_f)                    # the pool, G: no no_counterpart
+    assert s["bars"]["C1"]["pass"] is None and s["bars"]["C1"]["reason"] and s["verdict"] == "UNDERPOWERED"
     assert s["excluded"]["F"]["C1"] == dict(flags=2, counted=1)                              # F's flag is reported, apart
+
+
+def test_c1_is_evaluable_and_fails_when_there_are_no_counterpart_reads_but_no_flag_holds_two(tmp_path):
+    d = toy_dir(tmp_path, [tied_read("n1", "F.0", ("no_counterpart", None)),
+                           tied_read("n2", "F.0", ("no_counterpart", None), flag="F#0")])
+    s = _score(d, "score.C.json", panel="C", focus=None, exclude_p=None)
+    assert s["bars"]["C1"] == {"value": 0, "limit": 1, "op": ">=", "pass": False} and s["verdict"] == "FAIL"
 
 
 def test_c1_counts_the_flags_holding_at_least_two_no_counterpart_reads_in_flag_order(tmp_path):
@@ -827,13 +946,57 @@ def test_a_tag_not_measured_on_a_copy_picks_nothing(tmp_path):
     assert "| n1 | F.1 | F.0 | reference PSV | no | no | no |" in open(os.path.join(d.out, "F.summary.md")).read()
 
 
-def test_a_bar_with_nothing_to_measure_is_not_passed(tmp_path):
+def test_a_bar_with_nothing_to_measure_is_not_evaluable_and_the_panel_is_underpowered_not_failed(tmp_path):
+    # This was the test that pinned E2 False at zero VC placements (a panel in which VC places nothing "failed"). Ruling (fix
+    # round 1, finding 2): with no VC placement there is nothing to measure, so E1 and E2 are not evaluable.
+    d = toy_dir(tmp_path, [tied_read("u1", "F.0", ("unique", "F.0")), tied_read("u2", "F.0", ("unique", "F.1"))])
+    s = _score(d, "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["arms"]["VC"]["placed"] == 0 and s["precision"]["VC"] == dict(wrong=0, placed=0, rate=None)
+    why = "VC placed no scored read"
+    assert s["bars"]["E1"] == {"value": None, "num": 0, "den": 0, "limit": 0.02, "op": "<=", "pass": None, "reason": why}
+    assert s["bars"]["E2"] == {"value": 0, "limit": 0, "op": ">", "pass": None, "reason": why}
+    assert s["bars"]["K2"]["pass"] is True and s["verdict"] == "UNDERPOWERED"
+
+
+def test_vc_placements_on_reads_that_are_not_scored_do_not_make_e1_and_e2_evaluable(tmp_path):
+    d = toy_dir(tmp_path, [tied_read("u1", "F.0", ("unique", "F.0")), tied_read("t1", "F.0", ("own_tie", None), vc="F.1", cols=1)])
+    s = _score(d, "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["vc"]["placements"] == 1 and s["arms"]["VC"]["placed"] == 0                     # t1: placed, but only K1 sees it
+    assert s["bars"]["E1"]["pass"] is None and s["bars"]["E2"]["pass"] is None and s["verdict"] == "UNDERPOWERED"
+
+
+def test_a2_and_a3_cannot_be_evaluated_when_the_focus_family_has_no_scored_read(tmp_path):
+    d = toy_dir(tmp_path, [tied_read(f"t{i}", "F.0", ("own_tie", None)) for i in range(3)])      # own_tie only: K1 and nothing else
+    s = _score(d, exclude_p=None)
+    assert s["scored"] == 0 and s["K1"] == dict(reads=3, placed=0)
+    why = "the focus family has no scored read"
+    assert s["bars"]["A1"]["pass"] is None and s["bars"]["A1"]["reason"] == "VC placed no scored read of the focus family"
+    assert (s["bars"]["A2"]["pass"], s["bars"]["A2"]["reason"]) == (None, why)
+    assert (s["bars"]["A3"]["pass"], s["bars"]["A3"]["reason"]) == (None, why)
+    assert s["bars"]["K1"]["pass"] is True and s["bars"]["K2"]["pass"] is True and s["verdict"] == "UNDERPOWERED"
+
+
+def test_k2_cannot_be_evaluated_without_a_read_whose_copy_is_present_and_a_certain_wrong_placement_still_fails_e1(tmp_path):
+    d = toy_dir(tmp_path, [tied_read("n1", "F.0", ("no_counterpart", None), vc="F.1", cols=1)])
+    s = _score(d, "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["bars"]["K2"] == {"value": None, "num": 0, "den": 0, "limit": 0.02, "op": "<=", "pass": None,
+                               "reason": "no read with a present copy"}
+    assert s["K1"] == dict(reads=0, placed=0) and s["arms"]["VC"] == dict(placed=1, right=0, wrong=1, abstained=0, fixes=0,
+                                                                          breaks=0, both_wrong=1)
+    assert s["bars"]["E1"]["pass"] is False and s["verdict"] == "FAIL"                       # wrong 1 of 1: evaluable, failed
+
+
+def test_a_bar_that_failed_still_fails_the_panel_when_another_bar_cannot_be_evaluated(tmp_path):
+    # panel E: VC places nothing (E1 and E2 not evaluable), but half of the reads with a present copy are flagged: K2 failed
     d = toy_dir(tmp_path, [tied_read("u1", "F.0", ("unique", "F.0")), tied_read("u2", "F.0", ("unique", "F.1"), flag="F#0")])
     s = _score(d, "score.E.json", panel="E", focus=None, exclude_p=None)
-    assert s["arms"]["VC"]["placed"] == 0
-    assert s["bars"]["E1"] == {"value": None, "num": 0, "den": 0, "limit": 0.02, "op": "<=", "pass": None}
-    assert s["bars"]["E2"]["pass"] is False and s["bars"]["K2"]["pass"] is False and s["verdict"] == "FAIL"
-    assert s["precision"]["VC"] == dict(wrong=0, placed=0, rate=None)
+    assert [s["bars"][b]["pass"] for b in ("E1", "E2", "K2")] == [None, None, False] and s["verdict"] == "FAIL"
+
+
+def test_a_focus_family_with_scored_reads_where_vc_places_nothing_fails_a2_and_a3_while_a1_is_not_evaluable(tmp_path):
+    d = toy_dir(tmp_path, [tied_read(f"u{i}", "F.0", ("unique", "F.0")) for i in range(3)])
+    s = _score(d, exclude_p=None)
+    assert [s["bars"][b]["pass"] for b in ("A1", "A2", "A3")] == [None, False, False] and s["verdict"] == "FAIL"
 
 
 def _edit_calls(out, fn):
@@ -864,6 +1027,11 @@ def test_inconsistent_or_unsupported_input_stops_the_scorer(tmp_path):
         O.cmd_score(d.out, [d.truth], "donor", panel="A")
     with pytest.raises(ValueError, match="focus"):
         O.cmd_score(d.out, [d.truth], "donor", panel="A", focus="G", exclude_p=d.par)
+    with pytest.raises(ValueError, match="Z"):                                                  # a focus family absent from the run
+        O.cmd_score(d.out, [d.truth], "donor", panel="A", focus="Z")
+    for panel in (None, "C", "E"):                                                              # --focus belongs to --panel A
+        with pytest.raises(ValueError, match="focus"):
+            O.cmd_score(d.out, [d.truth], "donor", panel=panel, focus="F")
     with pytest.raises(ValueError, match="panel"):
         O.cmd_score(d.out, [], "none", panel="A", focus="F")
 
@@ -890,14 +1058,21 @@ def test_inconsistent_or_unsupported_input_stops_the_scorer(tmp_path):
     _put(os.path.join(d.out, "F.reads.tsv"), READS_HEAD, [[r[k] for k in READS_HEAD.split()] for r in kept])
     with pytest.raises(ValueError, match="r3.*no row"):
         O.cmd_score(d.out, [d.truth], "donor")
+    d = make_score_toy(tmp_path)                                                                # unique, but no truth copy
+    rows = _rows(d.truth)
+    next(r for r in rows if r["read"] == "r1")["truth"] = ""
+    _put(d.truth, TRUTH_HEAD, [[r[k] for k in TRUTH_HEAD.split()] for r in rows])
+    with pytest.raises(ValueError, match="r1.*truth copy"):
+        O.cmd_score(d.out, [d.truth], "donor")
 
 
-def test_a_run_with_no_tied_read_scores_to_nothing_and_no_bar_passes(tmp_path):
+def test_a_run_with_no_tied_read_scores_to_nothing_and_is_underpowered(tmp_path):
     d = toy_dir(tmp_path, [])
-    s = _score(d, exclude_p=None)
-    assert s["tied"] == 0 and s["families"] == {} and s["arms"]["VC"]["placed"] == 0 and s["flags"] == []
-    assert {b: v["pass"] for b, v in s["bars"].items()} == dict(A1=None, A2=False, A3=False, K1=None, K2=None)
-    assert s["verdict"] == "FAIL"
+    s = _score(d, "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["tied"] == 0 and s["scored"] == 0 and s["families"] == {} and s["arms"]["VC"]["placed"] == 0 and s["flags"] == []
+    assert {b: v["pass"] for b, v in s["bars"].items()} == dict(E1=None, E2=None, K2=None) and s["verdict"] == "UNDERPOWERED"
+    with pytest.raises(ValueError, match="F"):                                                  # panel A: no family F in the run
+        O.cmd_score(d.out, [d.truth], "donor", panel="A", focus="F")
 
 
 def random_reads(rng, n, fams=("F", "G", "H", "P")):
@@ -920,15 +1095,41 @@ def random_reads(rng, n, fams=("F", "G", "H", "P")):
 
 
 def recount(reads, excluded):
-    """The pooled counts of `reads` outside `excluded`, straight from the definitions (a naive loop per read, no shared code)."""
-    arms = {a: dict(placed=0, right=0, wrong=0, abstained=0, fixes=0, breaks=0, both_wrong=0) for a in ("N1", "N2", "N3", "VC")}
-    k1, k2, d2, flags, n_dec = [0, 0], [0, 0], [0, 0, 0], {}, 0
+    """The pooled counts of `reads` outside `excluded`, straight from the amended spec (a naive loop per read, no shared code):
+    a tied read is SCORED when its class is unique, unique_elsewhere, elsewhere or no_counterpart; a placement is right only
+    when the placed copy is the truth copy, which only unique and unique_elsewhere reads have."""
+    zero = dict(placed=0, right=0, wrong=0, abstained=0, fixes=0, breaks=0, both_wrong=0)
+    names = ("N1", "N2", "N3", "VC")
+    arms, dec_arms = {a: dict(zero) for a in names}, {a: dict(zero) for a in names}
+    k1, k2, d2, flags, classes = [0, 0], [0, 0], [0, 0, 0], {}, {}
+    n_scored = n_dec = n_outside = n_not_scored_placed = 0
+    not_scored = {}
+
+    def tally(c, x, tc, n1):
+        if x == "":
+            c["abstained"] += 1
+            return
+        c["placed"] += 1
+        if tc is not None and x == tc:
+            c["right"] += 1
+            c["fixes"] += 1 if n1 != tc else 0
+        else:
+            c["wrong"] += 1
+            if tc is not None and n1 == tc:
+                c["breaks"] += 1
+            else:
+                c["both_wrong"] += 1
+
     for t in reads:
         if t["fam"] in excluded:
             continue
         cls, tc = t["truth"] if t["truth"] is not None else ("no_truth_row", None)
         n1 = t["mm"] if t["mm"] else "(off)"
         got = {"N1": n1, "N2": n1 if t["mapq"] >= 1 else "", "N3": t["n3"], "VC": t["vc"]}
+        c = classes.setdefault(cls, dict(reads=0, placed=0, flagged=0))
+        c["reads"] += 1
+        c["placed"] += 1 if t["vc"] else 0
+        c["flagged"] += 1 if t["flag"] else 0
         if cls == "own_tie":
             k1[0] += 1
             k1[1] += 1 if t["vc"] else 0
@@ -939,35 +1140,31 @@ def recount(reads, excluded):
             if f:
                 flags.setdefault(f, {})
                 flags[f][cls] = flags[f].get(cls, 0) + 1
-        if cls not in ("unique", "unique_elsewhere") or tc not in t["cands"]:
+        if cls not in ("unique", "unique_elsewhere", "elsewhere", "no_counterpart"):
+            if t["vc"]:
+                n_not_scored_placed += 1
+                not_scored[cls] = not_scored.get(cls, 0) + 1
             continue
-        n_dec += 1
+        n_scored += 1
+        n_outside += 1 if t["mm"] not in t["cands"] else 0
         for a, x in got.items():
-            c = arms[a]
-            if x == "":
-                c["abstained"] += 1
-            elif x == tc:
-                c["placed"] += 1
-                c["right"] += 1
-                if n1 != tc:
-                    c["fixes"] += 1
-            else:
-                c["placed"] += 1
-                c["wrong"] += 1
-                if n1 == tc:
-                    c["breaks"] += 1
-                else:
-                    c["both_wrong"] += 1
-        if n1 == tc:
+            tally(arms[a], x, tc, n1)
+        if tc is not None and tc in t["cands"]:                              # the decidable subset
+            n_dec += 1
+            for a, x in got.items():
+                tally(dec_arms[a], x, tc, n1)
+        if tc is not None and n1 == tc:
             d2[0] += 1
             if got["VC"] != "" and got["VC"] != n1:
                 d2[1] += 1
             if t["flag"]:
                 d2[2] += 1
-    return dict(arms=arms, K1=dict(reads=k1[0], placed=k1[1]), K2=dict(reads=k2[0], flagged=k2[1]), decidable=n_dec,
+    return dict(arms=arms, dec_arms=dec_arms, K1=dict(reads=k1[0], placed=k1[1]), K2=dict(reads=k2[0], flagged=k2[1]),
+                scored=n_scored, decidable=n_dec, outside_scored=n_outside, classes=dict(sorted(classes.items())),
                 D2=dict(reads=d2[0], moved=d2[1], flagged=d2[2]),
                 C1=dict(flags=len(flags), counted=sum(1 for c in flags.values() if c.get("no_counterpart", 0) >= 2)),
-                flags={f: dict(sorted(c.items())) for f, c in sorted(flags.items())})
+                flags={f: dict(sorted(c.items())) for f, c in sorted(flags.items())},
+                not_scored=dict(placements=n_not_scored_placed, classes=dict(sorted(not_scored.items()))))
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6])
@@ -979,7 +1176,10 @@ def test_the_score_matches_a_direct_recount_on_random_runs(tmp_path, seed):
     want = recount(reads, {"P"})
     assert {a: s["arms"][a] for a in want["arms"]} == want["arms"]
     assert (s["K1"], s["K2"], s["D2"], s["C1"]) == (want["K1"], want["K2"], want["D2"], want["C1"])
-    assert s["decidable"] == want["decidable"]
+    got = (s["scored"], s["decidable"]["reads"], s["outside"]["scored"])
+    assert got == (want["scored"], want["decidable"], want["outside_scored"])
+    assert {a: s["decidable"]["arms"][a] for a in want["dec_arms"]} == want["dec_arms"]
+    assert s["classes"] == want["classes"] and s["vc"]["not_scored"] == want["not_scored"]
     assert {f["id"]: f["classes"] for f in s["flags"]} == want["flags"]
     assert sorted(s["families"]) == ["F", "G", "H"] and list(s["excluded"]) == ["P"]
     for fam in ("F", "G", "H"):                                    # a family alone is the recount of the reads outside the others
