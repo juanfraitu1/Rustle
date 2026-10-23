@@ -51,3 +51,27 @@
 - The landing loci.
 - Each deleted copy's outcome: certified, look harder, in a slot, or no pile.
 - Runtime.
+
+## Result (run once, 2026-10-23; port at e11cf8c6, stage sha1 2e3cd592; work dir `/mnt/linuxdisk/tmp/rna_allele/p5`)
+**Panel.** The draw is GWFAM101, 11, 122, 127, 148, 166, 196, 267, 279, 283, 304, 307, 357, 396, 408, 424, 491, 58, 75 and 80.
+- 13,608 scored reads: 7,343 D, 6,265 S.
+- Attainable D reads: 3,499 (2,381 on the survivor, 1,118 attributed).
+- The stage's nets were replicated exactly on both arms (20 / 20 families).
+
+| rule | primary: v6, label propagation | secondary: correlation clustering |
+|---|---|---|
+| H5-1 D right among attainable >= 0.50 | 2,308 / 3,499 = **0.660, PASS** | 2,901 / 3,499 = **0.829, PASS** |
+| H5-2 false moves <= 5% (deletion arm) | 0 / 6,265, **PASS** | 0 / 6,265, **PASS** |
+| H5-3 families with a false flag <= 3 / 20 (control) | 2 (4 flags: 2 pri, 1 b_allele, 1 c_unmatched), **PASS** | 1 (1 pri flag), **PASS** |
+| D right, all D reads | 2,365 | 2,962 |
+| deleted copies with >= 1 D read given back | 10 / 20 | 11 / 20 |
+
+**Verdict: the O3 port v6 PASSES the held-out.** It is the first version to pass development (P1, P2) and a held-out.
+- Correlation clustering passes as well and is better on every row here, as in the one-copy simulation.
+- Development slightly favoured label propagation (P1 6,129 vs 5,949).
+- Making correlation clustering the default would be a choice made after seeing P5. P5 then holds as evidence that each arm
+  passes its own pre-registered rules, not for the choice between them.
+
+**Scope.** These are gorilla KB3781 fibroblasts, two-copy families, and a deleted copy simulated by masking it in the reference.
+Half of the deleted copies give back no read. With one survivor, a copy whose reads fit the survivor's free allele slot cannot be
+proven extra (Theorem A).
