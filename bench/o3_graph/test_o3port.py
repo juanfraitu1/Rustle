@@ -51,13 +51,14 @@ def test_three_haplotypes_on_one_pile_including_a_minor_one():
 
 
 def test_bridge_reads_do_not_merge_haplotypes():
-    # reads covering only column 1 (where A and C agree) touch both; zero disagreement + label propagation keeps A and C apart
+    # label propagation (--clusterer lp): reads covering only column 1 (where A and C agree) touch both; zero disagreement keeps
+    # A and C apart even though they differ at one column (correlation clustering merges them: the two-observation rule)
     haps = {"A": {1: "A", 2: "C"}, "C": {1: "A", 2: "T"}}
     obs, reads = obs_from(haps, {"A": 20, "C": 20})
     for i in range(6):
         obs[1].append((f"bridge{i}", "A", 30))
         reads.add(f"bridge{i}")
-    clusters, _, _ = P.cluster_pile(reads, obs)
+    clusters, _, _ = P.cluster_pile(reads, obs, "lp")
     big = [c for c in clusters if len(c) >= 10]
     assert len(big) == 2
     assert all(len({r[0] for r in c if not r.startswith("bridge")}) == 1 for c in big)

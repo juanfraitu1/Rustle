@@ -212,7 +212,7 @@ def correlation_clustering(pat):
 CLUSTERER = {"lp": label_propagation, "cc": correlation_clustering}
 
 
-def cluster_pile(reads, obs, method="lp"):
+def cluster_pile(reads, obs, method="cc"):
     """Strainy's clustering with refinement: label propagation on the pile's informative columns, then each cluster again on
     the columns informative inside it, until nothing splits. Returns (clusters of >= MIN_READS reads, every column used, the
     pile-level columns). Only the pile-level columns may prove two haplotypes distinct (the certificate): a column that passes
@@ -615,7 +615,7 @@ def divergence(h, ref):
 
 
 def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False,
-               floor_first=True, clusterer="lp"):
+               floor_first=True, clusterer="cc"):
     """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
     the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
@@ -866,8 +866,9 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--slot-order", choices=["divergence", "support"], default="divergence")
     r.add_argument("--isocon", default="", help="the stage's product prefix (candidate_copies) for the IsoCon side")
-    r.add_argument("--clusterer", choices=["lp", "cc"], default="lp", help="read clustering: label propagation on the "
-                   "zero-disagreement graph (Strainy's), or correlation clustering of agreeing / disagreeing read pairs")
+    r.add_argument("--clusterer", choices=["cc", "lp"], default="cc", help="read clustering: correlation clustering of agreeing "
+                   "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
+                   "zero-disagreement graph (Strainy's; v6 as pre-registered)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
     r.add_argument("--absorb", action="store_true", help="v5.1 (rejected on development data): join clusters outside the "
