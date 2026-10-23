@@ -147,7 +147,9 @@ def label_propagation(pat):
 
 def cluster_pile(reads, obs):
     """Strainy's clustering with refinement: label propagation on the pile's informative columns, then each cluster again on
-    the columns informative inside it, until nothing splits. Returns (clusters of >= MIN_READS reads, the columns used)."""
+    the columns informative inside it, until nothing splits. Returns (clusters of >= MIN_READS reads, every column used, the
+    pile-level columns). Only the pile-level columns may prove two haplotypes distinct (the certificate): a column that passes
+    the test only inside one cluster (smaller Bonferroni family, lower error mass) can come from a recurrent error or chimera."""
     cols = informative({c: [x for x in xs if x[0] in reads] for c, xs in obs.items()})
     used = dict(cols)
     todo = [c for c in label_propagation(patterns(reads, obs, cols)) if len(c) >= MIN_READS]
@@ -165,7 +167,7 @@ def cluster_pile(reads, obs):
             todo.extend(parts)
         else:
             done.append(c)
-    return sorted(done, key=lambda s: (-len(s), sorted(s))), used
+    return sorted(done, key=lambda s: (-len(s), sorted(s))), used, cols
 
 
 def haplotype(cluster, obs, cols):
@@ -391,6 +393,18 @@ def observations(pile, prim, span):
 
 
 
+def private_alleles(i, merged, match, options):
+    """Alleles of unmatched haplotype i that no slot-holding haplotype of its option copies carries, counted per pile where
+    i has a pattern (the largest count). A haplotype whose every allele some slot holder carries is a mosaic of them (a
+    chimeric molecule), not sequence the reference copies cannot hold: an extra copy needs >= MIN_READS private alleles."""
+    best = 0
+    for cid, hp in merged[i]["hap"].items():
+        holders = [merged[j]["hap"][cid] for j in match if match[j] is not None and j != i
+                   and cid in merged[j]["hap"] and cid in options[i]]
+        best = max(best, sum(1 for col, b in hp.items() if all(h.get(col) != b for h in holders)))
+    return best
+
+
 def divergence(h, ref):
     """Fraction of a haplotype's columns where its allele is not the reference base."""
     cols = [c for c in h if ref.get(c, "N") != "N"]
@@ -405,24 +419,25 @@ def run_family(fam, copies, reads, bam, prim, genome):
         if len(pile) < 2 * MIN_READS:
             continue
         obs, steps = observations(pile, prim, span[cid])
-        clusters, cols = cluster_pile(set(pile), obs)
-        hs = [haplotype(c, obs, cols) for c in clusters]
+        clusters, cols, top = cluster_pile(set(pile), obs)
+        hs = [haplotype(c, obs, top) for c in clusters]
         keep = conflicting_set(hs) if hs else []
         per_copy[cid] = (len(pile), len(clusters), len(keep))
         chrom = next(ch for c, ch, _, _ in copies if c == cid)
-        ref = {col: genome.fetch(chrom, col, col + 1).upper() for col in cols}
+        ref = {col: genome.fetch(chrom, col, col + 1).upper() for col in top}
         for i in keep:
-            haps.append((cid, clusters[i], steps, divergence(hs[i], ref)))
+            haps.append((cid, clusters[i], steps, divergence(hs[i], ref), hs[i]))
     # one haplotype found in several piles (tied reads) is one haplotype: merge by read overlap (>= half of the smaller)
     merged = []
-    for cid, reads_h, steps, dv in sorted(haps, key=lambda x: (-len(x[1]), x[0])):
+    for cid, reads_h, steps, dv, hp in sorted(haps, key=lambda x: (-len(x[1]), x[0])):
         for m in merged:
             if len(m["reads"] & reads_h) * 2 >= min(len(m["reads"]), len(reads_h)):
                 m["piles"].add(cid)
                 m["div"] = min(m["div"], dv)
+                m["hap"].setdefault(cid, hp)
                 break
         else:
-            merged.append({"reads": set(reads_h), "piles": {cid}, "div": dv})
+            merged.append({"reads": set(reads_h), "piles": {cid}, "div": dv, "hap": {cid: hp}})
     options = {}
     for i, m in enumerate(merged):
         options[i] = sorted(c for c, p in piles.items() if len(m["reads"] & p.keys()) * 2 >= len(m["reads"]))
@@ -431,7 +446,7 @@ def run_family(fam, copies, reads, bam, prim, genome):
     match = b_matching(options, capacity, order)
     certified = []
     for i, m in enumerate(merged):
-        if match[i] is None:
+        if match[i] is None and private_alleles(i, merged, match, options) >= MIN_READS:
             home = max(m["piles"], key=lambda c: (len(m["reads"] & piles[c].keys()), c))
             _, steps = observations({r: piles[home][r] for r in m["reads"] if r in piles[home]}, prim, span[home])
             certified.append((home, m["reads"], consensus(steps)))

@@ -43,10 +43,10 @@ def test_three_haplotypes_on_one_pile_including_a_minor_one():
     # and B's at column 2, and is separated only by the combination plus its private column 3
     haps = {"A": {1: "A", 2: "C", 3: "G", 4: "A"}, "B": {1: "T", 2: "T", 3: "G", 4: "A"}, "C": {1: "A", 2: "T", 3: "C", 4: "G"}}
     obs, reads = obs_from(haps, {"A": 45, "B": 45, "C": 9})
-    clusters, cols = P.cluster_pile(reads, obs)
+    clusters, cols, top = P.cluster_pile(reads, obs)
     got = sorted(sorted({r[0] for r in c}) for c in clusters)
     assert got == [["A"], ["B"], ["C"]]
-    hs = [P.haplotype(c, obs, cols) for c in clusters]
+    hs = [P.haplotype(c, obs, top) for c in clusters]
     assert len(P.conflicting_set(hs)) == 3
 
 
@@ -57,7 +57,7 @@ def test_bridge_reads_do_not_merge_haplotypes():
     for i in range(6):
         obs[1].append((f"bridge{i}", "A", 30))
         reads.add(f"bridge{i}")
-    clusters, _ = P.cluster_pile(reads, obs)
+    clusters, _, _ = P.cluster_pile(reads, obs)
     big = [c for c in clusters if len(c) >= 10]
     assert len(big) == 2
     assert all(len({r[0] for r in c if not r.startswith("bridge")}) == 1 for c in big)
@@ -95,3 +95,14 @@ def test_a_single_differing_column_is_not_a_conflict():
     # a piece that differs from a big haplotype at one column only (one observation) can share its slot
     assert len(P.conflicting_set([{1: "A", 2: "C", 3: "G"}, {1: "A", 2: "C", 3: "T"}])) == 1
     assert len(P.conflicting_set([{1: "A", 2: "C", 3: "G"}, {1: "A", 2: "T", 3: "T"}])) == 2
+
+
+def test_private_alleles_mosaic_versus_third_pattern():
+    merged = [{"hap": {"c": {1: "A", 2: "C", 3: "G", 4: "T"}}},     # slot holder A
+              {"hap": {"c": {1: "T", 2: "T", 3: "C", 4: "A"}}},     # slot holder B
+              {"hap": {"c": {1: "A", 2: "C", 3: "C", 4: "A"}}},     # mosaic of A and B: no private allele
+              {"hap": {"c": {1: "G", 2: "C", 3: "G", 4: "G"}}}]     # third pattern: private G at 1 and 4
+    match = {0: "c", 1: "c", 2: None, 3: None}
+    options = {0: ["c"], 1: ["c"], 2: ["c"], 3: ["c"]}
+    assert P.private_alleles(2, merged, match, options) == 0
+    assert P.private_alleles(3, merged, match, options) == 2
