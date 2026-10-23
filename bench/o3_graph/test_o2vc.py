@@ -1350,3 +1350,11 @@ def test_e2_is_not_evaluable_when_no_scored_read_of_the_pool_is_placed_wrong_by_
     s = _score(toy_dir(tmp_path / "b", _right_reads() + [tied_read("w0", "F.0", ("unique", "F.1"))]), "score.E.json",
                panel="E", focus=None, exclude_p=None)
     assert s["bars"]["E2"] == {"value": 0, "limit": 0, "op": ">", "pass": False} and s["verdict"] == "FAIL"   # 1 fix possible
+
+
+def test_e2_is_evaluable_and_fails_when_vc_breaks_a_read_even_though_no_fix_is_possible(tmp_path):
+    # refined follow-up ruling: no N1-wrong scored read makes E2 not evaluable only when VC broke none; 0 fixes > 1 break fails
+    s = _score(toy_dir(tmp_path, _right_reads() + [tied_read("b0", "F.0", ("unique", "F.0"), vc="F.1", cols=1)]),
+               "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["arms"]["N1"]["wrong"] == 0 and (s["arms"]["VC"]["fixes"], s["arms"]["VC"]["breaks"]) == (0, 1)
+    assert s["bars"]["E2"] == {"value": 0, "limit": 1, "op": ">", "pass": False} and s["verdict"] == "FAIL"

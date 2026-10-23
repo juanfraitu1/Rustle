@@ -78,7 +78,8 @@ OUTDIR/score[.PANEL[.FOCUS]].json and, for every family scored (a --exclude fami
   exactly. A bar with nothing to measure is not evaluable (pass null, with a reason): a zero denominator, no scored read on
   the focus family for A2 and A3, no VC placement of a scored read for E2; so is a bar no outcome could meet for lack of
   reads (Task 6 rulings): A2 with fewer than 10 scored reads of the focus family that minimap2 places wrong, C1 with fewer
-  than 2 no_counterpart tied reads, A3 (the focus family) and E2 (the pool) with no scored read minimap2 places wrong.
+  than 2 no_counterpart tied reads, A3 (the focus family) and E2 (the pool, and no VC break) with no scored read minimap2
+  places wrong.
   The verdict of a panel is FAIL when a bar failed, else UNDERPOWERED when a bar was not evaluable, else PASS. --focus
   belongs to --panel A and must be a family of the run.
 - Not built (deferred with panels D and C-gorilla): --mode world and units, --panel D and Cg, score-worlds, copies-from-genes.
@@ -810,8 +811,8 @@ def panel_bars(panel, pooled, focus):
     A2 and A3, no VC placement of a scored read for E2. So is a bar that no outcome could meet for lack of reads (Task 6
     ruling A3, made before any panel): A2 with fewer than MIN_FIXES scored reads of the focus family that minimap2 places
     wrong (a fix is one of them), C1 with fewer than 2 no_counterpart tied reads in the pool; and (follow-up ruling) A3 when
-    the focus family, E2 when the pool, has no scored read that minimap2 places wrong: no fix is possible. A reachable bar
-    missed fails."""
+    the focus family, E2 when the pool, has no scored read that minimap2 places wrong: no fix is possible (E2 only when VC
+    broke no read either: 0 fixes against a break fails). A reachable bar missed fails."""
     if panel == "A":
         a, n3 = focus["arms"]["VC"], focus["arms"]["N3"]
         bare = None if focus["scored"] else "the focus family has no scored read"
@@ -831,7 +832,8 @@ def panel_bars(panel, pooled, focus):
     if panel == "E":
         a = pooled["arms"]["VC"]
         none_placed = "VC placed no scored read"
-        no_fix = None if pooled["arms"]["N1"]["wrong"] else "the pool has no scored read minimap2 places wrong: no fix is possible"
+        no_fix = None if pooled["arms"]["N1"]["wrong"] or a["breaks"] else \
+            "the pool has no scored read minimap2 places wrong: no fix is possible"
         return {"E1": ratio_bar(a["wrong"], a["placed"], none_placed),
                 "E2": count_bar(a["fixes"], ">", a["breaks"], none_placed if not a["placed"] else no_fix),
                 "K2": ratio_bar(pooled["K2"]["flagged"], pooled["K2"]["reads"], "no read with a present copy")}
