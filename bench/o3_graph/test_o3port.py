@@ -137,11 +137,11 @@ def test_absorb_joins_a_fragment_to_its_one_compatible_haplotype():
     assert P.absorb(hs, [0, 1]) == {2: 0}
 
 
-def test_look_harder_needs_a_contrast_with_the_copys_own_allele():
+def test_putative_needs_a_contrast_with_the_copys_own_allele():
     reads_of = {0: {"a1", "a2", "a3"}, 1: {"e1", "e2", "e3"}, 2: {"z1", "z2"}}
     n_piles = {"a1": 1, "a2": 1, "a3": 2, "e1": 2, "e2": 2, "e3": 1, "z1": 2, "z2": 2}
     match = {0: "X", 1: "X", 2: "Y"}
-    got = P.look_harder([0, 1, 2], match, reads_of, n_piles)
+    got = P.putative_copies([0, 1, 2], match, reads_of, n_piles)
     assert [(i, c) for i, c, _, _ in got] == [(1, "X")]     # 2 is Y's only holder: no contrast, no flag
 
 
@@ -185,10 +185,10 @@ def test_foreign_splicing_counts_non_canonical_majority_junctions():
     assert not P.foreign_splicing(set(minor), minor, bad_two)                # (400, 600) is a minor isoform: not counted
 
 
-def test_look_harder_structure_flags_a_one_survivor_family():
+def test_putative_structure_flags_a_one_survivor_family():
     reads_of = {0: {"a1", "a2"}, 1: {"e1", "e2"}}
     n_piles = {r: 1 for r in ("a1", "a2", "e1", "e2")}                    # one pile: no ties anywhere
     match = {0: "X", 1: "X"}
-    assert P.look_harder([0, 1], match, reads_of, n_piles) == []
-    got = P.look_harder([0, 1], match, reads_of, n_piles, foreign=lambda i, X, co: i == 1)
+    assert P.putative_copies([0, 1], match, reads_of, n_piles) == []
+    got = P.putative_copies([0, 1], match, reads_of, n_piles, foreign=lambda i, X, co: i == 1)
     assert [(i, c) for i, c, _, _ in got] == [(1, "X")]

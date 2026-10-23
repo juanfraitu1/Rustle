@@ -41,7 +41,7 @@
    - Where the survivors' alleles are distinguishable, both of their slots are full and the haplotype is certified, with a 99.9% contig.
    - KB3781's real survivors are homozygous here. A homozygous survivor has a free slot, and RNA cannot rule out that the haplotype
      is that survivor's second allele, so it is not certified.
-   - That case is a "look harder" flag: a slot-filler that disagrees with the copy's reference almost everywhere.
+   - That case is a putative copy: a slot-filler that disagrees with the copy's reference almost everywhere.
 3. **Pseudogenes in the genome are trackable from multimappers alone.** The advisor's claim holds here:
    - Silent :3 collects 516 secondary alignments from its paralogs' reads.
    - So does an unlisted similar locus near the family (280-473 reads).
@@ -70,7 +70,7 @@ python3 bench/o3_graph/o3sim_one.py report --out $O --name <name>
 
 | E (the erased copy) | same individual, survivors as in KB3781 | same individual, survivors heterozygous | other individual, survivors as in KB3781 | other individual, survivors heterozygous |
 |---|---|---|---|---|
-| 100 / 30 / 10 / 5 reads per allele | **look harder** (pure print; contig 99.9-100%) | **certified** | certified at 100 / 30 / 10; missed at 5 | certified at 100 / 30 / 10; missed at 5 |
+| 100 / 30 / 10 / 5 reads per allele | **putative** (pure print; contig 99.9-100%) | **certified** | certified at 100 / 30 / 10; missed at 5 | certified at 100 / 30 / 10; missed at 5 |
 | 3 reads per allele | missed (below the 6-read floor) | missed | missed | missed |
 | f 0.5 / 0.25 (1.3 / 0.65%) | silent in :1's free slot | certified | certified | certified |
 | f 0.1 (0.26%) | silent | count right, but :1's own allele is named extra | certified | count right, wrong one named |
@@ -82,7 +82,7 @@ python3 bench/o3_graph/o3sim_one.py report --out $O --name <name>
    with the reference sequence to decide:
    - a column is informative only when the sample's own reads carry >= 2 alleles, so a variant the sample carries on both
      alleles is invisible to it;
-   - haplotypes, the count against slots, and the look-harder flag (tie patterns) all compare the sample with itself.
+   - haplotypes, the count against slots, and the putative-copy flag (tie patterns) all compare the sample with itself.
    Only two parts read the reference:
    - the slot order (closest to the reference first) decides which haplotype is named extra when the count exceeds the slots;
    - the DADA2 rule's reference parents.
@@ -94,7 +94,7 @@ python3 bench/o3_graph/o3sim_one.py report --out $O --name <name>
    - Divergence: below about 0.3% from its closest survivor (<= 4 differences), the extra copy is still counted, but RNA cannot
      say which of the three haplotypes is the extra one, so a survivor's allele can be named instead.
 4. **The sweep found a real bug (v6).** Before the fix, the conflicting set counted 2-3-read artifact clusters. Three of them beat
-   a real 93-read allele, freeing its slot for the erased copy (`expr100_6_other`: look harder, not certified). The 6-read floor
+   a real 93-read allele, freeing its slot for the erased copy (`expr100_6_other`: putative, not certified). The 6-read floor
    now applies before the count. On real development data this fix moved P1 from 5,762 to 6,129 D right (passes) with P2 still
    0 / 53 (`docs/PREREG_o3_port_2026-10-23.md`, development log).
 

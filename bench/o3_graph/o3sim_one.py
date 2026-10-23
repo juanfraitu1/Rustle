@@ -369,8 +369,8 @@ def run_config(W, name, cfg):
 
 def summary(W, name):
     """One row: the erased copy's reads (in a pile, multimappers), its print (the largest haplotype holding >= 90% E reads) and
-    what became of it (certified / look harder / an allele slot / below the floor ...), false calls (certified or look-harder
-    haplotypes with < half E reads), the certified or look-harder contig against the sample's own E transcripts, and the
+    what became of it (certified / putative / an allele slot / below the floor ...), false calls (certified or putative
+    haplotypes with < half E reads), the certified or putative contig against the sample's own E transcripts, and the
     landing loci on E."""
     case, meta = json.load(open(f"{W}/case.json")), json.load(open(f"{W}/{name}/meta.json"))
     D, E = f"{W}/{name}", case["erased"]
@@ -385,13 +385,13 @@ def summary(W, name):
     pr = max(prints, key=lambda m: len(m["reads"]), default=None)
     fate = "none"
     if pr:
-        fate = ("certified" if pr["certified"] else "look harder" if pr.get("look_harder") else
+        fate = ("certified" if pr["certified"] else "putative" if pr.get("putative") else
                 f"slot {pr['slot']}" if pr["slot"] else pr["fate"])
     false_c = sum(1 for m in d["merged"] if m["certified"] and 2 * is_e(m) < len(m["reads"]))
-    false_l = sum(1 for m in d["merged"] if m.get("look_harder") and 2 * is_e(m) < len(m["reads"]))
+    false_l = sum(1 for m in d["merged"] if m.get("putative") and 2 * is_e(m) < len(m["reads"]))
     sample = fasta(f"{D}/sample.fa")
     ident = None
-    for path in (f"{D}/port.contigs.fa", f"{D}/port.look_harder.fa"):
+    for path in (f"{D}/port.contigs.fa", f"{D}/port.putative.fa"):
         for c, sq in (fasta(path) if os.path.exists(path) else {}).items():
             hits = [compare(sample[f"{E}|{h}"], sq, D) for h in ("A", "B")]
             hits = [h for h in hits if h]
@@ -461,8 +461,8 @@ def report(a):
     for m in d["merged"]:
         c = collections.Counter(r.rsplit("_r", 1)[0] for r in m["reads"])
         print(f"   haplotype {len(m['reads']):4d} reads {dict(sorted(c.items()))} piles {m['piles']}: {m['fate']}, slot {m['slot']}, "
-              f"certified {m['certified']}, look harder {m.get('look_harder', False)}")
-    for f in ("look_harder.tsv", "loci.tsv"):
+              f"certified {m['certified']}, putative {m.get('putative', False)}")
+    for f in ("putative.tsv", "loci.tsv"):
         if os.path.exists(f"{D}/port.{f}"):
             for r in tsv(f"{D}/port.{f}"):
                 print(f"   {f.split('.')[0]}: {dict(r)}")

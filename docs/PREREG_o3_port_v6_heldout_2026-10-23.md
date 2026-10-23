@@ -86,3 +86,6 @@
 
 The main loss is "no pile", not Theorem A. Those deleted copies' reads never land within 10 AS on the survivor: they align
 elsewhere or not at all, and the shipped stage did not flag them either.
+
+*Terminology (2026-10-23, after the run): the "look-harder" flags above are now called putative copies (user's request). Only
+the name changed.*

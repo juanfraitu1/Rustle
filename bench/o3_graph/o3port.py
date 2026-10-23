@@ -18,9 +18,9 @@ Per family (the reads of its net with used = 1, as `candidate_copies` built it):
   7. its contig: the consensus of its reads (majority base, deletion or insertion at every position >= MIN_READS of them cover)
      along their alignments on the copy whose pile holds most of them.
 Products (the `candidate_copies` contract the acceptance harness reads): PREFIX.candidates.tsv (one row per certified haplotype,
-flagged = 1), PREFIX.contigs.fa, PREFIX.clusters.tsv, PREFIX.reads.tsv, PREFIX.families.tsv. Beside them, "look harder" (not
-certified; 2026-10-23): PREFIX.look_harder.tsv / .fa (slot holders whose reads tie to other copies while the slot copy's other
-allele's do not, `look_harder`) and PREFIX.loci.tsv (where >= MIN_SUPPORT of the family's reads land outside its copies,
+flagged = 1), PREFIX.contigs.fa, PREFIX.clusters.tsv, PREFIX.reads.tsv, PREFIX.families.tsv. Beside them, putative copies (not
+certified; 2026-10-23): PREFIX.putative.tsv / .fa (slot holders whose reads tie to other copies while the slot copy's other
+allele's do not, or that the slot copy cannot have spliced, `putative_copies`) and PREFIX.loci.tsv (where >= MIN_SUPPORT of the family's reads land outside its copies,
 `landing_loci`: an unannotated similar locus, expressed or silent).
 """
 import argparse
@@ -308,7 +308,7 @@ CANONICAL = {("GT", "AG"), ("GC", "AG"), ("AT", "AC"), ("CT", "AC"), ("CT", "GC"
 
 
 def foreign_splicing(reads_i, usage, site):
-    """Structure as look-harder evidence (2026-10-23): >= MIN_READS of haplotype i's own junctions on the slot copy are non-canonical
+    """Structure as evidence of a putative copy (2026-10-23): >= MIN_READS of haplotype i's own junctions on the slot copy are non-canonical
     on that copy's DNA (donor / acceptor dinucleotides not GT-AG, GC-AG or AT-AC on either strand): two independent observations,
     the project's rule (a first version asked >= half of them; P5's GWFAM101 had 7 of 17, so this threshold was set after looking
     at a held-out miss and P5 is no evidence for it). i's own junctions = those used
@@ -321,7 +321,7 @@ def foreign_splicing(reads_i, usage, site):
     return sum(1 for j in J if site(j) not in CANONICAL) >= MIN_READS
 
 
-def look_harder(demand, match, reads_of, n_piles, foreign=None):
+def putative_copies(demand, match, reads_of, n_piles, foreign=None):
     """The haplotypes RNA cannot prove extra (they hold an allele slot, Theorem A) but whose reads behave like another copy's:
     >= half of them tie (within AS_TIE of their best) to another copy as well as to the slot's, while < half of the reads of
     every other haplotype holding a slot of the same copy do. It compares the sample with itself (tie patterns), never with the
@@ -765,7 +765,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     site = lambda X: (lambda j: (genome.fetch(chrom[X], j[0], j[0] + 2).upper(), genome.fetch(chrom[X], j[1] - 2, j[1]).upper()))
     foreign = (lambda i, X, co: X in usage and foreign_splicing(merged[i]["reads"], usage[X], site(X))) if structure else None
     looks = []
-    for i, X, mi, mc in look_harder(demand, match, {i: merged[i]["reads"] for i in demand}, n_piles, foreign):
+    for i, X, mi, mc in putative_copies(demand, match, {i: merged[i]["reads"] for i in demand}, n_piles, foreign):
         if len(merged[i]["reads"]) < MIN_SUPPORT:
             continue
         _, steps = observations({r: piles[X][r] for r in sorted(merged[i]["reads"]) if r in piles[X]}, prim, span[X])
@@ -782,7 +782,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
             row = {"reads": sorted(m["reads"]), "piles": sorted(m["piles"]), "div": m["div"], "options": options[i],
                    "fate": fate[i][0], "by": fate[i][1], "slot": match.get(i) if i in demand else None,
                    "certified": any(rs is m["reads"] for _, rs, _ in certified),
-                   "look_harder": any(rs is m["reads"] for _, rs, _, _, _ in looks)}
+                   "putative": any(rs is m["reads"] for _, rs, _, _, _ in looks)}
             if i in demand and match[i] is None:
                 cid, priv = private_detail(i, merged, match, options)
                 row["private"] = [(cid, col, b, genome.fetch(chrom[cid], col, col + 1).upper()) for col, b in priv]
@@ -851,8 +851,8 @@ def cmd_run(a):
         cl.write("family\tcluster\tcandidate\tn_reads\tconsensus_len\tfate\tlinked_to\td\n")
         rd.write("read\tfamily\tcluster\n")
         ft.write("family\tn_net\tn_used\tpiles\tpile_reads\tclusters\tconflicting\thaplotypes\tcertified\n")
-        lh = open(f"{a.out}.look_harder.tsv", "w")
-        lf = open(f"{a.out}.look_harder.fa", "w")
+        lh = open(f"{a.out}.putative.tsv", "w")
+        lf = open(f"{a.out}.putative.fa", "w")
         lo = open(f"{a.out}.loci.tsv", "w")
         lh.write("family\tcandidate\tcopy\tn_reads\tmulti\tother_holders_multi\tconsensus_len\n")
         lo.write("family\tlocus\tn_reads\tnear_best\tweaker_only\n")
@@ -863,8 +863,8 @@ def cmd_run(a):
                                                                      tmpdir, dump, a.absorb, not a.v5_clique, a.clusterer,
                                                                      not a.no_structure)
             for k, (X, rs, seq, mi, mc) in enumerate(looks):
-                lh.write(f"{fam}\tlook_{fam}_{k}\t{X}\t{len(rs)}\t{mi:.3f}\t{','.join(f'{x:.3f}' for x in mc)}\t{len(seq)}\n")
-                lf.write(f">look_{fam}_{k}\n{seq}\n")
+                lh.write(f"{fam}\tputative_{fam}_{k}\t{X}\t{len(rs)}\t{mi:.3f}\t{','.join(f'{x:.3f}' for x in mc)}\t{len(seq)}\n")
+                lf.write(f">putative_{fam}_{k}\n{seq}\n")
             recs = []
             for n in reads:
                 b = max((x[3] for x in records.get(n, [])), default=None)
@@ -886,7 +886,7 @@ def cmd_run(a):
                 for r in sorted(rs):
                     rd.write(f"{r}\t{fam}\t{fam}:h{k}\n")
             print(f"[o3port] {fam}: reads {len(reads)}, piles {len(per_copy)}, haplotypes {n_h} {dict(why)}, "
-                  f"certified {len(certified)}, look harder {len(looks)}", file=sys.stderr, flush=True)
+                  f"certified {len(certified)}, putative {len(looks)}", file=sys.stderr, flush=True)
         for fh in (lh, lf, lo):
             fh.close()
 
@@ -906,7 +906,7 @@ def main(argv):
     r.add_argument("--clusterer", choices=["cc", "lp"], default="cc", help="read clustering: correlation clustering of agreeing "
                    "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
                    "zero-disagreement graph (Strainy's; v6 as pre-registered)")
-    r.add_argument("--no-structure", action="store_true", help="look harder on tie patterns only (no non-canonical splicing signal)")
+    r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
     r.add_argument("--absorb", action="store_true", help="v5.1 (rejected on development data): join clusters outside the "
