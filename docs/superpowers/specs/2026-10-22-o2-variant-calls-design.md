@@ -213,9 +213,21 @@ For a tied read, a **column** is a read base aligned in every one of its tied al
 
 ## Pass criteria (to be pre-registered; my proposals)
 
-**How reads are scored:**
-- **Decidable reads** are tied reads whose truth copy is among their tied copies. Fixes and breaks are counted over all of
-  them. Precision (wrong placements / placements) is always reported with its counts.
+**How reads are scored** (amended 2026-10-22 after the Task 5 review; memory metric trap 09-22, "a scorer that intersects
+predictions with the truth universe inflates precision"):
+- **Scored reads** are the tied reads with a definite truth.
+  - Truth classes: unique, unique_elsewhere, elsewhere, no_counterpart.
+  - **Right:** a placement is right only when the placed copy is the truth copy.
+  - **Wrong:** every other placement on a scored read. That covers a truth copy outside the tied set, `elsewhere`, and
+    `no_counterpart`.
+- **Not scored:** `own_tie` reads (they go to K1), and poor_match, unmapped and no-truth reads (reported as counts only).
+- **Same reads for every arm.** Precision (wrong placements / placements), fixes and breaks are counted over all scored
+  reads, for every arm on the same reads. A break includes a read whose minimap2 primary lies outside the tied set and is
+  the truth, which VC moves.
+- **Reported alongside.** The decidable subset (truth copy among the tied copies) is reported too, for comparison with
+  earlier registers.
+- **Not evaluable.** A bar with nothing to measure is "not evaluable", and the panel's verdict is then UNDERPOWERED, not
+  FAIL. That covers a zero denominator, no reads for a count bar, and no VC placements for E2.
 - **Two failure modes are invisible to that score**, so calibration bars (K1, K2) cover them, as in the 10-18 prereg's T3 and
   T5:
   - **K1 (donor-tied reads):** reads whose truth copies tie in the donor too (`own_tie`), so any placement is a guess.
