@@ -211,6 +211,21 @@ def conflicting_set(haps):
     return sorted(best)
 
 
+def absorb(hs, keep):
+    """v5.1 (design step 5: a haplotype split where the reads show no heterozygosity is one haplotype): {cluster outside the
+    conflicting set: the kept cluster it joins}. It joins the one kept haplotype it shares >= 1 column with and is not in
+    conflict with (differs at < MIN_READS shared columns, the conflict rule); with none or several such haplotypes it stays out."""
+    out = {}
+    for j in range(len(hs)):
+        if j in keep:
+            continue
+        fit = [k for k in keep if hs[j].keys() & hs[k].keys()
+               and sum(hs[j][c] != hs[k][c] for c in hs[j].keys() & hs[k].keys()) < MIN_READS]
+        if len(fit) == 1:
+            out[j] = fit[0]
+    return out
+
+
 def b_matching(options, capacity, order=None):
     """options: {haplotype: [copies]}; capacity: {copy: slots}. Maximum b-matching by augmenting paths, haplotypes taken in
     `order` (default: fewest options first). An augmenting path never unmatches a matched haplotype, so the ones left
@@ -492,7 +507,7 @@ def divergence(h, ref):
     return sum(h[c] != ref[c] for c in cols) / len(cols) if cols else 0.0
 
 
-def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None):
+def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False):
     """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
     the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
@@ -508,6 +523,11 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         clusters, cols, top = cluster_pile(set(pile), obs)
         hs = [haplotype(c, obs, top) for c in clusters]
         keep = conflicting_set(hs) if hs else []
+        joined = absorb(hs, keep) if absorb_fragments else {}
+        for j, k in joined.items():
+            clusters[k] = clusters[k] | clusters[j]
+        for k in set(joined.values()):
+            hs[k] = haplotype(clusters[k], obs, top)
         per_copy[cid] = (len(pile), len(clusters), len(keep))
         ref = {col: genome.fetch(chrom[cid], col, col + 1).upper() for col in top}
         cons[cid] = pile_consensus(obs)
@@ -518,12 +538,15 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         if dump is not None:
             dump["copies"][cid]["columns"] = len(top)
             dump["clusters"] += [{"copy": cid, "reads": sorted(c), "hap": {str(k): v for k, v in hs[i].items()},
-                                  "ref": {str(k): ref[k] for k in hs[i]}, "kept": i in keep} for i, c in enumerate(clusters)]
+                                  "ref": {str(k): ref[k] for k in hs[i]}, "kept": i in keep, "joined": i in joined}
+                                 for i, c in enumerate(clusters)]
     # one haplotype found in several piles (tied reads) is one haplotype: merge by read overlap (>= half of the smaller)
     merged = []
     for cid, reads_h, steps, dv, hp in sorted(haps, key=lambda x: (-len(x[1]), x[0])):
         for m in merged:
             if len(m["reads"] & reads_h) * 2 >= min(len(m["reads"]), len(reads_h)):
+                if absorb_fragments:            # v5.1: the merged haplotype holds the reads of every pile it was found in
+                    m["reads"] |= reads_h
                 m["piles"].add(cid)
                 m["div"] = min(m["div"], dv)
                 m["hap"].setdefault(cid, hp)
@@ -675,7 +698,7 @@ def cmd_run(a):
             reads = net[fam]
             dump = {} if dump_fh else None
             certified, per_copy, n_h, why, piled = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order, tmpdir,
-                                                              dump)
+                                                              dump, a.absorb)
             side = [(c, rs, seq) for c, rs, seq, vb in iso.get(fam, []) if isocon_keep(rs, vb, piled, a.isocon_rule)]
             if dump_fh:
                 dump["isocon"] = [{"candidate": c, "reads": sorted(rs)} for c, rs, _ in side]
@@ -706,6 +729,8 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--slot-order", choices=["divergence", "support"], default="divergence")
     r.add_argument("--isocon", default="", help="the stage's product prefix (candidate_copies) for the IsoCon side")
+    r.add_argument("--absorb", action="store_true", help="v5.1 (rejected on development data): join clusters outside the "
+                   "conflicting set to their one compatible haplotype, and a haplotype merged across piles keeps every pile's reads")
     r.add_argument("--isocon-rule", choices=["no-pile", "via-b"], default="no-pile",
                    help="which stage candidates the IsoCon side keeps: mostly reads in no phased pile (v5), or mostly via-B reads (v4)")
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "

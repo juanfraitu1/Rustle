@@ -125,3 +125,12 @@ def test_isocon_keep_rules():
     assert not P.isocon_keep(members, 0, {"a", "b", "c"}, "no-pile")
     assert P.isocon_keep(members, 2, {"a", "b", "c", "d"}, "via-b")   # v4: half joined by attribution
     assert not P.isocon_keep(members, 1, set(), "via-b")
+
+
+def test_absorb_joins_a_fragment_to_its_one_compatible_haplotype():
+    hs = [{1: "A", 2: "C", 3: "G"},          # kept
+          {1: "T", 2: "T", 3: "C"},          # kept
+          {2: "C", 3: "G"},                  # fragment of 0
+          {1: "A", 2: "T"},                  # one difference from each kept haplotype: fits both -> stays out
+          {9: "G"}]                          # shares no column -> stays out
+    assert P.absorb(hs, [0, 1]) == {2: 0}

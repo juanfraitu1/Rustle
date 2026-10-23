@@ -84,3 +84,10 @@ port can replace the stage on equal terms.
   - P2: 0 flags in 0 / 53: passes.
 - **The held-out for any version after v4 is a NEW gorilla fibroblast panel** (user 2026-10-23: "we need to stick to fibroblasts
   in gorilla"; no human test bed), registered before it is built.
+- **v5.1** (`--absorb`, opt-in, **rejected**): design step 5 as written: a cluster outside the conflicting set joins the one kept
+  haplotype it shares a column with and does not conflict with, and a haplotype merged across piles keeps every pile's reads.
+  - P1: flags hold +87 D and **+140 S** reads (a 118-read survivor haplotype certified on GWFAM269); harness D right **5,825**
+    (79.8% of C) < 5,842: fails by 17; false moves 20 (0.05%).
+  - P2: **4 flags in 4 / 53** families (v5: 0).
+  - Precision for 63 reads; v5 stays the candidate. Development stops here: neither version clears P1, and tuning further to pass
+    it would be fitting the bar.
