@@ -106,3 +106,13 @@ def test_private_alleles_mosaic_versus_third_pattern():
     options = {0: ["c"], 1: ["c"], 2: ["c"], 3: ["c"]}
     assert P.private_alleles(2, merged, match, options) == 0
     assert P.private_alleles(3, merged, match, options) == 2
+
+
+def test_explanation_dada2_rule():
+    hp = {1: "A", 2: "C", 3: "G", 4: "T"}
+    left = ("p1", {1: "A", 2: "C", 3: "A", 4: "A"})
+    right = ("p2", {1: "G", 2: "G", 3: "G", 4: "T"})
+    assert P.explanation(hp, [left, right]) == ("join", ("p1", "p2"))
+    assert P.explanation(hp, [("same", dict(hp))]) == ("single", "same")
+    assert P.explanation(hp, [left]) is None                      # one parent cannot make a join
+    assert P.explanation(hp, [("x", {1: "A", 4: "T"})]) is None    # uncovered columns are mismatches
