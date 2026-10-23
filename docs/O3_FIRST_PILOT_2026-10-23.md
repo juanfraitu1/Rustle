@@ -54,3 +54,41 @@ Expression is not the limit, divergence is. These are annotated copies; unannota
 - The read-level O2 effect: whether the donor-only copies' reads move to the candidates, and the false moves.
 - Verifying the labels of CBWD2, NBPF1, GTF2H2C and WASHC1.
 - A Strainy run with a lower coverage floor.
+
+## 3. Label check (2026-10-23): which `no_counterpart` reads come from sequence CHM13 lacks
+- **Method** (`o3first_pilot.py verify-queries` / `verify-call`, then the per-base pass).
+  1. Each `no_counterpart` read takes its best donor alignment (mat/pat, tied and untied).
+  2. Reads within 10 kb of each other form donor loci; each locus with >= 2 reads becomes a query, the locus plus 20 kb of flank
+     on each side from hg002v1.1.
+  3. The queries are aligned to CHM13 with minimap2 asm20 `--eqx`.
+  4. A read comes from donor-only sequence when >= 50 of its exon bases fall in an insertion (>= 50 bp) of the alignment that
+     spans both flanks.
+  - A first version that asked only whether the locus aligned across both flanks called every locus "counterpart". asm20
+    bridges multi-kb insertions inside one gapped alignment, so that version was discarded.
+
+| family | finding | labelled reads from donor-only sequence |
+|---|---|---|
+| SPDYE1 | 6.4 kb donor insertion (chr7_MATERNAL 104,183,399-104,189,258) | 99 / 342 |
+| POTEM | 0.35 kb insertion | 2 / 12 |
+| RASA4B, SDHA | 6.3 kb and 0.9 kb insertions | 1 / 19, 1 / 10 |
+| NPIPB2 | the known 57-bp insertion in a copy CHM13 has (allelic structural variant) | 25 / 43 |
+| NBPF1 | a 6.4 kb donor DELETION: HG002 lacks a unit CHM13 has; 11 reads span the junction | 0 (11 junction reads) |
+| CBWD2, GTF2H2C, WASHC1, USP17L11, BMS1P1, AGAP4, DUXAP9, FRG1, CTAGE15, ... | allele-level counterpart (<= 1% divergence, no insertion): liftover artifacts | 0 |
+
+**HG002 has one solid extra-copy positive, SPDYE1. Its 2026-10-22 positive set was partly wrong:** USP17L11 and BMS1P1 have no
+read from donor-only sequence, and RASA4B has one. The family-level tables above cannot rank arms.
+
+## 4. Read level: does any arm find SPDYE1's hidden copy?
+- **minimap2.** All 99 reads have their primary on CHM13 copy SPDYE1.18, unique, among ~1,050 reads there (9%). Their median NM
+  is 7 against CHM13 and 2 against the donor.
+- **The hidden copy's sites.** At the columns where its reads all carry a non-reference base, the donor's own SPDYE1.18 reads
+  mostly carry it too (alleles shared with one of its haplotypes). It is separable only by linkage across columns.
+- **candidate_copies.** 37 of the 99 reads sit in clusters linked to a reference copy as alleles (delta 0.96%), and 62 in
+  in-reference clusters. Its flagged SPDYE1 candidates (81 + 11 reads) contain none of them.
+- **Strainy.** 98 of the 99 fall in SPDYE1.18's main group (1,018 reads). Its pileup caller's allele-frequency floor (0.2) is
+  above the hidden copy's 9%. Its SPDYE1 flag came from copy SPDYE1.20.
+
+**Every arm "caught" SPDYE1 for another reason.** What the case needs:
+- variant columns admitted by recurrence or significance, not by an allele-frequency floor (IsoCon's statistical test);
+- reads linked across columns with zero disagreement and refined per cluster (Strainy's graph);
+- the cluster's consensus as the new copy (IsoCon).

@@ -255,9 +255,120 @@ def cmd_score(work):
     print("Strainy per positive:", {f: (rows[f]["phased"], rows[f]["mx"], rows[f]["flagged"]) for f in pos_b})
 
 
+FLANK = 20000   # donor sequence kept on each side of a donor locus for the synteny check
+LOCUS_GAP = 10000   # donor alignments closer than this join one donor locus
+
+
+def cmd_verify_queries(truth_dir, donor_fa, out_prefix):
+    """Label check, part 1 (2026-10-23): every read the HG002 truth calls `no_counterpart` (tied and untied, NUMT families
+    excluded) -> its best donor alignment (highest AS over mat/pat, tied and untied BAMs) -> donor loci per family (alignments
+    within LOCUS_GAP) -> one query per locus of >= 2 reads: the locus with FLANK bases each side, from the donor assembly."""
+    import collections
+    import os
+    want = {}
+    for p in ("truth.tsv", "truth_untied.tsv"):
+        for r in csv.DictReader(open(os.path.join(truth_dir, p)), delimiter="\t"):
+            if r["class"] == "no_counterpart" and not r["family"].startswith("S19MT"):
+                want[r["read"]] = r["family"]
+    best = {}
+    for b in ("mat.bam", "pat.bam", "mat_untied.bam", "pat_untied.bam"):
+        for rec in pysam.AlignmentFile(os.path.join(truth_dir, b), check_sq=False).fetch(until_eof=True):
+            if rec.is_unmapped or rec.query_name not in want or rec.is_supplementary:
+                continue
+            a = rec.get_tag("AS")
+            if rec.query_name not in best or a > best[rec.query_name][0]:
+                best[rec.query_name] = (a, rec.reference_name, rec.reference_start, rec.reference_end)
+    loci = collections.defaultdict(list)
+    for read, fam in want.items():
+        if read in best:
+            loci[fam].append(best[read][1:] + (read,))
+    fa = pysam.FastaFile(donor_fa)
+    n_q = 0
+    with open(f"{out_prefix}.queries.fa", "w") as q, open(f"{out_prefix}.loci.tsv", "w") as t:
+        t.write("family\tlocus\tcontig\tstart\tend\treads\tquery\tcore_qstart\tcore_qend\n")
+        for fam in sorted(loci):
+            groups = []
+            for c, s, e, read in sorted(loci[fam]):
+                if groups and groups[-1][0] == c and s <= groups[-1][2] + LOCUS_GAP:
+                    groups[-1][2] = max(groups[-1][2], e)
+                    groups[-1][3].append(read)
+                else:
+                    groups.append([c, s, e, [read]])
+            for i, (c, s, e, reads) in enumerate(groups):
+                qn = ""
+                lo, hi = max(0, s - FLANK), min(fa.get_reference_length(c), e + FLANK)
+                if len(reads) >= 2:
+                    qn = f"{fam}|{i}"
+                    q.write(f">{qn}\n{fa.fetch(c, lo, hi)}\n")
+                    n_q += 1
+                t.write(f"{fam}\t{i}\t{c}\t{s}\t{e}\t{len(reads)}\t{qn}\t{s - lo}\t{e - lo}\n")
+    print(f"{len(want)} no_counterpart reads, {len(best)} with a donor alignment, {sum(len(v) for v in loci.values())} placed; "
+          f"{n_q} donor loci with >= 2 reads -> {out_prefix}.queries.fa")
+
+
+def cmd_verify_call(loci_p, paf_p, copies_tsv, out_p):
+    """Label check, part 2: a donor locus has a CHM13 counterpart when one CHM13 alignment of its query runs from inside the left
+    flank to inside the right flank (CHM13 holds the copy at the syntenic site; the `no_counterpart` label came from the chain
+    lift); otherwise CHM13 lacks the copy there (a real donor-only copy). Also reported: where the core's best alignment lands
+    and whether that overlaps a copy of the family."""
+    import collections
+    copies = load_copies(copies_tsv)
+    fam_iv = collections.defaultdict(list)
+    for cid, (fam, chrom, exons) in copies.items():
+        fam_iv[fam].append((chrom, exons[0][0], exons[-1][1], cid))
+    alns = collections.defaultdict(list)
+    for line in open(paf_p):
+        p = line.rstrip("\n").split("\t")
+        cg = next((x[5:] for x in p[12:] if x.startswith("cg:Z:")), "")
+        alns[p[0]].append((int(p[2]), int(p[3]), p[5], int(p[7]), int(p[8]), int(p[9]) / max(1, int(p[10])), cg, p[4]))
+
+    def core_aligned(x, cs, ce):
+        """Fraction of the core [cs, ce) (query coordinates) that alignment x aligns base to base (M), not as an insertion.
+        asm20 can bridge an insertion of several kb inside one alignment, so spanning the flanks alone is not enough."""
+        import re
+        qs, qe, cg, strand = x[0], x[1], x[6], x[7]
+        ops = re.findall(r"(\d+)([MIDNSHP=X])", cg)
+        if strand == "-":        # PAF CIGAR runs along the target; on the minus strand the query is walked from qe down
+            ops = ops[::-1]
+        q, m = qs, 0
+        for n, op in ops:
+            n = int(n)
+            if op in "M=X":
+                m += max(0, min(q + n, ce) - max(q, cs))
+                q += n
+            elif op == "I":
+                q += n
+        return m / max(1, ce - cs)
+    out = open(out_p, "w")
+    out.write("family\tlocus\treads\tcall\tspanning_target\tspanning_identity\tcore_target\tcore_identity\tcore_on_family_copy\n")
+    summary = collections.defaultdict(lambda: collections.Counter())
+    for r in csv.DictReader(open(loci_p), delimiter="\t"):
+        if not r["query"]:
+            summary[r["family"]]["single-read loci"] += int(r["reads"])
+            continue
+        cs, ce = int(r["core_qstart"]), int(r["core_qend"])
+        a = alns.get(r["query"], [])
+        span = [x for x in a if x[0] <= cs - 1000 and x[1] >= ce + 1000]
+        core = sorted((x for x in a if min(x[1], ce) - max(x[0], cs) > 0.5 * (ce - cs)), key=lambda x: -x[5])
+        frac = max((core_aligned(x, cs, ce) for x in span), default=0.0)
+        call = "counterpart" if frac >= 0.5 else "donor_only"
+        sp = f"{span[0][2]}:{span[0][3]}-{span[0][4]} core_aligned={frac:.2f}" if span else ""
+        ct = f"{core[0][2]}:{core[0][3]}-{core[0][4]}" if core else ""
+        on = [cid for chrom, s, e, cid in fam_iv[r["family"]] if core and chrom == core[0][2] and s < core[0][4] and e > core[0][3]]
+        out.write(f"{r['family']}\t{r['locus']}\t{r['reads']}\t{call}\t{sp}\t{span[0][5] if span else ''}\t{ct}\t"
+                  f"{core[0][5] if core else ''}\t{','.join(on)}\n")
+        summary[r["family"]][call] += int(r["reads"])
+    for fam in sorted(summary):
+        print(fam, dict(summary[fam]))
+
+
 def main(argv):
     if len(argv) == 4 and argv[0] == "copies":
         cmd_copies(*argv[1:])
+    elif len(argv) == 4 and argv[0] == "verify-queries":
+        cmd_verify_queries(*argv[1:])
+    elif len(argv) == 5 and argv[0] == "verify-call":
+        cmd_verify_call(*argv[1:])
     elif len(argv) == 2 and argv[0] == "score":
         cmd_score(argv[1])
     elif len(argv) == 6 and argv[0] == "strainy-inputs":
