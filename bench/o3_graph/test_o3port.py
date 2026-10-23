@@ -117,3 +117,11 @@ def test_explanation_dada2_rule():
     assert P.explanation(hp, [("same", dict(hp))]) == ("single", "same")
     assert P.explanation(hp, [left]) is None                      # one parent cannot make a join
     assert P.explanation(hp, [("x", {1: "A", 4: "T"})]) is None    # uncovered columns are mismatches
+
+
+def test_isocon_keep_rules():
+    members = {"a", "b", "c", "d"}
+    assert P.isocon_keep(members, 0, {"a", "b"}, "no-pile")           # half of the members in no phased pile
+    assert not P.isocon_keep(members, 0, {"a", "b", "c"}, "no-pile")
+    assert P.isocon_keep(members, 2, {"a", "b", "c", "d"}, "via-b")   # v4: half joined by attribution
+    assert not P.isocon_keep(members, 1, set(), "via-b")

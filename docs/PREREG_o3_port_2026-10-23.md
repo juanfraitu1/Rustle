@@ -73,3 +73,14 @@ port can replace the stage on equal terms.
     3 b_allele, 2 c_unmatched.
   - **H3 178 / 27,757 = 0.64%, HOLDS** (<= 5%). 362 reads go to their own candidate.
 - **FINAL: P1 fails, P2 and P3 pass. Not adopted ("detects but not sensitive").** Register row added.
+
+## Development after the verdict (v5+, gorilla fibroblasts only; P1 / P2 are development, P3 is spent)
+- **Loss accounting** (P1, `--dump`, results doc): of 6,414 used D reads, 2,265 sit in no pile (1,289 of them have a record on a
+  copy but align better elsewhere, out of the v4 IsoCon side's reach), 1,343 took a free allele slot (Theorem A), 1,222 cover no
+  informative column.
+- **v5:** the IsoCon side keeps the stage's flagged candidates whose members are >= half in no phased pile (the reads the
+  Strainy side never sees), not >= half via B. No new constant. `--isocon-rule via-b` reproduces v4 exactly (checked on P1).
+  - P1 (harness ACC=a13 A=p17): D right **5,762** (78.9% of C) < 5,842: **FAILS by 80 reads**; false moves 7 / 41,727 = 0.02%.
+  - P2: 0 flags in 0 / 53: passes.
+- **The held-out for any version after v4 is a NEW gorilla fibroblast panel** (user 2026-10-23: "we need to stick to fibroblasts
+  in gorilla"; no human test bed), registered before it is built.

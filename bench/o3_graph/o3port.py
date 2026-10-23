@@ -608,14 +608,15 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
                 cid, priv = private_detail(i, merged, match, options)
                 row["private"] = [(cid, col, b, genome.fetch(chrom[cid], col, col + 1).upper()) for col, b in priv]
             dump["merged"].append(row)
-    return certified, per_copy, len(merged), why
+    piled = set().union(*(set(piles[c]) for c in per_copy)) if per_copy else set()
+    return certified, per_copy, len(merged), why, piled
 
 
 def isocon_side(prefix, net_path):
     """The IsoCon side (2026-10-23, design step 'reads that align to no copy'): the reference-free candidates of the shipped stage
-    (`candidate_copies`, in-house IsoCon: clusters of the whole net -> consensus -> significance merge -> flag), kept when at
-    least half of their member reads joined the net by attribution (net_reads.tsv via = B: unmapped or poorly placed reads
-    with no record on a copy), the reads the Strainy side never sees. Returns {family: [(stage candidate, members, contig)]}."""
+    (`candidate_copies`, in-house IsoCon: clusters of the whole net -> consensus -> significance merge -> flag) built mostly from
+    reads the Strainy side never sees (`isocon_keep`). Returns {family: [(stage candidate, members, contig, members via B)]}
+    for every flagged candidate."""
     via = {(r["family"], r["read"]): r["via"] for r in csv.DictReader(open(net_path), delimiter="\t")}
     cand = {r["candidate"]: r for r in csv.DictReader(open(f"{prefix}.candidates.tsv"), delimiter="\t")}
     owner = {r["cluster"]: r["candidate"] for r in csv.DictReader(open(f"{prefix}.clusters.tsv"), delimiter="\t")
@@ -635,9 +636,18 @@ def isocon_side(prefix, net_path):
     out = collections.defaultdict(list)
     for c, r in sorted(cand.items()):
         m = members[c]
-        if r["flagged"] == "1" and m and c in seqs and 2 * sum(via.get(x) == "B" for x in m) >= len(m):
-            out[r["family"]].append((c, {x[1] for x in m}, "".join(seqs[c])))
+        if r["flagged"] == "1" and m and c in seqs:
+            out[r["family"]].append((c, {x[1] for x in m}, "".join(seqs[c]), sum(via.get(x) == "B" for x in m)))
     return out
+
+
+def isocon_keep(members, n_via_b, piled, rule):
+    """v5 (rule no-pile): at least half of the members are in no pile the Strainy side phased (no record within AS_TIE of their
+    best on a copy with >= 2 * MIN_READS pile reads: reads that align better elsewhere, or not at all). v4 (rule via-b): at
+    least half joined the net by attribution (no record on a copy at all)."""
+    if rule == "via-b":
+        return 2 * n_via_b >= len(members)
+    return 2 * len(members - piled) >= len(members)
 
 
 def cmd_run(a):
@@ -664,11 +674,13 @@ def cmd_run(a):
         for fam in sorted(net):
             reads = net[fam]
             dump = {} if dump_fh else None
-            certified, per_copy, n_h, why = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order, tmpdir, dump)
+            certified, per_copy, n_h, why, piled = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order, tmpdir,
+                                                              dump)
+            side = [(c, rs, seq) for c, rs, seq, vb in iso.get(fam, []) if isocon_keep(rs, vb, piled, a.isocon_rule)]
             if dump_fh:
-                dump["isocon"] = [{"candidate": c, "reads": sorted(rs)} for c, rs, _ in iso.get(fam, [])]
+                dump["isocon"] = [{"candidate": c, "reads": sorted(rs)} for c, rs, _ in side]
                 dump_fh.write(json.dumps(dump) + "\n")
-            certified = certified + [(f"isocon:{c}", rs, seq) for c, rs, seq in iso.get(fam, [])]
+            certified = certified + [(f"isocon:{c}", rs, seq) for c, rs, seq in side]
             ft.write(f"{fam}\t{n_net[fam]}\t{len(reads)}\t{len(per_copy)}\t{sum(v[0] for v in per_copy.values())}\t"
                      f"{sum(v[1] for v in per_copy.values())}\t{sum(v[2] for v in per_copy.values())}\t{n_h}\t{len(certified)}\n")
             for k, (home, rs, seq) in enumerate(certified):
@@ -694,6 +706,8 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--slot-order", choices=["divergence", "support"], default="divergence")
     r.add_argument("--isocon", default="", help="the stage's product prefix (candidate_copies) for the IsoCon side")
+    r.add_argument("--isocon-rule", choices=["no-pile", "via-b"], default="no-pile",
+                   help="which stage candidates the IsoCon side keeps: mostly reads in no phased pile (v5), or mostly via-B reads (v4)")
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
