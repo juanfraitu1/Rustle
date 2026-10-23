@@ -52,3 +52,19 @@ port can replace the stage on equal terms.
 - **Diagnosis.** Of the surplus haplotypes, 4 of 72 are made of short reads (median read length 0.79-0.85 of the pile's p90),
   so requiring full-length reads would not remove them. Their private alleles are transition-rich and none are all A>G, so they
   are not editing. 28 of the 72 are mosaics of the copy's two alleles.
+- **v2:** the family-wide DADA2 rule runs before the slots. A haplotype that equals a more abundant haplotype, or is a left/right
+  join of two parents, takes no slot. Its possible parents are every copy's reference and the more abundant haplotypes, mapped
+  by asm20 homology. Result: P2 19/53, P1 13 families with D.
+- **v3:** MIN_SUPPORT 6, the shipped stage's own flag floor (candidate_copies --min-support 6, ruling R1), so the comparison is
+  on equal terms: a haplotype needs 6 reads to take a slot or be certified.
+  - Slot order compared on development: by divergence, P1 has 14 clusters, 1,031 D reads and 2 S reads; by read support, 301 D
+    and 396 S. Divergence was kept.
+  - P2 had 0 flags under both orders. GWFAM175's real paternal-only copy is no longer certified: its reads tie to a copy with a
+    free slot, which is Theorem A's ambiguity.
+- **v4 = FROZEN (1b4535cc):** v3 plus the IsoCon side, i.e. the stage's flagged candidates whose members are >= half via-B (unaligned)
+  reads. On P1 that adds 13 candidates in 12 families (804 D, 5 S reads); on P2, 0.
+- **P1 (v4, harness ACC=a13 A=p13): D right 3,995 (54.7% of C) < 5,842: FAILS.** False moves 7 / 41,727 = 0.02% (K: 7,882 and
+  0.77%).
+- **P2 (v4): 0 flags in 0 / 53 families: PASSES** (K: 10 / 53).
+- **Verdict so far: "detects but not sensitive", not adopted** (pre-registered reading of a P1 failure). P3 is run once on the
+  frozen code to record held-out specificity (H1 / H3); it cannot change the verdict.
