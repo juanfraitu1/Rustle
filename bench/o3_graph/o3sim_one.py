@@ -362,8 +362,8 @@ def run_config(W, name, cfg):
         for n in names:
             f.write(f"{fam}\t{n}\t1\t{'D' if n.startswith(E + '|') else 'S'}\t{'A' if tied.get(n) else 'B'}\tNA\t0\n")
     subprocess.run([sys.executable, f"{HERE}/o3port.py", "run", "--bam", f"{D}/reads.bam", "--copies", f"{D}/copies.tsv",
-                    "--genome", f"{D}/ref.fa", "--net", f"{D}/net.tsv", "--out", f"{D}/port", "--dump", f"{D}/port.dump.jsonl"],
-                   check=True, stderr=open(f"{D}/port.log", "w"))
+                    "--genome", f"{D}/ref.fa", "--net", f"{D}/net.tsv", "--out", f"{D}/port", "--dump", f"{D}/port.dump.jsonl",
+                    *cfg.get("port_args", "").split()], check=True, stderr=open(f"{D}/port.log", "w"))
     json.dump(dict(cfg, n_reads=len(names), E_where=where[E]), open(f"{D}/meta.json", "w"), indent=1)
 
 
@@ -422,9 +422,10 @@ def sweep(a):
     """The registered grid (2026-10-23): expression of the erased copy, its divergence from its closest survivor, and a nothing-
     erased control, each with the reference's own individual (KB3781) and with another individual (the sample's own variants at
     a human-like rate: 0.001 on both alleles + 0.001 on one) -> OUT/sweep.tsv"""
-    other = dict(indiv_hom=0.001, indiv_het=0.001)
+    other = dict(indiv_hom=0.001, indiv_het=0.001, port_args=a.port_args)
+    same = dict(port_args=a.port_args)
     grid = []
-    for ind_name, ind in (("same", {}), ("other", other)):
+    for ind_name, ind in (("same", same), ("other", other)):
         for het_name, het in (("survivors as KB3781", 0), ("survivors heterozygous", 6)):
             for n in (100, 30, 10, 5, 3):
                 grid.append((f"expr{n}_{het}_{ind_name}", dict(DEFAULT, e_reads_per_allele=n, s_het=het, **ind),
@@ -490,6 +491,7 @@ def main(argv):
     w = sub.add_parser("sweep")
     w.add_argument("--out", required=True)
     w.add_argument("--select", default="", help="run only the grid configurations whose name matches this regex")
+    w.add_argument("--port-args", default="", help="extra o3port.py run options, e.g. '--clusterer cc'")
     r = sub.add_parser("report")
     r.add_argument("--out", required=True)
     r.add_argument("--name", required=True)

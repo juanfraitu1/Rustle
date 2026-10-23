@@ -151,14 +151,75 @@ def label_propagation(pat):
     return sorted(clusters.values(), key=lambda s: (-len(s), sorted(s)))
 
 
-def cluster_pile(reads, obs):
+def correlation_clustering(pat):
+    """Correlation clustering of reads by their allele patterns (2026-10-23; the advisor's suggestion; Strainy itself uses label
+    propagation). Reads with the same pattern are one node weighted by their count. Two nodes that share >= 1 column are similar
+    (+) when they differ at < MIN_READS of them and dissimilar (-) when they differ at >= MIN_READS (the project's two-observation
+    rule: one difference can be one error); nodes that share no column are neutral. The partition minimizes the read pairs that
+    disagree inside a cluster plus the read pairs that agree across clusters. Deterministic: a pivot start (KwikCluster; the
+    heaviest unclustered node takes its similar unclustered neighbours), then each node in weight order moves to the cluster of
+    highest net agreement (or alone, when every cluster is net disagreement) until no move lowers the cost. Returns read sets,
+    as label_propagation (reads with no informative column are left out)."""
+    groups = collections.defaultdict(list)
+    for r, p in pat.items():
+        if p:
+            groups[tuple(sorted(p.items()))].append(r)
+    keys = sorted(groups, key=lambda k: (-len(groups[k]), k))
+    w = [len(groups[k]) for k in keys]
+    dicts = [dict(k) for k in keys]
+    n = len(keys)
+    nbr = [{} for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            shared = dicts[i].keys() & dicts[j].keys()
+            if shared:
+                sg = w[i] * w[j] * (1 if sum(dicts[i][c] != dicts[j][c] for c in shared) < MIN_READS else -1)
+                nbr[i][j] = nbr[j][i] = sg
+    label = [-1] * n
+    for i in range(n):
+        if label[i] < 0:
+            label[i] = i
+            for j, sg in nbr[i].items():
+                if sg > 0 and label[j] < 0:
+                    label[j] = i
+    size = collections.Counter(label)
+    for _ in range(MAX_ROUNDS):
+        moved = False
+        for i in range(n):
+            score = collections.Counter()
+            for j, sg in nbr[i].items():
+                score[label[j]] += sg
+            cur = score[label[i]]                            # net agreement with the rest of its cluster (0 when alone)
+            best, best_s = label[i], cur
+            for lab, sc in sorted(score.items()):
+                if lab != label[i] and sc > best_s:
+                    best, best_s = lab, sc
+            if best_s < 0:                                   # every cluster, its own included, is net disagreement:
+                best, best_s = n + i, 0                      # alone, under a fresh label of its own
+            if best != label[i] and best_s > cur:
+                size[label[i]] -= 1
+                size[best] += 1
+                label[i] = best
+                moved = True
+        if not moved:
+            break
+    clusters = collections.defaultdict(set)
+    for k, i in zip(keys, range(n)):
+        clusters[label[i]].update(groups[k])
+    return sorted(clusters.values(), key=lambda s: (-len(s), sorted(s)))
+
+
+CLUSTERER = {"lp": label_propagation, "cc": correlation_clustering}
+
+
+def cluster_pile(reads, obs, method="lp"):
     """Strainy's clustering with refinement: label propagation on the pile's informative columns, then each cluster again on
     the columns informative inside it, until nothing splits. Returns (clusters of >= MIN_READS reads, every column used, the
     pile-level columns). Only the pile-level columns may prove two haplotypes distinct (the certificate): a column that passes
     the test only inside one cluster (smaller Bonferroni family, lower error mass) can come from a recurrent error or chimera."""
     cols = informative({c: [x for x in xs if x[0] in reads] for c, xs in obs.items()})
     used = dict(cols)
-    todo = [c for c in label_propagation(patterns(reads, obs, cols)) if len(c) >= MIN_READS]
+    todo = [c for c in CLUSTERER[method](patterns(reads, obs, cols)) if len(c) >= MIN_READS]
     done = []
     while todo:
         c = todo.pop()
@@ -166,7 +227,7 @@ def cluster_pile(reads, obs):
         if not inner:
             done.append(c)
             continue
-        parts = [p for p in label_propagation(patterns(c, obs, inner)) if len(p) >= MIN_READS]
+        parts = [p for p in CLUSTERER[method](patterns(c, obs, inner)) if len(p) >= MIN_READS]
         if len(parts) >= 2:
             for col, real in inner.items():
                 used.setdefault(col, set()).update(real)
@@ -554,7 +615,7 @@ def divergence(h, ref):
 
 
 def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False,
-               floor_first=True):
+               floor_first=True, clusterer="lp"):
     """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
     the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
@@ -567,7 +628,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         if len(pile) < 2 * MIN_READS:
             continue
         obs, steps = observations(pile, prim, span[cid])
-        clusters, cols, top = cluster_pile(set(pile), obs)
+        clusters, cols, top = cluster_pile(set(pile), obs, clusterer)
         hs = [haplotype(c, obs, top) for c in clusters]
         if floor_first:   # v6: only clusters at the support floor can be counted as distinct haplotypes; with tiny clusters in
             big = [i for i, c in enumerate(clusters) if len(c) >= MIN_SUPPORT]   # the count, three 2-3-read artifacts beat a
@@ -763,7 +824,7 @@ def cmd_run(a):
             reads = net[fam]
             dump = {} if dump_fh else None
             certified, per_copy, n_h, why, piled, looks = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order,
-                                                                     tmpdir, dump, a.absorb, not a.v5_clique)
+                                                                     tmpdir, dump, a.absorb, not a.v5_clique, a.clusterer)
             for k, (X, rs, seq, mi, mc) in enumerate(looks):
                 lh.write(f"{fam}\tlook_{fam}_{k}\t{X}\t{len(rs)}\t{mi:.3f}\t{','.join(f'{x:.3f}' for x in mc)}\t{len(seq)}\n")
                 lf.write(f">look_{fam}_{k}\n{seq}\n")
@@ -805,6 +866,8 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--slot-order", choices=["divergence", "support"], default="divergence")
     r.add_argument("--isocon", default="", help="the stage's product prefix (candidate_copies) for the IsoCon side")
+    r.add_argument("--clusterer", choices=["lp", "cc"], default="lp", help="read clustering: label propagation on the "
+                   "zero-disagreement graph (Strainy's), or correlation clustering of agreeing / disagreeing read pairs")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
     r.add_argument("--absorb", action="store_true", help="v5.1 (rejected on development data): join clusters outside the "

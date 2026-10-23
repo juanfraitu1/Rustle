@@ -148,3 +148,24 @@ def test_landing_loci_merges_records_outside_the_copies():
     recs = [("c1", 100, 200, "r1", True), ("c1", 150, 260, "r2", False), ("c1", 150, 260, "r3", False),
             ("c1", 1000, 1100, "r1", False), ("c2", 0, 50, "r4", True)]
     assert P.landing_loci(recs, [("c1", 1000, 2000)], 3) == [("c1", 100, 260, 3, 1, 2)]
+
+
+def test_correlation_clustering_three_haplotypes_and_errors():
+    # A, B, C differ pairwise at >= 2 columns; one A read carries one error (still with A); one read covers only column 1,
+    # where A and C agree (joins one of them, never merges them)
+    haps = {"A": {1: "A", 2: "C", 3: "G", 4: "A"}, "B": {1: "T", 2: "T", 3: "G", 4: "C"}, "C": {1: "A", 2: "T", 3: "C", 4: "G"}}
+    obs, reads = obs_from(haps, {"A": 30, "B": 30, "C": 8})
+    pat = P.patterns(reads, obs, {c: {"A", "C", "G", "T"} for c in (1, 2, 3, 4)})
+    pat["Aerr"] = {1: "A", 2: "C", 3: "G", 4: "G"}
+    pat["bridge"] = {1: "A"}
+    got = P.correlation_clustering(pat)
+    names = [sorted({r.rstrip("0123456789") for r in c}) for c in got]
+    assert names[0] == ["A", "Aerr"] or names[0] == ["A", "Aerr", "bridge"]
+    assert ["B"] in names and any(n in (["C"], ["C", "bridge"]) for n in names)
+
+
+def test_correlation_clustering_keeps_a_one_column_difference_together():
+    # one differing column is one observation: the two-observation rule keeps such patterns in one cluster
+    pat = {f"a{i}": {1: "A", 2: "C"} for i in range(5)}
+    pat.update({f"b{i}": {1: "A", 2: "T"} for i in range(5)})
+    assert len(P.correlation_clustering(pat)) == 1

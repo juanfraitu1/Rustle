@@ -97,3 +97,21 @@ python3 bench/o3_graph/o3sim_one.py report --out $O --name <name>
    a real 93-read allele, freeing its slot for the erased copy (`expr100_6_other`: look harder, not certified). The 6-read floor
    now applies before the count. On real development data this fix moved P1 from 5,762 to 6,129 D right (passes) with P2 still
    0 / 53 (`docs/PREREG_o3_port_2026-10-23.md`, development log).
+
+## Correlation clustering in place of label propagation (`--clusterer cc`; sweep in `/mnt/linuxdisk/tmp/o3sim1_cc`)
+Same 40 runs; the cells that change:
+
+| run | label propagation | correlation clustering |
+|---|---|---|
+| other individual, 100 reads per allele: the erased copy's pure haplotype | 110 reads | **179** |
+| other individual, 30 / 10 per allele | 22 / 12 reads | 49 / 16 |
+| other individual, 5 per allele | missed | **certified** (7 reads) |
+| same individual, 10 / 5 per allele | 15 / 6 reads | 19 / 9 |
+| controls (nothing erased) | 0 false calls | 0 false calls |
+| erased copy <= 0.26% from a survivor | count right, wrong one named | the same |
+
+**Why it helps.** When the sample is another individual, the erased copy's two alleles differ at a site or two.
+- Label propagation links only reads that disagree nowhere, so it splits the copy into two half-size haplotypes.
+- Correlation clustering keeps them together (one differing column is one observation).
+
+The divergence limit is the slot logic's, not the clustering's.

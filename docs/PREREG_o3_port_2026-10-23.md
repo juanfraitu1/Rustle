@@ -102,3 +102,14 @@ port can replace the stage on equal terms.
   - P2: **0 flags in 0 / 53**: passes. Look harder: 2 families, one of them GWFAM175's real paternal-only copy (181 reads; lost to
     a free slot since v3), the other a 6-read flag (GWFAM4).
   - v6 passes both development panels. It needs a held-out (fresh gorilla fibroblast families) before any claim.
+- **Correlation clustering** (`--clusterer cc`; the advisor's suggestion; Strainy itself uses karateclub's LabelPropagation). Read
+  patterns are nodes weighted by read count. Edges follow the two-observation rule: patterns differing at < 2 shared columns are
+  similar, at >= 2 dissimilar. The partition minimizes disagreeing pairs within clusters + agreeing pairs across. Solver: a
+  deterministic pivot start, then local moves. No new constant.
+  - P1 (harness ACC=a13 A=p23): D right **5,949** (81.5% of C) >= 5,842: **PASSES**; false moves 20 / 41,727 = 0.05%.
+  - P2: **1 flag in 1 / 53** families (GWFAM163, 6 reads, c_unmatched): passes. Look harder still finds GWFAM175's real copy
+    (167 reads).
+  - **Against label propagation (v6):** label propagation is slightly better on gorilla development data (P1 6,129 vs 5,949;
+    P2 0 vs 1 false flag). Correlation clustering is better when the sample is another individual than the reference (the
+    one-copy sweep: the erased copy's two alleles are no longer split, so it is detected down to 5 reads per allele instead of
+    10). Both pass development. The choice is left to a held-out where both arms are registered.
