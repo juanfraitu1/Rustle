@@ -26,3 +26,25 @@ GWFAM415, 407, 28 and 401 are development (P1) families and were used for develo
 
 **Development** (P1 families, same simulation): 0 wrong of 24 placed; 1 fix, 0 breaks; 1,196 of 1,220 tied reads abstained
 (identical copies with free slots: nothing forced).
+
+## Result (run once, 2026-10-23)
+| run | tied | placed | wrong | abstain | fixes | breaks | minimap2 wrong |
+|---|---|---|---|---|---|---|---|
+| GWFAM168 control | 200 | 0 | 0 | 200 | 0 | 0 | 200 |
+| GWFAM168 missing | 0 | | | | | | |
+| GWFAM224 control | 200 | 0 | 0 | 200 | 0 | 0 | 200 |
+| GWFAM224 missing | 0 | | | | | | |
+| GWFAM430 control | 2 | 2 | 0 | 0 | 2 | 0 | 2 |
+| GWFAM430 missing | 12 | 9 | 0 | 3 | 9 | 0 | 12 |
+| GWFAM328 control (27 copies) | 42 | 42 | **24** | 0 | 15 | 0 | 39 |
+| GWFAM328 missing | not run: exceeded the heavy-job time limit twice | | | | | | |
+
+**Pooled over 7 runs:** 53 placed, 24 wrong (45%); 26 fixes, 0 breaks.
+- **O2-1 FAILS** (bar <= 2%). The missing 8th run could only change this by placing more than 1,100 tied reads with no new error.
+- **O2-2 passes.**
+- **Verdict: O2 as forced matches DOES NOT PASS.**
+
+**What it shows:**
+- In two- and three-copy families the rule is safe but mostly abstains: identical copies with free slots force nothing.
+- In the 27-copy family, forced edges were wrong 24 of 42 times. With many near-identical copies, haplotypes merged across piles
+  (the read-overlap merge) can be forced onto the wrong copy.
