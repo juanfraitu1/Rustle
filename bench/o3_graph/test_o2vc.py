@@ -1002,11 +1002,12 @@ def test_a_bar_that_failed_still_fails_the_panel_when_another_bar_cannot_be_eval
     assert [s["bars"][b]["pass"] for b in ("E1", "E2", "K2")] == [None, None, False] and s["verdict"] == "FAIL"
 
 
-def test_a_focus_family_with_scored_reads_where_vc_places_nothing_fails_a3_while_a1_and_a2_are_not_evaluable(tmp_path):
-    # Task 6 ruling A3: none of these reads is placed wrong by minimap2, so no outcome could reach 10 fixes: A2 not evaluable
+def test_a_focus_family_with_scored_reads_where_vc_places_nothing_and_minimap2_is_never_wrong_has_no_evaluable_a_bar(tmp_path):
+    # Task 6 ruling A3: none of these reads is placed wrong by minimap2, so no outcome could reach 10 fixes: A2 not evaluable;
+    # Task 6 follow-up ruling: nor can VC fix any read, so A3 (VC fixes > N3 fixes) is not evaluable either
     d = toy_dir(tmp_path, [tied_read(f"u{i}", "F.0", ("unique", "F.0")) for i in range(3)])
     s = _score(d, exclude_p=None)
-    assert [s["bars"][b]["pass"] for b in ("A1", "A2", "A3")] == [None, None, False] and s["verdict"] == "FAIL"
+    assert [s["bars"][b]["pass"] for b in ("A1", "A2", "A3")] == [None, None, None] and s["verdict"] == "UNDERPOWERED"
 
 
 def _edit_calls(out, fn):
@@ -1319,3 +1320,33 @@ def test_the_weak_het_default_is_the_policy_the_frozen_dev_rule_chose():
     # P1 (keep) and P2 (unknown) tie on every term (VC wrong/placed 1/1330, fixes 647, identical VC on all 1,849 tied reads),
     # so the default stays P1, the spec's genotype rule (the record's GT alleles whatever its FILTER).
     assert O.WEAK_HET_DEFAULT == "keep" and O.cmd_run.__defaults__[-1] == "keep"
+
+
+# ---- Task 6 follow-up ruling: A3 and E2 are not evaluable when no fix is possible (no scored read N1 places wrong) ----
+
+def _right_reads(n=3):
+    """n scored reads minimap2 and VC both place right (F.0)."""
+    return [tied_read(f"u{i}", "F.0", ("unique", "F.0"), vc="F.0", cols=1) for i in range(n)]
+
+
+def test_a3_is_not_evaluable_when_no_scored_read_of_the_focus_family_is_placed_wrong_by_minimap2(tmp_path):
+    os.makedirs(tmp_path / "a")
+    os.makedirs(tmp_path / "b")
+    s = _score(toy_dir(tmp_path / "a", _right_reads()), exclude_p=None)
+    assert s["bars"]["A3"] == {"value": 0, "limit": 0, "op": ">", "pass": None,
+                               "reason": "the focus family has no scored read minimap2 places wrong: no fix is possible"}
+    assert s["bars"]["A1"]["pass"] is True and s["verdict"] == "UNDERPOWERED"
+    s = _score(toy_dir(tmp_path / "b", _right_reads() + [tied_read("w0", "F.0", ("unique", "F.1"))]), exclude_p=None)
+    assert s["bars"]["A3"] == {"value": 0, "limit": 0, "op": ">", "pass": False} and s["verdict"] == "FAIL"   # 1 fix possible
+
+
+def test_e2_is_not_evaluable_when_no_scored_read_of_the_pool_is_placed_wrong_by_minimap2(tmp_path):
+    os.makedirs(tmp_path / "a")
+    os.makedirs(tmp_path / "b")
+    s = _score(toy_dir(tmp_path / "a", _right_reads()), "score.E.json", panel="E", focus=None, exclude_p=None)
+    assert s["bars"]["E2"] == {"value": 0, "limit": 0, "op": ">", "pass": None,
+                               "reason": "the pool has no scored read minimap2 places wrong: no fix is possible"}
+    assert s["bars"]["E1"]["pass"] is True and s["bars"]["K2"]["pass"] is True and s["verdict"] == "UNDERPOWERED"
+    s = _score(toy_dir(tmp_path / "b", _right_reads() + [tied_read("w0", "F.0", ("unique", "F.1"))]), "score.E.json",
+               panel="E", focus=None, exclude_p=None)
+    assert s["bars"]["E2"] == {"value": 0, "limit": 0, "op": ">", "pass": False} and s["verdict"] == "FAIL"   # 1 fix possible
