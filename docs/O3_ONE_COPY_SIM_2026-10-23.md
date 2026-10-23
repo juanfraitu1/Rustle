@@ -58,3 +58,42 @@ python3 bench/o3_graph/o3sim_one.py sim --out $O --name unannot_expressed --case
 python3 bench/o3_graph/o3sim_one.py sim --out $O --name unannot_silent --case unannotated --e-reads-per-allele 0
 python3 bench/o3_graph/o3sim_one.py report --out $O --name <name>
 ```
+
+## Sweep (port v6; `o3sim_one.py sweep`, 40 runs, `/mnt/linuxdisk/tmp/o3sim1/sweep.tsv`)
+**Setup.**
+- **Another individual** (the user: "the method should somehow account for individual differences of not having used the same
+  individual for the genome and for the RNA samples"): the sample's own variants, which the reference lacks. Per copy, 0.1% of
+  sites change on both alleles and 0.1% on one allele, a human-like rate. This is the CHM13-vs-HG002 situation.
+- **Divergence:** E's 34 differences from its closest survivor :1 are kept with probability f, the rest reverted to :1's base.
+  f = 0.5 / 0.25 / 0.1 / 0.05 gives about 1.3 / 0.65 / 0.26 / 0.13% divergence.
+- **Heterozygous survivors** (synthetic): survivors whose real alleles differ at < 2 positions get a B allele with 6 substitutions.
+
+| E (the erased copy) | same individual, survivors as in KB3781 | same individual, survivors heterozygous | other individual, survivors as in KB3781 | other individual, survivors heterozygous |
+|---|---|---|---|---|
+| 100 / 30 / 10 / 5 reads per allele | **look harder** (pure print; contig 99.9-100%) | **certified** | certified at 100 / 30 / 10; missed at 5 | certified at 100 / 30 / 10; missed at 5 |
+| 3 reads per allele | missed (below the 6-read floor) | missed | missed | missed |
+| f 0.5 / 0.25 (1.3 / 0.65%) | silent in :1's free slot | certified | certified | certified |
+| f 0.1 (0.26%) | silent | count right, but :1's own allele is named extra | certified | count right, wrong one named |
+| f 0.05 (0.13%) | silent | count right, wrong one named | silent | count right, wrong one named |
+| control (nothing erased) | 0 false calls | 0 false calls | 0 false calls | 0 false calls |
+
+**What the sweep shows.**
+1. **The reference being another individual does not create false calls (0 in every control).** The certificate never compares
+   with the reference sequence to decide:
+   - a column is informative only when the sample's own reads carry >= 2 alleles, so a variant the sample carries on both
+     alleles is invisible to it;
+   - haplotypes, the count against slots, and the look-harder flag (tie patterns) all compare the sample with itself.
+   Only two parts read the reference:
+   - the slot order (closest to the reference first) decides which haplotype is named extra when the count exceeds the slots;
+   - the DADA2 rule's reference parents.
+2. **Another individual helps more than it hurts here.** The sample's own heterozygous sites make KB3781's homozygous survivors
+   heterozygous, which fills their slots, so the erased copy becomes certifiable. It costs depth, though: the erased copy's two
+   alleles now differ, so each needs 6 reads on its own (missed at 5 per allele).
+3. **The limits are depth and divergence.**
+   - Depth: about 5-10 reads per allele.
+   - Divergence: below about 0.3% from its closest survivor (<= 4 differences), the extra copy is still counted, but RNA cannot
+     say which of the three haplotypes is the extra one, so a survivor's allele can be named instead.
+4. **The sweep found a real bug (v6).** Before the fix, the conflicting set counted 2-3-read artifact clusters. Three of them beat
+   a real 93-read allele, freeing its slot for the erased copy (`expr100_6_other`: look harder, not certified). The 6-read floor
+   now applies before the count. On real development data this fix moved P1 from 5,762 to 6,129 D right (passes) with P2 still
+   0 / 53 (`docs/PREREG_o3_port_2026-10-23.md`, development log).
