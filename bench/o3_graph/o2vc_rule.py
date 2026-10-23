@@ -31,6 +31,8 @@ import collections
 MIN_DEPTH = 6                                                   # teacher reads for a copy to be known (the caller's HiFi min-depth)
 MIN_BASEQ = 10                                                  # a read base votes from this quality (the caller's --min-baseq)
 UNKNOWN_FILTERS = frozenset({"RnaEdit", "Dense"})
+MIN_ALLELE_FREQ = 0.15                                          # longcallR 2.0.0 hifi-masseq min_allele_freq (main.rs:393)
+WEAK_HET = ("keep", "unknown", "ref")                           # P1, P2, P3 (Task 6 ruling A1)
 BASES = frozenset("ACGT")
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 # one VCF record: REF, the ALT alleles, GT as allele indices (0 = REF), FILTER, DP
@@ -50,6 +52,32 @@ def genotype(call, depth, ref_base):
         return frozenset({ref_base})
     alleles = (call.ref, *call.alts)
     return frozenset(alleles[i] for i in call.gt)
+
+
+def weak_alts(call, afs):
+    """The GT's alt allele indices whose allele fraction (afs, as weak_het reads it) is under MIN_ALLELE_FREQ when the record is
+    a het (two different GT alleles); empty otherwise. Non-empty = a WEAK het."""
+    if call is None or len(set(call.gt)) < 2:
+        return frozenset()
+    return frozenset(i for i in call.gt if i >= 1 and i - 1 < len(afs) and afs[i - 1] is not None and afs[i - 1] < MIN_ALLELE_FREQ)
+
+
+def weak_het(call, afs, policy):
+    """The record as the weak-het policy reads it (Task 6 ruling A1). A het (a GT of two different alleles) is WEAK when an alt
+    allele of its GT has an allele fraction (afs: the FORMAT AF of each ALT, in ALT order; None or missing = not measured, so
+    never weak) under MIN_ALLELE_FREQ, the hifi-masseq preset's own min_allele_freq -- e.g. the LowQual 0/1 at AF 0.14 on
+    SMN2.0 that erases a reference PSV. policy: "keep" (P1) the GT alleles, as genotype() reads any record; "unknown" (P2) the
+    copy is unknown there (gt (), which genotype() leaves unknown); "ref" (P3) the weak alts are dropped from the GT, and when
+    none is left (a 1/2 with both alts weak) the GT is the reference (0,): the caller's high-fraction call. Any other record,
+    and a policy's no-op, return the record itself; an unknown policy raises ValueError."""
+    if policy not in WEAK_HET:
+        raise ValueError(f"weak-het policy {policy!r}: one of {', '.join(WEAK_HET)}")
+    weak = weak_alts(call, afs)
+    if policy == "keep" or not weak:
+        return call
+    if policy == "unknown":
+        return call._replace(gt=())
+    return call._replace(gt=tuple(i for i in call.gt if i not in weak) or (0,))
 
 
 def to_read_frame(g, flip):

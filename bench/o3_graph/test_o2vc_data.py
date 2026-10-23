@@ -34,6 +34,16 @@ def test_parse_vcf_reads_every_record_0_based_with_gt_filter_and_depth(tmp_path)
         assert v[("chr1", 300)] == R.Call("T", ("C",), (0, 1), "LowQual", 8)
 
 
+def test_parse_vcf_with_af_also_returns_each_alt_s_allele_fraction_and_the_same_calls(tmp_path):
+    p = tmp_path / "x.vcf"
+    p.write_text(VCF + "chr1\t401\t.\tG\tA\t5\tLowQual\t.\tGT:GQ:DP:AF\t0/1:5:8:.\n"
+                 "chr1\t501\t.\tG\tA\t5\tLowQual\t.\tGT:GQ:DP\t0/1:5:8\n")
+    calls, afs = D.parse_vcf(str(p), with_af=True)
+    assert calls == D.parse_vcf(str(p))
+    assert afs == {("chr1", 100): (0.50,), ("chr1", 200): (0.40, 0.60), ("chr1", 300): (0.30,), ("chr1", 400): (None,),
+                   ("chr1", 500): ()}
+
+
 def test_longcallr_runs_with_the_masseq_preset_min_mapq_0_and_no_bam(monkeypatch, tmp_path):
     seen = {}
 

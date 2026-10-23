@@ -3,7 +3,8 @@
 docs/superpowers/plans/2026-10-22-o2-variant-calls.md): the CLI over o2vc_rule.py (the decision rule) and o2vc_data.py (the
 BAM, VCF and caller side).
 
-    o2vc.py run BAM COPIES.tsv GENOME.fa OUTDIR [--families A,B] [--exclude-chrM] [--threads N]
+    o2vc.py run BAM COPIES.tsv GENOME.fa OUTDIR [--families A,B] [--exclude-chrM] [--threads N] [--weak-het keep|unknown|ref]
+    o2vc.py copies-from-sets FAM.json SET FAMILY OUT.tsv
     o2vc.py score OUTDIR [TRUTH...] --mode donor|none [--n4 O2CORRECT.tsv] [--panel A|C|E] [--focus FAMILY] [--exclude PAR.json]
 
 run never reads truth. Per family, in sorted order -- a family with no AS-tied read is skipped, and under --exclude-chrM a
@@ -15,7 +16,10 @@ family with a copy on chrM:
    OUTDIR/ref/<chrom>.fa, into OUTDIR/vcf/<copy>.vcf. A VCF already there is reused, never re-called:
    the caller is not deterministic, so the saved VCFs are the record. A copy whose call fails is unknown everywhere
    (run.json failed_copies) and the run goes on;
-3. every record's REF is checked against the genome, upper-cased: a mismatch stops the run;
+3. every record's REF is checked against the genome, upper-cased: a mismatch stops the run. --weak-het (o2vc_rule.weak_het)
+   says how a het under the hifi-masseq min_allele_freq 0.15 is read: keep (P1, its GT alleles), unknown (P2), ref (P3, its
+   weak alt dropped); run.json weak_het holds the policy and the weak hets seen. run exits 1 when every longcallR call it
+   attempted failed;
 4. each tied read is held against every tied copy's genotype at its columns (o2vc_data.columns), in the read's frame. VC
    takes the sample's calls (genotype(): the record's GT, else the reference base); N3, the reference base wherever VC's
    genotype is known, isolates what the calls add. Foreign alleles that recur and co-occur across the family's reads flag a
@@ -71,11 +75,14 @@ OUTDIR/score[.PANEL[.FOCUS]].json and, for every family scored (a --exclude fami
   places right that VC moves or flags. The same numbers are kept per family and pooled over the families not in --exclude.
 - Bars: A (--focus family: A1 VC wrong/placed <= 2%, A2 fixes >= 10, A3 VC fixes > N3 fixes; pooled: K1 <= 2%, K2 <= 2%),
   C (C1 >= 1), E (pooled: E1 wrong/placed <= 2%, E2 fixes > breaks, K2 <= 2%), all over the scored reads. Ratios are compared
-  exactly. A bar with nothing to measure is not evaluable (pass null, with a reason): a zero denominator, no no_counterpart
-  tied read for C1, no scored read on the focus family for A2 and A3, no VC placement of a scored read for E2. The verdict of a
+  exactly. A bar with nothing to measure is not evaluable (pass null, with a reason): a zero denominator, no scored read on
+  the focus family for A2 and A3, no VC placement of a scored read for E2; so is a bar no outcome could meet for lack of
+  reads (Task 6 ruling): A2 with fewer than 10 scored reads of the focus family that minimap2 places wrong, C1 with fewer
+  than 2 no_counterpart tied reads. The verdict of a
   panel is FAIL when a bar failed, else UNDERPOWERED when a bar was not evaluable, else PASS. --focus belongs to --panel A and
   must be a family of the run.
-- Not built (deferred with panels D and C-gorilla): --mode world and units, --panel D and Cg, score-worlds.
+- Not built (deferred with panels D and C-gorilla): --mode world and units, --panel D and Cg, score-worlds, copies-from-genes.
+- copies-from-sets writes a family's copy table (o2psv.load_copies' format) from a family-sets JSON (copies_from_sets()).
 - The summary and the case file record the score options (mode, truth files, --n4, --panel, --focus, --exclude). The summary:
   the arm table; the VC placements resting on one column (vc_cols == 1), whose read has an erased_ref column, and that depend
   on erased columns (VC places, N3 abstains or places elsewhere, and the read has one) -- a column counts only when its base
@@ -96,6 +103,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAD = 1000                                                      # the caller's region: a copy's span and PAD bases each side
 CHRM = "chrM"
+WEAK_HET_DEFAULT = "keep"                                       # the weak-het policy run takes without --weak-het (Task 6)
 FILTERS = (("PASS", "pass"), ("LowQual", "lowqual"), ("HomRef", "homref"), ("Multiallelic", "multiallelic"),
            ("RnaEdit", "rnaedit"), ("Dense", "dense"))
 
@@ -158,6 +166,15 @@ def chrom_fasta(genome, chrom, ref_dir):
         os.replace(path + ".tmp", path)
         pysam.faidx(path)
     return path
+
+
+def load_calls(vcf, policy, seen):
+    """A copy's calls ({(chrom, pos): Call}, o2vc_data.parse_vcf) as the weak-het policy reads them (o2vc_rule.weak_het: P1
+    keep, P2 unknown, P3 ref); seen, a one-item list, gets the weak hets counted whatever the policy. The VCF is never
+    rewritten: it stays the caller's record."""
+    calls, afs = D.parse_vcf(vcf, with_af=True)
+    seen[0] += sum(1 for k in sorted(calls) if R.weak_alts(calls[k], afs[k]))
+    return {k: R.weak_het(calls[k], afs[k], policy) for k in sorted(calls)}
 
 
 def check_ref(calls, genome):
@@ -378,10 +395,11 @@ def run_family(f, cs, reads, sc, ctx):
         vcf = os.path.join(out, "vcf", f"{c}.vcf")
         if os.path.exists(vcf):                                 # never re-called: the caller is not deterministic
             ctx["reused"].append(c)
-            calls[c] = D.parse_vcf(vcf)
+            calls[c] = load_calls(vcf, ctx["weak_het"], ctx["weak_seen"])
             check_ref(calls[c], g)
             log(f"{f}: {c}: reusing {vcf} ({len(calls[c])} records), the saved calls being the record")
             continue
+        ctx["attempted"] += 1
         try:                                                    # called into vcf/.tmp, saved once checked
             got = D.run_longcallr(teach_bam, chrom_fasta(g, chrom, os.path.join(out, "ref")),
                                   os.path.join(out, "vcf", ".tmp", c), binary=ctx["longcallr"], threads=ctx["threads"],
@@ -390,7 +408,7 @@ def run_family(f, cs, reads, sc, ctx):
             ctx["failed"][c] = str(err)
             log(f"{f}: {c} {region}: longcallR failed, the copy is unknown everywhere: {str(err).splitlines()[0]}")
             continue
-        calls[c] = D.parse_vcf(got)
+        calls[c] = load_calls(got, ctx["weak_het"], ctx["weak_seen"])
         check_ref(calls[c], g)
         os.replace(got, vcf)
         log(f"{f}: {c} {region}: {len(teachers[c])} teachers, {len(calls[c])} records")
@@ -436,7 +454,12 @@ def _write(path, header, rows):
             fh.write("\t".join(str(x) for x in r) + "\n")
 
 
-def cmd_run(bam_p, copies_p, genome_p, out_dir, families=None, exclude_chrM=False, longcallr=D.LONGCALLR, threads=2):
+def cmd_run(bam_p, copies_p, genome_p, out_dir, families=None, exclude_chrM=False, longcallr=D.LONGCALLR, threads=2,
+            weak_het=WEAK_HET_DEFAULT):
+    """The run (see the module's doc). Returns 0, or 1 when every longcallR call it attempted failed (a reused VCF is not an
+    attempt; a run that attempts none returns 0). weak_het: the policy for a het under the preset's min_allele_freq."""
+    if weak_het not in R.WEAK_HET:
+        raise ValueError(f"weak_het {weak_het!r}: one of {', '.join(R.WEAK_HET)}")
     t0 = time.time()
 
     def log(msg):
@@ -467,7 +490,8 @@ def cmd_run(bam_p, copies_p, genome_p, out_dir, families=None, exclude_chrM=Fals
     except (OSError, subprocess.CalledProcessError) as err:
         version = f"unavailable: {err}"
     ctx = dict(out_dir=out_dir, genome=Genome(genome_p), log=log, span=span, bam_p=bam_p, longcallr=longcallr,
-               threads=threads, depth_agreement=[0, 0], failed={}, reused=[], q0_raised=collections.Counter())
+               threads=threads, depth_agreement=[0, 0], failed={}, reused=[], q0_raised=collections.Counter(),
+               weak_het=weak_het, weak_seen=[0], attempted=0)
     rows = []
     for f in todo:
         rows += run_family(f, fam[f], by_fam[f], sc, ctx)
@@ -476,7 +500,8 @@ def cmd_run(bam_p, copies_p, genome_p, out_dir, families=None, exclude_chrM=Fals
     run = dict(longcallr=version, binary=longcallr, preset=D.PRESET, min_mapq=D.MIN_MAPQ, threads=threads, families=todo,
                excluded_chrM=chrm, depth_agreement=ctx["depth_agreement"], failed_copies=ctx["failed"],
                reused_vcfs=ctx["reused"], q0_raised=dict(reads=ctx["q0_raised"]["reads"], bases=ctx["q0_raised"]["bases"]),
-               tied_without_qual=no_qual)
+               tied_without_qual=no_qual, attempted_calls=ctx["attempted"],
+               weak_het=dict(policy=weak_het, threshold=R.MIN_ALLELE_FREQ, records=ctx["weak_seen"][0]))
     with open(os.path.join(out_dir, "run.json"), "w") as fh:
         json.dump(run, fh, indent=1)
     try:
@@ -486,7 +511,10 @@ def cmd_run(bam_p, copies_p, genome_p, out_dir, families=None, exclude_chrM=Fals
     log(f"-> {out_dir}: {len(rows)} tied reads in {len(todo)} families; VC placed {sum(1 for r in rows if r[7])}, "
         f"flagged {sum(1 for r in rows if r[12])}; depth agreement {ctx['depth_agreement'][0]} of {ctx['depth_agreement'][1]} "
         f"records; {len(ctx['failed'])} copies failed, {len(ctx['reused'])} VCFs reused, {ctx['q0_raised']['bases']} teacher "
-        f"bases of quality 0 written as 1")
+        f"bases of quality 0 written as 1; weak-het policy {weak_het} on {ctx['weak_seen'][0]} weak hets")
+    if ctx["attempted"] and len(ctx["failed"]) == ctx["attempted"]:
+        log(f"every longcallR call attempted ({ctx['attempted']}) failed: exit 1")
+        return 1
     return 0
 
 
@@ -775,17 +803,24 @@ def count_bar(value, op, limit, why=None):
 
 def panel_bars(panel, pooled, focus):
     """The bars of a panel from the pooled score and the focus family's (A1-A3 are the focus family's alone), all over the
-    scored reads. A bar with nothing to measure is not evaluable: a zero denominator, no no_counterpart tied read for C1, no
-    scored read on the focus family for A2 and A3, no VC placement of a scored read for E2."""
+    scored reads. A bar with nothing to measure is not evaluable: a zero denominator, no scored read on the focus family for
+    A2 and A3, no VC placement of a scored read for E2. So is a bar that no outcome could meet for lack of reads (Task 6
+    ruling A3, made before any panel): A2 with fewer than MIN_FIXES scored reads of the focus family that minimap2 places
+    wrong (a fix is one of them), C1 with fewer than 2 no_counterpart tied reads in the pool. A reachable bar missed fails."""
     if panel == "A":
         a, n3 = focus["arms"]["VC"], focus["arms"]["N3"]
         bare = None if focus["scored"] else "the focus family has no scored read"
+        n1_wrong = focus["arms"]["N1"]["wrong"]
+        short = None if n1_wrong >= MIN_FIXES else \
+            f"the focus family has {n1_wrong} scored reads minimap2 places wrong, fewer than {MIN_FIXES}"
         return {"A1": ratio_bar(a["wrong"], a["placed"], "VC placed no scored read of the focus family"),
-                "A2": count_bar(a["fixes"], ">=", MIN_FIXES, bare), "A3": count_bar(a["fixes"], ">", n3["fixes"], bare),
+                "A2": count_bar(a["fixes"], ">=", MIN_FIXES, bare or short),
+                "A3": count_bar(a["fixes"], ">", n3["fixes"], bare),
                 "K1": ratio_bar(pooled["K1"]["placed"], pooled["K1"]["reads"], "no own_tie read"),
                 "K2": ratio_bar(pooled["K2"]["flagged"], pooled["K2"]["reads"], "no read with a present copy")}
     if panel == "C":
-        bare = None if pooled["classes"].get("no_counterpart", {}).get("reads") else "no no_counterpart tied read in the pool"
+        n = pooled["classes"].get("no_counterpart", {}).get("reads", 0)
+        bare = None if n >= 2 else f"{n} no_counterpart tied read{'' if n == 1 else 's'} in the pool, fewer than 2"
         return {"C1": count_bar(pooled["C1"]["counted"], ">=", 1, bare)}
     if panel == "E":
         a = pooled["arms"]["VC"]
@@ -1061,14 +1096,36 @@ def cmd_score(out_dir, truth_ps, mode, n4_p=None, panel=None, focus=None, exclud
     return 0
 
 
-RUN_OPTS = ("--families", "--threads", "--exclude-chrM")
+def copies_from_sets(fam_json, set_name, family):
+    """The pool rows ([dict(copy, family, chrom, start, end, strand, exons)], o2psv.load_copies' format) of `family` in set
+    `set_name` of a family-sets JSON (seqfamilies' families19cal_*.json, {"sets": {set: [{family, copies}]}}): copy
+    f"{family}.{k}" in the JSON's order, its exons the sorted, de-duplicated union of its transcripts' exons, "s-e"
+    comma-joined, as the file gives them. start and end may be strings and the transcripts a Python literal, as that file
+    writes them. A family the set does not hold once raises ValueError (Task 7's converter, folded into Task 6)."""
+    import ast
+    with open(fam_json) as fh:
+        sets = json.load(fh)["sets"][set_name]
+    fam = [x for x in sets if x["family"] == family]
+    if len(fam) != 1:
+        raise ValueError(f"{family}: {len(fam)} entries in set {set_name} of {fam_json}, not 1")
+    out = []
+    for k, c in enumerate(fam[0]["copies"]):
+        tx = ast.literal_eval(c["transcripts"]) if isinstance(c["transcripts"], str) else c["transcripts"]
+        ex = sorted({(int(a), int(b)) for v in tx.values() for a, b in v})
+        out.append(dict(copy=f"{family}.{k}", family=family, chrom=c["chrom"], start=int(c["start"]), end=int(c["end"]),
+                        strand=c["strand"], exons=",".join(f"{a}-{b}" for a, b in ex)))
+    return out
+
+
+POOL_HEAD = "copy family chrom start end strand exons"
+RUN_OPTS = ("--families", "--threads", "--weak-het", "--exclude-chrM")
 SCORE_OPTS = ("--mode", "--n4", "--panel", "--focus", "--exclude")
 
 
 def main(argv):
     opt, pos, i = {}, [], 0
     while i < len(argv):
-        if argv[i] in RUN_OPTS[:2] + SCORE_OPTS:
+        if argv[i] in RUN_OPTS[:3] + SCORE_OPTS:
             if i + 1 >= len(argv):
                 raise SystemExit(__doc__)
             opt[argv[i]], i = argv[i + 1], i + 2
@@ -1079,8 +1136,16 @@ def main(argv):
             i += 1
     if pos[:1] == ["run"] and len(pos) == 5 and set(opt) <= set(RUN_OPTS):
         fams = set(opt["--families"].split(",")) if "--families" in opt else None
+        weak = opt.get("--weak-het", WEAK_HET_DEFAULT)
+        if weak not in R.WEAK_HET:
+            raise SystemExit(f"--weak-het {weak}: one of {', '.join(R.WEAK_HET)}\n{__doc__}")
         return cmd_run(*pos[1:], families=fams, exclude_chrM=opt.get("--exclude-chrM", False),
-                       threads=int(opt.get("--threads", 2)))
+                       threads=int(opt.get("--threads", 2)), weak_het=weak)
+    if pos[:1] == ["copies-from-sets"] and len(pos) == 5 and not opt:
+        rows = copies_from_sets(*pos[1:4])
+        _write(pos[4], POOL_HEAD, [[r[k] for k in POOL_HEAD.split()] for r in rows])
+        print(f"[o2vc] {pos[4]}: {len(rows)} copies of {pos[3]}", file=sys.stderr, flush=True)
+        return 0
     if pos[:1] == ["score"] and len(pos) >= 2 and "--mode" in opt and set(opt) <= set(SCORE_OPTS):
         return cmd_score(pos[1], pos[2:], opt["--mode"], n4_p=opt.get("--n4"), panel=opt.get("--panel"), focus=opt.get("--focus"),
                          exclude_p=opt.get("--exclude"))

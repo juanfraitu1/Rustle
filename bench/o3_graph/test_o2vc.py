@@ -256,7 +256,12 @@ def test_the_cli_runs_cmd_run_with_its_options(monkeypatch):
     seen = {}
     monkeypatch.setattr(O, "cmd_run", lambda *a, **k: seen.update(a=a, k=k) or 0)
     assert O.main(["run", "b.bam", "c.tsv", "g.fa", "out", "--families", "F,G", "--exclude-chrM", "--threads", "3"]) == 0
-    assert seen == dict(a=("b.bam", "c.tsv", "g.fa", "out"), k=dict(families={"F", "G"}, exclude_chrM=True, threads=3))
+    assert seen == dict(a=("b.bam", "c.tsv", "g.fa", "out"), k=dict(families={"F", "G"}, exclude_chrM=True, threads=3,
+                                                                     weak_het=O.WEAK_HET_DEFAULT))
+    assert O.main(["run", "b.bam", "c.tsv", "g.fa", "out", "--weak-het", "unknown"]) == 0
+    assert seen["k"]["weak_het"] == "unknown"
+    with pytest.raises(SystemExit):
+        O.main(["run", "b.bam", "c.tsv", "g.fa", "out", "--weak-het", "drop"])                # not a policy
     with pytest.raises(SystemExit):
         O.main(["run", "b.bam"])
 
@@ -524,7 +529,8 @@ def test_score_json_reports_every_arm_its_precision_with_counts_and_the_class_fl
     assert s["excluded"]["G"]["arms"]["VC"] == dict(placed=1, right=1, wrong=0, abstained=0, fixes=1, breaks=0, both_wrong=0)
     assert s["bars"]["A1"] == {"value": 0.5, "num": 1, "den": 2, "limit": 0.02, "op": "<=", "pass": False}
     assert set(s["bars"]) == {"A1", "A2", "A3", "K1", "K2"} and s["verdict"] == "FAIL"
-    assert (s["bars"]["A2"]["value"], s["bars"]["A2"]["limit"], s["bars"]["A2"]["pass"]) == (1, 10, False)
+    assert (s["bars"]["A2"]["value"], s["bars"]["A2"]["limit"], s["bars"]["A2"]["pass"]) == (1, 10, None)   # 3 N1-wrong < 10
+    assert s["bars"]["A2"]["reason"] == "the focus family has 3 scored reads minimap2 places wrong, fewer than 10"
     assert (s["bars"]["A3"]["value"], s["bars"]["A3"]["limit"], s["bars"]["A3"]["pass"]) == (1, 0, True)       # N3 has no fix
     assert (s["bars"]["K1"]["num"], s["bars"]["K1"]["den"]) == (1, 1) and (s["bars"]["K2"]["num"], s["bars"]["K2"]["den"]) == (1, 5)
 
@@ -846,11 +852,13 @@ def make_bulk(tmp_path, spec):
     return toy_dir(tmp_path, reads)
 
 
-def panel_a_toy(tmp_path, fix=10, ok=38, brk=0, tie=50, tie_placed=1, flagged=2, n3_fix=False):
+def panel_a_toy(tmp_path, fix=10, ok=38, brk=0, tie=50, tie_placed=1, flagged=2, n3_fix=False, miss=0):
     """`fix` reads VC places right where minimap2 is wrong (N3 too when n3_fix), `ok` both right, `brk` VC wrong where minimap2 is
-    right, `tie` own_tie reads of which `tie_placed` VC places, `flagged` flagged reads whose copy is present."""
+    right, `tie` own_tie reads of which `tie_placed` VC places, `flagged` flagged reads whose copy is present, `miss` reads
+    minimap2 places wrong and VC leaves."""
     return make_bulk(tmp_path, [
         ("a", fix, "F.0", ("unique", "F.1"), dict(vc="F.1", n3="F.1" if n3_fix else "", cols=1)),
+        ("g", miss, "F.0", ("unique", "F.1"), {}),
         ("b", ok, "F.0", ("unique", "F.0"), dict(vc="F.0", cols=1)),
         ("c", brk, "F.0", ("unique", "F.0"), dict(vc="F.1", cols=1)),
         ("d", tie - tie_placed, "F.0", ("own_tie", None), {}),
@@ -860,7 +868,8 @@ def panel_a_toy(tmp_path, fix=10, ok=38, brk=0, tie=50, tie_placed=1, flagged=2,
 
 @pytest.mark.parametrize("kw, expect", [
     ({}, dict(A1=True, A2=True, A3=True, K1=True, K2=True)),                      # 10 fixes, 0 of 48 wrong, 1 of 50, 2 of 100
-    (dict(fix=9, ok=39), dict(A1=True, A2=False, A3=True, K1=True, K2=True)),     # 9 fixes
+    (dict(fix=9, ok=39), dict(A1=True, A2=None, A3=True, K1=True, K2=True)),      # 9 fixes of 9 minimap2-wrong: unreachable
+    (dict(fix=9, ok=38, miss=1), dict(A1=True, A2=False, A3=True, K1=True, K2=True)),     # 9 fixes of 10 minimap2-wrong
     (dict(ok=39, brk=1), dict(A1=True, A2=True, A3=True, K1=True, K2=True)),      # 1 wrong of 50 placed = 0.02: on the bar
     (dict(brk=1), dict(A1=False, A2=True, A3=True, K1=True, K2=True)),            # 1 wrong of 49: over
     (dict(tie_placed=2), dict(A1=True, A2=True, A3=True, K1=False, K2=True)),     # 2 of 50 own_tie reads placed
@@ -993,10 +1002,11 @@ def test_a_bar_that_failed_still_fails_the_panel_when_another_bar_cannot_be_eval
     assert [s["bars"][b]["pass"] for b in ("E1", "E2", "K2")] == [None, None, False] and s["verdict"] == "FAIL"
 
 
-def test_a_focus_family_with_scored_reads_where_vc_places_nothing_fails_a2_and_a3_while_a1_is_not_evaluable(tmp_path):
+def test_a_focus_family_with_scored_reads_where_vc_places_nothing_fails_a3_while_a1_and_a2_are_not_evaluable(tmp_path):
+    # Task 6 ruling A3: none of these reads is placed wrong by minimap2, so no outcome could reach 10 fixes: A2 not evaluable
     d = toy_dir(tmp_path, [tied_read(f"u{i}", "F.0", ("unique", "F.0")) for i in range(3)])
     s = _score(d, exclude_p=None)
-    assert [s["bars"][b]["pass"] for b in ("A1", "A2", "A3")] == [None, False, False] and s["verdict"] == "FAIL"
+    assert [s["bars"][b]["pass"] for b in ("A1", "A2", "A3")] == [None, None, False] and s["verdict"] == "FAIL"
 
 
 def _edit_calls(out, fn):
@@ -1223,3 +1233,82 @@ def test_the_scoring_is_the_same_under_any_hash_seed(tmp_path):
         seen.append([open(os.path.join(d.out, f), "rb").read() for f in ("score.A.F.json", "F.case.tsv", "F.summary.md",
                                                                            "G.case.tsv", "G.summary.md")] + [r.stdout])
     assert seen[0] == seen[1] == seen[2]
+
+
+# ---- Task 6 rulings (task-6-rulings.md): the weak-het policy, the exit code, bar evaluability, the DAZ copy table ----
+
+@pytest.mark.parametrize("af, policy, vc, n3, weak", [
+    ("0.14", "keep", "", "F.0", 1),          # P1: F.1's weak het {C, A} shares F.0's A, the reference PSV is erased
+    ("0.14", "unknown", "", "", 1),          # P2: F.1 unknown at the column, under N3 too (N3 knows only what VC knows)
+    ("0.14", "ref", "F.0", "F.0", 1),        # P3: the weak alt dropped, F.1 is {C}: the PSV separates and Z's A votes F.0
+    ("0.15", "ref", "", "F.0", 0),           # AF 0.15 is not weak: P3 changes nothing
+])
+def test_the_weak_het_policy_decides_a_column_whose_reference_psv_a_weak_het_erases(tmp_path, monkeypatch, af, policy, vc,
+                                                                                     n3, weak):
+    A = family_refs((300,))["chrA"]                                                   # chrB has C at 300, chrA A
+    w = make_family_world(tmp_path, psv=(300,), extra=[rec("Z", "chrA", 100, 590, seq=A[100:700]),
+                                                       rec("Z", "chrB", 100, 590, secondary=True)])
+    body = {"chrB": f"chrB\t301\t.\tC\tA\t.\tLowQual\t.\tGT:GQ:DP:AF\t0/1:30:8:{af}\n"}
+    monkeypatch.setattr(O.D, "run_longcallr", fake_vcf_caller([], body))
+    out = tmp_path / "out"
+    assert O.cmd_run(w.bam, w.copies, w.genome, str(out), exclude_chrM=True, weak_het=policy) == 0
+    z = {r["read"]: r for r in _rows(out / "calls.tsv")}["Z"]
+    assert (z["vc"], z["n3"]) == (vc, n3)
+    assert json.load(open(out / "run.json"))["weak_het"] == dict(policy=policy, threshold=0.15, records=weak)
+
+
+def test_run_exits_non_zero_when_every_attempted_longcallr_call_failed(tmp_path, monkeypatch):
+    w, prefixes, out = make_family_world(tmp_path), [], tmp_path / "out"
+
+    def fail(teacher_bam, genome, out_prefix, binary=None, threads=2, region=None):
+        prefixes.append(out_prefix)
+        raise RuntimeError(f"longcallR exited 101 ({region})")
+    monkeypatch.setattr(O.D, "run_longcallr", fail)
+    assert O.cmd_run(w.bam, w.copies, w.genome, str(out), exclude_chrM=True) == 1
+    assert len(prefixes) == 2 and sorted(json.load(open(out / "run.json"))["failed_copies"]) == ["F.0", "F.1"]
+
+
+def test_a2_is_not_evaluable_when_the_focus_family_has_fewer_than_ten_reads_minimap2_places_wrong(tmp_path):
+    os.makedirs(tmp_path / "a")
+    os.makedirs(tmp_path / "b")
+    s = _score(panel_a_toy(tmp_path / "a", fix=9, ok=39), exclude_p=None)
+    assert s["families"]["F"]["arms"]["N1"]["wrong"] == 9
+    assert s["bars"]["A2"] == {"value": 9, "limit": 10, "op": ">=", "pass": None,
+                               "reason": "the focus family has 9 scored reads minimap2 places wrong, fewer than 10"}
+    assert s["verdict"] == "UNDERPOWERED"
+    s = _score(panel_a_toy(tmp_path / "b", fix=9, ok=38, miss=1), exclude_p=None)       # reachable and missed: FAIL
+    assert s["bars"]["A2"] == {"value": 9, "limit": 10, "op": ">=", "pass": False} and s["verdict"] == "FAIL"
+
+
+def test_c1_is_not_evaluable_with_fewer_than_two_no_counterpart_tied_reads(tmp_path):
+    d = toy_dir(tmp_path, [tied_read("n1", "F.0", ("no_counterpart", None), flag="F#0"),
+                           tied_read("u1", "F.0", ("unique", "F.0"), flag="F#0")])
+    s = _score(d, "score.C.json", panel="C", focus=None, exclude_p=None)
+    assert s["bars"]["C1"] == {"value": 0, "limit": 1, "op": ">=", "pass": None,
+                               "reason": "1 no_counterpart tied read in the pool, fewer than 2"}
+    assert s["verdict"] == "UNDERPOWERED"
+
+
+def test_copies_from_sets_writes_pool_rows_with_the_union_of_transcript_exons(tmp_path):
+    p = tmp_path / "f.json"
+    p.write_text(json.dumps({"sets": {"seq19": [{"family": "S19X", "copies": [
+        {"chrom": "chrY", "start": 10, "end": 90, "strand": "-", "transcripts": {"t1": [[10, 20], [50, 60]], "t2": [[10, 20], [70, 90]]}}]}]}}))
+    assert O.copies_from_sets(str(p), "seq19", "S19X") == [dict(copy="S19X.0", family="S19X", chrom="chrY", start=10, end=90,
+                                                                strand="-", exons="10-20,50-60,70-90")]
+
+
+def test_copies_from_sets_reads_the_family_file_s_own_forms_and_the_cli_writes_a_table_load_copies_reads(tmp_path):
+    # families19cal_full2_all.json writes start and end as strings and the transcripts as a Python literal
+    p, out = tmp_path / "f.json", tmp_path / "c.tsv"
+    p.write_text(json.dumps({"sets": {"seq19": [
+        {"family": "S19Y", "copies": [{"chrom": "chr1", "start": "5", "end": "40", "strand": "+", "transcripts": "{'t': [[5, 40]]}"}]},
+        {"family": "S19X", "copies": [
+            {"chrom": "chrY", "start": "100", "end": "300", "strand": "+", "transcripts": "{'a': [[200, 300], [100, 150]], 'b': [[100, 150]]}"},
+            {"chrom": "chrY", "start": "1000", "end": "1100", "strand": "-", "transcripts": "{'c': [[1000, 1100]]}"}]}]}}))
+    assert O.main(["copies-from-sets", str(p), "seq19", "S19X", str(out)]) == 0
+    assert [(r["copy"], r["start"], r["end"], r["exons"]) for r in _rows(out)] == [
+        ("S19X.0", "100", "300", "100-150,200-300"), ("S19X.1", "1000", "1100", "1000-1100")]
+    assert open(out).readline().split() == "copy family chrom start end strand exons".split()
+    assert sorted(c for v in O.P.load_copies(str(out)).values() for c, *_ in v) == ["S19X.0", "S19X.1"]
+    with pytest.raises(ValueError, match="S19Z"):
+        O.copies_from_sets(str(p), "seq19", "S19Z")

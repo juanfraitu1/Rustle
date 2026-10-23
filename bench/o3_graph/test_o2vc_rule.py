@@ -88,3 +88,51 @@ def test_flags_do_not_depend_on_the_order_reads_arrive():
 
 def test_a_record_whose_gt_calls_no_allele_leaves_the_copy_unknown():
     assert R.genotype(R.Call("A", ("G",), (), "PASS", 9), 9, "A") is None
+
+
+# ---- Task 6 ruling A1: the weak-het genotype policy (a het whose alt fraction is under the preset's min_allele_freq) ----
+
+def _weak(af, gt=(0, 1), ref="A", alts=("G",), flt="LowQual"):
+    """(the record, its alt allele fractions) of a synthetic LowQual het at AF `af` (a tuple for several alts)."""
+    return R.Call(ref, alts, gt, flt, 79), af if isinstance(af, tuple) else (af,)
+
+
+def test_the_weak_het_threshold_is_the_hifi_masseq_min_allele_freq_and_keep_is_one_of_the_three_policies():
+    assert R.MIN_ALLELE_FREQ == 0.15 and R.WEAK_HET == ("keep", "unknown", "ref")
+
+
+def test_a_weak_het_at_af_0_14_keeps_its_gt_alleles_under_keep():
+    call, af = _weak(0.14)
+    assert R.genotype(R.weak_het(call, af, "keep"), 79, "A") == {"A", "G"}
+
+
+def test_a_weak_het_at_af_0_14_leaves_the_copy_unknown_under_unknown():
+    call, af = _weak(0.14)
+    assert R.genotype(R.weak_het(call, af, "unknown"), 79, "A") is None
+
+
+def test_a_weak_het_at_af_0_14_drops_its_weak_alt_under_ref_so_the_copy_holds_the_reference_base():
+    call, af = _weak(0.14)
+    assert R.genotype(R.weak_het(call, af, "ref"), 79, "A") == {"A"}
+
+
+def test_a_het_at_af_0_15_is_not_weak_under_any_policy():
+    call, af = _weak(0.15)
+    assert [R.genotype(R.weak_het(call, af, p), 79, "A") for p in R.WEAK_HET] == [{"A", "G"}] * 3
+
+
+def test_a_1_2_record_is_judged_on_each_alt_s_fraction_and_only_hets_are_touched():
+    call, af = _weak((0.40, 0.10), gt=(1, 2), ref="C", alts=("T", "G"), flt="Multiallelic")
+    assert [R.genotype(R.weak_het(call, af, p), 10, "C") for p in R.WEAK_HET] == [{"T", "G"}, None, {"T"}]
+    call, af = _weak((0.10, 0.12), gt=(1, 2), ref="C", alts=("T", "G"))
+    assert R.genotype(R.weak_het(call, af, "ref"), 10, "C") == {"C"}          # no alt left: the caller's high-fraction call
+    for gt in ((1, 1), (0, 0)):                                                # homozygous: no het to weaken
+        call, af = _weak(0.10, gt=gt)
+        assert all(R.weak_het(call, af, p) == call for p in R.WEAK_HET)
+    call, _ = _weak(0.10)
+    assert all(R.weak_het(call, (), p) == call and R.weak_het(call, (None,), p) == call for p in R.WEAK_HET)   # no AF
+    try:
+        R.weak_het(call, (0.10,), "drop")
+        assert False, "an unknown policy must raise"
+    except ValueError:
+        pass

@@ -84,13 +84,15 @@ def run_longcallr(teacher_bam, genome, out_prefix, binary=LONGCALLR, threads=2, 
     return vcf
 
 
-def parse_vcf(path):
+def parse_vcf(path, with_af=False):
     """{(chrom, POS - 1): Call} for every record of a longcallR VCF, .vcf or .vcf.gz (POS is 1-based in the file, 0-based in the
     key). FORMAT keys are read by name. gt is the tuple of the GT's allele indices (0 = REF), () when it calls none ("./.",
     ".|.", "."): a GT missing only one allele counts as calling none too, for half a genotype would make a copy look homozygous.
     The record is kept either way, and o2vc_rule.genotype() leaves such a copy unknown. dp is the record's own DP (0 when absent):
-    the depth o2vc_rule.genotype() is given where the caller wrote a record (teacher_depth reproduces it elsewhere)."""
-    out = {}
+    the depth o2vc_rule.genotype() is given where the caller wrote a record (teacher_depth reproduces it elsewhere).
+    with_af: (that dict, {(chrom, POS - 1): the FORMAT AF of each ALT as floats, in ALT order}) -- AF is Number=A in longcallR
+    2.0.0's header; a "." is None, and a record without AF has (). The weak-het policy reads it (o2vc_rule.weak_het)."""
+    out, afs = {}, {}
     with (gzip.open if path.endswith(".gz") else open)(path, "rt") as fh:
         for line in fh:
             if line.startswith("#") or not line.strip():
@@ -101,7 +103,9 @@ def parse_vcf(path):
             gt = tuple(int(i) for i in idx) if all(i.isdigit() for i in idx) else ()
             alts = () if c[4] == "." else tuple(c[4].split(","))
             out[c[0], int(c[1]) - 1] = Call(c[3], alts, gt, c[6], int(f["DP"]) if f.get("DP", ".").isdigit() else 0)
-    return out
+            if with_af:
+                afs[c[0], int(c[1]) - 1] = tuple(None if x == "." else float(x) for x in f["AF"].split(",")) if "AF" in f else ()
+    return (out, afs) if with_af else out
 
 
 @dataclasses.dataclass
