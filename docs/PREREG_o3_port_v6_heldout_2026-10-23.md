@@ -73,5 +73,16 @@
   passes its own pre-registered rules, not for the choice between them.
 
 **Scope.** These are gorilla KB3781 fibroblasts, two-copy families, and a deleted copy simulated by masking it in the reference.
-Half of the deleted copies give back no read. With one survivor, a copy whose reads fit the survivor's free allele slot cannot be
-proven extra (Theorem A).
+
+**Each deleted copy's outcome** (reported, not decided; the D-majority haplotype's fate in the port's dump):
+
+| outcome | label propagation | correlation clustering |
+|---|---|---|
+| certified (Strainy side) | 4 | 3 |
+| recovered by the IsoCon side | 7 | 7 |
+| in the survivor's free allele slot (Theorem A) | 2 | 3 |
+| reads in the survivor's pile but no D haplotype | 1 | 1 |
+| no pile | 6 | 6 |
+
+The main loss is "no pile", not Theorem A. Those deleted copies' reads never land within 10 AS on the survivor: they align
+elsewhere or not at all, and the shipped stage did not flag them either.
