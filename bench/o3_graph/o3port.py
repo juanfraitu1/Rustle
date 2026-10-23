@@ -18,7 +18,10 @@ Per family (the reads of its net with used = 1, as `candidate_copies` built it):
   7. its contig: the consensus of its reads (majority base, deletion or insertion at every position >= MIN_READS of them cover)
      along their alignments on the copy whose pile holds most of them.
 Products (the `candidate_copies` contract the acceptance harness reads): PREFIX.candidates.tsv (one row per certified haplotype,
-flagged = 1), PREFIX.contigs.fa, PREFIX.clusters.tsv, PREFIX.reads.tsv, PREFIX.families.tsv.
+flagged = 1), PREFIX.contigs.fa, PREFIX.clusters.tsv, PREFIX.reads.tsv, PREFIX.families.tsv. Beside them, "look harder" (not
+certified; 2026-10-23): PREFIX.look_harder.tsv / .fa (slot holders whose reads tie to other copies while the slot copy's other
+allele's do not, `look_harder`) and PREFIX.loci.tsv (where >= MIN_SUPPORT of the family's reads land outside its copies,
+`landing_loci`: an unannotated similar locus, expressed or silent).
 """
 import argparse
 import collections
@@ -226,6 +229,45 @@ def absorb(hs, keep):
     return out
 
 
+def look_harder(demand, match, reads_of, n_piles):
+    """The haplotypes RNA cannot prove extra (they hold an allele slot, Theorem A) but whose reads behave like another copy's:
+    >= half of them tie (within AS_TIE of their best) to another copy as well as to the slot's, while < half of the reads of
+    every other haplotype holding a slot of the same copy do. It compares the sample with itself (tie patterns), never with the
+    reference sequence, so a reference from another individual does not move it. A slot copy with no other holder gives no
+    contrast: no flag. reads_of: {haplotype: reads}; n_piles: {read: piles holding it}. Returns [(haplotype, copy, its multi
+    fraction, the other holders' multi fractions)]."""
+    multi = {i: sum(1 for r in reads_of[i] if n_piles.get(r, 0) >= 2) / max(1, len(reads_of[i])) for i in demand}
+    out = []
+    for i in demand:
+        X = match.get(i)
+        co = [j for j in demand if j != i and match.get(j) == X]
+        if X is None or not co:
+            continue
+        if 2 * multi[i] >= 1 and all(2 * multi[j] < 1 for j in co):
+            out.append((i, X, multi[i], [multi[j] for j in co]))
+    return out
+
+
+def landing_loci(records, spans, min_reads):
+    """Where a family's reads land outside its copies: records = [(chrom, start, end, read, near_best)] of the family's reads (every
+    primary and secondary record; near_best = within AS_TIE of the read's best AS); spans = [(chrom, start, end)] of the copies.
+    Records overlapping no copy are merged into loci (overlapping spans); a locus with >= min_reads distinct reads is reported as
+    (chrom, start, end, reads, reads with a near-best record there = an expressed copy's own reads, reads with only weaker records
+    there = paralogs' reads reaching it, as they reach a silent pseudogene)."""
+    out = [r for r in records if not any(r[0] == c and r[1] < e and s < r[2] for c, s, e in spans)]
+    loci = []
+    for ch, s, e, n, near in sorted(out):
+        if loci and loci[-1][0] == ch and s < loci[-1][2]:
+            loci[-1][2] = max(loci[-1][2], e)
+        else:
+            loci.append([ch, s, e, set(), set()])
+        L = loci[-1]
+        L[3].add(n)
+        if near:
+            L[4].add(n)
+    return [(ch, s, e, len(r), len(nb), len(r - nb)) for ch, s, e, r, nb in loci if len(r) >= min_reads]
+
+
 def b_matching(options, capacity, order=None):
     """options: {haplotype: [copies]}; capacity: {copy: slots}. Maximum b-matching by augmenting paths, haplotypes taken in
     `order` (default: fewest options first). An augmenting path never unmatches a matched haplotype, so the ones left
@@ -319,13 +361,17 @@ def load_net(path, families):
     return net, n_net
 
 
-def read_primaries(bam, wanted):
-    """{read: (seq, quals, is_reverse, best AS over every record of the read)} in one pass over the BAM."""
+def read_primaries(bam, wanted, records=None):
+    """{read: (seq, quals, is_reverse, best AS over every record of the read)} in one pass over the BAM; with `records` (a dict),
+    also every non-supplementary record of the wanted reads as (chrom, start, end, AS, is secondary) per read."""
     prim, best = {}, collections.defaultdict(lambda: -10 ** 9)
     for rec in bam.fetch(until_eof=True):
         n = rec.query_name
         if n not in wanted or rec.is_unmapped:
             continue
+        if records is not None and not rec.is_supplementary and rec.has_tag("AS"):
+            records.setdefault(n, []).append((rec.reference_name, rec.reference_start, rec.reference_end, rec.get_tag("AS"),
+                                              rec.is_secondary))
         if rec.has_tag("AS"):
             best[n] = max(best[n], rec.get_tag("AS"))
         if not rec.is_secondary and not rec.is_supplementary and rec.query_sequence:
@@ -507,7 +553,8 @@ def divergence(h, ref):
     return sum(h[c] != ref[c] for c in cols) / len(cols) if cols else 0.0
 
 
-def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False):
+def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False,
+               floor_first=True):
     """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
     the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
@@ -522,7 +569,11 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         obs, steps = observations(pile, prim, span[cid])
         clusters, cols, top = cluster_pile(set(pile), obs)
         hs = [haplotype(c, obs, top) for c in clusters]
-        keep = conflicting_set(hs) if hs else []
+        if floor_first:   # v6: only clusters at the support floor can be counted as distinct haplotypes; with tiny clusters in
+            big = [i for i, c in enumerate(clusters) if len(c) >= MIN_SUPPORT]   # the count, three 2-3-read artifacts beat a
+            keep = [big[k] for k in conflicting_set([hs[i] for i in big])] if big else []   # 93-read allele (largest set wins)
+        else:
+            keep = conflicting_set(hs) if hs else []
         joined = absorb(hs, keep) if absorb_fragments else {}
         for j, k in joined.items():
             clusters[k] = clusters[k] | clusters[j]
@@ -615,6 +666,13 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         order = sorted(demand, key=lambda i: (merged[i]["div"], -len(merged[i]["reads"]), i))
     match = b_matching({i: options[i] for i in demand}, capacity, order)
     certified = []
+    n_piles = collections.Counter(r for p in piles.values() for r in p)
+    looks = []
+    for i, X, mi, mc in look_harder(demand, match, {i: merged[i]["reads"] for i in demand}, n_piles):
+        if len(merged[i]["reads"]) < MIN_SUPPORT:
+            continue
+        _, steps = observations({r: piles[X][r] for r in sorted(merged[i]["reads"]) if r in piles[X]}, prim, span[X])
+        looks.append((X, merged[i]["reads"], consensus(steps), mi, mc))
     for i in demand:
         m = merged[i]
         if match[i] is None and private_alleles(i, merged, match, options) >= MIN_READS:
@@ -626,13 +684,14 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         for i, m in enumerate(merged):
             row = {"reads": sorted(m["reads"]), "piles": sorted(m["piles"]), "div": m["div"], "options": options[i],
                    "fate": fate[i][0], "by": fate[i][1], "slot": match.get(i) if i in demand else None,
-                   "certified": any(rs is m["reads"] for _, rs, _ in certified)}
+                   "certified": any(rs is m["reads"] for _, rs, _ in certified),
+                   "look_harder": any(rs is m["reads"] for _, rs, _, _, _ in looks)}
             if i in demand and match[i] is None:
                 cid, priv = private_detail(i, merged, match, options)
                 row["private"] = [(cid, col, b, genome.fetch(chrom[cid], col, col + 1).upper()) for col, b in priv]
             dump["merged"].append(row)
     piled = set().union(*(set(piles[c]) for c in per_copy)) if per_copy else set()
-    return certified, per_copy, len(merged), why, piled
+    return certified, per_copy, len(merged), why, piled, looks
 
 
 def isocon_side(prefix, net_path):
@@ -680,7 +739,8 @@ def cmd_run(a):
     net, n_net = load_net(a.net, fams)
     bam = pysam.AlignmentFile(a.bam)
     wanted = set().union(*net.values()) if net else set()
-    prim = read_primaries(bam, wanted)
+    records = {}
+    prim = read_primaries(bam, wanted, records)
     genome = pysam.FastaFile(a.genome)
     iso = isocon_side(a.isocon, a.net) if a.isocon else {}
     import os
@@ -694,11 +754,25 @@ def cmd_run(a):
         cl.write("family\tcluster\tcandidate\tn_reads\tconsensus_len\tfate\tlinked_to\td\n")
         rd.write("read\tfamily\tcluster\n")
         ft.write("family\tn_net\tn_used\tpiles\tpile_reads\tclusters\tconflicting\thaplotypes\tcertified\n")
+        lh = open(f"{a.out}.look_harder.tsv", "w")
+        lf = open(f"{a.out}.look_harder.fa", "w")
+        lo = open(f"{a.out}.loci.tsv", "w")
+        lh.write("family\tcandidate\tcopy\tn_reads\tmulti\tother_holders_multi\tconsensus_len\n")
+        lo.write("family\tlocus\tn_reads\tnear_best\tweaker_only\n")
         for fam in sorted(net):
             reads = net[fam]
             dump = {} if dump_fh else None
-            certified, per_copy, n_h, why, piled = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order, tmpdir,
-                                                              dump, a.absorb)
+            certified, per_copy, n_h, why, piled, looks = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order,
+                                                                     tmpdir, dump, a.absorb, not a.v5_clique)
+            for k, (X, rs, seq, mi, mc) in enumerate(looks):
+                lh.write(f"{fam}\tlook_{fam}_{k}\t{X}\t{len(rs)}\t{mi:.3f}\t{','.join(f'{x:.3f}' for x in mc)}\t{len(seq)}\n")
+                lf.write(f">look_{fam}_{k}\n{seq}\n")
+            recs = []
+            for n in reads:
+                b = max((x[3] for x in records.get(n, [])), default=None)
+                recs += [(ch, s0, e0, n, asc >= b - AS_TIE) for ch, s0, e0, asc, _ in records.get(n, [])]
+            for ch, s0, e0, nr, nb, so in landing_loci(recs, [(c[1], c[2], c[3]) for c in by_fam[fam]], MIN_SUPPORT):
+                lo.write(f"{fam}\t{ch}:{s0}-{e0}\t{nr}\t{nb}\t{so}\n")
             side = [(c, rs, seq) for c, rs, seq, vb in iso.get(fam, []) if isocon_keep(rs, vb, piled, a.isocon_rule)]
             if dump_fh:
                 dump["isocon"] = [{"candidate": c, "reads": sorted(rs)} for c, rs, _ in side]
@@ -714,7 +788,9 @@ def cmd_run(a):
                 for r in sorted(rs):
                     rd.write(f"{r}\t{fam}\t{fam}:h{k}\n")
             print(f"[o3port] {fam}: reads {len(reads)}, piles {len(per_copy)}, haplotypes {n_h} {dict(why)}, "
-                  f"certified {len(certified)}", file=sys.stderr, flush=True)
+                  f"certified {len(certified)}, look harder {len(looks)}", file=sys.stderr, flush=True)
+        for fh in (lh, lf, lo):
+            fh.close()
 
 
 def main(argv):
@@ -729,6 +805,8 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--slot-order", choices=["divergence", "support"], default="divergence")
     r.add_argument("--isocon", default="", help="the stage's product prefix (candidate_copies) for the IsoCon side")
+    r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
+                   "set (they can push a real allele out of it)")
     r.add_argument("--absorb", action="store_true", help="v5.1 (rejected on development data): join clusters outside the "
                    "conflicting set to their one compatible haplotype, and a haplotype merged across piles keeps every pile's reads")
     r.add_argument("--isocon-rule", choices=["no-pile", "via-b"], default="no-pile",

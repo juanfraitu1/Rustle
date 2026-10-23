@@ -254,38 +254,109 @@ def pick(a):
     print("no family meets the rule")
 
 
-def sim(a):
-    W = a.out
-    case = json.load(open(f"{W}/case.json"))
-    tx = fasta(f"{W}/truth.fa")
-    E, surv, copies, fam = case["erased"], case["survivors"], case["copies"], case["family"]
-    if a.s_het:   # synthetic heterozygosity: a survivor whose two real alleles differ at < 2 positions gets a B allele = A with
-        rng_h = random.Random(a.seed + 1)  # s_het random substitutions (the certificate needs >= 2 differences to see two alleles)
+def mismatches(a, b, tmp):
+    """[(position in b, position in a)] of b's substitutions against a (minimap2 map-ont --eqx, the longest + strand alignment)."""
+    with open(f"{tmp}/t.fa", "w") as f:
+        f.write(f">a\n{a}\n")
+    with open(f"{tmp}/q.fa", "w") as f:
+        f.write(f">b\n{b}\n")
+    paf = [ln.split("\t") for ln in subprocess.run(["minimap2", "-c", "--eqx", "-x", "map-ont", "-t", "1", f"{tmp}/t.fa", f"{tmp}/q.fa"],
+                                                    capture_output=True, text=True).stdout.splitlines()]
+    paf = [p for p in paf if p[4] == "+"]
+    if not paf:
+        return []
+    p = max(paf, key=lambda f: int(f[10]))
+    q, t, out = int(p[2]), int(p[7]), []
+    for n, o in re.findall(r"(\d+)([=XID])", next(x[5:] for x in p[12:] if x.startswith("cg:Z:"))):
+        n = int(n)
+        if o == "X":
+            out += [(q + k, t + k) for k in range(n)]
+        if o in "=X":
+            q, t = q + n, t + n
+        elif o == "I":
+            q += n
+        else:
+            t += n
+    return out
+
+
+def configure(case, tx, cfg, tmp):
+    """The sample's transcripts for one configuration (cfg keys: s_het, e_frac, indiv_hom, indiv_het, seed): synthetic survivor
+    heterozygosity, the erased copy moved toward its closest survivor, and the sample's own variants (another individual than
+    the reference)."""
+    tx = dict(tx)
+    E, surv = case["erased"], case["survivors"]
+    if cfg["s_het"]:   # a survivor whose two real alleles differ at < 2 positions gets a B allele = A + s_het substitutions
+        rng_h = random.Random(cfg["seed"] + 1)
         for c in surv:
             al = case["alleles"].get(c)
             if al is None or al["mismatches"] + al["indels"] < 2:
                 sq = list(tx[f"{c}|A"])
-                for i in rng_h.sample(range(len(sq)), a.s_het):
+                for i in rng_h.sample(range(len(sq)), cfg["s_het"]):
                     sq[i] = rng_h.choice([b for b in "ACGT" if b != sq[i]])
                 tx[f"{c}|B"] = "".join(sq)
+    if cfg["e_frac"] < 1:   # each substitution of E against its closest survivor T kept with probability e_frac (else T's base)
+        T = max(surv, key=lambda c: (case["erased_vs_survivor"][c] or {}).get("identity", 0))
+        rng_f = random.Random(cfg["seed"] + 2)
+        keep = {}
+        for h in ("A", "B"):
+            sq = list(tx[f"{E}|{h}"])
+            for qp, tp in mismatches(tx[f"{T}|A"], tx[f"{E}|{h}"], tmp):
+                if keep.setdefault(tp, rng_f.random() < cfg["e_frac"]) is False:
+                    sq[qp] = tx[f"{T}|A"][tp]
+            tx[f"{E}|{h}"] = "".join(sq)
+    if cfg["indiv_hom"] or cfg["indiv_het"]:   # the sample's own variants: per copy, sites at rate indiv_hom carry one alternative
+        rng_i = random.Random(cfg["seed"] + 3)  # base on both alleles, sites at rate indiv_het on one allele (positions scaled
+        for c in case["copies"]:                # between the two alleles' lengths)
+            A, B = list(tx[f"{c}|A"]), list(tx[f"{c}|B"])
+            for i in range(len(A)):
+                r = rng_i.random()
+                if r >= cfg["indiv_hom"] + cfg["indiv_het"]:
+                    continue
+                j = min(len(B) - 1, round(i * len(B) / len(A)))
+                alt = rng_i.choice([b for b in "ACGT" if b != A[i]])
+                if r < cfg["indiv_hom"]:
+                    A[i] = alt
+                    B[j] = alt if B[j] != alt else B[j]
+                elif rng_i.random() < 0.5:
+                    A[i] = alt
+                else:
+                    B[j] = rng_i.choice([b for b in "ACGT" if b != B[j]])
+            tx[f"{c}|A"], tx[f"{c}|B"] = "".join(A), "".join(B)
+    return tx
+
+
+DEFAULT = dict(case="missing", s_alleles="AB", e_alleles="AB", reads_per_allele=100, e_reads_per_allele=100, seed=1, s_het=0,
+               e_frac=1.0, indiv_hom=0.0, indiv_het=0.0)
+
+
+def run_config(W, name, cfg):
+    """Simulate, align and run the port for one configuration -> W/name/ (reads, reference, BAM, copy table, net, port products,
+    meta.json)."""
+    case = json.load(open(f"{W}/case.json"))
+    E, surv, copies, fam = case["erased"], case["survivors"], case["copies"], case["family"]
+    D = f"{W}/{name}"
+    os.makedirs(D, exist_ok=True)
+    tx = configure(case, fasta(f"{W}/truth.fa"), cfg, D)
+    with open(f"{D}/sample.fa", "w") as f:           # the sample's transcripts as simulated (the truth for this run)
+        for k, v in tx.items():
+            f.write(f">{k}\n{v}\n")
     plan = []
     for c in copies:
-        alleles, n = (a.e_alleles, a.e_reads_per_allele) if c == E else (a.s_alleles, a.reads_per_allele)
-        if n == 0:
-            continue
-        plan += [(f"{c}|{h}", n if len(alleles) == 2 else 2 * n) for h in alleles]
-    os.makedirs(f"{W}/{a.name}", exist_ok=True)
-    D = f"{W}/{a.name}"
-    simulate(tx, plan, random.Random(a.seed), f"{D}/reads.fa")
-    where = mini_reference(copies, E, a.case == "missing", D)
+        alleles, n = (cfg["e_alleles"], cfg["e_reads_per_allele"]) if c == E else (cfg["s_alleles"], cfg["reads_per_allele"])
+        if n:
+            plan += [(f"{c}|{h}", n if len(alleles) == 2 else 2 * n) for h in alleles]
+    simulate(tx, plan, random.Random(cfg["seed"]), f"{D}/reads.fa")
+    where = mini_reference(copies, E, cfg["case"] == "missing", D)
     align(D, f"{D}/reads.fa", f"{D}/reads.bam")
+    table = surv if cfg["case"] != "control" else list(copies)        # control: nothing erased, every copy in the table
     with open(f"{D}/copies.tsv", "w") as f:
         f.write("family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads\texons\n")
-        for k, c in enumerate(surv):
+        for k, c in enumerate(table):
             seg, s0, e0 = where[c]
             f.write(f"{fam}\t{k}\t{c}\t{seg}\t{s0}\t{e0}\t1\t+\t0\t{s0}-{e0}\n")
     names = [ln[1:].strip() for ln in open(f"{D}/reads.fa") if ln.startswith(">")]
-    tied, outside, best = landing(f"{D}/reads.bam", where, surv)
+    tied, _, _ = landing(f"{D}/reads.bam", where, table)
     with open(f"{D}/net.tsv", "w") as f:
         f.write("family\tread\tused\trole\tvia\tclass\tin_reads_tsv\n")
         for n in names:
@@ -293,76 +364,107 @@ def sim(a):
     subprocess.run([sys.executable, f"{HERE}/o3port.py", "run", "--bam", f"{D}/reads.bam", "--copies", f"{D}/copies.tsv",
                     "--genome", f"{D}/ref.fa", "--net", f"{D}/net.tsv", "--out", f"{D}/port", "--dump", f"{D}/port.dump.jsonl"],
                    check=True, stderr=open(f"{D}/port.log", "w"))
-    # where the family's reads land outside the copy table: merged loci of records (primary or secondary)
-    loci = []
-    for seg, s, e, n, sec, near in sorted(outside):
-        if loci and loci[-1]["seg"] == seg and s <= loci[-1]["end"]:
-            L = loci[-1]
-            L["end"] = max(L["end"], e)
-        else:
-            L = dict(seg=seg, start=s, end=e, reads=set(), secondary=set(), near_best=set())
-            loci.append(L)
-        L["reads"].add(n)
-        if sec:
-            L["secondary"].add(n)
-        if near:
-            L["near_best"].add(n)
-    eseg, es, ee = where[E]
-    meta = dict(case=a.case, s_alleles=a.s_alleles, e_alleles=a.e_alleles, s_het=a.s_het, reads_per_allele=a.reads_per_allele,
-                e_reads_per_allele=a.e_reads_per_allele, seed=a.seed, n_reads=len(names),
-                loci=[dict(seg=L["seg"], start=L["start"], end=L["end"], reads=len(L["reads"]), secondary_only=len(L["secondary"]),
-                           near_best=len(L["near_best"]), on_E=L["seg"] == eseg and L["start"] < ee and es < L["end"],
-                           origin=dict(collections.Counter(n.split("|")[0] for n in L["reads"])))
-                      for L in loci if len(L["reads"]) >= 2])
-    json.dump(meta, open(f"{D}/meta.json", "w"), indent=1)
-    print(f"{a.name}: {a.case}; reads {len(names)}; " + open(f"{D}/port.log").read().strip().splitlines()[-1])
+    json.dump(dict(cfg, n_reads=len(names), E_where=where[E]), open(f"{D}/meta.json", "w"), indent=1)
+
+
+def summary(W, name):
+    """One row: the erased copy's reads (in a pile, multimappers), its print (the largest haplotype holding >= 90% E reads) and
+    what became of it (certified / look harder / an allele slot / below the floor ...), false calls (certified or look-harder
+    haplotypes with < half E reads), the certified or look-harder contig against the sample's own E transcripts, and the
+    landing loci on E."""
+    case, meta = json.load(open(f"{W}/case.json")), json.load(open(f"{W}/{name}/meta.json"))
+    D, E = f"{W}/{name}", case["erased"]
+    d = json.loads(open(f"{D}/port.dump.jsonl").readline())
+    names = [ln[1:].strip() for ln in open(f"{D}/reads.fa") if ln.startswith(">")]
+    e_reads = {n for n in names if n.startswith(E + "|")}
+    piles = {c: set(v["pile"]) for c, v in d["copies"].items()}
+    in_pile = sum(1 for n in e_reads if any(n in p for p in piles.values()))
+    multi = sum(1 for n in e_reads if sum(1 for p in piles.values() if n in p) >= 2)
+    is_e = lambda m: sum(1 for r in m["reads"] if r in e_reads)
+    prints = [m for m in d["merged"] if is_e(m) >= 0.9 * len(m["reads"])]
+    pr = max(prints, key=lambda m: len(m["reads"]), default=None)
+    fate = "none"
+    if pr:
+        fate = ("certified" if pr["certified"] else "look harder" if pr.get("look_harder") else
+                f"slot {pr['slot']}" if pr["slot"] else pr["fate"])
+    false_c = sum(1 for m in d["merged"] if m["certified"] and 2 * is_e(m) < len(m["reads"]))
+    false_l = sum(1 for m in d["merged"] if m.get("look_harder") and 2 * is_e(m) < len(m["reads"]))
+    sample = fasta(f"{D}/sample.fa")
+    ident = None
+    for path in (f"{D}/port.contigs.fa", f"{D}/port.look_harder.fa"):
+        for c, sq in (fasta(path) if os.path.exists(path) else {}).items():
+            hits = [compare(sample[f"{E}|{h}"], sq, D) for h in ("A", "B")]
+            hits = [h for h in hits if h]
+            if hits:
+                ident = max(ident or 0, max(h[0] for h in hits))
+    seg, es, ee = meta["E_where"]
+    loci_e = 0
+    if os.path.exists(f"{D}/port.loci.tsv"):
+        for r in tsv(f"{D}/port.loci.tsv"):
+            ch, se = r["locus"].rsplit(":", 1)
+            s0, e0 = (int(x) for x in se.split("-"))
+            if ch == seg and s0 < ee and es < e0:
+                loci_e = max(loci_e, int(r["n_reads"]))
+    return dict(name=name, E_reads=len(e_reads), E_in_pile=in_pile, E_multi=multi, print_reads=len(pr["reads"]) if pr else 0,
+                print_E=is_e(pr) if pr else 0, fate=fate, false_certified=false_c, false_look=false_l, contig_identity=ident,
+                locus_on_E=loci_e)
+
+
+def sim(a):
+    cfg = dict(DEFAULT, case=a.case, s_alleles=a.s_alleles, e_alleles=a.e_alleles, reads_per_allele=a.reads_per_allele,
+               e_reads_per_allele=a.e_reads_per_allele, seed=a.seed, s_het=a.s_het, e_frac=a.e_frac, indiv_hom=a.indiv_hom,
+               indiv_het=a.indiv_het)
+    run_config(a.out, a.name, cfg)
+    print(json.dumps(summary(a.out, a.name)))
+
+
+def sweep(a):
+    """The registered grid (2026-10-23): expression of the erased copy, its divergence from its closest survivor, and a nothing-
+    erased control, each with the reference's own individual (KB3781) and with another individual (the sample's own variants at
+    a human-like rate: 0.001 on both alleles + 0.001 on one) -> OUT/sweep.tsv"""
+    other = dict(indiv_hom=0.001, indiv_het=0.001)
+    grid = []
+    for ind_name, ind in (("same", {}), ("other", other)):
+        for het_name, het in (("survivors as KB3781", 0), ("survivors heterozygous", 6)):
+            for n in (100, 30, 10, 5, 3):
+                grid.append((f"expr{n}_{het}_{ind_name}", dict(DEFAULT, e_reads_per_allele=n, s_het=het, **ind),
+                             f"expression {n}/allele; {het_name}; {ind_name} individual"))
+            for f in (0.5, 0.25, 0.1, 0.05):
+                grid.append((f"div{f}_{het}_{ind_name}", dict(DEFAULT, e_frac=f, s_het=het, **ind),
+                             f"E toward its closest survivor (frac {f}); {het_name}; {ind_name} individual"))
+            grid.append((f"control_{het}_{ind_name}", dict(DEFAULT, case="control", s_het=het, **ind),
+                         f"control (nothing erased); {het_name}; {ind_name} individual"))
+    for name, cfg, label in grid:
+        if not re.search(a.select, name):
+            continue
+        run_config(a.out, name, cfg)
+        r = dict(summary(a.out, name), label=label)
+        json.dump(r, open(f"{a.out}/{name}/summary.json", "w"))
+        print("\t".join(str(r[k]) for k in ("name", "E_reads", "E_in_pile", "E_multi", "print_reads", "print_E", "fate",
+                                             "false_certified", "false_look", "contig_identity", "locus_on_E")), flush=True)
+    keys = ["name", "label", "E_reads", "E_in_pile", "E_multi", "print_reads", "print_E", "fate", "false_certified", "false_look",
+            "contig_identity", "locus_on_E"]
+    with open(f"{a.out}/sweep.tsv", "w") as f:     # every grid run done so far, in grid order
+        f.write("\t".join(keys) + "\n")
+        for name, _, _ in grid:
+            if os.path.exists(f"{a.out}/{name}/summary.json"):
+                r = json.load(open(f"{a.out}/{name}/summary.json"))
+                f.write("\t".join(str(r[k]) for k in keys) + "\n")
 
 
 def report(a):
-    W, D = a.out, f"{a.out}/{a.name}"
-    case, meta = json.load(open(f"{W}/case.json")), json.load(open(f"{D}/meta.json"))
-    E, surv = case["erased"], case["survivors"]
+    """The run's summary, then every haplotype with its reads by origin and its fate."""
+    D = f"{a.out}/{a.name}"
+    print(json.dumps(summary(a.out, a.name)))
     d = json.loads(open(f"{D}/port.dump.jsonl").readline())
-    origin = lambda r: r.rsplit("_r", 1)[0]
-    names = [ln[1:].strip() for ln in open(f"{D}/reads.fa") if ln.startswith(">")]
-    # E reads: multimappers? (records within AS_TIE on >= 2 survivors), and their piles
-    piles = {c: set(v["pile"]) for c, v in d["copies"].items()}
-    e_reads = [n for n in names if n.startswith(E + "|")]
-    e_multi = sum(1 for n in e_reads if sum(1 for c in piles if n in piles[c]) >= 2)
-    e_any = sum(1 for n in e_reads if any(n in p for p in piles.values()))
-    rows = []
     for m in d["merged"]:
-        c = collections.Counter(origin(r) for r in m["reads"])
-        rows.append(dict(reads=len(m["reads"]), piles=m["piles"], origin=dict(sorted(c.items())), fate=m["fate"], slot=m["slot"],
-                         certified=m["certified"], private=len(m.get("private", []))))
-    tx = fasta(f"{W}/truth.fa")
-    contigs = fasta(f"{D}/port.contigs.fa") if os.path.exists(f"{D}/port.contigs.fa") else {}
-    best = {}
-    for c, s in contigs.items():
-        hits = {t: compare(seq, s, D) for t, seq in tx.items()}
-        hits = {t: h for t, h in hits.items() if h}
-        if hits:
-            t = max(hits, key=lambda t: (hits[t][0], -hits[t][1]))
-            best[c] = dict(truth=t, identity=round(hits[t][0], 5), mismatches=hits[t][1], indels=hits[t][2], length=len(s))
-    cert_e = sum(v for r in rows if r["certified"] for k, v in r["origin"].items() if k.startswith(E + "|"))
-    cert_s = sum(v for r in rows if r["certified"] for k, v in r["origin"].items() if not k.startswith(E + "|"))
-    rep = dict(name=a.name, meta=meta, E=E, E_reads=len(e_reads), E_reads_in_a_pile=e_any, E_reads_in_2plus_piles=e_multi,
-               haplotypes=rows, contigs=best, E_reads_certified=cert_e, other_reads_certified=cert_s)
-    json.dump(rep, open(f"{D}/report.json", "w"), indent=1)
-    print(f"== {a.name} ({meta['case']}; survivors {meta['s_alleles']} x {meta['reads_per_allele']}/allele"
-          + (f" (synthetic B alleles: {meta['s_het']} substitutions where the real ones differ at < 2)" if meta.get("s_het") else "")
-          + f", erased {E} "
-          f"{meta['e_alleles']} x {meta['e_reads_per_allele']}/allele)")
-    print(f"   E reads {len(e_reads)}: in a survivor pile {e_any}, in >= 2 piles (multimappers) {e_multi}")
-    for r in rows:
-        print(f"   haplotype {r['reads']:4d} reads {r['origin']} piles {r['piles']}: {r['fate']}, slot {r['slot']}, "
-              f"certified {r['certified']}" + (f", private alleles {r['private']}" if r["certified"] else ""))
-    for c, b in best.items():
-        print(f"   contig {c} ({b['length']} bp) = {b['truth']} at identity {b['identity']} ({b['mismatches']} mm, {b['indels']} indels)")
-    print(f"   certified reads: from E {cert_e}, from survivors {cert_s}")
-    for L in meta["loci"]:
-        print(f"   reads landing outside the copy table: {L['seg']}:{L['start']}-{L['end']} reads {L['reads']} (secondary "
-              f"{L['secondary_only']}, within {AS_TIE} AS of best {L['near_best']}), on E {L['on_E']}, from {L['origin']}")
+        c = collections.Counter(r.rsplit("_r", 1)[0] for r in m["reads"])
+        print(f"   haplotype {len(m['reads']):4d} reads {dict(sorted(c.items()))} piles {m['piles']}: {m['fate']}, slot {m['slot']}, "
+              f"certified {m['certified']}, look harder {m.get('look_harder', False)}")
+    for f in ("look_harder.tsv", "loci.tsv"):
+        if os.path.exists(f"{D}/port.{f}"):
+            for r in tsv(f"{D}/port.{f}"):
+                print(f"   {f.split('.')[0]}: {dict(r)}")
 
 
 def main(argv):
@@ -373,7 +475,7 @@ def main(argv):
     s = sub.add_parser("sim")
     s.add_argument("--out", required=True)
     s.add_argument("--name", required=True)
-    s.add_argument("--case", required=True, choices=["missing", "unannotated"])
+    s.add_argument("--case", required=True, choices=["missing", "unannotated", "control"])
     s.add_argument("--s-alleles", default="AB", choices=["AB", "A"])
     s.add_argument("--e-alleles", default="AB", choices=["AB", "A"])
     s.add_argument("--reads-per-allele", type=int, default=100)
@@ -381,11 +483,18 @@ def main(argv):
     s.add_argument("--seed", type=int, default=1)
     s.add_argument("--s-het", type=int, default=0, help="synthetic: survivors with < 2 allele differences get a B allele with "
                    "this many random substitutions")
+    s.add_argument("--e-frac", type=float, default=1.0, help="keep each substitution of E against its closest survivor with this "
+                   "probability (else the survivor's base): E's divergence scaled down")
+    s.add_argument("--indiv-hom", type=float, default=0.0, help="the sample's own variants on both alleles, per base")
+    s.add_argument("--indiv-het", type=float, default=0.0, help="the sample's own variants on one allele, per base")
+    w = sub.add_parser("sweep")
+    w.add_argument("--out", required=True)
+    w.add_argument("--select", default="", help="run only the grid configurations whose name matches this regex")
     r = sub.add_parser("report")
     r.add_argument("--out", required=True)
     r.add_argument("--name", required=True)
     a = ap.parse_args(argv)
-    {"pick": pick, "sim": sim, "report": report}[a.cmd](a)
+    {"pick": pick, "sim": sim, "sweep": sweep, "report": report}[a.cmd](a)
 
 
 if __name__ == "__main__":

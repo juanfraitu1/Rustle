@@ -91,3 +91,14 @@ port can replace the stage on equal terms.
   - P2: **4 flags in 4 / 53** families (v5: 0).
   - Precision for 63 reads; v5 stays the candidate. Development stops here: neither version clears P1, and tuning further to pass
     it would be fitting the bar.
+- **Look harder** (2026-10-23, report-only beside the certificate): a slot holder >= half of whose reads tie to another copy as well
+  as to the slot's, while < half of the reads of the slot copy's other holders do. It compares the sample with itself (tie
+  patterns), never with the reference sequence. Products `PREFIX.look_harder.tsv` / `.fa`; and `PREFIX.loci.tsv` (register 1377).
+- **v6** (found by the one-copy simulation with another individual's variants, `docs/O3_ONE_COPY_SIM_2026-10-23.md`): only clusters
+  at the support floor (6 reads, MIN_SUPPORT) enter the conflicting set. Before, the largest set of pairwise-conflicting clusters
+  counted 2-3-read artifacts too, and three of them beat a real 93-read allele, freeing its slot for the erased copy. No new
+  constant: the floor's own meaning ("a haplotype needs 6 reads to take a slot"), applied before the count. `--v5-clique` restores v5.
+  - P1 (harness ACC=a13 A=p21): D right **6,129** (83.9% of C) >= 5,842: **PASSES**; false moves 7 / 41,727 = 0.02%.
+  - P2: **0 flags in 0 / 53**: passes. Look harder: 2 families, one of them GWFAM175's real paternal-only copy (181 reads; lost to
+    a free slot since v3), the other a 6-read flag (GWFAM4).
+  - v6 passes both development panels. It needs a held-out (fresh gorilla fibroblast families) before any claim.

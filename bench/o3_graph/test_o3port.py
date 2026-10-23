@@ -134,3 +134,17 @@ def test_absorb_joins_a_fragment_to_its_one_compatible_haplotype():
           {1: "A", 2: "T"},                  # one difference from each kept haplotype: fits both -> stays out
           {9: "G"}]                          # shares no column -> stays out
     assert P.absorb(hs, [0, 1]) == {2: 0}
+
+
+def test_look_harder_needs_a_contrast_with_the_copys_own_allele():
+    reads_of = {0: {"a1", "a2", "a3"}, 1: {"e1", "e2", "e3"}, 2: {"z1", "z2"}}
+    n_piles = {"a1": 1, "a2": 1, "a3": 2, "e1": 2, "e2": 2, "e3": 1, "z1": 2, "z2": 2}
+    match = {0: "X", 1: "X", 2: "Y"}
+    got = P.look_harder([0, 1, 2], match, reads_of, n_piles)
+    assert [(i, c) for i, c, _, _ in got] == [(1, "X")]     # 2 is Y's only holder: no contrast, no flag
+
+
+def test_landing_loci_merges_records_outside_the_copies():
+    recs = [("c1", 100, 200, "r1", True), ("c1", 150, 260, "r2", False), ("c1", 150, 260, "r3", False),
+            ("c1", 1000, 1100, "r1", False), ("c2", 0, 50, "r4", True)]
+    assert P.landing_loci(recs, [("c1", 1000, 2000)], 3) == [("c1", 100, 260, 3, 1, 2)]
