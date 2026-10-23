@@ -12,7 +12,7 @@
 set -euo pipefail
 REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 W=${W:-/mnt/linuxdisk/tmp/rna_allele/p4}
-BIN=$W/bin/candidate_copies                      # frozen copy, sha1 2e3cd592 (the prereg)
+BIN=${BIN:-/mnt/linuxdisk/tmp/rna_allele/p4/bin/candidate_copies}   # frozen copy, sha1 2e3cd592 (both preregs)
 GGO_FA=/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta
 GGO_MMI=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi
 MAT_MMI=/mnt/linuxdisk/home/juanfraitu/winloci_data/mGorGor1.mat.splice.mmi
@@ -37,6 +37,7 @@ mkdir -p $W/logs
 step=${1:?step}; shift
 case $step in
   panel)   $LIGHT $P4 panel --w $W ;;
+  subpanel) $LIGHT $P4 subpanel --w $W --n ${1:-20} ;;   # P5: the 20 of P4's draw and their reads
   mask)    $HEAVY $LT mask --w $W ;;
   reads)   $HEAVY $LT reads --w $W ;;
   split)   $LIGHT $P4 split --w $W ;;
@@ -67,12 +68,13 @@ case $step in
            [ $arm = d ] && B="--bam $W/R.bam"
            $HEAVY $ACC_PY nets --w $X --linktest $W --prefix cand --copies $W/$arm.copies.tsv --copies-fa $W/$arm.copies.fa $B > $X/attrib.out
            cat $X/attrib.out ;;
-  port)    # the port (o3port.py as of 555e77db, default options = v5) on the stage's net; its IsoCon side = the stage's products
-    arm=$1; X=$W/p$arm; mkdir -p $X/logs
+  port)    # the port on the stage's net; its IsoCon side = the stage's products. arg 2 = cc: correlation clustering (dir p<arm>cc)
+    arm=$1; CL=${2:-}; X=$W/p$arm$CL; mkdir -p $X/logs
+    CLA=""; [ "$CL" = cc ] && CLA="--clusterer cc"
     if [ $arm = d ]; then BAMG="--bam $W/R.bam --genome $W/masked.fa"; else BAMG="--bam $W/R0.bam --genome $GGO_FA"; fi
     for f in net_reads.tsv nets.tsv attrib.json attrib.out; do cp $W/k$arm/$f $X/$f; done
     $HEAVY /usr/bin/time -v python3 $REPO/bench/o3_graph/o3port.py run $BAMG --copies $W/$arm.copies.tsv --net $X/net_reads.tsv \
-      --out $X/cand --isocon $W/k$arm/cand --dump $X/cand.dump.jsonl > $X/logs/port.log 2>&1
+      --out $X/cand --isocon $W/k$arm/cand --dump $X/cand.dump.jsonl $CLA > $X/logs/port.log 2>&1
     grep -E "Elapsed \(wall|Maximum resident" $X/logs/port.log; echo "flags $(($(wc -l < $X/cand.candidates.tsv) - 1))" ;;
   contigs) $LIGHT $ACC_PY contigs --w $W/$1 --prefix cand ;;
   mindex)  X=$W/$1
@@ -108,5 +110,6 @@ case $step in
     $HEAVY $CT score --w $X --l $W > $X/score.out; tail -8 $X/score.out ;;
   clean)   rm -f $W/$1/M.splice.mmi $W/$1/M.fa $W/$1/C.splice.mmi $W/$1/C.fa ;;
   verdict) $LIGHT $P4 verdict --w $W ;;
+  verdict5) $LIGHT $P4 verdict5 --w $W ;;
   *) echo "unknown step $step" >&2; exit 2 ;;
 esac

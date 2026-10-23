@@ -5,6 +5,10 @@
   split   --w W          W/scored.fa -> W/scored.part{0,1,2}.fa (record k goes to part k % 3)
   batches --w W          the panel's families in panel order, 10 per line -> W/batches.txt
   verdict --w W          H4-1 / H4-2 / H4-3 and the reported tables from the arms' products -> W/verdict.json, stdout
+  subpanel --w W --from P4 --n 20   P5 (docs/PREREG_o3_port_v6_heldout_2026-10-23.md): n families drawn with random.Random(1) from
+                         P4's draw (sorted by family) -> W/panel.json, and P4's scored reads of those families -> W/scored.fa,
+                         W/labels.tsv
+  verdict5 --w W --deletion pd,pdcc --control pc,pccc   P5's H5-1 / H5-2 / H5-3 per arm -> W/verdict.json, stdout
 """
 import argparse
 import collections
@@ -145,12 +149,81 @@ def verdict(a):
     print("tier 2:", {k: v for k, v in out.items() if k.startswith("tier2_")})
 
 
+def subpanel(a):
+    P = sorted(json.load(open(f"{a.source}/panel.json")), key=lambda p: p["fam"])
+    draw = sorted(random.Random(1).sample(P, a.n), key=lambda p: p["fam"])
+    json.dump(draw, open(f"{a.w}/panel.json", "w"), indent=0)
+    fams = {p["fam"] for p in draw}
+    lab = tsv(f"{a.source}/labels.tsv")
+    keep = {r["read"] for r in lab if r["family"] in fams}
+    with open(f"{a.w}/labels.tsv", "w") as o:
+        o.write("read\tfamily\trole\tcopy\n")
+        for r in lab:
+            if r["read"] in keep:
+                o.write(f"{r['read']}\t{r['family']}\t{r['role']}\t{r['copy']}\n")
+    n, name, out = 0, None, open(f"{a.w}/scored.fa", "w")
+    for ln in open(f"{a.source}/scored.fa"):
+        if ln.startswith(">"):
+            name = ln[1:].strip()
+            n += name in keep
+        if name in keep:
+            out.write(ln)
+    out.close()
+    roles = collections.Counter(r["role"] for r in lab if r["read"] in keep)
+    print(f"drawn {len(draw)} of {len(P)}: {sorted(fams)}; reads {n} ({dict(roles)})")
+
+
+def verdict5(a):
+    import accept_o3_candidates as acc
+    import pysam
+    W = a.w
+    P = {p["fam"]: p for p in json.load(open(f"{W}/panel.json"))}
+    lab = {r["read"]: r for r in tsv(f"{W}/labels.tsv")}
+    nS = sum(1 for r in lab.values() if r["role"] == "S")
+    on_surv = set()
+    for rd in pysam.AlignmentFile(f"{W}/R.bam").fetch(until_eof=True):
+        r = lab.get(rd.query_name)
+        if rd.is_unmapped or rd.is_supplementary or not r or r["role"] != "D":
+            continue
+        if any(rd.reference_name == k[0] and rd.reference_start < k[2] and k[1] < rd.reference_end for k in P[r["family"]]["keep"]):
+            on_surv.add(rd.query_name)
+    att = {r["read"] for r in tsv(f"{W}/kd/net_reads.tsv") if r["via"] == "B" and r["read"] in lab
+           and lab[r["read"]]["role"] == "D" and lab[r["read"]]["family"] == r["family"]} - on_surv
+    attainable = on_surv | att
+    out = {"attainable": len(attainable), "on_survivor": len(on_surv), "attributed": len(att), "n_S": nS}
+    print(f"P5 deletion arm: attainable D reads {len(attainable)} (on the survivor {len(on_surv)}, attributed {len(att)}); S reads {nS}")
+    for arm in a.deletion.split(","):
+        calls = acc.arm_m(f"{W}/{arm}", lab, P)
+        calls.pop("__false_moves__")
+        tot = collections.Counter(calls.values())
+        ra = sum(1 for n in attainable if calls[n] == ("D", "right"))
+        fm = tot[("S", "false_move")]
+        h1, h2 = ra >= 0.5 * len(attainable), fm <= 0.05 * nS
+        per = {f: sum(1 for n, r in lab.items() if r["family"] == f and calls[n] == ("D", "right")) for f in P}
+        out[arm] = dict(D_right=tot[("D", "right")], D_right_attainable=ra, false_moves=fm, H5_1=h1, H5_2=h2,
+                        families_with_D_right=sum(1 for v in per.values() if v), per_family_D_right=per)
+        print(f"  {arm}: D right {tot[('D', 'right')]}; among attainable {ra} = {ra / max(1, len(attainable)):.3f} "
+              f"(H5-1 >= 0.50: {'PASS' if h1 else 'FAIL'}); false moves {fm}/{nS} = {fm / nS:.2%} (H5-2 <= 5%: "
+              f"{'PASS' if h2 else 'FAIL'}); deleted copies with >= 1 D read right {out[arm]['families_with_D_right']}/{len(P)}")
+    for arm in a.control.split(","):
+        j = json.load(open(f"{W}/{arm}/classify.json"))["delta"]
+        h3 = j["families_false"] <= 3
+        out[arm] = dict(classes=j["classes"], families_any=j["families_any"], families_false=j["families_false"], H5_3=h3)
+        print(f"  {arm}: flags {j['candidates']} {j['classes']}; families with a false flag {j['families_false']}/20 "
+              f"(H5-3 <= 3: {'PASS' if h3 else 'FAIL'})")
+    json.dump(out, open(f"{W}/verdict.json", "w"), indent=1)
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["panel", "split", "batches", "verdict"])
+    ap.add_argument("cmd", choices=["panel", "split", "batches", "verdict", "subpanel", "verdict5"])
     ap.add_argument("--w", required=True)
+    ap.add_argument("--source", default=f"{RA}/p4", help="subpanel: the draw to sample from")
+    ap.add_argument("--n", type=int, default=20)
+    ap.add_argument("--deletion", default="pd,pdcc")
+    ap.add_argument("--control", default="pc,pccc")
     a = ap.parse_args(argv)
-    {"panel": panel, "split": split, "batches": batches, "verdict": verdict}[a.cmd](a)
+    {"panel": panel, "split": split, "batches": batches, "verdict": verdict, "subpanel": subpanel, "verdict5": verdict5}[a.cmd](a)
 
 
 if __name__ == "__main__":
