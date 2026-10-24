@@ -38,6 +38,7 @@ MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
 CLIP_BP = 50       # a soft clip this long that is not a poly-A / poly-T tail
 CLIP_BIN = 20      # clip boundaries in the same CLIP_BIN-bp bin on the same side count as one boundary
+ONE_SITE = False   # --one-site: a one-site lead suffices when the read's haplotype agrees (development, 2026-10-24)
 GUARD = False      # --guard: O2 abstains on copies where O3 flags a putative copy (development, 2026-10-24)
 PREFER = False     # --prefer: a haplotype cannot take a slot of a copy its reads clearly disfavour (development, 2026-10-24)
 RECONSTRUCT = True # O2 uses O3's certified copies (--no-reconstruct: O2 as if O3 had found none; the O3 -> O2 comparison)
@@ -500,6 +501,25 @@ def homologous(i, a, b):
             if i + k not in x or abs(x[i + k][2] - t) != abs(k):
                 return False
     return True
+
+
+def one_site(r, hap_reads, piles, prim, genome, cache, hap_cache, h):
+    """--one-site (IsoCon's rule, decided per haplotype, not per read): a semi-tied read with a lead of >= 1 supported site goes to
+    the leader when its haplotype (>= MIN_SUPPORT reads) agrees: the median lead over the haplotype's reads tied to the same two
+    copies is >= 1 for that copy. One site seen on many reads of one haplotype is an allele, not a read error."""
+    sc = sorted(((rec.get_tag("AS"), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
+    if len(sc) < 2 or r not in prim:
+        return "ABSTAIN"
+    ca, cb = sc[0][2], sc[1][2]
+    va, vb = site_votes(r, ca, cb, piles, prim, genome, cache)
+    if va - vb < 1:
+        return "ABSTAIN"
+    key = (h, ca, cb)
+    if key not in hap_cache:
+        d = sorted(x - y for q in hap_reads if q in piles[ca] and q in piles[cb] and q in prim
+                   for x, y in [site_votes(q, ca, cb, piles, prim, genome, cache)])
+        hap_cache[key] = len(d) >= MIN_SUPPORT and d[len(d) // 2] >= 1
+    return ca if hap_cache[key] else "ABSTAIN"
 
 
 def disfavoured(reads, opts, piles, prim, genome, cache):
@@ -1009,7 +1029,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     # --guard: where O3 flags a putative copy the copy set is not reconstructed: abstain on every tied read touching that copy or
     # the copies its haplotype could hold a slot on (a free-slot X* makes forced edges and site leads there unsafe, register 1393)
     unsure = {X for X, *_ in looks} | {c for _, rs, *_ in looks for i in demand if merged[i]["reads"] is rs for c in options[i]}
-    o2, semi_cache = [], {}
+    o2, semi_cache, hap_cache = [], {}, {}
     for r, k in n_in.items():
         if k < 2:
             continue
@@ -1020,7 +1040,10 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         elif r in home_of and home_of[r] in forced and {c for c, p in piles.items() if r in p} <= set(options[home_of[r]]):
             o2.append((r, forced[home_of[r]], k))
         elif SEMI:
-            o2.append((r, semi_tied(r, piles, prim, genome, semi_cache), k))
+            a = semi_tied(r, piles, prim, genome, semi_cache)
+            if a == "ABSTAIN" and ONE_SITE and r in home_of:
+                a = one_site(r, merged[home_of[r]]["reads"], piles, prim, genome, semi_cache, hap_cache, home_of[r])
+            o2.append((r, a, k))
         else:
             o2.append((r, "ABSTAIN", k))
     return certified, per_copy, len(merged), why, piled, looks, o2
@@ -1148,6 +1171,7 @@ def main(argv):
     r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
     r.add_argument("--semi", action="store_true", help="O2: semi-tied reads to their best AS / fewest-edit copy, exact ties "
                    "HOPELESS (unsafe where the sample carries the other copy's base at the deciding site, register 1388)")
+    r.add_argument("--one-site", action="store_true", help="O2: a one-site lead suffices when the read's haplotype agrees")
     r.add_argument("--guard", action="store_true", help="O2 abstains on tied reads touching a copy with a putative flag")
     r.add_argument("--prefer", action="store_true", help="slots only on copies the haplotype's reads do not disfavour by >= 2 sites")
     r.add_argument("--no-reconstruct", action="store_true", help="O2 ignores O3's certified copies (O3 -> O2 baseline)")
@@ -1163,8 +1187,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD
-    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard
+    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE
+    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard, a.one_site
     cmd_run(a)
 
 
