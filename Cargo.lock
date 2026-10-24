@@ -767,6 +767,7 @@ dependencies = [
  "clap",
  "flate2",
  "fxhash",
+ "indexmap",
  "lru",
  "noodles-bam",
  "noodles-bgzf 0.33.0",

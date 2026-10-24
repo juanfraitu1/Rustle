@@ -31,6 +31,8 @@ rustc-hash = "2" # src/sedef (vendored sedef-rs): FxHashMap / FxHashSet, as in t
 # Parallel processing
 rayon = "1.10"
 
+indexmap = "2" # src/o3port: Python dict insertion order
+
 lru = "0.12" # src/copy_assign_bin.rs contig cache
 
 flate2 = "1.1" # src/utilities.rs gff-to-gtf — plain .gz GFF3 input (bgzf is noodles' job)
@@ -97,6 +99,10 @@ path = "src/candidate_copies.rs"
 [[bin]]
 name = "as_table"
 path = "src/as_table.rs"
+
+[[bin]]
+name = "o3port"
+path = "src/o3port_bin.rs"
 
 [[bin]]
 name = "utilities"

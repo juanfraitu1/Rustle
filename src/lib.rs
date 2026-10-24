@@ -18,6 +18,9 @@ pub mod types;
 
 pub mod family;
 
+/// O3 port (o3port.py in Rust, 2026-10-24).
+pub mod o3port;
+
 /// Vendored sedef-rs (segmental duplications): `utilities sd-scan`, the driver's `sd` stage.
 pub mod sedef;
 
