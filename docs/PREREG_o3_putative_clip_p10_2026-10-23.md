@@ -33,3 +33,17 @@ seed 1), the deletion arm masks only these 58 copies, the control arm is the unm
 
 ## Reported, not decided
 Each signal's share of the flags (tie, splicing, clipping); certified flags; runtime.
+
+## Result (run once, 2026-10-23; port e3597fbc; work dir `/mnt/linuxdisk/tmp/rna_allele/p10`)
+- Reads 38,675 (19,571 D); the stage replicated on both arms (58 / 58); certified flags 38 (deletion arm), 3 (control).
+
+| rule | result | bar | verdict |
+|---|---|---|---|
+| HP1 precision (deletion arm) | 6 / 6 putative copies D-majority (GWFAM119 11 reads, 139 88, 171 6, 349 95, 363 313, 74 142) | >= 0.50 | PASS |
+| HP2 control families with a false putative flag | 0 (no putative flag at all on the control) | <= 8 | PASS |
+| HP3 recall over free-slot deleted copies | 5 / 8 = 0.625 | >= 0.25 | PASS |
+
+**Verdict: the putative tier PASSES.**
+- Reported: every one of the 6 flags carries the clip signature (>= 59 % of its reads clipped at one boundary), so the soft-clip
+  signal is what fires. Misses: GWFAM380 (454 reads, all clipped when every record is counted, but not on the near-best records
+  the port uses), GWFAM259 and GWFAM409 (no clipping: the deleted copy aligns end to end on the survivor).

@@ -112,6 +112,7 @@ case $step in
   verdict) $LIGHT $P4 verdict --w $W ;;
   verdict5) $LIGHT $P4 verdict5 --w $W ;;
   p6panel) $LIGHT $P4 p6panel --w $W ;;
+  p10panel) $LIGHT $P4 p10panel --w $W ;;
   putprod) $LIGHT $P4 putprod --w $W --arm ${1:?arm} ;;      # P6: the port's putative copies as stage-style products in <arm>put
   verdict6) $LIGHT $P4 verdict6 --w $W ;;
   *) echo "unknown step $step" >&2; exit 2 ;;

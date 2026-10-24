@@ -237,6 +237,19 @@ def p6panel(a):
     print(f"P4's draw minus P5: {len(rest)}; pool never drawn: {len(pool)}; drawn from it: {len(new)}; panel {len(draw)}")
 
 
+def p10panel(a):
+    """P10 (docs/PREREG_o3_putative_clip_p10_2026-10-23.md): every eligible family in none of P4's, P5's or P6's panels, sorted
+    by family -> W/panel.json"""
+    eligible, _ = eligible_families()
+    used = set()
+    for w in ("p4", "p5", "p6"):
+        used |= {p["fam"] for p in json.load(open(f"{RA}/{w}/panel.json"))}
+    draw = sorted((p for p in eligible if p["fam"] not in used), key=lambda p: p["fam"])
+    assert len(draw) == 58, len(draw)
+    json.dump(draw, open(f"{a.w}/panel.json", "w"), indent=0)
+    print(f"eligible {len(eligible)}; used by P4-P6 {len(used)}; panel {len(draw)}")
+
+
 def putprod(a):
     """The port's putative copies as stage-style products (cand.*: one flagged candidate cand_<family>_<k> per putative copy,
     its consensus as the contig) in W/<arm>put, so the control classification steps run on them unchanged. Members come from
@@ -329,7 +342,7 @@ def verdict6(a):
     out = dict(deletion_flags=detail, HP1=hp1, HP1_pass=hp1 is not None and hp1 >= 0.5,
                free_slot=free, HP3=hp3, HP3_pass=hp3 is not None and hp3 >= 0.25,
                control_flags=len(crow), control_classes=dict(collections.Counter(ccls.values())), control_false_families=false_fams,
-               HP2_pass=len(false_fams) <= 12)
+               HP2_pass=len(false_fams) <= int(0.15 * len(P)))
     out["verdict"] = out["HP1_pass"] and out["HP2_pass"] and out["HP3_pass"]
     json.dump(out, open(f"{W}/verdict6.json", "w"), indent=1)
     print(f"HP1 precision: {true}/{len(rows)} = {hp1}  (>= 0.50: {'PASS' if out['HP1_pass'] else 'FAIL'})")
@@ -338,13 +351,13 @@ def verdict6(a):
     print(f"HP3 recall: free-slot deleted copies {len(free)}, flagged {sum(1 for x in free if x[2])} = {hp3}  "
           f"(>= 0.25: {'PASS' if out['HP3_pass'] else 'FAIL'}); {free}")
     print(f"HP2 control: putative flags {len(crow)}, classes {out['control_classes']}, families with a false flag "
-          f"{len(false_fams)} {false_fams} (<= 12: {'PASS' if out['HP2_pass'] else 'FAIL'})")
+          f"{len(false_fams)} {false_fams} (<= {int(0.15 * len(P))}: {'PASS' if out['HP2_pass'] else 'FAIL'})")
     print(f"VERDICT (putative tier): {'PASSES' if out['verdict'] else 'DOES NOT PASS'}")
 
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["panel", "split", "batches", "verdict", "subpanel", "verdict5", "p6panel", "putprod", "verdict6"])
+    ap.add_argument("cmd", choices=["panel", "split", "batches", "verdict", "subpanel", "verdict5", "p6panel", "putprod", "verdict6", "p10panel"])
     ap.add_argument("--arm", default="pd")
     ap.add_argument("--w", required=True)
     ap.add_argument("--source", default=f"{RA}/p4", help="subpanel: the draw to sample from")
@@ -353,7 +366,7 @@ def main(argv):
     ap.add_argument("--control", default="pc,pccc")
     a = ap.parse_args(argv)
     {"panel": panel, "split": split, "batches": batches, "verdict": verdict, "subpanel": subpanel, "verdict5": verdict5,
-     "p6panel": p6panel, "putprod": putprod, "verdict6": verdict6}[a.cmd](a)
+     "p6panel": p6panel, "putprod": putprod, "verdict6": verdict6, "p10panel": p10panel}[a.cmd](a)
 
 
 if __name__ == "__main__":
