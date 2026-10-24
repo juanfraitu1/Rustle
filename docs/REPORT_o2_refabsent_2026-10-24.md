@@ -14,3 +14,32 @@ so their truth is close to allelic and is reported apart from beyond-delta loci.
 **Reported.** (1) Per family: expressed B-only loci vs the port's certified / putative flags. (2) O2 on tied reads from reference
 copies: placed, wrong, vs minimap2 MAPQ >= 1. (3) O2 on tied reads from B-only loci: placed anywhere but a certified new copy =
 wrong; vs minimap2 MAPQ >= 1 (always wrong there).
+
+## Result (run 2026-10-24; work dir `/mnt/linuxdisk/tmp/o2refabsent`)
+Truth: 16,236 reads from reference copies, 3,408 from B-only loci, 1,108 tied between loci (dropped). A first truth build mapped
+haplotype contigs by their `chrN` prefix, so `chrN_*_random_utig*` overwrote `chrN` and 87 correct GWFAM64 placements scored as
+wrong; fixed before the numbers below (the port's output was not rerun or changed).
+
+**O3 flags vs expressed B-only loci** (8 families have one; reads in parentheses):
+
+| family | expressed B-only loci | certified | putative |
+|---|---|---|---|
+| GWFAM175 | B0 (281), B1 (6) | 0 | 0 |
+| GWFAM205 | B0 (77) | 1 | 0 |
+| GWFAM227 | B0 (13) | 0 | 0 |
+| GWFAM26 | B2 (13), B3 (9) | 0 | 0 |
+| GWFAM382 | B0 (4) | 0 | 0 |
+| GWFAM390 | B1 (20) | 1 | 0 |
+| GWFAM4 | B0 (5) | 0 | 0 |
+| GWFAM70 | B1 (16), B4 (24) | 0 | 0 |
+| GWFAM256 | none | 0 | 1 |
+| GWFAM360 | none | 1 | 0 |
+
+- O3 flags 2 of the 8 families with an expressed haplotype-only locus (GWFAM205, GWFAM390); 2 of the 26 families without one are
+  flagged (GWFAM256 putative, GWFAM360 certified). Below MIN_SUPPORT (6 reads) a locus cannot be flagged: GWFAM382, GWFAM4, GWFAM175_B1.
+
+**O2 on tied reads:**
+- From reference copies: 432 tied, **157 placed, 0 wrong**; minimap2 MAPQ >= 1 418 placed, 29 wrong (6.9%).
+- From B-only loci: 18 tied, 2 placed, **2 wrong** (GWFAM175, onto copy 1: the silent free-slot case of P14, now in real data);
+  minimap2 MAPQ >= 1 16 placed, 16 wrong.
+- 308 tied reads have no truth (tied between haplotype loci).

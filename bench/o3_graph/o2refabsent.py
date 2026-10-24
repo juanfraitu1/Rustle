@@ -49,7 +49,8 @@ def truth(W):
     name = {h: {} for h in bams}
     for h, b in bams.items():
         for sq in b.references:
-            name[h][sq.split("_")[0][3:]] = sq
+            if "_random" not in sq and "_unplaced" not in sq:     # chrN_<hap>_hsaX only, not chrN_<hap>_hsaX_random_utig*
+                name[h][sq.split("_")[0][3:]] = sq
     loci = collections.defaultdict(list)   # family -> [(label, hap, bam contig, start, end)]
     for r in tsv(f"{R}/copies_lift.tsv"):
         if r["B_chrom"] and r["B_chrom"] in cm:
