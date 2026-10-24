@@ -38,6 +38,7 @@ MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
 CLIP_BP = 50       # a soft clip this long that is not a poly-A / poly-T tail
 CLIP_BIN = 20      # clip boundaries in the same CLIP_BIN-bp bin on the same side count as one boundary
+SEMI = False       # O2 --semi (opt-in, register 1388): semi-tied reads go to their best copy, exact ties are HOPELESS
 COVERAGE = False   # milestone 2 retry: foreign coverage as a putative signal (--coverage)
 CORRECT = False    # milestone 2b: IsoCon-style read correction before clustering (--correct)
 MIN_SUPPORT = 6    # reads a haplotype needs to take a slot or be certified: the shipped stage's own flag floor
@@ -417,6 +418,16 @@ def putative_copies(demand, match, reads_of, n_piles, foreign=None):
         if (2 * multi[i] >= 1 and all(2 * multi[j] < 1 for j in co)) or (foreign is not None and foreign(i, X, co)):
             out.append((i, X, multi[i], [multi[j] for j in co]))
     return out
+
+
+def semi_tied(r, piles):
+    """O2 on a tied read nothing forces (user rule, 2026-10-23: "the totally tied ones are hopeless"): HOPELESS when its two best
+    copies give the same AS and the same edit distance (an exact tie: the read covers no site that tells them apart); otherwise the
+    copy with the best AS, then the fewest edits (a semi-tied read: it covers a distinguishing site, MAPQ 0 or not)."""
+    sc = sorted(((rec.get_tag("AS"), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
+    if len(sc) < 2 or sc[0][:2] == sc[1][:2]:
+        return "HOPELESS"
+    return sc[0][2]
 
 
 def landing_loci(records, spans, min_reads):
@@ -904,6 +915,8 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
             o2.append((r, f"new:{cert_reads[r]}", k))
         elif r in home_of and home_of[r] in forced and {c for c, p in piles.items() if r in p} <= set(options[home_of[r]]):
             o2.append((r, forced[home_of[r]], k))
+        elif SEMI:
+            o2.append((r, semi_tied(r, piles), k))
         else:
             o2.append((r, "ABSTAIN", k))
     return certified, per_copy, len(merged), why, piled, looks, o2
@@ -1029,6 +1042,8 @@ def main(argv):
                    "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
                    "zero-disagreement graph (Strainy's; v6 as pre-registered)")
     r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
+    r.add_argument("--semi", action="store_true", help="O2: semi-tied reads to their best AS / fewest-edit copy, exact ties "
+                   "HOPELESS (unsafe where the sample carries the other copy's base at the deciding site, register 1388)")
     r.add_argument("--no-clipping", action="store_true", help="putative copies without the soft-clip signal (P6's port)")
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
@@ -1041,8 +1056,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT, COVERAGE, CLIPPING
-    CORRECT, COVERAGE, CLIPPING = a.correct, a.coverage, not a.no_clipping
+    global CORRECT, COVERAGE, CLIPPING, SEMI
+    CORRECT, COVERAGE, CLIPPING, SEMI = a.correct, a.coverage, not a.no_clipping, a.semi
     cmd_run(a)
 
 
