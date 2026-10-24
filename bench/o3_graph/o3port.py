@@ -35,6 +35,9 @@ MIN_Q = 10         # base quality below which a base counts as missing
 AS_TIE = 10        # O2's tie rule (Eichler): alignments within 10 AS of the read's best
 ALPHA = 0.01       # IsoCon-style test, Bonferroni over the tested columns
 MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
+CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
+CLIP_BP = 50       # a soft clip this long that is not a poly-A / poly-T tail
+CLIP_BIN = 20      # clip boundaries in the same CLIP_BIN-bp bin on the same side count as one boundary
 COVERAGE = False   # milestone 2 retry: foreign coverage as a putative signal (--coverage)
 CORRECT = False    # milestone 2b: IsoCon-style read correction before clustering (--correct)
 MIN_SUPPORT = 6    # reads a haplotype needs to take a slot or be certified: the shipped stage's own flag floor
@@ -355,6 +358,31 @@ def foreign_splicing(reads_i, usage, site):
     ji = collections.Counter(j for r in reads_i if r in usage for j in usage[r][2])
     J = [j for j, k in ji.items() if k >= MIN_READS and 2 * k >= spans(j)]
     return sum(1 for j in J if site(j) not in CANONICAL) >= MIN_READS
+
+
+def foreign_clipping(reads_i, recs):
+    """Clipping as evidence of a putative copy (2026-10-23, milestone 2, third signal): >= half of haplotype i's reads with a record
+    on the slot copy are soft-clipped there by >= CLIP_BP bases that are not a poly-A / poly-T tail (>= 70% A or T; a record
+    without its sequence, a secondary, counts as not a tail), and >= MIN_SUPPORT of them clip at one boundary (same side, same
+    CLIP_BIN-bp bin). Where the deleted copy's UTR or an exon diverges from the slot copy, its reads stop matching at the same
+    place; a copy's own alleles align end to end. Like the splicing signal it compares the reads with the slot copy's DNA,
+    so a survivor allele with another isoform mix cannot raise it. recs: {read: record on the copy}. Development (after P6's
+    verdict, P5 / P6 spent): P6 free-slot recall 6 / 13 with 0 flags on either control arm."""
+    tail = lambda q: bool(q) and max(q.count("A"), q.count("T")) >= 0.7 * len(q)
+    seen, hit, bnd = 0, 0, collections.Counter()
+    for r in reads_i:
+        rec = recs.get(r)
+        if rec is None or not rec.cigartuples:
+            continue
+        seen += 1
+        q, c, ev = rec.query_sequence or "", rec.cigartuples, []
+        if c[0][0] == 4 and c[0][1] >= CLIP_BP and not tail(q[:c[0][1]]):
+            ev.append(("L", rec.reference_start // CLIP_BIN))
+        if c[-1][0] == 4 and c[-1][1] >= CLIP_BP and not tail(q[-c[-1][1]:]):
+            ev.append(("R", rec.reference_end // CLIP_BIN))
+        hit += bool(ev)
+        bnd.update(ev)
+    return seen > 0 and 2 * hit >= seen and bool(bnd) and bnd.most_common(1)[0][1] >= MIN_SUPPORT
 
 
 def foreign_coverage(reads_i, reads_co, blocks):
@@ -832,6 +860,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     site = lambda X: (lambda j: (genome.fetch(chrom[X], j[0], j[0] + 2).upper(), genome.fetch(chrom[X], j[1] - 2, j[1]).upper()))
     blk = {c: {n: rec.get_blocks() for n, rec in piles[c].items()} for c in per_copy}
     foreign = (lambda i, X, co: X in usage and (foreign_splicing(merged[i]["reads"], usage[X], site(X)) or
+               (CLIPPING and foreign_clipping(merged[i]["reads"], piles[X])) or
                (COVERAGE and foreign_coverage(merged[i]["reads"], set().union(*(merged[j]["reads"] for j in co)), blk[X]))))\
         if structure else None
     looks = []
@@ -1000,6 +1029,7 @@ def main(argv):
                    "/ disagreeing read pairs (default since 2026-10-23, after the P5 held-out), or label propagation on the "
                    "zero-disagreement graph (Strainy's; v6 as pre-registered)")
     r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
+    r.add_argument("--no-clipping", action="store_true", help="putative copies without the soft-clip signal (P6's port)")
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
@@ -1011,8 +1041,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT, COVERAGE
-    CORRECT, COVERAGE = a.correct, a.coverage
+    global CORRECT, COVERAGE, CLIPPING
+    CORRECT, COVERAGE, CLIPPING = a.correct, a.coverage, not a.no_clipping
     cmd_run(a)
 
 

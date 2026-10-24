@@ -204,3 +204,20 @@ def test_forced_edges():
     cap = {"X": 2, "Y": 2}
     m = P.b_matching(opt, cap, [0, 1])
     assert P.forced_edges(opt, cap, m, [0, 1]) == {0: "X"}
+
+
+class _Rec:
+    def __init__(self, cig, start, end, seq=""):
+        self.cigartuples, self.reference_start, self.reference_end, self.query_sequence = cig, start, end, seq
+
+
+def test_foreign_clipping():
+    from o3port import foreign_clipping
+    clip = {f"r{k}": _Rec([(4, 80), (0, 900)], 1000 + k, 1900, "G" * 80 + "C" * 900) for k in range(8)}
+    clean = {f"s{k}": _Rec([(0, 980)], 1000, 1980, "G" * 980) for k in range(8)}
+    tails = {f"t{k}": _Rec([(0, 900), (4, 80)], 1000, 1900, "C" * 900 + "A" * 80) for k in range(8)}
+    assert foreign_clipping(list(clip), clip)
+    assert not foreign_clipping(list(clean), clean)
+    assert not foreign_clipping(list(tails), tails)                  # poly-A tails are not foreign
+    mixed = {**dict(list(clip.items())[:3]), **clean}
+    assert not foreign_clipping(list(mixed), mixed)                  # < half clipped, < 6 at one boundary
