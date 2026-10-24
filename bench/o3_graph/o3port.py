@@ -38,6 +38,7 @@ MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
 CLIP_BP = 50       # a soft clip this long that is not a poly-A / poly-T tail
 CLIP_BIN = 20      # clip boundaries in the same CLIP_BIN-bp bin on the same side count as one boundary
+ANCHOR = False     # --anchor: a one-site lead suffices at a site the copies' anchor reads show fixed (development, 2026-10-24)
 ONE_SITE = False   # --one-site: a one-site lead suffices when the read's haplotype agrees (development, 2026-10-24)
 GUARD = False      # --guard: O2 abstains on copies where O3 flags a putative copy (development, 2026-10-24)
 PREFER = False     # --prefer: a haplotype cannot take a slot of a copy its reads clearly disfavour (development, 2026-10-24)
@@ -466,18 +467,50 @@ def semi_tied(r, piles, prim, genome, cache):
     if r not in prim:
         return "ABSTAIN"
     va, vb = site_votes(r, sc[0][2], sc[1][2], piles, prim, genome, cache)
-    return sc[0][2] if va - vb >= MIN_READS else "ABSTAIN"
+    if va - vb >= MIN_READS:
+        return sc[0][2]
+    if ANCHOR and va - vb >= 1:
+        fa, fb = site_votes(r, sc[0][2], sc[1][2], piles, prim, genome, cache, fixed=True)
+        if fa >= 1 and fb == 0:
+            return sc[0][2]
+    return "ABSTAIN"
 
 
-def site_votes(r, ca, cb, piles, prim, genome, cache):
+def anchor_bases(piles, c, prim, cache):
+    """{reference position on copy c: Counter of bases} over c's ANCHORS: reads in c's pile and in no other copy's pile (no rival
+    within AS_TIE, so minimap2's placement is the read's own evidence), in the copy's strand."""
+    key = ("anchor", c)
+    if key not in cache:
+        others = set().union(*(set(p) for d, p in piles.items() if d != c)) if len(piles) > 1 else set()
+        col = collections.defaultdict(collections.Counter)
+        for n, rec in piles[c].items():
+            if n in others or n not in prim:
+                continue
+            seq, _, lead = oriented(prim[n], rec)
+            for q, t in rec.get_aligned_pairs(matches_only=True):
+                col[t][seq[lead + q]] += 1
+        cache[key] = col
+    return cache[key]
+
+
+def fixed_site(ta, ra, rb, tb, piles, ca, cb, prim, cache):
+    """--anchor: the site is fixed in the sample when >= MIN_READS anchors of each copy cover it, each copy's anchors carry its own
+    reference base, and none carries the other copy's (a converted allele seen in one anchor read unfixes it)."""
+    A, B = anchor_bases(piles, ca, prim, cache)[ta], anchor_bases(piles, cb, prim, cache)[tb]
+    return A[ra] >= MIN_READS and B[rb] >= MIN_READS and A[rb] == 0 and B[ra] == 0
+
+
+def site_votes(r, ca, cb, piles, prim, genome, cache, fixed=False):
     """(sites voting copy ca, sites voting copy cb) for read r: the distinguishing sites (the copies' reference bases differ) it
     covers on both, each counted only when the read's base is carried by >= MIN_SUPPORT reads of ca's pile at that column."""
     a, b = (site_bases(piles[c][r], prim[r], genome) for c in (ca, cb))
     col = column_bases(piles, ca, prim, genome, cache)
     va = vb = 0
     for i in a.keys() & b.keys():
-        (ra, qa, ta), (rb, _, _) = a[i], b[i]
+        (ra, qa, ta), (rb, _, tb) = a[i], b[i]
         if ra != rb and ra in "ACGT" and rb in "ACGT" and homologous(i, a, b):
+            if fixed and not fixed_site(ta, ra, rb, tb, piles, ca, cb, prim, cache):
+                continue
             # the read's base must be an allele of the sample: carried by >= MIN_SUPPORT reads of the family at this column (a
             # read error at a distinguishing site is not; P11's GWFAM118 / dev GWFAM248 r058: conversion + error looked like two sites)
             fwd = rec_strand_base(qa, piles[ca][r], prim[r])
@@ -1171,6 +1204,7 @@ def main(argv):
     r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
     r.add_argument("--semi", action="store_true", help="O2: semi-tied reads to their best AS / fewest-edit copy, exact ties "
                    "HOPELESS (unsafe where the sample carries the other copy's base at the deciding site, register 1388)")
+    r.add_argument("--anchor", action="store_true", help="O2: a one-site lead suffices at a site fixed by both copies' anchor reads")
     r.add_argument("--one-site", action="store_true", help="O2: a one-site lead suffices when the read's haplotype agrees")
     r.add_argument("--guard", action="store_true", help="O2 abstains on tied reads touching a copy with a putative flag")
     r.add_argument("--prefer", action="store_true", help="slots only on copies the haplotype's reads do not disfavour by >= 2 sites")
@@ -1187,8 +1221,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE
-    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard, a.one_site
+    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR
+    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard, a.one_site, a.anchor
     cmd_run(a)
 
 
