@@ -420,18 +420,66 @@ def putative_copies(demand, match, reads_of, n_piles, foreign=None):
     return out
 
 
-def semi_tied(r, piles):
-    """O2 on a tied read nothing forces (user rule, 2026-10-23: "the totally tied ones are hopeless"): HOPELESS when its two best
-    copies give the same AS and the same edit distance (an exact tie: the read covers no site that tells them apart); otherwise the
-    copy with the best AS, then the fewest edits (a semi-tied read: it covers a distinguishing site, MAPQ 0 or not)."""
+def site_bases(rec, pr, genome):
+    """{read index in the primary's orientation: (reference base, read base)} over the record's aligned pairs, both bases in the
+    primary's orientation (so two records of one read on different strands compare position by position)."""
+    seq, _, lead = oriented(pr, rec)
+    flip = rec.is_reverse != pr[2]
+    ref = genome.fetch(rec.reference_name, rec.reference_start, rec.reference_end).upper()
+    out, L = {}, len(seq)
+    for q, t in rec.get_aligned_pairs(matches_only=True):
+        i, rb, qb = lead + q, ref[t - rec.reference_start], seq[lead + q]
+        if flip:
+            i, rb, qb = L - 1 - i, CMP.get(rb, "N"), CMP.get(qb, "N")
+        out[i] = (rb, qb, t)
+    return out
+
+
+def column_bases(piles, c, prim, genome, cache):
+    """{reference position on copy c: Counter of read bases} over every read in c's pile (each in its own record's orientation, the
+    copy's strand), computed once per copy."""
+    if c not in cache:
+        col = collections.defaultdict(collections.Counter)
+        for n, rec in piles[c].items():
+            if n not in prim:
+                continue
+            seq, _, lead = oriented(prim[n], rec)
+            for q, t in rec.get_aligned_pairs(matches_only=True):
+                col[t][seq[lead + q]] += 1
+        cache[c] = col
+    return cache[c]
+
+
+def semi_tied(r, piles, prim, genome, cache):
+    """O2 on a tied read nothing forces (user rule, 2026-10-23: "the totally tied ones are hopeless"). Its two best copies by
+    (AS, fewest edits): HOPELESS when they give the same AS and edit distance (an exact tie). Otherwise count the distinguishing
+    sites the read covers on both: read positions where the two copies' reference bases differ; each votes for the copy whose base
+    the read carries. The read goes to the leader only when it leads by >= MIN_READS (2) sites: a conversion in the sample flips one
+    site, and an edit-distance lead also counts read errors (P11, register 1390), so neither can place a read alone."""
     sc = sorted(((rec.get_tag("AS"), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
     if len(sc) < 2 or sc[0][:2] == sc[1][:2]:
         return "HOPELESS"
-    # >= MIN_READS (2) more edits on the runner-up: two distinguishing sites agree. A conversion in the sample flips one site's
-    # base; one site alone cannot tell it from the copy it points to (register 1388), so a one-site lead abstains.
-    if -sc[1][1] - -sc[0][1] < MIN_READS:
+    if r not in prim:
         return "ABSTAIN"
-    return sc[0][2]
+    a, b = (site_bases(piles[c][r], prim[r], genome) for c in (sc[0][2], sc[1][2]))
+    col = column_bases(piles, sc[0][2], prim, genome, cache)
+    va = vb = 0
+    for i in a.keys() & b.keys():
+        (ra, qa, ta), (rb, _, _) = a[i], b[i]
+        if ra != rb and ra in "ACGT" and rb in "ACGT":
+            # the read's base must be an allele of the sample: carried by >= MIN_SUPPORT reads of the family at this column (a
+            # read error at a distinguishing site is not; P11's GWFAM118 / dev GWFAM248 r058: conversion + error looked like two sites)
+            fwd = rec_strand_base(qa, piles[sc[0][2]][r], prim[r])
+            if col[ta][fwd] < MIN_SUPPORT:
+                continue
+            va += qa == ra
+            vb += qa == rb
+    return sc[0][2] if va - vb >= MIN_READS else "ABSTAIN"
+
+
+def rec_strand_base(b, rec, pr):
+    """A base in the primary's orientation, back in this record's orientation (the copy's strand)."""
+    return CMP.get(b, "N") if rec.is_reverse != pr[2] else b
 
 
 def landing_loci(records, spans, min_reads):
@@ -911,7 +959,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         for r in merged[i]["reads"]:
             home_of.setdefault(r, i)
     cert_reads = {r: k for k, (_, rs, _) in enumerate(certified) for r in rs}
-    o2 = []
+    o2, semi_cache = [], {}
     for r, k in n_in.items():
         if k < 2:
             continue
@@ -920,7 +968,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         elif r in home_of and home_of[r] in forced and {c for c, p in piles.items() if r in p} <= set(options[home_of[r]]):
             o2.append((r, forced[home_of[r]], k))
         elif SEMI:
-            o2.append((r, semi_tied(r, piles), k))
+            o2.append((r, semi_tied(r, piles, prim, genome, semi_cache), k))
         else:
             o2.append((r, "ABSTAIN", k))
     return certified, per_copy, len(merged), why, piled, looks, o2
