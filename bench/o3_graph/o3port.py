@@ -476,7 +476,7 @@ def site_votes(r, ca, cb, piles, prim, genome, cache):
     va = vb = 0
     for i in a.keys() & b.keys():
         (ra, qa, ta), (rb, _, _) = a[i], b[i]
-        if ra != rb and ra in "ACGT" and rb in "ACGT":
+        if ra != rb and ra in "ACGT" and rb in "ACGT" and homologous(i, a, b):
             # the read's base must be an allele of the sample: carried by >= MIN_SUPPORT reads of the family at this column (a
             # read error at a distinguishing site is not; P11's GWFAM118 / dev GWFAM248 r058: conversion + error looked like two sites)
             fwd = rec_strand_base(qa, piles[ca][r], prim[r])
@@ -485,6 +485,21 @@ def site_votes(r, ca, cb, piles, prim, genome, cache):
             va += qa == ra
             vb += qa == rb
     return va, vb
+
+
+SITE_FLANK = 5     # a distinguishing site needs this many gap-free aligned bases on each side in both alignments
+
+
+def homologous(i, a, b):
+    """Read position i compares homologous reference bases of the two copies: both alignments are gap-free over i +- SITE_FLANK
+    (an indel beside a site shifts one alignment by a base, and the shifted positions then differ without being a PSV; P13,
+    register 1395)."""
+    for x in (a, b):
+        t = x[i][2]
+        for k in range(-SITE_FLANK, SITE_FLANK + 1):
+            if i + k not in x or abs(x[i + k][2] - t) != abs(k):
+                return False
+    return True
 
 
 def disfavoured(reads, opts, piles, prim, genome, cache):
