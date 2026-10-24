@@ -38,6 +38,8 @@ MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
 CLIP_BP = 50       # a soft clip this long that is not a poly-A / poly-T tail
 CLIP_BIN = 20      # clip boundaries in the same CLIP_BIN-bp bin on the same side count as one boundary
+PREFER = False     # --prefer: a haplotype cannot take a slot of a copy its reads clearly disfavour (development, 2026-10-24)
+RECONSTRUCT = True # O2 uses O3's certified copies (--no-reconstruct: O2 as if O3 had found none; the O3 -> O2 comparison)
 SEMI = False       # O2 --semi (opt-in, register 1388): semi-tied reads go to their best copy, exact ties are HOPELESS
 COVERAGE = False   # milestone 2 retry: foreign coverage as a putative signal (--coverage)
 CORRECT = False    # milestone 2b: IsoCon-style read correction before clustering (--correct)
@@ -461,20 +463,43 @@ def semi_tied(r, piles, prim, genome, cache):
         return "HOPELESS"
     if r not in prim:
         return "ABSTAIN"
-    a, b = (site_bases(piles[c][r], prim[r], genome) for c in (sc[0][2], sc[1][2]))
-    col = column_bases(piles, sc[0][2], prim, genome, cache)
+    va, vb = site_votes(r, sc[0][2], sc[1][2], piles, prim, genome, cache)
+    return sc[0][2] if va - vb >= MIN_READS else "ABSTAIN"
+
+
+def site_votes(r, ca, cb, piles, prim, genome, cache):
+    """(sites voting copy ca, sites voting copy cb) for read r: the distinguishing sites (the copies' reference bases differ) it
+    covers on both, each counted only when the read's base is carried by >= MIN_SUPPORT reads of ca's pile at that column."""
+    a, b = (site_bases(piles[c][r], prim[r], genome) for c in (ca, cb))
+    col = column_bases(piles, ca, prim, genome, cache)
     va = vb = 0
     for i in a.keys() & b.keys():
         (ra, qa, ta), (rb, _, _) = a[i], b[i]
         if ra != rb and ra in "ACGT" and rb in "ACGT":
             # the read's base must be an allele of the sample: carried by >= MIN_SUPPORT reads of the family at this column (a
             # read error at a distinguishing site is not; P11's GWFAM118 / dev GWFAM248 r058: conversion + error looked like two sites)
-            fwd = rec_strand_base(qa, piles[sc[0][2]][r], prim[r])
+            fwd = rec_strand_base(qa, piles[ca][r], prim[r])
             if col[ta][fwd] < MIN_SUPPORT:
                 continue
             va += qa == ra
             vb += qa == rb
-    return sc[0][2] if va - vb >= MIN_READS else "ABSTAIN"
+    return va, vb
+
+
+def disfavoured(reads, opts, piles, prim, genome, cache):
+    """--prefer: the option copies a haplotype's reads clearly disfavour: z, when for some other option c the median over its reads
+    on both of (sites voting c - sites voting z) is >= MIN_READS. Such a haplotype cannot hold a slot of z (a sample copy the
+    reference lacks, X*, otherwise fills a near copy's free slot: Theorem A's blind spot)."""
+    out = set()
+    for c in opts:
+        for z in opts:
+            if c == z or z in out:
+                continue
+            d = sorted(x - y for r in reads if r in piles[c] and r in piles[z] and r in prim
+                       for x, y in [site_votes(r, c, z, piles, prim, genome, cache)])
+            if d and d[len(d) // 2] >= MIN_READS:
+                out.add(z)
+    return out
 
 
 def rec_strand_base(b, rec, pr):
@@ -910,6 +935,12 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         else:
             why["duplicate" if ex[0] == "single" else "chimera"] += 1
             fate[i] = ("duplicate" if ex[0] == "single" else "chimera", ex[1])
+    if PREFER:
+        pc = {}
+        for i in demand:
+            drop = disfavoured(merged[i]["reads"], options[i], piles, prim, genome, pc)
+            if drop and len(drop) < len(options[i]):
+                options[i] = [c for c in options[i] if c not in drop]
     capacity = {c: 2 for c in piles}
     if slot_order == "support":
         order = sorted(demand, key=lambda i: (-len(merged[i]["reads"]), merged[i]["div"], i))
@@ -958,7 +989,7 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
     for i in demand:
         for r in merged[i]["reads"]:
             home_of.setdefault(r, i)
-    cert_reads = {r: k for k, (_, rs, _) in enumerate(certified) for r in rs}
+    cert_reads = {r: k for k, (_, rs, _) in enumerate(certified) for r in rs} if RECONSTRUCT else {}
     o2, semi_cache = [], {}
     for r, k in n_in.items():
         if k < 2:
@@ -1096,6 +1127,8 @@ def main(argv):
     r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
     r.add_argument("--semi", action="store_true", help="O2: semi-tied reads to their best AS / fewest-edit copy, exact ties "
                    "HOPELESS (unsafe where the sample carries the other copy's base at the deciding site, register 1388)")
+    r.add_argument("--prefer", action="store_true", help="slots only on copies the haplotype's reads do not disfavour by >= 2 sites")
+    r.add_argument("--no-reconstruct", action="store_true", help="O2 ignores O3's certified copies (O3 -> O2 baseline)")
     r.add_argument("--no-clipping", action="store_true", help="putative copies without the soft-clip signal (P6's port)")
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
@@ -1108,8 +1141,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT, COVERAGE, CLIPPING, SEMI
-    CORRECT, COVERAGE, CLIPPING, SEMI = a.correct, a.coverage, not a.no_clipping, a.semi
+    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER
+    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer
     cmd_run(a)
 
 

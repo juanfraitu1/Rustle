@@ -16,6 +16,7 @@ import pysam
 
 DUP_FLANK = 2000
 S_HET = 6
+CASES = os.environ.get("O2DUP_CASES", "control,missing").split(",")
 CONV = os.environ.get("O2DUP_CONV", "0") == "1"
 
 
@@ -68,7 +69,10 @@ def main():
                 if i >= 15 and j >= 0:
                     b = tx[f"{X}|B"]; txx[f"{X}|B"] = b[:j + 15] + txd[i] + b[j + 16:]
                     print(f"{f} d{d}: X|B converted at transcript {i}", flush=True)
-            for case in ("control", "missing"):
+            # case `extra` (O3 -> O2): the control sample plus a third near-identical copy X* (d substitutions, seed 3) that the
+            # reference lacks; X*'s reads tie between X and X' and are right only on a certified new copy
+            txe = duplicate(pri, copies[X], iso[X][0], iso[X][1], d, random.Random(3))[1] if d else None
+            for case in CASES:
                 D = f"{out}/{f}_d{d}_{case}"; os.makedirs(D, exist_ok=True)
                 where = S.mini_reference(copies, None, False, D)
                 with open(f"{D}/ref.fa", "a") as fh: fh.write(f">dup_{Xd}\n{contig}\n")
@@ -76,8 +80,11 @@ def main():
                 where[Xd] = (f"dup_{Xd}", s0, e0)
                 txs = dict(txx)
                 plan = [(t, N) for t in txx]
-                if case == "control":
+                if case in ("control", "extra"):
                     txs[f"{Xd}|A"] = txd; plan.append((f"{Xd}|A", 2 * N))
+                if case == "extra":
+                    if not txe: continue
+                    txs[f"{X}e|A"] = txe; plan.append((f"{X}e|A", 2 * N))
                 S.simulate(txs, plan, random.Random(1), f"{D}/reads.fa")
                 S.align(D, f"{D}/reads.fa", f"{D}/reads.bam")
                 with open(f"{D}/copies.tsv", "w") as fh:
