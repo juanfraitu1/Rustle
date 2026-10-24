@@ -89,7 +89,8 @@ def main():
                     fh.write("family\tread\tused\trole\tvia\tclass\tin_reads_tsv\n")
                     for n in names: fh.write(f"{f}\t{n}\t1\tS\tA\tNA\t0\n")
                 subprocess.run([sys.executable, f"{HERE}/o3port.py", "run", "--bam", f"{D}/reads.bam", "--copies", f"{D}/copies.tsv",
-                                "--genome", f"{D}/ref.fa", "--net", f"{D}/net.tsv", "--out", f"{D}/port"], check=True,
+                                "--genome", f"{D}/ref.fa", "--net", f"{D}/net.tsv", "--out", f"{D}/port",
+                                *os.environ.get("O2DUP_PORT_ARGS", "").split()], check=True,
                                stderr=subprocess.DEVNULL)
                 print(subprocess.run([sys.executable, f"{HERE}/o2eval_sim.py", D], capture_output=True, text=True).stdout.strip(),
                       flush=True)
