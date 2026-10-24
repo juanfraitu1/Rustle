@@ -43,3 +43,28 @@ wrong; fixed before the numbers below (the port's output was not rerun or change
 - From B-only loci: 18 tied, 2 placed, **2 wrong** (GWFAM175, onto copy 1: the silent free-slot case of P14, now in real data);
   minimap2 MAPQ >= 1 16 placed, 16 wrong.
 - 308 tied reads have no truth (tied between haplotype loci).
+
+## Addendum: O3 with the port's IsoCon side (the stage, `candidate_copies`, run on the 34 families; work dir `.../o2refabsent/h`)
+The run above had no IsoCon side (no stage products). With it (`o3port_p4.sh` stage / concat / nets / port c cc): 10 certified
+candidates + 1 putative. Each contig was aligned to KB3781's two haplotypes and to `_pri`; a contig the haplotypes hold at ~1.0
+but `_pri` only far lower is a copy the reference lacks (the truth table lists only loci found from the families' copies, so it
+misses some):
+
+| contig | best haplotype identity | best `_pri` identity | reading |
+|---|---|---|---|
+| cand_GWFAM4_1 | 0.9978 | 0.8673 | **reference-absent copy** |
+| cand_GWFAM103_1 | 0.9993 | 0.8980 | **reference-absent copy** |
+| cand_GWFAM175_0 | 1.0000 | 0.9378 | **reference-absent copy** (pat chr5 40.10-40.13 Mb, in the tandem array next to B1) |
+| cand_GWFAM70_0 | 0.9996 | 0.9750 | **reference-absent copy** |
+| putative_GWFAM256_0 | 0.9996 | 0.9908 | allele-level gap (0.9%): undecided |
+| cand_GWFAM205_0 | 0.9996 | 0.9958 | allele-level (0.4%) |
+| cand_GWFAM4_0 | 0.9905 | 0.9865 | allele-level / noisy consensus |
+| cand_GWFAM360_0 | 1.0000 | 0.9971 | allele-level (0.3%) |
+| cand_GWFAM205_1 | 1.0000 (70% covered) | 0.9988 | not absent |
+| cand_GWFAM169_0 | 0.9974 | 0.9974 | not absent (false flag) |
+| cand_GWFAM103_0 | 0.7148 | 0.7148 | junk contig (false flag) |
+
+- **4 clearly reference-absent copies found, in 4 families** (GWFAM4, 103, 175, 70), each held by a haplotype at >= 0.998 and by
+  `_pri` at <= 0.975. Only GWFAM175 was in the truth table's beyond-delta expressed list; the other three were unlisted.
+- 4 flags are at an allele-level gap (0.3-0.9%) and cannot be called absent or allelic from this check; 3 are false flags.
+- The IsoCon side is what finds them: without it the port flagged GWFAM205 / GWFAM390 / GWFAM360 / GWFAM256 and none of the four.
