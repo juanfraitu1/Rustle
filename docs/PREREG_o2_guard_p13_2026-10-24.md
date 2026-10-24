@@ -23,3 +23,20 @@ X*'s reads are right only on a certified new copy. A failed run is reported and 
 - **Verdict:** pass iff S1, S2, S3, power and E1. Run once; nothing changed after looking.
 
 **Reported, not decided (the limit):** the number of `extra` runs with no flag (silent), and O2's and minimap2's wrong rates there.
+
+## Result (run once, 2026-10-24; work dir `/mnt/linuxdisk/tmp/o2p13`): FAILS S2
+All 90 runs completed.
+
+| arm | runs | tied | placed | wrong | MAPQ >= 1 placed / wrong |
+|---|---|---|---|---|---|
+| control | 30 | 9,857 | 3,373 | 2 | 8,682 / 891 |
+| missing | 30 | 5,301 | 1,252 | 2 | 4,207 / 886 |
+| extra, flagged (guarded) | 7 | 1,184 | 0 | 0 | 1,180 / 182 |
+| extra, silent (limit) | 23 | 13,188 | 5,654 | 2,254 (39.9%) | 11,947 / 5,154 (43.1%) |
+
+- **S1 PASS** (4 / 4,625 = 0.09%). **S3 PASS** (0.09% < 19.7%). **Power PASS.** **E1 PASS** (guarded runs: 0 placed).
+- **S2 FAILS: 2 X|B reads on X' in missing runs** (GWFAM293 d2 r079, GWFAM297 d2 r098). Cause: an indel beside a distinguishing
+  site shifts the read's two alignments by 1 bp, so adjacent positions compare non-homologous reference bases and count as sites.
+- **The limit (reported):** O3 flags the extra copy in 7 / 30 `extra` runs; in the 23 silent runs O2 is about as wrong as minimap2
+  (39.9% vs 43.1%).
+- **Verdict: DOES NOT PASS.**
