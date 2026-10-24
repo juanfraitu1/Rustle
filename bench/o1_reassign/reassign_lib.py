@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post-MCL strongest-edge reassignment of family members (prereg docs/PREREG_post_mcl_reassign_2026-10-15.md).
+"""Post-MCL strongest-edge reassignment of family members (prereg docs/archive/2026-10/merged/PREREG_post_mcl_reassign_2026-10-15.md).
 
 After MCL, a member's `in` is its strongest edge to another member of its own family and its `out` is, per other
 family, its strongest edge into that family. A member whose best `out` is strictly greater than its `in` moves to that

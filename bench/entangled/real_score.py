@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score transcript sets on the truth tables of real_truth.py (docs/PREREG_gorilla_overlap_2026-10-07.md).
+"""Score transcript sets on the truth tables of real_truth.py (docs/archive/2026-10/merged/PREREG_gorilla_overlap_2026-10-07.md).
 
     real_score.py --truth TRUTHPREFIX --denominator P1|P2 --arm NAME=GTF [--arm NAME=GTF ...] --out OUTPREFIX
 

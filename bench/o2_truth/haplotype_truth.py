@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm 4 of docs/PREREG_o2_anchor_2026-10-13.md (Amendment 4): truth from the animal's own haplotype assemblies.
+"""Arm 4 of docs/archive/2026-10/merged/PREREG_o2_anchor_2026-10-13.md (Amendment 4): truth from the animal's own haplotype assemblies.
 
     haplotype_truth.py RUN_PREFIX CATALOG_PREFIX BAM WINDOWS.bed MAT.mmi PAT.mmi OUTDIR
 

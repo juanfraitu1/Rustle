@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Metrics of docs/PREREG_unmapped_rescue_2026-10-08.md section 4 (pure functions)."""
+"""Metrics of docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 4 (pure functions)."""
 import collections
 
 

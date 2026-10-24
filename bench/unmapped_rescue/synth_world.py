@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Supervised synthetic world (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 10): random genome, synthetic gene families, one copy per family
+"""Supervised synthetic world (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 10): random genome, synthetic gene families, one copy per family
 erased from the reference, reads simulated from every copy. Built with bench/famsim. Exact truth for every read and every copy.
 
     synth_world.py build <out_dir> [--seed 20261008]    # writes <out_dir>/{genome.ref.fa, genome.truth.fa, copies.tsv, transcripts.fa, targets.fa, reads.E0|E1|E2.fq, reads.truth.tsv}

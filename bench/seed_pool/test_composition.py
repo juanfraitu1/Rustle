@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of composition.py (docs/PREREG_seed_pool_real_reads_2026-10-07.md section 3). Run: python3 -m unittest bench/seed_pool/test_composition.py"""
+"""Tests of composition.py (docs/archive/2026-10/merged/PREREG_seed_pool_real_reads_2026-10-07.md section 3). Run: python3 -m unittest bench/seed_pool/test_composition.py"""
 import csv
 import json
 import os

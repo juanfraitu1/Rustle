@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O2 read-truth report on one simulated roster (docs/PREREG_o2_default_roster_2026-10-06.md): the registered scorer's per-read verdicts
+"""O2 read-truth report on one simulated roster (docs/archive/2026-10/merged/PREREG_o2_default_roster_2026-10-06.md): the registered scorer's per-read verdicts
 (`bench/score.py reads --per-read`, OWN / PRIMARY / ANY, and the union-certificate arm), joined with the simulated BAM by figures/_o2.py, tabulated
 for the MAPQ-0 reads whose source copy lies in the target set and for every MAPQ-0 read of the roster, by identity band, with the registered bars.
 

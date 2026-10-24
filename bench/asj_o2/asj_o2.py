@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Allele-specific junctions as an O2 extension (docs/PREREG_asj_o2_2026-10-10.md).
+"""Allele-specific junctions as an O2 extension (docs/archive/2026-10/merged/PREREG_asj_o2_2026-10-10.md).
 
 Arm A: reads assigned to the primary's haplotype (S) or the other haplotype (B) at het sites taken from the haplotype assemblies, by O2's certificate
 (`copy_pair_significance` / `poisson_binomial_upper_tail`, src/family.rs). Arm R: the June read-anchored split. Both: junction usage compared between the

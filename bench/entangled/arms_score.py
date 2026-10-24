@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Window-wide chain recovery, artifact load and gene resolution of transcript sets on the ideal-expression reads (docs/PREREG_entangled_baseline_2026-10-06.md).
+"""Window-wide chain recovery, artifact load and gene resolution of transcript sets on the ideal-expression reads (docs/archive/2026-10/merged/PREREG_entangled_baseline_2026-10-06.md).
 
     arms_score.py --truth READSPREFIX --arm NAME=GTF [--arm NAME=GTF ...] --out OUTPREFIX
 

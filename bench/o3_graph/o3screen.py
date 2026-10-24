@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """EXPLORATORY (spike, 2026-10-22, post hoc): an RNA-only O3 "look harder" screen, tiers 1 and 2 of
-docs/O3_FINGERPRINT_SURVEY_2026-10-22.md (definitions: docs/o3survey_2026-10-22/C_certificate.md §1-3; results and every choice
-made here: docs/O3_SCREEN_SPIKE_2026-10-22.md). Read-only over a frozen O2-VC run directory (o2vc.py run); reads no truth.
+docs/archive/2026-10/merged/O3_FINGERPRINT_SURVEY_2026-10-22.md (definitions: docs/o3survey_2026-10-22/C_certificate.md §1-3; results and every choice
+made here: docs/archive/2026-10/merged/O3_SCREEN_SPIKE_2026-10-22.md). Read-only over a frozen O2-VC run directory (o2vc.py run); reads no truth.
 
     o3screen.py OUTDIR COPIES GENOME OUT.tsv [--sex male|female|unknown] [--exclude-editing] [--pair-certified]
                 [--merge-single] [--families A,B]

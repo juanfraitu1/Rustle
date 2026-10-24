@@ -45,7 +45,7 @@
 #             --sd-cache`. Needs --fasta and --out only; `all` does not run it. An entry is a hit only if its DONE lists
 #             every file with its size (an empty DONE, as this stage wrote before 2026-10-14, is a miss); --no-cache scans
 #             again, into the same entry.
-#             Gates in docs/PREREG_sedef_rs_layers_2026-10-13.md (register 1278-1280): sd-scan's SD calls failed V1/V1b
+#             Gates in docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md (register 1278-1280): sd-scan's SD calls failed V1/V1b
 #             (recall about 0.40 against SEDEF) and its duplicons failed V2 (held-out family score 0.5153 against
 #             DupMasker), so `--sd-cache` is an opt-in, unvalidated alternative to `--hierarchy-sd` /
 #             `--hierarchy-duplicons`; its SD layer uses every `ok` pair (no identity or length floor). Cost with
@@ -99,7 +99,7 @@
 #                         2026-10-07 study 1.4-1.5x the transcripts of good on every contig, and the aligner
 #                         records of good x17.5 (chr16; x22.9 of primary), x14.0 (chr17; x15.0), x3.1 (gorilla NPIP; x3.9)
 #                         (human chr16: 14,183 against 9,473 transcripts, 1,648,588 against 94,433 PAF records;
-#                         docs/SEED_POOL_REAL_READS_2026-10-07.md)
+#                         docs/archive/2026-10/merged/SEED_POOL_REAL_READS_2026-10-07.md)
 #   --seed-as-ratio R     the width R of the good pool, a number in (0, 1]; 1 = exact ties only. Refused with another pool.
 #   RUSTLE_SEED_POOL / RUSTLE_SEED_AS_RATIO set the same two as defaults (a flag wins; a malformed exported ratio is refused,
 #   a valid one is ignored by the other pools). The pool the flag names is the pool the binary gets: an exported
@@ -260,7 +260,7 @@ if [ "$STAGE" = index ]; then
 else
   [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
 fi
-# --low-mem (docs/GENOMEWIDE_FAST_2026-10-12.md): the splice index in 1-Gbp parts (flag holds one part at a time) and one
+# --low-mem (docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md): the splice index in 1-Gbp parts (flag holds one part at a time) and one
 # assign region at a time; every other setting unchanged
 [[ "$MAX_WINDOW_RECORDS" =~ ^[0-9]+$ ]] || { echo "[rustle_pipeline] --max-window-records must be a whole number (got '$MAX_WINDOW_RECORDS')" >&2; exit 2; }
 if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; [ "$MAX_WINDOW_RECORDS" -gt 0 ] || MAX_WINDOW_RECORDS=500000; fi
@@ -268,7 +268,7 @@ if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; [ "$MAX_
 export TMPDIR=${TMPDIR:-/tmp}
 if [ "$CACHE" = 1 ]; then export RUSTLE_CACHE_DIR="$OUT.cache"; else unset RUSTLE_CACHE_DIR; fi
 INSPECT_CAT=(); INSPECT_ASSIGN=()
-# ASSIGN_FAST (docs/GENOMEWIDE_FAST_2026-10-12.md): every copy_assign of the assign stage skips the POA homology DIAGNOSTIC
+# ASSIGN_FAST (docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md): every copy_assign of the assign stage skips the POA homology DIAGNOSTIC
 # (byte-identical families / assignments / abundance; ~85% of the wall time on dense families; only the diagnostic
 # .fallback.tsv and its log counts are lost) and runs RUSTLE_REGION_THREADS regions at once (byte-identical; default 1, since
 # peak memory grows with it). RUSTLE_POA_DIAGNOSTIC=1 restores the diagnostic pass.
@@ -307,7 +307,7 @@ case "${RUSTLE_POLISH_TES:-}" in
 esac
 # RUSTLE_COMPAT_SUPPORT=1 (opt-in; unset or 0 = off, the same command): copy_assign --compat-support, compatible-read support in
 # the assembler's chain admission (a chain short of the read floor is admitted when every junction is carried by enough reads
-# whose chains are contiguous, end-compatible sub-chains of it; docs/PREREG_assembler_compatible_support_2026-10-11.md)
+# whose chains are contiguous, end-compatible sub-chains of it; docs/archive/2026-10/merged/PREREG_assembler_compatible_support_2026-10-11.md)
 case "${RUSTLE_COMPAT_SUPPORT:-}" in
   ""|0) ;;
   1) POLISH="$POLISH --compat-support" ;;
@@ -316,14 +316,14 @@ esac
 # RUSTLE_DIRECT_TRANSFRAGS=1|union (opt-in; unset or 0 = off, the same command): copy_assign --direct-transfrags (or, with union,
 # --direct-transfrags-union: plus every chain the default admits), transcripts from
 # maximal transfrags with the reads of the transfrags they contain transferred to them, no flow
-# (docs/PREREG_direct_transfrags_2026-10-11.md); exclusive with RUSTLE_COMPAT_SUPPORT
+# (docs/archive/2026-10/merged/PREREG_direct_transfrags_2026-10-11.md); exclusive with RUSTLE_COMPAT_SUPPORT
 case "${RUSTLE_DIRECT_TRANSFRAGS:-}" in
   ""|0) ;;
   1) POLISH="$POLISH --direct-transfrags" ;;
   union) POLISH="$POLISH --direct-transfrags-union" ;;
   *) echo "[rustle_pipeline] RUSTLE_DIRECT_TRANSFRAGS must be 0, 1 or union (got '$RUSTLE_DIRECT_TRANSFRAGS')" >&2; exit 2 ;;
 esac
-# Opt-in levers toward FLAIR's exclusive transcripts (docs/PENDING_2026-10-11.md; unset = off, the same command):
+# Opt-in levers toward FLAIR's exclusive transcripts (docs/archive/2026-10/merged/PENDING_2026-10-11.md; unset = off, the same command):
 #   RUSTLE_TRANSFER_CREDIT=full|best copy_assign --transfer-credit full|best (with RUSTLE_DIRECT_TRANSFRAGS)
 #   RUSTLE_READ_JUNCTION_SNAP=W    copy_assign --read-junction-snap W (bp; read junctions snap to better-supported ones)
 #   RUSTLE_MIN_CHAIN_READS=N       copy_assign --min-chain-reads N (1 = single-read spliced chains)

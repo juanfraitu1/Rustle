@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tools/minimap2_gate/build.sh -- build `minimap2-gate`: minimap2 2.30 (r1287) + gate.patch, the exon gate that
-# `mcl_families --from-gtf` uses for its all-vs-all (docs/O1_FAST_2026-10-21.md).
+# `mcl_families --from-gtf` uses for its all-vs-all (docs/archive/2026-10/merged/O1_FAST_2026-10-21.md).
 #
 #   tools/minimap2_gate/build.sh [BIN_DIR]        default BIN_DIR = ~/.local/bin; needs git, make, a C compiler, zlib headers
 #

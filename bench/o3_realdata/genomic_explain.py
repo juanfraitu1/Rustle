@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Would a reference with every isoform explain O3's unexplained clusters? A proxy for a family variation graph (post hoc,
-descriptive; docs/PREREG_o3_family_best_2026-10-15.md, Results).
+descriptive; docs/archive/2026-10/merged/PREREG_o3_family_best_2026-10-15.md, Results).
 
     genomic_explain.py PREFIX COPIES.tsv COPIES.fa READS.fa BAM GENOME ALL_COPIES.tsv OUT.tsv [KEPT.tsv]
 

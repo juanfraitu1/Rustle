@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Level C of Amendment 2 of docs/PREREG_locus_units_2026-10-06.md: the connected components of the pre-MCL homology graph (mcl_families --dump-graph) as clusters, in the registered cluster-file format,
+"""Level C of Amendment 2 of docs/archive/2026-10/merged/PREREG_locus_units_2026-10-06.md: the connected components of the pre-MCL homology graph (mcl_families --dump-graph) as clusters, in the registered cluster-file format,
 so the unchanged scorer (bench/ideal_expression/score.py, fam_score.py) can be run with the components in place of the MCL clusters.
 
     hier_clusters.py --loci PREFIX.fam.loci.gff3 --graph GRAPH.tsv --out OUTPREFIX

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trimming rule T for the untemplated 5' G run of a cluster consensus (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 13).
+"""Trimming rule T for the untemplated 5' G run of a cluster consensus (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 13).
 
 best_copy_prefix: how many consensus bases lie before the first dc-megablast HSP on the attributed family's best-covering surviving copy.
 decide: remove that prefix iff it is 1 to MAX_G bases, all G."""

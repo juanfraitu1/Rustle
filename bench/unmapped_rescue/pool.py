@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pools of unmapped reads with truth labels (docs/PREREG_unmapped_rescue_2026-10-08.md section 2).
+"""Pools of unmapped reads with truth labels (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 2).
 
     pool.py bedA    # W/bedA/{pool.fa,labels.tsv}: unmapped records of o3_excise/masked.bam + the 959 background reads
 """

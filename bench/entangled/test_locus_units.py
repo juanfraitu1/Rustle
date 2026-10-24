@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of locus_units.py (Rule 1 and Rule 2 of docs/PREREG_locus_units_2026-10-06.md). Run: python3 -m unittest bench/entangled/test_locus_units.py"""
+"""Tests of locus_units.py (Rule 1 and Rule 2 of docs/archive/2026-10/merged/PREREG_locus_units_2026-10-06.md). Run: python3 -m unittest bench/entangled/test_locus_units.py"""
 import os
 import sys
 import unittest

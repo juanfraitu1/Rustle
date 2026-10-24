@@ -1,9 +1,9 @@
 #!/bin/bash
-# bench/entangled/run.sh — runner of docs/PREREG_entangled_baseline_2026-10-06.md. FAMILY = NPIP | TBC1D3, REP = 1 | 2 (the ideal-expression read sets, bench/ideal_expression).
+# bench/entangled/run.sh — runner of docs/archive/2026-10/merged/PREREG_entangled_baseline_2026-10-06.md. FAMILY = NPIP | TBC1D3, REP = 1 | 2 (the ideal-expression read sets, bench/ideal_expression).
 #   run.sh tools FAMILY REP    StringTie (-L, no -G) and FLAIR (bam2bed + collapse --trust_ends, no correct, no annotation) on the ideal BAM, the lab's recipes (benchmark_collapse/run_*.sbatch)
 #   run.sh units FAMILY REP    the driver's assemble and families stages with RUSTLE_BRIDGE_REGROUP=f1units (set for these two commands only)
 #   run.sh levers FAMILY REP   Amendment 1: the driver's assemble and families stages with one existing opt-in change each: P = --no-seed-secondaries, C = RUSTLE_POLISH_SUBCHAIN=drop, PC = both (set for these commands only)
-#   run.sh units2 FAMILY REP   docs/PREREG_locus_units_2026-10-06.md: arms Q (Rule 1), S_D (Rule 2 on all), S_Q (Rules 1+2) = locus_units.py on the families input, then mcl_families with the driver's flags, family-level scoring (score.py), Compara F (fam_score.py)
+#   run.sh units2 FAMILY REP   docs/archive/2026-10/merged/PREREG_locus_units_2026-10-06.md: arms Q (Rule 1), S_D (Rule 2 on all), S_Q (Rules 1+2) = locus_units.py on the families input, then mcl_families with the driver's flags, family-level scoring (score.py), Compara F (fam_score.py)
 #   run.sh f1 FAMILY REP       Amendment 2: the driver with RUSTLE_BRIDGE_REGROUP=f1 (assemble + families), then family-level scoring (arm F1)
 #   run.sh f1q FAMILY REP      Amendment 2: F1's families input with Rule 1 (primary chains of the primaries-only assembly), mcl_families, scoring (arm F1Q)
 #   run.sh hier FAMILY REP     Amendment 2: for every arm, the pre-MCL graph (mcl_families --dump-graph, clusters must equal the registered ones), its components as clusters (hier_clusters.py), score.py and fam_score.py at level C

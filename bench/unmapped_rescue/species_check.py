@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Whose reads are the unmapped clusters? (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 34). Miniforge python.
+"""Whose reads are the unmapped clusters? (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 34). Miniforge python.
 
     species_check.py pool              pooled consensus of the ELSEWHERE / NOVEL / UNSUPPORTED clusters of the four real runs
     species_check.py align <assembly>  HSA GGO Tm PTR PPY (resumable, one assembly per call)

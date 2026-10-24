@@ -1,6 +1,6 @@
 # Copy assignment (O2): definition, decision rule, abstention, certificate
 
-**O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
+**O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/archive/2026-10/merged/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
 
 ## State as of 2026-10-07 (read this before the rest)
 
@@ -35,15 +35,15 @@ The body below was last committed 2026-09-01 (5d55287d) and describes the binary
 | §0 "There is no non-circular ground truth for REASSIGNMENT" / Amendment 1 "validated **only in simulation** (`sim_ground_truth`, `k0_flank`)" | Partly superseded: simulated read-level truth now exists on the real catalogs (human OWN 163/163, gorilla 0/0 — see (a)); real-read truth is still absent — the HG002 attempt covered 28 % of tied reads (C0 failed) and its DNA presence gate scored 0.21, below random | register rows 1092, 1109, 1180; `docs/PREREG_o2_presence_gate_2026-09-29.md` |
 
 ### (c) Open items
-- Row-1220 prereg `docs/PREREG_o2_tie_outside_2026-10-03.md` (`--tie-outside-at-best`): committed, NOT run (`docs/HANDOFF_2026-10-04.md` A; `docs/PENDING_2026-10-04.md` item 2). Its text says `as_tie_ratio` "(0.98)"; the CLI default at `src/copy_assign_bin.rs:773-774` is `1.0` — reconcile before running.
-- Default-roster simulations (`docs/O2_DEFAULT_ROSTER_2026-10-06.md`): bars UNDERPOWERED — NPIP 33 MAPQ-0 of 1,099 reads, TBC1D3 0 of 887; chrY run is an approximation (the 173-copy Yq12 satellite family skipped, register row 1252), full chrY NOT done; roster-wide chr16 OWN 27/0 but PRIMARY .37 / ANY .02 — the cross-family defect persists on the default roster. A tie-inducing read model (Stage 2) needs a NEW prereg.
+- Row-1220 prereg `docs/PREREG_o2_tie_outside_2026-10-03.md` (`--tie-outside-at-best`): committed, NOT run (`docs/archive/2026-10/merged/HANDOFF_2026-10-04.md` A; `docs/archive/2026-10/merged/PENDING_2026-10-04.md` item 2). Its text says `as_tie_ratio` "(0.98)"; the CLI default at `src/copy_assign_bin.rs:773-774` is `1.0` — reconcile before running.
+- Default-roster simulations (`docs/archive/2026-10/merged/O2_DEFAULT_ROSTER_2026-10-06.md`): bars UNDERPOWERED — NPIP 33 MAPQ-0 of 1,099 reads, TBC1D3 0 of 887; chrY run is an approximation (the 173-copy Yq12 satellite family skipped, register row 1252), full chrY NOT done; roster-wide chr16 OWN 27/0 but PRIMARY .37 / ANY .02 — the cross-family defect persists on the default roster. A tie-inducing read model (Stage 2) needs a NEW prereg.
 - Cross-family arbitration is an undecided user/advisor call: strict union certificate (assigns 0 of 1,259 chr16 sim reads, 0 of 931 on the default roster) vs an expression prior for the catalog copy (register row 1103).
 - The m = 1 boundary (p = alpha exactly) is an arbitrary edge; any change needs a prereg and a register check (`docs/PREREG_o2_power_2026-09-29.md`).
 - From memory `project_o2_as_tied_gate` "Open": `assigned_outside_catalog` scoring, tie width, the 92 rows that vanish on some excisions.
 - Real-read truth: the only matched-individual route (HG002) says "assign reads against the individual's OWN copies (a personal/graph reference), never by gating reference copies" — not built (memory `project_o2_presence_gate`).
 - Catalog hygiene affecting O2's denominator: gorilla rRNA families SM5/SM7/SM577 (105 copies, 7,551 contested reads) and the chrY satellite family — no filter implemented (`docs/PSV_CEILING_2026-10-03.md`; register row 1252).
 - "Matches no catalog copy" is O3's regime (uncatalogued paralogs, incomplete units): no assignment rule fixes it; the annotation-free test is to realign rejected reads and cluster the off-catalog loci (`docs/PSV_CEILING_2026-10-03.md`).
-- O2 chapter draft is held outside the repo until the operating points settle (`docs/PENDING_2026-10-04.md` item 4); the closed-loop pass-2 experiment `docs/PREREG_tied_read_loop_2026-09-25.md` — status not checked here.
+- O2 chapter draft is held outside the repo until the operating points settle (`docs/archive/2026-10/merged/PENDING_2026-10-04.md` item 4); the closed-loop pass-2 experiment `docs/PREREG_tied_read_loop_2026-09-25.md` — status not checked here.
 
 ---
 
@@ -338,11 +338,11 @@ reverse-complemented, sign test at the certificate's alpha 1e-3); a reverse-comp
 whose strand calls disagree) is aligned reverse-complemented, its alleles are stored in copy 0's frame, and its reads
 are read with its FRAME strand (`FamilyProfiles::strand`, dumped as `copy_strand`). Before, such pairs were aligned as
 given: 10/56 KB3781 families got a "PSV" at most bases (723 vs 9.8 columns/kb). The default read-star certificate
-never read these columns, so assignments were unchanged (`docs/PSV_SUN_PILEUP_2026-10-12.md`).
+never read these columns, so assignments were unchanged (`docs/archive/2026-10/merged/PSV_SUN_PILEUP_2026-10-12.md`).
 **Engine (2026-10-12, default by user decision):** the copy-vs-copy alignment is `semiglobal_msa_pair` — match +2 /
 mismatch -3, gaps min(5 + 2k, 30) (a missing exon costs a constant, like an intron), local ends, a band around the
 chain of unique shared 11-mers capped by the anchors' columns — and only columns inside significant local blocks
-(`significant_block_mask`, Karlin-Altschul at alpha 1e-3) are PSV columns (`docs/PREREG_psv_semiglobal_engine_2026-10-12.md`:
+(`significant_block_mask`, Karlin-Altschul at alpha 1e-3) are PSV columns (`docs/archive/2026-10/merged/PREREG_psv_semiglobal_engine_2026-10-12.md`:
 held-out precision 0.993-0.998 vs 0.42, junk pairs 119-766 vs 86-120 k, 5-20x faster). `RUSTLE_PSV_ENGINE=global` (or a
 legacy `RUSTLE_PSV_POASTA` / `RUSTLE_PSV_MINIMAP2` / `RUSTLE_PSV_BAND`) restores the previous global DP, now capped at
 2^29 DP cells per pair (above it the pair uses the semiglobal engine: the uncapped DP aborted at 13.8 / 135 GB on

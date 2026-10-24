@@ -8,7 +8,7 @@
     summary.py o2bars-unionf PREFIX WORLD ...   the same for round 5's graph O2 with the locus fallback (o2.unionf.m2.tsv)
     summary.py e2e OUT.json WORLD ... [--per-read-detectability] [--o2 O2_NAME] [--error-floor]   end to end: every read's fate (read_fate) by the kind of copy it came from, for the
                                           current method and the integrated O1 -> O2 -> O3
-    summary.py bars E2E.json              round 8's pre-registered bars (docs/PREREG_o3_graph_round8_2026-10-16.md) on an e2e
+    summary.py bars E2E.json              round 8's pre-registered bars (docs/archive/2026-10/merged/PREREG_o3_graph_round8_2026-10-16.md) on an e2e
                                           table: per world, integrated correct >= current (B1) and errors <= current (B2)
     summary.py flags OUT.json WORLD ...   round 6: the flagged clusters (o2graph.flag_reads' rule) by truth class -- copy /
                                           allele (one haplotype of a catalogued copy) / other -- and the uncatalogued copies covered

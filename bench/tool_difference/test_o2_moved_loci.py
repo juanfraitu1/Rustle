@@ -1,4 +1,4 @@
-"""Tests for o2_moved_loci.py (docs/PREREG_o2_population_2026-10-12.md, amendment 1)."""
+"""Tests for o2_moved_loci.py (docs/archive/2026-10/merged/PREREG_o2_population_2026-10-12.md, amendment 1)."""
 import os
 import sys
 

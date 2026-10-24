@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Graph-based O2 (prereg docs/PREREG_o3_graph_real_2026-10-15.md): assign a family's reads to its copies on the family's
+"""Graph-based O2 (prereg docs/archive/2026-10/merged/PREREG_o3_graph_real_2026-10-15.md): assign a family's reads to its copies on the family's
 variation graph, where every curated isoform's exons carry their PSVs (a representative lacks some of them).
 
 O2's domain (user, 2026-10-19): AS-tied multimapping reads only -- a rival alignment within 10 AS of the best (Eichler's rule).

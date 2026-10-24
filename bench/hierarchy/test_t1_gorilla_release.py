@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of the release path of the Phase R2 report (docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md section 5 and Amendment 1), written after the
+"""Tests of the release path of the Phase R2 report (docs/archive/2026-10/merged/PREREG_hierarchy_duplicon_expansion_2026-10-07.md section 5 and Amendment 1), written after the
 independent code review (two reviewers, 2026-10-07) and BEFORE the changes they asked for:
 
   * `report` itself refuses without the release token (also when compute_report is called directly), runs the positive control and the Gate 0 fingerprints

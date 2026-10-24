@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pure helpers of the LRPAP1 worked example (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 8). Pipeline: run_lrpap1.py."""
+"""Pure helpers of the LRPAP1 worked example (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 8). Pipeline: run_lrpap1.py."""
 
 PLACED = 0.999     # the registered recovery hit: identity x coverage
 

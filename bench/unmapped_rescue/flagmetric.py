@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The registered identity x coverage and its gate-aware version (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 17).
+"""The registered identity x coverage and its gate-aware version (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 17).
 
 ident x (aligned query bases) / (consensus length). Gate-aware: when the library gate is open and the consensus' unaligned 5' end is 1 to 3 bases, all G, those bases
 leave the denominator. Nothing else changes."""

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G1 of docs/PREREG_ideal_expression_2026-10-06.md, written separately from the generator: every kept intron of every simulated transcript must be >= 50 bp and canonical
+"""G1 of docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md, written separately from the generator: every kept intron of every simulated transcript must be >= 50 bp and canonical
 (GT-AG, GC-AG, AT-AC on the transcript's strand), re-read from the genome with this script's own motif table; no simulated molecule may exceed 30 kb or keep an intron > 200 kb.
 
     verify_g1.py TRUTHPREFIX

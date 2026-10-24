@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm B input of docs/PREREG_yag_o2_2026-10-12.md: the catalog's families with >= 1 copy on the Y, minus arrays of
+"""Arm B input of docs/archive/2026-10/merged/PREREG_yag_o2_2026-10-12.md: the catalog's families with >= 1 copy on the Y, minus arrays of
 > MAX_COPIES copies (the Yq12 satellite), their copies table / FASTA, and the catalog regions overlapping their copies.
 
     prep_real.py CATALOG_PREFIX YCHROM OUTDIR      (CATALOG_PREFIX.fam.copies.tsv/.fa, CATALOG_PREFIX.regions.txt)

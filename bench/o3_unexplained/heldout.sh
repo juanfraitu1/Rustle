@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The held-out test of docs/PREREG_o3_unexplained_2026-10-15.md: seeds 41-45 (--strands), variants E0 and E2, arms P and T.
+# The held-out test of docs/archive/2026-10/merged/PREREG_o3_unexplained_2026-10-15.md: seeds 41-45 (--strands), variants E0 and E2, arms P and T.
 #   pixi run bash bench/o3_unexplained/heldout.sh OUT_DIR
 set -euo pipefail
 OUT=$1; HERE=$(cd "$(dirname "$0")" && pwd)

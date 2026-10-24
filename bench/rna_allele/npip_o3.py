@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/PREREG_o3_npip_maternal_copy_2026-10-21.md: the frozen reference-free chain (Amendments 7-9 of
+"""docs/archive/2026-10/merged/PREREG_o3_npip_maternal_copy_2026-10-21.md: the frozen reference-free chain (Amendments 7-9 of
 PREREG_rna_allele_haplotype_count, control_test.py) on KB3781's NPIP reads with nothing masked, and its answer key from his
 assemblies. Steps, in order (the IsoCon run and the minimap2 alignments are the prereg's commands, run between them):
 
@@ -9,7 +9,7 @@ assemblies. Steps, in order (the IsoCon run and the minimap2 alignments are the 
     npip_o3.py truth --w W               W/net.{mat,pat}.bam (his assemblies) -> W/target_reads.txt (R_T)
     npip_o3.py score --w W               candidates, their IsoCon reads and R_T -> bars E1-E5 -> W/score.json
 
-docs/PREREG_o3_npip_candidates_realign_2026-10-21.md (the counted candidates join the reference; the net is realigned):
+docs/archive/2026-10/merged/PREREG_o3_npip_candidates_realign_2026-10-21.md (the counted candidates join the reference; the net is realigned):
     npip_o3.py realign-prep --w W        W/realign/C.fa (GGO + the candidates' contigs), W/realign/units.tsv (target reads' units)
     npip_o3.py score-realign --w W       W/realign/{R0,C}.bam -> bars H1-H3 and the tied-read counts -> W/realign/score.json
     npip_o3.py rel-prep --w W            Amendment 1: W/realign/rel.{a,b}.fa (the relatives' reads, from rel.names)

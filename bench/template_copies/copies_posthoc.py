@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Post hoc, descriptive (not pre-registered): why the de novo -copies analogue's bars fail
-(docs/PREREG_denovo_copies_2026-10-14.md, Results).
+(docs/archive/2026-10/merged/PREREG_denovo_copies_2026-10-14.md, Results).
 
     copies_posthoc.py --species S --base BASE.gtf --run DIR --out J [--liftoff ROOT]
 

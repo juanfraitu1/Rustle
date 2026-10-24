@@ -1,4 +1,4 @@
-"""Tests for score.py (docs/PREREG_asj_o2_2026-10-10.md)."""
+"""Tests for score.py (docs/archive/2026-10/merged/PREREG_asj_o2_2026-10-10.md)."""
 import os
 import sys
 

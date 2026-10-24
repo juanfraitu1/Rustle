@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Curated templates for the graph-O3 simulation (prereg docs/PREREG_o3_graph_sim_2026-10-15.md): real genes whose curated
+"""Curated templates for the graph-O3 simulation (prereg docs/archive/2026-10/merged/PREREG_o3_graph_sim_2026-10-15.md): real genes whose curated
 isoforms (RefSeq / CAT) are exon-skipping variants of their canonical transcript, so famsim can express every one of them
 on a copy (famsim isoforms are skip sets over the model's exons).
 

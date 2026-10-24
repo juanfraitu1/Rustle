@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DNA verification of consensus sequences by k-mer lookup in the individual's whole-genome reads (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 32).
+"""DNA verification of consensus sequences by k-mer lookup in the individual's whole-genome reads (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 32).
 
 covered_bases: a base is covered if at least one of the k-mers that contain it has count >= min_count (robust to the k-mers that span exon junctions of a cDNA)."""
 import statistics

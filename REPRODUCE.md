@@ -8,7 +8,7 @@ What to install, what to run, and what number should come back. Substrate proven
 objectives stand on, not the contribution — see `README.md` and `docs/METHOD_PSEUDOCODE.md`.
 
 ⚠⚠ **`RUSTLE_JUNCTION_MAJORITY` default flipped to ON 2026-09-21** (register row 960;
-`docs/IDEAL_CHROMOSOME_SIM_2026-09-21.md` §10–11; `bench/CHR16_JUNCTION_MAJORITY_ARM.md`). A non-canonical
+`docs/archive/2026-10/merged/IDEAL_CHROMOSOME_SIM_2026-09-21.md` §10–11; `bench/CHR16_JUNCTION_MAJORITY_ARM.md`). A non-canonical
 splice junction no longer discards an otherwise-canonical, well-supported transcript outright. Every
 number quoted below that does NOT explicitly set `RUSTLE_JUNCTION_MAJORITY=1` in its own command (i.e.
 most of §4's "Expected numbers") was measured under the OLD strict default and has not been re-run under
@@ -296,7 +296,7 @@ reference_absent_candidate, plus
 consensus — the probe for a DNA k-mer/depth check). Positive control:
 `bash bench/o3_posctl.sh REF_DIR OUT_DIR` (`sim.py missing-copy genomic ... chr20 40 d` at d = 0.02 and 0.01, seeds
 1-5, CHM13 chr20 + RefSeq from NCBI, scored by `score.py missing-copy-control`; re-measured 2026-10-14 with stable seeds,
-`docs/PREREG_missing_copy_posctl_2026-10-14.md`): **2%: 199/200 fired, 198 `reference_absent_candidate`, 197 confirmed;
+`docs/archive/2026-10/merged/PREREG_missing_copy_posctl_2026-10-14.md`): **2%: 199/200 fired, 198 `reference_absent_candidate`, 197 confirmed;
 1%: 91/200 fired, 88/90 confirmed; negative control (the extra copy's reads removed): 0/200 fired.** The earlier "40/40"
 (one hash()-seeded run of the out-of-repo `simB.py`) is superseded by these numbers.
 
@@ -322,7 +322,7 @@ consensus — the probe for a DNA k-mer/depth check). Positive control:
 
 `copy_assign --families F.copies.tsv --copies-fa F.copies.fa --no-as-tied-only --psv-clusters --out P` writes `P.psv_clusters.tsv`
 (per host copy: each read cluster, `explained` by a copy / `unexplained` / `unlinked` / `unresolved`, its estimated divergence, linkage and
-A->G fraction) and `P.psv_cluster_reads.tsv`. Held-out simulation (`docs/PREREG_o3_psv_clusters_v2_2026-10-15.md`):
+A->G fraction) and `P.psv_cluster_reads.tsv`. Held-out simulation (`docs/archive/2026-10/merged/PREREG_o3_psv_clusters_v2_2026-10-15.md`):
 
 ```bash
 pixi run bash bench/o3_unexplained/heldout_v2.sh OUT_DIR    # base seeds 61-63 + hard seeds 71-75, E0 / E2, the Rust product scored
@@ -338,7 +338,7 @@ labelled `copy` 262/262; Rust = prototype on 16/16 runs.
 
 `candidate_copies` writes `<out>.structure.tsv` / `<out>.contigs.gtf`: each flagged candidate's exons, projected from its union's genome
 alignment (spec `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md`). Held-out test
-(`docs/PREREG_o3_structure_projection_2026-10-14.md`):
+(`docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md`):
 
 ```bash
 pixi run bash bench/o3_structure/heldout.sh OUT_DIR      # seeds 21-25 --strands, reads E0 / E2, Rust product scored, IsoCon beside

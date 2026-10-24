@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm 2 of docs/PREREG_o2_anchor_2026-10-13.md (Amendment 2): junction truth from rival copies that cannot splice.
+"""Arm 2 of docs/archive/2026-10/merged/PREREG_o2_anchor_2026-10-13.md (Amendment 2): junction truth from rival copies that cannot splice.
 
     junction_truth.py RUN_PREFIX CATALOG_COPIES.tsv BAM GENOME_FA OUTDIR
 

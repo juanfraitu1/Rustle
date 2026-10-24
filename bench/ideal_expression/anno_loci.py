@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G6 positive control of docs/PREREG_ideal_expression_2026-10-06.md: the canonicalized annotation written as an assembled GTF (every simulated transcript, equal read counts), so the
+"""G6 positive control of docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md: the canonicalized annotation written as an assembled GTF (every simulated transcript, equal read counts), so the
 driver's `families` stage (mcl_families --from-gtf, the shipped flags) can be run on PERFECT loci and the same scorer applied: E2 and E3 must be 100% on R and its E4 is the family ceiling.
 
     anno_loci.py TRUTHPREFIX OUTPREFIX     writes OUTPREFIX.gtf and OUTPREFIX.families.gtf (identical; the second newer, as the driver's f1v2 guard requires)

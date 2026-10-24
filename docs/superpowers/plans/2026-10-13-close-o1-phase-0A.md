@@ -142,7 +142,7 @@
 ### Task 1: pre-register fix 0, then the two-node rule in `mcl` (TDD), build, famsim
 
 **Files:**
-- Create: `docs/PREREG_mcl_two_node_2026-10-13.md`
+- Create: `docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`
 - Modify: `src/family.rs`, inside `pub mod annotation_families` (opens near line 59803):
   - `pub fn mcl(` (~60875): its last line `attractors(&col, n)`;
   - add a private helper right after `fn attractors` (which ends ~60982);
@@ -158,7 +158,7 @@
 
 - [ ] **Step 1: Write and commit the prereg**
 
-Create `docs/PREREG_mcl_two_node_2026-10-13.md` with exactly:
+Create `docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md` with exactly:
 
 ```markdown
 # PREREG — MCL two-node components: the fix (2026-10-13)
@@ -207,7 +207,7 @@ are", item 1).
 ```
 
 ```bash
-git add docs/PREREG_mcl_two_node_2026-10-13.md
+git add docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md
 git commit -m "PREREG MCL two-node fix (F1-F4)"
 ```
 
@@ -407,7 +407,7 @@ Replace `(pending)` in the prereg's Results with three lines:
 Write "F2: Task 2" as a fourth line.
 
 ```bash
-git add src/family.rs docs/PREREG_mcl_two_node_2026-10-13.md
+git add src/family.rs docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md
 git commit -m "mcl: a connected two-node component is one cluster (PREREG_mcl_two_node_2026-10-13 F1/F3/F4; red-first tests)"
 ```
 
@@ -420,8 +420,8 @@ git commit -m "mcl: a connected two-node component is one cluster (PREREG_mcl_tw
 
 **Files:**
 - Create: `bench/o1_hier/pair_diff.py`, `bench/o1_hier/test_pair_diff.py`, `bench/o1_hier/recluster.sh`
-- Modify (results only): `docs/PREREG_mcl_two_node_2026-10-13.md`; `docs/NEGATIVE_RESULTS_REGISTER.md` (append a
-  row); `docs/THESIS_OBJECTIVES.md` (the O1 row of the STATUS 2026-10-11 table); `docs/PENDING_2026-10-11.md`
+- Modify (results only): `docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`; `docs/NEGATIVE_RESULTS_REGISTER.md` (append a
+  row); `docs/THESIS_OBJECTIVES.md` (the O1 row of the STATUS 2026-10-11 table); `docs/archive/2026-10/merged/PENDING_2026-10-11.md`
 
 **Interfaces:**
 - Consumes: `/mnt/linuxdisk/tmp/o1_close/mcl_families.{before,after}` (Task 1).
@@ -548,7 +548,7 @@ Run `python3 -m pytest -q bench/o1_hier/test_pair_diff.py`. Expected: `5 passed`
 
 ```bash
 #!/bin/bash
-# Re-cluster one default catalog from its cached all-vs-all (docs/PREREG_mcl_two_node_2026-10-13.md F2).
+# Re-cluster one default catalog from its cached all-vs-all (docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md F2).
 #   recluster.sh BIN SAMPLE OUTDIR
 # --fasta / --emit-units are not passed: neither changes clusters.tsv or loci.tsv (human_testis: byte-identical, 5.7 s).
 set -euo pipefail
@@ -594,20 +594,20 @@ least the two human catalogs.
    - one line per catalog: `pairs_joined`, clusters before -> after, members before -> after;
    - the H0 verdict.
 2. **Register:** append to `docs/NEGATIVE_RESULTS_REGISTER.md` the row
-   `| 1276 | 2026-10-13 | MCL two-node components (docs/PREREG_mcl_two_node_2026-10-13.md) | A connected pair's existence was decided by the sign of a 1e-7 convergence residual (and by unrelated components) | <verdict: F1-F4 with the per-catalog joins> |`.
+   `| 1276 | 2026-10-13 | MCL two-node components (docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md) | A connected pair's existence was decided by the sign of a 1e-7 convergence residual (and by unrelated components) | <verdict: F1-F4 with the per-catalog joins> |`.
    Check the last row number first; use the next free one.
 3. **THESIS_OBJECTIVES:** in the O1 row of the STATUS 2026-10-11 table, after the sentence listing the four catalogs'
    families / loci, insert:
-   ` After the MCL two-node fix (2026-10-13, docs/PREREG_mcl_two_node_2026-10-13.md; re-clustered from the cached all-vs-all, shipped files unchanged): A119b <a> / <b>, testis <c> / <d>, chimp <e> / <f>, gorilla <g> / <h>.`
+   ` After the MCL two-node fix (2026-10-13, docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md; re-clustered from the cached all-vs-all, shipped files unchanged): A119b <a> / <b>, testis <c> / <d>, chimp <e> / <f>, gorilla <g> / <h>.`
    The numbers are `clusters_after` / `members_after`.
-4. **PENDING:** append to `docs/PENDING_2026-10-11.md` under a new heading `## O1 two-node fix (2026-10-13)` one
+4. **PENDING:** append to `docs/archive/2026-10/merged/PENDING_2026-10-11.md` under a new heading `## O1 two-node fix (2026-10-13)` one
    bullet:
    - the shipped `runs/*` catalogs predate the fix;
    - the next families-stage run picks it up;
    - figure rescoring (paused) must use post-fix catalogs.
 
 ```bash
-git add bench/o1_hier/pair_diff.py bench/o1_hier/test_pair_diff.py bench/o1_hier/recluster.sh docs/PREREG_mcl_two_node_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/PENDING_2026-10-11.md
+git add bench/o1_hier/pair_diff.py bench/o1_hier/test_pair_diff.py bench/o1_hier/recluster.sh docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/archive/2026-10/merged/PENDING_2026-10-11.md
 git commit -m "MCL two-node fix: four default catalogs re-clustered (F2: only split pairs change); register + O1 counts"
 ```
 
@@ -1662,7 +1662,7 @@ git commit -m "o1_hier: hierarchy-aware Hungarian scorer (exon+strand truth mapp
 ### Task 5: pre-register the human evaluation (E1, E1b, E2)
 
 **Files:**
-- Create: `docs/PREREG_o1_hierarchy_eval_2026-10-13.md`
+- Create: `docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md`
 
 - [ ] **Step 1: Write the prereg** with exactly:
 
@@ -1677,7 +1677,7 @@ families counts every Soto family that sits one level down as a miss.
 
 **Catalogs.**
 - Dev: human A119b. Held-out: human testis.
-- Both are default catalogs, re-clustered with the MCL two-node fix (`docs/PREREG_mcl_two_node_2026-10-13.md`).
+- Both are default catalogs, re-clustered with the MCL two-node fix (`docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`).
 
 **Hierarchy.**
 - Command: `mcl_families.after --paf <S>.fam.loci.paf --gff <S>.fam.loci.gff3 --min-exonic-bp 1
@@ -1744,7 +1744,7 @@ families counts every Soto family that sits one level down as a miss.
 ```
 
 ```bash
-git add docs/PREREG_o1_hierarchy_eval_2026-10-13.md
+git add docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md
 git commit -m "PREREG O1 hierarchy-aware evaluation, human (E1 global null, E1b within-family null, E2 dev/held-out)"
 ```
 
@@ -1754,7 +1754,7 @@ git commit -m "PREREG O1 hierarchy-aware evaluation, human (E1 global null, E1b 
 
 **Files:**
 - Create: `docs/hierarchy_results/o1_close_human_2026-10-13.tsv` (the advisor table)
-- Modify: `docs/PREREG_o1_hierarchy_eval_2026-10-13.md` (Results only)
+- Modify: `docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md` (Results only)
 - Modify: `docs/NEGATIVE_RESULTS_REGISTER.md` (append a row)
 - Modify: `docs/THESIS_OBJECTIVES.md` (the O1 row of the STATUS 2026-10-11 table, as the reading allows)
 
@@ -1768,7 +1768,7 @@ git commit -m "PREREG O1 hierarchy-aware evaluation, human (E1 global null, E1b 
 - [ ] **Step 1: Check that the prereg is committed, then build both hierarchies**
 
 ```bash
-git log --oneline -1 -- docs/PREREG_o1_hierarchy_eval_2026-10-13.md   # must print the Task 5 commit
+git log --oneline -1 -- docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md   # must print the Task 5 commit
 L=/mnt/linuxdisk/tmp/o1_close/lift; B=/mnt/linuxdisk/tmp/o1_close/mcl_families.after
 for S in human_testis human_A119b; do
   R=/mnt/linuxdisk/tmp/rustle_figures/runs/$S; O=/mnt/linuxdisk/tmp/o1_close/hier/$S; mkdir -p $O
@@ -1806,14 +1806,14 @@ python3 bench/o1_hier/advisor_table.py docs/hierarchy_results/o1_close_human_202
    - per catalog: `exact_any`, `by_level`, the null summaries, and coverage;
    - the reading that applies, quoted from the prereg.
 2. **Register row** (next free number; 1277 if Task 2 used 1276):
-   `| 1277 | 2026-10-13 | O1 hierarchy-aware evaluation vs Soto (docs/PREREG_o1_hierarchy_eval_2026-10-13.md) | Soto's families are nodes of our hierarchy (dev A119b, held-out testis) | <verdicts + headline numbers> |`.
+   `| 1277 | 2026-10-13 | O1 hierarchy-aware evaluation vs Soto (docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md) | Soto's families are nodes of our hierarchy (dev A119b, held-out testis) | <verdicts + headline numbers> |`.
 3. **THESIS_OBJECTIVES:** edit the O1 row only as the reading allows.
    - All three pass: add the hierarchy claim with both catalogs' exact rates and mean Jaccard next to the flat ones.
    - E1b fails: add the family-level claim only.
    - Otherwise: add one clause, "hierarchy-aware Soto evaluation: not claimed (<which bar failed>)".
 
 ```bash
-git add docs/PREREG_o1_hierarchy_eval_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/hierarchy_results/o1_close_human_2026-10-13.tsv
+git add docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/hierarchy_results/o1_close_human_2026-10-13.tsv
 git commit -m "O1 hierarchy-aware evaluation, human: E1/E1b/E2 results + advisor table"
 ```
 

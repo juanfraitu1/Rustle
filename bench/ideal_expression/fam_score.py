@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Family scores of an ideal-expression run on the universe of simulated genes (docs/PREREG_ideal_expression_2026-10-06.md, endpoint E4 beside).
+"""Family scores of an ideal-expression run on the universe of simulated genes (docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md, endpoint E4 beside).
 
     fam_score.py --fs family_score --clusters RUN.fam.clusters.tsv --contig chr16 --windows WINDOWS.tsv|ALL --label L --out OUT.json
 

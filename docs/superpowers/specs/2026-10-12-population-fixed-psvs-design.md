@@ -4,7 +4,7 @@
 
 O2 should assign at least some reads from a man whose genome is NOT the reference (A119b testis Iso-Seq vs CHM13's
 HG002 Y) and say how far each call can be trusted. A matched genome + reads from the same man stays the ideal; this is
-the fallback. Motivation: `docs/PREREG_yag_o2_2026-10-12.md` — on the YAGs O2 is calibrated but split-half concordance on
+the fallback. Motivation: `docs/archive/2026-10/merged/PREREG_yag_o2_2026-10-12.md` — on the YAGs O2 is calibrated but split-half concordance on
 real testis reads was 0.544, plausibly because the donor's copies differ from the reference man's (gene conversion
 between palindrome arms varies between men). Scope chosen by the user: sub-project **B (population-fixed PSVs) first**,
 **human only**, population = **Hallast et al. 2023's 43 Y assemblies**, usage = **both** a portability label and an
@@ -53,7 +53,7 @@ flag) is separate and later.
 - Without the flags every output is byte-identical to today.
 - Tests: position mapping (both forms), masking, tier logic, flag validation.
 
-## 4. Validation (pre-registered before any run: `docs/PREREG_popfix_2026-10-12.md`)
+## 4. Validation (pre-registered before any run: `docs/archive/2026-10/merged/PREREG_popfix_2026-10-12.md`)
 
 - (a) Table sanity (descriptive): status counts by YAG family and region class; expectation: palindrome-arm PSVs often
   `POLYMORPHIC`, unique-flank PSVs mostly `FIXED`; k-mer vs alignment agreement where both apply.

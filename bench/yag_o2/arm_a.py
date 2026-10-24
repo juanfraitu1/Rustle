@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm A of docs/PREREG_yag_o2_2026-10-12.md: O2 on simulated chrY reads with truth.
+"""Arm A of docs/archive/2026-10/merged/PREREG_yag_o2_2026-10-12.md: O2 on simulated chrY reads with truth.
 
     arm_a.py RUN_PREFIX OUT.json
 RUN_PREFIX = a `copy_assign --dump-star` run on reads named `FAM|copy|i` (the truth copy).

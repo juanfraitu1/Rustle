@@ -71,7 +71,7 @@ enum Cmd {
         #[arg(long, default_value_t = 4)]
         threads: usize,
     },
-    /// Families whose copy windows hold more than --max records (docs/GENOMEWIDE_FAST_2026-10-12.md): writes OUT as
+    /// Families whose copy windows hold more than --max records (docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md): writes OUT as
     /// `family<TAB>records` (records = the count reached, max + 1 when it stopped early), one row per deep family, sorted.
     WindowDepth {
         #[arg(long)]
@@ -94,7 +94,7 @@ enum Cmd {
         #[arg(long)]
         out: String,
     },
-    /// PSV columns of every family of a copy catalog, WITHOUT reads (docs/PREREG_psv_semiglobal_engine_2026-10-12.md):
+    /// PSV columns of every family of a copy catalog, WITHOUT reads (docs/archive/2026-10/merged/PREREG_psv_semiglobal_engine_2026-10-12.md):
     /// `discover_psvs_oriented` per family -> OUT.psv_cols.tsv / OUT.psv_copies.tsv (the `copy_assign --dump-psv`
     /// formats), OUT.psv_pos.tsv (each copy's genome position and base per column), OUT.time.tsv (seconds per family).
     PsvDiscover {
@@ -137,7 +137,7 @@ enum Cmd {
     /// OUT.sd.{candidates,blocks,pairs,segments,families,duplicons,params}.tsv + OUT.sd.anchors.bin, with the sandbox
     /// CLI's default parameters. `--version-key` prints the line the driver's `sd` stage keys its cache on, and exits.
     ///
-    /// Gates in docs/PREREG_sedef_rs_layers_2026-10-13.md (register 1278-1280): sd-scan's SD calls failed V1/V1b (recall
+    /// Gates in docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md (register 1278-1280): sd-scan's SD calls failed V1/V1b (recall
     /// about 0.40 against SEDEF) and its duplicons failed V2 (held-out family score 0.5153 against DupMasker), so its
     /// tables feed `mcl_families --sd-cache` as an opt-in, unvalidated alternative to `--hierarchy-sd` /
     /// `--hierarchy-duplicons`; the SD layer built from them uses every `ok` pair (no identity or length floor). Measured
@@ -1556,7 +1556,7 @@ mod candidate_augment {
     }
 }
 
-/// `utilities psv-discover` (docs/PREREG_psv_semiglobal_engine_2026-10-12.md): copy_assign's PSV column discovery on a
+/// `utilities psv-discover` (docs/archive/2026-10/merged/PREREG_psv_semiglobal_engine_2026-10-12.md): copy_assign's PSV column discovery on a
 /// catalog, no reads, families in parallel. Each family's copies are its catalog rows in file order (as `copy_assign
 /// --families` hands them to `build_family_profiles`), each a transcript of its exon blocks and `--copies-fa` sequence.
 fn psv_discover(

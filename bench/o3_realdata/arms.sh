@@ -1,5 +1,5 @@
 #!/bin/bash
-# arms.sh — the masked and added-back BAMs of a real-data O3 build (prereg docs/PREREG_o3_realdata_2026-10-15.md, Method),
+# arms.sh — the masked and added-back BAMs of a real-data O3 build (prereg docs/archive/2026-10/merged/PREREG_o3_realdata_2026-10-15.md, Method),
 # one step per call so each heavy step fits the 10-minute window under tools/rlock.sh:
 #
 #   arms.sh mask  DIR              DIR/masked.fa (+ .fai): GGO.fasta with DIR/mask.bed hard-masked to N; checks every span is N

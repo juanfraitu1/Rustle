@@ -159,7 +159,7 @@ Recorded in `docs/superpowers/plans/2026-10-13-close-o1-phase-0A.md` ("Rulings")
    also depended on unrelated components, because convergence is tested on all columns at once.
 
 Amendments 5-7 were added on 2026-10-13 after the human evaluation's run and its final review
-(`docs/PREREG_o1_hierarchy_eval_2026-10-13.md`, Results). They change no verdict.
+(`docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md`, Results). They change no verdict.
 
 5. **Canonical placement replaces "scipy order on a stable node sort"** (section A, Matching, tie policy). The truth
    families matched to nodes with one identical member set take that set's lowest-rank nodes, best Jaccard first, then

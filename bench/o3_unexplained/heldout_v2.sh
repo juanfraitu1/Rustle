@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The held-out test of docs/PREREG_o3_psv_clusters_v2_2026-10-15.md: base seeds 61-63, hard seeds 71-75 (--strands), E0 / E2, arm P,
+# The held-out test of docs/archive/2026-10/merged/PREREG_o3_psv_clusters_v2_2026-10-15.md: base seeds 61-63, hard seeds 71-75 (--strands), E0 / E2, arm P,
 # copy_assign --psv-clusters (the Rust product, scored with score.py --rust), prototype parity on every run.
 #   pixi run bash bench/o3_unexplained/heldout_v2.sh OUT_DIR
 set -euo pipefail

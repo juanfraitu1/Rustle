@@ -46,7 +46,7 @@ results, register rows and the thesis line come last.
 - **Scope.** Human only; never pool with gorilla.
 - **Outputs.** `/mnt/linuxdisk/tmp/o1_soto_subset/<universe>/` with `<universe>` = `guided`, `human_A119b`,
   `human_testis`.
-- **Pre-registration.** `docs/PREREG_soto_subset_cn_2026-10-14.md` is committed before any T1 or T2 statistic is
+- **Pre-registration.** `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` is committed before any T1 or T2 statistic is
   computed. After that only its `## Results` section grows.
 
 ## Rulings on the spec (made while planning; Task 6 copies them into the prereg)
@@ -90,7 +90,7 @@ results, register rows and the thesis line come last.
 | `bench/soto_subset/universes.py` | guided and de novo universes: members, blocks, Soto labels, clustered members, genes per member, coverage; copy number per member |
 | `bench/soto_subset/run_subset.py` | the CLI: `inputs.json`, `t1.json`, `violations.tsv`, `t2.json`, `recipe.json` |
 | `bench/soto_subset/test_*.py` | one test file per module, with real-data wiring tests that are skipped when the inputs are absent |
-| `docs/PREREG_soto_subset_cn_2026-10-14.md` | the pre-registration, then the results |
+| `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` | the pre-registration, then the results |
 
 ---
 
@@ -233,7 +233,7 @@ Create `bench/soto_subset/subset_lib.py`:
 #!/usr/bin/env python3
 """Soto's families as our families cut by copy number: the statistics, as pure functions (no I/O).
 
-Spec: docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg: docs/PREREG_soto_subset_cn_2026-10-14.md.
+Spec: docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg: docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md.
 
 Conventions. `block_of` {member: block id} covers every member of a universe; each of our singletons has a block of
 its own. `soto_sets` {label: frozenset(member)} are Soto's families on that universe; a member can be in several
@@ -1428,7 +1428,7 @@ Create `bench/soto_subset/run_subset.py`:
 #!/usr/bin/env python3
 """Soto's families as our families cut by copy number: T1 and T2 on one universe.
 
-Spec docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg docs/PREREG_soto_subset_cn_2026-10-14.md.
+Spec docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md.
 
     run_subset.py guided --out DIR [--null 1000] [--boot 1000] [--seed 7] [--inputs-only] [--no-recipe]
     run_subset.py denovo --sample human_A119b|human_testis --out DIR [same options]
@@ -1628,7 +1628,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- benc
 ### Task 6: the pre-registration
 
 **Files:**
-- Create: `docs/PREREG_soto_subset_cn_2026-10-14.md`
+- Create: `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md`
 
 **Interfaces:**
 - Consumes: `inputs.json` of the three universes (`--inputs-only`), and the code commit (HEAD after Task 5).
@@ -1670,7 +1670,7 @@ The plan-1 wiring keys are in `coverage`:
 
 - [ ] **Step 2: Write the prereg**
 
-Create `docs/PREREG_soto_subset_cn_2026-10-14.md` with exactly this content. Replace `<CODE>` with the output of
+Create `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` with exactly this content. Replace `<CODE>` with the output of
 `git rev-parse --short HEAD`, which is Task 5's last commit.
 
 ````markdown
@@ -1710,7 +1710,7 @@ are fixed above.
 
 - **T1 on the guided universe is not blind.** On F_O (the 10-09 run, at member level, over plan 1's 400 evaluable
   families), about 78% of Soto's families lie inside one of our families. 215 equal one of our expansions and 346 lie
-  in one superfamily (`docs/PREREG_family_hierarchy_flag_2026-10-09.md`;
+  in one superfamily (`docs/archive/2026-10/merged/PREREG_family_hierarchy_flag_2026-10-09.md`;
   `docs/superpowers/specs/2026-10-13-close-o1-design.md`). The de novo catalogs are the replication.
 - **Older catalogs nest too.** On the older RNA lattice catalogs, 80-90% of Soto's families nest in ours at L1/L2.
   On held-out chr5/7/21 it was 61/76: 53/59 families of ≤ 3 genes and 8/17 larger ones
@@ -1830,12 +1830,12 @@ Added after the runs. Nothing above this heading changes once a statistic has be
 - [ ] **Step 3: Commit the prereg (before any statistic)**
 
 ```bash
-git add docs/PREREG_soto_subset_cn_2026-10-14.md
+git add docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
 git commit -m "prereg: Soto's families as our families cut by copy number (T1 containment + direction, T2 intersection vs within-block shuffle; guided, de novo replication)
 
 Co-Authored-By: <your model name> <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/PREREG_soto_subset_cn_2026-10-14.md
-git log --oneline -1 -- docs/PREREG_soto_subset_cn_2026-10-14.md
+Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
+git log --oneline -1 -- docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
 ```
 
 ---
@@ -1843,7 +1843,7 @@ git log --oneline -1 -- docs/PREREG_soto_subset_cn_2026-10-14.md
 ### Task 7: the guided run and its results
 
 **Files:**
-- Modify: `docs/PREREG_soto_subset_cn_2026-10-14.md` (append under `## Results`)
+- Modify: `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` (append under `## Results`)
 - Outputs (not committed): `/mnt/linuxdisk/tmp/o1_soto_subset/guided/`
 
 **Interfaces:**
@@ -1854,7 +1854,7 @@ git log --oneline -1 -- docs/PREREG_soto_subset_cn_2026-10-14.md
 
 ```bash
 cd /mnt/linuxdisk/home/juanfraitu/rustle_m2_soto
-git log --oneline -1 -- docs/PREREG_soto_subset_cn_2026-10-14.md   # must print the Task 6 commit
+git log --oneline -1 -- docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md   # must print the Task 6 commit
 RLOCK_TIMEOUT=600 bash tools/rlock.sh light /usr/bin/time -f "%e s %M KB" \
     python3 bench/soto_subset/run_subset.py guided --out /mnt/linuxdisk/tmp/o1_soto_subset/guided
 ```
@@ -1929,11 +1929,11 @@ pass> T2's bar.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/PREREG_soto_subset_cn_2026-10-14.md
+git add docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
 git commit -m "prereg results: Soto subset, guided universe
 
 Co-Authored-By: <your model name> <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/PREREG_soto_subset_cn_2026-10-14.md
+Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
 ```
 
 ---
@@ -1941,7 +1941,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs
 ### Task 8: the de novo replication runs and their results
 
 **Files:**
-- Modify: `docs/PREREG_soto_subset_cn_2026-10-14.md` (append under `## Results`)
+- Modify: `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` (append under `## Results`)
 - Outputs (not committed): `/mnt/linuxdisk/tmp/o1_soto_subset/human_A119b/`, `/mnt/linuxdisk/tmp/o1_soto_subset/human_testis/`
 
 **Interfaces:**
@@ -2020,11 +2020,11 @@ De novo verdicts: A119b T1a <>, T1b <>, T2 <>; testis T1a <>, T1b <>, T2 <>.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/PREREG_soto_subset_cn_2026-10-14.md
+git add docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
 git commit -m "prereg results: Soto subset, de novo A119b and testis
 
 Co-Authored-By: <your model name> <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/PREREG_soto_subset_cn_2026-10-14.md
+Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md
 ```
 
 ---
@@ -2032,7 +2032,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs
 ### Task 9: the readings, register rows and thesis line
 
 **Files:**
-- Modify: `docs/PREREG_soto_subset_cn_2026-10-14.md` (append `### Verdict`)
+- Modify: `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` (append `### Verdict`)
 - Modify: `docs/NEGATIVE_RESULTS_REGISTER.md` (append two rows at the end of the table)
 - Modify: `docs/THESIS_OBJECTIVES.md` (line 31, the O1 row: one sentence in its third cell)
 - Modify: `docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md` (append `## Results (2026-10-14)`)
@@ -2067,7 +2067,7 @@ next two numbers, N and N+1. Append both rows at the end of the table: after the
 follows it.
 
 ```markdown
-| N | 2026-10-14 | O1: Soto ⊂ ours (T1, `docs/PREREG_soto_subset_cn_2026-10-14.md`) | Soto's families lie inside our families more often than random partitions with our block sizes allow, and ours is the coarser partition (guided; de novo A119b and testis as replication) | <✅ PASS or ⛔ FAIL, in bold, with the reading number>: guided contained <c>/<f> (null mean <m>, p <p>), D <D> [<lo>, <hi>]; A119b <c>/<f> (p <p>), D <D> [<lo>, <hi>]; testis <c>/<f> (p <p>), D <D> [<lo>, <hi>]; violations guided coverage/cover/conflict <a>/<b>/<c> |
+| N | 2026-10-14 | O1: Soto ⊂ ours (T1, `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md`) | Soto's families lie inside our families more often than random partitions with our block sizes allow, and ours is the coarser partition (guided; de novo A119b and testis as replication) | <✅ PASS or ⛔ FAIL, in bold, with the reading number>: guided contained <c>/<f> (null mean <m>, p <p>), D <D> [<lo>, <hi>]; A119b <c>/<f> (p <p>), D <D> [<lo>, <hi>]; testis <c>/<f> (p <p>), D <D> [<lo>, <hi>]; violations guided coverage/cover/conflict <a>/<b>/<c> |
 | N+1 | 2026-10-14 | O1: Soto ≈ ours ∩ CN (T2, same prereg) | Cutting our families by assembly copy number with Soto's pair rule (|Δ| < 2) rebuilds Soto's families beyond a within-family shuffle of the copy numbers | <✅ PASS or ⛔ FAIL, in bold>: guided common set (<n> genes) assembly exact <e> (null mean <m>, p <p>), ARI <a> (w/o FAM90A <a2>; p <p>); read depth exact <e>, ARI <a>; S1C exact <e>, ARI <a>; ours alone exact <e>, ARI <a>; ceiling exact <e>, ARI <a>; A119b assembly exact <e> (p <p>), ARI <a> (p <p>); testis assembly exact <e> (p <p>), ARI <a> (p <p>) |
 ```
 
@@ -2079,11 +2079,11 @@ Line 31's third cell ends with `E1b also failed)`, followed by ` | Overall bipar
 sentence of the chosen reading right after `E1b also failed)`. Leave everything else on the line unchanged. The
 `<…>` slots are filled from the guided T2 assembly common-set row, the ceiling row and the T1 table.
 
-- Reading 1: `Soto as a refinement (2026-10-14, docs/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): Soto's families are a refinement of our multi-copy gene families, and cutting ours by assembly copy number rebuilds them (guided common set: <e> exact of <f>, ARI <a>; ceiling ARI <c>), on the guided universe and on both de novo catalogs`
-- Reading 2: `Soto as a refinement (2026-10-14, docs/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): on the guided universe only, Soto's families are a refinement of our multi-copy gene families and cutting ours by assembly copy number rebuilds them (common set: <e> exact of <f>, ARI <a>; ceiling ARI <c>); de novo <catalog> failed <bar>`
-- Reading 3, read depth passes: `Soto ⊂ ours (2026-10-14, docs/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): Soto's families lie inside ours (guided <c>/<f> contained, D <D> [<lo>, <hi>]); the copy-number cut is claimed with population read depth only (human-only: exact <e>, ARI <a>), since assembly copy number failed T2`
-- Reading 3, read depth fails: `Soto ⊂ ours (2026-10-14, docs/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): Soto's families lie inside ours (guided <c>/<f> contained, D <D> [<lo>, <hi>]); cutting ours by copy number is not claimed (T2 failed with assembly and read depth)`
-- Reading 4: `Soto as a refinement: not claimed (2026-10-14, docs/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1; T1 failed: <T1a and/or T1b>; size and violation tables in the prereg)`
+- Reading 1: `Soto as a refinement (2026-10-14, docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): Soto's families are a refinement of our multi-copy gene families, and cutting ours by assembly copy number rebuilds them (guided common set: <e> exact of <f>, ARI <a>; ceiling ARI <c>), on the guided universe and on both de novo catalogs`
+- Reading 2: `Soto as a refinement (2026-10-14, docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): on the guided universe only, Soto's families are a refinement of our multi-copy gene families and cutting ours by assembly copy number rebuilds them (common set: <e> exact of <f>, ARI <a>; ceiling ARI <c>); de novo <catalog> failed <bar>`
+- Reading 3, read depth passes: `Soto ⊂ ours (2026-10-14, docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): Soto's families lie inside ours (guided <c>/<f> contained, D <D> [<lo>, <hi>]); the copy-number cut is claimed with population read depth only (human-only: exact <e>, ARI <a>), since assembly copy number failed T2`
+- Reading 3, read depth fails: `Soto ⊂ ours (2026-10-14, docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1): Soto's families lie inside ours (guided <c>/<f> contained, D <D> [<lo>, <hi>]); cutting ours by copy number is not claimed (T2 failed with assembly and read depth)`
+- Reading 4: `Soto as a refinement: not claimed (2026-10-14, docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md, registers N-N+1; T1 failed: <T1a and/or T1b>; size and violation tables in the prereg)`
 
 - [ ] **Step 5: Point the spec at the results**
 
@@ -2093,19 +2093,19 @@ Append to `docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md`:
 ## Results (2026-10-14)
 
 Reading <n> of section 1's readings table: <the same one sentence as the thesis line>. Full results:
-`docs/PREREG_soto_subset_cn_2026-10-14.md` (Results, Verdict); register rows N and N+1.
+`docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` (Results, Verdict); register rows N and N+1.
 ```
 
 - [ ] **Step 6: Run the suites once more and commit**
 
 ```bash
 RLOCK_TIMEOUT=300 bash tools/rlock.sh light python3 -m pytest bench/soto_subset bench/o1_hier bench/soto -q -p no:cacheprovider
-git add docs/PREREG_soto_subset_cn_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md \
+git add docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md \
     docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md
 git commit -m "Soto subset: verdict (reading <n>), register rows N-N+1, O1 thesis line, spec results pointer
 
 Co-Authored-By: <your model name> <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/PREREG_soto_subset_cn_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md \
+Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md \
     docs/THESIS_OBJECTIVES.md docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md
 ```
 

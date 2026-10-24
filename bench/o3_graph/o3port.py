@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """O3 port (2026-10-23): Strainy's phasing with IsoCon's significance test, and an allele-slot certificate.
-Design: docs/superpowers/specs/2026-10-23-o3-strainy-isocon-design.md; decision rules: docs/PREREG_o3_port_2026-10-23.md.
+Design: docs/superpowers/specs/2026-10-23-o3-strainy-isocon-design.md; decision rules: docs/archive/2026-10/merged/PREREG_o3_port_2026-10-23.md.
 
   o3port.py run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2]
 

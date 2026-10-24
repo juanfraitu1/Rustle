@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of the Y block (concordance with Yoo et al. 2025) of docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md, Amendment 3.
+"""Tests of the Y block (concordance with Yoo et al. 2025) of docs/archive/2026-10/merged/PREREG_hierarchy_duplicon_expansion_2026-10-07.md, Amendment 3.
 
 Run: python3 -B -m unittest bench/hierarchy/test_yoo_concordance.py
 

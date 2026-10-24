@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of real_truth.py and real_score.py (docs/PREREG_gorilla_overlap_2026-10-07.md). Run: python3 -m unittest bench/entangled/test_real_overlap.py"""
+"""Tests of real_truth.py and real_score.py (docs/archive/2026-10/merged/PREREG_gorilla_overlap_2026-10-07.md). Run: python3 -m unittest bench/entangled/test_real_overlap.py"""
 import os
 import sys
 import unittest

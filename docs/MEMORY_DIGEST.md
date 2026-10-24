@@ -531,7 +531,7 @@ Lines removed or shortened from MEMORY.md on 2026-10-03 (index over the 24.4 KB 
 
 ⭐⭐⭐[[project_assembly_polish]] — polish flags = 28/30 cells vs StringTie/6 chroms, pooled 2,809 vs 2,761 chains; chr5/chr11 infeasible (r863), 9 closing attempts refuted.
 ⭐⭐⭐SQANTI3 (`bench/SQANTI3_POLISH.md`): pooled FSM 46.6% / PASS 94.3% beat StringTie+FLAIR on every category. NIC/NNC can't be made FSM.
-⭐⭐⭐**RESUME:** `docs/PENDING_2026-09-23.md` (items 1-2 measured; **item 3 = O3 DNA step: KB3781 HiFi reads from SRA, PSV k-mer depth on the 52 candidates + HG002 matched-individual human test**; O1 Compara truth) + `-17.md`.
+⭐⭐⭐**RESUME:** `docs/archive/2026-10/merged/PENDING_2026-09-23.md` (items 1-2 measured; **item 3 = O3 DNA step: KB3781 HiFi reads from SRA, PSV k-mer depth on the 52 candidates + HG002 matched-individual human test**; O1 Compara truth) + `-17.md`.
 ⭐⭐⭐[[project_cleanup_audit]] — chronology IN THE TOPIC FILE. **Wave 7 09-24 (tag `notebook-2026-09-24`): bench .py 42→9 (`lib/score/sim/truth` + 5), Rust 63.6k→56.8k lines, tools 5→2; catalog chr16 3,495→373 s byte-identical; `run_cache.rs` = `PREFIX.cache` (driver default, `--inspect`, `cache-ls`).** ⚠touch .rs before verify builds (/mnt/c timestamps). O1/O2/O3 internal only.
 ⭐⭐⭐§6s9 — **O1 emits a STRICT PARTITION** (0/2,670 loci in >1 cluster) ⇒ a fusion (PKD1P6-NPIPP1, member of 2 families) is INEXPRESSIBLE — forced choice, not a bug. Don't re-propose node-cut(846)/multi-truth(845).
 ⭐⭐⭐§6t1 — **DOMINANT GAP RESOLVED**: RNA edge-recall ceiling (0.052) is a protein-identity DIVERGENCE CLIFF at 0.60, not an O1 defect; no ceiling where the thesis operates (NPIP 90.6%, FAM90A 100%). Scope quote: prot id ≳0.80.
@@ -548,7 +548,7 @@ Lines removed or shortened from MEMORY.md on 2026-10-03 (index over the 24.4 KB 
 ⭐⭐⭐[[project_pipeline_performance]] — genome-wide sweep 426s→114s (3.74×) via dropping seq/qual in assemble-only. NEVER `--region-threads` (not byte-identical).
 
 ## O1 — family definition
-⭐10-03 [[project_family_hierarchy]] — advisor's "where is my hierarchy in the MCL" = nested levels, TP/FP level-relative; answer + question to ask in `docs/ADVISOR_HIERARCHY_2026-10-03.md`.
+⭐10-03 [[project_family_hierarchy]] — advisor's "where is my hierarchy in the MCL" = nested levels, TP/FP level-relative; answer + question to ask in `docs/archive/2026-10/merged/ADVISOR_HIERARCHY_2026-10-03.md`.
 
 ⭐09-25 [[project_readthrough_g50k_rule]] — **advisor `-G 50k` REFUTED (RT introns ~18 kb; breaks 99.6% of real ≥50 kb introns); polyA-inside-intron junction rule passes held-out (FPR ≤.004, recall ~.5)**; family gain unmeasured.
 ⛔09-25 [[project_advisor_jaccard_anchors]] — **advisor read-Jaccard/multimapper-anchor edge rule: NOT a replacement** (chr16 prec .96→.72 from SD passengers; anchor-chain worse); retrocopies are the real gain.
@@ -637,10 +637,10 @@ Moved verbatim from MEMORY.md (the index exceeded the load limit); their topic f
 ⭐⭐⭐10-06 [[project_fewcopy_ideal_cases_2026-10-06]] — few-copy ideal cases: 11/377 pass input criteria, 4/11 exact; anchors GSTA1/2 + PAGE2/2B/5; all-292 F .45; r1255; held-out prereg = DRAFT.
 ⭐⭐⭐10-06 [[project_ideal_expression_default_2026-10-06]] — DONE: ideal-expressed copies through the CURRENT default: TBC1D3 YES (12/13), NPIP NO (12/14, one short; 16/25 all), r1254; loss = representative; 09-21 sim bug r1253.
 ⭐⭐10-06 [[project_locus_anatomy_page]] — explainer artifact reworked: semi-guided tab dropped, step 2 = good secondaries, O3 steps 9-15 added; steps 3-8 + guided 2-7 still STALE (audit inside).
-⭐⭐⭐**HANDOFF `docs/HANDOFF_2026-10-04.md`** — everything done 10-03/04 and what is left, with paths; read it first.
+⭐⭐⭐**HANDOFF `docs/archive/2026-10/merged/HANDOFF_2026-10-04.md`** — everything done 10-03/04 and what is left, with paths; read it first.
 ⭐⭐10-04 [[project_lrpap1_family]] — LRPAP1 = 11 gorilla loci (8 full + 3 5′ fragments, ALL RefSeq-annotated; paper says 10): O1 de novo 6+3 / 8+3; O2 0 contested; O3 mat 7 / pat 8 (rows 1245-1246).
 ⭐⭐⭐10-04 [[project_locus_read_pool]] STRICT FOUND (Amendment E): NPIP loss = the most-read REP; [[project_locus_representatives_study]] R_J OPT-IN (chr6 clause fails).
-⭐⭐⭐10-04 [[project_week_2026-10-04_prove_o1_o2]] — **THIS WEEK = PROVE O1 AND O2 WORK RIGHT**; O3 Amendment 15 run, row-1220 run, HG002, chapter drafts PARKED in `docs/PENDING_2026-10-04.md`.
+⭐⭐⭐10-04 [[project_week_2026-10-04_prove_o1_o2]] — **THIS WEEK = PROVE O1 AND O2 WORK RIGHT**; O3 Amendment 15 run, row-1220 run, HG002, chapter drafts PARKED in `docs/archive/2026-10/merged/PENDING_2026-10-04.md`.
 ⭐⭐⭐10-04 [[project_rna_haplotype_count_parked]] — O3 chain truth-free, `o3_candidates` OPT-IN (b29afa55); A13 PASS, ⛔A14 control FAILS (35/53 false flags); Amendment 15/15b NOT run; rows 1194-1231.
 ⭐⭐⭐10-02 [[project_famsim]] — `bench/famsim`: family simulator that PROVES its condition + scores O1/O2/O3; 22-rung ladder ran on human SNRPB + orangutan SPAG7; gorilla needs a GFF-matching FASTA.
 ⭐⭐09-30 [[project_unit_cover]] — partition of (duplicon x CN class) units + genes as paths expresses Soto cover: held-out Jaccard .660, NPIP exact; 65% not exact.

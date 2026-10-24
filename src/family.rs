@@ -26178,7 +26178,7 @@ pub mod copy_assign {
                 assert_eq!(cols[1], vec![Some((120, a120)), Some((1120, b120))]);
             }
 
-            /// psv_sun 2026-10-12 (docs/PSV_SUN_PILEUP_2026-10-12.md): de novo 1-2-exon copies carry strand calls that
+            /// psv_sun 2026-10-12 (docs/archive/2026-10/merged/PSV_SUN_PILEUP_2026-10-12.md): de novo 1-2-exon copies carry strand calls that
             /// disagree, so a copy's transcript can be the REVERSE COMPLEMENT of its homolog's. Aligned as given, every
             /// base became a "PSV" (10/56 KB3781 families, alleles at chance). The copy must be aligned in the ref's
             /// orientation and its allele stored in the ref's frame.
@@ -46043,7 +46043,7 @@ pub mod denovo_pipeline {
             }
 
             /// [`Pass1Acc::finish`] plus COMPATIBLE-READ SUPPORT (`copy_assign --compat-support`,
-            /// `docs/PREREG_assembler_compatible_support_2026-10-11.md`). With `compat`, a chain with fewer than
+            /// `docs/archive/2026-10/merged/PREREG_assembler_compatible_support_2026-10-11.md`). With `compat`, a chain with fewer than
             /// `min_reads` exact reads is also admitted when every one of its junctions is carried by `>= min_reads`
             /// reads COMPATIBLE with it ([`compatible_support`]); its skeleton then carries that bottleneck count.
             /// Admitted groups and every other step are unchanged; `compat == false` is exactly `finish`.
@@ -46177,7 +46177,7 @@ pub mod denovo_pipeline {
         /// ([`compatible_support`]). `Direct` (`--direct-transfrags`): only MAXIMAL transfrags, with the reads of the
         /// transfrags they contain transferred to them ([`direct_transfrag_abundance`]).
         /// `DirectUnion` (`--direct-transfrags-union`): every `Exact` chain plus every `Direct` maximal transfrag
-        /// (`docs/PREREG_direct_transfrags_union_2026-10-11.md`).
+        /// (`docs/archive/2026-10/merged/PREREG_direct_transfrags_union_2026-10-11.md`).
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum ChainAdmission {
             Exact,
@@ -46556,7 +46556,7 @@ pub mod denovo_pipeline {
             direct_transfrag_abundance_impl(groups, min_reads, credit)
         }
 
-        /// DIRECT TRANSFRAGS (`docs/PREREG_direct_transfrags_2026-10-11.md`), no network flow. Each pass-1 group is a
+        /// DIRECT TRANSFRAGS (`docs/archive/2026-10/merged/PREREG_direct_transfrags_2026-10-11.md`), no network flow. Each pass-1 group is a
         /// transfrag. T is contained in C (C != T) when T's chain is a contiguous sub-chain `C[i .. i+m)` and T's reads stay
         /// inside C's exons around it (the containment of [`compatible_support`]). Transfrags contained in no other are
         /// MAXIMAL; every other transfrag transfers its reads to the maximal transfrags containing it (through intermediate
@@ -46669,7 +46669,7 @@ pub mod denovo_pipeline {
             out
         }
 
-        /// COMPATIBLE-READ SUPPORT (`docs/PREREG_assembler_compatible_support_2026-10-11.md`). Over pass-1 groups
+        /// COMPATIBLE-READ SUPPORT (`docs/archive/2026-10/merged/PREREG_assembler_compatible_support_2026-10-11.md`). Over pass-1 groups
         /// `(chrom, intron chain) -> (exact reads, k smallest starts asc, k largest ends desc, n_reverse)`: for every
         /// spliced group C with fewer than `min_reads` exact reads, a group D is COMPATIBLE when its chain is a
         /// contiguous sub-chain `C[i .. i+m)` (D != C) and its reads stay inside C's exons around it: the group's
@@ -50177,7 +50177,7 @@ pub mod denovo_pipeline {
             index: noodles_bam::bai::Index,
         }
 
-        /// COPY-WINDOW DEPTH (`docs/GENOMEWIDE_FAST_2026-10-12.md`). `copies` = (family, chrom, start, end). Each family's read
+        /// COPY-WINDOW DEPTH (`docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md`). `copies` = (family, chrom, start, end). Each family's read
         /// windows (copy +- `pad`, `copy_assign`'s COPY_READ_PAD) are merged per chromosome, and the records `copy_assign` would hold
         /// there are counted: mapped and non-supplementary, and with `multi` only those of multi-placement molecules. A family's
         /// count stops once it passes `max` (an rDNA array's millions of records are never walked). Returns the families with a
@@ -50819,7 +50819,7 @@ pub mod denovo_pipeline {
             // back for DOES NOT OCCUR at chr16 scale. The real price is +8.9% strictly-engulfed copies (79 -> 86)
             // -- a precision cost on copy BOUNDARIES, not on family structure.
             //
-            // Independently, §6v4/§6v5 (2026-09-21, `docs/IDEAL_CHROMOSOME_SIM_2026-09-21.md` §10-11) confirmed
+            // Independently, §6v4/§6v5 (2026-09-21, `docs/archive/2026-10/merged/IDEAL_CHROMOSOME_SIM_2026-09-21.md` §10-11) confirmed
             // the mechanism at the single-gene level on a fresh, unrelated pair (SMG1P6, NPIPB7: one and three
             // non-canonical junctions respectively, verified against the raw GFF, independent of assembly or
             // read quality) and re-measured the recall effect on REAL chr16 through the family-DEFINITION scoring
@@ -52111,7 +52111,7 @@ pub mod denovo_pipeline {
                 GenomeIndex::from_seqs(&[("c1", &s)])
             }
 
-            // ---- compatible-read support (`--compat-support`, docs/PREREG_assembler_compatible_support_2026-10-11.md) ----
+            // ---- compatible-read support (`--compat-support`, docs/archive/2026-10/merged/PREREG_assembler_compatible_support_2026-10-11.md) ----
 
             fn finish_opts(reads: &[PrimaryRead], min_reads: u32, opts: AdmitOpts) -> Vec<Skeleton> {
                 let mut acc = Pass1Acc::new(1, None);
@@ -52125,7 +52125,7 @@ pub mod denovo_pipeline {
                 finish_opts(reads, min_reads, AdmitOpts::from(mode))
             }
 
-            // ---- opt-in levers toward FLAIR's exclusive transcripts (docs/PENDING_2026-10-11.md) ----
+            // ---- opt-in levers toward FLAIR's exclusive transcripts (docs/archive/2026-10/merged/PENDING_2026-10-11.md) ----
 
             #[test]
             fn transfer_credit_full_gives_every_container_the_whole_fragment() {
@@ -52203,7 +52203,7 @@ pub mod denovo_pipeline {
                 assert_eq!(streamed, from_table);
             }
 
-            // ---- StringTie levers without flow (docs/PENDING_2026-10-11.md, StringTie milestone) ----
+            // ---- StringTie levers without flow (docs/archive/2026-10/merged/PENDING_2026-10-11.md, StringTie milestone) ----
 
             #[test]
             fn extend_transfrags_prepends_a_junction_reads_link_to_the_chain_and_stops_at_a_read_start() {
@@ -52294,7 +52294,7 @@ pub mod denovo_pipeline {
                 s
             }
 
-            // ---- direct transfrags (`--direct-transfrags`, docs/PREREG_direct_transfrags_2026-10-11.md) ----
+            // ---- direct transfrags (`--direct-transfrags`, docs/archive/2026-10/merged/PREREG_direct_transfrags_2026-10-11.md) ----
 
             #[test]
             fn direct_transfrags_pool_truncated_reads_into_the_full_chain() {
@@ -61345,7 +61345,7 @@ pub mod fam_from_gtf {
         /// Determinism: the graph is a `BTreeMap`, columns are normalised in index order, and ties keep the
         /// lowest index — the same PAF and parameters always yield the same clustering.
         ///
-        /// Post-step (`docs/PREREG_mcl_two_node_2026-10-13.md`): after the attractors are read, every connected
+        /// Post-step (`docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`): after the attractors are read, every connected
         /// two-node component is decided by a pair rule, because at weights >= `w*` MCL's own answer there was float
         /// residue. `mcl` uses the production default, EXACT-MCL (user decision 2026-10-13): a pair joins only at
         /// weight >= [`pair_boundary`]`(inflation)`, what exact arithmetic gives, so the residue no longer decides it.
@@ -61361,7 +61361,7 @@ pub mod fam_from_gtf {
         }
 
         /// How a connected two-node component is decided after MCL's attractors are read
-        /// (`docs/PREREG_mcl_two_node_2026-10-13.md`, Amendment 1(a); `mcl_families --pair-rule`).
+        /// (`docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`, Amendment 1(a); `mcl_families --pair-rule`).
         #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
         pub enum PairRule {
             /// Every connected two-node component is one cluster, whatever its edge weight: the pre-registered rule
@@ -79885,7 +79885,7 @@ pub mod candidates {
 
     pub mod structure {
         //! O3 structure projection (spec docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md §3; prereg
-        //! docs/PREREG_o3_structure_projection_2026-10-14.md): the exon structure of a flagged candidate, projected from the spliced alignment
+        //! docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md): the exon structure of a flagged candidate, projected from the spliced alignment
         //! of its union to the genome (the family paralog's introns), with the candidate's own differences (an exon the paralog lacks, a moved
         //! exon) turned into novel segments. A port of the frozen reference implementation `bench/o3_structure/proto.py` (md5
         //! 511562b804907e1f3cb54b008000dc68), boundary for boundary: `outer` (per candidate, from its genome records), then one batched
@@ -80529,7 +80529,7 @@ pub mod candidates {
     }
 }
 
-// ---- 2026-10-09: the family hierarchy (docs/PREREG_family_hierarchy_flag_2026-10-09.md) ----
+// ---- 2026-10-09: the family hierarchy (docs/archive/2026-10/merged/PREREG_family_hierarchy_flag_2026-10-09.md) ----
 pub mod family_hierarchy {
     //! **STATUS:** OPT-IN — `mcl_families --emit-hierarchy` (src/mcl_families.rs, `#[arg(long, default_value_t = false)] emit_hierarchy`)  (docs/MODULE_STATUS.md)
     //!
@@ -80752,7 +80752,7 @@ pub mod family_hierarchy {
     /// SD pairs from either format:
     /// - a SEDEF BED (`chrom1 s1 e1 chrom2 s2 e2 ...`): identity from column 21 when present;
     /// - `utilities sd-scan` pairs (`PREFIX.sd.pairs.tsv`: 11 columns, the last `ok` / `self` / `weak`): only `ok` rows
-    ///   are kept, identity = column 9 (`est_id`, percent) / 100 (docs/PREREG_sedef_rs_layers_2026-10-13.md).
+    ///   are kept, identity = column 9 (`est_id`, percent) / 100 (docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md).
     pub fn parse_sd(text: &str) -> Vec<SdPair> {
         let mut out = vec![];
         for line in text.lines() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A tolerant reading of O3's "nothing in the genome explains it" (post hoc, descriptive; docs/PREREG_o3_family_best_2026-10-15.md,
+"""A tolerant reading of O3's "nothing in the genome explains it" (post hoc, descriptive; docs/archive/2026-10/merged/PREREG_o3_family_best_2026-10-15.md,
 Results): an `unexplained` cluster counts only when its reads' median best-alignment divergence (minimap2 `de` on their primary
 record: the aligner's best-scoring alignment anywhere in the genome, not necessarily its lowest-`de` record) exceeds delta.
 

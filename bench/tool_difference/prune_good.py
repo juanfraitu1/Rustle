@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prune the good pool's shadow transcripts (docs/PREREG_o2_pruning_and_eichler_2026-10-12.md section 3).
+"""Prune the good pool's shadow transcripts (docs/archive/2026-10/merged/PREREG_o2_pruning_and_eichler_2026-10-12.md section 3).
 
 usage: prune_good.py --good GOOD.gtf --primary PRIMARY.gtf --ref REF.gtf[.gz] --genes A.genes.tsv[,B.genes.tsv] --rule o2|eichler --out OUT.gtf
 Drops every GOOD transcript that touches an exon of a gene the rule calls contradicted AND is good-pool-only: its intron chain is

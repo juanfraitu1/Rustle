@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed-based clustering of a redundant read pool (docs/PREREG_unmapped_rescue_2026-10-08.md section 1, steps 1-2).
+"""Seed-based clustering of a redundant read pool (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 1, steps 1-2).
 
 An all-vs-all of a pool in which one transcript has thousands of near-identical reads is quadratic. Instead each round takes `n_seeds` reads spread
 over the length order, maps EVERY unclustered read to the seeds only, and keeps the registered edge rule (graph.edges); components of size >= min_size are

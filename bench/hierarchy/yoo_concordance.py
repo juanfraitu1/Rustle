@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Y block of docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md, Amendment 3: concordance of our loci with the Yoo et al. 2025 gorilla tables.
+"""Y block of docs/archive/2026-10/merged/PREREG_hierarchy_duplicon_expansion_2026-10-07.md, Amendment 3: concordance of our loci with the Yoo et al. 2025 gorilla tables.
 
 Match rule (registered): two loci on the same chromosome match iff their overlap is at least 50% of the shorter locus.
 All coordinates are 1-based closed intervals on the RefSeq (NC_) names of the gorilla assembly; the Yoo tables use chrN / CM names and are mapped with GGO_chr_map.tsv.

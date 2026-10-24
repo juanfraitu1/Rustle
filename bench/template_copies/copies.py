@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""De novo analogue of Liftoff's `-copies` (prereg docs/PREREG_denovo_copies_2026-10-14.md).
+"""De novo analogue of Liftoff's `-copies` (prereg docs/archive/2026-10/merged/PREREG_denovo_copies_2026-10-14.md).
 
     copies.py --species S --sample ID --base BASE.gtf --run DIR --out J [--liftoff ROOT]
 

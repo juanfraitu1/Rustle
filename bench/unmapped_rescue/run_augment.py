@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Augmented-reference realignment on bed H (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 7).
+"""Augmented-reference realignment on bed H (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 7).
 
     run_augment.py prep               # W/bedHhalf/{pool.fa,labels.tsv}: building half of the unmapped D reads (seed 1) + the 959 background reads
     (then:  run_bed.py bedHhalf ; consensus.py W/bedHhalf/pool.fa W/bedHhalf/registered/clusters.tsv W/bedHhalf/registered/cons.fa)

@@ -1,4 +1,4 @@
-"""Tests for sanity.py, arm (a) of docs/PREREG_popfix_2026-10-12.md (run: python3 -m pytest -q bench/popfix)."""
+"""Tests for sanity.py, arm (a) of docs/archive/2026-10/merged/PREREG_popfix_2026-10-12.md (run: python3 -m pytest -q bench/popfix)."""
 import io, json, os, sys, contextlib
 
 sys.path.insert(0, os.path.dirname(__file__))

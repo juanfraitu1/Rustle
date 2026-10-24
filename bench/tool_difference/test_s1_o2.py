@@ -1,4 +1,4 @@
-"""Tests for s1_o2.py (docs/PREREG_s1_o2_certificate_2026-10-12.md)."""
+"""Tests for s1_o2.py (docs/archive/2026-10/merged/PREREG_s1_o2_certificate_2026-10-12.md)."""
 import os
 import sys
 

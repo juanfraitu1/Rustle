@@ -1,5 +1,5 @@
 #!/bin/bash
-# o3port_p4.sh — P4, the two-tier O3 output on a fresh gorilla fibroblast held-out (docs/PREREG_o3_two_tier_p4_2026-10-23.md).
+# o3port_p4.sh — P4, the two-tier O3 output on a fresh gorilla fibroblast held-out (docs/archive/2026-10/merged/PREREG_o3_two_tier_p4_2026-10-23.md).
 # The registered harness's commands (bench/rna_allele/accept_o3_candidates.sh, ACC=a13 for the deletion arm, ACC=a15h for the
 # control arm) with P4's paths; that harness stays as registered. Every heavy step is ONE foreground call under rlock heavy.
 #   o3port_p4.sh <step> [arg]

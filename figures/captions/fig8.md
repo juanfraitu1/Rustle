@@ -1,6 +1,6 @@
 # Figure 8: Loci in the Liftoff framework
 
-**Status (2026-10-11).** Tables built 2026-10-11 (`fig8_liftoff`, `fig8_guided`, `fig8_samples`, `fig8_flags`) for the four samples whose default families exist genome-wide (human A119b, human testis, chimp, gorilla KB3781); gorilla OR6737 and orangutan families, every legacy catalog and every missing-copy flag scan are rows marked not run. The rescoring is paused until the figure set is agreed (`docs/PENDING_2026-10-11.md`). The claims below are not yet filled.
+**Status (2026-10-11).** Tables built 2026-10-11 (`fig8_liftoff`, `fig8_guided`, `fig8_samples`, `fig8_flags`) for the four samples whose default families exist genome-wide (human A119b, human testis, chimp, gorilla KB3781); gorilla OR6737 and orangutan families, every legacy catalog and every missing-copy flag scan are rows marked not run. The rescoring is paused until the figure set is agreed (`docs/archive/2026-10/merged/PENDING_2026-10-11.md`). The claims below are not yet filled.
 
 **Status.** Pre-registered in `docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md` before any comparison existed. The Liftoff
 baseline is being computed genome-wide, one call per block of records (human 36 calls, gorilla 28, chimpanzee 27,

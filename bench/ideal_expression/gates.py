@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The gates of docs/PREREG_ideal_expression_2026-10-06.md for one arm, read from the files the runner wrote; prints VALID / INVALID with the reason for each gate.
+"""The gates of docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md for one arm, read from the files the runner wrote; prints VALID / INVALID with the reason for each gate.
 
     gates.py --dir W/FAMILY/repR --bam-reads N_FASTQ_READS_FROM_FQ
 G1 g1.log; G2 strata.G2.json; G3 BAM record count == FASTQ reads, driver exit status 0, families.gtf newer than gtf; G4 two scorer runs under different PYTHONHASHSEED (done by the caller,

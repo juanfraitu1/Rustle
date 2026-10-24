@@ -1,5 +1,5 @@
 #!/bin/bash
-# bench/seed_pool/run.sh — the runner of docs/PREREG_seed_pool_real_reads_2026-10-07.md: which alignments seed the assembly (primary / good / all)
+# bench/seed_pool/run.sh — the runner of docs/archive/2026-10/merged/PREREG_seed_pool_real_reads_2026-10-07.md: which alignments seed the assembly (primary / good / all)
 # and which transcript represents a locus (most reads / primary-first), on real reads, one substrate at a time. Every arm is the pipeline driver
 # (tools/rustle_pipeline.sh assemble, then families) with one --seed-pool setting, so the comparison is the switch the advisor can flip.
 #

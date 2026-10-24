@@ -20,7 +20,7 @@ scripts in `bench/crossspecies/`. Anything not yet measured is marked **OPEN**.
 - ⚠⚠ TIER NOTICE — READ BEFORE QUOTING ANY NUMBER IN THIS DOCUMENT (2026-08-10)
 - 0. What the definition must survive
 - 1★. THE OBJECT, RESTATED — ONE OBJECT AT TWO LEVELS (2026-08-14)
-  - (pointer, 2026-10-07) family vs SD / duplicon / expansion: one object, four levels; SD-embedded families are a SUBSET of multi-copy gene families → `docs/TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`
+  - (pointer, 2026-10-07) family vs SD / duplicon / expansion: one object, four levels; SD-embedded families are a SUBSET of multi-copy gene families → `docs/archive/2026-10/merged/TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`
 - 1. Definition
 - 2. Properties
 - 3. The certificate (and why it is not the definition)

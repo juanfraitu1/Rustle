@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of the gorilla SEDEF arm (Phase R2, T1-d) of docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md section 5 and Amendment 1.
+"""Tests of the gorilla SEDEF arm (Phase R2, T1-d) of docs/archive/2026-10/merged/PREREG_hierarchy_duplicon_expansion_2026-10-07.md section 5 and Amendment 1.
 
 Run: python3 -B -m unittest bench/hierarchy/test_t1_gorilla_pairs.py
 

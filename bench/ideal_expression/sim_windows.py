@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ideal-expression read simulation around the copies of one family (docs/PREREG_ideal_expression_2026-10-06.md, substrate S1).
+"""Ideal-expression read simulation around the copies of one family (docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md, substrate S1).
 
     sim_windows.py --family NPIP|TBC1D3 --out PREFIX [--pad 500000] [--reads-per-tx 10] [--seed 20261006]
 

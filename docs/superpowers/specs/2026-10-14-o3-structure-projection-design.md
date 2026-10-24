@@ -1,7 +1,7 @@
 # O3: exon structure for reference-absent candidates (structure projection) — design
 
 Date 2026-10-14. Status: implemented in `candidate_copies` (default products `structure.tsv`, `contigs.gtf`); held-out test PASSED (S1 0.946, S2, S3 0.995) — see
-`docs/PREREG_o3_structure_projection_2026-10-14.md`.
+`docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md`.
 
 ## 1. Goal: what "O3 works" has to show
 

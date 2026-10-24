@@ -670,12 +670,12 @@ Expected: completes. Then check by hand:
 - no flagged read is placed;
 - `S19SMN2.columns.tsv` shows the exon-7 c.840 site.
 
-Write the dev numbers (arms, K1, K2, flags) into `docs/O2VC_DEV_2026-10-22.md`. They are quoted in the prereg as already seen.
+Write the dev numbers (arms, K1, K2, flags) into `docs/archive/2026-10/merged/O2VC_DEV_2026-10-22.md`. They are quoted in the prereg as already seen.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/O2VC_DEV_2026-10-22.md bench/o3_graph/
+git add docs/archive/2026-10/merged/O2VC_DEV_2026-10-22.md bench/o3_graph/
 git commit -m "o2vc: development run on SMN2 and MSTRG3150 (HG002), the numbers seen before the prereg"
 ```
 
@@ -745,7 +745,7 @@ git commit -m "o2vc: copy-table converters for the DAZ (family sets) and gorilla
 ### Task 8: Pre-registration
 
 **Files:**
-- Create: `docs/PREREG_o2_variant_calls_2026-10-22.md`
+- Create: `docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md`
 
 - [ ] **Step 1: Write the prereg**
 
@@ -756,7 +756,7 @@ It contains:
 - **Arms** N1–N4 and VC.
 - **Panels with their exact input paths and Task 9's commands.**
 - **The bars, verbatim** from the spec's pass criteria, including the 2026-10-22 amendments: K1 on HG002 only, PAR apart, chrM out.
-- **What was seen before:** `docs/O2VC_DEV_2026-10-22.md` (SMN2, MSTRG3150) and the corrector's HG002 per-family numbers (GTF2IRD2 19/0, NBPF1 11/0, PDPR 14/0), which chose the showcase.
+- **What was seen before:** `docs/archive/2026-10/merged/O2VC_DEV_2026-10-22.md` (SMN2, MSTRG3150) and the corrector's HG002 per-family numbers (GTF2IRD2 19/0, NBPF1 11/0, PDPR 14/0), which chose the showcase.
 - **What was never run:** every other panel.
 - **The decision rule:**
   - the showcase passes iff A1–A3, K1 and K2 hold;
@@ -766,7 +766,7 @@ It contains:
 - [ ] **Step 2: Commit**
 
 ```bash
-git add docs/PREREG_o2_variant_calls_2026-10-22.md
+git add docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md
 git commit -m "Pre-register O2 from the sample's own variant calls: showcase GTF2IRD2 (HG002), DAZ, missing copy (HG002, gorilla), one genome, HG00733 held out"
 ```
 
@@ -827,7 +827,7 @@ Append `## Results (code <hash>; run once)` to the prereg:
 - the GTF2IRD2 summary's worked reads.
 
 ```bash
-git add docs/PREREG_o2_variant_calls_2026-10-22.md
+git add docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md
 git commit -m "O2 variant calls: results, run once (verdicts per panel)"
 ```
 
@@ -837,7 +837,7 @@ git commit -m "O2 variant calls: results, run once (verdicts per panel)"
 
 Copy `$T/o2vc/` (without BAMs) to `$T/o2vc/audit_frozen_<hash>/` and make it read-only. Dispatch the `metric-auditor` agent with:
 - the claim (each panel's verdict);
-- `docs/PREREG_o2_variant_calls_2026-10-22.md`;
+- `docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md`;
 - `bench/o3_graph/o2vc.py` as the scorer;
 - the frozen directory.
 
@@ -850,7 +850,7 @@ Append row 1374 to `docs/NEGATIVE_RESULTS_REGISTER.md`. Use the 5-column format 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/NEGATIVE_RESULTS_REGISTER.md docs/PREREG_o2_variant_calls_2026-10-22.md
+git add docs/NEGATIVE_RESULTS_REGISTER.md docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md
 git commit -m "Register 1374: O2 from the sample's own variant calls (audited)"
 ```
 

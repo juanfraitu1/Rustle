@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The decision of docs/PREREG_default_rescore_npip_2026-10-06.md, computed from the runner's products (nothing is judged by hand).
+"""The decision of docs/archive/2026-10/merged/PREREG_default_rescore_npip_2026-10-06.md, computed from the runner's products (nothing is judged by hand).
 
     verdict.py --work DIR
 

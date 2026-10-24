@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score docs/PREREG_asj_o2_2026-10-10.md on the per-chromosome JSONL of run_chrom.py.
+"""Score docs/archive/2026-10/merged/PREREG_asj_o2_2026-10-10.md on the per-chromosome JSONL of run_chrom.py.
 
     score.py dev|heldout|all|X        dev = odd chrmap numbers (1, 3, ..., 23), heldout = even, all = every autosome, X = the chrX control
 

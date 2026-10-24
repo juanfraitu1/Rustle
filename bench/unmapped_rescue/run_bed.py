@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cluster the pool of a bed and score it (docs/PREREG_unmapped_rescue_2026-10-08.md sections 1-2, 4).
+"""Cluster the pool of a bed and score it (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md sections 1-2, 4).
 
     run_bed.py <bed> [--delta D] [--tag T]    # bed = bedA | bedH | bedM; resumable: exit 75 = run again (one fresh minimap2 round per call)
 Writes W/<bed>/<tag>/clusters.tsv (read, cluster, size) and metrics.json.

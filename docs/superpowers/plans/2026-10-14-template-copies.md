@@ -57,7 +57,7 @@ The pre-registration is committed after the code and before the first real proje
   - bootstrap 2,000 resamples, seed 20260925.
 - **"0.2 points".** It means −0.2 for gffcompare precisions, which are percentages, and −0.002 for `located` shares,
   which are fractions.
-- **Pre-registration.** `docs/PREREG_template_copies_2026-10-14.md` is committed before the first real projection
+- **Pre-registration.** `docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md` is committed before the first real projection
   (Task 5). After that only its `## Results` section grows.
 - **Scope.** Human and gorilla are never pooled. The public human testis library is labelled "human testis (public,
   ERR13885926)"; A119b is a testis library too (user, 2026-10-14).
@@ -103,7 +103,7 @@ The pre-registration is committed after the code and before the first real proje
 | `bench/template_copies/run_tg.py` | the CLI stages `templates`, `project` and `assemble` |
 | `bench/template_copies/score_tg.py` | the CLI scores `liftoff`, `chains` and `tools` |
 | `bench/template_copies/test_*.py` | one test file per pair of modules, as below |
-| `docs/PREREG_template_copies_2026-10-14.md` | the pre-registration, then the results |
+| `docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md` | the pre-registration, then the results |
 
 ---
 
@@ -1346,7 +1346,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- benc
 ### Task 5: templates for every run, and the pre-registration
 
 **Files:**
-- Create: `docs/PREREG_template_copies_2026-10-14.md`
+- Create: `docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md`
 - Outputs (not committed): `/mnt/linuxdisk/tmp/o1_template_copies/<run>/templates.*` and `batches/*.fa`
 
 **Interfaces:**
@@ -1374,7 +1374,7 @@ Step 2.
 
 - [ ] **Step 2: Write the prereg**
 
-Create `docs/PREREG_template_copies_2026-10-14.md` with this content. Replace `<CODE>` with
+Create `docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md` with this content. Replace `<CODE>` with
 `git rev-parse --short HEAD`, which is Task 4's commit, and fill the template table from Step 1's JSON lines.
 
 ````markdown
@@ -1473,12 +1473,12 @@ Added after the runs. Nothing above this heading changes once a statistic has be
 - [ ] **Step 3: Commit the prereg, before any real projection**
 
 ```bash
-git add docs/PREREG_template_copies_2026-10-14.md
+git add docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md
 git commit -m "prereg: template-guided copy assembly (Liftoff recall; P1, P2 precision; tool lead; A119b dev, testis + KB3781 held out)
 
 Co-Authored-By: <your model name> <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/PREREG_template_copies_2026-10-14.md
-git log --oneline -1 -- docs/PREREG_template_copies_2026-10-14.md
+Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md
+git log --oneline -1 -- docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md
 ```
 
 ---
@@ -1660,7 +1660,7 @@ it.
 ### Task 10: results, readings, register rows, the thesis line
 
 **Files:**
-- Modify: `docs/PREREG_template_copies_2026-10-14.md` (append under `## Results`)
+- Modify: `docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md` (append under `## Results`)
 - Modify: `docs/NEGATIVE_RESULTS_REGISTER.md` (append one row)
 - Modify: `docs/THESIS_OBJECTIVES.md` (the O1 row, line 31: one sentence)
 - Modify: `docs/superpowers/specs/2026-10-14-template-copies-design.md` (append `## Results`)
@@ -1698,7 +1698,7 @@ KB3781.
   P2 shares, B1/B2.
 - Write `|Δ|`-style pipes inside a cell as `\|`.
 - In the O1 row of `docs/THESIS_OBJECTIVES.md` (line 31), append before the cell's closing ` |` one sentence:
-  - "Template-guided copy assembly (2026-10-14, docs/PREREG_template_copies_2026-10-14.md, register N+1): <reading>,
+  - "Template-guided copy assembly (2026-10-14, docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md, register N+1): <reading>,
     recall <base → merged> in A119b, P2 <share vs base>";
   - with the fail named if it failed.
 
@@ -1709,16 +1709,16 @@ Append to the spec:
 ```markdown
 ## Results (date)
 
-<the reading and its one sentence>. Full results: `docs/PREREG_template_copies_2026-10-14.md`; register row N+1.
+<the reading and its one sentence>. Full results: `docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md`; register row N+1.
 ```
 
 ```bash
 RLOCK_TIMEOUT=600 bash tools/rlock.sh light python3 -m pytest bench/template_copies bench/liftoff_pairs bench/soto_subset bench/o1_hier bench/soto -q -p no:cacheprovider
-git add docs/PREREG_template_copies_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/superpowers/specs/2026-10-14-template-copies-design.md
+git add docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/superpowers/specs/2026-10-14-template-copies-design.md
 git commit -m "Template-guided copies: results, verdict, register row, O1 thesis line, spec pointer
 
 Co-Authored-By: <your model name> <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/PREREG_template_copies_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/superpowers/specs/2026-10-14-template-copies-design.md
+Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z" -- docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md docs/NEGATIVE_RESULTS_REGISTER.md docs/THESIS_OBJECTIVES.md docs/superpowers/specs/2026-10-14-template-copies-design.md
 ```
 
 Expected: every test passes.

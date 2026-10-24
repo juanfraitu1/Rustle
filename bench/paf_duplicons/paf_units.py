@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Our own duplicon units from the locus self-alignment (docs/PREREG_paf_duplicon_units_2026-10-10.md).
+"""Our own duplicon units from the locus self-alignment (docs/archive/2026-10/merged/PREREG_paf_duplicon_units_2026-10-10.md).
 
     paf_units.py <loci.paf> <loci.gff3> <out.bed>      writes the unit BED (chrom start end PU<n>) and <out.bed>.stats.json
 

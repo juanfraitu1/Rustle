@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hybrid net (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 6): pooled cluster attribution first, per-read attribution for the residual."""
+"""Hybrid net (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 6): pooled cluster attribution first, per-read attribution for the residual."""
 
 
 def residual(clusters, cluster_att, reads):

@@ -14,7 +14,7 @@ The stages are separate calls, so each stays under the 10-minute limit for one f
              DIR/merged.gtf (base + added) and DIR/report.json (counts at every step).
 
 Known defects (final review 2026-10-14; the stage is not adopted, register 1285, so they are recorded, not fixed; fix
-all three before any rerun, docs/PREREG_template_copies_2026-10-14.md "Final-review findings"):
+all three before any rerun, docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md "Final-review findings"):
   1. a locus takes the strand of the template hit, not of its reads (the BAM is mapped with -uf; in A119b 0.475 of a
      400-locus sample have most reads on the opposite strand);
   2. read exon blocks are kept whole, not clipped to the projected exons, so a locus can run far past the copy;

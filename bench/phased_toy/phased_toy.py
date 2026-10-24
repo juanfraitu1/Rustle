@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phased-data toy — docs/PREREG_phased_toy_2026-10-12.md.
+"""Phased-data toy — docs/archive/2026-10/merged/PREREG_phased_toy_2026-10-12.md.
 
 One real gene (SNRPB, CHM13 chr20, CAT) on a 30-kb real slice, two haplotypes per scenario:
   S0 control  hap2 = hap1

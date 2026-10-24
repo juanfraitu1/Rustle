@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""An independent re-implementation of `copy_assign --psv-family-best` (prereg docs/PREREG_o3_family_best_2026-10-15.md): which
+"""An independent re-implementation of `copy_assign --psv-family-best` (prereg docs/archive/2026-10/merged/PREREG_o3_family_best_2026-10-15.md): which
 hosted (family, read) pairs have a best alignment in their family, and where the others' best alignments lie.
 
     family_best.py PREFIX BAM COPIES.tsv ALL_COPIES.tsv OUT.tsv

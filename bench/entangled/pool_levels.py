@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pool the family-level scores of every arm at level M (MCL clusters, registered) and level C (components of the pre-MCL graph), Amendment 2 of docs/PREREG_locus_units_2026-10-06.md.
+"""Pool the family-level scores of every arm at level M (MCL clusters, registered) and level C (components of the pre-MCL graph), Amendment 2 of docs/archive/2026-10/merged/PREREG_locus_units_2026-10-06.md.
 
     pool_levels.py [IDEALDIR WORKDIR]
 Per arm and level: reachable (R) and entangled (E) gene-runs found over the four runs (IDEAL-FOUND), E2 / E3 / E4 counts, per-run R found against the bar (NPIP 13, TBC1D3 12), the registered verdict, cluster precision of K*,

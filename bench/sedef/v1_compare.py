@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V1 / V1b of docs/PREREG_sedef_rs_layers_2026-10-13.md: sedef-rs SD calls (`utilities sd-scan` PREFIX.sd.pairs.tsv)
+"""V1 / V1b of docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md: sedef-rs SD calls (`utilities sd-scan` PREFIX.sd.pairs.tsv)
 against SEDEF's (34-column BED), base-pair-wise.
 
     v1_compare.py --sedef REF.bed --sedefrs PREFIX.sd.pairs.tsv (--chain V1_TO_V2.chain | --fai GENOME.fai)

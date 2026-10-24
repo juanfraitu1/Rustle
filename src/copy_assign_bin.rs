@@ -186,7 +186,7 @@ struct Args {
     read_isoform_k: u32,
 
     /// COMPATIBLE-READ SUPPORT for the `--gtf` / `--assemble-only` assembly
-    /// (`docs/PREREG_assembler_compatible_support_2026-10-11.md`). Reads are grouped by EXACT intron chain and a chain is
+    /// (`docs/archive/2026-10/merged/PREREG_assembler_compatible_support_2026-10-11.md`). Reads are grouped by EXACT intron chain and a chain is
     /// admitted at `>= 2` reads, so the truncated reads of one isoform (each its own sub-chain) never pool. With this flag a
     /// chain short of the floor is also admitted when every one of its junctions is carried by enough reads COMPATIBLE
     /// with it: reads whose chain is a contiguous sub-chain of it and that stay inside its exons around that sub-chain.
@@ -194,14 +194,14 @@ struct Args {
     #[arg(long, default_value_t = false)]
     compat_support: bool,
 
-    /// DIRECT TRANSFRAGS, no network flow (`docs/PREREG_direct_transfrags_2026-10-11.md`). Each exact intron-chain group is
+    /// DIRECT TRANSFRAGS, no network flow (`docs/archive/2026-10/merged/PREREG_direct_transfrags_2026-10-11.md`). Each exact intron-chain group is
     /// a transfrag; a transfrag contained in a longer one (contiguous sub-chain, reads inside its exons) transfers its reads
     /// to the maximal transfrags containing it, split by their own reads, and only maximal transfrags whose abundance reaches
     /// the read floor become transcripts. Exclusive with `--compat-support`. **Default off = byte-identical.**
     #[arg(long, default_value_t = false, conflicts_with = "compat_support")]
     direct_transfrags: bool,
 
-    /// DIRECT TRANSFRAGS + EXACT CHAINS (`docs/PREREG_direct_transfrags_union_2026-10-11.md`): every chain the default admits
+    /// DIRECT TRANSFRAGS + EXACT CHAINS (`docs/archive/2026-10/merged/PREREG_direct_transfrags_union_2026-10-11.md`): every chain the default admits
     /// (identical reads at the floor) plus every maximal transfrag `--direct-transfrags` admits; a contained chain with its own
     /// reads is kept. Exclusive with `--compat-support` and `--direct-transfrags`. **Default off = byte-identical.**
     #[arg(long, default_value_t = false, conflicts_with_all = ["compat_support", "direct_transfrags"])]
@@ -211,7 +211,7 @@ struct Args {
     /// `--direct-transfrags-union`: `split` (default) in proportion to the containers' own reads; `full` gives every
     /// container all of them (admission only), so a fragment can support each isoform it fits; `best` gives them ALL to ONE
     /// container (the fewest exonic bp, then the most own reads), as FLAIR's re-alignment gives each read one isoform
-    /// (`docs/PENDING_2026-10-11.md`).
+    /// (`docs/archive/2026-10/merged/PENDING_2026-10-11.md`).
     #[arg(long, default_value = "split", value_parser = ["split", "full", "best"])]
     transfer_credit: String,
 
@@ -227,7 +227,7 @@ struct Args {
 
     /// StringTie's greedy back / forward extension without flow, opt-in: every admitted chain is ALSO emitted extended,
     /// one junction at a time, along the junction pair the most reads link (at least the read floor), to an observed read
-    /// start / end (`docs/PENDING_2026-10-11.md`).
+    /// start / end (`docs/archive/2026-10/merged/PENDING_2026-10-11.md`).
     #[arg(long)]
     extend_transfrags: bool,
 
@@ -1157,7 +1157,7 @@ struct Args {
     skip_poa_diagnostic: bool,
 
 
-    /// GENOME-WIDE MEMORY (`docs/GENOMEWIDE_FAST_2026-10-12.md`): read each region twice — first every record LIGHT (name,
+    /// GENOME-WIDE MEMORY (`docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md`): read each region twice — first every record LIGHT (name,
     /// scores, span; no sequence), decide the AS-tied molecules exactly as the AS-tied gate does, then load FULL records for
     /// those molecules only. The gate keeps exactly those records anyway, so families, assignments and abundance are unchanged;
     /// peak memory follows the tied reads instead of every read in the copy windows. Refused with the options that read every

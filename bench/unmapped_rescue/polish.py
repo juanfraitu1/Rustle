@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""IsoCon-style correction of a cluster consensus (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 9). Pure functions; pipeline in run_polish.py.
+"""IsoCon-style correction of a cluster consensus (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 9). Pure functions; pipeline in run_polish.py.
 
 pileup(sam_lines, cons) -> (cnt, ins, ngap): cnt[i] = [A, C, G, T, deleted] counts of the primary read alignments at consensus position i; ins[g] = {string: reads}
 inserted at gap g (between positions g-1 and g); ngap[g] = reads spanning that gap."""

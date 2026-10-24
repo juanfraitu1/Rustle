@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pool `diff_model.py` outputs over a species' chromosomes and check claims D1-D6 of
-docs/PREREG_tool_difference_model_2026-10-11.md.
+docs/archive/2026-10/merged/PREREG_tool_difference_model_2026-10-11.md.
 usage: score_claims.py SPECIES DIR [DIR ...]   (each DIR holds diff_StringTie.txt and diff_FLAIR.txt)"""
 import sys, re, collections
 

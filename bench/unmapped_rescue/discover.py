@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discovery of reference-absent sequence from reads that do not align to the reference (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 28). Miniforge python.
+"""Discovery of reference-absent sequence from reads that do not align to the reference (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 28). Miniforge python.
 
     discover.py <name> <reads.fa>      resumable (exit 75 = run again); writes W/discover_<name>/{clusters.tsv, cons.fa, classes.json}
 Cluster (adopted rule: --proper edge, star step), abPOA consensus, align each consensus to the primary (R) and to the mother's (Tm) and the father's (Tp) assembly,

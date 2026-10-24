@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Are O1's families real duplications? (docs/PREREG_o1_families_sd_pairs_2026-10-21.md)
+"""Are O1's families real duplications? (docs/archive/2026-10/merged/PREREG_o1_families_sd_pairs_2026-10-21.md)
 
 A copy is SD-PAIRED in its family when one row of an independent segmental-duplication annotation has one side overlapping one
 of the copy's exons and the other side overlapping an exon of another copy of the same family (>= 1 bp each).

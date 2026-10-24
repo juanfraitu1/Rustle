@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post hoc (docs/SEED_POOL_REAL_READS_2026-10-07.md section 5): whose reads are the secondary alignments that carry a copy's annotated introns?
+"""Post hoc (docs/archive/2026-10/merged/SEED_POOL_REAL_READS_2026-10-07.md section 5): whose reads are the secondary alignments that carry a copy's annotated introns?
 
     paralog_support.py --copies copies.tsv --truth truth.gtf --bam reads.bam --support support.copies.tsv --family NPIP \
                        [--as-table molecules.tsv] --out paralog_support.json

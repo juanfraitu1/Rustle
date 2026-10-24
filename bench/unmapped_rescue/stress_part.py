@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-level stress harness for PART (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 25). Run with /home/juanfra/miniforge3/bin/python.
+"""Read-level stress harness for PART (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 25). Run with /home/juanfra/miniforge3/bin/python.
 
     stress_part.py <outdir> <seed> [n_transcripts=12]      GUARD=0 turns the block-purity guard off (to see the failure it fixes)
 Scenarios per transcript (100 reads, end jitter 3, HiFi substitutions 0.001, short indels 0.0003): control (independent errors only); hotspot (75 good reads with p 0.03 and 25

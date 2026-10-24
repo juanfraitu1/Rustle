@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ideal-scenario worlds for the graph-O3 detector (prereg docs/PREREG_o3_graph_sim_2026-10-15.md): one family per (curated
+"""Ideal-scenario worlds for the graph-O3 detector (prereg docs/archive/2026-10/merged/PREREG_o3_graph_sim_2026-10-15.md): one family per (curated
 template, scenario), every copy expressing the template's curated isoforms (RefSeq / CAT; templates.py), reads by famsim.
 
     world.py build OUT TEMPLATES.json --seed S --scenario SC [--first 0 --n 12] [--per-copy 60]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O1 seeding (round 7, docs/PREREG_o3_graph_round7_2026-10-16.md): a family's copy catalog from RNA support, before O2 and O3.
+"""O1 seeding (round 7, docs/archive/2026-10/merged/PREREG_o3_graph_round7_2026-10-16.md): a family's copy catalog from RNA support, before O2 and O3.
 
     o1seed.py WORLD    WORLD/graph/seeded.json
 

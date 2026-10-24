@@ -1,6 +1,6 @@
 //! **STATUS:** OTHER-BINARY — `utilities sd-scan` and the driver's `sd` stage; opt-in input of
 //! `mcl_families --emit-hierarchy --sd-cache`. Not adopted as the SD source (V1 FAIL), the SD98 source (V1b FAIL) or
-//! the duplicon source (V2 FAIL): see `docs/PREREG_sedef_rs_layers_2026-10-13.md`.
+//! the duplicon source (V2 FAIL): see `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
 //!
 //! Segmental duplications (SDs) of a genome with sedef-rs, a pure-Rust re-implementation of the SEDEF/BISER cascade
 //! (seed -> chain -> refine -> decompose), vendored on 2026-10-13 from the user's sandbox

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inputs of the real-data O3 test (prereg docs/PREREG_o3_realdata_2026-10-15.md).
+"""Inputs of the real-data O3 test (prereg docs/archive/2026-10/merged/PREREG_o3_realdata_2026-10-15.md).
 
     prepare.py heldout --out DIR [--min-copies 3] [--cap 60] [--seed 1]   fresh erasure from the KB3781 catalog (A13 excluded)
                        [--min-expressed K] [--exclude-picked P.tsv ...]   K expressed copies suffice; skip families already used

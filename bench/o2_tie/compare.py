@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F2 of docs/PREREG_o2_exact_tie_2026-10-13.md: row-for-row comparison of two copy_assign runs.
+"""F2 of docs/archive/2026-10/merged/PREREG_o2_exact_tie_2026-10-13.md: row-for-row comparison of two copy_assign runs.
 
     compare.py BEFORE_PREFIX AFTER_PREFIX OUT.json
 Every row whose status changes must have had |old margin| < 5e-4 and move from `assigned` to `ambiguous`/`tied`.

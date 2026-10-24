@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Truth tables of docs/PREREG_gorilla_overlap_2026-10-07.md: valid annotated chains, their read support (pools P1 and P2) and the overlap strata, from a RefSeq GFF, the genome and a BAM.
+"""Truth tables of docs/archive/2026-10/merged/PREREG_gorilla_overlap_2026-10-07.md: valid annotated chains, their read support (pools P1 and P2) and the overlap strata, from a RefSeq GFF, the genome and a BAM.
 
     real_truth.py --gff GFF --fasta FASTA --bam BAM --as-table MOLECULES.tsv --out OUTPREFIX [--contigs C1,C2,...]
 

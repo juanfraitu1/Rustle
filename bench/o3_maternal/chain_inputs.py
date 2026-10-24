@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inputs of the recovery chain with C.REF (env O3_REF, default mat) as the reference (docs/PREREG_o3_maternal_reference_2026-10-08.md section 6).
+"""Inputs of the recovery chain with C.REF (env O3_REF, default mat) as the reference (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 6).
 
     O3_REF=mat chain_inputs.py panel     # WR/isoc/{panel.json,labels.tsv,scored.fa,R0.bam}; WR/inhouse/{panel.json,labels.tsv,R0.bam}
     O3_REF=mat chain_inputs.py fasta     # W/<REF>.idx.fa: gorilla_haps/<REF>.fa with the haplotype-index sequence names (chrN_<REF>_hsaX), so that

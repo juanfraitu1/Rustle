@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 10 pipeline on the synthetic world (docs/PREREG_unmapped_rescue_2026-10-08.md). Run with /home/juanfra/miniforge3/bin/python (edlib, pyabpoa).
+"""Amendment 10 pipeline on the synthetic world (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md). Run with /home/juanfra/miniforge3/bin/python (edlib, pyabpoa).
 
     run_synth.py <E0|E1|E2> <map|cluster|truth|attribute|augment|report>
 World from synth_world.py at W0; per-variant work in W0/<variant>/. Stages are resumable; 'cluster' exits 75 between minimap2 rounds."""

@@ -177,7 +177,7 @@ catalogs. The claim **replicates** when every bar holds on both.
 ## 3. Order
 
 1. `subset_lib` and `cn_tables` with their tests.
-2. The pre-registration `docs/PREREG_soto_subset_cn_2026-10-14.md`, copying section 1's bars and readings, committed
+2. The pre-registration `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md`, copying section 1's bars and readings, committed
    before any real run.
 3. The guided runs, then the de novo replication.
 4. Results into the prereg, then register rows. `docs/THESIS_OBJECTIVES.md`'s O1 line changes only if the readings
@@ -200,4 +200,4 @@ Reading 4 of section 1's readings table: Soto as a refinement is not claimed.
 - **Design flaw found in the final review.** T1b's D equals H(Soto) − H(ours), so it compares the two partitions'
   coarseness and is not a nesting test. Any reuse of T1 must replace T1b with a nesting statistic first.
 
-Full results: `docs/PREREG_soto_subset_cn_2026-10-14.md` (Results, Verdict); register rows 1281 and 1282.
+Full results: `docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md` (Results, Verdict); register rows 1281 and 1282.

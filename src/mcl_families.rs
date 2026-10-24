@@ -115,7 +115,7 @@ struct Args {
     #[arg(long, default_value_t = 1e-9)]
     prune: f64,
 
-    /// How a connected TWO-NODE component is decided after MCL (`docs/PREREG_mcl_two_node_2026-10-13.md`,
+    /// How a connected TWO-NODE component is decided after MCL (`docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`,
     /// Amendment 1(a)). On a lone pair MCL's own answer above the boundary `w*` (0.456885 at inflation 2.8) was
     /// float residue. `exact-mcl` (default; user decision 2026-10-13): a pair is joined only at weight >= `w*`
     /// (exact-arithmetic MCL), otherwise MCL's split stands; on the four shipped default catalogs it reproduces
@@ -279,7 +279,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     emit_relations: bool,
     /// Default OFF (every product byte-identical without it). The FAMILY HIERARCHY of the partition just written
-    /// (`rustle::family_hierarchy`, `docs/PREREG_family_hierarchy_flag_2026-10-09.md`): SD components (`--hierarchy-sd`)
+    /// (`rustle::family_hierarchy`, `docs/archive/2026-10/merged/PREREG_family_hierarchy_flag_2026-10-09.md`): SD components (`--hierarchy-sd`)
     /// above the families, EXPANSIONS inside them (copies of one duplicated block = the family's maximal duplicon
     /// signatures; a member's signature = the dominant duplicons of its exons that its family owns), DUPLICONS below,
     /// FUSION LOCI across them (members with exons dominated by duplicons another family owns: `fusion_of`), and external
@@ -298,7 +298,7 @@ struct Args {
     /// duplicons from `<PREFIX>.sd.duplicons.tsv` (sedef-rs duplication families) and the SD layer from
     /// `<PREFIX>.sd.pairs.tsv` (its `ok` rows). It takes the place of `--hierarchy-duplicons` and `--hierarchy-sd`, which it
     /// excludes (docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md). Gates in
-    /// `docs/PREREG_sedef_rs_layers_2026-10-13.md` (register 1278-1280): sd-scan's SD calls failed V1/V1b (recall about 0.40
+    /// `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md` (register 1278-1280): sd-scan's SD calls failed V1/V1b (recall about 0.40
     /// against SEDEF) and its duplicons failed V2 (held-out family score 0.5153 against DupMasker), so `--sd-cache` is an
     /// opt-in, unvalidated alternative to `--hierarchy-sd` / `--hierarchy-duplicons`; its SD layer uses every `ok` pair (no
     /// identity or length floor).
@@ -3470,7 +3470,7 @@ mod tests {
         assert!(parse(&["--representative", "longest-span"]).is_err());
     }
 
-    /// `--pair-rule` (`docs/PREREG_mcl_two_node_2026-10-13.md` Amendment 1(a); user decision 2026-10-13): `exact-mcl`
+    /// `--pair-rule` (`docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md` Amendment 1(a); user decision 2026-10-13): `exact-mcl`
     /// is the default, `weight-blind` the switch; anything else is refused at parse time. The names are the ones
     /// `params.tsv` and the log print.
     #[test]

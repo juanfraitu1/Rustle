@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Truth of docs/PREREG_o3_maternal_reference_2026-10-08.md section 3 (+ Amendment 1) and the read labels of section 5, for the run's reference
+"""Truth of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 3 (+ Amendment 1) and the read labels of section 5, for the run's reference
 haplotype C.REF (env O3_REF, default mat): a locus is ABSENT iff it exists on C.OTHER and has no counterpart on C.REF.
 
     O3_REF=mat truth.py loci     # WR/truth/loci.tsv and lrpap1_loci.tsv

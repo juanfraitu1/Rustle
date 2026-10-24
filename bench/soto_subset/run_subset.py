@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Soto's families as our families cut by copy number: T1 and T2 on one universe.
 
-Spec docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg docs/PREREG_soto_subset_cn_2026-10-14.md.
+Spec docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md.
 
     run_subset.py guided --out DIR [--null 1000] [--boot 1000] [--seed 7] [--inputs-only] [--no-recipe]
     run_subset.py denovo --sample human_A119b|human_testis --out DIR [same options]

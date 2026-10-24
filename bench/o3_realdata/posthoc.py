@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post hoc, descriptive (not pre-registered): why the real-data O3 test misses (docs/PREREG_o3_realdata_2026-10-15.md, Results).
+"""Post hoc, descriptive (not pre-registered): why the real-data O3 test misses (docs/archive/2026-10/merged/PREREG_o3_realdata_2026-10-15.md, Results).
 
     posthoc.py LABELS REMOVED_PREFIX ADDEDBACK_PREFIX OUT.json [--min-placed 6]
 

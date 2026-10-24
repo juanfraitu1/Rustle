@@ -1,4 +1,4 @@
-"""Tests for prune_good.py (docs/PREREG_o2_pruning_and_eichler_2026-10-12.md)."""
+"""Tests for prune_good.py (docs/archive/2026-10/merged/PREREG_o2_pruning_and_eichler_2026-10-12.md)."""
 import os
 import sys
 

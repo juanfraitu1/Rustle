@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-copy strata of reference genes, from the reads alone (no assembly): docs/PREREG_inbetween_operating_point_2026-10-11.md.
+"""Multi-copy strata of reference genes, from the reads alone (no assembly): docs/archive/2026-10/merged/PREREG_inbetween_operating_point_2026-10-11.md.
 
 usage: multicopy_strata.py --bam B --molecules M.tsv --ref REF.gtf[.gz] --exclude CHROM --out PREFIX
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O3 on real reads (prereg docs/PREREG_o3_realdata_2026-10-15.md): pick families, attribute reads to copies, score.
+"""O3 on real reads (prereg docs/archive/2026-10/merged/PREREG_o3_realdata_2026-10-15.md): pick families, attribute reads to copies, score.
 
 The scoring rules are the simulation's (`bench/o3_unexplained/score.py`): a copy absent from the genome is RECOVERED when the
 `unexplained` PSV cluster holding the most of its reads that O2 placed on the family holds >= RECALL of them with purity

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""B2-B4 of docs/PREREG_psv_significant_blocks_2026-10-12.md: which labelled (copy, column) pairs survive in a new dump.
+"""B2-B4 of docs/archive/2026-10/merged/PREREG_psv_significant_blocks_2026-10-12.md: which labelled (copy, column) pairs survive in a new dump.
 
     python3 block_eval.py LABELS.tsv NEW_DUMP_PREFIX
 A pair (family, copy-0 genome position, copy, allele) is retained iff the new dump has a column at that copy-0 position

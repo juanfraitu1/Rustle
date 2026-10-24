@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E0 observability, the reachable stratum R and the instrument controls, from the truth tables and the mapped BAM alone (docs/PREREG_ideal_expression_2026-10-06.md).
+"""E0 observability, the reachable stratum R and the instrument controls, from the truth tables and the mapped BAM alone (docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md).
 Run after mapping and BEFORE the pipeline: R and its sha1 are fixed here.
 
     strata.py --truth TRUTHPREFIX --bam SIM.bam --out OUTPREFIX

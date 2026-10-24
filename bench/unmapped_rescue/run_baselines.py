@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""B0 / B1 against the pooled method on the SAME seeded sample of unmapped deleted-copy reads (docs/PREREG_unmapped_rescue_2026-10-08.md section 1, Amendment 1).
+"""B0 / B1 against the pooled method on the SAME seeded sample of unmapped deleted-copy reads (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 1, Amendment 1).
 
     run_baselines.py <bed> [--n 500]      # writes W/<bed>/baselines.json"""
 import argparse

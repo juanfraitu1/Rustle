@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PART on a real bed, descriptive (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 18, real dev A / H). Run with /home/juanfra/miniforge3/bin/python.
+"""PART on a real bed, descriptive (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 18, real dev A / H). Run with /home/juanfra/miniforge3/bin/python.
 
     run_partition_real.py <bedA|bedH> run     # W/<bed>/registered/partition_real.json (resumable: exit 75 = run again)
     run_partition_real.py <bedA|bedH> score   # candidates aligned to the unmasked genome; baseline vs best candidate (oracle on the erased copy), gate-aware metric"""

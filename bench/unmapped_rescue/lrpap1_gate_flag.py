@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O3 flag of the LRPAP1 consensus sequences, registered and gate-aware (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 17). Uses the existing alignments
+"""O3 flag of the LRPAP1 consensus sequences, registered and gate-aware (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 17). Uses the existing alignments
 cons.mat.sam / cons.pat.sam of run_lrpap1.py place; python3 lrpap1_gate_flag.py [full|half|fullpol]"""
 import json
 import os

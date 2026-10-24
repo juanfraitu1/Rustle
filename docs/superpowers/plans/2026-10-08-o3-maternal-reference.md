@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 (`pysam` 0.23, `unittest`), minimap2 2.30, samtools, IsoCon 0.3.3 (conda env `isocon`), the Rust binary `o3_candidates`, a hand-written inline-SVG artifact page.
 
-**Spec:** `docs/PREREG_o3_maternal_reference_2026-10-08.md` — the approved body plus **Amendment 1** (paternal-reference run and side-by-side; written 2026-10-08 at the user's request, pending the user's review together with this plan). Executors read both first; section numbers below (S3, S5, ...) refer to the prereg body.
+**Spec:** `docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md` — the approved body plus **Amendment 1** (paternal-reference run and side-by-side; written 2026-10-08 at the user's request, pending the user's review together with this plan). Executors read both first; section numbers below (S3, S5, ...) refer to the prereg body.
 
 ## Global Constraints
 
@@ -72,8 +72,8 @@ bench/o3_maternal/
   artifact_data.py     data.json + index.html for both directions
   template.html        the artifact page
   test_<name>.py       one per module above (common, extract_reads, truth, fate, chain_inputs, score, side, compare)
-docs/O3_MATERNAL_REFERENCE_2026-10-08.md     results write-up (Task 13)
-docs/REGISTER_DRAFTS_o3_maternal.md          proposed register rows (Task 13)
+docs/archive/2026-10/merged/O3_MATERNAL_REFERENCE_2026-10-08.md     results write-up (Task 13)
+docs/archive/2026-10/merged/REGISTER_DRAFTS_o3_maternal.md          proposed register rows (Task 13)
 ```
 
 ---
@@ -257,7 +257,7 @@ Expected: `ModuleNotFoundError: No module named 'common'`.
 
 ```python
 #!/usr/bin/env python3
-"""Shared helpers of the maternal-reference study (docs/PREREG_o3_maternal_reference_2026-10-08.md). Pure functions are unit-tested in test_common.py."""
+"""Shared helpers of the maternal-reference study (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md). Pure functions are unit-tested in test_common.py."""
 import collections
 import csv
 import os
@@ -375,7 +375,7 @@ Expected: `Ran 16 tests ... OK`.
 
 ```bash
 # run environment block first
-git add bench/o3_maternal/common.py bench/o3_maternal/testutil.py bench/o3_maternal/test_common.py docs/PREREG_o3_maternal_reference_2026-10-08.md docs/superpowers/plans/2026-10-08-o3-maternal-reference.md
+git add bench/o3_maternal/common.py bench/o3_maternal/testutil.py bench/o3_maternal/test_common.py docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md docs/superpowers/plans/2026-10-08-o3-maternal-reference.md
 commit "o3_maternal: prereg (+ Amendment 1), plan, shared helpers, reference switch and the fate rule"
 ```
 
@@ -455,7 +455,7 @@ Expected: `ModuleNotFoundError: No module named 'extract_reads'`.
 
 ```python
 #!/usr/bin/env python3
-"""R_LRP and R_unm of docs/PREREG_o3_maternal_reference_2026-10-08.md section 4.
+"""R_LRP and R_unm of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 4.
 
     extract_reads.py lrp    # reads with a primary/secondary record on one of the 11 LRPAP1 loci -> W/reads/R_LRP.{fa,names.tsv}
     extract_reads.py unm    # unmapped primaries of the fibroblast BAM -> W/reads/R_unm.fa
@@ -755,7 +755,7 @@ Expected: `ModuleNotFoundError: No module named 'truth'`.
 
 ```python
 #!/usr/bin/env python3
-"""Truth of docs/PREREG_o3_maternal_reference_2026-10-08.md section 3 (+ Amendment 1) and the read labels of section 5, for the run's reference
+"""Truth of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 3 (+ Amendment 1) and the read labels of section 5, for the run's reference
 haplotype C.REF (env O3_REF, default mat): a locus is ABSENT iff it exists on C.OTHER and has no counterpart on C.REF.
 
     O3_REF=mat truth.py loci     # WR/truth/loci.tsv and lrpap1_loci.tsv
@@ -1039,7 +1039,7 @@ Expected: `ModuleNotFoundError: No module named 'fate'`.
 
 ```python
 #!/usr/bin/env python3
-"""Q1 of docs/PREREG_o3_maternal_reference_2026-10-08.md: the fate on the reference haplotype C.REF (env O3_REF, default mat) of the reads of
+"""Q1 of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md: the fate on the reference haplotype C.REF (env O3_REF, default mat) of the reads of
 the loci absent from it.
 
     O3_REF=mat fate.py fasta    # WR/truth/loci.fa: the C.OTHER sequence of every absent locus
@@ -1262,7 +1262,7 @@ Expected: `ModuleNotFoundError: No module named 'chain_inputs'`.
 
 ```python
 #!/usr/bin/env python3
-"""Inputs of the recovery chain with C.REF (env O3_REF, default mat) as the reference (docs/PREREG_o3_maternal_reference_2026-10-08.md section 6).
+"""Inputs of the recovery chain with C.REF (env O3_REF, default mat) as the reference (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 6).
 
     O3_REF=mat chain_inputs.py panel     # WR/isoc/{panel.json,labels.tsv,scored.fa,R0.bam}; WR/inhouse/{panel.json,labels.tsv,R0.bam}
     O3_REF=mat chain_inputs.py fasta     # W/<REF>.idx.fa: gorilla_haps/<REF>.fa with the haplotype-index sequence names (chrN_<REF>_hsaX), so that
@@ -1788,7 +1788,7 @@ Expected: `ModuleNotFoundError: No module named 'score'`.
 
 ```python
 #!/usr/bin/env python3
-"""R1-R4 and the p12 line of docs/PREREG_o3_maternal_reference_2026-10-08.md section 6, per arm and per run (reference C.REF, env O3_REF).
+"""R1-R4 and the p12 line of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 6, per arm and per run (reference C.REF, env O3_REF).
 
     O3_REF=mat score.py isocon | inhouse   # reads WR/<dir>/{cands.tsv,cands.ref.paf,cands.other.paf}; writes WR/score/<arm>.json, prints verdicts
 
@@ -2142,7 +2142,7 @@ Expected: `ModuleNotFoundError: No module named 'side'` (and `compare`).
 
 ```python
 #!/usr/bin/env python3
-"""Side-by-side read view of one run (docs/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1): the reads of each absent locus on the
+"""Side-by-side read view of one run (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1): the reads of each absent locus on the
 reference haplotype (where the copy is missing) and on the other haplotype (where it is present).
 
     O3_REF=mat side.py     # WR/fate/side.json (needs WR/fate/fate.json, WR/truth/loci.tsv and both W/map/reads.<hap>.all.bam)
@@ -2248,7 +2248,7 @@ if __name__ == "__main__":
 
 ```python
 #!/usr/bin/env python3
-"""Chain side-by-side of the two runs (docs/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1).
+"""Chain side-by-side of the two runs (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1).
 
 For the loci absent from the reference of run A (A = mat: copies only the father has; A = pat: the reverse) show the SAME copies as seen by
 run A (the reference lacks them: are their transcripts flagged as new, are they recovered?) and by run B (the reference has them: are their
@@ -2590,14 +2590,14 @@ commit "o3_maternal: artifact data builder and page template (both directions, s
 ### Task 13: Write-up, register drafts, memory, cleanup, final review
 
 **Files:**
-- Create: `docs/O3_MATERNAL_REFERENCE_2026-10-08.md`, `docs/REGISTER_DRAFTS_o3_maternal.md`
+- Create: `docs/archive/2026-10/merged/O3_MATERNAL_REFERENCE_2026-10-08.md`, `docs/archive/2026-10/merged/REGISTER_DRAFTS_o3_maternal.md`
 - Modify: memory `project_o3_maternal_reference_2026-10-08.md` (+ its `MEMORY.md` line)
 
-- [ ] **Step 1: Write `docs/O3_MATERNAL_REFERENCE_2026-10-08.md`**
+- [ ] **Step 1: Write `docs/archive/2026-10/merged/O3_MATERNAL_REFERENCE_2026-10-08.md`**
 
 Sections, in this order, each number copied from `fate.tsv` / `score/*.json` / `compare_*.json` (never retyped from memory): (1) result in one paragraph per question and per direction; (2) fate table per locus with the prediction column from prereg S5 and PASS/FAIL against it; (3) the unmapped-set line (`W/unm.txt`) and the selection caveat; (4) the side-by-side findings against Amendment 1 predictions S1-S3 (held / failed, per locus); (5) the arms table (R1-R4 per arm and direction) and the p12 line; (6) what failed or was not as predicted, stated plainly; (7) provenance: minimap2 2.30 vs 2.31, `-p 0.1 -N 50`, IsoCon 0.3.3, `sha256sum` of the `o3_candidates` binary, the Task 4 label cross-check against Amendment 10, the mat-before-pat order (`W/mat/VERDICTS.txt` timestamp); (8) not covered (prereg S8 and A1.1). No pooled percentage; no winner between arms.
 
-- [ ] **Step 2: Draft the register rows** in `docs/REGISTER_DRAFTS_o3_maternal.md` (one row per decided clause: Q1 per LARGE locus and direction, R1-R3 per arm and direction, S1-S3, the p12 line), following the format of `docs/NEGATIVE_RESULTS_REGISTER.md` (read its last 10 rows first). Do not edit the register itself.
+- [ ] **Step 2: Draft the register rows** in `docs/archive/2026-10/merged/REGISTER_DRAFTS_o3_maternal.md` (one row per decided clause: Q1 per LARGE locus and direction, R1-R3 per arm and direction, S1-S3, the p12 line), following the format of `docs/NEGATIVE_RESULTS_REGISTER.md` (read its last 10 rows first). Do not edit the register itself.
 
 - [ ] **Step 3: Cleanup**
 
@@ -2619,7 +2619,7 @@ Update `project_o3_maternal_reference_2026-10-08.md` with the results (what held
 
 ```bash
 # run environment block first
-git add docs/O3_MATERNAL_REFERENCE_2026-10-08.md docs/REGISTER_DRAFTS_o3_maternal.md
+git add docs/archive/2026-10/merged/O3_MATERNAL_REFERENCE_2026-10-08.md docs/archive/2026-10/merged/REGISTER_DRAFTS_o3_maternal.md
 commit "o3_maternal: results write-up and register drafts"
 ```
 Do not push; tell the user the branch has local commits.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """KEY=dupfamboundary, Phase R2 (T1-d): the gorilla SEDEF arm. Descriptive, no verdict class.
 
-Spec: docs/PREREG_hierarchy_duplicon_expansion_2026-10-07.md section 5 and Amendment 1 (git 17ad07cd).
+Spec: docs/archive/2026-10/merged/PREREG_hierarchy_duplicon_expansion_2026-10-07.md section 5 and Amendment 1 (git 17ad07cd).
 
     t1_gorilla_pairs.py prepare   build the retained SEDEF tables, the atoms and the atom classes at tau 0.90, 0.95, 0.98
     t1_gorilla_pairs.py counts    the input-only counts of Gate 6 / section 5 and the positive control (no S-rate, no report table)

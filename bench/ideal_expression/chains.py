@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E1 of docs/PREREG_ideal_expression_2026-10-06.md (descriptive): per target copy, the distinct canonical multi-exon chains that appear exactly as a transcript chain in PREFIX.gtf
+"""E1 of docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md (descriptive): per target copy, the distinct canonical multi-exon chains that appear exactly as a transcript chain in PREFIX.gtf
 (any assembled transcript, same chromosome and strand), over all chains and over OBSERVABLE chains (>= 3 reads of the seeding pool P2, STRATAPREFIX.chains.tsv).
 
     chains.py --truth TRUTHPREFIX --strata STRATAPREFIX --asm ASMPREFIX --out OUT

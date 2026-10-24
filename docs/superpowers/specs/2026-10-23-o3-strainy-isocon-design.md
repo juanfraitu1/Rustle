@@ -2,12 +2,12 @@
 
 **Status:** the user approved the direction on 2026-10-23: "we are porting strainy's method right, not just calling it? ... O3 might
 be a mixture of some of strainy's behavior plus some of isocon's"; then "yes please", with gorilla first. The advisor called Strainy
-"very important" at the 2026-10-23 meeting. Decision rules: `docs/PREREG_o3_port_2026-10-23.md`, committed before any run.
+"very important" at the 2026-10-23 meeting. Decision rules: `docs/archive/2026-10/merged/PREREG_o3_port_2026-10-23.md`, committed before any run.
 
 ## 1. Why
 - **The O3 question.** O3 (RNA-only, one reference: `feedback_o3_rna_only`) has to show where this sample's reads need a copy that
   the reference lacks. It must then give that copy its reads back, so that O2 stops forcing them onto a reference copy.
-- **Why the current stage fails.** The 2026-10-23 HG002 pilot (`docs/O3_FIRST_PILOT_2026-10-23.md` §4) shows how. SPDYE1's hidden
+- **Why the current stage fails.** The 2026-10-23 HG002 pilot (`docs/archive/2026-10/merged/O3_FIRST_PILOT_2026-10-23.md` §4) shows how. SPDYE1's hidden
   copy is 99 reads at 9% of the pile on SPDYE1.18. It is separable only by alleles linked across columns.
   - The shipped stage `candidate_copies` (IsoCon-like, clusters cut at delta 0.96%) merges it.
   - Strainy run off the shelf merges it too: its allele-frequency floor is 0.2.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score the expansion level built on PAF units against the one built on DupMasker (docs/PREREG_paf_duplicon_units_2026-10-10.md).
+"""Score the expansion level built on PAF units against the one built on DupMasker (docs/archive/2026-10/merged/PREREG_paf_duplicon_units_2026-10-10.md).
 
     score_units.py <truth_dir> <ours_dir> <dev|heldout> <loci.gff3> <dupmasker.bed> <units.bed>
 
@@ -12,7 +12,7 @@ import json
 import math
 import sys
 
-# the members H3 of docs/PREREG_family_hierarchy_flag_2026-10-09.md reported (the "PKD1P6-NPIPP1" member is the PKD1P6 locus LOFF_G0001012, whose
+# the members H3 of docs/archive/2026-10/merged/PREREG_family_hierarchy_flag_2026-10-09.md reported (the "PKD1P6-NPIPP1" member is the PKD1P6 locus LOFF_G0001012, whose
 # model runs into the NPIP core; the readthrough record CHM13_G0020726 itself is not a member)
 NAMED_FUSIONS = {"chr16:15126207-15159416": "PKD1P6-NPIPP1", "chr16:75785720-75875798": "PDXDC2P-NPIPB14P"}
 NPIP_FAMILY = "MCL9"

@@ -204,7 +204,7 @@ For a tied read, a **column** is a read base aligned in every one of its tied al
     ties (mostly GTF2H2C and SPDYE1). Step 1's wider domain adds NPIPB2's 10.
   - **Excluded:** families with a chrM copy, because the chain has no chrM, so their `no_counterpart` label is an artifact.
 - **C-gorilla. Missing copy (gorilla KB3781 fibroblasts on GGO):** the NPIP family, with the maternal-only unit C as truth
-  (r1363–r1365; inputs and truth as in `docs/PREREG_o3_npip_maternal_copy_2026-10-21.md`). Its verdict stays apart from
+  (r1363–r1365; inputs and truth as in `docs/archive/2026-10/merged/PREREG_o3_npip_maternal_copy_2026-10-21.md`). Its verdict stays apart from
   human's.
 - **D. No harm (one genome):** the round-23 worlds. In one genome the calls are the reference, so VC should match N3 and never
   move a right read.
@@ -272,7 +272,7 @@ predictions with the truth universe inflates precision"):
    - VCF parsing;
    - mapping columns across strands and through secondary records without SEQ, reusing `o2correct.py`'s machinery.
 3. Develop only on spent HG002 families that are in no panel: SMN2 and MSTRG3150.
-4. Write and commit `docs/PREREG_o2_variant_calls_2026-10-22.md`, with the bars above and the code commit frozen.
+4. Write and commit `docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md`, with the bars above and the code commit frozen.
 5. Run panels A–E once each, serially, as light jobs (`tools/rlock.sh light`).
 6. Audit with the `metric-auditor` agent, then add the register row (next number 1374), update memory and report.
 

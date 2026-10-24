@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chain-aware refinement of the components of the pool graph (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 23).
+"""Chain-aware refinement of the components of the pool graph (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 23).
 
 A component is a chain when a short read is CONTAINED in two long reads that disagree with each other: both containments are proper overlaps, so single-linkage
 joins the long reads. Star clustering inside the component fixes it: longest-first, a read joins only a cluster whose representative it is compatible with."""

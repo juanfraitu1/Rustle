@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Liftoff copy pairs against matched decoys: the statistics, as pure functions.
 
-Prereg docs/PREREG_liftoff_pairs_null_2026-10-14.md. Loci, pairs and the coverage rule are figure 8's (`figures/_liftoff.py`;
+Prereg docs/archive/2026-10/merged/PREREG_liftoff_pairs_null_2026-10-14.md. Loci, pairs and the coverage rule are figure 8's (`figures/_liftoff.py`;
 prereg docs/archive/2026-09/PREREG_liftoff_loci_2026-09-25.md): a Liftoff locus is covered by a family member when the
 member covers >= 50% of its exon bases.
 

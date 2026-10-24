@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post hoc diagnostics of the O1 hierarchy evaluation (`docs/PREREG_o1_hierarchy_eval_2026-10-13.md`, Results). They
+"""Post hoc diagnostics of the O1 hierarchy evaluation (`docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md`, Results). They
 were added after the run and change no verdict. The pinned scorer `hier_match.py` (8f0515ef) is imported, never edited.
 
     posthoc_checks.py OUT.json --dev HIER_JSON --heldout HIER_JSON

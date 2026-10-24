@@ -1,4 +1,4 @@
-# Backing files for docs/UNMAPPED_RESCUE_2026-10-08.md and the Amendments of docs/PREREG_unmapped_rescue_2026-10-08.md
+# Backing files for docs/archive/2026-10/merged/UNMAPPED_RESCUE_2026-10-08.md and the Amendments of docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md
 
 - `*.log`: stdout of the real-bed analyses (`apply_trim_real.py`, `eval_clusters.py`, `consensus_support.py`, `lrpap1_gate_flag.py`, `o3_haplotype.py`, `o3_bed.py`, `discover.py`, `stress_part.py`, `run_partition_real.py`), first line = the command.
 - `dna_verify.jim.{log,json}`, `candidates_vs_human.log`, `discovery_candidates.fa`: Amendments 28 to 32.

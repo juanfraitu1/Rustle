@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amendment 41: maternal-assembly truth for the real-read recall test (docs/PREREG_unmapped_rescue_2026-10-08.md). Miniforge python.
+"""Amendment 41: maternal-assembly truth for the real-read recall test (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md). Miniforge python.
 
 Pure helpers (tested in test_mat_truth.py): cs_divergence, mask, assembly_version, group_loci, verdict.
 Steps (resumable, each one call): see main()."""

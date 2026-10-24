@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # missing_copy_flag positive control (d = 0.02, 0.01; seeds 1-5) and negative control (template reads only, d = 0.02),
-# docs/PREREG_missing_copy_posctl_2026-10-14.md. Run inside the pixi environment (minimap2 2.30, samtools 1.22.1):
+# docs/archive/2026-10/merged/PREREG_missing_copy_posctl_2026-10-14.md. Run inside the pixi environment (minimap2 2.30, samtools 1.22.1):
 #   pixi run bash bench/o3_posctl.sh REF_DIR OUT_DIR [BIN_DIR]
 # REF_DIR holds chm13_chr20.fa, chr20_ref.gtf, chm13_chr20.RefSeq.gff, chm13_chr20.splice.mmi (see the prereg).
 set -euo pipefail

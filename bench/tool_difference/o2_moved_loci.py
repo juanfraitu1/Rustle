@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Where O2's moved reads land (docs/PREREG_o2_population_2026-10-12.md, amendment 1).
+"""Where O2's moved reads land (docs/archive/2026-10/merged/PREREG_o2_population_2026-10-12.md, amendment 1).
 
 usage: o2_moved_loci.py --molecules PREFIX.molecules.tsv --ref REF.gtf[.gz] --gtf NAME=PATH [--gtf ...]
 Each moved molecule's winning placement (aligned span) is mapped to the reference genes whose exons it overlaps (none = unannotated).

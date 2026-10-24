@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The gates of docs/PREREG_seed_pool_real_reads_2026-10-07.md section 5, computed from the products of run.sh.
+"""The gates of docs/archive/2026-10/merged/PREREG_seed_pool_real_reads_2026-10-07.md section 5, computed from the products of run.sh.
 
     gates.py --work W/SUB --sub human_chr16|human_chr17 --def /mnt/linuxdisk/tmp/rescore_2026-10-06/DEF --bin RELEASE_DIR
 

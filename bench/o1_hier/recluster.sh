@@ -1,5 +1,5 @@
 #!/bin/bash
-# Re-cluster one default catalog from its cached all-vs-all (docs/PREREG_mcl_two_node_2026-10-13.md F2).
+# Re-cluster one default catalog from its cached all-vs-all (docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md F2).
 #   recluster.sh BIN SAMPLE OUTDIR [GRAPH_DUMP]
 # --fasta / --emit-units are not passed: neither changes clusters.tsv or loci.tsv (human_testis: byte-identical, 5.7 s).
 # GRAPH_DUMP: --dump-graph writes the PRE-MCL edges (u<TAB>v<TAB>weight) and changes no other output.

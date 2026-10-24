@@ -194,7 +194,7 @@ def main(json_p, out_p):
   <p class="sub" style="margin-top:14px">Data: <code>bench/o3_graph/ston1_fig.py</code>, <code>gorilla_tab_render.py</code>; mother
   CM054594.2:95,700,000-96,300,000 (GCA_028885495.2), father CM054570.2:90,900,000-91,500,000 (GCA_028885475.2; reference
   NC_073236.2 has the same length and sequence); the 113 reads of O3 cluster <code>clSRR27438212.9740719</code>
-  (<code>docs/PREREG_unmapped_rescue_2026-10-08.md</code>, Amendments 28-34, DNA check §T1). Gorilla numbers are never pooled
+  (<code>docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md</code>, Amendments 28-34, DNA check §T1). Gorilla numbers are never pooled
   with the human tab's. Built 20 Oct 2026.</p>
 </div>
 """

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score O2 on anchor-trimmed reads (docs/PREREG_o2_anchor_2026-10-13.md: T0, A1, A2 + reported numbers).
+"""Score O2 on anchor-trimmed reads (docs/archive/2026-10/merged/PREREG_o2_anchor_2026-10-13.md: T0, A1, A2 + reported numbers).
 
     score.py TRUTH.tsv CATALOG_COPIES.tsv TRIMMED.bam RUN_PREFIX OUT.json
 

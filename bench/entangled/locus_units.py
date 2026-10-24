@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rule 1 (primary-first representative) and Rule 2 (structural separators) of docs/PREREG_locus_units_2026-10-06.md, as a post-processor of a families-input GTF.
+"""Rule 1 (primary-first representative) and Rule 2 (structural separators) of docs/archive/2026-10/merged/PREREG_locus_units_2026-10-06.md, as a post-processor of a families-input GTF.
 
     locus_units.py --base IN.families.gtf --out OUT.families.gtf [--primary-gtf P.families.gtf] [--rule1] [--rule2 all|primary] [--side OUT.separators.tsv]
 

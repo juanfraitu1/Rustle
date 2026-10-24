@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """What are the `copy`-labelled unexplained clusters of families whose copies are all in the genome? (descriptive, post hoc;
-docs/PREREG_o3_realdata_2026-10-15.md, follow-up.)
+docs/archive/2026-10/merged/PREREG_o3_realdata_2026-10-15.md, follow-up.)
 
     copyclusters.py origins LABELS PREFIX BAM COPIES.tsv OUT.tsv
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LRPAP1 worked example (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 8).
+"""LRPAP1 worked example (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 8).
 
     run_lrpap1.py cluster <tag>    # tag = full | half: net = LRPAP1 reads with maternal de > delta; cluster (frozen edge rule), abPOA consensus
     run_lrpap1.py place <tag>      # align each consensus to the maternal and paternal genome (-N 50), per-locus identity x coverage

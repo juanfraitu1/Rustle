@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Consensus, attribution and rescue accounting of a clustered bed (docs/PREREG_unmapped_rescue_2026-10-08.md section 1 steps 3-4 and Amendment 1).
+"""Consensus, attribution and rescue accounting of a clustered bed (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 1 steps 3-4 and Amendment 1).
 
     attribute_bed.py <bed> [--tag registered]   # needs W/<bed>/{pool.fa,labels.tsv,targets.fa} and W/<bed>/<tag>/clusters.tsv
 Runs consensus (miniforge python, pyabpoa), dc-megablast and mmseqs2 translated search (foreground, ~3 min), then writes W/<bed>/<tag>/rescue.json:

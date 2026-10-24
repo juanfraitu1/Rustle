@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post-MCL strongest-edge reassignment on a shipped catalog (prereg docs/PREREG_post_mcl_reassign_2026-10-15.md).
+"""Post-MCL strongest-edge reassignment on a shipped catalog (prereg docs/archive/2026-10/merged/PREREG_post_mcl_reassign_2026-10-15.md).
 
     run_reassign.py dump  SAMPLE --out DIR [--bin MCL_FAMILIES]     re-cluster from the cached all-vs-all with
                                                                       --dump-graph; the clusters must equal the shipped

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Augmented-reference realignment (docs/PREREG_unmapped_rescue_2026-10-08.md Amendments 7 and 8). Pure helpers; pipelines in run_augment.py / run_lrpap1.py.
+"""Augmented-reference realignment (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendments 7 and 8). Pure helpers; pipelines in run_augment.py / run_lrpap1.py.
 
 A record is a dict(score, de, qcov, ref, mapq). The genome primary comes from the existing alignment to the masked genome, the consensus record from aligning
 the same read with the same minimap2 command to the consensus sequences alone."""

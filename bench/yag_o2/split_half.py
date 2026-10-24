@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm B of docs/PREREG_yag_o2_2026-10-12.md: O2's read-star certificate on the full read and on each half.
+"""Arm B of docs/archive/2026-10/merged/PREREG_yag_o2_2026-10-12.md: O2's read-star certificate on the full read and on each half.
 
     split_half.py RUN_PREFIX READ_LENGTHS.tsv OUT.json
 RUN_PREFIX = a `copy_assign --dump-star` run (needs .star_reads.tsv and .assignments.tsv); READ_LENGTHS.tsv =
@@ -8,7 +8,7 @@ where both have a base, the bases differ and the read has a base; LLR(a, b) = lr
 a / b; best = maximin LLR (ties: PSV score, then lower copy index); Tied if some rival shares no such column with the
 best, Assigned if every rival's p = P(Binomial(n, e/3) >= k) < alpha / #rivals and its LLR > 0, else Ambiguous.
 
-Population mode (docs/PREREG_popfix_2026-10-12.md, ruling R27): env POPULATION=psv_population.tsv re-runs the same
+Population mode (docs/archive/2026-10/merged/PREREG_popfix_2026-10-12.md, ruling R27): env POPULATION=psv_population.tsv re-runs the same
 certificate on the columns that are FIXED across the population, PER PAIR as Rust `fixed_only_certificate` does: a
 column counts for the pair (a, b) iff both candidates have a genome position there and both (chrom, pos) are in the
 site set S (chrom of a candidate from <RUN_PREFIX>.family_join.tsv); a candidate's PSV-score tie key counts the columns

@@ -2204,7 +2204,7 @@ def missing_copy_control(genes, rows):
 
 
 def cmd_missing_copy_control(a):
-    """missing_copy_flag positive / negative control on sim.py missing-copy reads (docs/PREREG_missing_copy_posctl_2026-10-14.md):
+    """missing_copy_flag positive / negative control on sim.py missing-copy reads (docs/archive/2026-10/merged/PREREG_missing_copy_posctl_2026-10-14.md):
     per planted gene fired / reference_absent_candidate / confirmed, and the funnel. --per-gene writes one row per gene."""
     genes = [ln.strip() for ln in open(a.sim + '.genes.txt') if ln.strip()]
     with open(a.run + '.missing_copy.tsv') as fh:

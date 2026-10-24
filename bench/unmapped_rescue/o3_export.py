@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O3 deliverable: the flagged reference-absent candidates of a run as unplaced transcripts, to load beside the assembler's GTF (docs/PREREG_unmapped_rescue_2026-10-08.md
+"""O3 deliverable: the flagged reference-absent candidates of a run as unplaced transcripts, to load beside the assembler's GTF (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md
 Amendment 48: O3 = detection; placement is DNA's job).
 
     o3_export.py <run_dir> <out_prefix>      writes <out_prefix>.fa, .gtf, .nearest.bed, .tsv (resumable read-share step; exit 75 = run again)

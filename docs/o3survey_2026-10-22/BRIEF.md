@@ -18,15 +18,15 @@ So O3 is a SCREENING / PRIORITISATION flag (recall-oriented, ranked), not a hard
 
 ## Where we are (read these)
 - **O2-VC (the sample's own longcallR calls on confident reads, assign-or-abstain) results:**
-  `/mnt/linuxdisk/home/juanfraitu/rustle_soto_subset/docs/PREREG_o2_variant_calls_2026-10-22.md`, section "Results".
+  `/mnt/linuxdisk/home/juanfraitu/rustle_soto_subset/docs/archive/2026-10/merged/PREREG_o2_variant_calls_2026-10-22.md`, section "Results".
   - The held-out donor HG00733 fails at 6.3% wrong, mostly PRAMEF.
   - The errors concentrate in copy-number-variable families: PRAMEF, GTF2H2C, SPDYE1, NBPF1, ANKRD36C.
-- **Exploratory gates:** `/mnt/linuxdisk/home/juanfraitu/rustle_soto_subset/docs/O2O3_EXPLORE_2026-10-22.md` (§5 especially).
+- **Exploratory gates:** `/mnt/linuxdisk/home/juanfraitu/rustle_soto_subset/docs/archive/2026-10/merged/O2O3_EXPLORE_2026-10-22.md` (§5 especially).
   - **Key insight:** a reference copy the donor LACKS (PRAMEF7.1 in HG00733) is taught by its paralog's reads and looks, from RNA
     alone, like a present copy with 4 private hom-alt SNVs.
   - The swap-pair gate is inert; the taught-by-paralog gate is harmful; a hindsight gate (H5) catches PRAMEF7.1.
 - **Pre-registered expected failures**, with mechanisms and the literature: F1-F5:
-  `/mnt/linuxdisk/home/juanfraitu/rustle_soto_subset/docs/PREREG_o2_variant_calls_expected_failures_2026-10-22.md`
+  `/mnt/linuxdisk/home/juanfraitu/rustle_soto_subset/docs/archive/2026-10/merged/PREREG_o2_variant_calls_expected_failures_2026-10-22.md`
 - **Prior O3 attempts.** Memory notes in `/home/juanfra/.claude/projects/-mnt-c-Users-jfris-Desktop/memory/`:
   - `project_o3_npip_maternal_copy_2026-10-21.md`: reference-free IsoCon chain; detection works, read recovery does not.
   - `project_samplecopy_2026-10-19.md`: EM haplotype mixture per family.

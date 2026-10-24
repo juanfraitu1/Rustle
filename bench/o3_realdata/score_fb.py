@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score `copy_assign --psv-family-best` against the old rule (prereg docs/PREREG_o3_family_best_2026-10-15.md).
+"""Score `copy_assign --psv-family-best` against the old rule (prereg docs/archive/2026-10/merged/PREREG_o3_family_best_2026-10-15.md).
 
     score_fb.py LABELS OLD_RM NEW_RM OLD_AB NEW_AB OUT.json
 

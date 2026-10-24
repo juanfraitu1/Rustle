@@ -6,7 +6,7 @@ product: no `*.fam.clusters.tsv`, no `family_score` output, no `outcomes.tsv`, n
 
 What was looked at before freezing (no per-family value): the family-size histogram of the truth file (377 of 426 families have 2-4 listed genes: 292 / 60 / 25),
 the vocabulary of `refseq_map.tsv` quality (strong / partial / weak / none) and of the CAT transcript biotypes, the BAM header (minimap2 `-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`,
-tags NM ms AS nn ts tp cm s1 de rl), `docs/PREREG_ideal_expression_2026-10-06.md` and `bench/ideal_expression/strata.py` (the E0 rule), and two format probes of one NPIP region (chr16:14938000-14943000, record tags only).
+tags NM ms AS nn ts tp cm s1 de rl), `docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md` and `bench/ideal_expression/strata.py` (the E0 rule), and two format probes of one NPIP region (chr16:14938000-14943000, record tags only).
 
 ## Universe
 

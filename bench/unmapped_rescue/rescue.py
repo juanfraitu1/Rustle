@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Terminal-exon rescue for the discovery coverage (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 29).
+"""Terminal-exon rescue for the discovery coverage (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 29).
 
 A spliced aligner can leave a small terminal exon (46 or 90 bases) of a consensus unaligned although it lies in the same locus. end_segments finds the unaligned ends of
 the best record; the pieces are mapped (short-read preset) to a window around the record; rescued turns the good pieces into consensus intervals; combine adds them to the

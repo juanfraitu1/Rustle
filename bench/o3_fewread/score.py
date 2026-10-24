@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score `candidate_copies` on a few-read world (docs/PREREG_o3_fewread_flags_2026-10-14.md, Phase 1).
+"""Score `candidate_copies` on a few-read world (docs/archive/2026-10/merged/PREREG_o3_fewread_flags_2026-10-14.md, Phase 1).
 
     score.py WORLD VARIANT [--flags OUT.tsv]
 

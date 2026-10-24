@@ -1,5 +1,5 @@
 #!/bin/bash
-# bench/ideal_expression/run.sh — the runner of docs/PREREG_ideal_expression_2026-10-06.md. FAMILY = NPIP | TBC1D3, REP = 1 | 2 (read seeds 20261006 | 20261007).
+# bench/ideal_expression/run.sh — the runner of docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md. FAMILY = NPIP | TBC1D3, REP = 1 | 2 (read seeds 20261006 | 20261007).
 #   run.sh truth FAMILY REP     truth tables + the ideal reads (sim_windows.py), then G1 (verify_g1.py)          -> W/FAMILY/repREP/reads.*
 #   run.sh map FAMILY REP       map the reads (whole-genome splice index, read-disjoint parts, one part per call; re-run until "mapping complete")
 #   run.sh strata FAMILY REP    E0, the reachable stratum R and its sha1, G2 — from the BAM alone, BEFORE the pipeline

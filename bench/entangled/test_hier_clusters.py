@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of hier_clusters.py (Amendment 2 of docs/PREREG_locus_units_2026-10-06.md). Run: python3 -m unittest test_hier_clusters"""
+"""Tests of hier_clusters.py (Amendment 2 of docs/archive/2026-10/merged/PREREG_locus_units_2026-10-06.md). Run: python3 -m unittest test_hier_clusters"""
 import os
 import sys
 import tempfile

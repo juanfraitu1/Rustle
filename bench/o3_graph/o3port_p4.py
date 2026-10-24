@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""P4, the two-tier O3 output on a fresh gorilla fibroblast held-out (docs/PREREG_o3_two_tier_p4_2026-10-23.md).
+"""P4, the two-tier O3 output on a fresh gorilla fibroblast held-out (docs/archive/2026-10/merged/PREREG_o3_two_tier_p4_2026-10-23.md).
 
   panel   --w W          the registered draw -> W/panel.json (link_test.py's format: fam, mask, keep)
   split   --w W          W/scored.fa -> W/scored.part{0,1,2}.fa (record k goes to part k % 3)
   batches --w W          the panel's families in panel order, 10 per line -> W/batches.txt
   verdict --w W          H4-1 / H4-2 / H4-3 and the reported tables from the arms' products -> W/verdict.json, stdout
-  subpanel --w W --from P4 --n 20   P5 (docs/PREREG_o3_port_v6_heldout_2026-10-23.md): n families drawn with random.Random(1) from
+  subpanel --w W --from P4 --n 20   P5 (docs/archive/2026-10/merged/PREREG_o3_port_v6_heldout_2026-10-23.md): n families drawn with random.Random(1) from
                          P4's draw (sorted by family) -> W/panel.json, and P4's scored reads of those families -> W/scored.fa,
                          W/labels.tsv
   verdict5 --w W --deletion pd,pdcc --control pc,pccc   P5's H5-1 / H5-2 / H5-3 per arm -> W/verdict.json, stdout
@@ -31,7 +31,7 @@ def tsv(path):
 
 
 def eligible_families():
-    """P4's eligibility (docs/PREREG_o3_two_tier_p4_2026-10-23.md): (eligible panel entries sorted by family, G3 drops)."""
+    """P4's eligibility (docs/archive/2026-10/merged/PREREG_o3_two_tier_p4_2026-10-23.md): (eligible panel entries sorted by family, G3 drops)."""
     rows = tsv(SRC)
     byfam = collections.defaultdict(list)
     for r in rows:
@@ -221,7 +221,7 @@ def verdict5(a):
 
 
 def p6panel(a):
-    """P6 (docs/PREREG_o3_putative_heldout_2026-10-23.md): P4's draw minus P5's 20, plus 40 drawn with random.Random(1) from the
+    """P6 (docs/archive/2026-10/merged/PREREG_o3_putative_heldout_2026-10-23.md): P4's draw minus P5's 20, plus 40 drawn with random.Random(1) from the
     eligible families P4 did not draw (sorted by family) -> W/panel.json"""
     eligible, _ = eligible_families()
     p4 = json.load(open(f"{RA}/p4/panel.json"))
@@ -238,7 +238,7 @@ def p6panel(a):
 
 
 def p10panel(a):
-    """P10 (docs/PREREG_o3_putative_clip_p10_2026-10-23.md): every eligible family in none of P4's, P5's or P6's panels, sorted
+    """P10 (docs/archive/2026-10/merged/PREREG_o3_putative_clip_p10_2026-10-23.md): every eligible family in none of P4's, P5's or P6's panels, sorted
     by family -> W/panel.json"""
     eligible, _ = eligible_families()
     used = set()

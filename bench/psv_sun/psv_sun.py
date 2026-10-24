@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SUNs vs our PSVs (M1) and a per-copy pileup check of PSVs (M2) — docs/PREREG_psv_sun_pileup_2026-10-12.md.
+"""SUNs vs our PSVs (M1) and a per-copy pileup check of PSVs (M2) — docs/archive/2026-10/merged/PREREG_psv_sun_pileup_2026-10-12.md.
 
     psv_sun.py prep            # subset S, its copy table / copies FASTA / regions -> OUT/run/
     (copy_assign --dump-psv on OUT/run/, see the prereg)

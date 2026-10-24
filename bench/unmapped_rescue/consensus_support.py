@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flag Q (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 21): is a cluster's consensus supported by its own reads?
+"""Flag Q (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 21): is a cluster's consensus supported by its own reads?
     consensus_support.py <bedA|bedH>      (miniforge python; needs registered/{cons.fa,clusters.tsv} and polish/score.json)
 A consensus is UNSUPPORTED if the median divergence of its reads (<= 100, splice:hq -uf) aligned to it exceeds 0.00958."""
 import json

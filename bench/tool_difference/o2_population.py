@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""How many multi-placement reads O2 can assign, and how many it moves off the aligner's primary (docs/PREREG_o2_population_2026-10-12.md).
+"""How many multi-placement reads O2 can assign, and how many it moves off the aligner's primary (docs/archive/2026-10/merged/PREREG_o2_population_2026-10-12.md).
 
 usage: o2_population.py --bam B --fasta F --molecules M.tsv --n 20000 --seed 1 --out PREFIX"""
 import argparse

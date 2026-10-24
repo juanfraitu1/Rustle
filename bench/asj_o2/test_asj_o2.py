@@ -1,4 +1,4 @@
-"""Tests for asj_o2.py (docs/PREREG_asj_o2_2026-10-10.md)."""
+"""Tests for asj_o2.py (docs/archive/2026-10/merged/PREREG_asj_o2_2026-10-10.md)."""
 import os
 import sys
 

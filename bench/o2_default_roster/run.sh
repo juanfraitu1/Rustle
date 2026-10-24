@@ -1,5 +1,5 @@
 #!/bin/bash
-# bench/o2_default_roster/run.sh — the runner of docs/PREREG_o2_default_roster_2026-10-06.md: O2 with read-level truth on the DEFAULT families roster.
+# bench/o2_default_roster/run.sh — the runner of docs/archive/2026-10/merged/PREREG_o2_default_roster_2026-10-06.md: O2 with read-level truth on the DEFAULT families roster.
 #
 #   run.sh roster CONTIG   HEAD assemble (the driver's `assemble` flags, --region CONTIG) + the driver's `families` stage -> W/CONTIG/roster.fam.copies.{tsv,fa,regions};
 #                          cmp against the stored e163d955 products where they exist

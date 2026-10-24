@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score the real-data O3 test (prereg docs/PREREG_o3_realdata_2026-10-15.md) from `copy_assign --psv-clusters` products.
+"""Score the real-data O3 test (prereg docs/archive/2026-10/merged/PREREG_o3_realdata_2026-10-15.md) from `copy_assign --psv-clusters` products.
 
     score.py removed   LABELS PREFIX OUT.tsv     per masked copy: recovered, recall, purity, est_div, label, fates of its reads
     score.py addedback LABELS PREFIX OUT.tsv     per masked copy: cleared once the copy is back in the genome

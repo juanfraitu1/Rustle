@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score graph-O3 worlds (prereg docs/PREREG_o3_graph_sim_2026-10-15.md).
+"""Score graph-O3 worlds (prereg docs/archive/2026-10/merged/PREREG_o3_graph_sim_2026-10-15.md).
 
     score.py OUT.json WORLD [WORLD ...]
 

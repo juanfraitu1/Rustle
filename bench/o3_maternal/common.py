@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared helpers of the maternal-reference study (docs/PREREG_o3_maternal_reference_2026-10-08.md). Pure functions are unit-tested in test_common.py."""
+"""Shared helpers of the maternal-reference study (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md). Pure functions are unit-tested in test_common.py."""
 import collections
 import csv
 import os

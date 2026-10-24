@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm (e) of docs/PREREG_popfix_2026-10-12.md: the implementation check of `copy_assign --psv-population` (bar = exact).
+"""Arm (e) of docs/archive/2026-10/merged/PREREG_popfix_2026-10-12.md: the implementation check of `copy_assign --psv-population` (bar = exact).
 
     check_e.py RUN_PREFIX POP_TSV            (env YAG_FAMILIES = yag_families.json restricts to the YAG families)
 RUN_PREFIX = a `--psv-population FILE --dump-star` run (star_reads.tsv with `positions`, assignments.tsv,

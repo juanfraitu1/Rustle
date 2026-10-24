@@ -1571,7 +1571,7 @@ fn union_hit(member: &[u8], union: &[u8], dir: &Path, mm: &Mm2) -> Result<Option
 type Structure = Option<(st::Outer, Vec<(usize, st::Kind)>)>;
 
 /// Phase 4 (spec `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md` §3, prereg
-/// `docs/PREREG_o3_structure_projection_2026-10-14.md`): every flagged candidate's union against the genome (`MM2_GENOME`, one call), the
+/// `docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md`): every flagged candidate's union against the genome (`MM2_GENOME`, one call), the
 /// outer pass per candidate, every candidate's segments re-aligned in one more call, then `finish`. In `cands` order, one entry per flagged
 /// candidate. The family's copies are its own rows of `--copies` (partner and candidate rows are no copy of it).
 fn project_structures(

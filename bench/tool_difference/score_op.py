@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Score the in-between operating point against StringTie and FLAIR, genome-wide and on the multi-copy strata
-(docs/PREREG_inbetween_operating_point_2026-10-11.md).
+(docs/archive/2026-10/merged/PREREG_inbetween_operating_point_2026-10-11.md).
 
 usage: score_op.py --species S --ref REF.gtf[.gz] --exclude CHROM --strata PREFIX --work DIR --arm NAME=GTF [--arm ...]
 Arms named OP_primary, OP_good, StringTie and FLAIR decide claims B1, B2, C1-C3; any other arm is reported only.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pool graph and clusters (docs/PREREG_unmapped_rescue_2026-10-08.md section 1, steps 1-2)."""
+"""Pool graph and clusters (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 1, steps 1-2)."""
 import collections
 
 

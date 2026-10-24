@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The graph-informed O3 detector on a world (prereg docs/PREREG_o3_graph_sim_2026-10-15.md): the current method's per-host PSV
+"""The graph-informed O3 detector on a world (prereg docs/archive/2026-10/merged/PREREG_o3_graph_sim_2026-10-15.md): the current method's per-host PSV
 clustering (bench/o3_unexplained/psvclust.py, = `copy_assign --psv-clusters`) plus three steps, as separate arms.
 
     detect.py WORLD             reads WORLD/cur/A.assignments.tsv (the hosts), writes WORLD/graph/calls.tsv (+ graph/<family>/)
@@ -29,11 +29,11 @@ Step 2 (S12 = S1 + branch calls): the family's variation graph (vg msga of its c
 S4 (graph O2 into O3): the S1 clustering run on the reads path-O2 (o2graph.py) cannot explain with any catalogued copy's
   isoform paths (`unexplained`), plus the branch calls (S4n), kept by the genome (S4): reads a catalogued copy explains
   can no longer dilute an absent copy's cluster.
-G (union-O2-informed O3; prereg docs/PREREG_o3_graph_union_2026-10-15.md): the same on the reads UNION O2 cannot explain
+G (union-O2-informed O3; prereg docs/archive/2026-10/merged/PREREG_o3_graph_union_2026-10-15.md): the same on the reads UNION O2 cannot explain
   (every family structure threaded through every copy, o2graph.py run WORLD union 2), each cluster's status with the MOSAIC
   rule (status_of mosaic=True: no single copy within DELTA), plus the branch calls (Gn), kept by the genome (G). S123m = S123
   with the mosaic rule, without the O2 restriction.
-H (prereg docs/PREREG_o3_graph_union2_2026-10-15.md): as G, but on the reads union O2 with padded path ends (o2graph.py run
+H (prereg docs/archive/2026-10/merged/PREREG_o3_graph_union2_2026-10-15.md): as G, but on the reads union O2 with padded path ends (o2graph.py run
   WORLD unionp 2) cannot explain, POOLED over every host of the family and aligned to each host (family_pool): an absent
   copy copy_assign spreads over several hosts clusters once (Hn without the genome check).
 Step 3 (S123 = S12 kept by the genome; S3 = R0 kept by the genome; S23 = S3 + kept branch calls, i.e. without step 1):

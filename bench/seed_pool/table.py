@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The comparison tables of docs/PREREG_seed_pool_real_reads_2026-10-07.md, computed from the products of run.sh score (nothing by hand).
+"""The comparison tables of docs/archive/2026-10/merged/PREREG_seed_pool_real_reads_2026-10-07.md, computed from the products of run.sh score (nothing by hand).
 
     table.py --work W/SUB --family NPIP --truths compara,u2,soto [--found tc|ann] [--targets "compara:CF153;u2:ID_154,ID_149;soto:ID_154"]
 

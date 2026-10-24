@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Soto's families as our families cut by copy number: the statistics, as pure functions (no I/O).
 
-Spec: docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg: docs/PREREG_soto_subset_cn_2026-10-14.md.
+Spec: docs/superpowers/specs/2026-10-14-soto-subset-cn-design.md; prereg: docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md.
 
 Conventions. `block_of` {member: block id} covers every member of a universe; each of our singletons has a block of
 its own. `soto_sets` {label: frozenset(member)} are Soto's families on that universe; a member can be in several

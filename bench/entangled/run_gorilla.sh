@@ -1,5 +1,5 @@
 #!/bin/bash
-# bench/entangled/run_gorilla.sh — runner of docs/PREREG_gorilla_overlap_2026-10-07.md (gorilla OR6737 testis, genome-wide).
+# bench/entangled/run_gorilla.sh — runner of docs/archive/2026-10/merged/PREREG_gorilla_overlap_2026-10-07.md (gorilla OR6737 testis, genome-wide).
 #   run_gorilla.sh arms          our assembler D (default), P (--no-seed-secondaries), PC (P + RUSTLE_POLISH_SUBCHAIN=drop): the driver's assemble stage, one after the other
 #   run_gorilla.sh annotation    valid annotated chains (GFF + FASTA)                         -> W/truth.annotation.pkl
 #   run_gorilla.sh support CONTIGS   read support of the annotated chains on those contigs (comma list; empty = all)   -> W/truth.support.*.pkl

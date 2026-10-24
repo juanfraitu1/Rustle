@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O3 -> O2 on the real refabsent panel (report-only, docs/REPORT_o2_refabsent_2026-10-24.md): KB3781 fibroblast reads of the 34
+"""O3 -> O2 on the real refabsent panel (report-only, docs/archive/2026-10/merged/REPORT_o2_refabsent_2026-10-24.md): KB3781 fibroblast reads of the 34
 families with haplotype-only (B-only) loci, truth from the animal's own haplotypes (refabsent/bonly.tsv, copies_lift.tsv).
   inputs W         W/copies.tsv (refabsent/copies_genes.tsv) and W/net.tsv (refabsent/fam/<family>.fa read names)
   truth W          W/truth.tsv: each read's origin = the lifted copy or B-only locus its best haplotype record overlaps (on the

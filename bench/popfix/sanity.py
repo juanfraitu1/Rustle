@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm (a) of docs/PREREG_popfix_2026-10-12.md: descriptive table sanity on the YAG families, no bar.
+"""Arm (a) of docs/archive/2026-10/merged/PREREG_popfix_2026-10-12.md: descriptive table sanity on the YAG families, no bar.
 
     sanity.py POP_TSV YAG_FAMILIES_JSON [RUN_PREFIX]
 POP_TSV = psv_population.tsv; YAG_FAMILIES_JSON = prep_yag.py's yag_families.json (its "families" keys are the families).

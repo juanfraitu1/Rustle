@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate a clustering of a real bed (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 22). Miniforge python.
+"""Evaluate a clustering of a real bed (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 22). Miniforge python.
     eval_clusters.py <bedA|bedH> <tag>      # tag = registered (frozen) | chain ; needs W/<bed>/<tag>/{clusters.tsv,metrics.json,cons.fa}
 Prints: coverage and purity, clusters on the erased copy, unsupported consensus (Amendment 21), gate-aware identity x coverage >= 0.999, clusters with > 200 edits."""
 import csv

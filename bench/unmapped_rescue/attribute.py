@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Attribution of a cluster consensus (or a single read) to a family (docs/PREREG_unmapped_rescue_2026-10-08.md section 1, step 3)."""
+"""Attribution of a cluster consensus (or a single read) to a family (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 1, step 3)."""
 import collections
 import subprocess
 

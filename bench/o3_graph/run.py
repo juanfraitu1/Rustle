@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a graph-O3 world (prereg docs/PREREG_o3_graph_sim_2026-10-15.md): map its reads, then the current method.
+"""Run a graph-O3 world (prereg docs/archive/2026-10/merged/PREREG_o3_graph_sim_2026-10-15.md): map its reads, then the current method.
 
     run.py map WORLD [--threads 4] [--index MMI]   WORLD/E0.bam: reads.E0.fq, the baseline's exact minimap2 command,
                                                    sorted + indexed

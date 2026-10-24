@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reciprocal best match for an O3 COPY call (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 27).
+"""Reciprocal best match for an O3 COPY call (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 27).
 
 A consensus that is >= 0.999 on the truth haplotype and more than the allele cutoff from every reference locus may still be a DIVERGED ORTHOLOG (a locus both haplotypes
 carry, 1 to 7% apart). It is an absent copy only if the reference locus it matches belongs to another truth locus: map the reference locus' transcript back to the truth

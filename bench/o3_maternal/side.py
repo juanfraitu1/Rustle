@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Side-by-side read view of one run (docs/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1): the reads of each absent locus on the
+"""Side-by-side read view of one run (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1): the reads of each absent locus on the
 reference haplotype (where the copy is missing) and on the other haplotype (where it is present).
 
     O3_REF=mat side.py     # WR/fate/side.json (needs WR/fate/fate.json, WR/truth/loci.tsv and both W/map/reads.<hap>.all.bam)

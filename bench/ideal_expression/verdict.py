@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Combine the two replicates of an arm (docs/PREREG_ideal_expression_2026-10-06.md): per family the verdict is the LOWER of the two (NO < PARTLY < YES), UNSTABLE when they differ,
+"""Combine the two replicates of an arm (docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md): per family the verdict is the LOWER of the two (NO < PARTLY < YES), UNSTABLE when they differ,
 CEILING-LIMITED when either replicate is; lists the copies whose IDEAL-FOUND flag differs between the replicates.
 
     verdict.py --rep1 SCOREPREFIX1 --rep2 SCOREPREFIX2 --out OUT.json

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post hoc (docs/SEED_POOL_REAL_READS_2026-10-07.md section 5): at each copy that is expressed under Amendment A, how many PRIMARY and how many
+"""Post hoc (docs/archive/2026-10/merged/SEED_POOL_REAL_READS_2026-10-07.md section 5): at each copy that is expressed under Amendment A, how many PRIMARY and how many
 SECONDARY alignments carry >= k of the copy's annotated introns? The answer says which pool can see the copy: a copy whose evidence is a handful of
 primaries and dozens of secondaries is only buildable from the secondary pool.
 

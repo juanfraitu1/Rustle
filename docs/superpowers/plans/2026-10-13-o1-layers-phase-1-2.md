@@ -228,7 +228,7 @@ The loop prints seven `ok` lines. If an md5 differs, the sandbox changed since t
 ```rust
 //! **STATUS:** OTHER-BINARY — `utilities sd-scan` and the driver's `sd` stage; opt-in input of
 //! `mcl_families --emit-hierarchy --sd-cache`. Adoption as the SD / duplicon source is decided by
-//! `docs/PREREG_sedef_rs_layers_2026-10-13.md`.
+//! `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
 //!
 //! Segmental duplications (SDs) of a genome with sedef-rs, a pure-Rust re-implementation of the SEDEF/BISER cascade
 //! (seed -> chain -> refine -> decompose), vendored on 2026-10-13 from the user's sandbox
@@ -276,7 +276,7 @@ At the end of `docs/MODULE_STATUS.md`, append the following lines. No line may s
 **Vendored crate, not a family module:** `src/sedef/` (sedef-rs, segmental duplications; vendored 2026-10-13 from
 the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` stage; an opt-in input of
 `mcl_families --emit-hierarchy --sd-cache`. Its adoption as the SD and duplicon source is decided by
-`docs/PREREG_sedef_rs_layers_2026-10-13.md`.
+`docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
 ```
 
 - [ ] **Step 5: Build and run the ported tests, plus the module-status tests**
@@ -2099,7 +2099,7 @@ Expected: `ModuleNotFoundError: No module named 'v1_compare'`.
 
 ```python
 #!/usr/bin/env python3
-"""V1 / V1b of docs/PREREG_sedef_rs_layers_2026-10-13.md: sedef-rs SD calls (`utilities sd-scan` PREFIX.sd.pairs.tsv)
+"""V1 / V1b of docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md: sedef-rs SD calls (`utilities sd-scan` PREFIX.sd.pairs.tsv)
 against SEDEF's (34-column BED), base-pair-wise.
 
     v1_compare.py --sedef REF.bed --sedefrs PREFIX.sd.pairs.tsv (--chain V1_TO_V2.chain | --fai GENOME.fai)
@@ -2289,7 +2289,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z"
 ### Task 7: Pre-registration (V1, V1b, V2), before any whole-genome comparison
 
 **Files:**
-- Create: `docs/PREREG_sedef_rs_layers_2026-10-13.md`
+- Create: `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`
 
 **Interfaces:**
 - Consumes: the commit hashes of Tasks 4 (`sd-scan`) and 6 (`v1_compare.py`), and the version key printed by `utilities sd-scan --version-key`.
@@ -2441,7 +2441,7 @@ The same comparison, with 0.98 in place of 0.90 for both tools.
 - [ ] **Step 2: Commit** (nothing whole-genome may have been compared yet)
 
 ```bash
-git add docs/PREREG_sedef_rs_layers_2026-10-13.md
+git add docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md
 git commit -m "prereg: sedef-rs as the SD and duplicon layers (V1, V1b vs SEDEF; V2 vs DupMasker on F_O), before any run
 
 Plan docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md, Task 7.
@@ -2456,13 +2456,13 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z"
 
 **Files:**
 - Create: `bench/sedef/run_genome.sh`
-- Modify: `docs/PREREG_sedef_rs_layers_2026-10-13.md` (`## Results`), `docs/NEGATIVE_RESULTS_REGISTER.md` (two rows)
+- Modify: `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md` (`## Results`), `docs/NEGATIVE_RESULTS_REGISTER.md` (two rows)
 
 **Interfaces:**
 - Consumes:
   - Task 5's `sd` stage;
   - Task 6's `v1_compare.py`;
-  - Task 7's prereg, which must be committed: `git log --oneline -1 -- docs/PREREG_sedef_rs_layers_2026-10-13.md`.
+  - Task 7's prereg, which must be committed: `git log --oneline -1 -- docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
 - Produces: `/mnt/linuxdisk/tmp/o1_layers/{chm13v2,ggo,chm13v1}.sd.prefix`, each holding one line, the cache prefix `/mnt/linuxdisk/home/juanfraitu/sd_cache/sd/<key>/genome`. Tasks 9-11 read them.
 
 - [ ] **Step 1: The run script** `bench/sedef/run_genome.sh`
@@ -2532,7 +2532,7 @@ Each call prints one JSON line. A cut passes when `recall` >= 0.80 and `precisio
 
 - [ ] **Step 4: Write the results into the prereg and the register**
 
-Append to `docs/PREREG_sedef_rs_layers_2026-10-13.md`, under `## Results`, filling the tables from the JSON files and the `.sd.time` / `params.tsv` files:
+Append to `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`, under `## Results`, filling the tables from the JSON files and the `.sd.time` / `params.tsv` files:
 
 ```markdown
 ### V1 and V1b (YYYY-MM-DD)
@@ -2558,14 +2558,14 @@ Recall by SEDEF identity / length bin (V1, both genomes): ...
 Append two rows to `docs/NEGATIVE_RESULTS_REGISTER.md`, numbered after its last row (1278 and 1279 if still free), in the register's five-column form:
 
 ```markdown
-| 1278 | YYYY-MM-DD | sedef-rs SD calls vs SEDEF, V1 (`docs/PREREG_sedef_rs_layers_2026-10-13.md`; `utilities sd-scan`, vendored `src/sedef/`) | sd-scan's SDs (>= 1 kb, >= 0.90) and SEDEF's cover each other at >= 0.80, bp-wise, on CHM13 v2.0 and gorilla | <✅ PASS / ⛔ FAIL>: CHM13 recall R / precision P; gorilla R / P; <one sentence on where the misses sit, from the bins> |
+| 1278 | YYYY-MM-DD | sedef-rs SD calls vs SEDEF, V1 (`docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`; `utilities sd-scan`, vendored `src/sedef/`) | sd-scan's SDs (>= 1 kb, >= 0.90) and SEDEF's cover each other at >= 0.80, bp-wise, on CHM13 v2.0 and gorilla | <✅ PASS / ⛔ FAIL>: CHM13 recall R / precision P; gorilla R / P; <one sentence on where the misses sit, from the bins> |
 | 1279 | YYYY-MM-DD | sedef-rs SD98 vs SEDEF SD98, V1b (same prereg) | the same at >= 0.98 | <✅ PASS / ⛔ FAIL>: CHM13 R / P; gorilla R / P; <reading> |
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add bench/sedef/run_genome.sh docs/PREREG_sedef_rs_layers_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md
+git add bench/sedef/run_genome.sh docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md
 git commit -m "V1/V1b: sd-scan vs SEDEF on CHM13 v2.0 and gorilla (<PASS/FAIL>, <PASS/FAIL>); whole-genome sd caches
 
 <the four recall/precision pairs; wall time and peak RSS per genome>
@@ -2664,7 +2664,7 @@ In `src/family.rs`, replace everything from the line `/// One SEDEF pair (`chrom
     /// SD pairs from either format:
     /// - a SEDEF BED (`chrom1 s1 e1 chrom2 s2 e2 ...`): identity from column 21 when present;
     /// - `utilities sd-scan` pairs (`PREFIX.sd.pairs.tsv`: 11 columns, the last `ok` / `self` / `weak`): only `ok` rows
-    ///   are kept, identity = column 9 (`est_id`, percent) / 100 (docs/PREREG_sedef_rs_layers_2026-10-13.md).
+    ///   are kept, identity = column 9 (`est_id`, percent) / 100 (docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md).
     pub fn parse_sd(text: &str) -> Vec<SdPair> {
         let mut out = vec![];
         for line in text.lines() {
@@ -2790,7 +2790,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z"
 ### Task 10: V2 DEV (duplicons, F_O universe)
 
 **Files:**
-- Modify: `docs/PREREG_sedef_rs_layers_2026-10-13.md` (`## Results`: a V2 DEV subsection)
+- Modify: `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md` (`## Results`: a V2 DEV subsection)
 
 **Interfaces:**
 - Consumes:
@@ -2865,7 +2865,7 @@ Worst families (the 12 lowest scores): ...
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/PREREG_sedef_rs_layers_2026-10-13.md
+git add docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md
 git commit -m "V2 DEV: sd-scan duplicons vs DupMasker on F_O (mean family score <x>; held-out not computed)
 
 Plan docs/superpowers/plans/2026-10-13-o1-layers-phase-1-2.md, Task 10.
@@ -2885,9 +2885,9 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z"
 
 **Files:**
 - Modify:
-  - `docs/PREREG_sedef_rs_layers_2026-10-13.md` (`## Results`: HELD-OUT, V2b, verdict);
+  - `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md` (`## Results`: HELD-OUT, V2b, verdict);
   - `docs/NEGATIVE_RESULTS_REGISTER.md` (one row);
-  - `docs/PENDING_2026-10-11.md` (a new section at the end);
+  - `docs/archive/2026-10/merged/PENDING_2026-10-11.md` (a new section at the end);
   - `docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md` (a results pointer at the end);
   - `docs/MODULE_STATUS.md` (the note's last sentence);
   - `src/sedef/mod.rs` (the STATUS lines' last sentence).
@@ -2900,7 +2900,7 @@ Claude-Session: https://claude.ai/code/session_015Xtq7GodhTGPYBzHDp3o4z"
 
 ```bash
 cd /mnt/linuxdisk/home/juanfraitu/rustle_m2_soto
-git log --oneline -3 -- docs/PREREG_sedef_rs_layers_2026-10-13.md
+git log --oneline -3 -- docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md
 W=/mnt/linuxdisk/home/juanfraitu/winloci_data; H=/mnt/linuxdisk/tmp/hier_flag; V=/mnt/linuxdisk/tmp/o1_layers/v2; P1=$(cat /mnt/linuxdisk/tmp/o1_layers/chm13v1.sd.prefix)
 RLOCK_TIMEOUT=600 bash tools/rlock.sh light python3 bench/paf_duplicons/score_units.py $V/dupmasker $V/sdscan heldout /mnt/linuxdisk/tmp/ourhom/loci.gff3 \
   $W/duplicons/chm13.draft_v1.0_plus38Y_dupmasker_colors.bed $P1.sd.duplicons.tsv > $V/score_heldout.json; echo "exit $?"
@@ -2937,10 +2937,10 @@ DupMasker <n>, sd-scan <m>; bar ⌈0.9 × n⌉ = <b>.
 Append one register row (after the last, 1280 if free):
 
 ```markdown
-| 1280 | YYYY-MM-DD | sedef-rs duplicons as the expansion layer's source vs DupMasker, V2 (`docs/PREREG_sedef_rs_layers_2026-10-13.md`; F_O, CHM13 v1.0; scorer of row 1263) | expansions built from sd-scan duplicons agree with DupMasker's (held-out mean family score >= 0.80) and keep Soto's sub-family expansions (>= 90% of DupMasker's) | <✅ ADOPTED / ⛔ NOT ADOPTED>: held-out P1 <x> (DEV <y>), V2b <m> vs <n>; <one sentence on where it disagrees> |
+| 1280 | YYYY-MM-DD | sedef-rs duplicons as the expansion layer's source vs DupMasker, V2 (`docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`; F_O, CHM13 v1.0; scorer of row 1263) | expansions built from sd-scan duplicons agree with DupMasker's (held-out mean family score >= 0.80) and keep Soto's sub-family expansions (>= 90% of DupMasker's) | <✅ ADOPTED / ⛔ NOT ADOPTED>: held-out P1 <x> (DEV <y>), V2b <m> vs <n>; <one sentence on where it disagrees> |
 ```
 
-Append to `docs/PENDING_2026-10-11.md`:
+Append to `docs/archive/2026-10/merged/PENDING_2026-10-11.md`:
 
 ```markdown
 ## O1 layers, phases 1-2: sedef-rs SD and duplicon layers (YYYY-MM-DD)
@@ -2949,7 +2949,7 @@ Append to `docs/PENDING_2026-10-11.md`:
   `/mnt/linuxdisk/home/juanfraitu/sd_cache` (CHM13 v2.0, gorilla, CHM13 v1.0; prefixes in
   `/mnt/linuxdisk/tmp/o1_layers/*.sd.prefix`). `mcl_families --emit-hierarchy --sd-cache PREFIX` reads it.
 - **Verdicts:** V1 <PASS/FAIL> (rows 1278); V1b <PASS/FAIL> (1279); V2 <PASS/FAIL> (1280). Prereg:
-  `docs/PREREG_sedef_rs_layers_2026-10-13.md`.
+  `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
 - **Next:** phase 3 of `docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md` (the Rust Soto core, S1; assembly
   copy number, CN1; S2). Its SD98 source follows V1b's reading. Its plan is written from these results.
 ```
@@ -2960,7 +2960,7 @@ Append to the spec:
 
 ## Results of phases 1-2 (YYYY-MM-DD)
 
-V1 <PASS/FAIL>, V1b <PASS/FAIL>, V2 <PASS/FAIL>: `docs/PREREG_sedef_rs_layers_2026-10-13.md` (register 1278-1280). The
+V1 <PASS/FAIL>, V1b <PASS/FAIL>, V2 <PASS/FAIL>: `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md` (register 1278-1280). The
 readings fixed there decide what phases 3-4 build on.
 ```
 
@@ -2980,7 +2980,7 @@ Expected: `exit 0`; all pass (libtest takes several filters after `--`).
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/PREREG_sedef_rs_layers_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md docs/PENDING_2026-10-11.md \
+git add docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md docs/NEGATIVE_RESULTS_REGISTER.md docs/archive/2026-10/merged/PENDING_2026-10-11.md \
   docs/superpowers/specs/2026-10-13-o1-layered-hierarchy-design.md docs/MODULE_STATUS.md src/sedef/mod.rs
 git commit -m "V2: sd-scan duplicons vs DupMasker on F_O, held-out (<PASS/FAIL>); phase 1-2 verdicts recorded
 

@@ -3,7 +3,7 @@
 
     score.py rows WORLD VARIANT ARM ROWS.tsv [--rust]    # one row per truth unit (absent source or control family); --rust scores
                                                          # copy_assign --psv-clusters' product (D/R.*) instead of psvclust.py's
-    score.py summary ROWS.tsv                    # the bars of docs/PREREG_o3_unexplained_2026-10-15.md and the reported-beside numbers
+    score.py summary ROWS.tsv                    # the bars of docs/archive/2026-10/merged/PREREG_o3_unexplained_2026-10-15.md and the reported-beside numbers
 
 Truth units:
   source  an expressed sequence absent from the genome (copy E / F, or allele H) in a REMOVED_* / LOWEXPR / COMBO_EH / DOUBLE / ALLELE

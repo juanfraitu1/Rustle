@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""IsoCon-style partition of a cluster into competing candidate transcripts (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 18).
+"""IsoCon-style partition of a cluster into competing candidate transcripts (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 18).
 
 significant_variants -> read_carry -> find_blocks (variants that travel together across reads) -> choose_split -> recurse on both sides.
 partition(reads, align_fn, consensus_fn): align_fn(cons, reads) -> SAM lines of the reads on cons; consensus_fn([seq]) -> str."""

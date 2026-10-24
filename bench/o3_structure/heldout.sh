@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The held-out test of docs/PREREG_o3_structure_projection_2026-10-14.md: seeds 21-25 (--strands), variants E0 and E2, the Rust product
+# The held-out test of docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md: seeds 21-25 (--strands), variants E0 and E2, the Rust product
 # scored by score.py, IsoCon as the reconstruction comparator. Run inside the default pixi environment:
 #   pixi run bash bench/o3_structure/heldout.sh OUT_DIR
 set -euo pipefail

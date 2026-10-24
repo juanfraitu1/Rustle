@@ -1,4 +1,4 @@
-"""Tests for seed_reach.py (docs/PREREG_lrpap1_seed_reach_2026-10-11.md)."""
+"""Tests for seed_reach.py (docs/archive/2026-10/merged/PREREG_lrpap1_seed_reach_2026-10-11.md)."""
 import os
 import sys
 

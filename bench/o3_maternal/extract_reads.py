@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R_LRP and R_unm of docs/PREREG_o3_maternal_reference_2026-10-08.md section 4.
+"""R_LRP and R_unm of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 4.
 
     extract_reads.py lrp    # reads with a primary/secondary record on one of the 11 LRPAP1 loci -> W/reads/R_LRP.{fa,names.tsv}
     extract_reads.py unm    # unmapped primaries of the fibroblast BAM -> W/reads/R_unm.fa

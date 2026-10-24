@@ -1,4 +1,4 @@
-"""Tests for paf_units.py (docs/PREREG_paf_duplicon_units_2026-10-10.md)."""
+"""Tests for paf_units.py (docs/archive/2026-10/merged/PREREG_paf_duplicon_units_2026-10-10.md)."""
 import os
 import sys
 

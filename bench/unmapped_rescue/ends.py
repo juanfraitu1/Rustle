@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Where do a consensus and its true transcript differ at the ends? (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 10, reading S4.)
+"""Where do a consensus and its true transcript differ at the ends? (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 10, reading S4.)
 
 end_offsets(ops) -> (left, right): from a global alignment (ops = [(op, n)], consensus = query, transcript = target; op in = X I D, I = consensus has extra bases),
 the net consensus-minus-transcript base count before the first run of >= ANCHOR matches at each end. Positive = the consensus carries extra bases there,

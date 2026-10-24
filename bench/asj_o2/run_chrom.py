@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-chromosome driver for docs/PREREG_asj_o2_2026-10-10.md (resumable; exit 75 = run again; prints DONE).
+"""Per-chromosome driver for docs/archive/2026-10/merged/PREREG_asj_o2_2026-10-10.md (resumable; exit 75 = run again; prints DONE).
 
     run_chrom.py <primary chromosome>          e.g. NC_073224.2; chrX (no other haplotype) runs arm R only, genes >= 5 Mb from either end
 

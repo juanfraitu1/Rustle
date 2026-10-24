@@ -1,6 +1,6 @@
 # D. What this thesis already tried for O3 on RNA reads (inventory, detection power, dead ends, a screening score)
 
-Audit written 2026-10-22, read-only. Sources read: the vault `Topics/O3.md`, about 25 `memory/project_o3_*`, `project_o2_*` and `feedback_o3_*` notes, `docs/O2O3_EXPLORE_2026-10-22.md`, `docs/NEGATIVE_RESULTS_REGISTER.md`, and the frozen O2-VC outputs (descriptive counts only, no truth used).
+Audit written 2026-10-22, read-only. Sources read: the vault `Topics/O3.md`, about 25 `memory/project_o3_*`, `project_o2_*` and `feedback_o3_*` notes, `docs/archive/2026-10/merged/O2O3_EXPLORE_2026-10-22.md`, `docs/NEGATIVE_RESULTS_REGISTER.md`, and the frozen O2-VC outputs (descriptive counts only, no truth used).
 Citation key: `rNNNN` = numbered register row; `L###` = line in the register for an older unnumbered row; `mem:` = memory note; `[unreg]` = result that is not in the register.
 
 ## 0. Bottom line

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The three-way O3 call on the maternal-reference study (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 26). Miniforge python.
+"""The three-way O3 call on the maternal-reference study (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 26). Miniforge python.
 
     o3_haplotype.py <mat|pat> prep     # net reads of the 34 families + LRPAP1 on the reference haplotype -> W/o3hap_<ref>/{pool.fa, labels.tsv}
     (then:  run_bed.py o3hap_<ref> --proper --tag chain ; run_chain.py o3hap_<ref> chain chain3 ; consensus.py pool chain3/clusters.tsv chain3/cons.fa)

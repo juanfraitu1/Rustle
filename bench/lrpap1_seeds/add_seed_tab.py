@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the "DNA-mode seeds" tab to the LRPAP1 artifact page (docs/PREREG_lrpap1_seed_reach_2026-10-11.md).
+"""Add the "DNA-mode seeds" tab to the LRPAP1 artifact page (docs/archive/2026-10/merged/PREREG_lrpap1_seed_reach_2026-10-11.md).
 
     add_seed_tab.py <live page.html> <seed_reach.json> <tab dir> <out.html>
 

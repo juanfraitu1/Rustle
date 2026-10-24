@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simulation v2 (prereg docs/PREREG_o3_graph_real_2026-10-15.md): worlds from HANDPICKED REAL families (families.py) on the
+"""Simulation v2 (prereg docs/archive/2026-10/merged/PREREG_o3_graph_real_2026-10-15.md): worlds from HANDPICKED REAL families (families.py) on the
 real CHM13 v2.0 genome, every read simulated from a curated CAT isoform of a real copy.
 
     realworld.py mask OUT_DIR FAMILIES.json --set S --seed N     OUT_DIR/mask.bed + masked.fa: the REMOVED arm's genome

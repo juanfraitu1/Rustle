@@ -57,7 +57,7 @@ Owning docs: `docs/archive/2026-10/PREREG_rna_allele_haplotype_count_2026-10-01.
 
 ### `bench/soto_m2/` (13 + 3 helpers + the page web) — the Soto-vs-ours meeting evidence (2026-09-30)
 Owning docs: `docs/archive/2026-09/SOTO_M2_MEETING_EVIDENCE_2026-09-30.md`, `docs/PREREG_soto_*` / `PREREG_unit_cover*` /
-`PREREG_our_homology*` / `PREREG_quasiclique_soto*`, `docs/REGISTER_DRAFTS_machine2.md`.
+`PREREG_our_homology*` / `PREREG_quasiclique_soto*`, `docs/archive/2026-10/merged/REGISTER_DRAFTS_machine2.md`.
 
 | file | role |
 |---|---|

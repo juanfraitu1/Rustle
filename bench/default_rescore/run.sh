@@ -1,5 +1,5 @@
 #!/bin/bash
-# bench/default_rescore/run.sh — the runner of docs/PREREG_default_rescore_npip_2026-10-06.md: the current default pipeline (HEAD binaries)
+# bench/default_rescore/run.sh — the runner of docs/archive/2026-10/merged/PREREG_default_rescore_npip_2026-10-06.md: the current default pipeline (HEAD binaries)
 # on human A119b chr16, scored on the 25 CAT/Liftoff NPIP copies (strict FOUND, Amendment E) and on the U2 / Compara / Soto family truths.
 #
 #   run.sh gates         G0 (HEAD scorer on the frozen read-pool arms), G1 (own-node rule vs the stored pagedata flags), G3 (HEAD family_score

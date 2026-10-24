@@ -1093,7 +1093,7 @@ git commit -m "popfix: copy_assign --psv-population / --psv-fixed-only, populati
 ### Task 8: pre-register and run the validation (spec §4)
 
 **Files:**
-- Create: `docs/PREREG_popfix_2026-10-12.md` (commit BEFORE any run below)
+- Create: `docs/archive/2026-10/merged/PREREG_popfix_2026-10-12.md` (commit BEFORE any run below)
 - Modify: `bench/yag_o2/split_half.py` (fixed-only mode)
 - Create: `bench/popfix/sanity.py`
 - Results appended to the prereg.
@@ -1122,7 +1122,7 @@ def test_fixed_only_mask_drops_non_fixed_columns():
 
 with `mask_fixed(cols, pos, chrom, fixed)` returning the columns whose every non-`.` candidate position is fixed.
 
-- [ ] **Step 3: Runs** — (a) `python3 bench/popfix/sanity.py /mnt/linuxdisk/tmp/popfix/psv_population.tsv /mnt/linuxdisk/tmp/yag_o2/yag_human/yag_families.json` printing status x method counts per YAG family; (b) the 10-06 chrY simulation command (as in `docs/PREREG_yag_o2_2026-10-12.md` Arm A) plus `--psv-population /mnt/linuxdisk/tmp/popfix/psv_population.tsv --psv-fixed-only --dump-star`, scored with `bench/yag_o2/arm_a.py` (YAG families); (c) the A119b YAG run (`/mnt/linuxdisk/tmp/yag_o2/yag_human/` inputs) plus `--psv-population ... --dump-star`, then `POPULATION=... python3 bench/yag_o2/split_half.py ...` and PORTABLE counts from `population_tier.tsv`; (d) `cargo test --release --no-fail-fast`.
+- [ ] **Step 3: Runs** — (a) `python3 bench/popfix/sanity.py /mnt/linuxdisk/tmp/popfix/psv_population.tsv /mnt/linuxdisk/tmp/yag_o2/yag_human/yag_families.json` printing status x method counts per YAG family; (b) the 10-06 chrY simulation command (as in `docs/archive/2026-10/merged/PREREG_yag_o2_2026-10-12.md` Arm A) plus `--psv-population /mnt/linuxdisk/tmp/popfix/psv_population.tsv --psv-fixed-only --dump-star`, scored with `bench/yag_o2/arm_a.py` (YAG families); (c) the A119b YAG run (`/mnt/linuxdisk/tmp/yag_o2/yag_human/` inputs) plus `--psv-population ... --dump-star`, then `POPULATION=... python3 bench/yag_o2/split_half.py ...` and PORTABLE counts from `population_tier.tsv`; (d) `cargo test --release --no-fail-fast`.
 
 - [ ] **Step 4: Append results + verdicts to the prereg, commit, push.**
 

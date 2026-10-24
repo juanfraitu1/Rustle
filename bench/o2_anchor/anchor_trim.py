@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O2 anchor-trim truth (docs/PREREG_o2_anchor_2026-10-13.md, arm 1): real reads placed uniquely (MAPQ 60) on a catalog
+"""O2 anchor-trim truth (docs/archive/2026-10/merged/PREREG_o2_anchor_2026-10-13.md, arm 1): real reads placed uniquely (MAPQ 60) on a catalog
 copy lose the part of the read that is not shared with a sibling copy; O2 must recover the copy from the shared part.
 
     anchor_trim.py CATALOG_PREFIX BAM GENOME_FA OUTDIR [PER_COPY] [MAX_FAMILIES] [MAX_LINES]

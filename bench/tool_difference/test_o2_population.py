@@ -1,4 +1,4 @@
-"""Tests for o2_population.py (docs/PREREG_o2_population_2026-10-12.md)."""
+"""Tests for o2_population.py (docs/archive/2026-10/merged/PREREG_o2_population_2026-10-12.md)."""
 import os
 import sys
 

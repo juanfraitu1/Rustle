@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""IsoCon 0.3.3 as the reconstruction comparator (docs/PREREG_o3_structure_projection_2026-10-14.md, "Reported beside").
+"""IsoCon 0.3.3 as the reconstruction comparator (docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md, "Reported beside").
 
     isocon_cmp.py WORLD VARIANT ROWS.tsv     # per family with an absent copy E: IsoCon on all its reads (A + B + E, FASTA), its best final
                                              # candidate against E's true transcript; one row appended per family

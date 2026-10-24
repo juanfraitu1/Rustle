@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The 5' artifact read from the library (docs/PREREG_unmapped_rescue_2026-10-08.md Amendment 15): the 5' soft clips of cleanly aligned reads of surviving copies.
+"""The 5' artifact read from the library (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 15): the 5' soft clips of cleanly aligned reads of surviving copies.
 
 five_prime_clip: the 5' end of the ORIGINAL read (left soft clip of a forward read; right soft clip of a reverse read, reverse-complemented).
 signature: counts of pure single-base clips of 1 to 3 bases among clean primary reads; gate: is G over-represented (binomial, one-sided)."""

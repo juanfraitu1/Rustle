@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Liftoff copy pairs against matched decoys, per sample (prereg docs/PREREG_liftoff_pairs_null_2026-10-14.md).
+"""Liftoff copy pairs against matched decoys, per sample (prereg docs/archive/2026-10/merged/PREREG_liftoff_pairs_null_2026-10-14.md).
 
     run_pairs.py SAMPLE --out DIR [--null 1000] [--seed 7] [--inputs-only]
     SAMPLE = human_A119b | human_testis | gorilla_KB3781

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Few-read false-flag worlds for `candidate_copies` (docs/PREREG_o3_fewread_flags_2026-10-14.md, Phase 1).
+"""Few-read false-flag worlds for `candidate_copies` (docs/archive/2026-10/merged/PREREG_o3_fewread_flags_2026-10-14.md, Phase 1).
 
     world.py build OUT --seed S          # synthetic world (bench/famsim via synth_world.build_world) + the stage's inputs
     world.py run OUT --variant E0|E3     # map the variant's reads (sim.MM2), run candidate_copies -> OUT/E0/P.cand.*

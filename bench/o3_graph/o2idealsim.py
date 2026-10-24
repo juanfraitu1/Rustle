@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The frozen corrector on ideal-expression reads simulated from both of KB3781's haplotypes
-(docs/PREREG_o2_corrector_idealsim_2026-10-21.md; user: "ok lets do that").
+(docs/archive/2026-10/merged/PREREG_o2_corrector_idealsim_2026-10-21.md; user: "ok lets do that").
 
     o2idealsim.py prepare GWFAM.tsv FAMILIES OUT_DIR
         the catalog's copies of FAMILIES (comma-separated) -> OUT_DIR/copies.tsv (o2psv.load_copies), families.json

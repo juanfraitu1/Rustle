@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Handpicked real gene families for the graph-O2/O3 simulation v2 (prereg docs/PREREG_o3_graph_real_2026-10-15.md): mainstay
+"""Handpicked real gene families for the graph-O2/O3 simulation v2 (prereg docs/archive/2026-10/merged/PREREG_o3_graph_real_2026-10-15.md): mainstay
 multi-copy families (NPIP, TBC1D3, GOLGA, Soto's and others), their copies and curated isoforms from CHM13 v2.0's CAT/Liftoff
 annotation (the project's human default).
 
@@ -30,18 +30,18 @@ GROUPS = {
             "POTE": r"^POTE", "GSTA": r"^GSTA[0-9]", "TP53TG3": r"^TP53TG3"},
     "heldout": {"NPIPA": r"^NPIPA", "NPIPB": r"^NPIPB", "TBC1D3": r"^TBC1D3", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
                 "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31"},
-    # held out for union O2 / G (docs/PREREG_o3_graph_union_2026-10-15.md), picked before any run: Soto's human-specific
+    # held out for union O2 / G (docs/archive/2026-10/merged/PREREG_o3_graph_union_2026-10-15.md), picked before any run: Soto's human-specific
     # duplications FAM72, ARHGAP11, TCAF2, and copy-number mainstays AMY, SULT1A, FCGR, APOBEC3, PSG; ARHGAP11 and APOBEC3 form
     # no family at MIN_IDENT (built, no world), so GTF2H2 (the SMA region) and LRRC37A (17q21.31) were added, still before any run
     "heldout2": {"FAM72": r"^FAM72[A-D]$", "ARHGAP11": r"^ARHGAP11[AB]$", "TCAF2": r"^TCAF2", "AMY": r"^AMY[12]",
                  "SULT1A": r"^SULT1A[1-4]$", "FCGR": r"^FCGR[23]", "APOBEC3": r"^APOBEC3[A-H]$", "PSG": r"^PSG[0-9]+$",
                  "GTF2H2": r"^GTF2H2", "LRRC37A": r"^LRRC37A"},
-    # held out for round 3 (docs/PREREG_o3_graph_union2_2026-10-15.md), picked before any run: X-linked cancer-testis families
+    # held out for round 3 (docs/archive/2026-10/merged/PREREG_o3_graph_union2_2026-10-15.md), picked before any run: X-linked cancer-testis families
     # SSX, MAGEA, SPANX; UGT2B; the opsins OPN1LW/MW; CGB; KIR; CYP4F (spares, in order, should one form no family: TRIM,
     # LILR, DEFB10, CSAG)
     "heldout3": {"SSX": r"^SSX[0-9]+[AB]?$", "MAGEA": r"^MAGEA[0-9]+[AB]?$", "SPANX": r"^SPANX", "UGT2B": r"^UGT2B[0-9]+$",
                  "OPN1": r"^OPN1[LM]W", "CGB": r"^CGB[0-9]*$", "KIR": r"^KIR[23]D", "CYP4F": r"^CYP4F[0-9]+$"},
-    # held out for round 4 (docs/PREREG_o3_graph_round4_2026-10-15.md), picked before any run, in this order; the first 8 with
+    # held out for round 4 (docs/archive/2026-10/merged/PREREG_o3_graph_round4_2026-10-15.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set (a removed copy must leave >= 2 catalogued hosts: round 3's CYP4F had none)
     "heldout4": {"TRIM": r"^TRIM(43|49|51|64)[A-Z]?$", "LILR": r"^LILR[AB][0-9]$", "DEFB10": r"^DEFB10[3-7][AB]$",
                  "CSAG": r"^CSAG[0-9]$", "MAGEB": r"^MAGEB[0-9]+$", "CTAG": r"^CTAG[12][AB]?$", "SERF1": r"^SERF1[AB]?$",
@@ -49,7 +49,7 @@ GROUPS = {
                  "GTF2I": r"^GTF2I", "PRAMEF": r"^PRAMEF[0-9]+$", "VCX": r"^VCX[0-9]?[AB]?$", "SPDYE": r"^SPDYE[0-9]+$",
                  "FAM86": r"^FAM86[A-Z]$", "GPR89": r"^GPR89[ABC]$", "STAG3L": r"^STAG3L[0-9]$", "POM121": r"^POM121[A-Z]?$",
                  "CCDC144": r"^CCDC144[A-Z]+$"},
-    # held out for round 5 (docs/PREREG_o3_graph_round5_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 5 (docs/archive/2026-10/merged/PREREG_o3_graph_round5_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set; the TRIM and LILR subfamilies come first so that sister families (another family's reads hosted
     # on a family: round 4's dev-2 failure) can occur
     "heldout5": {"TRIM64": r"^TRIM64[A-Z]?$", "TRIM43": r"^TRIM43[A-Z]?$", "TRIM51": r"^TRIM51[A-Z]*$", "LILRA": r"^LILRA[0-9]$",
@@ -58,18 +58,18 @@ GROUPS = {
                  "CYP2D": r"^CYP2D[0-9]+P?$", "BTN3A": r"^BTN3A[1-3]$", "SPANXN": r"^SPANXN[0-9]$",
                  "GUSBP": r"^GUSBP[0-9]+$", "ANKRD20A": r"^ANKRD20A[0-9]+P?$", "FRG2": r"^FRG2[A-Z]*$", "GOLGA6": r"^GOLGA6[A-D]$",
                  "PMS2": r"^PMS2(CL|P[0-9]+)?$"},
-    # held out for round 6 (docs/PREREG_o3_graph_round6_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 6 (docs/archive/2026-10/merged/PREREG_o3_graph_round6_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set (FRG2, GOLGA6 and PMS2 were round-5 candidates past its first 8, never built into a world)
     "heldout6": {"FRG2": r"^FRG2[A-Z]*$", "GOLGA6": r"^GOLGA6[A-D]$", "PMS2": r"^PMS2(CL|P[0-9]+)?$", "CCL34": r"^CCL[34](L[0-9])?$",
                  "DEFA": r"^DEFA[0-9]+[A-Z]?$", "BCRP": r"^BCRP[0-9]+$", "GGT": r"^GGT[0-9]+[A-Z]*$", "CFHR": r"^CFHR[0-9]$",
                  "PRB": r"^PRB[0-9]$", "ANKRD30": r"^ANKRD30[A-Z]+$", "FRG1": r"^FRG1[A-Z]*$", "GSTT2": r"^GSTT2[A-Z]?$",
                  "CTAGE": r"^CTAGE[0-9]+$", "RIMBP3": r"^RIMBP3[A-Z]?$"},
-    # held out for round 7 (docs/PREREG_o3_graph_round7_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 7 (docs/archive/2026-10/merged/PREREG_o3_graph_round7_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set (CTAGE was a round-6 candidate past its first 8, never built into a world)
     "heldout7": {"CTAGE": r"^CTAGE[0-9]+$", "AQP7": r"^AQP7(P[0-9]+)?$", "PRSS": r"^PRSS[1-3](P[0-9])?$", "SPRR2": r"^SPRR2[A-G]$",
                  "FAM74A": r"^FAM74A[0-9]+$", "TUBB8": r"^TUBB8(P[0-9]+)?$", "DDX11L": r"^DDX11L[0-9]+$", "WASH": r"^WASH[0-9]P?$",
                  "SIGLEC": r"^SIGLEC[0-9]+[A-Z]?$", "IFITM": r"^IFITM[0-9]+$", "FAM138": r"^FAM138[A-Z]$", "FAM157": r"^FAM157[A-Z]$"},
-    # held out for round 8 (docs/PREREG_o3_graph_round8_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 8 (docs/archive/2026-10/merged/PREREG_o3_graph_round8_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set. Human-specific duplications (NOTCH2NL, SRGAP2) first, then copy-number mainstays (GH/CSH, USP17L,
     # the Y ampliconic TSPY, RBMY, BPY2, CDY), then others; none was in any earlier world (FAM86, GPR89 and POM121 were round-4
     # candidates past its first 8, never built into a world)
@@ -79,14 +79,14 @@ GROUPS = {
                  "PNMA6": r"^PNMA6[A-F]$", "PPIAL4": r"^PPIAL4[A-H]$", "FCGR1": r"^FCGR1[A-C]P?$", "NOMO": r"^NOMO[1-3]$",
                  "CROCC": r"^CROCC(P[0-9])?$", "RGPD": r"^RGPD[1-8]$", "FAM86": r"^FAM86[A-Z]$", "GPR89": r"^GPR89[ABC]$",
                  "POM121": r"^POM121[A-Z]?$"},
-    # held out for round 9 (docs/PREREG_o3_graph_round9_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 9 (docs/archive/2026-10/merged/PREREG_o3_graph_round9_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set, UNCAPPED (full families, --cap 1000). PPIAL4 and FCGR1 were round-8 candidates past its first 8,
     # never built into a world; none of the others was in any earlier list
     "heldout9": {"PPIAL4": r"^PPIAL4[A-H]$", "FCGR1": r"^FCGR1[A-C]P?$", "PGA": r"^PGA[3-5]$", "H4C": r"^H4C[0-9]+$",
                  "LCE2": r"^LCE2[A-D]$", "LCE3": r"^LCE3[A-E]$", "KRTAP4": r"^KRTAP4-[0-9]+$", "AGAP": r"^AGAP([4-9]|1[01])P?$",
                  "ELOA3": r"^ELOA3[B-D]?P?$", "FAM25": r"^FAM25[A-G]$", "CYP3A": r"^CYP3A[0-9]+$", "FAM47": r"^FAM47[A-C]$",
                  "FAM9": r"^FAM9[A-C]$", "KRTAP9": r"^KRTAP9-[0-9]+$", "DAZ": r"^DAZ[1-4]$"},
-    # held out for round 10 (docs/PREREG_o3_graph_round10_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 10 (docs/archive/2026-10/merged/PREREG_o3_graph_round10_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set, UNCAPPED, linked by the locus rule (--link locus --min-cover 0.8). CYP3A, FAM47, FAM9 and DAZ were
     # round-9 candidates past its first 8, never built into a world (KRTAP9 was, in the rebuilt set 10); none of the others was in
     # any earlier list
@@ -95,7 +95,7 @@ GROUPS = {
                   "F8A": r"^F8A[1-3]$", "FAM236": r"^FAM236[A-D]$", "CENPVL": r"^CENPVL[0-9]$", "FOXD4L": r"^FOXD4L[0-9]$",
                   "OR2T": r"^OR2T[0-9]+$", "KRTAP10": r"^KRTAP10-[0-9]+$", "H2BC": r"^H2BC[0-9]+$", "FAM66": r"^FAM66[A-E]$",
                   "CXADRP": r"^CXADRP[0-9]$", "GOLGA2P": r"^GOLGA2P[0-9]+$"},
-    # held out for round 11 (docs/PREREG_o3_graph_round11_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 11 (docs/archive/2026-10/merged/PREREG_o3_graph_round11_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set, UNCAPPED, linked by the locus rule (--link locus --min-cover 0.8). FOXD4L, OR2T, KRTAP10, H2BC,
     # FAM66, CXADRP and GOLGA2P were round-10 candidates past its first 8, never built into a world; none of the others was in
     # any earlier list
@@ -106,14 +106,14 @@ GROUPS = {
                   "NAIP": r"^NAIP(P[0-9]+)?$", "HLA-DRB": r"^HLA-DRB[0-9]$", "TCEAL": r"^TCEAL[0-9]$", "ARMCX": r"^ARMCX[0-9]$",
                   "OR4C": r"^OR4C[0-9]+$", "OR4K": r"^OR4K[0-9]+$", "OR11H": r"^OR11H[0-9]+$", "SEC14L": r"^SEC14L[0-9]$",
                   "DUX4": r"^DUX4(L[0-9]+)?$"},
-    # held out for round 12 (docs/PREREG_o3_graph_round12_2026-10-16.md), picked before any run, in this order; the first 8 with
+    # held out for round 12 (docs/archive/2026-10/merged/PREREG_o3_graph_round12_2026-10-16.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set, UNCAPPED, linked by the locus rule. KRTAP2, KRTAP1, ETD, CDRT15, NAIP, HLA-DRB, OR11H and DUX4
     # were round-11 candidates past its first 8, never built into a world; none of the others was in any earlier list
     "heldout12": {"KRTAP2": r"^KRTAP2-[0-9]+$", "KRTAP1": r"^KRTAP1-[0-9]+$", "ETD": r"^ETD[ABC]$",
                   "CDRT15": r"^CDRT15(L[0-9]+|P[0-9]+)?$", "NAIP": r"^NAIP(P[0-9]+)?$", "HLA-DRB": r"^HLA-DRB[0-9]$",
                   "OR11H": r"^OR11H[0-9]+$", "DUX4": r"^DUX4(L[0-9]+)?$", "POLR2J": r"^POLR2J[23]?$",
                   "KRTAP19": r"^KRTAP19-[0-9]+$", "KRTAP3": r"^KRTAP3-[0-9]+$", "MRGPRX": r"^MRGPRX[1-4]$"},
-    # held out for round 13 (docs/PREREG_o3_graph_round13_2026-10-17.md), picked before any run, in this order; the first 8 with
+    # held out for round 13 (docs/archive/2026-10/merged/PREREG_o3_graph_round13_2026-10-17.md), picked before any run, in this order; the first 8 with
     # >= 3 copies are the set, UNCAPPED, linked by the locus rule. MRGPRX was a round-12 candidate past its first 8 with >= 3
     # copies, never built into a world; none of the others was in any earlier list
     "heldout13": {"MRGPRX": r"^MRGPRX[1-4]$", "S100A7": r"^S100A7([AL]2?)?$", "KRTAP12": r"^KRTAP12-[0-9]+$",
@@ -129,7 +129,7 @@ GROUPS = {
     # into one component under the locus rule (23 of 23), and split in two they placed NPIPB reads on NPIPA copies
     "mainstay": {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
                  "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31"},
-    # the O2 proof (2026-10-17, docs/PREREG_o2_proof_2026-10-17.md), in no earlier list, picked before any build: near-identical
+    # the O2 proof (2026-10-17, docs/archive/2026-10/merged/PREREG_o2_proof_2026-10-17.md), in no earlier list, picked before any build: near-identical
     # pairs and trios first (autosomal and chrY interleaved), retrocopy and few-copy spares last; the set = the first 8 that
     # form a family of >= 2 copies. VCY, HSFY and PRY were scored once before, for copy_assign's O2 only (2026-10-12 YAG test,
     # another simulator), never for the integrated pipeline.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parity and scoring for the O3 structure projection (docs/PREREG_o3_structure_projection_2026-10-14.md). Imports the frozen reference
+"""Parity and scoring for the O3 structure projection (docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md). Imports the frozen reference
 implementation `proto.py` (never edited after the freeze) for the rule and the truth.
 
     score.py parity WORLD VARIANT PREFIX      # P0: the Rust boundaries (PREFIX.structure.tsv) vs the prototype's, per flagged candidate

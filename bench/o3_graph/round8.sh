@@ -1,5 +1,5 @@
 #!/bin/bash
-# round8.sh OUTROOT FAMILIES SET SEED MASKDIR SCENARIO  (docs/PREREG_o3_graph_round8_2026-10-16.md)
+# round8.sh OUTROOT FAMILIES SET SEED MASKDIR SCENARIO  (docs/archive/2026-10/merged/PREREG_o3_graph_round8_2026-10-16.md)
 # One world, end to end: build (alleles, --het 0.001) + map + the current method (copy_assign O2 + its --psv-clusters O3) +
 # the integrated O1 -> O2 -> O3 (o1seed.py, o2graph.py run W integ 2, detect.py arm I). REMOVED maps to MASKDIR's masked
 # genome and index (realworld.py mask, then minimap2 -x splice:hq -d); CROSS projects by liftover.

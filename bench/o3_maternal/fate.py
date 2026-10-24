@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Q1 of docs/PREREG_o3_maternal_reference_2026-10-08.md: the fate on the reference haplotype C.REF (env O3_REF, default mat) of the reads of
+"""Q1 of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md: the fate on the reference haplotype C.REF (env O3_REF, default mat) of the reads of
 the loci absent from it.
 
     O3_REF=mat fate.py fasta    # WR/truth/loci.fa: the C.OTHER sequence of every absent locus

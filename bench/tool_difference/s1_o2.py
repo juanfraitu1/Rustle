@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""O2's certificate on the reads of secondary-only genes (docs/PREREG_s1_o2_certificate_2026-10-12.md).
+"""O2's certificate on the reads of secondary-only genes (docs/archive/2026-10/merged/PREREG_s1_o2_certificate_2026-10-12.md).
 
 usage: s1_o2.py --bam B --fasta F --molecules M.tsv --strata PREFIX --ref REF.gtf[.gz] --exclude CHROM
                 --op-gtf GTF --op-tmap TMAP --out PREFIX

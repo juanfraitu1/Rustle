@@ -154,7 +154,7 @@ pre-registered for them (write the `PREREG_` before reading further).
 **What the two bold rows are (both diagnosed, neither is the simulation):**
 
 1. **`mcl_families` on a two-member family is numerically fragile.** **Fixed 2026-10-13**
-   (`docs/PREREG_mcl_two_node_2026-10-13.md`): after MCL a pair rule decides every connected two-node component
+   (`docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`): after MCL a pair rule decides every connected two-node component
    (`mcl_families --pair-rule`; default `exact-mcl` since the user's decision of 2026-10-13: a pair joins at weight ≥ w* = 0.457; `weight-blind` joins every connected pair), and `snp_0.01`, `snp_0.1` (both
    species) and human `shuffle` are intact in both modes after the fix (F3), also under the `exact-mcl` default (re-run 2026-10-13). The 10-02 diagnosis: `snp_0.01`, `snp_0.1`
    (both species) and the human `shuffle` de novo arm all log `2 nodes, 1 edges, 0 pairs dropped` and then

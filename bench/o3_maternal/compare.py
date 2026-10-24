@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chain side-by-side of the two runs (docs/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1).
+"""Chain side-by-side of the two runs (docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md, Amendment 1).
 
 For the loci absent from the reference of run A (A = mat: copies only the father has; A = pat: the reverse) show the SAME copies as seen by
 run A (the reference lacks them: are their transcripts flagged as new, are they recovered?) and by run B (the reference has them: are their

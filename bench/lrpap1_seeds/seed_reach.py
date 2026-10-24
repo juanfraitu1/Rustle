@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""How many seeds does the DNA (guided) mode need to find every LRPAP1 copy? (docs/PREREG_lrpap1_seed_reach_2026-10-11.md)
+"""How many seeds does the DNA (guided) mode need to find every LRPAP1 copy? (docs/archive/2026-10/merged/PREREG_lrpap1_seed_reach_2026-10-11.md)
 
     seed_reach.py <browser.json> <out.json>        aligns every copy as a seed with the guided pipeline's two finders, then scores seed sets
 

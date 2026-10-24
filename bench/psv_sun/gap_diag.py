@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""What are the PSV columns that no local alignment supports? (docs/PSV_SUN_PILEUP_2026-10-12.md, "different exon content")
+"""What are the PSV columns that no local alignment supports? (docs/archive/2026-10/merged/PSV_SUN_PILEUP_2026-10-12.md, "different exon content")
 
 For every copy X vs copy 0 of a family, in O2's frame (a flipped copy reverse-complemented), the colinear chain of
 `minimap2 -cx asm20` pieces splits copy 0 into ALIGNED blocks and unaligned stretches. Each unaligned stretch of copy 0 is

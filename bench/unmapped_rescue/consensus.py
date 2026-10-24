@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""abPOA consensus of a cluster (docs/PREREG_unmapped_rescue_2026-10-08.md section 1, step 2). Needs pyabpoa: run with /home/juanfra/miniforge3/bin/python.
+"""abPOA consensus of a cluster (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md section 1, step 2). Needs pyabpoa: run with /home/juanfra/miniforge3/bin/python.
 
     consensus.py <pool.fa> <clusters.tsv> <out.fa>    # one consensus per cluster, <= 100 reads, longest first
 """

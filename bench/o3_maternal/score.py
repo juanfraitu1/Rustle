@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R1-R4 and the p12 line of docs/PREREG_o3_maternal_reference_2026-10-08.md section 6, per arm and per run (reference C.REF, env O3_REF).
+"""R1-R4 and the p12 line of docs/archive/2026-10/merged/PREREG_o3_maternal_reference_2026-10-08.md section 6, per arm and per run (reference C.REF, env O3_REF).
 
     O3_REF=mat score.py isocon | inhouse   # reads WR/<dir>/{cands.tsv,cands.ref.paf,cands.other.paf}; writes WR/score/<arm>.json, prints verdicts
 
