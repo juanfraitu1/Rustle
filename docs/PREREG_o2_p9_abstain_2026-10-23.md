@@ -27,3 +27,19 @@ GWFAM2 (27 copies) and GWFAM1 (36) are left out for runtime (P7's 27-copy run ex
 - **Verdict.** Pass iff Q1 and Q2. Run once; nothing changed after looking.
 
 **Reported, not decided:** tied reads, placed, abstained, fixes and breaks against minimap2, minimap2's wrong count, runtime.
+
+## Result (run once, 2026-10-23; work dir `/mnt/linuxdisk/tmp/o2p9`): PASS, but only by abstaining
+All 8 families x d {0, 2} x {control, missing} = 32 runs completed (GWFAM36 needed the synthetic B allele).
+
+| | tied | placed | wrong | on X' (missing) | abstain | minimap2 wrong |
+|---|---|---|---|---|---|---|
+| d 0 control | 3,201 | 0 | 0 | | 3,201 | 1,612 |
+| d 0 missing | 1,601 | 0 | 0 | 0 | 1,601 | 788 |
+| d 2 control (conversion) | 3,201 | 0 | 0 | | 3,201 | 410 |
+| d 2 missing (conversion) | 1,601 | 0 | 0 | 0 | 1,601 | 408 |
+| **pooled** | **9,604** | **0** | **0** | **0** | **9,604** | **3,218 (33.5%)** |
+
+- **Q1 PASS** (0 wrong of 0 placed). **Q2 PASS** (0 reads on the lacked copy X'; minimap2 put about half of X's tied reads there).
+- **Verdict: PASS under the reframed criterion 3, and the pass is pure abstention.** O2 v2 placed nothing: X' is homozygous in
+  every run, so a free allele slot remains and no haplotype-to-copy match is forced (Theorem A). The result shows O2 is safe where
+  minimap2 is wrong a third of the time, not that it resolves any tie. Fixes 0, breaks 0.
