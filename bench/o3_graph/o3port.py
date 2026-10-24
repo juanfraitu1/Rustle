@@ -38,6 +38,7 @@ MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
 CLIP_BP = 50       # a soft clip this long that is not a poly-A / poly-T tail
 CLIP_BIN = 20      # clip boundaries in the same CLIP_BIN-bp bin on the same side count as one boundary
+GUARD = False      # --guard: O2 abstains on copies where O3 flags a putative copy (development, 2026-10-24)
 PREFER = False     # --prefer: a haplotype cannot take a slot of a copy its reads clearly disfavour (development, 2026-10-24)
 RECONSTRUCT = True # O2 uses O3's certified copies (--no-reconstruct: O2 as if O3 had found none; the O3 -> O2 comparison)
 SEMI = False       # O2 --semi (opt-in, register 1388): semi-tied reads go to their best copy, exact ties are HOPELESS
@@ -990,12 +991,17 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
         for r in merged[i]["reads"]:
             home_of.setdefault(r, i)
     cert_reads = {r: k for k, (_, rs, _) in enumerate(certified) for r in rs} if RECONSTRUCT else {}
+    # --guard: where O3 flags a putative copy the copy set is not reconstructed: abstain on every tied read touching that copy or
+    # the copies its haplotype could hold a slot on (a free-slot X* makes forced edges and site leads there unsafe, register 1393)
+    unsure = {X for X, *_ in looks} | {c for _, rs, *_ in looks for i in demand if merged[i]["reads"] is rs for c in options[i]}
     o2, semi_cache = [], {}
     for r, k in n_in.items():
         if k < 2:
             continue
         if r in cert_reads:
             o2.append((r, f"new:{cert_reads[r]}", k))
+        elif GUARD and {c for c, p in piles.items() if r in p} & unsure:
+            o2.append((r, "ABSTAIN", k))
         elif r in home_of and home_of[r] in forced and {c for c, p in piles.items() if r in p} <= set(options[home_of[r]]):
             o2.append((r, forced[home_of[r]], k))
         elif SEMI:
@@ -1127,6 +1133,7 @@ def main(argv):
     r.add_argument("--coverage", action="store_true", help="putative copies also from coverage the slot copy's own allele never has")
     r.add_argument("--semi", action="store_true", help="O2: semi-tied reads to their best AS / fewest-edit copy, exact ties "
                    "HOPELESS (unsafe where the sample carries the other copy's base at the deciding site, register 1388)")
+    r.add_argument("--guard", action="store_true", help="O2 abstains on tied reads touching a copy with a putative flag")
     r.add_argument("--prefer", action="store_true", help="slots only on copies the haplotype's reads do not disfavour by >= 2 sites")
     r.add_argument("--no-reconstruct", action="store_true", help="O2 ignores O3's certified copies (O3 -> O2 baseline)")
     r.add_argument("--no-clipping", action="store_true", help="putative copies without the soft-clip signal (P6's port)")
@@ -1141,8 +1148,8 @@ def main(argv):
     r.add_argument("--dump", default="", help="JSON lines of each family's internal states (piles, clusters, haplotype "
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
-    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER
-    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer
+    global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD
+    CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard
     cmd_run(a)
 
 
