@@ -27,3 +27,21 @@ control and missing (the sample lacks X'). 60 runs. A run that fails (no isoform
 - **Verdict.** Pass iff S1, S2, S3 and power. Run once; nothing changed after looking.
 
 **Reported, not decided:** fixes and breaks against minimap2's primary; hopeless and abstain counts; per d.
+
+## Result (run once, 2026-10-23; work dir `/mnt/linuxdisk/tmp/o2p11`): FAILS S2
+All 60 runs completed.
+
+| | tied | placed | wrong | hopeless | minimap2 wrong | MAPQ >= 1 placed / wrong |
+|---|---|---|---|---|---|---|
+| d 1 | 6,000 | 0 | 0 | 120 | 2,015 | 5,882 / 1,955 |
+| d 2 | 5,997 | 3,782 | 4 | 1,891 | 994 | 4,106 / 22 |
+| d 3 | 2,599 | 804 | 0 | 41 | 28 | 2,558 / 6 |
+| **pooled** | **14,596** | **4,586** | **4 (0.09%)** | 2,052 | 3,037 | 12,546 / 1,983 (15.8%) |
+
+- **S1 PASS** (0.09% <= 2%). **S3 PASS** (0.09% < 15.8%). **Power PASS** (4,586 placed).
+- **S2 FAILS: 2 reads placed on X' in the missing case** (GWFAM118 d2, GWFAM172 d2; both X|B reads). GWFAM118's read has edit
+  distance 41 on X' and 43 on X (AS 3,771 vs 3,761): the "two-site" lead was one converted site plus one read error / alignment
+  difference, because the rule counts edits, not distinguishing sites.
+- **Verdict: DOES NOT PASS.** Fixes 0, breaks 0 against minimap2's primary.
+- Next (development, not this held-out): count distinguishing sites (reference positions where the copies differ) instead of the
+  edit-distance difference.
