@@ -427,6 +427,10 @@ def semi_tied(r, piles):
     sc = sorted(((rec.get_tag("AS"), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
     if len(sc) < 2 or sc[0][:2] == sc[1][:2]:
         return "HOPELESS"
+    # >= MIN_READS (2) more edits on the runner-up: two distinguishing sites agree. A conversion in the sample flips one site's
+    # base; one site alone cannot tell it from the copy it points to (register 1388), so a one-site lead abstains.
+    if -sc[1][1] - -sc[0][1] < MIN_READS:
+        return "ABSTAIN"
     return sc[0][2]
 
 
