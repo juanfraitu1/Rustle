@@ -10237,3 +10237,23 @@ before `:0`). The 78 golden cases passed only because their one two-option haplo
 with the copies reversed (`p14_d1_control_rev_*`) added. **81/81 identical at 1 and 4 threads.** (2) The `PORT=rs` concat branch had a
 Python syntax error. Fixed; run on a P10 stand-in (per-batch tables, no nets-step file): the table and all 10 products equal the frozen
 `pc` products. (3) The `candidate_copies` stage key moved to v3, so a pre-`--net-reads` cache entry is never reused.
+
+## 2026-10-24 REPORT (register 1408): how much does Jim differ from his own reference, family by family?
+The reference is one animal, KB3781 "Jim", and the fibroblast RNA comes from him too. We mapped the 1,415 transcript copies of the
+494 GGO_gwcat families (`minimap2 -c -x splice:hq -uf -N 50 -p 0.5`) to the reference and to Jim's maternal and paternal haplotypes
+(mGorGor1 cur.20231122). We counted the loci per family in each assembly; a locus = merged hits with query coverage >= C and
+identity >= T. The count is autosomes only, because Jim is male, so X is on mat only and Y on pat only. Work dir
+`/mnt/linuxdisk/tmp/hapcn`; scripts `bench/hapcn_mat_pat.py`, `bench/hapcn_mat_pat_robust.py`.
+- Every reference copy is present at 100% identity in mat or pat (1,414 / 1,415; 1 at >= 99.5%). The reference is a mosaic of Jim's
+  two haplotypes and holds no copy he lacks.
+- Copy-count differences between mat and pat in 27-35 / 494 families (5-7%), depending on C in {0.5, 0.8, 0.95} and T in {0.95,
+  0.98}; 23 families differ under all 6 settings. Most differ by 1 copy (17-27 families); 2-3 families differ by 3+. In copy slots
+  that is 41-62 of 2,725-3,160 (1.5-2%). The reference sides with pat in ~60% and with mat in ~35% of them, and with neither in 1-3.
+- Allele level: the other haplotype's best match for each of the 1,272 autosomal reference copies is identical for 336, >= 99.9% for 331, 99-99.9% for 574 and 90-99% for 31
+  (block identity, indels counted; the best match anywhere, so an upper bound on how similar the allele is).
+- So within Jim, most of the difference is allelic (about 1-10 differences per kb in these duplicated genes). Whole-copy differences are real but
+  affect ~1 family in 15, usually by one copy. Those are the copies O3 is after. A different animal (OR6737 testis) adds differences
+  between the two animals on top of this; with no assembly of OR6737 that part is not measured.
+- This revises the July result (bench commit 74851178: 196 older families, genomic spans, asm20; "zero autosomal inter-haplotype
+  CNVs"). On the current catalog with transcript queries the count is not zero. Not checked: whether a difference is a curation or
+  assembly error in one haplotype.
