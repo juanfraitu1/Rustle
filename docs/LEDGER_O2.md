@@ -8009,3 +8009,16 @@ allele) vs the primary's 14 wrong on the same reads.
 - H2: the LL argmax's wrong rate on non-tied band reads < the primary's on the same reads.
 - H3: posterior >= 0.99 assignments are <= 1% wrong and no worse than the primary on the same reads.
 - PASS = H1 and H2 and H3. FAIL means `ms` stays the ranking; report the allele share of the wrong calls.
+
+### P18 result (2026-10-25): ❌ FAIL (H1, H3); `ms` stays the ranking (register 1410)
+Test: 294 held-out families, 14,960 reads (8,170 from the reference allele, 6,790 from the other allele); minimap2's primary is right
+for 14,742 (98.5%). Band reads 471: 249 LL exact ties (the copies are identical over the read), 222 decidable.
+- H1 FAIL: 2 switches, both right (p = 0.25). The error model agrees with `ms` on 220 / 222.
+- H2 PASS (barely): LL wrong 40 / 222 vs primary 42 / 222.
+- H3 FAIL: posterior >= 0.99 assigns 220, 40 wrong (18%), the same 40 the primary gets wrong.
+- All 40 confident wrong calls are reads of Jim's OTHER allele, whose sequence matches another copy better than its own (its allele
+  carries that copy's base at the distinguishing sites). No read-error model can fix that; it is the donor-allele problem O3 -> O2 is for.
+- Where the 218 wrong primaries are: 146 exact ties in the band (coin toss), 42 near-ties (40 other-allele reads), 30 outside the band.
+- Conclusion: sequencing errors are not what makes minimap2 wrong on near-ties; HiFi errors fall on both alignments alike. What
+  makes it wrong is (a) copies identical over the read and (b) the sample's own alleles. Both need evidence from outside the read
+  (the sample's copies and alleles: O3 and O2's sample-aware lane), not a better per-read score.
