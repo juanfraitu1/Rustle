@@ -3,6 +3,7 @@
 //! Python dicts iterate in insertion order, so the maps that reach a product or a tie-break are `IndexMap`s; read names are
 //! interned as `ReadId`s in sorted-name order, so comparing ids compares names (`sorted(reads)` = sorted ids).
 
+pub mod pile;
 pub mod stats;
 
 use indexmap::IndexMap;

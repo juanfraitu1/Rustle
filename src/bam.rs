@@ -354,7 +354,7 @@ pub const DE_TAG: Tag = Tag::new(b'd', b'e');
 pub const TS_TAG: Tag = Tag::new(b't', b's');
 
 /// `AS:i` at any integer width; `None` for a non-integer value.
-fn value_as_i32(value: Value<'_>) -> Option<i32> {
+pub fn value_as_i32(value: Value<'_>) -> Option<i32> {
     match value {
         Value::Int8(v) => Some(v as i32),
         Value::UInt8(v) => Some(v as i32),

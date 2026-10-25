@@ -8,8 +8,9 @@
 //! `--threads` (default 4) never changes a product. Exit status 2: a usage error.
 
 use anyhow::{bail, Context, Result};
-use rustle::o3port::{Clusterer, Copy, Params, SlotOrder};
-use std::collections::{BTreeMap, BTreeSet};
+use rustle::o3port::pile::{pile_records, Bam};
+use rustle::o3port::{Clusterer, Copy, Params, ReadId, SlotOrder};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const USAGE: &str = "usage: o3port run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2] \
 [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site] [--guard] \
@@ -168,8 +169,24 @@ fn load_net(path: &str, families: &Option<BTreeSet<String>>) -> Result<(BTreeMap
 }
 
 fn run(a: &Args) -> Result<()> {
-    let _by_fam = load_copies(&a.copies)?;
-    let (_net, _n_net) = load_net(&a.net, &a.families)?;
-    let _ = (&a.bam, &a.genome, &a.out, &a.isocon, a.isocon_via_b, &a.dump, a.threads, &a.params);
+    let by_fam = load_copies(&a.copies)?;
+    let (net, _n_net) = load_net(&a.net, &a.families)?;
+    let _ = (&a.genome, &a.out, &a.isocon, a.isocon_via_b, &a.dump, a.threads, &a.params);
+    // the run's read table: every used net read, sorted, so ReadId order = name order
+    let table: Vec<String> = net.values().flatten().cloned().collect::<BTreeSet<_>>().into_iter().collect();
+    let names: HashMap<Vec<u8>, ReadId> = table.iter().enumerate().map(|(i, n)| (n.as_bytes().to_vec(), i as ReadId)).collect();
+    let bam = Bam::open(&a.bam)?;
+    let (prim, _records) = bam.read_primaries(&names)?;
+    if std::env::var_os("O3PORT_DEBUG_PILES").is_some() {
+        for (fam, reads) in &net {
+            let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
+            let piles = pile_records(&bam, &by_fam[fam], &ids, &prim, &names)?;
+            for (c, p) in &piles {
+                let mut v: Vec<&str> = p.keys().map(|&i| table[i as usize].as_str()).collect();
+                v.sort();
+                println!("{fam}\t{c}\t{}", v.join(","));
+            }
+        }
+    }
     Ok(())
 }
