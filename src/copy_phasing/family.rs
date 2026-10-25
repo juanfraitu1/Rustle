@@ -2,7 +2,7 @@
 //! haplotypes -> DADA2 explanation -> allele slots -> certified copies, putative copies, and the assignment of tied reads.
 
 use super::cluster::{absorb, cluster_pile, conflicting_set, haplotype, Cluster};
-use super::pile::{blocks, cmp_base, observations, Piles, Prim};
+use super::pile::{blocks, cmp_base, observations, Piles, Prim, RecSummary};
 use super::putative::{foreign_clipping, foreign_coverage, foreign_splicing, junction_usage, putative_copies, Usage};
 use super::pyjson::Json;
 use super::slots::{b_matching, consensus, divergence, explanation, forced_edges, pile_consensus, private_alleles, private_detail, Explain, Matching, Merged, Options, Parent};
@@ -60,6 +60,49 @@ enum By {
     Join(String, String),
 }
 
+/// `certificate_matching` (`--certify-all-records`, register 1414): the slot matching a certificate must survive. A haplotype
+/// whose reads' primaries mostly lie on no copy of the family is explained by that reference locus and claims no slot; the others
+/// may take a slot on every family copy most of their reads have ANY record on, not only the copies inside the tie window.
+#[allow(clippy::too_many_arguments)]
+fn certificate_matching(
+    demand: &[usize],
+    merged: &[Merged],
+    options: &Options,
+    piles: &Piles,
+    copies: &[Copy],
+    records: &HashMap<ReadId, Vec<RecSummary>>,
+    capacity: &BTreeMap<String, usize>,
+    order: &[usize],
+) -> Matching {
+    let on = |ch: &str, s0: i64, e0: i64, c: &Copy| ch == c.chrom && s0 < c.end && e0 > c.start;
+    let mut sorted_copies: Vec<&Copy> = copies.iter().collect();
+    sorted_copies.sort_by(|a, b| a.tid.cmp(&b.tid));
+    let none = Vec::new();
+    let recs = |r: &ReadId| records.get(r).unwrap_or(&none);
+    let mut copts = Options::new();
+    for &i in demand {
+        let reads = &merged[i].reads;
+        let out = reads
+            .iter()
+            .flat_map(|r| recs(r).iter())
+            .filter(|(ch, s0, e0, _, sec, _)| !*sec && !copies.iter().any(|c| on(ch, *s0, *e0, c)))
+            .count();
+        if out * 2 > reads.len() {
+            continue;
+        }
+        let mut o: BTreeSet<String> = options[&i].iter().cloned().collect();
+        for c in &sorted_copies {
+            let k = reads.iter().filter(|r| recs(r).iter().any(|(ch, s0, e0, ..)| on(ch, *s0, *e0, c))).count();
+            if k > 0 && piles.contains_key(&c.tid) && k * 2 >= reads.len() {
+                o.insert(c.tid.clone());
+            }
+        }
+        copts.insert(i, o.into_iter().collect());
+    }
+    let ord: Vec<usize> = order.iter().copied().filter(|i| copts.contains_key(i)).collect();
+    b_matching(&copts, capacity, Some(&ord))
+}
+
 /// `run_family` on the family's piles (`pile_records`, built by the caller). `names` maps read ids to names for the dump.
 #[allow(clippy::too_many_arguments)]
 pub fn run_family(
@@ -71,6 +114,7 @@ pub fn run_family(
     p: &Params,
     tmpdir: &Path,
     names: Option<&[String]>,
+    records: &HashMap<ReadId, Vec<RecSummary>>,
 ) -> Result<FamilyOut> {
     let span: HashMap<&str, (i64, i64)> = copies.iter().map(|c| (c.tid.as_str(), (c.start, c.end))).collect();
     let chrom: HashMap<&str, &str> = copies.iter().map(|c| (c.tid.as_str(), c.chrom.as_str())).collect();
@@ -296,11 +340,13 @@ pub fn run_family(
         looks.push((x, merged[i].reads.clone(), consensus(steps.values()), mi, mc));
         look_of.push(i);
     }
+    let cmatch = p.certify_all.then(|| certificate_matching(&demand, &merged, &options, piles, copies, records, &capacity, &order));
     let mut certified = Vec::new();
     let mut cert_of: Vec<usize> = Vec::new();
     for &i in &demand {
         let m = &merged[i];
-        if matched[&i].is_none() && private_alleles(i, &merged, &matched, &options) >= MIN_READS {
+        let survives = cmatch.as_ref().is_none_or(|cm| matches!(cm.get(&i), Some(None)));
+        if matched[&i].is_none() && private_alleles(i, &merged, &matched, &options) >= MIN_READS && survives {
             let home = m.piles.iter().max_by(|a, b| (in_pile(m, a), a.as_str()).cmp(&(in_pile(m, b), b.as_str()))).unwrap().clone();
             let (_, steps) = observations(m.reads.iter().filter_map(|r| piles[&home].get(r)), prim, span[home.as_str()]);
             certified.push((home, m.reads.clone(), consensus(steps.values())));
@@ -484,7 +530,7 @@ mod tests {
         let g = IndexedFasta::open(dir.join("g.fa").to_str().unwrap()).unwrap();
         let copies = vec![Copy { tid: "F:0".into(), chrom: "c".into(), start: 0, end: 4 }];
         let piles: Piles = [("F:0".to_string(), Default::default())].into_iter().collect();
-        let out = run_family("F", &copies, &piles, &HashMap::new(), &g, &Params::default(), &dir, Some(&[])).unwrap();
+        let out = run_family("F", &copies, &piles, &HashMap::new(), &g, &Params::default(), &dir, Some(&[]), &HashMap::new()).unwrap();
         assert!(out.certified.is_empty() && out.looks.is_empty() && out.o2.is_empty() && out.per_copy.is_empty());
         assert_eq!(out.n_h, 0);
         assert!(out.why.is_empty());

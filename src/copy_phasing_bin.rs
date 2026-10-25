@@ -4,7 +4,7 @@
 //! usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2]
 //!        [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site]
 //!        [--guard] [--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb]
-//!        [--tie-structure] [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
+//!        [--tie-structure] [--certify-all-records] [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
 //! `--threads` (default 4) never changes a product. Exit status 2: a usage error.
 
 use anyhow::{bail, Context, Result};
@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const USAGE: &str = "usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2] \
 [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site] [--guard] \
-[--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--tie-structure] \
+[--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--tie-structure] [--certify-all-records] \
 [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]";
 
 #[derive(Debug)]
@@ -74,6 +74,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
             "--v5-clique" => p.floor_first = false,
             "--absorb" => p.absorb = true,
             "--tie-structure" => p.tie_structure = true,
+            "--certify-all-records" => p.certify_all = true,
             "--bam" | "--copies" | "--genome" | "--net" | "--out" | "--families" | "--slot-order" | "--isocon" | "--clusterer"
             | "--isocon-rule" | "--dump" | "--threads" => {
                 let v = match inline {
@@ -220,7 +221,7 @@ fn run(a: &Args) -> Result<()> {
         let piles = pile_records(&bam, copies, &ids, &prim, &names, a.params.tie_structure)?;
         let ftmp = tmp.join(fam.replace('/', "_"));
         std::fs::create_dir_all(&ftmp)?;
-        let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &ftmp, dumping.then_some(&table[..]))?;
+        let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &ftmp, dumping.then_some(&table[..]), &records)?;
         let _ = std::fs::remove_dir_all(&ftmp);
         let mut o2: Vec<(&str, &str, usize)> = out.o2.iter().map(|(r, c, k)| (nm(*r), c.as_str(), *k)).collect();
         o2.sort();

@@ -43,6 +43,7 @@ ANCHOR = False     # --anchor: a one-site lead suffices at a site the copies' an
 ONE_SITE = False   # --one-site: a one-site lead suffices when the read's haplotype agrees (development, 2026-10-24)
 GUARD = False      # --guard: O2 abstains on copies where O3 flags a putative copy (development, 2026-10-24)
 PREFER = False     # --prefer: a haplotype cannot take a slot of a copy its reads clearly disfavour (development, 2026-10-24)
+CERTIFY_ALL = False  # --certify-all-records (register 1414)
 RECONSTRUCT = True # O2 uses O3's certified copies (--no-reconstruct: O2 as if O3 had found none; the O3 -> O2 comparison)
 SEMI = False       # O2 --semi (opt-in, register 1388): semi-tied reads go to their best copy, exact ties are HOPELESS
 COVERAGE = False   # milestone 2 retry: foreign coverage as a putative signal (--coverage)
@@ -889,6 +890,26 @@ def pile_consensus(obs):
 CMP = {"A": "T", "C": "G", "G": "C", "T": "A"}
 
 
+def certificate_matching(demand, merged, options, piles, chrom, span, records, capacity, order):
+    """--certify-all-records (register 1414): the slot matching a certificate must survive. A haplotype whose reads' primaries
+    mostly lie on no copy of the family is explained by that reference locus and claims no slot; the others may take a slot on
+    every family copy most of their reads have ANY record on, not only the copies inside the tie window. Returns {haplotype:
+    slot copy or None} over the slot-claiming haplotypes."""
+    on = lambda ch, s0, e0, c: ch == chrom[c] and s0 < span[c][1] and e0 > span[c][0]
+    def outside(i):
+        n = sum(1 for r in merged[i]["reads"] for ch, s0, e0, _, sec, _ in records.get(r, ())
+                if not sec and not any(on(ch, s0, e0, c) for c in chrom))
+        return n * 2 > len(merged[i]["reads"])
+    copts = {}
+    for i in demand:
+        if outside(i):
+            continue
+        hit = collections.Counter(c for r in merged[i]["reads"] for c in sorted(chrom)
+                                  if any(on(ch, s0, e0, c) for ch, s0, e0, *_ in records.get(r, ())))
+        copts[i] = sorted(set(options[i]) | {c for c, k in hit.items() if c in piles and k * 2 >= len(merged[i]["reads"])})
+    return b_matching(copts, capacity, [i for i in order if i in copts])
+
+
 def private_detail(i, merged, match, options):
     """(pile, [(column, allele)]): the alleles of unmatched haplotype i that no slot-holding haplotype of its option copies
     carries, on the pile where i has the most of them (the first such pile on a tie)."""
@@ -916,7 +937,7 @@ def divergence(h, ref):
 
 
 def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", tmpdir=".", dump=None, absorb_fragments=False,
-               floor_first=True, clusterer="cc", structure=True):
+               floor_first=True, clusterer="cc", structure=True, records=None):
     """dump: a dict filled with the family's internal states (piles, clusters, haplotype fates, private alleles) when given;
     the products do not depend on it."""
     piles = pile_records(bam, copies, reads, prim)
@@ -1049,9 +1070,10 @@ def run_family(fam, copies, reads, bam, prim, genome, slot_order="divergence", t
             continue
         _, steps = observations({r: piles[X][r] for r in sorted(merged[i]["reads"]) if r in piles[X]}, prim, span[X])
         looks.append((X, merged[i]["reads"], consensus(steps), mi, mc))
+    cmatch = certificate_matching(demand, merged, options, piles, chrom, span, records, capacity, order) if CERTIFY_ALL else None
     for i in demand:
         m = merged[i]
-        if match[i] is None and private_alleles(i, merged, match, options) >= MIN_READS:
+        if match[i] is None and private_alleles(i, merged, match, options) >= MIN_READS and (cmatch is None or cmatch.get(i, "") is None):
             home = max(m["piles"], key=lambda c: (len(m["reads"] & piles[c].keys()), c))
             # sorted: the consensus breaks a tie by read order, which must not follow the process's string-hash order
             _, steps = observations({r: piles[home][r] for r in sorted(m["reads"]) if r in piles[home]}, prim, span[home])
@@ -1171,7 +1193,7 @@ def cmd_run(a):
             dump = {} if dump_fh else None
             certified, per_copy, n_h, why, piled, looks, o2 = run_family(fam, by_fam[fam], reads, bam, prim, genome, a.slot_order,
                                                                      tmpdir, dump, a.absorb, not a.v5_clique, a.clusterer,
-                                                                     not a.no_structure)
+                                                                     not a.no_structure, records)
             for r, c, k in sorted(o2):
                 o2f.write(f"{fam}\t{r}\t{c}\t{k}\n")
             for k, (X, rs, seq, mi, mc) in enumerate(looks):
@@ -1233,6 +1255,9 @@ def main(argv):
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--tie-structure", action="store_true", help="O2's tie window = the primary's intron count and AS within 10 "
                    "of the primary's (register 1404; default: AS within 10 of the read's best)")
+    r.add_argument("--certify-all-records", action="store_true", help="a certified copy must survive the slot matching over every "
+                   "family copy its reads have any record on, and a haplotype whose primaries lie outside the family claims no "
+                   "slot (register 1414)")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
@@ -1244,8 +1269,8 @@ def main(argv):
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
     global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR
-    global TIE_STRUCTURE
-    TIE_STRUCTURE = a.tie_structure
+    global TIE_STRUCTURE, CERTIFY_ALL
+    TIE_STRUCTURE, CERTIFY_ALL = a.tie_structure, a.certify_all_records
     CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard, a.one_site, a.anchor
     cmd_run(a)
 

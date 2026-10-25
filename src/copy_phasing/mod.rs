@@ -80,6 +80,9 @@ pub struct Params {
     /// `--tie-structure` (register 1404): the tie window is the primary's intron count and AS within AS_TIE of the primary's
     /// (`pile::Prim::near`), not AS within AS_TIE of the read's best.
     pub tie_structure: bool,
+    /// `--certify-all-records` (register 1414): a certified copy must survive the slot matching over every family copy its reads
+    /// have any record on; a haplotype whose primaries lie outside the family claims no slot (`family::certificate_matching`).
+    pub certify_all: bool,
 }
 
 impl Default for Params {
@@ -100,6 +103,7 @@ impl Default for Params {
             floor_first: true,
             absorb: false,
             tie_structure: false,
+            certify_all: false,
         }
     }
 }

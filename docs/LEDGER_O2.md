@@ -8104,3 +8104,21 @@ Dumps: `/mnt/linuxdisk/tmp/p21/X.dump` (default window), `XT.dump` (`--tie-struc
   the 10-AS window. Certify only if no copy where the reads have any record has a free slot. GWFAM384's reads have a record on copy
   0, which has a free slot, so they would not be certified. The rule needs a held-out check that certified recall (P5) survives.
 - The original suspect, badread's context errors repeating like alleles, is not the cause in either family.
+
+## PREREG P22 (2026-10-25): `--certify-all-records` held out: precision and recall of certified copies
+**Status:** committed before the masked genome is built or any run on it. Code: `--certify-all-records` in `o3port.py` and
+`copy_phasing` (opt-in; Rust = Python on 28 flag-on golden cases at 1 and 4 threads, the 94 earlier cases unchanged).
+**Why held out:** the rule was built from P21's GWFAM197 / GWFAM384 (P18 test families). The P18 DEV families (153, 10,000 reads
+from both of Jim's alleles) have never been used for certification.
+**Panel:** dev families with >= 2 copies whose copies all have built alleles or sit on X/Y. A seeded draw (seed 20261025) puts half
+of them in arm EXTRA: one copy each (seeded) is replaced by N in a copy of GGO.fasta. Its reads become reads of a copy the
+reference lacks. The other half are CONTROL (nothing masked). The dev reads are realigned to the masked genome with the real-BAM
+command. The copies table drops the masked copies; net = every read with a record on a remaining copy of the family.
+**Runs:** `copy_phasing run --semi --guard` with and without `--certify-all-records`, each with and without `--tie-structure` (4 arms).
+**Truth:** a certified copy is TRUE if most of its reads come from the masked copy of its family (either allele), else FALSE.
+**Hypotheses** (bars before the run), comparing the flag arm with the same window without the flag:
+- H1 (precision): false certified copies with the flag <= without, and the flag arm has <= 2 false certified copies over all
+  families (default window).
+- H2 (recall): masked copies certified with the flag >= 90% of those certified without it (default window).
+- Reported, no bar: the same under `--tie-structure`; putative flags; O2 assigned / right on tied rows.
+**Fails if** H1 or H2 is missed.
