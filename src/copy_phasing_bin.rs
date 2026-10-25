@@ -209,20 +209,27 @@ fn run(a: &Args) -> Result<()> {
     writeln!(o2f, "family\tread\tassigned\tn_piles")?;
     let nm = |r: ReadId| table[r as usize].as_str();
     let empty = Vec::new();
-    for (fam, reads) in &net {
+    let dumping = dump_fh.is_some();
+    // one family's products as text (families run in parallel; the text is written in family order)
+    let family_text = |fam: &String, reads: &BTreeSet<String>| -> Result<[String; 11]> {
+        use std::fmt::Write as _;
+        let mut t: [String; 11] = Default::default(); // ct cf cl rd ft lh lf lo o2 dump log
         let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
         let copies = by_fam.get(fam).unwrap_or(&empty);
         let piles = pile_records(&bam, copies, &ids, &prim, &names)?;
-        let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &tmp, dump_fh.is_some().then_some(&table[..]))?;
+        let ftmp = tmp.join(fam.replace('/', "_"));
+        std::fs::create_dir_all(&ftmp)?;
+        let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &ftmp, dumping.then_some(&table[..]))?;
+        let _ = std::fs::remove_dir_all(&ftmp);
         let mut o2: Vec<(&str, &str, usize)> = out.o2.iter().map(|(r, c, k)| (nm(*r), c.as_str(), *k)).collect();
         o2.sort();
         for (r, c, k) in o2 {
-            writeln!(o2f, "{fam}\t{r}\t{c}\t{k}")?;
+            writeln!(t[8], "{fam}\t{r}\t{c}\t{k}")?;
         }
         for (k, (x, rs, seq, mi, mc)) in out.looks.iter().enumerate() {
             let mc: Vec<String> = mc.iter().map(|v| fmt3(*v)).collect();
-            writeln!(lh, "{fam}\tputative_{fam}_{k}\t{x}\t{}\t{}\t{}\t{}", rs.len(), fmt3(*mi), mc.join(","), seq.len())?;
-            writeln!(lf, ">putative_{fam}_{k}\n{}", String::from_utf8_lossy(seq))?;
+            writeln!(t[5], "{fam}\tputative_{fam}_{k}\t{x}\t{}\t{}\t{}\t{}", rs.len(), fmt3(*mi), mc.join(","), seq.len())?;
+            writeln!(t[6], ">putative_{fam}_{k}\n{}", String::from_utf8_lossy(seq))?;
         }
         let mut recs = Vec::new();
         for &n in &ids {
@@ -233,7 +240,7 @@ fn run(a: &Args) -> Result<()> {
         }
         let spans: Vec<(String, i64, i64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
         for (ch, s0, e0, nr, nb, so) in landing_loci(&recs, &spans, MIN_SUPPORT) {
-            writeln!(lo, "{fam}\t{ch}:{s0}-{e0}\t{nr}\t{nb}\t{so}")?;
+            writeln!(t[7], "{fam}\t{ch}:{s0}-{e0}\t{nr}\t{nb}\t{so}")?;
         }
         let piled: BTreeSet<String> = out.piled.iter().map(|&r| nm(r).to_string()).collect();
         let side: Vec<(&String, &BTreeSet<String>, &Vec<u8>)> = iso
@@ -243,7 +250,7 @@ fn run(a: &Args) -> Result<()> {
             .filter(|(_, rs, _, vb)| isocon_keep(rs, *vb, &piled, a.isocon_via_b))
             .map(|(c, rs, seq, _)| (c, rs, seq))
             .collect();
-        if let (Some(fh), Some(mut d)) = (dump_fh.as_mut(), out.dump) {
+        if let Some(mut d) = out.dump {
             d.push((
                 "isocon".into(),
                 Json::List(
@@ -252,24 +259,24 @@ fn run(a: &Args) -> Result<()> {
                         .collect(),
                 ),
             ));
-            writeln!(fh, "{}", Json::Obj(d).dumps())?;
+            writeln!(t[9], "{}", Json::Obj(d).dumps())?;
         }
         let mut certified: Vec<(String, BTreeSet<String>, &[u8])> =
             out.certified.iter().map(|(h, rs, seq)| (h.clone(), rs.iter().map(|&r| nm(r).to_string()).collect(), &seq[..])).collect();
         certified.extend(side.iter().map(|(c, rs, seq)| (format!("isocon:{c}"), (*rs).clone(), &seq[..])));
-        let pc = out.per_copy.values();
-        let (s0, s1, s2) = pc.fold((0, 0, 0), |t, v| (t.0 + v.0, t.1 + v.1, t.2 + v.2));
-        writeln!(ft, "{fam}\t{}\t{}\t{}\t{s0}\t{s1}\t{s2}\t{}\t{}", n_net[fam], reads.len(), out.per_copy.len(), out.n_h, certified.len())?;
+        let (s0, s1, s2) = out.per_copy.values().fold((0, 0, 0), |t, v| (t.0 + v.0, t.1 + v.1, t.2 + v.2));
+        writeln!(t[4], "{fam}\t{}\t{}\t{}\t{s0}\t{s1}\t{s2}\t{}\t{}", n_net[fam], reads.len(), out.per_copy.len(), out.n_h, certified.len())?;
         for (k, (home, rs, seq)) in certified.iter().enumerate() {
             let cand = format!("cand_{fam}_{k}");
-            writeln!(ct, "{fam}\t{cand}\t1\t{}\t1\t{}\t{home}\tNA\t{}\t{}", rs.len(), seq.len(), n_net[fam], reads.len())?;
-            writeln!(cf, ">{cand}\n{}", String::from_utf8_lossy(seq))?;
-            writeln!(cl, "{fam}\t{fam}:h{k}\t{cand}\t{}\t{}\tnew_copy\t-\tNA", rs.len(), seq.len())?;
+            writeln!(t[0], "{fam}\t{cand}\t1\t{}\t1\t{}\t{home}\tNA\t{}\t{}", rs.len(), seq.len(), n_net[fam], reads.len())?;
+            writeln!(t[1], ">{cand}\n{}", String::from_utf8_lossy(seq))?;
+            writeln!(t[2], "{fam}\t{fam}:h{k}\t{cand}\t{}\t{}\tnew_copy\t-\tNA", rs.len(), seq.len())?;
             for r in rs {
-                writeln!(rd, "{r}\t{fam}\t{fam}:h{k}")?;
+                writeln!(t[3], "{r}\t{fam}\t{fam}:h{k}")?;
             }
         }
-        eprintln!(
+        writeln!(
+            t[10],
             "[copy_phasing] {fam}: reads {}, piles {}, haplotypes {} {}, certified {}, putative {}",
             reads.len(),
             out.per_copy.len(),
@@ -277,7 +284,23 @@ fn run(a: &Args) -> Result<()> {
             dict_repr(&out.why),
             certified.len(),
             out.looks.len()
-        );
+        )?;
+        Ok(t)
+    };
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(a.threads).build()?;
+    let fams: Vec<(&String, &BTreeSet<String>)> = net.iter().collect();
+    let texts: Vec<[String; 11]> = pool.install(|| {
+        use rayon::prelude::*;
+        fams.par_iter().map(|(f, r)| family_text(f, r).with_context(|| format!("family {f}"))).collect::<Result<Vec<_>>>()
+    })?;
+    for t in &texts {
+        for (w, x) in [&mut ct, &mut cf, &mut cl, &mut rd, &mut ft, &mut lh, &mut lf, &mut lo, &mut o2f].into_iter().zip(t.iter()) {
+            w.write_all(x.as_bytes())?;
+        }
+        if let Some(fh) = dump_fh.as_mut() {
+            fh.write_all(t[9].as_bytes())?;
+        }
+        eprint!("{}", t[10]);
     }
     for w in [&mut ct, &mut cf, &mut cl, &mut rd, &mut ft, &mut lh, &mut lf, &mut lo, &mut o2f] {
         w.flush()?;
@@ -286,6 +309,5 @@ fn run(a: &Args) -> Result<()> {
         fh.flush()?;
     }
     let _ = std::fs::remove_dir_all(&tmp);
-    let _ = a.threads;
     Ok(())
 }

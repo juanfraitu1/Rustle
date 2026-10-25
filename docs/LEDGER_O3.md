@@ -10204,3 +10204,21 @@ sit in a survivor's free slot splice canonically there. Milestone 2 stays open.
 The user stopped the build before any P4 data was scored: "I think this might be overly complicating, can we somehow only focus on
 one erased copy? We could even simulate it so it's clean". Only the panel draw, the masked genome and the scored reads were made
 (`/mnt/linuxdisk/tmp/rna_allele/p4`). Nothing was aligned or scored. The work moved to `docs/O3_ONE_COPY_SIM_2026-10-23.md`.
+
+---
+
+## Copy phasing in Rust (`copy_phasing`, the port of `o3port.py`), 2026-10-24
+
+Plan: `docs/superpowers/plans/2026-10-24-o3port-rust.md`. The Rust binary is named for what it does (user, 2026-10-24): it phases each
+copy's reads into haplotypes, matches haplotypes to allele slots, certifies or flags copies the reference lacks, and assigns tied reads.
+Product file names (`.candidates.tsv` ... `.o2.tsv`) are unchanged, so the harness and scorers read either port.
+
+**Byte-identity** (`bench/o3_graph/o3port_golden.sh all`, cases in `o3port_golden.tsv`): 78 of 78 cases identical in every product, the
+`--dump` JSONL and the per-family progress lines, at `--threads 1` and at `--threads 4`. Cases: 9 o2p14 dirs × 7 flag sets (default,
+--semi, +--guard, +--no-reconstruct, +--anchor, +--one-site, +--prefer), every other switch alone on one dir, o2p12 GWFAM176, P5 and P10
+both arms with the IsoCon side, the refabsent `h` panel (--semi --guard; --isocon-rule via-b). The Python is itself deterministic: the 72
+small cases are identical under PYTHONHASHSEED 1 and 2. Numerics that had to follow CPython: `math.lgamma` (CPython's own Lanczos, not
+glibc: they differ on half the inputs), `sum()` of floats (Neumaier since 3.12), `repr(float)` in the dump, `'%.3f'`.
+
+**Speed** (P10 control arm, `R0.bam`, 40 families, IsoCon side): Python 166.4 s / 1.9 GB; Rust 19.1 s / 0.69 GB at 1 thread, 5.4 s /
+1.16 GB at 4 threads.
