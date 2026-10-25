@@ -7823,3 +7823,38 @@ misses some):
   `_pri` at <= 0.975. Only GWFAM175 was in the truth table's beyond-delta expressed list; the other three were unlisted.
 - 4 flags are at an allele-level gap (0.3-0.9%) and cannot be called absent or allelic from this check; 3 are false flags.
 - The IsoCon side is what finds them: without it the port flagged GWFAM205 / GWFAM390 / GWFAM360 / GWFAM256 and none of the four.
+
+---
+
+## The AS gap is a splicing artefact, not a copy signal (2026-10-24, register 1403)
+
+**Question (advisor's reading of the Eichler rule):** gather every alignment of a read, and assign the read to a secondary whose AS is >=
+10 above the primary's. The user's position: the rule was a window for flagging ambiguity, not for assignment, and the primary is the best
+alignment anyway. Tested on the real gorilla fibroblast BAM `fibroblasts/GCA_029281585.2_flnc_mm.bam` (minimap2 2.31 `-ax splice:hq -uf
+--eqx -Y -N 50 -p 0.1`; 13,516,443 primaries, 4,190,262 with a secondary). Script `bench/as_tie_splicing.py`; data `/mnt/linuxdisk/tmp/as_flip`.
+
+**A secondary with a HIGHER AS than the primary is common** (so "the primary has the highest AS" is false), and almost always a worse alignment:
+
+| best secondary AS - primary AS | reads | secondary has fewer introns (unspliced vs spliced) | secondary has more edits | same introns, fewer NM |
+|---|---|---|---|---|
+| 0 (exact tie) | 27,063 | 7.3% (7.1%) | 7.5% | 23 |
+| +1 to +9 | 15,405 | 97.9% (95.9%) | 97.9% | 231 |
+| >= +10 (the advisor's rule fires) | 399,865 | 99.9% (96.4%) | 99.4% | 193 |
+
+Mechanism: splice-mode AS charges every intron (a long gap, ~32), so an unspliced alignment to a processed copy, with a dozen mismatches,
+outscores the read's true spliced alignment; minimap2 still makes the spliced one primary (so it does not pick the primary by AS). Example
+SRR27438212.8997843: primary 5 introns, NM 0, MAPQ 60, AS 592; secondary unspliced on another chromosome, NM 19, MAPQ 0, AS 626. The rule
+would move ~400k reads (9.5% of reads with a secondary), ~99% of them onto an alignment with more mismatches.
+
+**Splice-aware windows** (reads with SOME secondary in the window):
+
+| window | reads | a candidate with > primary NM + 5 | primary MAPQ >= 20 |
+|---|---|---|---|
+| A raw AS within 10 (or higher) | 469,468 | 409,592 (87%) | 410,262 (87%) |
+| B splice-neutral AS (AS + 32 per intron) within 10 | 44,778 | 525 (1.2%) | 3,962 (8.8%) |
+| C same intron count, then AS within 10 | 40,978 | 162 (0.4%) | 2,510 (6.1%) |
+
+A same-intron-count rule with fewest edits (NM <= primary + 1) instead of AS is NOT usable: 112,183 reads, 66% with a confident primary,
+because a clipped, shorter secondary has fewer edits. **Conclusion:** compare copies only between alignments of the same exon structure
+(C; B is its single-score form); a spliced-vs-unspliced difference is a structure call (processed copy or not), not a copy tie. Only 142
+reads have both the advisor's trigger and a same-structure tie. Not yet run through the O2 regimen's held-out truth (counts only, no labels).
