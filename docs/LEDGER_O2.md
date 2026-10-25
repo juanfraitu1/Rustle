@@ -7957,3 +7957,21 @@ O3 panels; the window itself was validated held-out in P15 (register 1404). Noth
 `c.copies.tsv` copies and `kc/net_reads.tsv`, with the default window (D) and with `--tie-structure` (T). Truth = `labels.tsv` (each
 read's copy from KB3781's own haplotypes). Reported per panel: tied rows, assigned / abstain / hopeless, right / wrong among assigned
 reads with a label, minimap2's primary on the same rows, reads that change pile, and the T - D differences per family.
+
+### Result (report-only; register 1407): the window changes nothing in O2 on real reads
+Work dir `/mnt/linuxdisk/tmp/p17`; scorer `bench/o2_tie_window_real_score.py`.
+
+| panel | arm | tied rows | assigned | right / wrong (labelled) | abstain | hopeless |
+|---|---|---|---|---|---|---|
+| P5 control | D | 149 | 1 | 1 / 0 | 0 | 148 |
+| P5 control | T | 149 | 1 | 1 / 0 | 0 | 148 |
+| P10 control | D | 107 | 18 | 17 / 1 | 69 | 20 |
+| P10 control | T | 107 | 18 | 17 / 1 | 69 | 20 |
+
+- The same tied rows and the same assignments in both arms, on both panels (0 reads change). P10: minimap2's primary is right for 99 of
+  the 105 labelled tied reads; O2's one wrong placement breaks a right primary, in both arms.
+- P5: 144 of the 149 tied rows are GWFAM279 readthrough reads whose primary runs from copy :0 into copy :1, so one record is in
+  both piles: HOPELESS is right (a readthrough, not a copy tie).
+- So in copy_phasing the window reaches O2's assignments only through a same-family rival with a different structure. On these two
+  panels that never decides a tied read; its real-data effects are in the copy finder (GWFAM257, register 1405) and the landing
+  loci (GWFAM421, register 1406).
