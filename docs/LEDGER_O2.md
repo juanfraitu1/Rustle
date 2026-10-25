@@ -7912,3 +7912,26 @@ near-best in the landing loci, when it has the primary's intron count and an AS 
   copy: a false flag in the control arm, from the allele-vs-copy blind spot, not from the window.
 - Why it is not the default yet: P15 validated the window on reads with no allelic variation; on real reads it feeds the copy finder
   alleles the old rule hid. Flip the default once the copy finder separates a divergent allele from an extra copy.
+
+## PREREG: O2 placement with and without `--tie-structure` on fresh simulated gorilla families (P16), 2026-10-24
+
+**Status:** committed before any read is simulated or any family is run. Frozen code: main 54984246 (`copy_phasing`).
+
+**Panel.** Families of `GGO_gwcat` with 2-8 copies, at least one copy multi-exon, and a family id named nowhere in docs/, bench/ or the
+earlier panel copy tables (297 ids excluded); a seeded draw (seed 20261025) of 40. Gorilla only.
+
+**Reads.** Every copy equally expressed: 30 reads per copy, its full spliced sequence from `GGO_gwcat.copies.fa` in transcript orientation,
+with 0.05% substitutions, 0.025% insertions, 0.025% deletions per base (seeded). Aligned genome-wide: `minimap2 -ax splice:hq -uf --eqx -Y
+-N 50 -p 0.1 --secondary=yes` against `GGO.splice.mmi`. Truth = the source copy.
+
+**Runs.** `copy_phasing run --semi --guard` (P14's configuration) with the default window (arm D) and with `--tie-structure` (arm T), on the
+same inputs: copies table = the catalog spans, net = every read with a primary or secondary record overlapping a copy of the family (all
+used), no IsoCon side. Baseline M = minimap2's primary. A read's final placement = O2's assignment when it assigns, else the primary. Right
+= the assigned copy is the source / the primary overlaps the source copy's span.
+
+**Hypotheses** (bars by eye before the run):
+- **H1:** T's O2 assignments are right in >= 98%.
+- **H2:** T makes no more wrong assignments than D.
+- **H3:** final per-read accuracy over all panel reads: T >= D and T >= M.
+- Reported, no bar: tied rows, assigned / abstain / hopeless per arm; T - D differences per family.
+**Fails if** any bar is missed; reported as is.
