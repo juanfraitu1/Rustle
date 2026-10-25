@@ -8089,3 +8089,18 @@ Work dir `/mnt/linuxdisk/tmp/p21`; scorer `bench/o2_p21_score.py`; copy_phasing 
   it does not turn them into correct placements. To place them it would have to join the other allele's cluster to its own
   copy's reference-allele cluster, and nothing in the reads links the two. On a diploid sample, the certified tier can be fooled
   by a divergent allele plus errors that repeat.
+
+### REPORT (register 1414): the two false certified copies of P21 are not recurrent errors
+Dumps: `/mnt/linuxdisk/tmp/p21/X.dump` (default window), `XT.dump` (`--tie-structure`), `PY.dump` (Python port, identical).
+- **GWFAM197 = the AS intron artefact (r1403).** Copy 1's 20 reads (both alleles) are spliced on copy 1 (AS 698, ms 866) and have an
+  unspliced secondary on copy 0, a processed copy, with AS 793. In the raw AS window they join copy 0's pile, and copy 1's own pile
+  is empty, so their haplotype (11 private columns vs copy 0) has no slot: certified. With `--tie-structure` copy 1 gets its pile
+  back and nothing is certified. Whole test panel under `--tie-structure` (arm T): O2 unchanged (9 assigned, 9 right); certified 1.
+- **GWFAM384 = reads outside their own copy's window.** Copy 0's other allele (15 edits vs copy 0, 65 vs copy 1 over the whole
+  transcript) aligns better locally to copy 1's locus (primary on copy 1, AS 3185; on copy 0 AS 3160, NM 27 vs 22). Its 10 reads are
+  more than 10 AS behind on copy 0, so they never enter copy 0's pile. Copy 0 has a free slot (one haplotype seen), but the reads
+  don't have copy 0 as an option, so copy 1's pile shows a third haplotype: certified.
+- Rule this points to (not implemented): a certificate must hold over every copy the aligner placed the reads on, not only those in
+  the 10-AS window. Certify only if no copy where the reads have any record has a free slot. GWFAM384's reads have a record on copy
+  0, which has a free slot, so they would not be certified. The rule needs a held-out check that certified recall (P5) survives.
+- The original suspect, badread's context errors repeating like alleles, is not the cause in either family.
