@@ -21,3 +21,9 @@ this file must list exactly the module set.
 the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` stage; an opt-in input of
 `mcl_families --emit-hierarchy --sd-cache`. Not adopted as the SD source (V1 FAIL), the SD98 source (V1b FAIL) or the
 duplicon source (V2 FAIL): see `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
+
+**Directory module, not a family module:** `src/copy_phasing/` (2026-10-24) — OTHER-BINARY: the `copy_phasing` binary
+(`src/copy_phasing_bin.rs`), the Rust port of `bench/o3_graph/o3port.py run` (Strainy/IsoCon side, slot matching,
+certified / putative copies, O2 `--semi` / `--guard`). Byte-identical to the Python on 81 golden cases
+(`bench/o3_graph/o3port_golden.sh`; register 1402). `--tie-structure` (same intron count + AS within 10) is OPT-IN in both ports
+(register 1405).
