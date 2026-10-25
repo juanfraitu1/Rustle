@@ -35,15 +35,149 @@ fn by_label(keys: &[(Vec<(i64, u8)>, Vec<ReadId>)], label: &[usize]) -> Vec<Clus
 }
 
 pub fn label_propagation(pat: &BTreeMap<ReadId, Pattern>) -> Vec<Cluster> {
-    todo!()
+    let keys = pattern_groups(pat);
+    let n = keys.len();
+    let dicts: Vec<Pattern> = keys.iter().map(|(k, _)| k.iter().copied().collect()).collect();
+    let mut nbr: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for i in 0..n {
+        for j in i + 1..n {
+            if compatible(&dicts[i], &dicts[j]) {
+                nbr[i].push(j);
+                nbr[j].push(i);
+            }
+        }
+    }
+    let mut label: Vec<usize> = (0..n).collect();
+    let w: Vec<usize> = keys.iter().map(|(_, rs)| rs.len()).collect();
+    for _ in 0..MAX_ROUNDS {
+        let mut changed = false;
+        for i in 0..n {
+            let mut votes: BTreeMap<usize, usize> = BTreeMap::from([(label[i], w[i] - 1)]);
+            for &j in &nbr[i] {
+                *votes.entry(label[j]).or_default() += w[j];
+            }
+            let top = *votes.values().max().unwrap();
+            if votes[&label[i]] == top {
+                continue;
+            }
+            label[i] = *votes.iter().find(|(_, &v)| v == top).unwrap().0; // the smallest label at the top
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+    by_label(&keys, &label)
 }
 
 pub fn correlation_clustering(pat: &BTreeMap<ReadId, Pattern>) -> Vec<Cluster> {
-    todo!()
+    let keys = pattern_groups(pat);
+    let n = keys.len();
+    let w: Vec<i64> = keys.iter().map(|(_, rs)| rs.len() as i64).collect();
+    let dicts: Vec<Pattern> = keys.iter().map(|(k, _)| k.iter().copied().collect()).collect();
+    let mut nbr: Vec<BTreeMap<usize, i64>> = vec![BTreeMap::new(); n];
+    for i in 0..n {
+        for j in i + 1..n {
+            let (mut shared, mut diff) = (false, 0usize);
+            for (c, x) in &dicts[i] {
+                if let Some(y) = dicts[j].get(c) {
+                    shared = true;
+                    diff += (x != y) as usize;
+                }
+            }
+            if shared {
+                let sg = w[i] * w[j] * if diff < MIN_READS { 1 } else { -1 };
+                nbr[i].insert(j, sg);
+                nbr[j].insert(i, sg);
+            }
+        }
+    }
+    let mut label: Vec<i64> = vec![-1; n];
+    for i in 0..n {
+        if label[i] < 0 {
+            label[i] = i as i64;
+            for (&j, &sg) in &nbr[i] {
+                if sg > 0 && label[j] < 0 {
+                    label[j] = i as i64;
+                }
+            }
+        }
+    }
+    for _ in 0..MAX_ROUNDS {
+        let mut moved = false;
+        for i in 0..n {
+            let mut score: BTreeMap<i64, i64> = BTreeMap::new();
+            for (&j, &sg) in &nbr[i] {
+                *score.entry(label[j]).or_default() += sg;
+            }
+            let cur = score.get(&label[i]).copied().unwrap_or(0); // net agreement with the rest of its cluster (0 when alone)
+            let (mut best, mut best_s) = (label[i], cur);
+            for (&lab, &sc) in &score {
+                if lab != label[i] && sc > best_s {
+                    best = lab;
+                    best_s = sc;
+                }
+            }
+            if best_s < 0 {
+                // every cluster, its own included, is net disagreement: alone, under a fresh label of its own
+                best = (n + i) as i64;
+                best_s = 0;
+            }
+            if best != label[i] && best_s > cur {
+                label[i] = best;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    let label: Vec<usize> = label.into_iter().map(|l| l as usize).collect();
+    by_label(&keys, &label)
 }
 
 pub fn correct_patterns(pat: &BTreeMap<ReadId, Pattern>) -> BTreeMap<ReadId, Pattern> {
-    todo!()
+    let mut groups: BTreeMap<&Pattern, Vec<ReadId>> = BTreeMap::new();
+    for (r, p) in pat {
+        groups.entry(p).or_default().push(*r);
+    }
+    let keys: Vec<(&Pattern, Vec<ReadId>)> = groups.into_iter().collect();
+    let mut out = BTreeMap::new();
+    for (i, (p, rs)) in keys.iter().enumerate() {
+        let mut q = (*p).clone();
+        for (&c, &b) in p.iter() {
+            let mut votes: Vec<(u8, i64)> = Vec::new(); // Counter, first-appearance order
+            for (j, (o, ws)) in keys.iter().enumerate() {
+                let Some(&oc) = o.get(&c) else { continue };
+                let (mut other, mut agree) = (false, true);
+                for (x, px) in p.iter() {
+                    if *x == c {
+                        continue;
+                    }
+                    if let Some(ox) = o.get(x) {
+                        other = true;
+                        agree &= px == ox;
+                    }
+                }
+                if other && agree {
+                    let add = ws.len() as i64 - (j == i) as i64;
+                    match votes.iter_mut().find(|(a, _)| *a == oc) {
+                        Some(v) => v.1 += add,
+                        None => votes.push((oc, add)),
+                    }
+                }
+            }
+            votes.retain(|(_, v)| *v > 0); // `+votes`
+            let own = votes.iter().find(|(a, _)| *a == b).map_or(0, |(_, v)| *v);
+            if !votes.is_empty() && own == 0 && votes.len() == 1 && votes[0].1 >= MIN_READS as i64 {
+                q.insert(c, votes[0].0);
+            }
+        }
+        for &r in rs {
+            out.insert(r, q.clone());
+        }
+    }
+    out
 }
 
 fn clusterer(method: Clusterer, pat: &BTreeMap<ReadId, Pattern>) -> Vec<Cluster> {
@@ -56,11 +190,42 @@ fn clusterer(method: Clusterer, pat: &BTreeMap<ReadId, Pattern>) -> Vec<Cluster>
 /// `cluster_pile`: (clusters of >= MIN_READS reads, sorted; the pile-level informative columns). The Python's middle product (every
 /// column used) is never read and is not returned.
 pub fn cluster_pile(reads: &BTreeSet<ReadId>, obs: &Obs, method: Clusterer, correct: bool) -> (Vec<Cluster>, Cols) {
-    todo!()
+    let cols = informative(obs, |r| reads.contains(&r), None);
+    let mut pat = patterns(reads, obs, &cols);
+    if correct {
+        pat = correct_patterns(&pat);
+    }
+    let mut todo: Vec<Cluster> = clusterer(method, &pat).into_iter().filter(|c| c.len() >= MIN_READS).collect();
+    let mut done = Vec::new();
+    while let Some(c) = todo.pop() {
+        let inner = informative(obs, |r| c.contains(&r), None);
+        if inner.is_empty() {
+            done.push(c);
+            continue;
+        }
+        let parts: Vec<Cluster> = clusterer(method, &patterns(&c, obs, &inner)).into_iter().filter(|p| p.len() >= MIN_READS).collect();
+        if parts.len() >= 2 {
+            todo.extend(parts);
+        } else {
+            done.push(c);
+        }
+    }
+    (sort_clusters(done), cols)
 }
 
 pub fn haplotype(cluster: &Cluster, obs: &Obs, cols: &Cols) -> Hap {
-    todo!()
+    let mut h = Hap::new();
+    for (col, real) in cols {
+        let xs = obs.get(col).map_or(&[][..], |v| &v[..]);
+        let cnt = counter(xs.iter().filter(|x| cluster.contains(&x.read) && x.qual >= MIN_Q && real.contains(&x.base)).map(|x| x.base));
+        if let Some((b, n)) = most_common(&cnt) {
+            let total: usize = cnt.iter().map(|(_, k)| k).sum();
+            if n >= MIN_READS && 2 * n > total {
+                h.insert(*col, b);
+            }
+        }
+    }
+    h
 }
 
 fn differ(a: &Hap, b: &Hap) -> (bool, usize) {
@@ -76,11 +241,54 @@ fn differ(a: &Hap, b: &Hap) -> (bool, usize) {
 }
 
 pub fn conflicting_set(haps: &[Hap]) -> Vec<usize> {
-    todo!()
+    let n = haps.len();
+    let mut adj = vec![vec![false; n]; n];
+    for i in 0..n {
+        for j in i + 1..n {
+            let c = differ(&haps[i], &haps[j]).1 >= MIN_READS;
+            adj[i][j] = c;
+            adj[j][i] = c;
+        }
+    }
+    fn grow(cur: &mut Vec<usize>, rest: &[usize], adj: &[Vec<bool>], best: &mut Vec<usize>) {
+        if cur.len() > best.len() {
+            *best = cur.clone();
+        }
+        for (k, &v) in rest.iter().enumerate() {
+            if cur.len() + rest.len() - k <= best.len() {
+                return;
+            }
+            let next: Vec<usize> = rest[k + 1..].iter().copied().filter(|&u| adj[v][u]).collect();
+            cur.push(v);
+            grow(cur, &next, adj, best);
+            cur.pop();
+        }
+    }
+    let mut best = Vec::new();
+    grow(&mut Vec::new(), &(0..n).collect::<Vec<_>>(), &adj, &mut best);
+    best.sort();
+    best
 }
 
 pub fn absorb(hs: &[Hap], keep: &[usize]) -> BTreeMap<usize, usize> {
-    todo!()
+    let mut out = BTreeMap::new();
+    for j in 0..hs.len() {
+        if keep.contains(&j) {
+            continue;
+        }
+        let fit: Vec<usize> = keep
+            .iter()
+            .copied()
+            .filter(|&k| {
+                let (shared, n) = differ(&hs[j], &hs[k]);
+                shared && n < MIN_READS
+            })
+            .collect();
+        if fit.len() == 1 {
+            out.insert(j, fit[0]);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
