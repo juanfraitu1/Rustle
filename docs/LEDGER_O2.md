@@ -7986,3 +7986,26 @@ On the real fibroblast BAM (minimap2 2.31 splice:hq, 4,190,262 reads with >= 1 s
 the coin toss); 1,421 (0.03%) are below the best secondary's ms (the divergence recalibration). AS disagrees with the
 primary for 415,270 (9.9%), which is why the AS + 10 rule fired so often. Of the ms ties, 26,384 have the same NM and 25,176 the same intron
 count: exact ties, which no sequence score can break.
+
+## P18 pre-registration (2026-10-25): does an error-model score beat minimap2's `ms` on near-tie reads?
+**Question (user, after register 1409):** minimap2 ranks by `ms`, which weighs every mismatch alike and every 1-bp gap alike. HiFi errors
+are mostly 1-bp homopolymer indels. Does a likelihood under the real read error profile place near-tie reads better?
+**Scorer (fixed before the test):** log-likelihood of each alignment under per-event rates measured on 24,000 real fibroblast MAPQ-60
+primaries (`bench/o2_p18_errprof.py`; substitution 7.9e-4, 1-bp homopolymer deletion 7.6e-4 / insertion 5.6e-4, non-homopolymer
+indels 2-5e-5; real allele differences included). Matched column log(1 - total rate); soft-clipped base = one substitution.
+Candidates = the primary + every secondary with ms >= primary ms - 10 ("band"). LL exact ties are left to the primary.
+**Substrate:** simulated reads from BOTH of Jim's alleles of each GGO_gwcat copy. The reference chromosome is one haplotype's chromosome
+(exact length match). The other allele is the copy's transcript hit on the other haplotype's chromosome between its 20-kb flanks'
+asm5 anchors (`bench/o2_p18_alleles.py`: 1,193 built; 53 tandem copies with several hits in the window and 27 others excluded; 142 on X/Y,
+which are haploid, so 20 reference-allele reads). 10 reads per allele; errors from badread's pacbio2021 error and qscore models (independent of the
+scorer), identity beta(99.8, max 100, sd 0.15). Aligned as the real BAM (`splice:hq -uf --eqx -Y -N 50 -p 0.1`). Right = overlaps
+the true copy's span.
+**Split:** families by sha1("p18:"+family) mod 3 (0 = dev, else test); P16's 40 families excluded. Dev (153 families, 10,000 reads)
+was used only to build the pipeline. Dev result (already seen): 453 band reads, 308 LL exact ties; LL agrees with the primary on
+142 / 145 others (3 switches: 1 right, 2 wrong); at posterior >= 0.99, 136 assigned, 16 wrong (15 of them reads of the other
+allele) vs the primary's 14 wrong on the same reads.
+**Test hypotheses (held-out families, run once):**
+- H1: switches (LL argmax != primary) are right more often than wrong: right > wrong and one-sided binomial p < 0.05.
+- H2: the LL argmax's wrong rate on non-tied band reads < the primary's on the same reads.
+- H3: posterior >= 0.99 assignments are <= 1% wrong and no worse than the primary on the same reads.
+- PASS = H1 and H2 and H3. FAIL means `ms` stays the ranking; report the allele share of the wrong calls.
