@@ -7935,3 +7935,17 @@ used), no IsoCon side. Baseline M = minimap2's primary. A read's final placement
 - **H3:** final per-read accuracy over all panel reads: T >= D and T >= M.
 - Reported, no bar: tied rows, assigned / abstain / hopeless per arm; T - D differences per family.
 **Fails if** any bar is missed; reported as is.
+
+### P16 result (2026-10-24): ❌ FAIL by the pre-registered rule (H1 undefined: O2 assigns nothing); uninformative (register 1406)
+40 fresh families (203 eligible), 90 copies, 2,700 reads; data `/mnt/linuxdisk/tmp/p16`, scripts `bench/o2_p16_sim.py`, `bench/o2_p16_score.py`.
+- minimap2's primary is right for 2,671 / 2,700; all 29 wrong primaries are among the 360 tied rows (6 families x 60).
+- Arms D and T: the same 360 tied rows, all HOPELESS (exact ties), 0 assigned; final placements identical (2,671 for D, T and M).
+  H1 (T precision >= .98) is 0 / 0: FAIL by rule. H2, H3 pass trivially.
+- The tied rows: in 5 of the 6 families the two catalog "copies" are neighbouring opposite-strand genes with overlapping spans
+  (one record in both piles); GWFAM462 looks like a near-identical inverted pair. Exact ties, so abstaining is right.
+- Why the window cannot matter here: copy_phasing's O2 compares only the family's own copies; a processed copy elsewhere never
+  enters a pile. On ideal reads of reference copies there are no alleles, and minimap2 resolves every non-exact tie.
+- The only product difference: loci.tsv for GWFAM421. 30 reads land unspliced on NC_073245.2:55889087-55890310 (1.2 kb, a processed
+  copy); D marks them near-best (an expressed copy's own reads), T marks them weaker, which is right.
+- Lesson: an O2 test of the window needs tied reads whose rival is ANOTHER COPY OF THE FAMILY with a different structure (as GWFAM257,
+  register 1405), with allelic variation; equal expression from reference copies does not produce them.
