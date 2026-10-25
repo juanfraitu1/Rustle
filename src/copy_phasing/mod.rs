@@ -77,6 +77,9 @@ pub struct Params {
     pub structure: bool,
     pub floor_first: bool,
     pub absorb: bool,
+    /// `--tie-structure` (register 1404): the tie window is the primary's intron count and AS within AS_TIE of the primary's
+    /// (`pile::Prim::near`), not AS within AS_TIE of the read's best.
+    pub tie_structure: bool,
 }
 
 impl Default for Params {
@@ -96,6 +99,7 @@ impl Default for Params {
             structure: true,
             floor_first: true,
             absorb: false,
+            tie_structure: false,
         }
     }
 }

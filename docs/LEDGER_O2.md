@@ -7897,3 +7897,18 @@ spliced transcript sequence from GGO.fasta (strand-aware), full length, with 0.0
 - **H3 PASS:** C holds a right secondary for 270 / 270 of A's recoverable reads (B too), with 38% fewer reads in the window.
 - Caveat: reads come from reference transcripts with 0.1% error, no allelic variation and no expressed processed copies (by construction the
   parent is the truth); whether a processed copy itself is expressed is a separate call (spliced vs unspliced), outside this test.
+
+### `--tie-structure` wired into the tie-read step (2026-10-24, register 1405)
+`copy_phasing` and `o3port.py` take `--tie-structure` (opt-in; default unchanged): a record is in a copy's pile, and counts as
+near-best in the landing loci, when it has the primary's intron count and an AS within 10 of the primary's (`pile::Prim::near`,
+`o3port.near`). By default: an AS within 10 of the read's best, as before.
+- Flag off: both ports byte-identical to the frozen goldens (81/81, Python and Rust). Flag on: Python = Rust on 13 new golden cases
+  (`*_tie`), at 1 and 4 threads.
+- Effect: the family-local panels (o2p14, o2p12) are unchanged, since their references hold no processed copies. Refabsent `h`: 8 fewer
+  tied rows, 2 fewer assignments. P10 control: flags 3 -> 4. The new flag (cand_GWFAM257_0, 18 reads) is a haplotype whose reads the
+  old rule dropped from their own copy's pile, because a secondary with one more intron aligned ~250 more read bases and won on AS.
+  The contig matches KB3781's maternal haplotype at 3 / 4,989 differences and the reference / paternal at 40 (a 0.74% gap, the
+  allele-level band of register 1401). So the rule recovers a real divergent maternal allele, which the copy finder then certifies as a
+  copy: a false flag in the control arm, from the allele-vs-copy blind spot, not from the window.
+- Why it is not the default yet: P15 validated the window on reads with no allelic variation; on real reads it feeds the copy finder
+  alleles the old rule hid. Flip the default once the copy finder separates a divergent allele from an extra copy.

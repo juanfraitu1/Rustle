@@ -42,6 +42,8 @@ pub struct Prim {
     pub qual: Vec<u8>,
     pub reverse: bool,
     pub best_as: i32,
+    /// The primary record's (AS, intron count): the reference of the `--tie-structure` window (register 1404).
+    pub primary: Option<(i32, usize)>,
     seq_rc: Vec<u8>,
     qual_rev: Vec<u8>,
 }
@@ -52,12 +54,28 @@ impl Prim {
         let qual = qual.unwrap_or_else(|| vec![40; seq.len()]);
         let seq_rc = seq.iter().rev().map(|&b| comp(b)).collect();
         let qual_rev = qual.iter().rev().copied().collect();
-        Prim { seq, qual, reverse, best_as, seq_rc, qual_rev }
+        Prim { seq, qual, reverse, best_as, primary: None, seq_rc, qual_rev }
+    }
+
+    /// O2's tie window for one record of the read (AS, intron count): within AS_TIE of the read's best AS, or with `structure`
+    /// (`--tie-structure`, register 1404) the primary's intron count and AS within AS_TIE of the primary's. Splice-mode AS charges each
+    /// intron, so by best AS an unspliced processed-copy alignment can tie or outscore the read's own spliced one.
+    pub fn near(&self, as_: i32, introns: usize, structure: bool) -> bool {
+        if structure {
+            self.primary.is_some_and(|(pa, pn)| introns == pn && (as_ - pa).abs() <= AS_TIE)
+        } else {
+            as_ >= self.best_as - AS_TIE
+        }
     }
 }
 
+/// The record's intron count (CIGAR N operations).
+pub fn introns(rec: &Rec) -> usize {
+    rec.cigar.iter().filter(|&&(op, _)| op == OP_N).count()
+}
+
 /// `(chrom, start, end, AS, is secondary)` of every non-supplementary record with an AS tag.
-pub type RecSummary = (Arc<str>, i64, i64, i32, bool);
+pub type RecSummary = (Arc<str>, i64, i64, i32, bool, usize);
 /// A pile: {read: its best record on the copy}, in fetch order.
 pub type Pile = IndexMap<ReadId, Rec>;
 /// {copy tid: pile}, in `--copies` order.
@@ -266,14 +284,14 @@ impl Bam {
     pub fn read_primaries(&self, names: &HashMap<Vec<u8>, ReadId>) -> Result<(HashMap<ReadId, Prim>, HashMap<ReadId, Vec<RecSummary>>)> {
         let mut reader = crate::bam::open_bam(&self.path, 2)?;
         reader.read_header()?;
-        let (mut prim, mut best, mut records): (HashMap<ReadId, (Vec<u8>, Option<Vec<u8>>, bool)>, HashMap<ReadId, i32>, HashMap<ReadId, Vec<RecSummary>>) =
+        let (mut prim, mut best, mut records): (HashMap<ReadId, (Vec<u8>, Option<Vec<u8>>, bool, Option<(i32, usize)>)>, HashMap<ReadId, i32>, HashMap<ReadId, Vec<RecSummary>>) =
             Default::default();
         let mut buf = noodles_bam::Record::default();
         while reader.read_record(&mut buf)? != 0 {
             let Some(rec) = self.rec(&buf, names, false)? else { continue };
             if let Some(a) = rec.as_ {
                 if !rec.supplementary {
-                    records.entry(rec.read).or_default().push((rec.chrom.clone(), rec.start, rec.end, a, rec.secondary));
+                    records.entry(rec.read).or_default().push((rec.chrom.clone(), rec.start, rec.end, a, rec.secondary, introns(&rec)));
                 }
                 let b = best.entry(rec.read).or_insert(-1_000_000_000);
                 *b = (*b).max(a);
@@ -283,12 +301,16 @@ impl Bam {
                 let q = buf.quality_scores();
                 let q: &[u8] = q.as_ref();
                 let qual = if q.is_empty() || q[0] == 0xff { None } else { Some(q.to_vec()) };
-                prim.insert(rec.read, (seq, qual, rec.reverse));
+                prim.insert(rec.read, (seq, qual, rec.reverse, rec.as_.map(|a| (a, introns(&rec)))));
             }
         }
         let prim = prim
             .into_iter()
-            .map(|(n, (s, q, rev))| (n, Prim::new(s, q, rev, best.get(&n).copied().unwrap_or(-1_000_000_000))))
+            .map(|(n, (s, q, rev, pa))| {
+                let mut p = Prim::new(s, q, rev, best.get(&n).copied().unwrap_or(-1_000_000_000));
+                p.primary = pa;
+                (n, p)
+            })
             .collect();
         Ok((prim, records))
     }
@@ -311,15 +333,23 @@ impl Bam {
     }
 }
 
-/// `pile_records`: {copy: {read: record}} for the records within AS_TIE of the read's best that fall on the copy's span.
-pub fn pile_records(bam: &Bam, copies: &[Copy], reads: &BTreeSet<ReadId>, prim: &HashMap<ReadId, Prim>, names: &HashMap<Vec<u8>, ReadId>) -> Result<Piles> {
+/// `pile_records`: {copy: {read: record}} for the records in the tie window (`Prim::near`; `structure` = `--tie-structure`) that
+/// fall on the copy's span.
+pub fn pile_records(
+    bam: &Bam,
+    copies: &[Copy],
+    reads: &BTreeSet<ReadId>,
+    prim: &HashMap<ReadId, Prim>,
+    names: &HashMap<Vec<u8>, ReadId>,
+    structure: bool,
+) -> Result<Piles> {
     let mut piles = Piles::new();
     for c in copies {
         let mut p = Pile::new();
         for rec in bam.fetch(&c.chrom, c.start, c.end, names)? {
             let n = rec.read;
             let (Some(pr), Some(a)) = (prim.get(&n), rec.as_) else { continue };
-            if !reads.contains(&n) || a < pr.best_as - AS_TIE {
+            if !reads.contains(&n) || !pr.near(a, introns(&rec), structure) {
                 continue;
             }
             if p.get(&n).map_or(true, |old| a > old.as_.unwrap()) {
@@ -387,6 +417,26 @@ mod tests {
         assert_eq!(lead, 5);
         let (s, q, lead) = oriented(&p, &rec(0, &[(OP_M, 6)], false));
         assert_eq!((s, q, lead), (&b"AACGTN"[..], &[1u8, 2, 3, 4, 5, 6][..], 0));
+    }
+
+    #[test]
+    fn tie_window_by_best_as_or_by_the_primarys_structure() {
+        // the P15 case: spliced primary (5 introns, AS 592) and an unspliced processed-copy secondary with a higher AS (626)
+        let mut p = Prim::new(b"ACGT".to_vec(), None, false, 626);
+        p.primary = Some((592, 5));
+        // by best AS (the default): the secondary ties, the read's own spliced primary does not (592 < 626 - 10)
+        assert!(p.near(626, 0, false));
+        assert!(!p.near(592, 5, false));
+        // by structure (--tie-structure, register 1404): same intron count as the primary and AS within 10 of it
+        assert!(p.near(592, 5, true));
+        assert!(!p.near(626, 0, true));
+        assert!(p.near(600, 5, true) && p.near(582, 5, true));
+        assert!(!p.near(603, 5, true) && !p.near(581, 5, true));
+        assert!(!p.near(592, 4, true));
+        // no primary AS: nothing ties by structure
+        p.primary = None;
+        assert!(!p.near(592, 5, true));
+        assert_eq!(introns(&rec(0, &[(OP_M, 5), (OP_N, 100), (OP_M, 5), (OP_N, 7), (OP_M, 1)], false)), 2);
     }
 
     #[test]

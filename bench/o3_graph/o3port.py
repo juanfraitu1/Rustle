@@ -33,6 +33,7 @@ import sys
 MIN_READS = 2      # the project's ">= 2 independent observations"
 MIN_Q = 10         # base quality below which a base counts as missing
 AS_TIE = 10        # O2's tie rule (Eichler): alignments within 10 AS of the read's best
+TIE_STRUCTURE = False   # --tie-structure (register 1404): the window is the primary's intron count and AS within AS_TIE of the primary's
 ALPHA = 0.01       # IsoCon-style test, Bonferroni over the tested columns
 MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
@@ -707,8 +708,9 @@ def load_net(path, families):
 
 
 def read_primaries(bam, wanted, records=None):
-    """{read: (seq, quals, is_reverse, best AS over every record of the read)} in one pass over the BAM; with `records` (a dict),
-    also every non-supplementary record of the wanted reads as (chrom, start, end, AS, is secondary) per read."""
+    """{read: (seq, quals, is_reverse, best AS over every record of the read, (primary AS, primary intron count) or None)} in one pass
+    over the BAM; with `records` (a dict), also every non-supplementary record of the wanted reads as (chrom, start, end, AS, is
+    secondary, intron count) per read."""
     prim, best = {}, collections.defaultdict(lambda: -10 ** 9)
     for rec in bam.fetch(until_eof=True):
         n = rec.query_name
@@ -716,13 +718,28 @@ def read_primaries(bam, wanted, records=None):
             continue
         if records is not None and not rec.is_supplementary and rec.has_tag("AS"):
             records.setdefault(n, []).append((rec.reference_name, rec.reference_start, rec.reference_end, rec.get_tag("AS"),
-                                              rec.is_secondary))
+                                              rec.is_secondary, introns(rec)))
         if rec.has_tag("AS"):
             best[n] = max(best[n], rec.get_tag("AS"))
         if not rec.is_secondary and not rec.is_supplementary and rec.query_sequence:
             q = rec.query_qualities
-            prim[n] = (rec.query_sequence, list(q) if q is not None else [40] * len(rec.query_sequence), rec.is_reverse)
-    return {n: v + (best[n],) for n, v in prim.items()}
+            prim[n] = (rec.query_sequence, list(q) if q is not None else [40] * len(rec.query_sequence), rec.is_reverse,
+                       (rec.get_tag("AS"), introns(rec)) if rec.has_tag("AS") else None)
+    return {n: v[:3] + (best[n], v[3]) for n, v in prim.items()}
+
+
+def introns(rec):
+    """The record's intron count (CIGAR N operations)."""
+    return sum(1 for op, _ in rec.cigartuples or () if op == 3)
+
+
+def near(p, a, ni):
+    """O2's tie window for one record (AS a, ni introns) of the read whose primary entry is p: within AS_TIE of the read's best AS,
+    or under --tie-structure the primary's intron count and AS within AS_TIE of the primary's (splice-mode AS charges each intron,
+    so by best AS an unspliced processed-copy alignment can tie or outscore the read's own spliced one)."""
+    if TIE_STRUCTURE:
+        return p[4] is not None and ni == p[4][1] and abs(a - p[4][0]) <= AS_TIE
+    return a >= p[3] - AS_TIE
 
 
 def oriented(prim, rec):
@@ -735,7 +752,7 @@ def oriented(prim, rec):
 
 
 def pile_records(bam, copies, reads, prim):
-    """{copy: {read: record}} for the records within AS_TIE of the read's best that fall on the copy's span."""
+    """{copy: {read: record}} for the records in the tie window (`near`) that fall on the copy's span."""
     piles = {}
     for cid, chrom, s, e in copies:
         p = {}
@@ -743,7 +760,7 @@ def pile_records(bam, copies, reads, prim):
             n = rec.query_name
             if n not in reads or n not in prim or rec.is_unmapped or not rec.has_tag("AS"):
                 continue
-            if rec.get_tag("AS") < prim[n][3] - AS_TIE:
+            if not near(prim[n], rec.get_tag("AS"), introns(rec)):
                 continue
             if n not in p or rec.get_tag("AS") > p[n].get_tag("AS"):
                 p[n] = rec
@@ -1162,8 +1179,11 @@ def cmd_run(a):
                 lf.write(f">putative_{fam}_{k}\n{seq}\n")
             recs = []
             for n in reads:
+                if TIE_STRUCTURE:
+                    recs += [(ch, s0, e0, n, n in prim and near(prim[n], asc, ni)) for ch, s0, e0, asc, _, ni in records.get(n, [])]
+                    continue
                 b = max((x[3] for x in records.get(n, [])), default=None)
-                recs += [(ch, s0, e0, n, asc >= b - AS_TIE) for ch, s0, e0, asc, _ in records.get(n, [])]
+                recs += [(ch, s0, e0, n, asc >= b - AS_TIE) for ch, s0, e0, asc, _, _ in records.get(n, [])]
             for ch, s0, e0, nr, nb, so in landing_loci(recs, [(c[1], c[2], c[3]) for c in by_fam[fam]], MIN_SUPPORT):
                 lo.write(f"{fam}\t{ch}:{s0}-{e0}\t{nr}\t{nb}\t{so}\n")
             side = [(c, rs, seq) for c, rs, seq, vb in iso.get(fam, []) if isocon_keep(rs, vb, piled, a.isocon_rule)]
@@ -1211,6 +1231,8 @@ def main(argv):
     r.add_argument("--no-reconstruct", action="store_true", help="O2 ignores O3's certified copies (O3 -> O2 baseline)")
     r.add_argument("--no-clipping", action="store_true", help="putative copies without the soft-clip signal (P6's port)")
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
+    r.add_argument("--tie-structure", action="store_true", help="O2's tie window = the primary's intron count and AS within 10 "
+                   "of the primary's (register 1404; default: AS within 10 of the read's best)")
     r.add_argument("--no-structure", action="store_true", help="putative copies from tie patterns only (no non-canonical splicing signal)")
     r.add_argument("--v5-clique", action="store_true", help="v5: clusters below the support floor also enter the conflicting "
                    "set (they can push a real allele out of it)")
@@ -1222,6 +1244,8 @@ def main(argv):
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
     global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR
+    global TIE_STRUCTURE
+    TIE_STRUCTURE = a.tie_structure
     CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard, a.one_site, a.anchor
     cmd_run(a)
 

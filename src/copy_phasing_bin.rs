@@ -4,7 +4,7 @@
 //! usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2]
 //!        [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site]
 //!        [--guard] [--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb]
-//!        [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
+//!        [--tie-structure] [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
 //! `--threads` (default 4) never changes a product. Exit status 2: a usage error.
 
 use anyhow::{bail, Context, Result};
@@ -15,8 +15,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const USAGE: &str = "usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2] \
 [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site] [--guard] \
-[--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--isocon-rule no-pile|via-b] \
-[--dump PATH] [--threads N]";
+[--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--tie-structure] \
+[--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]";
 
 #[derive(Debug)]
 struct Args {
@@ -73,6 +73,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
             "--no-structure" => p.structure = false,
             "--v5-clique" => p.floor_first = false,
             "--absorb" => p.absorb = true,
+            "--tie-structure" => p.tie_structure = true,
             "--bam" | "--copies" | "--genome" | "--net" | "--out" | "--families" | "--slot-order" | "--isocon" | "--clusterer"
             | "--isocon-rule" | "--dump" | "--threads" => {
                 let v = match inline {
@@ -216,7 +217,7 @@ fn run(a: &Args) -> Result<()> {
         let mut t: [String; 11] = Default::default(); // ct cf cl rd ft lh lf lo o2 dump log
         let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
         let copies = by_fam.get(fam).unwrap_or(&empty);
-        let piles = pile_records(&bam, copies, &ids, &prim, &names)?;
+        let piles = pile_records(&bam, copies, &ids, &prim, &names, a.params.tie_structure)?;
         let ftmp = tmp.join(fam.replace('/', "_"));
         std::fs::create_dir_all(&ftmp)?;
         let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &ftmp, dumping.then_some(&table[..]))?;
@@ -234,8 +235,11 @@ fn run(a: &Args) -> Result<()> {
         let mut recs = Vec::new();
         for &n in &ids {
             let rs = records.get(&n).map_or(&[][..], |v| &v[..]);
-            if let Some(b) = rs.iter().map(|x| x.3).max() {
-                recs.extend(rs.iter().map(|(ch, s0, e0, asc, _)| (ch.to_string(), *s0, *e0, n, *asc >= b - AS_TIE)));
+            if a.params.tie_structure {
+                let pr = prim.get(&n);
+                recs.extend(rs.iter().map(|(ch, s0, e0, asc, _, ni)| (ch.to_string(), *s0, *e0, n, pr.is_some_and(|p| p.near(*asc, *ni, true)))));
+            } else if let Some(b) = rs.iter().map(|x| x.3).max() {
+                recs.extend(rs.iter().map(|(ch, s0, e0, asc, _, _)| (ch.to_string(), *s0, *e0, n, *asc >= b - AS_TIE)));
             }
         }
         let spans: Vec<(String, i64, i64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
