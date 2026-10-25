@@ -5,6 +5,7 @@
 
 pub mod cluster;
 pub mod pile;
+pub mod slots;
 pub mod stats;
 
 use indexmap::IndexMap;
