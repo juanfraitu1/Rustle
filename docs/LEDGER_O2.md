@@ -7858,3 +7858,25 @@ A same-intron-count rule with fewest edits (NM <= primary + 1) instead of AS is 
 because a clipped, shorter secondary has fewer edits. **Conclusion:** compare copies only between alignments of the same exon structure
 (C; B is its single-score form); a spliced-vs-unspliced difference is a structure call (processed copy or not), not a copy tie. Only 142
 reads have both the advisor's trigger and a same-structure tie. Not yet run through the O2 regimen's held-out truth (counts only, no labels).
+
+## PREREG: splice-aware tie window on simulated gorilla reads with known origin (P15), 2026-10-24
+
+**Status:** committed before any read is simulated. Rules frozen in `bench/as_tie_splicing.py` (register 1403): windows A (raw AS within 10
+or higher), B (AS + 32 per intron, within 10), C (same intron count, then AS within 10); the advisor's rule R (move the read to a secondary
+with AS >= primary AS + 10, the highest such).
+
+**Substrate (held out by construction: no truth has been seen for any rule).** Gorilla only (never pooled with human). Genes: the GGO_genomic.gff
+genes (any type with mRNA / lnc_RNA / transcript children) whose span holds >= 5 primary starts of real fibroblast reads in window A
+(`/mnt/linuxdisk/tmp/as_flip`); a seeded draw (seed 20261024) of 300. Per gene up to 5 of its transcripts (seeded), 20 reads each: the
+spliced transcript sequence from GGO.fasta (strand-aware), full length, with 0.05% substitutions, 0.025% insertions, 0.025% deletions per base
+(seeded). Aligned genome-wide with the real BAM's command: `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` against
+`GGO.splice.mmi`. Truth: an alignment is RIGHT when it lies on the source transcript's chromosome and overlaps its span.
+
+**Hypotheses and bars** (bars set by eye before the run):
+- **H1 (the advisor's rule harms):** among reads where R fires, the primary is right in >= 90% and R's chosen secondary is right in <= 10%.
+- **H2 (dropping structure differences is safe):** among reads in A but not in C, the primary is right in >= 98%.
+- **H3 (C keeps the real ties):** of the RECOVERABLE reads A catches (primary wrong, a right secondary in A's window), C's window holds a right
+  secondary for >= 90%.
+- Reported, no bar: the same for B; read counts per window; primary accuracy inside each window.
+
+**Fails if** any bar is missed; a failed bar is reported as is (no re-run with other constants).
