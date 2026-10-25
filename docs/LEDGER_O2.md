@@ -8055,3 +8055,21 @@ work dir `/mnt/linuxdisk/tmp/p18`. P18's family split; dev families only; test n
 - So: pooled abundance can put the right copy first for tied reads (83% vs 44% in dev), but it does not certify single reads at 99%.
   Its natural output is a per-copy expression split with uncertainty, or a probability per read, not an O2 assignment under
   assign-or-abstain. Sensitive to the simulated expression and truncation model; not yet held out.
+
+## PREREG P21 (2026-10-25): does copy_phasing (O3 -> O2, read clusters on alignment columns) fix the other-allele errors of P18?
+**Status:** committed before copy_phasing is run on these reads. Frozen code: main HEAD (`copy_phasing` binary as built from 69ddbe3f;
+no code change since).
+**Substrate:** the P18 TEST reads and BAM as they are (294 held-out families, 14,960 reads from both of Jim's alleles; `test.bam`
+in `/mnt/linuxdisk/tmp/p18`). P18 measured minimap2's primary here: 218 wrong, of which 40 are confident near-tie errors on
+other-allele reads and 146 are exact ties. P18's error-model score was the only thing run on them; copy_phasing was not.
+**Run:** `copy_phasing run --semi --guard` (P14's configuration, default window, no IsoCon side) with the copies table = the
+catalog spans of the 294 families, genome = GGO.fasta, net = every read with a record overlapping a copy of the family (all used).
+**Scoring:** a read's final placement = O2's assignment when it assigns, else the primary. Right = the assigned copy is the source
+copy / the primary overlaps the source copy's span (P18's rule).
+**Hypotheses** (bars set before the run):
+- H1: O2's assignments are right in >= 98%.
+- H2: O2 fixes more primaries than it breaks (fixed > broken), and fixes >= 1 of the 40 confident other-allele errors.
+- H3: final per-read accuracy >= minimap2's primary (14,742 / 14,960).
+- Reported, no bar: tied rows, assigned / abstain / hopeless; the same split for other-allele reads; haplotypes, certified and
+  putative copies found per family (every extra haplotype here is an allele of a reference copy, so certified copies are false).
+**Fails if** any bar is missed.
