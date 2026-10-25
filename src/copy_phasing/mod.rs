@@ -8,6 +8,7 @@ pub mod pile;
 pub mod putative;
 pub mod slots;
 pub mod stats;
+pub mod tied_reads;
 
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
