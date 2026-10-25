@@ -664,3 +664,19 @@ Moved verbatim from MEMORY.md (the index exceeded the load limit); their topic f
 ⭐09-26 [[project_readthrough_ends_filter]] r1117-r1120 — readthrough filter v3 `r3` EFFECTIVE 6/6 held-out but ASSEMBLY-level only (reps/families = R); opt-in; no v4 on these 6.
 ⭐⭐09-25 [[project_o3_wgs_trio_cn]] — WGS trio (Jim+Trib+Dolly) k-mer CN: 17/516 families differ between gorillas; RNA O3 flags mostly absent from DNA; RNA-as-screen recall 0/17 (`docs/archive/2026-09/O3_WGS_TRIO_CN_2026-09-25.md`).
 ⭐⭐⭐09-25 [[project_publication_figures]] — `figures/` = 7 publication figures (`make.py data figN|plot all|check`), all tables rebuilt 09-25; register 1109-1115 (O2 stable seed holds; de novo vs guided off chr16; r1115 spectrum).
+
+
+## Compacted 2026-10-25 (MEMORY.md "Current work" lines, verbatim)
+
+⭐⭐⭐10-14 [[project_soto_subset_cn_2026-10-14]] — Soto⊂ours×CN: NO subset claim (T1b=H(S)−H(O) fails); merged main f93e9fa9.
+⭐⭐⭐10-14 [[project_liftoff_pairs_null_2026-10-14]] — Liftoff decoys PASS but weak (75/91,12/12,4/4); F1 A119b FAIL 131/148; merged main 310dd2b7; G1 human FAIL .887 (r1287); post-MCL reassign NOT ADOPTED (r1288).
+⭐⭐⭐10-14 [[project_template_copies_2026-10-14]] NOT ADOPTED (r1285) + [[project_denovo_copies_2026-10-14]] -copies analogue NOT CLAIMED (r1286: recall own .638/.790/.846, C2 fails); merged main 380ce367 (10-15).
+⭐⭐⭐10-14 [[project_o1_layered_hierarchy_2026-10-13]] — O1 layers 1-2 in github main (10-15; o1-layers branch contained, PR not needed); V1/V1b FAIL (.40), V2 FAIL (.52).
+⭐⭐⭐10-13 [[project_close_o1_2026-10-13]] — CLOSING O1 plan 1 DONE: hierarchy claim FAILED prereg (E1b, E2); --pair-rule switch (exact-mcl = shipped); 215 is 10 below-family; Phase-B prereqs in spec Amdt 7.
+⭐⭐⭐10-12 [[project_genomewide_fast_2026-10-12]] — fast/low-mem genome-wide pipeline PAUSED (PSV fix elsewhere); next steps in docs/GENOMEWIDE_FAST_2026-10-12.md "Status and what is left".
+⭐⭐⭐10-11 [[project_assembler_gap_2026-10-11]] — vs StringTie: --direct-transfrags-union (r1266, opt-in) beats ST in human; flow-only = 9/195; difference model r1267; in-between OP (union+k2) PASSES vs StringTie/FLAIR + multi-copy strata r1268.
+⭐⭐10-13 [[project_popfix_2026-10-13]] — population-fixed PSVs (48 Y assemblies), opt-in --psv-population/--psv-fixed-only: YAGs 0 PORTABLE; split-half .544 = non-PSV columns (r1273).
+⭐⭐10-12 [[project_yag_o2_2026-10-12]] — YAG O2: calibrated (0/1,458 undecidable assigned) but split-half .544 FAIL (donor != reference Y); accuracy needs matched donor.
+⭐10-12 [[project_phased_toy_2026-10-12]] — phased toy: collapsed ref blind to allele vs extra copy, mat/pat rule separates 100% (easy case); cf4e8c0a.
+⭐⭐⭐10-11 [[project_rescore_2026-10-10]] — RESCORING PAUSED until figures agreed w/ advisor (focus StringTie/FLAIR benchmark); decision doc + docs/PENDING_2026-10-11.md; 4 samples' families genome-wide done.
+✅10-13 [[project_mcl_two_node_fragility]] — fixed as --pair-rule; USER chose default exact-mcl (shipped catalogs unchanged; weight-blind opt-in); uniform cliques can still tie.
