@@ -5,7 +5,7 @@
 //! the glue: arguments, the two BAM passes, the batched minimap2 calls, the per-family loop, the outputs and the stage cache.
 //!
 //! usage: candidate_copies --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi --out P.cand
-//!        [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2]
+//!        [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2] [--net-reads PATH]
 //!
 //! Products (`<out>.`): from `write_outputs`, `candidates.tsv`, `clusters.tsv` (the new-copy and the linked clusters; the in-reference
 //! ones are counted in `families.tsv`, not listed), `contigs.fa` and `nets.fa` (the whole net of each family with a flagged candidate, each
@@ -13,6 +13,8 @@
 //! only) and `clusters.fa` (the consensus of every cluster in `clusters.tsv`; with `reads.tsv` the input of Amendment 12's A12-2 measure).
 //! Phase 4 (2026-10-14, `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md`): `structure.tsv` and `contigs.gtf`, the exon
 //! structure of every flagged candidate projected from its union's genome alignment (`rustle::candidates::structure`).
+//! `--net-reads PATH` (2026-10-24, plan `docs/superpowers/plans/2026-10-24-o3port-rust.md` task 9): every read of every family's net
+//! (`write_net_reads`), the table `accept_o3_candidates.py nets` writes as `net_reads.tsv` with `role` NA (truth labels stay in the harness).
 //! Temporary files live in `<out>.tmp/` and are removed on success.
 //!
 //! Environment: `RUSTLE_MINIMAP2` (the minimap2 binary, default `minimap2`), `RUSTLE_CACHE_DIR` (run_cache: the whole result is one `cand`
@@ -47,7 +49,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const USAGE: &str = "usage: candidate_copies --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi \
---out P.cand [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2]";
+--out P.cand [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2] [--net-reads PATH]";
 
 /// spec §5.5: the per-column error proxy eps of the significance merge (`read_conflict.rs:77`, the default of `RUSTLE_CONFLICT_EPS`).
 const MERGE_EPS: f64 = 0.001;
@@ -65,6 +67,9 @@ const PRODUCTS: [&str; 9] = [
     "structure.tsv",
     "contigs.gtf",
 ];
+
+/// The run_cache payload name of the `--net-reads` table (not in `PRODUCTS`: it is replayed only when asked for).
+const NET_READS: &str = "net_reads.tsv";
 
 /// A usage or input error: exit status 2 (spec §8), with a message naming the argument or the file.
 #[derive(Debug)]
@@ -108,6 +113,8 @@ struct Args {
     min_support: usize,
     threads: usize,
     families: Option<Vec<String>>,
+    /// `--net-reads`: where the net-reads table goes (an extra product; like `--out` it is no input, so not in the stage key).
+    net_reads: Option<String>,
     /// The command line without `--threads`, `--out` and their values: the stage key's `cmd`. The thread count never changes the result, and
     /// the output prefix is no input (ruling R12): a re-run under another prefix replays the same entry.
     key_cmd: String,
@@ -115,7 +122,7 @@ struct Args {
 
 /// Hand-rolled like `missing_copy_flag`'s, but strict: every argument is a known flag followed by its value, none given twice.
 fn parse_args(raw: &[String]) -> Result<Args> {
-    const FLAGS: [&str; 12] = [
+    const FLAGS: [&str; 13] = [
         "--bam",
         "--fasta",
         "--copies",
@@ -128,6 +135,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         "--min-support",
         "--threads",
         "--families",
+        "--net-reads",
     ];
     let usage = |msg: String| exit_two(format!("{msg}\n{USAGE}"));
     let mut kv: BTreeMap<&str, &str> = BTreeMap::new();
@@ -144,7 +152,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         if kv.insert(flag, value).is_some() {
             return Err(usage(format!("{flag} is given twice")));
         }
-        if flag != "--threads" && flag != "--out" {
+        if !["--threads", "--out", "--net-reads"].contains(&flag) {
             key_cmd.extend([flag, value.as_str()]);
         }
         i += 2;
@@ -180,6 +188,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
                 .map(str::to_string)
                 .collect()
         }),
+        net_reads: kv.get("--net-reads").map(|v| v.to_string()),
         key_cmd: key_cmd.join(" "),
     };
     if !(args.delta.is_finite() && args.delta >= 0.0) {
@@ -291,7 +300,7 @@ fn run(raw: &[String]) -> Result<()> {
         .as_ref()
         .map(|root| rc::Entry::new(root, "cand", stage_key(&args, &mm2)).pinned());
     if let Some(e) = stage.as_ref() {
-        if replay_stage(e, &args.out) {
+        if replay_stage(e, &args.out, args.net_reads.as_deref()) {
             eprintln!("[cache] candidate_copies: stage result replayed from {} (BAM passes and minimap2 skipped)", e.dir.display());
             return Ok(());
         }
@@ -305,6 +314,13 @@ fn run(raw: &[String]) -> Result<()> {
             Err(e) => {
                 return Err(e).with_context(|| format!("removing the earlier product {path}"))
             }
+        }
+    }
+    if let Some(nr) = args.net_reads.as_deref() {
+        match std::fs::remove_file(nr) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("removing the earlier --net-reads {nr}")),
         }
     }
     let tmp = PathBuf::from(format!("{}.tmp", args.out));
@@ -462,8 +478,20 @@ fn run(raw: &[String]) -> Result<()> {
         members_out.iter().map(|(c, m)| (c, m.as_slice())).collect();
     write_cluster_members(&args.out, &member_refs)?;
     write_structures(&args.out, &cands, &structures)?;
+    let net_reads = args
+        .net_reads
+        .as_ref()
+        .map_or_else(|| tmp.join(NET_READS), PathBuf::from);
+    if args.net_reads.is_some() || stage.is_some() {
+        let in_reads_tsv: DetHashSet<(&str, &str)> = members_out
+            .iter()
+            .flat_map(|(c, m)| m.iter().map(move |r| (c.family.as_str(), r.as_str())))
+            .collect();
+        write_net_reads(&net_reads, &families, &nets, args.max_reads, &in_reads_tsv)
+            .with_context(|| format!("writing {}", net_reads.display()))?;
+    }
     if let Some(e) = stage.as_ref() {
-        store_stage(e, &args.out);
+        store_stage(e, &args.out, &net_reads);
     }
     std::fs::remove_dir_all(&tmp).with_context(|| format!("removing {}", tmp.display()))?;
     let n_flagged: usize = counts.iter().map(|c| c.n_flagged).sum();
@@ -588,19 +616,24 @@ fn stage_key(args: &Args, mm2: &str) -> String {
 
 /// Replays every product of a complete entry to `<out>.<product>` (hard links: the products are unlinked before any rewrite); `false` (the
 /// stage is computed) when the entry is no hit, lacks a product, or a product cannot be replayed.
-fn replay_stage(e: &rc::Entry, out: &str) -> bool {
+/// With `net_reads`, the entry's `net_reads.tsv` is replayed there too (an entry without one is no hit).
+fn replay_stage(e: &rc::Entry, out: &str, net_reads: Option<&str>) -> bool {
     e.is_hit()
         && PRODUCTS.iter().all(|p| e.dir.join(p).is_file())
+        && net_reads.is_none_or(|_| e.dir.join(NET_READS).is_file())
         && PRODUCTS
             .iter()
             .all(|p| e.replay(p, Path::new(&format!("{out}.{p}"))).is_ok())
+        && net_reads.is_none_or(|nr| e.replay(NET_READS, Path::new(nr)).is_ok())
 }
 
-fn store_stage(e: &rc::Entry, out: &str) {
+/// `net_reads`: the net-reads table, stored beside the products whether or not this run asked for it (`<tmp>/net_reads.tsv` otherwise).
+fn store_stage(e: &rc::Entry, out: &str, net_reads: &Path) {
     let stored = e.staging().and_then(|st| {
         for p in PRODUCTS {
             e.stage_link(&st, p, Path::new(&format!("{out}.{p}")))?;
         }
+        e.stage_link(&st, NET_READS, net_reads)?;
         e.commit(&st)
     });
     match stored {
@@ -617,6 +650,47 @@ fn store_stage(e: &rc::Entry, out: &str) {
 struct Nets {
     names: Vec<Vec<String>>,
     seqs: DetHashMap<String, Vec<u8>>,
+    /// The reads pass B brought into a net (they join one family, and no pass-A read is in the attribution set) -> their class.
+    joined: DetHashMap<String, AttribClass>,
+}
+
+/// `name_key` of `accept_o3_candidates.py` (`name_order` of `o3_candidates.rs`): the text before the trailing digits, the number (digit
+/// count, digits without leading zeros), the whole name.
+fn name_key(s: &str) -> (&str, usize, &str, &str) {
+    let stem = s.trim_end_matches(|c: char| c.is_ascii_digit());
+    let digits = s[stem.len()..].trim_start_matches('0');
+    (stem, digits.len(), digits, s)
+}
+
+/// The `--net-reads` table, as `accept_o3_candidates.py nets` writes `net_reads.tsv`: `family read used role via class in_reads_tsv`, the
+/// families in `name_key` order, each net's reads in sorted order; `used` = under the `--max-reads` cap (`sample_net`), `role` NA, `via` A
+/// (pass A) or B (attributed in pass B) with `class` pass_A / unmapped / poorly_placed, `in_reads_tsv` = the read is in a cluster of
+/// `reads.tsv` of its family (`in_reads_tsv` holds those (family, read) pairs).
+fn write_net_reads(
+    path: &Path,
+    families: &[CatalogFamily],
+    nets: &Nets,
+    max_reads: usize,
+    in_reads_tsv: &DetHashSet<(&str, &str)>,
+) -> std::io::Result<()> {
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+    writeln!(w, "family\tread\tused\trole\tvia\tclass\tin_reads_tsv")?;
+    let mut order: Vec<usize> = (0..families.len()).collect();
+    order.sort_by(|&a, &b| name_key(&families[a].family_id).cmp(&name_key(&families[b].family_id)));
+    for fi in order {
+        let f = families[fi].family_id.as_str();
+        let used: DetHashSet<String> = sample_net(&nets.names[fi], max_reads).into_iter().collect();
+        for n in &nets.names[fi] {
+            let (via, class) = nets.joined.get(n).map_or(("A", "pass_A"), |c| ("B", c.tag()));
+            writeln!(
+                w,
+                "{f}\t{n}\t{}\tNA\t{via}\t{class}\t{}",
+                u8::from(used.contains(n)),
+                u8::from(in_reads_tsv.contains(&(f, n.as_str())))
+            )?;
+        }
+    }
+    w.flush()
 }
 
 /// The read's sequence as sequenced: the record's, reverse-complemented when the record is reverse.
@@ -790,6 +864,7 @@ fn collect_nets(
     drop(attrib);
     // prereg Amendment 13b: one alignment of the attribution set against this run's net reads and every family's copies, then the rule
     let (mut counts, mut n_attributed, mut n_joined) = (ClassCounts::default(), 0usize, 0usize);
+    let mut joined: DetHashMap<String, AttribClass> = DetHashMap::default();
     if n_unmapped + n_poor > 0 {
         let targets_fa = tmp.join("attrib_targets.fa");
         let mut family_of_target = family_of_copy.clone();
@@ -840,6 +915,7 @@ fn collect_nets(
                 &joining,
                 &mut names,
                 &mut seqs,
+                &mut joined,
             )
             .with_context(|| format!("reading {}", attrib_fa.display()))?;
         }
@@ -870,7 +946,7 @@ fn collect_nets(
         .into_iter()
         .map(|set| set.into_iter().filter(|n| seqs.contains_key(n)).collect())
         .collect();
-    Ok(Nets { names, seqs })
+    Ok(Nets { names, seqs, joined })
 }
 
 /// Which part of the attribution set (prereg Amendment 13b) a read belongs to: the comment of its record in the attribution FASTA
@@ -921,7 +997,7 @@ struct ClassCounts {
 /// reads with a hit on a target; `attributed` and `joining` are subsets of it) is counted once under its record's class, and also as
 /// attributed when the rule gave it a family; it leaves `aligned` as it is counted, so a second record of the same name is neither counted
 /// nor read again. Each read of `joining` (read -> index of the family it joins) enters that family's `names`, and its sequence enters `seqs`
-/// unless the read has one already (the first wins). Every other record is passed over without being kept; a joining name the FASTA lacks
+/// unless the read has one already (the first wins), and its class enters `joined`. Every other record is passed over without being kept; a joining name the FASTA lacks
 /// adds nothing. A header without a known class is not the sweep's record: an `InvalidData` error naming it.
 fn read_back(
     fasta: impl BufRead,
@@ -930,6 +1006,7 @@ fn read_back(
     joining: &DetHashMap<String, usize>,
     names: &mut [BTreeSet<String>],
     seqs: &mut DetHashMap<String, Vec<u8>>,
+    joined: &mut DetHashMap<String, AttribClass>,
 ) -> std::io::Result<ClassCounts> {
     let mut counts = ClassCounts::default();
     let mut current: Option<(String, usize)> = None;
@@ -962,6 +1039,9 @@ fn read_back(
                 *n_aligned += 1;
                 *n_attributed += usize::from(attributed.contains_key(name));
                 current = joining.get(name).map(|&fi| (name.to_string(), fi));
+                if current.is_some() {
+                    joined.insert(name.to_string(), class);
+                }
             }
             None => {
                 if let Some((name, fi)) = current.take() {
@@ -1840,6 +1920,14 @@ mod tests {
     }
 
     #[test]
+    fn name_key_orders_like_the_python_harness() {
+        // sorted(["F10", "F2", "F02", "G1", "F", "F1x"], key=name_key) in accept_o3_candidates.py
+        let mut v = ["F10", "F2", "F02", "G1", "F", "F1x"];
+        v.sort_by(|a, b| name_key(a).cmp(&name_key(b)));
+        assert_eq!(v, ["F", "F02", "F2", "F10", "F1x", "G1"]);
+    }
+
+    #[test]
     fn the_stage_key_ignores_the_output_prefix_and_the_threads_but_not_a_parameter() {
         // R12: `--out` is an output path, not an input, so a re-run under another prefix hits; the thread count never enters a key (R10)
         let key = |extra: &[&str]| stage_key(&parsed(extra), "/nonexistent/minimap2");
@@ -1851,6 +1939,8 @@ mod tests {
         );
         assert_eq!(key(&["--out", "elsewhere/Q.cand"]), base);
         assert_eq!(key(&["--threads", "7", "--out", "elsewhere/Q.cand"]), base);
+        // `--net-reads` adds a product and changes none
+        assert_eq!(key(&["--out", "runs/a/P.cand", "--net-reads", "nr.tsv"]), base);
         // a parameter of the stage is part of the key, wherever `--out` stands
         assert_ne!(key(&["--out", "runs/a/P.cand", "--delta", "0.005"]), base);
         assert_ne!(key(&["--out", "runs/a/P.cand", "--min-support", "8"]), base);
@@ -1940,6 +2030,7 @@ mod tests {
             .iter()
             .map(|(r, s)| (r.to_string(), s.as_bytes().to_vec()))
             .collect();
+        let mut joined = DetHashMap::default();
         let counts = read_back(
             &fasta[..],
             aligned,
@@ -1947,6 +2038,7 @@ mod tests {
             &joining,
             &mut names,
             &mut seqs,
+            &mut joined,
         )
         .unwrap();
         assert_eq!(
@@ -1959,6 +2051,8 @@ mod tests {
             }
         );
         assert_eq!(names, vec![set(&["p3"]), set(&["p1", "u1", "u4"])]);
+        let classes: BTreeMap<&str, AttribClass> = joined.iter().map(|(r, c)| (r.as_str(), *c)).collect();
+        assert_eq!(classes.keys().copied().collect::<Vec<_>>(), ["p3", "u1", "u4"]);
         let got: BTreeMap<&str, &[u8]> = seqs
             .iter()
             .map(|(r, s)| (r.as_str(), s.as_slice()))
@@ -1981,6 +2075,7 @@ mod tests {
                 &joining,
                 &mut names,
                 &mut seqs,
+                &mut joined,
             )
             .unwrap_err()
             .to_string();

@@ -9,10 +9,14 @@
 # Deletion scoring (X = kd | pd): contigs X, mindex X, malign X <p>, mmerge X, label X, score X, clean X
 # Control scoring (X = kc | pc): contigs X, hap X, lift X, clabel X, classify X, cindex X, calign X <p>, cmerge X, cscore X, clean X
 # verdict: H4-1 / H4-2 / H4-3 (o3port_p4.py verdict)
+# PORT=rs (2026-10-24): `port` runs the Rust copy_phasing (RS_BIN) into p<arm><cl>.rs, on k<arm>/net_reads.tsv when the nets step wrote
+#   one, else on the stage's own --net-reads tables (NET_READS=1 at `stage`, a BIN that has the flag) concatenated in name_key order.
 set -euo pipefail
 REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 W=${W:-/mnt/linuxdisk/tmp/rna_allele/p4}
 BIN=${BIN:-/mnt/linuxdisk/tmp/rna_allele/p4/bin/candidate_copies}   # frozen copy, sha1 2e3cd592 (both preregs)
+RS_BIN=${RS_BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_phasing}
+PORT=${PORT:-py}
 GGO_FA=/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta
 GGO_MMI=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO.splice.mmi
 MAT_MMI=/mnt/linuxdisk/home/juanfraitu/winloci_data/mGorGor1.mat.splice.mmi
@@ -59,7 +63,8 @@ case $step in
     arm=$1; g=${2:?batch}; X=$W/k$arm; mkdir -p $X/logs
     fams=$(sed -n "$((g + 1))p" $W/batches.txt); [ -n "$fams" ] || { echo "no batch $g" >&2; exit 2; }
     printf '%s\tbinary sha1 %s\n' "$(date +%s)" "$(sha1sum $BIN | cut -c1-40)" > $X/logs/stage_g$g.log
-    env -u RUSTLE_CACHE_DIR $HEAVY /usr/bin/time -v $BIN $(arm_in $arm) --out $X/cand_g$g --threads 4 --families "$fams" 2>&1 >/dev/null \
+    NR=""; [ "${NET_READS:-0}" = 1 ] && NR="--net-reads $X/cand_g$g.net_reads.tsv"
+    env -u RUSTLE_CACHE_DIR $HEAVY /usr/bin/time -v $BIN $(arm_in $arm) --out $X/cand_g$g --threads 4 --families "$fams" $NR 2>&1 >/dev/null \
       | gawk '{ print systime() "\t" $0; fflush() }' >> $X/logs/stage_g$g.log
     grep -E "Elapsed \(wall|Maximum resident|pass B:|done:" $X/logs/stage_g$g.log ;;
   concat)  $LIGHT $ACC_PY concat --w $W/k$1 --prefix cand ;;
@@ -69,11 +74,23 @@ case $step in
            $HEAVY $ACC_PY nets --w $X --linktest $W --prefix cand --copies $W/$arm.copies.tsv --copies-fa $W/$arm.copies.fa $B > $X/attrib.out
            cat $X/attrib.out ;;
   port)    # the port on the stage's net; its IsoCon side = the stage's products. arg 2 = cc: correlation clustering (dir p<arm>cc)
-    arm=$1; CL=${2:-}; X=$W/p$arm$CL; mkdir -p $X/logs
+    arm=$1; CL=${2:-}; X=$W/p$arm$CL; [ $PORT = rs ] && X=$X.rs; mkdir -p $X/logs
     CLA=""; [ "$CL" = cc ] && CLA="--clusterer cc"
     if [ $arm = d ]; then BAMG="--bam $W/R.bam --genome $W/masked.fa"; else BAMG="--bam $W/R0.bam --genome $GGO_FA"; fi
-    for f in net_reads.tsv nets.tsv attrib.json attrib.out; do cp $W/k$arm/$f $X/$f; done
-    $HEAVY /usr/bin/time -v python3 $REPO/bench/o3_graph/o3port.py run $BAMG --copies $W/$arm.copies.tsv --net $X/net_reads.tsv \
+    if [ $PORT = rs ] && [ ! -f $W/k$arm/net_reads.tsv ]; then   # the stage's own tables, families in name_key order (as the nets step)
+      ls $W/k$arm/cand_g*.net_reads.tsv > /dev/null
+      python3 -c 'import sys
+def name_key(s):
+    stem = s.rstrip("0123456789"); digits = s[len(stem):].lstrip("0"); return (stem, len(digits), digits, s)
+rows = [ln for p in sys.argv[1:] for ln in list(open(p))[1:]]
+sys.stdout.write("family	read	used	role	via	class	in_reads_tsv
+" + "".join(sorted(rows, key=lambda ln: name_key(ln.split("	", 1)[0]))))' \
+        $W/k$arm/cand_g*.net_reads.tsv > $X/net_reads.tsv
+    else
+      for f in net_reads.tsv nets.tsv attrib.json attrib.out; do cp $W/k$arm/$f $X/$f; done
+    fi
+    if [ $PORT = rs ]; then PORTCMD="$RS_BIN run"; else PORTCMD="python3 $REPO/bench/o3_graph/o3port.py run"; fi
+    $HEAVY /usr/bin/time -v $PORTCMD $BAMG --copies $W/$arm.copies.tsv --net $X/net_reads.tsv \
       --out $X/cand --isocon $W/k$arm/cand --dump $X/cand.dump.jsonl $CLA > $X/logs/port.log 2>&1
     grep -E "Elapsed \(wall|Maximum resident" $X/logs/port.log; echo "flags $(($(wc -l < $X/cand.candidates.tsv) - 1))" ;;
   contigs) $LIGHT $ACC_PY contigs --w $W/$1 --prefix cand ;;

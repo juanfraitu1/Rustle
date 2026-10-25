@@ -9,6 +9,11 @@ const FX: &str = concat!(
 
 /// The stage on the fixture's genome, copies and splice index (built in `dir`), with `bam` as the reads; the products' prefix is `dir/t.cand`.
 fn run_stage(dir: &Path, bam: &str) -> (Output, String) {
+    run_stage_with(dir, bam, &[])
+}
+
+/// `run_stage` with `extra` arguments appended.
+fn run_stage_with(dir: &Path, bam: &str, extra: &[&str]) -> (Output, String) {
     let mmi = dir.join("genome.splice.mmi");
     assert!(
         Command::new(std::env::var("RUSTLE_MINIMAP2").unwrap_or("minimap2".into()))
@@ -37,6 +42,7 @@ fn run_stage(dir: &Path, bam: &str) -> (Output, String) {
             "--threads",
             "2",
         ])
+        .args(extra)
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
@@ -171,4 +177,29 @@ fn pass_b_attributes_the_unmapped_copy_b_reads_and_keeps_reads_under_the_floor_o
         (850..=950).contains(&union_len),
         "union {union_len} bp, expected the 900-bp spliced copy"
     );
+}
+
+/// Every column but `role` (the 4th: truth labels stay in the Python harness), line by line.
+fn without_role(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|l| {
+            let mut f: Vec<&str> = l.split('\t').collect();
+            f.remove(3);
+            f.join("\t")
+        })
+        .collect()
+}
+
+#[test]
+fn net_reads_matches_nets_step() {
+    // `net_reads_variant.tsv` is what `accept_o3_candidates.py nets` wrote for this stage run on `bam_with_unmapped_copy_b` (60 pass-A
+    // reads, 60 unmapped copy-B reads attributed in pass B; all 120 under the cap, the 60 B reads in reads.tsv)
+    let dir = tempfile::tempdir().unwrap();
+    let bam = bam_with_unmapped_copy_b(dir.path());
+    let nr = dir.path().join("t.net_reads.tsv");
+    run_stage_with(dir.path(), &bam, &["--net-reads", nr.to_str().unwrap()]);
+    let got = std::fs::read_to_string(&nr).unwrap();
+    assert!(got.lines().skip(1).all(|l| l.split('\t').nth(3) == Some("NA")), "{got}");
+    let want = std::fs::read_to_string(format!("{FX}/net_reads_variant.tsv")).unwrap();
+    assert_eq!(without_role(&got), without_role(&want));
 }

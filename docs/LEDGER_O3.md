@@ -10222,3 +10222,11 @@ glibc: they differ on half the inputs), `sum()` of floats (Neumaier since 3.12),
 
 **Speed** (P10 control arm, `R0.bam`, 40 families, IsoCon side): Python 166.4 s / 1.9 GB; Rust 19.1 s / 0.69 GB at 1 thread, 5.4 s /
 1.16 GB at 4 threads.
+
+**The nets step in the stage** (`candidate_copies --net-reads PATH`): the per-read net table `accept_o3_candidates.py nets` writes
+(`family read used role via class in_reads_tsv`, `role` NA: truth labels stay in the harness). Not in the stage key (it adds a product);
+stored in the cache entry and replayed only when asked for. Against the Python nets' `net_reads.tsv` (every column but `role`), one batch
+each: P5 g0 8,166 rows, P10 g3 6,632, refabsent `h` g2 4,572 (19 pass-B poorly placed reads): identical; the batch's 9 stage products equal
+the frozen binary's. **Switch:** `PORT=rs bench/o3_graph/o3port_p4.sh port <arm>` runs `copy_phasing` into `p<arm>.rs` (on the nets step's
+table when present, else on the stage's `--net-reads` tables, `NET_READS=1` at `stage`); on P10 `port c` its 10 products equal the
+frozen Python `pc` products, 8.8 s. Register row 1402.
