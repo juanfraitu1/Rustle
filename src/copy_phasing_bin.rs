@@ -9,6 +9,7 @@
 
 use anyhow::{bail, Context, Result};
 use rustle::copy_phasing::pile::{pile_records, Bam};
+use rustle::genome::IndexedFasta;
 use rustle::copy_phasing::{Clusterer, Copy, Params, ReadId, SlotOrder};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -169,24 +170,122 @@ fn load_net(path: &str, families: &Option<BTreeSet<String>>) -> Result<(BTreeMap
 }
 
 fn run(a: &Args) -> Result<()> {
+    use rustle::copy_phasing::family::{isocon_keep, isocon_side, run_family};
+    use rustle::copy_phasing::pyjson::{dict_repr, fmt3, Json};
+    use rustle::copy_phasing::slots::landing_loci;
+    use rustle::copy_phasing::{AS_TIE, MIN_SUPPORT};
+    use std::io::Write;
     let by_fam = load_copies(&a.copies)?;
-    let (net, _n_net) = load_net(&a.net, &a.families)?;
-    let _ = (&a.genome, &a.out, &a.isocon, a.isocon_via_b, &a.dump, a.threads, &a.params);
+    let (net, n_net) = load_net(&a.net, &a.families)?;
     // the run's read table: every used net read, sorted, so ReadId order = name order
     let table: Vec<String> = net.values().flatten().cloned().collect::<BTreeSet<_>>().into_iter().collect();
     let names: HashMap<Vec<u8>, ReadId> = table.iter().enumerate().map(|(i, n)| (n.as_bytes().to_vec(), i as ReadId)).collect();
     let bam = Bam::open(&a.bam)?;
-    let (prim, _records) = bam.read_primaries(&names)?;
-    if std::env::var_os("COPY_PHASING_DEBUG_PILES").is_some() {
-        for (fam, reads) in &net {
-            let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
-            let piles = pile_records(&bam, &by_fam[fam], &ids, &prim, &names)?;
-            for (c, p) in &piles {
-                let mut v: Vec<&str> = p.keys().map(|&i| table[i as usize].as_str()).collect();
-                v.sort();
-                println!("{fam}\t{c}\t{}", v.join(","));
+    let (prim, records) = bam.read_primaries(&names)?;
+    let genome = IndexedFasta::open(&a.genome).with_context(|| format!("opening --genome {} (and its .fai)", a.genome))?;
+    let iso = match &a.isocon {
+        Some(prefix) => isocon_side(prefix, &a.net)?,
+        None => BTreeMap::new(),
+    };
+    let out_dir = std::path::Path::new(&a.out).parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+    let tmp = out_dir.join(format!(".copy_phasing.{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+    let open = |suffix: &str| -> Result<std::io::BufWriter<std::fs::File>> {
+        let path = format!("{}.{suffix}", a.out);
+        Ok(std::io::BufWriter::new(std::fs::File::create(&path).with_context(|| format!("creating {path}"))?))
+    };
+    let (mut ct, mut cf, mut cl, mut rd, mut ft) = (open("candidates.tsv")?, open("contigs.fa")?, open("clusters.tsv")?, open("reads.tsv")?, open("families.tsv")?);
+    let (mut lh, mut lf, mut lo, mut o2f) = (open("putative.tsv")?, open("putative.fa")?, open("loci.tsv")?, open("o2.tsv")?);
+    let mut dump_fh = match &a.dump {
+        Some(d) => Some(std::io::BufWriter::new(std::fs::File::create(d).with_context(|| format!("creating {d}"))?)),
+        None => None,
+    };
+    writeln!(ct, "family\tcandidate\tn_clusters\tn_reads\tflagged\tunion_len\tnearest_locus\td\tn_net\tn_used")?;
+    writeln!(cl, "family\tcluster\tcandidate\tn_reads\tconsensus_len\tfate\tlinked_to\td")?;
+    writeln!(rd, "read\tfamily\tcluster")?;
+    writeln!(ft, "family\tn_net\tn_used\tpiles\tpile_reads\tclusters\tconflicting\thaplotypes\tcertified")?;
+    writeln!(lh, "family\tcandidate\tcopy\tn_reads\tmulti\tother_holders_multi\tconsensus_len")?;
+    writeln!(lo, "family\tlocus\tn_reads\tnear_best\tweaker_only")?;
+    writeln!(o2f, "family\tread\tassigned\tn_piles")?;
+    let nm = |r: ReadId| table[r as usize].as_str();
+    let empty = Vec::new();
+    for (fam, reads) in &net {
+        let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
+        let copies = by_fam.get(fam).unwrap_or(&empty);
+        let piles = pile_records(&bam, copies, &ids, &prim, &names)?;
+        let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &tmp, dump_fh.is_some().then_some(&table[..]))?;
+        let mut o2: Vec<(&str, &str, usize)> = out.o2.iter().map(|(r, c, k)| (nm(*r), c.as_str(), *k)).collect();
+        o2.sort();
+        for (r, c, k) in o2 {
+            writeln!(o2f, "{fam}\t{r}\t{c}\t{k}")?;
+        }
+        for (k, (x, rs, seq, mi, mc)) in out.looks.iter().enumerate() {
+            let mc: Vec<String> = mc.iter().map(|v| fmt3(*v)).collect();
+            writeln!(lh, "{fam}\tputative_{fam}_{k}\t{x}\t{}\t{}\t{}\t{}", rs.len(), fmt3(*mi), mc.join(","), seq.len())?;
+            writeln!(lf, ">putative_{fam}_{k}\n{}", String::from_utf8_lossy(seq))?;
+        }
+        let mut recs = Vec::new();
+        for &n in &ids {
+            let rs = records.get(&n).map_or(&[][..], |v| &v[..]);
+            if let Some(b) = rs.iter().map(|x| x.3).max() {
+                recs.extend(rs.iter().map(|(ch, s0, e0, asc, _)| (ch.to_string(), *s0, *e0, n, *asc >= b - AS_TIE)));
             }
         }
+        let spans: Vec<(String, i64, i64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
+        for (ch, s0, e0, nr, nb, so) in landing_loci(&recs, &spans, MIN_SUPPORT) {
+            writeln!(lo, "{fam}\t{ch}:{s0}-{e0}\t{nr}\t{nb}\t{so}")?;
+        }
+        let piled: BTreeSet<String> = out.piled.iter().map(|&r| nm(r).to_string()).collect();
+        let side: Vec<(&String, &BTreeSet<String>, &Vec<u8>)> = iso
+            .get(fam)
+            .map_or(&[][..], |v| &v[..])
+            .iter()
+            .filter(|(_, rs, _, vb)| isocon_keep(rs, *vb, &piled, a.isocon_via_b))
+            .map(|(c, rs, seq, _)| (c, rs, seq))
+            .collect();
+        if let (Some(fh), Some(mut d)) = (dump_fh.as_mut(), out.dump) {
+            d.push((
+                "isocon".into(),
+                Json::List(
+                    side.iter()
+                        .map(|(c, rs, _)| Json::Obj(vec![("candidate".into(), Json::str((*c).clone())), ("reads".into(), Json::List(rs.iter().map(|r| Json::str(r.clone())).collect()))]))
+                        .collect(),
+                ),
+            ));
+            writeln!(fh, "{}", Json::Obj(d).dumps())?;
+        }
+        let mut certified: Vec<(String, BTreeSet<String>, &[u8])> =
+            out.certified.iter().map(|(h, rs, seq)| (h.clone(), rs.iter().map(|&r| nm(r).to_string()).collect(), &seq[..])).collect();
+        certified.extend(side.iter().map(|(c, rs, seq)| (format!("isocon:{c}"), (*rs).clone(), &seq[..])));
+        let pc = out.per_copy.values();
+        let (s0, s1, s2) = pc.fold((0, 0, 0), |t, v| (t.0 + v.0, t.1 + v.1, t.2 + v.2));
+        writeln!(ft, "{fam}\t{}\t{}\t{}\t{s0}\t{s1}\t{s2}\t{}\t{}", n_net[fam], reads.len(), out.per_copy.len(), out.n_h, certified.len())?;
+        for (k, (home, rs, seq)) in certified.iter().enumerate() {
+            let cand = format!("cand_{fam}_{k}");
+            writeln!(ct, "{fam}\t{cand}\t1\t{}\t1\t{}\t{home}\tNA\t{}\t{}", rs.len(), seq.len(), n_net[fam], reads.len())?;
+            writeln!(cf, ">{cand}\n{}", String::from_utf8_lossy(seq))?;
+            writeln!(cl, "{fam}\t{fam}:h{k}\t{cand}\t{}\t{}\tnew_copy\t-\tNA", rs.len(), seq.len())?;
+            for r in rs {
+                writeln!(rd, "{r}\t{fam}\t{fam}:h{k}")?;
+            }
+        }
+        eprintln!(
+            "[copy_phasing] {fam}: reads {}, piles {}, haplotypes {} {}, certified {}, putative {}",
+            reads.len(),
+            out.per_copy.len(),
+            out.n_h,
+            dict_repr(&out.why),
+            certified.len(),
+            out.looks.len()
+        );
     }
+    for w in [&mut ct, &mut cf, &mut cl, &mut rd, &mut ft, &mut lh, &mut lf, &mut lo, &mut o2f] {
+        w.flush()?;
+    }
+    if let Some(fh) = dump_fh.as_mut() {
+        fh.flush()?;
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = a.threads;
     Ok(())
 }

@@ -4,8 +4,10 @@
 //! interned as `ReadId`s in sorted-name order, so comparing ids compares names (`sorted(reads)` = sorted ids).
 
 pub mod cluster;
+pub mod family;
 pub mod pile;
 pub mod putative;
+pub mod pyjson;
 pub mod slots;
 pub mod stats;
 pub mod tied_reads;
