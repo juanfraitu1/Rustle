@@ -7880,3 +7880,20 @@ spliced transcript sequence from GGO.fasta (strand-aware), full length, with 0.0
 - Reported, no bar: the same for B; read counts per window; primary accuracy inside each window.
 
 **Fails if** any bar is missed; a failed bar is reported as is (no re-run with other constants).
+
+### P15 result (2026-10-24): ✅ PASS on all three bars (register 1404)
+300 genes (of 532 eligible), 842 transcripts, 16,840 reads; minimap2 2.30, 480 s, 20 GB. Primary right for 16,550 / 16,840 (98.3%);
+15,831 reads have a secondary. Scripts `bench/as_tie_p15_sim.py`, `bench/as_tie_p15_score.py`; data `/mnt/linuxdisk/tmp/p15`.
+
+| | reads | primary right | recoverable (primary wrong, a right secondary in the window) |
+|---|---|---|---|
+| A raw AS window | 2,240 | 1,967 (87.8%) | 270 |
+| B splice-neutral AS | 1,419 | 1,146 (80.8%) | 270 |
+| C same intron count + AS within 10 | 1,384 | 1,114 (80.5%) | 270 |
+
+- **H1 PASS:** R (move to the secondary with AS >= primary + 10) fires on 812 reads; the primary is right for 809 (99.6%), R's secondary for
+  16 (2.0%); 802 of R's secondaries have fewer introns than the primary. Applied, R would make ~98% of the reads it moves wrong.
+- **H2 PASS:** the 856 reads in A but not C have a right primary in 853 (99.65%): the structure-difference cases are not ambiguity.
+- **H3 PASS:** C holds a right secondary for 270 / 270 of A's recoverable reads (B too), with 38% fewer reads in the window.
+- Caveat: reads come from reference transcripts with 0.1% error, no allelic variation and no expressed processed copies (by construction the
+  parent is the truth); whether a processed copy itself is expressed is a separate call (spliced vs unspliced), outside this test.
