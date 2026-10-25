@@ -8035,3 +8035,23 @@ P18 dev reads (153 families), band candidates (ms within 10), true copy vs each 
 - So within a single read's alignments there is nothing left: ties are identical everywhere, and the near-ties are the sample's
   alleles. Not tested here, because the simulation lacks it: real read ends (TSS / polyA site per copy) and evidence pooled over the
   sample's reads (unique reads of each copy, its alleles).
+
+### REPORT (register 1412, dev only): abundance from the sample's other reads as a tie-breaker
+Option 2 of register 1411: evidence pooled over the sample's reads. Units = catalog copies (else 10-kb locus bins); each read's
+candidates = its band (ms within 10) with the P18 error-model likelihood; abundances from all reads. Scripts `bench/o2_p20_*.py`;
+work dir `/mnt/linuxdisk/tmp/p18`. P18's family split; dev families only; test not touched.
+- **Even expression, full-length reads (P18 dev):** no information. 146 / 151 tied reads have two tied copies and neither has a
+  single unique read; the copies are identical over every read.
+- **Uneven expression (30% silent, else lognormal around 10 reads) + Iso-Seq-like 5' truncation (half the reads keep 20-100% from the
+  3' end), dev (`p20`, 5,727 reads, 142 families):** 180 LL-tied reads; minimap2's primary is right for 80 (44%, coin toss).
+  - EM point estimate, assign at >= 0.99: 40 assigned, 9 wrong (22%, all in GWFAM276 with 0 unique reads on either copy). EM pushes a
+    copy's abundance to ~0 on weak soft evidence, so its "0.99" is not a real posterior.
+  - Collapsed Gibbs with a flat Dirichlet prior (the abundance uncertainty enters the posterior): 0 tied reads reach 0.99, so as
+    a certifier it adds nothing. As a best guess, its pick is right for 150 / 180 tied reads (83%) vs the primary's 80 (44%), at
+    stated posteriors mostly 0.5-0.8: right but underconfident.
+- **Real fibroblast reads (no truth, 20-kb loci, `bench/o2_p20_emreal.py`):** 26,353 exactly tied reads (same ms and NM on >= 2 loci).
+  Several tied loci have unique reads: 90.2%. Exactly one: 8.1%. None: 1.7%. The top locus holds >= 99% of the tied loci's unique
+  reads for 2,420.
+- So: pooled abundance can put the right copy first for tied reads (83% vs 44% in dev), but it does not certify single reads at 99%.
+  Its natural output is a per-copy expression split with uncertainty, or a probability per read, not an O2 assignment under
+  assign-or-abstain. Sensitive to the simulated expression and truncation model; not yet held out.
