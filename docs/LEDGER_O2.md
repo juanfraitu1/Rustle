@@ -7949,3 +7949,11 @@ used), no IsoCon side. Baseline M = minimap2's primary. A read's final placement
   copy); D marks them near-best (an expressed copy's own reads), T marks them weaker, which is right.
 - Lesson: an O2 test of the window needs tied reads whose rival is ANOTHER COPY OF THE FAMILY with a different structure (as GWFAM257,
   register 1405), with allelic variation; equal expression from reference copies does not produce them.
+
+## REPORT (no verdict): `--tie-structure` vs the default window on real KB3781 reads with haplotype truth (P5, P10 control arms), 2026-10-24
+**Status:** written before the runs. No fresh family remains under P4's eligibility (all 158 used), so this is report-only on spent
+O3 panels; the window itself was validated held-out in P15 (register 1404). Nothing is tuned on it.
+**Method.** `copy_phasing run --semi --guard --isocon k c/cand` (main 69ddbe3f) on `R0.bam` (real fibroblast reads on `_pri`), the
+`c.copies.tsv` copies and `kc/net_reads.tsv`, with the default window (D) and with `--tie-structure` (T). Truth = `labels.tsv` (each
+read's copy from KB3781's own haplotypes). Reported per panel: tied rows, assigned / abstain / hopeless, right / wrong among assigned
+reads with a label, minimap2's primary on the same rows, reads that change pile, and the T - D differences per family.
