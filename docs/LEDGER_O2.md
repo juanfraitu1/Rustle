@@ -8073,3 +8073,19 @@ copy / the primary overlaps the source copy's span (P18's rule).
 - Reported, no bar: tied rows, assigned / abstain / hopeless; the same split for other-allele reads; haplotypes, certified and
   putative copies found per family (every extra haplotype here is an allele of a reference copy, so certified copies are false).
 **Fails if** any bar is missed.
+
+### P21 result (2026-10-25): ❌ FAIL (H2); O2 stays safe but fixes none of the allele errors (register 1413)
+Work dir `/mnt/linuxdisk/tmp/p21`; scorer `bench/o2_p21_score.py`; copy_phasing 28 s.
+- 1,190 tied rows: 9 assigned (all right, all where the primary was already right), 180 ABSTAIN, 1,001 HOPELESS. H1 PASS (9/9),
+  H3 PASS (final 14,742 = primary), H2 FAIL (fixed 0, broken 0).
+- The 40 confident other-allele errors: 30 are tied rows and all ABSTAIN (GWFAM4 20; GWFAM405 10, where the other allele's cluster
+  is flagged as a putative copy and `--guard` abstains); 10 (GWFAM65) are not tied among the family's copies.
+- O3 side, reported: 846 haplotypes in 294 families; 2 putative copies (GWFAM318, GWFAM405); **2 certified copies, both false**:
+  GWFAM197 and GWFAM384, where every haplotype is one of Jim's two alleles. In both, the divergent copy-0 allele (11 and 15
+  differences) yields more clusters than the family has allele slots (5 haplotypes for 2-3 copies), so one is forced to count as
+  extra. Badread's errors depend on sequence context, so they recur across reads; repeated errors that look like alleles are the
+  suspect, not yet checked.
+- Reading: clustering the reads by their alignment columns makes the right choice on the allele errors, which is to abstain, but
+  it does not turn them into correct placements. To place them it would have to join the other allele's cluster to its own
+  copy's reference-allele cluster, and nothing in the reads links the two. On a diploid sample, the certified tier can be fooled
+  by a divergent allele plus errors that repeat.
