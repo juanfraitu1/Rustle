@@ -1,8 +1,9 @@
-//! O3 port in Rust (2026-10-24): `bench/o3_graph/o3port.py run` byte for byte (plan docs/superpowers/plans/2026-10-24-o3port-rust.md).
+//! Copy phasing (2026-10-24): `bench/o3_graph/o3port.py run` in Rust, byte for byte (plan docs/superpowers/plans/2026-10-24-o3port-rust.md).
 //! The Python is the specification; every function here carries its Python name and keeps its iteration and tie-break order.
 //! Python dicts iterate in insertion order, so the maps that reach a product or a tie-break are `IndexMap`s; read names are
 //! interned as `ReadId`s in sorted-name order, so comparing ids compares names (`sorted(reads)` = sorted ids).
 
+pub mod cluster;
 pub mod pile;
 pub mod stats;
 

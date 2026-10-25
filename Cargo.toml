@@ -31,7 +31,7 @@ rustc-hash = "2" # src/sedef (vendored sedef-rs): FxHashMap / FxHashSet, as in t
 # Parallel processing
 rayon = "1.10"
 
-indexmap = "2" # src/o3port: Python dict insertion order
+indexmap = "2" # src/copy_phasing: Python dict insertion order
 
 lru = "0.12" # src/copy_assign_bin.rs contig cache
 
@@ -101,8 +101,8 @@ name = "as_table"
 path = "src/as_table.rs"
 
 [[bin]]
-name = "o3port"
-path = "src/o3port_bin.rs"
+name = "copy_phasing"
+path = "src/copy_phasing_bin.rs"
 
 [[bin]]
 name = "utilities"

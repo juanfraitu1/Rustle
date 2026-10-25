@@ -1,18 +1,18 @@
-//! o3port — the O3 port (`bench/o3_graph/o3port.py run`) in Rust, byte-identical products (plan
-//! docs/superpowers/plans/2026-10-24-o3port-rust.md; the algorithm is documented in `rustle::o3port` and in the Python).
+//! copy_phasing — `bench/o3_graph/o3port.py run` in Rust, byte-identical products (plan
+//! docs/superpowers/plans/2026-10-24-o3port-rust.md; the algorithm is documented in `rustle::copy_phasing` and in the Python).
 //!
-//! usage: o3port run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2]
+//! usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2]
 //!        [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site]
 //!        [--guard] [--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb]
 //!        [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
 //! `--threads` (default 4) never changes a product. Exit status 2: a usage error.
 
 use anyhow::{bail, Context, Result};
-use rustle::o3port::pile::{pile_records, Bam};
-use rustle::o3port::{Clusterer, Copy, Params, ReadId, SlotOrder};
+use rustle::copy_phasing::pile::{pile_records, Bam};
+use rustle::copy_phasing::{Clusterer, Copy, Params, ReadId, SlotOrder};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-const USAGE: &str = "usage: o3port run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2] \
+const USAGE: &str = "usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2] \
 [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site] [--guard] \
 [--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--isocon-rule no-pile|via-b] \
 [--dump PATH] [--threads N]";
@@ -36,12 +36,12 @@ fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     match parse_args(&raw).and_then(|a| run(&a)) {
         Ok(()) => {}
-        Err(e) if e.to_string().starts_with("usage") || e.to_string().starts_with("o3port: ") => {
+        Err(e) if e.to_string().starts_with("usage") || e.to_string().starts_with("copy_phasing: ") => {
             eprintln!("{e}");
             std::process::exit(2);
         }
         Err(e) => {
-            eprintln!("o3port: {e:#}");
+            eprintln!("copy_phasing: {e:#}");
             std::process::exit(1);
         }
     }
@@ -76,33 +76,33 @@ fn parse_args(raw: &[String]) -> Result<Args> {
             | "--isocon-rule" | "--dump" | "--threads" => {
                 let v = match inline {
                     Some(v) => v,
-                    None => it.next().cloned().with_context(|| format!("o3port: {flag} needs a value\n{USAGE}"))?,
+                    None => it.next().cloned().with_context(|| format!("copy_phasing: {flag} needs a value\n{USAGE}"))?,
                 };
                 kv.insert(flag, v);
             }
             "-h" | "--help" => bail!("{USAGE}"),
-            _ => bail!("o3port: unknown argument {a:?}\n{USAGE}"),
+            _ => bail!("copy_phasing: unknown argument {a:?}\n{USAGE}"),
         }
     }
-    let need = |k: &str| kv.get(k).cloned().with_context(|| format!("o3port: {k} is required\n{USAGE}"));
+    let need = |k: &str| kv.get(k).cloned().with_context(|| format!("copy_phasing: {k} is required\n{USAGE}"));
     p.clusterer = match kv.get("--clusterer").map(String::as_str) {
         None | Some("cc") => Clusterer::Cc,
         Some("lp") => Clusterer::Lp,
-        Some(v) => bail!("o3port: --clusterer {v:?} (cc or lp)\n{USAGE}"),
+        Some(v) => bail!("copy_phasing: --clusterer {v:?} (cc or lp)\n{USAGE}"),
     };
     p.slot_order = match kv.get("--slot-order").map(String::as_str) {
         None | Some("divergence") => SlotOrder::Divergence,
         Some("support") => SlotOrder::Support,
-        Some(v) => bail!("o3port: --slot-order {v:?} (divergence or support)\n{USAGE}"),
+        Some(v) => bail!("copy_phasing: --slot-order {v:?} (divergence or support)\n{USAGE}"),
     };
     let isocon_via_b = match kv.get("--isocon-rule").map(String::as_str) {
         None | Some("no-pile") => false,
         Some("via-b") => true,
-        Some(v) => bail!("o3port: --isocon-rule {v:?} (no-pile or via-b)\n{USAGE}"),
+        Some(v) => bail!("copy_phasing: --isocon-rule {v:?} (no-pile or via-b)\n{USAGE}"),
     };
     let threads = match kv.get("--threads") {
         None => 4,
-        Some(v) => v.parse::<usize>().ok().filter(|&n| n > 0).with_context(|| format!("o3port: --threads {v:?}\n{USAGE}"))?,
+        Some(v) => v.parse::<usize>().ok().filter(|&n| n > 0).with_context(|| format!("copy_phasing: --threads {v:?}\n{USAGE}"))?,
     };
     Ok(Args {
         bam: need("--bam")?,
@@ -177,7 +177,7 @@ fn run(a: &Args) -> Result<()> {
     let names: HashMap<Vec<u8>, ReadId> = table.iter().enumerate().map(|(i, n)| (n.as_bytes().to_vec(), i as ReadId)).collect();
     let bam = Bam::open(&a.bam)?;
     let (prim, _records) = bam.read_primaries(&names)?;
-    if std::env::var_os("O3PORT_DEBUG_PILES").is_some() {
+    if std::env::var_os("COPY_PHASING_DEBUG_PILES").is_some() {
         for (fam, reads) in &net {
             let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
             let piles = pile_records(&bam, &by_fam[fam], &ids, &prim, &names)?;

@@ -1,5 +1,5 @@
 #!/bin/bash
-# o3port_golden.sh — the Rust o3port against the Python o3port.py on frozen inputs (plan docs/superpowers/plans/2026-10-24-o3port-rust.md).
+# o3port_golden.sh — the Rust copy_phasing against the Python o3port.py on frozen inputs (plan docs/superpowers/plans/2026-10-24-o3port-rust.md).
 #   o3port_golden.sh py <name> [seed]   the Python side (PYTHONHASHSEED = seed, default 0) -> $GW/<name>/py.*  (seed != 0: py<seed>.*)
 #   o3port_golden.sh rs <name>          the Rust side ($RS_BIN, --threads $RS_THREADS) -> $GW/<name>/rs.*
 #   o3port_golden.sh diff <name> [a b]  byte-compare every product, the dump and the [o3port] stderr lines of prefixes a, b (py, rs)
@@ -8,7 +8,7 @@
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 GW=${GW:-/mnt/linuxdisk/tmp/o3port_golden}
-RS_BIN=${RS_BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target/release/o3port}
+RS_BIN=${RS_BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_phasing}
 RS_THREADS=${RS_THREADS:-1}
 PRODUCTS="candidates.tsv contigs.fa clusters.tsv reads.tsv families.tsv putative.tsv putative.fa loci.tsv o2.tsv dump.jsonl"
 
@@ -35,12 +35,16 @@ run_side() {   # side (py|rs), name, prefix tag, seed
   printf "%s\t%s\t%.1f s\n" "$n" "$tag" "$(echo "$(date +%s.%N) - $t0" | bc)" >> "$GW/times.tsv"
 }
 
+stderr_lines() {   # the per-family progress lines, without the program's name
+  grep -E '^\[(o3port|copy_phasing)\]' "$1" | sed -E 's/^\[[a-z0-9_]+\] //'
+}
+
 diff_case() {   # name, prefix a, prefix b
   local d=$GW/$1 a=${2:-py} b=${3:-rs} bad=0
   for p in $PRODUCTS; do
     cmp -s "$d/$a.$p" "$d/$b.$p" || { echo "DIFF $1 $p"; bad=1; }
   done
-  cmp -s <(grep '^\[o3port\]' "$d/$a.log") <(grep '^\[o3port\]' "$d/$b.log") || { echo "DIFF $1 stderr"; bad=1; }
+  cmp -s <(stderr_lines "$d/$a.log") <(stderr_lines "$d/$b.log") || { echo "DIFF $1 stderr"; bad=1; }
   [ $bad = 0 ] && echo "SAME $1"
   return $bad
 }
