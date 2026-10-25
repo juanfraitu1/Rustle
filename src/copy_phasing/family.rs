@@ -163,7 +163,10 @@ pub fn run_family(
     let in_pile = |m: &Merged, c: &str| m.reads.iter().filter(|r| piles[c].contains_key(*r)).count();
     let mut options: Options = Options::new();
     for (i, m) in merged.iter().enumerate() {
-        options.insert(i, piles.keys().filter(|c| 2 * in_pile(m, c) >= m.reads.len()).cloned().collect());
+        // sorted, as the Python: b_matching takes the first option with a free slot, so the order picks the slot copy
+        let mut opt: Vec<String> = piles.keys().filter(|c| 2 * in_pile(m, c) >= m.reads.len()).cloned().collect();
+        opt.sort();
+        options.insert(i, opt);
     }
     // DADA2's rule before the slots
     let mut maps_of: HashMap<String, HashMap<String, HashMap<i64, (i64, bool)>>> = HashMap::new();

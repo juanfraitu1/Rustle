@@ -83,8 +83,7 @@ case $step in
 def name_key(s):
     stem = s.rstrip("0123456789"); digits = s[len(stem):].lstrip("0"); return (stem, len(digits), digits, s)
 rows = [ln for p in sys.argv[1:] for ln in list(open(p))[1:]]
-sys.stdout.write("family	read	used	role	via	class	in_reads_tsv
-" + "".join(sorted(rows, key=lambda ln: name_key(ln.split("	", 1)[0]))))' \
+sys.stdout.write("family\tread\tused\trole\tvia\tclass\tin_reads_tsv\n" + "".join(sorted(rows, key=lambda ln: name_key(ln.split("\t", 1)[0]))))' \
         $W/k$arm/cand_g*.net_reads.tsv > $X/net_reads.tsv
     else
       for f in net_reads.tsv nets.tsv attrib.json attrib.out; do cp $W/k$arm/$f $X/$f; done

@@ -10230,3 +10230,10 @@ each: P5 g0 8,166 rows, P10 g3 6,632, refabsent `h` g2 4,572 (19 pass-B poorly p
 the frozen binary's. **Switch:** `PORT=rs bench/o3_graph/o3port_p4.sh port <arm>` runs `copy_phasing` into `p<arm>.rs` (on the nets step's
 table when present, else on the stage's `--net-reads` tables, `NET_READS=1` at `stage`); on P10 `port c` its 10 products equal the
 frozen Python `pc` products, 8.8 s. Register row 1402.
+
+**Final review fixes (2026-10-24).** (1) A haplotype's copy options were in `--copies` order, not sorted as in the Python. `b_matching` takes
+the first free option, so the slot copy could differ whenever a copies file lists a copy before a lower-sorting one (P5 / P10 list `:1`
+before `:0`). The 78 golden cases passed only because their one two-option haplotype was re-sorted on another path. Fixed; 3 golden cases
+with the copies reversed (`p14_d1_control_rev_*`) added. **81/81 identical at 1 and 4 threads.** (2) The `PORT=rs` concat branch had a
+Python syntax error. Fixed; run on a P10 stand-in (per-batch tables, no nets-step file): the table and all 10 products equal the frozen
+`pc` products. (3) The `candidate_copies` stage key moved to v3, so a pre-`--net-reads` cache entry is never reused.

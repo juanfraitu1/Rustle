@@ -596,10 +596,12 @@ fn copy_targets(fa: &str, checked: &DetHashSet<(&str, usize)>) -> DetHashMap<Str
 
 /// The stage key (spec §5.8): the command line without `--threads` and `--out` (R12), the executable, the minimap2 build, the fingerprints
 /// (path, size, mtime) of every input file and of the BAM and FASTA indexes, and every `RUSTLE_*` variable.
+/// v3 (2026-10-24): every entry holds `net_reads.tsv`; a v2 entry lacks it, and `commit` would keep that entry over a recomputed one, so a
+/// `--net-reads` run would recompute forever.
 fn stage_key(args: &Args, mm2: &str) -> String {
     let fp = |p: &str| rc::file_fingerprint(p);
     format!(
-        "rustle candidate_copies v2\ncmd\t{}\nexe\t{}\nminimap2\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncopies\t{}\ncopies_fa\t{}\nindex\t{}\n{}",
+        "rustle candidate_copies v3\ncmd\t{}\nexe\t{}\nminimap2\t{}\nbam\t{}\nbai\t{}\nfasta\t{}\nfai\t{}\ncopies\t{}\ncopies_fa\t{}\nindex\t{}\n{}",
         args.key_cmd,
         rc::exe_fingerprint(),
         rc::minimap2_version(mm2),
@@ -1932,7 +1934,7 @@ mod tests {
         // R12: `--out` is an output path, not an input, so a re-run under another prefix hits; the thread count never enters a key (R10)
         let key = |extra: &[&str]| stage_key(&parsed(extra), "/nonexistent/minimap2");
         let base = key(&["--out", "runs/a/P.cand"]);
-        assert!(base.starts_with("rustle candidate_copies v2\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
+        assert!(base.starts_with("rustle candidate_copies v3\ncmd\t--bam r.bam --fasta g.fa --copies c.tsv --copies-fa c.fa --index g.mmi\n"), "{base}");
         assert!(
             !base.contains("P.cand"),
             "the output prefix must not be in the key: {base}"
