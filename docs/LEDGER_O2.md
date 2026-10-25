@@ -8022,3 +8022,16 @@ for 14,742 (98.5%). Band reads 471: 249 LL exact ties (the copies are identical 
 - Conclusion: sequencing errors are not what makes minimap2 wrong on near-ties; HiFi errors fall on both alignments alike. What
   makes it wrong is (a) copies identical over the read and (b) the sample's own alleles. Both need evidence from outside the read
   (the sample's copies and alleles: O3 and O2's sample-aware lane), not a better per-read score.
+
+### REPORT (register 1411, dev only): no other tag or CIGAR feature separates the true copy on near-ties
+P18 dev reads (153 families), band candidates (ms within 10), true copy vs each wrong candidate (`bench/o2_p18_features.py`,
+`bench/o2_p18_features_cond.py`). Features: ms, AS, NM, de, cm, s1 (tags); and from the CIGAR + reference: introns, annotated junctions
+(GGO GFF), non-canonical junctions, soft clip, aligned length, A count in the 20 bp past the 3' end.
+- Primary wrong, LL-tied (147 reads, 135 of them reference-allele reads): every feature is EQUAL between the primary and the true copy.
+  The copies are identical over the read, structure included.
+- Primary wrong, decidable (30 reads, 29 other-allele): ms, LL, NM, de, cm and s1 favour the primary (the wrong copy) in 25-29 of the 30;
+  introns, junction motifs and clips are equal. Annotated junctions split 9 / 10. Downstream-A favours the truth 10 / 0, but all 10
+  are one family at 3 vs 2 A's (noise).
+- So within a single read's alignments there is nothing left: ties are identical everywhere, and the near-ties are the sample's
+  alleles. Not tested here, because the simulation lacks it: real read ends (TSS / polyA site per copy) and evidence pooled over the
+  sample's reads (unique reads of each copy, its alleles).
