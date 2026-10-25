@@ -7975,3 +7975,14 @@ Work dir `/mnt/linuxdisk/tmp/p17`; scorer `bench/o2_tie_window_real_score.py`.
 - So in copy_phasing the window reaches O2's assignments only through a same-family rival with a different structure. On these two
   panels that never decides a tied read; its real-data effects are in the copy finder (GWFAM257, register 1405) and the landing
   loci (GWFAM421, register 1406).
+
+### REPORT (register 1409): what minimap2 ranks by is `ms`, not AS
+Source (minimap2 v2.30 `hit.c` `mm_hit_sort`, `align.c` `mm_update_extra`): after base-level alignment, hits are sorted by `dp_max`
+(the `ms` tag: the best local DP score along the CIGAR, with no intron cost), with ties broken by a hash of the read name. For reads
+>= 500 bp (`rank_min_len`) whose top two hits are within `rank_frac` 0.9, `mm_update_dp_max` first recomputes `dp_max` with a
+mismatch penalty set from the best hit's divergence. AS (`dp_score`) includes the intron and splice-site costs and is never used to rank.
+On the real fibroblast BAM (minimap2 2.31 splice:hq, 4,190,262 reads with >= 1 secondary; `bench/mm2_primary_rank.py` on
+`/mnt/linuxdisk/tmp/as_flip/grp*.tsv`), the primary has the highest ms for 4,162,202 (99.3%); 26,639 (0.6%) tie on ms (the hash decides:
+the coin toss); 1,421 (0.03%) are below the best secondary's ms (the divergence recalibration). AS disagrees with the
+primary for 415,270 (9.9%), which is why the AS + 10 rule fired so often. Of the ms ties, 26,384 have the same NM and 25,176 the same intron
+count: exact ties, which no sequence score can break.
