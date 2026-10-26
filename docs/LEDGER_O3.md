@@ -10322,3 +10322,14 @@ group's first read is mapped to the reference (`minimap2 -x sr`); if it aligns w
 anywhere, the junction exists in the reference and the group is dropped.
 **Family flag:** >= 1 kept group whose junction lies in one of its copy spans.
 **Stage 1 reports (dev):** groups per family by type and truth; sensitivity, precision against the 25% base rate, Fisher test.
+
+### BPCLUST stage 1 (dev census, 144 families: 36 DIFF / 108 SAME)
+- Dev fixes (rulings): a query-offset bug (left clip counted twice) fixed; non-canonical junctions within 10 bp of an annotated
+  intron dropped as aligner jitter (1,105 reads put a 290k-read annotated junction 1 bp off).
+- JUNCTION carries no signal: 1,256 groups, mostly jitter around unannotated canonical junctions and small deletions in Jim's alleles
+  (e.g. a 134 bp non-canonical "intron" in 435 reads); flagged DIFF 20/36 vs SAME 73/108 (precision 0.22, base 0.25).
+- SPLIT or CLIP (ref-absent): 8/36 vs 12/108 (precision 0.40, p 0.086); with >= 3 reads 5/36 vs 4/108 (precision 0.56, sensitivity
+  0.14, p 0.043). One SAME family with ~290k reads (GWFAM115) carries 40 groups, including splits onto the mitochondrion.
+**Stage 2 (held-out, frozen before it is run):** rule = >= 1 ref-absent SPLIT or CLIP group with >= 3 reads whose SPLIT partner is not
+the mitochondrion (`flags.tsv`). Held-out base rate 75 / 319 = 0.235.
+- H1: precision >= 0.40. H2: Fisher one-sided p < 0.05 (flagged x truth). Reported: sensitivity, per-type counts.
