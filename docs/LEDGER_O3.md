@@ -10373,7 +10373,7 @@ putative. The net and run are split into batches by sha1 of the unit (machine li
 - Not pre-registered as a bar, seen on dev and held-out alike: units with a PUTATIVE copy are enriched for gaining units
   (dev 3 / 9, held-out 3 / 9 against a 0.03 base; p 0.002 both), but they catch 3 of 83 and 3 of 150 gaining units.
   Families, certified or putative: 14 flagged, GAIN 5 / 51 (precision 0.357, p 0.055).
-- Reading: the certified tier per exon cannot see most exon gains. About two-thirds of the extra exon copies match an existing
+- Reading (⚠ corrected by EXCEIL, register 1420: 41.9% of gains are read-visible, so the detector is the limit): the certified tier per exon cannot see most exon gains. About two-thirds of the extra exon copies match an existing
   reference copy over the exon, so their reads form no new haplotype; many others are not expressed. RNA reads alone reach at
   most ~10% of the families whose exon copy number differs. Data `/mnt/linuxdisk/tmp/exhap`; `bench/exhap_{units,net,score}.py`.
 
