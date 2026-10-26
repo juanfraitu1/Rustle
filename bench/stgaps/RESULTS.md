@@ -124,3 +124,24 @@ kept; single-copy unchanged). Dev: F1 FAIL, F3 FAIL (no signal). **Not adopted.*
 (MIN1) gains only 2.0 / 1.4 multi-copy recall points at a 3.5 / 7.2 point precision cost, so single-read chains are not
 where the multi-copy gap is. About half of the own-support-1 candidates have a junction that does not lift to the
 representative (indel at the splice site or partial copy alignment).
+
+## Recall on observed reference transcripts (descriptive; `bench/stgaps/observed.py`)
+Observed at k = >= k de-duplicated primary spliced molecules carry the reference transcript's exact intron chain on its
+contig (one pass over each BAM: gorilla KB3781 12.6M spliced primaries / 324 s, human A119b 12.4M / 485 s).
+
+| substrate | stratum | all: n, BASE R | obs>=1: n, BASE / MIN1 R | obs>=2: n, BASE / MIN1 R |
+|---|---|---|---|---|
+| gorilla KB3781 | single | 88,740, 28.1 | 33,756, 73.8 / 78.4 | 27,306, 91.2 / 91.1 |
+| | multi | 7,093, 13.5 | 1,362 (19%), 66.5 / 72.8 | 1,025, 86.0 / 86.0 |
+| human A119b | single | 166,114, 22.1 | 55,594, 66.0 / 71.6 | 42,178, 87.0 / 86.9 |
+| | multi | 9,288, 20.7 | 2,521 (27%), 69.0 / 74.2 | 1,875, 87.3 / 87.2 |
+
+Human obs>=2, other tools: StringTie single 64.7 / multi 65.7, FLAIR 77.7 / 74.9 (ours 87.0 / 87.3). Multi-copy
+transcripts whose molecules are >= half MAPQ 0: human 209 (ours 92.8, StringTie 72.7, FLAIR 60.3), gorilla 45 (91.1).
+**Reading.** The single- vs multi-copy recall gap is mostly a gap in what the reads show: only 19% (gorilla) / 27% (human)
+of multi-copy reference transcripts have any primary read carrying their whole chain at their own locus, against 38% /
+33% single-copy. Once observed twice, ours recovers multi-copy transcripts as well as single-copy ones in human (87.3
+vs 87.0), and 5 points lower in gorilla (86.0 vs 91.2, 143 of 1,025 missed). Single-read chains (obs = 1) are the
+remaining gap, and MIN1 shows admitting them all costs far more precision than it recovers (FW section). ⚠ "Own locus"
+means the reads' PRIMARY placement: a multi-copy transcript whose reads went to a paralog counts as unobserved here.
+That is the O2 question, not an assembly loss.
