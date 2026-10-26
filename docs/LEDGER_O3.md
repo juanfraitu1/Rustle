@@ -10276,3 +10276,29 @@ genome is CAPPED and reported separately. QC: share of units whose own reference
 share of the 494 families with >= 1 differing exon, next to 1408's 5-7%; for windows also the share whose ref count differs from
 mat and from pat, and windows overlapping a catalog copy vs not.
 **Known limit:** haplotype assemblies can collapse or miss SD sequence; a difference may be an assembly artefact.
+
+### SDCN result (2026-10-25, register 1416, REPORT)
+Data `/mnt/linuxdisk/tmp/sdcn`; scripts `bench/sdcn_{seg,units,count2,noise,noise_ex}.py`.
+**Amendment (after the first count, disclosed):** the pre-registered `asm20` preset failed its own QC on exons (own locus recovered
+for 3,062 / 9,210; 6,148 exons with no hit in any genome). Its exon numbers (mat != pat 2.8%, families 16%) were seen. Exons were
+remapped with `-x sr -N 500 -p 0.5` (own locus recovered 9,210 / 9,210); SD windows keep `asm20`. Added after the first count: a
+same-sequence noise control (each reference autosome is an exact copy of one of Jim's mat / pat chromosomes, so the units' loci on
+it must agree with that haplotype chromosome) and a placed-contigs-only recount (mat has 201 unplaced contigs, pat none).
+SD units: 62,568 SEDEF pairs -> 360 Mb of SD sequence, 35,479 elementary segments, 74,376 autosomal 5 kb windows; 6,000 sampled
+(4 capped). Exons: 9,210 autosomal exons >= 100 bp of 463 families.
+
+| unit | method noise (same sequence) | mat != pat (C 0.8, T 0.90) | all 9 settings | ref != mat / pat |
+|---|---|---|---|---|
+| exon | 0.2% (17 / 9,210) | 7.4% (680) | 4.7% | 5.8% / 2.3% |
+| SD window, 5 kb | 6.6% (3% at 1-2 ref copies, 13% at >= 6) | 44.8% (2,688 / 5,996) | 35.3% | 33.4% / 20.6% |
+
+- Exons: 111 / 463 families (24.0%) have >= 1 exon whose copy count differs between mat and pat, against 5-7% of families at the
+  whole-copy level (1408); noise can explain at most 17 families. Differing exons are mostly multi-copy (402 / 680 have >= 6 ref
+  copies); size |mat - pat| 1 in 363, 2 in 203, >= 3 in 114.
+- SD windows: mat != pat in 44.8%, 24.6% even for windows with 1-2 reference copies (713 / 2,902), far above the 3% noise there.
+  Windows overlapping a catalog gene copy differ less (44 / 219, 20%) than the rest (2,644 / 5,777, 46%).
+- Unplaced mat contigs do not drive it (placed contigs only: 44.8% and 7.4%, unchanged).
+- Reading: the advisor's claim holds at the SD level. Within one animal, the two haplotypes differ in copy number for about half
+  of SD sequence and a quarter of our families at exon level; whole expressed gene copies are the most stable unit (5-7%).
+- Limit: haplotype assemblies (T2T-grade, the reference's own sources) could still mis-assemble some SD; the same-sequence
+  control bounds only the mapping and counting noise.
