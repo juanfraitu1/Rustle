@@ -97,3 +97,30 @@ projections. The gorilla held-out was not run: dev fails both precision and gain
 `copy_assign` now applies it by default; `--no-polish-mono-primed` (driver `RUSTLE_POLISH_MONO_PRIMED=0`) restores the old
 output. Checked on A119b chr12: default == the earlier `--polish-mono-primed` run and `--no-polish-mono-primed` == the
 frozen main binary, byte for byte (gtf, params.tsv, families.gtf).
+
+## Family layer FW (PREREG_family_layer_2026-10-26, sha1 718822c1) — FAIL on held-out (F1)
+`bench/stgaps/fw_layer.py`; outputs `/mnt/linuxdisk/tmp/stgaps/fwl/{hsa,ggo}/`. BASE and MIN1 (`RUSTLE_MIN_CHAIN_READS=1`)
+from the same binary (this branch, `--polish-mono-primed` default). FW = BASE + single-read chains at an O1 family copy
+whose lifted family chain has >= 2 molecules over the family's copies.
+
+| substrate | candidates | confirmed (admitted) | unconfirmed | unlifted | own 0 |
+|---|---|---|---|---|---|
+| human A119b (dev) | 22,247 | 601 | 7,846 | 8,165 | 5,634 |
+| gorilla KB3781 (held-out; 326 families, 918 copies) | 2,193 | 75 | 1,044 | 769 | 305 |
+
+| substrate | arm | single R / P | multi R / P | multi `=` |
+|---|---|---|---|---|
+| human (dev) | BASE | 22.1 / 19.8 | 20.7 / 12.6 | 1,924 |
+| | MIN1 | 24.0 / 14.0 | 22.7 / 9.1 | 2,112 |
+| | FW | 22.1 / 19.7 | 20.8 / 12.5 | 1,932 |
+| gorilla (held-out) | BASE | 28.1 / 37.2 | 13.4 / 26.5 | 951 |
+| | MIN1 | 29.9 / 29.2 | 14.8 / 19.3 | 1,052 |
+| | FW | 28.1 / 37.2 | 13.5 / 26.3 | 956 |
+
+`=` share among own-support-1 candidates (MIN1 tmap): human confirmed 10/601 = 1.7% vs unconfirmed 141/7,846 = 1.8%;
+gorilla confirmed 10/75 = 13.3% vs unconfirmed 25/1,044 = 2.4%.
+Held-out clauses: F1 FAIL (+0.1 point, 5 transcripts; bar 0.5), F2 PASS (−0.2), F3 PASS (5.5x), F4 PASS (every BASE line
+kept; single-copy unchanged). Dev: F1 FAIL, F3 FAIL (no signal). **Not adopted.** Even admitting EVERY single-read chain
+(MIN1) gains only 2.0 / 1.4 multi-copy recall points at a 3.5 / 7.2 point precision cost, so single-read chains are not
+where the multi-copy gap is. About half of the own-support-1 candidates have a junction that does not lift to the
+representative (indel at the splice site or partial copy alignment).
