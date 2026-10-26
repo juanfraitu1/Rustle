@@ -40,8 +40,9 @@ pub struct RefineParams {
     /// are deterministically subsampled instead of truncated (truncation
     /// starves late positions in satellite arrays).
     pub max_pairs: u64,
-    /// Scan v2 (SEDEF's final filter): an ok pair needs at least this many uppercase (unmasked) bases on each side and
-    /// this many aligned matches between uppercase bases; otherwise it is a `repeat` record. 0 disables the filter.
+    /// Scan v2 (SEDEF's final filter): a block's ok pairs together need at least this many uppercase (unmasked) bases on
+    /// each side and this many aligned matches between uppercase bases; otherwise they are `repeat` records. 0 disables
+    /// the filter.
     pub min_uppercase: u64,
     /// Scan v2: a chain whose alignment identity is below this (percent) is not a pair and shadows no other chain.
     pub min_identity: f64,
@@ -391,8 +392,6 @@ const BISER_GAP: f64 = 0.5;
 const BISER_GAPOPEN: f64 = 100.0;
 const BISER_MAX_GAP: i64 = 10 * 1024;
 const BISER_MAX_ITER: usize = 500;
-/// Gaps between joined chains are aligned only up to this many DP cells (2 kb x 2 kb); larger ones count as indels.
-const ALIGN_MAX_CELLS: usize = 4_000_000;
 
 /// Scan v2: BISER's second-level chaining over the chains of one strand space. Chains sorted by end; each takes the
 /// best-scoring predecessor (ending before it on both axes, the longer gap < MAX_GAP, the shorter <= `max_gap` so the
@@ -423,6 +422,15 @@ pub fn join_chains(mut chains: Vec<Vec<(u32, i64)>>, k: usize, max_gap: u64) -> 
         let mut tried = 0;
         for p in (0..c).rev() {
             let (pe_a, pe_b) = end(&chains[p]);
+            if pe_a + BISER_MAX_GAP <= cs_a {
+                break; // sorted by end: every earlier chain ends even further away
+            }
+            // every examined predecessor counts (BISER counts only the feasible ones; a tandem block has thousands of
+            // overlapping chains)
+            tried += 1;
+            if tried > BISER_MAX_ITER {
+                break;
+            }
             if pe_a > cs_a || pe_b > cs_b {
                 continue;
             }
@@ -430,10 +438,6 @@ pub fn join_chains(mut chains: Vec<Vec<(u32, i64)>>, k: usize, max_gap: u64) -> 
             let (mi, ma) = (ga.min(gb), ga.max(gb));
             if ma >= BISER_MAX_GAP || mi > max_gap as i64 {
                 continue;
-            }
-            tried += 1;
-            if tried > BISER_MAX_ITER {
-                break;
             }
             let sc = dp[p] + score[c] - BISER_MISMATCH * mi as f64 - BISER_GAPOPEN - BISER_GAP * (ma - mi) as f64;
             if sc >= dp[c] {
@@ -514,7 +518,9 @@ pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64, u64) {
 /// Scan v2 identity of a chain: anchors are k-mer matches, the stretches between consecutive anchors are aligned;
 /// (100 x matches / (matches + mismatches), matches of two uppercase bases), indels left out of the identity (SEDEF's
 /// fracMatch). `b` is in the chain's strand space.
-pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize) -> (f64, u64) {
+/// A gap is aligned only up to `max_gap`^2 DP cells, the largest a run's own steps make; a longer gap of a BISER join
+/// counts as an indel plus its shorter side as mismatches.
+pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize, max_gap: u64) -> (f64, u64) {
     let both_up = |i: usize, j: usize| a[i].is_ascii_uppercase() && b[j].is_ascii_uppercase();
     // uppercase matches of `n` matched bases starting at a[i], b[j]
     let up_run = |i: usize, j: usize, n: usize| (0..n).filter(|&t| both_up(i + t, j + t)).count() as u64;
@@ -532,8 +538,10 @@ pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize) -> (f64,
         }
         let (ga, gb) = (pa as usize + k, (pb + k as i64) as usize);
         let cells = (qa as usize).saturating_sub(ga) * (qb.max(0) as usize).saturating_sub(gb);
-        if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() && cells > ALIGN_MAX_CELLS {
-            // a long gap between joined chains: indels only (BISER aligns it; here it is left out of the identity)
+        if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() && cells as u64 > max_gap * max_gap {
+            // a long gap between joined chains, not aligned (BISER aligns it): its longer side's excess is an indel, and
+            // the shorter side's bases are unverified, so they count as mismatches (identity stays a lower bound)
+            mis += ((qa as usize - ga).min(qb as usize - gb)) as u64;
             mat += k as u64;
             up += up_run(qa as usize, qb as usize, k);
         } else if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() {
@@ -647,7 +655,7 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
     };
     let ident = |i: usize| {
         let (strand, pts, ..) = cands[i];
-        chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k)
+        chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k, p.max_gap)
     };
     // (candidate, identity, uppercase matches) of the kept chains
     let mut chosen: Vec<(usize, f64, u64)> = Vec::new();
@@ -673,17 +681,14 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
         chosen.push((0, id, up)); // the best chain, as a weak record
         fallback = true;
     }
+    let mut up_stats: Vec<(u64, u64, u64)> = Vec::new(); // per kept record: unmasked matches, unmasked bases A, B
     let mut kept: Vec<Refined> = chosen
         .into_iter()
         .map(|(i, est_id, up_matches)| {
             let (strand, pts, ra0, ra1, rb0, rb1, _) = cands[i];
             let ok = is_ok(&cands[i]) && !fallback;
             let upper = |seq: &[u8], x0: u64, x1: u64| seq[x0 as usize..x1 as usize].iter().filter(|c| c.is_ascii_uppercase()).count() as u64;
-            let repeat = ok
-                && p.min_uppercase > 0
-                && (up_matches < p.min_uppercase
-                    || upper(sa_full, ra0, ra1) < p.min_uppercase
-                    || upper(sb_full, rb0, rb1) < p.min_uppercase);
+            up_stats.push((up_matches, upper(sa_full, ra0, ra1), upper(sb_full, rb0, rb1)));
             // "Self" only when the two sides land on (nearly) the SAME locus --
             // a refinement collapse artifact. Shifted copies (offset >= 1 kb)
             // are genuine tandem duplications.
@@ -700,11 +705,26 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
                 est_id,
                 ok,
                 self_pair,
-                repeat,
+                repeat: false,
                 stage2_id: b.est_id,
             }
         })
         .collect();
+    // SEDEF's final filter, over the block's ok pairs together (they are pieces of one duplication): unmasked matches and
+    // unmasked bases per side, summed
+    if p.min_uppercase > 0 {
+        let (mut um, mut ua, mut ub) = (0u64, 0u64, 0u64);
+        for (r, &(m, a, b)) in kept.iter().zip(&up_stats) {
+            if r.ok && !r.self_pair {
+                (um, ua, ub) = (um + m, ua + a, ub + b);
+            }
+        }
+        if um < p.min_uppercase || ua < p.min_uppercase || ub < p.min_uppercase {
+            for r in kept.iter_mut().filter(|r| r.ok && !r.self_pair) {
+                r.repeat = true;
+            }
+        }
+    }
     kept.sort_by_key(|r| (r.ra0, r.ra1, r.rb0, r.rb1, r.strand));
 
     // Re-extract anchors on each refined core (not the wider stage-2
@@ -809,6 +829,7 @@ mod tests {
             cells: 1,
             score: 100,
             est_id: 99.0,
+            upper_seed: true,
         }
     }
 
@@ -897,6 +918,7 @@ mod tests {
                 cells: 1,
                 score: 100,
                 est_id: 99.0,
+                upper_seed: true,
             };
             let (rec, ba) = refine_block(&blk, &seqs, &params()).swap_remove(0);
             assert_eq!(rec.strand, want_strand);

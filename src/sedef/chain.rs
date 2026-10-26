@@ -29,6 +29,8 @@ pub struct PairRec {
     pub s_b: u64,
     pub e_b: u64,
     pub shared: u32,
+    /// Scan v2: the window pair shares an all-unmasked seed k-mer (candidates.tsv column 9; true when absent).
+    pub upper_seed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +43,7 @@ pub struct Chain {
     pub b1: u32, // side B
     pub score: u32,
     pub cells: u32,
+    pub upper_seed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +57,8 @@ pub struct Block {
     pub cells: u32,
     pub score: u32,
     pub est_id: f64,
+    /// Scan v2: one of the block's cells shares an all-unmasked seed k-mer.
+    pub upper_seed: bool,
 }
 
 pub struct ChainParams {
@@ -72,6 +77,8 @@ pub struct ChainParams {
     pub min_block_id: f64,
     /// Precomputed: min `shared` count corresponding to `min_cell_id`.
     pub min_shared_cell: u32,
+    /// Scan v2 (SEDEF's seed rule): keep only blocks with an `upper_seed` cell.
+    pub require_upper_seed: bool,
 }
 
 pub fn load_pairs(
@@ -102,6 +109,7 @@ pub fn load_pairs(
             s_b: t[4].parse()?,
             e_b: t[5].parse()?,
             shared,
+            upper_seed: t.get(8).is_none_or(|v| *v == "1"),
         });
     }
     Ok(out)
@@ -132,6 +140,7 @@ pub fn load_blocks(path: &std::path::Path) -> Result<Vec<Block>, Box<dyn Error>>
             cells: t[6].parse()?,
             score: t[7].parse()?,
             est_id: t[8].parse()?,
+            upper_seed: true,
         });
     }
     Ok(out)
@@ -226,7 +235,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
     // phase drift between copies stays inside one chain.
     let stride = p.stride.max(1);
     let per_window = (p.window / stride).max(1) as u32; // stride units per window
-    let mut groups: HashMap<(String, String, i64), Vec<(u32, u32, u32)>> = HashMap::new();
+    let mut groups: HashMap<(String, String, i64), Vec<(u32, u32, u32, bool)>> = HashMap::new();
     for r in pairs {
         let a = (r.s_a / stride) as u32;
         let b = (r.s_b / stride) as u32;
@@ -234,7 +243,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
         groups
             .entry((r.chr_a.clone(), r.chr_b.clone(), d.div_euclid(2 * per_window as i64)))
             .or_default()
-            .push((a, b, r.shared));
+            .push((a, b, r.shared, r.upper_seed));
     }
 
     let mut chains: Vec<Chain> = Vec::new();
@@ -247,14 +256,16 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
             // strongest cell so the walk stays strictly increasing.
             let mut j = i;
             let mut best = cells[i];
+            let mut up = cells[i].3;
             while j + 1 < cells.len() && cells[j + 1].0 == cells[i].0 {
                 j += 1;
+                up |= cells[j].3;
                 if cells[j].2 > best.2 {
                     best = cells[j];
                 }
             }
             i = j + 1;
-            let (a, b, s) = best;
+            let (a, b, s, _) = best;
             let extend = matches!(&open, Some(c) if
                 c.a1 < a && c.b1 < b
                 && a - c.a1 <= p.gap * per_window && b - c.b1 <= p.gap * per_window);
@@ -264,6 +275,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
                 c.b1 = b;
                 c.score += s;
                 c.cells += 1;
+                c.upper_seed |= up;
             } else {
                 if let Some(c) = open.take() {
                     chains.push(c);
@@ -277,6 +289,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
                     b1: b,
                     score: s,
                     cells: 1,
+                    upper_seed: up,
                 });
             }
         }
@@ -309,24 +322,25 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
         active.push(i);
     }
 
-    let mut agg: HashMap<usize, (String, String, u32, u32, u32, u32, u32, u32)> = HashMap::new();
+    let mut agg: HashMap<usize, (String, String, u32, u32, u32, u32, u32, u32, bool)> = HashMap::new();
     for (i, c) in chains.iter().enumerate() {
         let root = dsu.find(i);
         let e = agg
             .entry(root)
-            .or_insert_with(|| (c.ca.clone(), c.cb.clone(), u32::MAX, 0, u32::MAX, 0, 0, 0));
+            .or_insert_with(|| (c.ca.clone(), c.cb.clone(), u32::MAX, 0, u32::MAX, 0, 0, 0, false));
         e.2 = e.2.min(c.a0);
         e.3 = e.3.max(c.a1);
         e.4 = e.4.min(c.b0);
         e.5 = e.5.max(c.b1);
         e.6 += c.score;
         e.7 += c.cells;
+        e.8 |= c.upper_seed;
     }
 
     let (w, st) = (p.window, stride);
     let mut blocks: Vec<Block> = agg
         .into_iter()
-        .map(|(_, (ca, cb, a0, a1, b0, b1, score, cells))| {
+        .map(|(_, (ca, cb, a0, a1, b0, b1, score, cells, upper_seed))| {
             let mean_shared = score as f64 / cells as f64;
             Block {
                 chr_a: ca,
@@ -338,6 +352,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
                 cells,
                 score,
                 est_id: est_identity(mean_shared, p.sketch, p.k),
+                upper_seed,
             }
         })
         .collect();
@@ -350,7 +365,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
     let blocks = merge_blocks(blocks, p.merge_frac, p.sketch, p.k);
     let blocks = {
         let mut b = blocks;
-        b.retain(|x| x.est_id >= p.min_block_id);
+        b.retain(|x| x.est_id >= p.min_block_id && (!p.require_upper_seed || x.upper_seed));
         b.sort_by(|x, y| y.score.cmp(&x.score));
         b
     };
@@ -407,6 +422,7 @@ fn merge_blocks(blocks: Vec<Block>, merge_frac: f64, sketch: usize, k: usize) ->
                 m.b1 = m.b1.max(b.b1);
                 m.cells += b.cells;
                 m.score += b.score;
+                m.upper_seed |= b.upper_seed;
             }
         }
     }
@@ -434,6 +450,7 @@ mod tests {
             min_cell_id: 0.0,
             min_block_id: 0.0,
             min_shared_cell: 1,
+            require_upper_seed: false,
         }
     }
 
@@ -445,7 +462,7 @@ mod tests {
             chr_b: "c".into(),
             s_b,
             e_b: s_b + 2000,
-            shared,
+            shared, upper_seed: true
         }
     }
 
@@ -516,7 +533,7 @@ mod tests {
             chr_b: cb.into(),
             s_b,
             e_b: s_b + 2000,
-            shared: 30,
+            shared: 30, upper_seed: true
         };
         let mut pairs = vec![];
         for i in 0..3u64 {

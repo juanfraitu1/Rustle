@@ -6908,4 +6908,19 @@ decision with the user). H1 FAIL + H2 PASS = better but still not a replacement.
   - BISER's second-level chain DP (MATCH 10, MISMATCH 1, GAP 0.5, GAPOPEN 100, MAX_GAP 10 kb), with the shorter gap of
     a join <= refine_max_gap so both copies' stretch is aligned; chains below min_block_id identity are not kept and
     shadow nothing in the selection.
-  - Dev runs of both modes: pending.
+  - Join cost fixes: a joined gap is aligned only up to refine_max_gap^2 cells, else its shorter side counts as
+    mismatches (identity stays a lower bound); the DP stops scanning predecessors more than MAX_GAP away and counts every
+    examined one toward MAX_ITER (an O(n^2) scan made refine 481 s).
+  - SEDEF's seed rule, ported exactly: every k-mer counts toward the shared mass; a candidate carries `upper_seed` when
+    a shared sketch k-mer is all unmasked in both windows (candidates.tsv column 9); the chain stage keeps blocks with
+    such a cell; the 100-unmasked filter is over a block's ok pairs together (pieces of one duplication).
+  - Dev (recall / precision; refine s, peak GB):
+    | arm | recall | precision | refine | peak |
+    |---|---|---|---|---|
+    | v1 | 0.4898 | 0.7659 | 65 | - |
+    | v2 repeat-blind (R1-R3) | 0.8478 | 0.6972 | 314 | 9.4 |
+    | BISER projection (`--masked-space`) | 0.7062 | 0.8349 | 20 | 1.9 |
+    | SEDEF rules, per-window gate | 0.6751 | 0.9693 | 124 | 3.9 |
+    | SEDEF rules, block gate (default) | 0.7079 | 0.9653 | 406 | 3.8 |
+    None reaches 0.80 / 0.80. The recall gap is long SEDEF SDs that are almost all soft-masked (~31 kb with < 1 kb
+    unmasked): SEDEF reaches them by extending one alignment through the repeats; our blocks and joins stop at them.
