@@ -10357,3 +10357,12 @@ smallest sha1 of the read name) (`bench/exhap_net.py`).
 **Run:** `copy_phasing run` with copies = the unit's loci (one exon each), default settings (no `--semi`, no IsoCon side).
 **Flag:** a unit with >= 1 certified copy; a family with >= 1 flagged unit. Reported: also putative copies.
 **Stage 1 reports (dev):** unit- and family-level sensitivity, precision against the base rate (family 0.19), Fisher test.
+
+### EXHAP stage 1 (dev: 2,573 of 2,814 units have reads; 28 GAIN / 144 families)
+- Units: certified 6 (0 / 83 gaining units), putative 9 (3 / 83; p 0.002), base 0.032.
+- Families: certified 3 (GAIN 2 / 28, precision 0.67, sensitivity 0.07, p 0.10); certified or putative 5 (2 / 28).
+- Ceiling: of the extra exon copies in dev, 60% have the same edit distance to the exon as an existing reference copy and 8% are
+  identical to it; only 32% carry a new variant. Of 97 gaining units, 14 have no reads and 47 of the 83 expressed show <= 1 haplotype.
+**Stage 2 (held-out, frozen before it is run):** family flag = >= 1 unit with a certified copy (default settings, as run on dev).
+Held-out base rate 51 / 319 = 0.16. H1: precision >= 0.40. H2: Fisher one-sided p < 0.05. Reported: sensitivity, unit level,
+putative. The net and run are split into batches by sha1 of the unit (machine limit); outputs are concatenated.
