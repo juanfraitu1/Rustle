@@ -215,16 +215,7 @@ fn flush_run(
     run.clear();
 }
 
-/// Greedy chaining of anchors within diagonal bins, with diagonal
-/// locking: candidates are grouped per A-position and the walk always
-/// continues with the candidate closest to the run's current diagonal.
-/// This ignores combinatorial junk pairs (multiple B positions for the
-/// same k-mer in repeat hubs) instead of letting them break or pollute
-/// the run. `pb_map` converts anchor B positions into the chaining
-/// strand space.
-///
-/// Implementation: one sort by (bin, pa, pb) followed by a linear scan --
-/// no hash maps, no per-bin vectors, no repeated sorting.
+/// The run of `runs` with the most A coverage (the first on ties): scan v1's refined core, and decompose's peeling step.
 pub fn best_run(
     anchors: &[(u32, u32)],
     k: usize,
@@ -232,8 +223,56 @@ pub fn best_run(
     diag_bin: i64,
     pb_map: impl Fn(u32) -> i64,
 ) -> Option<Run> {
-    if anchors.len() < 3 {
+    let mut best_pts: Vec<(u32, u32)> = Vec::new();
+    let mut best_cov = 0u64;
+    for mut run in runs(anchors, k, max_gap, diag_bin, pb_map) {
+        flush_run(&mut run, &mut best_pts, &mut best_cov, k);
+    }
+    if best_pts.is_empty() {
         return None;
+    }
+    let pa_min = best_pts.first().unwrap().0 as u64;
+    let pa_max = best_pts.last().unwrap().0 as u64 + k as u64;
+    let mut scratch: Vec<u64> = best_pts.iter().map(|&(_, pb)| pb as u64).collect();
+    let pb_min = *scratch.iter().min().unwrap();
+    let pb_max = scratch.iter().max().unwrap() + k as u64;
+    let cov_a = cov_pa(
+        &best_pts
+            .iter()
+            .map(|&(pa, pb)| (pa, pb as i64))
+            .collect::<Vec<_>>(),
+        k,
+    );
+    let cov_b = cov_starts(&mut scratch, k as u64);
+    Some(Run {
+        pts: best_pts,
+        cov_a,
+        cov_b,
+        span_a: pa_max - pa_min,
+        span_b: pb_max - pb_min,
+    })
+}
+
+/// Every run of the walker below with at least 3 points, in walk order; each run is (posA, posB in the chaining strand
+/// space) in ascending posA.
+///
+/// The walk: greedy chaining of anchors within diagonal bins, with diagonal locking: candidates are grouped per
+/// A-position and the walk always continues with the candidate closest to the run's current diagonal. This ignores
+/// combinatorial junk pairs (multiple B positions for the same k-mer in repeat hubs) instead of letting them break or
+/// pollute the run. `pb_map` converts anchor B positions into the chaining strand space.
+///
+/// Implementation: one sort by (bin, pa, pb) followed by a linear scan -- no hash maps, no per-bin vectors, no repeated
+/// sorting.
+pub fn runs(
+    anchors: &[(u32, u32)],
+    _k: usize,
+    max_gap: u64,
+    diag_bin: i64,
+    pb_map: impl Fn(u32) -> i64,
+) -> Vec<Vec<(u32, i64)>> {
+    let mut out: Vec<Vec<(u32, i64)>> = Vec::new();
+    if anchors.len() < 3 {
+        return out;
     }
     let mut cells: Vec<(i64, u32, i64)> = Vec::with_capacity(anchors.len());
     for &(pa, pb) in anchors {
@@ -243,10 +282,15 @@ pub fn best_run(
     }
     cells.sort_unstable();
 
-    let mut best_pts: Vec<(u32, u32)> = Vec::new();
-    let mut best_cov = 0u64;
     let mut run: Vec<(u32, i64)> = Vec::new();
     let mut diag: i64 = 0; // current diagonal pb_m - pa
+    let mut end_run = |run: &mut Vec<(u32, i64)>| {
+        if run.len() >= 3 {
+            out.push(std::mem::take(run));
+        } else {
+            run.clear();
+        }
+    };
 
     let mut i = 0;
     let n = cells.len();
@@ -282,7 +326,7 @@ pub fn best_run(
                 if gap_ok && drift <= diag_bin {
                     best
                 } else {
-                    flush_run(&mut run, &mut best_pts, &mut best_cov, k);
+                    end_run(&mut run);
                     cands[cands.len() / 2].2
                 }
             };
@@ -290,41 +334,125 @@ pub fn best_run(
             run.push((pa, pick));
             g = h;
         }
-        flush_run(&mut run, &mut best_pts, &mut best_cov, k);
+        end_run(&mut run);
         i = j;
     }
-    if best_pts.is_empty() {
-        return None;
-    }
-    let pa_min = best_pts.first().unwrap().0 as u64;
-    let pa_max = best_pts.last().unwrap().0 as u64 + k as u64;
-    let mut scratch: Vec<u64> = best_pts.iter().map(|&(_, pb)| pb as u64).collect();
-    let pb_min = *scratch.iter().min().unwrap();
-    let pb_max = scratch.iter().max().unwrap() + k as u64;
-    let cov_a = cov_pa(
-        &best_pts
-            .iter()
-            .map(|&(pa, pb)| (pa, pb as i64))
-            .collect::<Vec<_>>(),
-        k,
-    );
-    let cov_b = cov_starts(&mut scratch, k as u64);
-    Some(Run {
-        pts: best_pts,
-        cov_a,
-        cov_b,
-        span_a: pa_max - pa_min,
-        span_b: pb_max - pb_min,
-    })
+    out
 }
 
-fn refine_block(
-    b: &Block,
-    seqs: &HashMap<String, Vec<u8>>,
-    p: &RefineParams,
-) -> Option<(Refined, BlockAnchors)> {
-    let sa_full = get_seq(seqs, &b.chr_a)?;
-    let sb_full = get_seq(seqs, &b.chr_b)?;
+/// Scan v2: join runs of one strand space into chains. Runs are taken in ascending start; a run extends the chain whose
+/// last point it follows with a step of at most `max_gap` on both axes (the walker's own gap rule, now allowing the
+/// diagonal to move: an indel or a diverged stretch), closest diagonal first. Points of a run that do not advance past
+/// the chain's last point on both axes are dropped (a run split at a diagonal-bin edge overlaps its neighbour).
+pub fn chain_runs(mut runs: Vec<Vec<(u32, i64)>>, max_gap: u64) -> Vec<Vec<(u32, i64)>> {
+    runs.sort_by_key(|r| (r[0].0, r[0].1));
+    let mut chains: Vec<Vec<(u32, i64)>> = Vec::new();
+    let mut active: Vec<usize> = Vec::new(); // chains whose last point may still be followed
+    for run in runs {
+        let start = run[0].0;
+        active.retain(|&c| chains[c].last().unwrap().0 as u64 + max_gap >= start as u64);
+        let mut best: Option<(i64, usize, usize)> = None; // (diagonal change, chain, first kept point of the run)
+        for &c in &active {
+            let (lpa, lpb) = *chains[c].last().unwrap();
+            let Some(f) = run.iter().position(|&(pa, pb)| pa > lpa && pb > lpb) else { continue };
+            let (pa, pb) = run[f];
+            if (pa - lpa) as u64 > max_gap || (pb - lpb) as u64 > max_gap {
+                continue;
+            }
+            let dd = ((pb - pa as i64) - (lpb - lpa as i64)).abs();
+            if best.is_none_or(|b| (dd, c) < (b.0, b.1)) {
+                best = Some((dd, c, f));
+            }
+        }
+        match best {
+            Some((_, c, f)) => chains[c].extend_from_slice(&run[f..]),
+            None => {
+                chains.push(run);
+                active.push(chains.len() - 1);
+            }
+        }
+    }
+    chains
+}
+
+/// Unit-cost global alignment of two short sequences (case-insensitive): (matches, mismatches) on one optimal path,
+/// preferring the diagonal on ties.
+pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64) {
+    let (n, m) = (a.len(), b.len());
+    if n == 0 || m == 0 {
+        return (0, 0);
+    }
+    let w = m + 1;
+    let mut d = vec![0u32; (n + 1) * w];
+    for j in 0..=m {
+        d[j] = j as u32;
+    }
+    for i in 1..=n {
+        d[i * w] = i as u32;
+        let ai = a[i - 1].to_ascii_uppercase();
+        for j in 1..=m {
+            let sub = d[(i - 1) * w + j - 1] + (ai != b[j - 1].to_ascii_uppercase()) as u32;
+            let del = d[(i - 1) * w + j] + 1;
+            let ins = d[i * w + j - 1] + 1;
+            d[i * w + j] = sub.min(del).min(ins);
+        }
+    }
+    let (mut i, mut j) = (n, m);
+    let (mut mat, mut mis) = (0u64, 0u64);
+    while i > 0 && j > 0 {
+        let same = a[i - 1].to_ascii_uppercase() == b[j - 1].to_ascii_uppercase();
+        if d[i * w + j] == d[(i - 1) * w + j - 1] + (!same) as u32 {
+            if same {
+                mat += 1;
+            } else {
+                mis += 1;
+            }
+            i -= 1;
+            j -= 1;
+        } else if d[i * w + j] == d[(i - 1) * w + j] + 1 {
+            i -= 1;
+        } else {
+            j -= 1;
+        }
+    }
+    (mat, mis)
+}
+
+/// Scan v2 identity of a chain: anchors are k-mer matches, the stretches between consecutive anchors are aligned;
+/// matches / (matches + mismatches), indels left out (SEDEF's fracMatch). `b` is in the chain's strand space.
+pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize) -> f64 {
+    let mut mat = k as u64;
+    let mut mis = 0u64;
+    for w in pts.windows(2) {
+        let ((pa, pb), (qa, qb)) = (w[0], w[1]);
+        let (da, db) = ((qa - pa) as i64, qb - pb);
+        if da == db && da as usize <= k {
+            mat += da as u64;
+            continue;
+        }
+        let (ga, gb) = (pa as usize + k, (pb + k as i64) as usize);
+        if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() {
+            let (m2, x2) = align_counts(&a[ga..qa as usize], &b[gb..qb as usize]);
+            mat += m2 + k as u64;
+            mis += x2;
+        } else {
+            // the two k-mers overlap off one diagonal (a short indel inside them): count the new A bases both advance
+            mat += da.min(db).max(0) as u64;
+        }
+    }
+    if mat + mis == 0 {
+        return 0.0;
+    }
+    100.0 * mat as f64 / (mat + mis) as f64
+}
+
+/// Scan v2: every chain of the block (`chain_runs` in both strand spaces) whose two spans reach `min_span` is a pair,
+/// in ascending A start; a block with none gives its best chain (or, without any run, the block itself) as one weak
+/// record, as scan v1 did.
+fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) -> Vec<(Refined, BlockAnchors)> {
+    let (Some(sa_full), Some(sb_full)) = (get_seq(seqs, &b.chr_a), get_seq(seqs, &b.chr_b)) else {
+        return Vec::new();
+    };
     let (a0, a1) = (
         (b.a0 as usize).min(sa_full.len()),
         (b.a1 as usize).min(sa_full.len()),
@@ -334,7 +462,7 @@ fn refine_block(
         (b.b1 as usize).min(sb_full.len()),
     );
     if a1 <= a0 || b1 <= b0 {
-        return None;
+        return Vec::new();
     }
     let sa = &sa_full[a0..a1];
     let sb = &sb_full[b0..b1];
@@ -344,127 +472,146 @@ fn refine_block(
     // ---- anchors: shared canonical k-mers (strand-agnostic) -------------
     let anchors = extract_anchors(sa, sb, k, p.max_pairs);
 
-    // ---- chain in both strand spaces, keep the better run ---------------
-    let fwd = best_run(&anchors, k, p.max_gap, p.diag_bin, |pb| pb as i64);
-    let rev = best_run(&anchors, k, p.max_gap, p.diag_bin, |pb| sb_len - pb as i64 - k as i64);
-    let (strand, run) = match (fwd, rev) {
-        (Some(f), Some(r)) => {
-            let score = |x: &Run| x.cov_a.min(x.cov_b);
-            if score(&f) >= score(&r) {
-                ('+', f)
-            } else {
-                ('-', r)
-            }
+    // ---- chains in both strand spaces -----------------------------------
+    let mut chains: Vec<(char, Vec<(u32, i64)>)> = Vec::new();
+    for strand in ['+', '-'] {
+        let rs = if strand == '+' {
+            runs(&anchors, k, p.max_gap, p.diag_bin, |pb| pb as i64)
+        } else {
+            runs(&anchors, k, p.max_gap, p.diag_bin, |pb| sb_len - pb as i64 - k as i64)
+        };
+        chains.extend(chain_runs(rs, p.max_gap).into_iter().map(|c| (strand, c)));
+    }
+    if chains.is_empty() {
+        let rec = Refined {
+            chr_a: b.chr_a.clone(),
+            ra0: b.a0,
+            ra1: b.a1,
+            chr_b: b.chr_b.clone(),
+            rb0: b.b0,
+            rb1: b.b1,
+            strand: '+',
+            anchors: 0,
+            est_id: b.est_id,
+            ok: false,
+            self_pair: false,
+            stage2_id: b.est_id,
+        };
+        // No refined core exists; decompose only consumes ok records,
+        // so store an empty anchor list.
+        let ba = BlockAnchors {
+            chr_a: b.chr_a.clone(),
+            a0: b.a0,
+            a1: b.a1,
+            chr_b: b.chr_b.clone(),
+            b0: b.b0,
+            b1: b.b1,
+            status: 0,
+            anchors: Vec::new(),
+        };
+        return vec![(rec, ba)];
+    }
+    let sb_rc = if chains.iter().any(|(s, _)| *s == '-') { revcomp(sb) } else { Vec::new() };
+
+    // ---- refined coordinates per chain ----------------------------------
+    // (strand, points, ra0, ra1, rb0, rb1, A coverage) for every chain
+    let mut cands: Vec<(char, &Vec<(u32, i64)>, u64, u64, u64, u64, u64)> = Vec::new();
+    for (strand, pts) in &chains {
+        let pa_min = pts.first().unwrap().0 as u64;
+        let pa_max = pts.last().unwrap().0 as u64 + k as u64;
+        let (ra0, ra1) = (a0 as u64 + pa_min, a0 as u64 + pa_max);
+        // chain pb coords are in the strand space: original sb (+) or revcomp(sb) (-), where position q corresponds to
+        // the sb interval [L-q-k, L-q).
+        let pb_min = pts.iter().map(|&(_, pb)| pb as u64).min().unwrap();
+        let pb_max = pts.iter().map(|&(_, pb)| pb as u64).max().unwrap() + k as u64;
+        let (rb0, rb1) = if *strand == '-' {
+            (b0 as u64 + sb_len as u64 - pb_max, b0 as u64 + sb_len as u64 - pb_min)
+        } else {
+            (b0 as u64 + pb_min, b0 as u64 + pb_max)
+        };
+        cands.push((*strand, pts, ra0, ra1, rb0, rb1, cov_pa(pts, k)));
+    }
+    // Most A coverage first; a chain is kept when its A x B rectangle meets no kept chain's (shifted diagonals of a
+    // tandem array, or the other strand of a palindrome, chain the same two stretches again). Chains below min_span are
+    // only the fallback weak record.
+    cands.sort_by_key(|c| (std::cmp::Reverse(c.6), c.2, c.4, c.0));
+    let is_ok = |c: &(char, &Vec<(u32, i64)>, u64, u64, u64, u64, u64)| {
+        c.3 - c.2 >= p.min_span && c.5 - c.4 >= p.min_span && c.1.len() >= 3
+    };
+    let mut chosen: Vec<usize> = Vec::new();
+    for (i, c) in cands.iter().enumerate() {
+        if !is_ok(c) {
+            continue;
         }
-        (Some(f), None) => ('+', f),
-        (None, Some(r)) => ('-', r),
-        (None, None) => {
-            let rec = Refined {
+        let meets = chosen.iter().any(|&j| {
+            let d = &cands[j];
+            c.2 < d.3 && d.2 < c.3 && c.4 < d.5 && d.4 < c.5
+        });
+        if !meets {
+            chosen.push(i);
+        }
+    }
+    if chosen.is_empty() {
+        chosen.push(0); // the best chain, as a weak record
+    }
+    let mut kept: Vec<Refined> = chosen
+        .into_iter()
+        .map(|i| {
+            let (strand, pts, ra0, ra1, rb0, rb1, _) = cands[i];
+            let ok = is_ok(&cands[i]);
+            let est_id = chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k);
+            // "Self" only when the two sides land on (nearly) the SAME locus --
+            // a refinement collapse artifact. Shifted copies (offset >= 1 kb)
+            // are genuine tandem duplications.
+            let self_pair = b.chr_a == b.chr_b && ra0.abs_diff(rb0) < 1000 && ra1.abs_diff(rb1) < 1000;
+            Refined {
                 chr_a: b.chr_a.clone(),
-                ra0: b.a0,
-                ra1: b.a1,
+                ra0,
+                ra1,
                 chr_b: b.chr_b.clone(),
-                rb0: b.b0,
-                rb1: b.b1,
-                strand: '+',
-                anchors: 0,
-                est_id: b.est_id,
-                ok: false,
-                self_pair: false,
+                rb0,
+                rb1,
+                strand,
+                anchors: pts.len(),
+                est_id,
+                ok,
+                self_pair,
                 stage2_id: b.est_id,
-            };
-            // No refined core exists; decompose only consumes ok records,
-            // so store an empty anchor list.
-            let ba = BlockAnchors {
-                chr_a: b.chr_a.clone(),
-                a0: b.a0,
-                a1: b.a1,
-                chr_b: b.chr_b.clone(),
-                b0: b.b0,
-                b1: b.b1,
-                status: 0,
-                anchors: Vec::new(),
-            };
-            return Some((rec, ba));
-        }
-    };
+            }
+        })
+        .collect();
+    kept.sort_by_key(|r| (r.ra0, r.ra1, r.rb0, r.rb1, r.strand));
 
-    // ---- refined coordinates --------------------------------------------
-    let pa_min = run.pts.first().unwrap().0 as u64;
-    let pa_max = run.pts.last().unwrap().0 as u64 + k as u64;
-    let (ra0, ra1) = (a0 as u64 + pa_min, a0 as u64 + pa_max);
-
-    // run pb coords are already in the winning strand space; the space is
-    // either original sb (fwd) or revcomp(sb) (rev). For rev, position q
-    // in revcomp(sb) corresponds to sb interval [L-q-k, L-q).
-    let pb_min = run.pts.iter().map(|&(_, pb)| pb as u64).min().unwrap();
-    let pb_max = run.pts.iter().map(|&(_, pb)| pb as u64).max().unwrap() + k as u64;
-    let (rb0, rb1) = if strand == '-' {
-        (
-            b0 as u64 + sb_len as u64 - pb_max,
-            b0 as u64 + sb_len as u64 - pb_min,
-        )
-    } else {
-        (b0 as u64 + pb_min, b0 as u64 + pb_max)
-    };
-
-    let span_a = ra1 - ra0;
-    let span_b = rb1 - rb0;
-    let mean_span = (span_a + span_b) as f64 / 2.0;
-    let est_id = if mean_span > 0.0 {
-        (100.0 * (run.cov_a + run.cov_b) as f64 / (2.0 * mean_span)).min(100.0)
-    } else {
-        0.0
-    };
-    let n_anchors = run.pts.len();
-    let ok = span_a >= p.min_span && span_b >= p.min_span && n_anchors >= 3;
-    // "Self" only when the two sides land on (nearly) the SAME locus --
-    // a refinement collapse artifact. Shifted copies (offset >= 1 kb)
-    // are genuine tandem duplications.
-    let self_pair = b.chr_a == b.chr_b
-        && ra0.abs_diff(rb0) < 1000
-        && ra1.abs_diff(rb1) < 1000;
-    let status: u8 = if !ok {
-        0
-    } else if self_pair {
-        2
-    } else {
-        1
-    };
-
-    // Re-extract anchors on the refined core (not the wider stage-2
+    // Re-extract anchors on each refined core (not the wider stage-2
     // block) so the stored set is exactly what `decompose` would extract
     // from the refined intervals. Filtering the block-frame anchors is
     // NOT equivalent: subsampling under the max_pairs cap depends on
     // per-hash multiplicities, which change with the interval.
-    let ra1_c = (ra1 as usize).min(sa_full.len());
-    let rb1_c = (rb1 as usize).min(sb_full.len());
-    let kept = extract_anchors(&sa_full[ra0 as usize..ra1_c], &sb_full[rb0 as usize..rb1_c], k, p.max_pairs);
-    let rec = Refined {
-        chr_a: b.chr_a.clone(),
-        ra0,
-        ra1,
-        chr_b: b.chr_b.clone(),
-        rb0,
-        rb1,
-        strand,
-        anchors: n_anchors,
-        est_id,
-        ok,
-        self_pair,
-        stage2_id: b.est_id,
-    };
-    let ba = BlockAnchors {
-        chr_a: b.chr_a.clone(),
-        a0: ra0,
-        a1: ra1,
-        chr_b: b.chr_b.clone(),
-        b0: rb0,
-        b1: rb1,
-        status,
-        anchors: kept,
-    };
-    Some((rec, ba))
+    kept.into_iter()
+        .map(|r| {
+            let status: u8 = if !r.ok {
+                0
+            } else if r.self_pair {
+                2
+            } else {
+                1
+            };
+            let ra1_c = (r.ra1 as usize).min(sa_full.len());
+            let rb1_c = (r.rb1 as usize).min(sb_full.len());
+            let anchors = extract_anchors(&sa_full[r.ra0 as usize..ra1_c], &sb_full[r.rb0 as usize..rb1_c], k, p.max_pairs);
+            let ba = BlockAnchors {
+                chr_a: r.chr_a.clone(),
+                a0: r.ra0,
+                a1: r.ra1,
+                chr_b: r.chr_b.clone(),
+                b0: r.rb0,
+                b1: r.rb1,
+                status,
+                anchors,
+            };
+            (r, ba)
+        })
+        .collect()
 }
 
 pub fn refine_blocks(
@@ -474,7 +621,7 @@ pub fn refine_blocks(
 ) -> Vec<(Refined, BlockAnchors)> {
     blocks
         .par_iter()
-        .filter_map(|b| refine_block(b, seqs, p))
+        .flat_map_iter(|b| refine_block(b, seqs, p))
         .collect()
 }
 
@@ -545,7 +692,7 @@ mod tests {
         let mut seqs = HashMap::new();
         seqs.insert("c".to_string(), seq);
 
-        let r = refine_block(&block(9_000, 31_000, 39_000, 61_000), &seqs, &params()).unwrap().0;
+        let r = refine_block(&block(9_000, 31_000, 39_000, 61_000), &seqs, &params()).swap_remove(0).0;
         assert_eq!(r.strand, '+');
         assert!(r.ok, "expected ok refinement");
         assert!(r.ra0.abs_diff(10_000) <= 50, "ra0={}", r.ra0);
@@ -565,7 +712,7 @@ mod tests {
         let mut seqs = HashMap::new();
         seqs.insert("c".to_string(), seq);
 
-        let r = refine_block(&block(9_000, 31_000, 39_000, 61_000), &seqs, &params()).unwrap().0;
+        let r = refine_block(&block(9_000, 31_000, 39_000, 61_000), &seqs, &params()).swap_remove(0).0;
         assert_eq!(r.strand, '-');
         assert!(r.ok);
         assert!(r.rb0.abs_diff(40_000) <= 50, "rb0={}", r.rb0);
@@ -587,7 +734,7 @@ mod tests {
         let mut seqs = HashMap::new();
         seqs.insert("c".to_string(), seq);
 
-        let r = refine_block(&block(9_000, 31_000, 39_000, 61_000), &seqs, &params()).unwrap().0;
+        let r = refine_block(&block(9_000, 31_000, 39_000, 61_000), &seqs, &params()).swap_remove(0).0;
         // stage-2-style estimate would be ~99 (k-mer mass of shared X);
         // refinement must collapse to the ~10 kb real shared core.
         assert!(r.ra1 - r.ra0 < 12_000, "span={}", r.ra1 - r.ra0);
@@ -622,7 +769,7 @@ mod tests {
                 score: 100,
                 est_id: 99.0,
             };
-            let (rec, ba) = refine_block(&blk, &seqs, &params()).unwrap();
+            let (rec, ba) = refine_block(&blk, &seqs, &params()).swap_remove(0);
             assert_eq!(rec.strand, want_strand);
             assert_eq!((ba.a0, ba.a1), (rec.ra0, rec.ra1));
             assert_eq!((ba.b0, ba.b1), (rec.rb0, rec.rb1));
@@ -634,6 +781,85 @@ mod tests {
             let mut want = extract_anchors(sa, sb, 16, 1024);
             want.sort_unstable();
             assert_eq!(got, want, "strand {}", want_strand);
+        }
+    }
+
+    fn ok_records(b: &Block, seqs: &HashMap<String, Vec<u8>>) -> Vec<Refined> {
+        refine_block(b, seqs, &params()).into_iter().map(|(r, _)| r).filter(|r| r.ok).collect()
+    }
+
+    #[test]
+    fn an_indel_does_not_cut_the_pair() {
+        // ~95% copy with a 150 bp insertion in the B copy halfway: one pair over the whole copy.
+        let core = mutate(&synth(7, 20_000), 5, 99);
+        let mut b_copy = core[..10_000].to_vec();
+        b_copy.extend_from_slice(&synth(21, 150));
+        b_copy.extend_from_slice(&core[10_000..]);
+        let mut seq = synth(1, 70_000);
+        seq[10_000..30_000].copy_from_slice(&core);
+        seq[40_000..60_150].copy_from_slice(&b_copy);
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let recs = ok_records(&block(9_000, 31_000, 39_000, 61_000), &seqs);
+        assert!(recs.iter().any(|r| r.ra1 - r.ra0 >= 19_500 && r.rb1 - r.rb0 >= 19_600), "spans {:?}",
+            recs.iter().map(|r| (r.ra0, r.ra1, r.rb0, r.rb1)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn two_duplications_in_one_block_are_two_pairs() {
+        // X and Y are both duplicated, with 5 kb between them on A and 7 kb on B: two pairs, not the better one only.
+        let x = mutate(&synth(31, 5_000), 5, 1);
+        let y = mutate(&synth(37, 5_000), 5, 2);
+        let mut seq = synth(1, 70_000);
+        seq[10_000..15_000].copy_from_slice(&x);
+        seq[20_000..25_000].copy_from_slice(&y);
+        seq[40_000..45_000].copy_from_slice(&x);
+        seq[52_000..57_000].copy_from_slice(&y);
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let recs = ok_records(&block(9_000, 26_000, 39_000, 58_000), &seqs);
+        let near = |r: &Refined, a0: u64, b0: u64| r.ra0.abs_diff(a0) <= 50 && r.rb0.abs_diff(b0) <= 50;
+        assert!(recs.iter().any(|r| near(r, 10_000, 40_000)), "X missing");
+        assert!(recs.iter().any(|r| near(r, 20_000, 52_000)), "Y missing");
+    }
+
+    #[test]
+    fn a_tandem_array_gives_disjoint_pairs_not_one_per_diagonal() {
+        // 20 tandem copies of a 1 kb unit on A and on B: every shifted diagonal chains, but the kept pairs must not
+        // overlap each other on both axes.
+        let unit = synth(51, 1_000);
+        let mut seq = synth(1, 80_000);
+        for i in 0..20 {
+            seq[5_000 + i * 1_000..6_000 + i * 1_000].copy_from_slice(&unit);
+            seq[45_000 + i * 1_000..46_000 + i * 1_000].copy_from_slice(&mutate(&unit, 3, i as u64));
+        }
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let recs = ok_records(&block(4_000, 26_000, 44_000, 66_000), &seqs);
+        assert!(!recs.is_empty());
+        for (i, r) in recs.iter().enumerate() {
+            for q in &recs[i + 1..] {
+                let over = |a0: u64, a1: u64, b0: u64, b1: u64| a0 < b1 && b0 < a1;
+                assert!(!(over(r.ra0, r.ra1, q.ra0, q.ra1) && over(r.rb0, r.rb1, q.rb0, q.rb1)), "overlapping pairs");
+            }
+        }
+    }
+
+    #[test]
+    fn identity_is_the_alignment_identity() {
+        // mutate(rate) substitutes rate% of bases by a random base, a quarter of them by the same base:
+        // the true identity is 100 - 0.75 * rate.
+        for rate in [4u32, 8, 10] {
+            let core = mutate(&synth(41, 10_000), rate, 7);
+            let mut seq = synth(1, 40_000);
+            seq[5_000..15_000].copy_from_slice(&synth(41, 10_000));
+            seq[25_000..35_000].copy_from_slice(&core);
+            let mut seqs = HashMap::new();
+            seqs.insert("c".to_string(), seq);
+            let recs = ok_records(&block(4_000, 16_000, 24_000, 36_000), &seqs);
+            let best = recs.iter().max_by_key(|r| r.ra1 - r.ra0).expect("a pair");
+            let want = 100.0 - 0.75 * rate as f64;
+            assert!((best.est_id - want).abs() <= 1.0, "rate {rate}: est_id {} want {want}", best.est_id);
         }
     }
 
@@ -658,7 +884,7 @@ mod tests {
         let mut seqs = HashMap::new();
         seqs.insert("c".to_string(), seq);
 
-        let r = refine_block(&block(0, 18_000, 19_000, 37_000), &seqs, &params()).unwrap().0;
+        let r = refine_block(&block(0, 18_000, 19_000, 37_000), &seqs, &params()).swap_remove(0).0;
         assert_eq!(r.strand, '+');
         assert!(r.ra1 - r.ra0 < 4_000, "span={}", r.ra1 - r.ra0);
         assert!(r.est_id > 90.0, "est_id={}", r.est_id);

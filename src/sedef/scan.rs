@@ -26,7 +26,7 @@ use std::time::Instant;
 use crate::sedef::{anchors, chain, decompose, fasta, refine, seed};
 
 /// Bumped whenever an output of `run` can change for the same genome and parameters; part of the version key.
-pub const SCAN_VERSION: u32 = 1;
+pub const SCAN_VERSION: u32 = 2;
 
 /// The sandbox CLI's default parameters (`sedef_rs seed|chain|refine|decompose --help`), plus the output-neutral
 /// shard count of the seed stage's pair counting.
@@ -156,10 +156,21 @@ pub fn run(genome: &Path, out: &str, threads: usize, p: &ScanParams) -> Result<S
         .num_threads(threads)
         .build()
         .context("building the sd-scan thread pool")?;
-    pool.install(|| run_stages(genome, out, threads, p))
+    pool.install(|| run_stages(genome, out, threads, p, true))
 }
 
-fn run_stages(genome: &Path, out: &str, threads: usize, p: &ScanParams) -> Result<ScanSummary> {
+/// The first three stages only (candidates, blocks, pairs, anchors and params tables; no segments, families or
+/// duplicons): for scoring the pairs without paying for decompose.
+pub fn run_pairs_only(genome: &Path, out: &str, threads: usize, p: &ScanParams) -> Result<ScanSummary> {
+    let threads = threads.max(1);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .context("building the sd-scan thread pool")?;
+    pool.install(|| run_stages(genome, out, threads, p, false))
+}
+
+fn run_stages(genome: &Path, out: &str, threads: usize, p: &ScanParams, decompose: bool) -> Result<ScanSummary> {
     let f = |ext: &str| format!("{out}.sd.{ext}");
     let mut secs: Vec<(&str, f64)> = Vec::new();
 
@@ -178,14 +189,17 @@ fn run_stages(genome: &Path, out: &str, threads: usize, p: &ScanParams) -> Resul
     secs.push(("refine", t.elapsed().as_secs_f64()));
     eprintln!("[sd-scan] refine: {pairs} pairs, {pairs_ok} ok ({:.1} s)", secs[2].1);
 
-    let t = Instant::now();
-    let (segments, families, duplicon_rows) =
-        decompose_stage(&f("anchors.bin"), &f("segments.tsv"), &f("families.tsv"), &f("duplicons.tsv"), p)?;
-    secs.push(("decompose", t.elapsed().as_secs_f64()));
-    eprintln!(
-        "[sd-scan] decompose: {segments} segments, {families} families, {duplicon_rows} duplicon rows ({:.1} s)",
-        secs[3].1
-    );
+    let (mut segments, mut families, mut duplicon_rows) = (0, 0, 0);
+    if decompose {
+        let t = Instant::now();
+        (segments, families, duplicon_rows) =
+            decompose_stage(&f("anchors.bin"), &f("segments.tsv"), &f("families.tsv"), &f("duplicons.tsv"), p)?;
+        secs.push(("decompose", t.elapsed().as_secs_f64()));
+        eprintln!(
+            "[sd-scan] decompose: {segments} segments, {families} families, {duplicon_rows} duplicon rows ({:.1} s)",
+            secs[3].1
+        );
+    }
 
     let s = ScanSummary { sequences, bases, candidates, blocks, pairs, pairs_ok, segments, families, duplicon_rows };
     write_params(&f("params.tsv"), genome, threads, p, &s, &secs)?;
@@ -465,7 +479,7 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    // The golden output of SCAN_VERSION 1 on the toy genome; tests/sd_scan.rs reads the same tables back through the
+    // The golden output of SCAN_VERSIONs 1 and 2 on the toy genome (v2 changes nothing there); tests/sd_scan.rs reads the same tables back through the
     // hierarchy's readers. Change these constants only together with a SCAN_VERSION bump: a change here means sd-scan's
     // output for the same genome and parameters changed, and with it the driver's cache key.
     const PLANTED_PAIRS: &str = "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id\tstage2_id\tstatus\n\
@@ -599,7 +613,7 @@ chrB\t170000\t174999\tF0\n";
     fn the_version_key_names_every_parameter_but_the_shard_count() {
         let p = ScanParams::default();
         let k = p.version_key();
-        assert!(k.starts_with("sedef-rs 0.1.0 vendored 2026-10-13 scan v1;"), "{k}");
+        assert!(k.starts_with("sedef-rs 0.1.0 vendored 2026-10-13 scan v2;"), "{k}");
         assert_eq!(ScanParams { count_shards: 7, ..p.clone() }.version_key(), k);
         assert_ne!(ScanParams { min_seg: 999, ..p }.version_key(), k);
     }

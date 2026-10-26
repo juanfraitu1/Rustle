@@ -6881,3 +6881,11 @@ the same subset FASTA.
 same subset. Descriptive: per length / identity bin, run time per stage.
 **Readings:** H1 PASS = sd-scan v2 can replace SEDEF as the SD source on genomes without it (adoption is a separate
 decision with the user). H1 FAIL + H2 PASS = better but still not a replacement. H2 FAIL = the fixes are dev-overfit.
+
+### SDSCAN2 dev log (gorilla dev subset only)
+- scan v1 on the dev subset: recall 0.4898, precision 0.7659 (subset precision is lower than genome-wide: SEDEF pairs
+  with a partner outside the subset are not in the truth).
+- R1+R2 first build: OOM at 25 GB (crashed the session): in tandem arrays every shifted diagonal chained and each chain
+  stored its anchors. Fix (no threshold): chains taken by A coverage, a chain kept only when its A x B rectangle meets
+  no kept chain's. Rerun capped (`prlimit --as`): 6.3 GB peak, refine 246 s (v1 65 s).
+- R1+R2: recall 0.7561, precision 0.7457 (85,443 pairs, 84,652 ok). Next: R3 (seeding).

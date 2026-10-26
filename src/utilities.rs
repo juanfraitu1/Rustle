@@ -155,6 +155,9 @@ enum Cmd {
         /// Print the version key the driver's `sd` stage hashes into its cache key, and exit (no genome needed).
         #[arg(long)]
         version_key: bool,
+        /// Stop after refine: write the candidates, blocks, pairs, anchors and params tables only (for scoring pairs).
+        #[arg(long)]
+        pairs_only: bool,
     },
 }
 
@@ -202,14 +205,15 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::SdScan { genome, out, threads, version_key } => {
+        Cmd::SdScan { genome, out, threads, version_key, pairs_only } => {
             let p = rustle::sedef::scan::ScanParams::default();
             if version_key {
                 println!("{}", p.version_key());
                 return Ok(());
             }
             let (genome, out) = (genome.expect("clap: --genome"), out.expect("clap: --out"));
-            let s = rustle::sedef::scan::run(std::path::Path::new(&genome), &out, threads, &p)?;
+            let run = if pairs_only { rustle::sedef::scan::run_pairs_only } else { rustle::sedef::scan::run };
+            let s = run(std::path::Path::new(&genome), &out, threads, &p)?;
             eprintln!(
                 "[sd-scan] {} sequences, {} bp: {} candidates, {} blocks, {} pairs ({} ok), {} segments, {} families, \
                  {} duplicon rows -> {out}.sd.*",
