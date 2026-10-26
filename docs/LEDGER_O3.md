@@ -10427,3 +10427,17 @@ lambda_hap 5.01 (4.9M single-copy k-mers). Tested units (mat != pat, H_asm != H_
    HG002 diploid assembly, ~6 GB download).
 2. Simulated exon gains with even expression, to measure the per-exon test's sensitivity apart from expression.
 3. A fresh pre-registered test of the putative-exon signal (1418: 3 / 9 on dev and held-out) on families from a new catalog run.
+
+## MMDEMO (2026-10-25, register 1421, descriptive demonstration on one gene, not a test)
+Advisor's claim: "multimappers find a gene's pseudogenes even without expression, and copies not in the genome". Gene: PGM5
+(GWFAM40 copy 1, NC_073237.2:64.57 Mb, 139 primary fibroblast reads). Data `/mnt/linuxdisk/tmp/mmdemo`; `bench/mmdemo_flank.py`.
+1. **Secondary hits = a genome search.** The 139 reads carry 540 secondary records. Their loci (>= 2 reads) are exactly the 6 loci a
+   direct minimap2 search of the genome with the PGM5 transcript finds (chr3 212.3 Mb, chr4 185.3, chr7 151.2, chr11 15.07,
+   chr12 140.66, chrX 167.8 Mb); each has 0-1 primary reads (silent). Multimappers enumerate the reference's copies, expressed or not.
+2. **They do not show the copy is in the individual.** The chr12 copy (NC_073236.2:140,664,147; reference chr12 = Jim's paternal
+   chr12) is absent from his maternal chr12: 10 kb tiles of the reference from -130 kb to +30 kb around it align to maternal chr7
+   (99.5-100%, MAPQ 60), not chr12; the exon does not align anywhere on maternal chr12 (it does on paternal chr12, 100%). 92 reads
+   still put a secondary there, 91 of them PGM5 primaries. An individual homozygous for the maternal chr12 would show the same
+   secondaries onto a copy he lacks.
+3. Side finding: one candidate loss from 1416's exon counts (GWFAM42x5, BTF3's silent copy on chr5) is present in both
+   haplotypes by flank placement (match 0.99): a counting miss, consistent with 1419's caution.

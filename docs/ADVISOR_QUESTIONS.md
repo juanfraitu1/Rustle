@@ -1091,3 +1091,8 @@ Verbatim intent, and it supersedes Parts 0d–0g where they differ:
 - **What RNA can see of it** (registers 1417, 1418, held-out FAILs; 1420): split / clipped-read breakpoint groups (precision 0.39,
   sensitivity 0.09) and the certified tier per exon (precision 0.29, sensitivity 0.04) fail. Yet with the true haplotype sequences,
   41.9% of exon gains leave >= 2 reads that only the extra sequence explains (control 14%): the limit is the detector.
+- **"Multimappers find all pseudogenes of a gene, even unexpressed, and copies not in the genome"** (register 1421, PGM5): the
+  first half holds for copies IN the reference: PGM5's reads put secondaries on exactly the 6 silent loci a direct transcript
+  search of the genome finds. It is a similarity search, so it says nothing about the individual: one of those loci (chr12) is
+  missing from Jim's maternal chr12 and still receives 92 secondaries. Copies NOT in the reference show up only when expressed,
+  through reads no reference copy explains (1420: 42% of exon gains).
