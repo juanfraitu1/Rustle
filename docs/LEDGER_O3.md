@@ -10366,3 +10366,13 @@ smallest sha1 of the read name) (`bench/exhap_net.py`).
 **Stage 2 (held-out, frozen before it is run):** family flag = >= 1 unit with a certified copy (default settings, as run on dev).
 Held-out base rate 51 / 319 = 0.16. H1: precision >= 0.40. H2: Fisher one-sided p < 0.05. Reported: sensitivity, unit level,
 putative. The net and run are split into batches by sha1 of the unit (machine limit); outputs are concatenated.
+
+### EXHAP stage 2 result (held-out, 5,035 of 5,595 units with reads; 51 GAIN / 319 families): FAIL H1 and H2 (register 1418)
+- Families, certified: 7 flagged (GAIN 2 / 51, other 5 / 268); precision 0.286 (bar 0.40, base 0.160), sensitivity 0.039,
+  p = 0.31 (bar 0.05).
+- Not pre-registered as a bar, seen on dev and held-out alike: units with a PUTATIVE copy are enriched for gaining units
+  (dev 3 / 9, held-out 3 / 9 against a 0.03 base; p 0.002 both), but they catch 3 of 83 and 3 of 150 gaining units.
+  Families, certified or putative: 14 flagged, GAIN 5 / 51 (precision 0.357, p 0.055).
+- Reading: the certified tier per exon cannot see most exon gains. About two-thirds of the extra exon copies match an existing
+  reference copy over the exon, so their reads form no new haplotype; many others are not expressed. RNA reads alone reach at
+  most ~10% of the families whose exon copy number differs. Data `/mnt/linuxdisk/tmp/exhap`; `bench/exhap_{units,net,score}.py`.
