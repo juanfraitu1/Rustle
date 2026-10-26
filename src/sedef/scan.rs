@@ -29,11 +29,13 @@ use crate::sedef::{anchors, chain, decompose, fasta, refine, seed};
 pub const SCAN_VERSION: u32 = 2;
 
 /// The sandbox CLI's default parameters (`sedef_rs seed|chain|refine|decompose --help`), plus the output-neutral
-/// shard count of the seed stage's pair counting.
+/// shard count of the seed stage's pair counting. Scan v2 (2026-10-25, LEDGER_O1 SDSCAN2): seeding windows every
+/// `seed_stride` = half a window, and `max_postings` doubled with it (a k-mer of one copy now sits in two windows).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScanParams {
     pub k: usize,
     pub window: usize,
+    pub seed_stride: usize,
     pub sketch: usize,
     pub min_kmers: usize,
     pub max_postings: usize,
@@ -58,9 +60,10 @@ impl Default for ScanParams {
         ScanParams {
             k: 16,
             window: 2000,
+            seed_stride: 1000,
             sketch: 256,
             min_kmers: 32,
-            max_postings: 100,
+            max_postings: 200,
             min_shared: 40,
             chain_gap: 2,
             chain_min_score: 20,
@@ -84,12 +87,13 @@ impl ScanParams {
     /// `count_shards` is left out: it changes no output.
     pub fn version_key(&self) -> String {
         format!(
-            "sedef-rs 0.1.0 vendored 2026-10-13 scan v{SCAN_VERSION}; seed k={} window={} sketch={} min_kmers={} \
+            "sedef-rs 0.1.0 vendored 2026-10-13 scan v{SCAN_VERSION}; seed k={} window={} stride={} sketch={} min_kmers={} \
              max_postings={} min_shared={}; chain gap={} min_score={} merge_frac={} min_cell_id={} min_block_id={}; \
              refine max_gap={} diag_bin={} min_span={}; decompose max_gap={} diag_bin={} min_seg={}; max_pairs={}; \
              names=first-word",
             self.k,
             self.window,
+            self.seed_stride,
             self.sketch,
             self.min_kmers,
             self.max_postings,
@@ -219,6 +223,7 @@ fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, u
     let sp = seed::SeedParams {
         k: p.k,
         window: p.window,
+        stride: p.seed_stride,
         sketch: p.sketch,
         min_kmers: p.min_kmers,
         max_postings: p.max_postings,
@@ -268,6 +273,7 @@ fn chain_stage(cands: &str, out: &str, p: &ScanParams) -> Result<usize> {
     let pairs = chain::load_pairs(Path::new(cands), min_shared_cell).map_err(|e| anyhow!("reading {cands}: {e}"))?;
     let cp = chain::ChainParams {
         window: p.window as u64,
+        stride: p.seed_stride as u64,
         gap: p.chain_gap,
         min_score: p.chain_min_score,
         merge_frac: p.chain_merge_frac,
@@ -479,34 +485,22 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    // The golden output of SCAN_VERSIONs 1 and 2 on the toy genome (v2 changes nothing there); tests/sd_scan.rs reads the same tables back through the
+    // The golden output of SCAN_VERSION 2 on the toy genome (v1 split the inverted 8 kb copy into four 2 kb pairs); tests/sd_scan.rs reads the same tables back through the
     // hierarchy's readers. Change these constants only together with a SCAN_VERSION bump: a change here means sd-scan's
     // output for the same genome and parameters changed, and with it the driver's cache key.
     const PLANTED_PAIRS: &str = "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id\tstage2_id\tstatus\n\
-chrB\t10000\t14999\tchrB\t170000\t174999\t+\t4200\t99.0\t97.8\tok\n\
-chrA\t52000\t53999\tchrB\t124001\t126000\t-\t1840\t99.5\t99.5\tok\n\
-chrA\t50000\t51999\tchrB\t126001\t128000\t-\t1840\t99.5\t99.4\tok\n\
-chrA\t56000\t57999\tchrB\t120001\t122000\t-\t1840\t99.5\t99.4\tok\n\
-chrA\t54000\t55999\tchrB\t122001\t124000\t-\t1840\t99.5\t99.2\tok\n";
+chrA\t50000\t57999\tchrB\t120001\t128000\t-\t7360\t99.5\t97.7\tok\n\
+chrB\t10000\t14999\tchrB\t170000\t174999\t+\t4200\t99.0\t96.6\tok\n";
 
     const PLANTED_FAMILIES: &str = "#family_id\tn_copies\tspan_bp\tchromosomes\n\
-F0\t2\t9998\tchrB\n\
-F1\t2\t3998\tchrA;chrB\n\
-F2\t2\t3998\tchrA;chrB\n\
-F3\t2\t3998\tchrA;chrB\n\
-F4\t2\t3998\tchrA;chrB\n";
+F0\t2\t15998\tchrA;chrB\n\
+F1\t2\t9998\tchrB\n";
 
     const PLANTED_DUPLICONS: &str = "#chrom\tstart\tend\tfamily_id\n\
-chrA\t50000\t51999\tF1\n\
-chrA\t52000\t53999\tF2\n\
-chrA\t54000\t55999\tF3\n\
-chrA\t56000\t57999\tF4\n\
-chrB\t10000\t14999\tF0\n\
-chrB\t120001\t122000\tF4\n\
-chrB\t122001\t124000\tF3\n\
-chrB\t124001\t126000\tF2\n\
-chrB\t126001\t128000\tF1\n\
-chrB\t170000\t174999\tF0\n";
+chrA\t50000\t57999\tF0\n\
+chrB\t10000\t14999\tF1\n\
+chrB\t120001\t128000\tF0\n\
+chrB\t170000\t174999\tF1\n";
 
     fn tmp(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("sd_scan_{name}_{}", std::process::id()));
@@ -532,7 +526,7 @@ chrB\t170000\t174999\tF0\n";
         let (s, out) = scan_toy(&d, "toy", true);
         assert_eq!(
             (s.sequences, s.bases, s.candidates, s.blocks, s.pairs, s.pairs_ok, s.segments, s.families, s.duplicon_rows),
-            (2, 400_000, 7, 5, 5, 5, 5, 5, 10)
+            (2, 400_000, 41, 2, 2, 2, 2, 2, 4)
         );
         assert_eq!(read(&out, "pairs.tsv"), PLANTED_PAIRS);
         assert_eq!(read(&out, "families.tsv"), PLANTED_FAMILIES);

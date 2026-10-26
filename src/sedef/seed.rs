@@ -17,6 +17,9 @@ use crate::sedef::kmer::for_each_kmer;
 pub struct SeedParams {
     pub k: usize,
     pub window: usize,
+    /// Scan v2: windows start every `stride` bp (scan v1: `stride` = `window`, a non-overlapping grid; v2: half a
+    /// window, so a copy is never more than a quarter window off a window of the other copy).
+    pub stride: usize,
     pub sketch: usize,
     /// Windows with fewer distinct k-mers than this are treated as pure
     /// satellite repeats and skipped (SDFinder/BISER do analogous repeat
@@ -66,12 +69,13 @@ pub fn build_windows(
 
     let mut all: Vec<WindowSketch> = Vec::new();
     for (si, (_, seq)) in seqs.iter().enumerate() {
-        let n_win = seq.len() / p.window;
+        let stride = p.stride.max(1);
+        let n_win = if seq.len() < p.window { 0 } else { (seq.len() - p.window) / stride + 1 };
         let mut part: Vec<Option<WindowSketch>> = Vec::with_capacity(n_win);
         (0..n_win)
             .into_par_iter()
             .map(|wi| {
-                let s = wi * p.window;
+                let s = wi * stride;
                 let e = (s + p.window).min(seq.len());
                 let mut hashes: Vec<u64> = Vec::with_capacity(p.window);
                 for_each_kmer(&seq[s..e], p.k, |_, h| hashes.push(h));
@@ -105,6 +109,8 @@ pub fn build_windows(
 /// again), and the pairs are counted in `p.count_shards` independent shards, so a whole genome's pair map is never
 /// held at once. Candidates come back in shard order; the caller sorts them.
 pub fn find_candidates(wins: &mut [WindowSketch], p: &SeedParams) -> Vec<Candidate> {
+    // (sequence, start) per window: overlapping windows of one sequence (stride < window) share sequence, not a copy
+    let at: Vec<(u32, u64)> = wins.iter().map(|w| (w.seq, w.start)).collect();
     let mut entries: Vec<(u64, u32)> = Vec::with_capacity(wins.iter().map(|w| w.sketch.len()).sum());
     for (id, w) in wins.iter_mut().enumerate() {
         for &h in &w.sketch {
@@ -115,14 +121,14 @@ pub fn find_candidates(wins: &mut [WindowSketch], p: &SeedParams) -> Vec<Candida
     entries.par_sort_unstable();
     let shards = p.count_shards.max(1) as u32;
     let per_shard: Vec<Vec<Candidate>> =
-        (0..shards).into_par_iter().map(|s| count_shard(&entries, s, shards, p)).collect();
+        (0..shards).into_par_iter().map(|s| count_shard(&entries, &at, s, shards, p)).collect();
     per_shard.into_iter().flatten().collect()
 }
 
 /// The candidates whose lower window index is `shard` modulo `shards`. Inside one hash group the entries are sorted
 /// by window index and a window holds a hash once (its sketch is deduplicated), so `a < b` whenever x < y: the
 /// shard test can be made once per x.
-fn count_shard(entries: &[(u64, u32)], shard: u32, shards: u32, p: &SeedParams) -> Vec<Candidate> {
+fn count_shard(entries: &[(u64, u32)], at: &[(u32, u64)], shard: u32, shards: u32, p: &SeedParams) -> Vec<Candidate> {
     let mut counts: FxHashMap<(u32, u32), u32> =
         FxHashMap::with_capacity_and_hasher(entries.len() / 64 / shards as usize, Default::default());
     let n = entries.len();
@@ -143,6 +149,10 @@ fn count_shard(entries: &[(u64, u32)], shard: u32, shards: u32, p: &SeedParams) 
                 for y in (x + 1)..j {
                     let b = entries[y].1;
                     debug_assert!(a < b);
+                    let ((sa, xa), (sb, xb)) = (at[a as usize], at[b as usize]);
+                    if sa == sb && xa.abs_diff(xb) < p.window as u64 {
+                        continue;
+                    }
                     *counts.entry((a, b)).or_insert(0) += 1;
                 }
             }
@@ -166,7 +176,7 @@ mod tests {
     use super::*;
 
     fn params(shards: usize) -> SeedParams {
-        SeedParams { k: 16, window: 2000, sketch: 8, min_kmers: 1, max_postings: 3, min_shared: 2, count_shards: shards }
+        SeedParams { k: 16, window: 2000, sketch: 8, min_kmers: 1, max_postings: 3, min_shared: 2, count_shards: shards, stride: 2000 }
     }
 
     fn win(id: u64, sketch: &[u64]) -> WindowSketch {
@@ -212,9 +222,55 @@ mod tests {
                 b"ACGT"[(x >> 62) as usize]
             })
             .collect();
-        let p = SeedParams { k: 16, window: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1 };
+        let p = SeedParams { k: 16, window: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, stride: 2000 };
         let (wins, _) = build_windows(&[("s".to_string(), seq)], &p);
         assert_eq!(wins.len(), 10);
         assert!(wins.iter().all(|w| w.sketch.len() == 256 && w.sketch.capacity() == 256));
+    }
+
+    fn synth(seed: u64, n: usize) -> Vec<u8> {
+        let mut x = seed;
+        (0..n)
+            .map(|_| {
+                x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                b"ACGT"[(x >> 62) as usize]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_copy_half_a_window_off_the_grid_is_seeded_with_half_window_stride() {
+        // a 4 kb segment at 10 kb (on the 2 kb grid) and a ~91% copy at 41 kb (1 kb off it)
+        let seg = synth(5, 4_000);
+        let mut y = 99u64;
+        let copy: Vec<u8> = seg
+            .iter()
+            .map(|&b| {
+                y = y.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                if (y >> 32) % 100 < 12 { b"ACGT"[((y >> 40) % 4) as usize] } else { b }
+            })
+            .collect();
+        let mut seq = synth(1, 60_000);
+        seq[10_000..14_000].copy_from_slice(&seg);
+        seq[41_000..45_000].copy_from_slice(&copy);
+        let seqs = [("s".to_string(), seq)];
+        let pairs_copy = |stride: usize, max_postings: usize| {
+            let p = SeedParams { k: 16, window: 2000, stride, sketch: 256, min_kmers: 32, max_postings, min_shared: 40, count_shards: 1 };
+            let (mut wins, _) = build_windows(&seqs, &p);
+            let c = find_candidates(&mut wins, &p);
+            c.iter()
+                .filter(|c| wins[c.a].start < 14_000 && wins[c.a].end > 10_000 && wins[c.b].start < 45_000 && wins[c.b].end > 41_000)
+                .count()
+        };
+        assert_eq!(pairs_copy(2000, 100), 0, "scan v1's grid misses it (the reason for v2)");
+        assert!(pairs_copy(1000, 200) > 0, "the half-window grid seeds it");
+    }
+
+    #[test]
+    fn overlapping_windows_of_one_locus_are_not_candidates() {
+        let p = SeedParams { k: 16, window: 2000, stride: 1000, sketch: 256, min_kmers: 32, max_postings: 200, min_shared: 40, count_shards: 1 };
+        let (mut wins, _) = build_windows(&[("s".to_string(), synth(3, 20_000))], &p);
+        assert_eq!(wins.len(), 19);
+        assert!(find_candidates(&mut wins, &p).is_empty());
     }
 }

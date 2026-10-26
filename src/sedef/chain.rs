@@ -58,6 +58,9 @@ pub struct Block {
 
 pub struct ChainParams {
     pub window: u64,
+    /// Seeding windows start every `stride` bp (a divisor of `window`; scan v1: `window`). Cells are indexed in stride
+    /// units, so bands, `gap` (in windows) and block ends keep their bp meaning for any stride.
+    pub stride: u64,
     pub gap: u32,
     pub min_score: u32,
     pub merge_frac: f64,
@@ -221,13 +224,15 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
     // ---- pass 1: band grouping + per-band diagonal walk ----------------
     // The band (d.div_euclid(2)) groups diagonals in pairs so a one-window
     // phase drift between copies stays inside one chain.
+    let stride = p.stride.max(1);
+    let per_window = (p.window / stride).max(1) as u32; // stride units per window
     let mut groups: HashMap<(String, String, i64), Vec<(u32, u32, u32)>> = HashMap::new();
     for r in pairs {
-        let a = (r.s_a / p.window) as u32;
-        let b = (r.s_b / p.window) as u32;
+        let a = (r.s_a / stride) as u32;
+        let b = (r.s_b / stride) as u32;
         let d = b as i64 - a as i64;
         groups
-            .entry((r.chr_a.clone(), r.chr_b.clone(), d.div_euclid(2)))
+            .entry((r.chr_a.clone(), r.chr_b.clone(), d.div_euclid(2 * per_window as i64)))
             .or_default()
             .push((a, b, r.shared));
     }
@@ -252,7 +257,7 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
             let (a, b, s) = best;
             let extend = matches!(&open, Some(c) if
                 c.a1 < a && c.b1 < b
-                && a - c.a1 <= p.gap && b - c.b1 <= p.gap);
+                && a - c.a1 <= p.gap * per_window && b - c.b1 <= p.gap * per_window);
             if extend {
                 let c = open.as_mut().unwrap();
                 c.a1 = a;
@@ -318,18 +323,18 @@ pub fn chain_and_merge(pairs: &[PairRec], p: &ChainParams) -> (Vec<Block>, Chain
         e.7 += c.cells;
     }
 
-    let w = p.window;
+    let (w, st) = (p.window, stride);
     let mut blocks: Vec<Block> = agg
         .into_iter()
         .map(|(_, (ca, cb, a0, a1, b0, b1, score, cells))| {
             let mean_shared = score as f64 / cells as f64;
             Block {
                 chr_a: ca,
-                a0: a0 as u64 * w,
-                a1: (a1 as u64 + 1) * w,
+                a0: a0 as u64 * st,
+                a1: a1 as u64 * st + w,
                 chr_b: cb,
-                b0: b0 as u64 * w,
-                b1: (b1 as u64 + 1) * w,
+                b0: b0 as u64 * st,
+                b1: b1 as u64 * st + w,
                 cells,
                 score,
                 est_id: est_identity(mean_shared, p.sketch, p.k),
@@ -420,6 +425,7 @@ mod tests {
     fn params() -> ChainParams {
         ChainParams {
             window: 2000,
+            stride: 2000,
             gap: 2,
             min_score: 10,
             merge_frac: 0.5,

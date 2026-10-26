@@ -6889,3 +6889,13 @@ decision with the user). H1 FAIL + H2 PASS = better but still not a replacement.
   stored its anchors. Fix (no threshold): chains taken by A coverage, a chain kept only when its A x B rectangle meets
   no kept chain's. Rerun capped (`prlimit --as`): 6.3 GB peak, refine 246 s (v1 65 s).
 - R1+R2: recall 0.7561, precision 0.7457 (85,443 pairs, 84,652 ok). Next: R3 (seeding).
+- R3 (seeding windows every 1 kb; chain stage indexed in stride units, so v1 = stride 2 kb; `max_postings` 100 -> 200;
+  pairs of overlapping windows of one locus skipped): recall 0.8478, precision 0.6972 (96,742 pairs; seed 62 s, refine
+  314 s, 9.4 GB peak). The toy genome's inverted 8 kb copy is now one pair (v1: four 2 kb pairs); golden updated.
+- Precision loss: every false pair (>= half outside every SEDEF pair of any identity) is >= 80% soft-masked, but so are
+  1,365 true pairs. SEDEF source (github vpc-ccg/sedef, read 2026-10-25): seeds are k-mers with >= 1 unmasked base;
+  a final SD needs >= 100 unmasked bases per side and >= 100 unmasked matches (`stats_main.cc:302`); fracMatch =
+  matches / (matches + mismatches), R2's definition. Post-hoc filters on R3's pairs (dev, descriptive):
+  1 kb unmasked per pair 0.654 / 0.976; per stage-2 block 0.697 / 0.970; 100 per pair 0.713 / 0.948; 100 per block
+  0.757 / 0.930 (recall / precision). SEDEF reaches mostly-masked SD stretches by extending from unmasked seeds inside
+  one long alignment; our pairs and blocks are shorter, so the same rule removes them. Not yet decided; no held-out run.
