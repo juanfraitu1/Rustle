@@ -1085,6 +1085,9 @@ Verbatim intent, and it supersedes Parts 0d–0g where they differ:
   register 1408), which is why the gene-level count showed little. A second animal is expected to differ at least as much.
 - **Not a statement about the reference being an average:** it is one animal's two haplotypes stitched together (each reference
   chromosome is an exact copy of a mat or pat chromosome).
-- **What RNA can see of it** (registers 1417, 1418, held-out FAILs): split / clipped-read breakpoint groups (precision 0.39,
-  sensitivity 0.09) and the certified tier per exon (precision 0.29, sensitivity 0.04). About two-thirds of extra exon copies
-  match an existing reference copy over the exon, so reads carry no trace of them.
+- **How much is confirmed by DNA reads** (register 1419): Jim's 12x WGS sides with the assemblies for 94% (SD) / 77% (exons) of
+  differences >= 25%, but only 63-72% of +-1 differences in high-copy units. Confirmed core: 3.0% of SD windows, exon differences
+  in 6.3% of families; the 45% / 24% figures are upper bounds.
+- **What RNA can see of it** (registers 1417, 1418, held-out FAILs; 1420): split / clipped-read breakpoint groups (precision 0.39,
+  sensitivity 0.09) and the certified tier per exon (precision 0.29, sensitivity 0.04) fail. Yet with the true haplotype sequences,
+  41.9% of exon gains leave >= 2 reads that only the extra sequence explains (control 14%): the limit is the detector.

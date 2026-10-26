@@ -34,9 +34,10 @@ advisor (his focus: the StringTie / FLAIR benchmark): Claude Doc "Benchmark Figu
 
 **O3 reach, 2026-10-25 (registers 1416-1418, `LEDGER_O3.md`):** reference bias in copy content is real. Even between the reference
 animal's own two haplotypes, copy number differs in 44.8% of 5 kb SD windows and in exons of 24% of our families (whole gene copies
-5-7%). RNA reads alone see little of it: breakpoint groups (1417) and the certified tier per exon (1418) both fail held-out, because
-about two-thirds of the extra exon copies match an existing reference copy over the exon. O3's reachable target is a whole extra
-copy that carries a divergent allele; the exon- and SD-level remainder is stated as invisible to RNA, not claimed.
+5-7%), an upper bound: Jim's WGS confirms the large differences but not most +-1 differences in high-copy units (1419; confirmed
+core 3.0% of SD windows, exon differences in 6.3% of families). Breakpoint groups (1417) and the certified tier per exon (1418)
+both fail held-out, yet with the true haplotype sequences 41.9% of exon gains leave >= 2 reads only the extra sequence explains
+(1420, control 14%). The exon-level reach is a detector problem (extra copies take free allele slots), open, not claimed.
 
 ### ⭐ O3 RESTATED (2026-08-19) — stratify the target, bound each stratum
 

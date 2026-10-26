@@ -10395,3 +10395,35 @@ putative. The net and run are split into batches by sha1 of the unit (machine li
 - Control: 300 seeded non-gaining units, same levels (haplotype-only sequences there are alleles).
 - Reading: if level B reaches < 25% of gaining units, RNA's reach of exon gains is limited by the copies themselves (identical or
   silent), not by the detector.
+
+### WGSCHK result (register 1419): the assemblies' copy differences are only partly confirmed by Jim's WGS
+lambda_hap 5.01 (4.9M single-copy k-mers). Tested units (mat != pat, H_asm != H_ref), WGS closer to the assemblies vs the reference:
+- Exons: 333 vs 181 (64.8% of decided; 166 not testable). SD windows: 1,820 vs 692 (72.5%; 180 not testable). Both below the
+  pre-registered 80%: the reading "the differences are real" is NOT met as a whole.
+- Controls (no mat / pat difference): |obs - H_asm| median 0.40 (exons) / 0.60 (SD); < 1 copy in 84% / 69%.
+- Post hoc (not pre-registered): by relative size of the difference, WGS sides with the assemblies in 77% (exons) / 94% (SD) of
+  units differing by >= 25%, and in 63% / 71% of units differing by < 25% (mostly 1 copy in > 10), where 12x depth cannot resolve a
+  copy. WGS-supported core with >= 25% difference: 58 / 9,210 exons in 29 / 463 families (6.3%); 177 / 6,000 SD windows (3.0%).
+- Reading: 1416's headline (45% of SD windows, 24% of families) is dominated by +-1 differences in high-copy units that this WGS
+  cannot confirm; the confirmed core is smaller. Large differences are real. `bench/wgschk_{query,score}.py`, `/mnt/linuxdisk/tmp/wgschk`.
+
+### EXCEIL result (register 1420): RNA could see far more exon gains than the per-exon detector finds
+272 gaining units (dev 97, held-out 175); control 300 non-gaining units.
+
+| | level A: haplotype-only exon sequence | level B: >= 2 reads closer to it than to every reference copy |
+|---|---|---|
+| gaining units | 232 (85.3%) | 114 (41.9%) |
+| control | 70 (23.3%, alleles) | 42 (14.0%) |
+
+- Level B reaches 41.9% (> 25%): by the pre-registered reading, RNA's reach of exon gains is NOT limited mainly by the copies
+  themselves. The per-exon certified tier (1418) found 2-4%; the gap is the detector's. Level A / B also count alleles of existing
+  copies (the control's 14%), so 42% is an upper bound; the excess over control is ~28 points.
+- This corrects 1418's reading ("about two-thirds identical, so RNA cannot see them"): that compared edit distances to the exon, not
+  sequences, and ignored reads. Likely detector limit (untested): an extra copy's haplotype takes a free allele slot (homozygous
+  copies leave one), so it stays putative (Theorem A), never certified. `bench/exceil.py`.
+
+### Options kept for later (user, 2026-10-25)
+1. A second individual vs its reference: SD / exon copy number of HG002 mat / pat vs CHM13 (human numbers kept apart; needs the
+   HG002 diploid assembly, ~6 GB download).
+2. Simulated exon gains with even expression, to measure the per-exon test's sensitivity apart from expression.
+3. A fresh pre-registered test of the putative-exon signal (1418: 3 / 9 on dev and held-out) on families from a new catalog run.
