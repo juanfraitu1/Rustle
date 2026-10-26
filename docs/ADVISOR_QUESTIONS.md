@@ -1077,3 +1077,14 @@ Verbatim intent, and it supersedes Parts 0d–0g where they differ:
 - The bakeoff metric (`bench/tool_bakeoff.py`) must gain a **hard-locus restriction**: score only molecules that
   are AS-tied, and count transcripts emitted per copy where the competitor emitted none.
 - ⚠ The user decides the wording change to `THESIS_OBJECTIVES.md`; this Part records the instruction.
+
+## Reference bias in copy content (advisor, 2026-10-25): "the reference is an average; other individuals miss or gain copies"
+- **Conceded at the SD level** (register 1416). Between Jim's own maternal and paternal haplotypes (the reference's two sources),
+  copy number differs in 44.8% of 5 kb SEDEF SD windows (method noise 6.6%; 24.6% even at 1-2 reference copies) and in 7.4% of
+  exons (noise 0.2%), i.e. in exons of 24% of our 463 families. Whole expressed gene copies are the most stable unit (5-7%,
+  register 1408), which is why the gene-level count showed little. A second animal is expected to differ at least as much.
+- **Not a statement about the reference being an average:** it is one animal's two haplotypes stitched together (each reference
+  chromosome is an exact copy of a mat or pat chromosome).
+- **What RNA can see of it** (registers 1417, 1418, held-out FAILs): split / clipped-read breakpoint groups (precision 0.39,
+  sensitivity 0.09) and the certified tier per exon (precision 0.29, sensitivity 0.04). About two-thirds of extra exon copies
+  match an existing reference copy over the exon, so reads carry no trace of them.
