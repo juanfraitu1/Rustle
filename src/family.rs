@@ -80765,7 +80765,7 @@ pub mod family_hierarchy {
             }
             let p = |x: &str| x.parse::<u64>().ok();
             let (Some(s1), Some(e1), Some(s2), Some(e2)) = (p(f[1]), p(f[2]), p(f[4]), p(f[5])) else { continue };
-            let sd_scan = f.len() == 11 && matches!(f[10], "ok" | "self" | "weak");
+            let sd_scan = f.len() == 11 && matches!(f[10], "ok" | "self" | "weak" | "repeat");
             if sd_scan && f[10] != "ok" {
                 continue;
             }

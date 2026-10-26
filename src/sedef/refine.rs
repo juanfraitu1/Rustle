@@ -40,6 +40,11 @@ pub struct RefineParams {
     /// are deterministically subsampled instead of truncated (truncation
     /// starves late positions in satellite arrays).
     pub max_pairs: u64,
+    /// Scan v2 (SEDEF's final filter): an ok pair needs at least this many uppercase (unmasked) bases on each side and
+    /// this many aligned matches between uppercase bases; otherwise it is a `repeat` record. 0 disables the filter.
+    pub min_uppercase: u64,
+    /// Scan v2: a chain whose alignment identity is below this (percent) is not a pair and shadows no other chain.
+    pub min_identity: f64,
 }
 
 pub struct Refined {
@@ -57,6 +62,8 @@ pub struct Refined {
     /// A and B intervals are (nearly) the same locus -- tandem-overlap
     /// artifact rather than an interlocus duplication.
     pub self_pair: bool,
+    /// Scan v2: an otherwise ok pair below `min_uppercase` (made of soft-masked repeats).
+    pub repeat: bool,
     /// Stage-2 identity for comparison.
     pub stage2_id: f64,
 }
@@ -375,12 +382,97 @@ pub fn chain_runs(mut runs: Vec<Vec<(u32, i64)>>, max_gap: u64) -> Vec<Vec<(u32,
     chains
 }
 
-/// Unit-cost global alignment of two short sequences (case-insensitive): (matches, mismatches) on one optimal path,
-/// preferring the diagonal on ties.
-pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64) {
+/// BISER's refine (`align.codon`, `refine`): a chain scores MATCH per matched base and -MISMATCH per other spanned base;
+/// joining chain p to a later chain c costs GAPOPEN + MISMATCH x the shorter gap + GAP x (longer - shorter), for gaps
+/// below MAX_GAP; at most MAX_ITER predecessors are tried per chain. Values are BISER's.
+const BISER_MATCH: f64 = 10.0;
+const BISER_MISMATCH: f64 = 1.0;
+const BISER_GAP: f64 = 0.5;
+const BISER_GAPOPEN: f64 = 100.0;
+const BISER_MAX_GAP: i64 = 10 * 1024;
+const BISER_MAX_ITER: usize = 500;
+/// Gaps between joined chains are aligned only up to this many DP cells (2 kb x 2 kb); larger ones count as indels.
+const ALIGN_MAX_CELLS: usize = 4_000_000;
+
+/// Scan v2: BISER's second-level chaining over the chains of one strand space. Chains sorted by end; each takes the
+/// best-scoring predecessor (ending before it on both axes, the longer gap < MAX_GAP, the shorter <= `max_gap` so the
+/// stretch both copies have is aligned, not assumed: BISER aligns it afterwards); paths are read from the best scores
+/// down, each chain used once, and concatenated into one chain.
+pub fn join_chains(mut chains: Vec<Vec<(u32, i64)>>, k: usize, max_gap: u64) -> Vec<Vec<(u32, i64)>> {
+    if chains.len() < 2 {
+        return chains;
+    }
+    let end = |c: &Vec<(u32, i64)>| {
+        let l = c[c.len() - 1];
+        (l.0 as i64 + k as i64, l.1 + k as i64)
+    };
+    chains.sort_by_key(|c| (end(c), c[0].0, c[0].1));
+    let score: Vec<f64> = chains
+        .iter()
+        .map(|c| {
+            let cov = cov_pa(c, k) as f64;
+            let span = (end(c).0 - c[0].0 as i64) as f64;
+            BISER_MATCH * cov - BISER_MISMATCH * (span - cov)
+        })
+        .collect();
+    let n = chains.len();
+    let mut dp = score.clone();
+    let mut prev = vec![usize::MAX; n];
+    for c in 0..n {
+        let (cs_a, cs_b) = (chains[c][0].0 as i64, chains[c][0].1);
+        let mut tried = 0;
+        for p in (0..c).rev() {
+            let (pe_a, pe_b) = end(&chains[p]);
+            if pe_a > cs_a || pe_b > cs_b {
+                continue;
+            }
+            let (ga, gb) = (cs_a - pe_a, cs_b - pe_b);
+            let (mi, ma) = (ga.min(gb), ga.max(gb));
+            if ma >= BISER_MAX_GAP || mi > max_gap as i64 {
+                continue;
+            }
+            tried += 1;
+            if tried > BISER_MAX_ITER {
+                break;
+            }
+            let sc = dp[p] + score[c] - BISER_MISMATCH * mi as f64 - BISER_GAPOPEN - BISER_GAP * (ma - mi) as f64;
+            if sc >= dp[c] {
+                dp[c] = sc;
+                prev[c] = p;
+            }
+        }
+    }
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&x, &y| dp[y].total_cmp(&dp[x]).then(x.cmp(&y)));
+    let mut used = vec![false; n];
+    let mut out = Vec::new();
+    for top in order {
+        if used[top] {
+            continue;
+        }
+        let mut path = Vec::new();
+        let mut i = top;
+        while i != usize::MAX && !used[i] {
+            used[i] = true;
+            path.push(i);
+            i = prev[i];
+        }
+        path.reverse();
+        let mut pts = Vec::new();
+        for i in path {
+            pts.extend_from_slice(&chains[i]);
+        }
+        out.push(pts);
+    }
+    out
+}
+
+/// Unit-cost global alignment of two short sequences (case-insensitive): (matches, mismatches, matches of two uppercase
+/// bases) on one optimal path, preferring the diagonal on ties.
+pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64, u64) {
     let (n, m) = (a.len(), b.len());
     if n == 0 || m == 0 {
-        return (0, 0);
+        return (0, 0, 0);
     }
     let w = m + 1;
     let mut d = vec![0u32; (n + 1) * w];
@@ -398,12 +490,13 @@ pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64) {
         }
     }
     let (mut i, mut j) = (n, m);
-    let (mut mat, mut mis) = (0u64, 0u64);
+    let (mut mat, mut mis, mut up) = (0u64, 0u64, 0u64);
     while i > 0 && j > 0 {
         let same = a[i - 1].to_ascii_uppercase() == b[j - 1].to_ascii_uppercase();
         if d[i * w + j] == d[(i - 1) * w + j - 1] + (!same) as u32 {
             if same {
                 mat += 1;
+                up += (a[i - 1].is_ascii_uppercase() && b[j - 1].is_ascii_uppercase()) as u64;
             } else {
                 mis += 1;
             }
@@ -415,35 +508,48 @@ pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64) {
             j -= 1;
         }
     }
-    (mat, mis)
+    (mat, mis, up)
 }
 
 /// Scan v2 identity of a chain: anchors are k-mer matches, the stretches between consecutive anchors are aligned;
-/// matches / (matches + mismatches), indels left out (SEDEF's fracMatch). `b` is in the chain's strand space.
-pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize) -> f64 {
+/// (100 x matches / (matches + mismatches), matches of two uppercase bases), indels left out of the identity (SEDEF's
+/// fracMatch). `b` is in the chain's strand space.
+pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize) -> (f64, u64) {
+    let both_up = |i: usize, j: usize| a[i].is_ascii_uppercase() && b[j].is_ascii_uppercase();
+    // uppercase matches of `n` matched bases starting at a[i], b[j]
+    let up_run = |i: usize, j: usize, n: usize| (0..n).filter(|&t| both_up(i + t, j + t)).count() as u64;
+    let (p0a, p0b) = (pts[0].0 as usize, pts[0].1 as usize);
     let mut mat = k as u64;
+    let mut up = up_run(p0a, p0b, k);
     let mut mis = 0u64;
     for w in pts.windows(2) {
         let ((pa, pb), (qa, qb)) = (w[0], w[1]);
         let (da, db) = ((qa - pa) as i64, qb - pb);
         if da == db && da as usize <= k {
             mat += da as u64;
+            up += up_run(pa as usize + k, pb as usize + k, da as usize);
             continue;
         }
         let (ga, gb) = (pa as usize + k, (pb + k as i64) as usize);
-        if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() {
-            let (m2, x2) = align_counts(&a[ga..qa as usize], &b[gb..qb as usize]);
+        let cells = (qa as usize).saturating_sub(ga) * (qb.max(0) as usize).saturating_sub(gb);
+        if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() && cells > ALIGN_MAX_CELLS {
+            // a long gap between joined chains: indels only (BISER aligns it; here it is left out of the identity)
+            mat += k as u64;
+            up += up_run(qa as usize, qb as usize, k);
+        } else if qa as usize >= ga && qb >= 0 && qb as usize >= gb && (qb as usize) <= b.len() {
+            let (m2, x2, u2) = align_counts(&a[ga..qa as usize], &b[gb..qb as usize]);
             mat += m2 + k as u64;
             mis += x2;
+            up += u2 + up_run(qa as usize, qb as usize, k);
         } else {
             // the two k-mers overlap off one diagonal (a short indel inside them): count the new A bases both advance
             mat += da.min(db).max(0) as u64;
         }
     }
     if mat + mis == 0 {
-        return 0.0;
+        return (0.0, 0);
     }
-    100.0 * mat as f64 / (mat + mis) as f64
+    (100.0 * mat as f64 / (mat + mis) as f64, up)
 }
 
 /// Scan v2: every chain of the block (`chain_runs` in both strand spaces) whose two spans reach `min_span` is a pair,
@@ -480,7 +586,7 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
         } else {
             runs(&anchors, k, p.max_gap, p.diag_bin, |pb| sb_len - pb as i64 - k as i64)
         };
-        chains.extend(chain_runs(rs, p.max_gap).into_iter().map(|c| (strand, c)));
+        chains.extend(join_chains(chain_runs(rs, p.max_gap), k, p.max_gap).into_iter().map(|c| (strand, c)));
     }
     if chains.is_empty() {
         let rec = Refined {
@@ -495,6 +601,7 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
             est_id: b.est_id,
             ok: false,
             self_pair: false,
+            repeat: false,
             stage2_id: b.est_id,
         };
         // No refined core exists; decompose only consumes ok records,
@@ -538,28 +645,45 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
     let is_ok = |c: &(char, &Vec<(u32, i64)>, u64, u64, u64, u64, u64)| {
         c.3 - c.2 >= p.min_span && c.5 - c.4 >= p.min_span && c.1.len() >= 3
     };
-    let mut chosen: Vec<usize> = Vec::new();
+    let ident = |i: usize| {
+        let (strand, pts, ..) = cands[i];
+        chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k)
+    };
+    // (candidate, identity, uppercase matches) of the kept chains
+    let mut chosen: Vec<(usize, f64, u64)> = Vec::new();
     for (i, c) in cands.iter().enumerate() {
         if !is_ok(c) {
             continue;
         }
-        let meets = chosen.iter().any(|&j| {
+        let meets = chosen.iter().any(|&(j, ..)| {
             let d = &cands[j];
             c.2 < d.3 && d.2 < c.3 && c.4 < d.5 && d.4 < c.5
         });
-        if !meets {
-            chosen.push(i);
+        if meets {
+            continue;
+        }
+        let (id, up) = ident(i);
+        if id >= p.min_identity {
+            chosen.push((i, id, up));
         }
     }
+    let mut fallback = false;
     if chosen.is_empty() {
-        chosen.push(0); // the best chain, as a weak record
+        let (id, up) = ident(0);
+        chosen.push((0, id, up)); // the best chain, as a weak record
+        fallback = true;
     }
     let mut kept: Vec<Refined> = chosen
         .into_iter()
-        .map(|i| {
+        .map(|(i, est_id, up_matches)| {
             let (strand, pts, ra0, ra1, rb0, rb1, _) = cands[i];
-            let ok = is_ok(&cands[i]);
-            let est_id = chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k);
+            let ok = is_ok(&cands[i]) && !fallback;
+            let upper = |seq: &[u8], x0: u64, x1: u64| seq[x0 as usize..x1 as usize].iter().filter(|c| c.is_ascii_uppercase()).count() as u64;
+            let repeat = ok
+                && p.min_uppercase > 0
+                && (up_matches < p.min_uppercase
+                    || upper(sa_full, ra0, ra1) < p.min_uppercase
+                    || upper(sb_full, rb0, rb1) < p.min_uppercase);
             // "Self" only when the two sides land on (nearly) the SAME locus --
             // a refinement collapse artifact. Shifted copies (offset >= 1 kb)
             // are genuine tandem duplications.
@@ -576,6 +700,7 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
                 est_id,
                 ok,
                 self_pair,
+                repeat,
                 stage2_id: b.est_id,
             }
         })
@@ -593,6 +718,8 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
                 0
             } else if r.self_pair {
                 2
+            } else if r.repeat {
+                3
             } else {
                 1
             };
@@ -666,6 +793,8 @@ mod tests {
             diag_bin: 50,
             min_span: 500,
             max_pairs: 1024,
+            min_uppercase: 0,
+            min_identity: 90.0,
         }
     }
 
@@ -803,6 +932,23 @@ mod tests {
         let recs = ok_records(&block(9_000, 31_000, 39_000, 61_000), &seqs);
         assert!(recs.iter().any(|r| r.ra1 - r.ra0 >= 19_500 && r.rb1 - r.rb0 >= 19_600), "spans {:?}",
             recs.iter().map(|r| (r.ra0, r.ra1, r.rb0, r.rb1)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_long_insertion_inside_a_copy_is_bridged() {
+        // a 2 kb insertion in the B copy: BISER's gap-scored join keeps one pair over both halves
+        let core = mutate(&synth(7, 10_000), 3, 9);
+        let mut b_copy = core[..5_000].to_vec();
+        b_copy.extend_from_slice(&synth(23, 2_000));
+        b_copy.extend_from_slice(&core[5_000..]);
+        let mut seq = synth(1, 60_000);
+        seq[10_000..20_000].copy_from_slice(&core);
+        seq[30_000..42_000].copy_from_slice(&b_copy);
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let recs = ok_records(&block(9_000, 21_000, 29_000, 43_000), &seqs);
+        assert!(recs.iter().any(|r| r.ra1 - r.ra0 >= 9_900 && r.rb1 - r.rb0 >= 11_900),
+            "{:?}", recs.iter().map(|r| (r.ra0, r.ra1, r.rb0, r.rb1)).collect::<Vec<_>>());
     }
 
     #[test]

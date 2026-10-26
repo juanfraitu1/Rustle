@@ -29,6 +29,9 @@ pub struct SeedParams {
     /// (they carry no pairing signal -- classic too-common filter).
     pub max_postings: usize,
     pub min_shared: usize,
+    /// Scan v2 (SEDEF's `separate_lowercase`): only k-mers with at least one uppercase (unmasked) base enter a window's
+    /// sketch, so a window of common repeats seeds nothing.
+    pub uppercase_kmers: bool,
     /// Vendored change (2026-10-13): pairs are counted in this many shards (a pair belongs to the shard of its lower
     /// window index modulo `count_shards`), so at most one shard map per thread is alive. Every value gives the same
     /// candidates; 1 is the sandbox's single map.
@@ -78,7 +81,22 @@ pub fn build_windows(
                 let s = wi * stride;
                 let e = (s + p.window).min(seq.len());
                 let mut hashes: Vec<u64> = Vec::with_capacity(p.window);
-                for_each_kmer(&seq[s..e], p.k, |_, h| hashes.push(h));
+                let w = &seq[s..e];
+                if p.uppercase_kmers {
+                    // up[i] = uppercase bases in w[..i]
+                    let mut up = Vec::with_capacity(w.len() + 1);
+                    up.push(0u32);
+                    for &c in w {
+                        up.push(up[up.len() - 1] + c.is_ascii_uppercase() as u32);
+                    }
+                    for_each_kmer(w, p.k, |i, h| {
+                        if up[i + p.k] > up[i] {
+                            hashes.push(h)
+                        }
+                    });
+                } else {
+                    for_each_kmer(w, p.k, |_, h| hashes.push(h));
+                }
                 hashes.sort_unstable();
                 hashes.dedup();
                 if hashes.len() < p.min_kmers {
@@ -176,7 +194,7 @@ mod tests {
     use super::*;
 
     fn params(shards: usize) -> SeedParams {
-        SeedParams { k: 16, window: 2000, sketch: 8, min_kmers: 1, max_postings: 3, min_shared: 2, count_shards: shards, stride: 2000 }
+        SeedParams { k: 16, window: 2000, sketch: 8, min_kmers: 1, max_postings: 3, min_shared: 2, count_shards: shards, stride: 2000, uppercase_kmers: false }
     }
 
     fn win(id: u64, sketch: &[u64]) -> WindowSketch {
@@ -222,7 +240,7 @@ mod tests {
                 b"ACGT"[(x >> 62) as usize]
             })
             .collect();
-        let p = SeedParams { k: 16, window: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, stride: 2000 };
+        let p = SeedParams { k: 16, window: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, stride: 2000, uppercase_kmers: false };
         let (wins, _) = build_windows(&[("s".to_string(), seq)], &p);
         assert_eq!(wins.len(), 10);
         assert!(wins.iter().all(|w| w.sketch.len() == 256 && w.sketch.capacity() == 256));
@@ -255,7 +273,7 @@ mod tests {
         seq[41_000..45_000].copy_from_slice(&copy);
         let seqs = [("s".to_string(), seq)];
         let pairs_copy = |stride: usize, max_postings: usize| {
-            let p = SeedParams { k: 16, window: 2000, stride, sketch: 256, min_kmers: 32, max_postings, min_shared: 40, count_shards: 1 };
+            let p = SeedParams { k: 16, window: 2000, stride, sketch: 256, min_kmers: 32, max_postings, min_shared: 40, count_shards: 1, uppercase_kmers: false };
             let (mut wins, _) = build_windows(&seqs, &p);
             let c = find_candidates(&mut wins, &p);
             c.iter()
@@ -268,9 +286,20 @@ mod tests {
 
     #[test]
     fn overlapping_windows_of_one_locus_are_not_candidates() {
-        let p = SeedParams { k: 16, window: 2000, stride: 1000, sketch: 256, min_kmers: 32, max_postings: 200, min_shared: 40, count_shards: 1 };
+        let p = SeedParams { k: 16, window: 2000, stride: 1000, sketch: 256, min_kmers: 32, max_postings: 200, min_shared: 40, count_shards: 1, uppercase_kmers: false };
         let (mut wins, _) = build_windows(&[("s".to_string(), synth(3, 20_000))], &p);
         assert_eq!(wins.len(), 19);
         assert!(find_candidates(&mut wins, &p).is_empty());
+    }
+
+    #[test]
+    fn with_uppercase_kmers_a_soft_masked_window_has_no_sketch() {
+        let mut seq = synth(8, 6_000);
+        seq[2_000..4_000].make_ascii_lowercase();
+        for (upper, want) in [(false, 3usize), (true, 2)] {
+            let p = SeedParams { k: 16, window: 2000, stride: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, uppercase_kmers: upper };
+            let (wins, _) = build_windows(&[("s".to_string(), seq.clone())], &p);
+            assert_eq!(wins.len(), want, "uppercase_kmers {upper}");
+        }
     }
 }

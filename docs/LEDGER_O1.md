@@ -6899,3 +6899,13 @@ decision with the user). H1 FAIL + H2 PASS = better but still not a replacement.
   1 kb unmasked per pair 0.654 / 0.976; per stage-2 block 0.697 / 0.970; 100 per pair 0.713 / 0.948; 100 per block
   0.757 / 0.930 (recall / precision). SEDEF reaches mostly-masked SD stretches by extending from unmasked seeds inside
   one long alignment; our pairs and blocks are shorter, so the same rule removes them. Not yet decided; no held-out run.
+- SEDEF / BISER ports (sources cloned read-only to /mnt/linuxdisk/tmp/sdsrc, 2026-10-25):
+  - BISER's masked projection (`masked_space`, CLI `--masked-space`): seed, chain and refine without soft-masked bases,
+    coordinates mapped back. Dev: recall 0.7011, precision 0.8397; refine 19 s, 1.8 GB. Misses are long SDs that are
+    almost all soft-masked (154 SEDEF pairs, ~31 kb each, < 1 kb unmasked).
+  - SEDEF's mode (now the default): seeds only from k-mers with an unmasked base; ok pairs need >= 100 unmasked bases per
+    side and >= 100 unmasked matches (SEDEF `stats_main.cc` defaults; status `repeat` otherwise).
+  - BISER's second-level chain DP (MATCH 10, MISMATCH 1, GAP 0.5, GAPOPEN 100, MAX_GAP 10 kb), with the shorter gap of
+    a join <= refine_max_gap so both copies' stretch is aligned; chains below min_block_id identity are not kept and
+    shadow nothing in the selection.
+  - Dev runs of both modes: pending.

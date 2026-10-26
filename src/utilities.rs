@@ -158,6 +158,10 @@ enum Cmd {
         /// Stop after refine: write the candidates, blocks, pairs, anchors and params tables only (for scoring pairs).
         #[arg(long)]
         pairs_only: bool,
+        /// BISER's mode instead of SEDEF's: search the genome without its soft-masked bases (no unmasked-seed rule, no
+        /// unmasked-base filter).
+        #[arg(long)]
+        masked_space: bool,
     },
 }
 
@@ -205,8 +209,11 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::SdScan { genome, out, threads, version_key, pairs_only } => {
-            let p = rustle::sedef::scan::ScanParams::default();
+        Cmd::SdScan { genome, out, threads, version_key, pairs_only, masked_space } => {
+            let mut p = rustle::sedef::scan::ScanParams::default();
+            if masked_space {
+                (p.masked_space, p.seed_uppercase, p.min_uppercase) = (true, false, 0);
+            }
             if version_key {
                 println!("{}", p.version_key());
                 return Ok(());

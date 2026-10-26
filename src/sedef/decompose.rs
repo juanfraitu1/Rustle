@@ -312,7 +312,7 @@ fn dedup_segments(mut segs: Vec<Segment>) -> Vec<Segment> {
 /// clusters of overlapping endpoints with every copy of a duplication in a family of its own; (2) `span_bp` sums the
 /// covered bases per chromosome (the sandbox merged intervals of different chromosomes); (3) the distinct copies are
 /// kept (`Family::copies`) and break the remaining ties of the order, so ids no longer follow HashMap order.
-fn families(segs: &[Segment]) -> Vec<Family> {
+pub fn families(segs: &[Segment]) -> Vec<Family> {
     #[derive(Clone)]
     struct Node {
         chr: String,

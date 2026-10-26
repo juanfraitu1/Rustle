@@ -36,6 +36,14 @@ pub struct ScanParams {
     pub k: usize,
     pub window: usize,
     pub seed_stride: usize,
+    /// Scan v2 (BISER's `mask`): seed, chain and refine on the genome without its soft-masked (lowercase) bases, and
+    /// map pairs, segments and duplicons back to genome coordinates. Common repeats then seed nothing, and a repeat
+    /// inside a duplication no longer splits it.
+    pub masked_space: bool,
+    /// Scan v2 (SEDEF): seeds only from k-mers with an unmasked base (`seed::SeedParams::uppercase_kmers`).
+    pub seed_uppercase: bool,
+    /// Scan v2 (SEDEF's `--uppercase`, default 100): unmasked bases per side and unmasked matches an ok pair needs.
+    pub min_uppercase: u64,
     pub sketch: usize,
     pub min_kmers: usize,
     pub max_postings: usize,
@@ -61,6 +69,9 @@ impl Default for ScanParams {
             k: 16,
             window: 2000,
             seed_stride: 1000,
+            masked_space: false,
+            seed_uppercase: true,
+            min_uppercase: 100,
             sketch: 256,
             min_kmers: 32,
             max_postings: 200,
@@ -87,10 +98,13 @@ impl ScanParams {
     /// `count_shards` is left out: it changes no output.
     pub fn version_key(&self) -> String {
         format!(
-            "sedef-rs 0.1.0 vendored 2026-10-13 scan v{SCAN_VERSION}; seed k={} window={} stride={} sketch={} min_kmers={} \
+            "sedef-rs 0.1.0 vendored 2026-10-13 scan v{SCAN_VERSION}; masked={} upper_seeds={} min_upper={}; seed k={} window={} stride={} sketch={} min_kmers={} \
              max_postings={} min_shared={}; chain gap={} min_score={} merge_frac={} min_cell_id={} min_block_id={}; \
              refine max_gap={} diag_bin={} min_span={}; decompose max_gap={} diag_bin={} min_seg={}; max_pairs={}; \
              names=first-word",
+            self.masked_space as u8,
+            self.seed_uppercase as u8,
+            self.min_uppercase,
             self.k,
             self.window,
             self.seed_stride,
@@ -126,6 +140,67 @@ pub struct ScanSummary {
     pub segments: usize,
     pub families: usize,
     pub duplicon_rows: usize,
+}
+
+/// Per sequence, the kept runs of the masked projection as (projected start, genome start), ascending; a sequence
+/// without an entry is unprojected.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Projection {
+    pub runs: HashMap<String, Vec<(u64, u64)>>,
+}
+
+impl Projection {
+    /// Genome position of projected position `p`.
+    pub fn start(&self, chr: &str, p: u64) -> u64 {
+        match self.runs.get(chr) {
+            None => p,
+            Some(r) => {
+                let i = r.partition_point(|&(ps, _)| ps <= p).saturating_sub(1);
+                r.get(i).map_or(p, |&(ps, gs)| gs + (p - ps))
+            }
+        }
+    }
+
+    /// Genome end of a projected interval ending (exclusive) at `p`.
+    pub fn end(&self, chr: &str, p: u64) -> u64 {
+        if p == 0 {
+            0
+        } else {
+            self.start(chr, p - 1) + 1
+        }
+    }
+}
+
+/// A sequence without its lowercase bases, and its runs (see `Projection`).
+pub fn project(seq: &[u8]) -> (Vec<u8>, Vec<(u64, u64)>) {
+    let mut out = Vec::with_capacity(seq.len());
+    let mut runs = Vec::new();
+    let mut prev_kept = false;
+    for (i, &c) in seq.iter().enumerate() {
+        let keep = !c.is_ascii_lowercase();
+        if keep {
+            if !prev_kept {
+                runs.push((out.len() as u64, i as u64));
+            }
+            out.push(c);
+        }
+        prev_kept = keep;
+    }
+    (out, runs)
+}
+
+/// Project every sequence in place when `masked` (each shrunk to its kept bases); the identity projection otherwise.
+pub fn project_genome(seqs: &mut [(String, Vec<u8>)], masked: bool) -> Projection {
+    let mut proj = Projection::default();
+    if masked {
+        for (name, seq) in seqs.iter_mut() {
+            let (p, runs) = project(seq);
+            *seq = p;
+            seq.shrink_to_fit();
+            proj.runs.insert(name.clone(), runs);
+        }
+    }
+    proj
 }
 
 /// Every FASTA record (plain, gzip or bgzip), named by the first word of its header line, each sequence shrunk to its
@@ -179,7 +254,7 @@ fn run_stages(genome: &Path, out: &str, threads: usize, p: &ScanParams, decompos
     let mut secs: Vec<(&str, f64)> = Vec::new();
 
     let t = Instant::now();
-    let (sequences, bases, candidates) = seed_stage(genome, &f("candidates.tsv"), p)?;
+    let (sequences, bases, candidates, proj) = seed_stage(genome, &f("candidates.tsv"), p)?;
     secs.push(("seed", t.elapsed().as_secs_f64()));
     eprintln!("[sd-scan] seed: {sequences} sequences, {bases} bp, {candidates} candidate window pairs ({:.1} s)", secs[0].1);
 
@@ -189,7 +264,7 @@ fn run_stages(genome: &Path, out: &str, threads: usize, p: &ScanParams, decompos
     eprintln!("[sd-scan] chain: {blocks} blocks ({:.1} s)", secs[1].1);
 
     let t = Instant::now();
-    let (pairs, pairs_ok) = refine_stage(genome, &f("blocks.tsv"), &f("pairs.tsv"), &f("anchors.bin"), p)?;
+    let (pairs, pairs_ok) = refine_stage(genome, &f("blocks.tsv"), &f("pairs.tsv"), &f("anchors.bin"), p, &proj)?;
     secs.push(("refine", t.elapsed().as_secs_f64()));
     eprintln!("[sd-scan] refine: {pairs} pairs, {pairs_ok} ok ({:.1} s)", secs[2].1);
 
@@ -197,7 +272,7 @@ fn run_stages(genome: &Path, out: &str, threads: usize, p: &ScanParams, decompos
     if decompose {
         let t = Instant::now();
         (segments, families, duplicon_rows) =
-            decompose_stage(&f("anchors.bin"), &f("segments.tsv"), &f("families.tsv"), &f("duplicons.tsv"), p)?;
+            decompose_stage(&f("anchors.bin"), &f("segments.tsv"), &f("families.tsv"), &f("duplicons.tsv"), p, &proj)?;
         secs.push(("decompose", t.elapsed().as_secs_f64()));
         eprintln!(
             "[sd-scan] decompose: {segments} segments, {families} families, {duplicon_rows} duplicon rows ({:.1} s)",
@@ -216,14 +291,16 @@ fn create(path: &str) -> Result<std::io::BufWriter<std::fs::File>> {
 
 /// Stage 1, as the sandbox's `run_seed`; the genome is released before the pairs are counted.
 /// Returns (sequences, bases, candidates).
-fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, usize)> {
-    let seqs = read_genome(genome)?;
+fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, usize, Projection)> {
+    let mut seqs = read_genome(genome)?;
     let sequences = seqs.len();
     let bases: u64 = seqs.iter().map(|(_, s)| s.len() as u64).sum();
+    let proj = project_genome(&mut seqs, p.masked_space);
     let sp = seed::SeedParams {
         k: p.k,
         window: p.window,
         stride: p.seed_stride,
+        uppercase_kmers: p.seed_uppercase,
         sketch: p.sketch,
         min_kmers: p.min_kmers,
         max_postings: p.max_postings,
@@ -252,7 +329,7 @@ fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, u
         )?;
     }
     w.flush()?;
-    Ok((sequences, bases, cands.len()))
+    Ok((sequences, bases, cands.len(), proj))
 }
 
 /// The sandbox's candidate order (most shared first, then window a's sequence and start, then window b's start),
@@ -303,15 +380,26 @@ fn chain_stage(cands: &str, out: &str, p: &ScanParams) -> Result<usize> {
 }
 
 /// Stage 3, as the sandbox's `run_refine --anchors-out`. Returns (pairs, ok pairs).
-fn refine_stage(genome: &Path, blocks_path: &str, out: &str, anchors_out: &str, p: &ScanParams) -> Result<(usize, usize)> {
+fn refine_stage(
+    genome: &Path,
+    blocks_path: &str,
+    out: &str,
+    anchors_out: &str,
+    p: &ScanParams,
+    proj: &Projection,
+) -> Result<(usize, usize)> {
     let blocks = chain::load_blocks(Path::new(blocks_path)).map_err(|e| anyhow!("reading {blocks_path}: {e}"))?;
-    let seqs: HashMap<String, Vec<u8>> = read_genome(genome)?.into_iter().collect();
+    let mut genome_seqs = read_genome(genome)?;
+    project_genome(&mut genome_seqs, p.masked_space);
+    let seqs: HashMap<String, Vec<u8>> = genome_seqs.into_iter().collect();
     let rp = refine::RefineParams {
         k: p.k,
         max_gap: p.refine_max_gap,
         diag_bin: p.refine_diag_bin,
         min_span: p.refine_min_span,
         max_pairs: p.max_pairs,
+        min_uppercase: p.min_uppercase,
+        min_identity: p.min_block_id,
     };
     let refined_pairs = refine::refine_blocks(&blocks, &seqs, &rp);
     drop(seqs);
@@ -326,6 +414,8 @@ fn refine_stage(genome: &Path, blocks_path: &str, out: &str, anchors_out: &str, 
             "weak"
         } else if r.self_pair {
             "self"
+        } else if r.repeat {
+            "repeat"
         } else {
             ok += 1;
             "ok"
@@ -333,7 +423,17 @@ fn refine_stage(genome: &Path, blocks_path: &str, out: &str, anchors_out: &str, 
         writeln!(
             w,
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.1}\t{:.1}\t{}",
-            r.chr_a, r.ra0, r.ra1, r.chr_b, r.rb0, r.rb1, r.strand, r.anchors, r.est_id, r.stage2_id, status
+            r.chr_a,
+            proj.start(&r.chr_a, r.ra0),
+            proj.end(&r.chr_a, r.ra1),
+            r.chr_b,
+            proj.start(&r.chr_b, r.rb0),
+            proj.end(&r.chr_b, r.rb1),
+            r.strand,
+            r.anchors,
+            r.est_id,
+            r.stage2_id,
+            status
         )?;
     }
     w.flush()?;
@@ -341,7 +441,14 @@ fn refine_stage(genome: &Path, blocks_path: &str, out: &str, anchors_out: &str, 
 }
 
 /// Stage 4, as the sandbox's `decompose --anchors`, plus the duplicon table. Returns (segments, families, rows).
-fn decompose_stage(anchors_path: &str, seg_out: &str, fam_out: &str, dup_out: &str, p: &ScanParams) -> Result<(usize, usize, usize)> {
+fn decompose_stage(
+    anchors_path: &str,
+    seg_out: &str,
+    fam_out: &str,
+    dup_out: &str,
+    p: &ScanParams,
+    proj: &Projection,
+) -> Result<(usize, usize, usize)> {
     let (k, recs) = anchors::read(Path::new(anchors_path)).map_err(|e| anyhow!("reading {anchors_path}: {e}"))?;
     let dp = decompose::DecomposeParams {
         k,
@@ -350,7 +457,15 @@ fn decompose_stage(anchors_path: &str, seg_out: &str, fam_out: &str, dup_out: &s
         min_seg: p.min_seg,
         max_pairs: p.max_pairs,
     };
-    let (segs, fams, _) = decompose::decompose(recs, &dp);
+    let (mut segs, mut fams, _) = decompose::decompose(recs, &dp);
+    if !proj.runs.is_empty() {
+        // segments back to genome coordinates; families are built on those (their overlap and span are genome bases)
+        for sg in segs.iter_mut() {
+            (sg.a0, sg.a1) = (proj.start(&sg.chr_a, sg.a0), proj.end(&sg.chr_a, sg.a1));
+            (sg.b0, sg.b1) = (proj.start(&sg.chr_b, sg.b0), proj.end(&sg.chr_b, sg.b1));
+        }
+        fams = decompose::families(&segs);
+    }
     let mut w = create(seg_out)?;
     writeln!(w, "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id")?;
     for s in &segs {
@@ -506,6 +621,87 @@ chrB\t170000\t174999\tF1\n";
         let d = std::env::temp_dir().join(format!("sd_scan_{name}_{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn the_projection_drops_lowercase_and_maps_back() {
+        let (proj, runs) = project(b"ACgtNNaT");
+        assert_eq!(proj, b"ACNNT".to_vec());
+        let mut m = Projection::default();
+        m.runs.insert("c".into(), runs);
+        // projected 0..5 = original A0 C1 N4 N5 T7
+        assert_eq!([0, 1, 2, 3, 4].map(|p| m.start("c", p)), [0, 1, 4, 5, 7]);
+        assert_eq!(m.end("c", 2), 2); // [0, 2) ends after C1
+        assert_eq!(m.end("c", 3), 5); // [0, 3) ends after N4
+        assert_eq!(m.end("c", 5), 8);
+        assert_eq!(m.start("other", 7), 7); // a sequence without runs is unprojected
+    }
+
+    /// 30 identical soft-masked 2 kb repeat copies, and a 4 kb unique duplication whose second copy carries a 1.5 kb
+    /// soft-masked insertion.
+    fn masked_toy_fasta() -> String {
+        let mut x = 11u64;
+        let mut rnd = |n: usize| -> Vec<u8> {
+            (0..n)
+                .map(|_| {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    b"ACGT"[(x >> 62) as usize]
+                })
+                .collect()
+        };
+        let rep: Vec<u8> = rnd(2_000).to_ascii_lowercase();
+        let ins: Vec<u8> = rnd(1_500).to_ascii_lowercase();
+        let sd = rnd(4_000);
+        let mut g = rnd(300_000);
+        for i in 0..30 {
+            let at = 100_000 + i * 6_000;
+            g[at..at + 2_000].copy_from_slice(&rep);
+        }
+        g[20_000..24_000].copy_from_slice(&sd);
+        let mut copy = sd[..2_000].to_vec();
+        copy.extend_from_slice(&ins);
+        copy.extend_from_slice(&sd[2_000..]);
+        g[60_000..65_500].copy_from_slice(&copy);
+        let mut out = String::from(">chrM1\n");
+        for line in g.chunks(80) {
+            out.push_str(std::str::from_utf8(line).unwrap());
+            out.push('\n');
+        }
+        out
+    }
+
+    fn ok_pairs(text: &str) -> Vec<(u64, u64, u64, u64)> {
+        text.lines()
+            .filter(|l| !l.starts_with('#'))
+            .map(|l| l.split('\t').collect::<Vec<_>>())
+            .filter(|f| f[10] == "ok")
+            .map(|f| (f[1].parse().unwrap(), f[2].parse().unwrap(), f[4].parse().unwrap(), f[5].parse().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn soft_masked_repeats_pair_nothing_and_a_masked_insertion_stays_inside_the_pair() {
+        let d = tmp("masked");
+        let fa = d.join("m.fa");
+        std::fs::write(&fa, masked_toy_fasta()).unwrap();
+        let in_repeats = |s: u64| s >= 99_000;
+        // (masked_space, seed_uppercase, min_uppercase): repeat-blind, BISER's projection, SEDEF's unmasked seeds + filter
+        for (arm, masked, upper, min_up) in [("blind", false, false, 0), ("biser", true, false, 0), ("sedef", false, true, 100)] {
+            let out = d.join(arm).to_str().unwrap().to_string();
+            let p = ScanParams { masked_space: masked, seed_uppercase: upper, min_uppercase: min_up, ..ScanParams::default() };
+            run_pairs_only(&fa, &out, 2, &p).unwrap();
+            let pairs = ok_pairs(&read(&out, "pairs.tsv"));
+            let rep = pairs.iter().filter(|q| in_repeats(q.0) && in_repeats(q.2)).count();
+            if arm == "blind" {
+                assert!(rep > 0, "repeat-blind scan pairs the repeat copies (the reason for the other arms)");
+                continue;
+            }
+            assert_eq!(rep, 0, "{arm}: no repeat pairs");
+            assert_eq!(pairs.len(), 1, "{arm}: {pairs:?}");
+            let (a0, a1, b0, b1) = pairs[0];
+            assert!(a0.abs_diff(20_000) <= 50 && a1.abs_diff(24_000) <= 50, "{arm}: {pairs:?}");
+            assert!(b0.abs_diff(60_000) <= 50 && b1.abs_diff(65_500) <= 50, "{arm}: {pairs:?}");
+        }
     }
 
     fn scan_toy(dir: &Path, name: &str, planted: bool) -> (ScanSummary, String) {
