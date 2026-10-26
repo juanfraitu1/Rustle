@@ -10333,3 +10333,10 @@ anywhere, the junction exists in the reference and the group is dropped.
 **Stage 2 (held-out, frozen before it is run):** rule = >= 1 ref-absent SPLIT or CLIP group with >= 3 reads whose SPLIT partner is not
 the mitochondrion (`flags.tsv`). Held-out base rate 75 / 319 = 0.235.
 - H1: precision >= 0.40. H2: Fisher one-sided p < 0.05 (flagged x truth). Reported: sensitivity, per-type counts.
+
+### BPCLUST stage 2 result (held-out, 319 families): FAIL H1 and H2 (register 1417)
+Flagged 18: DIFF 7 / 75, SAME 11 / 244. Precision 0.389 (bar 0.40; base 0.235), sensitivity 0.093, Fisher one-sided p = 0.10 (bar
+0.05). Groups: SPLIT 55 ref-absent / 11 present, CLIP 19 / 10, JUNCTION 837 / 43. Data `/mnt/linuxdisk/tmp/bpclust/{dev,heldout}`.
+Reading: new adjacencies in RNA reads mark at most ~1 in 10 families whose exon copy number differs, at ~1.6x the base rate, not
+significantly. Most exon-level copy differences leave no new junction in transcripts: the extra or missing piece keeps the same
+flanks as a reference copy (or is silent), so reads from it align cleanly. The remaining signal for those is allele / depth level.
