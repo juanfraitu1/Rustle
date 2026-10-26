@@ -10340,3 +10340,20 @@ Flagged 18: DIFF 7 / 75, SAME 11 / 244. Precision 0.389 (bar 0.40; base 0.235), 
 Reading: new adjacencies in RNA reads mark at most ~1 in 10 families whose exon copy number differs, at ~1.6x the base rate, not
 significantly. Most exon-level copy differences leave no new junction in transcripts: the extra or missing piece keeps the same
 flanks as a reference copy (or is silent), so reads from it align cleanly. The remaining signal for those is allele / depth level.
+
+## PREREG EXHAP (2026-10-25): does the certified tier, run per exon, find exon copies Jim has and his reference lacks?
+**Status:** committed before copy_phasing is run on any exon unit. Stage 1 = dev census; stage-2 bars are set from it and committed
+before the held-out units are run.
+**Why:** 1417 showed exon copy differences leave no new junction. The certified tier's test (more read haplotypes than allele slots)
+needs no junction; 1416's truth lets it be run per exon on real reads.
+**Units** (`bench/exhap_units.py`): for each of the 463 families, its autosomal exons' reference loci (1416's `-x sr` mapping, C 0.8,
+T 0.90, overlapping hits merged); exons with the same locus set form one unit. 8,409 units (dev 2,814, held-out 5,595).
+**Truth:** a unit GAINS if mat or pat holds more copies of it than ref; a family is GAIN if any unit gains (dev 28 / 144,
+held-out 51 / 319; `bench/exhap_truth.tsv`). Only gains are testable: a copy the sample lacks leaves no reads (Limits).
+**Split:** BPCLUST's (sha1("bp:"+family) mod 3). The held-out families were scored once in 1417 by a different rule; nothing of
+this method was tuned on them.
+**Reads:** the fibroblast Iso-Seq BAM; per unit, the reads whose primary covers >= 80% of one of its loci, at most 200 (the 200
+smallest sha1 of the read name) (`bench/exhap_net.py`).
+**Run:** `copy_phasing run` with copies = the unit's loci (one exon each), default settings (no `--semi`, no IsoCon side).
+**Flag:** a unit with >= 1 certified copy; a family with >= 1 flagged unit. Reported: also putative copies.
+**Stage 1 reports (dev):** unit- and family-level sensitivity, precision against the base rate (family 0.19), Fisher test.
