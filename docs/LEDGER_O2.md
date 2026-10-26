@@ -8122,3 +8122,24 @@ command. The copies table drops the masked copies; net = every read with a recor
 - H2 (recall): masked copies certified with the flag >= 90% of those certified without it (default window).
 - Reported, no bar: the same under `--tie-structure`; putative flags; O2 assigned / right on tied rows.
 **Fails if** H1 or H2 is missed.
+
+### P22 result (2026-10-25): FAIL H2 (register 1415)
+Run: `/mnt/linuxdisk/tmp/p22` (panel.tsv, mask.bed, dev.bam on the masked genome, arms W / WC / T / TC, scorer `score.py`).
+141 eligible dev families: 70 EXTRA (one copy masked, 3.37 Mb of N), 71 CONTROL; 7,860 reads realigned, 7,178 net rows.
+
+| arm | certified | true | false | masked copies found (of 70) | putative (EXTRA / CONTROL) |
+|---|---|---|---|---|---|
+| default window (W) | 14 | 13 | 1 | 11 | 11 / 2 |
+| + `--certify-all-records` (WC) | 10 | 9 | 1 | 8 | 11 / 2 |
+| `--tie-structure` (T) | 17 | 16 | 1 | 13 | 10 / 2 |
+| `--tie-structure --certify-all-records` (TC) | 12 | 11 | 1 | 9 | 10 / 2 |
+
+- H1 PASS: 1 false certified copy in every arm, the same one (GWFAM256 EXTRA: copy 1 masked, its two alleles and copy 0's other
+  allele compete for copy 0's one free slot; the matching certifies a copy-0 allele). 0 false in the CONTROL families.
+- H2 FAIL: the flag keeps 8 / 11 masked copies (73% < 90%). Losses (diagnosed from `--dump`, after scoring):
+  GWFAM345 and GWFAM401 - a copy whose pile has no variable column yields no haplotype, so its slots look free to the extended
+  matching and the masked copy's haplotype takes one; GWFAM204 - probably a reshuffle: the extended matching leaves a different
+  haplotype unmatched, one O2's matching placed, so nobody is certified (not checked line by line).
+- O2: 0 assignments on tied rows in every arm (400 HOPELESS, 97-99 ABSTAIN).
+- Recall of the certified tier is low on this panel: 11-13 / 70 masked copies (16-19%).
+- Decision: `--certify-all-records` stays opt-in, not adopted. `--tie-structure` found 2 more masked copies, no extra false one.

@@ -23,7 +23,8 @@ the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` 
 duplicon source (V2 FAIL): see `docs/archive/2026-10/merged/PREREG_sedef_rs_layers_2026-10-13.md`.
 
 **Directory module, not a family module:** `src/copy_phasing/` (2026-10-24) — OTHER-BINARY: the `copy_phasing` binary
-(`src/copy_phasing_bin.rs`), the Rust port of `bench/o3_graph/o3port.py run` (Strainy/IsoCon side, slot matching,
-certified / putative copies, O2 `--semi` / `--guard`). Byte-identical to the Python on 81 golden cases
+(source in src/copy_phasing_bin.rs), the Rust port of `bench/o3_graph/o3port.py run` (Strainy/IsoCon side, slot matching,
+certified / putative copies, O2 `--semi` / `--guard`). Byte-identical to the Python on 122 golden cases
 (`bench/o3_graph/o3port_golden.sh`; register 1402). `--tie-structure` (same intron count + AS within 10) is OPT-IN in both ports
-(register 1405).
+(register 1405). `--certify-all-records` (certificate must survive a slot matching over every family copy with any
+record) is OPT-IN, not adopted (P22 FAIL, register 1415).
