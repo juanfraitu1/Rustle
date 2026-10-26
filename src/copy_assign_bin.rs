@@ -647,6 +647,24 @@ struct Args {
     #[arg(long, default_value = "off", value_parser = ["off", "tag", "pas-end"])]
     polish_tes: String,
 
+    /// `--polish-mono-primed`: drop a single-exon transcript when >= 80% of its reads are internally primed — the
+    /// genomic form of StringTie's long-read poly-A filter (rlink.cpp `genome_polyA_terminated`, applied to unspliced
+    /// reads only). Reads = unspliced primary records (`-F 2820`) overlapping >= 50% of the transcript; a read is primed
+    /// when the 20 bp past its aligned end hold >= 60% A or an A6 run, or the 20 bp before its aligned start hold >= 60%
+    /// T or a T6 run (the strand of an unspliced read is unknown). StringTie's own read-sequence test flags 4 of 458
+    /// on dev chr20. Runs last on each contig's polished transcripts; multi-exon transcripts are never touched.
+    ///
+    /// Held-out PASS (`bench/stgaps/PREREG_mono_primed_2026-10-26.md`, A119b chr11 / chr12): 838 / 852 flagged vs 42 /
+    /// 32 with read ends shifted 1 kb, 0 / 1 single-exon `=` lost, transcript precision 19.0 -> 20.5 / 16.7 -> 17.9,
+    /// chains unchanged. Gorilla OR6737 dev has ~10 single-exon transcripts, so it is inert there. Writes
+    /// `params.tsv` rows and one log line per contig only when on.
+    /// **Default ON (user decision 2026-10-26)**; `--no-polish-mono-primed` restores the output before the flip.
+    #[arg(long, default_value_t = true)]
+    polish_mono_primed: bool,
+    /// Escape hatch: keep internally primed single-exon transcripts (the behaviour before 2026-10-26).
+    #[arg(long, default_value_t = false)]
+    no_polish_mono_primed: bool,
+
     /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
     /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
     /// on its own, independently of `--homology-primary`.
@@ -4337,7 +4355,89 @@ struct SnapBam {
     index: noodles_bam::bai::Index,
 }
 
+/// `--polish-mono-primed`: the read window past each aligned end, and the share of primed reads that drops a transcript.
+const MONO_PRIMED_BP: usize = 20;
+const MONO_PRIMED_SHARE: f64 = 0.8;
+
+/// >= TES_PRIME_FRAC of `w` is `b`, or `w` holds a run of six `b` (case-insensitive; empty = false).
+fn mono_primed_rich(w: &[u8], b: u8) -> bool {
+    let n = w.iter().filter(|x| x.to_ascii_uppercase() == b).count();
+    !w.is_empty()
+        && (n as f64 >= TES_PRIME_FRAC * w.len() as f64
+            || w.windows(6).any(|x| x.iter().all(|y| y.to_ascii_uppercase() == b)))
+}
+
+/// A read aligned to [a, b) of `seq` is internally primed on either strand.
+fn mono_primed_read(seq: &[u8], a: usize, b: usize) -> bool {
+    let n = seq.len();
+    let dn = &seq[b.min(n)..(b + MONO_PRIMED_BP).min(n)];
+    let up = &seq[a.saturating_sub(MONO_PRIMED_BP).min(n)..a.min(n)];
+    mono_primed_rich(dn, b'A') || mono_primed_rich(up, b'T')
+}
+
 impl SnapBam {
+    /// `--polish-mono-primed` evidence: for each `[s, e)` of `monos` (sorted by start), (unspliced primary reads
+    /// overlapping >= half of it, how many of them are primed). One indexed pass over [min s, max e].
+    fn mono_primed(
+        &mut self,
+        chrom: &str,
+        seq: &[u8],
+        monos: &[(i64, i64)],
+    ) -> Result<Vec<(u32, u32)>> {
+        let mut out = vec![(0u32, 0u32); monos.len()];
+        let (Some(lo), Some(hi)) = (
+            monos.iter().map(|m| m.0).min(),
+            monos.iter().map(|m| m.1).max(),
+        ) else {
+            return Ok(out);
+        };
+        let max_len = monos.iter().map(|m| m.1 - m.0).max().unwrap_or(0);
+        let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+        for result in self.reader.query(&self.header, &self.index, &region)? {
+            let record = result?;
+            let flags = record.flags();
+            if flags.is_unmapped()
+                || flags.is_secondary()
+                || flags.is_supplementary()
+                || flags.is_qc_fail()
+            {
+                continue;
+            }
+            let Some(start) = record.alignment_start() else {
+                continue;
+            };
+            let a = usize::from(start?) as i64 - 1;
+            let (mut span, mut spliced) = (0i64, false);
+            for op in record.cigar().iter() {
+                let op = op?;
+                use noodles_sam::alignment::record::cigar::op::Kind;
+                match op.kind() {
+                    Kind::Skip => spliced = true,
+                    Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                        span += op.len() as i64
+                    }
+                    _ => {}
+                }
+            }
+            if spliced || span == 0 {
+                continue;
+            }
+            let b = a + span;
+            let first = monos.partition_point(|m| m.0 < a - max_len);
+            let last = monos.partition_point(|m| m.0 < b);
+            let mut primed: Option<bool> = None;
+            for (i, &(s, e)) in monos.iter().enumerate().take(last).skip(first) {
+                if ((e.min(b) - s.max(a)) as f64) < 0.5 * (e - s) as f64 {
+                    continue;
+                }
+                let p = *primed.get_or_insert_with(|| mono_primed_read(seq, a as usize, b as usize));
+                out[i].0 += 1;
+                out[i].1 += u32::from(p);
+            }
+        }
+        Ok(out)
+    }
+
     fn open(bam: &str) -> Result<Self> {
         // the assembler's own reader settings (`reads_in_region`): 1 MiB buffer, min(4, cores) inflate workers
         let workers = std::thread::available_parallelism()
@@ -6226,6 +6326,9 @@ fn main() -> Result<()> {
     // spec 2026-10-12-population-fixed-psvs (final review R30): the population flag guards, from the arguments alone,
     // before any file or BAM is read
     population_guards(&args)?;
+    if args.no_polish_mono_primed {
+        args.polish_mono_primed = false;
+    }
     // §6p6: --assemble-only IS the assembly product, so it implies --gtf. Setting it here means every
     // existing `if args.gtf` gate fires unchanged rather than each one needing a second condition.
     if args.assemble_only {
@@ -9668,6 +9771,8 @@ fn main() -> Result<()> {
     let mut tss_subchain_spared = 0usize;
     // --polish-tes: per-contig statistics and the attributes to append (after the --polish-tss ones)
     let mut tes_stats: Vec<TesStats> = Vec::new();
+    // --polish-mono-primed: (single-exon transcripts, dropped) per contig
+    let mut mono_primed_stats: Vec<(usize, usize)> = Vec::new();
     let mut tes_attrs: DetHashMap<String, String> = DetHashMap::default();
     // --polish-junction-snap: per-contig statistics (params.tsv, the log line)
     let mut snap_stats: Vec<SnapStats> = Vec::new();
@@ -9905,6 +10010,58 @@ fn main() -> Result<()> {
                         st.end_primed, st.moved
                     );
                     tes_stats.push(out.stats);
+                }
+                if args.polish_mono_primed {
+                    let g = genome_for(c)?;
+                    let seq: &[u8] = g
+                        .chroms()
+                        .find(|(n, _)| *n == c.as_str())
+                        .map(|(_, s)| s)
+                        .unwrap_or(&[]);
+                    // single-exon transcripts of the contig's final set, as 0-based half-open spans
+                    let mut nex: std::collections::BTreeMap<String, (usize, i64, i64)> =
+                        std::collections::BTreeMap::new();
+                    for l in part.iter() {
+                        let f: Vec<&str> = l.split('\t').collect();
+                        if f.len() < 9 || f[2] != "exon" {
+                            continue;
+                        }
+                        let (Some(t), Ok(s), Ok(e)) =
+                            (re_attr(f[8], "transcript_id"), f[3].parse::<i64>(), f[4].parse::<i64>())
+                        else {
+                            continue;
+                        };
+                        let x = nex.entry(t).or_insert((0, s - 1, e));
+                        x.0 += 1;
+                    }
+                    let mut monos: Vec<(i64, i64, String)> = nex
+                        .into_iter()
+                        .filter(|(_, v)| v.0 == 1)
+                        .map(|(t, v)| (v.1, v.2, t))
+                        .collect();
+                    monos.sort();
+                    let spans: Vec<(i64, i64)> = monos.iter().map(|m| (m.0, m.1)).collect();
+                    if snap_bam.is_none() {
+                        snap_bam = Some(SnapBam::open(&args.bam)?);
+                    }
+                    let ev = snap_bam.as_mut().expect("opened above").mono_primed(c, seq, &spans)?;
+                    let drop: DetHashSet<&str> = monos
+                        .iter()
+                        .zip(ev.iter())
+                        .filter(|(_, x)| x.0 > 0 && x.1 as f64 / x.0 as f64 >= MONO_PRIMED_SHARE)
+                        .map(|(m, _)| m.2.as_str())
+                        .collect();
+                    let n_drop = drop.len();
+                    part.retain(|l| {
+                        re_attr(l, "transcript_id").map_or(true, |t| !drop.contains(t.as_str()))
+                    });
+                    eprintln!(
+                        "[copy_assign] MONO PRIMED {c}: {} single-exon transcripts, {} with reads -> {n_drop} dropped \
+                         (>= {MONO_PRIMED_SHARE} of their unspliced reads internally primed)",
+                        monos.len(),
+                        ev.iter().filter(|x| x.0 > 0).count()
+                    );
+                    mono_primed_stats.push((monos.len(), n_drop));
                 }
                 std::mem::drop(recs);
                 polished.extend(part);
@@ -11480,6 +11637,24 @@ fn main() -> Result<()> {
             row("polish_tes_end_pas", sum(&|st| st.end_pas))?;
             row("polish_tes_end_primed", sum(&|st| st.end_primed))?;
             row("polish_tes_ends_moved", sum(&|st| st.moved))?;
+        }
+        // --polish-mono-primed: rows only when on (--no-polish-mono-primed writes the params.tsv of before the flip)
+        if args.polish_mono_primed {
+            row("polish_mono_primed", "true".to_string())?;
+            row(
+                "polish_mono_primed_rule",
+                format!(
+                    ">={MONO_PRIMED_SHARE} of unspliced reads with >={TES_PRIME_FRAC} A (T) or A6 (T6) in {MONO_PRIMED_BP} bp past the end (before the start)"
+                ),
+            )?;
+            row(
+                "polish_mono_primed_single_exon",
+                format!("{}", mono_primed_stats.iter().map(|x| x.0).sum::<usize>()),
+            )?;
+            row(
+                "polish_mono_primed_dropped",
+                format!("{}", mono_primed_stats.iter().map(|x| x.1).sum::<usize>()),
+            )?;
         }
         // --polish-junction-snap: rows only when not `off` (the default params.tsv stays byte-identical); counts
         // summed over contigs
@@ -13575,6 +13750,34 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mono_primed_read_checks_a_past_the_end_or_t_before_the_start() {
+        let c = |n: usize| vec![b'C'; n];
+        // 12 A of the 20 bp past the end (60%) -> primed; 11 A without an A6 run -> not
+        let mut s = c(100);
+        s[50..62].copy_from_slice(&[b'A'; 12]);
+        assert!(mono_primed_read(&s, 10, 50));
+        let mut s = c(100);
+        for i in [50, 51, 52, 53, 54, 56, 57, 58, 59, 60, 62] {
+            s[i] = b'A';
+        }
+        assert!(!mono_primed_read(&s, 10, 50));
+        // an A6 run anywhere in the window, soft-masked, is enough
+        let mut s = c(100);
+        s[60..66].copy_from_slice(b"aaaaaa");
+        assert!(mono_primed_read(&s, 10, 50));
+        // minus strand: T-rich 20 bp before the start
+        let mut s = c(100);
+        s[20..30].copy_from_slice(&[b'T'; 10]);
+        assert!(mono_primed_read(&s, 30, 60));
+        // A before the start / T past the end do not count; contig edges clip to empty windows
+        let mut s = c(100);
+        s[20..30].copy_from_slice(&[b'A'; 10]);
+        s[60..70].copy_from_slice(&[b'T'; 10]);
+        assert!(!mono_primed_read(&s, 30, 60));
+        assert!(!mono_primed_read(&c(50), 0, 50));
     }
 
     #[test]

@@ -121,6 +121,7 @@
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
+#   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
 #   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off; needs
 #     RUSTLE_BRIDGE_REGROUP=off, whose default contains RG3's split);
@@ -304,6 +305,14 @@ case "${RUSTLE_POLISH_TES:-}" in
   "") ;;
   off|tag|pas-end) POLISH="$POLISH --polish-tes $RUSTLE_POLISH_TES" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TES must be off, tag or pas-end (got '$RUSTLE_POLISH_TES')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_MONO_PRIMED (default ON since 2026-10-26, user decision; unset or 1 = on, the same command; 0 = off):
+# copy_assign drops a single-exon transcript when >= 80% of its unspliced reads are internally primed (StringTie's
+# long-read poly-A filter, genomic form; held-out PASS bench/stgaps/PREREG_mono_primed_2026-10-26.md)
+case "${RUSTLE_POLISH_MONO_PRIMED:-}" in
+  ""|1) ;;
+  0) POLISH="$POLISH --no-polish-mono-primed" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_PRIMED must be 0 or 1 (got '$RUSTLE_POLISH_MONO_PRIMED')" >&2; exit 2 ;;
 esac
 # RUSTLE_COMPAT_SUPPORT=1 (opt-in; unset or 0 = off, the same command): copy_assign --compat-support, compatible-read support in
 # the assembler's chain admission (a chain short of the read floor is admitted when every junction is carried by enough reads
