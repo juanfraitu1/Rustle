@@ -6845,3 +6845,39 @@ loci GFF.
   - gorilla_KB3781: 918 → 843;
   - gorilla_OR6737: 1,607 → 1,521.
 - The shipped catalogs in `rustle_figures/runs` are unchanged until they are rebuilt.
+
+## SDSCAN2 — sd-scan v2: find SEDEF's segmental duplications without SEDEF (prereg 2026-10-25)
+
+**Why.** The user asked for SD finding "a la sedef without needing it as external dependency". The vendored `utilities
+sd-scan` (src/sedef/) failed V1 (r1278: base recall vs SEDEF 0.398 CHM13 v2.0 / 0.407 gorilla at identity >= 0.90,
+precision 0.92 / 0.95).
+
+**Diagnosis (gorilla, the r1278 outputs; `/mnt/linuxdisk/tmp/sddiag/`).** Of SEDEF's pair bases (>= 0.90):
+- 34% never seeded (no candidate window pair covers half the pair): 67% of 1-5 kb pairs, 55% of 90-95% pairs.
+- 30% are inside a stage-2 block but lost in refine. Refine keeps ONE anchor run per block (a 270 kb block becomes one
+  8.6 kb pair; any indel > 50 bp or gap > 400 bp ends a run).
+- Refine's identity is anchor coverage, a lower bound (a 96% block reads 84-92%), so the >= 0.90 filter drops true pairs.
+- Upper bounds with the V1 scorer: block identity instead of anchor coverage, recall 0.542; every block whole, 0.683
+  (precision 0.916).
+
+**Changes (scan v2; developed on gorilla only):**
+- R1, refine: every collinear anchor run is kept; consecutive runs of one strand are joined when the step between them is
+  <= `refine_max_gap` on both axes (the existing run rule, so no new threshold); every joined chain with both spans >=
+  `refine_min_span` is a pair.
+- R2, identity: the gaps between consecutive anchors are aligned (unit-cost global alignment); identity = matches /
+  (matches + mismatches), indels excluded, as SEDEF's fracMatch.
+- R3, seeding (if dev needs it): seeding windows that overlap by half, so a copy is never more than a quarter window off
+  the grid.
+Any further dev change is logged here before the held-out run.
+
+**Evaluation.** `bench/sedef/v1_compare.py` unchanged (min-id 0.90, min-len 1000), on chromosome subsets so a run fits the
+machine; SEDEF truth = the pairs with both sides in the subset; both arms (scan v1 = commit before R1, scan v2) are run on
+the same subset FASTA.
+- DEV: gorilla NC_073228.2, NC_073234.2, NC_073238.2, NC_073242.2 (any number of looks).
+- HELD-OUT, run once with frozen code: CHM13 v2.0 chr1, chr9, chr15, chr16, truth = `o1_close/lift/sedef_pairs.v2.bed`
+  (lifted v1.0 SEDEF), `--chain soto_replication/v1.0_to_v1.1_rdna_merged.chain`. Human and gorilla numbers are not pooled.
+
+**Bars (held-out):** H1 recall >= 0.80 AND precision >= 0.80 (r1278's V1 bar). H2 recall of v2 > recall of v1 on the
+same subset. Descriptive: per length / identity bin, run time per stage.
+**Readings:** H1 PASS = sd-scan v2 can replace SEDEF as the SD source on genomes without it (adoption is a separate
+decision with the user). H1 FAIL + H2 PASS = better but still not a replacement. H2 FAIL = the fixes are dev-overfit.
