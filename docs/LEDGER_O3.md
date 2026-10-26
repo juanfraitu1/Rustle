@@ -10376,3 +10376,22 @@ putative. The net and run are split into batches by sha1 of the unit (machine li
 - Reading: the certified tier per exon cannot see most exon gains. About two-thirds of the extra exon copies match an existing
   reference copy over the exon, so their reads form no new haplotype; many others are not expressed. RNA reads alone reach at
   most ~10% of the families whose exon copy number differs. Data `/mnt/linuxdisk/tmp/exhap`; `bench/exhap_{units,net,score}.py`.
+
+## PREREG WGSCHK + EXCEIL (2026-10-25, reports with one reading rule each), committed before either is computed
+**WGSCHK - are 1416's copy differences assembly artefacts?** Truth-only use of Jim's own Illumina WGS (SRR26039725, ~12x).
+- Query = every canonical 21-mer of 1416's units (9,210 exons, 6,000 SD windows; reference sequence). Counted with `dna_cn/o3x/ks`
+  in the reference, mat, pat and the WGS (the WGS streamed in spot ranges, summed).
+- lambda_hap = mean WGS count of k-mers with count 1 in ref, mat and pat (below 6x their mode) / 2.
+- Per unit: obs = median over its k-mers of WGS count / lambda_hap; H_asm = median of (mat + pat count); H_ref = median of 2 x ref.
+- Units tested: those 1416 counted mat != pat (headline) whose H_asm != H_ref. A unit SUPPORTS the assemblies if
+  |obs - H_asm| < |obs - H_ref|, the reference if the reverse, else undecided.
+- Reading (fixed now): the assemblies' differences are real if >= 80% of decided tested units support them, for exons and for SD
+  windows separately. Reported: the same on units with no difference (control: |obs - H_asm| distribution).
+**EXCEIL - the most RNA could see of exon gains.** Units 1416/1418 call GAIN (dev + held-out, 272).
+- Level A (sequence): the gaining haplotype holds >= 1 exon sequence absent from every reference copy of the unit (reference and
+  haplotype copies taken at their mapped loci, oriented as the exon).
+- Level B (reads): >= 2 of the unit's reads (EXHAP nets, <= 200 per unit) whose segment over the unit locus (+-20 bp) is closer
+  (edlib infix edit distance) to such a haplotype-only sequence than to every reference copy.
+- Control: 300 seeded non-gaining units, same levels (haplotype-only sequences there are alleles).
+- Reading: if level B reaches < 25% of gaining units, RNA's reach of exon gains is limited by the copies themselves (identical or
+  silent), not by the detector.
