@@ -10257,3 +10257,22 @@ identity >= T. The count is autosomes only, because Jim is male, so X is on mat 
 - This revises the July result (bench commit 74851178: 196 older families, genomic spans, asm20; "zero autosomal inter-haplotype
   CNVs"). On the current catalog with transcript queries the count is not zero. Not checked: whether a difference is a curation or
   assembly error in one haplotype.
+
+## PREREG SDCN (2026-10-25, REPORT, no pass/fail): copy number of exons and of SD segments, Jim's mat vs pat
+**Why:** register 1408 counted whole expressed gene copies (query coverage >= 0.8) and found mat != pat in 5-7% of 494 families. The
+advisor's claim (individuals differ from the reference in copy content) may hold at the unit SD studies use (SD blocks / duplicons,
+genic or not) and be invisible at ours. Committed before any mat / pat count below is computed.
+**Truth only:** Jim's (KB3781) maternal and paternal haplotype assemblies (`/mnt/linuxdisk/tmp/p18/{mat,pat}.fa`), as in 1408.
+**Step 1 - exons.** Units = the exons of every GGO_gwcat catalog copy (from the copy's self-hit in 1408's `ref.paf`, split at
+introns), >= 100 bp, deduplicated by reference coordinates. Each exon's reference sequence is mapped to ref, mat and pat
+(minimap2 `-c -x asm20 -N 500 -p 0.5`).
+**Step 2 - SD segments.** SEDEF pairs (`GGO_sedef_final.bed`) with both sides >= 1 kb and fracMatch >= 0.90; their intervals cut at
+every boundary into elementary segments >= 1 kb, tiled into 5 kb windows (last piece kept if >= 1 kb). A seeded sample of 6,000
+autosomal windows (seed 20261025) is mapped the same way.
+**Count:** copies of a unit in a genome = target loci (overlapping hits merged) with query coverage >= C and identity >= T.
+Headline C = 0.8, T = 0.90 (Bailey); also C in {0.5, 0.8, 0.95} x T in {0.90, 0.95, 0.98}. A unit with >= 400 hits in any
+genome is CAPPED and reported separately. QC: share of units whose own reference locus is recovered in ref.
+**Reported:** autosomal units with mat != pat count (share; stable across all 9 settings); size of the difference; for exons also the
+share of the 494 families with >= 1 differing exon, next to 1408's 5-7%; for windows also the share whose ref count differs from
+mat and from pat, and windows overlapping a catalog copy vs not.
+**Known limit:** haplotype assemblies can collapse or miss SD sequence; a difference may be an assembly artefact.
