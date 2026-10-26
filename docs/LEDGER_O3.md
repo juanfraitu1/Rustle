@@ -10302,3 +10302,23 @@ SD units: 62,568 SEDEF pairs -> 360 Mb of SD sequence, 35,479 elementary segment
   of SD sequence and a quarter of our families at exon level; whole expressed gene copies are the most stable unit (5-7%).
 - Limit: haplotype assemblies (T2T-grade, the reference's own sources) could still mis-assemble some SD; the same-sequence
   control bounds only the mapping and counting noise.
+
+## PREREG BPCLUST (2026-10-25): do breakpoint groups in real RNA mark families whose exon copy number differs from the reference?
+**Status:** committed before any read is examined. Stage 1 (now) = DEV census only; stage 2 bars are set from it and committed
+before the held-out families are looked at.
+**Truth (1416, haplotypes as truth only):** a family is DIFF if any of its autosomal exons has a different copy count in ref than
+in mat or in pat (`-x sr`, C 0.8, T 0.90), else SAME. 463 families: 111 DIFF, 352 SAME (`bench/bpclust_truth.tsv`).
+**Split:** sha1("bp:"+family) mod 3 = 0 -> dev (36 DIFF / 108 SAME); the rest held-out (75 / 244).
+**Reads:** KB3781 fibroblast Iso-Seq on the GGO reference (`fibroblasts/GCA_029281585.2_flnc_mm.bam`), primary records
+overlapping an autosomal catalog copy of the family.
+**Events** (per primary record):
+- SPLIT: the read has a supplementary alignment (SA tag); junction = the primary's reference end facing the supplementary's part of
+  the read; partner = the supplementary's reference end facing back.
+- CLIP: a soft clip >= 100 bp with no SA; junction = the clipped end; partner = none.
+- JUNCTION: an intron absent from `GGO_genomic.gff` whose motif is not GT-AG, GC-AG or AT-AC (either strand).
+**Groups:** same event type, junction within 10 bp, and (SPLIT) partner within 10 bp on the same chromosome / (CLIP) same side.
+A group needs >= 2 distinct reads. **Reference-absence check:** 100 bp of read sequence each side of the junction (200 bp) of the
+group's first read is mapped to the reference (`minimap2 -x sr`); if it aligns with query coverage >= 0.95 and identity >= 0.95
+anywhere, the junction exists in the reference and the group is dropped.
+**Family flag:** >= 1 kept group whose junction lies in one of its copy spans.
+**Stage 1 reports (dev):** groups per family by type and truth; sensitivity, precision against the 25% base rate, Fisher test.
