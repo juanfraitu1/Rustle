@@ -257,3 +257,26 @@ The literal 09-28 chain is unchanged and byte-identical without the new flags.
 4. **DupMasker** (item 4) only if the downstream human-specific-expansion labels are asked for by name.
 5. **The nesting result (§3.1) is still the single most advisor-facing artifact** — `SOTO_AS_A_REFINEMENT.md`'s table
    as one slide, now beside the ladder of §1.1 (sequence 0.73 → our CN 0.93 → their CN 0.97).
+
+## 7. 2026-10-26: what the hand curation is worth (corrects register 1163's "−0.021 / −23 exact")
+
+Reconciled recipe (exon map-back edges, per-pair MAD < 1), three curation inputs × copy numbers
+(`soto_replication.py genesets` / `curate --rule contained_outranked` (72 dropped) / `curate --rule none`, then
+`ladder`; work dir `/mnt/linuxdisk/tmp/soto_cur2/`). ALL ARI / exact of 491 (held-out ARI / exact of 266):
+
+| curation | S1C famCN, ours for genes S1C lacks | S1C famCN only | our famCN (268 SGDP, Soto's interval) |
+|---|---|---|---|
+| their hand list (1,793) | **0.9698 / 479** (0.9681 / 263) | 0.9698 / 479 | 0.9277 / 411 |
+| our rule (1,792) | 0.9650 / 471 (0.9650 / 260) | 0.9490 / 456 | 0.9266 / 406 |
+| none (1,864) | 0.9652 / 461 (0.9610 / 253) | 0.9310 / 422 | 0.9254 / 399 |
+
+**The "S1C famCN only" column is an artefact for the rule / none rows:** genes outside S1C have no famCN, and the pair
+gate passes a pair when only one member has a value (`pair_kept`), so the extra genes bridge families unconditionally.
+With every gene given a copy number (first column), the hand curation is worth **0.005 ARI / 18 exact families**; our
+rule recovers 10 of the 18 (472 vs 465 exact in the family-level check), 8 still differ: ID_22 (BAGE/DRD5P2),
+ID_261 (CNTNAP3P), ID_315 (CDRT1/FBXW10), ID_330 + ID_331 (DUX4L: they keep DUX4L28 and drop the identical
+DUX4L29 / U85056.1), ID_374 (GTF2IRD2), ID_465 (STAG3L), ID_81 (TRIM16). Rule and list disagree on 27 genes.
+Tie choices are not reproducible from annotation or ID order: among annotation-tied redundant pairs the dropped
+gene is the higher ID 5 times, the lower 2 (DUX4L / NF1P triplets: one representative kept by hand).
+**Reading:** the step from our own pipeline to 0.97 is copy number (0.928 → 0.970, 68 families), not curation; with
+our copy numbers, any curation (their list, our rule, none) lands within 0.0023 ARI / 12 families.
