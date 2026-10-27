@@ -7378,3 +7378,16 @@ members Compara splits across gene trees). Mainstays/YAGs (dev seeds): DAZ A 0/4
 B 6/22 (splice mode drops near-identical secondaries; D restores it); TSPY 0/38 in A and B. `minimap2 -x splice` alone is unfit for arrays.
 Reading for the user's question: a CDS seed DOES find spliced members and processed pseudogenes that gene-body seeds miss (pseudogene
 recall x7), but against a Simiiformes truth it is scored as imprecise because it also finds the older members of the multigene family.
+
+## PREREG GUIDED-S2 (2026-10-27): spliced seeds judged against MULTIGENE-family truth (user: HGNC gene groups)
+r1442 failed on precision because Compara (any level) splits multigene clusters: 220 of 359 off-family hits are not Compara paralogues at
+all, and any-level Compara merges superfamilies (largest 417). User rule: the multigene family is THE family; user chose HGNC gene groups.
+**Truth (cdsseed.py `--truth hgnc`, HGNC complete set downloaded 2026-10-27, /mnt/linuxdisk/tmp/hgnc/):** each HGNC gene takes its MOST SPECIFIC
+gene group (fewest members; ties: lowest id); CAT protein-coding genes are joined (by Ensembl id) when they share that group OR form a
+Compara Simiiformes pair (genes in no group, e.g. NPIP, keep their Compara family). Families = components with >= 2 protein-coding genes.
+Pseudogenes = CAT pseudogenes in the family's HGNC group plus the r1442 name proxy (one family only).
+**Seeds, arms, hit rule:** as GUIDED-S: A gene body asm20; D CDS splice + asm20 (the r1442 leader); B, C reported. Families split dev/held-out by
+the same SHA-1 rule on the NEW families. **Primary metric MACRO** (mean over families of per-family recall; one seed per family, so a
+373-member KRAB group must not dominate); micro reported. Precision = micro over judged hits (judged = genes in any truth family or proxy).
+**Decision:** dev: D replaces A if member and pseudogene macro recall are higher and precision >= A's - 0.02; then held-out on the same
+three conditions plus no mainstay/YAG member found by A lost. PASS -> spliced CDS seeds (splice + asm20 union) proposed as the guided default.
