@@ -7126,3 +7126,32 @@ Reading: the filter buys precision (unannotated real-copy rate x2.5, random back
 unannotated copies and 17 annotated ones: many real pseudogene copies sit in, or carry, repeats. Opt-in for a high-precision list
 (about 1 in 4 unannotated candidates real, parent symbol 29/29 where named); the default keeps every copy.
 
+
+## PREREG DENOVOFAM (2026-10-27): better de novo multi-copy families against Compara, mainstays and YAGs
+**Goal (user /goal):** improve the de novo mode's detection of multi-copy gene families; judge on Ensembl Compara, the mainstays and the YAGs.
+**Truth (`bench/denovo_eval/famtruth.py`):** Ensembl Compara human within-species paralogue pairs (BioMart, 3.3M rows); truth families =
+connected components over pairs at duplication levels Homo sapiens..Catarrhini ("recent"; Simiiformes and Primates ladders reported).
+Copies map to the CAT/Liftoff v2.0 gene sharing the most exonic bp on the strand; judgeable = protein-coding CAT genes with a Compara
+Ensembl id that carry a de novo transcript. Dev/held-out halves = SHA-1 of each truth family's smallest ENSG (singletons hashed alike).
+Mainstays/YAGs = the `bench/o3_graph/protfam.py` KNOWN regexes (NPIP, TBC1D3, GOLGA8, GOLGA6L, CT47A, XAGE, SPATA31; BPY2, CDY, DAZ, HSFY,
+PRY, RBMY, TSPY, VCY, XKRY).
+**Baseline = current main `mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units`** on A119b (testis):
+dev pair F 0.764, family F 0.791 (all-pairs 0.894 / 0.836, seen). Miss diagnosis (`bench/denovo_eval/missdiag.py`, 204 missed recent pairs):
+**104 MCL splits** (an edge joins the two loci; GOLGA8/6, POTE, AGAP, NPIP), 78 below the shared-exon gate on the best SINGLE record
+(19 of them reach >= 0.60 as the union of exon-to-exon records), 14 with no record, 7 coverage, 1 short.
+**Arms (each a replay of the cached alignment, 26 s):**
+- **A inflation:** MCL inflation 2.0 and 2.4 (default 2.8). §6ec: with the size-safe prune NPIP is stable 2.0-4.0, so the split is the
+  graph, not prune.
+- **B union shared-exon:** the shared-exon gate counts exon-to-exon bases over the UNION of the pair's records that each touch exons on
+  both sides (now: the best single record). Distinct from r302/r1097 (union of SPAN coverage, which admitted Alu stubs): only exon-to-exon
+  bases count, and the 0.60 fraction is unchanged. New opt-in flag.
+- **C = best A + B.**
+**Selection (dev half of A119b only; held-out halves and testis not printed while choosing):** the arm with the highest dev family F
+among arms whose dev pair precision drops <= 0.02 and that do not regress any mainstay/YAG (largest-family members not fewer, families
+not more, foreign not more by > 1).
+**Held-out bars (chosen arm vs baseline):**
+- **H1** A119b held-out half: family F >= baseline + 0.01 AND pair F >= baseline.
+- **H2** fresh testis library ERR13885926 (`runs/human_testis`), all genes: family F >= baseline + 0.01 AND pair F >= baseline.
+- **H3** precision: pair precision on both held-out sets drops <= 0.02 (recent), and Primates-ladder pair precision does not drop > 0.02.
+- **H4** mainstays + YAGs on testis: no regression as defined above.
+- **PASS = H1-H4** -> the arm becomes the default (old behaviour behind a flag). Any fail -> register row, stays opt-in or dropped.
