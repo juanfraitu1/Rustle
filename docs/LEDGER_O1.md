@@ -7247,3 +7247,9 @@ precision loss comes from Liftoff's ONE-SIDED coverage: a template covering half
 lifts onto it, which is a placement criterion, not a family one. Liftoff's thresholds answer "where does this gene go", not
 "are these two loci one family". The recall gain is real (+11 dev true pairs), so an edge that needs the lift to explain the
 TARGET too (two-sided) is the untested next step, and it needs its own prereg.
+
+## PREREG DENOVOFAM-L2 (2026-10-27): two-sided lift edges
+r1437 showed lift edges add true pairs but a one-sided lift (small template inside a big locus) costs precision. **E4** = baseline graph +
+an edge A-B only when A lifts onto B AND B lifts onto A (each direction: Liftoff coverage >= 0.5, identity >= 0.5, >= 1 bp on the other's
+exons; the same liftchain.py stats), w = min over the two directions of identity x coverage. No new number. Same dev selection and held-out
+bars as DENOVOFAM-L (A119b dev half -> A119b held-out half + testis). Fail at dev -> FAIL, nothing held out.
