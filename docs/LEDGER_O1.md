@@ -7400,3 +7400,15 @@ Dev (964 families): MACRO member / pseudogene recall, precision: A 0.025 / 0.012
 (+10 pseudogenes), DAZ 0 -> 4, XAGE 0 -> 2, SPATA31 1 -> 2, BPY2 pseudogene 0 -> 1. Absolute recall is low because most HGNC groups are old,
 diverged families no nucleotide aligner reaches at Liftoff's 0.5 floors; the comparison is the same truth for both arms.
 Caveats: the truth changed twice after the r1442 fail (user choices); S2 held-out families were first scored here; B's S1 held-out was seen.
+**Audit of S2 (2026-10-27, metric-auditor; /mnt/linuxdisk/tmp/audit_2026-10-27_guided_s2/): NOT grounds for a default change.** Numbers
+reproduce to the digit (paired held-out families: D beats A on members 47 vs 5, pseudogenes 75 vs 1). But (1) the mainstay guard was EMPTY:
+under the merged HGNC truth every mainstay family is seeded by a foreign gene (NPIP by SLC29A1, TBC1D3 by RABGAP1, GOLGA by GOLGA5, PRY/RBMY
+by MSTRG.4761), so A finds 0 and nothing can be lost; with a real NPIPB12 seed (S1 files) A finds 21/22 and D 6/22, because D's asm20 half
+breaks a CDS into exon-by-exon records each below the 0.5 per-record coverage floor (register §4.1 line 290, mRNA seed 19/19 -> 9/19, is the
+same failure). (2) The named gains quoted as held-out (TSPY, DAZ, SPATA31, CT47A, VCY) are DEV families; "XAGE 0 -> 2" is GAGE12C/E.
+(3) Truth and metric changed after the r1442 dev readout; D's held-out member gain equals B's, whose S1 held-out was seen; 43 S2 held-out
+families contain S1-dev genes. (4) 26% of D's held-out hits are unjudged (A 3/67); counted as wrong, precision D 0.709 vs A 0.821 (fails).
+(5) Truth families chain non-homology HGNC groups (the 1,095 family spans 31 groups, seeded by ARF5; not "C2H2/KRAB"); 845/915 held-out
+families are 0 in both arms. (6) A is not handicapped by its body-coverage rule (CDS-based coverage leaves A at 0.0167 / 0.0086). (7) D loses
+SSX and SPANXN members A finds. Seed 2 was promised and not run. **Verdict r1443: NOT VALIDATED.** The fix the audit points to is Liftoff's
+own step: CHAIN a seed's records per target locus (aggregate coverage), which needs its own prereg and a fresh substrate.
