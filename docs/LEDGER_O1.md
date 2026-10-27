@@ -7266,3 +7266,12 @@ The DENOVOFAM dev misses are mostly genes in NO family; r1437/r1438 lost precisi
 homology edges (MCL then regroups, GOLGA6L/DAZ). **E5** = baseline graph + the one-sided DENOVOFAM-L lift edges (identity >= 0.5) whose
 pair has at least one locus with NO edge in the baseline graph (`--dump-graph` of the baseline run), so no existing edge is added to or
 raised. No new number. Same dev selection and held-out bars (A119b dev -> A119b held-out half + testis with its own ungated all-vs-all).
+
+### DENOVOFAM-L3 result (register 1439): **FAIL at dev selection (recent truth)**; the older Compara levels disagree
+E5 (9,532 orphan lift edges, 0 raised): dev recent pair sens 0.733, prec 0.784, F 0.758 (baseline 0.716 / 0.819 / 0.764); family F 0.822
+(0.793); every mainstay and YAG identical to baseline. Pair diff vs baseline on dev: +5 true (LYZL1-LYZL2, SLC35G4/5/6, APOL3-APOL4), +13
+"false", 0 lost. The 13 are mostly REAL older paralogues (ZNF726 with seven KZNFs, ARHGEF5-ARHGEF35, GPRASP1-2, TMSB15A-B, SMG1-BOLA2-SMG1P6).
+Reported ladders (dev; pair F / family F): baseline Simiiformes 0.743 / 0.773, Primates 0.714 / 0.748; **E1 0.780 / 0.828, 0.762 / 0.810**
+(precision 0.830 vs 0.861, 0.837 vs 0.842); E5 0.774 / 0.809, 0.739 / 0.780. So against the older truth E1 gains on every number; the recent-
+level precision loss is largely older paralogues the recent cut calls false. The verdict stays as registered (recent): FAIL. Changing the
+primary truth level is a science choice for the user; held-out halves remain unscored for every L arm.
