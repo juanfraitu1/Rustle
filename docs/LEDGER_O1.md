@@ -7253,3 +7253,10 @@ r1437 showed lift edges add true pairs but a one-sided lift (small template insi
 an edge A-B only when A lifts onto B AND B lifts onto A (each direction: Liftoff coverage >= 0.5, identity >= 0.5, >= 1 bp on the other's
 exons; the same liftchain.py stats), w = min over the two directions of identity x coverage. No new number. Same dev selection and held-out
 bars as DENOVOFAM-L (A119b dev half -> A119b held-out half + testis). Fail at dev -> FAIL, nothing held out.
+
+### DENOVOFAM-L2 result (register 1438): **FAIL at dev selection**
+421,645 two-sided lifts (29,107 new edges, 27,993 raised). Dev, recent: pair sens 0.723, prec 0.774, F 0.747 (baseline 0.716 / 0.819 /
+0.764); family F 0.788 (baseline 0.793); DAZ splits (1 -> 2 families). Worse than E1 on every number: two-sidedness removes most of the
+recall gain and keeps the precision loss, so one-sided coverage is not the whole cause. The raised weights also move MCL (DAZ). Post hoc
+only: the Liftoff line is closed at its two registered forms; the recall it adds (E1 +11 dev pairs) comes with edges MCL cannot
+separate from passengers.
