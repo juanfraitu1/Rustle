@@ -7487,3 +7487,13 @@ pseudogenes). Truth pseudogenes 6,776 -> 9,625 (1,132 families). Seeds byte-iden
 All bars pass on seed 1; seed 2 passes recall, judged precision and the named bar, and misses strict precision by 0.0016. With the independent
 judge the unjudged pool falls from 353 to 162 (seed 1), so S3's precision "loss" was mostly the truth's pseudogene gap. Pseudogene recall
 x10-14 (0.009 -> 0.130), member recall x1.9; TSPY 0/38 -> 38/38 (seed 1). Verdict as registered: FAIL; the held-out stays fresh.
+**Post-S4 dev diagnosis (seed 2, U-only bad hits):** 109 "wrong" protein-coding hits, 48 from ONE seed, LINC02218 (HGNC: lncRNA; CAT biotype
+protein_coding) -> TAF11L5/10/14; the rest spread (ACTA2 -> POTEG/POTEKP actin-domain fusions, MIA2 -> CTAGE*P, USP17L3 -> USP17L27, LILRB5 ->
+LILRA2). Unjudged: FAM90A26 -> FAM90A*P (absent from the 2-way table), unnamed AC*/AL* retrocopies.
+
+## PREREG GUIDED-S5 (2026-10-27): S4 with an HGNC cross-checked protein-coding set; gorilla held-out
+One change from S4 (user: "keep FAIL, new prereg"): a gene is protein-coding for families and seeds only when its annotation biotype is
+protein_coding AND, when HGNC lists it (human: by ENSG; gorilla: by symbol), HGNC locus_type is "gene with protein product". Genes HGNC calls
+non-coding fall out of families, seeds and the judged set. Everything else = S4 (truth with pgparent tables, arms A and U, both seeds, bars).
+Seeds that change are re-aligned with the same presets. Bars on human dev, then gorilla held-out; PASS on gorilla -> propose U as the guided
+default (user decides), metric-auditor before any claim.
