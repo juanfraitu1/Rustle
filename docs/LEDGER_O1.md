@@ -7052,3 +7052,23 @@ Fibroblast: C1 PASS (+0.32 recall); C2 FAIL (B2 0.359 < 0.40); C3 FAIL (0.508 < 
 recall but the extra hits are less often the right gene's copy and less often annotated. At 0.8, about 3 in 4 annotated hits are
 the right gene's pseudogene (0.71-0.74 in both tissues).
 
+## PREREG SEMITRUTH (2026-10-27): are SEMISEC's unannotated silent candidates real gene copies?
+**Status:** committed before any projection is computed. The gorilla annotation has no answer for them; human does, by synteny.
+**Sets** (SEMISEC default, `--ratio 0.8`, per sample): **U** = silent candidates with no overlapping gorilla gene/pseudogene;
+**P** = silent candidates whose annotated biotype is pseudogene (positive control: shows what the check can see);
+**N** = one random interval per U item, same contig and length, overlapping no gorilla gene/pseudogene feature and no candidate
+(negative control, fixed seed 1).
+**Projection to human:** the interval with 2 kb flanks on each side, from `GGO.aug.fa`, aligned with `minimap2 -x asm20 -c` (prebuilt
+T2T-CHM13 v2.0 index `npip_ladder/idx/target.asm20.mmi`); keep the primary alignment with MAPQ >= 1 (unique; minimap2's own
+uniqueness signal); the core interval is projected through its CIGAR. No unique primary, or a core projecting to < 50% of its length:
+**UNPLACED**.
+**Human call** (CAT/Liftoff v2.0, `chm13v2.0_CAT_Liftoff.genes.tsv`, gene spans): **PSEUDO** = the projected core overlaps a gene whose
+biotype contains "pseudogene"; **GENE** = overlaps another gene (no pseudogene); **NONE** = placed, overlaps no gene.
+**Parent match** (U and P): the human pseudogene's name is the parent's symbol + `P<digits>` (HGNC pseudogene naming), parent = the
+`gene=` symbol of a protein_coding gene at the best read's seed locus. Reported over the items whose human pseudogene has an HGNC-style
+name.
+**Also reported:** fraction of each interval covered by RepeatMasker (GenArk `GCF_029281585.2.repeatMasker.out`), per set.
+**Bars** (testis = dev, descriptive; fibroblast KB3781 = decisive): **T1** the check works: P PSEUDO rate >= 0.50. **T2** U is enriched
+for copies: U PSEUDO rate >= 2 x N PSEUDO rate. **PASS = T1 and T2.** Then: estimated real unannotated copies = U PSEUDO / P PSEUDO rate
+(descriptive); U parent-match rate (descriptive).
+
