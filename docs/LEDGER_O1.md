@@ -7307,3 +7307,14 @@ trimming also flatters every earlier DENOVOFAM dev/held-out number; famtruth.py 
 **famtruth.py fixed (same day):** a half now counts every predicted pair touching >= 1 of its genes, and the bipartite step sees untrimmed
 families. Reproduces the audit: A119b Simiiformes held-out baseline pair F 0.890 (prec 0.928), family F 0.814; E5 0.888 (0.908), 0.832.
 Every DENOVOFAM / -G / -L dev and held-out number above was computed with the old trimming and reads high on precision.
+
+## PREREG DENOVOFAM-L5 (2026-10-27): orphan lifts that do not widen a family
+After the audit (r1440 retracted) and the scorer fix (04c72875). E5's "false" pairs are orphans (often older paralogues: ZNF726 -> KZNFs)
+attached to EXISTING families; its true gains (LYZL, SLC35G, APOL) look like orphans joining each other. Two number-free arms, from the
+same A119b/testis lift and orphan sets (orphan = locus with no edge in the baseline `--dump-graph`):
+**E6** = baseline + lifts whose BOTH loci are orphans (A119b 1,378 of 9,532). **E7** = E6 + an orphan-to-family lift kept only when its weight
+is >= the weakest internal edge (baseline graph, both ends in the baseline MCL cluster of the non-orphan locus) of that family: an orphan may
+join a family but not widen its divergence radius.
+**Scorer:** fixed famtruth.py, primary truth Compara **Simiiformes** (user, 2026-10-27), recent reported. Dev selection on the A119b dev half
+(family F >= baseline + 0.01, pair F not lower, precision drop <= 0.02, mainstays/YAGs no regression in the score AND content changes listed).
+Best qualifying arm held out on the A119b held-out half and testis with the same bars. PASS on both -> propose default (user). Else FAIL.
