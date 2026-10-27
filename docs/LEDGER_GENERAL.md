@@ -2357,3 +2357,24 @@ Recorded by the user so it is not lost; not started again.
   say `src/bin/family_gfa.rs`).
 - History: written 2026-09-30 in worktree `rustle_m2` (branch `machine2/family-gfa`) and never committed; spec and plan merged
   2026-10-26 (c2c7dec5), code copied onto main the same day. The `rustle_m2` copy is now redundant.
+
+---
+
+## PENDING_2026-10-27
+
+## Pending work — registered 2026-10-27 (user), to be pre-registered after the DENOVOFAM arms (`docs/LEDGER_O1.md`)
+
+### 1. A Liftoff-style family mode (the advisor admires Liftoff)
+**Idea:** each read-supported transcript is a TEMPLATE; place its EXONS across the reference and chain them in order (Liftoff's
+exon-level alignment + chaining), keep every placement passing Liftoff's own coverage / identity defaults as a copy (read-supported or
+silent); a family = a template plus its placements, merged when templates place onto each other. No MCL, no coverage tuning: every number
+is Liftoff's default. Guided, semi-guided and de novo then differ only in where templates come from (annotation, reads, both).
+**Differs from the near misses:** r1286 (de novo Liftoff `-copies`, whole-transcript `minimap2 -x splice`; A119b recall 0.638 < 0.80) and
+r1287 (guided G1, 0.887 < 0.90) never did EXON-LEVEL chaining, the step that handles retrocopies and partial copies (today's dominant
+edge loss; DENOVOFAM arm B is a crude union version).
+**Judge on:** the DENOVOFAM scorer (`bench/denovo_eval/famtruth.py`: Compara recent/Primates, mainstays, YAGs, dev/held-out halves) plus
+recall of Liftoff `-copies` extra copies; held-out testis ERR13885926 and a gorilla sample.
+
+### 2. Does the de novo family fix carry into semi-guided?
+SEMISEC (`src/semisec.rs`) never builds a family graph, so DENOVOFAM arms do not change it directly. Test: feed SEMISEC candidates to
+`mcl_families` as extra loci beside the de novo GTF, score with `famtruth.py` with and without the adopted arms.
