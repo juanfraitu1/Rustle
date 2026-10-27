@@ -7284,3 +7284,12 @@ held-out half and human testis (all genes; testis lift edges from its own ungate
 its own baseline `--dump-graph`). Bars at Simiiformes, each sample: family F >= baseline + 0.01, pair F not lower, pair precision drop
 <= 0.02, no mainstay/YAG regression (largest-family members not fewer, families not more, foreign not more by > 1). PASS on both ->
 propose making orphan lift edges the de novo default (user decides; needs the lift step in Rust). Otherwise opt-in.
+
+### DENOVOFAM-L4 result (register 1440): **PASS on both held-out samples (Simiiformes)** - default flip proposed to the user
+Testis lift: own ungated all-vs-all (672,671 records, mm2_shard 545 s), 372,255 pairs, 5,436 lifts, 334 orphan lifts (302 edges, 277 new
+nodes). A119b held-out half, Simiiformes: pair F 0.913 -> 0.917 (prec 0.978 -> 0.970), family F 0.840 -> **0.858** (+0.018). Testis, all
+genes, Simiiformes: pair F 0.900 -> 0.909 (prec 0.956 -> 0.952), family F 0.865 -> **0.897** (+0.032). Mainstays and YAGs identical in both.
+Reported: recent A119b held-out pair F 0.956 -> 0.949 (prec 0.974 -> 0.957), family F 0.903 -> 0.914; testis 0.954 -> 0.944 (0.939 -> 0.918),
+0.916 -> 0.926. Primates A119b 0.904 -> 0.910 / 0.837 -> 0.857; testis 0.890 -> 0.899 / 0.855 -> 0.887. Recent pair F falls slightly in
+both (older paralogues, r1439). The lift step is Python today (liftchain.py over an UNGATED all-vs-all); a default needs it in Rust and the
+ungated alignment (A119b ~9.5 min sharded, testis 9 min).
