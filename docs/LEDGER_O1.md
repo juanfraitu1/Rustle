@@ -7368,3 +7368,13 @@ Compara paralogues of the seed at an older level (KZNF clusters, PCDHB, H2AC, KR
 `minimap2 -x splice` returns few secondary copies of near-identical arrays (TSPY seed on chrY: 2 records with -x splice, 49 with -x asm20;
 not -f, not -G). Added arm **D** = B's records UNION the CDS aligned with `-x asm20 -c -N 100 -p 0.1` (r1287 G1's own unit + envelope design;
 no new number). Same dev selection and held-out bars.
+
+### GUIDED-S result (register 1442): **FAIL as registered (precision vs Compara Simiiformes)**; spliced seeds find far more copies
+Dev (166 families' seeds; Simiiformes): member recall / pseudogene recall / precision: A gene body 0.423 / 0.035 / 0.882; B CDS splice
+0.717 / 0.129 / 0.601; C protein miniprot 0.119 / 0.000 / 0.690; **D CDS splice + asm20 0.806 / 0.259 / 0.633**. Every spliced arm loses
+> 0.02 precision, so A stays; nothing held out (B's held-out was seen by mistake, see Deviation). Off-family hits are multigene relatives the
+Simiiformes cut separates (D: 113 of 249 are Compara paralogues of the seed at an older level; the rest mostly KZNF/KRTAP/PCDH cluster
+members Compara splits across gene trees). Mainstays/YAGs (dev seeds): DAZ A 0/4 -> B 4/4; XAGE/GAGE A 0/26 -> B 2/26; NPIP A 21/22 ->
+B 6/22 (splice mode drops near-identical secondaries; D restores it); TSPY 0/38 in A and B. `minimap2 -x splice` alone is unfit for arrays.
+Reading for the user's question: a CDS seed DOES find spliced members and processed pseudogenes that gene-body seeds miss (pseudogene
+recall x7), but against a Simiiformes truth it is scored as imprecise because it also finds the older members of the multigene family.

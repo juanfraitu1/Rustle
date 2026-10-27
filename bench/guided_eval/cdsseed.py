@@ -205,7 +205,7 @@ def score(a):
     fams = [set(c) for c in T['families']]
     pseudo = {int(k): set(v) for k, v in T['pseudo'].items()}
     _, universe = F.truth_pairs(G, F.PARALOGS, F.LEVELS[T['level']])
-    judge = set(universe) | {g for v in pseudo.values() for g in v}
+    judge = set(universe) | {g for c in fams for g in c} | {g for v in pseudo.values() for g in v}
     recs = miniprot_records(a.hits) if a.arm == 'C' else paf_records(a.hits)
     found = collections.defaultdict(set)
     for q, chrom, strand, bl, cov, ident in recs:
