@@ -7155,3 +7155,37 @@ not more, foreign not more by > 1).
 - **H3** precision: pair precision on both held-out sets drops <= 0.02 (recent), and Primates-ladder pair precision does not drop > 0.02.
 - **H4** mainstays + YAGs on testis: no regression as defined above.
 - **PASS = H1-H4** -> the arm becomes the default (old behaviour behind a flag). Any fail -> register row, stays opt-in or dropped.
+**Amendment 1 (2026-10-27, before any arm was scored on a held-out set):** the scorer maps a copy to the PROTEIN-CODING CAT gene with the
+most shared exonic bp when one overlaps it (else any gene, as before). Found on dev: DAZ2's copy went to CHM13_G1000495
+(`unknown_likely_coding`, a 200 kb model over DAZ2), SPDYE15's to PMS2P2. Applies to baseline and every arm alike. Re-scored dev
+baseline: pair F 0.764, family F 0.793 (303 dev pairs). Arm A on dev: I 2.0 F 0.753 / 0.791 (precision -0.034, out); I 2.4 0.764 / 0.801.
+**Amendment 2 (same time): arm D, fold bridges.** Dev diagnosis: most dev misses are genes in NO family because
+`fold-within-clusters` welds two genes into one locus through a readthrough model that overlaps both (GOLGA8Q + GOLGA8H -> one copy,
+the 70 kb readthrough AC091057.3). Rule (no threshold): inside a cluster, a record is a BRIDGE when two of the records it overlaps on exon
+bases do not overlap each other; loci = connected exon-overlap components of the non-bridge records; each bridge folds into the locus it
+overlaps most (exon bp; ties to the smaller coordinate). Not r815 (which cut bridge transcripts in the assembler, before families, and
+failed on gorilla): the transcripts are untouched, only which records count as one copy changes. Arms now A, B, D and C = the selected
+combination; selection and bars unchanged.
+**Amendment 3 (dev only; no held-out run yet):** arm D as written gave dev pair F 0.764 -> 0.825, family F 0.793 -> 0.810, GOLGA8 11 -> 13/13,
+but NPIP 19 -> 18/20: NPIPB13's full 24 kb model overlaps two DISJOINT FRAGMENTS of NPIPB13 itself, so it counted as a bridge and a 2.8 kb
+fragment became the representative. Refined rule (still no threshold): a record is a bridge only when two records it overlaps do not
+overlap each other AND are joined by a homology edge of the graph (two paralogues of the family welded into one copy; two fragments of
+one gene are not homologous to each other). Arm D' replaces D; selection and bars unchanged.
+
+### DENOVOFAM result (register 1435): **FAIL** (H1, H2) - `--fold-split-bridges` stays opt-in; nothing becomes default
+**Dev selection (A119b dev half, Amendment 1 scorer):** baseline pair F 0.764 / family F 0.793. A I 2.0 0.753 / 0.791 (precision -0.034,
+out); A I 2.4 0.764 / 0.801; B `--shared-exon-union` 0.759 / 0.795 (DAZ splits into 2 families, out); **D' `--fold-split-bridges` 0.826 /
+0.810 (selected; GOLGA8 11 -> 13/13, NPIP 19/20 kept)**; C = B + D' 0.820 / 0.811 (DAZ split, out).
+| D' vs baseline | baseline | D' | bar |
+|---|---|---|---|
+| H1 A119b held-out half pair F / family F | 0.956 / 0.903 | 0.956 / 0.903 | family +0.01 FAIL |
+| H2 testis ERR13885926 all pair F / family F | 0.954 / 0.916 | 0.954 / 0.916 (copies byte-identical) | family +0.01 FAIL |
+| H3 pair precision recent (held-out A119b / testis); Primates A119b held-out | 0.974 / 0.939; 0.980 | same; 0.980 | pass |
+| H4 mainstays + YAGs on testis | | unchanged | pass |
+Reading: D' is INERT outside the development families: no held-out family has two paralogues welded by a readthrough model (testis:
+not one fold changed). All-gene A119b pair F 0.891 -> 0.897, family F 0.834 -> 0.838, Primates all-pair precision 0.916 -> 0.909; the gain is
+GOLGA8/GOLGA6, SPDYE, POTE, SERPINB on the dev half only. Opt-in for catalogs that hold readthrough models over paralogues; a fresh
+held-out with such loci is needed before any default. B (union of exon-to-exon records) gains nothing on dev and splits DAZ.
+Other findings: (1) the scorer must map copies to protein-coding genes first (Amendment 1); (2) most "MCL splits" in the first diagnosis
+were folds, not MCL (inflation 2.0-2.8 moves dev sensitivity 0.717 -> 0.724); (3) ungated `--from-gtf` needs the sharded wrapper
+(`RUSTLE_MINIMAP2=tools/mm2_shard.sh`): a plain minimap2 all-vs-all of 94k loci ran > 75 min.

@@ -60205,6 +60205,12 @@ pub mod fam_from_gtf {
             /// without turning that on has no effect other than the wasted comparison — `exonic_both_sides` is ALSO
             /// default-on, so this is inert only behind an explicit `--no-exonic-both-sides`).
             pub min_shared_exon_frac: f64,
+            /// PREREG DENOVOFAM arm B (2026-10-27): the shared exon bases are counted over the UNION of the pair's
+            /// records that each touch exon bases on both sides (merged per side, min of the two sides), not on the best
+            /// single record. A pair whose homology minimap2 split into several exon-to-exon records (GOLGA8/GOLGA6,
+            /// LYZL1/2, APOL3/4) is then judged on all of it. Only exon-to-exon bases count (r302/r1097 unioned SPAN
+            /// coverage and admitted Alu stubs). Default off: the best-record rule, byte-identical.
+            pub shared_exon_union: bool,
         }
 
         impl Default for GraphParams {
@@ -60220,6 +60226,7 @@ pub mod fam_from_gtf {
                     exonic_both_sides: false,
                     min_exonic_bp: 0,
                     min_shared_exon_frac: 0.0,
+                    shared_exon_union: false,
                 }
             }
         }
@@ -60379,6 +60386,116 @@ pub mod fam_from_gtf {
             m
         }
 
+        /// PREREG DENOVOFAM arm D (2026-10-27): [`loci_from_exon_blocks`] without letting a BRIDGE weld two loci. A record
+        /// is a bridge when two of the records it overlaps on exon bases do not overlap each other and are HOMOLOGOUS
+        /// (`homologous`: a graph edge joins them) — a readthrough model welding the paralogues GOLGA8Q and GOLGA8H into one
+        /// copy. Two disjoint fragments of one gene are not homologous, so the full model over them is no bridge
+        /// (Amendment 3: NPIPB13). Loci = exon-overlap components of the non-bridge records, each represented by its longest
+        /// exon union as before; each bridge folds into the locus it shares the most exon bases with (ties: the smaller
+        /// representative key). A part with no bridge folds exactly as [`loci_from_exon_blocks`].
+        pub fn loci_from_exon_blocks_split_bridges(
+            exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+            homologous: impl Fn(&GeneKey, &GeneKey) -> bool,
+        ) -> LocusMap {
+            let genes: Vec<&GeneKey> = exon_blocks.keys().collect();
+            let n = genes.len();
+            let shared = |a: usize, b: usize| -> u64 {
+                if genes[a].0 != genes[b].0 {
+                    return 0;
+                }
+                let (x, y) = (&exon_blocks[genes[a]], &exon_blocks[genes[b]]);
+                x.iter()
+                    .flat_map(|&(s1, e1)| y.iter().map(move |&(s2, e2)| e1.min(e2).saturating_sub(s1.max(s2))))
+                    .sum()
+            };
+            let mut nb: Vec<Vec<usize>> = vec![Vec::new(); n];
+            let mut ov = BTreeSet::new();
+            for a in 0..n {
+                for b in a + 1..n {
+                    if shared(a, b) > 0 {
+                        nb[a].push(b);
+                        nb[b].push(a);
+                        ov.insert((a, b));
+                    }
+                }
+            }
+            let overlaps = |a: usize, b: usize| ov.contains(&(a.min(b), a.max(b)));
+            let bridge: Vec<bool> = (0..n)
+                .map(|m| {
+                    nb[m].iter().enumerate().any(|(i, &x)| {
+                        nb[m][i + 1..].iter().any(|&y| !overlaps(x, y) && homologous(genes[x], genes[y]))
+                    })
+                })
+                .collect();
+            let mut parent: Vec<usize> = (0..n).collect();
+            fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+                while p[x] != x {
+                    p[x] = p[p[x]];
+                    x = p[x];
+                }
+                x
+            }
+            for &(a, b) in &ov {
+                if !bridge[a] && !bridge[b] {
+                    let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                    if ra != rb {
+                        parent[ra.max(rb)] = ra.min(rb);
+                    }
+                }
+            }
+            let exlen = |i: usize| exon_blocks[genes[i]].iter().map(|(s, e)| e - s).sum::<u64>();
+            let longest = |members: &[usize]| -> usize {
+                *members
+                    .iter()
+                    .max_by(|&&a, &&b| {
+                        exlen(a).cmp(&exlen(b)).then_with(|| (genes[b].1, genes[b].2).cmp(&(genes[a].1, genes[a].2)))
+                    })
+                    .unwrap()
+            };
+            let mut comps: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+            for i in (0..n).filter(|&i| !bridge[i]) {
+                let r = find(&mut parent, i);
+                comps.entry(r).or_default().push(i);
+            }
+            let rep_of_root: BTreeMap<usize, usize> = comps.iter().map(|(&r, m)| (r, longest(m))).collect();
+            // each bridge joins the locus it shares the most exon bases with; a bridge overlapping only bridges stays alone
+            // (decided against the non-bridge loci only, so the order bridges are visited in cannot matter)
+            let joins: Vec<(usize, Option<usize>)> = (0..n)
+                .filter(|&m| bridge[m])
+                .map(|m| {
+                    let mut best: Option<(u64, &GeneKey, usize)> = None;
+                    for (&root, members) in &comps {
+                        let bp: u64 = members.iter().map(|&x| shared(m, x)).sum();
+                        let key = genes[rep_of_root[&root]];
+                        if bp > 0 && best.map_or(true, |(b, k, _)| bp > b || (bp == b && key < k)) {
+                            best = Some((bp, key, root));
+                        }
+                    }
+                    (m, best.map(|b| b.2))
+                })
+                .collect();
+            for (m, root) in joins {
+                match root {
+                    Some(root) => comps.get_mut(&root).unwrap().push(m),
+                    None => {
+                        comps.insert(n + m, vec![m]);
+                    }
+                }
+            }
+            let mut m = LocusMap::default();
+            for (root, members) in comps {
+                if members.len() < 2 {
+                    continue;
+                }
+                let rep = rep_of_root.get(&root).copied().unwrap_or_else(|| longest(&members));
+                for &i in &members {
+                    m.rep_of.insert(genes[i].clone(), genes[rep].clone());
+                }
+                m.n_multi += 1;
+            }
+            m
+        }
+
         impl HomologyGraph {
             pub fn n_nodes(&self) -> usize {
                 self.genes.len()
@@ -60473,7 +60590,9 @@ pub mod fam_from_gtf {
             // splits one paralogous alignment across many records, so a per-record floor rejects a real family
             // whose exons are jointly covered. Accumulate the pair's intervals, threshold ONCE at the end.
             // (Measured: per-record thresholding shattered the NPIP cluster 43 -> 17/15/3/3/1.)
-            type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64);
+            // (a intervals, b intervals, nmatch, blocklen, best record's exon-to-exon bases, a / b intervals of the
+            // records touching exon bases on both sides — kept only under `shared_exon_union`)
+            type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64, Vec<(u64, u64)>, Vec<(u64, u64)>);
             // the deferred pairs, sorted by key: the order the resolution below walks (and numbers the nodes in)
             let mut pairs: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
 
@@ -60551,7 +60670,7 @@ pub mod fam_from_gtf {
                 SameLocus,
                 Overlapping,
                 SelfHit,
-                Deferred { k: (u32, u32), a: (u64, u64), b: (u64, u64), nm: u64, bl: u64, ee: u64, miss: [Option<u32>; 2] },
+                Deferred { k: (u32, u32), a: (u64, u64), b: (u64, u64), nm: u64, bl: u64, ee: u64, both: bool, miss: [Option<u32>; 2] },
                 Direct { qi: u32, ti: u32, w: Option<(f64, f64)>, miss: [Option<u32>; 2] },
             }
             let deferred = p.exonic_overlap || p.min_exonic_bp > 0;
@@ -60622,10 +60741,11 @@ pub mod fam_from_gtf {
                     } else {
                         0
                     };
+                    let both = p.shared_exon_union && ee > 0;
                     return if qi <= ti {
-                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, miss }
+                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, both, miss }
                     } else {
-                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, miss }
+                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, both, miss }
                     };
                 }
                 let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
@@ -60648,14 +60768,18 @@ pub mod fam_from_gtf {
                                 Rec::SameLocus => local.1[0] += 1,
                                 Rec::Overlapping => local.1[1] += 1,
                                 Rec::SelfHit => local.1[2] += 1,
-                                Rec::Deferred { k, a, b, nm, bl, ee, miss } => {
+                                Rec::Deferred { k, a, b, nm, bl, ee, both, miss } => {
                                     local.2.extend(miss.into_iter().flatten());
-                                    let e = local.0.entry(k).or_insert_with(|| (Vec::new(), Vec::new(), 0, 0, 0));
+                                    let e = local.0.entry(k).or_default();
                                     e.0.push(a);
                                     e.1.push(b);
                                     e.2 += nm;
                                     e.3 += bl;
                                     e.4 = e.4.max(ee);
+                                    if both {
+                                        e.5.push(a);
+                                        e.6.push(b);
+                                    }
                                 }
                             }
                         }
@@ -60681,6 +60805,8 @@ pub mod fam_from_gtf {
                             e.2 += v.2;
                             e.3 += v.3;
                             e.4 = e.4.max(v.4);
+                            e.5.extend(v.5);
+                            e.6.extend(v.6);
                         }
                         _ => {
                             pairs.push(((keys[k.0 as usize].clone(), keys[k.1 as usize].clone()), v));
@@ -60731,8 +60857,16 @@ pub mod fam_from_gtf {
                 use rayon::prelude::*;
                 pairs
                     .par_iter()
-                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon))| {
-                        let (nmatch, blocklen, exon_exon) = (*nmatch, *blocklen, *exon_exon);
+                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon, aee, bee))| {
+                        let (nmatch, blocklen, mut exon_exon) = (*nmatch, *blocklen, *exon_exon);
+                        if p.shared_exon_union && !aee.is_empty() {
+                            let side = |k: &GeneKey, iv: &[(u64, u64)]| -> u64 {
+                                exon_blocks.get(k).map_or(0, |b| {
+                                    merge_intervals(iv.to_vec()).iter().map(|&(s0, e0)| exonic_bases_in(b, k.1, s0, e0)).sum()
+                                })
+                            };
+                            exon_exon = exon_exon.max(side(ak, aee).min(side(bk, bee)));
+                        }
                         let da = exonic_len.get(ak).copied().unwrap_or(0);
                         let db = exonic_len.get(bk).copied().unwrap_or(0);
                         let a_is_longer = da >= db;
@@ -61664,6 +61798,16 @@ pub mod fam_from_gtf {
             parts: &[Vec<usize>],
             exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
         ) -> (Vec<Vec<usize>>, LocusMap) {
+            fold_parts_into_loci_opt(g, parts, exon_blocks, false)
+        }
+
+        /// [`fold_parts_into_loci`]; `split_bridges` folds each part with [`loci_from_exon_blocks_split_bridges`].
+        pub fn fold_parts_into_loci_opt(
+            g: &HomologyGraph,
+            parts: &[Vec<usize>],
+            exon_blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+            split_bridges: bool,
+        ) -> (Vec<Vec<usize>>, LocusMap) {
             let mut all = LocusMap::default();
             let mut out = Vec::with_capacity(parts.len());
             for part in parts {
@@ -61675,7 +61819,15 @@ pub mod fam_from_gtf {
                             .map(|b| (g.genes[i].clone(), b.clone()))
                     })
                     .collect();
-                let m = loci_from_exon_blocks(&sub);
+                let m = if split_bridges {
+                    let node: BTreeMap<&GeneKey, usize> = part.iter().map(|&i| (&g.genes[i], i)).collect();
+                    loci_from_exon_blocks_split_bridges(&sub, |a, b| {
+                        let (x, y) = (node[a], node[b]);
+                        g.edges.contains_key(&(x.min(y), x.max(y)))
+                    })
+                } else {
+                    loci_from_exon_blocks(&sub)
+                };
                 let kept: Vec<usize> = part
                     .iter()
                     .copied()
@@ -62456,6 +62608,32 @@ pub mod fam_from_gtf {
                 assert_eq!((g4.n_edges(), g4.rejected_no_exonic), (0, 1));
             }
 
+            /// PREREG DENOVOFAM arm B: two exon-to-exon records of 500 bp each cover 0.5 of the smaller gene apiece (best
+            /// record below 0.60) and 1.0 together.
+            #[test]
+            fn shared_exon_union_counts_every_exon_to_exon_record() {
+                let mut paf = paf_line("c:1001-3000", 2000, 0, 500, "c:9001-11000", 2000, 0, 500, 490, 500);
+                paf.push('\n');
+                paf.push_str(&paf_line("c:1001-3000", 2000, 1500, 2000, "c:9001-11000", 2000, 1500, 2000, 490, 500));
+                let mut ex = BTreeMap::new();
+                ex.insert(("c".to_string(), 1001, 3000), 1000);
+                ex.insert(("c".to_string(), 9001, 11000), 1000);
+                let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                bl.insert(("c".to_string(), 1001, 3000), vec![(1000, 1500), (2500, 3000)]);
+                bl.insert(("c".to_string(), 9001, 11000), vec![(9000, 9500), (10500, 11000)]);
+                let best = GraphParams {
+                    min_bp: 100,
+                    min_exonic_bp: 1,
+                    exonic_both_sides: true,
+                    min_shared_exon_frac: 0.6,
+                    ..GraphParams::default()
+                };
+                let g0 = graph_from_paf(&paf, &ex, &bl, &best);
+                assert_eq!((g0.n_edges(), g0.rejected_low_shared_exon), (0, 1), "best single record: 0.5 < 0.6");
+                let union = GraphParams { shared_exon_union: true, ..best };
+                assert_eq!(graph_from_paf(&paf, &ex, &bl, &union).n_edges(), 1, "union of the two records: 1.0");
+            }
+
             /// ⭐ §6x4/§6x5 CONTAINMENT ESCAPE (`min_cov_shorter`).
             ///
             /// The population it exists for (§6x3/r1002): a SHORT locus that aligns along ~100% of its own length
@@ -62788,6 +62966,44 @@ pub mod fam_from_gtf {
             }
 
             /// ⚠ The §6dd coordinate trap, pinned: blocks are ABSOLUTE, the gene start is GFF 1-based.
+            #[test]
+            fn split_bridges_keeps_two_genes_a_readthrough_overlaps_apart() {
+                let k = |s: u64, e: u64| -> GeneKey { ("c".to_string(), s, e) };
+                let mut b: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                b.insert(k(1, 1000), vec![(0, 300), (700, 1000)]); // gene X
+                b.insert(k(5001, 6000), vec![(5000, 5300), (5700, 6000)]); // gene Y
+                b.insert(k(1, 6000), vec![(0, 300), (700, 1000), (5000, 5300), (5700, 6100)]); // readthrough X..Y, longest
+                b.insert(k(701, 1500), vec![(700, 1000), (1200, 1500)]); // isoform of X: overlaps X and the readthrough
+                let old = loci_from_exon_blocks(&b);
+                assert_eq!(old.rep_of[&k(1, 1000)], k(1, 6000), "the old fold welds X and Y through the readthrough");
+                assert_eq!(old.rep_of[&k(5001, 6000)], k(1, 6000));
+                let frag = loci_from_exon_blocks_split_bridges(&b, |_, _| false);
+                assert_eq!(frag.rep_of, old.rep_of, "X and Y not homologous (two fragments of one gene): the old fold");
+                let para = |a: &GeneKey, c: &GeneKey| {
+                    let xy = [k(1, 1000), k(5001, 6000)];
+                    xy.contains(a) && xy.contains(c)
+                };
+                let m = loci_from_exon_blocks_split_bridges(&b, para);
+                assert_eq!(m.rep_of[&k(1, 1000)], k(1, 1000), "X keeps its own locus (X = 600 bp, isoform 600 bp: smaller key)");
+                assert_eq!(m.rep_of[&k(701, 1500)], k(1, 1000));
+                assert!(!m.rep_of.contains_key(&k(5001, 6000)) || m.rep_of[&k(5001, 6000)] == k(5001, 6000), "Y stays its own copy");
+                // the readthrough shares 600 bp with X's locus (X 600 + isoform 300 = 900) and 600 with Y: it joins X's
+                assert_eq!(m.rep_of[&k(1, 6000)], k(1, 1000));
+                assert_eq!(m.n_multi, 1);
+            }
+
+            #[test]
+            fn split_bridges_is_the_old_fold_without_a_bridge() {
+                let k = |s: u64, e: u64| -> GeneKey { ("c".to_string(), s, e) };
+                let mut b: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                b.insert(k(1, 1000), vec![(0, 1000)]);
+                b.insert(k(501, 2000), vec![(500, 2000)]);
+                b.insert(k(9001, 9500), vec![(9000, 9500)]);
+                let (old, new) = (loci_from_exon_blocks(&b), loci_from_exon_blocks_split_bridges(&b, |_, _| true));
+                assert_eq!(old.rep_of, new.rep_of);
+                assert_eq!(old.n_multi, new.n_multi);
+            }
+
             #[test]
             fn exonic_bases_in_converts_absolute_blocks_to_the_local_frame() {
                 // Gene at GFF 1-based 1001..2000; exon at absolute 0-based [1000, 1100) == local [0, 100).

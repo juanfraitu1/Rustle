@@ -116,3 +116,7 @@ path = "src/family_gfa.rs"
 [[bin]]
 name = "semisec"
 path = "src/semisec.rs"
+
+[[bin]]
+name = "slimbam"
+path = "src/slimbam.rs"

@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
-    build_clusters, fold_parts_into_loci, graph_from_paf_loci_stranded, loci_from_exon_blocks,
+    build_clusters, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks,
     mcl_pair_rule_counted, sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
 use rustle::fam_from_gtf::{
@@ -347,6 +347,16 @@ struct Args {
     /// Escape hatch: the behaviour before 2026-09-05 (`--fold-within-clusters` off).
     #[arg(long, default_value_t = false)]
     no_fold_within_clusters: bool,
+    /// PREREG DENOVOFAM arm D (2026-10-27, opt-in): inside a cluster a record that overlaps two records which do not
+    /// overlap each other (a readthrough over GOLGA8Q and GOLGA8H) does not weld them into one locus; it folds into the
+    /// locus it shares the most exon bases with (`loci_from_exon_blocks_split_bridges`).
+    #[arg(long, default_value_t = false)]
+    fold_split_bridges: bool,
+    /// PREREG DENOVOFAM arm B (2026-10-27, opt-in): `--min-shared-exon-frac` counts exon-to-exon bases over the UNION of
+    /// the pair's exon-to-exon records, not the best single record. Turns the exon gate off (the gate keeps only pairs one
+    /// chain of which reaches the fraction).
+    #[arg(long, default_value_t = false)]
+    shared_exon_union: bool,
 
     /// ⭐ A gene/pseudogene record with NO exon children counts as one exon spanning the record (§6ey). RefSeq
     /// (CHM13) leaves 160 of 747 records in Soto's neighbourhoods without exon features (NF1P, CNTNAP3P, PMS2P
@@ -1193,7 +1203,7 @@ fn exon_gate_margin(a: &Args) -> Option<(u64, f64)> {
 fn edge_rule_frac(a: &Args) -> Option<f64> {
     let exon_to_exon = a.min_exonic_bp >= 1
         && ((a.exonic_both_sides && !a.no_exonic_both_sides) || a.min_shared_exon_frac > 0.0);
-    let reads_every_record = a.core_from_paf || a.sedef.is_some() || a.emit_container;
+    let reads_every_record = a.core_from_paf || a.sedef.is_some() || a.emit_container || a.shared_exon_union;
     (exon_to_exon && !reads_every_record).then_some(a.min_shared_exon_frac.max(0.0))
 }
 
@@ -1336,6 +1346,7 @@ fn main() -> Result<()> {
         min_exonic_bp: args.min_exonic_bp,
         exonic_both_sides: args.exonic_both_sides,
         min_shared_exon_frac: args.min_shared_exon_frac,
+        shared_exon_union: args.shared_exon_union,
     };
 
     let blocks = match &args.gff {
@@ -1476,7 +1487,7 @@ fn main() -> Result<()> {
     // ⭐ §6ey: fold overlapping records into loci INSIDE each cluster (sequence decided the cluster, coordinates
     // decide the locus). `parts` becomes representative-only; the fold map is written like the fold-first one.
     let (parts, loci) = if args.fold_within_clusters {
-        let (folded, m) = fold_parts_into_loci(&g, &parts, &blocks);
+        let (folded, m) = fold_parts_into_loci_opt(&g, &parts, &blocks, args.fold_split_bridges);
         eprintln!(
             "[mcl_families] fold-within-clusters: {} annotation record(s) folded into {} multi-record loci inside their clusters",
             m.n_merged(),
@@ -2799,6 +2810,13 @@ fn main() -> Result<()> {
         ),
     ] {
         writeln!(ph, "{k}\t{v}")?;
+    }
+    // PREREG DENOVOFAM opt-in arms: rows only when on, so a default run's params.tsv is unchanged
+    if args.shared_exon_union {
+        writeln!(ph, "shared_exon_union\ttrue")?;
+    }
+    if args.fold_split_bridges {
+        writeln!(ph, "fold_split_bridges\ttrue")?;
     }
     // `--from-gtf --emit-units` only (appended LAST, and only then, so every other run's params.tsv is unchanged)
     if let Some(s) = &rep_copy_stats {

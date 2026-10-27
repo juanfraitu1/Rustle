@@ -40,6 +40,9 @@ def blocks(s):
     return [tuple(map(int, b.split('-'))) for b in s.split(',') if b]
 
 
+GENES = {}
+
+
 def load_cat():
     """gene id -> dict(name, biotype, chrom, strand, exons, ens: set of unversioned Ensembl gene ids)."""
     ens = {}
@@ -57,6 +60,7 @@ def load_cat():
         if f[0] == 'gene_id':
             continue
         genes[f[0]] = dict(name=f[1], biotype=f[2], chrom=f[4], strand=f[7], exons=blocks(f[9]), ens=ens.get(f[0], set()))
+    GENES.update(genes)
     return genes
 
 
@@ -86,7 +90,13 @@ def map_copy(idx, chrom, strand, exons):
             if b > s:
                 share[g] += min(b, e) - max(a, s)
             i += 1
-    return share.most_common(1)[0][0] if share else None
+    if not share:
+        return None
+    # protein-coding first (PREREG DENOVOFAM Amendment 1): a long non-coding or "unknown_likely_coding" CAT model spanning a
+    # coding gene (CHM13_G1000495 over DAZ2, AC091057.3 over GOLGA8Q, PMS2P2 over SPDYE15) otherwise takes the copy away
+    # from the gene the truth is about
+    pc = [g for g in share if GENES.get(g, {}).get('biotype') == 'protein_coding']
+    return max(pc, key=lambda g: (share[g], g)) if pc else max(share, key=lambda g: (share[g], g))
 
 
 def load_catalog(path, genes, idx):
