@@ -7361,3 +7361,10 @@ beat A on HELD-OUT families on both recalls with precision >= A's - 0.02, and lo
 become the guided finder's documented default seed (user decides the flip).
 **Deviation (2026-10-27):** the first scorer call printed BOTH halves for arm B (held-out seen for B before selection: member recall 0.747,
 pseudo 0.368, precision 0.865). Fixed (`--show`, default dev). Selection still uses dev only; B's held-out reading must be stated as seen.
+**Amendment 1 (2026-10-27, after the dev readout of A/B/C; held-out of A, C unseen, B seen by mistake):** dev member recall / pseudogene
+recall / precision: A 0.423 / 0.035 / 0.882; B 0.717 / 0.129 / 0.601; C 0.119 / 0.000 / 0.690 (miniprot's default `--outs 0.99` keeps only
+near-best hits). As registered, A is selected (B fails precision) -> **GUIDED-S FAIL**. Diagnostics (dev): 113 of B's 248 off-family hits are
+Compara paralogues of the seed at an older level (KZNF clusters, PCDHB, H2AC, KRTAP: multigene families the Simiiformes cut splits);
+`minimap2 -x splice` returns few secondary copies of near-identical arrays (TSPY seed on chrY: 2 records with -x splice, 49 with -x asm20;
+not -f, not -G). Added arm **D** = B's records UNION the CDS aligned with `-x asm20 -c -N 100 -p 0.1` (r1287 G1's own unit + envelope design;
+no new number). Same dev selection and held-out bars.
