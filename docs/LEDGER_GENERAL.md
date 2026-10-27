@@ -2378,3 +2378,10 @@ recall of Liftoff `-copies` extra copies; held-out testis ERR13885926 and a gori
 ### 2. Does the de novo family fix carry into semi-guided?
 SEMISEC (`src/semisec.rs`) never builds a family graph, so DENOVOFAM arms do not change it directly. Test: feed SEMISEC candidates to
 `mcl_families` as extra loci beside the de novo GTF, score with `famtruth.py` with and without the adopted arms.
+
+### 3. Strainy-style clustering for O1 families (user 2026-10-27; advisor favours Strainy)
+Strainy (Kazantseva 2024) = strict-consistency edges (reads linked only when they never disagree at an informative SNP) + label
+propagation + recursion on the sites still informative inside each cluster. (a) Cheap check: label propagation and Louvain on the
+DENOVOFAM dumped homology graph (`--dump-graph`), scored with `famtruth.py` on the dev half vs MCL (expect little: dev inflation sweep moved
+sensitivity 0.717 -> 0.724; Louvain lost to MCL at DNA level, r851; grouping saturated, §6o8; label propagation is randomized).
+(b) Where it should matter: the recursion as the family -> subfamily hierarchy, and read-level splitting of a family into copies (O2/O3).
