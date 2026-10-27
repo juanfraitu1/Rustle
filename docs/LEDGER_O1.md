@@ -7275,3 +7275,12 @@ Reported ladders (dev; pair F / family F): baseline Simiiformes 0.743 / 0.773, P
 (precision 0.830 vs 0.861, 0.837 vs 0.842); E5 0.774 / 0.809, 0.739 / 0.780. So against the older truth E1 gains on every number; the recent-
 level precision loss is largely older paralogues the recent cut calls false. The verdict stays as registered (recent): FAIL. Changing the
 primary truth level is a science choice for the user; held-out halves remain unscored for every L arm.
+
+## PREREG DENOVOFAM-L4 (2026-10-27): orphan lift edges (E5) held out against Simiiformes truth (user decision 2026-10-27)
+User decision after r1439: a multi-copy family is judged against Compara **Simiiformes** paralogues (recent stays reported). Dev selection
+at Simiiformes, bars unchanged: E1 fails (precision 0.861 -> 0.830, drop 0.031 > 0.02); **E5 qualifies** (pair F 0.743 -> 0.774, prec 0.861
+-> 0.861, family F 0.773 -> 0.809, mainstays/YAGs identical); E2-E4 not re-selected. **Held out (never scored for any L arm):** A119b
+held-out half and human testis (all genes; testis lift edges from its own ungated `-x asm20 -c -X -N 50 -p 0.1` all-vs-all, orphans from
+its own baseline `--dump-graph`). Bars at Simiiformes, each sample: family F >= baseline + 0.01, pair F not lower, pair precision drop
+<= 0.02, no mainstay/YAG regression (largest-family members not fewer, families not more, foreign not more by > 1). PASS on both ->
+propose making orphan lift edges the de novo default (user decides; needs the lift step in Rust). Otherwise opt-in.
