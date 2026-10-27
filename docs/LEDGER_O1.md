@@ -7391,3 +7391,12 @@ the same SHA-1 rule on the NEW families. **Primary metric MACRO** (mean over fam
 373-member KRAB group must not dominate); micro reported. Precision = micro over judged hits (judged = genes in any truth family or proxy).
 **Decision:** dev: D replaces A if member and pseudogene macro recall are higher and precision >= A's - 0.02; then held-out on the same
 three conditions plus no mainstay/YAG member found by A lost. PASS -> spliced CDS seeds (splice + asm20 union) proposed as the guided default.
+
+### GUIDED-S2 result (register 1443): **PASS on held-out families (pending audit)** - spliced CDS seeds (splice + asm20) beat gene-body seeds
+Truth: 1,879 HGNC-group/Compara families (16,412 protein-coding genes; largest 1,095 = C2H2/KRAB zinc fingers), 6,881 pseudogenes in 759.
+Dev (964 families): MACRO member / pseudogene recall, precision: A 0.025 / 0.012, 0.950; B 0.051 / 0.109, 0.959; **D 0.053 / 0.115, 0.959**
+(micro member 0.017 / 0.033 / 0.039). D qualifies. **Held-out (915 families): A 0.016 / 0.004, 0.859 (55/64); D 0.038 / 0.126, 0.956
+(307/321)**; micro member 0.006 -> 0.014, pseudogene 0.002 -> 0.047. No mainstay/YAG member found by A lost; D gains TSPY 0 -> 38 members
+(+10 pseudogenes), DAZ 0 -> 4, XAGE 0 -> 2, SPATA31 1 -> 2, BPY2 pseudogene 0 -> 1. Absolute recall is low because most HGNC groups are old,
+diverged families no nucleotide aligner reaches at Liftoff's 0.5 floors; the comparison is the same truth for both arms.
+Caveats: the truth changed twice after the r1442 fail (user choices); S2 held-out families were first scored here; B's S1 held-out was seen.
