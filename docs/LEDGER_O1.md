@@ -7189,3 +7189,16 @@ held-out with such loci is needed before any default. B (union of exon-to-exon r
 Other findings: (1) the scorer must map copies to protein-coding genes first (Amendment 1); (2) most "MCL splits" in the first diagnosis
 were folds, not MCL (inflation 2.0-2.8 moves dev sensitivity 0.717 -> 0.724); (3) ungated `--from-gtf` needs the sharded wrapper
 (`RUSTLE_MINIMAP2=tools/mm2_shard.sh`): a plain minimap2 all-vs-all of 94k loci ran > 75 min.
+
+## PREREG DENOVOFAM-G (2026-10-27): `--fold-split-bridges` (D') on FRESH gorilla catalogs
+DENOVOFAM failed because both human held-outs had no paralogue pair welded by a readthrough (D' inert, r1435). The two gorilla
+catalogs (fibroblast KB3781, OR6737; `runs/gorilla_*`) were never used to build or choose D'. Gorilla numbers are never pooled with human.
+**Truth:** gorilla RefSeq genes (`winloci_data/GGO_genomic.gff`, protein-coding, exon union per gene) carry the human symbol; a gene
+takes the Ensembl ids of the CAT/Liftoff human gene of the same symbol, and truth families are the human Compara "recent" components over
+those ids (Homo sapiens..Catarrhini). Unnamed `LOC` genes are outside the universe (a stated blind spot: many gorilla multi-copy genes
+are LOC). Copies map protein-coding-first by exonic bp, as Amendment 1. Mainstay/YAG regexes on gorilla symbols. All genes, no halves.
+**Runs:** baseline vs D' (`mcl_families --from-gtf ... --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units [--fold-split-bridges]`).
+**Bars, per sample:** G1 pair F and family F not lower than baseline; G2 pair precision (recent) drops <= 0.02; G3 no mainstay/YAG
+regression (largest-family members not fewer, families not more, foreign not more by > 1). **PASS = G1-G3 on both samples AND family F
+>= baseline + 0.01 on at least one** -> `--fold-split-bridges` becomes the default (old behaviour behind `--no-fold-split-bridges`).
+Otherwise it stays opt-in.
