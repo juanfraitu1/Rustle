@@ -7472,3 +7472,18 @@ seed CDS bases only). Both seeds.
 arm). **Bars (each seed, dev then gorilla):** U > A on MACRO member and MACRO pseudogene recall; judged precision >= A - 0.02 and
 unjudged-as-wrong precision >= A - 0.02; every label-seeded mainstay/YAG family U >= A members. PASS on gorilla -> propose U as the guided
 default (user decides), then metric-auditor before any claim.
+
+### GUIDED-S4 RESULT (2026-10-27, register 1445): FAIL on dev by 0.0016 (seed 2 strict precision); gorilla held-out NOT run
+Parent tables: human 7,984 CAT pseudogene -> parent pairs (8,938 GENCODE v50 2-way pseudogenes, 7,755 linked); gorilla 1,180 (7,079 RefSeq
+pseudogenes). Truth pseudogenes 6,776 -> 9,625 (1,132 families). Seeds byte-identical to S3 (`cmp cds.fa`). Outputs `/mnt/linuxdisk/tmp/guided_s3h/s4seed{1,2}/`.
+
+| seed | arm | MACRO member | MACRO pseudo | prec judged | prec unjudged-as-wrong | named losses |
+|---|---|---|---|---|---|---|
+| 1 | A | 0.0252 | 0.0091 | 0.848 | 0.713 | - |
+| 1 | U | 0.0477 | 0.1302 | 0.906 | 0.808 | none / 14 |
+| 2 | A | 0.0288 | 0.0127 | 0.871 | 0.820 | - |
+| 2 | U | 0.0533 | 0.1282 | 0.869 | **0.7987** (bar 0.8003) | none / 13 |
+
+All bars pass on seed 1; seed 2 passes recall, judged precision and the named bar, and misses strict precision by 0.0016. With the independent
+judge the unjudged pool falls from 353 to 162 (seed 1), so S3's precision "loss" was mostly the truth's pseudogene gap. Pseudogene recall
+x10-14 (0.009 -> 0.130), member recall x1.9; TSPY 0/38 -> 38/38 (seed 1). Verdict as registered: FAIL; the held-out stays fresh.

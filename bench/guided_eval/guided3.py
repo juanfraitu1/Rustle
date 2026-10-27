@@ -56,7 +56,7 @@ def group_of(species, d, by_ens, by_sym, size):
     return min(gs, key=lambda g: (size[g], int(g))) if gs else None
 
 
-def truth(species, G):
+def truth(species, G, pgparent=None):
     by_ens, by_sym, size = hgnc_tables()
     pc = {g for g, d in G.items() if d['biotype'] == 'protein_coding' and (species == 'human' or not d['name'].startswith('LOC'))}
     grp = {g: group_of(species, G[g], by_ens, by_sym, size) for g in pc}
@@ -89,6 +89,23 @@ def truth(species, G):
         if len(cand) == 1:
             pseudo[next(iter(cand))].add(g)
     judge = set(universe) | set(pc) | {g for v in pseudo.values() for g in v}
+    if pgparent:  # GUIDED-S4: independent pseudogene -> parent table widens the pseudogene sets
+        fam_of = {g: k for k, c in fams.items() for g in c}
+        proxy = {g: k for k, v in pseudo.items() for g in v}
+        par = dict(line.rstrip('\n').split('\t') for line in open(pgparent))
+        for p, q in par.items():
+            if p not in G or 'pseudogene' not in G[p]['biotype']:
+                continue
+            judge.add(p)
+            k = fam_of.get(q)
+            if k is None:
+                continue
+            if p in proxy and proxy[p] != k:  # sources disagree: out of the truth, unjudged
+                pseudo[proxy[p]].discard(p)
+                judge.discard(p)
+            elif p not in proxy:
+                pseudo[k].add(p)
+        pseudo = {k: v for k, v in pseudo.items() if v}
     return fams, pseudo, judge
 
 
@@ -118,7 +135,7 @@ def order_key(species, G, g):
 
 def prep(a):
     G = load_genes(a.species)
-    fams, pseudo, judge = truth(a.species, G)
+    fams, pseudo, judge = truth(a.species, G, a.pgparent)
     pcs = {g for c in fams.values() for g in c}
     cds = C.cat_cds(pcs) if a.species == 'human' else ggo_cds(pcs)
     C.FA = FASTA[a.species]
@@ -158,7 +175,7 @@ def prep(a):
             w.write(f'>{name}\n{(bm if st == "-" else bp)[r]}\n')
     json.dump(dict(species=a.species, seed=a.seed, families={k: sorted(v) for k, v in fams.items()},
                    pseudo={k: sorted(v) for k, v in pseudo.items()}, judge=sorted(judge), seeds=meta),
-              open(os.path.join(a.outdir, f'truth.seed{a.seed}.json'), 'w'))
+              open(os.path.join(a.outdir, f'truth.seed{a.seed}{a.tag}.json'), 'w'))
     sz = sorted(map(len, fams.values()), reverse=True)
     print(f'{a.species}: families {len(fams)} (largest {sz[:5]}), seeded {len(seeds)}, pseudogenes {sum(map(len, pseudo.values()))} '
           f'in {len(pseudo)} families, named seeds {sum(1 for k, (g, _) in seeds.items() if any(re.match(p, G[g]["name"]) for p in NAMED.values()))}')
@@ -218,7 +235,7 @@ def chain(rs, strand):
 
 
 def score(a):
-    T = json.load(open(os.path.join(a.outdir, f'truth.seed{a.seed}.json')))
+    T = json.load(open(os.path.join(a.outdir, f'truth.seed{a.seed}{a.tag}.json')))
     G = load_genes(a.species)
     idx = F.exon_index(G)
     fams = {k: set(v) for k, v in T['families'].items()}
@@ -264,7 +281,7 @@ def score(a):
     for lab in sorted(named):
         r = named[lab]
         print(f"  {lab}: seed {r['seed']} members {len(r['members'])}/{r['n'] - 1} pseudo {len(r['pseudo'])}/{r['n_pseudo']} wrong {len(r['wrong'])}")
-    json.dump(dict(totals=res, per_family=per, named=named), open(os.path.join(a.outdir, f'score.{a.arm}.seed{a.seed}.json'), 'w'), indent=0)
+    json.dump(dict(totals=res, per_family=per, named=named), open(os.path.join(a.outdir, f'score.{a.arm}.seed{a.seed}{a.tag}.json'), 'w'), indent=0)
 
 
 def main():
@@ -275,6 +292,8 @@ def main():
     ap.add_argument('arm', nargs='?')
     ap.add_argument('paf', nargs='*')
     ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--pgparent', help='GUIDED-S4 pseudogene -> parent TSV (pgparent.py)')
+    ap.add_argument('--tag', default='', help='suffix for truth/score files')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     prep(a) if a.cmd == 'prep' else score(a)
