@@ -7072,3 +7072,23 @@ name.
 for copies: U PSEUDO rate >= 2 x N PSEUDO rate. **PASS = T1 and T2.** Then: estimated real unannotated copies = U PSEUDO / P PSEUDO rate
 (descriptive); U parent-match rate (descriptive).
 
+### SEMITRUTH result (register 1433): **PASS** in both tissues
+`bench/semitruth.py` (one minimap2 call for both samples, 297 s, 14.5 GB with the index); per-item table `/mnt/linuxdisk/tmp/semisec/truth/items.tsv`.
+
+| sample | set | n | PSEUDO | GENE | NONE | UNPLACED | repeat frac | parent match |
+|---|---|---|---|---|---|---|---|---|
+| testis | N | 1,256 | 0.018 | 0.181 | 0.535 | 0.266 | 0.564 | - |
+| testis | P | 427 | **0.829** | 0.077 | 0.037 | 0.056 | 0.169 | 189/215 |
+| testis | U | 1,256 | **0.120** | 0.265 | 0.410 | 0.205 | 0.699 | 14/23 |
+| fibroblast | N | 1,437 | 0.024 | 0.216 | 0.496 | 0.264 | 0.539 | - |
+| fibroblast | P | 650 | **0.792** | 0.138 | 0.020 | 0.049 | 0.208 | 262/306 |
+| fibroblast | U | 1,437 | **0.106** | 0.288 | 0.417 | 0.189 | 0.774 | 27/40 |
+
+- Fibroblast: T1 P 0.792 >= 0.50 PASS; T2 U 0.106 >= 2 x N 0.049 PASS. Testis the same (0.829; 0.120 vs 0.037).
+- Estimated real copies among the unannotated: about 180-190 per sample (U PSEUDO / P PSEUDO), ~13%: copies the gorilla annotation
+  missed and human annotates as pseudogenes at the syntenic place; where named, 60-70% carry the parent's symbol (small n).
+- The rest is mostly repeat-driven: U is 70-77% RepeatMasker-covered vs 54-56% background. Descriptive split (post hoc): U PSEUDO
+  0.23-0.25 when < 50% repeat vs 0.07 when >= 50%; P drops from 0.86-0.88 to 0.48-0.55 in the same way. A repeat filter is the next
+  candidate rule (needs its own prereg).
+- Parent check of the annotated controls: 0.86-0.88 of named human pseudogenes carry the seed gene's symbol.
+
