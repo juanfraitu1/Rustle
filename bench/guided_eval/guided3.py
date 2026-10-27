@@ -171,6 +171,7 @@ def overlap(iv, s, e):
 def records(paths, body_cds):
     """Per PAF record: (seed, chrom, strand, genomic blocks, seed interval, target interval, seed-CDS bases aligned, identity)."""
     for p in paths:
+        bc = body_cds if os.path.basename(p).startswith('A') else {}  # gene-body PAFs are named A*.paf
         for line in open(p):
             f = line.rstrip('\n').split('\t')
             q, qs, qe, st, t, ts = f[0], int(f[2]), int(f[3]), f[4], f[5], int(f[7])
@@ -180,7 +181,7 @@ def records(paths, body_cds):
                 n = int(n)
                 if op in 'M=X':
                     qa = qs + qo if st == '+' else qe - qo - n
-                    cdsb += overlap(body_cds[q], qa, qa + n) if q in body_cds else n
+                    cdsb += overlap(bc[q], qa, qa + n) if q in bc else n
                     qo += n
                 if op in 'M=XD':
                     cur = [pos, pos + n] if cur is None else [cur[0], pos + n]
@@ -223,7 +224,7 @@ def score(a):
     fams = {k: set(v) for k, v in T['families'].items()}
     pseudo = {k: set(v) for k, v in T['pseudo'].items()}
     judge = set(T['judge'])
-    body_cds = {q: [tuple(x) for x in m['body_cds']] for q, m in T['seeds'].items()} if a.arm == 'A' else {}
+    body_cds = {q: [tuple(x) for x in m['body_cds']] for q, m in T['seeds'].items()}
     groups = collections.defaultdict(list)
     for q, t, st, bl, qi, ti, cdsb, ident in records(a.paf, body_cds):
         if q not in T['seeds'] or not bl or cdsb <= 0:

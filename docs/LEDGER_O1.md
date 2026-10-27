@@ -7450,3 +7450,10 @@ TSPY 38/38 vs 0/38 (seed 1). Mechanism of the NPIP loss: E misses the divergent 
 asm20 records of <= 1,126 bp, while the gene body gives enough anchors through introns to reach them. Chaining did not recover them.
 Side finding: against HGNC most-specific groups BOTH nucleotide arms find only 2.5-5% of members per family; most HGNC groups are too divergent
 for a nucleotide seed at Liftoff 0.5/0.5, so this truth measures protein-level homology more than multi-copy families.
+**Post-S3 dev exploration (not a verdict; dev only):** arm U = body asm20 UNION CDS splice+asm20, chained (guided3.py fix: gene-body PAFs `A*.paf`
+always CDS-mapped; A numbers unchanged). U: MACRO member 0.048/0.053, pseudogene 0.117/0.121, judged precision 0.890/0.847 (A 0.846/0.869),
+unjudged-as-wrong 0.680/0.673 (A 0.713/0.807); NPIP 13/21 and 20/21 (= A), TSPY 38/38, GOLGA8 2/27 (= A). **The unjudged hits are the truth's
+gap, not off-family genes:** of U's 353 unjudged seed-1 hits, 349 are pseudogenes of the seed's own family that the name proxy missed
+(FAM90A1 -> FAM90A2P..25P, MT-ND6 -> MTND6P*, HSP90AA1 -> HSP90AA4P/5P, FAM47A -> FAM47DP, FAM25A -> FAM25BP) or unnamed AC*/AL* processed
+pseudogenes (TAF11L12 -> AC233724.*); 4 lncRNA (SETMAR transposase hits). The unjudged-as-wrong bar therefore penalises the pseudogenes the
+user asked for; a fair S4 needs an independent pseudogene-parent judge before any held-out score.
