@@ -7231,3 +7231,19 @@ F not lower, dev pair precision drops <= 0.02, no mainstay/YAG regression (as DE
 pair F not lower, precision drop <= 0.02, no mainstay/YAG regression. PASS -> the arm becomes a documented option and a default flip is
 proposed to the user; otherwise opt-in. Reported (no verdict): Simiiformes/Primates ladders, edges added, largest family.
 **Not tested here:** families as pure connected components (no MCL), and lifts onto silent sites (copies without a locus).
+**Amendment 1 (2026-10-27, after the dev readout of E1/E2, before any held-out score):** dev, recent: baseline pair F 0.764 (prec 0.819),
+family F 0.793; E1 0.763 (prec 0.773) / 0.828, GOLGA6L foreign 2 -> 15; E2 0.753 (prec 0.757) / 0.835, NPIP 19 -> 16. Both fail selection
+(pair F lower, precision drop > 0.02). Liftoff's `-s 0.5` is a placement floor, not a homology floor. One added dev arm, no new number:
+**E3** = E1 with each lift also meeting the graph's own shipped identity floor (`min_identity` 0.70) in a passing direction. Same
+selection and held-out bars. If E3 fails dev, DENOVOFAM-L is FAIL and nothing is held out.
+
+### DENOVOFAM-L result (register 1437): **FAIL at dev selection** - `--extra-edges` stays an opt-in tool, nothing held out
+Lift (liftchain.py, 494 s): 5,779,244 locus pairs, 742,022 lift edges (baseline graph 553,600 edges); 256,428 self-hit records dropped.
+Dev half, recent (pair sens / prec / F; family F): baseline 0.716 / 0.819 / 0.764; 0.793. E1 0.752 / 0.773 / 0.763; 0.828. E2 0.749 /
+0.757 / 0.753; 0.835. E3 0.746 / 0.769 / 0.757; 0.821. Every arm raises family F by >= 0.028 and pair recall by ~0.03, and every arm
+fails precision (drop 0.046-0.062 > 0.02) and pair F; GOLGA6L foreign members 2 -> 15 (E1, E3), NPIP 19 -> 16 (E2).
+Post hoc (no verdict): the 0.70 identity floor is inert (removes 317 of 742,022 lifts; the asm20 records are already >= 0.70), so the
+precision loss comes from Liftoff's ONE-SIDED coverage: a template covering half of its own exons anywhere inside a bigger locus
+lifts onto it, which is a placement criterion, not a family one. Liftoff's thresholds answer "where does this gene go", not
+"are these two loci one family". The recall gain is real (+11 dev true pairs), so an edge that needs the lift to explain the
+TARGET too (two-sided) is the untested next step, and it needs its own prereg.

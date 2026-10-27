@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
-    build_clusters, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks,
+    build_clusters, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks, parse_gene_key,
     mcl_pair_rule_counted, sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
 use rustle::fam_from_gtf::{
@@ -198,6 +198,13 @@ struct Args {
     /// any shipped pipeline; default off, no effect on any existing output.
     #[arg(long)]
     dump_graph: Option<String>,
+    /// PREREG DENOVOFAM-L: extra edges `a<TAB>b<TAB>w` (`chrom:start-end` names, as the PAF) merged into the graph before
+    /// MCL (`bench/denovo_eval/liftchain.py`: Liftoff-style exon chaining). An existing edge is raised to max(w). Opt-in.
+    #[arg(long)]
+    extra_edges: Option<String>,
+    /// With `--extra-edges`: drop every PAF edge first, so the graph is the extra edges alone (nodes stay).
+    #[arg(long, default_value_t = false, requires = "extra_edges")]
+    extra_edges_only: bool,
     /// ⭐ §6fo: derive the SD-like pairs for the core refinement (and `blocks.tsv`) from the input `--paf`
     /// itself — every alignment between two annotated loci is one pair of genomic intervals — instead of a
     /// SEDEF bed. No external SD caller; the intergenic SD context is not available this way. Ignored when
@@ -1396,8 +1403,28 @@ fn main() -> Result<()> {
         _ => None,
     };
     clock.lap("loci map + strands");
-    let g = graph_from_paf_loci_stranded(&paf, &exonic, &blocks, &p, loci.as_ref(), self_hit_strands.as_ref());
+    let mut g = graph_from_paf_loci_stranded(&paf, &exonic, &blocks, &p, loci.as_ref(), self_hit_strands.as_ref());
     clock.lap("graph");
+    if let Some(path) = &args.extra_edges {
+        let mut extra = Vec::new();
+        for line in std::fs::read_to_string(path).with_context(|| path.clone())?.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            let parsed = match f.as_slice() {
+                [a, b, w, ..] => parse_gene_key(a).zip(parse_gene_key(b)).zip(w.parse::<f64>().ok()),
+                _ => None,
+            };
+            let ((ka, kb), w) = parsed.with_context(|| format!("--extra-edges: bad line {line:?}"))?;
+            extra.push((ka, kb, w));
+        }
+        let n_before = g.n_nodes();
+        let (added, raised) = g.add_extra_edges(&extra, args.extra_edges_only);
+        eprintln!(
+            "[mcl_families] extra-edges{}: {} line(s), {added} edge(s) added, {raised} raised, {} new node(s)",
+            if args.extra_edges_only { " (only)" } else { "" },
+            extra.len(),
+            g.n_nodes() - n_before
+        );
+    }
     if let Some(path) = &args.dump_graph {
         let mut f = std::fs::File::create(path)?;
         for (&(i, j), &w) in &g.edges {
@@ -2814,6 +2841,10 @@ fn main() -> Result<()> {
     // PREREG DENOVOFAM opt-in arms: rows only when on, so a default run's params.tsv is unchanged
     if args.shared_exon_union {
         writeln!(ph, "shared_exon_union\ttrue")?;
+    }
+    if let Some(path) = &args.extra_edges {
+        writeln!(ph, "extra_edges\t{path}")?;
+        writeln!(ph, "extra_edges_only\t{}", args.extra_edges_only)?;
     }
     if args.fold_split_bridges {
         writeln!(ph, "fold_split_bridges\ttrue")?;

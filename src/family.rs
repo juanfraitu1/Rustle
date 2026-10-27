@@ -60503,6 +60503,44 @@ pub mod fam_from_gtf {
             pub fn n_edges(&self) -> usize {
                 self.edges.len()
             }
+            /// PREREG DENOVOFAM-L: merge externally computed edges (Liftoff-style lifts). A missing node is appended; an
+            /// edge already present is raised to `max(w)`, never lowered. `only` first drops every PAF edge (and its
+            /// identity), keeping the nodes. Returns (edges added, edges raised).
+            pub fn add_extra_edges(&mut self, extra: &[(GeneKey, GeneKey, f64)], only: bool) -> (usize, usize) {
+                if only {
+                    self.edges.clear();
+                    self.idents.clear();
+                }
+                let mut idx: std::collections::HashMap<GeneKey, usize> =
+                    self.genes.iter().cloned().enumerate().map(|(i, g)| (g, i)).collect();
+                let (mut added, mut raised) = (0, 0);
+                for (a, b, w) in extra {
+                    let mut id = |g: &GeneKey| {
+                        *idx.entry(g.clone()).or_insert_with(|| {
+                            self.genes.push(g.clone());
+                            self.genes.len() - 1
+                        })
+                    };
+                    let (i, j) = (id(a), id(b));
+                    if i == j {
+                        continue;
+                    }
+                    let w = w.min(1.0);
+                    match self.edges.entry((i.min(j), i.max(j))) {
+                        std::collections::btree_map::Entry::Vacant(e) => {
+                            e.insert(w);
+                            added += 1;
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut e) => {
+                            if w > *e.get() {
+                                e.insert(w);
+                                raised += 1;
+                            }
+                        }
+                    }
+                }
+                (added, raised)
+            }
         }
 
         /// Slack, in bp, for [`is_self_hit`]: a record whose aligned genomic intervals coincide this closely is DNA
@@ -62606,6 +62644,29 @@ pub mod fam_from_gtf {
                 ));
                 let g4 = graph_from_paf(&paf3, &ex, &bl, &both);
                 assert_eq!((g4.n_edges(), g4.rejected_no_exonic), (0, 1));
+            }
+
+            /// PREREG DENOVOFAM-L: an extra edge adds missing nodes, raises a weaker edge to its weight, never lowers one;
+            /// `only` drops every PAF edge first (nodes stay).
+            #[test]
+            fn extra_edges_add_nodes_raise_weights_and_replace_when_only() {
+                let k = |s: u64| ("c".to_string(), s, s + 999);
+                let mut g = HomologyGraph::default();
+                g.genes = vec![k(1), k(5001)];
+                g.edges.insert((0, 1), 0.4);
+                let extra = vec![(k(1), k(5001), 0.9), (k(5001), k(9001), 0.6), (k(1), k(5001), 0.2)];
+                assert_eq!(g.add_extra_edges(&extra, false), (1, 1));
+                assert_eq!(g.n_nodes(), 3);
+                assert_eq!(g.edges[&(0, 1)], 0.9);
+                assert_eq!(g.edges[&(1, 2)], 0.6);
+                let mut h = HomologyGraph::default();
+                h.genes = vec![k(1), k(5001), k(9001)];
+                h.edges.insert((0, 2), 0.8);
+                h.idents.insert((0, 2), 0.9);
+                assert_eq!(h.add_extra_edges(&extra[..1], true), (1, 0));
+                assert_eq!(h.edges.len(), 1);
+                assert!(h.idents.is_empty());
+                assert_eq!(h.n_nodes(), 3);
             }
 
             /// PREREG DENOVOFAM arm B: two exon-to-exon records of 500 bp each cover 0.5 of the smaller gene apiece (best
