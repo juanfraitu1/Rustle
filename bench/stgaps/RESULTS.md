@@ -145,3 +145,25 @@ vs 87.0), and 5 points lower in gorilla (86.0 vs 91.2, 143 of 1,025 missed). Sin
 remaining gap, and MIN1 shows admitting them all costs far more precision than it recovers (FW section). ⚠ "Own locus"
 means the reads' PRIMARY placement: a multi-copy transcript whose reads went to a paralog counts as unobserved here.
 That is the O2 question, not an assembly loss.
+
+## Why observed multi-copy transcripts are missed (gorilla KB3781, descriptive; `missed.py`, `missed_polish_steps.py`)
+⚠ Gorilla KB3781 is the held-out of the family layer: anything designed from this section needs a fresh substrate.
+Reference transcripts with >= 2 molecules carrying their exact chain and no `=` in BASE: multi 143 / 1,025, single
+2,409 / 27,306. A `--assembly-polish none` run of the same command (224,698 transcripts) splits them:
+
+| class | multi | single |
+|---|---|---|
+| polish removed it | 131 | 2,335 |
+| never built (chain absent before polish) | 10 | 66 |
+| chain emitted, scored to a same-chain reference / other | 2 | 8 |
+
+`polish_port.py` reproduces the shipped polish exactly here (72,100 multi-exon chains, 0 differences). The polish
+step responsible: multi isoform-fraction 79, ISM collapse 38, retained intron 14; single 1,626 / 616 / 93. Among
+isoform-fraction losses, the gene's top transcript is at ANOTHER locus of the same gene_id (cross-copy suppression)
+for 11 / 79 multi and 70 / 1,626 single. Polish loss rate: multi 12.8%, single 8.6%.
+Nine of the 10 multi "never built" are PCBP2 isoforms (NC_073234.2, − strand): their chain uses an acceptor at
+47886718 (374 molecules; the genome reads `ca` there → a TG acceptor, non-canonical) 12 bp from the canonical AG at
+47886706 (576 molecules). `--assembly-junctions strict` drops the non-canonical junction; RefSeq annotates it.
+**Reading.** The multi-copy loss is the same polish trade as the single-copy one (isoform fraction first), at a
+slightly higher rate. It is not a copy-specific failure: cross-copy suppression through a shared gene_id accounts
+for 11 transcripts. The polish dials were fitted for precision (register 853-873, 1066).
