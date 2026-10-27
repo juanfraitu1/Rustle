@@ -7005,3 +7005,14 @@ Same script, same parameters, fibroblast BAM. Fractions among annotated candidat
 - **PASS = B1 and B2 and B3.** **B4** (reported separately, the lncRNA claim): lncRNA fraction LNC-LIKE / coding classes >= 1.25 (dev 1.64).
 - Unannotated candidates: descriptive only.
 
+### SEMISEC stage 2 - held-out fibroblast KB3781 (register 1431): **PASS** (B1-B3); B4 lncRNA FAIL
+Code = 0a12c3d9. Seeds 23,311; candidates 6,378, silent 3,672 (run 487 s, 9.2 GB).
+- B1 pseudogene DISRUPTED / INTACT = 0.378 (n 1,092) / 0.107 (n 484) = **3.52** (>= 1.5) PASS.
+- B2 PROCESSED/DISRUPTED annotated pseudogene = 293 / 618 = **0.474** (>= 0.40) PASS. PROCESSED/INTACT again mostly protein_coding (0.77).
+- B3 recall = 151 / 664 = **0.227** (>= 0.10) PASS.
+- B4 lncRNA LNC-LIKE 0.164 (n 635) vs coding 0.150 (n 1,576) = 1.09 (< 1.25) **FAIL**: the dev 1.64 did not hold. "LNC-LIKE" means only
+  "copy of a non-coding read"; it does not predict an annotated lncRNA.
+- Unannotated silent candidates 1,437 (median span 3.1 kb): possible unannotated copies or noise; no truth.
+- Reading: semi-guided from multimappers finds about 1 in 5 silent annotated pseudogenes of expressed genes (loss = AS >= 0.8 x primary)
+  and tells a disrupted copy from an intact one (3.5x pseudogene enrichment in both tissues). It does not identify lncRNAs.
+
