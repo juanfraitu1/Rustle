@@ -6973,3 +6973,35 @@ overlapping it most (pseudogene and transcribed_pseudogene -> pseudogene; protei
   of a protein_coding gene overlapping a seed) - the fraction overlapped by a silent candidate. NCBI's homology, not ours.
 - Unannotated silent candidates ("none"): count and size, reported as possible new copies or noise (no truth).
 **Stage 2 (held-out fibroblast):** bars committed after stage 1, before it is run.
+
+### SEMISEC stage 1 - dev census (testis OR6737), 2026-10-26
+Script `bench/semisec.py` (dump -> TSV per contig via samtools+mawk; run 2.5 min, 3.1 GB). Seeds 26,055; candidates 6,630, silent 2,672.
+
+| class | n | pseudogene | protein_coding | lncRNA | other | none |
+|---|---|---|---|---|---|---|
+| PROCESSED/DISRUPTED | 313 | 189 (0.60) | 90 (0.29) | 14 (0.04) | 0 | 20 (0.06) |
+| PROCESSED/INTACT | 152 | 13 (0.09) | 126 (0.83) | 5 (0.03) | 0 | 8 (0.05) |
+| PROCESSED/LNC-LIKE | 199 | 60 (0.30) | 50 (0.25) | 12 (0.06) | 0 | 77 (0.39) |
+| UNPROCESSED/DISRUPTED | 746 | 79 (0.11) | 161 (0.22) | 54 (0.07) | 3 | 449 (0.60) |
+| UNPROCESSED/INTACT | 480 | 36 (0.07) | 159 (0.33) | 31 (0.06) | 3 | 251 (0.52) |
+| UNPROCESSED/LNC-LIKE | 780 | 50 (0.06) | 166 (0.21) | 68 (0.09) | 46 (0.06) | 450 (0.58) |
+| UNPROCESSED/UNCOVERED | 2 | 0 | 0 | 1 | 0 | 1 |
+
+- Classes carry meaning: among annotated candidates, pseudogene fraction DISRUPTED 0.454 (n 590) vs INTACT 0.131 (n 373) = 3.46x;
+  PROCESSED/DISRUPTED 0.60 pseudogene; PROCESSED/INTACT 0.83 protein_coding (intact retrocopies are annotated as genes). LNC-LIKE
+  lncRNA 0.177 vs coding classes 0.108 (1.64x; weak).
+- Recall (silent denominator, as preregistered): 115 / 582 = 0.198. Ruling: the first report counted expressed pseudogenes too
+  (120 / 1,186) - a bug against the prereg text, fixed before any bar was set. Loss ladder over the 1,186 (dev only): 1,163 get
+  secondaries of seed reads; 788 lose them all at AS >= 0.8 x primary - the main loss is the preregistered -p 0.8 cut.
+- Unannotated silent candidates 1,256 (median span 3.9 kb, median 4 reads), from only 513 distinct best reads: a few multi-hit reads
+  give most of them; includes mitochondrial reads (NUMTs, unannotated in RefSeq). No truth for them.
+
+### SEMISEC stage-2 bars (committed before the fibroblast KB3781 run; code frozen at this commit)
+Same script, same parameters, fibroblast BAM. Fractions among annotated candidates (truth != none), PROCESSED+UNPROCESSED pooled.
+- **B1** pseudogene fraction DISRUPTED / INTACT >= 1.5 (dev 3.46).
+- **B2** PROCESSED/DISRUPTED candidates annotated pseudogene >= 0.40 (dev 0.60).
+- **B3** recall over annotated silent "X-like" pseudogenes of expressed seed genes >= 0.10 (dev 0.198; half of dev, since the seed set
+  changes with tissue).
+- **PASS = B1 and B2 and B3.** **B4** (reported separately, the lncRNA claim): lncRNA fraction LNC-LIKE / coding classes >= 1.25 (dev 1.64).
+- Unannotated candidates: descriptive only.
+
