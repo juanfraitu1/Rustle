@@ -64,6 +64,50 @@ def load_cat():
     return genes
 
 
+GGO_GFF = '/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff'
+
+
+def load_ggo(human):
+    """Gorilla RefSeq genes (PREREG DENOVOFAM-G): exon union per gene; `ens` = the Ensembl ids of the human CAT gene(s) of the same
+    symbol, so the human Compara truth applies by symbol. LOC genes get no ids (outside the universe)."""
+    sym_ens = collections.defaultdict(set)
+    for d in human.values():
+        sym_ens[d['name']] |= d['ens']
+    genes, tx_gene, ex = {}, {}, collections.defaultdict(list)
+    for line in open(GGO_GFF):
+        if line[0] == '#':
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9:
+            continue
+        a = dict(x.split('=', 1) for x in f[8].split(';') if '=' in x)
+        if f[2] in ('gene', 'pseudogene'):
+            name = a.get('gene', a.get('Name', a['ID']))
+            genes[a['ID']] = dict(name=name, biotype=a.get('gene_biotype', 'other'), chrom=f[0], strand=f[6], exons=[],
+                                  ens=set() if name.startswith('LOC') else sym_ens.get(name, set()))
+        elif f[2] == 'exon':
+            ex[a.get('Parent', '')].append((int(f[3]) - 1, int(f[4])))
+        elif 'Parent' in a and a['Parent'].startswith('gene-'):
+            tx_gene[a['ID']] = a['Parent']
+    by = collections.defaultdict(list)
+    for t, v in ex.items():
+        g = tx_gene.get(t, t if t in genes else None)
+        if g in genes:
+            by[g] += v
+    for g, v in by.items():
+        m = []
+        for s0, e0 in sorted(v):
+            if m and s0 <= m[-1][1]:
+                m[-1][1] = max(m[-1][1], e0)
+            else:
+                m.append([s0, e0])
+        genes[g]['exons'] = [tuple(x) for x in m]
+    genes = {g: d for g, d in genes.items() if d['exons']}
+    GENES.clear()
+    GENES.update(genes)
+    return genes
+
+
 def exon_index(genes):
     by = collections.defaultdict(list)
     for g, d in genes.items():
@@ -239,10 +283,13 @@ def main():
     ap.add_argument('--paralogs', default=PARALOGS)
     ap.add_argument('--levels', default='recent')
     ap.add_argument('--show', default='all,dev,heldout', help='halves to PRINT (the JSON always holds all): dev only while tuning')
+    ap.add_argument('--species', default='human', choices=['human', 'gorilla'])
     ap.add_argument('--gtf', help='de novo GTF of the sample: expressed = genes with a transcript (default: genes in a family)')
     a = ap.parse_args()
     global G
     G = load_cat()
+    if a.species == 'gorilla':
+        G = load_ggo(G)
     idx = exon_index(G)
     fams, n_copies, n_mapped = load_catalog(a.copies, G, idx)
     in_fam = set().union(*fams.values()) if fams else set()

@@ -7202,3 +7202,9 @@ are LOC). Copies map protein-coding-first by exonic bp, as Amendment 1. Mainstay
 regression (largest-family members not fewer, families not more, foreign not more by > 1). **PASS = G1-G3 on both samples AND family F
 >= baseline + 0.01 on at least one** -> `--fold-split-bridges` becomes the default (old behaviour behind `--no-fold-split-bridges`).
 Otherwise it stays opt-in.
+
+### DENOVOFAM-G result (register 1436): **FAIL (no gain; truth underpowered)** - `--fold-split-bridges` stays opt-in
+D' changes a few copies (KB3781 843 -> 846 copies, 290 -> 291 families; OR6737 1,521 -> 1,523) and NO scored number: KB3781 pair F 0.320,
+family F 0.625 both arms; OR6737 0.324 / 0.619 both; mainstays/YAGs identical. G1-G3 pass, the +0.01 family bar fails on both.
+Underpowered: the symbol-mapped Compara truth holds only 9 (KB3781) and 13 (OR6737) true families with >= 2 expressed members (13 and 17
+true pairs), because gorilla RefSeq names most extra copies `LOC...` (the pre-stated blind spot).
