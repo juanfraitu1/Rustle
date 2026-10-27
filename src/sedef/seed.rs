@@ -30,7 +30,8 @@ pub struct SeedParams {
     pub max_postings: usize,
     pub min_shared: usize,
     /// Scan v2 (SEDEF's seed rule, `--uppercase` = k): every k-mer counts toward the shared mass, and a candidate is
-    /// marked `upper_seed` when a shared sketch k-mer is all uppercase (unmasked) in both windows; the chain stage keeps
+    /// marked `upper_seed` when a shared sketch k-mer has an uppercase (unmasked) base in both windows (SEDEF's
+    /// HAS_UPPERCASE, hash.cc / search.cc); the chain stage keeps
     /// only blocks with such a seed, so common repeats seed nothing while a mostly-masked duplication is extended from
     /// its unmasked part.
     pub uppercase_seed: bool,
@@ -51,7 +52,7 @@ pub struct WindowSketch {
     pub end: u64,
     /// Bottom-S distinct canonical k-mer hashes, sorted ascending.
     pub sketch: Vec<u64>,
-    /// With `uppercase_seed`: per sketch hash, whether one of its k-mers in the window is all uppercase (else empty).
+    /// With `uppercase_seed`: per sketch hash, whether one of its k-mers in the window has an uppercase base (else empty).
     pub upper: Vec<bool>,
 }
 
@@ -59,7 +60,7 @@ pub struct Candidate {
     pub a: usize,
     pub b: usize,
     pub shared: u32,
-    /// A shared sketch k-mer is all uppercase in both windows (always false without `uppercase_seed`).
+    /// A shared sketch k-mer has an uppercase base in both windows (always false without `uppercase_seed`).
     pub upper_seed: bool,
 }
 
@@ -87,7 +88,7 @@ pub fn build_windows(
                 let s = wi * stride;
                 let e = (s + p.window).min(seq.len());
                 let w = &seq[s..e];
-                // (hash, the k-mer is all uppercase)
+                // (hash, the k-mer has an uppercase base: SEDEF's HAS_UPPERCASE, hash.cc)
                 let mut hashes: Vec<(u64, bool)> = Vec::with_capacity(p.window);
                 if p.uppercase_seed {
                     // up[i] = uppercase bases in w[..i]
@@ -96,11 +97,11 @@ pub fn build_windows(
                     for &c in w {
                         up.push(up[up.len() - 1] + c.is_ascii_uppercase() as u32);
                     }
-                    for_each_kmer(w, p.k, |i, h| hashes.push((h, (up[i + p.k] - up[i]) as usize == p.k)));
+                    for_each_kmer(w, p.k, |i, h| hashes.push((h, up[i + p.k] > up[i])));
                 } else {
                     for_each_kmer(w, p.k, |_, h| hashes.push((h, false)));
                 }
-                // ascending hash, an all-uppercase occurrence first, so dedup keeps it
+                // ascending hash, an occurrence with an uppercase base first, so dedup keeps it
                 hashes.sort_unstable_by_key(|&(h, u)| (h, !u));
                 hashes.dedup_by_key(|x| x.0);
                 if hashes.len() < p.min_kmers {
@@ -186,7 +187,7 @@ fn count_shard(entries: &[(u64, u32, bool)], at: &[(u32, u64)], shard: u32, shar
                     if sa == sb && xa.abs_diff(xb) < p.window as u64 {
                         continue;
                     }
-                    // low 31 bits: shared hashes; bit 31: one of them is all uppercase in both windows
+                    // low 31 bits: shared hashes; bit 31: one of them has an uppercase base in both windows
                     let both_up = ((entries[x].2 && entries[y].2) as u32) << 31;
                     let c = counts.entry((a, b)).or_insert(0);
                     *c = (*c + 1) | both_up;
@@ -311,27 +312,34 @@ mod tests {
     }
 
     #[test]
-    fn only_windows_sharing_an_unmasked_kmer_are_upper_seeds() {
-        // a masked 2 kb unit twice (windows 0 and 5) and an unmasked one twice (windows 10 and 15)
+    fn only_windows_sharing_a_kmer_with_an_unmasked_base_are_upper_seeds() {
+        // a masked 2 kb unit twice (windows 0 and 5), an unmasked one twice (windows 10 and 15), and a masked one with
+        // every 10th base unmasked twice (windows 20 and 25): SEDEF's HAS_UPPERCASE (hash.cc) needs one unmasked base
+        // per k-mer, so the third unit seeds although none of its k-mers is wholly unmasked
         let masked = synth(61, 2_000).to_ascii_lowercase();
         let unmasked = synth(62, 2_000);
-        let mut seq = synth(8, 34_000);
+        let mut sparse = synth(63, 2_000).to_ascii_lowercase();
+        for c in sparse.iter_mut().step_by(10) {
+            c.make_ascii_uppercase();
+        }
+        let mut seq = synth(8, 54_000);
         seq[0..2_000].copy_from_slice(&masked);
         seq[10_000..12_000].copy_from_slice(&masked);
         seq[20_000..22_000].copy_from_slice(&unmasked);
         seq[30_000..32_000].copy_from_slice(&unmasked);
-        for (upper, want) in [(false, vec![]), (true, vec![(20_000u64, 30_000u64)])] {
+        seq[40_000..42_000].copy_from_slice(&sparse);
+        seq[50_000..52_000].copy_from_slice(&sparse);
+        for (upper, want) in [(false, vec![]), (true, vec![(20_000u64, 30_000u64), (40_000, 50_000)])] {
             let p = SeedParams { k: 16, window: 2000, stride: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, uppercase_seed: upper };
             let (mut wins, _) = build_windows(&[("s".to_string(), seq.clone())], &p);
             let cands = find_candidates(&mut wins, &p);
             let mut all: Vec<(u64, u64)> = cands.iter().map(|c| (wins[c.a].start, wins[c.b].start)).collect();
             all.sort();
-            assert_eq!(all, vec![(0, 10_000), (20_000, 30_000)], "both units are candidates");
+            assert_eq!(all, vec![(0, 10_000), (20_000, 30_000), (40_000, 50_000)], "all three units are candidates");
             let mut got: Vec<(u64, u64)> =
                 cands.iter().filter(|c| c.upper_seed).map(|c| (wins[c.a].start, wins[c.b].start)).collect();
             got.sort();
             assert_eq!(got, want, "uppercase_seed {upper}");
         }
     }
-
 }

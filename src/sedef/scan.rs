@@ -26,7 +26,7 @@ use std::time::Instant;
 use crate::sedef::{anchors, chain, decompose, fasta, refine, seed};
 
 /// Bumped whenever an output of `run` can change for the same genome and parameters; part of the version key.
-pub const SCAN_VERSION: u32 = 2;
+pub const SCAN_VERSION: u32 = 3;
 
 /// The sandbox CLI's default parameters (`sedef_rs seed|chain|refine|decompose --help`), plus the output-neutral
 /// shard count of the seed stage's pair counting. Scan v2 (2026-10-25, LEDGER_O1 SDSCAN2): seeding windows every
@@ -602,7 +602,7 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    // The golden output of SCAN_VERSION 2 on the toy genome (v1 split the inverted 8 kb copy into four 2 kb pairs); tests/sd_scan.rs reads the same tables back through the
+    // The golden output of SCAN_VERSION 2 and 3 on the toy genome (v1 split the inverted 8 kb copy into four 2 kb pairs); tests/sd_scan.rs reads the same tables back through the
     // hierarchy's readers. Change these constants only together with a SCAN_VERSION bump: a change here means sd-scan's
     // output for the same genome and parameters changed, and with it the driver's cache key.
     const PLANTED_PAIRS: &str = "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id\tstage2_id\tstatus\n\
@@ -805,7 +805,7 @@ chrB\t170000\t174999\tF1\n";
     fn the_version_key_names_every_parameter_but_the_shard_count() {
         let p = ScanParams::default();
         let k = p.version_key();
-        assert!(k.starts_with("sedef-rs 0.1.0 vendored 2026-10-13 scan v2;"), "{k}");
+        assert!(k.starts_with("sedef-rs 0.1.0 vendored 2026-10-13 scan v3;"), "{k}");
         assert_eq!(ScanParams { count_shards: 7, ..p.clone() }.version_key(), k);
         assert_ne!(ScanParams { min_seg: 999, ..p }.version_key(), k);
     }

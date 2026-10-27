@@ -40,8 +40,9 @@ pub struct RefineParams {
     /// are deterministically subsampled instead of truncated (truncation
     /// starves late positions in satellite arrays).
     pub max_pairs: u64,
-    /// Scan v2 (SEDEF's final filter): a block's ok pairs together need at least this many uppercase (unmasked) bases on
-    /// each side and this many aligned matches between uppercase bases; otherwise they are `repeat` records. 0 disables
+    /// Scan v2 (SEDEF's final filter, stats_main.cc): an ok pair, with the other pieces of its duplication, needs at least
+    /// this many uppercase (unmasked) bases on each side and this many aligned matches between uppercase bases; otherwise
+    /// it is a `repeat` record. 0 disables
     /// the filter.
     pub min_uppercase: u64,
     /// Scan v2: a chain whose alignment identity is below this (percent) is not a pair and shadows no other chain.
@@ -394,7 +395,7 @@ const BISER_MAX_GAP: i64 = 10 * 1024;
 const BISER_MAX_ITER: usize = 500;
 
 /// Scan v2: BISER's second-level chaining over the chains of one strand space. Chains sorted by end; each takes the
-/// best-scoring predecessor (ending before it on both axes, the longer gap < MAX_GAP, the shorter <= `max_gap` so the
+/// best-scoring predecessor (ending before it on both axes, an overlap clipped as BISER does, the longer gap < MAX_GAP, the shorter <= `max_gap` so the
 /// stretch both copies have is aligned, not assumed: BISER aligns it afterwards); paths are read from the best scores
 /// down, each chain used once, and concatenated into one chain.
 pub fn join_chains(mut chains: Vec<Vec<(u32, i64)>>, k: usize, max_gap: u64) -> Vec<Vec<(u32, i64)>> {
@@ -431,10 +432,17 @@ pub fn join_chains(mut chains: Vec<Vec<(u32, i64)>>, k: usize, max_gap: u64) -> 
             if tried > BISER_MAX_ITER {
                 break;
             }
-            if pe_a > cs_a || pe_b > cs_b {
+            // BISER: the predecessor ends first on both axes and starts first on B; an overlap is clipped (the later
+            // chain starts where the predecessor ends), so its gap is 0. An overlap is a negative gap, bounded as the
+            // shorter gap is (BISER's hits overlap by little; a long one would put one stretch into both chains).
+            let (ce_a, ce_b) = end(&chains[c]);
+            if pe_a >= ce_a || pe_b >= ce_b || chains[p][0].1 >= cs_b {
                 continue;
             }
-            let (ga, gb) = (cs_a - pe_a, cs_b - pe_b);
+            if pe_a - cs_a > max_gap as i64 || pe_b - cs_b > max_gap as i64 {
+                continue;
+            }
+            let (ga, gb) = ((cs_a - pe_a).max(0), (cs_b - pe_b).max(0));
             let (mi, ma) = (ga.min(gb), ga.max(gb));
             if ma >= BISER_MAX_GAP || mi > max_gap as i64 {
                 continue;
@@ -462,9 +470,13 @@ pub fn join_chains(mut chains: Vec<Vec<(u32, i64)>>, k: usize, max_gap: u64) -> 
             i = prev[i];
         }
         path.reverse();
-        let mut pts = Vec::new();
+        let mut pts: Vec<(u32, i64)> = Vec::new();
         for i in path {
-            pts.extend_from_slice(&chains[i]);
+            // the clipped overlap: k-mers of the later chain that start inside the predecessor's last k-mer are dropped
+            let from = pts.last().map_or(0, |&(la, lb)| {
+                chains[i].iter().position(|&(pa, pb)| pa >= la + k as u32 && pb >= lb + k as i64).unwrap_or(chains[i].len())
+            });
+            pts.extend_from_slice(&chains[i][from..]);
         }
         out.push(pts);
     }
@@ -478,41 +490,61 @@ pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64, u64) {
     if n == 0 || m == 0 {
         return (0, 0, 0);
     }
-    let w = m + 1;
-    let mut d = vec![0u32; (n + 1) * w];
-    for j in 0..=m {
-        d[j] = j as u32;
-    }
-    for i in 1..=n {
-        d[i * w] = i as u32;
-        let ai = a[i - 1].to_ascii_uppercase();
-        for j in 1..=m {
-            let sub = d[(i - 1) * w + j - 1] + (ai != b[j - 1].to_ascii_uppercase()) as u32;
-            let del = d[(i - 1) * w + j] + 1;
-            let ins = d[i * w + j - 1] + 1;
-            d[i * w + j] = sub.min(del).min(ins);
+    // Ukkonen's band: only diagonals |j - i| <= t are filled, others are infinite. A cell whose true distance is <= t
+    // has its optimal path inside the band, so it is exact; when the corner's distance is <= t, every cell the
+    // traceback visits or compares against is then exact or fails the comparison as in the full DP, so the counts are
+    // the full DP's. A corner above t is an upper bound on the distance, so a second pass with t = that bound is final.
+    let mut t = (n.abs_diff(m) + 16).min(n.max(m));
+    loop {
+        let w = 2 * t + 1;
+        const INF: u32 = u32::MAX / 2;
+        let mut d = vec![INF; (n + 1) * w];
+        let at = |i: usize, j: usize| i * w + j + t - i; // j in [i - t, i + t]
+        for j in 0..=t.min(m) {
+            d[at(0, j)] = j as u32;
         }
-    }
-    let (mut i, mut j) = (n, m);
-    let (mut mat, mut mis, mut up) = (0u64, 0u64, 0u64);
-    while i > 0 && j > 0 {
-        let same = a[i - 1].to_ascii_uppercase() == b[j - 1].to_ascii_uppercase();
-        if d[i * w + j] == d[(i - 1) * w + j - 1] + (!same) as u32 {
-            if same {
-                mat += 1;
-                up += (a[i - 1].is_ascii_uppercase() && b[j - 1].is_ascii_uppercase()) as u64;
-            } else {
-                mis += 1;
+        for i in 1..=n {
+            let ai = a[i - 1].to_ascii_uppercase();
+            let (lo, hi) = (i.saturating_sub(t), (i + t).min(m));
+            for j in lo..=hi {
+                if j == 0 {
+                    d[at(i, 0)] = i as u32;
+                    continue;
+                }
+                let sub = d[at(i - 1, j - 1)] + (ai != b[j - 1].to_ascii_uppercase()) as u32;
+                let del = if j < i + t { d[at(i - 1, j)] + 1 } else { INF }; // (i - 1, j) is in the band
+                let ins = if j > lo { d[at(i, j - 1)] + 1 } else { INF };
+                d[at(i, j)] = sub.min(del).min(ins);
             }
-            i -= 1;
-            j -= 1;
-        } else if d[i * w + j] == d[(i - 1) * w + j] + 1 {
-            i -= 1;
-        } else {
-            j -= 1;
         }
+        let score = d[at(n, m)] as usize;
+        if score > t {
+            t = score.min(n.max(m));
+            continue;
+        }
+        let get = |i: usize, j: usize| if j + t < i || j > i + t { INF } else { d[at(i, j)] };
+        let (mut i, mut j) = (n, m);
+        let (mut mat, mut mis, mut up) = (0u64, 0u64, 0u64);
+        while i > 0 && j > 0 {
+            let same = a[i - 1].to_ascii_uppercase() == b[j - 1].to_ascii_uppercase();
+            let here = get(i, j);
+            if here == get(i - 1, j - 1) + (!same) as u32 {
+                if same {
+                    mat += 1;
+                    up += (a[i - 1].is_ascii_uppercase() && b[j - 1].is_ascii_uppercase()) as u64;
+                } else {
+                    mis += 1;
+                }
+                i -= 1;
+                j -= 1;
+            } else if here == get(i - 1, j) + 1 {
+                i -= 1;
+            } else {
+                j -= 1;
+            }
+        }
+        return (mat, mis, up);
     }
-    (mat, mis, up)
 }
 
 /// Scan v2 identity of a chain: anchors are k-mer matches, the stretches between consecutive anchors are aligned;
@@ -520,7 +552,9 @@ pub fn align_counts(a: &[u8], b: &[u8]) -> (u64, u64, u64) {
 /// fracMatch). `b` is in the chain's strand space.
 /// A gap is aligned only up to `max_gap`^2 DP cells, the largest a run's own steps make; a longer gap of a BISER join
 /// counts as an indel plus its shorter side as mismatches.
-pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize, max_gap: u64) -> (f64, u64) {
+/// Once even all-matching remaining A bases cannot lift the identity to `floor`, it stops and returns that bound (below
+/// `floor`); an identity at or above `floor` is exact.
+pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize, max_gap: u64, floor: f64) -> (f64, u64) {
     let both_up = |i: usize, j: usize| a[i].is_ascii_uppercase() && b[j].is_ascii_uppercase();
     // uppercase matches of `n` matched bases starting at a[i], b[j]
     let up_run = |i: usize, j: usize, n: usize| (0..n).filter(|&t| both_up(i + t, j + t)).count() as u64;
@@ -528,7 +562,14 @@ pub fn chain_identity(pts: &[(u32, i64)], a: &[u8], b: &[u8], k: usize, max_gap:
     let mut mat = k as u64;
     let mut up = up_run(p0a, p0b, k);
     let mut mis = 0u64;
+    let last = pts[pts.len() - 1].0 as u64;
     for w in pts.windows(2) {
+        // the identity if every A base after this anchor matched
+        let rest = last - w[0].0 as u64;
+        let bound = 100.0 * (mat + rest) as f64 / (mat + mis + rest).max(1) as f64;
+        if bound < floor {
+            return (bound, up);
+        }
         let ((pa, pb), (qa, qb)) = (w[0], w[1]);
         let (da, db) = ((qa - pa) as i64, qb - pb);
         if da == db && da as usize <= k {
@@ -653,31 +694,41 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
     let is_ok = |c: &(char, &Vec<(u32, i64)>, u64, u64, u64, u64, u64)| {
         c.3 - c.2 >= p.min_span && c.5 - c.4 >= p.min_span && c.1.len() >= 3
     };
-    let ident = |i: usize| {
+    let ident = |i: usize, floor: f64| {
         let (strand, pts, ..) = cands[i];
-        chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k, p.max_gap)
+        chain_identity(pts, sa, if strand == '-' { &sb_rc } else { sb }, k, p.max_gap, floor)
     };
     // (candidate, identity, uppercase matches) of the kept chains
     let mut chosen: Vec<(usize, f64, u64)> = Vec::new();
-    for (i, c) in cands.iter().enumerate() {
-        if !is_ok(c) {
-            continue;
-        }
-        let meets = chosen.iter().any(|&(j, ..)| {
+    let meets = |chosen: &[(usize, f64, u64)], i: usize| {
+        let c = &cands[i];
+        chosen.iter().any(|&(j, ..)| {
             let d = &cands[j];
             c.2 < d.3 && d.2 < c.3 && c.4 < d.5 && d.4 < c.5
-        });
-        if meets {
-            continue;
+        })
+    };
+    // Identities of the next few unshadowed candidates are computed in parallel, then the selection is replayed in
+    // order, so the kept chains are the sequential selection's (a candidate shadowed within its batch costs only work).
+    const BATCH: usize = 8;
+    let mut next = 0;
+    while next < cands.len() {
+        let mut batch = Vec::with_capacity(BATCH);
+        while next < cands.len() && batch.len() < BATCH {
+            if is_ok(&cands[next]) && !meets(&chosen, next) {
+                batch.push(next);
+            }
+            next += 1;
         }
-        let (id, up) = ident(i);
-        if id >= p.min_identity {
-            chosen.push((i, id, up));
+        let ids: Vec<(f64, u64)> = batch.par_iter().map(|&i| ident(i, p.min_identity)).collect();
+        for (&i, &(id, up)) in batch.iter().zip(&ids) {
+            if id >= p.min_identity && !meets(&chosen, i) {
+                chosen.push((i, id, up));
+            }
         }
     }
     let mut fallback = false;
     if chosen.is_empty() {
-        let (id, up) = ident(0);
+        let (id, up) = ident(0, 0.0);
         chosen.push((0, id, up)); // the best chain, as a weak record
         fallback = true;
     }
@@ -710,18 +761,45 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
             }
         })
         .collect();
-    // SEDEF's final filter, over the block's ok pairs together (they are pieces of one duplication): unmasked matches and
-    // unmasked bases per side, summed
+    // SEDEF's final filter (stats_main.cc): unmasked matches and unmasked bases per side, per duplication. SEDEF judges
+    // one alignment; ours may be pieces of it, so pieces of one strand in order on both copies whose boundary is an indel
+    // (the shorter gap at most max_gap, an overlap at most max_gap) are summed. Copies of a tandem array have equal gaps
+    // on both axes, so each stays alone (summing them would pass the array on one or two unmasked bases per copy).
     if p.min_uppercase > 0 {
-        let (mut um, mut ua, mut ub) = (0u64, 0u64, 0u64);
-        for (r, &(m, a, b)) in kept.iter().zip(&up_stats) {
-            if r.ok && !r.self_pair {
-                (um, ua, ub) = (um + m, ua + a, ub + b);
+        let live: Vec<usize> = (0..kept.len()).filter(|&i| kept[i].ok && !kept[i].self_pair).collect();
+        let mut group: Vec<usize> = (0..kept.len()).collect();
+        fn root(g: &mut [usize], mut x: usize) -> usize {
+            while g[x] != x {
+                g[x] = g[g[x]];
+                x = g[x];
+            }
+            x
+        }
+        let mg = p.max_gap as i64;
+        for &i in &live {
+            for &j in &live {
+                let (x, y) = (&kept[i], &kept[j]);
+                if x.strand != y.strand || x.ra0 >= y.ra0 {
+                    continue;
+                }
+                let ga = y.ra0 as i64 - x.ra1 as i64;
+                let gb = if x.strand == '-' { x.rb0 as i64 - y.rb1 as i64 } else { y.rb0 as i64 - x.rb1 as i64 };
+                if ga >= -mg && gb >= -mg && ga.min(gb) <= mg {
+                    let (ri, rj) = (root(&mut group, i), root(&mut group, j));
+                    group[ri] = rj;
+                }
             }
         }
-        if um < p.min_uppercase || ua < p.min_uppercase || ub < p.min_uppercase {
-            for r in kept.iter_mut().filter(|r| r.ok && !r.self_pair) {
-                r.repeat = true;
+        let mut sums: HashMap<usize, (u64, u64, u64)> = HashMap::new();
+        for &i in &live {
+            let (m, a, b) = up_stats[i];
+            let e = sums.entry(root(&mut group, i)).or_default();
+            *e = (e.0 + m, e.1 + a, e.2 + b);
+        }
+        for &i in &live {
+            let (m, a, b) = sums[&root(&mut group, i)];
+            if m < p.min_uppercase || a < p.min_uppercase || b < p.min_uppercase {
+                kept[i].repeat = true;
             }
         }
     }
@@ -974,6 +1052,86 @@ mod tests {
     }
 
     #[test]
+    fn a_long_insertion_whose_ends_repeat_a_few_bases_is_bridged() {
+        // the B copy repeats 50 bases of A after its 2 kb insertion (microhomology at the breakpoints), so the two
+        // halves overlap on A: BISER clips the later half's start (align.codon `refine`) and joins them
+        let core = mutate(&synth(7, 10_000), 3, 9);
+        let mut b_copy = core[..5_000].to_vec();
+        b_copy.extend_from_slice(&synth(23, 2_000));
+        b_copy.extend_from_slice(&core[4_950..]);
+        let mut seq = synth(1, 60_000);
+        seq[10_000..20_000].copy_from_slice(&core);
+        seq[30_000..42_050].copy_from_slice(&b_copy);
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let recs = ok_records(&block(9_000, 21_000, 29_000, 43_000), &seqs);
+        assert!(recs.iter().any(|r| r.ra1 - r.ra0 >= 9_900 && r.rb1 - r.rb0 >= 11_900),
+            "{:?}", recs.iter().map(|r| (r.ra0, r.ra1, r.rb0, r.rb1)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn pieces_stay_pairs_when_their_join_fails_the_identity() {
+        // two 1.5 kb pieces of a duplication with 400 unrelated bases between them on both copies: the joined chain is
+        // below 90% identity, the pieces are not, so both pieces are pairs
+        let (x, y) = (synth(51, 1_500), synth(53, 1_500));
+        let mut a_copy = x.clone();
+        a_copy.extend_from_slice(&synth(55, 400));
+        a_copy.extend_from_slice(&y);
+        let mut b_copy = mutate(&x, 2, 4);
+        b_copy.extend_from_slice(&synth(57, 400));
+        b_copy.extend_from_slice(&mutate(&y, 2, 6));
+        let mut seq = synth(1, 40_000);
+        seq[10_000..13_400].copy_from_slice(&a_copy);
+        seq[25_000..28_400].copy_from_slice(&b_copy);
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let recs = ok_records(&block(9_000, 14_000, 24_000, 29_000), &seqs);
+        let near = |r: &Refined, a0: u64, b0: u64| r.ra0.abs_diff(a0) <= 50 && r.rb0.abs_diff(b0) <= 50;
+        let got: Vec<_> = recs.iter().map(|r| (r.ra0, r.ra1, r.rb0, r.rb1, r.est_id)).collect();
+        assert!(recs.iter().any(|r| near(r, 10_000, 25_000)), "first piece: {got:?}");
+        assert!(recs.iter().any(|r| near(r, 11_900, 26_900)), "second piece: {got:?}");
+    }
+
+    #[test]
+    fn a_join_clips_a_short_overlap_but_not_a_long_one() {
+        let chain = |a0: u32, a1: u32, shift: i64| (a0..a1).step_by(10).map(|a| (a, a as i64 + shift)).collect::<Vec<_>>();
+        // the later chain starts 26 bases before the first ends on A (k = 16), 1.4 kb later on B: one chain
+        let short = join_chains(vec![chain(0, 3_000, 0), chain(2_980, 6_000, 1_400)], 16, 400);
+        assert_eq!(short.len(), 1);
+        assert!(short[0].windows(2).all(|w| w[1].0 > w[0].0 && w[1].1 > w[0].1), "monotone");
+        // the later chain lies over most of the first on A: two chains
+        let long = join_chains(vec![chain(0, 3_000, 0), chain(100, 3_100, 5_000)], 16, 400);
+        assert_eq!(long.len(), 2);
+    }
+
+    #[test]
+    fn the_unmasked_filter_counts_the_pieces_of_one_duplication_together() {
+        // two masked 2 kb halves with 60 unmasked bases each; the B copy has a 12 kb insertion between them (beyond
+        // BISER's join), so they are two pieces, each under 100 unmasked matches but 120 together
+        let half = |seed: u64| {
+            let mut h = synth(seed, 2_000).to_ascii_lowercase();
+            for c in h.iter_mut().step_by(33).take(60) {
+                c.make_ascii_uppercase();
+            }
+            h
+        };
+        let (x, y) = (half(61), half(63));
+        let mut seq = synth(1, 60_000);
+        seq[10_000..12_000].copy_from_slice(&x);
+        seq[12_000..14_000].copy_from_slice(&y);
+        seq[30_000..32_000].copy_from_slice(&x);
+        seq[44_000..46_000].copy_from_slice(&y);
+        let mut seqs = HashMap::new();
+        seqs.insert("c".to_string(), seq);
+        let p = RefineParams { min_uppercase: 100, ..params() };
+        let recs: Vec<Refined> = refine_block(&block(9_000, 15_000, 29_000, 47_000), &seqs, &p)
+            .into_iter().map(|(r, _)| r).filter(|r| r.ok && !r.self_pair).collect();
+        let got: Vec<_> = recs.iter().map(|r| (r.ra0, r.ra1, r.rb0, r.rb1, r.repeat)).collect();
+        assert_eq!(recs.len(), 2, "{got:?}");
+        assert!(recs.iter().all(|r| !r.repeat), "{got:?}");
+    }
+
+    #[test]
     fn two_duplications_in_one_block_are_two_pairs() {
         // X and Y are both duplicated, with 5 kb between them on A and 7 kb on B: two pairs, not the better one only.
         let x = mutate(&synth(31, 5_000), 5, 1);
@@ -1009,6 +1167,98 @@ mod tests {
             for q in &recs[i + 1..] {
                 let over = |a0: u64, a1: u64, b0: u64, b1: u64| a0 < b1 && b0 < a1;
                 assert!(!(over(r.ra0, r.ra1, q.ra0, q.ra1) && over(r.rb0, r.rb1, q.rb0, q.rb1)), "overlapping pairs");
+            }
+        }
+    }
+
+    /// The full unit-cost DP that `align_counts` bands (scan v2 before the band).
+    fn align_counts_full(a: &[u8], b: &[u8]) -> (u64, u64, u64) {
+        let (n, m) = (a.len(), b.len());
+        if n == 0 || m == 0 {
+            return (0, 0, 0);
+        }
+        let w = m + 1;
+        let mut d = vec![0u32; (n + 1) * w];
+        for j in 0..=m {
+            d[j] = j as u32;
+        }
+        for i in 1..=n {
+            d[i * w] = i as u32;
+            let ai = a[i - 1].to_ascii_uppercase();
+            for j in 1..=m {
+                let sub = d[(i - 1) * w + j - 1] + (ai != b[j - 1].to_ascii_uppercase()) as u32;
+                let del = d[(i - 1) * w + j] + 1;
+                let ins = d[i * w + j - 1] + 1;
+                d[i * w + j] = sub.min(del).min(ins);
+            }
+        }
+        let (mut i, mut j) = (n, m);
+        let (mut mat, mut mis, mut up) = (0u64, 0u64, 0u64);
+        while i > 0 && j > 0 {
+            let same = a[i - 1].to_ascii_uppercase() == b[j - 1].to_ascii_uppercase();
+            if d[i * w + j] == d[(i - 1) * w + j - 1] + (!same) as u32 {
+                if same {
+                    mat += 1;
+                    up += (a[i - 1].is_ascii_uppercase() && b[j - 1].is_ascii_uppercase()) as u64;
+                } else {
+                    mis += 1;
+                }
+                i -= 1;
+                j -= 1;
+            } else if d[i * w + j] == d[(i - 1) * w + j] + 1 {
+                i -= 1;
+            } else {
+                j -= 1;
+            }
+        }
+        (mat, mis, up)
+    }
+
+    #[test]
+    fn the_banded_alignment_counts_what_the_full_dp_counts() {
+        let mut x = 5u64;
+        let mut r = |n: u64| {
+            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (x >> 33) % n
+        };
+        for _ in 0..3_000 {
+            let n = r(400) as usize;
+            let a: Vec<u8> = (0..n).map(|_| b"ACGTacgt"[r(8) as usize]).collect();
+            // b: a with substitutions, insertions and deletions at a random rate, or unrelated sequence
+            let rate = r(40);
+            let mut b = Vec::new();
+            if r(10) == 0 {
+                b = (0..r(400)).map(|_| b"ACGT"[r(4) as usize]).collect();
+            } else {
+                for &c in &a {
+                    match r(100) {
+                        e if e < rate / 2 => b.push(b"ACGT"[r(4) as usize]),
+                        e if e < rate * 3 / 4 => {}
+                        e if e < rate => {
+                            b.push(c);
+                            b.push(b"acgt"[r(4) as usize]);
+                        }
+                        _ => b.push(c),
+                    }
+                }
+            }
+            assert_eq!(align_counts(&a, &b), align_counts_full(&a, &b), "a {} b {}", a.len(), b.len());
+            assert_eq!(align_counts(&b, &a), align_counts_full(&b, &a));
+        }
+    }
+
+    #[test]
+    fn an_identity_floor_changes_no_decision_and_no_identity_above_it() {
+        // chains of anchors every 60 bases on one diagonal, between a sequence and copies of it at 0-45% substitutions
+        let a = synth(77, 20_000);
+        for rate in [0u32, 3, 8, 12, 20, 45] {
+            let b = mutate(&a, rate, 3);
+            let pts: Vec<(u32, i64)> = (0..330).map(|i| (i * 60, i as i64 * 60)).collect();
+            let exact = chain_identity(&pts, &a, &b, 16, 400, 0.0);
+            let floored = chain_identity(&pts, &a, &b, 16, 400, 90.0);
+            assert_eq!(exact.0 >= 90.0, floored.0 >= 90.0, "rate {rate}: {exact:?} {floored:?}");
+            if exact.0 >= 90.0 {
+                assert_eq!(exact, floored, "rate {rate}");
             }
         }
     }
