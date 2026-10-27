@@ -6943,3 +6943,33 @@ decision with the user). H1 FAIL + H2 PASS = better but still not a replacement.
     | + per-duplication filter (scan v3) | 0.7178 | 0.9530 | 335 | 4.5 |
     - Remaining loss (bp of truth): unmasked filter 10.8% (SDs split into 4+ pieces with unaligned masked stretches on
       both copies, which SEDEF aligns through), never a candidate 5.2%, seed gate 4.9%, chain 1.8%, refine 1.6%.
+
+## PREREG SEMISEC (2026-10-26): semi-guided mode from multimappers - silent copies of expressed genes, classified
+**Status:** committed before any candidate is computed. Stage 1 = dev census (testis); stage-2 bars are set from it and committed
+before the held-out sample is run.
+**Question (user, after the advisor):** can the secondary alignments of expressed genes' reads find their copies that carry no
+reads (pseudogenes, lncRNA-like copies), and say which kind each is? Semi-guided as defined 09-26: seeds = read-supported loci,
+targets = copies with no reads; no annotation is used to build or classify (annotation = truth only).
+**Samples (gorilla only, one reference GCF_029281585.2):** DEV = testis OR6737 (`winloci_data/GGO_mm.bam`); HELD-OUT = fibroblast
+KB3781 (`fibroblasts/GCA_029281585.2_flnc_mm.bam`). Both aligned `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1`.
+**Steps** (per sample; script `bench/semisec.py`):
+1. Seeds: primary records (`-F 2308`, MAPQ any) merged into loci by overlap on the same strand; a seed = a locus with >= 2 reads.
+2. Candidate hits: secondary records (flag 256) of seed reads with AS >= 0.8 x the read's primary AS (minimap2's own default
+   `-p 0.8`; the BAM kept 0.1) not overlapping the read's own seed locus. Hits merged by overlap per strand into candidate loci; a
+   candidate needs >= 2 distinct reads.
+3. Silent: a candidate locus with < 2 primary reads of the same sample. Only silent candidates are scored (the rest are expressed
+   copies, de novo's job).
+4. Class, from sequence only, using the candidate's best hit (highest AS): seed ORF = the longest ORF (ATG..stop) of that read, coding
+   if >= 100 codons (the usual lncRNA cut). The candidate's sequence = reference bases along the hit's aligned blocks (introns skipped).
+   - PROCESSED if the primary has >= 1 intron (N) and the hit has none; else UNPROCESSED.
+   - Coding seed: DISRUPTED if the ORF's aligned stretch on the candidate has a premature stop or a net indel not divisible by 3,
+     else INTACT. Non-coding seed: LNC-LIKE.
+**Truth (annotation, never read by steps 1-4):** a candidate's annotated biotype = the gene / pseudogene feature of `GGO_genomic.gff`
+overlapping it most (pseudogene and transcribed_pseudogene -> pseudogene; protein_coding; lncRNA; other; none).
+**Reports (stage 1, dev):**
+- Candidates: count, by class; annotated biotype per class (confusion). Expected if the classes mean something: DISRUPTED and
+  PROCESSED enriched for pseudogene over INTACT; LNC-LIKE enriched for lncRNA.
+- Recall: annotated silent pseudogenes whose description names an expressed seed's gene (description "X-like", X = the description
+  of a protein_coding gene overlapping a seed) - the fraction overlapped by a silent candidate. NCBI's homology, not ours.
+- Unannotated silent candidates ("none"): count and size, reported as possible new copies or noise (no truth).
+**Stage 2 (held-out fibroblast):** bars committed after stage 1, before it is run.
