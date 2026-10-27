@@ -10458,3 +10458,21 @@ its k-mers seen >= 3 times.
 Trib for P) is >= 0.5; an ASSEMBLY ERROR if Jim's dosage < 0.25; otherwise UNRESOLVED. The non-transmitting parent is reported:
 dosage < 0.25 there means the two parents differ for that sequence (the advisor's claim, for that locus); >= 0.5 means both carry it
 (Jim inherited only one). Script `bench/triochk.py`; data `/mnt/linuxdisk/tmp/triochk`.
+
+### TRIOCHK result (register 1422): all three CONFIRMED; the parents differ in copy number at both loci
+Haplotype-specific 21-mers kept: N 6,540 / 77,814 (the rest occur in NPIP paralogs), S 86,032 / 116,772, P 191 / 4,001;
+control 149,296. lambda = 10 (2 copies) in all three animals. Dosage (fraction of k-mers seen >= 3 times):
+
+| target | Jim | Trib (father) | Dolly (mother) | verdict |
+|---|---|---|---|---|
+| N, NPIP maternal-only locus | 1.00 (0.82) | 1.00 (0.75) | 2.00 (1.00) | CONFIRMED |
+| S, STON1 maternal-only 121.6 kb | 1.00 (0.85) | 0.80 (0.82) | 2.20 (1.00) | CONFIRMED |
+| P, father's deletion junctions | 0.80 (0.93) | 0.60 (0.75) | 0.00 (0.00) | CONFIRMED |
+
+- Neither haplotype-only sequence is an assembly error: each is in Jim's own WGS at one copy, and in the parent that passed it on.
+- Reading by genotype (dosage ~ copies of the sequence): Dolly carries both sequences on both chromosomes (2) and no deletion
+  junction; Trib carries each once (1) and the deletion once; Jim got Dolly's insertion and Trib's deletion. So at STON1 the
+  three animals hold 2 (Dolly), 1 (Trib) and 1 (Jim) copies of the 121.6 kb, and likewise at the NPIP locus: a segregating
+  insertion / deletion, with the parents differing.
+- Limits: k-mer counts do not give positions, so Trib's single copy of N / S is assumed to be the allele at the same site (his
+  untransmitted chromosome); 12x WGS. Data `/mnt/linuxdisk/tmp/triochk` (`result.json`), `bench/triochk.py`.
