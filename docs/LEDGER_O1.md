@@ -7092,3 +7092,17 @@ for copies: U PSEUDO rate >= 2 x N PSEUDO rate. **PASS = T1 and T2.** Then: esti
   candidate rule (needs its own prereg).
 - Parent check of the annotated controls: 0.86-0.88 of named human pseudogenes carry the seed gene's symbol.
 
+## PREREG SEMIREP (2026-10-27): drop repeat-driven secondary hits
+**Rule:** `semisec --repeats GCF_029281585.2.repeatMasker.out.gz`: a secondary hit is dropped (before candidates are formed) when
+MOST of its aligned reference bases (M/=/X blocks; > half - a majority, not a tuned cut) lie in RepeatMasker intervals. Primaries,
+seeds and the silent test are untouched. Everything else as SEMISEC (ratio 0.8).
+**Contamination note:** SEMITRUTH's descriptive split (candidate SPAN repeat cover < / >= 0.5) was already seen on both samples. This
+rule acts on single hits, before merging, so its candidate sets and every number below are unseen; but it is the same idea, so a PASS
+here is weaker than a fresh-sample PASS.
+**Runs:** testis (descriptive), fibroblast KB3781 (decisive); `semisec.py report` + `semitruth.py`, filtered vs unfiltered.
+**Fibroblast bars:**
+- **R1 precision of the unannotated:** U (unannotated silent) human-PSEUDO rate >= 0.20 (unfiltered 0.106).
+- **R2 real copies kept:** U human-PSEUDO count >= 0.8 x unfiltered (152 -> >= 122).
+- **R3 annotated side not worse:** recall >= 0.227 - 0.02; parent agreement >= 0.708 - 0.02; B1 and B2 pass.
+- **PASS = R1 and R2 and R3** -> `--repeats` becomes part of the default SEMISEC run.
+

@@ -38,6 +38,10 @@ struct Args {
     /// Contigs scanned at once.
     #[arg(long, default_value_t = 5)]
     threads: usize,
+    /// RepeatMasker .out (plain or .gz): drop a secondary hit when most of its aligned reference bases (> half) are repeat
+    /// (SEMIREP). Off when absent.
+    #[arg(long)]
+    repeats: Option<String>,
 }
 
 const MIN_READS: usize = 2;
@@ -58,6 +62,64 @@ struct Sec {
     end: u32,
     rev: bool,
     as_: i32,
+    /// most aligned reference bases lie in repeats (only with --repeats)
+    repeat: bool,
+}
+
+/// RepeatMasker intervals per contig, 0-based half-open, merged and sorted.
+fn load_repeats(path: &str) -> Result<HashMap<String, Vec<(u32, u32)>>> {
+    use std::io::BufRead;
+    let f = std::fs::File::open(path).with_context(|| format!("opening {path}"))?;
+    let r: Box<dyn BufRead> = if path.ends_with(".gz") {
+        Box::new(std::io::BufReader::new(flate2::read::MultiGzDecoder::new(f)))
+    } else {
+        Box::new(std::io::BufReader::new(f))
+    };
+    let mut by: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
+    for line in r.lines() {
+        let line = line?;
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 15 || !f[0].bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let (Ok(s), Ok(e)) = (f[5].parse::<u32>(), f[6].parse::<u32>()) else { continue };
+        by.entry(f[4].to_string()).or_default().push((s - 1, e));
+    }
+    for v in by.values_mut() {
+        v.sort_unstable();
+        let mut m: Vec<(u32, u32)> = Vec::with_capacity(v.len());
+        for &(s, e) in v.iter() {
+            match m.last_mut() {
+                Some(l) if s <= l.1 => l.1 = l.1.max(e),
+                _ => m.push((s, e)),
+            }
+        }
+        *v = m;
+    }
+    Ok(by)
+}
+
+/// Bases of [s, e) inside the merged intervals `m`.
+fn repeat_bp(m: &[(u32, u32)], s: u32, e: u32) -> u32 {
+    let i = m.partition_point(|x| x.1 <= s);
+    m[i..].iter().take_while(|x| x.0 < e).map(|x| x.1.min(e) - x.0.max(s)).sum()
+}
+
+/// Whether most aligned reference bases (M/=/X blocks) of an alignment starting at `pos` are repeat.
+fn mostly_repeat(m: &[(u32, u32)], pos: u32, cig: &[(Kind, u32)]) -> bool {
+    let (mut r, mut aligned, mut rep) = (pos, 0u32, 0u32);
+    for &(k, n) in cig {
+        match k {
+            Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                aligned += n;
+                rep += repeat_bp(m, r, r + n);
+                r += n;
+            }
+            Kind::Deletion | Kind::Skip => r += n,
+            _ => {}
+        }
+    }
+    2 * rep > aligned
 }
 
 fn ref_span(cig: &[(Kind, u32)]) -> u32 {
@@ -80,7 +142,7 @@ fn cigar_of(record: &noodles_bam::Record) -> Result<Vec<(Kind, u32)>> {
 const SPAN: u64 = 20_000_000;
 
 /// Every primary and secondary record of one contig piece (records STARTING in it), in BAM order.
-fn scan_span(bam: &str, span: &rustle::bam::ContigSpan) -> Result<(Vec<Prim>, Vec<Sec>)> {
+fn scan_span(bam: &str, span: &rustle::bam::ContigSpan, reps: Option<&[(u32, u32)]>) -> Result<(Vec<Prim>, Vec<Sec>)> {
     let mut reader = rustle::bam::open_bam(bam, 1)?;
     let header = reader.read_header()?;
     let (mut prims, mut secs) = (Vec::new(), Vec::new());
@@ -112,7 +174,8 @@ fn scan_span(bam: &str, span: &rustle::bam::ContigSpan) -> Result<(Vec<Prim>, Ve
         let as_ = rustle::bam::record_as(&record).unwrap_or(0);
         let name: Box<str> = String::from_utf8_lossy(name).into();
         if f.is_secondary() {
-            secs.push(Sec { name, pos, end, rev: f.is_reverse_complemented(), as_ });
+            let repeat = reps.is_some_and(|m| mostly_repeat(m, pos, &cig));
+            secs.push(Sec { name, pos, end, rev: f.is_reverse_complemented(), as_, repeat });
         } else {
             let spliced = cig.iter().any(|(k, _)| *k == Kind::Skip);
             prims.push(Prim { name, pos, end, rev: f.is_reverse_complemented(), as_, spliced });
@@ -317,6 +380,7 @@ fn main() -> Result<()> {
             .map(|(k, v)| (k.to_string(), usize::from(v.length()) as u64))
             .collect()
     };
+    let reps = args.repeats.as_deref().map(load_repeats).transpose()?;
     let mut pieces: Vec<(usize, u64, rustle::bam::ContigSpan)> = Vec::new();
     for &i in &order {
         let (c, len) = (&contigs[i], lens[&contigs[i]]);
@@ -329,7 +393,10 @@ fn main() -> Result<()> {
     }
     let mut parts: Vec<(usize, u64, Vec<Prim>, Vec<Sec>)> = pieces
         .par_iter()
-        .map(|(i, lo, sp)| scan_span(&args.bam, sp).map(|(p, s)| (*i, *lo, p, s)))
+        .map(|(i, lo, sp)| {
+            let r = reps.as_ref().map(|h| h.get(&sp.contig).map_or(&[][..], |v| v.as_slice()));
+            scan_span(&args.bam, sp, r).map(|(p, s)| (*i, *lo, p, s))
+        })
         .collect::<Result<_>>()?;
     parts.sort_by_key(|x| (x.0, x.1));
     let mut scanned: Vec<(usize, Vec<Prim>, Vec<Sec>)> = Vec::new();
@@ -368,7 +435,7 @@ fn main() -> Result<()> {
         pidx.insert(*ci, Iv::new(prims.iter().map(|p| (p.pos, p.end)).collect()));
     }
     // 2. candidate hits
-    let (mut n_sec, mut n_kept) = (0u64, 0u64);
+    let (mut n_sec, mut n_kept, mut n_repeat) = (0u64, 0u64, 0u64);
     struct Cand<'a> {
         ci: usize,
         strand: char,
@@ -386,6 +453,10 @@ fn main() -> Result<()> {
             let Some(&(sc, ss, se)) = read_seed.get(&*x.name) else { continue };
             let p = prim[&*x.name].1;
             if (x.as_ as f64) < args.ratio * p.as_ as f64 {
+                continue;
+            }
+            if x.repeat {
+                n_repeat += 1;
                 continue;
             }
             if sc == *ci && x.pos < se && x.end > ss {
@@ -484,7 +555,7 @@ fn main() -> Result<()> {
         off += iv.v.len();
     }
     let mut w = std::fs::File::create(format!("{o}/stats.tsv"))?;
-    writeln!(w, "seeds\t{}\nsecondaries\t{n_sec}\nkept_hits\t{n_kept}\ncandidates\t{}\nsilent\t{}\nratio\t{}", seeds.len(), cands.len(), silent.len(), args.ratio)?;
+    writeln!(w, "seeds\t{}\nsecondaries\t{n_sec}\nkept_hits\t{n_kept}\nrepeat_hits_dropped\t{n_repeat}\ncandidates\t{}\nsilent\t{}\nratio\t{}", seeds.len(), cands.len(), silent.len(), args.ratio)?;
     eprintln!("[semisec] {} silent classed; done in {:.0} s", silent.len(), t0.elapsed().as_secs_f64());
     Ok(())
 }
