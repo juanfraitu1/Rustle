@@ -7432,3 +7432,21 @@ human Compara by symbol; `LOC` genes outside the truth, a stated blind spot). Ne
 **Bars (dev, then gorilla):** E beats A on MACRO member and MACRO pseudogene recall; precision (judged) >= A - 0.02 AND precision (unjudged as
 wrong) >= A - 0.02; for every label-seeded mainstay/YAG family E finds >= A's members. PASS on gorilla -> chained spliced seeds proposed as
 the guided default (user decides).
+
+### GUIDED-S3 RESULT (2026-10-27, register 1444): FAIL on dev; gorilla held-out NOT run (kept fresh)
+`bench/guided_eval/guided3.py`, outputs `/mnt/linuxdisk/tmp/guided_s3h/seed{1,2}/score.{A,E}.seed*.json`. Truth: 2,089 human families
+(largest 340, 200, 121), 6,776 pseudogenes in 865 families, 15 label-seeded mainstay/YAG families.
+
+| seed | arm | MACRO member | MACRO pseudo | prec judged | prec unjudged-as-wrong | micro member |
+|---|---|---|---|---|---|---|
+| 1 | A body asm20 | 0.0252 | 0.0125 | 0.846 | 0.713 | 312/14,300 |
+| 1 | E CDS splice+asm20 | 0.0460 | 0.1159 | 0.908 | **0.689** | 514/14,300 |
+| 2 | A | 0.0288 | 0.0172 | 0.869 | 0.807 | 356/14,300 |
+| 2 | E | 0.0508 | 0.1209 | 0.856 | **0.678** | 544/14,300 |
+
+Bars: recall bars PASS both seeds; judged precision PASS both; **unjudged-as-wrong precision FAILS both** (-0.024, -0.129: E's extra hits are
+mostly genes in no truth family); **named bar FAILS**: NPIP 6/21 (E) vs 13/21 (A) seed 1, 7 vs 20 seed 2; GOLGA8 1 vs 2 seed 1. E wins
+TSPY 38/38 vs 0/38 (seed 1). Mechanism of the NPIP loss: E misses the divergent NPIPA subgroup (NPIPA1/2/5/7/8); the CDS query (1,767 bp) gives
+asm20 records of <= 1,126 bp, while the gene body gives enough anchors through introns to reach them. Chaining did not recover them.
+Side finding: against HGNC most-specific groups BOTH nucleotide arms find only 2.5-5% of members per family; most HGNC groups are too divergent
+for a nucleotide seed at Liftoff 0.5/0.5, so this truth measures protein-level homology more than multi-copy families.
