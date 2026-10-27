@@ -291,3 +291,39 @@ Links inside one S1C family: full 1,540, nested 1,163, partial 1,168, one_exon 3
 +nested 87, +partial 89, +one_exon 60, not connected by edges 2 (the hand merges). Nested = partial copies, as
 expected biologically: NOTCH2NL (NOTCH2's first exons), SRGAP2B/C/D (truncated SRGAP2). Partial: NPIP ID_154,
 TBC1D3 ID_468, FAM90A, POTE, WASH, ARHGAP11A/B. One-exon families include IGKV orphons, RPL23AP, CYP4F/FAR2P.
+
+## 9. 2026-10-26: what Soto's families are made of, how complete, what long RNA sees (`bench/soto/soto_measure.py`)
+Single-label S1C members (2,071 of 491 families). RNA = A119b TESTIS Iso-Seq, primary reads overlapping a lifted exon block, any strand (an upper bound: testis transcribes pervasively, and a read through a host gene's exon counts). Outputs `/mnt/linuxdisk/tmp/soto_exshare/measure/`.
+
+## Composition (491 S1C families, 2071 single-label members)
+- with >= 1 protein-coding: 238 (48.5%)
+- with >= 2 protein-coding: 129 (26.3%)
+- no protein-coding member: 253 (51.5%)
+- pseudogenes only: 223 (45.4%)
+- with >= 1 lncRNA: 61 (12.4%)
+- members: pseudogene 1263 (61.0%), protein_coding 618 (29.8%), lncRNA 122 (5.9%), other 68 (3.3%)
+
+## Completeness: share of each member's exonic bp shared with its own family
+| members | all (100%) | 80-99% | 50-79% | 20-49% | <20% |
+|---|---|---|---|---|---|
+| all (2071) | 1362 (66%) | 355 (17%) | 135 (7%) | 97 (5%) | 122 (6%) |
+| protein_coding (618) | 331 (54%) | 140 (23%) | 50 (8%) | 43 (7%) | 54 (9%) |
+| pseudogene (1263) | 899 (71%) | 199 (16%) | 74 (6%) | 40 (3%) | 51 (4%) |
+| lncRNA (122) | 69 (57%) | 11 (9%) | 11 (9%) | 14 (11%) | 17 (14%) |
+| other (68) | 63 (93%) | 5 (7%) | 0 (0%) | 0 (0%) | 0 (0%) |
+- families where a member shares < 50% of its exonic bp: 177 (36.0%)
+- families where a member shares < 20%: 105 (21.4%)
+
+## Long RNA reads (A119b testis Iso-Seq; blocks lifted 13139/13139)
+- families with no member expressed: 37 (7.5%)
+- families with exactly 1 member expressed: 73 (14.9%)
+- families with >= 2 members expressed (visible as multi-copy): 381 (77.6%)
+- families with all members expressed: 337 (68.6%)
+- families with >= 2 members with >= 2 MAPQ>=20 reads (copies told apart): 336 (68.4%)
+- protein_coding members: 618; expressed (>= 2 reads) 472 (76.4%); distinguishable (>= 2 MAPQ>=20 reads) 410 (66.3%)
+- pseudogene members: 1263; expressed (>= 2 reads) 875 (69.3%); distinguishable (>= 2 MAPQ>=20 reads) 744 (58.9%)
+- lncRNA members: 122; expressed (>= 2 reads) 108 (88.5%); distinguishable (>= 2 MAPQ>=20 reads) 96 (78.7%)
+- other members: 68; expressed (>= 2 reads) 24 (35.3%); distinguishable (>= 2 MAPQ>=20 reads) 22 (32.4%)
+- primary reads on family members: 536,071; MAPQ 0 25,556 (4.8%)
+
+SD identity band (same SEDEF `final_v1.bed`, CAT v4, gene = >= 1 exon fully inside): >=98% 132.4 Mbp / 5,364 genes / 844 protein-coding; >=95% 191.3 / 8,301 / 1,551; >=90% 234.3 / 12,135 / 2,747. Protein-coding only at 95-98%: 699 (ACSM2A/B, ALG10/10B, ALG1L/1L2, ANKRD18A/B, AQP7, ADGRE1, ...); at 90-95%: 1,170 (includes parents of pseudogene copies, e.g. ACTB / ACTG1: an upper bound on coding families).

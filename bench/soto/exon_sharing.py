@@ -172,3 +172,21 @@ with open(os.path.join(out, "families.tsv"), "w", newline="") as fh:
 print(f"Soto families (>= 2 members, {sum(need.values())}): weakest link class needed to connect all members")
 for lab in ["full", "+nested", "+partial", "+one_exon", "not connected by edges"]:
     print(f"  {lab:24s} {need[lab]}")
+
+# per member: exonic blocks (and bp) shared with ANY other member of its own S1C family
+with open(os.path.join(out, "members.tsv"), "w", newline="") as fh:
+    w = csv.writer(fh, delimiter="\t")
+    w.writerow(["gene_id", "name", "biotype", "family", "blocks", "shared_blocks", "exonic_bp", "shared_bp"])
+    for f, mem in sorted(fam.items()):
+        if f.startswith("Unassigned"):
+            continue
+        for g in sorted(mem):
+            if g not in blocks:
+                continue
+            sb = set()
+            for h in mem:
+                if h != g:
+                    sb |= shared.get((g, h), set())
+            bp = sum(b - a for a, b in blocks[g])
+            sbp = sum(blocks[g][i][1] - blocks[g][i][0] for i in sb)
+            w.writerow([g, name.get(g, ""), biotype.get(g, ""), f, len(blocks[g]), len(sb), bp, sbp])
