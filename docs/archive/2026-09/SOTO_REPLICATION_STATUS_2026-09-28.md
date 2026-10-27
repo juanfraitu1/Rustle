@@ -280,3 +280,14 @@ Tie choices are not reproducible from annotation or ID order: among annotation-t
 gene is the higher ID 5 times, the lower 2 (DUX4L / NF1P triplets: one representative kept by hand).
 **Reading:** the step from our own pipeline to 0.97 is copy number (0.928 → 0.970, 68 families), not curation; with
 our copy numbers, any curation (their list, our rule, none) lands within 0.0023 ARI / 12 families.
+
+## 8. 2026-10-26: how much of each gene Soto's shared-exon links share (`bench/soto/exon_sharing.py`, descriptive)
+The exon map-back re-run with its PAF kept (`edges --exon-mapback --work`, edges byte-identical to the frozen table;
+`/mnt/linuxdisk/tmp/soto_exshare/`). Per linked pair, shared exonic blocks / all blocks of each gene (blocks = merged
+exons of all CAT v4 transcripts, also outside SD98). Classes: full (both >= 80%), nested (one >= 80%), partial (both
+< 80%, >= 2 shared blocks), one_exon (1 block each side), single_exon_gene.
+Links inside one S1C family: full 1,540, nested 1,163, partial 1,168, one_exon 353, single-exon gene 4,867.
+444 S1C families with >= 2 members, weakest link class needed to connect all members: **full only 206 (46%)**,
++nested 87, +partial 89, +one_exon 60, not connected by edges 2 (the hand merges). Nested = partial copies, as
+expected biologically: NOTCH2NL (NOTCH2's first exons), SRGAP2B/C/D (truncated SRGAP2). Partial: NPIP ID_154,
+TBC1D3 ID_468, FAM90A, POTE, WASH, ARHGAP11A/B. One-exon families include IGKV orphons, RPL23AP, CYP4F/FAR2P.
