@@ -7359,3 +7359,5 @@ family's proxy pseudogene); unjudgeable hits counted. Per mainstay/YAG family li
 **Decision:** on DEV, the best arm by member recall + pseudogene recall among those with precision >= A's - 0.02. If that arm is not A, it must
 beat A on HELD-OUT families on both recalls with precision >= A's - 0.02, and lose no mainstay/YAG member found by A. PASS -> spliced seeds
 become the guided finder's documented default seed (user decides the flip).
+**Deviation (2026-10-27):** the first scorer call printed BOTH halves for arm B (held-out seen for B before selection: member recall 0.747,
+pseudo 0.368, precision 0.865). Fixed (`--show`, default dev). Selection still uses dev only; B's held-out reading must be stated as seen.
