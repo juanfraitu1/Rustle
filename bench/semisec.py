@@ -10,6 +10,7 @@ import bisect
 import collections
 import csv
 import json
+import re
 import sys
 
 import numpy as np
@@ -67,6 +68,28 @@ def load(out):
         c, st, s, e, n = line.split()
         seeds[f'{c}:{s}-{e}{st}'] = (c, st, int(s), int(e), int(n))
     return cands, seeds
+
+
+ISOFORM = re.compile(r' isoform \S+$')
+
+
+def products(gff):
+    """Protein names of coding genes: each protein's CDS span with its `product=` (isoform suffix dropped), by contig."""
+    span = {}
+    for line in open(gff):
+        f = line.split('\t')
+        if len(f) < 9 or f[2] != 'CDS':
+            continue
+        a = dict(x.split('=', 1) for x in f[8].strip().split(';') if '=' in x)
+        k = (f[0], a.get('protein_id', a.get('ID', '')))
+        s, e = int(f[3]) - 1, int(f[4])
+        name = ISOFORM.sub('', a.get('product', '').replace('%2C', ','))
+        old = span.get(k)
+        span[k] = (min(s, old[0]), max(e, old[1]), name) if old else (s, e, name)
+    by = collections.defaultdict(list)
+    for (c, _), v in span.items():
+        by[c].append(v)
+    return {c: Index(v) for c, v in by.items()}
 
 
 def biotypes(gff):
@@ -149,7 +172,9 @@ def report(out, gff):
     lines += [f'{k}: {v:.3f} {"PASS" if ok else "FAIL"}' for k, (v, ok) in bars.items()]
     lines.append('VERDICT (B1-B3): ' + ('PASS' if all(ok for k, (_, ok) in bars.items() if not k.startswith('B4')) else 'FAIL'))
     # parent agreement (precision on annotated pseudogene hits): a silent candidate whose annotated pseudogene is "X-like" agrees when
-    # the best read's seed locus overlaps a protein_coding gene described X
+    # the best read's seed locus overlaps a protein named X (CDS product; NCBI names "X-like" pseudogenes after the protein, while a
+    # gene's description is the gene name: "ribosomal protein S26" makes "small ribosomal subunit protein eS26")
+    pi = products(gff)
     agree = n_like = 0
     for c in sil:
         if c['truth'] != 'pseudogene' or not c['truth_desc'].endswith('-like'):
@@ -157,7 +182,7 @@ def report(out, gff):
         ch, iv = c['best_seed'].rsplit(':', 1)
         s0, e0 = map(int, iv.split('-'))
         n_like += 1
-        agree += any(h[2] == 'protein_coding' and h[3] == c['truth_desc'][:-5] for h in (gi[ch].over(s0, e0) if ch in gi else []))
+        agree += any(h[2] == c['truth_desc'][:-5] for h in (pi[ch].over(s0, e0) if ch in pi else []))
     lines.append(f'parent agreement: {agree} / {n_like} ({agree / max(n_like, 1):.3f}) silent candidates on an "X-like" pseudogene found from a seed on X')
     none = [c for c in sil if c['truth'] == 'none']
     sizes = sorted(c['end'] - c['start'] for c in none)

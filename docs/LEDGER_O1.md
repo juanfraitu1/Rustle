@@ -7035,3 +7035,20 @@ from a seed overlapping a protein_coding gene described X (NCBI's homology says 
 - **C3** parent agreement(0) >= parent agreement(0.8) - 0.05.
 - **PASS = C1 and C2 and C3** -> `--ratio 0` becomes the default. Candidate and unannotated counts reported.
 
+### SEMIRATIO result (register 1432): **FAIL** - the 0.8 cut stays the default
+- Ruling (before the fibroblast ratio-0 report was read; dev and fibroblast 0.8 had been seen): the parent-agreement measure as first
+  coded matched "X-like" against gene DESCRIPTIONS and gave 0.12-0.14 at 0.8; NCBI names "X-like" pseudogenes after the PROTEIN
+  ("small ribosomal subunit protein eS26-like" for gene "ribosomal protein S26"), so it now matches CDS `product=` names (isoform
+  suffix dropped). A measurement fix, bars unchanged; cost if wrong: C3 judged on the corrected number only.
+
+| sample, ratio | candidates (silent) | recall | B1 | B2 | parent agreement | unannotated |
+|---|---|---|---|---|---|---|
+| testis 0.8 | 6,630 (2,672) | 115/582 = 0.198 | 3.46 | 0.604 | 272/369 = 0.737 | 1,256 |
+| testis 0 | 26,699 (9,380) | 191/582 = 0.328 | 3.60 | 0.443 | 544/860 = 0.633 | 6,157 |
+| fibroblast 0.8 | 6,378 (3,672) | 151/664 = 0.227 | 3.52 | 0.474 | 403/569 = 0.708 | 1,437 |
+| fibroblast 0 | 27,703 (15,549) | 364/664 = **0.548** | 2.18 | **0.359** | 713/1,403 = **0.508** | 8,236 |
+
+Fibroblast: C1 PASS (+0.32 recall); C2 FAIL (B2 0.359 < 0.40); C3 FAIL (0.508 < 0.708 - 0.05). Dropping the cut more than doubles
+recall but the extra hits are less often the right gene's copy and less often annotated. At 0.8, about 3 in 4 annotated hits are
+the right gene's pseudogene (0.71-0.74 in both tissues).
+
