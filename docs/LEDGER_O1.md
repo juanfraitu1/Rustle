@@ -7328,3 +7328,12 @@ Held out, Simiiformes: A119b half pair F 0.8903 -> 0.8904 (prec 0.9278 -> 0.9271
 Reported: recent A119b pair F 0.9200 -> 0.9160 (prec 0.9028 -> 0.8943), family F 0.8765 -> 0.8819; testis 0.9536 -> 0.9522 (0.9387 -> 0.9343),
 0.9160 -> 0.9277. Primates A119b 0.8842 -> 0.8836, 0.8102 -> 0.8291; testis 0.8901 -> 0.8927, 0.8546 -> 0.8855.
 The A119b pair-F margin is +0.0001 (1 more true pair, 2 more predicted); the gain is in FAMILY recovery, not pairs.
+**Audit of L5 (2026-10-27, metric-auditor; /mnt/linuxdisk/tmp/audit_2026-10-27_denovofamL5/): NOT a held-out validation; no default flip.**
+Numbers reproduce to the digit; tie policy irrelevant. But (1) the A119b held-out half and testis had already been scored for E5 (L4) and
+the audit pair lists that motivated E7 included held-out cross-half pairs, so neither set is fresh for E7. (2) The A119b pair-F margin
+(+0.0001) is an MCL side effect: E7's own held-out gains are 2 true / 16 (FAM209A-B, ADH1B-C), and the margin comes from ZNF66 and ZNF430
+leaving the 24-gene KZNF family into 2-member families with new loci (13 false pairs removed); without that, pair F 0.8863 < 0.8903.
+(3) 94% (A119b) / 90% (testis) of E7's new pairs are outside the judgeable Compara universe; 401 of 988 new A119b copies map to no CAT gene.
+(4) orphanlift.py was committed with the result, not the prereg. **Verdict r1441: NOT VALIDATED (fresh substrate needed); opt-in only.**
+What would decide it: E7 on a sample never scored for any L arm (e.g. HG002 Kinnex FLNC, needs a full de novo run + ungated all-vs-all),
+with pair-F split into intended joins vs side-effect splits and a minimum number of judgeable new pairs.
