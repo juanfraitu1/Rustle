@@ -7457,3 +7457,18 @@ gap, not off-family genes:** of U's 353 unjudged seed-1 hits, 349 are pseudogene
 (FAM90A1 -> FAM90A2P..25P, MT-ND6 -> MTND6P*, HSP90AA1 -> HSP90AA4P/5P, FAM47A -> FAM47DP, FAM25A -> FAM25BP) or unnamed AC*/AL* processed
 pseudogenes (TAF11L12 -> AC233724.*); 4 lncRNA (SETMAR transposase hits). The unjudged-as-wrong bar therefore penalises the pseudogenes the
 user asked for; a fair S4 needs an independent pseudogene-parent judge before any held-out score.
+
+## PREREG GUIDED-S4 (2026-10-27): independent pseudogene-parent judge; body UNION CDS seed; gorilla held-out
+User choice (after S3): judge pseudogene hits with an independent parent annotation. `bench/guided_eval/pgparent.py`:
+- **Human:** GENCODE v50 2-way consensus pseudogenes (Yale PseudoPipe + UCSC RetroFinder, `parent_id`) -> the GENCODE v50 pseudogene gene they
+  overlap (same strand, >= 0.5 of the 2-way record, exactly one) -> CAT/Liftoff CHM13 gene by ENSG; parent ENSG -> CAT gene (exactly one).
+- **Gorilla:** RefSeq pseudogene `description` minus a trailing `-like` -> the single protein-coding gene with that description (Gnomon's call).
+**Truth = S3 truth, pseudogene sets widened:** pseudogene p joins family F when the S3 proxy assigns it to F OR its parent is a member of F; if the
+two sources name different families, p is dropped. Judged set = S3 judged + every pseudogene with a table parent (a found pseudogene whose
+parent is outside the seed's family counts wrong). Families and seeds are unchanged from S3 (pseudogenes do not shape families).
+**Arms:** A = gene body asm20; U = gene body asm20 UNION CDS splice UNION CDS asm20 (one chain per seed/target/strand, body records counted on
+seed CDS bases only). Both seeds.
+**Dev = human (all families; already explored post S3, so dev is a sanity check only). Held-out = gorilla** (still never scored by any guided
+arm). **Bars (each seed, dev then gorilla):** U > A on MACRO member and MACRO pseudogene recall; judged precision >= A - 0.02 and
+unjudged-as-wrong precision >= A - 0.02; every label-seeded mainstay/YAG family U >= A members. PASS on gorilla -> propose U as the guided
+default (user decides), then metric-auditor before any claim.
