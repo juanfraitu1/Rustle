@@ -7106,3 +7106,23 @@ here is weaker than a fresh-sample PASS.
 - **R3 annotated side not worse:** recall >= 0.227 - 0.02; parent agreement >= 0.708 - 0.02; B1 and B2 pass.
 - **PASS = R1 and R2 and R3** -> `--repeats` becomes part of the default SEMISEC run.
 
+### SEMIREP result (register 1434): **FAIL** - `--repeats` stays opt-in
+Unfiltered `semisec` output is byte-identical to before (cands.tsv, testis). The filter drops 46,042 testis hits; candidates 6,630 -> 4,292
+(testis), 6,378 -> 3,765 (fibroblast).
+
+| fibroblast | unfiltered | --repeats | bar |
+|---|---|---|---|
+| U (unannotated silent) | 1,437 | 346 | |
+| U human-PSEUDO rate | 0.106 | **0.263** | R1 >= 0.20 PASS |
+| U human-PSEUDO count | 152 | **91** | R2 >= 122 FAIL |
+| recall | 0.227 | **0.202** | R3 >= 0.207 FAIL |
+| parent agreement | 0.708 | 0.831 | R3 >= 0.688 pass |
+| B1 / B2 | 3.52 / 0.474 | 4.90 / 0.550 | pass |
+| P human-PSEUDO (control) | 0.792 | 0.864 | |
+
+Testis (descriptive) the same way: U 1,256 -> 513, PSEUDO rate 0.120 -> 0.214, count 151 -> 110; recall 0.198 -> 0.189; parent agreement
+0.737 -> 0.783.
+Reading: the filter buys precision (unannotated real-copy rate x2.5, random background unchanged at 0.01-0.03) but loses 40% of the real
+unannotated copies and 17 annotated ones: many real pseudogene copies sit in, or carry, repeats. Opt-in for a high-precision list
+(about 1 in 4 unannotated candidates real, parent symbol 29/29 where named); the default keeps every copy.
+
