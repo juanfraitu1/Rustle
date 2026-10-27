@@ -7412,3 +7412,23 @@ families contain S1-dev genes. (4) 26% of D's held-out hits are unjudged (A 3/67
 families are 0 in both arms. (6) A is not handicapped by its body-coverage rule (CDS-based coverage leaves A at 0.0167 / 0.0086). (7) D loses
 SSX and SPANXN members A finds. Seed 2 was promised and not run. **Verdict r1443: NOT VALIDATED.** The fix the audit points to is Liftoff's
 own step: CHAIN a seed's records per target locus (aggregate coverage), which needs its own prereg and a fresh substrate.
+
+## PREREG GUIDED-S3 (2026-10-27): Liftoff-chained spliced seeds, human dev, FRESH gorilla held-out
+Fixes from the S2 audit, before any S3 score:
+- **Chaining (Liftoff's step, both arms):** a seed's records (all of an arm's PAFs) are grouped by target gene (hit -> gene rule of GUIDED-S);
+  per (seed, target gene, strand) the Liftoff DAG chain (colinear in seed and genome, not overlapping in the seed; maximize aligned seed
+  CDS bases) gives coverage = chained seed-CDS bases / CDS length, identity = base-weighted nmatch/blocklen; a target is found when coverage
+  >= 0.5 and identity >= 0.5 (Liftoff -a/-s). For the gene-body seed (A) only its CDS bases count (seed CDS mapped into body coordinates).
+- **Truth without chaining:** a gene's family = its MOST SPECIFIC HGNC gene group (no union with Compara); genes in no HGNC group form
+  families from Compara Simiiformes pairs among group-less genes. >= 2 protein-coding members. Pseudogenes = group members with pseudogene
+  biotype + the name proxy (assigned only when exactly one family matches; fixes the 27 double assignments).
+- **Seeds:** a family holding a mainstay/YAG gene is seeded by its smallest-ENSG (gorilla: smallest GeneID) label member; others as before.
+  Seed 2 (next member) run and reported for every family.
+- **Precision both ways:** judged-only AND unjudged-as-wrong; both bars apply.
+**Arms:** A = gene body `-x asm20 -c -N 100 -p 0.1`; E = CDS `-x splice -c -N 100 -p 0.1` UNION CDS `-x asm20 -c -N 100 -p 0.1`; chained as above.
+**Dev = ALL human families (CHM13, CAT v2.0)** (S2's split is spent). **Held-out = gorilla guided** (mGorGor1 v2.0 `GGO.fasta`,
+RefSeq `GGO_genomic.gff`; never used by any guided arm): seeds = RefSeq CDS / gene bodies, truth by gene symbol (HGNC symbol -> group,
+human Compara by symbol; `LOC` genes outside the truth, a stated blind spot). Never pool human and gorilla.
+**Bars (dev, then gorilla):** E beats A on MACRO member and MACRO pseudogene recall; precision (judged) >= A - 0.02 AND precision (unjudged as
+wrong) >= A - 0.02; for every label-seeded mainstay/YAG family E finds >= A's members. PASS on gorilla -> chained spliced seeds proposed as
+the guided default (user decides).
