@@ -2375,6 +2375,11 @@ edge loss; DENOVOFAM arm B is a crude union version).
 **Judge on:** the DENOVOFAM scorer (`bench/denovo_eval/famtruth.py`: Compara recent/Primates, mainstays, YAGs, dev/held-out halves) plus
 recall of Liftoff `-copies` extra copies; held-out testis ERR13885926 and a gorilla sample.
 
+### 1b. PAUSED (user 2026-10-27): fresh-sample test of DENOVOFAM-L5 arm E7 on HG002 Kinnex
+User aligns HG002 on the cluster. Then: de novo run + `mcl_families` baseline (`--dump-graph`) + ungated asm20 all-vs-all, liftchain.py,
+orphanlift.py, `--extra-edges` E7; NEW prereg before scoring (fixed famtruth.py, Simiiformes; pair-F split into intended joins vs MCL
+side-effect splits; a minimum count of judgeable new pairs) per the L5 audit (r1441).
+
 ### 2. Does the de novo family fix carry into semi-guided?
 SEMISEC (`src/semisec.rs`) never builds a family graph, so DENOVOFAM arms do not change it directly. Test: feed SEMISEC candidates to
 `mcl_families` as extra loci beside the de novo GTF, score with `famtruth.py` with and without the adopted arms.
