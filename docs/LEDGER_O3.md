@@ -10441,3 +10441,38 @@ Advisor's claim: "multimappers find a gene's pseudogenes even without expression
    secondaries onto a copy he lacks.
 3. Side finding: one candidate loss from 1416's exon counts (GWFAM42x5, BTF3's silent copy on chr5) is present in both
    haplotypes by flank placement (match 0.99): a counting miss, consistent with 1419's caution.
+
+## PREREG TRIOCHK (2026-10-26): are Jim's haplotype-only copies real, and do his parents differ?
+**Question (user):** the copy differences between Jim's maternal and paternal assemblies (mGorGor1) could be assembly errors.
+Test two of them with the trio's own Illumina WGS, which the assemblies did not use for sequence (Jim SRR26039725; father Trib
+SRR26044569; mother Dolly SRR26044623; ~12x each).
+**Targets** (canonical 21-mers):
+- N, NPIP maternal-only locus (register 1360/1363): mat CM054600.2:6,720,000-6,820,000.
+- S, STON1 maternal-only insertion (121.6 kb, father has 3 kb): mat CM054594.2:95,909,997-96,031,621.
+- P, the father's side of the same site (his 3 kb, +-500 bp, so including both junctions): pat CM054570.2:91,200,203-91,204,230.
+- A target keeps its k-mers that occur exactly once in its own haplotype genome and never in the other (haplotype-specific).
+- Control C: mat CM054594.2:95,700,000-95,900,000 k-mers occurring exactly once in each haplotype (two-copy, single-locus).
+**Measure** per animal: lambda = median count of C (2 copies); dosage of a target = median count / (lambda / 2); also the fraction of
+its k-mers seen >= 3 times.
+**Reading (fixed now):** a target is CONFIRMED if Jim's dosage is in [0.5, 1.5] and its transmitting parent's (Dolly for N and S,
+Trib for P) is >= 0.5; an ASSEMBLY ERROR if Jim's dosage < 0.25; otherwise UNRESOLVED. The non-transmitting parent is reported:
+dosage < 0.25 there means the two parents differ for that sequence (the advisor's claim, for that locus); >= 0.5 means both carry it
+(Jim inherited only one). Script `bench/triochk.py`; data `/mnt/linuxdisk/tmp/triochk`.
+
+### TRIOCHK result (register 1422): all three CONFIRMED; the parents differ in copy number at both loci
+Haplotype-specific 21-mers kept: N 6,540 / 77,814 (the rest occur in NPIP paralogs), S 86,032 / 116,772, P 191 / 4,001;
+control 149,296. lambda = 10 (2 copies) in all three animals. Dosage (fraction of k-mers seen >= 3 times):
+
+| target | Jim | Trib (father) | Dolly (mother) | verdict |
+|---|---|---|---|---|
+| N, NPIP maternal-only locus | 1.00 (0.82) | 1.00 (0.75) | 2.00 (1.00) | CONFIRMED |
+| S, STON1 maternal-only 121.6 kb | 1.00 (0.85) | 0.80 (0.82) | 2.20 (1.00) | CONFIRMED |
+| P, father's deletion junctions | 0.80 (0.93) | 0.60 (0.75) | 0.00 (0.00) | CONFIRMED |
+
+- Neither haplotype-only sequence is an assembly error: each is in Jim's own WGS at one copy, and in the parent that passed it on.
+- Reading by genotype (dosage ~ copies of the sequence): Dolly carries both sequences on both chromosomes (2) and no deletion
+  junction; Trib carries each once (1) and the deletion once; Jim got Dolly's insertion and Trib's deletion. So at STON1 the
+  three animals hold 2 (Dolly), 1 (Trib) and 1 (Jim) copies of the 121.6 kb, and likewise at the NPIP locus: a segregating
+  insertion / deletion, with the parents differing.
+- Limits: k-mer counts do not give positions, so Trib's single copy of N / S is assumed to be the allele at the same site (his
+  untransmitted chromosome); 12x WGS. Data `/mnt/linuxdisk/tmp/triochk` (`result.json`), `bench/triochk.py`.

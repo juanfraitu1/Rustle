@@ -29,9 +29,12 @@ pub struct SeedParams {
     /// (they carry no pairing signal -- classic too-common filter).
     pub max_postings: usize,
     pub min_shared: usize,
-    /// Scan v2 (SEDEF's `separate_lowercase`): only k-mers with at least one uppercase (unmasked) base enter a window's
-    /// sketch, so a window of common repeats seeds nothing.
-    pub uppercase_kmers: bool,
+    /// Scan v2 (SEDEF's seed rule, `--uppercase` = k): every k-mer counts toward the shared mass, and a candidate is
+    /// marked `upper_seed` when a shared sketch k-mer has an uppercase (unmasked) base in both windows (SEDEF's
+    /// HAS_UPPERCASE, hash.cc / search.cc); the chain stage keeps
+    /// only blocks with such a seed, so common repeats seed nothing while a mostly-masked duplication is extended from
+    /// its unmasked part.
+    pub uppercase_seed: bool,
     /// Vendored change (2026-10-13): pairs are counted in this many shards (a pair belongs to the shard of its lower
     /// window index modulo `count_shards`), so at most one shard map per thread is alive. Every value gives the same
     /// candidates; 1 is the sandbox's single map.
@@ -49,12 +52,16 @@ pub struct WindowSketch {
     pub end: u64,
     /// Bottom-S distinct canonical k-mer hashes, sorted ascending.
     pub sketch: Vec<u64>,
+    /// With `uppercase_seed`: per sketch hash, whether one of its k-mers in the window has an uppercase base (else empty).
+    pub upper: Vec<bool>,
 }
 
 pub struct Candidate {
     pub a: usize,
     pub b: usize,
     pub shared: u32,
+    /// A shared sketch k-mer has an uppercase base in both windows (always false without `uppercase_seed`).
+    pub upper_seed: bool,
 }
 
 /// Cut all sequences into window sketches. Returned in genomic order.
@@ -80,36 +87,44 @@ pub fn build_windows(
             .map(|wi| {
                 let s = wi * stride;
                 let e = (s + p.window).min(seq.len());
-                let mut hashes: Vec<u64> = Vec::with_capacity(p.window);
                 let w = &seq[s..e];
-                if p.uppercase_kmers {
+                // (hash, the k-mer has an uppercase base: SEDEF's HAS_UPPERCASE, hash.cc)
+                let mut hashes: Vec<(u64, bool)> = Vec::with_capacity(p.window);
+                if p.uppercase_seed {
                     // up[i] = uppercase bases in w[..i]
                     let mut up = Vec::with_capacity(w.len() + 1);
                     up.push(0u32);
                     for &c in w {
                         up.push(up[up.len() - 1] + c.is_ascii_uppercase() as u32);
                     }
-                    for_each_kmer(w, p.k, |i, h| {
-                        if up[i + p.k] > up[i] {
-                            hashes.push(h)
-                        }
-                    });
+                    for_each_kmer(w, p.k, |i, h| hashes.push((h, up[i + p.k] > up[i])));
                 } else {
-                    for_each_kmer(w, p.k, |_, h| hashes.push(h));
+                    for_each_kmer(w, p.k, |_, h| hashes.push((h, false)));
                 }
-                hashes.sort_unstable();
-                hashes.dedup();
+                // ascending hash, an occurrence with an uppercase base first, so dedup keeps it
+                hashes.sort_unstable_by_key(|&(h, u)| (h, !u));
+                hashes.dedup_by_key(|x| x.0);
                 if hashes.len() < p.min_kmers {
                     return None;
                 }
                 hashes.truncate(p.sketch);
-                // vendored change: release the k-mer buffer's spare capacity (the sandbox kept 16 KB per window)
-                hashes.shrink_to_fit();
+                let upper: Vec<bool> = if p.uppercase_seed {
+                    let mut u = Vec::with_capacity(hashes.len());
+                    u.extend(hashes.iter().map(|x| x.1));
+                    u
+                } else {
+                    Vec::new()
+                };
+                // a fresh exact-size buffer (collecting in place would keep the k-mer buffer's capacity)
+                let mut sketch = Vec::with_capacity(hashes.len());
+                sketch.extend(hashes.iter().map(|x| x.0));
+                let hashes = sketch;
                 Some(WindowSketch {
                     seq: si as u32,
                     start: s as u64,
                     end: e as u64,
                     sketch: hashes,
+                    upper,
                 })
             })
             .collect_into_vec(&mut part);
@@ -129,12 +144,13 @@ pub fn build_windows(
 pub fn find_candidates(wins: &mut [WindowSketch], p: &SeedParams) -> Vec<Candidate> {
     // (sequence, start) per window: overlapping windows of one sequence (stride < window) share sequence, not a copy
     let at: Vec<(u32, u64)> = wins.iter().map(|w| (w.seq, w.start)).collect();
-    let mut entries: Vec<(u64, u32)> = Vec::with_capacity(wins.iter().map(|w| w.sketch.len()).sum());
+    let mut entries: Vec<(u64, u32, bool)> = Vec::with_capacity(wins.iter().map(|w| w.sketch.len()).sum());
     for (id, w) in wins.iter_mut().enumerate() {
-        for &h in &w.sketch {
-            entries.push((h, id as u32));
+        for (j, &h) in w.sketch.iter().enumerate() {
+            entries.push((h, id as u32, w.upper.get(j).copied().unwrap_or(false)));
         }
         w.sketch = Vec::new();
+        w.upper = Vec::new();
     }
     entries.par_sort_unstable();
     let shards = p.count_shards.max(1) as u32;
@@ -146,7 +162,7 @@ pub fn find_candidates(wins: &mut [WindowSketch], p: &SeedParams) -> Vec<Candida
 /// The candidates whose lower window index is `shard` modulo `shards`. Inside one hash group the entries are sorted
 /// by window index and a window holds a hash once (its sketch is deduplicated), so `a < b` whenever x < y: the
 /// shard test can be made once per x.
-fn count_shard(entries: &[(u64, u32)], at: &[(u32, u64)], shard: u32, shards: u32, p: &SeedParams) -> Vec<Candidate> {
+fn count_shard(entries: &[(u64, u32, bool)], at: &[(u32, u64)], shard: u32, shards: u32, p: &SeedParams) -> Vec<Candidate> {
     let mut counts: FxHashMap<(u32, u32), u32> =
         FxHashMap::with_capacity_and_hasher(entries.len() / 64 / shards as usize, Default::default());
     let n = entries.len();
@@ -171,7 +187,10 @@ fn count_shard(entries: &[(u64, u32)], at: &[(u32, u64)], shard: u32, shards: u3
                     if sa == sb && xa.abs_diff(xb) < p.window as u64 {
                         continue;
                     }
-                    *counts.entry((a, b)).or_insert(0) += 1;
+                    // low 31 bits: shared hashes; bit 31: one of them has an uppercase base in both windows
+                    let both_up = ((entries[x].2 && entries[y].2) as u32) << 31;
+                    let c = counts.entry((a, b)).or_insert(0);
+                    *c = (*c + 1) | both_up;
                 }
             }
         }
@@ -179,8 +198,8 @@ fn count_shard(entries: &[(u64, u32)], at: &[(u32, u64)], shard: u32, shards: u3
     }
     counts
         .into_iter()
-        .filter(|(_, c)| *c >= p.min_shared as u32)
-        .map(|((a, b), c)| Candidate { a: a as usize, b: b as usize, shared: c })
+        .filter(|(_, c)| (c & 0x7fff_ffff) >= p.min_shared as u32)
+        .map(|((a, b), c)| Candidate { a: a as usize, b: b as usize, shared: c & 0x7fff_ffff, upper_seed: c >> 31 == 1 })
         .collect()
 }
 
@@ -194,11 +213,11 @@ mod tests {
     use super::*;
 
     fn params(shards: usize) -> SeedParams {
-        SeedParams { k: 16, window: 2000, sketch: 8, min_kmers: 1, max_postings: 3, min_shared: 2, count_shards: shards, stride: 2000, uppercase_kmers: false }
+        SeedParams { k: 16, window: 2000, sketch: 8, min_kmers: 1, max_postings: 3, min_shared: 2, count_shards: shards, stride: 2000, uppercase_seed: false }
     }
 
     fn win(id: u64, sketch: &[u64]) -> WindowSketch {
-        WindowSketch { seq: 0, start: id * 2000, end: id * 2000 + 2000, sketch: sketch.to_vec() }
+        WindowSketch { seq: 0, start: id * 2000, end: id * 2000 + 2000, sketch: sketch.to_vec(), upper: Vec::new() }
     }
 
     /// Hash 9 sits in 4 windows (> max_postings 3) and pairs nothing. Shared counts: (0,1) = {1,2,3} = 3;
@@ -240,7 +259,7 @@ mod tests {
                 b"ACGT"[(x >> 62) as usize]
             })
             .collect();
-        let p = SeedParams { k: 16, window: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, stride: 2000, uppercase_kmers: false };
+        let p = SeedParams { k: 16, window: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, stride: 2000, uppercase_seed: false };
         let (wins, _) = build_windows(&[("s".to_string(), seq)], &p);
         assert_eq!(wins.len(), 10);
         assert!(wins.iter().all(|w| w.sketch.len() == 256 && w.sketch.capacity() == 256));
@@ -273,7 +292,7 @@ mod tests {
         seq[41_000..45_000].copy_from_slice(&copy);
         let seqs = [("s".to_string(), seq)];
         let pairs_copy = |stride: usize, max_postings: usize| {
-            let p = SeedParams { k: 16, window: 2000, stride, sketch: 256, min_kmers: 32, max_postings, min_shared: 40, count_shards: 1, uppercase_kmers: false };
+            let p = SeedParams { k: 16, window: 2000, stride, sketch: 256, min_kmers: 32, max_postings, min_shared: 40, count_shards: 1, uppercase_seed: false };
             let (mut wins, _) = build_windows(&seqs, &p);
             let c = find_candidates(&mut wins, &p);
             c.iter()
@@ -286,20 +305,41 @@ mod tests {
 
     #[test]
     fn overlapping_windows_of_one_locus_are_not_candidates() {
-        let p = SeedParams { k: 16, window: 2000, stride: 1000, sketch: 256, min_kmers: 32, max_postings: 200, min_shared: 40, count_shards: 1, uppercase_kmers: false };
+        let p = SeedParams { k: 16, window: 2000, stride: 1000, sketch: 256, min_kmers: 32, max_postings: 200, min_shared: 40, count_shards: 1, uppercase_seed: false };
         let (mut wins, _) = build_windows(&[("s".to_string(), synth(3, 20_000))], &p);
         assert_eq!(wins.len(), 19);
         assert!(find_candidates(&mut wins, &p).is_empty());
     }
 
     #[test]
-    fn with_uppercase_kmers_a_soft_masked_window_has_no_sketch() {
-        let mut seq = synth(8, 6_000);
-        seq[2_000..4_000].make_ascii_lowercase();
-        for (upper, want) in [(false, 3usize), (true, 2)] {
-            let p = SeedParams { k: 16, window: 2000, stride: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, uppercase_kmers: upper };
-            let (wins, _) = build_windows(&[("s".to_string(), seq.clone())], &p);
-            assert_eq!(wins.len(), want, "uppercase_kmers {upper}");
+    fn only_windows_sharing_a_kmer_with_an_unmasked_base_are_upper_seeds() {
+        // a masked 2 kb unit twice (windows 0 and 5), an unmasked one twice (windows 10 and 15), and a masked one with
+        // every 10th base unmasked twice (windows 20 and 25): SEDEF's HAS_UPPERCASE (hash.cc) needs one unmasked base
+        // per k-mer, so the third unit seeds although none of its k-mers is wholly unmasked
+        let masked = synth(61, 2_000).to_ascii_lowercase();
+        let unmasked = synth(62, 2_000);
+        let mut sparse = synth(63, 2_000).to_ascii_lowercase();
+        for c in sparse.iter_mut().step_by(10) {
+            c.make_ascii_uppercase();
+        }
+        let mut seq = synth(8, 54_000);
+        seq[0..2_000].copy_from_slice(&masked);
+        seq[10_000..12_000].copy_from_slice(&masked);
+        seq[20_000..22_000].copy_from_slice(&unmasked);
+        seq[30_000..32_000].copy_from_slice(&unmasked);
+        seq[40_000..42_000].copy_from_slice(&sparse);
+        seq[50_000..52_000].copy_from_slice(&sparse);
+        for (upper, want) in [(false, vec![]), (true, vec![(20_000u64, 30_000u64), (40_000, 50_000)])] {
+            let p = SeedParams { k: 16, window: 2000, stride: 2000, sketch: 256, min_kmers: 32, max_postings: 100, min_shared: 40, count_shards: 1, uppercase_seed: upper };
+            let (mut wins, _) = build_windows(&[("s".to_string(), seq.clone())], &p);
+            let cands = find_candidates(&mut wins, &p);
+            let mut all: Vec<(u64, u64)> = cands.iter().map(|c| (wins[c.a].start, wins[c.b].start)).collect();
+            all.sort();
+            assert_eq!(all, vec![(0, 10_000), (20_000, 30_000), (40_000, 50_000)], "all three units are candidates");
+            let mut got: Vec<(u64, u64)> =
+                cands.iter().filter(|c| c.upper_seed).map(|c| (wins[c.a].start, wins[c.b].start)).collect();
+            got.sort();
+            assert_eq!(got, want, "uppercase_seed {upper}");
         }
     }
 }

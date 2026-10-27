@@ -6908,4 +6908,38 @@ decision with the user). H1 FAIL + H2 PASS = better but still not a replacement.
   - BISER's second-level chain DP (MATCH 10, MISMATCH 1, GAP 0.5, GAPOPEN 100, MAX_GAP 10 kb), with the shorter gap of
     a join <= refine_max_gap so both copies' stretch is aligned; chains below min_block_id identity are not kept and
     shadow nothing in the selection.
-  - Dev runs of both modes: pending.
+  - Join cost fixes: a joined gap is aligned only up to refine_max_gap^2 cells, else its shorter side counts as
+    mismatches (identity stays a lower bound); the DP stops scanning predecessors more than MAX_GAP away and counts every
+    examined one toward MAX_ITER (an O(n^2) scan made refine 481 s).
+  - SEDEF's seed rule, ported exactly: every k-mer counts toward the shared mass; a candidate carries `upper_seed` when
+    a shared sketch k-mer is all unmasked in both windows (candidates.tsv column 9); the chain stage keeps blocks with
+    such a cell; the 100-unmasked filter is over a block's ok pairs together (pieces of one duplication).
+  - Dev (recall / precision; refine s, peak GB):
+    | arm | recall | precision | refine | peak |
+    |---|---|---|---|---|
+    | v1 | 0.4898 | 0.7659 | 65 | - |
+    | v2 repeat-blind (R1-R3) | 0.8478 | 0.6972 | 314 | 9.4 |
+    | BISER projection (`--masked-space`) | 0.7062 | 0.8349 | 20 | 1.9 |
+    | SEDEF rules, per-window gate | 0.6751 | 0.9693 | 124 | 3.9 |
+    | SEDEF rules, block gate (default) | 0.7079 | 0.9653 | 406 | 3.8 |
+    None reaches 0.80 / 0.80. The recall gap is long SEDEF SDs that are almost all soft-masked (~31 kb with < 1 kb
+    unmasked): SEDEF reaches them by extending one alignment through the repeats; our blocks and joins stop at them.
+  - 2026-10-26, scan v3 (dev only; held-out not run):
+    - Port fix: SEDEF's seed k-mer needs ONE uppercase base (hash.cc HAS_UPPERCASE, search.cc:416), not all k; the
+      seed-gate loss fell from 17.2% to 4.9% of truth bp (12,100 blocks pass instead of 8,354).
+    - Port fix: the 100-unmasked filter is per duplication (stats_main.cc judges one alignment), not per block: summing a
+      block passed tandem arrays of masked copies (toy: 207 repeat pairs). Pieces of one strand, in order on both
+      copies, whose boundary is an indel (shorter gap and any overlap <= refine_max_gap) are summed; tandem copies
+      (equal gaps) never group.
+    - BISER's join clips an overlap (align.codon refine); bounded by refine_max_gap (an unbounded clip put one stretch
+      into two chains: recall 0.667).
+    - Refine speed, outputs byte-identical on a 1-in-8 block sample: Ukkonen-banded gap alignment, an identity floor
+      (stop once all-matching remaining A bases cannot reach 90%), identities of a block's next 8 unshadowed chains in
+      parallel then replayed in order. Sample refine 87.7 s -> 44.6 s.
+    | arm (dev) | recall | precision | refine | peak |
+    |---|---|---|---|---|
+    | v3 seed fix + per-pair filter | 0.6982 | 0.9559 | 356 | 4.6 |
+    | + overlap clip bounded | 0.7035 | 0.9547 | 345 | 4.5 |
+    | + per-duplication filter (scan v3) | 0.7178 | 0.9530 | 335 | 4.5 |
+    - Remaining loss (bp of truth): unmasked filter 10.8% (SDs split into 4+ pieces with unaligned masked stretches on
+      both copies, which SEDEF aligns through), never a candidate 5.2%, seed gate 4.9%, chain 1.8%, refine 1.6%.

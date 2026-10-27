@@ -26,7 +26,7 @@ use std::time::Instant;
 use crate::sedef::{anchors, chain, decompose, fasta, refine, seed};
 
 /// Bumped whenever an output of `run` can change for the same genome and parameters; part of the version key.
-pub const SCAN_VERSION: u32 = 2;
+pub const SCAN_VERSION: u32 = 3;
 
 /// The sandbox CLI's default parameters (`sedef_rs seed|chain|refine|decompose --help`), plus the output-neutral
 /// shard count of the seed stage's pair counting. Scan v2 (2026-10-25, LEDGER_O1 SDSCAN2): seeding windows every
@@ -40,7 +40,7 @@ pub struct ScanParams {
     /// map pairs, segments and duplicons back to genome coordinates. Common repeats then seed nothing, and a repeat
     /// inside a duplication no longer splits it.
     pub masked_space: bool,
-    /// Scan v2 (SEDEF): seeds only from k-mers with an unmasked base (`seed::SeedParams::uppercase_kmers`).
+    /// Scan v2 (SEDEF): a candidate needs a shared all-unmasked seed k-mer (`seed::SeedParams::uppercase_seed`).
     pub seed_uppercase: bool,
     /// Scan v2 (SEDEF's `--uppercase`, default 100): unmasked bases per side and unmasked matches an ok pair needs.
     pub min_uppercase: u64,
@@ -300,7 +300,7 @@ fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, u
         k: p.k,
         window: p.window,
         stride: p.seed_stride,
-        uppercase_kmers: p.seed_uppercase,
+        uppercase_seed: p.seed_uppercase,
         sketch: p.sketch,
         min_kmers: p.min_kmers,
         max_postings: p.max_postings,
@@ -312,12 +312,12 @@ fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, u
     let mut cands = seed::find_candidates(&mut wins, &sp);
     sort_candidates(&mut cands, &wins);
     let mut w = create(out)?;
-    writeln!(w, "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tshared\test_jaccard")?;
+    writeln!(w, "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tshared\test_jaccard\tupper_seed")?;
     for c in &cands {
         let (wa, wb) = (&wins[c.a], &wins[c.b]);
         writeln!(
             w,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
             infos[wa.seq as usize].name,
             wa.start,
             wa.end,
@@ -326,6 +326,7 @@ fn seed_stage(genome: &Path, out: &str, p: &ScanParams) -> Result<(usize, u64, u
             wb.end,
             c.shared,
             seed::est_jaccard(c.shared, sp.sketch),
+            c.upper_seed as u8,
         )?;
     }
     w.flush()?;
@@ -359,6 +360,7 @@ fn chain_stage(cands: &str, out: &str, p: &ScanParams) -> Result<usize> {
         min_cell_id: p.min_cell_id,
         min_block_id: p.min_block_id,
         min_shared_cell,
+        require_upper_seed: p.seed_uppercase,
     };
     let (mut blocks, _) = chain::chain_and_merge(&pairs, &cp);
     blocks.sort_by(|x, y| {
@@ -600,7 +602,7 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    // The golden output of SCAN_VERSION 2 on the toy genome (v1 split the inverted 8 kb copy into four 2 kb pairs); tests/sd_scan.rs reads the same tables back through the
+    // The golden output of SCAN_VERSION 2 and 3 on the toy genome (v1 split the inverted 8 kb copy into four 2 kb pairs); tests/sd_scan.rs reads the same tables back through the
     // hierarchy's readers. Change these constants only together with a SCAN_VERSION bump: a change here means sd-scan's
     // output for the same genome and parameters changed, and with it the driver's cache key.
     const PLANTED_PAIRS: &str = "#chr_a\tstart_a\tend_a\tchr_b\tstart_b\tend_b\tstrand\tanchors\test_id\tstage2_id\tstatus\n\
@@ -803,7 +805,7 @@ chrB\t170000\t174999\tF1\n";
     fn the_version_key_names_every_parameter_but_the_shard_count() {
         let p = ScanParams::default();
         let k = p.version_key();
-        assert!(k.starts_with("sedef-rs 0.1.0 vendored 2026-10-13 scan v2;"), "{k}");
+        assert!(k.starts_with("sedef-rs 0.1.0 vendored 2026-10-13 scan v3;"), "{k}");
         assert_eq!(ScanParams { count_shards: 7, ..p.clone() }.version_key(), k);
         assert_ne!(ScanParams { min_seg: 999, ..p }.version_key(), k);
     }
