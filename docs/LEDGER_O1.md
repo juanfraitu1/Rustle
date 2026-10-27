@@ -7208,3 +7208,26 @@ D' changes a few copies (KB3781 843 -> 846 copies, 290 -> 291 families; OR6737 1
 family F 0.625 both arms; OR6737 0.324 / 0.619 both; mainstays/YAGs identical. G1-G3 pass, the +0.01 family bar fails on both.
 Underpowered: the symbol-mapped Compara truth holds only 9 (KB3781) and 13 (OR6737) true families with >= 2 expressed members (13 and 17
 true pairs), because gorilla RefSeq names most extra copies `LOC...` (the pre-stated blind spot).
+
+## PREREG DENOVOFAM-L (2026-10-27): Liftoff-style exon chaining as family edges (pending item 1, user go 2026-10-27)
+**Why:** the DENOVOFAM dev misses that D' did not fix are missing EDGES for retro/partial copies (CCL3L, SIRP, APOBEC3, LYZL, ZNF,
+BOLA2): no single alignment record carries >= 0.60 of the smaller locus's exons. Liftoff (Shumate & Salzberg 2021) places a gene by
+aligning it and CHAINING its exon-level alignments in order, and accepts a placement at coverage >= 0.5 (`-a`) and exon identity >= 0.5
+(`-s`). Differs from arm B (`--shared-exon-union`, union of exon bases over unordered records inside the old gate) and from r1286/r1287
+(one whole-transcript record, recall of Liftoff copies).
+**Lift (bench/denovo_eval/liftchain.py, written before any score):** records = the UNGATED all-vs-all of the same locus FASTA
+(`minimap2 -x asm20 -c -X -N 50 -p 0.1`, cache bd6780f14333f911, query hash db4ee602…; both PAF orientations). For template A and locus B:
+per record, through the CIGAR, the A-exon bases aligned (and those landing on B-exon bases); records on genomic bases aligned onto
+themselves dropped (the shipped self-hit rule). Chain = Liftoff's DAG: records on one strand, colinear in A and B, not overlapping in A;
+the path maximizing A-exon aligned bases. coverage = chained A-exon bases / A exon-union length; identity = A-exon-base-weighted record
+identity (nmatch/blocklen). **A lifts onto B** when coverage >= 0.5, identity >= 0.5 and >= 1 chained A-exon base lands on a B exon
+(the shipped `--min-exonic-bp 1` convention). Edge A-B when A lifts onto B or B onto A; w = max over directions of identity x coverage
+(the graph's own identity x coverage form). No other number.
+**Arms (new opt-in `mcl_families --extra-edges TSV [--extra-edges-only]`; an extra edge raises an existing edge to max(w)):**
+E1 = baseline graph + lift edges, MCL unchanged. E2 = lift edges only, MCL unchanged.
+**Selection on the A119b DEV half (famtruth.py, recent levels, Amendment 1):** an arm qualifies if dev family F >= baseline + 0.01, dev pair
+F not lower, dev pair precision drops <= 0.02, no mainstay/YAG regression (as DENOVOFAM). Best qualifying arm by dev family F goes held out.
+**Held out:** A119b held-out half AND human testis (all genes; its own ungated all-vs-all, same command): family F >= baseline + 0.01 on both,
+pair F not lower, precision drop <= 0.02, no mainstay/YAG regression. PASS -> the arm becomes a documented option and a default flip is
+proposed to the user; otherwise opt-in. Reported (no verdict): Simiiformes/Primates ladders, edges added, largest family.
+**Not tested here:** families as pure connected components (no MCL), and lifts onto silent sites (copies without a locus).
