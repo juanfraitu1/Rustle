@@ -7337,3 +7337,25 @@ leaving the 24-gene KZNF family into 2-member families with new loci (13 false p
 (4) orphanlift.py was committed with the result, not the prereg. **Verdict r1441: NOT VALIDATED (fresh substrate needed); opt-in only.**
 What would decide it: E7 on a sample never scored for any L arm (e.g. HG002 Kinnex FLNC, needs a full de novo run + ungated all-vs-all),
 with pair-F split into intended joins vs side-effect splits and a minimum number of judgeable new pairs.
+
+## PREREG GUIDED-S (2026-10-27): guided mode in SPLICED mode - CDS seeds find their family's other members and pseudogenes
+User question 2026-10-27: does guided mode work spliced, i.e. fed a CDS from a family, does it find every other member, pseudogenes included?
+Gene-body (genomic, intron-containing) seeds match a processed pseudogene only exon by exon; a spliced seed matches spliced copies through
+introns and processed copies contiguously.
+**Truth (bench/guided_eval/cdsseed.py, written before any score):** Compara paralogue components at **Simiiformes** (user choice; recent and
+Primates reported) over ALL CAT/Liftoff v2.0 protein-coding genes (no expression filter), size >= 2. Pseudogenes (no parent table exists:
+Ensembl CHM13 GFF and Compara carry none): a CAT `*pseudogene` whose name minus a final `P[0-9]*` equals a member's name, or a member's name
+minus one trailing `[A-Z]` or `[0-9]+` token; one matching family only (else excluded). Stated blind spot: unnamed (`AC...`/`LOC`) pseudogenes.
+**Seeds:** per family, the member with the smallest ENSG that has a CDS; its longest CAT CDS (spliced, 5'->3'), its protein (translation), and
+its gene body (genomic span). A second seed (next ENSG) is reported for seed robustness.
+**Arms (each against CHM13 v2.0, tool settings named, no tuning):** A = gene body, `minimap2 -x asm20 -c -N 100 -p 0.1` (the guided all-vs-all's
+preset/secondary settings); B = CDS, `minimap2 -x splice -c -N 100 -p 0.1`; C = protein, `miniprot` 0.18 defaults (`--gff`).
+**Hit -> gene:** each record's aligned genomic blocks; a record counts when it covers >= 0.5 of the seed (Liftoff -a) at identity >= 0.5
+(Liftoff -s; PAF nmatch/blocklen, miniprot Identity). Its gene = the CAT gene with most exonic bp overlap, priority protein-coding >
+pseudogene > other. The seed's own gene is excluded.
+**Metrics (micro over families):** member recall = found other members / other members; pseudogene recall = found proxy pseudogenes / proxy
+pseudogenes; precision = hits on the family's members or proxy pseudogenes / hits on any judgeable gene (Compara-universe protein-coding or any
+family's proxy pseudogene); unjudgeable hits counted. Per mainstay/YAG family listed. Families split dev/held-out by famtruth `half`.
+**Decision:** on DEV, the best arm by member recall + pseudogene recall among those with precision >= A's - 0.02. If that arm is not A, it must
+beat A on HELD-OUT families on both recalls with precision >= A's - 0.02, and lose no mainstay/YAG member found by A. PASS -> spliced seeds
+become the guided finder's documented default seed (user decides the flip).
