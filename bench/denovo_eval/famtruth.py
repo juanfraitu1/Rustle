@@ -233,11 +233,16 @@ def bipartite(true_fams, pred_fams):
     return dict(sens=s, prec=p, f=2 * s * p / max(s + p, 1e-12), overlap=ov, true_genes=tg, matched_pred_genes=pg)
 
 
-def score(true_fams, pred_fams, universe):
-    """Pairwise and bipartite, both restricted to `universe`."""
+def score(true_fams, pred_fams, universe, half=None):
+    """Pairwise and bipartite, both restricted to `universe`. With `half` (a gene subset of `universe`), a predicted pair counts
+    when it touches >= 1 gene of the half (a pair joining the half to the other half is false and must count against it; audit
+    2026-10-27), and the bipartite matching sees predicted families over the whole universe."""
     tp_pairs = {(min(a, b), max(a, b)) for t in true_fams for a in t for b in t if a < b and a in universe and b in universe}
     pr = [p & universe for p in pred_fams]
     pp_pairs = {(min(a, b), max(a, b)) for p in pr for a in p for b in p if a < b}
+    if half is not None:
+        pp_pairs = {q for q in pp_pairs if q[0] in half or q[1] in half}
+        pr = [p for p in pr if p & half]
     hit = len(tp_pairs & pp_pairs)
     s, p = hit / max(len(tp_pairs), 1), hit / max(len(pp_pairs), 1)
     out = dict(pair_true=len(tp_pairs), pair_pred=len(pp_pairs), pair_hit=hit, pair_sens=s, pair_prec=p,
@@ -308,7 +313,7 @@ def main():
             hg = set().union(*th) if th else set()
             # each half: its true families' genes plus singletons hashed to it
             sing = {g for g in uexp - set().union(*tf) if int(hashlib.sha1(min(G[g]['ens']).encode()).hexdigest(), 16) % 2 == h}
-            r['dev' if h == 0 else 'heldout'] = score(th, pf, hg | sing)
+            r['dev' if h == 0 else 'heldout'] = score(th, pf, uexp, half=hg | sing)
         res[lvname] = r
     _, universe = truth_pairs(G, a.paralogs, LEVELS['recent'])
     res['mainstays'] = named(G, expressed, fams, universe, MAINSTAYS)

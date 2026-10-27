@@ -7304,3 +7304,6 @@ outside the judgeable protein-coding universe; 571 of 1,367 new copies map to no
 identical in the SCORE but not in content (DAZL joins DAZ, NOS2P1 joins TBC1D3, RBMY1A3P / RBMY2EP / RBMY2FP join RBMY). Testis alone passes
 at Simiiformes. **Verdict: FAIL (A119b held-out pair F lower once cross-half pairs count); `--extra-edges` stays opt-in.** The per-half
 trimming also flatters every earlier DENOVOFAM dev/held-out number; famtruth.py must count cross-half pairs before the next prereg.
+**famtruth.py fixed (same day):** a half now counts every predicted pair touching >= 1 of its genes, and the bipartite step sees untrimmed
+families. Reproduces the audit: A119b Simiiformes held-out baseline pair F 0.890 (prec 0.928), family F 0.814; E5 0.888 (0.908), 0.832.
+Every DENOVOFAM / -G / -L dev and held-out number above was computed with the old trimming and reads high on precision.
