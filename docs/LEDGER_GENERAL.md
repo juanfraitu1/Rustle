@@ -2345,3 +2345,15 @@ samtools view -@ 4 -N fam.names -b -o subset.bam BAM && samtools index subset.ba
   - `multicopy_gains/`, `o1_sd/`.
   
   Their results are in the documents above. Each has a frozen `audit_frozen_*` copy if a number needs rechecking.
+
+## PENDING (2026-10-26): unfinished family_gfa
+Recorded by the user so it is not lost; not started again.
+- `family_gfa` (a graph view of O1 families: exon blocks, fusion joint graphs) is **Task 1 of 6 only**: inputs, CLI and load
+  (`src/family_gfa.rs`, `tests/family_gfa.rs`, `[[bin]] family_gfa`; 5 unit + 3 integration tests pass on main). Tasks 2-6 are not
+  written: joining exonic bases into columns, compaction into exon-aligned nodes / paths / tags, writers and the family run, fusions
+  across families, the real-data smoke test.
+- Spec `docs/superpowers/specs/2026-09-30-family-gfa-design.md` (+ amendment 1: DupMasker duplicon annotation, representation only);
+  plan `docs/superpowers/plans/2026-09-30-family-gfa.md` (the file moved from `src/bin/` to `src/` on merge; the plan's paths still
+  say `src/bin/family_gfa.rs`).
+- History: written 2026-09-30 in worktree `rustle_m2` (branch `machine2/family-gfa`) and never committed; spec and plan merged
+  2026-10-26 (c2c7dec5), code copied onto main the same day. The `rustle_m2` copy is now redundant.
