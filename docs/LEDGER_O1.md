@@ -7260,3 +7260,9 @@ bars as DENOVOFAM-L (A119b dev half -> A119b held-out half + testis). Fail at de
 recall gain and keeps the precision loss, so one-sided coverage is not the whole cause. The raised weights also move MCL (DAZ). Post hoc
 only: the Liftoff line is closed at its two registered forms; the recall it adds (E1 +11 dev pairs) comes with edges MCL cannot
 separate from passengers.
+
+## PREREG DENOVOFAM-L3 (2026-10-27): lift edges only for orphan loci
+The DENOVOFAM dev misses are mostly genes in NO family; r1437/r1438 lost precision by adding or raising edges BETWEEN loci that already had
+homology edges (MCL then regroups, GOLGA6L/DAZ). **E5** = baseline graph + the one-sided DENOVOFAM-L lift edges (identity >= 0.5) whose
+pair has at least one locus with NO edge in the baseline graph (`--dump-graph` of the baseline run), so no existing edge is added to or
+raised. No new number. Same dev selection and held-out bars (A119b dev -> A119b held-out half + testis with its own ungated all-vs-all).
