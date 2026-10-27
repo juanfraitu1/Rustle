@@ -7293,3 +7293,14 @@ Reported: recent A119b held-out pair F 0.956 -> 0.949 (prec 0.974 -> 0.957), fam
 0.916 -> 0.926. Primates A119b 0.904 -> 0.910 / 0.837 -> 0.857; testis 0.890 -> 0.899 / 0.855 -> 0.887. Recent pair F falls slightly in
 both (older paralogues, r1439). The lift step is Python today (liftchain.py over an UNGATED all-vs-all); a default needs it in Rust and the
 ungated alignment (A119b ~9.5 min sharded, testis 9 min).
+**Audit correction (2026-10-27, metric-auditor; scratch /mnt/linuxdisk/tmp/audit_2026-10-27_denovofamL4/): the PASS above is RETRACTED.**
+Numbers reproduce to the digit, but (1) famtruth.py scores each half on predicted families TRIMMED to that half's genes
+(`score(th, pf, hg | sing)`), so a predicted pair joining a held-out gene to a dev gene (always false) counts in neither half. E5 adds 22
+such cross-half false pairs (8 ZNF726-KZNF, GSTA, IGLL, TUBA1A/C, PRDM7/9, TEX13A/B, ...). Counting predicted pairs that touch >= 1 held-out
+gene, A119b held-out pair F 0.8903 -> **0.8885 (lower: bar fails)**, precision 0.9278 -> 0.9079 (drop 0.0199); family F untrimmed 0.8136 ->
+0.8323. (2) The pass exists only at Simiiformes, chosen after E5 failed dev at recent; at recent both held-outs fail (A119b 0.9557 -> 0.9486,
+testis 0.9536 -> 0.9444, testis precision drop 0.0211). (3) 91.5% of E5's new A119b gene pairs (864/944) and 194/223 testis pairs touch genes
+outside the judgeable protein-coding universe; 571 of 1,367 new copies map to no CAT gene; families 1,872 -> 2,341. (4) Mainstays/YAGs are
+identical in the SCORE but not in content (DAZL joins DAZ, NOS2P1 joins TBC1D3, RBMY1A3P / RBMY2EP / RBMY2FP join RBMY). Testis alone passes
+at Simiiformes. **Verdict: FAIL (A119b held-out pair F lower once cross-half pairs count); `--extra-edges` stays opt-in.** The per-half
+trimming also flatters every earlier DENOVOFAM dev/held-out number; famtruth.py must count cross-half pairs before the next prereg.
