@@ -7016,3 +7016,22 @@ Code = 0a12c3d9. Seeds 23,311; candidates 6,378, silent 3,672 (run 487 s, 9.2 GB
 - Reading: semi-guided from multimappers finds about 1 in 5 silent annotated pseudogenes of expressed genes (loss = AS >= 0.8 x primary)
   and tells a disrupted copy from an intact one (3.5x pseudogene enrichment in both tissues). It does not identify lncRNAs.
 
+### SEMISEC Rust port (2026-10-26)
+Steps 1-4 now run in `src/semisec.rs` (bin `semisec`; contigs scanned in 20 Mb pieces in parallel through the .bai, then indexed
+fetches of each silent candidate's best hit and read); `bench/semisec.py report OUT GFF` scores. Same candidates as the Python run
+on both samples (testis 6,630, fibroblast 6,378: reads, primaries, silent, class, best read; ORF coverage equal to 5 decimals) and
+byte-identical reports. Time: testis 79 s / 2.0 GB (Python dump + run ~10 min), fibroblast ~200 s / 4.0 GB (~16 min / 9.2 GB);
+report 5 s. New output column `best_seed` (the best read's seed locus) for the parent-agreement measure below.
+
+## PREREG SEMIRATIO (2026-10-26): drop the 0.8 AS cut?
+**Why:** the main recall loss of SEMISEC is the AS >= 0.8 x primary cut (788 / 1,186 target pseudogenes lose all their seed-read
+secondaries there, testis). The alternative is no cut of our own: every secondary the aligner reported (`-p 0.1 -N 50`) with AS >= 0
+(`semisec --ratio 0`). Everything else unchanged.
+**New measure (both settings):** parent agreement = among silent candidates whose annotated pseudogene is "X-like", the fraction found
+from a seed overlapping a protein_coding gene described X (NCBI's homology says the copy came from the right gene).
+**Runs:** testis (descriptive) and fibroblast KB3781 (decisive), each at --ratio 0.8 and --ratio 0. Fibroblast bars:
+- **C1** recall(0) >= recall(0.8) + 0.05.
+- **C2** under ratio 0: B1 (pseudogene DISRUPTED / INTACT >= 1.5) and B2 (PROCESSED/DISRUPTED pseudogene >= 0.40) still pass.
+- **C3** parent agreement(0) >= parent agreement(0.8) - 0.05.
+- **PASS = C1 and C2 and C3** -> `--ratio 0` becomes the default. Candidate and unannotated counts reported.
+

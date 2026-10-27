@@ -1,70 +1,24 @@
-"""SEMISEC (docs/LEDGER_O1.md): semi-guided silent copies of expressed genes from their reads' secondary alignments.
+"""SEMISEC (docs/LEDGER_O1.md): score the candidates of the Rust `semisec` binary (steps 1-4) against the annotation.
 
-  semisec.py dump BAM OUT_DIR prim|sec CONTIG... -> OUT_DIR/{prim,sec}/CONTIG1.tsv
-  semisec.py run BAM GENOME_FA GFF OUT_DIR     (reads the dump; fetches seed read sequences from BAM)
+  semisec --bam BAM --genome FA --out OUT [--ratio 0.8]     (src/semisec.rs; ~1.5 min testis, 1.6 GB)
+  semisec.py report OUT GFF                                  -> OUT/report.md, OUT/silent.json
 
-Steps 1-4 of the prereg read only the BAM and the genome; the GFF is read afterwards, for the truth columns and the report.
+The annotation is read only here (truth columns, recall, bars). Steps 1-4 were first written in Python in this file (commit
+0a12c3d9, held-out run a2e27ff3); the Rust port gives the same candidates on the testis (all 6,630: reads, primaries, class, best).
 """
 import bisect
 import collections
-import glob
+import csv
 import json
-import os
-import re
-import subprocess
 import sys
 
-import pysam
+import numpy as np
 
-CIG = re.compile(r'(\d+)([MIDNSHP=X])')
-REF = re.compile(r'(\d+)[MDN=X]')
-COMP = str.maketrans('ACGTNacgtn', 'TGCANtgcan')
-STOP = {'TAA', 'TAG', 'TGA'}
-MIN_READS, SEC_RATIO, MIN_CODONS = 2, 0.8, 100
-
-
-def rc(s):
-    return s.translate(COMP)[::-1]
-
-
-def ref_len(cig):
-    return sum(map(int, REF.findall(cig)))
-
-
-AWK = r'''{a=0; for(i=12;i<=NF;i++) if(substr($i,1,5)=="AS:i:"){a=substr($i,6);break}
- print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"a}'''
-
-
-def dump(bam, out, kind, *contigs):
-    """Stage 0: QNAME FLAG RNAME POS MAPQ CIGAR AS of primaries (kind prim) or secondaries (kind sec) of CONTIGS, one file per
-    call in OUT_DIR/KIND/ (batch the contigs so each call stays inside the machine's time limit)."""
-    flags = '-F 2308' if kind == 'prim' else '-f 256'
-    os.makedirs(f'{out}/{kind}', exist_ok=True)
-    subprocess.run(f"samtools view -@4 {flags} {bam} {' '.join(contigs)} | mawk -F'\\t' '{AWK}' > {out}/{kind}/{contigs[0]}.tsv",
-                   shell=True, check=True)
-
-
-def sam(path):
-    for fn in [path] if os.path.isfile(path) else sorted(glob.glob(f'{path}/*.tsv')):
-        for line in open(fn):
-            f = line.rstrip('\n').split('\t')
-            yield f, int(f[6])
-
-
-def merge(ivs):
-    """ivs: list of (start, end, payload); returns [(start, end, [payloads])] merged by overlap."""
-    out = []
-    for s, e, x in sorted(ivs):
-        if out and s < out[-1][1]:
-            out[-1][1] = max(out[-1][1], e)
-            out[-1][2].append(x)
-        else:
-            out.append([s, e, [x]])
-    return out
+MIN_READS = 2
 
 
 class Index:
-    """Count / find intervals overlapping a query (sorted starts + max length)."""
+    """Find intervals overlapping a query (sorted starts + max length)."""
 
     def __init__(self, ivs):
         self.v = sorted(ivs)
@@ -81,156 +35,38 @@ class Index:
         return out
 
 
-def longest_orf(seq):
-    best = (0, 0)
-    for fr in range(3):
-        start = None
-        for i in range(fr, len(seq) - 2, 3):
-            c = seq[i:i + 3]
-            if start is None and c == 'ATG':
-                start = i
-            elif start is not None and c in STOP:
-                if i + 3 - start > best[1] - best[0]:
-                    best = (start, i + 3)
-                start = None
-    return best
+class PrimCount:
+    """Primary records overlapping [s, e), from the binary's prim_iv.bin (u32 start, end pairs sorted per contig)."""
+
+    def __init__(self, out):
+        a = np.fromfile(f'{out}/prim_iv.bin', dtype='<u4').reshape(-1, 2)
+        self.c = {}
+        for line in open(f'{out}/prim_iv.tsv'):
+            chrom, off, n = line.split()
+            v = a[int(off):int(off) + int(n)]
+            self.c[chrom] = (v[:, 0].astype(np.int64), v[:, 1].astype(np.int64), int((v[:, 1] - v[:, 0]).max(initial=0)))
+
+    def count(self, chrom, s, e):
+        if chrom not in self.c:
+            return 0
+        st, en, m = self.c[chrom]
+        i, j = np.searchsorted(st, s - m), np.searchsorted(st, e)
+        return int((en[i:j] > s).sum())
 
 
-def candidate_in_read_sense(cig, rpos, reverse, qlen, genome, chrom):
-    """Events in original-read order: (orig_pos or None, candidate bases). Matches carry 1 base at a read position;
-    D runs carry candidate bases with no read position (attached to the preceding read position); I runs give read
-    positions with no candidate base."""
-    ev, q, r = [], 0, rpos
-    for n, op in CIG.findall(cig):
-        n = int(n)
-        if op in 'M=X':
-            ref = genome.fetch(chrom, r, r + n).upper()
-            for j in range(n):
-                ev.append((q + j, ref[j]))
-            q += n
-            r += n
-        elif op == 'D':
-            ev.append((q - 0.5, genome.fetch(chrom, r, r + n).upper()))
-            r += n
-        elif op == 'N':
-            r += n
-        elif op in 'I':
-            for j in range(n):
-                ev.append((q + j, ''))
-            q += n
-        elif op in 'SH':
-            q += n
-    if reverse:
-        ev = [((qlen - 1 - p), b.translate(COMP)[::-1]) for p, b in reversed(ev)]
-    return ev, q
-
-
-def orf_status(ev, o0, o1):
-    """Translate the candidate over the read's ORF [o0, o1); DISRUPTED on a frameshift or a premature in-frame stop."""
-    seg = [(p, b) for p, b in ev if o0 <= p < o1]
-    if not seg:
-        return 'UNCOVERED', 0.0
-    covered = sum(1 for p, b in seg if b and float(p).is_integer())
-    first = min(int(p) for p, b in seg if float(p).is_integer())
-    lead = (first - o0) % 3  # skip to the first codon boundary of the seed frame
-    cand = ''.join(b for _, b in seg)
-    net = sum(len(b) for p, b in seg if not float(p).is_integer()) - sum(1 for p, b in seg if b == '')
-    frac = covered / (o1 - o0)
-    if net % 3:
-        return 'DISRUPTED', frac
-    cs = cand[(3 - lead) % 3:]
-    codons = [cs[i:i + 3] for i in range(0, len(cs) - 2, 3)]
-    if any(c in STOP for c in codons[:-1]):
-        return 'DISRUPTED', frac
-    return 'INTACT', frac
-
-
-def run(bam, genome_fa, gff, out):
-    # 1. seeds
-    prim = {}
-    by = collections.defaultdict(list)
-    for f, AS in sam(f'{out}/prim' if os.path.isdir(f'{out}/prim') else f'{out}/prim.tsv'):
-        q, flag, chrom, pos, cig = f[0], int(f[1]), f[2], int(f[3]) - 1, f[5]
-        end = pos + ref_len(cig)
-        strand = '-' if flag & 16 else '+'
-        prim[q] = (chrom, strand, pos, end, AS, 'N' in cig, flag & 16 != 0)
-        by[(chrom, strand)].append((pos, end, q))
-    seeds, read_seed = {}, {}
-    for key, ivs in by.items():
-        for s, e, qs in merge(ivs):
-            if len(set(qs)) >= MIN_READS:
-                sid = f'{key[0]}:{s}-{e}{key[1]}'
-                seeds[sid] = (key[0], key[1], s, e, len(set(qs)))
-                for q in qs:
-                    read_seed[q] = (key[0], s, e)
-    pidx_all = collections.defaultdict(list)
-    for (c, _), v in by.items():
-        pidx_all[c] += [(s, e) for s, e, _ in v]
-    pidx = {c: Index(v) for c, v in pidx_all.items()}
-    del by
-    # 2. candidate hits
-    hits = collections.defaultdict(list)
-    n_sec = n_kept = 0
-    for f, AS in sam(f'{out}/sec' if os.path.isdir(f'{out}/sec') else f'{out}/sec.tsv'):
-        n_sec += 1
-        q = f[0]
-        if q not in read_seed:
-            continue
-        p = prim[q]
-        if AS < SEC_RATIO * p[4]:
-            continue
-        chrom, pos, cig, flag = f[2], int(f[3]) - 1, f[5], int(f[1])
-        end = pos + ref_len(cig)
-        sc, ss, se = read_seed[q]
-        if chrom == sc and pos < se and end > ss:
-            continue
-        n_kept += 1
-        strand = '-' if flag & 16 else '+'
-        hits[(chrom, strand)].append((pos, end, (q, AS, cig, pos, flag & 16 != 0)))
+def load(out):
     cands = []
-    for (chrom, strand), ivs in hits.items():
-        for s, e, xs in merge(ivs):
-            reads = {x[0] for x in xs}
-            if len(reads) < MIN_READS:
-                continue
-            n_prim = len(pidx[chrom].over(s, e)) if chrom in pidx else 0
-            best = max(xs, key=lambda x: x[1])
-            cands.append({'chrom': chrom, 'strand': strand, 'start': s, 'end': e, 'reads': len(reads),
-                          'primaries': n_prim, 'silent': n_prim < MIN_READS, 'best': best})
-    del hits
-    # 4. class (silent only) - read sequences of the best hits' primaries
-    want = {c['best'][0] for c in cands if c['silent']}
-    seqs = {}
-    open(f'{out}/want.txt', 'w').write(''.join(q + '\n' for q in want))
-    p = subprocess.Popen(['samtools', 'view', '-@4', '-F', '2308', '-N', f'{out}/want.txt', bam],
-                         stdout=subprocess.PIPE, text=True)
-    for line in p.stdout:
-        f = line.split('\t', 10)
-        seqs[f[0]] = rc(f[9]) if int(f[1]) & 16 else f[9]
-    p.wait()
-    genome = pysam.FastaFile(genome_fa)
-    for c in cands:
-        if not c['silent']:
-            continue
-        q, AS, cig, pos, rev = c['best']
-        read = seqs.get(q, '')
-        c['processed'] = prim[q][5] and 'N' not in cig
-        o0, o1 = longest_orf(read)
-        coding = (o1 - o0) // 3 >= MIN_CODONS
-        # the secondary's SEQ orientation: original read if not reverse
-        ev, qlen = candidate_in_read_sense(cig, pos, rev, len(read), genome, c['chrom'])
-        if coding:
-            c['orf'], c['orf_cov'] = orf_status(ev, o0, o1)
-        else:
-            c['orf'], c['orf_cov'] = 'LNC-LIKE', 0.0
-        c['class'] = ('PROCESSED' if c['processed'] else 'UNPROCESSED') + '/' + c['orf']
-        c['best'] = q
-    for c in cands:
-        if not c['silent']:
-            c['best'] = c['best'][0]
-    json.dump({'seeds': len(seeds), 'secondaries': n_sec, 'kept_hits': n_kept, 'cands': cands},
-              open(f'{out}/cands.json', 'w'))
-    report(out, cands, seeds, gff, pidx)
+    for r in csv.DictReader(open(f'{out}/cands.tsv'), delimiter='\t'):
+        c = {'chrom': r['chrom'], 'strand': r['strand'], 'start': int(r['start']), 'end': int(r['end']), 'reads': int(r['reads']),
+             'primaries': int(r['primaries']), 'silent': r['silent'] == 'true', 'best': r['best'], 'best_seed': r['best_seed']}
+        if c['silent']:
+            c.update({'class': r['class'], 'orf': r['orf'], 'orf_cov': float(r['orf_cov']), 'processed': r['processed'] == 'true'})
+        cands.append(c)
+    seeds = {}
+    for line in open(f'{out}/seeds.tsv'):
+        c, st, s, e, n = line.split()
+        seeds[f'{c}:{s}-{e}{st}'] = (c, st, int(s), int(e), int(n))
+    return cands, seeds
 
 
 def biotypes(gff):
@@ -248,7 +84,9 @@ def biotypes(gff):
     return {c: Index(v) for c, v in genes.items()}
 
 
-def report(out, cands, seeds, gff, pidx):
+def report(out, gff):
+    cands, seeds = load(out)
+    pc = PrimCount(out)
     gi = biotypes(gff)
 
     def top(c, s, e):
@@ -284,7 +122,7 @@ def report(out, cands, seeds, gff, pidx):
         for s, e, bt, desc, gid in idx.v:
             if bt != 'pseudogene' or not desc.endswith('-like') or desc[:-5] not in seed_desc:
                 continue
-            if chrom in pidx and len(pidx[chrom].over(s, e)) >= MIN_READS:
+            if pc.count(chrom, s, e) >= MIN_READS:
                 continue  # expressed copy: not silent, not in the recall denominator
             tot += 1
             found += bool(cidx.get(chrom) and cidx[chrom].over(s, e))
@@ -310,6 +148,17 @@ def report(out, cands, seeds, gff, pidx):
                   f'lncRNA LNC-LIKE {ll:.3f} (n {nl}) coding {lcf:.3f} (n {len(lc)})']
     lines += [f'{k}: {v:.3f} {"PASS" if ok else "FAIL"}' for k, (v, ok) in bars.items()]
     lines.append('VERDICT (B1-B3): ' + ('PASS' if all(ok for k, (_, ok) in bars.items() if not k.startswith('B4')) else 'FAIL'))
+    # parent agreement (precision on annotated pseudogene hits): a silent candidate whose annotated pseudogene is "X-like" agrees when
+    # the best read's seed locus overlaps a protein_coding gene described X
+    agree = n_like = 0
+    for c in sil:
+        if c['truth'] != 'pseudogene' or not c['truth_desc'].endswith('-like'):
+            continue
+        ch, iv = c['best_seed'].rsplit(':', 1)
+        s0, e0 = map(int, iv.split('-'))
+        n_like += 1
+        agree += any(h[2] == 'protein_coding' and h[3] == c['truth_desc'][:-5] for h in (gi[ch].over(s0, e0) if ch in gi else []))
+    lines.append(f'parent agreement: {agree} / {n_like} ({agree / max(n_like, 1):.3f}) silent candidates on an "X-like" pseudogene found from a seed on X')
     none = [c for c in sil if c['truth'] == 'none']
     sizes = sorted(c['end'] - c['start'] for c in none)
     lines.append(f"unannotated silent candidates: {len(none)}; median span {sizes[len(sizes) // 2] if sizes else 0} bp")
@@ -319,7 +168,4 @@ def report(out, cands, seeds, gff, pidx):
 
 
 if __name__ == '__main__':
-    if sys.argv[1] == 'dump':
-        dump(*sys.argv[2:])
-    elif sys.argv[1] == 'run':
-        run(*sys.argv[2:6])
+    report(sys.argv[2], sys.argv[3]) if sys.argv[1] == 'report' else sys.exit(__doc__)
