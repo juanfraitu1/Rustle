@@ -7318,3 +7318,13 @@ join a family but not widen its divergence radius.
 **Scorer:** fixed famtruth.py, primary truth Compara **Simiiformes** (user, 2026-10-27), recent reported. Dev selection on the A119b dev half
 (family F >= baseline + 0.01, pair F not lower, precision drop <= 0.02, mainstays/YAGs no regression in the score AND content changes listed).
 Best qualifying arm held out on the A119b held-out half and testis with the same bars. PASS on both -> propose default (user). Else FAIL.
+
+### DENOVOFAM-L5 result (register 1441): **PASS at Simiiformes on both held-outs (pending audit)**; recent pair F still dips
+Edges: A119b E6 1,378 orphan-orphan; E7 + 3,832 orphan-family kept (4,322 dropped as widening). Testis E7 133 + 42 (159 dropped).
+Dev (fixed scorer, Simiiformes): baseline pair F 0.679 (prec 0.706), family F 0.755; E6 0.678 (0.694), 0.771 (fails pair F); **E7 0.695
+(0.716), 0.769 (qualifies)**; content: NPIP family + AL359195.2 (lncRNA), GOLGA8 family - LINC02259; scores of every mainstay/YAG identical.
+Held out, Simiiformes: A119b half pair F 0.8903 -> 0.8904 (prec 0.9278 -> 0.9271), family F 0.8136 -> 0.8253 (+0.012); testis pair F 0.9002
+-> 0.9028 (prec 0.9562 -> 0.9556), family F 0.8650 -> 0.8962 (+0.031); mainstay/YAG scores identical, testis family content unchanged.
+Reported: recent A119b pair F 0.9200 -> 0.9160 (prec 0.9028 -> 0.8943), family F 0.8765 -> 0.8819; testis 0.9536 -> 0.9522 (0.9387 -> 0.9343),
+0.9160 -> 0.9277. Primates A119b 0.8842 -> 0.8836, 0.8102 -> 0.8291; testis 0.8901 -> 0.8927, 0.8546 -> 0.8855.
+The A119b pair-F margin is +0.0001 (1 more true pair, 2 more predicted); the gain is in FAMILY recovery, not pairs.
