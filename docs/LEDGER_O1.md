@@ -8044,3 +8044,15 @@ rule), so F falls without any change in what is found. As registered ("pair F an
 SEMISEC copies land in the right family 86% of the time by protein evidence on both samples (vs 0.3-0.6% by chance), add no Compara-visible
 pair on the held-out, and widen the expressed universe; the bar as written penalises the mode for finding copies the truth cannot see.
 A re-registration would fix the universe to the base set before comparing F — not done tonight.
+
+## ASMTPL-4 (2026-10-28): a non-degenerate precision bar for ASMTPL-3 — RETROSPECTIVE (numbers already seen in r1452)
+Bar: RK's judged precision is not significantly below R1's — the 95% Wilson interval of RK's precision overlaps R1's — on dev and on held-out;
+recall bars as ASMTPL (RK >= R1 members in every family, > in at least one; pseudogenes summed >=). No new data, no new arms; the ASMTPL-3
+outputs (`/mnt/linuxdisk/tmp/asmtpl/v3/`) are rescored. Because the numbers were seen before this bar was written, a PASS here is a
+retrospective PASS and is logged as such (weaker than a pre-registered one); it decides nothing about defaults.
+**ASMTPL-4 result (register 1466, retrospective):** dev R1 3/3 = 1.000 [0.438, 1.000] vs RK 63/69 = 0.913 [0.823, 0.960]: overlap; held-out
+R1 28/28 = 1.000 [0.879, 1.000] vs RK 35/37 = 0.946 [0.823, 0.985]: overlap; recall bars pass on both (RK >= R1 in every family, > in GOLGA
+0 -> 23/33, TBC1D3 0 -> 11/16, NBPF 3 -> 19/23, RBMY 9 -> 13/13; pseudogenes 0 -> 8 dev, 4 -> 4 held-out). Retrospective PASS: "every unique
+intron chain of a family's assembled transcripts as templates" is not significantly less precise than one template and recovers 55/122 vs 3/122
+members on dev, 31/56 vs 24/56 held-out. Not a default change (retrospective); it is the template rule carried by U1/U1p and the fresh-substrate
+test, where it will be judged prospectively.
