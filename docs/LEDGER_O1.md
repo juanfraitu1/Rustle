@@ -7752,3 +7752,16 @@ family definition (user decides), metric-auditor first.
 2,482 -> 2,286). Simiiformes: X3 pair F 0.338 (25/29 | 119) fam F 0.784; **XR3 pair F 0.339 (19/29 | 83) fam F 0.727** (base 0.195 / 0.455).
 Asymmetric judge, WRONG pairs: base 2 (CHAMP1-TUBB8, MTHFS-SLAIN2), XR 5, X3 9, **XR3 4** (+AP1S2-BDP1, HNRNPA1L2-MRPS31); XR3's other
 non-Simiiformes pairs: 21 older Compara, 36 HGNC-group (KZNF), 3 PAR. All XR3 dev bars PASS -> OR6737 held-out next.
+
+### LIFTMODE-GW3 RESULT (2026-10-27, register 1455): XR3 PASSES dev AND the OR6737 held-out (pending metric-auditor)
+OR6737 (`/mnt/linuxdisk/tmp/liftgw/{or,or3,or3R,mclOR}/`, frozen copies in `liftgw/frozen/`): 73,965 templates (251 Mb), 106,065
+placements, 1,989 retro placements removed; base = the shipped catalog (1,521 copies; ungated all-vs-all PAF, today's binary, 235 s).
+| arm (OR6737 held-out) | loci on genes | families | pair sens / prec / F (Simiiformes) | family sens / prec / F | WRONG pairs (judge) | older / HGNC / PAR |
+|---|---|---|---|---|---|---|
+| MCL base | 1,171 | 414 | 0.225 / 0.450 / 0.300 (9/40, 20) | 0.352 / 0.950 / 0.514 | 1 (MTHFS-SLAIN2) | 5 / 1 / 4 |
+| **XR3** | 1,622 | 568 | 0.650 / 0.283 / **0.394** (26/40, 92) | 0.667 / 0.783 / **0.720** | **2** (+CDH18-NUP50) | 27 / 33 / 4 |
+| X3 (reported) | 1,984 | 694 | 0.875 / 0.205 / 0.332 (35/40, 171) | 0.778 / 0.712 / 0.743 | 9 | 57 / 66 / 4 |
+Bars: pair F and family F > base PASS; wrong 2 <= 1 + 2 PASS; mainstays/YAGs identical (NPIP 1/1 fam3, DAZ 1/1) PASS. Dev (KB3781) passed
+the same bars (pair F 0.195 -> 0.339, family F 0.455 -> 0.727, wrong 2 -> 4). Cost: ~45 min of template alignment per sample (9 chunks),
+22 s to edges, +2 min in mcl_families. Verdict: PASS, awaiting the metric-auditor; on audit PASS -> propose to the user: liftmode reciprocal
+placements (retro-filtered) as `--extra-edges` in the de novo `families` stage.
