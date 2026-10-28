@@ -7716,3 +7716,10 @@ placements at Liftoff's cross-species -a/-s 0.5 are transitive within one genome
 pair sensitivity is near-complete (28/29) but 379 predicted pairs for 29 true. Liftoff's own within-genome copy mode uses identity 1.0 (-sc),
 which would be too strict here; a middle value is an arbitrary threshold. Threshold-free candidates for a re-run (user decides): reciprocal
 placement (A lifts onto B AND B onto A) as the edge; or LIFT placements as edges INTO the existing MCL (the --extra-edges path of r1437-41).
+
+## PREREG LIFTMODE-GW2 (2026-10-27): reciprocal placement as the family edge; then LIFT edges into MCL
+Same data, templates, alignments, scorer and bars as LIFTMODE-GW. **Arm R:** locus A and locus B are joined only when some template of A
+places on B AND some template of B places on A (each placement by the GW rule); families = connected components of reciprocal edges.
+If R fails a bar on dev: **Arm X** = the GW placements (locus pairs, weight = identity x coverage of the best placement, max over directions)
+fed to the shipped `mcl_families --from-gtf ... --extra-edges` (r1437-41 path) on the same GTF, scored the same way. Dev KB3781 first; a
+passing arm is then run on OR6737 (held-out) before anything is proposed.
