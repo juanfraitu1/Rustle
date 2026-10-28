@@ -7519,3 +7519,14 @@ pseudogenes, 284 LOC protein-coding; seed 2: 380, 224): the by-symbol gorilla tr
 LOC blind spot (declared in S3). On judged hits U beats A on both seeds (+0.03, +0.11) and on recall x4-5 member, x19-200 pseudogene. Held-out
 is now SPENT for this question. A further test needs a judge for LOC genes (RefSeq description -> parent, as pgparent.py does for
 pseudogenes) and a fresh substrate.
+
+## PREREG GUIDED-S6 (2026-10-27): S5 arms on a FRESH gorilla held-out, Kamilah_GGO_v0 + NCBI Annotation Release 102
+User choices: mGorGor1 hap1/hap2 have no annotation, so the held-out is **Kamilah_GGO_v0 (GCF_008122165.1, RefSeq release 102, 2019)**: a different
+animal, assembly and annotation from mGorGor1 (spent in S5); the same gene families biologically (stated caveat). Never pooled with human.
+**Arms, seeds, truth, bars = S5** (A = body asm20, U = body UNION CDS splice UNION CDS asm20 chained; HGNC most-specific group truth by symbol +
+Compara Simiiformes for group-less genes; --hgnc-coding; pseudogene parent table from this GFF's descriptions; both seeds; U > A on MACRO member
+and pseudogene recall, judged and strict precision >= A - 0.02, no named-family member loss).
+**One addition, fixed before looking (the S5 failure mode):** LOC protein-coding genes get the same description judge as pseudogenes
+(description minus a trailing `-like` -> the single named protein-coding gene with that description). A found LOC gene whose parent is in the seed's
+family counts CORRECT; parent in another family or outside the truth -> judged WRONG; no parent -> unjudged. LOC genes never enter recall
+denominators. Dev check: human has no LOC genes, so S5 dev numbers stand. PASS -> propose U as the guided default (user decides), metric-auditor first.
