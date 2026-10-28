@@ -7803,3 +7803,12 @@ same description, NBPF-sortilin, "uncharacterized LOC" partners). Bridge tables 
 than base pairs (OR 267/1,382 = 19% vs 339/2,832 = 12%; KB 26% vs 32%). The lever to test next is template boundaries, not bridge classes:
 templates cut to read-defined units (`mcl_families --emit-units`, units follow reads) instead of whole loci, or chains trimmed to exons the
 family's other chains also carry (ASMTPL-2's rule, which cost single-chain families). Not run.
+
+## PREREG LIFTMODE-GW4 (2026-10-27): template boundaries — representative-only (U1) vs locus-shared exons (U2) vs all chains (XR3)
+Finding: `mcl_families --emit-units` under `--from-gtf` is the locus representative, not a sub-locus unit, so "units as templates" = one chain
+per locus. Arms, all on the GW alignments (masks projected onto the existing PAFs; no realignment), reciprocal + retro-filtered edges into MCL
+as XR3: **U1** = per locus only the most-reads chain (ties: longest) is a template; **U2** = every chain, but a template's bases are restricted
+to exons carried by >= 2 unique chains of the SAME locus (exact donor/acceptor; first/last exons by their inner splice site), single-chain
+loci kept whole, chains with no shared exon dropped; coverage/identity over the kept bases (denominator = kept length). Scores: famtruth
+Simiiformes pair F / family F, pairjudge wrong pairs, and the GW3-RBH mutual-hit rate of added pairs. Dev KB3781 first; an arm goes to OR6737
+only if on dev it keeps XR3's pair F and family F within 0.02 AND raises the added-pairs mutual-hit rate above base's (the GW3-RBH rule).
