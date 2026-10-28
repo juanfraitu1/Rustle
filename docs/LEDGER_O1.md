@@ -7901,3 +7901,17 @@ Seed 2 passes every bar; seed 1 fails the named bar (7 NPIP members binned retro
 onto an NPIP copy whose Ensembl HG002 model has no intron there — intron-loss copies or thinner models) and the member bar by 0.0002.
 Verdict FAIL as registered. Descriptively the retro class costs <= 0.001 recall for +0.01 precision on dev and held-out, but it mislabels
 intron-variant members of the family it matters most for. Guided default unchanged. HG002 held-out now SPENT for the retro question.
+
+## PREREG SEMIFAM (2026-10-28): do SEMISEC's silent copies belong in the de novo families? (PENDING_2026-10-27 item 2)
+SEMISEC silent candidates (`/mnt/linuxdisk/tmp/semisec/{rdev,rho}/silent.json`: KB3781 2,672, OR6737 3,672; ratio 0.8, unfiltered) are added
+to the de novo family graph as NEW NODES through `mcl_families --extra-edges`: one edge per silent candidate, candidate span
+(`chrom:start-end`) <-> the de novo locus (`<out>.fam.loci.gff3` key) that contains the PRIMARY alignment of the candidate's best read
+(its primary fetched from the BAM by name; candidates whose best read's primary lies in no de novo locus are dropped and counted); weight
+= best_as / primary AS (SEMISEC's own ratio, >= 0.8 by construction). Nothing else changes (base = today's `mcl_families --from-gtf` run with
+the cached all-vs-all PAF). Scorers: famtruth Simiiformes (pair F, family F), pairjudge wrong pairs, mainstays/YAGs; the silent candidates
+themselves are reported by SEMISEC class and by whether they map onto an annotated gene (famtruth map_copy), so the question "do the copies
+join the right family" is answered per candidate: joined family contains the candidate's annotated parent (RefSeq description stem) = right.
+**Dev KB3781 (SEMISEC's dev), held-out OR6737 (SEMISEC's held-out; reused tonight by the GW rows, stated).** Bars: pair F and family F not
+lower than base; wrong pairs <= base + 2; no mainstay/YAG regression; >= 50% of the annotated silent candidates that join a family join
+the family holding their parent (the semi-guided claim). PASS on both -> propose SEMISEC candidates as extra nodes of the `families` stage
+(user decides), metric-auditor first.
