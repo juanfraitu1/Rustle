@@ -7726,3 +7726,15 @@ passing arm is then run on OR6737 (held-out) before anything is proposed.
 **GW2 arm R, dev KB3781 (`/mnt/linuxdisk/tmp/liftgw/kbR/`):** 439 families, 1,302 loci; pair sens 0.793 prec 0.190 F **0.307** (23/29 | 121 pred);
 family sens 0.781 prec 0.641 F **0.704**. Pair F and family F beat MCL (0.182 / 0.455); pair precision 0.267 -> 0.190 FAILS the <= 0.02 bar
 -> arm X next, as registered.
+
+### LIFTMODE-GW2 RESULT (2026-10-27, register 1454): R, X and XR all beat MCL on pair F and family F; all FAIL the pair-precision bar -> FAIL, OR6737 NOT run
+Base re-run with today's binary (`--reject-self-hits` default): `/mnt/linuxdisk/tmp/liftgw/mclX/`, cached all-vs-all PAF, 120 s each.
+| arm (dev KB3781) | loci on genes | families | pair sens / prec / F | family sens / prec / F |
+|---|---|---|---|---|
+| MCL base | 667 | 267 | 0.138 / 0.333 / 0.195 (4/29, 12 pred) | 0.312 / 0.833 / 0.455 |
+| R reciprocal components | 1,147 | 411 | 0.793 / 0.190 / 0.307 (23/29, 121) | 0.781 / 0.641 / 0.704 |
+| X MCL + all LIFT edges (5,249; 2,340 added, 1,017 new nodes) | 1,497 | 572 | 0.862 / 0.181 / 0.299 (25/29, 138) | 0.906 / 0.690 / **0.784** |
+| XR MCL + reciprocal LIFT edges (2,482; 969 added) | 1,141 | 446 | 0.655 / 0.216 / **0.325** (19/29, 88) | 0.750 / 0.706 / 0.727 |
+Mainstays/YAGs identical in all arms (almost none expressed in fibroblasts). Pair precision drops 0.12-0.15 against a bar of 0.02: the bar
+is set on a baseline with 12 predicted pairs, so any arm that finds the other 25 true pairs at < 1-in-3 precision fails. Verdict FAIL as
+registered. Side note: /mnt/linuxdisk hit 100% during the run (today's indexes); 31 GB of reproducible .mmi deleted, 27 GB free now.
