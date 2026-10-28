@@ -21,6 +21,7 @@ import guided3 as g3  # noqa: E402
 
 COV, IDENT = 0.5, 0.5
 RECIPROCAL = os.environ.get('LIFT_RECIPROCAL') == '1'  # LIFTMODE-GW2 arm R
+RETRO = os.environ.get('LIFT_RETRO') == '1'  # LIFTMODE-GW3
 
 
 def templates(gtf, fasta, outdir):
@@ -100,6 +101,9 @@ def families(outdir, pafs):
     idx = locus_index(loci)
     groups = collections.defaultdict(list)
     land = collections.defaultdict(list)
+    nblk = {}
+    spliced_locus = {g: len(L['exons']) > 1 for g, L in loci.items()}
+    n_retro = 0
     for q, t, st, bl, qi, ti, cdsb, ident in g3.records(pafs, {}):
         if q not in tm or not bl:
             continue
@@ -108,6 +112,7 @@ def families(outdir, pafs):
             continue
         key = (q, g if g and frac >= 0.5 else f'{t}:{bl[0][0]}-{bl[-1][1]}', st)
         groups[key].append((qi, ti, cdsb, ident))
+        nblk[key] = max(nblk.get(key, 0), len(bl))
         land[key].append((t, bl[0][0], bl[-1][1]))
     parent = {}
 
@@ -118,6 +123,7 @@ def families(outdir, pafs):
         return x
 
     putative = []
+    retro = []
     n_place = 0
     placed = set()  # (source locus, target locus)
     edges = {}
@@ -128,6 +134,10 @@ def families(outdir, pafs):
         n_place += 1
         if g in loci:
             a, b = tm[q]['locus'], g
+            if RETRO and len(tm[q]['exons']) > 1 and nblk[(q, g, st)] == 1 and spliced_locus[b]:
+                n_retro += 1  # GW3: a spliced template landing intronless inside a spliced locus = processed copy, not a family edge
+                retro.append((a, b))
+                continue
             placed.add((a, b))
             w = ident * min(1.0, bases / tm[q]['len'])
             edges[(min(a, b), max(a, b))] = max(edges.get((min(a, b), max(a, b)), 0.0), w)
@@ -140,6 +150,9 @@ def families(outdir, pafs):
         for (a, b), wt in sorted(edges.items()):
             if not RECIPROCAL or ((a, b) in placed and (b, a) in placed):
                 w.write(f'{a}\t{b}\t{wt:.6f}\n')
+    with open(f'{outdir}/retro.tsv', 'w') as w:
+        for a, b in sorted(set(retro)):
+            w.write(f'{a}\t{b}\n')
     comp = collections.defaultdict(set)
     for g in loci:
         comp[find(g)].add(g)
@@ -165,7 +178,7 @@ def families(outdir, pafs):
             w.write(f'{c}\t{s}\t{e}\t{";".join(sorted(srcs))}\n')
     sz = [len(v) for v in fams]
     print(f'templates {len(tm)}, placements {n_place}, families {len(fams)} (loci in families {sum(sz)}, largest {sz[:5]}), '
-          f'putative copies {len(merged)} (from {len(putative)} landings)')
+          f'putative copies {len(merged)} (from {len(putative)} landings), retro placements {n_retro}')
 
 
 if __name__ == '__main__':

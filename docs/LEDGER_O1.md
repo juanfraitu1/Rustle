@@ -7748,3 +7748,7 @@ same symbol (PAR); otherwise it is true (Simiiformes) or "older/HGNC" (reported,
 edges, primary), X (reported). **Bars (dev then OR6737):** XR pair F and family F > base at Simiiformes; XR wrong pairs <= base wrong pairs + 2;
 mainstays/YAGs no regression (G3). PASS on OR6737 -> propose `--extra-edges` from liftmode reciprocal placements as part of the de novo
 family definition (user decides), metric-auditor first.
+**GW3 dev KB3781 (`/mnt/linuxdisk/tmp/liftgw/{kb3,kb3R,mclX}/`):** retro placements 1,539 removed from the edge set (edges 5,249 -> 4,759; reciprocal
+2,482 -> 2,286). Simiiformes: X3 pair F 0.338 (25/29 | 119) fam F 0.784; **XR3 pair F 0.339 (19/29 | 83) fam F 0.727** (base 0.195 / 0.455).
+Asymmetric judge, WRONG pairs: base 2 (CHAMP1-TUBB8, MTHFS-SLAIN2), XR 5, X3 9, **XR3 4** (+AP1S2-BDP1, HNRNPA1L2-MRPS31); XR3's other
+non-Simiiformes pairs: 21 older Compara, 36 HGNC-group (KZNF), 3 PAR. All XR3 dev bars PASS -> OR6737 held-out next.
