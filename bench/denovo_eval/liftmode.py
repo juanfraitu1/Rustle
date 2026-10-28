@@ -102,9 +102,16 @@ def masks(tm):
     for n, t in tm.items():
         by_locus[t['locus']].append(n)
     out = {}
-    if MASK == 'rep':
+    if MASK in ('rep', 'repf'):
         for L, ns in by_locus.items():
-            best = max(ns, key=lambda n: (tm[n]['reads'], tm[n]['len']))
+            cands = ns
+            if MASK == 'repf':  # U1-TSS: drop chains whose first/last exon lies wholly inside a sibling chain's intron
+                introns = [(a, b, n) for n in ns for (_, a), (b, _) in zip(tm[n]['exons'], tm[n]['exons'][1:])]
+                def flagged(n):
+                    ex = tm[n]['exons']
+                    return len(ex) > 1 and any(any(a <= e[0] and e[1] <= b and o != n for a, b, o in introns) for e in (ex[0], ex[-1]))
+                cands = [n for n in ns if not flagged(n)] or ns
+            best = max(cands, key=lambda n: (tm[n]['reads'], tm[n]['len']))
             out[best] = [(0, tm[best]['len'])]
         return out
     for L, ns in by_locus.items():

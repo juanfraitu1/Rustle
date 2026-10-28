@@ -8005,3 +8005,7 @@ intron) excluded from the representative choice (a locus whose chains are all fl
 **U1p** = the same rule on a KB3781 re-assembly with `--polish-tss split --polish-subchain drop` (the shipped opt-in polishes; new chains aligned
 the same way). Reported vs shipped MCL and vs U1: how many representatives change; pair F / family F (famtruth Simiiformes), wrong pairs,
 added-pair protein mutual-hit; number of lift edges and putative copies.
+**U1-TSS arm U1f (KB3781 dev):** 1,690 / 17,608 representatives change; lift edges 1,730 -> 1,756; MCL + edges: pair F **0.462** (U1 0.500; shipped
+0.195), family F **0.717** (0.764), wrong 2 (= U1 = base), added-pair protein mutual-hit 0.967 (U1 0.986). Excluding intronic-terminal chains
+from the representative choice does NOT help: the replaced chains were slightly better templates than their replacements. U1p (re-assembly with
+`--polish-tss split --polish-subchain drop`) launched next.
