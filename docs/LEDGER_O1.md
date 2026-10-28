@@ -7738,3 +7738,13 @@ Base re-run with today's binary (`--reject-self-hits` default): `/mnt/linuxdisk/
 Mainstays/YAGs identical in all arms (almost none expressed in fibroblasts). Pair precision drops 0.12-0.15 against a bar of 0.02: the bar
 is set on a baseline with 12 predicted pairs, so any arm that finds the other 25 true pairs at < 1-in-3 precision fails. Verdict FAIL as
 registered. Side note: /mnt/linuxdisk hit 100% during the run (today's indexes); 31 GB of reproducible .mmi deleted, 27 GB free now.
+
+## PREREG LIFTMODE-GW3 (2026-10-27): retro-placement class + asymmetric pair judge; then OR6737
+Same data/templates/alignments as GW/GW2. (1) **Retro placement:** a template with >= 1 intron whose chained placement on a locus has no
+intron (every record of the chain is one block) while that locus's own transcripts have introns is classed `retro` (a processed copy inside the
+locus), reported, and NOT a family edge. (2) **Judge:** recall = famtruth Compara Simiiformes (pairs, families), unchanged. Precision: a
+predicted pair of judged genes is WRONG only when the two genes are Compara paralogues at NO level, share NO HGNC gene group, and are not the
+same symbol (PAR); otherwise it is true (Simiiformes) or "older/HGNC" (reported, not penalised). Arms: MCL base, XR (MCL + reciprocal LIFT
+edges, primary), X (reported). **Bars (dev then OR6737):** XR pair F and family F > base at Simiiformes; XR wrong pairs <= base wrong pairs + 2;
+mainstays/YAGs no regression (G3). PASS on OR6737 -> propose `--extra-edges` from liftmode reciprocal placements as part of the de novo
+family definition (user decides), metric-auditor first.
