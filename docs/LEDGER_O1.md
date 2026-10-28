@@ -8106,3 +8106,13 @@ Register 1467: **edge recall rises on both samples (dev +0.072, held-out +0.012)
 >= 20 judgeable added pairs bar is met on both (128, 33). What this is NOT yet: the MCL-integrated family bars (pair F, family F, pair precision,
 mainstays, protein mutual-hit) — the A119b `mcl_families` re-run needs a background job the memory watchdog stopped; testis MCL catalogs exist
 (`edgeh/mcl/`, frozen) but are judged only after dev. Frozen: `/mnt/linuxdisk/tmp/edgeh/frozen/`. Audit requested before any proposal.
+**AUDIT of r1467 (metric-auditor, 2026-10-28 15:57): NOT VALIDATED — the "PASS" is withdrawn.** (1) The edge-recall measure and its "<= 2 wrong"
+bar were written AFTER the result (prereg 4c5cbeb8 names only MCL-integrated bars; edgerecall.py 15:48, edges 15:09). (2) The registered bars,
+applied to the held-out MCL catalogs that already existed: pair sens 0.850 -> 0.859, **pair precision 0.956 -> 0.935 (-0.021, below the
+bar)**, **pair F 0.900 -> 0.895 (fails "> base")**, family F 0.865 -> 0.895 (passes), mainstays identical; base == shipped. (3) The dev gain is
+mostly transitive closure through shipped cliques into >= 50-gene components (60 of 109 gained pairs; MCL would not keep them); U1 edges alone
+connect 0.690 / 0.782. (4) 91% / 80% of new pairs are unjudged (617 rDNA RNA28S pairs, older paralogues absent from Compara, pc-pseudogene).
+(5) The 2 dev wrongs are pseudogene-welded loci (TMEM185AP1 inside the HSFX1 locus; a NUP50 retrocopy inside a CDH18 intron, missed by the
+retro filter) — family-level over-merges the judge cannot see. Descriptive facts that stand: held-out MCL-integrated family F +0.03, 0 new
+Simiiformes-wrong pairs, 23 older-paralogue pairs added; dev edge recall +0.072 is a connectivity number. What would change it: the A119b
+MCL re-run under the 4c5cbeb8 bars (held-out pair precision must stay >= 0.936 and pair F > 0.900 — it does not on the catalog in hand).
