@@ -7660,3 +7660,10 @@ MOSTLY IN INTRONS of the hit gene (a family copy nested in the host's intron, gr
 the ALG1L region) — these are copies the annotation does not name, not wrong paralogues; `gene_of` hands them to the protein-coding host.
 ITSN2 34/34, USP32 7/9, ABCA9 1/1 land on the hit gene's EXONS (real cross-hits to look at). Next (not run): judge a hit on target EXON bases
 (Liftoff lifts features onto features); intronic landings become "putative unannotated copy" — O3's tier names — rather than wrong.
+
+## PREREG ASMTPL-3 (2026-10-27): exon-side judge, GOLGA6+GOLGA8 merged, full templates
+Same data, templates (ASMTPL v1, untrimmed, chimeric flag kept), arms and bars as ASMTPL. Changes: (1) a chained hit is judged on the target
+gene's EXON bases: found when >= 0.5 of the chained template bases lie on that gene's exons (and the S3 coverage/identity rule holds); a chain
+whose blocks lie mostly inside a gene's introns is binned "putative unannotated copy" (reported per family, neither right nor wrong — O3's tier
+name); (2) GOLGA6 and GOLGA8 scored as ONE family (one HGNC superfamily; templates of either seed it); (3) ITSN2 checked by hand before scoring
+(reported either way).
