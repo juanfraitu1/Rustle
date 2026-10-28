@@ -7812,3 +7812,8 @@ to exons carried by >= 2 unique chains of the SAME locus (exact donor/acceptor; 
 loci kept whole, chains with no shared exon dropped; coverage/identity over the kept bases (denominator = kept length). Scores: famtruth
 Simiiformes pair F / family F, pairjudge wrong pairs, and the GW3-RBH mutual-hit rate of added pairs. Dev KB3781 first; an arm goes to OR6737
 only if on dev it keeps XR3's pair F and family F within 0.02 AND raises the added-pairs mutual-hit rate above base's (the GW3-RBH rule).
+**GW4 dev KB3781 (`/mnt/linuxdisk/tmp/liftgw/{kb4_rep,kb4_shared,mclX}/`):** U1 (rep only): 17,608 templates (62 Mb), 1,730 reciprocal edges;
+pair F **0.500** (17/29 | 39), family F **0.764**, wrong 2 (= base), added pairs 393, protein mutual-hit **0.986** (346/351).
+U2 (locus-shared exons): 72,379 templates (224 Mb), 2,255 edges; pair F 0.345 (19/29 | 81), family F 0.727, wrong 4, added 972, mutual-hit
+0.950 (753/793). XR3 for reference 0.339 / 0.727 / wrong 4 / 0.943; base 0.195 / 0.455 / 2 / 0.883. Both arms clear the OR6737 gate.
+Caveat: mutual-hit uses the GW3-RBH protein set (genes of base + XR3 pairs); U1/U2 pairs outside it (42 / 179) are excluded from the rate.

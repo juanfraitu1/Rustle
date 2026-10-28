@@ -22,6 +22,7 @@ import guided3 as g3  # noqa: E402
 COV, IDENT = 0.5, 0.5
 RECIPROCAL = os.environ.get('LIFT_RECIPROCAL') == '1'  # LIFTMODE-GW2 arm R
 RETRO = os.environ.get('LIFT_RETRO') == '1'  # LIFTMODE-GW3
+MASK = os.environ.get('LIFT_MASK', '')  # LIFTMODE-GW4: 'rep' (one chain per locus) or 'shared' (locus-shared exons)
 
 
 def templates(gtf, fasta, outdir):
@@ -95,17 +96,64 @@ def locus_of(idx, chrom, strand, bl):
     return g, share[g] / max(1, sum(b - a for a, b in bl))
 
 
+def masks(tm):
+    """GW4: template -> kept intervals in template coordinates (None = dropped); 'rep' keeps whole templates of the most-reads chain."""
+    by_locus = collections.defaultdict(list)
+    for n, t in tm.items():
+        by_locus[t['locus']].append(n)
+    out = {}
+    if MASK == 'rep':
+        for L, ns in by_locus.items():
+            best = max(ns, key=lambda n: (tm[n]['reads'], tm[n]['len']))
+            out[best] = [(0, tm[best]['len'])]
+        return out
+    for L, ns in by_locus.items():
+        if len(ns) == 1:
+            n = ns[0]
+            out[n] = [(0, tm[n]['len'])]
+            continue
+        exact, inner = collections.Counter(), collections.Counter()
+        for n in ns:
+            ex = tm[n]['exons']
+            for e in ex:
+                exact[tuple(e)] += 1
+            if len(ex) > 1:
+                inner[('first', ex[0][1])] += 1
+                inner[('last', ex[-1][0])] += 1
+        for n in ns:
+            ex = tm[n]['exons']
+            keep = [i for i, e in enumerate(ex) if len(ex) == 1 or exact[tuple(e)] >= 2
+                    or (i == 0 and inner[('first', e[1])] >= 2) or (i == len(ex) - 1 and inner[('last', e[0])] >= 2)]
+            if not keep:
+                continue
+            # template coordinates run 5'->3' in transcript orientation
+            order = ex if tm[n]['strand'] == '+' else ex[::-1]
+            pos, iv = 0, []
+            for e in order:
+                ln = e[1] - e[0]
+                if (ex.index(e) in keep):
+                    iv.append((pos, pos + ln))
+                pos += ln
+            out[n] = iv
+    return out
+
+
 def families(outdir, pafs):
     M = json.load(open(f'{outdir}/meta.json'))
     tm, loci = M['templates'], M['loci']
+    mk = masks(tm) if MASK else None
+    g3.MASK_ALL = mk is not None
+    if mk is not None:
+        tm = {n: dict(t, len=sum(b - a for a, b in mk[n])) for n, t in tm.items() if n in mk}
+        print(f'mask {MASK}: templates kept {len(tm)}, bp {sum(t["len"] for t in tm.values())}')
     idx = locus_index(loci)
     groups = collections.defaultdict(list)
     land = collections.defaultdict(list)
     nblk = {}
     spliced_locus = {g: len(L['exons']) > 1 for g, L in loci.items()}
     n_retro = 0
-    for q, t, st, bl, qi, ti, cdsb, ident in g3.records(pafs, {}):
-        if q not in tm or not bl:
+    for q, t, st, bl, qi, ti, cdsb, ident in g3.records(pafs, mk or {}):
+        if q not in tm or not bl or cdsb <= 0:
             continue
         g, frac = locus_of(idx, t, st, bl)
         if g == tm[q]['locus']:

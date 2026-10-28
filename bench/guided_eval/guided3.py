@@ -27,6 +27,7 @@ STEM_JUDGE = False  # GUIDED-S8
 CLONE = re.compile(r'^[A-Z]{1,2}[0-9]{5,6}\.[0-9]+$')  # clone-named (AC007610.3): no symbol to stem
 PARENT_GROUP = False  # GUIDED-S7: family key = parent of the most-specific HGNC group
 HG002_XREF = None
+MASK_ALL = False  # liftmode GW4: apply body_cds masks to every PAF
 COV, IDENT = 0.5, 0.5
 NAMED = {**F.MAINSTAYS, **F.YAGS}
 
@@ -319,7 +320,7 @@ def overlap(iv, s, e):
 def records(paths, body_cds):
     """Per PAF record: (seed, chrom, strand, genomic blocks, seed interval, target interval, seed-CDS bases aligned, identity)."""
     for p in paths:
-        bc = body_cds if os.path.basename(p).startswith('A') else {}  # gene-body PAFs are named A*.paf
+        bc = body_cds if MASK_ALL or os.path.basename(p).startswith('A') else {}  # gene-body PAFs are named A*.paf
         for line in open(p):
             f = line.rstrip('\n').split('\t')
             q, qs, qe, st, t, ts = f[0], int(f[2]), int(f[3]), f[4], f[5], int(f[7])
