@@ -3,7 +3,7 @@
   pgparent.py human   TWOWAY_GTF_GZ V50_GENES_GTF OUT_TSV   GENCODE 2-way consensus pseudogenes (Yale PseudoPipe + UCSC RetroFinder,
                                                             parent_id) -> the GENCODE pseudogene gene they overlap (same strand, >= 0.5 of
                                                             the 2-way record) -> CAT/Liftoff CHM13 gene by ENSG
-  pgparent.py gorilla OUT_TSV                               RefSeq pseudogene description minus a trailing '-like' -> the one protein-coding
+  pgparent.py gorilla OUT_TSV [GFF [GENE_INFO]]                              RefSeq pseudogene description minus a trailing '-like' -> the one protein-coding
                                                             gene with that description (NCBI Gnomon's homology call)
 
 OUT_TSV: pseudogene gene id (famtruth key) <TAB> parent gene id (famtruth key).
@@ -54,10 +54,16 @@ def human(twoway, genes, out):
     print(f'human: 2-way pseudogenes {n}, linked {linked}, CAT pseudogene -> parent pairs {len(pairs)}', file=sys.stderr)
 
 
-def gorilla(out):
-    desc_pc = collections.defaultdict(set)
-    pseudo = {}
-    for line in open(F.GGO_GFF):
+def gorilla(out, gff=None, gene_info=None):
+    info = {}  # GUIDED-S6: RefSeq release 102 gene lines carry no description; NCBI Gene's gene_info does (by GeneID)
+    if gene_info:
+        for line in open(gene_info):
+            f = line.split('\t')
+            if f[8] != '-':
+                info[f[1]] = f[8]
+    desc_pc, desc_named = collections.defaultdict(set), collections.defaultdict(set)
+    pseudo, loc_pc = {}, {}
+    for line in open(gff or F.GGO_GFF):
         if line[0] == '#':
             continue
         f = line.rstrip('\n').split('\t')
@@ -65,16 +71,26 @@ def gorilla(out):
             continue
         a = dict(x.split('=', 1) for x in f[8].split(';') if '=' in x)
         d = urllib.parse.unquote(a.get('description', ''))
+        if not d:
+            d = info.get(next((x.split(':')[1] for x in a.get('Dbxref', '').split(',') if x.startswith('GeneID:')), ''), '')
         gid = a.get('ID')
         if not d or not gid:
             continue
         if a.get('gene_biotype') == 'protein_coding':
             desc_pc[d].add(gid)
+            if a.get('Name', '').startswith('LOC'):
+                loc_pc[gid] = re.sub(r'-like$', '', d)
+            else:
+                desc_named[d].add(gid)
         elif 'pseudogene' in a.get('gene_biotype', ''):
             pseudo[gid] = re.sub(r'-like$', '', d)
     pairs = {(p, next(iter(desc_pc[d]))) for p, d in pseudo.items() if len(desc_pc.get(d, ())) == 1}
+    n_pseudo = len(pairs)
+    if gff:  # GUIDED-S6: LOC protein-coding genes -> the single NAMED protein-coding gene with their description
+        pairs |= {(p, next(iter(desc_named[d]))) for p, d in loc_pc.items() if len(desc_named.get(d, ())) == 1 and p not in desc_named[d]}
     write(out, pairs)
-    print(f'gorilla: RefSeq pseudogenes {len(pseudo)}, pseudogene -> parent pairs {len(pairs)}', file=sys.stderr)
+    print(f'gorilla: RefSeq pseudogenes {len(pseudo)}, pseudogene -> parent pairs {n_pseudo}; LOC protein-coding {len(loc_pc)}, '
+          f'LOC -> parent pairs {len(pairs) - n_pseudo}', file=sys.stderr)
 
 
 def write(out, pairs):
@@ -84,4 +100,4 @@ def write(out, pairs):
 
 
 if __name__ == '__main__':
-    human(*sys.argv[2:5]) if sys.argv[1] == 'human' else gorilla(sys.argv[2])
+    human(*sys.argv[2:5]) if sys.argv[1] == 'human' else gorilla(*sys.argv[2:5])

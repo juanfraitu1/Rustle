@@ -7530,3 +7530,8 @@ and pseudogene recall, judged and strict precision >= A - 0.02, no named-family 
 (description minus a trailing `-like` -> the single named protein-coding gene with that description). A found LOC gene whose parent is in the seed's
 family counts CORRECT; parent in another family or outside the truth -> judged WRONG; no parent -> unjudged. LOC genes never enter recall
 denominators. Dev check: human has no LOC genes, so S5 dev numbers stand. PASS -> propose U as the guided default (user decides), metric-auditor first.
+**S6 setup (before any score):** Kamilah files md5-verified (`/mnt/linuxdisk/tmp/kamilah/`). Ruling: release-102 gene lines carry no
+`description`, so descriptions come from NCBI Gene `gene_info` (All_Mammalia, taxid 9595) by GeneID, the same NCBI naming source as mGorGor1's
+GFF descriptions (coverage: pseudogenes 5,176/6,290, LOC protein-coding 2,996/3,800, named 16,700/16,856) — cost if wrong: names updated after
+2019 may differ from release 102's models. Parent table: 951 pseudogene pairs, 146 LOC pairs (118 LOC genes judged-correct in 67 families).
+Truth: 1,927 families, 353 pseudogenes in 132 families, 2 label-seeded named families. CDS ATG >= 99.8%, stops >= 99.7%.

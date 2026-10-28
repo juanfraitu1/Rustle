@@ -109,11 +109,17 @@ def truth(species, G, pgparent=None, hgnc_coding=False):
         if len(cand) == 1:
             pseudo[next(iter(cand))].add(g)
     judge = set(universe) | set(pc) | {g for v in pseudo.values() for g in v}
+    extra = collections.defaultdict(set)
     if pgparent:  # GUIDED-S4: independent pseudogene -> parent table widens the pseudogene sets
         fam_of = {g: k for k, c in fams.items() for g in c}
         proxy = {g: k for k, v in pseudo.items() for g in v}
         par = dict(line.rstrip('\n').split('\t') for line in open(pgparent))
         for p, q in par.items():
+            if p in G and G[p]['biotype'] == 'protein_coding' and G[p]['name'].startswith('LOC'):
+                judge.add(p)  # GUIDED-S6: LOC gene judged by its RefSeq-description parent; never in recall
+                if q in fam_of:
+                    extra[fam_of[q]].add(p)
+                continue
             if p not in G or 'pseudogene' not in G[p]['biotype']:
                 continue
             judge.add(p)
@@ -127,7 +133,7 @@ def truth(species, G, pgparent=None, hgnc_coding=False):
                 pseudo[k].add(p)
         pseudo = {k: v for k, v in pseudo.items() if v}
     judge -= noncoding
-    return fams, pseudo, judge
+    return fams, pseudo, judge, extra
 
 
 def ggo_cds(wanted):
@@ -156,7 +162,7 @@ def order_key(species, G, g):
 
 def prep(a):
     G = load_genes(a.species)
-    fams, pseudo, judge = truth(a.species, G, a.pgparent, a.hgnc_coding)
+    fams, pseudo, judge, extra = truth(a.species, G, a.pgparent, a.hgnc_coding)
     pcs = {g for c in fams.values() for g in c}
     cds = C.cat_cds(pcs) if a.species == 'human' else ggo_cds(pcs)
     C.FA = FASTA[a.species]
@@ -195,7 +201,7 @@ def prep(a):
         for r, name, st in body:
             w.write(f'>{name}\n{(bm if st == "-" else bp)[r]}\n')
     json.dump(dict(species=a.species, seed=a.seed, families={k: sorted(v) for k, v in fams.items()},
-                   pseudo={k: sorted(v) for k, v in pseudo.items()}, judge=sorted(judge), seeds=meta),
+                   pseudo={k: sorted(v) for k, v in pseudo.items()}, extra={k: sorted(v) for k, v in extra.items()}, judge=sorted(judge), seeds=meta),
               open(os.path.join(a.outdir, f'truth.seed{a.seed}{a.tag}.json'), 'w'))
     sz = sorted(map(len, fams.values()), reverse=True)
     print(f'{a.species}: families {len(fams)} (largest {sz[:5]}), seeded {len(seeds)}, pseudogenes {sum(map(len, pseudo.values()))} '
@@ -262,6 +268,7 @@ def score(a):
     fams = {k: set(v) for k, v in T['families'].items()}
     pseudo = {k: set(v) for k, v in T['pseudo'].items()}
     judge = set(T['judge'])
+    extra = {k: set(v) for k, v in T.get('extra', {}).items()}
     body_cds = {q: [tuple(x) for x in m['body_cds']] for q, m in T['seeds'].items()}
     groups = collections.defaultdict(list)
     for q, t, st, bl, qi, ti, cdsb, ident in records(a.paf, body_cds):
@@ -283,12 +290,12 @@ def score(a):
         ps = pseudo.get(m['fam'], set())
         fd = found.get(q, set())
         c['members'] += len(others); c['mf'] += len(fd & others); c['pseudo'] += len(ps); c['pf'] += len(fd & ps)
-        c['judged'] += len(fd & judge); c['ok'] += len(fd & (others | ps)); c['unjudged'] += len(fd - judge)
+        c['judged'] += len(fd & judge); c['ok'] += len(fd & (others | ps | extra.get(m['fam'], set()))); c['unjudged'] += len(fd - judge)
         nf += 1; mm += len(fd & others) / len(others)
         if ps:
             nfp += 1; mp += len(fd & ps) / len(ps)
         r = dict(seed=G[m['gene']]['name'], n=len(others) + 1, members=sorted(G[g]['name'] for g in fd & others),
-                 pseudo=sorted(G[g]['name'] for g in fd & ps), n_pseudo=len(ps), wrong=sorted(G[g]['name'] for g in (fd & judge) - others - ps))
+                 pseudo=sorted(G[g]['name'] for g in fd & ps), n_pseudo=len(ps), wrong=sorted(G[g]['name'] for g in (fd & judge) - others - ps - extra.get(m['fam'], set())))
         per[q] = r
         for lab, pat in NAMED.items():
             if re.match(pat, G[m['gene']]['name']):
@@ -315,8 +322,14 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--pgparent', help='GUIDED-S4 pseudogene -> parent TSV (pgparent.py)')
     ap.add_argument('--hgnc-coding', action='store_true', help='GUIDED-S5: protein-coding only when HGNC agrees')
+    ap.add_argument('--gff', help='GUIDED-S6: gorilla RefSeq GFF instead of mGorGor1')
+    ap.add_argument('--fasta', help='GUIDED-S6: gorilla genome instead of mGorGor1')
     ap.add_argument('--tag', default='', help='suffix for truth/score files')
     a = ap.parse_args()
+    if a.gff:
+        F.GGO_GFF = a.gff
+    if a.fasta:
+        FASTA['gorilla'] = a.fasta
     os.makedirs(a.outdir, exist_ok=True)
     prep(a) if a.cmd == 'prep' else score(a)
 
