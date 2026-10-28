@@ -22,6 +22,8 @@ KEY = {'NPIP': r'nuclear pore complex[- ]interacting protein', 'TBC1D3': r'TBC1 
        'RBMY': r'RNA-binding motif protein, Y chromosome', 'CDY': r'testis-specific chromodomain protein Y',
        'NBPF': r'neuroblastoma breakpoint family', 'USP17L': r'ubiquitin carboxyl-terminal hydrolase 17-like'}
 SHARED = os.environ.get('ASMTPL_SHARED') == '1'
+EXON_JUDGE = os.environ.get('ASMTPL_EXON') == '1'  # ASMTPL-3
+MERGE = {'GOLGA6': 'GOLGA', 'GOLGA8': 'GOLGA'} if EXON_JUDGE else {}
 SYM = {'NPIP': r'^NPIP', 'TBC1D3': r'^TBC1D3', 'GOLGA6': r'^GOLGA6', 'GOLGA8': r'^GOLGA8', 'TSPY': r'^TSPY', 'XAGE': r'^XAGE',
        'DAZ': r'^DAZ[0-9]', 'CT47': r'^CT47', 'SPATA31': r'^SPATA31', 'RBMY': r'^RBMY', 'CDY': r'^CDY[0-9]', 'NBPF': r'^NBPF', 'USP17L': r'^USP17L'}
 DEV = {'NPIP', 'TBC1D3', 'GOLGA6', 'GOLGA8', 'USP17L', 'NBPF'}
@@ -149,42 +151,53 @@ def score(outdir, arm, pafs):
     G = F.load_ggo(F.load_cat())
     idx = F.exon_index(G)
     tm = T['templates']
-    kw = T['keyword']
-    fams = {k: set(v) for k, v in T['families'].items()}
-    pseudo = {k: set(v) for k, v in T['pseudo'].items()}
+    for t in tm.values():
+        t['fam'] = MERGE.get(t['fam'], t['fam'])
+    kw = {g: MERGE.get(k, k) for g, k in T['keyword'].items()}
+    fams, pseudo = collections.defaultdict(set), collections.defaultdict(set)
+    for k, v in T['families'].items():
+        fams[MERGE.get(k, k)] |= set(v)
+    for k, v in T['pseudo'].items():
+        pseudo[MERGE.get(k, k)] |= set(v)
     use = {n for n, t in tm.items() if (arm == 'RK' or t.get('r1')) and not t.get('chimeric')}
     src = collections.defaultdict(set)  # fam -> loci expressed in the libraries (reported, not excluded)
     for t in tm.values():
         src[t['fam']] |= set(t['src'])
     groups = collections.defaultdict(list)
+    exbp = collections.defaultdict(lambda: [0, 0])
     for q, t, st, bl, qi, ti, cdsb, ident in g3.records(pafs, {}):
         if q not in use or not bl:
             continue
         g = C.gene_of(idx, G, t, st, bl)
         if g and g not in tm[q]['src']:  # a template never finds its own locus
             groups[(q, g, st)].append((qi, ti, cdsb, ident))
-    found = collections.defaultdict(set)
+            exbp[(q, g, st)][0] += sum(max(0, min(b, e) - max(a, s)) for a, b in bl for s, e in G[g]['exons'])
+            exbp[(q, g, st)][1] += sum(b - a for a, b in bl)
+    found, putative = collections.defaultdict(set), collections.defaultdict(set)
     for (q, g, st), rs in groups.items():
         bases, ident = g3.chain(rs, st)
         if bases / tm[q]['cds_len'] >= g3.COV and ident >= g3.IDENT:
-            found[tm[q]['fam']].add(g)
+            if EXON_JUDGE and exbp[(q, g, st)][0] < 0.5 * exbp[(q, g, st)][1]:
+                putative[tm[q]['fam']].add(g)  # blocks mostly inside the gene's introns: a copy the annotation does not name
+            else:
+                found[tm[q]['fam']].add(g)
     rows = {}
     for fam in sorted(src):
         others, ps, fd = fams.get(fam, set()), pseudo.get(fam, set()), found.get(fam, set())
         ok = fd & (others | ps)
         unj = {g for g in fd - ok if kw.get(g) is None and g3.unnamed(G[g])}
         wrong = fd - ok - unj
-        rows[fam] = dict(split='dev' if fam in DEV else 'heldout', n_templates=sum(1 for n in use if tm[n]['fam'] == fam),
+        rows[fam] = dict(split='dev' if fam in DEV or fam == 'GOLGA' else 'heldout', putative=len(putative.get(fam, set()) - fd), n_templates=sum(1 for n in use if tm[n]['fam'] == fam),
                          members=len(fd & others), n_members=len(others), pseudo=len(fd & ps), n_pseudo=len(ps),
                          ok=len(ok), wrong=len(wrong), unjudged=len(unj), wrong_names=sorted(G[g]['name'] + ':' + str(kw.get(g)) for g in wrong))
         r = rows[fam]
         print(f"{arm} {fam:8s} {r['split']:7s} tpl {r['n_templates']:3d} | members {r['members']}/{r['n_members']} pseudo {r['pseudo']}/{r['n_pseudo']} "
-              f"| wrong {r['wrong']} unjudged {r['unjudged']} {r['wrong_names'][:4]}")
+              f"| wrong {r['wrong']} unjudged {r['unjudged']} putative {r['putative']} {r['wrong_names'][:4]}")
     for split in ('dev', 'heldout'):
         rs = [r for r in rows.values() if r['split'] == split]
         ok, wr = sum(r['ok'] for r in rs), sum(r['wrong'] for r in rs)
         print(f"{arm} {split}: member {sum(r['members'] for r in rs)}/{sum(r['n_members'] for r in rs)} pseudo {sum(r['pseudo'] for r in rs)}/"
-              f"{sum(r['n_pseudo'] for r in rs)} judged precision {ok / max(ok + wr, 1):.3f} ({ok}/{ok + wr}) unjudged {sum(r['unjudged'] for r in rs)}")
+              f"{sum(r['n_pseudo'] for r in rs)} judged precision {ok / max(ok + wr, 1):.3f} ({ok}/{ok + wr}) unjudged {sum(r['unjudged'] for r in rs)} putative {sum(r['putative'] for r in rs)}")
     json.dump(rows, open(f'{outdir}/score.{arm}.json', 'w'), indent=0)
 
 

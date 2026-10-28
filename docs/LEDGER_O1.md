@@ -7667,3 +7667,20 @@ gene's EXON bases: found when >= 0.5 of the chained template bases lie on that g
 whose blocks lie mostly inside a gene's introns is binned "putative unannotated copy" (reported per family, neither right nor wrong — O3's tier
 name); (2) GOLGA6 and GOLGA8 scored as ONE family (one HGNC superfamily; templates of either seed it); (3) ITSN2 checked by hand before scoring
 (reported either way).
+
+### ASMTPL-3 RESULT (2026-10-27, register 1452): precision 0.62 -> 0.91 dev, 0.94 -> 0.95 held-out; FAIL as registered (bar = R1 1.000 - 0.02, R1 has 3 dev hits)
+`asmtpl.py` `ASMTPL_EXON=1` (`/mnt/linuxdisk/tmp/asmtpl/v3/`). ITSN2 by hand: ONE 3.2-kb segment (NC_073236.2:115,683,695-115,686,863, inside an
+ITSN2 exon) hit by 24 GOLGA8/6 templates at 86-89% identity — a shared segment, kept as wrong.
+
+| split | arm | member | pseudogene | judged precision | unjudged | putative (intronic) |
+|---|---|---|---|---|---|---|
+| dev | R1 | 3/122 | 0/24 | 1.000 (3/3) | 11 | 8 |
+| dev | RK | **55/122** | 8/24 | **0.913** (63/69) | 46 | 73 |
+| held-out | R1 | 24/56 | 4/41 | 1.000 (28/28) | 2 | 0 |
+| held-out | RK | **31/56** | 4/41 | **0.946** (35/37) | 4 | 15 |
+
+Per family RK >= R1 everywhere; GOLGA merged 23/33 members (2 wrong: ITSN2 segment, UBE2Q2P16), NBPF 19/23 (PDZK1, TRIP13), TBC1D3 11/16
+(ABCA9, USP6 exon-side), RBMY 13/13. Cost of the exon judge: hits on pseudogenes whose annotated exons do not cover the lifted blocks moved to
+putative (RBMY pseudo 10 -> 2, dev members 62 -> 55), so the putative bin holds both unannotated copies and loosely-annotated pseudogenes.
+The precision bar is degenerate: R1 has 3 and 28 hits, so 1.000 - 0.02 is unbeatable by any arm with real recall; the user decides the bar
+for a re-run (e.g. a fixed 0.90, or R1 - 0.02 with R1 pooled over splits). USP17L 0/45 persists (9 putative: the array copies' annotation).
