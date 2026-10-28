@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
@@ -21,8 +22,51 @@ import famtruth as F  # noqa: E402
 
 FASTA = {'human': '/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa',
          'gorilla': '/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta'}
+HIERARCHY = '/mnt/linuxdisk/tmp/hgnc/hierarchy.csv'
+PARENT_GROUP = False  # GUIDED-S7: family key = parent of the most-specific HGNC group
+HG002_XREF = None
 COV, IDENT = 0.5, 0.5
 NAMED = {**F.MAINSTAYS, **F.YAGS}
+
+
+def unnamed(d):
+    """Outside the by-symbol truth: RefSeq LOC genes, Ensembl genes without an HGNC symbol."""
+    return d['name'].startswith('LOC') or d['name'].startswith('ENSG')
+
+
+def load_ensembl(path):
+    """Ensembl GFF3 genes (ID=gene:..., biotype=...; transcripts Parent=gene:...; exons Parent=transcript:...): exon union per gene."""
+    genes, tx_gene, ex = {}, {}, collections.defaultdict(list)
+    for line in open(path):
+        if line[0] == '#':
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9:
+            continue
+        a = dict(x.split('=', 1) for x in f[8].split(';') if '=' in x)
+        if a.get('ID', '').startswith('gene:'):
+            genes[a['ID']] = dict(name=a['ID'], biotype=a.get('biotype', 'other'), chrom=f[0], strand=f[6], exons=[], ens=set(),
+                                  description=urllib.parse.unquote(a.get('description', '')))
+        elif a.get('ID', '').startswith('transcript:') and a.get('Parent', '').startswith('gene:'):
+            tx_gene[a['ID']] = a['Parent']
+        elif f[2] == 'exon':
+            ex[a.get('Parent', '')].append((int(f[3]) - 1, int(f[4])))
+    for t, v in ex.items():
+        g = tx_gene.get(t)
+        if g in genes:
+            genes[g]['exons'] += v
+    for d in genes.values():
+        m = []
+        for s0, e0 in sorted(d['exons']):
+            if m and s0 <= m[-1][1]:
+                m[-1][1] = max(m[-1][1], e0)
+            else:
+                m.append([s0, e0])
+        d['exons'] = [tuple(x) for x in m]
+    genes = {g: d for g, d in genes.items() if d['exons']}
+    F.GENES.clear()
+    F.GENES.update(genes)
+    return genes
 
 
 def load_genes(species):
@@ -31,18 +75,54 @@ def load_genes(species):
         F.GENES.clear()
         F.GENES.update(human)
         return human
-    return F.load_ggo(human)
+    G = load_ensembl(F.GGO_GFF) if species == 'hg002' else F.load_ggo(human)
+    if species == 'hg002':  # GUIDED-S7: Ensembl rapid-release GFF3 (ID=gene:ENSG...); symbols from the xref HGNC rows
+        sym = {}
+        for line in open(HG002_XREF):
+            f = line.rstrip('\n').split('\t')
+            if len(f) > 6 and f[6] == 'HGNC Symbol':
+                sym[f[0]] = f[4]
+        sym_ens = collections.defaultdict(set)
+        for d in human.values():
+            sym_ens[d['name']] |= d['ens']
+        for g, d in G.items():
+            d['name'] = sym.get(g.split(':')[-1], g.split(':')[-1])
+            d['ens'] = set() if unnamed(d) else sym_ens.get(d['name'], set())
+    return G
 
 
 def hgnc_tables():
+    global parent_of
     rows = list(csv.DictReader(open(C.HGNC), delimiter='\t'))
     size = collections.Counter(g for r in rows for g in r['gene_group_id'].split('|') if g)
+    if PARENT_GROUP:
+        anc = collections.defaultdict(set)
+        for r in csv.DictReader(open(HIERARCHY)):
+            if r['parent_fam_id'] != r['child_fam_id']:
+                anc[r['child_fam_id']].add(r['parent_fam_id'])
+        desc = collections.defaultdict(set)
+        for c, ps in anc.items():
+            for q in ps:
+                desc[q].add(c)
+        total = collections.Counter()
+        for r in rows:
+            gs = {g for g in r['gene_group_id'].split('|') if g}
+            for q in set(desc) | set(anc):
+                if q in gs or gs & desc[q]:
+                    total[q] += 1
+        # nearest ancestor = the smallest by gene count (then lowest id); a group with no parent keys itself
+        parent_of = lambda g: min(anc[g], key=lambda q: (total[q], int(q))) if anc.get(g) else g  # noqa: E731
+        size = size + collections.Counter()
+        for q, n in total.items():
+            size[q] = max(size[q], n)
     by_ens, by_sym = {}, {}
     for r in rows:
         gs = [g for g in r['gene_group_id'].split('|') if g]
         if not gs:
             continue
         best = min(gs, key=lambda g: (size[g], int(g)))
+        if PARENT_GROUP:
+            best = parent_of(best)
         if r['ensembl_gene_id']:
             by_ens[r['ensembl_gene_id']] = best
         by_sym[r['symbol']] = best
@@ -50,7 +130,7 @@ def hgnc_tables():
 
 
 def group_of(species, d, by_ens, by_sym, size):
-    if species == 'gorilla':
+    if species != 'human':
         return by_sym.get(d['name'])
     gs = {by_ens[e] for e in d['ens'] if e in by_ens}
     return min(gs, key=lambda g: (size[g], int(g))) if gs else None
@@ -67,7 +147,7 @@ def hgnc_noncoding(species, G):
     for g, d in G.items():
         if d['biotype'] != 'protein_coding':
             continue
-        lts = {lt_sym[d['name']]} if species == 'gorilla' and d['name'] in lt_sym else \
+        lts = {lt_sym[d['name']]} if species != 'human' and d['name'] in lt_sym else \
             {lt_ens[e.split('.')[0]] for e in d['ens'] if e.split('.')[0] in lt_ens} if species == 'human' else set()
         if lts and 'gene with protein product' not in lts:
             out.add(g)
@@ -76,7 +156,7 @@ def hgnc_noncoding(species, G):
 
 def truth(species, G, pgparent=None, hgnc_coding=False):
     by_ens, by_sym, size = hgnc_tables()
-    pc = {g for g, d in G.items() if d['biotype'] == 'protein_coding' and (species == 'human' or not d['name'].startswith('LOC'))}
+    pc = {g for g, d in G.items() if d['biotype'] == 'protein_coding' and (species == 'human' or not unnamed(d))}
     noncoding = hgnc_noncoding(species, G) if hgnc_coding else set()
     pc -= noncoding
     grp = {g: group_of(species, G[g], by_ens, by_sym, size) for g in pc}
@@ -97,7 +177,7 @@ def truth(species, G, pgparent=None, hgnc_coding=False):
                 key_fam[s].add(k)
     pseudo = collections.defaultdict(set)
     for g, d in G.items():
-        if 'pseudogene' not in d['biotype'] or d['name'].startswith('LOC'):
+        if 'pseudogene' not in d['biotype'] or unnamed(d):
             continue
         cand = set()
         gg = group_of(species, d, by_ens, by_sym, size)
@@ -115,7 +195,7 @@ def truth(species, G, pgparent=None, hgnc_coding=False):
         proxy = {g: k for k, v in pseudo.items() for g in v}
         par = dict(line.rstrip('\n').split('\t') for line in open(pgparent))
         for p, q in par.items():
-            if p in G and G[p]['biotype'] == 'protein_coding' and G[p]['name'].startswith('LOC'):
+            if p in G and G[p]['biotype'] == 'protein_coding' and unnamed(G[p]):
                 judge.add(p)  # GUIDED-S6: LOC gene judged by its RefSeq-description parent; never in recall
                 if q in fam_of:
                     extra[fam_of[q]].add(p)
@@ -315,7 +395,7 @@ def score(a):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('cmd')
-    ap.add_argument('species', choices=['human', 'gorilla'])
+    ap.add_argument('species', choices=['human', 'gorilla', 'hg002'])
     ap.add_argument('outdir')
     ap.add_argument('arm', nargs='?')
     ap.add_argument('paf', nargs='*')
@@ -324,12 +404,16 @@ def main():
     ap.add_argument('--hgnc-coding', action='store_true', help='GUIDED-S5: protein-coding only when HGNC agrees')
     ap.add_argument('--gff', help='GUIDED-S6: gorilla RefSeq GFF instead of mGorGor1')
     ap.add_argument('--fasta', help='GUIDED-S6: gorilla genome instead of mGorGor1')
+    ap.add_argument('--parent-group', action='store_true', help='GUIDED-S7: HGNC parent-group truth')
+    ap.add_argument('--xref', help='GUIDED-S7: Ensembl rapid-release xref TSV (hg002)')
     ap.add_argument('--tag', default='', help='suffix for truth/score files')
     a = ap.parse_args()
+    global PARENT_GROUP, HG002_XREF
+    PARENT_GROUP, HG002_XREF = a.parent_group, a.xref
     if a.gff:
         F.GGO_GFF = a.gff
     if a.fasta:
-        FASTA['gorilla'] = a.fasta
+        FASTA[a.species] = a.fasta
     os.makedirs(a.outdir, exist_ok=True)
     prep(a) if a.cmd == 'prep' else score(a)
 

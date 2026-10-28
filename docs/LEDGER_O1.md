@@ -7562,3 +7562,12 @@ its own projection + paralogue-mapping pipeline, independent of our chaining. Hu
 symbol. **Arms, seeds, chaining, bars = S5:** A body asm20 vs U body UNION CDS splice UNION CDS asm20; both seeds; U > A on MACRO member and
 pseudogene recall; judged and unjudged-as-wrong precision >= A - 0.02; no named mainstay/YAG member loss. Bars on dev, then HG002.
 PASS -> propose U as the guided default (user decides), metric-auditor before any claim.
+
+### GUIDED-S7 RESULT (2026-10-27, register 1448): FAIL on dev (seed-2 strict precision 0.7685 vs bar 0.7805); HG002 held-out NOT scored
+Parent-group truth: 1,151 human families (largest 487, 465, 387), 9,564 pseudogenes in 719 families, 13 named. Seeds: same gene+CDS reused
+(alignments renamed, `s7seed*/ *_re.paf`); 13 / 195 new seeds aligned with the same presets.
+seed 1 A member 0.0337 / pseudo 0.0103 / judged 0.869 / strict 0.710; U 0.0549 / 0.1025 / 0.903 / 0.794 (all bars pass).
+seed 2 A 0.0371 / 0.0060 / 0.873 / 0.801; U 0.0561 / 0.1031 / 0.870 / **0.7685** (bar 0.7805); named losses none.
+U-only unjudged seed-2 hits (77): 36 are FAM90A26 -> FAM90A*P (own-family pseudogenes absent from the GENCODE 2-way table and missed by the name
+proxy, the same gap seen since S3), the rest AC*/AL* unnamed pseudogenes (IFITM3 -> IFITM4P/8P, MIA2 -> CTAGE11P/12P, RPL26L1 -> AL*). Across S3-S7
+the strict bar fails on pseudogenes the judges cannot reach, not on off-family protein-coding hits (2 here: ZNF582 -> ZNF781, STON1 -> STON1-GTF2A1L).

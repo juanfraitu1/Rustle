@@ -6,6 +6,8 @@
   pgparent.py gorilla OUT_TSV [GFF [GENE_INFO]]                              RefSeq pseudogene description minus a trailing '-like' -> the one protein-coding
                                                             gene with that description (NCBI Gnomon's homology call)
 
+  pgparent.py hg002 OUT_TSV GFF3 XREF_TSV               Ensembl description '(SYMBOL) pseudogene' -> that protein-coding gene
+
 OUT_TSV: pseudogene gene id (famtruth key) <TAB> parent gene id (famtruth key).
 """
 import collections
@@ -93,6 +95,27 @@ def gorilla(out, gff=None, gene_info=None):
           f'LOC -> parent pairs {len(pairs) - n_pseudo}', file=sys.stderr)
 
 
+def hg002(out, gff, xref):
+    """GUIDED-S7: Ensembl pseudogene description '... (SYMBOL) pseudogene' -> the single protein-coding gene with that HGNC symbol."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import guided3 as g3
+    g3.HG002_XREF, F.GGO_GFF = xref, gff
+    G = g3.load_genes('hg002')
+    by_sym = collections.defaultdict(set)
+    for g, d in G.items():
+        if d['biotype'] == 'protein_coding' and not g3.unnamed(d):
+            by_sym[d['name']].add(g)
+    pairs, n = set(), 0
+    for g, d in G.items():
+        m = re.search(r'\(([^()]+)\) pseudogene', d.get('description', ''))
+        if 'pseudogene' in d['biotype'] and m:
+            n += 1
+            if len(by_sym.get(m.group(1), ())) == 1:
+                pairs.add((g, next(iter(by_sym[m.group(1)]))))
+    write(out, pairs)
+    print(f'hg002: pseudogenes naming a parent {n}, pseudogene -> parent pairs {len(pairs)}', file=sys.stderr)
+
+
 def write(out, pairs):
     with open(out, 'w') as w:
         for p, q in sorted(pairs):
@@ -100,4 +123,4 @@ def write(out, pairs):
 
 
 if __name__ == '__main__':
-    human(*sys.argv[2:5]) if sys.argv[1] == 'human' else gorilla(*sys.argv[2:5])
+    {'human': human, 'gorilla': gorilla, 'hg002': hg002}[sys.argv[1]](*sys.argv[2:5])
