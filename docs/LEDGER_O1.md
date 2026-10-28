@@ -8033,3 +8033,14 @@ protein of its own family hits the candidate. **Control** = the same candidate s
 permutation (seed 0) of the family labels; reported as the background rate. Candidates whose family has no protein-coding gene are reported
 apart. Bars: agreement >= 0.50 (the SEMIFAM bar) AND agreement >= 2 x control. PASS on dev -> the same judge on OR6737 (S3 built the same way);
 PASS there -> propose "SEMISEC copies admitted by the lift rule join the seed's family" (user decides), metric-auditor first.
+
+### SEMIFAM-3 RESULT (2026-10-28, register 1465): protein judge PASSES on dev AND OR6737 (0.865 / 0.861 vs control 0.006 / 0.003); the famtruth bars FAIL on OR6737 by a denominator effect -> FAIL as registered
+Dev KB3781 (`liftgw/sf3/`): 1,336 lift-confirmed candidates, 1,122 in a family with >= 1 protein-coding gene (572 proteins); own-family protein
+hits the candidate for **970 / 1,122 = 0.865**; permuted-family control 7 / 1,122 = 0.006 (ratio 139). OR6737 (`liftgw/sf3or/`, S3 built the same
+way: 989 / 1,726 lift-confirmed): **612 / 711 = 0.861**, control 2 / 711 = 0.003. Both judge bars pass on both samples.
+famtruth on OR6737: base pair F 0.300 (9/40 | 20), family F 0.514; S3 pair F **0.286 (9/43 | 20)**, family F **0.494**, wrong 1 = 1. The hit
+counts are identical; the truth universe grows from 40 to 43 pairs because candidate loci count as expressed genes (famtruth `--gtf`
+rule), so F falls without any change in what is found. As registered ("pair F and family F >= base") the held-out fails. Reading: the lift-admitted
+SEMISEC copies land in the right family 86% of the time by protein evidence on both samples (vs 0.3-0.6% by chance), add no Compara-visible
+pair on the held-out, and widen the expressed universe; the bar as written penalises the mode for finding copies the truth cannot see.
+A re-registration would fix the universe to the base set before comparing F — not done tonight.
