@@ -56,9 +56,29 @@ def group_of(species, d, by_ens, by_sym, size):
     return min(gs, key=lambda g: (size[g], int(g))) if gs else None
 
 
-def truth(species, G, pgparent=None):
+def hgnc_noncoding(species, G):
+    """GUIDED-S5: protein_coding genes HGNC lists with a locus_type other than 'gene with protein product' (human by ENSG, gorilla by symbol)."""
+    lt_ens, lt_sym = {}, {}
+    for r in csv.DictReader(open(C.HGNC), delimiter='\t'):
+        if r['ensembl_gene_id']:
+            lt_ens[r['ensembl_gene_id']] = r['locus_type']
+        lt_sym[r['symbol']] = r['locus_type']
+    out = set()
+    for g, d in G.items():
+        if d['biotype'] != 'protein_coding':
+            continue
+        lts = {lt_sym[d['name']]} if species == 'gorilla' and d['name'] in lt_sym else \
+            {lt_ens[e.split('.')[0]] for e in d['ens'] if e.split('.')[0] in lt_ens} if species == 'human' else set()
+        if lts and 'gene with protein product' not in lts:
+            out.add(g)
+    return out
+
+
+def truth(species, G, pgparent=None, hgnc_coding=False):
     by_ens, by_sym, size = hgnc_tables()
     pc = {g for g, d in G.items() if d['biotype'] == 'protein_coding' and (species == 'human' or not d['name'].startswith('LOC'))}
+    noncoding = hgnc_noncoding(species, G) if hgnc_coding else set()
+    pc -= noncoding
     grp = {g: group_of(species, G[g], by_ens, by_sym, size) for g in pc}
     fams = collections.defaultdict(set)
     for g in pc:
@@ -106,6 +126,7 @@ def truth(species, G, pgparent=None):
             elif p not in proxy:
                 pseudo[k].add(p)
         pseudo = {k: v for k, v in pseudo.items() if v}
+    judge -= noncoding
     return fams, pseudo, judge
 
 
@@ -135,7 +156,7 @@ def order_key(species, G, g):
 
 def prep(a):
     G = load_genes(a.species)
-    fams, pseudo, judge = truth(a.species, G, a.pgparent)
+    fams, pseudo, judge = truth(a.species, G, a.pgparent, a.hgnc_coding)
     pcs = {g for c in fams.values() for g in c}
     cds = C.cat_cds(pcs) if a.species == 'human' else ggo_cds(pcs)
     C.FA = FASTA[a.species]
@@ -293,6 +314,7 @@ def main():
     ap.add_argument('paf', nargs='*')
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--pgparent', help='GUIDED-S4 pseudogene -> parent TSV (pgparent.py)')
+    ap.add_argument('--hgnc-coding', action='store_true', help='GUIDED-S5: protein-coding only when HGNC agrees')
     ap.add_argument('--tag', default='', help='suffix for truth/score files')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)

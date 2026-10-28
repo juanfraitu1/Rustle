@@ -7497,3 +7497,8 @@ protein_coding AND, when HGNC lists it (human: by ENSG; gorilla: by symbol), HGN
 non-coding fall out of families, seeds and the judged set. Everything else = S4 (truth with pgparent tables, arms A and U, both seeds, bars).
 Seeds that change are re-aligned with the same presets. Bars on human dev, then gorilla held-out; PASS on gorilla -> propose U as the guided
 default (user decides), metric-auditor before any claim.
+**S5 dev (human, both seeds): every bar PASSES.** 2,083 families; 2-3 seeds changed per seed set (re-aligned, `s5seed*/Anew.paf`, `*_new.paf`).
+seed 1 A member 0.0253 / pseudo 0.0091 / judged 0.854 / strict 0.713; U 0.0479 / 0.1304 / 0.909 / 0.807. seed 2 A 0.0289 / 0.0127 / 0.876 /
+0.818; U 0.0532 / 0.1282 / 0.899 / 0.823. Named losses none (14, 13). Ruling: the HGNC filter applies only to CAT protein_coding genes (a first
+version also removed HGNC pseudogenes from the judged set, giving judged precision > 1; caught and fixed before any verdict). Ruling: gorilla
+LOC pseudogenes enter the truth only through the parent table (S4 built it for them); LOC protein-coding genes stay outside (S3 blind spot).
