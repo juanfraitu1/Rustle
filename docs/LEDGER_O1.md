@@ -7934,3 +7934,11 @@ unchanged. Per candidate: 1,903 of 2,857 overlap an annotated gene; the family h
 family 2 times out of 3 — the seed read's primary locus is not the copy's parent when the read itself is a multimapper (secondary of a
 secondary), and repeat-carrying candidates link unrelated genes. Outputs `/mnt/linuxdisk/tmp/liftgw/mclX/S*.fam.copies.tsv`, edges
 `/mnt/linuxdisk/tmp/semisec/{kb,or}_semi_edges.tsv`, `*_aug.gtf`.
+
+## PREREG SEMIFAM-2 (2026-10-28): SEMISEC candidates admitted by the LIFT rule, not by the read's secondary hit
+Same candidates, seeds, base families and dev/held-out as SEMIFAM. A candidate is **lift-confirmed** when a template of its seed LOCUS (the
+locus's unique chains, LIFTMODE-GW `meta.json`; genome-wide splice + asm20 alignments already on disk) chains onto the candidate span at
+coverage >= 0.5 of the template and identity >= 0.5 (the S3/GW rule; intronless landing of a spliced template = retro, kept as a copy class but
+reported). Arm **S3** = S2 restricted to lift-confirmed candidates (candidate joins the seed locus's family; singleton seeds form new families).
+Bars as SEMIFAM on dev KB3781: pair F and family F >= base; wrong pairs <= base + 2; >= 50% of annotated lift-confirmed candidates join the
+family holding their parent. Reported: how many of the 2,857 candidates are lift-confirmed, by SEMISEC class. Held-out OR6737 only on a dev PASS.
