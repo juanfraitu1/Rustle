@@ -7502,3 +7502,20 @@ seed 1 A member 0.0253 / pseudo 0.0091 / judged 0.854 / strict 0.713; U 0.0479 /
 0.818; U 0.0532 / 0.1282 / 0.899 / 0.823. Named losses none (14, 13). Ruling: the HGNC filter applies only to CAT protein_coding genes (a first
 version also removed HGNC pseudogenes from the judged set, giving judged precision > 1; caught and fixed before any verdict). Ruling: gorilla
 LOC pseudogenes enter the truth only through the parent table (S4 built it for them); LOC protein-coding genes stay outside (S3 blind spot).
+
+### GUIDED-S5 RESULT (2026-10-27, register 1446): dev PASS; gorilla held-out FAIL on seed-2 strict precision (0.170 vs bar 0.173)
+Gorilla held-out (`/mnt/linuxdisk/tmp/guided_s5g/`): 1,960 families, 353 pseudogenes in 127 families, 3/2 label-seeded named families.
+CDS extraction checked (ATG starts >= 99.9%, stops 100%).
+
+| seed | arm | MACRO member | MACRO pseudo | prec judged | prec unjudged-as-wrong | named losses |
+|---|---|---|---|---|---|---|
+| 1 | A | 0.0042 | 0.0083 | 0.806 (25/31) | 0.143 (+144) | - |
+| 1 | U | 0.0210 | 0.1581 | 0.834 (171/205) | 0.195 (+670) | none / 3 |
+| 2 | A | 0.0060 | 0.0005 | 0.674 (29/43) | 0.193 (+107) | - |
+| 2 | U | 0.0219 | 0.1125 | 0.780 (131/168) | **0.170** (+604; bar 0.173) | none / 2 |
+
+Every bar passes except seed-2 strict precision -> **FAIL as registered**. Of U's unjudged gorilla hits, 99.8% are LOC genes (seed 1: 383 LOC
+pseudogenes, 284 LOC protein-coding; seed 2: 380, 224): the by-symbol gorilla truth cannot judge them, so the strict bar there measures the truth's
+LOC blind spot (declared in S3). On judged hits U beats A on both seeds (+0.03, +0.11) and on recall x4-5 member, x19-200 pseudogene. Held-out
+is now SPENT for this question. A further test needs a judge for LOC genes (RefSeq description -> parent, as pgparent.py does for
+pseudogenes) and a fresh substrate.
