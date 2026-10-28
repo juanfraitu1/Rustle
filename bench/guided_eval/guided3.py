@@ -23,6 +23,8 @@ import famtruth as F  # noqa: E402
 FASTA = {'human': '/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa',
          'gorilla': '/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta'}
 HIERARCHY = '/mnt/linuxdisk/tmp/hgnc/hierarchy.csv'
+STEM_JUDGE = False  # GUIDED-S8
+CLONE = re.compile(r'^[A-Z]{1,2}[0-9]{5,6}\.[0-9]+$')  # clone-named (AC007610.3): no symbol to stem
 PARENT_GROUP = False  # GUIDED-S7: family key = parent of the most-specific HGNC group
 HG002_XREF = None
 COV, IDENT = 0.5, 0.5
@@ -212,6 +214,28 @@ def truth(species, G, pgparent=None, hgnc_coding=False):
             elif p not in proxy:
                 pseudo[k].add(p)
         pseudo = {k: v for k, v in pseudo.items() if v}
+    pseudo = collections.defaultdict(set, pseudo)
+    if STEM_JUDGE:  # GUIDED-S8: name-stem judge for named pseudogenes no other source assigned
+        done = {g for v in pseudo.values() for g in v} | (set(par) & set(G) if pgparent else set())
+        stems = collections.defaultdict(set)
+        for k, c in fams.items():
+            for g in c:
+                if CLONE.match(G[g]['name']):
+                    continue
+                st = re.sub(r'[0-9]+[A-Z]?[0-9]*$', '', G[g]['name'])
+                if len(st) >= 3:
+                    stems[st].add(k)
+        for g, d in G.items():
+            if 'pseudogene' not in d['biotype'] or unnamed(d) or CLONE.match(d['name']) or g in done:
+                continue
+            base = re.sub(r'P[0-9]*$', '', d['name'])
+            hit = [st for st in stems if base.startswith(st)]
+            if not hit:
+                continue
+            ks = set().union(*(stems[st] for st in hit if len(st) == max(map(len, hit))))
+            if len(ks) == 1:
+                pseudo[next(iter(ks))].add(g)
+                judge.add(g)
     judge -= noncoding
     return fams, pseudo, judge, extra
 
@@ -404,12 +428,13 @@ def main():
     ap.add_argument('--hgnc-coding', action='store_true', help='GUIDED-S5: protein-coding only when HGNC agrees')
     ap.add_argument('--gff', help='GUIDED-S6: gorilla RefSeq GFF instead of mGorGor1')
     ap.add_argument('--fasta', help='GUIDED-S6: gorilla genome instead of mGorGor1')
+    ap.add_argument('--stem-judge', action='store_true', help='GUIDED-S8: name-stem pseudogene judge')
     ap.add_argument('--parent-group', action='store_true', help='GUIDED-S7: HGNC parent-group truth')
     ap.add_argument('--xref', help='GUIDED-S7: Ensembl rapid-release xref TSV (hg002)')
     ap.add_argument('--tag', default='', help='suffix for truth/score files')
     a = ap.parse_args()
-    global PARENT_GROUP, HG002_XREF
-    PARENT_GROUP, HG002_XREF = a.parent_group, a.xref
+    global PARENT_GROUP, HG002_XREF, STEM_JUDGE
+    PARENT_GROUP, HG002_XREF, STEM_JUDGE = a.parent_group, a.xref, a.stem_judge
     if a.gff:
         F.GGO_GFF = a.gff
     if a.fasta:

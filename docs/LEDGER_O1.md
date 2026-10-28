@@ -7578,3 +7578,7 @@ trailing `P[0-9]*`; member stem = a family member's name minus its trailing `[0-
 having a member stem that is a prefix of base, keep those with the LONGEST such stem; exactly one -> the pseudogene joins that family
 (recall + judged); several -> unjudged. Unnamed (AC*/AL*/LOC/ENSG) pseudogenes stay with the parent table only. Everything else = S7
 (parent-group truth, arms A/U, both seeds, bars). Dev re-scored on existing alignments (seeds unchanged: pseudogenes do not shape families).
+**S8 dev (human, existing S7 alignments, seeds byte-identical): every bar PASSES.** Pseudogenes 9,564 -> 9,914 (745 families).
+seed 1 A member 0.0337 / pseudo 0.0123 / judged 0.884 / strict 0.812; U 0.0549 / 0.1036 / 0.908 / 0.841. seed 2 A 0.0371 / 0.0083 / 0.875 /
+0.816; U 0.0561 / 0.1031 / 0.877 / 0.821. Named losses none (13, 13). Ruling: clone-named genes (`^[A-Z]{1,2}[0-9]{5,6}\.[0-9]+$`, e.g.
+AC007610.3) are excluded from the stem judge on both sides, as the prereg keeps unnamed pseudogenes with the parent table only.
