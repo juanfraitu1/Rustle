@@ -8070,3 +8070,6 @@ chain per locus, frozen as in GW4: splice + asm20 `-N 100 -p 0.1`, Liftoff chain
 **Bars (the full GW4 set, including the one GW3 dropped):** U1 pair F > base AND family F > base (Simiiformes); pair precision >= base - 0.02;
 wrong pairs (pairjudge) <= base + 2; no mainstay/YAG regression; added-pair protein mutual-hit >= base's own pairs' rate; and >= 20 judgeable
 added pairs (otherwise UNDERPOWERED, not PASS). PASS -> propose U1 edges in the `families` stage (user decides); metric-auditor first.
+**U1-FRESH WITHDRAWN (user, 2026-10-28 13:08) before any alignment finished:** Kamilah_GGO_v0 is not T2T, so the young copies the test is about
+are missing from the genome; a held-out that lacks the object cannot validate the rule. The partial run (`/mnt/linuxdisk/tmp/kamfresh/`) was
+killed; no data looked at. Substrate question reopened: a complete, independently annotated genome of human or gorilla not used by any GW row.
