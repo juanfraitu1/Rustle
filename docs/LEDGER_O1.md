@@ -7703,3 +7703,16 @@ Scorer: `famtruth.py --species gorilla --levels simiiformes` (DENOVOFAM-G truth:
 families) + the 13 keyword families of ASMTPL as a descriptive check (members per family, mixed families). Bars per sample: LIFT pair F and
 family F >= MCL; pair precision drop <= 0.02; no mainstay/YAG regression (DENOVOFAM-G G3). PASS on dev then held-out -> liftmode proposed
 as the de novo family definition beside MCL (user decides). Putative copies reported as counts only.
+
+### LIFTMODE-GW RESULT (2026-10-27, register 1453): dev KB3781 FAIL (family F up, pair F and pair precision down); OR6737 NOT run
+`/mnt/linuxdisk/tmp/liftgw/kb/`: 72,531 templates (244 Mb; 9 chunks, ~4 min splice + 45 s asm20 each), 89,253 placements, 22 s to families.
+| arm | copies on genes | families | pair sens / prec / F | family sens / prec / F |
+|---|---|---|---|---|
+| MCL (shipped) | 731 | 302 | 0.138 / 0.267 / 0.182 (4/29, 15 pred) | 0.312 / 0.833 / 0.455 |
+| LIFT | 3,476 | 1,233 | 0.966 / **0.074** / 0.137 (28/29, 379 pred) | 0.938 / 0.469 / **0.625** |
+Bars: family F PASS (+0.17), pair F FAIL (-0.045), pair precision FAIL (-0.19), mainstays/YAGs unchanged (truth has almost none expressed in
+fibroblasts). Keyword check: 0 mixed families in either; NBPF 14 -> 16/23, GOLGA 1 -> 2, TSPY 0 -> 1. Diagnosis: connected components over
+placements at Liftoff's cross-species -a/-s 0.5 are transitive within one genome: 3,846 loci end up in families (MCL 918), largest 80 loci;
+pair sensitivity is near-complete (28/29) but 379 predicted pairs for 29 true. Liftoff's own within-genome copy mode uses identity 1.0 (-sc),
+which would be too strict here; a middle value is an arbitrary threshold. Threshold-free candidates for a re-run (user decides): reciprocal
+placement (A lifts onto B AND B onto A) as the edge; or LIFT placements as edges INTO the existing MCL (the --extra-edges path of r1437-41).
