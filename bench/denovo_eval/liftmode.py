@@ -160,6 +160,15 @@ def families(outdir, pafs):
     groups = collections.defaultdict(list)
     land = collections.defaultdict(list)
     nblk = {}
+    spans_j = collections.defaultdict(bool)
+    tjunc = {}  # template -> exon-exon junction positions in template (transcript-orientation) coordinates
+    for n, t in tm.items():
+        ex = t['exons'] if t['strand'] == '+' else t['exons'][::-1]
+        pos, js = 0, []
+        for a, b in ex[:-1]:
+            pos += b - a
+            js.append(pos)
+        tjunc[n] = js
     spliced_locus = {g: len(L['exons']) > 1 for g, L in loci.items()}
     n_retro = 0
     for q, t, st, bl, qi, ti, cdsb, ident in g3.records(pafs, mk or {}):
@@ -172,6 +181,9 @@ def families(outdir, pafs):
         groups[key].append((qi, ti, cdsb, ident))
         nblk[key] = max(nblk.get(key, 0), len(bl))
         land[key].append((t, bl[0][0], bl[-1][1]))
+        # EDGE-HUMAN-2 retro rule: ONE block covering >= 0.5 of the template while spanning >= 1 of its exon-exon junctions
+        if len(bl) == 1 and (qi[1] - qi[0]) >= 0.5 * tm[q]['len'] and any(qi[0] < j < qi[1] for j in tjunc[q]):
+            spans_j[key] = True
     parent = {}
 
     def find(x):
@@ -185,6 +197,7 @@ def families(outdir, pafs):
     n_place = 0
     placed = set()  # (source locus, target locus)
     edges = {}
+    eident = {}
     for (q, g, st), rs in groups.items():
         bases, ident = g3.chain(rs, st)
         if bases / tm[q]['len'] < COV or ident < IDENT:
@@ -192,13 +205,14 @@ def families(outdir, pafs):
         n_place += 1
         if g in loci:
             a, b = tm[q]['locus'], g
-            if RETRO and len(tm[q]['exons']) > 1 and nblk[(q, g, st)] == 1 and spliced_locus[b]:
+            if RETRO and len(tm[q]['exons']) > 1 and spliced_locus[b] and (nblk[(q, g, st)] == 1 or spans_j[(q, g, st)]):
                 n_retro += 1  # GW3: a spliced template landing intronless inside a spliced locus = processed copy, not a family edge
                 retro.append((a, b))
                 continue
             placed.add((a, b))
             w = ident * min(1.0, bases / tm[q]['len'])
             edges[(min(a, b), max(a, b))] = max(edges.get((min(a, b), max(a, b)), 0.0), w)
+            eident[(min(a, b), max(a, b))] = max(eident.get((min(a, b), max(a, b)), 0.0), ident)
             if not RECIPROCAL or (b, a) in placed:
                 parent[find(a)] = find(b)
         else:
@@ -207,7 +221,7 @@ def families(outdir, pafs):
     with open(f'{outdir}/edges.tsv', 'w') as w:  # locus pairs with a placement, for --extra-edges (arm X)
         for (a, b), wt in sorted(edges.items()):
             if not RECIPROCAL or ((a, b) in placed and (b, a) in placed):
-                w.write(f'{a}\t{b}\t{wt:.6f}\n')
+                w.write(f'{a}\t{b}\t{wt:.6f}\t{eident[(a, b)]:.6f}\n')
     with open(f'{outdir}/retro.tsv', 'w') as w:
         for a, b in sorted(set(retro)):
             w.write(f'{a}\t{b}\n')

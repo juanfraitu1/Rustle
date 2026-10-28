@@ -8127,3 +8127,15 @@ re-checked on the NUP50 case before anything is scored (bug fix only if a defect
 testis ERR13885926 — disclosed: U1 unfiltered was scored there in r1467 (fails by 0.001 on precision); the floor rule was motivated by the gorilla
 pattern (r1455, 27 older pairs), not designed on testis. **Bars:** the GW4 set (pair F > base, family F > base, pair precision >= base - 0.02,
 wrong <= base + 2, mainstays/YAGs, added-pair protein mutual-hit >= base's own, >= 20 judgeable added pairs), dev first, then testis.
+**EDGE-HUMAN-2 state at hand-off (2026-10-28 16:37, goal cleared by the user; to continue on the cluster):**
+- Code: `liftmode.py` retro rule fixed (a single block covering >= 0.5 of the template while spanning >= 1 template exon-exon junction; the NUP50
+  retrocopy in CDH18 had a 124-bp deletion aligned as an intron by the splice preset, so the old all-records-single-block test missed it);
+  `edges.tsv` now carries the placement identity (4th column) for the floor rule. Testis U1 edges rebuilt: 3,859 -> 2,731 (retro 555 -> 3,192).
+- Floors (shipped within-family best-record identity, min per family): testis median 0.979 / global 0.706 (`edgeh/human_testis_u1/floors.json`);
+  human slice chr20-21 median 0.906 / global 0.352 (`edgeh/human_slice_u2/floors.json`).
+- Blocked here: the human-slice representative alignment (20 Mb) dies on index load under memory pressure; the A119b `mcl_families` run exceeds
+  memory. Both are routine on the cluster.
+- To finish: (1) align `edgeh/human_slice/reps.fa` and `edgeh/human_testis/reps.fa` (splice + asm20, `-N 100 -p 0.1`) if not present; (2) liftmode
+  families with `LIFT_MASK=rep LIFT_RETRO=1 LIFT_RECIPROCAL=1`; (3) drop edges with identity < floor(family(A), family(B)) (two singletons: global
+  floor); (4) key to `fam.loci.gff3`, `mcl_families --from-gtf ... --extra-edges`; (5) famtruth `--levels simiiformes --gtf`, pairjudge
+  (`PAIRJUDGE_SPECIES=human`), protein mutual-hit (CAT CDS, mmseqs -s 7.5); bars = GW4 set; dev (slice, KB3781) before testis.
