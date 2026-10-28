@@ -7915,3 +7915,7 @@ join the right family" is answered per candidate: joined family contains the can
 lower than base; wrong pairs <= base + 2; no mainstay/YAG regression; >= 50% of the annotated silent candidates that join a family join
 the family holding their parent (the semi-guided claim). PASS on both -> propose SEMISEC candidates as extra nodes of the `families` stage
 (user decides), metric-auditor first.
+**SEMIFAM ruling (before any score):** the SEMISEC run directories are identified by READ NAMES, not by the labels I assumed: `rdev/` best
+reads are `m64076_.../ccs` = `winloci_data/GGO_mm.bam` = **OR6737 testis** (2,672 silent); `rho/` best reads are `SRR27438212.*` =
+`fibroblasts/GCA_029281585.2_flnc_mm.bam` = **KB3781 fibroblast** (3,672 silent). The prereg's sample sizes are therefore swapped: dev KB3781 =
+`rho`, held-out OR6737 = `rdev`. (ASMTPL's fib/tes labels followed the BAM paths and are correct.) Nothing else changes.
