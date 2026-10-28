@@ -7831,3 +7831,11 @@ U1: pair F and family F > base, wrong 1 <= 1 + 2, mainstays/YAGs identical, adde
 XR3 failed). Dev KB3781 U1: 0.500 / 0.764 / wrong 2 / 0.986. Reading: one template per locus (the most-reads chain) removes the readthrough/UTR
 chains that dragged neighbours in, at a quarter of the alignment cost (62 Mb vs 244 Mb of templates). Verdict PASS pending metric-auditor;
 on audit PASS -> propose to the user: `families` stage gains liftmode(rep, reciprocal, retro-filtered) placements as `--extra-edges`.
+**AUDIT of r1457 (metric-auditor, 2026-10-27 23:10): NOT VALIDATED.** Numbers reproduce to the digit. Reasons: (1) OR6737 was not a held-out
+for GW4 — both arms were designed from the diagnosis of OR6737's own failing pairs (commit 3caaf47a, two minutes before the prereg); (2) U1's
+edge set is a strict SUBSET of XR3's (OR 4,210 shared / 0 U1-only / 657 XR3-only; KB 1,730 / 0 / 556), so its protein-rule pass is XR3's pairs
+minus the edges that carried the bad pairs, selected after XR3 failed that rule on the same sample; margin 4 pairs; (3) 81% of U1's added pairs
+are judged only by the post-hoc protein rule, 6% by Compara/HGNC, 13% by nothing; (4) U1 is below XR3 on held-out family F (0.710 vs 0.720);
+the recall gain is XR3's, inherited; (5) the GW2 pair-precision bar still fails on OR (0.450 -> 0.367); (6) KB family F depends on the
+bipartite tie policy (0.764 or 0.737). What would change it: U1 frozen as-is on a gorilla sample untouched by any GW/ASMTPL/DENOVOFAM row,
+full bar set (incl. the pair-precision bar) written first, protein set from that sample's own genes. No such sample exists on disk tonight.
