@@ -7983,3 +7983,15 @@ carry the representative transcript's exons; all arms use the same rebuild. Froz
 Bars: LPA > MCL on pair F and family F on both samples, wrong <= MCL + 2, no mainstay/YAG regression -> PASS as registered, pending the
 metric-auditor. Reading: on the de novo homology graph the clustering rule matters less than MCL's habit of leaving weakly attached loci as
 singletons; LPA keeps them and, on the held-out, still splits the big component where CC does not. Louvain and LPA-recursion add nothing on dev.
+**AUDIT of r1463 (metric-auditor, 2026-10-28 09:30): NOT VALIDATED — the mechanism sentence and the "wrong 8 -> 1" headline are RETRACTED.**
+(1) The "singletons" are not dropped copies: of 2,619 KB nodes absent from clusters.tsv, 2,551 coordinate-overlap a graph neighbour (the same
+locus's overlapping records; `fold_within_clusters` collapses them and `min_size 2` then drops the 1-locus cluster); only 54 (KB) / 69 (OR)
+non-overlapping nodes are truly dropped. 2,334 of 4,405 KB edges join overlapping nodes; 994 of LPA's 1,290 "families" are one locus. (2) The
+MCL baseline was rebuilt after the prereg (shipped clusters were registered); the rebuild alone moves OR wrong pairs 1 -> 8, so "8 -> 1" is the
+rebuild. Against the SHIPPED catalogs: KB 0.195 / 0.455 / wrong 2, OR 0.300 / 0.514 / wrong 1. (3) The whole LPA gain is one KRAB-ZNF block on
+NC_073244.2 (+3 pairs per sample: ZNF468/578/813, ZNF430/723/701), a merge of three MCL families on dev. (4) Seed dependence: KB seeds 2-5
+give pair F 0.200 / family F 0.478 / wrong 5 (= shipped, fails the wrong bar); OR seeds 1-5 0.353-0.438 all above shipped. r922 already found
+label propagation TIED (+0.017) and rejected `asyn_lpa` for seed dependence; r851 forbids re-proposing full-partition operators — the prereg
+cited r851 but missed r921/r922. (5) 98% of predicted gene pairs are invisible to the pair scorer (universe intersection).
+Descriptive facts that stand: numbers reproduce; against shipped MCL, LPA(seed 0) OR6737 pair F 0.300 -> 0.364, family F 0.514 -> 0.579, wrong
+1 -> 1, driven by the ZNF block. Item 3a of PENDING_2026-10-27 closes as r922 did: TIED at the DNA level, seed-dependent; do not re-propose.
