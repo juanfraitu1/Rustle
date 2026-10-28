@@ -7621,3 +7621,24 @@ template, identity >= 0.5); family found set = union over its templates; the tem
 the 13 = wrong; a LOC gene of no keyword = unjudged, reported, NOT penalised — the user-approved revision of the strict bar).
 **Bars (dev, then held-out):** RK >= R1 on member recall in every family and > in at least one; RK >= R1 on pseudogene recall summed; judged
 precision RK >= R1 - 0.02; unjudged count reported. Lookups reported: templates per family (RK) vs reads at the loci.
+
+### ASMTPL RESULT (2026-10-27, register 1450): recall bars PASS dev + held-out; precision bar FAILS both -> FAIL as registered
+`bench/guided_eval/asmtpl.py`, `/mnt/linuxdisk/tmp/asmtpl/`. Assembler on 163 merged loci regions: fib 362 / tes 526 transcripts, 21 s / 18 s each;
+764 unique intron chains (12,021 primary reads at the loci -> 764 lookups, 16x fewer). Rulings before the verdict: `--bridge-regroup off` (f1v2
+needs one region per contig); family keywords matched by SYMBOL too (named members carry HGNC-style descriptions, LOC copies Gnomon's: the
+first scorer missed every named member); a template excludes only its OWN locus; 78 templates whose exons overlap a named protein-coding gene
+of another family are flagged chimeric and skipped (NPIP 40/49, XAGE 18/26 — readthrough into neighbours).
+
+| split | arm | member | pseudogene | judged precision | unjudged |
+|---|---|---|---|---|---|
+| dev (6 fams) | R1 one template | 3/122 | 0/24 | 1.000 (3/3) | 19 |
+| dev | RK all chains | **62/122** | **9/24** | **0.617** (71/115) | 102 |
+| held-out (7) | R1 | 24/56 | 4/41 | 1.000 (28/28) | 2 |
+| held-out | RK | **34/56** | **13/41** | **0.940** (47/50) | 6 |
+
+Per family RK >= R1 everywhere (GOLGA8 0 -> 17/17, GOLGA6 0 -> 12/16, TBC1D3 0 -> 11/16, NBPF 3 -> 20/23, RBMY 9 -> 13/13 + 10/10 pseudo).
+Precision: RK's dev "wrong" hits are (a) GOLGA6 <-> GOLGA8 cross-hits (one HGNC superfamily split by my keywords) and (b) SD-passenger
+neighbours of the family loci (HERC2, ITSN2, DNM1, GOLGA2 beside GOLGA8; USP32/USP6/ABCA9 beside TBC1D3; ALG1/ALG1L beside USP17L):
+templates carry UTR/readthrough exons of the neighbour. USP17L 0/45 in both arms (intronless array; to inspect). Held-out wrong: DAZL (DAZ
+relative), FRAT2/ZNF484 (SPATA31 neighbours). Verdict FAIL on the precision bar; the recall answer to the user's question is unambiguous:
+one representative per family finds 3/122 dev members, all unique chains find 62/122.
