@@ -7942,3 +7942,13 @@ coverage >= 0.5 of the template and identity >= 0.5 (the S3/GW rule; intronless 
 reported). Arm **S3** = S2 restricted to lift-confirmed candidates (candidate joins the seed locus's family; singleton seeds form new families).
 Bars as SEMIFAM on dev KB3781: pair F and family F >= base; wrong pairs <= base + 2; >= 50% of annotated lift-confirmed candidates join the
 family holding their parent. Reported: how many of the 2,857 candidates are lift-confirmed, by SEMISEC class. Held-out OR6737 only on a dev PASS.
+
+### SEMIFAM-2 RESULT (2026-10-28, register 1462): lift-confirmation fixes the wrong pairs (12 -> 3) but the parent-agreement bar FAILS as measured (0.389); OR6737 NOT run
+Lift-confirmed: **1,336 / 2,857** SEMISEC candidates (PROCESSED 748/1,032 = 72%, UNPROCESSED 588/1,825 = 32%; 46 retro-type landings),
+from 22,495 template-candidate pairs over the GW alignments. S3 dev (KB3781): pair F 0.195 -> 0.208 (5/33 | 15), family F 0.455 -> 0.471,
+**WRONG pairs 2 -> 3** (S2 12), mainstays unchanged — all PASS; parent agreement 432 / 1,110 = **0.389** (S2 0.30; bar 0.50) FAIL.
+The mismatch list is dominated by nomenclature, not biology: "large/small ribosomal subunit protein eL/uS…" (new names on the candidate side)
+vs "ribosomal L…/SA" (Gnomon names on the family side) 86 cases, and seeds described only as "uncharacterized LOC" 50+ cases; the stem
+judge cannot see through either. Verdict FAIL as registered; the honest reading is that the lift rule makes SEMISEC's copies family-safe
+(wrong pairs at base level) and that the parent judge needs a protein-level test (mmseqs mutual hit between the candidate's annotated gene
+and the family's genes) before the 50% bar means anything. Not run.
