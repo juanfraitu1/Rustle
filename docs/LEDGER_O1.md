@@ -8024,3 +8024,12 @@ Reading: support counts are exact-chain (no cross-credit); the intronic-terminal
 them (U1f) slightly hurts and polishing them away (U1p) leaves pair F unchanged (family F -0.027, a tie-policy-sized move). The concern does
 not skew the de novo template result; it remains relevant to the transcript PRODUCT (assembler precision), where the polishes already live
 as opt-ins. Outputs `liftgw/{kb5_repf,kb6_pol,kbp,mclP}/`.
+
+## PREREG SEMIFAM-3 (2026-10-28): protein-level parent judge for the lift-confirmed SEMISEC copies
+The SEMIFAM-2 parent bar failed on nomenclature. New judge, fixed now: for every lift-confirmed candidate of S3 (KB3781 dev, 1,336), the
+candidate's genomic span (nucleotide) is searched with the PROTEINS of its assigned family's genes (longest RefSeq CDS of every annotated
+gene the family's de novo members map to; `mmseqs easy-search --search-type 2`, translated, default e-value 1e-3). **Agrees** = at least one
+protein of its own family hits the candidate. **Control** = the same candidate searched with the proteins of a different family chosen by a fixed
+permutation (seed 0) of the family labels; reported as the background rate. Candidates whose family has no protein-coding gene are reported
+apart. Bars: agreement >= 0.50 (the SEMIFAM bar) AND agreement >= 2 x control. PASS on dev -> the same judge on OR6737 (S3 built the same way);
+PASS there -> propose "SEMISEC copies admitted by the lift rule join the seed's family" (user decides), metric-auditor first.
