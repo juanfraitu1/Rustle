@@ -8056,3 +8056,17 @@ R1 28/28 = 1.000 [0.879, 1.000] vs RK 35/37 = 0.946 [0.823, 0.985]: overlap; rec
 intron chain of a family's assembled transcripts as templates" is not significantly less precise than one template and recovers 55/122 vs 3/122
 members on dev, 31/56 vs 24/56 held-out. Not a default change (retrospective); it is the template rule carried by U1/U1p and the fresh-substrate
 test, where it will be judged prospectively.
+
+## PREREG U1-FRESH (2026-10-28): the U1 lift-edge rule on a genome no GW/ASMTPL/DENOVOFAM row has touched — Kamilah_GGO_v0 + RefSeq 102
+User choices: Kamilah (independent assembly + its own NCBI annotation; stated bias: a 2019 scaffold-level assembly collapses young copies) over
+the mGorGor1 haplotypes (no independent annotation; kept for the per-haplotype copy question). Reads: OR6737 testis FLNC (`GGO_mm.bam` primaries
+re-extracted) — the READS were used tonight at the primary genome, the GENOME, alignments, loci, graph and truth are new; stated plainly.
+**Pipeline, frozen:** minimap2 `-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` to Kamilah (the shipped read-alignment flags) ->
+`rustle_pipeline.sh assemble` (defaults) -> `families` stage = shipped `mcl_families --from-gtf` (base) -> liftmode templates (U1 = most-reads
+chain per locus, frozen as in GW4: splice + asm20 `-N 100 -p 0.1`, Liftoff chain -a/-s 0.5, exon-side placement, reciprocal, retro-filtered) ->
+`--extra-edges` into the same MCL run (arm U1). No other arm; no retuning.
+**Truth:** Kamilah RefSeq genes by symbol -> human Compara Simiiformes (famtruth; LOC genes outside, stated), descriptions from NCBI Gene
+`gene_info` as in S6; protein set = longest CDS of every gene in a base or U1 pair (mmseqs -s 7.5), built from THIS genome.
+**Bars (the full GW4 set, including the one GW3 dropped):** U1 pair F > base AND family F > base (Simiiformes); pair precision >= base - 0.02;
+wrong pairs (pairjudge) <= base + 2; no mainstay/YAG regression; added-pair protein mutual-hit >= base's own pairs' rate; and >= 20 judgeable
+added pairs (otherwise UNDERPOWERED, not PASS). PASS -> propose U1 edges in the `families` stage (user decides); metric-auditor first.
