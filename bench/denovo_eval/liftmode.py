@@ -20,6 +20,7 @@ import cdsseed as C  # noqa: E402
 import guided3 as g3  # noqa: E402
 
 COV, IDENT = 0.5, 0.5
+RECIPROCAL = os.environ.get('LIFT_RECIPROCAL') == '1'  # LIFTMODE-GW2 arm R
 
 
 def templates(gtf, fasta, outdir):
@@ -118,16 +119,27 @@ def families(outdir, pafs):
 
     putative = []
     n_place = 0
+    placed = set()  # (source locus, target locus)
+    edges = {}
     for (q, g, st), rs in groups.items():
         bases, ident = g3.chain(rs, st)
         if bases / tm[q]['len'] < COV or ident < IDENT:
             continue
         n_place += 1
         if g in loci:
-            parent[find(tm[q]['locus'])] = find(g)
+            a, b = tm[q]['locus'], g
+            placed.add((a, b))
+            w = ident * min(1.0, bases / tm[q]['len'])
+            edges[(min(a, b), max(a, b))] = max(edges.get((min(a, b), max(a, b)), 0.0), w)
+            if not RECIPROCAL or (b, a) in placed:
+                parent[find(a)] = find(b)
         else:
             c, s, e = min(land[(q, g, st)]), min(x[1] for x in land[(q, g, st)]), max(x[2] for x in land[(q, g, st)])
             putative.append((land[(q, g, st)][0][0], s, e, tm[q]['locus'], round(ident, 3)))
+    with open(f'{outdir}/edges.tsv', 'w') as w:  # locus pairs with a placement, for --extra-edges (arm X)
+        for (a, b), wt in sorted(edges.items()):
+            if not RECIPROCAL or ((a, b) in placed and (b, a) in placed):
+                w.write(f'{a}\t{b}\t{wt:.6f}\n')
     comp = collections.defaultdict(set)
     for g in loci:
         comp[find(g)].add(g)

@@ -7723,3 +7723,6 @@ places on B AND some template of B places on A (each placement by the GW rule); 
 If R fails a bar on dev: **Arm X** = the GW placements (locus pairs, weight = identity x coverage of the best placement, max over directions)
 fed to the shipped `mcl_families --from-gtf ... --extra-edges` (r1437-41 path) on the same GTF, scored the same way. Dev KB3781 first; a
 passing arm is then run on OR6737 (held-out) before anything is proposed.
+**GW2 arm R, dev KB3781 (`/mnt/linuxdisk/tmp/liftgw/kbR/`):** 439 families, 1,302 loci; pair sens 0.793 prec 0.190 F **0.307** (23/29 | 121 pred);
+family sens 0.781 prec 0.641 F **0.704**. Pair F and family F beat MCL (0.182 / 0.455); pair precision 0.267 -> 0.190 FAILS the <= 0.02 bar
+-> arm X next, as registered.
