@@ -7952,3 +7952,14 @@ vs "ribosomal L…/SA" (Gnomon names on the family side) 86 cases, and seeds des
 judge cannot see through either. Verdict FAIL as registered; the honest reading is that the lift rule makes SEMISEC's copies family-safe
 (wrong pairs at base level) and that the parent judge needs a protein-level test (mmseqs mutual hit between the candidate's annotated gene
 and the family's genes) before the 50% bar means anything. Not run.
+
+## PREREG STRAINY-A (2026-10-28): Strainy-style clustering on the de novo homology graph (PENDING_2026-10-27 item 3a)
+Graph = `mcl_families --from-gtf ... --dump-graph` of the shipped KB3781 run (dev) and OR6737 (held-out, only on a dev PASS): nodes = loci,
+edges = the post-gate homology weights MCL itself sees. Arms, all on the SAME graph, deterministic seeds (0): **MCL** = the shipped clusters;
+**LPA** = weighted asynchronous label propagation (networkx `asyn_lpa_communities`, weight, seed 0); **LOUV** = weighted Louvain
+(`louvain_communities`, resolution 1, seed 0); **LPA-R** = Strainy's recursion: LPA re-run inside every community of size >= 4 on its induced
+subgraph, once (the family -> subfamily level, reported as a second level, scored as the top level only). Families -> copies.tsv by relabelling
+the base copies rows (locus = containing span). Scorers: famtruth Simiiformes pair F / family F, pairjudge wrong pairs, mainstays/YAGs; also
+family-size distribution and the Rand index between arms (descriptive). Stated expectation (register r851, §6n5/§6o8): little or no gain at
+the DNA level; the interesting output is the second level. Bars (dev): an arm beats MCL on BOTH pair F and family F with wrong pairs <= MCL + 2
+and no mainstay/YAG regression -> that arm goes to OR6737; otherwise FAIL and the item closes with the descriptive table.
