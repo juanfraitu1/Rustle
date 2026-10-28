@@ -8009,3 +8009,18 @@ added-pair protein mutual-hit; number of lift edges and putative copies.
 0.195), family F **0.717** (0.764), wrong 2 (= U1 = base), added-pair protein mutual-hit 0.967 (U1 0.986). Excluding intronic-terminal chains
 from the representative choice does NOT help: the replaced chains were slightly better templates than their replacements. U1p (re-assembly with
 `--polish-tss split --polish-subchain drop`) launched next.
+
+### U1-TSS RESULT (2026-10-28, register 1464): neither arm changes U1 — the intronic-terminal chains are not skewing the lift result
+U1p: re-assembly with `--polish-tss split --polish-subchain drop` (10 min; 72,531 -> 70,217 chains, 17,608 -> 17,459 loci; sub-chain drop
+2,171; TSS split proven on most contigs) changes 240 representatives and drops 149 loci; every polished representative's chain was already
+aligned. MCL baseline on the polished GTF (`liftgw/mclP/baseP`) = pair F 0.195 / family F 0.455 / wrong 2, identical to the shipped base.
+| KB3781 dev | pair F | family F | wrong | added pairs | protein mutual-hit |
+|---|---|---|---|---|---|
+| shipped MCL / baseP | 0.195 | 0.455 | 2 | - | own 0.883 / 0.881 |
+| U1 | 0.500 | 0.764 | 2 | 393 | 0.986 |
+| U1f (exclude intronic-terminal reps) | 0.462 | 0.717 | 2 | 383 | 0.967 |
+| U1p (polished assembly) | 0.500 | 0.737 | 2 | 387 | 0.986 |
+Reading: support counts are exact-chain (no cross-credit); the intronic-terminal chains are 26% of chains / 17% of reads but choosing around
+them (U1f) slightly hurts and polishing them away (U1p) leaves pair F unchanged (family F -0.027, a tie-policy-sized move). The concern does
+not skew the de novo template result; it remains relevant to the transcript PRODUCT (assembler precision), where the polishes already live
+as opt-ins. Outputs `liftgw/{kb5_repf,kb6_pol,kbp,mclP}/`.

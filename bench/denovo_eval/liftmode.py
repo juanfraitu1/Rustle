@@ -102,6 +102,9 @@ def masks(tm):
     for n, t in tm.items():
         by_locus[t['locus']].append(n)
     out = {}
+    if MASK == 'list':  # U1-TSS arm U1p: template names listed in LIFT_MASK_LIST (one per line), whole templates
+        names = {l.strip() for l in open(os.environ['LIFT_MASK_LIST']) if l.strip()}
+        return {n: [(0, tm[n]['len'])] for n in names if n in tm}
     if MASK in ('rep', 'repf'):
         for L, ns in by_locus.items():
             cands = ns
