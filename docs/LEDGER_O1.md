@@ -7919,3 +7919,18 @@ the family holding their parent (the semi-guided claim). PASS on both -> propose
 reads are `m64076_.../ccs` = `winloci_data/GGO_mm.bam` = **OR6737 testis** (2,672 silent); `rho/` best reads are `SRR27438212.*` =
 `fibroblasts/GCA_029281585.2_flnc_mm.bam` = **KB3781 fibroblast** (3,672 silent). The prereg's sample sizes are therefore swapped: dev KB3781 =
 `rho`, held-out OR6737 = `rdev`. (ASMTPL's fib/tes labels followed the BAM paths and are correct.) Nothing else changes.
+
+### SEMIFAM RESULT (2026-10-28, register 1461): FAIL on dev KB3781 (wrong pairs 2 -> 12; parent agreement 30%); OR6737 NOT run
+Implementation rulings: (1) `mcl_families` always recomputes the all-vs-all for a changed loci set (`--paf` is not a cache under
+`--from-gtf`), so candidates appended to the GTF also receive PAF edges: 230,712 of 312,629 records involve a candidate — repeat-derived
+secondary hits are hubs. Arm S (GTF + SEMISEC edges) and control S0 (GTF only) both collapse: pair precision 0.333 -> 0.028 / 0.048, wrong pairs
+2 -> 234 / 93. (2) The fair arm therefore needs no clustering: **S2** = base families + each candidate joins the family of its seed locus
+(143 seeds in MCL families; 841 singleton seeds become new 2+-member families with their candidates; 2,857 candidates).
+S2 dev: pair F 0.195 -> 0.203 (6/34 | 25; the truth universe grows to 16 families / 34 pairs because candidate loci count as expressed),
+family F 0.455 -> 0.509, **WRONG pairs 2 -> 12** (bar <= 4: ACSM4-LINGO2/ZEB1, ANKRD31-CWH43/FAAH2, CEACAM21-SLCO5A1 ...), mainstays
+unchanged. Per candidate: 1,903 of 2,857 overlap an annotated gene; the family holds a gene with the candidate's description stem for
+**538 (30%)**, mismatch 1,279, undescribed 86 (bar >= 50%). Verdict FAIL as registered. Reading: SEMISEC's candidates are right about
+"a copy of SOMETHING expressed" (its own parent agreement 0.71 was per seed READ), but attached at the LOCUS/family level they land in the wrong
+family 2 times out of 3 — the seed read's primary locus is not the copy's parent when the read itself is a multimapper (secondary of a
+secondary), and repeat-carrying candidates link unrelated genes. Outputs `/mnt/linuxdisk/tmp/liftgw/mclX/S*.fam.copies.tsv`, edges
+`/mnt/linuxdisk/tmp/semisec/{kb,or}_semi_edges.tsv`, `*_aug.gtf`.
