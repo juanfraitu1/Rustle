@@ -8073,3 +8073,12 @@ added pairs (otherwise UNDERPOWERED, not PASS). PASS -> propose U1 edges in the 
 **U1-FRESH WITHDRAWN (user, 2026-10-28 13:08) before any alignment finished:** Kamilah_GGO_v0 is not T2T, so the young copies the test is about
 are missing from the genome; a held-out that lacks the object cannot validate the rule. The partial run (`/mnt/linuxdisk/tmp/kamfresh/`) was
 killed; no data looked at. Substrate question reopened: a complete, independently annotated genome of human or gorilla not used by any GW row.
+
+## PREREG U1-FRESH-HG002 (2026-10-28): the U1 lift-edge rule on HG002 T2T Q100 paternal + Ensembl rapid release 2022_07
+Replaces U1-FRESH (Kamilah withdrawn: not T2T). Substrate: `/mnt/linuxdisk/tmp/hg002g/hg002.fa` (GCA_021950905.1, complete), Ensembl
+2022_07 gene set (independent of our chaining; HGNC symbols via xref, Ensembl gene ids -> human Compara by symbol as guided3 does), reads =
+HG002 Kinnex FLNC `~/hg002_kinnex/flnc.bam` (never aligned or used by any row). Human, never pooled with gorilla; HG002 pat was used tonight
+only for the GUIDED retro question (r1460), never for a de novo family row. Pipeline, truth construction and bars exactly as U1-FRESH (minimap2
+`splice:hq -N 50 --secondary=yes` -> assemble -> shipped MCL base -> U1 templates frozen as GW4 -> --extra-edges; famtruth Simiiformes with
+the HG002 gene set, pairjudge, protein set from HG002's own CDS; full GW4 bar set incl. pair precision >= base - 0.02 and >= 20 judgeable added
+pairs). PASS -> propose U1 edges in `families` (user decides); metric-auditor first.
