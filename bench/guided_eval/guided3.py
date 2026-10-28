@@ -376,17 +376,44 @@ def score(a):
     extra = {k: set(v) for k, v in T.get('extra', {}).items()}
     body_cds = {q: [tuple(x) for x in m['body_cds']] for q, m in T['seeds'].items()}
     groups = collections.defaultdict(list)
-    for q, t, st, bl, qi, ti, cdsb, ident in records(a.paf, body_cds):
-        if q not in T['seeds'] or not bl or cdsb <= 0:
-            continue
-        g = C.gene_of(idx, G, t, st, bl)
-        if g and g != T['seeds'][q]['gene']:
-            groups[(q, g, st)].append((qi, ti, cdsb, ident))
-    found = collections.defaultdict(set)
+    nblk, spans_junction = {}, collections.defaultdict(bool)
+    cdsj = {}  # seed -> CDS-coordinate positions of its exon-exon junctions
+    for q, iv in body_cds.items():
+        pos, js = 0, []
+        for s0, e0 in iv[:-1]:
+            pos += e0 - s0
+            js.append(pos)
+        cdsj[q] = js
+    body_paf = [p for p in a.paf if os.path.basename(p).startswith('A')]
+    cds_paf = [p for p in a.paf if not os.path.basename(p).startswith('A')]
+    for is_cds, paths in ((False, body_paf), (True, cds_paf)):
+        for q, t, st, bl, qi, ti, cdsb, ident in records(paths, body_cds):
+            if q not in T['seeds'] or not bl or cdsb <= 0:
+                continue
+            g = C.gene_of(idx, G, t, st, bl)
+            if g and g != T['seeds'][q]['gene']:
+                groups[(q, g, st)].append((qi, ti, cdsb, ident))
+                nblk[(q, g, st)] = max(nblk.get((q, g, st), 0), len(bl))
+                if is_cds and len(bl) == 1 and any(qi[0] < j < qi[1] for j in cdsj[q]) \
+                        and not any(ti[0] < b < ti[1] for e in G[g]['exons'] for b in e):
+                    spans_junction[(q, g, st)] = True  # a seed junction aligned contiguously where the target has no intron
+    recip = None
+    if a.reciprocal:  # GUIDED-S10 URR: (seed gene, hit gene) pairs whose hit gene lifted back onto the seed
+        recip = {tuple(l.rstrip('\n').split('\t')[:2]) for l in open(a.reciprocal)}
+    found, retro, oneway = collections.defaultdict(set), collections.defaultdict(set), collections.defaultdict(set)
     for (q, g, st), rs in groups.items():
         bases, ident = chain(rs, st)
         if bases / T['seeds'][q]['cds_len'] >= COV and ident >= IDENT:
-            found[q].add(g)
+            if a.retro and nblk[(q, g, st)] == 1 and spans_junction[(q, g, st)] and len(G[g]['exons']) > 1:
+                retro[q].add(g)  # GUIDED-S10 UR: spliced seed landing intronless in a spliced gene = processed copy
+            elif recip is not None and (T['seeds'][q]['gene'], g) not in recip:
+                oneway[q].add(g)
+            else:
+                found[q].add(g)
+    with open(os.path.join(a.outdir, f'hits.{a.arm}.seed{a.seed}{a.tag}.tsv'), 'w') as w:
+        for q, gs in found.items():
+            for g in gs:
+                w.write(f"{T['seeds'][q]['gene']}\t{g}\n")
     c = collections.Counter()
     mm = mp = nf = nfp = 0.0
     per, named = {}, {}
@@ -396,6 +423,9 @@ def score(a):
         fd = found.get(q, set())
         c['members'] += len(others); c['mf'] += len(fd & others); c['pseudo'] += len(ps); c['pf'] += len(fd & ps)
         c['judged'] += len(fd & judge); c['ok'] += len(fd & (others | ps | extra.get(m['fam'], set()))); c['unjudged'] += len(fd - judge)
+        c['unjudged_pseudo'] += sum(1 for g in fd - judge if 'pseudogene' in G[g]['biotype'])  # S10 revised strict: reported only
+        c['retro'] += len(retro.get(q, set())); c['retro_pseudo'] += sum(1 for g in retro.get(q, set()) if 'pseudogene' in G[g]['biotype'])
+        c['oneway'] += len(oneway.get(q, set()))
         nf += 1; mm += len(fd & others) / len(others)
         if ps:
             nfp += 1; mp += len(fd & ps) / len(ps)
@@ -406,11 +436,13 @@ def score(a):
             if re.match(pat, G[m['gene']]['name']):
                 named[lab] = r
     res = dict(macro_member=mm / max(nf, 1), macro_pseudo=mp / max(nfp, 1), precision=c['ok'] / max(c['judged'], 1),
-               precision_strict=c['ok'] / max(c['judged'] + c['unjudged'], 1), micro_member=c['mf'] / max(c['members'], 1),
+               precision_strict=c['ok'] / max(c['judged'] + c['unjudged'], 1),
+               precision_revised=c['ok'] / max(c['judged'] + c['unjudged'] - c['unjudged_pseudo'], 1), micro_member=c['mf'] / max(c['members'], 1),
                micro_pseudo=c['pf'] / max(c['pseudo'], 1), families=nf, families_with_pseudo=nfp, **c)
     print(f"{a.species} {a.arm} seed{a.seed}: MACRO member {res['macro_member']:.4f} pseudo {res['macro_pseudo']:.4f} | precision "
           f"{res['precision']:.3f} ({c['ok']}/{c['judged']}), unjudged-as-wrong {res['precision_strict']:.3f} (+{c['unjudged']}) | micro "
-          f"member {c['mf']}/{c['members']} pseudo {c['pf']}/{c['pseudo']} | {int(nf)} fams")
+          f"revised-strict {res['precision_revised']:.3f} | member {c['mf']}/{c['members']} pseudo {c['pf']}/{c['pseudo']} | retro {c['retro']} "
+          f"(pseudo {c['retro_pseudo']}) one-way {c['oneway']} | {int(nf)} fams")
     for lab in sorted(named):
         r = named[lab]
         print(f"  {lab}: seed {r['seed']} members {len(r['members'])}/{r['n'] - 1} pseudo {len(r['pseudo'])}/{r['n_pseudo']} wrong {len(r['wrong'])}")
@@ -432,6 +464,8 @@ def main():
     ap.add_argument('--stem-judge', action='store_true', help='GUIDED-S8: name-stem pseudogene judge')
     ap.add_argument('--parent-group', action='store_true', help='GUIDED-S7: HGNC parent-group truth')
     ap.add_argument('--xref', help='GUIDED-S7: Ensembl rapid-release xref TSV (hg002)')
+    ap.add_argument('--retro', action='store_true', help='GUIDED-S10: bin intronless landings of spliced seeds in spliced genes as retro')
+    ap.add_argument('--reciprocal', help='GUIDED-S10: TSV seed_gene<TAB>hit_gene of hits that lift back; others binned one-way')
     ap.add_argument('--tag', default='', help='suffix for truth/score files')
     a = ap.parse_args()
     global PARENT_GROUP, HG002_XREF, STEM_JUDGE

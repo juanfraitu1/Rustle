@@ -7851,3 +7851,22 @@ prepared, untouched by any guided arm; truth = S8 rules on HG002 symbols + the H
 U - 0.02 on MACRO pseudogene recall (retro moves processed pseudogenes out of the hit set by design; they are reported as retro); URR judged
 precision and revised-strict precision >= U; no named mainstay/YAG family with fewer members than U; both seeds. UR reported as the
 intermediate. PASS on HG002 -> propose UR/URR as the guided default (user decides), metric-auditor first.
+
+### GUIDED-S10 RESULT (2026-10-27, register 1458): URR FAILS dev on member recall; UR is a small clean gain (not the registered arm); HG002 NOT spent
+Dev human (S8 alignments; back-lift templates for the 1,585 hit genes: CDS splice+asm20, bodies asm20, CDS-less bodies also splice —
+`/mnt/linuxdisk/tmp/guided_s3h/s10/`). Retro rule as finally fixed: a CDS record aligned as ONE block that spans a seed exon-exon junction where the
+target gene has no annotated intron (two earlier drafts flagged true members: multi-record asm20 chains, and single-exon-dominated CDSs; logged).
+| seed | arm | MACRO member | MACRO pseudo | judged prec | revised strict | retro (pseudo) | one-way |
+|---|---|---|---|---|---|---|---|
+| 1 | U | 0.0549 | 0.1036 | 0.908 | 0.905 | - | - |
+| 1 | UR | 0.0542 | 0.1010 | 0.915 | 0.912 | 25 (13) | - |
+| 1 | URR | **0.0446** | 0.0893 | 0.924 | 0.922 | 25 (13) | 255 |
+| 2 | U | 0.0561 | 0.1031 | 0.877 | 0.865 | - | - |
+| 2 | UR | 0.0560 | 0.1021 | 0.891 | 0.880 | 24 (8) | - |
+| 2 | URR | **0.0493** | 0.0871 | 0.907 | 0.894 | 24 (8) | 220 |
+URR fails the member bar (-0.010 / -0.007): 100/401 true members of seed 1 do not lift back at >= 0.5 of THEIR OWN CDS — Liftoff coverage is
+template-relative, so a longer member lifting onto a shorter seed fails by construction; 342/374 processed pseudogenes failed until their bodies
+were aligned spliced (back-lift of a retrocopy onto its parent needs the splice preset). Reciprocity is therefore not a guided-mode rule as
+stated; a length-symmetric version (coverage of the shorter) would be a new prereg. UR: precision +0.007/+0.014, member -0.0007/-0.0001,
+pseudogene -0.003/-0.001, 13/8 of the retro hits are annotated pseudogenes, the other 12/16 protein-coding genes (intron-loss copies or
+single-exon members). HG002 held-out prepared (1,112 families, 9,930 pseudogenes, 12 named seeds, CDS ATG 98.5%) and NOT scored.
