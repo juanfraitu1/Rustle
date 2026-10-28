@@ -60,7 +60,7 @@ def read_gtf(path):
         else:
             t['exons'].append((int(f[3]) - 1, int(f[4])))
     for t in tx.values():
-        t['exons'].sort()
+        t['exons'] = sorted(set(t['exons']))  # the same transcript id may occur in several GTFs
     return tx
 
 

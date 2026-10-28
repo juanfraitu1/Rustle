@@ -7684,3 +7684,12 @@ Per family RK >= R1 everywhere; GOLGA merged 23/33 members (2 wrong: ITSN2 segme
 putative (RBMY pseudo 10 -> 2, dev members 62 -> 55), so the putative bin holds both unannotated copies and loosely-annotated pseudogenes.
 The precision bar is degenerate: R1 has 3 and 28 hits, so 1.000 - 0.02 is unbeatable by any arm with real recall; the user decides the bar
 for a re-run (e.g. a fixed 0.90, or R1 - 0.02 with R1 pooled over splits). USP17L 0/45 persists (9 putative: the array copies' annotation).
+
+### LIFTMODE prototype (2026-10-27, no verdict): `bench/denovo_eval/liftmode.py`
+De novo Liftoff-style family mode wired from the ASMTPL-3 template rule: every unique intron chain of the assembled GTF is a template; each is
+aligned (splice + asm20) and Liftoff-chained; a placement counts when >= 0.5 of the chained bases lie on the exons of ONE assembled locus
+(gene_id); family = connected component of loci joined by placements (no MCL, no thresholds beyond -a/-s); landings on no locus's exons =
+putative copies (BED). Smoke test on the 13-family loci assembly (fib + tes, `/mnt/linuxdisk/tmp/asmtpl/lm/`): 845 transcripts -> 760 chains,
+233 loci -> 26 families, 414 putative copies. By annotation keyword the families are clean: NBPF 16 genes (+2 unnamed LOC), RBMY 11, GOLGA 6+3,
+TBC1D3 4, TSPY 4, NPIP 2, 0 mixed families. Fix on the way: `asmtpl.read_gtf` dedupes exons (the same transcript id occurs in both library GTFs).
+Not yet: genome-wide run vs the MCL catalog (prereg needed; gorilla OR6737 `asm_gap/heldout/gorilla_OR6737.good.dt.families.gtf`, 171 MB).
