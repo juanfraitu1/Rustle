@@ -7604,3 +7604,20 @@ M-only unjudged hits (91): 81 pseudogenes no judge reaches (RBMY1B -> RBMY2KP/2X
 not a member stem; FAM86B1 -> FAM86EP/FP; DDX11 -> DDX11L5; clone-named AC*/AL*), 7 lncRNA (NSFL1C), 2 readthrough genes.
 Descriptive: two members vs one (U2 vs S8 U) roughly doubles pseudogene recall (0.10 -> 0.19); extra isoforms add +15% members, +19% pseudogenes
 at the same judged precision. The strict bar again fails on pseudogenes the truth cannot judge, not on wrong genes.
+
+## PREREG ASMTPL (2026-10-27): assembled transcripts as family templates, gorilla, 13 families
+User (10-27): "use gorilla and just a handful of gene families; several representatives; the assembler first, so lookups reduce to unique
+intron chains". Substrate mGorGor1 v2.0 + RefSeq (`GGO_genomic.gff`), families by RefSeq description keyword (`/mnt/linuxdisk/tmp/asmtpl/
+family_regions.tsv`, 231 loci): **dev** NPIP (5 pc), TBC1D3 (16+1), GOLGA6 (14+3), GOLGA8 (17), USP17L (45+11), NBPF (23+9); **held-out**
+TSPY (6+10), XAGE (7+3), CT47 (8), RBMY (13+10), SPATA31 (10+3), CDY (1+15), DAZ (1). Members = protein-coding genes of the keyword; pseudogenes =
+pseudogene-biotype genes of the keyword. (Gorilla here answers a NEW question — template construction — not the S5/S6 guided question.)
+**Templates:** `copy_assign --assemble-only --assembly-junctions strict --bridge-regroup f1v2` (pipeline defaults, no secondary pool) on the
+family loci (+-5 kb) of KB3781 fibroblast `fibroblasts/GCA_029281585.2_flnc_mm.bam` and OR6737 testis `winloci_data/GGO_mm.bam`; transcripts
+assigned to the family whose locus they overlap; deduplicated by exact intron chain across both libraries; template sequence = spliced exons.
+**Arms:** R1 = one template per family (the most-read-supported chain, ties: longest); RK = every unique-chain template. Each template is aligned
+`-x splice -c -N 100 -p 0.1` and `-x asm20 -c -N 100 -p 0.1` to GGO.fasta, chained per target gene (guided3 rule, coverage >= 0.5 of the
+template, identity >= 0.5); family found set = union over its templates; the template's own source locus is excluded from hits and denominators.
+**Score per family:** member recall, pseudogene recall, judged precision (hit on a gene of ANOTHER keyword family or on a named gene outside
+the 13 = wrong; a LOC gene of no keyword = unjudged, reported, NOT penalised — the user-approved revision of the strict bar).
+**Bars (dev, then held-out):** RK >= R1 on member recall in every family and > in at least one; RK >= R1 on pseudogene recall summed; judged
+precision RK >= R1 - 0.02; unjudged count reported. Lookups reported: templates per family (RK) vs reads at the loci.
