@@ -16,7 +16,8 @@ HGNC = '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.txt'
 
 
 def main(paths):
-    G = F.load_ggo(F.load_cat())
+    species = os.environ.get('PAIRJUDGE_SPECIES', 'gorilla')  # EDGE-HUMAN: 'human' judges CAT genes directly
+    G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
     idx = F.exon_index(G)
     sim, universe = F.truth_pairs(G, F.PARALOGS, F.LEVELS['simiiformes'])
     sim = {tuple(sorted(p)) for p in sim}
