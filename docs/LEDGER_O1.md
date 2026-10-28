@@ -7548,3 +7548,17 @@ Recall bars and named bar PASS; precision bars FAIL. U-only judged-wrong hits (2
 parent sits in a sibling HGNC group or outside the truth: IFITM1/IFITM2 -> LOC IFITM-like copies (12, 13), SUMO2 -> LOC (10), LILRA <-> LILRB,
 MIA2 -> CTAGE15, CR1L -> CR1. Pattern across S3-S6: U's extra hits land in neighbouring HGNC sub-groups of the same superfamily, which the
 most-specific-group truth calls wrong. Verdict: no validated guided improvement; default unchanged. Kamilah held-out now SPENT.
+
+## PREREG GUIDED-S7 (2026-10-27): HGNC PARENT-group truth; fresh human held-out HG002 pat (Ensembl rapid release 2022_07)
+User choices after S6: truth one level up the HGNC hierarchy; fresh held-out = HG002.
+**Truth change (only one vs S5):** a gene's family key = the PARENT of its most-specific HGNC group in HGNC `hierarchy.csv` (several parents ->
+the smallest by gene count, then lowest id); a group with no parent keys itself. Group-less genes: Compara Simiiformes as before; >= 2
+protein-coding members; --hgnc-coding; pseudogene sets = proxy + parent table.
+**Dev = human CHM13 / CAT v2.0, re-run on the new truth** (seeds change where families merge; changed seeds re-aligned with the same presets).
+**Held-out = HG002 paternal haplotype (GCA_021950905.1, carries chrY) with Ensembl rapid-release gene set 2022_07** (gene symbols from the
+Ensembl xref `HGNC Symbol` rows; genes without an HGNC symbol are outside the truth = stated blind spot, like LOC). Ensembl's set is built by
+its own projection + paralogue-mapping pipeline, independent of our chaining. Human held-out numbers are never pooled with gorilla.
+**HG002 pseudogene parent judge:** an Ensembl pseudogene description `... (SYMBOL) pseudogene` -> the single HG002 protein-coding gene with that
+symbol. **Arms, seeds, chaining, bars = S5:** A body asm20 vs U body UNION CDS splice UNION CDS asm20; both seeds; U > A on MACRO member and
+pseudogene recall; judged and unjudged-as-wrong precision >= A - 0.02; no named mainstay/YAG member loss. Bars on dev, then HG002.
+PASS -> propose U as the guided default (user decides), metric-auditor before any claim.
