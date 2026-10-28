@@ -7782,3 +7782,16 @@ longest RefSeq CDS (`GGO_genomic.gff`). `mmseqs easy-search` all-vs-all (-s 7.5,
 **mutual hit** = A's protein lists B and B's lists A (primary; family size does not cap it); **RBH** = each is the other's best non-self hit
 (secondary). Rates compared per sample: XR3-added protein-coding pairs vs base's own protein-coding pairs. Rule, fixed now: OR6737 mutual-hit rate
 of added pairs >= base's -> r1455 upgraded to HOLDS; lower -> stays NOT VALIDATED. Pairs with a pseudogene are reported separately (no protein).
+
+### LIFTMODE-GW3-RBH RESULT (2026-10-27, register 1456): r1455 stays NOT VALIDATED (held-out mutual-hit rate 0.921 vs base 0.962)
+1,378 proteins (longest RefSeq CDS, translated), `mmseqs easy-search -s 7.5`, 31,355 hits (`/mnt/linuxdisk/tmp/liftgw/rbh/`).
+| sample | pairs | n (both coding) | mutual protein hit | RBH |
+|---|---|---|---|---|
+| KB3781 dev | base | 622 | 0.883 | 0.228 |
+| KB3781 dev | XR3-added | 835 | **0.943** | 0.153 |
+| OR6737 held-out | base | 2,208 | 0.962 | 0.106 |
+| OR6737 held-out | XR3-added | 1,035 | **0.921** | 0.136 |
+Unjudged-only subsets are within 0.005 of these. Pairs with a pseudogene/non-coding member (no protein): KB 171/1,006 added, OR 347/1,382.
+By the fixed rule (added >= base on OR6737) the held-out FAILS by 0.041 -> r1455 remains NOT VALIDATED. Descriptively: 92-94% of the LOC pairs
+the lever adds are protein-level homologues (RBH is capped by family size, so mutual hit is the fair number); the 6-8% with no mutual hit are
+the unresolved residue. The lever's recall gain is real; its added pairs are slightly less protein-supported than MCL's own on the held-out.
