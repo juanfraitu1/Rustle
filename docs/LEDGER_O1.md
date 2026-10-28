@@ -7535,3 +7535,16 @@ denominators. Dev check: human has no LOC genes, so S5 dev numbers stand. PASS -
 GFF descriptions (coverage: pseudogenes 5,176/6,290, LOC protein-coding 2,996/3,800, named 16,700/16,856) — cost if wrong: names updated after
 2019 may differ from release 102's models. Parent table: 951 pseudogene pairs, 146 LOC pairs (118 LOC genes judged-correct in 67 families).
 Truth: 1,927 families, 353 pseudogenes in 132 families, 2 label-seeded named families. CDS ATG >= 99.8%, stops >= 99.7%.
+
+### GUIDED-S6 RESULT (2026-10-27, register 1447): FAIL on the fresh Kamilah held-out (strict precision both seeds; judged precision seed 2)
+| seed | arm | MACRO member | MACRO pseudo | prec judged | prec unjudged-as-wrong | named (U/A/n-1) |
+|---|---|---|---|---|---|---|
+| 1 | A | 0.0043 | 0.0219 | 0.814 (35/43) | 0.255 (+94) | |
+| 1 | U | 0.0206 | 0.1699 | 0.830 (171/206) | **0.223** (bar 0.236) | XAGE 1/0/2, GOLGA6L 0/0/2 |
+| 2 | A | 0.0037 | 0.0002 | 0.778 (28/36) | 0.228 (+87) | |
+| 2 | U | 0.0198 | 0.1456 | **0.751** (bar 0.758) | **0.203** (bar 0.208) | XAGE 2/0/2, GOLGA6L 1/0/2 |
+
+Recall bars and named bar PASS; precision bars FAIL. U-only judged-wrong hits (27 / 41) are mostly LOC genes (22 / 31) whose description
+parent sits in a sibling HGNC group or outside the truth: IFITM1/IFITM2 -> LOC IFITM-like copies (12, 13), SUMO2 -> LOC (10), LILRA <-> LILRB,
+MIA2 -> CTAGE15, CR1L -> CR1. Pattern across S3-S6: U's extra hits land in neighbouring HGNC sub-groups of the same superfamily, which the
+most-specific-group truth calls wrong. Verdict: no validated guided improvement; default unchanged. Kamilah held-out now SPENT.
