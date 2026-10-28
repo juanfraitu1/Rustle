@@ -306,6 +306,7 @@ def main():
         sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'guided_eval'))
         import guided3 as _g3
         _g3.HG002_XREF = a.xref
+        _g3.F.GGO_GFF = a.ggo_gff  # the imported famtruth module, not this __main__
         G = _g3.load_genes('hg002')
     idx = exon_index(G)
     fams, n_copies, n_mapped = load_catalog(a.copies, G, idx)
