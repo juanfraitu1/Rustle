@@ -7995,3 +7995,13 @@ label propagation TIED (+0.017) and rejected `asyn_lpa` for seed dependence; r85
 cited r851 but missed r921/r922. (5) 98% of predicted gene pairs are invisible to the pair scorer (universe intersection).
 Descriptive facts that stand: numbers reproduce; against shipped MCL, LPA(seed 0) OR6737 pair F 0.300 -> 0.364, family F 0.514 -> 0.579, wrong
 1 -> 1, driven by the ZNF block. Item 3a of PENDING_2026-10-27 closes as r922 did: TIED at the DNA level, seed-dependent; do not re-propose.
+
+## PREREG U1-TSS (2026-10-28): representative chains that start or end inside a sibling's intron
+Finding (user, 2026-10-28): reads whose terminal block lies in an intron and that splice elsewhere form their own exact chains (the assembler
+never credits them to another isoform): KB3781 17,096 / 65,936 spliced chains in multi-chain loci (26%), 17% of reads; U1's most-reads
+representative is such a chain in 1,753 / 11,013 loci (16%). Two arms on KB3781 dev, descriptive (no held-out claim: the fresh-substrate test
+of U1 is the gate for any proposal): **U1f** = U1 with intronic-terminal chains (first or last exon wholly inside a same-locus sibling's
+intron) excluded from the representative choice (a locus whose chains are all flagged keeps its most-reads chain) — existing alignments;
+**U1p** = the same rule on a KB3781 re-assembly with `--polish-tss split --polish-subchain drop` (the shipped opt-in polishes; new chains aligned
+the same way). Reported vs shipped MCL and vs U1: how many representatives change; pair F / family F (famtruth Simiiformes), wrong pairs,
+added-pair protein mutual-hit; number of lift edges and putative copies.
