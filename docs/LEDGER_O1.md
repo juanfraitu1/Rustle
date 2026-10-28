@@ -7582,3 +7582,14 @@ having a member stem that is a prefix of base, keep those with the LONGEST such 
 seed 1 A member 0.0337 / pseudo 0.0123 / judged 0.884 / strict 0.812; U 0.0549 / 0.1036 / 0.908 / 0.841. seed 2 A 0.0371 / 0.0083 / 0.875 /
 0.816; U 0.0561 / 0.1031 / 0.877 / 0.821. Named losses none (13, 13). Ruling: clone-named genes (`^[A-Z]{1,2}[0-9]{5,6}\.[0-9]+$`, e.g.
 AC007610.3) are excluded from the stem judge on both sides, as the prereg keeps unnamed pseudogenes with the parent table only.
+
+## PREREG GUIDED-S9 (2026-10-27): many templates per family (every isoform CDS + body, 2 members) vs one template
+User question: does one representative lose copies? Arm **M** = per family, the first TWO members (the S8 seed-1 and seed-2 genes), each
+contributing its gene body (asm20) AND the CDS of EVERY annotated transcript (splice + asm20); each template chained and judged as in S3
+(coverage >= 0.5 of that template, identity >= 0.5); the family's found set = the UNION over templates. Baseline **U2** = the same two members,
+body + longest CDS only (the S8 U arm run from both seeds, unioned) — so M differs from U2 ONLY by the extra isoforms. Both seeded genes are
+excluded from hits and denominators. Truth = S8 (parent group, --hgnc-coding, parent table, stem judge). Families with < 3 protein-coding
+members have no recall denominator and count for precision only.
+**Bars (dev human, then HG002 pat held-out, the same held-out as S8 — both pre-registered before it is looked at, separate questions):**
+M > U2 on MACRO member and MACRO pseudogene recall; judged and unjudged-as-wrong precision >= U2 - 0.02; no named mainstay/YAG family with
+fewer members than U2. PASS -> multi-template seeds proposed for guided mode and as the template rule of the de novo Liftoff mode (user decides).
