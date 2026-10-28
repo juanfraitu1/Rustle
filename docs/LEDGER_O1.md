@@ -7817,3 +7817,17 @@ pair F **0.500** (17/29 | 39), family F **0.764**, wrong 2 (= base), added pairs
 U2 (locus-shared exons): 72,379 templates (224 Mb), 2,255 edges; pair F 0.345 (19/29 | 81), family F 0.727, wrong 4, added 972, mutual-hit
 0.950 (753/793). XR3 for reference 0.339 / 0.727 / wrong 4 / 0.943; base 0.195 / 0.455 / 2 / 0.883. Both arms clear the OR6737 gate.
 Caveat: mutual-hit uses the GW3-RBH protein set (genes of base + XR3 pairs); U1/U2 pairs outside it (42 / 179) are excluded from the rate.
+
+### LIFTMODE-GW4 RESULT (2026-10-27, register 1457): **U1 PASSES dev and OR6737 on every bar including the protein rule** (audit pending); U2 fails the protein rule
+OR6737 (`liftgw/{or4_rep,or4_shared,mclOR}/`, frozen `liftgw/frozen/or_U{1,2}.fam.copies.tsv`): U1 19,711 templates, 4,210 reciprocal edges
+(563 added, 236 new nodes); U2 73,904 templates, 4,905 edges.
+| arm (OR6737) | pair sens / prec / F | family sens / prec / F | WRONG | older / HGNC / PAR | added pairs | protein mutual-hit of added |
+|---|---|---|---|---|---|---|
+| base | 0.225 / 0.450 / 0.300 (9/40, 20) | 0.352 / 0.950 / 0.514 | 1 | 5 / 1 / 4 | - | (own pairs 0.962) |
+| XR3 (GW3) | 0.650 / 0.283 / 0.394 | 0.667 / 0.783 / 0.720 | 2 | 27 / 33 / 4 | 1,382 | 0.921 |
+| **U1 rep-only** | 0.550 / 0.367 / **0.440** (22/40, 60) | 0.611 / 0.846 / **0.710** | **1** | 18 / 15 / 4 | 656 | **0.968** (551/569) |
+| U2 shared-exons | 0.650 / 0.289 / 0.400 (26/40, 90) | 0.685 / 0.787 / 0.733 | 3 | 28 / 29 / 4 | 1,443 | 0.922 |
+U1: pair F and family F > base, wrong 1 <= 1 + 2, mainstays/YAGs identical, added-pair protein support >= base's own (the GW3-RBH rule that
+XR3 failed). Dev KB3781 U1: 0.500 / 0.764 / wrong 2 / 0.986. Reading: one template per locus (the most-reads chain) removes the readthrough/UTR
+chains that dragged neighbours in, at a quarter of the alignment cost (62 Mb vs 244 Mb of templates). Verdict PASS pending metric-auditor;
+on audit PASS -> propose to the user: `families` stage gains liftmode(rep, reciprocal, retro-filtered) placements as `--extra-edges`.
