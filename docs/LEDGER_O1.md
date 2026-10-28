@@ -8100,3 +8100,9 @@ judgeable CAT genes; "connected" = same shipped family, or same component once t
 judged with the pairjudge rule. **Dev A119b:** 1,525 truth pairs; shipped families connect 1,231 (**0.807**); + U1 edges 1,340 (**0.879**),
 U1 direct hits 932. U1 adds 1,486 gene pairs: 128 judgeable = 50 Simiiformes-true, 29 older Compara, 47 HGNC-group, **2 wrong** (NUP50-CDH18,
 TMEM185A-HSFX1): judged precision 0.984; 1,358 unjudged (outside the Compara universe).
+**Held-out testis (ERR13885926), same script, looked at after dev:** 985 truth pairs; shipped families connect 812 (**0.824**); + U1 edges 823
+(**0.836**), direct hits 753. U1 adds 166 gene pairs: 33 judgeable = 7 Simiiformes-true, 23 older Compara, 3 HGNC-group, **0 wrong**; 133 unjudged.
+Register 1467: **edge recall rises on both samples (dev +0.072, held-out +0.012) with 2 / 0 wrong pairs among 128 / 33 judged new pairs**; the
+>= 20 judgeable added pairs bar is met on both (128, 33). What this is NOT yet: the MCL-integrated family bars (pair F, family F, pair precision,
+mainstays, protein mutual-hit) — the A119b `mcl_families` re-run needs a background job the memory watchdog stopped; testis MCL catalogs exist
+(`edgeh/mcl/`, frozen) but are judged only after dev. Frozen: `/mnt/linuxdisk/tmp/edgeh/frozen/`. Audit requested before any proposal.
