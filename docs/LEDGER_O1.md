@@ -7878,3 +7878,13 @@ direction is S8's unchanged. Same data, same back-lift alignments (`s10/`). Bars
 precision >= U, no named loss, both seeds). (b) **Amendment, fixed now:** the arm that goes to HG002 pat is URS if it passes dev, else UR
 (retro only), against U; same bars on HG002 (truth = S8 rules on HG002, `hg002g/seed{1,2}`); PASS -> propose as guided default (user decides),
 metric-auditor first.
+
+### GUIDED-S11 RESULT (2026-10-28, register 1459): URS FAILS dev on member recall by 0.0015 / 0.0006 -> per the amendment, UR goes to HG002
+Ruling (logged before the HG002 look): the one-way members of S10 were a minimap2 artefact, not biology — their templates had 18-149 genome-wide
+records but none at the seed (secondary cap -N 100 on families with > 100 copies; asymmetric search). Reciprocity was therefore re-implemented
+as the rule intends: a TARGETED pairwise lift of the hit's templates onto the seed loci (`s10/seedref.fa`, 2,302 seed bodies; CDS splice,
+bodies asm20; `-N 500 -p 0.1`; the splice run of CDS-less bodies vs the seed reference does not terminate and was replaced by the genome-wide
+splice back-lift of S10 for those genes: `recip_union.tsv` = either check). Coverage over the shorter of hit and seed.
+URS dev: seed 1 member 0.0534 (U 0.0549) pseudo 0.0919 (0.1036) precision 0.925 (0.908) revised 0.923 (0.905); seed 2 0.0555 (0.0561) /
+0.0885 (0.1031) / 0.903 (0.877) / 0.890 (0.865); one-way 104 / 86; no named loss. Member bar FAILS by 0.0015 / 0.0006 (15 / 8 true
+members still one-way); pseudogene, precision and named bars pass. Not carried to HG002.

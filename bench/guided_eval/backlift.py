@@ -13,6 +13,7 @@ import famtruth as F  # noqa: E402
 import guided3 as g3  # noqa: E402
 
 hits, meta, out, pafs = sys.argv[1], json.load(open(sys.argv[2])), sys.argv[3], sys.argv[4:]
+SEEDLEN = os.environ.get('BACKLIFT_SEEDLEN')  # GUIDED-S11: JSON {seed gene: CDS length}; coverage over the shorter of hit and seed
 G = g3.load_genes('human')
 idx = F.exon_index(G)
 want = collections.defaultdict(set)
@@ -31,10 +32,12 @@ for q, t, st, bl, qi, ti, cdsb, ident in g3.records(pafs, body_cds):
     g = C.gene_of(idx, G, t, st, bl)
     if g in want[q]:
         groups[(q, g, st)].append((qi, ti, cdsb, ident))
+seedlen = json.load(open(SEEDLEN)) if SEEDLEN else {}
 ok = set()
 for (h, s, st), rs in groups.items():
     bases, ident = g3.chain(rs, st)
-    if bases / length[h] >= g3.COV and ident >= g3.IDENT:
+    denom = min(length[h], seedlen.get(s, length[h])) if SEEDLEN else length[h]
+    if bases / denom >= g3.COV and ident >= g3.IDENT:
         ok.add((s, h))
 with open(out, 'w') as w:
     for s, h in sorted(ok):
