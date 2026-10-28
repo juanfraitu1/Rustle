@@ -7571,3 +7571,10 @@ seed 2 A 0.0371 / 0.0060 / 0.873 / 0.801; U 0.0561 / 0.1031 / 0.870 / **0.7685**
 U-only unjudged seed-2 hits (77): 36 are FAM90A26 -> FAM90A*P (own-family pseudogenes absent from the GENCODE 2-way table and missed by the name
 proxy, the same gap seen since S3), the rest AC*/AL* unnamed pseudogenes (IFITM3 -> IFITM4P/8P, MIA2 -> CTAGE11P/12P, RPL26L1 -> AL*). Across S3-S7
 the strict bar fails on pseudogenes the judges cannot reach, not on off-family protein-coding hits (2 here: ZNF582 -> ZNF781, STON1 -> STON1-GTF2A1L).
+
+## PREREG GUIDED-S8 (2026-10-27): S7 + a name-stem pseudogene judge; dev, then HG002 pat held-out
+User choice after S7. **Only change vs S7:** a named pseudogene left unassigned by the proxy AND the parent table gets base = its name minus a
+trailing `P[0-9]*`; member stem = a family member's name minus its trailing `[0-9]+[A-Z]?[0-9]*`, kept when >= 3 characters. Among families
+having a member stem that is a prefix of base, keep those with the LONGEST such stem; exactly one -> the pseudogene joins that family
+(recall + judged); several -> unjudged. Unnamed (AC*/AL*/LOC/ENSG) pseudogenes stay with the parent table only. Everything else = S7
+(parent-group truth, arms A/U, both seeds, bars). Dev re-scored on existing alignments (seeds unchanged: pseudogenes do not shape families).
