@@ -7775,3 +7775,10 @@ still falls (KB 0.333 -> 0.229, OR 0.450 -> 0.283); (3) the judge excuses Opisth
 — higher; **OR6737 0.760 (995/1310) vs 0.846 — lower by 0.09** -> by the auditor's rule the held-out row reads NOT VALIDATED. The stem check
 undercounts (NDUFA4 named two ways, HLA Gogo/Patr/HLA, ZC3H11A vs "zinc finger CCCH domain-containing protein 11B-like"), so a protein-level
 reciprocal-best-hit judge of the LOC pairs is the next thing that could settle it (not run).
+
+## PREREG LIFTMODE-GW3-RBH (2026-10-27): protein-level judge of the unjudged pairs
+Gene set = every protein-coding gene in a base pair or an XR3-added pair on either sample (1,378 genes); protein = translation of each gene's
+longest RefSeq CDS (`GGO_genomic.gff`). `mmseqs easy-search` all-vs-all (-s 7.5, --max-seqs 2000, default e-value 1e-3). For a pair (A,B):
+**mutual hit** = A's protein lists B and B's lists A (primary; family size does not cap it); **RBH** = each is the other's best non-self hit
+(secondary). Rates compared per sample: XR3-added protein-coding pairs vs base's own protein-coding pairs. Rule, fixed now: OR6737 mutual-hit rate
+of added pairs >= base's -> r1455 upgraded to HOLDS; lower -> stays NOT VALIDATED. Pairs with a pseudogene are reported separately (no protein).
