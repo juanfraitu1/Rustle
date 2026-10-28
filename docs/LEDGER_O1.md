@@ -7593,3 +7593,14 @@ members have no recall denominator and count for precision only.
 **Bars (dev human, then HG002 pat held-out, the same held-out as S8 — both pre-registered before it is looked at, separate questions):**
 M > U2 on MACRO member and MACRO pseudogene recall; judged and unjudged-as-wrong precision >= U2 - 0.02; no named mainstay/YAG family with
 fewer members than U2. PASS -> multi-template seeds proposed for guided mode and as the template rule of the de novo Liftoff mode (user decides).
+
+### GUIDED-S9 RESULT (2026-10-27, register 1449): FAIL on dev (strict precision 0.787 vs bar 0.795); HG002 NOT scored
+`bench/guided_eval/multiseed.py`, `/mnt/linuxdisk/tmp/guided_s3h/s9/`. 1,151 families, 2,302 seeded genes, 11,996 distinct isoform CDS
+templates (2,327 longest: length ties count as longest for U2). 1,024 families with >= 1 non-seeded member.
+U2 (2 members, body + longest CDS): MACRO member 0.0563, pseudo 0.1916, judged 0.889 (1194/1343), strict 0.815 (+122).
+M (2 members, body + EVERY isoform CDS): member 0.0649, pseudo 0.2283, judged 0.890 (1452/1632), strict **0.787** (+213). Named: none lower;
+NPIP 19/20 -> 20/20, TSPY pseudo 10 -> 15/34, GOLGA 7 -> 8/26 (wrong 1 -> 3), RBMY wrong 2 -> 4.
+M-only unjudged hits (91): 81 pseudogenes no judge reaches (RBMY1B -> RBMY2KP/2XP/3AP/2EP/2QP/2DP — RBMY2* pseudogenes whose stem RBMY2 is
+not a member stem; FAM86B1 -> FAM86EP/FP; DDX11 -> DDX11L5; clone-named AC*/AL*), 7 lncRNA (NSFL1C), 2 readthrough genes.
+Descriptive: two members vs one (U2 vs S8 U) roughly doubles pseudogene recall (0.10 -> 0.19); extra isoforms add +15% members, +19% pseudogenes
+at the same judged precision. The strict bar again fails on pseudogenes the truth cannot judge, not on wrong genes.
