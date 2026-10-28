@@ -7693,3 +7693,13 @@ putative copies (BED). Smoke test on the 13-family loci assembly (fib + tes, `/m
 233 loci -> 26 families, 414 putative copies. By annotation keyword the families are clean: NBPF 16 genes (+2 unnamed LOC), RBMY 11, GOLGA 6+3,
 TBC1D3 4, TSPY 4, NPIP 2, 0 mixed families. Fix on the way: `asmtpl.read_gtf` dedupes exons (the same transcript id occurs in both library GTFs).
 Not yet: genome-wide run vs the MCL catalog (prereg needed; gorilla OR6737 `asm_gap/heldout/gorilla_OR6737.good.dt.families.gtf`, 171 MB).
+
+## PREREG LIFTMODE-GW (2026-10-27): Liftoff-style de novo families genome-wide vs the MCL catalog, gorilla
+Substrate: the genome-wide assembled GTFs `rustle_figures/runs/gorilla_KB3781/gorilla_KB3781.families.gtf` (dev, fibroblast) and
+`.../gorilla_OR6737/gorilla_OR6737.families.gtf` (held-out, testis). Arms: **MCL** = the shipped `mcl_families --from-gtf` catalog of the
+same GTF (`<run>/gorilla_*.fam.copies.tsv`); **LIFT** = `liftmode.py` on the same GTF (templates = unique chains; splice + asm20 -N 100
+-p 0.1 to GGO.fasta; Liftoff chaining -a/-s 0.5; placement on a locus's exons >= 0.5 of chained bases; connected components).
+Scorer: `famtruth.py --species gorilla --levels simiiformes` (DENOVOFAM-G truth: human Compara by symbol; stated underpowered, 9/13 true
+families) + the 13 keyword families of ASMTPL as a descriptive check (members per family, mixed families). Bars per sample: LIFT pair F and
+family F >= MCL; pair precision drop <= 0.02; no mainstay/YAG regression (DENOVOFAM-G G3). PASS on dev then held-out -> liftmode proposed
+as the de novo family definition beside MCL (user decides). Putative copies reported as counts only.
