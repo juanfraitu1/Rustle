@@ -8094,3 +8094,9 @@ failed there and nothing was tuned on it); no liftmode row has touched either hu
 **Bars (dev, then testis):** pair F > base and family F > base (Simiiformes); pair precision >= base - 0.02; no mainstay/YAG regression;
 protein mutual-hit of added pairs >= base's own pairs (CAT CDS proteins of base ∪ U1 genes, mmseqs -s 7.5); >= 20 judgeable added pairs.
 PASS on testis -> propose U1 edges in the `families` stage (user decides); metric-auditor first.
+**EDGE-HUMAN, pre-MCL edge recall (the goal's quantity, measured before the MCL step because the A119b MCL re-run exceeds the foreground cap and
+the background job was stopped by the memory watchdog; `bench/denovo_eval/edgerecall.py`).** Truth = Compara Simiiformes pairs among expressed,
+judgeable CAT genes; "connected" = same shipped family, or same component once the U1 lift edges (gene-mapped) are added; U1's NEW gene pairs
+judged with the pairjudge rule. **Dev A119b:** 1,525 truth pairs; shipped families connect 1,231 (**0.807**); + U1 edges 1,340 (**0.879**),
+U1 direct hits 932. U1 adds 1,486 gene pairs: 128 judgeable = 50 Simiiformes-true, 29 older Compara, 47 HGNC-group, **2 wrong** (NUP50-CDH18,
+TMEM185A-HSFX1): judged precision 0.984; 1,358 unjudged (outside the Compara universe).
