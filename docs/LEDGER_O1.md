@@ -7963,3 +7963,23 @@ the base copies rows (locus = containing span). Scorers: famtruth Simiiformes pa
 family-size distribution and the Rand index between arms (descriptive). Stated expectation (register r851, §6n5/§6o8): little or no gain at
 the DNA level; the interesting output is the second level. Bars (dev): an arm beats MCL on BOTH pair F and family F with wrong pairs <= MCL + 2
 and no mainstay/YAG regression -> that arm goes to OR6737; otherwise FAIL and the item closes with the descriptive table.
+
+### STRAINY-A RESULT (2026-10-28, register 1463): **LPA PASSES dev and the OR6737 held-out** (audit pending); the gain is mostly loci MCL drops
+Graphs: KB3781 3,462 nodes / 4,405 edges; OR6737 3,537 / 8,854 (`mcl_families --dump-graph`, inflation 2.8, pair rule exact-mcl). Catalogs for
+every arm rebuilt from the loci GFF3 (exon unions, all graph nodes) so arms are comparable — MCL's shipped copies.tsv holds only 843 / 1,521
+loci, i.e. **MCL leaves 2,600 of 3,462 (KB) and 2,063 of 3,537 (OR) homology-connected loci out of any family** (clusters of size 1).
+Ruling: the rebuilt MCL catalog scores slightly below the shipped one (KB pair F 0.146 vs 0.195; OR 0.273 vs 0.300) because the shipped rows
+carry the representative transcript's exons; all arms use the same rebuild. Frozen: `liftgw/frozen/{kb,or}_{MCLF,LPA,CC}.full.copies.tsv`, graphs.
+| sample | arm | pair sens / prec / F | family sens / prec / F | WRONG | mainstays |
+|---|---|---|---|---|---|
+| KB dev | MCL | 0.103 / 0.250 / 0.146 | 0.250 / 0.800 / 0.381 | 4 | same |
+| KB dev | **LPA** (seed 0) | 0.241 / 0.304 / **0.269** | 0.375 / 0.800 / **0.511** | 4 | same |
+| KB dev | Louvain | 0.241 / 0.280 / 0.259 | 0.375 / 0.750 / 0.500 | 6 | same |
+| KB dev | LPA recursive | 0.241 / 0.304 / 0.269 | 0.375 / 0.800 / 0.511 | 4 | same |
+| KB dev | connected components | 0.241 / 0.280 / 0.259 | 0.375 / 0.750 / 0.500 | 6 | (ARI LPA vs CC 0.975) |
+| OR held-out | MCL | 0.225 / 0.346 / 0.273 | 0.352 / 0.950 / 0.514 | 8 | NPIP for1 |
+| OR held-out | **LPA** | 0.300 / 0.462 / **0.364** | 0.407 / 1.000 / **0.579** | **1** | NPIP for0 |
+| OR held-out | connected components | 0.400 / 0.281 / 0.330 | 0.444 / 0.774 / 0.565 | 5 | (ARI LPA vs CC 0.806; the 128-locus component is split) |
+Bars: LPA > MCL on pair F and family F on both samples, wrong <= MCL + 2, no mainstay/YAG regression -> PASS as registered, pending the
+metric-auditor. Reading: on the de novo homology graph the clustering rule matters less than MCL's habit of leaving weakly attached loci as
+singletons; LPA keeps them and, on the held-out, still splits the big component where CC does not. Louvain and LPA-recursion add nothing on dev.
