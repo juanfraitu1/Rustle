@@ -8140,6 +8140,12 @@ wrong <= base + 2, mainstays/YAGs, added-pair protein mutual-hit >= base's own, 
   floor); (4) key to `fam.loci.gff3`, `mcl_families --from-gtf ... --extra-edges`; (5) famtruth `--levels simiiformes --gtf`, pairjudge
   (`PAIRJUDGE_SPECIES=human`), protein mutual-hit (CAT CDS, mmseqs -s 7.5); bars = GW4 set; dev (slice, KB3781) before testis.
 
+## EXONSUPPORT (2026-10-28, user: "make the exons count better, based on the CIGAR"; improve the template pool before minimap2)
+Measurement first (descriptive, no bars): `bench/denovo_eval/exonsupport.py` scores every exon of every assembled transcript from the read
+CIGARs — cover = primary reads with an aligned block over the exon, skip = primary reads whose N gap spans the exon; UNSUPPORTED iff cover < 2
+(the assembler's chain floor) or skip > cover (the §6er units rule). Substrate: human slice chr20-21 (`merged_bench/human_slice/mg.families.gtf`,
+`winloci_data/A119b.t2t.bam`). Reported: share of transcripts / exons unsupported; share among the most-reads representatives (the U1 template
+pool); overlap with the intronic-terminal chains of U1-TSS. A pool rule follows only if the share is material.
 ## Column-exact shared exons: `mcl_families --shared-exon-columns` (2026-10-29, development on gorilla KB3781 fibroblast; opt-in)
 **User:** "implement a column-exact exon gate that tries to decide whether two loci share enough exon by using the existing
 aligned_runs CIGAR parser; test it with the gorilla fibroblast dataset".
