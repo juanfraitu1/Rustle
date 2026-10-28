@@ -8116,3 +8116,14 @@ connect 0.690 / 0.782. (4) 91% / 80% of new pairs are unjudged (617 rDNA RNA28S 
 retro filter) — family-level over-merges the judge cannot see. Descriptive facts that stand: held-out MCL-integrated family F +0.03, 0 new
 Simiiformes-wrong pairs, 23 older-paralogue pairs added; dev edge recall +0.072 is a connectivity number. What would change it: the A119b
 MCL re-run under the 4c5cbeb8 bars (held-out pair precision must stay >= 0.936 and pair F > 0.900 — it does not on the catalog in hand).
+
+## PREREG EDGE-HUMAN-2 (2026-10-28, user "yes" 16:05): family-calibrated identity floor for lift edges
+Motivation (from r1455 gorilla and r1467 testis audits alike): U1's precision cost is older-paralogue merges. **Rule:** a U1 lift edge A-B is
+kept only if its placement identity >= the LOWEST identity among the shipped homology edges inside A's shipped family or inside B's (whichever
+is lower; shipped edge identity = best all-vs-all PAF record identity between two members of one shipped family); if neither endpoint is in a
+shipped family (two singletons) the floor is the lowest within-family identity of the whole catalog. No number of ours. Also: the retro rule is
+re-checked on the NUP50 case before anything is scored (bug fix only if a defect is found; logged either way).
+**Dev:** gorilla KB3781 (full MCL feasible) and the human chromosome-slice run `merged_bench/human_slice/mg` (fits memory). **Held-out:** human
+testis ERR13885926 — disclosed: U1 unfiltered was scored there in r1467 (fails by 0.001 on precision); the floor rule was motivated by the gorilla
+pattern (r1455, 27 older pairs), not designed on testis. **Bars:** the GW4 set (pair F > base, family F > base, pair precision >= base - 0.02,
+wrong <= base + 2, mainstays/YAGs, added-pair protein mutual-hit >= base's own, >= 20 judgeable added pairs), dev first, then testis.
