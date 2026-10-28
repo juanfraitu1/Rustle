@@ -7642,3 +7642,11 @@ neighbours of the family loci (HERC2, ITSN2, DNM1, GOLGA2 beside GOLGA8; USP32/U
 templates carry UTR/readthrough exons of the neighbour. USP17L 0/45 in both arms (intronless array; to inspect). Held-out wrong: DAZL (DAZ
 relative), FRAT2/ZNF484 (SPATA31 neighbours). Verdict FAIL on the precision bar; the recall answer to the user's question is unambiguous:
 one representative per family finds 3/122 dev members, all unique chains find 62/122.
+
+## PREREG ASMTPL-2 (2026-10-27): family-shared exons, Liftoff per-exon scoring
+Same data, families, split, arms and bars as ASMTPL. Two changes: (1) **template = family-shared exons only**: an exon of a unique chain is kept
+when another unique chain of the same family (either library) has an exon with the same donor AND acceptor (first/last exons: the same inner
+splice site and overlapping span); mono-exonic chains are kept whole; a chain with no shared exon is dropped. Chimeric flag no longer applied
+(the shared-exon rule replaces it). (2) **Coverage counted per lifted exon** (Liftoff's feature lift): a target is found when the chained
+template exons that land on it cover >= 0.5 of the template's exon bases at identity >= 0.5 — i.e. the S3 rule applied to the trimmed template.
+R1 = the trimmed template with most reads; RK = every trimmed unique chain (identical trimmed sequences deduplicated).
