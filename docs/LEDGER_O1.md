@@ -7888,3 +7888,16 @@ splice back-lift of S10 for those genes: `recip_union.tsv` = either check). Cove
 URS dev: seed 1 member 0.0534 (U 0.0549) pseudo 0.0919 (0.1036) precision 0.925 (0.908) revised 0.923 (0.905); seed 2 0.0555 (0.0561) /
 0.0885 (0.1031) / 0.903 (0.877) / 0.890 (0.865); one-way 104 / 86; no named loss. Member bar FAILS by 0.0015 / 0.0006 (15 / 8 true
 members still one-way); pseudogene, precision and named bars pass. Not carried to HG002.
+
+### GUIDED-S11 Amendment RESULT (2026-10-28, register 1460): UR vs U on HG002 pat — FAIL (seed 1: NPIP 24 -> 17 members; member bar by 0.0002)
+HG002 pat (`/mnt/linuxdisk/tmp/hg002g/`; bodies 8 chunks asm20, CDS splice + asm20; truth 1,112 families, 9,930 pseudogenes, 11 named).
+| seed | arm | MACRO member | MACRO pseudo | judged prec | revised strict | retro (pseudo) | named |
+|---|---|---|---|---|---|---|---|
+| 1 | U | 0.0442 | 0.1008 | 0.915 | 0.907 | - | NPIP 24 |
+| 1 | UR | 0.0440 | 0.0998 | 0.925 | 0.919 | 23 (8) | **NPIP 17** |
+| 2 | U | 0.0465 | 0.0721 | 0.890 | 0.875 | - | - |
+| 2 | UR | 0.0465 | 0.0721 | 0.899 | 0.883 | 10 (3) | none lost |
+Seed 2 passes every bar; seed 1 fails the named bar (7 NPIP members binned retro: a CDS record aligned as one block across a seed junction
+onto an NPIP copy whose Ensembl HG002 model has no intron there — intron-loss copies or thinner models) and the member bar by 0.0002.
+Verdict FAIL as registered. Descriptively the retro class costs <= 0.001 recall for +0.01 precision on dev and held-out, but it mislabels
+intron-variant members of the family it matters most for. Guided default unchanged. HG002 held-out now SPENT for the retro question.
