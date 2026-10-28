@@ -289,8 +289,12 @@ def main():
     ap.add_argument('--levels', default='recent')
     ap.add_argument('--show', default='all,dev,heldout', help='halves to PRINT (the JSON always holds all): dev only while tuning')
     ap.add_argument('--species', default='human', choices=['human', 'gorilla'])
+    ap.add_argument('--ggo-gff', help='U1-FRESH: a RefSeq GFF other than mGorGor1 (e.g. Kamilah) for --species gorilla')
     ap.add_argument('--gtf', help='de novo GTF of the sample: expressed = genes with a transcript (default: genes in a family)')
     a = ap.parse_args()
+    if a.ggo_gff:
+        global GGO_GFF
+        GGO_GFF = a.ggo_gff
     global G
     G = load_cat()
     if a.species == 'gorilla':
