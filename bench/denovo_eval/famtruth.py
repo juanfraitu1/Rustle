@@ -12,6 +12,7 @@ Metrics (family_score's): pairwise sensitivity / precision / F over gene pairs; 
 share, foreign judgeable genes in those families. Halves: true families split by the SHA-1 of their smallest Ensembl ID.
 """
 import argparse
+import sys
 import collections
 import hashlib
 import json
@@ -288,7 +289,8 @@ def main():
     ap.add_argument('--paralogs', default=PARALOGS)
     ap.add_argument('--levels', default='recent')
     ap.add_argument('--show', default='all,dev,heldout', help='halves to PRINT (the JSON always holds all): dev only while tuning')
-    ap.add_argument('--species', default='human', choices=['human', 'gorilla'])
+    ap.add_argument('--species', default='human', choices=['human', 'gorilla', 'hg002'])
+    ap.add_argument('--xref', help='hg002: Ensembl rapid-release xref TSV (HGNC symbols)')
     ap.add_argument('--ggo-gff', help='U1-FRESH: a RefSeq GFF other than mGorGor1 (e.g. Kamilah) for --species gorilla')
     ap.add_argument('--gtf', help='de novo GTF of the sample: expressed = genes with a transcript (default: genes in a family)')
     a = ap.parse_args()
@@ -299,6 +301,12 @@ def main():
     G = load_cat()
     if a.species == 'gorilla':
         G = load_ggo(G)
+    elif a.species == 'hg002':  # U1-FRESH-HG002: Ensembl rapid-release GFF3 (--ggo-gff) + xref; symbols -> CAT Ensembl ids -> Compara
+        import os as _os
+        sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'guided_eval'))
+        import guided3 as _g3
+        _g3.HG002_XREF = a.xref
+        G = _g3.load_genes('hg002')
     idx = exon_index(G)
     fams, n_copies, n_mapped = load_catalog(a.copies, G, idx)
     in_fam = set().union(*fams.values()) if fams else set()
