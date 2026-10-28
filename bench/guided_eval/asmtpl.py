@@ -21,6 +21,7 @@ KEY = {'NPIP': r'nuclear pore complex[- ]interacting protein', 'TBC1D3': r'TBC1 
        'CT47': r'cancer/testis antigen 47', 'SPATA31': r'spermatogenesis-associated protein 31',
        'RBMY': r'RNA-binding motif protein, Y chromosome', 'CDY': r'testis-specific chromodomain protein Y',
        'NBPF': r'neuroblastoma breakpoint family', 'USP17L': r'ubiquitin carboxyl-terminal hydrolase 17-like'}
+SHARED = os.environ.get('ASMTPL_SHARED') == '1'
 SYM = {'NPIP': r'^NPIP', 'TBC1D3': r'^TBC1D3', 'GOLGA6': r'^GOLGA6', 'GOLGA8': r'^GOLGA8', 'TSPY': r'^TSPY', 'XAGE': r'^XAGE',
        'DAZ': r'^DAZ[0-9]', 'CT47': r'^CT47', 'SPATA31': r'^SPATA31', 'RBMY': r'^RBMY', 'CDY': r'^CDY[0-9]', 'NBPF': r'^NBPF', 'USP17L': r'^USP17L'}
 DEV = {'NPIP', 'TBC1D3', 'GOLGA6', 'GOLGA8', 'USP17L', 'NBPF'}
@@ -87,8 +88,32 @@ def prep(outdir, regions, gtfs):
     for t in chains.values():
         s0, e0 = t['exons'][0][0], t['exons'][-1][1]
         over = {g for a, b, g in span[t['chrom']] if a < e0 and b > s0 and any(x < eb and y > ea for x, y in G[g]['exons'] for ea, eb in t['exons'])}
-        t['chimeric'] = any(kw.get(g) != t['fam'] and G[g]['biotype'] == 'protein_coding' and not g3.unnamed(G[g]) for g in over)
+        t['chimeric'] = not SHARED and any(kw.get(g) != t['fam'] and G[g]['biotype'] == 'protein_coding' and not g3.unnamed(G[g]) for g in over)
         t['src'] = sorted(set(t['src']) | {g for g in over if kw.get(g) == t['fam']})
+    if SHARED:  # ASMTPL-2: keep family-shared exons only
+        sites = collections.Counter()
+        for t in chains.values():
+            for a, b in t['exons']:
+                sites[(t['fam'], t['chrom'], t['strand'], a, b)] += 1
+        inner = collections.Counter()
+        for t in chains.values():
+            ex = t['exons']
+            if len(ex) > 1:
+                inner[(t['fam'], t['chrom'], t['strand'], 'acc', ex[0][1])] += 1   # first exon: its donor side
+                inner[(t['fam'], t['chrom'], t['strand'], 'don', ex[-1][0])] += 1  # last exon: its acceptor side
+        kept = {}
+        for key, t in chains.items():
+            ex = t['exons']
+            if len(ex) == 1:
+                keep = ex
+            else:
+                keep = [e for i, e in enumerate(ex) if sites[(t['fam'], t['chrom'], t['strand'], e[0], e[1])] >= 2
+                        or (i == 0 and inner[(t['fam'], t['chrom'], t['strand'], 'acc', e[1])] >= 2)
+                        or (i == len(ex) - 1 and inner[(t['fam'], t['chrom'], t['strand'], 'don', e[0])] >= 2)]
+            if keep:
+                t = dict(t, exons=keep, len=sum(b - a for a, b in keep))
+                kept.setdefault((t['chrom'], t['strand'], tuple(keep)), t)
+        chains = kept
     C.FA = FA
     regs = [f"{t['chrom']}:{a + 1}-{b}" for t in chains.values() for a, b in t['exons']]
     sp = C.faidx(regs, f'{outdir}/ex')

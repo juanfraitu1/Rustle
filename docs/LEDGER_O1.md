@@ -7650,3 +7650,13 @@ splice site and overlapping span); mono-exonic chains are kept whole; a chain wi
 (the shared-exon rule replaces it). (2) **Coverage counted per lifted exon** (Liftoff's feature lift): a target is found when the chained
 template exons that land on it cover >= 0.5 of the template's exon bases at identity >= 0.5 — i.e. the S3 rule applied to the trimmed template.
 R1 = the trimmed template with most reads; RK = every trimmed unique chain (identical trimmed sequences deduplicated).
+
+### ASMTPL-2 RESULT (2026-10-27, register 1451): FAIL (precision unchanged, two held-out families lost)
+Shared-exon trimming: 764 -> 725 templates; CT47 and TSPY (single chains, nothing shared) have NO template -> held-out denominators shrink
+(members 56 -> 36). RK dev member 58/122, pseudo 7/24, judged precision 0.596 (R1 0.750); held-out 21/36, 12/31, 0.846 (R1 0.857).
+(An aln.sh path slip re-aligned the v1 templates once; inputs identical, v1 PAFs unchanged.)
+**Diagnosis of RK's neighbour hits (v1 PAFs, chained blocks vs the hit gene's exons):** HERC2 7/7, GOLGA2 2/2, ALG1 10/10, USP6 13/20 and DNM1 land
+MOSTLY IN INTRONS of the hit gene (a family copy nested in the host's intron, grazing one host exon: GOLGA8 in HERC2, TBC1D3 in USP6, USP17L in
+the ALG1L region) — these are copies the annotation does not name, not wrong paralogues; `gene_of` hands them to the protein-coding host.
+ITSN2 34/34, USP32 7/9, ABCA9 1/1 land on the hit gene's EXONS (real cross-hits to look at). Next (not run): judge a hit on target EXON bases
+(Liftoff lifts features onto features); intronic landings become "putative unannotated copy" — O3's tier names — rather than wrong.
