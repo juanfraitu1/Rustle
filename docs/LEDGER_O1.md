@@ -7795,3 +7795,11 @@ Unjudged-only subsets are within 0.005 of these. Pairs with a pseudogene/non-cod
 By the fixed rule (added >= base on OR6737) the held-out FAILS by 0.041 -> r1455 remains NOT VALIDATED. Descriptively: 92-94% of the LOC pairs
 the lever adds are protein-level homologues (RBH is capped by family size, so mutual hit is the fair number); the 6-8% with no mutual hit are
 the unresolved residue. The lever's recall gain is real; its added pairs are slightly less protein-supported than MCL's own on the held-out.
+**Diagnosis of the 82 unsupported added pairs (OR6737, 2026-10-27 22:50):** by locus structure 33 pairs have a locus spanning >= 2 annotated
+coding genes (NOTCH2-NBPF, ACTB-RNPC3, LARP1B-KLHL2, C8orf89-ZNF589), 5 are same-chromosome < 1 Mb, 44 other (SMG1-kinase copy pairs with the
+same description, NBPF-sortilin, "uncharacterized LOC" partners). Bridge tables of the run: only **1/82** involves a flagged F1v2 bridge
+(97 bridges, 517 bridge junctions), so the fusion-category / readthrough machinery (fusions.tsv classes, bridge regroup) does not reach them;
+40/82 are UNFLAGGED multi-gene loci (exons touching two coding genes), 41/82 single-gene loci. Added pairs involve a multi-gene locus more often
+than base pairs (OR 267/1,382 = 19% vs 339/2,832 = 12%; KB 26% vs 32%). The lever to test next is template boundaries, not bridge classes:
+templates cut to read-defined units (`mcl_families --emit-units`, units follow reads) instead of whole loci, or chains trimmed to exons the
+family's other chains also carry (ASMTPL-2's rule, which cost single-chain families). Not run.
