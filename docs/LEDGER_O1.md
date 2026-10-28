@@ -7839,3 +7839,15 @@ are judged only by the post-hoc protein rule, 6% by Compara/HGNC, 13% by nothing
 the recall gain is XR3's, inherited; (5) the GW2 pair-precision bar still fails on OR (0.450 -> 0.367); (6) KB family F depends on the
 bipartite tie policy (0.764 or 0.737). What would change it: U1 frozen as-is on a gorilla sample untouched by any GW/ASMTPL/DENOVOFAM row,
 full bar set (incl. the pair-precision bar) written first, protein set from that sample's own genes. No such sample exists on disk tonight.
+
+## PREREG GUIDED-S10 (2026-10-27): the de novo lessons carried to guided mode — retro class + reciprocity; HG002 pat held-out
+Same data, truth (S8: parent group, --hgnc-coding, parent table, stem judge), seeds and alignments as S8 on human CHM13 dev. Arms:
+**U** = S8's body ∪ CDS splice ∪ CDS asm20 (reference); **UR** = U + retro class: a hit whose chained records are all single-block, from a seed
+whose CDS has >= 1 intron, onto a gene whose annotated transcripts have introns, is binned `retro` (reported, not a member/pseudogene hit, not
+wrong); **URR** = UR + reciprocity: a hit gene G counts only if G's own body ∪ CDS templates (built and aligned the same way) lift back onto the
+seed gene at coverage >= 0.5 and identity >= 0.5 (reciprocal failures binned `one-way`, reported). Precision bars use the revised strict rule:
+unjudged protein-coding / lncRNA hits count wrong, unjudged pseudogene hits are reported only. **Bars, dev then HG002 pat (Ensembl 2022_07,
+prepared, untouched by any guided arm; truth = S8 rules on HG002 symbols + the HG002 parent table):** URR >= U on MACRO member recall and >=
+U - 0.02 on MACRO pseudogene recall (retro moves processed pseudogenes out of the hit set by design; they are reported as retro); URR judged
+precision and revised-strict precision >= U; no named mainstay/YAG family with fewer members than U; both seeds. UR reported as the
+intermediate. PASS on HG002 -> propose UR/URR as the guided default (user decides), metric-auditor first.
