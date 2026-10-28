@@ -8082,3 +8082,15 @@ only for the GUIDED retro question (r1460), never for a de novo family row. Pipe
 `splice:hq -N 50 --secondary=yes` -> assemble -> shipped MCL base -> U1 templates frozen as GW4 -> --extra-edges; famtruth Simiiformes with
 the HG002 gene set, pairjudge, protein set from HG002's own CDS; full GW4 bar set incl. pair precision >= base - 0.02 and >= 20 judgeable added
 pairs). PASS -> propose U1 edges in `families` (user decides); metric-auditor first.
+
+## PREREG EDGE-HUMAN (2026-10-28, /goal "improve edge recall based on data we already have")
+Substrate on disk: human CHM13 v2.0 de novo runs `rustle_figures/runs/human_A119b` (fibroblast, DEV) and `human_testis` (ERR13885926, HELD-OUT).
+Disclosure: the testis run was the H2 held-out of DENOVOFAM-G/L (r1435, r1441: a different edge rule, liftchain over the ungated all-vs-all; it
+failed there and nothing was tuned on it); no liftmode row has touched either human run. Truth: human Compara Simiiformes on CAT genes
+(thousands of pairs; no LOC blind spot), famtruth all genes.
+**Lever, frozen as GW4 U1:** one most-reads chain per de novo locus as template; minimap2 splice + asm20 `-N 100 -p 0.1` to CHM13; Liftoff chain
+-a/-s 0.5; placement counts on the target locus's exon bases (>= 0.5 of chained bases); reciprocal; retro-filtered; `mcl_families
+--from-gtf --extra-edges` into the shipped run (same flags, cached all-vs-all). Arm U1 vs the shipped MCL catalog (`<run>.fam.copies.tsv`).
+**Bars (dev, then testis):** pair F > base and family F > base (Simiiformes); pair precision >= base - 0.02; no mainstay/YAG regression;
+protein mutual-hit of added pairs >= base's own pairs (CAT CDS proteins of base ∪ U1 genes, mmseqs -s 7.5); >= 20 judgeable added pairs.
+PASS on testis -> propose U1 edges in the `families` stage (user decides); metric-auditor first.
