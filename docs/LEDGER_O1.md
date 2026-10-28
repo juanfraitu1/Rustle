@@ -7870,3 +7870,11 @@ were aligned spliced (back-lift of a retrocopy onto its parent needs the splice 
 stated; a length-symmetric version (coverage of the shorter) would be a new prereg. UR: precision +0.007/+0.014, member -0.0007/-0.0001,
 pseudogene -0.003/-0.001, 13/8 of the retro hits are annotated pseudogenes, the other 12/16 protein-coding genes (intron-loss copies or
 single-exon members). HG002 held-out prepared (1,112 families, 9,930 pseudogenes, 12 named seeds, CDS ATG 98.5%) and NOT scored.
+
+## PREREG GUIDED-S11 (2026-10-27): length-symmetric reciprocity (URS); then Amendment: UR/URS vs U on HG002
+(c) **URS** = UR + reciprocity where the back-lift of hit gene h onto seed s needs chained bases >= 0.5 x min(h's template length, s's CDS
+length) at identity >= 0.5 (Liftoff's -a on the SHORTER of the two, so a long member lifting onto a short seed is not penalised); the forward
+direction is S8's unchanged. Same data, same back-lift alignments (`s10/`). Bars as S10 (URS >= U on MACRO member, >= U - 0.02 pseudogene,
+precision >= U, no named loss, both seeds). (b) **Amendment, fixed now:** the arm that goes to HG002 pat is URS if it passes dev, else UR
+(retro only), against U; same bars on HG002 (truth = S8 rules on HG002, `hg002g/seed{1,2}`); PASS -> propose as guided default (user decides),
+metric-auditor first.
