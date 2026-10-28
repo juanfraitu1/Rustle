@@ -7765,3 +7765,13 @@ Bars: pair F and family F > base PASS; wrong 2 <= 1 + 2 PASS; mainstays/YAGs ide
 the same bars (pair F 0.195 -> 0.339, family F 0.455 -> 0.727, wrong 2 -> 4). Cost: ~45 min of template alignment per sample (9 chunks),
 22 s to edges, +2 min in mcl_families. Verdict: PASS, awaiting the metric-auditor; on audit PASS -> propose to the user: liftmode reciprocal
 placements (retro-filtered) as `--extra-edges` in the de novo `families` stage.
+**AUDIT of r1455 (metric-auditor, 2026-10-27 22:30): HOLDS WITH CAVEATS -> downgraded to NOT VALIDATED after the requested check.** All numbers
+reproduce to the digit; OR6737 was run after the GW3 prereg commit. Caveats: (1) 94.8% of the 1,382 pairs XR3 adds on OR6737 (92.9% of 1,006
+on KB3781) touch a LOC/non-judgeable gene and are invisible to both judges (the r1440/r1441 failure mode); (2) the bar was changed twice (GW,
+GW2 precision bar -> GW3 "wrong <= base + 2" with a judge designed after inspecting dev's false pairs); at the registered level pair precision
+still falls (KB 0.333 -> 0.229, OR 0.450 -> 0.283); (3) the judge excuses Opisthokonta-deep paralogy (tubulins, MAGEA); (4) G3 has no power
+(1 expressed mainstay member); (5) bipartite family precision is conditioned on the matching (re-denominated OR fam F 0.418 -> 0.529 still up).
+**Requested check, RefSeq description-stem agreement of the unjudged NEW pairs vs base's own unjudged pairs:** KB3781 0.812 (759/935) vs 0.690
+— higher; **OR6737 0.760 (995/1310) vs 0.846 — lower by 0.09** -> by the auditor's rule the held-out row reads NOT VALIDATED. The stem check
+undercounts (NDUFA4 named two ways, HLA Gogo/Patr/HLA, ZC3H11A vs "zinc finger CCCH domain-containing protein 11B-like"), so a protein-level
+reciprocal-best-hit judge of the LOC pairs is the next thing that could settle it (not run).
