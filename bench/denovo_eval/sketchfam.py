@@ -6,7 +6,7 @@ dozen), join two loci when they share >= --min-shared retained hashes AND contai
 connected components of that graph (>= 2 loci). No minimap2, no gate. Writes OUT.fam.copies.tsv (famtruth/pairjudge format),
 OUT.edges.tsv (a b shared containment masked_share_of_shared) and OUT.sketch.log.
 
-  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1]
+  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15]
 Needs numpy and samtools (per-chromosome fetch).
 """
 import sys, re, collections, subprocess, time
@@ -18,7 +18,7 @@ def opt(name, default, cast=float):
 GFF, FA, OUT = a[0], a[1], a[2]
 K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
 MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
-MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
+MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
 def say(*x):
@@ -173,7 +173,23 @@ with np.errstate(over='ignore'):
             for x, y, c in cedges[root]:
                 D[ix[x], ix[y]] = D[ix[y], ix[x]] = 1.0 - c
             Z = linkage(squareform(D, checks=False), method='average')
-            lab = fcluster(Z, t=1.0 - ROOTC, criterion='distance')
+            # Per-family relative cut (2026-10-29 goal "replace the global containment cut with a per-family relative cut"): nested
+            # families (NPIP, GOLGA8, KRAB-ZNF) span containment 0.2-1.0 inside one component while flat arrays sit at 0.9-1.0, so a
+            # fixed root containment splits the former and is irrelevant to the latter.
+            #   fixed:    cut at 1 - root_cont (the old behaviour)
+            #   relative: cut at containment rel_frac x the component's median edge containment, never below root_cont
+            #   gap:      cut at the largest gap between consecutive merge heights if it exceeds gap_min, else at 1 - root_cont
+            if CUT == 'relative':
+                med = float(np.median([c for _, _, c in cedges[root]])) if cedges[root] else ROOTC
+                t_cut = 1.0 - max(ROOTC, RELF * med)
+            elif CUT == 'gap':
+                h = np.sort(Z[:, 2]); h = h[h >= 0.2]; t_cut = 1.0 - ROOTC  # gaps among the deeper merges only (identical copies at 0 are not a gap)
+                if len(h) >= 2:
+                    gaps = np.diff(h); i = int(np.argmax(gaps))
+                    if gaps[i] >= GAPMIN: t_cut = min(t_cut, float((h[i] + h[i + 1]) / 2))
+            else:
+                t_cut = 1.0 - ROOTC
+            lab = fcluster(Z, t=t_cut, criterion='distance')
             groups = collections.defaultdict(list)
             for t, l in zip(m, lab): groups[l].append(t)
             for g in groups.values():
