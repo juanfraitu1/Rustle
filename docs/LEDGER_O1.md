@@ -8368,3 +8368,38 @@ it keeps the protein-confirmed edges (0.993 mutual hit on the added pairs vs 0.7
 (`edgeh/lift_misses.intron.tsv`): hit 167, no-placement 58, retro-only 45, one-way 43 (+20 with retro), no-locus 42, edge-split 32,
 both-ways-no-edge 7. Timing note for the housekeeping question: align 9 h dominates; everything after it is under 1.5 h on 72 cores.
 
+## PREREG DISPERSION (2026-10-29, user "yes lets do that"): chromosome-dispersion filter on de novo families, held-out on human A119b (CHM13 v2.0) and gorilla OR6737 testis
+**Origin (design sets: HG002 Kinnex and KB3781, both now spent for this rule).** After U1-FRESH-HG002-INTRON failed, the base's 94 pairjudge
+WRONG pairs on HG002 were traced: 82 join protein-coding genes on DIFFERENT chromosomes, concentrated in 36 families; the gated-PAF records
+inside those families are 99% soft-masked (median lowercase 1.00), 93% inter-chromosomal, identity 0.991 (young TEs), while records inside
+true families are 4% inter-chromosomal, identity 0.85. True-pair families lie on 1 (42), 2 (8) or 3 (1) chromosomes; the wrong ones on up
+to 24. A family-level count needs no external data (the mask is unusable as a rule: HG002's WindowMasker also masks SDs, 59% of true
+records). Dev numbers (Simiiformes), `bench/denovo_eval/dispersion.py` (a post-filter on `fam.copies.tsv`; sequences < 10 Mb count as one
+pseudo-chromosome "unplaced"):
+
+| set / arm | pair sens / prec / F | family F | pairjudge WRONG | true pairs lost |
+|---|---|---|---|---|
+| HG002 base | 0.353 / 0.498 / 0.413 | 0.605 | 94 | - |
+| HG002 drop >= 4 chrom | 0.347 / 0.633 / 0.448 | 0.593 | 17 | 3 |
+| HG002 drop >= 4, recluster | 0.349 / 0.627 / 0.448 | 0.600 | 19 | 2 |
+| HG002 drop >= 3, recluster | 0.347 / 0.638 / 0.449 | 0.593 | 14 | 3 |
+| KB3781 base | 0.206 / 0.341 / 0.257 | 0.500 | 12 | - |
+| KB3781 drop >= 4 chrom | 0.191 / 0.406 / 0.260 | 0.474 | 4 | 1 |
+| KB3781 drop >= 4, recluster | 0.191 / 0.406 / 0.260 | 0.474 | 4 | 1 (RABL2A/RABL2B) |
+| KB3781 drop >= 6 chrom | 0.206 / 0.400 / 0.272 | 0.500 | 6 | 0 |
+
+"recluster" = a dispersed family is split into the connected components of its intra-chromosomal gated-PAF records instead of discarded.
+The cost is real inter-chromosomal SD families (RABL2A/B, subtelomeric; 6/143 true pairs on HG002 are inter-chromosomal): family F falls
+0.005-0.026 on dev. The threshold 4 is fixed from the HG002 true-family distribution (max 3 chromosomes), not from the bars.
+**Rule, frozen: primary = drop families on >= 4 chromosomes with recluster (`--max-chrom 3 --recluster`); secondary, reported = plain drop
+at >= 4 and >= 6.** Applied to the shipped base families (`mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60
+--emit-units`, exon gate on) of each held-out, nothing else changed.
+**Held-outs, untouched by any family rule so far on Fritz:** human A119b (`reads/A119b.t2t.bam`, already aligned to CHM13 v2.0 with the
+shipped read flags; truth = CAT/Liftoff v2.0, `famtruth --species human`, `PAIRJUDGE_SPECIES=human`) and gorilla OR6737 testis
+(`reads/GGO_mm.bam` on GGO, `--species gorilla`). Base runs submitted as jobs 4394129 / 4394130 (assemble + families) before this text;
+their family tables have not been looked at. Scored once each, Simiiformes level.
+**Bars, each held-out against its own base (never pooled): pair F > base; pair precision >= base + 0.05; pairjudge WRONG <= base / 2;
+pair sens >= base - 0.02; family F >= base - 0.03; no mainstay/YAG regression (famtruth lines identical or better).** PASS on BOTH
+held-outs -> propose the filter as a default post-step of the de novo `families` stage (user decides); PASS on one -> report, opt-in tool;
+FAIL -> opt-in tool, register row. Metric-auditor on a frozen SHA1 copy before any claim. No re-tuning on the held-outs.
+
