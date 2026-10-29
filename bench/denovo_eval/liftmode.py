@@ -23,6 +23,8 @@ COV, IDENT = 0.5, 0.5
 RECIPROCAL = os.environ.get('LIFT_RECIPROCAL') == '1'  # LIFTMODE-GW2 arm R
 RETRO = os.environ.get('LIFT_RETRO') == '1'  # LIFTMODE-GW3
 MASK = os.environ.get('LIFT_MASK', '')  # LIFTMODE-GW4: 'rep' (one chain per locus) or 'shared' (locus-shared exons)
+COV_SHORTER = os.environ.get('LIFT_COV_SHORTER') == '1'  # 2026-10-29: coverage over the SHORTER of the two templates (fragment loci)
+RETRO_JUNCTION = os.environ.get('LIFT_RETRO_JUNCTION') == '1'  # 2026-10-29: retro only when ONE block spans a template junction
 
 
 def templates(gtf, fasta, outdir):
@@ -198,14 +200,18 @@ def families(outdir, pafs):
     placed = set()  # (source locus, target locus)
     edges = {}
     eident = {}
+    rep_len = {}
+    for n, t in tm.items():
+        rep_len[t['locus']] = max(rep_len.get(t['locus'], 0), t['len'])
     for (q, g, st), rs in groups.items():
         bases, ident = g3.chain(rs, st)
-        if bases / tm[q]['len'] < COV or ident < IDENT:
+        denom = min(tm[q]['len'], rep_len[g]) if COV_SHORTER and g in rep_len else tm[q]['len']
+        if bases / denom < COV or ident < IDENT:
             continue
         n_place += 1
         if g in loci:
             a, b = tm[q]['locus'], g
-            if RETRO and len(tm[q]['exons']) > 1 and spliced_locus[b] and (nblk[(q, g, st)] == 1 or spans_j[(q, g, st)]):
+            if RETRO and len(tm[q]['exons']) > 1 and spliced_locus[b] and (spans_j[(q, g, st)] or (nblk[(q, g, st)] == 1 and not RETRO_JUNCTION)):
                 n_retro += 1  # GW3: a spliced template landing intronless inside a spliced locus = processed copy, not a family edge
                 retro.append((a, b))
                 continue
@@ -224,6 +230,9 @@ def families(outdir, pafs):
                 w.write(f'{a}\t{b}\t{wt:.6f}\t{eident[(a, b)]:.6f}\n')
     with open(f'{outdir}/retro.tsv', 'w') as w:
         for a, b in sorted(set(retro)):
+            w.write(f'{a}\t{b}\n')
+    with open(f'{outdir}/placed.tsv', 'w') as w:  # every one-way placement that passed COV/IDENT (diagnosis of reciprocity)
+        for a, b in sorted(placed):
             w.write(f'{a}\t{b}\n')
     comp = collections.defaultdict(set)
     for g in loci:

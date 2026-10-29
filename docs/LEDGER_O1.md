@@ -8265,3 +8265,52 @@ ZNF230, ...), ZC3H11A/B, RBMX/RBMXL1 (1/9; a retrocopy against a spliced gene) a
 `--shared-exon-union` idea) is weaker at every threshold (at 0.6: 8 true, 0 wrong, 75 unjudged). Not proposed as a flag: the gain (8 true
 pairs) rides on 207 unjudged LOC pairs per threshold step, and the one lever that would be defensible (an exon rule above 0.7 AND a not-
 overlapping-loci condition) is the self-hit rule of register 1369 extended to off-diagonal records, which is a separate question.
+
+### Lift edges, development after the EDGE-HUMAN-2 failure (2026-10-29, Fritz; user: "find a way to improve the edges, ideas from the ThesisVault"); NOT a result, nothing held out
+**Where U1 loses the 30 Simiiformes pairs it misses on KB3781 (`bench/denovo_eval/lift_misses.py`, `edgeh/lift_misses.tsv`; liftmode now
+also writes `placed.tsv`):** one-way placement 12 (+2 also retro-binned) — the reciprocity rule; no placement at Liftoff -a/-s 0.5 8
+(APOL1/APOL4, APOL2/APOL4, BIVM/ERCC5, IGFL2/IGFL3, STEAP1/STEAP1B, ZNF195/ZNF429, ZNF225/ZNF284, ZNF678/ZNF682); edge given but MCL kept
+the loci apart 4 (ZNF443/563, ZNF486/506, ZNF761/860, ZNF860/888); retro-binned only 2 (NAT1/NAT2: single coding exon + a differing UTR
+exon, binned by the `nblk == 1` clause; UTP14A/UTP14C: a real retrogene, binned by design); AGAP6 has no locus 1; placed both ways by
+different fragment loci 1. Most one-way pairs involve a fragment locus (ZNF860 x2, ZNF429, ZNF587: Liftoff coverage is over the QUERY
+template, so the long template never covers >= 0.5 of itself on the fragment).
+**What the vault offers for an edge (Topics/O1, Terminology, SegDups; paper notes):** (1) Bailey 2002 / SEDEF (Yoo 2025 Supp. XXI): a
+segmental duplication = >= 1 kb at >= 90% identity of GENOMIC sequence, "edge evidence of paralogy for young copies" (Terminology,
+2026-10-07): exons of old paralogues stay alignable under purifying selection, introns and flanks do not; (2) Makova 2024 / Pal 2026 /
+Yoo 2025 (Canzar lab): blastp >= 50% identity over >= 35% length, transitive closure, with the "ampliconic" cut (97%) justified by a
+breakpoint in the identity distribution rather than chosen; (3) Dishuck 2025 (NPIP) and Guitart 2024 (TBC1D3): paralogue identity is
+phylogenetic (monophyletic clades, or paralogous variation < 1.5x allelic variation), not synteny; (4) Soto 2025: exons linked when
+non-self mappings cover > 99% of the exon, plus famCN agreement (a cover, pseudogene-heavy; the standing critique); (5) Deschamps 2020:
+pair score = alignment length / sequence length x identity, i.e. the coverage x identity weight liftmode already uses; (6) Yoo 2025 Note
+VIII: read-bundle Jaccard > 0.8 as an edge (near-identical copies only; the advisor's read-Jaccard proposal was refuted earlier as a
+replacement). Of these, (1) is the one that addresses the measured failure (older paralogues), and the gated all-vs-all already holds the
+evidence: `bench/denovo_eval/edge_dna.py` splits each pair's aligned columns into exon-exon, mixed and intron-intron.
+**U1's 554 edges by placement identity and verdict** (`edgeh/edge_dna.tsv`): true / older / HGNC edges are indistinguishable by identity
+(0.75-0.88 for all three, the chr19 KRAB-ZNF cluster) and by coverage; the ancient pairs (TUBB2A/TUBB4B, TUBB8/TUBB4B, DDX3X/DDX3Y,
+KDM6A/UTY, ACTB/ACTG1, PCDHB2/PCDHB11) have no PAF record or < 200 intron-intron columns, the Simiiformes pairs have thousands.
+| intron-intron columns >= | edges kept | true | older | HGNC | PAR | wrong | unjudged (LOC) |
+|---|---|---|---|---|---|---|---|
+| (no filter) | 554 | 24 | 31 | 42 | 3 | 0 | 453 |
+| 1 | 378 | 20 | 18 | 24 | 3 | 0 | 312 |
+| 500 | 332 | 18 | 10 | 20 | 3 | 0 | 280 |
+| 1000 | 273 | 18 | 8 | 18 | 3 | 0 | 225 |
+| 2000 | 234 | 15 | 4 | 9 | 3 | 0 | 202 |
+| SD rule (one record >= 1 kb intron-intron at >= 0.90) | 134 | 1 | 2 | 0 | 3 | 0 | 134 |
+The true edges without intron homology: GLUD1/GLUD2 (a retrogene: no intron), ZNF888/ZNF860, ZNF761/ZNF860 (fragment locus), ZNF563/
+ZNF443, ZNF92/ZNF675, ZNF747/ZNF764. The literal SD rule is far too strict for Simiiformes-age pairs (0.75-0.88 identity).
+**Four variants, all on dev, all post hoc** (`kbu1{c,r,cr,dna}.*`; MCL on the cached all-vs-all; GW4 bar set at Simiiformes):
+| arm | pair sens / prec / F (hit/true, pred) | family F | WRONG | older / HGNC | added coding, mutual hit |
+|---|---|---|---|---|---|
+| base | 0.206 / 0.341 / 0.257 (14/68, 41) | 0.500 | 12 | 4 / 7 | own 0.880 |
+| U1 | 0.559 / 0.297 / 0.388 (38/68, 128) | 0.613 | 12 | 27 / 47 | 324, 0.988 |
+| U1 + coverage over the shorter template (`LIFT_COV_SHORTER=1`) | 0.632 / 0.261 / 0.369 (43/68, 165) | 0.639 | **16** | 42 / 60 | 471, 0.960 |
+| U1 + retro only when a block spans a junction (`LIFT_RETRO_JUNCTION=1`) | 0.559 / 0.297 / 0.388 (38/68, 128) | 0.613 | 12 | 27 / 47 | 331, 0.976 |
+| **U1 + intron homology >= 500 columns in the gated PAF** | 0.500 / **0.358** / **0.417** (34/68, 95) | 0.585 | 12 | 12 / 33 | 135, 0.978 |
+Coverage-over-shorter rescues 5 true pairs and admits 4 wrong ones (AGAP5/TIMM23, AGAP5/TIMM23B: one locus spanning two genes; KIF15/PPIA:
+a PPIA retrocopy inside KIF15; ...), fails wrong <= base + 2. The junction-only retro rule changes no judged pair (NAT1/NAT2 moves from
+retro to one-way). **The intron-homology filter is the only arm that clears every GW4 bar on dev including pair precision (0.358 >= 0.321),
+and it is the vault's SD argument in its weakest form (any shared non-exonic DNA, not >= 1 kb at >= 90%).** It is post hoc (threshold 500
+read off this table; 1 to 1000 behave alike, 2000+ costs true pairs) and dev-only; by the GW4 audit rule it needs a pre-registration with
+the threshold frozen and a sample no lift row has touched (U1-FRESH-HG002 above is the registered candidate; HG002 Kinnex reads are
+arriving on Fritz). Not run: a phylogenetic edge (3), a breakpoint-derived identity cut (2; U1's identities are bimodal, 0.75-0.85 and
+>= 0.95, but the upper mode is 219/224 LOC pairs that no judge sees), read-sharing edges (6).
