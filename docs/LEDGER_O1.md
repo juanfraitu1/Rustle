@@ -8710,3 +8710,13 @@ false pairs on each gorilla set, A119b 0.777 -> 0.767): the overlapping families
 the "families" column reports duplicates instead. Mainstay gaps that remain on A119b: NPIP 15-18/20 (pieces, see diagnosis),
 GOLGA8 9-11/13, GOLGA6L 4/10 (fragments), SPATA31 4/8 (A vs D subfamilies), RBMY 5/6. The base is ahead of the sketch on NPIP and
 GOLGA8 (alignment links repeat-rich pieces); the sketch is ahead on unrelated foreign (0 vs 2) and pair precision.
+
+### HYBRID sketch + base alignment edges, development (2026-10-30): FAIL on the gorilla dev sets, not run on A119b
+`bench/denovo_eval/hybrid.py`: union of the sketch edges and the families-stage PAF alignments (identity >= 0.8, matches / shorter
+exonic length >= 0.5), same UPGMA cut. KB3781 coding P / R: 0.006 / 0.324 (all alignments), 0.036 / 0.412 (same chromosome only),
+0.009 / 0.265 (identity >= 0.9); OR6737 0.011 / 0.511, 0.058 / 0.466, 0.016 / 0.307. 15,000-20,000 alignment pairs pass against
+2,000-4,000 sketch edges. Cause: the loci PAF aligns the UNSPLICED locus spans (the loci .fa carries introns), so intronic repeats
+produce alignments whose matches exceed half of the shorter locus's exonic length; the base's own gate (mcl_families: coverage on
+the LONGER sequence over the exon-union length, identity, min-cov-shorter) is what makes those alignments usable, and this script
+does not reproduce it. A faithful hybrid must take the base's gated edges (mcl_families `<out>.pairs.tsv`, within-cluster only) or
+re-run the base gate, not the raw PAF. Not pursued further; the A119b hybrid run was stopped.
