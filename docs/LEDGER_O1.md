@@ -8426,3 +8426,30 @@ reads on the HG002 paternal assembly, base pair F 0.41 vs 0.78 here). The filter
 outlier that deserves its own diagnosis (assembly masking or Kinnex library, not the family rules); (2) the auditor's bar note: a +0.05
 absolute precision bar is unreachable from a 0.81 base, so a future precision rule should be registered with a relative bar on WRONG.
 
+## PREREG SKETCHFAM (2026-10-29, user "lets try the sketch"): exon-only FracMinHash families instead of the minimap2 all-vs-all, held-out on A119b (CHM13) and OR6737 testis
+**Method (`bench/denovo_eval/sketchfam.py`, PENDING 1c in LEDGER_GENERAL).** Nodes = the base run's de novo loci (`<p>.fam.loci.gff3`, the
+same set the shipped MCL sees). For each locus: canonical k-mers of its EXON sequences only (k-mers never cross an exon boundary), k = 21,
+FracMinHash with scale 20 (splitmix64 of the 2-bit code, keep hash < 2^64/20). High-copy removal: every hash present in > 20 loci is
+discarded (TE k-mers: on KB3781 223 hashes sat in up to 1,076 loci). Edge = two loci share >= 5 retained hashes AND containment
+(shared / smaller sketch) >= 0.2, EXCLUDING pairs whose loci overlap on the same sequence (the base's reject_overlapping: on dev 360/366
+wrong edges were antisense/nested overlapping loci). Families = connected components with >= 2 loci. No minimap2, no exon gate, no MCL.
+Wall: 70 s on KB3781 (17,460 loci), ~3 min on HG002 (41,796), one core.
+**Development (both sets spent): grid k in {15, 21}, max-loci in {20, 50, 200}, min-cont in {0.2, 0.5}, with/without overlap rejection,
+with/without soft-mask exclusion.** Soft-mask exclusion changed nothing (wrong edges were not repeats). k = 15 raises recall further
+(KB3781 sens 0.382) but precision collapses (0.098). Chosen: k 21, scale 20, max-loci 20, min-shared 5, min-cont 0.2, overlap rejected.
+
+| dev set, arm (Simiiformes) | pair sens / prec / F | family F | pairjudge WRONG |
+|---|---|---|---|
+| HG002 base (shipped MCL) | 0.353 / 0.498 / 0.413 | 0.605 | 94 |
+| HG002 sketch | 0.457 / 0.566 / 0.505 | 0.690 | 108 |
+| KB3781 base | 0.206 / 0.341 / 0.257 | 0.500 | 12 |
+| KB3781 sketch | 0.294 / 0.290 / 0.292 | 0.646 | 25 |
+
+**Held-outs: A119b testis on CHM13 v2.0 and OR6737 testis on GGO, base runs from PREREG DISPERSION (`~/runs/human_A119b/a1.*`,
+`~/runs/gorilla_OR6737/or.*`). Disclosure: both were scored once for the dispersion rule (r1470); no sketch parameter was chosen with
+them, and their loci, PAFs and family tables have not been opened for this method.** Scored once, as above, Simiiformes.
+**Bars, each held-out vs its own base: pair F > base; family F > base; pair sens >= base + 0.05; pair precision >= base - 0.05;
+pairjudge WRONG <= 2 x base; no mainstay/YAG regression; sketch wall < 10 min on one core.** PASS on both -> propose the sketch as
+the de novo `families` graph builder (the minimap2 all-vs-all + exon gate become opt-in; MCL on the sketch graph is a follow-up arm);
+PASS on one -> report, opt-in tool; FAIL -> opt-in, register. Metric-auditor on frozen SHA1 copies before any claim; no re-tuning.
+
