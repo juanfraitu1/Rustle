@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import famtruth as F  # noqa: E402
 
-HGNC = '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.txt'
+HGNC = os.environ.get('DENOVO_HGNC', '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.txt')
 
 
 def main(paths):

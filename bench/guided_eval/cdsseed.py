@@ -26,7 +26,7 @@ CODON = {a + b + c: aa for (a, b, c), aa in zip(
 CIG = re.compile(r'(\d+)([MIDNSHP=X])')
 
 
-HGNC = '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.txt'
+HGNC = os.environ.get('DENOVO_HGNC', '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.txt')
 
 
 def hgnc_groups():

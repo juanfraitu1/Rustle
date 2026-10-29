@@ -42,6 +42,7 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--levels', default='recent')
     ap.add_argument('--graph', help='mcl_families --dump-graph TSV: a pair with an edge between its loci is mcl_split')
+    ap.add_argument('--species', default='human', choices=['human', 'gorilla'], help='gorilla: RefSeq genes by symbol (famtruth.load_ggo)')
     a = ap.parse_args()
     rep = {}
     for line in open(a.prefix + '.loci.tsv'):
@@ -54,6 +55,8 @@ def main():
             edges.add((x, y))
             edges.add((y, x))
     G = F.load_cat()
+    if a.species == 'gorilla':
+        G = F.load_ggo(G)
     idx = F.exon_index(G)
     loci = {}  # name -> (chrom, start0, strand, local exon blocks)
     cur = None

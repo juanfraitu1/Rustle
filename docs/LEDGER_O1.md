@@ -8208,3 +8208,60 @@ arrangement: recent pair F 0.400 -> 0.415, family F 0.902 = 0.902.)
 **Driver fix on the way (same day):** `copy_assign` writes `PREFIX.families.gtf` a few ms before `PREFIX.gtf`, and on a filesystem with
 sub-second mtimes (NFS on Fritz) `fam_gtf_guard`'s `-ot` then refused the families stage; `stage_assemble` now stamps the families GTF
 with `PREFIX.gtf`'s mtime.
+
+### EDGE-HUMAN-2 RESULT, dev KB3781 (2026-10-29, Fritz; register 1469): **FAIL at dev on the pair-precision bar; the floor removes true edges, not older ones**
+Run dir `~/runs/gorilla_KB3781/edgeh/` on Fritz (scripts in `bench/denovo_eval/`: `liftfloor.py` floors + filter, `protjudge.py` the GW3-RBH
+mutual-hit judge re-implemented, `edge_verdicts.py` per-edge truth readout; `pairjudge.py`/`cdsseed.py` read `DENOVO_HGNC`). Substrate = the
+KB3781 fibroblast de novo assembly of the column-exact row above (17,460 loci; base `kb.fam`: 280 families / 812 copies).
+**Pipeline, as registered.** Templates: one most-reads chain per locus (17,460, 61.1 Mb), `minimap2 -c -x splice|asm20 -N 100 -p 0.1
+--secondary=yes` to GGO (166 s / 127 s at 36 threads, 36 / 18 GB). `liftmode.py families` with `LIFT_MASK=rep LIFT_RETRO=1 LIFT_RECIPROCAL=1`
+(the retro rule as fixed on 2026-10-28): 32,266 placements, 3,869 retro, **554 reciprocal edges** (placement identity 0.55-0.75: 37, 0.75-0.85:
+218, 0.85-0.95: 75, >= 0.95: 224). Floors from the shipped families and the gated all-vs-all (`kb.floors.json`): 280/280 families have a PAF
+pair; floor median **0.980**, q1 0.933, global (lowest) **0.729**. The floor keeps 392 edges, drops 162. `mcl_families --from-gtf --extra-edges`
+on the cached gated PAF (identical to the base's): U1 +331 edges / 164 raised / 161 new nodes -> 346 families, 985 copies; floor +197 / 151 /
+147 -> 347 families, 971 copies.
+| arm (KB3781 dev, Simiiformes) | pair sens / prec / F | family sens / prec / F | WRONG (pairjudge) | older / HGNC / PAR | added coding pairs | protein mutual-hit of added |
+|---|---|---|---|---|---|---|
+| base | 0.206 / 0.341 / 0.257 (14/68, 41) | 0.345 / 0.906 / 0.500 | 12 | 4 / 7 / 4 | - | (own pairs 0.880, 526/598) |
+| U1 (no floor) | 0.559 / 0.297 / **0.388** (38/68, 128) | 0.500 / 0.792 / **0.613** | **12** (none added) | 27 / 47 / 4 | 324 | **0.988** (320/324) |
+| U1 + family floor | 0.353 / 0.282 / 0.314 (24/68, 85) | 0.452 / 0.826 / 0.585 | **12** (none added) | 22 / 23 / 4 | 179 | 0.978 (175/179) |
+Recent level: base 0.367 / 0.268 / 0.310 (family F 0.623); U1 0.633 / 0.148 / 0.241 (0.602); floor 0.467 / 0.165 / 0.243 (0.634).
+**Bars (GW4 set).** pair F > base: both pass. family F > base: both pass. **pair precision >= base - 0.02 (0.321): U1 0.297 FAIL, floor 0.282
+FAIL.** wrong <= base + 2: both pass (U1 adds no pairjudge-wrong pair at all; the 12 are the base's own: the ACADSB/ATPSCKMT/PRCP/RAPH1
+weld, CHAMP1/TUBB8, GSTM2/ZNF717, ...). added-pair mutual-hit >= base's own: both pass. >= 20 judgeable added pairs: 87 / 44, pass.
+Mainstays/YAGs: no expressed member in fibroblast (no power). **Verdict: FAIL at dev; the human testis held-out is not spent.**
+**Why the floor fails (per-edge verdicts, `edgeh/edge_verdicts.txt`).** Of U1's 554 edges: 24 true (12 recent + 12 Simiiformes), 31 older,
+42 HGNC, 3 PAR, **0 wrong**, 453 unjudged (LOC). The floor drops **12 of the 24 true edges** (ZNF701/ZNF888 0.813 < 0.859, ZNF506/ZNF486
+0.840 < 0.858, ZNF701/ZNF468 0.851 < 0.898, ZNF595/ZNF141 0.818 < 0.876, the chr19 KRAB-ZNF cluster pairs at 0.69-0.85 against the floors
+0.859-0.862 of MCL41/MCL65/MCL254) and 38 of the 73 older/HGNC edges. A shipped family's floor is its own tightness (median 0.98: most
+shipped families are near-identical tandem/segmental copies), so a lift edge at 0.81-0.85 onto such a family is rejected whatever its age,
+while an older pair whose placement identity happens to exceed the floor passes. The rule does not separate age from family tightness;
+it is a worse version of a flat identity threshold. The precision cost of U1 on this sample is **not wrong pairs** (0 added) but Compara-
+older and HGNC pairs (74 of the 90 judged non-true added pairs): real paralogues outside the Simiiformes universe. No further floor variant
+is proposed; a different precision bar is the user's call, not a lever to tune.
+**Other state.** Reciprocal U1 edges here are 554 against GW4's 1,730 on the laptop's KB3781 assembly: the 2026-10-28 retro fix (one block
+covering >= 0.5 of the template across a junction) now bins 3,869 placements as retro. mmseqs 18.8cc5c on 596 proteins (longest RefSeq
+CDS, own translation), 9,190 hits, `-s 7.5 --max-seqs 2000 -e 1e-3`. Human data on Fritz tonight: `HG002_kinnex.t2t.bam` and `A119b.t2t.bam`
+in transfer; the registered held-out (testis ERR13885926) is not on the cluster.
+
+### Per-exon shared-exon rule, measurement on KB3781 (2026-10-29; descriptive, no bars; `bench/denovo_eval/exon_rules.py` + `exon_rule_judge.py`)
+Question from the miss diagnosis above (42 of 53 Simiiformes misses are `low_shared`): would counting EXONS instead of bases rescue them? Rule
+measured: over the pair's records at identity >= 0.70, an exon of the SMALLER locus is "joined" when >= 0.5 of its bases sit in exon-to-exon
+CIGAR columns (the column machinery; union over records); `exon_frac` = joined exons / exons of the smaller locus. Readout = pairs with
+column fraction < 0.60 (not in the column arm) that the exon rule would add, judged like pairjudge (`exon_rule_judge.txt`):
+| exon_frac >= | added pairs | true recent / Simiiformes | older | HGNC | WRONG | same gene (overlapping loci) | unjudged (LOC) |
+|---|---|---|---|---|---|---|---|
+| 0.5 | 1,039 | 9 / 8 | 27 | 26 | 53 | 189 | 727 |
+| 0.6 | 375 | 6 / 3 | 7 | 9 | 8 | 15 | 327 |
+| 0.7 | 239 | 5 / 3 | 4 | 8 | 1 | 11 | 207 |
+| 0.8 | 143 | 1 / 2 | 1 | 3 | 0 | 9 | 127 |
+For scale, the column arm's own set (column >= 0.60, 4,328 pairs): 14 / 7 true, 23 older, 21 HGNC, 19 PAR, 84 wrong, 2,067 same-gene, 2,093
+unjudged. At 0.7 the rule rescues ZNF595/ZNF141 (4/4 exons), GLUD1/GLUD2 (1/1), STEAP1/STEAP1B (4/5), ZNF701/ZNF888, APOBEC3C/F, APOBEC3C/D
+(3/4), TIMM23/TIMM23B and APOL1/APOL2 (5/7) for one wrong pair (ZNF79/RPL12: overlapping loci on one contig at identity 1.0) and 207 LOC
+pairs nobody judges. The 53 wrong pairs at 0.5 are almost all that same class (two genes on one stretch of DNA, identity 1.0: CDK4/TSPAN31,
+GNG5/RPF1, NDUFB2/BRAF, ...; only NOCT/REXO2 0.871, AP5Z1/SLC37A3 0.818 and ACADSB/PRCP 0.864 are dispersed). Not rescued by any variant: the
+KRAB-ZNF pairs whose records cover part of the single zinc-finger exon only (0/4 exons: ZNF680/ZNF92, ZNF273/ZNF430, ZNF92/ZNF675, ZNF155/
+ZNF230, ...), ZC3H11A/B, RBMX/RBMXL1 (1/9; a retrocopy against a spliced gene) and UTP14A/C (2/15). The union-of-columns fraction (the
+`--shared-exon-union` idea) is weaker at every threshold (at 0.6: 8 true, 0 wrong, 75 unjudged). Not proposed as a flag: the gain (8 true
+pairs) rides on 207 unjudged LOC pairs per threshold step, and the one lever that would be defensible (an exon rule above 0.7 AND a not-
+overlapping-loci condition) is the self-hit rule of register 1369 extended to off-diagonal records, which is a separate question.

@@ -152,7 +152,7 @@ samtools faidx <genome>.fa <contig> > chrN.fa && samtools faidx chrN.fa
 ## DENOVOFAM truth files, re-downloaded on Fritz (2026-10-29)
 
 `bench/denovo_eval/famtruth.py` reads them from the laptop paths unless `DENOVO_CAT_GFF`, `DENOVO_CAT_TSV`, `DENOVO_PARALOGS`
-and `DENOVO_GGO_GFF` are set. On Fritz they live in `~/data/denovo_eval/`:
+and `DENOVO_GGO_GFF` are set (plus `DENOVO_HGNC` for the HGNC gene groups). On Fritz they live in `~/data/denovo_eval/`:
 
 | file | source | note |
 |---|---|---|
@@ -160,3 +160,4 @@ and `DENOVO_GGO_GFF` are set. On Fritz they live in `~/data/denovo_eval/`:
 | `chm13v2.0_CAT_Liftoff.genes.tsv` | the cluster bundle (`rustle_data/annotation/`) | unchanged |
 | `paralogs.tsv` | Ensembl BioMart, release 116, dataset `hsapiens_gene_ensembl`, attributes `ensembl_gene_id`, `hsapiens_paralog_ensembl_gene`, `hsapiens_paralog_orthology_type`, `hsapiens_paralog_subtype`, one query per chromosome (`~/data/denovo_eval/fetch_paralogs.sh`) | the laptop export (3.3M rows) was an earlier release; row counts may differ |
 | `GGO_genomic.gff` | the bundle's `GGO_genomic.gff.gz`, decompressed | |
+| `hgnc_complete_set.txt` | `https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt` (2026-10-29) | `pairjudge.py`, `cdsseed.py` and `exon_rule_judge.py` read it from `DENOVO_HGNC` (laptop default `/mnt/linuxdisk/tmp/hgnc/`) |
