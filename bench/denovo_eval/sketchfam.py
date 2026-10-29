@@ -6,7 +6,7 @@ dozen), join two loci when they share >= --min-shared retained hashes AND contai
 connected components of that graph (>= 2 loci). No minimap2, no gate. Writes OUT.fam.copies.tsv (famtruth/pairjudge format),
 OUT.edges.tsv (a b shared containment masked_share_of_shared) and OUT.sketch.log.
 
-  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15] [--weak-cont 0.1 --intron-cont 0.2 --intron-min-hashes 10] [--merge-overlap]
+  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15] [--weak-cont 0.1 --intron-cont 0.2 --intron-min-hashes 10] [--merge-overlap] [--metric containment|jaccard]
 Needs numpy and samtools (per-chromosome fetch).
 """
 import sys, re, collections, subprocess, time
@@ -18,7 +18,7 @@ def opt(name, default, cast=float):
 GFF, FA, OUT = a[0], a[1], a[2]
 K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
 MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
-MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); MERGE = '--merge-overlap' in a; UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
+MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); MERGE = '--merge-overlap' in a; METRIC = a[a.index('--metric') + 1] if '--metric' in a else 'containment'; UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
 def say(*x):
@@ -70,9 +70,9 @@ def mix(h):  # splitmix64 finaliser
     h = (h ^ (h >> np.uint64(30))) * np.uint64(0xbf58476d1ce4e5b9)
     h = (h ^ (h >> np.uint64(27))) * np.uint64(0x94d049bb133111eb)
     return h ^ (h >> np.uint64(31))
-def sketch(seq_u8, low):
-    """FracMinHash of the canonical k-mers of one 2-bit array (k-mers with N dropped); returns (hashes, masked flag per hash:
-    k-mer touches a soft-masked base). With --unmasked-only masked k-mers are dropped."""
+def kmer_hashes(seq_u8, low):
+    """Per k-mer START position of one 2-bit array: splitmix hash of the canonical k-mer (0 where the k-mer has an N, or is
+    soft-masked under --unmasked-only), and the masked flag (k-mer touches a soft-masked base). Chromosome-wide, once."""
     n = len(seq_u8) - K + 1
     if n <= 0: return np.empty(0, dtype=np.uint64), np.empty(0, dtype=bool)
     codes = seq_u8.astype(np.uint64)
@@ -83,11 +83,28 @@ def sketch(seq_u8, low):
         fwd = (fwd << np.uint64(2)) | (w & np.uint64(3))
         rev |= ((np.uint64(3) - (w & np.uint64(3))) << np.uint64(2 * j))
     if UNMASKED: bad |= msk
-    canon = np.minimum(fwd, rev)[~bad]; msk = msk[~bad]
-    h = mix(canon); keep = h < THRESH
-    h, msk = h[keep], msk[keep]
+    h = mix(np.minimum(fwd, rev)); h[bad] = np.uint64(0); h[h >= THRESH] = np.uint64(0)  # 0 = not in the sketch
+    return h, msk
+SEP = np.full(K - 1, 4, dtype=np.uint8); SEPL = np.zeros(K - 1, dtype=bool)
+def sketch_pieces(arr, lowarr, ranges):
+    """FracMinHash of the k-mers inside each [s, e) piece, ONE numpy pass per locus: the pieces are concatenated with K-1 N's
+    between them, so every k-mer crossing a piece boundary contains an N and is dropped. Only the pieces' bp are hashed."""
+    ranges = [(s0, e) for s0, e in ranges if e - s0 >= K]
+    if not ranges: return np.empty(0, dtype=np.uint64), np.empty(0, dtype=bool)
+    parts = []; lows = []
+    for s0, e in ranges: parts += [arr[s0:e], SEP]; lows += [lowarr[s0:e], SEPL]
+    h, m = kmer_hashes(np.concatenate(parts[:-1]), np.concatenate(lows[:-1]))
+    nz = h != 0; h, m = h[nz], m[nz]
     u, first = np.unique(h, return_index=True)
-    return u, msk[first]
+    return u, m[first]
+def sketch_ranges(hpos, mpos, ranges):
+    """FracMinHash of the k-mers fully inside the given [s, e) ranges (k-mers never cross a range boundary): gather the
+    chromosome-wide hashes at positions s .. e-K, drop zeros, unique."""
+    idx = np.concatenate([np.arange(s0, e - K + 1) for s0, e in ranges if e - s0 >= K]) if ranges else np.empty(0, dtype=np.int64)
+    if len(idx) == 0: return np.empty(0, dtype=np.uint64), np.empty(0, dtype=bool)
+    h = hpos[idx]; m = mpos[idx]; nz = h != 0; h, m = h[nz], m[nz]
+    u, first = np.unique(h, return_index=True)
+    return u, m[first]
 
 with np.errstate(over='ignore'):
     by_chrom = collections.defaultdict(list)
@@ -98,23 +115,18 @@ with np.errstate(over='ignore'):
         seq = ''.join(seq.split('\n')[1:]).encode()
         raw = np.frombuffer(seq, dtype=np.uint8); arr = LUT[raw]; lowarr = LOW[raw]
         for tid in tids:
-            # k-mers must not cross exon boundaries: sketch each exon, union
-            hs = [sketch(arr[s0:e], lowarr[s0:e]) for s0, e in sorted(exons[tid]) if e - s0 >= K]
-            if hs:
-                h = np.concatenate([x[0] for x in hs]); m = np.concatenate([x[1] for x in hs])
-                u, first = np.unique(h, return_index=True); sk[tid] = u; masked[tid] = m[first]
-            else:
-                sk[tid] = np.empty(0, dtype=np.uint64); masked[tid] = np.empty(0, dtype=bool)
+            # hash the LOCUS SPAN once (chromosome-wide hashing is too slow and memory-heavy on 3 Gb), then gather each exon's
+            # range: k-mers never cross an exon boundary
+            ex = sorted(exons[tid])
+            if not ex: sk[tid] = np.empty(0, dtype=np.uint64); masked[tid] = np.empty(0, dtype=bool); continue
+            sk[tid], masked[tid] = sketch_pieces(arr, lowarr, ex)
             if WEAKC:
                 # UNSPLICED signal (2026-10-29 user "could there be a method for unspliced and one for spliced?"): sketch of the
                 # unmasked intron k-mers (gaps between consecutive exons); a WEAK exon edge (containment in [weak_cont, min_cont))
                 # is accepted only when the two loci's intron sketches share >= intron_cont (young segmental duplicates copy their
                 # introns; old paralogs and unrelated adjacent genes do not).
-                ex = sorted(exons[tid]); hs = []
-                for (s0, e0), (s1, e1) in zip(ex, ex[1:]):
-                    if s1 - e0 >= K:
-                        h, m = sketch(arr[e0:s1], lowarr[e0:s1]); hs.append(h[~m])
-                isk[tid] = np.unique(np.concatenate(hs)) if hs else np.empty(0, dtype=np.uint64)
+                h, m = sketch_pieces(arr, lowarr, [(e0, s1) for (s0, e0), (s1, e1) in zip(ex, ex[1:]) if s1 - e0 >= K])
+                isk[tid] = h[~m]
     say(f"sketched {len(sk)} loci, mean hashes/locus {np.mean([len(v) for v in sk.values()]):.1f}, empty {sum(1 for v in sk.values() if len(v)==0)}")
     # high-copy removal: by locus count (--max-loci) and/or by CHROMOSOME DISPERSION (--max-chrom, r1471 lesson: a 46-copy array on
     # one chromosome is a family; a hash on 8 chromosomes is a TE). Sequences < --min-chrom-bp count as one 'unplaced' chromosome.
@@ -134,25 +146,33 @@ with np.errstate(over='ignore'):
         hot2 = uh2[nchrom > MAXC]
         say(f"hashes on > {MAXC} chromosomes: {len(hot2)} (max {nchrom.max()})")
         hot = np.union1d(hot, hot2)
-    hotset = set(hot.tolist())
-    for tid in sk:
-        v = sk[tid]
-        if len(v):
-            keep = ~np.isin(v, hot); sk[tid] = v[keep]; masked[tid] = masked[tid][keep]
+    if len(hot):
+        order = [t for t in sk if len(sk[t])]; allv = np.concatenate([sk[t] for t in order]); keep = ~np.isin(allv, hot)
+        off = 0
+        for t in order:
+            n = len(sk[t]); k = keep[off:off + n]; sk[t] = sk[t][k]; masked[t] = masked[t][k]; off += n
     say(f"masked share of retained hashes {np.mean(np.concatenate([masked[t] for t in sk if len(masked[t])])):.2f}")
-    mset = {t: set(sk[t][masked[t]].tolist()) for t in sk}
-    # inverted index -> pair counts
-    index = collections.defaultdict(list)
-    for tid, v in sk.items():
-        for h in v.tolist(): index[h].append(tid)
+    # pair counts, VECTORISED (2026-10-30, user "lets do it" on speed: the Python inverted-index loop took > 1 h on 76k human loci at
+    # scale 10). Exact, same pairs and counts as the loop: sort (hash, locus) rows, emit every within-hash pair by group size.
+    tids = sorted(sk); tix = {t: i for i, t in enumerate(tids)}
+    H = np.concatenate([sk[t] for t in tids]); L = np.concatenate([np.full(len(sk[t]), tix[t], dtype=np.int64) for t in tids])
+    M = np.concatenate([masked[t] for t in tids])
+    o = np.lexsort((L, H)); H, L, M = H[o], L[o], M[o]
+    starts = np.flatnonzero(np.r_[True, H[1:] != H[:-1]]); sizes = np.diff(np.r_[starts, len(H)])
+    keys = []; mflag = []
+    for sz in np.unique(sizes[sizes >= 2]):
+        st = starts[sizes == sz]
+        ii, jj = np.triu_indices(sz, 1)
+        a = (st[:, None] + ii[None, :]).ravel(); b = (st[:, None] + jj[None, :]).ravel()
+        keys.append(L[a] * len(tids) + L[b]); mflag.append(M[a] | M[b])
     pair = collections.Counter(); pairm = collections.Counter()
-    for h, ts in index.items():
-        if len(ts) < 2: continue
-        ts.sort()
-        for i in range(len(ts)):
-            for j in range(i + 1, len(ts)):
-                pair[(ts[i], ts[j])] += 1
-                if h in mset[ts[i]] or h in mset[ts[j]]: pairm[(ts[i], ts[j])] += 1
+    if keys:
+        keys = np.concatenate(keys); mflag = np.concatenate(mflag)
+        uk, inv, cnt = np.unique(keys, return_inverse=True, return_counts=True)
+        mcnt = np.bincount(inv, weights=mflag).astype(np.int64)
+        for k, n, mc in zip(uk.tolist(), cnt.tolist(), mcnt.tolist()):
+            p = (tids[k // len(tids)], tids[k % len(tids)]); pair[p] = n
+            if mc: pairm[p] = mc
     span = {t: (loci[t][0], min(s0 for s0, _ in exons[t]), max(e for _, e in exons[t])) for t in sk}
     def overlapping(x, y):
         a, b = span[x], span[y]
@@ -162,7 +182,7 @@ with np.errstate(over='ignore'):
         if n < MINS: continue
         if not OVERLAP_OK and overlapping(x, y):  # the base's reject_overlapping: antisense / nested loci share k-mers, not ancestry
             n_overlap += 1; continue
-        c = n / max(1, min(len(sk[x]), len(sk[y])))
+        c = n / max(1, min(len(sk[x]), len(sk[y]))) if METRIC == 'containment' else n / max(1, len(sk[x]) + len(sk[y]) - n)  # jaccard (2026-10-30, user: guided mode, full-length templates)
         if c >= MINC: edges.append((x, y, n, c, pairm[(x, y)] / n))
         elif WEAKC and c >= WEAKC:
             ix, iy = isk.get(x), isk.get(y)

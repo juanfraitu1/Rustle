@@ -8720,3 +8720,36 @@ produce alignments whose matches exceed half of the shorter locus's exonic lengt
 the LONGER sequence over the exon-union length, identity, min-cov-shorter) is what makes those alignments usable, and this script
 does not reproduce it. A faithful hybrid must take the base's gated edges (mcl_families `<out>.pairs.tsv`, within-cluster only) or
 re-run the base gate, not the raw PAF. Not pursued further; the A119b hybrid run was stopped.
+
+### GUIDED-MODE SKETCH, Jaccard vs containment (2026-10-30, user "what if we tried jaccard in guided mode?")
+Templates = the 64,213 CHM13 annotated genes themselves (spliced exon unions; 20,067 coding, 17,578 lncRNA, 13,887 pseudogenes),
+`sketchfam.py --metric jaccard|containment`, k 17 scale 20 cap 3 tree r0.15; scored on the genes expressed in A119b so the numbers
+compare with the de novo arms (`~/runs/guided_sketch/g.*`):
+
+| metric, floor | coding P / R (false, of which related) | mainstays recalled / 123 | NPIP | TBC1D3 | GOLGA8 | RBMY | unrelated foreign |
+|---|---|---|---|---|---|---|---|
+| containment 0.2 | 0.273 / 0.735 (4,273, 4,001 related) | 107 | 20/20 | 9/9 | 7/13 (7 fams) | 6/6 | 0 |
+| jaccard 0.1 | 0.260 / 0.584 | 97 | 8/20 | 9/9 | 9/13 | 6/6 | 0 |
+| jaccard 0.15 | 0.256 / 0.567 | 93 | 8/20 | 9/9 | 5/13 | 6/6 | 0 |
+| jaccard 0.2 | 0.260 / 0.558 | 93 | 8/20 | 9/9 | 5/13 | 6/6 | 0 |
+
+Jaccard loses on every readout: it penalises length differences, and NPIP copies differ in length (8/20 vs 20/20). Guided
+containment reaches de novo-base recall (0.735 vs 0.741) with NPIP and RBMY complete and zero unrelated foreign genes, but its
+"precision" is 0.27 because 94% of its false pairs are real paralogs older than Simiiformes: on the full annotation every family
+is multi-layered, and the Simiiformes bar scores the older layers as false. GOLGA8 splits into 7 families (containment 0.2-0.4
+between sub-groups, as on A119b). Verdict: Jaccard no; guided containment is a sound mainstay catalogue (107/123, 0 unrelated) and
+the right place to define families when an annotation exists, with the truth level, not the metric, deciding the precision number.
+
+### SPEED (2026-10-30, user "lets do it", on LSH): exact vectorised pair counting instead of LSH
+LSH banding would be approximate (misses low-containment pairs). The slow step (Python loop over the inverted index, > 1 h on
+76k A119b loci at scale 10) is replaced by an exact numpy enumeration (sort (hash, locus), emit within-hash pairs by group size,
+np.unique counts); the per-locus sketching is replaced by one chromosome-wide k-mer hash pass with exon-range gathers, and the
+hot-hash removal by one np.isin. Edge files byte-identical on KB3781 (md5 ac346131...), scores identical. KB3781 wall: pair
+counting 1 s (was the bulk), whole run see below.
+A119b check of the cuts (2026-10-30, `~/runs/human_A119b/a1cut.*`, k 17 scale 10 cap 3; coding P / R; NPIP largest family /
+families; GOLGA8 largest): fixed r0.15 c0.2 0.777 / 0.644, NPIP 12 / 6, GOLGA8 9; gap 0.25 c0.15 0.761 / 0.693, NPIP 16 / 5,
+GOLGA8 10; relative 0.6 c0.15 0.755 / 0.621, NPIP 9 / 11. Unlike gorilla, the GAP cut helps on human (+0.05 recall, NPIP 12 -> 16,
+GOLGA8 9 -> 10 for -0.016 precision), the relative cut hurts. Human nested families do show a merge-height gap; gorilla's do not.
+KB3781 (17,460 loci) wall: 106 s before -> 45 s after (sketching 37 s = samtools faidx of 26 sequences + one numpy pass per
+locus over its exons joined by K-1 N's; hot-hash removal 1 s; pair counting < 1 s); with intron rescue 100 s. Edges byte-identical
+(md5 ac346131... / 223bc57f...). The A119b runs that took > 1.5 h in pair enumeration were killed and relaunched.
