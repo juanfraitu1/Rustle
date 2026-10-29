@@ -8403,3 +8403,26 @@ pair sens >= base - 0.02; family F >= base - 0.03; no mainstay/YAG regression (f
 held-outs -> propose the filter as a default post-step of the de novo `families` stage (user decides); PASS on one -> report, opt-in tool;
 FAIL -> opt-in tool, register row. Metric-auditor on a frozen SHA1 copy before any claim. No re-tuning on the held-outs.
 
+### RESULT DISPERSION (2026-10-29, Fritz; register 1470): **FAIL on both held-outs; the TE-glued families that motivated the rule are an HG002 phenomenon, not a general one**
+Held-out base runs: A119b testis on CHM13 v2.0 (job 4394129, assemble 48 min + families 5 min; 1,565 clusters, 7,987 members) and
+OR6737 testis on GGO (job 4394219, 9 min; 446 clusters). Scored once each as registered; frozen SHA1 copies in `audit/`; metric-auditor
+reproduced every number and the family/copy bookkeeping, mainstay/YAG lines byte-identical across arms.
+
+| held-out, arm (Simiiformes) | hit/true \| pred | sens | prec | pair F | family F | WRONG |
+|---|---|---|---|---|---|---|
+| A119b base | 1811/2395 \| 2228 | 0.756 | 0.813 | 0.783 | 0.754 | 87 |
+| A119b drop >= 4, recluster (primary) | 1793/2395 \| 2189 | 0.749 | 0.819 | 0.782 | 0.751 | 67 |
+| A119b drop >= 4 | 1788/2395 \| 2179 | 0.747 | 0.821 | 0.782 | 0.751 | 65 |
+| A119b drop >= 6 | 1811/2395 \| 2205 | 0.756 | 0.821 | 0.787 | 0.754 | 65 |
+| OR6737 base | 21/88 \| 49 | 0.239 | 0.429 | 0.307 | 0.497 | 5 |
+| OR6737 all three arms (identical) | 20/88 \| 46 | 0.227 | 0.435 | 0.299 | 0.471 | 3 |
+
+Primary arm misses pair F, the +0.05 precision bar and the WRONG <= base/2 bar on both; sens, family F and mainstays/YAGs pass. The
+secondary >= 6 arm on A119b is the only one that gains pair F (+0.004, no true pair lost) and still misses precision and WRONG. **Outcome
+as registered: `dispersion.py` stays an opt-in tool.** Why it failed: the base on A119b/CHM13 already has precision 0.81 with 87 wrong
+pairs in 2,228 (4%), and OR6737 has 5 wrong pairs; the 94-wrong-pair, 17-chromosome TE families were specific to the HG002 run (Kinnex
+reads on the HG002 paternal assembly, base pair F 0.41 vs 0.78 here). The filter removed 20-22 wrong pairs on A119b at the cost of
+18-23 true pairs (inter-chromosomal SD families, as the dev note predicted). Two things worth keeping: (1) the HG002 base is an
+outlier that deserves its own diagnosis (assembly masking or Kinnex library, not the family rules); (2) the auditor's bar note: a +0.05
+absolute precision bar is unreachable from a 0.81 base, so a future precision rule should be registered with a relative bar on WRONG.
+
