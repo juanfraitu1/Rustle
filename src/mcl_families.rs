@@ -364,6 +364,16 @@ struct Args {
     /// chain of which reaches the fraction).
     #[arg(long, default_value_t = false)]
     shared_exon_union: bool,
+    /// COLUMN-EXACT shared exons (2026-10-29, opt-in): the exon-to-exon evidence of a record is the number of its aligned
+    /// CIGAR columns (`cg:Z:`) that join an exon base of one locus to an exon base of the other, walked with the
+    /// container's `aligned_runs` parser, instead of `min(exon bases inside the record's query span, exon bases inside
+    /// its target span)`. The interval rule lets a record whose query exons align onto the target's introns (and the
+    /// target's exons onto the query's introns) pass `--min-shared-exon-frac`; the column rule does not. Column counts
+    /// never exceed the interval counts, so the exon gate stays on and exact. Needs minimap2 `-c` records (the
+    /// families stage's own); a record without a usable `cg:Z:` tag fails the run. Combines with `--shared-exon-union`
+    /// (the union of the exon-to-exon column stretches). Default off: byte-identical.
+    #[arg(long, default_value_t = false)]
+    shared_exon_columns: bool,
 
     /// ⭐ A gene/pseudogene record with NO exon children counts as one exon spanning the record (§6ey). RefSeq
     /// (CHM13) leaves 160 of 747 records in Soto's neighbourhoods without exon features (NF1P, CNTNAP3P, PMS2P
@@ -1354,6 +1364,7 @@ fn main() -> Result<()> {
         exonic_both_sides: args.exonic_both_sides,
         min_shared_exon_frac: args.min_shared_exon_frac,
         shared_exon_union: args.shared_exon_union,
+        shared_exon_columns: args.shared_exon_columns,
     };
 
     let blocks = match &args.gff {
@@ -1479,9 +1490,26 @@ fn main() -> Result<()> {
     }
     if p.min_shared_exon_frac > 0.0 {
         eprintln!(
-            "[mcl_families] min-shared-exon-frac={}: {} pair(s) dropped for sharing too small a fraction of exons",
-            p.min_shared_exon_frac, g.rejected_low_shared_exon
+            "[mcl_families] min-shared-exon-frac={}: {} pair(s) dropped for sharing too small a fraction of exons{}",
+            p.min_shared_exon_frac,
+            g.rejected_low_shared_exon,
+            if p.shared_exon_columns { " (column-exact: exon-to-exon CIGAR columns)" } else { "" }
         );
+    }
+    if p.shared_exon_columns {
+        if p.min_exonic_bp == 0 || !(p.exonic_both_sides || p.min_shared_exon_frac > 0.0) {
+            eprintln!(
+                "[mcl_families] WARNING: --shared-exon-columns is inert without --min-exonic-bp 1 and both-sided exonic \
+                 evidence (--min-shared-exon-frac > 0 or --exonic-both-sides)"
+            );
+        }
+        if g.no_cigar_records > 0 {
+            anyhow::bail!(
+                "--shared-exon-columns: {} PAF record(s) carry no cg:Z: tag (or one that does not span the record), so \
+                 their exon-to-exon columns cannot be counted; the all-vs-all must be minimap2 -c output",
+                g.no_cigar_records
+            );
+        }
     }
     if p.reject_overlapping {
         eprintln!(
@@ -2841,6 +2869,9 @@ fn main() -> Result<()> {
     // PREREG DENOVOFAM opt-in arms: rows only when on, so a default run's params.tsv is unchanged
     if args.shared_exon_union {
         writeln!(ph, "shared_exon_union\ttrue")?;
+    }
+    if args.shared_exon_columns {
+        writeln!(ph, "shared_exon_columns\ttrue")?;
     }
     if let Some(path) = &args.extra_edges {
         writeln!(ph, "extra_edges\t{path}")?;

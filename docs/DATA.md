@@ -148,3 +148,15 @@ Built under `/mnt/linuxdisk/home/juanfraitu/bakeoff/`, one directory per chromos
 samtools view -@3 -b <library>.bam <contig> -o chrN.bam && samtools index chrN.bam
 samtools faidx <genome>.fa <contig> > chrN.fa && samtools faidx chrN.fa
 ```
+
+## DENOVOFAM truth files, re-downloaded on Fritz (2026-10-29)
+
+`bench/denovo_eval/famtruth.py` reads them from the laptop paths unless `DENOVO_CAT_GFF`, `DENOVO_CAT_TSV`, `DENOVO_PARALOGS`
+and `DENOVO_GGO_GFF` are set. On Fritz they live in `~/data/denovo_eval/`:
+
+| file | source | note |
+|---|---|---|
+| `chm13v2.0_gencode.genes.gff3` | `s3://human-pangenomics/T2T/CHM13/assemblies/annotation/chm13.draft_v2.0.gene_annotation.gff3` (4.0 GB), gene lines only | the loader reads only `gene` lines (`gene_id`, `source_gene`, `collapsed_gene_ids`) |
+| `chm13v2.0_CAT_Liftoff.genes.tsv` | the cluster bundle (`rustle_data/annotation/`) | unchanged |
+| `paralogs.tsv` | Ensembl BioMart, release 116, dataset `hsapiens_gene_ensembl`, attributes `ensembl_gene_id`, `hsapiens_paralog_ensembl_gene`, `hsapiens_paralog_orthology_type`, `hsapiens_paralog_subtype`, one query per chromosome (`~/data/denovo_eval/fetch_paralogs.sh`) | the laptop export (3.3M rows) was an earlier release; row counts may differ |
+| `GGO_genomic.gff` | the bundle's `GGO_genomic.gff.gz`, decompressed | |

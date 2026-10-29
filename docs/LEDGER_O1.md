@@ -8139,3 +8139,59 @@ wrong <= base + 2, mainstays/YAGs, added-pair protein mutual-hit >= base's own, 
   families with `LIFT_MASK=rep LIFT_RETRO=1 LIFT_RECIPROCAL=1`; (3) drop edges with identity < floor(family(A), family(B)) (two singletons: global
   floor); (4) key to `fam.loci.gff3`, `mcl_families --from-gtf ... --extra-edges`; (5) famtruth `--levels simiiformes --gtf`, pairjudge
   (`PAIRJUDGE_SPECIES=human`), protein mutual-hit (CAT CDS, mmseqs -s 7.5); bars = GW4 set; dev (slice, KB3781) before testis.
+
+## Column-exact shared exons: `mcl_families --shared-exon-columns` (2026-10-29, development on gorilla KB3781 fibroblast; opt-in)
+**User:** "implement a column-exact exon gate that tries to decide whether two loci share enough exon by using the existing
+aligned_runs CIGAR parser; test it with the gorilla fibroblast dataset".
+**What the shipped rule measures.** A record's exon-to-exon evidence is `min(exon bases of q inside the record's query span, exon bases
+of t inside its target span)`, maxed over the pair's records, divided by the smaller locus's exon length (`--min-shared-exon-frac 0.60`).
+The two sides are counted separately, so a record whose query exons lie on the target's introns and whose target exons lie on the query's
+introns passes.
+**The column rule (new, `GraphParams::shared_exon_columns`).** The evidence is the number of the record's aligned CIGAR columns (`cg:Z:`,
+M/=/X) that join an exon base of q to an exon base of t, walked with `family_container::aligned_runs` / `exon_columns` (the container's
+parser, now shared by the graph). Everything else (the fraction, the both-sides floor, `--shared-exon-union` as the union of the column
+stretches) is unchanged. A column count never exceeds the interval count, so the exon gate (`minimap2-gate`) stays on and exact; a record
+without a usable `cg:Z:` tag is counted (`no_cigar_records`) and fails the run. Default off: byte-identical (full suite 1,176 lib + every
+binary and integration test pass; 3 new tests: exons on introns rejected, a deletion and the `-` strand followed, union and missing CIGAR).
+**Substrate.** KB3781 fibroblast FLNC on GCF_029281585.2 (`reads/GCA_029281585.2_flnc_mm.bam`), assembled on Fritz with the shipped
+driver (`tools/rustle_pipeline.sh assemble`, seed pool good, f1v2): 72,474 transcripts, 17,460 loci; families stage with the gate6
+binary, 36 threads, 83 s end to end; the column arm replays the cached gated PAF (`bench/denovo_eval/compare_arms.py` and
+`shared_exon_rules.py` are the two readouts; run dir `~/runs/gorilla_KB3781` on Fritz).
+| | baseline (interval rule) | `--shared-exon-columns` |
+|---|---|---|
+| graph nodes / edges | 3,427 / 4,336 | 3,317 / 4,135 |
+| pairs dropped: no exonic evidence / low shared fraction | 16,260 / 2,321 | 16,295 / 2,489 |
+| families (>= 2 copies) / copies | 280 / 812 | 283 / 802 |
+| co-clustered locus pairs (exact coordinates) | 1,709 | 1,625 (1,590 shared; Jaccard 0.91) |
+**Per pair, recomputed from the gated PAF (`shared_exon_rules.py`):** 24,395 locus pairs carry records; 4,327 pass both rules at 0.60;
+**470 pass the interval rule only; 0 pass the column rule only.** Of the 470: **352 are overlapping loci on one contig, all at identity
+>= 0.99, 347 sharing a RefSeq gene name** (one transcription unit's DNA aligned onto itself with exons on introns: the shared-DNA edge the
+self-hit rule of register 1369 does not reach when the records are not on the diagonal or the loci share no exon base); 8 are same-contig
+pairs within 100 kb (ZNF780A/ZNF780B among them: on their best record, identity 0.73, column 0.595 against interval 0.614, a real paralogue pair lost at the threshold; its other records add 0.29 + 0.11 + 0.10 of further exon-to-exon columns, so `--shared-exon-union` would keep it); 110 are
+dispersed, 191 of the 470 have a column fraction < 0.10 (interval 0.7-1.0: the exon layouts do not line up along the alignment).
+**Family-level reading (names from the RefSeq GFF).** Dissolved: MCL54 (C7H8orf33, SURF6, PPP1R15A, LOC129527512: four unrelated genes),
+MCL119 (NOM1 vs LOC101124243), MCL127 (PDZK1/CD160 vs LOC101128637), MCL253 (ZNF780A/B, the loss above), MCL274 (two pseudogenes at
+0.38). Split: MCL10 (the six 8-exon chr1 LOC tandem copies keep their family; LOC129531982 and PLA2G4B/LOC129527105 leave), MCL19, MCL22,
+MCL14 (the chr16 LOC/snoRNA loci into two by position), MCL56 (AGAP6/TIMM23B/PARG locus off its LOC copies at column 0.00). Unchanged:
+MCL0 (34 copies, the largest), MCL11 (STX18, ENTPD1, ACADSB, PRCP, RAPH1, ALG11, ATPSCKMT: unrelated genes whose exons DO align to each
+other, so the column rule cannot separate them; it even gains TTC7A). New: MCL59 (four chr16 LOC loci the baseline had folded into
+overlapping loci of a larger cluster). 35 co-clustered pairs exist only in the column arm; all but MCL59's six are representative shifts of
+the same loci after a fold change (1,015 of the baseline's 1,077 multi-record loci keep the same record set).
+**Scored against the DENOVOFAM-G truth (same day, after re-downloading the truth files to Fritz: T2T `chm13.draft_v2.0.gene_annotation.gff3`
+gene lines, BioMart release 116 paralogues, 3.55M rows; `docs/DATA.md`).** `famtruth.py score --species gorilla --gtf kb.families.gtf`,
+expressed = genes with a transcript (11,082 judgeable), the registered arrangement; the baseline reproduces register 1436's KB3781 numbers
+to within the catalog's own drift (0.310 / 0.623 here against 0.320 / 0.625 there: 17,460 loci against 17,608, a newer Compara release).
+| level | baseline pair sens / prec / F (hit/true \| pred) | column-exact | family F |
+|---|---|---|---|
+| recent | 0.367 / 0.268 / 0.310 (11/30 \| 41) | 0.367 / **0.282** / **0.319** (11/30 \| 39) | 0.623 = 0.623 |
+| Simiiformes (DENOVOFAM-G's primary) | 0.206 / 0.341 / 0.257 (14/68 \| 41) | 0.206 / **0.359** / **0.262** (14/68 \| 39) | 0.500 = 0.500 |
+| Primates | 0.135 / 0.341 / 0.193 | 0.135 / 0.359 / 0.196 | 0.446 = 0.446 |
+Reading: the column rule removes 2 of the 41 judgeable predicted pairs, both wrong, and keeps every true pair at every level; family F is
+unchanged; mainstays and YAGs are unchanged (none has >= 2 expressed members in this library). ZNF780A/ZNF780B, the one named pair it
+loses, is an `other_paralog` at Bilateria in Compara, outside every judged level. The truth is as underpowered as register 1436 said (23
+recent true families, 30 true pairs), so this is a development result consistent with a precision gain and no recall cost, not a
+held-out verdict; the rule stays opt-in. **Status: development.** (Same scorer with expressed = genes in a family, the non-registered
+arrangement: recent pair F 0.400 -> 0.415, family F 0.902 = 0.902.)
+**Driver fix on the way (same day):** `copy_assign` writes `PREFIX.families.gtf` a few ms before `PREFIX.gtf`, and on a filesystem with
+sub-second mtimes (NFS on Fritz) `fam_gtf_guard`'s `-ot` then refused the families stage; `stage_assemble` now stamps the families GTF
+with `PREFIX.gtf`'s mtime.

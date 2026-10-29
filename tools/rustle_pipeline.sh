@@ -506,6 +506,9 @@ stage_assemble() {
   if [ "$SEED_POOL" = good ] && grep -qE 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log"; then
     echo "[rustle_pipeline] --seed-pool good: copy_assign did not apply the best-AS table ($(grep -m1 -E 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log" | cut -c1-300)); the assembly is not the good pool: delete $table and $table.asbin, then run again (an absent table is rebuilt; see $OUT.assemble.log)" >&2; exit 3
   fi
+  # copy_assign writes PREFIX.families.gtf a few ms BEFORE PREFIX.gtf; on a filesystem with sub-second mtimes fam_gtf_guard's
+  # `-ot` then calls it older (seen on NFS, 2026-10-29). Stamp it with PREFIX.gtf's mtime: same assembly, same age.
+  [ "$FAM_GTF" = "$OUT.gtf" ] || [ ! -s "$FAM_GTF" ] || touch -r "$OUT.gtf" "$FAM_GTF"
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
   if [ "$BRIDGE_MODE" = f1units ]; then
     say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts cut into $(awk -F'\t' '$3=="transcript"' "$FAM_GTF" | grep -c 'fusion_unit "') units in the families input $FAM_GTF ($OUT.bridge_units.tsv)"

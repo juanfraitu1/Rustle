@@ -22,9 +22,12 @@ import sys
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-CAT_GFF = '/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_gencode.gff3'
-CAT_TSV = '/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_CAT_Liftoff.genes.tsv'
-PARALOGS = '/mnt/linuxdisk/tmp/denovo_eval/paralogs.tsv'
+# The truth files, overridable by environment for a machine other than the one the work was done on (Fritz, 2026-10-29: the T2T
+# `chm13.draft_v2.0.gene_annotation.gff3` gene lines, the bundle's genes.tsv, a BioMart export of release 116, see docs/DATA.md):
+import os as _os
+CAT_GFF = _os.environ.get('DENOVO_CAT_GFF', '/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_gencode.gff3')
+CAT_TSV = _os.environ.get('DENOVO_CAT_TSV', '/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_CAT_Liftoff.genes.tsv')
+PARALOGS = _os.environ.get('DENOVO_PARALOGS', '/mnt/linuxdisk/tmp/denovo_eval/paralogs.tsv')
 LEVELS = {
     'recent': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini'],
     'simiiformes': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini', 'Simiiformes'],
@@ -65,7 +68,7 @@ def load_cat():
     return genes
 
 
-GGO_GFF = '/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff'
+GGO_GFF = _os.environ.get('DENOVO_GGO_GFF', '/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff')
 
 
 def load_ggo(human):

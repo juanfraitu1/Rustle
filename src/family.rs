@@ -60109,6 +60109,7 @@ pub mod fam_from_gtf {
         //!
         //! **STATUS:** OTHER-BINARY  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
+        use super::family_container::exon_columns;
         use std::collections::{BTreeMap, BTreeSet};
 
         /// Admission thresholds for an edge of the homology graph. Defaults are the values every measurement in
@@ -60211,6 +60212,16 @@ pub mod fam_from_gtf {
             /// LYZL1/2, APOL3/4) is then judged on all of it. Only exon-to-exon bases count (r302/r1097 unioned SPAN
             /// coverage and admitted Alu stubs). Default off: the best-record rule, byte-identical.
             pub shared_exon_union: bool,
+            /// COLUMN-EXACT shared exons (2026-10-29): a record's exon-to-exon evidence is the number of its aligned
+            /// CIGAR columns (`cg:Z:`, M/=/X) that join an exon base of the query locus to an exon base of the target
+            /// locus, walked with the container's `aligned_runs` / `exon_columns`. The interval rule above counts the
+            /// exon bases inside the record's query span and inside its target span separately and takes the min, so a
+            /// record whose query exons land on the target's introns (and vice versa) passes it; the column rule does
+            /// not. Column counts never exceed the interval counts, so the exon gate (`minimap2-gate`) stays exact.
+            /// Under `shared_exon_union` the union is taken over the exon-to-exon column stretches themselves (min of
+            /// the two sides). A record without a usable `cg:Z:` tag carries no exon-to-exon evidence and is counted in
+            /// [`HomologyGraph::no_cigar_records`]. Default off: byte-identical.
+            pub shared_exon_columns: bool,
         }
 
         impl Default for GraphParams {
@@ -60227,6 +60238,7 @@ pub mod fam_from_gtf {
                     min_exonic_bp: 0,
                     min_shared_exon_frac: 0.0,
                     shared_exon_union: false,
+                    shared_exon_columns: false,
                 }
             }
         }
@@ -60266,6 +60278,10 @@ pub mod fam_from_gtf {
             /// Pairs dropped by `min_shared_exon_frac` — some exonic evidence existed, but on the best record it
             /// covered too small a fraction of the smaller gene. Reported, never silent.
             pub rejected_low_shared_exon: usize,
+            /// Under `shared_exon_columns`: PAF records with no `cg:Z:` tag, or one that does not span the record, so
+            /// their exon-to-exon columns could not be counted (they carry no exon-to-exon evidence). Reported, never
+            /// silent; `mcl_families` refuses a run where this is not 0.
+            pub no_cigar_records: usize,
             /// ⭐ §6x4: pairs admitted ONLY by the containment escape (`min_cov_shorter`), i.e. `cov_longer` failed
             /// and `cov_shorter` passed. Always 0 when the escape is off. Reported, never silent.
             pub admitted_by_containment: usize,
@@ -60676,6 +60692,8 @@ pub mod fam_from_gtf {
                 exonic: Option<u64>,
                 blocks: Option<&'a Vec<(u64, u64)>>,
                 strand: Option<char>,
+                /// `shared_exon_columns` only: the exon blocks merged, as the sorted `(starts, ends)` the column walk takes
+                cols: Option<(Vec<i64>, Vec<i64>)>,
             }
             let mut reps: Vec<&GeneKey> = match loci {
                 Some(l) => keys.iter().map(|k| l.representative(k)).collect(),
@@ -60691,6 +60709,14 @@ pub mod fam_from_gtf {
                     exonic: exonic_len.get(k).copied(),
                     blocks: exon_blocks.get(k),
                     strand: strands.and_then(|st| st.get(k).copied()),
+                    cols: if p.shared_exon_columns {
+                        exon_blocks.get(k).map(|b| {
+                            let m = merge_intervals(b.clone());
+                            (m.iter().map(|&(s0, _)| s0 as i64).collect(), m.iter().map(|&(_, e0)| e0 as i64).collect())
+                        })
+                    } else {
+                        None
+                    },
                 })
                 .collect();
             let same_unit = |a: &Info, b: &Info| -> bool {
@@ -60708,7 +60734,20 @@ pub mod fam_from_gtf {
                 SameLocus,
                 Overlapping,
                 SelfHit,
-                Deferred { k: (u32, u32), a: (u64, u64), b: (u64, u64), nm: u64, bl: u64, ee: u64, both: bool, miss: [Option<u32>; 2] },
+                // `aee` / `bee`: the a / b intervals this record adds to the pair's shared-exon UNION (empty unless
+                // `shared_exon_union`); `no_cigar`: under `shared_exon_columns`, the record had no usable `cg:Z:` tag
+                Deferred {
+                    k: (u32, u32),
+                    a: (u64, u64),
+                    b: (u64, u64),
+                    nm: u64,
+                    bl: u64,
+                    ee: u64,
+                    aee: Vec<(u64, u64)>,
+                    bee: Vec<(u64, u64)>,
+                    no_cigar: bool,
+                    miss: [Option<u32>; 2],
+                },
                 Direct { qi: u32, ti: u32, w: Option<(f64, f64)>, miss: [Option<u32>; 2] },
             }
             let deferred = p.exonic_overlap || p.min_exonic_bp > 0;
@@ -60772,18 +60811,68 @@ pub mod fam_from_gtf {
                 if deferred {
                     // Defer: bank this record's intervals on each side and decide once the pair is complete.
                     // exon-to-exon: THIS record's interval must touch exon bases on both sides; the pair keeps its best record
-                    let ee = if p.exonic_both_sides || p.min_shared_exon_frac > 0.0 {
-                        let qx = qn.blocks.map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
-                        let tx = tn.blocks.map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
-                        qx.min(tx)
+                    let mut no_cigar = false;
+                    // (ee, the record's query / target intervals for the union)
+                    let (ee, qiv, tiv): (u64, Vec<(u64, u64)>, Vec<(u64, u64)>) = if p.exonic_both_sides
+                        || p.min_shared_exon_frac > 0.0
+                    {
+                        if p.shared_exon_columns {
+                            // column-exact: the aligned columns joining an exon base of q to an exon base of t
+                            match (qn.cols.as_ref(), tn.cols.as_ref(), cigar_of(line)) {
+                                (Some(qc), Some(tc), Some(cg)) => {
+                                    let (q_off, t_off) = (qk.1 as i64 - 1, tk.1 as i64 - 1);
+                                    match exon_columns(
+                                        cg,
+                                        f[4],
+                                        qs as i64,
+                                        qe as i64,
+                                        ts as i64,
+                                        te as i64,
+                                        q_off,
+                                        t_off,
+                                        (&qc.0, &qc.1),
+                                        (&tc.0, &tc.1),
+                                    ) {
+                                        Ok(cols) => {
+                                            let n: u64 = cols.iter().map(|c| (c.1 - c.0) as u64).sum();
+                                            if p.shared_exon_union && n > 0 {
+                                                // the stretches, back in each record's own offset frame
+                                                let qv = cols.iter().map(|c| ((c.0 - q_off) as u64, (c.1 - q_off) as u64)).collect();
+                                                let tv = cols.iter().map(|c| ((c.3 - t_off) as u64, (c.4 - t_off) as u64)).collect();
+                                                (n, qv, tv)
+                                            } else {
+                                                (n, Vec::new(), Vec::new())
+                                            }
+                                        }
+                                        Err(_) => {
+                                            no_cigar = true;
+                                            (0, Vec::new(), Vec::new())
+                                        }
+                                    }
+                                }
+                                (_, _, None) => {
+                                    no_cigar = true;
+                                    (0, Vec::new(), Vec::new())
+                                }
+                                _ => (0, Vec::new(), Vec::new()), // a locus without exon blocks: no exon evidence
+                            }
+                        } else {
+                            let qx = qn.blocks.map_or(0, |b| exonic_bases_in(b, qk.1, qs, qe));
+                            let tx = tn.blocks.map_or(0, |b| exonic_bases_in(b, tk.1, ts, te));
+                            let ee = qx.min(tx);
+                            if p.shared_exon_union && ee > 0 {
+                                (ee, vec![(qs, qe)], vec![(ts, te)])
+                            } else {
+                                (ee, Vec::new(), Vec::new())
+                            }
+                        }
                     } else {
-                        0
+                        (0, Vec::new(), Vec::new())
                     };
-                    let both = p.shared_exon_union && ee > 0;
                     return if qi <= ti {
-                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, both, miss }
+                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, aee: qiv, bee: tiv, no_cigar, miss }
                     } else {
-                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, both, miss }
+                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, aee: tiv, bee: qiv, no_cigar, miss }
                     };
                 }
                 let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
@@ -60795,7 +60884,7 @@ pub mod fam_from_gtf {
                 // Every record is banked per pair, and a pair's resolution below sorts its intervals and sums integers,
                 // so chunks of the PAF are classified in parallel and merged; the graph is the sequential one.
                 // a chunk's keys are unique, so its map's iteration order never reaches the merge below
-                type Chunk = (DetHashMap<(u32, u32), PairAcc>, [usize; 3], Vec<u32>);
+                type Chunk = (DetHashMap<(u32, u32), PairAcc>, [usize; 4], Vec<u32>);
                 let chunks: Vec<Chunk> = lines
                     .par_chunks(1 << 15)
                     .map(|ls| {
@@ -60806,18 +60895,17 @@ pub mod fam_from_gtf {
                                 Rec::SameLocus => local.1[0] += 1,
                                 Rec::Overlapping => local.1[1] += 1,
                                 Rec::SelfHit => local.1[2] += 1,
-                                Rec::Deferred { k, a, b, nm, bl, ee, both, miss } => {
+                                Rec::Deferred { k, a, b, nm, bl, ee, aee, bee, no_cigar, miss } => {
                                     local.2.extend(miss.into_iter().flatten());
+                                    local.1[3] += no_cigar as usize;
                                     let e = local.0.entry(k).or_default();
                                     e.0.push(a);
                                     e.1.push(b);
                                     e.2 += nm;
                                     e.3 += bl;
                                     e.4 = e.4.max(ee);
-                                    if both {
-                                        e.5.push(a);
-                                        e.6.push(b);
-                                    }
+                                    e.5.extend(aee);
+                                    e.6.extend(bee);
                                 }
                             }
                         }
@@ -60830,6 +60918,7 @@ pub mod fam_from_gtf {
                     g.same_locus_records += c[0];
                     g.rejected_overlapping += c[1];
                     g.rejected_self_hits += c[2];
+                    g.no_cigar_records += c[3];
                     missing.extend(miss.into_iter().map(|i| keys[i as usize].clone()));
                     all.extend(m);
                 }
@@ -60898,12 +60987,20 @@ pub mod fam_from_gtf {
                     .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon, aee, bee))| {
                         let (nmatch, blocklen, mut exon_exon) = (*nmatch, *blocklen, *exon_exon);
                         if p.shared_exon_union && !aee.is_empty() {
-                            let side = |k: &GeneKey, iv: &[(u64, u64)]| -> u64 {
-                                exon_blocks.get(k).map_or(0, |b| {
-                                    merge_intervals(iv.to_vec()).iter().map(|&(s0, e0)| exonic_bases_in(b, k.1, s0, e0)).sum()
-                                })
-                            };
-                            exon_exon = exon_exon.max(side(ak, aee).min(side(bk, bee)));
+                            if p.shared_exon_columns {
+                                // the stretches are exon-to-exon columns already: the union of each side, min of the two
+                                let len = |iv: &[(u64, u64)]| -> u64 {
+                                    merge_intervals(iv.to_vec()).iter().map(|&(s0, e0)| e0 - s0).sum()
+                                };
+                                exon_exon = exon_exon.max(len(aee).min(len(bee)));
+                            } else {
+                                let side = |k: &GeneKey, iv: &[(u64, u64)]| -> u64 {
+                                    exon_blocks.get(k).map_or(0, |b| {
+                                        merge_intervals(iv.to_vec()).iter().map(|&(s0, e0)| exonic_bases_in(b, k.1, s0, e0)).sum()
+                                    })
+                                };
+                                exon_exon = exon_exon.max(side(ak, aee).min(side(bk, bee)));
+                            }
                         }
                         let da = exonic_len.get(ak).copied().unwrap_or(0);
                         let db = exonic_len.get(bk).copied().unwrap_or(0);
@@ -61488,6 +61585,11 @@ pub mod fam_from_gtf {
         /// `blocks` are ABSOLUTE 0-based half-open merged exon intervals; `gene_start` is the GFF **1-based**
         /// gene start, so an absolute base `b` sits at local `b - (gene_start - 1)`. ⚠ Getting that conversion
         /// wrong is the §6dd bug: a `start - 1` key joined 0/4,477 and silently fell back to the span.
+        /// The `cg:Z:` CIGAR of a PAF line (minimap2 `-c`), among the optional columns after the 12th; `None` without one.
+        fn cigar_of(line: &str) -> Option<&str> {
+            line.split('\t').skip(12).find_map(|f| f.strip_prefix("cg:Z:"))
+        }
+
         fn exonic_bases_in(blocks: &[(u64, u64)], gene_start: u64, s: u64, e: u64) -> u64 {
             let off = gene_start.saturating_sub(1);
             let mut acc = 0u64;
@@ -62693,6 +62795,125 @@ pub mod fam_from_gtf {
                 assert_eq!((g0.n_edges(), g0.rejected_low_shared_exon), (0, 1), "best single record: 0.5 < 0.6");
                 let union = GraphParams { shared_exon_union: true, ..best };
                 assert_eq!(graph_from_paf(&paf, &ex, &bl, &union).n_edges(), 1, "union of the two records: 1.0");
+            }
+
+            /// A PAF line with a strand and a `cg:Z:` CIGAR, as minimap2 `-c` writes it.
+            #[allow(clippy::too_many_arguments)]
+            fn paf_line_cg(q: &str, ql: u64, qs: u64, qe: u64, strand: char, t: &str, tl: u64, ts: u64, te: u64, nm: u64, bl: u64, cg: &str) -> String {
+                format!("{q}\t{ql}\t{qs}\t{qe}\t{strand}\t{t}\t{tl}\t{ts}\t{te}\t{nm}\t{bl}\t60\ttp:A:P\tcg:Z:{cg}")
+            }
+
+            /// COLUMN-EXACT shared exons (2026-10-29). Two 2,000 bp loci aligned end to end on the diagonal (`2000M`). The
+            /// query's exon is its first 500 bp, the target's exon is its bases 1,000-1,500: the interval rule sees 500
+            /// exon bases inside the record on each side (min 500 = the whole smaller gene, fraction 1.0) and admits
+            /// the pair, although no aligned column joins an exon base to an exon base; the column rule counts 0 and
+            /// rejects it. With the target's exon moved onto the diagonal (bases 0-500) both rules count 500.
+            #[test]
+            fn shared_exon_columns_rejects_exons_aligned_onto_introns() {
+                let paf = paf_line_cg("c:1001-3000", 2000, 0, 2000, '+', "c:9001-11000", 2000, 0, 2000, 1900, 2000, "2000M");
+                let mut ex = BTreeMap::new();
+                ex.insert(("c".to_string(), 1001, 3000), 500);
+                ex.insert(("c".to_string(), 9001, 11000), 500);
+                let mut off_diag: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                off_diag.insert(("c".to_string(), 1001, 3000), vec![(1000, 1500)]);
+                off_diag.insert(("c".to_string(), 9001, 11000), vec![(10000, 10500)]);
+                let intervals = GraphParams {
+                    min_bp: 100,
+                    min_exonic_bp: 1,
+                    exonic_both_sides: true,
+                    min_shared_exon_frac: 0.6,
+                    ..GraphParams::default()
+                };
+                let columns = GraphParams { shared_exon_columns: true, ..intervals };
+                let gi = graph_from_paf(&paf, &ex, &off_diag, &intervals);
+                assert_eq!((gi.n_edges(), gi.rejected_low_shared_exon, gi.rejected_no_exonic), (1, 0, 0), "interval rule: 500/500");
+                let gc = graph_from_paf(&paf, &ex, &off_diag, &columns);
+                assert_eq!((gc.n_edges(), gc.rejected_no_exonic, gc.no_cigar_records), (0, 1, 0), "column rule: 0 exon-to-exon columns");
+                let mut diag = off_diag.clone();
+                diag.insert(("c".to_string(), 9001, 11000), vec![(9000, 9500)]);
+                let gc2 = graph_from_paf(&paf, &ex, &diag, &columns);
+                assert_eq!((gc2.n_edges(), gc2.rejected_low_shared_exon), (1, 0), "column rule: 500 exon-to-exon columns");
+                assert_eq!(graph_from_paf(&paf, &ex, &diag, &intervals).n_edges(), 1);
+            }
+
+            /// The column walk follows the CIGAR: a 100 bp deletion in the target shifts the query's exon onto the
+            /// target's exon only partly, and on `-` the query runs backwards. Query exon = local [0, 500), CIGAR
+            /// `400M100D1600M` (target offsets 0-400 then 500-2100; query 0-400 then 400-2000) against a 2,100 bp
+            /// target whose exon is local [100, 600): columns join query [100, 400) <-> target [100, 400) and query
+            /// [400, 500) <-> target [500, 600): 400 columns, 0.80 of the smaller gene (500). The interval rule would
+            /// count min(500, 500) = 500 (1.0). On `-` with the query exon at local [1500, 2000) (the query's last 500
+            /// bases, which the reversed alignment lays onto target offsets 0-500): columns = target exon [100, 500)
+            /// = 400 again.
+            #[test]
+            fn shared_exon_columns_follows_deletions_and_the_reverse_strand() {
+                let mut ex = BTreeMap::new();
+                ex.insert(("c".to_string(), 1001, 3000), 500);
+                ex.insert(("c".to_string(), 9001, 11100), 500);
+                let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                bl.insert(("c".to_string(), 1001, 3000), vec![(1000, 1500)]);
+                bl.insert(("c".to_string(), 9001, 11100), vec![(9100, 9600)]);
+                let base = GraphParams {
+                    min_bp: 100,
+                    min_exonic_bp: 1,
+                    exonic_both_sides: true,
+                    min_shared_exon_frac: 0.7,
+                    shared_exon_columns: true,
+                    ..GraphParams::default()
+                };
+                let fwd = paf_line_cg("c:1001-3000", 2000, 0, 2000, '+', "c:9001-11100", 2100, 0, 2100, 1900, 2100, "400M100D1600M");
+                let g = graph_from_paf(&fwd, &ex, &bl, &base);
+                assert_eq!((g.n_edges(), g.rejected_low_shared_exon), (1, 0), "400 columns = 0.80 >= 0.70");
+                let strict = GraphParams { min_shared_exon_frac: 0.9, ..base };
+                let g = graph_from_paf(&fwd, &ex, &bl, &strict);
+                assert_eq!((g.n_edges(), g.rejected_low_shared_exon), (0, 1), "400 columns = 0.80 < 0.90");
+                let g = graph_from_paf(&fwd, &ex, &bl, &GraphParams { shared_exon_columns: false, ..strict });
+                assert_eq!(g.n_edges(), 1, "the interval rule counts 500 = 1.0");
+                // reverse strand: query local [1500, 2000) is laid onto target offsets [0, 500) of the first run
+                let mut bl_rev = bl.clone();
+                bl_rev.insert(("c".to_string(), 1001, 3000), vec![(2500, 3000)]);
+                let rev = paf_line_cg("c:1001-3000", 2000, 0, 2000, '-', "c:9001-11100", 2100, 0, 2100, 1900, 2100, "400M100D1600M");
+                let g = graph_from_paf(&rev, &ex, &bl_rev, &base);
+                assert_eq!((g.n_edges(), g.rejected_low_shared_exon), (1, 0), "- strand: target exon [100,500) <-> query [1500,1900): 400");
+                let g = graph_from_paf(&rev, &ex, &bl_rev, &strict);
+                assert_eq!((g.n_edges(), g.rejected_low_shared_exon), (0, 1));
+                // the same records with the exon on the other end of the query find no exon-to-exon column on `-`
+                let g = graph_from_paf(&rev, &ex, &bl, &base);
+                assert_eq!((g.n_edges(), g.rejected_no_exonic), (0, 1));
+            }
+
+            /// Under `shared_exon_columns` + `shared_exon_union`, the union is over the exon-to-exon stretches: two records
+            /// each joining 250 of the smaller gene's 500 exon bases (0.5 apiece, below 0.60) reach 1.0 together, and a
+            /// record repeating the same stretch adds nothing. A record without `cg:Z:` is counted, not guessed.
+            #[test]
+            fn shared_exon_columns_union_and_missing_cigar() {
+                let mut ex = BTreeMap::new();
+                ex.insert(("c".to_string(), 1001, 3000), 500);
+                ex.insert(("c".to_string(), 9001, 11000), 500);
+                let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                bl.insert(("c".to_string(), 1001, 3000), vec![(1000, 1500)]);
+                bl.insert(("c".to_string(), 9001, 11000), vec![(9000, 9500)]);
+                let a = paf_line_cg("c:1001-3000", 2000, 0, 250, '+', "c:9001-11000", 2000, 0, 250, 240, 250, "250M");
+                let b = paf_line_cg("c:1001-3000", 2000, 250, 500, '+', "c:9001-11000", 2000, 250, 500, 240, 250, "250M");
+                let paf = format!("{a}\n{b}\n{a}");
+                let best = GraphParams {
+                    min_bp: 100,
+                    min_exonic_bp: 1,
+                    exonic_both_sides: true,
+                    min_shared_exon_frac: 0.6,
+                    shared_exon_columns: true,
+                    ..GraphParams::default()
+                };
+                let g = graph_from_paf(&paf, &ex, &bl, &best);
+                assert_eq!((g.n_edges(), g.rejected_low_shared_exon), (0, 1), "best record: 250/500");
+                let union = GraphParams { shared_exon_union: true, ..best };
+                assert_eq!(graph_from_paf(&paf, &ex, &bl, &union).n_edges(), 1, "union of the stretches: 500/500");
+                let paf_dup = format!("{a}\n{a}");
+                let g = graph_from_paf(&paf_dup, &ex, &bl, &union);
+                assert_eq!((g.n_edges(), g.rejected_low_shared_exon), (0, 1), "the same stretch twice is still 250");
+                let no_cg = paf_line("c:1001-3000", 2000, 0, 500, "c:9001-11000", 2000, 0, 500, 490, 500);
+                let g = graph_from_paf(&no_cg, &ex, &bl, &best);
+                assert_eq!((g.n_edges(), g.no_cigar_records, g.rejected_no_exonic), (0, 1, 1));
+                assert_eq!(graph_from_paf(&no_cg, &ex, &bl, &GraphParams { shared_exon_columns: false, ..best }).n_edges(), 1);
             }
 
             /// ⭐ §6x4/§6x5 CONTAINMENT ESCAPE (`min_cov_shorter`).
