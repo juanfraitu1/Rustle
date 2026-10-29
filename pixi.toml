@@ -22,6 +22,7 @@ seqkit = "*"
 pigz = "*"
 htslib = "*"            # bgzip, tabix
 pytest = ">=9.1.1,<10"
+miniprot = ">=0.18,<0.19"
 
 [feature.bench.dependencies]
 # baselines and comparators used by bench/ and figures/ (not needed by the pipeline)

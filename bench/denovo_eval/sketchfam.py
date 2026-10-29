@@ -159,19 +159,19 @@ with np.errstate(over='ignore'):
         for x, y, _, _, _ in edges: parent[find(x)] = find(y)
         comp = collections.defaultdict(list)
         for t in sk: comp[find(t)].append(t)
-        cont = {}
-        for x, y, _, c, _ in edges: cont[(x, y)] = c; cont[(y, x)] = c
+        cedges = collections.defaultdict(list)  # per-component edge list (iterating all edges per component was O(C x E))
+        for x, y, _, c, _ in edges: cedges[find(x)].append((x, y, c))
         fams = []; nwk = open(OUT + '.trees.nwk', 'w')
         def newick(node, names):
             if node.is_leaf(): return names[node.id]
             return f"({newick(node.get_left(), names)},{newick(node.get_right(), names)}):{node.dist:.3f}"
-        for members_ in comp.values():
+        for root, members_ in comp.items():
             if len(members_) < 2: continue
             m = sorted(members_); n = len(m); D = np.ones((n, n))
             np.fill_diagonal(D, 0.0)
             ix = {t: i for i, t in enumerate(m)}
-            for (x, y), c in cont.items():
-                if x in ix and y in ix: D[ix[x], ix[y]] = 1.0 - c
+            for x, y, c in cedges[root]:
+                D[ix[x], ix[y]] = D[ix[y], ix[x]] = 1.0 - c
             Z = linkage(squareform(D, checks=False), method='average')
             lab = fcluster(Z, t=1.0 - ROOTC, criterion='distance')
             groups = collections.defaultdict(list)

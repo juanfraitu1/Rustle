@@ -8502,3 +8502,59 @@ older/HGNC/same-symbol relatives), **precision, recall**. famtruth's family-leve
 mainstay/YAG lines are no longer bars (they may still be printed as diagnostics). User words: "we don't need bipartite matching anymore,
 the only thing that is useful is precision and recall", "pseudogenes don't need their own category", "we dont need F anymore".
 
+
+### SCORING REFINEMENT (2026-10-29, user): non-coding pairs are judged by sequence, not ignored
+User: "recover all protein coding, pseudogenes and lncRNAs but use Compara for the things that are validated as protein coding, then the
+others can be judged based on discarding that they are just false positives due to domain sharing". `pairscore.py --fasta GENOME
+--noncoding`: every predicted pair with a pseudogene / lncRNA / other gene is aligned (the two genes' spliced ANNOTATION exon
+sequences, minimap2 `-c -x asm20 -N 500 -p 0.05 --secondary=yes`); accepted when the shorter spliced sequence is covered >= 50% at
+>= 85% identity, otherwise DOMAIN-ONLY. Reported: nc_pairs, nc_accepted, nc_domain_only, nc_precision. No recall for non-coding pairs.
+`PAIRSCORE_DUMP=1` writes `<copies>.ncpairs.tsv` with the per-pair verdicts. Bars from here on: coding precision, coding recall,
+nc precision, all vs the shipped MCL base.
+Scorer caveat found with the miniprot test below: predicted coding pairs are counted over the whole Compara universe, not only the
+expressed genes (`universe` vs `universe & expressed`), which never mattered while every family member had a de novo transcript.
+
+### GORILLA TREE GRID, development (2026-10-29, user "since human data is so dense can we first perfect it in gorilla only"): sketch tree clustering tuned on KB3781 fibroblast + OR6737 testis, HG002 reserved as the held-out
+`sketchfam.py --fai GGO.fa.fai --max-chrom 3 --cluster tree` (UPGMA per component on 1 - containment, cut at 1 - root_cont),
+16 points k {21,17} x scale {20,10} x root {0.1,0.15} x min-cont {0.2,0.3}; `~/runs/grid_gorilla/{kb,or}.scores.tsv`. Simiiformes,
+coding precision / recall, nc precision (sequence judge):
+
+| arm | KB3781 (68 truth pairs) | OR6737 (88) |
+|---|---|---|
+| base (MCL on minimap2 all-vs-all) | 0.341 / 0.206, nc 0.545 | 0.429 / 0.239, nc 0.676 |
+| k21 s20 r0.1 c0.2 (SKETCHFAM-2 settings) | 0.465 / 0.294, nc 0.615 | 0.391 / 0.284, nc 0.746 |
+| **k17 s10 r0.15 c0.2 (chosen)** | **0.500 / 0.309, nc 0.613** | **0.403 / 0.284, nc 0.763** |
+| k17 s10 r0.1 c0.2 (best recall) | 0.469 / 0.338, nc 0.590 | 0.392 / 0.330, nc 0.727 |
+| k21 s20 r0.1 c0.3 (best precision) | 0.520 / 0.191, nc 0.674 | 0.447 / 0.193, nc 0.779 |
+
+The grid moves recall by +-0.07 and precision by +-0.07 across 16 points; no point beats base precision on OR6737 while beating its
+recall. The chosen point is the best KB3781 precision among points with recall >= 0.3 and the best nc precision on OR6737 among those.
+Recall misses are "no edge" (KB 45/47, OR 58/63): KRAB-ZNF Simiiformes pairs (ZNF468/578/701/813/860/888...), APOL, APOBEC3,
+NAT1/NAT2, RABL2A/B share too few exact 17-mers at scale 10. Unrelated false pairs (KB 9, OR 15) are mostly adjacent genes (GNG5/RPF1,
+RHBDF1/SNRNP25, SPSB2/TPI1) and retrocopies labelled by their host gene (EDARADD/ENO1, P4HA1/RPL17): a locus-to-gene mapping artefact,
+noted, not tuned on. A second grid (k 13/15, min-shared 3, scale 5) runs in `~/runs/grid_gorilla/grid2.sh`.
+
+### MINIPROT MEMBER RECOVERY, development note (2026-10-29, user "yes lets do that"): FAIL as an add-on on both gorilla sets
+Idea: pseudogenes and frameshifted copies are missed by exact k-mers; map the longest CDS of every coding family member with miniprot
+0.18 (`bench/denovo_eval/miniprot_members.py`, index `miniprot -d GGO.mpi`, 35 s; `--outs 0.5 -N 50`, query coverage >= 0.5) and add
+every placement on an annotated gene not yet in the family. KB3781: 788 proteins, 3,925 placements; OR6737: 1,143, 9,011.
+Placements at identity >= 0.7 on KB3781 beyond self and existing members: 966 coding genes new to the family (799 of them without a
+de novo transcript), 183 coding genes already in another family, 874 pseudogenes (785 silent), 34 lncRNAs, 235 unannotated.
+
+| arm (chosen tree point + miniprot) | KB3781 P / R, nc P | OR6737 P / R, nc P |
+|---|---|---|
+| tree alone | 0.500 / 0.309, 0.613 | 0.403 / 0.284, 0.763 |
+| + all targets, id >= 0.7 | 0.170 / 0.338, 0.744 | 0.161 / 0.341, 0.761 |
+| + all targets, id >= 0.85 | 0.214 / 0.324, 0.778 | 0.200 / 0.330, 0.790 |
+| + expressed targets only, id >= 0.85 | 0.250 / 0.324, 0.514 | 0.238 / 0.330, 0.643 |
+| + expressed non-coding targets only, id >= 0.85 | 0.500 / 0.309, 0.596 | 0.403 / 0.284, 0.694 |
+
+Coding additions: +1 to +4 Simiiformes hits for 45-80 false coding pairs, 70% of them older Compara relatives (ribosomal protein,
+HNRNP, EEF1A families: miniprot at 0.85 protein identity reaches far past the Simiiformes level) and the rest retrocopies inside host
+genes (NPM1 in BLNK, RPL26 in MSS51, RPL7 in ZNF589, TMSB4X in SLC27A4). Non-coding-only additions (19 members on KB3781, 38 on
+OR6737): each added pseudogene is accepted against the protein that placed it (cov 0.5-1.0, identity 0.88-0.99) but fails the sequence
+judge against the other coding members of the same family (cov 0.0-0.48), i.e. it joins a family that the tree already made
+heterogeneous, and several truncated pseudogenes sit at cov 0.40-0.48 just under the judge's 0.5. nc precision falls 0.613 -> 0.596
+and 0.763 -> 0.694; coding P/R unchanged. Not registered as a prereg (no held-out was touched); NOT part of the sketch arm. The
+placements themselves are a usable annotation of silent copies (874 + 1,119 pseudogene placements) but do not improve the family
+readout. Run dir `~/runs/miniprot_gorilla/` (mp.gff, scores.tsv per set, `mpclass.py` placement classes).
