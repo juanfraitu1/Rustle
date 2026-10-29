@@ -8598,3 +8598,34 @@ heterogeneous, and several truncated pseudogenes sit at cov 0.40-0.48 just under
 and 0.763 -> 0.694; coding P/R unchanged. Not registered as a prereg (no held-out was touched); NOT part of the sketch arm. The
 placements themselves are a usable annotation of silent copies (874 + 1,119 pseudogene placements) but do not improve the family
 readout. Run dir `~/runs/miniprot_gorilla/` (mp.gff, scores.tsv per set, `mpclass.py` placement classes).
+
+### PER-FAMILY CUT, TRUSS, BRIDGES, development (2026-10-29, user goal "replace the global containment cut with a per-family relative cut"; then "is there a more lenient graph theory concept" between cliques and components): FAIL on the gorilla dev sets
+`sketchfam.py --cut relative --rel-frac F` (cut each component's UPGMA tree at F x its median edge containment, floored at root-cont)
+and `--cut gap --gap-min G` (cut at the largest gap between merge heights >= 0.2 if >= G), `bench/denovo_eval/truss.py` (k-truss
+and bridge removal on a sketchfam edge list). KB3781 / OR6737, k 17 scale 10 chromosome cap 3, coding P / R, nc P
+(`~/runs/grid_gorilla/{kb,or}.scores{4,5,6}.tsv`):
+
+| arm | KB3781 | OR6737 |
+|---|---|---|
+| tree fixed r0.15, floor 0.2 (chosen) | 0.500 / 0.309, 0.613 | 0.403 / 0.284, 0.763 |
+| tree fixed r0.15, floor 0.15 | 0.439 / 0.368, 0.597 | 0.360 / 0.352, 0.738 |
+| tree relative 0.6, floor 0.15 | 0.417 / 0.368, 0.597 | 0.348 / 0.352, 0.758 |
+| tree relative 0.5, floor 0.15 | 0.417 / 0.368, 0.600 | 0.308 / 0.364, 0.750 |
+| tree gap 0.25, floor 0.15 | 0.410 / 0.368, 0.595 | 0.315 / 0.386, 0.751 |
+| tree relative 0.5, floor 0.1 | 0.311 / 0.412, 0.566 | 0.270 / 0.432, 0.667 |
+| 3-truss (edge needs a triangle), floor 0.2 | 0.400 / 0.059, 0.543 | 0.114 / 0.045, 0.687 |
+| 3-truss, floor 0.15 | 0.273 / 0.132, 0.496 | 0.098 / 0.068, 0.609 |
+| components minus inter-group bridges, floor 0.2 | 0.442 / 0.338, 0.557 | 0.268 / 0.341, 0.641 |
+| components minus bridges, floor 0.15 | 0.329 / 0.382, 0.500 | 0.277 / 0.432, 0.578 |
+| components minus bridges, floor 0.1 | 0.237 / 0.691, 0.451 | 0.268 / 0.682, 0.488 |
+
+Findings. (1) The relative and gap cuts are inert: ZNF-type components have median edge containment 0.27 (q10 0.21, q90 0.86), so a
+cut relative to the median lands under the floor and the component stays whole, older layer included; merge heights in a nested family
+rise smoothly, so there is no gap to cut at. No function of within-component containment separates the Simiiformes layer from the
+older layer. (2) Any triangle requirement (truss, clique percolation) destroys recall because most Simiiformes truth pairs are
+TWO-gene families (ZNF pairs, NAT1/NAT2, APOL pairs): a lone pair has no triangle. (3) Removing only bridges between non-trivial groups
+drops 9-32 edges and is a mild recall gain for a larger precision loss. (4) The recall ceiling of the sketch graph at floor 0.1 is
+0.69 on both sets (components minus bridges): the Simiiformes pairs ARE in the graph; what costs precision at every floor is the layer
+of real but older paralogs of the same families, which the Simiiformes bar counts as false. Goal bars (recall up at no precision
+loss) not met on either dev set; HG002 untouched. Chosen point unchanged. A119b mainstay check of the cuts in
+`~/runs/human_A119b/a1cut.mainstays.txt`.
