@@ -8648,3 +8648,23 @@ problem, not a graph problem). It does separate unrelated pairs (median 0, 7/117
 45% of true Simiiformes pairs that share no intron k-mers at all (retrocopies, old-but-Simiiformes pairs, single-exon loci). A
 spliced + unspliced two-signal rule would therefore be a precision tool against the unrelated 9-15 pairs, not a recall tool, and
 would cost about half the recall if required. Not pursued as a bar.
+
+### INTRON RESCUE, development (2026-10-29, user "ok lets try that"): weak exon edges accepted when the introns agree
+`sketchfam.py --weak-cont W --intron-cont I`: an exon edge with containment in [W, 0.2) is kept only if the two loci's intron sketches
+(unmasked k-mers of the gaps between consecutive de novo exons, same k and scale, >= 10 hashes each) have containment >= I. Exon
+edges >= 0.2 unchanged. Tree r0.15, cap 3, k 17 scale 10 (`~/runs/grid_gorilla/{kb,or}.scores7.tsv`), coding P / R, nc P:
+
+| arm | KB3781 | OR6737 |
+|---|---|---|
+| chosen (no rescue) | 0.500 / 0.309, 0.613 | 0.403 / 0.284, 0.763 |
+| W 0.1, I 0.1 | 0.453 / 0.353, 0.592 | 0.387 / 0.330, 0.736 |
+| **W 0.1, I 0.2** | **0.500 / 0.368, 0.592** | **0.415 / 0.307, 0.748** |
+| W 0.1, I 0.3 | 0.512 / 0.324, 0.596 | 0.415 / 0.307, 0.751 |
+| W 0.05, I 0.2 | 0.500 / 0.368, 0.592 | 0.415 / 0.307, 0.745 |
+
+W 0.1 I 0.2 rescues 133 (KB) / 298 (OR) edges. Gained Simiiformes hits: APOBEC3C/D, APOBEC3C/F, ZNF747/ZNF764, ZNF761/ZNF813 (KB),
+ZNF747/764, ZNF761/813 (OR); no hit lost. New false coding pairs: GSTM1/4, GSTM4/5, ZNF354A/B (older relatives) and CHAMP1/TUBB8
+(unrelated) on KB; GPRASP1/2 (older) on OR. New non-coding pairs: 6 (KB, all domain-only) and 15 (OR, 5 accepted), hence nc
+precision -0.02 / -0.015. Against the goal bars: coding recall up on both (+0.06, +0.02) at coding precision equal or up; nc
+precision DOWN by 0.02 on both, i.e. the third bar is missed by a small margin. The rescue is the first rule in this series that
+moves recall without moving precision against the Simiiformes bar. A119b mainstay check pending (`~/runs/human_A119b/a1intron.*`).

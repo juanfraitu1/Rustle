@@ -6,7 +6,7 @@ dozen), join two loci when they share >= --min-shared retained hashes AND contai
 connected components of that graph (>= 2 loci). No minimap2, no gate. Writes OUT.fam.copies.tsv (famtruth/pairjudge format),
 OUT.edges.tsv (a b shared containment masked_share_of_shared) and OUT.sketch.log.
 
-  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15]
+  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15] [--weak-cont 0.1 --intron-cont 0.2 --intron-min-hashes 10]
 Needs numpy and samtools (per-chromosome fetch).
 """
 import sys, re, collections, subprocess, time
@@ -18,7 +18,7 @@ def opt(name, default, cast=float):
 GFF, FA, OUT = a[0], a[1], a[2]
 K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
 MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
-MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
+MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
 def say(*x):
@@ -66,7 +66,7 @@ def sketch(seq_u8, low):
 with np.errstate(over='ignore'):
     by_chrom = collections.defaultdict(list)
     for tid, (c, s) in loci.items(): by_chrom[c].append(tid)
-    sk = {}; masked = {}
+    sk = {}; masked = {}; isk = {}
     for chrom, tids in by_chrom.items():
         seq = subprocess.run(['samtools', 'faidx', FA, chrom], capture_output=True, text=True).stdout
         seq = ''.join(seq.split('\n')[1:]).encode()
@@ -79,6 +79,16 @@ with np.errstate(over='ignore'):
                 u, first = np.unique(h, return_index=True); sk[tid] = u; masked[tid] = m[first]
             else:
                 sk[tid] = np.empty(0, dtype=np.uint64); masked[tid] = np.empty(0, dtype=bool)
+            if WEAKC:
+                # UNSPLICED signal (2026-10-29 user "could there be a method for unspliced and one for spliced?"): sketch of the
+                # unmasked intron k-mers (gaps between consecutive exons); a WEAK exon edge (containment in [weak_cont, min_cont))
+                # is accepted only when the two loci's intron sketches share >= intron_cont (young segmental duplicates copy their
+                # introns; old paralogs and unrelated adjacent genes do not).
+                ex = sorted(exons[tid]); hs = []
+                for (s0, e0), (s1, e1) in zip(ex, ex[1:]):
+                    if s1 - e0 >= K:
+                        h, m = sketch(arr[e0:s1], lowarr[e0:s1]); hs.append(h[~m])
+                isk[tid] = np.unique(np.concatenate(hs)) if hs else np.empty(0, dtype=np.uint64)
     say(f"sketched {len(sk)} loci, mean hashes/locus {np.mean([len(v) for v in sk.values()]):.1f}, empty {sum(1 for v in sk.values() if len(v)==0)}")
     # high-copy removal: by locus count (--max-loci) and/or by CHROMOSOME DISPERSION (--max-chrom, r1471 lesson: a 46-copy array on
     # one chromosome is a family; a hash on 8 chromosomes is a TE). Sequences < --min-chrom-bp count as one 'unplaced' chromosome.
@@ -121,14 +131,19 @@ with np.errstate(over='ignore'):
     def overlapping(x, y):
         a, b = span[x], span[y]
         return a[0] == b[0] and a[1] < b[2] and b[1] < a[2]
-    edges = []; n_overlap = 0
+    edges = []; n_overlap = 0; n_weak = 0
     for (x, y), n in pair.items():
         if n < MINS: continue
         if not OVERLAP_OK and overlapping(x, y):  # the base's reject_overlapping: antisense / nested loci share k-mers, not ancestry
             n_overlap += 1; continue
         c = n / max(1, min(len(sk[x]), len(sk[y])))
         if c >= MINC: edges.append((x, y, n, c, pairm[(x, y)] / n))
-    say(f"pairs sharing >= 1 hash {len(pair)}, overlapping pairs rejected {n_overlap}, edges {len(edges)}")
+        elif WEAKC and c >= WEAKC:
+            ix, iy = isk.get(x), isk.get(y)
+            if ix is not None and iy is not None and min(len(ix), len(iy)) >= INTRMIN:
+                ic = len(np.intersect1d(ix, iy, assume_unique=True)) / min(len(ix), len(iy))
+                if ic >= INTRC: edges.append((x, y, n, c, pairm[(x, y)] / n)); n_weak += 1
+    say(f"pairs sharing >= 1 hash {len(pair)}, overlapping pairs rejected {n_overlap}, edges {len(edges)} (weak exon edges rescued by introns {n_weak})")
     if CLUSTER == 'greedy':
         # Family = UNION SKETCH (linclust / CD-HIT style, 2026-10-29 user: "faithfully encapsulates gene families, ok to lose the most
         # divergent"): loci in decreasing sketch size; a locus joins the first family whose union sketch contains >= --family-cont of
