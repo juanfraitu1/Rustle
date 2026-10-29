@@ -21,6 +21,7 @@ gffread = "*"
 seqkit = "*"
 pigz = "*"
 htslib = "*"            # bgzip, tabix
+pytest = ">=9.1.1,<10"
 
 [feature.bench.dependencies]
 # baselines and comparators used by bench/ and figures/ (not needed by the pipeline)
@@ -38,6 +39,8 @@ c-compiler = "*"
 [environments]
 bench = ["bench"]
 isocon = { features = ["isocon"], no-default-feature = true }
+flair = { features = ["flair"], no-default-feature = true }
+sqanti3 = { features = ["sqanti3"], no-default-feature = true }
 
 [tasks]
 build = "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/rustle_target} cargo build --release --bins -j 4 > build.log 2>&1"
@@ -58,3 +61,16 @@ minimap2 = "==2.30"
 
 [feature.isocon.pypi-dependencies]
 IsoCon = "==0.3.3"
+
+[feature.flair.dependencies]
+# FLAIR 3.0.0, the comparator in REPRODUCE.md. Own environment so it cannot shadow anything else (§6q6).
+flair = "==3.0.0"
+bedtools = "*"
+minimap2 = "==2.30"
+samtools = "==1.22.1"
+
+[feature.sqanti3.dependencies]
+# SQANTI3 classification and isoseq collapse; kept apart from FLAIR (their numpy pins conflict).
+sqanti3 = "*"
+isoseq = "*"
+minimap2 = "==2.30"
