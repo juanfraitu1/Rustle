@@ -8474,3 +8474,23 @@ minute per genome without minimap2. The next iteration, if any, must replace the
 hash by the number of CHROMOSOMES its loci span, not the number of loci), so that a 46-copy array on one chromosome keeps its k-mers;
 that needs a fresh held-out (A119b and OR6737 are now spent for sketch rules as well).
 
+### SKETCHFAM-2, development note (2026-10-29, user "ok lets do that"): chromosome-dispersion k-mer cap + MCL; ALL FOUR samples are now dev, no held-out exists
+`sketchfam.py --max-chrom 3 --fai` (new): a hash is discarded when its loci span > 3 chromosomes (sequences < 10 Mb = one "unplaced"),
+no per-locus cap. Two clusterings: connected components (as r1471) and `mcl_families --extra-edges-only` on the sketch edges with unit
+weights (containment as weight collapsed recall: KB3781 sens 0.118; shared/50 in between). A119b and OR6737 were used here to measure, so
+they are spent as held-outs for the sketch; nothing below is a verdict.
+
+| set | base sens / prec / F, famF, WRONG | cap-by-chrom, components | cap-by-chrom, MCL unit weights |
+|---|---|---|---|
+| KB3781 fibroblast | 0.206 / 0.341 / 0.257, 0.500, 12 | 0.294 / 0.370 / 0.328, 0.646, 10 | 0.294 / 0.408 / **0.342**, 0.646, **6** |
+| OR6737 testis | 0.239 / 0.429 / 0.307, 0.497, 5 | 0.295 / 0.271 / 0.283, 0.602, 22 | 0.250 / 0.373 / 0.299, 0.554, 10 |
+| HG002 Kinnex | 0.353 / 0.498 / 0.413, 0.605, 94 | 0.475 / 0.493 / 0.484, 0.659, 149 | 0.382 / 0.660 / **0.484**, 0.637, **42** |
+| A119b testis | 0.756 / 0.813 / 0.783, 0.754, 87 | 0.747 / 0.840 / **0.791**, 0.777, 160 | 0.676 / 0.904 / 0.774, 0.750, 66 |
+
+TSPY is back (34/34 on A119b, both clusterings). Components win pair F on 3/4 and family F on 4/4 but raise WRONG on 3/4 (transitive
+chaining: 15/22 wrong OR6737 pairs had no direct edge) and leave a 5,659-locus chr13/chr21 short-arm blob (rDNA arrays within the
+3-chromosome cap). MCL cuts WRONG below base on 4/4 and raises precision on 3/4 at a recall cost (A119b sens 0.756 -> 0.676, NPIP
+19 -> 15, HSFY 2 -> 0). Neither clustering is uniformly better than the shipped base on OR6737. Wall: sketch 70 s to 5 min per genome, MCL
+replay under a minute. **Decision pending the user: a prereg needs a FRESH held-out sample (none of KB3781, HG002, A119b, OR6737 can
+serve); candidate arms = cap-by-chrom + MCL (precision-first) and cap-by-chrom + components (recall-first).**
+

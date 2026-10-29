@@ -6,7 +6,7 @@ dozen), join two loci when they share >= --min-shared retained hashes AND contai
 connected components of that graph (>= 2 loci). No minimap2, no gate. Writes OUT.fam.copies.tsv (famtruth/pairjudge format),
 OUT.edges.tsv (a b shared containment masked_share_of_shared) and OUT.sketch.log.
 
-  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 50] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap]
+  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap]
 Needs numpy and samtools (per-chromosome fetch).
 """
 import sys, re, collections, subprocess, time
@@ -16,7 +16,8 @@ a = sys.argv[1:]
 def opt(name, default, cast=float):
     return cast(a[a.index(name) + 1]) if name in a else default
 GFF, FA, OUT = a[0], a[1], a[2]
-K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 50, int)
+K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
+MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
 MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
@@ -79,11 +80,24 @@ with np.errstate(over='ignore'):
             else:
                 sk[tid] = np.empty(0, dtype=np.uint64); masked[tid] = np.empty(0, dtype=bool)
     say(f"sketched {len(sk)} loci, mean hashes/locus {np.mean([len(v) for v in sk.values()]):.1f}, empty {sum(1 for v in sk.values() if len(v)==0)}")
-    # high-copy removal
+    # high-copy removal: by locus count (--max-loci) and/or by CHROMOSOME DISPERSION (--max-chrom, r1471 lesson: a 46-copy array on
+    # one chromosome is a family; a hash on 8 chromosomes is a TE). Sequences < --min-chrom-bp count as one 'unplaced' chromosome.
     allh = np.concatenate([v for v in sk.values() if len(v)])
     uh, cnt = np.unique(allh, return_counts=True)
-    hot = uh[cnt > MAXL]
+    hot = uh[cnt > MAXL] if MAXL else np.empty(0, dtype=np.uint64)
     say(f"distinct hashes {len(uh)}, in > {MAXL} loci: {len(hot)} (max copies {cnt.max()})")
+    if MAXC:
+        big = {l.split('\t')[0] for l in open(FAI) if int(l.split('\t')[1]) >= MINBP} if FAI else set(by_chrom)
+        cid = {c: (i if c in big else -1) for i, c in enumerate(by_chrom)}
+        hs = []; cs = []
+        for tid, v in sk.items():
+            if len(v): hs.append(v); cs.append(np.full(len(v), cid[loci[tid][0]], dtype=np.int64))
+        hs = np.concatenate(hs); cs = np.concatenate(cs)
+        pairs_hc = np.unique(np.stack([hs, cs.astype(np.uint64)], axis=1), axis=0)
+        uh2, nchrom = np.unique(pairs_hc[:, 0], return_counts=True)
+        hot2 = uh2[nchrom > MAXC]
+        say(f"hashes on > {MAXC} chromosomes: {len(hot2)} (max {nchrom.max()})")
+        hot = np.union1d(hot, hot2)
     hotset = set(hot.tolist())
     for tid in sk:
         v = sk[tid]
