@@ -6,7 +6,7 @@ dozen), join two loci when they share >= --min-shared retained hashes AND contai
 connected components of that graph (>= 2 loci). No minimap2, no gate. Writes OUT.fam.copies.tsv (famtruth/pairjudge format),
 OUT.edges.tsv (a b shared containment masked_share_of_shared) and OUT.sketch.log.
 
-  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15] [--weak-cont 0.1 --intron-cont 0.2 --intron-min-hashes 10]
+  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1 --cut fixed|relative|gap --rel-frac 0.5 --gap-min 0.15] [--weak-cont 0.1 --intron-cont 0.2 --intron-min-hashes 10] [--merge-overlap]
 Needs numpy and samtools (per-chromosome fetch).
 """
 import sys, re, collections, subprocess, time
@@ -18,7 +18,7 @@ def opt(name, default, cast=float):
 GFF, FA, OUT = a[0], a[1], a[2]
 K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
 MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
-MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
+MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); MERGE = '--merge-overlap' in a; UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
 def say(*x):
@@ -33,6 +33,32 @@ for line in open(GFF):
         loci[re.search(r'ID=gene-([^;]+)', f[8]).group(1)] = (f[0], f[6] if f[6] in '+-' else '+')
     elif f[2] == 'exon':
         exons[re.search(r'gene=([^;]+)', f[8]).group(1)].append((int(f[3]) - 1, int(f[4])))
+if MERGE:
+    # LOCUS MERGE (2026-10-29, user "can we ensure that all mainstays are correctly and specifically recalled?"): on A119b 36% of the
+    # de novo loci overlap an earlier same-strand locus (TBC1D3: a 14-exon locus and a 2-exon intron-retaining locus at every copy,
+    # each set forming its own family; NPIPB4: six overlapping 2-exon loci). Same-strand loci whose spans overlap are one locus:
+    # union of their exons (merged intervals), name of the first. Sub-gene families and duplicate families disappear.
+    by_cs = collections.defaultdict(list)
+    for t, (c, s_) in loci.items():
+        if exons[t]: by_cs[(c, s_)].append((min(a for a, _ in exons[t]), max(b for _, b in exons[t]), t))
+    n_before = len(loci); loci2 = {}; exons2 = {}
+    for (c, s_), v in by_cs.items():
+        v.sort(); cur = None
+        for a, b, t in v:
+            if cur and a < cur[1]:
+                cur[1] = max(cur[1], b); cur[2] += exons[t]
+            else:
+                if cur: loci2[cur[3]] = (c, s_); exons2[cur[3]] = cur[2]
+                cur = [a, b, list(exons[t]), t]
+        if cur: loci2[cur[3]] = (c, s_); exons2[cur[3]] = cur[2]
+    for t, ex in exons2.items():
+        m = []
+        for a, b in sorted(ex):
+            if m and a <= m[-1][1]: m[-1][1] = max(m[-1][1], b)
+            else: m.append([a, b])
+        exons2[t] = [tuple(x) for x in m]
+    loci = loci2; exons = collections.defaultdict(list, exons2)
+    say(f"merge-overlap: {n_before} loci -> {len(loci)}")
 say(f"loci {len(loci)}, exons {sum(len(v) for v in exons.values())}, k {K} scale {SCALE} max-loci {MAXL} min-shared {MINS} min-cont {MINC}")
 
 LUT = np.full(256, 4, dtype=np.uint8)

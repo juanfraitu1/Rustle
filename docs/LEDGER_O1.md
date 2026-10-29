@@ -8668,3 +8668,25 @@ ZNF747/764, ZNF761/813 (OR); no hit lost. New false coding pairs: GSTM1/4, GSTM4
 precision -0.02 / -0.015. Against the goal bars: coding recall up on both (+0.06, +0.02) at coding precision equal or up; nc
 precision DOWN by 0.02 on both, i.e. the third bar is missed by a small margin. The rescue is the first rule in this series that
 moves recall without moving precision against the Simiiformes bar. A119b mainstay check pending (`~/runs/human_A119b/a1intron.*`).
+
+### MAINSTAY DIAGNOSIS on A119b (2026-10-29, user "can we ensure that all mainstays are correctly and specifically recalled?")
+`bench/denovo_eval/mainstay_diag.py` on the sketch tree arm a1sk_t0.1 (k21 s20): where each expressed member sits, the foreign genes
+and their edge strength, the best edge between the sub-families. Findings, family by family:
+- TBC1D3: all 9 copies in TWO complete families (SK73, SK29) because every copy carries two de novo loci, a 14-exon 2.1 kb locus
+  and a 2-exon 5.6 kb intron-retaining locus; overlapping loci are not linked (by design), so each locus type forms its own
+  family. A duplicate family, not a split. Specific (no foreign).
+- NPIP: one family of 14/20 (A and B together, foreign = AC138894.1 / AC138969.1 at containment 0.97 / 0.93 = unnamed NPIP copies),
+  plus four small families made of 2-exon, 56-81% repeat-masked pieces inside NPIPB3/B4/B5/B12/B13/A3 (six overlapping 2-exon
+  loci at NPIPB4 alone). Those pieces share 0.00-0.06 exon 17-mers with the full-length loci. NPIPB3, B12, A3 and B7 have NO
+  full-length locus in A119b; they are not recoverable from this sample by any k-mer rule. The base (minimap2) holds 19/20.
+- GOLGA8: 9 + 3 + 1 (best edges 0.38 and 0.21, i.e. a cut problem at containment 0.2-0.4); foreign MSTRG.1863 (novel gene, 0.79).
+- GOLGA6L: four families of 1-3 and one unplaced, no edge >= 0.11 between them: the loci are 2-9 exon FRAGMENTS of different
+  exons of long genes (GOLGA6L6 vs GOLGA6L22 share zero 17-mers, spliced or unspliced); only GOLGA6L9/L4 are intact (0.81).
+- CT47A: 7/7 in one family; foreign CT47B1 (0.42) is a CT47 member the pattern excludes. Correct and specific.
+- XAGE: 2 of 3 expressed; SPATA31: A-subfamily 4 and D-subfamily 3, no edge (distinct subfamilies). TSPY, TBC1D3, YAGs: intact.
+Same-strand overlapping loci are 36% of A119b loci (27,630 of 76,161; 9,888 groups) and 14% on KB3781. `sketchfam.py
+--merge-overlap` (union of same-strand overlapping loci before sketching) removes the duplicate families but LOWERS the gorilla
+pair scores (KB 0.500/0.309 -> 0.435/0.294, OR 0.403/0.284 -> 0.375/0.273): intron-retaining loci bloat the merged sketch and
+dilute containment. Kept as an option, not adopted. Conclusion: the mainstay failures on A119b are locus-level (duplicate loci,
+fragments, repeat-rich pieces), not threshold-level; the exact-k-mer sketch cannot link fragments covering different exons,
+where the minimap2 base can (NPIP 19 vs 14).
