@@ -8753,3 +8753,36 @@ GOLGA8 9 -> 10 for -0.016 precision), the relative cut hurts. Human nested famil
 KB3781 (17,460 loci) wall: 106 s before -> 45 s after (sketching 37 s = samtools faidx of 26 sequences + one numpy pass per
 locus over its exons joined by K-1 N's; hot-hash removal 1 s; pair counting < 1 s); with intron rescue 100 s. Edges byte-identical
 (md5 ac346131... / 223bc57f...). The A119b runs that took > 1.5 h in pair enumeration were killed and relaunched.
+A119b with the fast sketch (2026-10-30, `~/runs/human_A119b/a1f.*`, k 17 scale 10 cap 3; 3.6-5 min per arm, was > 1.5 h):
+
+| arm | coding P / R | mainstays recalled / 123 | NPIP | GOLGA8 | unrelated foreign |
+|---|---|---|---|---|---|
+| base (MCL) | 0.726 / 0.741 | 108 | 18/20 | 11/13 | 2 |
+| tree fixed r0.15 c0.2 | 0.777 / 0.644 | 98 | 10/20 | 9/13 | 0 |
+| + intron rescue (w0.1 i0.2) | 0.780 / 0.675 | 103 | 15/20 | 9/13 | 0 |
+| gap 0.25 c0.15 | 0.761 / 0.693 | 104 | 15/20 | 10/13 | 0 |
+| gap 0.25 c0.15 + intron rescue | 0.762 / 0.694 | 104 | 15/20 | 10/13 | 0 |
+
+The intron rescue is positive on human too: +0.03 recall at +0.003 precision, NPIP 10 -> 15, mainstays 98 -> 103, still zero
+unrelated foreign genes. The gap cut adds recall (+0.05) and GOLGA8 at -0.016 precision; on top of the gap cut the rescue adds
+nothing (the weak edges it rescues are the ones the lower floor already admits). TSPY, TBC1D3, CT47A, XAGE and all YAGs unchanged
+on every arm.
+
+### MMSEQS CLUSTERING of the loci, development (2026-10-30, user "what about trying mmseqs on the family members"): FAIL on both gorilla sets
+`bench/denovo_eval/mmseqs_families.py`: spliced exon sequence per locus, `mmseqs easy-cluster` (nucleotide, --cov-mode 1 = coverage of
+the shorter, cluster-mode 0), 18-20 s per set. Coding P / R, nc P (`~/runs/mmseqs_gorilla/{kb,or}.scores.tsv`):
+
+| arm | KB3781 | OR6737 |
+|---|---|---|
+| sketch tree (chosen) | 0.500 / 0.309, 0.613 | 0.403 / 0.284, 0.763 |
+| mmseqs id 0.7 cov 0.5 | 0.062 / 0.544, 0.368 | 0.051 / 0.500, 0.429 |
+| mmseqs id 0.8 cov 0.5 | 0.086 / 0.324, 0.441 | 0.113 / 0.318, 0.585 |
+| mmseqs id 0.9 cov 0.5 | 0.135 / 0.206, 0.652 | 0.158 / 0.182, 0.693 |
+| mmseqs id 0.8 cov 0.8 | 0.185 / 0.147, 0.627 | 0.203 / 0.182, 0.722 |
+| mmseqs id 0.8, soft-masked bases hard-masked | 0.131 / 0.250, 0.621 | 0.145 / 0.250, 0.698 |
+| mmseqs id 0.9, hard-masked | 0.141 / 0.191, 0.668 | 0.163 / 0.170, 0.760 |
+
+Precision collapses at every setting and most false pairs are UNRELATED (id 0.8: 152 of 234 on KB3781, 95 of 219 on OR6737),
+even with repeats hard-masked (75 of 113). Local alignment covering half of the shorter locus is satisfied by a shared exon or
+domain; the sketch's chromosome-dispersion cap (drop k-mers on > 3 chromosomes) is what removes exactly those shared segments, and
+mmseqs has no equivalent. mmseqs stays a judge (protein mutual hit), not a family engine.
