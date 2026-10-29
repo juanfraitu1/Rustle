@@ -8629,3 +8629,22 @@ drops 9-32 edges and is a mild recall gain for a larger precision loss. (4) The 
 of real but older paralogs of the same families, which the Simiiformes bar counts as false. Goal bars (recall up at no precision
 loss) not met on either dev set; HG002 untouched. Chosen point unchanged. A119b mainstay check of the cuts in
 `~/runs/human_A119b/a1cut.mainstays.txt`.
+Intron test (user "is the problem that the edges are spliced? could there be a method for unspliced and one for spliced?"):
+`bench/denovo_eval/intron_containment.py` = unmasked exact 17-mer containment between the INTRONS of the two de novo loci (locus span
+minus exons), for every coding pair inside the floor-0.1 families (components minus bridges, recall 0.69):
+
+| set | class | pairs | no/short intron | intron containment q25 / median / q75 | >= 0.05 | >= 0.2 |
+|---|---|---|---|---|---|---|
+| KB3781 | Simiiformes hit | 60 | 1 | 0.00 / 0.09 / 0.34 | 34/59 | 23/59 |
+| KB3781 | older relative | 82 | 15 | 0.02 / 0.11 / 0.91 | 41/67 | 25/67 |
+| KB3781 | unrelated | 117 | 0 | 0.00 / 0.00 / 0.04 | 22/117 | 7/117 |
+| OR6737 | Simiiformes hit | 79 | 2 | 0.00 / 0.05 / 0.23 | 38/77 | 20/77 |
+| OR6737 | older relative | 121 | 46 | 0.00 / 0.03 / 0.39 | 33/75 | 22/75 |
+| OR6737 | unrelated | 102 | 0 | 0.00 / 0.00 / 0.09 | 30/102 | 9/102 |
+
+Intron sharing does NOT separate the Simiiformes layer from the older layer (same distribution; the older relatives on KB3781 share
+introns MORE, q75 0.91, i.e. many "older" Compara pairs are young segmental duplicates or gene-converted copies, a truth-label
+problem, not a graph problem). It does separate unrelated pairs (median 0, 7/117 >= 0.2) from real pairs, but at the price of the
+45% of true Simiiformes pairs that share no intron k-mers at all (retrocopies, old-but-Simiiformes pairs, single-exon loci). A
+spliced + unspliced two-signal rule would therefore be a precision tool against the unrelated 9-15 pairs, not a recall tool, and
+would cost about half the recall if required. Not pursued as a bar.
