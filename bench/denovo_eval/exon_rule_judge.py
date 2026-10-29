@@ -19,6 +19,12 @@ class Judge:
 
     def __init__(self, species, loci_gff3):
         G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+        if species == 'hg002':
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
+            import guided3 as g3
+            g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']
+            F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
+            G = g3.load_genes('hg002')
         idx = F.exon_index(G)
         levels = {lv: {tuple(sorted(p)) for p in F.truth_pairs(G, F.PARALOGS, F.LEVELS[lv])[0]} for lv in ('recent', 'simiiformes')}
         _, universe = F.truth_pairs(G, F.PARALOGS, F.LEVELS['recent'])

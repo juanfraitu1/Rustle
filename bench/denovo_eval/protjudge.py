@@ -26,9 +26,17 @@ def translate(s):
 
 
 def longest_cds(species, wanted):
-    """gene id -> [(chrom, s0, e, strand, phase)] of its longest CDS (by coding bp)."""
-    path = F.GGO_GFF if species == 'gorilla' else F.CAT_GFF
+    """gene id -> [(chrom, s0, e, strand, phase)] of its longest CDS (by coding bp). hg002: Ensembl GFF3 (DENOVO_HG002_GFF)."""
+    path = {'gorilla': F.GGO_GFF, 'human': F.CAT_GFF, 'hg002': os.environ.get('DENOVO_HG002_GFF')}[species]
     per_tx = collections.defaultdict(list); tx_gene = {}
+    if species == 'hg002':
+        for line in open(path):
+            f = line.split('\t', 8)
+            if len(f) < 9 or f[2] == 'exon' or f[2] == 'CDS':
+                continue
+            a = dict(kv.split('=', 1) for kv in f[8].rstrip('\n;').split(';') if '=' in kv)
+            if a.get('ID', '').startswith('transcript:') and a.get('Parent', '').startswith('gene:'):
+                tx_gene[a['ID']] = a['Parent']
     for line in open(path):
         f = line.split('\t', 8)
         if len(f) < 9 or f[2] != 'CDS':
@@ -37,6 +45,8 @@ def longest_cds(species, wanted):
         g = a.get('gene_id') if species == 'human' else None
         if species == 'gorilla':
             g = 'gene-' + a['gene'] if 'gene' in a else None
+        elif species == 'hg002':
+            g = tx_gene.get(a.get('Parent', ''))
         if g not in wanted:
             continue
         per_tx[(g, a['Parent'])].append((f[0], int(f[3]) - 1, int(f[4]), f[6], f[7]))
@@ -98,7 +108,14 @@ def pairs(species, base, arm, outdir):
     protein-coding, LOC genes included). Writes OUTDIR/{base,added}.pairs.tsv and OUTDIR/genes.txt."""
     import itertools
     os.makedirs(outdir, exist_ok=True)
-    G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+    if species == 'hg002':
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
+        import guided3 as g3
+        g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']
+        F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
+        G = g3.load_genes('hg002')
+    else:
+        G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
     idx = F.exon_index(G)
 
     def gene_pairs(path):

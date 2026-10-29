@@ -8314,3 +8314,31 @@ read off this table; 1 to 1000 behave alike, 2000+ costs true pairs) and dev-onl
 the threshold frozen and a sample no lift row has touched (U1-FRESH-HG002 above is the registered candidate; HG002 Kinnex reads are
 arriving on Fritz). Not run: a phylogenetic edge (3), a breakpoint-derived identity cut (2; U1's identities are bimodal, 0.75-0.85 and
 >= 0.95, but the upper mode is 219/224 LOC pairs that no judge sees), read-sharing edges (6).
+
+## PREREG U1-FRESH-HG002-INTRON (2026-10-29, user "Sounds good, please proceed"): U1 lift edges + the intron-homology filter, HG002 T2T Q100 paternal held-out
+Extends U1-FRESH-HG002 (2026-10-28) with the one amendment that cleared every GW4 bar on dev (the development note above): a lift edge is
+kept only when the two loci also share NON-EXONIC DNA in the base run's gated all-vs-all (the vault's segmental-duplication argument, Bailey
+2002 / SEDEF via Terminology 2026-10-07: shared introns and flanks are the evidence of YOUNG paralogy; shared exons alone are not).
+**Disclosure.** The filter was designed post hoc on KB3781 dev after EDGE-HUMAN-2 failed there (floor rule). Dev numbers (Simiiformes):
+base 0.206/0.341/0.257, U1 0.559/0.297/0.388, U1+intron 0.500/0.358/0.417, family F 0.500 / 0.613 / 0.585, wrong 12 / 12 / 12. Nothing
+about HG002 (reads, genome, gene set) has been looked at by any lift row; HG002 pat served only the GUIDED retro question (r1460). The
+Ensembl 2022_07 gene set and xref were downloaded to Fritz `~/data/hg002/` on 2026-10-29 03:23 before this text; the genome
+(GCA_021950905.1, NCBI) is downloading; the reads (`reads/HG002_kinnex.t2t.bam`, in transfer) will be re-aligned from their FLNC sequences
+to HG002 pat with the shipped read flags, whatever their current reference is.
+**Pipeline, frozen.** (1) FLNC reads from the BAM -> `minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` to HG002 pat ->
+sorted BAM; (2) `tools/rustle_pipeline.sh assemble` then `families` (base = shipped MCL, `--min-exonic-bp 1 --min-shared-exon-frac 0.60
+--emit-units`, exon gate on; same flags as KB3781); (3) U1 exactly as GW4 / EDGE-HUMAN-2: one most-reads chain per locus, `minimap2 -c -x
+splice|asm20 -N 100 -p 0.1 --secondary=yes` to HG002 pat, `liftmode.py families` with `LIFT_MASK=rep LIFT_RETRO=1 LIFT_RECIPROCAL=1`
+(the 2026-10-28 retro rule; `LIFT_COV_SHORTER` and `LIFT_RETRO_JUNCTION` OFF), edges keyed to `fam.loci.gff3`; (4) **intron filter,
+primary: keep an edge iff `edge_dna.py` counts >= 1 intron-intron aligned column for the pair in the base's gated all-vs-all PAF**
+(threshold-free form; on dev 20/24 true, 42/73 older+HGNC edges kept); **secondary, reported only: >= 500 columns** (dev 18/24, 30/73);
+(5) `mcl_families --from-gtf --extra-edges` on the cached all-vs-all for arms U1 and U1+intron.
+**Truth and judges.** famtruth `--species hg002 --ggo-gff genes.gff3 --xref xref.tsv --levels simiiformes --gtf <run>.families.gtf`
+(Ensembl genes, HGNC symbols from the xref, Compara by symbol; genes without an HGNC symbol are outside the universe, the stated blind
+spot); pairjudge with `PAIRJUDGE_SPECIES=hg002` (same gene set; Compara any level + HGNC groups + same symbol); protein mutual hit from
+HG002's own Ensembl CDS (`protjudge.py pairs/prep/rate`, species hg002, mmseqs -s 7.5); mainstays/YAGs from famtruth.
+**Bars (GW4 set, Simiiformes, each arm against base): pair F > base; family F > base; pair precision >= base - 0.02; pairjudge WRONG <=
+base + 2; no mainstay/YAG regression; added-pair mutual hit >= base's own; >= 20 judgeable added pairs.** The registered arm is
+U1+intron (primary threshold); U1 is reported beside it so the filter's own effect is visible. PASS -> propose "U1 lift edges with the
+intron-homology filter" for the de novo `families` stage (user decides); metric-auditor before any claim. FAIL -> both rules stay opt-in
+tools; no re-tuning on HG002. Human numbers are never pooled with gorilla.

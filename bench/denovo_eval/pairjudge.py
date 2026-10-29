@@ -17,7 +17,14 @@ HGNC = os.environ.get('DENOVO_HGNC', '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.
 
 def main(paths):
     species = os.environ.get('PAIRJUDGE_SPECIES', 'gorilla')  # EDGE-HUMAN: 'human' judges CAT genes directly
-    G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+    if species == 'hg002':  # U1-FRESH-HG002-INTRON: Ensembl rapid-release genes + HGNC symbols via xref (guided3.load_genes)
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
+        import guided3 as g3
+        g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']
+        F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
+        G = g3.load_genes('hg002')
+    else:
+        G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
     idx = F.exon_index(G)
     sim, universe = F.truth_pairs(G, F.PARALOGS, F.LEVELS['simiiformes'])
     sim = {tuple(sorted(p)) for p in sim}

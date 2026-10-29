@@ -14,6 +14,12 @@ run, lift, arm = sys.argv[1:4]
 levels = sys.argv[sys.argv.index('--levels') + 1] if '--levels' in sys.argv else 'simiiformes'
 species = sys.argv[sys.argv.index('--species') + 1] if '--species' in sys.argv else 'gorilla'
 G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+if species == 'hg002':
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
+    import guided3 as g3
+    g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']
+    F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
+    G = g3.load_genes('hg002')
 idx = F.exon_index(G)
 fams, _, _ = F.load_catalog(f'{arm}.fam.copies.tsv', G, idx)
 in_fam = set().union(*fams.values()) if fams else set()
