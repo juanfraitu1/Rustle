@@ -13,7 +13,7 @@ from family_container import aligned_runs, mask_ranges, exon_columns  # noqa: E4
 from exon_rule_judge import Judge  # noqa: E402
 
 gff, paf, edges = sys.argv[1:4]
-species = sys.argv[5] if len(sys.argv) > 5 else 'gorilla'
+species = sys.argv[sys.argv.index('--species') + 1] if '--species' in sys.argv else 'gorilla'
 blocks = collections.defaultdict(list); gene_of_span = {}
 for line in open(gff):
     if line[0] == '#':

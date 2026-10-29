@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """EDGE-HUMAN-2 readout: verdict of every U1 lift edge (keyed to locus coordinates) and what the family floor keeps / drops.
 
-  edge_verdicts.py LOCI_GFF3 FLOORS_JSON EDGES_U1_TSV EDGES_FLOOR_TSV [--species gorilla]
+  edge_verdicts.py LOCI_GFF3 FLOORS_JSON|- EDGES_U1_TSV EDGES_KEPT_TSV [--species gorilla]   ('-' = no floors: a filtered edge set)
 """
 import collections, json, sys
 from exon_rule_judge import Judge
 
 gff, fl, u1, flo = sys.argv[1:5]
-J = Judge(sys.argv[6] if len(sys.argv) > 6 else 'gorilla', gff)
-F = json.load(open(fl))
+J = Judge(sys.argv[sys.argv.index('--species') + 1] if '--species' in sys.argv else 'gorilla', gff)
+F = json.load(open(fl)) if fl != '-' else dict(member={}, family={}, global_floor=0.0)
 kept = {tuple(l.split('\t')[:2]) for l in open(flo)}
 order = ['true-recent', 'true-simiiformes', 'older', 'hgnc', 'same-symbol', 'WRONG', 'same-gene', 'unjudged']
 c = collections.defaultdict(collections.Counter)
