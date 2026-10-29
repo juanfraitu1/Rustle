@@ -8690,3 +8690,23 @@ pair scores (KB 0.500/0.309 -> 0.435/0.294, OR 0.403/0.284 -> 0.375/0.273): intr
 dilute containment. Kept as an option, not adopted. Conclusion: the mainstay failures on A119b are locus-level (duplicate loci,
 fragments, repeat-rich pieces), not threshold-level; the exact-k-mer sketch cannot link fragments covering different exons,
 where the minimap2 base can (NPIP 19 vs 14).
+
+### MAINSTAY SCORE + FAMILY-OVERLAP MERGE (2026-10-30, user "ok lets do that then")
+`bench/denovo_eval/mainstay_score.py BASE.gtf COPIES...`: per named family, expressed members, RECALLED = members whose best locus
+(most exonic bp shared with the gene) is in the family holding most members' best loci, number of families holding any member
+locus, related and UNRELATED foreign coding genes in that family. `bench/denovo_eval/famoverlap.py`: merge families whose member
+loci overlap pairwise on the same strand in >= 50% of the smaller family (TBC1D3's two complete families). A119b:
+
+| arm | recalled / 123 expressed | unrelated foreign | NPIP | TBC1D3 | GOLGA8 | GOLGA6L | SPATA31 | coding P / R |
+|---|---|---|---|---|---|---|---|---|
+| base (MCL) | 108 | 2 (GOLGA8: AC091167.6, MTPAP) | 18/20 | 9/9 (2 fams) | 11/13 | 4/10 | 4/8 | 0.726 / 0.741 |
+| base + overlap merge | 108 | 2 | 18 | 9 (1 fam) | 11 | 4 | 4 | 0.723 / 0.741 |
+| sketch tree k21 s20 r0.1 | 103 | 0 | 15 | 9 (2 fams) | 9 | 4 | 4 | 0.777 / 0.671 |
+| sketch + overlap merge | 103 | 0 | 15 | 9 (1 fam) | 9 | 4 | 4 | 0.767 / 0.674 |
+
+CT47A 7/7, XAGE 3/3, TSPY 34/34, BPY2, CDY, DAZ, HSFY, VCY complete on all arms; RBMY 5/6 on all. The overlap merge only changes
+the family COUNT (TBC1D3, HSFY to one family), never the recalled members, and costs pair precision on every arm (4 extra related
+false pairs on each gorilla set, A119b 0.777 -> 0.767): the overlapping families it joins are mostly real sub-families. Not adopted;
+the "families" column reports duplicates instead. Mainstay gaps that remain on A119b: NPIP 15-18/20 (pieces, see diagnosis),
+GOLGA8 9-11/13, GOLGA6L 4/10 (fragments), SPATA31 4/8 (A vs D subfamilies), RBMY 5/6. The base is ahead of the sketch on NPIP and
+GOLGA8 (alignment links repeat-rich pieces); the sketch is ahead on unrelated foreign (0 vs 2) and pair precision.
