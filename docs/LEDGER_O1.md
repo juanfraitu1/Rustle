@@ -8146,6 +8146,13 @@ CIGARs — cover = primary reads with an aligned block over the exon, skip = pri
 (the assembler's chain floor) or skip > cover (the §6er units rule). Substrate: human slice chr20-21 (`merged_bench/human_slice/mg.families.gtf`,
 `winloci_data/A119b.t2t.bam`). Reported: share of transcripts / exons unsupported; share among the most-reads representatives (the U1 template
 pool); overlap with the intronic-terminal chains of U1-TSS. A pool rule follows only if the share is material.
+**EXONSUPPORT first pass (human slice chr20-21, primaries only, 2026-10-28 17:12):** 13,207 transcripts; 6,718 (50.9%) carry an exon flagged by the
+combined rule, 3,838 / 6,705 (57%) of the most-reads representatives. Split: 4,690 flags are "spliced over by more reads than cover it" — a
+minority cassette exon, i.e. a legitimate isoform, so that half of the rule over-flags and is withdrawn as a pool criterion; 2,028 are "cover < 2
+primaries", the real candidates, suspected to be exons supported only by SECONDARY alignments (the seed pool admits good secondaries; the scan
+counted primaries). Only 51 of the 3,838 flagged loci have a clean alternative chain. The secondary-inclusive rerun (`--include-secondary`) was
+stopped at the user's hand-off (17:55). Next on the cluster: finish that scan, define "unsupported" = cover < 2 over primaries+secondaries, report
+the share of representatives affected, then decide on a pool rule.
 ## Column-exact shared exons: `mcl_families --shared-exon-columns` (2026-10-29, development on gorilla KB3781 fibroblast; opt-in)
 **User:** "implement a column-exact exon gate that tries to decide whether two loci share enough exon by using the existing
 aligned_runs CIGAR parser; test it with the gorilla fibroblast dataset".

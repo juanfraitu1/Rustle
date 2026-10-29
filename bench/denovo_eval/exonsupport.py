@@ -55,6 +55,7 @@ def main():
     ap.add_argument('bam')
     ap.add_argument('out')
     ap.add_argument('--contigs')
+    ap.add_argument('--include-secondary', action='store_true', help='count secondary alignments too (the assembler seed pool); default primaries only')
     a = ap.parse_args()
     contigs = set(a.contigs.split(',')) if a.contigs else None
     tx = read_gtf(a.gtf, contigs)
@@ -71,7 +72,7 @@ def main():
         e = max(e[1] for tid in tids for e in tx[tid]['exons'])
         reads = []
         for aln in bam.fetch(chrom, s, e):
-            if aln.flag & 2308 or aln.cigartuples is None:
+            if aln.flag & (2052 if a.include_secondary else 2308) or aln.cigartuples is None:
                 continue
             reads.append(blocks_and_gaps(aln))
         for tid in tids:
