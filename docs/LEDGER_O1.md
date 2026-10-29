@@ -8550,6 +8550,29 @@ TLR1/6, GPRASP1/2, DCAF12L1/2, SLC22A4/5, RPL10/RPL10L); the unrelated ones are 
 So smaller k does not reach the no-edge KRAB-ZNF Simiiformes misses (ZNF468/701/813/860/888 still absent); it reaches the next-older
 layer of the same families, which the Simiiformes bar counts as false. Min-shared 3 changes nothing; scale 5 changes nothing.
 k 17 stays the chosen point.
+Why the ZNF pairs have no edge (user "could we do something different for those?"): counting exact 17-mers between the ANNOTATION
+exons of the 47 missed KB3781 pairs shows most of them share plenty (ZNF761/ZNF813 668 of 3,471 17-mers = 19%, ZNF578/ZNF701 10%,
+ZNF155/ZNF230 8%, GON4L/YY1AP1 46%); only APOL1/APOL3, IGFL2/IGFL3, ZNF468/ZNF813, ZNF813/ZNF888, ZNF860/ZNF888 share none. So the
+misses sit just under the containment floor of 0.2 (and some under the chromosome cap), not beyond the seed. Third grid (`grid3.sh`,
+`{kb,or}.scores3.tsv`, k 17 scale 10): containment floor c, root cut r, chromosome cap mc:
+
+| arm | KB3781 P / R (unrelated false), nc P | OR6737 P / R (unrelated false), nc P |
+|---|---|---|
+| r0.15 c0.2 mc3 (chosen) | 0.500 / 0.309 (9), 0.613 | 0.403 / 0.284 (15), 0.763 |
+| r0.15 c0.15 mc3 | 0.439 / 0.368 (10), 0.597 | 0.360 / 0.352 (18), 0.738 |
+| r0.1 c0.15 mc3 | 0.379 / 0.368 (11), 0.587 | 0.302 / 0.398 (24), 0.702 |
+| r0.1 c0.1 mc3 | 0.301 / 0.412 (15), 0.539 | 0.257 / 0.432 (32), 0.627 |
+| r0.1 c0.1 no cap | 0.199 / 0.500 (73), 0.473 | 0.213 / 0.580 (93), 0.572 |
+| r0.15 c0.2 cap 6 | 0.458 / 0.324 (11), 0.615 | 0.394 / 0.295 (16), 0.758 |
+| r0.15 c0.2 no cap | 0.367 / 0.324 (23), 0.594 | 0.342 / 0.295 (23), 0.724 |
+
+Reading: containment is one axis of a precision/recall trade: every 0.05 lower recovers 4-6 Simiiformes pairs per set and admits
+2-4 times as many pairs that are real but OLDER paralogs of the same KRAB-ZNF / PCDHB / GSTM families (the "related" column), while
+the UNRELATED false pairs barely move (KB 9 -> 10 -> 15, OR 15 -> 18 -> 32) until the chromosome cap is removed, where the
+zinc-finger linker and KRAB k-mers glue families across chromosomes (unrelated 73 / 93). No containment value separates
+Simiiformes pairs from older pairs because these families are nested; the Simiiformes bar is what makes the older layer count as
+false. Candidate for the prereg if recall is wanted: r0.15 c0.15 mc3 (KB +0.06 recall for -0.06 precision, OR +0.07 / -0.04, nc
+precision -0.02 both). Decision left to the user.
 
 ### MINIPROT MEMBER RECOVERY, development note (2026-10-29, user "yes lets do that"): FAIL as an add-on on both gorilla sets
 Idea: pseudogenes and frameshifted copies are missed by exact k-mers; map the longest CDS of every coding family member with miniprot
