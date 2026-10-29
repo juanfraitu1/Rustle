@@ -12,7 +12,7 @@ set -euo pipefail
 export PATH=$HOME/.pixi/detached-envs/rustle-7434162673922408322/envs/default/bin:$PATH
 RUN=$HOME/runs/hg002_kinnex; BIN=$HOME/rustle_target/release; REPO=$HOME/Rustle
 FASTA=$HOME/data/hg002/hg002.pat.fa; SRC_BAM=$HOME/work/jfim/rustle_data/reads/HG002_kinnex.t2t.bam
-BAM=$RUN/hg002.pat.bam; T=72
+BAM=$HOME/work/jfim/hg002_run/hg002.pat.bam; T=72
 STAGES=${STAGES:-align assemble families templates lift}
 cd $RUN
 for st in $STAGES; do
@@ -20,7 +20,7 @@ for st in $STAGES; do
   case $st in
     align)
       samtools fastq -@ 8 -F 0x900 $SRC_BAM 2> $RUN/fastq.log | minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes -t $T $FASTA - 2> $RUN/mm2.log \
-        | samtools sort -@ 16 -m 2G -o $BAM - && samtools index $BAM
+        | samtools sort -@ 16 -m 2G -T $HOME/work/jfim/hg002_run/sort_tmp -o $BAM - && samtools index $BAM
       samtools flagstat $BAM > $RUN/hg002.pat.flagstat ;;
     assemble)
       bash $REPO/tools/rustle_pipeline.sh assemble --bam $BAM --fasta $FASTA --out $RUN/hg --threads $T --bin $BIN > $RUN/hg.assemble.log 2>&1 ;;
