@@ -6,7 +6,7 @@ dozen), join two loci when they share >= --min-shared retained hashes AND contai
 connected components of that graph (>= 2 loci). No minimap2, no gate. Writes OUT.fam.copies.tsv (famtruth/pairjudge format),
 OUT.edges.tsv (a b shared containment masked_share_of_shared) and OUT.sketch.log.
 
-  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap]
+  sketchfam.py LOCI_GFF3 GENOME_FA OUT [--k 21] [--scale 20] [--max-loci 0] [--max-chrom 0 --fai GENOME_FAI] [--min-shared 5] [--min-cont 0.2] [--unmasked-only] [--allow-overlap] [--cluster components|greedy|tree --family-cont 0.3 --root-cont 0.1]
 Needs numpy and samtools (per-chromosome fetch).
 """
 import sys, re, collections, subprocess, time
@@ -18,7 +18,7 @@ def opt(name, default, cast=float):
 GFF, FA, OUT = a[0], a[1], a[2]
 K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
 MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
-MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
+MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
 def say(*x):
@@ -129,15 +129,67 @@ with np.errstate(over='ignore'):
         c = n / max(1, min(len(sk[x]), len(sk[y])))
         if c >= MINC: edges.append((x, y, n, c, pairm[(x, y)] / n))
     say(f"pairs sharing >= 1 hash {len(pair)}, overlapping pairs rejected {n_overlap}, edges {len(edges)}")
-    # components
-    parent = {t: t for t in sk}
-    def find(x):
-        while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
-        return x
-    for x, y, _, _, _ in edges: parent[find(x)] = find(y)
-    comp = collections.defaultdict(list)
-    for t in sk: comp[find(t)].append(t)
-    fams = sorted([v for v in comp.values() if len(v) >= 2], key=lambda v: -len(v))
+    if CLUSTER == 'greedy':
+        # Family = UNION SKETCH (linclust / CD-HIT style, 2026-10-29 user: "faithfully encapsulates gene families, ok to lose the most
+        # divergent"): loci in decreasing sketch size; a locus joins the first family whose union sketch contains >= --family-cont of
+        # its hashes (ties: largest containment), among families it has an edge into; else it founds one. No transitive chaining.
+        nbr = collections.defaultdict(set)
+        for x, y, _, _, _ in edges: nbr[x].add(y); nbr[y].add(x)
+        fam_of = {}; union = {}; members = {}
+        for t in sorted(sk, key=lambda t: -len(sk[t])):
+            if len(sk[t]) == 0: continue
+            best = None; bc = 0.0; mine = set(sk[t].tolist())
+            for f in {fam_of[n] for n in nbr[t] if n in fam_of}:
+                c = len(mine & union[f]) / len(mine)
+                if c >= FAMC and c > bc: best, bc = f, c
+            if best is None:
+                best = t; union[best] = set(); members[best] = []
+            fam_of[t] = best; union[best] |= mine; members[best].append(t)
+        fams = sorted([v for v in members.values() if len(v) >= 2], key=lambda v: -len(v))
+    elif CLUSTER == 'tree':
+        # Family = a TREE (2026-10-29 user: "one that respects clades"): per connected component, average-linkage (UPGMA) on
+        # distance 1 - containment (unlinked pairs = 1), families = cut at 1 - --root-cont, clades = the subtrees; Newick per family
+        # in OUT.trees.nwk so NPIPA / NPIPB are one family with two clades instead of two families.
+        from scipy.cluster.hierarchy import linkage, fcluster, to_tree
+        from scipy.spatial.distance import squareform
+        parent = {t: t for t in sk}
+        def find(x):
+            while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
+            return x
+        for x, y, _, _, _ in edges: parent[find(x)] = find(y)
+        comp = collections.defaultdict(list)
+        for t in sk: comp[find(t)].append(t)
+        cont = {}
+        for x, y, _, c, _ in edges: cont[(x, y)] = c; cont[(y, x)] = c
+        fams = []; nwk = open(OUT + '.trees.nwk', 'w')
+        def newick(node, names):
+            if node.is_leaf(): return names[node.id]
+            return f"({newick(node.get_left(), names)},{newick(node.get_right(), names)}):{node.dist:.3f}"
+        for members_ in comp.values():
+            if len(members_) < 2: continue
+            m = sorted(members_); n = len(m); D = np.ones((n, n))
+            np.fill_diagonal(D, 0.0)
+            ix = {t: i for i, t in enumerate(m)}
+            for (x, y), c in cont.items():
+                if x in ix and y in ix: D[ix[x], ix[y]] = 1.0 - c
+            Z = linkage(squareform(D, checks=False), method='average')
+            lab = fcluster(Z, t=1.0 - ROOTC, criterion='distance')
+            groups = collections.defaultdict(list)
+            for t, l in zip(m, lab): groups[l].append(t)
+            for g in groups.values():
+                if len(g) >= 2: fams.append(g)
+            if n >= 3: nwk.write(newick(to_tree(Z), m) + ';\n')
+        nwk.close()
+        fams = sorted(fams, key=lambda v: -len(v))
+    else:
+        parent = {t: t for t in sk}
+        def find(x):
+            while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
+            return x
+        for x, y, _, _, _ in edges: parent[find(x)] = find(y)
+        comp = collections.defaultdict(list)
+        for t in sk: comp[find(t)].append(t)
+        fams = sorted([v for v in comp.values() if len(v) >= 2], key=lambda v: -len(v))
     say(f"families {len(fams)}, members {sum(len(v) for v in fams)}, largest {[len(v) for v in fams[:5]]}")
     with open(OUT + '.edges.tsv', 'w') as w:
         for x, y, n, c, m in edges: w.write(f"{x}\t{y}\t{n}\t{c:.3f}\t{m:.2f}\n")

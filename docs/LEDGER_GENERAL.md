@@ -2283,6 +2283,8 @@ Clone the repository and work on **`o3-fast`**: `git clone git@github.com:juanfr
   a dated amendment.
 - **Audit before reporting.** A fresh auditor (the `metric-auditor` agent) checks each verdict on a frozen, read-only copy with
   SHA1SUMS. Record the outcome in `docs/NEGATIVE_RESULTS_REGISTER.md`, and check that register before proposing anything.
+- **Family scoring (2026-10-29, user):** pair precision and recall only (`bench/denovo_eval/pairscore.py`); no family F, no bipartite
+  family matching, no F; pseudogene-involving pairs are ignored, not a category.
 - **Data invariants:**
   - never pool human and gorilla numbers;
   - human annotation = CAT/Liftoff v2.0;

@@ -34,8 +34,9 @@ families; Yoo 2025 concordance), inversion aligner blindness, O3 candidates Amen
 
 ## Conventions
 
-- Pre-register before looking (`PREREG_*.md`); hold a substrate back; report sensitivity, precision and bipartite
-  matching; never pool human and gorilla numbers; check the register before proposing.
+- Pre-register before looking (`PREREG_*.md`); hold a substrate back; report pair precision and recall
+  (`bench/denovo_eval/pairscore.py`, since 2026-10-29: no F, no bipartite family matching, pseudogene pairs ignored);
+  never pool human and gorilla numbers; check the register before proposing.
 - When a study closes, move its files to `archive/YYYY-MM/` with `git mv`, regenerate `INDEX.md`, and make sure
   the register row that records the verdict cites the archived path.
 - `figures/` holds the publication figures' sources; `superpowers/` holds agent plans and specs.

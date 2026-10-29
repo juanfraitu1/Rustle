@@ -8494,3 +8494,11 @@ chaining: 15/22 wrong OR6737 pairs had no direct edge) and leave a 5,659-locus c
 replay under a minute. **Decision pending the user: a prereg needs a FRESH held-out sample (none of KB3781, HG002, A119b, OR6737 can
 serve); candidate arms = cap-by-chrom + MCL (precision-first) and cap-by-chrom + components (recall-first).**
 
+## SCORING CHANGE (2026-10-29, user): pair precision and recall only; no family F, no bipartite family matching, no F; pseudogenes not a category
+From here on the de novo family readout is `bench/denovo_eval/pairscore.py`: truth = Compara pairs at the registered level among
+protein-coding genes expressed in the run; predicted = gene pairs inside one family; a predicted pair with a non-protein-coding gene
+(pseudogene, lncRNA) is ignored, neither hit nor false; reported per arm: predicted pairs, hits, false (and how many of the false are
+older/HGNC/same-symbol relatives), **precision, recall**. famtruth's family-level one-to-one matching, family F, pair F and the
+mainstay/YAG lines are no longer bars (they may still be printed as diagnostics). User words: "we don't need bipartite matching anymore,
+the only thing that is useful is precision and recall", "pseudogenes don't need their own category", "we dont need F anymore".
+
