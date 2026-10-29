@@ -2375,6 +2375,14 @@ edge loss; DENOVOFAM arm B is a crude union version).
 **Judge on:** the DENOVOFAM scorer (`bench/denovo_eval/famtruth.py`: Compara recent/Primates, mainstays, YAGs, dev/held-out halves) plus
 recall of Liftoff `-copies` extra copies; held-out testis ERR13885926 and a gorilla sample.
 
+### 1c. Exon-only k-mer sketch families with high-copy k-mer removal (user 2026-10-29: "can we try that eventually?")
+**Idea:** replace the minimap2 all-vs-all of the `families` stage by FracMinHash sketches (Mash / sourmash style) of each locus's EXONS
+only; drop every k-mer seen in more than N loci genome-wide (the k-mer form of the dispersion rule, PREREG DISPERSION in LEDGER_O1: the
+94 HG002 wrong pairs were TE-glued inter-chromosomal families whose shared segments were 99% soft-masked); families = clusters on the
+containment distance. Expected: the families stage in seconds genome-wide, no gate thresholds, and the TE families never form.
+**Judge on:** the same famtruth / pairjudge readouts at Simiiformes against the shipped MCL base, dev KB3781 + HG002 (both spent),
+held-out = whichever of A119b / OR6737 is not consumed by PREREG DISPERSION's verdict, or a fresh sample. Pre-register before scoring.
+
 ### 1b. PAUSED (user 2026-10-27): fresh-sample test of DENOVOFAM-L5 arm E7 on HG002 Kinnex
 User aligns HG002 on the cluster. Then: de novo run + `mcl_families` baseline (`--dump-graph`) + ungated asm20 all-vs-all, liftchain.py,
 orphanlift.py, `--extra-edges` E7; NEW prereg before scoring (fixed famtruth.py, Simiiformes; pair-F split into intended joins vs MCL
