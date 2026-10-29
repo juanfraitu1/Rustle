@@ -8209,7 +8209,7 @@ arrangement: recent pair F 0.400 -> 0.415, family F 0.902 = 0.902.)
 sub-second mtimes (NFS on Fritz) `fam_gtf_guard`'s `-ot` then refused the families stage; `stage_assemble` now stamps the families GTF
 with `PREFIX.gtf`'s mtime.
 
-### EDGE-HUMAN-2 RESULT, dev KB3781 (2026-10-29, Fritz; register 1469): **FAIL at dev on the pair-precision bar; the floor removes true edges, not older ones**
+### EDGE-HUMAN-2 RESULT, dev KB3781 (2026-10-29, Fritz; register 1468): **FAIL at dev on the pair-precision bar; the floor removes true edges, not older ones**
 Run dir `~/runs/gorilla_KB3781/edgeh/` on Fritz (scripts in `bench/denovo_eval/`: `liftfloor.py` floors + filter, `protjudge.py` the GW3-RBH
 mutual-hit judge re-implemented, `edge_verdicts.py` per-edge truth readout; `pairjudge.py`/`cdsseed.py` read `DENOVO_HGNC`). Substrate = the
 KB3781 fibroblast de novo assembly of the column-exact row above (17,460 loci; base `kb.fam`: 280 families / 812 copies).
@@ -8342,3 +8342,29 @@ base + 2; no mainstay/YAG regression; added-pair mutual hit >= base's own; >= 20
 U1+intron (primary threshold); U1 is reported beside it so the filter's own effect is visible. PASS -> propose "U1 lift edges with the
 intron-homology filter" for the de novo `families` stage (user decides); metric-auditor before any claim. FAIL -> both rules stay opt-in
 tools; no re-tuning on HG002. Human numbers are never pooled with gorilla.
+
+### RESULT U1-FRESH-HG002-INTRON (2026-10-29, Fritz; register 1469): **FAIL on the held-out: pair F 0.411 < base 0.413 and pair precision 0.415 < 0.478; the intron filter removes most of U1's precision loss but not enough**
+Run `~/runs/hg002_kinnex/` (jobs 4391754 + 4393872): 37.2 M primary reads re-aligned to HG002 pat (9 h 8 min, 98.6% mapped; 163 M secondaries
+at -N 50 -p 0.1), assemble 78 min, base families 2 min (644 clusters, 4,066 members), templates 150,410 chains / 41,796 reps, lift 342,147
+placements / 11,152 retro / 27,566 U1 edges; intron filter keeps 809 edges (>= 1 column) / 530 (>= 500). MCL arms: U1 1,164 edges added,
+intron 233, intron500 191. Scored exactly as registered (one fix before scoring, commit b6694819: `edge_dna`/`lift_misses` with
+`--species hg002` loaded the gorilla GFF first and crashed on its laptop path; no metric change). Audited by a fresh metric-auditor on a
+frozen SHA1-summed copy (`audit/`): every number reproduces to 3 decimals, JSONs match the log.
+
+| arm (Simiiformes, famtruth) | hit/true \| pred | sens | prec | pair F | family F | pairjudge WRONG | added mutual hit |
+|---|---|---|---|---|---|---|---|
+| base (shipped MCL) | 160/453 \| 321 | 0.353 | 0.498 | **0.413** | 0.605 | 94 | own 338/469 = 0.721 |
+| U1 (reported) | 198/453 \| 576 | 0.437 | 0.344 | 0.385 | 0.625 | 99 | 267/274 = 0.974 |
+| **U1+intron >= 1 col (registered)** | 184/453 \| 443 | 0.406 | 0.415 | **0.411** | 0.621 | 95 | 143/144 = 0.993 |
+| U1+intron >= 500 (secondary) | 186/453 \| 446 | 0.411 | 0.417 | 0.414 | 0.630 | 95 | 138/139 = 0.993 |
+
+Bars, registered arm: pair F FAIL (-0.003, four TP-equivalents); family F PASS; precision FAIL (-0.063); WRONG PASS (+1); mainstays/YAGs
+unchanged (NPIP 11/16, TBC1D3 13/13, GOLGA8 2/2; YAGs 0 in a fibroblast-free Kinnex run); mutual hit PASS; judgeable added PASS (144
+coding pairs). Secondary: passes pair F by two pairs, fails precision. **Outcome as registered: both rules stay opt-in tools; no re-tuning on
+HG002.** The auditor's split readout: the intron arm's whole gain is on famtruth's dev split (pair F 0.244 -> 0.294) while the heldout split
+falls (0.446 -> 0.411, precision 0.564 -> 0.452), consistent with a filter designed on dev. What the filter does do, on human as on gorilla:
+it keeps the protein-confirmed edges (0.993 mutual hit on the added pairs vs 0.721 among the base's own) and drops U1's extra WRONG pairs
+(99 -> 95); what it does not do is recover the precision the lift edges cost against famtruth's universe. Miss tracing of the 453 truth pairs
+(`edgeh/lift_misses.intron.tsv`): hit 167, no-placement 58, retro-only 45, one-way 43 (+20 with retro), no-locus 42, edge-split 32,
+both-ways-no-edge 7. Timing note for the housekeeping question: align 9 h dominates; everything after it is under 1.5 h on 72 cores.
+
