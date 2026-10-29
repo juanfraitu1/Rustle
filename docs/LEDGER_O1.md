@@ -8453,3 +8453,24 @@ pairjudge WRONG <= 2 x base; no mainstay/YAG regression; sketch wall < 10 min on
 the de novo `families` graph builder (the minimap2 all-vs-all + exon gate become opt-in; MCL on the sketch graph is a follow-up arm);
 PASS on one -> report, opt-in tool; FAIL -> opt-in, register. Metric-auditor on frozen SHA1 copies before any claim; no re-tuning.
 
+### RESULT SKETCHFAM (2026-10-29, Fritz; register 1471): **FAIL on both held-outs; the 20-locus k-mer cap erases large genuine families (TSPY 46 loci, GOLGA6/8 32), which is where human recall lives**
+Scored once each, frozen SHA1 copies in `audit_sketch/`; metric-auditor reproduced every number (one correction: on A119b the WRONG bar
+passes, 172 <= 174, which changes nothing).
+
+| held-out, arm (Simiiformes) | hit/true \| pred | sens | prec | pair F | family F | WRONG | wall |
+|---|---|---|---|---|---|---|---|
+| A119b base | 1811/2395 \| 2228 | 0.756 | 0.813 | 0.783 | 0.754 | 87 | (minimap2 all-vs-all + MCL, 5 min on 72 cores) |
+| A119b sketch | 1069/2395 \| 1416 | 0.446 | 0.755 | 0.561 | 0.738 | 172 | 300 s, 4.0 GB, one process |
+| OR6737 base | 21/88 \| 49 | 0.239 | 0.429 | 0.307 | 0.497 | 5 | |
+| OR6737 sketch | 27/88 \| 98 | 0.307 | 0.276 | 0.290 | 0.618 | 20 | 73 s, 1.6 GB |
+
+A119b misses pair F, family F, sens, precision (by 0.008) and the mainstay/YAG bar: **TSPY goes from 34/34 found in one family to 0/34**,
+every one of its 46 chrY loci a singleton, because every TSPY-specific hash sits in > 20 loci and is discarded. OR6737 gains sens
+(+0.07) and family F (+0.12) and misses pair F, precision and WRONG. **Outcome as registered: opt-in tool.** Post hoc trace of the 683
+true pairs the sketch loses on A119b: 540 are TSPY (base MCL56, 38 genes / 46 loci), 67 GOLGA6/GOLGA8 (32 loci), 23 a KRAB-ZNF family
+(24 loci); 563/683 come from base families of 20-49 genes. What the method does well, both held-outs: the mainstay contamination drops
+(GOLGA8 foreign members 11 -> 1, GOLGA6L 2 -> 0) and it finds 103 true pairs the base misses on A119b (and 6 on OR6737) in about one
+minute per genome without minimap2. The next iteration, if any, must replace the absolute per-locus cap by the dispersion count (drop a
+hash by the number of CHROMOSOMES its loci span, not the number of loci), so that a 46-copy array on one chromosome keeps its k-mers;
+that needs a fresh held-out (A119b and OR6737 are now spent for sketch rules as well).
+
