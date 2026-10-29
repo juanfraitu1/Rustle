@@ -8532,7 +8532,24 @@ recall. The chosen point is the best KB3781 precision among points with recall >
 Recall misses are "no edge" (KB 45/47, OR 58/63): KRAB-ZNF Simiiformes pairs (ZNF468/578/701/813/860/888...), APOL, APOBEC3,
 NAT1/NAT2, RABL2A/B share too few exact 17-mers at scale 10. Unrelated false pairs (KB 9, OR 15) are mostly adjacent genes (GNG5/RPF1,
 RHBDF1/SNRNP25, SPSB2/TPI1) and retrocopies labelled by their host gene (EDARADD/ENO1, P4HA1/RPL17): a locus-to-gene mapping artefact,
-noted, not tuned on. A second grid (k 13/15, min-shared 3, scale 5) runs in `~/runs/grid_gorilla/grid2.sh`.
+noted, not tuned on.
+Second grid (`grid2.sh`, `{kb,or}.scores2.tsv`; user "can we try to see if smaller kmers would work?"), all at scale 10, root 0.15,
+min-cont 0.2 unless stated:
+
+| arm | KB3781 P / R, nc P | OR6737 P / R, nc P |
+|---|---|---|
+| k17 (chosen) | 0.500 / 0.309, 0.613 | 0.403 / 0.284, 0.763 |
+| k15 | 0.404 / 0.309, 0.613 | 0.386 / 0.307, 0.747 |
+| k13 | 0.451 / 0.338, 0.597 | 0.365 / 0.307, 0.733 |
+| k17 min-shared 3 | 0.500 / 0.309, 0.613 | 0.403 / 0.284, 0.762 |
+| k17 scale 5 | 0.500 / 0.294, 0.622 | 0.391 / 0.284, 0.758 |
+
+k13 gains APOBEC3C/D, APOBEC3C/F (KB) and PCDHB11/12, PNMA6E/F (OR), loses no hit, and adds 8 (KB) / 17 (OR) false coding pairs
+of which nearly all are REAL paralogs older than Simiiformes (GSTM1/4/5, PCDHB clusters, ZNF222/230, ZNF780A/B, ZNF578/600/611/808,
+TLR1/6, GPRASP1/2, DCAF12L1/2, SLC22A4/5, RPL10/RPL10L); the unrelated ones are PAICS/PPAT (adjacent), CDR2/RRN3, CDR2/SPN.
+So smaller k does not reach the no-edge KRAB-ZNF Simiiformes misses (ZNF468/701/813/860/888 still absent); it reaches the next-older
+layer of the same families, which the Simiiformes bar counts as false. Min-shared 3 changes nothing; scale 5 changes nothing.
+k 17 stays the chosen point.
 
 ### MINIPROT MEMBER RECOVERY, development note (2026-10-29, user "yes lets do that"): FAIL as an add-on on both gorilla sets
 Idea: pseudogenes and frameshifted copies are missed by exact k-mers; map the longest CDS of every coding family member with miniprot
