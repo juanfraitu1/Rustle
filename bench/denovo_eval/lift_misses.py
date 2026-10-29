@@ -13,7 +13,7 @@ import famtruth as F  # noqa: E402
 run, lift, arm = sys.argv[1:4]
 levels = sys.argv[sys.argv.index('--levels') + 1] if '--levels' in sys.argv else 'simiiformes'
 species = sys.argv[sys.argv.index('--species') + 1] if '--species' in sys.argv else 'gorilla'
-G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+G = F.load_cat() if species == 'human' else (None if species == 'hg002' else F.load_ggo(F.load_cat()))
 if species == 'hg002':
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
     import guided3 as g3

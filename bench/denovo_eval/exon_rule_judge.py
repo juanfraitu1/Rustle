@@ -18,7 +18,7 @@ class Judge:
     """Locus pair -> verdict: true-recent / true-simiiformes / older / hgnc / same-symbol / WRONG / same-gene / unjudged."""
 
     def __init__(self, species, loci_gff3):
-        G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+        G = F.load_cat() if species == 'human' else (None if species == 'hg002' else F.load_ggo(F.load_cat()))
         if species == 'hg002':
             sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
             import guided3 as g3
