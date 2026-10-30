@@ -22,6 +22,8 @@ if species == 'hg002':  # Ensembl rapid-release genes via guided3; HGNC symbols 
     for r in csv.DictReader(open(os.environ['DENOVO_HG002_XREF']), delimiter='\t'):
         if r['db_name'] == 'HGNC Symbol' and r['gene_stable_id']: sym.setdefault(r['gene_stable_id'], r['xref_label'])
     for g, d in G.items(): d['name'] = sym.get(g.split(':')[-1], d['name'])
+elif species == 'gorilla':  # Yoo families: symbol or RefSeq description, any biotype (F.GGO_MAINSTAYS)
+    G = F.load_ggo(F.load_cat())
 else:
     G = F.load_cat()
 idx = F.exon_index(G)
@@ -37,6 +39,7 @@ if os.environ.get('DENOVO_HGNC'):
             if g and r['ensembl_gene_id']: groups[r['ensembl_gene_id']].add(g)
 def related(x, y):
     if G[x]['name'] == G[y]['name']: return True
+    if species == 'gorilla' and G[x].get('desc') and G[x]['desc'].replace('-like', '') == G[y].get('desc', '').replace('-like', ''): return True
     ex, ey = {e.split('.')[0] for e in G[x]['ens']}, {e.split('.')[0] for e in G[y]['ens']}
     return any((min(p, q), max(p, q)) in anyp for p in ex for q in ey) or any(groups[p] & groups[q] for p in ex for q in ey)
 def share(g, chrom, strand, ex):
@@ -46,7 +49,11 @@ def share(g, chrom, strand, ex):
         for s, e in G[g]['exons']: tot += max(0, min(b, e) - max(a, s))
     return tot
 pats = dict(F.MAINSTAYS); pats.update(F.YAGS)
-print("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names")
+if species == 'gorilla': pats = dict(F.GGO_MAINSTAYS)
+def is_member(d, rx):  # gorilla: symbol or description, any biotype; human: symbol, protein-coding
+    if species == 'gorilla': return bool(rx.search(d['name']) or rx.search(d.get('desc', '')))
+    return bool(rx.match(d['name'])) and d['biotype'] == 'protein_coding'
+print("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names\tannotated")
 for path in a[1:]:
     rows = [r for r in csv.DictReader(open(path), delimiter='\t')]
     loc_gene = {}; loc_fam = {}; loc_ex = {}
@@ -61,18 +68,18 @@ for path in a[1:]:
     tot = collections.Counter()
     for name, pat in pats.items():
         rx = re.compile(pat)
-        mem = {g for g, d in G.items() if rx.match(d['name']) and d['biotype'] == 'protein_coding'}
+        mem = {g for g, d in G.items() if is_member(d, rx)}
         exp = mem & expressed
-        if not exp: continue
+        if not exp and species != 'gorilla': continue  # gorilla: Yoo families with no expressed copy are reported as 0 of N
         best = {g: max(gene_locs[g], key=lambda t: share(g, *loc_ex[t])) for g in exp if gene_locs[g]}
         held = collections.Counter(loc_fam[t] for g in exp for t in gene_locs[g])
         top_by_best = collections.Counter(loc_fam[t] for t in best.values())  # largest = family holding most members' BEST loci
         if not held:
-            print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t0\t0\t0\t0\t"); continue
+            print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t0\t0\t0\t0\t\t{len(mem)}"); continue
         top = top_by_best.most_common(1)[0][0]
         rec = sum(1 for g, t in best.items() if loc_fam[t] == top)
         foreign = {g for g in fam_genes[top] if g not in mem and G[g]['biotype'] == 'protein_coding'}
         unrel = sorted(G[g]['name'] for g in foreign if not any(related(g, m) for m in exp))
-        print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t{rec}\t{len(held)}\t{len(foreign) - len(unrel)}\t{len(unrel)}\t{','.join(unrel[:6])}")
+        print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t{rec}\t{len(held)}\t{len(foreign) - len(unrel)}\t{len(unrel)}\t{','.join(unrel[:6])}\t{len(mem)}")
         tot['exp'] += len(exp); tot['rec'] += rec; tot['unrel'] += len(unrel)
     print(f"{os.path.basename(path)}\tALL\t{tot['exp']}\t{tot['rec']}\t\t\t{tot['unrel']}\t")

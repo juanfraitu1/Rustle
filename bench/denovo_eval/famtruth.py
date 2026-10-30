@@ -41,6 +41,13 @@ LEVELS = {
 # bench/o3_graph/protfam.py KNOWN: the mainstay set and IsoCon's nine Y-ampliconic families
 MAINSTAYS = {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3([A-L]|P[0-9]+)?$", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
              "CT47A": r"^CT47A", "XAGE": r"^XAGE", "SPATA31": r"^SPATA31"}
+# Gorilla mainstays (2026-10-30, user: Yoo 2025 ape expansions "MAPKBP1, JMJD7-PLA2G4B, SPTBN5 in chr1 in gorilla ... as well as
+# LRPAP1"): the copies are RefSeq LOC genes, so a family is defined by the gene symbol OR the RefSeq description (any biotype: Yoo's
+# copies include pseudogene-annotated ones). Matched against `name` and `desc` of famtruth.load_ggo genes.
+GGO_MAINSTAYS = {"LRPAP1": r"^LRPAP1$|alpha-2-macroglobulin receptor-associated protein",
+                 "MAPKBP1": r"^MAPKBP1$|mitogen-activated protein kinase[- ]binding protein 1",
+                 "JMJD7-PLA2G4B": r"^JMJD7$|^PLA2G4B$|lysyl hydroxylase JMJD7|cytosolic phospholipase A2 beta",  # one readthrough unit in Yoo and in our loci
+                 "SPTBN5": r"^SPTBN5$|spectrin beta chain, non-erythrocytic 5"}
 YAGS = {"BPY2": r"^BPY2[BC]?$", "CDY": r"^CDY[12][AB]?$", "DAZ": r"^DAZ[1-4]$", "HSFY": r"^HSFY[12]$", "PRY": r"^PRY2?$",
         "RBMY": r"^RBMY1[A-J][0-9]?$", "TSPY": r"^TSPY[0-9]+$", "VCY": r"^VCY(1B)?$", "XKRY": r"^XKRY2?$"}
 
@@ -93,7 +100,8 @@ def load_ggo(human):
         if f[2] in ('gene', 'pseudogene'):
             name = a.get('gene', a.get('Name', a['ID']))
             genes[a['ID']] = dict(name=name, biotype=a.get('gene_biotype', 'other'), chrom=f[0], strand=f[6], exons=[],
-                                  ens=set() if name.startswith('LOC') else sym_ens.get(name, set()))
+                                  ens=set() if name.startswith('LOC') else sym_ens.get(name, set()),
+                                  desc=a.get('description', '').replace('%2C', ','))
         elif f[2] == 'exon':
             ex[a.get('Parent', '')].append((int(f[3]) - 1, int(f[4])))
         elif 'Parent' in a and a['Parent'].startswith('gene-'):
