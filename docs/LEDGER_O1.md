@@ -9039,3 +9039,32 @@ GOLGA6L1-L4 0 / 0 / 0; GOLGA6L22-L10 0.01 / 0 / 0; NPIPB3-PKD1 0 / 0 / 0. The th
 the divergence that separates the sub-groups is not scattered substitutions (which spaced seeds and codon collapsing would
 forgive) but whole regions that are different or absent, so no seed design changes the verdict. GOLGA8A sits at 0.14 under all
 three, i.e. in the weak-edge band the intron rescue already inspects.
+
+## Protein layer over the sketch families (2026-10-30, report; `bench/denovo_eval/protlayer.py`, `~/runs/protlayer/`)
+
+**User:** "is there a way we can add an extra layer for the members that only work at the protein level?" then "can we check how
+would it be to add a layer when we have grounds to expect that adding it would help reconcile family members?"
+
+**Design.** Layer 1 = the final guided sketch families (`g_cap20i`, 64,213 CHM13 gene records). Layer 2 = translated all-vs-all
+(`mmseqs easy-search --search-type 2`, TBLASTX-like, e <= 1e-5) of the spliced exon sequences of the protein-coding members;
+a family pair is an edge when a member pair aligns at amino-acid identity >= 0.4 (arm id0.3: 0.3) covering >= 50% of the shorter;
+two families merge when the hits touch >= min-frac of the smaller family's protein-coding members (0, 0.3, 0.5). Scored as the
+SD merge was: mainstays (`mainstay_score.py`), Compara pairs (`pairscore.py`), sequence pairs (`seqscore.py`, A119b expression).
+
+| arm | mainstays complete / unrel. foreign | GOLGA8 | GOLGA6L | SPATA31 | Compara P / R | seq P / R @0.85 | family pairs merged |
+|---|---|---|---|---|---|---|---|
+| base (sketch) | 110 / 0 | 10/13 in 4 | 4/10 in 3 | 4/8 in 2 | 0.270 / 0.757 | 0.632 / 0.780 | - |
+| id 0.4, frac 0 | 115 / 1 | 13/13 in 2 (+AC005154.5) | 6/10 in 2 | 4/8 | 0.087 / 0.836 | 0.341 / 0.790 | 235 |
+| id 0.4, frac 0.5 | 115 / 1 | 13/13 | 6/10 | 4/8 | 0.102 / 0.831 | 0.431 / 0.790 | 209 |
+| id 0.3, frac 0.5 | 118 / 1 | 13/13 | 6/10 | 7/8 in 1 | 0.090 / 0.832 | 0.356 / 0.790 | - |
+
+- 1,907 family pairs have a protein hit at id >= 0.4; 1,724 at frac 0.5. They are the protein SUPERFAMILIES: every olfactory
+  receptor family joins every other (OR2L to OR4A, OR5M, OR13C ...), all tubulins (TUBB2 to TUBA3, TUBB8, TUBB4A), MAGEA to MAGEB,
+  ZNF to ZNF. GOLGA8 reaches 13/13 only by also absorbing the GOLGA6 family (SK460, 28 member hits at 0.51) and the lncRNA
+  AC005154.5; GOLGA6L joins L2 to the proximal group (0.48) but still not proximal to distal; SPATA31 A to D only at 0.3.
+- Precision collapses at every setting (Compara 0.27 -> 0.09-0.10, sequence 0.63 -> 0.34-0.43) for a recall gain of 0.08 / 0.01.
+- **Reading.** Amino-acid similarity at 30-50% is the superfamily relation (domain sharing), not the duplication relation the
+  families are meant to capture; as a merge rule it does what the SD-edge and strong-edge merges did, only wider. NOT adopted as a
+  merge. What it can be is a separate label: layer-2 components as superfamily names over the layer-1 families, reported apart and
+  never fed to O2/O3 (reads never tie across 50%-identity copies). GOLGA6L proximal vs distal and SPATA31 A vs D are not reconciled
+  by nucleotide, SD or 40% protein evidence; only the 30% arm joins SPATA31, at the price above.
