@@ -9166,3 +9166,30 @@ metric-auditor first). Open: the attach step is Python (10 min on A119b, all-vs-
 (minimap2 dominates). Pipeline order: `semisec` -> `mcl_families` -> `semifam`. The mainstay page (artifact v19) carries a column
 "of annotated, found: de novo -> semi-guided" in both Scores tables and the semi-guided tracks in the Loci tab. Still NOT a default
 (auditor pending on r1472).
+
+## PREREG REPRULE-2 (2026-10-30): the locus representative that agrees most with StringTie and FLAIR (user: "ensure that the assembly part is as similar as possible to stringtie and flair ... the chosen representatives are still different so it's time to measure and pick a new default")
+**Stage 1 (measurement, seen, `bench/denovo_eval/repcompare.py`, runs `~/work/jfim/runs/repcmp/`):** per de novo locus with >= 2 transcripts,
+one transcript per rule vs the StringTie top isoform at the locus (highest TPM, same strand) by exact intron chain, membership of the chain
+among FLAIR's isoforms (FLAIR carries no abundance), and exact match to a RefSeq chain. The `benchmark_collapse` StringTie / FLAIR GTFs of
+2026-10-21 (A119b on CHM13, OR6737 on mGorGor1). The StringTie top chain is one of OUR transcripts at 76% (A119b) / 91% (OR6737) of
+spliced loci, so the remaining disagreement is the CHOICE, not the assembly.
+| rule (multi-transcript loci) | A119b: StringTie exact / FLAIR member / RefSeq exact | OR6737: same |
+|---|---|---|
+| most-reads (shipped) | 0.565 / 0.599 / 0.459 | 0.773 / 0.800 / 0.677 |
+| most-junctions (opt-in, r1469 era) | 0.257 / 0.703 / 0.332 | 0.448 / 0.797 / 0.549 |
+| most-cov / most-tpm | 0.526 / 0.598 / 0.450 · 0.559 / 0.581 / 0.452 | 0.731 / 0.780 / 0.658 · 0.763 / 0.789 / 0.668 |
+| longest spliced | 0.329 / 0.541 / 0.347 | 0.478 / 0.741 / 0.556 |
+| **reads x (junctions + 1)** | **0.593 / 0.670 / 0.503** | **0.791 / 0.827 / 0.706** |
+| maximal-chain most-reads | 0.483 / 0.750 / 0.493 | 0.721 / 0.858 / 0.709 |
+| flow-credited maximal chain | 0.479 / 0.741 / 0.474 | 0.722 / 0.853 / 0.695 |
+Where most-reads disagrees with a StringTie top that is one of ours (3,383 / 1,619 loci), the pick is a FRAGMENT of the top in 60% / 59%
+and the top has more junctions in 72% / 73%: 5'-truncated fragments outvote the full chain. `reads x (junctions + 1)` is the only rule
+above most-reads on all three measures in both samples; it changes the pick at 18% (A119b) / 9% (OR6737) of multi-transcript loci.
+**Stage 2 (decision, registered before any family run):** `mcl_families --representative reads-x-junctions` (key = reads x (junctions+1),
+tie reads, tie span, tie last id; `src/family.rs` next to the two existing rules). **Dev** = A119b and OR6737 (agreement seen).
+**Held-outs** = gorilla KB3781 (base `kb`) and HG002 (base `hg`, `--species hg002`). Bars on each held-out, PASS = all:
+(B1) mainstay recalled (expressed) summed >= base and unrelated foreign summed <= base; (B2) pair precision >= base - 0.01 and pair recall
+>= base - 0.01 (pairscore, default universe); (B3) on OR6737 the Rust picks equal the Python `reads-x-junc` picks (consistency, not a bar
+on the held-outs). PASS on both -> `reads-x-junctions` becomes the `--representative` default (user decides; metric-auditor first);
+FAIL -> opt-in like most-junctions. Expectation stated: the most-junctions rule lost NPIP recall (18 -> 12) because longer representatives
+fail the 60% shared-exon gate; a reads-weighted rule moves fewer loci and should not.
