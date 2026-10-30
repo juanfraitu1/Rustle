@@ -39,6 +39,7 @@ c-compiler = "*"
 
 [environments]
 bench = ["bench"]
+graph = { features = ["graph"], no-default-feature = true }
 isocon = { features = ["isocon"], no-default-feature = true }
 flair = { features = ["flair"], no-default-feature = true }
 sqanti3 = { features = ["sqanti3"], no-default-feature = true }
@@ -75,3 +76,15 @@ samtools = "==1.22.1"
 sqanti3 = "*"
 isoseq = "*"
 minimap2 = "==2.30"
+
+[feature.graph.dependencies]
+# family variation graphs (thesis model, LEDGER_GENERAL §18): vg msga / vg rna, GraphAligner, odgi for stats and layout
+vg = "*"              # vg msga is gone in v1.76; graphs are induced with seqwish (minimap2 all-vs-all) or minigraph
+graphaligner = "*"
+odgi = "*"
+seqwish = "*"
+minigraph = "*"
+gfatools = "*"
+minimap2 = "==2.30"
+samtools = "*"
+python = "3.12.*"

@@ -9008,3 +9008,25 @@ opposite strands align (GOLGA6L1 + vs GOLGA6L6 -, 0.966 on the locus). Translate
 over the coiled-coil region (GOLGA6L1-L10 0.43 over 723 nt, L1-L4 0.42 over 846, L22-L10 0.46 over 669), i.e. an ancient
 duplication whose DNA has diverged past alignability while the protein is still recognisably golgin-A. GOLGA6L is a protein
 family name over two nucleotide families.
+
+### FAMILY VARIATION GRAPHS from the sketch families (2026-10-30, user: "the graph is in my thesis proposal, whereas a sketch is not")
+Position: the variation graph has been the thesis model since LEDGER_GENERAL §18 (2026-10-18): a family is a graph of its copies'
+loci, isoforms are paths, O2 assigns reads by the paths, O3 calls what no path explains. The sketch changes only how the MEMBERS
+of a family are found (O1); the graph is built from those members, as before. `vg msga` (used by `bench/o3_graph/detect.py`) no
+longer exists in vg 1.76, so the graph is now induced by seqwish from a minimap2 all-vs-all of the member loci. New pixi
+environment `graph` (vg, GraphAligner, odgi, seqwish, minigraph, gfatools; `pixi run -e graph ...` or put its bin on PATH).
+`bench/denovo_eval/family_graph.py COPIES GENOME OUT --family NAME=REGEX ...`: whole member loci (introns included, strand-normalised),
+one path per locus; prints loci, named coding members, total sequence, graph length, nodes, edges, paths, components.
+
+| family | de novo A119b (cap 20 + intron): loci / seq -> graph bp / nodes / components | guided + SD merge: loci / seq -> graph bp / nodes / components |
+|---|---|---|
+| TSPY | 46 / 130 kb -> 2.9 kb / 148 / 1 | 51 / 136 kb -> 5.4 kb / 432 / 2 (TSPY16P + TSPY17P apart) |
+| GOLGA8 | 19 / 174 kb -> 23 kb / 2,501 / 1 | 31 / 377 kb -> 111 kb / 4,626 / 1 |
+| NPIP | 32 / 228 kb -> 18 kb / 2,467 / 1 | 29 / 773 kb -> 190 kb / 5,728 / 1 |
+| TBC1D3 | 16 / 74 kb -> 6.8 kb / 255 / 1 | 14 / 141 kb -> 15 kb / 1,237 / 1 |
+| CT47A | 8 / 30 kb -> 5.0 kb / 134 / 1 | 8 / 27 kb -> 4.0 kb / 112 / 1 |
+
+Reading: each sketch family collapses into one connected graph (TSPY's two separated pseudogenes excepted), 0.4-4 s per family;
+the compression (130 kb of TSPY loci into a 2.9 kb graph) is the family's shared backbone, the nodes beyond it are the copy-
+specific variants O2 needs. The graphs live in `~/runs/family_graphs/{denovo,guided}/NAME.{gfa,og,loci.fa,members.tsv}`.
+Next, if wanted: GraphAligner the A119b reads of a family to its graph and compare copy assignment with the linear O2.
