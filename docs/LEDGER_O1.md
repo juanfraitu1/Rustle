@@ -8980,3 +8980,25 @@ other, E1 to nothing; no A-D pair. GOLGA8: all 13 linked, including A (to F, G, 
 exactly the lines the sketch draws for GOLGA6L and SPATA31 (same sub-groups, same singletons) and finds GOLGA8 as one family
 where the sketch gives 10 of 13 (12 with the strong-edge merge). The sub-group splits are therefore a property of the genome, not
 of the engine; GOLGA8A / N / O are the one place the SD track is ahead.
+
+### SD-PROJECTION MERGE, development (2026-10-30, user "can we somehow overlap segmental duplications? do we have that data?"; `bench/denovo_eval/sd_merge.py`, `~/runs/{guided_sketch,human_A119b,grid_gorilla}/*sd*`)
+Data: `~/work/jfim/rustle_data/tables/CHM13_SDs.SD90.bed.gz` (human, 40,502 SD pairs >= 90%) and `GGO_sedef_final.bed.gz` (gorilla,
+253k SEDEF pairs); none for HG002. Rule: project each locus's exons THROUGH an SD pair (linear, strand-aware) onto the partner
+interval; an SD edge exists when the projection covers >= 50% of a locus on the other side (projection, not overlap: an SD block
+holds many genes, NPIP next to PKD1). Then merge the sketch families joined by SD edges. Three versions:
+
+| version | guided mainstays / unrel. | guided P/R @0.85 | A119b de novo mainstays / unrel. | A119b P/R @0.85 | A119b Compara P/R |
+|---|---|---|---|---|---|
+| sketch only (cap 20 [+ intron]) | 110 / 0 | 0.635 / 0.778 | 103 / 0 | 0.617 / 0.617 | 0.774 / 0.681 |
+| any SD edge >= 0.9 merges | 113 / 8 | 0.223 / 0.844 | 107 / 0, GOLGA8 13/13 | 0.299 / 0.675 | 0.750 / 0.721 |
+| + gated by a sketch edge >= 0.1 | 113 / 3 | 0.379 / 0.841 | 107 / 0, GOLGA8 13/13 | 0.490 / 0.651 | 0.778 / 0.721 |
+| + SD edges must touch >= 50% of the smaller family | 113 / 1, GOLGA8 13/13 | 0.622 / 0.787 | 104 / 0, GOLGA8 10/13 | 0.600 / 0.624 | 0.774 / 0.691 |
+
+Why the first two collapse sequence precision although no unrelated gene enters a mainstay family: one SD edge between a
+processed pseudogene in family A and its copy in family B merges two 30-member pseudogene / lncRNA families whose other members
+are not copies of each other (2,140 new pairs on A119b, 220 of them >= 85% identical; top merged families POM121L/BCRP, SEPTIN,
+ANKRD20, RPL23AP). The fraction rule removes that: with >= 50% of the smaller family SD-linked, guided reaches GOLGA8 13/13 and
+113 / 123 at -0.013 precision and +0.009 recall (Compara P and R both up), de novo gains one GOLGA8 and +0.007 recall at -0.017
+precision. Gorilla: 3-8 merges per set, scores unchanged to -0.02 precision. Verdict: a sound OPT-IN when an SD catalogue exists
+(`sd_merge.py --min-id 0.9 --gate-edges EDGES --gate-cont 0.1 --min-frac 0.5`); it is the one rule that completes GOLGA8 without
+touching NPIP; not part of the registered arm (HG002 has no SD table, and the gain is one family).
