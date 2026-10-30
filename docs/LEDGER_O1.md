@@ -9193,3 +9193,21 @@ tie reads, tie span, tie last id; `src/family.rs` next to the two existing rules
 on the held-outs). PASS on both -> `reads-x-junctions` becomes the `--representative` default (user decides; metric-auditor first);
 FAIL -> opt-in like most-junctions. Expectation stated: the most-junctions rule lost NPIP recall (18 -> 12) because longer representatives
 fail the 60% shared-exon gate; a reads-weighted rule moves fewer loci and should not.
+
+### REPRULE-2 RESULT (2026-10-30, register 1473): **FAIL** — `reads-x-junctions` loses NPIP on HG002 (B1) and 6 recall points on dev A119b; stays opt-in
+Runs `~/work/jfim/runs/reprule_{A119b,OR6737,KB3781,HG002}/` (`<p>rxj.fam.*`, mainstays.txt, pairs.txt; cached all-vs-all).
+| sample | role | mainstay recalled (unrel foreign) base -> rxj | pair precision / recall base -> rxj |
+|---|---|---|---|
+| A119b | dev | 108 (2) -> 105 (1): NPIP 18 -> 15 over 8 families, GOLGA8 unrel 2 -> 1 | 0.726 / 0.741 -> 0.715 / **0.679** (2,228 -> 2,073 coding pairs) |
+| OR6737 | dev | 15 (0) -> 15 (0) | 0.429 / 0.239 -> 0.440 / 0.250 |
+| KB3781 | held-out | 14 (0) -> 14 (0) PASS | 0.341 / 0.206 -> 0.341 / 0.206 PASS |
+| HG002 | held-out | 26 (1) -> 25 (1): NPIP 11 -> 10 **FAIL B1** | 0.426 / 0.345 -> 0.422 / 0.345 PASS |
+Verdict FAIL as registered. Reading: the same mechanism as most-junctions (r1469 era) at a smaller scale — a longer representative of a
+NPIP / GOLGA8 locus fails the 60% shared-exon gate against siblings represented by a different isoform length, so the family splits
+(NPIP 5 -> 8 families on A119b). Closer agreement with StringTie's isoform choice (stage 1: +2.8 / +1.8 points exact) does not transfer to
+family recall, because the family stage wants representatives of comparable extent across copies, not the best isoform per locus.
+Consistency (B3): 1,436 of 1,460 OR6737 family copies carry the Python `reads-x-junc` pick (the rest are fold / tie-break differences of
+`gtf_loci`). `--representative reads-x-junctions` stays available, opt-in, like most-junctions; `most-reads` remains the default.
+Implication for "as similar as possible to StringTie": the representative is not where similarity should be bought; the gate (shared-exon
+fraction between representatives of different isoform length) is the lever to look at next, with the StringTie source review pending the
+`stringtie_modded` sync.
