@@ -32,6 +32,11 @@ LEVELS = {
     'recent': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini'],
     'simiiformes': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini', 'Simiiformes'],
     'primates': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini', 'Simiiformes', 'Haplorrhini', 'Primates'],
+    # family LEVEL of a hierarchical output (2026-10-30, user "could it be that some families are actually subfamilies?"):
+    'eutheria': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini', 'Simiiformes', 'Haplorrhini', 'Primates',
+                 'Euarchontoglires', 'Boreoeutheria', 'Eutheria'],
+    'mammalia': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini', 'Simiiformes', 'Haplorrhini', 'Primates',
+                 'Euarchontoglires', 'Boreoeutheria', 'Eutheria', 'Theria', 'Mammalia'],
 }
 # bench/o3_graph/protfam.py KNOWN: the mainstay set and IsoCon's nine Y-ampliconic families
 MAINSTAYS = {"NPIP": r"^NPIP[AB]", "TBC1D3": r"^TBC1D3([A-L]|P[0-9]+)?$", "GOLGA8": r"^GOLGA8", "GOLGA6L": r"^GOLGA6L",
