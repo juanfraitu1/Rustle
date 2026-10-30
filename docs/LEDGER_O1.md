@@ -8804,3 +8804,37 @@ pairs meeting T; recall at T = truth pairs at T recovered. Gorilla:
 Reading: by what the genes really share, the sketch and the base are close (sketch more precise, base slightly higher recall), and
 the real gap is RECALL at the high tiers: on KB3781 half of the gene pairs that are >= 98% identical over half their length are
 not in one family, on OR6737 a quarter. That, not Compara, is the number to fix (diagnosis below).
+
+Diagnosis (`bench/denovo_eval/seqdiag.py`): the misses at >= 98% are mostly (i) pairs under the CHROMOSOME CAP (`--max-chrom 3`
+drops every k-mer seen on > 3 chromosomes, which erases genuinely dispersed, near-identical families outright) and (ii) pseudogene
+copies placed in a different family than their parent (KB 48 of 135 remaining misses with no cap, OR 90 of 237), plus
+readthrough-type annotation pairs. The cap was introduced for the HG002 TE-glued families; by sequence it costs more than it saves.
+
+### CHROMOSOME CAP REMOVED, gene-averaged score, RNA arrays excluded (2026-10-30, `~/runs/grid_gorilla/grid8.sh`)
+Scorer changes (seqscore.py): (1) gene-averaged precision / recall next to the pair counts, because pair counts grow with the square
+of the family size (on A119b one component of 434 expressed RNA45S/RNA28S rDNA copies made 94k of the 98% truth pairs); (2)
+structural RNA biotypes (rRNA, tRNA, snRNA, snoRNA, misc_RNA, miRNA, ...) dropped from the universe by default (`--keep-rna` to
+restore): tandem rDNA units are not a gene family. Truth with that: KB3781 956 pairs @0.85 / 446 @0.98, OR6737 2,741 / 1,321,
+A119b 6,398 / 2,747 (was 61,279 / 57,628 with the rDNA array). Tree k17 scale 10 root 0.15, pair P/R then gene-averaged P/R:
+
+| arm | KB @0.85 pair | gene | KB @0.98 pair | gene | OR @0.85 pair | gene | OR @0.98 pair | gene |
+|---|---|---|---|---|---|---|---|---|
+| base (MCL) | 0.583 / 0.502 | 0.615 / 0.403 | 0.350 / 0.646 | 0.359 / 0.607 | 0.730 / 0.718 | 0.670 / 0.510 | 0.399 / 0.815 | 0.374 / 0.735 |
+| c0.2 cap 3 (was "chosen") | 0.609 / 0.502 | 0.662 / 0.603 | 0.299 / 0.529 | 0.321 / 0.763 | 0.765 / 0.695 | 0.714 / 0.638 | 0.401 / 0.755 | 0.344 / 0.796 |
+| c0.2 cap 10 | 0.627 / 0.660 | 0.654 / 0.660 | 0.339 / 0.765 | 0.318 / 0.844 | 0.755 / 0.762 | 0.705 / 0.683 | 0.400 / 0.839 | 0.338 / 0.854 |
+| c0.2 NO cap | 0.609 / 0.660 | 0.641 / 0.660 | 0.329 / 0.765 | 0.311 / 0.844 | 0.745 / 0.765 | 0.698 / 0.683 | 0.396 / 0.844 | 0.336 / 0.855 |
+| c0.2 no cap, max-loci 50 | 0.614 / 0.660 | 0.651 / 0.660 | 0.332 / 0.765 | 0.317 / 0.844 | 0.752 / 0.765 | 0.704 / 0.684 | 0.400 / 0.844 | 0.338 / 0.855 |
+| c0.15 no cap | 0.581 / 0.679 | 0.596 / 0.684 | 0.311 / 0.780 | 0.284 / 0.856 | 0.711 / 0.785 | 0.654 / 0.715 | 0.375 / 0.858 | 0.301 / 0.862 |
+| c0.3 no cap | 0.679 / 0.616 | 0.704 / 0.616 | 0.392 / 0.762 | 0.365 / 0.839 | 0.767 / 0.734 | 0.730 / 0.624 | 0.417 / 0.828 | 0.376 / 0.840 |
+| gap cut (c0.15 r0.1 gap 0.25) no cap | 0.568 / 0.658 | 0.596 / 0.670 | 0.314 / 0.780 | 0.286 / 0.849 | 0.699 / 0.791 | 0.655 / 0.698 | 0.384 / 0.903 | 0.308 / 0.867 |
+| **c0.2 + intron rescue, no cap** | 0.596 / 0.704 | 0.635 / 0.675 | 0.333 / 0.843 | 0.307 / 0.868 | 0.726 / 0.806 | 0.687 / 0.700 | 0.395 / 0.910 | 0.325 / 0.877 |
+
+Reading: removing the cap raises recall at every tier on both sets (KB @0.98 0.529 -> 0.765, OR 0.755 -> 0.844) at unchanged
+precision; a cap of 10 is equivalent to no cap. The intron rescue on top gives the best recall of any arm (KB @0.98 0.843, OR
+0.910; gene-averaged 0.868 / 0.877) with precision within 0.02 of the base. c0.3 is the precision end of the same axis. The Compara
+Simiiformes readout of the same arms (coding P / R, nc P): base 0.341 / 0.206, 0.545; cap 3 0.500 / 0.309, 0.613; no cap 0.367 /
+0.324, 0.594; no cap + intron 0.368 / 0.368, 0.573 (KB3781); the Compara false pairs that appear without the cap are the
+dispersed pairs that the sequence score counts as true (identity >= 85% over half the gene), i.e. the Compara readout penalises
+exactly what the user asked to score. A119b with the cap, same scorer (rDNA excluded): base 0.528 / 0.559 @0.85 (gene 0.506 /
+0.470), 0.297 / 0.734 @0.98 (0.256 / 0.690); sketch cap 3 0.670 / 0.539 (0.543 / 0.493), 0.397 / 0.745 (0.279 / 0.735); + intron
+0.655 / 0.545, 0.384 / 0.746; gap 0.617 / 0.553, 0.356 / 0.743. No-cap A119b arms: next entry.
