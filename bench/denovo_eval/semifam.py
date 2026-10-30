@@ -77,9 +77,9 @@ for i, c in enumerate(cands):
     # else the loci.gff3 record with most overlap
     inc = [(ov, g) for ov, g in hits if g in row_of]
     if not inc:
-        best_l = max(hits)[1]; ch, st = loc_meta[best_l]
-        inc = [(min(se, ce) - max(ss, cs), t) for t, r0 in row_of.items() if r0['chrom'] == ch and r0['strand'] == st
-               for cs, ce in [(int(r0['start']), int(r0['end']))] if ce > ss and cs < se]
+        best_l = max(hits)[1]; ch, st = loc_meta[best_l]; ls, le = loc_ex[best_l][0][0], loc_ex[best_l][-1][1]  # the record's own span
+        inc = [(min(le, ce) - max(ls, cs), t) for t, r0 in row_of.items() if r0['chrom'] == ch and r0['strand'] == st
+               for cs, ce in [(int(r0['start']), int(r0['end']))] if ce > ls and cs < le]
     seed = max(inc)[1] if inc else max(hits)[1]
     if seed in row_of: tex = (row_of[seed]['chrom'], row_of[seed]['strand'], F.blocks(row_of[seed]['exons']))
     else: tex = (loc_meta[seed][0], loc_meta[seed][1], loc_ex[seed])
