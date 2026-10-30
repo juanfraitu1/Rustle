@@ -83,7 +83,15 @@ def locus_rules(ts):
     mr = max(maximal, key=lambda t: (rd(t), span(ours[t]['exons']), t))
     credit = {t: sum(rd(u) for u in ts if chains[u] <= chains[t]) for t in maximal}
     fr = max(maximal, key=lambda t: (credit[t], rd(t), t))
-    return {'maximal-reads': mr, 'flow-reads': fr}
+    # StringTie's long-read grouping (rlink.cpp compatible_long case 1): the most abundant transfrag seeds the group and a compatible
+    # transfrag that EXTENDS it with introns replaces it as the representative -> extend-most-reads: start from the most-reads pick,
+    # move to the transcript whose intron set contains the pick's and has the most introns (tie reads), repeat to a fixed point
+    cur = max(ts, key=lambda t: (rd(t), span(ours[t]['exons']), t))
+    while True:
+        ext = [u for u in ts if u != cur and chains[cur] < chains[u]]
+        if not ext: break
+        cur = max(ext, key=lambda u: (len(chains[u]), rd(u), u))
+    return {'maximal-reads': mr, 'flow-reads': fr, 'extend-most-reads': cur}
 ATTR = collections.Counter()
 for d in ours.values():
     for k in ('reads', 'cov', 'TPM'):
@@ -119,7 +127,7 @@ for g, ts in loci.items():
             if len(topc) > len(mrc): DIAG['top_has_more_junctions'] += 1
             if lr['flow-reads'] == tt: DIAG['flow_reads_picks_top'] += 1
             if lr['maximal-reads'] == tt: DIAG['maximal_reads_picks_top'] += 1
-    for r in list(RULES) + ['maximal-reads', 'flow-reads']:
+    for r in list(RULES) + ['maximal-reads', 'flow-reads', 'extend-most-reads']:
         p = lr[r] if r in lr else max(ts, key=lambda t: (RULES[r](ours[t]), t)); picks[g][r] = p
         pc = introns(ours[p]['exons'])
         for scope in (['all', 'multi'] if multi else ['all']):
@@ -136,12 +144,12 @@ def pr(scope):
     n = C[(scope, 'loci')]
     print(f"\n## {scope} loci: {n}; StringTie top spliced at {C[(scope, 'st_top_spliced')]}; StringTie top chain is one of ours at {C[(scope, 'st_top_in_locus')]} ({C[(scope, 'st_top_in_locus')] / max(1, C[(scope, 'st_top_spliced')]):.3f} of spliced tops)")
     print("rule\tst_pairs\tst_exact\tst_compat\tspliced\tflair_member\tref_exact")
-    for r in list(RULES) + ['maximal-reads', 'flow-reads']:
+    for r in list(RULES) + ['maximal-reads', 'flow-reads', 'extend-most-reads']:
         sp = C[(scope, r, 'st_pairs')]; s = C[(scope, r, 'spliced')]
         print(f"{r}\t{sp}\t{C[(scope, r, 'st_exact')] / max(1, sp):.3f}\t{C[(scope, r, 'st_compat')] / max(1, sp):.3f}\t{s}\t{C[(scope, r, 'flair_member')] / max(1, s):.3f}\t{C[(scope, r, 'ref_exact')] / max(1, s):.3f}")
 pr('all'); pr('multi')
 print('\n## multi loci where the StringTie top chain is ours but most-reads picks another chain:', dict(DIAG))
-names = list(RULES) + ['maximal-reads', 'flow-reads']; multi_g = [g for g, ts in loci.items() if len(ts) >= 2]
+names = list(RULES) + ['maximal-reads', 'flow-reads', 'extend-most-reads']; multi_g = [g for g, ts in loci.items() if len(ts) >= 2]
 print("\n## same pick as most-reads on multi-transcript loci")
 for r in names[1:]:
     same = sum(1 for g in multi_g if picks[g][r] == picks[g]['most-reads'])
