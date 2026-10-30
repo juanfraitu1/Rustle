@@ -421,6 +421,12 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     chain_gate: usize,
 
+    /// PREREG CHAIN-GATE arm U (2026-10-30, opt-in): the locus's ONE further chain is the UNION of the exons of every transcript
+    /// with >= 2 reads (Liftoff's "lift every isoform and join the exons", two-sided through the interval rule). Implies the
+    /// chain gate; `--chain-gate K` is ignored.
+    #[arg(long, default_value_t = false)]
+    chain_gate_union: bool,
+
     /// ⭐ Units of one family that share EXON bases are one locus (§6fb): the longest exon union represents them,
     /// the others go to `<out>.units.merged.tsv`. A base cannot belong to two copies (MCL108: a 1.16-Mb read-followed
     /// unit with two units nested in its exons, 13,000 reads counted three times, all K = 0 ties). Default ON.
@@ -1314,6 +1320,7 @@ fn main() -> Result<()> {
             args.representative,
             exon_gate_margin(&args),
             args.chain_gate,
+            args.chain_gate_union,
         )?;
         let gated = run.gate.is_some();
         exon_gate_used = run.gate.map(|v| (args.exon_gate_margin, v));
@@ -1426,7 +1433,7 @@ fn main() -> Result<()> {
     };
     clock.lap("loci map + strands");
     // PREREG REPRULE-3 `--chain-gate K`: the loci's further chains, as 0-based half-open blocks (the `blocks` convention)
-    let chain_blocks: Option<BTreeMap<GeneKey, Vec<Vec<(u64, u64)>>>> = (args.chain_gate > 0).then(|| {
+    let chain_blocks: Option<BTreeMap<GeneKey, Vec<Vec<(u64, u64)>>>> = (args.chain_gate > 0 || args.chain_gate_union).then(|| {
         gtf_loci_list
             .iter()
             .flatten()
@@ -2760,6 +2767,7 @@ fn main() -> Result<()> {
             g.rejected_low_shared_exon.to_string(),
         ),
         ("chain_gate".to_string(), args.chain_gate.to_string()),
+        ("chain_gate_union".to_string(), args.chain_gate_union.to_string()),
         ("admitted_by_chain_gate".to_string(), g.admitted_by_chain_gate.to_string()),
         (
             "merge_overlapping_loci".to_string(),
@@ -3819,6 +3827,10 @@ c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\";
         let loci = rustle::fam_from_gtf::gtf_loci_chains(std::io::Cursor::new(gtf), Representative::MostReads, 2).unwrap();
         assert_eq!((loci[0].rep.as_str(), loci[0].chains.clone()), ("T2", vec![vec![(101, 200), (301, 400)]]));
         assert!(loci[1].chains.is_empty());
+        // arm U: one chain = the exon union of the >= 2-read transcripts (T0's 51-90 excluded; T1 + T2 join to 101-200, 301-450)
+        let u = rustle::fam_from_gtf::gtf_loci_chains_opt(std::io::Cursor::new(gtf), Representative::MostReads, 0, true).unwrap();
+        assert_eq!(u[0].chains, vec![vec![(101, 200), (301, 450)]]);
+        assert_eq!(u[1].chains, vec![vec![(1001, 1100)]]);
         let off = gtf_loci(std::io::Cursor::new(gtf), Representative::MostReads).unwrap();
         assert!(off.iter().all(|l| l.chains.is_empty()));
     }

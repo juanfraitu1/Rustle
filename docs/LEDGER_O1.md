@@ -9298,3 +9298,30 @@ foreign summed <= base; (B2) pair precision >= base - 0.01 and pair recall >= ba
 both -> proposed as default with `--chain-gate 0` the escape hatch (metric-auditor first, user decides); FAIL on either -> opt-in.
 No other constant; K = 3 is the dev value. Known limit, stated: pairs the alignment-time gate never aligned (representative exon
 rows) are not recovered; a second arm listing chain exons in the gate rows (realignment) is not part of this prereg.
+**Amendment 1 (2026-10-30, before any run of it; user: "liftoff tries to lift every isoform and joins exons, can we try something
+like that?"): arm U = `--chain-gate-union`:** the locus's one further chain is the UNION of the exons of every transcript with
+>= 2 reads (lift every isoform, join the exons), passed through the same two-sided interval rule (denominator = the smaller
+union-or-representative chain of the pair). Dev A119b on the shipped representative first; the arm that is better on dev pairs
+(precision + recall) with mainstays >= base goes to the held-outs under the same bars; if both arms are within 0.005 on both pair
+numbers, K = 3 (the first registered) is the one held out. Arm C's held-out runs were already submitted; arm U's go only if selected.
+
+### CHAIN-GATE arm C RESULT (2026-10-30, register 1475): **FAIL on both held-outs** - the dev pair gain does not transfer; stays opt-in
+Runs `~/work/jfim/runs/chaingate_{KB3781,HG002}/` (`<p>cg.fam.*`, cached PAFs, Slurm 4398897/4398898).
+| sample | mainstays recalled (unrel) base -> C | pairs precision / recall base -> C | admitted_by_chain_gate | verdict |
+|---|---|---|---|---|
+| KB3781 | 28 (0) -> 28 (0) B1 PASS | 0.341 / 0.206 -> **0.321** / 0.265 (B2 precision -0.020 > 0.01) | 168 | FAIL B2 |
+| HG002 | 52 (2) -> **50** (2): NPIP 11 -> 10, B1 FAIL | 0.426 / 0.345 -> 0.430 / 0.389 PASS | 1,521 | FAIL B1 |
+Reading: the chain gate adds edges (recall +0.06 / +0.04) but a share of them are wrong (KB3781: 11 new false pairs for 4 true), and
+on HG002 the added edges regroup one NPIP copy out of its family. The dev A119b gain (+0.008 / +0.018, every mainstay kept) was
+the exception, not the rule. `--chain-gate K` stays opt-in; most-reads + the representative-only gate remain the default. The
+"gate measures exon coincidence of two chosen isoforms" diagnosis stands, but relaxing it through more chains buys recall with
+precision, like every other relaxation in this ledger (r1435, r1437-1439). Arm U (amendment 1, union of isoform exons) is
+evaluated on dev only unless it clears the dev selection rule; its held-out, if any, is disclosed as run AFTER arm C's held-out
+result was seen (same samples, same bars).
+
+### CHAIN-GATE arm U, dev result (2026-10-30): not selected (below arm C on dev), not held out
+`--chain-gate-union` (`$S/npip/cgu_{base,rxj}.fam.*`): base representative 216 / 4 mainstays, NPIP 18, pairs 0.727 / 0.750
+(13,551 pairs admitted by the union chain); reads-x-junctions 210 / 4, NPIP 15, pairs 0.717 / 0.719. Below arm C on both pair
+numbers on dev (0.734 / 0.759), so by amendment 1 it is not held out; and the union does not rescue the long NPIPA loci either
+(their 2-exon chain is a separate gene_id, so no isoform of the locus lies inside the unit). Lifting every isoform and joining
+the exons behaves like the chain gate: more edges, a mix of true and false, no change to the mainstays. Opt-in, like arm C.

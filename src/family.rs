@@ -56484,7 +56484,14 @@ pub mod fam_from_gtf {
     }
 
     /// [`gtf_loci`] with up to `k` further chains per locus ([`GtfLocus::chains`]).
-    pub fn gtf_loci_chains<R: std::io::BufRead>(mut reader: R, rule: Representative, k: usize) -> Result<Vec<GtfLocus>> {
+    pub fn gtf_loci_chains<R: std::io::BufRead>(reader: R, rule: Representative, k: usize) -> Result<Vec<GtfLocus>> {
+        gtf_loci_chains_opt(reader, rule, k, false)
+    }
+
+    /// [`gtf_loci_chains`]; with `union`, the ONE chain of each locus is the union of the exons of every transcript with
+    /// >= 2 reads (PREREG CHAIN-GATE arm U, 2026-10-30, the user's Liftoff framing: lift every isoform and join the exons);
+    /// `k` is ignored then.
+    pub fn gtf_loci_chains_opt<R: std::io::BufRead>(mut reader: R, rule: Representative, k: usize, union: bool) -> Result<Vec<GtfLocus>> {
         use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
         use rayon::prelude::*;
         use std::collections::BTreeMap;
@@ -56623,7 +56630,24 @@ pub mod fam_from_gtf {
                 ex.sort_by_key(|x| x.1);
                 // `--chain-gate K`: the next K transcripts by the same rule (>= 2 reads, a new exon set each)
                 let mut chains: Vec<Vec<(u64, u64)>> = Vec::new();
-                if k > 0 {
+                if union {
+                    let mut all: Vec<(u64, u64)> = ts
+                        .iter()
+                        .filter(|t| reads.get(**t).copied().unwrap_or(0) >= 2)
+                        .flat_map(|t| exons.get(t).into_iter().flatten().map(|x| (x.1, x.2)))
+                        .collect();
+                    all.sort();
+                    let mut u: Vec<(u64, u64)> = Vec::new();
+                    for (a, b) in all {
+                        match u.last_mut() {
+                            Some(l) if a <= l.1 + 1 => l.1 = l.1.max(b),
+                            _ => u.push((a, b)),
+                        }
+                    }
+                    if !u.is_empty() {
+                        chains.push(u);
+                    }
+                } else if k > 0 {
                     let key = |t: &str| -> (u64, u64, u64) {
                         let r = reads.get(t).copied().unwrap_or(0);
                         let j = exons.get(t).map_or(0, |v| junction_count(v)) as u64;
@@ -56828,10 +56852,11 @@ pub mod fam_from_gtf {
         rule: Representative,
         exon_gate: Option<(u64, f64)>,
         chain_gate: usize,
+        chain_gate_union: bool,
     ) -> Result<GtfLociRun> {
         use std::collections::HashSet;
         let mut clock = PhaseClock::new();
-        let loci = gtf_loci_chains(reader, rule, chain_gate)?;
+        let loci = gtf_loci_chains_opt(reader, rule, chain_gate, chain_gate_union)?;
         clock.lap("GTF -> loci");
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
@@ -57025,9 +57050,10 @@ pub mod fam_from_gtf {
         rule: Representative,
         exon_gate: Option<(u64, f64)>,
         chain_gate: usize,
+        chain_gate_union: bool,
     ) -> Result<GtfLociRun> {
         let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
-        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate, chain_gate)
+        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate, chain_gate, chain_gate_union)
     }
 
     #[cfg(test)]
