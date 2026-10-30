@@ -8955,3 +8955,16 @@ superfamily (GOLGA8 + GOLGA8A + GOLGA6L, biologically the 15q golgin-A array) wi
 A/D. Not built into the pipeline: the lower level is the family definition that passed HG002; the upper level is a report of
 the hierarchy, if wanted (the per-component Newick already gives it inside a component; between components it needs this
 second sketch). Decision left to the user.
+
+### GOLGA6L anatomy and the whole-locus sketch, development (2026-10-30, user "what is different between GOLGA6L and its group?", "could the problem be that the exons differ but ... start from a different start site"; `~/runs/guided_sketch/g_span*`)
+GOLGA6L is three things: proximal 15q11-13 copies L1 (x2), L6, L22 (9 exons of identical sizes, 3.8-4.4 kb spliced), distal 15q25
+copies L4 (x2), L9, L10 (6-8 exons, 2.9 kb terminal exons, 4.7-6.6 kb), and L2, L7 (11 / 9 exons, a different mix). Spliced
+sequences: within the proximal group 84-92% identity end to end, within the distal 81-89%; BETWEEN groups no alignment at all
+(minimap2 asm20, -p 0.1). Whole genomic loci (introns included, ~10 kb): within-group identity is HIGHER than spliced (L1-L6
+0.966, L10-L4 0.961, L4-L9 0.924), i.e. annotation boundaries lower the apparent exon identity; L2 and L7 align to the proximal
+group over half the locus (L2-L6 0.858 over 5.1 kb, L2-L7 0.912); proximal vs distal still nothing. Test of the hypothesis:
+guided sketch on the whole locus (one "exon" per gene, `cat.span.gff3`), k 17 scale 10 cap 20: masked share of hashes 0.54,
+mainstays 109 (span) / 108 (unmasked-only) vs 110, GOLGA6L still 4/10 in 3 families, GOLGA8 11/13, NPIP 18/20 with CLN3 glued,
+TBC1D3 with RNFT1, P / R @0.85 0.445 / 0.734 (unmasked 0.471 / 0.686) vs 0.635 / 0.778. Verdict: introns add repeat glue and no
+bridge; the start-site / annotation hypothesis holds within a GOLGA6L group (where the sketch already succeeds) and not between
+the groups, which share no sequence on the locus either. Exon sketch stays.
