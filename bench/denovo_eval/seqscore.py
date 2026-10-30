@@ -20,7 +20,13 @@ TIERS = [float(x) for x in opt('--tiers', '0.85,0.90,0.95,0.98').split(',')]; CA
 RNA_BT = {'rRNA', 'rRNA_pseudogene', 'tRNA', 'Mt_tRNA', 'Mt_rRNA', 'snRNA', 'snoRNA', 'scaRNA', 'misc_RNA', 'miRNA', 'vault_RNA', 'sRNA'}
 flags = {'--species', '--gtf', '--fasta', '--cov', '--tiers', '--cache'}
 paths = [x for i, x in enumerate(a) if not x.startswith('--') and (i == 0 or a[i - 1] not in flags)]
-G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+if species == 'hg002':  # as pairscore.py: Ensembl rapid-release GFF3 + xref via guided_eval/guided3
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
+    import guided3 as g3
+    g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']; F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
+    G = g3.load_genes('hg002')
+else:
+    G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
 idx = F.exon_index(G); expressed = F.expressed_from_gtf(gtf, idx)
 genes = sorted(g for g in expressed if G[g]['exons'] and ('--keep-rna' in a or G[g].get('biotype') not in RNA_BT))
 best = None

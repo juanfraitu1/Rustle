@@ -8867,3 +8867,17 @@ precision and one NPIP; not adopted. On gorilla, cap 10 still loses the disperse
 0.334 / 0.843 @0.98; OR 0.734 / 0.806, 0.399 / 0.910; Compara KB 0.431 / 0.368 nc 0.615, OR 0.389 / 0.318 nc 0.720 for cap 10 +
 intron). ONE arm for both species therefore: `--cluster tree --k 17 --scale 10 --root-cont 0.15 --min-cont 0.2 --max-chrom 20
 --weak-cont 0.1 --intron-cont 0.2`. Runs in 45 s (gorilla) / 6.5 min (human).
+
+### PREREG SKETCH-SEQ-HG002 (2026-10-30, registered before any HG002 sketch run in this form)
+Held-out: HG002 Kinnex (`~/runs/hg002_kinnex/`, base `hg.*` from job 4391754; earlier sketch numbers on HG002 from 10-29
+(components / MCL, locus cap, Compara readout) were seen and are disclosed; the tree arm, the intron rescue, the cap 20 and the
+sequence score were developed on KB3781, OR6737 and A119b only). Arm, fixed: `sketchfam.py hg.fam.loci.gff3 hg002.pat.fa hgs
+--fai --cluster tree --k 17 --scale 10 --root-cont 0.15 --min-cont 0.2 --max-chrom 20 --weak-cont 0.1 --intron-cont 0.2`.
+Scorer: `seqscore.py --species hg002 --gtf hg.families.gtf --fasta hg002.pat.fa` (truth = expressed annotated gene pairs, shorter
+covered >= 50% at identity >= T, structural RNA biotypes excluded, overlapping genes excluded; pair and gene-averaged P / R).
+Bars vs the shipped MCL base `hg.fam.copies.tsv`, all must hold:
+  B1 pair recall @0.85 > base;  B2 pair recall @0.98 > base;  B3 pair precision @0.85 > base;
+  B4 pair precision @0.98 >= base - 0.02 (dev: A119b +0.04, KB3781 -0.016, OR6737 0.000);
+  B5 gene-averaged recall @0.98 > base.
+Secondary (reported, not bars): Compara Simiiformes P / R and nc precision (`pairscore.py --species hg002`), run time, memory.
+One run, no re-tuning; result written under this entry; metric-auditor before any claim.
