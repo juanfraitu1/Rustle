@@ -9002,3 +9002,9 @@ ANKRD20, RPL23AP). The fraction rule removes that: with >= 50% of the smaller fa
 precision. Gorilla: 3-8 merges per set, scores unchanged to -0.02 precision. Verdict: a sound OPT-IN when an SD catalogue exists
 (`sd_merge.py --min-id 0.9 --gate-edges EDGES --gate-cont 0.1 --min-frac 0.5`); it is the one rule that completes GOLGA8 without
 touching NPIP; not part of the registered arm (HG002 has no SD table, and the gain is one family).
+Follow-up (user "could it be that some copies are reversed?"): no; minimap2 is strand-aware and the within-group pairs on
+opposite strands align (GOLGA6L1 + vs GOLGA6L6 -, 0.966 on the locus). Translated search (`mmseqs easy-search --search-type 2
+-s 7.5`) between the spliced sequences finds the proximal-distal homology at the PROTEIN level only: 42-53% amino-acid identity
+over the coiled-coil region (GOLGA6L1-L10 0.43 over 723 nt, L1-L4 0.42 over 846, L22-L10 0.46 over 669), i.e. an ancient
+duplication whose DNA has diverged past alignability while the protein is still recognisably golgin-A. GOLGA6L is a protein
+family name over two nucleotide families.
