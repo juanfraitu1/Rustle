@@ -8968,3 +8968,6 @@ mainstays 109 (span) / 108 (unmasked-only) vs 110, GOLGA6L still 4/10 in 3 famil
 TBC1D3 with RNFT1, P / R @0.85 0.445 / 0.734 (unmasked 0.471 / 0.686) vs 0.635 / 0.778. Verdict: introns add repeat glue and no
 bridge; the start-site / annotation hypothesis holds within a GOLGA6L group (where the sketch already succeeds) and not between
 the groups, which share no sequence on the locus either. Exon sketch stays.
+Follow-up (user "minimap2 without asm so it can seed lower than 80%"): `-x map-ont -N50 -p0.05` on the spliced and the genomic
+GOLGA6L sequences finds the within-group pairs plus L2 to the proximal group (spliced 0.615-0.755, genomic 0.844-0.854) and
+L4-L9 at 0.741; proximal vs distal: still no alignment at any sensitivity. The two arrays share no detectable nucleotide homology.
