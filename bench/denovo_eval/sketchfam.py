@@ -18,7 +18,7 @@ def opt(name, default, cast=float):
 GFF, FA, OUT = a[0], a[1], a[2]
 K = opt('--k', 21, int); SCALE = opt('--scale', 20, int); MAXL = opt('--max-loci', 0, int)
 MAXC = opt('--max-chrom', 0, int); FAI = a[a.index('--fai') + 1] if '--fai' in a else None; MINBP = opt('--min-chrom-bp', 10_000_000, int)
-MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); MERGE = '--merge-overlap' in a; METRIC = a[a.index('--metric') + 1] if '--metric' in a else 'containment'; UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
+MINS = opt('--min-shared', 5, int); MINC = opt('--min-cont', 0.2); CLUSTER = a[a.index('--cluster') + 1] if '--cluster' in a else 'components'; FAMC = opt('--family-cont', 0.3); ROOTC = opt('--root-cont', 0.1); CUT = a[a.index('--cut') + 1] if '--cut' in a else 'fixed'; RELF = opt('--rel-frac', 0.5); GAPMIN = opt('--gap-min', 0.15); WEAKC = opt('--weak-cont', 0.0); INTRC = opt('--intron-cont', 0.2); INTRMIN = opt('--intron-min-hashes', 10, int); MERGE = '--merge-overlap' in a; STRONG = opt('--merge-strong', 0.0); METRIC = a[a.index('--metric') + 1] if '--metric' in a else 'containment'; UNMASKED = '--unmasked-only' in a; OVERLAP_OK = '--allow-overlap' in a
 t0 = time.time()
 log = open(OUT + '.sketch.log', 'w')
 def say(*x):
@@ -259,6 +259,18 @@ with np.errstate(over='ignore'):
             lab = fcluster(Z, t=t_cut, criterion='distance')
             groups = collections.defaultdict(list)
             for t, l in zip(m, lab): groups[l].append(t)
+            if STRONG > 0:  # STRONG-EDGE MERGE (2026-10-30, user "can we make a rule to also include those"): average linkage lets a
+                # sub-group with many weak partners drift away from a group it shares >= STRONG of its sketch with (GOLGA8N/O vs the
+                # main GOLGA8 group at 0.56-0.64). Two cut families joined by any edge with containment >= STRONG are one family.
+                gl = {t: l for t, l in zip(m, lab)}; gp = {l: l for l in set(lab)}
+                def gfind(x):
+                    while gp[x] != x: gp[x] = gp[gp[x]]; x = gp[x]
+                    return x
+                for x, y, c in cedges[root]:
+                    if c >= STRONG and gfind(gl[x]) != gfind(gl[y]): gp[gfind(gl[x])] = gfind(gl[y])
+                merged = collections.defaultdict(list)
+                for l, g in groups.items(): merged[gfind(l)] += g
+                groups = merged
             for g in groups.values():
                 if len(g) >= 2: fams.append(g)
             if n >= 3: nwk.write(newick(to_tree(Z), m) + ';\n')

@@ -8913,3 +8913,24 @@ subfamilies, 2 families). Sequence score (rDNA excluded): P / R @0.85 0.635 / 0.
 genes, so no weak edges need rescuing). Reading: with an annotation, the arm finds 97% of the >= 98%-identical gene pairs and every
 mainstay except the GOLGA8 / GOLGA6L / SPATA31 subfamily splits, which are real sequence sub-groups (containment 0.2-0.4 between
 them), not misses of the engine.
+
+### STRONG-EDGE MERGE after the tree cut, development (2026-10-30, user "can we make a rule to also include those [GOLGA8/GOLGA6L/SPATA31 sub-groups]"): FAIL as a general rule
+Why the sub-groups sit apart (guided, `g_cap20`): GOLGA8N/O share 0.56-0.64 of their sketch with the main GOLGA8 group yet average
+linkage pulls them into a clade of 22 weak partners (GOLGA8 pseudogene / lncRNA copies), so the cut separates them; GOLGA8A has NO
+sketch edge to any GOLGA8 gene (identity 0.87 to F/G: at k 17 only ~9% of k-mers survive 13% divergence); GOLGA6L sub-groups L1/L6/L22,
+L4/L9/L10 and L2, L7 are 0.84-0.89 identical between groups (L2, L7 align to nothing at >= 50% coverage); SPATA31 A and D align to
+each other at no coverage. Only the GOLGA8N/O case is a clustering error; the rest are below what the sequence itself shares.
+Rule tested: `sketchfam.py --merge-strong S` = two cut families joined by any edge with containment >= S become one family.
+
+| arm | guided mainstays / unrel. foreign | guided P/R @0.85 | A119b de novo mainstays / unrel. | A119b P/R @0.85 | KB P/R @0.85, Compara P | OR P/R @0.85, Compara P |
+|---|---|---|---|---|---|---|
+| no merge | 110 / 0 | 0.635 / 0.778 | 103 / 0 | 0.617 / 0.617 | 0.598 / 0.704, 0.357 | 0.734 / 0.806, 0.384 |
+| S 0.5 | 112 / 1 (PKD1 into NPIP) | 0.385 / 0.839 | 103 / 0 | 0.570 / 0.634 | 0.595 / 0.704, 0.357 | 0.730 / 0.807, 0.373 |
+| S 0.4 | 112 / 5 (BOLA2, SMG1, SLC7A5 ...) | 0.301 / 0.847 | 103 / 0 | 0.530 / 0.641 | 0.590 / 0.713, 0.352 | 0.714 / 0.807, 0.318 |
+| S 0.3 | 112 / 23 | 0.114 / 0.877 | 106 / 0 (GOLGA8 12/13) | 0.462 / 0.664 | 0.563 / 0.723, 0.309 | 0.694 / 0.815, 0.311 |
+
+Reading: the merge recovers GOLGA8N/O (12/13) but the same edges that connect them connect NPIP to PKD1 and BOLA2/SMG1 (the
+16p13 segmental-duplication neighbours) and halve guided precision; on gorilla and A119b it only costs precision. GOLGA6L and
+SPATA31 are never reached because they have no edge. Not adopted; `--merge-strong` stays opt-in. The honest statement for the
+thesis: the engine finds every mainstay whose copies share >= ~90% of their exon sequence; sub-groups below that (GOLGA8A,
+GOLGA6L groups, SPATA31 A vs D) are distinct families by sequence and only the gene symbol says otherwise.
