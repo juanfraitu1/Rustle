@@ -118,5 +118,9 @@ name = "semisec"
 path = "src/semisec.rs"
 
 [[bin]]
+name = "semifam"
+path = "src/semifam.rs"
+
+[[bin]]
 name = "slimbam"
 path = "src/slimbam.rs"

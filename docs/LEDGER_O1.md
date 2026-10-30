@@ -9159,3 +9159,10 @@ exon (CDH18|NUP50, BLNK|NPM1, CLN5|DHX9, GOLM2|TPTE2, SLC27A4|TMSB4X): 'false' b
 **Proposal:** `semisec` + `semifam.py --all-candidates` as the family-stage option "semi-guided" next to de novo and guided (user decides;
 metric-auditor first). Open: the attach step is Python (10 min on A119b, all-vs-all minimap2 of 18k template/region pairs) and belongs in
 `mcl_families` as `--semi`; the famsum/mainstay page shows the semi-guided track (artifact v18).
+**SEMIGUIDED port (2026-10-30, user "ok lets apply all of that"):** `src/semifam.rs` (bin `semifam`) is the Rust port of
+`bench/denovo_eval/semifam.py` — `semifam --copies BASE.fam.copies.tsv --loci BASE.fam.loci.gff3 --semisec SS_DIR --genome FA --out OUT`
+(default = every candidate, amendment 1; `--silent-only` restores the first registration). On KB3781 both outputs (`.fam.copies.tsv`,
+`.semi.tsv`) are byte-identical to the Python run (`~/work/jfim/runs/semi_KB3781/rs_kbsemi.*` vs `kbsemi.*`), 4 min with 16 threads
+(minimap2 dominates). Pipeline order: `semisec` -> `mcl_families` -> `semifam`. The mainstay page (artifact v19) carries a column
+"of annotated, found: de novo -> semi-guided" in both Scores tables and the semi-guided tracks in the Loci tab. Still NOT a default
+(auditor pending on r1472).

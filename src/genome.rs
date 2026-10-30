@@ -562,6 +562,11 @@ impl IndexedFasta {
         Ok(Self { file, index })
     }
 
+    /// Length of a contig from the .fai, or `None` if unknown.
+    pub fn contig_length(&self, chrom: &str) -> Option<u64> {
+        self.index.get(chrom).map(|r| r.length)
+    }
+
     /// Fetch `[start, end)` (0-based half-open) verbatim, or `None` if the contig is
     /// unknown. An empty/degenerate interval yields `Some(vec![])` (pysam returns "").
     /// Bytes are read straight from the file at their `.fai`-computed offsets, skipping
