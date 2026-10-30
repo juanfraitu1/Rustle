@@ -8143,3 +8143,45 @@ Run: `/mnt/linuxdisk/tmp/p22` (panel.tsv, mask.bed, dev.bam on the masked genome
 - O2: 0 assignments on tied rows in every arm (400 HOPELESS, 97-99 ABSTAIN).
 - Recall of the certified tier is low on this panel: 11-13 / 70 masked copies (16-19%).
 - Decision: `--certify-all-records` stays opt-in, not adopted. `--tie-structure` found 2 more masked copies, no extra false one.
+
+## PREREG O2-TIE-MS (register 1472, 2026-10-30): O2's tie window defined on `ms`, the score minimap2 ranks by
+
+**User:** "does it work for tied reads, not only AS but also ms since that is the true tag that determines primaries from
+secondaries?" then "lets run it". Written before any P12 run directory is re-run under the new flag (the P12 substrate is being
+copied from the other machine to `~/work/jfim/rustle_data/reads/o2p12/` as this is committed; `--tie-ms` is implemented and
+unit-tested, commit pending).
+
+**Why.** Register 1409: minimap2 ranks hits by `ms` (best local DP score, no intron cost) and breaks exact `ms` ties by a hash of
+the read name; AS (with intron and splice costs) is never used to rank. O2's pile window (`o3port.near`) is AS within 10 of the
+read's best AS, so "AS-tied" is O2's own definition, not minimap2's coin toss.
+
+**Measurement on real BAMs (no bar; `bench/o3_graph/tie_ms_vs_as.py`, `~/runs/o2_ties/`), KB3781 fibroblast on GGO, reads with
+>= 2 non-supplementary records (4,190,262):**
+- Genome-wide: 26,669 exact `ms` ties (26,405 same NM, 25,210 same intron count); 25,172 (94.4%) fall inside O2's AS window,
+  1,497 outside, nearly all (1,236 of 1,497) with an intron-count difference >= 5 and an AS gap >= 100: a spliced and an unspliced
+  placement with the same `ms` (the processed-copy artefact of register 1403). O2's AS window holds 82,070 reads, 56,683 of them
+  not `ms` ties: reads minimap2 did rank (primary = max `ms` in 56,467).
+- Restricted to reads whose records all fall on one family's copies (kbcols, 165,931 reads): 16,949 `ms` ties, **16,940 (99.95%)
+  inside the AS window**, 9 outside (intron difference 3-5). The AS window holds 27,401 reads, 10,461 of them (38%) not `ms` ties.
+- Reading: within families O2 already sees every coin-toss read; the AS window is wider than the coin toss, not narrower. The
+  question for the bar is whether narrowing it to `ms` changes placements or error.
+
+**Arms (P12 substrate: 10 fresh gorilla families x d 1,2,3 x control/missing = 60 runs, `o2dup.py` products as copied; the port
+re-run per directory with `o3port.py run --semi [--tie-ms W]`, scored by `o2eval_sim.py`, nothing re-simulated):**
+- A (reproduction): default window. Must reproduce P12 pooled: tied 14,240, placed 4,562, wrong 1.
+- M0 (registered): `--tie-ms 0`, the window = records with the read's best `ms` (minimap2's exact ties; the hopeless rule then
+  compares `ms` and NM).
+- M10 (reported): `--tie-ms 10`.
+
+**Bars (M0 vs A, pooled over the 60 runs; run once, nothing tuned):**
+- R: A reproduces P12 (placed 4,562, wrong 1). Otherwise the comparison is void and reported as such.
+- B1: M0 wrong <= 2% of M0 placed, and M0 placed >= 100 (P12's own S1 and power bars).
+- B2: M0 placed >= 0.95 x A placed (the `ms` window loses at most 5% of the placements).
+- B3: M0 wrong rate <= A wrong rate + 0.5 percentage points.
+- Reported: tied-set sizes per arm; reads tied in one window and not the other; hopeless counts; M10 the same.
+- PASS = R, B1, B2, B3. Then `--tie-ms 0` is proposed as the default window (a separate decision, since P14's `--guard` and the
+  refabsent panel were not re-run here). FAIL = any bar fails; `--tie-ms` stays opt-in and the page keeps "AS-tied".
+
+**Not claimed:** anything about reads outside families (the 1,497 genome-wide `ms` ties outside the AS window are spliced vs
+unspliced placements and are the copy finder's problem, register 1403); anything about the Rust port (`copy_phasing` has no
+`--tie-ms` yet).

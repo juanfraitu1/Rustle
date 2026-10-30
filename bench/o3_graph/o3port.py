@@ -34,6 +34,8 @@ MIN_READS = 2      # the project's ">= 2 independent observations"
 MIN_Q = 10         # base quality below which a base counts as missing
 AS_TIE = 10        # O2's tie rule (Eichler): alignments within 10 AS of the read's best
 TIE_STRUCTURE = False   # --tie-structure (register 1404): the window is the primary's intron count and AS within AS_TIE of the primary's
+TIE_MS = None           # --tie-ms W (2026-10-30, user: minimap2 ranks on ms, "the true tag that determines primaries from secondaries",
+                        # register 1409): the window is ms within W of the read's best ms (W 0 = the exact ties minimap2 breaks by hash)
 ALPHA = 0.01       # IsoCon-style test, Bonferroni over the tested columns
 MAX_ROUNDS = 100   # label propagation stops earlier when no label changes
 CLIPPING = True    # milestone 2, third signal: reads the slot copy's DNA cannot hold end to end (--no-clipping turns it off)
@@ -463,7 +465,8 @@ def semi_tied(r, piles, prim, genome, cache):
     sites the read covers on both: read positions where the two copies' reference bases differ; each votes for the copy whose base
     the read carries. The read goes to the leader only when it leads by >= MIN_READS (2) sites: a conversion in the sample flips one
     site, and an edit-distance lead also counts read errors (P11, register 1390), so neither can place a read alone."""
-    sc = sorted(((rec.get_tag("AS"), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
+    key = (lambda rec: rec.get_tag("ms")) if TIE_MS is not None and all(p[r].has_tag("ms") for p in piles.values() if r in p) else (lambda rec: rec.get_tag("AS"))
+    sc = sorted(((key(rec), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
     if len(sc) < 2 or sc[0][:2] == sc[1][:2]:
         return "HOPELESS"
     if r not in prim:
@@ -712,21 +715,23 @@ def read_primaries(bam, wanted, records=None):
     """{read: (seq, quals, is_reverse, best AS over every record of the read, (primary AS, primary intron count) or None)} in one pass
     over the BAM; with `records` (a dict), also every non-supplementary record of the wanted reads as (chrom, start, end, AS, is
     secondary, intron count) per read."""
-    prim, best = {}, collections.defaultdict(lambda: -10 ** 9)
+    prim, best, bms = {}, collections.defaultdict(lambda: -10 ** 9), {}
     for rec in bam.fetch(until_eof=True):
         n = rec.query_name
         if n not in wanted or rec.is_unmapped:
             continue
         if records is not None and not rec.is_supplementary and rec.has_tag("AS"):
             records.setdefault(n, []).append((rec.reference_name, rec.reference_start, rec.reference_end, rec.get_tag("AS"),
-                                              rec.is_secondary, introns(rec)))
+                                              rec.is_secondary, introns(rec), rec.get_tag("ms") if rec.has_tag("ms") else None))
         if rec.has_tag("AS"):
             best[n] = max(best[n], rec.get_tag("AS"))
+        if rec.has_tag("ms") and not rec.is_supplementary:
+            bms[n] = max(bms.get(n, -10 ** 9), rec.get_tag("ms"))
         if not rec.is_secondary and not rec.is_supplementary and rec.query_sequence:
             q = rec.query_qualities
             prim[n] = (rec.query_sequence, list(q) if q is not None else [40] * len(rec.query_sequence), rec.is_reverse,
                        (rec.get_tag("AS"), introns(rec)) if rec.has_tag("AS") else None)
-    return {n: v[:3] + (best[n], v[3]) for n, v in prim.items()}
+    return {n: v[:3] + (best[n], v[3], bms.get(n)) for n, v in prim.items()}
 
 
 def introns(rec):
@@ -734,10 +739,13 @@ def introns(rec):
     return sum(1 for op, _ in rec.cigartuples or () if op == 3)
 
 
-def near(p, a, ni):
-    """O2's tie window for one record (AS a, ni introns) of the read whose primary entry is p: within AS_TIE of the read's best AS,
+def near(p, a, ni, ms=None):
+    """O2's tie window for one record (AS a, ni introns, ms) of the read whose primary entry is p: within AS_TIE of the read's best AS,
     or under --tie-structure the primary's intron count and AS within AS_TIE of the primary's (splice-mode AS charges each intron,
-    so by best AS an unspliced processed-copy alignment can tie or outscore the read's own spliced one)."""
+    so by best AS an unspliced processed-copy alignment can tie or outscore the read's own spliced one), or under --tie-ms W within
+    W of the read's best ms (minimap2's ranking score; p[5] is the read's best ms)."""
+    if TIE_MS is not None:
+        return ms is not None and p[5] is not None and ms >= p[5] - TIE_MS
     if TIE_STRUCTURE:
         return p[4] is not None and ni == p[4][1] and abs(a - p[4][0]) <= AS_TIE
     return a >= p[3] - AS_TIE
@@ -761,7 +769,7 @@ def pile_records(bam, copies, reads, prim):
             n = rec.query_name
             if n not in reads or n not in prim or rec.is_unmapped or not rec.has_tag("AS"):
                 continue
-            if not near(prim[n], rec.get_tag("AS"), introns(rec)):
+            if not near(prim[n], rec.get_tag("AS"), introns(rec), rec.get_tag("ms") if rec.has_tag("ms") else None):
                 continue
             if n not in p or rec.get_tag("AS") > p[n].get_tag("AS"):
                 p[n] = rec
@@ -897,7 +905,7 @@ def certificate_matching(demand, merged, options, piles, chrom, span, records, c
     slot copy or None} over the slot-claiming haplotypes."""
     on = lambda ch, s0, e0, c: ch == chrom[c] and s0 < span[c][1] and e0 > span[c][0]
     def outside(i):
-        n = sum(1 for r in merged[i]["reads"] for ch, s0, e0, _, sec, _ in records.get(r, ())
+        n = sum(1 for r in merged[i]["reads"] for ch, s0, e0, _, sec, *_ in records.get(r, ())
                 if not sec and not any(on(ch, s0, e0, c) for c in chrom))
         return n * 2 > len(merged[i]["reads"])
     copts = {}
@@ -1201,11 +1209,11 @@ def cmd_run(a):
                 lf.write(f">putative_{fam}_{k}\n{seq}\n")
             recs = []
             for n in reads:
-                if TIE_STRUCTURE:
-                    recs += [(ch, s0, e0, n, n in prim and near(prim[n], asc, ni)) for ch, s0, e0, asc, _, ni in records.get(n, [])]
+                if TIE_STRUCTURE or TIE_MS is not None:
+                    recs += [(ch, s0, e0, n, n in prim and near(prim[n], asc, ni, ms)) for ch, s0, e0, asc, _, ni, ms in records.get(n, [])]
                     continue
                 b = max((x[3] for x in records.get(n, [])), default=None)
-                recs += [(ch, s0, e0, n, asc >= b - AS_TIE) for ch, s0, e0, asc, _, _ in records.get(n, [])]
+                recs += [(ch, s0, e0, n, asc >= b - AS_TIE) for ch, s0, e0, asc, _, _, _ in records.get(n, [])]
             for ch, s0, e0, nr, nb, so in landing_loci(recs, [(c[1], c[2], c[3]) for c in by_fam[fam]], MIN_SUPPORT):
                 lo.write(f"{fam}\t{ch}:{s0}-{e0}\t{nr}\t{nb}\t{so}\n")
             side = [(c, rs, seq) for c, rs, seq, vb in iso.get(fam, []) if isocon_keep(rs, vb, piled, a.isocon_rule)]
@@ -1255,6 +1263,8 @@ def main(argv):
     r.add_argument("--correct", action="store_true", help="milestone 2b: IsoCon-style neighbour correction of read alleles")
     r.add_argument("--tie-structure", action="store_true", help="O2's tie window = the primary's intron count and AS within 10 "
                    "of the primary's (register 1404; default: AS within 10 of the read's best)")
+    r.add_argument("--tie-ms", type=int, default=None, metavar="W", help="O2's tie window = ms within W of the read's best ms "
+                   "(minimap2's ranking score, register 1409); W 0 = the exact ties minimap2 breaks by read-name hash")
     r.add_argument("--certify-all-records", action="store_true", help="a certified copy must survive the slot matching over every "
                    "family copy its reads have any record on, and a haplotype whose primaries lie outside the family claims no "
                    "slot (register 1414)")
@@ -1269,8 +1279,8 @@ def main(argv):
                    "fates, private alleles); the products do not change")
     a = ap.parse_args(argv)
     global CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR
-    global TIE_STRUCTURE, CERTIFY_ALL
-    TIE_STRUCTURE, CERTIFY_ALL = a.tie_structure, a.certify_all_records
+    global TIE_STRUCTURE, CERTIFY_ALL, TIE_MS
+    TIE_STRUCTURE, CERTIFY_ALL, TIE_MS = a.tie_structure, a.certify_all_records, a.tie_ms
     CORRECT, COVERAGE, CLIPPING, SEMI, RECONSTRUCT, PREFER, GUARD, ONE_SITE, ANCHOR = a.correct, a.coverage, not a.no_clipping, a.semi, not a.no_reconstruct, a.prefer, a.guard, a.one_site, a.anchor
     cmd_run(a)
 

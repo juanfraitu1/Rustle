@@ -221,3 +221,16 @@ def test_foreign_clipping():
     assert not foreign_clipping(list(tails), tails)                  # poly-A tails are not foreign
     mixed = {**dict(list(clip.items())[:3]), **clean}
     assert not foreign_clipping(list(mixed), mixed)                  # < half clipped, < 6 at one boundary
+
+
+def test_tie_ms_window_uses_the_read_s_best_ms_and_falls_back_to_as():
+    prim = ("ACGT", [40] * 4, False, 1000, (1000, 2), 1200)          # best AS 1000, primary (AS, introns), best ms 1200
+    P.TIE_MS, P.TIE_STRUCTURE = None, False
+    assert P.near(prim, 995, 2, 1150) is True                        # AS window: within 10 AS, ms ignored
+    P.TIE_MS = 0
+    assert P.near(prim, 995, 2, 1200) is True                        # exact ms tie
+    assert P.near(prim, 1000, 2, 1199) is False                      # one ms point below the best: minimap2 ranked it
+    assert P.near(prim, 1000, 2, None) is False                      # no ms tag: outside the window
+    P.TIE_MS = 10
+    assert P.near(prim, 900, 1, 1191) is True                        # ms within 10, whatever AS and intron count
+    P.TIE_MS = None
