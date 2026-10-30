@@ -9395,3 +9395,12 @@ AND outside_as_window reads are >= 5% of reads>=2 on either sample (reads whose 
 tie it already handles). Below 5% on both: ARCHIVE `--tie-ms` (no port, the Python flag stays as is) and the ms/AS question is closed in
 favour of the PSV certificate; the next lever for near-ties is pooled phasing of the O2-undecided stratum (copy_phasing), a separate prereg.
 Descriptive extras (no bar): the ms_tie / as_win overlap classes the script already had.
+**Amendment 1 (2026-10-31, before the KB3781 / A119b reports were seen; OR6737 v1 report seen and kept as `OR6737.report.v1.tsv`; user:
+"my advisor always asks me to test the naive rule proposed by the Eichler paper ... can we also include that always as a test of fitness"):
+the EICHLER RULE is a STANDING test from now on.** Definition: a read's true copy is the record no rival comes within 10 AS of (about two
+substitutions); `eichler.decided` = exactly one record within 10 of the best AS, pick = that record; `eichler.undecided` otherwise.
+Reported beside it, every time: `pick_is_ms_best` and `pick_is_primary` (agreement with minimap2's own ranking), `pick_unspliced_rival_spliced`
+(the pick has fewer introns than the ms-best record: the retrocopy signature of register 1270, where the rule picks the processed copy),
+`pick_more_spliced_than_ms_best`. No bar on it in this prereg: it is a descriptive column that goes into every read-placement result, and in
+the assign stage the same rule is `as_margin > 10` of `<p>.assignments.tsv` against O2's status (agreement table to be printed whenever O2
+runs). The three scans were restarted with the classes (OR6737 Slurm 4399106; KB3781 / A119b resubmitted).
