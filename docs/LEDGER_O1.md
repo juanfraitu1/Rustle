@@ -8901,3 +8901,15 @@ own counting code) reproduced every number to the printed digit, verified the co
 the base's expressed set and the annotation only; identical universe for both arms). Dev samples disclosed: KB3781, OR6737, A119b.
 Status: the sketch tree arm (k17, scale 10, root 0.15, floor 0.2, cap 20, intron rescue 0.1/0.2) is the family engine candidate
 to ship; next = wire it into the pipeline's family stage as the default and rerun the end-to-end benchmark.
+
+### GUIDED MODE with the final arm (2026-10-30, user "how about for guided, would we find them all"; `~/runs/guided_sketch/g_cap20{,i}`)
+Templates = the 64,213 CHM13 genes, `sketchfam.py cat.loci.gff3 --cluster tree --k 17 --scale 10 --root-cont 0.15 --min-cont 0.2
+--max-chrom 20 [--weak-cont 0.1 --intron-cont 0.2]`, scored on the genes expressed in A119b. Mainstays recalled 110 / 123 (cap 3:
+107; de novo base 108 with 2 unrelated foreign; de novo arm 103), unrelated foreign 0. Complete: NPIP 20/20 (3 families: A,
+full-length B, B pieces), TBC1D3 9/9 in one family with no foreign gene, CT47A 7/7, XAGE 3/3, TSPY 34/34, RBMY 6/6, DAZ, BPY2,
+CDY, VCY, HSFY. Not complete: GOLGA8 10/13 (4 families; cap 3 had 7/13 in 7), GOLGA6L 4/10 (3 families), SPATA31 4/8 (A vs D
+subfamilies, 2 families). Sequence score (rDNA excluded): P / R @0.85 0.635 / 0.778, @0.98 0.341 / 0.973 (gene-averaged recall
+0.958) vs de novo base 0.528 / 0.559 and 0.297 / 0.734. The intron rescue changes nothing in guided mode (templates are complete
+genes, so no weak edges need rescuing). Reading: with an annotation, the arm finds 97% of the >= 98%-identical gene pairs and every
+mainstay except the GOLGA8 / GOLGA6L / SPATA31 subfamily splits, which are real sequence sub-groups (containment 0.2-0.4 between
+them), not misses of the engine.
