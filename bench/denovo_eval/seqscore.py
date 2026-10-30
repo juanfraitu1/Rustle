@@ -47,11 +47,14 @@ if best is None:
         if cov >= COV and (k not in best or idn > best[k]): best[k] = idn
     if CACHE: pickle.dump(best, open(CACHE, 'wb'))
 exp = set(genes)
+def overlapping(x, y):  # genes sharing genomic sequence (nested / readthrough / antisense annotations) are not a family pair
+    return G[x]['chrom'] == G[y]['chrom'] and G[x]['exons'][0][0] < G[y]['exons'][-1][1] and G[y]['exons'][0][0] < G[x]['exons'][-1][1]
+best = {k: i for k, i in best.items() if not overlapping(*k)}
 truth = {T: {k for k, i in best.items() if i >= T} for T in TIERS}
 print("run\tpred_pairs\t" + "\t".join(f"P@{T:.2f}\tR@{T:.2f} (truth {len(truth[T])})" for T in TIERS))
 for p in paths:
     fams, _, _ = F.load_catalog(p, G, idx)
-    pred = {(x, y) for v in fams.values() for x, y in itertools.combinations(sorted(v), 2) if x in exp and y in exp}
+    pred = {(x, y) for v in fams.values() for x, y in itertools.combinations(sorted(v), 2) if x in exp and y in exp and not overlapping(x, y)}
     cells = []
     for T in TIERS:
         ok = len(pred & truth[T]); cells.append(f"{ok / len(pred) if pred else 0:.3f}\t{ok / len(truth[T]) if truth[T] else 0:.3f}")
