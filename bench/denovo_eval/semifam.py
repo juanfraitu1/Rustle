@@ -13,7 +13,8 @@ aligning the seed locus itself; unconfirmed candidates are repeat hubs and land 
                    and identity >= --min-id (0.7), the SEMIFAM-2 lift rule; the copy's exons = the aligned target blocks;
   4. attach      = the confirmed copy joins the seed locus's family (source `semisec`, member_status `silent`, n_reads = candidate reads);
                    a seed locus in no family forms a new family `SEMI<n>` with its confirmed copies (--no-new-families keeps base only).
-A candidate overlapping an existing copy of the run (same strand) is skipped (not silent for the run). Families are not re-clustered.
+A candidate overlapping an existing copy of the run (same strand, checked on the aligned strand too) is skipped. The seed pile resolves to a
+copy already in a family when one overlaps it (loci.gff3 holds overlapping records of one locus), else to the loci.gff3 record. Families are not re-clustered.
   semifam.py BASE.fam.copies.tsv BASE.fam.loci.gff3 SEMISEC_DIR GENOME_FA OUT [--cov 0.5] [--min-id 0.7] [--pad 2000] [--threads 8]
              [--no-new-families] [--all-candidates]
 --all-candidates also attaches candidates that are NOT silent (>= 2 primaries: expressed copies the assembler dropped).
@@ -72,7 +73,14 @@ for i, c in enumerate(cands):
     s, e = int(c['start']), int(c['end'])
     if overlaps_copy(c['chrom'], c['strand'], s, e): plan.append((c, None, None, 'overlaps_copy')); continue
     if not hits: plan.append((c, None, None, 'seed_no_locus')); continue
-    seed = max(hits)[1]
+    # the seed pile's locus: a copy already in a family first (overlapping loci records are one locus: STRAINY-A audit r1463),
+    # else the loci.gff3 record with most overlap
+    inc = [(ov, g) for ov, g in hits if g in row_of]
+    if not inc:
+        best_l = max(hits)[1]; ch, st = loc_meta[best_l]
+        inc = [(min(se, ce) - max(ss, cs), t) for t, r0 in row_of.items() if r0['chrom'] == ch and r0['strand'] == st
+               for cs, ce in [(int(r0['start']), int(r0['end']))] if ce > ss and cs < se]
+    seed = max(inc)[1] if inc else max(hits)[1]
     if seed in row_of: tex = (row_of[seed]['chrom'], row_of[seed]['strand'], F.blocks(row_of[seed]['exons']))
     else: tex = (loc_meta[seed][0], loc_meta[seed][1], loc_ex[seed])
     plan.append((c, seed, tex, 'align'))
@@ -125,8 +133,10 @@ with open(OUT + '.semi.tsv', 'w') as w:
                     v = 'attached'
                     rs = region[i][0]; ex = [(rs + s0, rs + e0) for s0, e0 in bl]
                     strand = tex[1] if pst == '+' else ('-' if tex[1] == '+' else '+')
+                    if overlaps_copy(c['chrom'], strand, ex[0][0], ex[-1][1]): v = 'overlaps_copy'
                     fam = fam_of.get(seed)
-                    if fam is None:
+                    if v != 'attached': pass
+                    elif fam is None:
                         if not NEWFAM: v = 'seed_singleton'
                         else:
                             if seed not in newfam:
