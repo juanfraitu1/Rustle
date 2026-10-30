@@ -7,6 +7,10 @@ shorter sequence. Two families are joined when the hits touch >= --min-frac of t
 (the SD-merge rule of sd_merge.py, so one pseudogene cannot glue two 30-member families). Connected components of layer 2 are the
 reconciled (super)families.
   protlayer.py COPIES_TSV GENOME_FA OUT [--min-id 0.4] [--cov 0.5] [--evalue 1e-5] [--min-frac 0.5[,0.3,...]] [--threads 16] [--species human]
+               [--rbh] [--same-chrom] [--tag T]
+Specificity options (2026-10-30, user "can we try to be more specific"): --rbh keeps a family pair only when each is the other's
+best-hit family (by best member identity); --same-chrom only when the touched members of both sides lie on one chromosome (SD
+families are local; superfamilies are not). --tag names the output copies files OUT_<tag>_f{frac}.fam.copies.tsv.
 Writes OUT.pc.fa (spliced exons of protein-coding members), OUT.m8 (reused if present), OUT.prot_edges.tsv (family pairs with hit
 count, best identity, touched fraction of each side, touched gene names) and OUT_f{frac}.fam.copies.tsv per --min-frac value."""
 import sys, os, csv, collections, subprocess
@@ -16,7 +20,7 @@ a = sys.argv[1:]
 opt = lambda k, d, f=float: f(a[a.index(k) + 1]) if k in a else d
 MINID = opt('--min-id', 0.4); COV = opt('--cov', 0.5); EV = opt('--evalue', 1e-5); T = opt('--threads', 16, int)
 FRACS = [float(x) for x in opt('--min-frac', '0.5', str).split(',')]
-species = opt('--species', 'human', str)
+species = opt('--species', 'human', str); RBH = '--rbh' in a; SAMECHR = '--same-chrom' in a; TAG = opt('--tag', '', str)
 pos = [x for i, x in enumerate(a) if not x.startswith('--') and (i == 0 or not a[i - 1].startswith('--'))]
 COPIES, GENOME, OUT = pos[:3]
 G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
@@ -53,13 +57,21 @@ for line in open(OUT + '.m8'):
     hits.setdefault(k, {})
     if e not in hits[k] or pid > hits[k][e]: hits[k][e] = pid
 nm = lambda t: G[t]['name']
+bestfam = {}  # family -> (best identity, partner family)
+for (fa_, fb_), d in hits.items():
+    m = max(d.values())
+    for x, y in ((fa_, fb_), (fb_, fa_)):
+        if x not in bestfam or m > bestfam[x][0]: bestfam[x] = (m, y)
 edges = []
 with open(OUT + '.prot_edges.tsv', 'w') as w:
     w.write('famA\tfamB\tpc_A\tpc_B\thits\tbest_id\tfrac_A\tfrac_B\ttouched_A\ttouched_B\n')
     for (fa_, fb_), d in sorted(hits.items()):
         ta = {x for e in d for x in e if fam[x] == fa_}; tb = {x for e in d for x in e if fam[x] == fb_}
         fra, frb = len(ta) / len(members[fa_]), len(tb) / len(members[fb_])
-        edges.append((fa_, fb_, min(fra, frb)))
+        ok = True
+        if RBH and not (bestfam[fa_][1] == fb_ and bestfam[fb_][1] == fa_): ok = False
+        if SAMECHR and len({G[x]['chrom'] for x in ta | tb}) > 1: ok = False
+        if ok: edges.append((fa_, fb_, min(fra, frb)))
         w.write(f"{fa_}\t{fb_}\t{len(members[fa_])}\t{len(members[fb_])}\t{len(d)}\t{max(d.values()):.2f}\t{fra:.2f}\t{frb:.2f}\t"
                 f"{','.join(sorted(nm(x) for x in ta))}\t{','.join(sorted(nm(x) for x in tb))}\n")
 print(f"family pairs with a protein hit (id >= {MINID}, cov >= {COV}): {len(edges)}", file=sys.stderr)
@@ -71,7 +83,7 @@ for fr in FRACS:
     n = 0
     for fa_, fb_, f_ in edges:
         if f_ >= fr and find(fa_) != find(fb_): gp[find(fa_)] = find(fb_); n += 1
-    with open(f"{OUT}_f{fr}.fam.copies.tsv", 'w') as w:
+    with open(f"{OUT}_{TAG + '_' if TAG else ''}f{fr}.fam.copies.tsv", 'w') as w:
         w.write('\t'.join(rows[0].keys()) + '\n')
         for r in rows:
             r = dict(r); r['family_id'] = find(r['family_id']); w.write('\t'.join(r.values()) + '\n')
