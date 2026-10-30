@@ -9345,3 +9345,11 @@ spent twice on 2026-10-30 by r1473/r1475). Bars (REPRULE-2): (B1) mainstay recal
 (B2) pair precision >= base - 0.01 and pair recall >= base - 0.01. PASS -> proposed default with `--absorb-loci` off as the hatch
 (metric-auditor first, user decides); FAIL -> opt-in. Constants 0.1 / 0.5 are the dev census values; no sweep on the held-out.
 Runs under `~/work/jfim/runs/absorb_{A119b,OR6737}/`.
+
+### LOCUS-ABSORB dev result (2026-10-31, A119b, Slurm 4399003, `~/work/jfim/runs/absorb_A119b/a1ab.fam.*`)
+6,924 of 76,161 loci absorbed (the census number exactly), 7,574 copy rows (base 7,987). Mainstays identical to base
+(ALL 108 recalled / 2 unrelated-foreign, NPIP 18 of 20). Pairs: base 2,228 predicted, 1,617 hit, 611 false ->
+absorb 1,998 predicted, 1,591 hit, 407 false; precision 0.726 -> **0.796**, recall 0.741 -> **0.729**. The dev gate as
+registered (recall >= 0.731) is MISSED by 0.002 (26 true pairs lost with 204 false ones), precision bar cleared by 0.07.
+Not submitted to the held-out on the registered rule; whether to amend the dev gate (recall - 0.015) and run OR6737 is the
+user's call and is disclosed here as a post-hoc decision if taken.
