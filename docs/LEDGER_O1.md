@@ -8971,3 +8971,12 @@ the groups, which share no sequence on the locus either. Exon sketch stays.
 Follow-up (user "minimap2 without asm so it can seed lower than 80%"): `-x map-ont -N50 -p0.05` on the spliced and the genomic
 GOLGA6L sequences finds the within-group pairs plus L2 to the proximal group (spliced 0.615-0.755, genomic 0.844-0.854) and
 L4-L9 at 0.741; proximal vs distal: still no alignment at any sensitivity. The two arrays share no detectable nucleotide homology.
+
+### SD CATALOGUE CHECK (2026-10-30, user "can we prove that Soto does not find them either?"; `~/work/jfim/rustle_data/tables/CHM13_SDs.SD90.bed.gz`, 40,502 SD pairs >= 90%)
+Gene loci overlapped with the CHM13 segmental-duplication pairs; a pair of genes is "SD-linked" when an SD pair joins their loci.
+GOLGA6L: proximal L1 (x2), L6, L22 linked to each other, L2 linked only to L22, distal L4 (x2), L9, L10 linked to each other, L7 to
+no GOLGA6L gene; NO SD pair joins a proximal to a distal copy. SPATA31: A1, A3, A6, A7 linked to each other, D1, D3, D4 to each
+other, E1 to nothing; no A-D pair. GOLGA8: all 13 linked, including A (to F, G, H, J, K, S, T) and N, O. So the SD catalogue draws
+exactly the lines the sketch draws for GOLGA6L and SPATA31 (same sub-groups, same singletons) and finds GOLGA8 as one family
+where the sketch gives 10 of 13 (12 with the strong-edge merge). The sub-group splits are therefore a property of the genome, not
+of the engine; GOLGA8A / N / O are the one place the SD track is ahead.
