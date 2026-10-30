@@ -1285,7 +1285,7 @@ fn main() -> Result<()> {
     );
     anyhow::ensure!(
         args.representative == Representative::MostReads || args.from_gtf.is_some(),
-        "--representative most-junctions needs --from-gtf (it picks the representative transcript of each de novo locus)"
+        "--representative most-junctions / reads-x-junctions needs --from-gtf (it picks the representative transcript of each de novo locus)"
     );
     // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
     let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
@@ -2912,8 +2912,10 @@ fn main() -> Result<()> {
         }
     }
     // `--representative most-junctions` only (appended LAST, and only then: a default run's params.tsv is unchanged)
-    if args.representative == Representative::MostJunctions {
-        writeln!(ph, "representative\tmost-junctions")?;
+    match args.representative {
+        Representative::MostReads => {}
+        Representative::MostJunctions => writeln!(ph, "representative\tmost-junctions")?,
+        Representative::ReadsXJunctions => writeln!(ph, "representative\treads-x-junctions")?,
     }
     // the exon gate, only when it ran (an ungated run's params.tsv is unchanged). Its rejection counters above count the
     // ALIGNED pairs only: a gated run never aligns the pairs the gate dropped.
@@ -3547,6 +3549,12 @@ mod tests {
                 .representative,
             Representative::MostJunctions
         );
+        assert_eq!(
+            parse(&["--representative", "reads-x-junctions"])
+                .expect("parse")
+                .representative,
+            Representative::ReadsXJunctions
+        );
         assert!(parse(&["--representative", "longest-span"]).is_err());
     }
 
@@ -3653,6 +3661,28 @@ mod tests {
     /// with 10 reads represents its locus under `most-reads` and loses to the 5-junction transcript with 2 reads under
     /// `most-junctions`. Only the representative moves: the locus, its span and every locus with one transcript, or with
     /// no spliced transcript, are the same under both rules.
+        /// PREREG REPRULE-2: `reads-x-junctions` weighs reads by (junctions + 1). A 10-read 1-junction fragment (score 20) loses to a
+    /// 5-read 5-junction full chain (30) but beats a 2-read full chain (12); unspliced loci fall back to reads, then span, then id.
+    #[test]
+    fn reads_x_junctions_weighs_reads_by_junctions() {
+        let full = [(101, 200), (301, 400), (501, 600), (701, 800), (901, 1000), (1101, 1200)];
+        let gtf = gtf_tx("G1", "Tfrag", 10, &full[4..])
+            + &gtf_tx("G1", "Tfull", 5, &full)
+            + &gtf_tx("G2", "Ufrag", 10, &full[4..])
+            + &gtf_tx("G2", "Ufull", 2, &full)
+            + &gtf_tx("G3", "Tshort", 5, &[(5001, 5100)])
+            + &gtf_tx("G3", "Tlong", 5, &[(5001, 5300)]);
+        assert_eq!(
+            reps_of(&gtf, Representative::ReadsXJunctions),
+            vec![
+                ("G1".to_string(), "Tfull".to_string()),
+                ("G2".to_string(), "Ufrag".to_string()),
+                ("G3".to_string(), "Tlong".to_string()),
+            ]
+        );
+        assert_eq!(reps_of(&gtf, Representative::MostReads)[0].1, "Tfrag");
+    }
+
     #[test]
     fn most_junctions_beats_reads_where_the_most_read_transcript_is_a_fragment() {
         let full = [

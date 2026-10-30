@@ -56456,6 +56456,10 @@ pub mod fam_from_gtf {
         MostReads,
         /// the transcript with the most junctions; ties to the most `reads`, then the longer span, then the last `transcript_id`
         MostJunctions,
+        /// PREREG REPRULE-2 (2026-10-30): `reads x (junctions + 1)`, ties to the most `reads`, then the longer span, then the last
+        /// `transcript_id`; the rule that agrees most with StringTie's top isoform and FLAIR (5'-truncated fragments no longer outvote
+        /// the full chain by read count alone)
+        ReadsXJunctions,
     }
 
     const MIN_JUNCTION_GAP: u64 = 50;
@@ -56587,6 +56591,14 @@ pub mod fam_from_gtf {
                         (
                             exons.get(**t).map_or(0, |v| junction_count(v)),
                             reads.get(**t).copied().unwrap_or(0),
+                            span_of(**t),
+                        )
+                    }),
+                    Representative::ReadsXJunctions => sorted_ts.iter().max_by_key(|t| {
+                        let r = reads.get(**t).copied().unwrap_or(0);
+                        (
+                            r * (exons.get(**t).map_or(0, |v| junction_count(v)) as u64 + 1),
+                            r,
                             span_of(**t),
                         )
                     }),
