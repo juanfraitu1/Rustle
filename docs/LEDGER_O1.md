@@ -9068,3 +9068,34 @@ SD merge was: mainstays (`mainstay_score.py`), Compara pairs (`pairscore.py`), s
   merge. What it can be is a separate label: layer-2 components as superfamily names over the layer-1 families, reported apart and
   never fed to O2/O3 (reads never tie across 50%-identity copies). GOLGA6L proximal vs distal and SPATA31 A vs D are not reconciled
   by nucleotide, SD or 40% protein evidence; only the 30% arm joins SPATA31, at the price above.
+
+### Specific protein reconciler (2026-10-30, user "can we try to be more specific"; grid `~/runs/protlayer/grid.*`, 32 arms on the same alignments)
+
+Gates added to `protlayer.py`: `--rbh` (a family pair joins only when each is the other's best-hit family by best member
+identity) and `--same-chrom` (every touched member on both sides on one chromosome). Grid: identity 0.4/0.5/0.6/0.7 x coverage
+0.5/0.8 x {none, rbh, chr, rbh+chr}, min-frac 0.5. Base = guided sketch (110/123 mainstays, Compara 0.270/0.757, seq 0.632/0.780).
+
+| arm (cov 0.5, frac 0.5) | mainstays / unrel. | GOLGA8 | GOLGA6L | Compara P / R | seq P / R @0.85 | merged groups |
+|---|---|---|---|---|---|---|
+| id 0.4, no gate | 115 / 1 | 13/13 (+GOLGA6, +lncRNA) | 6/10 | 0.102 / 0.831 | 0.431 / 0.790 | 209 |
+| id 0.4, chr | 115 / 1 | 13/13 | 6/10 | 0.214 / 0.825 | 0.561 / 0.789 | |
+| id 0.4, rbh | 114 / 0 | 12/13 | 6/10 | 0.257 / 0.772 | 0.617 / 0.786 | |
+| **id 0.4, rbh + chr** | **114 / 0** | 12/13 | 6/10 | 0.261 / 0.772 | 0.622 / 0.786 | 55 |
+| id 0.5, rbh + chr | 111 / 0 | 12/13 | 4/10 | 0.262 / 0.768 | 0.625 / 0.786 | |
+| **id 0.7, rbh + chr** | **112 / 0** | 12/13 | 4/10 | 0.268 / 0.768 | 0.629 / 0.786 | 28 |
+| any arm at cov 0.8 | 110-111 / 0 | 10/13 | 4/10 | ~base | ~base | |
+
+- The reciprocal-best gate is what removes the superfamily hairball (Compara precision 0.10 -> 0.26 at id 0.4); same-chromosome
+  adds little on top of it, coverage 0.8 removes the useful joins too (GOLGA8N/O align to GOLGA8 over 50-80% of the shorter).
+- **What rbh + chr merges, by name** (`merged_id{0.7,0.4}_rbhchr.txt`): at 0.7, 28 groups, every one a same-root local cluster
+  (GOLGA8N/O + GOLGA8; TRIM51 + TRIM48/49; KRTAP10, KRTAP4, KRTAP5, KRTAP13 clusters; IFNA; UGT2B; PCDHB; CRYGB/C/D; FUT3/5/6;
+  KLRC; ZSCAN5; MRGPRX; TUBB2 + TUBB; OR sub-families with the same letter). At 0.4, 55 groups: the same plus GOLGA6L2/L7 to the
+  proximal GOLGA6L group, PRAMEF, KIR, LCE, SPANX, MAGEA, TAS2R, KRT3x, LILR, DEFB, ACOT, ARS; the only joins without a shared
+  symbol root are XAGE3 + GAGE (both CT antigens), LCN1 + OBP2 (lipocalins) and an unnamed AC008537.1 + CYP2B6. No olfactory
+  receptor crosses to another OR letter group; no tubulin alpha to beta; no histone cross-cluster.
+- Cost: Compara precision -0.002 (0.7) / -0.009 (0.4) for recall +0.011 / +0.015; sequence precision -0.003 / -0.010 for recall
+  +0.006. Mainstays +2 / +4, 0 unrelated. GOLGA6L proximal vs distal and SPATA31 A vs D stay apart at every gated setting.
+- **Reading.** With reciprocity and locality the protein layer is specific: it joins sub-clusters of one tandem family whose DNA
+  has drifted past the sketch's reach while the protein is conserved (histone-like purifying selection in KRTAP, TUBB, IFNA,
+  PCDHB). It is a candidate second rule, not adopted: it was tuned on A119b dev and must be pre-registered on HG002 with the
+  usual bars before it enters the family stage. Proposed registered arm: id 0.7, cov 0.5, rbh + chr, frac 0.5.
