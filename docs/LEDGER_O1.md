@@ -8786,3 +8786,21 @@ Precision collapses at every setting and most false pairs are UNRELATED (id 0.8:
 even with repeats hard-masked (75 of 113). Local alignment covering half of the shorter locus is satisfied by a shared exon or
 domain; the sketch's chromosome-dispersion cap (drop k-mers on > 3 chromosomes) is what removes exactly those shared segments, and
 mmseqs has no equivalent. mmseqs stays a judge (protein mutual hit), not a family engine.
+
+### SEQUENCE-DEFINED FAMILY SCORE (2026-10-30, user "lets try to fix the scoring artifact, or score the families based on what they really share"; "Soto only works for up to 98% similarity of SDs")
+`bench/denovo_eval/seqscore.py --species S --gtf BASE.gtf --fasta GENOME [--cache PKL] COPIES...`: NO Compara. Truth at identity
+tier T = pairs of EXPRESSED annotated genes (any biotype) whose spliced exon sequences align (minimap2 asm20 all-vs-all, 30 s per
+gorilla set) with the shorter covered >= 50% at identity >= T; predicted = gene pairs inside a family. Precision at T = predicted
+pairs meeting T; recall at T = truth pairs at T recovered. Gorilla:
+
+| arm | KB3781 P/R @0.85 (991 truth) | @0.90 (821) | @0.95 (636) | @0.98 (477) | OR6737 @0.85 (2,898) | @0.90 (2,575) | @0.95 (2,114) | @0.98 (1,472) |
+|---|---|---|---|---|---|---|---|---|
+| base (MCL) | 0.582 / 0.485 | 0.513 / 0.516 | 0.433 / 0.563 | 0.350 / 0.606 | 0.741 / 0.721 | 0.698 / 0.765 | 0.606 / 0.809 | 0.424 / 0.813 |
+| tree k17 c0.2 (chosen) | 0.604 / 0.485 | 0.553 / 0.536 | 0.440 / 0.550 | 0.298 / 0.497 | 0.774 / 0.699 | 0.739 / 0.750 | 0.633 / 0.784 | 0.427 / 0.760 |
+| + intron rescue | 0.592 / 0.497 | 0.533 / 0.541 | 0.423 / 0.553 | 0.286 / 0.499 | 0.763 / 0.704 | 0.723 / 0.751 | 0.621 / 0.785 | 0.418 / 0.760 |
+| tree c0.15 | 0.584 / 0.505 | 0.523 / 0.546 | 0.414 / 0.557 | 0.279 / 0.501 | 0.752 / 0.711 | 0.712 / 0.757 | 0.606 / 0.785 | 0.409 / 0.760 |
+| whole components (intron edges) | 0.466 / 0.544 | 0.412 / 0.581 | 0.324 / 0.590 | 0.219 / 0.530 | 0.638 / 0.741 | 0.600 / 0.783 | 0.508 / 0.808 | 0.340 / 0.778 |
+
+Reading: by what the genes really share, the sketch and the base are close (sketch more precise, base slightly higher recall), and
+the real gap is RECALL at the high tiers: on KB3781 half of the gene pairs that are >= 98% identical over half their length are
+not in one family, on OR6737 a quarter. That, not Compara, is the number to fix (diagnosis below).
