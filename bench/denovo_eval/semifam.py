@@ -132,7 +132,7 @@ with open(OUT + '.semi.tsv', 'w') as w:
                 else:
                     v = 'attached'
                     rs = region[i][0]; ex = [(rs + s0, rs + e0) for s0, e0 in bl]
-                    strand = tex[1] if pst == '+' else ('-' if tex[1] == '+' else '+')
+                    strand = pst  # the template is in transcript sense, the region is + genomic: the PAF strand IS the copy's strand
                     if overlaps_copy(c['chrom'], strand, ex[0][0], ex[-1][1]): v = 'overlaps_copy'
                     fam = fam_of.get(seed)
                     if v != 'attached': pass
