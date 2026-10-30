@@ -6,7 +6,9 @@ novo transcript in the run (famtruth's expressed universe). Predicted = gene pai
 Also reports 'related' (Compara at any level / same HGNC group / same symbol) among the non-true predicted pairs, so a false pair means
 an unrelated protein-coding gene pair.
 
-  pairscore.py --species human|gorilla|hg002 --gtf RUN.families.gtf [--level simiiformes] [--fasta GENOME --noncoding] COPIES_TSV...
+  pairscore.py --species human|gorilla|hg002 --gtf RUN.families.gtf [--level simiiformes] [--fasta GENOME --noncoding] [--universe-copies] COPIES_TSV...
+--universe-copies (semi-guided, 2026-10-30): truth pairs among genes carrying any copy of THAT run (silent copies included) instead of
+the GTF's expressed genes, so a silent copy of an unexpressed paralog can be a hit rather than a false pair.
 
 --noncoding (2026-10-29, user: "recover all protein coding, pseudogenes and lncRNAs but use Compara for the things that are validated as
 protein coding, then the others can be judged based on discarding that they are just false positives due to domain sharing"): every
@@ -23,6 +25,7 @@ a = sys.argv[1:]
 species = a[a.index('--species') + 1]; gtf = a[a.index('--gtf') + 1]
 level = a[a.index('--level') + 1] if '--level' in a else 'simiiformes'
 paths = [x for i, x in enumerate(a) if not x.startswith('--') and a[i - 1] not in ('--species', '--gtf', '--level', '--fasta')]
+# --universe-copies: see below
 if species == 'hg002':
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
     import guided3 as g3
@@ -32,7 +35,9 @@ else:
     G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
 idx = F.exon_index(G)
 expressed = F.expressed_from_gtf(gtf, idx)
+UNIVERSE_COPIES = '--universe-copies' in a  # semi-guided (2026-10-30): the expressed universe = genes carrying ANY copy of the run (silent copies included), per run
 truth, universe = F.truth_pairs(G, F.PARALOGS, F.LEVELS[level])
+truth_all = truth
 truth = {tuple(sorted(p)) for p in truth if p[0] in expressed and p[1] in expressed}
 anyp = set()
 for r in csv.DictReader(open(F.PARALOGS), delimiter='\t'):
@@ -86,6 +91,9 @@ print(f"# level {level}: truth pairs among expressed protein-coding genes {len(t
 print("run\tpred_pairs\tignored_noncoding\thit\tfalse\tof_which_related\tprecision\trecall" + ("\tnc_pairs\tnc_accepted\tnc_domain_only\tnc_precision" if NONCODING else ""))
 for p in paths:
     fams, _, _ = F.load_catalog(p, G, idx)
+    if UNIVERSE_COPIES:
+        expressed = {g for v in fams.values() for g in v}
+        truth = {tuple(sorted(q)) for q in truth_all if q[0] in expressed and q[1] in expressed}
     pred = set()
     for v in fams.values():
         for x, y in itertools.combinations(sorted(v), 2): pred.add((x, y))

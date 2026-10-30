@@ -9099,3 +9099,27 @@ identity) and `--same-chrom` (every touched member on both sides on one chromoso
   has drifted past the sketch's reach while the protein is conserved (histone-like purifying selection in KRTAP, TUBB, IFNA,
   PCDHB). It is a candidate second rule, not adopted: it was tuned on A119b dev and must be pre-registered on HG002 with the
   usual bars before it enters the family stage. Proposed registered arm: id 0.7, cov 0.5, rbh + chr, frac 0.5.
+
+## PREREG SEMIGUIDED (2026-10-30): semi-guided families = de novo families + silent copies confirmed by the seed locus (user: "Lets focus on implementing the semi-guided mode, notice that in the artifact for CDY2B for example, if we used the secondaries we would be able to find at least part of the locus")
+Motivation (A119b, mainstay page v17): CDY2B has 24 primary reads, none spliced, so no assembled locus and no family membership; its 709
+secondary reads come from CDY1 / CDY1B primaries (166 of 171 traced at AS >= 0.8 x primary, 52 spliced). The same holds for CDY2A, XAGE,
+TSPY2, PRY: reads present at 99.9% identity, unspliced or antisense, below the assembler's floor. SEMIFAM-1..3 (r1461-r1465) showed that
+the seed read's primary alone mis-assigns 2 of 3 candidates while a lift-confirmed candidate lands in the right family 86% of the time by
+protein evidence, and that the famtruth F bars penalise the mode by enlarging the expressed universe. This registration fixes both.
+**Rule** (`bench/denovo_eval/semifam.py`, written and frozen before any score): `semisec` (ratio 0.8, unfiltered) on the sample's BAM; for
+every SILENT candidate, seed locus = the de novo locus overlapping the best read's seed pile (most overlap); template = that locus's
+spliced exon sequence; confirm = minimap2 -x splice of the template onto the candidate span +- 2 kb with template coverage >= 0.5 and
+identity >= 0.7 (SEMIFAM-2's lift rule); the confirmed copy (exons = aligned blocks, source `semisec`, status `silent`) joins the seed
+locus's family; a seed locus outside every family forms a new family with its confirmed copies. Candidates overlapping an existing copy
+are skipped. No re-clustering; the base families are the shipped minimap2 + MCL runs (a1 / kb / or).
+**Scoring** (new columns, written today before any run): `mainstay_score.py` `recalled_annot` = members whose best copy is in the top
+family over ALL annotated members (expressed or silent); `pairscore.py --universe-copies` = truth pairs among genes carrying any copy of
+that run (so a silent paralog copy can be a hit, and a wrong one a false pair). Precision = hit / coding predicted pairs as before.
+**Dev** = human A119b (base `a1`; CDY2B is the motivating case, so A119b decides nothing). **Held-outs** = gorilla KB3781 (base `kb`)
+and OR6737 (base `or`), Yoo 2025 mainstays (`--species gorilla`), where MAPKBP1 (8 of 9 copies unexpressed) and SPTBN5 (10 of 10
+unexpressed) are exactly the silent-copy case; pairscore Simiiformes with `--universe-copies` on both arms.
+**Bars on each held-out, PASS = all:** (B1) recalled_annot summed over the four Yoo families > base; (B2) unrelated foreign genes
+summed over the four families <= base; (B3) pair precision (`--universe-copies`) >= base - 0.02; (B4) pair recall >= base.
+PASS on both -> propose semi-guided (`semisec` + `semifam.py`) as a family-stage option alongside de novo and guided (user decides,
+metric-auditor first); FAIL -> register and keep de novo. Reported either way: candidates by verdict (overlaps_copy / seed_no_locus /
+no_alignment / below_gate / attached), new families, and per Yoo family the copies attached with their template coverage and identity.

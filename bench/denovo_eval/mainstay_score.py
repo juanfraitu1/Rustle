@@ -3,6 +3,7 @@
 specifically recalled"). Per named family (famtruth MAINSTAYS + YAGS), human only:
   expressed    protein-coding members with a de novo locus
   recalled     members whose BEST locus (most exonic bp shared with the gene) is in the largest family holding the group
+  recalled_annot  the same over ALL annotated members (semi-guided copies of unexpressed members count; 2026-10-30)
   families     number of families holding any member locus
   unrel_foreign  protein-coding genes in the largest family that are not members and not related to any member (Compara at any
                  level, HGNC group, same symbol); rel_foreign = the related ones (pseudogene-like siblings, unnamed copies)
@@ -53,7 +54,7 @@ if species == 'gorilla': pats = dict(F.GGO_MAINSTAYS)
 def is_member(d, rx):  # gorilla: symbol or description, any biotype; human: symbol, protein-coding
     if species == 'gorilla': return bool(rx.search(d['name']) or rx.search(d.get('desc', '')))
     return bool(rx.match(d['name'])) and d['biotype'] == 'protein_coding'
-print("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names\tannotated")
+print("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names\tannotated\trecalled_annot")
 for path in a[1:]:
     rows = [r for r in csv.DictReader(open(path), delimiter='\t')]
     loc_gene = {}; loc_fam = {}; loc_ex = {}
@@ -80,15 +81,17 @@ for path in a[1:]:
                 if G[p]['chrom'] == G[q_]['chrom'] and G[p]['strand'] == G[q_]['strand'] and G[q_]['exons'][0][0] - G[p]['exons'][-1][1] <= 20_000:
                     unit_of[q_] = unit_of[p]
         best = {g: max(gene_locs[g], key=lambda t: share(g, *loc_ex[t])) for g in exp if gene_locs[g]}
+        best_all = {g: max(gene_locs[g], key=lambda t: share(g, *loc_ex[t])) for g in mem if gene_locs[g]}  # semi-guided (2026-10-30): any annotated member with a copy, expressed or silent
         held = collections.Counter(loc_fam[t] for g in exp for t in gene_locs[g])
         top_by_best = collections.Counter(loc_fam[t] for t in best.values())  # largest = family holding most members' BEST loci
         if not held:
-            print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t0\t0\t0\t0\t\t{len(mem)}"); continue
+            print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t0\t0\t0\t0\t\t{len(mem)}\t0"); continue
         top = top_by_best.most_common(1)[0][0]
         rec = len({unit_of[g] for g, t in best.items() if loc_fam[t] == top})
+        rec_all = len({unit_of[g] for g, t in best_all.items() if loc_fam[t] == top})
         n_exp = len({unit_of[g] for g in exp}); n_mem = len(set(unit_of.values()))
         foreign = {g for g in fam_genes[top] if g not in mem and G[g]['biotype'] == 'protein_coding'}
         unrel = sorted(G[g]['name'] for g in foreign if not any(related(g, m) for m in exp))
-        print(f"{os.path.basename(path)}\t{name}\t{n_exp}\t{rec}\t{len(held)}\t{len(foreign) - len(unrel)}\t{len(unrel)}\t{','.join(unrel[:6])}\t{n_mem}")
-        tot['exp'] += n_exp; tot['rec'] += rec; tot['unrel'] += len(unrel)
-    print(f"{os.path.basename(path)}\tALL\t{tot['exp']}\t{tot['rec']}\t\t\t{tot['unrel']}\t")
+        print(f"{os.path.basename(path)}\t{name}\t{n_exp}\t{rec}\t{len(held)}\t{len(foreign) - len(unrel)}\t{len(unrel)}\t{','.join(unrel[:6])}\t{n_mem}\t{rec_all}")
+        tot['exp'] += n_exp; tot['rec'] += rec; tot['unrel'] += len(unrel); tot['mem'] += n_mem; tot['rec_all'] += rec_all
+    print(f"{os.path.basename(path)}\tALL\t{tot['exp']}\t{tot['rec']}\t\t\t{tot['unrel']}\t\t{tot['mem']}\t{tot['rec_all']}")
