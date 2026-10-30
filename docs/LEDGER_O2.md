@@ -8223,3 +8223,18 @@ home quota and was re-run from scratch after the run directories moved to the wo
   where minimap2 is wrong 14-16%" to what the panels show: O2 certifies near-tied reads (0.06-0.16% wrong) and abstains on exact
   ties, which no sequence score decides; minimap2's 14-16% error on the tied set sits in the reads O2 abstains on.
 - **Human BAM (A119b) measurement:** pending (job 4395118) at the time of writing; added below when it finishes.
+
+**Human BAM (A119b testis on CHM13, final sketch arm copies `a1n_cap20i`; job 4395118, 5,829,738 reads with >= 2 records):**
+- Genome-wide: 114,054 exact `ms` ties (110,665 same NM); 96,720 (84.8%) inside the AS window, 17,334 outside. AS window
+  322,166 reads, 213,429 not `ms` ties (primary = max `ms` in 202,946).
+- Records all on one family's copies (600,070 reads): 53,984 `ms` ties, **38,549 (71.4%) inside the AS window, 15,435 outside**,
+  against 0.05% outside on the gorilla. Of the 15,435, the two `ms`-tied records themselves differ by < 30 AS in ~12,000 and by
+  0-1 introns in 14,035: they are excluded because a THIRD record on another copy of the same family has an AS more than 10
+  above both while its `ms` is lower. In splice mode AS sums every exon and `ms` is the best segment, so on long multi-exon human
+  families AS and `ms` rank differently, and O2's window can be anchored on a record minimap2 did not rank first. For those
+  reads O2 sees one pile and does nothing; the coin-toss primary stands. 43,660 of the 53,984 (81%) have equal AS and NM as well
+  and are hopeless under any window.
+- Reading added to the decision: the AS window is not wrong on gorilla but misses 29% of the within-family coin tosses on human
+  testis; an `ms`-anchored window (`--tie-ms 10`, M10, which on the gorilla panels equals A within 3 reads) is the better
+  anchor for the human. Not adopted here (register 1472 FAILED its bars on the gorilla panels and no human panel with truth was
+  run); candidate for a human pre-registration on the HG002 truth set.
