@@ -9123,3 +9123,10 @@ summed over the four families <= base; (B3) pair precision (`--universe-copies`)
 PASS on both -> propose semi-guided (`semisec` + `semifam.py`) as a family-stage option alongside de novo and guided (user decides,
 metric-auditor first); FAIL -> register and keep de novo. Reported either way: candidates by verdict (overlaps_copy / seed_no_locus /
 no_alignment / below_gate / attached), new families, and per Yoo family the copies attached with their template coverage and identity.
+**SEMIGUIDED amendment 1 (2026-10-30, before any held-out number; dev A119b seen):** `semisec` counts CDY2B's 24 unspliced primaries
+as expression, so CDY2A / CDY2B are NOT silent (4 / 42 primaries) and the registered "silent candidates only" rule skipped the motivating
+case (dev with silent only: 274 attached, mainstays and pairs unchanged). The rule is therefore EVERY semisec candidate (silent or not)
+that overlaps no copy of the run (`semifam.py --all-candidates`); the confirmation gate and the attach rule are unchanged. Dev A119b
+with the amended rule: CDY2A and CDY2B attach to the CDY family (template coverage 1.00, identity 0.986, 2 exons each); 1,205
+attached of 17,917 candidates (9,790 no alignment, 3,656 seed in no locus, 2,330 overlap a copy, 936 below gate), 333 new families.
+Bars and held-outs as registered.
