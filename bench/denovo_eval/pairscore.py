@@ -91,6 +91,17 @@ for p in paths:
         for x, y in itertools.combinations(sorted(v), 2): pred.add((x, y))
     coding = {(x, y) for x, y in pred if G[x]['biotype'] == 'protein_coding' and G[y]['biotype'] == 'protein_coding' and x in universe and y in universe}
     hit = len(coding & truth); false = [(x, y) for x, y in coding if (x, y) not in truth]
+    if os.environ.get('PAIRSCORE_FAMDUMP'):  # per-family readout of the CODING truth (2026-10-30, user "how does it do in all the gene families"):
+        import re as _re                      # family key = gene symbol with trailing digits/letters stripped; hit / missed truth pairs; false pairs
+        key = lambda g: _re.sub(r'[0-9]+[A-Z]?$|[A-Z]$', '', G[g]['name'].split('-')[0]) or G[g]['name']
+        fam = collections.defaultdict(lambda: [0, 0, 0])
+        for x, y in truth:
+            k = key(x) if key(x) == key(y) else f"{key(x)}/{key(y)}"; fam[k][0 if (x, y) in coding else 1] += 1
+        for x, y in false:
+            k = key(x) if key(x) == key(y) else f"{key(x)}/{key(y)}"; fam[k][2] += 1
+        with open(os.environ['PAIRSCORE_FAMDUMP'] + '.' + os.path.basename(p) + '.famdump.tsv', 'w') as fh:
+            fh.write('family\thit\tmissed\tfalse\n')
+            for k, v in sorted(fam.items(), key=lambda kv: -(kv[1][0] + kv[1][1] + kv[1][2])): fh.write(f"{k}\t{v[0]}\t{v[1]}\t{v[2]}\n")
     rel = sum(1 for x, y in false if related(x, y))
     prec = hit / len(coding) if coding else 0.0; rec = hit / len(truth) if truth else 0.0
     extra = ''

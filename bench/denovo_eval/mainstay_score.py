@@ -10,8 +10,22 @@ specifically recalled"). Per named family (famtruth MAINSTAYS + YAGS), human onl
 import sys, os, re, csv, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import famtruth as F
-G = F.load_cat(); idx = F.exon_index(G)
-expressed = F.expressed_from_gtf(sys.argv[1], idx)
+a = sys.argv[1:]
+species = a[a.index('--species') + 1] if '--species' in a else 'human'
+if '--species' in a: i = a.index('--species'); del a[i:i + 2]
+if species == 'hg002':  # Ensembl rapid-release genes via guided3; HGNC symbols from the xref so the family patterns match
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
+    import guided3 as g3
+    g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']; F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
+    G = g3.load_genes('hg002')
+    sym = {}
+    for r in csv.DictReader(open(os.environ['DENOVO_HG002_XREF']), delimiter='\t'):
+        if r['db_name'] == 'HGNC Symbol' and r['gene_stable_id']: sym.setdefault(r['gene_stable_id'], r['xref_label'])
+    for g, d in G.items(): d['name'] = sym.get(g.split(':')[-1], d['name'])
+else:
+    G = F.load_cat()
+idx = F.exon_index(G)
+expressed = F.expressed_from_gtf(a[0], idx)
 anyp = set()
 for r in csv.DictReader(open(F.PARALOGS), delimiter='\t'):
     x, y = r['Gene stable ID'].split('.')[0], r['Human paralogue gene stable ID'].split('.')[0]
@@ -33,7 +47,7 @@ def share(g, chrom, strand, ex):
     return tot
 pats = dict(F.MAINSTAYS); pats.update(F.YAGS)
 print("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names")
-for path in sys.argv[2:]:
+for path in a[1:]:
     rows = [r for r in csv.DictReader(open(path), delimiter='\t')]
     loc_gene = {}; loc_fam = {}; loc_ex = {}
     for r in rows:
