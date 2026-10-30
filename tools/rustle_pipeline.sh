@@ -23,6 +23,8 @@
 #             its peak memory exceeds that batch's 10.7 GB — an OOM risk on this machine.
 #   catalog   LEGACY copy catalog (gw_family_catalog; kept, not the default definition)
 #   assign    per-read copy assignment on the catalog (assign/abstain)  copy_assign --families
+#   all --to STAGE / --from STAGE   stop after / start at a stage (escape hatch; `--to families` answers "what do the loci
+#             look like before reads are assigned": PREFIX.fam.copies.tsv + PREFIX.fam.loci.gff3). 2026-10-30.
 #   merged    THE genome-wide entry point: assemble + families + assign on the FAMILIES copy table, one command,
 #             byte-identical products, with the genome-wide levers ON by default (--skip-poa-diagnostic and
 #             --region-threads, both cmp-proven byte-identical) and per-phase resume (a finished phase is never
@@ -154,6 +156,9 @@ ORIG_ARGS=("$@")
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
+# `all --to STAGE` stops after STAGE (the escape hatch: `--to families` = the loci and their copy table before any read is
+# assigned, 2026-10-30 NEXT TARGETS item 2); `--from STAGE` starts there (the earlier products must exist).
+TO_STAGE=; FROM_STAGE=
 INDEX_GB=8; LOW_MEM=0; NO_FLAG=0; RESUME=1; MAX_WINDOW_RECORDS=${RUSTLE_MAX_WINDOW_RECORDS:-0}
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -167,6 +172,7 @@ while [ $# -gt 0 ]; do
     --piecewise) PIECEWISE=1; shift;; --max-pieces) MAX_PIECES=$2; shift 2;; --budget-s) BUDGET_S=$2; shift 2;;
     --piece-records) PIECE_RECORDS=$2; shift 2;; --piece) PIECE=$2; shift 2;;
     --legacy-catalog) LEGACY_CATALOG=1; shift;; --candidates) CANDIDATES=1; shift;; --no-candidates) CANDIDATES=0; shift;;
+    --to) TO_STAGE=$2; shift 2;; --from) FROM_STAGE=$2; shift 2;;
     --delta) DELTA=$2; shift 2;; --cand-max-reads) CAND_MAX=$2; shift 2;;
     --index-gb) INDEX_GB=$2; shift 2;; --low-mem) LOW_MEM=1; shift;; --no-flag) NO_FLAG=1; shift;; --no-resume) RESUME=0; shift;;
     --max-window-records) MAX_WINDOW_RECORDS=$2; shift 2;;
@@ -873,8 +879,12 @@ run_all() {
     plan+=(flag:"$OUT.flag.missing_copy.tsv")
   fi
   env_now=$(all_env)
+  local started=1; [ -n "$FROM_STAGE" ] && started=0
   for item in "${plan[@]}"; do
     st=${item%%:*}; prod=${item#*:}
+    if [ "$started" = 0 ]; then
+      if [ "$st" = "$FROM_STAGE" ]; then started=1; else say "all: $st skipped (--from $FROM_STAGE)"; continue; fi
+    fi
     if [ "$RESUME" = 1 ] && [ "$ran" = 0 ] && [ -s "$prod" ] && [ -f "$OUT.all.env" ] && [ "$(cat "$OUT.all.env")" = "$env_now" ] \
        && grep -qx $'exit\t0' "$OUT.$st.time" 2>/dev/null; then
       say "all: $st SKIPPED ($prod present, settings unchanged)"; continue
@@ -887,6 +897,7 @@ run_all() {
     { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
     [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"; }
     printf '%s\n' "$env_now" > "$OUT.all.env"
+    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
   done
   printf '%s\n' "$env_now" > "$OUT.all.env"
   say "all: done. stage, wall, peak memory:"

@@ -9211,3 +9211,90 @@ Consistency (B3): 1,436 of 1,460 OR6737 family copies carry the Python `reads-x-
 Implication for "as similar as possible to StringTie": the representative is not where similarity should be bought; the gate (shared-exon
 fraction between representatives of different isoform length) is the lever to look at next, with the StringTie source review pending the
 `stringtie_modded` sync.
+
+## STRINGTIE NON-FLOW RULE REVIEW + THESISVAULT RULES (2026-10-30; reading only, no run yet; `~/stringtie_modded/rlink.cpp`)
+StringTie -L rules that need no flow and are not in the ledger: (1) greedy abundance-ordered grouping (`rlink.cpp:5969-6160`,
+`compatible_long`): a longer chain containing the rep's introns REPLACES the rep only at abundance > DROP x rep (0.5) with its extra
+ends within 25 bp of a splice site; a fragment is absorbed only with loose ends within 100 bp (CHI_WIN) of the rep's. Measured as a
+representative rule (`repcompare.py extend-most-reads`, ffae9780): StringTie exact 0.462 / 0.719 (A119b / OR6737) < most-reads
+0.565 / 0.773 < reads-x-junctions 0.593 / 0.791 - dead as a pick rule. (2) trustworthy ends (`6143-6153`): a chain not absorbed
+becomes a rep only if both ends are long-read site-scan ends or hard ends, else `weak` (never seeds). (3) `compatible_long_core`:
+two different hard starts never group; an intron before another's hard start never groups. (4) site scan (`1694-1870`): 100 bp
+window / 50 bp step chi cost; a start is accepted only when starts-left < 10% of starts-right (the asymmetric part was not the
+snap-25 / anchor-10 arms). (5) output-stage pairwise filters (`19820-19960, 20080-20100`): included_drop (container > DROP x cov,
+>= exons), short first/last exon, retained intron, single-exon intronic < isofrac, and isofrac loosened for abundant transcripts
+(cov > 100: isofrac x 0.05; > 50: x 0.5). (6) terminal read exon < 50 bp and < half the read is cut before junction counting (`1149`).
+ThesisVault rules not in the ledger: IsoCon nearest-neighbour candidate test (a chain survives only if its reads jointly support
+every variant that distinguishes it from its nearest candidate, one alpha); Tomaszkiewicz 2023 / Iso-Seq3 asymmetric end tolerance
+(substring within 100 bp 5' / 30 bp 3'); Pal 2026 family-relative support (2% of family reads or 5 reads); Yoo 2025 Note VIII
+read-set Jaccard > 0.8 between bundles as a family edge; FLAIR 10 bp junction correction to a >= 3-read set.
+
+## PREREG REPRULE-3 (2026-10-30): where the NPIP split of r1473 actually happens (diagnosis seen; one arm registered before any run)
+**Diagnosis (seen, dev A119b, `--dump-graph` on the cached gated PAFs, `$S/npip/{rxj,base}.graph.tsv`):** the hypothesis of r1473's
+closing line (longer representatives fail the 60% shared-exon gate) is REFUTED. Under reads-x-junctions NPIPA1 (7 exons) has
+edges 0.95-0.98 to every NPIP locus of both resulting families (MCL497 = NPIPA1/A7/A8 + two 13/14-exon loci; MCL77 = NPIPB* +
+NPIPA2/A5), 30 edges cross the split at 0.945-0.960; within NPIPA they are 0.978-0.998. The direct minimap2 record NPIPA1-NPIPB6
+covers the whole locus at 94.5% identity, NPIPA1-NPIPA2 at 98.4%. MCL at inflation 2.8 splits a near-clique by that identity gradient
+(subfamily A vs B). Base (2-exon reps, shorter alignments): NPIP same-family edges median 0.954, cross 0.562, 22 loci in MCL58.
+`--inflation 2.0` on the rxj graph: NPIP 18/20 (= base) but pair precision 0.726 -> 0.682, recall 0.741 -> 0.729 - not the lever.
+Earlier arms already cover "Fix A" (union of records r1435 arm B; Liftoff chaining r1437-1439): all FAIL; not rerun.
+**Arm S (registered before running): identity saturation.** Edge weight w = identity x cov_longer is replaced by w' = min(1, w / 0.95):
+identity differences among paralogues above 95% stop ranking edges (subfamily age is not family evidence), everything below keeps its
+order. Applied to the SAME dumped graphs through `--extra-edges FILE --extra-edges-only` (no new alignment), on the base graph (S-base)
+and the reads-x-junctions graph (S-rxj). Dev bars (A119b, mainstay_score + pairscore default universe): NPIP recalled >= 18 AND pair
+precision >= 0.716 AND pair recall >= 0.731 (base - 0.01). An arm meeting all three goes to the held-outs (KB3781, HG002; the same
+transform on their graphs; B1 + B2 of REPRULE-2) before anything is proposed; otherwise FAIL and nothing changes. No other constant.
+
+### REPRULE-3 arm S RESULT (2026-10-30, register 1474): **FAIL** - identity saturation is inert on the base graph and does not rejoin NPIP on the rxj graph
+`$S/npip/sat_{base,rxj}.fam.*` (same dumped graphs through `--extra-edges --extra-edges-only`). S-base: mainstays 216 recalled / 4 unrel
+(= base), pairs 0.725 / 0.741 (base 0.726 / 0.741), NPIP 18 in 5. S-rxj: NPIP 15 in 7 (= r1473), mainstays 210 / 2, pairs 0.715 / 0.682
+(= r1473's 0.715 / 0.679). With every edge >= 0.95 set to 1, MCL still splits the rxj NPIP graph: the weights were never the cause;
+the MISSING cross edges are (NPIPA1 has an edge to 13 of the 21 MCL77 members, none to the other 8). Next check (seen after this
+line): whether those pairs have no PAF record at all (minimap2 `-N 50` secondary cap per query, or the alignment gate) or a record the
+graph rejected.
+
+## NEXT TARGETS (registered 2026-10-30, user decision): one binary, one object, stage escape hatches; prune as it comes
+Context: 19 source files but 14 binaries and 7 driver stages; the "one object" of the thesis (loci -> families -> copies ->
+assignments -> missing copies) exists only as files handed between binaries. The advisor's question of 2026-10-30 ("what do the
+loci look like before reads are assigned to copies") is the `families` stage product (`PREFIX.fam.copies.tsv`, `.fam.loci.gff3`)
+and should be one command, not a reading of the driver.
+1. `rustle` single binary with stage subcommands over one run directory (`assemble | loci | families | copies | assign | missing`);
+   each stage reads the previous product from the directory and writes its own. The tool binaries (semisec, semifam, family_gfa,
+   slimbam, as_table, family_score, readthrough_filter, utilities) become subcommands or are archived.
+2. Escape hatches = stage boundaries: `rustle run --to <stage>` / `--from <stage>`, and `--skip <stage>` (product passed through
+   unchanged, as `candidates` is opt-in today) so a step's contribution is the diff of two runs on one directory.
+3. Acceptance: byte-identical products against the current binaries (`tools/identity_check.sh golden|check`, FULL=1 slice);
+   no algorithm or product byte changes in this change set.
+4. Pruning as it comes: OPT-IN / OTHER-BINARY modules (`docs/MODULE_STATUS.md`) that no default and no open prereg uses go under an
+   `archive` cargo feature (buildable for the ledger, out of the default binary); each removal names the register entries it serves.
+Order: 2 first (the `--to families` hatch, the advisor's question), then 1, then 4. Open before this: REPRULE-3 chain-gate dev result.
+
+### REPRULE-3 chain gate, dev result (2026-10-30; `mcl_families --chain-gate 3`, commit below): the 13/14-exon NPIPA loci are not rescued; on the base representative the gate GAINS pairs
+Diagnosis completed first (seen): the rxj NPIP split is between MCL497 (NPIPA1/A7/A8 7-exon reps + two 13/14-exon loci,
+`DN_chr16_16402040_2.rg2` / `DN_chr16_18372354_2`, 74 / 72 transcripts each) and MCL77 (NPIPB + NPIPA2/A5). Of the 105 cross pairs
+46 are edges, 46 have a record but no edge, 13 have no record. The record-no-edge pairs are the two long loci: a single record
+spans the whole 14.5 kb unit at 95% identity, but only ~900 of their 2,182-2,434 exon bases lie inside it (the rest of the 13-exon
+model is elsewhere in the 29 kb locus), so the interval rule gives 0.41-0.47 < 0.60 while the 7-exon NPIPA1 gives 0.71-0.78 and
+base's 2-exon fragment representative ~1.0. So r1473's closing line holds in this form: the gate measures exon-set coincidence of
+two chosen isoforms, and a representative carrying exons outside the homologous unit fails it.
+Arm C = `--chain-gate 3` (each locus also carries its next 3 chains by the representative rule, >= 2 reads, distinct exon sets; a
+pair passes the fraction if ANY chain pair does; interval rule, denominator the smaller chain; alignment gate rows unchanged, so
+the cached PAFs replay). Dev A119b (`$S/npip/cg_{rxj,base}.fam.*`):
+| arm | mainstays recalled / unrel | NPIP | pairs precision / recall | admitted_by_chain_gate |
+|---|---|---|---|---|
+| base (most-reads) | 216 / 4 | 18 in 5 | 0.726 / 0.741 | - |
+| rxj (r1473) | 210 / 2 | 15 in 8 | 0.715 / 0.679 | - |
+| C-rxj | 208 / 2 | 15 in 8 | 0.734 / 0.732 | 16,833 pairs |
+| **C-base** | **216 / 4** | **18 in 6** | **0.734 / 0.759** | 16,431 pairs |
+C-rxj does not rescue NPIP: the two long loci's top-3 chains are all 11-16-exon isoforms (their 2-exon chain is a separate locus,
+`DN_chr16_16402040_2`, folded apart by gene_id), so no chain pair reaches 0.60. C-base keeps every mainstay and adds 40 true
+coding pairs for 11 fewer false ones (+0.008 precision, +0.018 recall) with the SAME representative. Reading: the chain gate is a
+gate repair, not a representative repair; reads-x-junctions stays FAIL (r1473).
+
+## PREREG CHAIN-GATE (2026-10-30, registered before any held-out run): `--chain-gate 3` on the shipped representative
+Arm = base pipeline (most-reads) + `mcl_families --chain-gate 3`, cached PAFs (alignment gate rows unchanged). Held-outs KB3781
+(base `kb`) and HG002 (base `hg`, `--species hg002`), the REPRULE-2 bars: (B1) mainstay recalled summed >= base and unrelated
+foreign summed <= base; (B2) pair precision >= base - 0.01 and pair recall >= base - 0.01 (pairscore, default universe). PASS on
+both -> proposed as default with `--chain-gate 0` the escape hatch (metric-auditor first, user decides); FAIL on either -> opt-in.
+No other constant; K = 3 is the dev value. Known limit, stated: pairs the alignment-time gate never aligned (representative exon
+rows) are not recovered; a second arm listing chain exons in the gate rows (realignment) is not part of this prereg.

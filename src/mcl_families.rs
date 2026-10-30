@@ -411,6 +411,16 @@ struct Args {
     #[arg(long, default_value_t = 0.30)]
     min_shared_exon_frac: f64,
 
+    /// PREREG REPRULE-3 (2026-10-30, opt-in): each `--from-gtf` locus also carries its next K chains (by the representative
+    /// rule, >= 2 reads, distinct exon sets), and a pair under `--min-shared-exon-frac` on its representatives is still an
+    /// edge when ANY chain pair of the two loci reaches the fraction (same interval rule, denominator = the smaller chain).
+    /// The representative is unchanged everywhere else. Why: a representative that carries exons beyond the homologous unit
+    /// (NPIP 13-exon readthrough models) fails the gate against loci it is 95% identical to over the whole unit, while its
+    /// own 2- or 7-exon chains pass. 0 = off (every earlier catalog). The alignment-time exon gate still lists representative
+    /// exons only, so a cached PAF is reused; pairs the alignment gate skipped are not recovered by this flag.
+    #[arg(long, default_value_t = 0)]
+    chain_gate: usize,
+
     /// ⭐ Units of one family that share EXON bases are one locus (§6fb): the longest exon union represents them,
     /// the others go to `<out>.units.merged.tsv`. A base cannot belong to two copies (MCL108: a 1.16-Mb read-followed
     /// unit with two units nested in its exons, 13,000 reads counted three times, all K = 0 ties). Default ON.
@@ -1303,6 +1313,7 @@ fn main() -> Result<()> {
             args.threads,
             args.representative,
             exon_gate_margin(&args),
+            args.chain_gate,
         )?;
         let gated = run.gate.is_some();
         exon_gate_used = run.gate.map(|v| (args.exon_gate_margin, v));
@@ -1414,7 +1425,24 @@ fn main() -> Result<()> {
         _ => None,
     };
     clock.lap("loci map + strands");
-    let mut g = graph_from_paf_loci_stranded(&paf, &exonic, &blocks, &p, loci.as_ref(), self_hit_strands.as_ref());
+    // PREREG REPRULE-3 `--chain-gate K`: the loci's further chains, as 0-based half-open blocks (the `blocks` convention)
+    let chain_blocks: Option<BTreeMap<GeneKey, Vec<Vec<(u64, u64)>>>> = (args.chain_gate > 0).then(|| {
+        gtf_loci_list
+            .iter()
+            .flatten()
+            .filter(|l| !l.chains.is_empty())
+            .map(|l| {
+                let key: GeneKey = (l.chrom.clone(), l.start, l.end);
+                let ch: Vec<Vec<(u64, u64)>> =
+                    l.chains.iter().map(|c| c.iter().map(|&(a, b)| (a.saturating_sub(1), b)).collect()).collect();
+                (key, ch)
+            })
+            .collect()
+    });
+    if let Some(c) = &chain_blocks {
+        eprintln!("[mcl_families] chain gate: {} loci carry up to {} further chain(s)", c.len(), args.chain_gate);
+    }
+    let mut g = graph_from_paf_loci_stranded(&paf, &exonic, &blocks, &p, loci.as_ref(), self_hit_strands.as_ref(), chain_blocks.as_ref());
     clock.lap("graph");
     if let Some(path) = &args.extra_edges {
         let mut extra = Vec::new();
@@ -2731,6 +2759,8 @@ fn main() -> Result<()> {
             "rejected_low_shared_exon".to_string(),
             g.rejected_low_shared_exon.to_string(),
         ),
+        ("chain_gate".to_string(), args.chain_gate.to_string()),
+        ("admitted_by_chain_gate".to_string(), g.admitted_by_chain_gate.to_string()),
         (
             "merge_overlapping_loci".to_string(),
             args.merge_overlapping_loci.to_string(),
@@ -3292,6 +3322,7 @@ mod tests {
             rep_reads: reads,
             strand: st.into(),
             rep_exons: ex.iter().map(|&(a, b)| (chrom.to_string(), a, b)).collect(),
+            chains: vec![],
         };
         let loci = vec![
             locus(
@@ -3768,6 +3799,31 @@ mod tests {
     /// transcript with the most reads, ties to the longer span, then to the LAST transcript_id; a gene without
     /// exons is not a locus; the representative's exons come back sorted.
     #[test]
+    /// PREREG REPRULE-3: `--chain-gate 2` carries G1's other >= 2-read transcript (T1: its exon set differs from the
+    /// representative's); T0 has one read and is not a chain; G2's two transcripts share one exon set, so no chain.
+    fn gtf_loci_chains_are_the_next_distinct_exon_sets_with_two_reads() {
+        let gtf = "\
+c1\tr\ttranscript\t101\t400\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\"; reads \"5\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\";
+c1\tr\texon\t301\t400\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\";
+c1\tr\ttranscript\t101\t450\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T2\"; reads \"5\";
+c1\tr\texon\t301\t450\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T2\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T2\";
+c1\tr\ttranscript\t51\t90\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T0\"; reads \"1\";
+c1\tr\texon\t51\t90\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T0\";
+c1\tr\ttranscript\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Ta\"; reads \"3\";
+c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Ta\";
+c1\tr\ttranscript\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\"; reads \"3\";
+c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\";
+";
+        let loci = rustle::fam_from_gtf::gtf_loci_chains(std::io::Cursor::new(gtf), Representative::MostReads, 2).unwrap();
+        assert_eq!((loci[0].rep.as_str(), loci[0].chains.clone()), ("T2", vec![vec![(101, 200), (301, 400)]]));
+        assert!(loci[1].chains.is_empty());
+        let off = gtf_loci(std::io::Cursor::new(gtf), Representative::MostReads).unwrap();
+        assert!(off.iter().all(|l| l.chains.is_empty()));
+    }
+
+    #[test]
     fn gtf_loci_takes_the_most_read_transcript_ties_to_the_longer_span_then_the_last_id() {
         let gtf = "\
 c1\tr\ttranscript\t101\t400\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\"; reads \"5\";
@@ -3797,6 +3853,7 @@ c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; re
                 rep_reads: 5,
                 strand: "+".into(),
                 rep_exons: vec![("c1".into(), 101, 200), ("c1".into(), 301, 450)],
+                chains: vec![],
             }
         );
         assert_eq!(

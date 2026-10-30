@@ -56447,6 +56447,11 @@ pub mod fam_from_gtf {
         pub strand: String,
         /// The representative's exons, GFF 1-based closed, sorted by start (stable).
         pub rep_exons: Vec<(String, u64, u64)>,
+        /// PREREG REPRULE-3 (2026-10-30, `--chain-gate K`): up to K further chains of the locus (exon sets, 1-based closed,
+        /// sorted), the next transcripts by the representative rule with >= 2 reads and an exon set different from the
+        /// representative's and from each other. Empty unless asked for. The shared-exon gate may pass a pair through any
+        /// chain pair; the representative alone still defines the locus everywhere else.
+        pub chains: Vec<Vec<(u64, u64)>>,
     }
 
     /// Which transcript of a `--from-gtf` locus is its representative (`--representative`).
@@ -56474,7 +56479,12 @@ pub mod fam_from_gtf {
             .count()
     }
 
-    pub fn gtf_loci<R: std::io::BufRead>(mut reader: R, rule: Representative) -> Result<Vec<GtfLocus>> {
+    pub fn gtf_loci<R: std::io::BufRead>(reader: R, rule: Representative) -> Result<Vec<GtfLocus>> {
+        gtf_loci_chains(reader, rule, 0)
+    }
+
+    /// [`gtf_loci`] with up to `k` further chains per locus ([`GtfLocus::chains`]).
+    pub fn gtf_loci_chains<R: std::io::BufRead>(mut reader: R, rule: Representative, k: usize) -> Result<Vec<GtfLocus>> {
         use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
         use rayon::prelude::*;
         use std::collections::BTreeMap;
@@ -56611,6 +56621,40 @@ pub mod fam_from_gtf {
                     .map(|v| v.iter().map(|&(c, a, b)| (c.to_string(), a, b)).collect())
                     .unwrap_or_default();
                 ex.sort_by_key(|x| x.1);
+                // `--chain-gate K`: the next K transcripts by the same rule (>= 2 reads, a new exon set each)
+                let mut chains: Vec<Vec<(u64, u64)>> = Vec::new();
+                if k > 0 {
+                    let key = |t: &str| -> (u64, u64, u64) {
+                        let r = reads.get(t).copied().unwrap_or(0);
+                        let j = exons.get(t).map_or(0, |v| junction_count(v)) as u64;
+                        match rule {
+                            Representative::MostReads => (r, span_of(t), 0),
+                            Representative::MostJunctions => (j, r, span_of(t)),
+                            Representative::ReadsXJunctions => (r * (j + 1), r, span_of(t)),
+                        }
+                    };
+                    let mut order = sorted_ts.clone();
+                    order.sort_by(|x, y| key(y).cmp(&key(x)).then_with(|| y.cmp(x)));
+                    let set_of = |t: &str| -> Vec<(u64, u64)> {
+                        let mut v: Vec<(u64, u64)> = exons.get(t).map(|v| v.iter().map(|x| (x.1, x.2)).collect()).unwrap_or_default();
+                        v.sort();
+                        v
+                    };
+                    let rep_set = set_of(rep);
+                    for t in order {
+                        if chains.len() >= k {
+                            break;
+                        }
+                        if t == rep || reads.get(t).copied().unwrap_or(0) < 2 {
+                            continue;
+                        }
+                        let c = set_of(t);
+                        if c.is_empty() || c == rep_set || chains.contains(&c) {
+                            continue;
+                        }
+                        chains.push(c);
+                    }
+                }
                 Some(GtfLocus {
                     gene_id: g.to_string(),
                     chrom,
@@ -56620,6 +56664,7 @@ pub mod fam_from_gtf {
                     rep: rep.to_string(),
                     strand: st,
                     rep_exons: ex,
+                    chains,
                 })
             })
             .collect();
@@ -56782,10 +56827,11 @@ pub mod fam_from_gtf {
         threads: usize,
         rule: Representative,
         exon_gate: Option<(u64, f64)>,
+        chain_gate: usize,
     ) -> Result<GtfLociRun> {
         use std::collections::HashSet;
         let mut clock = PhaseClock::new();
-        let loci = gtf_loci(reader, rule)?;
+        let loci = gtf_loci_chains(reader, rule, chain_gate)?;
         clock.lap("GTF -> loci");
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
@@ -56978,9 +57024,10 @@ pub mod fam_from_gtf {
         threads: usize,
         rule: Representative,
         exon_gate: Option<(u64, f64)>,
+        chain_gate: usize,
     ) -> Result<GtfLociRun> {
         let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
-        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate)
+        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate, chain_gate)
     }
 
     #[cfg(test)]
@@ -57001,6 +57048,7 @@ pub mod fam_from_gtf {
                 rep_reads: 1,
                 strand: "+".into(),
                 rep_exons: vec![("t".into(), 1001, 1100), ("t".into(), 1501, 1600)],
+                chains: vec![],
             };
             assert_eq!(gate_rows(&[l]), "chr1:1001-2000\t0\t100\nchr1:1001-2000\t500\t600\n");
         }
@@ -60297,6 +60345,9 @@ pub mod fam_from_gtf {
             /// ⭐ §6x4: pairs admitted ONLY by the containment escape (`min_cov_shorter`), i.e. `cov_longer` failed
             /// and `cov_shorter` passed. Always 0 when the escape is off. Reported, never silent.
             pub admitted_by_containment: usize,
+            /// PREREG REPRULE-3: pairs whose representatives fall under `min_shared_exon_frac` but one chain pair of the
+            /// two loci reaches it (`--chain-gate`). Always 0 without it. Reported, never silent.
+            pub admitted_by_chain_gate: usize,
             /// PAF records between two annotations of ONE locus (`LocusMap`) — a locus aligned to itself —
             /// skipped. Reported, never silent.
             pub same_locus_records: usize,
@@ -60618,7 +60669,7 @@ pub mod fam_from_gtf {
             p: &GraphParams,
             loci: Option<&LocusMap>,
         ) -> HomologyGraph {
-            graph_from_paf_loci_stranded(paf, exonic_len, exon_blocks, p, loci, None)
+            graph_from_paf_loci_stranded(paf, exonic_len, exon_blocks, p, loci, None, None)
         }
 
         /// Whether two absolute 0-based half-open exon-block lists share at least one base.
@@ -60637,6 +60688,7 @@ pub mod fam_from_gtf {
             p: &GraphParams,
             loci: Option<&LocusMap>,
             strands: Option<&BTreeMap<GeneKey, char>>,
+            chains: Option<&BTreeMap<GeneKey, Vec<Vec<(u64, u64)>>>>,
         ) -> HomologyGraph {
             let mut g = HomologyGraph::default();
             let mut idx: BTreeMap<GeneKey, usize> = BTreeMap::new();
@@ -60658,7 +60710,8 @@ pub mod fam_from_gtf {
             // (Measured: per-record thresholding shattered the NPIP cluster 43 -> 17/15/3/3/1.)
             // (a intervals, b intervals, nmatch, blocklen, best record's exon-to-exon bases, a / b intervals of the
             // records touching exon bases on both sides — kept only under `shared_exon_union`)
-            type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64, Vec<(u64, u64)>, Vec<(u64, u64)>);
+            // (.., best chain-pair shared-exon fraction of the pair (`--chain-gate`; 0 without))
+            type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64, Vec<(u64, u64)>, Vec<(u64, u64)>, f64);
             // the deferred pairs, sorted by key: the order the resolution below walks (and numbers the nodes in)
             let mut pairs: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
 
@@ -60706,6 +60759,8 @@ pub mod fam_from_gtf {
                 strand: Option<char>,
                 /// `shared_exon_columns` only: the exon blocks merged, as the sorted `(starts, ends)` the column walk takes
                 cols: Option<(Vec<i64>, Vec<i64>)>,
+                /// `--chain-gate`: the locus's further chains (0-based half-open blocks), if any
+                chains: Option<&'a Vec<Vec<(u64, u64)>>>,
             }
             let mut reps: Vec<&GeneKey> = match loci {
                 Some(l) => keys.iter().map(|k| l.representative(k)).collect(),
@@ -60721,6 +60776,7 @@ pub mod fam_from_gtf {
                     exonic: exonic_len.get(k).copied(),
                     blocks: exon_blocks.get(k),
                     strand: strands.and_then(|st| st.get(k).copied()),
+                    chains: chains.and_then(|c| c.get(k)),
                     cols: if p.shared_exon_columns {
                         exon_blocks.get(k).map(|b| {
                             let m = merge_intervals(b.clone());
@@ -60757,6 +60813,7 @@ pub mod fam_from_gtf {
                     ee: u64,
                     aee: Vec<(u64, u64)>,
                     bee: Vec<(u64, u64)>,
+                    cf: f64,
                     no_cigar: bool,
                     miss: [Option<u32>; 2],
                 },
@@ -60881,10 +60938,30 @@ pub mod fam_from_gtf {
                     } else {
                         (0, Vec::new(), Vec::new())
                     };
+                    // `--chain-gate`: the best shared-exon fraction over chain pairs of the two loci (the representative's
+                    // blocks count as one chain of each), the interval rule as above, denominator = the smaller chain
+                    let mut cf = 0.0f64;
+                    if chains.is_some() && p.min_shared_exon_frac > 0.0 {
+                        fn side<'b>(blocks: Option<&'b Vec<(u64, u64)>>, ch: Option<&'b Vec<Vec<(u64, u64)>>>) -> Vec<&'b Vec<(u64, u64)>> {
+                            blocks.into_iter().chain(ch.into_iter().flatten()).collect()
+                        }
+                        let (qc, tc) = (side(qn.blocks, qn.chains), side(tn.blocks, tn.chains));
+                        if qc.len() + tc.len() > 2 {
+                            let len = |c: &Vec<(u64, u64)>| -> u64 { c.iter().map(|&(a, b)| b.saturating_sub(a)).sum() };
+                            for cq in &qc {
+                                let qx = exonic_bases_in(cq, qk.1, qs, qe);
+                                for ct in &tc {
+                                    let tx = exonic_bases_in(ct, tk.1, ts, te);
+                                    let sm = len(cq).min(len(ct)).max(1);
+                                    cf = cf.max(qx.min(tx) as f64 / sm as f64);
+                                }
+                            }
+                        }
+                    }
                     return if qi <= ti {
-                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, aee: qiv, bee: tiv, no_cigar, miss }
+                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, aee: qiv, bee: tiv, cf, no_cigar, miss }
                     } else {
-                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, aee: tiv, bee: qiv, no_cigar, miss }
+                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, aee: tiv, bee: qiv, cf, no_cigar, miss }
                     };
                 }
                 let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
@@ -60907,7 +60984,7 @@ pub mod fam_from_gtf {
                                 Rec::SameLocus => local.1[0] += 1,
                                 Rec::Overlapping => local.1[1] += 1,
                                 Rec::SelfHit => local.1[2] += 1,
-                                Rec::Deferred { k, a, b, nm, bl, ee, aee, bee, no_cigar, miss } => {
+                                Rec::Deferred { k, a, b, nm, bl, ee, aee, bee, cf, no_cigar, miss } => {
                                     local.2.extend(miss.into_iter().flatten());
                                     local.1[3] += no_cigar as usize;
                                     let e = local.0.entry(k).or_default();
@@ -60918,6 +60995,7 @@ pub mod fam_from_gtf {
                                     e.4 = e.4.max(ee);
                                     e.5.extend(aee);
                                     e.6.extend(bee);
+                                    e.7 = e.7.max(cf);
                                 }
                             }
                         }
@@ -60946,6 +61024,7 @@ pub mod fam_from_gtf {
                             e.4 = e.4.max(v.4);
                             e.5.extend(v.5);
                             e.6.extend(v.6);
+                            e.7 = e.7.max(v.7);
                         }
                         _ => {
                             pairs.push(((keys[k.0 as usize].clone(), keys[k.1 as usize].clone()), v));
@@ -60990,14 +61069,15 @@ pub mod fam_from_gtf {
                 NoExonic,
                 LowShared,
                 Below { contained: bool },
-                Edge { w: f64, identity: f64, contained: bool },
+                Edge { w: f64, identity: f64, contained: bool, by_chain: bool },
             }
             let verdicts: Vec<Verdict> = {
                 use rayon::prelude::*;
                 pairs
                     .par_iter()
-                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon, aee, bee))| {
+                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon, aee, bee, cf))| {
                         let (nmatch, blocklen, mut exon_exon) = (*nmatch, *blocklen, *exon_exon);
+                        let mut by_chain = false;
                         if p.shared_exon_union && !aee.is_empty() {
                             if p.shared_exon_columns {
                                 // the stretches are exon-to-exon columns already: the union of each side, min of the two
@@ -61043,7 +61123,12 @@ pub mod fam_from_gtf {
                             // gene's model (§6ks — co-duplicated neighbours pass at exactly this point).
                             let smaller = da.min(db).max(1);
                             if (exon_exon as f64 / smaller as f64) < p.min_shared_exon_frac {
-                                return Verdict::LowShared;
+                                // `--chain-gate`: one chain pair of the two loci reaches the fraction
+                                if *cf >= p.min_shared_exon_frac {
+                                    by_chain = true;
+                                } else {
+                                    return Verdict::LowShared;
+                                }
                             }
                         }
                         // `exonic_overlap` REPLACES the numerator; otherwise keep the span numerator (unioned over the
@@ -61084,7 +61169,7 @@ pub mod fam_from_gtf {
                             return Verdict::Below { contained };
                         }
                         let identity = nmatch as f64 / blocklen.max(1) as f64;
-                        Verdict::Edge { w: identity * cov_eff, identity, contained }
+                        Verdict::Edge { w: identity * cov_eff, identity, contained, by_chain }
                     })
                     .collect()
             };
@@ -61112,9 +61197,12 @@ pub mod fam_from_gtf {
                         }
                         continue;
                     }
-                    Verdict::Edge { w, identity, contained } => {
+                    Verdict::Edge { w, identity, contained, by_chain } => {
                         if contained {
                             g.admitted_by_containment += 1;
+                        }
+                        if by_chain {
+                            g.admitted_by_chain_gate += 1;
                         }
                         (w, identity)
                     }
@@ -63010,6 +63098,31 @@ pub mod fam_from_gtf {
             /// FRACTION of the smaller gene's own exonic length instead, which is what separated Soto's agreed
             /// pairs (median 52-89% shared) from this project's extra pairs (median 11-25%, ledger §6kr).
             #[test]
+            /// PREREG REPRULE-3 (2026-10-30): the representatives share too little (0.20 < 0.6), but a second chain of g1
+            /// (its first 400 bp) against g2's chain (first 300 bp) shares 200 / min(400, 300) = 0.67: with `--chain-gate`
+            /// the pair is an edge, counted in `admitted_by_chain_gate`; without chains it stays rejected.
+            fn chain_gate_passes_a_pair_through_its_best_chain_pair() {
+                let a: GeneKey = ("g1".to_string(), 1, 2000);
+                let b: GeneKey = ("g2".to_string(), 1, 2000);
+                let ex: BTreeMap<GeneKey, u64> = [(a.clone(), 1000u64), (b.clone(), 1000u64)].into_iter().collect();
+                let bl: BTreeMap<GeneKey, Vec<(u64, u64)>> =
+                    [(a.clone(), vec![(0u64, 1000u64)]), (b.clone(), vec![(0u64, 1000u64)])].into_iter().collect();
+                let low = paf_line("g1:1-2000", 2000, 0, 200, "g2:1-2000", 2000, 0, 200, 200, 200);
+                let p = GraphParams { min_bp: 100, min_exonic_bp: 1, min_cov_longer: 0.1, min_shared_exon_frac: 0.6, ..GraphParams::default() };
+                let none = graph_from_paf_loci_stranded(&low, &ex, &bl, &p, None, None, None);
+                assert_eq!((none.n_edges(), none.rejected_low_shared_exon, none.admitted_by_chain_gate), (0, 1, 0));
+                let ch: BTreeMap<GeneKey, Vec<Vec<(u64, u64)>>> =
+                    [(a.clone(), vec![vec![(0u64, 400u64)]]), (b.clone(), vec![vec![(0u64, 300u64)]])].into_iter().collect();
+                let with = graph_from_paf_loci_stranded(&low, &ex, &bl, &p, None, None, Some(&ch));
+                assert_eq!((with.n_edges(), with.rejected_low_shared_exon, with.admitted_by_chain_gate), (1, 0, 1));
+                // chains sharing nothing with the record leave the verdict as it was
+                let far: BTreeMap<GeneKey, Vec<Vec<(u64, u64)>>> =
+                    [(a.clone(), vec![vec![(600u64, 1000u64)]]), (b.clone(), vec![vec![(600u64, 1000u64)]])].into_iter().collect();
+                let off = graph_from_paf_loci_stranded(&low, &ex, &bl, &p, None, None, Some(&far));
+                assert_eq!((off.n_edges(), off.admitted_by_chain_gate), (0, 0));
+            }
+
+            #[test]
             fn min_shared_exon_frac_rejects_a_small_slice_and_keeps_a_majority_overlap() {
                 let a: GeneKey = ("g1".to_string(), 1, 2000);
                 let b: GeneKey = ("g2".to_string(), 1, 2000);
@@ -63413,7 +63526,7 @@ pub mod fam_from_gtf {
                     ..GraphParams::default()
                 };
                 let run = |blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>, s: &BTreeMap<GeneKey, char>| {
-                    graph_from_paf_loci_stranded(self_hit, &exonic, blocks, &p, None, Some(s))
+                    graph_from_paf_loci_stranded(self_hit, &exonic, blocks, &p, None, Some(s), None)
                 };
                 assert_eq!(run(&shared, &same).n_edges(), 1, "one transcription unit: kept for the fold");
                 assert_eq!(run(&shared, &same).rejected_self_hits, 0);
