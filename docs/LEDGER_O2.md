@@ -8185,3 +8185,41 @@ re-run per directory with `o3port.py run --semi [--tie-ms W]`, scored by `o2eval
 **Not claimed:** anything about reads outside families (the 1,497 genome-wide `ms` ties outside the AS window are spliced vs
 unspliced placements and are the copy finder's problem, register 1403); anything about the Rust port (`copy_phasing` has no
 `--tie-ms` yet).
+
+**Amendment 1 (2026-10-30, written while the P14 substrate is still being copied, before any P14 directory is re-run):** the P14
+substrate (10 further fresh families, `--semi --guard`, 90 runs: control / missing / extra) arrives after P12. It is re-run the
+same way (arms A, M0, M10, `o3port.py run --semi --guard [--tie-ms W]`). R for P14 = A reproduces control + missing pooled:
+tied 14,669, placed 3,431, wrong 4; extra-flagged 0 placed. B1-B3 apply to M0 vs A pooled over control + missing; the extra arms
+(flagged and silent) are reported, not barred, because the silent-extra limit (39.7% wrong) is O3's, not the window's. P12 and
+P14 are judged separately; PASS of register 1472 requires both.
+
+### Result (2026-10-30, run once; `~/runs/o2_ties/{p12,p14}/{A,M0,M10}.score.txt`; code 4986cbcc; the first attempt died on the
+home quota and was re-run from scratch after the run directories moved to the work filesystem): **FAIL as registered**
+
+| substrate | case | arm | tied | placed | wrong | fixes of minimap2 | hopeless |
+|---|---|---|---|---|---|---|---|
+| P12 | control | A (AS window) | 9,236 | 3,144 | 2 (0.06%) | 0 | 887 |
+| P12 | control | M0 (`--tie-ms 0`) | 888 | 0 | 0 | 0 | 887 |
+| P12 | control | M10 (`--tie-ms 10`) | 9,239 | 3,147 | 2 | 0 | 887 |
+| P12 | missing | A / M0 / M10 | 5,004 / 869 / 5,007 | 1,233 / 0 / 1,236 | 0 / 0 / 0 | 0 | 868 |
+| P14 | control | A / M0 / M10 | 9,553 / 1,034 / 9,553 | 2,496 / 0 / 2,497 | 4 / 0 / 4 | 0 | 1,022 / 290 / 1,022 |
+| P14 | missing | A / M0 / M10 | 5,116 / 955 / 5,116 | 935 / 0 / 935 | 0 / 0 / 0 | 0 | 945 / 218 / 945 |
+| P14 | extra (silent limit) | A / M0 / M10 | 14,032 / 1,119 / 14,032 | 3,988 / 52 / 3,989 | 1,585 / 52 / 1,585 | 0 | 1,098 / 313 / 1,098 |
+
+- **R:** P14 reproduces exactly (control 2,496 / 4, missing 935 / 0, extra 3,988 / 1,585). **P12 does not** (A: 4,377 placed, 2
+  wrong, against 4,562 / 1): P12 was run at 3b11426e, before the SITE_FLANK rule of register 1396 (P14's method); arm A is the
+  current code on P12's directories, so the A-vs-M0 comparison stands but the registered reproduction bar fails on P12.
+- **B1 FAILS, B2 FAILS:** M0 places 0 reads on every control and missing run (P12 and P14). **B3** vacuous.
+- **Why, and what it shows.** With the window at the read's best `ms`, every record in a pile has the same `ms`; the `--semi` rule
+  then calls the read HOPELESS when the NM is also equal, and that is every read: an exact `ms` tie with the same NM is a read that
+  fits both copies equally over its aligned bases. The reads O2 places under the AS window are reads whose two copies differ in
+  `ms` (the simulated d substitutions cost `ms` points), i.e. reads minimap2 ranked, and ranked right: **fixes = 0 in all 450
+  runs**; O2 never moves a read off a correct primary. Its placements are certificates on minimap2's near-tie choice (AS within
+  10, `ms` margin of a few points), with 2-4 wrong per 3,000-4,000 placed; its abstentions are the coin-toss reads (hopeless
+  887-1,098 per arm, all `ms`-tied), on which register 1411 found no read-level feature and 1410 no score. M10 = A within 3 reads.
+- **The silent-extra limit is window-independent:** M0's 52 placements in the extra arms are all wrong (an NM lead toward a
+  present copy, the free-slot case); A's 1,585 wrong likewise.
+- **Decision:** `--tie-ms` stays opt-in; the default window is unchanged. The page's O2 wording changes from "AS-tied reads placed
+  where minimap2 is wrong 14-16%" to what the panels show: O2 certifies near-tied reads (0.06-0.16% wrong) and abstains on exact
+  ties, which no sequence score decides; minimap2's 14-16% error on the tied set sits in the reads O2 abstains on.
+- **Human BAM (A119b) measurement:** pending (job 4395118) at the time of writing; added below when it finishes.
