@@ -9353,3 +9353,31 @@ absorb 1,998 predicted, 1,591 hit, 407 false; precision 0.726 -> **0.796**, reca
 registered (recall >= 0.731) is MISSED by 0.002 (26 true pairs lost with 204 false ones), precision bar cleared by 0.07.
 Not submitted to the held-out on the registered rule; whether to amend the dev gate (recall - 0.015) and run OR6737 is the
 user's call and is disclosed here as a post-hoc decision if taken.
+
+### LOCUS-ABSORB, the 26 lost true pairs (2026-10-31): KRAB-ZNF pairs that the base recalls only through absorbed hub loci
+30 lost / 4 gained; 28 of the 30 are KRAB-ZNF pairs (chr19/chr7/chr4 clusters: ZNF100/430/273/723/730/98, ZNF66/675/680/92, ZNF525/761/765,
+ZNF718/141/732), plus TVP23B/C and TYW1/TYW1B. None of the lost genes' loci was absorbed and their alignments are identical in both PAFs.
+Node-only arm (absorbed loci + the BASE alignments filtered to kept loci, replayed from a private cache, `a1abN.fam.*`): byte-for-byte
+the same scores as the realigned run (108/2 mainstays, 0.796/0.729), so the loss is the NODE removal, not the realignment (which differs
+by 170k new pairs, 160k of them chr13 satellite loci freed from minimap2 secondary slots, and 18k missing). Mechanism: the base ZNF family
+MCL53 (24 members) has only 14 internal edges; its cohesion came from 113 edges to 25 absorbed neighbours, e.g. `chr19:21432035-21707761`
+(a 275 kb few-read model spanning several ZNF genes, 20 edges into MCL53, absorbed into the ZNF708 locus). The ZNF430 locus has exactly
+two edges in the base graph, both to absorbed hubs, none to another ZNF locus. Without the hubs 15 of 24 members fall out of any family.
+So the base's KRAB-ZNF recall rests on multi-gene low-read models acting as hubs; the same hubs carry a share of the 204 false pairs the
+rule removes. Not a defect of the absorb rule, a dependence of the shipped families on hub artifacts. `bench/denovo_eval/pairscore.py`
+`PAIRSCORE_HITDUMP=prefix` writes each run's hit pairs for such diffs.
+
+## TOOL COMPARISON ON MULTI-COPY LOCI (2026-10-31, descriptive, no prereg; `bench/denovo_eval/toolcompare.py`, runs `~/work/jfim/runs/toolcmp/`)
+User: "can we already affirm that we are doing a better job than stringtie and flair on multi-copy loci?" The `benchmark_collapse` StringTie
+3.0.1 (`-L`, no -G) and FLAIR GTFs vs our assembled GTF (`a1.families.gtf`, `or.families.gtf`), per mainstay + YAG member copy: modeled =
+a spliced transcript maps to the copy (famtruth.map_copy); junction precision = introns with both ends on an annotated exon-block boundary
+(CAT is gene-level; a proxy for both species). isoseq collapse excluded (user).
+| sample | expressed copies (any tool) | rustle modeled / junc prec | StringTie | FLAIR |
+|---|---|---|---|---|
+| A119b (15 families, 133 annotated) | 127 | **123** / 0.46 | 107 / 0.47 | 98 / 0.35 |
+| OR6737 (4 Yoo families, 49 annotated) | 30 | 27 / 0.58 | **28** / 0.59 | 23 / 0.55 |
+A119b's gap is TSPY (ours 34 of 35 copies, StringTie 19, FLAIR 12) and CT47A (7 / 5 / 5); every other family is tied. Junction precision is
+tied with StringTie on both samples and above FLAIR. Reading: on COPY-LEVEL modeling we are ahead on tandem arrays and tied elsewhere; on
+JUNCTION quality we are at StringTie's level, not above it; grouping into families is not something either tool does, so "better" there has
+no comparator. Caveats: different alignments (the lab's BAM vs ours), the proxy for annotated junctions, and no test of whether a model's
+reads come from that copy (a primary-only question for all three).
