@@ -9381,3 +9381,17 @@ tied with StringTie on both samples and above FLAIR. Reading: on COPY-LEVEL mode
 JUNCTION quality we are at StringTie's level, not above it; grouping into families is not something either tool does, so "better" there has
 no comparator. Caveats: different alignments (the lab's BAM vs ours), the proxy for annotated junctions, and no test of whether a model's
 reads come from that copy (a primary-only question for all three).
+
+## PREREG MS-VS-AS (2026-10-31, registered before any run): does minimap2's ms ranking disagree with O2's AS ranking often enough to matter?
+User: "when we cannot trust the primary since it is a coin toss decision based on either the ms or AS tags ... there must be something
+to be done for near tied based on PSVs and/or BAM tags". minimap2 ranks a read's hits by ms (register 1409); O2 ranks and windows by AS
+(AS_TIE 10). `bench/o3_graph/tie_ms_vs_as.py BAM COPIES_TSV` (written 2026-10-30, never run; extended today with the `disagree` classes):
+per read with >= 2 non-supplementary records, `disagree` = the max-ms record is not the max-AS record; `distinct_place` = they lie on
+different copies / 10 kb bins; `in_as_window` = their AS gap <= 10 (O2 already treats both as tied); `primary_is_ms_best`.
+Scope `family` = every record of the read on one family's copies (the multi-copy stratum the question is about).
+Samples: OR6737 (`GGO_mm.bam`, `or.fam.copies.tsv`) and KB3781 (`GCA_029281585.2_flnc_mm.bam`, `kb.fam.copies.tsv`); A119b if time allows.
+Decision rule: `--tie-ms` (o3port.py; a Rust port was pending) is worth finishing only if, in the `family` scope, disagree AND distinct_place
+AND outside_as_window reads are >= 5% of reads>=2 on either sample (reads whose placement O2 would change by switching to ms, outside the
+tie it already handles). Below 5% on both: ARCHIVE `--tie-ms` (no port, the Python flag stays as is) and the ms/AS question is closed in
+favour of the PSV certificate; the next lever for near-ties is pooled phasing of the O2-undecided stratum (copy_phasing), a separate prereg.
+Descriptive extras (no bar): the ms_tie / as_win overlap classes the script already had.

@@ -33,7 +33,7 @@ for rec in bam.fetch(until_eof=True):
     if rec.is_unmapped or rec.is_supplementary or not rec.has_tag('ms'): continue
     ni = sum(1 for op, _ in rec.cigartuples or () if op == 3)
     recs[rec.query_name].append((rec.get_tag('ms'), rec.get_tag('AS'), rec.get_tag('NM'), ni, rec.is_secondary,
-                                 fam_of(rec.reference_name, rec.reference_start, rec.reference_end)))
+                                 fam_of(rec.reference_name, rec.reference_start, rec.reference_end), (rec.reference_name, rec.reference_start // 10_000)))
     n += 1
     if n % 5_000_000 == 0: print(f"{n} records", file=sys.stderr)
 C = collections.Counter(); gaps = collections.Counter(); dint = collections.Counter()
@@ -48,8 +48,20 @@ for name, L in recs.items():
     W = [x for x in L if x[1] >= best_as - AS_TIE]
     as_win = len(W) >= 2
     byas = sorted(L, key=lambda x: (-x[1], x[2]))
+    # PREREG MS-VS-AS (2026-10-31): the record minimap2 ranks first (max ms) vs the record O2 ranks first (max AS); `disagree`
+    # = different records, `disagree.distinct_place` = on different family copies / contigs, `disagree.in_as_window` = the AS
+    # gap between them is within AS_TIE (O2 would treat both as tied anyway), `disagree.primary_is_ms_best` = the aligner's
+    # primary is the ms-best one.
+    disagree = byas[0][0] < bym[0][0]  # the AS-best record is not ms-maximal
     for sc in scope:
         C[(sc, 'reads>=2')] += 1
+        if disagree:
+            C[(sc, 'disagree')] += 1
+            if bym[0][5] != byas[0][5] or bym[0][6] != byas[0][6]: C[(sc, 'disagree.distinct_place')] += 1
+            if byas[0][1] - bym[0][1] <= AS_TIE: C[(sc, 'disagree.in_as_window')] += 1
+            else: C[(sc, 'disagree.outside_as_window')] += 1
+            if not bym[0][4]: C[(sc, 'disagree.primary_is_ms_best')] += 1
+            if bym[0][3] != byas[0][3]: C[(sc, 'disagree.intron_count_differs')] += 1
         if ms_tie:
             C[(sc, 'ms_tie')] += 1
             same_nm = bym[0][2] == bym[1][2]; same_int = bym[0][3] == bym[1][3]
