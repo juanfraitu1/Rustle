@@ -9404,3 +9404,25 @@ Reported beside it, every time: `pick_is_ms_best` and `pick_is_primary` (agreeme
 `pick_more_spliced_than_ms_best`. No bar on it in this prereg: it is a descriptive column that goes into every read-placement result, and in
 the assign stage the same rule is `as_margin > 10` of `<p>.assignments.tsv` against O2's status (agreement table to be printed whenever O2
 runs). The three scans were restarted with the classes (OR6737 Slurm 4399106; KB3781 / A119b resubmitted).
+
+## PREREG ISOCON-GORILLA (2026-10-31, registered before any run): IsoCon as the "truly de novo" comparator on single- and multi-copy targets
+Advisor (meeting 2026-10-31): compare our gorilla results with IsoCon (Sahlin 2018, reference-free isoform reconstruction from targeted
+Iso-Seq), on single-copy and multi-copy targets. IsoCon 0.3.3 installed in `~/work/jfim/tools/isocon` (pixi, Python 3.7, networkx 2.2);
+earlier use: register 1195 (NPIP/TBC1D3 on human fibroblast reads, real reads too truncated and sparse). IsoCon is targeted: it takes the
+reads of one gene family, so the read pool per target is defined HERE, by alignment (every primary or secondary record of `GGO_mm.bam` on
+any member copy's annotated span, deduplicated by read name, sequence restored to read orientation). That pool is the same information
+our pipeline uses to seed loci, so the comparison is of the reconstruction, not of read discovery.
+Sample: OR6737 testis on mGorGor1 (`GGO_mm.bam`, our arm = `~/runs/gorilla_OR6737/or.families.gtf`).
+Multi-copy targets: the 4 Yoo families (`famtruth.GGO_MAINSTAYS`: LRPAP1 11 copies, MAPKBP1 9, JMJD7-PLA2G4B 19, SPTBN5 10; 30 expressed by
+any of our arm / StringTie / FLAIR, toolcompare 2026-10-31). Single-copy targets: 30 gorilla protein-coding genes with NO Compara paralog
+at any level (famtruth truth_pairs over all levels, via the human symbol), a de novo locus in our GTF, 50-5,000 alignment records on the
+gene span, drawn with `random.Random(0)` from the eligible list sorted by gene id; one IsoCon run per gene on its own pool.
+IsoCon: `IsoCon pipeline -fl_reads POOL.fa -outfolder DIR --nr_cores 16`, defaults otherwise; `final_candidates.fa` mapped back with
+`minimap2 -ax splice:hq -uf --eqx -N 50 -p 0.1 --secondary=yes` to GGO.fa, primary records -> GTF (exons from the CIGAR), scored with
+`toolcompare.py` columns per copy: modeled (spliced transcript maps to the copy), junction precision (both ends on an annotated exon-block
+boundary), transcripts; plus, multi-copy only, `placed_ambiguous` = candidates whose primary has a rival within 10 AS (the Eichler window,
+amendment 1 of MS-VS-AS: a candidate IsoCon cannot place is not a copy-specific reconstruction).
+Verdict rule per target class (multi-copy, single-copy), stated before the run: IsoCon is BETTER if it models more targets than our arm
+with junction precision >= ours - 0.05; WORSE if it models fewer targets or its junction precision is below ours - 0.05 with equal targets;
+TIED otherwise. Both classes reported; no held-out (descriptive comparison, the advisor's question, not a design change). StringTie and
+FLAIR columns are shown alongside from the same scorer. Runs under `~/work/jfim/runs/isocon_OR6737/`.
