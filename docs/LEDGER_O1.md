@@ -9030,3 +9030,12 @@ Reading: each sketch family collapses into one connected graph (TSPY's two separ
 the compression (130 kb of TSPY loci into a 2.9 kb graph) is the family's shared backbone, the nodes beyond it are the copy-
 specific variants O2 needs. The graphs live in `~/runs/family_graphs/{denovo,guided}/NAME.{gfa,og,loci.fa,members.tsv}`.
 Next, if wanted: GraphAligner the A119b reads of a family to its graph and compare copy assignment with the linear O2.
+
+Sketch variants tolerant to point changes (2026-10-30, user "could there be subsketches that allow us to know that the other
+members should belong somewhere but they are not due to a nucleotide or codon?"): containment of the same pairs under contiguous
+17-mers, a spaced seed (weight 17, span 25) and translated amino-acid 8-mers (6 frames; synonymous codons collapse), scale 10:
+GOLGA8A-GOLGA8F 0.14 / 0.15 / 0.14; GOLGA8N-M 0.41 / 0.42 / 0.49; GOLGA6L1-L22 0.93 / 0.94 / 0.94; GOLGA6L4-L10 0.82 / 0.75 / 0.78;
+GOLGA6L1-L4 0 / 0 / 0; GOLGA6L22-L10 0.01 / 0 / 0; NPIPB3-PKD1 0 / 0 / 0. The three sketches agree within 0.05 on every pair:
+the divergence that separates the sub-groups is not scattered substitutions (which spaced seeds and codon collapsing would
+forgive) but whole regions that are different or absent, so no seed design changes the verdict. GOLGA8A sits at 0.14 under all
+three, i.e. in the weak-edge band the intron rescue already inspects.
