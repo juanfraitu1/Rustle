@@ -427,6 +427,17 @@ struct Args {
     #[arg(long, default_value_t = false)]
     chain_gate_union: bool,
 
+    /// PREREG LOCUS-ABSORB (2026-10-30, opt-in): a `--from-gtf` gene_id with <= `--absorb-ratio` x the reads of a same-contig,
+    /// same-strand gene_id and >= `--absorb-frac` of its exon-union bases inside that gene's exon union is folded into that
+    /// locus before the gate rows (retained-intron and 5'-truncated fragments that the exact-junction gene rule leaves as
+    /// separate gene_ids). Absorbed loci: `<out>.loci.absorbed.tsv`. Changes the loci, so the PAF is re-aligned.
+    #[arg(long, default_value_t = false)]
+    absorb_loci: bool,
+    #[arg(long, default_value_t = 0.1)]
+    absorb_ratio: f64,
+    #[arg(long, default_value_t = 0.5)]
+    absorb_frac: f64,
+
     /// ⭐ Units of one family that share EXON bases are one locus (§6fb): the longest exon union represents them,
     /// the others go to `<out>.units.merged.tsv`. A base cannot belong to two copies (MCL108: a 1.16-Mb read-followed
     /// unit with two units nested in its exons, 13,000 reads counted three times, all K = 0 ties). Default ON.
@@ -1321,6 +1332,7 @@ fn main() -> Result<()> {
             exon_gate_margin(&args),
             args.chain_gate,
             args.chain_gate_union,
+            args.absorb_loci.then_some((args.absorb_ratio, args.absorb_frac)),
         )?;
         let gated = run.gate.is_some();
         exon_gate_used = run.gate.map(|v| (args.exon_gate_margin, v));
@@ -2768,6 +2780,9 @@ fn main() -> Result<()> {
         ),
         ("chain_gate".to_string(), args.chain_gate.to_string()),
         ("chain_gate_union".to_string(), args.chain_gate_union.to_string()),
+        ("absorb_loci".to_string(), args.absorb_loci.to_string()),
+        ("absorb_ratio".to_string(), args.absorb_ratio.to_string()),
+        ("absorb_frac".to_string(), args.absorb_frac.to_string()),
         ("admitted_by_chain_gate".to_string(), g.admitted_by_chain_gate.to_string()),
         (
             "merge_overlapping_loci".to_string(),
@@ -3331,6 +3346,8 @@ mod tests {
             strand: st.into(),
             rep_exons: ex.iter().map(|&(a, b)| (chrom.to_string(), a, b)).collect(),
             chains: vec![],
+                gene_reads: 0,
+                gene_blocks: vec![],
         };
         let loci = vec![
             locus(
@@ -3866,6 +3883,8 @@ c1\tr\ttranscript\t5001\t5100\t.\t+\t.\tgene_id \"G3\"; transcript_id \"Tx\"; re
                 strand: "+".into(),
                 rep_exons: vec![("c1".into(), 101, 200), ("c1".into(), 301, 450)],
                 chains: vec![],
+                gene_reads: 11,
+                gene_blocks: vec![(51, 90), (101, 200), (301, 450)],
             }
         );
         assert_eq!(

@@ -9325,3 +9325,23 @@ result was seen (same samples, same bars).
 numbers on dev (0.734 / 0.759), so by amendment 1 it is not held out; and the union does not rescue the long NPIPA loci either
 (their 2-exon chain is a separate gene_id, so no isoform of the locus lies inside the unit). Lifting every isoform and joining
 the exons behaves like the chain gate: more edges, a mix of true and false, no change to the mainstays. Opt-in, like arm C.
+
+## PREREG LOCUS-ABSORB (2026-10-30, registered before any run): fold dominated overlapping gene_ids into one locus
+Census behind it (A119b `a1.families.gtf`, 76,161 gene_ids): the assembler's gene = transcripts connected by IDENTICAL intron
+coordinates; 112,404 same-strand gene pairs share exon bases and NONE shares a junction (retained-intron fragments, 911 pairs with
+a junction within 10 bp). 71,087 of them have a side with <= 3 reads. 1,609 such pairs ended as members of DIFFERENT families
+(1,534 of the 7,987 members; NBPF / chr2 2-exon 2-4-read fragments forming fragment families MCL274/498/501/1337 beside MCL744/128).
+Exon-overlap union-find is ruled out before the run: one chr13 component of 4,499 genes (13.9-15.5 Mb, 86k reads). The NPIPA1
+2-exon fragment (its intron inside a retained exon of the 42-transcript gene) was never a family member, so this is NOT the r1473 fix.
+Rule (`mcl_families --absorb-loci --absorb-ratio 0.1 --absorb-frac 0.5`, applied to the `--from-gtf` loci BEFORE representative
+exons go to the gate rows; realignment, new PAF key): locus B is absorbed into same-contig, same-strand locus A when
+reads(B) <= ratio x reads(A) (gene totals over all transcripts) and >= frac of B's exon-union bases lie inside A's exon union;
+B's transcripts are removed from the locus list (A's representative is unchanged: most-reads, so B's few reads never win);
+the absorber with the most reads wins a tie, and chains resolve to the root. Absorbed loci listed in `<out>.loci.absorbed.tsv`.
+Dev census: 6,924 loci absorbed, 356 of them current family members, 9 chains, 613 of the 1,609 cross-family overlap pairs covered.
+Dev A119b (base `a1`, most-reads, default gate) must keep mainstays >= 216 recalled and <= 4 unrelated-foreign and pair precision
+>= 0.726 with recall >= 0.741 - 0.01 to proceed. Held-out: OR6737 ONLY (base `or`, `--species gorilla`; KB3781 and HG002 were each
+spent twice on 2026-10-30 by r1473/r1475). Bars (REPRULE-2): (B1) mainstay recalled summed >= base and unrelated foreign <= base;
+(B2) pair precision >= base - 0.01 and pair recall >= base - 0.01. PASS -> proposed default with `--absorb-loci` off as the hatch
+(metric-auditor first, user decides); FAIL -> opt-in. Constants 0.1 / 0.5 are the dev census values; no sweep on the held-out.
+Runs under `~/work/jfim/runs/absorb_{A119b,OR6737}/`.

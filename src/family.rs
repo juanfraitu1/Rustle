@@ -56452,6 +56452,96 @@ pub mod fam_from_gtf {
         /// representative's and from each other. Empty unless asked for. The shared-exon gate may pass a pair through any
         /// chain pair; the representative alone still defines the locus everywhere else.
         pub chains: Vec<Vec<(u64, u64)>>,
+        /// PREREG LOCUS-ABSORB (2026-10-30, `--absorb-loci`): the gene's `reads` summed over ALL its transcripts and the
+        /// union of all its exons (1-based closed, sorted, merged). Read only by `absorb_loci`; never written to a product.
+        pub gene_reads: u64,
+        pub gene_blocks: Vec<(u64, u64)>,
+    }
+
+    /// PREREG LOCUS-ABSORB (2026-10-30): fold a dominated overlapping gene_id into the locus that dominates it. Locus B is
+    /// absorbed into same-contig, same-strand locus A when `reads(B) <= ratio x reads(A)` (gene totals) and `>= frac` of
+    /// B's exon-union bases lie inside A's exon union. The absorber with the most reads wins (ties: the earlier locus);
+    /// an absorber that is itself absorbed resolves to its root. Returns the kept loci (input order) and `(absorbed, root)`.
+    pub fn absorb_loci(loci: Vec<GtfLocus>, ratio: f64, frac: f64) -> (Vec<GtfLocus>, Vec<(String, String)>) {
+        use std::collections::BTreeMap;
+        let len_of = |b: &[(u64, u64)]| -> u64 { b.iter().map(|&(a, e)| e - a + 1).sum() };
+        let inside = |b: &[(u64, u64)], a: &[(u64, u64)]| -> u64 {
+            let mut s = 0;
+            let (mut i, mut j) = (0, 0);
+            while i < b.len() && j < a.len() {
+                let (x, y) = b[i];
+                let (p, q) = a[j];
+                if y < p {
+                    i += 1;
+                } else if q < x {
+                    j += 1;
+                } else {
+                    s += y.min(q) - x.max(p) + 1;
+                    if y < q {
+                        i += 1;
+                    } else {
+                        j += 1;
+                    }
+                }
+            }
+            s
+        };
+        // same-contig, same-strand loci sorted by span start; a sweep over span overlap finds the candidate pairs
+        let mut by: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+        for (i, l) in loci.iter().enumerate() {
+            by.entry((l.chrom.clone(), l.strand.clone())).or_default().push(i);
+        }
+        let mut into: Vec<Option<usize>> = vec![None; loci.len()];
+        for (_, mut idx) in by {
+            idx.sort_by_key(|&i| (loci[i].start, loci[i].end, i));
+            let mut active: Vec<usize> = Vec::new();
+            for &i in &idx {
+                active.retain(|&k| loci[k].end >= loci[i].start);
+                for &k in &active {
+                    for (small, big) in [(i, k), (k, i)] {
+                        let (s, b) = (&loci[small], &loci[big]);
+                        if s.gene_reads as f64 > ratio * b.gene_reads as f64 || s.gene_blocks.is_empty() {
+                            continue;
+                        }
+                        let ins = inside(&s.gene_blocks, &b.gene_blocks);
+                        if (ins as f64) < frac * len_of(&s.gene_blocks) as f64 {
+                            continue;
+                        }
+                        let better = match into[small] {
+                            None => true,
+                            Some(cur) => (b.gene_reads, std::cmp::Reverse(big)) > (loci[cur].gene_reads, std::cmp::Reverse(cur)),
+                        };
+                        if better {
+                            into[small] = Some(big);
+                        }
+                    }
+                }
+                active.push(i);
+            }
+        }
+        let n_loci = loci.len();
+        let root = |mut i: usize| -> usize {
+            let mut seen = 0;
+            while let Some(k) = into[i] {
+                i = k;
+                seen += 1;
+                if seen > n_loci {
+                    break;
+                }
+            }
+            i
+        };
+        let ids: Vec<String> = loci.iter().map(|l| l.gene_id.clone()).collect();
+        let mut absorbed: Vec<(String, String)> = Vec::new();
+        let mut kept: Vec<GtfLocus> = Vec::new();
+        for (i, l) in loci.into_iter().enumerate() {
+            if into[i].is_some() {
+                absorbed.push((l.gene_id, ids[root(i)].clone()));
+            } else {
+                kept.push(l);
+            }
+        }
+        (kept, absorbed)
     }
 
     /// Which transcript of a `--from-gtf` locus is its representative (`--representative`).
@@ -56679,6 +56769,16 @@ pub mod fam_from_gtf {
                         chains.push(c);
                     }
                 }
+                let gene_reads: u64 = ts.iter().map(|t| reads.get(*t).copied().unwrap_or(0)).sum();
+                let mut gene_blocks: Vec<(u64, u64)> = all.iter().map(|x| (x.1, x.2)).collect();
+                gene_blocks.sort();
+                let mut gb: Vec<(u64, u64)> = Vec::new();
+                for (a, b) in gene_blocks {
+                    match gb.last_mut() {
+                        Some(l) if a <= l.1 => l.1 = l.1.max(b),
+                        _ => gb.push((a, b)),
+                    }
+                }
                 Some(GtfLocus {
                     gene_id: g.to_string(),
                     chrom,
@@ -56689,6 +56789,8 @@ pub mod fam_from_gtf {
                     strand: st,
                     rep_exons: ex,
                     chains,
+                    gene_reads,
+                    gene_blocks: gb,
                 })
             })
             .collect();
@@ -56853,11 +56955,24 @@ pub mod fam_from_gtf {
         exon_gate: Option<(u64, f64)>,
         chain_gate: usize,
         chain_gate_union: bool,
+        absorb: Option<(f64, f64)>,
     ) -> Result<GtfLociRun> {
         use std::collections::HashSet;
         let mut clock = PhaseClock::new();
-        let loci = gtf_loci_chains_opt(reader, rule, chain_gate, chain_gate_union)?;
+        let mut loci = gtf_loci_chains_opt(reader, rule, chain_gate, chain_gate_union)?;
         clock.lap("GTF -> loci");
+        if let Some((ratio, frac)) = absorb {
+            let n = loci.len();
+            let (kept, absorbed) = absorb_loci(loci, ratio, frac);
+            loci = kept;
+            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{out}.loci.absorbed.tsv"))?);
+            writeln!(fh, "absorbed_gene_id\tinto_gene_id")?;
+            for (a, b) in &absorbed {
+                writeln!(fh, "{a}\t{b}")?;
+            }
+            eprintln!("[mcl_families] --absorb-loci ratio {ratio} frac {frac}: {} of {n} loci absorbed -> {} loci", absorbed.len(), loci.len());
+            clock.lap("absorb loci");
+        }
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
         let mut paf = format!("{out}.loci.paf");
@@ -57051,15 +57166,47 @@ pub mod fam_from_gtf {
         exon_gate: Option<(u64, f64)>,
         chain_gate: usize,
         chain_gate_union: bool,
+        absorb: Option<(f64, f64)>,
     ) -> Result<GtfLociRun> {
         let f = std::fs::File::open(gtf).with_context(|| format!("opening {gtf}"))?;
-        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate, chain_gate, chain_gate_union)
+        loci_from_gtf_reader(std::io::BufReader::new(f), fasta, out, threads, rule, exon_gate, chain_gate, chain_gate_union, absorb)
     }
 
     #[cfg(test)]
     mod paf_cache_key_tests {
         use super::*;
         use crate::run_cache as rc;
+
+        /// LOCUS-ABSORB: a 3-read 2-exon fragment inside a 100-read gene folds into it; a same-size neighbour, an
+        /// opposite-strand overlap and a gene with only a third of its bases inside do not; a chain resolves to the root.
+        #[test]
+        fn absorb_loci_folds_dominated_overlaps_only() {
+            let mk = |g: &str, strand: &str, reads: u64, blocks: Vec<(u64, u64)>| GtfLocus {
+                gene_id: g.into(),
+                chrom: "chr1".into(),
+                start: blocks[0].0,
+                end: blocks[blocks.len() - 1].1,
+                rep: g.into(),
+                rep_reads: reads,
+                strand: strand.into(),
+                rep_exons: vec![],
+                chains: vec![],
+                gene_reads: reads,
+                gene_blocks: blocks,
+            };
+            let loci = vec![
+                mk("big", "+", 100, vec![(1000, 2000), (3000, 4000)]),
+                mk("frag", "+", 3, vec![(1500, 1700), (3100, 3200)]),
+                mk("peer", "+", 90, vec![(1500, 1700)]),
+                mk("anti", "-", 1, vec![(1500, 1700)]),
+                mk("outside", "+", 2, vec![(1900, 2000), (2001, 2200)]),
+                mk("tiny", "+", 1, vec![(1600, 1650)]),
+            ];
+            let (kept, absorbed) = absorb_loci(loci, 0.1, 0.5);
+            let kept: Vec<&str> = kept.iter().map(|l| l.gene_id.as_str()).collect();
+            assert_eq!(kept, vec!["big", "peer", "anti", "outside"]);
+            assert_eq!(absorbed, vec![("frag".to_string(), "big".to_string()), ("tiny".to_string(), "big".to_string())]);
+        }
 
         /// The exon gate's input: each representative exon of each locus, 0-based half-open in the locus span's own
         /// coordinates (the loci FASTA record `chrom:start-end`, the coordinates of the PAF).
@@ -57075,6 +57222,8 @@ pub mod fam_from_gtf {
                 strand: "+".into(),
                 rep_exons: vec![("t".into(), 1001, 1100), ("t".into(), 1501, 1600)],
                 chains: vec![],
+                gene_reads: 1,
+                gene_blocks: vec![(1001, 1100), (1501, 1600)],
             };
             assert_eq!(gate_rows(&[l]), "chr1:1001-2000\t0\t100\nchr1:1001-2000\t500\t600\n");
         }
