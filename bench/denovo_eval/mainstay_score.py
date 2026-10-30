@@ -71,15 +71,24 @@ for path in a[1:]:
         mem = {g for g, d in G.items() if is_member(d, rx)}
         exp = mem & expressed
         if not exp and species != 'gorilla': continue  # gorilla: Yoo families with no expressed copy are reported as 0 of N
+        # read-through units (gorilla JMJD7-PLA2G4B, 2026-10-30): adjacent same-strand members within 20 kb are ONE unit; a unit
+        # is expressed / recalled when any of its genes is, so a read-through locus scored against one gene counts the unit once
+        unit_of = {g: g for g in mem}
+        if species == 'gorilla' and '-' in name:
+            ordered = sorted(mem, key=lambda g: (G[g]['chrom'], G[g]['strand'], G[g]['exons'][0][0]))
+            for p, q_ in zip(ordered, ordered[1:]):
+                if G[p]['chrom'] == G[q_]['chrom'] and G[p]['strand'] == G[q_]['strand'] and G[q_]['exons'][0][0] - G[p]['exons'][-1][1] <= 20_000:
+                    unit_of[q_] = unit_of[p]
         best = {g: max(gene_locs[g], key=lambda t: share(g, *loc_ex[t])) for g in exp if gene_locs[g]}
         held = collections.Counter(loc_fam[t] for g in exp for t in gene_locs[g])
         top_by_best = collections.Counter(loc_fam[t] for t in best.values())  # largest = family holding most members' BEST loci
         if not held:
             print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t0\t0\t0\t0\t\t{len(mem)}"); continue
         top = top_by_best.most_common(1)[0][0]
-        rec = sum(1 for g, t in best.items() if loc_fam[t] == top)
+        rec = len({unit_of[g] for g, t in best.items() if loc_fam[t] == top})
+        n_exp = len({unit_of[g] for g in exp}); n_mem = len(set(unit_of.values()))
         foreign = {g for g in fam_genes[top] if g not in mem and G[g]['biotype'] == 'protein_coding'}
         unrel = sorted(G[g]['name'] for g in foreign if not any(related(g, m) for m in exp))
-        print(f"{os.path.basename(path)}\t{name}\t{len(exp)}\t{rec}\t{len(held)}\t{len(foreign) - len(unrel)}\t{len(unrel)}\t{','.join(unrel[:6])}\t{len(mem)}")
-        tot['exp'] += len(exp); tot['rec'] += rec; tot['unrel'] += len(unrel)
+        print(f"{os.path.basename(path)}\t{name}\t{n_exp}\t{rec}\t{len(held)}\t{len(foreign) - len(unrel)}\t{len(unrel)}\t{','.join(unrel[:6])}\t{n_mem}")
+        tot['exp'] += n_exp; tot['rec'] += rec; tot['unrel'] += len(unrel)
     print(f"{os.path.basename(path)}\tALL\t{tot['exp']}\t{tot['rec']}\t\t\t{tot['unrel']}\t")
