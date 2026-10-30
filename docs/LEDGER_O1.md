@@ -8881,3 +8881,23 @@ Bars vs the shipped MCL base `hg.fam.copies.tsv`, all must hold:
   B5 gene-averaged recall @0.98 > base.
 Secondary (reported, not bars): Compara Simiiformes P / R and nc precision (`pairscore.py --species hg002`), run time, memory.
 One run, no re-tuning; result written under this entry; metric-auditor before any claim.
+
+**RESULT SKETCH-SEQ-HG002 (2026-10-30 03:06, one run, audited): PASS on all five bars.** Arm as registered (`~/runs/hg002_kinnex/sketch_seq.sh`;
+frozen copies + SHA1SUMS in `audit_seq/`); 2 min 17 s, 4.4 GB, 181,965 edges (869 rescued by introns), 863 families / 4,974 members.
+Truth: 15,054 expressed genes after RNA exclusion, 1,380 pairs @0.85, 574 @0.98.
+
+| | base (MCL) | arm | bar |
+|---|---|---|---|
+| B1 pair recall @0.85 | 0.418 | 0.497 | PASS |
+| B2 pair recall @0.98 | 0.638 | 0.709 | PASS |
+| B3 pair precision @0.85 | 0.392 | 0.449 | PASS |
+| B4 pair precision @0.98 (>= base - 0.02) | 0.248 | 0.266 | PASS |
+| B5 gene-averaged recall @0.98 | 0.551 | 0.695 | PASS |
+
+Secondary: Compara Simiiformes P / R 0.426 / 0.345 -> 0.505 / 0.377, nc precision 0.400 -> 0.449; gene-averaged precision goes
+DOWN (0.424 -> 0.413 @0.85, 0.219 -> 0.187 @0.98; the arm places more loci on genes, 1,927 vs 1,162 mapped copies, and the extra
+partners of some genes are not >= 98% identical). Auditor (independent recount from `hg.seqtruth.pkl` + `famtruth.load_catalog`,
+own counting code) reproduced every number to the printed digit, verified the command flag by flag, found no leakage (truth from
+the base's expressed set and the annotation only; identical universe for both arms). Dev samples disclosed: KB3781, OR6737, A119b.
+Status: the sketch tree arm (k17, scale 10, root 0.15, floor 0.2, cap 20, intron rescue 0.1/0.2) is the family engine candidate
+to ship; next = wire it into the pipeline's family stage as the default and rerun the end-to-end benchmark.
