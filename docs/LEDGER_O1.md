@@ -8934,3 +8934,12 @@ Reading: the merge recovers GOLGA8N/O (12/13) but the same edges that connect th
 SPATA31 are never reached because they have no edge. Not adopted; `--merge-strong` stays opt-in. The honest statement for the
 thesis: the engine finds every mainstay whose copies share >= ~90% of their exon sequence; sub-groups below that (GOLGA8A,
 GOLGA6L groups, SPATA31 A vs D) are distinct families by sequence and only the gene symbol says otherwise.
+
+Alignment-based merge simulated on the same guided arm (user "would extending it to proteins help?"): merge two cut families when a
+member pair aligns at identity >= T over >= 50% of the shorter gene (pairs from the minimap2 asm20 all-vs-all cache; this is the
+nucleotide step BEFORE any protein step). T 0.90: 109 merges, mainstays 112, NPIP absorbs PKD1, BOLA2, SMG1, SLC7A5 (the 16p13
+SD block neighbours align at >= 90% over half the gene), guided P @0.85 0.635 -> 0.372, Compara P 0.270 -> 0.237. T 0.85: 151
+merges, GOLGA8 13/13 but 1 unrelated + 5 related foreign, P @0.85 0.326; GOLGA6L and SPATA31 still not merged (no pair >= 85% over
+half the gene). So the sub-groups the sketch misses are already beyond what a nucleotide alignment can add without gluing NPIP
+to its neighbours; a protein step reaches further still (older paralogs, pseudogene relatives) and failed exactly that way twice
+today (miniprot members, mmseqs clusters). Verdict: no protein extension for family definition; protein stays a judge.
