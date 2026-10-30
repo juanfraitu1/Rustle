@@ -223,9 +223,15 @@ with np.errstate(over='ignore'):
         cedges = collections.defaultdict(list)  # per-component edge list (iterating all edges per component was O(C x E))
         for x, y, _, c, _ in edges: cedges[find(x)].append((x, y, c))
         fams = []; nwk = open(OUT + '.trees.nwk', 'w')
-        def newick(node, names):
-            if node.is_leaf(): return names[node.id]
-            return f"({newick(node.get_left(), names)},{newick(node.get_right(), names)}):{node.dist:.3f}"
+        def newick(root, names):  # iterative (a 10k-leaf component overflowed the recursive version, 2026-10-30)
+            out = []; stack = [(root, 0)]
+            while stack:
+                node, state = stack.pop()
+                if node.is_leaf(): out.append(names[node.id]); continue
+                if state == 0: out.append('('); stack.append((node, 1)); stack.append((node.get_left(), 0))
+                elif state == 1: out.append(','); stack.append((node, 2)); stack.append((node.get_right(), 0))
+                else: out.append(f"):{node.dist:.3f}")
+            return ''.join(out)
         for root, members_ in comp.items():
             if len(members_) < 2: continue
             m = sorted(members_); n = len(m); D = np.ones((n, n))

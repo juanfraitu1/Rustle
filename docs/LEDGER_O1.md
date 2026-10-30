@@ -8838,3 +8838,32 @@ dispersed pairs that the sequence score counts as true (identity >= 85% over hal
 exactly what the user asked to score. A119b with the cap, same scorer (rDNA excluded): base 0.528 / 0.559 @0.85 (gene 0.506 /
 0.470), 0.297 / 0.734 @0.98 (0.256 / 0.690); sketch cap 3 0.670 / 0.539 (0.543 / 0.493), 0.397 / 0.745 (0.279 / 0.735); + intron
 0.655 / 0.545, 0.384 / 0.746; gap 0.617 / 0.553, 0.356 / 0.743. No-cap A119b arms: next entry.
+
+### A119b WITHOUT the cap, and the cap that works on both species (2026-10-30, `~/runs/human_A119b/{nocap,nocap2,batch3}.sh`, `a1n_*`, `a1m_*`)
+On human the fully uncapped sketch is a different animal: 402 M candidate pairs, 16.5 M edges, 17-19 min and 158 GB (the first three
+uncapped arms died: the recursive Newick writer overflowed on a 10k-leaf component; now iterative). Sequence score (rDNA excluded,
+truth 6,398 pairs @0.85 / 2,747 @0.98), Compara Simiiformes P / R, mainstays recalled of 123 and unrelated foreign genes:
+
+| arm (tree k17 s10 r0.15 c0.2) | P/R @0.85 | P/R @0.98 | Compara P/R | mainstays | unrel. | NPIP |
+|---|---|---|---|---|---|---|
+| base (MCL) | 0.528 / 0.559 | 0.297 / 0.734 | 0.726 / 0.741 | 108 | 2 | 18/20 |
+| cap 3 | 0.670 / 0.539 | 0.397 / 0.745 | 0.777 / 0.644 | 98 | 0 | 10 |
+| cap 10 | 0.631 / 0.605 | 0.353 / 0.788 | 0.772 / 0.651 | 98 | 0 | 10 |
+| cap 10 + intron rescue | 0.621 / 0.614 | 0.343 / 0.789 | 0.774 / 0.679 | 103 | 0 | 15 |
+| **cap 20 + intron rescue** | 0.617 / 0.617 | 0.340 / 0.791 | 0.774 / 0.681 | 103 | 0 | 15 |
+| no cap | 0.476 / 0.609 | 0.264 / 0.788 | 0.721 / 0.649 | 98 | 0 | 10 |
+| no cap + intron rescue | 0.471 / 0.617 | 0.259 / 0.790 | 0.725 / 0.680 | 103 | 0 | 15 |
+| no cap, soft-masked k-mers dropped | 0.612 / 0.605 | 0.335 / 0.772 | 0.753 / 0.645 | 98 | 0 | 10 |
+| no cap, locus cap 50 | 0.629 / 0.601 | 0.348 / 0.774 | 0.772 / 0.650 | 98 | 0 | 10 |
+| multi-exon loci only (59,660 of 76,161), no cap + intron | 0.597 / 0.593 | 0.332 / 0.768 | 0.761 / 0.678 | 104 | 0 | 16 |
+| multi-exon loci only, cap 10 + intron | 0.634 / 0.590 | 0.354 / 0.766 | 0.777 / 0.679 | 104 | 0 | 16 |
+
+Reading: on human the cap is needed (no cap: precision 0.62 -> 0.47 at equal recall, the HG002-type repeat glue), but 3 is far too
+tight: caps 10 and 20 give recall above the base at both tiers (0.617 vs 0.559 @0.85, 0.791 vs 0.734 @0.98) with precision 0.09 above
+it and no unrelated foreign gene. The intron rescue is what brings the mainstays back (98 -> 103, NPIP 10 -> 15). Restricting the
+sketch to multi-exon loci (user "run the assembler first" idea, which the de novo arm already is) trades a little recall for a little
+precision and one NPIP; not adopted. On gorilla, cap 10 still loses the dispersed families (KB @0.98 0.767 vs 0.843 uncapped, OR
+0.843 vs 0.910; 2,238 / 2,744 hashes sit on > 10 chromosomes) while **cap 20 equals no cap** on both sets (KB 0.598 / 0.704 @0.85,
+0.334 / 0.843 @0.98; OR 0.734 / 0.806, 0.399 / 0.910; Compara KB 0.431 / 0.368 nc 0.615, OR 0.389 / 0.318 nc 0.720 for cap 10 +
+intron). ONE arm for both species therefore: `--cluster tree --k 17 --scale 10 --root-cont 0.15 --min-cont 0.2 --max-chrom 20
+--weak-cont 0.1 --intron-cont 0.2`. Runs in 45 s (gorilla) / 6.5 min (human).
