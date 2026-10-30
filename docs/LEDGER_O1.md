@@ -9130,3 +9130,32 @@ that overlaps no copy of the run (`semifam.py --all-candidates`); the confirmati
 with the amended rule: CDY2A and CDY2B attach to the CDY family (template coverage 1.00, identity 0.986, 2 exons each); 1,205
 attached of 17,917 candidates (9,790 no alignment, 3,656 seed in no locus, 2,330 overlap a copy, 936 below gate), 333 new families.
 Bars and held-outs as registered.
+
+### SEMIGUIDED RESULT (2026-10-30, register 1472): **PASS on both held-outs** (all four bars), after two implementation fixes whose first held-out numbers were seen
+Runs `~/work/jfim/runs/semi_{A119b,KB3781,OR6737}/` (`ss/` = semisec census, `<p>semi.fam.copies.tsv`, `<p>semi.semi.tsv` per-candidate
+verdicts, `mainstays.txt`, `pairs_uc.txt`). Census: A119b 123,848 seeds / 17,917 candidates (3,047 silent); KB3781 23,311 / 6,378 (3,672);
+OR6737 26,055 / 6,630 (2,672) — the gorilla counts equal the laptop runs of 10-26.
+**Honesty note.** The held-outs were scored three times: (1) with the copy strand flipped relative to the template strand (the template
+is already transcript-sense, so mirror copies of existing members were added: KB precision 0.341 -> 0.304, OR 0.429 -> 0.403, **FAIL B3
+on both**); (2) after fixing the strand (commit "copy strand = alignment strand"): PASS; (3) after a second fix to the seed-pile ->
+copy resolution (the fallback matched copies against the pile span instead of the locus record's span, so DAZ1 spawned a new family on
+dev): held-out numbers identical to (2). Both fixes are correctness fixes visible on dev (DAZ 4 -> 3 -> 4), not tuning; the bars were not
+touched. A PASS after seeing a FAIL under a bug is weaker than a clean PASS and is logged as such: metric-auditor before any default.
+| sample | arm | recalled_annot (Yoo, sum) | unrel foreign | pair precision (universe = run copies) | pair recall | attached / new families |
+|---|---|---|---|---|---|---|
+| KB3781 | base kb | 14 | 0 | 0.341 (14/41) | 0.609 | — |
+| KB3781 | **semi** | **19** (LRPAP1 6 -> 8, MAPKBP1 0 -> 3) | 0 | 0.333 (21/63) | 0.636 | 1,181 / 432 |
+| OR6737 | base or | 15 | 0 | 0.429 (21/49) | 0.677 | — |
+| OR6737 | **semi** | **18** (MAPKBP1 0 -> 2, JMJD7-PLA2G4B 7 -> 8) | 0 | 0.456 (31/68) | 0.756 | 1,276 / 433 |
+| A119b dev | base a1 | 108 (of 131) | 2 | 0.726 (1617/2228) | 0.878 | — |
+| A119b dev | semi | 110 (CDY 2 -> 4: CDY2A, CDY2B) | 2 | 0.721 (1642/2276) | 0.877 | 1,071 / 248 |
+Bars: B1 19 > 14 and 18 > 15 PASS; B2 0 <= 0 PASS; B3 0.333 >= 0.321 and 0.456 >= 0.409 PASS; B4 0.636 >= 0.609 and 0.756 >= 0.677 PASS.
+Yoo copies attached: KB3781 MAPKBP1 LOC101128796 (chr1 19.04 Mb, 29 exons, identity 0.980) + LOC129531977 (29.09 Mb, 0.978) seeded by the
+ancestral chr16 locus (a singleton in the base, so the MAPKBP1 family is NEW: SEMI36); LRPAP1 LOC129523574 + LOC129530227 (7 exons, 0.978 /
+0.986) join MCL26. OR6737: MAPKBP1 LOC129531977 (0.984); JMJD7-PLA2G4B LOC129527105 (8 exons, 0.982) joins MCL30. SPTBN5: 0 on both (no
+expressed seed anywhere, so no secondaries). The new false pairs are retrocopies that Compara Simiiformes does not list (KIF4A|KIF4B,
+SET|SETSIP, PGAM1|PGAM4, RAB6A|RAB6D, ACTB|ACTG1, PABPC1|PABPC3, ANKRD18A|B) and host-gene mismaps of a retrocopy lying in another gene's
+exon (CDH18|NUP50, BLNK|NPM1, CLN5|DHX9, GOLM2|TPTE2, SLC27A4|TMSB4X): 'false' by the truth table, mostly real copies by sequence.
+**Proposal:** `semisec` + `semifam.py --all-candidates` as the family-stage option "semi-guided" next to de novo and guided (user decides;
+metric-auditor first). Open: the attach step is Python (10 min on A119b, all-vs-all minimap2 of 18k template/region pairs) and belongs in
+`mcl_families` as `--semi`; the famsum/mainstay page shows the semi-guided track (artifact v18).
