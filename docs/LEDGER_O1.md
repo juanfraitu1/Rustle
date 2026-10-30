@@ -8943,3 +8943,15 @@ merges, GOLGA8 13/13 but 1 unrelated + 5 related foreign, P @0.85 0.326; GOLGA6L
 half the gene). So the sub-groups the sketch misses are already beyond what a nucleotide alignment can add without gluing NPIP
 to its neighbours; a protein step reaches further still (older paralogs, pseudogene relatives) and failed exactly that way twice
 today (miniprot members, mmseqs clusters). Verdict: no protein extension for family definition; protein stays a judge.
+
+### TWO-LEVEL ("intermediate tree") idea: smaller k as an upper level, development (2026-10-30, user "could there be an intermediate tree for bridging the low similarity to high similarity"; `~/runs/guided_sketch/g_k{11,13,15}*`)
+Same guided arm with k 15 / 13 / 11 at the k 17 floor (0.2): mainstays 110 / 109 / 104, P @0.85 0.619 / 0.607 / 0.649, and NO edge
+between the separated groups at any k (survival of a k-mer at 86% identity is 0.86^k = 0.19 at k 11, under the 0.2 floor). With the
+floor at 0.1 (k 13 and k 11) the bridges appear, as edges only: GOLGA8A-GOLGA8 0.29, GOLGA8-GOLGA6L(L4/L9/L10) 0.19, GOLGA6L2-L7
+0.22, GOLGA6L2-L1 group 0.15; the two GOLGA6L groups never touch each other directly (only through GOLGA8), SPATA31 A-D never
+connect at any k or floor. NPIP's coding partners outside NPIP go from 3 (PKD1 + two unnamed) to 4 (+ SMG1) at floor 0.1 and 5
+(+ TTN) at 0.05; TSPY stays at 1. So a second level built from k 13 floor 0.1 edges BETWEEN k 17 families would be a GOLGA
+superfamily (GOLGA8 + GOLGA8A + GOLGA6L, biologically the 15q golgin-A array) with SMG1 next to NPIP, and would not reach SPATA31
+A/D. Not built into the pipeline: the lower level is the family definition that passed HG002; the upper level is a report of
+the hierarchy, if wanted (the per-component Newick already gives it inside a component; between components it needs this
+second sketch). Decision left to the user.
