@@ -37,6 +37,7 @@ def load_best_as(path, names):
 
 
 def pool(copies_path, bam_path, molecules_path, out_dir, contig=None):
+    """Two passes: fetch every >= 2-copy family's records from the BAM, then ONE scan of molecules.tsv for the secondaries' best AS."""
     import pysam
     copies = fw_layer.read_copies(copies_path)
     if contig:
@@ -46,7 +47,7 @@ def pool(copies_path, bam_path, molecules_path, out_dir, contig=None):
         fams[fam].append((idx, v))
     os.makedirs(os.path.join(out_dir, "pool"), exist_ok=True)
     bam = pysam.AlignmentFile(bam_path)
-    stats = []
+    recs_by_fam, sec_names = {}, set()
     for fam, members in sorted(fams.items()):
         if len(members) < 2:
             continue
@@ -56,12 +57,18 @@ def pool(copies_path, bam_path, molecules_path, out_dir, contig=None):
                 if rec.is_unmapped or rec.is_supplementary or rec.is_qcfail or not rec.has_tag("AS"):
                     continue
                 # a record belongs to the copy whose locus it overlaps most (loci of one family do not overlap)
-                ov = min(rec.reference_end, end) - max(rec.reference_start, start)
-                if ov <= 0:
+                if min(rec.reference_end, end) - max(rec.reference_start, start) <= 0:
                     continue
                 recs.append((rec.query_name, idx, not rec.is_secondary, int(rec.get_tag("AS")), fw_layer.chain_of(rec),
                              rec.reference_start, rec.reference_end))
-        best = load_best_as(molecules_path, {r[0] for r in recs if not r[2]})
+                if rec.is_secondary:
+                    sec_names.add(rec.query_name)
+        recs_by_fam[fam] = recs
+    print(f"[pool] {len(recs_by_fam)} families, {sum(map(len, recs_by_fam.values()))} records, "
+          f"{len(sec_names)} molecules with a secondary record; scanning {molecules_path}", file=sys.stderr, flush=True)
+    best = load_best_as(molecules_path, sec_names)
+    stats = []
+    for fam, recs in recs_by_fam.items():
         kept, seen = [], set()
         secondary_kept = 0
         for read, idx, prim, as_, chain, rs, re_ in recs:
@@ -375,6 +382,88 @@ def gtf(out_dir, base_gtf, copies_path, out_gtf):
         w.write(f"appended\talready_in_base\n{appended}\t{already}\n")
 
 
+def _strata(path):
+    """strata.txt -> {(arm, stratum): (recall%, precision%)}"""
+    out = {}
+    for l in open(path):
+        f = l.rstrip("\n").split("\t")
+        if len(f) == 8 and f[0] != "arm":
+            out[(f[0], f[1])] = (float(f[4]), float(f[7]))
+    return out
+
+
+def _last_two(path, cols):
+    """first and last data row of a mainstay/pair table (BASE then run) -> two tuples of the named columns."""
+    rows, hdr = [], None
+    for l in open(path):
+        if l[0] == "#":
+            continue
+        f = l.rstrip("\n").split("\t")
+        if hdr is None:
+            hdr = {k: i for i, k in enumerate(f)}
+            continue
+        rows.append(f)
+    return [tuple(float(r[hdr[c]] or 0) for c in cols) for r in (rows[0], rows[-1])]
+
+
+def score(run_dir):
+    """M1-M4 verdict from strata.txt, mainstays.txt, pairs.txt; BASE lines kept and single-copy identity from the GTFs."""
+    env = dict(l.rstrip("\n").split("=", 1) for l in open(os.path.join(run_dir, "famasm.env")) if "=" in l)
+    j = lambda *p: os.path.join(run_dir, *p)
+    st = _strata(j("strata.txt"))
+    br, bp = st[("base", "multi")]
+    fr, fp = st[("famasm", "multi")]
+    sbr, sbp = st[("base", "single")]
+    sfr, sfp = st[("famasm", "single")]
+    base = open(env["BASE_GTF"], "rb").read()
+    fam = open(j("famasm.gtf"), "rb").read()
+    kept = fam.startswith(base)
+    copies = fw_layer.read_copies(env["COPIES"])
+    nfam = defaultdict(int)
+    for (f, _i) in copies:
+        nfam[f] += 1
+    multi_loci = defaultdict(list)
+    for (f, _i), (c, a, b, _) in copies.items():
+        if nfam[f] >= 2:
+            multi_loci[c].append((a, b))
+    single_ok = kept
+    for line in fam[len(base):].decode().splitlines() if kept else []:
+        f = line.split("\t")
+        if len(f) < 9 or 'famasm "1"' not in f[8]:
+            single_ok = False
+            break
+        x, y = int(f[3]), int(f[4])
+        if not any(a <= x and y <= b for a, b in multi_loci.get(f[0], ())):
+            single_ok = False
+            break
+    (m_b, m_r) = _last_two(j("mainstays.txt"), ["recalled", "unrel_foreign"])
+    (p_b, p_r) = _last_two(j("pairs.txt"), ["precision", "recall"])
+    bars = [
+        ("M1", f"multi recall {br:.1f} -> {fr:.1f} (need +1.0)", fr - br >= 1.0 - 1e-9),
+        ("M2", f"multi precision {bp:.1f} -> {fp:.1f} (need >= base-0.5)", fp >= bp - 0.5 - 1e-9),
+        ("M3", f"single recall {sbr:.1f} -> {sfr:.1f}, precision {sbp:.1f} -> {sfp:.1f} (|d|<=0.1), base_lines_kept {'yes' if kept else 'no'}",
+         abs(sfr - sbr) <= 0.1 + 1e-9 and abs(sfp - sbp) <= 0.1 + 1e-9 and kept),
+        ("M4", f"mainstays recalled {m_b[0]:.0f} -> {m_r[0]:.0f}, unrel_foreign {m_b[1]:.0f} -> {m_r[1]:.0f}; pairs precision {p_b[0]:.3f} -> {p_r[0]:.3f}, recall {p_b[1]:.3f} -> {p_r[1]:.3f} (>= base-0.01)",
+         m_r[0] >= m_b[0] and m_r[1] <= m_b[1] and p_r[0] >= p_b[0] - 0.01 - 1e-9 and p_r[1] >= p_b[1] - 0.01 - 1e-9),
+    ]
+    lines = [f"FAMASM {env.get('SAMPLE', '?')} ({env.get('SPECIES', '?')})"]
+    for name, text, ok in bars:
+        lines.append(f"{name} {'PASS' if ok else 'FAIL'}: {text}")
+    lines.append(f"single_copy_identical {'yes' if single_ok else 'no'}")
+    for fn in ("gtf.stats.tsv", "pool.stats.tsv", "admit.stats.tsv", "lift.unmapped.tsv"):
+        if os.path.exists(j(fn)):
+            rows = [l.rstrip("\n").split("\t") for l in open(j(fn))]
+            if fn == "gtf.stats.tsv":
+                lines.append("gtf: " + ", ".join(f"{k}={v}" for k, v in zip(rows[0], rows[1])))
+            elif fn == "lift.unmapped.tsv":
+                lines.append(f"copies without a lift table: {len(rows) - 1}")
+            else:
+                tot = [sum(int(r[i]) for r in rows[1:]) for i in range(1, len(rows[0]))]
+                lines.append(f"{fn[:-10]}: families={len(rows) - 1}, " + ", ".join(f"{k}={v}" for k, v in zip(rows[0][1:], tot)))
+    lines.append("verdict " + ("PASS" if all(ok for _n, _t, ok in bars) else "FAIL"))
+    return "\n".join(lines) + "\n"
+
+
 def main():
     cmd, *a = sys.argv[1:]
     if cmd == "pool":
@@ -390,6 +479,8 @@ def main():
         admit(*a[:3])
     elif cmd == "gtf":
         gtf(*a[:4])
+    elif cmd == "score":
+        sys.stdout.write(score(a[0]))
     else:
         sys.exit(f"unknown command {cmd}")
 

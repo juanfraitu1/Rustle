@@ -197,3 +197,41 @@ def test_single_copy_untouched(tmp_path):
     (tmp_path / "out").mkdir()
     famasm.gtf(str(tmp_path / "out"), str(tmp_path / "base.gtf"), str(tmp_path / "copies.tsv"), str(tmp_path / "famasm.gtf"))
     assert (tmp_path / "famasm.gtf").read_bytes() == (tmp_path / "base.gtf").read_bytes()
+
+
+# ---- score -----------------------------------------------------------------------------------------------------
+def _score_setup(tmp_path, famasm_multi="12.5\t2000\t300\t15.0", single="12.9\t1000\t129\t12.9", base_kept=True,
+                 ms_run="110\t\t\t2", pairs_run="0.730\t0.745"):
+    r = tmp_path
+    (r / "copies.tsv").write_text(_COPIES_TSV)
+    (r / "base.gtf").write_text(_BASE)
+    extra = ('c1\tfamasm\ttranscript\t5101\t5400\t.\t+\t.\tgene_id "FAMASM_F1_2"; transcript_id "FAMASM_F1_2_1"; famasm "1";\n'
+             'c1\tfamasm\texon\t5101\t5200\t.\t+\t.\tgene_id "FAMASM_F1_2"; transcript_id "FAMASM_F1_2_1"; famasm "1";\n')
+    (r / "famasm.gtf").write_text((_BASE if base_kept else _BASE.replace("1101", "1102", 1)) + extra)
+    (r / "famasm.env").write_text(f"SAMPLE=t\nSPECIES=human\nPREFIX=x\nBASE_GTF={r / 'base.gtf'}\nCOPIES={r / 'copies.tsv'}\n")
+    (r / "strata.txt").write_text("reference multi-exon transcripts: {}\narm\tstratum\tref_tx\trecalled\trecall%\tqueries\t=\tprecision%\n"
+                                  "base\tsingle\t1000\t129\t12.9\t1000\t129\t12.9\nbase\tmulti\t1000\t110\t11.0\t2000\t280\t14.0\n"
+                                  f"famasm\tsingle\t1000\t129\t{single}\nfamasm\tmulti\t1000\t125\t{famasm_multi}\n")
+    (r / "mainstays.txt").write_text("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names\tannotated\trecalled_annot\n"
+                                     "base.tsv\tALL\t123\t108\t\t\t2\t\t131\t108\n" + f"famasm.fam.copies.tsv\tALL\t123\t{ms_run}\t\t131\t108\n")
+    (r / "pairs.txt").write_text("# level\nrun\tpred_pairs\tignored_noncoding\thit\tfalse\tof_which_related\tprecision\trecall\n"
+                                 "base.tsv\t2228\t49502\t1617\t611\t524\t0.726\t0.741\n" + f"famasm.fam.copies.tsv\t2000\t1\t1\t1\t1\t{pairs_run}\n")
+    (r / "gtf.stats.tsv").write_text("appended\talready_in_base\n1\t0\n")
+    return famasm.score(str(r))
+
+
+def test_score_pass(tmp_path):
+    v = _score_setup(tmp_path)
+    assert "M1 PASS" in v and "M2 PASS" in v and "M3 PASS" in v and "M4 PASS" in v and "verdict PASS" in v
+    assert "single_copy_identical yes" in v and "base_lines_kept yes" in v
+
+
+def test_score_fails_on_small_gain_and_lost_base_line(tmp_path):
+    v = _score_setup(tmp_path, famasm_multi="11.9\t2000\t300\t15.0")
+    assert "M1 FAIL" in v and "verdict FAIL" in v
+    v = _score_setup(tmp_path, base_kept=False)
+    assert "M3 FAIL" in v and "base_lines_kept no" in v
+    v = _score_setup(tmp_path, ms_run="107\t\t\t2")
+    assert "M4 FAIL" in v
+    v = _score_setup(tmp_path, pairs_run="0.710\t0.745")
+    assert "M4 FAIL" in v
