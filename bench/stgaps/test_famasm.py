@@ -246,7 +246,7 @@ def test_certificate_is_per_family(tmp_path):
     a = tmp_path / "x.assign.assignments.tsv"
     a.write_text(_ASG_HDR + "r1\tF2\t1\tassigned\t3\t1\nr1\tF1\t0\ttied\t0\tNA\nr2\tF1\t0\tassigned\t2\t1\n")
     cert = famasm.load_certified(str(a))
-    assert cert == {("F2", "r1"): "1", ("F1", "r2"): "1"}
+    assert cert == {("F2", "r1"): "1", ("F1", "r1"): None, ("F1", "r2"): "1"}
     pool = [("r1", "1", 1, ((1200, 1300),), 1100, 1400), ("r2", "1", 1, ((1200, 1300),), 1100, 1400)]
     lift = [("r1", "1", 1, "199-300", 0), ("r2", "1", 1, "199-300", 0)]
     rows, stats = famasm.admit_family("F1", pool, lift, cert, _COPIES, _REPS, _LIFTS)
@@ -278,3 +278,16 @@ def test_gtf_counts_span_outside_locus(tmp_path):
     out, stats = _gtf_setup(tmp_path, "2\t199-300\t4950-5050\twhole\t2\t4900\t5400\n")
     assert out == _BASE
     assert stats == "appended\talready_in_base\tspan_outside_locus\n0\t0\t1\n"
+
+
+def test_unique_primary_is_certified_by_placement():
+    # amendment 1: no assignment row + a single pool record (the primary) = minimap2 placed it without a rival
+    pool = [("r1", "2", 1, ((5200, 5300),), 5100, 5400), ("r2", "2", 1, ((5200, 5300),), 5150, 5450),
+            ("r3", "2", 1, ((5200, 5300),), 5150, 5450), ("r3", "1", 0, ((1200, 1300),), 1100, 1400)]   # r3 has a rival: not certified
+    lift = [("r1", "2", 1, "199-300", 0), ("r2", "2", 1, "199-300", 0), ("r3", "2", 1, "199-300", 0), ("r3", "1", 0, "199-300", 0)]
+    rows, stats = _admit_family(pool, lift, {})
+    assert rows == [("2", "199-300", "5200-5300", "whole", 2, 5100, 5450)]
+    assert stats["certified_by_placement"] == 2
+    # a row in the assignments table wins over placement
+    rows, stats = _admit_family(pool, lift, {"r1": "1"})
+    assert rows == [] and stats["certified_by_placement"] == 1

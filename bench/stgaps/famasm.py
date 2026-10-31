@@ -194,7 +194,7 @@ def read_liftrows(path):
 
 
 def load_certified(path):
-    """PREFIX.assign.assignments.tsv -> {(family_id, read): copy_idx} for status == assigned. One row per read x family: a read is
+    """PREFIX.assign.assignments.tsv -> {(family_id, read): copy_idx | None}; None = a row exists but is not assigned. One row per read x family: a read is
     certified in ONE family and tied in the others, so the key carries the family. copy_assign sorts copies and reports its own
     index in assigned_copy; the catalog's copy_idx is catalog_copy_idx (used when the column exists and is not NA)."""
     out = {}
@@ -208,10 +208,11 @@ def load_certified(path):
                 hdr = {k: i for i, k in enumerate(f)}
                 ci = hdr.get("catalog_copy_idx")
                 continue
+            key = (f[hdr["family_id"]], f[hdr["read_name"]])
             if f[hdr["status"]] != "assigned":
+                out.setdefault(key, None)      # contested (tied / ambiguous): never certified by placement either
                 continue
-            copy = f[ci] if ci is not None and f[ci] != "NA" else f[hdr["assigned_copy"]]
-            out[(f[hdr["family_id"]], f[hdr["read_name"]])] = copy
+            out[key] = f[ci] if ci is not None and f[ci] != "NA" else f[hdr["assigned_copy"]]
     return out
 
 
@@ -261,12 +262,20 @@ def admit_at_copy(chain, rows, min_reads=2):
 def admit_family(fam, pool_rows, lift_rows, certified, copies, reps, lifts, min_reads=2):
     """-> (rows, stats); row = (copy_idx, fam_chain_str, genomic_chain_str, via, certified_reads, span_start, span_end).
     certified = {(family_id, read): copy_idx} (load_certified). A family chain is tried at every copy with certified reads; a private chain only at its own."""
-    stats = dict(family_chains=0, admitted_whole=0, admitted_compat=0, certified_without_record=0, uninvertible=0)
+    stats = dict(family_chains=0, admitted_whole=0, admitted_compat=0, certified_without_record=0, uninvertible=0,
+                 certified_by_placement=0)
     rec_at = {(r[0], r[1]): r for r in pool_rows}            # (read, idx) -> pool row
     at_copy = defaultdict(list)                               # idx -> [(read, chain, s, e)] of certified reads with a record there
-    fam_reads = {r[0] for r in pool_rows}
-    for read in fam_reads:
+    recs_of = defaultdict(list)
+    for r in pool_rows:
+        recs_of[r[0]].append(r)
+    for read, recs in recs_of.items():
         c = certified.get((fam, read))
+        if (fam, read) not in certified and len(recs) == 1 and recs[0][2]:
+            # amendment 1: no assignment row and a single pool record (the primary, no secondary within 2% of the best AS):
+            # the aligner placed it without a rival, so the placement itself certifies the copy
+            c = recs[0][1]
+            stats["certified_by_placement"] += 1
         if c is None:
             continue
         r = rec_at.get((read, c))
@@ -313,7 +322,7 @@ def admit(out_dir, assignments_path, copies_path, min_reads=2):
     lifts = fw_layer.load_lift(os.path.join(out_dir, "map", "copies_vs_reps.paf"))
     certified = load_certified(assignments_path)
     os.makedirs(os.path.join(out_dir, "admit"), exist_ok=True)
-    keys = ["family_chains", "admitted_whole", "admitted_compat", "certified_without_record", "uninvertible"]
+    keys = ["family_chains", "admitted_whole", "admitted_compat", "certified_without_record", "uninvertible", "certified_by_placement"]
     with open(os.path.join(out_dir, "admit.stats.tsv"), "w") as st:
         st.write("family\t" + "\t".join(keys) + "\n")
         for fn in sorted(os.listdir(os.path.join(out_dir, "lift"))):

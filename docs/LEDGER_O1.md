@@ -9503,3 +9503,8 @@ the family gates (r1473 reads-x-junctions, r1475 chain-gate) and earlier (SKETCH
 copies), the only substrate where certificates can be checked against haplotypes. ADOPT as opt-in `--multicopy` on the assemble stage
 iff M1-M4 all PASS on HG002; otherwise a register row and the prototype stays in `bench/stgaps/`. Runs under
 `~/work/jfim/runs/famasm_{A119b,HG002}/` (`verdict.txt`). Register row 1479.
+**Amendment 1 (2026-10-31, before any FAMASM number; user's ruling):** a read with NO row in `PREFIX.assign.assignments.tsv` for the
+family and a SINGLE record in the family pool (its primary; no secondary within 2% of its best AS) is certified to that copy by its
+placement: minimap2 placed it without a rival, there is no ambiguity to adjudicate (the assign stage only writes rows for AS-tied
+molecules, so these reads would otherwise certify nothing). A read with a `tied` / `ambiguous` row, or with a good secondary in the
+pool, still needs an `assigned` row. Reported as `certified_by_placement` in `admit.stats.tsv`.
