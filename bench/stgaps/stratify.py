@@ -26,7 +26,8 @@ for l in open(paf):
     f = l.split("\t")
     t, qlen, qs, qe, tn, ts, te, nm, al = f[0], int(f[1]), int(f[2]), int(f[3]), f[5], int(f[7]), int(f[8]), int(f[9]), int(f[10])
     # identity = 1 - dv: a spliced PAF's block length (col 11) counts intron bases (Amendment 1 of the spec)
-    dv = next((float(x[5:]) for x in f[12:] if x.startswith("dv:f:")), 1.0)
+    # minimap2 writes dv:f (approximate) without -c and de:f (gap-compressed, from the base alignment) with -c
+    dv = next((float(x[5:]) for x in f[12:] if x.startswith(("dv:f:", "de:f:"))), 1.0)
     if t not in loc or 1 - dv < 0.95 or (qe - qs) < 0.8 * qlen:
         continue
     c, a, b = loc[t]
