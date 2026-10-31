@@ -58,3 +58,35 @@ def test_pool_keeps_one_record_per_copy_and_drops_bad_secondaries(tmp_path):
     stats = [l.rstrip("\n").split("\t") for l in open(out / "pool.stats.tsv")]
     assert stats[0] == ["family", "molecules", "records", "secondary_kept"]
     assert stats[1] == ["F1", "2", "3", "1"]
+
+
+# ---- lift ------------------------------------------------------------------------------------------------------
+# F1: copy 1 = c1:1000-2000 (representative, 10 reads), copy 2 = c1:5000-6000 (3 reads).
+_COPIES = {("F1", "1"): ("c1", 1000, 2000, 10), ("F1", "2"): ("c1", 5000, 6000, 3)}
+_REPS = {"F1": "1"}
+# copy 2 -> rep: first half on '+' (identity), second half on '-' (reversed).
+_LIFTS = {("F1", "2"): ([0, 500], [(0, 500, 0, "+"), (500, 1000, 500, "-")])}
+
+
+def test_private_junction_admits_only_at_own_copy():
+    lifts = {("F1", "2"): ([0], [(0, 500, 0, "+")])}   # only the first 500 bp of copy 2 align
+    rows = [("r1", "2", 1, ((5200, 5300),)), ("r2", "2", 1, ((5700, 5800),))]
+    out = famasm.lift_rows(_COPIES, _REPS, lifts, "F1", rows)
+    assert out[0] == ("r1", "2", 1, "199-300", 0)
+    assert out[1][3].startswith("c2:") and out[1][4] == 1
+
+
+def test_missing_lift_is_private(tmp_path):
+    out = famasm.lift_rows(_COPIES, _REPS, {}, "F1", [("r1", "2", 1, ((5200, 5300),))])
+    assert out == [("r1", "2", 1, "c2:5200-5300", 1)]
+
+
+def test_inverse_lift_roundtrip():
+    chain = ((5200, 5300), (5700, 5800))
+    fam = famasm.fw_layer.fam_chain(_COPIES, _REPS, _LIFTS, "F1", "2", chain)
+    assert fam == ((199, 300), (699, 800))
+    assert famasm.inverse_lift(_LIFTS, _COPIES, _REPS, "F1", "2", fam) == chain
+    # at the representative the inverse is a shift
+    assert famasm.inverse_lift(_LIFTS, _COPIES, _REPS, "F1", "1", ((199, 300),)) == ((1200, 1300),)
+    # a family junction outside every aligned column has no placement
+    assert famasm.inverse_lift({("F1", "2"): ([0], [(0, 500, 0, "+")])}, _COPIES, _REPS, "F1", "2", ((699, 800),)) is None
