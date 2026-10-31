@@ -9449,3 +9449,20 @@ one, the retrocopy pick that r1270 showed is wrong by PSVs. Genome-wide it decid
 of decisions. Reading for the advisor: the 10-AS rule is not "wrong most of the time"; it agrees with minimap2 on about nine decided reads
 in ten, abstains on one read in five at family loci, and is systematically wrong in one named class (spliced read, unspliced higher-AS
 rival on a processed copy) that is 7-12% of its family-scope decisions. The classes are printed by `tie_ms_vs_as.py` on every run from now on.
+
+### ISOCON-GORILLA RESULT (2026-10-31, register 1478; `~/work/jfim/runs/isocon_OR6737/{targets.tsv,pools,isocon,isocon.gtf,score.txt,sam}`, Slurm 4399147)
+All 34 IsoCon runs finished (7-69 s each on their alignment-defined pools: LRPAP1 4,652 reads, JMJD7-PLA2G4B 928, MAPKBP1 443, SPTBN5 387,
+single-copy genes 52-1,625); 760 candidates placed by minimap2 splice:hq.
+| class | expressed targets | rustle modeled / junc prec / tx | StringTie | FLAIR | IsoCon | verdict on IsoCon |
+|---|---|---|---|---|---|---|
+| multi-copy (4 Yoo families, 49 copies) | 30 | **27** / 0.58 / 131 | 28 / 0.59 / 155 | 23 / 0.51 / 116 | **20** / 0.61 / 208 | **WORSE** (fewer copies) |
+| single-copy (30 genes) | 30 | **30** / 0.83 / 168 | 29 / 0.83 / 145 | 30 / 0.67 / 235 | **27** / 0.88 / 300 | **WORSE** by the rule (fewer targets); junction precision +0.05 |
+(junction precision = transcript-weighted over the class). Per family: LRPAP1 IsoCon 10 of 11 copies with 142 candidates (ours 11 / 44),
+JMJD7-PLA2G4B 9 of 17 (ours 15), MAPKBP1 1 of 1 at precision 0.00 (ours 0.93), SPTBN5 0 (nobody but StringTie). Single-copy misses:
+PPARA, CD80, SHISA2 (52-179 reads; IsoCon emits nothing). `placed_ambiguous` (candidate's primary has a rival within 10 AS): LRPAP1
+10 of 155 (6%), MAPKBP1 6 of 15 (40%), JMJD7-PLA2G4B 17 of 41 (41%), SPTBN5 6 of 13 (46%): a third to a half of IsoCon's multi-copy
+candidates are not copy-specific reconstructions by the Eichler window, and none of the LRPAP1 / JMJD7 / SPTBN5 candidates has a single
+placement. Reading: IsoCon, given the same reads, produces 1.6-1.8x as many transcripts as we do with slightly cleaner junctions on
+single-copy genes, but models fewer targets in both classes, and on multi-copy families its candidates are consensus sequences that often
+cannot be placed on one copy. "Truly de novo" buys nothing on copy recovery here; the comparison is of reconstruction given the SAME
+alignment-defined pools (IsoCon has no read-discovery step of its own at genome scale). Descriptive, no design change.
