@@ -9539,3 +9539,19 @@ enough at 2 reads with placement-certified primaries. Per the registered rule th
 prototype stays in `bench/stgaps/`. Dev A119b (job 4399302, assign stage still running at 09:17) is reported below when it ends; it
 cannot change the verdict. Next question, if asked: the same mode with a stricter certificate (whole-chain reads >= 3, or only
 `assigned` rows, no placement certificates) scored on A119b only, since HG002 is now spent for this question too.
+
+### FAMASM dev result (2026-10-31, A119b, job 4401277, `~/famasm_A119b_home/verdict.txt`; reported, not judged): FAIL on the same bars
+
+| bar | BASE | FAMASM | verdict |
+|---|---|---|---|
+| M1 multi-copy recall | 18.6 (1,917 / 10,283) | 19.3 (1,986) | FAIL (+0.7 < 1.0) |
+| M2 multi-copy precision | 12.7 (15,095 queries) | 8.0 (24,901) | FAIL |
+| M3 single-copy recall / precision | 22.2 / 19.8 | 22.2 / 19.1 | FAIL (precision -0.7; lines kept) |
+| M4 mainstays recalled / unrel_foreign | 108 / 2 | 108 / 1 | PASS |
+| M4 pairs precision / recall | 0.726 / 0.741 | 0.737 / 0.749 | PASS |
+
+1,565 families, 4.45 M molecules pooled, 39,075 family chains, 92,228 admitted whole / 677 compat, 1,839,527 certified by placement;
+21,262 transcripts appended (23,715 already in BASE, 47,928 admissions outside their copy's locus); 1,450 copies without a lift table.
+Same shape as HG002: a small recall gain (+69 multi-copy, +102 single-copy matches) bought with ~10 k unmatched transcripts per
+stratum; families improve slightly. The assign stage took 10.75 h on 72 cores (job 4399302 hit the 12 h wall in pool; famasm steps
+rerun with the assign product; the second rerun moved to `$HOME` because the /home/atuin group file quota was full).
