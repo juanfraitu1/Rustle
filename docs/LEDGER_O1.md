@@ -9100,6 +9100,33 @@ identity) and `--same-chrom` (every touched member on both sides on one chromoso
   PCDHB). It is a candidate second rule, not adopted: it was tuned on A119b dev and must be pre-registered on HG002 with the
   usual bars before it enters the family stage. Proposed registered arm: id 0.7, cov 0.5, rbh + chr, frac 0.5.
 
+### Protein reconciler on the DE NOVO families (2026-10-30 run, read 2026-11-01; `~/work/jfim/runs/protlayer_dn/`, missing arm `~/protlayer_dn_home/`; register 1480)
+
+Same `protlayer.py` rule applied annotation-free (`--members all`) to the shipped A119b de novo catalog (`a1.fam.copies.tsv`, 14,115 loci in
+1,690 families; translated all-vs-all 42 GB, reused). The first sbatch's `/usr/bin/time` line failed on the node, so the proposed registered
+arm (id 0.7, cov 0.5, rbh + chr, frac 0.5) did not run on 10-30; rerun 2026-11-01 (job 4403277) from the same alignments. Dev only (A119b).
+
+| arm (cov 0.5, frac 0.5) | family pairs passing gates / merges | Compara P / R | seq P / R @0.85 | mainstays complete / unrel. |
+|---|---|---|---|---|
+| base de novo | - | 0.774 / 0.681 | 0.617 / 0.617 | 103/123, 0 |
+| id 0.4, no gate | 1126 / 126 | 0.350 / 0.702 | 0.342 / 0.621 | 103, 0 |
+| id 0.4, chr | 231 / 49 | 0.527 / 0.698 | 0.512 / 0.617 | 103, 0 |
+| id 0.4, rbh | 55 / 31 | 0.751 / 0.683 | 0.606 / 0.617 | 103, 0 |
+| id 0.4, rbh + chr | 28 / 16 | 0.766 / 0.683 | 0.611 / 0.617 | 103, 0 |
+| id 0.7, no gate | 728 / 79 | 0.686 / 0.687 | 0.561 / 0.621 | 103, 0 |
+| id 0.7, chr | 73 / 25 | 0.742 / 0.684 | 0.604 / 0.617 | 103, 0 |
+| id 0.7, rbh | 32 / 15 | 0.763 / 0.682 | 0.613 / 0.617 | 103, 0 |
+| **id 0.7, rbh + chr (proposed arm)** | 18 / 6 | 0.774 / 0.682 | 0.616 / 0.617 | 103, 0 |
+
+- Every arm leaves all fourteen mainstay rows byte-identical (GOLGA8 9/13 in 3, GOLGA6L 4/10 in 4, SPATA31 4/8 in 2, NPIP 15/20 in 5).
+  The proposed arm merges 6 family pairs (18 edges pass, mostly 2-locus families on chr11/chr19 with 1-6 hits) for Compara +2 hit pairs,
+  +1 false, sequence pairs +8 predicted, 0 new hits.
+- **Reading.** On de novo loci the protein layer has no reconciling power; what it joined on the guided sketch (GOLGA8N/O, KRTAP, IFNA,
+  PCDHB sub-clusters) is here either already one de novo family or not present as separately assembled loci. The de novo families' open
+  mainstay losses (GOLGA8, GOLGA6L, SPATA31, NPIP) are locus-assembly and nucleotide-edge losses, not protein-drift losses. NOT pursued
+  further; no HG002 registration (nothing to register: the dev effect is 0.000 / +0.001). The sketch-side proposal (Specific protein
+  reconciler above) stands as recorded, unregistered.
+
 ## PREREG SEMIGUIDED (2026-10-30): semi-guided families = de novo families + silent copies confirmed by the seed locus (user: "Lets focus on implementing the semi-guided mode, notice that in the artifact for CDY2B for example, if we used the secondaries we would be able to find at least part of the locus")
 Motivation (A119b, mainstay page v17): CDY2B has 24 primary reads, none spliced, so no assembled locus and no family membership; its 709
 secondary reads come from CDY1 / CDY1B primaries (166 of 171 traced at AS >= 0.8 x primary, 52 spliced). The same holds for CDY2A, XAGE,
