@@ -8302,3 +8302,27 @@ material for correlation clustering on the 35-63 mixed columns (O3's `copy_phasi
 Order of levers for this class: (1) `--union-certificate` on (judge the read against all its tied catalog copies at once; cheap,
 needs a prereg on A119b since it changes production rows); (2) candidates / semisec for the 40 outside-catalog bins; (3) correlation
 clustering of the tied reads at each bin into sub-copies (O3), then the certificate against the sub-copy consensus.
+
+## PREREG O2 LEVERS (2026-11-01, register 1481; dev A119b; runs `~/o2levers_A119b/`, scorer `bench/o2levers/levers_score.py`)
+Follow-up of the 2026-10-31 decomposition: of A119b's 212,176 exact-AS-tied reads 4,331 are assigned, 156,703 fail the origin
+certificate, and in the 4 debug families 24,298 well-aligned (< 5% substitutions) rejected reads tie outside the catalog (83-94%) or
+sit in another family's copy (75% of their primaries). Two existing, never-run-at-scale levers, each one arm, both on the shipped A119b
+base (`a1.fam.copies.*`, `a1.regions.txt`, the base assign command of `rustle_pipeline.sh stage_assign`):
+- **U (union certificate)**: `copy_assign ... --union-certificate` (register 1092/1093), one certificate over every tied family's copies
+  plus outside pseudo-copies; otherwise the base command byte for byte.
+- **C (candidates)**: `rustle_pipeline.sh candidates` (opt-in since 2026-10-02, R14) then `assign --candidates` (the two-run split):
+  candidate copies from each family's own read net, flagged at >= 6 reads, nets realigned to the augmented genome.
+**Scoring, written before any run** (`levers_score.py`; DISTINCT READS, one bucket per read by precedence assigned > weak >
+origin_rejected > orphan > tied; this precedence recounts the base as assigned 4,331 / weak 11,116 / origin_rejected 156,703 /
+orphan 9,242 / tied 30,784, and base reads assigned in >= 2 families = 1,613, unique-mapper agreement 412/1147 = 35.9%; the
+< 5% class `~/o2diag/a1.lt5.names` = 24,298 reads, 20,899 with a row: 986 assigned, 149 weak, 19,764 origin-rejected).
+**Bars** (PASS = all of an arm's bars):
+- U1 assigned reads >= 4,331; U2 reads assigned in >= 2 families = 0 (the double claim the union exists to cure); U3 unique-mapper
+  agreement >= 35.9%; U4 lt5 assigned >= 986.
+- C1 >= 1 flagged candidate; C2 lt5 rescued >= 25% of 20,899 (rescued = assigned row on a `cand_` copy OR realigned primary on a
+  `cand_` contig of `a1.aug.bam`, i.e. the read left the tie); C3 assigned reads >= 4,331; C4 unique-mapper agreement >= 35.9%.
+**Consequence.** A119b is dev: a PASS proposes the lever for an HG002 registration (`--union-certificate` default; `--candidates` in
+`all`), a FAIL closes it as a default and records the counts. Reported either way: the bucket table per arm, the lt5 block, flagged
+candidates and their families, assigned rows on candidates, run time. Each arm is one spr1tb job (`union.sbatch`, `cand.sbatch`,
+24 h, `--region-threads 8`).
+
