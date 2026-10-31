@@ -9472,3 +9472,34 @@ stands, and the human number is reported as the low end); intron count differs o
 Genome-wide 186,498 of 5,829,738 (3.2%). Eichler rule: decides 83.4% (262,233), pick = primary on 97.7%, picks an unspliced record over a
 spliced ms-best one on 2.1% of decisions (5,395), undecided 16.6%. The retrocopy class is a smaller share in human than in gorilla
 (2.1% vs 6.8-11.9% of decisions), consistent with r1270's species pattern.
+
+## PREREG FAMASM (2026-10-31, registered before any FAMASM number): multi-copy assembly mode on top of the normal assembly
+Spec `docs/superpowers/specs/2026-10-31-multicopy-assembly-design.md`, plan `docs/superpowers/plans/2026-10-31-multicopy-assembly.md`,
+prototype `bench/stgaps/famasm.py` (`pool|lift|admit|gtf|score`) + driver `bench/stgaps/famasm_run.sh`. The advisor's ask: the
+assembler should borrow information across family members. The mode: per O1 family with >= 2 copies, pool the reads (primary records
+plus secondary records with AS >= 0.98 x the molecule's genome-wide best, `PREFIX.molecules.tsv`; one molecule once per family), lift
+every intron chain into the representative copy's coordinates (`fw_layer` lift tables, `minimap2 -x asm20 -c --cs` copies vs
+representative), call FAMILY chains by the pass-1 rule (>= 2 molecules over all copies; a chain with an unliftable junction is private
+to its copy), then ADMIT a family chain at copy c only with reads the assign stage CERTIFIED to c (`PREFIX.assign.assignments.tsv`,
+`status == assigned`, `assigned_copy == c`): `whole` = >= 2 certified reads carry the whole chain at c; `compat` = certified reads
+whose chains are consecutive runs of the chain's junctions, end-compatible (no exon into a neighbouring intron), cover every junction
+>= 2. Admission is judged in c's genomic coordinates (inverse lift of the family chain). FAMASM GTF = BASE verbatim + admitted
+(copy, chain) pairs absent from BASE on that contig (`gene_id FAMASM_<fam>_<idx>`, source `famasm`, attrs via/certified_reads);
+one-copy families and single-copy loci are byte-identical to BASE by construction.
+Strata: `bench/stgaps/stratify.py` (annotation-only copy status: a reference transcript is multi-copy when a minimap2 hit covers >= 80%
+at >= 95% identity off its own locus; `de:f` from the -c PAF, fixed today, both arms scored by the same rule). Scorer: gffcompare `=`
+on reference multi-exon transcripts, per stratum. BASE numbers known before this registration (they are BASE, not FAMASM):
+A119b base multi-copy recall 18.6% / precision 12.7% (10,283 multi-copy ref transcripts in 3,177 genes), single 22.2% / 19.8%;
+HG002 base multi 11.3% / 14.0% (15,175 in 3,918 genes), single 12.9% / 19.2%.
+Bars (spec Measurement, verbatim):
+- M1 gain: multi-copy recall FAMASM - BASE >= 1.0 point.
+- M2 precision: multi-copy precision FAMASM >= BASE - 0.5 point.
+- M3 single-copy untouched: every BASE line kept; single-copy recall / precision |FAMASM - BASE| <= 0.1 point (expected 0.0).
+- M4 families: `mcl_families --from-gtf famasm.gtf` rerun; mainstays recalled >= BASE and unrelated foreign <= BASE; pair precision
+  >= BASE - 0.01 and recall >= BASE - 0.01.
+- Descriptive: admitted chains by `via`, certified reads per chain, pools and lift coverage, chains with no reference transcript, runtime.
+Dev: human A119b (reported, not judged). **Held-out: HG002 Kinnex on the T2T Q100 paternal haplotype**, DISCLOSED prior use today for
+the family gates (r1473 reads-x-junctions, r1475 chain-gate) and earlier (SKETCH-SEQ-HG002); this is a new question (assembly at family
+copies), the only substrate where certificates can be checked against haplotypes. ADOPT as opt-in `--multicopy` on the assemble stage
+iff M1-M4 all PASS on HG002; otherwise a register row and the prototype stays in `bench/stgaps/`. Runs under
+`~/work/jfim/runs/famasm_{A119b,HG002}/` (`verdict.txt`). Register row 1479.
