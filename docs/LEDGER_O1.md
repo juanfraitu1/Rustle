@@ -9466,3 +9466,9 @@ placement. Reading: IsoCon, given the same reads, produces 1.6-1.8x as many tran
 single-copy genes, but models fewer targets in both classes, and on multi-copy families its candidates are consensus sequences that often
 cannot be placed on one copy. "Truly de novo" buys nothing on copy recovery here; the comparison is of reconstruction given the SAME
 alignment-defined pools (IsoCon has no read-discovery step of its own at genome scale). Descriptive, no design change.
+**A119b (human testis on CHM13, Slurm 4399108), appended to the r1477 result:** family scope 314,261 reads with >= 2 records; disagree 7,293
+(2.3%), AND distinct place AND outside the window 6,001 (**1.9%**, below the 5% bar; the rule was "either gorilla sample", so the verdict
+stands, and the human number is reported as the low end); intron count differs on 82% of disagreements, primary = ms-best on 90%.
+Genome-wide 186,498 of 5,829,738 (3.2%). Eichler rule: decides 83.4% (262,233), pick = primary on 97.7%, picks an unspliced record over a
+spliced ms-best one on 2.1% of decisions (5,395), undecided 16.6%. The retrocopy class is a smaller share in human than in gorilla
+(2.1% vs 6.8-11.9% of decisions), consistent with r1270's species pattern.
