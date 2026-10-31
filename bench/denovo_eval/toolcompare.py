@@ -16,6 +16,11 @@ if '--species' in a: i = a.index('--species'); del a[i:i + 2]
 G = F.load_ggo(F.load_cat()) if species == 'gorilla' else F.load_cat()
 idx = F.exon_index(G)
 pats = dict(F.GGO_MAINSTAYS) if species == 'gorilla' else {**F.MAINSTAYS, **F.YAGS}
+if '--targets' in a:  # PREREG ISOCON-GORILLA: a targets.tsv (isocon_targets.py) replaces the family patterns; each single-copy gene is its own 'family'
+    i = a.index('--targets'); tfile = a[i + 1]; del a[i:i + 2]
+    pats = {}; explicit = collections.defaultdict(set)
+    for l in list(open(tfile))[1:]:
+        t, cls, g = l.rstrip('\n').split('\t')[:3]; explicit[t].add(g)
 def is_member(d, rx):
     if species == 'gorilla': return bool(rx.search(d['name']) or rx.search(d.get('desc', '')))
     return bool(rx.match(d['name'])) and d['biotype'] == 'protein_coding'
@@ -24,6 +29,10 @@ for name, pat in pats.items():
     rx = re.compile(pat)
     for g, d in G.items():
         if is_member(d, rx): members[g] = name
+if '--targets' in sys.argv:
+    for t, gs in explicit.items():
+        for g in gs: members[g] = t
+    pats = {t: None for t in explicit}
 bounds = {g: ({e for _, e in G[g]['exons']}, {s for s, _ in G[g]['exons']}) for g in members}  # 0-based half-open blocks
 def scan(path):
     """gene -> dict(spliced, junc: Counter of (donor0, acceptor0))"""
