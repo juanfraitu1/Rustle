@@ -8285,3 +8285,20 @@ a spillover shadow is decided by the PSV certificate once the candidate is in th
 not by ms or AS: a spliced parent read aligns unspliced to a processed copy with a higher AS (r1270), so the score cannot tell.
 Next (not registered): run the candidates stage + `--candidates` assign on A119b, count how many of the 69 k < 5% reads obtain a
 scored competitor and how the certificate splits them (assigned to candidate / assigned to parent / tied).
+
+**Follow-up (same day, user: "how about ms, CIGAR, tags and clustering?"), the 24,298 distinct < 5% rejected reads of the four A119b
+debug families, all BAM records (1,224,394; 50 records per read, every read >= 20 records; acrocentric chr13/chr21 SD families).**
+Tags/CIGAR: primary spliced 70%; primary INSIDE a catalog copy of ANOTHER family 75% (MCL0 2,029, MCL22 1,646, MCL37 1,102, MCL2,
+MCL1, MCL7 ...; `primary_local` to the judging family 4%): the read was rejected family by family although its tied copies are all
+in the catalog; `--union-certificate` (one certificate over every tied copy across families, register 1092/1093) is OPT-IN and was
+off. ms vs AS: the primary is not the max-AS record for 54% of these reads (the r1270 class at scale). Primary `de`: <= 0.5% for
+10% only, 0.5-2% for 73%, > 2% for 17%: NO reference locus, the primary included, explains these reads at HiFi error. No cs/MD tags
+in the BAM (only NM/ms/AS/de), so mismatch columns need a realignment or pileup. Clustering by primary locus (20 kb bins): 91 bins
+with >= 5 reads hold 100% of the reads, 40 of them outside every catalog copy, 83 mostly spliced. Pileup of each of the three largest
+bins over its own reads (1,474 / 1,281 / 1,169 reads, ~17-19 k covered columns): columns where >= 80% of reads carry the alt allele
+5 / 0 / 0; 20-80% (mixed) 35 / 63 / 46; 2-20% 346 / 466 / 372. So a bin is NOT one consistent missing copy (no shared variant set)
+but a MIXTURE of several copies each 1-2% off the reference, i.e. the individual's own copy-number-variable SD paralogs: the
+material for correlation clustering on the 35-63 mixed columns (O3's `copy_phasing` engine), not for a single candidate locus.
+Order of levers for this class: (1) `--union-certificate` on (judge the read against all its tied catalog copies at once; cheap,
+needs a prereg on A119b since it changes production rows); (2) candidates / semisec for the 40 outside-catalog bins; (3) correlation
+clustering of the tied reads at each bin into sub-copies (O3), then the certificate against the sub-copy consensus.
