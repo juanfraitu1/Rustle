@@ -9508,3 +9508,34 @@ family and a SINGLE record in the family pool (its primary; no secondary within 
 placement: minimap2 placed it without a rival, there is no ambiguity to adjudicate (the assign stage only writes rows for AS-tied
 molecules, so these reads would otherwise certify nothing). A read with a `tied` / `ambiguous` row, or with a good secondary in the
 pool, still needs an `assigned` row. Reported as `certified_by_placement` in `admit.stats.tsv`.
+**Amendment 2 (2026-10-31, before any FAMASM number; first HG002 pass ended `verdict INVALID` in admit):** a junction of a read fetched
+at the representative that lies outside the representative's locus has no family coordinate (it lifted to a negative one, "-105775-32550",
+209,878 lift rows, and could not be parsed back); the chain is private to that copy, as an unaligned column already makes it at the
+other copies. `fw_layer.fam_chain`, commit c7998dd6, test `test_rep_junction_outside_locus_is_private`. Pool reused (`SKIP_POOL=1`).
+
+### FAMASM RESULT (2026-10-31, HG002 held-out, job 4399742; `~/work/jfim/runs/famasm_HG002/verdict.txt`): **FAIL** (M1, M4 PASS; M2, M3 FAIL)
+
+| bar | BASE | FAMASM | rule | verdict |
+|---|---|---|---|---|
+| M1 multi-copy recall | 11.3 (1,713 / 15,175) | 12.7 (1,932) | +1.0 pt | PASS |
+| M2 multi-copy precision | 14.0 (12,264 queries) | 8.5 (22,870 queries) | >= 13.5 | FAIL |
+| M3 single-copy recall / precision | 12.9 / 19.2 | 13.0 / 18.3 | abs d <= 0.1, BASE lines kept (yes) | FAIL (precision -0.9) |
+| M4 mainstays recalled / unrel_foreign | 26 / 1 | 26 / 1 | >= / <= | PASS |
+| M4 pairs precision / recall | 0.426 / 0.345 | 0.455 / 0.365 | >= BASE - 0.01 | PASS |
+
+What happened: 644 families with >= 2 copies, 3.77 M molecules pooled (7.17 M records, 3.73 M secondaries kept), 24,476 family chains;
+63,175 chains admitted `whole`, 204 `compat`; 36,778 uninvertible at the target copy; 457 copies had no lift table (not aligned to the
+representative at asm20). After de-duplication against BASE (16,189 already present) 20,038 transcripts were appended, 27,152
+admissions fell outside their copy's locus. The 20,038 appended transcripts recalled 219 more multi-copy reference transcripts and 153
+more single-copy ones; the rest are unmatched queries, so multi-copy precision fell from 14.0 to 8.5 and single-copy precision from 19.2
+to 18.3 (the single-copy GTF lines are byte-identical; appended chains at family loci overlap single-copy reference genes in the strata
+map). Certification: 2,681,740 of the 3.77 M molecules were certified by placement (amendment 1), i.e. the assign stage's AS-tied rows
+decide only the contested minority; the AS-tied ceiling on M1 stated at registration did not bind (M1 passed). Families got better
+(pairs +0.03 / +0.02) because the appended transcripts carry family evidence into `mcl_families`, but that is M4, not the question.
+
+Reading: borrowing chains across copies finds real transcripts (M1 +1.4 pt, the first positive multi-copy recall gain in this ledger) at
+the cost of five unmatched transcripts per matched one; the certificate (>= 2 reads certified to the copy, whole chain) is not selective
+enough at 2 reads with placement-certified primaries. Per the registered rule the mode is NOT adopted: no `--multicopy` port; the
+prototype stays in `bench/stgaps/`. Dev A119b (job 4399302, assign stage still running at 09:17) is reported below when it ends; it
+cannot change the verdict. Next question, if asked: the same mode with a stricter certificate (whole-chain reads >= 3, or only
+`assigned` rows, no placement certificates) scored on A119b only, since HG002 is now spent for this question too.
