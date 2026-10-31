@@ -52,9 +52,10 @@ def test_pool_keeps_one_record_per_copy_and_drops_bad_secondaries(tmp_path):
     out = tmp_path / "out"
     famasm.pool(str(copies), str(tmp_path / "s.bam"), str(mols), str(out))
     rows = [l.rstrip("\n").split("\t") for l in open(out / "pool" / "F1.tsv")]
-    assert rows[0] == ["read", "copy_idx", "is_primary", "AS", "chain"]
+    assert rows[0] == ["read", "copy_idx", "is_primary", "AS", "chain", "ref_start", "ref_end"]
     body = sorted(rows[1:])
-    assert body == [["r1", "1", "1", "100", "1200-1500"], ["r1", "2", "0", "99", "5200-5500"], ["r2", "1", "1", "100", ""]]
+    assert body == [["r1", "1", "1", "100", "1200-1500", "1100", "1600"], ["r1", "2", "0", "99", "5200-5500", "5100", "5600"],
+                    ["r2", "1", "1", "100", "", "1100", "1300"]]
     stats = [l.rstrip("\n").split("\t") for l in open(out / "pool.stats.tsv")]
     assert stats[0] == ["family", "molecules", "records", "secondary_kept"]
     assert stats[1] == ["F1", "2", "3", "1"]
@@ -90,3 +91,66 @@ def test_inverse_lift_roundtrip():
     assert famasm.inverse_lift(_LIFTS, _COPIES, _REPS, "F1", "1", ((199, 300),)) == ((1200, 1300),)
     # a family junction outside every aligned column has no placement
     assert famasm.inverse_lift({("F1", "2"): ([0], [(0, 500, 0, "+")])}, _COPIES, _REPS, "F1", "2", ((699, 800),)) is None
+
+
+# ---- admit -----------------------------------------------------------------------------------------------------
+J1, J2, J3 = (1200, 1300), (1400, 1500), (1600, 1700)
+
+
+def test_family_chain_floor_counts_molecules_over_copies():
+    rows = [("r1", "1", 1, "199-300", 0), ("r2", "2", 1, "199-300", 0), ("r3", "1", 1, "399-500", 0),
+            ("r4", "2", 1, "c2:5200-5300", 1), ("r5", "2", 0, "c2:5200-5300", 1)]
+    assert famasm.family_chains(rows) == {((199, 300),)}
+
+
+def test_admit_whole_needs_two_certified():
+    chain = (J1, J2)
+    two = [("r1", chain, 1100, 1800), ("r2", chain, 1150, 1750)]
+    assert famasm.admit_at_copy(chain, two) == "whole"
+    assert famasm.admit_at_copy(chain, two[:1]) is None
+
+
+def test_admit_compat_covers_every_junction_twice():
+    chain = (J1, J2, J3)
+    left = [("a", (J1, J2), 1100, 1550), ("b", (J1, J2), 1150, 1580)]
+    right = [("c", (J2, J3), 1350, 1800), ("d", (J2, J3), 1320, 1750)]
+    assert famasm.admit_at_copy(chain, left + right) == "compat"
+    assert famasm.admit_at_copy(chain, left + [("e", (J3,), 1550, 1800)]) is None
+    # end-incompatible: the read's first exon runs into chain's first intron
+    bad = [("c", (J2, J3), 1250, 1800), ("d", (J2, J3), 1320, 1750)]
+    assert famasm.admit_at_copy(chain, left + bad) is None
+    # a read whose junctions are not a consecutive run of chain's never counts
+    assert famasm.admit_at_copy(chain, left + [("f", (J1, J3), 1100, 1800), ("g", (J1, J3), 1100, 1800)]) is None
+
+
+def _admit_family(pool_rows, lift_rows, certified, lifts=_LIFTS):
+    return famasm.admit_family("F1", pool_rows, lift_rows, certified, _COPIES, _REPS, lifts)
+
+
+def test_chain_comes_from_certified_record():
+    # r1 and r2 certified to copy 2; records on copies 1 and 2 (same family chain 199-300).
+    pool = [("r1", "1", 1, ((1200, 1300),), 1100, 1400), ("r1", "2", 0, ((5200, 5300),), 5100, 5400),
+            ("r2", "1", 1, ((1200, 1300),), 1100, 1400), ("r2", "2", 0, ((5200, 5300),), 5100, 5400),
+            ("r3", "1", 1, ((1200, 1300),), 1100, 1400)]
+    lift = [("r1", "1", 1, "199-300", 0), ("r1", "2", 0, "199-300", 0), ("r2", "1", 1, "199-300", 0),
+            ("r2", "2", 0, "199-300", 0), ("r3", "1", 1, "199-300", 0)]
+    rows, stats = _admit_family(pool, lift, {"r1": "2", "r2": "2", "r3": "1"})
+    assert rows == [("2", "199-300", "5200-5300", "whole", 2, 5100, 5400)]
+    assert stats["certified_without_record"] == 0 and stats["family_chains"] == 1
+    # r3 certified to copy 2 but with a record on copy 1 only: counted, never used
+    rows, stats = _admit_family(pool, lift, {"r1": "2", "r2": "2", "r3": "2"})
+    assert rows[0][4] == 2 and stats["certified_without_record"] == 1
+
+
+def test_inverse_lift_dedups():
+    # synthetic lift where representative positions 199-300 and 1199-1300 both come from copy-2 positions 199-300
+    lifts = {("F1", "2"): ([0, 0], [(0, 500, 0, "+"), (0, 500, 1000, "+")])}
+    pool = [("r1", "2", 1, ((5200, 5300),), 5100, 5400), ("r2", "2", 1, ((5200, 5300),), 5150, 5450),
+            ("r3", "1", 1, ((1200, 1300),), 1100, 1400), ("r4", "1", 1, ((2200, 2300),), 2100, 2400),
+            ("r5", "1", 1, ((2200, 2300),), 2150, 2450)]
+    lift = [("r1", "2", 1, "199-300", 0), ("r2", "2", 1, "199-300", 0), ("r3", "1", 1, "199-300", 0),
+            ("r4", "1", 1, "1199-1300", 0), ("r5", "1", 1, "1199-1300", 0)]
+    rows, stats = _admit_family(pool, lift, {"r1": "2", "r2": "2", "r3": "1", "r4": "1", "r5": "1"}, lifts)
+    at2 = [r for r in rows if r[0] == "2"]
+    assert len(at2) == 1 and at2[0][2] == "5200-5300" and at2[0][4] == 2 and at2[0][1] == "1199-1300;199-300"
+    assert stats["uninvertible"] == 0
