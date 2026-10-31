@@ -194,7 +194,9 @@ def read_liftrows(path):
 
 
 def load_certified(path):
-    """PREFIX.assignments.tsv -> {read: assigned_copy} for status == assigned."""
+    """PREFIX.assign.assignments.tsv -> {(family_id, read): copy_idx} for status == assigned. One row per read x family: a read is
+    certified in ONE family and tied in the others, so the key carries the family. copy_assign sorts copies and reports its own
+    index in assigned_copy; the catalog's copy_idx is catalog_copy_idx (used when the column exists and is not NA)."""
     out = {}
     with open(path) as fh:
         hdr = None
@@ -204,9 +206,12 @@ def load_certified(path):
             f = line.rstrip("\n").split("\t")
             if hdr is None:
                 hdr = {k: i for i, k in enumerate(f)}
+                ci = hdr.get("catalog_copy_idx")
                 continue
-            if f[hdr["status"]] == "assigned":
-                out[f[hdr["read_name"]]] = f[hdr["assigned_copy"]]
+            if f[hdr["status"]] != "assigned":
+                continue
+            copy = f[ci] if ci is not None and f[ci] != "NA" else f[hdr["assigned_copy"]]
+            out[(f[hdr["family_id"]], f[hdr["read_name"]])] = copy
     return out
 
 
@@ -255,13 +260,13 @@ def admit_at_copy(chain, rows, min_reads=2):
 
 def admit_family(fam, pool_rows, lift_rows, certified, copies, reps, lifts, min_reads=2):
     """-> (rows, stats); row = (copy_idx, fam_chain_str, genomic_chain_str, via, certified_reads, span_start, span_end).
-    certified = {read: copy_idx}. A family chain is tried at every copy with certified reads; a private chain only at its own."""
+    certified = {(family_id, read): copy_idx} (load_certified). A family chain is tried at every copy with certified reads; a private chain only at its own."""
     stats = dict(family_chains=0, admitted_whole=0, admitted_compat=0, certified_without_record=0, uninvertible=0)
     rec_at = {(r[0], r[1]): r for r in pool_rows}            # (read, idx) -> pool row
     at_copy = defaultdict(list)                               # idx -> [(read, chain, s, e)] of certified reads with a record there
     fam_reads = {r[0] for r in pool_rows}
     for read in fam_reads:
-        c = certified.get(read)
+        c = certified.get((fam, read))
         if c is None:
             continue
         r = rec_at.get((read, c))
@@ -350,7 +355,7 @@ def gtf(out_dir, base_gtf, copies_path, out_gtf):
     strands = copy_strands(copies_path)
     base_chains = {(c, chain) for c, _s, _e, chain in fw_layer.gtf_tx(base_gtf).values()}
     adir = os.path.join(out_dir, "admit")
-    appended = already = 0
+    appended = already = outside = 0
     with open(out_gtf, "wb") as w:
         with open(base_gtf, "rb") as fh:
             for line in fh:
@@ -369,6 +374,7 @@ def gtf(out_dir, base_gtf, copies_path, out_gtf):
                     s, e = max(int(s), a), min(int(e), b)
                     ex = chain_exons(chain, s, e)
                     if any(x > y for x, y in ex):
+                        outside += 1
                         continue
                     n += 1
                     st = strands.get((fam, idx), ".")
@@ -379,7 +385,7 @@ def gtf(out_dir, base_gtf, copies_path, out_gtf):
                         w.write(f"{chrom}\tfamasm\texon\t{x}\t{y}\t.\t{st}\t.\t{attrs} exon_number \"{i}\";\n".encode())
                     appended += 1
     with open(os.path.join(out_dir, "gtf.stats.tsv"), "w") as w:
-        w.write(f"appended\talready_in_base\n{appended}\t{already}\n")
+        w.write(f"appended\talready_in_base\tspan_outside_locus\n{appended}\t{already}\t{outside}\n")
 
 
 def _strata(path):
@@ -392,8 +398,9 @@ def _strata(path):
     return out
 
 
-def _last_two(path, cols):
-    """first and last data row of a mainstay/pair table (BASE then run) -> two tuples of the named columns."""
+def _base_and_run(path, cols, family=None):
+    """mainstay/pair table -> (BASE, run) tuples of the named columns: the first and the last data row, restricted to
+    `family == family` rows when given (mainstay_score prints one row per family pattern then ALL, per run)."""
     rows, hdr = [], None
     for l in open(path):
         if l[0] == "#":
@@ -402,7 +409,8 @@ def _last_two(path, cols):
         if hdr is None:
             hdr = {k: i for i, k in enumerate(f)}
             continue
-        rows.append(f)
+        if family is None or f[hdr["family"]] == family:
+            rows.append(f)
     return [tuple(float(r[hdr[c]] or 0) for c in cols) for r in (rows[0], rows[-1])]
 
 
@@ -436,8 +444,8 @@ def score(run_dir):
         if not any(a <= x and y <= b for a, b in multi_loci.get(f[0], ())):
             single_ok = False
             break
-    (m_b, m_r) = _last_two(j("mainstays.txt"), ["recalled", "unrel_foreign"])
-    (p_b, p_r) = _last_two(j("pairs.txt"), ["precision", "recall"])
+    (m_b, m_r) = _base_and_run(j("mainstays.txt"), ["recalled", "unrel_foreign"], family="ALL")
+    (p_b, p_r) = _base_and_run(j("pairs.txt"), ["precision", "recall"])
     bars = [
         ("M1", f"multi recall {br:.1f} -> {fr:.1f} (need +1.0)", fr - br >= 1.0 - 1e-9),
         ("M2", f"multi precision {bp:.1f} -> {fp:.1f} (need >= base-0.5)", fp >= bp - 0.5 - 1e-9),

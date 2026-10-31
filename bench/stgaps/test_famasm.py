@@ -124,7 +124,7 @@ def test_admit_compat_covers_every_junction_twice():
 
 
 def _admit_family(pool_rows, lift_rows, certified, lifts=_LIFTS):
-    return famasm.admit_family("F1", pool_rows, lift_rows, certified, _COPIES, _REPS, lifts)
+    return famasm.admit_family("F1", pool_rows, lift_rows, {("F1", r): c for r, c in certified.items()}, _COPIES, _REPS, lifts)
 
 
 def test_chain_comes_from_certified_record():
@@ -177,7 +177,7 @@ def _gtf_setup(tmp_path, admit_rows):
 def test_no_duplicate_of_base(tmp_path):
     out, stats = _gtf_setup(tmp_path, "1\t199-300\t1200-1300\twhole\t2\t1100\t1400\n")
     assert out == _BASE
-    assert stats == "appended\talready_in_base\n0\t1\n"
+    assert stats == "appended\talready_in_base\tspan_outside_locus\n0\t1\t0\n"
 
 
 def test_base_lines_verbatim(tmp_path):
@@ -188,7 +188,7 @@ def test_base_lines_verbatim(tmp_path):
                                                   ["c1", "famasm", "exon", "5101", "5200", ".", "+", "."],
                                                   ["c1", "famasm", "exon", "5301", "5400", ".", "+", "."]]
     assert 'gene_id "FAMASM_F1_2"; transcript_id "FAMASM_F1_2_1"; reads "2"; famasm "1"; family "F1"; via "whole"; certified_reads "2";' in tail[0]
-    assert stats == "appended\talready_in_base\n1\t0\n"
+    assert stats == "appended\talready_in_base\tspan_outside_locus\n1\t0\t0\n"
 
 
 def test_single_copy_untouched(tmp_path):
@@ -216,7 +216,7 @@ def _score_setup(tmp_path, famasm_multi="12.5\t2000\t300\t15.0", single="12.9\t1
                                      "base.tsv\tALL\t123\t108\t\t\t2\t\t131\t108\n" + f"famasm.fam.copies.tsv\tALL\t123\t{ms_run}\t\t131\t108\n")
     (r / "pairs.txt").write_text("# level\nrun\tpred_pairs\tignored_noncoding\thit\tfalse\tof_which_related\tprecision\trecall\n"
                                  "base.tsv\t2228\t49502\t1617\t611\t524\t0.726\t0.741\n" + f"famasm.fam.copies.tsv\t2000\t1\t1\t1\t1\t{pairs_run}\n")
-    (r / "gtf.stats.tsv").write_text("appended\talready_in_base\n1\t0\n")
+    (r / "gtf.stats.tsv").write_text("appended\talready_in_base\tspan_outside_locus\n1\t0\t0\n")
     return famasm.score(str(r))
 
 
@@ -235,3 +235,46 @@ def test_score_fails_on_small_gain_and_lost_base_line(tmp_path):
     assert "M4 FAIL" in v
     v = _score_setup(tmp_path, pairs_run="0.710\t0.745")
     assert "M4 FAIL" in v
+
+
+# ---- review fix pass -------------------------------------------------------------------------------------------
+_ASG_HDR = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tcatalog_copy_idx\n"
+
+
+def test_certificate_is_per_family(tmp_path):
+    # r1 is certified in F2 (copy 1) and only tied in F1: F1 admits nothing on it
+    a = tmp_path / "x.assign.assignments.tsv"
+    a.write_text(_ASG_HDR + "r1\tF2\t1\tassigned\t3\t1\nr1\tF1\t0\ttied\t0\tNA\nr2\tF1\t0\tassigned\t2\t1\n")
+    cert = famasm.load_certified(str(a))
+    assert cert == {("F2", "r1"): "1", ("F1", "r2"): "1"}
+    pool = [("r1", "1", 1, ((1200, 1300),), 1100, 1400), ("r2", "1", 1, ((1200, 1300),), 1100, 1400)]
+    lift = [("r1", "1", 1, "199-300", 0), ("r2", "1", 1, "199-300", 0)]
+    rows, stats = famasm.admit_family("F1", pool, lift, cert, _COPIES, _REPS, _LIFTS)
+    assert rows == [] and stats["family_chains"] == 1
+
+
+def test_load_certified_uses_catalog_copy_idx(tmp_path):
+    # copy_assign sorts copies and reports its own index in assigned_copy; the catalog's copy_idx is catalog_copy_idx
+    a = tmp_path / "x.assign.assignments.tsv"
+    a.write_text(_ASG_HDR + "r1\tF1\t0\tassigned\t3\t2\n")
+    assert famasm.load_certified(str(a)) == {("F1", "r1"): "2"}
+    b = tmp_path / "old.tsv"   # a product without the catalog column falls back to assigned_copy
+    b.write_text("read_name\tfamily_id\tassigned_copy\tstatus\nr1\tF1\t0\tassigned\n")
+    assert famasm.load_certified(str(b)) == {("F1", "r1"): "0"}
+
+
+def test_score_m4_uses_all_rows(tmp_path):
+    v = _score_setup(tmp_path)
+    ms = tmp_path / "mainstays.txt"
+    ms.write_text("run\tfamily\texpressed\trecalled\tfamilies\trel_foreign\tunrel_foreign\tunrel_names\tannotated\trecalled_annot\n"
+                  "base.tsv\tNPIP\t20\t15\t5\t3\t0\t\t20\t15\nbase.tsv\tALL\t123\t108\t\t\t2\t\t131\t108\n"
+                  "famasm.fam.copies.tsv\tNPIP\t20\t15\t5\t3\t5\t\t20\t15\nfamasm.fam.copies.tsv\tALL\t123\t108\t\t\t2\t\t131\t108\n")
+    v = famasm.score(str(tmp_path))
+    assert "M4 PASS" in v and "recalled 108 -> 108" in v
+
+
+def test_gtf_counts_span_outside_locus(tmp_path):
+    # an admitted chain whose first intron starts before the copy locus leaves no exon after trimming: counted, not silently dropped
+    out, stats = _gtf_setup(tmp_path, "2\t199-300\t4950-5050\twhole\t2\t4900\t5400\n")
+    assert out == _BASE
+    assert stats == "appended\talready_in_base\tspan_outside_locus\n0\t0\t1\n"
