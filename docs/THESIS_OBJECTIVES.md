@@ -499,6 +499,9 @@ copy-specific *junctions* as distinguishing positions, adding to ΔNM to resolve
 near-silent (~2–6 genuine reads, see O2), so this is the design concept, not a demonstrated resolution.
 
 - Coverage/junction borrowing implemented in the VG pipeline.
+- **2026-10-31 FAMASM (register 1479):** a family-pooled assembly mode (chains defined over all copies, emitted at a copy only
+  with >= 2 reads certified to it) FAILED its held-out: multi-copy recall +1.4 pt on HG002 but precision 14.0 -> 8.5. Sharing
+  evidence across copies helps assignment, not assembly, at this certificate strength. Prototype `bench/stgaps/famasm.py`.
 - **The "intra-bundle splitter" blocker was a mirage (corrected 2026-06-01).** GOLGA6L7 is **antisense-silent**
   (0 own-strand reads; its 53+17 reads are +strand, belonging to an overlapping +strand lncRNA) — it correctly
   emits nothing; the "miss" was a gffcompare overlap artifact, not a tool bug. Checked on 3 genuine same-strand

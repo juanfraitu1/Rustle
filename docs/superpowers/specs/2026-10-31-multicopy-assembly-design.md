@@ -1,5 +1,7 @@
 # Multi-copy assembly mode: family assembly, then PSV placement (design, 2026-10-31)
 
+> **Outcome (2026-10-31):** implemented as `bench/stgaps/famasm.py`; held-out HG002 **FAIL** (M1 recall +1.4 PASS, M2 precision 14.0 -> 8.5 FAIL, M3 FAIL, M4 PASS); A119b dev FAIL on the same bars. Not adopted. Record: `docs/LEDGER_O1.md` `### FAMASM RESULT`, register 1479.
+
 User (2026-10-31, advisor's request): a multi-copy assembly mode that borrows information across family members, both reads and
 structure, running on top of the normal single-copy assembly. Approach A of the brainstorm was approved.
 

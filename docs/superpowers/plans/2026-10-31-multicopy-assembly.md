@@ -1,5 +1,7 @@
 # Multi-copy assembly mode (FAMASM) Implementation Plan
 
+> **Outcome (2026-10-31):** implemented as `bench/stgaps/famasm.py`; held-out HG002 **FAIL** (M1 recall +1.4 PASS, M2 precision 14.0 -> 8.5 FAIL, M3 FAIL, M4 PASS); A119b dev FAIL on the same bars. Not adopted. Record: `docs/LEDGER_O1.md` `### FAMASM RESULT`, register 1479.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A Python prototype that pools a family's reads across copies, defines chains family-wide, and emits a chain at a copy only where O2-certified reads support it, layered on the unchanged base GTF; scored on dev A119b and held-out HG002 under the spec's bars M1-M4.

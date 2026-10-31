@@ -167,3 +167,24 @@ Nine of the 10 multi "never built" are PCBP2 isoforms (NC_073234.2, − strand):
 **Reading.** The multi-copy loss is the same polish trade as the single-copy one (isoform fraction first), at a
 slightly higher rate. It is not a copy-specific failure: cross-copy suppression through a shared gene_id accounts
 for 11 transcripts. The polish dials were fitted for precision (register 853-873, 1066).
+
+## FAMASM multi-copy assembly mode (PREREG r1479, 2026-10-31; `famasm.py pool|lift|admit|gtf|score`, `famasm_run.sh`) — FAIL on held-out HG002
+
+Pool a family's reads (primary + secondaries with AS >= 0.98 x best from `PREFIX.molecules.tsv`), lift chains to the representative
+copy (`fw_layer`), family chains = >= 2 molecules over all copies, admit a chain at copy c only with >= 2 reads certified to c (assign
+stage `assigned` rows by `catalog_copy_idx`, or unique primaries by placement — amendment 1); FAMASM GTF = BASE verbatim + admitted chains.
+Scored by `stratify.py` (multi-copy stratum = reference transcripts with a >= 90% identity paralog), `mainstay_score.py`, `pairscore.py`.
+
+| bar | HG002 BASE -> FAMASM | A119b BASE -> FAMASM (dev) |
+|---|---|---|
+| M1 multi-copy recall (+1.0 pt) | 11.3 -> 12.7 PASS | 18.6 -> 19.3 FAIL |
+| M2 multi-copy precision (>= BASE - 0.5) | 14.0 -> 8.5 FAIL | 12.7 -> 8.0 FAIL |
+| M3 single-copy precision (abs d <= 0.1; lines kept) | 19.2 -> 18.3 FAIL | 19.8 -> 19.1 FAIL |
+| M4 mainstays / pairs (not below BASE) | 26/26, 0.426/0.345 -> 0.455/0.365 PASS | 108/108, 0.726/0.741 -> 0.737/0.749 PASS |
+| appended transcripts / new multi-copy matches | 20,038 / 219 | 21,262 / 69 |
+| molecules pooled / certified by placement | 3.77 M / 2.68 M | 4.45 M / 1.84 M |
+
+Not adopted (no `--multicopy` port). Lessons: the 2-read whole-chain certificate with placement-certified primaries is not
+selective; appended chains at family loci also overlap single-copy reference genes, so M3 moves although the single-copy GTF lines
+are byte-identical. Amendment 2 (before any number): junctions outside the representative's locus lift to negative coordinates and
+are private. Runs `~/work/jfim/runs/famasm_HG002/`, `~/famasm_A119b_home/`. Full record: `docs/LEDGER_O1.md` `## PREREG FAMASM`.

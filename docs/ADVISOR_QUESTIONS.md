@@ -23,7 +23,7 @@ Prepend to `docs/ADVISOR_QUESTIONS.md` (last committed f9a31f26, 2026-09-20). On
 | 1.5 "You would not show me the failures" | Register 841 rows, each with its killing number; the deleted verdict-tag note (11/22 = 50%). | Register ends at r1262 (MEMORY.md: 864 rows); its own header still reads "Last updated 2026-09-02, 836 data rows"; the verdict-tag note is unchanged in `seeded_family_definition.md` INDEX. | docs/NEGATIVE_RESULTS_REGISTER.md; docs/seeded_family_definition.md |
 | Q1 Method identifies multi-copy families | Triangle-supported leaders confirmed on 3 substrates, opt-in only; NPIP 31/31 present but in 4 clusters (25/3/2/1); gap = annotation content (F 0.955 vs 0.726). | Default restated 09-25 (§0★: exon-sum representatives, `mcl_families --min-exonic-bp 1 --min-shared-exon-frac 0.60`, cov-shorter 0.70, f1v2); leaders stay opt-in; NPIP at HEAD: 24/26 copies in one family, strict E-found 8/25 (r1250). | docs/seeded_family_definition.md §0★; docs/archive/2026-10/merged/DEFAULT_RESCORE_NPIP_2026-10-06.md; docs/NEGATIVE_RESULTS_REGISTER.md r1113 (de novo vs guided held-out) |
 | Q2 Real families or overfitting | Narrowly defensible; evidence covers the >=0.90 end; annotation-vs-annotation ceiling F 0.67-0.81; protein families F 0.977 (self-corrected once). | Soto under-merges, never over-merges: pairwise precision 0.711→0.888 (r945/946); protein edges extend pair coverage 80.0→93.8%, NOT adopted (r906); held-out operator bakeoff: nothing beats MCL (r922); CAT human annotation since 10-01. | docs/COVER_AND_JN_DEFINITION_2026-09-21.md; docs/PROTEIN_EDGES_RESULT_2026-09-20.md; docs/OPERATOR_BAKEOFF_HELDOUT_2026-09-20.md; docs/ANNOTATION_CAT_DEFAULT_2026-10-01.md |
-| Q3 Borrowing across the family | No (cross-copy borrowing inert/dead); shared multimappers are evidence; `E_c` splits large families (0.2406 to 0.5431). | unchanged for O1 (no new register row); the opt-in O3 `candidate_copies` stage pools a family's read net into consensus copies (10-03..05): borrowing lives in O3, not assembly. | docs/O3_STATUS.md (2026-10-04 header); docs/NEGATIVE_RESULTS_REGISTER.md r1247 |
+| Q3 Borrowing across the family | No (cross-copy borrowing inert/dead); shared multimappers are evidence; `E_c` splits large families (0.2406 to 0.5431). | Tried as an assembly mode on his request (FAMASM, r1479, 10-31): pool a family's reads, define chains family-wide, emit at a copy only with reads certified to it. Held-out HG002 FAIL: multi-copy recall +1.4 pt (the first positive gain) but precision 14.0 -> 8.5 (20 k appended transcripts for 219 new matches); A119b the same shape. Not adopted; borrowing stays in assignment / O3 `candidate_copies`. | docs/LEDGER_O1.md `### FAMASM RESULT`; docs/NEGATIVE_RESULTS_REGISTER.md r1479, r1247 |
 | Q4 Isoforms of near-identical copies | Genomic read-star separates structure from origin; identical isoforms tie at K = 0 (26 NPIP reads); 456 NPIP-proper reads abstain. | NPIP chain comparison 10-04: only 27% of multi-junction reads are an annotated chain (54% NNC); at A7/A8/LOC124907808 siblings share structure, so chains cannot separate copies, only PSVs (r1239). | docs/NPIP_CHAIN_COMPARISON_2026-10-04.md |
 | Q5 Tandem copies sharing a read | Three cases (K = 0 tie / clipped locus / nested units); 21-30% of the canonical-unannotated bin cross-species-confirmed, majority undetermined. | Tandem-copy simulation 09-24: minimap2 produces 0 cross-copy chains at identity 0.90-0.995 (tandem or interleaved); a cross-copy junction = chimeric molecule or broken splice site, never the aligner (r1095). | docs/PREREG_tandem_copy_sim_2026-09-24.md; docs/NEGATIVE_RESULTS_REGISTER.md r1095 |
 | Q6 Portability (families, tissues, apes) | Family/tissue yes; apes port structurally but NPIP fragmentation is universal (HSA 26/56, PTR 15/42, PPY 27/172). | famsim ladder (22 rungs) ran on human SNRPB and orangutan SPAG7; F1 bridge effective on both gorilla samples (r1145); gorilla TBC1D3 held-out: NPIP's loss mechanism does not transfer (r1155). | docs/FAMSIM_DESIGN_2026-10-02.md; docs/PREREG_ggo_tbc1d3_holdout_2026-09-29.md; docs/archive/2026-10/merged/HIERARCHY_DUPLICON_EXPANSION_2026-10-07.md |
@@ -228,7 +228,7 @@ which copy; show what yours adds.*
 | produce isoforms | ⭐ **exists**: `copy_assign --gtf` writes a FLAIR-style transcript+exon GTF of every de-novo isoform in the swept regions, IGV-loadable, annotation-free (intron-chain collapse + the canonical gate) |
 | say which copy each isoform belongs to | ⚖️ **partly**: each transcript carries `family_id`, `copy_index` and `multicopy "true"` — but that tag comes from **where the isoform assembled**, i.e. position, not from the read evidence |
 | resolve reads statistically when scores tie | ⭐ **exists and is the contribution**: the origin certificate + posterior, assign-or-abstain, never 1/k |
-| borrow information across family members | ⛔ **assembly-side borrowing is dead/inert** (register: `consensus.rs` has no call sites; `rescue_thin_loci_iterative` yields 0 copies in both shipped catalogs). Borrowing is live **only** in assignment |
+| borrow information across family members | ⛔ **assembly-side borrowing is dead/inert** (register: `consensus.rs` has no call sites; `rescue_thin_loci_iterative` yields 0 copies in both shipped catalogs); re-tried as FAMASM 10-31 (r1479): recall +1.4 pt on HG002, precision halved, FAIL. Borrowing is live **only** in assignment |
 | view it in IGV | ⭐ `bench/igv_tracks.py` writes `<out>.tagged.bam` with `cp:Z:<family>_c<idx>` per read — IGV "Group by tag" / "Color by tag" |
 
 ⟹ ⭐ **The one real gap is the join.** Isoforms are tagged by POSITION; reads are assigned to copies by
@@ -735,6 +735,14 @@ edges) **splits** large families that `E_r` fuses — **0.2406 → 0.5431** on t
 rule (§6bi). ⚠ Scoped: it reaches only near-identical arrays, and it is **not** a definition tier
 (§6ae: no depth threshold exists).
 
+**Re-asked and re-tried 2026-10-31 (FAMASM, register 1479).** The mode he described: pool a family's reads (primaries plus
+secondaries within 2% of the best score), define intron chains family-wide, and emit a chain at a copy only where >= 2 reads
+certified to that copy carry it. On the held-out HG002 it finds real transcripts (multi-copy recall 11.3 -> 12.7, the first
+positive multi-copy gain in the ledger) but appends ~20,000 transcripts for 219 new matches, so multi-copy precision falls
+14.0 -> 8.5 and single-copy precision 19.2 -> 18.3; A119b shows the same shape (recall +0.7, precision 12.7 -> 8.0). Families
+improve slightly (pairs +0.03). FAIL under the registered bars; not adopted; the prototype is `bench/stgaps/famasm.py`. The
+honest answer stays: borrowing helps ASSIGNMENT, and the certificate at 2 reads is not selective enough to make it help ASSEMBLY.
+
 ### Q4. "What about isoforms? Could two extremely similar copies produce the same isoforms?"
 
 **Answered by the genomic read-star (§6fd).** Each molecule is aligned splice-aware to each candidate's LOCUS,
@@ -1020,7 +1028,7 @@ chosen. `REPRODUCE.md` pins the **one** that is — three contigs, ~40 minutes, 
 |---|---|---|
 | Q1 method exists | ⭐ triangle-supported leaders (confirmed 3 substrates, opt-in, not yet default); NPIP 31/31 present but fragmented into 4 clusters; guided_pipeline as a human-only third path | §6kb–§6kg, §6hu, `seeded_family_definition.md` |
 | Q2 real vs overfit | ⚠ **narrowly** defensible; ⭐ annotation-vs-annotation ceiling F 0.67-0.81 bounds every F-score; protein-space families reproduce at goal bars (self-corrected once) | §6kl, §6ko, §6dy–§6dz, §6eh, Part 1 |
-| Q3 borrowing | ⛔ no (inert) / ⭐ `E_c` splits | §6bd, §6bi |
+| Q3 borrowing | ⛔ no (inert) / ⭐ `E_c` splits / ⛔ FAMASM assembly mode FAIL on HG002 (recall +1.4, precision halved; r1479) | §6bd, §6bi, LEDGER_O1 FAMASM RESULT |
 | Q4 isoforms | ⭐ structure and origin separated by the genomic read-star | §6fd |
 | Q5 tandem reads | ⭐ K = 0 tie / clipped locus / nested special case; ⭐ 21-30% of the canonical-unannotated "unknown" bin now cross-species-confirmed real, majority still undetermined | §6fh, §6fj, row 721, §6l1 |
 | Q6 portability | ⭐ tissue/animal · ⭐ apes port structurally, ⛔ coherent-family gap is universal (worst on human itself) | §4l, §5p, §6l0 |
