@@ -9426,3 +9426,26 @@ Verdict rule per target class (multi-copy, single-copy), stated before the run: 
 with junction precision >= ours - 0.05; WORSE if it models fewer targets or its junction precision is below ours - 0.05 with equal targets;
 TIED otherwise. Both classes reported; no held-out (descriptive comparison, the advisor's question, not a design change). StringTie and
 FLAIR columns are shown alongside from the same scorer. Runs under `~/work/jfim/runs/isocon_OR6737/`.
+
+### MS-VS-AS RESULT (2026-10-31, register 1477; `~/work/jfim/runs/msvsas/{OR6737,KB3781}.report.tsv`, Slurm 4399106 / 4399107; A119b 4399108 pending)
+| family scope | OR6737 | KB3781 |
+|---|---|---|
+| reads with >= 2 records, all on one family's copies | 42,611 | 166,916 |
+| disagree (max-ms record is not the max-AS record) | 4,555 (10.7%) | 10,089 (6.0%) |
+| ... AND distinct place AND outside O2's 10-AS window (the bar: >= 5%) | 4,342 (**10.2%**) | 9,746 (**5.8%**) |
+| ... intron count differs between the two records | 4,513 (99%) | 10,060 (99.7%) |
+| ... the aligner's primary is the ms-best | 4,528 (99%) | 10,070 (99.8%) |
+| genome-wide ('all' scope) disagree outside the window | 41,697 of 1,356,607 (3.1%) | 396,154 of 4,190,262 (9.5%) |
+**Verdict: the bar is met on both samples, so by the registered rule `--tie-ms` is worth porting.** What the reads are, stated with the
+verdict: 99% of the disagreements are a spliced ms-best record (minimap2's primary) against an unspliced AS-best record on another copy,
+the processed-retrocopy class of register 1270 E3, where the AS window admits the retrocopy as a rival and O2's PSV call returns the read
+to the spliced parent. A tie window by ms would exclude that rival before the PSV test. What the port buys is therefore not new
+assignments but fewer rivals in 6-10% of family-scope reads (fewer undecided outcomes where the retrocopy's columns muddy the certificate,
+and cheaper certification); whether that moves O2's undecided stratum (15-24%, r1271) is the next measurement, with O2 run, not this one.
+**Eichler rule, standing test (amendment 1):** of the family-scope reads, the rule DECIDES 80.0% (OR6737: 34,095) / 83.6% (KB3781:
+139,464) and leaves 20.0% / 16.4% undecided (>= 2 records within 10 AS); its pick is the aligner's primary on 87.5% / 93.1% of decided reads
+and the ms-best on 88.0% / 93.2%; on 11.9% / 6.8% of its decisions (4,073 / 9,527) it picks an unspliced record over a spliced ms-best
+one, the retrocopy pick that r1270 showed is wrong by PSVs. Genome-wide it decides 98.0% / 98.0% and the unspliced pick is 3.0% / 9.4%
+of decisions. Reading for the advisor: the 10-AS rule is not "wrong most of the time"; it agrees with minimap2 on about nine decided reads
+in ten, abstains on one read in five at family loci, and is systematically wrong in one named class (spliced read, unspliced higher-AS
+rival on a processed copy) that is 7-12% of its family-scope decisions. The classes are printed by `tie_ms_vs_as.py` on every run from now on.
