@@ -8238,3 +8238,50 @@ home quota and was re-run from scratch after the run directories moved to the wo
   testis; an `ms`-anchored window (`--tie-ms 10`, M10, which on the gorilla panels equals A within 3 reads) is the better
   anchor for the human. Not adopted here (register 1472 FAILED its bars on the gorilla panels and no human panel with truth was
   run); candidate for a human pre-registration on the HG002 truth set.
+
+## O2 AMBIGUOUS DECOMPOSITION (2026-10-31, descriptive; HG002 `hg.assign.*` and A119b `a1.assign.*` from the FAMASM runs; debug `~/o2diag/`)
+
+Question (user): what keeps O2 from "attained", and how much of what the assign stage throws out could still carry information. The
+production stage judges exact AS ties only (`as_margin` 0 on every row). Distinct reads, not rows (A119b rows are inflated 12x: one
+row per read x family hull, the same ~29 k acrocentric / chrY reads repeated across ~70 families):
+
+| bucket | A119b reads | HG002 reads |
+|---|---|---|
+| reads with a row (exact AS ties in the swept families) | 212,176 | 141,265 |
+| assigned (PSV certificate; 8,532 HG002 rows land off minimap2's primary) | 4,331 | 17,805 |
+| tied = K = 0 identifiability wall (correct abstention) | 47,428 | 62,158 |
+| ambiguous, weak certificate (decisive columns, margin <= 0 or p short of alpha/(n-1)) | 12,673 | 3,878 |
+| ambiguous, origin certificate rejected, >= 1 candidate | 164,293 | 67,571 |
+| ambiguous, orphan (tied inside a hull, no catalog copy aligns the read) | 21,438 | 16,349 |
+
+Origin rejections (`RUSTLE_STAR_DEBUG` on 4 families per sample: A119b MCL51/14/37/1302 = 98,061 rejected of 99,991 certificates;
+HG002 MCL164/99/338/12 = 20,450 of 27,754). Substitutions alone reject 99.6% / 88.0% (unaligned tails matter only on HG002, 12%).
+By the read's substitution rate against its best catalog copy (HiFi error 0.1-0.3%, model 0.3%):
+
+| substitution rate | A119b reads | tie outside catalog | primary at the copy | AS/base | HG002 reads | tie outside | primary at copy | AS/base |
+|---|---|---|---|---|---|---|---|---|
+| < 1% | 1,793 | 94% | 4% | 0.94 | 2,972 | 69% | 2% | 0.94 |
+| 1-2% | 35,578 | 92% | 4% | 0.91 | 1,496 | 86% | 2% | 0.89 |
+| 2-5% | 31,936 | 83% | 3% | 0.86 | 2,073 | 91% | 0% | 0.82 |
+| >= 5% | 28,754 | 1% | 0% | 0.34 | 13,909 | 50% | 0% | 0.44 |
+
+Reading. (1) The >= 5% class (29% A119b, 68% HG002 of rejections) is junk alignment: a third to a half of the read's score, never
+the primary; correctly abstained, nothing to recover. (2) The < 5% class (70% / 32%) is a well-aligned read (AS/base 0.86-0.94)
+whose primary is almost never at the catalog copy and which in 83-94% of cases has an AS-tied placement OUTSIDE every catalog copy:
+its origin is a locus the catalog does not hold, 1-5% divergent from the nearest catalog copy (an unannotated or silent paralog, a
+processed copy, a locus the mono-exon polish dropped, or one the 60% gate kept out of the family). These reads are not recoverable by
+a better certificate: their competitor was never scored. They are recoverable by widening the catalog: the candidates stage
+(`PREFIX.cand.*`, `--candidates` assign) and the semi-guided `semisec` piles are exactly that mechanism, and neither has been run on
+A119b or HG002 (no `cand`/`aug` products in either run dir). Genome-wide, 620,699 of HG002's 931,726 AS-tied molecules tie outside
+the catalog. (3) The weak-certificate class (12.7 k / 3.9 k reads) is the only bucket a rule change inside O2 can reach: margin <= 0
+(a rival PSV-ties the best, 2,770 HG002 rows) or thin evidence (1,320). (4) Near ties (rival within 1-10 AS, 370,779 HG002 molecules,
+2.5x the exact ties) never enter the stage; the semi-tied rule exists only in `o3port.py` / `copy_phasing`.
+
+On the user's observation (ms rule picks the spliced locus, several reads support an unknown or misannotated pseudogene elsewhere):
+yes, this is the < 5% class. The `semisec` census already lists such places: processed-copy candidates with >= 5 reads, A119b 183
+(94 secondary-only), KB3781 816 (685), OR6737 525 (347); of A119b's 329 processed candidates the semi-guided alignment gate
+attached 37 to a family, 191 had no alignment, 60 no seed locus. Whether a candidate is EXPRESSED (reads truly from it) rather than
+a spillover shadow is decided by the PSV certificate once the candidate is in the catalog (the refabsent panel: 157 placed, 0 wrong),
+not by ms or AS: a spliced parent read aligns unspliced to a processed copy with a higher AS (r1270), so the score cannot tell.
+Next (not registered): run the candidates stage + `--candidates` assign on A119b, count how many of the 69 k < 5% reads obtain a
+scored competitor and how the certificate splits them (assigned to candidate / assigned to parent / tied).

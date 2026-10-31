@@ -331,6 +331,7 @@ edits takes the read, every unaligned base counted; otherwise the read keeps tha
 ### 🔄 OPEN
 - `n_decisive = 0` (exonically identical copies) is a **genuine, aligner-invariant floor** — abstention there is correct, not a gap.
 - The abstention defence rests on **one** excision panel; a second independent validation would strengthen it.
+- **Whole-sample yield (2026-10-31, LEDGER_O2 `O2 AMBIGUOUS DECOMPOSITION`):** HG002 17,805 of 141,265 exact-tied reads assigned, A119b 4,331 of 212,176; the largest discard (48% / 77% of reads) is the origin certificate rejecting well-aligned reads whose origin is a copy the catalog lacks (83-94% tie outside every catalog copy, 1-5% divergent) plus junk alignments at >= 5%. Attaining O2 at sample scale is a catalog-completeness problem (candidates / semisec on A119b, HG002: not yet run) and the unprocessed 1-10 AS near-tie population, not the certificate.
 
 ---
 
