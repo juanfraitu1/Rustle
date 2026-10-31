@@ -154,3 +154,46 @@ def test_inverse_lift_dedups():
     at2 = [r for r in rows if r[0] == "2"]
     assert len(at2) == 1 and at2[0][2] == "5200-5300" and at2[0][4] == 2 and at2[0][1] == "1199-1300;199-300"
     assert stats["uninvertible"] == 0
+
+
+# ---- gtf -------------------------------------------------------------------------------------------------------
+_COPIES_TSV = ("family_id\tcopy_idx\tchrom\tstrand\tlocus_start\tlocus_end\tn_reads\n"
+               "F1\t1\tc1\t+\t1000\t2000\t10\nF1\t2\tc1\t+\t5000\t6000\t3\n")
+_BASE = ('c1\trustle\ttranscript\t1101\t1400\t.\t+\t.\tgene_id "DN_1"; transcript_id "DN_1"; reads "3";\n'
+         'c1\trustle\texon\t1101\t1200\t.\t+\t.\tgene_id "DN_1"; transcript_id "DN_1"; exon_number "1";\n'
+         'c1\trustle\texon\t1301\t1400\t.\t+\t.\tgene_id "DN_1"; transcript_id "DN_1"; exon_number "2";\n')
+_ADMIT_HDR = "copy_idx\tfam_chain\tgenomic_chain\tvia\tcertified_reads\tspan_start\tspan_end\n"
+
+
+def _gtf_setup(tmp_path, admit_rows):
+    (tmp_path / "copies.tsv").write_text(_COPIES_TSV)
+    (tmp_path / "base.gtf").write_text(_BASE)
+    (tmp_path / "out" / "admit").mkdir(parents=True)
+    (tmp_path / "out" / "admit" / "F1.tsv").write_text(_ADMIT_HDR + admit_rows)
+    famasm.gtf(str(tmp_path / "out"), str(tmp_path / "base.gtf"), str(tmp_path / "copies.tsv"), str(tmp_path / "famasm.gtf"))
+    return (tmp_path / "famasm.gtf").read_text(), (tmp_path / "out" / "gtf.stats.tsv").read_text()
+
+
+def test_no_duplicate_of_base(tmp_path):
+    out, stats = _gtf_setup(tmp_path, "1\t199-300\t1200-1300\twhole\t2\t1100\t1400\n")
+    assert out == _BASE
+    assert stats == "appended\talready_in_base\n0\t1\n"
+
+
+def test_base_lines_verbatim(tmp_path):
+    out, stats = _gtf_setup(tmp_path, "2\t199-300\t5200-5300\twhole\t2\t5100\t5400\n")
+    assert out.startswith(_BASE)
+    tail = out[len(_BASE):].splitlines()
+    assert [l.split("\t")[:8] for l in tail] == [["c1", "famasm", "transcript", "5101", "5400", ".", "+", "."],
+                                                  ["c1", "famasm", "exon", "5101", "5200", ".", "+", "."],
+                                                  ["c1", "famasm", "exon", "5301", "5400", ".", "+", "."]]
+    assert 'gene_id "FAMASM_F1_2"; transcript_id "FAMASM_F1_2_1"; reads "2"; famasm "1"; family "F1"; via "whole"; certified_reads "2";' in tail[0]
+    assert stats == "appended\talready_in_base\n1\t0\n"
+
+
+def test_single_copy_untouched(tmp_path):
+    (tmp_path / "copies.tsv").write_text("family_id\tcopy_idx\tchrom\tstrand\tlocus_start\tlocus_end\tn_reads\nF1\t1\tc1\t+\t1000\t2000\t10\n")
+    (tmp_path / "base.gtf").write_bytes(_BASE.encode() + b"c1\trustle\ttranscript\t3000\t3100\t.\t-\t.\tgene_id \"DN_2\"; transcript_id \"DN_2\";\n")
+    (tmp_path / "out").mkdir()
+    famasm.gtf(str(tmp_path / "out"), str(tmp_path / "base.gtf"), str(tmp_path / "copies.tsv"), str(tmp_path / "famasm.gtf"))
+    assert (tmp_path / "famasm.gtf").read_bytes() == (tmp_path / "base.gtf").read_bytes()

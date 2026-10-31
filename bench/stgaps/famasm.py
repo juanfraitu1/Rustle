@@ -315,6 +315,66 @@ def admit(out_dir, assignments_path, copies_path, min_reads=2):
             st.write(fam + "\t" + "\t".join(str(stats[k]) for k in keys) + "\n")
 
 
+def copy_strands(copies_path):
+    """-> {(fam, idx): strand}"""
+    out, hdr = {}, None
+    for l in open(copies_path):
+        f = l.rstrip("\n").split("\t")
+        if hdr is None:
+            hdr = {k: i for i, k in enumerate(f)}
+            continue
+        out[(f[hdr["family_id"]], f[hdr["copy_idx"]])] = f[hdr["strand"]] if "strand" in hdr else "."
+    return out
+
+
+def chain_exons(chain, span_start, span_end):
+    """0-based half-open span + intron chain -> 1-based closed exons."""
+    ex, s = [], span_start
+    for x, y in chain:
+        ex.append((s + 1, x))
+        s = y
+    ex.append((s + 1, span_end))
+    return ex
+
+
+def gtf(out_dir, base_gtf, copies_path, out_gtf):
+    """FAMASM GTF = BASE verbatim + one transcript per admitted (copy, genomic chain) absent from BASE on that contig."""
+    copies = fw_layer.read_copies(copies_path)
+    strands = copy_strands(copies_path)
+    base_chains = {(c, chain) for c, _s, _e, chain in fw_layer.gtf_tx(base_gtf).values()}
+    adir = os.path.join(out_dir, "admit")
+    appended = already = 0
+    with open(out_gtf, "wb") as w:
+        with open(base_gtf, "rb") as fh:
+            for line in fh:
+                w.write(line)
+        for fn in sorted(os.listdir(adir)) if os.path.isdir(adir) else []:
+            fam, n = fn[:-4], 0
+            with open(os.path.join(adir, fn)) as fh:
+                next(fh)
+                for line in fh:
+                    idx, _fc, g, via, nreads, s, e = line.rstrip("\n").split("\t")
+                    chrom, a, b, _ = copies[(fam, idx)]
+                    chain = fw_layer.parse(g)
+                    if (chrom, chain) in base_chains:
+                        already += 1
+                        continue
+                    s, e = max(int(s), a), min(int(e), b)
+                    ex = chain_exons(chain, s, e)
+                    if any(x > y for x, y in ex):
+                        continue
+                    n += 1
+                    st = strands.get((fam, idx), ".")
+                    attrs = (f'gene_id "FAMASM_{fam}_{idx}"; transcript_id "FAMASM_{fam}_{idx}_{n}"; reads "{nreads}"; famasm "1"; '
+                             f'family "{fam}"; via "{via}"; certified_reads "{nreads}";')
+                    w.write(f"{chrom}\tfamasm\ttranscript\t{ex[0][0]}\t{ex[-1][1]}\t.\t{st}\t.\t{attrs}\n".encode())
+                    for i, (x, y) in enumerate(ex, 1):
+                        w.write(f"{chrom}\tfamasm\texon\t{x}\t{y}\t.\t{st}\t.\t{attrs} exon_number \"{i}\";\n".encode())
+                    appended += 1
+    with open(os.path.join(out_dir, "gtf.stats.tsv"), "w") as w:
+        w.write(f"appended\talready_in_base\n{appended}\t{already}\n")
+
+
 def main():
     cmd, *a = sys.argv[1:]
     if cmd == "pool":
@@ -328,6 +388,8 @@ def main():
         lift(*a[:3])
     elif cmd == "admit":
         admit(*a[:3])
+    elif cmd == "gtf":
+        gtf(*a[:4])
     else:
         sys.exit(f"unknown command {cmd}")
 
