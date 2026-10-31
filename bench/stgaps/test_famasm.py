@@ -93,6 +93,14 @@ def test_inverse_lift_roundtrip():
     assert famasm.inverse_lift({("F1", "2"): ([0], [(0, 500, 0, "+")])}, _COPIES, _REPS, "F1", "2", ((699, 800),)) is None
 
 
+def test_rep_junction_outside_locus_is_private():
+    # a read fetched at the representative whose junction lies before the locus start would lift to a negative
+    # coordinate; such chains are private to the representative, not family chains
+    out = famasm.lift_rows(_COPIES, _REPS, _LIFTS, "F1", [("r1", "1", 1, ((300, 1200),)), ("r2", "1", 1, ((1900, 2500),))])
+    assert out == [("r1", "1", 1, "c1:300-1200", 1), ("r2", "1", 1, "c1:1900-2500", 1)]
+    assert famasm.fw_layer.parse("199-300,699-800") == ((199, 300), (699, 800))
+
+
 # ---- admit -----------------------------------------------------------------------------------------------------
 J1, J2, J3 = (1200, 1300), (1400, 1500), (1600, 1700)
 

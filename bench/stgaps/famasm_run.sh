@@ -6,7 +6,7 @@
 #SBATCH -e famasm.%j.err
 # FAMASM driver for one sample: famasm_run.sh SAMPLE PREFIX BAM GENOME RUN_DIR SPECIES
 #   RUN_DIR/ref/{reftx.tsv,reftx.paf,ref.gtf} must exist (Task 1 of the plan). Env: THREADS (72), CONTIG (pool smoke only,
-#   no scoring), OBSERVED=0 skips the observed.py BAM pass, SKIP_ASSIGN=1 refuses to run the assign stage.
+#   no scoring), OBSERVED=0 skips the observed.py BAM pass, SKIP_ASSIGN=1 refuses to run the assign stage, SKIP_POOL=1 reuses an existing RUN_DIR/pool/.
 # Products: RUN_DIR/{pool,lift,admit}/, famasm.gtf, strata.txt, famasm.fam.*, mainstays.txt, pairs.txt, verdict.txt.
 set -u
 export PATH=$HOME/.pixi/detached-envs/gff-17846079296155688661/envs/default/bin:$HOME/.pixi/detached-envs/rustle-7434162673922408322/envs/default/bin:$PATH
@@ -41,7 +41,8 @@ if [ "$OBSERVED" = 1 ] && [ ! -s ref/counts.tsv ]; then
 fi
 # 2. FAMASM
 fail() { echo "[famasm] $1 failed (exit $2): no verdict" >&2; echo "verdict INVALID: $1 failed" > verdict.txt; exit 2; }
-step "pool"; python3 $B/famasm.py pool "$COPIES" "$BAM" "$PREFIX.molecules.tsv" "$RUN" || fail pool $?; echo "pool exit 0"
+if [ "${SKIP_POOL:-0}" = 1 ] && [ -s pool.stats.tsv ]; then echo "pool reused (SKIP_POOL=1)"; else
+step "pool"; python3 $B/famasm.py pool "$COPIES" "$BAM" "$PREFIX.molecules.tsv" "$RUN" || fail pool $?; echo "pool exit 0"; fi
 step "lift"; python3 $B/famasm.py lift "$COPIES" "$GENOME" "$RUN" || fail lift $?; echo "lift exit 0"
 step "admit"; python3 $B/famasm.py admit "$RUN" "$ASG" "$COPIES" || fail admit $?; echo "admit exit 0"
 step "gtf"; python3 $B/famasm.py gtf "$RUN" "$BASE" "$COPIES" famasm.gtf || fail gtf $?; echo "gtf exit 0"; cat gtf.stats.tsv

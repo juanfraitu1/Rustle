@@ -173,6 +173,8 @@ def fam_chain(copies, reps, lifts, fam, idx, chain):
     for x, y in chain:
         if reps.get(fam) == idx:
             p, q = x - 1 - a, y - a
+            if p < 0 or q > b - a:        # junction outside the representative's locus: no family coordinate
+                return None
         else:
             lf = lifts.get((fam, idx))
             if lf is None:
