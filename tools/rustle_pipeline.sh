@@ -732,7 +732,7 @@ stage_assign() {
   }
   if [ "$LEGACY_CATALOG" = 1 ]; then
     say "assign: per-read copy assignment on $OUT.cat"
-    samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.regions.txt"
+    samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":0-"$3}' > "$OUT.regions.txt"
     "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
       --families "$OUT.cat.copies.tsv" --copies-fa "$OUT.cat.copies.fa" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
     say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
@@ -781,7 +781,7 @@ stage_assign() {
 # are ON here by default instead of opt-in. Products: PREFIX.assign_fam.* (the catalog assign keeps PREFIX.assign.*).
 stage_assign_fam() {
   say "assign: per-read copy assignment on $OUT.fam.copies (families table; --skip-poa-diagnostic --region-threads $THREADS)"
-  samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.regions.txt"
+  samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":0-"$3}' > "$OUT.regions.txt"
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
     --families "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
     --skip-poa-diagnostic --region-threads "$THREADS" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_fam" > "$OUT.assign_fam.log" 2>&1

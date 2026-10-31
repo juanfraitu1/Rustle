@@ -2599,7 +2599,7 @@ fn main() -> Result<()> {
                 writeln!(
                     ur,
                     "{fid}\t{ctg}:{}-{}",
-                    a.saturating_sub(5_000).max(1),
+                    a.saturating_sub(5_000),
                     b + 5_000
                 )?;
             }

@@ -56413,7 +56413,7 @@ pub mod fam_from_gtf {
                 writeln!(
                     cr,
                     "{fid}\t{ctg}:{}-{}",
-                    a.saturating_sub(5_000).max(1),
+                    a.saturating_sub(5_000),
                     b + 5_000
                 )?;
             }
