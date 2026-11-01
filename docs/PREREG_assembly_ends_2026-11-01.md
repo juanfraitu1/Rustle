@@ -216,3 +216,20 @@ family readout, Compara pairs among expressed protein-coding genes): coding prec
 **Bars (both samples):** C1 coding precision >= SHIP - 0.010; C2 coding recall >= SHIP - 0.010.
 PASS on both -> propose E3 + E4 + E5 as pipeline defaults (the user decides); FAIL -> the three stay assembly options, and the
 families stage keeps reading the SHIP ends (a separate pre-polish families GTF would be the follow-up).
+
+### E6 RESULT (2026-11-02, jobs 4406175 / 4406176, `~/asm_fam/`): FAIL on A119b, PASS on OR6737 -> FAIL as registered
+
+| sample | arm | predicted coding pairs | hits | false | precision | recall | families | copies (single-exon) |
+|---|---|---|---|---|---|---|---|---|
+| A119b | SHIP | 2,228 | 1,617 | 611 | 0.726 | 0.741 | 1,565 | 7,987 (3,299) |
+| A119b | ALL | 2,238 | 1,567 | 671 | **0.700** | **0.714** | 1,319 | 4,877 (217) |
+| OR6737 | SHIP | 49 | 21 | 28 | 0.429 | 0.239 | | |
+| OR6737 | ALL | 52 | 22 | 30 | 0.423 | 0.244 | | |
+
+SHIP reproduces the base A119b run exactly (0.726 / 0.741, 1,565 families, 7,987 copies). A119b fails C1 (-0.026) and C2 (-0.027);
+OR6737 passes (-0.006 / +0.005, ~50 scored pairs). Mechanism (descriptive): the loss is the single-exon copies, 3,299 -> 217 (multi-exon
+copies 4,688 -> 4,660), i.e. E5: its read-sized single-exon models replace the old union spans, and the families stage keeps almost
+none of them as copies (families input single-exon transcripts 16,501 -> 9,214). E3 and E4 move ends of multi-exon models only and were
+not separated here. **Per the rule: the three layers stay assembly options; no default changes.** Follow-ups, each needing its own
+registration: (a) E3 + E4 alone through the families stage; (b) the families stage reading the pre-E5 single-exon models while the
+emitted GTF carries E5's (single-exon copies are often processed copies / retrocopies, which the families need).
