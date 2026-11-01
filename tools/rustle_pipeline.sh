@@ -121,7 +121,7 @@
 # The splice index is needed by `candidates` (the consensus sequences' genome hits) and `flag` (home search); the
 # annotation (--gff) by `flag` only (IG/TR screen).
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
-#   RUSTLE_POLISH_TSS=tag|rescue|split adds `--polish-tss` to `assemble` (default unset = off);
+#   RUSTLE_POLISH_TSS=off|tag|rescue|split sets `--polish-tss` for `assemble` (default unset = rescue since 2026-11-01, register 1485);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
@@ -296,12 +296,13 @@ case "${RUSTLE_POLISH_SUBCHAIN:-}" in
   off|tag|drop) POLISH="$POLISH --polish-subchain $RUSTLE_POLISH_SUBCHAIN" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_SUBCHAIN must be off, tag or drop (got '$RUSTLE_POLISH_SUBCHAIN')" >&2; exit 2 ;;
 esac
-# RUSTLE_POLISH_TSS=tag|rescue|split (opt-in; unset = off, the same command): copy_assign --polish-tss, the read-proven
-# TSS (tag: `tss_clusters` only; rescue: also keeps proven short-TSS forms the polish dropped; split: also emits a chain
-# once per proven TSS cluster). Dev-only, in-sample evidence: see its --help
-case "${RUSTLE_POLISH_TSS:-}" in
-  "") ;;
-  off|tag|rescue|split) POLISH="$POLISH --polish-tss $RUSTLE_POLISH_TSS" ;;
+# RUSTLE_POLISH_TSS=off|tag|rescue|split: copy_assign --polish-tss, the read-proven TSS (tag: `tss_clusters` only; rescue:
+# also keeps proven short-TSS forms the polish dropped; split: also emits a chain once per proven TSS cluster). Unset = rescue,
+# the default since 2026-11-01 (register 1485, PREREG ASSEMBLY ENDS E1: held-out A119b chr11 / chr7 chains +7 / +9 at
+# transcript precision -0.07 / -0.01 points); RUSTLE_POLISH_TSS=off restores the earlier output (`--polish-tss off` is byte-identical to no flag).
+POLISH_TSS=${RUSTLE_POLISH_TSS:-rescue}
+case "$POLISH_TSS" in
+  off|tag|rescue|split) POLISH="$POLISH --polish-tss $POLISH_TSS" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TSS must be off, tag, rescue or split (got '$RUSTLE_POLISH_TSS')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_TES=tag|pas-end (opt-in; unset = off, the same command): copy_assign --polish-tes, the read + genome
