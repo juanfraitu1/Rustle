@@ -8427,3 +8427,25 @@ of 10% are real). bcftools agrees on 94% of O2's columns once it is allowed to u
 >= 2-carrier, Bonferroni and within-pile rules remove. Report only; nothing changes. Hand check: `grep ID or.psv60.vcf`,
 `or.psv60.bcftools/<family>.<copy>.vcf` and `.bam` hold the exact records bcftools saw. The `--mapq-reset` run is disclosed as
 post hoc (added after the registered run missed the expectation; the registered numbers stand above).
+
+### O2 LEVERS: why the full runs gave nothing, and the fast-panel amendment (2026-11-01 20:45, before any panel run)
+**What happened.** Arm U (job 4403494, `--union-certificate` on all 1,565 families) was cancelled at 19 h 20 of 24 h by the user: no
+output since 01:59, 911 of 936 work units logged (all 740 cross-chromosome units, 171 of 196 regions). Arm C (job 4403495) is gone
+from the queue with no exit line, no stderr and no Slurm footer after `candidate_copies` started at 01:06; the accounting database is
+down (`sacct` connection refused), so its end reason is unknown. Neither arm produced a score.
+**Why so slow.** The unfinished units include `chr13:5223545-110741425` (1,422,065 mapped reads). In the base run 89 families with
+every copy in chr13:13.9-15.6 Mb (590 copies) hold 1,882,813 of the 2,196,659 non-assigned rows (86%), from only 30,155 distinct reads
+(14% of the non-assigned reads), each in a median 62 of those families. The union certificate scores one molecule against the union of
+its candidates across families: measured cost on finished units 0.06-0.78 s per scored molecule, highest on the largest unions
+(~xchrom~MCL33 0.78 s, ~xchrom~MCL3 0.63 s); at 62 families per read the hotspot union is the largest in the run, so its cost dominates
+and one worker sits on it for hours with no log line until it ends. The design ran the lever genome-wide first, so no answer could come
+before the slowest region finished.
+**Amendment (the lever's question is unchanged; the substrate and the bars are, disclosed).** Fast panel `~/o2levers_fast/`:
+57 families taken in SHA-1 order of family id from the 686 non-hotspot families with >= 2 copies and >= 1 tied row, skipping families
+with > 2,000 non-assigned base rows, until 15,000 base non-assigned rows (14,966; 2,422 tied; 21 cross-chromosome); 35 regions holding
+their copies. BASE and U are both re-run on the panel (`--only-families`, same flags as stage_assign), side by side on one node, 1 h 30
+wall. Bars become relative to BASE on the panel: U1 assigned reads >= BASE; U2 reads assigned in >= 2 families = 0; U3 unique-mapper
+agreement >= BASE; U4 lt5-class assigned >= BASE; U5 (new, cost) U's wall time <= 2 x BASE's, and a wall-limit hit = FAIL. PASS on the
+panel licenses the hotspot as a separate cost question (union on the 89 hotspot families alone with a per-molecule candidate cap),
+then the HG002 registration; FAIL closes the lever. Arm C waits for its end reason; when rerun it uses the same panel
+(`candidate_copies --families` + assign `--only-families`) under the same 1 h 30 limit.
