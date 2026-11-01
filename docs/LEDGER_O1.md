@@ -9394,6 +9394,14 @@ So the base's KRAB-ZNF recall rests on multi-gene low-read models acting as hubs
 rule removes. Not a defect of the absorb rule, a dependence of the shipped families on hub artifacts. `bench/denovo_eval/pairscore.py`
 `PAIRSCORE_HITDUMP=prefix` writes each run's hit pairs for such diffs.
 
+### LOCUS-ABSORB held-out decision (2026-11-01, user: "can we run r1476?"): POST-HOC amendment, disclosed
+The dev gate as registered (pair recall >= 0.731) was missed by 0.002 (0.729) while precision cleared its bar by 0.07 and mainstays were
+identical; the 26 lost pairs were diagnosed as KRAB-ZNF pairs recalled only through absorbed hub artifacts. The user chose to run the
+held-out anyway. This amends the dev gate after seeing the dev result (recall >= base - 0.015 instead of - 0.01) and is recorded as such.
+The held-out bars are UNCHANGED (REPRULE-2 B1 + B2 on OR6737, pair recall >= base - 0.01): a held-out recall loss like the dev one
+(-0.012) FAILS B2. Run: `~/absorb_OR6737_home/` (the work filesystem is over its group file quota), base `or`, same flags and constants,
+scorers `--species gorilla`. Code 0311c388 (`mcl_families` as built 2026-10-31; no change to the absorb code since the dev run).
+
 ## TOOL COMPARISON ON MULTI-COPY LOCI (2026-10-31, descriptive, no prereg; `bench/denovo_eval/toolcompare.py`, runs `~/work/jfim/runs/toolcmp/`)
 User: "can we already affirm that we are doing a better job than stringtie and flair on multi-copy loci?" The `benchmark_collapse` StringTie
 3.0.1 (`-L`, no -G) and FLAIR GTFs vs our assembled GTF (`a1.families.gtf`, `or.families.gtf`), per mainstay + YAG member copy: modeled =
