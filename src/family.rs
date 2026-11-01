@@ -46794,6 +46794,14 @@ pub mod denovo_pipeline {
             seen: DetHashSet<u64>,
             /// chromosome -> its deduplicated records, in arrival order
             pub by_chrom: std::collections::BTreeMap<String, Vec<TssRead>>,
+            /// `copy_assign --polish-tes-extend` (register 1488): chromosome -> its deduplicated primary UNSPLICED records as
+            /// (minus, oriented 5' end, oriented 3' end), 1-based, in arrival order (strand = the read's orientation, as
+            /// for the spliced records). Read only by that flag.
+            pub unspliced: std::collections::BTreeMap<String, Vec<(bool, i64, i64)>>,
+            seen_u: DetHashSet<(bool, u64, u64, u64)>,
+            chrom_ids: std::collections::BTreeMap<String, u64>,
+            /// collect `unspliced` in `push_alignment` (off unless `--polish-tes-extend` asks: the default run holds none)
+            pub collect_unspliced: bool,
         }
 
         impl TssEvidence {
@@ -46855,9 +46863,30 @@ pub mod denovo_pipeline {
                 }
             }
 
+            /// One primary UNSPLICED alignment `[ref_start, ref_end)` (0-based half-open), deduplicated on its coordinates.
+            pub fn push_unspliced(&mut self, chrom: &str, minus: bool, ref_start: u64, ref_end: u64) {
+                let n = self.chrom_ids.len() as u64;
+                let id = *self.chrom_ids.entry(chrom.to_string()).or_insert(n);
+                if !self.seen_u.insert((minus, id, ref_start, ref_end)) {
+                    return;
+                }
+                let rec = if minus {
+                    (true, -(ref_end as i64), -(ref_start as i64 + 1))
+                } else {
+                    (false, ref_start as i64 + 1, ref_end as i64)
+                };
+                self.unspliced.entry(chrom.to_string()).or_default().push(rec);
+            }
+
             /// Fold another region's evidence in; a record already held (same key) is not counted twice, so regions whose
             /// reads overlap, and the windows of one region, add up to the per-chromosome evidence.
             pub fn absorb(&mut self, other: TssEvidence) {
+                for (chrom, recs) in other.unspliced {
+                    for (minus, o5, o3) in recs {
+                        let (s0, e0) = if minus { ((-o3 - 1) as u64, (-o5) as u64) } else { ((o5 - 1) as u64, o3 as u64) };
+                        self.push_unspliced(&chrom, minus, s0, e0);
+                    }
+                }
                 for (chrom, recs) in other.by_chrom {
                     for r in recs {
                         if self.seen.insert(r.key) {
@@ -46898,8 +46927,15 @@ pub mod denovo_pipeline {
                     || flags.is_secondary()
                     || flags.is_supplementary()
                     || flags.is_qc_fail()
-                    || exons.len() < 2
+                    || exons.is_empty()
                 {
+                    return;
+                }
+                if exons.len() < 2 {
+                    if self.collect_unspliced {
+                        let rev = flags.is_reverse_complemented();
+                        self.push_unspliced(chrom, rev, exons[0].0, exons[0].1);
+                    }
                     return;
                 }
                 let rev = flags.is_reverse_complemented();

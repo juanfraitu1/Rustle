@@ -116,3 +116,24 @@ UNSPLICED records, strand = the read's orientation as for spliced records):** on
 - 1.0 point; B3 matching intron chains and matching transcripts identical (by construction); B4 among `=` multi-exon transcripts, the
 share with the 3' end within 50 bp of the reference >= SHIP - 3 points.
 PASS -> propose as default (the user decides).
+
+### E4 RESULT (2026-11-01, job 4405941, `~/asm_ends/`): PASS on both held-out contigs
+
+| contig | arm | base Sn / Pr | chains | matching tx | `=` 3' within 50 bp | median 3' | 5' within 50 bp |
+|---|---|---|---|---|---|---|---|
+| chr11 (held-out) | SHIP | 45.5 / 25.8 | 1,702 | 1,703 | 49.00% | 62 bp | 40.60% |
+| chr11 (held-out) | + extend | **47.6** / 25.9 | 1,702 | 1,703 | 48.00% | 79.5 bp | 40.60% |
+| chr11 (held-out) | + extend + median 5' | 46.1 / 26.2 | 1,702 | 1,703 | 48.06% | 78 bp | 64.57% |
+| chr7 (held-out) | SHIP | 50.6 / 18.7 | 1,562 | 1,563 | 43.73% | 171.5 bp | 39.31% |
+| chr7 (held-out) | + extend | **53.0** / 18.7 | 1,562 | 1,563 | 42.19% | 226 bp | 39.31% |
+| chr7 (held-out) | + extend + median 5' | 51.8 / 19.0 | 1,562 | 1,563 | 42.19% | 226 bp | 63.44% |
+| chr20 (dev) | SHIP | 53.1 / 26.9 | 882 | 884 | 60.66% | 10 bp | 46.15% |
+| chr20 (dev) | + extend | 54.4 / 26.5 | 882 | 884 | 60.66% | 9.5 bp | 46.15% |
+
+B1 base sensitivity +2.1 / +2.4 (bar +2.0) PASS; B2 base precision +0.1 / 0.0 (bar -1.0) PASS; B3 chains and matching transcripts
+identical PASS; B4 3' within 50 bp -1.0 / -1.5 points (bar -3) PASS. Moved: 2,777 (chr11), 3,273 (chr7), 1,479 (chr20) transcripts
+from 300,767 / 398,711 / 120,518 unspliced records. Without the flag the chr20 output is byte-identical to the r1485 arm. The two layers
+compose: with the median 5' layer base sensitivity sits between (46.1 / 51.8), precision is highest, both end shares keep their gains.
+Status: opt-in `--polish-tes-extend on` (driver `RUSTLE_POLISH_TES_EXTEND=on`); PASS proposes it as default, the user decides. Tests: 5
+new (`tes_extend_*`, `tss_evidence_keeps_deduplicated_oriented_unspliced_records`), copy_assign 94/94; the coverage floor was mutated to
+1 to confirm a test fails.

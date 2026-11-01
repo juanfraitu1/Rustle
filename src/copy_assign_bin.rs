@@ -656,6 +656,16 @@ struct Args {
     #[arg(long, default_value = "off", value_parser = ["off", "tag", "pas-end"])]
     polish_tes: String,
 
+    /// 3' UTR EXTENSION (register 1488, PREREG ASSEMBLY ENDS E4; needs `--polish-tss` tag|rescue|split, whose evidence pass it
+    /// extends with the primary UNSPLICED records). On each contig's final transcripts (after `--polish-tss`,
+    /// `--polish-tss-end`, `--polish-tes`), a multi-exon transcript's 3' end E moves to the most distal `--polish-tes`
+    /// PAS-proven cluster mode M of the unspliced records on its strand with E < M <= E + 20 kb, when every base of (E, M]
+    /// is covered by >= 2 of them and (E, M] overlaps no exon of another gene_id on the strand. Unspliced reads that reach a
+    /// long 3' UTR are 5'-truncated molecules pass 1 never joins to the spliced model. Nothing else changes.
+    /// * `off` (default): byte-identical to a run without this flag (no unspliced evidence is held). * `on`: the move above.
+    #[arg(long, default_value = "off", value_parser = ["off", "on"])]
+    polish_tes_extend: String,
+
     /// `--polish-mono-primed`: drop a single-exon transcript when >= 80% of its reads are internally primed — the
     /// genomic form of StringTie's long-read poly-A filter (rlink.cpp `genome_polyA_terminated`, applied to unspliced
     /// reads only). Reads = unspliced primary records (`-F 2820`) overlapping >= 50% of the transcript; a read is primed
@@ -6186,6 +6196,111 @@ fn tes_clusters(ends: &[i64], seq: &[u8], minus: bool) -> Vec<TesCluster> {
     out
 }
 
+/// `--polish-tes-extend`'s reach: the farthest a 3' end may move (oriented bp), and how far upstream of a transcript's end
+/// an unspliced read may start and still be searched (no unspliced HiFi read is longer).
+const TES_EXT_MAX: i64 = 20_000;
+const TES_EXT_READ_MAX: i64 = 50_000;
+
+/// `--polish-tes-extend on` (register 1488, PREREG ASSEMBLY ENDS E4) on one contig's final lines: every multi-exon transcript's
+/// oriented 3' end E moves to the most distal PAS-proven cluster mode M of the unspliced records on its strand with
+/// E < M <= E + 20 kb, when every base of (E, M] is covered by >= 2 of those records and (E, M] overlaps no exon of another
+/// gene_id on the strand. `unsp` = (minus, oriented 5' end, oriented 3' end), deduplicated. Returns (lines, moved).
+fn tes_extend(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8]) -> (Vec<String>, usize) {
+    let txs = tss_parse(lines);
+    let mut by_strand: [Vec<(i64, i64)>; 2] = [Vec::new(), Vec::new()];
+    for &(minus, o5, o3) in unsp {
+        if o3 >= o5 {
+            by_strand[usize::from(minus)].push((o5, o3));
+        }
+    }
+    for v in by_strand.iter_mut() {
+        v.sort_unstable();
+    }
+    // oriented exons of every transcript, per strand, with their gene
+    let mut exons: [Vec<(i64, i64, &str)>; 2] = [Vec::new(), Vec::new()];
+    for t in txs.values() {
+        for &(a, b) in &t.oex {
+            exons[usize::from(t.minus)].push((a, b, t.gene.as_str()));
+        }
+    }
+    let mut new3: DetHashMap<String, i64> = DetHashMap::default();
+    for (tid, t) in txs.iter() {
+        if t.ochain.is_empty() {
+            continue;
+        }
+        let e = t.oex[t.oex.len() - 1].1;
+        let reads = &by_strand[usize::from(t.minus)];
+        let lo = reads.partition_point(|r| r.0 < e - TES_EXT_READ_MAX);
+        let hi = reads.partition_point(|r| r.0 <= e + TES_EXT_MAX);
+        let near: Vec<(i64, i64)> = reads[lo..hi].iter().copied().filter(|r| r.1 > e).collect();
+        if near.len() < 2 {
+            continue;
+        }
+        let mut ends: Vec<i64> = near.iter().map(|r| r.1).filter(|&o| o <= e + TES_EXT_MAX).collect();
+        ends.sort_unstable();
+        let mut cands: Vec<i64> = tes_clusters(&ends, seq, t.minus)
+            .into_iter()
+            .filter(|c| c.proven && c.mode > e)
+            .map(|c| c.mode)
+            .collect();
+        cands.sort_unstable_by(|a, b| b.cmp(a));
+        let foreign = |m: i64| {
+            exons[usize::from(t.minus)]
+                .iter()
+                .any(|&(a, b, g)| g != t.gene && a <= m && b > e)
+        };
+        for m in cands {
+            // coverage over (e, m]: a difference array on the offsets 1..=m-e
+            let n = (m - e) as usize;
+            let mut d = vec![0i32; n + 2];
+            for &(a, b) in &near {
+                let s = (a.max(e + 1) - e) as usize;
+                let t_ = (b.min(m) - e) as usize;
+                if s <= t_ && s >= 1 {
+                    d[s] += 1;
+                    d[t_ + 1] -= 1;
+                }
+            }
+            let mut c = 0i32;
+            let covered = (1..=n).all(|i| {
+                c += d[i];
+                c >= 2
+            });
+            if covered && !foreign(m) {
+                new3.insert(tid.clone(), m);
+                break;
+            }
+        }
+    }
+    let tid_of = |l: &str| -> Option<String> {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() < 9 {
+            return None;
+        }
+        re_attr(f[8], "transcript_id")
+    };
+    let mut res: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let Some(tid) = tid_of(&lines[i]) else {
+            res.push(lines[i].clone());
+            i += 1;
+            continue;
+        };
+        let mut j = i + 1;
+        while j < lines.len() && tid_of(&lines[j]).as_deref() == Some(tid.as_str()) {
+            j += 1;
+        }
+        match (new3.get(&tid), txs.get(&tid)) {
+            (Some(&o3), Some(t)) => res.extend(tes_rewrite_block(&lines[i..j], t.minus, o3)),
+            _ => res.extend(lines[i..j].iter().cloned()),
+        }
+        i = j;
+    }
+    let moved = new3.len();
+    (res, moved)
+}
+
 /// One contig's `--polish-tes` statistics (params.tsv, the log line). `end_pas` / `end_primed` are of the emitted 3'
 /// ends BEFORE any move.
 #[derive(Clone, Debug, Default)]
@@ -6441,6 +6556,13 @@ fn main() -> Result<()> {
             args.gtf && args.assembly_polish != "none",
             "--polish-tss {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
             args.polish_tss
+        );
+    }
+    if args.polish_tes_extend != "off" {
+        anyhow::ensure!(
+            args.polish_tss != "off",
+            "--polish-tes-extend {} reads the --polish-tss evidence pass: pass --polish-tss tag|rescue|split",
+            args.polish_tes_extend
         );
     }
     if args.polish_tss_end != "off" {
@@ -7064,7 +7186,9 @@ fn main() -> Result<()> {
             let mut acc = rustle::denovo_assemble::Pass1Acc::new(1, None);
             acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
             if args.polish_tss != "off" || args.polish_tes != "off" {
-                acc.tss = Some(rustle::denovo_assemble::TssEvidence::default());
+                let mut ev = rustle::denovo_assemble::TssEvidence::default();
+                ev.collect_unspliced = args.polish_tes_extend != "off";
+                acc.tss = Some(ev);
             }
             if bridge_evidence_on {
                 acc.bridge = Some(rustle::bridge_regroup::BridgeEvidence::default());
@@ -7118,6 +7242,7 @@ fn main() -> Result<()> {
             streamed = Some(acc.finish_with(cfg.pass1_min_reads, args.read_isoform_k, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
+            ev.collect_unspliced = args.polish_tes_extend != "off";
             for (wchrom, wlo, whi) in &wins {
                 rustle::denovo_assemble::tss_evidence_region(
                     &args.bam, wchrom, *wlo, *whi, &mut ev,
@@ -9993,6 +10118,7 @@ fn main() -> Result<()> {
                 } else {
                     Vec::new()
                 };
+                let unsp = tss_all.unspliced.remove(c.as_str()).unwrap_or_default();
                 if args.polish_tss == "off" {
                     let (a, b, d, floor, e) = polish_gtf_lines(
                         &mut part,
@@ -10106,6 +10232,21 @@ fn main() -> Result<()> {
                         st.end_primed, st.moved
                     );
                     tes_stats.push(out.stats);
+                }
+                if args.polish_tes_extend != "off" {
+                    let g = genome_for(c)?;
+                    let seq: &[u8] = g
+                        .chroms()
+                        .find(|(n, _)| *n == c.as_str())
+                        .map(|(_, s)| s)
+                        .unwrap_or(&[]);
+                    let (ext, moved) = tes_extend(&part, &unsp, seq);
+                    part = ext;
+                    eprintln!(
+                        "[copy_assign] TES EXTEND ({}) {}: {} unspliced records; {} multi-exon transcripts moved their 3' end \
+                         to a PAS-proven unspliced cluster over >= 2-read coverage (<= {} bp, no other gene's exon)",
+                        args.polish_tes_extend, c, unsp.len(), moved, TES_EXT_MAX
+                    );
                 }
                 if args.polish_mono_primed {
                     let g = genome_for(c)?;
@@ -13916,6 +14057,94 @@ mod tests {
         }
     }
 
+    /// `--polish-tes-extend` (register 1488) fixtures: `k` unspliced reads on `+` over [a, b] (1-based) as oriented (minus, o5, o3).
+    fn ext_reads(minus: bool, a: i64, b: i64, k: usize) -> Vec<(bool, i64, i64)> {
+        let (o5, o3) = if minus { (-b, -a) } else { (a, b) };
+        (0..k).map(|_| (minus, o5, o3)).collect()
+    }
+    fn ext_last_end(l: &[String], tid: &str, minus: bool) -> (i64, i64) {
+        let mut tx = 0i64;
+        let mut ex: Vec<i64> = Vec::new();
+        for line in l {
+            let f: Vec<&str> = line.split('\t').collect();
+            if !f[8].contains(&format!("transcript_id \"{tid}\";")) {
+                continue;
+            }
+            let v: i64 = if minus { f[3].parse().unwrap() } else { f[4].parse().unwrap() };
+            if f[2] == "transcript" { tx = v } else { ex.push(v) }
+        }
+        (tx, if minus { *ex.iter().min().unwrap() } else { *ex.iter().max().unwrap() })
+    }
+    const EXT_T: [(i64, i64); 2] = [(101, 200), (1001, 1100)];
+    #[test]
+    fn tes_extend_moves_the_3prime_end_to_a_pas_proven_unspliced_cluster_over_continuous_coverage() {
+        let l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        // PAS AATAAA at 1975 (inside [2000-35, 2000-10]), no A run after 2000
+        let seq = tes_seq(3000, &[(1975, "AATAAA")]);
+        let mut u = ext_reads(false, 1050, 1500, 2);
+        u.extend(ext_reads(false, 1400, 2000, 2));
+        let (out, moved) = tes_extend(&l, &u, &seq);
+        assert_eq!(moved, 1);
+        assert_eq!(ext_last_end(&out, "T", false), (2000, 2000));
+        assert_eq!(out[1], l[1]); // the first exon is untouched
+    }
+    #[test]
+    fn tes_extend_needs_two_read_coverage_without_a_gap() {
+        let l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        let seq = tes_seq(3000, &[(1975, "AATAAA")]);
+        let mut u = ext_reads(false, 1050, 1300, 2);
+        u.extend(ext_reads(false, 1400, 2000, 2)); // 1301-1399 uncovered
+        assert_eq!(tes_extend(&l, &u, &seq), (l.clone(), 0));
+        // one read only over 1501-2000: coverage 1 there
+        let mut u = ext_reads(false, 1050, 1500, 2);
+        u.extend(ext_reads(false, 1400, 2000, 1));
+        u.extend(ext_reads(false, 1990, 2000, 1));
+        assert_eq!(tes_extend(&l, &u, &seq), (l, 0));
+    }
+    #[test]
+    fn tes_extend_refuses_an_unproven_end_and_another_genes_exon() {
+        let l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        let mut u = ext_reads(false, 1050, 1500, 2);
+        u.extend(ext_reads(false, 1400, 2000, 2));
+        // no PAS: unchanged
+        assert_eq!(tes_extend(&l, &u, &tes_seq(3000, &[])), (l.clone(), 0));
+        // internally primed end: unchanged
+        let primed = tes_seq(3000, &[(1975, "AATAAA"), (2001, "AAAAAAAAAAAA")]);
+        assert_eq!(tes_extend(&l, &u, &primed), (l.clone(), 0));
+        // another gene's exon on the strand inside (1100, 2000]: unchanged
+        let mut l2 = l.clone();
+        l2.extend(sc_gtf("U", "G2", "+", 5, &[(1600, 1700), (2500, 2600)]));
+        let (out, moved) = tes_extend(&l2, &u, &tes_seq(3000, &[(1975, "AATAAA")]));
+        assert_eq!((moved, out), (0, l2));
+    }
+    #[test]
+    fn tes_extend_orients_minus_strand() {
+        // T on `-`: exons 1901-2000 (5') and 1001-1100 (3'); the 3' end is 1001, extension runs left to a PAS-proven end at 500
+        let l = sc_gtf("T", "G", "-", 5, &[(1001, 1100), (1901, 2000)]);
+        // on `-` the hexamer reads TTTATT on the + strand at [500+10, 500+35]
+        let seq = tes_seq(3000, &[(520, "TTTATT")]);
+        let mut u = ext_reads(true, 900, 1050, 2);
+        u.extend(ext_reads(true, 500, 950, 2));
+        let (out, moved) = tes_extend(&l, &u, &seq);
+        assert_eq!(moved, 1);
+        assert_eq!(ext_last_end(&out, "T", true), (500, 500));
+    }
+    #[test]
+    fn tss_evidence_keeps_deduplicated_oriented_unspliced_records() {
+        let mut ev = TssEvidence::default();
+        ev.push_unspliced("c", false, 99, 500);
+        ev.push_unspliced("c", false, 99, 500); // coordinate duplicate
+        ev.push_unspliced("c", true, 99, 500);
+        let u = ev.unspliced.get("c").cloned().unwrap_or_default();
+        // + : (o5 = start + 1, o3 = end); - : (o5 = -end, o3 = -(start + 1))
+        assert_eq!(u, vec![(false, 100, 500), (true, -500, -100)]);
+        // absorb keeps the dedup across regions
+        let mut other = TssEvidence::default();
+        other.push_unspliced("c", false, 99, 500);
+        other.push_unspliced("c", false, 199, 600);
+        ev.absorb(other);
+        assert_eq!(ev.unspliced["c"].len(), 3);
+    }
     #[test]
     fn mono_primed_read_checks_a_past_the_end_or_t_before_the_start() {
         let c = |n: usize| vec![b'C'; n];

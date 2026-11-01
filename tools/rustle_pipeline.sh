@@ -123,6 +123,7 @@
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TSS=off|tag|rescue|split sets `--polish-tss` for `assemble` (default unset = rescue since 2026-11-01, register 1485);
 #   RUSTLE_POLISH_TSS_END=median adds `--polish-tss-end` to `assemble` (default unset = off; register 1487);
+#   RUSTLE_POLISH_TES_EXTEND=on adds `--polish-tes-extend` to `assemble` (default unset = off; register 1488);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
@@ -313,6 +314,14 @@ case "${RUSTLE_POLISH_TSS_END:-}" in
   "") ;;
   off|median) POLISH="$POLISH --polish-tss-end $RUSTLE_POLISH_TSS_END" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TSS_END must be off or median (got '$RUSTLE_POLISH_TSS_END')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_TES_EXTEND=on (opt-in; unset = off, the same command): copy_assign --polish-tes-extend, a multi-exon model's 3' end
+# extended to a PAS-proven cluster of unspliced reads over >= 2-read coverage (register 1488, PASSED held-out chr11 / chr7: base
+# sensitivity +2.1 / +2.4, precision unchanged, chains identical); needs --polish-tss (the default rescue). Default pending the user.
+case "${RUSTLE_POLISH_TES_EXTEND:-}" in
+  "") ;;
+  off|on) POLISH="$POLISH --polish-tes-extend $RUSTLE_POLISH_TES_EXTEND" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_TES_EXTEND must be off or on (got '$RUSTLE_POLISH_TES_EXTEND')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_TES=tag|pas-end (opt-in; unset = off, the same command): copy_assign --polish-tes, the read + genome
 # proven TES (tag: `tes_clusters` / `tes_pas` / `tes_primed` only; pas-end: also moves an internally primed 3' end to
