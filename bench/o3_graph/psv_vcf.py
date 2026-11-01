@@ -21,11 +21,11 @@ leading copy's pile. This script rebuilds those piles with o3port.py's own funct
                     read carries a supported allele at), votes for / against.
   PREFIX.sites.tsv  every distinguishing site a `sites` read voted with: ID on the leading copy, its base, the rival copy's ID
                     and base, the leading pile's carriers of each base, how many reads it decided.
-  PREFIX.bcftools/  per copy with >= 1 variable column: the pile's records (samtools view -N) and `bcftools mpileup -f G -r SPAN
+  PREFIX.bcftools/  per copy with >= 1 variable column: exactly the pile's records (one per read, written out) and `bcftools mpileup -f G -r SPAN
                     -Q 10 -q 0 --ff UNMAP -a AD,DP -d 100000 | bcftools call -mv` (secondaries kept: the piles hold them).
   PREFIX.compare.tsv per copy: O2 variable columns, those bcftools also calls as an SNV sharing an ALT, bcftools SNV calls O2 does
-                    not hold variable with O2's reason (one_allele = fewer than two alleles with >= 2 carriers at Q >= 10; p=...
-                    = the minor allele is explained by error at m = 1; no_pile = no pile base at the column), bcftools indels.
+                    not hold variable with O2's reason (one_allele = fewer than two alleles with >= 2 carriers at Q >= 10; bonferroni =
+                    p under ALPHA but not under ALPHA / m; p=... = the minor allele is explained by error; no_pile), bcftools indels.
   PREFIX.report.txt the totals.
 Nothing here changes a placement: the arm's o2.tsv is the input, the piles are rebuilt the way the arm built them."""
 import argparse
@@ -72,22 +72,26 @@ def vcf_rows(chrom, fam, copy, obs, ref_of):
     return rows
 
 
-def reason(xs):
-    """Why O2 holds a column not variable, from its own pile bases."""
+def reason(xs, m=1):
+    """Why O2 holds a column not variable, from its own pile bases: no_pile, one_allele (fewer than two alleles with >= MIN_READS
+    carriers at Q >= MIN_Q), bonferroni (the minor allele's p is under ALPHA but not under ALPHA / m), p=... (explained by error)."""
     if not xs:
         return "no_pile"
     good, cnt, alleles, major, ps = column_test(xs)
     if len(alleles) < 2:
         return "one_allele"
     p = min(ps.values())
-    return f"p={p:.2g}" if p >= P.ALPHA else "variable"
+    if p < P.ALPHA / m:
+        return "variable"
+    return "bonferroni" if p < P.ALPHA else f"p={p:.2g}"
 
 
-def compare(o2_cols, calls, obs_at):
-    """o2_cols {(chrom, pos1): alt set}; calls {(chrom, pos1): (ref, [alts], 'snv'|'indel')}; obs_at(chrom, col0) -> pile bases."""
+def compare(o2_cols, calls, obs_at, m=1):
+    """o2_cols {(chrom, pos1): alt set}; calls {(chrom, pos1): (ref, [alts], 'snv'|'indel')}; obs_at(chrom, col0) -> pile bases;
+    m the pile's Bonferroni m."""
     called = [k for k, alts in o2_cols.items() if k in calls and calls[k][2] == "snv" and set(calls[k][1]) & alts]
     missed = sorted(k for k in o2_cols if k not in called)
-    only = sorted((k, reason(obs_at(k[0], k[1] - 1))) for k, (_, _, kind) in calls.items() if kind == "snv" and k not in o2_cols)
+    only = sorted((k, reason(obs_at(k[0], k[1] - 1), m)) for k, (_, _, kind) in calls.items() if kind == "snv" and k not in o2_cols)
     return {"o2_cols": len(o2_cols), "o2_called": len(called), "o2_missed": missed, "caller_only": only,
             "caller_indels": sum(1 for v in calls.values() if v[2] == "indel")}
 
@@ -131,15 +135,17 @@ def ranked_copies(r, piles):
     return sorted(((key(rec), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
 
 
-def bcftools_calls(bam_path, names, chrom, s, e, genome, outdir, tag, threads):
-    """samtools view -N + bcftools mpileup | call on the pile's reads over the copy span; {(chrom, pos1): (ref, alts, kind)}."""
+def bcftools_calls(bam, recs, chrom, s, e, genome, outdir, tag, threads):
+    """bcftools mpileup | call on exactly O2's pile records (one record per read, the one in the tie window on this copy; the
+    piles hold secondaries, so --ff keeps them), over the copy span; {(chrom, pos1): (ref, alts, kind)}."""
+    import pysam
     os.makedirs(outdir, exist_ok=True)
-    nf, bf, vf = (os.path.join(outdir, f"{tag}.{x}") for x in ("names", "bam", "vcf"))
-    with open(nf, "w") as fh:
-        fh.write("\n".join(sorted(names)) + "\n")
+    bf, vf = (os.path.join(outdir, f"{tag}.{x}") for x in ("bam", "vcf"))
+    with pysam.AlignmentFile(bf, "wb", template=bam) as out:
+        for rec in sorted(recs, key=lambda r: (r.reference_start, r.query_name)):
+            out.write(rec)
+    pysam.index(bf)
     region = f"{chrom}:{s + 1}-{e}"
-    subprocess.run(["samtools", "view", "-b", "-@", str(threads), "-N", nf, "-o", bf, bam_path, region], check=True)
-    subprocess.run(["samtools", "index", bf], check=True)
     with open(vf, "w") as fh:
         mp = subprocess.Popen(["bcftools", "mpileup", "-f", genome, "-r", region, "-Q", "10", "-q", "0", "--ff", "UNMAP", "-a", "AD,DP",
                                "-d", "100000", "--threads", str(threads), bf], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -227,10 +233,10 @@ def cmd_run(a):
                 if not rows:
                     continue
                 ch, s, e = span[cid]
-                calls = bcftools_calls(a.bam, set(piles[cid]), ch, s, e, a.genome, f"{a.out}.bcftools", f"{fam}.{cid}", a.threads)
+                calls = bcftools_calls(bam, list(piles[cid].values()), ch, s, e, a.genome, f"{a.out}.bcftools", f"{fam}.{cid}", a.threads)
                 o2c = {(ch, r["pos"]): set(r["alt"]) for r in rows}
                 obs = obs_by_copy[cid]
-                out = compare(o2c, calls, lambda chrom, col, obs=obs: obs.get(col, []))
+                out = compare(o2c, calls, lambda chrom, col, obs=obs: obs.get(col, []), rows[0]["m"])
                 tot["o2_cols"] += out["o2_cols"]
                 tot["o2_called"] += out["o2_called"]
                 tot["only"] += len(out["caller_only"])

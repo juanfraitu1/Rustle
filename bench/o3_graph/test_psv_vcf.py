@@ -45,3 +45,5 @@ def test_reason_names_the_failed_clause():
     assert V.reason([("r", "A", 30)] * 10 + [("s", "G", 5), ("t", "G", 5)]) == "one_allele"      # Q < 10 bases are missing
     assert V.reason([("r", "A", 30)] * 1000 + [("s", "G", 10), ("t", "G", 10)]).startswith("p=")   # error explains 2 of 1,000
     assert V.reason([]) == "no_pile"
+    xs = [("r", "A", 30)] * 30 + [("s", "G", 30), ("t", "G", 30), ("u", "G", 30)]   # p ~ 1e-6: variable alone, not among 10,000 columns
+    assert V.reason(xs) == "variable" and V.reason(xs, m=10 ** 5) == "bonferroni"
