@@ -8350,3 +8350,27 @@ not barred: register 1472 showed it assigns nothing).
 **Decision.** PASS = R, B1, B2, B3 -> propose `--tie-ms 10` as copy_phasing's default window (a separate decision; the production
 `copy_assign` keeps its AS margin, its ms question is register 1477's open item). FAIL = any bar missed -> `--tie-ms` stays opt-in in
 Rust as in Python, reported as is. Nothing adopted by this measurement alone.
+
+### TIE-MS PORT RESULT (2026-11-01, register 1483; Slurm 4403643, `~/o2ties_real/{or,kb}.{A,M10,M0}.*`, `*.score.txt`; port commit 0311c388): **FAIL as registered** (R PASS, B1 PASS, B2 FAIL both, B3 FAIL OR6737)
+| sample | arm | tied rows | assigned | ABSTAIN | HOPELESS | certified | run |
+|---|---|---|---|---|---|---|---|
+| OR6737 (446 fam.) | A default | 15,491 | 1,758 | 8,500 | 5,233 | 77 | 374 s |
+| OR6737 | M10 `--tie-ms 10` | 13,503 | 1,289 | 7,095 | 5,119 | 75 | 371 s |
+| OR6737 | M0 `--tie-ms 0` | 6,024 | 314 | 360 | 5,350 | 83 | 376 s |
+| KB3781 (280 fam.) | A | 63,734 | 6,544 | 16,804 | 40,386 | 122 | 976 s |
+| KB3781 | M10 | 55,647 | 3,092 | 12,230 | 40,325 | 126 | 978 s |
+| KB3781 | M0 | 41,625 | 1,655 | 322 | 39,648 | 125 | 943 s |
+- **R PASS:** the ported binary's default-window products are byte-identical to the pre-port binary's on OR6737 (all 9 product files).
+- **B1 PASS:** reads tied under A and untied under M10 = 2,487 of 15,491 (16.1%) on OR6737, 8,964 of 63,734 (14.1%) on KB3781 (bar 5%;
+  1477 predicted 6-10%): the ms window removes the rival on one tied read in six or seven.
+- **B2 FAIL:** M10 assigns 1,289 vs 1,758 (73.3%) and 3,092 vs 6,544 (47.2%) (bar 95%). Where the lost assignments went (post hoc, after the
+  verdict): OR6737 699 of 823 and KB3781 3,572 of 3,633 are reads with ONE pile under M10, i.e. the rival A's assignment was made against
+  is the record the ms window excludes; 36 / 58 became ABSTAIN, 88 / 3 HOPELESS. So most of B2's loss is the B1 effect itself: under A those
+  reads were near-tie certificates of the primary (register 1472 showed O2 never moves a read off a correct primary), under M10 the primary
+  stands with no row. The bar as written counts the intended rival removal as lost assignments; disclosed, not re-run, verdict stands.
+- **B3:** OR6737 24 of 935 reads assigned by both go to different copies (2.6% > 1%, FAIL); KB3781 11 of 2,911 (0.4%, PASS). Reads whose
+  ms-ranked best copy is not their AS-ranked best: new sample-level evidence that the two scores disagree on a small set of placements.
+- M0 (reported): assigns 314 / 1,655, ABSTAIN nearly empty, HOPELESS unchanged: as on the simulated panels, exact ms ties are exact ties.
+- **Decision:** `--tie-ms` stays OPT-IN in Rust as in Python. The port is correct (R) and does what 1477 predicted (B1); whether the 27-53% fewer
+  assignments are losses or redundant certificates needs truth, which these two samples lack. Next measurement if revisited: the HG002
+  truth set with B2 redefined on FINAL PLACEMENT (assignment, else primary) rather than on assignment count.
