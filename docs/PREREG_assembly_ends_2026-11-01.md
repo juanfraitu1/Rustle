@@ -137,3 +137,27 @@ compose: with the median 5' layer base sensitivity sits between (46.1 / 51.8), p
 Status: opt-in `--polish-tes-extend on` (driver `RUSTLE_POLISH_TES_EXTEND=on`); PASS proposes it as default, the user decides. Tests: 5
 new (`tes_extend_*`, `tss_evidence_keeps_deduplicated_oriented_unspliced_records`), copy_assign 94/94; the coverage floor was mutated to
 1 to confirm a test fails.
+
+## E5 (register 1489): single-exon models from end-clustered unspliced reads, frozen 2026-11-01 before any code or held-out run
+**Diagnosis it rests on** (chr20, descriptive, `~/asm_chr20_diag/`): pass 1 builds a single-exon model as the union of overlapping
+unspliced reads; where one overlaps an expressed CAT single-exon transcript it is a median 17x longer; the raw (unpolished) 5,394
+single-exon models match 4 of chr20's 600 single-exon CAT transcripts exactly, the shipped 271 match 2. The Python prototype of the rule
+below (W 50, 3 reads) emits 366 models, 37 exact (10%); swapped into SHIP chr20: base precision 26.9 -> 40.8, base sensitivity 53.1 ->
+54.5, transcript precision 16.5 -> 16.4, matching transcripts 878 -> 888. chr20 is development; the rule is the prototype's, untuned.
+**Rule (new opt-in flag `--mono-model off|cluster`; reads the `--polish-tes-extend` unspliced evidence stream, so it needs
+`--polish-tss` on):** as the LAST step of each contig's final transcripts (after `--polish-tss`, `--polish-tss-end`, `--polish-tes`,
+`--polish-tes-extend`, `--polish-mono-primed`):
+1. every single-exon transcript of the contig is removed;
+2. the contig's deduplicated primary unspliced records, per strand (the read's orientation), sorted by (start, end), are clustered
+   greedily: the first unused record seeds a cluster of every unused record whose start lies within 50 bp after the seed's start and
+   whose end lies within 50 bp of the seed's end;
+3. a cluster of >= 3 records gives a model [lower median start, lower median end] (genomic, 1-based);
+4. the model is dropped when it overlaps an exon of a multi-exon transcript of the contig on the same strand, when its 3' end is
+   internally primed (`--polish-tes`'s test), or when its 3' end has no canonical PAS in [3' - 35, 3' - 10] (oriented);
+5. each kept model is emitted as its own gene (`gene_id` / `transcript_id` from contig, strand and start) with `reads` = cluster size.
+Multi-exon transcripts are untouched.
+**Arms:** SHIP (pipeline default, `--polish-tss rescue`) vs SHIP + `--mono-model cluster` (the flag turns the unspliced stream on).
+**Bars (held-out chr11 and chr7, both; run once):** B1 base precision >= SHIP + 5.0 points; B2 base sensitivity >= SHIP; B3 transcript
+precision >= SHIP - 0.1 points; B4 matching intron chains identical (multi-exon models untouched). Reported beside: exact matches to
+CAT single-exon transcripts, models emitted, chr20.
+PASS -> propose as default (the user decides).
