@@ -666,6 +666,16 @@ struct Args {
     #[arg(long, default_value = "off", value_parser = ["off", "on"])]
     polish_tes_extend: String,
 
+    /// SINGLE-EXON MODELS FROM END CLUSTERS (register 1489, PREREG ASSEMBLY ENDS E5; needs `--polish-tss` tag|rescue|split, whose
+    /// evidence pass holds the primary unspliced records). As the last step of each contig's final transcripts, every single-exon
+    /// transcript is removed and replaced by clusters of >= 3 deduplicated unspliced reads whose starts and ends agree within 50 bp
+    /// (greedy, in (start, end) order), at their lower median start / end, kept when the model overlaps no exon of a multi-exon
+    /// transcript on its strand and its 3' end has a canonical PAS and is not internally primed. Pass 1 otherwise emits a single-exon
+    /// model as the union of overlapping unspliced reads (a median 17x longer than the CAT single-exon transcript it overlaps, chr20).
+    /// * `off` (default): byte-identical to a run without this flag. * `cluster`: the replacement above.
+    #[arg(long, default_value = "off", value_parser = ["off", "cluster"])]
+    mono_model: String,
+
     /// `--polish-mono-primed`: drop a single-exon transcript when >= 80% of its reads are internally primed — the
     /// genomic form of StringTie's long-read poly-A filter (rlink.cpp `genome_polyA_terminated`, applied to unspliced
     /// reads only). Reads = unspliced primary records (`-F 2820`) overlapping >= 50% of the transcript; a read is primed
@@ -6301,6 +6311,90 @@ fn tes_extend(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8]) -> (Vec<S
     (res, moved)
 }
 
+/// `--mono-model cluster`'s constants (register 1489): end window and read floor of a single-exon cluster.
+const MONO_W: i64 = 50;
+const MONO_MIN_READS: usize = 3;
+
+/// `--mono-model cluster` (register 1489, PREREG ASSEMBLY ENDS E5) on one contig's final lines: remove every single-exon
+/// transcript; cluster the deduplicated primary unspliced records `unsp` (minus, oriented 5', oriented 3') per strand,
+/// greedily in (start, end) order (an unused record seeds; every unused record starting within MONO_W bp after the seed's
+/// start with its end within MONO_W bp of the seed's end joins); a cluster of >= MONO_MIN_READS gives the model [lower median
+/// start, lower median end], dropped when it overlaps an exon of a multi-exon transcript on its strand, when its 3' end is
+/// internally primed or carries no canonical PAS (`--polish-tes`'s tests). Returns (lines, (removed, emitted)).
+fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &str) -> (Vec<String>, (usize, usize)) {
+    let txs = tss_parse(lines);
+    let single: DetHashSet<String> = txs.iter().filter(|(_, t)| t.oex.len() == 1).map(|(k, _)| k.clone()).collect();
+    // genomic exons of the multi-exon transcripts, per strand
+    let mut multi: [Vec<(i64, i64)>; 2] = [Vec::new(), Vec::new()];
+    for t in txs.values().filter(|t| t.oex.len() > 1) {
+        for &(a, b) in &t.oex {
+            multi[usize::from(t.minus)].push(if t.minus { (-b, -a) } else { (a, b) });
+        }
+    }
+    let mut res: Vec<String> = lines
+        .iter()
+        .filter(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            !(f.len() > 8 && re_attr(f[8], "transcript_id").is_some_and(|t| single.contains(&t)))
+        })
+        .cloned()
+        .collect();
+    let mut emitted = 0usize;
+    let mut ids_seen: DetHashMap<String, usize> = DetHashMap::default();
+    for minus in [false, true] {
+        let mut v: Vec<(i64, i64)> = unsp
+            .iter()
+            .filter(|r| r.0 == minus)
+            .map(|&(_, o5, o3)| if minus { (-o3, -o5) } else { (o5, o3) })
+            .collect();
+        v.sort_unstable();
+        let mut used = vec![false; v.len()];
+        let strand = if minus { "-" } else { "+" };
+        for i in 0..v.len() {
+            if used[i] {
+                continue;
+            }
+            let (a, b) = v[i];
+            let mut members: Vec<(i64, i64)> = Vec::new();
+            let mut j = i;
+            while j < v.len() && v[j].0 <= a + MONO_W {
+                if !used[j] && (v[j].1 - b).abs() <= MONO_W {
+                    used[j] = true;
+                    members.push(v[j]);
+                }
+                j += 1;
+            }
+            if members.len() < MONO_MIN_READS {
+                continue;
+            }
+            let mut st: Vec<i64> = members.iter().map(|m| m.0).collect();
+            let mut en: Vec<i64> = members.iter().map(|m| m.1).collect();
+            st.sort_unstable();
+            en.sort_unstable();
+            let (ms, me) = (st[(st.len() - 1) / 2], en[(en.len() - 1) / 2]);
+            if ms > me || multi[usize::from(minus)].iter().any(|&(x, y)| x <= me && y >= ms) {
+                continue;
+            }
+            let o3 = if minus { -ms } else { me };
+            if tes_primed(seq, minus, o3) || !tes_pas(seq, minus, o3) {
+                continue;
+            }
+            let base_id = format!("MONO_{chrom}_{strand}_{ms}_{me}");
+            let k = ids_seen.entry(base_id.clone()).or_insert(0usize);
+            *k += 1;
+            let id = if *k == 1 { base_id } else { format!("{base_id}_{k}") };
+            let at = format!("gene_id \"{id}\"; transcript_id \"{id}.1\";");
+            res.push(format!(
+                "{chrom}\trustle\ttranscript\t{ms}\t{me}\t.\t{strand}\t.\t{at} reads \"{}\"; mono_model \"cluster\";",
+                members.len()
+            ));
+            res.push(format!("{chrom}\trustle\texon\t{ms}\t{me}\t.\t{strand}\t.\t{at} exon_number \"1\";"));
+            emitted += 1;
+        }
+    }
+    (res, (single.len(), emitted))
+}
+
 /// One contig's `--polish-tes` statistics (params.tsv, the log line). `end_pas` / `end_primed` are of the emitted 3'
 /// ends BEFORE any move.
 #[derive(Clone, Debug, Default)]
@@ -6556,6 +6650,13 @@ fn main() -> Result<()> {
             args.gtf && args.assembly_polish != "none",
             "--polish-tss {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
             args.polish_tss
+        );
+    }
+    if args.mono_model != "off" {
+        anyhow::ensure!(
+            args.polish_tss != "off",
+            "--mono-model {} reads the --polish-tss evidence pass: pass --polish-tss tag|rescue|split",
+            args.mono_model
         );
     }
     if args.polish_tes_extend != "off" {
@@ -7187,7 +7288,7 @@ fn main() -> Result<()> {
             acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
             if args.polish_tss != "off" || args.polish_tes != "off" {
                 let mut ev = rustle::denovo_assemble::TssEvidence::default();
-                ev.collect_unspliced = args.polish_tes_extend != "off";
+                ev.collect_unspliced = args.polish_tes_extend != "off" || args.mono_model != "off";
                 acc.tss = Some(ev);
             }
             if bridge_evidence_on {
@@ -7242,7 +7343,7 @@ fn main() -> Result<()> {
             streamed = Some(acc.finish_with(cfg.pass1_min_reads, args.read_isoform_k, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends }));
         } else if args.polish_tss != "off" || args.polish_tes != "off" {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
-            ev.collect_unspliced = args.polish_tes_extend != "off";
+            ev.collect_unspliced = args.polish_tes_extend != "off" || args.mono_model != "off";
             for (wchrom, wlo, whi) in &wins {
                 rustle::denovo_assemble::tss_evidence_region(
                     &args.bam, wchrom, *wlo, *whi, &mut ev,
@@ -10301,6 +10402,21 @@ fn main() -> Result<()> {
                     mono_primed_stats.push((monos.len(), n_drop));
                 }
                 std::mem::drop(recs);
+                if args.mono_model != "off" {
+                    let g = genome_for(c)?;
+                    let seq: &[u8] = g
+                        .chroms()
+                        .find(|(n, _)| *n == c.as_str())
+                        .map(|(_, s)| s)
+                        .unwrap_or(&[]);
+                    let (m, (removed, emitted)) = mono_models(&part, &unsp, seq, c);
+                    part = m;
+                    eprintln!(
+                        "[copy_assign] MONO MODEL ({}) {}: {} single-exon transcripts removed, {} emitted from >= {} unspliced reads \
+                         with starts and ends within {} bp (PAS, not primed, no multi-exon exon on the strand)",
+                        args.mono_model, c, removed, emitted, MONO_MIN_READS, MONO_W
+                    );
+                }
                 polished.extend(part);
             }
             let comments: Vec<String> = gtf_lines
@@ -14144,6 +14260,77 @@ mod tests {
         other.push_unspliced("c", false, 199, 600);
         ev.absorb(other);
         assert_eq!(ev.unspliced["c"].len(), 3);
+    }
+    /// `--mono-model cluster` (register 1489): (transcript_id, start, end, strand) of every transcript line.
+    fn mono_txs(l: &[String]) -> Vec<(String, i64, i64, String)> {
+        l.iter()
+            .filter_map(|line| {
+                let f: Vec<&str> = line.split('\t').collect();
+                (f.len() > 8 && f[2] == "transcript").then(|| {
+                    (re_attr(f[8], "transcript_id").unwrap(), f[3].parse().unwrap(), f[4].parse().unwrap(), f[6].to_string())
+                })
+            })
+            .collect()
+    }
+    fn mono_unsp(minus: bool, spans: &[(i64, i64)]) -> Vec<(bool, i64, i64)> {
+        spans.iter().map(|&(a, b)| if minus { (true, -b, -a) } else { (false, a, b) }).collect()
+    }
+    #[test]
+    fn mono_model_replaces_single_exon_models_by_end_clusters_with_a_pas() {
+        let mut l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        l.extend(sc_gtf("M", "G9", "+", 9, &[(3000, 6000)]));
+        let seq = tes_seq(7000, &[(2470, "AATAAA")]);
+        let u = mono_unsp(false, &[(2001, 2500), (2010, 2490), (2040, 2520)]);
+        let (out, st) = mono_models(&l, &u, &seq, "c");
+        assert_eq!(st, (1, 1));
+        let txs = mono_txs(&out);
+        assert_eq!(txs.len(), 2);
+        assert_eq!(txs[0].0, "T");
+        assert_eq!((txs[1].1, txs[1].2, txs[1].3.as_str()), (2010, 2500, "+"));
+        assert!(out.iter().any(|x| x.contains("\ttranscript\t2010\t2500\t") && x.contains("reads \"3\";")));
+        assert!(out.iter().any(|x| x.contains("\texon\t2010\t2500\t")));
+    }
+    #[test]
+    fn mono_model_drops_small_clusters_overlaps_primed_and_pas_less_ends() {
+        let l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        let seq = tes_seq(7000, &[(2470, "AATAAA")]);
+        // two reads only
+        let (out, st) = mono_models(&l, &mono_unsp(false, &[(2001, 2500), (2010, 2490)]), &seq, "c");
+        assert_eq!((st, out), ((0, 0), l.clone()));
+        // ends too far apart to cluster (> 50 bp)
+        let (_, st) = mono_models(&l, &mono_unsp(false, &[(2001, 2500), (2010, 2600), (2040, 2700)]), &seq, "c");
+        assert_eq!(st, (0, 0));
+        // overlapping T's exon 1001-1100 on the same strand
+        let s2 = tes_seq(7000, &[(1170, "AATAAA")]);
+        let (_, st) = mono_models(&l, &mono_unsp(false, &[(1050, 1200), (1060, 1200), (1070, 1200)]), &s2, "c");
+        assert_eq!(st, (0, 0));
+        // no PAS / internally primed
+        let u = mono_unsp(false, &[(2001, 2500), (2010, 2490), (2040, 2520)]);
+        assert_eq!(mono_models(&l, &u, &tes_seq(7000, &[]), "c").1, (0, 0));
+        let primed = tes_seq(7000, &[(2470, "AATAAA"), (2501, "AAAAAAAAAAAA")]);
+        assert_eq!(mono_models(&l, &u, &primed, "c").1, (0, 0));
+    }
+    #[test]
+    fn mono_model_gives_clusters_with_one_start_distinct_ids() {
+        let l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        // two clusters, same median start 2010, ends 2500 and 2800 (> 50 bp apart), each with a PAS
+        let seq = tes_seq(7000, &[(2470, "AATAAA"), (2770, "AATAAA")]);
+        let u = mono_unsp(false, &[(2010, 2500), (2010, 2500), (2010, 2500), (2010, 2800), (2010, 2800), (2010, 2800)]);
+        let (out, st) = mono_models(&l, &u, &seq, "c");
+        assert_eq!(st, (0, 2));
+        let ids: DetHashSet<String> = mono_txs(&out).into_iter().map(|t| t.0).collect();
+        assert_eq!(ids.len(), 3);
+    }
+    #[test]
+    fn mono_model_orients_minus_strand_ends() {
+        let l = sc_gtf("T", "G", "+", 5, &EXT_T);
+        // on `-` the 3' end is the genomic start (2010): TTTATT on + at [2020, 2045]
+        let seq = tes_seq(7000, &[(2025, "TTTATT")]);
+        let u = mono_unsp(true, &[(2001, 2500), (2010, 2490), (2040, 2520)]);
+        let (out, st) = mono_models(&l, &u, &seq, "c");
+        assert_eq!(st, (0, 1));
+        let txs = mono_txs(&out);
+        assert_eq!((txs[1].1, txs[1].2, txs[1].3.as_str()), (2010, 2500, "-"));
     }
     #[test]
     fn mono_primed_read_checks_a_past_the_end_or_t_before_the_start() {

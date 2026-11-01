@@ -124,6 +124,7 @@
 #   RUSTLE_POLISH_TSS=off|tag|rescue|split sets `--polish-tss` for `assemble` (default unset = rescue since 2026-11-01, register 1485);
 #   RUSTLE_POLISH_TSS_END=median adds `--polish-tss-end` to `assemble` (default unset = off; register 1487);
 #   RUSTLE_POLISH_TES_EXTEND=on adds `--polish-tes-extend` to `assemble` (default unset = off; register 1488);
+#   RUSTLE_MONO_MODEL=cluster adds `--mono-model` to `assemble` (default unset = off; register 1489);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
@@ -322,6 +323,14 @@ case "${RUSTLE_POLISH_TES_EXTEND:-}" in
   "") ;;
   off|on) POLISH="$POLISH --polish-tes-extend $RUSTLE_POLISH_TES_EXTEND" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TES_EXTEND must be off or on (got '$RUSTLE_POLISH_TES_EXTEND')" >&2; exit 2 ;;
+esac
+# RUSTLE_MONO_MODEL=cluster (opt-in; unset = off, the same command): copy_assign --mono-model, single-exon models rebuilt from
+# end-clustered unspliced reads (register 1489, PASSED held-out chr11 / chr7: base precision +17.2 / +16.5, transcript precision
+# +0.2 / +0.4, chains identical); needs --polish-tss (the default rescue). Default pending the user.
+case "${RUSTLE_MONO_MODEL:-}" in
+  "") ;;
+  off|cluster) POLISH="$POLISH --mono-model $RUSTLE_MONO_MODEL" ;;
+  *) echo "[rustle_pipeline] RUSTLE_MONO_MODEL must be off or cluster (got '$RUSTLE_MONO_MODEL')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_TES=tag|pas-end (opt-in; unset = off, the same command): copy_assign --polish-tes, the read + genome
 # proven TES (tag: `tes_clusters` / `tes_pas` / `tes_primed` only; pas-end: also moves an internally primed 3' end to

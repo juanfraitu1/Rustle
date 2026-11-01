@@ -161,3 +161,21 @@ Multi-exon transcripts are untouched.
 precision >= SHIP - 0.1 points; B4 matching intron chains identical (multi-exon models untouched). Reported beside: exact matches to
 CAT single-exon transcripts, models emitted, chr20.
 PASS -> propose as default (the user decides).
+
+### E5 RESULT (2026-11-01, job 4406074, `~/asm_ends/`): PASS on both held-out contigs
+
+| contig | arm | transcripts | base Sn / Pr | transcript Sn / Pr (exact) | chains | matching transcripts | single-exon removed / emitted |
+|---|---|---|---|---|---|---|---|
+| chr11 (held-out) | SHIP | 10,318 | 45.5 / 25.8 | 12.5 / 16.505 | 1,702 | 1,703 | |
+| chr11 (held-out) | + mono cluster | 10,310 | 45.8 / **43.0** | 12.7 / 16.702 | 1,702 | 1,722 | 624 / 616 |
+| chr7 (held-out) | SHIP | 11,749 | 50.6 / 18.7 | 14.2 / 13.303 | 1,562 | 1,563 | |
+| chr7 (held-out) | + mono cluster | 11,513 | 50.7 / **35.2** | 14.3 / 13.715 | 1,562 | 1,579 | 971 / 735 |
+| chr20 (dev) | SHIP | 5,366 | 53.1 / 26.9 | 16.2 / 16.474 | 882 | 884 | |
+| chr20 (dev) | + mono cluster | 5,463 | 54.5 / 40.7 | 16.3 / 16.365 | 882 | 894 | 271 / 368 |
+
+B1 base precision +17.2 / +16.5 points (bar +5.0) PASS; B2 base sensitivity +0.3 / +0.1 PASS; B3 transcript precision +0.20 / +0.41
+(bar -0.1) PASS; B4 chains identical PASS. Matching transcripts +19 / +16. Without the flag the chr20 output is byte-identical to the r1485
+arm. Disclosure: the first run of this job (4406056) crashed on every contig before writing a GTF (two clusters with one median start
+got one transcript id; `--bridge-regroup` refused the duplicate). No score was produced or read; the id now carries start and end plus
+a counter (test `mono_model_gives_clusters_with_one_start_distinct_ids`, watched failing first); rule and bars unchanged. Status: opt-in
+`--mono-model cluster` (driver `RUSTLE_MONO_MODEL=cluster`); PASS proposes it as default, the user decides. Tests: 4 new, copy_assign 98/98.
