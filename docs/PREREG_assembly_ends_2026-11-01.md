@@ -203,3 +203,16 @@ panel (`docs/PREREG_sqanti_single_copy_2026-11-01.md`) the combination reads bas
 (after every polish step, minus the bridges), so they change the families stage's input: transcript ends (E3, E4) and the single-exon
 models (E5). Intron chains are identical, but locus extents and single-exon loci move; register 975 / 979 showed locus extents matter
 for family graph admission. None of the three has been scored on families; that check precedes any default.
+
+## E6 (register 1490): do E3 + E4 + E5 leave the families stage intact? Frozen 2026-11-01 before any run
+**Why:** the correction above: the three layers change `PREFIX.families.gtf`, the families stage's input.
+**Arms (each sample, fresh, one binary = today's build with E3-E5):** SHIP = `tools/rustle_pipeline.sh assemble` then `families` with
+the defaults (`--polish-tss rescue`); ALL = the same with `RUSTLE_POLISH_TSS_END=median RUSTLE_POLISH_TES_EXTEND=on
+RUSTLE_MONO_MODEL=cluster`. Seeding as the base runs (good pool, the sample's existing best-AS table). Samples: A119b (human testis,
+CHM13) and OR6737 (gorilla testis, GGO), the base runs' samples; this is a non-regression check, not a new family rule.
+**Metric:** `bench/denovo_eval/pairscore.py --species human|gorilla --gtf PREFIX.families.gtf PREFIX.fam.copies.tsv` (the standing
+family readout, Compara pairs among expressed protein-coding genes): coding precision and recall. Reported beside: families, copies,
+`--fasta --noncoding` precision.
+**Bars (both samples):** C1 coding precision >= SHIP - 0.010; C2 coding recall >= SHIP - 0.010.
+PASS on both -> propose E3 + E4 + E5 as pipeline defaults (the user decides); FAIL -> the three stay assembly options, and the
+families stage keeps reading the SHIP ends (a separate pre-polish families GTF would be the follow-up).
