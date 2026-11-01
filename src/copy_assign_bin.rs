@@ -621,6 +621,15 @@ struct Args {
     #[arg(long, default_value = "off", value_parser = ["off", "tag", "rescue", "split"])]
     polish_tss: String,
 
+    /// READ-CONSENSUS 5' ENDS (register 1487, PREREG ASSEMBLY ENDS E3; needs `--polish-tss` tag|rescue|split, whose evidence it
+    /// reads). On each contig's final transcripts (after `--polish-tss`), every multi-exon transcript that `--polish-tss` did
+    /// not rescue or split has its 5' end moved to the lower median of its own starts: deduplicated primary spliced records
+    /// with its exact intron chain whose 5' end lies inside its first exon (>= 2 needed). Pass 1 emits the most upstream read
+    /// start; IsoCon / FLAIR place an end where most reads start. Nothing else changes (chain, 3' end, `reads`, the set).
+    /// * `off` (default): byte-identical to a run without this flag. * `median`: the move above, one log line per contig.
+    #[arg(long, default_value = "off", value_parser = ["off", "median"])]
+    polish_tss_end: String,
+
     /// READ + GENOME PROVEN TES (`--gtf`, `--assemble-only`; needs `--assembly-polish` mono|full). The 3' mirror of
     /// `--polish-tss` with the genome in place of the cap (tesfus_design §1): per contig, for every multi-exon
     /// transcript of the output (after `--polish-tss`), its OWN 3' ends (exact-chain, same-strand deduplicated
@@ -5925,6 +5934,70 @@ fn tss_apply(
     (res, twins)
 }
 
+/// `--polish-tss-end median` (register 1487, PREREG ASSEMBLY ENDS E3): on one contig's final lines, move the 5' end of every
+/// multi-exon transcript not in `skip` (the forms `--polish-tss` rescued or split, already at a proven mode) to the lower median
+/// of its OWN starts: the deduplicated primary spliced records with the transcript's exact intron chain whose oriented 5' end
+/// lies inside its oriented first exon. Needs >= 2 own starts; nothing else in the block changes. Returns (lines, moved).
+fn tss_end_median(
+    lines: &[String],
+    recs: &[rustle::denovo_assemble::TssRead],
+    skip: &DetHashSet<String>,
+) -> (Vec<String>, usize) {
+    let txs = tss_parse(lines);
+    let mut starts: DetHashMap<(bool, u64), Vec<i64>> = DetHashMap::default();
+    for r in recs {
+        if !r.oin.is_empty() {
+            starts.entry((r.minus, r.chain)).or_default().push(r.o5);
+        }
+    }
+    let mut new5: DetHashMap<String, i64> = DetHashMap::default();
+    for (tid, t) in txs.iter() {
+        if t.ochain.is_empty() || skip.contains(tid) {
+            continue;
+        }
+        let (_, first_end) = t.oex[0];
+        let mut v: Vec<i64> = starts
+            .get(&(t.minus, t.chain))
+            .map(|v| v.iter().copied().filter(|&o| o <= first_end).collect())
+            .unwrap_or_default();
+        if v.len() < 2 {
+            continue;
+        }
+        v.sort_unstable();
+        let m = v[(v.len() - 1) / 2];
+        if m != t.oex[0].0 {
+            new5.insert(tid.clone(), m);
+        }
+    }
+    let tid_of = |l: &str| -> Option<String> {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() < 9 {
+            return None;
+        }
+        re_attr(f[8], "transcript_id")
+    };
+    let mut res: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let Some(tid) = tid_of(&lines[i]) else {
+            res.push(lines[i].clone());
+            i += 1;
+            continue;
+        };
+        let mut j = i + 1;
+        while j < lines.len() && tid_of(&lines[j]).as_deref() == Some(tid.as_str()) {
+            j += 1;
+        }
+        match (new5.get(&tid), txs.get(&tid)) {
+            (Some(&o5), Some(t)) => res.extend(tss_rewrite_block(&lines[i..j], t.minus, o5, None, None)),
+            _ => res.extend(lines[i..j].iter().cloned()),
+        }
+        i = j;
+    }
+    let moved = new5.len();
+    (res, moved)
+}
+
 /// The `--polish-tss` attributes of every transcript of one contig's outcome (tss_clusters; tss_rescued; tss_split).
 fn tss_attr_strings(out: &TssOutcome) -> std::collections::BTreeMap<String, String> {
     let mut m: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -6368,6 +6441,13 @@ fn main() -> Result<()> {
             args.gtf && args.assembly_polish != "none",
             "--polish-tss {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
             args.polish_tss
+        );
+    }
+    if args.polish_tss_end != "off" {
+        anyhow::ensure!(
+            args.polish_tss != "off",
+            "--polish-tss-end {} reads the --polish-tss evidence: pass --polish-tss tag|rescue|split",
+            args.polish_tss_end
         );
     }
     if args.polish_tes != "off" {
@@ -9962,6 +10042,22 @@ fn main() -> Result<()> {
                     part = on;
                     tss_attrs.extend(tss_attr_strings(&out));
                     tss_protect.extend(out.protect.iter().cloned());
+                    if args.polish_tss_end != "off" {
+                        let mut skip: DetHashSet<String> = out.rescued.keys().cloned().collect();
+                        for (tid, pieces) in &out.split {
+                            skip.insert(tid.clone());
+                            for k in 1..pieces.len() {
+                                skip.insert(format!("{tid}_tss{}", k + 1));
+                            }
+                        }
+                        let (moved_lines, moved) = tss_end_median(&part, &recs, &skip);
+                        part = moved_lines;
+                        eprintln!(
+                            "[copy_assign] TSS END ({}) {}: {} multi-exon transcripts moved their 5' end to the lower median \
+                             of their own exact-chain starts (>= 2; {} rescued / split forms left at their proven mode)",
+                            args.polish_tss_end, c, moved, skip.len()
+                        );
+                    }
                     let st = &out.stats;
                     eprintln!(
                         "[copy_assign] TSS PROOF ({}) {}: {}; cap signal {} (capped {}/{} at the proven first-exon \
@@ -12990,6 +13086,74 @@ mod tests {
         assert_eq!(tss_binom_half_cdf(0, 0), 1.0);
     }
 
+    /// `--polish-tss-end median` (register 1487): the first exon's start of each block, (transcript line start, exon start).
+    fn tss_end_starts(l: &[String], tid: &str, minus: bool) -> (i64, i64) {
+        let mut tx = 0i64;
+        let mut ex: Vec<i64> = Vec::new();
+        for line in l {
+            let f: Vec<&str> = line.split('\t').collect();
+            if !f[8].contains(&format!("transcript_id \"{tid}\";")) {
+                continue;
+            }
+            let v: i64 = if minus { f[4].parse().unwrap() } else { f[3].parse().unwrap() };
+            if f[2] == "transcript" {
+                tx = v;
+            } else {
+                ex.push(v);
+            }
+        }
+        (tx, if minus { *ex.iter().max().unwrap() } else { *ex.iter().min().unwrap() })
+    }
+    #[test]
+    fn tss_end_median_moves_the_start_to_the_lower_median_of_exact_chain_starts_plus() {
+        let l = sc_gtf("X", "G", "+", 5, &TSS_X);
+        let mut ev = TssEvidence::default();
+        let introns = [(201, 1000), (1101, 1200)];
+        tss_push(&mut ev, false, 101, 1300, &introns, 1, false);
+        tss_push(&mut ev, false, 150, 1290, &introns, 2, false);
+        tss_push(&mut ev, false, 170, 1280, &introns, 2, false);
+        // a read with another chain starting at 120 must not count
+        tss_push(&mut ev, false, 120, 1300, &[(201, 1000)], 3, false);
+        let (out, moved) = tss_end_median(&l, &tss_recs(&ev), &DetHashSet::default());
+        assert_eq!(moved, 1);
+        assert_eq!(tss_end_starts(&out, "X", false), (150, 150));
+        // nothing but the 5' end changes
+        assert_eq!(out.len(), l.len());
+        assert_eq!(out[2], l[2]);
+        assert_eq!(out[3], l[3]);
+    }
+    #[test]
+    fn tss_end_median_orients_minus_strand_starts() {
+        let l = sc_gtf("X", "G", "-", 5, &TSS_X);
+        let mut ev = TssEvidence::default();
+        let introns = [(201, 1000), (1101, 1200)];
+        // 5' end on `-` is the right end: starts 1300 (1), 1250 (2), 1230 (2) -> lower median in oriented terms = 1250
+        tss_push(&mut ev, true, 1300, 101, &introns, 1, false);
+        tss_push(&mut ev, true, 1250, 110, &introns, 2, false);
+        tss_push(&mut ev, true, 1230, 120, &introns, 2, false);
+        let (out, moved) = tss_end_median(&l, &tss_recs(&ev), &DetHashSet::default());
+        assert_eq!(moved, 1);
+        assert_eq!(tss_end_starts(&out, "X", true), (1250, 1250));
+    }
+    #[test]
+    fn tss_end_median_needs_two_own_starts_and_spares_skipped_transcripts() {
+        let l = sc_gtf("X", "G", "+", 5, &TSS_X);
+        let introns = [(201, 1000), (1101, 1200)];
+        let mut one = TssEvidence::default();
+        tss_push(&mut one, false, 150, 1300, &introns, 1, false);
+        let (out, moved) = tss_end_median(&l, &tss_recs(&one), &DetHashSet::default());
+        assert_eq!((moved, out.clone()), (0, l.clone()));
+        let mut ev = TssEvidence::default();
+        tss_push(&mut ev, false, 150, 1300, &introns, 3, false);
+        let skip: DetHashSet<String> = ["X".to_string()].into_iter().collect();
+        let (out, moved) = tss_end_median(&l, &tss_recs(&ev), &skip);
+        assert_eq!((moved, out), (0, l.clone()));
+        // a start outside the first exon (downstream of the first donor) is not an own start
+        let mut far = TssEvidence::default();
+        tss_push(&mut far, false, 1050, 1300, &[(1101, 1200)], 3, false);
+        let (out, moved) = tss_end_median(&l, &tss_recs(&far), &DetHashSet::default());
+        assert_eq!((moved, out), (0, l));
+    }
     #[test]
     fn tss_evidence_deduplicates_orients_and_reads_the_cap_clip() {
         use noodles_sam::alignment::record::cigar::{op::Kind as K, Op};

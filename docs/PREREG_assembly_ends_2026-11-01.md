@@ -76,3 +76,22 @@ families stage uses are untouched (the step runs on the emitted GTF only).
 identical to SHIP (by construction: any difference is a bug and fails); B3 base-level sensitivity >= SHIP - 2.0 points.
 PASS -> propose as the pipeline default (the user decides). Reported beside: chr20, the 3' ends (unchanged by construction),
 how many transcripts moved and by how much.
+
+### E3 RESULT (2026-11-01, job 4405816, `~/asm_ends/`, scorer `bench/assembly_ends/end_score.py`): PASS on both held-out contigs
+
+| contig | arm | `=` multi-exon | 5' within 50 bp (M) | median 5' distance | base sensitivity | chains | matching transcripts |
+|---|---|---|---|---|---|---|---|
+| chr11 (held-out) | SHIP | 1,702 | 40.60% | 77 bp | 45.5 | 1,702 | 1,703 |
+| chr11 (held-out) | + median | 1,702 | **64.57%** | 28 bp | 44.0 | 1,702 | 1,703 |
+| chr7 (held-out) | SHIP | 1,562 | 39.31% | 79 bp | 50.6 | 1,562 | 1,563 |
+| chr7 (held-out) | + median | 1,562 | **63.44%** | 30 bp | 49.3 | 1,562 | 1,563 |
+| chr20 (dev) | SHIP | 882 | 46.15% | 57 bp | 53.1 | 882 | 884 |
+| chr20 (dev) | + median | 882 | 67.91% | 27 bp | 51.8 | 882 | 884 |
+
+B1 +24.0 / +24.1 points (bar +10) PASS; B2 chains and matching transcripts identical PASS; B3 base sensitivity -1.5 / -1.3 (bar -2.0)
+PASS. Base precision rises (25.8 -> 26.2, 18.7 -> 19.1). Moved: 6,081 (chr11), 6,478 (chr7), 3,174 (chr20) transcripts; the rescued /
+split forms (87 / 74 / 47) stay at their proven mode. Checked: same transcript set, no 3' end and no internal exon changed on any
+contig; without the flag the chr20 output is byte-identical to the r1485 arm. The 3' share moves by 0.06 on chr11 only because
+gffcompare picks a different representative query for a reference once starts move. Status: flag `--polish-tss-end median` (opt-in,
+driver `RUSTLE_POLISH_TSS_END=median`); PASS proposes it as the pipeline default, the user decides. Tests: 3 new (`tss_end_median_*`),
+copy_assign 89/89.

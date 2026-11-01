@@ -122,6 +122,7 @@
 # annotation (--gff) by `flag` only (IG/TR screen).
 # Environment: RUSTLE_POLISH_SUBCHAIN=tag|drop adds `--polish-subchain` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_TSS=off|tag|rescue|split sets `--polish-tss` for `assemble` (default unset = rescue since 2026-11-01, register 1485);
+#   RUSTLE_POLISH_TSS_END=median adds `--polish-tss-end` to `assemble` (default unset = off; register 1487);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
@@ -304,6 +305,14 @@ POLISH_TSS=${RUSTLE_POLISH_TSS:-rescue}
 case "$POLISH_TSS" in
   off|tag|rescue|split) POLISH="$POLISH --polish-tss $POLISH_TSS" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_TSS must be off, tag, rescue or split (got '$RUSTLE_POLISH_TSS')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_TSS_END=median (opt-in; unset = off, the same command): copy_assign --polish-tss-end, each multi-exon transcript's
+# 5' end at the lower median of its exact-chain reads' starts (register 1487, PASSED held-out chr11 / chr7: starts within 50 bp
+# of CAT 40.6 -> 64.6% / 39.3 -> 63.4%, chains identical); needs --polish-tss (the default rescue). Default pending the user.
+case "${RUSTLE_POLISH_TSS_END:-}" in
+  "") ;;
+  off|median) POLISH="$POLISH --polish-tss-end $RUSTLE_POLISH_TSS_END" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_TSS_END must be off or median (got '$RUSTLE_POLISH_TSS_END')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_TES=tag|pas-end (opt-in; unset = off, the same command): copy_assign --polish-tes, the read + genome
 # proven TES (tag: `tes_clusters` / `tes_pas` / `tes_primed` only; pas-end: also moves an internally primed 3' end to
