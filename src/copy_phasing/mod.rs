@@ -60,6 +60,17 @@ pub enum SlotOrder {
     Support,
 }
 
+/// O2's tie window (o3port.py `near`: AS_TIE, TIE_STRUCTURE, TIE_MS).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TieWindow {
+    /// AS within AS_TIE of the read's best AS (the default).
+    BestAs,
+    /// `--tie-structure`: the primary's intron count and AS within AS_TIE of the primary's AS.
+    Structure,
+    /// `--tie-ms W`: ms within W of the read's best ms; a record without an ms tag is outside the window.
+    Ms(i32),
+}
+
 /// The run's switches (the Python's module globals and `run_family` keywords); `Default` = the Python defaults.
 #[derive(Clone, Debug)]
 pub struct Params {
@@ -77,9 +88,10 @@ pub struct Params {
     pub structure: bool,
     pub floor_first: bool,
     pub absorb: bool,
-    /// `--tie-structure` (register 1404): the tie window is the primary's intron count and AS within AS_TIE of the primary's
-    /// (`pile::Prim::near`), not AS within AS_TIE of the read's best.
-    pub tie_structure: bool,
+    /// The tie window (`pile::Prim::near`): AS within AS_TIE of the read's best (default), `--tie-structure` (register 1404: the
+    /// primary's intron count and AS within AS_TIE of the primary's) or `--tie-ms W` (register 1472 / 1483: ms within W of the read's
+    /// best ms, the score minimap2 ranks by).
+    pub window: TieWindow,
     /// `--certify-all-records` (register 1414): a certified copy must survive the slot matching over every family copy its reads
     /// have any record on; a haplotype whose primaries lie outside the family claims no slot (`family::certificate_matching`).
     pub certify_all: bool,
@@ -102,7 +114,7 @@ impl Default for Params {
             structure: true,
             floor_first: true,
             absorb: false,
-            tie_structure: false,
+            window: TieWindow::BestAs,
             certify_all: false,
         }
     }

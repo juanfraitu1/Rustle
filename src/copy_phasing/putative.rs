@@ -190,6 +190,7 @@ mod tests {
             start,
             end,
             as_: Some(0),
+            ms: None,
             nm: None,
             reverse: false,
             secondary: false,

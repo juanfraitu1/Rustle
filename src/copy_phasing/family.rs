@@ -7,7 +7,7 @@ use super::putative::{foreign_clipping, foreign_coverage, foreign_splicing, junc
 use super::pyjson::Json;
 use super::slots::{b_matching, consensus, divergence, explanation, forced_edges, pile_consensus, private_alleles, private_detail, Explain, Matching, Merged, Options, Parent};
 use super::tied_reads::{disfavoured, homology, one_site, semi_tied, SiteCache};
-use super::{Copy, Hap, Params, ReadId, SlotOrder, MIN_READS, MIN_SUPPORT};
+use super::{Copy, Hap, Params, ReadId, SlotOrder, TieWindow, MIN_READS, MIN_SUPPORT};
 use crate::genome::IndexedFasta;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
@@ -85,7 +85,7 @@ fn certificate_matching(
         let out = reads
             .iter()
             .flat_map(|r| recs(r).iter())
-            .filter(|(ch, s0, e0, _, sec, _)| !*sec && !copies.iter().any(|c| on(ch, *s0, *e0, c)))
+            .filter(|(ch, s0, e0, _, sec, ..)| !*sec && !copies.iter().any(|c| on(ch, *s0, *e0, c)))
             .count();
         if out * 2 > reads.len() {
             continue;
@@ -423,7 +423,7 @@ pub fn run_family(
             let mut a = semi_tied(r, piles, prim, genome, &mut semi_cache, p);
             if a == "ABSTAIN" && p.one_site {
                 if let Some(&h) = home_of.get(&r) {
-                    a = one_site(r, &merged[h].reads, piles, prim, genome, &mut semi_cache, &mut hap_cache, h);
+                    a = one_site(r, &merged[h].reads, piles, prim, genome, &mut semi_cache, &mut hap_cache, h, matches!(p.window, TieWindow::Ms(_)));
                 }
             }
             a

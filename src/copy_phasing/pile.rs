@@ -2,7 +2,7 @@
 //! reads off a pysam record; piles keep pysam's fetch order (Python dict insertion order: a better record replaces a read's
 //! record in place).
 
-use super::{Copy, Obs, ObsX, ReadId, AS_TIE};
+use super::{Copy, Obs, ObsX, ReadId, TieWindow, AS_TIE};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap};
@@ -26,6 +26,8 @@ pub struct Rec {
     pub start: i64,
     pub end: i64,
     pub as_: Option<i32>,
+    /// minimap2's `ms` (the score it ranks records by, register 1409).
+    pub ms: Option<i32>,
     pub nm: Option<i32>,
     pub reverse: bool,
     pub secondary: bool,
@@ -42,6 +44,8 @@ pub struct Prim {
     pub qual: Vec<u8>,
     pub reverse: bool,
     pub best_as: i32,
+    /// The read's best `ms` over its non-supplementary records (None when no record carries the tag): the anchor of `--tie-ms`.
+    pub best_ms: Option<i32>,
     /// The primary record's (AS, intron count): the reference of the `--tie-structure` window (register 1404).
     pub primary: Option<(i32, usize)>,
     seq_rc: Vec<u8>,
@@ -54,17 +58,18 @@ impl Prim {
         let qual = qual.unwrap_or_else(|| vec![40; seq.len()]);
         let seq_rc = seq.iter().rev().map(|&b| comp(b)).collect();
         let qual_rev = qual.iter().rev().copied().collect();
-        Prim { seq, qual, reverse, best_as, primary: None, seq_rc, qual_rev }
+        Prim { seq, qual, reverse, best_as, best_ms: None, primary: None, seq_rc, qual_rev }
     }
 
-    /// O2's tie window for one record of the read (AS, intron count): within AS_TIE of the read's best AS, or with `structure`
-    /// (`--tie-structure`, register 1404) the primary's intron count and AS within AS_TIE of the primary's. Splice-mode AS charges each
-    /// intron, so by best AS an unspliced processed-copy alignment can tie or outscore the read's own spliced one.
-    pub fn near(&self, as_: i32, introns: usize, structure: bool) -> bool {
-        if structure {
-            self.primary.is_some_and(|(pa, pn)| introns == pn && (as_ - pa).abs() <= AS_TIE)
-        } else {
-            as_ >= self.best_as - AS_TIE
+    /// O2's tie window for one record of the read (AS, intron count, ms): within AS_TIE of the read's best AS; under `--tie-structure`
+    /// (register 1404) the primary's intron count and AS within AS_TIE of the primary's (splice-mode AS charges each intron, so by best
+    /// AS an unspliced processed-copy alignment can tie or outscore the read's own spliced one); under `--tie-ms W` (register 1472)
+    /// ms within W of the read's best ms, minimap2's own ranking score, a record without the tag being outside.
+    pub fn near(&self, as_: i32, introns: usize, ms: Option<i32>, w: TieWindow) -> bool {
+        match w {
+            TieWindow::BestAs => as_ >= self.best_as - AS_TIE,
+            TieWindow::Structure => self.primary.is_some_and(|(pa, pn)| introns == pn && (as_ - pa).abs() <= AS_TIE),
+            TieWindow::Ms(wd) => matches!((ms, self.best_ms), (Some(m), Some(b)) if m >= b - wd),
         }
     }
 }
@@ -74,8 +79,8 @@ pub fn introns(rec: &Rec) -> usize {
     rec.cigar.iter().filter(|&&(op, _)| op == OP_N).count()
 }
 
-/// `(chrom, start, end, AS, is secondary)` of every non-supplementary record with an AS tag.
-pub type RecSummary = (Arc<str>, i64, i64, i32, bool, usize);
+/// `(chrom, start, end, AS, is secondary, introns, ms)` of every non-supplementary record with an AS tag.
+pub type RecSummary = (Arc<str>, i64, i64, i32, bool, usize, Option<i32>);
 /// A pile: {read: its best record on the copy}, in fetch order.
 pub type Pile = IndexMap<ReadId, Rec>;
 /// {copy tid: pile}, in `--copies` order.
@@ -271,6 +276,7 @@ impl Bam {
             start,
             end: start + rl,
             as_: int(*b"AS")?,
+            ms: int(*b"ms")?,
             nm: int(*b"NM")?,
             reverse: flags.is_reverse_complemented(),
             secondary: flags.is_secondary(),
@@ -284,14 +290,18 @@ impl Bam {
     pub fn read_primaries(&self, names: &HashMap<Vec<u8>, ReadId>) -> Result<(HashMap<ReadId, Prim>, HashMap<ReadId, Vec<RecSummary>>)> {
         let mut reader = crate::bam::open_bam(&self.path, 2)?;
         reader.read_header()?;
-        let (mut prim, mut best, mut records): (HashMap<ReadId, (Vec<u8>, Option<Vec<u8>>, bool, Option<(i32, usize)>)>, HashMap<ReadId, i32>, HashMap<ReadId, Vec<RecSummary>>) =
+        let (mut prim, mut best, mut best_ms, mut records): (HashMap<ReadId, (Vec<u8>, Option<Vec<u8>>, bool, Option<(i32, usize)>)>, HashMap<ReadId, i32>, HashMap<ReadId, i32>, HashMap<ReadId, Vec<RecSummary>>) =
             Default::default();
         let mut buf = noodles_bam::Record::default();
         while reader.read_record(&mut buf)? != 0 {
             let Some(rec) = self.rec(&buf, names, false)? else { continue };
             if let Some(a) = rec.as_ {
                 if !rec.supplementary {
-                    records.entry(rec.read).or_default().push((rec.chrom.clone(), rec.start, rec.end, a, rec.secondary, introns(&rec)));
+                    records.entry(rec.read).or_default().push((rec.chrom.clone(), rec.start, rec.end, a, rec.secondary, introns(&rec), rec.ms));
+                    if let Some(m) = rec.ms {
+                        let b = best_ms.entry(rec.read).or_insert(i32::MIN);
+                        *b = (*b).max(m);
+                    }
                 }
                 let b = best.entry(rec.read).or_insert(-1_000_000_000);
                 *b = (*b).max(a);
@@ -308,6 +318,7 @@ impl Bam {
             .into_iter()
             .map(|(n, (s, q, rev, pa))| {
                 let mut p = Prim::new(s, q, rev, best.get(&n).copied().unwrap_or(-1_000_000_000));
+                p.best_ms = best_ms.get(&n).copied();
                 p.primary = pa;
                 (n, p)
             })
@@ -333,15 +344,14 @@ impl Bam {
     }
 }
 
-/// `pile_records`: {copy: {read: record}} for the records in the tie window (`Prim::near`; `structure` = `--tie-structure`) that
-/// fall on the copy's span.
+/// `pile_records`: {copy: {read: record}} for the records in the tie window (`Prim::near` under `w`) that fall on the copy's span.
 pub fn pile_records(
     bam: &Bam,
     copies: &[Copy],
     reads: &BTreeSet<ReadId>,
     prim: &HashMap<ReadId, Prim>,
     names: &HashMap<Vec<u8>, ReadId>,
-    structure: bool,
+    w: TieWindow,
 ) -> Result<Piles> {
     let mut piles = Piles::new();
     for c in copies {
@@ -349,7 +359,7 @@ pub fn pile_records(
         for rec in bam.fetch(&c.chrom, c.start, c.end, names)? {
             let n = rec.read;
             let (Some(pr), Some(a)) = (prim.get(&n), rec.as_) else { continue };
-            if !reads.contains(&n) || !pr.near(a, introns(&rec), structure) {
+            if !reads.contains(&n) || !pr.near(a, introns(&rec), rec.ms, w) {
                 continue;
             }
             if p.get(&n).map_or(true, |old| a > old.as_.unwrap()) {
@@ -364,6 +374,7 @@ pub fn pile_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::copy_phasing::TieWindow;
 
     pub(crate) fn rec(start: i64, cigar: &[(u8, u32)], reverse: bool) -> Rec {
         let rl: i64 = cigar.iter().filter(|(o, _)| [OP_M, OP_D, OP_N, OP_EQ, OP_X].contains(o)).map(|(_, n)| *n as i64).sum();
@@ -373,6 +384,7 @@ mod tests {
             start,
             end: start + rl,
             as_: Some(0),
+            ms: None,
             nm: None,
             reverse,
             secondary: false,
@@ -425,18 +437,34 @@ mod tests {
         let mut p = Prim::new(b"ACGT".to_vec(), None, false, 626);
         p.primary = Some((592, 5));
         // by best AS (the default): the secondary ties, the read's own spliced primary does not (592 < 626 - 10)
-        assert!(p.near(626, 0, false));
-        assert!(!p.near(592, 5, false));
+        assert!(p.near(626, 0, None, TieWindow::BestAs));
+        assert!(!p.near(592, 5, None, TieWindow::BestAs));
         // by structure (--tie-structure, register 1404): same intron count as the primary and AS within 10 of it
-        assert!(p.near(592, 5, true));
-        assert!(!p.near(626, 0, true));
-        assert!(p.near(600, 5, true) && p.near(582, 5, true));
-        assert!(!p.near(603, 5, true) && !p.near(581, 5, true));
-        assert!(!p.near(592, 4, true));
+        assert!(p.near(592, 5, None, TieWindow::Structure));
+        assert!(!p.near(626, 0, None, TieWindow::Structure));
+        assert!(p.near(600, 5, None, TieWindow::Structure) && p.near(582, 5, None, TieWindow::Structure));
+        assert!(!p.near(603, 5, None, TieWindow::Structure) && !p.near(581, 5, None, TieWindow::Structure));
+        assert!(!p.near(592, 4, None, TieWindow::Structure));
         // no primary AS: nothing ties by structure
         p.primary = None;
-        assert!(!p.near(592, 5, true));
+        assert!(!p.near(592, 5, None, TieWindow::Structure));
         assert_eq!(introns(&rec(0, &[(OP_M, 5), (OP_N, 100), (OP_M, 5), (OP_N, 7), (OP_M, 1)], false)), 2);
+    }
+
+    #[test]
+    fn tie_window_by_ms_uses_the_reads_best_ms_and_needs_the_tag() {
+        // --tie-ms W (o3port.py TIE_MS, register 1472): ms within W of the read's best ms; a record without ms is outside the window
+        let mut p = Prim::new(b"ACGT".to_vec(), None, false, 1000);
+        p.primary = Some((1000, 2));
+        p.best_ms = Some(1200);
+        assert!(p.near(995, 2, Some(1150), TieWindow::BestAs)); // the AS window ignores ms
+        assert!(p.near(995, 2, Some(1200), TieWindow::Ms(0))); // an exact ms tie
+        assert!(!p.near(1000, 2, Some(1199), TieWindow::Ms(0))); // one ms point below the best: minimap2 ranked it
+        assert!(!p.near(1000, 2, None, TieWindow::Ms(0))); // no ms tag
+        assert!(p.near(900, 1, Some(1191), TieWindow::Ms(10))); // within 10, whatever AS and intron count
+        assert!(!p.near(900, 1, Some(1189), TieWindow::Ms(10)));
+        p.best_ms = None;
+        assert!(!p.near(1000, 2, Some(1200), TieWindow::Ms(10))); // a read without any ms: nothing ties by ms
     }
 
     #[test]

@@ -4,18 +4,18 @@
 //! usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2]
 //!        [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site]
 //!        [--guard] [--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb]
-//!        [--tie-structure] [--certify-all-records] [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
+//!        [--tie-structure | --tie-ms W] [--certify-all-records] [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]
 //! `--threads` (default 4) never changes a product. Exit status 2: a usage error.
 
 use anyhow::{bail, Context, Result};
 use rustle::copy_phasing::pile::{pile_records, Bam};
 use rustle::genome::IndexedFasta;
-use rustle::copy_phasing::{Clusterer, Copy, Params, ReadId, SlotOrder};
+use rustle::copy_phasing::{Clusterer, Copy, Params, ReadId, SlotOrder, TieWindow};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const USAGE: &str = "usage: copy_phasing run --bam B --copies COPIES.tsv --genome G.fa --net net_reads.tsv --out PREFIX [--families F1,F2] \
 [--slot-order divergence|support] [--isocon PREFIX] [--clusterer cc|lp] [--coverage] [--semi] [--anchor] [--one-site] [--guard] \
-[--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--tie-structure] [--certify-all-records] \
+[--prefer] [--no-reconstruct] [--no-clipping] [--correct] [--no-structure] [--v5-clique] [--absorb] [--tie-structure | --tie-ms W] [--certify-all-records] \
 [--isocon-rule no-pile|via-b] [--dump PATH] [--threads N]";
 
 #[derive(Debug)]
@@ -73,10 +73,10 @@ fn parse_args(raw: &[String]) -> Result<Args> {
             "--no-structure" => p.structure = false,
             "--v5-clique" => p.floor_first = false,
             "--absorb" => p.absorb = true,
-            "--tie-structure" => p.tie_structure = true,
+            "--tie-structure" => p.window = TieWindow::Structure,
             "--certify-all-records" => p.certify_all = true,
             "--bam" | "--copies" | "--genome" | "--net" | "--out" | "--families" | "--slot-order" | "--isocon" | "--clusterer"
-            | "--isocon-rule" | "--dump" | "--threads" => {
+            | "--isocon-rule" | "--dump" | "--threads" | "--tie-ms" => {
                 let v = match inline {
                     Some(v) => v,
                     None => it.next().cloned().with_context(|| format!("copy_phasing: {flag} needs a value\n{USAGE}"))?,
@@ -88,6 +88,10 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         }
     }
     let need = |k: &str| kv.get(k).cloned().with_context(|| format!("copy_phasing: {k} is required\n{USAGE}"));
+    if let Some(w) = kv.get("--tie-ms") {
+        // --tie-ms takes precedence over --tie-structure, as in o3port.py
+        p.window = TieWindow::Ms(w.parse().with_context(|| format!("copy_phasing: --tie-ms {w:?} (an integer ms margin)\n{USAGE}"))?);
+    }
     p.clusterer = match kv.get("--clusterer").map(String::as_str) {
         None | Some("cc") => Clusterer::Cc,
         Some("lp") => Clusterer::Lp,
@@ -218,7 +222,7 @@ fn run(a: &Args) -> Result<()> {
         let mut t: [String; 11] = Default::default(); // ct cf cl rd ft lh lf lo o2 dump log
         let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
         let copies = by_fam.get(fam).unwrap_or(&empty);
-        let piles = pile_records(&bam, copies, &ids, &prim, &names, a.params.tie_structure)?;
+        let piles = pile_records(&bam, copies, &ids, &prim, &names, a.params.window)?;
         let ftmp = tmp.join(fam.replace('/', "_"));
         std::fs::create_dir_all(&ftmp)?;
         let out = run_family(fam, copies, &piles, &prim, &genome, &a.params, &ftmp, dumping.then_some(&table[..]), &records)?;
@@ -236,11 +240,17 @@ fn run(a: &Args) -> Result<()> {
         let mut recs = Vec::new();
         for &n in &ids {
             let rs = records.get(&n).map_or(&[][..], |v| &v[..]);
-            if a.params.tie_structure {
-                let pr = prim.get(&n);
-                recs.extend(rs.iter().map(|(ch, s0, e0, asc, _, ni)| (ch.to_string(), *s0, *e0, n, pr.is_some_and(|p| p.near(*asc, *ni, true)))));
-            } else if let Some(b) = rs.iter().map(|x| x.3).max() {
-                recs.extend(rs.iter().map(|(ch, s0, e0, asc, _, _)| (ch.to_string(), *s0, *e0, n, *asc >= b - AS_TIE)));
+            match a.params.window {
+                // the default window anchors on the best AS over the read's summarised records (as before the windows were flags)
+                TieWindow::BestAs => {
+                    if let Some(b) = rs.iter().map(|x| x.3).max() {
+                        recs.extend(rs.iter().map(|(ch, s0, e0, asc, _, _, _)| (ch.to_string(), *s0, *e0, n, *asc >= b - AS_TIE)));
+                    }
+                }
+                w => {
+                    let pr = prim.get(&n);
+                    recs.extend(rs.iter().map(|(ch, s0, e0, asc, _, ni, ms)| (ch.to_string(), *s0, *e0, n, pr.is_some_and(|p| p.near(*asc, *ni, *ms, w)))));
+                }
             }
         }
         let spans: Vec<(String, i64, i64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();

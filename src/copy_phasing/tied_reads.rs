@@ -2,7 +2,7 @@
 //! `semi_tied`, `anchor_bases`, `fixed_site`, `site_votes`, `homologous`, `one_site`, `disfavoured`, `rec_strand_base`, `homology`).
 
 use super::pile::{aligned_pairs, cmp_base, oriented, Piles, Prim, Rec};
-use super::{Copy, Params, ReadId, MIN_READS, MIN_SUPPORT, SITE_FLANK};
+use super::{Copy, Params, ReadId, TieWindow, MIN_READS, MIN_SUPPORT, SITE_FLANK};
 use crate::genome::IndexedFasta;
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -140,10 +140,14 @@ fn counts(piles: &Piles, c: &str, prim: &HashMap<ReadId, Prim>, keep: impl Fn(Re
 }
 
 /// The read's piles ordered as `sorted(((AS, -NM, copy) ...), reverse=True)`.
-fn ranked(r: ReadId, piles: &Piles) -> Vec<(i32, i32, &str)> {
-    let mut sc: Vec<(i32, i32, &str)> = piles
-        .iter()
-        .filter_map(|(c, p)| p.get(&r).map(|rec| (rec.as_.unwrap_or(0), -rec.nm.unwrap_or(0), c.as_str())))
+/// The read's pile records ranked by (AS, fewest edits), or under `--tie-ms` (`by_ms`) by (ms, fewest edits) when every one of them
+/// carries ms (o3port.py `semi_tied`).
+fn ranked(r: ReadId, piles: &Piles, by_ms: bool) -> Vec<(i32, i32, &str)> {
+    let recs: Vec<(&str, &Rec)> = piles.iter().filter_map(|(c, p)| p.get(&r).map(|rec| (c.as_str(), rec))).collect();
+    let by_ms = by_ms && recs.iter().all(|(_, rec)| rec.ms.is_some());
+    let mut sc: Vec<(i32, i32, &str)> = recs
+        .into_iter()
+        .map(|(c, rec)| ((if by_ms { rec.ms } else { rec.as_ }).unwrap_or(0), -rec.nm.unwrap_or(0), c))
         .collect();
     sc.sort_by(|a, b| b.cmp(a));
     sc
@@ -152,7 +156,7 @@ fn ranked(r: ReadId, piles: &Piles) -> Vec<(i32, i32, &str)> {
 /// `semi_tied`: HOPELESS on an exact tie of the two best copies, the leader when it leads by >= MIN_READS supported sites, else
 /// ABSTAIN (with --anchor a one-site lead at a fixed site suffices).
 pub fn semi_tied(r: ReadId, piles: &Piles, prim: &HashMap<ReadId, Prim>, genome: &IndexedFasta, cache: &mut SiteCache, p: &Params) -> String {
-    let sc = ranked(r, piles);
+    let sc = ranked(r, piles, matches!(p.window, TieWindow::Ms(_)));
     if sc.len() < 2 || (sc[0].0, sc[0].1) == (sc[1].0, sc[1].1) {
         return "HOPELESS".into();
     }
@@ -184,8 +188,9 @@ pub fn one_site(
     cache: &mut SiteCache,
     hap_cache: &mut HashMap<(usize, String, String), bool>,
     h: usize,
+    by_ms: bool,
 ) -> String {
-    let sc = ranked(r, piles);
+    let sc = ranked(r, piles, by_ms);
     if sc.len() < 2 || !prim.contains_key(&r) {
         return "ABSTAIN".into();
     }
@@ -301,6 +306,7 @@ pub fn homology(home: &Copy, others: &[&Copy], genome: &IndexedFasta, tmpdir: &P
 mod tests {
     use super::*;
     use crate::copy_phasing::pile::{Pile, OP_M};
+    use crate::copy_phasing::TieWindow;
     use std::sync::Arc;
 
     /// A FASTA (+ .fai) in a fresh temp dir.
@@ -331,6 +337,7 @@ mod tests {
             start: 0,
             end: len as i64,
             as_: Some(50),
+            ms: None,
             nm: Some(1),
             reverse: false,
             secondary: false,
@@ -375,6 +382,35 @@ mod tests {
         piles.get_mut("b").unwrap().get_mut(&0).unwrap().nm = Some(0); // b leads by edits, by one site only
         assert_eq!(semi_tied(0, &piles, &prim, &g, &mut SiteCache::default(), &Params::default()), "ABSTAIN");
         assert_eq!(semi_tied(9, &piles, &prim, &g, &mut SiteCache::default(), &Params::default()), "HOPELESS");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn ranked_by_ms_under_the_ms_window_when_every_record_has_it() {
+        // o3port.py semi_tied: under --tie-ms the two best copies are ranked by (ms, fewest edits) when every pile record of the read
+        // carries ms, else by (AS, fewest edits) as today
+        let (mut ra, mut rb) = (rec(0, "a", 30), rec(0, "b", 30));
+        (ra.as_, ra.ms, rb.as_, rb.ms) = (Some(50), Some(100), Some(40), Some(110));
+        let mut pa = Pile::new();
+        let mut pb = Pile::new();
+        pa.insert(0, ra);
+        pb.insert(0, rb);
+        let mut piles: Piles = [("a".to_string(), pa), ("b".to_string(), pb)].into_iter().collect();
+        assert_eq!(ranked(0, &piles, false)[0].2, "a"); // by AS
+        assert_eq!(ranked(0, &piles, true)[0].2, "b"); // by ms
+        assert_eq!(ranked(0, &piles, true)[0].0, 110);
+        piles.get_mut("b").unwrap().get_mut(&0).unwrap().ms = None;
+        assert_eq!(ranked(0, &piles, true)[0].2, "a"); // a record without ms: back to AS
+    }
+
+    #[test]
+    fn semi_tied_exact_as_tie_is_not_hopeless_when_ms_differs_under_the_ms_window() {
+        let (d, g, mut piles, prim) = toy("semims", 6);
+        piles.get_mut("a").unwrap().get_mut(&0).unwrap().ms = Some(60);
+        piles.get_mut("b").unwrap().get_mut(&0).unwrap().ms = Some(50);
+        let p = Params { window: TieWindow::Ms(10), ..Params::default() };
+        assert_eq!(semi_tied(0, &piles, &prim, &g, &mut SiteCache::default(), &Params::default()), "HOPELESS"); // same AS and NM
+        assert_eq!(semi_tied(0, &piles, &prim, &g, &mut SiteCache::default(), &p), "ABSTAIN"); // a leads by ms, by no site
         let _ = std::fs::remove_dir_all(d);
     }
 
