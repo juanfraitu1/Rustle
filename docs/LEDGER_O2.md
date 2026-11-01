@@ -8326,3 +8326,27 @@ orphan 9,242 / tied 30,784, and base reads assigned in >= 2 families = 1,613, un
 candidates and their families, assigned rows on candidates, run time. Each arm is one spr1tb job (`union.sbatch`, `cand.sbatch`,
 24 h, `--region-threads 8`).
 
+
+## PREREG TIE-MS PORT (2026-11-01, register 1483; follows register 1477 "worth porting"; runs `~/o2ties_real/`)
+**Status:** written before the Rust code is changed and before any run. Code at commit 0a7c894a.
+**Port.** `copy_phasing run --tie-ms W` = o3port.py's `--tie-ms W` (register 1472): the pile window is `ms >= the read's best ms - W`
+(records without an `ms` tag are outside it; `--tie-ms` takes precedence over `--tie-structure`, as in the Python), and `--semi`'s
+ranking of a read's pile records is by (`ms`, fewest edits) when every one of them carries `ms`, else by (AS, fewest edits). Records
+gain `ms`, primaries gain `best_ms`, the landing-locus `near_best` flag uses the same window. The default window is untouched: with no
+flag every product must be byte-identical to today's.
+**Substrate.** The real BAMs of the two gorilla samples, scope = the run's families with >= 2 copies (`or.fam.copies.tsv` 446
+families, `kb.fam.copies.tsv` 280), net = every read with a non-supplementary record on a copy of the family (`bench/o3_graph/real_net.py`,
+the P16 / P18 convention). GGO.fa. No truth: these are the samples 1477 measured (10.2% / 5.8% ms-vs-AS disagreements in family scope).
+**Arms.** `copy_phasing run --semi --guard` (P14's configuration): A = default window; M10 = `--tie-ms 10`; M0 = `--tie-ms 0` (reported,
+not barred: register 1472 showed it assigns nothing).
+**Bars (run once, nothing tuned):**
+- R: A's products from the ported binary are byte-identical to A's from the pre-port binary (0a7c894a) on OR6737 (the regression guard).
+- B1 (the claimed effect): reads tied under A (`o2.tsv` n_piles >= 2) and no longer tied under M10 are >= 5% of A's tied reads on
+  BOTH samples (1477 predicted the retrocopy-rival class at 6-10% of family-scope reads).
+- B2: M10's assigned reads (an `assigned` value that is a copy, not ABSTAIN / HOPELESS) >= 0.95 x A's on both samples.
+- B3: of the reads both arms assign, < 1% go to different copies.
+- Reported: tied / assigned / ABSTAIN / HOPELESS per arm and sample; certified copies and putative candidates per arm; the M0 column;
+  run time. The Eichler standing test is 1477's (unchanged inputs; not re-run).
+**Decision.** PASS = R, B1, B2, B3 -> propose `--tie-ms 10` as copy_phasing's default window (a separate decision; the production
+`copy_assign` keeps its AS margin, its ms question is register 1477's open item). FAIL = any bar missed -> `--tie-ms` stays opt-in in
+Rust as in Python, reported as is. Nothing adopted by this measurement alone.
