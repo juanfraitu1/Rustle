@@ -67,8 +67,9 @@ exact-chain reads' starts would give 24 bp / 70%; FLAIR (one model per isoform) 
 `--polish-tss`), for every multi-exon transcript NOT rescued or split by `--polish-tss`, its own starts = the deduplicated primary
 spliced records whose first intron is the transcript's first intron, whose intron chain equals the transcript's, and whose oriented
 5' end lies inside the transcript's oriented first exon. With >= 2 own starts, the 5' end moves to their lower median
-(sorted[(n-1)/2], oriented coordinates). Nothing else changes (chain, 3' end, `reads`, transcript set); the locus boundaries the
-families stage uses are untouched (the step runs on the emitted GTF only).
+(sorted[(n-1)/2], oriented coordinates). Nothing else changes (chain, 3' end, `reads`, transcript set). [CORRECTION 2026-11-01: the families stage reads
+`PREFIX.families.gtf`, written after every polish step, so this layer DOES change the families' input ends; its effect on families is
+untested.]
 **Arms:** SHIP (the pipeline default since r1485, i.e. with `--polish-tss rescue`) vs SHIP + `--polish-tss-end median`.
 **Metric:** gffcompare vs CAT per contig; over query transcripts with class `=` and >= 2 exons, M = share whose 5' end lies within
 50 bp of the matched reference transcript's 5' end.
@@ -197,3 +198,8 @@ sensitivity with all three sits between the median-5' arm (which trims) and the 
 panel (`docs/PREREG_sqanti_single_copy_2026-11-01.md`) the combination reads base 71.9 / 58.5, transcript 22.8 / 18.6, 5' within 50 bp
 69.8%: there, inside protein-coding gene spans, the added single-exon models rarely match, so transcript precision drops 0.5 points
 (19.1 -> 18.6) while whole contigs gain 0.1-0.7.
+
+**Correction (2026-11-01, before any default change):** E3, E4 and E5 all act on the GTF that `PREFIX.families.gtf` is written from
+(after every polish step, minus the bridges), so they change the families stage's input: transcript ends (E3, E4) and the single-exon
+models (E5). Intron chains are identical, but locus extents and single-exon loci move; register 975 / 979 showed locus extents matter
+for family graph admission. None of the three has been scored on families; that check precedes any default.
