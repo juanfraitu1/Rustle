@@ -1,118 +1,32 @@
 # O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05)
 
+Compact version; prose draft verbatim at `archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md`.
+
+## Current state (2026-11-01)
+- This is the 2026-09-05/06 draft on the 3-contig substrate; its numbers are of that date. The composition (O1 units -> O2 assigns among exactly them) still holds; the thesis model is the variation graph (sketch families = member discovery only).
+- O2's domain since 2026-10-19: AS-tied multimapping reads only (rival within 10 AS). At sample scale (LEDGER_O2 `O2 AMBIGUOUS DECOMPOSITION`): HG002 17,805 of 141,265 tied reads assigned; discards are outside-catalog origins and junk.
+- Newer rows: 1477 (`--tie-ms` worth porting), 1483 (`--tie-ms` port FAIL, opt-in), 1481 (O2 LEVERS, amended to a 57-family panel), 1484 (O2 = pileup + caller; bcftools agrees 54.6% as run / 93.9% with MAPQ reset). Family-stage rules 1469-1476 FAIL or opt-in; defaults unchanged.
+
 ## 1. The two objects, and the one that is not the thesis's
-A duplicated region of a genome is two things at once. SEDEF, or any segmental-duplication caller, sees a
-**duplication block**: a mosaic of modules copied together. A gene family is a **set of loci sharing a
-transcribed core**. On 16p the two disagree by construction: LCR16a carries NPIP, the adjacent module LCR16u
-carries the SMG1 pseudogenes, and Johnson et al. (2001) showed they have divergent origins and concerted
-expansion. The catalog must define the second object and must be able to say why it did not build the
-first. Every instrument in this chapter is judged by whether it can tell the two apart on NPIP.
+A duplication block (SEDEF) is not a gene family (a set of loci sharing a transcribed core); on 16p LCR16a (NPIP) and LCR16u (SMG1 pseudogenes) differ. The catalog defines the second and must say why it did not build the first. (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:3)
 
 ## 2. O1: the family as a set of units
-**Node.** A unit is a locus, not an annotation record: annotation records whose exon unions overlap on a
-contig are one locus (representative = longest exon union; ledger §6ef, §6er). The locus's core is the
-segment linked by SD pairs to at least half of its family (§6ei, one constant, "half", used three times);
-chimeric models are trimmed to it (NPIP: seven 125–308 kb models → 23–25 kb LCR16a hulls; EIF3C, an
-808 bp sliver of the core, and the ABCC1-region records fall out). The unit's exon chain is read-supported:
-a base is exonic when ≥ 3 reads cover it and more reads cover it than splice over it (§6en). The GFF is the
-seed; the reads are the node.
-**Edge.** Homology between annotation records' sequences (asm20 alignment; identity ≥ 0.70, coverage of the
-longer ≥ 0.30, ≥ 300 bp; an additive exonic floor of 1 bp, which is where the distribution's wall is, §6dt), and
-the alignment must map exon bases of one record onto exon bases of the other (§6ey: records are genomic spans, a
-nested pseudogene carries its host's bases). The three thresholds are points inside a measured plateau — identity
-0.60–0.80, coverage 0.10–0.50, 100–500 bp leave every anchored family and the Soto scores unchanged on both
-substrates; the walls are at identity 0.85, coverage 0.60 and 1 kb (§6ez). Records are clustered first and
-folded into loci afterwards, inside their cluster, so two records are one locus only if they overlap on exon
-bases and share a cluster (§6ey; the fold-first order lost every pseudogene nested in another family's gene).
-**Family.** A set of loci that share a duplicated core: each member's core is the segment of its locus linked
-by SD pairs to at least half of the set. That is the object; MCL over the homology graph (inflation 2.8, prune
-1e-9, smallest family 2 — a pair sharing a core is the minimum object, §6ex) is the pre-clustering that proposes candidate sets, and the core rule, SD corroboration, the repeat
-library and the CHM13 landing certify them. The inflation is not a tuned constant: with a size-safe prune the
-anchored families are unchanged from 2.0 to 4.0 (§6ec); the earlier "cliff at 3.6" was the prune emptying the
-columns of any near-uniform clique above 61 nodes. The earlier definition (γ-quasi-clique partition of the
-read-transcript graph E_r) stays runnable and is scored against this one on Soto in `O1_DEFINITION_SWITCH.md`:
-band-[0.90,1) precision 0.974 vs 0.954 (CIs overlap), recall among detected pairs 0.874 → 0.940.
-**Certificates carried on every unit:** SD depth and core length; curated-repeat fraction of the chain
-(Dfam 3.8); nearest-paralogue identity; the duplication block each core hull belongs to and the families it is
-directly SD-linked to (`blocks.tsv`, §6ez: NPIP's hulls are directly linked to LCR16u's — one block, two
-families); and, per family, the CHM13 landing of its members (one human gene stem on one chromosome for every
-anchored real family; scattered for every artefact; mixed 16p stems for every duplication-block "family", §6eh).
+Node = locus (overlapping exon unions, core linked by SD pairs to >= half the family, read-supported chain: >= 3 reads). Edge = asm20 homology (identity >= 0.70, coverage >= 0.30, >= 300 bp, exon-on-exon), inside a measured plateau (walls at 0.85 / 0.60 / 1 kb). Family = MCL (inflation 2.8, prune 1e-9, min 2) proposals certified by the core rule, SD, repeat library, CHM13 landing. Old γ-quasi-clique definition: precision 0.974 vs 0.954, recall 0.874 -> 0.940 (`O1_DEFINITION_SWITCH.md`). Certificates per unit: SD depth, repeat fraction, nearest-paralogue identity, block (`blocks.tsv`), CHM13 landing. (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:11)
 
 ## 3. What the certificates decided on the 3-contig substrate (46 clusters with n ≥ 5)
-39 SD-corroborated (3 anchored: NPIP, the CGB/NTF tandem array split at a cut vertex); 3 artefacts
-(L1, ERV1, L1 — every edge a curated interspersed repeat, §6dz); 1 element-welded cluster (MCL4: a ≥ 673-
-copy unclassified young element with an embedded MER1A, absent from the curated library, §6dz/§6eg);
-boundaries certified for 3. The genome-wide catalog at prune 1e-9 recovers the tandem array (dissolved at
-1e-5) and its three clusters above 100 members are the two repeat blobs and one 119-member protein-coding
-family (§6ec).
+39 SD-corroborated (3 anchored), 3 repeat artefacts (L1, ERV1, L1), 1 element-welded (MCL4); genome-wide at prune 1e-9 the tandem array is recovered. (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:41)
 
 ## 4. O2: assignment among exactly O1's units
-
-> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/archive/2026-10/merged/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
-
-`copy_assign` consumes the unit table as its copy set — no detection, no re-derivation of the roster
-(§6da–§6er). Since §6fa–§6fd the read is the star: each molecule's sequence is aligned splice-aware to every
-candidate's locus (the catalog's read-supported extent of the unit, §6fh: primaries with a block in the chain, cut at giant unsupported introns, clipped at the family's neighbouring units — O1 writes it, O2 aligns to it), its columns are its own positions
-where the candidates' genomic bases differ, and each competitor is certified against the
-best-aligned candidate on the columns both carry (`min_p < α/(n−1)`); a pair sharing no distinguishing column
-is a tie, a competitor not rejected is an abstention, and an origin certificate abstains when the read's substitutions, indels and unaligned bases
-against its best locus exceed sequencing error — "no candidate explains this read", which names the node, not
-the identity. On the 35 paired families this assigns 56 % of unit reads with 9,236 of 9,236 MAPQ-60 placements
-agreeing and no wrong call on NPIP's audited anchors (§6fd). The earlier family-column form scored every BAM record separately and abstained on contradiction;
-that abstention was masking wrong column positions on non-star copies (34 % of a read's columns disagreed
-between two placements on NPIP, §6fa). The truth for what O2 assigns is junction-anchored reads, **audited**: of
-117 anchors on NPIP, 55 were annotation gaps (the read carries the same splice on another copy at equal or
-better edit distance); on the 62 valid anchors the spliced path makes no wrong confident call (GFF cores
-5/5, read-chain units 3/3, §6eq–§6es), while the genomic-hull column modes do (3/8) and stay off.
+Domain (user, 2026-10-19): AS-tied reads only. Each molecule aligned splice-aware to every candidate locus; competitors rejected at `min_p < α/(n−1)` on shared distinguishing columns, else tie/abstain; origin certificate abstains when no candidate explains the read. 35 paired families: 56% assigned, 9,236 of 9,236 MAPQ-60 agreeing; 62 valid NPIP anchors (55 of 117 were annotation gaps), no wrong confident call on the spliced path. (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:49)
 
 ## 5. The result on NPIP, and catalog-wide
-**NPIP (32 loci after the locus rule; LCR16u separate):** on the 62 audited anchors O2 makes no wrong call
-(0 assigned, 59 abstain, 1 tie) and places MAPQ-60 reads where minimap2 placed them 201 of 201 times; of its
-433 low-MAPQ reads 115 are assigned (the record-level form: 15), 64 are K = 0 ties and 254 are explained by no
-unit at the sequencing error rate — two thirds of NPIP's abstention is the node, one third is identity (§6fa). The "4,743 assigned reads" of the annotation-level family were EIF3C, the block's
-housekeeping gene, not NPIP (§6eg). The multimapping pool on the LCR16a cores is 592 of 6,545 reads and
-98.6% of it is unassignable with 2–5 kb molecules: **on NPIP, O2 is an abstention certificate.**
-NPIPA versus NPIPB (the advisor's Q9): the 29 gorilla loci land on CHM13 as 17 NPIPB-only, 3 on both NPIPA2 and
-NPIPB13, and 9 chimeric models; identity and coverage do not separate the A-landing loci and MCL keeps all 20 in
-one cluster to inflation 4.0, its first cut being exactly the four core-0 chimeras (§6ew). The A/B split is a
-human 16p-position label, not a cut in this catalog.
-**Catalog-wide (35 SD-evidenced families on the 3-contig substrate, paired across unit catalogs, §6eu,
-Figs. 1–2):** with the hull-clipped units and the PSV read-filter, 29% assigned / 6% tied / 64% ambiguous
-and MAPQ-60 placement agreement 95.3%; with units that follow the reads inside the annotated locus and the
-filter off, 28% assigned / 8% tied / 63% ambiguous and agreement 99.4% (4,674/4,704): the same number of
-assignments, with the confident wrong calls gone. Nearest-paralogue identity does not predict abstention across families
-(ρ −0.05; row 688).
+NPIP (32 loci): 0 wrong on 62 anchors, MAPQ-60 201/201; of 433 low-MAPQ reads 115 assigned, 64 K = 0, 254 unexplained; on NPIP, O2 is an abstention certificate. NPIPA/B is a human 16p label, not a cut in this catalog (§6ew). Catalog-wide (35 families): reads-following units 28% assigned / 8% tied / 63% ambiguous, agreement 99.4% (4,674/4,704); identity does not predict abstention (ρ −0.05; row 688). (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:68)
 
 ## 6. What is a limitation and what is a defect
-- Node boundaries are copy-inconsistent in the annotation and RNA cannot repair them (§6ea): the read
-  chain is the transcribed unit, not the gene.
-- A library-silent element (MCL4) is caught only by de novo family identity; the curated column is blind.
-- Cohesion is slice-conditioned; the reported object is the genome-wide catalog.
-- SD corroborates the duplication, not the gene: MCL32/MCL24 are ERV-K inside SDs (row 669).
-- Two O2 defects found by adjudicating the sweep's worst families (§6eu, rows 689–691), both fixed or fixable
-  without a new constant: (i) the read-support PSV filter deleted every column of an unexpressed paralogue and
-  left the expressed copy's own polymorphisms as the "PSVs" (ZSCAN5: 4 of 216 columns, 11 confident wrong
-  calls) — off is strictly better on the sweep; (ii) the unit's chain was clipped to the SD hull, so a gene's
-  main exon outside the shared core was not in its unit and O2 decided on a secondary record over the
-  neighbouring copy (ZNF569-like: 190 wrong calls) — the chain now follows the reads within the annotated
-  locus (Fig. 3). Still open: a molecule's secondary records are scored as observations (row 691).
-- O2's hygiene closed (§6et): `in_copy` and `catalog_copy_idx` columns; unit reads counted inside the chain.
+Limitations: copy-inconsistent annotation boundaries, library-silent elements (MCL4), slice-conditioned cohesion, SD corroborates the duplication not the gene (row 669). Defects fixed (rows 689-691): PSV read-filter (ZSCAN5, 11 wrong; off is better), SD-hull clipping (ZNF569-like, 190 wrong; chain follows reads). Open then: secondary records scored as observations (row 691). (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:86)
 
 ## 7. The sentence
-DNA defines the edge, RNA defines the node where the annotation is absent, SEDEF and the repeat library audit
-both, and O2 assigns — or, on NPIP, declines to assign — among exactly the units O1 defined.
+DNA defines the edge, RNA defines the node where the annotation is absent, SEDEF and the repeat library audit both, and O2 assigns — or, on NPIP, declines to assign — among exactly the units O1 defined. (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:101)
 
 ## 8. Figures
-- Fig. 1 `docs/figures/fig_sweep_status.png` — assigned / tied / ambiguous share per sweep family, three unit catalogs.
-- Fig. 2 `docs/figures/fig_sweep_agreement.png` — MAPQ-60 placement agreement per family, hull-clipped units vs units that follow the reads.
-- Fig. 3 `docs/figures/fig_znf569_locus.png` — the ZNF569-like locus: GFF exons, SD core hull, the clipped unit and the unit that follows the reads, over MAPQ-60 read coverage.
-- Fig. 4 `docs/figures/fig_npip_anchors.png` — the 62 valid NPIP junction anchors by arm (assigned-agrees / wrong / tied / ambiguous).
-Rendered by `bench/chapter_figures.py`.
-
-> **Update 2026-09-06 (§6fh–§6fj).** Three changes to the composition since §4 was drafted: the candidate set is
-> every locus of the cluster (dropped members carry `member_status = dropped`); the alignment target is the
-> catalog's read-supported locus extent (O1 writes it, O2 aligns to it); a molecule whose only candidate passes
-> the origin certificate is a *sole candidate* (`assigned`, marked), not a tie. On the paired 35 families with
-> the same units: 79.8 % assigned, 233 K = 0 ties, 4,704 ambiguous (of which 4,327 rejected by the certificate),
-> MAPQ-60 placement agreement 18,994/18,995, NPIP anchors 16/16. Per-copy abundance now comes from the
-> per-molecule posteriors (`n_reads_soft`), and `--dump-star` writes each molecule's proof.
+Figs 1-4 `docs/figures/fig_sweep_status.png`, `fig_sweep_agreement.png`, `fig_znf569_locus.png`, `fig_npip_anchors.png`, rendered by `bench/chapter_figures.py`. Update 2026-09-06 (§6fh–§6fj): candidate set = every cluster locus; sole candidate = assigned; 79.8% assigned, agreement 18,994/18,995, NPIP anchors 16/16; `n_reads_soft`, `--dump-star`. (full: archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md:105)

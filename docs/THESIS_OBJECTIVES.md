@@ -1,526 +1,200 @@
 # Thesis objectives — the current three
 
-The scope agreed with the advisor. **This file is the live status; nothing here is superseded.**
-The 2026-08-07 five-objective VG/EM decomposition this file used to carry is archived in
-[`o1_investigations.md`](o1_investigations.md#superseded-five-objective-vg-em-decomposition).
+Compact version (2026-11-01). The verbatim full text is `docs/archive/2026-11/THESIS_OBJECTIVES.md`; every `## ` heading below
+keeps its exact text and ends with a pointer to the archive line. Thesis model: the **variation graph** is the proposal's family
+model; linear alignment is the implementation, and any member-discovery step (minimap2 all-vs-all, sketch) feeds the graph,
+it does not replace it.
 
+## Current state (2026-11-01)
+
+- **O1 default (unchanged):** `rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60`,
+  minimap2 `-x asm20` all-vs-all of locus spans, MCL 2.8, pair rule `exact-mcl` (w* = 0.456885), representative = most-reads.
+  Guided mode = same rule on the annotation. `gw_family_catalog` (E_r / γ) is LEGACY; protein attach is optional, manual.
+- **O1 family rules tested 2026-10-29..11-01, none adopted:** U1-FRESH-HG002-INTRON FAIL (r1469, pair F 0.411 < 0.413);
+  DISPERSION FAIL (r1470); SKETCHFAM FAIL (r1471, A119b pair F 0.783 -> 0.561; opt-in member-discovery tool only);
+  SEMIGUIDED PASS both held-outs (r1472), not a default, auditor first; REPRULE-2 FAIL (r1473); REPRULE-3 arm S FAIL (r1474);
+  CHAIN-GATE FAIL (r1475); LOCUS-ABSORB held-out OR6737 PASS by equality (r1476), PROPOSED as default, not adopted yet
+  (metric-auditor first, user decides); protein reconciler on de novo families NULL (r1480).
+- **O2 default:** AS-tied reads only (rival within 10 AS), certificate alpha 1e-3, no 1/k, abstain otherwise; fewest-edit rule
+  round 23 PASS (r1338). Placement: `--tie-ms` worth porting (r1477), port FAIL B2/B3 -> stays opt-in (r1483); next = HG002
+  truth with B2 on final placement. Sample-scale yield: HG002 17,805 of 141,265 exact-tied reads assigned, A119b 4,331 of
+  212,176 (discards = outside-catalog origins + junk). O2 LEVERS (r1481): full runs gave nothing, amended to a 57-family panel
+  (`~/o2levers_fast/`): arm U (`--union-certificate`) FAILED the 57-family fast panel (assigned 59 < 63; rejections become ties, 311 molecules go to outside loci), stays opt-in; arm C (candidates) still to rerun on the panel. PSV VCF report (r1484): bcftools calls 54.6% of O2's variable columns as registered, 93.9% at
+  MAPQ 60 (post hoc); report only.
+- **Assembly side:** FAMASM multi-copy assembly FAIL on HG002 (r1479, multi recall 11.3 -> 12.7, precision 14.0 -> 8.5), not
+  adopted, prototype `bench/stgaps/famasm.py`. IsoCon WORSE than ours in both classes (r1478, 20 vs 27 of 30 multi-copy copies).
+  SQANTI single-copy A119b chr20 (r1482, 370 genes): ours FSM+ISM 30.2% / artifact 5.0%; StringTie, FLAIR, IsoCon all WORSE;
+  report only.
+- **O3:** detection only, never completeness; advisor's definition = PSV clusters of the reads O2 places (opt-in);
+  real-read PSV clusters not claimed (r1294, 4 of 12 held out, bar 0.70). Exon-level reach open (registers 1416-1420).
+- **Paused:** genome-wide rescoring until the figure set is agreed with the advisor (2026-10-11).
+- **Spent samples (held-out use):** KB3781, OR6737, A119b, HG002 per the 2026-10 family experiments.
+
+## Objectives table (2026-09-25 / 2026-10-19 restatements)
 
 | # | objective |
 |---|---|
-| **O1** | **(restated 2026-09-25, user decision) — THE ONE DEFAULT DE NOVO FAMILY DEFINITION, at the RNA level.** IsoSeq reads → loci assembled from primary alignments plus secondary alignments scoring ≥ 98% of the read's genome-wide best (`tools/rustle_pipeline.sh assemble`) → one representative per locus, its **positional exon sum** (the exons of the locus's most-read transcript: read-derived coordinates, genome bases) → families: `rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60` (all-vs-all of the loci's genomic spans, `minimap2 -x asm20`; an edge needs ≥ 300 bp at ≥ 70% identity, ≥ 30% of the longer locus's exonic length, exonic bases on both sides, and one exon-to-exon record over ≥ 60% of the smaller locus's exonic length; MCL inflation 2.8; families of ≥ 2 loci) (a connected two-node component is decided by the pair rule, `mcl_families --pair-rule`: the default `exact-mcl` (user decision 2026-10-13) joins a pair only at weight ≥ w* = 0.456885, as exact MCL does, which removes the float-residue decision and reproduces the shipped catalogs' `clusters.tsv` and `loci.tsv` byte for byte; the opt-in `weight-blind` makes every connected pair one family whatever its edge weight; `docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md`). **Copy assignment (O2) consumes the SAME families** through the stage's copy table (`<id>.fam.copies.tsv`: one copy per member locus, its representative's exons and spliced sequence; `docs/archive/2026-09/PREREG_families_copy_table_2026-09-25.md`). **Guided mode** = the same family rule on the annotated gene and pseudogene bodies (Fig. 7); the goal is to reduce the de novo–guided difference. **Not the default:** the `gw_family_catalog` E_r / γ-quasi-clique copy catalog (`catalog` stage) is **LEGACY** (kept runnable for comparison and for the runs made with it); **protein is an OPTIONAL, MANUALLY INVOKED extra-sensitive step** (`tools/protein_attach.py`, never part of the default or of `all`) that attaches disconnected or strongly diverged loci to existing families at the protein level, shown only in a supplementary figure (`docs/archive/2026-09/PREREG_protein_attach_2026-09-25.md`); `gw_family_catalog --protein-tail`, `RUSTLE_SHARED_DEFINITION`, the SD-core certification and the nested edge-test lattice (`seeded_family_definition.md` §0★★, §0★★★) are opt-in or proposed designs. The families are judged against EXTERNAL references only: Ensembl Compara (human), Soto 2025 (labelled not independent: the 0.60 threshold was chosen against it), Liftoff copies (every species). **The closed loop** (families → union-certificate assignment of tied reads → each read given to its copy → re-assembly) is a pre-registered pass-2 experiment (`docs/archive/2026-09/PREREG_tied_read_loop_2026-09-25.md`), not part of the definition. *Superseded wording (2026-09-05, kept for provenance):* **(restated 2026-09-05, user decision) — THIS IS THE SHIPPED DEFAULT, not one of two live options.** A multi-copy gene family is a set of loci that share a duplicated core: each member's core is the segment of its locus linked by segmental-duplication pairs to at least half of the set, and the family's units are the members' read-supported exon chains within their annotated loci. Candidate sets are proposed by MCL over genomic homology of the annotation and certified by the core rule, SD corroboration, the curated repeat library and the CHM13 landing. **This is the one to present, the one every 09-09/09-10 O1 finding (MCL0/MCL5, NPIP fragmentation, the Soto pseudogene audit) was measured against.** The earlier definition — a γ-quasi-clique partition of the read-transcript homology graph E_r — is NOT shipped; it survives only as an opt-in comparison arm (`gw_family_catalog`, no `--families`), used for the de novo/annotation-free line of experiments and the `O1_DEFINITION_SWITCH.md` §2 cross-check, never as the default O1 claim. (D7, `docs/OPEN_ITEMS_2026-09-09.md`: closed.) |
-| **O2** | **Only for AS-tied multimapping reads** (a rival alignment within 10 AS of the best: Eichler's rule; user 2026-10-19) — a read minimap2 placed clearly needs no O2, and applying O2 to it is tautological. For each AS-tied read, decide whether the evidence (PSVs, junctions, divergence) warrants assigning it to one of the very similar copies — and abstain when it does not. Contested set = **alignment-score near-ties**, not MAPQ-0. No 1/k. **2026-10-10: the same certificate assigns reads to HAPLOTYPES (allele-specific junctions as a sub-result).** |
-| **O3** | Detect + flag expressed transcript paths not explained by represented reference copies, **STRATIFIED by whether the orphaned reads have anywhere to go**. Detect-and-flag with a measured FPR per stratum; **completeness is never claimed**. (this was O4) **2026-10-09 (Amendment 48, user decision): the success criterion is DETECTION of the copy the reference lacks; whether it belongs to the animal's genome, and where, is DNA's job.** **2026-10-15 (advisor, relayed by the user): O3 is an extension of O2, not a rescue of lost reads. The reads O2 places on a family are clustered by their PSVs; a cluster that no copy in the genome explains better is a copy absent from the genome (`copy_assign --families --no-as-tied-only --psv-clusters`, opt-in; `docs/archive/2026-10/merged/PREREG_o3_psv_clusters_v2_2026-10-15.md`).** **2026-10-19 (user): O3 feeds O2.** O2 stays CHM13-PSV tie-breaking on AS-tied reads. The AS-tied reads CHM13 cannot explain are clustered by their own variants (`bench/o3_graph/samplecopy.py`). A cluster that reads minimap2 placed confidently (AS margin >= 10) label is handed back to that CHM13 copy (O3 -> O2); one with no such label is a candidate copy CHM13 lacks. Phased data is never an input; a donor's assembly is only a truth for testing (register 1333). |
+| **O1** | One default de novo family definition at the RNA level (restated 2026-09-25, user decision): IsoSeq reads -> loci from primary + secondary alignments scoring >= 98% of the best (`rustle_pipeline.sh assemble`) -> one representative per locus (positional exon sum of the most-read transcript) -> `families` stage (rule above; edge needs >= 300 bp at >= 70% identity, >= 30% of longer locus exonic length, one exon-to-exon record over >= 60% of the smaller locus; families of >= 2 loci). Pair rule `exact-mcl` default (2026-10-13), `weight-blind` opt-in. O2 consumes the same families via `<id>.fam.copies.tsv`. Judged against external references only: Ensembl Compara, Soto 2025 (not independent), Liftoff. Closed loop (tied-read loop) is a pass-2 experiment, not the definition. Superseded 2026-09-05 SD-core definition kept in the archive for provenance. |
+| **O2** | Only AS-tied multimapping reads (rival within 10 AS, Eichler, user 2026-10-19): assign to a copy on PSVs, junctions, divergence, or abstain. Contested set = AS near-ties, not MAPQ-0. No 1/k. 2026-10-10: same certificate assigns reads to haplotypes (ASJ as sub-result). |
+| **O3** | Detect + flag expressed paths not explained by reference copies, stratified by whether orphaned reads have anywhere to go; FPR per stratum; completeness never claimed. Amendment 48 (2026-10-09): success = detection; placement is DNA's job. 2026-10-15 advisor: O3 extends O2 (PSV clusters, `copy_assign --families --no-as-tied-only --psv-clusters`, opt-in). 2026-10-19: O3 feeds O2 (`bench/o3_graph/samplecopy.py`); phased data never an input (register 1333). |
 
-**The allele-specific-junction objective is DROPPED as an objective** — cut for time, and because it does not connect
-to the others. ⚠ It was the only objective the 2026-06-25 audit rated ATTAINED; the ASJ result itself
-is de-scoped, not retracted. **2026-10-10: brought back as a sub-result of O2** (haplotype = copy one level down; see the status below).
-
-⚠ **"O3" denotes three different things across this repo's history** — the EM below, ASJ in the
-06-25 audit, and reference-absent copies now. Resolve the scheme before quoting any objective number.
-The numbered sections below are kept for provenance only.
+ASJ is DROPPED as an objective (cut for time), de-scoped not retracted; back as an O2 sub-result 2026-10-10. "O3" has meant
+three things in this repo's history (EM, ASJ, reference-absent copies): resolve the scheme before quoting a number.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:1)
 
 ## ⭐ STATUS 2026-10-11 — where each objective stands (read before the 2026-08-23 scoreboard below)
 
-**Each objective is attained in its restated, bounded form; none unconditionally.** The numbers here are the current ones; the
-scoreboard further down predates them. Genome-wide rescoring is PAUSED (2026-10-11) until the figure set is agreed with the
-advisor (his focus: the StringTie / FLAIR benchmark): Claude Doc "Benchmark Figure Decisions"
-(https://claude.ai/code/artifact/c1333a2e-d5c7-4fbd-a167-0d252c18f2a9) and `docs/archive/2026-10/merged/PENDING_2026-10-11.md`.
-
-| Objective | The claim that holds | Current evidence | Limits; what is not rescored |
-|---|---|---|---|
-| **O1** family definition | One default de novo rule (guided = the same rule on the annotation), with a typed hierarchy | Genome-wide default families (2026-10-10/11): human A119b 2,150 families / 9,907 loci, human testis 342 / 1,115, chimp 396 / 1,343, gorilla KB3781 326 / 918. After the MCL two-node fix (2026-10-13, docs/archive/2026-10/merged/PREREG_mcl_two_node_2026-10-13.md) the default pair rule is `exact-mcl` (user decision 2026-10-13), under which the shipped counts above stand unchanged; the opt-in `weight-blind` rule would give A119b 2,218 / 10,043, testis 351 / 1,133, chimp 416 / 1,383, gorilla 341 / 948 (all added pairs lie below w* = 0.456885, where exact MCL splits a lone pair). Fig. 8 (2026-10-11): in human A119b, 131 of 148 Liftoff copy pairs whose loci both sit in families share a family (88.5%, copy identity >= 0.95). `mcl_families --emit-hierarchy` (fe5be654): 215 of 400 Soto families are exactly one expansion (10 of these 215 lie below a whole family — spec amendment 6, `docs/superpowers/specs/2026-10-13-close-o1-design.md`; on the de novo catalogs 4 A119b / 2 testis exact matches — `docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md`), 346 lie in one superfamily (`docs/archive/2026-10/merged/PREREG_family_hierarchy_flag_2026-10-09.md`); hierarchy-aware Soto evaluation on the de novo human catalogs (2026-10-13, `docs/archive/2026-10/merged/PREREG_o1_hierarchy_eval_2026-10-13.md`, register 1277): not claimed (E2 failed: exact rate 41/84 = 0.488 in testis against 63/247 = 0.255 in A119b, difference 0.233 > 0.10, so sample-specific and per-catalog numbers only; E1 passed on both catalogs (by design), E1b also failed); Soto as a refinement: not claimed (2026-10-14, docs/archive/2026-10/merged/PREREG_soto_subset_cn_2026-10-14.md, registers 1281-1282; T1 failed: T1b on the guided universe and both de novo catalogs, while T1a passed, with 258 of 491 Soto families inside one block of ours (256 in one of our families, 2 on one shared unclustered locus) against a null mean of 0.7; T1b compares only the two partitions' coarseness, D = H(Soto) − H(ours), and fails because 526 of Soto's 2,334 genes are our singletons; size and violation tables in the prereg); Liftoff copies (2026-10-14, docs/archive/2026-10/merged/PREREG_liftoff_pairs_null_2026-10-14.md, register 1284): passed as registered, as a specificity check against unrelated loci. Where both read-supported copies of a gene are in our families they share one in 75/91 (A119b), 12/12 (testis) and 4/4 (gorilla, held out), against coverage- and distance-matched decoys at 0.121, 0.102 and 0.012 (p 0.000999 each). The bar is weak: it is passed from 17/91 in A119b. Recall is limited mostly by coverage: in most read-supported copy pairs neither copy is in any family (290/514, 24/38, 66/78). The conditioned F1 (register 1283) passes in 3 of 4 samples and fails in A119b (131/148); template-guided copy assembly (2026-10-14, docs/archive/2026-10/merged/PREREG_template_copies_2026-10-14.md, register 1285): not adopted for the build tested (strand from the template hit, whole read blocks, no de-duplication). On A119b it covers 160 more read-supported Liftoff copies (234 → 394 of 641), 119 of them only by unspliced single-exon loci; only 8.1% of its 26,726 added loci (23,415 distinct) sit at a Liftoff locus, below every depth group of base loci (16.7-35.2%; 23.2% at 2-5 reads), so P1 and P2 fail; de novo analogue of Liftoff -copies (2026-10-14, docs/archive/2026-10/merged/PREREG_denovo_copies_2026-10-14.md, register 1286): not claimed. Projecting each assembled locus's representative at Liftoff's own thresholds finds 268 of 420 reachable Liftoff copies in A119b (0.638; 0.567 by projection off the template's own locus), 49 of 62 in testis (one short of the bar) and 44 of 52 in gorilla (bar 0.80; two genes give 32 of the 52). Only 3-22% of Liftoff's copies are reachable (source gene assembled), and the second bar (unexplained sites ≤ 0.10) fails in all three (0.41, 0.18, 0.36). Post hoc: where the representative is shaped like the gene, it finds the copy 15 of 16 (A119b), 18 of 18 (testis) and 40 of 40 (gorilla) times; figure 8's G1, the guided search seeded with every record (2026-10-15, register 1287): fails in human, finding 1,126 of 1,270 Liftoff extra copies (0.887, bar 0.90); gorilla not run (user decision); post-MCL strongest-edge reassignment (2026-10-15, register 1288): not adopted. It lifts A119b's F1 to 137 of 148 by reuniting the CYKILR tandem array, but it moves 1,609 members, grows the largest family by 34% and lowers pairwise precision against Soto (0.734 → 0.688); held out it changes nothing measurable | Overall bipartite F against one annotation about 0.63 (2026-09-18, slices; the genome-wide fig. 7 scoring is paused); recall is the weak side (RNA edge recall ceiling 0.052 human / 0.229 gorilla); own duplicon units NOT adopted (register 1263), so the expansion level needs DupMasker (human only) |
-| **O2** assign or abstain | A read is given to a copy OR a haplotype only under the certificate (alpha 1e-3, no 1/k) | Haplotype test on KB3781 (`docs/archive/2026-10/merged/PREREG_asj_o2_2026-10-10.md`, f330d332): discordance 0.0010 dev / 0.0014 held-out (bar 0.005), assemblies separate allelic from non-allelic anchors; 636 allele-specific junctions in 286 genes. Excision abstention AUC 0.80 with MAPQ at chance (0.49); simulation 157 / 157 in the source family, 0 wrong. Hard-locus bakeoff (human chr16, 2026-09-25): 0.858 vs IsoSeq collapse 0.732, FLAIR 0.473, StringTie 0.441 — reverses on the contested stratum (0.692 vs IsoSeq 0.813, register 1112) | The real-read check is on haplotypes, not paralogs; real multi-copy loci mostly abstain (copies identical along the read); genome-wide assignment done for chimp and KB3781 only (human A119b stopped for low memory) |
-| **O3** reference-absent copies | DETECTION from RNA (Amendment 48, 2026-10-09); placement is DNA's job | Erased copies, real reads: 80.1% of reads rescued, 0.07% wrong joins, consensus on the erased copy 40 / 40. Assembly truth genome-wide: recall 0.566 on the never-used paternal half (56 / 99 loci), 0.646 maternal; STON1-GTF2A1L DNA-confirmed. Deliverable: 2,559 candidates as an unplaced GTF (`bench/unmapped_rescue/o3_export.py`). **Structure (2026-10-14):** `candidate_copies` projects each flagged candidate's exons from its genome alignment: 210/222 simulated absent copies structure-correct within ±5 bp, boundary recall/precision 0.995 (`docs/archive/2026-10/merged/PREREG_o3_structure_projection_2026-10-14.md`); the positive control of `missing_copy_flag` re-measured on stable seeds: 199/200 fired at 2% (`docs/archive/2026-10/merged/PREREG_missing_copy_posctl_2026-10-14.md`). **2026-10-15, the advisor's definition (O3 = cluster the reads O2 places on multi-copy loci by PSVs; no adequate copy ⇒ a copy absent from the genome):** `copy_assign --no-as-tied-only --psv-clusters` recovers 425/426 simulated absent copies (≥ 0.6%), flags 0/152 intact families (allele background, editing, conversion, 8 copies), separates two missing sequences on one copy; exact ties alone see only identical-twin cases (`docs/archive/2026-10/merged/PREREG_o3_psv_clusters_v2_2026-10-15.md`); real-data level not yet run **Real reads (2026-10-15, register 1294): not claimed.** With a copy removed from the gorilla genome, PSV clusters recover 4 of 12 eligible masked copies held out (15 of 25 in development; bar 0.70). With every copy present, about 30% of families still give a `copy`-labelled cluster. Families reduced to one copy, and single-copy genes, get no placed reads and are not tested | About 4 in 5 flags in KB3781 are other apes' transcripts (the read-share screen removes 80%, keeps 97% of confirmed); the framing was adopted after the numbers; the absorbed stratum is divergence-limited; completeness never claimed; genome-wide flag scans not rerun |
-
-**O3 reach, 2026-10-25 (registers 1416-1418, `LEDGER_O3.md`):** reference bias in copy content is real. Even between the reference
-animal's own two haplotypes, copy number differs in 44.8% of 5 kb SD windows and in exons of 24% of our families (whole gene copies
-5-7%), an upper bound: Jim's WGS confirms the large differences but not most +-1 differences in high-copy units (1419; confirmed
-core 3.0% of SD windows, exon differences in 6.3% of families). Breakpoint groups (1417) and the certified tier per exon (1418)
-both fail held-out, yet with the true haplotype sequences 41.9% of exon gains leave >= 2 reads only the extra sequence explains
-(1420, control 14%). The exon-level reach is a detector problem (extra copies take free allele slots), open, not claimed.
-
-### ⭐ O3 RESTATED (2026-08-19) — stratify the target, bound each stratum
-
-O3 as originally posed — *"find copies missing from the genome"* — is **not achievable**, and the
-reason is measured, not conjectural. In the whole-genome excision control (one copy of 162 two-copy
-families deleted, matched IsoSeq) a deleted copy has **two fates**:
-
-| fate | rate | what the reads do |
-|---|---:|---|
-| **ORPHANED** | 33.3% | median **92.7% of reads unmapped** — detectable |
-| **ABSORBED** | 64.2% | reads land on the best paralogue at **1.75× depth**, concordance 0.967 — invisible to any unmapped-read method |
-
-**Expression is not the constraint** (99.34% of copies clear the floor); **where the reads go** is.
-⚠ And O3's original target class — a collapsed paralogue — sits in the ABSORBED stratum.
-
-This is the same move that rescued O2: restate the target population and the claim, then bound each
-stratum honestly.
-
-**Target.** Copies absent from the assembly, **stratified by whether the orphaned reads have anywhere
-to go.** **Claim.** Detect-and-flag with a measured FPR, stated **per stratum**:
-
-| stratum × route | status | bound |
-|---|---|---|
-| unique sequence, **unmapped-read** route | **works** | **M ≤ 6.4** missing expressed copies |
-| paralogous sequence, **unmapped-read** route | ⚠⚠ **vacuous** | π = 1/35 = 0.0286, 0/26 at cov ≥ 0.8, **formally unbounded** |
-| paralogous sequence, **depth (S2)** route | **partial** | held-out **TPR 0.2703 / FPR 0.0200**; sensitivity set by **divergence, not abundance** (0.4500 above 0.01 divergence vs **0.0588** below) — ⚠ and **45.78% of positives lie below 0.01** |
-
-**Say this, not more:** *the instrument flags candidates with a measured false-positive rate in a
-named stratum, and has explicitly no power for unmapped-read detection in the collapsible stratum.*
-**Never claim completeness.** The signature is **UNMAPPED READS, not clipping** (34.53% pooled,
-MAPQ-60 before deletion) — no published collapse detector uses clipping.
-
-⚠ **The one real candidate does not close:** STON1+GTF2A1L, ~116.7 kb absent from mGorGor1, 125
-near-full-length unmapped reads, gapless chromosome, 0 GFF lines, present in chimp and orangutan —
-but **single-copy, n = 1, p = 0.055, UNCONFIRMED**. It supports the instrument; it is not a result.
-
-⭐ **The niche is empty**, which is the thesis value: nobody has found a reference-absent copy from
-transcriptome data. The field standard is S1 re-assemble / S2 depth+PSV / S3 peptides. A *bounded
-negative* is therefore itself publishable.
-
-⚠ **The advisor's "the reference is an average" objection fails on PROVENANCE, not on measurement:**
-mGorGor1 is a haplotype-resolved assembly of **one animal** and the fibroblast IsoSeq is that
-animal's **own cell line**. Keep the two arguments separate — the objection dies on how the substrate
-was built, and the copy-number-polymorphism rate is **still unmeasured** (the 2026-08-19 mat-vs-pat
-run was uninformative: control floor 0.1512 vs signal 0.0278). ⚠⚠ And **do not quote the 8/9/9-vs-5/6/8
-haplotype deficit** — it does not reproduce; see [`o3_missing_copy_evidence.md`](o3_missing_copy_evidence.md).
-
-**Current O3 avenues and claim boundary (2026-08-16):** see
-[`docs/o3_missing_copy_evidence.md` §8](o3_missing_copy_evidence.md#8-possible-o3-avenues--decision-record-2026-08-16).
-Liftoff or a second genome is not required for the main experiment; natural RNA-only findings remain
-candidates unless independently validated with donor DNA.
-
-**Current O1 purity rules and expanded known-family graphs (2026-08-16):** see
-[`docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`](o1_investigations.md#false-positive-hardening-rules-that-survived-falsification) and the 19-graph
-[`expanded audit`](../bench/o1_expanded_family_audit/README.md). Soto SD membership is discovery
-evidence, not automatic gene-family membership; primary and audit graphs are emitted separately.
+Each objective attained in its restated, bounded form; none unconditionally. Genome-wide rescoring PAUSED 2026-10-11.
+- **O1:** default families A119b 2,150 / 9,907 loci, testis 342 / 1,115, chimp 396 / 1,343, gorilla KB3781 326 / 918
+  (unchanged under `exact-mcl`; `weight-blind` would give A119b 2,218 / 10,043). Fig. 8: 131 of 148 Liftoff copy pairs share a
+  family (88.5%). Hierarchy: 215 of 400 Soto families exactly one expansion. Not claimed: hierarchy-aware Soto eval (r1277, E2
+  failed 0.488 vs 0.255), Soto as refinement (r1281-1282, T1b failed), de novo Liftoff analogue (r1286), guided G1 (r1287,
+  0.887 < 0.90). Liftoff pairs null PASS (r1284: 75/91, 12/12, 4/4 vs decoys 0.121, 0.102, 0.012), bar weak. Not adopted:
+  template copies (r1285), strongest-edge reassignment (r1288, precision 0.734 -> 0.688). Limit: bipartite F about 0.63;
+  RNA edge recall ceiling 0.052 human / 0.229 gorilla; own duplicon units not adopted (r1263).
+- **O2:** haplotype test KB3781 discordance 0.0010 dev / 0.0014 held-out (bar 0.005), 636 ASJs in 286 genes; excision
+  abstention AUC 0.80, MAPQ 0.49; hard-locus bakeoff 0.858 vs IsoSeq 0.732, FLAIR 0.473, StringTie 0.441, reverses on the
+  contested stratum (0.692 vs 0.813, r1112). Limit: real check is on haplotypes, not paralogs.
+- **O3:** erased copies 80.1% reads rescued, 0.07% wrong joins; assembly-truth recall 0.566 paternal (56 / 99), 0.646
+  maternal; 2,559 candidates exported (`bench/unmapped_rescue/o3_export.py`); structure projection 210/222, boundary 0.995;
+  PSV clusters 425/426 simulated, 0/152 intact flagged; real reads not claimed (r1294, 4 of 12 held out, bar 0.70).
+  About 4 in 5 KB3781 flags are other apes' transcripts.
+- **O3 reach 2026-10-25 (r1416-1420):** CN differs in 44.8% of 5 kb SD windows between the reference's haplotypes (upper bound;
+  WGS-confirmed core 3.0%, exon differences 6.3% of families); breakpoint groups (1417) and certified tier (1418) fail
+  held-out; 41.9% of exon gains leave >= 2 reads only the extra sequence explains (1420, control 14%). Open, not claimed.
+- **O3 RESTATED (2026-08-19):** original target not achievable. Excision: ORPHANED 33.3% (92.7% reads unmapped), ABSORBED
+  64.2% (1.75x depth). Strata: unique/unmapped works (M <= 6.4); paralogous/unmapped vacuous (π = 0.0286); paralogous/depth S2
+  partial (TPR 0.2703 / FPR 0.0200; 45.78% of positives below 0.01 divergence). STON1+GTF2A1L n = 1, p = 0.055, UNCONFIRMED.
+  Do not quote the 8/9/9-vs-5/6/8 haplotype deficit (does not reproduce).
+(full: archive/2026-11/THESIS_OBJECTIVES.md:22)
 
 # ⭐ SCOREBOARD — what is WON, what is DEAD, what is OPEN
 
-> **Read this before proposing anything.** Every row is measured unless marked *estimated*. Numbers carry
-> their unit and, where it matters, their comparator. `NUMBERS.md` holds provenance; the 631-entry
-> `NEGATIVE_RESULTS_REGISTER.md` holds the long tail; `o1_ledger.md` §3–§4l holds O1's route-by-route detail.
-> Last updated **2026-08-23**. ⚠ Superseded where it conflicts by the STATUS 2026-10-11 block at the top of this file.
-
+Last updated 2026-08-23; superseded where it conflicts by the STATUS block above. Most O1 rows describe the legacy
+`gw_family_catalog` (E_r, γ), not the default. (full: archive/2026-11/THESIS_OBJECTIVES.md:98)
 
 ## INDEX
 
-> **Index.** 11 sections; this is the map. **The titles carry the verdicts** — no tag is derived
-> here. ⚠ In `o1_ledger.md` an earlier auto-derived verdict tag scored **11/22 = 50%** against
-> sections whose outcome was known first-hand, so tags were removed rather than shipped. Search a
-> heading to jump.
-
-
-- ⚠⚠ THE META-LEDGER — the failure modes that keep recurring
-- O1 — define a multi-copy gene family topologically at the RNA level
-- O2 — assign a read to a copy, or abstain
-- O3 — detect + flag reference-absent copies (**completeness never claimed**)
-- ⚠ DROPPED — allele-specific junctions (ASJ)
-- O1 — Formally define a multi-copy gene family in the VG  ✅
-- O2 — Recover copies that primary-only assembly misses  🔄 capability shown · ⛔ no validated real-data recovery
-- O3 — Assign ambiguous reads to the right copy (the EM)  ✅ synthetic
-- O4 — Assemble each copy's distinct isoforms / structural variants  ✅ synthetic (capability) · 🔄 real-data
-- O5 — Share evidence across copies via the graph  🔄 partial · ⛔ one blocker
-- Cross-cutting honest gaps
+Map of the 11 sections below; titles carry the verdicts, no derived tags (an auto-derived tag scored 11/22 = 50%).
+(full: archive/2026-11/THESIS_OBJECTIVES.md:106)
 
 ## ⚠⚠ THE META-LEDGER — the failure modes that keep recurring
 
-These have cost more than any single wrong idea. **Four headlines died in one week to #1 alone.**
-
-| # | failure mode | the scar |
+| # | failure mode | scar |
 |---|---|---|
-| **1** | **A denominator conditioned on the prediction.** | Killed 7 findings, then 4 headlines in one week: the SD "node gap" (0.8984 *was* the base rate 0.9086); a degree-0 rate of 0.9947 against a 0.9945 base rate; a 93.06% self-overlap that inverts on its control; the primary-flag finding. **A rate without its comparator is a stop condition, not a to-do.** |
-| **2** | **A CONTROL can be broken too.** | The gate control that "refuted" the primary-flag finding filtered secondaries at `de ≤ 0.05`, silently discarding **66%** of the evidence and preferentially the diverged reads that mattered. **Check what a control's filters remove.** |
-| **3** | A null matched on **COUNT** proves nothing — match the **SIZE distribution** (and, for haplotype work, **COMPOSITION**). | The 2026-08-19 hapcnv run died on span- vs composition-matched controls (floor 0.1512 vs signal 0.0278). |
-| **4** | Judging a change to **what a NODE or EDGE IS** on node-level metrics. | Failed **3× end-to-end**. Judge on the emitted PARTITION. |
-| **5** | **T8** — offline re-derivation is a hypothesis generator, **never a test**. | 4 prior offline-proxy errors on the E_r/PSV line alone. |
-| **6** | **argmax / best-hit counting is not counting** (T19); always record **`-p` and `-N`** with any copy count. | MAPKBP1 gives 1/1 at `-p 0.8` and 9/8 at `-p 0.1`. |
-| **7** | Never pool **human** and **gorilla**; state the **unit** every time. | The two headline O1 rates are on different species. |
-| **12** | ⭐⭐**A read that SPLICES OVER a locus is not evidence for it — `samtools view -c REGION` counts the wrong thing.** | 2026-09-02 (§6cm): inflated a headline **3.4×**. `NPIPP1` looked like 1,608 reads collapsing to a 4-read locus; **1,151 = 71.6%** merely spliced across, because `PDXDC1` (168 kb) CONTAINS it. Real figure **457**, itself an upper bound. The rule was already project doctrine and enforced nowhere. **Use `bench/lib.py::reads_with_block_in`** (CLI: `python3 bench/score.py locus-reads BAM CHROM START END`; it was `bench/locus_reads.py` until wave 7). |
-| **13** | ⭐⭐**Before blaming the pipeline for an oversized locus, ask what gene SPANS it.** | 2026-09-02 (§6cm): two "mis-chained giants" were `SNX29` (covers **100.0%**) and `PDXDC1` (**99.9%**) — real genes, correctly assembled, with canonical junctions and majority read support *because they are real transcripts*. A rule fitted to that 3-node "blob class" would have been fitted to two real genes. **`bench/lib.py::spanning_genes`** (was `bench/locus_reads.py::spanning_genes`). |
-| **14** | ⚠**Exemplars are not a measurement.** | 2026-09-02 (§6cl): 4 blobs vs 4 normal loci suggested a **10–200×** read-level separation; across all 105 nodes against an independent target it was **2.2×**, best precision 0.29. Two orders of magnitude, from picking the extremes. |
-| **15** | ⭐⭐⭐**A rule validated only where it was developed is NOT validated — hold one substrate back.** | 2026-09-08 (§6gn, register 760): the cross-family exon-overlap rule was designed on the gorilla read-throughs and checked on gorilla NPIP, the Soto slice and the gorilla catalog — **all three agreed**, so it was flipped ON by default. The **fourth** substrate, human chr16+18, was the only one never used during development, and it **lost two real members** (`NPIPA1`, `NPIPA6`): NPIP sensitivity **26/26 → 24/26**. The default was reverted the same run. ⟹ The agreement of the development substrates carried **no information** about the rule's correctness; only the held-out one did. Name the held-out substrate in the pre-registration, before the flip. |
-| **9** | ⭐**Pre-declaring a confound protects against THAT confound and no other.** | 2026-09-02 (§6bv): §6bu named **length** as D4's confound and controlled for it; the effect held in all four length quartiles. The operative confound was **EXON STRUCTURE**, and controlling for that erased it entirely. State the mechanism by which a confound could act, not just its name. |
-| **10** | **A parameter change makes an old measurement look unreproducible.** | 2026-09-02 (§6bt.1): the frozen human panel appeared to have "moved" and was written up as lost provenance. It reproduces **exactly** at `RUSTLE_GATE_MIN_READS=3` — the node floor §6ac changed. **Check the flags before declaring a number stale.** |
-| **11** | **"A pure restriction" can be true of one layer and false of another.** | 2026-09-02 (§6bv): the coverage clause adds **no** edges (verified) yet **creates 29 copies at loci that had none**, because removing edges lets γ split a sparse component into denser passing pieces. **Name the layer.** |
-| **8** | **Substrate provenance.** | The shipped catalog was built from `GGO_ds.bam` = **OR6737 testis**, a *different animal* from the assembly (KB3781). Same-animal RNA exists: `fibroblasts/GCA_029281585.2_flnc_mm.bam`. |
-
----
+| 1 | Denominator conditioned on the prediction | killed 7 findings, 4 headlines in a week (0.8984 was base rate 0.9086) |
+| 2 | A control can be broken too | gate control discarded 66% of evidence |
+| 3 | Match null on SIZE distribution / COMPOSITION, not count | hapcnv floor 0.1512 vs signal 0.0278 |
+| 4 | Judge node/edge changes on the emitted PARTITION | failed 3x end-to-end |
+| 5 | T8: offline re-derivation is a hypothesis generator, never a test | 4 offline-proxy errors |
+| 6 | argmax is not counting; record `-p` and `-N` | MAPKBP1 1/1 at -p 0.8, 9/8 at -p 0.1 |
+| 7 | Never pool human and gorilla; state the unit | |
+| 12 | A read that splices over a locus is not evidence for it; use `bench/lib.py::reads_with_block_in` | NPIPP1 inflated 3.4x (1,151 = 71.6% spliced across) |
+| 13 | Ask what gene spans an oversized locus (`bench/lib.py::spanning_genes`) | SNX29 100.0%, PDXDC1 99.9% |
+| 14 | Exemplars are not a measurement | 10-200x became 2.2x |
+| 15 | Validated only where developed is not validated; name the held-out substrate | NPIP 26/26 -> 24/26 on human chr16+18 (r760) |
+| 9 | Pre-declaring a confound protects only against that one | length vs exon structure |
+| 10 | A parameter change makes an old number look unreproducible | reproduces at `RUSTLE_GATE_MIN_READS=3` |
+| 11 | "Pure restriction" true of one layer, false of another | 29 copies created |
+| 8 | Substrate provenance | shipped catalog from OR6737 testis, not KB3781 |
+(full: archive/2026-11/THESIS_OBJECTIVES.md:126)
 
 ## O1 — define a multi-copy gene family topologically at the RNA level
 
-> **Read first (2026-09-25).** The default de novo family definition is the driver's `families` stage (the O1 row of
-> the table above): reads → seeded loci → one representative per locus (positional exon sum) → `mcl_families
-> --from-gtf`, exon-sum ≥ 0.60, MCL 2.8; copy assignment consumes the same families. Most results below were measured
-> on the **legacy** `gw_family_catalog` copy catalog (E_r, γ-quasi-clique; "shipped catalog" in the older text) or on
-> opt-in definitions; they describe those objects, not the default, and are kept as the record. Figures 6–8 and the
-> genome-wide pre-registrations of 2026-09-25 score the default families (`figures/README.md`).
-
-### ✅ WON
-
-- ⭐⭐⭐ **A CROSS-SPECIES PRE-REGISTERED TEST, PASSED 5/5 (2026-09-02, §6bq → §6bt.2).** The two-sided
-  coverage clause was developed entirely on **gorilla** NPIP; the 150-window negative panel is **human**
-  CHM13/A119b, frozen since 08-10 and never used to tune anything. The prediction was **mechanistic**
-  (which window dies, why, and that the other **must survive**), committed as `5cbced4` and **pushed
-  before the run**. Result: **5/5 criteria, 0/3 falsifiers, 9/9 edge outcomes across two node floors.**
-  ⚠**Do NOT report a rate change** — 2–3 events, overlapping intervals. ⚖️**And it was then refused a
-  default (§6bv)**, which is the more useful half of the result.
-- ⭐⭐ **THE SELF-OVERLAP DEFECT IS GONE FROM THE CURRENT PATH (2026-09-02, §6bs).** Blind-spot item 6,
-  unaudited since 08-14: **7.09%** (GGO) and **7.10%** (PTR) of families in the `refine`-built catalogs
-  had a copy overlapping its own sister — cross-species replication at nearly the same value, i.e. a
-  **pipeline** property. Current path: **0/4,176 within-family pairs** [0, 0.0009]. Tested against the
-  obvious objection: `arm_cov030` produces the defect on those *same three contigs*, so the zero is not
-  substrate size. ⛔**Not claimable genome-wide** — the 7.1% is genome-wide, every zero is 3-contig.
-| result | number | substrate |
-|---|---|---|
-| Shipped catalog | **627 families / 2,019 copies** | GORILLA mGorGor1 |
-| **P1 seed-invariance is a THEOREM** | — | definitional |
-| **The RELATION transports across ANIMAL *and* TISSUE** ⭐ *(08-23, not T8)* | **87.06% of `E_r` edges recovered** (Jaccard 0.7397). Partition **ARI 0.9707** once the single largest component is dropped (0.7064 raw — **blob-driven**) | testis(OR6737) vs depth-matched fibroblast(KB3781), 10,143 shared loci |
-| λ (edge connectivity) shipped as a per-family certificate | `lambda` / `cut_certified` | — |
-| Orientation guard shipped as default | spurious edges **28 → 3**; antisense families **7.09% → 0.64%** | HUMAN negative panel + GORILLA |
-| ONE path — `--refine` removed, hard error on O1 | — | — |
-| False-**merge** | **2/150 = 1.33%** [0.37, 4.73] — ⚠⚠**RE-MEASURED 2026-09-02 (§6bt.1). This figure is REPRODUCIBLE — it needs `RUSTLE_GATE_MIN_READS=3`, the node floor in force when it was measured.** At the shipped default (floor 2, §6ac) the same panel and binary give **3/150 = 2.00%** [0.0068, 0.0571] on a **DISJOINT** window set (W063/W106 → W033/W034/W065, no window in both). 2 vs 3 events is not a significant difference; the controlled swap is the finding, and **6/6 floor-2 edges carry a 2-read endpoint**. Quote the floor with the rate.** | ⚠ **HUMAN**, a *specificity LOWER bound*, NOT a precision |
-| False-**omission** | **9/162 = 5.6%** [2.95, 10.22] | ⚠ **GORILLA**, excision ARM 3. Different species/design from the row above — **never pool** |
-| Reach | **22/40 = 0.5500** [0.398, 0.693], ~0.55 defensible genome-wide | HUMAN chr1; chr1 representative, Fisher p = 0.6090 |
-| Identity clause **never binds** | **0/728** | clause census |
-| DNA and RNA give the **identical partition** on the same loci | **7/7** | small n |
-| Per-rep **exon arrays** shipped ⭐ *(08-22)* | **45.06%** of "a node is here" was an **INTRON** | rep spans are 90.83% intron by bp |
-
-### ⛔ DEAD — do not retry
-
-- **Relaxing / removing the canonical-junction requirement** (§5f) — measured end-to-end at both
-  tolerances: it moves **2 reps out of 2,847**, changes no family, and rescues **0 of the 4** target loci.
-  It is also the principal mis-chain filter. ⟹ leave it alone.
-
-| route | the number that killed it |
-|---|---|
-| **Fixing the coverage hole** | HERC2 (a real family) splits at `c_long ≥ 0.034` while the FIRST false positive dies only at 0.05 ⟹ **TP loss starts before FP rejection; no constraint-satisfying threshold exists** |
-| Reads as a third source for it | tiling breadth significant in the **WRONG direction** (AUC 0.1259, p = 0.0005); reads are **redundant** with the rep alignment (median gain **+0.000**) |
-| Catalog-anchored repeat gate (R5) | **breaks P1** — same pair accepted/rejected by universe (seed-invariance 94/147 moves) |
-| Genome-anchored `min_shared_gmult` **as an admission rule** | rejects **12.80%** of shipped edges; parity with γ needs M≈3 and discards 48% of the edge set. **VETO only** |
-| Graph theory — density / Fiedler / min-cut | **AUC 0.36 / 0.35 / 0.35** — all *below* chance |
-| **Shared-exon / isoform pooling** *(08-22)* | **8.29%** `E_r` recovery, **25.04%** family retention against λ=1 in 88.04%; genuine new payload **9** node pairs at MIN_COUNT≥2, **0** at ≥3 |
-| `RUSTLE_LOCUS_EXON_UNION` | **−20 recall points** — concatenation inflates its own denominator |
-| `--single-copy-baseline` as a rep source | wrong object (`E_c` not `E_r`); **83.3%** of the catalog's own copies structurally unreachable |
-| Facility location / bipartite matching for loci | **BANNED** — and bipartite assignment *is* the primary flag (99.10%) |
-| FamilyGraph · k-mer Jaccard · `vg` for ties | dead / linear |
-
-
-- **The shared-exon denominator repair** (`RUSTLE_SHARED_EXON`) — refuted §4w. Every endpoint moves the
-  wrong way; the completeness deficit "improves" 3.16× → 1.32× only because the STUB rate collapses too.
-  ⚠ a ratio of two rates is not an endpoint when both may fall.
-- **The repeat-hub gate ported from `family_define`** (`RUSTLE_ER_REPEAT_GATE`) — refuted §4x, actively
-  harmful: NPIP loci 12/31 → 7/31, pure families 3 → 1. **Genome multiplicity cannot distinguish a repeat
-  from a high-copy family, and high-copy families are O1's subject.** Its apparent signal was tautological
-  (mult ≥ 20 ⟹ edge rate **1.0000**).
-- **Lowering the E_r coverage floor** — refuted end-to-end §5c, *despite* the strongest edge-level
-  evidence O1 has produced (FPR +0.0018 for TPR +0.4476 against 87,990 real genomic pairs). NPIP recovery
-  is UNCHANGED at 12/31 at every floor while pure families fall 3 → 1 and the largest balloons 39 → 104.
-
-### 🔄 OPEN
-
-- ⚠⚠ **DEFINITION GAPS, documented 2026-09-05 (`FRAMING_AUDIT_2026-09-05.md`, `O1_DEFINITION_SWITCH.md`).** Two O1
-  definitions coexist (the E_r/γ-quasi-clique above and the MCL + SD-core + read-supported-unit catalog the
-  chapter uses); scored on one truth (§6ev) the new one matches the old on Soto's [0.90,1.00) band precision
-  (0.954 vs 0.974, CIs overlap) and gains recall through the node (0.874 → 0.940 both-detected; 0.173 → 0.580
-  all pairs), but its node — the annotation — reaches fewer Soto members than the reads did (G5), and 0.70 /
-  0.30 / 300 bp were justified on 2026-09-05 (§6ez: a plateau over identity 0.60–0.80, coverage 0.10–0.50, 100–500 bp
-  on both substrates; G3 closed). The restatement was **accepted and applied** (user, 2026-09-05); the old definition
-  stays opt-in (`gw_family_catalog`). Defaults flipped the same day (§6ey/§6ez): fold within clusters, exon-less span,
-  exon-to-exon, units follow reads, min_size 2, PSV read filter off — each with an escape that reproduces the earlier catalogs.
-
-- ⭐⭐⭐ **A POSITIVE STRATUM — now the binding constraint on O1's precision work (2026-09-02, §6bv).**
-  Every precision lever dies at the same place: **no truth set labels a meaningful share of the copies
-  a filter deletes.** The coverage clause passed a cross-species pre-registered test **5/5 / 9/9** and
-  was still refused a default because its **220 lost copies are unadjudicable** — within exon strata,
-  deleted and retained copies carry a reciprocal RefSeq match at the *same* rate. **NPIP labels 21 of
-  678.** ⟹ until a positive stratum exists, "keep opt-in" is the ceiling for every E_r lever, and that
-  is a statement about the *evidence*, not about the levers.
-
-- ⭐⭐⭐ **SEEDED DISCOVERY (§5m) — the largest measured gain in the objective.** ONE annotated gorilla
-  copy plus one iteration finds **23/23 = 100% of expressed NPIP members**, against **13/23 = 56.5%** for
-  the pipeline's own node construction; RNA discovery is a strict SUBSET of it. With §5e (correct nodes ⟹
-  30/31 grouped) this projects to ~23 recovered against today's 12. Sits inside the accepted
-  "genome + minimal annotation + reads" reframing. ⚠ n = 1 family, recent high-identity expansion, and
-  the 2026-08-12 cross-family result was P = 0.0635 — **a demonstration, not a rate.**
-  ⭐ **The closure CONVERGES (2026-08-27):** 3 rounds to a fixed point at 25/31, non-NPIP hits constant
-  at 1 every round (no repeat-chaining), precision 0.941 → 0.962 → 0.962. **All 6 loci it never reaches
-  have ZERO reads**, so it recovers **23/23 = 1.000 of expressed members**. ⟹ for an RNA-level objective
-  ONE seed suffices; more seeds can only add loci RNA cannot see. ⛔ But seeded windows do NOT help RNA
-  NODE construction (§5o): they lose to the free unseeded footprint pass, 12/31 vs 13/31.
-
-
-- ⭐ **FOOTPRINT NODES (§5h) — the one open candidate whose evidence points the right way on both axes.**
-  Drop the chain-consistency requirement: a node is the union of bases covered by ≥2 reads, exonic only.
-  Prototype gives **18/31 vs 12/31** NPIP loci at **3.23%** contamination against a 60-locus control.
-  ⚠ OFFLINE (T8) and node-level — needs implementation behind a flag and an END-TO-END partition verdict.
-
-
-- ⭐⭐ **ORACLE ABLATION (§5e) — the definition owns 3% of the loss, node construction owns 58%.** With
-  perfect nodes the shipped rule groups **30/31** NPIP loci (and 5/5 on true exon-sums); the shipped run
-  gets 12/31 because **18 loci never become nodes**. ⟹ **stop repairing the edge rule** — §4w, §4x, §5b
-  and §5c all optimised the 3%. Largest addressable block: the **7 loci whose reads never agree on a
-  chain**, then the **4** that clear the read gate and still produce no node.
-
-- **The named definitional hole**: the min-length coverage denominator is **scale-free** (a ~1 kb repeat is ≥0.50 of ANY node < 2 kb; 24.88% of gorilla copies are ≤ 2 kb). Ceiling **41/494 = 8.30%** on the **superseded 494-family catalog**, ⚠ *not re-measured on the current 627*.
-- ⛔ **NODE CONSTRUCTION — the stub defect is REAL but NOT FIXABLE by representative choice** *(08-25, ledger §4s)*. `pick_locus_rep` keeps ONE chain; **46%** of reps covering a known family member are single-exon stubs and **53%** of those loci have a discarded gate-passing spliced chain.
-  - ⭐ **`E_r` has NO UPGRADE PATH: 0/215** — for stub-incident edges whose stub has a unique containing spliced model at its own locus, the container inherits the edge **0/215 = 0.0000** (validity checks: **1,416/1,416** containers are themselves OFF reps, and **116/215** have edges of their own). *"Edge is a property of the locus"* predicts 215/215; *"of the exact representative sequence"* predicts ~0.01. **Any representative change rewrites the edge set from scratch.**
-  - ⛔ **`RUSTLE_SPLICED_REP` was measured end-to-end and REGRESSED**: chr7 F1 **0.570 → 0.411**, chr16 **0.910 → 0.761**, loses NPIPB12. The counterfactual on the strand arms is a null (annotated-intron precision 0.9700 vs 0.9714).
-  - ⚠ **60.51%** of the edge set falls below the 0.50 coverage floor under a uniform **1.49×** rep-length inflation ⟹ **any intervention that lengthens a representative pays `RUSTLE_LOCUS_EXON_UNION`'s −20 recall points**, selected or constructed.
-  - ✅ **What ships instead: a FLAG** — `frac_pure_intron` per copy against the gorilla-native GFF. Within-family paired effect **1.37×** (22/118 vs 16/118); burden 7.4–12.8% of copies. ⚠ quote 1.37×, **not** the unclustered 13.55×; ⚠ the GFF holds **0 NOTCH2NL\*, 1 SRGAP2, 1 LIMS1** — structurally blind at the flagships.
-- ⭐⭐ **THE ORIENTATION GUARD IS THE LARGEST LOSS CHANNEL** *(08-23, ledger §4m)*. On the shipped `-k11 -w5` PAF with the shipped coverage form (copy-pair unit, denom 1,135): **orientation guard 167 = 0.1471 · coverage clause 147 = 0.1295 · identity 0 · γ 11 = 0.0097** ⟹ the edge rule costs **~28× γ**.
-  - ⛔ **RETRACTED:** "γ costs 3.0× the coverage clause" — scored on a **non-`E_r`** edge set. ⛔ The **"114 questionable γ over-splits" set is EMPTY**: 0/114 share an `E_r` component; 113–114/114 have only a minus-strand record, so γ never saw them.
-  - ⛔ **A HIERARCHY IS A NO-GO** *(§4m)*: the level that recovers the γ-cut pairs **is** the level that re-forms the blob; new coarse pairs are duplication-supported at **0.0016** vs **0.1252** — **78× less**. What ships is a *disclosure*, not a hierarchy.
-- ⭐⭐⭐ **THE GUARD WAS FILTERING ON AN UNMEASURED FIELD — RESOLVED** *(08-24/25, ledger §4n–§4r)*. `strand.unwrap_or('+')` gave **all 5,928 single-exon reps `'+'` and zero `'-'`** (spliced split 0.4867/0.5133), so a third of the rep set carried a **placeholder**. **98.55%** of guard-blocked pairs involve such a rep (base 0.3943, **2.50×**), leaving only **58** genuine antisense candidates genome-wide. Read orientation measures the strand at **0.9650** (0.9934 at margin 0.90, 1.0000 at unanimity) against a constant-`'+'` floor of **0.4867**.
-  - Shipped **opt-in** (`RUSTLE_READ_STRAND`, `RUSTLE_READ_STRAND_MARGIN`); the OFF gate is **byte-identical** to the shipped catalog. All pre-registered criteria PASS (0/58 antisense admitted; antisense-family rate 0.0048 both arms; **HUMAN 150-window false-merge 2/150 = 0.0133 UNMOVED**).
-  - ⛔ **ABSTENTION DOES NOT RESCUE IT** *(§4q)*: the dominant dissolution cause is the **same 32 families in both arms**, so it is not vote-related. **Line CLOSED after four iterations, stop pre-registered.**
-  - ⭐⭐ **THE REAL EFFECT IS NODE CONSTRUCTION** *(§4r)*: measuring the strand **re-picks 2,306 representatives and turns 1,928 = 0.8361 of them from a single-exon STUB into a SPLICED model** — the largest named node-construction defect — at a cost of 32 dissolved families. ⚠ That a spliced rep is *better* is **inferred, not measured**.
-  - ⭐ **WHAT IT SETTLES:** `E_r` edges are computed on the **representative's sequence**, so improving a node breaks the edges formed with its worse version. **That is a property of ONE-REPRESENTATIVE-PER-LOCUS**, not of the strand fix, and any future change to representative selection pays the same cost.
-  - ⚠⚠ **A matching lesson worth more than the result**: reading a property off *"the rep with the largest overlap"* returns a **neighbouring** rep when the exact span is gone — the case under test. That produced a phantom class of 18 families, retracted **twice**. **Match loci EXACTLY.**
-- ⚠ The blob is **466 copies / 38 families** (+14/4 in a second) = **480/2,019 = 0.2377** across **42/627 = 0.0670**. γ is **non-monotone under edge addition**.
-
----
-
-- **Node construction, not the edge rule.** Measured at NPIP (§5c/§5d): the edge rule has **1 locus** of
-  headroom, node construction **4**, read fragmentation **≤ 7**, and **7 loci are not transcribed at all**.
-  ⚠ §5c first claimed 18 behind node construction; that used reads overlapping by ≥ 1 bp and is
-  **withdrawn** — requiring reads ≥ 50% inside gives 23/31 expressed, not 28/31, and 419 reads, not 5,544.
-- **The completeness deficit itself has NO known repair** (§4v, survives a repeat attack at 3.67×). The
-  denominator route is measured and dead; the failure surface is a hard cliff at exactly 50% shared
-  sequence, divergence-independent (§5b).
+Read first: default = `families` stage; most results here measured on the legacy E_r / γ catalog or opt-in definitions.
+- **WON:** cross-species prereg test PASSED 5/5 (coverage clause; refused a default, §6bv); self-overlap defect 0/4,176 on
+  the current path (3 contigs only, not genome-wide); shipped catalog 627 families / 2,019 copies (gorilla); E_r relation
+  transports across animal and tissue (87.06% edges, ARI 0.9707 without largest component); orientation guard 28 -> 3 spurious
+  edges; false-merge 2/150 = 1.33% at floor 3 (3/150 = 2.00% at floor 2; human specificity bound); false-omission 9/162 = 5.6%
+  (gorilla, never pool); reach 22/40 = 0.5500; identity clause never binds 0/728; DNA = RNA partition 7/7; per-rep exon arrays.
+- **DEAD:** relaxing canonical junctions (2 of 2,847 reps); fixing the coverage hole (no threshold exists); reads as third
+  source (AUC 0.1259); R5 repeat gate (breaks P1); `min_shared_gmult` as admission (VETO only); density / Fiedler / min-cut
+  (AUC 0.36 / 0.35 / 0.35); shared-exon pooling (8.29%); `RUSTLE_LOCUS_EXON_UNION` (-20 recall points);
+  `--single-copy-baseline`; facility location / bipartite matching BANNED; `RUSTLE_SHARED_EXON` refuted §4w;
+  `RUSTLE_ER_REPEAT_GATE` refuted §4x (NPIP 12/31 -> 7/31); lowering E_r coverage floor refuted §5c.
+- **OPEN:** definition gaps 2026-09-05 (new definition accepted; old opt-in); positive stratum is the binding constraint
+  (NPIP labels 21 of 678); seeded discovery 23/23 expressed NPIP vs 13/23 (n = 1 family, a demonstration); footprint nodes
+  18/31 vs 12/31 (offline, T8); oracle ablation: definition owns 3%, node construction 58% (30/31 with perfect nodes);
+  scale-free coverage denominator (41/494 = 8.30%, superseded catalog); stub defect real, not fixable by rep choice
+  (E_r upgrade 0/215; `RUSTLE_SPLICED_REP` regressed chr7 F1 0.570 -> 0.411); orientation guard largest loss channel
+  (167 = 0.1471); hierarchy NO-GO (§4m, legacy E_r); strand placeholder resolved, `RUSTLE_READ_STRAND` opt-in, line CLOSED;
+  blob 480/2,019 = 0.2377; completeness deficit has no known repair.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:150)
 
 ## O2 — assign a read to a copy, or abstain
 
-**O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/archive/2026-10/merged/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
-
-**One genome first (user, 2026-10-19):** "until we make O2 work we stay with only 1 genome, in this case CHM13". O2 is
-judged on reads simulated from CHM13's own copies, with no donor alleles (`profiles/*_v4_ref.json`). A sample whose copies
-differ from CHM13's (HG002's truth, A119b) is O3's question. O2's job there is twofold: the most likely real placement
-among minimap2's tied multimappers, and, when copies are identical over the read, the smaller set of equally explained
-copies ("five multimappers, only two informative").
-
-**The fewest-edit rule** (`--fewest-edits`, d63df788). Where O2 lacks its two-edit margin, the tied copy with the fewest
-edits takes the read, every unaligned base counted; otherwise the read keeps that set. **Round 23 PASS** (register 1338,
-`docs/archive/2026-10/merged/PREREG_o2_single_genome_2026-10-19.md`):
-- 37 fresh families x 2 profiles x 3 seeds, 18 CHM13-only worlds;
-- of 7,450 multimapped reads tied within 10 AS, 2,045 placed right and 0 wrong, against v17's 430 / 0, where minimap2's
-  primary is wrong on 36.6% (Amendment 1's scorer);
-- the other 73% keep a set (2.02 tied copies -> 1.73), and the set holds the true copy for every read.
-
-### ✅ WON
-| result | number |
-|---|---|
-| **The abstention defence** — first non-circular validation (excision, truth by design) | held-out **TPR 0.5066 / FPR 0.0280, AUC 0.7995** |
-| ⭐⭐ **MAPQ is AT CHANCE on the same reads** | **AUC 0.4944**, median 60 vs 60 ⟹ *minimap2 is confidently wrong and its confidence is uninformative* |
-| Target population **restated** | contested set = **alignment-score near-ties (21.75%)**, not MAPQ-0 (**0.0004** inside multi-copy loci) — ~500× larger |
-| PSV engine ships with a **derived** bound, not a tuned threshold | gate `n_decisive ≥ 1`; **τ = ln((1−p)/p)**, τ=6.9 ⟹ stated **P(misassign) ≤ 1e-3** |
-| Given the copy set, **assignment DECOMPOSES** ⟹ per-read argmax is optimal | — |
-| **O1 → O2 is a CONDITIONING, not a correlation** ⭐ | `copy_assign.rs` has **0 hits** for λ/min-cut/density/γ; it consumes only **cardinality**, and n→2 moves **14/104,147 = 0.013%** of verdicts |
-
-### ⛔ DEAD — do not retry
-| route | the number |
-|---|---|
-| **Reassignment as the headline** | a secondary fits better by `de` in **1.96%** of reads-with-secondary; net headroom **~0.1%**. **NEVER claim "assigns better than minimap2"** |
-| The EM | changes **ZERO** evidenced decisions (**0/3,081**) |
-| Swapping votes → likelihood | **identical in 16/16** configs (monotone-equivalent under flat error). *The lever is the GATE* |
-| A better aligner (winnowmap) | **identical** to minimap2; DSFAM42 stays 95% MAPQ-0 under both — the limit is **identifiability** |
-| λ / density / min-cut / `de`-weighted capacity as assignability predictors | all fail; capacity **equals `min_de` on 82.14%** |
-| Structural-anchor reassignment truth | **cannot scale** — filter L1 rejects **29/29** anchors; **0/53** scored reads are near-ties |
-| Secondary-read corroboration / C5 admission | median per-locus preference **0.0000 in BOTH arms**, MWU **p = 0.2685**; both ~5–9× *below* the genome-wide 0.0196 ⟹ **spillover**. **C5 stays OFF** |
-
-### 🔄 OPEN
-- `n_decisive = 0` (exonically identical copies) is a **genuine, aligner-invariant floor** — abstention there is correct, not a gap.
-- The abstention defence rests on **one** excision panel; a second independent validation would strengthen it.
-- **Whole-sample yield (2026-10-31, LEDGER_O2 `O2 AMBIGUOUS DECOMPOSITION`):** HG002 17,805 of 141,265 exact-tied reads assigned, A119b 4,331 of 212,176; the largest discard (48% / 77% of reads) is the origin certificate rejecting well-aligned reads whose origin is a copy the catalog lacks (83-94% tie outside every catalog copy, 1-5% divergent) plus junk alignments at >= 5%. Attaining O2 at sample scale is a catalog-completeness problem (candidates / semisec on A119b, HG002: not yet run) and the unprocessed 1-10 AS near-tie population, not the certificate.
-
----
+Domain: AS-tied reads only (user 2026-10-19), `fastset --o2-scope tied --as-slack 9`; one genome first (CHM13). Fewest-edit
+rule round 23 PASS (r1338): of 7,450 reads tied within 10 AS, 2,045 placed right, 0 wrong (v17 430 / 0); the rest keep a set
+(2.02 -> 1.73 copies) holding the true copy.
+- **WON:** abstention TPR 0.5066 / FPR 0.0280, AUC 0.7995; MAPQ at chance (AUC 0.4944); contested set = AS near-ties
+  (21.75%) not MAPQ-0 (0.0004); τ = ln((1-p)/p), P(misassign) <= 1e-3; per-read argmax optimal given copy set; O1 -> O2 is a
+  conditioning (14/104,147 = 0.013%).
+- **DEAD:** reassignment as headline (1.96%, never claim "better than minimap2"); EM changes 0/3,081; votes -> likelihood
+  identical 16/16; winnowmap identical; λ / density / capacity predictors; structural-anchor truth (29/29 rejected); C5
+  stays OFF (p = 0.2685).
+- **OPEN:** `n_decisive = 0` floor is correct abstention; one excision panel only; whole-sample yield 2026-10-31 (HG002
+  17,805 of 141,265; A119b 4,331 of 212,176) is a catalog-completeness + 1-10 AS near-tie problem. Later: r1481 O2 LEVERS
+  arm U FAIL on the panel, arm C open, r1483 `--tie-ms` FAIL stays opt-in, r1484 PSV VCF report.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:292)
 
 ## O3 — detect + flag reference-absent copies (**completeness never claimed**)
 
-### ✅ WON
-| result | number |
-|---|---|
-| A positive control exists at all | whole-genome excision, **162** two-copy families, truth **by design** |
-| **The two fates, measured** | **ABSORBED 64.2%** (concordance 0.967, depth **1.75×**) · **ORPHANED 33.3%** (median **92.7%** of reads unmapped) |
-| ⟹ the signature is **UNMAPPED READS, not clipping** | no collapse detector in the literature uses clipping |
-| S2 detector | held-out **TPR 0.2703 / FPR 0.0200** |
-| Sensitivity is set by **DIVERGENCE, not abundance** | **0.4500** at ≥0.01 diverged vs **0.0588** below |
-| DNA-side instrument validated | FP floor **0/817**; fires on **11.42%** of random intervals; recovers a published expansion exactly |
-| Literature position established | **nobody** has found a reference-absent copy from transcriptome data |
-
-- **A depth caller for the ABSORBED stratum** (§5a, simulation). TPR 0.4248 / FPR 0.0000, AUC 0.8034 —
-  and **TPR 0.7333 below 0.01 divergence where the S2 detector scores 0.0588**, so the two are
-  COMPLEMENTARY rather than competing. 15× is the coverage knee. ⚠ FPR 0.0000 is measured under uniform
-  simulated coverage and **must not be quoted as a real-data figure**; the 1.5× threshold is not held out.
-
-### ⛔ DEAD — do not retry
-| route | the number |
-|---|---|
-| Unmapped reads in the **paralogous** stratum | **π = 1/35 = 0.0286**, **0/26** at cov ≥ 0.8 — **VACUOUS, and O3's target class lives there** (a collapsed copy is absorbed, not orphaned) |
-| **The haplotype route** *(08-23)* | parameter stability **Jaccard 0.5263** (47% turnover on one flag); genes **DEPLETED** vs a composition-matched control (0.96% vs 2.12%, CMH p = 0.5749); a mirror arm with the *opposite* truth value is **symmetric** (56 vs 51, p = 0.6992) |
-| …and its "larger compartment" premise | absent fraction is **0.3295% of genic span** ⟹ 10.9–42.1 Mb vs the existing ~37.0 Mb — **~1.1× at best, 3.4× SMALLER in the gene frame** |
-| **O3 as a residual of O1+O2** | degenerates: the excision panel is **two-copy**, so masking leaves \|C\|=1 — no assignment, hence no abstention. The PSV residual at \|C\|=1 **is the shipped S2 detector renamed** |
-| The **depth** residual | refuted — 16/104 destinations had **zero baseline reads**; 1.75× needs a "before" a real case does not have |
-| DNA-side collapse detection at the current compartment | **0 collapses at 816/817**, but **underpowered BY CONSTRUCTION** (1.1224% of genome ⟹ 0.47–0.94 predicted) |
-
-### 🔄 OPEN
-- **One unconfirmed candidate**: STON1+GTF2A1L (~116.7 kb absent, 125 near-full-length unmapped reads) — **n = 1, p = 0.055**.
-- ⚠ **45.78% of real positives sit BELOW the divergence line** where S2 is near-blind — a property of the problem, not the detector.
-- An **n ≥ 3 excision panel** would unblock the residual test. ⚠ Feasibility: 14 families at ≥20 reads, 56 at ≥5, 157 at ≥3 — but only **6/43 = 13.95%** of scenarios put the deleted copy below de 0.01 against **45.78%** of real positives, so it would sample the **wrong divergence regime**. Measure that distribution first; it is free.
-- A **larger compartment** remains the named lever for the DNA side.
-
----
+- **WON:** excision positive control (162 two-copy families); two fates ABSORBED 64.2% / ORPHANED 33.3%; signature = unmapped
+  reads, not clipping; S2 TPR 0.2703 / FPR 0.0200; sensitivity set by divergence (0.4500 vs 0.0588); DNA instrument FP 0/817;
+  nobody has found a reference-absent copy from transcriptome data. Depth caller for ABSORBED (simulation) TPR 0.4248 / FPR
+  0.0000, 0.7333 below 0.01 divergence (FPR not a real-data figure).
+- **DEAD:** unmapped reads in paralogous stratum (π = 0.0286, vacuous); haplotype route (Jaccard 0.5263, CMH p = 0.5749);
+  larger-compartment premise (~1.1x at best); O3 as O1+O2 residual (degenerates at |C|=1); depth residual; DNA-side collapse
+  detection (0 at 816/817, underpowered by construction).
+- **OPEN:** STON1+GTF2A1L n = 1, p = 0.055; 45.78% of positives below divergence line; n >= 3 excision panel (6/43 = 13.95%
+  below de 0.01, wrong regime); larger compartment for the DNA side.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:338)
 
 ## ⚠ DROPPED — allele-specific junctions (ASJ)
-Cut 2026-08-07 for time and because it does not connect to the others. ⚠ It was the **only** objective the
-2026-06-25 audit rated ATTAINED — say what was given up. The result is **de-scoped, not retracted**.
+
+Cut 2026-08-07 for time; the only objective the 2026-06-25 audit rated ATTAINED; de-scoped, not retracted.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:374)
 
 ---
 
-**Thesis claim:** assemble the isoforms of *individual paralogous copies* of multi-copy gene families from
-long reads — recovering, quantifying, and resolving copies that primary-alignment assembly (StringTie) cannot.
-The variation graph (`--vg`) shares evidence across copies; an EM assigns ambiguous reads to copies.
-
-Status key: ✅ done · 🔄 partial / in progress · ⛔ blocked.
-
----
+**Older five-objective scheme (pre-2026-08-07, provenance only).** Claim: assemble isoforms of individual paralogous copies;
+the variation graph (`--vg`) shares evidence across copies; an EM assigns ambiguous reads. Status key: ✅ done · 🔄 partial · ⛔ blocked.
 
 ## O1 — Formally define a multi-copy gene family in the VG  ✅
-**Foundational** — makes O2–O5 measurable (you cannot score copy recovery without defining a copy).
 
-A multi-copy family is a **connected component of the read-multi-mapping graph** (a *splice-graph
-generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy × isoform) satisfying:
-**M** ≥2 copies · **H** copies share a backbone (reads multi-map) · **X** ≥2 copies independently expressed
-(edit-distance anchored) · **I** graded identifiability (full / partial / none), reported not assumed.
-
-- Spec: `docs/superpowers/ARCHIVE_INDEX.md` → `2026-06-01-multicopy-family-definition-design.md` (in git history) (jargon scrubbed for the advisor).
-- Operational predicate `classify_family` shipped (`src/rustle/vg.rs`), emitted as `--vg` GTF attributes
-  (`family_verdict`, `family_identifiability`, `family_n_copies/n_expressed`, `family_locus_rel`).
-  Commits `d286400`..`6d91bf1`. Expression counted per **identifiability class** (`3609b60`), runs
-  independent of EM eligibility (`6d91bf1`).
-- Validated on **14 known families** (`bench/paralog_secondary_scan/validate_known_families.py`): DAZ / NBPF /
-  RBMY / amylase → `family`; TSPY (97% ties) / MAGEA → `family_nonidentifiable`; SORD+LOC → spillover;
-  β-defensin / protocadherin / PRAME correctly excluded (not expressed here).
-- **Fresh O1 purity challenge (2026-08-16):** current Rustle was rerun on predeclared regional
-  extracts from the original whole-genome-aligned GGO/HSA BAMs, without old node or family ids as
-  inputs. It re-emits 124/133 audited loci and 72/75 independently named targets. Although 14/16
-  unrelated conflicting-gene loci are real/reproducible emissions, only 1/16 rejoins the target;
-  all nine re-emitted non-NBPF loci from the adversarial repeat bridge remain outside fresh NBPF.
-  GOLGA2 is now separated as a documented broad-family/recent-subfamily outgroup rather than
-  mis-scored as an unrelated false positive; an RNA identity-0.80 view removes it but damages MAGEA
-  and NBPF, so this is a typed hierarchy rather than a new global threshold.
-  The cost is explicit: 69/75 named targets land in the modal family (three not emitted, three
-  split). The HSA run also discloses one node-pair decision delegated to O2 `reads_distinguish`,
-  so this particular node set is not sequence-only. Direct Rustle tables, rule certificates,
-  logs, and actual fresh `E_r` GFAs:
-  `bench/o1_fresh_emission_validation/`; interpretation: `docs/o1_investigations.md#false-positive-hardening-rules-that-survived-falsification`.
-- **Deferred implementation:** emit the current RNA homology family as the broad family plus an
-  opt-in, nested DNA-supported recent-copy subfamily (`RECENT_COPY`, `BROAD_ONLY`, or
-  `DNA_UNRESOLVED`). The annotation-free algorithm, flag-off byte-identity requirement, output
-  schema, GOLGA discriminator, and cross-family safety tests are specified in
-  `docs/o1_investigations.md#block-aware-duplication-provenance-graph`. Production Rustle does not yet emit these fields.
-- **Provenance-model avenue:** represent loci as ordered paths through homologous duplication blocks,
-  with separate RNA-homology, DNA-duplication, read-conflict, and optionally rooted ancestry edges.
-  This can express the mosaic GOLGA2 + ITSN2-UTR origin of the chr15 GOLGA expansion without calling
-  ITSN2 a GOLGA family member. A single genome yields an unrooted network; directional “ancestral”
-  claims require outgroup sequence/synteny, without using the outgroup as the assembly reference.
-  Formal model, five-family local pairwise-witness prototype, empirical concordance results, and
-  proof-of-concept criteria: `docs/o1_investigations.md#block-aware-duplication-provenance-graph`. Durable typed tables and GFA
-  projections: `bench/o1_provenance_witness_prototype/`. This is evidence that the representation
-  separates coherent cores from repeat bridges; stable multi-locus block-class construction is
-  still deferred and the current graphs remain `UNROOTED`. A deferred single-outgroup extension now
-  specifies direct minimap2 block/flank alignment to both phased gorilla haplotypes, two-sided
-  synteny rooting, explicit abstention states, and flag-off invariance. It uses no annotation
-  projection and cannot change human family membership. Local ape assembly paths and WSL mount
-  instructions: `docs/REFERENCE.md`. A GOLGA proof of concept now finds recurrent human
-  intervals from GOLGA2 into 8 audited family loci and from ITSN2 into 6, while both proposed source
-  loci have unique two-sided synteny in both gorilla haplotypes. These are retained as
-  `ROOT_CANDIDATE_SINGLE_OUTGROUP` with `direction_status=UNROOTED`, because stable multi-locus
-  block classes are not implemented. Evidence and rerun script:
-  `bench/o1_outgroup_rooting_poc/`.
-- **Open:** the §9 "report the range of consistent splits" quantification is deferred (shipped behavior:
-  label non-identifiable + abstain from splitting); scope gate is `any_spliced` (lenient vs per-copy wording).
+Family = connected component of the read-multi-mapping graph (splice-graph generalization) with M (>= 2 copies), H (shared
+backbone), X (>= 2 expressed), I (graded identifiability). `classify_family` shipped (`src/rustle/vg.rs`), validated on 14 known
+families. Fresh purity challenge 2026-08-16: 124/133 loci, 72/75 named targets re-emitted, 69/75 in the modal family; GOLGA2
+typed as broad-family outgroup. Deferred: nested `RECENT_COPY` subfamily; provenance-model / outgroup rooting PoC
+(`bench/o1_outgroup_rooting_poc/`, `UNROOTED`). Open: §9 split-range quantification.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:388)
 
 ## O2 — Recover copies that primary-only assembly misses  🔄 capability shown · ⛔ no validated real-data recovery
-Copies whose annotated transcripts are covered overwhelmingly by **secondary** alignments (their primary went
-to a sibling paralog) — StringTie drops them; the VG *can instantiate a model* for them. No end-to-end run yet
-demonstrates a dropped copy actually recovered on real data.
 
-- Genome-wide scan (`bench/paralog_secondary_scan/`, GGO IsoSeq vs RefSeq): of 846 expressed multi-copy
-  candidates, an edit-distance copy-anchor **classifies** ~93 expressed_real_copy (NBPF, LRPAP1-like, …) vs
-  ~89 pure_spillover loci that naive secondary-use would *fabricate* (the honest counterexamples;
-  SORD/LETM1/CES1 pseudogenes). This is *classification*, not assembly — no run shows `--vg` emitting a
-  expressed_real_copy locus that primary-only output drops.
-- **DAZ3 is a RETRACTED false positive (corrected 2026-06-02), not a recovery showcase.** Of its ~158–164
-  +strand reads, the overwhelming majority are *secondary* alignments of DAZ1's reads (median NM ~6 at DAZ1
-  vs ~88 at DAZ3); only ~2–6 reads genuinely prefer DAZ3. The earlier "5 isoforms at cov ~113" was phantom
-  mass echoed from DAZ1. The committed anchored-prior + joint-strand EM collapses it to **cov 4.04 (2 tx,
-  `low_confidence`, identifiability `none`)** — DAZ3 is real-but-very-lowly-expressed and the tool correctly
-  **abstains**. (The cov-113 result reproduces only with the fix disabled:
-  `RUSTLE_VG_JOINT_STRAND_EM=0 RUSTLE_VG_ANCHOR_PRIOR=0` → 5 tx, top cov 112.77.) DAZ3's value is now a
-  **correctness** example — the EM refuses to fabricate a copy from a sibling's reads — guarded by
-  `daz3_isoforms_max` in the oracle.
-- **Open:** (1) the 93/89 rate is unreproducible from committed state (stalled verification, inputs
-  uncommitted); (2) the decisive recovery test — mask a known copy out of the reference, confirm `--vg`
-  recovers + assembles it — is not done; (3) no validated real-data O2 recovery exists.
+Secondary-covered copies StringTie drops; ~93 expressed_real_copy vs ~89 pure_spillover of 846 candidates (classification,
+unreproducible from committed state). DAZ3 is a RETRACTED false positive (cov 4.04, abstains). Masked-copy recovery test not done.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:444)
 
 ## O3 — Assign ambiguous reads to the right copy (the EM)  ✅ synthetic
-Fingerprint-EM: latent = copy of origin, parameters = per-copy abundance, per-read likelihood from
-match/mismatch at distinguishing positions → the raw **ΔNM** anchor (T=2 decisive; ΔNM=0 non-identifiable).
-Ties are **apportioned by the prior, never fabricated** — the answer to "a single SNP makes this trivial."
 
-- Synthetic oracle: read-to-copy accuracy **100% / 100% decisive** (Obj 4).
-- Derivation figures: `bench/paralog_secondary_scan/em_derivation*.png` (worked nucleotide example →
-  E/M steps → convergence on DAZ-like numbers → the tie/decisive boundary).
-- **Open:** real-data per-read validation on GGO is thin.
+Fingerprint-EM on ΔNM (T=2 decisive; ΔNM=0 non-identifiable); synthetic read-to-copy 100% / 100%. Real-data validation thin.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:467)
 
 ## O4 — Assemble each copy's distinct isoforms / structural variants  ✅ synthetic (capability) · 🔄 real-data
-Per-copy isoform recovery — each copy gets its own source→sink paths through the family splice graph.
 
-- Synthetic oracle: per-copy isoform **Sn/Pr 100/100** (Obj 3) — but this fixture is spatially
-  separable, so the non-VG baseline ALSO scores 100/100; it certifies non-regression, not a
-  StringTie-beating capability.
-- **Discriminating benchmark built (2026-06-03):** `bench/tandem_attribution/o4o5_copy_benchmark.sh`
-  (spec `docs/superpowers/ARCHIVE_INDEX.md` → `2026-06-03-o4o5-copy-resolution-benchmark.md` (in git history)). Key finding:
-  **gffcompare chain Sn/Pr cannot discriminate** — when copies have full-length reads the baseline
-  always ties or beats VG. The honest discriminator is **copy ATTRIBUTION** (which copy each
-  ambiguous read came from): on a merged-but-separable fixture VG attributes multimappers to their
-  true source copy at **100% (default settings, id 0.97, 5/5 seeds)** while the baseline produces
-  **no copy metric at all** (undefined, not worse). VG **abstains 100% at identical copies** (the
-  DAZ limit — fabricates nothing). Measured calibration gap surfaced: at the **1-SNP boundary VG is
-  overconfident** (dec_acc 0.44 at dec_frac 0.75) — fix-and-remeasure item.
-- **Open:** real-data breadth (per-copy isoform recovery + copy attribution on curated GGO families);
-  the synthetic truth is read-name prefixes.
+Synthetic Sn/Pr 100/100 (baseline also 100/100: non-regression only). Benchmark 2026-06-03: gffcompare cannot discriminate;
+copy attribution 100% (id 0.97, 5/5 seeds), abstains at identical copies; overconfident at 1-SNP (dec_acc 0.44 at dec_frac 0.75).
+(full: archive/2026-11/THESIS_OBJECTIVES.md:477)
 
 ## O5 — Share evidence across copies via the graph  🔄 partial · ⛔ one blocker
-Cross-family borrowing (coverage + junction propagation) and the *intended* **structural-linkage channel** —
-copy-specific *junctions* as distinguishing positions, adding to ΔNM to resolve reads SNPs alone cannot
-(figure B's DAZ1−/DAZ3+ illustration). **Status caveat:** the junction channel (`lambda_j`) is currently
-**inert/redundant** in the EM (ablation is a no-op — see `project_color_cgroup_parity`), and DAZ3 is
-near-silent (~2–6 genuine reads, see O2), so this is the design concept, not a demonstrated resolution.
 
-- Coverage/junction borrowing implemented in the VG pipeline.
-- **2026-10-31 FAMASM (register 1479):** a family-pooled assembly mode (chains defined over all copies, emitted at a copy only
-  with >= 2 reads certified to it) FAILED its held-out: multi-copy recall +1.4 pt on HG002 but precision 14.0 -> 8.5. Sharing
-  evidence across copies helps assignment, not assembly, at this certificate strength. Prototype `bench/stgaps/famasm.py`.
-- **The "intra-bundle splitter" blocker was a mirage (corrected 2026-06-01).** GOLGA6L7 is **antisense-silent**
-  (0 own-strand reads; its 53+17 reads are +strand, belonging to an overlapping +strand lncRNA) — it correctly
-  emits nothing; the "miss" was a gffcompare overlap artifact, not a tool bug. Checked on 3 genuine same-strand
-  expressed paralog pairs (gap 15 bp–3 kb): they fail by **bundle rejection / partial assembly in separate
-  bundles, never merge-collapse** — so an intra-bundle splitter has **no validated target**.
-- **🔄 Real open gap:** paralog bundles (low-cov, family-secondary-stripped) get **rejected/partially
-  assembled** rather than each copy emitted — a depth-aware-bundling / family-read-handling problem, not a
-  splitter. This is the genuine O5 work item.
-
----
+Junction channel `lambda_j` inert in the EM. FAMASM (r1479) FAILED held-out: multi-copy recall +1.4 pt on HG002, precision
+14.0 -> 8.5; sharing helps assignment, not assembly, at this certificate strength. Intra-bundle splitter blocker was a mirage
+(GOLGA6L7 antisense-silent); real gap = paralog bundles rejected / partially assembled.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:495)
 
 ## Cross-cutting honest gaps
-- Most scores are **synthetic**; real-data per-copy validation (O3/O4 on GGO) is the weakest link.
-- O2's **93/89 rate** is classification-only and unreproducible from committed state; no validated real-data
-  recovery exists, and the former DAZ3 showcase is a retracted false positive (see O2).
-- O5's **GOLGA6L7 splitter** is unsolved.
-- Default de-novo (non-`--vg`) headline held at **95.6 / 90.5** throughout — none of the VG work regressed it.
 
----
-
-> **Moved documents (wave 4, 2026-09-23).** Files this document cites that were pruned from the working tree — `docs/o1_investigations.md`, `docs/OBJECTIVES_AND_VERIFICATION.md`, `docs/o3_missing_copy_evidence.md`, `docs/NUMBERS.md`, `docs/ONE_METHOD.md`, `docs/METHOD_PSEUDOCODE.md`, `docs/OPEN_ITEMS_2026-09-09.md`, `docs/superpowers/` — are at git tag `notebook-2026-09-23` (`git checkout notebook-2026-09-23 -- <path>`) and in `~/Desktop/Rustle_attic/2026-09-23/` (see its `MANIFEST.tsv`). The citations above are provenance and were left as written.
+Most scores synthetic; 93/89 rate unreproducible; DAZ3 retracted; GOLGA6L7 splitter unsolved; default de novo headline held
+at 95.6 / 90.5. Cited pruned docs are at git tag `notebook-2026-09-23` and `~/Desktop/Rustle_attic/2026-09-23/`.
+(full: archive/2026-11/THESIS_OBJECTIVES.md:517)

@@ -2,10 +2,23 @@
 
 **No sequencing data is in this repository.** The aligned BAMs are 4–96 GB each. This file records the
 provenance of every substrate a result in `docs/o1_ledger.md` depends on, precisely enough to rebuild it.
-Paths under `/mnt/linuxdisk/...` are local to the machine the work was done on; treat them as labels.
+Paths under `/mnt/linuxdisk/...` are local to the laptop the early work was done on; treat them as labels. Since 2026-10 the work runs on the Fritz cluster: see the next section.
 
 ⚠ Two human Iso-Seq libraries are used and **they are not interchangeable** (register row 867). A result
 quoted on one cannot be compared with a tool arm run on the other.
+
+## Where things live on Fritz (2026-11-01)
+
+| what | path |
+|---|---|
+| genomes | `~/data/chm13/chm13v2.0.fa`; `~/data/hg002/hg002.pat.fa` (HG002 T2T Q100 paternal, names 1..22,X,Y + JAKCWS); `~/work/jfim/rustle_data/genomes/GGO.fa` |
+| Iso-Seq BAMs | `~/work/jfim/rustle_data/reads/`: `A119b.t2t.bam` (human testis, CHM13), `GCA_029281585.2_flnc_mm.bam` (KB3781 gorilla fibroblast), `GGO_mm.bam` (OR6737 gorilla testis) |
+| HG002 Kinnex | `~/work/jfim/hg002_run/hg002.pat.bam` (aligned to the PATERNAL haplotype; 131 GB, 9 h to make, do not redo). `HG002_kinnex.t2t.bam` is CHM13-aligned and does not match the hg base run |
+| HG002 truth | `~/data/hg002/genes.gff3`, `~/data/hg002/xref.tsv` (`DENOVO_HG002_GFF`, `DENOVO_HG002_XREF`; Ensembl 2022_07) |
+| family truth | `~/data/denovo_eval/` (next-to-last section), CAT TSV `~/work/jfim/rustle_data/annotation/chm13v2.0_CAT_Liftoff.genes.tsv` |
+| base runs | `~/runs/human_A119b/a1.*`, `~/runs/gorilla_KB3781/kb.*`, `~/runs/gorilla_OR6737/or.*`, `~/runs/hg002_kinnex/hg.*` (first three symlink into `~/work/jfim/runs/`); driver `tools/rustle_pipeline.sh` |
+| PSV VCF report (register 1484) | `~/o2ties_real/psv/or.psv60.*` |
+| storage | big outputs under `$WORK` (`~/work`; group FILE quota full since 2026-10-31, so few big files), intermediates in node-local `$TMPDIR`, kept data on `$HPCVAULT`; `$HOME` 200 GB hard |
 
 ## Reference genomes and annotations
 
@@ -174,3 +187,7 @@ and `DENOVO_GGO_GFF` are set (plus `DENOVO_HGNC` for the HGNC gene groups). On F
 | `paralogs.tsv` | Ensembl BioMart, release 116, dataset `hsapiens_gene_ensembl`, attributes `ensembl_gene_id`, `hsapiens_paralog_ensembl_gene`, `hsapiens_paralog_orthology_type`, `hsapiens_paralog_subtype`, one query per chromosome (`~/data/denovo_eval/fetch_paralogs.sh`) | the laptop export (3.3M rows) was an earlier release; row counts may differ |
 | `GGO_genomic.gff` | the bundle's `GGO_genomic.gff.gz`, decompressed | |
 | `hgnc_complete_set.txt` | `https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt` (2026-10-29) | `pairjudge.py`, `cdsseed.py` and `exon_rule_judge.py` read it from `DENOVO_HGNC` (laptop default `/mnt/linuxdisk/tmp/hgnc/`) |
+
+## Docs archive
+
+Closed studies: `docs/archive/2026-09/`, `docs/archive/2026-10/` (`merged/`). `docs/archive/2026-11/` holds the verbatim pre-compaction copies (2026-11-01) of the ledgers, the register and the definition docs (`LEDGER_*.md`, `o1_ledger.md`, `NEGATIVE_RESULTS_REGISTER.md`, `seeded_family_definition.md`, `copy_assignment_definition.md`, and the living docs); every ledger citation of a dataset above resolves there in full.
