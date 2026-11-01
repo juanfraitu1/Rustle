@@ -8374,3 +8374,29 @@ Rust as in Python, reported as is. Nothing adopted by this measurement alone.
 - **Decision:** `--tie-ms` stays OPT-IN in Rust as in Python. The port is correct (R) and does what 1477 predicted (B1); whether the 27-53% fewer
   assignments are losses or redundant certificates needs truth, which these two samples lack. Next measurement if revisited: the HG002
   truth set with B2 redefined on FINAL PLACEMENT (assignment, else primary) rather than on assignment count.
+
+## PREREG PSV VCF REPORT (2026-11-01, register 1484; descriptive report, advisor's question "why no pileup + variant calling for PSVs?")
+**Status:** written before `bench/o3_graph/psv_vcf.py` exists and before any bcftools run. Code at commit c6c19d1b.
+**Claim to document.** O2 already is a pileup + variant-calling step, in spirit: per copy, the pile of tied-window records is a
+pileup (`observations`); a column is variable when >= 2 alleles have >= MIN_READS (2) carriers at base quality >= MIN_Q (10) and
+every minor allele beats a Poisson error test (lambda = sum of the carriers' per-read error / 3, Bonferroni ALPHA 0.01 / m over the
+tested columns; `informative`, `src/copy_phasing/stats.rs`); a tied read is placed by sites whose alleles are carried by >= MIN_SUPPORT
+(6) reads of the pile (`site_votes`), never by a site only it carries. What O2 does NOT do is write a VCF, so nothing can be checked by
+hand. The earlier design that used an external caller (longcallR, register 1374) placed reads by calls on each copy's confident reads
+and FAILED held-out HG00733 (6.3% wrong); O2's current statistic is IsoCon's, ported with the O3 port (register 1375).
+**Deliverable.** `psv_vcf.py emit`: for every OR6737 family with >= 1 assigned read in arm A of register 1483 (`~/o2ties_real/or.A.o2.tsv`,
+`copy_phasing run --semi --guard`, default window), the same piles rebuilt with o3port.py's functions, and (1) one VCF per sample
+(`or.psv.vcf`) of O2's variable columns: CHROM, POS (1-based), ID `family:copy:POS`, REF = GGO.fa base, ALT = the other supported
+alleles, QUAL = -10 log10 of the smallest minor-allele Poisson p, INFO DP (bases at Q >= 10), AD (per allele), M (Bonferroni m), P;
+(2) `or.psv.reads.tsv`: per assigned read its copy, decision path (`sites` when `semi_tied` reproduces the copy; else `haplotype`,
+i.e. the forced / certified path), and the VCF IDs of its deciding sites (for `sites`: the distinguishing columns it covers on both
+copies whose base >= 6 pile reads carry, with the two copies' reference bases; for `haplotype`: the variable columns it carries);
+(3) `or.psv.sites.tsv`: every distinguishing site used (reference differs between the two copies at homologous positions) with ID,
+both bases and the pile's base counts. PSV sites are reference-vs-reference differences and need no caller; the VCF is for the
+columns O2 treats as variable within a pile.
+**Comparison (bcftools 1.25, same reads).** Per copy with >= 1 variable column, the pile's records (`samtools view -N`) over the copy
+span -> `bcftools mpileup -f GGO.fa -r SPAN -Q 10 -q 0 --ff UNMAP -a AD,DP -d 100000 | bcftools call -mv`. Reported, not barred:
+(a) share of O2 variable columns where bcftools calls a SNV with at least one ALT in common (expectation stated in advance: >= 90%);
+(b) bcftools SNV calls at columns O2 does not hold variable, with the reason from O2's own counts (fewer than 2 alleles with >= 2
+carriers at Q >= 10; minor allele p >= ALPHA / m; column outside the span) and bcftools indel calls (O2 uses substitutions only).
+**Rule.** Report only: no default changes whatever the numbers; a share under 90% in (a) is reported with the per-column reasons.
