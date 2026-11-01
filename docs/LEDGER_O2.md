@@ -293,3 +293,14 @@ their origin, as the 2026-10-31 decomposition predicted), 11 to a family, 795 ti
 ties and weak rows, not assignments. Caveat (disclosed, not a reason to re-run): 3,611 of 5,563 (65%) were left as today because a
 tie partner lies in a region not loaded; the panel's region list holds only panel copies, and the genome-wide run had the same
 class (e.g. 1,641 of 3,623 on ~xchrom~MCL33). The hotspot cost question is moot after a FAIL.
+
+### O2 LEVERS arm C on the fast panel: frozen before the run (2026-11-01 ~21:00)
+Same 57 families and BASE as the arm U panel (`~/o2levers_fast/base.*`). Pipeline steps restricted to the panel: `candidate_copies
+--families <panel>` (delta 0.00958, max-reads 1000, the stage defaults) -> `utilities candidate-augment` -> the candidate families'
+nets realigned to `aug.fa` (`minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`) -> copy_assign on `aug.*` for the
+candidate families (`--only-families aug.families.txt`) and on the original inputs for the other panel families, the stage_assign
+flags as in BASE; tables concatenated as `assign_with_candidates` does. Wall limit 1 h 30 on spr1tb; a limit hit = FAIL.
+Bars (relative to BASE on the panel): C1 >= 1 flagged candidate; C2 of the lt5-class reads with a BASE row in the panel (72), >= 25%
+have their realigned primary on a `cand_` contig; C3 assigned reads >= BASE (63); C4 unique-mapper agreement >= BASE (12/22).
+PASS -> the hotspot and HG002 registration; FAIL -> arm C closes as a lever. If no candidate is flagged (C1 FAIL), the assign
+steps are skipped and the arm fails on C1.
