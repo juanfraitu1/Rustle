@@ -68,6 +68,19 @@ samtools sort -o GGO_mm.bam GGO_mm.sam ; samtools index GGO_mm.bam
 
 ⚠ `GGO_ds.bam` is a **downsample** of a gorilla library and is NOT the same substrate as `GGO_mm.bam`.
 
+## BAM tags and what the binaries read (2026-11-01)
+All three working BAMs (`A119b.t2t.bam`, `GGO_mm.bam`, `hg002.pat.bam`) were made with the command above: `--eqx` (CIGAR `=`/`X`, so every
+mismatch position and base is in the alignment; the MD and `--cs` tags would repeat it and are NOT added), `-Y` (soft clips, full query
+in secondaries), `-N 50 -p 0.1 --secondary=yes` (the secondaries O2 needs). Tags present on every record: `NM`, `ms`, `AS`, `de`, `tp`,
+`s1`, `cm`, `nn`, `rl`, `ts`; `s2` where a secondary chain existed. What reads what:
+- `copy_assign` (assign stage): AS, CIGAR (and the 10-AS margin, `as_margin`).
+- `copy_phasing` (O2 bench binary): AS, NM, CIGAR, and since register 1483 `ms` (`--tie-ms W`).
+- `bench/stgaps/stratify.py`: `de` (minimap2 `-c` PAF has no `dv`).
+- Unused, more informative than MD for tie decisions: `de` (gap-compressed divergence of the aligned part; equal-`ms` records can differ),
+  `s1` / `s2` (chaining score of the record and of the best rival chain, minimap2's own pre-alignment confidence, what sets MAPQ; independent
+  of the splice-aware AS that register 1477 showed misranks retrocopies). Adding them is a scorer column first (pre-register, run once,
+  report), not an aligner change. No re-alignment is needed for anything the pipeline does today.
+
 ## Comparison-tool outputs (not produced by this repo)
 
 `~/Desktop/isoseq_upload/` (isoseq collapse, A119b + GGO_OR6737) and `~/Desktop/benchmark_collapse/`
