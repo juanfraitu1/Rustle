@@ -95,3 +95,24 @@ contig; without the flag the chr20 output is byte-identical to the r1485 arm. Th
 gffcompare picks a different representative query for a reference once starts move. Status: flag `--polish-tss-end median` (opt-in,
 driver `RUSTLE_POLISH_TSS_END=median`); PASS proposes it as the pipeline default, the user decides. Tests: 3 new (`tss_end_median_*`),
 copy_assign 89/89.
+
+## E4 (register 1488): 3' UTR extension by unspliced coverage to a polyA-proven end, frozen 2026-11-01 before any code or run
+**Diagnosis it rests on** (chr20 panel, descriptive): FLAIR covers 292k reference exonic bases we miss (16% of the reference), 54% of
+them in annotated LAST exons; 62% of those lie past our model's 3' end inside the annotated last exon (median read depth there 16); in
+the ten largest cases (3.5-8 kb short) 340 of 399 reads ending > 50 bp past our end are UNSPLICED (5'-truncated molecules that never
+reach the last splice junction, so pass 1 never joins them to the spliced model).
+**Rule (new opt-in flag `--polish-tes-extend off|on`; reads the `--polish-tss` evidence, plus a new stream of deduplicated primary
+UNSPLICED records, strand = the read's orientation as for spliced records):** on each contig's final transcripts (after
+`--polish-tss`, `--polish-tss-end`, `--polish-tes`), for every multi-exon transcript T with oriented 3' end E:
+1. the unspliced records on T's strand cluster their oriented 3' ends by single linkage (gap > 21 bp starts a cluster, >= 2 reads, mode
+   = most-ended position ties 3'-most), exactly `--polish-tes`'s cluster rule; a cluster is PAS-proven by `--polish-tes`'s test
+   (canonical AATAAA / ATTAAA in [mode-35, mode-10], mode not internally primed);
+2. candidate ends: PAS-proven cluster modes M > E (oriented) with M - E <= 20,000 bp;
+3. M is admissible when every base of (E, M] is covered by >= 2 unspliced records on T's strand, and (E, M] overlaps no exon of a
+   transcript of ANOTHER gene_id on the same strand (read-through guard);
+4. T's 3' end moves to the most distal admissible M (none: unchanged). Nothing else changes (chain, 5' end, `reads`, the set).
+**Arms:** SHIP (pipeline default, `--polish-tss rescue`) vs SHIP + `--polish-tes-extend on`. Reported beside: + `--polish-tss-end median`.
+**Bars (held-out chr11 and chr7, both; run once):** B1 base-level sensitivity >= SHIP + 2.0 points; B2 base-level precision >= SHIP
+- 1.0 point; B3 matching intron chains and matching transcripts identical (by construction); B4 among `=` multi-exon transcripts, the
+share with the 3' end within 50 bp of the reference >= SHIP - 3 points.
+PASS -> propose as default (the user decides).
