@@ -3,6 +3,7 @@
   isocon_targets.py select  OUR.gtf BAM OUT_DIR          -> OUT_DIR/targets.tsv (target, class, gene, name, chrom, start0, end, strand, records)
   isocon_targets.py pool    BAM OUT_DIR                  -> OUT_DIR/pools/<target>.fa (every primary/secondary record on any span, by read name)
   isocon_targets.py gtf     GENOME OUT_DIR               -> OUT_DIR/isocon.gtf from each target's IsoCon final_candidates.fa (minimap2 splice:hq)
+                            (GENOME may be a prebuilt .mmi: minimap2 re-indexes a FASTA per target, ~4 min each on a human genome)
 Targets: the 4 Yoo families (famtruth.GGO_MAINSTAYS, class multi) + 30 single-copy genes (class single): protein-coding, no Compara paralog
 at any level, a de novo locus in OUR.gtf, 50-5,000 records on the span, random.Random(0) over the eligible ids sorted."""
 import sys, os, re, collections, subprocess, random
@@ -81,7 +82,7 @@ elif cmd == 'gtf':
                     elif op == 'N': cur += ln
                 exons = [(a, b - 1) for a, b in exons]
                 strand = '-' if flag & 16 else '+'
-                tid = f"{t}|{f[0]}"; n += 1
+                tid = f"{t}|{re.sub(r'[;,()]', '_', f[0])}"; n += 1  # gffread (SQANTI3) rejects ; , ( ) inside a transcript_id
                 w.write(f"{f[2]}\tIsoCon\ttranscript\t{exons[0][0]}\t{exons[-1][1]}\t.\t{strand}\t.\tgene_id \"{t}\"; transcript_id \"{tid}\";\n")
                 for i, (a, b) in enumerate(exons): w.write(f"{f[2]}\tIsoCon\texon\t{a}\t{b}\t.\t{strand}\t.\tgene_id \"{t}\"; transcript_id \"{tid}\"; exon_number \"{i + 1}\";\n")
             print(f"{t}\t{n} candidates placed")
