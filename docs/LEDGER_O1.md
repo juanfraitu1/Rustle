@@ -9402,6 +9402,20 @@ The held-out bars are UNCHANGED (REPRULE-2 B1 + B2 on OR6737, pair recall >= bas
 (-0.012) FAILS B2. Run: `~/absorb_OR6737_home/` (the work filesystem is over its group file quota), base `or`, same flags and constants,
 scorers `--species gorilla`. Code 0311c388 (`mcl_families` as built 2026-10-31; no change to the absorb code since the dev run).
 
+### LOCUS-ABSORB held-out result (2026-11-01, OR6737, Slurm 4403657, `~/absorb_OR6737_home/orab.fam.*`, 145 s): **PASS B1 + B2, by equality**
+490 of the OR6737 loci absorbed (`orab.fam.loci.absorbed.tsv`; dev A119b: 6,924), copy rows 1,468 -> 1,466 (1,463 rows share a tid with the
+base; 5 copy tids lost, 3 gained; families 446 -> 444). Mainstays IDENTICAL to base (Yoo families: 19 expressed, 15 recalled, 0 unrelated
+foreign; LRPAP1 8 / 11, JMJD7-PLA2G4B 7 / 8, MAPKBP1 0 / 1, SPTBN5 0). Pairs IDENTICAL (simiiformes, 88 truth pairs): 49 predicted, 21 hit,
+28 false, precision 0.429, recall 0.239 for both runs.
+- B1 (mainstays >= base, unrelated foreign <= base): PASS, equal. B2 (pair precision and recall >= base - 0.01): PASS, equal.
+- Reading: on gorilla the rule touches 490 few-read overlap fragments and none of them carried a family edge that the scores see; the
+  held-out neither confirms nor contradicts the dev trade (A119b precision 0.726 -> 0.796 for recall 0.741 -> 0.729). It shows the rule
+  is SAFE on a second species and that the dev loss is specific to the human KRAB-ZNF hub dependence.
+- By the registered decision: PASS -> `--absorb-loci --absorb-ratio 0.1 --absorb-frac 0.5` is PROPOSED as the families-stage default with
+  `--absorb-loci` off as the hatch, metric-auditor first, user decides. Caveats that travel with the proposal: (1) the dev gate was amended
+  post hoc (above); (2) the held-out PASS is a null effect, not a gain; (3) the dev gain is 7 precision points bought with 26 KRAB-ZNF pairs
+  whose base recall came from hub artifacts. Nothing changed in the binaries or the pipeline by this record.
+
 ## TOOL COMPARISON ON MULTI-COPY LOCI (2026-10-31, descriptive, no prereg; `bench/denovo_eval/toolcompare.py`, runs `~/work/jfim/runs/toolcmp/`)
 User: "can we already affirm that we are doing a better job than stringtie and flair on multi-copy loci?" The `benchmark_collapse` StringTie
 3.0.1 (`-L`, no -G) and FLAIR GTFs vs our assembled GTF (`a1.families.gtf`, `or.families.gtf`), per mainstay + YAG member copy: modeled =
