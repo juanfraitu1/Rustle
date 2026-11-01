@@ -8400,3 +8400,30 @@ span -> `bcftools mpileup -f GGO.fa -r SPAN -Q 10 -q 0 --ff UNMAP -a AD,DP -d 10
 (b) bcftools SNV calls at columns O2 does not hold variable, with the reason from O2's own counts (fewer than 2 alleles with >= 2
 carriers at Q >= 10; minor allele p >= ALPHA / m; column outside the span) and bcftools indel calls (O2 uses substitutions only).
 **Rule.** Report only: no default changes whatever the numbers; a share under 90% in (a) is reported with the per-column reasons.
+
+### PSV VCF RESULT (2026-11-01, register 1484; jobs 4403670 as registered, 4403688 `--mapq-reset 60`; `~/o2ties_real/psv/or.psv60.*`)
+**Deliverables.** 136 families with an assigned read in arm A, 1,758 assigned reads: 1,334 placed by sites (`semi_tied`), 131 by
+haplotype (forced copy; every one carries >= 1 variable column), 293 by a certified new copy. `or.psv60.vcf`: 5,796 variable columns on
+449 copies (QUAL median 82.8, min 21.7, ID `family:copy:POS`). `or.psv60.sites.tsv`: 1,898 distinct deciding PSV sites; at 618 of them
+>= 1 read of the leading pile carries the rival's base, at 451 >= 6 do (the sample carries both bases at a reference PSV: the class that
+made `--semi` unsafe at a one-site lead, register 1388). `or.psv60.reads.tsv`: each read's path, rival, votes and site IDs. Worked
+example: read m64076_221110_210557/120523192/ccs (MCL106) -> copy DN_NC_073242.2_68761372_18 over rival DN_NC_073242.2_65818799_18 by
+2 sites, 0 against: `MCL106:DN_NC_073242.2_68761372_18:68767206=C` and `...:68767805=A`; the rows in sites.tsv give the rival's
+coordinates and bases and the pile's carriers of each base.
+**bcftools on the same pile records.** As registered (records as they are): bcftools calls an SNV sharing an ALT at 3,162 of 5,796
+O2 columns (54.6%), under the stated 90%. Cause found and verified on one column (28 ref / 26 alt at Q >= 10, PL 4,0,9, no call):
+bcftools caps each base's quality at its read's MAPQ, and the piles are tied reads: 13,949 of 58,947 pile records (24%) carry MAPQ 0
+(secondaries), 3,130 MAPQ 1-19. With MAPQ reset to 60 on exactly the same records (post hoc, then re-run as `--mapq-reset 60`):
+5,445 of 5,796 (93.9%) -- the VCF is byte-identical between the two runs (bcftools is downstream of it). The 351 O2 columns bcftools
+still does not call: 304 have a minor allele under 10% and 339 lie at depth >= 30 -- a 10% allele at depth 183 (AD 156,20, P 1e-12 for
+O2) is homozygous reference under `call -m`'s diploid prior; a pile mixes copies, so O2's test has no ploidy. bcftools SNV calls in the
+spans: 23,583, of which 18,138 O2 does not hold variable: one_allele 14,759 (bcftools calls a single ALT read, 1/1 at AD 0,1, or a
+difference every pile read carries = fixed against the reference, which separates no reads within the pile), bonferroni 2,037 (p under
+0.01 but not under 0.01 / m, m up to 1,035 columns on one copy), p 1,342 (explained by the reads' own error rates); 504 indel calls
+(O2 uses substitutions only, by design: indels at HiFi homopolymers, register 1339).
+**Reading.** O2 is a pileup + variant-calling step with the two choices a general caller cannot make: it trusts the bases of MAPQ-0
+reads (the reads in question are multi-mappers by definition) and it has no ploidy prior (a pile is a mixture of copies, minor alleles
+of 10% are real). bcftools agrees on 94% of O2's columns once it is allowed to use the reads, and its extra calls are the ones O2's
+>= 2-carrier, Bonferroni and within-pile rules remove. Report only; nothing changes. Hand check: `grep ID or.psv60.vcf`,
+`or.psv60.bcftools/<family>.<copy>.vcf` and `.bam` hold the exact records bcftools saw. The `--mapq-reset` run is disclosed as
+post hoc (added after the registered run missed the expectation; the registered numbers stand above).
