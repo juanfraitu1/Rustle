@@ -179,3 +179,21 @@ arm. Disclosure: the first run of this job (4406056) crashed on every contig bef
 got one transcript id; `--bridge-regroup` refused the duplicate). No score was produced or read; the id now carries start and end plus
 a counter (test `mono_model_gives_clusters_with_one_start_distinct_ids`, watched failing first); rule and bars unchanged. Status: opt-in
 `--mono-model cluster` (driver `RUSTLE_MONO_MODEL=cluster`); PASS proposes it as default, the user decides. Tests: 4 new, copy_assign 98/98.
+
+### Combined E3 + E4 + E5 (descriptive, 2026-11-01, job 4406122): the three opt-in layers together vs SHIP
+
+| contig | arm | transcripts | base Sn / Pr | transcript precision | matching transcripts | 5' within 50 bp | 3' within 50 bp |
+|---|---|---|---|---|---|---|---|
+| chr11 | SHIP | 10,318 | 45.5 / 25.8 | 16.505 | 1,703 | 40.60% | 49.00% |
+| chr11 | all three | 10,065 | 45.8 / 43.6 | **17.119** | 1,723 | 64.57% | 48.06% |
+| chr7 | SHIP | 11,749 | 50.6 / 18.7 | 13.303 | 1,563 | 39.31% | 43.73% |
+| chr7 | all three | 11,271 | 51.2 / 35.2 | **14.001** | 1,578 | 63.44% | 42.19% |
+| chr20 | SHIP | 5,366 | 53.1 / 26.9 | 16.474 | 884 | 46.15% | 60.66% |
+| chr20 | all three | 5,400 | 54.3 / 41.3 | 16.556 | 894 | 67.91% | 60.66% |
+
+Chains identical on every contig. The layers interact in one place: extended 3' ends overlap more unspliced clusters, so the single-exon
+step keeps fewer models (chr11 10,310 -> 10,065 transcripts), which lifts transcript precision above any single layer. Base
+sensitivity with all three sits between the median-5' arm (which trims) and the extension arm (which adds). On the 370-gene single-copy
+panel (`docs/PREREG_sqanti_single_copy_2026-11-01.md`) the combination reads base 71.9 / 58.5, transcript 22.8 / 18.6, 5' within 50 bp
+69.8%: there, inside protein-coding gene spans, the added single-exon models rarely match, so transcript precision drops 0.5 points
+(19.1 -> 18.6) while whole contigs gain 0.1-0.7.
