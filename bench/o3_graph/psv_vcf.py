@@ -3,7 +3,7 @@
 bcftools on the same reads.
 
   psv_vcf.py run --bam BAM --copies COPIES.tsv --net NET.tsv --genome G.fa --o2 ARM.o2.tsv --out PREFIX
-                 [--families A,B] [--no-bcftools] [--threads N]
+                 [--families A,B] [--no-bcftools] [--threads N] [--mapq-reset Q]
 
 O2 (copy_phasing / o3port.py, `--semi --guard`) is a pileup + variant-calling step per copy of a family: the records in the tie
 window on a copy are its pile (`pile_records`), their aligned bases per reference column the pileup (`observations`), and a column
@@ -135,14 +135,18 @@ def ranked_copies(r, piles):
     return sorted(((key(rec), -rec.get_tag("NM"), c) for c, p in piles.items() if r in p for rec in [p[r]]), reverse=True)
 
 
-def bcftools_calls(bam, recs, chrom, s, e, genome, outdir, tag, threads):
+def bcftools_calls(bam, recs, chrom, s, e, genome, outdir, tag, threads, mapq=None):
     """bcftools mpileup | call on exactly O2's pile records (one record per read, the one in the tie window on this copy; the
-    piles hold secondaries, so --ff keeps them), over the copy span; {(chrom, pos1): (ref, alts, kind)}."""
+    piles hold secondaries, so --ff keeps them), over the copy span; {(chrom, pos1): (ref, alts, kind)}. With `mapq`, every
+    record's MAPQ is reset to it first: bcftools caps a base's quality at its read's MAPQ, and the piles' secondaries carry
+    MAPQ 0 (as run on OR6737: 24% of pile records), so a tied read's bases count for nothing in its genotype likelihoods."""
     import pysam
     os.makedirs(outdir, exist_ok=True)
     bf, vf = (os.path.join(outdir, f"{tag}.{x}") for x in ("bam", "vcf"))
     with pysam.AlignmentFile(bf, "wb", template=bam) as out:
         for rec in sorted(recs, key=lambda r: (r.reference_start, r.query_name)):
+            if mapq is not None:
+                rec.mapping_quality = mapq
             out.write(rec)
     pysam.index(bf)
     region = f"{chrom}:{s + 1}-{e}"
@@ -233,7 +237,7 @@ def cmd_run(a):
                 if not rows:
                     continue
                 ch, s, e = span[cid]
-                calls = bcftools_calls(bam, list(piles[cid].values()), ch, s, e, a.genome, f"{a.out}.bcftools", f"{fam}.{cid}", a.threads)
+                calls = bcftools_calls(bam, list(piles[cid].values()), ch, s, e, a.genome, f"{a.out}.bcftools", f"{fam}.{cid}", a.threads, a.mapq_reset)
                 o2c = {(ch, r["pos"]): set(r["alt"]) for r in rows}
                 obs = obs_by_copy[cid]
                 out = compare(o2c, calls, lambda chrom, col, obs=obs: obs.get(col, []), rows[0]["m"])
@@ -278,6 +282,8 @@ def main(argv):
     r.add_argument("--families", default="")
     r.add_argument("--no-bcftools", action="store_true")
     r.add_argument("--threads", type=int, default=4)
+    r.add_argument("--mapq-reset", type=int, default=None, metavar="Q", help="reset every pile record's MAPQ to Q before bcftools "
+                   "(bcftools caps base quality at MAPQ; the piles' secondaries carry MAPQ 0)")
     a = ap.parse_args(argv)
     cmd_run(a)
 
