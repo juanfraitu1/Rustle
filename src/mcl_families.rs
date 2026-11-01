@@ -3500,7 +3500,7 @@ mod tests {
         let (cf, _) = to_colocated(&fams[0], Some(&seqs), &genome).unwrap();
         assert_eq!(cf.copies.len(), 3);
         let regions = std::fs::read_to_string(format!("{out}.copies.regions")).unwrap();
-        assert_eq!(regions, "MCL0\tc1:1-7500\nMCL0\tc2:1-5600\n");
+        assert_eq!(regions, "MCL0\tc1:0-7500\nMCL0\tc2:0-5600\n");
     }
 
     /// The target is the unit whose chain contains the first base AFTER the intron; the source never
