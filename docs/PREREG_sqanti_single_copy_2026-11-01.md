@@ -69,3 +69,24 @@ after IsoCon and the mapping re-run from a prebuilt `splice:hq` index in job 440
 in its usage). (2) IsoCon transcript ids contain `;` `,` `(` `)`, which gffread (inside `sqanti3_qc.py`) rejects; the writer now
 replaces them with `_` and the IsoCon arm was re-run alone on the cleaned GTF (`isocon.cut.clean.gtf`), twice (the first srun
 launched 4 tasks on the same directory; cleaned and re-run with `-n 1`, identical numbers). Nothing adopted or changed.
+
+## gffcompare on the same panel, updated 2026-11-01 (descriptive; after registers 1485 / 1487)
+Reference = the 370 panel genes' CAT transcripts (`~/sqanti_sc_A119b/gffc/ref370.gtf`), each GTF cut to the universe spans as above;
+`ours` = the panel's `a1.gtf`; `ours_tssr` = chr20 re-assembled with today's default (`--polish-tss rescue`, r1485); `ours_med` = that
+plus `--polish-tss-end median` (r1487, opt-in). Sensitivity / precision in %; the last three columns are the `=` matched multi-exon
+transcripts, the share whose 5' end lies within 50 bp of the reference's, and the median 5' distance (`bench/assembly_ends/end_score.py`).
+Table: `~/sqanti_sc_A119b/gffc/table.tsv`.
+
+| arm | transcripts | base Sn / Pr | exon Sn / Pr | intron Sn / Pr | chain Sn / Pr | transcript Sn / Pr | locus Sn / Pr | missed exons | novel introns | `=` multi | 5' within 50 bp | median 5' |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ours | 3,259 | 71.4 / 54.7 | 57.4 / 63.4 | 70.0 / 70.3 | 22.9 / 19.2 | 22.7 / 19.1 | 87.9 / 71.2 | 11.8% | 4.4% | 623 | 43.0% | 63 bp |
+| ours_tssr | 3,298 | 71.5 / 54.5 | 57.5 / 63.2 | 70.0 / 70.3 | 23.0 / 19.1 | 22.8 / 19.1 | 87.9 / 71.2 | 11.8% | 4.4% | 628 | 42.8% | 64 bp |
+| ours_med | 3,297 | 69.6 / 58.7 | 58.7 / 64.8 | 70.0 / 70.3 | 23.0 / 19.1 | 22.8 / 19.1 | 87.9 / 70.9 | 12.1% | 4.4% | 628 | 69.8% | 26 bp |
+| StringTie | 2,928 | 75.1 / 28.7 | 51.0 / 57.5 | 68.6 / 69.8 | 19.0 / 19.1 | 18.8 / 17.7 | 83.3 / 45.8 | 10.7% | 7.2% | 519 | 40.7% | 78 bp |
+| FLAIR | 11,218 | 85.3 / 19.0 | 63.7 / 33.4 | 76.9 / 37.6 | 21.8 / 6.7 | 21.8 / 5.3 | 80.2 / 29.7 | 6.9% | 9.8% | 599 | 70.3% | 25 bp |
+| IsoCon | 19,067 | 69.1 / 35.1 | 57.8 / 37.3 | 63.1 / 70.6 | 22.4 / 4.5 | 22.3 / 3.2 | 81.4 / 37.7 | 16.8% | 5.6% | 4,914 | 58.6% | 36.5 bp |
+
+With the two end layers ours keeps the best transcript-, chain- and locus-level precision and now places 5' ends as well as FLAIR
+(69.8% vs 70.3% within 50 bp), with the highest base precision (58.7). The remaining gap is base and exon sensitivity against FLAIR
+(69.6 vs 85.3 base Sn; FLAIR emits 3.4x the transcripts). IsoCon's `=` count holds its redundant candidates (median ~4 per reference).
+ours_med has one transcript fewer than ours_tssr in the cut: a moved start can leave the universe span.

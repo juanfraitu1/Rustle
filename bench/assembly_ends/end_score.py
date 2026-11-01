@@ -32,7 +32,8 @@ for l in open(f"{pre}.tracking"):
     for q in f[4:]:
         if q == "-":
             continue
-        qt = q.split(":", 1)[1].split("|")[1]
+        parts = q.split(":", 1)[1].split("|")       # gene|transcript|exons|FPKM|TPM|cov|len; a transcript id may hold '|'
+        qt = "|".join(parts[1:-5])
         if qt in Q and rt in R and Q[qt][0] >= 2:
             d5.append(abs(Q[qt][1][0] - R[rt][1][0])); d3.append(abs(Q[qt][1][1] - R[rt][1][1]))
 stats = open(pre).read()
