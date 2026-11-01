@@ -58,3 +58,21 @@ it. The best proven-end subsets are sub-chains the end-compatible tag does not c
 15.91 < 16.21), the second B1 (884 < 885 chains), the 3'-short class B1 and B3. No E2 code was written; no held-out run was made.
 Disclosure: the stop condition as registered (no class above half the shipped precision) was not met by the two untagged subsets;
 E2 was stopped on the projection against the held-out bars instead, which the file did not name as a stop rule.
+
+## E3 (register 1487): read-consensus 5' ends (IsoCon / FLAIR's lesson), frozen 2026-11-01 before any code or held-out run
+**Diagnosis it rests on** (chr20 panel, descriptive): on 628 multi-exon FSM transcripts with >= 2 exact-chain reads, our emitted 5'
+end IS the most upstream read start (identical distributions), median 63 bp from the reference TSS, 43% within 50 bp; the median of the
+exact-chain reads' starts would give 24 bp / 70%; FLAIR (one model per isoform) 21 bp, IsoCon 9 bp (best of ~4 candidates).
+**Rule (new opt-in flag `--polish-tss-end off|median`, needs the `--polish-tss` evidence):** on each contig's final transcripts (after
+`--polish-tss`), for every multi-exon transcript NOT rescued or split by `--polish-tss`, its own starts = the deduplicated primary
+spliced records whose first intron is the transcript's first intron, whose intron chain equals the transcript's, and whose oriented
+5' end lies inside the transcript's oriented first exon. With >= 2 own starts, the 5' end moves to their lower median
+(sorted[(n-1)/2], oriented coordinates). Nothing else changes (chain, 3' end, `reads`, transcript set); the locus boundaries the
+families stage uses are untouched (the step runs on the emitted GTF only).
+**Arms:** SHIP (the pipeline default since r1485, i.e. with `--polish-tss rescue`) vs SHIP + `--polish-tss-end median`.
+**Metric:** gffcompare vs CAT per contig; over query transcripts with class `=` and >= 2 exons, M = share whose 5' end lies within
+50 bp of the matched reference transcript's 5' end.
+**Bars (held-out chr11 and chr7, both; run once):** B1 M(E3) >= M(SHIP) + 10 points; B2 matching intron chains and matching transcripts
+identical to SHIP (by construction: any difference is a bug and fails); B3 base-level sensitivity >= SHIP - 2.0 points.
+PASS -> propose as the pipeline default (the user decides). Reported beside: chr20, the 3' ends (unchanged by construction),
+how many transcripts moved and by how much.
