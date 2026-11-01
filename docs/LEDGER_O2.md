@@ -9,7 +9,7 @@ Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGE
 - **Opt-in, not default:** `--tie-ms` (o3port and Rust port; register 1483 FAIL as registered), `--tie-structure` (P15 PASS r1404, P16 uninformative r1406, no effect on real reads r1407), `--certify-all-records` (r1415 FAIL), `--union-certificate` (r1092/1093; lever under test), `RUSTLE_PSV_BLOCKS=1`, candidates stage.
 - **Standing facts:** minimap2 ranks by `ms`, not AS (r1409); a higher-AS secondary is usually an unspliced retrocopy artefact (r1403, r1270); Eichler 10-AS rule picks an unspliced record on 7-12% of decisions (r1477).
 - **What blocks more assignments (2026-10-31 decomposition):** HG002 17,805 of 141,265 tied reads assigned; most discards are origins outside the catalog (1-5% divergent) or junk (>= 5%).
-- **Closed 2026-11-01:** register 1481 O2 LEVERS arm U (`--union-certificate`) FAILED the fast panel (U1: assigned 59 < 63; see `### O2 LEVERS fast-panel RESULT`), stays opt-in. **Open:** arm C (candidates) awaits its end reason and a rerun on the same panel. Next for tie-ms: HG002 truth with B2 on final placement.
+- **Closed 2026-11-01:** register 1481 O2 LEVERS arm U (`--union-certificate`) FAILED the fast panel (U1: assigned 59 < 63; see `### O2 LEVERS fast-panel RESULT`), stays opt-in. **Parked:** arm C (candidates), untested: `candidate_copies` pass A reads ~0.85 GB per copy query (see `### O2 LEVERS arm C: PARKED`). Next for tie-ms: HG002 truth with B2 on final placement.
 - **Most recent rows:** 1481 (O2 LEVERS, arm U FAIL on the fast panel), 1483 (TIE-MS PORT, FAIL as registered, opt-in), 1484 (PSV VCF REPORT, bcftools 54.6% as run / 93.9% with MAPQ reset, report only). Related: 1477 (MS-VS-AS, `--tie-ms` worth porting), 1479 (FAMASM FAIL, not adopted).
 
 ## Contents
@@ -304,3 +304,13 @@ Bars (relative to BASE on the panel): C1 >= 1 flagged candidate; C2 of the lt5-c
 have their realigned primary on a `cand_` contig; C3 assigned reads >= BASE (63); C4 unique-mapper agreement >= BASE (12/22).
 PASS -> the hotspot and HG002 registration; FAIL -> arm C closes as a lever. If no candidate is flagged (C1 FAIL), the assign
 steps are skipped and the arm fails on C1.
+
+### O2 LEVERS arm C: PARKED (2026-11-01 22:00, user)
+Job 4405613 (panel, bars at bdad5c49) cancelled at 1 h 04 by the user's decision to park, still inside `candidate_copies` pass A
+(building the family nets): 430 GB read from the 96 GB BAM after 43 min. Cause measured on MCL331 (4 copies, ~13k records): samtools
+counts the four copy regions in 0.4 s; `candidate_copies` pass A takes 8 s and reads 3.4 GB for the same regions, so each copy
+query reads far more of the BAM than its region (mechanism not yet confirmed in the code). The genome-wide run (7,987 copies, job
+4403495) would need days in this step alone. **The lever is untested; no verdict is recorded** (the limit was not reached, and the
+cost is the tool's, not the idea's). To resume: collect the nets during pass B's existing sequential sweep against the merged copy
+intervals instead of one indexed query per copy, test that the nets are identical on a few families, then rerun the panel with the
+same bars and limit as a disclosed amendment.
