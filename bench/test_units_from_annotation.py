@@ -167,5 +167,56 @@ class T(unittest.TestCase):
             with open(f'{d}/list.tsv') as fh:
                 self.assertEqual(fh.read(), 'tid\tchrom\tstrand\tjunctions\tlabel\tgene\n')
 
+def gff_raw(rows):
+    """rows: (type, start, end, strand, attrs) on c1 -> GFF text."""
+    return '##gff-version 3\n' + ''.join(f'c1\tX\t{t}\t{a}\t{b}\t.\t{st}\t.\t{at}\n' for t, a, b, st, at in rows)
+
+
+def gene_rows(gid, exons, strand='+', gattr='', tattr=''):
+    lo, hi = exons[0][0], exons[-1][1]
+    r = [('gene', lo, hi, strand, f'ID={gid};Name={gid}{gattr}'), ('transcript', lo, hi, strand, f'ID={gid}.t;Parent={gid}{tattr}')]
+    return r + [('exon', a, b, strand, f'ID={gid}.e{k};Parent={gid}.t') for k, (a, b) in enumerate(exons)]
+
+
+class Readthrough(unittest.TestCase):
+    """register 1492: readthrough genes found on any convention."""
+
+    def calls(self, rows, mode):
+        with tempfile.NamedTemporaryFile('w', suffix='.gff', delete=False) as fh:
+            fh.write(gff_raw(rows))
+        c = {}
+        kept = U.read_genes(fh.name, None, mode, None, c)
+        os.unlink(fh.name)
+        return {k.split('|')[0]: v for k, v in c.items()}, {g['name'] for g in kept}
+
+    A_ = [(100, 400), (600, 900)]
+    B_ = [(2000, 2300), (2500, 2800)]
+    R_ = [(100, 400), (600, 900), (2000, 2300), (2500, 2800)]
+
+    def test_gencode_transcript_tag_is_a_label(self):
+        rows = gene_rows('A', self.A_) + gene_rows('B', self.B_) + gene_rows('A-B', self.R_, tattr=';tag=basic,readthrough_transcript')
+        c, kept = self.calls(rows, 'labels')
+        self.assertEqual(c, {'A-B': 'label'})
+        self.assertEqual(kept, {'A', 'B'})
+
+    def test_unlabelled_fusion_is_structural(self):
+        rows = gene_rows('A', self.A_) + gene_rows('B', self.B_) + gene_rows('LOC1', self.R_)
+        self.assertEqual(self.calls(rows, 'structural')[0], {'LOC1': 'structural'})
+        self.assertEqual(self.calls(rows, 'labels')[0], {})
+
+    def test_labels_and_structure_both(self):
+        rows = gene_rows('A', self.A_) + gene_rows('B', self.B_) + gene_rows('A-B', self.R_, gattr=';description=A-B readthrough')
+        self.assertEqual(self.calls(rows, 'both')[0], {'A-B': 'label+structural'})
+
+    def test_mirna_host_is_not_a_readthrough(self):
+        rows = (gene_rows('MIR1', [(150, 220)], gattr=';gene_biotype=miRNA') + gene_rows('MIR2', [(2050, 2120)], gattr=';gene_biotype=miRNA')
+                + gene_rows('HOST', self.R_, gattr=';gene_biotype=lncRNA'))
+        self.assertEqual(self.calls(rows, 'both')[0], {})
+
+    def test_overlapping_parts_are_not_a_fusion(self):
+        rows = gene_rows('A', [(100, 400), (2000, 2300)]) + gene_rows('B', self.B_) + gene_rows('R', self.R_)
+        self.assertNotIn('R', self.calls(rows, 'structural')[0])
+
+
 if __name__ == '__main__':
     unittest.main()

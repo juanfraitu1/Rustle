@@ -58,9 +58,20 @@ def merge(iv):
     return [tuple(x) for x in out]
 
 
-def read_genes(gff, contigs=None):
-    """[{id, name, chrom, strand, ex (merged 0-based half-open), lo, hi}] of the non-readthrough gene records with exons, in file order."""
+SMALL_RNA = {'mirna', 'snorna', 'snrna', 'scarna', 'trna', 'rrna', 'misc_rna', 'y_rna', 'vault_rna', 'vaultrna'}
+_BIOTYPE = re.compile(r'(?:^|;)(?:gene_biotype|gene_type|biotype)=([^;]+)')
+
+
+def read_genes(gff, contigs=None, mode='both', rt_list=None, calls=None):
+    """[{id, name, chrom, strand, ex (merged 0-based half-open), lo, hi}] of the non-readthrough gene records with exons, in file order.
+
+    Readthrough genes (register 1492, docs/PREREG_readthrough_detect_2026-11-02.md) are dropped by `mode`: `labels` = any attribute
+    value of the gene or of a record under it contains `readthrough` (RefSeq description, GENCODE tag=readthrough_transcript, ...);
+    `structural` = a transcript of the gene has an intron from an exon of gene A to an exon of gene B (same strand, A and B share no
+    exonic base and do not overlap, neither a small RNA: exon union >= 200 bp and biotype not in SMALL_RNA); `both`; `rt_list` = gene
+    IDs / names always dropped. `calls` (a dict) receives {gene name|start: reason} of every dropped gene."""
     ftype, parent, exons, genes = {}, {}, collections.defaultdict(list), []
+    labelled = set()
     with open_text(gff) as fh:
         for line in fh:
             if line.startswith('#'):
@@ -74,11 +85,19 @@ def read_genes(gff, contigs=None):
                 ftype[mid.group(1)] = f[2]
                 if mp:
                     parent[mid.group(1)] = mp.group(1).split(',')[0]
+            hit = 'readthrough' in a.lower()
             if f[2] in GENE_TYPES and mid:
-                mn, md = _ATTR['Name'].search(a), _ATTR['description'].search(a)
-                genes.append((mid.group(1), mn.group(1) if mn else mid.group(1), f[0], f[6], md.group(1) if md else '', f[3]))
-            elif f[2] == 'exon' and mp:
-                exons[mp.group(1).split(',')[0]].append((int(f[3]) - 1, int(f[4])))
+                mn, mb = _ATTR['Name'].search(a), _BIOTYPE.search(a)
+                genes.append((mid.group(1), mn.group(1) if mn else mid.group(1), f[0], f[6], mb.group(1).lower() if mb else '', f[3]))
+                if hit:
+                    labelled.add(mid.group(1))
+            else:
+                if hit and mid:
+                    labelled.add(mid.group(1))
+                if f[2] == 'exon' and mp:
+                    exons[mp.group(1).split(',')[0]].append((int(f[3]) - 1, int(f[4])))
+                    if hit:
+                        labelled.add(mp.group(1).split(',')[0])
 
     def gene_of(x):
         for _ in range(8):
@@ -86,16 +105,46 @@ def read_genes(gff, contigs=None):
                 break
             x = parent.get(x)
         return x if ftype.get(x) in GENE_TYPES else None
-    by_gene = collections.defaultdict(list)
+    by_gene, tx_of = collections.defaultdict(list), collections.defaultdict(list)
     for p, ex in exons.items():
         g = gene_of(p)
         if g:
             by_gene[g].extend(ex)
-    out = []
-    for gid, name, chrom, strand, desc, start1 in genes:
+            tx_of[g].append(sorted(ex))
+    lab = {gene_of(x) for x in labelled} - {None}
+    rt_list = set(rt_list or ())
+    all_genes = []
+    for gid, name, chrom, strand, bt, start1 in genes:
         ex = merge(by_gene.get(gid, []))
-        if ex and 'readthrough' not in desc.lower():
-            out.append(dict(id=f'{name}|{start1}', name=name, chrom=chrom, strand=strand, ex=ex, lo=ex[0][0], hi=ex[-1][1]))
+        if ex:
+            all_genes.append(dict(gid=gid, id=f'{name}|{start1}', name=name, chrom=chrom, strand=strand, ex=ex, lo=ex[0][0], hi=ex[-1][1], bt=bt))
+    struct = set()
+    if mode in ('structural', 'both'):
+        parts = GeneIndex([g for g in all_genes if g['bt'] not in SMALL_RNA and sum(b - a for a, b in g['ex']) >= 200])
+        for g in all_genes:
+            for t in tx_of.get(g['gid'], ()):
+                if g['gid'] in struct:
+                    break
+                for d, c in zip(t, t[1:]):
+                    left = [h for h in parts.hits(g['chrom'], d[0], d[1], g['strand']) if h is not g]
+                    right = [h for h in parts.hits(g['chrom'], c[0], c[1], g['strand']) if h is not g]
+                    if any(x is not y and (x['hi'] <= y['lo'] or y['hi'] <= x['lo']) for x in left for y in right):
+                        struct.add(g['gid'])
+                        break
+    out = []
+    for g in all_genes:
+        why = []
+        if g['gid'] in rt_list or g['name'] in rt_list:
+            why.append('list')
+        if mode in ('labels', 'both') and g['gid'] in lab:
+            why.append('label')
+        if g['gid'] in struct:
+            why.append('structural')
+        if why:
+            if calls is not None:
+                calls[g['id']] = '+'.join(why)
+            continue
+        out.append(dict(id=g['id'], name=g['name'], chrom=g['chrom'], strand=g['strand'], ex=g['ex'], lo=g['lo'], hi=g['hi']))
     return out
 
 
@@ -199,9 +248,9 @@ def cuts_of(exons, chrom, strand, gix):
     return cuts, genes, None
 
 
-def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:'):
+def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:', mode='both', rt_list=None, calls=None):
     """(list rows, uncuttable rows, counts)."""
-    genes = read_genes(gff, contigs)
+    genes = read_genes(gff, contigs, mode, rt_list, calls)
     if replace:
         names = {g['name'] for g in replace}
         genes = [g for g in genes if g['name'] not in names] + [g for g in replace if not contigs or g['chrom'] in contigs]
@@ -231,9 +280,21 @@ def main(argv):
     ap.add_argument('--label-prefix', default='ann:')
     ap.add_argument('--report', default='')
     ap.add_argument('--out', default='')
+    ap.add_argument('--readthrough', choices=('labels', 'structural', 'both'), default='both')
+    ap.add_argument('--readthrough-list', default='')
+    ap.add_argument('--readthrough-report', default='', help='dropped readthrough genes: gene reason')
     a = ap.parse_args(argv)
     contigs = set(a.contigs.split(',')) if a.contigs else None
-    rows, unc, n = run(a.gff, a.gtf, contigs, read_replacements(a.replace_genes) if a.replace_genes else None, a.label_prefix)
+    rt_list = [l.split('\t')[0].strip() for l in open_text(a.readthrough_list) if l.strip() and not l.startswith('#')] if a.readthrough_list else None
+    calls = {}
+    rows, unc, n = run(a.gff, a.gtf, contigs, read_replacements(a.replace_genes) if a.replace_genes else None, a.label_prefix,
+                       a.readthrough, rt_list, calls)
+    if a.readthrough_report:
+        with open(a.readthrough_report, 'w') as fh:
+            fh.write('gene\treason\n')
+            for k, v in calls.items():
+                fh.write(f'{k}\t{v}\n')
+    print(f'units_from_annotation: {len(calls)} readthrough genes dropped ({a.readthrough})', file=sys.stderr)
     out = open(a.out, 'w') if a.out else sys.stdout
     out.write('tid\tchrom\tstrand\tjunctions\tlabel\tgene\n')
     for r in rows:

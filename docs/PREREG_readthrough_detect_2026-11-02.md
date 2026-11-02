@@ -25,3 +25,19 @@ Gene-level, protein-coding/lncRNA genes, chr1-22,X: structural calls vs label se
 3. Identity: `--readthrough labels` on the RefSeq GFF gives a units list byte-identical to the current script (GTF = RefSeq transcripts).
 4. Gorilla RefSeq (no labels): every structural call listed for hand review; reported, not a bar.
 If 1 or 2 fails: `labels` becomes the default (it can only add labelled exclusions), structural stays opt-in, recorded FAIL.
+
+## RESULT r1492 (2026-11-02): ❌ FAIL (bar 1)
+| annotation | labelled | structural | both | recall | precision |
+|---|---|---|---|---|---|
+| GENCODE v46 basic, chr1-22,X | 960 | 771 | 727 | **0.757** | 0.943 |
+| RefSeq GRCh38.p14, NC chr1-22,X | 99 | 84 | 82 | 0.828 | 0.976 |
+Bar 3 PASS: `--readthrough labels` units list byte-identical to the previous script on RefSeq chr16-22 (72 cuts each).
+By the rule: default = `labels`; `structural` / `both` opt-in. Evaluator `bench/readthrough_detect/rt_eval.py`; outputs `/anvme/workspace/v138da13-rustle/annot/rt.*.txt`.
+Found while reading the misses (post hoc, descriptive): GENCODE tags `readthrough_transcript` on single isoforms of normal genes; 32 of the
+951 tagged genes are mixed (919 have every transcript tagged), and the any-record label would drop those 32 whole genes.
+
+## PREREG r1493 (2026-11-02, before the run): gene-level label
+LABEL = the gene record's own attributes contain `readthrough`, OR every transcript under it does (a mixed gene is kept).
+Bars: (a) RefSeq chr16-22 `labels` list still byte-identical to the previous script; (b) GENCODE: the 32 mixed genes are kept and the
+919 all-tagged genes still dropped. Pass both -> this is the `labels` definition (default). Fail -> `labels` stays gene-record-only
+(the previous behaviour) and the transcript tag is ignored.
