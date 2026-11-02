@@ -233,3 +233,11 @@ none of them as copies (families input single-exon transcripts 16,501 -> 9,214).
 not separated here. **Per the rule: the three layers stay assembly options; no default changes.** Follow-ups, each needing its own
 registration: (a) E3 + E4 alone through the families stage; (b) the families stage reading the pre-E5 single-exon models while the
 emitted GTF carries E5's (single-exon copies are often processed copies / retrocopies, which the families need).
+
+## E7 (register 1491): E3 + E4 alone through the families stage, frozen 2026-11-02 before the run
+Follow-up (a) of E6. Arm E34 = SHIP + `RUSTLE_POLISH_TSS_END=median RUSTLE_POLISH_TES_EXTEND=on` (no `--mono-model`), assemble + families
+genome-wide on A119b and OR6737, binary = current main (the `RUSTLE_FAMILY_THREADS` refactor is byte-identical at its default and does
+not touch assembly). SHIP = E6's SHIP arm (same seeding, same stages; it reproduced the base A119b run exactly: 0.726 / 0.741; OR6737
+0.429 / 0.239), not re-run. Metric and bars as E6: coding pair precision >= SHIP - 0.010 and recall >= SHIP - 0.010 on both samples.
+**PASS -> the user's standing instruction (2026-11-02, "make them default if they pass"): `tools/rustle_pipeline.sh` turns both on
+unless `RUSTLE_POLISH_TSS_END=off` / `RUSTLE_POLISH_TES_EXTEND=off`.** FAIL -> both stay opt-in.
