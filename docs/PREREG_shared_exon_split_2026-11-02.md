@@ -26,3 +26,8 @@ Arm D = arm C's assembly, then every transcript of PREFIX.families.gtf whose exo
 (same strand; the shared constant exons) is removed before `families` (bench/annot_compare/drop_shared_units.py), so each gene's
 own exons remain the copies. Same metrics; decision vs arm A: shared-exon loci fall >= 50% AND simiiformes precision and recall
 each fall by <= 0.01. Else FAIL.
+
+## RESULT r1497 (2026-11-02): ❌ FAIL
+Arm D: 607 of 30,638 families-input transcripts dropped. Loci 9,838; shared-exon loci 60 (A) -> 44 (-27%, bar -50%); fused 2.
+Pairs identical to arm C (pred 90, hit 31, precision 0.344, recall 0.838): the extra false pairs come from the private units, not the
+shared one. Not adopted.

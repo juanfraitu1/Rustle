@@ -30322,8 +30322,7 @@ pub mod denovo_pipeline {
         // records, the genome and the copy table, and appends only its own result and its opt-in records -- so they can
         // run in parallel and be merged in family order (the tie-outside gate is re-applied after every region, so no
         // cross-family state is read here). Unset / 1 = the sequential path, byte-for-byte as before.
-        // Unset = auto (2026-11-02): the cores left over by the regions running right now, in read-star-sized slots
-        // (cores / (RUSTLE_STAR_THREADS x active regions)), so a heavy region running alone at the tail (the A119b chr13
+        // Unset = auto (2026-11-02): a region running ALONE gets cores / RUSTLE_STAR_THREADS family threads, so a heavy region running alone at the tail (the A119b chr13
         // hotspot: 9 families 4,236 s -> 1,671 s at 9, five tables identical) fans out while a full region pool stays
         // at 1 (the 57-family panel was slower at 8 x 8 x 8). `RUSTLE_FAMILY_THREADS=1` forces the sequential path.
         let family_threads_env: Option<usize> = std::env::var("RUSTLE_FAMILY_THREADS").ok().and_then(|v| v.parse().ok());
@@ -30816,8 +30815,12 @@ pub mod denovo_pipeline {
             .unwrap_or_else(|| {
                 let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
                 let star: usize = std::env::var("RUSTLE_STAR_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1);
-                let active = crate::family::ACTIVE_REGIONS.load(std::sync::atomic::Ordering::SeqCst).max(1);
-                (cores / (star * active)).min(colocated.len())
+                // only a region running ALONE fans out: with other regions still in flight the panel was slower
+                // (555 s sequential vs 649 s with cores / (star x active), 2026-11-02)
+                if crate::family::ACTIVE_REGIONS.load(std::sync::atomic::Ordering::SeqCst) > 1 {
+                    return 1;
+                }
+                (cores / star).min(colocated.len())
             })
             .max(1);
         if std::env::var_os("RUSTLE_TIMING").is_some() {
