@@ -11,3 +11,12 @@ Metrics: shared-exon cluster loci in PREFIX.families.gtf (merge_audit.py); pairs
 and, descriptive, at mammalia; families holding >= 2 PCDHA / PCDHG / UGT1A genes.
 Decision: C is the recommended annotation-guided option if shared-exon loci fall >= 50% AND simiiformes precision and recall each
 fall by <= 0.01. Else FAIL.
+
+## RESULT r1496 (2026-11-02): ❌ FAIL
+| arm | loci | shared-exon | fused | pred | hit | precision | recall |
+|---|---|---|---|---|---|---|---|
+| A f1v2 | 9,550 | 60 | 55 | 43 | 30 | 0.698 | 0.811 |
+| C cut-shared | 9,986 | 101 (+68%) | 14 | 90 | 31 | 0.344 | 0.838 |
+Shared-exon loci rose instead of falling (the cut units still overlap >= 2 genes through the constant exons), and precision halved
+(47 more predicted pairs, 1 more hit). It did cut fused loci (55 -> 14), via the RefSeq guide + structural readthroughs. Stays opt-in;
+not recommended. Next idea, not run: drop the shared constant-exon unit from the copy table, keep only the private units.

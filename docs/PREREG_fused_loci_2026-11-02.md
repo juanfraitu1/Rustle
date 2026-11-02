@@ -9,3 +9,12 @@ Arms (A119b, panel chr17 + chr19 = 105 of the 543, `rustle_pipeline.sh assemble 
 Metrics: fused loci in PREFIX.families.gtf (merge_audit.py vs RefSeq coding genes); pairscore human coding precision/recall (panel).
 Decision: B is the recommended annotation-guided mode (documented, opt-in: needs an annotation) if fused loci fall >= 25% AND panel
 precision and recall each fall by <= 0.01. Else FAIL; the de novo route (read evidence, step 3 of the plan) is next either way.
+
+## RESULT r1495 (2026-11-02): ✅ PASS (panel)
+| arm | loci | fused | shared-exon | pred | hit | precision | recall |
+|---|---|---|---|---|---|---|---|
+| A f1v2 | 4,885 | 106 | 53 | 311 | 77 | 0.248 | 0.438 |
+| B guided f1units | 5,086 | 55 (-48%) | 59 | 201 | 79 | 0.393 | 0.446 |
+Units list: 594 transcripts cut at 609 introns (128 readthrough genes dropped by labels/list). Precision +0.145, recall +0.008.
+B is the recommended annotation-guided mode (opt-in, needs an annotation): `RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_BRIDGE_UNITS_LIST=`
+units_from_annotation.py output. Panel only (chr17+chr19; panel truth = panel genes): a genome-wide confirmation is the next run.
