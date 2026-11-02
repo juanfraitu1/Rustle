@@ -10,3 +10,7 @@ Bars: (1) for each sample, the PREFIX.counts.tsv column sum equals the log's com
 rounding); (2) P `=` >= max(A `=`, H `=`); (3) P chain precision >= min(A, H). Report: per-sample assign agreement (same family and
 copy, read in both) between P's shared-catalog assign and an assign on that sample's own panel catalog; walls.
 Pass -> genome-wide run next. Fail on (2)/(3) -> recorded; the pooled mode stays available but documented as not better.
+
+## Amendment 1 (2026-11-02, before any panel output; user: time)
+All arms read slim BAMs: A119b chr20 (identity gate), A119b and HG002 chr17+chr19 (panel), sliced with samtools from the full BAMs.
+The best-AS molecule table then sees only alignments on those contigs, identically for every arm. Bars unchanged.
