@@ -15,3 +15,13 @@ symbols of the human CAT genes) with and without the env; also the counts of CAT
 Decision rule: if coding pair recall or precision moves by >= 0.005 absolute on A119b, the split truth becomes the default human
 truth (env default on, headline numbers re-reported with both); otherwise it stays opt-in and the merges are recorded as negligible
 for the pair score at the default level (simiiformes).
+
+## RESULT r1494 (2026-11-02): below the bar -> stays opt-in
+Split: 188 collapsed coding CAT genes -> 444 RefSeq genes. Truth pairs among expressed coding genes 2,183 -> 2,199 (+16), universe 16,394 -> 16,468.
+| sample | arm | pred | hit | precision | recall |
+|---|---|---|---|---|---|
+| A119b | CAT truth | 2,228 | 1,617 | 0.7258 | 0.7407 |
+| A119b | split truth | 2,229 | 1,618 | 0.7259 | 0.7358 |
+| OR6737 | both (symbol truth) | 49 | 21 | 0.429 | 0.239 |
+Recall change 0.00493 < 0.005 (precision +0.0001): the merged clusters are mostly ancient duplications, outside the simiiformes truth
+level, so they hardly enter the pair score. Of the 16 added truth pairs our families find 1. Opt-in: `DENOVO_SPLIT_REFSEQ=REFSEQ.gtf`.

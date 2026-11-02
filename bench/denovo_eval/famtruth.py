@@ -14,6 +14,7 @@ share, foreign judgeable genes in those families. Halves: true families split by
 import argparse
 import sys
 import collections
+import csv
 import hashlib
 import json
 import re
@@ -61,7 +62,7 @@ GENES = {}
 
 def load_cat():
     """gene id -> dict(name, biotype, chrom, strand, exons, ens: set of unversioned Ensembl gene ids)."""
-    ens = {}
+    ens, collapsed = {}, set()
     for line in open(CAT_GFF):
         f = line.split('\t', 8)
         if len(f) < 9 or f[2] != 'gene':
@@ -70,14 +71,81 @@ def load_cat():
         ids = {a.get('source_gene', 'N/A').split('.')[0]}
         ids |= {x.split('.')[0] for x in a.get('collapsed_gene_ids', 'N/A').split(',')}
         ens[a['gene_id']] = {x for x in ids if x.startswith('ENSG')}
+        if a.get('collapsed_gene_ids', 'N/A') != 'N/A':
+            collapsed.add(a['gene_id'])
     genes = {}
     for line in open(CAT_TSV):
         f = line.rstrip('\n').split('\t')
         if f[0] == 'gene_id':
             continue
         genes[f[0]] = dict(name=f[1], biotype=f[2], chrom=f[4], strand=f[7], exons=blocks(f[9]), ens=ens.get(f[0], set()))
+    if _os.environ.get('DENOVO_SPLIT_REFSEQ'):
+        genes = split_collapsed(genes, collapsed, _os.environ['DENOVO_SPLIT_REFSEQ'])
     GENES.update(genes)
     return genes
+
+
+def split_collapsed(genes, collapsed, refseq_gtf):
+    """register 1494: a protein-coding CAT gene that collapsed several source genes becomes one truth gene per coding RefSeq gene
+    (NM_/XM_) on its strand sharing exonic bases with it whose HGNC symbol maps to one of its ENSG ids, when there are >= 2."""
+    import gzip
+    sym2e = {}
+    for r in csv.DictReader(open(_os.environ['DENOVO_HGNC']), delimiter='\t'):
+        if r['ensembl_gene_id']:
+            sym2e[r['symbol']] = r['ensembl_gene_id']
+    ex, meta, coding = collections.defaultdict(list), {}, set()
+    for line in (gzip.open(refseq_gtf, 'rt') if refseq_gtf.endswith('.gz') else open(refseq_gtf)):
+        f = line.split('\t')
+        if len(f) < 9 or f[2] != 'exon':
+            continue
+        mg = re.search(r'gene_id "([^"]+)"', f[8])
+        if not mg:
+            continue
+        g = mg.group(1)
+        ex[g].append((int(f[3]) - 1, int(f[4])))
+        meta[g] = (f[0], f[6], (re.search(r'gene_name "([^"]+)"', f[8]) or re.search(r'gene_id "([^"]+)"', f[8])).group(1))
+        if re.search(r'transcript_id "rna-[NX]M_', f[8]):
+            coding.add(g)
+    rs = {}
+    for g in coding:
+        u = []
+        for a, b in sorted(ex[g]):
+            if u and a <= u[-1][1]:
+                u[-1][1] = max(u[-1][1], b)
+            else:
+                u.append([a, b])
+        rs[g] = dict(chrom=meta[g][0], strand=meta[g][1], name=meta[g][2], exons=[tuple(x) for x in u])
+    ridx = exon_index(rs)
+    out, n_split, n_sub = {}, 0, 0
+    for gid, d in genes.items():
+        if gid not in collapsed or d['biotype'] != 'protein_coding':
+            out[gid] = d
+            continue
+        hits = set()
+        k = (d['chrom'], d['strand'])
+        if k in ridx:
+            import bisect
+            v, st, m = ridx[k]
+            for s0, e0 in d['exons']:
+                i = bisect.bisect_left(st, s0 - m)
+                while i < len(v) and v[i][0] < e0:
+                    if v[i][1] > s0:
+                        hits.add(v[i][2])
+                    i += 1
+        subs = {}
+        for r in hits:
+            e = sym2e.get(rs[r]['name'])
+            if e and e in d['ens']:
+                subs.setdefault(rs[r]['name'], (e, r))
+        if len(subs) < 2:
+            out[gid] = d
+            continue
+        n_split += 1
+        for sym, (e, r) in sorted(subs.items()):
+            n_sub += 1
+            out[f'{gid}#{sym}'] = dict(name=sym, biotype='protein_coding', chrom=d['chrom'], strand=d['strand'], exons=rs[r]['exons'], ens={e})
+    print(f'# split collapsed (register 1494): {n_split} CAT genes -> {n_sub} RefSeq genes', file=sys.stderr)
+    return out
 
 
 GGO_GFF = _os.environ.get('DENOVO_GGO_GFF', '/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff')
