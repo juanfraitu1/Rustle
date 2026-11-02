@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
 import famtruth as F  # noqa: E402
 
-FA = '/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa'
+FA = os.environ.get('DENOVO_FASTA_HUMAN')
 COV, IDENT = 0.5, 0.5
 CODON = {a + b + c: aa for (a, b, c), aa in zip(
     [(x, y, z) for x in 'TCAG' for y in 'TCAG' for z in 'TCAG'],
@@ -26,7 +26,7 @@ CODON = {a + b + c: aa for (a, b, c), aa in zip(
 CIG = re.compile(r'(\d+)([MIDNSHP=X])')
 
 
-HGNC = os.environ.get('DENOVO_HGNC', '/mnt/linuxdisk/tmp/hgnc/hgnc_complete_set.txt')
+HGNC = os.environ.get('DENOVO_HGNC')
 
 
 def hgnc_groups():

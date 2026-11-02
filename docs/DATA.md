@@ -199,3 +199,11 @@ families input). `PREFIX.final.gtf` is the assembly to look at and compare with 
 families input is unchanged (registers 1490 / 1491; `docs/PREREG_assembly_ends_2026-11-01.md`). `RUSTLE_ASSEMBLY_LAYERS=off` skips it.
 A fourth layer drops models whose intron chain is a strict sub-chain of another model (`--polish-subchain drop`, register 1498:
 contained share 10.1% -> 5.4% vs RefSeq, complete matches -0.44%); `RUSTLE_FINAL_SUBCHAIN=off` keeps them.
+
+## Scoring any species (2026-11-02)
+`famtruth.py`, `pairscore.py`, `seqscore.py` load genes through `famtruth.load_genes`: `--species human` = CHM13 CAT (`DENOVO_CAT_GFF/TSV`);
+presets `gorilla` (`DENOVO_GGO_GFF`) and `hg002` (`DENOVO_HG002_GFF` + `DENOVO_HG002_XREF`); any other name needs
+`--annotation GTF|GFF3[.gz]` (format sniffed: GTF, Ensembl GFF3, RefSeq-style GFF3). `--ids symbol` (default) maps genes to human
+Ensembl ids by symbol, so the human Compara table applies; `--ids own` uses the genes' own Ensembl ids with that species' Compara
+paralogue export (`--paralogs`, any 4-column BioMart export) and `--level` as a comma list of taxa (`'Mus musculus,Murinae'`).
+No script carries a machine path default: unset inputs exit naming the variable. Test: `bench/denovo_eval/test_famtruth_load.py`.

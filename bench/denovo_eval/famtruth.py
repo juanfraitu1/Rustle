@@ -1,7 +1,7 @@
 """DENOVOFAM: score a de novo family catalog (mcl_families copies.tsv) against Ensembl Compara recent paralogues and the named
-mainstay / Y-ampliconic (YAG) families. Human only (CHM13 v2.0, CAT/Liftoff v2.0).
+mainstay / Y-ampliconic (YAG) families. Any species: genes from load_genes (CHM13 CAT by default, or --annotation GTF/GFF3).
 
-  famtruth.py score COPIES_TSV OUT_JSON [--paralogs paralogs.tsv] [--levels recent]
+  famtruth.py score COPIES_TSV OUT_JSON [--paralogs paralogs.tsv] [--levels recent|TAXON,...] [--species S --annotation A --xref X --ids symbol|own]
 
 Copies map to CAT genes by most shared exonic bp on the same strand. A gene is EXPRESSED when a copy maps to it; de novo can only
 see expressed genes, so every truth is restricted to them. Predicted families = the catalog families' gene sets (a gene may sit in
@@ -23,12 +23,18 @@ import sys
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-# The truth files, overridable by environment for a machine other than the one the work was done on (Fritz, 2026-10-29: the T2T
-# `chm13.draft_v2.0.gene_annotation.gff3` gene lines, the bundle's genes.tsv, a BioMart export of release 116, see docs/DATA.md):
+# The truth files come from the environment (no machine defaults; docs/DATA.md: the T2T `chm13.draft_v2.0.gene_annotation.gff3` gene
+# lines, the bundle's genes.tsv, a BioMart paralogue export of release 116):
 import os as _os
-CAT_GFF = _os.environ.get('DENOVO_CAT_GFF', '/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_gencode.gff3')
-CAT_TSV = _os.environ.get('DENOVO_CAT_TSV', '/mnt/linuxdisk/home/juanfraitu/winloci_data/gencode_chm13/chm13v2.0_CAT_Liftoff.genes.tsv')
-PARALOGS = _os.environ.get('DENOVO_PARALOGS', '/mnt/linuxdisk/tmp/denovo_eval/paralogs.tsv')
+CAT_GFF = _os.environ.get('DENOVO_CAT_GFF')
+CAT_TSV = _os.environ.get('DENOVO_CAT_TSV')
+PARALOGS = _os.environ.get('DENOVO_PARALOGS')
+
+
+def need(path, var):
+    if not path:
+        sys.exit(f'famtruth: set {var}')
+    return path
 LEVELS = {
     'recent': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini'],
     'simiiformes': ['Homo sapiens', 'Homininae', 'Hominidae', 'Hominoidea', 'Catarrhini', 'Simiiformes'],
@@ -63,7 +69,7 @@ GENES = {}
 def load_cat():
     """gene id -> dict(name, biotype, chrom, strand, exons, ens: set of unversioned Ensembl gene ids)."""
     ens, collapsed = {}, set()
-    for line in open(CAT_GFF):
+    for line in open(need(CAT_GFF, 'DENOVO_CAT_GFF')):
         f = line.split('\t', 8)
         if len(f) < 9 or f[2] != 'gene':
             continue
@@ -74,7 +80,7 @@ def load_cat():
         if a.get('collapsed_gene_ids', 'N/A') != 'N/A':
             collapsed.add(a['gene_id'])
     genes = {}
-    for line in open(CAT_TSV):
+    for line in open(need(CAT_TSV, 'DENOVO_CAT_TSV')):
         f = line.rstrip('\n').split('\t')
         if f[0] == 'gene_id':
             continue
@@ -148,31 +154,31 @@ def split_collapsed(genes, collapsed, refseq_gtf):
     return out
 
 
-GGO_GFF = _os.environ.get('DENOVO_GGO_GFF', '/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_genomic.gff')
+GGO_GFF = _os.environ.get('DENOVO_GGO_GFF')
 
 
-def load_ggo(human):
-    """Gorilla RefSeq genes (PREREG DENOVOFAM-G): exon union per gene; `ens` = the Ensembl ids of the human CAT gene(s) of the same
-    symbol, so the human Compara truth applies by symbol. LOC genes get no ids (outside the universe)."""
+def load_ggo(human, path=None):
+    """RefSeq-style GFF3 genes (gorilla first, PREREG DENOVOFAM-G; any RefSeq / NCBI / Liftoff GFF3): exon union per gene; `ens` = the
+    Ensembl ids of the human CAT gene(s) of the same symbol, so the human Compara truth applies by symbol. LOC genes get no ids."""
     sym_ens = collections.defaultdict(set)
     for d in human.values():
         sym_ens[d['name']] |= d['ens']
     genes, tx_gene, ex = {}, {}, collections.defaultdict(list)
-    for line in open(GGO_GFF):
+    for line in _open(need(path or GGO_GFF, 'DENOVO_GGO_GFF or --annotation')):
         if line[0] == '#':
             continue
         f = line.rstrip('\n').split('\t')
         if len(f) < 9:
             continue
         a = dict(x.split('=', 1) for x in f[8].split(';') if '=' in x)
-        if f[2] in ('gene', 'pseudogene'):
-            name = a.get('gene', a.get('Name', a['ID']))
-            genes[a['ID']] = dict(name=name, biotype=a.get('gene_biotype', 'other'), chrom=f[0], strand=f[6], exons=[],
+        if f[2] in ('gene', 'pseudogene', 'ncRNA_gene'):
+            name = a.get('gene', a.get('gene_name', a.get('Name', a['ID'])))
+            genes[a['ID']] = dict(name=name, biotype=a.get('gene_biotype', a.get('biotype', a.get('gene_type', 'other'))), chrom=f[0], strand=f[6], exons=[],
                                   ens=set() if name.startswith('LOC') else sym_ens.get(name, set()),
                                   desc=a.get('description', '').replace('%2C', ','))
         elif f[2] == 'exon':
             ex[a.get('Parent', '')].append((int(f[3]) - 1, int(f[4])))
-        elif 'Parent' in a and a['Parent'].startswith('gene-'):
+        elif 'Parent' in a and a['Parent'] in genes:
             tx_gene[a['ID']] = a['Parent']
     by = collections.defaultdict(list)
     for t, v in ex.items():
@@ -191,6 +197,157 @@ def load_ggo(human):
     GENES.clear()
     GENES.update(genes)
     return genes
+
+
+def _open(path):
+    import gzip
+    return gzip.open(path, 'rt') if path.endswith('.gz') else open(path)
+
+
+def sniff(path):
+    """'gtf', 'ensembl' (GFF3 with ID=gene:...) or 'gff3' (RefSeq / NCBI / Liftoff style)."""
+    for line in _open(path):
+        f = line.split('\t')
+        if line[0] == '#' or len(f) < 9:
+            continue
+        if 'gene_id "' in f[8]:
+            return 'gtf'
+        if 'ID=gene:' in f[8]:
+            return 'ensembl'
+        if f[2] in ('gene', 'pseudogene', 'ncRNA_gene'):
+            return 'gff3'
+    return 'gff3'
+
+
+def load_gtf(path):
+    """GTF genes: exon union per gene_id; name gene_name, biotype gene_biotype / gene_type (else coding by an NM_/XM_ transcript)."""
+    genes, ex = {}, collections.defaultdict(list)
+    for line in _open(path):
+        f = line.rstrip('\n').split('\t')
+        if line[0] == '#' or len(f) < 9 or f[2] != 'exon':
+            continue
+        a = dict(re.findall(r'(\S+) "([^"]*)"', f[8]))
+        g = a['gene_id']
+        if g not in genes:
+            genes[g] = dict(name=a.get('gene_name', g), biotype=a.get('gene_biotype', a.get('gene_type', 'other')), chrom=f[0],
+                            strand=f[6], exons=[], ens=set())
+        ex[g].append((int(f[3]) - 1, int(f[4])))
+        if genes[g]['biotype'] == 'other' and (re.match(r'(rna-)?[NX]M_', a.get('transcript_id', '')) or
+                                               a.get('transcript_biotype', a.get('transcript_type')) == 'protein_coding'):
+            genes[g]['biotype'] = 'protein_coding'  # no gene biotype (RefSeq GTF): a coding transcript (NM_/XM_) makes it coding
+    for g, v in ex.items():
+        m = []
+        for s0, e0 in sorted(v):
+            if m and s0 <= m[-1][1]:
+                m[-1][1] = max(m[-1][1], e0)
+            else:
+                m.append([s0, e0])
+        genes[g]['exons'] = [tuple(x) for x in m]
+    GENES.clear()
+    GENES.update(genes)
+    return genes
+
+
+def load_ensembl(path):
+    """Ensembl GFF3 genes (ID=gene:..., biotype=...; transcripts Parent=gene:...; exons Parent=transcript:...): exon union per gene."""
+    import urllib.parse
+    genes, tx_gene, ex = {}, {}, collections.defaultdict(list)
+    for line in _open(path):
+        if line[0] == '#':
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 9:
+            continue
+        a = dict(x.split('=', 1) for x in f[8].split(';') if '=' in x)
+        if a.get('ID', '').startswith('gene:'):
+            genes[a['ID']] = dict(name=a['ID'], biotype=a.get('biotype', 'other'), chrom=f[0], strand=f[6], exons=[], ens=set(),
+                                  description=urllib.parse.unquote(a.get('description', '')), symbol=a.get('Name'))
+        elif a.get('ID', '').startswith('transcript:') and a.get('Parent', '').startswith('gene:'):
+            tx_gene[a['ID']] = a['Parent']
+        elif f[2] == 'exon':
+            ex[a.get('Parent', '')].append((int(f[3]) - 1, int(f[4])))
+    for t, v in ex.items():
+        g = tx_gene.get(t)
+        if g in genes:
+            genes[g]['exons'] += v
+    for d in genes.values():
+        m = []
+        for s0, e0 in sorted(d['exons']):
+            if m and s0 <= m[-1][1]:
+                m[-1][1] = max(m[-1][1], e0)
+            else:
+                m.append([s0, e0])
+        d['exons'] = [tuple(x) for x in m]
+    genes = {g: d for g, d in genes.items() if d['exons']}
+    GENES.clear()
+    GENES.update(genes)
+    return genes
+
+
+def unnamed(d):
+    """Outside the by-symbol truth: RefSeq LOC genes, Ensembl genes without a symbol."""
+    return d['name'].startswith('LOC') or re.match(r'ENS[A-Z]*G[0-9]{6,}', d['name']) is not None
+
+
+# Species presets: name -> (annotation env var, xref env var). Any other species: --annotation (+ --xref, --ids).
+PRESETS = {'gorilla': ('DENOVO_GGO_GFF', None), 'hg002': ('DENOVO_HG002_GFF', 'DENOVO_HG002_XREF')}
+
+
+def load_genes(species='human', annotation=None, xref=None, ids='symbol'):
+    """The annotated genes a run is scored against (gene id -> name, biotype, chrom, strand, exons, ens).
+    species human without --annotation: CHM13 CAT/Liftoff (DENOVO_CAT_GFF/TSV). Otherwise ANNOTATION is any GTF, Ensembl GFF3 or
+    RefSeq-style GFF3 of the sample's genome (presets: gorilla = DENOVO_GGO_GFF, hg002 = DENOVO_HG002_GFF + DENOVO_HG002_XREF).
+    ids: 'symbol' = a gene inherits the human Ensembl ids of the CAT gene(s) of its symbol (the paralogue table is human Compara);
+    'own' = a gene's own unversioned id is its Ensembl id (the paralogue table is that species' Compara export; no CAT needed).
+    xref: Ensembl xref TSV (column 1 stable id, 5 symbol, 7 'HGNC Symbol') naming Ensembl genes."""
+    if species in PRESETS:
+        annotation = annotation or _os.environ.get(PRESETS[species][0])
+        if PRESETS[species][1]:
+            xref = xref or _os.environ.get(PRESETS[species][1])
+    if species == 'human' and not annotation:
+        return load_cat()
+    path = need(annotation, f'--annotation (or {PRESETS[species][0]})' if species in PRESETS else '--annotation')
+    kind = sniff(path)
+    if kind == 'gff3' and ids == 'symbol':
+        return load_ggo(load_cat(), path)
+    G = load_gtf(path) if kind == 'gtf' else load_ensembl(path) if kind == 'ensembl' else load_ggo({}, path)
+    if kind == 'ensembl':
+        sym = {}
+        if xref:
+            for line in open(xref):
+                f = line.rstrip('\n').split('\t')
+                if len(f) > 6 and f[6] == 'HGNC Symbol':
+                    sym[f[0]] = f[4]
+        for g, d in G.items():
+            bare = g.split(':')[-1]
+            d['name'] = sym.get(bare, bare) if xref else (d.pop('symbol', None) or bare)
+            d.pop('symbol', None)
+    if ids == 'own':
+        for g, d in G.items():
+            d['ens'] = {re.sub(r'^(gene[:-])', '', g).split('.')[0]}
+    else:
+        sym_ens = collections.defaultdict(set)
+        for d in load_cat().values():
+            sym_ens[d['name']] |= d['ens']
+        for d in G.values():
+            d['ens'] = set() if unnamed(d) else sym_ens.get(d['name'], set())
+    GENES.clear()
+    GENES.update(G)
+    return G
+
+
+SPECIES_FLAGS = ('--species', '--annotation', '--xref', '--ids')
+
+
+def genes_from_argv(a, default='human'):
+    """load_genes from a hand-parsed argv (pairscore.py, seqscore.py)."""
+    opt = lambda k, d=None: a[a.index(k) + 1] if k in a else d
+    return load_genes(opt('--species', default), opt('--annotation'), opt('--xref'), opt('--ids', 'symbol'))
+
+
+def levels(name):
+    """A LEVELS key, or a comma list of Compara 'last common ancestor' taxa (any species: 'Mus musculus,Murinae,Muridae')."""
+    return LEVELS[name] if name in LEVELS else name.split(',')
 
 
 def exon_index(genes):
@@ -273,7 +430,7 @@ def truth_pairs(genes, paralogs, levels):
     known_ens = set()
     pairs = set()
     lv = set(levels)
-    for line in open(paralogs):
+    for line in _open(need(paralogs, 'DENOVO_PARALOGS or --paralogs')):
         f = line.rstrip('\n').split('\t')
         if f[0].startswith('Gene'):
             continue
@@ -373,32 +530,21 @@ def main():
     ap.add_argument('--paralogs', default=PARALOGS)
     ap.add_argument('--levels', default='recent')
     ap.add_argument('--show', default='all,dev,heldout', help='halves to PRINT (the JSON always holds all): dev only while tuning')
-    ap.add_argument('--species', default='human', choices=['human', 'gorilla', 'hg002'])
-    ap.add_argument('--xref', help='hg002: Ensembl rapid-release xref TSV (HGNC symbols)')
-    ap.add_argument('--ggo-gff', help='U1-FRESH: a RefSeq GFF other than mGorGor1 (e.g. Kamilah) for --species gorilla')
+    ap.add_argument('--species', default='human', help='human (CAT), a preset (gorilla, hg002) or any name with --annotation')
+    ap.add_argument('--annotation', '--ggo-gff', dest='annotation', help='GTF / GFF3 of the sample genome (see load_genes)')
+    ap.add_argument('--xref', help='Ensembl xref TSV naming Ensembl GFF3 genes (HGNC symbols)')
+    ap.add_argument('--ids', default='symbol', choices=['symbol', 'own'], help='symbol: human Compara by symbol; own: the genes\' own ids')
     ap.add_argument('--gtf', help='de novo GTF of the sample: expressed = genes with a transcript (default: genes in a family)')
     a = ap.parse_args()
-    if a.ggo_gff:
-        global GGO_GFF
-        GGO_GFF = a.ggo_gff
     global G
-    G = load_cat()
-    if a.species == 'gorilla':
-        G = load_ggo(G)
-    elif a.species == 'hg002':  # U1-FRESH-HG002: Ensembl rapid-release GFF3 (--ggo-gff) + xref; symbols -> CAT Ensembl ids -> Compara
-        import os as _os
-        sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'guided_eval'))
-        import guided3 as _g3
-        _g3.HG002_XREF = a.xref
-        _g3.F.GGO_GFF = a.ggo_gff  # the imported famtruth module, not this __main__
-        G = _g3.load_genes('hg002')
+    G = load_genes(a.species, a.annotation, a.xref, a.ids)
     idx = exon_index(G)
     fams, n_copies, n_mapped = load_catalog(a.copies, G, idx)
     in_fam = set().union(*fams.values()) if fams else set()
     expressed = expressed_from_gtf(a.gtf, idx) | in_fam if a.gtf else in_fam
     res = dict(copies=n_copies, copies_on_genes=n_mapped, families=len(fams), expressed_genes=len(expressed), genes_in_families=len(in_fam))
-    for lvname in [a.levels] + [x for x in LEVELS if x != a.levels]:
-        pairs, universe = truth_pairs(G, a.paralogs, LEVELS[lvname])
+    for lvname in [a.levels] + [x for x in LEVELS if x != a.levels and a.levels in LEVELS]:
+        pairs, universe = truth_pairs(G, a.paralogs, levels(lvname))
         uexp = universe & expressed
         tf = [c & uexp for c in components({p for p in pairs if p[0] in uexp and p[1] in uexp})]
         tf = [c for c in tf if len(c) >= 2]
@@ -412,7 +558,7 @@ def main():
             sing = {g for g in uexp - set().union(*tf) if int(hashlib.sha1(min(G[g]['ens']).encode()).hexdigest(), 16) % 2 == h}
             r['dev' if h == 0 else 'heldout'] = score(th, pf, uexp, half=hg | sing)
         res[lvname] = r
-    _, universe = truth_pairs(G, a.paralogs, LEVELS['recent'])
+    _, universe = truth_pairs(G, a.paralogs, levels('recent'))
     res['mainstays'] = named(G, expressed, fams, universe, MAINSTAYS)
     res['yags'] = named(G, expressed, fams, universe, YAGS)
     json.dump(res, open(a.out, 'w'), indent=1)

@@ -1004,9 +1004,9 @@ def main(argv=None):
 
     p = add('excise', cmd_excise, 'excise one copy and look for the missing-copy signature (was copy_assign_excision.py)')
     p.add_argument('fam_dir'); p.add_argument('x', help='copy_idx to excise'); p.add_argument('out')
-    p.add_argument('--bam', default='/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3.bam')
-    p.add_argument('--fasta', default='/mnt/linuxdisk/home/juanfraitu/npip_cat/npip3_contigs.fa')
-    p.add_argument('--bin', default='/mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_assign')
+    p.add_argument('--bam', required=True, help='read BAM of the family region (the original: npip3.bam)')
+    p.add_argument('--fasta', required=True, help='its contigs FASTA (the original: npip3_contigs.fa)')
+    p.add_argument('--bin', default='copy_assign', help='copy_assign binary (default: on PATH)')
     p.add_argument('--threads', type=int, default=4, help='minimap2 threads (the old script hard-coded 4)')
 
     a = ap.parse_args(argv)

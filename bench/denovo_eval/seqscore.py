@@ -6,7 +6,7 @@ pairs inside one family (copies mapped to genes, famtruth.map_copy). Per tier T 
 truth at T / predicted pairs that align at all or not (every predicted pair is judged: a pair below every tier is FALSE), recall =
 truth pairs at T recovered. A predicted pair is 'ok' for precision at tier T when it meets tier T; so precision falls as T rises
 and recall rises as T rises (fewer, closer truth pairs).
-  seqscore.py --species human|gorilla --gtf BASE.families.gtf --fasta GENOME [--cov 0.5] [--tiers 0.85,0.90,0.95,0.98]
+  seqscore.py [--species human|gorilla|hg002|NAME --annotation GTF/GFF3 --xref TSV] --gtf BASE.families.gtf --fasta GENOME [--cov 0.5] [--tiers 0.85,0.90,0.95,0.98]
               [--cache FILE] COPIES_TSV...        (env as famtruth)"""
 import sys, os, csv, collections, itertools, subprocess, tempfile, pickle
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,15 +18,9 @@ TIERS = [float(x) for x in opt('--tiers', '0.85,0.90,0.95,0.98').split(',')]; CA
 # Structural RNA arrays (rDNA RNA45S/RNA28S/RNA18S: 434 expressed copies at >= 98% on A119b, 94k pairs) are tandem repeat
 # units, not gene families; they are dropped from the universe unless --keep-rna (2026-10-30).
 RNA_BT = {'rRNA', 'rRNA_pseudogene', 'tRNA', 'Mt_tRNA', 'Mt_rRNA', 'snRNA', 'snoRNA', 'scaRNA', 'misc_RNA', 'miRNA', 'vault_RNA', 'sRNA'}
-flags = {'--species', '--gtf', '--fasta', '--cov', '--tiers', '--cache'}
+flags = set(F.SPECIES_FLAGS) | {'--gtf', '--fasta', '--cov', '--tiers', '--cache'}
 paths = [x for i, x in enumerate(a) if not x.startswith('--') and (i == 0 or a[i - 1] not in flags)]
-if species == 'hg002':  # as pairscore.py: Ensembl rapid-release GFF3 + xref via guided_eval/guided3
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
-    import guided3 as g3
-    g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']; F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
-    G = g3.load_genes('hg002')
-else:
-    G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+G = F.genes_from_argv(a, species)
 idx = F.exon_index(G); expressed = F.expressed_from_gtf(gtf, idx)
 genes = sorted(g for g in expressed if G[g]['exons'] and ('--keep-rna' in a or G[g].get('biotype') not in RNA_BT))
 best = None

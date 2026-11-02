@@ -2282,7 +2282,7 @@ def main(argv=None):
                    'one genome-wide clusters.tsv')
     p.add_argument('--families', help='--chroms ALL: the genome-wide protein-homology table (truth.py protein-homology '
                    '--chrom ALL)')
-    p.add_argument('--workdir', default='/mnt/linuxdisk/tmp/referee')
+    p.add_argument('--workdir', default=os.path.join(os.environ.get('TMPDIR', '/tmp'), 'referee'))
     p.add_argument('--threads', default='4', help='blastp threads (the old script hard-coded 4)')
 
     p = _sub(sub, 'edge-gap', cmd_edge_gap, 'nucleotide vs protein edges on Soto pairs (was protein_edge_gap.py)')

@@ -6,7 +6,8 @@ novo transcript in the run (famtruth's expressed universe). Predicted = gene pai
 Also reports 'related' (Compara at any level / same HGNC group / same symbol) among the non-true predicted pairs, so a false pair means
 an unrelated protein-coding gene pair.
 
-  pairscore.py --species human|gorilla|hg002 --gtf RUN.families.gtf [--level simiiformes] [--fasta GENOME --noncoding] [--universe-copies] COPIES_TSV...
+  pairscore.py [--species human|gorilla|hg002|NAME --annotation GTF/GFF3 --xref TSV --ids symbol|own] [--paralogs TSV] --gtf RUN.families.gtf
+               [--level simiiformes|TAXON,...] [--fasta GENOME --noncoding] [--universe-copies] COPIES_TSV...
 --universe-copies (semi-guided, 2026-10-30): truth pairs among genes carrying any copy of THAT run (silent copies included) instead of
 the GTF's expressed genes, so a silent copy of an unexpressed paralog can be a hit rather than a false pair.
 
@@ -16,32 +17,28 @@ predicted pair with a pseudogene / lncRNA / other gene is judged by SEQUENCE: th
 not our loci) are aligned with minimap2 -c -x asm20; accepted when the shorter spliced sequence is covered >= 50% at >= 85% identity
 (a paralog or a pseudogene of a family member), rejected as DOMAIN-ONLY otherwise (a single shared domain exon covers far less than
 half of a gene). Reported: nc_pairs, nc_accepted, nc_domain_only, nc_precision. No recall for non-coding pairs (no truth).
-  env as famtruth (+ DENOVO_HG002_GFF / DENOVO_HG002_XREF for hg002, DENOVO_HGNC)
+  env as famtruth (+ DENOVO_HG002_GFF / DENOVO_HG002_XREF for hg002, DENOVO_HGNC optional); genes: famtruth.load_genes
 """
 import sys, os, csv, collections, itertools
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import famtruth as F
 a = sys.argv[1:]
-species = a[a.index('--species') + 1]; gtf = a[a.index('--gtf') + 1]
+species = a[a.index('--species') + 1] if '--species' in a else 'human'; gtf = a[a.index('--gtf') + 1]
 level = a[a.index('--level') + 1] if '--level' in a else 'simiiformes'
-paths = [x for i, x in enumerate(a) if not x.startswith('--') and a[i - 1] not in ('--species', '--gtf', '--level', '--fasta')]
+paths = [x for i, x in enumerate(a) if not x.startswith('--') and a[i - 1] not in F.SPECIES_FLAGS + ('--gtf', '--level', '--fasta', '--paralogs')]
 # --universe-copies: see below
-if species == 'hg002':
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'guided_eval'))
-    import guided3 as g3
-    g3.HG002_XREF = os.environ['DENOVO_HG002_XREF']; F.GGO_GFF = os.environ['DENOVO_HG002_GFF']
-    G = g3.load_genes('hg002')
-else:
-    G = F.load_cat() if species == 'human' else F.load_ggo(F.load_cat())
+G = F.genes_from_argv(a, species)
 idx = F.exon_index(G)
 expressed = F.expressed_from_gtf(gtf, idx)
 UNIVERSE_COPIES = '--universe-copies' in a  # semi-guided (2026-10-30): the expressed universe = genes carrying ANY copy of the run (silent copies included), per run
-truth, universe = F.truth_pairs(G, F.PARALOGS, F.LEVELS[level])
+PARALOGS = F.need(a[a.index('--paralogs') + 1] if '--paralogs' in a else F.PARALOGS, 'DENOVO_PARALOGS or --paralogs')
+truth, universe = F.truth_pairs(G, PARALOGS, F.levels(level))
 truth_all = truth
 truth = {tuple(sorted(p)) for p in truth if p[0] in expressed and p[1] in expressed}
 anyp = set()
-for r in csv.DictReader(open(F.PARALOGS), delimiter='\t'):
-    x, y = r['Gene stable ID'].split('.')[0], r['Human paralogue gene stable ID'].split('.')[0]
+for r in csv.reader(F._open(PARALOGS), delimiter='\t'):  # columns: gene, paralogue, type, last common ancestor (any species)
+    if len(r) < 2 or r[0].startswith('Gene'): continue
+    x, y = r[0].split('.')[0], r[1].split('.')[0]
     if x and y: anyp.add((min(x, y), max(x, y)))
 groups = collections.defaultdict(set)
 hg = os.environ.get('DENOVO_HGNC')

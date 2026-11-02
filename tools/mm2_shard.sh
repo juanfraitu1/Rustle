@@ -30,7 +30,7 @@
 # ENVIRONMENT
 #   MM2_SHARD_MINIMAP2   the real minimap2 (default: `minimap2` on PATH, or `minimap2-gate` for a command line with
 #                        --gate, the exon gate of tools/minimap2_gate; must not resolve to this script)
-#   MM2_SHARD_DIR        cache root (default /mnt/linuxdisk/tmp/mm2_shard_cache)
+#   MM2_SHARD_DIR        cache root (default ${XDG_CACHE_HOME:-~/.cache}/mm2_shard)
 #   MM2_SHARD_READS      records per shard            } first one set wins; default MM2_SHARD_BP=10000000.
 #   MM2_SHARD_BP         bases per shard (a shard     } Changing the shard size starts a new layout (old
 #                        closes once it reaches BP)   } shards are kept, not reused).
@@ -61,7 +61,7 @@ set -uo pipefail
 SELF=$(readlink -f "${BASH_SOURCE[0]}")
 T0=$(date +%s)
 MM2=${MM2_SHARD_MINIMAP2:-minimap2}
-ROOT=${MM2_SHARD_DIR:-/mnt/linuxdisk/tmp/mm2_shard_cache}
+ROOT=${MM2_SHARD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/mm2_shard}
 EX_BUDGET=75; EX_TOOBIG=76; EX_USAGE=2; EX_FAIL=70
 
 log() { echo "[mm2_shard] $*" >&2; [ -n "${WLOG:-}" ] && echo "$(date '+%F %T') $*" >> "$WLOG"; return 0; }
@@ -110,7 +110,8 @@ parse_argv() {
   local a=("$@")
   TARGET=${a[$((n-2))]}; QUERY=${a[$((n-1))]}
   FLAGS=("${a[@]:0:$((n-2))}")
-  THREADS=3; KEYFLAGS=(); RUNFLAGS=(); IBASES=8000000000
+  THREADS=3; KEYFLAGS=()  # 3 = minimap2's own -t default, so a command line without -t keys as minimap2 would run it
+  RUNFLAGS=(); IBASES=8000000000
   local i=0 m=${#FLAGS[@]} f
   while [ $i -lt $m ]; do
     f=${FLAGS[$i]}

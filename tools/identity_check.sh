@@ -2,7 +2,7 @@
 # identity_check.sh — the consolidation safety harness (plan 2026-10-05, Phases 0-4 of the .rs merge work).
 #   tools/identity_check.sh golden [DIR]   run everything, SAVE the product set as the golden copy
 #   tools/identity_check.sh check [DIR]    run everything, cmp every product against the golden copy
-#   DIR defaults to /mnt/linuxdisk/home/juanfraitu/identity_golden
+#   DIR defaults to $IDENTITY_GOLDEN, else ~/identity_golden; FULL=1 needs IDENTITY_BAM, IDENTITY_FASTA, IDENTITY_REGION
 # What it proves after any merge/refactor: (1) the full release test suite; (2) an end-to-end mcl_families
 # --from-gtf --emit-units --emit-relations run on a synthetic fixture (exercises the MCL cluster: fam_from_gtf,
 # annotation_families, family_container, family_relations, run_cache PAF caching OFF); (3) with FULL=1 also a
@@ -10,17 +10,16 @@
 # hash-swap order-leak detector — minimap2 runs for real, ~6 min, heavy lock).
 set -uo pipefail
 MODE=${1:?golden|check}
-GOLD=${2:-/mnt/linuxdisk/home/juanfraitu/identity_golden}
+GOLD=${2:-${IDENTITY_GOLDEN:-$HOME/identity_golden}}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
-export PATH="$HOME/miniforge3/bin:$PATH"
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/mnt/linuxdisk/home/juanfraitu/rustle_target_m2}
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$REPO/target}
 BIN=$CARGO_TARGET_DIR/release
 mkdir -p "$GOLD"
 
 echo "[identity] 1/3 release test suite"
-bash tools/rlock.sh heavy cargo test --release > /tmp/identity_test.log 2>&1 || { echo "[identity] TEST SUITE FAILED"; tail -5 /tmp/identity_test.log; exit 1; }
-passed=$(grep -E "test result" /tmp/identity_test.log | awk -F'[.;] ' '{s+=$2} END{print s}')
+bash tools/rlock.sh heavy cargo test --release > ${TMPDIR:-/tmp}/identity_test.log 2>&1 || { echo "[identity] TEST SUITE FAILED"; tail -5 ${TMPDIR:-/tmp}/identity_test.log; exit 1; }
+passed=$(grep -E "test result" ${TMPDIR:-/tmp}/identity_test.log | awk -F'[.;] ' '{s+=$2} END{print s}')
 echo "[identity] suite: $passed tests passed"
 
 echo "[identity] 2/3 synthetic MCL end-to-end"
@@ -67,17 +66,17 @@ fi
 
 if [ "${FULL:-0}" = 1 ]; then
   echo "[identity] 3/3 real-data slice (assemble + families on a 5-Mb gorilla slice)"
-  BAM=/mnt/linuxdisk/home/juanfraitu/winloci_data/GGO_mm.bam
-  FASTA=/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta
+  # the original golden: mGorGor1 GGO_mm.bam + GGO.fasta, NC_073244.2:1-5000000
+  BAM=${IDENTITY_BAM:?set IDENTITY_BAM}; FASTA=${IDENTITY_FASTA:?set IDENTITY_FASTA}; REGION=${IDENTITY_REGION:-NC_073244.2:1-5000000}
   R=$W/real; mkdir -p $R
   if [ "$MODE" = golden ]; then
-    bash tools/rlock.sh heavy bash -c "samtools view -b $BAM NC_073244.2:1-5000000 > $R/slice.bam && samtools index $R/slice.bam"
+    bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
     bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
     bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
     cp $R/slice.gtf $R/slice.fam.copies.tsv $R/slice.fam.clusters.tsv $GOLD/real_
     echo "[identity] real-data golden saved"
   else
-    bash tools/rlock.sh heavy bash -c "samtools view -b $BAM NC_073244.2:1-5000000 > $R/slice.bam && samtools index $R/slice.bam"
+    bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
     bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
     bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
     for f in slice.gtf slice.fam.copies.tsv slice.fam.clusters.tsv; do

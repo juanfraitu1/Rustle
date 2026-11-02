@@ -20,9 +20,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import cdsseed as C  # noqa: E402
 import famtruth as F  # noqa: E402
 
-FASTA = {'human': '/mnt/linuxdisk/home/juanfraitu/winloci_data/chm13v2.0.fa',
-         'gorilla': '/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta'}
-HIERARCHY = '/mnt/linuxdisk/tmp/hgnc/hierarchy.csv'
+FASTA = {'human': os.environ.get('DENOVO_FASTA_HUMAN'), 'gorilla': os.environ.get('DENOVO_FASTA_GORILLA')}  # or --fasta
+HIERARCHY = os.environ.get('DENOVO_HGNC_HIERARCHY')  # HGNC gene-group hierarchy.csv (GUIDED-S7 parent groups)
 STEM_JUDGE = False  # GUIDED-S8
 CLONE = re.compile(r'^[A-Z]{1,2}[0-9]{5,6}\.[0-9]+$')  # clone-named (AC007610.3): no symbol to stem
 PARENT_GROUP = False  # GUIDED-S7: family key = parent of the most-specific HGNC group
@@ -32,44 +31,8 @@ COV, IDENT = 0.5, 0.5
 NAMED = {**F.MAINSTAYS, **F.YAGS}
 
 
-def unnamed(d):
-    """Outside the by-symbol truth: RefSeq LOC genes, Ensembl genes without an HGNC symbol."""
-    return d['name'].startswith('LOC') or d['name'].startswith('ENSG')
-
-
-def load_ensembl(path):
-    """Ensembl GFF3 genes (ID=gene:..., biotype=...; transcripts Parent=gene:...; exons Parent=transcript:...): exon union per gene."""
-    genes, tx_gene, ex = {}, {}, collections.defaultdict(list)
-    for line in open(path):
-        if line[0] == '#':
-            continue
-        f = line.rstrip('\n').split('\t')
-        if len(f) < 9:
-            continue
-        a = dict(x.split('=', 1) for x in f[8].split(';') if '=' in x)
-        if a.get('ID', '').startswith('gene:'):
-            genes[a['ID']] = dict(name=a['ID'], biotype=a.get('biotype', 'other'), chrom=f[0], strand=f[6], exons=[], ens=set(),
-                                  description=urllib.parse.unquote(a.get('description', '')))
-        elif a.get('ID', '').startswith('transcript:') and a.get('Parent', '').startswith('gene:'):
-            tx_gene[a['ID']] = a['Parent']
-        elif f[2] == 'exon':
-            ex[a.get('Parent', '')].append((int(f[3]) - 1, int(f[4])))
-    for t, v in ex.items():
-        g = tx_gene.get(t)
-        if g in genes:
-            genes[g]['exons'] += v
-    for d in genes.values():
-        m = []
-        for s0, e0 in sorted(d['exons']):
-            if m and s0 <= m[-1][1]:
-                m[-1][1] = max(m[-1][1], e0)
-            else:
-                m.append([s0, e0])
-        d['exons'] = [tuple(x) for x in m]
-    genes = {g: d for g, d in genes.items() if d['exons']}
-    F.GENES.clear()
-    F.GENES.update(genes)
-    return genes
+unnamed = F.unnamed
+load_ensembl = F.load_ensembl
 
 
 def load_genes(species):
@@ -78,20 +41,8 @@ def load_genes(species):
         F.GENES.clear()
         F.GENES.update(human)
         return human
-    G = load_ensembl(F.GGO_GFF) if species == 'hg002' else F.load_ggo(human)
-    if species == 'hg002':  # GUIDED-S7: Ensembl rapid-release GFF3 (ID=gene:ENSG...); symbols from the xref HGNC rows
-        sym = {}
-        for line in open(HG002_XREF):
-            f = line.rstrip('\n').split('\t')
-            if len(f) > 6 and f[6] == 'HGNC Symbol':
-                sym[f[0]] = f[4]
-        sym_ens = collections.defaultdict(set)
-        for d in human.values():
-            sym_ens[d['name']] |= d['ens']
-        for g, d in G.items():
-            d['name'] = sym.get(g.split(':')[-1], g.split(':')[-1])
-            d['ens'] = set() if unnamed(d) else sym_ens.get(d['name'], set())
-    return G
+    # GUIDED-S7 hg002: Ensembl rapid-release GFF3 (ID=gene:ENSG...); symbols from the xref HGNC rows
+    return F.load_genes(species, F.GGO_GFF, HG002_XREF)
 
 
 def hgnc_tables():
@@ -100,7 +51,7 @@ def hgnc_tables():
     size = collections.Counter(g for r in rows for g in r['gene_group_id'].split('|') if g)
     if PARENT_GROUP:
         anc = collections.defaultdict(set)
-        for r in csv.DictReader(open(HIERARCHY)):
+        for r in csv.DictReader(open(F.need(HIERARCHY, 'DENOVO_HGNC_HIERARCHY'))):
             if r['parent_fam_id'] != r['child_fam_id']:
                 anc[r['child_fam_id']].add(r['parent_fam_id'])
         desc = collections.defaultdict(set)
@@ -270,7 +221,7 @@ def prep(a):
     fams, pseudo, judge, extra = truth(a.species, G, a.pgparent, a.hgnc_coding)
     pcs = {g for c in fams.values() for g in c}
     cds = C.cat_cds(pcs) if a.species == 'human' else ggo_cds(pcs)
-    C.FA = FASTA[a.species]
+    C.FA = F.need(FASTA.get(a.species), f'--fasta (or DENOVO_FASTA_{a.species.upper()})')
     seeds = {}
     for k, c in sorted(fams.items()):
         have = [g for g in c if cds.get(g)]
