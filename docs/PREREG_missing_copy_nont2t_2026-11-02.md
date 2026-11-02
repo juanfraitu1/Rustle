@@ -22,3 +22,7 @@ missing copy / calls; calls hitting a PRESENT copy (false alarms on copies the g
 Decision: none on defaults (baseline). Pre-declared use: if union recall >= 0.5 and precision >= 0.5 on BOTH pairs the tools are
 reported as usable on incomplete genomes as they are; otherwise rule learning follows with HUMAN as development and GORILLA held out
 (rules fixed on human, scored once on gorilla).
+
+## Amendment 1 (2026-11-02, before any run)
+A copy's sequence = the spliced exon union of its gene (famtruth.load_cat for human, load_ggo for gorilla: the loaders that carry
+the gene names), not the longest isoform (the CAT slim GFF3 has no gene names). Same for both pairs.
