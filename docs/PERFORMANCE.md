@@ -23,7 +23,7 @@ threads, and the region's families ran one after another (`~/asg_prof/`, perf: 6
 |---|---|---|---|
 | `RUSTLE_TIMING=1` | per-region and read-star timing lines in the copy_assign log | — | identical |
 | `RUSTLE_STAR_THREADS=N` (default 8) | minimap2 threads of the read-star step | MCL1 read-star 1,452 s (8) / 423 s (32) / 248 s (64); wall 1,754 / 723 / 852 s | **identical** (4 tables) |
-| `RUSTLE_FAMILY_THREADS=N` (default 1) | a region's families in parallel, merged in family order (commit ddcd2e2d) | 57-family panel: 555 s (1) vs 686 s (8): no gain where families are light; hotspot test pending | **identical** (6 tables, and vs the previous binary) |
+| `RUSTLE_FAMILY_THREADS=N` (unset = auto: cores / (star threads x regions running now), capped at the region's families; `1` = sequential) | a region's families in parallel, merged in family order (commit ddcd2e2d; auto 2026-11-02) | 9 chr13 hotspot families: 4,236 s (1) vs 1,671 s (9), 2.5x; 57-family panel: 555 s (1) vs 686 s (8), so auto stays at 1 while the region pool is full; auto check: jobs 4407738-40 | **identical** (6 tables, and vs the previous binary) |
 | `--region-threads N` / `RUSTLE_REGION_THREADS` | regions in parallel | the pipeline's assign uses 8 | identical (merge in region order) |
 | slim BAM (`slimbam`, ratio 0.8) | drops secondaries no step reads | chr20: 12% fewer records; assemble 46 -> 36-44 s | assemble **identical**; assign **changes** (6 of 36 rows lost) |
 | mm2-fast (`RUSTLE_MINIMAP2`, `~/tools_home/mm2fast/src/minimap2`, v2.24 + AVX-512) | accelerated chaining | MCL1 at 64 threads: read-star 299 s vs **256 s for our minimap2 2.30 default**; 2.30 with the `--max-chain-skip=1000000` mm2-fast requires takes 3,031 s, so mm2-fast only accelerates a setting we do not use. **Not a lever.** | **changes** (15,946 of ~31,800 assignment lines differ vs 2.30; statuses nearly equal) |
@@ -40,7 +40,7 @@ default chaining heuristic on our read-star job, see the table).
 
 ## Open levers, by expected gain
 
-1. Star and family threads sized to the node for heavy regions (hotspot test running).
+1. Done: auto family threads (the hotspot runs alone at the tail and fans out).
 2. One read-star alignment per read per region, reused across families (the hotspot families' padded loci overlap heavily); may
    change products -> needs an identity check, a registration if not identical.
 3. `candidate_copies` pass A from the sequential sweep (needed before the candidates lever can be tested at all).

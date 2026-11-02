@@ -30322,11 +30322,12 @@ pub mod denovo_pipeline {
         // records, the genome and the copy table, and appends only its own result and its opt-in records -- so they can
         // run in parallel and be merged in family order (the tie-outside gate is re-applied after every region, so no
         // cross-family state is read here). Unset / 1 = the sequential path, byte-for-byte as before.
-        let family_threads: usize = std::env::var("RUSTLE_FAMILY_THREADS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1)
-            .max(1);
+        // Unset = auto (2026-11-02): the cores left over by the regions running right now, in read-star-sized slots
+        // (cores / (RUSTLE_STAR_THREADS x active regions)), so a heavy region running alone at the tail (the A119b chr13
+        // hotspot: 9 families 4,236 s -> 1,671 s at 9, five tables identical) fans out while a full region pool stays
+        // at 1 (the 57-family panel was slower at 8 x 8 x 8). `RUSTLE_FAMILY_THREADS=1` forces the sequential path.
+        let family_threads_env: Option<usize> = std::env::var("RUSTLE_FAMILY_THREADS").ok().and_then(|v| v.parse().ok());
+        let _active_region = crate::family::ActiveRegionGuard::enter();
         let assign_one = |cf: ColocatedFamily| -> (FamilyAssignment, Vec<DnaNeedsRecord>, Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))>) {
             let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
             let mut linearize_certs: Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))> = Vec::new();
@@ -30811,6 +30812,17 @@ pub mod denovo_pipeline {
             }
             (fa, dna_needs, linearize_certs)
         };
+        let family_threads: usize = family_threads_env
+            .unwrap_or_else(|| {
+                let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+                let star: usize = std::env::var("RUSTLE_STAR_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1);
+                let active = crate::family::ACTIVE_REGIONS.load(std::sync::atomic::Ordering::SeqCst).max(1);
+                (cores / (star * active)).min(colocated.len())
+            })
+            .max(1);
+        if std::env::var_os("RUSTLE_TIMING").is_some() {
+            eprintln!("[timing] family threads {} ({} families)", family_threads, colocated.len());
+        }
         let per_family: Vec<_> = if family_threads > 1 && colocated.len() > 1 {
             match rayon::ThreadPoolBuilder::new().num_threads(family_threads).build() {
                 Ok(pool) => pool.install(|| {
@@ -82110,5 +82122,20 @@ pub mod family_hierarchy {
             assert_eq!(e.len(), 2);
             assert_eq!(e[1].1, "ID_2");
         }
+    }
+}
+
+/// Regions currently inside `detect_and_assign` (sizes the auto `RUSTLE_FAMILY_THREADS`).
+pub(crate) static ACTIVE_REGIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(crate) struct ActiveRegionGuard;
+impl ActiveRegionGuard {
+    pub(crate) fn enter() -> Self {
+        ACTIVE_REGIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        ActiveRegionGuard
+    }
+}
+impl Drop for ActiveRegionGuard {
+    fn drop(&mut self) {
+        ACTIVE_REGIONS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
