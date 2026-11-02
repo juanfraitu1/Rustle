@@ -9,3 +9,8 @@ same locus with reads >= 3:
 Input A119b gw.LS final.gtf; gffcompare vs chains/ref.gtf. Bars: chain precision >= +0.5 points, `=` loss <= 0.5%, multicopy
 (SD90) / single-copy removal <= 1.5x. Pass -> RUSTLE_FINAL_END_ARTIFACTS layer proposed as the default of PREFIX.final.gtf (a
 separate commit, after the check). Fail -> recorded, tool stays opt-in. RTS-only and A-only parts reported, not decided on.
+
+## RESULT r1501 (2026-11-02): ❌ FAIL (bar 2)
+Rule J drops 15,840 models (rule E 24,064): = 39,277 -> 38,952 (-0.83%, bar 0.5%) FAIL; chain 22.0 / 19.1 -> 21.8 / 20.5 (+1.4,
+pass); multi/single 1.01 (pass). Parts (model has an RTS junction / not): 5,544 dropped with 141 `=`; 10,296 A-run-only with 184 `=`.
+The exemption halves the `=` loss of rule E (907 -> 325) but not to the bar. Tool keeps `--rule e|j`; no layer.

@@ -119,14 +119,23 @@ pub fn a_share(fa: &IndexedFasta, chrom: &str, strand: char, start0: i64, end: i
     seq.iter().filter(|&&b| b == b'A').count() as f64 / POLYA_WINDOW as f64 * 100.0
 }
 
-/// One model's flags: (any RTS junction, A share).
-pub fn model_flags(fa: &IndexedFasta, chrom: &str, strand: char, exons: &[(i64, i64)]) -> (bool, f64) {
+/// One model's flags: (its RTS junctions as (donor exon end, acceptor exon start 0-based), A share).
+pub fn model_flags(fa: &IndexedFasta, chrom: &str, strand: char, exons: &[(i64, i64)]) -> (Vec<(i64, i64)>, f64) {
     // exons: 0-based half-open, sorted
     let rts = exons
         .windows(2)
-        .any(|w| rts_junction(fa, chrom, strand, w[0].1 + 1, w[1].0));
+        .map(|w| (w[0].1, w[1].0))
+        .filter(|&(d, a)| rts_junction(fa, chrom, strand, d + 1, a))
+        .collect();
     let a = a_share(fa, chrom, strand, exons[0].0, exons[exons.len() - 1].1);
     (rts, a)
+}
+
+/// Rule J (register 1501): support = models of the same locus with reads > MAX_READS. `unshared_rts` = some RTS junction of the
+/// model is used by no support model; `end_supported` = a support model's 3' end lies within END_TOL_BP of the model's.
+pub const END_TOL_BP: i64 = 10;
+pub fn rule_j(unshared_rts: bool, a_pct: f64, end_supported: bool, reads: u64) -> bool {
+    (unshared_rts || (a_pct > POLYA_MAX_PCT && !end_supported)) && reads <= MAX_READS
 }
 
 /// Rule E.
@@ -154,6 +163,15 @@ mod tests {
     #[test]
     fn unrelated_sequences_have_no_repeat() {
         assert!(!has_repeat(b"AAAAAAAAAAAA", b"CCCCCCCCCCCC", 8, true));
+    }
+
+    #[test]
+    fn rule_j_spares_shared_evidence() {
+        assert!(rule_j(true, 0.0, false, 2));
+        assert!(!rule_j(false, 0.0, false, 2));
+        assert!(rule_j(false, 80.0, false, 1));
+        assert!(!rule_j(false, 80.0, true, 1));
+        assert!(!rule_j(true, 80.0, false, 3));
     }
 
     #[test]

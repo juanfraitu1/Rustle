@@ -37,6 +37,10 @@ enum Cmd {
         /// Per-model flags: transcript_id, reads, rts, a_pct, flagged.
         #[arg(long)]
         flags: Option<String>,
+        /// e = r1500 (RTS or A-run, reads <= 2); j = r1501 (exempt when a reads >= 3 model of the locus shares the junction
+        /// or ends within 10 bp).
+        #[arg(long, default_value = "e", value_parser = ["e", "j"])]
+        rule: String,
     },
     /// Extract one chromosome from a RefSeq GFF3 and write a gffread-style GTF.
     GffToGtf {
@@ -186,7 +190,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::GffToGtf { gff, chrom, out } => gff_to_gtf::run(&gff, &chrom, &out),
-        Cmd::EndArtifacts { gtf, fasta, out, mode, flags } => end_artifacts_run(&gtf, &fasta, &out, &mode, flags.as_deref()),
+        Cmd::EndArtifacts { gtf, fasta, out, mode, flags, rule } => end_artifacts_run(&gtf, &fasta, &out, &mode, flags.as_deref(), &rule),
         Cmd::LocusBed {
             pred,
             out,
@@ -249,7 +253,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Option<&str>) -> Result<()> {
+fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Option<&str>, rule: &str) -> Result<()> {
     use anyhow::Context;
     use rayon::prelude::*;
     use rustle::end_artifacts as ea;
@@ -260,8 +264,9 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
         let p = s.find(&format!("{k} \""))? + k.len() + 2;
         Some(s[p..p + s[p..].find('"')?].to_string())
     };
-    // transcript_id -> (chrom, strand, reads, exons 0-based half-open)
+    // transcript_id -> (chrom, strand, reads, exons 0-based half-open); gene_id per transcript
     let mut m: BTreeMap<String, (String, char, u64, Vec<(i64, i64)>)> = BTreeMap::new();
+    let mut gene: BTreeMap<String, String> = BTreeMap::new();
     for line in text.lines() {
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 9 {
@@ -271,20 +276,40 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
         let e = m.entry(t).or_insert_with(|| (f[0].to_string(), f[6].chars().next().unwrap_or('+'), 0, Vec::new()));
         if f[2] == "transcript" {
             e.2 = attr(f[8], "reads").and_then(|r| r.parse().ok()).unwrap_or(0);
+            if let (Some(t), Some(g)) = (attr(f[8], "transcript_id"), attr(f[8], "gene_id")) {
+                gene.insert(t, g);
+            }
         } else if f[2] == "exon" {
             e.3.push((f[3].parse::<i64>()? - 1, f[4].parse::<i64>()?));
         }
     }
+    for v in m.values_mut() {
+        v.3.sort_unstable();
+    }
+    // rule j support per locus (gene_id, contig, strand): junctions and 3' ends of models with reads > MAX_READS
+    type Locus = (String, String, char);
+    let locus = |t: &str| -> Locus {
+        let (c, s, _, _) = &m[t];
+        (gene.get(t).cloned().unwrap_or_else(|| t.to_string()), c.clone(), *s)
+    };
+    let three = |s: char, ex: &[(i64, i64)]| if s == '-' { ex[0].0 } else { ex[ex.len() - 1].1 };
+    let mut sup_j: std::collections::HashMap<Locus, HashSet<(i64, i64)>> = Default::default();
+    let mut sup_end: std::collections::HashMap<Locus, Vec<i64>> = Default::default();
+    for (t, (_, s, r, ex)) in m.iter() {
+        if *r > ea::MAX_READS && !ex.is_empty() {
+            let l = locus(t);
+            sup_j.entry(l.clone()).or_default().extend(ex.windows(2).map(|w| (w[0].1, w[1].0)));
+            sup_end.entry(l).or_default().push(three(*s, ex));
+        }
+    }
     let ids: Vec<&String> = m.keys().filter(|t| !m[*t].3.is_empty()).collect();
-    let res: Vec<(bool, f64)> = ids
+    let res: Vec<(Vec<(i64, i64)>, f64)> = ids
         .par_iter()
         .map_init(
             || ea_open(fasta),
             |fa, t| {
                 let (c, s, _, ex) = &m[*t];
-                let mut ex = ex.clone();
-                ex.sort_unstable();
-                ea::model_flags(fa, c, *s, &ex)
+                ea::model_flags(fa, c, *s, ex)
             },
         )
         .collect();
@@ -294,9 +319,19 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
         writeln!(w, "transcript_id\treads\trts\ta_pct\tflagged")?;
     }
     let (mut n_rts, mut n_a) = (0usize, 0usize);
-    for (t, &(rts, a)) in ids.iter().zip(&res) {
-        let reads = m[*t].2;
-        let f = ea::rule_e(rts, a, reads);
+    for (t, (rj, a)) in ids.iter().zip(&res) {
+        let (a, rts) = (*a, !rj.is_empty());
+        let (_, s, reads, ex) = &m[*t];
+        let reads = *reads;
+        let f = if rule == "j" {
+            let l = locus(t);
+            let unshared = rj.iter().any(|j| !sup_j.get(&l).is_some_and(|v| v.contains(j)));
+            let e3 = three(*s, ex);
+            let end_ok = sup_end.get(&l).is_some_and(|v| v.iter().any(|&x| (x - e3).abs() <= ea::END_TOL_BP));
+            ea::rule_j(unshared, a, end_ok, reads)
+        } else {
+            ea::rule_e(rts, a, reads)
+        };
         n_rts += rts as usize;
         n_a += (a > ea::POLYA_MAX_PCT) as usize;
         if f {
@@ -324,8 +359,8 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
         }
     }
     eprintln!(
-        "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a}; rule E (reads <= {}) {} {}",
-        ids.len(), ea::POLYA_MAX_PCT, ea::MAX_READS, flagged.len(), if mode == "drop" { "dropped" } else { "tagged" }
+        "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a}; rule {} (reads <= {}) {} {}",
+        ids.len(), ea::POLYA_MAX_PCT, rule.to_uppercase(), ea::MAX_READS, flagged.len(), if mode == "drop" { "dropped" } else { "tagged" }
     );
     Ok(())
 }
