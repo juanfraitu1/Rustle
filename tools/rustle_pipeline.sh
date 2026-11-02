@@ -125,6 +125,7 @@
 #   RUSTLE_POLISH_TSS_END=median adds `--polish-tss-end` to `assemble` (default unset = off; register 1487);
 #   RUSTLE_POLISH_TES_EXTEND=on adds `--polish-tes-extend` to `assemble` (default unset = off; register 1488);
 #   RUSTLE_MONO_MODEL=cluster adds `--mono-model` to `assemble` (default unset = off; register 1489);
+#   RUSTLE_FINAL_SUBCHAIN=drop|off: the sub-chain drop as a fourth final.gtf layer (default drop, register 1498);
 #   RUSTLE_ASSEMBLY_LAYERS=on|off: `assemble` also writes PREFIX.final.gtf, the assembly with the three end layers, from a second
 #   parallel run (default on; PREFIX.gtf / PREFIX.families.gtf unchanged by construction; registers 1487-1491);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
@@ -542,8 +543,8 @@ stage_assemble() {
   local layers=()
   case "${RUSTLE_ASSEMBLY_LAYERS:-on}" in
     on) layers=(--polish-tss-end median --polish-tes-extend on --mono-model cluster)
-        # RUSTLE_FINAL_SUBCHAIN=drop|off (register 1498): --polish-subchain drop as a fourth layer of PREFIX.final.gtf only
-        case "${RUSTLE_FINAL_SUBCHAIN:-off}" in
+        # RUSTLE_FINAL_SUBCHAIN=drop|off (register 1498 PASS; unset = drop): --polish-subchain drop as a fourth layer of PREFIX.final.gtf only
+        case "${RUSTLE_FINAL_SUBCHAIN:-drop}" in
           drop) case "$POLISH" in *--polish-subchain*) ;; *) layers+=(--polish-subchain drop) ;; esac ;;
           off) ;;
           *) echo "[rustle_pipeline] RUSTLE_FINAL_SUBCHAIN must be drop or off (got '$RUSTLE_FINAL_SUBCHAIN')" >&2; exit 2 ;;

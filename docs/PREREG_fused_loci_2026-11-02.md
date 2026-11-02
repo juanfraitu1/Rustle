@@ -23,3 +23,11 @@ units_from_annotation.py output. Panel only (chr17+chr19; panel truth = panel ge
 Same arms, A119b genome-wide (A default, B guided with the list built from A's PREFIX.gtf, no --contigs). Same bars: fused loci in
 PREFIX.families.gtf fall >= 25% AND coding pair precision and recall each fall by <= 0.01. Pass -> documented as the recommended
 annotation-guided mode; fail -> the panel result is recorded as not replicated.
+
+## RESULT r1495 genome-wide (2026-11-02, job 4407908): ✅ PASS
+| arm | loci | fused | shared-exon | pred | hit | truth | precision | recall |
+|---|---|---|---|---|---|---|---|---|
+| A f1v2 | 76,161 | 547 | 502 | 2,228 | 1,617 | 2,183 | 0.7258 | 0.7407 |
+| B guided f1units | 77,705 | 282 (-48%) | 556 | 2,102 | 1,599 | 2,187 | 0.7607 | 0.7311 |
+Units list: 5,044 transcripts cut at 5,234 introns (599 readthrough genes dropped). Precision +0.035; recall -0.0096 (bar 0.01, narrow).
+B assemble+families 2,693 s vs A 4,717 s (A wall includes cold caches). Recommended annotation-guided mode (opt-in, needs an annotation).

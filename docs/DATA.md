@@ -197,3 +197,5 @@ Closed studies: `docs/archive/2026-09/`, `docs/archive/2026-10/` (`merged/`). `d
 families input). `PREFIX.final.gtf` is the assembly to look at and compare with other tools: the same run plus the three end layers
 (median 5' ends, 3' UTR extension, single-exon models from end clusters; registers 1487-1489), produced by a parallel second run so the
 families input is unchanged (registers 1490 / 1491; `docs/PREREG_assembly_ends_2026-11-01.md`). `RUSTLE_ASSEMBLY_LAYERS=off` skips it.
+A fourth layer drops models whose intron chain is a strict sub-chain of another model (`--polish-subchain drop`, register 1498:
+contained share 10.1% -> 5.4% vs RefSeq, complete matches -0.44%); `RUSTLE_FINAL_SUBCHAIN=off` keeps them.
