@@ -8,6 +8,7 @@
 //!   utilities candidate-augment --fasta G.fa --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa
 //!                        --regions P.fam.copies.regions --cand P.cand --out P.aug
 //!   utilities sd-scan --genome FA --out PREFIX [--threads 4]     (or --version-key)
+//!   utilities sample-counts --gtf FINAL.gtf --bam A.bam,B.bam --samples A,B --out COUNTS.tsv
 //!   utilities end-artifacts --gtf FINAL.gtf --fasta G.fa --out OUT.gtf [--mode drop|tag] [--flags FLAGS.tsv]
 
 use anyhow::Result;
@@ -22,6 +23,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Per-sample read counts on a final assembly (multi-sample runs): transcript_id, gene_id, one column per sample.
+    SampleCounts {
+        #[arg(long)]
+        gtf: String,
+        /// Comma-separated BAMs.
+        #[arg(long)]
+        bam: String,
+        /// Comma-separated sample names, one per BAM.
+        #[arg(long)]
+        samples: String,
+        #[arg(long)]
+        out: String,
+    },
     /// End-artifact layer (register 1500, rule E): drop or tag models with an RT-switching junction or an A-run after the
     /// 3' end (> 60% A in 20 bp) that have reads <= 2. SQANTI3 6.1 definitions, our code (src/end_artifacts.rs).
     EndArtifacts {
@@ -191,6 +205,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::GffToGtf { gff, chrom, out } => gff_to_gtf::run(&gff, &chrom, &out),
+        Cmd::SampleCounts { gtf, bam, samples, out } => sample_counts_run(&gtf, &bam, &samples, &out),
         Cmd::EndArtifacts { gtf, fasta, out, mode, flags, rule } => end_artifacts_run(&gtf, &fasta, &out, &mode, flags.as_deref(), &rule),
         Cmd::LocusBed {
             pred,
@@ -370,6 +385,90 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
         "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a} (with PAS {n_pas}, rule k); rule {} (reads <= {}) {} {}",
         ids.len(), ea::POLYA_MAX_PCT, rule.to_uppercase(), ea::MAX_READS, flagged.len(), if mode == "drop" { "dropped" } else { "tagged" }
     );
+    Ok(())
+}
+
+fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<()> {
+    use anyhow::{ensure, Context};
+    use noodles_sam::alignment::record::cigar::op::Kind;
+    use rustle::sample_counts::{count, Tx};
+    use std::collections::BTreeMap;
+    use std::io::Write;
+    let (bams, names): (Vec<&str>, Vec<&str>) = (bams.split(',').collect(), samples.split(',').collect());
+    ensure!(bams.len() == names.len(), "sample-counts: {} BAMs but {} sample names", bams.len(), names.len());
+    let attr = |s: &str, k: &str| -> Option<String> {
+        let p = s.find(&format!("{k} \""))? + k.len() + 2;
+        Some(s[p..p + s[p..].find('"')?].to_string())
+    };
+    let mut by: BTreeMap<String, Tx> = BTreeMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for line in std::fs::read_to_string(gtf).with_context(|| format!("read {gtf}"))?.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "exon" {
+            continue;
+        }
+        let Some(t) = attr(f[8], "transcript_id") else { continue };
+        let tx = by.entry(t.clone()).or_insert_with(|| {
+            order.push(t.clone());
+            Tx { id: t, gene: attr(f[8], "gene_id").unwrap_or_default(), chrom: f[0].to_string(), exons: Vec::new() }
+        });
+        tx.exons.push((f[3].parse::<i64>()? - 1, f[4].parse::<i64>()?));
+    }
+    let txs: Vec<Tx> = order
+        .iter()
+        .map(|t| {
+            let mut x = by.remove(t).unwrap();
+            x.exons.sort_unstable();
+            x
+        })
+        .collect();
+    let mut cols = Vec::new();
+    for (bam, name) in bams.iter().zip(&names) {
+        let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam).with_context(|| format!("open {bam}"))?;
+        let header = reader.read_header()?;
+        let refs: Vec<String> = header.reference_sequences().keys().map(|k| String::from_utf8_lossy(k).to_string()).collect();
+        let mut reads = Vec::new();
+        for r in reader.records() {
+            let r = r?;
+            let fl = r.flags();
+            if fl.is_unmapped() || fl.is_secondary() || fl.is_supplementary() || fl.is_qc_fail() {
+                continue;
+            }
+            let (Some(id), Some(st)) = (r.reference_sequence_id(), r.alignment_start()) else { continue };
+            let (id, mut p) = (id?, usize::from(st?) as i64 - 1);
+            let mut ex = vec![(p, p)];
+            for op in r.cigar().iter() {
+                let op = op?;
+                match op.kind() {
+                    Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                        p += op.len() as i64;
+                        ex.last_mut().unwrap().1 = p;
+                    }
+                    Kind::Skip => {
+                        p += op.len() as i64;
+                        ex.push((p, p));
+                    }
+                    _ => {}
+                }
+            }
+            ex.retain(|e| e.1 > e.0);
+            if !ex.is_empty() {
+                reads.push((refs[id].clone(), ex));
+            }
+        }
+        let (c, seen, comp) = count(&txs, reads.into_iter());
+        eprintln!("[sample-counts] {name}: seen {seen}, compatible {comp}, unassigned {}", seen - comp);
+        cols.push(c);
+    }
+    let mut w = std::io::BufWriter::new(std::fs::File::create(out)?);
+    writeln!(w, "transcript_id\tgene_id\t{}", names.join("\t"))?;
+    for (i, t) in txs.iter().enumerate() {
+        write!(w, "{}\t{}", t.id, t.gene)?;
+        for c in &cols {
+            write!(w, "\t{:.2}", c[i])?;
+        }
+        writeln!(w)?;
+    }
     Ok(())
 }
 
