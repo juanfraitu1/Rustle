@@ -15,3 +15,14 @@ must not target family copies). Else FAIL. The filter's own artifact share is no
 The smoke showed `multicopy` is "false" on every assemble-stage model (copies are adjudicated later), so bar (3) was unmeasurable.
 Multicopy = any exon overlapping `CHM13_SDs.SD90.bed.gz` (segmental duplications >= 90%). Base = same exon chain in PREFIX.gtf,
 any id (the layer run renames ids). gffcompare tmap path fixed (written beside the input). Bars and arms unchanged.
+
+## RESULT r1499 (2026-11-02, job 4410027): ❌ FAIL (bar 2)
+| arm | transcripts | = | c | chain sens / prec |
+|---|---|---|---|---|
+| F0 final.gtf | 211,392 | 39,277 | 11,421 | 22.0 / 19.1 |
+| F1 rules filter | 151,317 | 36,779 (-6.4%) | 8,974 | 20.6 / 25.4 |
+Bar 1 pass (+6.3 points), bar 2 FAIL (= -6.4% vs <= 0.5%), bar 3 pass (multi/single removal 1.09).
+Removals: RT-switching 26k, intrapriming (perc_A_downstream_TTS > 59) 37k; every non-FSM removal also cites "NA value in min_cov"
+(no short-read junction coverage given). Base models flagged most (45.8% removed vs 20.8% of layer-changed models; intrapriming
+26.8% vs 10.8%): the 3' end layer already moves many A-run ends. Not adopted. A follow-up would need its own prereg (e.g. RTS only,
+or intrapriming with an FSM/read-support exemption).
