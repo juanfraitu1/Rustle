@@ -18,3 +18,8 @@ precision and recall each fall by <= 0.01. Else FAIL; the de novo route (read ev
 Units list: 594 transcripts cut at 609 introns (128 readthrough genes dropped by labels/list). Precision +0.145, recall +0.008.
 B is the recommended annotation-guided mode (opt-in, needs an annotation): `RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_BRIDGE_UNITS_LIST=`
 units_from_annotation.py output. Panel only (chr17+chr19; panel truth = panel genes): a genome-wide confirmation is the next run.
+
+## PREREG r1495 genome-wide confirmation (2026-11-02, before the run)
+Same arms, A119b genome-wide (A default, B guided with the list built from A's PREFIX.gtf, no --contigs). Same bars: fused loci in
+PREFIX.families.gtf fall >= 25% AND coding pair precision and recall each fall by <= 0.01. Pass -> documented as the recommended
+annotation-guided mode; fail -> the panel result is recorded as not replicated.
