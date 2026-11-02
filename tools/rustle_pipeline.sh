@@ -159,6 +159,15 @@
 set -euo pipefail
 STAGE=${1:-all}; shift || true
 ORIG_ARGS=("$@")
+# Multi-sample runs (a comma in --bam): tools/rustle_samples.sh takes the whole call (pool, then split). A `case "$STAGE"` block
+# at column 0, so figures/samples.py's driver_stage_code leaves it out of every stage's hash; one BAM never enters it.
+case "$STAGE" in
+  *) for ((i = 0; i + 1 < ${#ORIG_ARGS[@]}; i++)); do
+       if [ "${ORIG_ARGS[$i]}" = --bam ] && [[ "${ORIG_ARGS[$((i + 1))]}" == *,* ]]; then
+         exec bash "$(dirname "$0")/rustle_samples.sh" "$STAGE" "${ORIG_ARGS[@]}"
+       fi
+     done;;
+esac
 BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
