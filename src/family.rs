@@ -30318,7 +30318,18 @@ pub mod denovo_pipeline {
                 .map(|(i, c)| colocated_from_copies(i, c))
                 .collect();
         }
-        for cf in colocated {
+        // ⭐ RUSTLE_FAMILY_THREADS (2026-11-02, speed): a region's families are independent here -- each reads the region's
+        // records, the genome and the copy table, and appends only its own result and its opt-in records -- so they can
+        // run in parallel and be merged in family order (the tie-outside gate is re-applied after every region, so no
+        // cross-family state is read here). Unset / 1 = the sequential path, byte-for-byte as before.
+        let family_threads: usize = std::env::var("RUSTLE_FAMILY_THREADS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1)
+            .max(1);
+        let assign_one = |cf: ColocatedFamily| -> (FamilyAssignment, Vec<DnaNeedsRecord>, Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))>) {
+            let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
+            let mut linearize_certs: Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))> = Vec::new();
             // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
             // and ADD them to the copy set, so reads can be assigned to them too. Iterative (bridge-aware).
             //
@@ -30798,7 +30809,23 @@ pub mod denovo_pipeline {
                 }
                 recompute_realign_abundance(&mut fa, p, VG_REALIGN_EM_EPS, VG_REALIGN_EM_MAX_ITER);
             }
+            (fa, dna_needs, linearize_certs)
+        };
+        let per_family: Vec<_> = if family_threads > 1 && colocated.len() > 1 {
+            match rayon::ThreadPoolBuilder::new().num_threads(family_threads).build() {
+                Ok(pool) => pool.install(|| {
+                    use rayon::prelude::*;
+                    colocated.into_par_iter().map(&assign_one).collect()
+                }),
+                Err(_) => colocated.into_iter().map(&assign_one).collect(),
+            }
+        } else {
+            colocated.into_iter().map(&assign_one).collect()
+        };
+        for (fa, d, l) in per_family {
             out.push(fa);
+            dna_needs.extend(d);
+            linearize_certs.extend(l);
         }
 
         // COLLAPSE GATE. `colocated_families` needs >= min_copies assembled REPS, so a collapsed locus — one whose
