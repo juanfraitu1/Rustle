@@ -26,7 +26,7 @@ threads, and the region's families ran one after another (`~/asg_prof/`, perf: 6
 | `RUSTLE_FAMILY_THREADS=N` (default 1) | a region's families in parallel, merged in family order (commit ddcd2e2d) | 57-family panel: 555 s (1) vs 686 s (8): no gain where families are light; hotspot test pending | **identical** (6 tables, and vs the previous binary) |
 | `--region-threads N` / `RUSTLE_REGION_THREADS` | regions in parallel | the pipeline's assign uses 8 | identical (merge in region order) |
 | slim BAM (`slimbam`, ratio 0.8) | drops secondaries no step reads | chr20: 12% fewer records; assemble 46 -> 36-44 s | assemble **identical**; assign **changes** (6 of 36 rows lost) |
-| mm2-fast (`RUSTLE_MINIMAP2`, `~/tools_home/mm2fast/src/minimap2`, v2.24 + AVX-512) | accelerated chaining | MCL1 read-star 299 s at 64 threads with `--max-chain-skip=1000000` (comparison pending) | **changes** (needs `--max-chain-skip` infinity and is v2.24, not our v2.30) |
+| mm2-fast (`RUSTLE_MINIMAP2`, `~/tools_home/mm2fast/src/minimap2`, v2.24 + AVX-512) | accelerated chaining | MCL1 at 64 threads: read-star 299 s vs **256 s for our minimap2 2.30 default**; 2.30 with the `--max-chain-skip=1000000` mm2-fast requires takes 3,031 s, so mm2-fast only accelerates a setting we do not use. **Not a lever.** | **changes** (15,946 of ~31,800 assignment lines differ vs 2.30; statuses nearly equal) |
 
 Threads multiply: region threads x family threads x star threads should not exceed the node's cores by much (the panel run at
 8 x 8 x 8 was slower than 8 x 1 x 8).
@@ -35,7 +35,8 @@ Threads multiply: region threads x family threads x star threads should not exce
 
 Caching alignments by copy sequence (all 590 hotspot copies are distinct); `-G 100k` and query dedup (§6w9: slower / 5.5%
 duplicates); Roaring bitmaps and smarter comparisons in assemble (register 983: BAM iteration is the wall); NumPy / bitsets / LRU
-caches in copy_assign (our own code is ~5 s of a ~1,450 s family; the rest is minimap2).
+caches in copy_assign (our own code is ~5 s of a ~1,450 s family; the rest is minimap2); mm2-fast (slower than minimap2 2.30's
+default chaining heuristic on our read-star job, see the table).
 
 ## Open levers, by expected gain
 
