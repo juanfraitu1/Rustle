@@ -22,6 +22,7 @@ Start with the `## Current state` block at the top of each ledger and living doc
 | [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | Chapter draft: O1 units, O2 assignment among exactly them (2026-09-05) |
 | [`PREREG_sqanti_single_copy_2026-11-01.md`](PREREG_sqanti_single_copy_2026-11-01.md) | Open study: SQANTI single-copy comparison (register 1482) |
 | [`DATA.md`](DATA.md) | Datasets: what they are, where they live (Fritz and laptop), how to rebuild them |
+| [`PERFORMANCE.md`](PERFORMANCE.md) | Where pipeline time goes, the speed switches (`RUSTLE_STAR_THREADS`, `RUSTLE_FAMILY_THREADS`, `RUSTLE_TIMING`) with measured effect and whether products stay identical |
 | [`REFERENCE.md`](REFERENCE.md) | Glossary, laptop disk mount procedure, the DAZ worked example |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Which Rust modules exist and their state (checked by a test in `src/lib.rs`) |
 | [`ACTIVE_WORKING_SET.md`](ACTIVE_WORKING_SET.md) · [`MEMORY_DIGEST.md`](MEMORY_DIGEST.md) | Session bookkeeping: the active file set; compacted memory entries |
