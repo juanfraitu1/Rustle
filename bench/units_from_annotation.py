@@ -8,7 +8,9 @@ docs/archive/2026-09/PREREG_container_units_mechanism_2026-09-30.md section 3, w
   * GENES = the `gene` / `pseudogene` / `ncRNA_gene` records of ANNOT.gff (GFF3 with ID / Parent / Name / description, NCBI RefSeq
     style); a gene's exons are the union of every `exon` record
     whose Parent chain (<= 8 levels) reaches it, merged where they overlap or abut; a record without exons is dropped, and so is
-    a record whose `description` contains `readthrough` (RefSeq's own fused models: they are the fusions, not their parts).
+    a readthrough gene (the fusions, not their parts): `--readthrough labels` (default) = an attribute of the GENE record contains
+    `readthrough` (RefSeq description, GENCODE tag=readthrough_gene); `structural` = a transcript joins exons of two separate,
+    non-small-RNA genes (opt-in: GENCODE recall 0.757, RefSeq 0.828, register 1492); `both`; `--readthrough-list FILE` always.
   * For every SPLICED transcript T of GTF (>= 2 exons): G(T) = the genes on T's strand whose exon union shares >= 1 base with an
     exon of T; E_g = the indices of T's exons they overlap; the index intervals [min E_g, max E_g] are merged where they overlap
     (a gene nested in another's interval, or two models over the same exons, are one block and never cut).
@@ -62,11 +64,11 @@ SMALL_RNA = {'mirna', 'snorna', 'snrna', 'scarna', 'trna', 'rrna', 'misc_rna', '
 _BIOTYPE = re.compile(r'(?:^|;)(?:gene_biotype|gene_type|biotype)=([^;]+)')
 
 
-def read_genes(gff, contigs=None, mode='both', rt_list=None, calls=None):
+def read_genes(gff, contigs=None, mode='labels', rt_list=None, calls=None):
     """[{id, name, chrom, strand, ex (merged 0-based half-open), lo, hi}] of the non-readthrough gene records with exons, in file order.
 
     Readthrough genes (register 1492, docs/PREREG_readthrough_detect_2026-11-02.md) are dropped by `mode`: `labels` = any attribute
-    value of the gene or of a record under it contains `readthrough` (RefSeq description, GENCODE tag=readthrough_transcript, ...);
+    value of the gene record contains `readthrough` (RefSeq description, GENCODE tag=readthrough_gene, ...);
     `structural` = a transcript of the gene has an intron from an exon of gene A to an exon of gene B (same strand, A and B share no
     exonic base and do not overlap, neither a small RNA: exon union >= 200 bp and biotype not in SMALL_RNA); `both`; `rt_list` = gene
     IDs / names always dropped. `calls` (a dict) receives {gene name|start: reason} of every dropped gene."""
@@ -111,7 +113,8 @@ def read_genes(gff, contigs=None, mode='both', rt_list=None, calls=None):
         if g:
             by_gene[g].extend(ex)
             tx_of[g].append(sorted(ex))
-    lab = {gene_of(x) for x in labelled} - {None}
+    # a gene is labelled by its OWN record only (register 1493: the all-transcripts variant failed its bar as worded)
+    lab = {g for g in labelled if ftype.get(g) in GENE_TYPES}
     rt_list = set(rt_list or ())
     all_genes = []
     for gid, name, chrom, strand, bt, start1 in genes:
@@ -248,7 +251,7 @@ def cuts_of(exons, chrom, strand, gix):
     return cuts, genes, None
 
 
-def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:', mode='both', rt_list=None, calls=None):
+def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:', mode='labels', rt_list=None, calls=None):
     """(list rows, uncuttable rows, counts)."""
     genes = read_genes(gff, contigs, mode, rt_list, calls)
     if replace:
@@ -280,7 +283,7 @@ def main(argv):
     ap.add_argument('--label-prefix', default='ann:')
     ap.add_argument('--report', default='')
     ap.add_argument('--out', default='')
-    ap.add_argument('--readthrough', choices=('labels', 'structural', 'both'), default='both')
+    ap.add_argument('--readthrough', choices=('labels', 'structural', 'both'), default='labels')
     ap.add_argument('--readthrough-list', default='')
     ap.add_argument('--readthrough-report', default='', help='dropped readthrough genes: gene reason')
     a = ap.parse_args(argv)

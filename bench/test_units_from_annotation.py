@@ -193,8 +193,8 @@ class Readthrough(unittest.TestCase):
     B_ = [(2000, 2300), (2500, 2800)]
     R_ = [(100, 400), (600, 900), (2000, 2300), (2500, 2800)]
 
-    def test_gencode_transcript_tag_is_a_label(self):
-        rows = gene_rows('A', self.A_) + gene_rows('B', self.B_) + gene_rows('A-B', self.R_, tattr=';tag=basic,readthrough_transcript')
+    def test_gencode_gene_tag_is_a_label(self):
+        rows = gene_rows('A', self.A_) + gene_rows('B', self.B_) + gene_rows('A-B', self.R_, gattr=';tag=readthrough_gene')
         c, kept = self.calls(rows, 'labels')
         self.assertEqual(c, {'A-B': 'label'})
         self.assertEqual(kept, {'A', 'B'})
@@ -216,6 +216,11 @@ class Readthrough(unittest.TestCase):
     def test_overlapping_parts_are_not_a_fusion(self):
         rows = gene_rows('A', [(100, 400), (2000, 2300)]) + gene_rows('B', self.B_) + gene_rows('R', self.R_)
         self.assertNotIn('R', self.calls(rows, 'structural')[0])
+
+    def test_transcript_tags_alone_do_not_label(self):
+        rows = gene_rows('A', self.A_) + gene_rows('B', self.B_) + gene_rows('C', [(5000, 5300), (5600, 5900)])
+        rows = [r if r[0] != 'transcript' or 'C.t' not in r[4] else r[:4] + (r[4] + ';tag=readthrough_transcript',) for r in rows]
+        self.assertEqual(self.calls(rows, 'labels')[0], {})
 
 
 if __name__ == '__main__':

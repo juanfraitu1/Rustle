@@ -183,7 +183,7 @@ Shipped driver code is clean: `rustle_pipeline.sh`/`rustle_reassemble.sh` have n
 | bench/denovo_eval/pairscore.py:47 / seqscore.py:26 | HGNC groups (`DENOVO_HGNC`), HG002 xref via guided3 | HGNC optional (already env); hg002 loader -> famtruth |
 | bench/denovo_eval/seqscore.py:9,16,29 | `--species human\|gorilla`, default gorilla | as pairscore |
 | bench/guided_eval/guided3.py:23-25 | chm13v2.0.fa, GGO.fasta, `/mnt/linuxdisk/tmp/hgnc/hierarchy.csv` hard-coded | do not ship; merge loader into famtruth |
-| bench/units_from_annotation.py:8-11,97 | readthrough = RefSeq `description` contains "readthrough" | also honour Ensembl/GENCODE `gene_biotype`/tag `readthrough_transcript` |
+| bench/units_from_annotation.py:8-11,97 | DONE r1492/r1493: any gene attribute (GENCODE tag=readthrough_gene), opt-in structural rule, --readthrough-list | — |
 | bench/sim.py:9,1007-1009 | defaults `/mnt/linuxdisk/home/juanfraitu/npip_cat/*`, rustle_target bin; chr20 note | require args; `--bin` default target/release |
 | bench/sim.py:608 | minimap2 forced `-t 1` | fine for determinism; document |
 | bench/score.py:8-10 | usage example paths `/mnt/linuxdisk/tmp/gw22`, NC_073244.2 | docstring only |

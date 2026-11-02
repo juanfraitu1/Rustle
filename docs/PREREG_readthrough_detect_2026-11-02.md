@@ -41,3 +41,11 @@ LABEL = the gene record's own attributes contain `readthrough`, OR every transcr
 Bars: (a) RefSeq chr16-22 `labels` list still byte-identical to the previous script; (b) GENCODE: the 32 mixed genes are kept and the
 919 all-tagged genes still dropped. Pass both -> this is the `labels` definition (default). Fail -> `labels` stays gene-record-only
 (the previous behaviour) and the transcript tag is ignored.
+
+## RESULT r1493 (2026-11-02): ❌ FAIL as worded (bar b)
+(a) PASS: RefSeq chr16-22 list byte-identical. (b) 919/919 all-tagged dropped, but 2 of the 32 mixed genes dropped too: ARHGAP11B and
+CARMIL2 carry `tag=readthrough_gene` on the GENE record (the definition drops them by design; the bar's count missed gene tags).
+By the rule: `labels` = gene record only (GENCODE: the 654 genes tagged `readthrough_gene`; ~265 transcript-only-tagged genes not caught).
+Gorilla RefSeq GFF (no labels at all): structural calls 2 (LOC101124002, LOC115930417), for review; no gorilla readthrough is labelled.
+Shipped: default `--readthrough labels` (gene record, any attribute: RefSeq description, GENCODE tag=readthrough_gene),
+`--readthrough structural|both` and `--readthrough-list` opt-in, `--readthrough-report` (gene, reason).
