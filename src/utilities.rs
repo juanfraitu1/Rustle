@@ -39,7 +39,8 @@ enum Cmd {
         flags: Option<String>,
         /// e = r1500 (RTS or A-run, reads <= 2); j = r1501 (exempt when a reads >= 3 model of the locus shares the junction
         /// or ends within 10 bp).
-        #[arg(long, default_value = "e", value_parser = ["e", "j"])]
+        /// k = r1502 (j for RTS; an A-run end is flagged only without an upstream PAS hexamer, any reads).
+        #[arg(long, default_value = "e", value_parser = ["e", "j", "k"])]
         rule: String,
     },
     /// Extract one chromosome from a RefSeq GFF3 and write a gffread-style GTF.
@@ -318,17 +319,24 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
     if let Some(w) = w.as_mut() {
         writeln!(w, "transcript_id\treads\trts\ta_pct\tflagged")?;
     }
-    let (mut n_rts, mut n_a) = (0usize, 0usize);
+    let (mut n_rts, mut n_a, mut n_pas) = (0usize, 0usize, 0usize);
+    let fa0 = ea_open(fasta);
     for (t, (rj, a)) in ids.iter().zip(&res) {
         let (a, rts) = (*a, !rj.is_empty());
         let (_, s, reads, ex) = &m[*t];
         let reads = *reads;
-        let f = if rule == "j" {
+        let f = if rule == "j" || rule == "k" {
             let l = locus(t);
             let unshared = rj.iter().any(|j| !sup_j.get(&l).is_some_and(|v| v.contains(j)));
             let e3 = three(*s, ex);
             let end_ok = sup_end.get(&l).is_some_and(|v| v.iter().any(|&x| (x - e3).abs() <= ea::END_TOL_BP));
-            ea::rule_j(unshared, a, end_ok, reads)
+            if rule == "j" {
+                ea::rule_j(unshared, a, end_ok, reads)
+            } else {
+                let pas = a > ea::POLYA_MAX_PCT && ea::has_pas(&fa0, &m[*t].0, *s, ex[0].0, ex[ex.len() - 1].1);
+                n_pas += pas as usize;
+                ea::rule_k(unshared, a, pas, end_ok, reads)
+            }
         } else {
             ea::rule_e(rts, a, reads)
         };
@@ -359,7 +367,7 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
         }
     }
     eprintln!(
-        "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a}; rule {} (reads <= {}) {} {}",
+        "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a} (with PAS {n_pas}, rule k); rule {} (reads <= {}) {} {}",
         ids.len(), ea::POLYA_MAX_PCT, rule.to_uppercase(), ea::MAX_READS, flagged.len(), if mode == "drop" { "dropped" } else { "tagged" }
     );
     Ok(())

@@ -138,6 +138,26 @@ pub fn rule_j(unshared_rts: bool, a_pct: f64, end_supported: bool, reads: u64) -
     (unshared_rts || (a_pct > POLYA_MAX_PCT && !end_supported)) && reads <= MAX_READS
 }
 
+/// PAS hexamers (Tian 2005, AAAAAG left out) and the upstream window searched (register 1502).
+pub const PAS: [&[u8]; 11] = [b"AATAAA", b"ATTAAA", b"AGTAAA", b"TATAAA", b"CATAAA", b"GATAAA", b"AATATA", b"AATACA", b"AATAGA",
+    b"ACTAAA", b"AATGAA"];
+pub const PAS_WINDOW: i64 = 40;
+
+/// A PAS hexamer wholly inside the PAS_WINDOW bases before the 3' end (transcript orientation).
+pub fn has_pas(fa: &IndexedFasta, chrom: &str, strand: char, start0: i64, end: i64) -> bool {
+    let seq = if strand == '+' {
+        slice(fa, chrom, (end - PAS_WINDOW).max(0), end)
+    } else {
+        revcomp(&slice(fa, chrom, start0, start0 + PAS_WINDOW))
+    };
+    seq.windows(6).any(|w| PAS.contains(&w))
+}
+
+/// Rule K (register 1502): the A part needs no PAS and no read cap.
+pub fn rule_k(unshared_rts: bool, a_pct: f64, pas: bool, end_supported: bool, reads: u64) -> bool {
+    (unshared_rts && reads <= MAX_READS) || (a_pct > POLYA_MAX_PCT && !pas && !end_supported)
+}
+
 /// Rule E.
 pub fn rule_e(rts: bool, a_pct: f64, reads: u64) -> bool {
     (rts || a_pct > POLYA_MAX_PCT) && reads <= MAX_READS
@@ -172,6 +192,14 @@ mod tests {
         assert!(rule_j(false, 80.0, false, 1));
         assert!(!rule_j(false, 80.0, true, 1));
         assert!(!rule_j(true, 80.0, false, 3));
+    }
+
+    #[test]
+    fn rule_k_spares_a_run_ends_with_a_pas() {
+        assert!(rule_k(false, 80.0, false, false, 9));
+        assert!(!rule_k(false, 80.0, true, false, 1));
+        assert!(!rule_k(true, 0.0, false, false, 3));
+        assert!(rule_k(true, 0.0, true, false, 2));
     }
 
     #[test]
