@@ -49,3 +49,8 @@ By the rule: `labels` = gene record only (GENCODE: the 654 genes tagged `readthr
 Gorilla RefSeq GFF (no labels at all): structural calls 2 (LOC101124002, LOC115930417), for review; no gorilla readthrough is labelled.
 Shipped: default `--readthrough labels` (gene record, any attribute: RefSeq description, GENCODE tag=readthrough_gene),
 `--readthrough structural|both` and `--readthrough-list` opt-in, `--readthrough-report` (gene, reason).
+
+## CHM13 CAT/Liftoff readthrough list (2026-11-02, data, no bar)
+The slim CAT GFF (`chm13v2.0_CAT_Liftoff.slim.gff3.gz`, with exons) lost its tags. GENCODE v46 `readthrough_gene` (654) -> stable ENSG ->
+CAT `source_gene` (genes GFF) -> CHM13 gene IDs: 599 genes, all present in the slim GFF (by name only 133). File
+`~/data/denovo_eval/chm13_readthrough.ids`; use `--readthrough-list` with the slim GFF. No liftoff needed.
