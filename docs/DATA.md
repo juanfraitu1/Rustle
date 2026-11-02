@@ -191,3 +191,9 @@ and `DENOVO_GGO_GFF` are set (plus `DENOVO_HGNC` for the HGNC gene groups). On F
 ## Docs archive
 
 Closed studies: `docs/archive/2026-09/`, `docs/archive/2026-10/` (`merged/`). `docs/archive/2026-11/` holds the verbatim pre-compaction copies (2026-11-01) of the ledgers, the register and the definition docs (`LEDGER_*.md`, `o1_ledger.md`, `NEGATIVE_RESULTS_REGISTER.md`, `seeded_family_definition.md`, `copy_assignment_definition.md`, and the living docs); every ledger citation of a dataset above resolves there in full.
+
+## Assembly products (2026-11-02)
+`PREFIX.gtf` is the assembly the later stages read (families, assign); `PREFIX.families.gtf` is it without bridge transcripts (the
+families input). `PREFIX.final.gtf` is the assembly to look at and compare with other tools: the same run plus the three end layers
+(median 5' ends, 3' UTR extension, single-exon models from end clusters; registers 1487-1489), produced by a parallel second run so the
+families input is unchanged (registers 1490 / 1491; `docs/PREREG_assembly_ends_2026-11-01.md`). `RUSTLE_ASSEMBLY_LAYERS=off` skips it.

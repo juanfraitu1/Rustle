@@ -125,6 +125,8 @@
 #   RUSTLE_POLISH_TSS_END=median adds `--polish-tss-end` to `assemble` (default unset = off; register 1487);
 #   RUSTLE_POLISH_TES_EXTEND=on adds `--polish-tes-extend` to `assemble` (default unset = off; register 1488);
 #   RUSTLE_MONO_MODEL=cluster adds `--mono-model` to `assemble` (default unset = off; register 1489);
+#   RUSTLE_ASSEMBLY_LAYERS=on|off: `assemble` also writes PREFIX.final.gtf, the assembly with the three end layers, from a second
+#   parallel run (default on; PREFIX.gtf / PREFIX.families.gtf unchanged by construction; registers 1487-1491);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
@@ -533,8 +535,34 @@ stage_assemble() {
   else
     say "assemble: seeding pool: primary (primary alignments only)"
   fi
+  # PREFIX.final.gtf (2026-11-02, registers 1487-1491): the assembly with the three end layers (median 5' ends, 3' UTR extension,
+  # single-exon models from end clusters), each PASSED on held-out chromosomes, but each changed the families stage when it read
+  # them (r1490 / r1491). So the layered assembly is a SECOND run, in parallel, written only as PREFIX.final.gtf: PREFIX.gtf and
+  # PREFIX.families.gtf (every later stage's input) are byte-identical to a run without it. RUSTLE_ASSEMBLY_LAYERS=off skips it.
+  local layers=()
+  case "${RUSTLE_ASSEMBLY_LAYERS:-on}" in
+    on) layers=(--polish-tss-end median --polish-tes-extend on --mono-model cluster) ;;
+    off) ;;
+    *) echo "[rustle_pipeline] RUSTLE_ASSEMBLY_LAYERS must be on or off (got '$RUSTLE_ASSEMBLY_LAYERS')" >&2; exit 2 ;;
+  esac
+  local fin_pid=""
+  rm -f "$OUT.final.gtf" "$OUT".final_run.*
+  if [ "${#layers[@]}" -gt 0 ]; then
+    env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
+      --bam "$BAM" --fasta "$FASTA" --out "$OUT.final_run" > "$OUT.final.log" 2>&1 &
+    fin_pid=$!
+  fi
   env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
+  if [ -n "$fin_pid" ]; then
+    if wait "$fin_pid" && [ -s "$OUT.final_run.gtf" ]; then
+      mv -f "$OUT.final_run.gtf" "$OUT.final.gtf"
+      say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.final.gtf" | wc -l) transcripts in the layered assembly $OUT.final.gtf (log $OUT.final.log)"
+    else
+      say "assemble: WARNING the layered assembly failed (see $OUT.final.log); $OUT.gtf and the families input are unaffected"
+    fi
+    rm -f "$OUT".final_run.*
+  fi
   # the good pool is only the good pool if the binary used the table: an empty table is ignored and the region-local rule applies, a table
   # from another BAM keeps every secondary it does not know; either way the run is wider than --seed-pool good says
   if [ "$SEED_POOL" = good ] && grep -qE 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log"; then

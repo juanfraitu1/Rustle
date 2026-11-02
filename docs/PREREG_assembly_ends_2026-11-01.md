@@ -257,3 +257,10 @@ exon overlap the families stage gates on (shared-exon fraction 0.6), so some fam
 change.** The direct follow-up: write `PREFIX.families.gtf` from the transcripts BEFORE the end layers (E3-E5) apply, so the families
 stage sees exactly SHIP's input by construction while `PREFIX.gtf` carries the layers; acceptance = families products byte-identical to
 SHIP's with the layers on.
+
+## The split (2026-11-02): the layers ship as PREFIX.final.gtf, the families input stays SHIP's
+After r1490 / r1491, `tools/rustle_pipeline.sh assemble` runs the layered assembly (E3 + E4 + E5) as a second copy_assign in parallel
+and writes it only as `PREFIX.final.gtf` (log `PREFIX.final.log`); `PREFIX.gtf` and `PREFIX.families.gtf` come from the unlayered run,
+so every later stage reads exactly what it read before. Default on; `RUSTLE_ASSEMBLY_LAYERS=off` skips the second run. Acceptance
+(job 4407528, OR6737 genome-wide, assemble + families with the default): `families.gtf`, `fam.copies.tsv`, `fam.clusters.tsv`
+byte-identical to E6's SHIP arm (pairs 0.429 / 0.239); `final.gtf` 74,891 transcripts vs 73,912 in `PREFIX.gtf`; wall 593 s vs 569 s.
