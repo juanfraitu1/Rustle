@@ -50630,6 +50630,108 @@ pub mod denovo_pipeline {
                 home_report(chrom, lo, hi, &hc);
                 Ok((primary, bam_reads))
             }
+
+            /// r1507 (2026-11-02, `docs/PREREG_assign_window_sweep_2026-11-02.md`): ONE indexed query over the hull of
+            /// `windows` on `chrom`, with the multithreaded reader, each record collected into every window it overlaps
+            /// — noodles' own query rule (1-based alignment interval intersects the window's `lo+1..=hi`) — in file
+            /// order. So `out[i]` holds exactly what `reads_in_region_mode(chrom, lo_i, hi_i, mode_i)` returns, in the
+            /// same order, without decoding the shared BGZF blocks once per window. `windows[i] = (lo, hi, mode)`.
+            /// The caller guarantees [`sweep_supported`] (no read-home table, no secondary AS ratio): those paths keep
+            /// per-record state per window and stay on the per-window query.
+            pub fn sweep_windows(
+                &self,
+                bam_path: &str,
+                chrom: &str,
+                windows: &[(u64, u64, ReadMode<'_>)],
+            ) -> Result<Vec<(Vec<PrimaryRead>, Vec<BamRead>)>> {
+                let mut out: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> =
+                    (0..windows.len()).map(|_| (Vec::new(), Vec::new())).collect();
+                if windows.is_empty() {
+                    return Ok(out);
+                }
+                anyhow::ensure!(sweep_supported(), "sweep_windows: unsupported read settings");
+                // windows by `lo`, with the running maximum of `hi`: the windows overlapping a record are a suffix walk
+                // of the prefix `lo < end`, cut where no earlier window reaches `start` any more.
+                let mut order: Vec<usize> = (0..windows.len()).collect();
+                order.sort_by_key(|&i| (windows[i].0, windows[i].1, i));
+                let mut max_hi: Vec<u64> = Vec::with_capacity(order.len());
+                let mut m = 0u64;
+                for &i in &order {
+                    m = m.max(windows[i].1);
+                    max_hi.push(m);
+                }
+                let span_lo = windows.iter().map(|w| w.0).min().unwrap_or(0);
+                let span_hi = windows.iter().map(|w| w.1).max().unwrap_or(0);
+                let ivals: Vec<noodles_core::region::Interval> = windows
+                    .iter()
+                    .map(|w| {
+                        format!("{chrom}:{}-{}", w.0 + 1, w.1)
+                            .parse::<noodles_core::Region>()
+                            .map(|r| r.interval())
+                    })
+                    .collect::<std::result::Result<_, _>>()?;
+                let workers = std::thread::available_parallelism()
+                    .map(|n| n.get().min(4))
+                    .unwrap_or(1)
+                    .max(1);
+                let file = std::fs::File::open(bam_path)
+                    .map_err(|e| anyhow::anyhow!("opening {bam_path}: {e}"))?;
+                let mut reader = noodles_bam::io::Reader::from(noodles_bgzf::MultithreadedReader::with_worker_count(
+                    std::num::NonZeroUsize::new(workers).unwrap_or(std::num::NonZeroUsize::MIN),
+                    std::io::BufReader::with_capacity(1 << 20, file),
+                ));
+                let region: noodles_core::Region = format!("{chrom}:{}-{}", span_lo + 1, span_hi).parse()?;
+                let query = reader.query(&self.header, &self.index, &region)?;
+                use noodles_sam::alignment::Record as _;
+                for result in query {
+                    let record = result?;
+                    let (start, end) = match (record.alignment_start().transpose()?, record.alignment_end().transpose()?) {
+                        (Some(s), Some(e)) => (s, e),
+                        _ => continue,
+                    };
+                    let (s1, e1) = (start.get() as u64, end.get() as u64);
+                    let (a, b) = (s1.min(e1), s1.max(e1));
+                    let aln: noodles_core::region::Interval = (start..=end).into();
+                    // windows with lo + 1 <= b, walked back while some earlier window's hi >= a
+                    let bound = order.partition_point(|&i| windows[i].0 + 1 <= b);
+                    let mut rb: Option<RecordBuf> = None;
+                    let mut k = bound;
+                    while k > 0 && max_hi[k - 1] >= a {
+                        k -= 1;
+                        let i = order[k];
+                        if windows[i].1 < a || !ivals[i].intersects(aln) {
+                            continue;
+                        }
+                        let mode = windows[i].2;
+                        if let ReadMode::Only(names) = mode {
+                            if !record
+                                .name()
+                                .map(|n| names.contains(std::str::from_utf8(n.as_ref()).unwrap_or("")))
+                                .unwrap_or(false)
+                            {
+                                continue;
+                            }
+                        }
+                        if rb.is_none() {
+                            rb = Some(RecordBuf::try_from_alignment_record(&self.header, &record)?);
+                        }
+                        let rb = rb.as_ref().expect("set above");
+                        if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
+                            out[i].0.push(pr);
+                        }
+                        if let Some(br) = self.bam_read_for(rb, chrom, mode) {
+                            out[i].1.push(br);
+                        }
+                    }
+                }
+                Ok(out)
+            }
+        }
+
+        /// Whether [`BamIndexCache::sweep_windows`] reproduces the per-window query: no read-home table (its counts and
+        /// report are per window) and no secondary AS ratio (that path buffers a window's records to pick a local best).
+        pub fn sweep_supported() -> bool {
+            read_home_table().is_none() && gtf_secondary_as_ratio() <= 0.0
         }
 
         /// Collect AS-TIED SECONDARY reads overlapping `[lo, hi)` on `chrom`, as `PrimaryRead`s — the starved-copy

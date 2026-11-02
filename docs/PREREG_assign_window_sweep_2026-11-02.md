@@ -18,3 +18,10 @@ Decision rule (pre-declared), slim A119b run (`~/msamp/ws/A`, flags of r1503, 64
 2. assign wall <= 976 s (>= 2x against 1,952 s).
 Then a genome-wide identity check on A119b assign is required before the default flips (its wall is reported, no bar: the chr13
 hotspot is read-star bound). If 1 fails anywhere: fix or drop. If 2 fails: keep opt-in (`RUSTLE_WINDOW_SWEEP=1`), record the gain.
+
+## RESULT r1507, panel (2026-11-03): identical, 5.0x -> opt-in `RUSTLE_WINDOW_SWEEP=1` pending the genome-wide check
+Job 4420759, slim A119b chr17+chr19 through `rustle_pipeline.sh assign` (64 threads, binary of commit below):
+assign wall 1,952 s (r1503) -> **391 s**; window sweep 786 windows of 76 regions over 2 chromosomes: light 72.1 s, tie + full
+46.3 s; the window loop's own `reads_in_region` brackets sum to 29.6 s (MCL0 178 -> 2.5 s). All six assign tables
+(`assignments`, `families`, `quant`, `famcn_readonly`, `family_join`, `copy_conversions`) byte-identical to r1503; `params.tsv`
+differs only in the two input paths. Bars 1 and 2 met. Genome-wide A119b identity (sweep on vs off, same binary) pending.

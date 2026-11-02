@@ -2804,6 +2804,46 @@ fn load_supplied_families(
 /// `exclude_supplementary` is true under the AS-tied gate (a supplementary is another segment of the read,
 /// not an alternative placement) and false on the `--no-as-tied-only` escape, which must reproduce the
 /// pre-2026-09-09 columns byte-for-byte.
+/// r1507: the copy windows' records of every region, swept once per chromosome before the region sweep (`index`:
+/// region -> its windows' slots in `compute`'s window order; each slot is taken exactly once).
+struct WindowStore {
+    index: DetHashMap<RegionKey, Vec<usize>>,
+    light: Vec<Mutex<Option<(Vec<PrimaryRead>, Vec<BamRead>)>>>,
+    full: Vec<Mutex<Option<Vec<BamRead>>>>,
+}
+
+/// The pooling `compute`'s window loop applies to a region's windows, on records fetched elsewhere: primaries kept once
+/// per (chrom, span, intron chain) — or, with `keep_dups`, dropped when they overlap an earlier window of the region
+/// (`window(i)` = the i-th window's (chrom, lo, hi)) — and BAM records once per (name, chrom, start). Used by the
+/// sweep's tie pass; `compute` keeps its own copy of the rule on the fetched records (the r1507 identity test pins both).
+fn pool_windows(
+    windows: Vec<(Vec<PrimaryRead>, Vec<BamRead>)>,
+    keep_dups: bool,
+    window: impl Fn(usize) -> (String, u64, u64),
+) -> (Vec<PrimaryRead>, Vec<BamRead>) {
+    let mut pr: Vec<PrimaryRead> = Vec::new();
+    let mut br: Vec<BamRead> = Vec::new();
+    let mut seen = DetHashSet::default();
+    let mut fetched: Vec<(String, u64, u64)> = Vec::new();
+    for (i, (p, b)) in windows.into_iter().enumerate() {
+        for x in p {
+            let keep = if keep_dups {
+                !fetched.iter().any(|(c, l, h)| c == &x.chrom && x.ref_start < *h && x.ref_end > *l)
+            } else {
+                seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))
+            };
+            if keep {
+                pr.push(x);
+            }
+        }
+        br.extend(b);
+        fetched.push(window(i));
+    }
+    let mut bseen = DetHashSet::default();
+    br.retain(|x| bseen.insert((x.name.clone(), x.chrom.clone(), x.read.ref_start)));
+    (pr, br)
+}
+
 fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> Vec<AsEvidence> {
     let aligned_len = |br: &BamRead| -> u32 {
         br.read
@@ -7241,6 +7281,121 @@ fn main() -> Result<()> {
         .filter(|(k, _)| k.0.starts_with("~xchrom~"))
         .flat_map(|(_, ws)| ws.iter().cloned())
         .collect();
+    // r1507 (2026-11-02, docs/PREREG_assign_window_sweep_2026-11-02.md): the copy windows of EVERY region, read in one
+    // multithreaded query per chromosome instead of one query per window (the slim A119b run spent 89% of its wall
+    // re-decoding the same blocks window by window). Light records first; then, per region, the AS-tied molecules by
+    // the same dedup + `as_tied` rule `compute` applies; then the full records of those names, again one query per
+    // chromosome. `compute` takes each window's light and full records from the store, in the window order it would
+    // have queried them, so every product is the per-window query's. Only on the buffered `--tied-prefilter` path with
+    // an index and none of the per-window record states (read-home table, secondary AS ratio, readthrough flags);
+    // Opt-in `RUSTLE_WINDOW_SWEEP=1` until the genome-wide identity check of the prereg passes.
+    let window_store: Option<WindowStore> = if args.tied_prefilter
+        && bam_cache.is_some()
+        && !args.assemble_only
+        && rt_switch.is_none()
+        && rustle::denovo_assemble::sweep_supported()
+        && std::env::var("RUSTLE_WINDOW_SWEEP").map(|v| v == "1").unwrap_or(false)
+    {
+        let t = std::time::Instant::now();
+        let c = bam_cache.as_ref().expect("checked above");
+        let mut index: DetHashMap<RegionKey, Vec<usize>> = DetHashMap::default();
+        let mut by_chrom: DetHashMap<String, Vec<(usize, u64, u64)>> = DetHashMap::default();
+        let mut n_win = 0usize;
+        let mut win_coord: Vec<(String, u64, u64)> = Vec::new();
+        for (contig, lo, hi) in &flat {
+            let key: RegionKey = (contig.clone(), *lo, *hi);
+            let wins: Vec<(String, u64, u64)> = region_windows
+                .as_ref()
+                .and_then(|w| w.get(&key))
+                .cloned()
+                .unwrap_or_else(|| vec![(contig.clone(), *lo, *hi)]);
+            let ids: Vec<usize> = wins
+                .iter()
+                .map(|(wc, wl, wh)| {
+                    let g = n_win;
+                    n_win += 1;
+                    by_chrom.entry(wc.clone()).or_default().push((g, *wl, *wh));
+                    win_coord.push((wc.clone(), *wl, *wh));
+                    g
+                })
+                .collect();
+            index.insert(key, ids);
+        }
+        let light: Vec<Mutex<Option<(Vec<PrimaryRead>, Vec<BamRead>)>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
+        let chroms: Vec<&String> = { let mut v: Vec<&String> = by_chrom.keys().collect(); v.sort(); v };
+        let swept: Vec<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> = chroms
+            .par_iter()
+            .map(|chrom| -> Result<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> {
+                let ws = &by_chrom[*chrom];
+                let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> =
+                    ws.iter().map(|(_, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Light)).collect();
+                let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
+                Ok(ws.iter().map(|(g, _, _)| *g).zip(got).collect())
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (g, r) in swept.into_iter().flatten() {
+            *light[g].lock().unwrap() = Some(r);
+        }
+        let t_light = t.elapsed().as_secs_f64();
+        // the tied names of each region, from its windows' light records exactly as `compute` pools them
+        let tied: Vec<Arc<DetHashSet<String>>> = flat
+            .par_iter()
+            .map(|(contig, lo, hi)| {
+                let ids = &index[&(contig.clone(), *lo, *hi)];
+                let wins: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> = ids
+                    .iter()
+                    .map(|g| {
+                        let l = light[*g].lock().unwrap();
+                        let (p, b) = l.as_ref().expect("swept");
+                        (p.clone(), b.clone())
+                    })
+                    .collect();
+                let (_, br) = pool_windows(wins, args.keep_coordinate_duplicates, |i| win_coord[ids[i]].clone());
+                let ev = as_evidence_per_read(&br, true);
+                let t: DetHashSet<String> = br
+                    .iter()
+                    .zip(ev.iter())
+                    .filter(|(_, e)| as_tied(e, args.as_tie_ratio))
+                    .map(|(b, _)| b.name.clone())
+                    .collect();
+                Arc::new(t)
+            })
+            .collect();
+        let tied_of_window: Vec<Arc<DetHashSet<String>>> = {
+            let mut v: Vec<Option<Arc<DetHashSet<String>>>> = vec![None; n_win];
+            for (ri, (contig, lo, hi)) in flat.iter().enumerate() {
+                for g in &index[&(contig.clone(), *lo, *hi)] {
+                    v[*g] = Some(tied[ri].clone());
+                }
+            }
+            v.into_iter().map(|x| x.expect("every window has a region")).collect()
+        };
+        let full: Vec<Mutex<Option<Vec<BamRead>>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
+        let swept: Vec<Vec<(usize, Vec<BamRead>)>> = chroms
+            .par_iter()
+            .map(|chrom| -> Result<Vec<(usize, Vec<BamRead>)>> {
+                let ws = &by_chrom[*chrom];
+                let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> = ws
+                    .iter()
+                    .map(|(g, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Only(&tied_of_window[*g])))
+                    .collect();
+                let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
+                Ok(ws.iter().map(|(g, _, _)| *g).zip(got.into_iter().map(|(_, b)| b)).collect())
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (g, r) in swept.into_iter().flatten() {
+            *full[g].lock().unwrap() = Some(r);
+        }
+        if timing {
+            eprintln!(
+                "[timing] window sweep: {} windows of {} regions over {} chromosome(s): light {:.1}s, tie + full {:.1}s",
+                n_win, flat.len(), chroms.len(), t_light, t.elapsed().as_secs_f64() - t_light
+            );
+        }
+        Some(WindowStore { index, light, full })
+    } else {
+        None
+    };
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
@@ -7404,6 +7559,11 @@ fn main() -> Result<()> {
             for (wchrom, wlo, whi) in &wins {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
+                    Some(_) if window_store.is_some() => {
+                        let st = window_store.as_ref().expect("checked");
+                        let g = st.index[&(contig.clone(), lo, hi)][fetched.len()];
+                        Ok(st.light[g].lock().unwrap().take().expect("each window's light records are taken once"))
+                    }
                     Some(c) if args.tied_prefilter => c.reads_in_region_mode(
                         &args.bam,
                         wchrom,
@@ -7465,16 +7625,24 @@ fn main() -> Result<()> {
                 drop(br);
                 let c = bam_cache.as_ref().expect("checked at startup");
                 let mut full: Vec<rustle::denovo_assemble::BamRead> = Vec::new();
-                for (wchrom, wlo, whi) in &wins {
-                    let (_, b) = c
-                        .reads_in_region_mode(
-                            &args.bam,
-                            wchrom,
-                            *wlo,
-                            *whi,
-                            rustle::denovo_assemble::ReadMode::Only(&tied),
-                        )
-                        .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
+                for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
+                    let b = match &window_store {
+                        Some(st) => {
+                            let g = st.index[&(contig.clone(), lo, hi)][wi];
+                            st.full[g].lock().unwrap().take().expect("each window's full records are taken once")
+                        }
+                        None => {
+                            c.reads_in_region_mode(
+                                &args.bam,
+                                wchrom,
+                                *wlo,
+                                *whi,
+                                rustle::denovo_assemble::ReadMode::Only(&tied),
+                            )
+                            .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?
+                            .1
+                        }
+                    };
                     full.extend(b);
                 }
                 let mut fseen = DetHashSet::default();
