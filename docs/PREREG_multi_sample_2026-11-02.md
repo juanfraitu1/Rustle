@@ -14,3 +14,9 @@ Pass -> genome-wide run next. Fail on (2)/(3) -> recorded; the pooled mode stays
 ## Amendment 1 (2026-11-02, before any panel output; user: time)
 All arms read slim BAMs: A119b chr20 (identity gate), A119b and HG002 chr17+chr19 (panel), sliced with samtools from the full BAMs.
 The best-AS molecule table then sees only alignments on those contigs, identically for every arm. Bars unchanged.
+
+## Identity gate result (job 4412353) and amendment 2 (before any panel output)
+35 products compared, 32 identical. The 3 differing: `x.assign.params.tsv` and `x.fam.params.tsv` differ only in the lines that
+record their own output paths (`id.old/` vs `id.new/`); `x.molecules.tsv.asbin` is the cache sidecar, which stores the TSV's mtime
+and inode (AsTsvIdentity), while `x.molecules.tsv` itself is identical. Read as PASS on products; amendment 2: the gate compares
+products, excluding `*.params.tsv` path rows and `*.asbin`. Panel run as job below.
