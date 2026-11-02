@@ -20,3 +20,9 @@ fall by <= 0.01. Else FAIL.
 Shared-exon loci rose instead of falling (the cut units still overlap >= 2 genes through the constant exons), and precision halved
 (47 more predicted pairs, 1 more hit). It did cut fused loci (55 -> 14), via the RefSeq guide + structural readthroughs. Stays opt-in;
 not recommended. Next idea, not run: drop the shared constant-exon unit from the copy table, keep only the private units.
+
+## PREREG r1497 (2026-11-02, before the run): private units only
+Arm D = arm C's assembly, then every transcript of PREFIX.families.gtf whose exons ALL share bases with exons of >= 2 RefSeq genes
+(same strand; the shared constant exons) is removed before `families` (bench/annot_compare/drop_shared_units.py), so each gene's
+own exons remain the copies. Same metrics; decision vs arm A: shared-exon loci fall >= 50% AND simiiformes precision and recall
+each fall by <= 0.01. Else FAIL.
