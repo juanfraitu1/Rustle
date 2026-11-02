@@ -223,5 +223,21 @@ class Readthrough(unittest.TestCase):
         self.assertEqual(self.calls(rows, 'labels')[0], {})
 
 
+class CutShared(unittest.TestCase):
+    """register 1496: alternative-promoter clusters cut between private and shared exons."""
+
+    def test_private_first_exon_cut_from_shared_constant_exons(self):
+        const = [(5000, 5200), (6000, 6300)]
+        rows = gene_rows('P1', [(1000, 1500)] + const) + gene_rows('P2', [(2000, 2500)] + const)
+        with tempfile.NamedTemporaryFile('w', suffix='.gff', delete=False) as fh:
+            fh.write(gff_raw(rows))
+        gix = U.GeneIndex(U.read_genes(fh.name))
+        os.unlink(fh.name)
+        ex = [(1000, 1500), (5000, 5200), (6000, 6300)]
+        self.assertEqual(U.cuts_of(ex, 'c1', '+', gix)[2], 'shared_exon')
+        cuts, genes, why = U.cuts_of(ex, 'c1', '+', gix, cut_shared=True)
+        self.assertEqual((cuts, why), ([(1501, 4999)], None))
+
+
 if __name__ == '__main__':
     unittest.main()

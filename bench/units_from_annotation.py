@@ -218,8 +218,10 @@ def read_transcripts(gtf, contigs=None):
     return out
 
 
-def cuts_of(exons, chrom, strand, gix):
-    """(cut introns, genes, uncuttable reason): see the module docstring."""
+def cuts_of(exons, chrom, strand, gix, cut_shared=False):
+    """(cut introns, genes, uncuttable reason): see the module docstring. `cut_shared` (register 1496): a transcript whose genes
+    share exons is cut at every intron between a PRIVATE exon (one gene) and a SHARED exon (>= 2 genes), so a cluster of
+    alternative-promoter genes (PCDHA, UGT1A) leaves each gene's own exons as a unit apart from the shared constant exons."""
     E = collections.defaultdict(set)
     name = {}
     for j, (a, b) in enumerate(exons):
@@ -238,7 +240,13 @@ def cuts_of(exons, chrom, strand, gix):
             blocks.append([lo, hi, [name[k]]])
     genes = [n for _, _, ns in blocks for n in ns]
     if len(blocks) < 2:
-        shared = any(sum(1 for s in E.values() if j in s) >= 2 for j in range(len(exons)))
+        nhit = [sum(1 for s in E.values() if j in s) for j in range(len(exons))]
+        shared = any(n >= 2 for n in nhit)
+        if shared and cut_shared:
+            cuts = [(exons[i][1] + 1, exons[i + 1][0] - 1) for i in range(len(exons) - 1)
+                    if (nhit[i] == 1 and nhit[i + 1] >= 2) or (nhit[i] >= 2 and nhit[i + 1] == 1)]
+            if cuts:
+                return cuts, genes, None
         return [], genes, 'shared_exon' if shared else 'nested_genes'
     cuts = []
     for (_, hi1, _), (lo2, _, _) in zip(blocks, blocks[1:]):
@@ -251,7 +259,7 @@ def cuts_of(exons, chrom, strand, gix):
     return cuts, genes, None
 
 
-def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:', mode='labels', rt_list=None, calls=None):
+def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:', mode='labels', rt_list=None, calls=None, cut_shared=False):
     """(list rows, uncuttable rows, counts)."""
     genes = read_genes(gff, contigs, mode, rt_list, calls)
     if replace:
@@ -261,7 +269,7 @@ def run(gff, gtf, contigs=None, replace=None, label_prefix='ann:', mode='labels'
     rows, unc, n = [], [], collections.Counter()
     for tid, gene, chrom, strand, exons in read_transcripts(gtf, contigs):
         n['spliced'] += 1
-        cuts, names, reason = cuts_of(exons, chrom, strand, gix)
+        cuts, names, reason = cuts_of(exons, chrom, strand, gix, cut_shared)
         if len(names) >= 2:
             n['ge2_genes'] += 1
         if reason:
@@ -285,13 +293,14 @@ def main(argv):
     ap.add_argument('--out', default='')
     ap.add_argument('--readthrough', choices=('labels', 'structural', 'both'), default='labels')
     ap.add_argument('--readthrough-list', default='')
+    ap.add_argument('--cut-shared-exon', action='store_true', help='cut private-to-shared exon introns (register 1496)')
     ap.add_argument('--readthrough-report', default='', help='dropped readthrough genes: gene reason')
     a = ap.parse_args(argv)
     contigs = set(a.contigs.split(',')) if a.contigs else None
     rt_list = [l.split('\t')[0].strip() for l in open_text(a.readthrough_list) if l.strip() and not l.startswith('#')] if a.readthrough_list else None
     calls = {}
     rows, unc, n = run(a.gff, a.gtf, contigs, read_replacements(a.replace_genes) if a.replace_genes else None, a.label_prefix,
-                       a.readthrough, rt_list, calls)
+                       a.readthrough, rt_list, calls, a.cut_shared_exon)
     if a.readthrough_report:
         with open(a.readthrough_report, 'w') as fh:
             fh.write('gene\treason\n')
