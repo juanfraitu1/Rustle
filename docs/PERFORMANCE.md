@@ -10,7 +10,8 @@ on A119b (human testis, CHM13) unless stated. Switches marked **identical** were
 | assemble (genome-wide, good seeding pool) | ~47 min per arm (32 threads, two arms on one node) | BAM decoding (register 983) |
 | families | ~5 min | all-vs-all minimap2 over locus spans |
 | assign | **10.75 h** | read-star minimap2 inside copy_assign: 92% of CPU (perf, 2026-11-02) |
-| candidates (`candidate_copies`) | days genome-wide (pass A never finished on a 57-family panel) | one indexed BAM query per copy, ~0.85 GB read per query |
+| candidates (`candidate_copies`) | days genome-wide (pass A never finished on a 57-family panel) | one indexed BAM query per copy, ~0.85 GB read per query; phase 1 (clusters) over a family pool since r1506 (2.0x on the r1504 panel, identical) |
+| assign on a sample without the chr13 hotspot (slim A119b chr17+19, r1503) | 33 min | the BAM window fetch: 89% of wall; a cross-chromosome family's copy windows decode ~1M records twice for ~3k kept reads (r1505, perf: 35% inflate, 14% record conversion) |
 
 The assign stage's time is one chr13 region (5.2-110.7 Mb): 89 families with every copy in chr13:13.9-15.6 Mb hold 86% of the
 unresolved rows, from ~30k reads that sit in a median 62 of those families each. Per family the read-star step aligns the
@@ -44,3 +45,7 @@ default chaining heuristic on our read-star job, see the table).
 2. One read-star alignment per read per region, reused across families (the hotspot families' padded loci overlap heavily); may
    change products -> needs an identity check, a registration if not identical.
 3. `candidate_copies` pass A from the sequential sweep (needed before the candidates lever can be tested at all).
+4. One BGZF sweep per chromosome serving every family's light window pass in `copy_assign` (r1505: the 73 cross-chromosome families
+   of the slim A119b run spend 1,427 s re-reading the same chr17/chr19 blocks; one multithreaded sweep of that BAM is ~240 s).
+   Identical by construction if each window's records are bucketed in coordinate order. The multithreaded reader itself is used
+   only on regions >= 2 Mb (1.5x there; 3.5x slower on windows, it restarts on every index seek).

@@ -50508,8 +50508,43 @@ pub mod denovo_pipeline {
                 hi: u64,
                 mode: ReadMode<'_>,
             ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
-                let mut reader =
-                    noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+                // r1505 (2026-11-02): a wide region (>= WINDOW_MT_BP) decodes with the same min(4, cores) inflate
+                // workers as `open` (perf put single-threaded inflate at 35% of an assign's cycles; the chr19 region
+                // of the slim A119b run 142 s -> 98 s). A copy window stays on the single-threaded reader: the
+                // multithreaded one restarts its pipeline on every index seek, and a window is mostly seeks
+                // (MCL0's 86 windows 178 s -> 622 s with it). Both read the index query's records in its order.
+                const WINDOW_MT_BP: u64 = 2_000_000;
+                if hi.saturating_sub(lo) >= WINDOW_MT_BP {
+                    let file = std::fs::File::open(bam_path)
+                        .map_err(|e| anyhow::anyhow!("opening {bam_path}: {e}"))?;
+                        let workers = std::thread::available_parallelism()
+                            .map(|n| n.get().min(4))
+                            .unwrap_or(1)
+                            .max(1);
+                    let mut reader = noodles_bam::io::Reader::from(noodles_bgzf::MultithreadedReader::with_worker_count(
+                        std::num::NonZeroUsize::new(workers).unwrap_or(std::num::NonZeroUsize::MIN),
+                        std::io::BufReader::with_capacity(1 << 20, file),
+                    ));
+                    self.reads_in_region_from(&mut reader, chrom, lo, hi, mode)
+                } else {
+                    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+                    self.reads_in_region_from(&mut reader, chrom, lo, hi, mode)
+                }
+            }
+
+            /// The body of [`BamIndexCache::reads_in_region_mode`] on an open reader (the query seeks via the
+            /// cached index).
+            fn reads_in_region_from<R>(
+                &self,
+                reader: &mut noodles_bam::io::Reader<R>,
+                chrom: &str,
+                lo: u64,
+                hi: u64,
+                mode: ReadMode<'_>,
+            ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)>
+            where
+                R: noodles_bgzf::io::BufRead + noodles_bgzf::io::Seek,
+            {
                 let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
                 let query = reader.query(&self.header, &self.index, &region)?;
                 let mut primary = Vec::new();
@@ -50520,6 +50555,20 @@ pub mod denovo_pipeline {
                 if ratio <= 0.0 {
                     for result in query {
                         let record = result?;
+                        // r1505: the `Only(names)` pass (the tied prefilter's second read) keeps nothing but the
+                        // named reads' records, and its callers discard the primaries — so a record whose name is
+                        // not wanted is skipped before the full conversion. Kept when a read-home table is set,
+                        // whose counts/report come from every record.
+                        if let ReadMode::Only(names) = mode {
+                            if home.is_none()
+                                && !record
+                                    .name()
+                                    .map(|n| names.contains(std::str::from_utf8(n.as_ref()).unwrap_or("")))
+                                    .unwrap_or(false)
+                            {
+                                continue;
+                            }
+                        }
                         let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
                         if let Some(home_keep) = home_decide_buf(home, &rb, chrom) {
                             let base =

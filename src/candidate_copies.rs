@@ -42,7 +42,9 @@ use rustle::copy_assign::AssignParams;
 use rustle::run_cache as rc;
 use rustle::seq_utils::reverse_complement;
 use rustle::types::{DetHashMap, DetHashSet};
-use std::cell::Cell;
+use rayon::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -213,11 +215,18 @@ fn parse_args(raw: &[String]) -> Result<Args> {
 struct Mm2 {
     cache: Option<PathBuf>,
     threads: usize,
-    calls: Cell<usize>,
+    calls: Arc<AtomicUsize>,
 }
 impl Mm2 {
+    /// The same settings and call counter with `threads` minimap2 threads per call (phase 1's per-family calls).
+    fn with_threads(&self, threads: usize) -> Mm2 {
+        Mm2 { cache: self.cache.clone(), threads, calls: self.calls.clone() }
+    }
+    fn count(&self) {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+    }
     fn run(&self, args: &[&str], target: &Path, query: &Path, out: &Path) -> Result<Vec<PafHit>> {
-        self.calls.set(self.calls.get() + 1);
+        self.count();
         minimap2(
             args,
             target,
@@ -328,7 +337,7 @@ fn run(raw: &[String]) -> Result<()> {
     let mm = Mm2 {
         cache,
         threads: args.threads,
-        calls: Cell::new(0),
+        calls: Arc::new(AtomicUsize::new(0)),
     };
 
     // spec §5.1 and prereg Amendment 13: the nets, then the cap
@@ -336,41 +345,63 @@ fn run(raw: &[String]) -> Result<()> {
     let t_nets = t0.elapsed().as_secs_f64();
 
     // phase 1, per family: clusters, consensus, refinement, significance merge (spec §5.3-5.5)
+    // r1506 (2026-11-02): the families run over a pool (`--threads` / per-family minimap2 threads workers), each in its own
+    // tmp dir with its own minimap2 calls; the work is independent and the sampling deterministic, so the products are
+    // those of the serial loop. The log lines are collected and printed in family order after the pool.
     let alpha = AssignParams::default().alpha;
+    let fam_threads = args.threads.min(4).max(1);
+    let workers = (args.threads / fam_threads).max(1);
+    let mm_fam = mm.with_threads(fam_threads);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .build()
+        .context("building the family pool")?;
+    eprintln!("[candidate_copies] phase 1: {} families over {} worker(s) x {} minimap2 thread(s)", families.len(), workers, fam_threads);
+    let phase1: Vec<(FamilyWork, String)> = pool.install(|| {
+        families
+            .par_iter()
+            .enumerate()
+            .map(|(fi, fam)| -> Result<(FamilyWork, String)> {
+                let used = sample_net(&nets.names[fi], args.max_reads);
+                let dir = tmp.join(format!("f{fi}"));
+                let mut w = FamilyWork {
+                    family: fam.family_id.clone(),
+                    n_net: nets.names[fi].len(),
+                    n_used: used.len(),
+                    clusters: Vec::new(),
+                    members: Vec::new(),
+                };
+                let line = if used.len() >= args.min_cluster {
+                    fresh_dir(&dir)?;
+                    let net = Net::write(&dir, used, &nets.seqs)?;
+                    let (clusters, log) = family_clusters(&net, &args, &dir, &mm_fam, alpha)?;
+                    let line = format!(
+                        "[candidate_copies] {}: net {} reads ({} used) | {}",
+                        w.family, w.n_net, w.n_used, log
+                    );
+                    for (k, c) in clusters.into_iter().enumerate() {
+                        let id = format!("{}:c{k}", w.family);
+                        w.members
+                            .push(c.members.iter().map(|&m| net.names[m].clone()).collect());
+                        w.clusters.push(ClusterSeq {
+                            family: w.family.clone(),
+                            id,
+                            n_reads: c.members.len(),
+                            seq: c.consensus,
+                        });
+                    }
+                    std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
+                    line
+                } else {
+                    format!("[candidate_copies] {}: net {} reads ({} used) | fewer than --min-cluster {}: no cluster", w.family, w.n_net, w.n_used, args.min_cluster)
+                };
+                Ok((w, line))
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
     let mut work: Vec<FamilyWork> = Vec::with_capacity(families.len());
-    for (fi, fam) in families.iter().enumerate() {
-        let used = sample_net(&nets.names[fi], args.max_reads);
-        let dir = tmp.join(format!("f{fi}"));
-        let mut w = FamilyWork {
-            family: fam.family_id.clone(),
-            n_net: nets.names[fi].len(),
-            n_used: used.len(),
-            clusters: Vec::new(),
-            members: Vec::new(),
-        };
-        if used.len() >= args.min_cluster {
-            fresh_dir(&dir)?;
-            let net = Net::write(&dir, used, &nets.seqs)?;
-            let (clusters, log) = family_clusters(&net, &args, &dir, &mm, alpha)?;
-            eprintln!(
-                "[candidate_copies] {}: net {} reads ({} used) | {}",
-                w.family, w.n_net, w.n_used, log
-            );
-            for (k, c) in clusters.into_iter().enumerate() {
-                let id = format!("{}:c{k}", w.family);
-                w.members
-                    .push(c.members.iter().map(|&m| net.names[m].clone()).collect());
-                w.clusters.push(ClusterSeq {
-                    family: w.family.clone(),
-                    id,
-                    n_reads: c.members.len(),
-                    seq: c.consensus,
-                });
-            }
-            std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
-        } else {
-            eprintln!("[candidate_copies] {}: net {} reads ({} used) | fewer than --min-cluster {}: no cluster", w.family, w.n_net, w.n_used, args.min_cluster);
-        }
+    for (w, line) in phase1 {
+        eprintln!("{line}");
         work.push(w);
     }
     let t_clusters = t0.elapsed().as_secs_f64();
@@ -389,7 +420,7 @@ fn run(raw: &[String]) -> Result<()> {
                 .flat_map(|w| w.clusters.iter().map(|c| (c.id.clone(), c.seq.as_slice()))),
         )?;
         let paf = dir.join("genome.paf");
-        mm.calls.set(mm.calls.get() + 1);
+        mm.count();
         // R7: the multi-GB index is keyed by its file fingerprint, never read for the key
         minimap2_keyed(
             MM2_GENOME,
@@ -497,7 +528,7 @@ fn run(raw: &[String]) -> Result<()> {
     let n_flagged: usize = counts.iter().map(|c| c.n_flagged).sum();
     eprintln!(
         "[candidate_copies] done: {} families, {} clusters, {} candidates, {} flagged in {} families; {} minimap2 calls; {:.1} s (nets {:.1} s, clusters {:.1} s, genome {:.1} s, structure {:.1} s)",
-        counts.len(), n_consensus, cands.len(), n_flagged, flagged_families.len(), mm.calls.get(), t0.elapsed().as_secs_f64(),
+        counts.len(), n_consensus, cands.len(), n_flagged, flagged_families.len(), mm.calls.load(Ordering::Relaxed), t0.elapsed().as_secs_f64(),
         t_nets, t_clusters - t_nets, t_genome - t_clusters, t_structure - t_genome
     );
     Ok(())
@@ -1669,7 +1700,7 @@ fn project_structures(
     }
     fresh_dir(dir)?;
     let genome_records = |fa: &Path, paf: &Path| -> Result<Vec<st::Rec>> {
-        mm.calls.set(mm.calls.get() + 1);
+        mm.count();
         minimap2_keyed(
             MM2_GENOME,
             Path::new(&args.index),
