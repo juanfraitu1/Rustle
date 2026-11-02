@@ -541,7 +541,13 @@ stage_assemble() {
   # PREFIX.families.gtf (every later stage's input) are byte-identical to a run without it. RUSTLE_ASSEMBLY_LAYERS=off skips it.
   local layers=()
   case "${RUSTLE_ASSEMBLY_LAYERS:-on}" in
-    on) layers=(--polish-tss-end median --polish-tes-extend on --mono-model cluster) ;;
+    on) layers=(--polish-tss-end median --polish-tes-extend on --mono-model cluster)
+        # RUSTLE_FINAL_SUBCHAIN=drop|off (register 1498): --polish-subchain drop as a fourth layer of PREFIX.final.gtf only
+        case "${RUSTLE_FINAL_SUBCHAIN:-off}" in
+          drop) case "$POLISH" in *--polish-subchain*) ;; *) layers+=(--polish-subchain drop) ;; esac ;;
+          off) ;;
+          *) echo "[rustle_pipeline] RUSTLE_FINAL_SUBCHAIN must be drop or off (got '$RUSTLE_FINAL_SUBCHAIN')" >&2; exit 2 ;;
+        esac ;;
     off) ;;
     *) echo "[rustle_pipeline] RUSTLE_ASSEMBLY_LAYERS must be on or off (got '$RUSTLE_ASSEMBLY_LAYERS')" >&2; exit 2 ;;
   esac
