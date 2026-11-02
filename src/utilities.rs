@@ -396,9 +396,9 @@ fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<
     use std::io::Write;
     let (bams, names): (Vec<&str>, Vec<&str>) = (bams.split(',').collect(), samples.split(',').collect());
     ensure!(bams.len() == names.len(), "sample-counts: {} BAMs but {} sample names", bams.len(), names.len());
+    // `key "value"` as a whole attribute (not the tail of ref_transcript_id)
     let attr = |s: &str, k: &str| -> Option<String> {
-        let p = s.find(&format!("{k} \""))? + k.len() + 2;
-        Some(s[p..p + s[p..].find('"')?].to_string())
+        s.split(';').map(str::trim).find_map(|a| a.strip_prefix(k)?.strip_prefix(" \"")?.split('"').next().map(String::from))
     };
     let mut by: BTreeMap<String, Tx> = BTreeMap::new();
     let mut order: Vec<String> = Vec::new();
@@ -427,18 +427,17 @@ fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<
         let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam).with_context(|| format!("open {bam}"))?;
         let header = reader.read_header()?;
         let refs: Vec<String> = header.reference_sequences().keys().map(|k| String::from_utf8_lossy(k).to_string()).collect();
-        let mut reads = Vec::new();
-        for r in reader.records() {
-            let r = r?;
+        let reads = reader.records().filter_map(|r| {
+            let r = r.unwrap_or_else(|e| panic!("sample-counts: {bam}: {e}"));
             let fl = r.flags();
             if fl.is_unmapped() || fl.is_secondary() || fl.is_supplementary() || fl.is_qc_fail() {
-                continue;
+                return None;
             }
-            let (Some(id), Some(st)) = (r.reference_sequence_id(), r.alignment_start()) else { continue };
-            let (id, mut p) = (id?, usize::from(st?) as i64 - 1);
+            let (Some(id), Some(st)) = (r.reference_sequence_id(), r.alignment_start()) else { return None };
+            let (id, mut p) = (id.ok()?, usize::from(st.ok()?) as i64 - 1);
             let mut ex = vec![(p, p)];
             for op in r.cigar().iter() {
-                let op = op?;
+                let op = op.ok()?;
                 match op.kind() {
                     Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => {
                         p += op.len() as i64;
@@ -452,11 +451,9 @@ fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<
                 }
             }
             ex.retain(|e| e.1 > e.0);
-            if !ex.is_empty() {
-                reads.push((refs[id].clone(), ex));
-            }
-        }
-        let (c, seen, comp) = count(&txs, reads.into_iter());
+            (!ex.is_empty()).then(|| (refs[id].clone(), ex))
+        });
+        let (c, seen, comp) = count(&txs, reads);
         eprintln!("[sample-counts] {name}: seen {seen}, compatible {comp}, unassigned {}", seen - comp);
         cols.push(c);
     }

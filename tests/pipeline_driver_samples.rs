@@ -133,3 +133,39 @@ fn one_bam_never_enters_the_multi_sample_path() {
     assert!(err(&o).contains("unknown stage pool"), "{}", err(&o));
     assert!(!d.join("run.samples.log").exists());
 }
+
+#[test]
+fn a_shared_read_name_in_big_bams_still_gets_the_message() {
+    // > a pipe buffer of names: the first duplicate must not end the check by SIGPIPE (review finding 1)
+    let d = scratch("dupbig");
+    let a: Vec<String> = (0..20000).map(|i| format!("read_{i:06}_with_a_long_name_to_fill_the_pipe")).collect();
+    let ar: Vec<&str> = a.iter().map(|s| s.as_str()).collect();
+    bam(&d.join("a.bam"), &ar, SQ);
+    bam(&d.join("b.bam"), &[ar[0]], SQ);
+    let b = format!("{},{}", d.join("a.bam").display(), d.join("b.bam").display());
+    let o = run("pool", &b, &[], &d.join("run"));
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    assert!(err(&o).contains("in a and b"), "{}", err(&o));
+}
+
+#[test]
+fn the_copy_table_keeps_columns_when_a_sample_has_no_quant() {
+    // review finding 2: a missing quant file must give that sample zeros, not shift the next sample's numbers
+    let d = scratch("copytable");
+    std::fs::create_dir_all(d.join("run.samples")).unwrap();
+    let h = "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tabundance\tn_reads_hard\n";
+    std::fs::write(d.join("run.samples/C.assign.quant.tsv"), format!("{h}F1\t0\tt0\tc1\t0.75\t9\n")).unwrap();
+    let o = Command::new("bash")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tools/rustle_samples.sh"))
+        .args(["copy-table", "--samples", "A,B,C", "--out"])
+        .arg(d.join("run"))
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    let t = std::fs::read_to_string(d.join("run.copy_counts.tsv")).unwrap();
+    assert_eq!(
+        t,
+        "family_id\tcopy_index\tcopy_tid\tA_reads\tA_abundance\tB_reads\tB_abundance\tC_reads\tC_abundance\n\
+         F1\t0\tt0\t0\t0\t0\t0\t9\t0.75\n"
+    );
+}
