@@ -241,3 +241,19 @@ not touch assembly). SHIP = E6's SHIP arm (same seeding, same stages; it reprodu
 0.429 / 0.239), not re-run. Metric and bars as E6: coding pair precision >= SHIP - 0.010 and recall >= SHIP - 0.010 on both samples.
 **PASS -> the user's standing instruction (2026-11-02, "make them default if they pass"): `tools/rustle_pipeline.sh` turns both on
 unless `RUSTLE_POLISH_TSS_END=off` / `RUSTLE_POLISH_TES_EXTEND=off`.** FAIL -> both stay opt-in.
+
+### E7 RESULT (2026-11-02, jobs 4407293 / 4407294): FAIL (A119b recall) -> E3 and E4 stay opt-in
+
+| sample | arm | predicted coding pairs | hits | precision | recall | families | copies (single-exon) |
+|---|---|---|---|---|---|---|---|
+| A119b | SHIP (E6) | 2,228 | 1,617 | 0.726 | 0.741 | 1,565 | 7,987 (3,299) |
+| A119b | E34 | 2,136 | 1,550 | 0.726 | **0.710** | 1,586 | 8,087 (3,312) |
+| OR6737 | SHIP (E6) | 49 | 21 | 0.429 | 0.239 | 446 | 1,468 |
+| OR6737 | E34 | 50 | 21 | 0.420 | 0.239 | 456 | 1,493 |
+
+A119b precision unchanged, recall -0.031 (bar -0.010) FAIL; OR6737 precision -0.009 and recall unchanged PASS. Unlike E5 the copy roster
+barely moves (single-exon copies 3,299 -> 3,312); A119b gains 21 families and loses 92 predicted pairs (67 hits): moved ends change the
+exon overlap the families stage gates on (shared-exon fraction 0.6), so some families split. E3 and E4 were not separated. **No default
+change.** The direct follow-up: write `PREFIX.families.gtf` from the transcripts BEFORE the end layers (E3-E5) apply, so the families
+stage sees exactly SHIP's input by construction while `PREFIX.gtf` carries the layers; acceptance = families products byte-identical to
+SHIP's with the layers on.
