@@ -8,6 +8,7 @@
 //!   utilities candidate-augment --fasta G.fa --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa
 //!                        --regions P.fam.copies.regions --cand P.cand --out P.aug
 //!   utilities sd-scan --genome FA --out PREFIX [--threads 4]     (or --version-key)
+//!   utilities end-artifacts --gtf FINAL.gtf --fasta G.fa --out OUT.gtf [--mode drop|tag] [--flags FLAGS.tsv]
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -21,6 +22,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// End-artifact layer (register 1500, rule E): drop or tag models with an RT-switching junction or an A-run after the
+    /// 3' end (> 60% A in 20 bp) that have reads <= 2. SQANTI3 6.1 definitions, our code (src/end_artifacts.rs).
+    EndArtifacts {
+        #[arg(long)]
+        gtf: String,
+        /// Genome FASTA with a .fai.
+        #[arg(long)]
+        fasta: String,
+        #[arg(long)]
+        out: String,
+        #[arg(long, default_value = "drop", value_parser = ["drop", "tag"])]
+        mode: String,
+        /// Per-model flags: transcript_id, reads, rts, a_pct, flagged.
+        #[arg(long)]
+        flags: Option<String>,
+    },
     /// Extract one chromosome from a RefSeq GFF3 and write a gffread-style GTF.
     GffToGtf {
         /// RefSeq GFF3 (optionally gzipped).
@@ -169,6 +186,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::GffToGtf { gff, chrom, out } => gff_to_gtf::run(&gff, &chrom, &out),
+        Cmd::EndArtifacts { gtf, fasta, out, mode, flags } => end_artifacts_run(&gtf, &fasta, &out, &mode, flags.as_deref()),
         Cmd::LocusBed {
             pred,
             out,
@@ -229,6 +247,91 @@ fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Option<&str>) -> Result<()> {
+    use anyhow::Context;
+    use rayon::prelude::*;
+    use rustle::end_artifacts as ea;
+    use std::collections::{BTreeMap, HashSet};
+    use std::io::Write;
+    let text = std::fs::read_to_string(gtf).with_context(|| format!("read {gtf}"))?;
+    let attr = |s: &str, k: &str| -> Option<String> {
+        let p = s.find(&format!("{k} \""))? + k.len() + 2;
+        Some(s[p..p + s[p..].find('"')?].to_string())
+    };
+    // transcript_id -> (chrom, strand, reads, exons 0-based half-open)
+    let mut m: BTreeMap<String, (String, char, u64, Vec<(i64, i64)>)> = BTreeMap::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(t) = attr(f[8], "transcript_id") else { continue };
+        let e = m.entry(t).or_insert_with(|| (f[0].to_string(), f[6].chars().next().unwrap_or('+'), 0, Vec::new()));
+        if f[2] == "transcript" {
+            e.2 = attr(f[8], "reads").and_then(|r| r.parse().ok()).unwrap_or(0);
+        } else if f[2] == "exon" {
+            e.3.push((f[3].parse::<i64>()? - 1, f[4].parse::<i64>()?));
+        }
+    }
+    let ids: Vec<&String> = m.keys().filter(|t| !m[*t].3.is_empty()).collect();
+    let res: Vec<(bool, f64)> = ids
+        .par_iter()
+        .map_init(
+            || ea_open(fasta),
+            |fa, t| {
+                let (c, s, _, ex) = &m[*t];
+                let mut ex = ex.clone();
+                ex.sort_unstable();
+                ea::model_flags(fa, c, *s, &ex)
+            },
+        )
+        .collect();
+    let mut flagged: HashSet<&str> = HashSet::new();
+    let mut w = flags.map(|p| std::fs::File::create(p).map(std::io::BufWriter::new)).transpose()?;
+    if let Some(w) = w.as_mut() {
+        writeln!(w, "transcript_id\treads\trts\ta_pct\tflagged")?;
+    }
+    let (mut n_rts, mut n_a) = (0usize, 0usize);
+    for (t, &(rts, a)) in ids.iter().zip(&res) {
+        let reads = m[*t].2;
+        let f = ea::rule_e(rts, a, reads);
+        n_rts += rts as usize;
+        n_a += (a > ea::POLYA_MAX_PCT) as usize;
+        if f {
+            flagged.insert(t.as_str());
+        }
+        if let Some(w) = w.as_mut() {
+            writeln!(w, "{t}\t{reads}\t{rts}\t{a:.1}\t{f}")?;
+        }
+    }
+    let mut o = std::io::BufWriter::new(std::fs::File::create(out)?);
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        let t = if f.len() >= 9 { attr(f[8], "transcript_id") } else { None };
+        match t {
+            Some(t) if flagged.contains(t.as_str()) => {
+                if mode == "tag" {
+                    if f[2] == "transcript" {
+                        writeln!(o, "{line} end_artifact \"true\";")?;
+                    } else {
+                        writeln!(o, "{line}")?;
+                    }
+                }
+            }
+            _ => writeln!(o, "{line}")?,
+        }
+    }
+    eprintln!(
+        "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a}; rule E (reads <= {}) {} {}",
+        ids.len(), ea::POLYA_MAX_PCT, ea::MAX_READS, flagged.len(), if mode == "drop" { "dropped" } else { "tagged" }
+    );
+    Ok(())
+}
+
+fn ea_open(fasta: &str) -> rustle::genome::IndexedFasta {
+    rustle::genome::IndexedFasta::open(fasta).unwrap_or_else(|e| panic!("end-artifacts: open {fasta} (+ .fai): {e}"))
 }
 
 mod gff_to_gtf {

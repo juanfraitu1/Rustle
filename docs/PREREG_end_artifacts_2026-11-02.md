@@ -28,3 +28,11 @@ drop a final.gtf model if [some junction is RTS AND reads <= 2] OR [A share of t
 all junctions); A share as classification_classifiers.py (window 20, strand-aware).
 Step-2 bars: (a) per-model detector agreement with job 4410027's RTS_stage and perc_A_downstream_TTS > 60 flags >= 95% each;
 (b) rule E on A119b gw.LS final.gtf: chain precision >= +0.5, `=` loss <= 0.5%, multicopy/single removal <= 1.5x.
+
+## RESULT step 2 (2026-11-02): ❌ FAIL (bar b2); detector bar (a) PASS
+(a) `utilities end-artifacts` (src/end_artifacts.rs) vs job 4410027's flags, all 211,392 models: RTS agreement 1.0000, A-run
+agreement 1.0000 (chr20 5,051 models also 1.0000). 33 s genome-wide vs 2,323 s for SQANTI3 qc.
+(b) rule E drops 24,064 models: = 39,277 -> 38,370 (-2.3%, bar 0.5%) FAIL; chain 22.0 / 19.1 -> 21.5 / 21.1 (+2.0, pass);
+multi/single 1.03 (pass). Reads <= 2 does not stand in for the FSM exemption: step 1's arms lost 3 `=` because they spared every
+FSM, rule E loses 907. The detector ships as a tool (tag/drop, flags TSV), not as a final.gtf layer. A next rule needs its own
+prereg (an exemption from our own evidence, e.g. junctions shared with a higher-read model).

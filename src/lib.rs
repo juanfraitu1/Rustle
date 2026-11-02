@@ -14,6 +14,7 @@
 
 pub mod bam;
 pub mod genome;
+pub mod end_artifacts;
 pub mod types;
 
 pub mod family;
