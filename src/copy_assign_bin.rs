@@ -3953,6 +3953,11 @@ fn gtf_attr_digits(attrs: &str, key: &str) -> Option<u64> {
 /// ties to the first `transcript_id` in byte order. Decided on the input set: nothing is removed here.
 /// Port of `compat_collapse.py` e14c5646 (unguarded); the key includes the contig, so one call over many
 /// contigs equals the per-contig calls concatenated. Also returns the number of multi-exon transcripts.
+/// `RUSTLE_SHARED_CATALOG=1`: per-sample assign on a catalog built from pooled samples (zero-read copies allowed).
+fn shared_catalog() -> bool {
+    matches!(std::env::var("RUSTLE_SHARED_CATALOG"), Ok(v) if v == "1")
+}
+
 fn subchain_flags(
     lines: &[String],
 ) -> (
@@ -7552,7 +7557,10 @@ fn main() -> Result<()> {
                             .copies
                             .iter()
                             .any(|cc| cc.tid == c.tid && cc.may_have_no_reads());
-                        if n == 0 && !catalog_zero {
+                        // RUSTLE_SHARED_CATALOG=1 (multi-sample runs, tools/rustle_samples.sh): the catalog was built
+                        // from the pooled reads of several samples, so a copy silent in THIS sample is expected and stays
+                        // a target with no reads, as a catalog-unexpressed copy does
+                        if n == 0 && !catalog_zero && !shared_catalog() {
                             anyhow::bail!(
                                 "--families: {} copy {} ({}:{}-{}) has NO reads in {contig}:{lo}-{hi} of \
                                  {}. It cannot be assigned, and silently dropping it would understate the \

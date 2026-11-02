@@ -99,7 +99,8 @@ for i in "${!B[@]}"; do
     [ -e "$f" ] && ln -sfn "$(readlink -f "$f")" "$SD/$n${f#"$OUT"}"
   done
   say "assign: $n"
-  bash "$P" assign --bam "${B[$i]}" --out "$SD/$n" "${REST[@]}"
+  # the catalog comes from the pooled reads: a copy silent in this sample is expected (copy_assign RUSTLE_SHARED_CATALOG)
+  RUSTLE_SHARED_CATALOG=1 bash "$P" assign --bam "${B[$i]}" --out "$SD/$n" "${REST[@]}"
 done
 GTF=$OUT.final.gtf; [ -s "$GTF" ] && [ ! "$GTF" -ot "$OUT.gtf" ] || GTF=$OUT.gtf
 say "counts: per-sample reads on $GTF"
