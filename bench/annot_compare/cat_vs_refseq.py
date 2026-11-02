@@ -7,60 +7,15 @@
              stretched (max intron >= 2x and >= 10 kb longer), isoform-extent (the rest); and the reverse
   merges   : CAT collapsed genes: RefSeq genes and our assembled copies (fam.copies) at the same exons
 usage: cat_vs_refseq.py CAT_GENES.gff3 CAT_SLIM.gff3.gz REFSEQ.gtf.gz SD.bed.gz UNIQUE.bed HGNC.txt PARALOGS.tsv COPIES.tsv OUTPREFIX"""
-import bisect, collections, gzip, re, sys
+import collections, gzip, os, re, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 cat_genes, cat_slim, rs_gtf, sd_bed, uniq_bed, hgnc, paralogs, copies, out = sys.argv[1:10]
 op = lambda p: gzip.open(p, 'rt') if p.endswith('.gz') else open(p)
 A = lambda k, a: (re.search(r'(?:^|;)\s*' + k + r'[= ]"?([^;"]+)', a) or [None, ''])[1]
 
 
-def merge(iv):
-    o = []
-    for a, b in sorted(iv):
-        if o and a <= o[-1][1]:
-            o[-1][1] = max(o[-1][1], b)
-        else:
-            o.append([a, b])
-    return o
-
-
-class Idx:
-    def __init__(self, items):  # items: dict id -> (chrom, strand, exons)
-        self.by = collections.defaultdict(list)
-        for k, (c, s, ex) in items.items():
-            self.by[(c, s)].append((ex[0][0], ex[-1][1], k, ex))
-        self.lo = {}
-        self.ml = {}
-        for k, v in self.by.items():
-            v.sort()
-            self.lo[k] = [x[0] for x in v]
-            self.ml[k] = max(x[1] - x[0] for x in v)
-
-    def hits(self, c, s, ex):
-        v = self.by.get((c, s))
-        if not v:
-            return []
-        lo, hi = ex[0][0], ex[-1][1]
-        i = bisect.bisect_left(self.lo[(c, s)], lo - self.ml[(c, s)])
-        o = []
-        while i < len(v) and v[i][0] < hi:
-            a, b, k, e2 = v[i]
-            i += 1
-            if b > lo and share(ex, e2):
-                o.append(k)
-        return o
-
-
-def share(x, y):
-    i = j = 0
-    while i < len(x) and j < len(y):
-        if x[i][0] < y[j][1] and y[j][0] < x[i][1]:
-            return True
-        if x[i][1] < y[j][1]:
-            i += 1
-        else:
-            j += 1
-    return False
+from cat_vs_refseq_lib import Idx, merge, share  # noqa: E402
 
 
 def bed(p):

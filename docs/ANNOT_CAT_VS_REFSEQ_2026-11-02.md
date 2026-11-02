@@ -78,3 +78,13 @@ all collapsed: 1667 CAT genes standing for 4210 source genes; RefSeq has >= 2 of
 | DDX19B | chr16:76100651-76146326 | 3 | 1 (1) | 0 |
 | RNU6-355P | chr16:96232696-96232800 | 3 | 0 (0) | 0 |
 | ZNF878 | chr19:12172011-12181178 | 3 | 1 (1) | 0 |
+
+## Merge audit of our own loci (A119b, vs coding RefSeq genes; `bench/annot_compare/merge_audit.py`)
+| GTF | loci | spanning >= 2 coding RefSeq genes | fused (genes share no exon) | shared-exon cluster | mixed |
+|---|---|---|---|---|---|
+| a1.gtf (assembly) | 76,549 | 1,285 | 691 | 509 | 85 |
+| a1.families.gtf (families input) | 76,161 | 1,112 | 543 | 502 | 67 |
+684 of the 691 fused loci contain a transcript that itself joins >= 2 genes (read-supported junctions, not grouping alone). Largest
+fused loci are tandem arrays (chr4:9.13-9.39 Mb 41 LOC genes; chr5:17.46-17.57 Mb 31). Truth side: famtruth gives a CAT collapsed
+gene ONE truth gene with all its ENSG ids, so pairs inside PCDHA/PCDHG/UGT1A are never scored; our assembly makes the same merge,
+so the score cannot see it. Per-locus tables: /anvme/workspace/v138da13-rustle/annot/merge_audit.a1{,fam}.tsv.
