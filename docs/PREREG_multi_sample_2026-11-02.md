@@ -20,3 +20,16 @@ The best-AS molecule table then sees only alignments on those contigs, identical
 record their own output paths (`id.old/` vs `id.new/`); `x.molecules.tsv.asbin` is the cache sidecar, which stores the TSV's mtime
 and inode (AsTsvIdentity), while `x.molecules.tsv` itself is identical. Read as PASS on products; amendment 2: the gate compares
 products, excluding `*.params.tsv` path rows and `*.asbin`. Panel run as job below.
+
+## RESULT r1503 (2026-11-02, jobs 4413201 + 4416521): ❌ FAIL (bar 3); bars 1 and 2 PASS
+| arm (chr17+chr19 vs RefSeq) | transcripts | = | chain sens / prec |
+|---|---|---|---|
+| A119b alone | 20,483 | 4,438 | 24.9 / 22.0 |
+| HG002 alone | 17,945 | 4,618 | 26.0 / 25.9 |
+| pooled | 29,807 | 5,957 | 33.4 / 20.2 |
+(1) counts: A119b column sum 878,130.81 vs 878,131 compatible; HG002 2,352,151.44 vs 2,352,152 (2-decimal rounding) PASS.
+(2) pooled `=` 5,957 >= 4,618 PASS (+29%). (3) pooled chain precision 20.2 < 22.0 FAIL: the pool is the union of both samples'
+isoforms, noise included. Report: reads assigned on the shared catalog vs the sample's own: A119b 332 vs 60 (13 in both), HG002
+1,391 vs 41 (23 in both), of the reads in both runs. First pooled run (4413201) stopped in HG002's assign: copy_assign refused
+copies with no HG002 read (catalog built from both samples); fixed by RUSTLE_SHARED_CATALOG=1, set by rustle_samples.sh.
+Verdict as pre-declared: the pooled mode ships, documented as more sensitive, not more precise.

@@ -207,3 +207,13 @@ presets `gorilla` (`DENOVO_GGO_GFF`) and `hg002` (`DENOVO_HG002_GFF` + `DENOVO_H
 Ensembl ids by symbol, so the human Compara table applies; `--ids own` uses the genes' own Ensembl ids with that species' Compara
 paralogue export (`--paralogs`, any 4-column BioMart export) and `--level` as a comma list of taxa (`'Mus musculus,Murinae'`).
 No script carries a machine path default: unset inputs exit naming the variable. Test: `bench/denovo_eval/test_famtruth_load.py`.
+
+## Multi-sample runs (2026-11-02)
+`tools/rustle_pipeline.sh all --bam a.bam,b.bam [--samples A,B] --fasta G --out PREFIX ...` (a comma in `--bam` hands the run to
+`tools/rustle_samples.sh`; one BAM is unchanged). BAMs: same genome (@SQ), indexed, no shared read names. Products: PREFIX.pooled.bam,
+the usual assembly / families on it, `PREFIX.samples/<S>.assign.*` per sample on the shared catalog (copy_assign
+RUSTLE_SHARED_CATALOG=1: a copy silent in one sample is allowed), `PREFIX.counts.tsv` (transcript x sample read counts, a read
+compatible with k transcripts adds 1/k; `utilities sample-counts`), `PREFIX.copy_counts.tsv` (copy x sample reads, abundance).
+`pool` builds only the pooled BAM; `copy-table --samples A,B --out PREFIX` rebuilds the copy table. v1 refuses --candidates,
+--legacy-catalog, --as-table, --to, --from and runs no flag stage. r1503 (A119b + HG002, chr17+chr19): pooled finds 29% more
+exact RefSeq chains, chain precision 20.2 vs 22.0-25.9 alone: more sensitive, not more precise.
