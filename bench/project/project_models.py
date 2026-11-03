@@ -40,7 +40,7 @@ def main():
     for r in csv.DictReader(open(copies_tsv), delimiter='\t'):
         fams[r['family_id']].append(dict(idx=r['copy_idx'], chrom=r['chrom'], start=int(r['locus_start']), end=int(r['locus_end']),
                                         strand=r['strand'], reads=int(r['n_reads']), gene=r['gene_id']))
-    fams = {f: m for f, m in fams.items() if len(m) >= 2}
+    fams = {f: m for f, m in fams.items() if len(m) >= 2 and (not targets_ok or any(c['chrom'] in targets_ok for c in m))}
     # transcripts at each copy: same strand, overlapping the locus span
     by_cs = collections.defaultdict(list)
     for t, v in tx.items(): by_cs[(v['chrom'], v['strand'])].append(t)
@@ -76,7 +76,7 @@ def main():
                 name = f'G{len(gmeta)}'; gmeta[name] = dict(fam=f, m=m, off=s0)
                 w.write(f'>{name}\n{fa.fetch(m["chrom"], s0, e0).upper()}\n')
     n_sec = max(2, max((len(ms) for ms in fams.values()), default=2))
-    subprocess.run(f"minimap2 -ax splice:hq -uf --eqx -N {n_sec} -p 0.1 --secondary=yes -t {opt['--threads']} {out}/targets.fa {out}/templates.fa > {out}/aln.sam 2> {out}/mm2.log", shell=True, check=True)
+    subprocess.run(f"minimap2 -ax splice:hq -uf --eqx -N {n_sec} -p 0.1 --secondary=yes -K 20M -t {opt['--threads']} {out}/targets.fa {out}/templates.fa > {out}/aln.sam 2> {out}/mm2.log", shell=True, check=True)
     # best alignment per (template, target) within the template's family
     best = {}
     for a in pysam.AlignmentFile(f'{out}/aln.sam', 'r'):
