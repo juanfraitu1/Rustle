@@ -42,3 +42,19 @@ more families. Two causes, found post hoc: (a) the registered "hit" required a S
 single-exon genes (TAS2R, OR, TSPY, SPANX, TUBB8) where ours emits a single-exon model that did not count while StringTie's
 spliced readthrough did; (b) at 3-9 primary molecules ours hits 0.34-0.47 vs StringTie 0.53-0.64 (the pass-1 floor of 3 and the
 polish), at 10+ the two are within 0.08. Amendment 2: hit = any model (single-exon included); rerun reported below, labelled post hoc.
+
+## Amendment 2 rerun (post hoc; hit = any model, `~/famcmp/run.4435571.out`)
+| definition | tool | complete | partial | none | fused | member hit | MAPQ0-dominated | other | T-only |
+|---|---|---|---|---|---|---|---|---|---|
+| P | ours | 205 | 92 | 20 | 49 | 0.837 | 0.940 | 0.821 | - |
+| P | StringTie | 239 | 64 | 14 | 59 | 0.883 | 0.827 | 0.892 | - |
+| P | FLAIR | 246 | 61 | 10 | 69 | 0.889 | 0.835 | 0.897 | - |
+| T | ours | 204 | 97 | 23 | 49 | 0.823 | 0.940 | 0.819 | 0.690 |
+| T | StringTie | 229 | 78 | 17 | 59 | 0.812 | 0.827 | 0.891 | 0.000 |
+| T | FLAIR | 239 | 72 | 13 | 69 | 0.821 | 0.835 | 0.897 | 0.046 |
+Reading: the base assembler wins exactly where the secondaries matter (T-only members 0.69 vs 0.00 / 0.05; MAPQ0-dominated 0.94 vs
+0.83) and fuses fewer families (49 vs 59 / 69), and it loses on the ordinary members (0.82 vs 0.89), which is the 3-9-molecule
+floor/polish gap of the registered run. Under T the three tools' overall member hit rates are equal (0.82 / 0.81 / 0.82): the
+copies only we reach balance the low-support copies only they emit. Prediction 1 (ours completes the most families) is wrong under
+both definitions; predictions 2-4 hold. The single-sample base mode is not where ours should be compared on families; the
+families stage and the multi-copy layer (r1519) are.
