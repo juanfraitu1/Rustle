@@ -44,3 +44,10 @@ The chr13 mega-families (1,200 templates x 23 targets of tandem repeats) took 12
 occurrence 105) make the splice chaining quadratic. `-f 2000` (ignore minimizers occurring > 2,000 times in the family's targets)
 cuts 100 templates of MCL0 from 28.7 s to 2.5 s with the same records and 6% MORE (template, target) pairs at coverage >= 0.9.
 Adopted; the bar stays 30 min.
+
+## Amendment 1 (before any arm number; the fifth run timed out in the tier pass: 25 chr13 hotspot targets took 462 s)
+The tied tier is gated by the as-table tie (a SECONDARY record with the exact projected chain at AS >= 0.98 x the molecule's
+genome-wide best, the good pool's rule) instead of "the molecule's primary lies on another member", which needed a second decode of
+every member locus. A near-tied placement means the molecule's best is a near-identical copy, i.e. a member in practice; the
+share whose primary is on a catalog member of the same family is reported on a sample of the tied-tier chains, not required.
+Tiers are computed per target in 16 worker processes, keeping only the projected chains.

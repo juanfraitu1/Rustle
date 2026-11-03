@@ -2,12 +2,12 @@
 """PREREG r1519 (docs/PREREG_project_models_2026-11-03.md): project each family's multi-exon transcript models onto its other
 members (structure borrowed, reads not pooled) and tier every projected chain by the reads at the target.
 
-  project_models.py GTF COPIES_TSV FASTA BAM OUTDIR [--targets chr13,chr20] [--threads N] [--min-cov 0.9] [--min-id 0.85]
+  project_models.py GTF COPIES_TSV FASTA BAM OUTDIR [--targets chr13,chr20] [--threads N] [--min-cov 0.9] [--min-id 0.85] [--as-table TSV]
 
 OUTDIR/templates.fa, targets.fa, aln.sam, projected.gtf (attrs: tier own|tied|none, template, from_copy, cov, ident, motif),
 tier_{own,tied,none}.gtf, base.gtf (the arm's own transcripts at the target copies, the SQANTI control), summary.txt.
 Tiers at the target copy: own = >= 1 PRIMARY record with the exact projected intron chain; tied = none primary but >= 1 SECONDARY
-record with the exact chain whose molecule's primary lies on another member of the same family; none = neither.
+record with the exact chain at AS >= 0.98 x the molecule's genome-wide best (--as-table; Amendment 1); none = neither.
 A chain already present among the target copy's own models is skipped (counted `already`). Single-exon templates are out (v1)."""
 import sys, os, re, csv, subprocess, collections
 import pysam
@@ -26,15 +26,37 @@ def read_gtf(path):
         tx[t] = dict(chrom=c, strand=s, exons=e, reads=r, gene=g, introns=tuple((a[1], b[0]) for a, b in zip(e, e[1:])))
     return tx
 
+def chain_of(rec):
+    pos = rec.reference_start; ints = []
+    for op, l in rec.cigartuples:
+        if op == 3: ints.append((pos, pos + l))
+        if op in (0, 2, 3, 7, 8): pos += l
+    return tuple(ints)
+
+def tier_target(gn):
+    g = _gmeta[gn]; m = g['m']; want = _want[gn]; d = {}
+    bam = pysam.AlignmentFile(_bam_path)
+    for r in bam.fetch(m['chrom'], g['off'], g['off'] + _glen[gn]):
+        if r.is_unmapped or r.is_supplementary or 'N' not in r.cigarstring: continue
+        c = chain_of(r)
+        if c not in want: continue
+        e = d.setdefault(c, [0, 0])
+        if not r.is_secondary: e[0] += 1
+        else:
+            b = _best.get(r.query_name)
+            if b and r.has_tag('AS') and r.get_tag('AS') >= 0.98 * b: e[1] += 1
+    return gn, {c: tuple(v) for c, v in d.items()}
+
 def main():
-    args = sys.argv[1:]; opt = {'--targets': None, '--threads': '16', '--min-cov': '0.9', '--min-id': '0.85'}
+    args = sys.argv[1:]; opt = {'--targets': None, '--threads': '16', '--min-cov': '0.9', '--min-id': '0.85', '--as-table': os.path.expanduser('~/runs/human_A119b/a1.molecules.tsv')}
     pos = []
     while args:
         a = args.pop(0)
         if a in opt: opt[a] = args.pop(0)
         else: pos.append(a)
     gtf, copies_tsv, fasta, bam_path, out = pos; os.makedirs(out, exist_ok=True)
-    if os.path.exists(f'{out}/aln.sam'): os.remove(f'{out}/aln.sam')
+    reuse = os.environ.get('PROJECT_REUSE_ALN') and os.path.exists(f'{out}/aln.sam')  # profiling: skip the alignment
+    if os.path.exists(f'{out}/aln.sam') and not reuse: os.remove(f'{out}/aln.sam')
     targets_ok = set(opt['--targets'].split(',')) if opt['--targets'] else None
     tx = read_gtf(gtf)
     fams = collections.defaultdict(list)
@@ -90,13 +112,14 @@ def main():
         jobs.append(f"minimap2 -ax splice:hq -uf --eqx -N {max(2, len(tg))} -p 0.1 --secondary=yes -f 2000 -t {max(1, int(opt['--threads']) // 6)} {out}/fam/{f}.targets.fa {out}/fam/{f}.templates.fa 2>> {out}/fam/{f}.mm2.log | grep -v '^@' > {out}/fam/{f}.sam")
     # the chr13 mega-families take ~2 min and 12 GB each: 6 at a time (the node has 256 GB), biggest first
     from multiprocessing.pool import ThreadPool
-    ThreadPool(6).map(lambda c: subprocess.run(c, shell=True, check=True), jobs)
-    subprocess.run(f"cat {out}/fam/*.sam > {out}/aln.sam && cat {out}/fam/*.mm2.log > {out}/mm2.log", shell=True, check=True)
+    if not reuse:
+        ThreadPool(6).map(lambda c: subprocess.run(c, shell=True, check=True), jobs)
+        subprocess.run(f"cat {out}/fam/*.sam > {out}/aln.sam && cat {out}/fam/*.mm2.log > {out}/mm2.log", shell=True, check=True)
     with open(f'{out}/targets.fa', 'w') as w:
         for f in fams:
             p = f'{out}/fam/{f}.targets.fa'
             if os.path.exists(p): w.write(open(p).read())
-    subprocess.run(f"samtools faidx {out}/targets.fa && (samtools dict {out}/targets.fa | grep -v '^@HD'; cat {out}/aln.sam) > {out}/aln.h.sam && mv {out}/aln.h.sam {out}/aln.sam", shell=True, check=True)
+    if not reuse: subprocess.run(f"samtools faidx {out}/targets.fa && (samtools dict {out}/targets.fa | grep -v '^@HD'; cat {out}/aln.sam) > {out}/aln.h.sam && mv {out}/aln.h.sam {out}/aln.sam", shell=True, check=True)
     # best alignment per (template, target) within the template's family
     best = {}
     for a in pysam.AlignmentFile(f'{out}/aln.sam', 'r', check_sq=False):
@@ -107,23 +130,12 @@ def main():
         if (a.query_name, a.reference_name) not in best or AS > best[(a.query_name, a.reference_name)][0]:
             best[(a.query_name, a.reference_name)] = (AS, a)
     CANON = {('GT', 'AG'), ('GC', 'AG'), ('AT', 'AC')}
-    bam = pysam.AlignmentFile(bam_path)
-    def chain_of(rec):
-        pos = rec.reference_start; ints = []
-        for op, l in rec.cigartuples:
-            if op == 3: ints.append((pos, pos + l))
-            if op in (0, 2, 3, 7, 8): pos += l
-        return tuple(ints)
-    fam_primary_names = {}
-    def primaries_in_family(f):
-        if f not in fam_primary_names:
-            s = set()
-            for m in fams[f]:
-                for r in bam.fetch(m['chrom'], m['start'], m['end']):
-                    if not (r.is_secondary or r.is_supplementary or r.is_unmapped): s.add(r.query_name)
-            fam_primary_names[f] = s
-        return fam_primary_names[f]
-    rows = []; cnt = collections.Counter(); motif_n = motif_ok = 0; gained = collections.defaultdict(set); chains_at = {}
+    best_as = {}
+    with open(opt['--as-table']) as fh:  # molecules with > 1 record: name -> genome-wide best AS (the good pool's tie set)
+        for l in fh:
+            f = l.rstrip('\n').split('\t')
+            if len(f) > 3 and f[0][0] != '#' and f[3].isdigit() and int(f[3]) > 1 and f[1].isdigit(): best_as[f[0]] = int(f[1])
+    rows = []; cnt = collections.Counter(); motif_n = motif_ok = 0; gained = collections.defaultdict(set); want = {}
     for (tn, gn), (AS, a) in best.items():
         t = tmeta[tn]; g = gmeta[gn]; m = g['m']
         qlen = a.query_length or t['len']; cov = a.query_alignment_length / t['len']
@@ -149,21 +161,23 @@ def main():
                 dn, acc = rc(acc), rc(dn)
             ok += (dn, acc) in CANON
         motif_n += len(introns); motif_ok += ok
-        if gn not in chains_at:  # one BAM pass per target copy: chain -> (primaries, secondary molecule names)
-            d = collections.defaultdict(lambda: [0, set()])
-            for r in bam.fetch(m['chrom'], g['off'], g['off'] + glen[gn]):
-                if r.is_unmapped or r.is_supplementary: continue
-                c = chain_of(r)
-                if not c: continue
-                if r.is_secondary: d[c][1].add(r.query_name)
-                else: d[c][0] += 1
-            chains_at[gn] = d
-        n_pri, secs = chains_at[gn].get(introns, (0, set()))
-        n_sec_fam = len(secs & primaries_in_family(g['fam'])) if secs else 0
-        tier = 'own' if n_pri else 'tied' if n_sec_fam else 'none'
+        want.setdefault(gn, set()).add(introns)
+        rows.append([m['chrom'], strand, exons, None, tn, t['tid'], t['copy'], g['fam'], m['idx'], cov, ident, ok, len(introns), 0, 0, gn, introns])
+    # tiers: one BAM pass per target copy in worker processes (the chr13 hotspot copies carry ~1M records each), keeping only
+    # the projected chains. tied = a SECONDARY record with the exact chain whose AS >= 0.98 x the molecule's genome-wide best
+    # (the good pool's tie: the molecule's best placement is a near-identical copy, i.e. another member).
+    from multiprocessing import Pool
+    global _bam_path, _want, _gmeta, _glen, _best
+    _bam_path, _want, _gmeta, _glen, _best = bam_path, want, gmeta, glen, best_as
+    with Pool(16) as pool:
+        tiers = dict(pool.imap_unordered(tier_target, sorted(want), chunksize=1))
+    for row in rows:
+        gn, introns = row[15], row[16]; n_pri, n_tied = tiers[gn].get(introns, (0, 0))
+        tier = 'own' if n_pri else 'tied' if n_tied else 'none'
+        row[3], row[13], row[14] = tier, n_pri, n_tied
         cnt[tier] += 1
-        if m['reads'] <= 2: gained[(g['fam'], m['idx'])].add(tier)
-        rows.append((m['chrom'], strand, exons, tier, tn, t['tid'], t['copy'], g['fam'], m['idx'], cov, ident, ok, len(introns), n_pri, n_sec_fam))
+        if gmeta[gn]['m']['reads'] <= 2: gained[(gmeta[gn]['fam'], gmeta[gn]['m']['idx'])].add(tier)
+    rows = [tuple(r[:15]) for r in rows]
     ws = {k: open(f'{out}/tier_{k}.gtf', 'w') for k in ('own', 'tied', 'none')}
     with open(f'{out}/projected.gtf', 'w') as w:
         for i, (c, s, ex, tier, tn, tid, fc, f, mi, cov, ident, ok, ni, npri, nsec) in enumerate(rows):
