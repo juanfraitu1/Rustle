@@ -17,9 +17,9 @@ for arm, ok in keep.items():
         f = l.split('\t'); a = dict(re.findall(r'(\S+) "([^"]*)"', f[8]))
         fam, mi = a['gene_id'].rsplit('_', 1)
         if (fam, mi) not in judged: continue
-        if f[2] == 'transcript':
-            ok_, n = map(int, a['motif'].split('/')); mo += ok_; mn += n; gained[(fam, mi)].add(a['tier'])
-        ws['tier_' + a['tier']].write(l)
+        if f[2] == 'transcript':  # exon lines carry no tier: keep the transcript's
+            tier = a['tier']; ok_, n = map(int, a['motif'].split('/')); mo += ok_; mn += n; gained[(fam, mi)].add(tier)
+        ws['tier_' + tier].write(l)
     for l in open(f'{d}/base.gtf'):
         t = re.search(r'transcript_id "([^"]+)"', l.split('\t')[8]).group(1)
         if tid2tg.get(t) in judged: ws['base'].write(l)
