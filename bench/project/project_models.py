@@ -34,6 +34,7 @@ def main():
         if a in opt: opt[a] = args.pop(0)
         else: pos.append(a)
     gtf, copies_tsv, fasta, bam_path, out = pos; os.makedirs(out, exist_ok=True)
+    if os.path.exists(f'{out}/aln.sam'): os.remove(f'{out}/aln.sam')
     targets_ok = set(opt['--targets'].split(',')) if opt['--targets'] else None
     tx = read_gtf(gtf)
     fams = collections.defaultdict(list)
@@ -64,22 +65,37 @@ def main():
                     name = f'T{n_t}'; n_t += 1
                     tmeta[name] = dict(fam=f, tid=t, copy=m['idx'], span=v['exons'][-1][1] - v['exons'][0][0], len=len(s), n_int=len(v['introns']))
                     w.write(f'>{name}\n{s}\n')
-    # targets: every member on a target contig, padded by the family's longest template span
-    gmeta = {}
-    with open(f'{out}/targets.fa', 'w') as w:
-        for f, ms in fams.items():
-            pad = max([tmeta[n]['span'] for n in tmeta if tmeta[n]['fam'] == f] or [0])
-            if not pad: continue
-            for m in ms:
-                if targets_ok and m['chrom'] not in targets_ok: continue
+    # targets: every member on a target contig, padded by the family's longest template span; one minimap2 run PER FAMILY
+    # (templates vs that family's targets only, -N = members), so the work is sum over families, not templates x all targets
+    gmeta = {}; tfam = collections.defaultdict(list)
+    for n, t in tmeta.items(): tfam[t['fam']].append(n)
+    tseq = {}; cur = None
+    for l in open(f'{out}/templates.fa'):
+        if l.startswith('>'): cur = l[1:].strip()
+        else: tseq[cur] = l.strip()
+    os.makedirs(f'{out}/fam', exist_ok=True)
+    sam_parts = []
+    for f, ms in fams.items():
+        pad = max([tmeta[n]['span'] for n in tfam[f]] or [0])
+        if not pad: continue
+        tg = [m for m in ms if not targets_ok or m['chrom'] in targets_ok]
+        if not tg: continue
+        with open(f'{out}/fam/{f}.targets.fa', 'w') as w:
+            for m in tg:
                 s0 = max(0, m['start'] - pad); e0 = min(fa.get_reference_length(m['chrom']), m['end'] + pad)
                 name = f'G{len(gmeta)}'; gmeta[name] = dict(fam=f, m=m, off=s0)
                 w.write(f'>{name}\n{fa.fetch(m["chrom"], s0, e0).upper()}\n')
-    n_sec = max(2, max((len(ms) for ms in fams.values()), default=2))
-    subprocess.run(f"minimap2 -ax splice:hq -uf --eqx -N {n_sec} -p 0.1 --secondary=yes -K 20M -t {opt['--threads']} {out}/targets.fa {out}/templates.fa > {out}/aln.sam 2> {out}/mm2.log", shell=True, check=True)
+        with open(f'{out}/fam/{f}.templates.fa', 'w') as w:
+            for n in tfam[f]: w.write(f'>{n}\n{tseq[n]}\n')
+        subprocess.run(f"minimap2 -ax splice:hq -uf --eqx -N {max(2, len(tg))} -p 0.1 --secondary=yes -t {opt['--threads']} {out}/fam/{f}.targets.fa {out}/fam/{f}.templates.fa 2>> {out}/mm2.log | grep -v '^@' >> {out}/aln.sam", shell=True, check=True)
+    with open(f'{out}/targets.fa', 'w') as w:
+        for f in fams:
+            p = f'{out}/fam/{f}.targets.fa'
+            if os.path.exists(p): w.write(open(p).read())
+    subprocess.run(f"samtools faidx {out}/targets.fa && (samtools dict {out}/targets.fa | grep -v '^@HD'; cat {out}/aln.sam) > {out}/aln.h.sam && mv {out}/aln.h.sam {out}/aln.sam", shell=True, check=True)
     # best alignment per (template, target) within the template's family
     best = {}
-    for a in pysam.AlignmentFile(f'{out}/aln.sam', 'r'):
+    for a in pysam.AlignmentFile(f'{out}/aln.sam', 'r', check_sq=False):
         if a.is_unmapped or a.is_supplementary: continue
         g = gmeta[a.reference_name]; t = tmeta[a.query_name]
         if g['fam'] != t['fam'] or g['m']['idx'] == t['copy']: continue

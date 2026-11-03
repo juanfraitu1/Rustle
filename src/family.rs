@@ -45970,6 +45970,9 @@ pub mod denovo_pipeline {
             allpos: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)>,
             /// Unspliced reads, in arrival order, for the position-aware seeding pass.
             pub unspliced: Vec<PrimaryRead>,
+            /// `UnsplicedSecondary::Support` (r1520): unspliced SECONDARY records, kept apart so they can add support to a
+            /// primary-seeded cluster but never seed or bridge one.
+            pub unspliced_sec: Vec<PrimaryRead>,
             /// Reads pushed (spliced + unspliced).
             pub n_pushed: usize,
             /// `RUSTLE_READTHROUGH_JUNCTIONS` statistics, fed by the streaming reader from every primary spliced record;
@@ -46003,6 +46006,7 @@ pub mod denovo_pipeline {
                     groups: std::collections::BTreeMap::new(),
                     allpos: std::collections::BTreeMap::new(),
                     unspliced: Vec::new(),
+                    unspliced_sec: Vec::new(),
                     n_pushed: 0,
                     readthrough: None,
                     tss: None,
@@ -46113,7 +46117,7 @@ pub mod denovo_pipeline {
             ) -> Vec<Skeleton> {
                 let opts: AdmitOpts = opts.into();
                 let mode = opts.mode;
-                let (k, snap, unspliced) = (self.k, self.snap, self.unspliced);
+                let (k, snap, unspliced, unspliced_sec) = (self.k, self.snap, self.unspliced, self.unspliced_sec);
                 let (groups, allpos) = if opts.snap_w > 0 {
                     snap_read_junctions(self.groups, self.allpos, opts.snap_w, k)
                 } else {
@@ -46224,9 +46228,79 @@ pub mod denovo_pipeline {
                 }
                 // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
                 // per chromosome instead of pooling every unspliced read on a chromosome into one giant group.
-                skels.extend(cluster_unspliced(&unspliced, min_reads, k));
+                if unspliced_sec.is_empty() {
+                    skels.extend(cluster_unspliced(&unspliced, min_reads, k));
+                } else {
+                    skels.extend(cluster_unspliced_supported(&unspliced, &unspliced_sec, min_reads, k));
+                }
                 skels
             }
+        }
+
+        /// What the seeding pool does with an unspliced SECONDARY record (`RUSTLE_SEED_UNSPLICED`): `Seed` = the r1060 good
+        /// pool (it seeds and bridges like a primary); `Drop` (r1518, `primary`) = it is not read; `Support` (r1520,
+        /// `support`) = it adds one read of support to the primary-seeded cluster whose span it overlaps and is otherwise
+        /// discarded, so a near-tied unspliced placement can lift a pseudogene copy over the floor but can neither seed a
+        /// locus nor chain two primary clusters into one array-wide blob.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum UnsplicedSecondary {
+            Seed,
+            Drop,
+            Support,
+        }
+
+        /// `RUSTLE_SEED_UNSPLICED` = `primary` (r1518) | `support` (r1520); unset = `Seed`. `RUSTLE_SEED_UNSPLICED_PRIMARY=1`
+        /// (r1518's spelling) is `primary`.
+        pub fn seed_unspliced_mode() -> UnsplicedSecondary {
+            if seed_unspliced_primary_only() {
+                return UnsplicedSecondary::Drop;
+            }
+            match std::env::var("RUSTLE_SEED_UNSPLICED").as_deref() {
+                Ok("primary") => UnsplicedSecondary::Drop,
+                Ok("support") => UnsplicedSecondary::Support,
+                _ => UnsplicedSecondary::Seed,
+            }
+        }
+
+        /// [`cluster_unspliced`] over the PRIMARY unspliced reads, then each unspliced secondary adds one read of support to
+        /// the cluster whose span it overlaps (the first in position order); clusters below `min_reads` after that are dropped.
+        /// Boundaries come from the primaries only. Secondaries overlapping no primary cluster seed nothing.
+        pub fn cluster_unspliced_supported(
+            primaries: &[PrimaryRead],
+            secondaries: &[PrimaryRead],
+            min_reads: u32,
+            k: usize,
+        ) -> Vec<Skeleton> {
+            let mut skels = cluster_unspliced(primaries, 1, k);
+            // primary clusters never overlap each other (single linkage), so per chrom a sorted start list suffices
+            let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
+            for (i, s) in skels.iter().enumerate() {
+                by_chrom.entry(s.chrom.as_str()).or_default().push(i);
+            }
+            for v in by_chrom.values_mut() {
+                v.sort_by_key(|&i| skels[i].start);
+            }
+            let mut hits: Vec<(usize, bool)> = Vec::new();
+            for r in secondaries {
+                if !r.introns.is_empty() {
+                    continue;
+                }
+                let Some(idx) = by_chrom.get(r.chrom.as_str()) else { continue };
+                // clusters are disjoint, so sorted by start = sorted by end: the first one ending after the read starts
+                let p = idx.partition_point(|&i| skels[i].end <= r.ref_start);
+                if p < idx.len() && skels[idx[p]].start < r.ref_end {
+                    hits.push((idx[p], r.reverse));
+                }
+            }
+            for (i, rev) in hits {
+                let s = &mut skels[i];
+                s.n_reads += 1;
+                s.read_tot += 1;
+                s.read_rev += rev as u32;
+                s.read_strand = Some(majority_read_strand(s.read_rev, s.read_tot));
+            }
+            skels.retain(|s| s.n_reads >= min_reads);
+            skels
         }
 
         /// How pass 1 admits intron-chain groups. `Exact` (default): a chain with `>= min_reads` identical reads.
@@ -50067,7 +50141,7 @@ pub mod denovo_pipeline {
                 fetched,
                 acc,
                 read_home_table(),
-                seed_unspliced_primary_only(),
+                seed_unspliced_mode(),
             )
         }
 
@@ -50092,7 +50166,7 @@ pub mod denovo_pipeline {
             fetched: &[(String, u64, u64)],
             acc: &mut Pass1Acc,
             home: Option<&ReadHomeTable>,
-            unspliced_primary_only: bool,
+            unspliced_sec: UnsplicedSecondary,
         ) -> Result<usize> {
             use std::hash::{Hash, Hasher};
             let bai_path = format!("{bam_path}.bai");
@@ -50245,7 +50319,16 @@ pub mod denovo_pipeline {
                 }
                 let ref_end = exons.last().map(|e| e.1).unwrap_or(ref_start);
                 let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
-                if unspliced_primary_only && flags.is_secondary() && introns.is_empty() {
+                if flags.is_secondary() && introns.is_empty() && unspliced_sec != UnsplicedSecondary::Seed {
+                    if unspliced_sec == UnsplicedSecondary::Support {
+                        acc.unspliced_sec.push(PrimaryRead {
+                            chrom: chrom.to_string(),
+                            ref_start,
+                            ref_end,
+                            introns: Vec::new(),
+                            reverse: flags.is_reverse_complemented(),
+                        });
+                    }
                     n_unspliced_sec_dropped += 1;
                     continue;
                 }
@@ -50280,8 +50363,9 @@ pub mod denovo_pipeline {
             }
             if n_tie_dropped > 0 || n_tie_unknown > 0 || n_unspliced_sec_dropped > 0 {
                 eprintln!(
-                "[stream-pass1] {chrom}:{lo}-{hi}: {n_tie_dropped} secondary record(s) below {tie_ratio} x genome-wide best AS dropped; {n_tie_unknown} kept with NO table entry{}; {n_unspliced_sec_dropped} unspliced secondary record(s) dropped (RUSTLE_SEED_UNSPLICED_PRIMARY)",
-                if n_tie_unknown > 0 { " — WARNING: the table may come from a different BAM" } else { "" }
+                "[stream-pass1] {chrom}:{lo}-{hi}: {n_tie_dropped} secondary record(s) below {tie_ratio} x genome-wide best AS dropped; {n_tie_unknown} kept with NO table entry{}; {n_unspliced_sec_dropped} unspliced secondary record(s) {} (RUSTLE_SEED_UNSPLICED)",
+                if n_tie_unknown > 0 { " — WARNING: the table may come from a different BAM" } else { "" },
+                if unspliced_sec == UnsplicedSecondary::Support { "held as support only" } else { "dropped" }
             );
             }
             home_report(chrom, lo, hi, &hc);
@@ -54193,7 +54277,7 @@ pub mod denovo_pipeline {
                 let run = |f: Option<ReadSupportFilter>| {
                     let mut acc = Pass1Acc::new(1, None);
                     acc.read_filter = f;
-                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, None, false).unwrap();
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, None, UnsplicedSecondary::Seed).unwrap();
                     (acc.n_pushed, acc.n_read_filtered)
                 };
                 assert_eq!(run(None), (4, 0));
@@ -54221,7 +54305,7 @@ pub mod denovo_pipeline {
                     &[],
                     &mut acc,
                     home,
-                    false,
+                    UnsplicedSecondary::Seed,
                 )
                 .unwrap();
                 (acc.n_pushed, acc.unspliced)
@@ -54237,13 +54321,27 @@ pub mod denovo_pipeline {
                     rec("t", Flags::SECONDARY, 0, 9_001, vec![m(100), n(500), m(100)]),
                 ];
                 let bam = write_indexed_bam(dir.path(), "usp.bam", &recs);
-                let run = |only: bool| {
+                let run = |mode: UnsplicedSecondary| {
                     let mut acc = Pass1Acc::new(1, None);
-                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, true, false, &[], &mut acc, None, only).unwrap();
-                    (acc.n_pushed, acc.unspliced.len())
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, true, false, &[], &mut acc, None, mode).unwrap();
+                    (acc.n_pushed, acc.unspliced.len(), acc.unspliced_sec.len())
                 };
-                assert_eq!(run(false), (3, 2));
-                assert_eq!(run(true), (2, 1)); // the spliced secondary stays
+                assert_eq!(run(UnsplicedSecondary::Seed), (3, 2, 0));
+                assert_eq!(run(UnsplicedSecondary::Drop), (2, 1, 0)); // the spliced secondary stays
+                assert_eq!(run(UnsplicedSecondary::Support), (2, 1, 1));
+            }
+
+            #[test]
+            fn unspliced_secondaries_support_primary_clusters_but_never_seed_or_bridge() {
+                let pr = |s: u64, e: u64| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: e, introns: vec![], reverse: false };
+                let primaries = vec![pr(1000, 2000), pr(10_000, 11_000)];
+                // 2 secondaries on the first cluster, 1 bridging the two, 3 far away
+                let secondaries = vec![pr(1500, 2500), pr(900, 1100), pr(1900, 10_500), pr(50_000, 51_000), pr(50_100, 51_100), pr(50_200, 51_200)];
+                let out = cluster_unspliced_supported(&primaries, &secondaries, 3, 1);
+                assert_eq!(out.len(), 1);
+                assert_eq!((out[0].start, out[0].end, out[0].n_reads), (1000, 2000, 4)); // 1 primary + 3 overlapping secondaries; span from primaries
+                // without secondaries the plain rule applies unchanged
+                assert_eq!(cluster_unspliced_supported(&primaries, &[], 1, 1), cluster_unspliced(&primaries, 1, 1));
             }
 
             #[test]
@@ -54778,7 +54876,7 @@ pub mod denovo_pipeline {
                     &[],
                     &mut acc,
                     None,
-                    false,
+                    UnsplicedSecondary::Seed,
                 )
                 .unwrap();
                 if let Some(rt) = acc.readthrough.as_mut() {
