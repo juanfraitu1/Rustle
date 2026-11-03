@@ -50,3 +50,7 @@ Bar 4 FAIL as registered: 90 -> 46 genes hit, ratio 0.51. 41 of the 44 lost gene
 ## Amendment 1 (written before any genome-wide number; the registered bar 4 is still reported)
 Bar 4 counts a gene as hit only by a same-strand single-exon model whose span is <= 2x the gene's span
 (`bench/seed_unspliced_score.py`, "Amendment 1" line). Bar 4 is judged on the amended line; the as-registered line is reported beside it.
+
+## Bar 2 (chr20 SQANTI, rerun with the env on PATH; single-exon isoforms only)
+A: intergenic 117, genic_intron 95, antisense 32, genic 9 (artifact 253), FSM 16, ISM 0. B: 91 / 95 / 32 / 9 (227), FSM 14, ISM 0.
+Artifact half PASS (227 <= 253, all of it intergenic). FSM half FAIL as registered: 14 / 16 = 0.875 < 0.98 (2 single-exon FSM lost).
