@@ -15,7 +15,9 @@ are left out of the gate exactly as unique mappers are (no row). Without the fla
 
 Run: KB3781, all 494 families, same binary/flags as r1510 plus the flag; truth = r1510's `truth_all10` hits (the new
 contested set is a subset of r1510's), `strict_truth` with copy loci requiring a near-perfect best per haplotype
-(commit 54b1b4c4; the registered r1510 loci definition is reported beside it).
+(commit 54b1b4c4). Amendment (2026-11-03, before the run finished): the r1510 loci definition (best + 2) is NOT
+reported beside it; strict_truth now has only the near-perfect rule, and bar 2's reference numbers (124 / 25) are from
+that rule.
 
 Decision rule (pre-declared), held-out 205 families (the 454 non-panel families with contested rows):
 1. Assigned rows whose truth is OUTSIDE every catalog copy fall from 326 to <= 5% of assigned rows.
