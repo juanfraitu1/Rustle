@@ -13,7 +13,7 @@ import collections, csv, hashlib, json, os, re, subprocess, sys
 
 CIG = re.compile(r"(\d+)([MIDNSHP=X])")
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
-SAMPLE = 3000
+SAMPLE = int(os.environ.get("RUSTLE_TRUTH_SAMPLE", "3000"))
 
 
 def parse_sam(lines):
