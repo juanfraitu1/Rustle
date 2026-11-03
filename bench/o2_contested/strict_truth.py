@@ -4,10 +4,17 @@ the copies overlapping every haplotype hit within NM <= best + 2, which on near-
 almost every read "ambiguous" by construction (a 1-2 edit difference IS the PSV evidence O2 uses). Here the slack g is
 0, 1 or 2: truth_g = copies overlapping hits with NM <= best + g; a row is decidable at g when truth_g is one locus.
 Reports, per g and status: decidable, O2 right / wrong, aligner right. Usage: strict_truth.py ARM_PREFIX TRUTH_DIR
-CATALOG_PREFIX [--sample-only]"""
+CATALOG_PREFIX [MOLECULES.tsv: adds the aligner's primary verdict]"""
 import collections, csv, subprocess, sys
 
-def main(prefix, truth_dir, catalog):
+def main(prefix, truth_dir, catalog, molecules=None):
+    prim = {}  # read -> (chrom, pos) of the genome-wide primary (extended as_table), for the aligner's verdict
+    if molecules:
+        with open(molecules) as fh:
+            for line in fh:
+                if line[0] == "#": continue
+                f = line.rstrip("\n").split("\t")
+                if len(f) >= 16 and f[4] != "NA": prim[f[0]] = (f[4], int(f[15]))
     span = {}
     with open(catalog + ".fam.copies.tsv") as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
@@ -22,8 +29,9 @@ def main(prefix, truth_dir, catalog):
     for q, hs in hits.items():
         if q.startswith("C|"):
             _, f, i = q.split("|")
-            best = min(h[4] for h in hs)
-            loci[(f, i)] = {(h[0], h[1], h[2], h[3]) for h in hs if h[4] <= best + 2}  # as haplotype_truth.copy_loci
+            best = {}
+            for h in hs: best[h[0]] = min(best.get(h[0], 10 ** 9), h[4])
+            loci[(f, i)] = {(h[0], h[1], h[2], h[3]) for h in hs if h[4] <= best[h[0]] + 2}  # = haplotype_truth.copy_loci (per haplotype)
     def overlaps(a, b): return a[0] == b[0] and a[1] < b[2] and b[1] < a[2]
     def one_locus(ks): return bool(ks) and all(overlaps(span[a], span[b]) for i, a in enumerate(ks) for b in ks[i + 1:])
     rows = []
@@ -31,7 +39,7 @@ def main(prefix, truth_dir, catalog):
         for r in csv.DictReader(fh, delimiter="\t"):
             if r["contested"] == "1" and "R|" + r["read_name"] in hits: rows.append(r)
     # primary span from the read's region-local row is not stored; use the aligner-right flag only where haplotype_truth gave it
-    print("g\tstatus\trows_with_hits\tno_near_perfect\tdecidable\toutside\to2_right\to2_wrong")
+    print("g\tstatus\trows_with_hits\tno_near_perfect\tdecidable\toutside\to2_right\to2_wrong\taligner_right\taligner_wrong")
     for g in (0, 1, 2):
         c = collections.defaultdict(collections.Counter)
         for r in rows:
@@ -45,7 +53,9 @@ def main(prefix, truth_dir, catalog):
             if not one_locus(T): c[st]["ambiguous"] += 1; continue
             c[st]["decidable"] += 1
             if st == "assigned": c[st]["right" if (r["family_id"], r["catalog_copy_idx"]) in T else "wrong"] += 1
+            p = prim.get(r["read_name"])
+            if p: c[st]["al_right" if any(span[k][0] == p[0] and span[k][1] <= p[1] <= span[k][2] for k in T) else "al_wrong"] += 1
         for st in ("assigned", "abstained"):
-            x = c[st]; print("\t".join(map(str, [g, st, x["rows"], x["no_near"], x["decidable"], x["outside"], x["right"], x["wrong"]])))
+            x = c[st]; print("\t".join(map(str, [g, st, x["rows"], x["no_near"], x["decidable"], x["outside"], x["right"], x["wrong"], x["al_right"], x["al_wrong"]])))
 
-if __name__ == "__main__": main(*sys.argv[1:4])
+if __name__ == "__main__": main(*sys.argv[1:5])

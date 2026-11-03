@@ -42,3 +42,22 @@ Decision rule (pre-declared):
 If 2 fails: the census and the gate disagree, investigate before any claim. If 3 fails on the wrong rate: O2 does not
 beat the aligner on its own uncertainty, record as FAIL. If 3 fails on the assigned fraction only: O2 is safe but silent,
 record as INCONCLUSIVE and report what the abstentions lacked (decisive sites vs certificate p).
+
+## RESULT r1509 (2026-11-03, job 4421510; `/anvme/workspace/v138da13-rustle/o2mstie/`, `~/o2contested/r1509_strict.txt`)
+Bar 1 PASS: slim A119b default gate, 6 tables byte-identical. Bar 2 FAIL: contested molecules MS10 40,524 vs BASE
+24,095 (1.7x, bar 5x; the panel's three overlapping 2-copy families are exact-AS-tie walls the default gate already
+admits); assigned molecules 1,265 vs 78 (16x); MS10 adds 16,518 molecules. Walls: base 376 s, ms10 210 s.
+Bar 3 by the REGISTERED truth (haplotype_truth, slack NM + 2): near-tie-both class 64 decidable, 31 assigned (48%, >= 20%
+met), O2 wrong 1 / 31 (3.2%) vs primary 4 / 64 (6.2%): misses "<= half" by one read; over all classes the script's own
+H1: 35 decidable assigned, 2 wrong (5.7%), aligner 2 / 35. **FAIL / underpowered as registered.** 4,266 of 6,102 rows
+are "truth ambiguous": the read matches >= 2 haplotype loci within 2 edits, which on one individual's near-identical copies
+is the PSV evidence itself, so the registered truth cannot score 95% of the set.
+POST HOC (flagged; `bench/o2_contested/strict_truth.py`, hits re-read at slack g): assigned rows 1,264 (319 no
+near-perfect hit, 11 outside the catalog). g = 0 (best haplotype hit strictly unique): 286 decidable, O2 284 right /
+2 wrong (0.7%), the primary 280 / 6 (2.1%); g = 1: 267 / 2 vs 263 / 6; g = 2: 33 / 2 vs 33 / 2. 648 assigned rows stay
+ambiguous even at g = 0 (identical loci over the read: unverifiable by the haplotypes, the allele-vs-paralog class of
+1413). Abstained rows: 4,303, decidable at g = 0 only 159 (the primary right on 154): O2 abstains on the walls as it
+should and misses ~160 reads the haplotypes could decide.
+Reading: at the registered slack the row fails; at the slack the question needs (a unique best hit) O2's wrong rate is a
+third of the primary's on 286 reads. Next row must pre-register g = 0 as the truth and a panel without the exact-tie
+walls, and count molecules, not rows.
