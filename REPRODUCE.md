@@ -2,7 +2,7 @@
 
 What to install, what to run, and what number should come back. Substrate provenance is in
 [`docs/DATA.md`](docs/DATA.md); what each file in the repo is for is in
-[`docs/ACTIVE_WORKING_SET.md`](docs/ACTIVE_WORKING_SET.md).
+[`docs/REFERENCE.md`](docs/REFERENCE.md) (working set section).
 
 ⚠ **This is not an assembler project.** The assembly-only mode below is the substrate the thesis
 objectives stand on, not the contribution — see `README.md` and `docs/METHOD_PSEUDOCODE.md`.
@@ -260,7 +260,7 @@ per genome → `edit-depth`) is heavy (a whole-genome meryl DB per assembly) and
 ## 6. Before proposing anything
 
 `docs/NEGATIVE_RESULTS_REGISTER.md` (870 rows) records what has already been refuted, with the reason.
-`docs/o1_ledger.md` is the running measurement record. Several claims in older sections are explicitly
+`docs/archive/2026-11/o1_ledger.md` (to 2026-10) and `docs/LEDGER_O1.md` are the running measurement record. Several claims in older sections are explicitly
 retracted in later ones — the ledger is append-only, so **the latest section wins**.
 
 ## Known reproducibility caveats

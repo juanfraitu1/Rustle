@@ -1,7 +1,7 @@
 # Datasets — what they are, where they came from, how to rebuild them
 
 **No sequencing data is in this repository.** The aligned BAMs are 4–96 GB each. This file records the
-provenance of every substrate a result in `docs/o1_ledger.md` depends on, precisely enough to rebuild it.
+provenance of every substrate a result in `docs/archive/2026-11/o1_ledger.md` (the O1 ledger to 2026-10) depends on, precisely enough to rebuild it.
 Paths under `/mnt/linuxdisk/...` are local to the laptop the early work was done on; treat them as labels. Since 2026-10 the work runs on the Fritz cluster: see the next section.
 
 ⚠ Two human Iso-Seq libraries are used and **they are not interchangeable** (register row 867). A result
@@ -196,7 +196,7 @@ Closed studies: `docs/archive/2026-09/`, `docs/archive/2026-10/` (`merged/`). `d
 `PREFIX.gtf` is the assembly the later stages read (families, assign); `PREFIX.families.gtf` is it without bridge transcripts (the
 families input). `PREFIX.final.gtf` is the assembly to look at and compare with other tools: the same run plus the three end layers
 (median 5' ends, 3' UTR extension, single-exon models from end clusters; registers 1487-1489), produced by a parallel second run so the
-families input is unchanged (registers 1490 / 1491; `docs/PREREG_assembly_ends_2026-11-01.md`). `RUSTLE_ASSEMBLY_LAYERS=off` skips it.
+families input is unchanged (registers 1490 / 1491; `docs/archive/2026-11/PREREG_assembly_ends_2026-11-01.md`). `RUSTLE_ASSEMBLY_LAYERS=off` skips it.
 A fourth layer drops models whose intron chain is a strict sub-chain of another model (`--polish-subchain drop`, register 1498:
 contained share 10.1% -> 5.4% vs RefSeq, complete matches -0.44%); `RUSTLE_FINAL_SUBCHAIN=off` keeps them.
 
@@ -217,3 +217,6 @@ compatible with k transcripts adds 1/k; `utilities sample-counts`), `PREFIX.copy
 `pool` builds only the pooled BAM; `copy-table --samples A,B --out PREFIX` rebuilds the copy table. v1 refuses --candidates,
 --legacy-catalog, --as-table, --to, --from and runs no flag stage. r1503 (A119b + HG002, chr17+chr19): pooled finds 29% more
 exact RefSeq chains, chain precision 20.2 vs 22.0-25.9 alone: more sensitive, not more precise.
+
+## O2 contested tables and haplotype truth (2026-11-03)
+Workspace `/anvme/workspace/v138da13-rustle/` (expires 2027-01-31; `ws_extend`): `o2contested/{A119b.t2t,HG002_kinnex.t2t,GGO_mm,KB3781}.molecules.tsv` (`as_table` with columns 7-17: best/second/primary ms, MAPQ, splice shape, best-AS rival, positions; one `#as_table` line, no column row), `o2contested/KB3781.records.tsv` (every primary and secondary record: name, secondary, chrom, pos, end, AS, ms, spliced; 34.8M records, 2.2 GB) and its by-name sort, `o2contested/haps/KB3781.{mat,pat}.mmi` (Jim's haplotypes for `haplotype_truth.py`), runs `o2mstie/` (r1509/1510/1514 assignments, `truth_all10/hits.tsv`, `*.strict_dump.tsv`), `o2contested/r1511/`, `o2pool/` (r1513 arms, `GGO.splice.mmi`). KB3781 fibroblast reads are Jim's (the mGorGor1 individual), so his haplotype assemblies are the read-level truth. Sbatch files and logs: `~/o2contested/`.

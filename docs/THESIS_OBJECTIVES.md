@@ -5,30 +5,14 @@ keeps its exact text and ends with a pointer to the archive line. Thesis model: 
 model; linear alignment is the implementation, and any member-discovery step (minimap2 all-vs-all, sketch) feeds the graph,
 it does not replace it.
 
-## Current state (2026-11-01)
+## Current state (2026-11-03)
 
-- **O1 default (unchanged):** `rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60`,
-  minimap2 `-x asm20` all-vs-all of locus spans, MCL 2.8, pair rule `exact-mcl` (w* = 0.456885), representative = most-reads.
-  Guided mode = same rule on the annotation. `gw_family_catalog` (E_r / γ) is LEGACY; protein attach is optional, manual.
-- **O1 family rules tested 2026-10-29..11-01, none adopted:** U1-FRESH-HG002-INTRON FAIL (r1469, pair F 0.411 < 0.413);
-  DISPERSION FAIL (r1470); SKETCHFAM FAIL (r1471, A119b pair F 0.783 -> 0.561; opt-in member-discovery tool only);
-  SEMIGUIDED PASS both held-outs (r1472), not a default, auditor first; REPRULE-2 FAIL (r1473); REPRULE-3 arm S FAIL (r1474);
-  CHAIN-GATE FAIL (r1475); LOCUS-ABSORB held-out OR6737 PASS by equality (r1476), PROPOSED as default, not adopted yet
-  (metric-auditor first, user decides); protein reconciler on de novo families NULL (r1480).
-- **O2 default:** AS-tied reads only (rival within 10 AS), certificate alpha 1e-3, no 1/k, abstain otherwise; fewest-edit rule
-  round 23 PASS (r1338). Placement: `--tie-ms` worth porting (r1477), port FAIL B2/B3 -> stays opt-in (r1483); next = HG002
-  truth with B2 on final placement. Sample-scale yield: HG002 17,805 of 141,265 exact-tied reads assigned, A119b 4,331 of
-  212,176 (discards = outside-catalog origins + junk). O2 LEVERS (r1481): full runs gave nothing, amended to a 57-family panel
-  (`~/o2levers_fast/`): arm U (`--union-certificate`) FAILED the 57-family fast panel (assigned 59 < 63; rejections become ties, 311 molecules go to outside loci), stays opt-in; arm C (candidates) still to rerun on the panel. PSV VCF report (r1484): bcftools calls 54.6% of O2's variable columns as registered, 93.9% at
-  MAPQ 60 (post hoc); report only.
-- **Assembly side:** FAMASM multi-copy assembly FAIL on HG002 (r1479, multi recall 11.3 -> 12.7, precision 14.0 -> 8.5), not
-  adopted, prototype `bench/stgaps/famasm.py`. IsoCon WORSE than ours in both classes (r1478, 20 vs 27 of 30 multi-copy copies).
-  SQANTI single-copy A119b chr20 (r1482, 370 genes): ours FSM+ISM 30.2% / artifact 5.0%; StringTie, FLAIR, IsoCon all WORSE;
-  report only.
-- **O3:** detection only, never completeness; advisor's definition = PSV clusters of the reads O2 places (opt-in);
-  real-read PSV clusters not claimed (r1294, 4 of 12 held out, bar 0.70). Exon-level reach open (registers 1416-1420).
-- **Paused:** genome-wide rescoring until the figure set is agreed with the advisor (2026-10-11).
-- **Spent samples (held-out use):** KB3781, OR6737, A119b, HG002 per the 2026-10 family experiments.
+- **O1 default (unchanged):** `rustle_pipeline.sh families` = `mcl_families --from-gtf --min-exonic-bp 1 --min-shared-exon-frac 0.60`, minimap2 `-x asm20` all-vs-all of locus spans, MCL 2.8, pair rule `exact-mcl`, representative = most-reads, built from the unlayered `PREFIX.gtf`. Assembly defaults since 11-01/02: `--polish-tss rescue` (r1485) and the sub-chain drop in `PREFIX.final.gtf` (r1498); the end layers E3-E5 passed alone but failed the families non-regression (r1490/1491) and stay opt-in. Every family rule of 2026-10-29..11-02 FAILED or stays opt-in (r1469-1476, 1492-1497; fused-loci annotation-guided cut PASS as recommended opt-in, r1495).
+- **O2 scope restated (user, 2026-11-03):** only reads minimap2 could not place: runner-up within 10 on `ms` (any AS) minus the K = 0 wall; exact ties on both scores are the aligner's coin toss and nothing decides them; the AS-gap class is out. Default binary still judges exact AS ties; `--tie-ms 10` + `--primary-on-family` are the measured configuration: panel 284/2 vs primary 280/6 (r1509, slack-0 truth), held-out 129/22 vs 125/26 after the guard (r1514); on 151 decidable held-out molecules O2 beats the primary 5 to 1. Without the guard 77% of held-out assignments were reads from uncatalogued parent genes (r1510 FAIL). Prohibition stands: defend O2 on abstention and correctness, never "better than minimap2" at scale.
+- **Secondaries:** informative down to ms ratio 0.5 (r1511); a gene graph from multimappers is not a family-discovery method (r1512 FAIL); the per-locus pool is (r1513: 6 vs 3 reference-absent contigs, opt-in).
+- **Assembly side:** FAMASM FAIL (r1479); IsoCon WORSE both classes (r1478); SQANTI single-copy: StringTie, FLAIR, IsoCon worse (r1482); SQANTI3 filter and own end-artifact rules lose too many exact matches (r1499-1502).
+- **O3:** detection only; `candidate_copies` opt-in; informative-secondary pool better on quality, no speed gain (r1513); non-T2T genomes not served (r1504); exon-level reach open (r1416-1420).
+- **Spent samples (held-out use):** KB3781, OR6737, A119b, HG002. Experiments end ~early January 2027, then GitHub and species-agnostic scripts.
 
 ## Objectives table (2026-09-25 / 2026-10-19 restatements)
 

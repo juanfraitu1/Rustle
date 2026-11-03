@@ -4,7 +4,7 @@ Compacted 2026-11-01. The verbatim pre-compaction text is `docs/archive/2026-11/
 (every entry ends with its line there); git history has every version. Numbers measured on CHM13 (human) and
 NHGRI_mGorGor1-v2.0 (gorilla); scripts in `bench/crossspecies/`. Anything not measured is **OPEN**.
 
-## Current state (2026-11-01)
+## Current state (2026-11-03)
 
 - **Shipped default = §0★ unchanged**: reads → loci (`copy_assign --assemble-only`, secondaries at AS ≥ 0.98 x best,
   `--bridge-regroup f1v2`) → most-reads representative, positional exon sum → `mcl_families --from-gtf
@@ -26,6 +26,7 @@ NHGRI_mGorGor1-v2.0 (gorilla); scripts in `bench/crossspecies/`. Anything not me
   - 1479 FAMASM multi-copy assembly mode: FAIL on HG002 (multi recall 11.3 -> 12.7 but multi precision 14.0 -> 8.5); not adopted, prototype `bench/stgaps/`.
   - 1480 protein reconciler on de novo families (A119b, descriptive): NULL; mainstay losses are assembly/nucleotide
     losses, not protein drift.
+- **Families input (2026-11-02, r1490/1491/1498):** families are built from the unlayered `PREFIX.gtf`; the assembly's end layers (median 5' ends, 3' UTR extension, single-exon cluster models) passed their own held-out but cost pair precision 0.726 -> 0.700 / recall 0.741 -> 0.714 on A119b through the families stage, so they live in `PREFIX.final.gtf` only. Annotation-guided fused-loci cut PASS (r1495, recommended opt-in); shared-exon split FAIL (r1496/1497); readthrough structural rule FAIL (r1492); CAT truth split below bar (r1494).
 - **Open**: held-out precision/recall of lattice levels L1-L3 / P1 (§0★★★.6); de novo node extent (H1) remains the
   dominant error (§4, §4a); reach bound §4a.
 

@@ -29,6 +29,11 @@ threads, and the region's families ran one after another (`~/asg_prof/`, perf: 6
 | slim BAM (`slimbam`, ratio 0.8) | drops secondaries no step reads | chr20: 12% fewer records; assemble 46 -> 36-44 s | assemble **identical**; assign **changes** (6 of 36 rows lost) |
 | mm2-fast (`RUSTLE_MINIMAP2`, `~/tools_home/mm2fast/src/minimap2`, v2.24 + AVX-512) | accelerated chaining | MCL1 at 64 threads: read-star 299 s vs **256 s for our minimap2 2.30 default**; 2.30 with the `--max-chain-skip=1000000` mm2-fast requires takes 3,031 s, so mm2-fast only accelerates a setting we do not use. **Not a lever.** | **changes** (15,946 of ~31,800 assignment lines differ vs 2.30; statuses nearly equal) |
 
+| `RUSTLE_WINDOW_SWEEP=1` (r1507) | one BGZF sweep per chromosome serves every family's copy windows (window store) | slim A119b panel: assign 1,952 -> 391 s (5.0x; MCL0 window fetch 178 -> 2.5 s), 6 tables identical. Genome-wide A119b: fetch 11,285 -> 116 s but OOM-killed (250 GB) on `~xchrom~MCL3` (579k reads); OFF arm 19,358 s | **identical** on the panel; genome-wide not completed: **opt-in** until the store releases finished chromosomes |
+| multithreaded BAM reader (r1505) | regions >= 2 Mb only | 1.5x on multi-Mb regions, 3.5x slower on copy windows (seek restarts) | **identical** (5 tables) |
+| `candidate_copies` phase 1 over a family pool (r1506) | clusters step parallel across families | clusters 385 -> 189 s, total 846 -> 646 s on the r1504 panel | **identical** (9 products) |
+| `candidate_copies --molecules --min-ms-ratio 0.5` (r1513) | nets keep informative secondaries only | 447 vs 416 s on 40 families: nets are primaries-bound, no gain | **changes** (6 vs 3 reference-absent contigs) |
+
 Threads multiply: region threads x family threads x star threads should not exceed the node's cores by much (the panel run at
 8 x 8 x 8 was slower than 8 x 1 x 8).
 

@@ -4,17 +4,14 @@ Compacted 2026-11-01. Merged 2026-10-24 from 14 dated docs plus later pending no
 kept below; each entry ends with a pointer to the verbatim text in `docs/archive/2026-11/LEDGER_GENERAL.md` (and the originals in
 `docs/archive/2026-10/merged/`). Numbers, verdicts and rows are copied from the original; anything not here is in the archive.
 
-## Current state (2026-11-01)
+## Current state (2026-11-03)
 
-- This ledger holds no live decisions of its own: handoffs, pending lists and register drafts up to 2026-10-27. Decisions live in
-  `docs/NEGATIVE_RESULTS_REGISTER.md`, `docs/MODULE_STATUS.md` and the per-objective ledgers (`LEDGER_O1/O2/O3.md`).
-- Defaults named here that still hold: assembler seeds with tied secondaries (rows 1060/1100/1101); `--union-certificate` opt-in
-  (row 1103); `o3_candidates` stage opt-in (rows 1221-1231, 1247); most-junctions representative opt-in (rows 1234-1236).
-- Most recent rows (register 1469-1484, 2026-10): all family rules FAIL or stay opt-in (1469-1482); the multi-copy assembly mode
-  (r1479) FAILED on HG002 and A119b; `--tie-ms` stays opt-in (r1483); r1484 adds the PSV VCF report (`bench/o3_graph/psv_vcf.py`).
-  Family-stage defaults are unchanged.
-- Open from this ledger: the 2026-10-27 pending list (`## PENDING_2026-10-27`) and the unfinished `family_gfa`
-  (`## PENDING (2026-10-26): unfinished family_gfa`); quantification parity bar (item 1 of 09-23) was measured as r1088 "close".
+- This ledger holds handoffs, pending lists and register drafts up to 2026-10-27 plus the cross-cutting rows since. Decisions live in `NEGATIVE_RESULTS_REGISTER.md`, `MODULE_STATUS.md` and the per-objective ledgers.
+- **Pipeline shape (user, 2026-11-02):** Rust for hot paths, Python for orchestration and scoring; one run directory with stage hatches (`tools/rustle_pipeline.sh all --to/--from STAGE` done); prune opt-in modules; the advisor's "loci before assignment" = the `families` stage product. Multi-sample pooling (r1503, `archive/2026-11/PREREG_multi_sample_2026-11-02.md`): A119b + HG002 pooled = 5,957 vs 4,618 best single (+29%), chain precision 20.2 < 22.0: ships as more sensitive, not more precise; shared-catalog assign needs `RUSTLE_SHARED_CATALOG=1`.
+- **Performance rows (details `PERFORMANCE.md`):** r1505 window fetch (multithreaded reader only on >= 2 Mb regions; 5 tables identical); r1506 candidates phase 1 over a family pool (2.0x); r1507 window sweep: panel 5.0x and identical, genome-wide A119b OOM-killed on the 579k-read `~xchrom~MCL3` after cutting fetch time 11,285 -> 116 s, OFF arm 19,358 s: `RUSTLE_WINDOW_SWEEP=1` stays opt-in until the store releases finished chromosomes.
+- **Defaults that still hold:** assembler seeds with tied secondaries (rows 1060/1100/1101); `--union-certificate` opt-in (1103); `o3_candidates` stage opt-in (1221-1231, 1247); most-junctions representative opt-in (1234-1236); family-stage defaults unchanged through r1514 (assembly defaults: `LEDGER_O1.md`).
+- **Memory digest (folded 2026-11-03):** the long form of the memory index to 2026-10-25 is `archive/2026-11/MEMORY_DIGEST.md` (verbatim; superseded catalogs and old WSL paths inside); the live memory is the user's `~/.claude/projects/.../memory/` index. Nothing in it is re-measured.
+- **Open from this ledger:** the 2026-10-27 pending list (`## PENDING_2026-10-27`); unfinished `family_gfa`; quantification parity (r1088 "close").
 
 ## Contents
 Section index (original order): REGISTER_DRAFTS_machine2.md, REGISTER_DRAFTS_o3_maternal.md, REGISTER_DRAFTS_unmapped_rescue.md,

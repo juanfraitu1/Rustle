@@ -4,28 +4,14 @@ Compacted 2026-11-01. Each entry keeps the claim, the rule, the verdict as recor
 section is in `docs/archive/2026-11/LEDGER_O3.md` (line given per entry). Merged 2026-10-24 from 51 dated docs; originals in
 `docs/archive/2026-10/merged/`.
 
-## Current state (2026-11-01)
-- **Framing:** O3 = detection of a copy the reference lacks from RNA; placement belongs to DNA (Amendment 48 of the unmapped-rescue
-  prereg). Advisor: O3 is a "look harder" screen, not a definitive call. An absent copy cannot be certified from RNA alone; an extra
-  copy can (haplotypes > allele slots), subject to Theorem A (a homozygous survivor's free slot hides it).
-- **`candidate_copies` (shipped stage): OPT-IN** (`--candidates`, ruling R14). Amendment 15/15b fix passed A13 but failed C1' (A14)
-  and H1 (held-out). Its structure output (`.structure.tsv`, `.contigs.gtf`) is written by default (S1-S3 PASS in simulation).
-  Remaining false flags: not reproduced by a clean simulation (F = 0); the foreign-ape check was registered, its outcome not recorded here.
-- **PSV-cluster O3 (`copy_assign --psv-clusters`):** PASS in simulation (v1 D1-D4, v2 H1-H4); on real reads (r1294) NOT claimed
-  (R1 4/12); `--psv-family-best` not claimed.
-- **O3 port (Strainy phasing + IsoCon test, `o3port.py`; Rust `copy_phasing`, r1402):** v4 not adopted (P1 FAIL); v6 PASSES
-  dev (P1 6,129, P2 0/53) and the fresh held-out P5; correlation clustering made default after P5. Putative tier: FAIL on P6
-  (HP3 0.15), PASS on P10 with the soft-clip signal (6/6, 0, 5/8).
-- **Graph rounds (simulation, O1 -> O2 -> O3):** PASS rounds 11, 14, 19, 22 (correctness; round 22 cost bar UNDECIDED); every other
-  round FAIL. Round 14's review: the allele confound is not solved.
-- **Exon / SD level (Jim, 2026-10-25/26):** mat vs pat differ for 24 % of families at exon level (r1416), only partly WGS-confirmed
-  (r1419); breakpoints (r1417) and the per-exon certified tier (r1418) FAIL; reads could see 41.9 % of gains (r1420), so the detector
-  is the limit; trio WGS confirms the NPIP and STON1 haplotype-only copies (r1422).
-- **Open:** detector sensitivity on exon gains (Theorem A free slots); allele vs copy on short reads; "no pile" losses (reads that
-  never land within 10 AS on a survivor); SPDYE1's hidden copy (HG002) found by no arm.
-- **Most recent rows touching this stage (register):** r1477 MS-VS-AS (bar met, `--tie-ms` worth porting); r1483 TIE-MS PORT
-  (`copy_phasing run --tie-ms`) FAIL, `--tie-ms` stays opt-in; r1484 PSV VCF report (bcftools calls 54.6 % of O2's columns).
-  Rows 1469-1482 are family / guided / assembly experiments, not O3 (see `docs/NEGATIVE_RESULTS_REGISTER.md`).
+## Current state (2026-11-03)
+- **Framing:** O3 = detection of a copy the reference lacks from RNA; placement belongs to DNA (Amendment 48). An absent copy cannot be certified from RNA alone; an extra copy can (haplotypes > allele slots), subject to Theorem A. IsoCon's reference-free strength is its significance test on a pool of reads from one locus; nothing in it discovers a locus. Our port of that test is `candidate_copies` (clusters -> consensus -> significance merge -> flag / link). A silent pseudogene emits no reads: nothing to assemble; secondaries give membership of reference-present copies only, and a reference-absent copy shows as a mismatch pattern fitting no catalog locus (`candidate_copies`' job).
+- **`candidate_copies` (shipped stage): OPT-IN** (`--candidates`, ruling R14). Phase 1 over a family pool (r1506: 2.0x, products identical). `--molecules P.molecules.tsv --min-ms-ratio R` (r1513): nets keep only secondaries at ms >= R x the read's primary ms; at R = 0.5 on the 40-family KB3781 panel it found 6 reference-absent contigs on Jim's haplotypes vs 3 for the default pool with fewer junk flags (19 vs 21) but no wall gain (447 vs 416 s): FAIL on the registered wall bar, opt-in; re-register without the speed bar. 14 of 38 junk contigs sit on two recurring repeat loci (CM054591.2:75.61 Mb, CM054595.2:100.75 Mb): a filter candidate.
+- **Non-T2T genomes (r1504):** flag + candidates on A119b -> GRCh38 and GGO -> Kamilah find 1 of 32 / 0 of 37 missing copies (precision 0.012 / 0): not usable as a non-T2T missing-copy detector.
+- **PSV-cluster O3 (`copy_assign --psv-clusters`):** PASS in simulation; on real reads NOT claimed (r1294). **O3 port (`copy_phasing`, r1402):** v6 PASSES dev and held-out P5; putative tier FAIL P6 / PASS P10.
+- **Exon / SD level (Jim):** mat vs pat differ for 24% of families at exon level (r1416), WGS-confirmed core 3.0% SD / 6.3% families (r1419); BPCLUST (r1417) and per-exon certified tier (r1418) FAIL; reads could see 41.9% of gains (r1420): the detector is the limit; trio WGS confirms the NPIP and STON1 haplotype-only copies (r1422).
+- **Defensible sentence (from O3_STATUS, 2026-11-01):** O3's RNA detectors are refuted, vacuous or unvalidated; O3 itself is untested in the regime where it would occur. Two DNA-level positive instances exist (GOLGA6L7 = the positive control; `LOC134757045` chr14 mat 5 / pat 3). No shipped binary emits a reference-absent copy at defaults.
+- **Open:** detector sensitivity on exon gains; allele vs copy on short reads; SPDYE1's hidden copy (HG002); r1513 re-registration; the repeat-locus filter.
 
 ## Contents
 
@@ -379,3 +365,9 @@ PGM5: its 139 reads' 540 secondaries hit exactly the 6 loci a direct genome sear
 
 ## PREREG TRIOCHK (2026-10-26): are Jim's haplotype-only copies real, and do his parents differ?
 Trio WGS 21-mer dosage at NPIP maternal-only locus (N), STON1 121.6-kb insertion (S), father's deletion junctions (P). Result (register 1422): **all three CONFIRMED**, not assembly errors; parents differ (Dolly 2 copies, Trib 1, Jim 1 at both loci): a segregating insertion/deletion. (full: archive/2026-11/LEDGER_O3.md:10445)
+
+## Rows 1504, 1506, 1513 (2026-11-02..03)
+`archive/2026-11/PREREG_missing_copy_nont2t_2026-11-02.md` (r1504 FAIL: union recall 0.031 human, 0 gorilla; calls are fragments / mixtures of present loci), `PREREG_candidates_parallel_families_2026-11-02.md` (r1506 KEPT: clusters 385 -> 189 s, total 846 -> 646 s, 9 products identical), `PREREG_secondary_pool_2026-11-03.md` (r1513, numbers in the current state; scorer `bench/o2_contested/pool_score.py`, outputs workspace `o2pool/score{A,B}.contigs.tsv`).
+
+## Do-not-quote list and what would settle O3 (folded from O3_STATUS.md, 2026-11-03)
+Full text: `archive/2026-11/O3_STATUS.md`. Do not say: "289 candidates, 0 admitted" (12-family MEC panel only; 8/328 on 73 families); "TPR 0.7965 / FPR 0 / AUC 0.8924" (retracted oracle statistic); "8/101 = 7.92% haplotype CNV rate" (defensible <= 4/101, tandem-confirmed 1/101); "8/9/9 vs 5/6/8 haplotype deficit" (direction survives, magnitude not); "2.78% mat-vs-pat difference rate" (null 0.1512); "the DNA-side 0/817 is an independent second zero"; "the NPIP chr16:80,195,301 novel gene" (it is NPIPB15); "multi-copy families do not differ between individuals" (the zero is on 99 housekeeping loci, §6dq); "GOLGA6L7 is a reference-absent finding" (positive control). Three-way decomposition: specific RNA statistics REFUTED (k+1 MEC, between-copy depth, near-tie proxy, WGS k-mer multiplicity, `collapse_gate`); headline zeros VACUOUS / BLOCKED (FARDIV ∧ FARCLIP 0/915 cannot fire; unmapped route power 1/35; gate 5 rejects 172/320); the phenomenon DEMONSTRATED at DNA level. What would settle it: matched-tissue Iso-Seq from a second gorilla; put `LOC134757045` in front of the RNA detector; fix gate 5 before quoting any admission rate.

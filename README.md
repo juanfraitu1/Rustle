@@ -52,10 +52,10 @@ driver and the cleanup-audit script.
 
 ## The record
 
-- `docs/o1_ledger.md` — the running notebook (sections §6xx are what the other documents cite).
+- `docs/LEDGER_O1.md`, `docs/LEDGER_O2.md`, `docs/LEDGER_O3.md` — the running ledgers (the O1 notebook to 2026-10, §6xx, is `docs/archive/2026-11/o1_ledger.md`).
 - `docs/NEGATIVE_RESULTS_REGISTER.md` — every refuted idea, one row each; check it before proposing anything.
-- `docs/PREREG_*.md` — decision rules written before looking, with their outcomes appended.
-- `docs/PENDING_*.md` — open items; `docs/ACTIVE_WORKING_SET.md` — what is live and what was pruned.
+- `docs/PREREG_*.md` while open, then `docs/archive/YYYY-MM/PREREG_*.md` — decision rules written before looking, with their outcomes appended.
+- `docs/REFERENCE.md` — glossary and the working set (what is live and what was pruned); open items are in each ledger's `## Current state`.
 
 ## Pruned material
 
