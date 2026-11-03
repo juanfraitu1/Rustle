@@ -67,7 +67,7 @@ def main():
                     w.write(f'>{name}\n{s}\n')
     # targets: every member on a target contig, padded by the family's longest template span; one minimap2 run PER FAMILY
     # (templates vs that family's targets only, -N = members), so the work is sum over families, not templates x all targets
-    gmeta = {}; tfam = collections.defaultdict(list)
+    gmeta = {}; glen = {}; tfam = collections.defaultdict(list)
     for n, t in tmeta.items(): tfam[t['fam']].append(n)
     tseq = {}; cur = None
     for l in open(f'{out}/templates.fa'):
@@ -83,7 +83,7 @@ def main():
         with open(f'{out}/fam/{f}.targets.fa', 'w') as w:
             for m in tg:
                 s0 = max(0, m['start'] - pad); e0 = min(fa.get_reference_length(m['chrom']), m['end'] + pad)
-                name = f'G{len(gmeta)}'; gmeta[name] = dict(fam=f, m=m, off=s0)
+                name = f'G{len(gmeta)}'; gmeta[name] = dict(fam=f, m=m, off=s0); glen[name] = e0 - s0
                 w.write(f'>{name}\n{fa.fetch(m["chrom"], s0, e0).upper()}\n')
         with open(f'{out}/fam/{f}.templates.fa', 'w') as w:
             for n in tfam[f]: w.write(f'>{n}\n{tseq[n]}\n')
@@ -123,7 +123,7 @@ def main():
                     if not (r.is_secondary or r.is_supplementary or r.is_unmapped): s.add(r.query_name)
             fam_primary_names[f] = s
         return fam_primary_names[f]
-    rows = []; cnt = collections.Counter(); motif_n = motif_ok = 0; gained = collections.defaultdict(set)
+    rows = []; cnt = collections.Counter(); motif_n = motif_ok = 0; gained = collections.defaultdict(set); chains_at = {}
     for (tn, gn), (AS, a) in best.items():
         t = tmeta[tn]; g = gmeta[gn]; m = g['m']
         qlen = a.query_length or t['len']; cov = a.query_alignment_length / t['len']
@@ -149,11 +149,17 @@ def main():
                 dn, acc = rc(acc), rc(dn)
             ok += (dn, acc) in CANON
         motif_n += len(introns); motif_ok += ok
-        n_pri = n_sec_fam = 0
-        for r in bam.fetch(m['chrom'], exons[0][0], exons[-1][1]):
-            if r.is_unmapped or r.is_supplementary or chain_of(r) != introns: continue
-            if not r.is_secondary: n_pri += 1
-            elif r.query_name in primaries_in_family(g['fam']): n_sec_fam += 1
+        if gn not in chains_at:  # one BAM pass per target copy: chain -> (primaries, secondary molecule names)
+            d = collections.defaultdict(lambda: [0, set()])
+            for r in bam.fetch(m['chrom'], g['off'], g['off'] + glen[gn]):
+                if r.is_unmapped or r.is_supplementary: continue
+                c = chain_of(r)
+                if not c: continue
+                if r.is_secondary: d[c][1].add(r.query_name)
+                else: d[c][0] += 1
+            chains_at[gn] = d
+        n_pri, secs = chains_at[gn].get(introns, (0, set()))
+        n_sec_fam = len(secs & primaries_in_family(g['fam'])) if secs else 0
         tier = 'own' if n_pri else 'tied' if n_sec_fam else 'none'
         cnt[tier] += 1
         if m['reads'] <= 2: gained[(g['fam'], m['idx'])].add(tier)
