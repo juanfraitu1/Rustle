@@ -49,3 +49,12 @@ PKD1P6-NPIPP1 present as a transcript in C's families input, wall of the detecto
 PASS all four -> Rule T is an opt-in de novo detector (`tandem_cut.py` -> `--bridge-units-list`), documented beside r1495's
 annotation-guided mode; the default stays f1v2 (a default change is the user's decision after OR6737 replication). Any FAIL
 -> recorded in the register; the descriptive decomposition stands either way.
+
+## Detector output (2026-11-03, before arm C ran; job 4421594 submitted on it)
+`tandem_cut.py` on arm A's `x.gtf`: 20,689 loci tested, 5,998 admissible points pass MINORITY, 92 pass HOMOLOGY, 19 cuts on
+123 transcripts, wall 35 s (bar 4 PASS). Reach on the 69 spliced tandem loci (run on those loci alone, `--debug`): 16 have an
+admissible minority point at all (the other 53 are one-sided: the paralog's own transcripts lie in another gene_id or the locus is
+the crosser alone), 7 of the 16 pass HOMOLOGY at identity >= 0.73 (RBMY1A1/B 0.999, POLR2J2/3 0.997, ZNF585A/B 0.940, ZNF222/223
+0.879, UGT2B15/17 0.865, ZNF324/324B 0.846; ZNF253/93 0.732 fails the 0.80 floor), 9 get no asm20 hit at all (ZNF pairs whose
+exons are far below 0.80: tandem paralogs, not tandem repeats). 6 of the 69 loci receive a cut, so bar 1 (69 -> <= 34) cannot
+pass whatever arm C returns; arm C still decides bars 2 and 3 (the safety of the 19 cuts) and is run as registered.
