@@ -69631,6 +69631,9 @@ pub mod family_detect {
             /// Best and runner-up `ms:i` over the same placements (ranked on ms, independently of the AS rank).
             pub best_ms: i32,
             pub second_ms: Option<i32>,
+            /// One of the molecule's records in the family's windows is its PRIMARY (register 1514): false means its best
+            /// placement lies outside this family, and `--primary-on-family` keeps it out of the tie gate.
+            pub has_primary: bool,
         }
 
         impl AsEvidence {
@@ -69672,6 +69675,7 @@ pub mod family_detect {
                 second_per_base: second.map(per_base),
                 best_ms: ms[0],
                 second_ms: ms.get(1).copied(),
+                has_primary: true,
             })
         }
 

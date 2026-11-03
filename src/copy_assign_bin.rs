@@ -899,6 +899,11 @@ struct Args {
     /// tie must be read on both. Adds `ms_best`, `ms_second`, `ms_margin` columns to the assignments table.
     #[arg(long)]
     tie_ms: Option<i32>,
+    /// Register 1514: a molecule enters the tie gate only if one of its records in the family's windows is a PRIMARY.
+    /// Seen through secondaries alone, its best placement is outside this family (an uncatalogued parent gene, another
+    /// family) and the PSV model cannot test that origin: 77 % of r1510's held-out assignments were such reads.
+    #[arg(long)]
+    primary_on_family: bool,
 
     /// ⭐ §6hd (user 2026-09-09): widen the gate to ALIGNER SELF-DISAGREEMENT — admit a molecule whose PRIMARY
     /// record sits in one supplied-family unit while its best-AS record sits in a DIFFERENT one, even with no
@@ -2865,6 +2870,7 @@ fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> V
     // AS is one MAPQ-60 read in two pieces, and counting it as a tie let one such molecule through the
     // AS-tied gate and into `placement_assign` (§6gz addendum). Only primary + secondary records vote.
     let mut by_name: DetHashMap<&str, Vec<(i32, u32, i32)>> = DetHashMap::default();
+    let mut has_primary: DetHashSet<&str> = DetHashSet::default();
     for br in bam_reads
         .iter()
         .filter(|br| !(exclude_supplementary && br.is_supplementary))
@@ -2873,6 +2879,9 @@ fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> V
             .entry(br.name.as_str())
             .or_default()
             .push((br.as_score, aligned_len(br), br.ms));
+        if !br.is_secondary && !br.is_supplementary {
+            has_primary.insert(br.name.as_str());
+        }
     }
     bam_reads
         .iter()
@@ -2880,7 +2889,9 @@ fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> V
             // a molecule seen ONLY through supplementary records has no placement evidence of its own
             let fallback = vec![(br.as_score, aligned_len(br), br.ms)];
             let placements = by_name.get(br.name.as_str()).unwrap_or(&fallback);
-            as_evidence(placements).expect("read is its own placement, so the slice is non-empty")
+            let mut e = as_evidence(placements).expect("read is its own placement, so the slice is non-empty");
+            e.has_primary = has_primary.contains(br.name.as_str());
+            e
         })
         .collect()
 }
@@ -3074,7 +3085,15 @@ fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
 }
 
 /// The gate: AS-tied at `ratio`, or (`--tie-ms W`) ms-tied within `W` (register 1509).
-fn gate_tied(ev: &AsEvidence, ratio: f64, tie_ms: Option<i32>) -> bool {
+fn gate_tied(ev: &AsEvidence, ratio: f64, tie_ms: Option<i32>, primary_on_family: bool) -> bool {
+    if primary_on_family && !ev.has_primary {
+        return false;
+    }
+    gate_tied_scores(ev, ratio, tie_ms)
+}
+
+/// The score part of the gate: an AS tie at `ratio`, or (under `--tie-ms`) an ms margin within the window.
+fn gate_tied_scores(ev: &AsEvidence, ratio: f64, tie_ms: Option<i32>) -> bool {
     as_tied(ev, ratio) || tie_ms.map_or(false, |w| ms_tied(ev, w))
 }
 
@@ -7368,7 +7387,7 @@ fn main() -> Result<()> {
                 let t: DetHashSet<String> = br
                     .iter()
                     .zip(ev.iter())
-                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms))
+                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, args.primary_on_family))
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 Arc::new(t)
@@ -7603,7 +7622,7 @@ fn main() -> Result<()> {
                 let tied: DetHashSet<String> = br
                     .iter()
                     .zip(ev.iter())
-                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms))
+                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, args.primary_on_family))
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 light_spans = Some(br.iter().map(|b| (b.chrom.clone(), b.read.ref_start, read_ref_end(&b.read))).collect());
@@ -7738,7 +7757,7 @@ fn main() -> Result<()> {
             let mut all: DetHashSet<&str> = DetHashSet::default();
             for (br, e) in bam_reads.iter().zip(ev.iter()) {
                 all.insert(br.name.as_str());
-                if gate_tied(e, args.as_tie_ratio, args.tie_ms) {
+                if gate_tied(e, args.as_tie_ratio, args.tie_ms, args.primary_on_family) {
                     tied.insert(br.name.as_str());
                 }
             }
@@ -10962,7 +10981,7 @@ fn main() -> Result<()> {
             for ratio in widths {
                 let el: Vec<&&AssignRow> = mols
                     .iter()
-                    .filter(|r| gate_tied(&r.as_ev, ratio, args.tie_ms) || is_disagreement(&r.read_name))
+                    .filter(|r| gate_tied(&r.as_ev, ratio, args.tie_ms, args.primary_on_family) || is_disagreement(&r.read_name))
                     .collect();
                 // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
                 // explain (origin-rejected — O3's material) and molecules with a single candidate locus
@@ -12615,6 +12634,19 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// Register 1514: `--primary-on-family` keeps a tied molecule out of the gate when none of its records in the
+    /// family's windows is a primary (its best placement is elsewhere); the score gate alone would admit it.
+    #[test]
+    fn gate_tied_needs_a_primary_record_under_primary_on_family() {
+        use super::as_evidence;
+        let mut e = as_evidence(&[(300, 100, 300), (300, 100, 295)]).unwrap();
+        assert!(super::gate_tied(&e, 1.0, Some(10), false));
+        assert!(super::gate_tied(&e, 1.0, Some(10), true), "a primary among its records: admitted");
+        e.has_primary = false;
+        assert!(super::gate_tied(&e, 1.0, Some(10), false), "without the flag the score gate decides");
+        assert!(!super::gate_tied(&e, 1.0, Some(10), true), "seen through secondaries only: out");
+    }
+
     /// `--bridge-regroup` unset is `f1v2` under `--assemble-only` (the default since 2026-09-29), off elsewhere;
     /// `off` is explicit, and `--gtf-regroup` needs `off`.
     #[test]

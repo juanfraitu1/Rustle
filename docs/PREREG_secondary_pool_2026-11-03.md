@@ -25,3 +25,16 @@ count (allele + junk) no higher than A's, and runs in <= 50% of A's wall: then t
 and the flag becomes the driver's default for the o3 stage. Fewer true contigs or more false ones: FAIL, flag stays opt-in.
 Fewer than 3 `absent_from_ref` contigs in arm A: UNDERPOWERED, report only. Report beside it: net sizes per family in both
 arms, contigs per class, wall.
+
+## RESULT (2026-11-03, job 4421549, R = 0.5; workspace o2pool/, `scoreA/B.contigs.tsv`)
+Arm A (default pool): pass A 188,284 primary + 434,429 secondary records; 25 flagged contigs in 13 families: absent_from_ref 3
+(two loci: CM054600.2:6.73-6.76 and 6.77-6.80 Mb, families MCL239 / MCL240), allele_of_known_copy 1, not_in_genome 20,
+between 1; wall 416 s. Arm B (ms ratio >= 0.5): 327,226 secondary records kept, 107,203 dropped; 28 flagged in 15
+families: absent_from_ref 6 (both A loci kept = 100%, plus CM054564.2:48.57-48.67 Mb in MCL172 and MCL84, and
+CM054582.2:127.83 Mb in MCL1), allele 1, not_in_genome 18, between 3; wall 447 s.
+Bars: (1) B keeps >= 80% of A's absent_from_ref loci: PASS (2 of 2, and 2 more loci); (2) false flags 19 <= 21: PASS;
+(3) wall <= 50% of A: FAIL (447 vs 416 s: the nets step is primaries-bound, the dropped secondaries cost nothing).
+Verdict as registered: ❌ FAIL on the wall bar; the pool itself is better on both quality bars (twice the reference-absent
+contigs, fewer junk). The flag stays opt-in; a follow-up may re-register without the speed bar, on more families, with the
+wall reported, not barred. Caveat: 14 of the 38 not_in_genome contigs sit on two recurring loci (CM054591.2:75.61 Mb,
+CM054595.2:100.75 Mb) shared by unrelated families: repeat-driven clusters, a filter candidate for `candidate_copies`.
