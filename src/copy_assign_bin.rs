@@ -7205,6 +7205,11 @@ fn main() -> Result<()> {
         );
         anyhow::ensure!(bam_cache.is_some(), "--tied-prefilter needs an indexed BAM (.bai)");
     }
+    // review 2026-11-03: the sequential scan builds reads with ms 0, on which the ms gate is silent (never a tie)
+    anyhow::ensure!(
+        args.tie_ms.is_none() || bam_cache.is_some(),
+        "--tie-ms needs an indexed BAM (.bai): only the indexed reader carries ms"
+    );
     // Region-parallel pool (opt-in via --region-threads > 1). Sized to region_threads; the inner per-copy
     // poasta parallelism (discover_psvs) composes on the SAME pool, so total concurrency is bounded to N.
     let region_pool = if args.region_threads > 1 {

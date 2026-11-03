@@ -769,27 +769,20 @@ fn oriented_sequence(record: &noodles_bam::Record) -> Vec<u8> {
 /// read given to a family the stage runs on joins its net (before the `--max-reads` cap), its sequence read back from the FASTA in the pass
 /// that also counts the aligned and the attributed reads of each class (`read_back`). A read whose sequence never appears (a secondary-only
 /// name without a primary record in the BAM) stays out of every net.
-/// `--molecules`: read name -> primary ms, for the reads with more than one record (as_table's `n` column; the others have no secondary
-/// to gate). Header line `#as_table`, then the column row; `primary_ms` is read by name.
+/// `--molecules`: read name -> primary ms, for the reads with more than one record (as_table's column 4 `n`; the others have no
+/// secondary to gate). as_table writes one `#as_table` line and no column row; `primary_ms` is column 9 (as_table columns 7-17).
 fn load_primary_ms(path: &str) -> Result<DetHashMap<String, i32>> {
     let fh = std::fs::File::open(path).map_err(|e| exit_two(format!("--molecules {path}: {e}")))?;
     let mut out = DetHashMap::default();
-    let (mut i_n, mut i_ms) = (None, None);
     for line in std::io::BufReader::new(fh).lines() {
         let line = line?;
         if line.starts_with('#') {
             continue;
         }
         let f: Vec<&str> = line.split('\t').collect();
-        if i_ms.is_none() {
-            i_n = f.iter().position(|c| *c == "n");
-            i_ms = f.iter().position(|c| *c == "primary_ms");
-            if i_n.is_none() || i_ms.is_none() {
-                return Err(exit_two(format!("--molecules {path}: no `n` / `primary_ms` columns (as_table without the ms columns?)")));
-            }
-            continue;
-        }
-        let (Some(n), Some(ms)) = (f.get(i_n.unwrap()), f.get(i_ms.unwrap())) else { continue };
+        let (Some(n), Some(ms)) = (f.get(3), f.get(8)) else {
+            return Err(exit_two(format!("--molecules {path}: fewer than 9 columns (as_table without the ms columns?)")));
+        };
         if n.parse::<usize>().unwrap_or(0) > 1 {
             if let Ok(ms) = ms.parse::<i32>() {
                 out.insert(f[0].to_string(), ms);

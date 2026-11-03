@@ -39,7 +39,9 @@ recommended lower bound is ms ratio 0.5: minimap2's default `-p 0.8` would have 
 useful (23% of all useful secondaries); `-p 0.1` was right to keep them, and below 0.5 the 14.45M records hold 689k useful
 (4.8%, under the bar). In every bin most secondaries land on an annotated gene that is neither a known paralog nor a catalog
 copy ("other_gene": 68-96%); the AS-ratio median exceeds 1 above ratio 0.9 (spliced primary vs unspliced rival: the AS-gap
-class of r1508). Standing rule for the records: ms ratio >= 0.5 is the informative set (verdict: REPORT, bound = 0.5).
+class of r1508). Caveat: "catalog copy of the primary's family" is read with a +-50 kb pad around each copy locus
+(`multimap_graph.py fam_at`), so the bound is measured against that pad. Standing rule for the records: ms ratio >= 0.5 is
+the informative set (verdict: REPORT, bound = 0.5).
 
 r1512 multimapper gene graph (K = 3 molecules; nodes = any annotated gene with an exon under the record), scored at the
 primates tier against O1's families (`kb.fam`: pair precision 0.341, recall 0.136 on 103 truth pairs):

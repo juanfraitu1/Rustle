@@ -221,7 +221,7 @@ fn bam_with_secondary_on_copy(dir: &Path) -> (String, String) {
     samtools(&["sort", "-o", bam.to_str().unwrap(), sam_p.to_str().unwrap()]);
     samtools(&["index", bam.to_str().unwrap()]);
     let mol = dir.join("s.molecules.tsv");
-    std::fs::write(&mol, "#as_table\nname\tbest_as\tsecond_as\tn\tprimary_chrom\tprimary_as\tbest_ms\tsecond_ms\tprimary_ms\nS_00\t1000\t500\t2\tchrT\t1000\t1000\t500\t1000\n").unwrap();
+    std::fs::write(&mol, "#as_table\tbam=s.bam\nS_00\t1000\t500\t2\tchrT\t1000\t1000\t500\t1000\n").unwrap();
     (bam.display().to_string(), mol.display().to_string())
 }
 
