@@ -119,6 +119,10 @@ def main(prefix, catalog, bam, windows, mat, pat, out):
         for q, hs in parse_sam(sam.splitlines()).items():
             hits[q].extend((hap,) + h for h in hs)
     loci = {(k.split("|")[1], k.split("|")[2]): copy_loci(v) for k, v in hits.items() if k.startswith("C|")}
+    with open(f"{out}/hits.tsv", "w") as fh:  # every haplotype hit of every query, for stricter re-reads of the truth
+        fh.write("query\thap\tchrom\tstart\tend\tnm\taligned\n")
+        for k, hs in hits.items():
+            fh.writelines(f"{k}\t" + "\t".join(map(str, h)) + "\n" for h in hs)
     c = collections.Counter(rows_considered=0)
     ex = {"wrong": [], "right": [], "outside": []}
     per_read = []  # r1509: one row per (read, family) with a near-perfect hit (truth empty = outside the catalog)
