@@ -89,6 +89,7 @@ def neighbour_mode():
     that share an exonic base with a crosser's exons on that side (any gene_id)."""
     global n_loci_tested, n_minority, n_hom
     import bisect
+    pend = []
     exidx = collections.defaultdict(list)   # (chrom, strand) -> sorted (start, end, tid)
     users = collections.defaultdict(list)   # (chrom, strand, s, e) -> tids
     for t, r in tx.items():
@@ -115,7 +116,30 @@ def neighbour_mode():
         rl, rr, rc = reads(up), reads(down), reads(cross)
         if not rc < min(rl, rr): continue
         n_minority += 1
-        ident, cov = (1.0, 1.0) if a.no_homology else homology(up, down, chrom, strand)
+        pend.append((chrom, strand, s, e, cross, up, down, rl, rr, rc)); continue
+        if a.debug: print(f'[debug] {chrom}:{s}-{e}:{strand} genes {sorted({tx[t]["g"] for t in cross})} up {len(up)}/{rl}r down {len(down)}/{rr}r cross {len(cross)}/{rc}r identity {ident:.3f} cov {cov:.3f}', file=sys.stderr)
+        if ident < 0.80 or cov < 0.50: continue
+        n_hom += 1
+        for t in cross: cuts[t].add((s, e))
+        report.append((','.join(sorted({tx[t]['g'] for t in cross})), chrom, strand, f'{s}-{e}', len(up), rl, len(down), rr, len(cross), rc, f'{ident:.4f}', f'{rc / (rc + min(rl, rr)):.4f}', 1))
+    # one minimap2 call for every pending pair: UP_i as query i, DOWN_i as target i, only same-index hits count
+    hom = {}
+    if pend and not a.no_homology:
+        with tempfile.TemporaryDirectory() as d:
+            q, t = os.path.join(d, 'q.fa'), os.path.join(d, 't.fa'); shorter = {}
+            with open(q, 'w') as fq, open(t, 'w') as ft:
+                for i, (chrom, strand, s, e, cross, up, down, rl, rr, rc) in enumerate(pend):
+                    L, R = union_seq(up, chrom, strand), union_seq(down, chrom, strand); shorter[i] = min(len(L), len(R))
+                    fq.write(f'>{i}\n{L}\n'); ft.write(f'>{i}\n{R}\n')
+            paf = subprocess.run(['minimap2', '-c', '-x', 'asm20', '-N', '50', '-t', str(a.threads), t, q], capture_output=True, text=True).stdout
+        bm = {}
+        for line in paf.splitlines():
+            f = line.split('\t')
+            if f[0] != f[5]: continue
+            i = int(f[0]); matches, blk = int(f[9]), int(f[10]); span = int(f[3]) - int(f[2])
+            if matches > bm.get(i, -1) and shorter[i] >= 100: bm[i] = matches; hom[i] = (matches / blk if blk else 0.0, span / shorter[i])
+    for i, (chrom, strand, s, e, cross, up, down, rl, rr, rc) in enumerate(pend):
+        ident, cov = (1.0, 1.0) if a.no_homology else hom.get(i, (0.0, 0.0))
         if a.debug: print(f'[debug] {chrom}:{s}-{e}:{strand} genes {sorted({tx[t]["g"] for t in cross})} up {len(up)}/{rl}r down {len(down)}/{rr}r cross {len(cross)}/{rc}r identity {ident:.3f} cov {cov:.3f}', file=sys.stderr)
         if ident < 0.80 or cov < 0.50: continue
         n_hom += 1
