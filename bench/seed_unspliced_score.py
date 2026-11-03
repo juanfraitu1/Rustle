@@ -32,16 +32,19 @@ def cat_mono(path, contigs):
     bad = {g for t, g in tg.items() if tex.get(t, 0) != 1}
     return {g: p for g, p in gpos.items() if g in set(tg.values()) and g not in bad}
 
-def hit(genes, mono):
+def hit(genes, mono, tight=False):
+    # tight (Amendment 1): the model's span must be <= 2x the gene's, so one array-wide blob does not "hit" every gene it covers
     by = defaultdict(list)
     for c, s, a, b in mono: by[(c, s)].append((a, b))
     n = 0
     for g, (c, s, a, b) in genes.items():
-        if any(x <= b and a <= y for x, y in by[(c, s)]): n += 1
+        if any(x <= b and a <= y and (not tight or y - x <= 2 * (b - a)) for x, y in by[(c, s)]): n += 1
     return n
 
 A, B, CAT = sys.argv[1:4]; contigs = set(sys.argv[4].split(',')) if len(sys.argv) > 4 else None
 ma, sa = models(A, contigs); mb, sb = models(B, contigs); genes = cat_mono(CAT, contigs)
 ha, hb = hit(genes, ma), hit(genes, mb)
-print(f"bar4 CAT single-exon genes {len(genes)}: hit A {ha} B {hb} ratio {hb/max(ha,1):.4f} (bar >= 0.98); single-exon models A {len(ma)} B {len(mb)}")
+print(f"bar4 as registered: CAT single-exon genes {len(genes)}: hit A {ha} B {hb} ratio {hb/max(ha,1):.4f} (bar >= 0.98); single-exon models A {len(ma)} B {len(mb)}")
+ta, tb = hit(genes, ma, True), hit(genes, mb, True)
+print(f"bar4 Amendment 1 (model span <= 2x gene): hit A {ta} B {tb} ratio {tb/max(ta,1):.4f} (bar >= 0.98)")
 print(f"bar5 spliced identical {len(sa & sb)} of A {len(sa)} = {len(sa & sb)/max(len(sa),1):.4f} (bar >= 0.99); B spliced {len(sb)}")

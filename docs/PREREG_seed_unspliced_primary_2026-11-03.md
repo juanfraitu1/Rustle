@@ -39,3 +39,14 @@ B: same with `RUSTLE_SEED_UNSPLICED_PRIMARY=1`. Fast feedback first: `--contig c
    by >= 1 same-strand single-exon model, B >= 0.98 x A (the r1060 fill-in was partly pseudogenes; this is the cost side).
 5. Spliced models unchanged: transcripts with >= 2 exons identical in (chrom, start, end, introns) between A and B >= 0.99 of A.
 PASS = all five -> default on. Any bar failed = FAIL, rule stays opt-in.
+
+## Panel result (chr4 + chr20, assemble only, 2026-11-03 18:55, before the genome-wide arm)
+Bar 1 PASS: single-exon models >= 20 kb with a zero-primary run >= 3 kb 4 -> 0; the USP17L span holds no model at all in B (the
+85-primary bin at chr4:9.17 Mb seeded nothing; not investigated). Bar 5 PASS: 14,338 of 14,338 spliced models identical. Bar 2: the
+sqanti3 call failed (`Bio` missing: the env's bin must be on PATH before python resolves, as r1515 did); rerun separately.
+Bar 4 FAIL as registered: 90 -> 46 genes hit, ratio 0.51. 41 of the 44 lost genes are the USP17L array: they were "hit" by the
+265-kb blob itself, so the registered metric counted the artifact as recall. The 3 real losses: FTLP, SDAD1P, AL078621.
+
+## Amendment 1 (written before any genome-wide number; the registered bar 4 is still reported)
+Bar 4 counts a gene as hit only by a same-strand single-exon model whose span is <= 2x the gene's span
+(`bench/seed_unspliced_score.py`, "Amendment 1" line). Bar 4 is judged on the amended line; the as-registered line is reported beside it.
