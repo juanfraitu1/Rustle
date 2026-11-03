@@ -52,11 +52,11 @@ fn as_table_reports_ms_mapq_splice_and_rival_columns() {
     let text = std::fs::read_to_string(&out).unwrap();
     let rows: Vec<Vec<&str>> = text.lines().filter(|l| !l.starts_with('#')).map(|l| l.split('\t').collect()).collect();
     // name best_as second_as n primary_chrom primary_as | best_ms second_ms primary_ms primary_mapq primary_spliced
-    // rival_as rival_ms rival_spliced rival_chrom
+    // rival_as rival_ms rival_spliced rival_chrom | primary_pos rival_pos
     let want: Vec<Vec<&str>> = vec![
-        vec!["pseudo", "310", "300", "3", "c1", "300", "320", "300", "320", "3", "1", "310", "300", "0", "c2"],
-        vec!["tie", "200", "200", "2", "c1", "200", "200", "200", "200", "0", "0", "200", "200", "0", "c1"],
-        vec!["unique", "400", "-1", "1", "c1", "400", "400", "-1", "400", "60", "0", "NA", "NA", "NA", "NA"],
+        vec!["pseudo", "310", "300", "3", "c1", "300", "320", "300", "320", "3", "1", "310", "300", "0", "c2", "100", "100"],
+        vec!["tie", "200", "200", "2", "c1", "200", "200", "200", "200", "0", "0", "200", "200", "0", "c1", "3000", "6000"],
+        vec!["unique", "400", "-1", "1", "c1", "400", "400", "-1", "400", "60", "0", "NA", "NA", "NA", "NA", "2000", "NA"],
     ];
     assert_eq!(rows, want, "table:\n{text}");
 }

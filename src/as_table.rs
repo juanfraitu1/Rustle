@@ -6,13 +6,15 @@
 //! ```text
 //! name<TAB>best_as<TAB>second_as<TAB>n_records<TAB>primary_chrom<TAB>primary_as<TAB>\
 //!   best_ms<TAB>second_ms<TAB>primary_ms<TAB>primary_mapq<TAB>primary_spliced<TAB>\
-//!   rival_as<TAB>rival_ms<TAB>rival_spliced<TAB>rival_chrom
+//!   rival_as<TAB>rival_ms<TAB>rival_spliced<TAB>rival_chrom<TAB>primary_pos<TAB>rival_pos
 //! ```
 //!
 //! Columns 7-15 (2026-11-03) size the O2 contested populations: `ms:i` is minimap2's max-scoring-segment score,
 //! the one it ranks primaries and secondaries on, so a near tie must be read on AS AND on ms; `*_spliced` is 1
 //! when the CIGAR has an N (intron) op; the rival is the best-AS non-primary record (`NA` columns when the
-//! molecule has a single placement). Consumers of the first six columns are unchanged.
+//! molecule has a single placement); `primary_pos` / `rival_pos` are the records' 1-based leftmost positions (`NA` when
+//! absent), so a read can be joined to the family whose copy window holds it. Consumers of the first six columns are
+//! unchanged.
 //!
 //! which is exactly what `RUSTLE_GTF_SECONDARY_AS_TABLE` consumes (`global_best_as` in
 //! `denovo_assemble.rs` reads the first two columns). A secondary record is then admitted into the
@@ -41,7 +43,7 @@ struct Args {
     #[arg(long)]
     bam: String,
     /// Output TSV (name, best_as, second_as, n_records, primary_chrom, primary_as, best_ms, second_ms, primary_ms,
-    /// primary_mapq, primary_spliced, rival_as, rival_ms, rival_spliced, rival_chrom), sorted by name.
+    /// primary_mapq, primary_spliced, rival_as, rival_ms, rival_spliced, rival_chrom, primary_pos, rival_pos), sorted by name.
     #[arg(long)]
     out: String,
     /// BGZF decompression threads.
@@ -67,6 +69,8 @@ struct Mol {
     rival_as: i32,
     rival_ms: i32,
     rival_spliced: bool,
+    primary_pos: u64,
+    rival_pos: u64,
 }
 
 const MS_TAG: noodles_sam::alignment::record::data::field::Tag =
@@ -106,6 +110,7 @@ fn main() -> Result<()> {
             .flatten()
             .unwrap_or(0);
         let is_spliced = spliced(&record);
+        let pos = record.alignment_start().and_then(|p| p.ok()).map_or(0, |p| p.get() as u64);
         let ref_id = record
             .reference_sequence_id()
             .and_then(|r| r.ok())
@@ -130,6 +135,8 @@ fn main() -> Result<()> {
             rival_as: -1,
             rival_ms: -1,
             rival_spliced: false,
+            primary_pos: 0,
+            rival_pos: 0,
         });
         m.n += 1;
         if as_ > m.best {
@@ -150,11 +157,13 @@ fn main() -> Result<()> {
             m.primary_ms = ms;
             m.primary_mapq = record.mapping_quality().map_or(255, |q| q.get());
             m.primary_spliced = is_spliced;
+            m.primary_pos = pos;
         } else if as_ > m.rival_as {
             m.rival_ref = ref_id;
             m.rival_as = as_;
             m.rival_ms = ms;
             m.rival_spliced = is_spliced;
+            m.rival_pos = pos;
         }
         if n_records % 5_000_000 == 0 {
             eprintln!(
@@ -189,20 +198,24 @@ fn main() -> Result<()> {
                 m.primary_as.to_string(),
             )
         };
-        let rival = if m.rival_ref == u32::MAX {
-            "NA\tNA\tNA\tNA".to_string()
+        let (rival, rpos) = if m.rival_ref == u32::MAX {
+            ("NA\tNA\tNA\tNA".to_string(), "NA".to_string())
         } else {
-            format!(
-                "{}\t{}\t{}\t{}",
-                m.rival_as,
-                m.rival_ms,
-                u8::from(m.rival_spliced),
-                contigs.get(m.rival_ref as usize).map_or("NA", String::as_str)
+            (
+                format!(
+                    "{}\t{}\t{}\t{}",
+                    m.rival_as,
+                    m.rival_ms,
+                    u8::from(m.rival_spliced),
+                    contigs.get(m.rival_ref as usize).map_or("NA", String::as_str)
+                ),
+                m.rival_pos.to_string(),
             )
         };
+        let ppos = if m.primary_ref == u32::MAX { "NA".to_string() } else { m.primary_pos.to_string() };
         writeln!(
             out,
-            "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}\t{}\t{}\t{}\t{}\t{}\t{rival}",
+            "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}\t{}\t{}\t{}\t{}\t{}\t{rival}\t{ppos}\t{rpos}",
             m.best,
             m.second,
             m.n,
