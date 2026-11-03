@@ -22,3 +22,13 @@ Fused = a tool model overlapping exons of >= 2 members. Member hit rate reported
 2. The member hit-rate gap between ours and the others is concentrated in the MAPQ0-dominated members.
 3. Fused families: ours <= StringTie and FLAIR (the span-overlap definition catches readthrough and tandem merges alike).
 No decision bar: nothing ships or changes on this row.
+
+## Amendment 1 (before any number; the first run was cancelled unseen)
+User: "we cannot trust primary alignments at multi-copy gene families ... it could have been one of the secondary alignments that
+were not used for assembly with stringtie, flair". A primary-only expression definition judges primary-only tools on exactly the
+copies their input can see. Two definitions are therefore reported side by side: P = >= 2 molecules with a primary record on the
+member; T = >= 2 molecules with any placement there (primary, or secondary at AS >= 0.98 x the molecule's genome-wide best, the
+good pool's tie set). T-only members (reachable only through a tied secondary) get their own hit-rate column. Prediction 4: the
+tools' hit rate on T-only members is near 0 for StringTie and FLAIR; ours is above 0 only through the good seeding pool. No PSV
+certificate is used (arm A has no assign stage), so neither definition is the truth of which copy is expressed; T is the
+upper bound of what any tool could see, P the lower.
