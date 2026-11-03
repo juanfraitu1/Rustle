@@ -22,3 +22,16 @@ Decision rule (pre-declared):
 3. Report, no bar: unverifiable fraction of assignments; abstained-but-decidable count (coverage O2 leaves); molecules
    (not rows) contested / assigned; wall and run time.
 Counting unit everywhere: distinct molecules (a read x family row is folded to its read's best row: assigned > abstained).
+
+## RESULT (2026-11-03, job 4421539; `~/o2contested/r1510_strict.txt`, per-row dumps workspace o2mstie/*.strict_dump.tsv)
+Run: all 494 families, 116,915 contested rows, 5,804 assigned, assign wall 462 s; truth on every contested row (970 s).
+Held-out (205 families with contested rows outside the panel): 764 assigned rows with hits, 304 decidable at g = 0:
+O2 143 right / 161 wrong; the primary 147 / 157 on the same rows. Bar 2 FAILS as registered (O2 wrong rate is not
+half the primary's; it is the same). Assigned 304 of 8,424 decidable held-out molecules (3.6%): bar 2's 20% coverage
+also FAILS. ❌ FAIL.
+Panel (the 40 r1509 families, rerun inside the all-families job): 290 decidable, O2 288 / 2, primary 284 / 6 (r1509's
+slack-0 numbers reproduced).
+Post hoc (flagged as such): 131 of the 161 held-out wrong rows are one family, MCL13 (3 single-exon copies of ~760 bp on
+three chromosomes + a 3-exon copy on chrX), all 131 assigned to copy 0 with the primary also on copy 0, while the reads'
+unique best haplotype hit is copy 2's locus. Without MCL13: O2 143 / 30, primary 143 / 26: O2 is no better than the
+primary on the held-out families either way. The gain seen on the panel (288 / 2 vs 284 / 6) does not transfer.

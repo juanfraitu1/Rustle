@@ -5,7 +5,7 @@ almost every read "ambiguous" by construction (a 1-2 edit difference IS the PSV 
 0, 1 or 2: truth_g = copies overlapping hits with NM <= best + g; a row is decidable at g when truth_g is one locus.
 Reports, per g and status: decidable, O2 right / wrong, aligner right. Usage: strict_truth.py ARM_PREFIX TRUTH_DIR
 CATALOG_PREFIX [MOLECULES.tsv: adds the aligner's primary verdict]"""
-import collections, csv, subprocess, sys
+import collections, csv, os, subprocess, sys
 
 def main(prefix, truth_dir, catalog, molecules=None):
     prim = {}  # read -> (chrom, pos) of the genome-wide primary (extended as_table), for the aligner's verdict
@@ -39,6 +39,7 @@ def main(prefix, truth_dir, catalog, molecules=None):
         for r in csv.DictReader(fh, delimiter="\t"):
             if r["contested"] == "1" and "R|" + r["read_name"] in hits: rows.append(r)
     # primary span from the read's region-local row is not stored; use the aligner-right flag only where haplotype_truth gave it
+    dump = open(os.environ["STRICT_DUMP"], "w") if os.environ.get("STRICT_DUMP") else None  # per-row verdicts at g = 0
     print("g\tstatus\trows_with_hits\tno_near_perfect\tdecidable\toutside\to2_right\to2_wrong\taligner_right\taligner_wrong")
     for g in (0, 1, 2):
         c = collections.defaultdict(collections.Counter)
@@ -52,9 +53,11 @@ def main(prefix, truth_dir, catalog, molecules=None):
             if not T: c[st]["outside"] += 1; continue
             if not one_locus(T): c[st]["ambiguous"] += 1; continue
             c[st]["decidable"] += 1
-            if st == "assigned": c[st]["right" if (r["family_id"], r["catalog_copy_idx"]) in T else "wrong"] += 1
-            p = prim.get(r["read_name"])
-            if p: c[st]["al_right" if any(span[k][0] == p[0] and span[k][1] <= p[1] <= span[k][2] for k in T) else "al_wrong"] += 1
+            v = "NA"
+            if st == "assigned": v = "right" if (r["family_id"], r["catalog_copy_idx"]) in T else "wrong"; c[st][v] += 1
+            p = prim.get(r["read_name"]); av = "NA"
+            if p: av = "al_right" if any(span[k][0] == p[0] and span[k][1] <= p[1] <= span[k][2] for k in T) else "al_wrong"; c[st][av] += 1
+            if g == 0 and dump: dump.write(f"{r['read_name']}\t{r['family_id']}\t{st}\t{v}\t{av}\t{r['catalog_copy_idx']}\t{';'.join(f'{k[0]}:{k[1]}' for k in T)}\n")
         for st in ("assigned", "abstained"):
             x = c[st]; print("\t".join(map(str, [g, st, x["rows"], x["no_near"], x["decidable"], x["outside"], x["right"], x["wrong"], x["al_right"], x["al_wrong"]])))
 
