@@ -33,7 +33,8 @@ def main(prefix, truth_dir, catalog, molecules=None):
             for h in hs: best[h[0]] = min(best.get(h[0], 10 ** 9), h[4])
             # a copy's locus on a haplotype = hits within 2 of its best there, given a NEAR-PERFECT best (NM <= max(2, 0.003 x aligned)); best + 2 alone let a
             # copy with no good hit on one haplotype (MCL13 copy 2, pat best NM 5) claim its parent gene's locus (r1510 post hoc)
-            loci[(f, i)] = {(h[0], h[1], h[2], h[3]) for h in hs if best[h[0]] <= max(2, 0.003 * h[5]) and h[4] <= best[h[0]] + 2}
+            loose = os.environ.get("STRICT_LOCI") == "best2"  # haplotype_truth's original rule, for comparison only
+            loci[(f, i)] = {(h[0], h[1], h[2], h[3]) for h in hs if (loose or best[h[0]] <= max(2, 0.003 * h[5])) and h[4] <= best[h[0]] + 2}
     def overlaps(a, b): return a[0] == b[0] and a[1] < b[2] and b[1] < a[2]
     def one_locus(ks): return bool(ks) and all(overlaps(span[a], span[b]) for i, a in enumerate(ks) for b in ks[i + 1:])
     rows = []
