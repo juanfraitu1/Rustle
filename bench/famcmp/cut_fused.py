@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """r1523 step B: cut models that span >= 2 truth-family members (each expressed, T >= 2) at the midpoint between the members.
 usage: cut_fused.py IN.gtf GENES.tsv OUT.gtf   (GENES.tsv = family_panel.py's *.genes.tsv: every row is an expressed member)
+       cut_fused.py IN.gtf --copies COPIES.tsv OUT.gtf   (r1524: catalog families, x.fam.copies.tsv; a copy counts when n_reads >= 2)
 Exons left of the cut form one model, exons right of it another; a side with no exon is dropped. Everything else is copied."""
 import sys, os, re, csv, collections
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
-import famtruth as F
-gtf, genes_tsv, out = sys.argv[1:4]
-G = F.load_cat()
+try:
+    import famtruth as F
+except ImportError:  # --copies mode needs no truth
+    F = None
 members = collections.defaultdict(list)  # (chrom, strand) -> [(lo, hi, exons, family, gene)]
-for r in csv.DictReader(open(genes_tsv), delimiter='\t'):
-    v = G[r['gene']]; members[(v['chrom'], v['strand'])].append((v['exons'][0][0], v['exons'][-1][1], v['exons'], r['family'], r['gene']))
+if sys.argv[2] == '--copies':
+    gtf, _, copies_tsv, out = sys.argv[1:5]
+    for r in csv.DictReader(open(copies_tsv), delimiter='\t'):
+        if int(r['n_reads']) < 2: continue
+        lo, hi = int(r['locus_start']), int(r['locus_end'])
+        members[(r['chrom'], r['strand'])].append((lo, hi, [(lo, hi)], r['family_id'], r['copy_idx']))
+else:
+    gtf, genes_tsv, out = sys.argv[1:4]
+    G = F.load_cat()
+    for r in csv.DictReader(open(genes_tsv), delimiter='\t'):
+        v = G[r['gene']]; members[(v['chrom'], v['strand'])].append((v['exons'][0][0], v['exons'][-1][1], v['exons'], r['family'], r['gene']))
 tx = collections.OrderedDict(); lines = collections.defaultdict(list)
 for l in open(gtf):
     f = l.rstrip('\n').split('\t')

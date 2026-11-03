@@ -45968,6 +45968,9 @@ pub mod denovo_pipeline {
             >,
             // all starts/ends per group, populated only when `snap` needs them
             allpos: std::collections::BTreeMap<(String, Vec<(u64, u64)>), (Vec<u64>, Vec<u64>)>,
+            // coordinate-duplicate spliced records per chain (r1524): they count only for chains that would otherwise
+            // fall under the floor, so the polish thresholds fitted on de-duplicated counts are untouched
+            dups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32>,
             /// Unspliced reads, in arrival order, for the position-aware seeding pass.
             pub unspliced: Vec<PrimaryRead>,
             /// `UnsplicedSecondary::Support` (r1520): unspliced SECONDARY records, kept apart so they can add support to a
@@ -46005,6 +46008,7 @@ pub mod denovo_pipeline {
                     snap,
                     groups: std::collections::BTreeMap::new(),
                     allpos: std::collections::BTreeMap::new(),
+                    dups: std::collections::BTreeMap::new(),
                     unspliced: Vec::new(),
                     unspliced_sec: Vec::new(),
                     n_pushed: 0,
@@ -46018,6 +46022,13 @@ pub mod denovo_pipeline {
 
             pub fn push_read(&mut self, r: &PrimaryRead) {
                 self.push(&r.chrom, r.ref_start, r.ref_end, &r.introns, r.reverse);
+            }
+
+            /// A spliced record whose (chrom, start, end, chain) duplicates one already pushed: admission support only.
+            pub fn push_dup(&mut self, chrom: &str, introns: &[(u64, u64)]) {
+                if !introns.is_empty() {
+                    *self.dups.entry((chrom.to_string(), introns.to_vec())).or_insert(0) += 1;
+                }
             }
 
             /// One read. An unspliced read is retained whole (empty chain would pool chromosome-wide; it is
@@ -46118,6 +46129,7 @@ pub mod denovo_pipeline {
                 let opts: AdmitOpts = opts.into();
                 let mode = opts.mode;
                 let (k, snap, unspliced, unspliced_sec) = (self.k, self.snap, self.unspliced, self.unspliced_sec);
+                let dups = self.dups;
                 let (groups, allpos) = if opts.snap_w > 0 {
                     snap_read_junctions(self.groups, self.allpos, opts.snap_w, k)
                 } else {
@@ -46164,7 +46176,7 @@ pub mod denovo_pipeline {
                             // only maximal transfrags whose transferred abundance reaches the floor
                             return extra.contains_key(&(chrom.clone(), introns.clone()));
                         }
-                        *n >= smin
+                        *n + dups.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(0) >= smin
                             || (!extra.is_empty() && extra.contains_key(&(chrom.clone(), introns.clone())))
                             || (isoform_k > 0
                                 && !introns.is_empty()
@@ -46205,6 +46217,12 @@ pub mod denovo_pipeline {
                         // over its own reads (`read_rev` / `read_tot`)
                         let n_reads = if (direct || union || n < smin) && !extra.is_empty() {
                             extra.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(n)
+                        } else if n < smin {
+                            // shortcut: a chain admitted only through its coordinate duplicates carries the raw count
+                            // (as `--keep-coordinate-duplicates` would), so the gate's read floor sees it; chains above
+                            // the floor keep de-duplicated counts, so the polish quantiles do not move. Upgrade to a
+                            // Skeleton field if a later rule needs the two counts apart.
+                            n + dups.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(0)
                         } else {
                             n
                         };
@@ -50350,6 +50368,7 @@ pub mod denovo_pipeline {
                     let mut h = std::collections::hash_map::DefaultHasher::new();
                     (chrom, ref_start, ref_end, &introns).hash(&mut h);
                     if !seen.insert(h.finish()) {
+                        acc.push_dup(chrom, &introns);
                         continue;
                     }
                 }
@@ -54329,6 +54348,29 @@ pub mod denovo_pipeline {
                 assert_eq!(run(UnsplicedSecondary::Seed), (3, 2, 0));
                 assert_eq!(run(UnsplicedSecondary::Drop), (2, 1, 0)); // the spliced secondary stays
                 assert_eq!(run(UnsplicedSecondary::Support), (2, 1, 1));
+            }
+
+            #[test]
+            fn coordinate_duplicates_admit_a_chain_under_the_floor_with_its_raw_count() {
+                // r1524 (PRAMEF8): two independent CCS reads with identical (start, end, chain) are one record after the
+                // coordinate de-duplication, so a 2-read chain fell under the floor of 2; the duplicates now count for
+                // such a chain (and only such a chain: others keep de-duplicated counts)
+                let dir = tempfile::tempdir().unwrap();
+                let n = |l| Op::new(Kind::Skip, l);
+                let recs = vec![
+                    rec("a", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("b", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "dup.bam", &recs);
+                let run = |dedupe: bool| {
+                    let mut acc = Pass1Acc::new(1, None);
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, dedupe, &[], &mut acc, None, UnsplicedSecondary::Seed).unwrap();
+                    let pushed = acc.n_pushed;
+                    let sk = acc.finish(2, 0, None);
+                    (pushed, sk.len(), sk.first().map(|s| s.n_reads))
+                };
+                assert_eq!(run(false), (2, 1, Some(2)));
+                assert_eq!(run(true), (1, 1, Some(2))); // admitted on 1 + 1 duplicate, carrying the raw count
             }
 
             #[test]
