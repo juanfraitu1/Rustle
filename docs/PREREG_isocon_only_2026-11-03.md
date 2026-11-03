@@ -52,3 +52,20 @@ not find what IsoCon found, or finds it at IsoCon's artifact cost. Part A is rep
 
 Run dir `~/isocon_only_A119b/` (job outputs), big files in workspace `isocon_only/`. Code: `src/candidate_copies.rs` (the flag),
 `bench/sqanti_single/isocon_only.py` (`set | copies | recover`), `~/isocon_only_A119b/run.sbatch`.
+
+## RESULT (2026-11-03, job 4421576; `~/isocon_only_A119b/{only.tsv,table.tsv,recover.tsv,sq3/arm}`, consensuses workspace `isocon_only/all_clusters.fa`)
+**Part A.** S_ours 631, S_isocon 645; **Only = 154** (125 multi-exon, 29 mono-exon); the reverse set (ours-only) is 140, so the
+645 vs 631 was a net of two large differences. Ours' best model on the Only gene: NIC 68, ISM of another transcript 39, NNC 11,
+FSM of another 4, ISM of this one 2, nothing 1. Drift: ours_tssr / med / ext / extmed / all already match 3 / 4 / 3 / 4 / 4 of the
+125 (the end-polish defaults do not close the gap). IsoCon's own read support on the multi-exon Only transcripts: median 3 reads
+(63 of 125 at <= 3, 7 at >= 10).
+**Part B.** candidate_copies wall 2,605 s (bar 3 PASS); 6,808 consensuses, 1,804 inside the universe spans after mapping.
+| arm | transcripts | genes | FSM | ISM | NIC | NNC | artifact | FSM+ISM % | artifact % | rules PASS % |
+|---|---|---|---|---|---|---|---|---|---|---|
+| arm (all consensuses) | 1,804 | 368 | 314 | 123 | 161 | 157 | 1,049 | 24.2 | **58.1** | 41.4 |
+Artifacts: genic_intron 759, genic 195, antisense 53, fusion 31. **Recovery: 12 of 125 multi-exon Only (9.6%)** (and 9 of 29
+mono-exon). **❌ FAIL on bars 1 and 2.** Our cluster -> consensus -> merge chain on IsoCon's pools finds one in ten of what IsoCon
+found, at an artifact share ten times ours: the consensus of a delta-0.00958 cluster is a copy-level object (intronic and
+partial pieces dominate), not an isoform. The IsoCon question is closed: its single-copy isoform gain comes from its own
+exhaustive per-read candidate loop, with support floors of 2-3 reads, and costs 2x artifacts; nothing of its clustering remains
+to port. `--all-clusters` stays as a diagnostic hatch.
