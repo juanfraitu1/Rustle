@@ -74,8 +74,8 @@ def main():
         if l.startswith('>'): cur = l[1:].strip()
         else: tseq[cur] = l.strip()
     os.makedirs(f'{out}/fam', exist_ok=True)
-    sam_parts = []
-    for f, ms in fams.items():
+    jobs = []
+    for f, ms in sorted(fams.items(), key=lambda kv: -len(kv[1])):
         pad = max([tmeta[n]['span'] for n in tfam[f]] or [0])
         if not pad: continue
         tg = [m for m in ms if not targets_ok or m['chrom'] in targets_ok]
@@ -87,7 +87,11 @@ def main():
                 w.write(f'>{name}\n{fa.fetch(m["chrom"], s0, e0).upper()}\n')
         with open(f'{out}/fam/{f}.templates.fa', 'w') as w:
             for n in tfam[f]: w.write(f'>{n}\n{tseq[n]}\n')
-        subprocess.run(f"minimap2 -ax splice:hq -uf --eqx -N {max(2, len(tg))} -p 0.1 --secondary=yes -t {opt['--threads']} {out}/fam/{f}.targets.fa {out}/fam/{f}.templates.fa 2>> {out}/mm2.log | grep -v '^@' >> {out}/aln.sam", shell=True, check=True)
+        jobs.append(f"minimap2 -ax splice:hq -uf --eqx -N {max(2, len(tg))} -p 0.1 --secondary=yes -t {max(1, int(opt['--threads']) // 6)} {out}/fam/{f}.targets.fa {out}/fam/{f}.templates.fa 2>> {out}/fam/{f}.mm2.log | grep -v '^@' > {out}/fam/{f}.sam")
+    # the chr13 mega-families take ~2 min and 12 GB each: 6 at a time (the node has 256 GB), biggest first
+    from multiprocessing.pool import ThreadPool
+    ThreadPool(6).map(lambda c: subprocess.run(c, shell=True, check=True), jobs)
+    subprocess.run(f"cat {out}/fam/*.sam > {out}/aln.sam && cat {out}/fam/*.mm2.log > {out}/mm2.log", shell=True, check=True)
     with open(f'{out}/targets.fa', 'w') as w:
         for f in fams:
             p = f'{out}/fam/{f}.targets.fa'
