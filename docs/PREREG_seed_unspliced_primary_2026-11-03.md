@@ -54,3 +54,17 @@ Bar 4 counts a gene as hit only by a same-strand single-exon model whose span is
 ## Bar 2 (chr20 SQANTI, rerun with the env on PATH; single-exon isoforms only)
 A: intergenic 117, genic_intron 95, antisense 32, genic 9 (artifact 253), FSM 16, ISM 0. B: 91 / 95 / 32 / 9 (227), FSM 14, ISM 0.
 Artifact half PASS (227 <= 253, all of it intergenic). FSM half FAIL as registered: 14 / 16 = 0.875 < 0.98 (2 single-exon FSM lost).
+
+## RESULT (genome-wide, 2026-11-03 19:57): FAIL as registered (bar 2 FSM half, bar 4 under both the registered and the amended rule)
+| bar | A | B | verdict |
+|---|---|---|---|
+| 1 zero-primary-run models (>= 20 kb, run >= 3 kb) | 61 | 0 | PASS |
+| 2 chr20 single-exon artifact classes / FSM | 253 / 16 | 227 / 14 | artifact PASS, FSM 0.875 FAIL |
+| 3 pair precision / recall / fused loci | 0.7158 / 0.7307 guards; 547 | 0.728 / 0.742; 545 | PASS |
+| 4 CAT single-exon genes hit, registered / Amendment 1 | 1,465 / 757 | 893 / 342 | FAIL 0.61 / 0.45 |
+| 5 spliced models identical | 219,503 | 219,503 | PASS 1.000 |
+Single-exon models 16,501 -> 14,498. Reading: the near-tied unspliced secondaries do two things at once. They build the array-wide
+blobs (bar 1: all 61 gone, USP17L span empty) AND they are the support that lifts many single-exon pseudogene copies over the
+pass-1 floor (bar 4: half of the tightly-hit CAT single-exon genes lose their model when only primaries count), which is the r1060
+fill-in measured on gorilla. Dropping them wholesale trades the blobs for that recall. The rule stays OPT-IN. The split-at-zero-run
+variant (keep the secondaries, cut the cluster where no primary spans a 1-kb bin) is the natural v2 and is not registered here.
