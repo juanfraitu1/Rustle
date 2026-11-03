@@ -13,6 +13,9 @@
 //! only) and `clusters.fa` (the consensus of every cluster in `clusters.tsv`; with `reads.tsv` the input of Amendment 12's A12-2 measure).
 //! Phase 4 (2026-10-14, `docs/superpowers/specs/2026-10-14-o3-structure-projection-design.md`): `structure.tsv` and `contigs.gtf`, the exon
 //! structure of every flagged candidate projected from its union's genome alignment (`rustle::candidates::structure`).
+//! `--all-clusters PATH` (2026-11-03, register 1515, `docs/PREREG_isocon_only_2026-11-03.md`): every consensus of every family after
+//! phase 1 (clusters -> refinement -> significance merge), BEFORE the genome fates drop the in-reference ones: `>family:cK n_reads=N`.
+//! An extra product like `--net-reads`; a run that asks for it never replays from the cache (the cache entry has no such file).
 //! `--net-reads PATH` (2026-10-24, plan `docs/superpowers/plans/2026-10-24-o3port-rust.md` task 9): every read of every family's net
 //! (`write_net_reads`), the table `accept_o3_candidates.py nets` writes as `net_reads.tsv` with `role` NA (truth labels stay in the harness).
 //! Temporary files live in `<out>.tmp/` and are removed on success.
@@ -52,7 +55,7 @@ use std::time::Instant;
 
 const USAGE: &str = "usage: candidate_copies --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi \
 --out P.cand [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2] [--net-reads PATH] \
-[--molecules P.molecules.tsv --min-ms-ratio R]";
+[--molecules P.molecules.tsv --min-ms-ratio R] [--all-clusters PATH]";
 
 /// spec §5.5: the per-column error proxy eps of the significance merge (`read_conflict.rs:77`, the default of `RUSTLE_CONFLICT_EPS`).
 const MERGE_EPS: f64 = 0.001;
@@ -123,6 +126,8 @@ struct Args {
     /// secondary on a copy counts, as before.
     molecules: Option<String>,
     min_ms_ratio: Option<f64>,
+    /// `--all-clusters`: where every post-merge consensus goes (register 1515); an extra product, not in the stage key.
+    all_clusters: Option<String>,
     /// The command line without `--threads`, `--out` and their values: the stage key's `cmd`. The thread count never changes the result, and
     /// the output prefix is no input (ruling R12): a re-run under another prefix replays the same entry.
     key_cmd: String,
@@ -130,7 +135,7 @@ struct Args {
 
 /// Hand-rolled like `missing_copy_flag`'s, but strict: every argument is a known flag followed by its value, none given twice.
 fn parse_args(raw: &[String]) -> Result<Args> {
-    const FLAGS: [&str; 15] = [
+    const FLAGS: [&str; 16] = [
         "--bam",
         "--fasta",
         "--copies",
@@ -146,6 +151,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         "--net-reads",
         "--molecules",
         "--min-ms-ratio",
+        "--all-clusters",
     ];
     let usage = |msg: String| exit_two(format!("{msg}\n{USAGE}"));
     let mut kv: BTreeMap<&str, &str> = BTreeMap::new();
@@ -162,7 +168,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         if kv.insert(flag, value).is_some() {
             return Err(usage(format!("{flag} is given twice")));
         }
-        if !["--threads", "--out", "--net-reads"].contains(&flag) {
+        if !["--threads", "--out", "--net-reads", "--all-clusters"].contains(&flag) {
             key_cmd.extend([flag, value.as_str()]);
         }
         i += 2;
@@ -199,6 +205,7 @@ fn parse_args(raw: &[String]) -> Result<Args> {
                 .collect()
         }),
         net_reads: kv.get("--net-reads").map(|v| v.to_string()),
+        all_clusters: kv.get("--all-clusters").map(|v| v.to_string()),
         molecules: kv.get("--molecules").map(|v| v.to_string()),
         min_ms_ratio: match kv.get("--min-ms-ratio") {
             None => None,
@@ -330,7 +337,7 @@ fn run(raw: &[String]) -> Result<()> {
         .as_ref()
         .map(|root| rc::Entry::new(root, "cand", stage_key(&args, &mm2)).pinned());
     if let Some(e) = stage.as_ref() {
-        if replay_stage(e, &args.out, args.net_reads.as_deref()) {
+        if args.all_clusters.is_none() && replay_stage(e, &args.out, args.net_reads.as_deref()) {
             eprintln!("[cache] candidate_copies: stage result replayed from {} (BAM passes and minimap2 skipped)", e.dir.display());
             return Ok(());
         }
@@ -426,6 +433,15 @@ fn run(raw: &[String]) -> Result<()> {
         work.push(w);
     }
     let t_clusters = t0.elapsed().as_secs_f64();
+    if let Some(p) = args.all_clusters.as_deref() {
+        write_fasta(
+            Path::new(p),
+            work.iter().flat_map(|w| {
+                w.clusters.iter().map(|c| (format!("{} n_reads={}", c.id, c.n_reads), c.seq.as_slice()))
+            }),
+        )
+        .with_context(|| format!("writing --all-clusters {p}"))?;
+    }
 
     // phase 2: every consensus of every family against the genome, one call (spec §5.6.1); ruling R4: the hit judged is the best by identity x coverage
     let dir = tmp.join("genome");
@@ -2035,6 +2051,7 @@ mod tests {
         assert_eq!(key(&["--threads", "7", "--out", "elsewhere/Q.cand"]), base);
         // `--net-reads` adds a product and changes none
         assert_eq!(key(&["--out", "runs/a/P.cand", "--net-reads", "nr.tsv"]), base);
+        assert_eq!(key(&["--out", "runs/a/P.cand", "--all-clusters", "all.fa"]), base);
         // a parameter of the stage is part of the key, wherever `--out` stands
         assert_ne!(key(&["--out", "runs/a/P.cand", "--delta", "0.005"]), base);
         assert_ne!(key(&["--out", "runs/a/P.cand", "--min-support", "8"]), base);

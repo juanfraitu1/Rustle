@@ -204,6 +204,21 @@ fn net_reads_matches_nets_step() {
     assert_eq!(without_role(&got), without_role(&want));
 }
 
+#[test]
+fn all_clusters_writes_every_consensus_before_the_fates() {
+    // register 1515: the in-reference consensus of copy A never reaches clusters.fa (dropped as InReference); --all-clusters keeps it
+    let dir = tempfile::tempdir().unwrap();
+    let bam = bam_with_unmapped_copy_b(dir.path());
+    let all = dir.path().join("t.all.fa");
+    let (o, out) = run_stage_with(dir.path(), &bam, &["--all-clusters", all.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let got = std::fs::read_to_string(&all).unwrap();
+    let heads: Vec<&str> = got.lines().filter(|l| l.starts_with('>')).collect();
+    let listed = std::fs::read_to_string(format!("{out}.clusters.fa")).unwrap().matches('>').count();
+    assert!(heads.len() > listed, "all {} vs listed {}:\n{got}", heads.len(), listed);
+    assert!(heads.iter().all(|h| h.contains(":c") && h.contains(" n_reads=")), "{heads:?}");
+}
+
 /// The fixture BAM plus one read `S_00` (A_30's sequence) whose PRIMARY lies far from the copy (chrT:40001, MAPQ 0) and whose SECONDARY
 /// record lies on the copy with `ms:i:500`. Sorted and indexed in `dir`. Returns the BAM path and a molecules table (as_table's
 /// schema: name, best_as, second_as, n, primary_chrom, primary_as, best_ms, second_ms, primary_ms, ...) giving S_00 a primary ms of 1000.
