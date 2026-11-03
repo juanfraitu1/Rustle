@@ -45,3 +45,13 @@ AS lead is 11-200 on ~88%, 1-10 on 9-17%; MAPQ < 60 on 11-27%. Next: near tie on
 5%, OR6737 12%); both spliced, rival higher AS, ms > 10 for the primary (10% / 6% / 8%). "AS tie, ms > 50" is 838 / 8,151 /
 706 molecules: out of scope as pre-declared. Reading rules 1-3 stand; the proof row defines the target set as the
 contested set minus the wall and tests, per class, on HG002 truth.
+
+### Post hoc amendment (2026-11-03, after the census; flagged as such)
+The pre-declared "either score within 10" set is too wide: its largest class (spliced primary, unspliced rival with the
+higher AS, ms > 10 for the primary) is the AS-gap class registers 1403/1404 already settled on this very sample (399,865
+KB3781 reads; held-out P15: primary right 99.6%, the AS-favoured secondary right 2.0%). minimap2 placed those reads by ms
+and was right; by the scoping rule they are out of O2. The O2 target set is therefore the **ms near-tie set** (ms margin
+<= 10, any AS) minus the K = 0 wall: A119b 283,924 (wall 27%), HG002 197,872 (22%), OR6737 15,964 (25%), KB3781 52,061
+(17%; register 1405 found 41k under `--tie-structure`, the same population). Its informative part is 35-65% near tie on
+both scores with the same shape, 7-17% spliced primary vs unspliced higher-AS rival with ms also within 10, the rest small.
+`~/o2contested/census_ms_window.txt`. KB3781 (Jim, the assembled individual) census added: contested-either 471,573, wall 1.9%.
