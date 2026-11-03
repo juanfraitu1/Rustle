@@ -49,3 +49,9 @@ Kept: the cut lowers fused families 49 -> 36 at zero cost on every hit rate, but
 spans), so it belongs with the r1495 guided f1units option, not the de novo default; not shipped here.
 Follow-up rows (base mode, from the prior diagnostic): single-exon strand placeholder (RUSTLE_READ_STRAND opt-in; 30 misses)
 and the PRAMEF8-class drop of a 2-read canonical chain (cause unidentified; 34 members with a >= 2-read chain and no model).
+
+### Post hoc note (after the numbers): step A was a plumbing null, not a method null
+`--tied-seed` is consulted only on the family-detection path (`tied_seed_skeletons` at family.rs ~30046, TSFAM families
+appended at ~30900); `--assemble-only` skips that stage, so the region runs with and without the flag are the same binary
+path (RUSTLE_TIED_SEED_DEBUG writes nothing). This is the r980 trap again. Wiring it into the assembly product was not
+pursued: the measured ceiling is 3 members. "0/3 gained" above reads as "not executable from the assembly product".
