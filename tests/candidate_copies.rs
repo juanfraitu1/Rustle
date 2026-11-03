@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const FX: &str = concat!(
@@ -202,4 +202,42 @@ fn net_reads_matches_nets_step() {
     assert!(got.lines().skip(1).all(|l| l.split('\t').nth(3) == Some("NA")), "{got}");
     let want = std::fs::read_to_string(format!("{FX}/net_reads_variant.tsv")).unwrap();
     assert_eq!(without_role(&got), without_role(&want));
+}
+
+/// The fixture BAM plus one read `S_00` (A_30's sequence) whose PRIMARY lies far from the copy (chrT:40001, MAPQ 0) and whose SECONDARY
+/// record lies on the copy with `ms:i:500`. Sorted and indexed in `dir`. Returns the BAM path and a molecules table (as_table's
+/// schema: name, best_as, second_as, n, primary_chrom, primary_as, best_ms, second_ms, primary_ms, ...) giving S_00 a primary ms of 1000.
+fn bam_with_secondary_on_copy(dir: &Path) -> (String, String) {
+    let sam = String::from_utf8(samtools(&["view", "-h", &format!("{FX}/reads.bam")]).stdout).unwrap();
+    let a30 = sam.lines().find(|l| l.starts_with("A_30\t")).unwrap();
+    let f: Vec<&str> = a30.split('\t').collect();
+    let tags = f[11..].join("\t");
+    let primary = format!("S_00\t0\tchrT\t40001\t0\t{}M\t*\t0\t0\t{}\t{}\t{tags}", f[9].len(), f[9], f[10]);
+    let secondary = format!("S_00\t256\tchrT\t10002\t0\t{}\t*\t0\t0\t{}\t{}\tms:i:500", f[5], f[9], f[10]);
+    let text = format!("{sam}{primary}\n{secondary}\n");
+    let sam_p = dir.join("s.sam");
+    std::fs::write(&sam_p, text).unwrap();
+    let bam = dir.join("s.bam");
+    samtools(&["sort", "-o", bam.to_str().unwrap(), sam_p.to_str().unwrap()]);
+    samtools(&["index", bam.to_str().unwrap()]);
+    let mol = dir.join("s.molecules.tsv");
+    std::fs::write(&mol, "#as_table\nname\tbest_as\tsecond_as\tn\tprimary_chrom\tprimary_as\tbest_ms\tsecond_ms\tprimary_ms\nS_00\t1000\t500\t2\tchrT\t1000\t1000\t500\t1000\n").unwrap();
+    (bam.display().to_string(), mol.display().to_string())
+}
+
+/// `--min-ms-ratio R` with `--molecules` (r1513): a secondary record names its read for a family's net only when its ms is at least R times
+/// the read's primary ms. Without the flags S_00's secondary joins the net (1 secondary record, its sequence found in pass B); at R = 0.9
+/// the 500 / 1000 record is dropped and S_00 is in no net.
+#[test]
+fn min_ms_ratio_drops_weak_secondaries_from_the_nets() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("cand_msratio_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (bam, mol) = bam_with_secondary_on_copy(&dir);
+    let (o, _) = run_stage(&dir, &bam);
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(err.contains("and 1 secondary records on the copies; pass B 1 of 1"), "{err}");
+    let (o, _) = run_stage_with(&dir, &bam, &["--molecules", &mol, "--min-ms-ratio", "0.9"]);
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(err.contains("and 0 secondary records on the copies; pass B 0 of 0"), "{err}");
+    assert!(err.contains("1 secondary records below --min-ms-ratio 0.9"), "{err}");
 }

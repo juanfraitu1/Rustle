@@ -51,7 +51,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const USAGE: &str = "usage: candidate_copies --bam B --fasta G --copies P.fam.copies.tsv --copies-fa P.fam.copies.fa --index G.splice.mmi \
---out P.cand [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2] [--net-reads PATH]";
+--out P.cand [--delta 0.00958] [--max-reads 1000] [--min-cluster 3] [--min-support 6] [--threads 4] [--families F1,F2] [--net-reads PATH] \
+[--molecules P.molecules.tsv --min-ms-ratio R]";
 
 /// spec §5.5: the per-column error proxy eps of the significance merge (`read_conflict.rs:77`, the default of `RUSTLE_CONFLICT_EPS`).
 const MERGE_EPS: f64 = 0.001;
@@ -117,6 +118,11 @@ struct Args {
     families: Option<Vec<String>>,
     /// `--net-reads`: where the net-reads table goes (an extra product; like `--out` it is no input, so not in the stage key).
     net_reads: Option<String>,
+    /// `--molecules` + `--min-ms-ratio R` (r1513, docs/PREREG_secondary_pool_2026-11-03.md): a secondary record names its read for a net
+    /// only when its `ms:i` is at least R times the read's primary ms (`as_table` molecules table, column `primary_ms`). Unset: every
+    /// secondary on a copy counts, as before.
+    molecules: Option<String>,
+    min_ms_ratio: Option<f64>,
     /// The command line without `--threads`, `--out` and their values: the stage key's `cmd`. The thread count never changes the result, and
     /// the output prefix is no input (ruling R12): a re-run under another prefix replays the same entry.
     key_cmd: String,
@@ -124,7 +130,7 @@ struct Args {
 
 /// Hand-rolled like `missing_copy_flag`'s, but strict: every argument is a known flag followed by its value, none given twice.
 fn parse_args(raw: &[String]) -> Result<Args> {
-    const FLAGS: [&str; 13] = [
+    const FLAGS: [&str; 15] = [
         "--bam",
         "--fasta",
         "--copies",
@@ -138,6 +144,8 @@ fn parse_args(raw: &[String]) -> Result<Args> {
         "--threads",
         "--families",
         "--net-reads",
+        "--molecules",
+        "--min-ms-ratio",
     ];
     let usage = |msg: String| exit_two(format!("{msg}\n{USAGE}"));
     let mut kv: BTreeMap<&str, &str> = BTreeMap::new();
@@ -191,8 +199,21 @@ fn parse_args(raw: &[String]) -> Result<Args> {
                 .collect()
         }),
         net_reads: kv.get("--net-reads").map(|v| v.to_string()),
+        molecules: kv.get("--molecules").map(|v| v.to_string()),
+        min_ms_ratio: match kv.get("--min-ms-ratio") {
+            None => None,
+            Some(_) => Some(num(&kv, "--min-ms-ratio", 0.0)?),
+        },
         key_cmd: key_cmd.join(" "),
     };
+    if args.min_ms_ratio.is_some() != args.molecules.is_some() {
+        return Err(usage("--min-ms-ratio and --molecules go together".into()));
+    }
+    if let Some(r) = args.min_ms_ratio {
+        if !(r.is_finite() && (0.0..=1.0).contains(&r)) {
+            return Err(usage(format!("--min-ms-ratio must be in [0, 1], not {r}")));
+        }
+    }
     if !(args.delta.is_finite() && args.delta >= 0.0) {
         return Err(usage(format!(
             "--delta must be a finite number >= 0, not {}",
@@ -748,6 +769,36 @@ fn oriented_sequence(record: &noodles_bam::Record) -> Vec<u8> {
 /// read given to a family the stage runs on joins its net (before the `--max-reads` cap), its sequence read back from the FASTA in the pass
 /// that also counts the aligned and the attributed reads of each class (`read_back`). A read whose sequence never appears (a secondary-only
 /// name without a primary record in the BAM) stays out of every net.
+/// `--molecules`: read name -> primary ms, for the reads with more than one record (as_table's `n` column; the others have no secondary
+/// to gate). Header line `#as_table`, then the column row; `primary_ms` is read by name.
+fn load_primary_ms(path: &str) -> Result<DetHashMap<String, i32>> {
+    let fh = std::fs::File::open(path).map_err(|e| exit_two(format!("--molecules {path}: {e}")))?;
+    let mut out = DetHashMap::default();
+    let (mut i_n, mut i_ms) = (None, None);
+    for line in std::io::BufReader::new(fh).lines() {
+        let line = line?;
+        if line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if i_ms.is_none() {
+            i_n = f.iter().position(|c| *c == "n");
+            i_ms = f.iter().position(|c| *c == "primary_ms");
+            if i_n.is_none() || i_ms.is_none() {
+                return Err(exit_two(format!("--molecules {path}: no `n` / `primary_ms` columns (as_table without the ms columns?)")));
+            }
+            continue;
+        }
+        let (Some(n), Some(ms)) = (f.get(i_n.unwrap()), f.get(i_ms.unwrap())) else { continue };
+        if n.parse::<usize>().unwrap_or(0) > 1 {
+            if let Ok(ms) = ms.parse::<i32>() {
+                out.insert(f[0].to_string(), ms);
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn collect_nets(
     args: &Args,
     families: &[CatalogFamily],
@@ -757,7 +808,11 @@ fn collect_nets(
 ) -> Result<Nets> {
     let mut seqs: DetHashMap<String, Vec<u8>> = DetHashMap::default();
     let mut names: Vec<BTreeSet<String>> = vec![BTreeSet::new(); families.len()];
-    let (mut n_primary, mut n_secondary) = (0usize, 0usize);
+    let (mut n_primary, mut n_secondary, mut n_below) = (0usize, 0usize, 0usize);
+    let primary_ms = match &args.molecules {
+        Some(p) if args.min_ms_ratio.is_some() => Some(load_primary_ms(p)?),
+        _ => None,
+    };
     {
         let mut reader = rustle::bam::open_bam(&args.bam, args.threads)
             .with_context(|| format!("opening --bam {}", args.bam))?;
@@ -799,6 +854,15 @@ fn collect_nets(
                     let Some(name) = record.name() else { continue };
                     let name = name.to_string();
                     if flags.is_secondary() {
+                        if let (Some(r), Some(pm)) = (args.min_ms_ratio, &primary_ms) {
+                            let ok = rustle::bam::record_ms(&record)
+                                .zip(pm.get(&name))
+                                .is_some_and(|(m, p)| *p > 0 && m as f64 / *p as f64 >= r);
+                            if !ok {
+                                n_below += 1;
+                                continue;
+                            }
+                        }
                         n_secondary += 1;
                     } else if !seqs.contains_key(&name) {
                         n_primary += 1;
@@ -959,8 +1023,12 @@ fn collect_nets(
         .count();
     eprintln!(
         "[candidate_copies] BAM: pass A {n_primary} reads by a primary record and {n_secondary} secondary records on the copies; pass B {n_found} of {} \
-         secondary-only reads found by their primary record ({n_lost} without one: left out)",
-        need.len()
+         secondary-only reads found by their primary record ({n_lost} without one: left out){}",
+        need.len(),
+        match args.min_ms_ratio {
+            Some(r) => format!("; {n_below} secondary records below --min-ms-ratio {r}"),
+            None => String::new(),
+        }
     );
     eprintln!(
         "[candidate_copies] pass B: unmapped >= {MIN_UNMAPPED_LEN} bp {n_unmapped}; poorly placed >= {MIN_UNMAPPED_LEN} bp {n_poor} (de > {POORLY_PLACED_DE} \

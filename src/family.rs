@@ -69645,9 +69645,11 @@ pub mod family_detect {
         }
 
         /// `copy_assign --tie-ms W` (register 1509): the runner-up placement is within `W` of the best on `ms`, the score
-        /// minimap2 picks its primary by, so the primary was its own near coin toss. A single placement never ties.
+        /// minimap2 picks its primary by, so the primary was its own near coin toss. A single placement never ties, and
+        /// neither does a read without a real ms (0: no `ms:i` tag, or a BAM reader that does not carry it), so the gate
+        /// cannot admit everything on a foreign or unindexed BAM (review 2026-11-03).
         pub fn ms_tied(e: &AsEvidence, w: i32) -> bool {
-            e.ms_margin().map_or(false, |m| m <= w)
+            e.best_ms > 0 && e.ms_margin().map_or(false, |m| m <= w)
         }
 
         /// Best and runner-up alignment score over one read's placements, as `(as_score, aligned_len, ms)` triples.
@@ -70306,6 +70308,9 @@ pub mod family_detect {
                 let one = as_evidence(&[(300, 100, 320)]).unwrap();
                 assert_eq!(one.ms_margin(), None);
                 assert!(!ms_tied(&one, 1000), "a single placement never ties");
+                let zero = as_evidence(&[(300, 100, 0), (300, 100, 0)]);
+                assert_eq!(zero.ms_margin(), Some(0));
+                assert!(!ms_tied(&zero, 10), "ms 0 = no ms tag: never a tie");
             }
 
             #[test]

@@ -25,3 +25,11 @@ assign wall 1,952 s (r1503) -> **391 s**; window sweep 786 windows of 76 regions
 46.3 s; the window loop's own `reads_in_region` brackets sum to 29.6 s (MCL0 178 -> 2.5 s). All six assign tables
 (`assignments`, `families`, `quant`, `famcn_readonly`, `family_join`, `copy_conversions`) byte-identical to r1503; `params.tsv`
 differs only in the two input paths. Bars 1 and 2 met. Genome-wide A119b identity (sweep on vs off, same binary) pending.
+
+## RESULT genome-wide (2026-11-03, jobs 4420941 on / 4420942 off, slim A119b, singlenode 250 GB, no memory cap)
+Off: exit 0, 19,358 s, reads_in_region sum 11,285 s. On: OOM-KILLED at 7,359 s (exit 137, one oom_kill event) while
+assigning `~xchrom~MCL3` (579,016 reads, 220 copies); its window sweep itself was done (4,427 windows of 936 regions over
+25 chromosomes: light 510 s, tie + full 357 s; reads_in_region sum 116 s = 97x less fetch time). No assign table written,
+so the identity bar is NOT met: `RUSTLE_WINDOW_SWEEP` stays opt-in. Cause to fix before a rerun: the window store keeps
+every chromosome's fetched records alive while the largest family runs; release a chromosome's store once its families are
+done (or cap the store), then rerun with `RUSTLE_TIMING=1` and the peak-RSS line.
