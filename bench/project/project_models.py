@@ -98,8 +98,8 @@ def main():
     os.makedirs(f'{out}/fam', exist_ok=True)
     jobs = []
     for f, ms in sorted(fams.items(), key=lambda kv: -len(kv[1])):
-        pad = max([tmeta[n]['span'] for n in tfam[f]] or [0])
-        if not pad: continue
+        if not tfam[f]: continue
+        pad = 5000  # a wider window (the longest template span) swallowed neighbouring copies: self-hits and chimeric chains
         tg = [m for m in ms if not targets_ok or m['chrom'] in targets_ok]
         if not tg: continue
         with open(f'{out}/fam/{f}.targets.fa', 'w') as w:
@@ -151,6 +151,7 @@ def main():
         exons.append((es, pos))
         exons = [(x + g['off'], y + g['off']) for x, y in exons]
         if len(exons) < 2: cnt['unspliced_at_target'] += 1; continue
+        if exons[0][0] < m['start'] - 5000 or exons[-1][1] > m['end'] + 5000: cnt['outside_locus'] += 1; continue
         introns = tuple((x[1], y[0]) for x, y in zip(exons, exons[1:]))
         if introns in m['chains']: cnt['already'] += 1; continue
         ok = 0
@@ -188,11 +189,11 @@ def main():
     for h in ws.values(): h.close()
     # base control: the arm's own transcripts at the target copies
     with open(f'{out}/base.gtf', 'w') as w, open(f'{out}/base_tids.txt', 'w') as w2:
-        tids = sorted({t for g in gmeta.values() for t in g['m']['tx']})
-        w2.write('\n'.join(tids) + '\n')
+        tids = {t for g in gmeta.values() for t in g['m']['tx']}
+        w2.write('\n'.join(sorted(tids)) + '\n')
         for l in open(gtf):
             f = l.split('\t')
-            if len(f) > 8 and re.search(r'transcript_id "([^"]+)"', f[8]).group(1) in set(tids): w.write(l)
+            if len(f) > 8 and re.search(r'transcript_id "([^"]+)"', f[8]).group(1) in tids: w.write(l)
     low = [(f, m['idx']) for f, ms in fams.items() for m in ms if m['reads'] <= 2 and (not targets_ok or m['chrom'] in targets_ok)]
     with open(f'{out}/summary.txt', 'w') as w:
         print(f"families {len(fams)} templates {len(tmeta)} targets {len(gmeta)} pairs_aligned {len(best)}", file=w)
