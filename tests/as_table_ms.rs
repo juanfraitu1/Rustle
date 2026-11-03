@@ -40,15 +40,27 @@ fn as_table_reports_ms_mapq_splice_and_rival_columns() {
     let bam = dir.join("t.bam");
     assert!(Command::new("samtools").args(["view", "-b", "-o"]).arg(&bam).arg(&sam).status().unwrap().success());
     let out = dir.join("t.molecules.tsv");
+    let recs = dir.join("t.records.tsv");
     let st = Command::new(env!("CARGO_BIN_EXE_as_table"))
         .env("RUSTLE_AS_TABLE_SIDECAR", "0")
         .arg("--bam")
         .arg(&bam)
         .arg("--out")
         .arg(&out)
+        .arg("--records")
+        .arg(&recs)
         .status()
         .unwrap();
     assert!(st.success());
+    // every primary and secondary record in file order: name, secondary flag, chrom, 1-based pos, end, AS, ms, spliced
+    let want_recs = "name\tsecondary\tchrom\tpos\tend\tas\tms\tspliced\n\
+pseudo\t0\tc1\t100\t699\t300\t320\t1\n\
+pseudo\t1\tc2\t100\t199\t310\t300\t0\n\
+pseudo\t1\tc2\t5000\t5099\t250\t250\t0\n\
+unique\t0\tc1\t2000\t2099\t400\t400\t0\n\
+tie\t0\tc1\t3000\t3099\t200\t200\t0\n\
+tie\t1\tc1\t6000\t6099\t200\t200\t0\n";
+    assert_eq!(std::fs::read_to_string(&recs).unwrap(), want_recs);
     let text = std::fs::read_to_string(&out).unwrap();
     let rows: Vec<Vec<&str>> = text.lines().filter(|l| !l.starts_with('#')).map(|l| l.split('\t').collect()).collect();
     // name best_as second_as n primary_chrom primary_as | best_ms second_ms primary_ms primary_mapq primary_spliced

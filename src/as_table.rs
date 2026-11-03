@@ -30,6 +30,7 @@
 //! It also writes `<out>.asbin`, the binary sidecar `copy_assign` loads instead of the text when it still
 //! describes the TSV (size, mtime, inode, header, sampled content; `load_as_table`): a human table loads in
 //! about 0.3 s instead of 6-10 s. The TSV stays the source of truth. `RUSTLE_AS_TABLE_SIDECAR=0` skips it.
+use noodles_sam::alignment::Record as _;
 use anyhow::Result;
 use clap::Parser;
 use std::io::Write;
@@ -49,6 +50,10 @@ struct Args {
     /// BGZF decompression threads.
     #[arg(long, default_value_t = 4)]
     threads: usize,
+    /// Also write every primary and secondary record (file order) as `name secondary chrom pos end as ms spliced`
+    /// (register 1511: the secondary-usefulness census and the multimapper family graph read this).
+    #[arg(long)]
+    records: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -93,6 +98,14 @@ fn main() -> Result<()> {
         .collect();
     let mut mols: std::collections::HashMap<String, Mol> = std::collections::HashMap::new();
     let mut n_records = 0u64;
+    let mut rec_out = match &args.records {
+        Some(p) => {
+            let mut w = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(p)?);
+            writeln!(w, "name\tsecondary\tchrom\tpos\tend\tas\tms\tspliced")?;
+            Some(w)
+        }
+        None => None,
+    };
     for result in reader.records() {
         let record = result?;
         let flags = record.flags();
@@ -114,6 +127,19 @@ fn main() -> Result<()> {
             Some(n) => n.to_string(),
             None => continue,
         };
+        if let Some(w) = rec_out.as_mut() {
+            let end = record
+                .alignment_end()
+                .and_then(|p| p.ok())
+                .map_or(0, |p| p.get() as u64);
+            writeln!(
+                w,
+                "{name}\t{}\t{}\t{pos}\t{end}\t{as_}\t{ms}\t{}",
+                u8::from(flags.is_secondary()),
+                contigs.get(ref_id as usize).map_or("NA", String::as_str),
+                u8::from(is_spliced)
+            )?;
+        }
         let m = mols.entry(name).or_insert(Mol {
             best: -1,
             second: -1,
@@ -166,6 +192,9 @@ fn main() -> Result<()> {
                 t0.elapsed().as_secs_f64()
             );
         }
+    }
+    if let Some(mut w) = rec_out.take() {
+        w.flush()?;
     }
     let mut names: Vec<&String> = mols.keys().collect();
     names.sort_unstable();
