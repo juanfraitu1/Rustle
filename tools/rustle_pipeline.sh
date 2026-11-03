@@ -97,6 +97,9 @@
 #   --seed-pool primary   primary alignments only                                   (= --no-seed-secondaries)
 #   --seed-pool good      primaries + secondaries with AS >= R x the molecule's genome-wide best AS, R = 0.98
 #                         (THE DEFAULT; = --seed-secondaries; needs the as_table pass above)
+#   RUSTLE_SEED_UNSPLICED=primary|support (opt-in, passed through to the binary; r1518/r1520): what the pool does with an UNSPLICED
+#                         secondary: primary = drop it; support = it adds support to the primary-seeded cluster it overlaps but never
+#                         seeds or bridges one (array-wide single-exon blobs gone; 13% of CAT single-exon pseudogene hits lost).
 #   --seed-pool all       primaries + EVERY secondary (RUSTLE_GTF_SECONDARY=1, no filter, no table): the 2026-09-21 pool; in the
 #                         2026-10-07 study 1.4-1.5x the transcripts of good on every contig, and the aligner
 #                         records of good x17.5 (chr16; x22.9 of primary), x14.0 (chr17; x15.0), x3.1 (gorilla NPIP; x3.9)
