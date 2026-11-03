@@ -99,7 +99,7 @@ elif cmd == 'table':
                     if cnt[ch] >= k: w.write(t + '\n')
         expressed = set(l.strip() for l in open(cache)); matched_any = set()
     print("arm\ttranscripts\tgenes_modeled/" + str(len(T)) + "\tFSM\tISM\tNIC\tNNC\tartifact\tFSM+ISM%\tartifact%\trules_PASS%\ttx_per_gene"
-          + (f"\texpr_recall/{len(expressed)}" if expressed is not None else ""))
+          + (f"\texpr_recall/{len(expressed)}\texpr_recall_filt" if expressed is not None else ""))
     for spec in args:
         arm, files = spec.split('='); cls = files.split(':')[0]; flt = files.split(':')[1] if ':' in files else None
         C = list(csv.DictReader(open(cls), delimiter='\t'))
@@ -111,13 +111,15 @@ elif cmd == 'table':
             for c, a, b, st, g, name in spans:
                 if r['chrom'] == c and a < hi and lo < b: hit.add(g)
         n = len(C); fi = cat['full-splice_match'] + cat['incomplete-splice_match']
-        ps = 'NA'
+        ps = 'NA'; kept = None
         if flt:
             Fr = list(csv.DictReader(open(flt), delimiter='\t'))
             ps = f"{100 * sum(1 for r in Fr if r.get('filter_result') == 'Isoform') / max(len(Fr), 1):.1f}"
+            kept = {r['isoform'] for r in Fr if r.get('filter_result') == 'Isoform'}
         print(f"{arm}\t{n}\t{len(hit)}\t{cat['full-splice_match']}\t{cat['incomplete-splice_match']}\t{cat['novel_in_catalog']}\t"
               f"{cat['novel_not_in_catalog']}\t{cat['artifact']}\t{100 * fi / max(n, 1):.1f}\t{100 * cat['artifact'] / max(n, 1):.1f}\t{ps}\t{n / max(len(hit), 1):.2f}"
-              + (f"\t{len(m)} ({100 * len(m) / max(len(expressed), 1):.1f}%)" if expressed is not None and (m := {r['associated_transcript'] for r in C if r['structural_category'] == 'full-splice_match'} & expressed) is not None else ""))
+              + (f"\t{len(m)} ({100 * len(m) / max(len(expressed), 1):.1f}%)" if expressed is not None and (m := {r['associated_transcript'] for r in C if r['structural_category'] == 'full-splice_match'} & expressed) is not None else "")
+              + (f"\t{len(mf)} ({100 * len(mf) / max(len(expressed), 1):.1f}%)" if expressed is not None and (mf := {r['associated_transcript'] for r in C if r['structural_category'] == 'full-splice_match' and (kept is None or r['isoform'] in kept)} & expressed) is not None else ""))
         if expressed is not None: matched_any |= m
     if expressed is not None:
         print(f"# expressed reference isoforms matched by no arm: {len(expressed - matched_any)} of {len(expressed)}")
