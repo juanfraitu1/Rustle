@@ -2814,8 +2814,8 @@ struct WindowStore {
 
 /// The pooling `compute`'s window loop applies to a region's windows, on records fetched elsewhere: primaries kept once
 /// per (chrom, span, intron chain) — or, with `keep_dups`, dropped when they overlap an earlier window of the region
-/// (`window(i)` = the i-th window's (chrom, lo, hi)) — and BAM records once per (name, chrom, start). Used by the
-/// sweep's tie pass; `compute` keeps its own copy of the rule on the fetched records (the r1507 identity test pins both).
+/// (`window(i)` = the i-th window's (chrom, lo, hi)) — and BAM records once per (name, chrom, start). The one copy of
+/// the rule: `compute`'s window loop and the r1507 sweep's tie pass both call it.
 fn pool_windows(
     windows: Vec<(Vec<PrimaryRead>, Vec<BamRead>)>,
     keep_dups: bool,
@@ -7319,7 +7319,7 @@ fn main() -> Result<()> {
                     g
                 })
                 .collect();
-            index.insert(key, ids);
+            anyhow::ensure!(index.insert(key.clone(), ids).is_none(), "region {}:{}-{} listed twice", key.0, key.1, key.2);
         }
         let light: Vec<Mutex<Option<(Vec<PrimaryRead>, Vec<BamRead>)>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
         let chroms: Vec<&String> = { let mut v: Vec<&String> = by_chrom.keys().collect(); v.sort(); v };
@@ -7344,11 +7344,7 @@ fn main() -> Result<()> {
                 let ids = &index[&(contig.clone(), *lo, *hi)];
                 let wins: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> = ids
                     .iter()
-                    .map(|g| {
-                        let l = light[*g].lock().unwrap();
-                        let (p, b) = l.as_ref().expect("swept");
-                        (p.clone(), b.clone())
-                    })
+                    .map(|g| (Vec::new(), light[*g].lock().unwrap().as_ref().expect("swept").1.clone()))
                     .collect();
                 let (_, br) = pool_windows(wins, args.keep_coordinate_duplicates, |i| win_coord[ids[i]].clone());
                 let ev = as_evidence_per_read(&br, true);
@@ -7536,8 +7532,6 @@ fn main() -> Result<()> {
         let (primary, mut bam_reads) = if streaming {
             (Vec::new(), Vec::new())
         } else {
-            let mut pr: Vec<_> = Vec::new();
-            let mut br: Vec<_> = Vec::new();
             // Windows already fetched for this region. A read spanning a window boundary is returned by
             // both queries (every reader yields each record overlapping `[lo, hi)`), so a record from
             // window i that overlaps an EARLIER window j was necessarily fetched by j and is skipped here.
@@ -7554,14 +7548,14 @@ fn main() -> Result<()> {
             // true counts, removes more matching chains than the fix adds (polished −147 human dev,
             // −1,096 gorilla held-out, with gorilla precision +3.2 pts). So the historical key stays the
             // DEFAULT (byte-identical) and the window rule is opt-in via `--keep-coordinate-duplicates`.
-            let mut seen = DetHashSet::default();
-            let mut fetched: Vec<(String, u64, u64)> = Vec::new();
-            for (wchrom, wlo, whi) in &wins {
+            // every window's records, from the r1507 store or its own query, then the pooling rule (`pool_windows`)
+            let mut fetched: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> = Vec::with_capacity(wins.len());
+            for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
                     Some(_) if window_store.is_some() => {
                         let st = window_store.as_ref().expect("checked");
-                        let g = st.index[&(contig.clone(), lo, hi)][fetched.len()];
+                        let g = st.index[&(contig.clone(), lo, hi)][wi];
                         Ok(st.light[g].lock().unwrap().take().expect("each window's light records are taken once"))
                     }
                     Some(c) if args.tied_prefilter => c.reads_in_region_mode(
@@ -7575,19 +7569,6 @@ fn main() -> Result<()> {
                     None => reads_in_region(&args.bam, wchrom, wlo, whi, args.threads),
                 }
                 .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?;
-                for x in p {
-                    let keep = if args.keep_coordinate_duplicates {
-                        !fetched
-                            .iter()
-                            .any(|(c, l, h)| c == &x.chrom && x.ref_start < *h && x.ref_end > *l)
-                    } else {
-                        // historical key: PrimaryRead has no name; (chrom, span, intron chain) stands in
-                        seen.insert((x.chrom.clone(), x.ref_start, x.ref_end, x.introns.clone()))
-                    };
-                    if keep {
-                        pr.push(x);
-                    }
-                }
                 if let Some(rt) = rt_buf.as_mut() {
                     // every primary spliced record of the window, before the pool's own rules (as streaming)
                     for x in &b {
@@ -7595,22 +7576,9 @@ fn main() -> Result<()> {
                     }
                     rt.window_done(wchrom, wlo, whi);
                 }
-                for x in b {
-                    br.push(x);
-                }
-                fetched.push((wchrom.clone(), wlo, whi));
+                fetched.push((p, b));
             }
-            // ⚠ Must include `chrom`, not just `(name, ref_start)`: before cross-chromosome families
-            // (2026-09-15) every record `compute` ever saw shared one contig, so `ref_start` alone was
-            // already a sufficient tiebreaker. A cross-chromosome family's windows span several real
-            // contigs in one call, and a read placed at the SAME offset on two of them (a real, distinct
-            // alignment record each) would otherwise collide onto one key and the second record would be
-            // silently dropped as a "duplicate" — exactly the kind of silent truncation this whole feature
-            // exists to avoid.
-            let mut bseen = DetHashSet::default();
-            br.retain(|x: &rustle::denovo_assemble::BamRead| {
-                bseen.insert((x.name.clone(), x.chrom.clone(), x.read.ref_start))
-            });
+            let (pr, br) = pool_windows(fetched, args.keep_coordinate_duplicates, |i| wins[i].clone());
             // --tied-prefilter: `br` holds LIGHT records; decide the AS-tied molecules as the gate below will, then read the
             // windows again keeping full records of those molecules only (every placement of each, in the same order)
             if args.tied_prefilter {
