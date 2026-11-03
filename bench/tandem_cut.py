@@ -8,6 +8,7 @@ at its intron containing p, then LEFT and RIGHT recurse (depth <= 3). Output: ti
 import sys, re, os, collections, subprocess, tempfile, argparse, pysam
 ap = argparse.ArgumentParser(); ap.add_argument('gtf'); ap.add_argument('genome'); ap.add_argument('out')
 ap.add_argument('--report'); ap.add_argument('--threads', type=int, default=4); ap.add_argument('--max-depth', type=int, default=3)
+ap.add_argument('--mode', choices=['locus', 'neighbour'], default='locus', help='locus = Rule T (r1516); neighbour = Rule T2 (r1517, docs/PREREG_tandem_cut_neighbour_2026-11-03.md)')
 ap.add_argument('--debug', action='store_true', help='print every admissible minority point with its homology')
 ap.add_argument('--no-homology', action='store_true', help='skip the gate (counts only; never for a registered arm)')
 a = ap.parse_args()
@@ -83,12 +84,51 @@ def solve(ts, chrom, strand, gene, depth):
             if x[1] < p < y[0]: cuts[t].add((x[1] + 1, y[0] - 1)); break
     report.append((gene, chrom, strand, p, len(left), rl, len(right), rr, len(cross), rc, f'{ident:.4f}', f'{share:.4f}', depth))
     solve(left, chrom, strand, gene, depth + 1); solve(right, chrom, strand, gene, depth + 1)
-for (g, chrom, strand), ts in sorted(loci.items()):
-    if strand in '+-' and len(ts) >= 2: solve(ts, chrom, strand, g, 1)
+def neighbour_mode():
+    """Rule T2: per junction J, CROSSERS = transcripts using J; UP / DOWN = same-strand non-users ending before J / starting after J
+    that share an exonic base with a crosser's exons on that side (any gene_id)."""
+    global n_loci_tested, n_minority, n_hom
+    import bisect
+    exidx = collections.defaultdict(list)   # (chrom, strand) -> sorted (start, end, tid)
+    users = collections.defaultdict(list)   # (chrom, strand, s, e) -> tids
+    for t, r in tx.items():
+        if r['strand'] not in '+-': continue
+        for x in r['ex']: exidx[(r['chrom'], r['strand'])].append((x[0], x[1], t))
+        for x, y in zip(r['ex'], r['ex'][1:]): users[(r['chrom'], r['strand'], x[1] + 1, y[0] - 1)].append(t)
+    for k in exidx: exidx[k].sort()
+    starts = {k: [v[0] for v in lst] for k, lst in exidx.items()}
+    def overlapping(chrom, strand, a, b):
+        lst = exidx[(chrom, strand)]; i = bisect.bisect_right(starts[(chrom, strand)], b)
+        return {tid for (s0, e0, tid) in lst[max(0, i - 20000):i] if e0 >= a}
+    for (chrom, strand, s, e), cross in sorted(users.items()):
+        if any(tx[t]['reads'] is None for t in cross): continue
+        up = set(); down = set()
+        for t in cross:
+            for x in tx[t]['ex']:
+                if x[1] < s: up |= overlapping(chrom, strand, x[0], x[1])
+                elif x[0] > e: down |= overlapping(chrom, strand, x[0], x[1])
+        cs = set(cross)
+        up = [t for t in up if t not in cs and tx[t]['ex'][-1][1] < s and tx[t]['reads'] is not None]
+        down = [t for t in down if t not in cs and tx[t]['ex'][0][0] > e and tx[t]['reads'] is not None]
+        if not up or not down: continue
+        n_loci_tested += 1
+        rl, rr, rc = reads(up), reads(down), reads(cross)
+        if not rc < min(rl, rr): continue
+        n_minority += 1
+        ident, cov = (1.0, 1.0) if a.no_homology else homology(up, down, chrom, strand)
+        if a.debug: print(f'[debug] {chrom}:{s}-{e}:{strand} genes {sorted({tx[t]["g"] for t in cross})} up {len(up)}/{rl}r down {len(down)}/{rr}r cross {len(cross)}/{rc}r identity {ident:.3f} cov {cov:.3f}', file=sys.stderr)
+        if ident < 0.80 or cov < 0.50: continue
+        n_hom += 1
+        for t in cross: cuts[t].add((s, e))
+        report.append((','.join(sorted({tx[t]['g'] for t in cross})), chrom, strand, f'{s}-{e}', len(up), rl, len(down), rr, len(cross), rc, f'{ident:.4f}', f'{rc / (rc + min(rl, rr)):.4f}', 1))
+if a.mode == 'neighbour': neighbour_mode()
+else:
+    for (g, chrom, strand), ts in sorted(loci.items()):
+        if strand in '+-' and len(ts) >= 2: solve(ts, chrom, strand, g, 1)
 with open(a.out, 'w') as w:
     w.write('tid\tchrom\tstrand\tjunctions\tlabel\tgene\n')
     for t in sorted(cuts):
-        w.write(f"{t}\t{tx[t]['chrom']}\t{tx[t]['strand']}\t{';'.join(f'{s}-{e}' for s, e in sorted(cuts[t]))}\ttandem\t{tx[t]['g']}\n")
+        w.write(f"{t}\t{tx[t]['chrom']}\t{tx[t]['strand']}\t{';'.join(f'{s}-{e}' for s, e in sorted(cuts[t]))}\t{'tandem2' if a.mode == 'neighbour' else 'tandem'}\t{tx[t]['g']}\n")
 if a.report:
     with open(a.report, 'w') as w:
         w.write('gene\tchrom\tstrand\tp\tn_left\treads_left\tn_right\treads_right\tn_cross\treads_cross\tidentity\tshare\tdepth\n')
