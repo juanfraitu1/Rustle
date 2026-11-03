@@ -33,3 +33,15 @@ Pre-declared reading of the census (fixed before the genome-wide tables exist):
    both margins > 10 (minimap2 uncertain for another reason): reported only.
 No bar: this row sizes populations; the proof row that follows carries the bar (HG002 truth: assigned fraction and
 agreement vs the minimap2 primary and vs the 10-AS rule, per sub-population).
+
+## RESULT r1508 (2026-11-03, job 4421419; `~/o2contested/census_r1508.txt`, tables in the workspace `o2contested/`)
+Scale confirmed genome-wide: unspliced primaries ms - AS 0.4 to 1.8; spliced 175 to 221. Contested (either margin <= 10),
+molecules with a primary and a rival: A119b 484,805 (8.4% of with-rival, 2.3% of all), HG002 1,375,995 (8.7% / 3.7%),
+OR6737 68,285 (5.1% / 1.6%). Both margins > 10 ("placed"): 91-95% of with-rival; MAPQ < 60 among them 0.7-3.5%.
+K = 0 wall (AS 0, ms 0, same shape, same chromosome): A119b 16.0%, HG002 3.2%, OR6737 5.8% of contested, i.e. the wall is
+small and most of the contested set is informative. Largest class everywhere: spliced primary vs unspliced rival whose AS is
+HIGHER while ms favours the primary by > 10 (the processed-copy class): 33% / 72% / 68% of the informative set; the rival's
+AS lead is 11-200 on ~88%, 1-10 on 9-17%; MAPQ < 60 on 11-27%. Next: near tie on both scores, same shape (A119b 31%, HG002
+5%, OR6737 12%); both spliced, rival higher AS, ms > 10 for the primary (10% / 6% / 8%). "AS tie, ms > 50" is 838 / 8,151 /
+706 molecules: out of scope as pre-declared. Reading rules 1-3 stand; the proof row defines the target set as the
+contested set minus the wall and tests, per class, on HG002 truth.
