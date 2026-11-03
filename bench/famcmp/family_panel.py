@@ -28,7 +28,7 @@ def read_models(path):
         ex[(f[0], t)].append((int(f[3]) - 1, int(f[4]))); strand[(f[0], t)] = f[6]
     by = collections.defaultdict(list)  # (chrom, strand) -> [(start, end, exons)]
     for (c, t), e in ex.items():
-        if len(e) < 2: continue
+        if len(e) < 2 and os.environ.get('FAMPANEL_SPLICED_ONLY'): continue  # the registered definition; Amendment 2 = any model
         e.sort(); by[(c, strand[(c, t)])].append((e[0][0], e[-1][1], e))
     for v in by.values(): v.sort()
     return by

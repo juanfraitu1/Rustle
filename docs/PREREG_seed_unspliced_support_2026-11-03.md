@@ -21,3 +21,16 @@ with no primary -> nothing.
 4. CAT single-exon genes hit (Amendment 1 rule, model span <= 2x gene) >= 0.98 x 757 = 742. Reported beside: the r1518 B value 342.
 5. Spliced models identical to A >= 0.99.
 PASS = all five -> default (`--seed-pool good` gets the support rule). Any failed = FAIL, opt-in.
+
+## RESULT (2026-11-03 21:47): FAIL as registered (bar 2 FSM half, bar 4); the mechanism holds and the cost is a third of r1518's
+| bar | A | C (support) | B (r1518 drop) | verdict |
+|---|---|---|---|---|
+| 1 zero-primary-run models | 61 | 0 | 0 | PASS (USP17L span: 2 local models, was 1 blob / 0) |
+| 2 chr20 single-exon artifacts / FSM | 253 / 16 | 233 / 15 | 227 / 14 | artifact PASS, FSM FAIL by one |
+| 3 pairs precision / recall / fused | guards 0.7158 / 0.7307 / 547 | 0.726 / 0.735 / 545 | 0.728 / 0.742 / 545 | PASS |
+| 4 CAT single-exon genes hit (span <= 2x) | 757 | 658 (0.869) | 342 (0.452) | FAIL |
+| 5 spliced models identical | 219,503 | 219,503 | 219,503 | PASS |
+Single-exon models 16,501 -> 15,316 (B 14,498). Reading: letting the tied secondaries support but not seed keeps two thirds of the
+pseudogene fill-in r1518 lost (658 of the 757 - 342 = 415 gap recovered, 76%) while every blob stays gone. The remaining 99 lost
+genes are copies with < 3 primaries whose cluster the secondaries used to CREATE, i.e. the r1060 class itself. Stays OPT-IN
+(`RUSTLE_SEED_UNSPLICED=support`); a default change needs a bar on bar 4 that the user accepts as the price of the blobs.

@@ -32,3 +32,13 @@ good pool's tie set). T-only members (reachable only through a tied secondary) g
 tools' hit rate on T-only members is near 0 for StringTie and FLAIR; ours is above 0 only through the good seeding pool. No PSV
 certificate is used (arm A has no assign stage), so neither definition is the truth of which copy is expressed; T is the
 upper bound of what any tool could see, P the lower.
+
+## Result under the registered definition (spliced models only), and Amendment 2 (POST HOC, after seeing it)
+Registered run (`~/famcmp/run.4435467.out`): complete / partial / none / fused, P: ours 201/91/25/48, StringTie 227/69/21/57,
+FLAIR 207/87/23/68; T: ours 199/95/30/48, StringTie 217/82/25/57, FLAIR 202/94/28/68. Member hit rate on T-only members (87):
+ours 0.322, StringTie 0.000, FLAIR 0.011 (prediction 4 confirmed); on MAPQ0-dominated members ours 0.925 vs 0.827 / 0.759
+(prediction 2 confirmed); fused ours < StringTie < FLAIR (prediction 3 confirmed). Prediction 1 CONTRADICTED: StringTie completes
+more families. Two causes, found post hoc: (a) the registered "hit" required a SPLICED model, and many truth members are
+single-exon genes (TAS2R, OR, TSPY, SPANX, TUBB8) where ours emits a single-exon model that did not count while StringTie's
+spliced readthrough did; (b) at 3-9 primary molecules ours hits 0.34-0.47 vs StringTie 0.53-0.64 (the pass-1 floor of 3 and the
+polish), at 10+ the two are within 0.08. Amendment 2: hit = any model (single-exon included); rerun reported below, labelled post hoc.
