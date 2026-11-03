@@ -96,11 +96,17 @@ def neighbour_mode():
         if r['strand'] not in '+-': continue
         for x in r['ex']: exidx[(r['chrom'], r['strand'])].append((x[0], x[1], t))
         for x, y in zip(r['ex'], r['ex'][1:]): users[(r['chrom'], r['strand'], x[1] + 1, y[0] - 1)].append(t)
-    for k in exidx: exidx[k].sort()
-    starts = {k: [v[0] for v in lst] for k, lst in exidx.items()}
+    BIN = 10000  # bucket index: an exon is listed in every 10-kb bin it touches
+    bins = collections.defaultdict(list)
+    for k, lst in exidx.items():
+        for s0, e0, tid in lst:
+            for b0 in range(s0 // BIN, e0 // BIN + 1): bins[(k, b0)].append((s0, e0, tid))
     def overlapping(chrom, strand, a, b):
-        lst = exidx[(chrom, strand)]; i = bisect.bisect_right(starts[(chrom, strand)], b)
-        return {tid for (s0, e0, tid) in lst[max(0, i - 20000):i] if e0 >= a}
+        out = set()
+        for b0 in range(a // BIN, b // BIN + 1):
+            for s0, e0, tid in bins.get(((chrom, strand), b0), ()):
+                if s0 <= b and e0 >= a: out.add(tid)
+        return out
     for (chrom, strand, s, e), cross in sorted(users.items()):
         if any(tx[t]['reads'] is None for t in cross): continue
         up = set(); down = set()
