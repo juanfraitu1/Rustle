@@ -121,7 +121,7 @@ def main(prefix, catalog, bam, windows, mat, pat, out):
     loci = {(k.split("|")[1], k.split("|")[2]): copy_loci(v) for k, v in hits.items() if k.startswith("C|")}
     c = collections.Counter(rows_considered=0)
     ex = {"wrong": [], "right": [], "outside": []}
-    per_read = []  # r1509: one row per decidable (read, family): the per-class scorer joins it to the as_table
+    per_read = []  # r1509: one row per (read, family) with a near-perfect hit (truth empty = outside the catalog)
     for r in rows:
         q, fam = r["read_name"], r["family_id"]
         if q not in want:
@@ -139,6 +139,7 @@ def main(prefix, catalog, bam, windows, mat, pat, out):
         tag = "assigned" if is_assigned else "abstained"
         if not T:
             c[f"truth_outside_catalog|{tag}"] += 1
+            per_read.append((q, fam, tag, r["catalog_copy_idx"], "", 0, 0, r.get("as_margin", ""), r.get("ms_margin", "")))
             if is_assigned and len(ex["outside"]) < 20:
                 ex["outside"].append({"read": q, "family": fam, "o2_copy": r["catalog_copy_idx"],
                                       "best": min(near, key=lambda h: h[4])})
