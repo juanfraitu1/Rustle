@@ -352,6 +352,8 @@ pub fn contig_record_counts(bam_path: &str) -> Result<Vec<(String, Option<u64>)>
 pub const DE_TAG: Tag = Tag::new(b'd', b'e');
 /// Transcript strand, `ts:A` (`+`/`-`).
 pub const TS_TAG: Tag = Tag::new(b't', b's');
+/// minimap2's max-scoring-segment score, `ms:i`: the score it ranks primaries and secondaries on (no intron cost).
+pub const MS_TAG: Tag = Tag::new(b'm', b's');
 
 /// `AS:i` at any integer width; `None` for a non-integer value.
 pub fn value_as_i32(value: Value<'_>) -> Option<i32> {
@@ -404,6 +406,11 @@ pub fn record_as<R: noodles_sam::alignment::Record + ?Sized>(record: &R) -> Opti
     aux_first(record, Tag::ALIGNMENT_SCORE, value_as_i32)
         .ok()
         .flatten()
+}
+
+/// `ms:i` max-scoring-segment score. `None` if absent, non-integer, or behind a malformed field.
+pub fn record_ms<R: noodles_sam::alignment::Record + ?Sized>(record: &R) -> Option<i32> {
+    aux_first(record, MS_TAG, value_as_i32).ok().flatten()
 }
 
 /// `de:f` divergence (the conflict-criterion signal). `None` if absent, non-float, or behind a malformed field.

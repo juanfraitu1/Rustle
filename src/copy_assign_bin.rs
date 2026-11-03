@@ -39,7 +39,7 @@ use rustle::denovo_pipeline::{
 use rustle::family_detect::collapse_loci_groups;
 use rustle::genome::GenomeIndex;
 use rustle::linearize::LinearizeCertificate;
-use rustle::read_conflict::{as_evidence, AsEvidence};
+use rustle::read_conflict::{as_evidence, ms_tied, AsEvidence};
 use rustle::readonly_copy_number::{chi_h_with_junctions, depth_cn};
 
 /// Read one GTF attribute out of an attribute string (`key "value";`). Used by `--productivity` to recover
@@ -892,6 +892,13 @@ struct Args {
     /// any default is proposed.
     #[arg(long, default_value_t = 1.0)]
     as_tie_ratio: f64,
+
+    /// Register 1509: ALSO admit a molecule whose runner-up placement is within W of the best on `ms:i`, the score
+    /// minimap2 ranks placements by (no intron cost), whatever its AS margin. The r1508 census: AS and ms are one unit
+    /// per record, but a molecule's two margins differ whenever primary and rival differ in splice shape, so a near
+    /// tie must be read on both. Adds `ms_best`, `ms_second`, `ms_margin` columns to the assignments table.
+    #[arg(long)]
+    tie_ms: Option<i32>,
 
     /// ⭐ §6hd (user 2026-09-09): widen the gate to ALIGNER SELF-DISAGREEMENT — admit a molecule whose PRIMARY
     /// record sits in one supplied-family unit while its best-AS record sits in a DIFFERENT one, even with no
@@ -2857,7 +2864,7 @@ fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> V
     // alternative placement of it, so it can never be a tie partner: a primary + supplementary with equal
     // AS is one MAPQ-60 read in two pieces, and counting it as a tie let one such molecule through the
     // AS-tied gate and into `placement_assign` (§6gz addendum). Only primary + secondary records vote.
-    let mut by_name: DetHashMap<&str, Vec<(i32, u32)>> = DetHashMap::default();
+    let mut by_name: DetHashMap<&str, Vec<(i32, u32, i32)>> = DetHashMap::default();
     for br in bam_reads
         .iter()
         .filter(|br| !(exclude_supplementary && br.is_supplementary))
@@ -2865,13 +2872,13 @@ fn as_evidence_per_read(bam_reads: &[BamRead], exclude_supplementary: bool) -> V
         by_name
             .entry(br.name.as_str())
             .or_default()
-            .push((br.as_score, aligned_len(br)));
+            .push((br.as_score, aligned_len(br), br.ms));
     }
     bam_reads
         .iter()
         .map(|br| {
             // a molecule seen ONLY through supplementary records has no placement evidence of its own
-            let fallback = vec![(br.as_score, aligned_len(br))];
+            let fallback = vec![(br.as_score, aligned_len(br), br.ms)];
             let placements = by_name.get(br.name.as_str()).unwrap_or(&fallback);
             as_evidence(placements).expect("read is its own placement, so the slice is non-empty")
         })
@@ -3064,6 +3071,11 @@ fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
         Some(second) => (second as f64) >= ratio * (ev.best as f64),
         None => false,
     }
+}
+
+/// The gate: AS-tied at `ratio`, or (`--tie-ms W`) ms-tied within `W` (register 1509).
+fn gate_tied(ev: &AsEvidence, ratio: f64, tie_ms: Option<i32>) -> bool {
+    as_tied(ev, ratio) || tie_ms.map_or(false, |w| ms_tied(ev, w))
 }
 
 /// `NA` for an absent runner-up (single-placement read); otherwise the formatted value.
@@ -7351,7 +7363,7 @@ fn main() -> Result<()> {
                 let t: DetHashSet<String> = br
                     .iter()
                     .zip(ev.iter())
-                    .filter(|(_, e)| as_tied(e, args.as_tie_ratio))
+                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms))
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 Arc::new(t)
@@ -7586,7 +7598,7 @@ fn main() -> Result<()> {
                 let tied: DetHashSet<String> = br
                     .iter()
                     .zip(ev.iter())
-                    .filter(|(_, e)| as_tied(e, args.as_tie_ratio))
+                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms))
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 light_spans = Some(br.iter().map(|b| (b.chrom.clone(), b.read.ref_start, read_ref_end(&b.read))).collect());
@@ -7721,7 +7733,7 @@ fn main() -> Result<()> {
             let mut all: DetHashSet<&str> = DetHashSet::default();
             for (br, e) in bam_reads.iter().zip(ev.iter()) {
                 all.insert(br.name.as_str());
-                if as_tied(e, args.as_tie_ratio) {
+                if gate_tied(e, args.as_tie_ratio, args.tie_ms) {
                     tied.insert(br.name.as_str());
                 }
             }
@@ -10816,12 +10828,14 @@ fn main() -> Result<()> {
     } else {
         ""
     };
+    // register 1509: the ms evidence, only under `--tie-ms` so every other run keeps its schema
+    let ms_hdr = if args.tie_ms.is_some() { "\tms_best\tms_second\tms_margin" } else { "" };
     if args.no_as_tied_only {
-        writeln!(ah, "{hdr}{sibling_hdr}{eichler_hdr}")?;
+        writeln!(ah, "{hdr}{sibling_hdr}{eichler_hdr}{ms_hdr}")?;
     } else {
         writeln!(
             ah,
-            "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}{eichler_hdr}"
+            "{hdr}\ttie_outside_catalog\taligner_disagreement{sibling_hdr}{eichler_hdr}{ms_hdr}"
         )?;
     }
     for r in &assign_rows {
@@ -10862,12 +10876,17 @@ fn main() -> Result<()> {
                 format!("\t{}\t{}", if assigns { "assign" } else { "discard" }, same)
             }
         };
+        let ms_cols = if args.tie_ms.is_some() {
+            format!("\t{}\t{}\t{}", r.as_ev.best_ms, opt_i32(r.as_ev.second_ms), opt_i32(r.as_ev.ms_margin()))
+        } else {
+            String::new()
+        };
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}{}{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}{}{}{}",
             r.read_name, r.family_id, r.assigned_copy, status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
             r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
-            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling, eichler
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling, eichler, ms_cols
         )?;
     }
     let indel_stats = rustle::copy_assign::copy_assign_pipeline::take_indel_stats();
@@ -10938,7 +10957,7 @@ fn main() -> Result<()> {
             for ratio in widths {
                 let el: Vec<&&AssignRow> = mols
                     .iter()
-                    .filter(|r| as_tied(&r.as_ev, ratio) || is_disagreement(&r.read_name))
+                    .filter(|r| gate_tied(&r.as_ev, ratio, args.tie_ms) || is_disagreement(&r.read_name))
                     .collect();
                 // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
                 // explain (origin-rejected — O3's material) and molecules with a single candidate locus
@@ -14782,6 +14801,7 @@ mod tests {
             mapq: 0,
             name: "r1".to_string(),
             as_score: 0,
+            ms: 0,
             de: 0.0,
             is_supplementary: false,
             is_secondary: false,
@@ -14826,6 +14846,7 @@ mod tests {
             mapq: 0,
             name: "r1".to_string(),
             as_score: 0,
+            ms: 0,
             de: 0.0,
             is_supplementary: false,
             is_secondary: false,
@@ -14874,6 +14895,7 @@ mod tests {
             mapq: 0,
             name: name.to_string(),
             as_score,
+            ms: 0,
             de: 0.0,
             is_supplementary: false,
             is_secondary: start != 1000,

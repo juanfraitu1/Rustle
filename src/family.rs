@@ -5152,6 +5152,7 @@ pub mod arms {
                         mapq: 0,
                         name: name.into(),
                         as_score,
+                        ms: 0,
                         de: 0.0,
                         is_supplementary: false,
                         is_secondary: as_score != 200,
@@ -5194,6 +5195,7 @@ pub mod arms {
                         mapq: 0,
                         name: "r".into(),
                         as_score: 200,
+                        ms: 0,
                         de: 0.0,
                         is_supplementary: false,
                         is_secondary: false,
@@ -5749,6 +5751,7 @@ pub mod arms {
                     mapq: 60,
                     name: name.to_string(),
                     as_score: 0,
+                    ms: 0,
                     de: 0.0,
                     is_supplementary,
                     is_secondary,
@@ -10738,6 +10741,7 @@ pub mod arms {
                     mapq,
                     name: name.to_string(),
                     as_score: 0,
+                    ms: 0,
                     de,
                     is_supplementary: false,
                     is_secondary: false,
@@ -38425,6 +38429,7 @@ pub mod denovo_pipeline {
                         mapq: r.next(61) as u8,
                         name: format!("q{}", r.next((n / 2).max(1) as u64)), // shared names = multi-record molecules
                         as_score: r.next(500) as i32,
+                        ms: 0,
                         de: r.next(100) as f32 / 1000.0,
                         is_supplementary: r.next(10) == 0,
                         is_secondary: r.next(3) == 0,
@@ -41065,6 +41070,7 @@ pub mod denovo_pipeline {
                         mapq: 60,
                         name: name.into(),
                         as_score: 380,
+                        ms: 0,
                         de: 0.010,
                         is_supplementary: false,
                         is_secondary: false,
@@ -41082,6 +41088,7 @@ pub mod denovo_pipeline {
                         mapq: 0,
                         name: name.into(),
                         as_score: 379,
+                        ms: 0,
                         de: 0.012,
                         is_supplementary: false,
                         is_secondary: false,
@@ -41809,6 +41816,7 @@ pub mod denovo_pipeline {
                     mapq: 3,
                     name: name.into(),
                     as_score: 0,
+                    ms: 0,
                     de: 0.0,
                     is_supplementary: false,
                     is_secondary: false,
@@ -42376,6 +42384,7 @@ pub mod denovo_pipeline {
                 mapq,
                 name: name.into(),
                 as_score: 500,
+                ms: 0,
                 de,
                 is_supplementary: false,
                 is_secondary,
@@ -43887,6 +43896,7 @@ pub mod denovo_pipeline {
                 mapq,
                 name: format!("r{start}_{mapq}"),
                 as_score: 100,
+                ms: 0,
                 de: 0.01,
                 is_supplementary: supp,
                 is_secondary: false,
@@ -43972,6 +43982,7 @@ pub mod denovo_pipeline {
                 mapq: 0,
                 name: format!("r{start}"),
                 as_score: 100,
+                ms: 0,
                 de: 0.01,
                 is_supplementary: false,
                 is_secondary: false,
@@ -44016,6 +44027,7 @@ pub mod denovo_pipeline {
                 mapq: 0,
                 name: format!("r{start}"),
                 as_score: 100,
+                ms: 0,
                 de: 0.01,
                 is_supplementary: false,
                 is_secondary: false,
@@ -44729,6 +44741,7 @@ pub mod denovo_pipeline {
                         mapq,
                         name: name.into(),
                         as_score,
+                        ms: 0,
                         de: 0.0,
                         is_supplementary: false,
                         is_secondary: secondary,
@@ -45116,6 +45129,7 @@ pub mod denovo_pipeline {
                 mapq: 0,
                 name: name.into(),
                 as_score,
+                ms: 0,
                 de: 0.0,
                 is_supplementary: supp,
                 is_secondary: at > 0,
@@ -45214,6 +45228,7 @@ pub mod denovo_pipeline {
                 mapq,
                 name: name.into(),
                 as_score: 600,
+                ms: 0,
                 de: 0.0,
                 is_supplementary: false,
                 is_secondary: false,
@@ -45583,7 +45598,7 @@ pub mod denovo_pipeline {
         use crate::copy_split::AlignedRead;
         use crate::family_detect::DenovoTranscript;
         // `AS:i` / `de:f` / `ts:A` readers, generic over `RecordBuf` and lazy records (shared with `as_table`).
-        use crate::bam::{record_as, record_de, record_ts};
+        use crate::bam::{record_as, record_de, record_ms, record_ts};
         use crate::genome::GenomeIndex;
         use crate::seq_utils::reverse_complement;
 
@@ -47779,6 +47794,9 @@ pub mod denovo_pipeline {
             pub mapq: u8,
             pub name: String,
             pub as_score: i32,
+            /// minimap2 `ms:i` max-scoring-segment score (0 if absent): the score minimap2 ranks placements on; a near
+            /// tie on it is minimap2's own uncertainty (`copy_assign --tie-ms`).
+            pub ms: i32,
             /// minimap2 `de:f` gap-compressed per-base divergence (0.0 if absent) — the conflict-tie signal.
             pub de: f32,
             /// chimeric/split alignment (SAM flag 0x800) — excluded from conflict placements.
@@ -47896,6 +47914,7 @@ pub mod denovo_pipeline {
                         mapq,
                         name,
                         as_score,
+                        ms: 0,
                         de,
                         is_supplementary,
                         is_secondary,
@@ -47999,6 +48018,7 @@ pub mod denovo_pipeline {
                     mapq,
                     name,
                     as_score: as_score.unwrap_or(0),
+                    ms: 0,
                     de: de.unwrap_or(0.0),
                     is_supplementary: flags.is_supplementary(),
                     is_secondary: flags.is_secondary(),
@@ -49940,6 +49960,7 @@ pub mod denovo_pipeline {
                             mapq,
                             name,
                             as_score,
+                            ms: 0,
                             de,
                             is_supplementary,
                             is_secondary,
@@ -49995,6 +50016,7 @@ pub mod denovo_pipeline {
                         mapq,
                         name,
                         as_score,
+                        ms: 0,
                         de,
                         is_supplementary,
                         is_secondary,
@@ -50484,7 +50506,8 @@ pub mod denovo_pipeline {
                     read.qual = Vec::new();
                 }
                 let (reverse, ts) = (rb.flags().is_reverse_complemented(), record_ts(rb));
-                Some(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary, is_secondary, reverse, ts })
+                let ms = record_ms(rb).unwrap_or(0);
+                Some(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, ms, de, is_supplementary, is_secondary, reverse, ts })
             }
 
             /// Query one region using the cached header+index (the reader seeks via the index, independent of the
@@ -50813,6 +50836,7 @@ pub mod denovo_pipeline {
                         mapq,
                         name,
                         as_score,
+                        ms: 0,
                         de,
                         is_supplementary,
                         is_secondary,
@@ -69604,6 +69628,9 @@ pub mod family_detect {
             pub second: Option<i32>,
             pub best_per_base: f32,
             pub second_per_base: Option<f32>,
+            /// Best and runner-up `ms:i` over the same placements (ranked on ms, independently of the AS rank).
+            pub best_ms: i32,
+            pub second_ms: Option<i32>,
         }
 
         impl AsEvidence {
@@ -69611,23 +69638,38 @@ pub mod family_detect {
             pub fn margin(&self) -> Option<i32> {
                 self.second.map(|s| self.best - s)
             }
+            /// `best_ms - second_ms`; `None` for a single placement.
+            pub fn ms_margin(&self) -> Option<i32> {
+                self.second_ms.map(|s| self.best_ms - s)
+            }
         }
 
-        /// Best and runner-up alignment score over one read's placements, as `(as_score, aligned_len)` pairs.
+        /// `copy_assign --tie-ms W` (register 1509): the runner-up placement is within `W` of the best on `ms`, the score
+        /// minimap2 picks its primary by, so the primary was its own near coin toss. A single placement never ties.
+        pub fn ms_tied(e: &AsEvidence, w: i32) -> bool {
+            e.ms_margin().map_or(false, |m| m <= w)
+        }
+
+        /// Best and runner-up alignment score over one read's placements, as `(as_score, aligned_len, ms)` triples.
         /// Ranks on RAW `AS` (that is the quantity people quote and Eichler's `AS >= 10` rule uses); the per-base
-        /// values are carried alongside for the length-fair comparison. `None` if the read has no placements.
+        /// values are carried alongside for the length-fair comparison, and the best / runner-up `ms` are ranked on
+        /// their own. `None` if the read has no placements.
         /// Zero-length placements get a per-base score of 0.0 rather than a division by zero.
-        pub fn as_evidence(placements: &[(i32, u32)]) -> Option<AsEvidence> {
-            let per_base = |(s, l): (i32, u32)| if l == 0 { 0.0 } else { s as f32 / l as f32 };
-            let mut sorted: Vec<(i32, u32)> = placements.to_vec();
+        pub fn as_evidence(placements: &[(i32, u32, i32)]) -> Option<AsEvidence> {
+            let per_base = |(s, l, _): (i32, u32, i32)| if l == 0 { 0.0 } else { s as f32 / l as f32 };
+            let mut sorted: Vec<(i32, u32, i32)> = placements.to_vec();
             sorted.sort_by(|a, b| b.0.cmp(&a.0));
             let &first = sorted.first()?;
             let second = sorted.get(1).copied();
+            let mut ms: Vec<i32> = placements.iter().map(|p| p.2).collect();
+            ms.sort_unstable_by(|a, b| b.cmp(a));
             Some(AsEvidence {
                 best: first.0,
                 second: second.map(|s| s.0),
                 best_per_base: per_base(first),
                 second_per_base: second.map(per_base),
+                best_ms: ms[0],
+                second_ms: ms.get(1).copied(),
             })
         }
 
@@ -70230,7 +70272,7 @@ pub mod family_detect {
 
             #[test]
             fn as_evidence_single_placement_has_no_second_or_margin() {
-                let e = as_evidence(&[(1842, 916)]).unwrap();
+                let e = as_evidence(&[(1842, 916, 1850)]).unwrap();
                 assert_eq!(e.best, 1842);
                 assert_eq!(e.second, None);
                 assert_eq!(e.second_per_base, None);
@@ -70243,7 +70285,7 @@ pub mod family_detect {
 
             #[test]
             fn as_evidence_ranks_best_and_runner_up_over_three_placements() {
-                let e = as_evidence(&[(1310, 800), (1842, 916), (900, 500)]).unwrap();
+                let e = as_evidence(&[(1310, 800, 1500), (1842, 916, 1850), (900, 500, 900)]).unwrap();
                 assert_eq!(e.best, 1842);
                 assert_eq!(e.second, Some(1310));
                 assert_eq!(e.margin(), Some(532));
@@ -70251,9 +70293,24 @@ pub mod family_detect {
                 assert!((e.second_per_base.unwrap() - 1310.0 / 800.0).abs() < 1e-6);
             }
 
+            /// The ms rank is independent of the AS rank: a spliced placement can lead on ms (no intron cost) while an
+            /// unspliced rival leads on AS. `--tie-ms` reads the ms margin only.
+            #[test]
+            fn as_evidence_ranks_ms_on_its_own_and_ms_tied_reads_that_margin() {
+                let e = as_evidence(&[(300, 100, 320), (310, 100, 300)]).unwrap();
+                assert_eq!((e.best, e.second), (310, Some(300)));
+                assert_eq!((e.best_ms, e.second_ms), (320, Some(300)));
+                assert_eq!(e.ms_margin(), Some(20));
+                assert!(!ms_tied(&e, 10));
+                assert!(ms_tied(&e, 20));
+                let one = as_evidence(&[(300, 100, 320)]).unwrap();
+                assert_eq!(one.ms_margin(), None);
+                assert!(!ms_tied(&one, 1000), "a single placement never ties");
+            }
+
             #[test]
             fn as_evidence_zero_length_placement_does_not_divide_by_zero() {
-                let e = as_evidence(&[(50, 0)]).unwrap();
+                let e = as_evidence(&[(50, 0, 50)]).unwrap();
                 assert_eq!(e.best_per_base, 0.0);
             }
 
@@ -70262,7 +70319,7 @@ pub mod family_detect {
             /// indistinguishable. This is why AS is reported and `de` decides.
             #[test]
             fn raw_as_misjudges_a_partial_placement_that_per_base_as_calls_equal() {
-                let (full, partial) = ((2000, 1000), (1200, 600)); // both exactly 2.0 AS per aligned base
+                let (full, partial) = ((2000, 1000, 2000), (1200, 600, 1200)); // both exactly 2.0 AS per aligned base
                 let e = as_evidence(&[full, partial]).unwrap();
                 assert_eq!(e.margin(), Some(800), "raw AS shows a large margin...");
                 assert!(

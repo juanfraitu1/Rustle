@@ -73,9 +73,6 @@ struct Mol {
     rival_pos: u64,
 }
 
-const MS_TAG: noodles_sam::alignment::record::data::field::Tag =
-    noodles_sam::alignment::record::data::field::Tag::new(b'm', b's');
-
 fn spliced(record: &noodles_bam::Record) -> bool {
     use noodles_sam::alignment::record::cigar::op::Kind;
     record
@@ -105,10 +102,7 @@ fn main() -> Result<()> {
         }
         n_records += 1;
         let as_ = rustle::bam::record_as(&record).unwrap_or(0);
-        let ms = rustle::bam::aux_first(&record, MS_TAG, rustle::bam::value_as_i32)
-            .ok()
-            .flatten()
-            .unwrap_or(0);
+        let ms = rustle::bam::record_ms(&record).unwrap_or(0);
         let is_spliced = spliced(&record);
         let pos = record.alignment_start().and_then(|p| p.ok()).map_or(0, |p| p.get() as u64);
         let ref_id = record

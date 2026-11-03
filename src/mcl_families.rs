@@ -3134,6 +3134,7 @@ mod tests {
             mapq: 60,
             name: String::new(),
             as_score: 0,
+            ms: 0,
             de: 0.0,
             is_supplementary: false,
             is_secondary: false,
