@@ -70308,7 +70308,7 @@ pub mod family_detect {
                 let one = as_evidence(&[(300, 100, 320)]).unwrap();
                 assert_eq!(one.ms_margin(), None);
                 assert!(!ms_tied(&one, 1000), "a single placement never ties");
-                let zero = as_evidence(&[(300, 100, 0), (300, 100, 0)]);
+                let zero = as_evidence(&[(300, 100, 0), (300, 100, 0)]).unwrap();
                 assert_eq!(zero.ms_margin(), Some(0));
                 assert!(!ms_tied(&zero, 10), "ms 0 = no ms tag: never a tie");
             }
